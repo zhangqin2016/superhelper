@@ -23,20 +23,32 @@ import { $ } from "./modules/dom.js";
 
 function initPanelToggles() {
   const shell = $("appShell");
+  if (!shell) return;
 
   $("leftToggleBtn")?.addEventListener("click", () => {
+    shell.classList.remove("both-collapsed");
     if (shell.classList.contains("left-collapsed")) {
       shell.classList.remove("left-collapsed");
     } else {
       shell.classList.add("left-collapsed");
     }
+    // If both are now individually collapsed, use the combined class
+    if (shell.classList.contains("left-collapsed") && shell.classList.contains("right-collapsed")) {
+      shell.classList.remove("left-collapsed", "right-collapsed");
+      shell.classList.add("both-collapsed");
+    }
   });
 
   $("rightToggleBtn")?.addEventListener("click", () => {
+    shell.classList.remove("both-collapsed");
     if (shell.classList.contains("right-collapsed")) {
       shell.classList.remove("right-collapsed");
     } else {
       shell.classList.add("right-collapsed");
+    }
+    if (shell.classList.contains("left-collapsed") && shell.classList.contains("right-collapsed")) {
+      shell.classList.remove("left-collapsed", "right-collapsed");
+      shell.classList.add("both-collapsed");
     }
   });
 }
