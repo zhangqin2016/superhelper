@@ -179,6 +179,7 @@ export async function refreshState() {
         }
       }
       store.set("sessions", allSessions);
+      if (state.conversation) store.set("conversation", state.conversation);
     }
   } catch {}
 }

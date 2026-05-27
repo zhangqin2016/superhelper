@@ -389,6 +389,8 @@ button, textarea, input { font: inherit; }
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: var(--bg-center);
 }
 

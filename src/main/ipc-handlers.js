@@ -199,10 +199,12 @@ function registerAll(ctx) {
       ...p,
       sessions: sessionManager.listForProject(p.id),
     }));
+    const activeSession = sessionManager.getActive();
     return {
       activeProjectId: projectState.activeProjectId,
       activeSessionId: sessionManager.activeSessionId,
       projects: projectsWithSessions,
+      conversation: activeSession ? activeSession.messages : [],
     };
   });
 

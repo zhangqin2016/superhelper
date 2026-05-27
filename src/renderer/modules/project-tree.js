@@ -74,7 +74,8 @@ export function renderProjectTree() {
       const result = await window.assistantClient.createSession("新会话", project.id);
       if (result.ok) {
         await window.assistantClient.switchProject(project.id);
-        await window.assistantClient.switchSession(result.session.id);
+        const sw = await window.assistantClient.switchSession(result.session.id);
+        if (sw.ok) store.set("conversation", sw.conversation || []);
         await refreshState();
         renderProjectTree();
         renderConversation();
@@ -132,7 +133,10 @@ export function renderProjectTree() {
           if (project.id !== store.get("activeProjectId")) {
             await window.assistantClient.switchProject(project.id);
           }
-          await window.assistantClient.switchSession(s.id);
+          const sw = await window.assistantClient.switchSession(s.id);
+          if (sw.ok && sw.conversation) {
+            store.set("conversation", sw.conversation);
+          }
           await refreshState();
           renderProjectTree();
           renderConversation();

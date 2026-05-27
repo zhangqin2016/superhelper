@@ -99,7 +99,8 @@ export function initComposer() {
     const projectId = store.get("activeProjectId");
     const result = await window.assistantClient.createSession("新会话", projectId);
     if (result.ok) {
-      await window.assistantClient.switchSession(result.session.id);
+      const sw = await window.assistantClient.switchSession(result.session.id);
+      store.set("conversation", sw.ok ? (sw.conversation || []) : []);
       const { refreshState, renderConversation } = await import("./message.js");
       const { renderProjectTree } = await import("./project-tree.js");
       await refreshState();
