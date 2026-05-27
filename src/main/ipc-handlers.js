@@ -226,7 +226,6 @@ function registerAll(ctx) {
   });
 
   ipcMain.handle("project:switch", (_event, projectId) => {
-    if (runner.isBusy()) return { ok: false, error: "BUSY" };
     if (!projectManager.switchTo(projectId)) {
       return { ok: false, error: "NOT_FOUND" };
     }

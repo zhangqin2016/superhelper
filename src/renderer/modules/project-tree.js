@@ -128,7 +128,6 @@ export function renderProjectTree() {
         item.appendChild(meta);
 
         item.addEventListener("click", async () => {
-          if (store.get("isBusy")) return;
           // Switch project if needed
           if (project.id !== store.get("activeProjectId")) {
             await window.assistantClient.switchProject(project.id);
