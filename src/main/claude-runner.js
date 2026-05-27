@@ -152,7 +152,7 @@ class ClaudeRunner extends EventEmitter {
       args.push("--add-dir", stagingDir);
     }
 
-    args.push("--output-format", "text", "-p", prompt);
+    args.push("--output-format", "stream-json", "-p", prompt);
 
     const home = userHome();
 
@@ -161,7 +161,6 @@ class ClaudeRunner extends EventEmitter {
       env: {
         ...process.env,
         PATH: [
-          // Offline bundle install dir (highest priority)
           userDataPath("claude-bin"),
           path.join(home, ".local", "bin"),
           path.join(home, ".npm-global", "bin"),
@@ -183,6 +182,7 @@ class ClaudeRunner extends EventEmitter {
     let collectedOutput = "";
     let processStarted = false;
     let processFailed = false;
+    let lineBuf = "";
 
     this.activeProcess.on("spawn", () => {
       processStarted = true;
@@ -190,14 +190,74 @@ class ClaudeRunner extends EventEmitter {
     });
 
     this.activeProcess.stdout.on("data", (chunk) => {
-      const text = chunk.toString();
-      collectedOutput += text;
-      this.emit("chunk", text);
+      const raw = chunk.toString();
+      lineBuf += raw;
+
+      // Extract complete lines
+      const lines = lineBuf.split("\n");
+      lineBuf = lines.pop(); // keep incomplete line in buffer
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        try {
+          const ev = JSON.parse(trimmed);
+          if (!ev || !ev.type) continue;
+
+          switch (ev.type) {
+            case "assistant":
+            case "content_block_delta_text_delta": {
+              // Extract text content from assistant messages
+              let text = "";
+              if (ev.message?.content) {
+                for (const block of ev.message.content) {
+                  if (block.type === "text") text += block.text;
+                }
+              }
+              if (text) {
+                collectedOutput += text;
+                this.emit("chunk", text);
+              }
+              break;
+            }
+            case "tool_use": {
+              const toolName = ev.name || ev.tool || "unknown";
+              const toolInput = ev.input || {};
+              this.emit("tool-using", {
+                name: toolName,
+                input: toolInput,
+                id: ev.id || ev.tool_use_id || "",
+              });
+              break;
+            }
+            case "tool_result": {
+              this.emit("tool-done", {
+                name: ev.name || ev.tool || "",
+                id: ev.tool_use_id || ev.id || "",
+                status: ev.is_error ? "failed" : "done",
+              });
+              break;
+            }
+            case "result": {
+              // Final result — text may be in ev.result
+              if (typeof ev.result === "string" && ev.result) {
+                // Only collect result text that isn't already emitted via assistant events
+                // The stream-json format may duplicate assistant text in the final result
+              }
+              break;
+            }
+            // system, user, etc. are ignored for display
+          }
+        } catch {
+          // Non-JSON line — forward as plain text (legacy fallback)
+          collectedOutput += trimmed + "\n";
+          this.emit("chunk", trimmed + "\n");
+        }
+      }
     });
 
     // stderr is forwarded for display only — NOT appended to collectedOutput.
-    // This fixes the original bug where stderr text was double-saved into
-    // the conversation history.
     this.activeProcess.stderr.on("data", (chunk) => {
       this.emit("stderr", sanitizeError(chunk.toString()));
     });
@@ -209,6 +269,22 @@ class ClaudeRunner extends EventEmitter {
     });
 
     this.activeProcess.on("close", (code) => {
+      // Flush any remaining text in the line buffer
+      if (lineBuf.trim()) {
+        try {
+          const ev = JSON.parse(lineBuf.trim());
+          if (ev?.type === "assistant" && ev.message?.content) {
+            let text = "";
+            for (const block of ev.message.content) {
+              if (block.type === "text") text += block.text;
+            }
+            if (text) {
+              collectedOutput += text;
+              this.emit("chunk", text);
+            }
+          }
+        } catch {}
+      }
       if (!processFailed && processStarted) {
         this.emit("done", { code, output: collectedOutput.trim() });
       }

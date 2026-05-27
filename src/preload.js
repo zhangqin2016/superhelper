@@ -89,6 +89,12 @@ contextBridge.exposeInMainWorld("assistantClient", {
   onError: (callback) => {
     ipcRenderer.on("assistant:error", (_event, data) => callback(data));
   },
+  onTool: (callback) => {
+    ipcRenderer.on("assistant:tool", (_event, data) => callback(data));
+  },
+  onToolDone: (callback) => {
+    ipcRenderer.on("assistant:tool-done", (_event, data) => callback(data));
+  },
   onFileChange: (callback) => {
     ipcRenderer.on("filetree:change", (_event, data) => callback(data));
   },

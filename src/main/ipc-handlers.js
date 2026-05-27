@@ -107,6 +107,14 @@ function handleClaude(ctx, session, project, input, files = []) {
     sendToRenderer(mainWindow, "assistant:status", { state, sessionId });
   });
 
+  runner.on("tool-using", (data) => {
+    sendToRenderer(mainWindow, "assistant:tool", { sessionId, ...data });
+  });
+
+  runner.on("tool-done", (data) => {
+    sendToRenderer(mainWindow, "assistant:tool-done", { sessionId, ...data });
+  });
+
   runner.run({
     prompt,
     cwd: project.path,
@@ -121,6 +129,8 @@ function handleClaude(ctx, session, project, input, files = []) {
     runner.removeAllListeners("done");
     runner.removeAllListeners("error");
     runner.removeAllListeners("status");
+    runner.removeAllListeners("tool-using");
+    runner.removeAllListeners("tool-done");
   }
 }
 

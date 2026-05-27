@@ -69,7 +69,64 @@ export function activeProject() {
 // IPC event wiring
 // ---------------------------------------------------------------------------
 
+// Track active tool cards
+const toolCards = new Map();
+
+function toolLabel(name, input) {
+  const action = input?.query || input?.search_query || input?.prompt || "";
+  const shortAction = String(action).slice(0, 40);
+  const icons = {
+    WebSearch: "🔍", web_search_prime: "🔍", webReader: "📖",
+    Read: "📄", Write: "✏️", Edit: "✏️", Bash: "⚡",
+    Grep: "🔎", Glob: "🗂️",
+  };
+  const icon = icons[name] || "🔄";
+  const desc = shortAction ? `「${shortAction}${action.length > 40 ? "..." : ""}」` : "";
+  return `${icon} ${name} ${desc}`;
+}
+
+function addToolCard(id, name, input) {
+  const el = $("messages");
+  if (!el) return;
+
+  const card = document.createElement("div");
+  card.className = "tool-card tool-card-running";
+  card.dataset.toolId = id;
+
+  const dot = document.createElement("span");
+  dot.className = "tool-card-dot";
+
+  const label = document.createElement("span");
+  label.className = "tool-card-label";
+  label.textContent = toolLabel(name, input);
+
+  card.append(dot, label);
+  el.appendChild(card);
+  scrollToBottom();
+  toolCards.set(id, card);
+}
+
+function updateToolCard(id, status) {
+  const card = toolCards.get(id);
+  if (!card) return;
+  card.classList.remove("tool-card-running");
+  card.classList.add(status === "failed" ? "tool-card-failed" : "tool-card-done");
+  toolCards.delete(id);
+}
+
 export function wireIpcEvents() {
+  window.assistantClient.onTool((payload) => {
+    const sid = store.get("activeSessionId");
+    if (payload.sessionId && payload.sessionId !== sid) return;
+    addToolCard(payload.id, payload.name, payload.input);
+  });
+
+  window.assistantClient.onToolDone((payload) => {
+    const sid = store.get("activeSessionId");
+    if (payload.sessionId && payload.sessionId !== sid) return;
+    updateToolCard(payload.id, payload.status);
+  });
+
   window.assistantClient.onChunk((payload) => {
     const sid = store.get("activeSessionId");
     if (payload.sessionId && payload.sessionId !== sid) return;
@@ -91,6 +148,13 @@ export function wireIpcEvents() {
     const sid = store.get("activeSessionId");
     if (payload.sessionId && payload.sessionId !== sid) return;
 
+    // Clear any lingering tool cards
+    for (const [id, card] of toolCards) {
+      card.classList.remove("tool-card-running");
+      card.classList.add("tool-card-done");
+    }
+    toolCards.clear();
+
     const bubble = store.get("activeBubble");
     if (bubble) {
       bubble.classList.remove("pending");
@@ -105,7 +169,6 @@ export function wireIpcEvents() {
     setBusyUI(false);
     $("promptInput")?.focus();
 
-    // Refresh diff after conversation completes
     try {
       const result = await window.assistantClient.getDiff();
       if (result.ok && result.diffs.length > 0) {
@@ -129,6 +192,12 @@ export function wireIpcEvents() {
   window.assistantClient.onError(async (error) => {
     const sid = store.get("activeSessionId");
     if (error.sessionId && error.sessionId !== sid) return;
+
+    for (const [id, card] of toolCards) {
+      card.classList.remove("tool-card-running");
+      card.classList.add("tool-card-failed");
+    }
+    toolCards.clear();
 
     let bubble = store.get("activeBubble");
     if (!bubble) bubble = createMessage("assistant", "");
