@@ -54,7 +54,7 @@ function remove(el) {
 export const FILE_ERROR_MESSAGES = {
   FILE_NOT_FOUND: "文件不存在或路径无效。",
   NOT_A_FILE: "暂不支持上传文件夹。",
-  UNSUPPORTED_TYPE: "不支持此文件格式。支持的格式：图片(png/jpg/gif/webp/svg/bmp)、文档(pdf/doc/txt/md/csv)、代码文件。",
+  UNSUPPORTED_TYPE: "不支持此文件格式。支持图片、PDF、Word、文本等常见格式。",
   FILE_TOO_LARGE: "文件超过 20MB 限制，请压缩后重试。",
 };
 

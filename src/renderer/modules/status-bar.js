@@ -1,5 +1,5 @@
 /**
- * Bottom status bar — real-time CLI status, current task, shortcuts.
+ * Bottom status bar — assistant status and about info.
  */
 
 import { $ } from "./dom.js";
@@ -13,7 +13,7 @@ export function initStatusBar() {
 
   $("statusCliVersion")?.addEventListener("click", () => {
     import("./toast.js").then(({ showToast }) => {
-      showToast("Claude Code CLI — 纯 UI 壳层客户端 V1.0", "info");
+      showToast("智能助手 V1.0", "info");
     });
   });
 }

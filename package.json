@@ -2,7 +2,7 @@
   "name": "terminal-chat-claude",
   "version": "0.1.0",
   "private": true,
-  "description": "AI Super Terminal — Claude Code CLI 纯 UI 壳层桌面客户端",
+  "description": "智能助手桌面客户端",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -11,7 +11,7 @@
   },
   "build": {
     "appId": "com.company.ai-super-terminal",
-    "productName": "AI Super Terminal",
+    "productName": "智能助手",
     "asar": true,
     "files": [
       "src/**/*",

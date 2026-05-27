@@ -27,7 +27,7 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 640,
-    title: "AI Super Terminal",
+    title: "智能助手",
     backgroundColor: "#0f1119",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Persisted quick command templates for one-click CLI execution.
+ * Persisted quick prompts for one-click chat input.
  * Stored in userData/templates.json.
  */
 
@@ -11,51 +11,39 @@ const { templatesConfigPath } = require("./config");
 
 const BUILT_IN = [
   {
-    id: "code-review",
-    title: "代码巡检",
-    prompt: "请对当前项目进行全面的代码审查，找出潜在问题并给出改进建议。",
+    id: "daily-help",
+    title: "生活小帮手",
+    prompt: "我想咨询一个日常生活问题，请用简单易懂的方式回答我：",
     builtIn: true,
   },
   {
-    id: "fix-bug",
-    title: "Bug 修复",
-    prompt: "请分析以下问题并提供修复方案：",
+    id: "write-email",
+    title: "帮我写消息",
+    prompt: "请帮我写一段礼貌、清晰的消息，用途是：",
     builtIn: true,
   },
   {
-    id: "refactor",
-    title: "代码重构",
-    prompt: "请对以下代码进行重构，提升可读性和性能：",
+    id: "summarize",
+    title: "帮我总结",
+    prompt: "请用分点的方式，帮我总结下面这段内容的重点：",
     builtIn: true,
   },
   {
-    id: "generate-comments",
-    title: "生成注释",
-    prompt: "请为以下代码添加清晰的中文注释：",
+    id: "translate",
+    title: "帮我翻译",
+    prompt: "请把下面这段文字翻译成英文，语气自然一些：",
     builtIn: true,
   },
   {
-    id: "generate-tests",
-    title: "生成测试用例",
-    prompt: "请为以下代码生成完整的测试用例：",
+    id: "polish-text",
+    title: "帮我改改文字",
+    prompt: "请帮我润色下面这段文字，让它更通顺、更好读：",
     builtIn: true,
   },
   {
-    id: "architecture-doc",
-    title: "整理架构文档",
-    prompt: "请分析当前项目的整体架构并整理一份架构文档。",
-    builtIn: true,
-  },
-  {
-    id: "explain-code",
-    title: "代码解释",
-    prompt: "请详细解释以下代码的实现逻辑：",
-    builtIn: true,
-  },
-  {
-    id: "optimize-perf",
-    title: "性能优化",
-    prompt: "请分析以下代码的性能瓶颈并提出优化方案：",
+    id: "travel-tips",
+    title: "出行建议",
+    prompt: "我计划出行，请根据我的情况给出实用建议：",
     builtIn: true,
   },
 ];

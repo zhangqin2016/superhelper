@@ -25,7 +25,7 @@ function buildPluginPrompt(project, pluginManager) {
 
   if (enabled.length === 0) return "";
 
-  return `当前已启用 MCP 插件：\n${enabled.map((p) => `- ${p.name}`).join("\n")}\n请在回答用户问题时主动使用相关 MCP 工具。`;
+  return `当前已启用扩展能力：\n${enabled.map((p) => `- ${p.name}`).join("\n")}\n请在回答用户问题时主动使用相关能力。`;
 }
 
 function buildFilePrompt(files) {
@@ -58,6 +58,7 @@ function buildPrompt(session, input, project, pluginManager, files = []) {
 
 function handleClaude(ctx, session, project, input, files = []) {
   const { mainWindow, sessionManager, pluginManager, stagingManager, runner } = ctx;
+  const { appendTextSegment } = require("./claude-runner");
   const sessionId = session.id;
 
   const mcpConfigFile = pluginManager.writeMcpConfig(project);
@@ -72,7 +73,7 @@ function handleClaude(ctx, session, project, input, files = []) {
   let assistantOutput = "";
 
   runner.on("chunk", (text) => {
-    assistantOutput += text;
+    assistantOutput = appendTextSegment(assistantOutput, text);
     sendToRenderer(mainWindow, "assistant:chunk", { sessionId, text });
   });
 
@@ -224,14 +225,14 @@ function registerAll(ctx) {
 
   ipcMain.handle("project:add", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: "选择项目目录",
+      title: "选择文件夹",
       properties: ["openDirectory"],
     });
     if (result.canceled || result.filePaths.length === 0) {
       return { ok: false, canceled: true };
     }
     const project = projectManager.add(result.filePaths[0]);
-    sessionManager.create(project.id, "默认会话");
+    sessionManager.create(project.id, "默认对话");
     return { ok: true, state: projectManager.getAppState() };
   });
 
@@ -297,7 +298,9 @@ function registerAll(ctx) {
   });
 
   ipcMain.handle("session:rename", (_event, sessionId, title) => {
-    if (!sessionManager.rename(sessionId, title)) return { ok: false, error: "NOT_FOUND" };
+    const trimmed = String(title || "").trim();
+    if (!trimmed) return { ok: false, error: "INVALID" };
+    if (!sessionManager.rename(sessionId, trimmed)) return { ok: false, error: "NOT_FOUND" };
     return { ok: true };
   });
 

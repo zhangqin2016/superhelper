@@ -31,7 +31,7 @@ const ERROR_PATTERNS = [
   },
   {
     test: /command not found|ENOENT/i,
-    message: "本地 AI 助手暂时不可用，请确认服务已正确安装。",
+    message: "助手暂时无法连接，请稍后再试。",
   },
 ];
 
@@ -91,6 +91,15 @@ function resolveAgentCommand() {
   }
 
   return DEFAULT_AGENT_COMMAND;
+}
+
+function appendTextSegment(prev, next) {
+  const piece = String(next ?? "");
+  if (!piece) return prev || "";
+  const base = prev || "";
+  if (!base) return piece;
+  if (base.endsWith("\n") || piece.startsWith("\n")) return base + piece;
+  return `${base}\n\n${piece}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,12 +218,15 @@ class ClaudeRunner extends EventEmitter {
             case "assistant": {
               const blocks = ev.message?.content;
               if (!blocks) break;
-              let text = "";
               for (const block of blocks) {
                 switch (block.type) {
-                  case "text":
-                    text += block.text;
+                  case "text": {
+                    const piece = block.text || "";
+                    if (!piece) break;
+                    collectedOutput = appendTextSegment(collectedOutput, piece);
+                    this.emit("chunk", piece);
                     break;
+                  }
                   case "tool_use":
                     this.emit("tool-using", {
                       name: block.name || "unknown",
@@ -226,10 +238,6 @@ class ClaudeRunner extends EventEmitter {
                     // skip thinking blocks
                     break;
                 }
-              }
-              if (text) {
-                collectedOutput += text;
-                this.emit("chunk", text);
               }
               break;
             }
@@ -276,13 +284,12 @@ class ClaudeRunner extends EventEmitter {
           if (ev?.type === "assistant") {
             const blocks = ev.message?.content;
             if (blocks) {
-              let text = "";
               for (const block of blocks) {
-                if (block.type === "text") text += block.text;
-              }
-              if (text) {
-                collectedOutput += text;
-                this.emit("chunk", text);
+                if (block.type !== "text") continue;
+                const piece = block.text || "";
+                if (!piece) continue;
+                collectedOutput = appendTextSegment(collectedOutput, piece);
+                this.emit("chunk", piece);
               }
             }
           }
@@ -312,4 +319,4 @@ class ClaudeRunner extends EventEmitter {
   }
 }
 
-module.exports = { ClaudeRunner, sanitizeError };
+module.exports = { ClaudeRunner, sanitizeError, appendTextSegment };

@@ -51,14 +51,17 @@ button, textarea, input { font: inherit; }
 
 .app-shell {
   display: grid;
-  grid-template-columns: var(--left-w) 4px minmax(0, 1fr) 4px var(--right-w);
+  grid-template-columns: var(--left-w) 4px minmax(0, 1fr);
   height: calc(100vh - 28px);
   background: var(--bg-body);
 }
 
-.app-shell.left-collapsed { grid-template-columns: 0px 0px minmax(0, 1fr) 4px var(--right-w); }
-.app-shell.right-collapsed { grid-template-columns: var(--left-w) 4px minmax(0, 1fr) 0px 0px; }
-.app-shell.left-collapsed.right-collapsed { grid-template-columns: 0px 0px minmax(0, 1fr) 0px 0px; }
+/* Pin each region to a column — display:none on a panel must not reflow siblings */
+.left-panel { grid-column: 1; }
+#leftResizeHandle { grid-column: 2; }
+.center-panel { grid-column: 3; }
+
+.app-shell.left-collapsed { grid-template-columns: 0px 0px minmax(0, 1fr); }
 
 /* =========================================================================
    Resize Handler
@@ -93,8 +96,8 @@ button, textarea, input { font: inherit; }
   border-right: 1px solid var(--border);
 }
 
-.app-shell.left-collapsed .left-panel { display: none; }
-.app-shell.right-collapsed .right-panel { display: none; }
+.app-shell.left-collapsed .left-panel,
+.app-shell.left-collapsed #leftResizeHandle { display: none; }
 
 .left-top-actions {
   display: flex;
@@ -513,6 +516,42 @@ button, textarea, input { font: inherit; }
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  position: relative;
+}
+
+.scroll-to-bottom-btn {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(26, 29, 46, 0.96);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transform: translateX(-50%);
+  transition: opacity 0.15s, transform 0.15s, border-color 0.15s;
+  backdrop-filter: blur(8px);
+}
+.scroll-to-bottom-btn[hidden] {
+  display: none;
+}
+.scroll-to-bottom-btn:hover {
+  border-color: var(--accent);
+  color: #fff;
+  transform: translateX(-50%) translateY(-1px);
+}
+.scroll-to-bottom-btn svg {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
 .messages {
@@ -766,50 +805,84 @@ button, textarea, input { font: inherit; }
 .diff-hunk-del { color: #f87171; background: rgba(248, 113, 113, 0.08); }
 .diff-hunk-header { color: #60a5fa; }
 
-/* Tool execution cards */
+/* Tool execution steps (inside assistant turn, above reply bubble) */
+
+.msg-turn .msg-body {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(700px, calc(100vw - 200px));
+}
+
+.tool-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tool-activity[hidden] { display: none; }
 
 .tool-card {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: 500px;
-  margin: 0 0 6px 44px;
-  padding: 8px 14px;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 10px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.45;
   color: var(--text-secondary);
-  transition: opacity 0.3s;
+  background: #15182a;
+  border: 1px solid var(--border);
 }
 
 .tool-card-running {
-  background: #1a1d32;
-  border: 1px solid var(--border);
-  animation: card-pulse 1.8s ease-in-out infinite;
+  border-color: rgba(108, 99, 255, 0.35);
+  color: var(--text-primary);
 }
 
 .tool-card-done {
-  opacity: 0.6;
-  background: transparent;
-  border: 1px solid transparent;
+  border-color: rgba(74, 222, 128, 0.22);
+  color: var(--text-secondary);
+  opacity: 0.9;
 }
 
 .tool-card-failed {
-  opacity: 0.8;
-  background: transparent;
+  border-color: rgba(248, 113, 113, 0.35);
   color: #f87171;
-  border: 1px solid transparent;
 }
 
 .tool-card-dot {
-  width: 8px; height: 8px;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
   border-radius: 50%;
   flex-shrink: 0;
 }
-.tool-card-running .tool-card-dot { background: var(--accent); }
-.tool-card-done .tool-card-dot { background: #4ade80; }
-.tool-card-failed .tool-card-dot { background: #f87171; }
+.tool-card-running .tool-card-dot {
+  background: var(--accent);
+  animation: card-pulse 1.2s ease-in-out infinite;
+}
+
+.tool-card-dot-done {
+  background: #4ade80;
+  animation: none;
+}
 
 .tool-card-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-card-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -817,7 +890,7 @@ button, textarea, input { font: inherit; }
 
 @keyframes card-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  50% { opacity: 0.35; }
 }
 
 /* =========================================================================
@@ -1088,6 +1161,39 @@ textarea:disabled { opacity: 0.5; }
 }
 .modal-header h2 { margin: 0; font-size: 17px; }
 .modal-header p { margin: 3px 0 0; font-size: 12px; color: var(--text-dim); }
+
+.name-prompt-card {
+  width: min(420px, 94vw);
+  max-height: none;
+  padding-bottom: 16px;
+}
+.name-prompt-input {
+  width: calc(100% - 40px);
+  margin: 16px 20px 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  outline: none;
+}
+.name-prompt-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+.name-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px 4px;
+}
+.session-title-editable { cursor: text; }
+.session-title-editable:hover { color: var(--accent); }
+.topbar-info h1.editable-title {
+  cursor: pointer;
+}
+.topbar-info h1.editable-title:hover { color: var(--accent); }
 
 .modal-close-btn {
   height: 32px; padding: 0 14px;

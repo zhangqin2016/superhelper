@@ -4,7 +4,9 @@
 
 import store from "./state.js";
 import { $ } from "./dom.js";
-import { createMessage } from "./message.js";
+import { createMessage, beginAssistantTurn, finishActiveTurn, setBusyUI } from "./message.js";
+import { renderFilePreview, clearPendingFiles } from "./file-handler.js";
+import { promptSessionName } from "./name-prompt.js";
 
 export async function sendPrompt() {
   const promptInput = $("promptInput");
@@ -19,15 +21,13 @@ export async function sendPrompt() {
 
   createMessage("user", text, files.length > 0 ? files : null);
 
-  const bubble = createMessage("assistant", "");
+  const bubble = beginAssistantTurn();
   bubble.classList.add("pending");
-  store.set("activeBubble", bubble);
-  store.set("activeMarkdown", "");
 
   if (promptInput) promptInput.value = "";
-  store.set("pendingFiles", []);
-  updateFilePreview();
+  clearPendingFiles();
   store.set("isBusy", true);
+  setBusyUI(true);
 
   const result = await window.assistantClient.sendMessage(text, files);
 
@@ -36,45 +36,38 @@ export async function sendPrompt() {
     const { renderMarkdown } = await import("./markdown.js");
     renderMarkdown(bubble, result.error === "BUSY" ? "上一条消息还在处理中，请稍后再试。" : "消息发送失败。");
     store.set("isBusy", false);
-    store.set("activeBubble", null);
-    store.set("activeMarkdown", "");
+    finishActiveTurn();
+    setBusyUI(false);
   }
 }
 
-function updateFilePreview() {
-  const area = $("filePreviewArea");
-  const files = store.get("pendingFiles") || [];
-  if (!area) return;
-  area.textContent = "";
-  if (files.length === 0) { area.hidden = true; return; }
-  area.hidden = false;
-  for (const f of files) {
-    const chip = document.createElement("div");
-    chip.className = "file-chip";
-    chip.innerHTML = `<span>${f.name}</span>`;
-    const rm = document.createElement("button");
-    rm.className = "file-chip-remove";
-    rm.textContent = "×";
-    rm.addEventListener("click", () => {
-      store.set("pendingFiles", (store.get("pendingFiles") || []).filter((x) => x.id !== f.id));
-      updateFilePreview();
-    });
-    chip.appendChild(rm);
-    area.appendChild(chip);
-  }
+function shouldSendOnEnter(event) {
+  if (event.key !== "Enter" || event.shiftKey) return false;
+  // IME 选词/确认时按回车，不应触发发送
+  if (event.isComposing || event.keyCode === 229) return false;
+  return true;
 }
 
 export function initComposer() {
   const composer = $("composer");
   const promptInput = $("promptInput");
+  let imeComposing = false;
 
   if (composer) {
     composer.addEventListener("submit", (e) => { e.preventDefault(); sendPrompt(); });
   }
 
   if (promptInput) {
+    promptInput.addEventListener("compositionstart", () => {
+      imeComposing = true;
+    });
+    promptInput.addEventListener("compositionend", () => {
+      imeComposing = false;
+    });
     promptInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
+      if (imeComposing || !shouldSendOnEnter(e)) return;
+      e.preventDefault();
+      sendPrompt();
     });
   }
 
@@ -83,33 +76,36 @@ export function initComposer() {
     const result = await window.assistantClient.pickFiles();
     if (result.ok && result.files) {
       store.set("pendingFiles", [...(store.get("pendingFiles") || []), ...result.files]);
-      updateFilePreview();
+      renderFilePreview();
     }
   });
 
   // Interrupt
   $("interruptBtn")?.addEventListener("click", async () => {
     await window.assistantClient.interrupt();
-    store.set("isBusy", false);
     $("promptInput")?.focus();
   });
 
   // New chat (topbar) — create a new session in the active project
   $("newChatBtn")?.addEventListener("click", async () => {
     const projectId = store.get("activeProjectId");
-    const result = await window.assistantClient.createSession("新会话", projectId);
-    if (result.ok) {
-      const sw = await window.assistantClient.switchSession(result.session.id);
-      store.set("conversation", sw.ok ? (sw.conversation || []) : []);
-      const { refreshState, renderConversation } = await import("./message.js");
-      const { renderProjectTree } = await import("./project-tree.js");
-      await refreshState();
-      renderProjectTree();
-      messagesClear();
-      createMessage("assistant", "新会话已开始。");
-      store.set("isBusy", false);
-      $("promptInput")?.focus();
-    }
+    const result = await promptSessionName("新对话").then((title) => {
+      if (!title) return null;
+      return window.assistantClient.createSession(title, projectId);
+    });
+    if (!result?.ok) return;
+    const sw = await window.assistantClient.switchSession(result.session.id);
+    store.set("conversation", sw.ok ? (sw.conversation || []) : []);
+    const { refreshState, updateTopbarTitles } = await import("./message.js");
+    const { renderProjectTree } = await import("./project-tree.js");
+    await refreshState();
+    renderProjectTree();
+    clearPendingFiles();
+    messagesClear();
+    createMessage("assistant", "新对话已开始，有什么想问的？");
+    store.set("isBusy", false);
+    updateTopbarTitles();
+    $("promptInput")?.focus();
   });
 }
 

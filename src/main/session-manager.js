@@ -35,7 +35,7 @@ class SessionManager {
     for (const project of this.pm.projects) {
       const projectSessions = this._getProjectSessions(project.id);
       if (projectSessions.length === 0) {
-        this.create(project.id, "默认会话");
+        this.create(project.id, "默认对话");
       }
     }
 
@@ -84,7 +84,7 @@ class SessionManager {
     const session = {
       id: crypto.randomUUID(),
       projectId,
-      title: (title || "新会话").slice(0, 80),
+      title: (title || "新对话").slice(0, 80),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       status: "idle",

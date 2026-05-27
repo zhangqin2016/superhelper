@@ -4,13 +4,31 @@
 
 import store from "./state.js";
 import { $ } from "./dom.js";
-import { renderConversation, refreshState } from "./message.js";
-import { loadFileTree } from "./file-tree.js";
+import { renderConversation, refreshState, updateTopbarTitles } from "./message.js";
+import { promptSessionName, promptProjectName } from "./name-prompt.js";
 
 const container = () => $("projectTree");
 
 // Which projects are collapsed
 const collapsed = new Set();
+
+async function createNamedSession(projectId, defaultTitle = "新对话") {
+  const title = await promptSessionName(defaultTitle);
+  if (!title) return null;
+  return window.assistantClient.createSession(title, projectId);
+}
+
+async function renameSessionById(sessionId, currentTitle) {
+  const newTitle = await promptSessionName(currentTitle);
+  if (!newTitle || newTitle === currentTitle) return false;
+  const result = await window.assistantClient.renameSession(sessionId, newTitle);
+  if (result.ok) {
+    await refreshState();
+    renderProjectTree();
+    updateTopbarTitles();
+  }
+  return result.ok;
+}
 
 export function renderProjectTree() {
   const el = container();
@@ -32,11 +50,9 @@ export function renderProjectTree() {
     const group = document.createElement("div");
     group.className = `project-group${isActive ? " active" : ""}`;
 
-    // --- Project header ---
     const header = document.createElement("div");
     header.className = "project-header";
     header.addEventListener("click", (e) => {
-      // Don't toggle if clicking action buttons
       if (e.target.closest(".project-action-btn")) return;
       collapsed.has(project.id)
         ? collapsed.delete(project.id)
@@ -52,35 +68,39 @@ export function renderProjectTree() {
     info.className = "project-info";
 
     const name = document.createElement("span");
-    name.className = "project-name";
+    name.className = "project-name project-name-editable";
     name.textContent = project.name;
+    name.title = "双击可修改文件夹名称";
+    name.addEventListener("dblclick", async (e) => {
+      e.stopPropagation();
+      const newName = await promptProjectName(project.name);
+      if (!newName || newName === project.name) return;
+      await window.assistantClient.renameProject(project.id, newName);
+      await refreshState();
+      renderProjectTree();
+      updateTopbarTitles();
+    });
 
-    const pathEl = document.createElement("span");
-    pathEl.className = "project-path";
-    pathEl.textContent = project.path;
-    pathEl.title = project.path;
-
-    info.append(name, pathEl);
+    info.append(name);
 
     const actions = document.createElement("div");
     actions.className = "project-actions";
 
     const newSessionBtn = document.createElement("button");
     newSessionBtn.className = "project-action-btn";
-    newSessionBtn.title = "在此工作空间新建会话";
+    newSessionBtn.title = "新建对话";
     newSessionBtn.textContent = "+";
     newSessionBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      const result = await window.assistantClient.createSession("新会话", project.id);
-      if (result.ok) {
-        await window.assistantClient.switchProject(project.id);
-        const sw = await window.assistantClient.switchSession(result.session.id);
-        if (sw.ok) store.set("conversation", sw.conversation || []);
-        await refreshState();
-        renderProjectTree();
-        renderConversation();
-        loadFileTree();
-      }
+      const result = await createNamedSession(project.id);
+      if (!result?.ok) return;
+      await window.assistantClient.switchProject(project.id);
+      const sw = await window.assistantClient.switchSession(result.session.id);
+      if (sw.ok) store.set("conversation", sw.conversation || []);
+      await refreshState();
+      renderProjectTree();
+      renderConversation();
+      updateTopbarTitles();
     });
 
     const moreBtn = document.createElement("button");
@@ -96,7 +116,6 @@ export function renderProjectTree() {
     header.append(icon, info, actions);
     group.appendChild(header);
 
-    // --- Sessions ---
     const sessionList = document.createElement("div");
     sessionList.className = "project-sessions";
     if (isCollapsed) sessionList.style.display = "none";
@@ -104,7 +123,7 @@ export function renderProjectTree() {
     if (sessions.length === 0) {
       const empty = document.createElement("div");
       empty.className = "project-sessions-empty";
-      empty.textContent = "暂无会话";
+      empty.textContent = "暂无对话";
       sessionList.appendChild(empty);
     } else {
       for (const s of sessions) {
@@ -118,8 +137,13 @@ export function renderProjectTree() {
         item.appendChild(status);
 
         const title = document.createElement("span");
-        title.className = "session-title";
+        title.className = "session-title session-title-editable";
         title.textContent = s.title;
+        title.title = "双击可修改名称";
+        title.addEventListener("dblclick", async (e) => {
+          e.stopPropagation();
+          await renameSessionById(s.id, s.title);
+        });
         item.appendChild(title);
 
         const meta = document.createElement("span");
@@ -128,7 +152,6 @@ export function renderProjectTree() {
         item.appendChild(meta);
 
         item.addEventListener("click", async () => {
-          // Switch project if needed
           if (project.id !== store.get("activeProjectId")) {
             await window.assistantClient.switchProject(project.id);
           }
@@ -139,7 +162,7 @@ export function renderProjectTree() {
           await refreshState();
           renderProjectTree();
           renderConversation();
-          loadFileTree();
+          updateTopbarTitles();
         });
 
         item.addEventListener("contextmenu", (e) => {
@@ -156,10 +179,6 @@ export function renderProjectTree() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Project context menu
-// ---------------------------------------------------------------------------
-
 function showProjectMenu(e, project) {
   const existing = document.querySelector(".ctx-menu");
   if (existing) existing.remove();
@@ -170,12 +189,12 @@ function showProjectMenu(e, project) {
 
   const items = [
     {
-      label: "设为默认项目",
+      label: "切换到此文件夹",
       action: async () => {
         await window.assistantClient.switchProject(project.id);
         await refreshState();
         renderProjectTree();
-        loadFileTree();
+        updateTopbarTitles();
       },
     },
     {
@@ -189,12 +208,12 @@ function showProjectMenu(e, project) {
     {
       label: "重命名",
       action: async () => {
-        const name = prompt("新名称", project.name);
-        if (name && name.trim()) {
-          await window.assistantClient.renameProject(project.id, name.trim());
-          await refreshState();
-          renderProjectTree();
-        }
+        const name = await promptProjectName(project.name);
+        if (!name || name === project.name) return;
+        await window.assistantClient.renameProject(project.id, name);
+        await refreshState();
+        renderProjectTree();
+        updateTopbarTitles();
       },
     },
     {
@@ -210,7 +229,7 @@ function showProjectMenu(e, project) {
           await refreshState();
           renderProjectTree();
           renderConversation();
-          loadFileTree();
+          updateTopbarTitles();
         }
       },
     },
@@ -239,10 +258,6 @@ function showProjectMenu(e, project) {
   setTimeout(() => document.addEventListener("click", closeMenu), 0);
 }
 
-// ---------------------------------------------------------------------------
-// Session context menu
-// ---------------------------------------------------------------------------
-
 function showSessionMenu(x, y, sessionId, title) {
   const existing = document.querySelector(".ctx-menu");
   if (existing) existing.remove();
@@ -256,12 +271,7 @@ function showSessionMenu(x, y, sessionId, title) {
   rename.textContent = "重命名";
   rename.addEventListener("click", async () => {
     menu.remove();
-    const newTitle = prompt("新名称", title);
-    if (newTitle && newTitle.trim()) {
-      await window.assistantClient.renameSession(sessionId, newTitle.trim());
-      await refreshState();
-      renderProjectTree();
-    }
+    await renameSessionById(sessionId, title);
   });
 
   const archive = document.createElement("button");
@@ -273,6 +283,7 @@ function showSessionMenu(x, y, sessionId, title) {
     await refreshState();
     renderProjectTree();
     renderConversation();
+    updateTopbarTitles();
   });
 
   const del = document.createElement("button");
@@ -285,6 +296,7 @@ function showSessionMenu(x, y, sessionId, title) {
     await refreshState();
     renderProjectTree();
     renderConversation();
+    updateTopbarTitles();
   });
 
   menu.append(rename, archive, del);
@@ -299,24 +311,45 @@ function showSessionMenu(x, y, sessionId, title) {
   setTimeout(() => document.addEventListener("click", closeMenu), 0);
 }
 
-// ---------------------------------------------------------------------------
-// Add-project button handler
-// ---------------------------------------------------------------------------
-
 export function initAddProject() {
   $("addProjectBtn")?.addEventListener("click", async () => {
     const result = await window.assistantClient.addProject();
-    if (result.ok) {
-      await refreshState();
-      renderProjectTree();
-      loadFileTree();
+    if (!result.ok) return;
+
+    const project = (result.state?.projects || []).find(
+      (p) => p.id === result.state.activeProjectId,
+    );
+    if (project) {
+      const name = await promptProjectName(project.name);
+      if (name && name !== project.name) {
+        await window.assistantClient.renameProject(project.id, name);
+      }
     }
+
+    await refreshState();
+    renderProjectTree();
+    updateTopbarTitles();
   });
 }
 
-// ---------------------------------------------------------------------------
-// Context menu styles (inject once)
-// ---------------------------------------------------------------------------
+export function initTopbarSessionRename() {
+  $("projectTitle")?.addEventListener("click", async () => {
+    const sessionId = store.get("activeSessionId");
+    if (!sessionId) return;
+
+    const projects = store.get("projects") || [];
+    let currentTitle = "新对话";
+    for (const project of projects) {
+      const session = (project.sessions || []).find((s) => s.id === sessionId);
+      if (session) {
+        currentTitle = session.title;
+        break;
+      }
+    }
+
+    await renameSessionById(sessionId, currentTitle);
+  });
+}
 
 const style = document.createElement("style");
 style.textContent = `
@@ -325,5 +358,7 @@ style.textContent = `
     background:transparent;color:#e0e0f0;font-size:13px;text-align:left;cursor:pointer;
   }
   .ctx-menu-item:hover { background:#2a2d50; }
+  .project-name-editable { cursor: text; }
+  .project-name-editable:hover { color: var(--accent); }
 `;
 document.head.appendChild(style);

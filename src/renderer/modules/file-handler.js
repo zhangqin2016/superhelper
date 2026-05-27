@@ -61,16 +61,6 @@ async function addFileFromPaste(buffer, fileName) {
   }
 }
 
-function removePendingFile(fileId) {
-  const pending = (store.get("pendingFiles") || []).filter((f) => f.id !== fileId);
-  store.set("pendingFiles", pending);
-  renderFilePreview();
-}
-
-// ---------------------------------------------------------------------------
-// File preview chips
-// ---------------------------------------------------------------------------
-
 function renderFilePreview() {
   const area = filePreviewArea();
   if (!area) return;
@@ -111,6 +101,19 @@ function renderFilePreview() {
     area.appendChild(chip);
   }
 }
+
+function removePendingFile(fileId) {
+  const pending = (store.get("pendingFiles") || []).filter((f) => f.id !== fileId);
+  store.set("pendingFiles", pending);
+  renderFilePreview();
+}
+
+export function clearPendingFiles() {
+  store.set("pendingFiles", []);
+  renderFilePreview();
+}
+
+export { renderFilePreview };
 
 // ---------------------------------------------------------------------------
 // Event bindings
