@@ -135,6 +135,8 @@ class ClaudeRunner extends EventEmitter {
     const args = [
       "--session-id",
       crypto.randomUUID(),
+      "--permission-mode",
+      "bypassPermissions",
       "--mcp-config",
       mcpConfigPath,
     ];
