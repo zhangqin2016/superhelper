@@ -93,7 +93,10 @@ button, textarea, input { font: inherit; }
   border-right: 1px solid var(--border);
 }
 
-.app-shell.left-collapsed .left-panel { display: none; }
+.app-shell.left-collapsed .left-panel,
+.app-shell.both-collapsed .left-panel { display: none; }
+.app-shell.right-collapsed .right-panel,
+.app-shell.both-collapsed .right-panel { display: none; }
 
 .left-top-actions {
   display: flex;
@@ -916,8 +919,6 @@ textarea:disabled { opacity: 0.5; }
   overflow: hidden;
   border-left: 1px solid var(--border);
 }
-
-.app-shell.right-collapsed .right-panel { display: none; }
 
 .right-section {
   display: flex;
