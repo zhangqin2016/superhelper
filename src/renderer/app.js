@@ -26,29 +26,11 @@ function initPanelToggles() {
   if (!shell) return;
 
   $("leftToggleBtn")?.addEventListener("click", () => {
-    if (shell.classList.contains("both-collapsed")) {
-      shell.classList.remove("both-collapsed");
-      shell.classList.add("right-collapsed");
-    } else {
-      shell.classList.toggle("left-collapsed");
-      if (shell.classList.contains("left-collapsed") && shell.classList.contains("right-collapsed")) {
-        shell.classList.remove("left-collapsed", "right-collapsed");
-        shell.classList.add("both-collapsed");
-      }
-    }
+    shell.classList.toggle("left-collapsed");
   });
 
   $("rightToggleBtn")?.addEventListener("click", () => {
-    if (shell.classList.contains("both-collapsed")) {
-      shell.classList.remove("both-collapsed");
-      shell.classList.add("left-collapsed");
-    } else {
-      shell.classList.toggle("right-collapsed");
-      if (shell.classList.contains("left-collapsed") && shell.classList.contains("right-collapsed")) {
-        shell.classList.remove("left-collapsed", "right-collapsed");
-        shell.classList.add("both-collapsed");
-      }
-    }
+    shell.classList.toggle("right-collapsed");
   });
 }
 
