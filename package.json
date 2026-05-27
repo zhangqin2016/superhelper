@@ -1,0 +1,50 @@
+{
+  "name": "terminal-chat-claude",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Super Terminal — Claude Code CLI 纯 UI 壳层桌面客户端",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist:mac": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.company.ai-super-terminal",
+    "productName": "AI Super Terminal",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "scripts/**/*",
+      "bundles/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "sign": false
+    }
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "dompurify": "^3.4.5",
+    "highlight.js": "^11.11.1",
+    "marked": "^18.0.4",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "electron": "^41.7.0",
+    "electron-builder": "^26.8.1"
+  }
+}
