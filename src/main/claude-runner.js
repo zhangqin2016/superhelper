@@ -152,7 +152,7 @@ class ClaudeRunner extends EventEmitter {
       args.push("--add-dir", stagingDir);
     }
 
-    args.push("--output-format", "stream-json", "-p", prompt);
+    args.push("--output-format", "stream-json", "--verbose", "-p", prompt);
 
     const home = userHome();
 
@@ -206,13 +206,25 @@ class ClaudeRunner extends EventEmitter {
           if (!ev || !ev.type) continue;
 
           switch (ev.type) {
-            case "assistant":
-            case "content_block_delta_text_delta": {
-              // Extract text content from assistant messages
+            case "assistant": {
+              const blocks = ev.message?.content;
+              if (!blocks) break;
               let text = "";
-              if (ev.message?.content) {
-                for (const block of ev.message.content) {
-                  if (block.type === "text") text += block.text;
+              for (const block of blocks) {
+                switch (block.type) {
+                  case "text":
+                    text += block.text;
+                    break;
+                  case "tool_use":
+                    this.emit("tool-using", {
+                      name: block.name || "unknown",
+                      input: block.input || {},
+                      id: block.id || "",
+                    });
+                    break;
+                  case "thinking":
+                    // skip thinking blocks
+                    break;
                 }
               }
               if (text) {
@@ -221,36 +233,24 @@ class ClaudeRunner extends EventEmitter {
               }
               break;
             }
-            case "tool_use": {
-              const toolName = ev.name || ev.tool || "unknown";
-              const toolInput = ev.input || {};
-              this.emit("tool-using", {
-                name: toolName,
-                input: toolInput,
-                id: ev.id || ev.tool_use_id || "",
-              });
-              break;
-            }
-            case "tool_result": {
-              this.emit("tool-done", {
-                name: ev.name || ev.tool || "",
-                id: ev.tool_use_id || ev.id || "",
-                status: ev.is_error ? "failed" : "done",
-              });
-              break;
-            }
-            case "result": {
-              // Final result — text may be in ev.result
-              if (typeof ev.result === "string" && ev.result) {
-                // Only collect result text that isn't already emitted via assistant events
-                // The stream-json format may duplicate assistant text in the final result
+            case "user": {
+              // User messages may contain tool_result blocks
+              const blocks = ev.message?.content;
+              if (!blocks) break;
+              for (const block of blocks) {
+                if (block.type === "tool_result") {
+                  this.emit("tool-done", {
+                    id: block.tool_use_id || "",
+                    status: block.is_error ? "failed" : "done",
+                  });
+                }
               }
               break;
             }
-            // system, user, etc. are ignored for display
+            // system, result — ignored for display
           }
         } catch {
-          // Non-JSON line — forward as plain text (legacy fallback)
+          // Non-JSON line — legacy fallback
           collectedOutput += trimmed + "\n";
           this.emit("chunk", trimmed + "\n");
         }
@@ -273,14 +273,17 @@ class ClaudeRunner extends EventEmitter {
       if (lineBuf.trim()) {
         try {
           const ev = JSON.parse(lineBuf.trim());
-          if (ev?.type === "assistant" && ev.message?.content) {
-            let text = "";
-            for (const block of ev.message.content) {
-              if (block.type === "text") text += block.text;
-            }
-            if (text) {
-              collectedOutput += text;
-              this.emit("chunk", text);
+          if (ev?.type === "assistant") {
+            const blocks = ev.message?.content;
+            if (blocks) {
+              let text = "";
+              for (const block of blocks) {
+                if (block.type === "text") text += block.text;
+              }
+              if (text) {
+                collectedOutput += text;
+                this.emit("chunk", text);
+              }
             }
           }
         } catch {}
