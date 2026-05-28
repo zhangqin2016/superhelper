@@ -1,10 +1,5 @@
-# Build Windows claude.exe on GitHub-hosted Windows runner and upload as artifact.
-# The binary is gitignored; download it after the workflow completes.
-#
-# Usage:
-#   Actions → Bundle Windows CLI → Run workflow
-#   Download artifact "win32-x64-claude-cli" → place at bundles/win32-x64/claude.exe
-#   npm run dist:win
+# Build Windows claude.exe on GitHub-hosted runner; download artifact after run.
+# Place artifact at bundles/win32-x64/claude.exe then: npm run dist:win
 
 name: Bundle Windows CLI
 
@@ -12,9 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       package_version:
-        description: "npm 包版本（留空则安装 latest）"
+        description: npm package version (empty = latest)
         required: false
-        default: ""
+        type: string
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/bundle-windows-cli.yml
 
 permissions:
   contents: read
@@ -33,7 +32,7 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install CLI (npm global)
+      - name: Install CLI
         shell: pwsh
         run: |
           $version = "${{ inputs.package_version }}".Trim()
@@ -44,37 +43,26 @@ jobs:
           }
           npm list -g @anthropic-ai/claude-code --depth=0
 
-      - name: Copy claude.exe into bundles/win32-x64
+      - name: Copy claude.exe
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $destDir = "bundles/win32-x64"
           $dest = Join-Path $destDir "claude.exe"
           New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-
           $cmd = Get-Command claude -ErrorAction Stop
           $source = $cmd.Source
-          Write-Host "Found claude at: $source"
-
-          # npm may expose claude.cmd; prefer sibling claude.exe if present
           if ($source -match '\.cmd$') {
-            $dir = Split-Path $source -Parent
-            $exeCandidate = Join-Path $dir "claude.exe"
-            if (Test-Path $exeCandidate) {
-              $source = $exeCandidate
-              Write-Host "Using sibling: $source"
-            }
+            $exeCandidate = Join-Path (Split-Path $source -Parent) "claude.exe"
+            if (Test-Path $exeCandidate) { $source = $exeCandidate }
           }
-
           Copy-Item -Force $source $dest
-          $info = Get-Item $dest
-          Write-Host "Copied $($info.Length) bytes to $($info.FullName)"
+          Get-Item $dest | Format-List FullName, Length
 
       - name: Smoke test
         shell: pwsh
         run: |
-          $dest = "bundles/win32-x64/claude.exe"
-          & $dest --version
+          & bundles/win32-x64/claude.exe --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload artifact
@@ -84,17 +72,3 @@ jobs:
           path: bundles/win32-x64/claude.exe
           retention-days: 30
           if-no-files-found: error
-
-      - name: Summary
-        shell: pwsh
-        run: |
-          $sizeMB = [math]::Round((Get-Item bundles/win32-x64/claude.exe).Length / 1MB, 1)
-          @"
-          ## Windows CLI 已打包
-
-          - 文件: \`bundles/win32-x64/claude.exe\`（约 ${sizeMB} MB）
-          - 下载: Actions 本 run 的 Artifacts → **win32-x64-claude-cli**
-          - 本地放置后执行: \`npm run dist:win\`
-
-          > 该文件已在 .gitignore 中，不会自动提交到仓库。
-          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8

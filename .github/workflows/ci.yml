@@ -1,0 +1,19 @@
+# Minimal workflow so GitHub Actions registers workflows for this repo.
+
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check workflow files
+        run: ls -la .github/workflows/
