@@ -38,9 +38,11 @@ jobs:
           $ErrorActionPreference = "Stop"
           $version = "${{ inputs.package_version }}".Trim()
           if ($version) {
-            npm install -g "@anthropic-ai/claude-code@$version"
+            npm install -g "@anthropic-ai/claude-code@$version" --include=optional
+            npm install -g "@anthropic-ai/claude-code-win32-x64@$version"
           } else {
-            npm install -g @anthropic-ai/claude-code
+            npm install -g @anthropic-ai/claude-code --include=optional
+            npm install -g @anthropic-ai/claude-code-win32-x64
           }
           npm list -g @anthropic-ai/claude-code @anthropic-ai/claude-code-win32-x64 --depth=0
 
@@ -63,27 +65,42 @@ jobs:
           $dest = Join-Path $destDir "claude.exe"
           New-Item -ItemType Directory -Force -Path $destDir | Out-Null
 
-          $globalModules = npm root -g
-          $nativePkg = Join-Path $globalModules "@anthropic-ai/claude-code-win32-x64"
-          $source = $null
+          $globalModules = (npm root -g).Trim()
+          $explicitPaths = @(
+            (Join-Path $globalModules "@anthropic-ai\claude-code-win32-x64\claude.exe"),
+            (Join-Path $globalModules "@anthropic-ai\claude-code\node_modules\@anthropic-ai\claude-code-win32-x64\claude.exe")
+          )
 
-          if (Test-Path $nativePkg) {
-            $candidate = Get-ChildItem -Path $nativePkg -Recurse -Filter "claude.exe" |
-              Sort-Object Length -Descending |
-              Select-Object -First 1
-            if ($candidate) { $source = $candidate.FullName }
+          $source = $null
+          foreach ($p in $explicitPaths) {
+            if (Test-Path $p) {
+              $source = $p
+              break
+            }
           }
 
           if (-not $source) {
-            $cmd = Get-Command claude -ErrorAction SilentlyContinue
-            if ($cmd) { $source = $cmd.Source }
+            $hits = Get-ChildItem -Path $globalModules -Recurse -Filter "claude.exe" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "claude-code-win32-x64" } |
+              Sort-Object Length -Descending
+            if ($hits) { $source = $hits[0].FullName }
           }
 
-          if (-not $source -or -not (Test-Path $source)) {
-            Write-Host "Installed @anthropic-ai packages:"
-            Get-ChildItem $globalModules -Directory -Filter "@anthropic-ai/*" |
-              ForEach-Object { Write-Host " - $($_.Name)" }
-            throw "Could not locate Windows native claude.exe"
+          if (-not $source) {
+            Write-Host "npm root -g: $globalModules"
+            Write-Host "anthropic packages:"
+            $anthropicDir = Join-Path $globalModules "@anthropic-ai"
+            if (Test-Path $anthropicDir) {
+              Get-ChildItem $anthropicDir -Directory | ForEach-Object {
+                Write-Host "  $($_.Name)"
+                Get-ChildItem $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 8 | ForEach-Object {
+                  Write-Host "    $($_.Name)"
+                }
+              }
+            } else {
+              Write-Host "  (missing $anthropicDir)"
+            }
+            throw "Could not locate @anthropic-ai/claude-code-win32-x64/claude.exe"
           }
 
           $header = [System.IO.File]::ReadAllBytes($source)[0..1]
