@@ -2,48 +2,20 @@
  * Reactive state store — single source of truth for the renderer.
  */
 
-import { $, el, scrollToBottom } from "./dom.js";
-
 const store = {
   _state: {
-    // Projects
     activeProjectId: null,
     projects: [],
-
-    // Sessions
     activeSessionId: null,
     sessions: [],
     conversation: [],
-
-    // File tree
-    fileTree: [],
-
-    // Chat
     isBusy: false,
+    runningSessionId: null,
+    runningSessionIds: [],
     activeBubble: null,
     activeMarkdown: "",
-
-    // Diff
-    diffs: [],
-    diffSummary: { added: 0, deleted: 0, files: 0 },
-
-    // Tasks
-    tasks: [],
-
-    // Templates
-    templates: [],
-
-    // Plugins
-    plugins: [],
-
-    // Pending files for composer
     pendingFiles: [],
-
-    // Working directory display
-    workingDir: "",
-
-    // Mode
-    mode: "fast",
+    pendingQueueCount: 0,
   },
   _listeners: {},
 

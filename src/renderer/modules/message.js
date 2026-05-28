@@ -1,14 +1,117 @@
 /**
- * Message rendering: chat bubbles, Markdown, conversation display.
+ * Chat UI — one message panel per session (Claude Code App style).
  */
 
 import store from "./state.js";
-import { $, scrollToBottom } from "./dom.js";
+import {
+  $,
+  scrollToBottom,
+  scrollToBottomAfterLayout,
+  bindPanelScroll,
+  initScrollToBottom,
+} from "./dom.js";
 import { renderMarkdown } from "./markdown.js";
+import { activeProject, updateTopbarTitles } from "./session-chrome.js";
+import {
+  isSessionRunning,
+  setSessionRunning,
+  syncRunningFromState,
+  isActiveSessionBusy,
+} from "./session-busy.js";
 
-const messagesEl = $("messages");
+const stackEl = () => $("sessionMessagesStack");
 
-/** Join streamed assistant segments with paragraph breaks instead of gluing inline. */
+/** @type {Map<string, {
+ *   panel: HTMLElement,
+ *   listEl: HTMLElement,
+ *   activeTurn: { article: HTMLElement, activity: HTMLElement, bubble: HTMLElement } | null,
+ *   toolCards: Map<string, { card: HTMLElement, name: string, input: object, status: string }>,
+ *   activeMarkdown: string,
+ *   activeBubble: HTMLElement | null,
+ *   activityLabel: string,
+ * }>} */
+const sessionViews = new Map();
+
+function isActiveSession(sessionId) {
+  return store.get("activeSessionId") === sessionId;
+}
+
+function view(sessionId) {
+  if (!sessionViews.has(sessionId)) {
+    sessionViews.set(sessionId, {
+      panel: null,
+      listEl: null,
+      activeTurn: null,
+      toolCards: new Map(),
+      activeMarkdown: "",
+      activeBubble: null,
+      activityLabel: "",
+    });
+  }
+  return sessionViews.get(sessionId);
+}
+
+function ensurePanel(sessionId) {
+  const v = view(sessionId);
+  if (v.panel) return v;
+
+  const root = stackEl();
+  if (!root) return v;
+
+  const panel = document.createElement("div");
+  panel.className = "session-messages";
+  panel.dataset.sessionId = sessionId;
+  panel.setAttribute("aria-hidden", "true");
+
+  const listEl = document.createElement("div");
+  listEl.className = "messages";
+  panel.appendChild(listEl);
+
+  root.appendChild(panel);
+  bindPanelScroll(panel);
+
+  v.panel = panel;
+  v.listEl = listEl;
+  return v;
+}
+
+export function showSessionMessages(sessionId) {
+  if (!sessionId) return;
+  ensurePanel(sessionId);
+
+  for (const el of stackEl()?.querySelectorAll(".session-messages") || []) {
+    const active = el.dataset.sessionId === sessionId;
+    el.classList.toggle("is-active", active);
+    el.setAttribute("aria-hidden", active ? "false" : "true");
+  }
+
+  if (isActiveSession(sessionId)) {
+    syncActiveStoreFromView(sessionId);
+  }
+
+  requestAnimationFrame(() => scrollToBottom(true, view(sessionId).panel));
+}
+
+export function hideAllSessionMessages() {
+  for (const el of stackEl()?.querySelectorAll(".session-messages") || []) {
+    el.classList.remove("is-active");
+    el.setAttribute("aria-hidden", "true");
+  }
+}
+
+export function removeSessionMessages(sessionId) {
+  const v = sessionViews.get(sessionId);
+  if (!v) return;
+  v.panel?.remove();
+  sessionViews.delete(sessionId);
+}
+
+function syncActiveStoreFromView(sessionId) {
+  const v = view(sessionId);
+  store.set("activeBubble", v.activeBubble);
+  store.set("activeMarkdown", v.activeMarkdown);
+}
+
 function appendMarkdownSegment(prev, next) {
   const piece = String(next ?? "");
   if (!piece) return prev || "";
@@ -18,14 +121,17 @@ function appendMarkdownSegment(prev, next) {
   return `${base}\n\n${piece}`;
 }
 
-/** Break glued sentence boundaries from model output into separate lines. */
 function softenStreamGlue(text) {
   return String(text || "")
     .replace(/([。！？!?])([^\s\n\r])/g, "$1\n\n$2")
     .replace(/\.(?=[A-Z\u4e00-\u9fff])/g, ".\n\n");
 }
 
-export function createMessage(role, text = "", files = null) {
+export function createMessage(sessionId, role, text = "", files = null) {
+  const v = ensurePanel(sessionId);
+  const listEl = v.listEl;
+  if (!listEl) return null;
+
   const wrapper = document.createElement("article");
   wrapper.className = `msg msg-${role}`;
 
@@ -42,7 +148,7 @@ export function createMessage(role, text = "", files = null) {
     bubble.textContent = text;
   }
 
-  if (files && files.length > 0) {
+  if (files?.length) {
     const fc = document.createElement("div");
     fc.className = "msg-bubble-files";
     for (const f of files) {
@@ -55,87 +161,133 @@ export function createMessage(role, text = "", files = null) {
   }
 
   wrapper.append(avatar, bubble);
-  messagesEl.appendChild(wrapper);
-  scrollToBottom(true);
+  listEl.appendChild(wrapper);
+  scrollToBottom(isActiveSession(sessionId), v.panel);
   return bubble;
 }
 
-export function renderConversation() {
-  finishActiveTurn();
-  messagesEl.textContent = "";
-  const conv = store.get("conversation");
-  if (!conv || conv.length === 0) {
-    const project = activeProject();
-    createMessage("assistant", project ? `当前文件夹：${project.name}。有什么想问的？` : "请先添加一个文件夹，然后开始聊天吧。");
-    return;
-  }
-  for (const msg of conv) {
-    createMessage(msg.role === "user" ? "user" : "assistant", msg.content, msg.files || null);
-  }
-  store.set("activeBubble", null);
-  store.set("activeMarkdown", "");
-  scrollToBottom(true);
+/** Remove the last user bubble (optimistic send rolled back). */
+export function removeLastUserMessage(sessionId) {
+  const v = view(sessionId);
+  const listEl = v.listEl;
+  if (!listEl) return;
+  const userMsgs = listEl.querySelectorAll(".msg-user");
+  const last = userMsgs[userMsgs.length - 1];
+  last?.remove();
+  scrollToBottom(isActiveSession(sessionId), v.panel);
 }
 
-export function activeProject() {
-  const state = store.get("projects");
-  const id = store.get("activeProjectId");
-  if (!state || !id) return null;
-  return state.find((p) => p.id === id) || null;
-}
-
-export function activeSession() {
-  const sessionId = store.get("activeSessionId");
-  if (!sessionId) return null;
+function getConversationForSession(sessionId) {
   for (const project of store.get("projects") || []) {
     const session = (project.sessions || []).find((s) => s.id === sessionId);
-    if (session) return session;
+    if (session?.messages) return session.messages;
   }
-  return null;
+  return store.get("conversation") || [];
 }
 
-export function updateTopbarTitles() {
-  const project = activeProject();
-  const session = activeSession();
-  const titleEl = $("projectTitle");
-  const metaEl = $("sessionMeta");
-
-  if (titleEl) {
-    titleEl.textContent = session?.title || project?.name || "智能助手";
-  }
-  if (metaEl && !store.get("isBusy")) {
-    metaEl.textContent = project?.name ? `文件夹：${project.name}` : "已就绪";
-  }
+export function hasLiveTurn(sessionId) {
+  const v = view(sessionId);
+  return Boolean(v.activeTurn);
 }
 
-// ---------------------------------------------------------------------------
-// IPC event wiring
-// ---------------------------------------------------------------------------
+/** Keep in-flight assistant UI when switching back (do not rebuild from history). */
+export function shouldPreserveSessionView(sessionId) {
+  return hasLiveTurn(sessionId);
+}
 
-const toolCards = new Map();
-/** @type {{ article: HTMLElement, activity: HTMLElement, bubble: HTMLElement } | null} */
-let activeTurn = null;
-let currentActivityLabel = "";
+export function resumeLiveSessionUi(sessionId) {
+  if (!sessionId || hasLiveTurn(sessionId)) return;
+  if (isSessionRunning(sessionId)) beginAssistantTurn(sessionId);
+}
 
-function countRunningTools() {
+export function syncComposerForActiveSession() {
+  const sid = store.get("activeSessionId");
+  const hasProject = (store.get("projects") || []).length > 0;
+  const busy = Boolean(sid && (isSessionRunning(sid) || hasLiveTurn(sid)));
+  store.set("isBusy", busy);
+  setBusyUI(busy);
+
+  const promptInput = $("promptInput");
+  const blocked = !hasProject || !sid;
+  for (const id of ["sendBtn", "promptInput", "attachBtn"]) {
+    const el = $(id);
+    if (el) el.disabled = blocked || busy;
+  }
+  if (promptInput) {
+    promptInput.placeholder = !hasProject
+      ? "请先添加工作空间文件夹"
+      : !sid
+        ? "请先新建对话"
+        : "有什么想问的？";
+  }
+
+  import("./project-tree.js")
+    .then(({ updateSessionRunningIndicators }) => updateSessionRunningIndicators())
+    .catch(() => {});
+}
+
+export function renderConversation(sessionId) {
+  const sid = sessionId || store.get("activeSessionId");
+  if (!sid) return;
+
+  finishActiveTurn(sid);
+  const v = ensurePanel(sid);
+  if (!v.listEl) return;
+
+  v.listEl.textContent = "";
+  const conv = getConversationForSession(sid);
+
+  if (!conv.length) {
+    const project = activeProject();
+    createMessage(
+      sid,
+      "assistant",
+      project
+        ? `当前文件夹：${project.name}。有什么想问的？`
+        : "请先添加一个文件夹，然后开始聊天吧。",
+    );
+  } else {
+    for (const msg of conv) {
+      createMessage(
+        sid,
+        msg.role === "user" ? "user" : "assistant",
+        msg.content,
+        msg.files || null,
+      );
+    }
+  }
+
+  v.activeBubble = null;
+  v.activeMarkdown = "";
+  if (isActiveSession(sid)) syncActiveStoreFromView(sid);
+  scrollToBottomAfterLayout(v.panel);
+}
+
+function countRunningTools(sessionId) {
   let n = 0;
-  for (const entry of toolCards.values()) {
+  for (const entry of view(sessionId).toolCards.values()) {
     if (entry.status === "running") n++;
   }
   return n;
 }
 
-function updateBusyMeta() {
+function updateBusyMeta(sessionId) {
+  if (!isActiveSession(sessionId)) return;
   const meta = $("sessionMeta");
   if (!meta || !store.get("isBusy")) return;
-  meta.textContent = currentActivityLabel || "正在处理，请稍候…";
+  const label = view(sessionId).activityLabel;
+  meta.textContent = label || "正在处理，请稍候…";
 }
 
-function syncTurnProgress() {
-  if (!activeTurn?.activity) return;
+function syncTurnProgress(sessionId) {
+  const v = view(sessionId);
+  if (!v.activeTurn?.activity) return;
 
-  const progress = activeTurn.activity.querySelector(".turn-progress");
-  const waiting = store.get("isBusy") && countRunningTools() === 0;
+  const progress = v.activeTurn.activity.querySelector(".turn-progress");
+  const waiting =
+    isActiveSession(sessionId) &&
+    store.get("isBusy") &&
+    countRunningTools(sessionId) === 0;
 
   if (waiting) {
     if (!progress) {
@@ -147,9 +299,9 @@ function syncTurnProgress() {
       label.className = "tool-card-label";
       label.textContent = "继续处理中，请稍候…";
       row.append(dot, label);
-      activeTurn.activity.appendChild(row);
+      v.activeTurn.activity.appendChild(row);
     }
-    activeTurn.activity.hidden = false;
+    v.activeTurn.activity.hidden = false;
   } else if (progress) {
     progress.remove();
   }
@@ -195,8 +347,12 @@ function toolSummary(name, input = {}) {
   }
 }
 
-export function beginAssistantTurn() {
-  if (activeTurn) return activeTurn.bubble;
+function beginAssistantTurn(sessionId) {
+  const v = view(sessionId);
+  if (v.activeTurn) return v.activeTurn.bubble;
+
+  const listEl = ensurePanel(sessionId).listEl;
+  if (!listEl) return null;
 
   const article = document.createElement("article");
   article.className = "msg msg-assistant msg-turn";
@@ -217,27 +373,28 @@ export function beginAssistantTurn() {
 
   body.append(activity, bubble);
   article.append(avatar, body);
-  messagesEl.appendChild(article);
+  listEl.appendChild(article);
 
-  activeTurn = { article, activity, bubble };
-  store.set("activeBubble", bubble);
-  store.set("activeMarkdown", "");
-  scrollToBottom(false);
+  v.activeTurn = { article, activity, bubble };
+  v.activeBubble = bubble;
+  v.activeMarkdown = "";
+  if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
+  scrollToBottom(false, v.panel);
   return bubble;
 }
 
-function finishActiveTurn() {
-  clearToolCards();
-  if (activeTurn?.activity) {
-    activeTurn.activity.replaceChildren();
-    activeTurn.activity.hidden = true;
+function finishActiveTurn(sessionId) {
+  const v = view(sessionId);
+  clearToolCards(sessionId);
+  if (v.activeTurn?.activity) {
+    v.activeTurn.activity.replaceChildren();
+    v.activeTurn.activity.hidden = true;
   }
-  activeTurn = null;
-  store.set("activeBubble", null);
-  store.set("activeMarkdown", "");
+  v.activeTurn = null;
+  v.activeBubble = null;
+  v.activeMarkdown = "";
+  if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
 }
-
-export { finishActiveTurn, setBusyUI };
 
 function renderToolCardContent(card, name, input) {
   const { title, detail } = toolSummary(name, input);
@@ -265,34 +422,37 @@ function renderToolCardContent(card, name, input) {
   card.append(dot, textWrap);
 }
 
-function syncActivityVisibility() {
-  if (!activeTurn) return;
-  activeTurn.activity.hidden = activeTurn.activity.childElementCount === 0;
+function syncActivityVisibility(sessionId) {
+  const turn = view(sessionId).activeTurn;
+  if (!turn) return;
+  turn.activity.hidden = turn.activity.childElementCount === 0;
 }
 
-function addToolCard(id, name, input) {
-  if (!activeTurn) beginAssistantTurn();
+function addToolCard(sessionId, id, name, input) {
+  if (!view(sessionId).activeTurn) beginAssistantTurn(sessionId);
+  const v = view(sessionId);
 
   const summary = toolSummary(name, input);
-  currentActivityLabel = summary.detail
+  v.activityLabel = summary.detail
     ? `${summary.title}：${summary.detail}`
     : summary.title;
-  updateBusyMeta();
+  updateBusyMeta(sessionId);
 
   const card = document.createElement("div");
   card.className = "tool-card tool-card-running";
   card.dataset.toolId = id;
   renderToolCardContent(card, name, input);
 
-  activeTurn.activity.appendChild(card);
-  activeTurn.activity.hidden = false;
-  scrollToBottom(false);
-  toolCards.set(id, { card, name, input, status: "running" });
-  syncTurnProgress();
+  v.activeTurn.activity.appendChild(card);
+  v.activeTurn.activity.hidden = false;
+  scrollToBottom(false, v.panel);
+  v.toolCards.set(id, { card, name, input, status: "running" });
+  syncTurnProgress(sessionId);
 }
 
-function updateToolCard(id, status) {
-  const entry = toolCards.get(id);
+function updateToolCard(sessionId, id, status) {
+  const v = view(sessionId);
+  const entry = v.toolCards.get(id);
   if (!entry) return;
 
   if (status === "failed") {
@@ -301,181 +461,158 @@ function updateToolCard(id, status) {
     entry.card.querySelector(".tool-card-label").textContent =
       `${toolSummary(entry.name, entry.input).title}失败`;
     entry.status = "failed";
-    toolCards.delete(id);
-    currentActivityLabel = "遇到问题，正在调整…";
-    updateBusyMeta();
+    v.toolCards.delete(id);
+    v.activityLabel = "遇到问题，正在调整…";
+    updateBusyMeta(sessionId);
     window.setTimeout(() => {
       entry.card.remove();
-      syncActivityVisibility();
-      syncTurnProgress();
-      refreshRunningActivityLabel();
+      syncActivityVisibility(sessionId);
+      syncTurnProgress(sessionId);
+      refreshRunningActivityLabel(sessionId);
     }, 4000);
   } else {
     entry.card.classList.remove("tool-card-running");
     entry.card.classList.add("tool-card-done");
     entry.card.querySelector(".tool-card-dot")?.classList.add("tool-card-dot-done");
     entry.status = "done";
-    refreshRunningActivityLabel();
+    refreshRunningActivityLabel(sessionId);
   }
 
-  syncTurnProgress();
-  syncActivityVisibility();
+  syncTurnProgress(sessionId);
+  syncActivityVisibility(sessionId);
 }
 
-function refreshRunningActivityLabel() {
-  for (const entry of toolCards.values()) {
+function refreshRunningActivityLabel(sessionId) {
+  const v = view(sessionId);
+  for (const entry of v.toolCards.values()) {
     if (entry.status !== "running") continue;
     const summary = toolSummary(entry.name, entry.input);
-    currentActivityLabel = summary.detail
+    v.activityLabel = summary.detail
       ? `${summary.title}：${summary.detail}`
       : summary.title;
-    updateBusyMeta();
+    updateBusyMeta(sessionId);
     return;
   }
-  if (store.get("isBusy")) {
-    currentActivityLabel = "继续处理中，请稍候…";
-    updateBusyMeta();
+  if (isActiveSession(sessionId) && store.get("isBusy")) {
+    v.activityLabel = "继续处理中，请稍候…";
+    updateBusyMeta(sessionId);
   }
 }
 
-function clearToolCards() {
-  for (const { card } of toolCards.values()) {
+function clearToolCards(sessionId) {
+  const v = view(sessionId);
+  for (const { card } of v.toolCards.values()) {
     card.remove();
   }
-  toolCards.clear();
-  activeTurn?.activity?.querySelectorAll(".turn-progress").forEach((el) => el.remove());
-  syncActivityVisibility();
+  v.toolCards.clear();
+  v.activeTurn?.activity?.querySelectorAll(".turn-progress").forEach((el) => el.remove());
+  syncActivityVisibility(sessionId);
 }
 
-export function wireIpcEvents() {
+export function wireMessageIpc() {
   window.assistantClient.onTool((payload) => {
-    const sid = store.get("activeSessionId");
-    if (payload.sessionId && payload.sessionId !== sid) return;
-    addToolCard(payload.id, payload.name, payload.input);
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    addToolCard(sessionId, payload.id, payload.name, payload.input);
   });
 
   window.assistantClient.onToolDone((payload) => {
-    const sid = store.get("activeSessionId");
-    if (payload.sessionId && payload.sessionId !== sid) return;
-    updateToolCard(payload.id, payload.status);
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    updateToolCard(sessionId, payload.id, payload.status);
   });
 
   window.assistantClient.onChunk((payload) => {
-    const sid = store.get("activeSessionId");
-    if (payload.sessionId && payload.sessionId !== sid) return;
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    const v = view(sessionId);
 
-    let bubble = store.get("activeBubble");
+    let bubble = v.activeBubble;
     if (!bubble) {
-      bubble = beginAssistantTurn();
+      bubble = beginAssistantTurn(sessionId);
     }
-    const current = softenStreamGlue(
-      appendMarkdownSegment(store.get("activeMarkdown"), payload.text),
+    v.activeMarkdown = softenStreamGlue(
+      appendMarkdownSegment(v.activeMarkdown, payload.text),
     );
-    store.set("activeMarkdown", current);
-    renderMarkdown(bubble, current);
-    scrollToBottom(false);
-    if (store.get("isBusy")) syncTurnProgress();
+    renderMarkdown(bubble, v.activeMarkdown);
+    if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
+    scrollToBottom(false, v.panel);
+    if (isActiveSession(sessionId) && store.get("isBusy")) {
+      syncTurnProgress(sessionId);
+    }
   });
 
   window.assistantClient.onDone(async (payload) => {
-    const sid = store.get("activeSessionId");
-    if (payload.sessionId && payload.sessionId !== sid) return;
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
 
-    clearToolCards();
-    currentActivityLabel = "";
+    clearToolCards(sessionId);
+    view(sessionId).activityLabel = "";
+    setSessionRunning(sessionId, false);
 
-    const bubble = store.get("activeBubble");
-    if (bubble) {
-      bubble.classList.remove("pending");
-      const md = store.get("activeMarkdown");
-      if (!md.trim() && !bubble.textContent.trim()) {
-        renderMarkdown(bubble, "已完成。");
+    const v = view(sessionId);
+    if (v.activeBubble) {
+      v.activeBubble.classList.remove("pending");
+      if (!v.activeMarkdown.trim() && !v.activeBubble.textContent.trim()) {
+        renderMarkdown(v.activeBubble, "已完成。");
       }
     }
-    finishActiveTurn();
-    store.set("isBusy", false);
-    setBusyUI(false);
-    syncTurnProgress();
-    $("promptInput")?.focus();
+    finishActiveTurn(sessionId);
 
-    await refreshState();
+    const { refreshStateLight } = await import("./session-chrome.js");
+    await refreshStateLight({ reRenderActive: isActiveSession(sessionId) });
+
+    if (isActiveSession(sessionId)) {
+      $("promptInput")?.focus();
+      syncComposerForActiveSession();
+    }
   });
 
   window.assistantClient.onStatus((status) => {
-    const sid = store.get("activeSessionId");
-    if (status.sessionId && status.sessionId !== sid) return;
+    const sessionId = status.sessionId;
+    if (!sessionId) return;
     const busy = status.state === "thinking";
-    store.set("isBusy", busy);
-    setBusyUI(busy);
+    if (busy) {
+      setSessionRunning(sessionId, true);
+      if (!view(sessionId).activeBubble) beginAssistantTurn(sessionId);
+    }
+    if (isActiveSession(sessionId)) syncComposerForActiveSession();
+    import("./project-tree.js")
+      .then(({ updateSessionRunningIndicators }) => updateSessionRunningIndicators())
+      .catch(() => {});
   });
 
   window.assistantClient.onError(async (error) => {
-    const sid = store.get("activeSessionId");
-    if (error.sessionId && error.sessionId !== sid) return;
+    const sessionId = error.sessionId;
+    if (!sessionId) return;
 
-    clearToolCards();
+    clearToolCards(sessionId);
+    setSessionRunning(sessionId, false);
 
-    let bubble = store.get("activeBubble");
-    if (!bubble) bubble = beginAssistantTurn();
+    let bubble = view(sessionId).activeBubble;
+    if (!bubble) bubble = beginAssistantTurn(sessionId);
     bubble.classList.remove("pending");
     renderMarkdown(bubble, error.message || "处理请求时遇到问题。");
-    finishActiveTurn();
-    store.set("isBusy", false);
-    setBusyUI(false);
-    await refreshState();
+    finishActiveTurn(sessionId);
+
+    const { refreshStateLight } = await import("./session-chrome.js");
+    await refreshStateLight({ reRenderActive: isActiveSession(sessionId) });
+
+    if (isActiveSession(sessionId)) syncComposerForActiveSession();
+  });
+
+  window.assistantClient.onFocusSession((payload) => {
+    const sessionId = payload?.sessionId;
+    if (!sessionId) return;
+    store.set("activeSessionId", sessionId);
+    showSessionMessages(sessionId);
+    renderConversation(sessionId);
+    updateTopbarTitles();
   });
 }
 
-// ---------------------------------------------------------------------------
-// Diff panel control
-// ---------------------------------------------------------------------------
-
-export function showDiffPanel() {
-  const panel = $("diffPanel");
-  if (panel) panel.hidden = false;
-}
-
-export function hideDiffPanel() {
-  const panel = $("diffPanel");
-  if (panel) panel.hidden = true;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-export async function refreshState() {
-  try {
-    const state = await window.assistantClient.getFullState();
-    if (state) {
-      store.set("projects", state.projects || []);
-      store.set("activeProjectId", state.activeProjectId);
-      store.set("activeSessionId", state.activeSessionId);
-      const active = (state.projects || []).find((p) => p.id === state.activeProjectId);
-      store.set("workingDir", active ? active.path : "");
-      updateWorkingDir(active ? active.path : "");
-      updateTopbarTitles();
-      // Flatten sessions for backward compat
-      const allSessions = [];
-      for (const p of state.projects || []) {
-        for (const s of p.sessions || []) {
-          allSessions.push(s);
-        }
-      }
-      store.set("sessions", allSessions);
-      if (state.conversation) store.set("conversation", state.conversation);
-      updateTopbarTitles();
-    }
-  } catch {}
-}
-
-function updateWorkingDir(path) {
-  const el = $("workingDir");
-  if (el) el.textContent = path || "--";
-}
-
-function setBusyUI(busy) {
-  for (const id of ["sendBtn", "promptInput", "attachBtn", "newSessionBtn"]) {
+export function setBusyUI(busy) {
+  for (const id of ["sendBtn", "promptInput", "attachBtn"]) {
     const el = $(id);
     if (el) el.disabled = busy;
   }
@@ -483,25 +620,29 @@ function setBusyUI(busy) {
   const interruptBtn = $("interruptBtn");
   if (interruptBtn) interruptBtn.hidden = !busy;
 
-  if (busy) {
-    syncTurnProgress();
-    updateBusyMeta();
-  } else {
-    currentActivityLabel = "";
+  import("./project-tree.js")
+    .then(({ updateSessionRunningIndicators }) => updateSessionRunningIndicators())
+    .catch(() => {});
+
+  const sid = store.get("activeSessionId");
+  if (busy && sid) {
+    syncTurnProgress(sid);
+    updateBusyMeta(sid);
+  } else if (sid) {
+    view(sid).activityLabel = "";
   }
 
   const meta = $("sessionMeta");
   if (meta && !busy) {
     const project = activeProject();
-    meta.textContent = project?.name ? `文件夹：${project.name}` : "已就绪";
+    meta.textContent = project?.path
+      ? project.path
+      : project?.name
+        ? `文件夹：${project.name}`
+        : "已就绪";
   }
+}
 
-  const badge = $("statusBadge");
-  if (badge) {
-    badge.textContent = busy ? "回复中" : "就绪";
-    badge.className = `status-badge ${busy ? "running" : "idle"}`;
-  }
-
-  const cliState = $("statusCliState");
-  if (cliState) cliState.textContent = `助手：${busy ? "回复中" : "就绪"}`;
+export function initMessageUi() {
+  initScrollToBottom();
 }

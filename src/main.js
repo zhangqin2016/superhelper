@@ -4,30 +4,28 @@ const { app, BrowserWindow } = require("electron");
 const path = require("node:path");
 
 const { PROJECT_ROOT } = require("./main/config");
+const { loadAppIconImage } = require("./main/app-icon");
+const { bootstrapAgent } = require("./main/agent-bootstrap");
 const ProjectManager = require("./main/project-manager");
 const SessionManager = require("./main/session-manager");
-const PluginManager = require("./main/plugin-manager");
 const FileStagingManager = require("./main/file-staging-manager");
-const { ClaudeRunner } = require("./main/claude-runner");
-const FileWatcher = require("./main/file-watcher");
-const DiffRunner = require("./main/diff-runner");
-const TerminalManager = require("./main/terminal-manager");
-const TemplateStore = require("./main/template-store");
+const { SessionRunnerPool } = require("./main/session-runner-pool");
 const ipcHandlers = require("./main/ipc-handlers");
 
-// ---------------------------------------------------------------------------
-// Window
-// ---------------------------------------------------------------------------
-
 let mainWindow = null;
+let runnerPoolRef = null;
+/** @type {{ ok: boolean, mode?: string, error?: string, message?: string } | null} */
+let agentBootstrap = null;
 
 function createWindow() {
+  const appIcon = loadAppIconImage();
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
     minHeight: 640,
-    title: "智能助手",
+    title: "智能工作台",
+    ...(appIcon ? { icon: appIcon } : {}),
     backgroundColor: "#0f1119",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -43,24 +41,35 @@ function createWindow() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Bootstrap
-// ---------------------------------------------------------------------------
-
 app.whenReady().then(async () => {
+  const appIcon = loadAppIconImage();
+  if (appIcon && process.platform === "darwin" && app.dock) {
+    const ok = app.dock.setIcon(appIcon);
+    if (!ok) {
+      console.warn("[app-icon] app.dock.setIcon returned false");
+    }
+  }
+
+  agentBootstrap = bootstrapAgent();
+  if (!agentBootstrap.ok) {
+    console.error("[agent-bootstrap]", agentBootstrap.error);
+  } else {
+    console.info(
+      "[agent-bootstrap]",
+      agentBootstrap.mode,
+      agentBootstrap.cliPath || "(dev-system)",
+    );
+  }
+
   const projectManager = new ProjectManager(PROJECT_ROOT);
   projectManager.load();
 
   const sessionManager = new SessionManager(projectManager);
   sessionManager.load();
 
-  const pluginManager = new PluginManager(projectManager);
   const stagingManager = new FileStagingManager();
-  const fileWatcher = new FileWatcher();
-  const diffRunner = new DiffRunner();
-  const terminalManager = new TerminalManager();
-  const templateStore = new TemplateStore();
-  const runner = new ClaudeRunner();
+  const runnerPool = new SessionRunnerPool();
+  runnerPoolRef = runnerPool;
 
   createWindow();
 
@@ -68,15 +77,13 @@ app.whenReady().then(async () => {
     get mainWindow() {
       return mainWindow;
     },
+    get agentBootstrap() {
+      return agentBootstrap;
+    },
     projectManager,
     sessionManager,
-    pluginManager,
     stagingManager,
-    fileWatcher,
-    diffRunner,
-    terminalManager,
-    templateStore,
-    runner,
+    runnerPool,
   });
 
   app.on("activate", () => {
@@ -87,6 +94,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  runnerPoolRef?.terminateAll();
   try {
     const { fileStagingDir } = require("./main/config");
     const fs = require("node:fs");

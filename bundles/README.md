@@ -1,6 +1,6 @@
 # 离线打包说明
 
-将 Claude Code CLI 二进制文件放入对应的平台目录，用户在没安装 CLI 的情况下也能使用本应用。
+将 Claude Code CLI 二进制放入对应平台目录，应用会使用**内置引擎**，不会读取用户本机 PATH 里的 `claude`，也不会共用 `~/.claude` 配置。
 
 ## 制作离线包
 
@@ -8,34 +8,87 @@
 # 在有网络的同平台机器上先安装 Claude Code
 npm install -g @anthropic-ai/claude-code
 
-# 复制二进制到对应目录
 # macOS Apple Silicon
-cp $(which claude) ./bundles/darwin-arm64/claude
+cp "$(which claude)" ./bundles/darwin-arm64/claude
+chmod +x ./bundles/darwin-arm64/claude
 
 # macOS Intel
-cp $(which claude) ./bundles/darwin-x64/claude
+cp "$(which claude)" ./bundles/darwin-x64/claude
+chmod +x ./bundles/darwin-x64/claude
 
-# Windows x64
-# copy $(where claude) .\bundles\win32-x64\claude.exe
+# Windows x64（在 Windows 或 CI 上获取）
+
+在 Mac 上可用 **GitHub Actions** 自动构建（无需实体 Windows 电脑）：
+
+1. 打开仓库 **Actions** → **Bundle Windows CLI** → **Run workflow**
+2. 完成后下载 Artifact **win32-x64-claude-cli**
+3. 解压得到 `claude.exe`，放到本仓库：
+
+   ```
+   bundles/win32-x64/claude.exe
+   ```
+
+4. 在 Mac 上打 Windows 安装包：
+
+   ```bash
+   npm run dist:win
+   ```
+
+或在 Windows 本机手动安装后复制：
+
+```powershell
+npm install -g @anthropic-ai/claude-code
+# 将 (Get-Command claude).Source 或同目录下的 claude.exe 复制到：
+# .\bundles\win32-x64\claude.exe
+```
 
 # Linux x64
-cp $(which claude) ./bundles/linux-x64/claude
+cp "$(which claude)" ./bundles/linux-x64/claude
+chmod +x ./bundles/linux-x64/claude
 ```
 
 ## 目录结构
 
 ```
 bundles/
-├── darwin-arm64/claude     # macOS Apple Silicon
-├── darwin-x64/claude       # macOS Intel
-├── win32-x64/claude.exe    # Windows x64
-└── linux-x64/claude        # Linux x64
+├── darwin-arm64/claude
+├── darwin-x64/claude
+├── win32-x64/claude.exe
+└── linux-x64/claude
+
+resources/
+└── models.default.json    # 内置模型预设（网关地址 / Key / 模型名）
 ```
+
+## 模型预设
+
+编辑 `resources/models.default.json`，配置多套模型的 `ANTHROPIC_BASE_URL`、`ANTHROPIC_API_KEY`、`ANTHROPIC_MODEL`。
+
+用户可在 App 顶部下拉框切换；选择会保存到应用数据目录，不会写入用户 shell 环境。
 
 ## 运行逻辑
 
-应用启动时按以下顺序查找 Claude CLI：
+1. 启动时从 `bundles/<平台>/` 复制 CLI 到应用数据 `claude-bin/`
+2. 子进程使用独立 `CLAUDE_CONFIG_DIR`（应用数据内）
+3. 仅注入当前模型预设的环境变量，不继承用户 `ANTHROPIC_*`
+4. **不会**使用用户本机已安装的 `claude`
 
-1. 系统已安装的 claude（PATH / Homebrew / npm global）
-2. `bundles/<当前平台>/` 下的离线包（自动复制到应用数据目录）
-3. 在线自动安装（`npm install -g @anthropic-ai/claude-code`）
+## 开发调试
+
+本机已有 Claude CLI、但未放入 `bundles/` 时：
+
+```bash
+npm run start:dev
+```
+
+会设置 `DEV_USE_SYSTEM_CLAUDE=1`，临时使用本机 CLI（不隔离，仅开发用）。
+
+## 打安装包
+
+```bash
+npm run dist:mac    # macOS DMG/ZIP
+npm run dist:win    # Windows NSIS/ZIP
+npm run dist:all    # 同时打 Mac + Win
+```
+
+产物在 `dist/` 目录。

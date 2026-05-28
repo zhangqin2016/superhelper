@@ -1,12 +1,14 @@
 /**
- * Composer: input handling, send flow, keyboard events.
+ * Composer — sends user messages to the active Claude session (stream-json).
  */
 
 import store from "./state.js";
 import { $ } from "./dom.js";
-import { createMessage, beginAssistantTurn, finishActiveTurn, setBusyUI } from "./message.js";
 import { renderFilePreview, clearPendingFiles } from "./file-handler.js";
 import { promptSessionName } from "./name-prompt.js";
+import { showToast } from "./toast.js";
+import { applySessionSwitch, refreshState } from "./session-chrome.js";
+import { isSessionRunning, setSessionRunning } from "./session-busy.js";
 
 export async function sendPrompt() {
   const promptInput = $("promptInput");
@@ -17,33 +19,75 @@ export async function sendPrompt() {
   }));
 
   if (!text && files.length === 0) return;
-  if (store.get("isBusy")) return;
 
-  createMessage("user", text, files.length > 0 ? files : null);
-
-  const bubble = beginAssistantTurn();
-  bubble.classList.add("pending");
+  const sessionId = store.get("activeSessionId");
+  if (!(store.get("projects") || []).length) {
+    showToast("请先添加工作空间文件夹。", "warning");
+    return;
+  }
+  if (!sessionId) {
+    showToast("请先新建对话。", "warning");
+    return;
+  }
+  if (sessionId && isSessionRunning(sessionId)) {
+    showToast("当前对话还在处理上一条消息，请稍后再试。", "warning");
+    return;
+  }
+  const displayFiles = files.map((f) => ({
+    name: f.name,
+    isImage: f.isImage,
+  }));
+  const savedText = text;
+  const savedFiles = [...(store.get("pendingFiles") || [])];
 
   if (promptInput) promptInput.value = "";
   clearPendingFiles();
-  store.set("isBusy", true);
-  setBusyUI(true);
+
+  const { createMessage, removeLastUserMessage, syncComposerForActiveSession } =
+    await import("./message.js");
+  if (sessionId) {
+    createMessage(
+      sessionId,
+      "user",
+      savedText,
+      displayFiles.length ? displayFiles : null,
+    );
+  }
 
   const result = await window.assistantClient.sendMessage(text, files);
 
   if (!result.ok) {
-    bubble.classList.remove("pending");
-    const { renderMarkdown } = await import("./markdown.js");
-    renderMarkdown(bubble, result.error === "BUSY" ? "上一条消息还在处理中，请稍后再试。" : "消息发送失败。");
-    store.set("isBusy", false);
-    finishActiveTurn();
-    setBusyUI(false);
+    if (sessionId) removeLastUserMessage(sessionId);
+    if (promptInput && savedText) promptInput.value = savedText;
+    if (savedFiles.length) {
+      store.set("pendingFiles", savedFiles);
+      renderFilePreview();
+    }
+    const msg =
+      result.detail ||
+      (result.error === "NO_CLI"
+        ? "内置助手引擎未就绪。请完全退出后重新打开应用。"
+        : result.error === "NO_PROJECT"
+          ? "该对话所属的文件夹已不存在，请在左侧重新选择文件夹或新建对话。"
+          : result.error === "INVALID_WORKDIR"
+            ? "工作目录不存在，请检查左侧文件夹路径是否有效。"
+            : result.error === "BUSY"
+              ? "上一条消息还在处理中，请稍后再试。"
+              : result.error === "RUNNER_ERROR"
+                ? "助手进程启动失败，请重启应用后再试。"
+                : "发送失败。");
+    showToast(msg, "error");
+    return;
   }
+
+  if (sessionId) setSessionRunning(sessionId, true);
+  syncComposerForActiveSession();
+
+  $("promptInput")?.focus();
 }
 
 function shouldSendOnEnter(event) {
   if (event.key !== "Enter" || event.shiftKey) return false;
-  // IME 选词/确认时按回车，不应触发发送
   if (event.isComposing || event.keyCode === 229) return false;
   return true;
 }
@@ -58,6 +102,7 @@ export function initComposer() {
   }
 
   if (promptInput) {
+    promptInput.placeholder = "有什么想问的？";
     promptInput.addEventListener("compositionstart", () => {
       imeComposing = true;
     });
@@ -71,7 +116,6 @@ export function initComposer() {
     });
   }
 
-  // Attach button
   $("attachBtn")?.addEventListener("click", async () => {
     const result = await window.assistantClient.pickFiles();
     if (result.ok && result.files) {
@@ -80,36 +124,31 @@ export function initComposer() {
     }
   });
 
-  // Interrupt
   $("interruptBtn")?.addEventListener("click", async () => {
+    const sessionId = store.get("activeSessionId");
     await window.assistantClient.interrupt();
+    if (sessionId) setSessionRunning(sessionId, false);
+    const { syncComposerForActiveSession } = await import("./message.js");
+    syncComposerForActiveSession();
     $("promptInput")?.focus();
   });
 
-  // New chat (topbar) — create a new session in the active project
   $("newChatBtn")?.addEventListener("click", async () => {
     const projectId = store.get("activeProjectId");
-    const result = await promptSessionName("新对话").then((title) => {
-      if (!title) return null;
-      return window.assistantClient.createSession(title, projectId);
-    });
+    if (!projectId) {
+      showToast("请先添加工作空间文件夹。", "warning");
+      return;
+    }
+    const title = await promptSessionName("新对话");
+    if (!title) return;
+    const result = await window.assistantClient.createSession(title, projectId);
     if (!result?.ok) return;
     const sw = await window.assistantClient.switchSession(result.session.id);
-    store.set("conversation", sw.ok ? (sw.conversation || []) : []);
-    const { refreshState, updateTopbarTitles } = await import("./message.js");
-    const { renderProjectTree } = await import("./project-tree.js");
     await refreshState();
+    const { renderProjectTree } = await import("./project-tree.js");
     renderProjectTree();
     clearPendingFiles();
-    messagesClear();
-    createMessage("assistant", "新对话已开始，有什么想问的？");
-    store.set("isBusy", false);
-    updateTopbarTitles();
+    await applySessionSwitch(sw, result.session.id, projectId);
     $("promptInput")?.focus();
   });
-}
-
-function messagesClear() {
-  const el = $("messages");
-  if (el) el.textContent = "";
 }

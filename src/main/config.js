@@ -23,16 +23,20 @@ function mcpConfigPath() {
   return userDataPath("mcp-active.json");
 }
 
-function templatesConfigPath() {
-  return userDataPath("templates.json");
-}
-
 function userHome() {
   return app.getPath("home");
 }
 
 function fileStagingDir() {
   return userDataPath("file-staging");
+}
+
+function agentBinDir() {
+  return userDataPath("claude-bin");
+}
+
+function agentConfigDir() {
+  return userDataPath("claude-config");
 }
 
 module.exports = {
@@ -42,7 +46,8 @@ module.exports = {
   sessionsConfigPath,
   projectsConfigPath,
   mcpConfigPath,
-  templatesConfigPath,
   userHome,
   fileStagingDir,
+  agentBinDir,
+  agentConfigDir,
 };

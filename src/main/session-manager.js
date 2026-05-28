@@ -39,15 +39,102 @@ class SessionManager {
       }
     }
 
-    const active = this.getActive();
-    if (!active) {
-      const first = this.pm.getActive();
-      const list = this._getProjectSessions(first.id);
-      if (list.length > 0) {
-        this.activeSessionId = list[0].id;
+    this._reconcileWithProjects();
+    if (this.pm.projects.length === 0) {
+      this.activeSessionId = null;
+    } else {
+      const active = this.getActive();
+      if (!active) {
+        const first = this.pm.getActive();
+        if (first) {
+          const list = this._getProjectSessions(first.id);
+          if (list.length > 0) {
+            this.activeSessionId = list[0].id;
+          }
+        }
       }
     }
+    this._resetStaleRunningStatus();
     this.save();
+  }
+
+  /** Remove sessions for a deleted project (do not merge into other projects). */
+  purgeProject(projectId) {
+    const list = this.sessions[projectId];
+    if (!list?.length) {
+      delete this.sessions[projectId];
+      return [];
+    }
+    const ids = list.map((s) => s.id);
+    if (ids.includes(this.activeSessionId)) {
+      this.activeSessionId = null;
+    }
+    delete this.sessions[projectId];
+    this.save();
+    return ids;
+  }
+
+  /** Ensure a project has at least one session without switching away from current. */
+  ensureDefaultForProject(projectId) {
+    if (this._getProjectSessions(projectId).length > 0) return null;
+    const session = {
+      id: crypto.randomUUID(),
+      projectId,
+      title: "默认对话",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: "idle",
+      messages: [],
+    };
+    if (!this.sessions[projectId]) this.sessions[projectId] = [];
+    this.sessions[projectId].push(session);
+    if (!this.activeSessionId) this.activeSessionId = session.id;
+    this.save();
+    return session;
+  }
+
+  /** Drop sessions whose project no longer exists (never migrate to another project). */
+  _reconcileWithProjects() {
+    const validProjectIds = new Set(this.pm.projects.map((p) => p.id));
+    const activeProject = this.pm.getActive();
+
+    if (!activeProject) {
+      for (const projectId of Object.keys(this.sessions)) {
+        if (!validProjectIds.has(projectId)) {
+          delete this.sessions[projectId];
+        }
+      }
+      if (this.activeSessionId && !this._find(this.activeSessionId)) {
+        this.activeSessionId = null;
+      }
+      return;
+    }
+
+    for (const projectId of Object.keys(this.sessions)) {
+      if (validProjectIds.has(projectId)) continue;
+      const orphaned = this.sessions[projectId] || [];
+      delete this.sessions[projectId];
+      if (orphaned.some((s) => s.id === this.activeSessionId)) {
+        this.activeSessionId = null;
+      }
+    }
+
+    if (this.activeSessionId && !this._find(this.activeSessionId)) {
+      const list = this._getProjectSessions(activeProject.id);
+      this.activeSessionId = list[0]?.id || null;
+    }
+
+    for (const project of this.pm.projects) {
+      this.ensureDefaultForProject(project.id);
+    }
+  }
+
+  _resetStaleRunningStatus() {
+    for (const list of Object.values(this.sessions)) {
+      for (const session of list) {
+        if (session.status === "running") session.status = "idle";
+      }
+    }
   }
 
   save() {
@@ -64,8 +151,13 @@ class SessionManager {
   }
 
   getActive() {
-    const projectId = this.pm.getActive().id;
-    const list = this._getProjectSessions(projectId);
+    if (this.activeSessionId) {
+      const byId = this._find(this.activeSessionId);
+      if (byId) return byId;
+    }
+    const project = this.pm.getActive();
+    if (!project) return null;
+    const list = this._getProjectSessions(project.id);
     return list.find((s) => s.id === this.activeSessionId) || list[0] || null;
   }
 
@@ -113,7 +205,9 @@ class SessionManager {
   }
 
   delete(sessionId) {
-    const projectId = this.pm.getActive().id;
+    const project = this.pm.getActive();
+    if (!project) return "NOT_FOUND";
+    const projectId = project.id;
     const list = this.sessions[projectId];
     if (!list || list.length <= 1) return "LAST_SESSION";
     const idx = list.findIndex((s) => s.id === sessionId);
@@ -144,6 +238,28 @@ class SessionManager {
   pushMessage(role, content, files = null) {
     const session = this.getActive();
     if (!session) return;
+    this._appendMessage(session, role, content, files);
+  }
+
+  pushMessageTo(sessionId, role, content, files = null) {
+    const session = this._find(sessionId);
+    if (!session) return;
+    this._appendMessage(session, role, content, files);
+  }
+
+  /** Remove the last message if it is from the user (e.g. send to CLI failed). */
+  popLastUserMessage(sessionId) {
+    const session = this._find(sessionId);
+    if (!session || session.messages.length === 0) return false;
+    const last = session.messages[session.messages.length - 1];
+    if (last.role !== "user") return false;
+    session.messages.pop();
+    session.updatedAt = new Date().toISOString();
+    this.save();
+    return true;
+  }
+
+  _appendMessage(session, role, content, files = null) {
     session.messages.push({
       role,
       content,
@@ -151,7 +267,6 @@ class SessionManager {
       timestamp: new Date().toISOString(),
     });
     session.updatedAt = new Date().toISOString();
-    // Keep last 200 messages max
     if (session.messages.length > 200) {
       session.messages = session.messages.slice(-200);
     }
@@ -161,6 +276,10 @@ class SessionManager {
   getConversation(sessionId) {
     const session = sessionId ? this._find(sessionId) : this.getActive();
     return session ? session.messages : [];
+  }
+
+  findById(sessionId) {
+    return this._find(sessionId);
   }
 
   clearConversation(sessionId) {

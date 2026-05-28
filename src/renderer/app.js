@@ -2,37 +2,27 @@
  * Application entry point — wires all modules together.
  */
 
-import store from "./modules/state.js";
 import { initComposer } from "./modules/composer.js";
 import { initFileHandler } from "./modules/file-handler.js";
-import { wireIpcEvents, renderConversation, refreshState, updateTopbarTitles } from "./modules/message.js";
-import { initScrollToBottom } from "./modules/dom.js";
+import { refreshState, updateTopbarTitles } from "./modules/session-chrome.js";
+import { wireMessageIpc, initMessageUi } from "./modules/message.js";
 import { renderProjectTree, initAddProject, initTopbarSessionRename } from "./modules/project-tree.js";
-import { loadTemplates, renderTemplates } from "./modules/templates.js";
-import { initStatusBar } from "./modules/status-bar.js";
+import { initSettingsPanel } from "./modules/settings-panel.js";
+import { initPermissionSettings } from "./modules/permission-settings.js";
+import { showToast } from "./modules/toast.js";
 import { $ } from "./modules/dom.js";
-
-// ---------------------------------------------------------------------------
-// Panel toggle
-// ---------------------------------------------------------------------------
 
 function initPanelToggles() {
   const shell = $("appShell");
   if (!shell) return;
-
   $("leftToggleBtn")?.addEventListener("click", () => {
     shell.classList.toggle("left-collapsed");
   });
 }
 
-// ---------------------------------------------------------------------------
-// Resize handles
-// ---------------------------------------------------------------------------
-
 function initResizeHandles() {
   const shell = $("appShell");
   if (!shell) return;
-
   initResizeHandle("leftResizeHandle", "left-w", "left-collapsed", 180, 450);
 }
 
@@ -72,10 +62,6 @@ function initResizeHandle(handleId, varName, collapseClass, minW, maxW) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Global search
-// ---------------------------------------------------------------------------
-
 function initGlobalSearch() {
   $("globalSearch")?.addEventListener("input", (e) => {
     const query = e.target.value.toLowerCase();
@@ -95,29 +81,46 @@ function initGlobalSearch() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Bootstrap
-// ---------------------------------------------------------------------------
+function bindAppIcons() {
+  try {
+    const url = window.assistantClient?.getAppIconUrl?.();
+    if (!url) return;
+    for (const img of document.querySelectorAll(".app-logo, .settings-about-logo")) {
+      img.src = url;
+    }
+    const favicon = document.querySelector('link[rel="icon"]');
+    if (favicon) favicon.href = url;
+  } catch {
+    // non-fatal
+  }
+}
 
 async function init() {
-  wireIpcEvents();
+  bindAppIcons();
+  initMessageUi();
+  wireMessageIpc();
 
   initComposer();
   initFileHandler();
   initPanelToggles();
   initResizeHandles();
   initGlobalSearch();
-  initStatusBar();
   initAddProject();
   initTopbarSessionRename();
-  initScrollToBottom();
+  initSettingsPanel();
+  initPermissionSettings();
 
   await refreshState();
-  loadTemplates();
+  const state = await window.assistantClient.getFullState();
+  if (state?.agent && !state.agent.ready) {
+    showToast(
+      state.agent.error ||
+        "内置助手引擎未就绪。请重启应用；开发调试可运行 npm run start:dev。",
+      "error",
+    );
+  }
 
-  renderConversation();
   renderProjectTree();
-  renderTemplates();
   updateTopbarTitles();
 }
 

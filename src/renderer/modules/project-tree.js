@@ -4,7 +4,8 @@
 
 import store from "./state.js";
 import { $ } from "./dom.js";
-import { renderConversation, refreshState, updateTopbarTitles } from "./message.js";
+import { refreshState, updateTopbarTitles, applySessionSwitch } from "./session-chrome.js";
+import { removeSessionMessages } from "./message.js";
 import { promptSessionName, promptProjectName } from "./name-prompt.js";
 
 const container = () => $("projectTree");
@@ -42,6 +43,14 @@ export function renderProjectTree() {
   const unpinned = projects.filter((p) => !p.pinned);
   const sorted = [...pinned, ...unpinned];
 
+  if (sorted.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "project-tree-empty";
+    empty.textContent = "暂无工作空间，点击上方 + 添加文件夹";
+    el.appendChild(empty);
+    return;
+  }
+
   for (const project of sorted) {
     const sessions = project.sessions || [];
     const isActive = project.id === activeProjectId;
@@ -49,6 +58,7 @@ export function renderProjectTree() {
 
     const group = document.createElement("div");
     group.className = `project-group${isActive ? " active" : ""}`;
+    group.dataset.projectId = project.id;
 
     const header = document.createElement("div");
     header.className = "project-header";
@@ -96,11 +106,9 @@ export function renderProjectTree() {
       if (!result?.ok) return;
       await window.assistantClient.switchProject(project.id);
       const sw = await window.assistantClient.switchSession(result.session.id);
-      if (sw.ok) store.set("conversation", sw.conversation || []);
+      await applySessionSwitch(sw, result.session.id, project.id);
       await refreshState();
-      renderProjectTree();
-      renderConversation();
-      updateTopbarTitles();
+      updateProjectTreeChrome();
     });
 
     const moreBtn = document.createElement("button");
@@ -133,7 +141,10 @@ export function renderProjectTree() {
         item.dataset.projectId = project.id;
 
         const status = document.createElement("span");
-        status.className = `session-status ${s.status || "idle"}`;
+        const runningIds = store.get("runningSessionIds") || [];
+        const isRunning = runningIds.includes(s.id) || s.status === "running";
+        status.className = `session-status ${isRunning ? "running" : "idle"}`;
+        status.title = isRunning ? "正在处理" : "";
         item.appendChild(status);
 
         const title = document.createElement("span");
@@ -152,17 +163,12 @@ export function renderProjectTree() {
         item.appendChild(meta);
 
         item.addEventListener("click", async () => {
+          if (s.id === store.get("activeSessionId")) return;
           if (project.id !== store.get("activeProjectId")) {
             await window.assistantClient.switchProject(project.id);
           }
           const sw = await window.assistantClient.switchSession(s.id);
-          if (sw.ok && sw.conversation) {
-            store.set("conversation", sw.conversation);
-          }
-          await refreshState();
-          renderProjectTree();
-          renderConversation();
-          updateTopbarTitles();
+          await applySessionSwitch(sw, s.id, project.id);
         });
 
         item.addEventListener("contextmenu", (e) => {
@@ -177,6 +183,64 @@ export function renderProjectTree() {
     group.appendChild(sessionList);
     el.appendChild(group);
   }
+}
+
+export function updateProjectTreeSelection() {
+  const el = container();
+  if (!el) return;
+  const activeProjectId = store.get("activeProjectId");
+  const activeSessionId = store.get("activeSessionId");
+
+  el.querySelectorAll(".project-group").forEach((group) => {
+    group.classList.toggle("active", group.dataset.projectId === activeProjectId);
+  });
+
+  el.querySelectorAll(".session-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.sessionId === activeSessionId);
+  });
+}
+
+export function updateSessionRunningIndicators() {
+  const sessionById = new Map();
+  for (const project of store.get("projects") || []) {
+    for (const session of project.sessions || []) {
+      sessionById.set(session.id, session);
+    }
+  }
+  const runningIds = new Set(store.get("runningSessionIds") || []);
+
+  container()?.querySelectorAll(".session-item").forEach((item) => {
+    const dot = item.querySelector(".session-status");
+    if (!dot) return;
+    const session = sessionById.get(item.dataset.sessionId);
+    const isRunning =
+      runningIds.has(item.dataset.sessionId) || session?.status === "running";
+    dot.classList.toggle("running", isRunning);
+    dot.classList.toggle("idle", !isRunning);
+    dot.title = isRunning ? "正在处理" : "";
+  });
+}
+
+export function updateSessionMetaCounts() {
+  const sessionById = new Map();
+  for (const project of store.get("projects") || []) {
+    for (const session of project.sessions || []) {
+      sessionById.set(session.id, session);
+    }
+  }
+
+  container()?.querySelectorAll(".session-item").forEach((item) => {
+    const session = sessionById.get(item.dataset.sessionId);
+    if (!session) return;
+    const meta = item.querySelector(".session-meta");
+    if (meta) meta.textContent = session.messageCount ? `${session.messageCount}条` : "";
+  });
+}
+
+export function updateProjectTreeChrome() {
+  updateProjectTreeSelection();
+  updateSessionRunningIndicators();
+  updateSessionMetaCounts();
 }
 
 function showProjectMenu(e, project) {
@@ -226,9 +290,10 @@ function showProjectMenu(e, project) {
       action: async () => {
         const result = await window.assistantClient.removeProject(project.id);
         if (result.ok) {
+          const { hideAllSessionMessages } = await import("./message.js");
+          hideAllSessionMessages();
           await refreshState();
           renderProjectTree();
-          renderConversation();
           updateTopbarTitles();
         }
       },
@@ -282,7 +347,6 @@ function showSessionMenu(x, y, sessionId, title) {
     await window.assistantClient.archiveSession(sessionId);
     await refreshState();
     renderProjectTree();
-    renderConversation();
     updateTopbarTitles();
   });
 
@@ -293,9 +357,9 @@ function showSessionMenu(x, y, sessionId, title) {
   del.addEventListener("click", async () => {
     menu.remove();
     await window.assistantClient.deleteSession(sessionId);
+    removeSessionMessages(sessionId);
     await refreshState();
     renderProjectTree();
-    renderConversation();
     updateTopbarTitles();
   });
 

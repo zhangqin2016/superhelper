@@ -15,34 +15,33 @@ class ProjectManager {
     this.defaultPath = defaultPath;
     this.projects = [];
     this.activeProjectId = null;
-    this.globalPlugins = {};
   }
 
   load() {
+    let freshInstall = false;
     try {
       const raw = fs.readFileSync(projectsConfigPath(), "utf8");
       const parsed = JSON.parse(raw);
       this.projects = Array.isArray(parsed.projects)
         ? parsed.projects.map((p) => this._normalize(p))
         : [];
-      this.activeProjectId = parsed.activeProjectId || null;
-      this.globalPlugins =
-        parsed.globalPlugins && typeof parsed.globalPlugins === "object"
-          ? parsed.globalPlugins
-          : {};
+      this.activeProjectId = parsed.activeProjectId ?? null;
     } catch {
       this.projects = [];
-      this.globalPlugins = {};
+      freshInstall = true;
     }
 
-    if (this.projects.length === 0) {
+    // First launch only — user may intentionally delete all workspaces later.
+    if (freshInstall && this.projects.length === 0) {
       const project = this._create(this.defaultPath);
       this.projects = [project];
       this.activeProjectId = project.id;
       this.save();
     }
 
-    if (!this.projects.some((p) => p.id === this.activeProjectId)) {
+    if (this.projects.length === 0) {
+      this.activeProjectId = null;
+    } else if (!this.projects.some((p) => p.id === this.activeProjectId)) {
       this.activeProjectId = this.projects[0].id;
       this.save();
     }
@@ -56,7 +55,6 @@ class ProjectManager {
       JSON.stringify(
         {
           activeProjectId: this.activeProjectId,
-          globalPlugins: this.globalPlugins,
           projects: this.projects,
         },
         null,
@@ -66,6 +64,7 @@ class ProjectManager {
   }
 
   getActive() {
+    if (this.projects.length === 0) return null;
     return (
       this.projects.find((p) => p.id === this.activeProjectId) ||
       this.projects[0]
@@ -73,7 +72,6 @@ class ProjectManager {
   }
 
   getAppState() {
-    const current = this.getActive();
     return {
       activeProjectId: this.activeProjectId,
       projects: [...this.projects]
@@ -122,21 +120,16 @@ class ProjectManager {
   }
 
   remove(projectId) {
-    if (this.projects.length <= 1) return "LAST_PROJECT";
     const index = this.projects.findIndex((p) => p.id === projectId);
     if (index === -1) return "NOT_FOUND";
     this.projects.splice(index, 1);
-    if (this.activeProjectId === projectId) {
+    if (this.projects.length === 0) {
+      this.activeProjectId = null;
+    } else if (this.activeProjectId === projectId) {
       this.activeProjectId = this.projects[Math.max(0, index - 1)].id;
     }
     this.save();
     return "OK";
-  }
-
-  scanDirectory(projectId) {
-    const project = this.find(projectId);
-    if (!project) return [];
-    return this._scanDir(project.path, "");
   }
 
   _create(projectPath) {
@@ -145,7 +138,6 @@ class ProjectManager {
       name: path.basename(projectPath) || projectPath,
       path: projectPath,
       pinned: false,
-      plugins: {},
     };
   }
 
@@ -155,10 +147,6 @@ class ProjectManager {
       project.name || path.basename(project.path || this.defaultPath);
     project.path = project.path || this.defaultPath;
     project.pinned = Boolean(project.pinned);
-    project.plugins =
-      project.plugins && typeof project.plugins === "object"
-        ? project.plugins
-        : {};
     return project;
   }
 
@@ -169,45 +157,6 @@ class ProjectManager {
       path: project.path,
       pinned: Boolean(project.pinned),
     };
-  }
-
-  _scanDir(basePath, relativePath) {
-    const fullPath = path.join(basePath, relativePath);
-    const entries = [];
-    try {
-      const items = fs.readdirSync(fullPath, { withFileTypes: true });
-      for (const item of items) {
-        if (item.name.startsWith(".") && item.name !== ".gitignore") continue;
-        if (item.name === "node_modules" || item.name === ".git") continue;
-        const rel = relativePath ? `${relativePath}/${item.name}` : item.name;
-        if (item.isDirectory()) {
-          entries.push({
-            name: item.name,
-            path: rel,
-            type: "directory",
-            children: this._scanDir(basePath, rel),
-          });
-        } else {
-          const ext = path.extname(item.name).toLowerCase();
-          let stat = null;
-          try { stat = fs.statSync(path.join(fullPath, item.name)); } catch {}
-          entries.push({
-            name: item.name,
-            path: rel,
-            type: "file",
-            ext,
-            size: stat ? stat.size : 0,
-            status: "unchanged",
-          });
-        }
-      }
-    } catch {
-      // permission denied, skip
-    }
-    return entries.sort((a, b) => {
-      if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
   }
 }
 

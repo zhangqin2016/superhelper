@@ -1,11 +1,13 @@
 "use strict";
 
+const fs = require("node:fs");
 const { ipcMain, dialog, shell } = require("electron");
 const FileStagingManager = require("./file-staging-manager");
-
-// ---------------------------------------------------------------------------
-// Renderer push helpers
-// ---------------------------------------------------------------------------
+const { listPresetsPublic, setActivePreset } = require("./model-presets");
+const { resolveAgentCommand } = require("./agent-command");
+const { sanitizeError, appendTextSegment } = require("./claude-runner");
+const { notifySessionFinished } = require("./background-notify");
+const { fileStagingDir } = require("./config");
 
 function sendToRenderer(window, channel, payload) {
   if (window && !window.isDestroyed()) {
@@ -13,137 +15,253 @@ function sendToRenderer(window, channel, payload) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Prompt construction
-// ---------------------------------------------------------------------------
+/** @type {Map<string, string>} */
+const turnOutputs = new Map();
 
-function buildPluginPrompt(project, pluginManager) {
-  const enabled = pluginManager
-    .enabledIds(project)
-    .map((id) => require("./plugin-registry").findById(id))
-    .filter(Boolean);
+/** Sessions with an in-flight assistant turn (guards duplicate done/error). */
+const activeTurns = new Set();
 
-  if (enabled.length === 0) return "";
-
-  return `当前已启用扩展能力：\n${enabled.map((p) => `- ${p.name}`).join("\n")}\n请在回答用户问题时主动使用相关能力。`;
+function anyRunnerBusy(runnerPool) {
+  for (const sessionId of runnerPool.getSessionIds()) {
+    const runner = runnerPool.get(sessionId);
+    if (runner?.isBusy()) return true;
+  }
+  return false;
 }
 
-function buildFilePrompt(files) {
-  if (!files || files.length === 0) return "";
-  const paths = files.map((f) => f.path).filter(Boolean);
-  const pathList = paths.map((p) => `  - ${p}`).join("\n");
-  return `\n用户通过附件上传了文件，文件路径如下：\n${pathList}\n请使用 Read 工具直接查看这些文件的内容。`;
+function getRunningSessionIds(runnerPool, sessionManager) {
+  const ids = new Set(activeTurns);
+  for (const sessionId of runnerPool.getSessionIds()) {
+    if (runnerPool.get(sessionId)?.isBusy()) ids.add(sessionId);
+  }
+  for (const list of Object.values(sessionManager.sessions)) {
+    for (const session of list) {
+      if (session.status === "running") ids.add(session.id);
+    }
+  }
+  return [...ids];
 }
 
-function buildPrompt(session, input, project, pluginManager, files = []) {
-  const history = session.messages
-    .slice(-8)
-    .map((msg) => `${msg.role === "user" ? "用户" : "助手"}：${msg.content}`)
-    .join("\n\n");
-
-  const pluginPrompt = buildPluginPrompt(project, pluginManager);
-  const filePrompt = buildFilePrompt(files);
-
-  let prompt = "";
-  if (pluginPrompt) prompt += `${pluginPrompt}\n\n`;
-  if (history) prompt += `以下是当前对话上下文，请基于上下文继续回答。\n\n${history}\n\n`;
-  prompt += `用户：${input}`;
-  if (filePrompt) prompt += filePrompt;
-  return prompt;
+function resolveProjectForSession(projectManager, session) {
+  if (!session) return null;
+  const project = projectManager.find(session.projectId);
+  if (project) return project;
+  return null;
 }
 
-// ---------------------------------------------------------------------------
-// Claude CLI flow
-// ---------------------------------------------------------------------------
+function diagnoseSendBlocker(ctx, sessionId) {
+  const cliPath = resolveAgentCommand();
+  if (!cliPath) {
+    return {
+      error: "NO_CLI",
+      detail: "内置 Claude 可执行文件未安装。请完全退出应用后重新打开。",
+    };
+  }
+  if (!fs.existsSync(cliPath)) {
+    return {
+      error: "NO_CLI",
+      detail: `引擎文件不存在：${cliPath}`,
+    };
+  }
 
-function handleClaude(ctx, session, project, input, files = []) {
-  const { mainWindow, sessionManager, pluginManager, stagingManager, runner } = ctx;
-  const { appendTextSegment } = require("./claude-runner");
-  const sessionId = session.id;
+  const { sessionManager, projectManager } = ctx;
+  const session =
+    sessionManager.findById(sessionId) || sessionManager.getActive();
+  if (!session) {
+    return { error: "NO_SESSION", detail: "请先创建或选择一个对话。" };
+  }
 
-  const mcpConfigFile = pluginManager.writeMcpConfig(project);
-  const prompt = buildPrompt(session, input, project, pluginManager, files);
+  const project = resolveProjectForSession(projectManager, session);
+  if (!project) {
+    return { error: "NO_PROJECT", detail: "对话所属的文件夹已不存在，请重新添加文件夹。" };
+  }
+  if (!fs.existsSync(project.path)) {
+    return {
+      error: "INVALID_WORKDIR",
+      detail: `工作目录不存在：${project.path}`,
+    };
+  }
 
-  const fileMetadata = files.map((f) => ({
-    id: f.id, name: f.name, type: f.type, size: f.size, isImage: f.isImage,
-  }));
+  return null;
+}
 
-  sessionManager.pushMessage("user", input, fileMetadata);
+function wireRunner(ctx, runner) {
+  if (runner._ipcWired) return;
+  runner._ipcWired = true;
 
-  let assistantOutput = "";
+  const sessionId = runner.sessionId;
+  const { sessionManager } = ctx;
 
   runner.on("chunk", (text) => {
-    assistantOutput = appendTextSegment(assistantOutput, text);
-    sendToRenderer(mainWindow, "assistant:chunk", { sessionId, text });
+    const prev = turnOutputs.get(sessionId) || "";
+    const next = appendTextSegment(prev, text);
+    turnOutputs.set(sessionId, next);
+    sendToRenderer(ctx.mainWindow, "assistant:chunk", { sessionId, text });
   });
 
   runner.on("stderr", (text) => {
-    sendToRenderer(mainWindow, "assistant:chunk", { sessionId, text });
-  });
-
-  runner.on("done", ({ code, output }) => {
-    const finalOutput = output || assistantOutput.trim();
-    if (finalOutput) {
-      sessionManager.pushMessage("assistant", finalOutput);
-    } else if (code !== null) {
-      sessionManager.pushMessage("assistant", "这次没有收到有效回复，请稍后重试。");
-    }
-    sessionManager.setStatus(sessionId, "idle");
-    sendToRenderer(mainWindow, "assistant:done", { code, sessionId });
-    cleanup();
-  });
-
-  runner.on("error", (message) => {
-    const friendlyMessage = message === "BUSY"
-      ? "上一条消息还在处理中，请稍后再试。"
-      : require("./claude-runner").sanitizeError(message);
-    sessionManager.pushMessage("assistant", friendlyMessage);
-    sessionManager.setStatus(sessionId, "idle");
-    sendToRenderer(mainWindow, "assistant:error", { sessionId, message: friendlyMessage });
-    cleanup();
-  });
-
-  runner.on("status", (state) => {
-    if (state === "thinking") sessionManager.setStatus(sessionId, "running");
-    sendToRenderer(mainWindow, "assistant:status", { state, sessionId });
+    console.error(`[claude stderr ${sessionId}]`, text);
   });
 
   runner.on("tool-using", (data) => {
-    sendToRenderer(mainWindow, "assistant:tool", { sessionId, ...data });
+    sendToRenderer(ctx.mainWindow, "assistant:tool", { sessionId, ...data });
   });
 
   runner.on("tool-done", (data) => {
-    sendToRenderer(mainWindow, "assistant:tool-done", { sessionId, ...data });
+    sendToRenderer(ctx.mainWindow, "assistant:tool-done", { sessionId, ...data });
   });
 
-  runner.run({
-    prompt,
-    cwd: project.path,
-    mcpConfigPath: mcpConfigFile,
-    stagingDir: stagingManager.getStagingDir(),
-    files,
+  runner.on("status", (state) => {
+    if (state === "thinking") {
+      sessionManager.setStatus(sessionId, "running");
+    }
+    sendToRenderer(ctx.mainWindow, "assistant:status", { state, sessionId });
   });
 
-  function cleanup() {
-    runner.removeAllListeners("chunk");
-    runner.removeAllListeners("stderr");
-    runner.removeAllListeners("done");
-    runner.removeAllListeners("error");
-    runner.removeAllListeners("status");
-    runner.removeAllListeners("tool-using");
-    runner.removeAllListeners("tool-done");
+  runner.on("done", ({ code, output, interrupted }) => {
+    if (!activeTurns.has(sessionId)) return;
+    activeTurns.delete(sessionId);
+
+    const finalOutput = (output || turnOutputs.get(sessionId) || "").trim();
+    turnOutputs.delete(sessionId);
+
+    if (finalOutput) {
+      sessionManager.pushMessageTo(sessionId, "assistant", finalOutput);
+    } else if (!interrupted && code !== 0 && code !== null) {
+      sessionManager.pushMessageTo(
+        sessionId,
+        "assistant",
+        "这次没有收到有效回复，请稍后重试。",
+      );
+    }
+
+    sessionManager.setStatus(sessionId, "idle");
+    sendToRenderer(ctx.mainWindow, "assistant:done", { code, sessionId });
+
+    const session = sessionManager.findById(sessionId);
+    const wasFocused = ctx.mainWindow?.isFocused?.() ?? true;
+    if (!wasFocused) {
+      notifySessionFinished(ctx.mainWindow, {
+        sessionId,
+        sessionTitle: session?.title,
+        ok: Boolean(finalOutput),
+        body: finalOutput,
+      });
+    }
+  });
+
+  runner.on("error", (message) => {
+    if (!activeTurns.has(sessionId)) return;
+    activeTurns.delete(sessionId);
+
+    turnOutputs.delete(sessionId);
+    const friendly =
+      message === "BUSY"
+        ? "上一条消息还在处理中，请稍后再试。"
+        : sanitizeError(String(message));
+    sessionManager.pushMessageTo(sessionId, "assistant", friendly);
+    sessionManager.setStatus(sessionId, "idle");
+    sendToRenderer(ctx.mainWindow, "assistant:error", {
+      sessionId,
+      message: friendly,
+    });
+  });
+}
+
+/**
+ * @returns {{ runner: import('./claude-session').ClaudeSession | null, error?: string, detail?: string }}
+ */
+function ensureSessionRunner(ctx, sessionId) {
+  const { sessionManager, projectManager, runnerPool } = ctx;
+  const session = sessionManager.findById(sessionId);
+  if (!session) {
+    return {
+      runner: null,
+      error: "NO_SESSION",
+      detail: "对话不存在或已删除，请重新选择或新建对话。",
+    };
+  }
+
+  const project = resolveProjectForSession(projectManager, session);
+  if (!project) {
+    return {
+      runner: null,
+      error: "NO_PROJECT",
+      detail: "对话所属的文件夹已不存在，请重新添加文件夹。",
+    };
+  }
+
+  const cliPath = resolveAgentCommand();
+  if (!cliPath) {
+    return {
+      runner: null,
+      error: "NO_CLI",
+      detail: "内置 Claude 可执行文件未安装。请完全退出应用后重新打开。",
+    };
+  }
+  if (!fs.existsSync(cliPath)) {
+    return {
+      runner: null,
+      error: "NO_CLI",
+      detail: `引擎文件不存在：${cliPath}`,
+    };
+  }
+  if (!fs.existsSync(project.path)) {
+    return {
+      runner: null,
+      error: "INVALID_WORKDIR",
+      detail: `工作目录不存在：${project.path}`,
+    };
+  }
+
+  const agentDefaults = ctx.agentBootstrap?.agentDefaults || {};
+  const stagingDir = fileStagingDir();
+  try {
+    fs.mkdirSync(stagingDir, { recursive: true });
+  } catch (err) {
+    console.warn("[runner] could not create staging dir:", err.message);
+  }
+  const extra = {
+    disallowedTools: agentDefaults.disallowedTools || [],
+    stagingDir,
+  };
+
+  try {
+    const runner = runnerPool.ensure(sessionId, project.path, extra);
+    wireRunner(ctx, runner);
+    return { runner };
+  } catch (err) {
+    console.error("[runner]", sessionId, err.message);
+    if (err.stack) console.error(err.stack);
+    const detail =
+      err.message && !/^(RUNNER_|AGENT_|NO_)/.test(err.message)
+        ? err.message
+        : sanitizeError(err.message);
+    return { runner: null, error: "RUNNER_ERROR", detail };
   }
 }
 
-// ---------------------------------------------------------------------------
-// Handler registration
-// ---------------------------------------------------------------------------
+function warmupActiveRunner(ctx) {
+  const session = ctx.sessionManager.getActive();
+  if (!session) return;
+  const result = ensureSessionRunner(ctx, session.id);
+  if (!result.runner) {
+    console.error("[runner] warmup failed:", result.error, result.detail);
+  }
+}
+
+function buildInputLine(text, files = []) {
+  const parts = [String(text || "").trim()];
+  for (const f of files) {
+    if (f.path) parts.push(f.path);
+  }
+  return parts.filter(Boolean).join(" ");
+}
 
 function registerAll(ctx) {
   const {
-    mainWindow, projectManager, sessionManager, pluginManager,
-    stagingManager, fileWatcher, diffRunner, terminalManager,
-    templateStore, runner,
+    mainWindow, projectManager, sessionManager,
+    stagingManager, runnerPool,
   } = ctx;
 
   // --- Files ---------------------------------------------------------------
@@ -170,7 +288,7 @@ function registerAll(ctx) {
     return { ok: true, files: staged, errors };
   });
 
-  ipcMain.handle("files:stage", (_event, filePath, fileName) => {
+  ipcMain.handle("files:stage", (_event, filePath) => {
     try {
       const meta = stagingManager.stageFromPath(filePath);
       return { ok: true, file: meta };
@@ -193,30 +311,92 @@ function registerAll(ctx) {
     return { ok: true, dataUrl };
   });
 
-  ipcMain.handle("files:remove", (_event, fileId) => {
-    return { ok: true };
-  });
-
   ipcMain.handle("files:dimensions", (_event, filePath) => {
     const dims = stagingManager.getDimensions(filePath);
     return dims ? { ok: true, ...dims } : { ok: false };
+  });
+
+  ipcMain.handle("files:clear-staging", () => {
+    try {
+      const fs = require("node:fs");
+      const path = require("node:path");
+      const dir = fileStagingDir();
+      if (fs.existsSync(dir)) {
+        for (const name of fs.readdirSync(dir)) {
+          fs.unlinkSync(path.join(dir, name));
+        }
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   });
 
   // --- State ---------------------------------------------------------------
 
   ipcMain.handle("state:full", () => {
     const projectState = projectManager.getAppState();
+    const active = sessionManager.getActive();
     const projectsWithSessions = projectState.projects.map((p) => ({
       ...p,
-      sessions: sessionManager.listForProject(p.id),
+      sessions: sessionManager.listForProject(p.id).map((s) => {
+        const full = sessionManager.findById(s.id);
+        return {
+          ...s,
+          messages: full?.messages || [],
+        };
+      }),
     }));
-    const activeSession = sessionManager.getActive();
+    const cliPath = resolveAgentCommand();
+    const agent = ctx.agentBootstrap || { ok: false };
+    const cliReady = Boolean(cliPath && fs.existsSync(cliPath));
     return {
       activeProjectId: projectState.activeProjectId,
       activeSessionId: sessionManager.activeSessionId,
       projects: projectsWithSessions,
-      conversation: activeSession ? activeSession.messages : [],
+      conversation: active?.messages || [],
+      runnerSessionIds: runnerPool.getSessionIds(),
+      runningSessionIds: getRunningSessionIds(runnerPool, sessionManager),
+      agent: {
+        ...agent,
+        ok: cliReady,
+        cliPath: cliPath || agent.cliPath || null,
+        ready: cliReady,
+      },
+      models: listPresetsPublic(),
+      permissions: require("./permission-settings").listPermissionsPublic(),
     };
+  });
+
+  ipcMain.handle("models:list", () => ({ ok: true, ...listPresetsPublic() }));
+
+  ipcMain.handle("models:set-active", (_event, presetId) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const result = setActivePreset(presetId);
+    if (result.ok) {
+      runnerPool.terminateAll();
+    }
+    return result.ok ? { ok: true, ...listPresetsPublic() } : result;
+  });
+
+  ipcMain.handle("permissions:list", () => ({
+    ok: true,
+    ...require("./permission-settings").listPermissionsPublic(),
+  }));
+
+  ipcMain.handle("permissions:set-active", (_event, modeId) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const result = require("./permission-settings").setActivePermissionMode(modeId);
+    if (result.ok) {
+      runnerPool.terminateAll();
+    }
+    return result.ok
+      ? { ok: true, ...require("./permission-settings").listPermissionsPublic() }
+      : result;
   });
 
   // --- Projects ------------------------------------------------------------
@@ -244,8 +424,8 @@ function registerAll(ctx) {
     if (sessions.length > 0) {
       sessionManager.activeSessionId = sessions[0].id;
       sessionManager.save();
+      ensureSessionRunner(ctx, sessions[0].id);
     }
-    fileWatcher.watch(projectId, projectManager.find(projectId).path);
     return { ok: true, state: projectManager.getAppState(), sessions };
   });
 
@@ -268,9 +448,27 @@ function registerAll(ctx) {
   });
 
   ipcMain.handle("project:remove", (_event, projectId) => {
-    if (runner.isBusy()) return { ok: false, error: "BUSY" };
+    const sessionIds = sessionManager.purgeProject(projectId);
+    for (const sessionId of sessionIds) {
+      runnerPool.terminateSession(sessionId);
+    }
     const result = projectManager.remove(projectId);
     if (result !== "OK") return { ok: false, error: result };
+
+    const active = projectManager.getActive();
+    if (!active) {
+      sessionManager.activeSessionId = null;
+      sessionManager.save();
+    } else {
+      sessionManager.ensureDefaultForProject(active.id);
+      if (!sessionManager.findById(sessionManager.activeSessionId)) {
+        const remaining = sessionManager.listForProject(active.id);
+        if (remaining.length > 0) {
+          sessionManager.switchTo(remaining[0].id);
+        }
+      }
+    }
+
     return { ok: true, state: projectManager.getAppState() };
   });
 
@@ -278,6 +476,9 @@ function registerAll(ctx) {
 
   ipcMain.handle("session:list", () => {
     const project = projectManager.getActive();
+    if (!project) {
+      return { sessions: [], activeSessionId: null };
+    }
     return {
       sessions: sessionManager.listForProject(project.id),
       activeSessionId: sessionManager.activeSessionId,
@@ -285,16 +486,23 @@ function registerAll(ctx) {
   });
 
   ipcMain.handle("session:create", (_event, title, projectId) => {
-    const pid = projectId || projectManager.getActive().id;
+    const pid = projectId || projectManager.getActive()?.id;
+    if (!pid) return { ok: false, error: "NO_PROJECT" };
     const session = sessionManager.create(pid, title);
-    sessionManager.clearConversation(session.id);
+    ensureSessionRunner(ctx, session.id);
     return { ok: true, session: { id: session.id, title: session.title, projectId: pid } };
   });
 
   ipcMain.handle("session:switch", (_event, sessionId) => {
     sessionManager.switchTo(sessionId);
-    const session = sessionManager.getActive();
-    return { ok: true, conversation: session ? session.messages : [] };
+    ensureSessionRunner(ctx, sessionId);
+    const session = sessionManager.findById(sessionId);
+    return {
+      ok: true,
+      sessionId,
+      conversation: session?.messages || [],
+      runnerActive: runnerPool.has(sessionId),
+    };
   });
 
   ipcMain.handle("session:rename", (_event, sessionId, title) => {
@@ -305,171 +513,94 @@ function registerAll(ctx) {
   });
 
   ipcMain.handle("session:delete", (_event, sessionId) => {
+    runnerPool.terminateSession(sessionId);
     const result = sessionManager.delete(sessionId);
     if (result !== "OK") return { ok: false, error: result };
     return { ok: true };
   });
 
   ipcMain.handle("session:archive", (_event, sessionId) => {
+    runnerPool.terminateSession(sessionId);
     sessionManager.archive(sessionId);
     return { ok: true };
   });
 
-  // --- Assistant -----------------------------------------------------------
+  // --- Assistant (stream-json) ---------------------------------------------
 
   ipcMain.handle("assistant:input", (_event, payload) => {
     const text = typeof payload === "string" ? payload : payload.text;
-    const files = (typeof payload === "object" && payload.files) ? payload.files : [];
+    const files = typeof payload === "object" && payload.files ? payload.files : [];
 
-    const prompt = String(text || "").trim();
-    if (!prompt && files.length === 0) return { ok: false, error: "EMPTY" };
-    if (runner.isBusy()) return { ok: false, error: "BUSY" };
-
-    const project = projectManager.getActive();
     const session = sessionManager.getActive();
     if (!session) return { ok: false, error: "NO_SESSION" };
 
-    handleClaude(ctx, session, project, prompt, files);
+    const blocked = diagnoseSendBlocker(ctx, session.id);
+    if (blocked) {
+      console.error("[assistant:input]", blocked.error, blocked.detail);
+      return { ok: false, error: blocked.error, detail: blocked.detail };
+    }
+
+    const line = buildInputLine(text, files);
+    if (!line) return { ok: false, error: "EMPTY" };
+
+    const ensured = ensureSessionRunner(ctx, session.id);
+    const runner = ensured.runner;
+    if (!runner) {
+      return {
+        ok: false,
+        error: ensured.error || "RUNNER_ERROR",
+        detail:
+          ensured.detail ||
+          "无法启动助手进程，请查看终端日志或重启应用。",
+      };
+    }
+
+    if (runner.isBusy() || activeTurns.has(session.id)) {
+      return { ok: false, error: "BUSY" };
+    }
+
+    const fileMetadata = files.map((f) => ({
+      id: f.id,
+      name: f.name,
+      type: f.type,
+      size: f.size,
+      isImage: f.isImage,
+    }));
+
+    turnOutputs.set(session.id, "");
+    activeTurns.add(session.id);
+
+    const sent = runner.sendUserMessage(line);
+    if (!sent) {
+      activeTurns.delete(session.id);
+      turnOutputs.delete(session.id);
+      return { ok: false, error: "BUSY" };
+    }
+
+    sessionManager.pushMessageTo(
+      session.id,
+      "user",
+      String(text || "").trim(),
+      fileMetadata,
+    );
+
     return { ok: true };
   });
+
+  warmupActiveRunner(ctx);
 
   ipcMain.handle("assistant:interrupt", () => {
-    runner.interrupt();
     const session = sessionManager.getActive();
-    if (session) sessionManager.setStatus(session.id, "idle");
-    sendToRenderer(mainWindow, "assistant:done", { code: null, sessionId: session?.id });
-    return { ok: true };
-  });
+    if (!session) return { ok: false, error: "NO_SESSION" };
 
-  ipcMain.handle("assistant:restart", () => {
-    runner.terminate();
-    const session = sessionManager.getActive();
-    if (session) {
-      sessionManager.clearConversation(session.id);
-      sessionManager.setStatus(session.id, "idle");
+    const runner = runnerPool.get(session.id);
+    if (!runner?.isBusy() && !activeTurns.has(session.id)) {
+      return { ok: true };
     }
-    sendToRenderer(mainWindow, "assistant:status", { state: "ready", sessionId: session?.id });
+
+    runnerPool.interrupt(session.id);
     return { ok: true };
-  });
-
-  // --- File Tree -----------------------------------------------------------
-
-  ipcMain.handle("filetree:get", (_event, projectId) => {
-    const tree = projectManager.scanDirectory(projectId || projectManager.getActive().id);
-    return { ok: true, tree };
-  });
-
-  ipcMain.handle("filetree:watch", (_event, projectId) => {
-    const project = projectManager.find(projectId) || projectManager.getActive();
-    if (!project) return { ok: false };
-    fileWatcher.watch(project.id, project.path);
-    return { ok: true };
-  });
-
-  ipcMain.handle("filetree:unwatch", (_event, projectId) => {
-    fileWatcher.unwatch(projectId);
-    return { ok: true };
-  });
-
-  // --- Diff ----------------------------------------------------------------
-
-  ipcMain.handle("diff:get", async (_event, projectId) => {
-    const project = projectManager.find(projectId) || projectManager.getActive();
-    if (!project) return { ok: false };
-    const result = await diffRunner.getDiff(project.path);
-    return { ok: true, ...result };
-  });
-
-  ipcMain.handle("diff:accept", async (_event, projectId, filePaths) => {
-    const project = projectManager.find(projectId) || projectManager.getActive();
-    if (!project) return { ok: false };
-    const result = await diffRunner.acceptFiles(project.path, filePaths);
-    return result;
-  });
-
-  ipcMain.handle("diff:reject", async (_event, projectId, filePaths) => {
-    const project = projectManager.find(projectId) || projectManager.getActive();
-    if (!project) return { ok: false };
-    const result = await diffRunner.rejectFiles(project.path, filePaths);
-    return result;
-  });
-
-  // --- Terminal ------------------------------------------------------------
-
-  ipcMain.handle("terminal:create", (_event, { terminalId, cwd, cols, rows }) => {
-    terminalManager.create(terminalId, { cwd, cols, rows });
-    return { ok: true };
-  });
-
-  ipcMain.handle("terminal:write", (_event, terminalId, data) => {
-    terminalManager.write(terminalId, data);
-    return { ok: true };
-  });
-
-  ipcMain.handle("terminal:resize", (_event, terminalId, cols, rows) => {
-    terminalManager.resize(terminalId, cols, rows);
-    return { ok: true };
-  });
-
-  ipcMain.handle("terminal:destroy", (_event, terminalId) => {
-    terminalManager.destroy(terminalId);
-    return { ok: true };
-  });
-
-  // --- Templates -----------------------------------------------------------
-
-  ipcMain.handle("templates:list", () => {
-    return { ok: true, templates: templateStore.listAll() };
-  });
-
-  ipcMain.handle("templates:add", (_event, title, prompt) => {
-    const template = templateStore.add(title, prompt);
-    return { ok: true, template };
-  });
-
-  ipcMain.handle("templates:remove", (_event, id) => {
-    templateStore.remove(id);
-    return { ok: true };
-  });
-
-  // --- Plugins -------------------------------------------------------------
-
-  ipcMain.handle("plugins:list", () => pluginManager.getMarketState());
-
-  ipcMain.handle("plugins:install", (_event, pluginId, scope) => {
-    if (!pluginManager.install(pluginId, scope)) return { ok: false, error: "INVALID" };
-    return { ok: true, state: pluginManager.getMarketState() };
-  });
-
-  ipcMain.handle("plugins:set-enabled", (_event, pluginId, scope, enabled) => {
-    if (!pluginManager.setEnabled(pluginId, scope, enabled)) return { ok: false, error: "NOT_INSTALLED" };
-    return { ok: true, state: pluginManager.getMarketState() };
-  });
-
-  ipcMain.handle("plugins:uninstall", (_event, pluginId, scope) => {
-    pluginManager.uninstall(pluginId, scope);
-    return { ok: true, state: pluginManager.getMarketState() };
-  });
-
-  // --- File watcher events to renderer -------------------------------------
-
-  fileWatcher.on("change", ({ projectId, eventType, filename }) => {
-    sendToRenderer(mainWindow, "filetree:change", { projectId, eventType, filename });
-  });
-
-  // --- Terminal events to renderer -----------------------------------------
-
-  terminalManager.on("data", ({ terminalId, data }) => {
-    sendToRenderer(mainWindow, "terminal:data", { terminalId, data });
-  });
-
-  terminalManager.on("exit", ({ terminalId, exitCode }) => {
-    sendToRenderer(mainWindow, "terminal:exit", { terminalId, exitCode });
-  });
-
-  terminalManager.on("error", ({ terminalId, message }) => {
-    sendToRenderer(mainWindow, "terminal:error", { terminalId, message });
   });
 }
 
-module.exports = { registerAll };
+module.exports = { registerAll, ensureSessionRunner, warmupActiveRunner };

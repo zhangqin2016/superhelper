@@ -1,23 +1,33 @@
-# Terminal Chat Claude
+# 智能工作台（桌面 Claude）
 
-一个本地桌面聊天框，底层连接真实 PTY。应用启动后默认执行 `claude`，聊天框输入会写入 Claude Code 会话，stdout/stderr 会流式显示在聊天窗口和右侧终端面板。
+与 Claude Code App 类似的体验：聊天气泡、流式回复、工具步骤卡片；每个对话对应一个**长驻** Claude 进程（`stream-json` 协议），不是每条消息重新启动，也不是把终端 TUI 嵌进窗口。
 
 ## 使用
 
 ```bash
 npm install
-npm start
+npm run start:dev    # 使用本机 claude + ~/.claude
+npm start            # 使用内置 CLI + 应用配置目录
 ```
 
-默认命令是 `claude`。如果你的 Claude Code 命令名不同，可以这样启动：
+## 架构
+
+| 组件 | 说明 |
+|------|------|
+| `claude-session.js` | 每会话一个 `claude -p --input-format stream-json --output-format stream-json` 子进程 |
+| `session-runner-pool.js` | 管理多会话子进程 |
+| `message.js` | 多会话聊天气泡 UI、工具卡片、流式 Markdown |
+| `spawn-env.js` | 模型预设、配置目录、PATH |
+
+切换设置中的模型或权限模式会重启所有会话进程，使新参数在**下一次发送**时生效。
+
+## 测试
 
 ```bash
-DEFAULT_AGENT_COMMAND="claude" npm start
+npm run test:unit
 ```
 
-## 安全边界
+## 开发
 
-- Renderer 页面不能直接执行系统命令，只能向主进程已有 PTY 写入输入。
-- PTY 工作目录固定为本项目目录。
-- 默认启动的是 Claude Code；实际命令执行仍走 Claude Code 自身的权限确认机制。
-- 后续如果要让 AI 直接生成并执行 shell 命令，应增加命令白名单、危险命令二次确认、审计日志和目录沙箱。
+- macOS / Windows：无需原生 PTY 模块
+- 需本机或内置 `claude` CLI

@@ -1,0 +1,27 @@
+{
+  "activePresetId": "pro",
+  "presets": [
+    {
+      "id": "pro",
+      "label": "DeepSeek Pro",
+      "description": "deepseek-v4-pro，适合复杂任务",
+      "env": {
+        "ANTHROPIC_MODEL": "deepseek-v4-pro",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-pro",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-pro"
+      }
+    },
+    {
+      "id": "flash",
+      "label": "DeepSeek Flash",
+      "description": "deepseek-v4-flash，响应更快",
+      "env": {
+        "ANTHROPIC_MODEL": "deepseek-v4-flash",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-flash",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-flash",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
+        "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-v4-flash"
+      }
+    }
+  ]
+}

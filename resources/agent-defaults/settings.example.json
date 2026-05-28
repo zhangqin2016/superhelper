@@ -1,0 +1,17 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.example.com/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "your-api-key-here",
+    "ANTHROPIC_MODEL": "your-model-id",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "your-model-id",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "your-model-id",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "your-fast-model-id",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "your-fast-model-id",
+    "CLAUDE_CODE_EFFORT_LEVEL": "max",
+    "API_TIMEOUT_MS": "300000",
+    "VISION_API_KEY": "your-vision-api-key",
+    "VISION_MODEL": "qwen-vl-plus",
+    "DASHSCOPE_API_KEY": "your-dashscope-key",
+    "DASHSCOPE_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  }
+}
