@@ -35,34 +35,71 @@ jobs:
       - name: Install CLI
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           $version = "${{ inputs.package_version }}".Trim()
           if ($version) {
             npm install -g "@anthropic-ai/claude-code@$version"
           } else {
             npm install -g @anthropic-ai/claude-code
           }
-          npm list -g @anthropic-ai/claude-code --depth=0
+          npm list -g @anthropic-ai/claude-code @anthropic-ai/claude-code-win32-x64 --depth=0
 
-      - name: Copy claude.exe
+      - name: Link native binary (postinstall)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $globalModules = npm root -g
+          $installScript = Join-Path $globalModules "@anthropic-ai/claude-code/install.cjs"
+          if (-not (Test-Path $installScript)) {
+            throw "install.cjs not found at $installScript"
+          }
+          node $installScript
+
+      - name: Copy native claude.exe
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $destDir = "bundles/win32-x64"
           $dest = Join-Path $destDir "claude.exe"
           New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-          $cmd = Get-Command claude -ErrorAction Stop
-          $source = $cmd.Source
-          if ($source -match '\.cmd$') {
-            $exeCandidate = Join-Path (Split-Path $source -Parent) "claude.exe"
-            if (Test-Path $exeCandidate) { $source = $exeCandidate }
+
+          $globalModules = npm root -g
+          $nativePkg = Join-Path $globalModules "@anthropic-ai/claude-code-win32-x64"
+          $source = $null
+
+          if (Test-Path $nativePkg) {
+            $candidate = Get-ChildItem -Path $nativePkg -Recurse -Filter "claude.exe" |
+              Sort-Object Length -Descending |
+              Select-Object -First 1
+            if ($candidate) { $source = $candidate.FullName }
           }
+
+          if (-not $source) {
+            $cmd = Get-Command claude -ErrorAction SilentlyContinue
+            if ($cmd) { $source = $cmd.Source }
+          }
+
+          if (-not $source -or -not (Test-Path $source)) {
+            Write-Host "Installed @anthropic-ai packages:"
+            Get-ChildItem $globalModules -Directory -Filter "@anthropic-ai/*" |
+              ForEach-Object { Write-Host " - $($_.Name)" }
+            throw "Could not locate Windows native claude.exe"
+          }
+
+          $header = [System.IO.File]::ReadAllBytes($source)[0..1]
+          if ($header[0] -ne 0x4D -or $header[1] -ne 0x5A) {
+            throw "Not a PE executable (expected MZ header): $source"
+          }
+
+          Write-Host "Copying $source ($((Get-Item $source).Length) bytes)"
           Copy-Item -Force $source $dest
           Get-Item $dest | Format-List FullName, Length
 
       - name: Smoke test
         shell: pwsh
         run: |
-          & bundles/win32-x64/claude.exe --version
+          $ErrorActionPreference = "Stop"
+          & "bundles/win32-x64/claude.exe" --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload artifact

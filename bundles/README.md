@@ -34,12 +34,13 @@ chmod +x ./bundles/darwin-x64/claude
    npm run dist:win
    ```
 
-或在 Windows 本机手动安装后复制：
+或在 Windows 本机手动安装后复制（须为 **win32-x64 原生 PE**，不是 npm 下的 `.cmd` 包装）：
 
 ```powershell
 npm install -g @anthropic-ai/claude-code
-# 将 (Get-Command claude).Source 或同目录下的 claude.exe 复制到：
-# .\bundles\win32-x64\claude.exe
+node "$(npm root -g)\@anthropic-ai\claude-code\install.cjs"
+$native = "$(npm root -g)\@anthropic-ai\claude-code-win32-x64"
+Copy-Item (Get-ChildItem $native -Recurse -Filter claude.exe | Select-Object -First 1).FullName .\bundles\win32-x64\claude.exe
 ```
 
 # Linux x64
