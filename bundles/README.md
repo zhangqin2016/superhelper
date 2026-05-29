@@ -69,7 +69,7 @@ resources/
 
 ## 运行逻辑
 
-1. 启动时从 `bundles/<平台>/` 复制 CLI 到应用数据 `claude-bin/`
+1. 启动时从 `bundles/<平台>/` 复制 CLI（仓库内仍为 `claude` / `claude.exe`）到应用数据 `claude-bin/`，安装后文件名为 **`lily-workbench.exe`（Windows）** 或 **`lily-workbench`（macOS/Linux）**，任务管理器中不再显示 `claude`
 2. 子进程使用独立 `CLAUDE_CONFIG_DIR`（应用数据内）
 3. 仅注入当前模型预设的环境变量，不继承用户 `ANTHROPIC_*`
 4. **不会**使用用户本机已安装的 `claude`

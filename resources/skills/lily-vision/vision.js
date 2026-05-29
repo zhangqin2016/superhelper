@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 识图脚本 — 基于 https://github.com/asuojun/claude-vision-skill
+ * 识图脚本 — Lily Workbench 内置技能
  * 支持 VISION_API_KEY / DASHSCOPE_API_KEY，VISION_MODEL
  */
 

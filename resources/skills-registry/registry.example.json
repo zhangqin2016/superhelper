@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-05-28T00:00:00Z",
+  "publisher": "示例企业技能目录",
+  "registryUrl": "https://your-server.com/skills/registry.json",
+  "skills": [
+    {
+      "id": "excel-read",
+      "name": "Excel 分析",
+      "description": "读取 xlsx/csv，输出表格预览与基础统计。",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "downloadUrl": "https://your-server.com/skills/excel-read-1.0.0.skillpack.zip",
+      "sha256": "请替换为实际 zip 文件的 sha256",
+      "minAppVersion": "0.1.0",
+      "sizeBytes": 0,
+      "changelog": "首个版本。"
+    }
+  ]
+}

@@ -5,9 +5,11 @@ const { ipcMain, dialog, shell } = require("electron");
 const FileStagingManager = require("./file-staging-manager");
 const { listPresetsPublic, setActivePreset } = require("./model-presets");
 const { resolveAgentCommand } = require("./agent-command");
-const { sanitizeError, appendTextSegment } = require("./claude-runner");
+const { sanitizeError, appendTextSegment } = require("./agent-runner");
 const { notifySessionFinished } = require("./background-notify");
 const { fileStagingDir } = require("./config");
+const skillManager = require("./skill-manager");
+const { resolveRuntimeIconDataUrl } = require("./app-icon");
 
 function sendToRenderer(window, channel, payload) {
   if (window && !window.isDestroyed()) {
@@ -54,7 +56,7 @@ function diagnoseSendBlocker(ctx, sessionId) {
   if (!cliPath) {
     return {
       error: "NO_CLI",
-      detail: "内置 Claude 可执行文件未安装。请完全退出应用后重新打开。",
+      detail: "内置助手引擎未安装。请完全退出应用后重新打开。",
     };
   }
   if (!fs.existsSync(cliPath)) {
@@ -100,7 +102,7 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("stderr", (text) => {
-    console.error(`[claude stderr ${sessionId}]`, text);
+    console.error(`[agent stderr ${sessionId}]`, text);
   });
 
   runner.on("tool-using", (data) => {
@@ -116,6 +118,10 @@ function wireRunner(ctx, runner) {
       sessionManager.setStatus(sessionId, "running");
     }
     sendToRenderer(ctx.mainWindow, "assistant:status", { state, sessionId });
+  });
+
+  runner.on("agent-resume-id", (agentResumeId) => {
+    sessionManager.setAgentResumeId(sessionId, agentResumeId);
   });
 
   runner.on("done", ({ code, output, interrupted }) => {
@@ -169,7 +175,7 @@ function wireRunner(ctx, runner) {
 }
 
 /**
- * @returns {{ runner: import('./claude-session').ClaudeSession | null, error?: string, detail?: string }}
+ * @returns {{ runner: import('./agent-session').AgentSession | null, error?: string, detail?: string }}
  */
 function ensureSessionRunner(ctx, sessionId) {
   const { sessionManager, projectManager, runnerPool } = ctx;
@@ -196,7 +202,7 @@ function ensureSessionRunner(ctx, sessionId) {
     return {
       runner: null,
       error: "NO_CLI",
-      detail: "内置 Claude 可执行文件未安装。请完全退出应用后重新打开。",
+      detail: "内置助手引擎未安装。请完全退出应用后重新打开。",
     };
   }
   if (!fs.existsSync(cliPath)) {
@@ -214,7 +220,6 @@ function ensureSessionRunner(ctx, sessionId) {
     };
   }
 
-  const agentDefaults = ctx.agentBootstrap?.agentDefaults || {};
   const stagingDir = fileStagingDir();
   try {
     fs.mkdirSync(stagingDir, { recursive: true });
@@ -222,8 +227,9 @@ function ensureSessionRunner(ctx, sessionId) {
     console.warn("[runner] could not create staging dir:", err.message);
   }
   const extra = {
-    disallowedTools: agentDefaults.disallowedTools || [],
+    disallowedTools: skillManager.getDisallowedTools(),
     stagingDir,
+    resumeSessionId: session.agentResumeId || null,
   };
 
   try {
@@ -263,6 +269,8 @@ function registerAll(ctx) {
     mainWindow, projectManager, sessionManager,
     stagingManager, runnerPool,
   } = ctx;
+
+  ipcMain.handle("app:get-icon-url", () => resolveRuntimeIconDataUrl());
 
   // --- Files ---------------------------------------------------------------
 
@@ -397,6 +405,134 @@ function registerAll(ctx) {
     return result.ok
       ? { ok: true, ...require("./permission-settings").listPermissionsPublic() }
       : result;
+  });
+
+  ipcMain.handle("search:list", () => ({
+    ok: true,
+    ...require("./search-settings").listSearchSettingsPublic(),
+  }));
+
+  ipcMain.handle("search:set-provider", (_event, providerId) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const result = require("./search-settings").setSearchProvider(providerId);
+    return result.ok
+      ? { ok: true, ...require("./search-settings").listSearchSettingsPublic() }
+      : result;
+  });
+
+  ipcMain.handle("search:set-searxng-url", (_event, url) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const result = require("./search-settings").setSearxngUrl(url);
+    return result.ok
+      ? { ok: true, ...require("./search-settings").listSearchSettingsPublic() }
+      : result;
+  });
+
+  // --- Skills (P1) ---------------------------------------------------------
+
+  ipcMain.handle("skills:list", () => ({
+    ok: true,
+    skills: skillManager.listSkillsPublic(),
+  }));
+
+  ipcMain.handle("skills:set-enabled", (_event, payload) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const id = payload?.id;
+    const enabled = Boolean(payload?.enabled);
+    if (!id) return { ok: false, error: "NOT_FOUND" };
+    const result = skillManager.setSkillEnabled(id, enabled);
+    if (result.ok) {
+      runnerPool.terminateAll();
+      if (ctx.agentBootstrap?.agentDefaults) {
+        ctx.agentBootstrap.agentDefaults.disallowedTools = skillManager.getDisallowedTools();
+      }
+    }
+    return result;
+  });
+
+  ipcMain.handle("skills:refresh", () => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const result = skillManager.refreshSkillsConfig();
+    runnerPool.terminateAll();
+    return result;
+  });
+
+  ipcMain.handle("skills:restore-bundled", (_event, payload) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const id = payload?.id;
+    if (!id) return { ok: false, error: "NOT_FOUND" };
+    const result = skillManager.restoreBundledSkill(id);
+    if (result.ok) {
+      runnerPool.terminateAll();
+    }
+    return result;
+  });
+
+  ipcMain.handle("skills:get-registry-url", () => ({
+    ok: true,
+    registryUrl: skillManager.getRegistryUrl(),
+  }));
+
+  ipcMain.handle("skills:set-registry-url", (_event, payload) => {
+    const url = payload?.url ?? payload;
+    return skillManager.setRegistryUrl(url);
+  });
+
+  ipcMain.handle("skills:check-updates", async () => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    return skillManager.checkRegistryUpdates({ fetch: true });
+  });
+
+  ipcMain.handle("skills:install", async (_event, payload) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const id = payload?.id;
+    const version = payload?.version;
+    if (!id) return { ok: false, error: "NOT_FOUND" };
+    const result = await skillManager.installFromRegistry(id, version);
+    if (result.ok) {
+      runnerPool.terminateAll();
+    }
+    return result;
+  });
+
+  ipcMain.handle("skills:update", async (_event, payload) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const id = payload?.id;
+    if (!id) return { ok: false, error: "NOT_FOUND" };
+    const result = await skillManager.updateFromRegistry(id);
+    if (result.ok) {
+      runnerPool.terminateAll();
+    }
+    return result;
+  });
+
+  ipcMain.handle("skills:uninstall", (_event, payload) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const id = payload?.id;
+    if (!id) return { ok: false, error: "NOT_FOUND" };
+    const result = skillManager.uninstallRemoteSkill(id);
+    if (result.ok) {
+      runnerPool.terminateAll();
+    }
+    return result;
   });
 
   // --- Projects ------------------------------------------------------------

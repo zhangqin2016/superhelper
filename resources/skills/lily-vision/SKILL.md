@@ -1,5 +1,5 @@
 ---
-name: claude-vision
+name: lily-vision
 description: 为无原生识图能力的模型提供图片识别。遇到图片时使用 vision.js，不要用 Read 读取图片。
 ---
 

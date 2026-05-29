@@ -1,12 +1,12 @@
 "use strict";
 
-const { ClaudeSession } = require("./claude-session");
+const { AgentSession } = require("./agent-session");
 const { resolveAgentCommand } = require("./agent-command");
 const { getActivePermissionMode } = require("./permission-settings");
 
 class SessionRunnerPool {
   constructor() {
-    /** @type {Map<string, ClaudeSession>} */
+    /** @type {Map<string, AgentSession>} */
     this._sessions = new Map();
   }
 
@@ -21,7 +21,7 @@ class SessionRunnerPool {
   /**
    * @param {string} sessionId
    * @param {string} cwd
-   * @param {{ stagingDir?: string, disallowedTools?: string[] }} [extra]
+   * @param {{ stagingDir?: string, disallowedTools?: string[], resumeSessionId?: string | null }} [extra]
    */
   ensure(sessionId, cwd, extra = {}) {
     const agentCommand = resolveAgentCommand();
@@ -31,7 +31,7 @@ class SessionRunnerPool {
 
     let runner = this._sessions.get(sessionId);
     if (!runner) {
-      runner = new ClaudeSession(sessionId);
+      runner = new AgentSession(sessionId);
       this._sessions.set(sessionId, runner);
     }
 
@@ -40,6 +40,7 @@ class SessionRunnerPool {
       permissionMode: getActivePermissionMode(),
       disallowedTools: extra.disallowedTools || [],
       stagingDir: extra.stagingDir,
+      resumeSessionId: extra.resumeSessionId || null,
     });
 
     return runner;

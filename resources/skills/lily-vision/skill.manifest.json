@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-vision",
+  "name": "识图",
+  "version": "1.0.0",
+  "description": "为无原生识图能力的模型提供图片识别。",
+  "minAppVersion": "0.1.0",
+  "runtime": "node",
+  "entry": "vision.js",
+  "placeholders": {
+    "{{VISION_SCRIPT}}": "vision.js"
+  },
+  "permissions": {
+    "network": true,
+    "filesystem": "read",
+    "subprocess": "entry-only"
+  },
+  "guideMd": {
+    "title": "识图能力（必读）",
+    "priority": 10,
+    "body": "底层模型不具备原生识图能力。Read 工具无法读取图片内容。\n遇到图片时，不要用 Read，改用：\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" \"<图片绝对路径>\" \"用中文描述这张图片的内容\"\n```\n\n网络图片：\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" --url \"<图片链接>\" \"用中文描述这张图片的内容\"\n```\n\n对每张图片依次执行，拿到所有文字描述后再回复。"
+  }
+}

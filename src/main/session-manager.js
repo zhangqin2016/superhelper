@@ -235,6 +235,23 @@ class SessionManager {
     this.save();
   }
 
+  setAgentResumeId(sessionId, agentResumeId) {
+    const session = this._find(sessionId);
+    if (!session || !agentResumeId) return false;
+    if (session.agentResumeId === agentResumeId) return true;
+    session.agentResumeId = agentResumeId;
+    this.save();
+    return true;
+  }
+
+  clearAgentResumeId(sessionId) {
+    const session = this._find(sessionId);
+    if (!session || !session.agentResumeId) return false;
+    delete session.agentResumeId;
+    this.save();
+    return true;
+  }
+
   pushMessage(role, content, files = null) {
     const session = this.getActive();
     if (!session) return;
@@ -286,6 +303,7 @@ class SessionManager {
     const session = this._find(sessionId) || this.getActive();
     if (!session) return;
     session.messages = [];
+    delete session.agentResumeId;
     this.save();
   }
 

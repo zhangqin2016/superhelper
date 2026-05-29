@@ -1,5 +1,5 @@
 # Build Windows claude.exe on GitHub-hosted runner; download artifact after run.
-# Place artifact at bundles/win32-x64/claude.exe then: npm run dist:win
+# Place artifact at bundles/win32-x64/engine-upstream.exe then: npm run dist:win
 
 name: Bundle Windows CLI
 
@@ -57,12 +57,12 @@ jobs:
           }
           node $installScript
 
-      - name: Copy native claude.exe
+      - name: Copy native engine binary
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $destDir = "bundles/win32-x64"
-          $dest = Join-Path $destDir "claude.exe"
+          $dest = Join-Path $destDir "engine-upstream.exe"
           New-Item -ItemType Directory -Force -Path $destDir | Out-Null
 
           $globalModules = (npm root -g).Trim()
@@ -116,13 +116,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          & "bundles/win32-x64/claude.exe" --version
+          & "bundles/win32-x64/engine-upstream.exe" --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: win32-x64-claude-cli
-          path: bundles/win32-x64/claude.exe
+          name: win32-x64-engine-cli
+          path: bundles/win32-x64/engine-upstream.exe
           retention-days: 30
           if-no-files-found: error

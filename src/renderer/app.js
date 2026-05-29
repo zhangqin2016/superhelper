@@ -9,6 +9,8 @@ import { wireMessageIpc, initMessageUi } from "./modules/message.js";
 import { renderProjectTree, initAddProject, initTopbarSessionRename } from "./modules/project-tree.js";
 import { initSettingsPanel } from "./modules/settings-panel.js";
 import { initPermissionSettings } from "./modules/permission-settings.js";
+import { initSearchSettings } from "./modules/search-settings.js";
+import { initSkillSettings } from "./modules/skill-settings.js";
 import { showToast } from "./modules/toast.js";
 import { $ } from "./modules/dom.js";
 
@@ -81,22 +83,28 @@ function initGlobalSearch() {
   });
 }
 
-function bindAppIcons() {
+async function bindAppIcons() {
   try {
-    const url = window.assistantClient?.getAppIconUrl?.();
-    if (!url) return;
+    const url = await window.assistantClient?.getAppIconUrl?.();
+    if (!url) {
+      console.warn("[app-icon] no runtime icon URL");
+      return;
+    }
     for (const img of document.querySelectorAll(".app-logo, .settings-about-logo")) {
       img.src = url;
+      img.addEventListener("error", () => {
+        console.warn("[app-icon] failed to render logo");
+      }, { once: true });
     }
     const favicon = document.querySelector('link[rel="icon"]');
     if (favicon) favicon.href = url;
-  } catch {
-    // non-fatal
+  } catch (err) {
+    console.warn("[app-icon] bind failed:", err);
   }
 }
 
 async function init() {
-  bindAppIcons();
+  await bindAppIcons();
   initMessageUi();
   wireMessageIpc();
 
@@ -109,6 +117,8 @@ async function init() {
   initTopbarSessionRename();
   initSettingsPanel();
   initPermissionSettings();
+  initSearchSettings();
+  initSkillSettings();
 
   await refreshState();
   const state = await window.assistantClient.getFullState();

@@ -3,16 +3,17 @@
 const { EventEmitter } = require("node:events");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
-const { appendTextSegment, sanitizeError } = require("./claude-runner");
-const { buildClaudeSpawnEnv } = require("./spawn-env");
+const { appendTextSegment, sanitizeError } = require("./agent-runner");
+const { buildAgentSpawnEnv } = require("./spawn-env");
+const { sameSpawnOptions } = require("./runner-spawn-options");
 
 /**
- * One long-lived `claude -p --input-format stream-json` process per app session.
+ * One long-lived engine process per app session (`stream-json` protocol).
  * Multi-turn: each user message is one JSON line on stdin.
  */
-class ClaudeSession extends EventEmitter {
+class AgentSession extends EventEmitter {
   /**
-   * @param {string} sessionId App session id (not Claude's session_id).
+   * @param {string} sessionId App session id (not the engine resume id).
    */
   constructor(sessionId) {
     super();
@@ -23,7 +24,7 @@ class ClaudeSession extends EventEmitter {
     this.lineBuf = "";
     this.busy = false;
     this.collectedOutput = "";
-    this.claudeSessionId = null;
+    this.agentResumeId = null;
     this.spawnOptions = null;
     /** @type {boolean} True after done/error emitted for the current turn. */
     this._turnSettled = true;
@@ -39,7 +40,7 @@ class ClaudeSession extends EventEmitter {
 
   /**
    * @param {string} cwd
-   * @param {{ agentCommand: string, permissionMode: string, disallowedTools?: string[], stagingDir?: string }} options
+   * @param {{ agentCommand: string, permissionMode: string, disallowedTools?: string[], stagingDir?: string, resumeSessionId?: string | null }} options
    */
   ensureProcess(cwd, options) {
     if (!cwd || !options?.agentCommand) {
@@ -49,20 +50,31 @@ class ClaudeSession extends EventEmitter {
       throw new Error(`工作目录不存在：${cwd}`);
     }
     if (!fs.existsSync(options.agentCommand)) {
-      throw new Error(`找不到 Claude CLI：${options.agentCommand}`);
+      throw new Error(`找不到助手引擎：${options.agentCommand}`);
     }
+
+    if (options.resumeSessionId && !this.agentResumeId) {
+      this.agentResumeId = options.resumeSessionId;
+    }
+
+    const spawnOpts = {
+      agentCommand: options.agentCommand,
+      permissionMode: options.permissionMode,
+      disallowedTools: options.disallowedTools,
+      stagingDir: options.stagingDir,
+    };
 
     const same =
       this.isAlive() &&
       this.cwd === cwd &&
-      this.spawnOptions?.agentCommand === options.agentCommand &&
-      this.spawnOptions?.permissionMode === options.permissionMode;
+      this.spawnOptions &&
+      sameSpawnOptions(this.spawnOptions, spawnOpts);
 
     if (same) return;
 
     this.terminate();
     this.cwd = cwd;
-    this.spawnOptions = { ...options };
+    this.spawnOptions = spawnOpts;
     this._spawn();
   }
 
@@ -85,10 +97,13 @@ class ClaudeSession extends EventEmitter {
     if (opts.stagingDir && fs.existsSync(opts.stagingDir)) {
       args.push("--add-dir", opts.stagingDir);
     }
+    if (this.agentResumeId) {
+      args.push("--resume", this.agentResumeId);
+    }
 
     this.process = spawn(opts.agentCommand, args, {
       cwd: this.cwd,
-      env: buildClaudeSpawnEnv(),
+      env: buildAgentSpawnEnv(),
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -220,6 +235,7 @@ class ClaudeSession extends EventEmitter {
     this.spawnOptions = null;
     this.lineBuf = "";
     this.collectedOutput = "";
+    // agentResumeId intentionally kept for --resume on next spawn
   }
 
   _completeTurn(payload) {
@@ -269,7 +285,10 @@ class ClaudeSession extends EventEmitter {
     switch (ev.type) {
       case "system":
         if (ev.subtype === "init" && ev.session_id) {
-          this.claudeSessionId = ev.session_id;
+          if (this.agentResumeId !== ev.session_id) {
+            this.agentResumeId = ev.session_id;
+            this.emit("agent-resume-id", ev.session_id);
+          }
         }
         break;
 
@@ -334,4 +353,4 @@ class ClaudeSession extends EventEmitter {
   }
 }
 
-module.exports = { ClaudeSession };
+module.exports = { AgentSession };

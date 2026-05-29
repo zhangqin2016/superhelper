@@ -2,24 +2,32 @@
 
 const path = require("node:path");
 const { app } = require("electron");
-const { userHome, userDataPath, agentConfigDir } = require("./config");
+const { userHome, agentBinDir, agentConfigDir } = require("./config");
 const { getActivePresetEnv } = require("./model-presets");
-const { loadSettingsEnv } = require("./agent-settings");
+const { getSearchSpawnEnv } = require("./search-settings");
+const { normalizeToLilyEnv, toEngineEnv } = require("./agent-env");
 const { ensureRuntimeNodeShim, runtimeBinDir } = require("./runtime-node");
 
-function buildClaudeSpawnEnv() {
+function buildAgentSpawnEnv() {
   ensureRuntimeNodeShim();
+  const { loadSettingsEnv } = require("./agent-settings");
   const home = userHome();
-  const env = {
-    ...process.env,
+  const lilyEnv = normalizeToLilyEnv({
     ...loadSettingsEnv(),
     ...getActivePresetEnv(),
+  });
+  const engineEnv = toEngineEnv(lilyEnv);
+
+  const env = {
+    ...process.env,
+    ...engineEnv,
+    ...getSearchSpawnEnv(),
     TERM: "dumb",
     NO_COLOR: "1",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     PATH: [
       runtimeBinDir(),
-      userDataPath("claude-bin"),
+      agentBinDir(),
       path.join(home, ".local", "bin"),
       path.join(home, ".npm-global", "bin"),
       "/opt/homebrew/bin",
@@ -30,8 +38,7 @@ function buildClaudeSpawnEnv() {
     ].join(path.delimiter),
   };
 
-  const devSystem =
-    !app.isPackaged && process.env.DEV_USE_SYSTEM_CLAUDE === "1";
+  const devSystem = !app.isPackaged && process.env.DEV_USE_SYSTEM_AGENT === "1";
   if (!devSystem) {
     env.CLAUDE_CONFIG_DIR = agentConfigDir();
   }
@@ -39,4 +46,4 @@ function buildClaudeSpawnEnv() {
   return env;
 }
 
-module.exports = { buildClaudeSpawnEnv };
+module.exports = { buildAgentSpawnEnv };

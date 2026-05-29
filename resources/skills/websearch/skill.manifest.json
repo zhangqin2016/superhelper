@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "websearch",
+  "name": "联网搜索",
+  "version": "1.4.0",
+  "description": "默认阿里 IQS 联网搜索，亦支持 SearXNG / DuckDuckGo。",
+  "minAppVersion": "0.1.0",
+  "runtime": "node",
+  "entry": "scripts/websearch.cjs",
+  "placeholders": {
+    "{{WEBSEARCH_SCRIPT}}": "scripts/websearch.cjs"
+  },
+  "replaceNativeTools": ["WebSearch"],
+  "permissions": {
+    "network": true,
+    "filesystem": "none",
+    "subprocess": "entry-only"
+  },
+  "guideMd": {
+    "title": "联网能力（必读）",
+    "priority": 20,
+    "body": "内置 WebSearch / WebFetch 在本应用中不可用，不要调用这两个工具。\n需要查资料、新闻、实时信息时，用联网搜索脚本（默认阿里 IQS，应用已内置；亦可在「设置 → 联网搜索」切换 SearXNG / DuckDuckGo）。\n\n搜索示例：\n\n```\necho '{\"query\":\"搜索关键词\"}' | \"{{NODE_BIN}}\" \"{{WEBSEARCH_SCRIPT}}\"\n```"
+  }
+}

@@ -10,6 +10,7 @@ function iconCandidates(fileName) {
   const list = [];
   if (app.isPackaged) {
     list.push(path.join(process.resourcesPath, "resources", fileName));
+    list.push(path.join(process.resourcesPath, fileName));
   }
   list.push(path.join(PROJECT_ROOT, "resources", fileName));
   return list;
@@ -33,7 +34,14 @@ function resolveRuntimeIconPath() {
 function loadAppIconImage() {
   const iconPath = resolveRuntimeIconPath();
   if (!iconPath) return null;
-  const image = nativeImage.createFromPath(iconPath);
+  let image = nativeImage.createFromPath(iconPath);
+  if (image.isEmpty()) {
+    try {
+      image = nativeImage.createFromBuffer(fs.readFileSync(iconPath));
+    } catch {
+      return null;
+    }
+  }
   if (image.isEmpty()) {
     console.warn("[app-icon] failed to load:", iconPath);
     return null;
@@ -41,8 +49,23 @@ function loadAppIconImage() {
   return image;
 }
 
-/** file:// URL for renderer <img> tags. */
+let cachedDataUrl = null;
+
+/** data: URL for renderer <img> (reliable on Windows; file:// often blocked). */
+function resolveRuntimeIconDataUrl() {
+  if (cachedDataUrl) return cachedDataUrl;
+  const image = loadAppIconImage();
+  if (!image) return null;
+  const dataUrl = image.toDataURL();
+  if (!dataUrl || dataUrl === "data:image/png;base64,") return null;
+  cachedDataUrl = dataUrl;
+  return cachedDataUrl;
+}
+
+/** file:// or data: URL fallback for renderer images. */
 function resolveRuntimeIconUrl() {
+  const dataUrl = resolveRuntimeIconDataUrl();
+  if (dataUrl) return dataUrl;
   const iconPath = resolveRuntimeIconPath();
   return iconPath ? pathToFileURL(iconPath).href : null;
 }
@@ -51,4 +74,5 @@ module.exports = {
   resolveRuntimeIconPath,
   loadAppIconImage,
   resolveRuntimeIconUrl,
+  resolveRuntimeIconDataUrl,
 };

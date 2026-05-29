@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "webfetch",
+  "name": "网页抓取",
+  "version": "1.0.0",
+  "description": "打开链接并读取网页正文，无需 API Key。",
+  "minAppVersion": "0.1.0",
+  "runtime": "node",
+  "entry": "scripts/webfetch.cjs",
+  "placeholders": {
+    "{{WEBFETCH_SCRIPT}}": "scripts/webfetch.cjs"
+  },
+  "replaceNativeTools": ["WebFetch"],
+  "permissions": {
+    "network": true,
+    "filesystem": "none",
+    "subprocess": "entry-only"
+  },
+  "guideMd": {
+    "title": "联网能力（必读）",
+    "priority": 21,
+    "body": "打开链接并读取正文：\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"用户想了解的问题\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\n常见流程：先搜索找到链接，再 webfetch 读具体页面，最后用中文总结并附上来源。"
+  }
+}

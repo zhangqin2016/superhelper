@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>智能工作台</title>
-    <link rel="icon" type="image/png" href="../../resources/icon.png" />
+    <link rel="icon" type="image/png" href="" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -24,7 +24,7 @@
 
       <aside class="left-panel" id="leftPanel">
         <div class="app-brand">
-          <img src="../../resources/icon.png" alt="" class="app-logo" width="32" height="32" />
+          <img src="" alt="" class="app-logo" width="32" height="32" />
           <span class="app-brand-name">智能工作台</span>
         </div>
         <div class="left-top-actions">
@@ -117,6 +117,7 @@
           <h2 id="settingsPanelTitle">设置</h2>
           <button id="settingsCloseBtn" class="settings-panel-close" type="button" aria-label="关闭设置">×</button>
         </header>
+        <div class="settings-panel-body">
         <section class="settings-section">
           <h3 class="settings-section-title">模型</h3>
           <p class="settings-section-desc">选择助手使用的模型预设，网关与密钥由应用内置配置提供。</p>
@@ -127,8 +128,48 @@
           <p class="settings-section-desc">控制助手执行工具时的确认方式。切换后会在下次发送时生效。</p>
           <select id="permissionModeSelect" class="settings-select" aria-label="选择权限模式"></select>
         </section>
+        <section class="settings-section">
+          <h3 class="settings-section-title">联网搜索</h3>
+          <p class="settings-section-desc">选择助手联网查资料时使用的搜索引擎。切换后对新的对话生效。</p>
+          <select id="searchProviderSelect" class="settings-select" aria-label="选择搜索引擎"></select>
+          <div id="searchSearxngUrlRow" class="skills-registry-row search-provider-row">
+            <input
+              id="searchSearxngUrl"
+              class="skills-registry-input"
+              type="url"
+              placeholder="自定义 SearXNG 实例（可选），如 https://searx.example.com"
+              autocomplete="off"
+            />
+            <button id="searchSaveSearxngUrlBtn" class="settings-action-btn" type="button">保存</button>
+          </div>
+          <p id="searchSearxngHint" class="skills-registry-hint">填写自定义 SearXNG 实例后将优先使用；留空则自动尝试内置公共实例。</p>
+        </section>
+        <section class="settings-section">
+          <h3 class="settings-section-title">技能中心</h3>
+          <p class="settings-section-desc">管理助手可用的扩展能力。配置技能目录 URL 后，可从远程安装符合协议的技能包。更改后对新的对话生效。</p>
+          <label class="skills-registry-label" for="skillsRegistryUrl">技能目录 URL</label>
+          <div class="skills-registry-row">
+            <input
+              id="skillsRegistryUrl"
+              class="skills-registry-input"
+              type="url"
+              placeholder="https://your-server.com/skills/registry.json"
+              spellcheck="false"
+            />
+            <button id="skillsSaveRegistryBtn" class="settings-action-btn" type="button">保存</button>
+          </div>
+          <p id="skillsRegistryHint" class="skills-registry-hint"></p>
+          <div class="settings-actions skills-actions">
+            <button id="skillsCheckUpdatesBtn" class="settings-action-btn" type="button">检查更新</button>
+            <button id="skillsRefreshBtn" class="settings-action-btn" type="button">刷新配置</button>
+          </div>
+          <h4 class="skills-subsection-title">已安装</h4>
+          <div id="skillsList" class="skills-list"></div>
+          <h4 id="skillsAvailableTitle" class="skills-subsection-title" hidden>可安装</h4>
+          <div id="skillsAvailableList" class="skills-list"></div>
+        </section>
         <section class="settings-section settings-about">
-          <img src="../../resources/icon.png" alt="" class="settings-about-logo" width="72" height="72" />
+          <img src="" alt="" class="settings-about-logo" width="72" height="72" />
           <p class="settings-about-name">智能工作台</p>
           <p class="settings-about-version">版本 0.1.0</p>
         </section>
@@ -138,6 +179,7 @@
             <button id="settingsClearCache" class="settings-action-btn" type="button">清理缓存</button>
           </div>
         </section>
+        </div>
       </aside>
     </div>
 

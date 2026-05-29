@@ -6,9 +6,9 @@
       "label": "DeepSeek Pro",
       "description": "deepseek-v4-pro，适合复杂任务",
       "env": {
-        "ANTHROPIC_MODEL": "deepseek-v4-pro",
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-pro",
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-pro"
+        "LILY_MODEL": "deepseek-v4-pro",
+        "LILY_MODEL_OPUS": "deepseek-v4-pro",
+        "LILY_MODEL_SONNET": "deepseek-v4-pro"
       }
     },
     {
@@ -16,11 +16,11 @@
       "label": "DeepSeek Flash",
       "description": "deepseek-v4-flash，响应更快",
       "env": {
-        "ANTHROPIC_MODEL": "deepseek-v4-flash",
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-flash",
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-flash",
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
-        "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-v4-flash"
+        "LILY_MODEL": "deepseek-v4-flash",
+        "LILY_MODEL_OPUS": "deepseek-v4-flash",
+        "LILY_MODEL_SONNET": "deepseek-v4-flash",
+        "LILY_MODEL_HAIKU": "deepseek-v4-flash",
+        "LILY_SUBAGENT_MODEL": "deepseek-v4-flash"
       }
     }
   ]

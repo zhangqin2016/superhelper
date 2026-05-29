@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { app } = require("electron");
 const { PROJECT_ROOT, userDataPath } = require("./config");
+const { normalizeToLilyEnv, pickModelId } = require("./agent-env");
 
 /** @type {{ activePresetId: string, presets: Array<{id:string,label:string,description?:string,env:Record<string,string>}> } | null} */
 let cachedCatalog = null;
@@ -66,7 +67,7 @@ function getActivePreset() {
 function getActivePresetEnv() {
   const preset = getActivePreset();
   if (!preset?.env) return {};
-  return { ...preset.env };
+  return normalizeToLilyEnv(preset.env);
 }
 
 function listPresetsPublic() {
@@ -85,7 +86,7 @@ function listPresetsPublic() {
       id: p.id,
       label: p.label,
       description: p.description || "",
-      model: p.env?.ANTHROPIC_MODEL || settingsEnv.ANTHROPIC_MODEL || "",
+      model: pickModelId(normalizeToLilyEnv(p.env || {})) || pickModelId(settingsEnv) || "",
     })),
   };
 }

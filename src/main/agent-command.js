@@ -4,33 +4,34 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { ensureBundledCliInstalled } = require("./agent-bootstrap");
+const { ensureBundledCliInstalled, installedCliPath } = require("./agent-bootstrap");
+const { installedCliBasename } = require("./config");
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
-function resolveSystemClaude() {
-  const name = process.platform === "win32" ? "claude.exe" : "claude";
-
+function resolveSystemAgent() {
+  const bundledName = installedCliBasename();
   const fallbacks = [
-    path.join(os.homedir(), ".local", "bin", name),
-    "/opt/homebrew/bin/claude",
-    "/usr/local/bin/claude",
+    installedCliPath(),
+    path.join(os.homedir(), ".local", "bin", bundledName),
+    "/opt/homebrew/bin/lily-workbench",
+    "/usr/local/bin/lily-workbench",
   ];
   for (const p of fallbacks) {
-    if (fs.existsSync(p)) return p;
+    if (p && fs.existsSync(p)) return p;
   }
 
   try {
     if (process.platform === "win32") {
-      const result = spawnSync("where", [name], { encoding: "utf8" });
+      const result = spawnSync("where", [bundledName], { encoding: "utf8" });
       const resolved = String(result.stdout || "").trim().split(/\r?\n/)[0];
       if (resolved && fs.existsSync(resolved)) return resolved;
     } else {
       const result = spawnSync(
         process.env.SHELL || "/bin/zsh",
-        ["-lc", `command -v ${shellQuote(name)}`],
+        ["-lc", `command -v ${shellQuote(bundledName)}`],
         { encoding: "utf8" },
       );
       const resolved = String(result.stdout || "").trim();
@@ -43,19 +44,15 @@ function resolveSystemClaude() {
   return null;
 }
 
-/**
- * Bundled CLI under app userData, optional system CLI in dev, always prefers
- * integrated engine when available.
- */
 function resolveAgentCommand() {
   const bundled = ensureBundledCliInstalled();
   if (bundled) return bundled;
 
-  if (process.env.DEV_USE_SYSTEM_CLAUDE === "1") {
-    return resolveSystemClaude();
+  if (process.env.DEV_USE_SYSTEM_AGENT === "1") {
+    return resolveSystemAgent();
   }
 
   return null;
 }
 
-module.exports = { resolveAgentCommand, resolveSystemClaude };
+module.exports = { resolveAgentCommand, resolveSystemAgent };

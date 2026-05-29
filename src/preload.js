@@ -1,10 +1,9 @@
 "use strict";
 
 const { contextBridge, ipcRenderer } = require("electron");
-const { resolveRuntimeIconUrl } = require("./main/app-icon");
 
 contextBridge.exposeInMainWorld("assistantClient", {
-  getAppIconUrl: () => resolveRuntimeIconUrl(),
+  getAppIconUrl: () => ipcRenderer.invoke("app:get-icon-url"),
   sendMessage: (text, files) =>
     ipcRenderer.invoke("assistant:input", { text, files }),
   interrupt: () => ipcRenderer.invoke("assistant:interrupt"),
@@ -16,6 +15,22 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   listPermissions: () => ipcRenderer.invoke("permissions:list"),
   setActivePermission: (modeId) => ipcRenderer.invoke("permissions:set-active", modeId),
+
+  listSearchSettings: () => ipcRenderer.invoke("search:list"),
+  setSearchProvider: (providerId) => ipcRenderer.invoke("search:set-provider", providerId),
+  setSearxngUrl: (url) => ipcRenderer.invoke("search:set-searxng-url", url),
+
+  listSkills: () => ipcRenderer.invoke("skills:list"),
+  setSkillEnabled: (id, enabled) =>
+    ipcRenderer.invoke("skills:set-enabled", { id, enabled }),
+  refreshSkills: () => ipcRenderer.invoke("skills:refresh"),
+  restoreBundledSkill: (id) => ipcRenderer.invoke("skills:restore-bundled", { id }),
+  getRegistryUrl: () => ipcRenderer.invoke("skills:get-registry-url"),
+  setRegistryUrl: (url) => ipcRenderer.invoke("skills:set-registry-url", { url }),
+  checkSkillUpdates: () => ipcRenderer.invoke("skills:check-updates"),
+  installSkill: (id, version) => ipcRenderer.invoke("skills:install", { id, version }),
+  updateSkill: (id) => ipcRenderer.invoke("skills:update", { id }),
+  uninstallSkill: (id) => ipcRenderer.invoke("skills:uninstall", { id }),
 
   listProjects: () => ipcRenderer.invoke("project:list"),
   addProject: () => ipcRenderer.invoke("project:add"),

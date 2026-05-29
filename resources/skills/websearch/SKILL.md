@@ -1,6 +1,6 @@
 ---
 name: websearch
-description: 联网搜索（DuckDuckGo，无需 API Key）。用户需要查资料、新闻、实时信息时使用；内置 WebSearch 不可用时必须用本 skill。
+description: 联网搜索（默认阿里 IQS，国内稳定合规；亦支持 SearXNG / DuckDuckGo）。用户需要查资料、新闻、实时信息时使用；内置 WebSearch 不可用时必须用本 skill。
 allowed-tools: Bash(node *)
 ---
 
@@ -11,6 +11,8 @@ allowed-tools: Bash(node *)
 ```bash
 echo '{"query":"搜索关键词"}' | "{{NODE_BIN}}" "{{WEBSEARCH_SCRIPT}}"
 ```
+
+默认使用 **阿里 IQS**（信息查询服务，国内直连、合规可商用，应用已内置）。亦可在 **设置 → 联网搜索** 切换为 SearXNG 或 DuckDuckGo。
 
 可选参数（JSON）：
 

@@ -6,6 +6,8 @@ import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
 import { refreshModelSelect } from "./model-settings.js";
 import { refreshPermissionSelect } from "./permission-settings.js";
+import { refreshSearchSettings } from "./search-settings.js";
+import { refreshSkillsList } from "./skill-settings.js";
 import store from "./state.js";
 
 let panelOpen = false;
@@ -29,6 +31,8 @@ export async function initSettingsPanel() {
   openBtn.addEventListener("click", async () => {
     await refreshModelSelect();
     await refreshPermissionSelect();
+    await refreshSearchSettings();
+    await refreshSkillsList();
     setPanelOpen(true);
   });
 

@@ -1,18 +1,18 @@
 {
-  "name": "terminal-chat-claude",
+  "name": "lily-workbench",
   "version": "0.1.0",
   "private": true,
   "description": "智能工作台桌面客户端",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "start:dev": "DEV_USE_SYSTEM_CLAUDE=1 electron .",
-    "test:unit": "node scripts/test-claude-runner.mjs",
+    "start:dev": "DEV_USE_SYSTEM_AGENT=1 electron .",
+    "test:unit": "node scripts/test-agent-runner.mjs",
     "icon:optimize": "node scripts/optimize-icon.mjs",
     "rebuild:pty": "node scripts/rebuild-pty.mjs",
     "pack": "electron-builder --dir",
     "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win",
+    "dist:win": "bash scripts/dist-win.sh",
     "dist:all": "electron-builder --mac --win"
   },
   "build": {
@@ -73,8 +73,14 @@
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "nsis": {
-      "oneClick": true,
-      "allowToChangeInstallationDirectory": false
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "智能工作台",
+      "installerLanguages": ["zh_CN", "en_US"],
+      "language": "2052"
     }
   },
   "dependencies": {

@@ -4,6 +4,8 @@ dist/
 *.log
 bundles/*/claude
 bundles/*/claude.exe
+bundles/*/engine-upstream
+bundles/*/engine-upstream.exe
 
 # 本地密钥，勿提交（见 settings.example.json）
 resources/agent-defaults/settings.json
