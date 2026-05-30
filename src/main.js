@@ -63,6 +63,16 @@ app.whenReady().then(async () => {
     );
   }
 
+  const { getRuntimeSummary } = require("./main/runtime-python");
+  const runtimeSummary = getRuntimeSummary();
+  if (runtimeSummary.available) {
+    console.info("[runtime] available at", runtimeSummary.root);
+  } else if (process.platform === "win32") {
+    console.warn(
+      "[runtime] 内置 Python/LibreOffice 不可用 — 请在 Windows 上运行 npm run build:runtime 后重建安装包",
+    );
+  }
+
   const projectManager = new ProjectManager(defaultWorkspacePath());
   projectManager.load();
 

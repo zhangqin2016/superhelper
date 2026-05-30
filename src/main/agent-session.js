@@ -421,7 +421,9 @@ class AgentSession extends EventEmitter {
     this._clearInterruptFallback();
     if (this.process) {
       try {
-        this.process.kill("SIGINT");
+        // SIGINT on Windows only works for console group — spawn()ed processes need SIGTERM.
+        const sig = process.platform === "win32" ? "SIGTERM" : "SIGINT";
+        this.process.kill(sig);
       } catch {
         log.warn("interrupt kill failed (process already dead)");
       }

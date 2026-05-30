@@ -5,32 +5,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+source "$(dirname "$0")/setup-proxy.sh"
+
 ELECTRON_VERSION="$(node -p "require('electron/package.json').version")"
 CACHE_ZIP="${HOME}/Library/Caches/electron/electron-v${ELECTRON_VERSION}-win32-x64.zip"
-
-proxy_from_macos() {
-  local enable host port
-  enable="$(scutil --proxy 2>/dev/null | awk '/^[[:space:]]*HTTPEnable :/{print $3; exit}')"
-  host="$(scutil --proxy 2>/dev/null | awk '/^[[:space:]]*HTTPProxy :/{print $3; exit}')"
-  port="$(scutil --proxy 2>/dev/null | awk '/^[[:space:]]*HTTPPort :/{print $3; exit}')"
-  if [[ "${enable:-0}" == "1" && -n "${host:-}" && -n "${port:-}" ]]; then
-    echo "http://${host}:${port}"
-    return 0
-  fi
-  return 1
-}
-
-PROXY_URL=""
-if PROXY_URL="$(proxy_from_macos)"; then
-  export http_proxy="$PROXY_URL"
-  export https_proxy="$PROXY_URL"
-  export HTTP_PROXY="$PROXY_URL"
-  export HTTPS_PROXY="$PROXY_URL"
-  export ALL_PROXY="$PROXY_URL"
-  echo "[dist-win] 使用系统代理: $PROXY_URL"
-else
-  echo "[dist-win] 未检测到系统 HTTP 代理"
-fi
 
 download_electron_zip() {
   local url="$1"
