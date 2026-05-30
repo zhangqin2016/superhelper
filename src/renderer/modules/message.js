@@ -10,7 +10,7 @@ import {
   bindPanelScroll,
   initScrollToBottom,
 } from "./dom.js";
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdown, renderMarkdownWithCache, clearHighlightCache } from "./markdown.js";
 import { activeProject, updateTopbarTitles } from "./session-chrome.js";
 import { t } from "../i18n/index.js";
 import {
@@ -33,6 +33,38 @@ const stackEl = () => $("sessionMessagesStack");
  * }>} */
 const sessionViews = new Map();
 
+/** @type {Map<string, ReturnType<typeof setTimeout>>} */
+const streamSettleTimers = new Map();
+
+function clearStreamSettleTimer(sessionId) {
+  const t = streamSettleTimers.get(sessionId);
+  if (t) clearTimeout(t);
+  streamSettleTimers.delete(sessionId);
+}
+
+function scheduleStreamSettle(sessionId) {
+  if (!sessionId) return;
+  const v = view(sessionId);
+  if (v.turnHadToolUse || countRunningTools(sessionId) > 0) return;
+
+  clearStreamSettleTimer(sessionId);
+  streamSettleTimers.set(
+    sessionId,
+    setTimeout(async () => {
+      streamSettleTimers.delete(sessionId);
+      if (!hasLiveTurn(sessionId) || !isSessionRunning(sessionId)) return;
+      if (view(sessionId).turnHadToolUse || countRunningTools(sessionId) > 0) return;
+      const md = view(sessionId).activeMarkdown?.trim();
+      if (!md) return;
+      try {
+        await window.assistantClient.settleTurn(sessionId);
+      } catch (err) {
+        console.warn("[settle-turn]", err);
+      }
+    }, 12000),
+  );
+}
+
 function isActiveSession(sessionId) {
   return store.get("activeSessionId") === sessionId;
 }
@@ -47,6 +79,7 @@ function view(sessionId) {
       activeMarkdown: "",
       activeBubble: null,
       activityLabel: "",
+      turnHadToolUse: false,
     });
   }
   return sessionViews.get(sessionId);
@@ -128,13 +161,14 @@ function softenStreamGlue(text) {
     .replace(/\.(?=[A-Z\u4e00-\u9fff])/g, ".\n\n");
 }
 
-export function createMessage(sessionId, role, text = "", files = null) {
+export function createMessage(sessionId, role, text = "", files = null, options = null) {
   const v = ensurePanel(sessionId);
   const listEl = v.listEl;
   if (!listEl) return null;
 
   const wrapper = document.createElement("article");
   wrapper.className = `msg msg-${role}`;
+  if (options?.failed) wrapper.dataset.failed = "true";
 
   const avatar = document.createElement("div");
   avatar.className = "msg-avatar";
@@ -162,6 +196,9 @@ export function createMessage(sessionId, role, text = "", files = null) {
   }
 
   wrapper.append(avatar, bubble);
+  if (role === "assistant" && options?.failed) {
+    attachRetryAction(wrapper, sessionId);
+  }
   listEl.appendChild(wrapper);
   scrollToBottom(isActiveSession(sessionId), v.panel);
   return bubble;
@@ -176,6 +213,65 @@ export function removeLastUserMessage(sessionId) {
   const last = userMsgs[userMsgs.length - 1];
   last?.remove();
   scrollToBottom(isActiveSession(sessionId), v.panel);
+}
+
+/** Remove the last assistant bubble (before retry). */
+export function removeLastAssistantMessage(sessionId) {
+  const v = view(sessionId);
+  const listEl = v.listEl;
+  if (!listEl) return;
+  const assistantMsgs = listEl.querySelectorAll(".msg-assistant:not(.msg-turn)");
+  const last = assistantMsgs[assistantMsgs.length - 1];
+  last?.remove();
+  scrollToBottom(isActiveSession(sessionId), v.panel);
+}
+
+function retryErrorMessage(result) {
+  if (result.detail) return result.detail;
+  const key = `send.error.${result.error}`;
+  const mapped = t(key);
+  return mapped === key ? t("send.error.GENERIC") : mapped;
+}
+
+function attachRetryAction(article, sessionId) {
+  if (!article || article.querySelector(".msg-retry-btn")) return;
+
+  const row = document.createElement("div");
+  row.className = "msg-actions";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "msg-retry-btn";
+  btn.textContent = t("message.retry");
+  btn.addEventListener("click", () => {
+    retryLastPrompt(sessionId).catch((err) => {
+      console.error("[retry]", err);
+    });
+  });
+
+  row.appendChild(btn);
+  article.appendChild(row);
+}
+
+export async function retryLastPrompt(sessionId) {
+  if (!sessionId) return;
+  if (isSessionRunning(sessionId) || hasLiveTurn(sessionId)) {
+    const { showToast } = await import("./toast.js");
+    showToast(t("send.error.BUSY"), "warning");
+    return;
+  }
+
+  const result = await window.assistantClient.retryLastMessage(sessionId);
+  if (!result.ok) {
+    const { showToast } = await import("./toast.js");
+    showToast(retryErrorMessage(result), "error");
+    return;
+  }
+
+  removeLastAssistantMessage(sessionId);
+  setSessionRunning(sessionId, true);
+  beginAssistantTurn(sessionId);
+  syncComposerForActiveSession();
 }
 
 function getConversationForSession(sessionId) {
@@ -228,6 +324,7 @@ export function syncComposerForActiveSession() {
 }
 
 export function renderConversation(sessionId) {
+  clearHighlightCache();
   const sid = sessionId || store.get("activeSessionId");
   if (!sid) return;
 
@@ -254,6 +351,7 @@ export function renderConversation(sessionId) {
         msg.role === "user" ? "user" : "assistant",
         msg.content,
         msg.files || null,
+        msg.failed ? { failed: true } : null,
       );
     }
   }
@@ -377,8 +475,10 @@ function beginAssistantTurn(sessionId) {
   listEl.appendChild(article);
 
   v.activeTurn = { article, activity, bubble };
+  v._lastRenderedLength = 0;
   v.activeBubble = bubble;
   v.activeMarkdown = "";
+  v.turnHadToolUse = false;
   if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
   scrollToBottom(false, v.panel);
   return bubble;
@@ -391,9 +491,11 @@ function finishActiveTurn(sessionId) {
     v.activeTurn.activity.replaceChildren();
     v.activeTurn.activity.hidden = true;
   }
+  v._lastRenderedLength = 0;
   v.activeTurn = null;
   v.activeBubble = null;
   v.activeMarkdown = "";
+  v.turnHadToolUse = false;
   if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
 }
 
@@ -432,6 +534,8 @@ function syncActivityVisibility(sessionId) {
 function addToolCard(sessionId, id, name, input) {
   if (!view(sessionId).activeTurn) beginAssistantTurn(sessionId);
   const v = view(sessionId);
+  v.turnHadToolUse = true;
+  clearStreamSettleTimer(sessionId);
 
   const summary = toolSummary(name, input);
   v.activityLabel = summary.detail
@@ -510,6 +614,21 @@ function clearToolCards(sessionId) {
   syncActivityVisibility(sessionId);
 }
 
+export function forceEndTurnUi(sessionId) {
+  if (!sessionId) return;
+  clearStreamSettleTimer(sessionId);
+  clearToolCards(sessionId);
+  view(sessionId).activityLabel = "";
+  setSessionRunning(sessionId, false);
+
+  const v = view(sessionId);
+  if (v.activeBubble) {
+    v.activeBubble.classList.remove("pending");
+  }
+  finishActiveTurn(sessionId);
+  syncComposerForActiveSession();
+}
+
 export function wireMessageIpc() {
   window.assistantClient.onTool((payload) => {
     const sessionId = payload.sessionId;
@@ -521,6 +640,7 @@ export function wireMessageIpc() {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
     updateToolCard(sessionId, payload.id, payload.status);
+    scheduleStreamSettle(sessionId);
   });
 
   window.assistantClient.onChunk((payload) => {
@@ -531,11 +651,29 @@ export function wireMessageIpc() {
     let bubble = v.activeBubble;
     if (!bubble) {
       bubble = beginAssistantTurn(sessionId);
+      if (!bubble) return;
     }
+
     v.activeMarkdown = softenStreamGlue(
       appendMarkdownSegment(v.activeMarkdown, payload.text),
     );
-    renderMarkdown(bubble, v.activeMarkdown);
+
+    const hasCodeFence = v.activeMarkdown.includes("```");
+    const hasHtmlInNew = /<[a-zA-Z][^>]*>/.test(payload.text);
+    const threshold = v.activeMarkdown.length - (v._lastRenderedLength || 0) > 200;
+
+    if (hasCodeFence || hasHtmlInNew || threshold) {
+      renderMarkdownWithCache(bubble, v.activeMarkdown);
+      v._lastRenderedLength = v.activeMarkdown.length;
+    } else {
+      // 纯文本增量追加 — 不做 Markdown 解析
+      if (bubble.textContent) {
+        bubble.textContent += payload.text;
+      } else {
+        bubble.textContent = payload.text;
+      }
+    }
+
     if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
     scrollToBottom(false, v.panel);
     if (isActiveSession(sessionId) && store.get("isBusy")) {
@@ -547,6 +685,7 @@ export function wireMessageIpc() {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
 
+    clearStreamSettleTimer(sessionId);
     clearToolCards(sessionId);
     view(sessionId).activityLabel = "";
     setSessionRunning(sessionId, false);
@@ -587,13 +726,19 @@ export function wireMessageIpc() {
     const sessionId = error.sessionId;
     if (!sessionId) return;
 
+    clearStreamSettleTimer(sessionId);
     clearToolCards(sessionId);
     setSessionRunning(sessionId, false);
 
-    let bubble = view(sessionId).activeBubble;
+    const v = view(sessionId);
+    let bubble = v.activeBubble;
     if (!bubble) bubble = beginAssistantTurn(sessionId);
     bubble.classList.remove("pending");
     renderMarkdown(bubble, error.message || t("message.errorGeneric"));
+    if (v.activeTurn?.article) {
+      v.activeTurn.article.dataset.failed = "true";
+      attachRetryAction(v.activeTurn.article, sessionId);
+    }
     finishActiveTurn(sessionId);
 
     const { refreshStateLight } = await import("./session-chrome.js");
