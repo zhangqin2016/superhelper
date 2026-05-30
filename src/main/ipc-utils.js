@@ -2,13 +2,14 @@
 
 const fs = require("node:fs");
 const { resolveAgentCommand } = require("./agent-command");
-const { sanitizeError, appendTextSegment } = require("./agent-runner");
+const { sanitizeError } = require("./agent-runner");
 const { fileStagingDir } = require("./config");
 const {
   migrateGlobalResumeArtifacts,
   resetSessionEngineCache,
 } = require("./session-engine-recovery");
 const skillManager = require("./skill-manager");
+const { turnState, emitTurnState } = require("./session-turn-state");
 
 /** @type {Map<string, string>} */
 const lastRunnerStderr = new Map();
@@ -19,49 +20,6 @@ function sendToRenderer(window, channel, payload) {
   }
 }
 
-class TurnState {
-  constructor() {
-    /** @type {Set<string>} */
-    this.activeTurns = new Set();
-    /** @type {Map<string, string>} */
-    this.turnOutputs = new Map();
-  }
-
-  start(sessionId) {
-    this.activeTurns.add(sessionId);
-    this.turnOutputs.set(sessionId, "");
-  }
-
-  end(sessionId) {
-    this.activeTurns.delete(sessionId);
-    const output = this.turnOutputs.get(sessionId) || "";
-    this.turnOutputs.delete(sessionId);
-    return output;
-  }
-
-  has(sessionId) {
-    return this.activeTurns.has(sessionId);
-  }
-
-  append(sessionId, text) {
-    const prev = this.turnOutputs.get(sessionId) || "";
-    const next = appendTextSegment(prev, text);
-    this.turnOutputs.set(sessionId, next);
-    return next;
-  }
-
-  getOutput(sessionId) {
-    return this.turnOutputs.get(sessionId) || "";
-  }
-
-  delete(sessionId) {
-    this.activeTurns.delete(sessionId);
-    this.turnOutputs.delete(sessionId);
-  }
-}
-
-const turnState = new TurnState();
-
 function anyRunnerBusy(runnerPool) {
   for (const sessionId of runnerPool.getSessionIds()) {
     const runner = runnerPool.get(sessionId);
@@ -70,23 +28,15 @@ function anyRunnerBusy(runnerPool) {
   return false;
 }
 
-function isSessionBusy(runnerPool, sessionId, activeTurnIds = turnState.activeTurns) {
+function isSessionBusy(runnerPool, sessionId) {
   if (!sessionId) return false;
-  if (activeTurnIds.has(sessionId)) return true;
-  return Boolean(runnerPool.get(sessionId)?.isBusy());
+  const runner = runnerPool.get(sessionId);
+  if (runner?.isBusy()) return true;
+  return turnState.has(sessionId);
 }
 
-function getRunningSessionIds(runnerPool, sessionManager) {
-  const ids = new Set(turnState.activeTurns);
-  for (const sessionId of runnerPool.getSessionIds()) {
-    if (runnerPool.get(sessionId)?.isBusy()) ids.add(sessionId);
-  }
-  for (const list of Object.values(sessionManager.sessions)) {
-    for (const session of list) {
-      if (session.status === "running") ids.add(session.id);
-    }
-  }
-  return [...ids];
+function getRunningSessionIds(runnerPool) {
+  return turnState.getRunningSessionIds(runnerPool);
 }
 
 function resolveProjectForSession(projectManager, session) {
@@ -141,9 +91,7 @@ function wireRunner(ctx, runner) {
   const { notifySessionFinished } = require("./background-notify");
 
   runner.on("chunk", (text) => {
-    const prev = turnState.turnOutputs.get(sessionId) || "";
-    const next = appendTextSegment(prev, text);
-    turnState.turnOutputs.set(sessionId, next);
+    turnState.append(sessionId, text);
     sendToRenderer(ctx.mainWindow, "assistant:chunk", { sessionId, text });
   });
 
@@ -161,9 +109,41 @@ function wireRunner(ctx, runner) {
     sendToRenderer(ctx.mainWindow, "assistant:tool-done", { sessionId, ...data });
   });
 
+  runner.on("permission-request", (data) => {
+    turnState.setPhase(sessionId, "permission");
+    emitTurnState(ctx, sessionId);
+    sendToRenderer(ctx.mainWindow, "assistant:permission-request", {
+      sessionId,
+      ...data,
+    });
+  });
+
+  runner.on("permission-cancelled", (data) => {
+    sendToRenderer(ctx.mainWindow, "assistant:permission-cancelled", {
+      sessionId,
+      ...data,
+    });
+  });
+
+  runner.on("engine-notice", (data) => {
+    sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
+      sessionId,
+      ...data,
+    });
+  });
+
+  runner.on("prompt-suggestions", (data) => {
+    sendToRenderer(ctx.mainWindow, "assistant:prompt-suggestions", {
+      sessionId,
+      ...data,
+    });
+  });
+
   runner.on("status", (state) => {
     if (state === "thinking") {
       sessionManager.setStatus(sessionId, "running");
+      turnState.setPhase(sessionId, "active");
+      emitTurnState(ctx, sessionId);
     }
     sendToRenderer(ctx.mainWindow, "assistant:status", { state, sessionId });
   });
@@ -173,11 +153,9 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("done", ({ code, output, interrupted }) => {
-    const inTurn = turnState.activeTurns.has(sessionId);
-    turnState.activeTurns.delete(sessionId);
-
-    const finalOutput = (output || turnState.turnOutputs.get(sessionId) || "").trim();
-    turnState.turnOutputs.delete(sessionId);
+    const inTurn = turnState.has(sessionId);
+    const storedOutput = turnState.end(sessionId);
+    const finalOutput = (output || storedOutput || "").trim();
 
     if (inTurn) {
       if (finalOutput) {
@@ -201,6 +179,7 @@ function wireRunner(ctx, runner) {
     }
 
     sessionManager.setStatus(sessionId, "idle");
+    emitTurnState(ctx, sessionId);
     sendToRenderer(ctx.mainWindow, "assistant:done", { code, sessionId, interrupted });
 
     const session = sessionManager.findById(sessionId);
@@ -216,10 +195,8 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("error", (message) => {
-    if (!turnState.activeTurns.has(sessionId)) return;
-    turnState.activeTurns.delete(sessionId);
-
-    turnState.turnOutputs.delete(sessionId);
+    if (!turnState.has(sessionId)) return;
+    turnState.abort(sessionId);
     const friendly =
       message === "BUSY"
         ? "上一条消息还在处理中，请稍后再试。"
@@ -228,6 +205,7 @@ function wireRunner(ctx, runner) {
       failed: true,
     });
     sessionManager.setStatus(sessionId, "idle");
+    emitTurnState(ctx, sessionId);
     sendToRenderer(ctx.mainWindow, "assistant:error", {
       sessionId,
       message: friendly,
@@ -313,21 +291,18 @@ function ensureSessionRunner(ctx, sessionId) {
   }
 }
 
-function warmupActiveRunner(ctx) {
-  const session = ctx.sessionManager.getActive();
-  if (!session) return;
-  const result = ensureSessionRunner(ctx, session.id);
-  if (!result.runner) {
-    console.error("[runner] warmup failed:", result.error, result.detail);
-  }
+function warmupActiveRunner(_ctx) {
+  // Lazy spawn: CLI starts on first user message to avoid idle processes.
 }
 
-function buildInputLine(text, files = []) {
-  const parts = [String(text || "").trim()];
-  for (const f of files) {
-    if (f.path) parts.push(f.path);
+function applyPermissionModeLive(ctx, modeId) {
+  if (anyRunnerBusy(ctx.runnerPool)) {
+    return { ok: false, error: "BUSY" };
   }
-  return parts.filter(Boolean).join(" ");
+  const r = require("./permission-settings").setActivePermissionMode(modeId);
+  if (!r.ok) return r;
+  ctx.runnerPool.applyPermissionMode(modeId);
+  return { ok: true, ...require("./permission-settings").listPermissionsPublic() };
 }
 
 function fileMetadataFromPayload(files = []) {
@@ -351,8 +326,8 @@ function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
     return { ok: false, error: blocked.error, detail: blocked.detail };
   }
 
-  const line = buildInputLine(text, files);
-  if (!line) return { ok: false, error: "EMPTY" };
+  const { hasSendableContent } = require("./user-message");
+  if (!hasSendableContent(text, files)) return { ok: false, error: "EMPTY" };
 
   const ensured = ensureSessionRunner(ctx, session.id);
   const runner = ensured.runner;
@@ -366,19 +341,20 @@ function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
     };
   }
 
-  if (runner.isBusy() || turnState.activeTurns.has(session.id)) {
+  if (runner.isBusy() || turnState.has(session.id)) {
     return { ok: false, error: "BUSY" };
   }
 
-  turnState.turnOutputs.set(session.id, "");
-  turnState.activeTurns.add(session.id);
+  turnState.begin(session.id);
 
-  const sent = runner.sendUserMessage(line);
+  const sent = runner.sendUserMessage({ text, files });
   if (!sent) {
-    turnState.activeTurns.delete(session.id);
-    turnState.turnOutputs.delete(session.id);
+    turnState.abort(session.id);
+    emitTurnState(ctx, session.id);
     return { ok: false, error: "BUSY" };
   }
+
+  emitTurnState(ctx, session.id);
 
   if (recordUser) {
     const fileMetadata = fileMetadataFromPayload(files);
@@ -398,12 +374,27 @@ function withRunnerChange(ctx, action, opts = {}) {
     return { ok: false, error: "BUSY" };
   }
   const result = action();
-  if (result.ok) {
-    ctx.runnerPool.terminateAll();
-    if (opts.refreshState && ctx.agentBootstrap?.agentDefaults) {
-      ctx.agentBootstrap.agentDefaults.disallowedTools =
-        skillManager.getDisallowedTools();
+  if (!result.ok) return result;
+
+  const {
+    buildLiveEngineEnvPatch,
+    applyLiveEnvToPool,
+    terminateIdleRunners,
+  } = require("./runner-live-config");
+
+  if (opts.liveEnv === false) {
+    terminateIdleRunners(ctx.runnerPool);
+  } else {
+    const patch = buildLiveEngineEnvPatch();
+    const { failed } = applyLiveEnvToPool(ctx.runnerPool, patch);
+    for (const sessionId of failed) {
+      ctx.runnerPool.terminateSession(sessionId);
     }
+  }
+
+  if (opts.refreshState && ctx.agentBootstrap?.agentDefaults) {
+    ctx.agentBootstrap.agentDefaults.disallowedTools =
+      skillManager.getDisallowedTools();
   }
   return result;
 }
@@ -411,6 +402,7 @@ function withRunnerChange(ctx, action, opts = {}) {
 module.exports = {
   sendToRenderer,
   turnState,
+  emitTurnState,
   lastRunnerStderr,
   anyRunnerBusy,
   isSessionBusy,
@@ -420,7 +412,7 @@ module.exports = {
   wireRunner,
   ensureSessionRunner,
   warmupActiveRunner,
-  buildInputLine,
+  applyPermissionModeLive,
   fileMetadataFromPayload,
   dispatchUserLine,
   withRunnerChange,
