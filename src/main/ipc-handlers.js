@@ -141,31 +141,35 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("done", ({ code, output, interrupted }) => {
-    if (!activeTurns.has(sessionId)) return;
+    const inTurn = activeTurns.has(sessionId);
     activeTurns.delete(sessionId);
 
     const finalOutput = (output || turnOutputs.get(sessionId) || "").trim();
     turnOutputs.delete(sessionId);
 
-    if (finalOutput) {
-      sessionManager.pushMessageTo(sessionId, "assistant", finalOutput);
-      lastRunnerStderr.delete(sessionId);
-    } else if (!interrupted && code !== 0 && code !== null) {
-      const stderrHint = lastRunnerStderr.get(sessionId);
-      lastRunnerStderr.delete(sessionId);
-      sessionManager.clearAgentResumeId(sessionId);
-      resetSessionEngineCache(sessionId);
-      ctx.runnerPool.terminateSession(sessionId);
-      const friendly = stderrHint
-        ? sanitizeError(stderrHint)
-        : "这次没有收到有效回复。对话连接已重置，请再发一次（可简要说明要继续的内容）。";
-      sessionManager.pushMessageTo(sessionId, "assistant", friendly);
-    } else {
-      lastRunnerStderr.delete(sessionId);
+    if (inTurn) {
+      if (finalOutput) {
+        sessionManager.pushMessageTo(sessionId, "assistant", finalOutput);
+        lastRunnerStderr.delete(sessionId);
+      } else if (!interrupted && code !== 0 && code !== null) {
+        const stderrHint = lastRunnerStderr.get(sessionId);
+        lastRunnerStderr.delete(sessionId);
+        sessionManager.clearAgentResumeId(sessionId);
+        resetSessionEngineCache(sessionId);
+        ctx.runnerPool.terminateSession(sessionId);
+        const friendly = stderrHint
+          ? sanitizeError(stderrHint)
+          : "这次没有收到有效回复。对话连接已重置，请再发一次（可简要说明要继续的内容）。";
+        sessionManager.pushMessageTo(sessionId, "assistant", friendly, null, {
+          failed: true,
+        });
+      } else {
+        lastRunnerStderr.delete(sessionId);
+      }
     }
 
     sessionManager.setStatus(sessionId, "idle");
-    sendToRenderer(ctx.mainWindow, "assistant:done", { code, sessionId });
+    sendToRenderer(ctx.mainWindow, "assistant:done", { code, sessionId, interrupted });
 
     const session = sessionManager.findById(sessionId);
     const wasFocused = ctx.mainWindow?.isFocused?.() ?? true;
@@ -188,7 +192,9 @@ function wireRunner(ctx, runner) {
       message === "BUSY"
         ? "上一条消息还在处理中，请稍后再试。"
         : sanitizeError(String(message));
-    sessionManager.pushMessageTo(sessionId, "assistant", friendly);
+    sessionManager.pushMessageTo(sessionId, "assistant", friendly, null, {
+      failed: true,
+    });
     sessionManager.setStatus(sessionId, "idle");
     sendToRenderer(ctx.mainWindow, "assistant:error", {
       sessionId,
@@ -290,6 +296,100 @@ function buildInputLine(text, files = []) {
     if (f.path) parts.push(f.path);
   }
   return parts.filter(Boolean).join(" ");
+}
+
+function fileMetadataFromPayload(files = []) {
+  return files.map((f) => ({
+    id: f.id,
+    name: f.name,
+    path: f.path,
+    type: f.type,
+    size: f.size,
+    isImage: f.isImage,
+  }));
+}
+
+/**
+ * Send a user line to the session runner.
+ * @param {object} ctx
+ * @param {{ id: string }} session
+ * @param {string} text
+ * @param {object[]} files
+ * @param {{ recordUser?: boolean }} [opts]
+ */
+function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
+  const { sessionManager } = ctx;
+  const recordUser = opts.recordUser !== false;
+
+  const blocked = diagnoseSendBlocker(ctx, session.id);
+  if (blocked) {
+    console.error("[assistant:send]", blocked.error, blocked.detail);
+    return { ok: false, error: blocked.error, detail: blocked.detail };
+  }
+
+  const line = buildInputLine(text, files);
+  if (!line) return { ok: false, error: "EMPTY" };
+
+  const ensured = ensureSessionRunner(ctx, session.id);
+  const runner = ensured.runner;
+  if (!runner) {
+    return {
+      ok: false,
+      error: ensured.error || "RUNNER_ERROR",
+      detail:
+        ensured.detail ||
+        "无法启动助手进程，请查看终端日志或重启应用。",
+    };
+  }
+
+  if (runner.isBusy() || activeTurns.has(session.id)) {
+    return { ok: false, error: "BUSY" };
+  }
+
+  turnOutputs.set(session.id, "");
+  activeTurns.add(session.id);
+
+  const sent = runner.sendUserMessage(line);
+  if (!sent) {
+    activeTurns.delete(session.id);
+    turnOutputs.delete(session.id);
+    return { ok: false, error: "BUSY" };
+  }
+
+  if (recordUser) {
+    const fileMetadata = fileMetadataFromPayload(files);
+    sessionManager.pushMessageTo(
+      session.id,
+      "user",
+      String(text || "").trim(),
+      fileMetadata,
+    );
+  }
+
+  return { ok: true };
+}
+
+/**
+ * 执行一个会改变 runner 状态的操作：
+ * - 如果任何 runner 正忙 → 直接返回 BUSY
+ * - 操作成功后 → 终止所有 runner（下次发消息时重建）
+ * @param {object} ctx
+ * @param {() => { ok: boolean }} action
+ * @param {{ refreshState?: boolean }} [opts]
+ */
+function withRunnerChange(ctx, action, opts = {}) {
+  if (anyRunnerBusy(ctx.runnerPool)) {
+    return { ok: false, error: "BUSY" };
+  }
+  const result = action();
+  if (result.ok) {
+    ctx.runnerPool.terminateAll();
+    if (opts.refreshState && ctx.agentBootstrap?.agentDefaults) {
+      ctx.agentBootstrap.agentDefaults.disallowedTools =
+        require("./skill-manager").getDisallowedTools();
+    }
+  }
+  return result;
 }
 
 function registerAll(ctx) {
@@ -414,14 +514,10 @@ function registerAll(ctx) {
   ipcMain.handle("models:list", () => ({ ok: true, ...listPresetsPublic() }));
 
   ipcMain.handle("models:set-active", (_event, presetId) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
-    const result = setActivePreset(presetId);
-    if (result.ok) {
-      runnerPool.terminateAll();
-    }
-    return result.ok ? { ok: true, ...listPresetsPublic() } : result;
+    return withRunnerChange(ctx, () => {
+      const r = setActivePreset(presetId);
+      return r.ok ? { ok: true, ...listPresetsPublic() } : r;
+    });
   });
 
   ipcMain.handle("models:save-custom", (_event, payload) => {
@@ -433,25 +529,11 @@ function registerAll(ctx) {
   });
 
   ipcMain.handle("models:delete-custom", (_event, presetId) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
-    const result = deleteCustomPreset(presetId);
-    if (result.ok) {
-      runnerPool.terminateAll();
-    }
-    return result;
+    return withRunnerChange(ctx, () => deleteCustomPreset(presetId));
   });
 
   ipcMain.handle("models:set-api-gateway", (_event, payload) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
-    const result = setApiGateway(payload || {});
-    if (result.ok) {
-      runnerPool.terminateAll();
-    }
-    return result;
+    return withRunnerChange(ctx, () => setApiGateway(payload || {}));
   });
 
   ipcMain.handle("permissions:list", () => ({
@@ -460,16 +542,12 @@ function registerAll(ctx) {
   }));
 
   ipcMain.handle("permissions:set-active", (_event, modeId) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
-    const result = require("./permission-settings").setActivePermissionMode(modeId);
-    if (result.ok) {
-      runnerPool.terminateAll();
-    }
-    return result.ok
-      ? { ok: true, ...require("./permission-settings").listPermissionsPublic() }
-      : result;
+    return withRunnerChange(ctx, () => {
+      const r = require("./permission-settings").setActivePermissionMode(modeId);
+      return r.ok
+        ? { ok: true, ...require("./permission-settings").listPermissionsPublic() }
+        : r;
+    });
   });
 
   ipcMain.handle("search:list", () => ({
@@ -478,23 +556,21 @@ function registerAll(ctx) {
   }));
 
   ipcMain.handle("search:set-provider", (_event, providerId) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
-    const result = require("./search-settings").setSearchProvider(providerId);
-    return result.ok
-      ? { ok: true, ...require("./search-settings").listSearchSettingsPublic() }
-      : result;
+    return withRunnerChange(ctx, () => {
+      const r = require("./search-settings").setSearchProvider(providerId);
+      return r.ok
+        ? { ok: true, ...require("./search-settings").listSearchSettingsPublic() }
+        : r;
+    });
   });
 
   ipcMain.handle("search:set-searxng-url", (_event, url) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
-    const result = require("./search-settings").setSearxngUrl(url);
-    return result.ok
-      ? { ok: true, ...require("./search-settings").listSearchSettingsPublic() }
-      : result;
+    return withRunnerChange(ctx, () => {
+      const r = require("./search-settings").setSearxngUrl(url);
+      return r.ok
+        ? { ok: true, ...require("./search-settings").listSearchSettingsPublic() }
+        : r;
+    });
   });
 
   // --- Skills (P1) ---------------------------------------------------------
@@ -505,42 +581,22 @@ function registerAll(ctx) {
   }));
 
   ipcMain.handle("skills:set-enabled", (_event, payload) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
     const id = payload?.id;
     const enabled = Boolean(payload?.enabled);
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    const result = skillManager.setSkillEnabledWithSessions(id, enabled, sessionManager);
-    if (result.ok) {
-      runnerPool.terminateAll();
-      if (ctx.agentBootstrap?.agentDefaults) {
-        ctx.agentBootstrap.agentDefaults.disallowedTools = skillManager.getDisallowedTools();
-      }
-    }
-    return result;
+    return withRunnerChange(ctx, () => {
+      return skillManager.setSkillEnabledWithSessions(id, enabled, sessionManager);
+    }, { refreshState: true });
   });
 
   ipcMain.handle("skills:refresh", () => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
-    const result = skillManager.refreshSkillsConfig();
-    runnerPool.terminateAll();
-    return result;
+    return withRunnerChange(ctx, () => skillManager.refreshSkillsConfig());
   });
 
   ipcMain.handle("skills:restore-bundled", (_event, payload) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    const result = skillManager.restoreBundledSkill(id);
-    if (result.ok) {
-      runnerPool.terminateAll();
-    }
-    return result;
+    return withRunnerChange(ctx, () => skillManager.restoreBundledSkill(id));
   });
 
   ipcMain.handle("skills:get-registry-url", () => ({
@@ -561,43 +617,22 @@ function registerAll(ctx) {
   });
 
   ipcMain.handle("skills:install", async (_event, payload) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
     const id = payload?.id;
     const version = payload?.version;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    const result = await skillManager.installFromRegistry(id, version);
-    if (result.ok) {
-      runnerPool.terminateAll();
-    }
-    return result;
+    return withRunnerChange(ctx, () => skillManager.installFromRegistry(id, version));
   });
 
   ipcMain.handle("skills:update", async (_event, payload) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    const result = await skillManager.updateFromRegistry(id);
-    if (result.ok) {
-      runnerPool.terminateAll();
-    }
-    return result;
+    return withRunnerChange(ctx, () => skillManager.updateFromRegistry(id));
   });
 
   ipcMain.handle("skills:uninstall", (_event, payload) => {
-    if (anyRunnerBusy(runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    const result = skillManager.uninstallRemoteSkill(id);
-    if (result.ok) {
-      runnerPool.terminateAll();
-    }
-    return result;
+    return withRunnerChange(ctx, () => skillManager.uninstallRemoteSkill(id));
   });
 
   // --- Projects ------------------------------------------------------------
@@ -767,71 +802,93 @@ function registerAll(ctx) {
     const session = sessionManager.getActive();
     if (!session) return { ok: false, error: "NO_SESSION" };
 
-    const blocked = diagnoseSendBlocker(ctx, session.id);
-    if (blocked) {
-      console.error("[assistant:input]", blocked.error, blocked.detail);
-      return { ok: false, error: blocked.error, detail: blocked.detail };
+    return dispatchUserLine(ctx, session, text, files, { recordUser: true });
+  });
+
+  ipcMain.handle("assistant:retry", (_event, payload) => {
+    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const session = sessionId ? sessionManager.findById(sessionId) : null;
+    if (!session) return { ok: false, error: "NO_SESSION" };
+
+    const lastUser = sessionManager.getLastUserMessage(session.id);
+    if (!lastUser) return { ok: false, error: "NO_USER_MESSAGE" };
+
+    const lastMsg = session.messages[session.messages.length - 1];
+    if (lastMsg?.role !== "assistant") {
+      return { ok: false, error: "NOTHING_TO_RETRY" };
     }
 
-    const line = buildInputLine(text, files);
-    if (!line) return { ok: false, error: "EMPTY" };
-
-    const ensured = ensureSessionRunner(ctx, session.id);
-    const runner = ensured.runner;
-    if (!runner) {
+    const storedFiles = lastUser.files || [];
+    const files = [];
+    const missing = [];
+    for (const f of storedFiles) {
+      if (f.path && fs.existsSync(f.path)) {
+        files.push(f);
+      } else if (storedFiles.length > 0) {
+        missing.push(f.name || f.path || "file");
+      }
+    }
+    if (storedFiles.length > 0 && files.length !== storedFiles.length) {
       return {
         ok: false,
-        error: ensured.error || "RUNNER_ERROR",
-        detail:
-          ensured.detail ||
-          "无法启动助手进程，请查看终端日志或重启应用。",
+        error: "FILES_UNAVAILABLE",
+        detail: missing.length
+          ? `附件已失效：${missing.join("、")}`
+          : "原消息含附件，但路径已不可用，请重新添加附件后发送。",
       };
     }
 
-    if (runner.isBusy() || activeTurns.has(session.id)) {
-      return { ok: false, error: "BUSY" };
+    sessionManager.popLastAssistantMessage(session.id);
+
+    const result = dispatchUserLine(ctx, session, lastUser.content, files, {
+      recordUser: false,
+    });
+    if (!result.ok) {
+      sessionManager.pushMessageTo(
+        session.id,
+        "assistant",
+        lastMsg.content,
+        lastMsg.files || null,
+        lastMsg.failed ? { failed: true } : null,
+      );
     }
-
-    const fileMetadata = files.map((f) => ({
-      id: f.id,
-      name: f.name,
-      type: f.type,
-      size: f.size,
-      isImage: f.isImage,
-    }));
-
-    turnOutputs.set(session.id, "");
-    activeTurns.add(session.id);
-
-    const sent = runner.sendUserMessage(line);
-    if (!sent) {
-      activeTurns.delete(session.id);
-      turnOutputs.delete(session.id);
-      return { ok: false, error: "BUSY" };
-    }
-
-    sessionManager.pushMessageTo(
-      session.id,
-      "user",
-      String(text || "").trim(),
-      fileMetadata,
-    );
-
-    return { ok: true };
+    return result;
   });
 
   warmupActiveRunner(ctx);
+
+  ipcMain.handle("assistant:settle-turn", (_event, payload) => {
+    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    if (!sessionId) return { ok: false, error: "NO_SESSION" };
+
+    const runner = runnerPool.get(sessionId);
+    if (!runner?.isBusy()) return { ok: false, error: "NOT_BUSY" };
+
+    const settled = runner.settleTurnIfIdle();
+    return settled ? { ok: true, sessionId } : { ok: false, error: "NOT_READY", sessionId };
+  });
 
   ipcMain.handle("assistant:interrupt", () => {
     const session = sessionManager.getActive();
     if (!session) return { ok: false, error: "NO_SESSION" };
 
     const runner = runnerPool.get(session.id);
-    if (!runner?.isBusy() && !activeTurns.has(session.id)) {
-      return { ok: true };
-    }
+    const wasRunnerBusy = Boolean(runner?.isBusy());
+    const hadTurn = activeTurns.has(session.id) || wasRunnerBusy;
+    runner?.interrupt();
 
-    runnerPool.interrupt(session.id);
+    sessionManager.setStatus(session.id, "idle");
+    activeTurns.delete(session.id);
+    turnOutputs.delete(session.id);
+
+    // Busy runner emits `done` via wireRunner; only synthesize when UI still in-turn without runner.
+    if (hadTurn && !wasRunnerBusy) {
+      sendToRenderer(ctx.mainWindow, "assistant:done", {
+        code: null,
+        sessionId: session.id,
+        interrupted: true,
+      });
+    }
     return { ok: true };
   });
 }
