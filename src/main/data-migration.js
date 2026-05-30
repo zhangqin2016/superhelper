@@ -11,6 +11,66 @@ const LEGACY_CONFIG_DIR = "claude-config";
 const LEGACY_SKILL_ID = "claude-vision";
 const CURRENT_SKILL_ID = "lily-vision";
 
+function migrateLegacyCliBinaries() {
+  const {
+    agentBinDir,
+    bundledCliBasename,
+    installedCliBasename,
+    legacyInstalledCliBasenames,
+  } = require("./config");
+
+  const targetName = installedCliBasename();
+  const primaryTarget = path.join(agentBinDir(), targetName);
+  const binDirs = [agentBinDir(), userDataPath(LEGACY_BIN_DIR)];
+
+  for (const dir of binDirs) {
+    if (!fs.existsSync(dir)) continue;
+
+    for (const legacyName of legacyInstalledCliBasenames()) {
+      const legacyPath = path.join(dir, legacyName);
+      if (!fs.existsSync(legacyPath)) continue;
+      if (path.normalize(legacyPath) === path.normalize(primaryTarget)) continue;
+
+      if (!fs.existsSync(primaryTarget)) {
+        fs.mkdirSync(path.dirname(primaryTarget), { recursive: true });
+        try {
+          fs.renameSync(legacyPath, primaryTarget);
+          console.info(`[data-migration] renamed ${legacyPath} -> ${primaryTarget}`);
+        } catch (err) {
+          console.warn(
+            `[data-migration] rename legacy cli failed ${legacyPath}:`,
+            err?.message || err,
+          );
+        }
+        continue;
+      }
+
+      try {
+        fs.unlinkSync(legacyPath);
+        console.info(`[data-migration] removed legacy cli ${legacyPath}`);
+      } catch (err) {
+        console.warn(
+          `[data-migration] remove legacy cli failed ${legacyPath}:`,
+          err?.message || err,
+        );
+      }
+    }
+
+    const strayUpstream = path.join(dir, bundledCliBasename());
+    if (
+      fs.existsSync(strayUpstream) &&
+      path.normalize(strayUpstream) !== path.normalize(primaryTarget)
+    ) {
+      try {
+        fs.unlinkSync(strayUpstream);
+        console.info(`[data-migration] removed stray bundle copy ${strayUpstream}`);
+      } catch {
+        // ignore — may be in use
+      }
+    }
+  }
+}
+
 /** Previous Electron userData folder names (package / product renames). */
 const LEGACY_USER_DATA_DIR_NAMES = ["terminal-chat-claude", "智能工作台"];
 
@@ -426,6 +486,7 @@ function runDataMigrations() {
   migrateLegacyUserDataRoot();
   renameDirIfNeeded(LEGACY_BIN_DIR, path.basename(agentBinDir()));
   renameDirIfNeeded(LEGACY_CONFIG_DIR, path.basename(agentConfigDir()));
+  migrateLegacyCliBinaries();
   migrateInstalledSkillDir();
   migrateSkillsState();
   migrateSessionsResumeId();
@@ -435,6 +496,7 @@ function runDataMigrations() {
 
 module.exports = {
   runDataMigrations,
+  migrateLegacyCliBinaries,
   migrateSettingsEnvKeys,
   migrateLegacyGuideFile,
   shouldPreferLegacyJson,

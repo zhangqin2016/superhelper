@@ -272,7 +272,7 @@
 
   "errors.BUSY": "A chat is busy. Please try again later.",
   "errors.NETWORK": "Cannot reach skill registry. Check network or URL.",
-  "errors.NETWORK_DETAIL": "Bundled skill pack missing and GitHub unreachable. Update the app or retry later.",
+  "errors.NETWORK_DETAIL": "Cannot reach GitHub to download skills. Release builds should use the bundled offline catalog; if this persists, update the app or reinstall.",
   "errors.BUNDLED_MISSING": "Bundled skill pack missing. Please update the app.",
   "errors.INVALID_URL": "Invalid URL. Use http:// or https://",
   "errors.CHECKSUM_MISMATCH": "Checksum failed. Skill not installed.",

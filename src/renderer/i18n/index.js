@@ -214,10 +214,13 @@ export function tSkillDesc(skill) {
 }
 
 export function skillErrorMessage(error, detail) {
-  if (error === "NETWORK" && detail) {
-    const mapped = t("errors.NETWORK_DETAIL");
-    if (mapped !== "errors.NETWORK_DETAIL") return mapped;
-    return detail;
+  if (error === "BUNDLED_MISSING") {
+    return detail || t("errors.BUNDLED_MISSING");
+  }
+  if (error === "NETWORK") {
+    if (detail) return detail;
+    const mapped = t("errors.NETWORK");
+    return mapped === "errors.NETWORK" ? t("errors.GENERIC") : mapped;
   }
   if (error === "INVALID_MANIFEST" && detail) {
     const mapped = t("errors.INVALID_MANIFEST");

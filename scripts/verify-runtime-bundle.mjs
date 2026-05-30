@@ -25,13 +25,32 @@ function detectPlatform() {
   return platformCandidates()[0];
 }
 
+function runtimeRootFor(platform) {
+  return path.join(ROOT, "bundles", platform, "runtime");
+}
+
+function isCompleteRuntime(runtimeRoot) {
+  const manifestPath = path.join(runtimeRoot, "runtime-manifest.json");
+  if (!fs.existsSync(manifestPath)) return false;
+  const venvPython =
+    process.platform === "win32"
+      ? path.join(runtimeRoot, "venv", "Scripts", "python.exe")
+      : path.join(runtimeRoot, "venv", "bin", "python3");
+  return fs.existsSync(venvPython);
+}
+
 function resolveRuntimeRoot() {
   const explicit = process.argv.find((a, i) => process.argv[i - 1] === "--platform");
   const keys = explicit ? [explicit] : platformCandidates();
   for (const platform of keys) {
-    const runtimeRoot = path.join(ROOT, "bundles", platform, "runtime");
-    const manifestPath = path.join(runtimeRoot, "runtime-manifest.json");
-    if (fs.existsSync(manifestPath)) return { platform, runtimeRoot, manifestPath };
+    const runtimeRoot = runtimeRootFor(platform);
+    if (isCompleteRuntime(runtimeRoot)) {
+      return {
+        platform,
+        runtimeRoot,
+        manifestPath: path.join(runtimeRoot, "runtime-manifest.json"),
+      };
+    }
   }
   return null;
 }
@@ -41,11 +60,31 @@ function fail(msg) {
   process.exit(1);
 }
 
+const allowMissing = process.argv.includes("--allow-missing");
+const want = detectPlatform();
+const partialRoot = runtimeRootFor(want);
+
+if (fs.existsSync(partialRoot) && !isCompleteRuntime(partialRoot)) {
+  fail(
+    `incomplete bundles/${want}/runtime (missing manifest or venv). ` +
+      `Remove it: rm -rf bundles/${want}/runtime — or finish on Windows: ` +
+      `npm run build:runtime -- --platform ${want}`,
+  );
+}
+
 const resolved = resolveRuntimeRoot();
 if (!resolved) {
-  const want = detectPlatform();
+  if (allowMissing) {
+    console.warn(
+      `[verify-runtime] warning: no bundles/${want}/runtime — Windows 包将不含内置 Python/LibreOffice`,
+    );
+    console.warn(
+      `[verify-runtime] 在 Windows 或 CI 上运行: npm run build:runtime -- --platform ${want}`,
+    );
+    process.exit(0);
+  }
   fail(
-    `missing bundles/<platform>/runtime — run: npm run build:runtime -- --platform ${want}`,
+    `missing bundles/${want}/runtime — run: npm run build:runtime -- --platform ${want}`,
   );
 }
 

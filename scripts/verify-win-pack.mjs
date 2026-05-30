@@ -1,0 +1,60 @@
+#!/usr/bin/env node
+/**
+ * After `electron-builder --win --dir`, ensure Mac bundles were not shipped.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const unpacked = path.join(ROOT, "dist", "win-unpacked");
+const bundlesRoot = path.join(unpacked, "resources", "bundles");
+const expectRuntime = process.argv.includes("--expect-runtime");
+
+function fail(msg) {
+  console.error(`[verify-win-pack] ${msg}`);
+  process.exit(1);
+}
+
+if (!fs.existsSync(unpacked)) {
+  fail("dist/win-unpacked 不存在，请先运行 dist:win 或 electron-builder --win --dir");
+}
+
+const forbidden = ["darwin-arm64", "darwin-x64", "linux-x64"];
+for (const name of forbidden) {
+  if (fs.existsSync(path.join(bundlesRoot, name))) {
+    fail(`不应包含 ${name}，Windows 包应仅有 win32-x64`);
+  }
+}
+
+const winBundle = path.join(bundlesRoot, "win32-x64");
+if (!fs.existsSync(winBundle)) {
+  fail("缺少 resources/bundles/win32-x64");
+}
+
+if (expectRuntime) {
+  const manifest = path.join(winBundle, "runtime", "runtime-manifest.json");
+  if (!fs.existsSync(manifest)) {
+    fail("完整安装包应包含 win32-x64/runtime，但未找到 runtime-manifest.json");
+  }
+  console.log("[verify-win-pack] runtime manifest ok");
+}
+
+let fileCount = 0;
+let totalBytes = 0;
+function walk(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(full);
+    else {
+      fileCount += 1;
+      totalBytes += fs.statSync(full).size;
+    }
+  }
+}
+walk(unpacked);
+
+const mb = (totalBytes / (1024 * 1024)).toFixed(0);
+console.log(
+  `[verify-win-pack] ok — ${fileCount} files, ~${mb} MB unpacked, win32-x64 present`,
+);

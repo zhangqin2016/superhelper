@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { app } = require("electron");
 const { userDataPath } = require("./config");
 const { isAppVersionCompatible } = require("./skill-version");
 const { buildManifestFromSkillMd } = require("./skill-md-convert");
@@ -114,6 +115,72 @@ async function downloadGithubPath(repo, remotePath, ref, destDir) {
   }
 }
 
+function materializeFromBundled(entry, extractDir) {
+  const bundledDir = resolveBundledCatalogDir(entry.id);
+  if (!bundledDir) return false;
+  copyDirRecursive(bundledDir, extractDir);
+  return true;
+}
+
+async function materializeFromGithub(entry, extractDir) {
+  const ref = entry.github.ref || "main";
+  await downloadGithubPath(entry.github.repo, entry.github.path, ref, extractDir);
+}
+
+function finalizeInstalledSkill(entry, extractDir) {
+  const mgr = skillManager();
+  const skillMdPath = path.join(extractDir, "SKILL.md");
+  if (!fs.existsSync(skillMdPath)) {
+    return { ok: false, error: "INVALID_MANIFEST", detail: "未找到 SKILL.md" };
+  }
+
+  const skillMd = fs.readFileSync(skillMdPath, "utf8");
+  const manifest = buildManifestFromSkillMd({
+    skillId: entry.id,
+    skillMd,
+    version: entry.latestVersion,
+  });
+
+  fs.writeFileSync(
+    path.join(extractDir, "skill.manifest.json"),
+    JSON.stringify(manifest, null, 2),
+    "utf8",
+  );
+
+  const target = mgr.installedSkillDir(entry.id);
+  if (fs.existsSync(target)) {
+    fs.rmSync(target, { recursive: true, force: true });
+  }
+  copyDirRecursive(extractDir, target);
+
+  const state = mgr.loadSkillsState();
+  const now = new Date().toISOString();
+  const prev = state.skills[entry.id];
+  state.skills[entry.id] = {
+    id: entry.id,
+    enabled: prev ? prev.enabled !== false : false,
+    source: "remote",
+    installedVersion: entry.latestVersion,
+    installedAt: prev?.installedAt || now,
+    updatedAt: now,
+    githubRef: `${entry.github.repo}@${entry.github.ref || "main"}:${entry.github.path}`,
+  };
+  mgr.saveSkillsState();
+  mgr.mergeAgentGuide();
+
+  return { ok: true, id: entry.id, version: entry.latestVersion };
+}
+
+function networkErrorDetail(err) {
+  if (/HTTP 403/.test(err.message)) {
+    if (app.isPackaged) {
+      return "内置技能包未找到且无法访问 GitHub。请更新到最新安装包，或检查是否完整安装。";
+    }
+    return "无法访问 GitHub（403/限流）。开发环境请运行 npm run sync:skills-bundle 使用离线包。";
+  }
+  return err.message;
+}
+
 /**
  * @param {{ id: string, latestVersion: string, github: { repo: string, path: string, ref?: string }, minAppVersion?: string | null }} entry
  */
@@ -129,70 +196,68 @@ async function installFromGithubEntry(entry) {
     return { ok: false, error: "INVALID_MANIFEST", detail: "需要更高版本的应用" };
   }
 
-  const ref = entry.github.ref || "main";
   const cacheDir = skillsCacheDir();
   fs.mkdirSync(cacheDir, { recursive: true });
   const extractDir = path.join(cacheDir, `gh-${entry.id}-${Date.now()}`);
 
   try {
-    const bundledDir = resolveBundledCatalogDir(entry.id);
-    if (bundledDir) {
-      copyDirRecursive(bundledDir, extractDir);
+    let usedGithub = false;
+    if (materializeFromBundled(entry, extractDir)) {
+      // offline catalog
+    } else if (app.isPackaged) {
+      return {
+        ok: false,
+        error: "BUNDLED_MISSING",
+        detail: `安装包内缺少技能「${entry.id}」的离线文件，请更新应用。`,
+      };
     } else {
-      await downloadGithubPath(entry.github.repo, entry.github.path, ref, extractDir);
+      await materializeFromGithub(entry, extractDir);
+      usedGithub = true;
     }
 
-    const skillMdPath = path.join(extractDir, "SKILL.md");
-    if (!fs.existsSync(skillMdPath)) {
-      return { ok: false, error: "INVALID_MANIFEST", detail: "未找到 SKILL.md" };
+    const result = finalizeInstalledSkill(entry, extractDir);
+    if (result.ok || !usedGithub) return result;
+
+    // Dev-only: GitHub manifest invalid — retry bundled if sync added it since start
+    if (materializeFromBundled(entry, extractDir)) {
+      return finalizeInstalledSkill(entry, extractDir);
     }
-
-    const skillMd = fs.readFileSync(skillMdPath, "utf8");
-    const manifest = buildManifestFromSkillMd({
-      skillId: entry.id,
-      skillMd,
-      version: entry.latestVersion,
-    });
-
-    fs.writeFileSync(
-      path.join(extractDir, "skill.manifest.json"),
-      JSON.stringify(manifest, null, 2),
-      "utf8",
-    );
-
-    const target = mgr.installedSkillDir(entry.id);
-    if (fs.existsSync(target)) {
-      fs.rmSync(target, { recursive: true, force: true });
-    }
-    copyDirRecursive(extractDir, target);
-
-    const state = mgr.loadSkillsState();
-    const now = new Date().toISOString();
-    const prev = state.skills[entry.id];
-    state.skills[entry.id] = {
-      id: entry.id,
-      enabled: prev ? prev.enabled !== false : false,
-      source: "remote",
-      installedVersion: entry.latestVersion,
-      installedAt: prev?.installedAt || now,
-      updatedAt: now,
-      githubRef: `${entry.github.repo}@${ref}:${entry.github.path}`,
-    };
-    mgr.saveSkillsState();
-    mgr.mergeAgentGuide();
-
-    return { ok: true, id: entry.id, version: entry.latestVersion };
+    return result;
   } catch (err) {
     if (err.message === "SKILL_TOO_LARGE") {
       return { ok: false, error: "INVALID_MANIFEST", detail: "技能包超过大小上限" };
     }
-    const is403 = /HTTP 403/.test(err.message);
+
+    // GitHub failed — fall back to bundled catalog when available (common in CN networks)
+    if (fs.existsSync(extractDir)) {
+      fs.rmSync(extractDir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(extractDir, { recursive: true });
+    if (materializeFromBundled(entry, extractDir)) {
+      try {
+        const recovered = finalizeInstalledSkill(entry, extractDir);
+        if (recovered.ok) return recovered;
+      } catch (finalizeErr) {
+        return {
+          ok: false,
+          error: "INVALID_MANIFEST",
+          detail: finalizeErr.message,
+        };
+      }
+    }
+
+    if (app.isPackaged) {
+      return {
+        ok: false,
+        error: "BUNDLED_MISSING",
+        detail: networkErrorDetail(err),
+      };
+    }
+
     return {
       ok: false,
       error: "NETWORK",
-      detail: is403
-        ? "内置技能包缺失且无法访问 GitHub，请更新应用或稍后重试"
-        : err.message,
+      detail: networkErrorDetail(err),
     };
   } finally {
     if (fs.existsSync(extractDir)) {

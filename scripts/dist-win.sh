@@ -73,8 +73,12 @@ export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 export ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
 
 if [[ ! -f "bundles/win32-x64/engine-upstream.exe" && ! -f "bundles/win32-x64/claude.exe" ]]; then
-  echo "[dist-win] 警告: 缺少 bundles/win32-x64/engine-upstream.exe（从 GitHub Actions artifact 放入后再打包更完整）"
+  echo "[dist-win] 错误: 缺少 bundles/win32-x64/engine-upstream.exe"
+  echo "[dist-win] 从 GitHub Actions「Bundle Windows CLI」下载 artifact 后放入该路径"
+  exit 1
 fi
+
+echo "[dist-win] Windows 安装包仅包含 bundles/win32-x64（不含 Mac runtime）"
 
 # 必须打 x64：在 Apple Silicon 上省略 --x64 会产出 win-arm64，普通 Intel/AMD PC 无法运行。
 exec npx electron-builder --win --x64 "$@"

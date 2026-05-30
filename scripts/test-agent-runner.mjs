@@ -2,6 +2,7 @@
 /**
  * Lightweight checks for stream-json helpers (no Electron / no engine binary).
  */
+import { createRequire } from "node:module";
 import { appendTextSegment, sanitizeError } from "../src/main/agent-runner.js";
 import { sameSpawnOptions, sameRespawnOptions } from "../src/main/runner-spawn-options.js";
 import {
@@ -21,6 +22,7 @@ import {
 } from "../src/main/user-message.js";
 import { resolvePlanPreview } from "../src/main/plan-preview.js";
 import { SessionTurnState } from "../src/main/session-turn-state.js";
+import { isResumeFailureMessage } from "../src/main/session-engine-recovery.js";
 
 const merged = appendTextSegment("hello", "world");
 if (merged !== "hello\n\nworld") throw new Error(`appendTextSegment failed: ${merged}`);
@@ -181,5 +183,30 @@ if (!snap.active || snap.phase !== "permission") {
 }
 registry.end("s1");
 if (registry.has("s1")) throw new Error("SessionTurnState end failed");
+
+if (!isResumeFailureMessage("Failed to resume session abc")) {
+  throw new Error("isResumeFailureMessage resume failed");
+}
+if (isResumeFailureMessage("network timeout")) {
+  throw new Error("isResumeFailureMessage false positive");
+}
+
+const require = createRequire(import.meta.url);
+const {
+  bundledCatalogRoots,
+  resolveBundledCatalogDir,
+  isBundledInCatalog,
+} = require("../src/main/skill-bundled-catalog.js");
+
+const roots = bundledCatalogRoots();
+if (!roots.some((r) => r.includes("skills-catalog"))) {
+  throw new Error(`bundledCatalogRoots missing skills-catalog: ${roots.join("|")}`);
+}
+if (!isBundledInCatalog("anthropics-algorithmic-art")) {
+  throw new Error("isBundledInCatalog sample skill failed");
+}
+if (!resolveBundledCatalogDir("anthropics-algorithmic-art")) {
+  throw new Error("resolveBundledCatalogDir sample skill failed");
+}
 
 console.log("agent-runner: ok");

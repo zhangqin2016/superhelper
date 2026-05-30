@@ -272,7 +272,7 @@
 
   "errors.BUSY": "有对话正在处理中，请稍后再试。",
   "errors.NETWORK": "无法连接技能目录，请检查网络或 URL。",
-  "errors.NETWORK_DETAIL": "内置技能包缺失且无法访问 GitHub，请更新应用或稍后重试",
+  "errors.NETWORK_DETAIL": "无法访问 GitHub 下载技能。正式安装包应走内置离线包；若仍失败请更新应用或检查安装是否完整。",
   "errors.BUNDLED_MISSING": "内置技能包缺失，请更新应用版本。",
   "errors.INVALID_URL": "URL 格式无效，请使用 http:// 或 https:// 地址。",
   "errors.CHECKSUM_MISMATCH": "技能包校验失败，未安装。",

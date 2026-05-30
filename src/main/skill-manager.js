@@ -599,7 +599,7 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
 }
 
 async function installFromRegistry(skillId, version) {
-  const resolved = await resolveRegistry({ fetch: true });
+  const resolved = await resolveRegistry({ fetch: Boolean(getRegistryUrl()) });
   if (!resolved.ok) return resolved;
 
   const registry = resolved.registry;

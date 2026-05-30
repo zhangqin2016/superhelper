@@ -89,7 +89,8 @@ node scripts/build-runtime-bundle.mjs --skip-libreoffice
 
 ## 运行逻辑
 
-1. 启动时从 `bundles/<平台>/` 复制 CLI（仓库内仍为 `claude` / `claude.exe`）到应用数据 `claude-bin/`，安装后文件名为 **`lily-workbench.exe`（Windows）** 或 **`lily-workbench`（macOS/Linux）**，任务管理器中不再显示 `claude`
+1. 启动时从 `bundles/<平台>/engine-upstream(.exe)` 复制到应用数据 **`lily-bin/lily-workbench.exe`（Windows）** 或 **`lily-bin/lily-workbench`（macOS/Linux）**；任务管理器里主进程应显示 `lily-workbench`，不应再出现 `claude.exe`
+2. 若仍看到 `claude.exe`，多为旧版遗留的 `claude-bin/claude.exe` 或本机 npm 全局 `claude` 被 Bash 工具调用；升级后重启应用会自动清理前者
 2. 子进程使用独立 `CLAUDE_CONFIG_DIR`（应用数据内）
 3. 仅注入当前模型预设的环境变量，不继承用户 `ANTHROPIC_*`
 4. **不会**使用用户本机已安装的 `claude`
@@ -107,9 +108,19 @@ npm run start:dev
 ## 打安装包
 
 ```bash
-npm run dist:mac    # macOS DMG/ZIP
-npm run dist:win    # Windows NSIS/ZIP
-npm run dist:all    # 同时打 Mac + Win
+npm run dist:mac    # macOS DMG/ZIP（仅 darwin-arm64 + darwin-x64 bundles）
+npm run dist:win    # Windows NSIS/ZIP（仅 win32-x64；Mac 上可无 runtime，见 --allow-missing）
+npm run dist:all    # 同时打 Mac + Win（各平台只带自己的 bundles）
+
+### Windows 完整包（含 Python / LibreOffice runtime）
+
+在 Mac 上无法构建 `win32-x64/runtime`，请用 GitHub Actions：
+
+1. 打开 **Actions** → **Windows Full Installer** → **Run workflow**
+2. 可选：填写 Claude Code 版本；勾选 `skip_libreoffice` 可加快调试构建
+3. 完成后下载 Artifact **windows-installer-full**（`.exe` + `.zip`）
+
+或分步：先跑 **Build Runtime Bundle**（platform=`win32-x64`）与 **Bundle Windows CLI**，将 artifact 解压到 `bundles/win32-x64/` 后本地 `npm run dist:win`。
 ```
 
 产物在 `dist/` 目录。
