@@ -51,21 +51,6 @@ function readJsonSafe(filePath) {
   }
 }
 
-function countProjects(data) {
-  return Array.isArray(data?.projects) ? data.projects.length : 0;
-}
-
-function countSessions(data) {
-  const sessions = data?.sessions;
-  if (!sessions || typeof sessions !== "object") return 0;
-  if (Array.isArray(sessions)) return sessions.length;
-  let total = 0;
-  for (const list of Object.values(sessions)) {
-    if (Array.isArray(list)) total += list.length;
-  }
-  return total;
-}
-
 function shouldPreferLegacyJson(fileName, destPath, srcPath) {
   if (!fs.existsSync(srcPath)) return false;
   if (!fs.existsSync(destPath)) return true;
@@ -75,11 +60,10 @@ function shouldPreferLegacyJson(fileName, destPath, srcPath) {
   if (!src) return false;
   if (!dest) return true;
 
-  if (fileName === "projects.json") {
-    return countProjects(src) > countProjects(dest);
-  }
-  if (fileName === "sessions.json") {
-    return countSessions(src) > countSessions(dest);
+  // Once projects/sessions exist locally (even empty), user state wins — do not
+  // restore from a legacy userData folder after the user removed all workspaces.
+  if (fileName === "projects.json" || fileName === "sessions.json") {
+    return false;
   }
   if (fileName === "skills-state.json") {
     const destSkills = dest.skills && typeof dest.skills === "object" ? dest.skills : {};
@@ -284,4 +268,9 @@ function runDataMigrations() {
   migrateLegacyGuideFile();
 }
 
-module.exports = { runDataMigrations, migrateSettingsEnvKeys, migrateLegacyGuideFile };
+module.exports = {
+  runDataMigrations,
+  migrateSettingsEnvKeys,
+  migrateLegacyGuideFile,
+  shouldPreferLegacyJson,
+};

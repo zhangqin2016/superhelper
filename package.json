@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "start:dev": "DEV_USE_SYSTEM_AGENT=1 electron .",
-    "test:unit": "node scripts/test-agent-runner.mjs && node scripts/test-runtime-python.mjs && node scripts/test-spawn-env-runtime.mjs && node scripts/test-locale-settings.mjs",
+    "test:unit": "node scripts/test-agent-runner.mjs && node scripts/test-runtime-python.mjs && node scripts/test-spawn-env-runtime.mjs && node scripts/test-locale-settings.mjs && node scripts/test-data-migration.mjs",
     "sync:skills-catalog": "node scripts/sync-skills-catalog.mjs",
     "sync:skills-bundle": "node scripts/sync-skills-catalog.mjs --bundle-only",
     "generate:skill-i18n": "node scripts/generate-skill-i18n.mjs",
