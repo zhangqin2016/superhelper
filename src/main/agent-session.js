@@ -6,6 +6,8 @@ const fs = require("node:fs");
 const { appendTextSegment, sanitizeError } = require("./agent-runner");
 const { buildAgentSpawnEnv } = require("./spawn-env");
 const { sameSpawnOptions } = require("./runner-spawn-options");
+const { getLogger } = require("./logger");
+const log = getLogger("agent-session");
 
 /**
  * One long-lived engine process per app session (`stream-json` protocol).
@@ -26,8 +28,64 @@ class AgentSession extends EventEmitter {
     this.collectedOutput = "";
     this.agentResumeId = null;
     this.spawnOptions = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._idleTimer = null;
+    /** Tool calls awaiting `tool_result` — idle completion must not fire while these run. */
+    this._pendingToolIds = new Set();
+    /** Any tool invocation this turn — wait for engine `result`, do not quiesce-complete. */
+    this._turnHadToolUse = false;
     /** @type {boolean} True after done/error emitted for the current turn. */
     this._turnSettled = true;
+  }
+
+  /** Only for text-only turns missing `result` (not a task timeout). */
+  static QUIESCE_MS = 12_000;
+
+  _clearIdleTimer() {
+    if (this._idleTimer) {
+      clearTimeout(this._idleTimer);
+      this._idleTimer = null;
+    }
+  }
+
+  /** Complete turn when stream goes quiet after text (missing `result` event). */
+  _armIdleCompletionTimer() {
+    this._clearIdleTimer();
+    if (!this.busy || this._turnSettled) return;
+    if (this._turnHadToolUse || this._pendingToolIds.size > 0) return;
+    if (!this.collectedOutput.trim()) return;
+    this._idleTimer = setTimeout(() => {
+      if (!this.busy || this._turnSettled) return;
+      if (this._turnHadToolUse || this._pendingToolIds.size > 0) return;
+      if (!this.collectedOutput.trim()) return;
+      this._flushLineBuffer();
+      this._completeTurn({
+        code: 0,
+        output: this.collectedOutput.trim(),
+        idle: true,
+      });
+    }, AgentSession.QUIESCE_MS);
+  }
+
+  /**
+   * End turn when stream is quiet but engine omitted `result` (text-only turns only).
+   */
+  settleTurnIfIdle() {
+    if (!this.busy || this._turnSettled) return false;
+    if (this._turnHadToolUse || this._pendingToolIds.size > 0) return false;
+    if (!this.collectedOutput.trim()) return false;
+    this._flushLineBuffer();
+    this._completeTurn({
+      code: 0,
+      output: this.collectedOutput.trim(),
+      idle: true,
+    });
+    return true;
+  }
+
+  _markStreamActivity() {
+    if (!this.busy || this._turnSettled) return;
+    this._armIdleCompletionTimer();
   }
 
   isBusy() {
@@ -111,6 +169,7 @@ class AgentSession extends EventEmitter {
     this.lineBuf = "";
     this.collectedOutput = "";
     this._turnSettled = true;
+    this._clearIdleTimer();
 
     this.process.stdout.on("data", (chunk) => this._onStdout(chunk));
     this.process.stderr.on("data", (chunk) => {
@@ -171,6 +230,8 @@ class AgentSession extends EventEmitter {
     this.busy = true;
     this._turnSettled = false;
     this.collectedOutput = "";
+    this._pendingToolIds.clear();
+    this._turnHadToolUse = false;
     this.emit("status", "thinking");
 
     const payload = {
@@ -198,11 +259,13 @@ class AgentSession extends EventEmitter {
   }
 
   interrupt() {
-    if (!this.process) return;
-    try {
-      this.process.kill("SIGINT");
-    } catch {
-      // ignore
+    if (this.process) {
+      try {
+        this.process.kill("SIGINT");
+      } catch {
+        log.warn("interrupt kill failed (process already dead)");
+      }
+      this.process = null;
     }
     if (this.busy && !this._turnSettled) {
       this._completeTurn({
@@ -211,10 +274,12 @@ class AgentSession extends EventEmitter {
         interrupted: true,
       });
     }
-    this.process = null;
   }
 
   terminate() {
+    this._clearIdleTimer();
+    this._pendingToolIds.clear();
+    this._turnHadToolUse = false;
     if (!this.process) {
       this.cwd = null;
       this.spawnOptions = null;
@@ -227,7 +292,7 @@ class AgentSession extends EventEmitter {
     try {
       this.process.kill("SIGTERM");
     } catch {
-      // ignore
+      log.warn("terminate kill failed (process already dead)");
     }
     this.busy = false;
     this._turnSettled = true;
@@ -241,6 +306,9 @@ class AgentSession extends EventEmitter {
 
   _completeTurn(payload) {
     if (this._turnSettled) return;
+    this._clearIdleTimer();
+    this._pendingToolIds.clear();
+    this._turnHadToolUse = false;
     this._turnSettled = true;
     this.busy = false;
     this.emit("done", payload);
@@ -248,6 +316,9 @@ class AgentSession extends EventEmitter {
 
   _failTurn(message) {
     if (this._turnSettled) return;
+    this._clearIdleTimer();
+    this._pendingToolIds.clear();
+    this._turnHadToolUse = false;
     this._turnSettled = true;
     this.busy = false;
     this.emit("error", message);
@@ -278,6 +349,7 @@ class AgentSession extends EventEmitter {
     } catch {
       this.collectedOutput += `${trimmed}\n`;
       this.emit("chunk", `${trimmed}\n`);
+      this._markStreamActivity();
       return;
     }
 
@@ -303,15 +375,22 @@ class AgentSession extends EventEmitter {
               if (!piece) break;
               this.collectedOutput = appendTextSegment(this.collectedOutput, piece);
               this.emit("chunk", piece);
+              this._markStreamActivity();
               break;
             }
-            case "tool_use":
+            case "tool_use": {
+              this._turnHadToolUse = true;
+              const toolId = block.id || "";
+              if (toolId) this._pendingToolIds.add(toolId);
               this.emit("tool-using", {
                 name: block.name || "unknown",
                 input: block.input || {},
-                id: block.id || "",
+                id: toolId,
               });
+              this._clearIdleTimer();
+              this._markStreamActivity();
               break;
+            }
             default:
               break;
           }
@@ -324,10 +403,13 @@ class AgentSession extends EventEmitter {
         if (!blocks) break;
         for (const block of blocks) {
           if (block.type === "tool_result") {
+            const toolId = block.tool_use_id || "";
+            if (toolId) this._pendingToolIds.delete(toolId);
             this.emit("tool-done", {
-              id: block.tool_use_id || "",
+              id: toolId,
               status: block.is_error ? "failed" : "done",
             });
+            this._markStreamActivity();
           }
         }
         break;
@@ -340,6 +422,7 @@ class AgentSession extends EventEmitter {
           if (piece && !this.collectedOutput.includes(piece)) {
             this.collectedOutput = appendTextSegment(this.collectedOutput, piece);
             this.emit("chunk", piece);
+            this._markStreamActivity();
           }
         }
         this._completeTurn({

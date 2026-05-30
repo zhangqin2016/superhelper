@@ -13,6 +13,8 @@ const {
   legacyBundledCliBasenames,
 } = require("./config");
 const { runDataMigrations } = require("./data-migration");
+const { getLogger } = require("./logger");
+const log = getLogger("agent-bootstrap");
 
 /** Platform keys to search for bundled CLI (order matters). */
 function platformBundleKeys() {
@@ -107,8 +109,8 @@ function copyCliIfNeeded(source, target) {
       const { execFileSync } = require("node:child_process");
       execFileSync("xattr", ["-cr", target], { stdio: "ignore" });
     } catch {
-      // ignore xattr failures
-    }
+        log.warn("xattr cleanup failed (non-critical)");
+      }
   }
   return { ok: true, copied: true };
 }
@@ -119,7 +121,7 @@ function removeLegacyInstalledCli() {
     try {
       fs.unlinkSync(legacy);
     } catch {
-      // ignore
+      log.warn("legacy cli removal failed", legacy);
     }
   }
 }
