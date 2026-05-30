@@ -23,10 +23,14 @@ import { showToast } from "./toast.js";
 import { updateSessionRunningIndicators } from "./project-tree.js";
 import {
   addToolCard as addToolCardImpl,
+  addToolCardPlaceholder as addToolCardPlaceholderImpl,
+  updateToolCardInput as updateToolCardInputImpl,
+  finalizeToolCardInput as finalizeToolCardInputImpl,
   updateToolCard as updateToolCardImpl,
   clearToolCards as clearToolCardsImpl,
+  collapseToolCards as collapseToolCardsImpl,
+  updateToolCardProgress as updateToolCardProgressImpl,
   syncTurnProgress as syncTurnProgressImpl,
-  updateBusyMeta as updateBusyMetaImpl,
   countRunningTools,
   toolSummary,
   syncActivityVisibility,
@@ -70,7 +74,6 @@ function refreshBusyIndicators(sessionId) {
     v.activeBubble.classList.add("pending");
   }
   syncTurnProgress(sessionId);
-  updateBusyMeta(sessionId);
 
   if (!busyHeartbeats.has(sessionId)) {
     busyHeartbeats.set(
@@ -157,13 +160,13 @@ export function hideAllSessionMessages() {
 export function removeSessionMessages(sessionId) {
   const v = sessionViews.get(sessionId);
   if (!v) return;
-  // 清理未完成的工具卡片
   for (const { card } of v.toolCards.values()) {
     card.remove();
   }
   v.toolCards.clear();
   v.panel?.remove();
   sessionViews.delete(sessionId);
+  pendingPermissionBySession.delete(sessionId);
 }
 
 function syncActiveStoreFromView(sessionId) {
@@ -210,13 +213,30 @@ export function createMessage(sessionId, role, text = "", files = null, options 
   }
 
   if (files?.length) {
+    const hasImages = files.some((f) => f.isImage && f.thumbnail);
+    const containerClass = hasImages ? "msg-bubble-images" : "msg-bubble-files";
+
     const fc = document.createElement("div");
-    fc.className = "msg-bubble-files";
+    fc.className = containerClass;
+
     for (const f of files) {
-      const fi = document.createElement("div");
-      fi.className = "msg-bubble-file";
-      fi.textContent = f.isImage ? t("message.imagePrefix", { name: f.name }) : f.name;
-      fc.appendChild(fi);
+      if (f.isImage && f.thumbnail) {
+        const img = document.createElement("img");
+        img.className = "msg-bubble-image";
+        img.src = f.thumbnail;
+        img.alt = f.name;
+        img.title = f.name;
+        img.addEventListener("click", async () => {
+          const { openImageViewer } = await import("./image-viewer.js");
+          openImageViewer(f.thumbnail, f.name);
+        });
+        fc.appendChild(img);
+      } else {
+        const fi = document.createElement("div");
+        fi.className = "msg-bubble-file";
+        fi.textContent = f.isImage ? t("message.imagePrefix", { name: f.name }) : f.name;
+        fc.appendChild(fi);
+      }
     }
     bubble.appendChild(fc);
   }
@@ -331,7 +351,6 @@ export function syncComposerForActiveSession() {
   const awaitingPermission = Boolean(sid && pendingPermissionBySession.has(sid));
   store.set("isBusy", busy);
   setBusyUI(busy);
-  syncPermissionDockForActiveSession();
 
   const promptInput = $("promptInput");
   const blocked = !hasProject || !sid;
@@ -365,9 +384,20 @@ export function renderConversation(sessionId) {
   const sid = sessionId || store.get("activeSessionId");
   if (!sid) return;
 
-  finishActiveTurn(sid);
   const v = ensurePanel(sid);
   if (!v.listEl) return;
+
+  // If there's a live turn, finish it (it stays collapsed in the DOM)
+  finishActiveTurn(sid);
+
+  // Don't rebuild if already rendered — preserves collapsed tool cards
+  if (v.listEl.children.length > 0) {
+    v.activeBubble = null;
+    v.activeMarkdown = "";
+    if (isActiveSession(sid)) syncActiveStoreFromView(sid);
+    scrollToBottomAfterLayout(v.panel);
+    return;
+  }
 
   v.listEl.textContent = "";
   const conv = getConversationForSession(sid);
@@ -401,18 +431,17 @@ export function renderConversation(sessionId) {
 
 // --- Tool card wrappers (delegate to tool-cards.js) ---
 
-function addToolCard(sessionId, id, name, input) {
+function addToolCard(sessionId, id, name, input, parentToolUseId) {
   if (!view(sessionId).activeTurn) beginAssistantTurn(sessionId);
   const v = view(sessionId);
   v.turnHadToolUse = true;
-  addToolCardImpl(v, id, name, input);
-  updateBusyMeta(sessionId);
+  addToolCardImpl(v, id, name, input, parentToolUseId);
   syncTurnProgress(sessionId);
 }
 
-function updateToolCard(sessionId, id, status) {
+function updateToolCard(sessionId, id, status, result) {
   const v = view(sessionId);
-  updateToolCardImpl(v, id, status);
+  updateToolCardImpl(v, id, status, result);
 }
 
 function clearToolCards(sessionId) {
@@ -420,15 +449,14 @@ function clearToolCards(sessionId) {
   clearToolCardsImpl(v);
 }
 
+function collapseToolCards(sessionId) {
+  const v = view(sessionId);
+  collapseToolCardsImpl(v);
+}
+
 function syncTurnProgress(sessionId) {
   const v = view(sessionId);
   syncTurnProgressImpl(v);
-}
-
-function updateBusyMeta(sessionId) {
-  if (!store.get("isBusy")) return;
-  const v = view(sessionId);
-  updateBusyMetaImpl(v);
 }
 
 function beginAssistantTurn(sessionId) {
@@ -452,10 +480,17 @@ function beginAssistantTurn(sessionId) {
   activity.className = "tool-activity";
   activity.hidden = true;
 
+  const divider = document.createElement("div");
+  divider.className = "turn-section-divider";
+  divider.hidden = true;
+  const dividerSpan = document.createElement("span");
+  dividerSpan.textContent = t("turn.reply");
+  divider.appendChild(dividerSpan);
+
   const bubble = document.createElement("div");
   bubble.className = "msg-bubble pending";
 
-  body.append(activity, bubble);
+  body.append(activity, divider, bubble);
   article.append(avatar, body);
   listEl.appendChild(article);
 
@@ -471,10 +506,9 @@ function beginAssistantTurn(sessionId) {
 
 function finishActiveTurn(sessionId) {
   const v = view(sessionId);
-  clearToolCards(sessionId);
+  collapseToolCards(sessionId);
   if (v.activeTurn?.activity) {
-    v.activeTurn.activity.replaceChildren();
-    v.activeTurn.activity.hidden = true;
+    v.activeTurn.activity.hidden = false;
   }
   v._lastRenderedLength = 0;
   v.activeTurn = null;
@@ -488,14 +522,24 @@ function finishActiveTurn(sessionId) {
 export function forceEndTurnUi(sessionId) {
   if (!sessionId) return;
   clearBusyHeartbeat(sessionId);
-  clearToolCards(sessionId);
-  view(sessionId).activityLabel = "";
-
   const v = view(sessionId);
+  clearToolCards(sessionId);
+  v.activityLabel = "";
+
   if (v.activeBubble) {
     v.activeBubble.classList.remove("pending");
   }
-  finishActiveTurn(sessionId);
+  // Don't call finishActiveTurn — it would show the (now empty) activity div.
+  // Just clean up turn state directly.
+  if (v.activeTurn?.activity) {
+    v.activeTurn.activity.hidden = true;
+  }
+  v._lastRenderedLength = 0;
+  v.activeTurn = null;
+  v.activeBubble = null;
+  v.activeMarkdown = "";
+  v.turnHadToolUse = false;
+  if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
   syncComposerForActiveSession();
 }
 
@@ -516,30 +560,6 @@ function permissionPromptCopy(toolName, payload) {
 /** Pending tool approvals keyed by session (survives session switch). */
 const pendingPermissionBySession = new Map();
 
-function getPermissionDock() {
-  return $("permissionDock");
-}
-
-function hidePermissionDock() {
-  const dock = getPermissionDock();
-  if (!dock) return;
-  dock.replaceChildren();
-  dock.hidden = true;
-}
-
-function syncPermissionDockForActiveSession() {
-  const sid = store.get("activeSessionId");
-  const dock = getPermissionDock();
-  if (!dock) return;
-  const payload = sid ? pendingPermissionBySession.get(sid) : null;
-  if (payload) {
-    dock.replaceChildren(buildPermissionCard(sid, payload));
-    dock.hidden = false;
-  } else {
-    hidePermissionDock();
-  }
-}
-
 function dismissPermissionPrompt(sessionId, requestId) {
   if (sessionId) {
     const pending = pendingPermissionBySession.get(sessionId);
@@ -548,7 +568,6 @@ function dismissPermissionPrompt(sessionId, requestId) {
     }
   }
   if (isActiveSession(sessionId)) {
-    syncPermissionDockForActiveSession();
     syncComposerForActiveSession();
   }
 
@@ -661,18 +680,19 @@ function showPermissionPrompt(sessionId, payload) {
   beginAssistantTurn(sessionId);
   const v = view(sessionId);
   v.turnHadToolUse = true;
-  refreshBusyIndicators(sessionId);
+
+  // Render permission card inline — always in the correct session's panel
+  const card = buildPermissionCard(sessionId, payload);
+  v.activeTurn.activity.querySelectorAll(".permission-prompt").forEach((c) => c.remove());
+  v.activeTurn.activity.appendChild(card);
+  v.activeTurn.activity.hidden = false;
 
   pendingPermissionBySession.set(sessionId, payload);
+
+  // Only block composer & show busy if the permission is for the active session
   if (isActiveSession(sessionId)) {
-    syncPermissionDockForActiveSession();
+    refreshBusyIndicators(sessionId);
     syncComposerForActiveSession();
-    showToast(
-      payload.toolName === "ExitPlanMode"
-        ? t("permission.approvePlanTitle")
-        : t("permission.approveActionTitle"),
-      "info",
-    );
   }
 }
 
@@ -688,11 +708,17 @@ function handleEngineNotice(sessionId, payload) {
     showToast(t("permission.timeout"), "warning");
     return;
   }
-  if (payload.level === "progress" && payload.message) {
-    view(sessionId).activityLabel = payload.message;
-    if (isActiveSession(sessionId) && store.get("isBusy")) {
-      updateBusyMeta(sessionId);
+  // CLI error events and other warnings — show only for active session
+  if (payload.level === "warning" && payload.message) {
+    if (isActiveSession(sessionId)) {
+      showToast(payload.message, "warning");
     }
+    return;
+  }
+  if (payload.level === "progress" && payload.message) {
+    const v = view(sessionId);
+    v.activityLabel = payload.message;
+    updateToolCardProgressImpl(v, payload.toolName, payload.message);
   }
 }
 
@@ -714,21 +740,50 @@ export function wireMessageIpc() {
 
   window.assistantClient.onTurnState?.(applyTurnState);
 
+  // Full tool_use from assistant event
   window.assistantClient.onTool((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
-    // Clear previous turn diffs on first tool of a new turn
     const v = view(sessionId);
     if (!v.activeTurn) {
       import("./diff-panel.js").then((m) => m.clearDiffEntries(sessionId));
     }
-    addToolCard(sessionId, payload.id, payload.name, payload.input);
+    // If a placeholder card already exists (from content_block_start), finalize it
+    if (v.toolCards.has(payload.id)) {
+      finalizeToolCardInputImpl(v, payload.id, payload.input);
+    } else {
+      addToolCard(sessionId, payload.id, payload.name, payload.input, payload.parentToolUseId);
+    }
+  });
+
+  // Placeholder card from content_block_start (name/id only, no input yet)
+  window.assistantClient.onToolUpcoming?.((payload) => {
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    const v = view(sessionId);
+    if (!v.activeTurn) beginAssistantTurn(sessionId);
+    v.turnHadToolUse = true;
+    addToolCardPlaceholderImpl(v, payload.id, payload.name, payload.parentToolUseId);
+  });
+
+  // Streaming tool input from input_json_delta
+  window.assistantClient.onToolInputDelta?.((payload) => {
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    updateToolCardInputImpl(view(sessionId), payload.id, payload.partialJson);
+  });
+
+  // Tool input complete (from assistant event, for pre-created cards)
+  window.assistantClient.onToolInputDone?.((payload) => {
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    finalizeToolCardInputImpl(view(sessionId), payload.id, payload.input);
   });
 
   window.assistantClient.onToolDone((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
-    updateToolCard(sessionId, payload.id, payload.status);
+    updateToolCard(sessionId, payload.id, payload.status, payload.result);
   });
 
   window.assistantClient.onPermissionRequest((payload) => {
@@ -756,6 +811,12 @@ export function wireMessageIpc() {
     if (!bubble) {
       bubble = beginAssistantTurn(sessionId);
       if (!bubble) return;
+    }
+
+    // Show divider between tool steps and reply on first text
+    if (v.turnHadToolUse && v.activeTurn) {
+      const divider = v.activeTurn.article.querySelector(".turn-section-divider");
+      if (divider) divider.hidden = false;
     }
 
     v.activeMarkdown = softenStreamGlue(
@@ -790,8 +851,9 @@ export function wireMessageIpc() {
     if (!sessionId) return;
 
     clearBusyHeartbeat(sessionId);
-    clearToolCards(sessionId);
     view(sessionId).activityLabel = "";
+    // Force-clear running state immediately — don't wait for turnState IPC
+    setSessionRunning(sessionId, false);
 
     const v = view(sessionId);
     if (v.activeBubble) {
@@ -801,6 +863,11 @@ export function wireMessageIpc() {
       }
     }
     finishActiveTurn(sessionId);
+
+    // Unblock composer immediately, before the async refresh
+    if (isActiveSession(sessionId)) {
+      syncComposerForActiveSession();
+    }
 
     await refreshStateLight({ reRenderActive: isActiveSession(sessionId) });
 
@@ -827,6 +894,7 @@ export function wireMessageIpc() {
 
     clearBusyHeartbeat(sessionId);
     clearToolCards(sessionId);
+    setSessionRunning(sessionId, false);
 
     const v = view(sessionId);
     let bubble = v.activeBubble;
@@ -839,9 +907,14 @@ export function wireMessageIpc() {
     }
     finishActiveTurn(sessionId);
 
+    if (isActiveSession(sessionId)) syncComposerForActiveSession();
+
     await refreshStateLight({ reRenderActive: isActiveSession(sessionId) });
 
-    if (isActiveSession(sessionId)) syncComposerForActiveSession();
+    if (isActiveSession(sessionId)) {
+      $("promptInput")?.focus();
+      syncComposerForActiveSession();
+    }
   });
 
   window.assistantClient.onFocusSession((payload) => {
@@ -868,7 +941,8 @@ export function setBusyUI(busy) {
   const sid = store.get("activeSessionId");
   if (busy && sid) {
     syncTurnProgress(sid);
-    updateBusyMeta(sid);
+    const meta = $("sessionMeta");
+    if (meta) meta.textContent = t("message.processing");
   } else if (sid) {
     view(sid).activityLabel = "";
   }

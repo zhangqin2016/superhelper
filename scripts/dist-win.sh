@@ -76,4 +76,5 @@ if [[ ! -f "bundles/win32-x64/engine-upstream.exe" && ! -f "bundles/win32-x64/cl
   echo "[dist-win] 警告: 缺少 bundles/win32-x64/engine-upstream.exe（从 GitHub Actions artifact 放入后再打包更完整）"
 fi
 
-exec npx electron-builder --win "$@"
+# 必须打 x64：在 Apple Silicon 上省略 --x64 会产出 win-arm64，普通 Intel/AMD PC 无法运行。
+exec npx electron-builder --win --x64 "$@"

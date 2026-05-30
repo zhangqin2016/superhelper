@@ -12,17 +12,17 @@ const {
 function registerAssistantHandlers(ctx) {
   const { sessionManager, runnerPool } = ctx;
 
-  ipcMain.handle("assistant:input", (_event, payload) => {
+  ipcMain.handle("assistant:input", async (_event, payload) => {
     const text = typeof payload === "string" ? payload : payload.text;
     const files = typeof payload === "object" && payload.files ? payload.files : [];
 
     const session = sessionManager.getActive();
     if (!session) return { ok: false, error: "NO_SESSION" };
 
-    return dispatchUserLine(ctx, session, text, files, { recordUser: true });
+    return await dispatchUserLine(ctx, session, text, files, { recordUser: true });
   });
 
-  ipcMain.handle("assistant:retry", (_event, payload) => {
+  ipcMain.handle("assistant:retry", async (_event, payload) => {
     const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
     const session = sessionId ? sessionManager.findById(sessionId) : null;
     if (!session) return { ok: false, error: "NO_SESSION" };
@@ -57,7 +57,7 @@ function registerAssistantHandlers(ctx) {
 
     sessionManager.popLastAssistantMessage(session.id);
 
-    const result = dispatchUserLine(ctx, session, lastUser.content, files, {
+    const result = await dispatchUserLine(ctx, session, lastUser.content, files, {
       recordUser: false,
     });
     if (!result.ok) {

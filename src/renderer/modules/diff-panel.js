@@ -7,14 +7,72 @@ import { t } from "../i18n/index.js";
 
 const sessionDiffs = new Map(); // sessionId -> Map<filePath, entry>
 
+function isBypassMode() {
+  const select = document.getElementById("permissionModeSelect");
+  return select?.value === "bypassPermissions";
+}
+
+function isActiveSession(sessionId) {
+  return store.get("activeSessionId") === sessionId;
+}
+
 export function addDiffEntry(sessionId, entry) {
   if (!sessionDiffs.has(sessionId)) {
     sessionDiffs.set(sessionId, new Map());
   }
   const fileMap = sessionDiffs.get(sessionId);
   fileMap.set(entry.filePath, entry);
-  renderDiffPanel(sessionId);
-  showDiffPanel();
+  renderInlineDiffForFile(sessionId, entry.filePath, entry);
+
+  // In bypass mode, auto-accept immediately — no panel flash needed
+  if (isBypassMode()) {
+    acceptFileChange(sessionId, entry.filePath);
+    return;
+  }
+
+  // Only show diff panel for the active session
+  if (isActiveSession(sessionId)) {
+    renderDiffPanel(sessionId);
+    showDiffPanel();
+  }
+}
+
+function renderInlineDiffForFile(sessionId, filePath, entry) {
+  // Find the matching Write/Edit tool card in DOM
+  const panel = document.querySelector(
+    `.session-messages[data-session-id="${sessionId}"]`
+  );
+  if (!panel) return;
+  const card = panel.querySelector(`.tool-card[data-tool-file-path="${CSS.escape(filePath)}"]`);
+  if (!card) return;
+
+  // Remove existing inline diff
+  const existing = card.querySelector(".tool-card-diff");
+  if (existing) existing.remove();
+
+  const diffDiv = document.createElement("div");
+  diffDiv.className = "tool-card-diff";
+
+  if (entry.diff && entry.diff.length > 0) {
+    const lines = entry.diff.slice(0, 40); // inline: limit to first 40 hunks
+    for (const hunk of lines) {
+      const line = document.createElement("div");
+      line.className = `diff-hunk-${hunk.type}`;
+      line.textContent = (hunk.type === "add" ? "+" : hunk.type === "del" ? "-" : " ") + hunk.content;
+      diffDiv.appendChild(line);
+    }
+    if (entry.diff.length > 40) {
+      const more = document.createElement("div");
+      more.className = "tool-card-result-toggle";
+      more.textContent = "... 查看更多";
+      more.style.cssText = "color: var(--text-dim); font-size: 11px; cursor: pointer;";
+      diffDiv.appendChild(more);
+    }
+  } else {
+    diffDiv.textContent = entry.fileName;
+  }
+
+  card.appendChild(diffDiv);
 }
 
 export function clearDiffEntries(sessionId) {
@@ -25,17 +83,21 @@ export function clearDiffEntries(sessionId) {
 }
 
 function showDiffPanel() {
-  const panel = $("diffPanel");
-  if (panel) panel.hidden = false;
+  const sid = store.get("activeSessionId");
+  const fileMap = sid ? sessionDiffs.get(sid) : null;
+  if (fileMap && fileMap.size > 0) {
+    const panel = $("diffPanel");
+    if (panel) panel.hidden = false;
+  }
 }
 
 function hideDiffPanel() {
-  let any = false;
-  for (const fileMap of sessionDiffs.values()) {
-    if (fileMap.size > 0) { any = true; break; }
+  const sid = store.get("activeSessionId");
+  const fileMap = sid ? sessionDiffs.get(sid) : null;
+  if (!fileMap || fileMap.size === 0) {
+    const panel = $("diffPanel");
+    if (panel) panel.hidden = true;
   }
-  const panel = $("diffPanel");
-  if (panel && !any) panel.hidden = true;
 }
 
 function renderDiffPanel(sessionId) {
@@ -78,17 +140,19 @@ function renderDiffFileCard(sessionId, entry) {
   const fileActions = document.createElement("div");
   fileActions.className = "diff-file-actions";
 
-  const acceptBtn = document.createElement("button");
-  acceptBtn.className = "diff-accept-btn";
-  acceptBtn.textContent = t("diff.accept");
-  acceptBtn.addEventListener("click", () => acceptFileChange(sessionId, entry.filePath));
+  if (!isBypassMode()) {
+    const acceptBtn = document.createElement("button");
+    acceptBtn.className = "diff-accept-btn";
+    acceptBtn.textContent = t("diff.accept");
+    acceptBtn.addEventListener("click", () => acceptFileChange(sessionId, entry.filePath));
 
-  const rejectBtn = document.createElement("button");
-  rejectBtn.className = "diff-reject-btn";
-  rejectBtn.textContent = t("diff.reject");
-  rejectBtn.addEventListener("click", () => rejectFileChange(sessionId, entry.filePath));
+    const rejectBtn = document.createElement("button");
+    rejectBtn.className = "diff-reject-btn";
+    rejectBtn.textContent = t("diff.reject");
+    rejectBtn.addEventListener("click", () => rejectFileChange(sessionId, entry.filePath));
 
-  fileActions.append(acceptBtn, rejectBtn);
+    fileActions.append(acceptBtn, rejectBtn);
+  }
   header.append(nameSpan, statusSpan, fileActions);
   card.appendChild(header);
 
@@ -116,7 +180,8 @@ async function acceptFileChange(sessionId, filePath) {
   if (!fileMap) return;
   await window.assistantClient.acceptChange(sessionId, filePath);
   fileMap.delete(filePath);
-  renderDiffPanel(sessionId);
+  // Always render for active session to avoid cross-session DOM contamination
+  renderDiffPanel();
 }
 
 async function rejectFileChange(sessionId, filePath) {
@@ -128,7 +193,7 @@ async function rejectFileChange(sessionId, filePath) {
     await window.assistantClient.rejectChange(sessionId, filePath, entry.originalContent);
   }
   fileMap.delete(filePath);
-  renderDiffPanel(sessionId);
+  renderDiffPanel();
 }
 
 async function acceptAllChanges(sessionId) {
@@ -180,4 +245,27 @@ export function initDiffPanel() {
     if (sid) rejectAllChanges(sid);
   });
   $("diffToggleBtn")?.addEventListener("click", toggleDiffCollapse);
+
+  // Re-render diff panel on session switch
+  store.on("activeSessionId", (newId) => {
+    if (newId) {
+      renderDiffPanel(newId);
+      // Refresh bypass-mode button visibility
+      const bypass = isBypassMode();
+      const acceptAll = $("diffAcceptAllBtn");
+      const rejectAll = $("diffRejectAllBtn");
+      if (acceptAll) acceptAll.hidden = bypass;
+      if (rejectAll) rejectAll.hidden = bypass;
+    } else {
+      hideDiffPanel();
+    }
+  });
+
+  // Initial bypass check
+  if (isBypassMode()) {
+    const acceptAll = $("diffAcceptAllBtn");
+    const rejectAll = $("diffRejectAllBtn");
+    if (acceptAll) acceptAll.hidden = true;
+    if (rejectAll) rejectAll.hidden = true;
+  }
 }

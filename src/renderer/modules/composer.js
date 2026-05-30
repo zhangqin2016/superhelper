@@ -90,10 +90,14 @@ export async function sendPrompt() {
     showToast(t("toast.sessionBusy"), "warning");
     return;
   }
-  const displayFiles = files.map((f) => ({
-    name: f.name,
-    isImage: f.isImage,
-  }));
+  const displayFiles = files.map((f) => {
+    const pending = (store.get("pendingFiles") || []).find((pf) => pf.id === f.id);
+    return {
+      name: f.name,
+      isImage: f.isImage,
+      thumbnail: f.isImage ? (pending?.thumbnail || null) : null,
+    };
+  });
   const savedText = text;
   const savedFiles = [...(store.get("pendingFiles") || [])];
 

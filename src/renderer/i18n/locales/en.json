@@ -316,5 +316,13 @@
   "diff.expand": "Expand",
   "diff.fileAdded": "Added",
   "diff.fileModified": "Modified",
-  "diff.noChanges": "No changes"
+  "diff.noChanges": "No changes",
+  "turn.reply": "Reply",
+  "turn.steps": "Steps",
+  "tool.summaryBar": "{count} tools",
+  "tool.expand": "Expand",
+  "tool.collapse": "Collapse",
+  "tool.exitCode": "Exit code",
+  "tool.showMore": "Show all",
+  "tool.showLess": "Show less"
 }

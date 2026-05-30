@@ -93,6 +93,15 @@ contextBridge.exposeInMainWorld("assistantClient", {
   onTool: (callback) => {
     ipcRenderer.on("assistant:tool", (_event, data) => callback(data));
   },
+  onToolUpcoming: (callback) => {
+    ipcRenderer.on("assistant:tool-upcoming", (_event, data) => callback(data));
+  },
+  onToolInputDelta: (callback) => {
+    ipcRenderer.on("assistant:tool-input-delta", (_event, data) => callback(data));
+  },
+  onToolInputDone: (callback) => {
+    ipcRenderer.on("assistant:tool-input-done", (_event, data) => callback(data));
+  },
   onToolDone: (callback) => {
     ipcRenderer.on("assistant:tool-done", (_event, data) => callback(data));
   },

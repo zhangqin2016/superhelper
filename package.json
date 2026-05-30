@@ -18,7 +18,7 @@
     "pack": "electron-builder --dir",
     "dist:mac": "node scripts/verify-runtime-bundle.mjs && electron-builder --mac && node scripts/build-mac-dmg.mjs && node scripts/verify-mac-dmg.mjs",
     "dist:win": "node scripts/verify-runtime-bundle.mjs --platform win32-x64 && bash scripts/dist-win.sh",
-    "dist:all": "electron-builder --mac --win"
+    "dist:all": "electron-builder --mac --win --x64 && node scripts/build-mac-dmg.mjs --arch x64 && node scripts/verify-mac-dmg.mjs --arch x64"
   },
   "build": {
     "appId": "com.company.ai-super-terminal",
@@ -73,9 +73,16 @@
     },
     "win": {
       "icon": "icon.png",
+      "executableName": "LilyWorkbench",
       "target": [
-        "nsis",
-        "zip"
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64"]
+        }
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
@@ -86,6 +93,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "智能工作台",
+      "unicode": true,
       "installerLanguages": ["zh_CN", "en_US"],
       "language": "2052"
     }

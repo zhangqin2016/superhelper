@@ -56,6 +56,12 @@ class AgentSession extends EventEmitter {
     this._interruptPending = false;
     /** @type {string | null} */
     this._streamParentToolUseId = null;
+    /** @type {Map<string, string>} — accumulated partial_json per tool_use id */
+    this._streamingToolInputs = new Map();
+    /** @type {Set<string>} — tool_use ids already emitted from content_block_start */
+    this._emittedToolIds = new Set();
+    /** @type {Map<number, string>} — content block index → tool_use id */
+    this._blockIndexToToolId = new Map();
   }
 
   /** Only for text-only turns missing `result` (not a task timeout). */
@@ -276,6 +282,9 @@ class AgentSession extends EventEmitter {
     this._pendingToolIds.clear();
     this._turnHadToolUse = false;
     this._clearPendingPermissions(true);
+    this._streamingToolInputs.clear();
+    this._emittedToolIds.clear();
+    this._blockIndexToToolId.clear();
     this.emit("status", "thinking");
 
     this._maybeSendInitialize();
@@ -453,6 +462,9 @@ class AgentSession extends EventEmitter {
     this._pendingToolIds.clear();
     this._turnHadToolUse = false;
     this._streamParentToolUseId = null;
+    this._streamingToolInputs.clear();
+    this._emittedToolIds.clear();
+    this._blockIndexToToolId.clear();
     this._turnSettled = true;
     this.busy = false;
     this.emit("done", payload);
@@ -466,6 +478,9 @@ class AgentSession extends EventEmitter {
     this._pendingToolIds.clear();
     this._turnHadToolUse = false;
     this._streamParentToolUseId = null;
+    this._streamingToolInputs.clear();
+    this._emittedToolIds.clear();
+    this._blockIndexToToolId.clear();
     this._turnSettled = true;
     this.busy = false;
     this.emit("error", message);
@@ -577,6 +592,9 @@ class AgentSession extends EventEmitter {
       canUse;
     const permissionMode = this.spawnOptions?.permissionMode || "default";
 
+    log.info("permission-check tool=%s mode=%s needsApproval=%s",
+      toolName, permissionMode, needsUserApproval(toolName, permissionMode));
+
     if (!needsUserApproval(toolName, permissionMode)) {
       this._allowToolUse(requestId, input);
       return;
@@ -658,14 +676,24 @@ class AgentSession extends EventEmitter {
               this._turnHadToolUse = true;
               const toolId = block.id || "";
               if (toolId) this._pendingToolIds.add(toolId);
+              this._clearIdleTimer();
+              this._markStreamActivity();
+              // If already emitted from content_block_start, skip duplicate emission
+              if (this._emittedToolIds.has(toolId)) {
+                // But still emit with full input so card can be updated
+                this.emit("tool-input-done", {
+                  id: toolId,
+                  input: block.input || {},
+                });
+                this._streamingToolInputs.delete(toolId);
+                break;
+              }
               this.emit("tool-using", {
                 name: block.name || "unknown",
                 input: block.input || {},
                 id: toolId,
                 parentToolUseId: ev.parent_tool_use_id || null,
               });
-              this._clearIdleTimer();
-              this._markStreamActivity();
               break;
             }
             default:
@@ -682,9 +710,17 @@ class AgentSession extends EventEmitter {
           if (block.type === "tool_result") {
             const toolId = block.tool_use_id || "";
             if (toolId) this._pendingToolIds.delete(toolId);
+            let resultContent = null;
+            if (Array.isArray(block.content)) {
+              resultContent = block.content
+                .filter((c) => c.type === "text")
+                .map((c) => c.text)
+                .join("\n");
+            }
             this.emit("tool-done", {
               id: toolId,
               status: block.is_error ? "failed" : "done",
+              result: resultContent ? { content: resultContent, isError: !!block.is_error } : null,
             });
             this._markStreamActivity();
           }
@@ -694,8 +730,61 @@ class AgentSession extends EventEmitter {
 
       case "stream_event": {
         const inner = ev.event;
-        if (inner?.type === "content_block_delta" && inner.delta?.type === "text_delta") {
-          this._appendTextPiece(inner.delta.text || "");
+        if (!inner) break;
+
+        switch (inner.type) {
+          case "message_start":
+            this._streamingToolInputs.clear();
+            this._emittedToolIds.clear();
+            this._blockIndexToToolId.clear();
+            this.emit("status", "thinking");
+            break;
+
+          case "content_block_start": {
+            const block = inner.content_block;
+            if (block?.type === "tool_use" && block.id && block.name) {
+              this._turnHadToolUse = true;
+              this._clearIdleTimer();
+              this._emittedToolIds.add(block.id);
+              this._streamingToolInputs.set(block.id, "");
+              if (typeof inner.index === "number") {
+                this._blockIndexToToolId.set(inner.index, block.id);
+              }
+              this.emit("tool-upcoming", {
+                id: block.id,
+                name: block.name,
+                parentToolUseId: ev.parent_tool_use_id || null,
+              });
+            }
+            break;
+          }
+
+          case "content_block_delta": {
+            const delta = inner.delta;
+            if (delta?.type === "text_delta") {
+              this._appendTextPiece(delta.text || "");
+            } else if (delta?.type === "input_json_delta" && delta.partial_json) {
+              const idx = typeof inner.index === "number" ? inner.index : -1;
+              const toolId = this._blockIndexToToolId.get(idx);
+              if (toolId) {
+                const accumulated = (this._streamingToolInputs.get(toolId) || "") + delta.partial_json;
+                this._streamingToolInputs.set(toolId, accumulated);
+                this.emit("tool-input-delta", { id: toolId, partialJson: delta.partial_json });
+              }
+            }
+            break;
+          }
+
+          case "content_block_stop":
+            // Tool input streaming complete — no action needed; assistant event will follow
+            break;
+
+          case "message_stop":
+            this._markStreamActivity();
+            break;
+
+          default:
+            break;
         }
         break;
       }
@@ -752,6 +841,18 @@ class AgentSession extends EventEmitter {
           interrupted: Boolean(this._interruptPending || ev.interrupted),
         });
         break;
+
+      case "error": {
+        const errMsg =
+          (ev.error && typeof ev.error === "object" ? ev.error.message : "") ||
+          ev.message ||
+          "";
+        log.warn("CLI error event: %s", errMsg || JSON.stringify(ev).slice(0, 200));
+        if (errMsg) {
+          this.emit("engine-notice", { level: "warning", message: errMsg });
+        }
+        break;
+      }
 
       case "control_request":
       case "sdk_control_request":

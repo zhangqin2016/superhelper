@@ -97,7 +97,35 @@ export function countRunningTools(toolCards) {
   return n;
 }
 
-export function addToolCard(viewState, id, name, input) {
+function insertCardAtPlace(viewState, card, id, name, input, parentToolUseId) {
+  const parentTypes = ["Task", "Agent", "Subagent"];
+  if (parentToolUseId) {
+    const parentCard = viewState.activeTurn.activity.querySelector(
+      `.tool-card[data-tool-id="${parentToolUseId}"]`
+    );
+    const parentEntry = viewState.toolCards.get(parentToolUseId);
+    if (parentCard && parentEntry && parentTypes.includes(parentEntry.name)) {
+      card.classList.add("tool-card-child");
+      const siblings = parentCard.parentNode.querySelectorAll(
+        `.tool-card-child[data-parent-id="${parentToolUseId}"]`
+      );
+      const lastSibling = siblings[siblings.length - 1];
+      card.dataset.parentId = parentToolUseId;
+      if (lastSibling) {
+        lastSibling.after(card);
+      } else {
+        parentCard.after(card);
+      }
+      viewState.toolCards.set(id, { card, name, input, status: "running" });
+      return;
+    }
+  }
+
+  viewState.activeTurn.activity.appendChild(card);
+  viewState.toolCards.set(id, { card, name, input, status: "running" });
+}
+
+export function addToolCard(viewState, id, name, input, parentToolUseId) {
   if (!viewState.activeTurn) return;
 
   const summary = toolSummary(name, input);
@@ -108,15 +136,78 @@ export function addToolCard(viewState, id, name, input) {
   const card = document.createElement("div");
   card.className = "tool-card tool-card-running";
   card.dataset.toolId = id;
+  // For diff-to-card linking — same fallback order as diff-capture.js extractFilePath
+  if (["Write", "Edit", "MultiEdit"].includes(name)) {
+    const fp = input?.file_path || input?.path || input?.target_file;
+    if (fp) card.dataset.toolFilePath = fp;
+  }
   renderToolCardContent(card, name, input);
 
-  viewState.activeTurn.activity.appendChild(card);
+  insertCardAtPlace(viewState, card, id, name, input, parentToolUseId);
   viewState.activeTurn.activity.hidden = false;
   scrollToBottom(false, viewState.panel);
-  viewState.toolCards.set(id, { card, name, input, status: "running" });
 }
 
-export function updateToolCard(viewState, id, status) {
+/**
+ * Create a placeholder card from content_block_start (name/id only, no input yet).
+ * Updated later by addToolCard with full input.
+ */
+export function addToolCardPlaceholder(viewState, id, name, parentToolUseId) {
+  if (!viewState.activeTurn) return;
+
+  const summary = toolSummary(name, {});
+  viewState.activityLabel = summary.title;
+
+  const card = document.createElement("div");
+  card.className = "tool-card tool-card-running";
+  card.dataset.toolId = id;
+  renderToolCardContent(card, name, {});
+
+  insertCardAtPlace(viewState, card, id, name, {}, parentToolUseId);
+  viewState.activeTurn.activity.hidden = false;
+  scrollToBottom(false, viewState.panel);
+}
+
+/**
+ * Stream input_json_delta into the tool card's detail text.
+ */
+export function updateToolCardInput(viewState, id, partialJson) {
+  const entry = viewState.toolCards.get(id);
+  if (!entry) return;
+  const detailEl = entry.card.querySelector(".tool-card-detail");
+  if (!detailEl) return;
+  // Accumulate and try to extract human-readable info from partial JSON
+  const detail = entry._streamedInput || "";
+  const updated = detail + partialJson;
+  entry._streamedInput = updated;
+  // Show the partial input as detail — strip JSON noise for readability
+  const preview = updated
+    .replace(/^[{,"'\s]+/, "")
+    .replace(/[}:,"']/g, " ")
+    .trim()
+    .slice(0, 80);
+  detailEl.textContent = preview || "...";
+}
+
+/**
+ * Finalize tool card with complete input from assistant event.
+ */
+export function finalizeToolCardInput(viewState, id, input) {
+  const entry = viewState.toolCards.get(id);
+  if (!entry) return;
+  entry.input = input;
+  entry._streamedInput = null;
+  // Set diff-linking file path
+  const name = entry.name;
+  if (["Write", "Edit", "MultiEdit"].includes(name)) {
+    const fp = input?.file_path || input?.path || input?.target_file;
+    if (fp) entry.card.dataset.toolFilePath = fp;
+  }
+  renderToolCardContent(entry.card, name, input);
+  refreshRunningActivityLabel(viewState);
+}
+
+export function updateToolCard(viewState, id, status, result) {
   const entry = viewState.toolCards.get(id);
   if (!entry) return;
 
@@ -128,7 +219,6 @@ export function updateToolCard(viewState, id, status) {
     entry.status = "failed";
     viewState.toolCards.delete(id);
     viewState.activityLabel = t("message.adjusting");
-    updateBusyMeta(viewState);
     window.setTimeout(() => {
       entry.card.remove();
       syncActivityVisibility(viewState);
@@ -140,11 +230,46 @@ export function updateToolCard(viewState, id, status) {
     entry.card.classList.add("tool-card-done");
     entry.card.querySelector(".tool-card-dot")?.classList.add("tool-card-dot-done");
     entry.status = "done";
+
+    // Show tool result if available
+    if (result?.content) {
+      appendToolResult(entry, result);
+    }
+
     refreshRunningActivityLabel(viewState);
   }
 
   syncTurnProgress(viewState);
   syncActivityVisibility(viewState);
+}
+
+function appendToolResult(entry, result) {
+  const existing = entry.card.querySelector(".tool-card-result");
+  if (existing) existing.remove();
+
+  const content = result.content || "";
+  const truncated = content.length > 300 ? content.slice(0, 300) + "\n..." : content;
+
+  const resultDiv = document.createElement("div");
+  resultDiv.className = "tool-card-result";
+  resultDiv.textContent = truncated;
+
+  if (content.length > 300) {
+    const toggle = document.createElement("button");
+    toggle.className = "tool-card-result-toggle";
+    toggle.textContent = "展开全部";
+    let expanded = false;
+    toggle.addEventListener("click", () => {
+      expanded = !expanded;
+      resultDiv.textContent = expanded ? content : truncated;
+      resultDiv.style.maxHeight = expanded ? "none" : "150px";
+      toggle.textContent = expanded ? "收起" : "展开全部";
+    });
+    entry.card.appendChild(resultDiv);
+    entry.card.appendChild(toggle);
+  } else {
+    entry.card.appendChild(resultDiv);
+  }
 }
 
 export function syncActivityVisibility(viewState) {
@@ -160,6 +285,61 @@ export function clearToolCards(viewState) {
   viewState.toolCards.clear();
   viewState.activeTurn?.activity?.querySelectorAll(".turn-progress").forEach((el) => el.remove());
   syncActivityVisibility(viewState);
+}
+
+function buildToolSummaryBar(count) {
+  const bar = document.createElement("div");
+  bar.className = "tool-summary-bar";
+  bar.textContent = `${count} 个工具`;
+  bar.addEventListener("click", () => {
+    const activity = bar.closest(".tool-activity");
+    if (!activity) return;
+    const wrap = activity.querySelector(".tool-cards-wrap");
+    if (activity.classList.contains("tool-collapsed")) {
+      activity.classList.remove("tool-collapsed");
+      if (wrap) wrap.hidden = false;
+      bar.textContent = bar.textContent.replace("▶", "▼");
+    } else {
+      activity.classList.add("tool-collapsed");
+      if (wrap) wrap.hidden = true;
+      bar.textContent = bar.textContent.replace("▼", "▶");
+    }
+  });
+  return bar;
+}
+
+export function collapseToolCards(viewState) {
+  const activity = viewState.activeTurn?.activity;
+  if (!activity) return;
+  const cards = activity.querySelectorAll(".tool-card:not(.turn-progress)");
+  if (cards.length === 0) return;
+
+  // Wrap existing cards
+  const wrap = document.createElement("div");
+  wrap.className = "tool-cards-wrap";
+  while (cards[0] && cards[0].parentNode === activity) {
+    wrap.appendChild(cards[0]);
+  }
+  // Move turn-progress into wrap if present
+  const progress = activity.querySelector(".turn-progress");
+  if (progress) wrap.appendChild(progress);
+
+  const bar = buildToolSummaryBar(wrap.childElementCount);
+  activity.insertBefore(bar, activity.firstChild);
+  activity.insertBefore(wrap, bar.nextSibling);
+  activity.classList.add("tool-collapsed");
+  wrap.hidden = true;
+  bar.textContent = "▶ " + bar.textContent;
+}
+
+export function expandToolCards(viewState) {
+  const activity = viewState.activeTurn?.activity;
+  if (!activity) return;
+  activity.classList.remove("tool-collapsed");
+  const wrap = activity.querySelector(".tool-cards-wrap");
+  if (wrap) wrap.hidden = false;
+  const bar = activity.querySelector(".tool-summary-bar");
+  if (bar) bar.textContent = bar.textContent.replace("▶", "▼");
 }
 
 export function syncTurnProgress(viewState) {
@@ -186,10 +366,16 @@ export function syncTurnProgress(viewState) {
   }
 }
 
-export function updateBusyMeta(viewState) {
-  const meta = $("sessionMeta");
-  if (!meta || !store.get("isBusy")) return;
-  meta.textContent = viewState.activityLabel || t("message.processing");
+export function updateToolCardProgress(viewState, toolName, message) {
+  for (const entry of viewState.toolCards.values()) {
+    if (entry.status === "running") {
+      const detailEl = entry.card.querySelector(".tool-card-detail");
+      if (detailEl) {
+        detailEl.textContent = message;
+        detailEl.classList.add("progress-active");
+      }
+    }
+  }
 }
 
 export function refreshRunningActivityLabel(viewState) {
@@ -199,11 +385,9 @@ export function refreshRunningActivityLabel(viewState) {
     viewState.activityLabel = summary.detail
       ? `${summary.title}：${summary.detail}`
       : summary.title;
-    updateBusyMeta(viewState);
     return;
   }
   if (store.get("isBusy")) {
     viewState.activityLabel = t("message.continuing");
-    updateBusyMeta(viewState);
   }
 }

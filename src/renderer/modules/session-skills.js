@@ -11,6 +11,48 @@ import { t, tSkillName, tSkillDesc } from "../i18n/index.js";
 /** @type {{ customized: boolean, effectiveIds: string[], skills: object[] } | null} */
 let lastPayload = null;
 
+// --- Category system ---
+
+const SKILL_CATEGORIES = {
+  tools: { label: "工具", icon: "🔧" },
+  workflow: { label: "开发流程", icon: "⚙️" },
+  collab: { label: "协作调试", icon: "🐛" },
+  other: { label: "其他", icon: "📦" },
+};
+
+const BUNDLED_SKILL_CATEGORIES = {
+  "lily-vision": "tools",
+  "websearch": "tools",
+  "webfetch": "tools",
+  "anthropics-web-artifacts-builder": "tools",
+  "superpowers-writing-plans": "workflow",
+  "superpowers-executing-plans": "workflow",
+  "superpowers-finishing-a-development-branch": "workflow",
+  "superpowers-test-driven-development": "workflow",
+  "superpowers-using-superpowers": "workflow",
+  "superpowers-brainstorming": "workflow",
+  "superpowers-receiving-code-review": "collab",
+  "superpowers-requesting-code-review": "collab",
+  "superpowers-systematic-debugging": "collab",
+  "superpowers-subagent-driven-development": "collab",
+};
+
+function getSkillCategory(skill) {
+  if (skill.category) return skill.category;
+  const mapped = BUNDLED_SKILL_CATEGORIES[skill.id];
+  return mapped && SKILL_CATEGORIES[mapped] ? mapped : "other";
+}
+
+function groupSkillsByCategory(skills) {
+  const groups = {};
+  for (const skill of skills) {
+    const cat = getSkillCategory(skill);
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(skill);
+  }
+  return groups;
+}
+
 function activeSessionId() {
   return store.get("activeSessionId");
 }
@@ -60,8 +102,13 @@ function closePopover() {
   const popover = $("sessionSkillsPopover");
   if (!popover || popover.hidden) return;
   popover.hidden = true;
-  renderTags();
+  hideSkillTags();
   updateSkillButtonBadge();
+}
+
+function hideSkillTags() {
+  const wrap = $("sessionSkillTagsWrap");
+  if (wrap) wrap.hidden = true;
 }
 
 function openPopover() {
@@ -124,52 +171,10 @@ async function persistSelection(enabledSkillIds) {
   if (isPopoverOpen()) {
     syncPopoverFromPayload();
   } else {
-    renderTags();
+    hideSkillTags();
     updateSkillButtonBadge();
   }
   return result;
-}
-
-function renderTags() {
-  const container = $("sessionSkillTags");
-  if (!container) return;
-  container.replaceChildren();
-
-  const skills = (lastPayload?.skills || []).filter((s) => s.sessionEnabled);
-  if (!skills.length) {
-    container.hidden = true;
-    updateSkillButtonBadge();
-    return;
-  }
-
-  container.hidden = false;
-  for (const skill of skills) {
-    const chip = document.createElement("span");
-    chip.className = "session-skill-chip";
-    chip.dataset.skillId = skill.id;
-
-    const label = document.createElement("span");
-    label.className = "session-skill-chip-label";
-    label.textContent = tSkillName(skill);
-
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "session-skill-chip-remove";
-    removeBtn.setAttribute("aria-label", t("skills.removeSkill", { name: tSkillName(skill) }));
-    removeBtn.textContent = "×";
-    removeBtn.disabled = isBusy();
-    removeBtn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const enabledIds = (lastPayload?.skills || [])
-        .filter((s) => s.sessionEnabled && s.id !== skill.id)
-        .map((s) => s.id);
-      await persistSelection(enabledIds);
-    });
-
-    chip.append(label, removeBtn);
-    container.append(chip);
-  }
-  updateSkillButtonBadge();
 }
 
 function buildSkillCard(skill, list) {
@@ -216,6 +221,14 @@ function buildSkillCard(skill, list) {
   body.append(name, desc);
   card.append(input, body);
 
+  // Hover tooltip for description
+  if (descText) {
+    const tooltip = document.createElement("span");
+    tooltip.className = "session-skills-card-tooltip";
+    tooltip.textContent = descText;
+    card.appendChild(tooltip);
+  }
+
   if (!skill.globallyEnabled) {
     const badge = document.createElement("span");
     badge.className = "session-skills-card-badge";
@@ -233,8 +246,36 @@ function renderPopoverList() {
   list.replaceChildren();
   const skills = lastPayload?.skills || [];
 
-  for (const skill of skills) {
-    list.append(buildSkillCard(skill, list));
+  if (!skills.length) {
+    updateResetButton();
+    updateSkillButtonBadge();
+    return;
+  }
+
+  const groups = groupSkillsByCategory(skills);
+  const catOrder = ["tools", "workflow", "collab", "other"];
+
+  for (const catId of catOrder) {
+    const catSkills = groups[catId];
+    if (!catSkills || !catSkills.length) continue;
+    const catInfo = SKILL_CATEGORIES[catId];
+    if (!catInfo) continue;
+
+    const section = document.createElement("div");
+    section.className = "session-skills-popover-section";
+
+    const header = document.createElement("div");
+    header.className = "session-skills-popover-section-header";
+    header.textContent = `${catInfo.icon} ${catInfo.label}`;
+    section.appendChild(header);
+
+    const grid = document.createElement("div");
+    grid.className = "session-skills-popover-section-grid";
+    for (const skill of catSkills) {
+      grid.appendChild(buildSkillCard(skill, list));
+    }
+    section.appendChild(grid);
+    list.appendChild(section);
   }
 
   updateResetButton();
@@ -243,15 +284,12 @@ function renderPopoverList() {
 
 export async function refreshSessionSkillsUi() {
   const sessionId = activeSessionId();
-  const tags = $("sessionSkillTags");
+  const wrap = $("sessionSkillTagsWrap");
   const btn = $("sessionSkillsBtn");
   if (!sessionId) {
     lastPayload = null;
     store.set("sessionSkills", null);
-    if (tags) {
-      tags.hidden = true;
-      tags.replaceChildren();
-    }
+    hideSkillTags();
     if (btn) btn.disabled = true;
     closePopover();
     updateSkillButtonBadge();
@@ -275,7 +313,8 @@ export async function refreshSessionSkillsUi() {
     if (isPopoverOpen()) {
       syncPopoverFromPayload();
     } else {
-      renderTags();
+      hideSkillTags();
+      updateSkillButtonBadge();
     }
   } catch {
     lastPayload = null;

@@ -74,22 +74,23 @@ function renderFilePreview() {
     const chip = document.createElement("div");
     chip.className = "file-chip";
 
-    if (file.thumbnail) {
+    if (file.isImage && file.thumbnail) {
       const thumb = document.createElement("img");
+      thumb.className = "file-chip-img";
       thumb.src = file.thumbnail;
-      thumb.style.cssText = "width:28px;height:28px;border-radius:4px;object-fit:cover;cursor:pointer";
+      thumb.alt = file.name;
       thumb.addEventListener("click", () => openImageViewer(file.thumbnail, file.name));
       chip.appendChild(thumb);
     } else {
       const icon = document.createElement("span");
-      icon.textContent = file.isImage ? "🖼" : "📎";
-      icon.style.cssText = "font-size:14px;margin-right:4px";
+      icon.className = "file-chip-icon";
+      icon.textContent = file.isImage ? "🖼" : "📄";
       chip.appendChild(icon);
     }
 
     const name = document.createElement("span");
+    name.className = "file-chip-name";
     name.textContent = file.name;
-    name.style.cssText = "font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
     chip.appendChild(name);
 
     const rm = document.createElement("button");

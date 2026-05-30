@@ -316,5 +316,13 @@
   "diff.expand": "展开",
   "diff.fileAdded": "已添加",
   "diff.fileModified": "已修改",
-  "diff.noChanges": "无内容变更"
+  "diff.noChanges": "无内容变更",
+  "turn.reply": "回复",
+  "turn.steps": "操作步骤",
+  "tool.summaryBar": "{count} 个工具",
+  "tool.expand": "展开",
+  "tool.collapse": "收起",
+  "tool.exitCode": "退出码",
+  "tool.showMore": "展开全部",
+  "tool.showLess": "收起"
 }

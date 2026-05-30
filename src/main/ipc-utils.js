@@ -107,6 +107,21 @@ function wireRunner(ctx, runner) {
     sendToRenderer(ctx.mainWindow, "assistant:tool", { sessionId, ...data });
   });
 
+  // Stream event: tool card placeholder (name/id before full input arrives)
+  runner.on("tool-upcoming", (data) => {
+    sendToRenderer(ctx.mainWindow, "assistant:tool-upcoming", { sessionId, ...data });
+  });
+
+  // Stream event: incremental tool input
+  runner.on("tool-input-delta", (data) => {
+    sendToRenderer(ctx.mainWindow, "assistant:tool-input-delta", { sessionId, ...data });
+  });
+
+  // Stream event: tool input complete (from assistant event, for pre-created cards)
+  runner.on("tool-input-done", (data) => {
+    sendToRenderer(ctx.mainWindow, "assistant:tool-input-done", { sessionId, ...data });
+  });
+
   runner.on("tool-done", (data) => {
     sendToRenderer(ctx.mainWindow, "assistant:tool-done", { sessionId, ...data });
     const { emitDiffForTool } = require("./diff-capture");
@@ -322,7 +337,7 @@ function fileMetadataFromPayload(files = []) {
   }));
 }
 
-function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
+async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
   const { sessionManager } = ctx;
   const recordUser = opts.recordUser !== false;
 
@@ -333,7 +348,23 @@ function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
   }
 
   const { hasSendableContent } = require("./user-message");
+  // For the hasSendableContent check, images in files are considered content
   if (!hasSendableContent(text, files)) return { ok: false, error: "EMPTY" };
+
+  // Translate images to text before sending to the engine
+  let engineFiles = files;
+  try {
+    const descriptions = await require("./vision-translator").translateImages(files);
+    if (descriptions) {
+      text = (text ? text + "\n\n" : "") + descriptions;
+      engineFiles = files.filter((f) => !f.isImage);
+    }
+  } catch (err) {
+    console.warn("[vision-translator]", err.message);
+  }
+
+  // Re-check sendable content after translation (images may have been the only content)
+  if (!text && !hasSendableContent("", engineFiles)) return { ok: false, error: "EMPTY" };
 
   const ensured = ensureSessionRunner(ctx, session.id);
   const runner = ensured.runner;
@@ -353,7 +384,7 @@ function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
 
   turnState.begin(session.id);
 
-  const sent = runner.sendUserMessage({ text, files });
+  const sent = runner.sendUserMessage({ text, files: engineFiles });
   if (!sent) {
     turnState.abort(session.id);
     emitTurnState(ctx, session.id);
