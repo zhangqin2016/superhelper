@@ -48,6 +48,13 @@ export function toolSummary(name, input = {}) {
         title: t("tool.subagent"),
         detail: clip(input.description || input.prompt),
       };
+    case "ExitPlanMode":
+      return {
+        title: t("tool.exitPlanMode"),
+        detail: clip(input.plan || input.summary || input.reason),
+      };
+    case "EnterPlanMode":
+      return { title: t("tool.enterPlanMode"), detail: "" };
     default:
       return {
         title: name || t("tool.processing"),

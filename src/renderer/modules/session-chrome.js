@@ -92,6 +92,8 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
 
   syncComposerForActiveSession();
   updateTopbarTitles();
+  const { clearPromptSuggestions } = await import("./composer.js");
+  clearPromptSuggestions();
   await refreshSessionSkillsUi();
 
   const { updateProjectTreeChrome } = await import("./project-tree.js");

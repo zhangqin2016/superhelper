@@ -38,6 +38,15 @@ function legacyBundledCliBasenames() {
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 
+/** User-writable default workspace — never use PROJECT_ROOT in packaged builds (resolves to app.asar). */
+function defaultWorkspacePath() {
+  const folderName = "智能工作台";
+  if (process.platform === "win32") {
+    return path.join(app.getPath("documents"), folderName);
+  }
+  return path.join(app.getPath("home"), folderName);
+}
+
 function userDataPath(...segments) {
   return path.join(app.getPath("userData"), ...segments);
 }
@@ -88,6 +97,7 @@ module.exports = {
   legacyInstalledCliBasenames,
   legacyBundledCliBasenames,
   PROJECT_ROOT,
+  defaultWorkspacePath,
   userDataPath,
   sessionsConfigPath,
   projectsConfigPath,

@@ -51,14 +51,44 @@ class SessionRunnerPool {
     return this._sessions.get(sessionId) || null;
   }
 
-  sendMessage(sessionId, text) {
+  sendMessage(sessionId, payload) {
     const runner = this._sessions.get(sessionId);
     if (!runner) throw new Error("NO_RUNNER");
-    return runner.sendUserMessage(text);
+    return runner.sendUserMessage(payload);
   }
 
   interrupt(sessionId) {
     this._sessions.get(sessionId)?.interrupt();
+  }
+
+  /**
+   * @param {string} modeId
+   * @returns {{ ok: boolean, restarted: string[] }}
+   */
+  applyPermissionMode(modeId) {
+    /** @type {string[]} */
+    const restarted = [];
+    for (const sessionId of this.getSessionIds()) {
+      const runner = this._sessions.get(sessionId);
+      if (!runner) continue;
+      if (runner.isAlive() && runner.setPermissionMode(modeId)) continue;
+      if (runner.isAlive()) {
+        runner.terminate();
+      }
+      restarted.push(sessionId);
+    }
+    return { ok: true, restarted };
+  }
+
+  /**
+   * @param {Record<string, string>} envPatch
+   */
+  applyLiveEnvironment(envPatch) {
+    return require("./runner-live-config").applyLiveEnvToPool(this, envPatch);
+  }
+
+  terminateIdleAll() {
+    require("./runner-live-config").terminateIdleRunners(this);
   }
 
   terminateSession(sessionId) {

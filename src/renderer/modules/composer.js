@@ -11,6 +11,55 @@ import { applySessionSwitch, refreshState } from "./session-chrome.js";
 import { isSessionRunning, setSessionRunning } from "./session-busy.js";
 import { t } from "../i18n/index.js";
 
+function renderPromptSuggestions(sessionId, suggestions = []) {
+  const bar = $("promptSuggestions");
+  if (!bar) return;
+  const activeId = store.get("activeSessionId");
+  if (sessionId !== activeId || isSessionRunning(sessionId)) {
+    bar.hidden = true;
+    bar.replaceChildren();
+    return;
+  }
+
+  const items = (suggestions || [])
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item.prompt === "string") return item.prompt.trim();
+      if (item && typeof item.text === "string") return item.text.trim();
+      return "";
+    })
+    .filter(Boolean)
+    .slice(0, 4);
+
+  if (!items.length) {
+    bar.hidden = true;
+    bar.replaceChildren();
+    return;
+  }
+
+  bar.hidden = false;
+  bar.replaceChildren();
+  for (const text of items) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "prompt-suggestion-btn";
+    btn.textContent = text.length > 80 ? `${text.slice(0, 77)}…` : text;
+    btn.title = text;
+    btn.addEventListener("click", () => {
+      const input = $("promptInput");
+      if (input) input.value = text;
+      bar.hidden = true;
+      bar.replaceChildren();
+      input?.focus();
+    });
+    bar.appendChild(btn);
+  }
+}
+
+export function clearPromptSuggestions() {
+  renderPromptSuggestions(store.get("activeSessionId"), []);
+}
+
 function sendErrorMessage(result) {
   if (result.detail) return result.detail;
   const key = `send.error.${result.error}`;
@@ -75,7 +124,7 @@ export async function sendPrompt() {
     return;
   }
 
-  if (sessionId) setSessionRunning(sessionId, true);
+  if (sessionId) renderPromptSuggestions(sessionId, []);
   syncComposerForActiveSession();
 
   $("promptInput")?.focus();
@@ -121,10 +170,14 @@ export function initComposer() {
   $("interruptBtn")?.addEventListener("click", async () => {
     const sessionId = store.get("activeSessionId");
     await window.assistantClient.interrupt();
-    if (sessionId) setSessionRunning(sessionId, false);
-    const { syncComposerForActiveSession } = await import("./message.js");
-    syncComposerForActiveSession();
+    const { forceEndTurnUi } = await import("./message.js");
+    if (sessionId) forceEndTurnUi(sessionId);
+    renderPromptSuggestions(sessionId, []);
     $("promptInput")?.focus();
+  });
+
+  window.assistantClient.onPromptSuggestions?.((payload) => {
+    renderPromptSuggestions(payload?.sessionId, payload?.suggestions);
   });
 
   $("newChatBtn")?.addEventListener("click", async () => {

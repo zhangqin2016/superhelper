@@ -43,6 +43,8 @@
   "composer.skillsTitle": "Chat skills",
   "composer.attach": "Add image or file",
   "composer.placeholder": "What would you like to ask?",
+  "composer.placeholderBusy": "Task running, please wait…",
+  "composer.placeholderPermission": "Waiting for your approval — use Approve or Deny above",
   "composer.send": "Send",
   "composer.sessionSkills": "Chat skills",
   "composer.close": "Close",
@@ -184,6 +186,9 @@
   "send.error.BUSY": "Still processing the last message. Try again later.",
   "send.error.RUNNER_ERROR": "Failed to start assistant process. Restart the app.",
   "send.error.GENERIC": "Failed to send.",
+  "send.error.NO_USER_MESSAGE": "No previous message to retry.",
+  "send.error.NOTHING_TO_RETRY": "Nothing failed to retry.",
+  "send.error.FILES_UNAVAILABLE": "Attachments from the original message are no longer available.",
 
   "prompt.defaultTitle": "Enter name",
   "prompt.defaultLabel": "Name",
@@ -206,6 +211,17 @@
   "message.done": "Done.",
   "message.errorGeneric": "Something went wrong while handling the request.",
   "message.toolFailed": "{title} failed",
+  "message.retry": "Retry",
+
+  "permission.approvePlanTitle": "Plan ready — waiting for your approval",
+  "permission.approvePlanDesc": "After approval, the assistant will leave plan mode and start executing.",
+  "permission.approveActionTitle": "Confirmation required",
+  "permission.approve": "Approve",
+  "permission.deny": "Deny",
+  "permission.approveRemember": "Approve and remember (skip future prompts for this tool)",
+  "permission.respondFailed": "Could not submit approval. Please try again.",
+  "permission.timeout": "Approval has been waiting a while — please approve or deny.",
+  "permission.planTruncated": "(Plan preview truncated)",
 
   "tool.readFile": "Read file",
   "tool.writeFile": "Write file",
@@ -216,6 +232,10 @@
   "tool.webSearch": "Web search",
   "tool.readWeb": "Read webpage",
   "tool.processing": "Processing",
+  "tool.subagentTask": "Subtask",
+  "tool.subagent": "Subagent",
+  "tool.exitPlanMode": "Exit plan mode",
+  "tool.enterPlanMode": "Enter plan mode",
 
   "skills.source.bundled": "Built-in",
   "skills.source.remote": "Remote",
@@ -285,5 +305,16 @@
   "search.provider.searxng.label": "SearXNG",
   "search.provider.searxng.desc": "Open meta-search, no tracking, no API key.",
   "search.provider.duckduckgo.label": "DuckDuckGo",
-  "search.provider.duckduckgo.desc": "Direct DuckDuckGo Lite, no API key."
+  "search.provider.duckduckgo.desc": "Direct DuckDuckGo Lite, no API key.",
+
+  "diff.title": "File Changes",
+  "diff.acceptAll": "Accept All",
+  "diff.rejectAll": "Reject All",
+  "diff.accept": "Accept",
+  "diff.reject": "Reject",
+  "diff.collapse": "Collapse",
+  "diff.expand": "Expand",
+  "diff.fileAdded": "Added",
+  "diff.fileModified": "Modified",
+  "diff.noChanges": "No changes"
 }

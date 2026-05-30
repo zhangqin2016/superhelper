@@ -5,8 +5,8 @@ const { ipcMain } = require("electron");
 const {
   sendToRenderer,
   turnState,
+  emitTurnState,
   dispatchUserLine,
-  warmupActiveRunner,
 } = require("./ipc-utils");
 
 function registerAssistantHandlers(ctx) {
@@ -72,15 +72,22 @@ function registerAssistantHandlers(ctx) {
     return result;
   });
 
-  ipcMain.handle("assistant:settle-turn", (_event, payload) => {
+  ipcMain.handle("assistant:permission-response", (_event, payload) => {
     const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
-    if (!sessionId) return { ok: false, error: "NO_SESSION" };
+    const requestId = payload?.requestId;
+    if (!sessionId || !requestId) {
+      return { ok: false, error: "INVALID_PAYLOAD" };
+    }
 
     const runner = runnerPool.get(sessionId);
-    if (!runner?.isBusy()) return { ok: false, error: "NOT_BUSY" };
+    if (!runner) return { ok: false, error: "NO_RUNNER" };
 
-    const settled = runner.settleTurnIfIdle();
-    return settled ? { ok: true, sessionId } : { ok: false, error: "NOT_READY", sessionId };
+    const handled = runner.respondPermission(requestId, {
+      allow: Boolean(payload.allow),
+      message: typeof payload.message === "string" ? payload.message : undefined,
+      remember: Boolean(payload.remember),
+    });
+    return handled ? { ok: true, sessionId, requestId } : { ok: false, error: "NOT_PENDING" };
   });
 
   ipcMain.handle("assistant:interrupt", () => {
@@ -89,24 +96,24 @@ function registerAssistantHandlers(ctx) {
 
     const runner = runnerPool.get(session.id);
     const wasRunnerBusy = Boolean(runner?.isBusy());
-    const hadTurn = turnState.activeTurns.has(session.id) || wasRunnerBusy;
+    const hadTurn = turnState.has(session.id) || wasRunnerBusy;
     runner?.interrupt();
 
-    sessionManager.setStatus(session.id, "idle");
-    turnState.activeTurns.delete(session.id);
-    turnState.turnOutputs.delete(session.id);
+    if (!runner?.isBusy()) {
+      sessionManager.setStatus(session.id, "idle");
+      turnState.abort(session.id);
+      emitTurnState(ctx, session.id);
 
-    if (hadTurn && !wasRunnerBusy) {
-      sendToRenderer(ctx.mainWindow, "assistant:done", {
-        code: null,
-        sessionId: session.id,
-        interrupted: true,
-      });
+      if (hadTurn && !wasRunnerBusy) {
+        sendToRenderer(ctx.mainWindow, "assistant:done", {
+          code: null,
+          sessionId: session.id,
+          interrupted: true,
+        });
+      }
     }
     return { ok: true };
   });
-
-  warmupActiveRunner(ctx);
 }
 
 module.exports = { registerAssistantHandlers };

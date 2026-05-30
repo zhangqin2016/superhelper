@@ -51,6 +51,104 @@ function readJsonSafe(filePath) {
   }
 }
 
+function writeJsonSafe(filePath, data) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+/** Union workspaces by folder path; current entry wins when paths match. */
+function mergeProjectsJson(destData, srcData) {
+  const srcProjects = Array.isArray(srcData?.projects) ? srcData.projects : [];
+  if (!destData || !Array.isArray(destData.projects)) {
+    return {
+      merged: {
+        activeProjectId:
+          srcData?.activeProjectId ?? srcProjects[0]?.id ?? null,
+        projects: srcProjects.map((p) => ({ ...p })),
+      },
+      added: srcProjects.length,
+    };
+  }
+
+  const byPath = new Map();
+  for (const project of destData.projects) {
+    if (project?.path) byPath.set(project.path, { ...project });
+  }
+
+  let added = 0;
+  for (const project of srcProjects) {
+    if (!project?.path || byPath.has(project.path)) continue;
+    byPath.set(project.path, { ...project });
+    added += 1;
+  }
+
+  const projects = [...byPath.values()];
+  let activeProjectId = destData.activeProjectId ?? null;
+  if (activeProjectId && !projects.some((p) => p.id === activeProjectId)) {
+    activeProjectId = projects[0]?.id ?? null;
+  }
+
+  return { merged: { activeProjectId, projects }, added };
+}
+
+function normalizeSessionsStore(raw) {
+  if (!raw?.sessions || typeof raw.sessions !== "object") {
+    return { activeSessionId: raw?.activeSessionId ?? null, sessions: {} };
+  }
+  if (Array.isArray(raw.sessions)) {
+    return { activeSessionId: raw.activeSessionId ?? null, sessions: {} };
+  }
+  return {
+    activeSessionId: raw.activeSessionId ?? null,
+    sessions: { ...raw.sessions },
+  };
+}
+
+/** Copy legacy sessions for newly merged workspaces; keep current sessions when paths overlap. */
+function mergeSessionsJson(destData, srcData, destProjectsBefore, srcProjects) {
+  const dest = normalizeSessionsStore(destData);
+  const src = normalizeSessionsStore(srcData);
+  const currentPathToId = new Map();
+  for (const project of destProjectsBefore || []) {
+    if (project?.path) currentPathToId.set(project.path, project.id);
+  }
+
+  let added = 0;
+  for (const project of srcProjects || []) {
+    const legacyId = project?.id;
+    const legacyList = src.sessions[legacyId];
+    if (!legacyId || !Array.isArray(legacyList) || legacyList.length === 0) continue;
+
+    const targetId = currentPathToId.get(project.path) || legacyId;
+    if (dest.sessions[targetId]?.length) continue;
+
+    dest.sessions[targetId] = legacyList.map((session) => ({
+      ...session,
+      projectId: targetId,
+    }));
+    added += legacyList.length;
+  }
+
+  return { merged: dest, added };
+}
+
+function mergeSkillsStateJson(destData, srcData) {
+  const dest = destData && typeof destData === "object" ? { ...destData } : { skills: {} };
+  const src = srcData && typeof srcData === "object" ? srcData : null;
+  if (!src?.skills || typeof src.skills !== "object") {
+    return { merged: dest, changed: false };
+  }
+
+  dest.skills = dest.skills && typeof dest.skills === "object" ? { ...dest.skills } : {};
+  let changed = false;
+  for (const [id, entry] of Object.entries(src.skills)) {
+    if (dest.skills[id]) continue;
+    dest.skills[id] = entry;
+    changed = true;
+  }
+  return { merged: dest, changed };
+}
+
 function shouldPreferLegacyJson(fileName, destPath, srcPath) {
   if (!fs.existsSync(srcPath)) return false;
   if (!fs.existsSync(destPath)) return true;
@@ -60,11 +158,6 @@ function shouldPreferLegacyJson(fileName, destPath, srcPath) {
   if (!src) return false;
   if (!dest) return true;
 
-  // Once projects/sessions exist locally (even empty), user state wins — do not
-  // restore from a legacy userData folder after the user removed all workspaces.
-  if (fileName === "projects.json" || fileName === "sessions.json") {
-    return false;
-  }
   if (fileName === "skills-state.json") {
     const destSkills = dest.skills && typeof dest.skills === "object" ? dest.skills : {};
     const srcSkills = src.skills && typeof src.skills === "object" ? src.skills : {};
@@ -96,26 +189,98 @@ function mergeDirectory(srcDir, destDir) {
   }
 }
 
+function migrateLegacyProjectsAndSessions(legacyRoot, currentRoot) {
+  const srcProjectsPath = path.join(legacyRoot, "projects.json");
+  const srcProjects = readJsonSafe(srcProjectsPath);
+  if (!srcProjects) return false;
+
+  const destProjectsPath = path.join(currentRoot, "projects.json");
+  const destProjects = readJsonSafe(destProjectsPath);
+  const destProjectsBefore = Array.isArray(destProjects?.projects)
+    ? destProjects.projects
+    : [];
+
+  const { merged: mergedProjects, added: projectsAdded } = mergeProjectsJson(
+    destProjects,
+    srcProjects,
+  );
+  writeJsonSafe(destProjectsPath, mergedProjects);
+
+  const srcSessions = readJsonSafe(path.join(legacyRoot, "sessions.json"));
+  const destSessions = readJsonSafe(path.join(currentRoot, "sessions.json"));
+  const { merged: mergedSessions, added: sessionsAdded } = mergeSessionsJson(
+    destSessions,
+    srcSessions,
+    destProjectsBefore,
+    srcProjects.projects || [],
+  );
+  writeJsonSafe(path.join(currentRoot, "sessions.json"), mergedSessions);
+
+  return projectsAdded > 0 || sessionsAdded > 0 || !destProjects || !destSessions;
+}
+
+function migrateLegacyConfigFiles(legacyRoot, currentRoot) {
+  let changed = false;
+  for (const file of APP_DATA_FILES) {
+    if (file === "projects.json" || file === "sessions.json" || file === "workspaces.json") {
+      continue;
+    }
+
+    const src = path.join(legacyRoot, file);
+    const dest = path.join(currentRoot, file);
+    if (file === "skills-state.json" && fs.existsSync(src)) {
+      const { merged, changed: skillsChanged } = mergeSkillsStateJson(
+        readJsonSafe(dest),
+        readJsonSafe(src),
+      );
+      if (skillsChanged || !fs.existsSync(dest)) {
+        writeJsonSafe(dest, merged);
+        changed = true;
+      }
+      continue;
+    }
+
+    if (copyFileIfNeeded(src, dest, file)) {
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function removeLegacyUserDataRoot(legacyRoot) {
+  try {
+    fs.rmSync(legacyRoot, { recursive: true, force: true });
+    console.info(`[data-migration] removed legacy userData ${legacyRoot}`);
+    return true;
+  } catch (err) {
+    console.warn(
+      `[data-migration] failed to remove legacy userData ${legacyRoot}:`,
+      err?.message || err,
+    );
+    return false;
+  }
+}
+
 /**
- * Copy projects/sessions/config from pre-rename userData roots (e.g. terminal-chat-claude).
+ * Merge projects/sessions/config from pre-rename userData roots, then delete the legacy folder.
  */
 function migrateLegacyUserDataRoot() {
   const currentRoot = app.getPath("userData");
   for (const legacyRoot of legacyUserDataRoots()) {
-    let copied = false;
-    for (const file of APP_DATA_FILES) {
-      if (copyFileIfNeeded(path.join(legacyRoot, file), path.join(currentRoot, file), file)) {
-        copied = true;
-      }
-    }
+    let changed = migrateLegacyProjectsAndSessions(legacyRoot, currentRoot);
+    changed = migrateLegacyConfigFiles(legacyRoot, currentRoot) || changed;
+
     for (const dir of APP_DATA_DIRS) {
       const before = fs.existsSync(path.join(currentRoot, dir));
       mergeDirectory(path.join(legacyRoot, dir), path.join(currentRoot, dir));
-      if (!before && fs.existsSync(path.join(currentRoot, dir))) copied = true;
+      if (!before && fs.existsSync(path.join(currentRoot, dir))) changed = true;
     }
-    if (copied) {
-      console.info(`[data-migration] restored user data from ${legacyRoot}`);
+
+    if (changed) {
+      console.info(`[data-migration] migrated user data from ${legacyRoot}`);
     }
+
+    removeLegacyUserDataRoot(legacyRoot);
   }
 }
 
@@ -273,4 +438,6 @@ module.exports = {
   migrateSettingsEnvKeys,
   migrateLegacyGuideFile,
   shouldPreferLegacyJson,
+  mergeProjectsJson,
+  mergeSessionsJson,
 };

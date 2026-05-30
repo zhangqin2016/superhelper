@@ -15,6 +15,7 @@ import { initPermissionSettings } from "./modules/permission-settings.js";
 import { initSearchSettings } from "./modules/search-settings.js";
 import { initSkillSettings, refreshSkillsList } from "./modules/skill-settings.js";
 import { initLocaleSettings, refreshLocaleSelect } from "./modules/locale-settings.js";
+import { initDiffPanel } from "./modules/diff-panel.js";
 import { showToast } from "./modules/toast.js";
 import { $ } from "./modules/dom.js";
 
@@ -149,6 +150,8 @@ async function init() {
   initSearchSettings();
   initSkillSettings();
   initSessionSkills();
+
+  initDiffPanel();
 
   await refreshLocaleSelect();
   await refreshState();

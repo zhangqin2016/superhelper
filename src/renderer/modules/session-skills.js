@@ -197,6 +197,9 @@ function buildSkillCard(skill, list) {
     list.scrollTop = scrollTop;
   });
 
+  const body = document.createElement("div");
+  body.className = "session-skills-card-body";
+
   const name = document.createElement("span");
   name.className = "session-skills-card-name";
   name.textContent = tSkillName(skill);
@@ -210,7 +213,8 @@ function buildSkillCard(skill, list) {
     desc.hidden = true;
   }
 
-  card.append(input, name, desc);
+  body.append(name, desc);
+  card.append(input, body);
 
   if (!skill.globallyEnabled) {
     const badge = document.createElement("span");

@@ -86,9 +86,23 @@
           </button>
         </section>
 
+        <section id="diffPanel" class="diff-panel" hidden>
+          <div class="diff-header">
+            <h3 data-i18n="diff.title">文件变更</h3>
+            <div class="diff-actions">
+              <button id="diffToggleBtn" class="diff-btn" type="button" data-i18n="diff.collapse" title="收起">收起</button>
+              <button id="diffAcceptAllBtn" class="diff-btn diff-btn-accept" type="button" data-i18n="diff.acceptAll">全部接受</button>
+              <button id="diffRejectAllBtn" class="diff-btn diff-btn-reject" type="button" data-i18n="diff.rejectAll">全部拒绝</button>
+            </div>
+          </div>
+          <div id="diffList" class="diff-list"></div>
+        </section>
+
         <form id="composer" class="composer">
           <div id="filePreviewArea" class="file-preview-area" hidden></div>
           <div id="sessionSkillTags" class="session-skill-tags" hidden></div>
+          <div id="promptSuggestions" class="prompt-suggestions" hidden></div>
+          <div id="permissionDock" class="permission-dock" hidden></div>
           <div class="composer-toolbar">
             <button id="sessionSkillsBtn" type="button" class="composer-icon-btn composer-skill-btn" data-i18n-title="composer.skillsTitle" title="本对话技能">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

@@ -28,6 +28,8 @@ import {
   syncTurnProgress as syncTurnProgressImpl,
   updateBusyMeta as updateBusyMetaImpl,
   countRunningTools,
+  toolSummary,
+  syncActivityVisibility,
 } from "./tool-cards.js";
 
 const stackEl = () => $("sessionMessagesStack");
@@ -42,15 +44,6 @@ const stackEl = () => $("sessionMessagesStack");
  *   activityLabel: string,
  * }>} */
 const sessionViews = new Map();
-
-/** @type {Map<string, ReturnType<typeof setTimeout>>} */
-const streamSettleTimers = new Map();
-
-function clearStreamSettleTimer(sessionId) {
-  const t = streamSettleTimers.get(sessionId);
-  if (t) clearTimeout(t);
-  streamSettleTimers.delete(sessionId);
-}
 
 /** @type {Map<string, ReturnType<typeof setInterval>>} */
 const busyHeartbeats = new Map();
@@ -91,29 +84,6 @@ function refreshBusyIndicators(sessionId) {
       }, 2500),
     );
   }
-}
-
-function scheduleStreamSettle(sessionId) {
-  if (!sessionId) return;
-  const v = view(sessionId);
-  if (v.turnHadToolUse || countRunningTools(v.toolCards) > 0) return;
-
-  clearStreamSettleTimer(sessionId);
-  streamSettleTimers.set(
-    sessionId,
-    setTimeout(async () => {
-      streamSettleTimers.delete(sessionId);
-      if (!hasLiveTurn(sessionId) || !isSessionRunning(sessionId)) return;
-      if (view(sessionId).turnHadToolUse || countRunningTools(v.toolCards) > 0) return;
-      const md = view(sessionId).activeMarkdown?.trim();
-      if (!md) return;
-      try {
-        await window.assistantClient.settleTurn(sessionId);
-      } catch (err) {
-        console.warn("[settle-turn]", err);
-      }
-    }, 12000),
-  );
 }
 
 function isActiveSession(sessionId) {
@@ -323,7 +293,6 @@ export async function retryLastPrompt(sessionId) {
   }
 
   removeLastAssistantMessage(sessionId);
-  setSessionRunning(sessionId, true);
   beginAssistantTurn(sessionId);
   refreshBusyIndicators(sessionId);
   syncComposerForActiveSession();
@@ -359,8 +328,10 @@ export function syncComposerForActiveSession() {
   const sid = store.get("activeSessionId");
   const hasProject = (store.get("projects") || []).length > 0;
   const busy = Boolean(sid && (isSessionRunning(sid) || hasLiveTurn(sid)));
+  const awaitingPermission = Boolean(sid && pendingPermissionBySession.has(sid));
   store.set("isBusy", busy);
   setBusyUI(busy);
+  syncPermissionDockForActiveSession();
 
   const promptInput = $("promptInput");
   const blocked = !hasProject || !sid;
@@ -369,13 +340,15 @@ export function syncComposerForActiveSession() {
     if (el) el.disabled = blocked || busy;
   }
   if (promptInput) {
-    promptInput.placeholder = busy
-      ? t("composer.placeholderBusy")
-      : !hasProject
-        ? t("composer.placeholderNeedProject")
-        : !sid
-          ? t("composer.placeholderNeedSession")
-          : t("composer.placeholder");
+    promptInput.placeholder = awaitingPermission
+      ? t("composer.placeholderPermission")
+      : busy
+        ? t("composer.placeholderBusy")
+        : !hasProject
+          ? t("composer.placeholderNeedProject")
+          : !sid
+            ? t("composer.placeholderNeedSession")
+            : t("composer.placeholder");
   }
 
   if (busy && sid) {
@@ -432,7 +405,6 @@ function addToolCard(sessionId, id, name, input) {
   if (!view(sessionId).activeTurn) beginAssistantTurn(sessionId);
   const v = view(sessionId);
   v.turnHadToolUse = true;
-  clearStreamSettleTimer(sessionId);
   addToolCardImpl(v, id, name, input);
   updateBusyMeta(sessionId);
   syncTurnProgress(sessionId);
@@ -515,11 +487,9 @@ function finishActiveTurn(sessionId) {
 
 export function forceEndTurnUi(sessionId) {
   if (!sessionId) return;
-  clearStreamSettleTimer(sessionId);
   clearBusyHeartbeat(sessionId);
   clearToolCards(sessionId);
   view(sessionId).activityLabel = "";
-  setSessionRunning(sessionId, false);
 
   const v = view(sessionId);
   if (v.activeBubble) {
@@ -529,10 +499,229 @@ export function forceEndTurnUi(sessionId) {
   syncComposerForActiveSession();
 }
 
+function permissionPromptCopy(toolName, payload) {
+  if (toolName === "ExitPlanMode") {
+    return {
+      title: t("permission.approvePlanTitle"),
+      desc: t("permission.approvePlanDesc"),
+    };
+  }
+  const summary = toolSummary(toolName, payload.input || {});
+  return {
+    title: t("permission.approveActionTitle"),
+    desc: summary.detail ? `${summary.title}：${summary.detail}` : summary.title,
+  };
+}
+
+/** Pending tool approvals keyed by session (survives session switch). */
+const pendingPermissionBySession = new Map();
+
+function getPermissionDock() {
+  return $("permissionDock");
+}
+
+function hidePermissionDock() {
+  const dock = getPermissionDock();
+  if (!dock) return;
+  dock.replaceChildren();
+  dock.hidden = true;
+}
+
+function syncPermissionDockForActiveSession() {
+  const sid = store.get("activeSessionId");
+  const dock = getPermissionDock();
+  if (!dock) return;
+  const payload = sid ? pendingPermissionBySession.get(sid) : null;
+  if (payload) {
+    dock.replaceChildren(buildPermissionCard(sid, payload));
+    dock.hidden = false;
+  } else {
+    hidePermissionDock();
+  }
+}
+
+function dismissPermissionPrompt(sessionId, requestId) {
+  if (sessionId) {
+    const pending = pendingPermissionBySession.get(sessionId);
+    if (!requestId || pending?.requestId === requestId) {
+      pendingPermissionBySession.delete(sessionId);
+    }
+  }
+  if (isActiveSession(sessionId)) {
+    syncPermissionDockForActiveSession();
+    syncComposerForActiveSession();
+  }
+
+  const turn = view(sessionId)?.activeTurn;
+  if (!turn?.activity) return;
+  const card = turn.activity.querySelector(
+    `.permission-prompt[data-request-id="${requestId}"]`,
+  );
+  card?.remove();
+  syncActivityVisibility(view(sessionId));
+}
+
+function planPreviewText(payload) {
+  if (typeof payload.planPreview === "string" && payload.planPreview.trim()) {
+    return payload.planPreview.trim().slice(0, 400);
+  }
+  const input = payload.input || {};
+  if (typeof input.plan === "string" && input.plan.trim()) {
+    return input.plan.trim().slice(0, 400);
+  }
+  if (typeof input.summary === "string" && input.summary.trim()) {
+    return input.summary.trim().slice(0, 400);
+  }
+  return "";
+}
+
+function buildPermissionCard(sessionId, payload) {
+  const { title, desc } = permissionPromptCopy(payload.toolName, payload);
+  const card = document.createElement("div");
+  card.className = "permission-prompt";
+  card.dataset.requestId = payload.requestId;
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "permission-prompt-title";
+  titleEl.textContent = payload.title || title;
+
+  const descEl = document.createElement("div");
+  descEl.className = "permission-prompt-desc";
+  const preview = planPreviewText(payload);
+  descEl.textContent = payload.description || preview || desc;
+
+  if (preview && (payload.planPreviewTruncated || preview.length >= 400)) {
+    const more = document.createElement("div");
+    more.className = "permission-prompt-desc";
+    more.textContent = t("permission.planTruncated");
+    card.append(titleEl, descEl, more);
+  } else {
+    card.append(titleEl, descEl);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "permission-prompt-actions";
+
+  let rememberChecked = false;
+  if (payload.toolName !== "ExitPlanMode") {
+    const rememberWrap = document.createElement("label");
+    rememberWrap.className = "permission-prompt-remember";
+    const rememberInput = document.createElement("input");
+    rememberInput.type = "checkbox";
+    rememberInput.addEventListener("change", () => {
+      rememberChecked = rememberInput.checked;
+    });
+    rememberWrap.append(rememberInput, document.createTextNode(t("permission.approveRemember")));
+    card.appendChild(rememberWrap);
+  }
+
+  const approveBtn = document.createElement("button");
+  approveBtn.type = "button";
+  approveBtn.className = "permission-prompt-btn permission-prompt-btn-approve";
+  approveBtn.textContent = t("permission.approve");
+
+  const denyBtn = document.createElement("button");
+  denyBtn.type = "button";
+  denyBtn.className = "permission-prompt-btn";
+  denyBtn.textContent = t("permission.deny");
+
+  actions.append(approveBtn, denyBtn);
+  card.appendChild(actions);
+
+  const respond = async (allow) => {
+    if (card.classList.contains("permission-prompt-resolved")) return;
+    card.classList.add("permission-prompt-resolved");
+    try {
+      const result = await window.assistantClient.respondPermission(
+        sessionId,
+        payload.requestId,
+        allow,
+        { remember: allow && rememberChecked },
+      );
+      if (!result?.ok) {
+        card.classList.remove("permission-prompt-resolved");
+        showToast(t("permission.respondFailed"), "error");
+      }
+    } catch (err) {
+      card.classList.remove("permission-prompt-resolved");
+      showToast(t("permission.respondFailed"), "error");
+      console.warn("[permission-response]", err);
+    }
+  };
+
+  approveBtn.addEventListener("click", () => respond(true));
+  denyBtn.addEventListener("click", () => respond(false));
+
+  return card;
+}
+
+function showPermissionPrompt(sessionId, payload) {
+  if (!sessionId || !payload?.requestId) return;
+
+  beginAssistantTurn(sessionId);
+  const v = view(sessionId);
+  v.turnHadToolUse = true;
+  refreshBusyIndicators(sessionId);
+
+  pendingPermissionBySession.set(sessionId, payload);
+  if (isActiveSession(sessionId)) {
+    syncPermissionDockForActiveSession();
+    syncComposerForActiveSession();
+    showToast(
+      payload.toolName === "ExitPlanMode"
+        ? t("permission.approvePlanTitle")
+        : t("permission.approveActionTitle"),
+      "info",
+    );
+  }
+}
+
+function handleEngineNotice(sessionId, payload) {
+  if (!sessionId || !payload) return;
+  if (payload.level === "stderr" && payload.message) {
+    if (isActiveSession(sessionId)) {
+      showToast(payload.message, "warning");
+    }
+    return;
+  }
+  if (payload.message === "PERMISSION_TIMEOUT") {
+    showToast(t("permission.timeout"), "warning");
+    return;
+  }
+  if (payload.level === "progress" && payload.message) {
+    view(sessionId).activityLabel = payload.message;
+    if (isActiveSession(sessionId) && store.get("isBusy")) {
+      updateBusyMeta(sessionId);
+    }
+  }
+}
+
+function applyTurnState(payload) {
+  if (!payload?.sessionId) return;
+  setSessionRunning(payload.sessionId, Boolean(payload.active));
+  if (isActiveSession(payload.sessionId)) {
+    syncComposerForActiveSession();
+  }
+  updateSessionRunningIndicators();
+}
+
 export function wireMessageIpc() {
+  window.assistantClient.onFileDiff?.((payload) => {
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    import("./diff-panel.js").then((m) => m.addDiffEntry(sessionId, payload));
+  });
+
+  window.assistantClient.onTurnState?.(applyTurnState);
+
   window.assistantClient.onTool((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
+    // Clear previous turn diffs on first tool of a new turn
+    const v = view(sessionId);
+    if (!v.activeTurn) {
+      import("./diff-panel.js").then((m) => m.clearDiffEntries(sessionId));
+    }
     addToolCard(sessionId, payload.id, payload.name, payload.input);
   });
 
@@ -540,7 +729,22 @@ export function wireMessageIpc() {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
     updateToolCard(sessionId, payload.id, payload.status);
-    scheduleStreamSettle(sessionId);
+  });
+
+  window.assistantClient.onPermissionRequest((payload) => {
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    showPermissionPrompt(sessionId, payload);
+  });
+
+  window.assistantClient.onPermissionCancelled((payload) => {
+    const sessionId = payload.sessionId;
+    if (!sessionId || !payload.requestId) return;
+    dismissPermissionPrompt(sessionId, payload.requestId);
+  });
+
+  window.assistantClient.onEngineNotice((payload) => {
+    handleEngineNotice(payload.sessionId, payload);
   });
 
   window.assistantClient.onChunk((payload) => {
@@ -585,11 +789,9 @@ export function wireMessageIpc() {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
 
-    clearStreamSettleTimer(sessionId);
     clearBusyHeartbeat(sessionId);
     clearToolCards(sessionId);
     view(sessionId).activityLabel = "";
-    setSessionRunning(sessionId, false);
 
     const v = view(sessionId);
     if (v.activeBubble) {
@@ -611,9 +813,7 @@ export function wireMessageIpc() {
   window.assistantClient.onStatus((status) => {
     const sessionId = status.sessionId;
     if (!sessionId) return;
-    const busy = status.state === "thinking";
-    if (busy) {
-      setSessionRunning(sessionId, true);
+    if (status.state === "thinking") {
       if (!view(sessionId).activeBubble) beginAssistantTurn(sessionId);
       refreshBusyIndicators(sessionId);
     }
@@ -625,10 +825,8 @@ export function wireMessageIpc() {
     const sessionId = error.sessionId;
     if (!sessionId) return;
 
-    clearStreamSettleTimer(sessionId);
     clearBusyHeartbeat(sessionId);
     clearToolCards(sessionId);
-    setSessionRunning(sessionId, false);
 
     const v = view(sessionId);
     let bubble = v.activeBubble;

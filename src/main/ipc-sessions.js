@@ -105,17 +105,17 @@ function registerSkillHandlers(ctx) {
     if (!id) return { ok: false, error: "NOT_FOUND" };
     return withRunnerChange(ctx, () => {
       return skillManager.setSkillEnabledWithSessions(id, enabled, ctx.sessionManager);
-    }, { refreshState: true });
+    }, { refreshState: true, liveEnv: false });
   });
 
   ipcMain.handle("skills:refresh", () => {
-    return withRunnerChange(ctx, () => skillManager.refreshSkillsConfig());
+    return withRunnerChange(ctx, () => skillManager.refreshSkillsConfig(), { liveEnv: false });
   });
 
   ipcMain.handle("skills:restore-bundled", (_event, payload) => {
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    return withRunnerChange(ctx, () => skillManager.restoreBundledSkill(id));
+    return withRunnerChange(ctx, () => skillManager.restoreBundledSkill(id), { liveEnv: false });
   });
 
   ipcMain.handle("skills:get-registry-url", () => ({
@@ -139,19 +139,19 @@ function registerSkillHandlers(ctx) {
     const id = payload?.id;
     const version = payload?.version;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    return withRunnerChange(ctx, () => skillManager.installFromRegistry(id, version));
+    return withRunnerChange(ctx, () => skillManager.installFromRegistry(id, version), { liveEnv: false });
   });
 
   ipcMain.handle("skills:update", async (_event, payload) => {
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    return withRunnerChange(ctx, () => skillManager.updateFromRegistry(id));
+    return withRunnerChange(ctx, () => skillManager.updateFromRegistry(id), { liveEnv: false });
   });
 
   ipcMain.handle("skills:uninstall", (_event, payload) => {
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    return withRunnerChange(ctx, () => skillManager.uninstallRemoteSkill(id));
+    return withRunnerChange(ctx, () => skillManager.uninstallRemoteSkill(id), { liveEnv: false });
   });
 }
 

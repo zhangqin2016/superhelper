@@ -2,7 +2,7 @@
 
 const { ipcMain } = require("electron");
 const { listPresetsPublic, setActivePreset, saveCustomPreset, deleteCustomPreset, setApiGateway } = require("./model-presets");
-const { anyRunnerBusy, withRunnerChange } = require("./ipc-utils");
+const { anyRunnerBusy, withRunnerChange, applyPermissionModeLive } = require("./ipc-utils");
 
 function registerModelHandlers(ctx) {
   ipcMain.handle("models:list", () => ({ ok: true, ...listPresetsPublic() }));
@@ -37,12 +37,7 @@ function registerPermissionHandlers(ctx) {
   }));
 
   ipcMain.handle("permissions:set-active", (_event, modeId) => {
-    return withRunnerChange(ctx, () => {
-      const r = require("./permission-settings").setActivePermissionMode(modeId);
-      return r.ok
-        ? { ok: true, ...require("./permission-settings").listPermissionsPublic() }
-        : r;
-    });
+    return applyPermissionModeLive(ctx, modeId);
   });
 }
 

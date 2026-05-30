@@ -3,7 +3,7 @@
 const { app, BrowserWindow } = require("electron");
 const path = require("node:path");
 
-const { PROJECT_ROOT } = require("./main/config");
+const { defaultWorkspacePath } = require("./main/config");
 const { loadAppIconImage } = require("./main/app-icon");
 const { bootstrapAgent } = require("./main/agent-bootstrap");
 const ProjectManager = require("./main/project-manager");
@@ -63,7 +63,7 @@ app.whenReady().then(async () => {
     );
   }
 
-  const projectManager = new ProjectManager(PROJECT_ROOT);
+  const projectManager = new ProjectManager(defaultWorkspacePath());
   projectManager.load();
 
   const sessionManager = new SessionManager(projectManager);

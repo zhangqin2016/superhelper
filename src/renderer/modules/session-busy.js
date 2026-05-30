@@ -16,8 +16,7 @@ function findSession(sessionId) {
 export function isSessionRunning(sessionId) {
   if (!sessionId) return false;
   const ids = store.get("runningSessionIds") || [];
-  if (ids.includes(sessionId)) return true;
-  return findSession(sessionId)?.status === "running";
+  return ids.includes(sessionId);
 }
 
 export function setSessionRunning(sessionId, running) {

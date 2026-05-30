@@ -43,6 +43,8 @@
   "composer.skillsTitle": "مهارات المحادثة",
   "composer.attach": "إضافة صورة أو ملف",
   "composer.placeholder": "ماذا تريد أن تسأل؟",
+  "composer.placeholderBusy": "المهمة قيد التنفيذ، يرجى الانتظار…",
+  "composer.placeholderPermission": "بانتظار موافقتك — استخدم «موافقة» أو «رفض» أعلاه",
   "composer.send": "إرسال",
   "composer.sessionSkills": "مهارات المحادثة",
   "composer.close": "إغلاق",
@@ -184,6 +186,9 @@
   "send.error.BUSY": "ما زالت الرسالة السابقة قيد المعالجة.",
   "send.error.RUNNER_ERROR": "فشل تشغيل عملية المساعد. أعد تشغيل التطبيق.",
   "send.error.GENERIC": "فشل الإرسال.",
+  "send.error.NO_USER_MESSAGE": "لا توجد رسالة سابقة لإعادة المحاولة.",
+  "send.error.NOTHING_TO_RETRY": "لا يوجد رد فاشل لإعادة المحاولة.",
+  "send.error.FILES_UNAVAILABLE": "المرفقات من الرسالة الأصلية لم تعد متاحة.",
 
   "prompt.defaultTitle": "أدخل الاسم",
   "prompt.defaultLabel": "الاسم",
@@ -206,6 +211,7 @@
   "message.done": "اكتمل.",
   "message.errorGeneric": "حدث خطأ أثناء معالجة الطلب.",
   "message.toolFailed": "فشل {title}",
+  "message.retry": "إعادة المحاولة",
 
   "tool.readFile": "قراءة ملف",
   "tool.writeFile": "كتابة ملف",
@@ -216,6 +222,8 @@
   "tool.webSearch": "بحث على الويب",
   "tool.readWeb": "قراءة صفحة ويب",
   "tool.processing": "قيد المعالجة",
+  "tool.subagentTask": "مهمة فرعية",
+  "tool.subagent": "وكيل فرعي",
 
   "skills.source.bundled": "مدمج",
   "skills.source.remote": "بعيد",
@@ -272,6 +280,16 @@
   "model.pro.desc": "deepseek-v4-pro للمهام المعقدة",
   "model.flash.label": "DeepSeek Flash",
   "model.flash.desc": "deepseek-v4-flash لاستجابة أسرع",
+
+  "permission.approvePlanTitle": "الخطة جاهزة — بانتظار موافقتك",
+  "permission.approvePlanDesc": "بعد الموافقة سيخرج المساعد من وضع التخطيط ويبدأ التنفيذ.",
+  "permission.approveActionTitle": "مطلوب تأكيد",
+  "permission.approve": "موافقة",
+  "permission.deny": "رفض",
+  "permission.approveRemember": "موافقة وتذكّر (تخطي طلبات مستقبلية لهذه الأداة)",
+  "permission.respondFailed": "تعذّر إرسال الموافقة. أعد المحاولة.",
+  "permission.timeout": "الموافقة تنتظر منذ فترة — يرجى الموافقة أو الرفض.",
+  "permission.planTruncated": "(معاينة الخطة مقطوعة)",
 
   "permission.default.label": "افتراضي",
   "permission.default.desc": "يطلب تأكيداً قبل الإجراءات الحساسة.",

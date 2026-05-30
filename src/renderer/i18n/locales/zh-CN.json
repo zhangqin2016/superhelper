@@ -43,6 +43,8 @@
   "composer.skillsTitle": "本对话技能",
   "composer.attach": "添加图片或文件",
   "composer.placeholder": "有什么想问的？",
+  "composer.placeholderBusy": "任务执行中，请稍候…",
+  "composer.placeholderPermission": "等待你的审批 — 请在上方点击「批准」或「拒绝」",
   "composer.send": "发送",
   "composer.sessionSkills": "本对话技能",
   "composer.close": "关闭",
@@ -184,6 +186,9 @@
   "send.error.BUSY": "上一条消息还在处理中，请稍后再试。",
   "send.error.RUNNER_ERROR": "助手进程启动失败，请重启应用后再试。",
   "send.error.GENERIC": "发送失败。",
+  "send.error.NO_USER_MESSAGE": "没有可重试的上一条消息。",
+  "send.error.NOTHING_TO_RETRY": "当前没有失败回复可重试。",
+  "send.error.FILES_UNAVAILABLE": "原消息的附件已失效，请重新添加后发送。",
 
   "prompt.defaultTitle": "输入名称",
   "prompt.defaultLabel": "名称",
@@ -206,6 +211,17 @@
   "message.done": "已完成。",
   "message.errorGeneric": "处理请求时遇到问题。",
   "message.toolFailed": "{title}失败",
+  "message.retry": "重试",
+
+  "permission.approvePlanTitle": "计划已写好，等待你的审批",
+  "permission.approvePlanDesc": "批准后助手将退出计划模式并开始执行。",
+  "permission.approveActionTitle": "需要你的确认",
+  "permission.approve": "批准",
+  "permission.deny": "拒绝",
+  "permission.approveRemember": "批准并记住（同类操作不再询问）",
+  "permission.respondFailed": "审批提交失败，请重试。",
+  "permission.timeout": "审批等待时间较长，请尽快点击「批准」或「拒绝」。",
+  "permission.planTruncated": "（计划内容较长，已截断预览）",
 
   "tool.readFile": "读取文件",
   "tool.writeFile": "写入文件",
@@ -216,6 +232,10 @@
   "tool.webSearch": "搜索网络",
   "tool.readWeb": "阅读网页",
   "tool.processing": "处理中",
+  "tool.subagentTask": "子任务",
+  "tool.subagent": "子代理",
+  "tool.exitPlanMode": "退出计划模式",
+  "tool.enterPlanMode": "进入计划模式",
 
   "skills.source.bundled": "内置",
   "skills.source.remote": "远程",
@@ -285,5 +305,16 @@
   "search.provider.searxng.label": "SearXNG",
   "search.provider.searxng.desc": "开源元搜索，无追踪、无需 API Key。",
   "search.provider.duckduckgo.label": "DuckDuckGo",
-  "search.provider.duckduckgo.desc": "直连 DuckDuckGo Lite，无需 API Key。"
+  "search.provider.duckduckgo.desc": "直连 DuckDuckGo Lite，无需 API Key。",
+
+  "diff.title": "文件变更",
+  "diff.acceptAll": "全部接受",
+  "diff.rejectAll": "全部拒绝",
+  "diff.accept": "接受",
+  "diff.reject": "拒绝",
+  "diff.collapse": "收起",
+  "diff.expand": "展开",
+  "diff.fileAdded": "已添加",
+  "diff.fileModified": "已修改",
+  "diff.noChanges": "无内容变更"
 }

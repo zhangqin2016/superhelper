@@ -12,6 +12,7 @@ const { registerModelHandlers, registerPermissionHandlers, registerSearchHandler
 const { registerProjectHandlers } = require("./ipc-projects");
 const { registerSessionHandlers, registerSkillHandlers } = require("./ipc-sessions");
 const { registerAssistantHandlers } = require("./ipc-assistant");
+const { registerFileTreeHandlers } = require("./ipc-filetree");
 
 function registerAll(ctx) {
   const {
@@ -49,7 +50,7 @@ function registerAll(ctx) {
       projects: projectsWithSessions,
       conversation: active?.messages || [],
       runnerSessionIds: runnerPool.getSessionIds(),
-      runningSessionIds: getRunningSessionIds(runnerPool, sessionManager),
+      runningSessionIds: getRunningSessionIds(runnerPool),
       agent: {
         ...agent,
         ok: cliReady,
@@ -71,6 +72,7 @@ function registerAll(ctx) {
   registerSessionHandlers(ctx);
   registerSkillHandlers(ctx);
   registerAssistantHandlers(ctx);
+  registerFileTreeHandlers();
 }
 
 module.exports = { registerAll };

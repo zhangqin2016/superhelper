@@ -192,6 +192,7 @@ export function renderProjectTree() {
     }
 
     group.appendChild(sessionList);
+
     el.appendChild(group);
   }
 }

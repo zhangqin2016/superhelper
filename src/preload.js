@@ -8,6 +8,16 @@ contextBridge.exposeInMainWorld("assistantClient", {
   setLocale: (locale) => ipcRenderer.invoke("app:set-locale", locale),
   sendMessage: (text, files) =>
     ipcRenderer.invoke("assistant:input", { text, files }),
+  retryLastMessage: (sessionId) =>
+    ipcRenderer.invoke("assistant:retry", { sessionId }),
+  respondPermission: (sessionId, requestId, allow, options = {}) =>
+    ipcRenderer.invoke("assistant:permission-response", {
+      sessionId,
+      requestId,
+      allow,
+      remember: Boolean(options.remember),
+      message: options.message,
+    }),
   interrupt: () => ipcRenderer.invoke("assistant:interrupt"),
 
   getFullState: () => ipcRenderer.invoke("state:full"),
@@ -62,6 +72,12 @@ contextBridge.exposeInMainWorld("assistantClient", {
   getImageDimensions: (fileId) => ipcRenderer.invoke("files:dimensions", fileId),
   clearStagingCache: () => ipcRenderer.invoke("files:clear-staging"),
 
+  listDirectory: (dirPath) => ipcRenderer.invoke("filetree:list-dir", { dirPath }),
+  acceptChange: (sessionId, filePath) =>
+    ipcRenderer.invoke("filetree:accept-change", { sessionId, filePath }),
+  rejectChange: (sessionId, filePath, content) =>
+    ipcRenderer.invoke("filetree:reject-change", { sessionId, filePath, content }),
+
   onChunk: (callback) => {
     ipcRenderer.on("assistant:chunk", (_event, data) => callback(data));
   },
@@ -80,7 +96,25 @@ contextBridge.exposeInMainWorld("assistantClient", {
   onToolDone: (callback) => {
     ipcRenderer.on("assistant:tool-done", (_event, data) => callback(data));
   },
+  onPermissionRequest: (callback) => {
+    ipcRenderer.on("assistant:permission-request", (_event, data) => callback(data));
+  },
+  onPermissionCancelled: (callback) => {
+    ipcRenderer.on("assistant:permission-cancelled", (_event, data) => callback(data));
+  },
+  onEngineNotice: (callback) => {
+    ipcRenderer.on("assistant:engine-notice", (_event, data) => callback(data));
+  },
+  onPromptSuggestions: (callback) => {
+    ipcRenderer.on("assistant:prompt-suggestions", (_event, data) => callback(data));
+  },
+  onTurnState: (callback) => {
+    ipcRenderer.on("assistant:turn-state", (_event, data) => callback(data));
+  },
   onFocusSession: (callback) => {
     ipcRenderer.on("assistant:focus-session", (_event, data) => callback(data));
+  },
+  onFileDiff: (callback) => {
+    ipcRenderer.on("assistant:file-diff", (_event, data) => callback(data));
   },
 });

@@ -102,11 +102,15 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("tool-using", (data) => {
+    const { captureBeforeSnapshot } = require("./diff-capture");
+    captureBeforeSnapshot(sessionId, data.id, data.name, data.input);
     sendToRenderer(ctx.mainWindow, "assistant:tool", { sessionId, ...data });
   });
 
   runner.on("tool-done", (data) => {
     sendToRenderer(ctx.mainWindow, "assistant:tool-done", { sessionId, ...data });
+    const { emitDiffForTool } = require("./diff-capture");
+    emitDiffForTool(sessionId, data.id, ctx);
   });
 
   runner.on("permission-request", (data) => {
@@ -197,6 +201,8 @@ function wireRunner(ctx, runner) {
   runner.on("error", (message) => {
     if (!turnState.has(sessionId)) return;
     turnState.abort(sessionId);
+    const { clearDiffsForSession } = require("./diff-capture");
+    clearDiffsForSession(sessionId);
     const friendly =
       message === "BUSY"
         ? "上一条消息还在处理中，请稍后再试。"
