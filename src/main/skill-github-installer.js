@@ -27,7 +27,7 @@ function copyDirRecursive(source, target) {
     if (entry.isDirectory()) {
       copyDirRecursive(src, dst);
     } else {
-      fs.copyFileSync(src, dst);
+      fs.writeFileSync(dst, fs.readFileSync(src));
     }
   }
 }

@@ -21,10 +21,11 @@ function skillsStatePath() {
 }
 
 function bundledResourceCandidates(relativePath) {
-  const candidates = [
-    path.join(process.resourcesPath, relativePath),
-    path.join(PROJECT_ROOT, relativePath),
-  ];
+  const candidates = [];
+  if (typeof process.resourcesPath === "string" && process.resourcesPath.length > 0) {
+    candidates.push(path.join(process.resourcesPath, relativePath));
+  }
+  candidates.push(path.join(PROJECT_ROOT, relativePath));
   return candidates.find((p) => fs.existsSync(p)) || null;
 }
 
@@ -52,7 +53,7 @@ function copyDirRecursive(source, target) {
     if (entry.isDirectory()) {
       copyDirRecursive(src, dst);
     } else {
-      fs.copyFileSync(src, dst);
+      fs.writeFileSync(dst, fs.readFileSync(src));
       if (
         process.platform !== "win32" &&
         (entry.name.endsWith(".js") || entry.name.endsWith(".cjs"))

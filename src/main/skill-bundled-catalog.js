@@ -6,7 +6,7 @@ const { PROJECT_ROOT } = require("./config");
 
 function bundledCatalogRoots() {
   const roots = [];
-  if (process.resourcesPath) {
+  if (typeof process.resourcesPath === "string" && process.resourcesPath.length > 0) {
     roots.push(path.join(process.resourcesPath, "resources", "skills-catalog"));
   }
   roots.push(path.join(PROJECT_ROOT, "resources", "skills-catalog"));
@@ -15,9 +15,12 @@ function bundledCatalogRoots() {
 
 function resolveBundledCatalogDir(skillId) {
   if (!skillId) return null;
-  for (const root of bundledCatalogRoots()) {
+  const roots = bundledCatalogRoots();
+  for (const root of roots) {
     const dir = path.join(root, skillId);
-    if (fs.existsSync(path.join(dir, "SKILL.md"))) {
+    const skillMd = path.join(dir, "SKILL.md");
+    const exists = fs.existsSync(skillMd);
+    if (exists) {
       return dir;
     }
   }

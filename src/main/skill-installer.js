@@ -136,7 +136,7 @@ function copyDirRecursive(source, target) {
     if (entry.isDirectory()) {
       copyDirRecursive(src, dst);
     } else {
-      fs.copyFileSync(src, dst);
+      fs.writeFileSync(dst, fs.readFileSync(src));
       if (
         process.platform !== "win32" &&
         (entry.name.endsWith(".js") || entry.name.endsWith(".cjs"))

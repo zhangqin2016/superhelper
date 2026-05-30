@@ -13,7 +13,7 @@ function registryCachePath() {
 
 function bundledRegistryPath() {
   const candidates = [];
-  if (process.resourcesPath) {
+  if (typeof process.resourcesPath === "string" && process.resourcesPath.length > 0) {
     candidates.push(
       path.join(process.resourcesPath, "resources", "skills-registry", "registry.json"),
     );
