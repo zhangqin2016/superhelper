@@ -21,7 +21,17 @@ const ROOT = path.resolve(__dirname, "..");
 const REQUIREMENTS = path.join(ROOT, "resources/runtime/requirements-runtime.txt");
 const CACHE_DIR = path.join(ROOT, ".cache/runtime-build");
 const PYTHON_VERSION = "3.12";
+const PYTHON_FULL_VERSION = "3.12.13";
+const PYTHON_BUILD_TAG = "20260510";
 const UV_VERSION = "0.6.14";
+
+// python-build-standalone downloads for cross-platform builds
+const PYTHON_STANDALONE = {
+  "win32-x64": {
+    url: `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_FULL_VERSION}%2B${PYTHON_BUILD_TAG}/cpython-${PYTHON_FULL_VERSION}%2B${PYTHON_BUILD_TAG}-x86_64-pc-windows-msvc-install_only_stripped.tar.gz`,
+    sha256: null, // not verified for cross-builds
+  },
+};
 
 const LO_VERSION = "25.8.7";
 const LO_URLS = {
@@ -62,6 +72,14 @@ function detectPlatform() {
   }
   if (process.platform === "win32") return "win32-x64";
   return "linux-x64";
+}
+
+function isCrossBuild(platform) {
+  return platform !== detectPlatform();
+}
+
+function isWindowsPlatform(platform) {
+  return platform === "win32-x64";
 }
 
 function log(msg) {
@@ -151,9 +169,41 @@ async function installUv(platform, runtimeRoot) {
   }
 
   const uvSrc = findUvBinary(extractDir);
-  const uvDest = path.join(binDir, process.platform === "win32" ? "uv.exe" : "uv");
+  const uvDest = path.join(binDir, isWindowsPlatform(platform) ? "uv.exe" : "uv");
   fs.copyFileSync(uvSrc, uvDest);
-  if (process.platform !== "win32") fs.chmodSync(uvDest, 0o755);
+  if (!isWindowsPlatform(platform)) fs.chmodSync(uvDest, 0o755);
+
+  // When cross-building, also return host uv for running pip install
+  if (isCrossBuild(platform)) {
+    const hostPlatform = detectPlatform();
+    const hostUvPath = path.join(runtimeRoot, "bin",
+      isWindowsPlatform(hostPlatform) ? "uv.exe" : "uv");
+    // Host uv might already exist from a previous build — use system uv as fallback
+    if (fs.existsSync(hostUvPath)) {
+      return { hostUv: hostUvPath, targetUv: uvDest };
+    }
+    // Download host uv too
+    const hostUrl = UV_RELEASE[hostPlatform];
+    if (hostUrl) {
+      const hostArchive = path.join(CACHE_DIR, `uv-${hostPlatform}${hostUrl.endsWith(".zip") ? ".zip" : ".tar.gz"}`);
+      await download(hostUrl, hostArchive);
+      const hostExtractDir = path.join(CACHE_DIR, `uv-extract-${hostPlatform}`);
+      rmrf(hostExtractDir);
+      ensureDir(hostExtractDir);
+      if (hostArchive.endsWith(".zip")) {
+        run("unzip", ["-q", hostArchive, "-d", hostExtractDir]);
+      } else {
+        run("tar", ["-xzf", hostArchive, "-C", hostExtractDir]);
+      }
+      const hostSrc = findUvBinary(hostExtractDir);
+      fs.copyFileSync(hostSrc, hostUvPath);
+      if (!isWindowsPlatform(hostPlatform)) fs.chmodSync(hostUvPath, 0o755);
+      return { hostUv: hostUvPath, targetUv: uvDest };
+    }
+    // Fallback: use system uv
+    return { hostUv: "uv", targetUv: uvDest };
+  }
+
   return uvDest;
 }
 
@@ -217,11 +267,87 @@ async function installPythonAndVenv(uvPath, platform, runtimeRoot) {
   return { pythonExe, venvPython };
 }
 
+/**
+ * Cross-build Windows runtime from macOS/Linux.
+ * 1. Download Windows CPython standalone build from python-build-standalone
+ * 2. Extract it as the Python install
+ * 3. Create venv structure manually (Scripts/python.exe, Lib/site-packages/)
+ * 4. Use macOS uv pip install --python-platform windows --target to install packages
+ */
+async function crossInstallPythonAndVenv(uvPath, platform, runtimeRoot) {
+  const pythonRoot = path.join(runtimeRoot, "python");
+  const venvDir = path.join(runtimeRoot, "venv");
+  rmrf(pythonRoot);
+  rmrf(venvDir);
+  ensureDir(pythonRoot);
+
+  const standalone = PYTHON_STANDALONE[platform];
+  if (!standalone) throw new Error(`No standalone Python for ${platform}`);
+
+  const archive = path.join(CACHE_DIR, `cpython-${platform}.tar.gz`);
+  await download(standalone.url, archive);
+  validateArchiveSize(archive, 5_000_000, "Windows CPython");
+
+  const pythonInstallDir = path.join(
+    pythonRoot,
+    `cpython-${PYTHON_FULL_VERSION}-${platform}-none`,
+  );
+  rmrf(pythonInstallDir);
+  ensureDir(pythonInstallDir);
+  run("tar", ["-xzf", archive, "-C", pythonInstallDir]);
+
+  const pythonExe = findPythonExecutable(pythonInstallDir);
+  log(`cross python at ${pythonExe}`);
+
+  // Build Windows venv structure
+  const scriptsDir = path.join(venvDir, "Scripts");
+  ensureDir(scriptsDir);
+
+  const pythonDir = path.dirname(pythonExe);
+  for (const name of ["python.exe", "python3.exe", "pythonw.exe"]) {
+    const src = path.join(pythonDir, name);
+    if (fs.existsSync(src)) fs.copyFileSync(src, path.join(scriptsDir, name));
+  }
+  for (const dll of fs.readdirSync(pythonDir)) {
+    if (dll.endsWith(".dll")) {
+      fs.copyFileSync(path.join(pythonDir, dll), path.join(scriptsDir, dll));
+    }
+  }
+
+  const libSrc = path.join(pythonDir, "Lib");
+  if (fs.existsSync(libSrc)) run("cp", ["-R", libSrc, path.join(venvDir, "Lib")]);
+
+  const sitePackages = path.join(venvDir, "Lib", "site-packages");
+  ensureDir(sitePackages);
+
+  const uvPlatform = "x86_64-pc-windows-msvc";
+  log(`cross pip install --python-platform ${uvPlatform}`);
+  run(uvPath, [
+    "pip", "install",
+    "--python-platform", uvPlatform,
+    "--python-version", PYTHON_VERSION,
+    "--only-binary", ":all:",
+    "--target", sitePackages,
+    "-r", REQUIREMENTS,
+  ]);
+
+  const cfg = [
+    `home = ${pythonInstallDir}`,
+    "include-system-site-packages = false",
+    `version = ${PYTHON_FULL_VERSION}`,
+    `executable = ${path.join(scriptsDir, "python.exe")}`,
+  ].join("\r\n");
+  fs.writeFileSync(path.join(venvDir, "pyvenv.cfg"), cfg + "\r\n");
+
+  return { pythonExe, venvPython: path.join(scriptsDir, "python.exe") };
+}
+
 function writeShims(runtimeRoot, venvPython, platform) {
   const binDir = path.join(runtimeRoot, "bin");
   ensureDir(binDir);
 
-  if (process.platform === "win32") {
+  const isWin = isWindowsPlatform(platform);
+  if (isWin) {
     for (const name of ["python.exe", "python3.exe"]) {
       const bat = `@echo off\r\n"${venvPython}" %*\r\n`;
       fs.writeFileSync(path.join(binDir, name), bat);
@@ -264,8 +390,8 @@ function writeSofficeShim(runtimeRoot, platform) {
 
   if (!realSoffice || !fs.existsSync(realSoffice)) return;
 
-  const shimPath = path.join(binDir, process.platform === "win32" ? "soffice.cmd" : "soffice");
-  if (process.platform === "win32") {
+  const shimPath = path.join(binDir, isWindowsPlatform(platform) ? "soffice.cmd" : "soffice");
+  if (isWindowsPlatform(platform)) {
     fs.writeFileSync(shimPath, `@echo off\r\n"${realSoffice}" %*\r\n`);
   } else {
     let content = `#!/bin/sh\n`;
@@ -371,30 +497,41 @@ async function main() {
   ensureDir(CACHE_DIR);
   ensureDir(runtimeRoot);
 
+  const cross = isCrossBuild(platform);
+  if (cross) log(`cross-build: building ${platform} from ${detectPlatform()}`);
+
   log(`platform=${platform} dest=${runtimeRoot}`);
 
-  let uvPath = path.join(runtimeBinDir(runtimeRoot), process.platform === "win32" ? "uv.exe" : "uv");
-  let venvPython =
-    process.platform === "win32"
-      ? path.join(runtimeRoot, "venv", "Scripts", "python.exe")
-      : path.join(runtimeRoot, "venv", "bin", "python3");
+  const isWin = isWindowsPlatform(platform);
+  let uvPath = path.join(runtimeBinDir(runtimeRoot), isWin ? "uv.exe" : "uv");
+  let venvPython = isWin
+    ? path.join(runtimeRoot, "venv", "Scripts", "python.exe")
+    : path.join(runtimeRoot, "venv", "bin", "python3");
 
   if (!libreOfficeOnly) {
-    uvPath = await installUv(platform, runtimeRoot);
-    ({ venvPython } = await installPythonAndVenv(uvPath, platform, runtimeRoot));
+    const uvResult = await installUv(platform, runtimeRoot);
+    if (cross) {
+      uvPath = uvResult.hostUv; // macOS uv for running pip install
+      ({ venvPython } = await crossInstallPythonAndVenv(uvPath, platform, runtimeRoot));
+    } else {
+      uvPath = uvResult;
+      ({ venvPython } = await installPythonAndVenv(uvPath, platform, runtimeRoot));
+    }
     writeShims(runtimeRoot, venvPython, platform);
   } else if (!fs.existsSync(venvPython)) {
     throw new Error("--libreoffice-only requires an existing venv; run full build first");
   }
 
   let hasLo = false;
-  if (!skipLibreOffice) {
+  if (!skipLibreOffice && !(cross && isWin)) {
     try {
       await installLibreOffice(platform, runtimeRoot);
       hasLo = true;
     } catch (err) {
       console.warn(`[runtime-build] LibreOffice install failed (continuing): ${err.message}`);
     }
+  } else if (cross && isWin) {
+    log("skipping LibreOffice (MSI extraction not available on this platform)");
   }
 
   writeManifest(runtimeRoot, platform, { libreoffice: hasLo });
