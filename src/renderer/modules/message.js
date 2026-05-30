@@ -42,6 +42,47 @@ function clearStreamSettleTimer(sessionId) {
   streamSettleTimers.delete(sessionId);
 }
 
+/** @type {Map<string, ReturnType<typeof setInterval>>} */
+const busyHeartbeats = new Map();
+
+function clearBusyHeartbeat(sessionId) {
+  const timer = busyHeartbeats.get(sessionId);
+  if (timer) clearInterval(timer);
+  busyHeartbeats.delete(sessionId);
+}
+
+/** Keep visible “still working” cues when the engine is silent (tools/subagents). */
+function refreshBusyIndicators(sessionId) {
+  if (!sessionId || !isSessionRunning(sessionId)) {
+    clearBusyHeartbeat(sessionId);
+    return;
+  }
+
+  if (!hasLiveTurn(sessionId)) {
+    beginAssistantTurn(sessionId);
+  }
+
+  const v = view(sessionId);
+  if (v.activeBubble) {
+    v.activeBubble.classList.add("pending");
+  }
+  syncTurnProgress(sessionId);
+  updateBusyMeta(sessionId);
+
+  if (!busyHeartbeats.has(sessionId)) {
+    busyHeartbeats.set(
+      sessionId,
+      setInterval(() => {
+        if (!isSessionRunning(sessionId)) {
+          clearBusyHeartbeat(sessionId);
+          return;
+        }
+        refreshBusyIndicators(sessionId);
+      }, 2500),
+    );
+  }
+}
+
 function scheduleStreamSettle(sessionId) {
   if (!sessionId) return;
   const v = view(sessionId);
@@ -271,6 +312,7 @@ export async function retryLastPrompt(sessionId) {
   removeLastAssistantMessage(sessionId);
   setSessionRunning(sessionId, true);
   beginAssistantTurn(sessionId);
+  refreshBusyIndicators(sessionId);
   syncComposerForActiveSession();
 }
 
@@ -294,7 +336,10 @@ export function shouldPreserveSessionView(sessionId) {
 
 export function resumeLiveSessionUi(sessionId) {
   if (!sessionId || hasLiveTurn(sessionId)) return;
-  if (isSessionRunning(sessionId)) beginAssistantTurn(sessionId);
+  if (isSessionRunning(sessionId)) {
+    beginAssistantTurn(sessionId);
+    refreshBusyIndicators(sessionId);
+  }
 }
 
 export function syncComposerForActiveSession() {
@@ -311,11 +356,19 @@ export function syncComposerForActiveSession() {
     if (el) el.disabled = blocked || busy;
   }
   if (promptInput) {
-    promptInput.placeholder = !hasProject
-      ? t("composer.placeholderNeedProject")
-      : !sid
-        ? t("composer.placeholderNeedSession")
-        : t("composer.placeholder");
+    promptInput.placeholder = busy
+      ? t("composer.placeholderBusy")
+      : !hasProject
+        ? t("composer.placeholderNeedProject")
+        : !sid
+          ? t("composer.placeholderNeedSession")
+          : t("composer.placeholder");
+  }
+
+  if (busy && sid) {
+    refreshBusyIndicators(sid);
+  } else if (sid) {
+    clearBusyHeartbeat(sid);
   }
 
   import("./project-tree.js")
@@ -362,50 +415,6 @@ export function renderConversation(sessionId) {
   scrollToBottomAfterLayout(v.panel);
 }
 
-function countRunningTools(sessionId) {
-  let n = 0;
-  for (const entry of view(sessionId).toolCards.values()) {
-    if (entry.status === "running") n++;
-  }
-  return n;
-}
-
-function updateBusyMeta(sessionId) {
-  if (!isActiveSession(sessionId)) return;
-  const meta = $("sessionMeta");
-  if (!meta || !store.get("isBusy")) return;
-  const label = view(sessionId).activityLabel;
-  meta.textContent = label || t("message.processing");
-}
-
-function syncTurnProgress(sessionId) {
-  const v = view(sessionId);
-  if (!v.activeTurn?.activity) return;
-
-  const progress = v.activeTurn.activity.querySelector(".turn-progress");
-  const waiting =
-    isActiveSession(sessionId) &&
-    store.get("isBusy") &&
-    countRunningTools(sessionId) === 0;
-
-  if (waiting) {
-    if (!progress) {
-      const row = document.createElement("div");
-      row.className = "turn-progress tool-card tool-card-running";
-      const dot = document.createElement("span");
-      dot.className = "tool-card-dot";
-      const label = document.createElement("span");
-      label.className = "tool-card-label";
-      label.textContent = t("message.continuing");
-      row.append(dot, label);
-      v.activeTurn.activity.appendChild(row);
-    }
-    v.activeTurn.activity.hidden = false;
-  } else if (progress) {
-    progress.remove();
-  }
-}
-
 function basename(path) {
   if (!path) return "";
   const parts = String(path).split(/[/\\]/);
@@ -438,6 +447,17 @@ function toolSummary(name, input = {}) {
       return { title: t("tool.webSearch"), detail: clip(input.query || input.search_query) };
     case "webReader":
       return { title: t("tool.readWeb"), detail: clip(input.url) };
+    case "Task":
+      return {
+        title: t("tool.subagentTask"),
+        detail: clip(input.description || input.prompt || input.task),
+      };
+    case "Agent":
+    case "Subagent":
+      return {
+        title: t("tool.subagent"),
+        detail: clip(input.description || input.prompt),
+      };
     default:
       return {
         title: name || t("tool.processing"),
@@ -499,124 +519,11 @@ function finishActiveTurn(sessionId) {
   if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
 }
 
-function renderToolCardContent(card, name, input) {
-  const { title, detail } = toolSummary(name, input);
-  card.replaceChildren();
-
-  const dot = document.createElement("span");
-  dot.className = "tool-card-dot";
-
-  const textWrap = document.createElement("div");
-  textWrap.style.minWidth = "0";
-  textWrap.style.flex = "1";
-
-  const label = document.createElement("span");
-  label.className = "tool-card-label";
-  label.textContent = title;
-
-  textWrap.appendChild(label);
-  if (detail) {
-    const detailEl = document.createElement("span");
-    detailEl.className = "tool-card-detail";
-    detailEl.textContent = detail;
-    textWrap.appendChild(detailEl);
-  }
-
-  card.append(dot, textWrap);
-}
-
-function syncActivityVisibility(sessionId) {
-  const turn = view(sessionId).activeTurn;
-  if (!turn) return;
-  turn.activity.hidden = turn.activity.childElementCount === 0;
-}
-
-function addToolCard(sessionId, id, name, input) {
-  if (!view(sessionId).activeTurn) beginAssistantTurn(sessionId);
-  const v = view(sessionId);
-  v.turnHadToolUse = true;
-  clearStreamSettleTimer(sessionId);
-
-  const summary = toolSummary(name, input);
-  v.activityLabel = summary.detail
-    ? `${summary.title}：${summary.detail}`
-    : summary.title;
-  updateBusyMeta(sessionId);
-
-  const card = document.createElement("div");
-  card.className = "tool-card tool-card-running";
-  card.dataset.toolId = id;
-  renderToolCardContent(card, name, input);
-
-  v.activeTurn.activity.appendChild(card);
-  v.activeTurn.activity.hidden = false;
-  scrollToBottom(false, v.panel);
-  v.toolCards.set(id, { card, name, input, status: "running" });
-  syncTurnProgress(sessionId);
-}
-
-function updateToolCard(sessionId, id, status) {
-  const v = view(sessionId);
-  const entry = v.toolCards.get(id);
-  if (!entry) return;
-
-  if (status === "failed") {
-    entry.card.classList.remove("tool-card-running");
-    entry.card.classList.add("tool-card-failed");
-    entry.card.querySelector(".tool-card-label").textContent =
-      t("message.toolFailed", { title: toolSummary(entry.name, entry.input).title });
-    entry.status = "failed";
-    v.toolCards.delete(id);
-    v.activityLabel = t("message.adjusting");
-    updateBusyMeta(sessionId);
-    window.setTimeout(() => {
-      entry.card.remove();
-      syncActivityVisibility(sessionId);
-      syncTurnProgress(sessionId);
-      refreshRunningActivityLabel(sessionId);
-    }, 4000);
-  } else {
-    entry.card.classList.remove("tool-card-running");
-    entry.card.classList.add("tool-card-done");
-    entry.card.querySelector(".tool-card-dot")?.classList.add("tool-card-dot-done");
-    entry.status = "done";
-    refreshRunningActivityLabel(sessionId);
-  }
-
-  syncTurnProgress(sessionId);
-  syncActivityVisibility(sessionId);
-}
-
-function refreshRunningActivityLabel(sessionId) {
-  const v = view(sessionId);
-  for (const entry of v.toolCards.values()) {
-    if (entry.status !== "running") continue;
-    const summary = toolSummary(entry.name, entry.input);
-    v.activityLabel = summary.detail
-      ? `${summary.title}：${summary.detail}`
-      : summary.title;
-    updateBusyMeta(sessionId);
-    return;
-  }
-  if (isActiveSession(sessionId) && store.get("isBusy")) {
-    v.activityLabel = t("message.continuing");
-    updateBusyMeta(sessionId);
-  }
-}
-
-function clearToolCards(sessionId) {
-  const v = view(sessionId);
-  for (const { card } of v.toolCards.values()) {
-    card.remove();
-  }
-  v.toolCards.clear();
-  v.activeTurn?.activity?.querySelectorAll(".turn-progress").forEach((el) => el.remove());
-  syncActivityVisibility(sessionId);
-}
 
 export function forceEndTurnUi(sessionId) {
   if (!sessionId) return;
   clearStreamSettleTimer(sessionId);
+  clearBusyHeartbeat(sessionId);
   clearToolCards(sessionId);
   view(sessionId).activityLabel = "";
   setSessionRunning(sessionId, false);
@@ -686,6 +593,7 @@ export function wireMessageIpc() {
     if (!sessionId) return;
 
     clearStreamSettleTimer(sessionId);
+    clearBusyHeartbeat(sessionId);
     clearToolCards(sessionId);
     view(sessionId).activityLabel = "";
     setSessionRunning(sessionId, false);
@@ -699,7 +607,6 @@ export function wireMessageIpc() {
     }
     finishActiveTurn(sessionId);
 
-    const { refreshStateLight } = await import("./session-chrome.js");
     await refreshStateLight({ reRenderActive: isActiveSession(sessionId) });
 
     if (isActiveSession(sessionId)) {
@@ -715,11 +622,10 @@ export function wireMessageIpc() {
     if (busy) {
       setSessionRunning(sessionId, true);
       if (!view(sessionId).activeBubble) beginAssistantTurn(sessionId);
+      refreshBusyIndicators(sessionId);
     }
     if (isActiveSession(sessionId)) syncComposerForActiveSession();
-    import("./project-tree.js")
-      .then(({ updateSessionRunningIndicators }) => updateSessionRunningIndicators())
-      .catch(() => {});
+    updateSessionRunningIndicators();
   });
 
   window.assistantClient.onError(async (error) => {
@@ -727,6 +633,7 @@ export function wireMessageIpc() {
     if (!sessionId) return;
 
     clearStreamSettleTimer(sessionId);
+    clearBusyHeartbeat(sessionId);
     clearToolCards(sessionId);
     setSessionRunning(sessionId, false);
 
@@ -741,7 +648,6 @@ export function wireMessageIpc() {
     }
     finishActiveTurn(sessionId);
 
-    const { refreshStateLight } = await import("./session-chrome.js");
     await refreshStateLight({ reRenderActive: isActiveSession(sessionId) });
 
     if (isActiveSession(sessionId)) syncComposerForActiveSession();
@@ -766,9 +672,7 @@ export function setBusyUI(busy) {
   const interruptBtn = $("interruptBtn");
   if (interruptBtn) interruptBtn.hidden = !busy;
 
-  import("./project-tree.js")
-    .then(({ updateSessionRunningIndicators }) => updateSessionRunningIndicators())
-    .catch(() => {});
+  updateSessionRunningIndicators();
 
   const sid = store.get("activeSessionId");
   if (busy && sid) {
