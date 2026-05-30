@@ -19,6 +19,8 @@ class SessionManager {
     this.pm = projectManager;
     this.sessions = {};
     this.activeSessionId = null;
+    this._saveTimer = null;
+    this._savePending = false;
   }
 
   load() {
@@ -55,7 +57,7 @@ class SessionManager {
       }
     }
     this._resetStaleRunningStatus();
-    this.save();
+    this.saveImmediate();
   }
 
   /** Remove sessions for a deleted project (do not merge into other projects). */
@@ -70,7 +72,7 @@ class SessionManager {
       this.activeSessionId = null;
     }
     delete this.sessions[projectId];
-    this.save();
+    this.saveImmediate();
     return ids;
   }
 
@@ -89,7 +91,7 @@ class SessionManager {
     if (!this.sessions[projectId]) this.sessions[projectId] = [];
     this.sessions[projectId].push(session);
     if (!this.activeSessionId) this.activeSessionId = session.id;
-    this.save();
+    this.saveImmediate();
     return session;
   }
 
@@ -137,7 +139,22 @@ class SessionManager {
     }
   }
 
-  save() {
+  _scheduleSave() {
+    if (this._saveTimer) {
+      this._savePending = true;
+      return;
+    }
+    this._doSave();
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      if (this._savePending) {
+        this._savePending = false;
+        this._doSave();
+      }
+    }, 500);
+  }
+
+  _doSave() {
     const dir = path.dirname(sessionsConfigPath());
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
@@ -148,6 +165,19 @@ class SessionManager {
         2,
       ),
     );
+  }
+
+  save() {
+    this._scheduleSave();
+  }
+
+  saveImmediate() {
+    if (this._saveTimer) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
+      this._savePending = false;
+    }
+    this._doSave();
   }
 
   getActive() {
@@ -211,13 +241,13 @@ class SessionManager {
     }
     this.sessions[projectId].push(session);
     this.activeSessionId = session.id;
-    this.save();
+    this.saveImmediate();
     return session;
   }
 
   switchTo(sessionId) {
     this.activeSessionId = sessionId;
-    this.save();
+    this.saveImmediate();
   }
 
   rename(sessionId, title) {
@@ -282,10 +312,33 @@ class SessionManager {
     this._appendMessage(session, role, content, files);
   }
 
-  pushMessageTo(sessionId, role, content, files = null) {
+  pushMessageTo(sessionId, role, content, files = null, extra = null) {
     const session = this._find(sessionId);
     if (!session) return;
-    this._appendMessage(session, role, content, files);
+    this._appendMessage(session, role, content, files, extra);
+  }
+
+  /** Last user message in this session (for retry). */
+  getLastUserMessage(sessionId) {
+    const session = this._find(sessionId);
+    if (!session) return null;
+    for (let i = session.messages.length - 1; i >= 0; i -= 1) {
+      const msg = session.messages[i];
+      if (msg.role === "user") return msg;
+    }
+    return null;
+  }
+
+  /** Remove trailing assistant message (failed turn before retry). */
+  popLastAssistantMessage(sessionId) {
+    const session = this._find(sessionId);
+    if (!session || session.messages.length === 0) return false;
+    const last = session.messages[session.messages.length - 1];
+    if (last.role !== "assistant") return false;
+    session.messages.pop();
+    session.updatedAt = new Date().toISOString();
+    this.save();
+    return true;
   }
 
   /** Remove the last message if it is from the user (e.g. send to CLI failed). */
@@ -300,13 +353,15 @@ class SessionManager {
     return true;
   }
 
-  _appendMessage(session, role, content, files = null) {
-    session.messages.push({
+  _appendMessage(session, role, content, files = null, extra = null) {
+    const entry = {
       role,
       content,
       files: files && files.length > 0 ? files : undefined,
       timestamp: new Date().toISOString(),
-    });
+    };
+    if (extra?.failed) entry.failed = true;
+    session.messages.push(entry);
     session.updatedAt = new Date().toISOString();
     if (session.messages.length > 200) {
       session.messages = session.messages.slice(-200);
