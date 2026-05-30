@@ -6,6 +6,7 @@ const { sanitizeError } = require("./agent-runner");
 const { fileStagingDir } = require("./config");
 const {
   migrateGlobalResumeArtifacts,
+  hasResumeArtifacts,
   resetSessionEngineCache,
 } = require("./session-engine-recovery");
 const skillManager = require("./skill-manager");
@@ -171,6 +172,12 @@ function wireRunner(ctx, runner) {
     sessionManager.setAgentResumeId(sessionId, agentResumeId);
   });
 
+  runner.on("resume-invalid", () => {
+    sessionManager.clearAgentResumeId(sessionId);
+    resetSessionEngineCache(sessionId);
+    ctx.runnerPool.terminateSession(sessionId);
+  });
+
   runner.on("done", ({ code, output, interrupted }) => {
     const inTurn = turnState.has(sessionId);
     const storedOutput = turnState.end(sessionId);
@@ -180,6 +187,21 @@ function wireRunner(ctx, runner) {
       if (finalOutput) {
         sessionManager.pushMessageTo(sessionId, "assistant", finalOutput);
         lastRunnerStderr.delete(sessionId);
+      } else if (
+        !interrupted &&
+        sessionManager.findById(sessionId)?.agentResumeId
+      ) {
+        lastRunnerStderr.delete(sessionId);
+        sessionManager.clearAgentResumeId(sessionId);
+        resetSessionEngineCache(sessionId);
+        ctx.runnerPool.terminateSession(sessionId);
+        sessionManager.pushMessageTo(
+          sessionId,
+          "assistant",
+          "对话上下文已失效（可能因重启中断）。已重置连接，请再发一次消息。",
+          null,
+          { failed: true },
+        );
       } else if (!interrupted && code !== 0 && code !== null) {
         const stderrHint = lastRunnerStderr.get(sessionId);
         lastRunnerStderr.delete(sessionId);
@@ -289,6 +311,15 @@ function ensureSessionRunner(ctx, sessionId) {
   const configDir = skillManager.writeSessionAgentGuide(sessionId, session);
   if (session.agentResumeId) {
     migrateGlobalResumeArtifacts(sessionId, session.agentResumeId);
+    if (!hasResumeArtifacts(sessionId, session.agentResumeId)) {
+      console.warn(
+        "[runner] stale agentResumeId for session %s — starting fresh",
+        sessionId,
+      );
+      sessionManager.clearAgentResumeId(sessionId);
+      resetSessionEngineCache(sessionId);
+      runnerPool.terminateSession(sessionId);
+    }
   }
   const extra = {
     disallowedTools: skillManager.getDisallowedTools(),

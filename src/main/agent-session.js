@@ -209,7 +209,19 @@ class AgentSession extends EventEmitter {
 
     this.process.stdout.on("data", (chunk) => this._onStdout(chunk));
     this.process.stderr.on("data", (chunk) => {
-      const text = sanitizeError(chunk.toString());
+      const raw = chunk.toString();
+      const text = sanitizeError(raw);
+      const { isResumeFailureMessage } = require("./session-engine-recovery");
+      if (
+        this.busy &&
+        !this._turnSettled &&
+        this.agentResumeId &&
+        isResumeFailureMessage(raw)
+      ) {
+        this.emit("resume-invalid", { message: raw });
+        this._failTurn(text);
+        return;
+      }
       this.emit("engine-notice", { level: "stderr", message: text });
       this.emit("stderr", text);
     });
@@ -250,6 +262,8 @@ class AgentSession extends EventEmitter {
 
   _maybeSendInitialize() {
     if (this._cliInitialized || !this.isAlive()) return;
+    // --resume sessions are initialized by the CLI; host initialize breaks resume.
+    if (this.agentResumeId) return;
     this._cliInitialized = true;
     this._writeControlLine(buildInitializeRequest());
   }
@@ -848,6 +862,14 @@ class AgentSession extends EventEmitter {
           ev.message ||
           "";
         log.warn("CLI error event: %s", errMsg || JSON.stringify(ev).slice(0, 200));
+        if (this.busy && !this._turnSettled) {
+          const { isResumeFailureMessage } = require("./session-engine-recovery");
+          if (this.agentResumeId && isResumeFailureMessage(errMsg)) {
+            this.emit("resume-invalid", { message: errMsg });
+          }
+          this._failTurn(sanitizeError(errMsg || "Engine error"));
+          return;
+        }
         if (errMsg) {
           this.emit("engine-notice", { level: "warning", message: errMsg });
         }

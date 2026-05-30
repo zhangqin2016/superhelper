@@ -59,6 +59,51 @@ function migrateGlobalResumeArtifacts(sessionId, resumeId) {
   return copied > 0;
 }
 
+function treeContainsNeedle(root, needle) {
+  if (!needle || !root || !fs.existsSync(root)) return false;
+  const token = String(needle);
+
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const ent of entries) {
+      const full = path.join(dir, ent.name);
+      if (ent.name.includes(token) || full.includes(token)) return true;
+      if (ent.isDirectory() && walk(full)) return true;
+    }
+    return false;
+  }
+
+  return walk(root);
+}
+
+/** True when local engine cache contains files for this resume id. */
+function hasResumeArtifacts(sessionId, resumeId) {
+  if (!resumeId) return false;
+  const sessionRoot = sessionGuideDir(sessionId);
+  const globalRoot = agentConfigDir();
+  const candidates = [
+    path.join(sessionRoot, "sessions"),
+    sessionRoot,
+    path.join(globalRoot, "sessions"),
+    globalRoot,
+  ];
+  for (const dir of candidates) {
+    if (treeContainsNeedle(dir, resumeId)) return true;
+  }
+  return false;
+}
+
+function isResumeFailureMessage(text) {
+  return /resume|session.*not found|unknown session|Session ID .* already in use/i.test(
+    String(text || ""),
+  );
+}
+
 /** Drop broken resume linkage and local engine cache (keep AGENT.md / CLAUDE.md). */
 function resetSessionEngineCache(sessionId) {
   const dir = sessionGuideDir(sessionId);
@@ -77,5 +122,7 @@ function resetSessionEngineCache(sessionId) {
 
 module.exports = {
   migrateGlobalResumeArtifacts,
+  hasResumeArtifacts,
+  isResumeFailureMessage,
   resetSessionEngineCache,
 };
