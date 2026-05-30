@@ -37,6 +37,17 @@ export function toolSummary(name, input = {}) {
       return { title: t("tool.webSearch"), detail: clip(input.query || input.search_query) };
     case "webReader":
       return { title: t("tool.readWeb"), detail: clip(input.url) };
+    case "Task":
+      return {
+        title: t("tool.subagentTask"),
+        detail: clip(input.description || input.prompt || input.task),
+      };
+    case "Agent":
+    case "Subagent":
+      return {
+        title: t("tool.subagent"),
+        detail: clip(input.description || input.prompt),
+      };
     default:
       return {
         title: name || t("tool.processing"),

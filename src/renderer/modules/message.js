@@ -11,7 +11,7 @@ import {
   initScrollToBottom,
 } from "./dom.js";
 import { renderMarkdown, renderMarkdownWithCache, clearHighlightCache } from "./markdown.js";
-import { activeProject, updateTopbarTitles } from "./session-chrome.js";
+import { activeProject, updateTopbarTitles, refreshStateLight } from "./session-chrome.js";
 import { t } from "../i18n/index.js";
 import {
   isSessionRunning,
@@ -19,6 +19,16 @@ import {
   syncRunningFromState,
   isActiveSessionBusy,
 } from "./session-busy.js";
+import { showToast } from "./toast.js";
+import { updateSessionRunningIndicators } from "./project-tree.js";
+import {
+  addToolCard as addToolCardImpl,
+  updateToolCard as updateToolCardImpl,
+  clearToolCards as clearToolCardsImpl,
+  syncTurnProgress as syncTurnProgressImpl,
+  updateBusyMeta as updateBusyMetaImpl,
+  countRunningTools,
+} from "./tool-cards.js";
 
 const stackEl = () => $("sessionMessagesStack");
 
@@ -86,7 +96,7 @@ function refreshBusyIndicators(sessionId) {
 function scheduleStreamSettle(sessionId) {
   if (!sessionId) return;
   const v = view(sessionId);
-  if (v.turnHadToolUse || countRunningTools(sessionId) > 0) return;
+  if (v.turnHadToolUse || countRunningTools(v.toolCards) > 0) return;
 
   clearStreamSettleTimer(sessionId);
   streamSettleTimers.set(
@@ -94,7 +104,7 @@ function scheduleStreamSettle(sessionId) {
     setTimeout(async () => {
       streamSettleTimers.delete(sessionId);
       if (!hasLiveTurn(sessionId) || !isSessionRunning(sessionId)) return;
-      if (view(sessionId).turnHadToolUse || countRunningTools(sessionId) > 0) return;
+      if (view(sessionId).turnHadToolUse || countRunningTools(v.toolCards) > 0) return;
       const md = view(sessionId).activeMarkdown?.trim();
       if (!md) return;
       try {
@@ -297,14 +307,12 @@ function attachRetryAction(article, sessionId) {
 export async function retryLastPrompt(sessionId) {
   if (!sessionId) return;
   if (isSessionRunning(sessionId) || hasLiveTurn(sessionId)) {
-    const { showToast } = await import("./toast.js");
     showToast(t("send.error.BUSY"), "warning");
     return;
   }
 
   const result = await window.assistantClient.retryLastMessage(sessionId);
   if (!result.ok) {
-    const { showToast } = await import("./toast.js");
     showToast(retryErrorMessage(result), "error");
     return;
   }
@@ -371,9 +379,7 @@ export function syncComposerForActiveSession() {
     clearBusyHeartbeat(sid);
   }
 
-  import("./project-tree.js")
-    .then(({ updateSessionRunningIndicators }) => updateSessionRunningIndicators())
-    .catch(() => {});
+  updateSessionRunningIndicators();
 }
 
 export function renderConversation(sessionId) {
@@ -415,55 +421,37 @@ export function renderConversation(sessionId) {
   scrollToBottomAfterLayout(v.panel);
 }
 
-function basename(path) {
-  if (!path) return "";
-  const parts = String(path).split(/[/\\]/);
-  return parts[parts.length - 1] || String(path);
+// --- Tool card wrappers (delegate to tool-cards.js) ---
+
+function addToolCard(sessionId, id, name, input) {
+  if (!view(sessionId).activeTurn) beginAssistantTurn(sessionId);
+  const v = view(sessionId);
+  v.turnHadToolUse = true;
+  clearStreamSettleTimer(sessionId);
+  addToolCardImpl(v, id, name, input);
+  updateBusyMeta(sessionId);
+  syncTurnProgress(sessionId);
 }
 
-function clip(text, max = 72) {
-  const value = String(text || "").trim();
-  if (!value) return "";
-  return value.length > max ? `${value.slice(0, max)}...` : value;
+function updateToolCard(sessionId, id, status) {
+  const v = view(sessionId);
+  updateToolCardImpl(v, id, status);
 }
 
-function toolSummary(name, input = {}) {
-  switch (name) {
-    case "Read":
-      return { title: t("tool.readFile"), detail: basename(input.file_path || input.path || input.target_file) };
-    case "Write":
-      return { title: t("tool.writeFile"), detail: basename(input.file_path || input.path) };
-    case "Edit":
-    case "MultiEdit":
-      return { title: t("tool.editFile"), detail: basename(input.file_path || input.path) };
-    case "Bash":
-      return { title: t("tool.runCommand"), detail: clip(input.command || input.description) };
-    case "Grep":
-      return { title: t("tool.searchContent"), detail: clip(input.pattern || input.query) };
-    case "Glob":
-      return { title: t("tool.findFiles"), detail: clip(input.pattern || input.glob_pattern) };
-    case "WebSearch":
-    case "web_search_prime":
-      return { title: t("tool.webSearch"), detail: clip(input.query || input.search_query) };
-    case "webReader":
-      return { title: t("tool.readWeb"), detail: clip(input.url) };
-    case "Task":
-      return {
-        title: t("tool.subagentTask"),
-        detail: clip(input.description || input.prompt || input.task),
-      };
-    case "Agent":
-    case "Subagent":
-      return {
-        title: t("tool.subagent"),
-        detail: clip(input.description || input.prompt),
-      };
-    default:
-      return {
-        title: name || t("tool.processing"),
-        detail: clip(input.query || input.prompt || input.description || input.file_path || input.path),
-      };
-  }
+function clearToolCards(sessionId) {
+  const v = view(sessionId);
+  clearToolCardsImpl(v);
+}
+
+function syncTurnProgress(sessionId) {
+  const v = view(sessionId);
+  syncTurnProgressImpl(v);
+}
+
+function updateBusyMeta(sessionId) {
+  if (!store.get("isBusy")) return;
+  const v = view(sessionId);
+  updateBusyMetaImpl(v);
 }
 
 function beginAssistantTurn(sessionId) {
