@@ -4,8 +4,7 @@ const fs = require("node:fs");
 const { ipcMain } = require("electron");
 const {
   sendToRenderer,
-  activeTurns,
-  turnOutputs,
+  turnState,
   dispatchUserLine,
   warmupActiveRunner,
 } = require("./ipc-utils");
@@ -90,12 +89,12 @@ function registerAssistantHandlers(ctx) {
 
     const runner = runnerPool.get(session.id);
     const wasRunnerBusy = Boolean(runner?.isBusy());
-    const hadTurn = activeTurns.has(session.id) || wasRunnerBusy;
+    const hadTurn = turnState.activeTurns.has(session.id) || wasRunnerBusy;
     runner?.interrupt();
 
     sessionManager.setStatus(session.id, "idle");
-    activeTurns.delete(session.id);
-    turnOutputs.delete(session.id);
+    turnState.activeTurns.delete(session.id);
+    turnState.turnOutputs.delete(session.id);
 
     if (hadTurn && !wasRunnerBusy) {
       sendToRenderer(ctx.mainWindow, "assistant:done", {

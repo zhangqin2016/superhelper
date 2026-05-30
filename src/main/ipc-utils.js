@@ -19,11 +19,48 @@ function sendToRenderer(window, channel, payload) {
   }
 }
 
-/** @type {Map<string, string>} */
-const turnOutputs = new Map();
+class TurnState {
+  constructor() {
+    /** @type {Set<string>} */
+    this.activeTurns = new Set();
+    /** @type {Map<string, string>} */
+    this.turnOutputs = new Map();
+  }
 
-/** Sessions with an in-flight assistant turn (guards duplicate done/error). */
-const activeTurns = new Set();
+  start(sessionId) {
+    this.activeTurns.add(sessionId);
+    this.turnOutputs.set(sessionId, "");
+  }
+
+  end(sessionId) {
+    this.activeTurns.delete(sessionId);
+    const output = this.turnOutputs.get(sessionId) || "";
+    this.turnOutputs.delete(sessionId);
+    return output;
+  }
+
+  has(sessionId) {
+    return this.activeTurns.has(sessionId);
+  }
+
+  append(sessionId, text) {
+    const prev = this.turnOutputs.get(sessionId) || "";
+    const next = appendTextSegment(prev, text);
+    this.turnOutputs.set(sessionId, next);
+    return next;
+  }
+
+  getOutput(sessionId) {
+    return this.turnOutputs.get(sessionId) || "";
+  }
+
+  delete(sessionId) {
+    this.activeTurns.delete(sessionId);
+    this.turnOutputs.delete(sessionId);
+  }
+}
+
+const turnState = new TurnState();
 
 function anyRunnerBusy(runnerPool) {
   for (const sessionId of runnerPool.getSessionIds()) {
@@ -33,14 +70,14 @@ function anyRunnerBusy(runnerPool) {
   return false;
 }
 
-function isSessionBusy(runnerPool, sessionId, activeTurnIds = activeTurns) {
+function isSessionBusy(runnerPool, sessionId, activeTurnIds = turnState.activeTurns) {
   if (!sessionId) return false;
   if (activeTurnIds.has(sessionId)) return true;
   return Boolean(runnerPool.get(sessionId)?.isBusy());
 }
 
 function getRunningSessionIds(runnerPool, sessionManager) {
-  const ids = new Set(activeTurns);
+  const ids = new Set(turnState.activeTurns);
   for (const sessionId of runnerPool.getSessionIds()) {
     if (runnerPool.get(sessionId)?.isBusy()) ids.add(sessionId);
   }
@@ -104,9 +141,9 @@ function wireRunner(ctx, runner) {
   const { notifySessionFinished } = require("./background-notify");
 
   runner.on("chunk", (text) => {
-    const prev = turnOutputs.get(sessionId) || "";
+    const prev = turnState.turnOutputs.get(sessionId) || "";
     const next = appendTextSegment(prev, text);
-    turnOutputs.set(sessionId, next);
+    turnState.turnOutputs.set(sessionId, next);
     sendToRenderer(ctx.mainWindow, "assistant:chunk", { sessionId, text });
   });
 
@@ -136,11 +173,11 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("done", ({ code, output, interrupted }) => {
-    const inTurn = activeTurns.has(sessionId);
-    activeTurns.delete(sessionId);
+    const inTurn = turnState.activeTurns.has(sessionId);
+    turnState.activeTurns.delete(sessionId);
 
-    const finalOutput = (output || turnOutputs.get(sessionId) || "").trim();
-    turnOutputs.delete(sessionId);
+    const finalOutput = (output || turnState.turnOutputs.get(sessionId) || "").trim();
+    turnState.turnOutputs.delete(sessionId);
 
     if (inTurn) {
       if (finalOutput) {
@@ -179,10 +216,10 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("error", (message) => {
-    if (!activeTurns.has(sessionId)) return;
-    activeTurns.delete(sessionId);
+    if (!turnState.activeTurns.has(sessionId)) return;
+    turnState.activeTurns.delete(sessionId);
 
-    turnOutputs.delete(sessionId);
+    turnState.turnOutputs.delete(sessionId);
     const friendly =
       message === "BUSY"
         ? "上一条消息还在处理中，请稍后再试。"
@@ -329,17 +366,17 @@ function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
     };
   }
 
-  if (runner.isBusy() || activeTurns.has(session.id)) {
+  if (runner.isBusy() || turnState.activeTurns.has(session.id)) {
     return { ok: false, error: "BUSY" };
   }
 
-  turnOutputs.set(session.id, "");
-  activeTurns.add(session.id);
+  turnState.turnOutputs.set(session.id, "");
+  turnState.activeTurns.add(session.id);
 
   const sent = runner.sendUserMessage(line);
   if (!sent) {
-    activeTurns.delete(session.id);
-    turnOutputs.delete(session.id);
+    turnState.activeTurns.delete(session.id);
+    turnState.turnOutputs.delete(session.id);
     return { ok: false, error: "BUSY" };
   }
 
@@ -373,8 +410,7 @@ function withRunnerChange(ctx, action, opts = {}) {
 
 module.exports = {
   sendToRenderer,
-  turnOutputs,
-  activeTurns,
+  turnState,
   lastRunnerStderr,
   anyRunnerBusy,
   isSessionBusy,

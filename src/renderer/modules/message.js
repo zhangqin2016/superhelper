@@ -187,6 +187,11 @@ export function hideAllSessionMessages() {
 export function removeSessionMessages(sessionId) {
   const v = sessionViews.get(sessionId);
   if (!v) return;
+  // 清理未完成的工具卡片
+  for (const { card } of v.toolCards.values()) {
+    card.remove();
+  }
+  v.toolCards.clear();
   v.panel?.remove();
   sessionViews.delete(sessionId);
 }
