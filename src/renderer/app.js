@@ -2,15 +2,19 @@
  * Application entry point — wires all modules together.
  */
 
+import { initI18n, onLocaleChange, t, applyDomI18n } from "./i18n/index.js";
 import { initComposer } from "./modules/composer.js";
+import { initSessionSkills, refreshSessionSkillsUi } from "./modules/session-skills.js";
 import { initFileHandler } from "./modules/file-handler.js";
 import { refreshState, updateTopbarTitles } from "./modules/session-chrome.js";
-import { wireMessageIpc, initMessageUi } from "./modules/message.js";
+import { wireMessageIpc, initMessageUi, syncComposerForActiveSession } from "./modules/message.js";
 import { renderProjectTree, initAddProject, initTopbarSessionRename } from "./modules/project-tree.js";
 import { initSettingsPanel } from "./modules/settings-panel.js";
+import { initModelSettings } from "./modules/model-settings.js";
 import { initPermissionSettings } from "./modules/permission-settings.js";
 import { initSearchSettings } from "./modules/search-settings.js";
-import { initSkillSettings } from "./modules/skill-settings.js";
+import { initSkillSettings, refreshSkillsList } from "./modules/skill-settings.js";
+import { initLocaleSettings, refreshLocaleSelect } from "./modules/locale-settings.js";
 import { showToast } from "./modules/toast.js";
 import { $ } from "./modules/dom.js";
 
@@ -50,7 +54,8 @@ function initResizeHandle(handleId, varName, collapseClass, minW, maxW) {
 
   document.addEventListener("mousemove", (e) => {
     if (!dragging) return;
-    const delta = e.clientX - startX;
+    const rtl = document.documentElement.dir === "rtl";
+    const delta = rtl ? startX - e.clientX : e.clientX - startX;
     const newW = Math.min(maxW, Math.max(minW, startW + delta));
     shell.style.setProperty(`--${varName}`, `${newW}px`);
   });
@@ -83,6 +88,11 @@ function initGlobalSearch() {
   });
 }
 
+function updateAboutVersion() {
+  const el = $("settingsAboutVersion");
+  if (el) el.textContent = t("settings.aboutVersion", { version: "0.1.0" });
+}
+
 async function bindAppIcons() {
   try {
     const url = await window.assistantClient?.getAppIconUrl?.();
@@ -103,7 +113,24 @@ async function bindAppIcons() {
   }
 }
 
+function wireLocaleRefresh() {
+  onLocaleChange(async () => {
+    applyDomI18n();
+    updateAboutVersion();
+    await refreshLocaleSelect();
+    updateTopbarTitles();
+    renderProjectTree();
+    await refreshSkillsList();
+    await refreshSessionSkillsUi();
+    syncComposerForActiveSession();
+  });
+}
+
 async function init() {
+  await initI18n();
+  updateAboutVersion();
+  wireLocaleRefresh();
+
   await bindAppIcons();
   initMessageUi();
   wireMessageIpc();
@@ -116,22 +143,23 @@ async function init() {
   initAddProject();
   initTopbarSessionRename();
   initSettingsPanel();
+  initModelSettings();
+  initLocaleSettings();
   initPermissionSettings();
   initSearchSettings();
   initSkillSettings();
+  initSessionSkills();
 
+  await refreshLocaleSelect();
   await refreshState();
   const state = await window.assistantClient.getFullState();
   if (state?.agent && !state.agent.ready) {
-    showToast(
-      state.agent.error ||
-        "内置助手引擎未就绪。请重启应用；开发调试可运行 npm run start:dev。",
-      "error",
-    );
+    showToast(state.agent.error || t("app.agentNotReady"), "error");
   }
 
   renderProjectTree();
   updateTopbarTitles();
+  await refreshSessionSkillsUi();
 }
 
 init();

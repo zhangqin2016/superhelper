@@ -12,6 +12,7 @@ import {
 } from "./dom.js";
 import { renderMarkdown } from "./markdown.js";
 import { activeProject, updateTopbarTitles } from "./session-chrome.js";
+import { t } from "../i18n/index.js";
 import {
   isSessionRunning,
   setSessionRunning,
@@ -137,7 +138,7 @@ export function createMessage(sessionId, role, text = "", files = null) {
 
   const avatar = document.createElement("div");
   avatar.className = "msg-avatar";
-  avatar.textContent = role === "user" ? "你" : "助手";
+  avatar.textContent = role === "user" ? t("message.user") : t("message.assistant");
 
   const bubble = document.createElement("div");
   bubble.className = "msg-bubble";
@@ -154,7 +155,7 @@ export function createMessage(sessionId, role, text = "", files = null) {
     for (const f of files) {
       const fi = document.createElement("div");
       fi.className = "msg-bubble-file";
-      fi.textContent = f.isImage ? `[图片] ${f.name}` : f.name;
+      fi.textContent = f.isImage ? t("message.imagePrefix", { name: f.name }) : f.name;
       fc.appendChild(fi);
     }
     bubble.appendChild(fc);
@@ -215,10 +216,10 @@ export function syncComposerForActiveSession() {
   }
   if (promptInput) {
     promptInput.placeholder = !hasProject
-      ? "请先添加工作空间文件夹"
+      ? t("composer.placeholderNeedProject")
       : !sid
-        ? "请先新建对话"
-        : "有什么想问的？";
+        ? t("composer.placeholderNeedSession")
+        : t("composer.placeholder");
   }
 
   import("./project-tree.js")
@@ -243,8 +244,8 @@ export function renderConversation(sessionId) {
       sid,
       "assistant",
       project
-        ? `当前文件夹：${project.name}。有什么想问的？`
-        : "请先添加一个文件夹，然后开始聊天吧。",
+        ? t("composer.placeholderWithProject", { name: project.name })
+        : t("composer.placeholderEmpty"),
     );
   } else {
     for (const msg of conv) {
@@ -276,7 +277,7 @@ function updateBusyMeta(sessionId) {
   const meta = $("sessionMeta");
   if (!meta || !store.get("isBusy")) return;
   const label = view(sessionId).activityLabel;
-  meta.textContent = label || "正在处理，请稍候…";
+  meta.textContent = label || t("message.processing");
 }
 
 function syncTurnProgress(sessionId) {
@@ -297,7 +298,7 @@ function syncTurnProgress(sessionId) {
       dot.className = "tool-card-dot";
       const label = document.createElement("span");
       label.className = "tool-card-label";
-      label.textContent = "继续处理中，请稍候…";
+      label.textContent = t("message.continuing");
       row.append(dot, label);
       v.activeTurn.activity.appendChild(row);
     }
@@ -322,26 +323,26 @@ function clip(text, max = 72) {
 function toolSummary(name, input = {}) {
   switch (name) {
     case "Read":
-      return { title: "读取文件", detail: basename(input.file_path || input.path || input.target_file) };
+      return { title: t("tool.readFile"), detail: basename(input.file_path || input.path || input.target_file) };
     case "Write":
-      return { title: "写入文件", detail: basename(input.file_path || input.path) };
+      return { title: t("tool.writeFile"), detail: basename(input.file_path || input.path) };
     case "Edit":
     case "MultiEdit":
-      return { title: "修改文件", detail: basename(input.file_path || input.path) };
+      return { title: t("tool.editFile"), detail: basename(input.file_path || input.path) };
     case "Bash":
-      return { title: "执行命令", detail: clip(input.command || input.description) };
+      return { title: t("tool.runCommand"), detail: clip(input.command || input.description) };
     case "Grep":
-      return { title: "搜索内容", detail: clip(input.pattern || input.query) };
+      return { title: t("tool.searchContent"), detail: clip(input.pattern || input.query) };
     case "Glob":
-      return { title: "查找文件", detail: clip(input.pattern || input.glob_pattern) };
+      return { title: t("tool.findFiles"), detail: clip(input.pattern || input.glob_pattern) };
     case "WebSearch":
     case "web_search_prime":
-      return { title: "搜索网络", detail: clip(input.query || input.search_query) };
+      return { title: t("tool.webSearch"), detail: clip(input.query || input.search_query) };
     case "webReader":
-      return { title: "阅读网页", detail: clip(input.url) };
+      return { title: t("tool.readWeb"), detail: clip(input.url) };
     default:
       return {
-        title: name || "处理中",
+        title: name || t("tool.processing"),
         detail: clip(input.query || input.prompt || input.description || input.file_path || input.path),
       };
   }
@@ -359,7 +360,7 @@ function beginAssistantTurn(sessionId) {
 
   const avatar = document.createElement("div");
   avatar.className = "msg-avatar";
-  avatar.textContent = "助手";
+  avatar.textContent = t("message.assistant");
 
   const body = document.createElement("div");
   body.className = "msg-body";
@@ -459,10 +460,10 @@ function updateToolCard(sessionId, id, status) {
     entry.card.classList.remove("tool-card-running");
     entry.card.classList.add("tool-card-failed");
     entry.card.querySelector(".tool-card-label").textContent =
-      `${toolSummary(entry.name, entry.input).title}失败`;
+      t("message.toolFailed", { title: toolSummary(entry.name, entry.input).title });
     entry.status = "failed";
     v.toolCards.delete(id);
-    v.activityLabel = "遇到问题，正在调整…";
+    v.activityLabel = t("message.adjusting");
     updateBusyMeta(sessionId);
     window.setTimeout(() => {
       entry.card.remove();
@@ -494,7 +495,7 @@ function refreshRunningActivityLabel(sessionId) {
     return;
   }
   if (isActiveSession(sessionId) && store.get("isBusy")) {
-    v.activityLabel = "继续处理中，请稍候…";
+    v.activityLabel = t("message.continuing");
     updateBusyMeta(sessionId);
   }
 }
@@ -554,7 +555,7 @@ export function wireMessageIpc() {
     if (v.activeBubble) {
       v.activeBubble.classList.remove("pending");
       if (!v.activeMarkdown.trim() && !v.activeBubble.textContent.trim()) {
-        renderMarkdown(v.activeBubble, "已完成。");
+        renderMarkdown(v.activeBubble, t("message.done"));
       }
     }
     finishActiveTurn(sessionId);
@@ -592,7 +593,7 @@ export function wireMessageIpc() {
     let bubble = view(sessionId).activeBubble;
     if (!bubble) bubble = beginAssistantTurn(sessionId);
     bubble.classList.remove("pending");
-    renderMarkdown(bubble, error.message || "处理请求时遇到问题。");
+    renderMarkdown(bubble, error.message || t("message.errorGeneric"));
     finishActiveTurn(sessionId);
 
     const { refreshStateLight } = await import("./session-chrome.js");
@@ -638,8 +639,8 @@ export function setBusyUI(busy) {
     meta.textContent = project?.path
       ? project.path
       : project?.name
-        ? `文件夹：${project.name}`
-        : "已就绪";
+        ? t("app.folderLabel", { name: project.name })
+        : t("app.ready");
   }
 }
 

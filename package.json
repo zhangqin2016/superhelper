@@ -7,12 +7,17 @@
   "scripts": {
     "start": "electron .",
     "start:dev": "DEV_USE_SYSTEM_AGENT=1 electron .",
-    "test:unit": "node scripts/test-agent-runner.mjs",
+    "test:unit": "node scripts/test-agent-runner.mjs && node scripts/test-runtime-python.mjs && node scripts/test-spawn-env-runtime.mjs && node scripts/test-locale-settings.mjs",
+    "sync:skills-catalog": "node scripts/sync-skills-catalog.mjs",
+    "sync:skills-bundle": "node scripts/sync-skills-catalog.mjs --bundle-only",
+    "generate:skill-i18n": "node scripts/generate-skill-i18n.mjs",
+    "build:runtime": "node scripts/build-runtime-bundle.mjs",
+    "verify:runtime": "node scripts/verify-runtime-bundle.mjs",
     "icon:optimize": "node scripts/optimize-icon.mjs",
     "rebuild:pty": "node scripts/rebuild-pty.mjs",
     "pack": "electron-builder --dir",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "bash scripts/dist-win.sh",
+    "dist:mac": "node scripts/verify-runtime-bundle.mjs && electron-builder --mac && node scripts/build-mac-dmg.mjs && node scripts/verify-mac-dmg.mjs",
+    "dist:win": "node scripts/verify-runtime-bundle.mjs --platform win32-x64 && bash scripts/dist-win.sh",
     "dist:all": "electron-builder --mac --win"
   },
   "build": {
@@ -53,8 +58,8 @@
       "icon": "icon.icns",
       "category": "public.app-category.developer-tools",
       "target": [
-        "dmg",
-        "zip"
+        "zip",
+        "dir"
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "hardenedRuntime": false,
@@ -62,6 +67,8 @@
     },
     "dmg": {
       "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "title": "${productName}-${version}",
+      "format": "UDZO",
       "sign": false
     },
     "win": {

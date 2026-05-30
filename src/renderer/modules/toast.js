@@ -1,25 +1,27 @@
 /**
  * Toast notification system.
- * Renders stacked notifications at the top-right of the app.
  */
 
-const TYPES = ["error", "warning", "info", "success"];
+export { fileErrorMessage } from "../i18n/index.js";
+
 let container = null;
 
 function ensureContainer() {
   if (container) return container;
-  container = document.createElement("div");
-  container.className = "toast-container";
-  container.id = "toastContainer";
-  document.body.appendChild(container);
+  container = document.getElementById("toastContainer");
+  if (!container) {
+    container = document.createElement("div");
+    container.className = "toast-container";
+    container.id = "toastContainer";
+    document.body.appendChild(container);
+  }
   return container;
 }
 
 /**
- * Show a toast notification.
  * @param {string} message
  * @param {"error"|"warning"|"info"|"success"} type
- * @param {number} duration  Auto-dismiss after ms (0 = persistent).
+ * @param {number} duration
  */
 export function showToast(message, type = "error", duration = 5000) {
   const ct = ensureContainer();
@@ -35,7 +37,6 @@ export function showToast(message, type = "error", duration = 5000) {
 
   ct.appendChild(el);
 
-  // Animate in
   requestAnimationFrame(() => el.classList.add("toast-visible"));
 
   if (duration > 0) {
@@ -49,16 +50,4 @@ function remove(el) {
   el.classList.remove("toast-visible");
   el.addEventListener("transitionend", () => el.remove(), { once: true });
   setTimeout(() => { if (el.parentNode) el.remove(); }, 350);
-}
-
-export const FILE_ERROR_MESSAGES = {
-  FILE_NOT_FOUND: "文件不存在或路径无效。",
-  NOT_A_FILE: "暂不支持上传文件夹。",
-  UNSUPPORTED_TYPE: "不支持此文件格式。支持图片、PDF、Word、文本等常见格式。",
-  FILE_TOO_LARGE: "文件超过 20MB 限制，请压缩后重试。",
-};
-
-export function fileErrorMessage(error, fileName) {
-  const base = FILE_ERROR_MESSAGES[error] || `文件处理失败：${error}`;
-  return fileName ? `${base}（${fileName}）` : base;
 }

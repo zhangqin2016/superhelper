@@ -2,6 +2,8 @@
  * Full-screen image preview modal.
  */
 
+import { t } from "../i18n/index.js";
+
 /**
  * Open a full-screen image preview.
  * @param {string} src   Image URL (data URL or path).
@@ -23,7 +25,7 @@ export function openImageViewer(src, alt) {
   closeBtn.type = "button";
   closeBtn.className = "image-viewer-close";
   closeBtn.innerHTML = "&times;";
-  closeBtn.setAttribute("aria-label", "关闭");
+  closeBtn.setAttribute("aria-label", t("composer.close"));
 
   overlay.append(bg, img, closeBtn);
 

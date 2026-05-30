@@ -1,0 +1,570 @@
+{
+  "anthropics-algorithmic-art": {
+    "name": "算法艺术",
+    "description": "使用 p5.js 创建算法艺术，支持种子随机数与交互式参数探索。当用户请求用代码创作艺术、生成艺术、算法艺术、流场或粒子系统时使用。应创作原创算法艺术，勿复制现有艺术家作品，以避免版权侵权。"
+  },
+  "anthropics-brand-guidelines": {
+    "name": "品牌指南",
+    "description": "将 Anthropic 官方品牌色彩与字体应用于各类可从 Anthropic 视觉风格中受益的产出物。适用于品牌色、样式指南、视觉排版或公司设计标准相关场景。"
+  },
+  "anthropics-canvas-design": {
+    "name": "画布设计",
+    "description": "运用设计理念在 .png 与 .pdf 文档中创作精美视觉作品。当用户请求制作海报、艺术作品、设计或其他静态视觉内容时使用。应创作原创视觉设计，勿复制现有艺术家作品，以避免版权侵权。"
+  },
+  "anthropics-doc-coauthoring": {
+    "name": "文档协作撰写",
+    "description": "引导用户完成结构化文档协作撰写流程。当用户希望撰写文档、提案、技术规格、决策文档或类似结构化内容时使用。该流程帮助高效传递上下文、通过迭代完善内容，并验证文档对读者的可用性。触发场景包括撰写文档、创建提案、起草规格等任务。"
+  },
+  "anthropics-docx": {
+    "name": "Word 文档",
+    "description": "当用户需要创建、读取、编辑或处理 Word 文档（.docx）时使用。触发词包括「Word 文档」「.docx」，或需要生成含目录、标题、页码、信头等格式的专业文档。也适用于从 .docx 提取或重组内容、插入或替换图片、查找替换、处理修订与批注，或将内容转换为精美 Word 文档。若用户要求以 Word/.docx 交付报告、备忘录、信函、模板等，使用本技能。不适用于 PDF、电子表格、Google Docs 或与文档生成无关的通用编码任务。"
+  },
+  "anthropics-frontend-design": {
+    "name": "前端设计",
+    "description": "打造独具特色、可用于生产环境且设计品质出众的前端界面。当用户请求构建 Web 组件、页面、产出物、海报或应用（如网站、落地页、仪表盘、React 组件、HTML/CSS 布局，或美化任意 Web UI）时使用。生成富有创意、精致的代码与 UI 设计，避免千篇一律的 AI 审美。"
+  },
+  "anthropics-internal-comms": {
+    "name": "内部沟通",
+    "description": "提供撰写各类内部沟通文稿的资源，并遵循公司常用格式。当被要求撰写内部沟通内容（状态报告、管理层更新、3P 更新、公司通讯、FAQ、事故报告、项目更新等）时应使用本技能。"
+  },
+  "anthropics-pdf": {
+    "name": "PDF",
+    "description": "当用户需要对 PDF 进行任何操作时使用，包括读取或提取文本/表格、合并多个 PDF、拆分、旋转页面、添加水印、创建新 PDF、填写表单、加密/解密、提取图片，以及对扫描 PDF 进行 OCR 使其可搜索。若用户提及 .pdf 文件或要求生成 PDF，使用本技能。"
+  },
+  "anthropics-pptx": {
+    "name": "演示文稿",
+    "description": "凡涉及 .pptx 文件（作为输入、输出或两者）时均应使用，包括：创建幻灯片/路演/演示；读取、解析或提取 .pptx 文本（即使内容将用于邮件或摘要）；编辑、修改或更新现有演示；合并或拆分幻灯片；处理模板、版式、演讲者备注或批注。当用户提及「deck」「slides」「presentation」或 .pptx 文件名时触发，无论后续如何处理内容。若需打开、创建或处理 .pptx，使用本技能。"
+  },
+  "anthropics-skill-creator": {
+    "name": "技能创建器",
+    "description": "创建新技能、修改与改进现有技能，并衡量技能表现。当用户希望从零创建技能、编辑或优化现有技能、运行评测、通过方差分析对技能进行基准测试，或优化技能描述以提升触发准确性时使用。"
+  },
+  "anthropics-slack-gif-creator": {
+    "name": "Slack GIF 制作",
+    "description": "提供面向 Slack 优化的动图 GIF 制作知识与工具，包含约束条件、校验工具与动画概念。当用户请求为 Slack 制作动图（如「帮我做一个 X 做 Y 的 Slack GIF」）时使用。"
+  },
+  "anthropics-theme-factory": {
+    "name": "主题工厂",
+    "description": "为产出物套用主题风格的工具包，适用于幻灯片、文档、报告、HTML 落地页等。提供 10 套预设主题（色彩/字体），可应用于已有产出物，也可即时生成新主题。"
+  },
+  "anthropics-web-artifacts-builder": {
+    "name": "Web 产出物构建器",
+    "description": "使用现代前端技术（React、Tailwind CSS、shadcn/ui）构建复杂 claude.ai HTML 产出物的工具套件。适用于需要状态管理、路由或 shadcn/ui 组件的复杂产出物，不适用于简单单文件 HTML/JSX 产出物。"
+  },
+  "anthropics-webapp-testing": {
+    "name": "Web 应用测试",
+    "description": "使用 Playwright 与本地 Web 应用交互和测试的工具包。支持验证前端功能、调试 UI 行为、截取浏览器截图以及查看浏览器日志。"
+  },
+  "anthropics-xlsx": {
+    "name": "电子表格",
+    "description": "当电子表格文件是主要输入或输出时使用，包括：打开、读取、编辑或修复现有 .xlsx、.xlsm、.csv、.tsv（如增列、计算公式、格式化、制图、清洗数据）；从零或其他数据源创建新表格；或在表格格式间转换。尤其当用户以名称或路径引用表格文件并希望对其处理或基于其产出时触发。也适用于将格式混乱的表格数据清洗为规范表格。交付物必须是表格文件。若主要交付物为 Word、HTML 报告、独立脚本、数据库管道或 Google Sheets API 集成，即使涉及表格数据也不触发。"
+  },
+  "lily-vision": {
+    "name": "识图",
+    "description": "为无原生识图能力的模型提供图片识别。"
+  },
+  "marketing-ab-testing": {
+    "name": "A/B 测试",
+    "description": "当用户希望规划、设计或实施 A/B 测试/实验，或建立增长实验体系时使用。也适用于用户提及「A/B 测试」「分流测试」「实验」「测试这个改动」「变体文案」「多变量测试」「假设」「该不该测」「哪个版本更好」「测两个版本」「统计显著性」「实验要跑多久」「增长实验」「实验速度」「实验待办」「ICE 评分」「实验体系」「实验手册」等场景。当有人比较两种方案并想衡量效果，或希望建立系统化实验实践时使用。跟踪实施见 analytics；页面级转化优化见 cro。"
+  },
+  "marketing-ad-creative": {
+    "name": "广告创意",
+    "description": "当用户希望为任意付费广告平台生成、迭代或规模化广告创意——标题、描述、主文案或完整广告变体时使用。也适用于「广告文案变体」「广告创意」「生成标题」「RSA 标题」「批量广告文案」「广告迭代」「创意测试」「广告效果优化」「帮我写几条广告」「Facebook 广告文案」「Google 广告标题」「LinkedIn 广告文案」「需要更多广告变体」等。当需要大规模产出或迭代广告文案时使用。投放策略与定向见 ads；落地页文案见 copywriting。"
+  },
+  "marketing-ads": {
+    "name": "广告投放",
+    "description": "当用户需要 Google Ads、Meta（Facebook/Instagram）、LinkedIn、Twitter/X 或其他平台的付费广告帮助时使用。也适用于「PPC」「付费媒体」「ROAS」「CPA」「广告活动」「再营销」「受众定向」「Google Ads」「Facebook 广告」「LinkedIn 广告」「广告预算」「点击成本」「广告花费」「要不要投广告」等。用于活动策略、受众、出价与优化。批量创意生成见 ad-creative；落地页优化见 cro。"
+  },
+  "marketing-ai-seo": {
+    "name": "AI SEO",
+    "description": "当用户希望优化内容以适配 AI 搜索引擎、被 LLM 引用或出现在 AI 生成答案中时使用。也适用于「AI SEO」「AEO」「GEO」「LLMO」「答案引擎优化」「生成式引擎优化」「LLM 优化」「AI Overviews」「优化 ChatGPT」「优化 Perplexity」「AI 引用」「AI 可见性」「零点击搜索」「怎么出现在 AI 答案里」「LLM 提及」「优化 Claude/Gemini」等。当希望内容被 AI 助手与 AI 搜索引擎引用或展示时使用。传统技术与页面 SEO 审计见 seo-audit；结构化数据见 schema。"
+  },
+  "marketing-analytics": {
+    "name": "数据分析",
+    "description": "当用户希望搭建、改进或审计分析追踪与度量时使用。也适用于「搭建追踪」「GA4」「Google Analytics」「转化追踪」「事件追踪」「UTM 参数」「Tag Manager」「GTM」「分析实施」「追踪方案」「怎么衡量」「追踪转化」「归因」「Mixpanel」「Segment」「事件有没有触发」「分析不工作」等。当有人问如何知道效果或想衡量营销结果时使用。A/B 测试度量见 ab-testing。"
+  },
+  "marketing-aso": {
+    "name": "应用商店优化",
+    "description": "当用户希望审计或优化 App Store 或 Google Play  listing 时使用。也适用于「ASO 审计」「应用商店优化」「优化应用 listing」「提升应用可见性」「应用商店排名」「审计 listing」「为什么没人下载」「提升应用转化」「应用关键词优化」「与竞品对比」等。当用户分享 App Store 或 Google Play 链接并希望改进时使用。"
+  },
+  "marketing-churn-prevention": {
+    "name": "流失预防",
+    "description": "当用户希望降低流失、构建取消流程、设置挽留优惠、恢复失败付款或实施留存策略时使用。也适用于「流失」「取消流程」「下线流程」「挽留优惠」「dunning」「失败付款恢复」「赢回」「留存」「退出问卷」「暂停订阅」「非自愿流失」「用户一直取消」「流失率太高」「怎么留住用户」「客户在离开」等。当订阅流失或需建立预防体系时使用。取消后赢回邮件序列见 emails；应用内升级付费墙见 paywalls。"
+  },
+  "marketing-co-marketing": {
+    "name": "联合营销",
+    "description": "当用户希望寻找联合营销伙伴、规划联合活动或头脑风暴合作机会时使用。触发词包括「联合营销」「伙伴营销」「联合活动」「该和谁合作」「集成营销」「交叉推广」「与其他公司合作」「合作想法」「联合品牌」。客户推荐计划见 referrals；发布相关合作见 launch。"
+  },
+  "marketing-cold-email": {
+    "name": "冷邮件",
+    "description": "撰写能获得回复的 B2B 冷邮件与跟进序列。当用户希望写冷触达邮件、潜客开发邮件、冷邮件活动、销售开发邮件或 SDR 邮件时使用。也适用于「冷触达」「潜客邮件」「外呼邮件」「给线索发邮件」「联系潜客」「销售邮件」「跟进邮件序列」「没人回复我的邮件」「冷邮件怎么写」等。涵盖主题行、开场、正文、CTA、个性化与多触点跟进。温/生命周期邮件见 emails；邮件以外的销售物料见 sales-enablement。"
+  },
+  "marketing-community-marketing": {
+    "name": "社区营销",
+    "description": "构建并运营在线社区以驱动产品增长与品牌忠诚。当用户希望制定社区策略、发展 Discord/Slack 社区、管理论坛或 subreddit、培养品牌倡导者、提升口碑、推动社区驱动增长、提升注册后参与，或将客户转化为传播者时使用。触发词：「建社区」「社区策略」「Discord 社区」「Slack 社区」「社区驱动增长」「品牌倡导者」「用户社区」「论坛策略」「社区运营」「做大社区」「大使计划」「社区飞轮」。"
+  },
+  "marketing-competitor-profiling": {
+    "name": "竞品画像",
+    "description": "当用户希望从 URL 研究、画像或分析竞品时使用。也适用于「竞品画像」「竞品研究」「竞品分析」「分析这个竞品」「竞争情报」「竞品深潜」「我的竞品是谁」「竞品格局」「竞品档案」「竞争审计」「研究这些竞品」等。输入为竞品 URL 列表，输出为结构化竞品画像 Markdown。基于画像做对比/替代页见 competitors；销售 battle card 见 sales-enablement。"
+  },
+  "marketing-competitors": {
+    "name": "竞品对比",
+    "description": "当用户希望为 SEO 与销售赋能创建竞品对比或替代页面时使用。也适用于「替代页」「对比页」「竞品对比」「[产品] vs [产品]」「[产品] 替代」「竞争落地页」「我们跟 X 比怎么样」「battle card」「竞品拆解」等。适用于任何将产品与竞品对位的内容，涵盖单数替代、复数替代、你 vs 竞品、竞品 vs 竞品四种格式。销售向竞品文档见 sales-enablement。"
+  },
+  "marketing-content-strategy": {
+    "name": "内容策略",
+    "description": "当用户希望规划内容策略、决定创作什么内容或确定主题方向时使用。也适用于「内容策略」「该写什么」「内容想法」「博客策略」「主题集群」「内容规划」「编辑日历」「内容营销」「内容路线图」「该创作什么内容」「博客主题」「内容支柱」「不知道写什么」等。当需要帮助决定产出什么内容（而非仅撰写单篇）时使用。单篇撰写见 copywriting；SEO 审计见 seo-audit；社媒内容见 social。"
+  },
+  "marketing-copy-editing": {
+    "name": "文案润色",
+    "description": "当用户希望编辑、审阅或改进现有营销文案，或更新过时内容时使用。也适用于「改这段文案」「审阅文案」「文案反馈」「校对」「润色」「让它更好」「文案 sweep」「精简」「读起来别扭」「整理文字」「太啰嗦」「锐化信息」「刷新内容」「更新页面」「内容过时」「内容审计」等。当用户已有文案并希望改进或刷新而非从零重写时使用。新文案撰写见 copywriting。"
+  },
+  "marketing-copywriting": {
+    "name": "营销文案",
+    "description": "当用户希望为任意页面撰写、重写或改进营销文案——首页、落地页、定价页、功能页、关于页或产品页时使用。也适用于「写文案」「改进文案」「重写页面」「营销文案」「标题帮助」「CTA 文案」「价值主张」「标语」「副标题」「首屏文案」「文案太弱」「让它更有说服力」「帮我描述产品」等。当需要说服或转化的网站文案时使用。邮件文案见 emails；弹窗文案见 popups；编辑现有文案见 copy-editing。"
+  },
+  "marketing-cro": {
+    "name": "转化优化",
+    "description": "当用户希望优化、改进或提升任意营销页面或表单的转化时使用——包括首页、落地页、定价页、功能页、线索表单或联系表单。也适用于「CRO」「转化率优化」「页面不转化」「提升转化」「这页为什么不行」「落地页很差」「表单放弃」「没人转化」「转化率低」「这页需要改」等。即使用户只分享 URL 求反馈也适用。注册流程见 signup；注册后激活见 onboarding；弹窗见 popups。"
+  },
+  "marketing-customer-research": {
+    "name": "客户研究",
+    "description": "当用户希望开展、分析或综合客户研究时使用。适用于「客户研究」「ICP 研究」「与客户访谈」「分析访谈记录」「客户访谈」「问卷分析」「工单分析」「客户之声」「VOC」「构建画像」「客户画像」「Jobs to be Done」「JTBD」「客户怎么说」「客户在挣扎什么」「Reddit 挖掘」「G2 评价」「评价挖掘」「数字聚集地」「社区研究」「论坛研究」「竞品评价」「客户情绪」「弄清流失/转化/购买原因」等。既可用于分析已有研究资产，也可从在线来源收集新研究。基于研究写文案见 copywriting；基于研究改页面见 cro。"
+  },
+  "marketing-directory-submissions": {
+    "name": "目录提交",
+    "description": "当用户希望将产品提交至创业、SaaS、AI、Agent、MCP、无代码或评测目录以获取外链、域名权重与曝光时使用。也适用于「目录提交」「提交到目录」「目录外链」「上架产品」「提交 Product Hunt」「BetaList」「TAAFT」「Futurepedia」「G2 listing」「Capterra listing」「AlternativeTo」「SaaSHub」「AI 目录」「MCP 注册表」「Agent 目录」「dofollow 外链」「发布目录」「目录追踪表」等。当规划产品发布的目录层或持续外链活动时使用。 broader 发布见 launch；程序化 SEO 见 programmatic-seo；AI 引用优化见 ai-seo。"
+  },
+  "marketing-emails": {
+    "name": "邮件营销",
+    "description": "当用户希望创建或优化邮件序列、滴灌活动、自动化邮件流或生命周期邮件计划时使用。也适用于「邮件序列」「滴灌」「培育序列」「 onboarding 邮件」「欢迎序列」「召回邮件」「邮件自动化」「生命周期邮件」「触发式邮件」「邮件漏斗」「邮件工作流」「该发什么邮件」「欢迎系列」「邮件节奏」等。适用于任何多封自动化邮件流。冷触达见 cold-email；应用内 onboarding 见 onboarding。"
+  },
+  "marketing-free-tools": {
+    "name": "免费工具",
+    "description": "当用户希望为营销目的规划、评估或构建免费工具——获客、SEO 或品牌曝光时使用。也适用于「工程即营销」「免费工具」「营销工具」「计算器」「生成器」「互动工具」「获客工具」「为线索做工具」「免费资源」「ROI 计算器」「评分工具」「审计工具」「该不该做免费工具」「获客工具」等。当希望通过有用工具免费分发以吸引线索或获取链接时使用。可下载内容磁铁见 lead-magnets。"
+  },
+  "marketing-image": {
+    "name": "营销图片",
+    "description": "当用户希望为营销创建、生成、编辑或优化图片——博客头图、社媒图、产品 mockup、横幅、listing 视觉或品牌资产时使用。也适用于「AI 生图」「生成图片」「做图」「产品 mockup」「头图」「社媒图」「横幅」「封面」「listing 截图」「Flux」「Flux Kontext」「Midjourney」「DALL-E」「GPT Image」「ChatGPT Images」「Ideogram」「Gemini image」「Nano Banana」「Recraft」「Stable Diffusion」「Canva」「Figma」「图片优化」「压缩」「WebP」「OG 图」等。用于通用营销图片创作与优化。付费广告图片见 ad-creative；视频见 video。"
+  },
+  "marketing-launch": {
+    "name": "产品发布",
+    "description": "当用户希望规划产品发布、功能公告或发布策略时使用。也适用于「发布」「Product Hunt」「功能上线」「公告」「go-to-market」「beta 发布」「早期访问」「候补名单」「产品更新」「怎么发布」「发布清单」「GTM 计划」「马上要 ship」等。当准备公开发布某物时使用。发布后持续营销见 marketing-ideas。"
+  },
+  "marketing-lead-magnets": {
+    "name": "线索磁铁",
+    "description": "当用户希望创建、规划或优化用于邮件捕获或获客的线索磁铁时使用。也适用于「线索磁铁」「门控内容」「内容升级」「可下载物」「电子书」「速查表」「清单」「模板下载」「opt-in」「免费品」「PDF 下载」「资源库」「邮件捕获内容」「Notion 模板」「表格模板」「该用什么换邮箱」等。用于规划创建什么及如何分发。互动工具作线索磁铁见 free-tools；实际内容撰写见 copywriting；捕获后邮件序列见 emails。"
+  },
+  "marketing-marketing-ideas": {
+    "name": "营销灵感",
+    "description": "当用户需要营销想法、灵感或 SaaS/软件产品的增长策略时使用。也适用于「营销想法」「增长想法」「怎么营销」「营销策略」「营销战术」「推广方式」「还能试什么」「不知道怎么营销」「头脑风暴营销」「该做什么营销」等。当有人卡住或寻找增长灵感时作为起点。具体渠道执行见对应技能（ads、social、emails 等）。"
+  },
+  "marketing-marketing-psychology": {
+    "name": "营销心理学",
+    "description": "当用户希望将心理学原理、思维模型或行为科学应用于营销时使用。也适用于「心理学」「思维模型」「认知偏差」「说服」「行为科学」「人们为什么购买」「决策」「消费者行为」「锚定」「社会证明」「稀缺」「损失厌恶」「框架」「助推」等。当希望在营销语境理解或利用人们如何思考与决策时使用。应用于具体页面见 cro；定价战术见 pricing；文案框架见 copywriting。"
+  },
+  "marketing-onboarding": {
+    "name": "用户激活",
+    "description": "当用户希望优化注册后 onboarding、用户激活、首次体验或价值达成时间时使用。也适用于「onboarding 流程」「激活率」「用户激活」「首次体验」「空状态」「onboarding 清单」「aha 时刻」「新用户体验」「用户不激活」「没人完成设置」「激活率低」「注册了但不用」「价值达成时间」「首次会话体验」等。当用户注册但不留存时使用。注册优化见 signup；持续邮件见 emails。"
+  },
+  "marketing-paywalls": {
+    "name": "付费墙",
+    "description": "当用户希望创建或优化应用内付费墙、升级页、 upsell 弹窗或功能门控时使用。也适用于「付费墙」「升级页」「升级弹窗」「upsell」「功能门控」「免费转付费」「freemium 转化」「试用到期页」「达到限额页」「计划升级提示」「应用内定价」「免费用户不升级」「试用转付费」「怎么让用户付费」等。用于产品内请求升级的任意时刻。与公开定价页（见 cro）不同，聚焦用户已体验价值后的升级时刻。定价决策见 pricing。"
+  },
+  "marketing-popups": {
+    "name": "弹窗营销",
+    "description": "当用户希望为转化目的创建或优化弹窗、模态框、浮层、滑入或横幅时使用。也适用于「退出意图」「弹窗转化」「模态优化」「线索弹窗」「邮件弹窗」「公告横幅」「浮层」「用弹窗收集邮箱」「退出弹窗」「滚动触发」「固定条」「通知条」等。用于任何浮层或打断式转化元素。弹窗外的表单见 cro；一般页面转化见 cro。"
+  },
+  "marketing-pricing": {
+    "name": "定价策略",
+    "description": "当用户需要定价决策、包装或变现策略帮助时使用。也适用于「定价」「定价层级」「freemium」「免费试用」「包装」「涨价」「价值指标」「Van Westendorp」「支付意愿」「变现」「该收多少钱」「定价不对」「定价页」「年付 vs 月付」「按席位定价」「要不要免费版」等。当在确定收费多少或如何设计套餐时使用。应用内升级屏见 paywalls。"
+  },
+  "marketing-product-marketing": {
+    "name": "产品营销",
+    "description": "当用户希望创建或更新产品营销上下文文档时使用。也适用于「产品上下文」「营销上下文」「建立上下文」「定位」「目标受众是谁」「描述产品」「ICP」「理想客户画像」，或希望在营销任务中避免重复基础信息时使用。在新项目开始时、使用其他营销技能之前使用——创建 `.agents/product-marketing.md` 供其他技能引用产品、受众与定位上下文。"
+  },
+  "marketing-programmatic-seo": {
+    "name": "程序化 SEO",
+    "description": "当用户希望用模板与数据规模化创建 SEO 驱动页面时使用。也适用于「程序化 SEO」「模板页」「规模化页面」「目录页」「地域页」「[关键词]+[城市] 页」「对比页」「集成页」「为 SEO 建很多页」「pSEO」「生成 100 页」「数据驱动页面」「模板落地页」等。当需要创建大量相似页面 targeting 不同关键词或地域时使用。现有 SEO 问题审计见 seo-audit；内容策略见 content-strategy。"
+  },
+  "marketing-prospecting": {
+    "name": "潜客开发",
+    "description": "当用户希望寻找、筛选并建立待触达潜客名单时使用——涵盖 B2B SaaS、一般 B2B 或本地小企业。也适用于「潜客开发」「建潜客名单」「找潜客」「找线索」「线索名单」「找符合 ICP 的 SaaS」「找 B2B 公司」「找本地商家」「该主攻谁」「外呼名单」「目标账户清单」「附近找客户」「没网站的企业」「潜客研究」「合格线索」等。用于名单构建与筛选阶段。名单完成后外呼文案见 cold-email；特定账户深度竞品研究见 competitor-profiling。"
+  },
+  "marketing-referrals": {
+    "name": "推荐计划",
+    "description": "当用户希望创建、优化或分析推荐计划、联盟计划或口碑策略时使用。也适用于「推荐」「联盟」「大使」「口碑」「病毒循环」「推荐好友」「伙伴计划」「推荐激励」「怎么获得推荐」「客户推荐客户」「联盟分成」等。当希望现有用户或伙伴带来新客户时使用。发布相关病毒性见 launch。"
+  },
+  "marketing-revops": {
+    "name": "收入运营",
+    "description": "当用户需要收入运营、线索生命周期管理或营销到销售交接流程帮助时使用。也适用于「RevOps」「收入运营」「线索评分」「线索路由」「MQL」「SQL」「管道阶段」「deal desk」「CRM 自动化」「营销到销售交接」「数据卫生」「线索没到销售」「管道管理」「线索资格」「何时交给销售」等。用于连接营销与收入的系统与流程。冷邮件见 cold-email；邮件滴灌见 emails；定价见 pricing。"
+  },
+  "marketing-sales-enablement": {
+    "name": "销售赋能",
+    "description": "当用户希望创建销售物料、路演 deck、一页纸、异议处理文档或 demo 脚本时使用。也适用于「销售 deck」「路演」「一页纸」「留档」「异议处理」「deal 级 ROI」「demo 脚本」「话术」「销售 playbook」「提案模板」「买家画像卡」「帮销售团队」「销售资料」「该给销售什么」等。用于帮助销售成交的任何文档或资产。竞品对比页与 battle card 见 competitors；营销网站文案见 copywriting；冷邮件见 cold-email。"
+  },
+  "marketing-schema": {
+    "name": "结构化数据",
+    "description": "当用户希望添加、修复或优化网站 schema 标记与结构化数据时使用。也适用于「schema 标记」「结构化数据」「JSON-LD」「富摘要」「schema.org」「FAQ schema」「产品 schema」「评价 schema」「面包屑 schema」「Google 富结果」「知识面板」「搜索星级」「添加结构化数据」等。当希望页面在 Google 展示增强结果时使用。更广 SEO 见 seo-audit；AI 搜索优化见 ai-seo。"
+  },
+  "marketing-seo-audit": {
+    "name": "SEO 审计",
+    "description": "当用户希望审计、审阅或诊断网站 SEO 问题时使用。也适用于「SEO 审计」「技术 SEO」「为什么没排名」「SEO 问题」「页面 SEO」「meta 标签审阅」「SEO 健康检查」「流量下降」「排名丢失」「Google 搜不到」「网站不排名」「被 Google 更新打击」「页面速度」「Core Web Vitals」「爬取错误」「索引问题」等。即使用户只说「SEO 很差」「帮帮 SEO」也应从审计开始。规模化建页见 programmatic-seo；结构化数据见 schema；AI 搜索见 ai-seo。"
+  },
+  "marketing-signup": {
+    "name": "注册优化",
+    "description": "当用户希望优化注册、开户、账号创建或试用激活流程时使用。也适用于「注册转化」「注册摩擦」「注册表单优化」「免费试用注册」「降低注册流失」「账号创建流程」「没人注册」「注册放弃」「试用转化率」「没人完成注册」「注册步骤太多」「简化注册」等。当注册或开户流程表现不佳时使用。注册后 onboarding 见 onboarding；非开户的线索表单见 cro。"
+  },
+  "marketing-site-architecture": {
+    "name": "网站架构",
+    "description": "当用户希望规划、梳理或重构网站页面层级、导航、URL 结构或内链时使用。也适用于「sitemap」「站点地图」「可视化 sitemap」「网站结构」「页面层级」「信息架构」「IA」「导航设计」「URL 结构」「面包屑」「内链策略」「网站规划」「需要哪些页面」「怎么组织网站」「网站导航」等。当规划网站应有哪些页面及如何连接时使用。非 XML sitemap（属技术 SEO，见 seo-audit）。SEO 审计见 seo-audit；结构化数据见 schema。"
+  },
+  "marketing-sms": {
+    "name": "短信营销",
+    "description": "当用户希望规划、构建或优化 SMS/MMS 营销时使用——包括欢迎流、弃购短信、购后、赢回、促销发送或交易/验证短信。也适用于「短信营销」「短信活动」「短信序列」「短信自动化」「弃购短信」「购后短信」「Klaviyo SMS」「Postscript」「Attentive」「Twilio」「A2P 10DLC」「TCPA」「短信合规」「短码」「免费短信」「MMS 活动」「要不要做短信」「短信 vs 邮件」等。邮件序列见 emails；短信文案框架见 copywriting；收集手机号的 opt-in 弹窗见 popups。"
+  },
+  "marketing-social": {
+    "name": "社交媒体",
+    "description": "当用户需要 LinkedIn、Twitter/X、Instagram、TikTok、Facebook 或其他平台的社媒内容创建、排期或优化帮助时使用。也适用于「LinkedIn 帖子」「Twitter 线程」「社交媒体」「内容日历」「社媒排期」「互动」「病毒内容」「该发什么」「内容 repurposing」「推文想法」「LinkedIn 轮播」「社媒策略」「涨粉」「TikTok 视频」「Reels」「Shorts」「视频脚本」「视频 hook」「短视频」「做 reel」等。用于社媒创作、 repurposing、排期与短视频脚本。更广内容策略见 content-strategy；付费视频广告见 ad-creative。"
+  },
+  "marketing-video": {
+    "name": "视频营销",
+    "description": "当用户希望使用 AI 工具或程序化框架创建、生成或制作视频内容时使用。也适用于「视频制作」「AI 视频」「Remotion」「Hyperframes」「HeyGen」「Synthesia」「Veo」「Sora」「Runway」「Kling」「Seedance」「Hailuo」「MiniMax」「Pika」「Hunyuan」「Wan」「视频生成」「AI 数字人」「口播视频」「程序化视频」「视频模板」「讲解视频」「产品 demo 视频」「视频流水线」「帮我做视频」等。用于视频创作、生成与制作工作流。视频内容策略见 social；付费视频广告见 ad-creative。"
+  },
+  "pm-acquisition-channel-advisor": {
+    "name": "获客渠道顾问",
+    "description": "基于单位经济、客户质量与可扩展性评估获客渠道。当决定放大、测试或关停增长渠道时使用。"
+  },
+  "pm-ai-shaped-readiness-advisor": {
+    "name": "AI 形态就绪顾问",
+    "description": "评估产品工作是 AI-first 还是 AI-shaped。当评估 AI 成熟度并选择下一项团队能力建设时使用。"
+  },
+  "pm-altitude-horizon-framework": {
+    "name": "高度与视野框架",
+    "description": "通过「高度」与「视野」思维理解 PM 到总监的转型。当诊断范围、时间视野或领导力层级差距时使用。"
+  },
+  "pm-business-health-diagnostic": {
+    "name": "业务健康诊断",
+    "description": "从增长、留存、效率与资本维度诊断 SaaS 业务健康。当准备业务复盘或优先处理紧急修复时使用。"
+  },
+  "pm-company-research": {
+    "name": "公司研究",
+    "description": "创建包含高管引述、产品战略与组织背景的公司研究简报。当准备面试、竞品分析、合作或市场进入工作时使用。"
+  },
+  "pm-context-engineering-advisor": {
+    "name": "上下文工程顾问",
+    "description": "诊断上下文堆砌 vs 上下文工程。当 AI 工作流显得臃肿、脆弱或难以可靠引导时使用。"
+  },
+  "pm-customer-journey-map": {
+    "name": "客户旅程地图",
+    "description": "跨阶段、触点、行为、情绪与指标创建客户旅程地图。当诊断体验断裂或对齐团队对客户全流程认知时使用。"
+  },
+  "pm-customer-journey-mapping-workshop": {
+    "name": "客户旅程地图工作坊",
+    "description": "通过自适应问题与输出运行客户旅程地图工作坊。当需要为特定人物与场景映射阶段、行为、情绪、痛点与机会时使用。"
+  },
+  "pm-director-readiness-advisor": {
+    "name": "总监就绪顾问",
+    "description": "在准备、面试、落地与再校准各阶段引导 PM 到总监转型。当领导范围变化并需要实用辅导时使用。"
+  },
+  "pm-discovery-interview-prep": {
+    "name": "探索访谈准备",
+    "description": "以正确目标、细分、约束与方法规划客户探索访谈。当为问题验证、流失研究或新产品想法准备访谈时使用。"
+  },
+  "pm-discovery-process": {
+    "name": "探索流程",
+    "description": "运行从问题假设到验证解决方案的完整探索周期。当团队需要结构化路径穿越框架、访谈、综合与实验时使用。"
+  },
+  "pm-eol-message": {
+    "name": "EOL 公告",
+    "description": "撰写清晰、有同理心的产品/功能/计划下线公告，含理由、客户影响与后续步骤。当退役产品、功能或套餐且需避免不必要困惑时使用。"
+  },
+  "pm-epic-breakdown-advisor": {
+    "name": "Epic 拆分顾问",
+    "description": "使用 Humanizing Work 拆分模式将 Epic 拆为用户故事。当 backlog 项过大无法估算、排序或安全交付时使用。"
+  },
+  "pm-epic-hypothesis": {
+    "name": "Epic 假设",
+    "description": "将 Epic 表述为可测试假设，含目标用户、预期结果与验证方法。当在路线图、探索或交付规划前定义重大举措时使用。"
+  },
+  "pm-executive-onboarding-playbook": {
+    "name": "高管入职手册",
+    "description": "规划 VP 或 CPO 30-60-90 天诊断式入职路径。当进入新的高管产品角色并需避免过早变革时使用。"
+  },
+  "pm-feature-investment-advisor": {
+    "name": "功能投资顾问",
+    "description": "基于收入影响、成本结构、ROI 与战略评估功能投资。当决定某功能是否值得投资时使用。"
+  },
+  "pm-finance-based-pricing-advisor": {
+    "name": "财务导向定价顾问",
+    "description": "基于 ARPU、转化、流失风险、NRR 与回收期评估定价变更。当决定定价调整是否应上线时使用。"
+  },
+  "pm-finance-metrics-quickref": {
+    "name": "财务指标速查",
+    "description": "快速查阅 SaaS 财务指标、公式与基准。当分析过程中需要指标定义、公式或基准时使用。"
+  },
+  "pm-jobs-to-be-done": {
+    "name": "待办任务（JTBD）",
+    "description": "以结构化 JTBD 格式揭示客户任务、痛点与收益。当澄清未满足需求、重新定位产品或改进探索与信息时使用。"
+  },
+  "pm-lean-ux-canvas": {
+    "name": "精益 UX 画布",
+    "description": "引导团队完成 Lean UX Canvas v2。当框定业务问题、浮现假设并定义下一步学习内容时使用。"
+  },
+  "pm-opportunity-solution-tree": {
+    "name": "机会解决方案树",
+    "description": "从成果到机会、方案与测试构建机会解决方案树（OST）。当利益相关者需求在决定构建什么之前需要问题框架时使用。"
+  },
+  "pm-organic-growth-advisor": {
+    "name": "有机增长顾问",
+    "description": "识别应追求的有机增长路径——新细分、地域、渠道或产品。当诊断增长约束所在及下一步应行动的 McKinsey 增长层级时使用。"
+  },
+  "pm-pestel-analysis": {
+    "name": "PESTEL 分析",
+    "description": "分析政治、经济、社会、技术、环境与法律因素。当外部市场变化可能实质影响产品、路线图或战略时使用。"
+  },
+  "pm-pm-skill-creator": {
+    "name": "PM 技能创建器",
+    "description": "通过引导式对话设计新 PM 技能。当你有原始内容或想法并希望塑造成合规技能时使用。"
+  },
+  "pm-pol-probe": {
+    "name": "PoL 探针",
+    "description": "定义廉价验证高风险假设的 Proof of Life（PoL）探针。当在构建真实产品之前需要残酷真相时使用。"
+  },
+  "pm-pol-probe-advisor": {
+    "name": "PoL 探针顾问",
+    "description": "根据假设、风险与资源选择正确的 Proof of Life（PoL）探针。用于将验证方法与真实学习目标匹配，而非工具偏好。"
+  },
+  "pm-positioning-statement": {
+    "name": "定位陈述",
+    "description": "创建 Geoffrey Moore 风格的定位陈述。当需要澄清服务谁、解决什么问题、所属品类及与替代方案差异时使用。"
+  },
+  "pm-positioning-workshop": {
+    "name": "定位工作坊",
+    "description": "运行定位工作坊，梳理目标客户、未满足需求、品类、收益与差异化。当产品信息模糊、泛化或失准时使用。"
+  },
+  "pm-prd-development": {
+    "name": "PRD 撰写",
+    "description": "构建连接问题、用户、方案与成功标准的结构化 PRD。当将探索笔记转化为重大举措的工程就绪文档时使用。"
+  },
+  "pm-press-release": {
+    "name": "新闻稿（逆向）",
+    "description": "撰写 Amazon 风格新闻稿，在构建之前定义客户价值。当就新产品、功能或战略赌注对齐利益相关者时使用。"
+  },
+  "pm-prioritization-advisor": {
+    "name": "优先级顾问",
+    "description": "根据阶段、团队上下文与利益相关者需求选择优先级框架。当在 RICE、ICE、价值/工作量或其他评分方式间抉择时使用。"
+  },
+  "pm-problem-framing-canvas": {
+    "name": "问题框架画布",
+    "description": "引导团队完成 MITRE 问题框架画布。当在跳向解决方案之前需要更清晰的问题陈述时使用。"
+  },
+  "pm-problem-statement": {
+    "name": "问题陈述",
+    "description": "撰写以用户为中心的问题陈述：谁受阻、试图做什么、为何重要、感受如何。当为探索、优先级或 PRD 框定问题时使用。"
+  },
+  "pm-product-sense-interview-answer": {
+    "name": "产品感面试回答",
+    "description": "结构化口头 PM 产品感回答，含假设、细分、痛点优先级与 MVP 权衡。当练习设计、改进或「下一步构建什么」类面试题时使用。"
+  },
+  "pm-product-strategy-session": {
+    "name": "产品战略会议",
+    "description": "运行贯穿定位、探索与路线图规划的产品战略会议。当团队在投入执行前需要经过验证的方向时使用。"
+  },
+  "pm-proto-persona": {
+    "name": "原型人物",
+    "description": "基于现有研究、市场信号与团队知识创建原型人物。当在更深验证之前需要可工作的客户画像时使用。"
+  },
+  "pm-recommendation-canvas": {
+    "name": "推荐画布",
+    "description": "从成果、假设、风险与定位评估 AI 产品想法。当决定 AI 方案是否值得投资或推荐时使用。"
+  },
+  "pm-roadmap-planning": {
+    "name": "路线图规划",
+    "description": "规划贯穿优先级、Epic 定义、利益相关者对齐与排序的战略路线图。当将战略转化为团队可执行的发布计划时使用。"
+  },
+  "pm-saas-economics-efficiency-metrics": {
+    "name": "SaaS 经济效率指标",
+    "description": "评估 SaaS 单位经济与资本效率。当判断业务能否高效扩张或需要纠偏时使用。"
+  },
+  "pm-saas-revenue-growth-metrics": {
+    "name": "SaaS 收入增长指标",
+    "description": "计算 SaaS 收入、留存与增长指标。当诊断动能、流失、扩展或产品市场契合信号时使用。"
+  },
+  "pm-skill-authoring-workflow": {
+    "name": "技能编写工作流",
+    "description": "将原始 PM 内容转化为合规、可发布的技能。当创建或更新仓库技能且需不破坏标准时使用。"
+  },
+  "pm-storyboard": {
+    "name": "故事板",
+    "description": "创建六格故事板，展示用户从问题到解决方案的旅程。当需要快速叙事用于对齐、概念评审或 demo 时使用。"
+  },
+  "pm-tam-sam-som-calculator": {
+    "name": "TAM/SAM/SOM 计算器",
+    "description": "以明确假设、方法与注意事项计算 TAM、SAM 与 SOM。当为产品想法、商业案例或高管评审做市场规模估算时使用。"
+  },
+  "pm-user-story": {
+    "name": "用户故事",
+    "description": "以 Mike Cohn 格式与 Gherkin 验收标准创建用户故事。当将用户需求转化为开发就绪工作且含清晰结果与可测条件时使用。"
+  },
+  "pm-user-story-mapping": {
+    "name": "用户故事地图",
+    "description": "创建用户故事地图，排列活动、步骤、任务与发布切片。当围绕用户旅程规划工作流、backlog 或 MVP 时使用。"
+  },
+  "pm-user-story-mapping-workshop": {
+    "name": "用户故事地图工作坊",
+    "description": "通过自适应问题与结构化地图输出运行用户故事地图工作坊。当需要某工作流的骨干活动、任务与发布切片时使用。"
+  },
+  "pm-user-story-splitting": {
+    "name": "用户故事拆分",
+    "description": "使用成熟拆分模式将大故事或 Epic 拆为更小可交付故事。当 backlog 项过大无法估算、排序或独立发布时使用。"
+  },
+  "pm-vp-cpo-readiness-advisor": {
+    "name": "VP/CPO 就绪顾问",
+    "description": "在准备、面试、落地与再校准各阶段引导向 VP 或 CPO 转型。当高管产品范围快速变化时使用。"
+  },
+  "pm-workshop-facilitation": {
+    "name": "工作坊引导",
+    "description": "以单步多轮流程引导工作坊会话。当交互式技能需要一致节奏、选项与进度追踪时使用。"
+  },
+  "superpowers-brainstorming": {
+    "name": "头脑风暴",
+    "description": "在进行任何创意工作之前必须使用——包括创建功能、构建组件、添加能力或修改行为。在实现之前探索用户意图、需求与设计。"
+  },
+  "superpowers-dispatching-parallel-agents": {
+    "name": "并行派发代理",
+    "description": "当面临 2 个及以上可独立推进、无需共享状态且无顺序依赖的任务时使用。"
+  },
+  "superpowers-executing-plans": {
+    "name": "执行计划",
+    "description": "当你已有书面实现计划，并需在独立会话中按检查点执行时使用。"
+  },
+  "superpowers-finishing-a-development-branch": {
+    "name": "收尾开发分支",
+    "description": "当实现已完成、全部测试通过，且需决定如何集成工作时使用——通过结构化选项引导完成合并、PR 或清理等收尾工作。"
+  },
+  "superpowers-receiving-code-review": {
+    "name": "接收代码评审",
+    "description": "当收到代码评审反馈、在落实建议之前，尤其当反馈不清晰或技术上存疑时使用——要求技术严谨与验证，而非表演式认同或盲目执行。"
+  },
+  "superpowers-requesting-code-review": {
+    "name": "请求代码评审",
+    "description": "当完成任务、实现重要功能，或在合并前需验证工作是否满足要求时使用。"
+  },
+  "superpowers-subagent-driven-development": {
+    "name": "子代理驱动开发",
+    "description": "当在当前会话中按实现计划执行可独立完成的任务时使用。"
+  },
+  "superpowers-systematic-debugging": {
+    "name": "系统化调试",
+    "description": "当遇到任何 Bug、测试失败或意外行为时，在提出修复方案之前使用。"
+  },
+  "superpowers-test-driven-development": {
+    "name": "测试驱动开发",
+    "description": "当实现任何功能或修复 Bug 时，在编写实现代码之前使用。"
+  },
+  "superpowers-using-git-worktrees": {
+    "name": "使用 Git Worktree",
+    "description": "当开始需要与当前工作区隔离的功能开发，或在执行实现计划之前使用——通过原生工具或 git worktree 回退确保存在隔离工作区。"
+  },
+  "superpowers-using-superpowers": {
+    "name": "使用 Superpowers",
+    "description": "在开启任何对话时使用——建立如何发现与调用技能的规范，要求在包括澄清问题在内的任何回复之前先调用 Skill 工具。"
+  },
+  "superpowers-verification-before-completion": {
+    "name": "完成前验证",
+    "description": "当即将声称工作已完成、已修复或通过时，在提交或创建 PR 之前使用——要求运行验证命令并确认输出后再做成功声明；始终证据先于断言。"
+  },
+  "superpowers-writing-plans": {
+    "name": "编写计划",
+    "description": "当你已有规格或多步骤任务的需求、且尚未动手写代码时使用。"
+  },
+  "superpowers-writing-skills": {
+    "name": "编写技能",
+    "description": "当创建新技能、编辑现有技能，或在部署前验证技能可用时使用。"
+  },
+  "tob-agentic-actions-auditor-agentic-actions-auditor": {
+    "name": "Agentic Actions 审计",
+    "description": "审计 GitHub Actions 工作流中 AI 代理集成的安全漏洞，涵盖 Claude Code Action、Gemini CLI、OpenAI Codex 与 GitHub AI Inference。检测攻击者可控输入进入 CI/CD 管道中运行的 AI 代理的向量，包括环境变量中介模式、直接表达式注入、危险沙箱配置与通配符用户白名单。当审阅调用 AI 编码代理的工作流、审计 CI/CD 管道中的提示注入风险，或评估 agentic action 配置时使用。"
+  },
+  "tob-ask-questions-if-underspecified-ask-questions-if-underspecified": {
+    "name": "需求不清先提问",
+    "description": "在实现之前澄清需求。当出现严重疑虑时使用。"
+  },
+  "tob-audit-context-building-audit-context-building": {
+    "name": "审计上下文构建",
+    "description": "支持超细粒度逐行代码分析，在漏洞或缺陷发现之前构建深度架构上下文。"
+  },
+  "tob-building-secure-contracts-algorand-vulnerability-scanner": {
+    "name": "Algorand 漏洞扫描",
+    "description": "扫描 Algorand 智能合约的 11 类常见漏洞，包括 rekeying 攻击、未检查交易费、缺失字段校验与访问控制问题。审计 Algorand 项目（TEAL/PyTeal）时使用。"
+  },
+  "tob-building-secure-contracts-audit-prep-assistant": {
+    "name": "审计准备助手",
+    "description": "使用 Trail of Bits 检查清单为代码库做安全评审准备。帮助设定评审目标、运行静态分析、提升测试覆盖率、移除死代码、确保可访问性，并生成文档（流程图、用户故事、行内注释）。"
+  },
+  "tob-building-secure-contracts-cairo-vulnerability-scanner": {
+    "name": "Cairo 漏洞扫描",
+    "description": "扫描 Cairo/StarkNet 智能合约的 6 类关键漏洞，包括 felt252 算术溢出、L1-L2 消息、地址转换与签名重放。审计 StarkNet 项目时使用。"
+  },
+  "tob-building-secure-contracts-code-maturity-assessor": {
+    "name": "代码成熟度评估",
+    "description": "使用 Trail of Bits 九类框架进行系统化代码成熟度评估。分析算术安全、审计实践、访问控制、复杂度、去中心化、文档、MEV 风险、底层代码与测试，产出专业评分卡、基于证据的评级与可执行建议。"
+  },
+  "tob-building-secure-contracts-cosmos-vulnerability-scanner": {
+    "name": "Cosmos 漏洞扫描",
+    "description": "扫描 Cosmos SDK 模块与 CosmWasm 合约的共识级关键漏洞——链停机、资金损失、状态分歧。含 25 核心 + 16 IBC + 10 EVM + 3 CosmWasm 模式。审计自定义 x/ 模块、审阅 IBC 集成或评估链上线前安全时使用。已更新至 SDK v0.53.x。"
+  },
+  "tob-building-secure-contracts-guidelines-advisor": {
+    "name": "合约指南顾问",
+    "description": "基于 Trail of Bits 最佳实践的智能合约开发顾问。分析代码库以生成文档/规格、评审架构、检查可升级模式、评估实现质量、识别陷阱、审阅依赖与测试，并提供可执行建议。"
+  },
+  "tob-building-secure-contracts-secure-workflow-guide": {
+    "name": "安全工作流指南",
+    "description": "引导完成 Trail of Bits 五步安全开发工作流。运行 Slither 扫描、检查特殊特性（可升级性/ERC 一致性/代币集成）、生成可视化安全图、记录模糊测试/验证的安全属性，并审阅需人工关注的安全领域。"
+  },
+  "tob-building-secure-contracts-solana-vulnerability-scanner": {
+    "name": "Solana 漏洞扫描",
+    "description": "扫描 Solana 程序的 6 类关键漏洞，包括任意 CPI、PDA 校验不当、缺失签名者/所有权检查与 sysvar 欺骗。审计 Solana/Anchor 程序时使用。"
+  },
+  "tob-building-secure-contracts-substrate-vulnerability-scanner": {
+    "name": "Substrate 漏洞扫描",
+    "description": "扫描 Substrate/Polkadot pallet 的 7 类关键漏洞，包括算术溢出、panic DoS、权重错误与 origin 检查不当。审计 Substrate runtime 或 FRAME pallet 时使用。"
+  },
+  "tob-building-secure-contracts-token-integration-analyzer": {
+    "name": "代币集成分析",
+    "description": "基于 Trail of Bits 代币集成检查清单的代币集成与实现分析器。分析 ERC20/ERC721 一致性、检查 20+ 非常规代币模式、评估合约组合与所有者权限、进行链上稀缺性分析，并评估协议如何处理非标准代币。上下文感知代币实现与集成场景。"
+  },
+  "tob-building-secure-contracts-ton-vulnerability-scanner": {
+    "name": "TON 漏洞扫描",
+    "description": "扫描 TON（The Open Network）智能合约的 3 类关键漏洞，包括整数作布尔误用、伪造 Jetton 合约与转发 TON 未做 gas 检查。审计 FunC 合约时使用。"
+  },
+  "tob-burpsuite-project-parser-burpsuite-project-parser": {
+    "name": "Burp Suite 项目解析",
+    "description": "从命令行搜索与探索 Burp Suite 项目文件（.burp）。当用正则搜索响应头/体、提取安全审计发现、导出代理历史或站点地图数据，或分析 Burp 项目中捕获的 HTTP 流量时使用。"
+  },
+  "tob-c-review-c-review": {
+    "name": "C/C++ 安全评审",
+    "description": "对 C/C++ 进行全面的安全评审，覆盖内存破坏、整数溢出、竞态与平台特定漏洞。审计原生 C/C++ 应用、评审守护进程/服务内存安全，或在本机代码中排查整数溢出/释放后使用/竞态时使用。"
+  },
+  "tob-claude-in-chrome-troubleshooting-claude-in-chrome-troubleshooting": {
+    "name": "Claude in Chrome 排障",
+    "description": "诊断并修复 Claude in Chrome MCP 扩展连接问题。当 mcp__claude-in-chrome__* 工具失败、返回「浏览器扩展未连接」或行为异常时使用。"
+  },
+  "tob-constant-time-analysis-constant-time-analysis": {
+    "name": "恒定时间分析",
+    "description": "检测密码学代码中的计时侧信道漏洞。在实现或评审密码代码、遇到对秘密做除法、秘密相关分支，或在 C/C++/Go/Rust/Swift/Java/Kotlin/C#/PHP/JavaScript/TypeScript/Python/Ruby 中讨论恒定时间编程时使用。"
+  },
+  "tob-culture-index-interpreting-culture-index": {
+    "name": "Culture Index 解读",
+    "description": "解读 Culture Index（CI）调查、行为画像与人格评估数据。支持个人画像解读、团队构成分析（gas/brake/glue）、倦怠检测、画像对比、招聘画像、管理者辅导、访谈记录特质预测、候选人复盘、入职规划与冲突调解。可通过 OpenCV 提取脚本接受 JSON 或 PDF 输入。"
+  },
+  "webfetch": {
+    "name": "网页抓取",
+    "description": "打开链接并读取网页正文，无需 API Key。"
+  },
+  "websearch": {
+    "name": "联网搜索",
+    "description": "默认阿里 IQS 联网搜索，亦支持 SearXNG / DuckDuckGo。"
+  }
+}

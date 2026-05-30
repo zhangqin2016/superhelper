@@ -5,6 +5,7 @@
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
 import store from "./state.js";
+import { t, tSearchProvider, tSearchProviderDesc } from "../i18n/index.js";
 
 function isBusy() {
   return (store.get("runningSessionIds") || []).length > 0;
@@ -29,8 +30,9 @@ export async function refreshSearchSettings() {
   for (const provider of data.providers || []) {
     const option = document.createElement("option");
     option.value = provider.id;
-    option.textContent = provider.label;
-    if (provider.description) option.title = provider.description;
+    option.textContent = tSearchProvider(provider);
+    const desc = tSearchProviderDesc(provider);
+    if (desc) option.title = desc;
     if (provider.id === data.providerId) option.selected = true;
     select.appendChild(option);
   }
@@ -46,34 +48,34 @@ export async function initSearchSettings() {
 
   $("searchProviderSelect")?.addEventListener("change", async () => {
     if (isBusy()) {
-      showToast("有对话正在处理中，请稍后再切换搜索引擎。", "error");
+      showToast(t("toast.searchBusy"), "error");
       await refreshSearchSettings();
       return;
     }
     const providerId = $("searchProviderSelect").value;
     const result = await window.assistantClient.setSearchProvider(providerId);
     if (!result.ok) {
-      showToast("搜索引擎切换失败，请重试。", "error");
+      showToast(t("toast.searchSwitchFailed"), "error");
       await refreshSearchSettings();
       return;
     }
     updateProviderRows(providerId);
     const active = (result.providers || []).find((item) => item.id === result.providerId);
-    showToast(`联网搜索已设为：${active?.label || "当前引擎"}`, "success");
+    showToast(t("toast.searchSwitched", { label: tSearchProvider(active) || "" }), "success");
   });
 
   $("searchSaveSearxngUrlBtn")?.addEventListener("click", async () => {
     if (isBusy()) {
-      showToast("有对话正在处理中，请稍后再保存。", "error");
+      showToast(t("toast.searchSaveBusy"), "error");
       return;
     }
     const url = $("searchSearxngUrl")?.value?.trim() || "";
     const result = await window.assistantClient.setSearxngUrl(url);
     if (!result.ok) {
-      showToast("实例地址无效，请使用 http:// 或 https:// 开头的 URL。", "error");
+      showToast(t("toast.searchUrlInvalid"), "error");
       return;
     }
-    showToast(url ? "SearXNG 实例已保存" : "已清除自定义实例，将使用内置公共实例", "success");
+    showToast(url ? t("toast.searchUrlSaved") : t("toast.searchUrlCleared"), "success");
     await refreshSearchSettings();
   });
 }

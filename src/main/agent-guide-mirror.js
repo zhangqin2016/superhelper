@@ -21,8 +21,8 @@ function hideFileIfSupported(filePath) {
   }
 }
 
-function syncEngineGuideMirror(agentGuideFile) {
-  const mirror = path.join(agentConfigDir(), ENGINE_GUIDE_BASENAME);
+function syncEngineGuideMirror(agentGuideFile, configDir = agentConfigDir()) {
+  const mirror = path.join(configDir, ENGINE_GUIDE_BASENAME);
   if (!fs.existsSync(agentGuideFile)) return;
   fs.copyFileSync(agentGuideFile, mirror);
   hideFileIfSupported(mirror);

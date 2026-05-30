@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { PROJECT_ROOT, userDataPath, agentConfigDir, agentGuidePath } = require("./config");
+const { PROJECT_ROOT, userDataPath, agentConfigDir, agentGuidePath, sessionGuideDir } = require("./config");
 const { syncEngineGuideMirror } = require("./agent-guide-mirror");
 const { ensureRuntimeNodeShim, resolveRuntimeNodePath } = require("./runtime-node");
 const { compareSemver, isAppVersionCompatible } = require("./skill-version");
@@ -238,34 +238,72 @@ function ensureBundledPresent() {
 }
 
 function getEnabledInstalledSkills() {
+  return getSkillsForIds(getGloballyEnabledSkillIds());
+}
+
+function getAllInstalledSkillIds() {
   ensureSkillsStateDefaults();
-  const skills = [];
+  const ids = new Set();
   for (const skillId of Object.keys(loadSkillsState().skills)) {
-    if (!isSkillEnabled(skillId)) continue;
+    if (readInstalledManifest(skillId)) ids.add(skillId);
+  }
+  for (const skillId of BUNDLED_SKILL_IDS) {
+    if (readInstalledManifest(skillId)) ids.add(skillId);
+  }
+  return [...ids];
+}
+
+function getGloballyEnabledSkillIds() {
+  ensureSkillsStateDefaults();
+  const ids = [];
+  for (const skillId of getAllInstalledSkillIds()) {
+    if (isSkillEnabled(skillId)) ids.push(skillId);
+  }
+  return ids;
+}
+
+function getSkillsForIds(skillIds) {
+  const skills = [];
+  for (const skillId of skillIds || []) {
     const skillDir = installedSkillDir(skillId);
     const manifest = loadManifestFromDir(skillDir);
     if (!manifest) continue;
     skills.push({ id: skillId, skillDir, manifest });
   }
-  return skills;
-}
-
-function manifestGuide(manifest) {
-  return manifest?.guideMd || manifest?.claudeMd || null;
-}
-
-function mergeAgentGuide() {
-  ensureRuntimeNodeShim();
-  const configDir = agentConfigDir();
-  fs.mkdirSync(configDir, { recursive: true });
-
-  const enabled = getEnabledInstalledSkills();
-  enabled.sort(
+  skills.sort(
     (a, b) =>
       (manifestGuide(a.manifest)?.priority ?? 100) -
       (manifestGuide(b.manifest)?.priority ?? 100),
   );
+  return skills;
+}
 
+function sameIdSet(a, b) {
+  const sa = new Set(a || []);
+  const sb = new Set(b || []);
+  if (sa.size !== sb.size) return false;
+  for (const id of sa) {
+    if (!sb.has(id)) return false;
+  }
+  return true;
+}
+
+function resolveSessionSkillIds(session) {
+  const installed = new Set(getAllInstalledSkillIds());
+  if (!session || session.enabledSkillIds == null) {
+    return getGloballyEnabledSkillIds().filter((id) => installed.has(id));
+  }
+  if (!Array.isArray(session.enabledSkillIds)) {
+    return getGloballyEnabledSkillIds().filter((id) => installed.has(id));
+  }
+  return session.enabledSkillIds.filter((id) => installed.has(id));
+}
+
+function isSessionSkillCustomized(session) {
+  return session != null && session.enabledSkillIds != null && Array.isArray(session.enabledSkillIds);
+}
+
+function buildAgentGuideContent(enabledSkills) {
   const sections = [
     "# 智能工作台全局说明",
     "",
@@ -282,7 +320,7 @@ function mergeAgentGuide() {
   ];
   let lastTitle = null;
 
-  for (const skill of enabled) {
+  for (const skill of enabledSkills) {
     const guide = manifestGuide(skill.manifest);
     const bodyTemplate = guide?.body;
     const title = guide?.title;
@@ -299,9 +337,94 @@ function mergeAgentGuide() {
     }
   }
 
+  return sections.join("\n").trim() + "\n";
+}
+
+function writeSessionAgentGuide(sessionId, session) {
+  ensureRuntimeNodeShim();
+  const skillIds = resolveSessionSkillIds(session);
+  const skills = getSkillsForIds(skillIds);
+  const configDir = sessionGuideDir(sessionId);
+  fs.mkdirSync(configDir, { recursive: true });
+  ensureSessionConfigBridge(configDir);
+  const guidePath = path.join(configDir, "AGENT.md");
+  fs.writeFileSync(guidePath, buildAgentGuideContent(skills), "utf8");
+  syncEngineGuideMirror(guidePath, configDir);
+  return configDir;
+}
+
+function listSkillsForSessionPublic(session) {
+  const installed = listSkillsPublic();
+  const effectiveIds = new Set(resolveSessionSkillIds(session));
+  const customized = isSessionSkillCustomized(session);
+  return {
+    customized,
+    effectiveIds: [...effectiveIds],
+    skills: installed.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+      globallyEnabled: skill.enabled,
+      sessionEnabled: effectiveIds.has(skill.id),
+    })),
+  };
+}
+
+function normalizeSessionSkillSelection(enabledSkillIds) {
+  if (enabledSkillIds == null) return null;
+  const installed = new Set(getAllInstalledSkillIds());
+  const normalized = [...new Set((enabledSkillIds || []).filter((id) => installed.has(id)))];
+  if (sameIdSet(normalized, getGloballyEnabledSkillIds())) {
+    return null;
+  }
+  return normalized;
+}
+
+function syncInheritedSessionGuides(sessionManager) {
+  if (!sessionManager || typeof sessionManager.iterateSessions !== "function") return;
+  for (const session of sessionManager.iterateSessions()) {
+    if (isSessionSkillCustomized(session)) continue;
+    writeSessionAgentGuide(session.id, session);
+  }
+}
+
+function manifestGuide(manifest) {
+  return manifest?.guideMd || manifest?.claudeMd || null;
+}
+
+/** Link global skills/settings into per-session CLAUDE_CONFIG_DIR for engine discovery. */
+function ensureSessionConfigBridge(configDir) {
+  const globalRoot = agentConfigDir();
+  const links = [
+    { rel: "skills", type: "dir" },
+    { rel: "settings.json", type: "file" },
+  ];
+  for (const { rel, type } of links) {
+    const src = path.join(globalRoot, rel);
+    const dest = path.join(configDir, rel);
+    if (!fs.existsSync(src) || fs.existsSync(dest)) continue;
+    try {
+      if (type === "dir") {
+        const symlinkType = process.platform === "win32" ? "junction" : "dir";
+        fs.symlinkSync(src, dest, symlinkType);
+      } else {
+        fs.symlinkSync(src, dest, "file");
+      }
+    } catch {
+      // Non-fatal: AGENT.md still carries inlined guide with absolute script paths.
+    }
+  }
+}
+
+function mergeAgentGuide() {
+  ensureRuntimeNodeShim();
+  const configDir = agentConfigDir();
+  fs.mkdirSync(configDir, { recursive: true });
+
+  const enabled = getEnabledInstalledSkills();
   const guidePath = agentGuidePath();
-  fs.writeFileSync(guidePath, sections.join("\n").trim() + "\n", "utf8");
-  syncEngineGuideMirror(guidePath);
+  fs.writeFileSync(guidePath, buildAgentGuideContent(enabled), "utf8");
+  syncEngineGuideMirror(guidePath, configDir);
 }
 
 function getDisallowedTools() {
@@ -371,35 +494,57 @@ function availableSkillToPublic(registryEntry, installedVersion) {
     changelog: registryEntry.changelog || "",
     minAppVersion: registryEntry.minAppVersion,
     compatible: isAppVersionCompatible(registryEntry.minAppVersion),
+    category: registryEntry.category || null,
+    categoryLabel: registryEntry.categoryLabel || null,
+    publisher: registryEntry.publisher || null,
+    sourceType: registryEntry.sourceType || "zip",
   };
+}
+
+async function resolveRegistry({ fetch = true } = {}) {
+  const userUrl = getRegistryUrl();
+  if (userUrl) {
+    if (fetch) {
+      return skillRegistry.fetchRegistry(userUrl);
+    }
+    const cached = skillRegistry.loadCachedRegistry();
+    if (!cached || cached.sourceUrl !== userUrl) {
+      return { ok: false, error: "NETWORK", detail: "尚无缓存，请先检查更新" };
+    }
+    return { ok: true, registry: cached };
+  }
+
+  const bundled = fetch
+    ? skillRegistry.ensureBundledRegistryCached()
+    : skillRegistry.loadCachedRegistry() || skillRegistry.ensureBundledRegistryCached();
+  if (!bundled) {
+    return { ok: false, error: "NOT_FOUND", detail: "内置技能目录不可用" };
+  }
+  return { ok: true, registry: bundled };
 }
 
 async function checkRegistryUpdates({ fetch = true } = {}) {
   const registryUrl = getRegistryUrl();
-  if (!registryUrl) {
-    return {
-      ok: true,
-      registryUrl: "",
-      publisher: "",
-      installed: listSkillsPublic(),
-      available: [],
-      updates: [],
-      updatesCount: 0,
-    };
+  const resolved = await resolveRegistry({ fetch });
+  if (!resolved.ok) {
+    if (!registryUrl && !fetch) {
+      return {
+        ok: true,
+        registryUrl: "",
+        publisher: "",
+        installed: listSkillsPublic(),
+        available: [],
+        updates: [],
+        updatesCount: 0,
+        categories: [],
+        remoteIndexes: [],
+        bundledCatalog: true,
+      };
+    }
+    return resolved;
   }
 
-  let registry;
-  if (fetch) {
-    const result = await skillRegistry.fetchRegistry(registryUrl);
-    if (!result.ok) return result;
-    registry = result.registry;
-  } else {
-    const cached = skillRegistry.loadCachedRegistry();
-    if (!cached) {
-      return { ok: false, error: "NETWORK", detail: "尚无缓存，请先检查更新" };
-    }
-    registry = cached;
-  }
+  const registry = resolved.registry;
 
   ensureSkillsStateDefaults();
   const state = loadSkillsState();
@@ -439,28 +584,24 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
 
   return {
     ok: true,
-    registryUrl,
+    registryUrl: registryUrl || skillRegistry.BUNDLED_REGISTRY_SOURCE,
     publisher: registry.publisher || "",
     fetchedAt: registry.fetchedAt || state.registryCachedAt,
     installed,
     available,
     updates,
     updatesCount: updates.length,
+    categories: registry.categories || [],
+    remoteIndexes: registry.remoteIndexes || [],
+    bundledCatalog: !registryUrl,
   };
 }
 
 async function installFromRegistry(skillId, version) {
-  const registryUrl = getRegistryUrl();
-  if (!registryUrl) {
-    return { ok: false, error: "NOT_FOUND", detail: "请先配置技能目录 URL" };
-  }
+  const resolved = await resolveRegistry({ fetch: true });
+  if (!resolved.ok) return resolved;
 
-  let registry = skillRegistry.loadCachedRegistry();
-  if (!registry || registry.sourceUrl !== registryUrl) {
-    const fetched = await skillRegistry.fetchRegistry(registryUrl);
-    if (!fetched.ok) return fetched;
-    registry = fetched.registry;
-  }
+  const registry = resolved.registry;
 
   const entry = skillRegistry.findRegistryEntry(registry, skillId, version);
   if (!entry) {
@@ -493,7 +634,7 @@ function listSkillsPublic() {
   }
   const cached = skillRegistry.loadCachedRegistry();
   const registryById =
-    cached && cached.sourceUrl === state.registryUrl
+    cached && skillRegistry.registrySourceMatches(state, cached)
       ? Object.fromEntries((cached.skills || []).map((s) => [s.id, s]))
       : {};
   const skills = [];
@@ -520,6 +661,7 @@ function listSkillsPublic() {
 
 function bootstrapSkills() {
   ensureSkillsStateDefaults();
+  skillRegistry.ensureBundledRegistryCached();
   const installed = ensureBundledPresent();
   mergeAgentGuide();
   return { installed };
@@ -549,6 +691,14 @@ function setSkillEnabled(skillId, enabled) {
   return { ok: true, skills: listSkillsPublic() };
 }
 
+function setSkillEnabledWithSessions(skillId, enabled, sessionManager) {
+  const result = setSkillEnabled(skillId, enabled);
+  if (result.ok && sessionManager) {
+    syncInheritedSessionGuides(sessionManager);
+  }
+  return result;
+}
+
 function restoreBundledSkill(skillId) {
   if (!PROTECTED_BUNDLED_IDS.has(skillId)) {
     return { ok: false, error: "BUNDLED_PROTECTED" };
@@ -571,7 +721,9 @@ module.exports = {
   PROTECTED_BUNDLED_IDS,
   bootstrapSkills,
   listSkillsPublic,
+  listSkillsForSessionPublic,
   setSkillEnabled,
+  setSkillEnabledWithSessions,
   restoreBundledSkill,
   refreshSkillsConfig,
   mergeAgentGuide,
@@ -589,4 +741,9 @@ module.exports = {
   buildReplacements,
   readInstalledManifest,
   installedSkillDir,
+  writeSessionAgentGuide,
+  resolveSessionSkillIds,
+  normalizeSessionSkillSelection,
+  syncInheritedSessionGuides,
+  getGloballyEnabledSkillIds,
 };

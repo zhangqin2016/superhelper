@@ -4,6 +4,7 @@
 
 import store from "./state.js";
 import { $ } from "./dom.js";
+import { t } from "../i18n/index.js";
 import {
   showSessionMessages,
   hideAllSessionMessages,
@@ -14,6 +15,7 @@ import {
   syncComposerForActiveSession,
 } from "./message.js";
 import { syncRunningFromState } from "./session-busy.js";
+import { refreshSessionSkillsUi } from "./session-skills.js";
 
 export function activeProject() {
   const id = store.get("activeProjectId");
@@ -38,17 +40,17 @@ export function updateTopbarTitles() {
   const metaEl = $("sessionMeta");
 
   if (titleEl) {
-    titleEl.textContent = session?.title || project?.name || "智能工作台";
+    titleEl.textContent = session?.title || project?.name || t("app.brand");
   }
   if (metaEl && !store.get("isBusy")) {
     const projects = store.get("projects") || [];
     metaEl.textContent = project?.path
       ? project.path
       : project?.name
-        ? `文件夹：${project.name}`
+        ? t("app.folderLabel", { name: project.name })
         : projects.length === 0
-          ? "请添加工作空间文件夹"
-          : "已就绪";
+          ? t("app.addWorkspace")
+          : t("app.ready");
   }
 }
 
@@ -90,6 +92,7 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
 
   syncComposerForActiveSession();
   updateTopbarTitles();
+  await refreshSessionSkillsUi();
 
   const { updateProjectTreeChrome } = await import("./project-tree.js");
   updateProjectTreeChrome();
@@ -116,6 +119,7 @@ export async function refreshStateLight({ reRenderActive = false } = {}) {
     updateTopbarTitles();
     const { updateProjectTreeChrome } = await import("./project-tree.js");
     updateProjectTreeChrome();
+    await refreshSessionSkillsUi();
   } catch {
     // ignore
   }

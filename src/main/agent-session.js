@@ -62,6 +62,7 @@ class AgentSession extends EventEmitter {
       permissionMode: options.permissionMode,
       disallowedTools: options.disallowedTools,
       stagingDir: options.stagingDir,
+      configDir: options.configDir,
     };
 
     const same =
@@ -103,7 +104,7 @@ class AgentSession extends EventEmitter {
 
     this.process = spawn(opts.agentCommand, args, {
       cwd: this.cwd,
-      env: buildAgentSpawnEnv(),
+      env: buildAgentSpawnEnv({ configDir: opts.configDir || undefined }),
       stdio: ["pipe", "pipe", "pipe"],
     });
 

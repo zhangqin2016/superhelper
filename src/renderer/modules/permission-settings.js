@@ -3,6 +3,7 @@
  */
 
 import { $ } from "./dom.js";
+import { tPermission, tPermissionDesc } from "../i18n/index.js";
 
 export async function refreshPermissionSelect() {
   const select = $("permissionModeSelect");
@@ -15,14 +16,14 @@ export async function refreshPermissionSelect() {
   for (const mode of data.modes || []) {
     const option = document.createElement("option");
     option.value = mode.id;
-    option.textContent = mode.label;
-    if (mode.description) option.title = mode.description;
+    option.textContent = tPermission(mode);
+    const desc = tPermissionDesc(mode);
+    if (desc) option.title = desc;
     if (mode.id === data.activeModeId) option.selected = true;
     select.appendChild(option);
   }
 }
 
-/** Load permission options once at startup. */
 export async function initPermissionSettings() {
   await refreshPermissionSelect();
 }

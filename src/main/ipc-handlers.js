@@ -3,13 +3,21 @@
 const fs = require("node:fs");
 const { ipcMain, dialog, shell } = require("electron");
 const FileStagingManager = require("./file-staging-manager");
-const { listPresetsPublic, setActivePreset } = require("./model-presets");
+const { listPresetsPublic, setActivePreset, saveCustomPreset, deleteCustomPreset, setApiGateway } = require("./model-presets");
 const { resolveAgentCommand } = require("./agent-command");
 const { sanitizeError, appendTextSegment } = require("./agent-runner");
 const { notifySessionFinished } = require("./background-notify");
 const { fileStagingDir } = require("./config");
 const skillManager = require("./skill-manager");
+const {
+  migrateGlobalResumeArtifacts,
+  resetSessionEngineCache,
+} = require("./session-engine-recovery");
 const { resolveRuntimeIconDataUrl } = require("./app-icon");
+const { listLocalesPublic, setLocale } = require("./locale-settings");
+
+/** @type {Map<string, string>} */
+const lastRunnerStderr = new Map();
 
 function sendToRenderer(window, channel, payload) {
   if (window && !window.isDestroyed()) {
@@ -29,6 +37,12 @@ function anyRunnerBusy(runnerPool) {
     if (runner?.isBusy()) return true;
   }
   return false;
+}
+
+function isSessionBusy(runnerPool, sessionId, activeTurnIds = activeTurns) {
+  if (!sessionId) return false;
+  if (activeTurnIds.has(sessionId)) return true;
+  return Boolean(runnerPool.get(sessionId)?.isBusy());
 }
 
 function getRunningSessionIds(runnerPool, sessionManager) {
@@ -102,6 +116,8 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("stderr", (text) => {
+    const trimmed = String(text || "").trim();
+    if (trimmed) lastRunnerStderr.set(sessionId, trimmed);
     console.error(`[agent stderr ${sessionId}]`, text);
   });
 
@@ -133,12 +149,19 @@ function wireRunner(ctx, runner) {
 
     if (finalOutput) {
       sessionManager.pushMessageTo(sessionId, "assistant", finalOutput);
+      lastRunnerStderr.delete(sessionId);
     } else if (!interrupted && code !== 0 && code !== null) {
-      sessionManager.pushMessageTo(
-        sessionId,
-        "assistant",
-        "这次没有收到有效回复，请稍后重试。",
-      );
+      const stderrHint = lastRunnerStderr.get(sessionId);
+      lastRunnerStderr.delete(sessionId);
+      sessionManager.clearAgentResumeId(sessionId);
+      resetSessionEngineCache(sessionId);
+      ctx.runnerPool.terminateSession(sessionId);
+      const friendly = stderrHint
+        ? sanitizeError(stderrHint)
+        : "这次没有收到有效回复。对话连接已重置，请再发一次（可简要说明要继续的内容）。";
+      sessionManager.pushMessageTo(sessionId, "assistant", friendly);
+    } else {
+      lastRunnerStderr.delete(sessionId);
     }
 
     sessionManager.setStatus(sessionId, "idle");
@@ -226,10 +249,15 @@ function ensureSessionRunner(ctx, sessionId) {
   } catch (err) {
     console.warn("[runner] could not create staging dir:", err.message);
   }
+  const configDir = skillManager.writeSessionAgentGuide(sessionId, session);
+  if (session.agentResumeId) {
+    migrateGlobalResumeArtifacts(sessionId, session.agentResumeId);
+  }
   const extra = {
     disallowedTools: skillManager.getDisallowedTools(),
     stagingDir,
     resumeSessionId: session.agentResumeId || null,
+    configDir,
   };
 
   try {
@@ -271,6 +299,13 @@ function registerAll(ctx) {
   } = ctx;
 
   ipcMain.handle("app:get-icon-url", () => resolveRuntimeIconDataUrl());
+
+  ipcMain.handle("app:get-locale", () => ({ ok: true, ...listLocalesPublic() }));
+
+  ipcMain.handle("app:set-locale", (_event, locale) => {
+    const result = setLocale(locale);
+    return { ok: true, locale: result.locale, supported: listLocalesPublic().supported };
+  });
 
   // --- Files ---------------------------------------------------------------
 
@@ -389,6 +424,36 @@ function registerAll(ctx) {
     return result.ok ? { ok: true, ...listPresetsPublic() } : result;
   });
 
+  ipcMain.handle("models:save-custom", (_event, payload) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const result = saveCustomPreset(payload || {});
+    return result;
+  });
+
+  ipcMain.handle("models:delete-custom", (_event, presetId) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const result = deleteCustomPreset(presetId);
+    if (result.ok) {
+      runnerPool.terminateAll();
+    }
+    return result;
+  });
+
+  ipcMain.handle("models:set-api-gateway", (_event, payload) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const result = setApiGateway(payload || {});
+    if (result.ok) {
+      runnerPool.terminateAll();
+    }
+    return result;
+  });
+
   ipcMain.handle("permissions:list", () => ({
     ok: true,
     ...require("./permission-settings").listPermissionsPublic(),
@@ -446,7 +511,7 @@ function registerAll(ctx) {
     const id = payload?.id;
     const enabled = Boolean(payload?.enabled);
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    const result = skillManager.setSkillEnabled(id, enabled);
+    const result = skillManager.setSkillEnabledWithSessions(id, enabled, sessionManager);
     if (result.ok) {
       runnerPool.terminateAll();
       if (ctx.agentBootstrap?.agentDefaults) {
@@ -659,6 +724,38 @@ function registerAll(ctx) {
     runnerPool.terminateSession(sessionId);
     sessionManager.archive(sessionId);
     return { ok: true };
+  });
+
+  ipcMain.handle("session:get-skills", (_event, sessionId) => {
+    const sid = sessionId || sessionManager.activeSessionId;
+    const session = sid ? sessionManager.findById(sid) : null;
+    if (!session) return { ok: false, error: "NOT_FOUND" };
+    return {
+      ok: true,
+      sessionId: sid,
+      ...skillManager.listSkillsForSessionPublic(session),
+    };
+  });
+
+  ipcMain.handle("session:set-skills", (_event, payload) => {
+    const sessionId = payload?.sessionId || sessionManager.activeSessionId;
+    const session = sessionId ? sessionManager.findById(sessionId) : null;
+    if (!session) return { ok: false, error: "NOT_FOUND" };
+    if (isSessionBusy(runnerPool, sessionId)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const normalized = skillManager.normalizeSessionSkillSelection(payload?.enabledSkillIds);
+    if (!sessionManager.setEnabledSkillIds(sessionId, normalized)) {
+      return { ok: false, error: "NOT_FOUND" };
+    }
+    const updated = sessionManager.findById(sessionId);
+    skillManager.writeSessionAgentGuide(sessionId, updated);
+    runnerPool.terminateSession(sessionId);
+    return {
+      ok: true,
+      sessionId,
+      ...skillManager.listSkillsForSessionPublic(updated),
+    };
   });
 
   // --- Assistant (stream-json) ---------------------------------------------

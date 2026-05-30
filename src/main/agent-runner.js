@@ -6,6 +6,10 @@ const ERROR_PATTERNS = [
     message: "刚才的请求还在收尾，请稍后再试。",
   },
   {
+    test: /resume|session.*not found|unknown session/i,
+    message: "对话上下文已失效（可能因重启中断）。已尝试恢复，请再发一次消息。",
+  },
+  {
     test: /command not found|ENOENT/i,
     message: "助手暂时无法连接，请稍后再试。",
   },

@@ -6,6 +6,7 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const { userDataPath, agentConfigDir } = require("./config");
 const { compareSemver, isAppVersionCompatible } = require("./skill-version");
+const skillGithubInstaller = require("./skill-github-installer");
 
 function skillManager() {
   return require("./skill-manager");
@@ -172,9 +173,7 @@ function applySkillPlaceholders(skillDir, manifest) {
   }
 }
 
-/**
- * @param {{ id: string, latestVersion: string, downloadUrl: string, sha256: string, minAppVersion?: string | null }} entry
- */
+/** @param {object} entry registry entry (zip or github) */
 async function installFromRegistryEntry(entry) {
   const mgr = skillManager();
   if (mgr.PROTECTED_BUNDLED_IDS.has(entry.id)) {
@@ -182,6 +181,14 @@ async function installFromRegistryEntry(entry) {
   }
   if (entry.minAppVersion && !isAppVersionCompatible(entry.minAppVersion)) {
     return { ok: false, error: "INVALID_MANIFEST", detail: "需要更高版本的应用" };
+  }
+
+  if (entry.sourceType === "github") {
+    return skillGithubInstaller.installFromGithubEntry(entry);
+  }
+
+  if (!entry.downloadUrl || !entry.sha256) {
+    return { ok: false, error: "INVALID_MANIFEST", detail: "技能源无效" };
   }
 
   const cacheDir = skillsCacheDir();

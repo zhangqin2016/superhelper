@@ -21,7 +21,7 @@ class SessionRunnerPool {
   /**
    * @param {string} sessionId
    * @param {string} cwd
-   * @param {{ stagingDir?: string, disallowedTools?: string[], resumeSessionId?: string | null }} [extra]
+   * @param {{ stagingDir?: string, disallowedTools?: string[], resumeSessionId?: string | null, configDir?: string }} [extra]
    */
   ensure(sessionId, cwd, extra = {}) {
     const agentCommand = resolveAgentCommand();
@@ -41,6 +41,7 @@ class SessionRunnerPool {
       disallowedTools: extra.disallowedTools || [],
       stagingDir: extra.stagingDir,
       resumeSessionId: extra.resumeSessionId || null,
+      configDir: extra.configDir,
     });
 
     return runner;

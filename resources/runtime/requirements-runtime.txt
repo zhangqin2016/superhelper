@@ -1,0 +1,15 @@
+# Pre-installed into bundles/<platform>/runtime/venv for document & data skills.
+# Playwright package only (Chromium is not bundled — run playwright install if needed).
+pandas>=2.2,<3
+openpyxl>=3.1,<4
+xlsxwriter>=3.2,<4
+Pillow>=10.4,<12
+imageio>=2.34,<3
+numpy>=1.26,<3
+markitdown[pptx,pdf,docx]>=0.0.1a2
+pypdf>=4.0,<7
+pdf2image>=1.17,<2
+lxml>=5.0,<6
+defusedxml>=0.7,<1
+python-docx>=1.1,<2
+playwright>=1.40,<2

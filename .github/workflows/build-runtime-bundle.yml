@@ -1,0 +1,92 @@
+# Build bundled Python / uv / venv / LibreOffice runtime (one platform per run).
+# Download artifact into bundles/<platform>/runtime/ before npm run dist:*.
+
+name: Build Runtime Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Target platform
+        required: true
+        default: darwin-arm64
+        type: choice
+        options:
+          - darwin-arm64
+          - darwin-x64
+          - linux-x64
+          - win32-x64
+
+permissions:
+  contents: read
+
+jobs:
+  build-darwin-arm64:
+    if: inputs.platform == 'darwin-arm64'
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/build-runtime-bundle.mjs --platform darwin-arm64
+      - run: bundles/darwin-arm64/runtime/venv/bin/python3 -c "import pandas, openpyxl, PIL; print('ok')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-darwin-arm64
+          path: bundles/darwin-arm64/runtime
+          retention-days: 14
+
+  build-darwin-x64:
+    if: inputs.platform == 'darwin-x64'
+    runs-on: macos-13
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/build-runtime-bundle.mjs --platform darwin-x64
+      - run: bundles/darwin-x64/runtime/venv/bin/python3 -c "import pandas, openpyxl, PIL; print('ok')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-darwin-x64
+          path: bundles/darwin-x64/runtime
+          retention-days: 14
+
+  build-linux-x64:
+    if: inputs.platform == 'linux-x64'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: sudo apt-get update && sudo apt-get install -y libreoffice curl
+      - run: node scripts/build-runtime-bundle.mjs --platform linux-x64
+      - run: bundles/linux-x64/runtime/venv/bin/python3 -c "import pandas, openpyxl, PIL; print('ok')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-linux-x64
+          path: bundles/linux-x64/runtime
+          retention-days: 14
+
+  build-win32-x64:
+    if: inputs.platform == 'win32-x64'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/build-runtime-bundle.mjs --platform win32-x64
+      - shell: pwsh
+        run: bundles/win32-x64/runtime/venv/Scripts/python.exe -c "import pandas, openpyxl, PIL; print('ok')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-win32-x64
+          path: bundles/win32-x64/runtime
+          retention-days: 14

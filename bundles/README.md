@@ -52,14 +52,34 @@ chmod +x ./bundles/linux-x64/claude
 
 ```
 bundles/
-├── darwin-arm64/claude
-├── darwin-x64/claude
-├── win32-x64/claude.exe
-└── linux-x64/claude
+├── darwin-arm64/
+│   ├── engine-upstream          # 助手引擎（或 legacy claude）
+│   └── runtime/                 # Python + uv + venv + LibreOffice（npm run build:runtime）
+├── darwin-x64/
+├── win32-x64/
+└── linux-x64/
 
 resources/
-└── models.default.json    # 内置模型预设（网关地址 / Key / 模型名）
+├── models.default.json          # 内置模型预设
+└── runtime/requirements-runtime.txt
 ```
+
+## 内置运行时（Python / Office）
+
+技能里的 `python`、`uv`、`soffice` 默认走 `bundles/<平台>/runtime/`，不依赖用户本机环境。
+
+```bash
+# 在本机构建（需网络；macOS 会下载 LibreOffice DMG）
+npm run build:runtime
+
+# 仅 Python + 包，跳过 LibreOffice（约快 5 分钟）
+node scripts/build-runtime-bundle.mjs --skip-libreoffice
+```
+
+跨平台可在 **Actions → Build Runtime Bundle** 下载 artifact，解压到对应 `bundles/<平台>/runtime/` 后再打安装包。
+
+内置 venv 包含：pandas、openpyxl、markitdown、Pillow、python-docx、pypdf 等（见 `resources/runtime/requirements-runtime.txt`）。Playwright 仅安装 Python 包，**不含** Chromium 浏览器。
+
 
 ## 模型预设
 

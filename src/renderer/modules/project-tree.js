@@ -4,6 +4,7 @@
 
 import store from "./state.js";
 import { $ } from "./dom.js";
+import { t } from "../i18n/index.js";
 import { refreshState, updateTopbarTitles, applySessionSwitch } from "./session-chrome.js";
 import { removeSessionMessages } from "./message.js";
 import { promptSessionName, promptProjectName } from "./name-prompt.js";
@@ -13,8 +14,18 @@ const container = () => $("projectTree");
 // Which projects are collapsed
 const collapsed = new Set();
 
-async function createNamedSession(projectId, defaultTitle = "新对话") {
-  const title = await promptSessionName(defaultTitle);
+/** Expand a project's session list (e.g. after creating a session). */
+export function expandProjectGroup(projectId) {
+  if (projectId) collapsed.delete(projectId);
+}
+
+function afterSessionListChanged(projectId) {
+  expandProjectGroup(projectId);
+  renderProjectTree();
+}
+
+async function createNamedSession(projectId, defaultTitle) {
+  const title = await promptSessionName(defaultTitle || t("prompt.newSession"));
   if (!title) return null;
   return window.assistantClient.createSession(title, projectId);
 }
@@ -46,7 +57,7 @@ export function renderProjectTree() {
   if (sorted.length === 0) {
     const empty = document.createElement("div");
     empty.className = "project-tree-empty";
-    empty.textContent = "暂无工作空间，点击上方 + 添加文件夹";
+    empty.textContent = t("sidebar.emptyWorkspace");
     el.appendChild(empty);
     return;
   }
@@ -80,7 +91,7 @@ export function renderProjectTree() {
     const name = document.createElement("span");
     name.className = "project-name project-name-editable";
     name.textContent = project.name;
-    name.title = "双击可修改文件夹名称";
+    name.title = t("sidebar.renameFolderHint");
     name.addEventListener("dblclick", async (e) => {
       e.stopPropagation();
       const newName = await promptProjectName(project.name);
@@ -98,7 +109,7 @@ export function renderProjectTree() {
 
     const newSessionBtn = document.createElement("button");
     newSessionBtn.className = "project-action-btn";
-    newSessionBtn.title = "新建对话";
+    newSessionBtn.title = t("sidebar.newSession");
     newSessionBtn.textContent = "+";
     newSessionBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -106,14 +117,14 @@ export function renderProjectTree() {
       if (!result?.ok) return;
       await window.assistantClient.switchProject(project.id);
       const sw = await window.assistantClient.switchSession(result.session.id);
-      await applySessionSwitch(sw, result.session.id, project.id);
       await refreshState();
-      updateProjectTreeChrome();
+      afterSessionListChanged(project.id);
+      await applySessionSwitch(sw, result.session.id, project.id);
     });
 
     const moreBtn = document.createElement("button");
     moreBtn.className = "project-action-btn";
-    moreBtn.title = "更多操作";
+    moreBtn.title = t("sidebar.moreActions");
     moreBtn.textContent = "…";
     moreBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -131,7 +142,7 @@ export function renderProjectTree() {
     if (sessions.length === 0) {
       const empty = document.createElement("div");
       empty.className = "project-sessions-empty";
-      empty.textContent = "暂无对话";
+      empty.textContent = t("sidebar.noSessions");
       sessionList.appendChild(empty);
     } else {
       for (const s of sessions) {
@@ -144,13 +155,13 @@ export function renderProjectTree() {
         const runningIds = store.get("runningSessionIds") || [];
         const isRunning = runningIds.includes(s.id) || s.status === "running";
         status.className = `session-status ${isRunning ? "running" : "idle"}`;
-        status.title = isRunning ? "正在处理" : "";
+        status.title = isRunning ? t("sidebar.processing") : "";
         item.appendChild(status);
 
         const title = document.createElement("span");
         title.className = "session-title session-title-editable";
         title.textContent = s.title;
-        title.title = "双击可修改名称";
+        title.title = t("sidebar.renameSessionHint");
         title.addEventListener("dblclick", async (e) => {
           e.stopPropagation();
           await renameSessionById(s.id, s.title);
@@ -159,7 +170,7 @@ export function renderProjectTree() {
 
         const meta = document.createElement("span");
         meta.className = "session-meta";
-        meta.textContent = s.messageCount ? `${s.messageCount}条` : "";
+        meta.textContent = s.messageCount ? t("sidebar.messageCount", { count: s.messageCount }) : "";
         item.appendChild(meta);
 
         item.addEventListener("click", async () => {
@@ -217,7 +228,7 @@ export function updateSessionRunningIndicators() {
       runningIds.has(item.dataset.sessionId) || session?.status === "running";
     dot.classList.toggle("running", isRunning);
     dot.classList.toggle("idle", !isRunning);
-    dot.title = isRunning ? "正在处理" : "";
+    dot.title = isRunning ? t("sidebar.processing") : "";
   });
 }
 
@@ -233,7 +244,7 @@ export function updateSessionMetaCounts() {
     const session = sessionById.get(item.dataset.sessionId);
     if (!session) return;
     const meta = item.querySelector(".session-meta");
-    if (meta) meta.textContent = session.messageCount ? `${session.messageCount}条` : "";
+    if (meta) meta.textContent = session.messageCount ? t("sidebar.messageCount", { count: session.messageCount }) : "";
   });
 }
 
@@ -253,7 +264,7 @@ function showProjectMenu(e, project) {
 
   const items = [
     {
-      label: "切换到此文件夹",
+      label: t("ctx.switchFolder"),
       action: async () => {
         await window.assistantClient.switchProject(project.id);
         await refreshState();
@@ -262,7 +273,7 @@ function showProjectMenu(e, project) {
       },
     },
     {
-      label: project.pinned ? "取消置顶" : "置顶",
+      label: project.pinned ? t("ctx.unpin") : t("ctx.pin"),
       action: async () => {
         await window.assistantClient.pinProject(project.id);
         await refreshState();
@@ -270,7 +281,7 @@ function showProjectMenu(e, project) {
       },
     },
     {
-      label: "重命名",
+      label: t("ctx.rename"),
       action: async () => {
         const name = await promptProjectName(project.name);
         if (!name || name === project.name) return;
@@ -281,11 +292,11 @@ function showProjectMenu(e, project) {
       },
     },
     {
-      label: "在 Finder 中打开",
+      label: t("ctx.openInFinder"),
       action: () => window.assistantClient.openProject(project.id),
     },
     {
-      label: "删除",
+      label: t("ctx.delete"),
       danger: true,
       action: async () => {
         const result = await window.assistantClient.removeProject(project.id);
@@ -333,7 +344,7 @@ function showSessionMenu(x, y, sessionId, title) {
 
   const rename = document.createElement("button");
   rename.className = "ctx-menu-item";
-  rename.textContent = "重命名";
+  rename.textContent = t("ctx.rename");
   rename.addEventListener("click", async () => {
     menu.remove();
     await renameSessionById(sessionId, title);
@@ -341,7 +352,7 @@ function showSessionMenu(x, y, sessionId, title) {
 
   const archive = document.createElement("button");
   archive.className = "ctx-menu-item";
-  archive.textContent = "归档";
+  archive.textContent = t("ctx.archive");
   archive.addEventListener("click", async () => {
     menu.remove();
     await window.assistantClient.archiveSession(sessionId);
@@ -353,7 +364,7 @@ function showSessionMenu(x, y, sessionId, title) {
   const del = document.createElement("button");
   del.className = "ctx-menu-item";
   del.style.color = "#f87171";
-  del.textContent = "删除";
+  del.textContent = t("ctx.delete");
   del.addEventListener("click", async () => {
     menu.remove();
     await window.assistantClient.deleteSession(sessionId);
@@ -402,7 +413,7 @@ export function initTopbarSessionRename() {
     if (!sessionId) return;
 
     const projects = store.get("projects") || [];
-    let currentTitle = "新对话";
+    let currentTitle = t("prompt.newSession");
     for (const project of projects) {
       const session = (project.sessions || []).find((s) => s.id === sessionId);
       if (session) {
@@ -419,7 +430,7 @@ const style = document.createElement("style");
 style.textContent = `
   .ctx-menu-item {
     display:block;width:100%;padding:6px 12px;border:0;border-radius:4px;
-    background:transparent;color:#e0e0f0;font-size:13px;text-align:left;cursor:pointer;
+    background:transparent;color:#e0e0f0;font-size:13px;text-align:start;cursor:pointer;
   }
   .ctx-menu-item:hover { background:#2a2d50; }
   .project-name-editable { cursor: text; }

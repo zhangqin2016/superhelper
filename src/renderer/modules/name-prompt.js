@@ -2,17 +2,17 @@
  * Simple in-app name input dialog (replaces window.prompt for naming).
  */
 
-import { $ } from "./dom.js";
+import { t } from "../i18n/index.js";
 
 let activeDialog = null;
 
 export function promptName({
-  title = "输入名称",
-  label = "名称",
+  title = t("prompt.defaultTitle"),
+  label = t("prompt.defaultLabel"),
   defaultValue = "",
   placeholder = "",
-  confirmText = "确定",
-  cancelText = "取消",
+  confirmText = t("prompt.confirm"),
+  cancelText = t("prompt.cancel"),
 } = {}) {
   if (activeDialog) {
     activeDialog.remove();
@@ -80,20 +80,20 @@ export function promptName({
   });
 }
 
-export async function promptSessionName(defaultValue = "新对话") {
+export async function promptSessionName(defaultValue) {
   return promptName({
-    title: "对话名称",
-    label: "给这次对话起个名字，方便以后找到",
-    defaultValue,
-    placeholder: "例如：旅行计划、工作报告",
+    title: t("prompt.sessionTitle"),
+    label: t("prompt.sessionLabel"),
+    defaultValue: defaultValue || t("prompt.newSession"),
+    placeholder: t("prompt.sessionPlaceholder"),
   });
 }
 
 export async function promptProjectName(defaultValue = "") {
   return promptName({
-    title: "文件夹名称",
-    label: "在列表里显示的名字（不影响电脑上的文件夹名）",
+    title: t("prompt.projectTitle"),
+    label: t("prompt.projectLabel"),
     defaultValue,
-    placeholder: "例如：我的文档、工作资料",
+    placeholder: t("prompt.projectPlaceholder"),
   });
 }

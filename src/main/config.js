@@ -75,6 +75,11 @@ function agentGuidePath() {
   return path.join(agentConfigDir(), "AGENT.md");
 }
 
+/** Per-session engine config (AGENT.md only; skill scripts stay global). */
+function sessionGuideDir(sessionId) {
+  return userDataPath("session-guides", sessionId);
+}
+
 module.exports = {
   INSTALLED_CLI_STEM,
   BUNDLED_CLI_STEM,
@@ -92,4 +97,5 @@ module.exports = {
   agentBinDir,
   agentConfigDir,
   agentGuidePath,
+  sessionGuideDir,
 };

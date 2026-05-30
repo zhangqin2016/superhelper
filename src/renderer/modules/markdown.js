@@ -27,9 +27,15 @@ export async function renderMarkdown(element, markdownText) {
   }
 
   const hl = await ensureHljs();
-  let html;
+  const renderer = new window.marked.Renderer();
+  renderer.link = function ({ href, title, tokens }) {
+    const text = this.parser.parseInline(tokens);
+    if (!href) return text;
+    const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
+  };
+
   if (hl) {
-    const renderer = new window.marked.Renderer();
     renderer.code = function ({ text, lang }) {
       if (lang && hl.getLanguage(lang)) {
         try {
@@ -44,10 +50,9 @@ export async function renderMarkdown(element, markdownText) {
         return `<pre><code>${escapeHtml(text)}</code></pre>`;
       }
     };
-    html = parser(markdownText || "", { renderer });
-  } else {
-    html = parser(markdownText || "");
   }
+
+  const html = parser(markdownText || "", { renderer });
 
   element.innerHTML = window.DOMPurify.sanitize(html);
 }

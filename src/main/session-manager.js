@@ -169,7 +169,31 @@ class SessionManager {
       updatedAt: s.updatedAt,
       messageCount: s.messages.length,
       status: s.status,
+      skillCustomized: s.enabledSkillIds != null && Array.isArray(s.enabledSkillIds),
     }));
+  }
+
+  iterateSessions() {
+    const all = [];
+    for (const list of Object.values(this.sessions)) {
+      for (const session of list) {
+        all.push(session);
+      }
+    }
+    return all;
+  }
+
+  setEnabledSkillIds(sessionId, enabledSkillIds) {
+    const session = this._find(sessionId);
+    if (!session) return false;
+    if (enabledSkillIds == null) {
+      delete session.enabledSkillIds;
+    } else {
+      session.enabledSkillIds = [...new Set(enabledSkillIds)];
+    }
+    session.updatedAt = new Date().toISOString();
+    this.save();
+    return true;
   }
 
   create(projectId, title) {

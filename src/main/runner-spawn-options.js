@@ -12,6 +12,7 @@ function normalizeSpawnOptions(opts) {
     permissionMode: opts?.permissionMode || "default",
     disallowedTools: tools,
     stagingDir: opts?.stagingDir || "",
+    configDir: opts?.configDir || "",
   };
 }
 
@@ -26,6 +27,7 @@ function sameSpawnOptions(a, b) {
     na.agentCommand !== nb.agentCommand ||
     na.permissionMode !== nb.permissionMode ||
     na.stagingDir !== nb.stagingDir ||
+    na.configDir !== nb.configDir ||
     na.disallowedTools.length !== nb.disallowedTools.length
   ) {
     return false;

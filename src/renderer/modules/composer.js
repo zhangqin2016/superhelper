@@ -9,6 +9,14 @@ import { promptSessionName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
 import { isSessionRunning, setSessionRunning } from "./session-busy.js";
+import { t } from "../i18n/index.js";
+
+function sendErrorMessage(result) {
+  if (result.detail) return result.detail;
+  const key = `send.error.${result.error}`;
+  const mapped = t(key);
+  return mapped === key ? t("send.error.GENERIC") : mapped;
+}
 
 export async function sendPrompt() {
   const promptInput = $("promptInput");
@@ -22,15 +30,15 @@ export async function sendPrompt() {
 
   const sessionId = store.get("activeSessionId");
   if (!(store.get("projects") || []).length) {
-    showToast("请先添加工作空间文件夹。", "warning");
+    showToast(t("toast.needProject"), "warning");
     return;
   }
   if (!sessionId) {
-    showToast("请先新建对话。", "warning");
+    showToast(t("toast.needSession"), "warning");
     return;
   }
   if (sessionId && isSessionRunning(sessionId)) {
-    showToast("当前对话还在处理上一条消息，请稍后再试。", "warning");
+    showToast(t("toast.sessionBusy"), "warning");
     return;
   }
   const displayFiles = files.map((f) => ({
@@ -63,20 +71,7 @@ export async function sendPrompt() {
       store.set("pendingFiles", savedFiles);
       renderFilePreview();
     }
-    const msg =
-      result.detail ||
-      (result.error === "NO_CLI"
-        ? "内置助手引擎未就绪。请完全退出后重新打开应用。"
-        : result.error === "NO_PROJECT"
-          ? "该对话所属的文件夹已不存在，请在左侧重新选择文件夹或新建对话。"
-          : result.error === "INVALID_WORKDIR"
-            ? "工作目录不存在，请检查左侧文件夹路径是否有效。"
-            : result.error === "BUSY"
-              ? "上一条消息还在处理中，请稍后再试。"
-              : result.error === "RUNNER_ERROR"
-                ? "助手进程启动失败，请重启应用后再试。"
-                : "发送失败。");
-    showToast(msg, "error");
+    showToast(sendErrorMessage(result), "error");
     return;
   }
 
@@ -102,7 +97,6 @@ export function initComposer() {
   }
 
   if (promptInput) {
-    promptInput.placeholder = "有什么想问的？";
     promptInput.addEventListener("compositionstart", () => {
       imeComposing = true;
     });
@@ -136,16 +130,17 @@ export function initComposer() {
   $("newChatBtn")?.addEventListener("click", async () => {
     const projectId = store.get("activeProjectId");
     if (!projectId) {
-      showToast("请先添加工作空间文件夹。", "warning");
+      showToast(t("toast.needProject"), "warning");
       return;
     }
-    const title = await promptSessionName("新对话");
+    const title = await promptSessionName(t("prompt.newSession"));
     if (!title) return;
     const result = await window.assistantClient.createSession(title, projectId);
     if (!result?.ok) return;
     const sw = await window.assistantClient.switchSession(result.session.id);
     await refreshState();
-    const { renderProjectTree } = await import("./project-tree.js");
+    const { expandProjectGroup, renderProjectTree } = await import("./project-tree.js");
+    expandProjectGroup(projectId);
     renderProjectTree();
     clearPendingFiles();
     await applySessionSwitch(sw, result.session.id, projectId);

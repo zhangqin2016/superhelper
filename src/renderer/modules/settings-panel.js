@@ -4,19 +4,41 @@
 
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
+import { t, tPermission } from "../i18n/index.js";
 import { refreshModelSelect } from "./model-settings.js";
 import { refreshPermissionSelect } from "./permission-settings.js";
 import { refreshSearchSettings } from "./search-settings.js";
 import { refreshSkillsList } from "./skill-settings.js";
 import store from "./state.js";
 
+const SETTINGS_PAGES = ["general", "model", "permission", "search", "skills", "about"];
+
 let panelOpen = false;
+let activeSettingsPage = "general";
+
+function switchSettingsPage(pageId) {
+  if (!SETTINGS_PAGES.includes(pageId)) return;
+  activeSettingsPage = pageId;
+
+  document.querySelectorAll(".settings-nav-item").forEach((btn) => {
+    const isActive = btn.dataset.settingsPage === pageId;
+    btn.classList.toggle("is-active", isActive);
+    btn.setAttribute("aria-current", isActive ? "page" : "false");
+  });
+
+  document.querySelectorAll(".settings-page").forEach((page) => {
+    const isActive = page.dataset.settingsPage === pageId;
+    page.classList.toggle("is-active", isActive);
+    page.hidden = !isActive;
+  });
+}
 
 function setPanelOpen(open) {
   panelOpen = open;
   const panel = $("settingsPanel");
   if (panel) panel.hidden = !open;
   document.body.classList.toggle("settings-open", open);
+  if (open) switchSettingsPage(activeSettingsPage);
 }
 
 export async function initSettingsPanel() {
@@ -24,11 +46,20 @@ export async function initSettingsPanel() {
   const panel = $("settingsPanel");
   const closeBtn = $("settingsCloseBtn");
   const backdrop = $("settingsBackdrop");
-  const select = $("modelPresetSelect");
 
   if (!openBtn || !panel) return;
 
+  document.querySelectorAll(".settings-nav-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchSettingsPage(btn.dataset.settingsPage || "general");
+    });
+  });
+
+  switchSettingsPage(activeSettingsPage);
+
   openBtn.addEventListener("click", async () => {
+    const { refreshLocaleSelect } = await import("./locale-settings.js");
+    await refreshLocaleSelect();
     await refreshModelSelect();
     await refreshPermissionSelect();
     await refreshSearchSettings();
@@ -43,24 +74,9 @@ export async function initSettingsPanel() {
     if (event.key === "Escape" && panelOpen) setPanelOpen(false);
   });
 
-  select?.addEventListener("change", async () => {
-    const presetId = select.value;
-    const result = await window.assistantClient.setActiveModel(presetId);
-    if (!result.ok) {
-      const msg = result.error === "BUSY"
-        ? "正在回复中，请稍后再切换模型。"
-        : "模型切换失败，请重试。";
-      showToast(msg, "error");
-      await refreshModelSelect();
-      return;
-    }
-    const active = (result.presets || []).find((p) => p.id === result.activePresetId);
-    showToast(`已切换为：${active?.label || "当前模型"}`, "success");
-  });
-
   $("permissionModeSelect")?.addEventListener("change", async () => {
     if ((store.get("runningSessionIds") || []).length > 0) {
-      showToast("有对话正在处理中，请稍后再切换权限。", "error");
+      showToast(t("toast.permissionBusySession"), "error");
       await refreshPermissionSelect();
       return;
     }
@@ -69,18 +85,18 @@ export async function initSettingsPanel() {
     if (!result.ok) {
       const msg =
         result.error === "BUSY"
-          ? "正在回复中，请稍后再切换权限。"
-          : "权限模式切换失败，请重试。";
+          ? t("toast.permissionBusy")
+          : t("toast.permissionSwitchFailed");
       showToast(msg, "error");
       await refreshPermissionSelect();
       return;
     }
     const active = (result.modes || []).find((m) => m.id === result.activeModeId);
-    showToast(`权限已设为：${active?.label || "当前模式"}`, "success");
+    showToast(t("toast.permissionSwitched", { label: tPermission(active) || "" }), "success");
   });
 
   $("settingsClearCache")?.addEventListener("click", async () => {
     const result = await window.assistantClient.clearStagingCache();
-    showToast(result?.ok ? "附件缓存已清理" : "清理失败", result?.ok ? "success" : "error");
+    showToast(result?.ok ? t("toast.cacheCleared") : t("toast.cacheClearFailed"), result?.ok ? "success" : "error");
   });
 }

@@ -1,0 +1,101 @@
+{
+  "categories": [
+    { "id": "office", "label": "办公文档" },
+    { "id": "design", "label": "设计创意" },
+    { "id": "dev", "label": "研发工程" },
+    { "id": "marketing", "label": "市场营销" },
+    { "id": "pm", "label": "产品经理" },
+    { "id": "security", "label": "安全审计" }
+  ],
+  "sources": [
+    {
+      "prefix": "anthropics",
+      "repo": "anthropics/skills",
+      "path": "skills",
+      "ref": "main",
+      "category": "office",
+      "categoryLabel": "办公文档",
+      "publisher": "Anthropic",
+      "exclude": ["claude-api", "mcp-builder"],
+      "includeOnly": [
+        "doc-coauthoring",
+        "docx",
+        "internal-comms",
+        "pdf",
+        "pptx",
+        "xlsx",
+        "webapp-testing",
+        "skill-creator"
+      ]
+    },
+    {
+      "prefix": "anthropics",
+      "repo": "anthropics/skills",
+      "path": "skills",
+      "ref": "main",
+      "category": "design",
+      "categoryLabel": "设计创意",
+      "publisher": "Anthropic",
+      "includeOnly": [
+        "algorithmic-art",
+        "brand-guidelines",
+        "canvas-design",
+        "frontend-design",
+        "slack-gif-creator",
+        "theme-factory",
+        "web-artifacts-builder"
+      ]
+    },
+    {
+      "prefix": "superpowers",
+      "repo": "obra/superpowers",
+      "path": "skills",
+      "ref": "main",
+      "category": "dev",
+      "categoryLabel": "研发工程",
+      "publisher": "obra/superpowers"
+    },
+    {
+      "prefix": "marketing",
+      "repo": "coreyhaines31/marketingskills",
+      "path": "skills",
+      "ref": "main",
+      "category": "marketing",
+      "categoryLabel": "市场营销",
+      "publisher": "coreyhaines31/marketingskills"
+    },
+    {
+      "prefix": "pm",
+      "repo": "deanpeters/Product-Manager-Skills",
+      "path": "skills",
+      "ref": "main",
+      "category": "pm",
+      "categoryLabel": "产品经理",
+      "publisher": "deanpeters/Product-Manager-Skills"
+    },
+    {
+      "prefix": "tob",
+      "repo": "trailofbits/skills",
+      "path": "plugins",
+      "ref": "main",
+      "category": "security",
+      "categoryLabel": "安全审计",
+      "publisher": "Trail of Bits",
+      "mode": "plugin-skills"
+    }
+  ],
+  "remoteIndexes": [
+    {
+      "name": "Antigravity Awesome Skills",
+      "description": "1400+ 社区技能索引（按需浏览，不随安装包分发）",
+      "url": "https://github.com/sickn33/antigravity-awesome-skills",
+      "stars": 39000
+    },
+    {
+      "name": "VoltAgent Awesome Agent Skills",
+      "description": "精选 Agent 技能索引与导航",
+      "url": "https://github.com/VoltAgent/awesome-agent-skills",
+      "stars": 23000
+    }
+  ]
+}

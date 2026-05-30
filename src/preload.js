@@ -4,6 +4,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("assistantClient", {
   getAppIconUrl: () => ipcRenderer.invoke("app:get-icon-url"),
+  getLocale: () => ipcRenderer.invoke("app:get-locale"),
+  setLocale: (locale) => ipcRenderer.invoke("app:set-locale", locale),
   sendMessage: (text, files) =>
     ipcRenderer.invoke("assistant:input", { text, files }),
   interrupt: () => ipcRenderer.invoke("assistant:interrupt"),
@@ -12,6 +14,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   listModels: () => ipcRenderer.invoke("models:list"),
   setActiveModel: (presetId) => ipcRenderer.invoke("models:set-active", presetId),
+  saveCustomModel: (payload) => ipcRenderer.invoke("models:save-custom", payload),
+  deleteCustomModel: (presetId) => ipcRenderer.invoke("models:delete-custom", presetId),
+  setModelApiGateway: (payload) => ipcRenderer.invoke("models:set-api-gateway", payload),
 
   listPermissions: () => ipcRenderer.invoke("permissions:list"),
   setActivePermission: (modeId) => ipcRenderer.invoke("permissions:set-active", modeId),
@@ -21,6 +26,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   setSearxngUrl: (url) => ipcRenderer.invoke("search:set-searxng-url", url),
 
   listSkills: () => ipcRenderer.invoke("skills:list"),
+  getSessionSkills: (sessionId) => ipcRenderer.invoke("session:get-skills", sessionId),
+  setSessionSkills: (sessionId, enabledSkillIds) =>
+    ipcRenderer.invoke("session:set-skills", { sessionId, enabledSkillIds }),
   setSkillEnabled: (id, enabled) =>
     ipcRenderer.invoke("skills:set-enabled", { id, enabled }),
   refreshSkills: () => ipcRenderer.invoke("skills:refresh"),
