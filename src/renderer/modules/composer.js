@@ -193,7 +193,13 @@ export function initComposer() {
     const title = await promptSessionName(t("prompt.newSession"));
     if (!title) return;
     const result = await window.assistantClient.createSession(title, projectId);
-    if (!result?.ok) return;
+    if (!result?.ok) {
+      showToast(
+        result?.detail || sendErrorMessage(result) || t("toast.createSessionFailed"),
+        "error",
+      );
+      return;
+    }
     const sw = await window.assistantClient.switchSession(result.session.id);
     await refreshState();
     const { expandProjectGroup, renderProjectTree } = await import("./project-tree.js");

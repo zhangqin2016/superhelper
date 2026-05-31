@@ -22,6 +22,7 @@ const {
   mergeProjectsJson,
   mergeSessionsJson,
   shouldPreferLegacyJson,
+  forEachPersistedSession,
 } = require(path.join(__dirname, "../src/main/data-migration.js"));
 
 const legacyProjects = {
@@ -74,6 +75,26 @@ const tmpCurrent = path.join("/tmp", "current-projects.json");
 const tmpLegacy = path.join("/tmp", "legacy-projects.json");
 if (shouldPreferLegacyJson("projects.json", tmpCurrent, tmpLegacy)) {
   throw new Error("shouldPreferLegacyJson should not replace projects.json wholesale");
+}
+
+const resumeRaw = {
+  activeSessionId: "s1",
+  sessions: {
+    proj1: [
+      { id: "s1", projectId: "proj1", claudeSessionId: "resume-old", messages: [] },
+    ],
+  },
+};
+let resumeChanged = false;
+forEachPersistedSession(resumeRaw, (session) => {
+  if (session.claudeSessionId && !session.agentResumeId) {
+    session.agentResumeId = session.claudeSessionId;
+    delete session.claudeSessionId;
+    resumeChanged = true;
+  }
+});
+if (!resumeChanged || resumeRaw.sessions.proj1[0].agentResumeId !== "resume-old") {
+  throw new Error("forEachPersistedSession should migrate claudeSessionId on nested sessions");
 }
 
 console.log("data-migration: ok");

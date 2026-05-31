@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Mac 安装包：bundles 含 Python + LibreOffice，签名阶段文件极多，需跳过 bundles 内二进制签名。
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+source "$(dirname "$0")/setup-proxy.sh"
+
+echo "[dist-mac] 打包 darwin-arm64 + darwin-x64 bundles（约 3GB，签名 bundles 已跳过）"
+node scripts/fix-runtime-symlinks.mjs
+
+exec npx electron-builder --mac "$@"

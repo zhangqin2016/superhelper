@@ -22,7 +22,16 @@ function registerSessionHandlers(ctx) {
     const pid = projectId || projectManager.getActive()?.id;
     if (!pid) return { ok: false, error: "NO_PROJECT" };
     const session = sessionManager.create(pid, title);
-    ensureSessionRunner(ctx, session.id);
+    const ensured = ensureSessionRunner(ctx, session.id);
+    if (!ensured.runner) {
+      runnerPool.terminateSession(session.id);
+      sessionManager.delete(session.id);
+      return {
+        ok: false,
+        error: ensured.error || "RUNNER_ERROR",
+        detail: ensured.detail,
+      };
+    }
     return { ok: true, session: { id: session.id, title: session.title, projectId: pid } };
   });
 

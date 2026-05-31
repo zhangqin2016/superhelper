@@ -153,6 +153,7 @@
   "toast.cacheClearFailed": "Failed to clear cache",
   "toast.needProject": "Add a workspace folder first.",
   "toast.needSession": "Create a chat first.",
+  "toast.createSessionFailed": "Could not create a conversation — assistant engine not ready. Quit and reopen the app.",
   "toast.sessionBusy": "This chat is still processing the last message.",
   "toast.searchBusy": "A chat is busy. Try again later to switch search.",
   "toast.searchSwitchFailed": "Failed to switch search engine. Please retry.",

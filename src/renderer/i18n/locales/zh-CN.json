@@ -153,6 +153,7 @@
   "toast.cacheClearFailed": "清理失败",
   "toast.needProject": "请先添加工作空间文件夹。",
   "toast.needSession": "请先新建对话。",
+  "toast.createSessionFailed": "无法创建对话，助手引擎未就绪。请完全退出后重新打开应用。",
   "toast.sessionBusy": "当前对话还在处理上一条消息，请稍后再试。",
   "toast.searchBusy": "有对话正在处理中，请稍后再切换搜索引擎。",
   "toast.searchSwitchFailed": "搜索引擎切换失败，请重试。",

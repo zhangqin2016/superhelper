@@ -149,24 +149,29 @@ function migrateLegacyInstalledCli() {
 }
 
 function ensureBundledCliInstalled() {
-  const migrated = migrateLegacyInstalledCli();
-  if (migrated) return migrated;
-
   const target = installedCliPath();
+  const source = findBundledCliSource();
+
+  const migrated = migrateLegacyInstalledCli();
+  if (migrated) {
+    if (source) copyCliIfNeeded(source, migrated);
+    return migrated;
+  }
+
+  if (source) {
+    const copyResult = copyCliIfNeeded(source, target);
+    if (copyResult.ok) {
+      removeLegacyInstalledCli();
+      return target;
+    }
+  }
+
   if (fs.existsSync(target)) {
     removeLegacyInstalledCli();
     return target;
   }
 
-  const source = findBundledCliSource();
-  if (!source) return null;
-
-  const copyResult = copyCliIfNeeded(source, target);
-  if (!copyResult.ok) {
-    return fs.existsSync(target) ? target : null;
-  }
-  removeLegacyInstalledCli();
-  return target;
+  return null;
 }
 
 function bootstrapAgent() {

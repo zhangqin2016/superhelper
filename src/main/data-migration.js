@@ -437,6 +437,17 @@ function migrateInstalledSkillDir() {
   fs.renameSync(from, to);
 }
 
+function forEachPersistedSession(raw, fn) {
+  const store = raw?.sessions;
+  if (!store || typeof store !== "object" || Array.isArray(store)) return;
+  for (const list of Object.values(store)) {
+    if (!Array.isArray(list)) continue;
+    for (const session of list) {
+      if (session && typeof session === "object") fn(session);
+    }
+  }
+}
+
 function migrateSessionsResumeId() {
   const sessionsPath = userDataPath("sessions.json");
   if (!fs.existsSync(sessionsPath)) return;
@@ -447,19 +458,86 @@ function migrateSessionsResumeId() {
   } catch {
     return;
   }
-  const sessions = raw?.sessions;
-  if (!Array.isArray(sessions)) return;
 
   let changed = false;
-  for (const session of sessions) {
+  forEachPersistedSession(raw, (session) => {
     if (session.claudeSessionId && !session.agentResumeId) {
       session.agentResumeId = session.claudeSessionId;
       delete session.claudeSessionId;
       changed = true;
     }
-  }
+  });
   if (!changed) return;
   fs.writeFileSync(sessionsPath, JSON.stringify(raw, null, 2), "utf8");
+}
+
+const ENGINE_IDENTITY_FILE = "engine-identity.json";
+
+function bundledEngineFingerprint() {
+  try {
+    const { findBundledCliSource } = require("./agent-bootstrap");
+    const source = findBundledCliSource();
+    if (!source) return null;
+    const st = fs.statSync(source);
+    return {
+      size: st.size,
+      mtimeMs: Math.floor(st.mtimeMs),
+      appVersion: app.getVersion(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Drop resume linkage when bundled engine binary or app version changes. */
+function migrateEngineSessionCompatibility() {
+  const fp = bundledEngineFingerprint();
+  if (!fp) return;
+
+  const identityPath = userDataPath(ENGINE_IDENTITY_FILE);
+  const prev = fs.existsSync(identityPath) ? readJsonSafe(identityPath) : null;
+  const same =
+    prev &&
+    prev.size === fp.size &&
+    prev.mtimeMs === fp.mtimeMs &&
+    prev.appVersion === fp.appVersion;
+  if (same) return;
+
+  clearAllSessionResumeIds();
+  writeJsonSafe(identityPath, fp);
+  if (prev) {
+    console.info(
+      "[data-migration] engine bundle identity changed — cleared session resume state",
+    );
+  }
+}
+
+function clearAllSessionResumeIds() {
+  const sessionsPath = userDataPath("sessions.json");
+  if (!fs.existsSync(sessionsPath)) return 0;
+
+  const raw = readJsonSafe(sessionsPath);
+  if (!raw) return 0;
+
+  const { resetSessionEngineCache } = require("./session-engine-recovery");
+  let cleared = 0;
+  forEachPersistedSession(raw, (session) => {
+    if (!session.id) return;
+    if (session.agentResumeId || session.claudeSessionId) {
+      delete session.agentResumeId;
+      delete session.claudeSessionId;
+      cleared += 1;
+    }
+    resetSessionEngineCache(session.id);
+  });
+
+  if (cleared > 0) {
+    writeJsonSafe(sessionsPath, raw);
+    console.info(
+      `[data-migration] cleared resume ids for ${cleared} session(s)`,
+    );
+  }
+  return cleared;
 }
 
 function migrateLegacyGuideFile() {
@@ -487,6 +565,7 @@ function runDataMigrations() {
   renameDirIfNeeded(LEGACY_BIN_DIR, path.basename(agentBinDir()));
   renameDirIfNeeded(LEGACY_CONFIG_DIR, path.basename(agentConfigDir()));
   migrateLegacyCliBinaries();
+  migrateEngineSessionCompatibility();
   migrateInstalledSkillDir();
   migrateSkillsState();
   migrateSessionsResumeId();
@@ -497,9 +576,12 @@ function runDataMigrations() {
 module.exports = {
   runDataMigrations,
   migrateLegacyCliBinaries,
+  migrateEngineSessionCompatibility,
+  clearAllSessionResumeIds,
   migrateSettingsEnvKeys,
   migrateLegacyGuideFile,
   shouldPreferLegacyJson,
   mergeProjectsJson,
   mergeSessionsJson,
+  forEachPersistedSession,
 };

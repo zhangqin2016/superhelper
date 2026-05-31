@@ -6,6 +6,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import {
+  findExternalRuntimeSymlinks,
+  relativizeRuntimeSymlinks,
+} from "./fix-runtime-symlinks.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -29,14 +33,17 @@ function runtimeRootFor(platform) {
   return path.join(ROOT, "bundles", platform, "runtime");
 }
 
-function isCompleteRuntime(runtimeRoot) {
+function venvPythonPath(runtimeRoot, platform) {
+  if (platform === "win32-x64") {
+    return path.join(runtimeRoot, "venv", "Scripts", "python.exe");
+  }
+  return path.join(runtimeRoot, "venv", "bin", "python3");
+}
+
+function isCompleteRuntime(runtimeRoot, platform) {
   const manifestPath = path.join(runtimeRoot, "runtime-manifest.json");
   if (!fs.existsSync(manifestPath)) return false;
-  const venvPython =
-    process.platform === "win32"
-      ? path.join(runtimeRoot, "venv", "Scripts", "python.exe")
-      : path.join(runtimeRoot, "venv", "bin", "python3");
-  return fs.existsSync(venvPython);
+  return fs.existsSync(venvPythonPath(runtimeRoot, platform));
 }
 
 function resolveRuntimeRoot() {
@@ -44,7 +51,7 @@ function resolveRuntimeRoot() {
   const keys = explicit ? [explicit] : platformCandidates();
   for (const platform of keys) {
     const runtimeRoot = runtimeRootFor(platform);
-    if (isCompleteRuntime(runtimeRoot)) {
+    if (isCompleteRuntime(runtimeRoot, platform)) {
       return {
         platform,
         runtimeRoot,
@@ -64,7 +71,22 @@ const allowMissing = process.argv.includes("--allow-missing");
 const want = detectPlatform();
 const partialRoot = runtimeRootFor(want);
 
-if (fs.existsSync(partialRoot) && !isCompleteRuntime(partialRoot)) {
+for (const platform of platformCandidates()) {
+  const runtimeRoot = runtimeRootFor(platform);
+  if (!fs.existsSync(runtimeRoot)) continue;
+  const { fixed } = relativizeRuntimeSymlinks(runtimeRoot);
+  if (fixed > 0) {
+    console.log(`[verify-runtime] fixed ${fixed} absolute symlink(s) in ${platform}`);
+  }
+  const bad = findExternalRuntimeSymlinks(runtimeRoot);
+  if (bad.length) {
+    fail(
+      `invalid symlink(s) in bundles/${platform}/runtime — run: node scripts/fix-runtime-symlinks.mjs --platform ${platform}`,
+    );
+  }
+}
+
+if (fs.existsSync(partialRoot) && !isCompleteRuntime(partialRoot, want)) {
   fail(
     `incomplete bundles/${want}/runtime (missing manifest or venv). ` +
       `Remove it: rm -rf bundles/${want}/runtime — or finish on Windows: ` +
@@ -90,20 +112,25 @@ if (!resolved) {
 
 const { platform, runtimeRoot, manifestPath } = resolved;
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-const venvPython =
-  process.platform === "win32"
-    ? path.join(runtimeRoot, "venv", "Scripts", "python.exe")
-    : path.join(runtimeRoot, "venv", "bin", "python3");
+const venvPython = venvPythonPath(runtimeRoot, platform);
 
 if (!fs.existsSync(venvPython)) {
   fail(`venv python missing at ${venvPython}`);
 }
 
-const probe = spawnSync(venvPython, ["-c", "import pandas, openpyxl; print('ok')"], {
-  encoding: "utf8",
-});
-if (probe.status !== 0) {
-  fail(`venv smoke test failed: ${probe.stderr || probe.stdout}`);
+const canRunSmokeTest =
+  platform !== "win32-x64" || process.platform === "win32";
+if (canRunSmokeTest) {
+  const probe = spawnSync(venvPython, ["-c", "import pandas, openpyxl; print('ok')"], {
+    encoding: "utf8",
+  });
+  if (probe.status !== 0) {
+    fail(`venv smoke test failed: ${probe.stderr || probe.stdout}`);
+  }
+} else {
+  console.warn(
+    "[verify-runtime] warning: skipping venv smoke test for win32-x64 on non-Windows host",
+  );
 }
 
 if (manifest.platform !== platform) {

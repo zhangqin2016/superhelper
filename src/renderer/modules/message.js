@@ -858,8 +858,12 @@ export function wireMessageIpc() {
     const v = view(sessionId);
     if (v.activeBubble) {
       v.activeBubble.classList.remove("pending");
-      if (!v.activeMarkdown.trim() && !v.activeBubble.textContent.trim()) {
-        renderMarkdown(v.activeBubble, t("message.done"));
+      const hasContent =
+        v.activeMarkdown.trim().length > 0 || v.activeBubble.textContent.trim().length > 0;
+      if (!hasContent && !payload.interrupted) {
+        v.activeBubble.remove();
+        v.activeBubble = null;
+        v.activeTurn = null;
       }
     }
     finishActiveTurn(sessionId);

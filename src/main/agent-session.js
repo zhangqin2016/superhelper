@@ -43,10 +43,13 @@ class AgentSession extends EventEmitter {
     this.collectedOutput = "";
     this.agentResumeId = null;
     this.spawnOptions = null;
+    this.lastSpawnError = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._idleTimer = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._interruptFallbackTimer = null;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  this._interruptFallbackTimer = null;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  this._turnResponseTimer = null;
     this._pendingToolIds = new Set();
     this._turnHadToolUse = false;
     this._turnSettled = true;
@@ -68,6 +71,8 @@ class AgentSession extends EventEmitter {
   static QUIESCE_MS = 12_000;
   static INTERRUPT_FALLBACK_MS = 5_000;
   static PERMISSION_UI_TIMEOUT_MS = 55_000;
+  static TURN_RESPONSE_TIMEOUT_MS = 90_000;
+  static RESUME_TURN_TIMEOUT_MS = 45_000;
 
   _clearIdleTimer() {
     if (this._idleTimer) {
@@ -82,6 +87,32 @@ class AgentSession extends EventEmitter {
       this._interruptFallbackTimer = null;
     }
     this._interruptPending = false;
+  }
+
+  _clearTurnResponseTimer() {
+    if (this._turnResponseTimer) {
+      clearTimeout(this._turnResponseTimer);
+      this._turnResponseTimer = null;
+    }
+  }
+
+  _armTurnResponseTimer() {
+    this._clearTurnResponseTimer();
+    if (!this.busy || this._turnSettled) return;
+    const ms = this.agentResumeId
+      ? AgentSession.RESUME_TURN_TIMEOUT_MS
+      : AgentSession.TURN_RESPONSE_TIMEOUT_MS;
+    this._turnResponseTimer = setTimeout(() => {
+      if (!this.busy || this._turnSettled) return;
+      log.warn("turn timed out waiting for engine response", {
+        sessionId: this.sessionId,
+        resume: Boolean(this.agentResumeId),
+      });
+      if (this.agentResumeId) {
+        this.emit("resume-invalid", { message: "resume session timed out" });
+      }
+      this._failTurn("助手长时间无响应，连接已重置。请再发一次消息。");
+    }, ms);
   }
 
   _clearPendingPermissions(notifyCancel = false) {
@@ -118,6 +149,7 @@ class AgentSession extends EventEmitter {
 
   _markStreamActivity() {
     if (!this.busy || this._turnSettled) return;
+    this._armTurnResponseTimer();
     this._armIdleCompletionTimer();
   }
 
@@ -133,7 +165,7 @@ class AgentSession extends EventEmitter {
    * @param {string} cwd
    * @param {{ agentCommand: string, permissionMode: string, disallowedTools?: string[], stagingDir?: string, resumeSessionId?: string | null, configDir?: string }} options
    */
-  ensureProcess(cwd, options) {
+  ensureProcess(cwd, options, callOpts = {}) {
     if (!cwd || !options?.agentCommand) {
       throw new Error("RUNNER_MISSING_ARGS");
     }
@@ -166,6 +198,7 @@ class AgentSession extends EventEmitter {
     this.terminate();
     this.cwd = cwd;
     this.spawnOptions = spawnOpts;
+    if (callOpts.lazy) return;
     this._spawn();
   }
 
@@ -194,10 +227,12 @@ class AgentSession extends EventEmitter {
       args.push("--resume", this.agentResumeId);
     }
 
+    this.lastSpawnError = null;
     this.process = spawn(opts.agentCommand, args, {
       cwd: this.cwd,
       env: buildAgentSpawnEnv({ configDir: opts.configDir || undefined }),
       stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
     });
 
     this.lineBuf = "";
@@ -224,11 +259,14 @@ class AgentSession extends EventEmitter {
       }
       this.emit("engine-notice", { level: "stderr", message: text });
       this.emit("stderr", text);
+      if (text) this.lastSpawnError = text;
     });
 
     this.process.on("error", (err) => {
+      const msg = sanitizeError(err.message);
+      this.lastSpawnError = msg;
       if (this.busy && !this._turnSettled) {
-        this._failTurn(sanitizeError(err.message));
+        this._failTurn(msg);
       } else {
         this.busy = false;
         this.process = null;
@@ -327,6 +365,7 @@ class AgentSession extends EventEmitter {
     if (!wrote) {
       stdin.once("drain", () => {});
     }
+    this._armTurnResponseTimer();
     return true;
   }
 
@@ -473,6 +512,7 @@ class AgentSession extends EventEmitter {
   _completeTurn(payload) {
     if (this._turnSettled) return;
     this._clearIdleTimer();
+    this._clearTurnResponseTimer();
     this._clearInterruptFallback();
     this._clearPendingPermissions(true);
     this._pendingToolIds.clear();
@@ -489,6 +529,7 @@ class AgentSession extends EventEmitter {
   _failTurn(message) {
     if (this._turnSettled) return;
     this._clearIdleTimer();
+    this._clearTurnResponseTimer();
     this._clearInterruptFallback();
     this._clearPendingPermissions(true);
     this._pendingToolIds.clear();

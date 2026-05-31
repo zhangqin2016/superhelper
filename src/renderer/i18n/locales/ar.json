@@ -153,6 +153,7 @@
   "toast.cacheClearFailed": "فشل المسح",
   "toast.needProject": "أضف مجلد مساحة عمل أولاً.",
   "toast.needSession": "أنشئ محادثة أولاً.",
+  "toast.createSessionFailed": "تعذّر إنشاء المحادثة — محرك المساعد غير جاهز. أغلق التطبيق وأعد فتحه.",
   "toast.sessionBusy": "المحادثة ما زالت تعالج الرسالة السابقة.",
   "toast.searchBusy": "محادثة مشغولة. حاول تغيير البحث لاحقاً.",
   "toast.searchSwitchFailed": "فشل تبديل محرك البحث. أعد المحاولة.",

@@ -23,7 +23,7 @@ class SessionRunnerPool {
    * @param {string} cwd
    * @param {{ stagingDir?: string, disallowedTools?: string[], resumeSessionId?: string | null, configDir?: string }} [extra]
    */
-  ensure(sessionId, cwd, extra = {}) {
+  ensure(sessionId, cwd, extra = {}, callOpts = {}) {
     const agentCommand = resolveAgentCommand();
     if (!agentCommand) {
       throw new Error("AGENT_NOT_READY");
@@ -42,7 +42,7 @@ class SessionRunnerPool {
       stagingDir: extra.stagingDir,
       resumeSessionId: extra.resumeSessionId || null,
       configDir: extra.configDir,
-    });
+    }, { lazy: Boolean(callOpts.lazy) });
 
     return runner;
   }

@@ -214,6 +214,18 @@ function wireRunner(ctx, runner) {
         sessionManager.pushMessageTo(sessionId, "assistant", friendly, null, {
           failed: true,
         });
+      } else if (!interrupted) {
+        const stderrHint = lastRunnerStderr.get(sessionId);
+        lastRunnerStderr.delete(sessionId);
+        sessionManager.clearAgentResumeId(sessionId);
+        resetSessionEngineCache(sessionId);
+        ctx.runnerPool.terminateSession(sessionId);
+        const friendly = stderrHint
+          ? sanitizeError(stderrHint)
+          : "这次没有收到有效回复。对话连接已重置，请再发一次（可简要说明要继续的内容）。";
+        sessionManager.pushMessageTo(sessionId, "assistant", friendly, null, {
+          failed: true,
+        });
       } else {
         lastRunnerStderr.delete(sessionId);
       }
@@ -329,7 +341,7 @@ function ensureSessionRunner(ctx, sessionId) {
   };
 
   try {
-    const runner = runnerPool.ensure(sessionId, project.path, extra);
+    const runner = runnerPool.ensure(sessionId, project.path, extra, { lazy: true });
     wireRunner(ctx, runner);
     return { runner };
   } catch (err) {
@@ -437,12 +449,12 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
   return { ok: true };
 }
 
-function withRunnerChange(ctx, action, opts = {}) {
+async function withRunnerChange(ctx, action, opts = {}) {
   if (anyRunnerBusy(ctx.runnerPool)) {
     return { ok: false, error: "BUSY" };
   }
-  const result = action();
-  if (!result.ok) return result;
+  const result = await action();
+  if (!result?.ok) return result || { ok: false, error: "UNKNOWN" };
 
   const {
     buildLiveEngineEnvPatch,

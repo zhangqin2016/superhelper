@@ -16,7 +16,7 @@
     "icon:optimize": "node scripts/optimize-icon.mjs",
     "rebuild:pty": "node scripts/rebuild-pty.mjs",
     "pack": "electron-builder --dir",
-    "dist:mac": "node scripts/verify-runtime-bundle.mjs && electron-builder --mac && node scripts/build-mac-dmg.mjs && node scripts/verify-mac-dmg.mjs",
+    "dist:mac": "node scripts/verify-runtime-bundle.mjs && bash scripts/dist-mac.sh && node scripts/build-mac-dmg.mjs && node scripts/verify-mac-dmg.mjs",
     "dist:win": "node scripts/verify-runtime-bundle.mjs --platform win32-x64 --allow-missing && bash scripts/dist-win.sh && node scripts/verify-win-pack.mjs",
     "build:runtime:win": "node scripts/build-runtime-bundle.mjs --platform win32-x64",
     "dist:all": "bash -c 'source scripts/setup-proxy.sh && node scripts/verify-runtime-bundle.mjs && node scripts/ensure-win-runtime.mjs && npx electron-builder --mac --win --x64 && node scripts/build-mac-dmg.mjs --arch x64 && node scripts/verify-mac-dmg.mjs --arch x64'"
@@ -67,7 +67,10 @@
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "signIgnore": [
+        ".*/Resources/bundles/.*"
+      ]
     },
     "dmg": {
       "artifactName": "${productName}-${version}-${arch}.${ext}",

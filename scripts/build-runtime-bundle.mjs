@@ -15,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { relativizeRuntimeSymlinks } from "./fix-runtime-symlinks.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -28,7 +29,8 @@ const UV_VERSION = "0.6.14";
 // python-build-standalone downloads for cross-platform builds
 const PYTHON_STANDALONE = {
   "win32-x64": {
-    url: `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_FULL_VERSION}%2B${PYTHON_BUILD_TAG}/cpython-${PYTHON_FULL_VERSION}%2B${PYTHON_BUILD_TAG}-x86_64-pc-windows-msvc-install_only_stripped.tar.gz`,
+    // Release tag is the build date only (e.g. 20260510), not cpython-3.12.13+20260510.
+    url: `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_BUILD_TAG}/cpython-${PYTHON_FULL_VERSION}%2B${PYTHON_BUILD_TAG}-x86_64-pc-windows-msvc-install_only_stripped.tar.gz`,
     sha256: null, // not verified for cross-builds
   },
 };
@@ -207,7 +209,24 @@ async function installUv(platform, runtimeRoot) {
   return uvDest;
 }
 
-function findPythonExecutable(pythonRoot) {
+function findPythonExecutable(pythonRoot, { windowsLayout = false } = {}) {
+  const winNames = ["python.exe", "python3.exe", "python3.12.exe"];
+  const unixNames = ["python3.12", "python3", "python"];
+  const useWindows =
+    windowsLayout || process.platform === "win32";
+
+  if (useWindows) {
+    const stack = [pythonRoot];
+    while (stack.length) {
+      const dir = stack.pop();
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) stack.push(full);
+        else if (winNames.includes(ent.name)) return full;
+      }
+    }
+  }
+
   const binDirs = [];
   const stack = [pythonRoot];
   while (stack.length) {
@@ -220,12 +239,8 @@ function findPythonExecutable(pythonRoot) {
       }
     }
   }
-  const names =
-    process.platform === "win32"
-      ? ["python.exe", "python3.exe", "python3.12.exe"]
-      : ["python3.12", "python3", "python"];
   for (const binDir of binDirs) {
-    for (const name of names) {
+    for (const name of unixNames) {
       const candidate = path.join(binDir, name);
       if (fs.existsSync(candidate)) return candidate;
     }
@@ -264,6 +279,9 @@ async function installPythonAndVenv(uvPath, platform, runtimeRoot) {
     REQUIREMENTS,
   ]);
 
+  const { fixed } = relativizeRuntimeSymlinks(runtimeRoot);
+  if (fixed > 0) log(`relativized ${fixed} runtime symlink(s) for codesign`);
+
   return { pythonExe, venvPython };
 }
 
@@ -296,7 +314,7 @@ async function crossInstallPythonAndVenv(uvPath, platform, runtimeRoot) {
   ensureDir(pythonInstallDir);
   run("tar", ["-xzf", archive, "-C", pythonInstallDir]);
 
-  const pythonExe = findPythonExecutable(pythonInstallDir);
+  const pythonExe = findPythonExecutable(pythonInstallDir, { windowsLayout: true });
   log(`cross python at ${pythonExe}`);
 
   // Build Windows venv structure
