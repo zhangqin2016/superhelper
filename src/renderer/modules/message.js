@@ -319,6 +319,10 @@ export async function retryLastPrompt(sessionId) {
 }
 
 function getConversationForSession(sessionId) {
+  if (sessionId && store.get("activeSessionId") === sessionId) {
+    const activeConv = store.get("conversation");
+    if (Array.isArray(activeConv)) return activeConv;
+  }
   for (const project of store.get("projects") || []) {
     const session = (project.sessions || []).find((s) => s.id === sessionId);
     if (session?.messages) return session.messages;
@@ -379,7 +383,7 @@ export function syncComposerForActiveSession() {
   updateSessionRunningIndicators();
 }
 
-export function renderConversation(sessionId) {
+export function renderConversation(sessionId, { force = false } = {}) {
   clearHighlightCache();
   const sid = sessionId || store.get("activeSessionId");
   if (!sid) return;
@@ -391,7 +395,7 @@ export function renderConversation(sessionId) {
   finishActiveTurn(sid);
 
   // Don't rebuild if already rendered — preserves collapsed tool cards
-  if (v.listEl.children.length > 0) {
+  if (!force && v.listEl.children.length > 0) {
     v.activeBubble = null;
     v.activeMarkdown = "";
     if (isActiveSession(sid)) syncActiveStoreFromView(sid);
@@ -459,7 +463,7 @@ function syncTurnProgress(sessionId) {
   syncTurnProgressImpl(v);
 }
 
-function beginAssistantTurn(sessionId) {
+export function beginAssistantTurn(sessionId) {
   const v = view(sessionId);
   if (v.activeTurn) return v.activeTurn.bubble;
 

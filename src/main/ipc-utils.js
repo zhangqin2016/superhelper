@@ -62,6 +62,21 @@ function diagnoseSendBlocker(ctx, sessionId) {
     };
   }
 
+  const { loadSettingsEnv } = require("./agent-settings");
+  const { getUserApiEnv, getActivePresetEnv } = require("./model-presets");
+  const { normalizeToLilyEnv } = require("./agent-env");
+  const lilyEnv = normalizeToLilyEnv({
+    ...loadSettingsEnv(),
+    ...getUserApiEnv(),
+    ...getActivePresetEnv(),
+  });
+  if (!String(lilyEnv.LILY_API_KEY || "").trim()) {
+    return {
+      error: "NO_API_KEY",
+      detail: "未配置 API Key。请在设置 → 模型/API 网关中填写密钥后再发送消息。",
+    };
+  }
+
   const { sessionManager, projectManager } = ctx;
   const session =
     sessionManager.findById(sessionId) || sessionManager.getActive();
@@ -271,7 +286,7 @@ function wireRunner(ctx, runner) {
 /**
  * @returns {{ runner: import('./agent-session').AgentSession | null, error?: string, detail?: string }}
  */
-function ensureSessionRunner(ctx, sessionId) {
+function ensureSessionRunner(ctx, sessionId, opts = {}) {
   const { sessionManager, projectManager, runnerPool } = ctx;
   const session = sessionManager.findById(sessionId);
   if (!session) {
@@ -341,8 +356,15 @@ function ensureSessionRunner(ctx, sessionId) {
   };
 
   try {
-    const runner = runnerPool.ensure(sessionId, project.path, extra, { lazy: true });
+    const lazy = opts.spawn !== true;
+    const runner = runnerPool.ensure(sessionId, project.path, extra, { lazy });
     wireRunner(ctx, runner);
+
+    if (opts.spawn === true && !runner.isAlive()) {
+      const hint = runner.lastSpawnError || "助手引擎进程未能启动。";
+      return { runner: null, error: "RUNNER_ERROR", detail: hint };
+    }
+
     return { runner };
   } catch (err) {
     console.error("[runner]", sessionId, err.message);
@@ -409,7 +431,9 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
   // Re-check sendable content after translation (images may have been the only content)
   if (!text && !hasSendableContent("", engineFiles)) return { ok: false, error: "EMPTY" };
 
-  const ensured = ensureSessionRunner(ctx, session.id);
+  const ensured = ensureSessionRunner(ctx, session.id, {
+    spawn: opts.spawnEngine === true,
+  });
   const runner = ensured.runner;
   if (!runner) {
     return {
@@ -418,6 +442,14 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
       detail:
         ensured.detail ||
         "无法启动助手进程，请查看终端日志或重启应用。",
+    };
+  }
+
+  if (opts.spawnEngine === true && !runner.isAlive()) {
+    return {
+      ok: false,
+      error: "RUNNER_ERROR",
+      detail: runner.lastSpawnError || "助手引擎进程未能启动。",
     };
   }
 
@@ -431,7 +463,12 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
   if (!sent) {
     turnState.abort(session.id);
     emitTurnState(ctx, session.id);
-    return { ok: false, error: "BUSY" };
+    const spawnHint = runner.lastSpawnError;
+    return {
+      ok: false,
+      error: "RUNNER_ERROR",
+      detail: spawnHint || "助手引擎未接受消息，请重试。",
+    };
   }
 
   emitTurnState(ctx, session.id);

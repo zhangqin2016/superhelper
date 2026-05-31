@@ -10,16 +10,31 @@ const {
 } = require("./ipc-utils");
 
 function registerAssistantHandlers(ctx) {
-  const { sessionManager, runnerPool } = ctx;
+  const { sessionManager, runnerPool, projectManager } = ctx;
 
   ipcMain.handle("assistant:input", async (_event, payload) => {
     const text = typeof payload === "string" ? payload : payload.text;
     const files = typeof payload === "object" && payload.files ? payload.files : [];
+    const requestedId =
+      typeof payload === "object" && payload?.sessionId ? payload.sessionId : null;
 
-    const session = sessionManager.getActive();
+    let session = requestedId
+      ? sessionManager.findById(requestedId)
+      : sessionManager.getActive();
     if (!session) return { ok: false, error: "NO_SESSION" };
 
-    return await dispatchUserLine(ctx, session, text, files, { recordUser: true });
+    if (requestedId && requestedId !== sessionManager.activeSessionId) {
+      sessionManager.switchTo(requestedId);
+    }
+    const { projectManager } = ctx;
+    if (session.projectId !== projectManager.getActive()?.id) {
+      projectManager.switchTo(session.projectId);
+    }
+
+    return await dispatchUserLine(ctx, session, text, files, {
+      recordUser: true,
+      spawnEngine: true,
+    });
   });
 
   ipcMain.handle("assistant:retry", async (_event, payload) => {
@@ -59,6 +74,7 @@ function registerAssistantHandlers(ctx) {
 
     const result = await dispatchUserLine(ctx, session, lastUser.content, files, {
       recordUser: false,
+      spawnEngine: true,
     });
     if (!result.ok) {
       sessionManager.pushMessageTo(

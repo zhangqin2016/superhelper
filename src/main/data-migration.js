@@ -238,7 +238,9 @@ function copyFileIfNeeded(src, dest, fileName) {
 function mergeDirectory(srcDir, destDir) {
   if (!fs.existsSync(srcDir)) return;
   fs.mkdirSync(destDir, { recursive: true });
+  const { isShipIgnoredEntry } = require("./ship-ignore");
   for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    if (isShipIgnoredEntry(entry.name, entry.isDirectory())) continue;
     const src = path.join(srcDir, entry.name);
     const dest = path.join(destDir, entry.name);
     if (entry.isDirectory()) {
@@ -350,7 +352,9 @@ function renameDirIfNeeded(fromName, toName) {
   if (from === to) return;
   if (!fs.existsSync(from)) return;
   if (fs.existsSync(to)) {
+    const { isShipIgnoredEntry } = require("./ship-ignore");
     for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+      if (isShipIgnoredEntry(entry.name, entry.isDirectory())) continue;
       const src = path.join(from, entry.name);
       const dst = path.join(to, entry.name);
       if (entry.isDirectory()) {
@@ -547,13 +551,8 @@ function migrateLegacyGuideFile() {
   if (!fs.existsSync(legacyGuide)) return;
   if (!fs.existsSync(agentGuide)) {
     fs.renameSync(legacyGuide, agentGuide);
-    return;
   }
-  try {
-    fs.unlinkSync(legacyGuide);
-  } catch {
-    // ignore
-  }
+  // Both exist: CLAUDE.md is the engine mirror — repaired by repairAllEngineGuideMirrors().
 }
 
 /**
@@ -571,6 +570,8 @@ function runDataMigrations() {
   migrateSessionsResumeId();
   migrateSettingsEnvKeys();
   migrateLegacyGuideFile();
+  const { repairAllEngineGuideMirrors } = require("./agent-guide-mirror");
+  repairAllEngineGuideMirrors();
 }
 
 module.exports = {

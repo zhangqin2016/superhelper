@@ -58,5 +58,7 @@ fi
 
 echo "[dist-win] Windows 安装包仅包含 bundles/win32-x64（不含 Mac runtime）"
 
+node scripts/purge-macos-junk.mjs --check
+
 # 必须打 x64：在 Apple Silicon 上省略 --x64 会产出 win-arm64，普通 Intel/AMD PC 无法运行。
 exec npx electron-builder --win --x64 "$@"

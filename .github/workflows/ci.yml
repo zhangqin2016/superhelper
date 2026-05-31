@@ -15,5 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+      - run: node scripts/purge-macos-junk.mjs --check
       - name: Check workflow files
         run: ls -la .github/workflows/

@@ -41,6 +41,9 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+      - name: Ship dirs must not contain macOS junk
+        run: node scripts/purge-macos-junk.mjs --check
+
       - name: Install Claude Code CLI (engine-upstream source)
         shell: pwsh
         run: |
@@ -95,6 +98,9 @@ jobs:
 
       - name: Verify runtime bundle
         run: node scripts/verify-runtime-bundle.mjs --platform win32-x64
+
+      - name: Purge macOS junk before pack
+        run: node scripts/purge-macos-junk.mjs
 
       - name: Build Windows installer (NSIS + ZIP)
         run: npx electron-builder --win --x64

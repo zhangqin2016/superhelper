@@ -15,7 +15,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { relativizeRuntimeSymlinks } from "./fix-runtime-symlinks.mjs";
+
+const require = createRequire(import.meta.url);
+const { purgeJunkUnder } = require("../src/main/ship-ignore.js");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -166,6 +170,7 @@ async function installUv(platform, runtimeRoot) {
 
   if (archive.endsWith(".zip")) {
     run("unzip", ["-q", archive, "-d", extractDir]);
+    purgeJunkUnder(extractDir);
   } else {
     run("tar", ["-xzf", archive, "-C", extractDir]);
   }
@@ -194,6 +199,7 @@ async function installUv(platform, runtimeRoot) {
       ensureDir(hostExtractDir);
       if (hostArchive.endsWith(".zip")) {
         run("unzip", ["-q", hostArchive, "-d", hostExtractDir]);
+        purgeJunkUnder(hostExtractDir);
       } else {
         run("tar", ["-xzf", hostArchive, "-C", hostExtractDir]);
       }
@@ -553,6 +559,7 @@ async function main() {
   }
 
   writeManifest(runtimeRoot, platform, { libreoffice: hasLo });
+  purgeJunkUnder(runtimeRoot);
   log("done");
 }
 

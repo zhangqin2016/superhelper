@@ -71,22 +71,47 @@ function applyStatePayload(state) {
   store.set("sessions", allSessions);
 }
 
+function getVisibleSessionId() {
+  const active = document.querySelector(".session-messages.is-active");
+  return active?.dataset?.sessionId || null;
+}
+
+function patchSessionMessagesInStore(sessionId, messages) {
+  if (!sessionId) return;
+  const projects = store.get("projects") || [];
+  let changed = false;
+  for (const project of projects) {
+    for (const session of project.sessions || []) {
+      if (session.id === sessionId) {
+        session.messages = messages || [];
+        session.messageCount = session.messages.length;
+        changed = true;
+      }
+    }
+  }
+  if (changed) store.set("projects", projects);
+}
+
 export async function applySessionSwitch(switchResult, nextSessionId, nextProjectId) {
-  if (!switchResult?.ok || !nextSessionId) return;
+  if (!switchResult?.ok || !nextSessionId) {
+    const { showToast } = await import("./toast.js");
+    showToast(switchResult?.detail || t("toast.switchSessionFailed"), "error");
+    return;
+  }
 
   if (nextProjectId) store.set("activeProjectId", nextProjectId);
   store.set("activeSessionId", nextSessionId);
 
-  if (switchResult.conversation) {
-    store.set("conversation", switchResult.conversation);
-  }
+  const messages = switchResult.conversation || [];
+  store.set("conversation", messages);
+  patchSessionMessagesInStore(nextSessionId, messages);
 
   showSessionMessages(nextSessionId);
 
   if (shouldPreserveSessionView(nextSessionId)) {
     resumeLiveSessionUi(nextSessionId);
   } else {
-    renderConversation(nextSessionId);
+    renderConversation(nextSessionId, { force: true });
     resumeLiveSessionUi(nextSessionId);
   }
 

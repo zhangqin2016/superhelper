@@ -22,27 +22,24 @@ function registerSessionHandlers(ctx) {
     const pid = projectId || projectManager.getActive()?.id;
     if (!pid) return { ok: false, error: "NO_PROJECT" };
     const session = sessionManager.create(pid, title);
-    const ensured = ensureSessionRunner(ctx, session.id);
-    if (!ensured.runner) {
-      runnerPool.terminateSession(session.id);
-      sessionManager.delete(session.id);
-      return {
-        ok: false,
-        error: ensured.error || "RUNNER_ERROR",
-        detail: ensured.detail,
-      };
-    }
     return { ok: true, session: { id: session.id, title: session.title, projectId: pid } };
   });
 
   ipcMain.handle("session:switch", (_event, sessionId) => {
+    const session = sessionManager.findById(sessionId);
+    if (!session) return { ok: false, error: "NOT_FOUND" };
+
+    if (session.projectId !== projectManager.getActive()?.id) {
+      projectManager.switchTo(session.projectId);
+    }
     sessionManager.switchTo(sessionId);
     ensureSessionRunner(ctx, sessionId);
-    const session = sessionManager.findById(sessionId);
+
     return {
       ok: true,
       sessionId,
-      conversation: session?.messages || [],
+      projectId: session.projectId,
+      conversation: session.messages || [],
       runnerActive: runnerPool.has(sessionId),
     };
   });

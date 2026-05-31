@@ -7,6 +7,8 @@ const { userDataPath } = require("./config");
 const { isAppVersionCompatible } = require("./skill-version");
 const { buildManifestFromSkillMd } = require("./skill-md-convert");
 const { resolveBundledCatalogDir } = require("./skill-bundled-catalog");
+const { findSkillRoot } = require("./skill-root");
+const { copyDirRecursiveShipSafe, isShipIgnoredEntry } = require("./ship-ignore");
 
 function skillManager() {
   return require("./skill-manager");
@@ -14,23 +16,12 @@ function skillManager() {
 
 const FETCH_TIMEOUT_MS = 60_000;
 const MAX_SKILL_DIR_BYTES = 3 * 1024 * 1024;
-const BLOCKED_DIRS = new Set(["node_modules", ".git", ".github"]);
-
 function skillsCacheDir() {
   return userDataPath("skills-cache");
 }
 
 function copyDirRecursive(source, target) {
-  fs.mkdirSync(target, { recursive: true });
-  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    const src = path.join(source, entry.name);
-    const dst = path.join(target, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursive(src, dst);
-    } else {
-      fs.writeFileSync(dst, fs.readFileSync(src));
-    }
-  }
+  copyDirRecursiveShipSafe(source, target, { chmodJs: false });
 }
 
 async function fetchJson(url) {
@@ -70,6 +61,7 @@ async function fetchText(url) {
 function dirSize(root) {
   let total = 0;
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (isShipIgnoredEntry(entry.name, entry.isDirectory())) continue;
     const full = path.join(root, entry.name);
     if (entry.isDirectory()) {
       total += dirSize(full);
@@ -95,7 +87,7 @@ async function downloadGithubPath(repo, remotePath, ref, destDir) {
 
   fs.mkdirSync(destDir, { recursive: true });
   for (const entry of entries) {
-    if (BLOCKED_DIRS.has(entry.name)) continue;
+    if (isShipIgnoredEntry(entry.name, entry.type === "dir")) continue;
     const local = path.join(destDir, entry.name);
     if (entry.type === "file") {
       if (!entry.download_url) continue;
@@ -115,50 +107,104 @@ async function downloadGithubPath(repo, remotePath, ref, destDir) {
   }
 }
 
+function resetExtractDir(extractDir) {
+  if (fs.existsSync(extractDir)) {
+    fs.rmSync(extractDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(extractDir, { recursive: true });
+}
+
 function materializeFromBundled(entry, extractDir) {
   const bundledDir = resolveBundledCatalogDir(entry.id);
   if (!bundledDir) return false;
+  resetExtractDir(extractDir);
   copyDirRecursive(bundledDir, extractDir);
   return true;
 }
 
 async function materializeFromGithub(entry, extractDir) {
+  resetExtractDir(extractDir);
   const ref = entry.github.ref || "main";
   await downloadGithubPath(entry.github.repo, entry.github.path, ref, extractDir);
 }
 
+function applySkillPlaceholders(skillDir, manifest) {
+  const mgr = skillManager();
+  const replacements = mgr.buildReplacements(skillDir, manifest);
+  const skillMdPath = path.join(skillDir, "SKILL.md");
+  if (fs.existsSync(skillMdPath)) {
+    const skillMd = mgr.applyPlaceholders(
+      fs.readFileSync(skillMdPath, "utf8"),
+      replacements,
+    );
+    fs.writeFileSync(skillMdPath, skillMd, "utf8");
+  }
+}
+
 function finalizeInstalledSkill(entry, extractDir) {
   const mgr = skillManager();
-  const skillMdPath = path.join(extractDir, "SKILL.md");
+  const skillRoot = findSkillRoot(extractDir);
+  if (!skillRoot) {
+    return {
+      ok: false,
+      error: "INVALID_MANIFEST",
+      detail: "未找到 SKILL.md 或 skill.manifest.json（目录结构无效）",
+    };
+  }
+
+  const skillMdPath = path.join(skillRoot, "SKILL.md");
   if (!fs.existsSync(skillMdPath)) {
     return { ok: false, error: "INVALID_MANIFEST", detail: "未找到 SKILL.md" };
   }
 
   const skillMd = fs.readFileSync(skillMdPath, "utf8");
-  const manifest = buildManifestFromSkillMd({
-    skillId: entry.id,
-    skillMd,
-    version: entry.latestVersion,
-  });
-
-  fs.writeFileSync(
-    path.join(extractDir, "skill.manifest.json"),
-    JSON.stringify(manifest, null, 2),
-    "utf8",
-  );
+  let manifest;
+  const existingManifestPath = path.join(skillRoot, "skill.manifest.json");
+  if (fs.existsSync(existingManifestPath)) {
+    try {
+      manifest = JSON.parse(fs.readFileSync(existingManifestPath, "utf8"));
+      if (manifest.id && manifest.id !== entry.id) {
+        return {
+          ok: false,
+          error: "INVALID_MANIFEST",
+          detail: "技能 ID 与目录不一致",
+        };
+      }
+      manifest.id = entry.id;
+      if (!manifest.version) manifest.version = entry.latestVersion;
+    } catch (err) {
+      return {
+        ok: false,
+        error: "INVALID_MANIFEST",
+        detail: `skill.manifest.json 无法解析：${err.message}`,
+      };
+    }
+  } else {
+    manifest = buildManifestFromSkillMd({
+      skillId: entry.id,
+      skillMd,
+      version: entry.latestVersion,
+    });
+    fs.writeFileSync(
+      existingManifestPath,
+      JSON.stringify(manifest, null, 2),
+      "utf8",
+    );
+  }
 
   const target = mgr.installedSkillDir(entry.id);
   if (fs.existsSync(target)) {
     fs.rmSync(target, { recursive: true, force: true });
   }
-  copyDirRecursive(extractDir, target);
+  copyDirRecursive(skillRoot, target);
+  applySkillPlaceholders(target, manifest);
 
   const state = mgr.loadSkillsState();
   const now = new Date().toISOString();
   const prev = state.skills[entry.id];
   state.skills[entry.id] = {
     id: entry.id,
-    enabled: prev ? prev.enabled !== false : false,
+    enabled: prev ? prev.enabled !== false : true,
     source: "remote",
     installedVersion: entry.latestVersion,
     installedAt: prev?.installedAt || now,
@@ -229,10 +275,7 @@ async function installFromGithubEntry(entry) {
     }
 
     // GitHub failed — fall back to bundled catalog when available (common in CN networks)
-    if (fs.existsSync(extractDir)) {
-      fs.rmSync(extractDir, { recursive: true, force: true });
-    }
-    fs.mkdirSync(extractDir, { recursive: true });
+    resetExtractDir(extractDir);
     if (materializeFromBundled(entry, extractDir)) {
       try {
         const recovered = finalizeInstalledSkill(entry, extractDir);

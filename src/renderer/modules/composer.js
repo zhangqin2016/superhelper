@@ -104,7 +104,7 @@ export async function sendPrompt() {
   if (promptInput) promptInput.value = "";
   clearPendingFiles();
 
-  const { createMessage, removeLastUserMessage, syncComposerForActiveSession } =
+  const { createMessage, removeLastUserMessage, syncComposerForActiveSession, beginAssistantTurn } =
     await import("./message.js");
   if (sessionId) {
     createMessage(
@@ -115,9 +115,21 @@ export async function sendPrompt() {
     );
   }
 
-  const result = await window.assistantClient.sendMessage(text, files);
+  let result;
+  try {
+    result = await window.assistantClient.sendMessage(text, files, sessionId);
+  } catch (err) {
+    if (sessionId) removeLastUserMessage(sessionId);
+    if (promptInput && savedText) promptInput.value = savedText;
+    if (savedFiles.length) {
+      store.set("pendingFiles", savedFiles);
+      renderFilePreview();
+    }
+    showToast(err?.message || t("send.error.GENERIC"), "error");
+    return;
+  }
 
-  if (!result.ok) {
+  if (!result?.ok) {
     if (sessionId) removeLastUserMessage(sessionId);
     if (promptInput && savedText) promptInput.value = savedText;
     if (savedFiles.length) {
@@ -128,7 +140,11 @@ export async function sendPrompt() {
     return;
   }
 
-  if (sessionId) renderPromptSuggestions(sessionId, []);
+  if (sessionId) {
+    setSessionRunning(sessionId, true);
+    beginAssistantTurn(sessionId);
+    renderPromptSuggestions(sessionId, []);
+  }
   syncComposerForActiveSession();
 
   $("promptInput")?.focus();

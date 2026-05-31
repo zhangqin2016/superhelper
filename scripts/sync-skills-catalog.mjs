@@ -12,13 +12,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { copyDirRecursiveShipSafe, purgeJunkUnder } = require("../src/main/ship-ignore.js");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const SOURCES_PATH = path.join(ROOT, "resources/skills-registry/catalog-sources.json");
 const OUT_PATH = path.join(ROOT, "resources/skills-registry/registry.json");
 const CATALOG_DIR = path.join(ROOT, "resources/skills-catalog");
-const BLOCKED_NAMES = new Set(["node_modules", ".git", ".github"]);
 
 const GITHUB_API = "https://api.github.com";
 const HEADERS = {
@@ -175,17 +178,7 @@ async function collectPluginSkills(source) {
 }
 
 function copyDirRecursive(source, target) {
-  fs.mkdirSync(target, { recursive: true });
-  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    if (BLOCKED_NAMES.has(entry.name)) continue;
-    const src = path.join(source, entry.name);
-    const dst = path.join(target, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursive(src, dst);
-    } else {
-      fs.copyFileSync(src, dst);
-    }
-  }
+  copyDirRecursiveShipSafe(source, target, { chmodJs: false });
 }
 
 async function downloadZip(url, destPath) {
@@ -216,6 +209,7 @@ async function ensureRepoExtracted(repo, ref) {
 
   fs.mkdirSync(treeDir, { recursive: true });
   execFileSync("unzip", ["-q", "-o", zipPath, "-d", treeDir], { stdio: "pipe" });
+  purgeJunkUnder(treeDir);
   fs.writeFileSync(marker, new Date().toISOString(), "utf8");
 
   const [folder] = fs.readdirSync(treeDir);

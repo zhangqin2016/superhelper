@@ -8,6 +8,7 @@ const { ensureRuntimeNodeShim, resolveRuntimeNodePath } = require("./runtime-nod
 const { compareSemver, isAppVersionCompatible } = require("./skill-version");
 const skillRegistry = require("./skill-registry");
 const skillInstaller = require("./skill-installer");
+const { copyDirRecursiveShipSafe } = require("./ship-ignore");
 
 const BUNDLED_SKILL_IDS = ["lily-vision", "websearch", "webfetch"];
 
@@ -46,22 +47,7 @@ function readJsonFile(filePath) {
 }
 
 function copyDirRecursive(source, target) {
-  fs.mkdirSync(target, { recursive: true });
-  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    const src = path.join(source, entry.name);
-    const dst = path.join(target, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursive(src, dst);
-    } else {
-      fs.writeFileSync(dst, fs.readFileSync(src));
-      if (
-        process.platform !== "win32" &&
-        (entry.name.endsWith(".js") || entry.name.endsWith(".cjs"))
-      ) {
-        fs.chmodSync(dst, 0o755);
-      }
-    }
-  }
+  copyDirRecursiveShipSafe(source, target);
 }
 
 function applyPlaceholders(content, replacements) {

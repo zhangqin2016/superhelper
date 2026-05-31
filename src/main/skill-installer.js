@@ -7,6 +7,8 @@ const { execFileSync } = require("node:child_process");
 const { userDataPath, agentConfigDir } = require("./config");
 const { compareSemver, isAppVersionCompatible } = require("./skill-version");
 const skillGithubInstaller = require("./skill-github-installer");
+const { findSkillRoot } = require("./skill-root");
+const { copyDirRecursiveShipSafe, isShipIgnoredEntry } = require("./ship-ignore");
 
 function skillManager() {
   return require("./skill-manager");
@@ -85,6 +87,7 @@ function assertPathInside(base, target) {
 
 function walkDirSafe(rootDir, callback) {
   for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
+    if (isShipIgnoredEntry(entry.name, entry.isDirectory())) continue;
     const full = path.join(rootDir, entry.name);
     assertPathInside(rootDir, full);
     callback(entry, full);
@@ -94,22 +97,8 @@ function walkDirSafe(rootDir, callback) {
   }
 }
 
-function findSkillRoot(extractDir) {
-  const manifestAtRoot = path.join(extractDir, "skill.manifest.json");
-  if (fs.existsSync(manifestAtRoot)) {
-    return extractDir;
-  }
-
-  const children = fs.readdirSync(extractDir, { withFileTypes: true }).filter((e) => e.isDirectory());
-  if (children.length !== 1) {
-    return null;
-  }
-
-  const candidate = path.join(extractDir, children[0].name);
-  if (fs.existsSync(path.join(candidate, "skill.manifest.json"))) {
-    return candidate;
-  }
-  return null;
+function findSkillRootInArchive(extractDir) {
+  return findSkillRoot(extractDir);
 }
 
 function validateManifest(manifest, expectedId) {
@@ -129,22 +118,7 @@ function validateManifest(manifest, expectedId) {
 }
 
 function copyDirRecursive(source, target) {
-  fs.mkdirSync(target, { recursive: true });
-  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    const src = path.join(source, entry.name);
-    const dst = path.join(target, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursive(src, dst);
-    } else {
-      fs.writeFileSync(dst, fs.readFileSync(src));
-      if (
-        process.platform !== "win32" &&
-        (entry.name.endsWith(".js") || entry.name.endsWith(".cjs"))
-      ) {
-        fs.chmodSync(dst, 0o755);
-      }
-    }
-  }
+  copyDirRecursiveShipSafe(source, target);
 }
 
 function backupInstalledSkill(skillId) {
@@ -207,9 +181,9 @@ async function installFromRegistryEntry(entry) {
     extractZip(zipPath, extractDir);
     walkDirSafe(extractDir, () => {});
 
-    const skillRoot = findSkillRoot(extractDir);
+    const skillRoot = findSkillRootInArchive(extractDir);
     if (!skillRoot) {
-      return { ok: false, error: "INVALID_MANIFEST", detail: "压缩包结构无效" };
+      return { ok: false, error: "INVALID_MANIFEST", detail: "压缩包结构无效（未找到 SKILL.md 或 skill.manifest.json）" };
     }
 
     const manifestPath = path.join(skillRoot, "skill.manifest.json");

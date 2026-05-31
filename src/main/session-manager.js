@@ -259,9 +259,14 @@ class SessionManager {
   }
 
   delete(sessionId) {
-    const project = this.pm.getActive();
-    if (!project) return "NOT_FOUND";
-    const projectId = project.id;
+    return this.deleteById(sessionId);
+  }
+
+  /** Delete by session id across all projects (not limited to active project). */
+  deleteById(sessionId) {
+    const session = this._find(sessionId);
+    if (!session) return "NOT_FOUND";
+    const projectId = session.projectId;
     const list = this.sessions[projectId];
     if (!list || list.length <= 1) return "LAST_SESSION";
     const idx = list.findIndex((s) => s.id === sessionId);
@@ -270,7 +275,7 @@ class SessionManager {
     if (this.activeSessionId === sessionId) {
       this.activeSessionId = list[Math.max(0, idx - 1)].id;
     }
-    this.save();
+    this.saveImmediate();
     return "OK";
   }
 

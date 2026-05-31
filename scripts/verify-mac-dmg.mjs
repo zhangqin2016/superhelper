@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -80,6 +80,15 @@ try {
   console.log(
     `[verify-mac-dmg] OK — Electron Framework ${(size / 1024 / 1024).toFixed(1)} MiB`,
   );
+
+  const resources = path.join(mountPoint, apps[0], "Contents", "Resources");
+  if (fs.existsSync(resources)) {
+    execFileSync(
+      process.execPath,
+      ["scripts/purge-macos-junk.mjs", "--verify", resources],
+      { cwd: ROOT, stdio: "inherit" },
+    );
+  }
 } finally {
   spawnSync("hdiutil", ["detach", mountPoint, "-quiet"], { stdio: "inherit" });
   fs.rmSync(mountPoint, { recursive: true, force: true });

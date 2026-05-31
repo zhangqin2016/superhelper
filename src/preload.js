@@ -6,8 +6,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
   getAppIconUrl: () => ipcRenderer.invoke("app:get-icon-url"),
   getLocale: () => ipcRenderer.invoke("app:get-locale"),
   setLocale: (locale) => ipcRenderer.invoke("app:set-locale", locale),
-  sendMessage: (text, files) =>
-    ipcRenderer.invoke("assistant:input", { text, files }),
+  sendMessage: (text, files, sessionId) =>
+    ipcRenderer.invoke("assistant:input", { text, files, sessionId }),
   retryLastMessage: (sessionId) =>
     ipcRenderer.invoke("assistant:retry", { sessionId }),
   respondPermission: (sessionId, requestId, allow, options = {}) =>

@@ -55,6 +55,18 @@ function walk(dir) {
 walk(unpacked);
 
 const mb = (totalBytes / (1024 * 1024)).toFixed(0);
+
+const { execFileSync } = await import("node:child_process");
+try {
+  execFileSync(
+    process.execPath,
+    ["scripts/purge-macos-junk.mjs", "--verify", unpacked],
+    { cwd: ROOT, stdio: "inherit" },
+  );
+} catch {
+  fail("安装包内含有 __MACOSX / .DS_Store 等 macOS 元数据，Windows 技能安装可能失败");
+}
+
 console.log(
   `[verify-win-pack] ok — ${fileCount} files, ~${mb} MB unpacked, win32-x64 present`,
 );

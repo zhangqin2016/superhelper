@@ -8,6 +8,7 @@ import { t } from "../i18n/index.js";
 import { refreshState, updateTopbarTitles, applySessionSwitch } from "./session-chrome.js";
 import { removeSessionMessages } from "./message.js";
 import { promptSessionName, promptProjectName } from "./name-prompt.js";
+import { showToast } from "./toast.js";
 
 const container = () => $("projectTree");
 
@@ -114,7 +115,10 @@ export function renderProjectTree() {
     newSessionBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const result = await createNamedSession(project.id);
-      if (!result?.ok) return;
+      if (!result?.ok) {
+        showToast(result?.detail || t("toast.createSessionFailed"), "error");
+        return;
+      }
       await window.assistantClient.switchProject(project.id);
       const sw = await window.assistantClient.switchSession(result.session.id);
       await refreshState();
@@ -174,12 +178,17 @@ export function renderProjectTree() {
         item.appendChild(meta);
 
         item.addEventListener("click", async () => {
-          if (s.id === store.get("activeSessionId")) return;
-          if (project.id !== store.get("activeProjectId")) {
-            await window.assistantClient.switchProject(project.id);
+          const visibleId = document.querySelector(".session-messages.is-active")?.dataset?.sessionId;
+          if (s.id === store.get("activeSessionId") && s.id === visibleId) return;
+          try {
+            if (project.id !== store.get("activeProjectId")) {
+              await window.assistantClient.switchProject(project.id);
+            }
+            const sw = await window.assistantClient.switchSession(s.id);
+            await applySessionSwitch(sw, s.id, project.id);
+          } catch (err) {
+            showToast(err?.message || t("toast.switchSessionFailed"), "error");
           }
-          const sw = await window.assistantClient.switchSession(s.id);
-          await applySessionSwitch(sw, s.id, project.id);
         });
 
         item.addEventListener("contextmenu", (e) => {
