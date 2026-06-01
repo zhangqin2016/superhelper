@@ -3,21 +3,35 @@
 /**
  * Vision translation — converts image files to text descriptions via DashScope.
  * Used by the send pipeline so non-vision LLMs can "see" user-uploaded images.
+ *
+ * Keys live in agent settings.json (bundled or userData), not only process.env.
  */
 
 const fs = require("node:fs");
 const path = require("node:path");
 const https = require("node:https");
 const http = require("node:http");
+const { resolveSettingsEnvValue } = require("./agent-settings");
 
-const BASE_URL = process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1";
-const API_KEY = process.env.VISION_API_KEY || process.env.DASHSCOPE_API_KEY || "";
-const MODEL = process.env.VISION_MODEL || "qwen-vl-plus";
+const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+const DEFAULT_MODEL = "qwen-vl-plus";
 
 const MIME_MAP = {
   jpg: "jpeg", jpeg: "jpeg", png: "png",
   gif: "gif", webp: "webp", bmp: "bmp",
 };
+
+function getVisionConfig() {
+  return {
+    baseUrl: resolveSettingsEnvValue("DASHSCOPE_BASE_URL") || DEFAULT_BASE_URL,
+    apiKey: resolveSettingsEnvValue("VISION_API_KEY", "DASHSCOPE_API_KEY"),
+    model: resolveSettingsEnvValue("VISION_MODEL") || DEFAULT_MODEL,
+  };
+}
+
+function hasVisionApiKey() {
+  return Boolean(getVisionConfig().apiKey);
+}
 
 function imageToDataUrl(filePath) {
   const ext = path.extname(filePath).toLowerCase().replace(".", "");
@@ -26,8 +40,8 @@ function imageToDataUrl(filePath) {
   return `data:image/${mime};base64,${data.toString("base64")}`;
 }
 
-function callVisionApi(payload) {
-  const url = new URL(`${BASE_URL.replace(/\/?$/, "/")}chat/completions`);
+function callVisionApi(config, payload) {
+  const url = new URL(`${config.baseUrl.replace(/\/?$/, "/")}chat/completions`);
   const body = JSON.stringify(payload);
   const transport = url.protocol === "https:" ? https : http;
 
@@ -35,7 +49,7 @@ function callVisionApi(payload) {
     const req = transport.request(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
       },
@@ -70,7 +84,8 @@ function callVisionApi(payload) {
  * @returns {Promise<string>} Text description.
  */
 async function translateImage(filePath, prompt) {
-  if (!API_KEY) {
+  const config = getVisionConfig();
+  if (!config.apiKey) {
     throw new Error("VISION_API_KEY or DASHSCOPE_API_KEY not configured");
   }
   if (!fs.existsSync(filePath)) {
@@ -78,8 +93,8 @@ async function translateImage(filePath, prompt) {
   }
   const imageUrl = imageToDataUrl(filePath);
   const question = prompt || "请用中文详细描述这张图片的内容。";
-  return callVisionApi({
-    model: MODEL,
+  return callVisionApi(config, {
+    model: config.model,
     messages: [{
       role: "user",
       content: [
@@ -94,16 +109,20 @@ async function translateImage(filePath, prompt) {
 
 /**
  * Translate all images in a files array to a combined text description.
- * Returns null if no images need translation or translation is unavailable.
  * @param {Array<{path?: string, name?: string, isImage?: boolean}>} files
- * @returns {Promise<string|null>}
+ * @returns {Promise<{ ok: true, text: string } | { ok: false, reason: string, detail?: string } | null>}
  */
 async function translateImages(files) {
-  if (!API_KEY) return null;
   const imageFiles = (files || []).filter((f) => f?.isImage && f?.path && fs.existsSync(f.path));
   if (imageFiles.length === 0) return null;
 
+  const config = getVisionConfig();
+  if (!config.apiKey) {
+    return { ok: false, reason: "NO_KEY" };
+  }
+
   const results = [];
+  let failed = 0;
   for (const f of imageFiles) {
     try {
       const desc = await translateImage(f.path,
@@ -111,11 +130,26 @@ async function translateImages(files) {
       );
       results.push(`[图片${f.name ? ` "${f.name}"` : ""}的内容：${desc}]`);
     } catch (err) {
+      failed += 1;
       console.warn(`Vision translation failed for ${f.name || f.path}:`, err.message);
       results.push(`[图片: ${f.name || path.basename(f.path)}]`);
     }
   }
-  return results.length > 0 ? results.join("\n\n") : null;
+
+  if (failed === imageFiles.length) {
+    return {
+      ok: false,
+      reason: "API_FAILED",
+      detail: "图片识别服务暂时不可用，请稍后再试。",
+    };
+  }
+
+  return { ok: true, text: results.join("\n\n") };
 }
 
-module.exports = { translateImage, translateImages };
+module.exports = {
+  getVisionConfig,
+  hasVisionApiKey,
+  translateImage,
+  translateImages,
+};

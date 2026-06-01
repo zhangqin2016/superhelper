@@ -6,8 +6,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
   getAppIconUrl: () => ipcRenderer.invoke("app:get-icon-url"),
   getLocale: () => ipcRenderer.invoke("app:get-locale"),
   setLocale: (locale) => ipcRenderer.invoke("app:set-locale", locale),
-  sendMessage: (text, files, sessionId) =>
-    ipcRenderer.invoke("assistant:input", { text, files, sessionId }),
+  sendMessage: (text, files, sessionId, displayFiles) =>
+    ipcRenderer.invoke("assistant:input", { text, files, sessionId, displayFiles }),
   retryLastMessage: (sessionId) =>
     ipcRenderer.invoke("assistant:retry", { sessionId }),
   respondPermission: (sessionId, requestId, allow, options = {}) =>
@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
       message: options.message,
     }),
   interrupt: () => ipcRenderer.invoke("assistant:interrupt"),
+  cancelQueuedMessage: (sessionId, index) =>
+    ipcRenderer.invoke("assistant:cancel-queued-message", { sessionId, index }),
 
   getFullState: () => ipcRenderer.invoke("state:full"),
 
@@ -119,6 +121,18 @@ contextBridge.exposeInMainWorld("assistantClient", {
   },
   onTurnState: (callback) => {
     ipcRenderer.on("assistant:turn-state", (_event, data) => callback(data));
+  },
+  onAutoRecover: (callback) => {
+    ipcRenderer.on("assistant:auto-recover", (_event, data) => callback(data));
+  },
+  onQueueState: (callback) => {
+    ipcRenderer.on("assistant:queue-state", (_event, data) => callback(data));
+  },
+  onUserMessage: (callback) => {
+    ipcRenderer.on("assistant:user-message", (_event, data) => callback(data));
+  },
+  onQueueDispatchFailed: (callback) => {
+    ipcRenderer.on("assistant:queue-dispatch-failed", (_event, data) => callback(data));
   },
   onFocusSession: (callback) => {
     ipcRenderer.on("assistant:focus-session", (_event, data) => callback(data));

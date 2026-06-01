@@ -20,6 +20,36 @@ function readBundledFile(relativePath) {
   return fs.readFileSync(found, "utf8");
 }
 
+function readBundledSettingsEnv() {
+  const raw = readBundledFile("resources/agent-defaults/settings.json");
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.env && typeof parsed.env === "object" ? parsed.env : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Resolve env key from user settings, bundled defaults, then process.env. */
+function resolveSettingsEnvValue(...keys) {
+  const userEnv = loadSettingsEnv();
+  for (const key of keys) {
+    const value = String(userEnv[key] || "").trim();
+    if (value) return value;
+  }
+  const bundledEnv = readBundledSettingsEnv();
+  for (const key of keys) {
+    const value = String(bundledEnv[key] || "").trim();
+    if (value) return value;
+  }
+  for (const key of keys) {
+    const value = String(process.env[key] || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
 function ensureSettingsPresent() {
   const settingsPath = path.join(agentConfigDir(), "settings.json");
   const bundledSettings = readBundledFile("resources/agent-defaults/settings.json");
@@ -37,7 +67,14 @@ function ensureSettingsPresent() {
     const env = raw?.env && typeof raw.env === "object" ? raw.env : {};
     const bundledEnv = bundled?.env && typeof bundled.env === "object" ? bundled.env : {};
     let changed = false;
-    for (const key of ["IQS_API_KEY", "WEBSEARCH_IQS_API_KEY"]) {
+    for (const key of [
+      "IQS_API_KEY",
+      "WEBSEARCH_IQS_API_KEY",
+      "DASHSCOPE_API_KEY",
+      "VISION_API_KEY",
+      "DASHSCOPE_BASE_URL",
+      "VISION_MODEL",
+    ]) {
       const bundledVal = String(bundledEnv[key] || "").trim();
       const currentVal = String(env[key] || "").trim();
       if (bundledVal && !currentVal) {
@@ -84,6 +121,8 @@ function installAgentDefaults() {
 
 module.exports = {
   loadSettingsEnv,
+  readBundledSettingsEnv,
+  resolveSettingsEnvValue,
   installAgentDefaults,
   getDefaultDisallowedTools: skillManager.getDisallowedTools,
 };

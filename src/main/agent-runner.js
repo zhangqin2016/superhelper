@@ -13,7 +13,21 @@ const ERROR_PATTERNS = [
     test: /command not found|ENOENT/i,
     message: "助手暂时无法连接，请稍后再试。",
   },
+  {
+    test: /API Error:|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|502|503|504/i,
+    message: "与模型服务的连接中断，请检查网络与 API 配置后重试。",
+  },
+  {
+    test: /rate.?limit|429|too many requests/i,
+    message: "请求过于频繁，请稍后再试。",
+  },
 ];
+
+function isUpstreamApiFailure(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return false;
+  return ERROR_PATTERNS.some(({ test }) => test.test(text));
+}
 
 function scrubVendorNames(raw) {
   return String(raw || "")
@@ -29,6 +43,16 @@ function sanitizeError(raw) {
   return "处理请求时遇到问题，请稍后再试。";
 }
 
+/** @returns {{ text: string, failed: boolean }} */
+function normalizeAssistantOutput(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return { text: "", failed: false };
+  if (isUpstreamApiFailure(text)) {
+    return { text: sanitizeError(text), failed: true };
+  }
+  return { text, failed: false };
+}
+
 function appendTextSegment(prev, next) {
   const piece = String(next ?? "");
   if (!piece) return prev || "";
@@ -38,4 +62,10 @@ function appendTextSegment(prev, next) {
   return `${base}\n\n${piece}`;
 }
 
-module.exports = { sanitizeError, appendTextSegment, scrubVendorNames };
+module.exports = {
+  sanitizeError,
+  appendTextSegment,
+  scrubVendorNames,
+  isUpstreamApiFailure,
+  normalizeAssistantOutput,
+};

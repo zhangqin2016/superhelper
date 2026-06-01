@@ -3,7 +3,7 @@
  * Lightweight checks for stream-json helpers (no Electron / no engine binary).
  */
 import { createRequire } from "node:module";
-import { appendTextSegment, sanitizeError } from "../src/main/agent-runner.js";
+import { appendTextSegment, sanitizeError, isUpstreamApiFailure } from "../src/main/agent-runner.js";
 import { sameSpawnOptions, sameRespawnOptions } from "../src/main/runner-spawn-options.js";
 import {
   parseCanUseToolRequest,
@@ -23,12 +23,26 @@ import {
 import { resolvePlanPreview } from "../src/main/plan-preview.js";
 import { SessionTurnState } from "../src/main/session-turn-state.js";
 import { isResumeFailureMessage } from "../src/main/session-engine-recovery.js";
+import {
+  classifyEngineEvent,
+  noticeForControlSubtype,
+} from "../src/main/engine-event-notices.js";
 
 const merged = appendTextSegment("hello", "world");
 if (merged !== "hello\n\nworld") throw new Error(`appendTextSegment failed: ${merged}`);
 
 const friendly = sanitizeError("engine-upstream: command not found");
 if (!friendly.includes("助手")) throw new Error(`sanitizeError failed: ${friendly}`);
+
+const socketErr = sanitizeError(
+  "API Error: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()",
+);
+if (!socketErr.includes("连接中断")) {
+  throw new Error(`sanitizeError socket failed: ${socketErr}`);
+}
+if (!isUpstreamApiFailure("API Error: socket connection was closed")) {
+  throw new Error("isUpstreamApiFailure failed");
+}
 
 const baseOpts = {
   agentCommand: "/a/lily-workbench",
@@ -207,6 +221,50 @@ if (!isBundledInCatalog("anthropics-algorithmic-art")) {
 }
 if (!resolveBundledCatalogDir("anthropics-algorithmic-art")) {
   throw new Error("resolveBundledCatalogDir sample skill failed");
+}
+
+const compact = classifyEngineEvent({ type: "system", subtype: "compact_boundary" });
+if (!compact || compact.code !== "compactBoundary") {
+  throw new Error(`compact_boundary classify failed: ${JSON.stringify(compact)}`);
+}
+
+const retry = classifyEngineEvent({
+  type: "system",
+  subtype: "api_retry",
+  attempt: 2,
+  max_retries: 5,
+  error: "rate_limit",
+});
+if (!retry || retry.code !== "apiRetry" || retry.attempt !== 2) {
+  throw new Error(`api_retry classify failed: ${JSON.stringify(retry)}`);
+}
+
+const hook = noticeForControlSubtype("hook_callback");
+if (!hook || hook.code !== "hookCallback") {
+  throw new Error(`hook_callback notice failed: ${JSON.stringify(hook)}`);
+}
+
+const taskUpdated = classifyEngineEvent({ type: "system", subtype: "task_updated" });
+if (taskUpdated !== null) {
+  throw new Error(`task_updated should be silent, got ${JSON.stringify(taskUpdated)}`);
+}
+
+const taskProgress = classifyEngineEvent({ type: "system", subtype: "task_progress" });
+if (taskProgress !== null) {
+  throw new Error(`task_progress should be silent, got ${JSON.stringify(taskProgress)}`);
+}
+
+const unknownSystem = classifyEngineEvent({ type: "system", subtype: "some_new_internal" });
+if (unknownSystem !== null) {
+  throw new Error(`unknown system subtype should be silent, got ${JSON.stringify(unknownSystem)}`);
+}
+
+const compactDone = classifyEngineEvent({ type: "system", subtype: "compact_complete" });
+if (!compactDone || compactDone.code !== "compactComplete") {
+  throw new Error(`compact_complete should have code compactComplete, got ${JSON.stringify(compactDone)}`);
+}
+if (compactDone.replacesCode !== "compactBoundary") {
+  throw new Error(`compact_complete should replace compactBoundary, got ${compactDone.replacesCode}`);
 }
 
 console.log("agent-runner: ok");

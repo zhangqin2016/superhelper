@@ -14,12 +14,14 @@ import { renderMarkdown, renderMarkdownWithCache, clearHighlightCache } from "./
 import { activeProject, updateTopbarTitles, refreshStateLight } from "./session-chrome.js";
 import { t } from "../i18n/index.js";
 import {
-  isSessionRunning,
-  setSessionRunning,
+  canSend,
+  canInterrupt,
+  getTurnPhase,
+  applyTurnState as storeTurnState,
   syncRunningFromState,
-  isActiveSessionBusy,
 } from "./session-busy.js";
 import { showToast } from "./toast.js";
+import { renderMessageQueue } from "./composer.js";
 import { updateSessionRunningIndicators } from "./project-tree.js";
 import {
   addToolCard as addToolCardImpl,
@@ -31,10 +33,15 @@ import {
   collapseToolCards as collapseToolCardsImpl,
   updateToolCardProgress as updateToolCardProgressImpl,
   syncTurnProgress as syncTurnProgressImpl,
+  refreshRunningActivityLabel,
   countRunningTools,
   toolSummary,
   syncActivityVisibility,
 } from "./tool-cards.js";
+import {
+  addOrUpdateEngineNotice,
+  engineNoticeText,
+} from "./engine-notices.js";
 
 const stackEl = () => $("sessionMessagesStack");
 
@@ -43,6 +50,7 @@ const stackEl = () => $("sessionMessagesStack");
  *   listEl: HTMLElement,
  *   activeTurn: { article: HTMLElement, activity: HTMLElement, bubble: HTMLElement } | null,
  *   toolCards: Map<string, { card: HTMLElement, name: string, input: object, status: string }>,
+ *   engineNotices: Map<string, { card: HTMLElement, code: string, status: string }>,
  *   activeMarkdown: string,
  *   activeBubble: HTMLElement | null,
  *   activityLabel: string,
@@ -58,14 +66,40 @@ function clearBusyHeartbeat(sessionId) {
   busyHeartbeats.delete(sessionId);
 }
 
+/** Pending user messages waiting for the current turn to finish (Claude CLI queue). */
+const queuedMessageCounts = new Map();
+/** @type {Map<string, Array<{ index: number, preview: string, hasFiles: boolean }>>} */
+const queuedMessageItems = new Map();
+
+export function getQueuedMessageCount(sessionId) {
+  if (!sessionId) return 0;
+  return queuedMessageCounts.get(sessionId) || 0;
+}
+
+function setQueuedMessageCount(sessionId, count) {
+  if (!sessionId) return;
+  if (count > 0) queuedMessageCounts.set(sessionId, count);
+  else queuedMessageCounts.delete(sessionId);
+}
+
+function setQueuedMessageItems(sessionId, items) {
+  if (!sessionId) return;
+  if (items?.length) queuedMessageItems.set(sessionId, items);
+  else queuedMessageItems.delete(sessionId);
+}
+
 /** Keep visible “still working” cues when the engine is silent (tools/subagents). */
 function refreshBusyIndicators(sessionId) {
-  if (!sessionId || !isSessionRunning(sessionId)) {
+  if (!sessionId || canSend(sessionId)) {
     clearBusyHeartbeat(sessionId);
     return;
   }
 
-  if (!hasLiveTurn(sessionId)) {
+  const phase = getTurnPhase(sessionId);
+  if (
+    ["streaming", "tool", "permission"].includes(phase) &&
+    !hasLiveTurn(sessionId)
+  ) {
     beginAssistantTurn(sessionId);
   }
 
@@ -79,7 +113,7 @@ function refreshBusyIndicators(sessionId) {
     busyHeartbeats.set(
       sessionId,
       setInterval(() => {
-        if (!isSessionRunning(sessionId)) {
+        if (canSend(sessionId)) {
           clearBusyHeartbeat(sessionId);
           return;
         }
@@ -100,6 +134,7 @@ function view(sessionId) {
       listEl: null,
       activeTurn: null,
       toolCards: new Map(),
+      engineNotices: new Map(),
       activeMarkdown: "",
       activeBubble: null,
       activityLabel: "",
@@ -301,7 +336,7 @@ function attachRetryAction(article, sessionId) {
 
 export async function retryLastPrompt(sessionId) {
   if (!sessionId) return;
-  if (isSessionRunning(sessionId) || hasLiveTurn(sessionId)) {
+  if (!canSend(sessionId)) {
     showToast(t("send.error.BUSY"), "warning");
     return;
   }
@@ -313,8 +348,6 @@ export async function retryLastPrompt(sessionId) {
   }
 
   removeLastAssistantMessage(sessionId);
-  beginAssistantTurn(sessionId);
-  refreshBusyIndicators(sessionId);
   syncComposerForActiveSession();
 }
 
@@ -342,7 +375,7 @@ export function shouldPreserveSessionView(sessionId) {
 
 export function resumeLiveSessionUi(sessionId) {
   if (!sessionId || hasLiveTurn(sessionId)) return;
-  if (isSessionRunning(sessionId)) {
+  if (!canSend(sessionId)) {
     beginAssistantTurn(sessionId);
     refreshBusyIndicators(sessionId);
   }
@@ -351,8 +384,9 @@ export function resumeLiveSessionUi(sessionId) {
 export function syncComposerForActiveSession() {
   const sid = store.get("activeSessionId");
   const hasProject = (store.get("projects") || []).length > 0;
-  const busy = Boolean(sid && (isSessionRunning(sid) || hasLiveTurn(sid)));
+  const busy = Boolean(sid && !canSend(sid));
   const awaitingPermission = Boolean(sid && pendingPermissionBySession.has(sid));
+  const queueCount = sid ? getQueuedMessageCount(sid) : 0;
   store.set("isBusy", busy);
   setBusyUI(busy);
 
@@ -360,18 +394,20 @@ export function syncComposerForActiveSession() {
   const blocked = !hasProject || !sid;
   for (const id of ["sendBtn", "promptInput", "attachBtn"]) {
     const el = $(id);
-    if (el) el.disabled = blocked || busy;
+    if (el) el.disabled = blocked;
   }
   if (promptInput) {
     promptInput.placeholder = awaitingPermission
       ? t("composer.placeholderPermission")
-      : busy
-        ? t("composer.placeholderBusy")
-        : !hasProject
-          ? t("composer.placeholderNeedProject")
-          : !sid
-            ? t("composer.placeholderNeedSession")
-            : t("composer.placeholder");
+      : busy && queueCount > 0
+        ? t("composer.placeholderBusyQueue", { count: queueCount })
+        : busy
+          ? t("composer.placeholderBusy")
+          : !hasProject
+            ? t("composer.placeholderNeedProject")
+            : !sid
+              ? t("composer.placeholderNeedSession")
+              : t("composer.placeholder");
   }
 
   if (busy && sid) {
@@ -379,6 +415,8 @@ export function syncComposerForActiveSession() {
   } else if (sid) {
     clearBusyHeartbeat(sid);
   }
+
+  renderMessageQueue(sid, queuedMessageItems.get(sid) || []);
 
   updateSessionRunningIndicators();
 }
@@ -522,30 +560,53 @@ function finishActiveTurn(sessionId) {
   if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
 }
 
-
-export function forceEndTurnUi(sessionId) {
-  if (!sessionId) return;
-  clearBusyHeartbeat(sessionId);
+/** Collapse the in-flight assistant turn before appending a user bubble (queue flush / IPC race). */
+function finalizeTurnUi(sessionId) {
   const v = view(sessionId);
-  clearToolCards(sessionId);
-  v.activityLabel = "";
+  if (!v.activeTurn && !v.activeBubble) return;
 
+  const hadReply =
+    v.activeMarkdown.trim().length > 0 ||
+    (v.activeBubble?.textContent?.trim().length > 0);
   if (v.activeBubble) {
     v.activeBubble.classList.remove("pending");
+    if (!hadReply) {
+      v.activeBubble.remove();
+      v.activeBubble = null;
+    }
   }
-  // Don't call finishActiveTurn — it would show the (now empty) activity div.
-  // Just clean up turn state directly.
-  if (v.activeTurn?.activity) {
-    v.activeTurn.activity.hidden = true;
-  }
-  v._lastRenderedLength = 0;
-  v.activeTurn = null;
-  v.activeBubble = null;
-  v.activeMarkdown = "";
-  v.turnHadToolUse = false;
-  if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
-  syncComposerForActiveSession();
+  finishActiveTurn(sessionId);
+  sealLastTurnArticle(sessionId);
 }
+
+function sealLastTurnArticle(sessionId) {
+  const listEl = view(sessionId).listEl;
+  if (!listEl) return;
+  const turn = listEl.querySelector(".msg-turn:last-of-type");
+  if (!turn) return;
+
+  const activity = turn.querySelector(".tool-activity");
+  if (!activity) return;
+
+  activity.querySelector(".turn-progress-slot")?.replaceChildren();
+  activity.querySelectorAll(".turn-progress").forEach((el) => el.remove());
+
+  const hasCards = activity.querySelector(".tool-card");
+  const hasEngine = activity.querySelector(".engine-notice-card");
+  const bar = activity.querySelector(".tool-summary-bar");
+  const barVisible = bar && !bar.hidden;
+  if (!hasCards && !hasEngine && !barVisible) {
+    activity.hidden = true;
+  }
+}
+
+function appendCommittedUserMessage(sessionId, text, files) {
+  if (hasLiveTurn(sessionId)) {
+    finalizeTurnUi(sessionId);
+  }
+  createMessage(sessionId, "user", text, files);
+}
+
 
 function permissionPromptCopy(toolName, payload) {
   if (toolName === "ExitPlanMode") {
@@ -702,34 +763,70 @@ function showPermissionPrompt(sessionId, payload) {
 
 function handleEngineNotice(sessionId, payload) {
   if (!sessionId || !payload) return;
-  if (payload.level === "stderr" && payload.message) {
-    if (isActiveSession(sessionId)) {
-      showToast(payload.message, "warning");
-    }
-    return;
-  }
-  if (payload.message === "PERMISSION_TIMEOUT") {
-    showToast(t("permission.timeout"), "warning");
-    return;
-  }
-  // CLI error events and other warnings — show only for active session
-  if (payload.level === "warning" && payload.message) {
-    if (isActiveSession(sessionId)) {
-      showToast(payload.message, "warning");
-    }
-    return;
-  }
-  if (payload.level === "progress" && payload.message) {
+
+  const showPanel = payload.panel !== false;
+  const text = engineNoticeText(payload);
+
+  if (showPanel) {
+    if (!hasLiveTurn(sessionId)) beginAssistantTurn(sessionId);
+    addOrUpdateEngineNotice(view(sessionId), payload);
     const v = view(sessionId);
-    v.activityLabel = payload.message;
-    updateToolCardProgressImpl(v, payload.toolName, payload.message);
+    // Meaningful progress (compaction, retry) updates the single activity line;
+    // do not overwrite tool-card-driven labels for generic engine codes.
+    if (text && payload.replace) v.activityLabel = text;
+    refreshRunningActivityLabel(v);
+    syncTurnProgressImpl(v);
+    if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
+    scrollToBottom(false, v.panel);
+  }
+
+  const shouldToast =
+    payload.toast ||
+    payload.level === "stderr" ||
+    (payload.level === "warning" && payload.code === "permissionTimeout");
+
+  if (shouldToast && isActiveSession(sessionId)) {
+    if (payload.code === "permissionTimeout") {
+      showToast(t("permission.timeout"), "warning");
+    } else if (text) {
+      showToast(text, payload.level === "warning" ? "warning" : "info");
+    }
+  } else if (payload.level === "warning" && payload.message && isActiveSession(sessionId)) {
+    showToast(payload.message, "warning");
+  }
+
+  if (payload.level === "progress" && payload.toolName) {
+    updateToolCardProgressImpl(view(sessionId), payload.toolName, payload.detail || text);
   }
 }
 
 function applyTurnState(payload) {
   if (!payload?.sessionId) return;
-  setSessionRunning(payload.sessionId, Boolean(payload.active));
-  if (isActiveSession(payload.sessionId)) {
+  storeTurnState(payload);
+  const sessionId = payload.sessionId;
+  const phase = getTurnPhase(sessionId);
+
+  if (["streaming", "tool", "permission"].includes(phase) && !hasLiveTurn(sessionId)) {
+    beginAssistantTurn(sessionId);
+  }
+
+  if (phase === "streaming" && view(sessionId).activeBubble) {
+    view(sessionId).activeBubble.classList.add("pending");
+  }
+
+  if (phase === "idle" || phase === "stopping") {
+    clearBusyHeartbeat(sessionId);
+    const bubble = view(sessionId).activeBubble;
+    if (bubble && phase === "idle") {
+      bubble.classList.remove("pending");
+    }
+  }
+
+  if (sessionId && !canSend(sessionId)) {
+    refreshBusyIndicators(sessionId);
+  }
+
+  if (isActiveSession(sessionId)) {
     syncComposerForActiveSession();
   }
   updateSessionRunningIndicators();
@@ -743,6 +840,50 @@ export function wireMessageIpc() {
   });
 
   window.assistantClient.onTurnState?.(applyTurnState);
+
+  window.assistantClient.onQueueState?.((payload) => {
+    const sessionId = payload?.sessionId;
+    if (!sessionId) return;
+    setQueuedMessageCount(sessionId, payload.queueLength || 0);
+    setQueuedMessageItems(sessionId, payload.items || []);
+    renderMessageQueue(sessionId, payload.items || []);
+    if (isActiveSession(sessionId)) syncComposerForActiveSession();
+  });
+
+  window.assistantClient.onUserMessage?.((payload) => {
+    const sessionId = payload?.sessionId;
+    if (!sessionId) return;
+    appendCommittedUserMessage(sessionId, payload.text || "", payload.files || null);
+    if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
+  });
+
+  window.assistantClient.onQueueDispatchFailed?.((payload) => {
+    const sessionId = payload?.sessionId;
+    if (!sessionId) return;
+    showToast(payload.detail || payload.error || t("send.error.GENERIC"), "error");
+    if (isActiveSession(sessionId)) syncComposerForActiveSession();
+  });
+
+  window.assistantClient.onAutoRecover?.((payload) => {
+    const sessionId = payload?.sessionId;
+    if (!sessionId) return;
+
+    clearBusyHeartbeat(sessionId);
+    view(sessionId).activityLabel = "";
+    clearToolCards(sessionId);
+    finishActiveTurn(sessionId);
+
+    if (isActiveSession(sessionId)) {
+      showToast(
+        t("engine.autoRecover", {
+          attempt: payload.attempt ?? 1,
+          maxRetries: payload.maxRetries ?? 2,
+        }),
+        "info",
+      );
+      syncComposerForActiveSession();
+    }
+  });
 
   // Full tool_use from assistant event
   window.assistantClient.onTool((payload) => {
@@ -845,9 +986,6 @@ export function wireMessageIpc() {
 
     if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
     scrollToBottom(false, v.panel);
-    if (isActiveSession(sessionId) && store.get("isBusy")) {
-      syncTurnProgress(sessionId);
-    }
   });
 
   window.assistantClient.onDone(async (payload) => {
@@ -856,21 +994,16 @@ export function wireMessageIpc() {
 
     clearBusyHeartbeat(sessionId);
     view(sessionId).activityLabel = "";
-    // Force-clear running state immediately — don't wait for turnState IPC
-    setSessionRunning(sessionId, false);
 
     const v = view(sessionId);
-    if (v.activeBubble) {
-      v.activeBubble.classList.remove("pending");
-      const hasContent =
-        v.activeMarkdown.trim().length > 0 || v.activeBubble.textContent.trim().length > 0;
-      if (!hasContent && !payload.interrupted) {
-        v.activeBubble.remove();
-        v.activeBubble = null;
-        v.activeTurn = null;
-      }
+    const hadReply =
+      v.activeMarkdown.trim().length > 0 ||
+      (v.activeBubble?.textContent?.trim().length > 0);
+    finalizeTurnUi(sessionId);
+
+    if (payload.stalled && isActiveSession(sessionId) && !hadReply) {
+      showToast(t("message.stalledHint"), "info");
     }
-    finishActiveTurn(sessionId);
 
     // Unblock composer immediately, before the async refresh
     if (isActiveSession(sessionId)) {
@@ -902,7 +1035,6 @@ export function wireMessageIpc() {
 
     clearBusyHeartbeat(sessionId);
     clearToolCards(sessionId);
-    setSessionRunning(sessionId, false);
 
     const v = view(sessionId);
     let bubble = v.activeBubble;
@@ -941,12 +1073,12 @@ export function setBusyUI(busy) {
     if (el) el.disabled = busy;
   }
 
+  const sid = store.get("activeSessionId");
   const interruptBtn = $("interruptBtn");
-  if (interruptBtn) interruptBtn.hidden = !busy;
+  if (interruptBtn) interruptBtn.hidden = !canInterrupt(sid);
 
   updateSessionRunningIndicators();
 
-  const sid = store.get("activeSessionId");
   if (busy && sid) {
     syncTurnProgress(sid);
     const meta = $("sessionMeta");

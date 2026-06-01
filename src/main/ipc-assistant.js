@@ -8,6 +8,9 @@ const {
   emitTurnState,
   dispatchUserLine,
 } = require("./ipc-utils");
+const { turnController } = require("./turn-controller");
+const { cancelAutoRecovery } = require("./turn-auto-recovery");
+const { clearMessageQueue, emitQueueState, removeQueuedMessage, queueLength } = require("./turn-message-queue");
 
 function registerAssistantHandlers(ctx) {
   const { sessionManager, runnerPool, projectManager } = ctx;
@@ -31,9 +34,15 @@ function registerAssistantHandlers(ctx) {
       projectManager.switchTo(session.projectId);
     }
 
+    const displayFiles =
+      typeof payload === "object" && Array.isArray(payload.displayFiles)
+        ? payload.displayFiles
+        : [];
+
     return await dispatchUserLine(ctx, session, text, files, {
       recordUser: true,
       spawnEngine: true,
+      displayFiles,
     });
   });
 
@@ -111,24 +120,57 @@ function registerAssistantHandlers(ctx) {
     if (!session) return { ok: false, error: "NO_SESSION" };
 
     const runner = runnerPool.get(session.id);
-    const wasRunnerBusy = Boolean(runner?.isBusy());
-    const hadTurn = turnState.has(session.id) || wasRunnerBusy;
+    const hadTurn = turnState.has(session.id);
+
+    cancelAutoRecovery(session.id);
+    clearMessageQueue(session.id);
+    emitQueueState(ctx, session.id);
+
+    if (hadTurn) {
+      turnController.transition(session.id, "userInterrupt");
+      emitTurnState(ctx, session.id);
+    }
+
     runner?.interrupt();
 
-    if (!runner?.isBusy()) {
-      sessionManager.setStatus(session.id, "idle");
-      turnState.abort(session.id);
-      emitTurnState(ctx, session.id);
-
-      if (hadTurn && !wasRunnerBusy) {
-        sendToRenderer(ctx.mainWindow, "assistant:done", {
-          code: null,
-          sessionId: session.id,
-          interrupted: true,
-        });
+    if (hadTurn && !runner?.isBusy()) {
+      const { turnId, output, wasActive } = turnController.completeTurn(
+        session.id,
+        "interrupted",
+      );
+      if (wasActive && output?.trim()) {
+        sessionManager.pushMessageTo(session.id, "assistant", output.trim());
       }
+      emitTurnState(ctx, session.id);
+      sendToRenderer(ctx.mainWindow, "assistant:done", {
+        code: null,
+        sessionId: session.id,
+        turnId,
+        interrupted: true,
+        stalled: false,
+        hadOutput: Boolean(output?.trim()),
+      });
     }
+
     return { ok: true };
+  });
+
+  ipcMain.handle("assistant:cancel-queued-message", (_event, payload) => {
+    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const index = Number(payload?.index);
+    if (!sessionId || !Number.isInteger(index) || index < 0) {
+      return { ok: false, error: "INVALID_PAYLOAD" };
+    }
+
+    const session = sessionManager.findById(sessionId);
+    if (!session) return { ok: false, error: "NO_SESSION" };
+
+    if (!removeQueuedMessage(sessionId, index)) {
+      return { ok: false, error: "NOT_FOUND" };
+    }
+
+    emitQueueState(ctx, sessionId);
+    return { ok: true, sessionId, queueLength: queueLength(sessionId) };
   });
 }
 

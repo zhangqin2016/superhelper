@@ -3,7 +3,11 @@
 const { EventEmitter } = require("node:events");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
-const { appendTextSegment, sanitizeError } = require("./agent-runner");
+const {
+  appendTextSegment,
+  sanitizeError,
+  isUpstreamApiFailure,
+} = require("./agent-runner");
 const {
   parseCanUseToolRequest,
   needsUserApproval,
@@ -19,6 +23,10 @@ const {
 } = require("./control-protocol");
 const { buildUserMessagePayload, hasSendableContent } = require("./user-message");
 const { resolvePlanPreview, PLAN_PREVIEW_MAX } = require("./plan-preview");
+const {
+  classifyEngineEvent,
+  noticeForControlSubtype,
+} = require("./engine-event-notices");
 const { buildAgentSpawnEnv } = require("./spawn-env");
 const { sameRespawnOptions } = require("./runner-spawn-options");
 const { getLogger } = require("./logger");
@@ -46,10 +54,17 @@ class AgentSession extends EventEmitter {
     this.lastSpawnError = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._idleTimer = null;
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  this._interruptFallbackTimer = null;
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  this._turnResponseTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._interruptFallbackTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._turnResponseTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._absoluteTurnTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._postToolWaitTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._messageStopTimer = null;
+    this._turnStartedAt = 0;
     this._pendingToolIds = new Set();
     this._turnHadToolUse = false;
     this._turnSettled = true;
@@ -67,12 +82,18 @@ class AgentSession extends EventEmitter {
     this._blockIndexToToolId = new Map();
   }
 
-  /** Only for text-only turns missing `result` (not a task timeout). */
-  static QUIESCE_MS = 12_000;
-  static INTERRUPT_FALLBACK_MS = 5_000;
+  /** After stream goes quiet, complete turn if CLI never sends `result`. */
+  static QUIESCE_MS = 4_000;
+  static INTERRUPT_FALLBACK_MS = 2_000;
   static PERMISSION_UI_TIMEOUT_MS = 55_000;
   static TURN_RESPONSE_TIMEOUT_MS = 90_000;
   static RESUME_TURN_TIMEOUT_MS = 45_000;
+  /** Hard cap — verbose logs must not extend a turn forever. */
+  static TURN_ABSOLUTE_MAX_MS = 30 * 60_000;
+  /** After all tools finish, model must respond within this window. */
+  static POST_TOOL_SILENCE_MS = 45_000;
+  /** Wait briefly after message_stop for a trailing `result` event. */
+  static MESSAGE_STOP_GRACE_MS = 2_500;
 
   _clearIdleTimer() {
     if (this._idleTimer) {
@@ -96,6 +117,69 @@ class AgentSession extends EventEmitter {
     }
   }
 
+  _clearAbsoluteTurnTimer() {
+    if (this._absoluteTurnTimer) {
+      clearTimeout(this._absoluteTurnTimer);
+      this._absoluteTurnTimer = null;
+    }
+  }
+
+  _clearPostToolWaitTimer() {
+    if (this._postToolWaitTimer) {
+      clearTimeout(this._postToolWaitTimer);
+      this._postToolWaitTimer = null;
+    }
+  }
+
+  _clearMessageStopTimer() {
+    if (this._messageStopTimer) {
+      clearTimeout(this._messageStopTimer);
+      this._messageStopTimer = null;
+    }
+  }
+
+  /** End a stuck turn quietly — unlock UI without scary error bubbles. */
+  _recoverStalledTurn(reason) {
+    log.warn("turn stalled, recovering quietly: %s", reason, {
+      sessionId: this.sessionId,
+    });
+    this._flushLineBuffer();
+    this._completeTurn({
+      code: 0,
+      output: this.collectedOutput.trim(),
+      stalled: true,
+    });
+  }
+
+  _armAbsoluteTurnTimer() {
+    this._clearAbsoluteTurnTimer();
+    if (!this.busy || this._turnSettled) return;
+    this._absoluteTurnTimer = setTimeout(() => {
+      if (!this.busy || this._turnSettled) return;
+      this._recoverStalledTurn("absolute");
+    }, AgentSession.TURN_ABSOLUTE_MAX_MS);
+  }
+
+  _armPostToolWaitTimer() {
+    this._clearPostToolWaitTimer();
+    if (!this.busy || this._turnSettled) return;
+    if (this._pendingToolIds.size > 0) return;
+    if (!this._turnHadToolUse) return;
+    this._postToolWaitTimer = setTimeout(() => {
+      if (!this.busy || this._turnSettled) return;
+      if (this._pendingToolIds.size > 0) return;
+      this._recoverStalledTurn("post-tool");
+    }, AgentSession.POST_TOOL_SILENCE_MS);
+  }
+
+  _maybeArmPostToolWaitTimer() {
+    if (this._pendingToolIds.size === 0 && this._turnHadToolUse) {
+      this._armPostToolWaitTimer();
+    } else {
+      this._clearPostToolWaitTimer();
+    }
+  }
+
   _armTurnResponseTimer() {
     this._clearTurnResponseTimer();
     if (!this.busy || this._turnSettled) return;
@@ -104,14 +188,7 @@ class AgentSession extends EventEmitter {
       : AgentSession.TURN_RESPONSE_TIMEOUT_MS;
     this._turnResponseTimer = setTimeout(() => {
       if (!this.busy || this._turnSettled) return;
-      log.warn("turn timed out waiting for engine response", {
-        sessionId: this.sessionId,
-        resume: Boolean(this.agentResumeId),
-      });
-      if (this.agentResumeId) {
-        this.emit("resume-invalid", { message: "resume session timed out" });
-      }
-      this._failTurn("助手长时间无响应，连接已重置。请再发一次消息。");
+      this._recoverStalledTurn("silence");
     }, ms);
   }
 
@@ -126,16 +203,21 @@ class AgentSession extends EventEmitter {
     }
   }
 
+  _canAutoCompleteTurn() {
+    return (
+      this.busy &&
+      !this._turnSettled &&
+      this._pendingToolIds.size === 0 &&
+      this._pendingPermissions.size === 0
+    );
+  }
+
   _armIdleCompletionTimer() {
     this._clearIdleTimer();
-    if (!this.busy || this._turnSettled) return;
-    if (this._turnHadToolUse || this._pendingToolIds.size > 0) return;
-    if (this._pendingPermissions.size > 0) return;
+    if (!this._canAutoCompleteTurn()) return;
     if (!this.collectedOutput.trim()) return;
     this._idleTimer = setTimeout(() => {
-      if (!this.busy || this._turnSettled) return;
-      if (this._turnHadToolUse || this._pendingToolIds.size > 0) return;
-      if (this._pendingPermissions.size > 0) return;
+      if (!this._canAutoCompleteTurn()) return;
       if (!this.collectedOutput.trim()) return;
       log.warn("turn completed via idle quiesce (no result event)");
       this._flushLineBuffer();
@@ -145,6 +227,21 @@ class AgentSession extends EventEmitter {
         idle: true,
       });
     }, AgentSession.QUIESCE_MS);
+  }
+
+  _armMessageStopCompletionTimer() {
+    this._clearMessageStopTimer();
+    if (!this._canAutoCompleteTurn()) return;
+    this._messageStopTimer = setTimeout(() => {
+      if (!this._canAutoCompleteTurn()) return;
+      log.warn("turn completed via message_stop grace (no result event)");
+      this._flushLineBuffer();
+      this._completeTurn({
+        code: 0,
+        output: this.collectedOutput.trim(),
+        idle: true,
+      });
+    }, AgentSession.MESSAGE_STOP_GRACE_MS);
   }
 
   _markStreamActivity() {
@@ -257,7 +354,14 @@ class AgentSession extends EventEmitter {
         this._failTurn(text);
         return;
       }
-      this.emit("engine-notice", { level: "stderr", message: text });
+      this.emit("engine-notice", {
+        code: "stderr",
+        level: "warning",
+        message: text,
+        panel: true,
+        toast: true,
+        done: true,
+      });
       this.emit("stderr", text);
       if (text) this.lastSpawnError = text;
     });
@@ -274,12 +378,14 @@ class AgentSession extends EventEmitter {
     });
 
     this.process.on("close", (code) => {
+      const wasInterrupt = this._interruptPending;
       this._clearInterruptFallback();
       if (this.busy && !this._turnSettled) {
         this._flushLineBuffer();
         this._completeTurn({
           code,
           output: this.collectedOutput.trim(),
+          interrupted: wasInterrupt,
         });
       } else {
         this.busy = false;
@@ -329,6 +435,7 @@ class AgentSession extends EventEmitter {
 
     this.busy = true;
     this._turnSettled = false;
+    this._turnStartedAt = Date.now();
     this.collectedOutput = "";
     this._streamParentToolUseId = null;
     this._pendingToolIds.clear();
@@ -366,6 +473,7 @@ class AgentSession extends EventEmitter {
       stdin.once("drain", () => {});
     }
     this._armTurnResponseTimer();
+    this._armAbsoluteTurnTimer();
     return true;
   }
 
@@ -440,35 +548,17 @@ class AgentSession extends EventEmitter {
       this._writeControlLine(buildInterruptRequest());
       this._interruptFallbackTimer = setTimeout(() => {
         if (this.busy && !this._turnSettled) {
-          log.warn("interrupt control timed out, force killing CLI");
-          this._forceInterruptKill();
+          log.warn("interrupt control timed out; ending turn without killing CLI");
+          this._completeTurn({
+            code: null,
+            output: this.collectedOutput.trim(),
+            interrupted: true,
+          });
         }
       }, AgentSession.INTERRUPT_FALLBACK_MS);
       return;
     }
 
-    if (this.busy && !this._turnSettled) {
-      this._completeTurn({
-        code: null,
-        output: this.collectedOutput.trim(),
-        interrupted: true,
-      });
-    }
-  }
-
-  _forceInterruptKill() {
-    this._clearInterruptFallback();
-    if (this.process) {
-      try {
-        // SIGINT on Windows only works for console group — spawn()ed processes need SIGTERM.
-        const sig = process.platform === "win32" ? "SIGTERM" : "SIGINT";
-        this.process.kill(sig);
-      } catch {
-        log.warn("interrupt kill failed (process already dead)");
-      }
-      this.process = null;
-      this._cliInitialized = false;
-    }
     if (this.busy && !this._turnSettled) {
       this._completeTurn({
         code: null,
@@ -513,6 +603,9 @@ class AgentSession extends EventEmitter {
     if (this._turnSettled) return;
     this._clearIdleTimer();
     this._clearTurnResponseTimer();
+    this._clearAbsoluteTurnTimer();
+    this._clearPostToolWaitTimer();
+    this._clearMessageStopTimer();
     this._clearInterruptFallback();
     this._clearPendingPermissions(true);
     this._pendingToolIds.clear();
@@ -529,7 +622,10 @@ class AgentSession extends EventEmitter {
   _failTurn(message) {
     if (this._turnSettled) return;
     this._clearIdleTimer();
+    this._clearMessageStopTimer();
     this._clearTurnResponseTimer();
+    this._clearAbsoluteTurnTimer();
+    this._clearPostToolWaitTimer();
     this._clearInterruptFallback();
     this._clearPendingPermissions(true);
     this._pendingToolIds.clear();
@@ -629,6 +725,7 @@ class AgentSession extends EventEmitter {
         ev.request?.hook_event && typeof ev.request.hook_event === "object"
           ? ev.request.hook_event
           : {};
+      this._emitEngineNotice(noticeForControlSubtype(subtype));
       this._writeControlLine(
         buildHookCallbackResponse(requestId, {
           continue: true,
@@ -640,6 +737,7 @@ class AgentSession extends EventEmitter {
 
     if (requestId) {
       log.warn("unhandled control_request subtype=%s", subtype || "unknown");
+      this._emitEngineNotice(noticeForControlSubtype(subtype));
       this._writeControlLine(buildControlAck(requestId));
     }
   }
@@ -675,8 +773,11 @@ class AgentSession extends EventEmitter {
     setTimeout(() => {
       if (!this._pendingPermissions.has(requestId)) return;
       this.emit("engine-notice", {
+        code: "permissionTimeout",
         level: "warning",
-        message: "PERMISSION_TIMEOUT",
+        panel: true,
+        toast: true,
+        done: true,
         requestId,
         toolName,
       });
@@ -687,8 +788,17 @@ class AgentSession extends EventEmitter {
     }, AgentSession.PERMISSION_UI_TIMEOUT_MS);
   }
 
+  _emitEngineNotice(notice) {
+    if (!notice) return;
+    this.emit("engine-notice", notice);
+  }
+
   _appendTextPiece(piece) {
     if (!piece) return;
+    if (this.busy && !this._turnSettled && isUpstreamApiFailure(piece)) {
+      this._failTurn(sanitizeError(piece));
+      return;
+    }
     this.collectedOutput = appendTextSegment(this.collectedOutput, piece);
     this.emit("chunk", piece);
     this._markStreamActivity();
@@ -702,7 +812,9 @@ class AgentSession extends EventEmitter {
     try {
       ev = JSON.parse(trimmed);
     } catch {
-      this._appendTextPiece(`${trimmed}\n`);
+      if (trimmed.length > 0) {
+        log.debug("ignored non-json stdout: %s", trimmed.slice(0, 160));
+      }
       return;
     }
 
@@ -719,6 +831,11 @@ class AgentSession extends EventEmitter {
             this.emit("agent-resume-id", ev.session_id);
           }
         }
+        this._emitEngineNotice(classifyEngineEvent(ev));
+        break;
+
+      case "rate_limit_event":
+        this._emitEngineNotice(classifyEngineEvent(ev));
         break;
 
       case "assistant": {
@@ -734,6 +851,7 @@ class AgentSession extends EventEmitter {
               const toolId = block.id || "";
               if (toolId) this._pendingToolIds.add(toolId);
               this._clearIdleTimer();
+              this._clearPostToolWaitTimer();
               this._markStreamActivity();
               // If already emitted from content_block_start, skip duplicate emission
               if (this._emittedToolIds.has(toolId)) {
@@ -767,6 +885,7 @@ class AgentSession extends EventEmitter {
           if (block.type === "tool_result") {
             const toolId = block.tool_use_id || "";
             if (toolId) this._pendingToolIds.delete(toolId);
+            this._maybeArmPostToolWaitTimer();
             let resultContent = null;
             if (Array.isArray(block.content)) {
               resultContent = block.content
@@ -802,6 +921,8 @@ class AgentSession extends EventEmitter {
             if (block?.type === "tool_use" && block.id && block.name) {
               this._turnHadToolUse = true;
               this._clearIdleTimer();
+              this._clearPostToolWaitTimer();
+              if (block.id) this._pendingToolIds.add(block.id);
               this._emittedToolIds.add(block.id);
               this._streamingToolInputs.set(block.id, "");
               if (typeof inner.index === "number") {
@@ -838,6 +959,7 @@ class AgentSession extends EventEmitter {
 
           case "message_stop":
             this._markStreamActivity();
+            this._armMessageStopCompletionTimer();
             break;
 
           default:
@@ -847,9 +969,12 @@ class AgentSession extends EventEmitter {
       }
 
       case "tool_progress":
-        this.emit("engine-notice", {
+        this._emitEngineNotice({
+          code: "toolProgress",
           level: "progress",
-          message: ev.message || ev.summary || "",
+          panel: true,
+          replace: true,
+          detail: String(ev.message || ev.summary || "").slice(0, 160),
           toolName: ev.tool_name || "",
         });
         this._turnHadToolUse = true;
@@ -857,12 +982,7 @@ class AgentSession extends EventEmitter {
         break;
 
       case "tool_use_summary":
-        if (ev.summary) {
-          this.emit("engine-notice", {
-            level: "info",
-            message: String(ev.summary),
-          });
-        }
+        this._emitEngineNotice(classifyEngineEvent(ev));
         break;
 
       case "keep_alive":
@@ -885,6 +1005,7 @@ class AgentSession extends EventEmitter {
       }
 
       case "result":
+        this._clearMessageStopTimer();
         this._flushLineBuffer();
         if (ev.subtype === "success" && ev.result) {
           const piece = String(ev.result);
@@ -914,7 +1035,14 @@ class AgentSession extends EventEmitter {
           return;
         }
         if (errMsg) {
-          this.emit("engine-notice", { level: "warning", message: errMsg });
+          this._emitEngineNotice({
+            code: "engineError",
+            level: "warning",
+            panel: true,
+            toast: true,
+            done: true,
+            detail: sanitizeError(errMsg),
+          });
         }
         break;
       }
@@ -924,9 +1052,15 @@ class AgentSession extends EventEmitter {
         this._handleControlRequest(ev);
         break;
 
-      default:
-        log.debug("ignored stream event type=%s", ev.type);
+      default: {
+        const notice = classifyEngineEvent(ev);
+        if (notice) {
+          this._emitEngineNotice(notice);
+        } else {
+          log.debug("ignored stream event type=%s", ev.type);
+        }
         break;
+      }
     }
   }
 }

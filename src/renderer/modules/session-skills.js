@@ -5,8 +5,13 @@
 import { $ } from "./dom.js";
 import store from "./state.js";
 import { showToast } from "./toast.js";
-import { isSessionRunning } from "./session-busy.js";
+import { canSend } from "./session-busy.js";
 import { t, tSkillName, tSkillDesc } from "../i18n/index.js";
+
+function isBusy() {
+  const sid = store.get("activeSessionId");
+  return sid ? !canSend(sid) : false;
+}
 
 /** @type {{ customized: boolean, effectiveIds: string[], skills: object[] } | null} */
 let lastPayload = null;
@@ -55,11 +60,6 @@ function groupSkillsByCategory(skills) {
 
 function activeSessionId() {
   return store.get("activeSessionId");
-}
-
-function isBusy() {
-  const sid = activeSessionId();
-  return sid ? isSessionRunning(sid) : false;
 }
 
 function isPopoverOpen() {

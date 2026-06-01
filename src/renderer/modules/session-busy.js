@@ -1,46 +1,34 @@
 /**
- * Per-session busy state — each conversation can run its own Claude runner.
+ * Per-session busy state — reads from turn-store (IPC-driven).
  */
 
-import store from "./state.js";
+import {
+  applyTurnState,
+  canSend,
+  canInterrupt,
+  isSessionRunning,
+  anySessionRunning,
+  getTurnPhase,
+  hydrateTurnStoreFromState,
+  isActiveSessionBusy,
+  enableTurnStoreDevCompare,
+} from "./turn-store.js";
 
-function findSession(sessionId) {
-  if (!sessionId) return null;
-  for (const project of store.get("projects") || []) {
-    const session = (project.sessions || []).find((s) => s.id === sessionId);
-    if (session) return session;
-  }
-  return (store.get("sessions") || []).find((s) => s.id === sessionId) || null;
-}
+export {
+  applyTurnState,
+  canSend,
+  canInterrupt,
+  isSessionRunning,
+  anySessionRunning,
+  getTurnPhase,
+  hydrateTurnStoreFromState,
+  isActiveSessionBusy,
+  enableTurnStoreDevCompare,
+};
 
-export function isSessionRunning(sessionId) {
-  if (!sessionId) return false;
-  const ids = store.get("runningSessionIds") || [];
-  return ids.includes(sessionId);
-}
-
-export function setSessionRunning(sessionId, running) {
-  if (!sessionId) return;
-  const next = new Set(store.get("runningSessionIds") || []);
-  if (running) next.add(sessionId);
-  else next.delete(sessionId);
-  store.set("runningSessionIds", [...next]);
-
-  const session = findSession(sessionId);
-  if (session) session.status = running ? "running" : "idle";
-}
+/** @deprecated Busy is driven by assistant:turn-state — no-op. */
+export function setSessionRunning(_sessionId, _running) {}
 
 export function syncRunningFromState(state) {
-  const ids = new Set(state?.runningSessionIds || []);
-  for (const project of state?.projects || []) {
-    for (const session of project.sessions || []) {
-      if (session.status === "running") ids.add(session.id);
-    }
-  }
-  store.set("runningSessionIds", [...ids]);
-}
-
-export function isActiveSessionBusy() {
-  const sid = store.get("activeSessionId");
-  return isSessionRunning(sid);
+  hydrateTurnStoreFromState(state);
 }

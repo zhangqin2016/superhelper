@@ -97,32 +97,125 @@ export function countRunningTools(toolCards) {
   return n;
 }
 
-function insertCardAtPlace(viewState, card, id, name, input, parentToolUseId) {
-  const parentTypes = ["Task", "Agent", "Subagent"];
-  if (parentToolUseId) {
-    const parentCard = viewState.activeTurn.activity.querySelector(
-      `.tool-card[data-tool-id="${parentToolUseId}"]`
-    );
-    const parentEntry = viewState.toolCards.get(parentToolUseId);
-    if (parentCard && parentEntry && parentTypes.includes(parentEntry.name)) {
-      card.classList.add("tool-card-child");
-      const siblings = parentCard.parentNode.querySelectorAll(
-        `.tool-card-child[data-parent-id="${parentToolUseId}"]`
-      );
-      const lastSibling = siblings[siblings.length - 1];
-      card.dataset.parentId = parentToolUseId;
-      if (lastSibling) {
-        lastSibling.after(card);
-      } else {
-        parentCard.after(card);
+function ensureCompactToolLayout(activity) {
+  if (activity.querySelector(".tool-current-slot")) return;
+
+  const bar = buildToolSummaryBar();
+  bar.hidden = true;
+
+  const currentSlot = document.createElement("div");
+  currentSlot.className = "tool-current-slot";
+
+  const progressSlot = document.createElement("div");
+  progressSlot.className = "turn-progress-slot";
+  progressSlot.hidden = true;
+
+  const wrap = document.createElement("div");
+  wrap.className = "tool-cards-wrap";
+
+  activity.prepend(wrap);
+  activity.prepend(progressSlot);
+  activity.prepend(currentSlot);
+  activity.prepend(bar);
+  activity.classList.add("tool-steps-compact", "tool-collapsed");
+}
+
+/** Progress rows must live inside activity; legacy code appended them as body siblings. */
+function removeStrayTurnProgress(viewState) {
+  const turn = viewState.activeTurn;
+  if (!turn) return;
+  const body = turn.activity?.parentElement;
+  body?.querySelectorAll(":scope > .turn-progress").forEach((el) => el.remove());
+}
+
+function ensureTurnProgressSlot(activity) {
+  ensureCompactToolLayout(activity);
+  let slot = activity.querySelector(".turn-progress-slot");
+  if (!slot) {
+    slot = document.createElement("div");
+    slot.className = "turn-progress-slot";
+    slot.hidden = true;
+    const { currentSlot } = getCompactParts(activity);
+    (currentSlot || activity).after(slot);
+  }
+  return slot;
+}
+
+function turnHasStreamedText(viewState) {
+  return (
+    Boolean(viewState.activeMarkdown?.trim()) ||
+    Boolean(viewState.activeBubble?.textContent?.trim())
+  );
+}
+
+function getCompactParts(activity) {
+  return {
+    bar: activity.querySelector(".tool-summary-bar"),
+    currentSlot: activity.querySelector(".tool-current-slot"),
+    wrap: activity.querySelector(".tool-cards-wrap"),
+  };
+}
+
+function syncToolSummaryBar(viewState) {
+  const activity = viewState.activeTurn?.activity;
+  if (!activity) return;
+  const { bar, wrap } = getCompactParts(activity);
+  if (!bar || !wrap) return;
+
+  const doneCount = wrap.querySelectorAll(".tool-card").length;
+  if (doneCount === 0) {
+    bar.hidden = true;
+    return;
+  }
+
+  bar.hidden = false;
+  const collapsed = activity.classList.contains("tool-collapsed");
+  const prefix = collapsed ? "▶ " : "▼ ";
+  bar.textContent = prefix + t("tool.summaryBar", { count: doneCount });
+}
+
+function toggleToolStepsExpanded(activity) {
+  if (!activity) return;
+  const collapsed = activity.classList.toggle("tool-collapsed");
+  const { bar } = getCompactParts(activity);
+  if (bar && !bar.hidden) {
+    const text = bar.textContent.replace(/^[▶▼]\s*/, "");
+    bar.textContent = (collapsed ? "▶ " : "▼ ") + text;
+  }
+}
+
+function archiveCardToWrap(viewState, card) {
+  const activity = viewState.activeTurn?.activity;
+  if (!activity || !card?.isConnected) return;
+  ensureCompactToolLayout(activity);
+  const { wrap } = getCompactParts(activity);
+  if (!wrap) return;
+  wrap.appendChild(card);
+  syncToolSummaryBar(viewState);
+}
+
+function mountRunningToolCard(viewState, card, id, name, input) {
+  const activity = viewState.activeTurn?.activity;
+  if (!activity) return;
+  ensureCompactToolLayout(activity);
+  const { currentSlot, wrap } = getCompactParts(activity);
+
+  // Defensive: if a previous running card is still in the slot, archive it.
+  if (currentSlot && wrap) {
+    for (const child of [...currentSlot.children]) {
+      if (child.classList.contains("tool-card")) {
+        wrap.appendChild(child);
       }
-      viewState.toolCards.set(id, { card, name, input, status: "running" });
-      return;
     }
   }
 
-  viewState.activeTurn.activity.appendChild(card);
+  if (currentSlot) {
+    currentSlot.appendChild(card);
+  } else {
+    activity.appendChild(card);
+  }
   viewState.toolCards.set(id, { card, name, input, status: "running" });
+  syncToolSummaryBar(viewState);
 }
 
 export function addToolCard(viewState, id, name, input, parentToolUseId) {
@@ -143,7 +236,7 @@ export function addToolCard(viewState, id, name, input, parentToolUseId) {
   }
   renderToolCardContent(card, name, input);
 
-  insertCardAtPlace(viewState, card, id, name, input, parentToolUseId);
+  mountRunningToolCard(viewState, card, id, name, input);
   viewState.activeTurn.activity.hidden = false;
   scrollToBottom(false, viewState.panel);
 }
@@ -163,7 +256,7 @@ export function addToolCardPlaceholder(viewState, id, name, parentToolUseId) {
   card.dataset.toolId = id;
   renderToolCardContent(card, name, {});
 
-  insertCardAtPlace(viewState, card, id, name, {}, parentToolUseId);
+  mountRunningToolCard(viewState, card, id, name, {});
   viewState.activeTurn.activity.hidden = false;
   scrollToBottom(false, viewState.panel);
 }
@@ -236,6 +329,7 @@ export function updateToolCard(viewState, id, status, result) {
       appendToolResult(entry, result);
     }
 
+    archiveCardToWrap(viewState, entry.card);
     refreshRunningActivityLabel(viewState);
   }
 
@@ -275,7 +369,17 @@ function appendToolResult(entry, result) {
 export function syncActivityVisibility(viewState) {
   const turn = viewState.activeTurn;
   if (!turn) return;
-  turn.activity.hidden = turn.activity.childElementCount === 0;
+  const activity = turn.activity;
+  const hasCurrent = activity.querySelector(".tool-current-slot .tool-card");
+  const hasArchived = activity.querySelector(".tool-cards-wrap .tool-card");
+  const hasProgress =
+    Boolean(
+      activity.querySelector(".turn-progress-slot:not([hidden]) .turn-progress"),
+    ) || Boolean(activity.querySelector(".turn-progress"));
+  const hasEngine = activity.querySelector(".engine-notice-card");
+  const bar = activity.querySelector(".tool-summary-bar");
+  const barVisible = bar && !bar.hidden;
+  activity.hidden = !(hasCurrent || hasArchived || hasProgress || hasEngine || barVisible);
 }
 
 export function clearToolCards(viewState) {
@@ -283,27 +387,29 @@ export function clearToolCards(viewState) {
     card.remove();
   }
   viewState.toolCards.clear();
-  viewState.activeTurn?.activity?.querySelectorAll(".turn-progress").forEach((el) => el.remove());
+  if (viewState.engineNotices) {
+    for (const { card } of viewState.engineNotices.values()) {
+      card?.remove();
+    }
+    viewState.engineNotices.clear();
+  }
+  const activity = viewState.activeTurn?.activity;
+  activity?.querySelector(".tool-current-slot")?.replaceChildren();
+  activity?.querySelector(".tool-cards-wrap")?.replaceChildren();
+  activity?.querySelector(".turn-progress-slot")?.replaceChildren();
+  activity?.querySelectorAll(".turn-progress").forEach((el) => el.remove());
+  removeStrayTurnProgress(viewState);
+  const bar = activity?.querySelector(".tool-summary-bar");
+  if (bar) bar.hidden = true;
   syncActivityVisibility(viewState);
 }
 
-function buildToolSummaryBar(count) {
+function buildToolSummaryBar() {
   const bar = document.createElement("div");
   bar.className = "tool-summary-bar";
-  bar.textContent = `${count} 个工具`;
   bar.addEventListener("click", () => {
     const activity = bar.closest(".tool-activity");
-    if (!activity) return;
-    const wrap = activity.querySelector(".tool-cards-wrap");
-    if (activity.classList.contains("tool-collapsed")) {
-      activity.classList.remove("tool-collapsed");
-      if (wrap) wrap.hidden = false;
-      bar.textContent = bar.textContent.replace("▶", "▼");
-    } else {
-      activity.classList.add("tool-collapsed");
-      if (wrap) wrap.hidden = true;
-      bar.textContent = bar.textContent.replace("▼", "▶");
-    }
+    toggleToolStepsExpanded(activity);
   });
   return bar;
 }
@@ -311,59 +417,78 @@ function buildToolSummaryBar(count) {
 export function collapseToolCards(viewState) {
   const activity = viewState.activeTurn?.activity;
   if (!activity) return;
-  const cards = activity.querySelectorAll(".tool-card:not(.turn-progress)");
-  if (cards.length === 0) return;
 
-  // Wrap existing cards
-  const wrap = document.createElement("div");
-  wrap.className = "tool-cards-wrap";
-  while (cards[0] && cards[0].parentNode === activity) {
-    wrap.appendChild(cards[0]);
+  ensureCompactToolLayout(activity);
+  const { currentSlot, wrap } = getCompactParts(activity);
+  if (!wrap) return;
+
+  if (currentSlot) {
+    for (const child of [...currentSlot.children]) {
+      if (child.classList.contains("tool-card")) {
+        wrap.appendChild(child);
+      }
+    }
   }
-  // Move turn-progress into wrap if present
-  const progress = activity.querySelector(".turn-progress");
-  if (progress) wrap.appendChild(progress);
 
-  const bar = buildToolSummaryBar(wrap.childElementCount);
-  activity.insertBefore(bar, activity.firstChild);
-  activity.insertBefore(wrap, bar.nextSibling);
+  // Legacy: cards appended directly under activity
+  for (const card of [...activity.querySelectorAll(":scope > .tool-card")]) {
+    if (!card.classList.contains("turn-progress")) {
+      wrap.appendChild(card);
+    }
+  }
+
+  activity.querySelector(".turn-progress-slot")?.replaceChildren();
+  activity.querySelectorAll(".turn-progress").forEach((el) => el.remove());
+
   activity.classList.add("tool-collapsed");
-  wrap.hidden = true;
-  bar.textContent = "▶ " + bar.textContent;
+  syncToolSummaryBar(viewState);
 }
 
 export function expandToolCards(viewState) {
   const activity = viewState.activeTurn?.activity;
   if (!activity) return;
   activity.classList.remove("tool-collapsed");
-  const wrap = activity.querySelector(".tool-cards-wrap");
-  if (wrap) wrap.hidden = false;
-  const bar = activity.querySelector(".tool-summary-bar");
-  if (bar) bar.textContent = bar.textContent.replace("▶", "▼");
+  syncToolSummaryBar(viewState);
 }
 
 export function syncTurnProgress(viewState) {
   if (!viewState.activeTurn?.activity) return;
 
-  const progress = viewState.activeTurn.activity.querySelector(".turn-progress");
-  const waiting = store.get("isBusy") && countRunningTools(viewState.toolCards) === 0;
+  removeStrayTurnProgress(viewState);
 
-  if (waiting) {
-    if (!progress) {
-      const row = document.createElement("div");
-      row.className = "turn-progress tool-card tool-card-running";
-      const dot = document.createElement("span");
-      dot.className = "tool-card-dot";
-      const label = document.createElement("span");
-      label.className = "tool-card-label";
-      label.textContent = t("message.continuing");
-      row.append(dot, label);
-      viewState.activeTurn.activity.appendChild(row);
-    }
-    viewState.activeTurn.activity.hidden = false;
-  } else if (progress) {
-    progress.remove();
+  const activity = viewState.activeTurn.activity;
+  const slot = ensureTurnProgressSlot(activity);
+  const waiting =
+    store.get("isBusy") &&
+    countRunningTools(viewState.toolCards) === 0 &&
+    !turnHasStreamedText(viewState);
+
+  activity.querySelectorAll(".turn-progress").forEach((el) => {
+    if (el.parentElement !== slot) el.remove();
+  });
+
+  if (!waiting) {
+    slot.replaceChildren();
+    slot.hidden = true;
+    syncActivityVisibility(viewState);
+    return;
   }
+
+  let progress = slot.querySelector(".turn-progress");
+  if (!progress) {
+    progress = document.createElement("div");
+    progress.className = "turn-progress tool-card tool-card-running";
+    const dot = document.createElement("span");
+    dot.className = "tool-card-dot";
+    const label = document.createElement("span");
+    label.className = "tool-card-label";
+    label.textContent = t("message.continuing");
+    progress.append(dot, label);
+    slot.appendChild(progress);
+  }
+
+  slot.hidden = false;
+  activity.hidden = false;
 }
 
 export function updateToolCardProgress(viewState, toolName, message) {
@@ -387,7 +512,7 @@ export function refreshRunningActivityLabel(viewState) {
       : summary.title;
     return;
   }
-  if (store.get("isBusy")) {
+  if (store.get("isBusy") && !turnHasStreamedText(viewState)) {
     viewState.activityLabel = t("message.continuing");
   }
 }

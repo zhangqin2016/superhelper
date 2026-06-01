@@ -9,7 +9,7 @@ import { refreshModelSelect } from "./model-settings.js";
 import { refreshPermissionSelect } from "./permission-settings.js";
 import { refreshSearchSettings } from "./search-settings.js";
 import { refreshSkillsList } from "./skill-settings.js";
-import store from "./state.js";
+import { anySessionRunning } from "./session-busy.js";
 
 const SETTINGS_PAGES = ["general", "model", "permission", "search", "skills", "about"];
 
@@ -75,7 +75,7 @@ export async function initSettingsPanel() {
   });
 
   $("permissionModeSelect")?.addEventListener("change", async () => {
-    if ((store.get("runningSessionIds") || []).length > 0) {
+    if (anySessionRunning()) {
       showToast(t("toast.permissionBusySession"), "error");
       await refreshPermissionSelect();
       return;

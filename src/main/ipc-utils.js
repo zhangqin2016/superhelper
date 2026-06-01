@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const { resolveAgentCommand } = require("./agent-command");
-const { sanitizeError } = require("./agent-runner");
+const { sanitizeError, normalizeAssistantOutput } = require("./agent-runner");
 const { fileStagingDir } = require("./config");
 const {
   migrateGlobalResumeArtifacts,
@@ -11,6 +11,23 @@ const {
 } = require("./session-engine-recovery");
 const skillManager = require("./skill-manager");
 const { turnState, emitTurnState } = require("./session-turn-state");
+const { turnController } = require("./turn-controller");
+const {
+  recordTurnPayload,
+  cancelAutoRecovery,
+  clearTurnPayloadOnSuccess,
+  scheduleAutoRecovery,
+  isRecoverableFailure,
+  isRecoveryPending,
+} = require("./turn-auto-recovery");
+const {
+  enqueueMessage,
+  clearMessageQueue,
+  emitQueueState,
+  flushMessageQueue,
+  scheduleFlushMessageQueue,
+  queueLength,
+} = require("./turn-message-queue");
 
 /** @type {Map<string, string>} */
 const lastRunnerStderr = new Map();
@@ -107,6 +124,7 @@ function wireRunner(ctx, runner) {
   const { notifySessionFinished } = require("./background-notify");
 
   runner.on("chunk", (text) => {
+    turnController.transition(sessionId, "engineAccepted");
     turnState.append(sessionId, text);
     sendToRenderer(ctx.mainWindow, "assistant:chunk", { sessionId, text });
   });
@@ -118,6 +136,8 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("tool-using", (data) => {
+    turnController.transition(sessionId, "toolStart");
+    emitTurnState(ctx, sessionId);
     const { captureBeforeSnapshot } = require("./diff-capture");
     captureBeforeSnapshot(sessionId, data.id, data.name, data.input);
     sendToRenderer(ctx.mainWindow, "assistant:tool", { sessionId, ...data });
@@ -139,13 +159,15 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("tool-done", (data) => {
+    turnController.transition(sessionId, "toolEnd");
+    emitTurnState(ctx, sessionId);
     sendToRenderer(ctx.mainWindow, "assistant:tool-done", { sessionId, ...data });
     const { emitDiffForTool } = require("./diff-capture");
     emitDiffForTool(sessionId, data.id, ctx);
   });
 
   runner.on("permission-request", (data) => {
-    turnState.setPhase(sessionId, "permission");
+    turnController.transition(sessionId, "permissionRequest");
     emitTurnState(ctx, sessionId);
     sendToRenderer(ctx.mainWindow, "assistant:permission-request", {
       sessionId,
@@ -154,6 +176,8 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("permission-cancelled", (data) => {
+    turnController.transition(sessionId, "permissionResolved");
+    emitTurnState(ctx, sessionId);
     sendToRenderer(ctx.mainWindow, "assistant:permission-cancelled", {
       sessionId,
       ...data,
@@ -176,8 +200,7 @@ function wireRunner(ctx, runner) {
 
   runner.on("status", (state) => {
     if (state === "thinking") {
-      sessionManager.setStatus(sessionId, "running");
-      turnState.setPhase(sessionId, "active");
+      turnController.transition(sessionId, "engineAccepted");
       emitTurnState(ctx, sessionId);
     }
     sendToRenderer(ctx.mainWindow, "assistant:status", { state, sessionId });
@@ -188,19 +211,76 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("resume-invalid", () => {
+    sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
+      sessionId,
+      code: "sessionRefresh",
+      level: "info",
+      panel: true,
+      toast: true,
+      done: true,
+    });
     sessionManager.clearAgentResumeId(sessionId);
     resetSessionEngineCache(sessionId);
     ctx.runnerPool.terminateSession(sessionId);
   });
 
-  runner.on("done", ({ code, output, interrupted }) => {
+  runner.on("done", ({ code, output, interrupted, stalled }) => {
     const inTurn = turnState.has(sessionId);
-    const storedOutput = turnState.end(sessionId);
+    const endReason = interrupted
+      ? "interrupted"
+      : stalled
+        ? "stalled"
+        : !interrupted && code !== 0 && code !== null
+          ? "error"
+          : "completed";
+    const { turnId, output: storedOutput, wasActive } = turnController.completeTurn(
+      sessionId,
+      endReason,
+    );
     const finalOutput = (output || storedOutput || "").trim();
+    const normalized = normalizeAssistantOutput(finalOutput);
 
-    if (inTurn) {
-      if (finalOutput) {
-        sessionManager.pushMessageTo(sessionId, "assistant", finalOutput);
+    if (interrupted) {
+      clearTurnPayloadOnSuccess(sessionId);
+    } else if (normalized.text && !normalized.failed) {
+      clearTurnPayloadOnSuccess(sessionId);
+    }
+
+    const recoveryMeta = {
+      turnId,
+      mainWindow: ctx.mainWindow,
+      sendToRenderer,
+    };
+
+    if (!interrupted && !stalled && (inTurn || wasActive)) {
+      const stderrHint = lastRunnerStderr.get(sessionId);
+      const recoverReason = normalized.failed
+        ? finalOutput
+        : stderrHint && !normalized.text
+          ? stderrHint
+          : null;
+      if (
+        recoverReason &&
+        isRecoverableFailure(recoverReason) &&
+        scheduleAutoRecovery(ctx, sessionId, recoverReason, recoveryMeta)
+      ) {
+        lastRunnerStderr.delete(sessionId);
+        emitTurnState(ctx, sessionId);
+        return;
+      }
+    }
+
+    if (inTurn || wasActive) {
+      if (normalized.text) {
+        sessionManager.pushMessageTo(
+          sessionId,
+          "assistant",
+          normalized.text,
+          null,
+          normalized.failed ? { failed: true } : null,
+        );
+        lastRunnerStderr.delete(sessionId);
+      } else if (stalled || interrupted) {
         lastRunnerStderr.delete(sessionId);
       } else if (
         !interrupted &&
@@ -244,11 +324,30 @@ function wireRunner(ctx, runner) {
       } else {
         lastRunnerStderr.delete(sessionId);
       }
+    } else if (normalized.text) {
+      const session = sessionManager.findById(sessionId);
+      const last = session?.messages?.[session.messages.length - 1];
+      if (!last || last.role !== "assistant" || last.content !== normalized.text) {
+        sessionManager.pushMessageTo(
+          sessionId,
+          "assistant",
+          normalized.text,
+          null,
+          normalized.failed ? { failed: true } : null,
+        );
+      }
+      lastRunnerStderr.delete(sessionId);
     }
 
-    sessionManager.setStatus(sessionId, "idle");
     emitTurnState(ctx, sessionId);
-    sendToRenderer(ctx.mainWindow, "assistant:done", { code, sessionId, interrupted });
+    sendToRenderer(ctx.mainWindow, "assistant:done", {
+      code,
+      sessionId,
+      turnId,
+      interrupted,
+      stalled: Boolean(stalled),
+      hadOutput: Boolean(normalized.text),
+    });
 
     const session = sessionManager.findById(sessionId);
     const wasFocused = ctx.mainWindow?.isFocused?.() ?? true;
@@ -256,17 +355,34 @@ function wireRunner(ctx, runner) {
       notifySessionFinished(ctx.mainWindow, {
         sessionId,
         sessionTitle: session?.title,
-        ok: Boolean(finalOutput),
-        body: finalOutput,
+        ok: Boolean(normalized.text),
+        body: normalized.text,
       });
     }
+
+    void scheduleFlushMessageQueue(ctx, sessionId);
   });
 
   runner.on("error", (message) => {
     if (!turnState.has(sessionId)) return;
-    turnState.abort(sessionId);
+    const { turnId } = turnController.completeTurn(sessionId, "error");
     const { clearDiffsForSession } = require("./diff-capture");
     clearDiffsForSession(sessionId);
+
+    const recoveryMeta = {
+      turnId,
+      mainWindow: ctx.mainWindow,
+      sendToRenderer,
+    };
+    if (
+      message !== "BUSY" &&
+      scheduleAutoRecovery(ctx, sessionId, String(message), recoveryMeta)
+    ) {
+      emitTurnState(ctx, sessionId);
+      return;
+    }
+
+    cancelAutoRecovery(sessionId);
     const friendly =
       message === "BUSY"
         ? "上一条消息还在处理中，请稍后再试。"
@@ -274,12 +390,13 @@ function wireRunner(ctx, runner) {
     sessionManager.pushMessageTo(sessionId, "assistant", friendly, null, {
       failed: true,
     });
-    sessionManager.setStatus(sessionId, "idle");
     emitTurnState(ctx, sessionId);
     sendToRenderer(ctx.mainWindow, "assistant:error", {
       sessionId,
+      turnId,
       message: friendly,
     });
+    void scheduleFlushMessageQueue(ctx, sessionId);
   });
 }
 
@@ -399,12 +516,38 @@ function fileMetadataFromPayload(files = []) {
     type: f.type,
     size: f.size,
     isImage: f.isImage,
+    thumbnail: f.thumbnail || null,
   }));
+}
+
+function notifyUserMessageCommitted(ctx, sessionId, text, files, displayFiles) {
+  const meta =
+    displayFiles?.length > 0
+      ? displayFiles
+      : fileMetadataFromPayload(files);
+  sendToRenderer(ctx.mainWindow, "assistant:user-message", {
+    sessionId,
+    text: String(text || "").trim(),
+    files: meta.length ? meta : null,
+  });
+}
+
+function shouldQueueUserLine(sessionId, runner, opts = {}) {
+  if (opts.fromAutoRecovery || opts.fromQueue) return false;
+  if (turnController.snapshot(sessionId).phase === "stopping") return false;
+  if (isRecoveryPending(sessionId)) return true;
+  if (runner?.isBusy()) return true;
+  if (turnState.has(sessionId)) return true;
+  return false;
 }
 
 async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
   const { sessionManager } = ctx;
   const recordUser = opts.recordUser !== false;
+
+  if (!opts.fromAutoRecovery) {
+    cancelAutoRecovery(session.id);
+  }
 
   const blocked = diagnoseSendBlocker(ctx, session.id);
   if (blocked) {
@@ -418,14 +561,32 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
 
   // Translate images to text before sending to the engine
   let engineFiles = files;
-  try {
-    const descriptions = await require("./vision-translator").translateImages(files);
-    if (descriptions) {
-      text = (text ? text + "\n\n" : "") + descriptions;
-      engineFiles = files.filter((f) => !f.isImage);
+  const hasImages = (files || []).some((f) => f?.isImage);
+  if (hasImages) {
+    try {
+      const visionResult = await require("./vision-translator").translateImages(files);
+      if (visionResult?.ok === true && visionResult.text) {
+        text = (text ? `${text}\n\n` : "") + visionResult.text;
+        engineFiles = files.filter((f) => !f.isImage);
+      } else if (visionResult?.ok === false) {
+        const detail =
+          visionResult.reason === "NO_KEY"
+            ? "内置图片识别未配置，无法分析截图。请联系管理员或稍后再试。"
+            : visionResult.detail || "图片识别失败，请稍后再试。";
+        return {
+          ok: false,
+          error: visionResult.reason === "NO_KEY" ? "VISION_UNAVAILABLE" : "VISION_FAILED",
+          detail,
+        };
+      }
+    } catch (err) {
+      console.warn("[vision-translator]", err.message);
+      return {
+        ok: false,
+        error: "VISION_FAILED",
+        detail: "图片识别失败，请稍后再试。",
+      };
     }
-  } catch (err) {
-    console.warn("[vision-translator]", err.message);
   }
 
   // Re-check sendable content after translation (images may have been the only content)
@@ -453,15 +614,25 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
     };
   }
 
+  if (shouldQueueUserLine(session.id, runner, opts)) {
+    const length = enqueueMessage(session.id, {
+      text,
+      files: engineFiles,
+      displayFiles: opts.displayFiles || fileMetadataFromPayload(files),
+    });
+    emitQueueState(ctx, session.id);
+    return { ok: true, queued: true, queueLength: length };
+  }
+
   if (runner.isBusy() || turnState.has(session.id)) {
     return { ok: false, error: "BUSY" };
   }
 
-  turnState.begin(session.id);
+  turnController.transition(session.id, "userSend");
 
   const sent = runner.sendUserMessage({ text, files: engineFiles });
   if (!sent) {
-    turnState.abort(session.id);
+    turnController.transition(session.id, "sendFailed");
     emitTurnState(ctx, session.id);
     const spawnHint = runner.lastSpawnError;
     return {
@@ -481,7 +652,16 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
       String(text || "").trim(),
       fileMetadata,
     );
+    notifyUserMessageCommitted(
+      ctx,
+      session.id,
+      text,
+      files,
+      opts.displayFiles,
+    );
   }
+
+  recordTurnPayload(session.id, { text, files: engineFiles });
 
   return { ok: true };
 }
@@ -531,6 +711,11 @@ module.exports = {
   warmupActiveRunner,
   applyPermissionModeLive,
   fileMetadataFromPayload,
+  notifyUserMessageCommitted,
+  shouldQueueUserLine,
   dispatchUserLine,
+  flushMessageQueue,
+  clearMessageQueue,
+  queueLength,
   withRunnerChange,
 };

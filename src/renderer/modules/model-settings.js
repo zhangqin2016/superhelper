@@ -7,8 +7,10 @@ import { showToast } from "./toast.js";
 import store from "./state.js";
 import { t, tModel, tModelDesc } from "../i18n/index.js";
 
+import { anySessionRunning } from "./session-busy.js";
+
 function isBusy() {
-  return (store.get("runningSessionIds") || []).length > 0;
+  return anySessionRunning();
 }
 
 function apiErrorMessage(error) {

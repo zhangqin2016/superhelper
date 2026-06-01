@@ -8,14 +8,79 @@ import { renderFilePreview, clearPendingFiles } from "./file-handler.js";
 import { promptSessionName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
-import { isSessionRunning, setSessionRunning } from "./session-busy.js";
+import { canSend, getTurnPhase } from "./session-busy.js";
 import { t } from "../i18n/index.js";
+
+function messageQueueArea() {
+  return $("messageQueueArea");
+}
+
+export function renderMessageQueue(sessionId, items = []) {
+  const area = messageQueueArea();
+  if (!area) return;
+
+  const activeId = store.get("activeSessionId");
+  if (!activeId || sessionId !== activeId || !items.length) {
+    if (!sessionId || sessionId === activeId) {
+      area.hidden = true;
+      area.replaceChildren();
+    }
+    return;
+  }
+
+  area.hidden = false;
+  area.replaceChildren();
+
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "message-queue-item";
+
+    const badge = document.createElement("span");
+    badge.className = "message-queue-badge";
+    badge.textContent = t("composer.queueBadge");
+    row.appendChild(badge);
+
+    const text = document.createElement("span");
+    text.className = "message-queue-preview";
+    const preview =
+      item.preview ||
+      (item.hasFiles ? t("composer.queueAttachmentOnly") : t("composer.queueEmptyText"));
+    text.textContent = preview;
+    text.title = preview;
+    row.appendChild(text);
+
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "message-queue-remove";
+    rm.innerHTML = "&times;";
+    rm.title = t("composer.cancelQueued");
+    rm.setAttribute("aria-label", t("composer.cancelQueued"));
+    rm.addEventListener("click", () => void cancelQueuedMessage(sessionId, item.index));
+    row.appendChild(rm);
+
+    area.appendChild(row);
+  }
+}
+
+async function cancelQueuedMessage(sessionId, index) {
+  if (!sessionId) return;
+  try {
+    const result = await window.assistantClient.cancelQueuedMessage(sessionId, index);
+    if (!result?.ok) {
+      showToast(t("toast.queueCancelFailed"), "warning");
+      return;
+    }
+    showToast(t("toast.messageQueueCancelled"), "info");
+  } catch (err) {
+    showToast(err?.message || t("toast.queueCancelFailed"), "error");
+  }
+}
 
 function renderPromptSuggestions(sessionId, suggestions = []) {
   const bar = $("promptSuggestions");
   if (!bar) return;
   const activeId = store.get("activeSessionId");
-  if (sessionId !== activeId || isSessionRunning(sessionId)) {
+  if (sessionId !== activeId || !canSend(sessionId)) {
     bar.hidden = true;
     bar.replaceChildren();
     return;
@@ -86,8 +151,8 @@ export async function sendPrompt() {
     showToast(t("toast.needSession"), "warning");
     return;
   }
-  if (sessionId && isSessionRunning(sessionId)) {
-    showToast(t("toast.sessionBusy"), "warning");
+  if (sessionId && getTurnPhase(sessionId) === "stopping") {
+    showToast(t("toast.sessionStopping"), "warning");
     return;
   }
   const displayFiles = files.map((f) => {
@@ -104,22 +169,15 @@ export async function sendPrompt() {
   if (promptInput) promptInput.value = "";
   clearPendingFiles();
 
-  const { createMessage, removeLastUserMessage, syncComposerForActiveSession, beginAssistantTurn } =
-    await import("./message.js");
-  if (sessionId) {
-    createMessage(
-      sessionId,
-      "user",
-      savedText,
-      displayFiles.length ? displayFiles : null,
-    );
-  }
-
   let result;
   try {
-    result = await window.assistantClient.sendMessage(text, files, sessionId);
+    result = await window.assistantClient.sendMessage(
+      text,
+      files,
+      sessionId,
+      displayFiles.length ? displayFiles : null,
+    );
   } catch (err) {
-    if (sessionId) removeLastUserMessage(sessionId);
     if (promptInput && savedText) promptInput.value = savedText;
     if (savedFiles.length) {
       store.set("pendingFiles", savedFiles);
@@ -130,7 +188,6 @@ export async function sendPrompt() {
   }
 
   if (!result?.ok) {
-    if (sessionId) removeLastUserMessage(sessionId);
     if (promptInput && savedText) promptInput.value = savedText;
     if (savedFiles.length) {
       store.set("pendingFiles", savedFiles);
@@ -140,11 +197,17 @@ export async function sendPrompt() {
     return;
   }
 
+  if (result.queued) {
+    showToast(
+      t("toast.messageQueued", { count: result.queueLength || 1 }),
+      "info",
+    );
+  }
+
   if (sessionId) {
-    setSessionRunning(sessionId, true);
-    beginAssistantTurn(sessionId);
     renderPromptSuggestions(sessionId, []);
   }
+  const { syncComposerForActiveSession } = await import("./message.js");
   syncComposerForActiveSession();
 
   $("promptInput")?.focus();
@@ -190,8 +253,6 @@ export function initComposer() {
   $("interruptBtn")?.addEventListener("click", async () => {
     const sessionId = store.get("activeSessionId");
     await window.assistantClient.interrupt();
-    const { forceEndTurnUi } = await import("./message.js");
-    if (sessionId) forceEndTurnUi(sessionId);
     renderPromptSuggestions(sessionId, []);
     $("promptInput")?.focus();
   });

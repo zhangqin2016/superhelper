@@ -9,6 +9,7 @@ import { refreshState, updateTopbarTitles, applySessionSwitch } from "./session-
 import { removeSessionMessages } from "./message.js";
 import { promptSessionName, promptProjectName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
+import { isSessionRunning } from "./session-busy.js";
 
 const container = () => $("projectTree");
 
@@ -156,8 +157,7 @@ export function renderProjectTree() {
         item.dataset.projectId = project.id;
 
         const status = document.createElement("span");
-        const runningIds = store.get("runningSessionIds") || [];
-        const isRunning = runningIds.includes(s.id) || s.status === "running";
+        const isRunning = isSessionRunning(s.id);
         status.className = `session-status ${isRunning ? "running" : "idle"}`;
         status.title = isRunning ? t("sidebar.processing") : "";
         item.appendChild(status);
@@ -228,14 +228,14 @@ export function updateSessionRunningIndicators() {
       sessionById.set(session.id, session);
     }
   }
-  const runningIds = new Set(store.get("runningSessionIds") || []);
+  const runningIds = new Set(
+    [...sessionById.keys()].filter((id) => isSessionRunning(id)),
+  );
 
   container()?.querySelectorAll(".session-item").forEach((item) => {
     const dot = item.querySelector(".session-status");
     if (!dot) return;
-    const session = sessionById.get(item.dataset.sessionId);
-    const isRunning =
-      runningIds.has(item.dataset.sessionId) || session?.status === "running";
+    const isRunning = runningIds.has(item.dataset.sessionId);
     dot.classList.toggle("running", isRunning);
     dot.classList.toggle("idle", !isRunning);
     dot.title = isRunning ? t("sidebar.processing") : "";

@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+/**
+ * Vision config resolution (mock Electron, no network).
+ */
+import module from "node:module";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = module.createRequire(import.meta.url);
+const ROOT = path.resolve(__dirname, "..");
+
+const emptyResources = fs.mkdtempSync(path.join(os.tmpdir(), "lily-vision-empty-res-"));
+process.resourcesPath = emptyResources;
+
+const mockUserData = fs.mkdtempSync(path.join(os.tmpdir(), "lily-vision-test-"));
+const electronPath = require.resolve("electron");
+require.cache[electronPath] = {
+  id: electronPath,
+  filename: electronPath,
+  loaded: true,
+  exports: {
+    app: {
+      isPackaged: false,
+      getPath(name) {
+        if (name === "userData") return mockUserData;
+        if (name === "home") return os.homedir();
+        return os.tmpdir();
+      },
+    },
+  },
+};
+
+const prevDash = process.env.DASHSCOPE_API_KEY;
+const prevVision = process.env.VISION_API_KEY;
+delete process.env.DASHSCOPE_API_KEY;
+delete process.env.VISION_API_KEY;
+
+const { agentConfigDir } = require("../src/main/config.js");
+const agentDir = agentConfigDir();
+fs.mkdirSync(agentDir, { recursive: true });
+fs.writeFileSync(
+  path.join(agentDir, "settings.json"),
+  JSON.stringify({
+    env: {
+      DASHSCOPE_API_KEY: "user-dash-key",
+      VISION_MODEL: "qwen-vl-max",
+      DASHSCOPE_BASE_URL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    },
+  }),
+  "utf8",
+);
+
+const { getVisionConfig, translateImages, hasVisionApiKey } = require("../src/main/vision-translator.js");
+
+const config = getVisionConfig();
+if (config.apiKey !== "user-dash-key") {
+  throw new Error(`expected user dash key, got ${config.apiKey}`);
+}
+if (config.model !== "qwen-vl-max") {
+  throw new Error(`expected qwen-vl-max, got ${config.model}`);
+}
+if (!hasVisionApiKey()) {
+  throw new Error("hasVisionApiKey should be true");
+}
+
+(async () => {
+  const noImages = await translateImages([]);
+  if (noImages !== null) {
+    throw new Error("expected null when no images");
+  }
+
+  fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({ env: {} }), "utf8");
+  delete require.cache[require.resolve("../src/main/agent-settings.js")];
+  delete require.cache[require.resolve("../src/main/vision-translator.js")];
+  const vision = require("../src/main/vision-translator.js");
+  if (!vision.hasVisionApiKey()) {
+    const noKeyResult = await vision.translateImages([
+      { isImage: true, path: fileURLToPath(import.meta.url), name: "x.png" },
+    ]);
+    if (!noKeyResult || noKeyResult.ok !== false || noKeyResult.reason !== "NO_KEY") {
+      throw new Error(`expected NO_KEY result, got ${JSON.stringify(noKeyResult)}`);
+    }
+  }
+})()
+  .then(() => {
+    if (prevDash) process.env.DASHSCOPE_API_KEY = prevDash;
+    if (prevVision) process.env.VISION_API_KEY = prevVision;
+    fs.rmSync(mockUserData, { recursive: true, force: true });
+    fs.rmSync(emptyResources, { recursive: true, force: true });
+    console.log("test-vision-translator: ok");
+  })
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
