@@ -7,6 +7,12 @@ import { showToast } from "./toast.js";
 import { t } from "../i18n/index.js";
 
 let latestPackageUrl = "";
+let autoUpdateTimer = null;
+
+const AUTO_UPDATE_START_DELAY_MS = 15_000;
+const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const AUTO_UPDATE_REMIND_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const AUTO_UPDATE_REMIND_KEY = "lily:last-update-reminder";
 
 function licenseErrorMessage(error) {
   const key = `license.error.${error || "GENERIC"}`;
@@ -102,6 +108,80 @@ async function checkUpdates() {
   }
   if (downloadBtn) downloadBtn.hidden = !latestPackageUrl;
   showToast(t("toast.updateAvailable"), "info");
+}
+
+function readLastUpdateReminder() {
+  try {
+    return JSON.parse(localStorage.getItem(AUTO_UPDATE_REMIND_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function shouldRemindUpdate(latestVersion) {
+  const last = readLastUpdateReminder();
+  if (last.version !== latestVersion) return true;
+  const ts = Number(last.ts || 0);
+  return !ts || Date.now() - ts > AUTO_UPDATE_REMIND_COOLDOWN_MS;
+}
+
+function markUpdateReminder(latestVersion) {
+  try {
+    localStorage.setItem(AUTO_UPDATE_REMIND_KEY, JSON.stringify({
+      version: latestVersion,
+      ts: Date.now(),
+    }));
+  } catch {
+    // non-critical reminder persistence
+  }
+}
+
+function applyUpdateAvailable(result) {
+  latestPackageUrl = result.package?.url || "";
+  const statusEl = $("updateStatusText");
+  if (statusEl) {
+    statusEl.textContent = t("settings.updateAvailable", {
+      current: result.currentVersion,
+      latest: result.latestVersion,
+    });
+  }
+  const downloadBtn = $("updateDownloadBtn");
+  if (downloadBtn) downloadBtn.hidden = !latestPackageUrl;
+}
+
+async function autoCheckUpdates() {
+  const result = await window.assistantClient.checkForUpdates();
+  if (!result?.ok || !result.hasUpdate) return;
+
+  applyUpdateAvailable(result);
+  if (!shouldRemindUpdate(result.latestVersion)) return;
+  markUpdateReminder(result.latestVersion);
+
+  const toast = showToast(
+    t("toast.updateAvailableVersion", { version: result.latestVersion }),
+    "info",
+    12000,
+  );
+  if (latestPackageUrl) {
+    toast.style.cursor = "pointer";
+    toast.addEventListener("click", async () => {
+      const opened = await window.assistantClient.openUpdateDownload(latestPackageUrl);
+      if (!opened?.ok) showToast(updateErrorMessage(opened?.error), "error");
+    }, { once: true });
+  }
+}
+
+export function startAutoUpdateChecks() {
+  if (autoUpdateTimer) return;
+
+  const run = () => {
+    autoCheckUpdates().catch((err) => {
+      console.warn("[updates:auto-check]", err?.message || err);
+    });
+  };
+
+  setTimeout(run, AUTO_UPDATE_START_DELAY_MS);
+  autoUpdateTimer = setInterval(run, AUTO_UPDATE_INTERVAL_MS);
 }
 
 export function initLicenseUpdateSettings() {

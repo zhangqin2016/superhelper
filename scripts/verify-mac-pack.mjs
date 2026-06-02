@@ -21,11 +21,14 @@ function findMacUnpacked() {
     .readdirSync(dist, { withFileTypes: true })
     .filter((e) => e.isDirectory() && /^mac(-|$)/.test(e.name))
     .map((e) => path.join(dist, e.name));
-  for (const dir of candidates) {
-    const apps = fs.readdirSync(dir).filter((n) => n.endsWith(".app"));
-    if (apps.length) return path.join(dir, apps[0]);
-  }
-  return null;
+  return candidates
+    .flatMap((dir) =>
+      fs
+        .readdirSync(dir)
+        .filter((n) => n.endsWith(".app"))
+        .map((app) => path.join(dir, app)),
+    )
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] || null;
 }
 
 const appPath = findMacUnpacked();
@@ -36,6 +39,34 @@ if (!appPath) {
 const resources = path.join(appPath, "Contents", "Resources");
 if (!fs.existsSync(resources)) {
   fail(`缺少 Contents/Resources: ${appPath}`);
+}
+
+const appArch = appPath.includes("mac-arm64") ? "arm64" : "x64";
+const bundlesRoot = path.join(resources, "bundles");
+if (fs.existsSync(bundlesRoot)) {
+  const forbiddenBundle = appArch === "arm64" ? "darwin-x64" : "darwin-arm64";
+  if (fs.existsSync(path.join(bundlesRoot, forbiddenBundle))) {
+    fail(`${appArch} Mac 包不应包含 bundles/${forbiddenBundle}`);
+  }
+}
+
+const imgRoot = path.join(resources, "app.asar.unpacked", "node_modules", "@img");
+if (fs.existsSync(imgRoot)) {
+  const sharpNodes = fs
+    .readdirSync(imgRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^sharp-darwin-/.test(entry.name))
+    .map((entry) => path.join(imgRoot, entry.name, "lib", `${entry.name}.node`))
+    .filter((file) => fs.existsSync(file));
+  if (!sharpNodes.length) {
+    fail("缺少 sharp darwin 原生包，图片压缩主路径在 Mac 上不可用");
+  }
+  for (const entry of fs.readdirSync(imgRoot)) {
+    if (/^sharp-(win32|linux)-/.test(entry) || /^sharp-libvips-linux-/.test(entry)) {
+      fail(`Mac 包不应包含 ${entry}`);
+    }
+  }
+} else {
+  fail("缺少 app.asar.unpacked/node_modules/@img，sharp 原生包未打入 Mac 包");
 }
 
 try {

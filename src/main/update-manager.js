@@ -9,6 +9,7 @@ const { verifyDetached } = require("./crypto-signing");
 
 const SETTINGS_FILE = "update-settings.json";
 const FETCH_TIMEOUT_MS = 20_000;
+const DEFAULT_MANIFEST_URL = "https://qny.lanrensoft.cn/app/updates/latest.json";
 
 function settingsPath() {
   return userDataPath(SETTINGS_FILE);
@@ -31,7 +32,7 @@ function writeSettings(settings) {
 }
 
 function defaultManifestUrl() {
-  return process.env.LILY_UPDATE_MANIFEST_URL || "";
+  return process.env.LILY_UPDATE_MANIFEST_URL || DEFAULT_MANIFEST_URL;
 }
 
 function getUpdateSettings() {
@@ -153,4 +154,5 @@ module.exports = {
   compareVersions,
   currentPlatformKey,
   createUpdateManifest,
+  defaultManifestUrl,
 };

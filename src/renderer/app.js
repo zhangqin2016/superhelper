@@ -19,6 +19,7 @@ import {
   initLicenseUpdateSettings,
   refreshLicenseStatus,
   refreshUpdateSettings,
+  startAutoUpdateChecks,
 } from "./modules/license-update-settings.js";
 import { initDiffPanel } from "./modules/diff-panel.js";
 import { showToast } from "./modules/toast.js";
@@ -169,6 +170,7 @@ async function init() {
   await refreshLocaleSelect();
   await refreshLicenseStatus();
   await refreshUpdateSettings();
+  startAutoUpdateChecks();
   await refreshState();
   const state = await window.assistantClient.getFullState();
   if (state?.agent && !state.agent.ready) {

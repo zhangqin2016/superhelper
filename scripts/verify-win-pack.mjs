@@ -32,6 +32,29 @@ if (!fs.existsSync(winBundle)) {
   fail("缺少 resources/bundles/win32-x64");
 }
 
+const sharpNode = path.join(
+  unpacked,
+  "resources",
+  "app.asar.unpacked",
+  "node_modules",
+  "@img",
+  "sharp-win32-x64",
+  "lib",
+  "sharp-win32-x64.node",
+);
+if (!fs.existsSync(sharpNode)) {
+  fail("缺少 sharp win32-x64 原生包，图片压缩主路径在 Windows 上不可用");
+}
+
+const imgRoot = path.join(unpacked, "resources", "app.asar.unpacked", "node_modules", "@img");
+if (fs.existsSync(imgRoot)) {
+  for (const entry of fs.readdirSync(imgRoot)) {
+    if (/^sharp-(darwin|linux)-/.test(entry) || /^sharp-libvips-(darwin|linux)-/.test(entry)) {
+      fail(`Windows 包不应包含 ${entry}`);
+    }
+  }
+}
+
 if (expectRuntime) {
   const manifest = path.join(winBundle, "runtime", "runtime-manifest.json");
   if (!fs.existsSync(manifest)) {

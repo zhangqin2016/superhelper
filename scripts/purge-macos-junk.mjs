@@ -46,11 +46,49 @@ function parseArgs() {
   };
 }
 
+function findPackagedMetadataUnder(rootDir) {
+  const dirs = [];
+  const files = [];
+  if (!rootDir || !fs.existsSync(rootDir)) return { dirs, files };
+
+  function walk(target) {
+    const stat = fs.statSync(target);
+    if (stat.isFile()) {
+      const name = path.basename(target);
+      if (name === ".DS_Store" || name === "Thumbs.db" || name === "desktop.ini" || name.startsWith("._")) {
+        files.push(target);
+      }
+      return;
+    }
+
+    for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+      const full = path.join(target, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "__MACOSX") {
+          dirs.push(full);
+          continue;
+        }
+        walk(full);
+      } else if (
+        entry.name === ".DS_Store" ||
+        entry.name === "Thumbs.db" ||
+        entry.name === "desktop.ini" ||
+        entry.name.startsWith("._")
+      ) {
+        files.push(full);
+      }
+    }
+  }
+
+  walk(rootDir);
+  return { dirs, files };
+}
+
 function main() {
   const { checkOnly, verifyPath, targets } = parseArgs();
 
   if (verifyPath) {
-    const { dirs, files } = findJunkUnder(verifyPath);
+    const { dirs, files } = findPackagedMetadataUnder(verifyPath);
     if (dirs.length || files.length) {
       console.error("[purge-macos-junk] forbidden metadata in packaged output:");
       for (const d of dirs) console.error(`  dir  ${path.relative(ROOT, d) || d}`);

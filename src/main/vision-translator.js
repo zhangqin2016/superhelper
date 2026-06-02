@@ -16,6 +16,9 @@ const { resolveSettingsEnvValue } = require("./agent-settings");
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DEFAULT_MODEL = "qwen-vl-max";
 const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_MAX_EDGE = 1800;
+const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
+const DEFAULT_JPEG_QUALITY = 88;
 
 const MIME_MAP = {
   jpg: "jpeg", jpeg: "jpeg", png: "png",
@@ -40,11 +43,140 @@ function getVisionTimeoutMs() {
   return Math.min(Math.max(raw, 5000), 60000);
 }
 
-function imageToDataUrl(filePath) {
+function getBoundedIntegerEnv(key, fallback, min, max) {
+  const raw = Number.parseInt(resolveSettingsEnvValue(key), 10);
+  if (!Number.isFinite(raw) || raw <= 0) return fallback;
+  return Math.min(Math.max(raw, min), max);
+}
+
+function getVisionImageLimits() {
+  return {
+    maxEdge: getBoundedIntegerEnv("VISION_MAX_EDGE", DEFAULT_MAX_EDGE, 512, 4096),
+    maxBytes: getBoundedIntegerEnv("VISION_MAX_BYTES", DEFAULT_MAX_BYTES, 256 * 1024, 12 * 1024 * 1024),
+    jpegQuality: getBoundedIntegerEnv("VISION_JPEG_QUALITY", DEFAULT_JPEG_QUALITY, 60, 95),
+  };
+}
+
+function toDataUrl(buffer, mime) {
+  return `data:${mime};base64,${buffer.toString("base64")}`;
+}
+
+async function optimizeWithSharp(filePath, limits) {
+  let sharp;
+  try {
+    sharp = require("sharp");
+  } catch {
+    return null;
+  }
+
+  const image = sharp(filePath, { failOn: "none", animated: false }).rotate();
+  const meta = await image.metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  const originalSize = fs.statSync(filePath).size;
+  if (!width || !height) return null;
+
+  const shouldResize = Math.max(width, height) > limits.maxEdge;
+  const shouldCompress = originalSize > limits.maxBytes;
+  if (!shouldResize && !shouldCompress) return null;
+
+  let pipeline = image;
+  if (shouldResize) {
+    pipeline = pipeline.resize({
+      width: limits.maxEdge,
+      height: limits.maxEdge,
+      fit: "inside",
+      withoutEnlargement: true,
+    });
+  }
+
+  let buffer = await pipeline
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: limits.jpegQuality, mozjpeg: true })
+    .toBuffer();
+
+  if (buffer.length > limits.maxBytes) {
+    buffer = await sharp(buffer, { failOn: "none" })
+      .resize({
+        width: Math.floor(limits.maxEdge * 0.8),
+        height: Math.floor(limits.maxEdge * 0.8),
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: Math.max(72, limits.jpegQuality - 10), mozjpeg: true })
+      .toBuffer();
+  }
+
+  return {
+    dataUrl: toDataUrl(buffer, "image/jpeg"),
+    optimized: true,
+    originalBytes: originalSize,
+    optimizedBytes: buffer.length,
+    width,
+    height,
+  };
+}
+
+async function optimizeWithNativeImage(filePath, limits) {
+  let nativeImage;
+  try {
+    ({ nativeImage } = require("electron"));
+  } catch {
+    return null;
+  }
+  if (!nativeImage) return null;
+
+  const originalSize = fs.statSync(filePath).size;
+  const img = nativeImage.createFromPath(filePath);
+  if (!img || img.isEmpty()) return null;
+  const size = img.getSize();
+  const maxOriginalEdge = Math.max(size.width || 0, size.height || 0);
+  const shouldResize = maxOriginalEdge > limits.maxEdge;
+  const shouldCompress = originalSize > limits.maxBytes;
+  if (!shouldResize && !shouldCompress) return null;
+
+  const scale = shouldResize ? limits.maxEdge / maxOriginalEdge : 1;
+  const resized = shouldResize
+    ? img.resize({
+        width: Math.max(1, Math.round(size.width * scale)),
+        height: Math.max(1, Math.round(size.height * scale)),
+        quality: "best",
+      })
+    : img;
+  const buffer = resized.toJPEG(limits.jpegQuality);
+  return {
+    dataUrl: toDataUrl(buffer, "image/jpeg"),
+    optimized: true,
+    originalBytes: originalSize,
+    optimizedBytes: buffer.length,
+    width: size.width || 0,
+    height: size.height || 0,
+  };
+}
+
+async function imageToDataUrl(filePath) {
+  const limits = getVisionImageLimits();
+  try {
+    const optimized =
+      (await optimizeWithSharp(filePath, limits)) ||
+      (await optimizeWithNativeImage(filePath, limits));
+    if (optimized?.dataUrl) {
+      if (optimized.optimizedBytes < optimized.originalBytes) {
+        console.info(
+          `[vision-translator] optimized ${path.basename(filePath)} ` +
+          `${optimized.width}x${optimized.height} ${optimized.originalBytes}B -> ${optimized.optimizedBytes}B`,
+        );
+      }
+      return optimized.dataUrl;
+    }
+  } catch (err) {
+    console.warn(`[vision-translator] image optimize skipped for ${path.basename(filePath)}:`, err.message);
+  }
+
   const ext = path.extname(filePath).toLowerCase().replace(".", "");
   const mime = MIME_MAP[ext] || "jpeg";
   const data = fs.readFileSync(filePath);
-  return `data:image/${mime};base64,${data.toString("base64")}`;
+  return toDataUrl(data, `image/${mime}`);
 }
 
 function includesAny(text, words) {
@@ -213,7 +345,7 @@ async function translateImage(filePath, prompt) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Image file not found: ${filePath}`);
   }
-  const imageUrl = imageToDataUrl(filePath);
+  const imageUrl = await imageToDataUrl(filePath);
   const question = prompt || "请用中文详细描述这张图片的内容。";
   return callVisionApi(config, {
     model: config.model,
@@ -278,9 +410,11 @@ async function translateImages(files, options = {}) {
 module.exports = {
   buildVisionPrompt,
   getVisionConfig,
+  getVisionImageLimits,
   getVisionTimeoutMs,
   hasVisionApiKey,
   inferVisionMode,
+  imageToDataUrl,
   translateImage,
   translateImages,
 };

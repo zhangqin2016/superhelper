@@ -41,6 +41,8 @@ const {
 const {
   createUpdateManifest,
   compareVersions,
+  defaultManifestUrl,
+  getUpdateSettings,
 } = require("../src/main/update-manager.js");
 const { verifyDetached } = require("../src/main/crypto-signing.js");
 
@@ -112,6 +114,13 @@ if (compareVersions("0.2.0", "0.1.9") <= 0) {
 }
 if (compareVersions("0.1.0", "0.1.0") !== 0) {
   throw new Error("compareVersions equality failed");
+}
+
+if (defaultManifestUrl() !== "https://qny.lanrensoft.cn/app/updates/latest.json") {
+  throw new Error(`default manifest url mismatch: ${defaultManifestUrl()}`);
+}
+if (getUpdateSettings().manifestUrl !== defaultManifestUrl()) {
+  throw new Error("update settings should expose the built-in manifest URL by default");
 }
 
 console.log("license-update: ok");

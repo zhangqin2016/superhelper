@@ -7,8 +7,8 @@ cd "$ROOT"
 
 source "$(dirname "$0")/setup-proxy.sh"
 
-echo "[dist-mac] 打包 darwin-arm64 + darwin-x64 bundles（约 3GB，签名 bundles 已跳过）"
+echo "[dist-mac] 打包 darwin-arm64（新款 Mac 默认架构，签名 bundles 已跳过）"
 node scripts/fix-runtime-symlinks.mjs
 node scripts/purge-macos-junk.mjs --check
 
-exec npx electron-builder --mac "$@"
+exec npx electron-builder --mac --arm64 "$@"

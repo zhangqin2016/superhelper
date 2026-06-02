@@ -60,5 +60,8 @@ echo "[dist-win] Windows 安装包仅包含 bundles/win32-x64（不含 Mac runti
 
 node scripts/purge-macos-junk.mjs --check
 
+echo "[dist-win] 确保 sharp win32-x64 原生包已安装"
+npm install --os=win32 --cpu=x64 --include=optional
+
 # 必须打 x64：在 Apple Silicon 上省略 --x64 会产出 win-arm64，普通 Intel/AMD PC 无法运行。
 exec npx electron-builder --win --x64 "$@"
