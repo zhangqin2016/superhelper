@@ -582,6 +582,9 @@ function shouldQueueUserLine(sessionId, runner, opts = {}) {
 async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
   const { sessionManager } = ctx;
   const recordUser = opts.recordUser !== false;
+  const displayText = String(text || "").trim();
+  let engineText = displayText;
+  const engineFiles = files;
 
   if (!opts.fromAutoRecovery) {
     cancelAutoRecovery(session.id);
@@ -595,40 +598,7 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
 
   const { hasSendableContent } = require("./user-message");
   // For the hasSendableContent check, images in files are considered content
-  if (!hasSendableContent(text, files)) return { ok: false, error: "EMPTY" };
-
-  // Translate images to text before sending to the engine
-  let engineFiles = files;
-  const hasImages = (files || []).some((f) => f?.isImage);
-  if (hasImages) {
-    try {
-      const visionResult = await require("./vision-translator").translateImages(files);
-      if (visionResult?.ok === true && visionResult.text) {
-        text = (text ? `${text}\n\n` : "") + visionResult.text;
-        engineFiles = files.filter((f) => !f.isImage);
-      } else if (visionResult?.ok === false) {
-        const detail =
-          visionResult.reason === "NO_KEY"
-            ? "内置图片识别未配置，无法分析截图。请联系管理员或稍后再试。"
-            : visionResult.detail || "图片识别失败，请稍后再试。";
-        return {
-          ok: false,
-          error: visionResult.reason === "NO_KEY" ? "VISION_UNAVAILABLE" : "VISION_FAILED",
-          detail,
-        };
-      }
-    } catch (err) {
-      console.warn("[vision-translator]", err.message);
-      return {
-        ok: false,
-        error: "VISION_FAILED",
-        detail: "图片识别失败，请稍后再试。",
-      };
-    }
-  }
-
-  // Re-check sendable content after translation (images may have been the only content)
-  if (!text && !hasSendableContent("", engineFiles)) return { ok: false, error: "EMPTY" };
+  if (!hasSendableContent(displayText, files)) return { ok: false, error: "EMPTY" };
 
   const ensured = ensureSessionRunner(ctx, session.id, {
     spawn: opts.spawnEngine === true,
@@ -654,8 +624,8 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
 
   if (shouldQueueUserLine(session.id, runner, opts)) {
     const length = enqueueMessage(session.id, {
-      text,
-      files: engineFiles,
+      text: displayText,
+      files,
       displayFiles: opts.displayFiles || fileMetadataFromPayload(files),
     });
     emitQueueState(ctx, session.id);
@@ -679,14 +649,14 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
     sessionManager.pushMessageTo(
       session.id,
       "user",
-      String(text || "").trim(),
+      displayText,
       fileMetadata,
     );
     if (!opts.skipSessionEvents) {
       notifyUserMessageCommitted(
         ctx,
         session.id,
-        text,
+        displayText,
         files,
         opts.displayFiles,
         { fromQueue: opts.fromQueue },
@@ -695,8 +665,63 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
   }
 
   turnController.transition(session.id, "userSend");
+  emitTurnState(ctx, session.id);
 
-  const sent = runner.sendUserMessage({ text, files: engineFiles });
+  // Enrich images after committing the user bubble, so slow OCR/vision never makes
+  // the chat appear frozen. Keep original images in the payload for vision-capable models.
+  const hasImages = (files || []).some((f) => f?.isImage);
+  if (hasImages) {
+    sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
+      sessionId: session.id,
+      code: "visionPreparing",
+      level: "progress",
+      panel: true,
+      replace: true,
+    });
+    try {
+      const visionResult = await require("./vision-translator").translateImages(files, {
+        userText: displayText,
+      });
+      if (visionResult?.ok === true && visionResult.text) {
+        engineText = (displayText ? `${displayText}\n\n` : "") + visionResult.text;
+        sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
+          sessionId: session.id,
+          code: "visionReady",
+          level: "progress",
+          panel: true,
+          replace: true,
+          replacesCode: "visionPreparing",
+          done: true,
+        });
+      } else if (visionResult?.ok === false) {
+        console.warn("[vision-translator]", visionResult.reason, visionResult.detail || "");
+        sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
+          sessionId: session.id,
+          code: "visionSkipped",
+          level: "warning",
+          panel: true,
+          replace: true,
+          replacesCode: "visionPreparing",
+          done: true,
+          detail: visionResult.detail || "",
+        });
+      }
+    } catch (err) {
+      console.warn("[vision-translator]", err.message);
+      sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
+        sessionId: session.id,
+        code: "visionSkipped",
+        level: "warning",
+        panel: true,
+        replace: true,
+        replacesCode: "visionPreparing",
+        done: true,
+        detail: err.message || "",
+      });
+    }
+  }
+
+  const sent = runner.sendUserMessage({ text: engineText, files: engineFiles });
   if (!sent) {
     turnController.transition(session.id, "sendFailed");
     emitTurnState(ctx, session.id);
@@ -710,7 +735,7 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
 
   emitTurnState(ctx, session.id);
 
-  recordTurnPayload(session.id, { text, files: engineFiles });
+  recordTurnPayload(session.id, { text: engineText, files: engineFiles });
 
   const committedMeta =
     opts.displayFiles?.length > 0
@@ -720,7 +745,7 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
     ok: true,
     userCommitted: recordUser
       ? {
-          text: String(text || "").trim(),
+          text: displayText,
           files: committedMeta.length ? committedMeta : null,
         }
       : null,

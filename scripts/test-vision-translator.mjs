@@ -53,7 +53,13 @@ fs.writeFileSync(
   "utf8",
 );
 
-const { getVisionConfig, translateImages, hasVisionApiKey } = require("../src/main/vision-translator.js");
+const {
+  buildVisionPrompt,
+  getVisionConfig,
+  hasVisionApiKey,
+  inferVisionMode,
+  translateImages,
+} = require("../src/main/vision-translator.js");
 
 const config = getVisionConfig();
 if (config.apiKey !== "user-dash-key") {
@@ -64,6 +70,30 @@ if (config.model !== "qwen-vl-max") {
 }
 if (!hasVisionApiKey()) {
   throw new Error("hasVisionApiKey should be true");
+}
+
+const bugMode = inferVisionMode("这个 bug 截图报错 Session ID already in use", [
+  { name: "screen.png" },
+]);
+if (bugMode !== "bug_screenshot") {
+  throw new Error(`expected bug_screenshot, got ${bugMode}`);
+}
+
+const designMode = inferVisionMode("帮我看下这个页面布局和间距", [
+  { name: "ui.png" },
+]);
+if (designMode !== "design_review") {
+  throw new Error(`expected design_review, got ${designMode}`);
+}
+
+const prompt = buildVisionPrompt({
+  userText: "这个截图为什么不能发送消息？",
+  mode: "bug_screenshot",
+});
+for (const expected of ["用户问题：这个截图为什么不能发送消息？", "可见文字/OCR", "关键错误/异常", "可用于代码搜索的关键词", "不确定点"]) {
+  if (!prompt.includes(expected)) {
+    throw new Error(`expected prompt to include ${expected}`);
+  }
 }
 
 (async () => {

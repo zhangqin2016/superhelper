@@ -271,6 +271,9 @@
   "message.toolFailed": "فشل {title}",
   "message.retry": "إعادة المحاولة",
   "engine.shellLongRunning": "الأمر ما زال قيد التشغيل: {detail}",
+  "engine.visionPreparing": "جارٍ تحليل الصورة…",
+  "engine.visionReady": "اكتمل تحليل الصورة",
+  "engine.visionSkipped": "تحليل الصورة غير متاح حالياً — نتابع بالصورة الأصلية",
 
   "tool.readFile": "قراءة ملف",
   "tool.writeFile": "كتابة ملف",
