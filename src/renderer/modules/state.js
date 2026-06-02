@@ -11,7 +11,6 @@ const store = {
     conversation: [],
     isBusy: false,
     runningSessionId: null,
-    runningSessionIds: [],
     activeBubble: null,
     activeMarkdown: "",
     pendingFiles: [],

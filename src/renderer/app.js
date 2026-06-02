@@ -15,6 +15,11 @@ import { initPermissionSettings } from "./modules/permission-settings.js";
 import { initSearchSettings } from "./modules/search-settings.js";
 import { initSkillSettings, refreshSkillsList } from "./modules/skill-settings.js";
 import { initLocaleSettings, refreshLocaleSelect } from "./modules/locale-settings.js";
+import {
+  initLicenseUpdateSettings,
+  refreshLicenseStatus,
+  refreshUpdateSettings,
+} from "./modules/license-update-settings.js";
 import { initDiffPanel } from "./modules/diff-panel.js";
 import { showToast } from "./modules/toast.js";
 import { $ } from "./modules/dom.js";
@@ -89,9 +94,15 @@ function initGlobalSearch() {
   });
 }
 
-function updateAboutVersion() {
+async function updateAboutVersion() {
   const el = $("settingsAboutVersion");
-  if (el) el.textContent = t("settings.aboutVersion", { version: "0.1.0" });
+  if (!el) return;
+  try {
+    const result = await window.assistantClient?.getAppVersion?.();
+    el.textContent = t("settings.aboutVersion", { version: result?.version || "0.1.0" });
+  } catch {
+    el.textContent = t("settings.aboutVersion", { version: "0.1.0" });
+  }
 }
 
 async function bindAppIcons() {
@@ -117,7 +128,8 @@ async function bindAppIcons() {
 function wireLocaleRefresh() {
   onLocaleChange(async () => {
     applyDomI18n();
-    updateAboutVersion();
+    await updateAboutVersion();
+    await refreshLicenseStatus();
     await refreshLocaleSelect();
     updateTopbarTitles();
     renderProjectTree();
@@ -129,7 +141,7 @@ function wireLocaleRefresh() {
 
 async function init() {
   await initI18n();
-  updateAboutVersion();
+  await updateAboutVersion();
   wireLocaleRefresh();
 
   await bindAppIcons();
@@ -149,11 +161,14 @@ async function init() {
   initPermissionSettings();
   initSearchSettings();
   initSkillSettings();
+  initLicenseUpdateSettings();
   initSessionSkills();
 
   initDiffPanel();
 
   await refreshLocaleSelect();
+  await refreshLicenseStatus();
+  await refreshUpdateSettings();
   await refreshState();
   const state = await window.assistantClient.getFullState();
   if (state?.agent && !state.agent.ready) {

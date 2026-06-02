@@ -4,7 +4,7 @@
 
 import store from "./state.js";
 
-/** @typedef {"idle"|"sending"|"streaming"|"tool"|"permission"|"stopping"} TurnPhase */
+/** @typedef {"idle"|"sending"|"streaming"|"tool"|"permission"|"stopping"|"closing"} TurnPhase */
 
 const MACHINE_PHASES = new Set([
   "idle",
@@ -13,6 +13,7 @@ const MACHINE_PHASES = new Set([
   "tool",
   "permission",
   "stopping",
+  "closing",
 ]);
 
 /** @type {Map<string, object>} */
@@ -39,14 +40,6 @@ function normalizePhase(payload) {
     default:
       return payload.active ? "streaming" : "idle";
   }
-}
-
-function syncLegacyRunningIds() {
-  const ids = [];
-  for (const [sessionId, entry] of states) {
-    if (entry.phase !== "idle") ids.push(sessionId);
-  }
-  store.set("runningSessionIds", ids);
 }
 
 function logDevMismatch(sessionId, legacyRunning) {
@@ -91,7 +84,6 @@ export function applyTurnState(payload) {
     seq: payload.seq ?? (prev?.seq ?? 0) + 1,
   };
   states.set(sessionId, entry);
-  syncLegacyRunningIds();
 
   if (devCompareEnabled && typeof payload.active === "boolean") {
     logDevMismatch(sessionId, payload.active);
@@ -100,7 +92,7 @@ export function applyTurnState(payload) {
 
 /** Seed from state:full on startup (until first turn-state arrives). */
 export function hydrateTurnStoreFromState(state) {
-  const ids = new Set(state?.runningSessionIds || []);
+  const ids = new Set();
   for (const project of state?.projects || []) {
     for (const session of project.sessions || []) {
       if (session.status === "running") ids.add(session.id);
@@ -118,7 +110,6 @@ export function hydrateTurnStoreFromState(state) {
       });
     }
   }
-  syncLegacyRunningIds();
 }
 
 /** @param {string | null | undefined} sessionId */

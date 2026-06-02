@@ -28,11 +28,13 @@ class SessionTurnState {
 
   end(sessionId) {
     const { output, wasActive } = turnController.completeTurn(sessionId, "completed");
+    turnController.finalizeTurn(sessionId);
     return wasActive ? output : turnController.getOutput(sessionId);
   }
 
   abort(sessionId) {
     turnController.completeTurn(sessionId, "interrupted");
+    turnController.finalizeTurn(sessionId);
   }
 
   getRunningSessionIds(_runnerPool) {

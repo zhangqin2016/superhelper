@@ -15,6 +15,7 @@ const {
   emitQueueState,
 } = require("../src/main/turn-message-queue.js");
 const { shouldQueueUserLine } = require("../src/main/ipc-utils.js");
+const { turnController } = require("../src/main/turn-controller.js");
 
 const sid = "sess_queue_test";
 
@@ -56,5 +57,13 @@ if (!shouldQueueUserLine(sid, busyRunner, {})) {
 if (shouldQueueUserLine(sid, busyRunner, { fromQueue: true })) {
   throw new Error("fromQueue should not re-queue");
 }
+
+turnController.transition(sid, "userSend");
+turnController.transition(sid, "engineAccepted");
+turnController.completeTurn(sid, "completed");
+if (!shouldQueueUserLine(sid, { isBusy: () => false }, {})) {
+  throw new Error("closing turn should queue direct user send");
+}
+turnController.finalizeTurn(sid);
 
 console.log("turn-message-queue: ok");

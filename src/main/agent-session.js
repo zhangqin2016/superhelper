@@ -80,6 +80,10 @@ class AgentSession extends EventEmitter {
     this._emittedToolIds = new Set();
     /** @type {Map<number, string>} — content block index → tool_use id */
     this._blockIndexToToolId = new Map();
+    /** @type {Map<string, { name: string, input: Record<string, unknown>, detached: boolean }>} */
+    this._toolLeases = new Map();
+    /** @type {Map<string, ReturnType<typeof setTimeout>>} */
+    this._toolLeaseNoticeTimers = new Map();
   }
 
   /** After stream goes quiet, complete turn if CLI never sends `result`. */
@@ -94,6 +98,8 @@ class AgentSession extends EventEmitter {
   static POST_TOOL_SILENCE_MS = 45_000;
   /** Wait briefly after message_stop for a trailing `result` event. */
   static MESSAGE_STOP_GRACE_MS = 2_500;
+  /** Long-running foreground shell commands need visible user feedback. */
+  static TOOL_LONG_TASK_NOTICE_MS = 30_000;
 
   _clearIdleTimer() {
     if (this._idleTimer) {
@@ -136,6 +142,19 @@ class AgentSession extends EventEmitter {
       clearTimeout(this._messageStopTimer);
       this._messageStopTimer = null;
     }
+  }
+
+  _clearToolLeaseNoticeTimer(toolId) {
+    const timer = this._toolLeaseNoticeTimers.get(toolId);
+    if (timer) clearTimeout(timer);
+    this._toolLeaseNoticeTimers.delete(toolId);
+  }
+
+  _clearToolLeaseNoticeTimers() {
+    for (const timer of this._toolLeaseNoticeTimers.values()) {
+      clearTimeout(timer);
+    }
+    this._toolLeaseNoticeTimers.clear();
   }
 
   /** End a stuck turn quietly — unlock UI without scary error bubbles. */
@@ -210,6 +229,86 @@ class AgentSession extends EventEmitter {
       this._pendingToolIds.size === 0 &&
       this._pendingPermissions.size === 0
     );
+  }
+
+  _isShellTool(name) {
+    return /^(bash|shell|runcommand)$/i.test(String(name || ""));
+  }
+
+  _isDetachedShellInput(name, input = {}) {
+    if (!this._isShellTool(name)) return false;
+    const command = String(input.command || input.cmd || input.script || "").trim();
+    if (!command) return false;
+    return /(?:^|\s)(?:nohup|setsid)\s+/i.test(command) ||
+      /(?:^|\s)disown(?:\s|$)/i.test(command) ||
+      /&\s*(?:>|2>|1>|$)/.test(command);
+  }
+
+  _trackToolLease(toolId, name, input = {}) {
+    if (!toolId) return;
+    const prev = this._toolLeases.get(toolId);
+    const nextName = name || prev?.name || "unknown";
+    const nextInput =
+      input && Object.keys(input).length > 0
+        ? input
+        : prev?.input || {};
+    const detached = this._isDetachedShellInput(nextName, nextInput);
+
+    this._toolLeases.set(toolId, {
+      name: nextName,
+      input: nextInput,
+      detached,
+    });
+
+    if (detached) this._pendingToolIds.delete(toolId);
+    else this._pendingToolIds.add(toolId);
+
+    if (detached) {
+      this._clearToolLeaseNoticeTimer(toolId);
+    } else if (this._isShellTool(nextName) && !this._toolLeaseNoticeTimers.has(toolId)) {
+      const detail = String(nextInput.command || nextInput.cmd || nextInput.script || "")
+        .trim()
+        .slice(0, 160);
+      const timer = setTimeout(() => {
+        this._toolLeaseNoticeTimers.delete(toolId);
+        if (!this.busy || this._turnSettled || !this._toolLeases.has(toolId)) return;
+        this._emitEngineNotice({
+          code: "shellLongRunning",
+          level: "progress",
+          panel: true,
+          replace: true,
+          toolName: nextName,
+          detail,
+        });
+      }, AgentSession.TOOL_LONG_TASK_NOTICE_MS);
+      this._toolLeaseNoticeTimers.set(toolId, timer);
+    }
+  }
+
+  _updateToolLeaseInput(toolId, input = {}) {
+    if (!toolId) return;
+    const prev = this._toolLeases.get(toolId);
+    if (!prev) return;
+    this._trackToolLease(toolId, prev.name, input);
+  }
+
+  _finishToolLease(toolId) {
+    if (!toolId) return;
+    this._pendingToolIds.delete(toolId);
+    this._toolLeases.delete(toolId);
+    this._clearToolLeaseNoticeTimer(toolId);
+  }
+
+  _tryParseToolInputJson(toolId) {
+    if (!toolId) return null;
+    const raw = this._streamingToolInputs.get(toolId);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
   }
 
   _armIdleCompletionTimer() {
@@ -439,6 +538,7 @@ class AgentSession extends EventEmitter {
     this.collectedOutput = "";
     this._streamParentToolUseId = null;
     this._pendingToolIds.clear();
+    this._toolLeases.clear();
     this._turnHadToolUse = false;
     this._clearPendingPermissions(true);
     this._streamingToolInputs.clear();
@@ -548,12 +648,13 @@ class AgentSession extends EventEmitter {
       this._writeControlLine(buildInterruptRequest());
       this._interruptFallbackTimer = setTimeout(() => {
         if (this.busy && !this._turnSettled) {
-          log.warn("interrupt control timed out; ending turn without killing CLI");
+          log.warn("interrupt control timed out; ending turn and restarting CLI");
           this._completeTurn({
             code: null,
             output: this.collectedOutput.trim(),
             interrupted: true,
           });
+          this.terminate();
         }
       }, AgentSession.INTERRUPT_FALLBACK_MS);
       return;
@@ -573,7 +674,9 @@ class AgentSession extends EventEmitter {
     this._clearInterruptFallback();
     this._denyAllPendingPermissions("Session ended");
     this._clearPendingPermissions(true);
+    this._clearToolLeaseNoticeTimers();
     this._pendingToolIds.clear();
+    this._toolLeases.clear();
     this._turnHadToolUse = false;
     if (!this.process) {
       this.cwd = null;
@@ -607,8 +710,10 @@ class AgentSession extends EventEmitter {
     this._clearPostToolWaitTimer();
     this._clearMessageStopTimer();
     this._clearInterruptFallback();
+    this._clearToolLeaseNoticeTimers();
     this._clearPendingPermissions(true);
     this._pendingToolIds.clear();
+    this._toolLeases.clear();
     this._turnHadToolUse = false;
     this._streamParentToolUseId = null;
     this._streamingToolInputs.clear();
@@ -627,8 +732,10 @@ class AgentSession extends EventEmitter {
     this._clearAbsoluteTurnTimer();
     this._clearPostToolWaitTimer();
     this._clearInterruptFallback();
+    this._clearToolLeaseNoticeTimers();
     this._clearPendingPermissions(true);
     this._pendingToolIds.clear();
+    this._toolLeases.clear();
     this._turnHadToolUse = false;
     this._streamParentToolUseId = null;
     this._streamingToolInputs.clear();
@@ -849,7 +956,7 @@ class AgentSession extends EventEmitter {
             case "tool_use": {
               this._turnHadToolUse = true;
               const toolId = block.id || "";
-              if (toolId) this._pendingToolIds.add(toolId);
+              this._trackToolLease(toolId, block.name || "unknown", block.input || {});
               this._clearIdleTimer();
               this._clearPostToolWaitTimer();
               this._markStreamActivity();
@@ -860,6 +967,7 @@ class AgentSession extends EventEmitter {
                   id: toolId,
                   input: block.input || {},
                 });
+                this._updateToolLeaseInput(toolId, block.input || {});
                 this._streamingToolInputs.delete(toolId);
                 break;
               }
@@ -884,7 +992,7 @@ class AgentSession extends EventEmitter {
         for (const block of blocks) {
           if (block.type === "tool_result") {
             const toolId = block.tool_use_id || "";
-            if (toolId) this._pendingToolIds.delete(toolId);
+            this._finishToolLease(toolId);
             this._maybeArmPostToolWaitTimer();
             let resultContent = null;
             if (Array.isArray(block.content)) {
@@ -922,7 +1030,7 @@ class AgentSession extends EventEmitter {
               this._turnHadToolUse = true;
               this._clearIdleTimer();
               this._clearPostToolWaitTimer();
-              if (block.id) this._pendingToolIds.add(block.id);
+              this._trackToolLease(block.id, block.name, block.input || {});
               this._emittedToolIds.add(block.id);
               this._streamingToolInputs.set(block.id, "");
               if (typeof inner.index === "number") {
@@ -953,9 +1061,13 @@ class AgentSession extends EventEmitter {
             break;
           }
 
-          case "content_block_stop":
-            // Tool input streaming complete — no action needed; assistant event will follow
+          case "content_block_stop": {
+            const idx = typeof inner.index === "number" ? inner.index : -1;
+            const toolId = this._blockIndexToToolId.get(idx);
+            const parsed = this._tryParseToolInputJson(toolId);
+            if (parsed) this._updateToolLeaseInput(toolId, parsed);
             break;
+          }
 
           case "message_stop":
             this._markStreamActivity();

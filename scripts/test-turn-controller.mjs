@@ -40,6 +40,9 @@ const done = tc.completeTurn(sid, "completed");
 if (!done.wasActive || done.output !== "hello") {
   throw new Error(`completeTurn failed: ${JSON.stringify(done)}`);
 }
+s = snap("closing");
+assertCaps(s, { canSend: false, canInterrupt: false });
+tc.finalizeTurn(sid);
 s = snap("idle");
 if (s.endReason !== "completed") throw new Error("endReason missing");
 
@@ -51,6 +54,7 @@ snap("tool");
 tc.transition(sid, "toolEnd");
 snap("streaming");
 tc.completeTurn(sid, "completed");
+tc.finalizeTurn(sid);
 
 // interrupt path
 tc.beginTurn(sid);
@@ -80,12 +84,13 @@ const seqAfter = tc.snapshot(sid).seq;
 if (seqAfter <= seqBefore) throw new Error("seq should increase on transition");
 
 // running ids
-tc.completeTurn(sid, "completed");
+tc.finalizeTurn(sid);
 tc.beginTurn("other");
 const running = tc.getRunningSessionIds();
 if (!running.includes("other") || running.includes(sid)) {
   throw new Error(`getRunningSessionIds failed: ${running}`);
 }
 tc.completeTurn("other", "completed");
+tc.finalizeTurn("other");
 
 console.log("test-turn-controller: ok");

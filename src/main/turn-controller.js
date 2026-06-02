@@ -3,7 +3,7 @@
 const crypto = require("node:crypto");
 const { appendTextSegment } = require("./agent-runner");
 
-/** @typedef {"idle"|"sending"|"streaming"|"tool"|"permission"|"stopping"} TurnPhase */
+/** @typedef {"idle"|"sending"|"streaming"|"tool"|"permission"|"stopping"|"closing"} TurnPhase */
 /** @typedef {"completed"|"interrupted"|"stalled"|"error"|"send_failed"} TurnEndReason */
 
 const CAPS = {
@@ -13,6 +13,7 @@ const CAPS = {
   tool: { canSend: false, canInterrupt: true },
   permission: { canSend: false, canInterrupt: true },
   stopping: { canSend: false, canInterrupt: false },
+  closing: { canSend: false, canInterrupt: false },
 };
 
 function emptySession() {
@@ -159,7 +160,7 @@ class TurnController {
   }
 
   /**
-   * End turn and return accumulated output (done handler).
+   * End turn output collection; enter closing until finalizeTurn (UI boundary).
    * @param {string} sessionId
    * @param {TurnEndReason} reason
    */
@@ -168,8 +169,25 @@ class TurnController {
     if (s.phase === "idle") {
       return { turnId: null, output: s.output, wasActive: false };
     }
-    const { turnId, output } = this._toIdle(sessionId, reason);
+    const turnId = s.turnId;
+    const output = s.output;
+    s.endReason = reason;
+    s.phase = "closing";
+    s.pendingTools = 0;
+    this._bump(sessionId);
     return { turnId, output, wasActive: true };
+  }
+
+  /** After session-events boundary — allow next send / queue flush. */
+  finalizeTurn(sessionId) {
+    const s = this._ensure(sessionId);
+    if (s.phase === "idle") {
+      return { turnId: null, output: s.output, wasActive: false };
+    }
+    if (s.phase === "closing") {
+      return this._toIdle(sessionId, s.endReason || "completed");
+    }
+    return this._toIdle(sessionId, s.endReason || "completed");
   }
 
   /** Force idle (e.g. interrupt when runner already settled). */

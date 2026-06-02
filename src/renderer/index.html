@@ -368,6 +368,42 @@
                 <p class="settings-about-name" data-i18n="app.brand">智能工作台</p>
                 <p class="settings-about-version" id="settingsAboutVersion">版本 0.1.0</p>
               </div>
+              <div class="settings-field settings-field--divider">
+                <h4 class="settings-subsection-title" data-i18n="settings.licenseTitle">授权</h4>
+                <p id="licenseStatusText" class="settings-section-desc" data-i18n="settings.licenseLoading">正在读取授权状态…</p>
+                <textarea
+                  id="licenseTokenInput"
+                  class="skills-registry-input"
+                  rows="3"
+                  data-i18n-placeholder="settings.licensePlaceholder"
+                  placeholder="粘贴激活码"
+                  spellcheck="false"
+                ></textarea>
+                <div class="settings-actions">
+                  <button id="licenseActivateBtn" class="settings-action-btn" type="button" data-i18n="settings.licenseActivate">激活</button>
+                  <button id="licenseClearBtn" class="settings-action-btn" type="button" data-i18n="settings.licenseClear">移除授权</button>
+                </div>
+              </div>
+              <div class="settings-field settings-field--divider">
+                <h4 class="settings-subsection-title" data-i18n="settings.updateTitle">版本更新</h4>
+                <p id="updateStatusText" class="settings-section-desc" data-i18n="settings.updateHint">填写七牛 latest.json 地址后可检查新版本。</p>
+                <label class="settings-field-label" for="updateManifestUrl" data-i18n="settings.updateManifestUrl">更新清单 URL</label>
+                <input
+                  id="updateManifestUrl"
+                  class="skills-registry-input"
+                  type="url"
+                  maxlength="512"
+                  data-i18n-placeholder="settings.updateManifestPlaceholder"
+                  placeholder="https://cdn.example.com/app/updates/latest.json"
+                  spellcheck="false"
+                  autocomplete="off"
+                />
+                <div class="settings-actions">
+                  <button id="updateSaveBtn" class="settings-action-btn" type="button" data-i18n="settings.updateSave">保存地址</button>
+                  <button id="updateCheckBtn" class="settings-action-btn" type="button" data-i18n="settings.updateCheck">检查更新</button>
+                  <button id="updateDownloadBtn" class="settings-action-btn" type="button" hidden data-i18n="settings.updateDownload">打开下载</button>
+                </div>
+              </div>
             </section>
           </div>
         </div>

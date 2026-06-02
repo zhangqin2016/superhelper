@@ -90,60 +90,29 @@ function emitQueueState(ctx, sessionId) {
  * @param {object} ctx
  * @param {string} sessionId
  */
-async function flushMessageQueue(ctx, sessionId) {
-  const { sessionManager, runnerPool } = ctx;
-  const { isRecoveryPending } = require("./turn-auto-recovery");
-  const { turnState } = require("./session-turn-state");
-
-  if (!sessionId || queueLength(sessionId) === 0) return;
-
-  const runner = runnerPool.get(sessionId);
-  if (runner?.isBusy() || turnState.has(sessionId) || isRecoveryPending(sessionId)) {
-    return;
-  }
-
-  const item = dequeueMessage(sessionId);
+function requeueFront(sessionId, item) {
   if (!item) return;
-
-  const session = sessionManager.findById(sessionId);
-  if (!session) {
-    emitQueueState(ctx, sessionId);
-    return;
-  }
-
-  const { dispatchUserLine, sendToRenderer } = require("./ipc-utils");
-  const result = await dispatchUserLine(ctx, session, item.text, item.files, {
-    recordUser: true,
-    spawnEngine: true,
-    fromQueue: true,
-    displayFiles: item.displayFiles,
-  });
-
-  if (result.queued) {
-    getQueue(sessionId).unshift(item);
-    emitQueueState(ctx, sessionId);
-    return;
-  }
-
-  if (!result.ok) {
-    getQueue(sessionId).unshift(item);
-    emitQueueState(ctx, sessionId);
-    sendToRenderer(ctx.mainWindow, "assistant:queue-dispatch-failed", {
-      sessionId,
-      error: result.error,
-      detail: result.detail,
-    });
-    return;
-  }
-
-  emitQueueState(ctx, sessionId);
+  getQueue(sessionId).unshift(item);
 }
 
-function scheduleFlushMessageQueue(ctx, sessionId) {
-  if (!sessionId) return;
-  setImmediate(() => {
-    void flushMessageQueue(ctx, sessionId);
-  });
+/**
+ * @param {object} ctx
+ * @param {string} sessionId
+ */
+function takeQueueItemIfIdle(ctx, sessionId) {
+  const { runnerPool } = ctx;
+  const { isRecoveryPending } = require("./turn-auto-recovery");
+  const { turnController } = require("./turn-controller");
+
+  if (!sessionId || queueLength(sessionId) === 0) return null;
+
+  const runner = runnerPool.get(sessionId);
+  if (runner?.isBusy() || isRecoveryPending(sessionId)) return null;
+
+  const phase = turnController.snapshot(sessionId).phase;
+  if (phase !== "idle" && phase !== "closing") return null;
+
+  return dequeueMessage(sessionId);
 }
 
 module.exports = {
@@ -152,8 +121,8 @@ module.exports = {
   queueLength,
   clearMessageQueue,
   removeQueuedMessage,
+  requeueFront,
+  takeQueueItemIfIdle,
   buildQueueState,
   emitQueueState,
-  flushMessageQueue,
-  scheduleFlushMessageQueue,
 };

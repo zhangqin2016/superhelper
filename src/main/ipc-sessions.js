@@ -3,6 +3,7 @@
 const { ipcMain } = require("electron");
 const { ensureSessionRunner, isSessionBusy, withRunnerChange, anyRunnerBusy } = require("./ipc-utils");
 const skillManager = require("./skill-manager");
+const { requireValidLicense } = require("./license-manager");
 
 function registerSessionHandlers(ctx) {
   const { sessionManager, projectManager, runnerPool } = ctx;
@@ -76,6 +77,9 @@ function registerSessionHandlers(ctx) {
   });
 
   ipcMain.handle("session:set-skills", (_event, payload) => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
     const sessionId = payload?.sessionId || sessionManager.activeSessionId;
     const session = sessionId ? sessionManager.findById(sessionId) : null;
     if (!session) return { ok: false, error: "NOT_FOUND" };
@@ -106,6 +110,9 @@ function registerSkillHandlers(ctx) {
   }));
 
   ipcMain.handle("skills:set-enabled", (_event, payload) => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
     const id = payload?.id;
     const enabled = Boolean(payload?.enabled);
     if (!id) return { ok: false, error: "NOT_FOUND" };
@@ -115,10 +122,16 @@ function registerSkillHandlers(ctx) {
   });
 
   ipcMain.handle("skills:refresh", () => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
     return withRunnerChange(ctx, () => skillManager.refreshSkillsConfig(), { liveEnv: false });
   });
 
   ipcMain.handle("skills:restore-bundled", (_event, payload) => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
     return withRunnerChange(ctx, () => skillManager.restoreBundledSkill(id), { liveEnv: false });
@@ -135,6 +148,9 @@ function registerSkillHandlers(ctx) {
   });
 
   ipcMain.handle("skills:check-updates", async () => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
     if (anyRunnerBusy(runnerPool)) {
       return { ok: false, error: "BUSY" };
     }
@@ -142,6 +158,9 @@ function registerSkillHandlers(ctx) {
   });
 
   ipcMain.handle("skills:install", async (_event, payload) => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
     const id = payload?.id;
     const version = payload?.version;
     if (!id) return { ok: false, error: "NOT_FOUND" };
@@ -149,12 +168,18 @@ function registerSkillHandlers(ctx) {
   });
 
   ipcMain.handle("skills:update", async (_event, payload) => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
     return withRunnerChange(ctx, () => skillManager.updateFromRegistry(id), { liveEnv: false });
   });
 
   ipcMain.handle("skills:uninstall", (_event, payload) => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
     return withRunnerChange(ctx, () => skillManager.uninstallRemoteSkill(id), { liveEnv: false });

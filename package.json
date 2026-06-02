@@ -1,16 +1,22 @@
 {
   "name": "lily-workbench",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "description": "智能工作台桌面客户端",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "start:dev": "DEV_USE_SYSTEM_AGENT=1 electron .",
-    "test:unit": "node scripts/test-turn-controller.mjs && node scripts/test-agent-runner.mjs && node scripts/test-turn-auto-recovery.mjs && node scripts/test-turn-message-queue.mjs && node scripts/test-runtime-python.mjs && node scripts/test-spawn-env-runtime.mjs && node scripts/test-locale-settings.mjs && node scripts/test-data-migration.mjs && node scripts/test-skill-root.mjs && node scripts/test-ship-ignore.mjs && node scripts/test-agent-guide-mirror.mjs && node scripts/test-vision-translator.mjs",
+    "test:unit": "node scripts/test-turn-controller.mjs && node scripts/test-turn-boundary.mjs && node scripts/test-interrupt-and-send.mjs && node scripts/test-agent-runner.mjs && node scripts/test-agent-tool-lease.mjs && node scripts/test-license-update.mjs && node scripts/test-release-admin.mjs && node scripts/test-turn-auto-recovery.mjs && node scripts/test-turn-message-queue.mjs && node scripts/test-session-events.mjs && node scripts/test-runtime-python.mjs && node scripts/test-spawn-env-runtime.mjs && node scripts/test-locale-settings.mjs && node scripts/test-data-migration.mjs && node scripts/test-skill-root.mjs && node scripts/test-ship-ignore.mjs && node scripts/test-agent-guide-mirror.mjs && node scripts/test-vision-translator.mjs",
     "sync:skills-catalog": "node scripts/sync-skills-catalog.mjs",
     "sync:skills-bundle": "node scripts/sync-skills-catalog.mjs --bundle-only",
     "generate:skill-i18n": "node scripts/generate-skill-i18n.mjs",
+    "license:keygen": "node scripts/license-keygen.mjs",
+    "license:generate": "node scripts/generate-license.mjs",
+    "updates:sign-manifest": "node scripts/sign-update-manifest.mjs",
+    "release:admin": "node scripts/release-admin.mjs",
+    "release:one": "node scripts/release-one-click.mjs",
+    "release:all": "node scripts/release-one-click.mjs --target all --upload",
     "build:runtime": "node scripts/build-runtime-bundle.mjs",
     "verify:runtime": "node scripts/verify-runtime-bundle.mjs",
     "icon:optimize": "node scripts/optimize-icon.mjs",
@@ -24,7 +30,7 @@
   },
   "build": {
     "appId": "com.company.ai-super-terminal",
-    "productName": "智能工作台",
+    "productName": "Lily Workbench",
     "directories": {
       "buildResources": "resources"
     },
@@ -109,11 +115,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}"
@@ -124,9 +134,12 @@
       "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "智能工作台",
+      "shortcutName": "Lily Workbench",
       "unicode": true,
-      "installerLanguages": ["zh_CN", "en_US"],
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
       "language": "2052"
     }
   },

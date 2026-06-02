@@ -11,11 +11,16 @@ const {
 const { turnController } = require("./turn-controller");
 const { cancelAutoRecovery } = require("./turn-auto-recovery");
 const { clearMessageQueue, emitQueueState, removeQueuedMessage, queueLength } = require("./turn-message-queue");
+const { interruptAndSend, finishInterruptedTurnIfSettled } = require("./interrupt-and-send");
+const { requireValidLicense } = require("./license-manager");
 
 function registerAssistantHandlers(ctx) {
   const { sessionManager, runnerPool, projectManager } = ctx;
 
   ipcMain.handle("assistant:input", async (_event, payload) => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
     const text = typeof payload === "string" ? payload : payload.text;
     const files = typeof payload === "object" && payload.files ? payload.files : [];
     const requestedId =
@@ -46,7 +51,41 @@ function registerAssistantHandlers(ctx) {
     });
   });
 
+  ipcMain.handle("assistant:interrupt-and-send", async (_event, payload) => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
+    const text = typeof payload === "string" ? payload : payload.text;
+    const files = typeof payload === "object" && payload.files ? payload.files : [];
+    const requestedId =
+      typeof payload === "object" && payload?.sessionId ? payload.sessionId : null;
+
+    let session = requestedId
+      ? sessionManager.findById(requestedId)
+      : sessionManager.getActive();
+    if (!session) return { ok: false, error: "NO_SESSION" };
+
+    if (requestedId && requestedId !== sessionManager.activeSessionId) {
+      sessionManager.switchTo(requestedId);
+    }
+    if (session.projectId !== projectManager.getActive()?.id) {
+      projectManager.switchTo(session.projectId);
+    }
+
+    const displayFiles =
+      typeof payload === "object" && Array.isArray(payload.displayFiles)
+        ? payload.displayFiles
+        : [];
+
+    return await interruptAndSend(ctx, session, text, files, {
+      displayFiles,
+    });
+  });
+
   ipcMain.handle("assistant:retry", async (_event, payload) => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
     const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
     const session = sessionId ? sessionManager.findById(sessionId) : null;
     if (!session) return { ok: false, error: "NO_SESSION" };
@@ -115,7 +154,13 @@ function registerAssistantHandlers(ctx) {
     return handled ? { ok: true, sessionId, requestId } : { ok: false, error: "NOT_PENDING" };
   });
 
-  ipcMain.handle("assistant:interrupt", () => {
+  ipcMain.handle("assistant:turn-state:snapshot", (_event, payload) => {
+    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    if (!sessionId) return { ok: false, error: "NO_SESSION" };
+    return { ok: true, ...turnController.snapshot(sessionId) };
+  });
+
+  ipcMain.handle("assistant:interrupt", async () => {
     const session = sessionManager.getActive();
     if (!session) return { ok: false, error: "NO_SESSION" };
 
@@ -133,22 +178,15 @@ function registerAssistantHandlers(ctx) {
 
     runner?.interrupt();
 
-    if (hadTurn && !runner?.isBusy()) {
-      const { turnId, output, wasActive } = turnController.completeTurn(
-        session.id,
-        "interrupted",
-      );
-      if (wasActive && output?.trim()) {
-        sessionManager.pushMessageTo(session.id, "assistant", output.trim());
-      }
-      emitTurnState(ctx, session.id);
+    const settled = await finishInterruptedTurnIfSettled(ctx, session, runner, hadTurn);
+    if (settled) {
       sendToRenderer(ctx.mainWindow, "assistant:done", {
         code: null,
         sessionId: session.id,
-        turnId,
+        turnId: settled.turnId,
         interrupted: true,
         stalled: false,
-        hadOutput: Boolean(output?.trim()),
+        hadOutput: settled.hadOutput,
       });
     }
 

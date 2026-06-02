@@ -9,6 +9,7 @@ import { refreshModelSelect } from "./model-settings.js";
 import { refreshPermissionSelect } from "./permission-settings.js";
 import { refreshSearchSettings } from "./search-settings.js";
 import { refreshSkillsList } from "./skill-settings.js";
+import { refreshLicenseStatus, refreshUpdateSettings } from "./license-update-settings.js";
 import { anySessionRunning } from "./session-busy.js";
 
 const SETTINGS_PAGES = ["general", "model", "permission", "search", "skills", "about"];
@@ -64,6 +65,8 @@ export async function initSettingsPanel() {
     await refreshPermissionSelect();
     await refreshSearchSettings();
     await refreshSkillsList();
+    await refreshLicenseStatus();
+    await refreshUpdateSettings();
     setPanelOpen(true);
   });
 

@@ -5,11 +5,14 @@ dist/
 **/__MACOSX/
 **/._*
 *.log
+release/
+release-keys/
 bundles/*/claude
 bundles/*/claude.exe
 bundles/*/engine-upstream
 bundles/*/engine-upstream.exe
 bundles/*/runtime/
+bundles/*.iml
 .idea
 # 本地密钥，勿提交（见 settings.example.json）
 resources/agent-defaults/settings.json

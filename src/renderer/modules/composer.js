@@ -132,7 +132,7 @@ function sendErrorMessage(result) {
   return mapped === key ? t("send.error.GENERIC") : mapped;
 }
 
-export async function sendPrompt() {
+export async function sendPrompt(opts = {}) {
   const promptInput = $("promptInput");
   const text = promptInput?.value.trim() || "";
   const files = (store.get("pendingFiles") || []).map((f) => ({
@@ -166,12 +166,19 @@ export async function sendPrompt() {
   const savedText = text;
   const savedFiles = [...(store.get("pendingFiles") || [])];
 
+  if (files.some((f) => f.isImage)) {
+    showToast(t("toast.visionPreparing"), "info", 5000);
+  }
+
   if (promptInput) promptInput.value = "";
   clearPendingFiles();
 
   let result;
   try {
-    result = await window.assistantClient.sendMessage(
+    const send = opts.interrupt
+      ? window.assistantClient.interruptAndSend
+      : window.assistantClient.sendMessage;
+    result = await send(
       text,
       files,
       sessionId,
@@ -197,7 +204,9 @@ export async function sendPrompt() {
     return;
   }
 
-  if (result.queued) {
+  if (result.priority) {
+    showToast(t("toast.messagePriorityQueued"), "info");
+  } else if (result.queued) {
     showToast(
       t("toast.messageQueued", { count: result.queueLength || 1 }),
       "info",
@@ -219,6 +228,10 @@ function shouldSendOnEnter(event) {
   return true;
 }
 
+function shouldInterruptAndSend(event) {
+  return shouldSendOnEnter(event) && event.altKey;
+}
+
 export function initComposer() {
   const composer = $("composer");
   const promptInput = $("promptInput");
@@ -238,7 +251,7 @@ export function initComposer() {
     promptInput.addEventListener("keydown", (e) => {
       if (imeComposing || !shouldSendOnEnter(e)) return;
       e.preventDefault();
-      sendPrompt();
+      sendPrompt({ interrupt: shouldInterruptAndSend(e) });
     });
   }
 

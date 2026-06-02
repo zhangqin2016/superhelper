@@ -6,7 +6,6 @@ const { resolveAgentCommand } = require("./agent-command");
 const { listPresetsPublic } = require("./model-presets");
 const { resolveRuntimeIconDataUrl } = require("./app-icon");
 const { listLocalesPublic, setLocale } = require("./locale-settings");
-const { getRunningSessionIds } = require("./ipc-utils");
 const { registerFileHandlers } = require("./ipc-files");
 const { registerModelHandlers, registerPermissionHandlers, registerSearchHandlers } = require("./ipc-models");
 const { registerProjectHandlers } = require("./ipc-projects");
@@ -23,6 +22,7 @@ function registerAll(ctx) {
   // --- App ---------------------------------------------------------------
 
   ipcMain.handle("app:get-icon-url", () => resolveRuntimeIconDataUrl());
+  ipcMain.handle("app:get-version", () => ({ ok: true, version: require("electron").app.getVersion() }));
   ipcMain.handle("app:get-locale", () => ({ ok: true, ...listLocalesPublic() }));
   ipcMain.handle("app:set-locale", (_event, locale) => {
     const result = setLocale(locale);
@@ -50,7 +50,6 @@ function registerAll(ctx) {
       projects: projectsWithSessions,
       conversation: active?.messages || [],
       runnerSessionIds: runnerPool.getSessionIds(),
-      runningSessionIds: getRunningSessionIds(runnerPool),
       agent: {
         ...agent,
         ok: cliReady,
@@ -60,6 +59,28 @@ function registerAll(ctx) {
       models: listPresetsPublic(),
       permissions: require("./permission-settings").listPermissionsPublic(),
     };
+  });
+
+  ipcMain.handle("license:status", () =>
+    require("./license-manager").getLicenseStatus());
+  ipcMain.handle("license:activate", (_event, payload) =>
+    require("./license-manager").activateLicense(payload?.token || payload));
+  ipcMain.handle("license:clear", () =>
+    require("./license-manager").clearLicense());
+
+  ipcMain.handle("updates:get-settings", () =>
+    require("./update-manager").getUpdateSettings());
+  ipcMain.handle("updates:set-settings", (_event, payload) =>
+    require("./update-manager").setUpdateSettings(payload));
+  ipcMain.handle("updates:check", () => {
+    const licensed = require("./license-manager").requireValidLicense();
+    if (!licensed.ok) return licensed;
+    return require("./update-manager").checkForUpdates();
+  });
+  ipcMain.handle("updates:open-download", (_event, payload) => {
+    const licensed = require("./license-manager").requireValidLicense();
+    if (!licensed.ok) return licensed;
+    return require("./update-manager").openUpdateDownload(payload?.url || payload);
   });
 
   // --- Sub-module registrations ---

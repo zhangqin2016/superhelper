@@ -18,10 +18,10 @@ import {
   canInterrupt,
   getTurnPhase,
   applyTurnState as storeTurnState,
-  syncRunningFromState,
 } from "./session-busy.js";
 import { showToast } from "./toast.js";
 import { renderMessageQueue } from "./composer.js";
+import { createSessionEventApplier } from "./session-event-applier.js";
 import { updateSessionRunningIndicators } from "./project-tree.js";
 import {
   addToolCard as addToolCardImpl,
@@ -59,6 +59,7 @@ const sessionViews = new Map();
 
 /** @type {Map<string, ReturnType<typeof setInterval>>} */
 const busyHeartbeats = new Map();
+let turnStateWatchdog = null;
 
 function clearBusyHeartbeat(sessionId) {
   const timer = busyHeartbeats.get(sessionId);
@@ -561,23 +562,84 @@ function finishActiveTurn(sessionId) {
 }
 
 /** Collapse the in-flight assistant turn before appending a user bubble (queue flush / IPC race). */
-function finalizeTurnUi(sessionId) {
+function materializeTurnEnded(sessionId, event) {
   const v = view(sessionId);
-  if (!v.activeTurn && !v.activeBubble) return;
+  const assistantText = event?.assistant?.text || "";
+  const hadTools = v.turnHadToolUse || v.toolCards.size > 0;
+
+  if (assistantText && v.activeTurn) {
+    let bubble = v.activeBubble;
+    if (!bubble && v.activeTurn.bubble) {
+      bubble = v.activeTurn.bubble;
+      v.activeBubble = bubble;
+    }
+    const domEmpty =
+      !v.activeMarkdown.trim() && !(bubble?.textContent?.trim().length > 0);
+    if (bubble && domEmpty) {
+      renderMarkdown(bubble, softenStreamGlue(assistantText));
+      v.activeMarkdown = assistantText;
+      if (hadTools && v.activeTurn?.article) {
+        const divider = v.activeTurn.article.querySelector(".turn-section-divider");
+        if (divider) divider.hidden = false;
+      }
+    }
+  }
 
   const hadReply =
     v.activeMarkdown.trim().length > 0 ||
-    (v.activeBubble?.textContent?.trim().length > 0);
+    (v.activeBubble?.textContent?.trim().length > 0) ||
+    Boolean(assistantText);
   if (v.activeBubble) {
     v.activeBubble.classList.remove("pending");
-    if (!hadReply) {
+    if (!hadReply && !hadTools) {
       v.activeBubble.remove();
       v.activeBubble = null;
     }
   }
+
   finishActiveTurn(sessionId);
   sealLastTurnArticle(sessionId);
+  flushDeferredUserCommits(sessionId);
+
+  if (event?.assistant?.failed && v.listEl) {
+    const turn = v.listEl.querySelector(".msg-turn:last-of-type");
+    if (turn) {
+      turn.dataset.failed = "true";
+      attachRetryAction(turn, sessionId);
+    }
+  }
 }
+
+/** Deferred user bubbles when session-events beat turn-ended materialization. */
+const deferredUserCommits = new Map();
+
+function flushDeferredUserCommits(sessionId) {
+  const pending = deferredUserCommits.get(sessionId);
+  if (!pending?.length) return;
+  deferredUserCommits.delete(sessionId);
+  for (const event of pending) {
+    createMessage(sessionId, "user", event.text || "", event.files || null);
+  }
+}
+
+function appendUserCommitted(sessionId, event) {
+  if (hasLiveTurn(sessionId)) {
+    if (event.fromQueue) {
+      const queue = deferredUserCommits.get(sessionId) || [];
+      queue.push(event);
+      deferredUserCommits.set(sessionId, queue);
+      return;
+    }
+    // idle IPC can beat turn-ended; seal stale shell so user bubble lands in order
+    materializeTurnEnded(sessionId, { assistant: null });
+  }
+  createMessage(sessionId, "user", event.text || "", event.files || null);
+}
+
+const applySessionEventBatch = createSessionEventApplier({
+  materializeTurnEnded,
+  appendUserCommitted,
+});
 
 function sealLastTurnArticle(sessionId) {
   const listEl = view(sessionId).listEl;
@@ -599,14 +661,6 @@ function sealLastTurnArticle(sessionId) {
     activity.hidden = true;
   }
 }
-
-function appendCommittedUserMessage(sessionId, text, files) {
-  if (hasLiveTurn(sessionId)) {
-    finalizeTurnUi(sessionId);
-  }
-  createMessage(sessionId, "user", text, files);
-}
-
 
 function permissionPromptCopy(toolName, payload) {
   if (toolName === "ExitPlanMode") {
@@ -832,7 +886,27 @@ function applyTurnState(payload) {
   updateSessionRunningIndicators();
 }
 
+function startTurnStateWatchdog() {
+  if (turnStateWatchdog || !window.assistantClient?.getTurnState) return;
+  turnStateWatchdog = setInterval(async () => {
+    const sessionId = store.get("activeSessionId");
+    if (!sessionId) return;
+    if (canSend(sessionId) && !hasLiveTurn(sessionId)) return;
+    try {
+      const snap = await window.assistantClient.getTurnState(sessionId);
+      if (snap?.ok) {
+        applyTurnState(snap);
+        if (isActiveSession(sessionId)) syncComposerForActiveSession();
+      }
+    } catch {
+      // Best-effort UI calibration only.
+    }
+  }, 10000);
+}
+
 export function wireMessageIpc() {
+  startTurnStateWatchdog();
+
   window.assistantClient.onFileDiff?.((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
@@ -841,6 +915,15 @@ export function wireMessageIpc() {
 
   window.assistantClient.onTurnState?.(applyTurnState);
 
+  window.assistantClient.onSessionEvents?.((payload) => {
+    applySessionEventBatch(payload);
+    const sessionId = payload?.sessionId;
+    if (sessionId && isActiveSession(sessionId)) {
+      syncActiveStoreFromView(sessionId);
+      syncComposerForActiveSession();
+    }
+  });
+
   window.assistantClient.onQueueState?.((payload) => {
     const sessionId = payload?.sessionId;
     if (!sessionId) return;
@@ -848,13 +931,6 @@ export function wireMessageIpc() {
     setQueuedMessageItems(sessionId, payload.items || []);
     renderMessageQueue(sessionId, payload.items || []);
     if (isActiveSession(sessionId)) syncComposerForActiveSession();
-  });
-
-  window.assistantClient.onUserMessage?.((payload) => {
-    const sessionId = payload?.sessionId;
-    if (!sessionId) return;
-    appendCommittedUserMessage(sessionId, payload.text || "", payload.files || null);
-    if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
   });
 
   window.assistantClient.onQueueDispatchFailed?.((payload) => {
@@ -995,22 +1071,15 @@ export function wireMessageIpc() {
     clearBusyHeartbeat(sessionId);
     view(sessionId).activityLabel = "";
 
-    const v = view(sessionId);
-    const hadReply =
-      v.activeMarkdown.trim().length > 0 ||
-      (v.activeBubble?.textContent?.trim().length > 0);
-    finalizeTurnUi(sessionId);
-
-    if (payload.stalled && isActiveSession(sessionId) && !hadReply) {
+    if (payload.stalled && isActiveSession(sessionId) && !payload.hadOutput) {
       showToast(t("message.stalledHint"), "info");
     }
 
-    // Unblock composer immediately, before the async refresh
     if (isActiveSession(sessionId)) {
       syncComposerForActiveSession();
     }
 
-    await refreshStateLight({ reRenderActive: isActiveSession(sessionId) });
+    await refreshStateLight({ reRenderActive: false });
 
     if (isActiveSession(sessionId)) {
       $("promptInput")?.focus();
@@ -1034,22 +1103,10 @@ export function wireMessageIpc() {
     if (!sessionId) return;
 
     clearBusyHeartbeat(sessionId);
-    clearToolCards(sessionId);
-
-    const v = view(sessionId);
-    let bubble = v.activeBubble;
-    if (!bubble) bubble = beginAssistantTurn(sessionId);
-    bubble.classList.remove("pending");
-    renderMarkdown(bubble, error.message || t("message.errorGeneric"));
-    if (v.activeTurn?.article) {
-      v.activeTurn.article.dataset.failed = "true";
-      attachRetryAction(v.activeTurn.article, sessionId);
-    }
-    finishActiveTurn(sessionId);
 
     if (isActiveSession(sessionId)) syncComposerForActiveSession();
 
-    await refreshStateLight({ reRenderActive: isActiveSession(sessionId) });
+    await refreshStateLight({ reRenderActive: false });
 
     if (isActiveSession(sessionId)) {
       $("promptInput")?.focus();

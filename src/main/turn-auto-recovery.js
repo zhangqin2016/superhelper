@@ -1,6 +1,7 @@
 "use strict";
 
 const { isUpstreamApiFailure, sanitizeError } = require("./agent-runner");
+const { emitTurnState } = require("./session-turn-state");
 
 const MAX_AUTO_RETRIES = 2;
 const RECOVERY_DELAYS_MS = [1500, 3000];
@@ -114,7 +115,7 @@ async function executeAutoRecovery(ctx, sessionId, priorReason, meta) {
   const { sessionManager, runnerPool } = ctx;
   const session = sessionManager.findById(sessionId);
   if (!session) {
-    finalizeRecoveryFailure(ctx, sessionId, priorReason, meta);
+    await finalizeRecoveryFailure(ctx, sessionId, priorReason, meta);
     return;
   }
 
@@ -145,13 +146,12 @@ async function executeAutoRecovery(ctx, sessionId, priorReason, meta) {
     return;
   }
 
-  finalizeRecoveryFailure(ctx, sessionId, detail, meta);
+  await finalizeRecoveryFailure(ctx, sessionId, detail, meta);
 }
 
-function finalizeRecoveryFailure(ctx, sessionId, message, meta = {}) {
+async function finalizeRecoveryFailure(ctx, sessionId, message, meta = {}) {
   cancelAutoRecovery(sessionId);
   const { sessionManager } = ctx;
-  const { emitTurnState } = require("./turn-controller");
   const friendly = sanitizeError(String(message || ""));
 
   sessionManager.pushMessageTo(sessionId, "assistant", friendly, null, {
@@ -170,8 +170,15 @@ function finalizeRecoveryFailure(ctx, sessionId, message, meta = {}) {
     sessionId,
     message: friendly,
   });
-  const { scheduleFlushMessageQueue } = require("./turn-message-queue");
-  scheduleFlushMessageQueue(ctx, sessionId);
+  const { emitTurnBoundary } = require("./turn-boundary");
+  await emitTurnBoundary(ctx, sessionId, {
+    turnId: meta.turnId ?? null,
+    endReason: "error",
+    interrupted: false,
+    stalled: false,
+    hadOutput: true,
+    assistant: { text: friendly, failed: true },
+  });
 }
 
 module.exports = {

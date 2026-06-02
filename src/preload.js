@@ -4,10 +4,13 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("assistantClient", {
   getAppIconUrl: () => ipcRenderer.invoke("app:get-icon-url"),
+  getAppVersion: () => ipcRenderer.invoke("app:get-version"),
   getLocale: () => ipcRenderer.invoke("app:get-locale"),
   setLocale: (locale) => ipcRenderer.invoke("app:set-locale", locale),
   sendMessage: (text, files, sessionId, displayFiles) =>
     ipcRenderer.invoke("assistant:input", { text, files, sessionId, displayFiles }),
+  interruptAndSend: (text, files, sessionId, displayFiles) =>
+    ipcRenderer.invoke("assistant:interrupt-and-send", { text, files, sessionId, displayFiles }),
   retryLastMessage: (sessionId) =>
     ipcRenderer.invoke("assistant:retry", { sessionId }),
   respondPermission: (sessionId, requestId, allow, options = {}) =>
@@ -18,6 +21,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
       remember: Boolean(options.remember),
       message: options.message,
     }),
+  getTurnState: (sessionId) =>
+    ipcRenderer.invoke("assistant:turn-state:snapshot", { sessionId }),
   interrupt: () => ipcRenderer.invoke("assistant:interrupt"),
   cancelQueuedMessage: (sessionId, index) =>
     ipcRenderer.invoke("assistant:cancel-queued-message", { sessionId, index }),
@@ -74,6 +79,15 @@ contextBridge.exposeInMainWorld("assistantClient", {
   getImageDimensions: (fileId) => ipcRenderer.invoke("files:dimensions", fileId),
   clearStagingCache: () => ipcRenderer.invoke("files:clear-staging"),
 
+  getLicenseStatus: () => ipcRenderer.invoke("license:status"),
+  activateLicense: (token) => ipcRenderer.invoke("license:activate", { token }),
+  clearLicense: () => ipcRenderer.invoke("license:clear"),
+
+  getUpdateSettings: () => ipcRenderer.invoke("updates:get-settings"),
+  setUpdateSettings: (payload) => ipcRenderer.invoke("updates:set-settings", payload),
+  checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  openUpdateDownload: (url) => ipcRenderer.invoke("updates:open-download", { url }),
+
   listDirectory: (dirPath) => ipcRenderer.invoke("filetree:list-dir", { dirPath }),
   acceptChange: (sessionId, filePath) =>
     ipcRenderer.invoke("filetree:accept-change", { sessionId, filePath }),
@@ -125,11 +139,11 @@ contextBridge.exposeInMainWorld("assistantClient", {
   onAutoRecover: (callback) => {
     ipcRenderer.on("assistant:auto-recover", (_event, data) => callback(data));
   },
+  onSessionEvents: (callback) => {
+    ipcRenderer.on("assistant:session-events", (_event, data) => callback(data));
+  },
   onQueueState: (callback) => {
     ipcRenderer.on("assistant:queue-state", (_event, data) => callback(data));
-  },
-  onUserMessage: (callback) => {
-    ipcRenderer.on("assistant:user-message", (_event, data) => callback(data));
   },
   onQueueDispatchFailed: (callback) => {
     ipcRenderer.on("assistant:queue-dispatch-failed", (_event, data) => callback(data));
