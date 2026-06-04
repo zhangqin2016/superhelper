@@ -12,6 +12,7 @@ const { registerProjectHandlers } = require("./ipc-projects");
 const { registerSessionHandlers, registerSkillHandlers } = require("./ipc-sessions");
 const { registerAssistantHandlers } = require("./ipc-assistant");
 const { registerFileTreeHandlers } = require("./ipc-filetree");
+const { registerPtyHandlers } = require("./ipc-pty");
 
 function registerAll(ctx) {
   const {
@@ -111,6 +112,7 @@ function registerAll(ctx) {
   registerSkillHandlers(ctx);
   registerAssistantHandlers(ctx);
   registerFileTreeHandlers();
+  registerPtyHandlers(mainWindow);
 }
 
 module.exports = { registerAll };

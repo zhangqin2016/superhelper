@@ -188,4 +188,19 @@ contextBridge.exposeInMainWorld("assistantClient", {
   onFileDiff: (callback) => {
     ipcRenderer.on("assistant:file-diff", (_event, data) => callback(data));
   },
+
+  // --- PTY terminal API ---
+  ptyCreate: (payload) => ipcRenderer.invoke("pty:create", payload),
+  ptyInput: (sessionId, data) => ipcRenderer.send("pty:input", { sessionId, data }),
+  ptyResize: (sessionId, cols, rows) => ipcRenderer.send("pty:resize", { sessionId, cols, rows }),
+  ptyDestroy: (sessionId) => ipcRenderer.invoke("pty:destroy", { sessionId }),
+  onPtyData: (callback) => {
+    ipcRenderer.on("pty:data", (_event, data) => callback(data));
+  },
+  onPtyExit: (callback) => {
+    ipcRenderer.on("pty:exit", (_event, data) => callback(data));
+  },
+  onPtyError: (callback) => {
+    ipcRenderer.on("pty:error", (_event, data) => callback(data));
+  },
 });

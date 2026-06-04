@@ -1,5 +1,6 @@
 /**
- * Composer — sends user messages to the active Claude session (stream-json).
+ * Composer — sends user messages to the active Claude session.
+ * PTY mode: sends text directly to terminal. Falls back to stream-json.
  */
 
 import store from "./state.js";
@@ -8,6 +9,7 @@ import { renderFilePreview, clearPendingFiles } from "./file-handler.js";
 import { promptSessionName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
+import { sendToTerminal } from "./message.js";
 import { canSend, getTurnPhase } from "./session-busy.js";
 import { t } from "../i18n/index.js";
 
@@ -151,6 +153,14 @@ export async function sendPrompt(opts = {}) {
     showToast(t("toast.needSession"), "warning");
     return;
   }
+
+  // PTY mode: send text directly to terminal
+  if (sendToTerminal(sessionId, text)) {
+    if (promptInput) promptInput.value = "";
+    return;
+  }
+
+  // Stream-json mode fallback
   if (sessionId && getTurnPhase(sessionId) === "stopping") {
     showToast(t("toast.sessionStopping"), "warning");
     return;

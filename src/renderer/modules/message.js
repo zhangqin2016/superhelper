@@ -1,8 +1,10 @@
 /**
  * Chat UI — one message panel per session (Claude Code App style).
+ * PTY mode: uses xterm.js terminal instead of message list.
  */
 
 import store from "./state.js";
+import { createTerminal, writeToTerminal, destroyTerminal } from "./terminal-view.js";
 import {
   $,
   scrollToBottom,
@@ -254,6 +256,9 @@ function ensurePanel(sessionId) {
   return v;
 }
 
+/** @type {Set<string>} */
+const activeTerminals = new Set();
+
 export function showSessionMessages(sessionId) {
   if (!sessionId) return;
   ensurePanel(sessionId);
@@ -264,11 +269,31 @@ export function showSessionMessages(sessionId) {
     el.setAttribute("aria-hidden", active ? "false" : "true");
   }
 
+  // Create PTY terminal on first show
+  if (!activeTerminals.has(sessionId)) {
+    const v = view(sessionId);
+    const container = v.panel?.querySelector(".messages");
+    if (container) {
+      activeTerminals.add(sessionId);
+      createTerminal(sessionId, container, {}).then((r) => {
+        if (!r.ok) {
+          console.error("[terminal] create failed:", r.error);
+          container.textContent = `Terminal failed: ${r.error}`;
+        }
+      });
+    }
+  }
+
   if (isActiveSession(sessionId)) {
     syncActiveStoreFromView(sessionId);
   }
+}
 
-  requestAnimationFrame(() => scrollToBottom(true, view(sessionId).panel));
+/** Send composer text to the PTY terminal. */
+export function sendToTerminal(sessionId, text) {
+  if (!activeTerminals.has(sessionId)) return false;
+  writeToTerminal(sessionId, text);
+  return true;
 }
 
 export function hideAllSessionMessages() {
@@ -281,6 +306,8 @@ export function hideAllSessionMessages() {
 export function removeSessionMessages(sessionId) {
   const v = sessionViews.get(sessionId);
   if (!v) return;
+  destroyTerminal(sessionId);
+  activeTerminals.delete(sessionId);
   for (const { card } of v.toolCards.values()) {
     card.remove();
   }
