@@ -311,10 +311,8 @@ function appendToolResult(card, content) {
 
 function noticeDetail(payload, entry) {
   if (payload?.code !== "thinkingProgress") return payload?.detail || payload?.message || "";
-  const parts = [elapsedText(entry.startedAt), payload?.detail || payload?.message || ""]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean);
-  return [...new Set(parts)].join(" · ");
+  // Only show elapsed time during thinking — token counts are internal detail
+  return elapsedText(entry.startedAt);
 }
 
 function noticeText(payload, entry) {
@@ -548,10 +546,22 @@ function ensureTextEntry(viewState) {
 }
 
 export function addTextEntry(viewState) {
+  // When real text arrives, dismiss the thinking indicator
+  if (viewState.engineNotices) {
+    for (const [id, entry] of viewState.engineNotices) {
+      if (entry.code === "thinkingProgress" && entry.status === "running") {
+        entry.status = "done";
+        entry.timer && clearInterval(entry.timer);
+        updateRow(entry.card, { running: false });
+        archiveLive(viewState, entry.card);
+      }
+    }
+  }
+  clearFallback(viewState);
   return ensureTextEntry(viewState);
 }
 
-const TEXT_RENDER_MS = 120;
+const TEXT_RENDER_MS = 80;
 
 export function updateTextEntry(viewState, markdownText) {
   const card = ensureTextEntry(viewState);
@@ -559,7 +569,8 @@ export function updateTextEntry(viewState, markdownText) {
   const last = viewState.timeline._lastTextRender || 0;
   const len = markdownText?.length || 0;
   const lastLen = viewState.timeline._lastTextLen || 0;
-  if (now - last < TEXT_RENDER_MS && (len - lastLen) < 300) return;
+  // First chunk always renders immediately; subsequent chunks throttle
+  if (last > 0 && now - last < TEXT_RENDER_MS && (len - lastLen) < 200) return;
   renderStreamingMarkdown(card, markdownText);
   viewState.timeline._lastTextRender = now;
   viewState.timeline._lastTextLen = len;
