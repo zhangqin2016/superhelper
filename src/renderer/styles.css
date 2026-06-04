@@ -1326,8 +1326,9 @@ button, textarea, input { font: inherit; }
 }
 
 .tool-card-running {
-  border-color: rgba(108, 99, 255, 0.35);
+  border-color: rgba(108, 99, 255, 0.55);
   color: var(--text-primary);
+  box-shadow: 0 0 0 1px rgba(108, 99, 255, 0.08);
 }
 
 .reply-progress-slot .turn-progress {
@@ -1536,6 +1537,8 @@ button, textarea, input { font: inherit; }
   padding: 4px 10px;
   font-size: 12px;
   color: var(--text-dim);
+  background: transparent;
+  border: none;
   cursor: pointer;
   border-radius: var(--radius-sm);
   user-select: none;
