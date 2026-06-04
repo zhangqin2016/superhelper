@@ -11,7 +11,7 @@ const sessions = new Map();
  */
 function registerPtyHandlers(mainWindow) {
   // Create a new PTY session
-  ipcMain.handle("pty:create", (_event, { sessionId, cwd, claudeBin, permissionMode, additionalDirs }) => {
+  ipcMain.handle("pty:create", (_event, { sessionId, cwd, permissionMode, additionalDirs, configDir }) => {
     if (!sessionId) return { ok: false, error: "INVALID_SESSION" };
 
     const existing = sessions.get(sessionId);
@@ -22,8 +22,8 @@ function registerPtyHandlers(mainWindow) {
 
     const session = new PtySession(sessionId, {
       cwd: cwd || process.cwd(),
-      claudeBin: claudeBin || "claude",
       permissionMode: permissionMode || "default",
+      configDir: configDir || undefined,
     });
 
     session.on("pty-data", (data) => {

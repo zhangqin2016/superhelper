@@ -1,7 +1,8 @@
 "use strict";
 
 const { EventEmitter } = require("node:events");
-const path = require("node:path");
+const fs = require("node:fs");
+const { resolveAgentCommand } = require("./agent-command");
 const { buildAgentSpawnEnv } = require("./spawn-env");
 
 /** @type {typeof import("node-pty")} */
@@ -9,26 +10,27 @@ let pty;
 try {
   pty = require("node-pty");
 } catch {
-  // node-pty is optional; app falls back gracefully
+  // node-pty is optional; falls back to stream-json
 }
 
 class PtySession extends EventEmitter {
   /**
    * @param {string} sessionId
-   * @param {{ cwd?: string, claudeBin?: string, permissionMode?: string }} opts
+   * @param {{ cwd?: string, permissionMode?: string, configDir?: string }} opts
    */
   constructor(sessionId, opts = {}) {
     super();
     this.sessionId = sessionId;
     this.cwd = opts.cwd || process.cwd();
-    this.claudeBin = opts.claudeBin || "claude";
     this.permissionMode = opts.permissionMode || "default";
+    this.configDir = opts.configDir || null;
 
     /** @type {import("node-pty").IPty | null} */
     this.process = null;
     this.busy = false;
     this.cols = 120;
     this.rows = 40;
+    this.agentCommand = null;
   }
 
   isAlive() {
@@ -36,8 +38,8 @@ class PtySession extends EventEmitter {
   }
 
   /**
-   * Spawn Claude CLI inside a PTY.
-   * @param {{ cwd?: string, additionalDirs?: string[] }} [opts]
+   * Spawn Claude CLI inside a PTY in interactive terminal mode.
+   * @param {{ cwd?: string, additionalDirs?: string[], resumeSessionId?: string }} [opts]
    */
   spawn(opts = {}) {
     if (!pty) {
@@ -46,18 +48,42 @@ class PtySession extends EventEmitter {
     }
     if (this.process) this.kill();
 
-    const cwd = opts.cwd || this.cwd;
-    const env = buildAgentSpawnEnv(process.env, {});
+    // Resolve CLI binary using the same logic as AgentSession
+    const agentCommand = resolveAgentCommand();
+    if (!agentCommand || !fs.existsSync(agentCommand)) {
+      this.emit("error", new Error(`CLI not found: ${agentCommand || "null"}`));
+      return false;
+    }
+    this.agentCommand = agentCommand;
 
-    const args = [];
+    const cwd = opts.cwd || this.cwd;
+
+    // Build spawn env — but keep TERM=xterm-256color for full TUI,
+    // and remove NO_COLOR so ANSI colors render properly.
+    const env = Object.assign(
+      {},
+      process.env,
+      buildAgentSpawnEnv({ configDir: this.configDir || undefined }),
+      { TERM: "xterm-256color" },
+    );
+    delete env.NO_COLOR;
+
+    // CLI args for interactive terminal mode (NO stream-json flags)
+    const args = ["-p"];
+    if (this.permissionMode && this.permissionMode !== "default") {
+      args.push("--permission-mode", this.permissionMode);
+    }
     if (opts.additionalDirs?.length) {
       for (const dir of opts.additionalDirs) {
-        args.push("--add-dir", dir);
+        if (fs.existsSync(dir)) args.push("--add-dir", dir);
       }
+    }
+    if (opts.resumeSessionId) {
+      args.push("--resume", opts.resumeSessionId);
     }
 
     try {
-      this.process = pty.spawn(this.claudeBin, args, {
+      this.process = pty.spawn(agentCommand, args, {
         name: "xterm-256color",
         cols: this.cols,
         rows: this.rows,

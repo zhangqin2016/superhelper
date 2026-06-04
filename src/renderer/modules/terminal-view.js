@@ -11,7 +11,7 @@ const terminals = new Map();
  * Create and mount a terminal for a session.
  * @param {string} sessionId
  * @param {HTMLElement} container — the DOM element to mount into
- * @param {{ cwd?: string, claudeBin?: string, cols?: number, rows?: number }} [opts]
+ * @param {{ cwd?: string, cols?: number, rows?: number }} [opts]
  * @returns {Promise<{ ok: boolean, error?: string }>}
  */
 export async function createTerminal(sessionId, container, opts = {}) {
@@ -19,11 +19,10 @@ export async function createTerminal(sessionId, container, opts = {}) {
     destroyTerminal(sessionId);
   }
 
-  // Create the PTY session on main process
+  // Create the PTY session on main process (CLI path resolved internally)
   const result = await window.assistantClient.ptyCreate({
     sessionId,
     cwd: opts.cwd || "",
-    claudeBin: opts.claudeBin || "claude",
     permissionMode: "default",
     additionalDirs: [],
   });
