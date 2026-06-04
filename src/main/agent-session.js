@@ -9,7 +9,6 @@ const {
   isUpstreamApiFailure,
 } = require("./agent-runner");
 const {
-  parseCanUseToolRequest,
   needsUserApproval,
   buildControlResponse,
   buildRememberAllowPermissions,
@@ -21,16 +20,29 @@ const {
   buildSetPermissionModeRequest,
   buildInitializeRequest,
 } = require("./control-protocol");
+const {
+  normalizeClaudeEvent,
+  normalizeAskUserQuestions,
+} = require("./claude-event-normalizer");
 const { buildUserMessagePayload, hasSendableContent } = require("./user-message");
 const { resolvePlanPreview, PLAN_PREVIEW_MAX } = require("./plan-preview");
-const {
-  classifyEngineEvent,
-  noticeForControlSubtype,
-} = require("./engine-event-notices");
 const { buildAgentSpawnEnv } = require("./spawn-env");
 const { sameRespawnOptions } = require("./runner-spawn-options");
 const { getLogger } = require("./logger");
 const log = getLogger("agent-session");
+
+const TOOL_RESULT_UI_MAX_CHARS = 12_000;
+
+function truncateToolResultForUi(text) {
+  const value = String(text || "");
+  if (value.length <= TOOL_RESULT_UI_MAX_CHARS) return { content: value, truncated: false };
+  const head = value.slice(0, 6_000);
+  const tail = value.slice(-4_000);
+  return {
+    content: `${head}\n\n[...output truncated for display: ${value.length - head.length - tail.length} characters hidden...]\n\n${tail}`,
+    truncated: true,
+  };
+}
 
 /**
  * One long-lived engine process per app session (`stream-json` protocol).
@@ -49,6 +61,7 @@ class AgentSession extends EventEmitter {
     this.lineBuf = "";
     this.busy = false;
     this.collectedOutput = "";
+    this._backgroundActivityUntil = 0;
     this.agentResumeId = null;
     this.spawnOptions = null;
     this.lastSpawnError = null;
@@ -64,6 +77,10 @@ class AgentSession extends EventEmitter {
     this._postToolWaitTimer = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._messageStopTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._firstResponseNoticeTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._longWaitNoticeTimer = null;
     this._turnStartedAt = 0;
     this._pendingToolIds = new Set();
     this._turnHadToolUse = false;
@@ -84,6 +101,9 @@ class AgentSession extends EventEmitter {
     this._toolLeases = new Map();
     /** @type {Map<string, ReturnType<typeof setTimeout>>} */
     this._toolLeaseNoticeTimers = new Map();
+    this._internalCommand = null;
+    this._internalCommandTimer = null;
+    this._backgroundActivityUntil = 0;
   }
 
   /** After stream goes quiet, complete turn if CLI never sends `result`. */
@@ -92,6 +112,9 @@ class AgentSession extends EventEmitter {
   static PERMISSION_UI_TIMEOUT_MS = 55_000;
   static TURN_RESPONSE_TIMEOUT_MS = 90_000;
   static RESUME_TURN_TIMEOUT_MS = 45_000;
+  /** User-visible notice before timeout, not a failure. */
+  static FIRST_RESPONSE_NOTICE_MS = 10_000;
+  static LONG_WAIT_NOTICE_MS = 30_000;
   /** Hard cap — verbose logs must not extend a turn forever. */
   static TURN_ABSOLUTE_MAX_MS = 30 * 60_000;
   /** After all tools finish, model must respond within this window. */
@@ -144,6 +167,17 @@ class AgentSession extends EventEmitter {
     }
   }
 
+  _clearWaitNoticeTimers() {
+    if (this._firstResponseNoticeTimer) {
+      clearTimeout(this._firstResponseNoticeTimer);
+      this._firstResponseNoticeTimer = null;
+    }
+    if (this._longWaitNoticeTimer) {
+      clearTimeout(this._longWaitNoticeTimer);
+      this._longWaitNoticeTimer = null;
+    }
+  }
+
   _clearToolLeaseNoticeTimer(toolId) {
     const timer = this._toolLeaseNoticeTimers.get(toolId);
     if (timer) clearTimeout(timer);
@@ -187,6 +221,10 @@ class AgentSession extends EventEmitter {
     this._postToolWaitTimer = setTimeout(() => {
       if (!this.busy || this._turnSettled) return;
       if (this._pendingToolIds.size > 0) return;
+      if (Date.now() < this._backgroundActivityUntil) {
+        this._armPostToolWaitTimer();
+        return;
+      }
       this._recoverStalledTurn("post-tool");
     }, AgentSession.POST_TOOL_SILENCE_MS);
   }
@@ -227,7 +265,25 @@ class AgentSession extends EventEmitter {
       this.busy &&
       !this._turnSettled &&
       this._pendingToolIds.size === 0 &&
-      this._pendingPermissions.size === 0
+      this._pendingPermissions.size === 0 &&
+      Date.now() >= this._backgroundActivityUntil
+    );
+  }
+
+  _markBackgroundActivity(short = false) {
+    this._backgroundActivityUntil = Date.now() + (short ? 10_000 : 120_000);
+    this._clearIdleTimer();
+    this._clearMessageStopTimer();
+    this._clearPostToolWaitTimer();
+  }
+
+  _isBackgroundActivityEvent(ev) {
+    const marker = `${ev?.type || ""}:${ev?.subtype || ""}`.toLowerCase();
+    return (
+      marker.includes("task_") ||
+      marker.includes("background") ||
+      marker.includes("workflow") ||
+      marker.includes("agent")
     );
   }
 
@@ -241,11 +297,61 @@ class AgentSession extends EventEmitter {
     if (!command) return false;
     return /(?:^|\s)(?:nohup|setsid)\s+/i.test(command) ||
       /(?:^|\s)disown(?:\s|$)/i.test(command) ||
-      /&\s*(?:>|2>|1>|$)/.test(command);
+      /&\s*(?:>|2>|1>|$)/.test(command) ||
+      this._looksLikeLongRunningShellCommand(command);
+  }
+
+  _looksLikeLongRunningShellCommand(command) {
+    const normalized = String(command || "")
+      .replace(/\\\n/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    if (!normalized) return false;
+
+    const longRunningPatterns = [
+      /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview|watch)\b/,
+      /\b(?:vite|next|nuxt|astro|webpack-dev-server|webpack\s+serve)\b/,
+      /\b(?:ng|vue-cli-service)\s+serve\b/,
+      /\b(?:react-scripts|nodemon|ts-node-dev)\s+start\b/,
+      /\b(?:python(?:3)?\s+-m\s+)?(?:uvicorn|gunicorn|flask|fastapi)\b.*\b(?:--reload|--host|--port)\b/,
+      /\b(?:tail|less)\s+-(?:[a-z]*f|f[a-z]*)\b/,
+      /\b(?:docker|podman)\s+logs\b.*\s-f\b/,
+      /\bkubectl\s+logs\b.*\s-f\b/,
+      /\bjournalctl\b.*\s-f\b/,
+    ];
+
+    return longRunningPatterns.some((pattern) => pattern.test(normalized));
+  }
+
+  _emitDetachedShellNotice(toolId, name, input = {}) {
+    const detail = String(input.command || input.cmd || input.script || "")
+      .trim()
+      .slice(0, 160);
+    this._emitEngineNotice({
+      code: "shellDetached",
+      level: "progress",
+      panel: true,
+      replace: true,
+      done: true,
+      toolName: name,
+      detail,
+    });
+    this.emit("tool-done", {
+      id: toolId,
+      status: "done",
+      result: {
+        content: detail
+          ? `Command is running in the background: ${detail}`
+          : "Command is running in the background.",
+        truncated: false,
+        detached: true,
+      },
+    });
   }
 
   _trackToolLease(toolId, name, input = {}) {
-    if (!toolId) return;
+    if (!toolId) return { detached: false, becameDetached: false };
     const prev = this._toolLeases.get(toolId);
     const nextName = name || prev?.name || "unknown";
     const nextInput =
@@ -253,6 +359,7 @@ class AgentSession extends EventEmitter {
         ? input
         : prev?.input || {};
     const detached = this._isDetachedShellInput(nextName, nextInput);
+    const becameDetached = detached && !prev?.detached;
 
     this._toolLeases.set(toolId, {
       name: nextName,
@@ -283,13 +390,14 @@ class AgentSession extends EventEmitter {
       }, AgentSession.TOOL_LONG_TASK_NOTICE_MS);
       this._toolLeaseNoticeTimers.set(toolId, timer);
     }
+    return { detached, becameDetached };
   }
 
   _updateToolLeaseInput(toolId, input = {}) {
-    if (!toolId) return;
+    if (!toolId) return { detached: false, becameDetached: false };
     const prev = this._toolLeases.get(toolId);
-    if (!prev) return;
-    this._trackToolLease(toolId, prev.name, input);
+    if (!prev) return { detached: false, becameDetached: false };
+    return this._trackToolLease(toolId, prev.name, input);
   }
 
   _finishToolLease(toolId) {
@@ -345,8 +453,32 @@ class AgentSession extends EventEmitter {
 
   _markStreamActivity() {
     if (!this.busy || this._turnSettled) return;
+    this._clearWaitNoticeTimers();
     this._armTurnResponseTimer();
     this._armIdleCompletionTimer();
+  }
+
+  _armWaitNoticeTimers() {
+    this._clearWaitNoticeTimers();
+    if (!this.busy || this._turnSettled) return;
+    this._firstResponseNoticeTimer = setTimeout(() => {
+      if (!this.busy || this._turnSettled || this.collectedOutput.trim()) return;
+      this._emitEngineNotice({
+        code: "waitingForFirstResponse",
+        level: "progress",
+        panel: true,
+        replace: true,
+      });
+    }, AgentSession.FIRST_RESPONSE_NOTICE_MS);
+    this._longWaitNoticeTimer = setTimeout(() => {
+      if (!this.busy || this._turnSettled || this.collectedOutput.trim()) return;
+      this._emitEngineNotice({
+        code: "longWait",
+        level: "progress",
+        panel: true,
+        replace: true,
+      });
+    }, AgentSession.LONG_WAIT_NOTICE_MS);
   }
 
   isBusy() {
@@ -407,6 +539,8 @@ class AgentSession extends EventEmitter {
       "stream-json",
       "--output-format",
       "stream-json",
+      "--prompt-suggestions",
+      "true",
       "--permission-mode",
       opts.permissionMode || "default",
       "--permission-prompt-tool",
@@ -437,6 +571,7 @@ class AgentSession extends EventEmitter {
     this._cliInitialized = false;
     this._clearIdleTimer();
     this._clearInterruptFallback();
+    this._clearWaitNoticeTimers();
 
     this.process.stdout.on("data", (chunk) => this._onStdout(chunk));
     this.process.stderr.on("data", (chunk) => {
@@ -450,7 +585,7 @@ class AgentSession extends EventEmitter {
         isResumeFailureMessage(raw)
       ) {
         this.emit("resume-invalid", { message: raw });
-        this._failTurn(text);
+        this._failTurn("对话连接已刷新，请重新发送这条消息。");
         return;
       }
       this.emit("engine-notice", {
@@ -536,15 +671,18 @@ class AgentSession extends EventEmitter {
     this._turnSettled = false;
     this._turnStartedAt = Date.now();
     this.collectedOutput = "";
+    this._backgroundActivityUntil = 0;
     this._streamParentToolUseId = null;
     this._pendingToolIds.clear();
     this._toolLeases.clear();
     this._turnHadToolUse = false;
+    this._backgroundActivityUntil = 0;
     this._clearPendingPermissions(true);
     this._streamingToolInputs.clear();
     this._emittedToolIds.clear();
     this._blockIndexToToolId.clear();
     this.emit("status", "thinking");
+    this._armWaitNoticeTimers();
 
     this._maybeSendInitialize();
 
@@ -589,9 +727,10 @@ class AgentSession extends EventEmitter {
         updatedInput: pending.input,
       };
       if (decision.remember && pending.toolName) {
-        allowDecision.updatedPermissions = buildRememberAllowPermissions(
-          pending.toolName,
-        );
+        allowDecision.updatedPermissions =
+          Array.isArray(pending.suggestions) && pending.suggestions.length
+            ? pending.suggestions
+            : buildRememberAllowPermissions(pending.toolName);
       }
       this._writeControlLine(buildControlResponse(requestId, allowDecision));
     } else {
@@ -603,6 +742,34 @@ class AgentSession extends EventEmitter {
       );
       this._writeControlLine(buildControlCancelRequest(requestId));
     }
+    this.emit("permission-cancelled", { requestId });
+    this._markStreamActivity();
+    return true;
+  }
+
+  respondUserQuestion(requestId, payload = {}) {
+    const pending = this._pendingPermissions.get(requestId);
+    if (!pending || pending.toolName !== "AskUserQuestion") return false;
+
+    const questions = normalizeAskUserQuestions(pending.input || {});
+    const answers =
+      payload.answers && typeof payload.answers === "object"
+        ? payload.answers
+        : {};
+    const response =
+      typeof payload.response === "string" ? payload.response.trim() : "";
+
+    this._pendingPermissions.delete(requestId);
+    this._writeControlLine(
+      buildControlResponse(requestId, {
+        behavior: "allow",
+        updatedInput: {
+          questions,
+          answers,
+          ...(response ? { response } : {}),
+        },
+      }),
+    );
     this.emit("permission-cancelled", { requestId });
     this._markStreamActivity();
     return true;
@@ -640,6 +807,19 @@ class AgentSession extends EventEmitter {
     return this._writeControlLine(buildSetPermissionModeRequest(mode));
   }
 
+  reloadSkills() {
+    if (!this.isAlive() || this.busy || this._internalCommand) return false;
+    const payload = buildUserMessagePayload({ text: "/reload-skills" });
+    if (!payload) return false;
+    this._internalCommand = "reload-skills";
+    this._writeControlLine(payload);
+    this._internalCommandTimer = setTimeout(() => {
+      this._internalCommand = null;
+      this._internalCommandTimer = null;
+    }, 10_000);
+    return true;
+  }
+
   interrupt() {
     this._denyAllPendingPermissions("Session interrupted");
 
@@ -675,9 +855,12 @@ class AgentSession extends EventEmitter {
     this._denyAllPendingPermissions("Session ended");
     this._clearPendingPermissions(true);
     this._clearToolLeaseNoticeTimers();
+    this._clearWaitNoticeTimers();
+    this._clearInternalCommandTimer();
     this._pendingToolIds.clear();
     this._toolLeases.clear();
     this._turnHadToolUse = false;
+    this._backgroundActivityUntil = 0;
     if (!this.process) {
       this.cwd = null;
       this.spawnOptions = null;
@@ -711,10 +894,13 @@ class AgentSession extends EventEmitter {
     this._clearMessageStopTimer();
     this._clearInterruptFallback();
     this._clearToolLeaseNoticeTimers();
+    this._clearWaitNoticeTimers();
+    this._clearInternalCommandTimer();
     this._clearPendingPermissions(true);
     this._pendingToolIds.clear();
     this._toolLeases.clear();
     this._turnHadToolUse = false;
+    this._backgroundActivityUntil = 0;
     this._streamParentToolUseId = null;
     this._streamingToolInputs.clear();
     this._emittedToolIds.clear();
@@ -733,6 +919,8 @@ class AgentSession extends EventEmitter {
     this._clearPostToolWaitTimer();
     this._clearInterruptFallback();
     this._clearToolLeaseNoticeTimers();
+    this._clearWaitNoticeTimers();
+    this._clearInternalCommandTimer();
     this._clearPendingPermissions(true);
     this._pendingToolIds.clear();
     this._toolLeases.clear();
@@ -771,6 +959,14 @@ class AgentSession extends EventEmitter {
     return true;
   }
 
+  _clearInternalCommandTimer() {
+    if (this._internalCommandTimer) {
+      clearTimeout(this._internalCommandTimer);
+      this._internalCommandTimer = null;
+    }
+    this._internalCommand = null;
+  }
+
   _denyAllPendingPermissions(message) {
     for (const [requestId] of this._pendingPermissions) {
       this._writeControlLine(
@@ -801,58 +997,15 @@ class AgentSession extends EventEmitter {
     this._markStreamActivity();
   }
 
-  _handleControlRequest(ev) {
-    const requestId =
-      ev.request_id ||
-      (typeof ev.request?.request_id === "string" ? ev.request.request_id : "");
-    const subtype = ev.request?.subtype;
-
-    const canUse = parseCanUseToolRequest(ev);
-    if (canUse) {
-      this._handleCanUseTool(canUse);
-      return;
-    }
-
-    if (requestId && subtype === "initialize") {
-      this._cliInitialized = true;
-      this._writeControlLine(buildControlAck(requestId, { promptSuggestions: true }));
-      const suggestions =
-        ev.request?.prompt_suggestions ||
-        ev.request?.suggestions ||
-        ev.request?.promptSuggestions ||
-        [];
-      if (Array.isArray(suggestions) && suggestions.length) {
-        this.emit("prompt-suggestions", { suggestions });
-      }
-      return;
-    }
-
-    if (requestId && subtype === "hook_callback") {
-      const hookEvent =
-        ev.request?.hook_event && typeof ev.request.hook_event === "object"
-          ? ev.request.hook_event
-          : {};
-      this._emitEngineNotice(noticeForControlSubtype(subtype));
-      this._writeControlLine(
-        buildHookCallbackResponse(requestId, {
-          continue: true,
-          ...hookEvent,
-        }),
-      );
-      return;
-    }
-
-    if (requestId) {
-      log.warn("unhandled control_request subtype=%s", subtype || "unknown");
-      this._emitEngineNotice(noticeForControlSubtype(subtype));
-      this._writeControlLine(buildControlAck(requestId));
-    }
-  }
-
   _handleCanUseTool(canUse) {
-    const { requestId, toolName, input, title, description, decisionReason } =
+    const { requestId, toolName, input, title, description, decisionReason, suggestions } =
       canUse;
     const permissionMode = this.spawnOptions?.permissionMode || "default";
+
+    if (toolName === "AskUserQuestion") {
+      this._handleAskUserQuestion(canUse);
+      return;
+    }
 
     log.info("permission-check tool=%s mode=%s needsApproval=%s",
       toolName, permissionMode, needsUserApproval(toolName, permissionMode));
@@ -862,7 +1015,18 @@ class AgentSession extends EventEmitter {
       return;
     }
 
-    this._pendingPermissions.set(requestId, { toolName, input });
+    if (permissionMode === "dontAsk") {
+      this._writeControlLine(
+        buildControlResponse(requestId, {
+          behavior: "deny",
+          message: "Skipped because confirmations are turned off",
+        }),
+      );
+      this._markStreamActivity();
+      return;
+    }
+
+    this._pendingPermissions.set(requestId, { toolName, input, suggestions });
     this._turnHadToolUse = true;
     this._clearIdleTimer();
     const planPreview = resolvePlanPreview(input, description);
@@ -873,6 +1037,7 @@ class AgentSession extends EventEmitter {
       title,
       description,
       decisionReason,
+      suggestions,
       planPreview,
       planPreviewTruncated: planPreview.length >= PLAN_PREVIEW_MAX,
     });
@@ -895,6 +1060,22 @@ class AgentSession extends EventEmitter {
     }, AgentSession.PERMISSION_UI_TIMEOUT_MS);
   }
 
+  _handleAskUserQuestion(canUse) {
+    const { requestId, input } = canUse;
+    const questions = normalizeAskUserQuestions(input || {});
+    this._pendingPermissions.set(requestId, {
+      toolName: "AskUserQuestion",
+      input: { ...input, questions },
+    });
+    this._turnHadToolUse = true;
+    this._clearIdleTimer();
+    this.emit("ask-user-question", {
+      requestId,
+      input,
+      questions,
+    });
+  }
+
   _emitEngineNotice(notice) {
     if (!notice) return;
     this.emit("engine-notice", notice);
@@ -909,6 +1090,254 @@ class AgentSession extends EventEmitter {
     this.collectedOutput = appendTextSegment(this.collectedOutput, piece);
     this.emit("chunk", piece);
     this._markStreamActivity();
+  }
+
+  _handleTurnResult(ev) {
+    this._clearMessageStopTimer();
+    this._flushLineBuffer();
+    if (ev.modelUsage && typeof ev.modelUsage === "object") {
+      require("./usage-reporter").recordModelUsage(this.sessionId, ev.modelUsage);
+    }
+    if (ev.subtype === "success" && ev.result) {
+      const piece = String(ev.result);
+      if (piece && !this.collectedOutput.includes(piece)) {
+        this._appendTextPiece(piece);
+      }
+    }
+    const resultFailed =
+      Boolean(ev.is_error) ||
+      (typeof ev.subtype === "string" && ev.subtype.startsWith("error"));
+    const output =
+      this.collectedOutput.trim() ||
+      (typeof ev.error === "string" ? sanitizeError(ev.error) : "") ||
+      (typeof ev.message === "string" ? sanitizeError(ev.message) : "");
+    this._completeTurn({
+      code: resultFailed ? 1 : 0,
+      output,
+      interrupted: Boolean(this._interruptPending || ev.interrupted),
+    });
+  }
+
+  _handleRuntimeError(ev) {
+    const errMsg =
+      (ev.error && typeof ev.error === "object" ? ev.error.message : "") ||
+      ev.message ||
+      "";
+    log.warn("CLI error event: %s", errMsg || JSON.stringify(ev).slice(0, 200));
+    if (this.busy && !this._turnSettled) {
+      const { isResumeFailureMessage } = require("./session-engine-recovery");
+      if (this.agentResumeId && isResumeFailureMessage(errMsg)) {
+        this.emit("resume-invalid", { message: errMsg });
+        this._failTurn("对话连接已刷新，请重新发送这条消息。");
+        return;
+      }
+      this._failTurn(sanitizeError(errMsg || "Engine error"));
+      return;
+    }
+    if (errMsg) {
+      this._emitEngineNotice({
+        code: "engineError",
+        level: "warning",
+        panel: true,
+        toast: true,
+        done: true,
+        detail: sanitizeError(errMsg),
+      });
+    }
+  }
+
+  _handleNormalizedAction(action) {
+    switch (action.kind) {
+      case "system_notice":
+        if (action.subtype === "init") {
+          this._cliInitialized = true;
+          if (action.sessionId && this.agentResumeId !== action.sessionId) {
+            this.agentResumeId = action.sessionId;
+            this.emit("agent-resume-id", action.sessionId);
+          }
+        }
+        this._emitEngineNotice(action.notice);
+        break;
+
+      case "engine_notice":
+        this._emitEngineNotice(action.notice);
+        break;
+
+      case "protocol_warning":
+      case "unknown_runtime_event":
+      case "unknown_control_request":
+        this._emitEngineNotice(action.notice);
+        void require("./runtime-diagnostics").reportRuntimeProtocolIssue({
+          normalizedKind: action.kind,
+          event: action.event || null,
+          notice: action.notice || null,
+          eventType: action.notice?.type,
+          eventSubtype: action.notice?.subtype || action.subtype,
+          turnPhase: this.busy ? "busy" : "idle",
+          sessionState: this._turnSettled ? "settled" : "running",
+          summary: action.notice?.code || action.kind,
+        });
+        if (action.kind !== "unknown_control_request") break;
+        log.warn("unhandled control_request subtype=%s", action.subtype || "unknown");
+        this._writeControlLine(buildControlAck(action.requestId));
+        break;
+
+      case "assistant_text":
+        this._appendTextPiece(action.text || "");
+        break;
+
+      case "assistant_tool_use": {
+        this._turnHadToolUse = true;
+        const lease = this._trackToolLease(action.id, action.name, action.input || {});
+        this._clearIdleTimer();
+        this._clearPostToolWaitTimer();
+        this._markStreamActivity();
+        if (this._emittedToolIds.has(action.id)) {
+          this.emit("tool-input-done", {
+            id: action.id,
+            input: action.input || {},
+          });
+          const updatedLease = this._updateToolLeaseInput(action.id, action.input || {});
+          if (lease.becameDetached || updatedLease.becameDetached) {
+            this._emitDetachedShellNotice(action.id, action.name, action.input || {});
+          }
+          this._streamingToolInputs.delete(action.id);
+          break;
+        }
+        this.emit("tool-using", {
+          name: action.name,
+          input: action.input || {},
+          id: action.id,
+          parentToolUseId: action.parentToolUseId || null,
+        });
+        if (lease.becameDetached) {
+          this._emitDetachedShellNotice(action.id, action.name, action.input || {});
+        }
+        break;
+      }
+
+      case "tool_result": {
+        this._finishToolLease(action.id);
+        this._maybeArmPostToolWaitTimer();
+        const uiResult = action.content ? truncateToolResultForUi(action.content) : null;
+        this.emit("tool-done", {
+          id: action.id,
+          status: action.isError ? "failed" : "done",
+          result: uiResult ? { ...uiResult, isError: action.isError } : null,
+        });
+        this._markStreamActivity();
+        break;
+      }
+
+      case "stream_message_start":
+        this._streamingToolInputs.clear();
+        this._emittedToolIds.clear();
+        this._blockIndexToToolId.clear();
+        this.emit("status", "thinking");
+        break;
+
+      case "stream_tool_start":
+        this._turnHadToolUse = true;
+        this._clearIdleTimer();
+        this._clearPostToolWaitTimer();
+        this._trackToolLease(action.id, action.name, action.input || {});
+        this._emittedToolIds.add(action.id);
+        this._streamingToolInputs.set(action.id, "");
+        if (typeof action.index === "number" && action.index >= 0) {
+          this._blockIndexToToolId.set(action.index, action.id);
+        }
+        this.emit("tool-upcoming", {
+          id: action.id,
+          name: action.name,
+          parentToolUseId: action.parentToolUseId || null,
+        });
+        break;
+
+      case "stream_tool_input_delta": {
+        const toolId = this._blockIndexToToolId.get(action.index);
+        if (toolId) {
+          const accumulated = (this._streamingToolInputs.get(toolId) || "") + action.partialJson;
+          this._streamingToolInputs.set(toolId, accumulated);
+          this.emit("tool-input-delta", { id: toolId, partialJson: action.partialJson });
+        }
+        break;
+      }
+
+      case "stream_content_block_stop": {
+        const toolId = this._blockIndexToToolId.get(action.index);
+        const parsed = this._tryParseToolInputJson(toolId);
+        if (parsed) {
+          const lease = this._updateToolLeaseInput(toolId, parsed);
+          if (lease.becameDetached) {
+            const entry = this._toolLeases.get(toolId);
+            this.emit("tool-input-done", { id: toolId, input: parsed });
+            this._emitDetachedShellNotice(toolId, entry?.name || "unknown", parsed);
+          }
+        }
+        break;
+      }
+
+      case "stream_message_stop":
+        this._markStreamActivity();
+        this._armMessageStopCompletionTimer();
+        break;
+
+      case "prompt_suggestions":
+        this.emit("prompt-suggestions", { suggestions: action.suggestions || [] });
+        break;
+
+      case "control_cancel":
+        if (action.requestId && this._pendingPermissions.has(action.requestId)) {
+          this._pendingPermissions.delete(action.requestId);
+          this.emit("permission-cancelled", { requestId: action.requestId });
+        }
+        break;
+
+      case "turn_result":
+        this._handleTurnResult(action.event);
+        break;
+
+      case "runtime_error":
+        this._handleRuntimeError(action.event);
+        break;
+
+      case "initialize_request":
+        this._cliInitialized = true;
+        this._writeControlLine(buildControlAck(action.requestId, { promptSuggestions: true }));
+        if (Array.isArray(action.suggestions) && action.suggestions.length) {
+          this.emit("prompt-suggestions", { suggestions: action.suggestions });
+        }
+        break;
+
+      case "hook_callback":
+        this._emitEngineNotice(action.notice);
+        this._writeControlLine(
+          buildHookCallbackResponse(action.requestId, {
+            continue: true,
+            ...action.hookEvent,
+          }),
+        );
+        break;
+
+      case "permission_check":
+        this._handleCanUseTool(action);
+        break;
+
+      case "ask_user_question":
+        this._handleAskUserQuestion(action);
+        break;
+
+      default:
+        log.warn("unknown normalized action kind=%s", action.kind || "missing");
+        this._emitEngineNotice({
+          code: "unknownEvent",
+          level: "warning",
+          panel: true,
+          done: true,
+          type: action.kind || "normalized_event",
+        });
+        break;
+    }
   }
 
   _handleLine(line) {
@@ -929,250 +1358,31 @@ class AgentSession extends EventEmitter {
 
     this._noteStreamContext(ev);
 
-    switch (ev.type) {
-      case "system":
-        if (ev.subtype === "init") {
-          this._cliInitialized = true;
-          if (ev.session_id && this.agentResumeId !== ev.session_id) {
-            this.agentResumeId = ev.session_id;
-            this.emit("agent-resume-id", ev.session_id);
-          }
-        }
-        this._emitEngineNotice(classifyEngineEvent(ev));
-        break;
-
-      case "rate_limit_event":
-        this._emitEngineNotice(classifyEngineEvent(ev));
-        break;
-
-      case "assistant": {
-        const blocks = ev.message?.content;
-        if (!blocks) break;
-        for (const block of blocks) {
-          switch (block.type) {
-            case "text":
-              this._appendTextPiece(block.text || "");
-              break;
-            case "tool_use": {
-              this._turnHadToolUse = true;
-              const toolId = block.id || "";
-              this._trackToolLease(toolId, block.name || "unknown", block.input || {});
-              this._clearIdleTimer();
-              this._clearPostToolWaitTimer();
-              this._markStreamActivity();
-              // If already emitted from content_block_start, skip duplicate emission
-              if (this._emittedToolIds.has(toolId)) {
-                // But still emit with full input so card can be updated
-                this.emit("tool-input-done", {
-                  id: toolId,
-                  input: block.input || {},
-                });
-                this._updateToolLeaseInput(toolId, block.input || {});
-                this._streamingToolInputs.delete(toolId);
-                break;
-              }
-              this.emit("tool-using", {
-                name: block.name || "unknown",
-                input: block.input || {},
-                id: toolId,
-                parentToolUseId: ev.parent_tool_use_id || null,
-              });
-              break;
-            }
-            default:
-              break;
-          }
-        }
-        break;
+    if (this._internalCommand) {
+      if (ev.type === "result") {
+        log.info(`internal command completed: ${this._internalCommand}`);
+        this._clearInternalCommandTimer();
+      } else if (ev.type === "error") {
+        log.warn(
+          "internal command error: %s",
+          ev.message || JSON.stringify(ev).slice(0, 200),
+        );
+        this._clearInternalCommandTimer();
       }
+      return;
+    }
 
-      case "user": {
-        const blocks = ev.message?.content;
-        if (!blocks) break;
-        for (const block of blocks) {
-          if (block.type === "tool_result") {
-            const toolId = block.tool_use_id || "";
-            this._finishToolLease(toolId);
-            this._maybeArmPostToolWaitTimer();
-            let resultContent = null;
-            if (Array.isArray(block.content)) {
-              resultContent = block.content
-                .filter((c) => c.type === "text")
-                .map((c) => c.text)
-                .join("\n");
-            }
-            this.emit("tool-done", {
-              id: toolId,
-              status: block.is_error ? "failed" : "done",
-              result: resultContent ? { content: resultContent, isError: !!block.is_error } : null,
-            });
-            this._markStreamActivity();
-          }
-        }
-        break;
-      }
+    if (this._isBackgroundActivityEvent(ev)) {
+      const subtype = String(ev.subtype || "");
+      this._markBackgroundActivity(
+        subtype.endsWith("_complete") ||
+          subtype.endsWith("_completed") ||
+          subtype.endsWith("_failed"),
+      );
+    }
 
-      case "stream_event": {
-        const inner = ev.event;
-        if (!inner) break;
-
-        switch (inner.type) {
-          case "message_start":
-            this._streamingToolInputs.clear();
-            this._emittedToolIds.clear();
-            this._blockIndexToToolId.clear();
-            this.emit("status", "thinking");
-            break;
-
-          case "content_block_start": {
-            const block = inner.content_block;
-            if (block?.type === "tool_use" && block.id && block.name) {
-              this._turnHadToolUse = true;
-              this._clearIdleTimer();
-              this._clearPostToolWaitTimer();
-              this._trackToolLease(block.id, block.name, block.input || {});
-              this._emittedToolIds.add(block.id);
-              this._streamingToolInputs.set(block.id, "");
-              if (typeof inner.index === "number") {
-                this._blockIndexToToolId.set(inner.index, block.id);
-              }
-              this.emit("tool-upcoming", {
-                id: block.id,
-                name: block.name,
-                parentToolUseId: ev.parent_tool_use_id || null,
-              });
-            }
-            break;
-          }
-
-          case "content_block_delta": {
-            const delta = inner.delta;
-            if (delta?.type === "text_delta") {
-              this._appendTextPiece(delta.text || "");
-            } else if (delta?.type === "input_json_delta" && delta.partial_json) {
-              const idx = typeof inner.index === "number" ? inner.index : -1;
-              const toolId = this._blockIndexToToolId.get(idx);
-              if (toolId) {
-                const accumulated = (this._streamingToolInputs.get(toolId) || "") + delta.partial_json;
-                this._streamingToolInputs.set(toolId, accumulated);
-                this.emit("tool-input-delta", { id: toolId, partialJson: delta.partial_json });
-              }
-            }
-            break;
-          }
-
-          case "content_block_stop": {
-            const idx = typeof inner.index === "number" ? inner.index : -1;
-            const toolId = this._blockIndexToToolId.get(idx);
-            const parsed = this._tryParseToolInputJson(toolId);
-            if (parsed) this._updateToolLeaseInput(toolId, parsed);
-            break;
-          }
-
-          case "message_stop":
-            this._markStreamActivity();
-            this._armMessageStopCompletionTimer();
-            break;
-
-          default:
-            break;
-        }
-        break;
-      }
-
-      case "tool_progress":
-        this._emitEngineNotice({
-          code: "toolProgress",
-          level: "progress",
-          panel: true,
-          replace: true,
-          detail: String(ev.message || ev.summary || "").slice(0, 160),
-          toolName: ev.tool_name || "",
-        });
-        this._turnHadToolUse = true;
-        this._clearIdleTimer();
-        break;
-
-      case "tool_use_summary":
-        this._emitEngineNotice(classifyEngineEvent(ev));
-        break;
-
-      case "keep_alive":
-        break;
-
-      case "prompt_suggestion":
-      case "prompt_suggestions":
-        this.emit("prompt-suggestions", {
-          suggestions: ev.suggestions || ev.prompt_suggestions || [],
-        });
-        break;
-
-      case "control_cancel_request": {
-        const cancelId = ev.request_id || ev.request?.request_id;
-        if (cancelId && this._pendingPermissions.has(cancelId)) {
-          this._pendingPermissions.delete(cancelId);
-          this.emit("permission-cancelled", { requestId: cancelId });
-        }
-        break;
-      }
-
-      case "result":
-        this._clearMessageStopTimer();
-        this._flushLineBuffer();
-        if (ev.subtype === "success" && ev.result) {
-          const piece = String(ev.result);
-          if (piece && !this.collectedOutput.includes(piece)) {
-            this._appendTextPiece(piece);
-          }
-        }
-        this._completeTurn({
-          code: ev.is_error ? 1 : 0,
-          output: this.collectedOutput.trim(),
-          interrupted: Boolean(this._interruptPending || ev.interrupted),
-        });
-        break;
-
-      case "error": {
-        const errMsg =
-          (ev.error && typeof ev.error === "object" ? ev.error.message : "") ||
-          ev.message ||
-          "";
-        log.warn("CLI error event: %s", errMsg || JSON.stringify(ev).slice(0, 200));
-        if (this.busy && !this._turnSettled) {
-          const { isResumeFailureMessage } = require("./session-engine-recovery");
-          if (this.agentResumeId && isResumeFailureMessage(errMsg)) {
-            this.emit("resume-invalid", { message: errMsg });
-          }
-          this._failTurn(sanitizeError(errMsg || "Engine error"));
-          return;
-        }
-        if (errMsg) {
-          this._emitEngineNotice({
-            code: "engineError",
-            level: "warning",
-            panel: true,
-            toast: true,
-            done: true,
-            detail: sanitizeError(errMsg),
-          });
-        }
-        break;
-      }
-
-      case "control_request":
-      case "sdk_control_request":
-        this._handleControlRequest(ev);
-        break;
-
-      default: {
-        const notice = classifyEngineEvent(ev);
-        if (notice) {
-          this._emitEngineNotice(notice);
-        } else {
-          log.debug("ignored stream event type=%s", ev.type);
-        }
-        break;
-      }
+    for (const action of normalizeClaudeEvent(ev)) {
+      this._handleNormalizedAction(action);
     }
   }
 }

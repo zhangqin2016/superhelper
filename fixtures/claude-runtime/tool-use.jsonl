@@ -1,0 +1,8 @@
+{"type":"stream_event","event":{"type":"message_start"}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_bash_1","name":"Bash"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"npm test\"}"}}}
+{"type":"stream_event","event":{"type":"content_block_stop","index":0}}
+{"type":"user","session_id":"sess_tool","message":{"id":"msg_tool_result","type":"message","role":"user","content":[{"type":"tool_result","tool_use_id":"tool_bash_1","content":[{"type":"text","text":"tests passed"}]}]}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"测试已通过。"}}}
+{"type":"stream_event","event":{"type":"message_stop"}}
+{"type":"result","subtype":"success","session_id":"sess_tool","is_error":false,"result":"测试已通过。"}

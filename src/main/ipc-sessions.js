@@ -4,6 +4,10 @@ const { ipcMain } = require("electron");
 const { ensureSessionRunner, isSessionBusy, withRunnerChange, anyRunnerBusy } = require("./ipc-utils");
 const skillManager = require("./skill-manager");
 const { requireValidLicense } = require("./license-manager");
+const {
+  listSessionPermissionsPublic,
+  resolveSessionPermissionMode,
+} = require("./permission-settings");
 
 function registerSessionHandlers(ctx) {
   const { sessionManager, projectManager, runnerPool } = ctx;
@@ -92,11 +96,50 @@ function registerSessionHandlers(ctx) {
     }
     const updated = sessionManager.findById(sessionId);
     skillManager.writeSessionAgentGuide(sessionId, updated);
-    runnerPool.terminateSession(sessionId);
+    const runner = runnerPool.get(sessionId);
+    if (runner?.isAlive() && !runner.isBusy()) {
+      if (!runner.reloadSkills()) runnerPool.terminateSession(sessionId);
+    } else {
+      runnerPool.terminateSession(sessionId);
+    }
     return {
       ok: true,
       sessionId,
       ...skillManager.listSkillsForSessionPublic(updated),
+    };
+  });
+
+  ipcMain.handle("session:get-permission", (_event, sessionId) => {
+    const sid = sessionId || sessionManager.activeSessionId;
+    const session = sid ? sessionManager.findById(sid) : null;
+    if (!session) return { ok: false, error: "NOT_FOUND" };
+    return {
+      ok: true,
+      sessionId: sid,
+      ...listSessionPermissionsPublic(session),
+    };
+  });
+
+  ipcMain.handle("session:set-permission", (_event, payload) => {
+    const sessionId = payload?.sessionId || sessionManager.activeSessionId;
+    const session = sessionId ? sessionManager.findById(sessionId) : null;
+    if (!session) return { ok: false, error: "NOT_FOUND" };
+    if (isSessionBusy(runnerPool, sessionId)) {
+      return { ok: false, error: "BUSY" };
+    }
+    if (!sessionManager.setPermissionMode(sessionId, payload?.modeId ?? null)) {
+      return { ok: false, error: "NOT_FOUND" };
+    }
+    const updated = sessionManager.findById(sessionId);
+    const effectiveMode = resolveSessionPermissionMode(updated);
+    const runner = runnerPool.get(sessionId);
+    if (runner?.isAlive() && !runner.isBusy() && !runner.setPermissionMode(effectiveMode)) {
+      runnerPool.terminateSession(sessionId);
+    }
+    return {
+      ok: true,
+      sessionId,
+      ...listSessionPermissionsPublic(updated),
     };
   });
 }
@@ -118,14 +161,14 @@ function registerSkillHandlers(ctx) {
     if (!id) return { ok: false, error: "NOT_FOUND" };
     return withRunnerChange(ctx, () => {
       return skillManager.setSkillEnabledWithSessions(id, enabled, ctx.sessionManager);
-    }, { refreshState: true, liveEnv: false });
+    }, { refreshState: true, liveEnv: false, reloadSkills: true });
   });
 
   ipcMain.handle("skills:refresh", () => {
     const licensed = requireValidLicense();
     if (!licensed.ok) return licensed;
 
-    return withRunnerChange(ctx, () => skillManager.refreshSkillsConfig(), { liveEnv: false });
+    return withRunnerChange(ctx, () => skillManager.refreshSkillsConfig(), { liveEnv: false, reloadSkills: true });
   });
 
   ipcMain.handle("skills:restore-bundled", (_event, payload) => {
@@ -134,27 +177,15 @@ function registerSkillHandlers(ctx) {
 
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    return withRunnerChange(ctx, () => skillManager.restoreBundledSkill(id), { liveEnv: false });
-  });
-
-  ipcMain.handle("skills:get-registry-url", () => ({
-    ok: true,
-    registryUrl: skillManager.getRegistryUrl(),
-  }));
-
-  ipcMain.handle("skills:set-registry-url", (_event, payload) => {
-    const url = payload?.url ?? payload;
-    return skillManager.setRegistryUrl(url);
+    return withRunnerChange(ctx, () => skillManager.restoreBundledSkill(id), { liveEnv: false, reloadSkills: true });
   });
 
   ipcMain.handle("skills:check-updates", async () => {
-    const licensed = requireValidLicense();
-    if (!licensed.ok) return licensed;
-
     if (anyRunnerBusy(runnerPool)) {
       return { ok: false, error: "BUSY" };
     }
-    return skillManager.checkRegistryUpdates({ fetch: true });
+    const licensed = requireValidLicense();
+    return skillManager.checkRegistryUpdates({ fetch: licensed.ok });
   });
 
   ipcMain.handle("skills:install", async (_event, payload) => {
@@ -164,7 +195,7 @@ function registerSkillHandlers(ctx) {
     const id = payload?.id;
     const version = payload?.version;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    return withRunnerChange(ctx, () => skillManager.installFromRegistry(id, version), { liveEnv: false });
+    return withRunnerChange(ctx, () => skillManager.installFromRegistry(id, version), { liveEnv: false, reloadSkills: true });
   });
 
   ipcMain.handle("skills:update", async (_event, payload) => {
@@ -173,7 +204,7 @@ function registerSkillHandlers(ctx) {
 
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    return withRunnerChange(ctx, () => skillManager.updateFromRegistry(id), { liveEnv: false });
+    return withRunnerChange(ctx, () => skillManager.updateFromRegistry(id), { liveEnv: false, reloadSkills: true });
   });
 
   ipcMain.handle("skills:uninstall", (_event, payload) => {
@@ -182,7 +213,7 @@ function registerSkillHandlers(ctx) {
 
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
-    return withRunnerChange(ctx, () => skillManager.uninstallRemoteSkill(id), { liveEnv: false });
+    return withRunnerChange(ctx, () => skillManager.uninstallRemoteSkill(id), { liveEnv: false, reloadSkills: true });
   });
 }
 

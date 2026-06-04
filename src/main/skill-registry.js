@@ -208,9 +208,7 @@ function findRegistryEntry(registry, skillId, version) {
 
 function registrySourceMatches(state, cached) {
   if (!cached) return false;
-  const userUrl = state.registryUrl;
-  if (userUrl) return cached.sourceUrl === userUrl;
-  return cached.sourceUrl === BUNDLED_REGISTRY_SOURCE;
+  return cached.sourceUrl === BUNDLED_REGISTRY_SOURCE || cached.sourceUrl === state.serviceRegistryUrl;
 }
 
 module.exports = {
@@ -220,6 +218,7 @@ module.exports = {
   loadBundledRegistry,
   ensureBundledRegistryCached,
   parseRegistryJson,
+  cacheRegistry,
   findRegistryEntry,
   isValidRegistryUrl,
   normalizeRegistryEntry,

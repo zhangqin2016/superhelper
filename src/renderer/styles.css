@@ -1079,6 +1079,7 @@ button, textarea, input { font: inherit; }
   font-weight: 500;
 }
 
+.tool-card {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -1185,6 +1186,35 @@ button, textarea, input { font: inherit; }
 .permission-prompt-resolved {
   opacity: 0.65;
   pointer-events: none;
+}
+
+.user-question-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.user-question-option input {
+  margin-top: 3px;
+}
+
+.user-question-free {
+  width: 100%;
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-input);
 }
 
 .tool-card-dot {
@@ -1733,17 +1763,18 @@ button, textarea, input { font: inherit; }
 
 .composer-toolbar {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: stretch;
-  min-width: 44px;
+  flex-direction: row;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 .composer-toolbar .composer-icon-btn {
-  width: 100%;
+  width: 36px;
   height: 36px;
 }
 .composer-toolbar .composer-skill-btn {
-  width: 100%;
+  width: auto;
   justify-content: center;
 }
 
@@ -1778,7 +1809,7 @@ button, textarea, input { font: inherit; }
   font-weight: 500;
   cursor: pointer;
   outline: none;
-  max-width: 120px;
+  max-width: 132px;
 }
 
 .permission-mode-select:disabled {
@@ -1787,10 +1818,18 @@ button, textarea, input { font: inherit; }
 }
 
 .composer-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: end;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.composer-actionbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
 }
 
 .composer-icon-btn {
@@ -1828,11 +1867,12 @@ textarea {
   line-height: 1.5;
   min-height: 44px;
   max-height: 160px;
-  padding: 11px 14px;
+  padding: 12px 14px;
   outline: none;
   font-size: 14px;
   transition: border-color 0.15s;
 }
+
 textarea:focus { border-color: var(--accent); }
 textarea:disabled { opacity: 0.5; }
 
@@ -1849,6 +1889,20 @@ textarea:disabled { opacity: 0.5; }
 }
 .send-btn:hover { background: var(--accent-hover); }
 .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 720px) {
+  .composer-actionbar {
+    align-items: stretch;
+  }
+
+  .permission-mode-select {
+    max-width: 96px;
+  }
+
+  .send-btn {
+    min-width: 76px;
+  }
+}
 
 /* =========================================================================
    RIGHT PANEL
@@ -2376,6 +2430,21 @@ textarea:disabled { opacity: 0.5; }
   margin: 0;
   font-size: 12px;
   color: var(--text-dim);
+}
+
+.settings-about-link {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.settings-about-link:hover {
+  text-decoration: underline;
 }
 
 .settings-section {

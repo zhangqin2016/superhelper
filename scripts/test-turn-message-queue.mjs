@@ -13,6 +13,7 @@ const {
   removeQueuedMessage,
   buildQueueState,
   emitQueueState,
+  takeQueueItemIfIdle,
 } = require("../src/main/turn-message-queue.js");
 const { shouldQueueUserLine } = require("../src/main/ipc-utils.js");
 const { turnController } = require("../src/main/turn-controller.js");
@@ -64,6 +65,25 @@ turnController.completeTurn(sid, "completed");
 if (!shouldQueueUserLine(sid, { isBusy: () => false }, {})) {
   throw new Error("closing turn should queue direct user send");
 }
+enqueueMessage(sid, { text: "must wait for finalize", files: [], displayFiles: [] });
+const blockedByClosing = takeQueueItemIfIdle(
+  {
+    runnerPool: { get: () => ({ isBusy: () => false }) },
+  },
+  sid,
+);
+if (blockedByClosing) {
+  throw new Error("closing turn must not dispatch queued messages before finalize");
+}
 turnController.finalizeTurn(sid);
+const availableAfterFinalize = takeQueueItemIfIdle(
+  {
+    runnerPool: { get: () => ({ isBusy: () => false }) },
+  },
+  sid,
+);
+if (availableAfterFinalize?.text !== "must wait for finalize") {
+  throw new Error("idle turn should dispatch queued message after finalize");
+}
 
 console.log("turn-message-queue: ok");

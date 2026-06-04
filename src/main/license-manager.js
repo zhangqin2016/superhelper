@@ -25,6 +25,19 @@ function parseIsoTime(value) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+function isTransientServerLicenseError(error) {
+  return error === "NO_SERVICE_URL" || error === "SERVICE_REQUEST_FAILED";
+}
+
+function normalizeServerTrial(payload = {}) {
+  return {
+    enabled: Boolean(payload.enabled),
+    valid: Boolean(payload.valid),
+    expiresAt: payload.expiresAt || "",
+    rawPayload: payload,
+  };
+}
+
 function loadPublicKey() {
   const envKey = process.env.LILY_LICENSE_PUBLIC_KEY;
   if (envKey?.includes("BEGIN PUBLIC KEY")) return envKey;
@@ -117,7 +130,12 @@ function unprotectText(record) {
   const buf = Buffer.from(record.data, "base64");
   if (record.encrypted) {
     if (!safeStorage?.isEncryptionAvailable?.()) return "";
-    return safeStorage.decryptString(buf);
+    try {
+      return safeStorage.decryptString(buf);
+    } catch (err) {
+      console.warn("[license] stored license could not be decrypted:", err?.message || err);
+      return "";
+    }
   }
   return buf.toString("utf8");
 }
@@ -141,7 +159,65 @@ function writeState(state) {
 function getLicenseStatus() {
   const state = readState();
   const token = unprotectText(state.license);
-  if (!token) return { ok: true, activated: false };
+  if (!token && state.license && !state.serverLicense) {
+    const invalidState = {
+      ...state,
+      licenseInvalid: {
+        error: "DECRYPT_FAILED",
+        checkedAt: nowIso(),
+      },
+    };
+    delete invalidState.license;
+    writeState(invalidState);
+    return {
+      ok: true,
+      activated: false,
+      valid: false,
+      error: "DECRYPT_FAILED",
+    };
+  }
+  if (!token && !state.serverLicense) {
+    const trial = normalizeServerTrial(state.serverTrial || {});
+    const expiresAtMs = parseIsoTime(trial.expiresAt);
+    const valid = Boolean(trial.enabled && expiresAtMs && Date.now() <= expiresAtMs);
+    if (trial.enabled) {
+      return {
+        ok: true,
+        activated: true,
+        valid,
+        error: valid ? undefined : "TRIAL_EXPIRED",
+        license: valid
+          ? {
+              licenseId: "trial",
+              customer: "Trial",
+              plan: "trial",
+              expiresAt: trial.expiresAt,
+              features: ["trial"],
+              rawPayload: trial.rawPayload,
+            }
+          : null,
+        source: "trial",
+      };
+    }
+    return { ok: true, activated: false };
+  }
+
+  if (!token && state.serverLicense) {
+    const license = normalizeServerLicense(state.serverLicense);
+    const expiresAtMs = parseIsoTime(license?.expiresAt);
+    const invalid = state.serverLicenseInvalid;
+    const transientInvalid = isTransientServerLicenseError(invalid?.error);
+    const valid = Boolean(expiresAtMs && Date.now() <= expiresAtMs && (!invalid?.error || transientInvalid));
+    return {
+      ok: true,
+      activated: true,
+      valid,
+      error: transientInvalid ? undefined : invalid?.error || (valid ? undefined : "EXPIRED"),
+      license,
+      source: "server",
+      lastSeenTime: state.lastSeenTime || "",
+    };
+  }
 
   const checked = verifyLicenseToken(token);
   const lastSeenMs = parseIsoTime(state.lastSeenTime);
@@ -163,6 +239,7 @@ function getLicenseStatus() {
     valid: Boolean(checked.ok),
     error: checked.error,
     license: checked.license || null,
+    source: "offline",
     lastSeenTime: now,
   };
 }
@@ -179,22 +256,114 @@ function requireValidLicense() {
   };
 }
 
+async function refreshServerLicense() {
+  const state = readState();
+  if (!state.serverLicense) {
+    const registered = await require("./service-client").registerDevice();
+    if (!registered.ok) {
+      if (isTransientServerLicenseError(registered.error)) {
+        return { ...registered, transient: true };
+      }
+      return registered;
+    }
+    const trial = normalizeServerTrial(registered.json?.trial || {});
+    writeState({
+      ...state,
+      serverTrial: trial.rawPayload,
+      lastSeenTime: nowIso(),
+    });
+    return { ok: true, trial, source: "trial" };
+  }
+  const current = normalizeServerLicense(state.serverLicense);
+  if (!current.licenseId) return { ok: false, error: "INVALID_PAYLOAD" };
+  const verified = await require("./service-client").verifyLicense(current.licenseId);
+  if (!verified.ok) {
+    if (isTransientServerLicenseError(verified.error)) {
+      writeState({
+        ...state,
+        serverLicenseInvalid: null,
+        lastSeenTime: nowIso(),
+      });
+      return { ...verified, transient: true };
+    }
+    writeState({
+      ...state,
+      serverLicenseInvalid: {
+        error: verified.error,
+        checkedAt: nowIso(),
+      },
+      lastSeenTime: nowIso(),
+    });
+    return verified;
+  }
+  const license = normalizeServerLicense(verified.json?.license || {});
+  writeState({
+    ...state,
+    serverLicense: license.rawPayload,
+    serverLicenseInvalid: null,
+    lastSeenTime: nowIso(),
+  });
+  return { ok: true, license, source: "server" };
+}
+
+function normalizeServerLicense(payload = {}) {
+  return {
+    licenseId: String(payload.licenseId || ""),
+    customer: String(payload.customer || payload.licenseId || ""),
+    plan: String(payload.plan || "pro"),
+    issuedAt: payload.issuedAt || "",
+    expiresAt: payload.expiresAt || "",
+    seats: Number(payload.seats || 1),
+    features: Array.isArray(payload.features) ? payload.features.map(String) : [],
+    deviceId: payload.deviceId || "",
+    rawPayload: payload,
+  };
+}
+
 function activateLicense(token) {
   const checked = verifyLicenseToken(token);
-  if (!checked.ok) return checked;
+  if (!checked.ok && checked.error !== "INVALID_FORMAT" && checked.error !== "NO_PUBLIC_KEY" && checked.error !== "BAD_SIGNATURE") {
+    return checked;
+  }
+  if (!checked.ok && String(token || "").includes(".")) return checked;
+
+  if (!checked.ok) {
+    return require("./service-client").activateLicenseKey(token).then((activated) => {
+      if (!activated.ok) return activated;
+      const license = normalizeServerLicense(activated.json?.license || {});
+      if (!license.licenseId || !parseIsoTime(license.expiresAt)) {
+        return { ok: false, error: "INVALID_PAYLOAD" };
+      }
+      const state = readState();
+      writeState({
+        ...state,
+        serverLicense: license.rawPayload,
+        serverLicenseInvalid: null,
+        serverTrial: null,
+        activatedAt: nowIso(),
+        lastSeenTime: nowIso(),
+      });
+      return { ok: true, license, source: "server" };
+    });
+  }
+
   const state = readState();
   writeState({
     ...state,
     license: protectText(String(token || "").trim()),
+    serverLicense: null,
+    serverTrial: null,
     activatedAt: nowIso(),
     lastSeenTime: nowIso(),
   });
-  return { ok: true, license: checked.license };
+  return { ok: true, license: checked.license, source: "offline" };
 }
 
 function clearLicense() {
   const state = readState();
   delete state.license;
+  delete state.serverLicense;
+  delete state.serverLicenseInvalid;
   writeState(state);
   return { ok: true };
 }
@@ -217,4 +386,5 @@ module.exports = {
   requireValidLicense,
   clearLicense,
   createLicenseToken,
+  refreshServerLicense,
 };

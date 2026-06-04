@@ -119,6 +119,12 @@ export function getTurnPhase(sessionId) {
 }
 
 /** @param {string | null | undefined} sessionId */
+export function getTurnId(sessionId) {
+  if (!sessionId) return null;
+  return states.get(sessionId)?.turnId ?? null;
+}
+
+/** @param {string | null | undefined} sessionId */
 export function canSend(sessionId) {
   if (!sessionId) return true;
   const entry = states.get(sessionId);

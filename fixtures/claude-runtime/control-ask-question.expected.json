@@ -1,0 +1,7 @@
+{
+  "description": "AskUserQuestion loose payload normalizes into an answerable question.",
+  "mustIncludeKinds": ["ask_user_question"],
+  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
+  "warningCount": 0,
+  "firstQuestion": "你想按什么方向继续？"
+}

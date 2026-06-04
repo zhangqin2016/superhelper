@@ -27,6 +27,10 @@ import {
   classifyEngineEvent,
   noticeForControlSubtype,
 } from "../src/main/engine-event-notices.js";
+import {
+  normalizeClaudeEvent,
+  normalizeAskUserQuestions,
+} from "../src/main/claude-event-normalizer.js";
 
 const merged = appendTextSegment("hello", "world");
 if (merged !== "hello\n\nworld") throw new Error(`appendTextSegment failed: ${merged}`);
@@ -99,10 +103,14 @@ const parsedNoId = parseCanUseToolRequest({
     subtype: "can_use_tool",
     tool_name: "Bash",
     input: { command: "ls" },
+    suggestions: [{ type: "allow", tool_name: "Bash", rule: "ls" }],
   },
 });
 if (!parsedNoId?.requestId || !parsedNoId.requestId.startsWith("perm_")) {
   throw new Error(`parseCanUseToolRequest missing request_id failed: ${JSON.stringify(parsedNoId)}`);
+}
+if (parsedNoId.suggestions?.[0]?.rule !== "ls") {
+  throw new Error(`parseCanUseToolRequest suggestions failed: ${JSON.stringify(parsedNoId)}`);
 }
 
 if (needsUserApproval("ExitPlanMode", "bypassPermissions")) {
@@ -172,6 +180,17 @@ const allowRemember = buildControlResponse("req_2", {
 });
 if (!allowRemember.response.response.updatedPermissions) {
   throw new Error("buildControlResponse updatedPermissions failed");
+}
+
+const askQuestion = buildControlResponse("req_question", {
+  behavior: "allow",
+  updatedInput: {
+    questions: [{ id: "mode", question: "Pick mode", multiSelect: false }],
+    answers: { "Pick mode": "Fast" },
+  },
+});
+if (askQuestion.response.response.updatedInput?.answers?.["Pick mode"] !== "Fast") {
+  throw new Error("AskUserQuestion response payload failed");
 }
 
 const parentPayload = buildUserMessagePayload({
@@ -265,6 +284,79 @@ if (!compactDone || compactDone.code !== "compactComplete") {
 }
 if (compactDone.replacesCode !== "compactBoundary") {
   throw new Error(`compact_complete should replace compactBoundary, got ${compactDone.replacesCode}`);
+}
+
+const normalizedQuestion = normalizeClaudeEvent({
+  type: "control_request",
+  request_id: "req_question_adapter",
+  request: {
+    subtype: "can_use_tool",
+    tool_name: "AskUserQuestion",
+    input: { question: "下一步怎么做？" },
+  },
+});
+if (
+  normalizedQuestion[0]?.kind !== "ask_user_question" ||
+  normalizedQuestion[0]?.questions?.[0]?.question !== "下一步怎么做？"
+) {
+  throw new Error(`normalizeClaudeEvent AskUserQuestion failed: ${JSON.stringify(normalizedQuestion)}`);
+}
+
+const normalizedPermission = normalizeClaudeEvent({
+  type: "sdk_control_request",
+  request_id: "req_perm_adapter",
+  request: {
+    subtype: "permission",
+    tool_name: "Bash",
+    tool_input: { command: "ls" },
+  },
+});
+if (normalizedPermission[0]?.kind !== "permission_check" || normalizedPermission[0]?.toolName !== "Bash") {
+  throw new Error(`normalizeClaudeEvent permission failed: ${JSON.stringify(normalizedPermission)}`);
+}
+
+const normalizedText = normalizeClaudeEvent({
+  type: "stream_event",
+  event: {
+    type: "content_block_delta",
+    index: 0,
+    delta: { type: "text_delta", text: "hello" },
+  },
+});
+if (normalizedText[0]?.kind !== "assistant_text" || normalizedText[0]?.text !== "hello") {
+  throw new Error(`normalizeClaudeEvent text delta failed: ${JSON.stringify(normalizedText)}`);
+}
+
+const unknownRuntime = normalizeClaudeEvent({ type: "new_runtime_event", subtype: "mystery" });
+if (unknownRuntime[0]?.kind !== "unknown_runtime_event" || unknownRuntime[0]?.notice?.level !== "warning") {
+  throw new Error(`unknown runtime event should be visible warning: ${JSON.stringify(unknownRuntime)}`);
+}
+
+const unknownSystemNormalized = normalizeClaudeEvent({
+  type: "system",
+  subtype: "new_protocol_shape",
+});
+if (unknownSystemNormalized[0]?.kind !== "protocol_warning") {
+  throw new Error(`unknown system subtype should become protocol_warning: ${JSON.stringify(unknownSystemNormalized)}`);
+}
+
+const silentTaskNormalized = normalizeClaudeEvent({ type: "system", subtype: "task_progress" });
+if (silentTaskNormalized[0]?.notice !== null) {
+  throw new Error(`task_progress should stay silent: ${JSON.stringify(silentTaskNormalized)}`);
+}
+
+const thinkingTokensNormalized = normalizeClaudeEvent({
+  type: "system",
+  subtype: "thinking_tokens",
+  estimated_tokens: 100,
+});
+if (thinkingTokensNormalized[0]?.notice !== null) {
+  throw new Error(`thinking_tokens should stay silent: ${JSON.stringify(thinkingTokensNormalized)}`);
+}
+
+const fallbackQuestions = normalizeAskUserQuestions({ prompt: "请补充方向" });
+if (fallbackQuestions[0]?.question !== "请补充方向") {
+  throw new Error(`normalizeAskUserQuestions fallback failed: ${JSON.stringify(fallbackQuestions)}`);
 }
 
 console.log("agent-runner: ok");

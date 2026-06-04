@@ -10,6 +10,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { sessionsConfigPath } = require("./config");
+const { normalizeSessionPermissionMode } = require("./permission-settings");
 
 class SessionManager {
   /**
@@ -200,6 +201,8 @@ class SessionManager {
       messageCount: s.messages.length,
       status: s.status,
       skillCustomized: s.enabledSkillIds != null && Array.isArray(s.enabledSkillIds),
+      permissionModeId: normalizeSessionPermissionMode(s.permissionModeId) || null,
+      permissionCustomized: Boolean(normalizeSessionPermissionMode(s.permissionModeId)),
     }));
   }
 
@@ -220,6 +223,21 @@ class SessionManager {
       delete session.enabledSkillIds;
     } else {
       session.enabledSkillIds = [...new Set(enabledSkillIds)];
+    }
+    session.updatedAt = new Date().toISOString();
+    this.save();
+    return true;
+  }
+
+  setPermissionMode(sessionId, modeId) {
+    const session = this._find(sessionId);
+    if (!session) return false;
+    const normalized = normalizeSessionPermissionMode(modeId);
+    if (normalized === undefined) return false;
+    if (normalized == null) {
+      delete session.permissionModeId;
+    } else {
+      session.permissionModeId = normalized;
     }
     session.updatedAt = new Date().toISOString();
     this.save();

@@ -18,6 +18,10 @@ let runnerPoolRef = null;
 /** @type {{ ok: boolean, mode?: string, error?: string, message?: string } | null} */
 let agentBootstrap = null;
 
+// Keep persisted app data stable across display-name changes.
+app.setPath("userData", path.join(app.getPath("appData"), "lily-workbench"));
+app.setName("Lily Workbench");
+
 function createWindow() {
   const appIcon = loadAppIconImage();
   mainWindow = new BrowserWindow({
@@ -25,7 +29,7 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 640,
-    title: "智能工作台",
+    title: "Lily Workbench",
     ...(appIcon ? { icon: appIcon } : {}),
     backgroundColor: "#0f1119",
     webPreferences: {
@@ -84,6 +88,19 @@ app.whenReady().then(async () => {
   runnerPoolRef = runnerPool;
 
   createWindow();
+
+  require("./main/service-client")
+    .registerDevice()
+    .then((result) => {
+      if (!result.ok && result.error !== "NO_SERVICE_URL") {
+        console.warn("[device-register]", result.error, result.detail || "");
+      }
+    })
+    .catch((err) => console.warn("[device-register]", err?.message || err));
+
+  require("./main/license-manager")
+    .refreshServerLicense()
+    .catch((err) => console.warn("[license-refresh]", err?.message || err));
 
   ipcHandlers.registerAll({
     get mainWindow() {

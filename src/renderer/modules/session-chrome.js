@@ -123,6 +123,8 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
 
   const { updateProjectTreeChrome } = await import("./project-tree.js");
   updateProjectTreeChrome();
+  const { refreshSessionPermissionSelect } = await import("./permission-settings.js");
+  await refreshSessionPermissionSelect();
 }
 
 /** Refresh store from main; optionally rebuild active session chat from disk. */
@@ -147,6 +149,8 @@ export async function refreshStateLight({ reRenderActive = false } = {}) {
     const { updateProjectTreeChrome } = await import("./project-tree.js");
     updateProjectTreeChrome();
     await refreshSessionSkillsUi();
+    const { refreshSessionPermissionSelect } = await import("./permission-settings.js");
+    await refreshSessionPermissionSelect();
   } catch {
     // ignore
   }

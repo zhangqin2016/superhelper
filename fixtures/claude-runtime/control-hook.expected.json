@@ -1,0 +1,6 @@
+{
+  "description": "Hook callback control request normalizes to hook_callback.",
+  "mustIncludeKinds": ["hook_callback"],
+  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
+  "warningCount": 0
+}

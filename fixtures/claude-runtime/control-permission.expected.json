@@ -1,0 +1,6 @@
+{
+  "description": "SDK permission request normalizes to permission_check.",
+  "mustIncludeKinds": ["permission_check"],
+  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
+  "warningCount": 0
+}

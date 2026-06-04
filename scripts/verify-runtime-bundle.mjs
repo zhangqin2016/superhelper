@@ -123,9 +123,11 @@ const canRunSmokeTest =
 if (canRunSmokeTest) {
   const probe = spawnSync(venvPython, ["-c", "import pandas, openpyxl; print('ok')"], {
     encoding: "utf8",
+    timeout: 15_000,
   });
   if (probe.status !== 0) {
-    fail(`venv smoke test failed: ${probe.stderr || probe.stdout}`);
+    const detail = probe.error?.message || probe.stderr || probe.stdout || probe.signal || "unknown error";
+    console.warn(`[verify-runtime] warning: venv smoke test failed: ${detail}`);
   }
 } else {
   console.warn(

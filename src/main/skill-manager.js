@@ -294,7 +294,9 @@ function buildAgentGuideContent(enabledSkills) {
   const sections = [
     "# 智能工作台全局说明",
     "",
-    "你是智能工作台（Lily Workbench）助手。不要自称 Claude，不要提及 Anthropic。",
+    "你是智能工作台（Lily Workbench）助手。不要自称 Claude、Claude Code 或 Anthropic 产品。",
+    "本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
+    "只有在用户明确讨论第三方技术、兼容协议、代码变量或排障时，才可客观提及相关名称。",
     "",
     "## 身份问答（必读）",
     "",
@@ -302,7 +304,7 @@ function buildAgentGuideContent(enabledSkills) {
     "- 只回答：智能工作台助手（或 Lily Workbench 助手）。",
     "- 说明你是帮助用户在本机项目中完成写作、查资料、读文件、识图等任务的桌面助手。",
     "- 禁止说自己是 Claude、Claude Code、Anthropic 的产品或模型。",
-    "- 若用户追问底层技术，可笼统说「由大语言模型驱动」，不要透露上游厂商或产品名。",
+    "- 若用户追问底层服务，说明本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
     "",
   ];
   let lastTitle = null;
@@ -418,20 +420,31 @@ function getDisallowedTools() {
   return ["WebSearch", "WebFetch"];
 }
 
-function getRegistryUrl() {
-  const state = loadSkillsState();
-  return state.registryUrl || "";
+function getServiceRegistryUrl() {
+  try {
+    const service = require("./service-client").getServiceSettings();
+    if (service?.apiBaseUrl) return `${service.apiBaseUrl}/api/plugins/registry`;
+  } catch {
+    // fall back to bundled catalog
+  }
+  return "";
 }
 
-function setRegistryUrl(url) {
-  const trimmed = String(url || "").trim();
-  if (trimmed && !skillRegistry.isValidRegistryUrl(trimmed)) {
-    return { ok: false, error: "INVALID_URL" };
-  }
+async function fetchServiceRegistry() {
+  const sourceUrl = getServiceRegistryUrl();
+  if (!sourceUrl) return { ok: false, error: "NO_SERVICE_URL" };
+
+  const response = await require("./service-client").skillRegistry();
+  if (!response.ok) return response;
+
+  const parsed = skillRegistry.parseRegistryJson(response.json);
+  if (!parsed.ok) return parsed;
+
+  const fetchedAt = skillRegistry.cacheRegistry(parsed.registry, sourceUrl);
   const state = loadSkillsState();
-  state.registryUrl = trimmed || null;
+  state.serviceRegistryUrl = sourceUrl;
   saveSkillsState();
-  return { ok: true, registryUrl: trimmed };
+  return { ok: true, registry: { ...parsed.registry, fetchedAt, sourceUrl } };
 }
 
 function skillToPublic(skillId, entry, manifest, registryEntry) {
@@ -488,17 +501,19 @@ function availableSkillToPublic(registryEntry, installedVersion) {
   };
 }
 
-async function resolveRegistry({ fetch = true } = {}) {
-  const userUrl = getRegistryUrl();
-  if (userUrl) {
+async function resolveRegistry({ fetch = true, allowBundledFallback = true } = {}) {
+  const serviceUrl = getServiceRegistryUrl();
+  if (serviceUrl) {
     if (fetch) {
-      return skillRegistry.fetchRegistry(userUrl);
+      const service = await fetchServiceRegistry();
+      if (service.ok) return service;
+      if (!allowBundledFallback) return service;
+    } else {
+      const cached = skillRegistry.loadCachedRegistry();
+      if (cached?.sourceUrl === serviceUrl) {
+        return { ok: true, registry: cached };
+      }
     }
-    const cached = skillRegistry.loadCachedRegistry();
-    if (!cached || cached.sourceUrl !== userUrl) {
-      return { ok: false, error: "NETWORK", detail: "尚无缓存，请先检查更新" };
-    }
-    return { ok: true, registry: cached };
   }
 
   const bundled = fetch
@@ -511,10 +526,10 @@ async function resolveRegistry({ fetch = true } = {}) {
 }
 
 async function checkRegistryUpdates({ fetch = true } = {}) {
-  const registryUrl = getRegistryUrl();
+  const serviceRegistryUrl = getServiceRegistryUrl();
   const resolved = await resolveRegistry({ fetch });
   if (!resolved.ok) {
-    if (!registryUrl && !fetch) {
+    if (!fetch) {
       return {
         ok: true,
         registryUrl: "",
@@ -571,7 +586,7 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
 
   return {
     ok: true,
-    registryUrl: registryUrl || skillRegistry.BUNDLED_REGISTRY_SOURCE,
+    registryUrl: registry.sourceUrl || serviceRegistryUrl || skillRegistry.BUNDLED_REGISTRY_SOURCE,
     publisher: registry.publisher || "",
     fetchedAt: registry.fetchedAt || state.registryCachedAt,
     installed,
@@ -580,12 +595,16 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
     updatesCount: updates.length,
     categories: registry.categories || [],
     remoteIndexes: registry.remoteIndexes || [],
-    bundledCatalog: !registryUrl,
+    bundledCatalog: registry.sourceUrl === skillRegistry.BUNDLED_REGISTRY_SOURCE,
+    serviceCatalog: registry.sourceUrl === serviceRegistryUrl,
   };
 }
 
-async function installFromRegistry(skillId, version) {
-  const resolved = await resolveRegistry({ fetch: Boolean(getRegistryUrl()) });
+async function installOrUpdateFromRegistry(skillId, version) {
+  const resolved = await resolveRegistry({
+    fetch: Boolean(getServiceRegistryUrl()),
+    allowBundledFallback: !getServiceRegistryUrl(),
+  });
   if (!resolved.ok) return resolved;
 
   const registry = resolved.registry;
@@ -600,14 +619,31 @@ async function installFromRegistry(skillId, version) {
   return { ok: true, skills: listSkillsPublic(), id: result.id, version: result.version };
 }
 
+async function installFromRegistry(skillId, version) {
+  const result = await installOrUpdateFromRegistry(skillId, version);
+  if (result.ok) {
+    reportSkillEvent("install", result.id, result.version, { requestedVersion: version || null });
+  }
+  return result;
+}
+
 async function updateFromRegistry(skillId) {
-  return installFromRegistry(skillId);
+  const result = await installOrUpdateFromRegistry(skillId);
+  if (result.ok) reportSkillEvent("update", result.id, result.version);
+  return result;
 }
 
 function uninstallRemoteSkill(skillId) {
   const result = skillInstaller.uninstallRemoteSkill(skillId);
   if (!result.ok) return result;
+  reportSkillEvent("uninstall", skillId, null);
   return { ok: true, skills: listSkillsPublic() };
+}
+
+function reportSkillEvent(eventType, pluginId, pluginVersion, metadata = {}) {
+  require("./service-client")
+    .reportSkillEvent({ eventType, pluginId, pluginVersion, metadata })
+    .catch((err) => console.warn("[skills-report]", err?.message || err));
 }
 
 function listSkillsPublic() {
@@ -675,6 +711,7 @@ function setSkillEnabled(skillId, enabled) {
   }
   saveSkillsState();
   mergeAgentGuide();
+  reportSkillEvent(Boolean(enabled) ? "enable" : "disable", skillId, state.skills[skillId]?.installedVersion || null);
   return { ok: true, skills: listSkillsPublic() };
 }
 
@@ -716,8 +753,7 @@ module.exports = {
   mergeAgentGuide,
   getDisallowedTools,
   ensureBundledPresent,
-  getRegistryUrl,
-  setRegistryUrl,
+  getServiceRegistryUrl,
   checkRegistryUpdates,
   installFromRegistry,
   updateFromRegistry,

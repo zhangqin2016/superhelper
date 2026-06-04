@@ -1,0 +1,23 @@
+{
+  "name": "lily-workbench-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "migrate": "node scripts/migrate.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "integration": "node scripts/integration.mjs"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.1.0",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.6.2",
+    "kysely": "^0.28.8",
+    "nanoid": "^5.1.6",
+    "pg": "^8.16.3",
+    "zod": "^4.1.13"
+  }
+}

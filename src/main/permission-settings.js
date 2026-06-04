@@ -6,23 +6,38 @@ const { userDataPath } = require("./config");
 
 const PERMISSION_MODES = [
   {
+    id: "auto",
+    label: "智能确认",
+    description: "常规操作自动处理，拿不准或风险较高时再请你确认。",
+  },
+  {
     id: "default",
-    label: "默认权限",
-    description: "执行敏感操作前会请求确认。",
+    label: "每次确认",
+    description: "执行可能影响文件或电脑的操作前，都会先问你。",
   },
   {
     id: "acceptEdits",
-    label: "自动审阅",
-    description: "自动批准文件修改，其他操作仍会确认。",
+    label: "自动改文件",
+    description: "修改文件不用每次问你，其他重要操作仍会确认。",
+  },
+  {
+    id: "plan",
+    label: "先写计划",
+    description: "先让助手说明准备怎么做，你同意后再开始执行。",
+  },
+  {
+    id: "dontAsk",
+    label: "少打扰",
+    description: "不弹出确认；不确定或有风险的操作会直接跳过。",
   },
   {
     id: "bypassPermissions",
-    label: "完全授权",
-    description: "无需确认即可读写文件、执行命令。",
+    label: "完全放开",
+    description: "不再确认，直接读写文件和执行命令。只建议在可信项目里使用。",
   },
 ];
 
-const DEFAULT_MODE = "bypassPermissions";
+const DEFAULT_MODE = "auto";
 
 /** @type {{ activeModeId: string } | null} */
 let cachedChoice = null;
@@ -49,6 +64,11 @@ function isValidMode(modeId) {
   return PERMISSION_MODES.some((mode) => mode.id === modeId);
 }
 
+function normalizeSessionPermissionMode(modeId) {
+  if (modeId == null || modeId === "" || modeId === "inherit") return null;
+  return isValidMode(modeId) ? modeId : undefined;
+}
+
 function getActivePermissionMode() {
   const user = cachedChoice ?? readJson(userSettingsPath(), null);
   if (user?.activeModeId && isValidMode(user.activeModeId)) {
@@ -73,8 +93,27 @@ function setActivePermissionMode(modeId) {
   return { ok: true, activeModeId: modeId, label: mode?.label || modeId };
 }
 
+function resolveSessionPermissionMode(session) {
+  return normalizeSessionPermissionMode(session?.permissionModeId) || getActivePermissionMode();
+}
+
+function listSessionPermissionsPublic(session) {
+  const modeId = normalizeSessionPermissionMode(session?.permissionModeId) || null;
+  return {
+    modeId,
+    effectiveModeId: modeId || getActivePermissionMode(),
+    inherited: !modeId,
+    globalModeId: getActivePermissionMode(),
+    modes: PERMISSION_MODES.map(({ id, label, description }) => ({ id, label, description })),
+  };
+}
+
 module.exports = {
   getActivePermissionMode,
+  isValidMode,
   listPermissionsPublic,
+  listSessionPermissionsPublic,
+  normalizeSessionPermissionMode,
+  resolveSessionPermissionMode,
   setActivePermissionMode,
 };

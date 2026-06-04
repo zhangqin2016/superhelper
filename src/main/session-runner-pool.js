@@ -21,7 +21,7 @@ class SessionRunnerPool {
   /**
    * @param {string} sessionId
    * @param {string} cwd
-   * @param {{ stagingDir?: string, disallowedTools?: string[], resumeSessionId?: string | null, configDir?: string }} [extra]
+   * @param {{ stagingDir?: string, disallowedTools?: string[], resumeSessionId?: string | null, configDir?: string, permissionMode?: string }} [extra]
    */
   ensure(sessionId, cwd, extra = {}, callOpts = {}) {
     const agentCommand = resolveAgentCommand();
@@ -37,7 +37,7 @@ class SessionRunnerPool {
 
     runner.ensureProcess(cwd, {
       agentCommand,
-      permissionMode: getActivePermissionMode(),
+      permissionMode: extra.permissionMode || getActivePermissionMode(),
       disallowedTools: extra.disallowedTools || [],
       stagingDir: extra.stagingDir,
       resumeSessionId: extra.resumeSessionId || null,
@@ -65,10 +65,11 @@ class SessionRunnerPool {
    * @param {string} modeId
    * @returns {{ ok: boolean, restarted: string[] }}
    */
-  applyPermissionMode(modeId) {
+  applyPermissionMode(modeId, filter = null) {
     /** @type {string[]} */
     const restarted = [];
     for (const sessionId of this.getSessionIds()) {
+      if (filter && !filter(sessionId)) continue;
       const runner = this._sessions.get(sessionId);
       if (!runner) continue;
       if (runner.isAlive() && runner.setPermissionMode(modeId)) continue;

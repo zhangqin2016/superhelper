@@ -1,0 +1,60 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile
+    container_name: lily-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      IMAGE_TAG: ${IMAGE_TAG:-latest}
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      LICENSE_PRIVATE_KEY: ${LICENSE_PRIVATE_KEY:-}
+      LICENSE_PUBLIC_KEY: ${LICENSE_PUBLIC_KEY:-}
+      LICENSE_PRIVATE_KEY_B64: ${LICENSE_PRIVATE_KEY_B64:-}
+      LICENSE_PUBLIC_KEY_B64: ${LICENSE_PUBLIC_KEY_B64:-}
+      ALLOW_UNSIGNED_LICENSES: ${ALLOW_UNSIGNED_LICENSES:-false}
+      QINIU_PUBLIC_BASE_URL: ${QINIU_PUBLIC_BASE_URL:-https://qny.lanrensoft.cn}
+    command: sh -c "npm run migrate && npm run start"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ../..
+      dockerfile: web/Dockerfile
+    container_name: lily-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      API_BASE_URL: http://api:3000
+      NEXT_PUBLIC_API_BASE_URL: http://api:3000
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      RELEASE_CDN_BASE_URL: ${QINIU_PUBLIC_BASE_URL:-https://qny.lanrensoft.cn}
+      NEXT_PUBLIC_RELEASE_CDN_BASE_URL: ${QINIU_PUBLIC_BASE_URL:-https://qny.lanrensoft.cn}
+      RELEASE_CDN_PREFIX: ${RELEASE_CDN_PREFIX:-app/updates}
+      NEXT_PUBLIC_RELEASE_CDN_PREFIX: ${RELEASE_CDN_PREFIX:-app/updates}
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: lily-gateway
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    ports:
+      - "${HTTP_PORT:-18080}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro

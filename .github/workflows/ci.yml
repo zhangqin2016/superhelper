@@ -1,26 +1,42 @@
-# Minimal workflow so GitHub Actions registers workflows for this repo.
-
 name: CI
 
 on:
-  workflow_dispatch:
   push:
-    branches: [master]
-
-permissions:
-  contents: read
+    branches: [master, main]
+  pull_request:
 
 jobs:
-  sanity:
+  test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: integration
+          POSTGRES_PASSWORD: integration
+          POSTGRES_DB: integration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U integration"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://integration:integration@localhost:5432/integration
+      ADMIN_TOKEN: integration-token
+      ALLOW_UNSIGNED_LICENSES: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm --prefix server ci
+      - run: npm --prefix web ci
       - run: npm run test:unit
-      - run: node scripts/purge-macos-junk.mjs --check
-      - name: Check workflow files
-        run: ls -la .github/workflows/
+      - run: npm run server:smoke
+      - run: npm run server:migrate
+      - run: npm run server:integration
+      - run: npm --prefix web run build

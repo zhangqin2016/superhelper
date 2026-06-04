@@ -19,7 +19,12 @@ Module._load = function patchedLoad(request, parent, isMain) {
         getVersion: () => "0.1.0",
       },
       safeStorage: {
-        isEncryptionAvailable: () => false,
+        isEncryptionAvailable: () => globalThis.__safeStorageAvailable || false,
+        encryptString: (text) => Buffer.from(String(text), "utf8"),
+        decryptString: (buf) => {
+          if (globalThis.__safeStorageThrow) throw new Error("decrypt failed");
+          return Buffer.from(buf).toString("utf8");
+        },
       },
       shell: {
         openExternal: async () => {},
@@ -36,6 +41,7 @@ const {
   createLicenseToken,
   getLicenseStatus,
   requireValidLicense,
+  refreshServerLicense,
   verifyLicenseToken,
 } = require("../src/main/license-manager.js");
 const {
@@ -93,6 +99,72 @@ if (!allowed.ok) {
   throw new Error(`valid license should pass gate: ${JSON.stringify(allowed)}`);
 }
 
+clearLicense();
+globalThis.__safeStorageAvailable = true;
+globalThis.__safeStorageThrow = true;
+fs.writeFileSync(path.join(tmp, "license-state.json"), JSON.stringify({
+  license: {
+    encrypted: true,
+    data: Buffer.from("bad ciphertext").toString("base64"),
+  },
+}, null, 2));
+const corruptStatus = getLicenseStatus();
+if (corruptStatus.activated || corruptStatus.error !== "DECRYPT_FAILED") {
+  throw new Error(`corrupt encrypted license should not crash: ${JSON.stringify(corruptStatus)}`);
+}
+globalThis.__safeStorageAvailable = false;
+globalThis.__safeStorageThrow = false;
+
+const serviceClientPath = require.resolve("../src/main/service-client.js");
+require.cache[serviceClientPath] = {
+  id: serviceClientPath,
+  filename: serviceClientPath,
+  loaded: true,
+  exports: {
+    verifyLicense: async () => ({ ok: false, error: "NO_SERVICE_URL" }),
+    registerDevice: async () => ({
+      ok: true,
+      json: {
+        ok: true,
+        trial: {
+          enabled: true,
+          valid: true,
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        },
+      },
+    }),
+  },
+};
+
+fs.writeFileSync(path.join(tmp, "license-state.json"), JSON.stringify({}, null, 2));
+const trialRefresh = await refreshServerLicense();
+if (!trialRefresh.ok || !trialRefresh.trial?.valid) {
+  throw new Error(`trial refresh should store valid trial: ${JSON.stringify(trialRefresh)}`);
+}
+const trialAllowed = requireValidLicense();
+if (!trialAllowed.ok || trialAllowed.license?.plan !== "trial") {
+  throw new Error(`valid trial should pass gate: ${JSON.stringify(trialAllowed)}`);
+}
+
+fs.writeFileSync(path.join(tmp, "license-state.json"), JSON.stringify({
+  serverLicense: {
+    licenseId: "lic_server_1",
+    deviceId: "dev_server_1",
+    customer: "Server Customer",
+    plan: "pro",
+    features: ["usage"],
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  },
+}, null, 2));
+const transientRefresh = await refreshServerLicense();
+if (transientRefresh.ok || transientRefresh.error !== "NO_SERVICE_URL" || !transientRefresh.transient) {
+  throw new Error(`transient refresh should surface but not invalidate: ${JSON.stringify(transientRefresh)}`);
+}
+const serverStatus = getLicenseStatus();
+if (!serverStatus.activated || !serverStatus.valid || serverStatus.error) {
+  throw new Error(`transient server refresh should keep stored license valid: ${JSON.stringify(serverStatus)}`);
+}
+
 const manifest = createUpdateManifest({
   version: "0.2.0",
   force: false,
@@ -116,11 +188,18 @@ if (compareVersions("0.1.0", "0.1.0") !== 0) {
   throw new Error("compareVersions equality failed");
 }
 
-if (defaultManifestUrl() !== "https://qny.lanrensoft.cn/app/updates/latest.json") {
+if (defaultManifestUrl() !== "https://lily.lanrensoft.cn/app/updates/latest.json") {
   throw new Error(`default manifest url mismatch: ${defaultManifestUrl()}`);
 }
 if (getUpdateSettings().manifestUrl !== defaultManifestUrl()) {
   throw new Error("update settings should expose the built-in manifest URL by default");
+}
+fs.writeFileSync(
+  path.join(tmp, "update-settings.json"),
+  JSON.stringify({ manifestUrl: "https://user-controlled.example.com/latest.json" }),
+);
+if (getUpdateSettings().manifestUrl !== defaultManifestUrl()) {
+  throw new Error("update settings should ignore user-controlled manifest URL");
 }
 
 console.log("license-update: ok");

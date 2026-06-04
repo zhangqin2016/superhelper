@@ -7,49 +7,19 @@ const { userDataPath } = require("./config");
 const { loadPublicKey } = require("./license-manager");
 const { verifyDetached } = require("./crypto-signing");
 
-const SETTINGS_FILE = "update-settings.json";
 const FETCH_TIMEOUT_MS = 20_000;
-const DEFAULT_MANIFEST_URL = "https://qny.lanrensoft.cn/app/updates/latest.json";
-
-function settingsPath() {
-  return userDataPath(SETTINGS_FILE);
-}
-
-function readSettings() {
-  try {
-    const p = settingsPath();
-    if (!fs.existsSync(p)) return {};
-    return JSON.parse(fs.readFileSync(p, "utf8"));
-  } catch {
-    return {};
-  }
-}
-
-function writeSettings(settings) {
-  const p = settingsPath();
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(settings, null, 2), "utf8");
-}
+const DEFAULT_MANIFEST_URL = "https://lily.lanrensoft.cn/app/updates/latest.json";
 
 function defaultManifestUrl() {
   return process.env.LILY_UPDATE_MANIFEST_URL || DEFAULT_MANIFEST_URL;
 }
 
 function getUpdateSettings() {
-  const settings = readSettings();
   return {
     ok: true,
-    manifestUrl: settings.manifestUrl || defaultManifestUrl(),
+    manifestUrl: defaultManifestUrl(),
+    configurable: false,
   };
-}
-
-function setUpdateSettings(payload = {}) {
-  const manifestUrl = String(payload.manifestUrl || "").trim();
-  if (manifestUrl && !/^https?:\/\//i.test(manifestUrl)) {
-    return { ok: false, error: "INVALID_URL" };
-  }
-  writeSettings({ manifestUrl });
-  return { ok: true, manifestUrl };
 }
 
 function compareVersions(a, b) {
@@ -95,6 +65,33 @@ function verifyManifest(manifest) {
 }
 
 async function checkForUpdates() {
+  const service = require("./service-client");
+  const serviceSettings = service.getServiceSettings();
+  if (serviceSettings.apiBaseUrl) {
+    const currentVersion = app.getVersion();
+    const platformKey = currentPlatformKey();
+    const latest = await service.latestRelease(platformKey, currentVersion);
+    if (!latest.ok) return latest;
+    const release = latest.json || {};
+    return {
+      ok: true,
+      hasUpdate: compareVersions(release.version, currentVersion) > 0,
+      currentVersion,
+      latestVersion: release.version || currentVersion,
+      force: Boolean(release.force),
+      notes: release.notes || "",
+      platformKey,
+      source: "service",
+      package: release.url
+        ? {
+            url: release.url,
+            sha256: release.sha256 || "",
+            size: release.sizeBytes || null,
+          }
+        : null,
+    };
+  }
+
   const { manifestUrl } = getUpdateSettings();
   if (!manifestUrl) return { ok: false, error: "NO_MANIFEST_URL" };
 
@@ -148,7 +145,6 @@ function createUpdateManifest(payload, privateKeyPem) {
 
 module.exports = {
   getUpdateSettings,
-  setUpdateSettings,
   checkForUpdates,
   openUpdateDownload,
   compareVersions,

@@ -131,7 +131,8 @@ async function executeAutoRecovery(ctx, sessionId, priorReason, meta) {
   if (result.ok) {
     meta.sendToRenderer?.(meta.mainWindow, "assistant:engine-notice", {
       sessionId,
-      code: "autoRecover",
+      code: "autoRecoverDone",
+      replacesCode: "autoRecover",
       level: "info",
       panel: true,
       replace: true,
@@ -160,7 +161,8 @@ async function finalizeRecoveryFailure(ctx, sessionId, message, meta = {}) {
   emitTurnState(ctx, sessionId);
   meta.sendToRenderer?.(meta.mainWindow, "assistant:engine-notice", {
     sessionId,
-    code: "autoRecover",
+    code: "autoRecoverFailed",
+    replacesCode: "autoRecover",
     level: "warning",
     panel: true,
     replace: true,

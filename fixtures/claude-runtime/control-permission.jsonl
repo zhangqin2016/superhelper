@@ -1,0 +1,1 @@
+{"type":"sdk_control_request","request_id":"req_perm_1","request":{"subtype":"permission","tool_name":"Bash","tool_input":{"command":"git status"}}}

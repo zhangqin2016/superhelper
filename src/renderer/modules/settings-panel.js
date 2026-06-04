@@ -6,13 +6,14 @@ import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
 import { t, tPermission } from "../i18n/index.js";
 import { refreshModelSelect } from "./model-settings.js";
-import { refreshPermissionSelect } from "./permission-settings.js";
+import { refreshPermissionSelect, refreshSessionPermissionSelect } from "./permission-settings.js";
 import { refreshSearchSettings } from "./search-settings.js";
 import { refreshSkillsList } from "./skill-settings.js";
 import { refreshLicenseStatus, refreshUpdateSettings } from "./license-update-settings.js";
 import { anySessionRunning } from "./session-busy.js";
+import { activeSession, refreshStateLight } from "./session-chrome.js";
 
-const SETTINGS_PAGES = ["general", "model", "permission", "search", "skills", "about"];
+const SETTINGS_PAGES = ["general", "model", "permission", "search", "skills", "license", "about"];
 
 let panelOpen = false;
 let activeSettingsPage = "general";
@@ -96,6 +97,30 @@ export async function initSettingsPanel() {
     }
     const active = (result.modes || []).find((m) => m.id === result.activeModeId);
     showToast(t("toast.permissionSwitched", { label: tPermission(active) || "" }), "success");
+    await refreshSessionPermissionSelect();
+  });
+
+  $("sessionPermissionModeSelect")?.addEventListener("change", async () => {
+    const sessionId = activeSession()?.id;
+    if (!sessionId) {
+      await refreshSessionPermissionSelect();
+      return;
+    }
+    const modeId = $("sessionPermissionModeSelect").value || "inherit";
+    const result = await window.assistantClient.setSessionPermission(sessionId, modeId);
+    if (!result.ok) {
+      const msg =
+        result.error === "BUSY"
+          ? t("toast.permissionBusy")
+          : t("toast.permissionSwitchFailed");
+      showToast(msg, "error");
+      await refreshSessionPermissionSelect();
+      return;
+    }
+    const active = (result.modes || []).find((m) => m.id === result.effectiveModeId);
+    showToast(t("toast.sessionPermissionSwitched", { label: tPermission(active) || "" }), "success");
+    await refreshStateLight();
+    await refreshSessionPermissionSelect();
   });
 
   $("settingsClearCache")?.addEventListener("click", async () => {

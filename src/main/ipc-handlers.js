@@ -63,15 +63,20 @@ function registerAll(ctx) {
 
   ipcMain.handle("license:status", () =>
     require("./license-manager").getLicenseStatus());
-  ipcMain.handle("license:activate", (_event, payload) =>
+  ipcMain.handle("license:activate", async (_event, payload) =>
     require("./license-manager").activateLicense(payload?.token || payload));
   ipcMain.handle("license:clear", () =>
     require("./license-manager").clearLicense());
+  ipcMain.handle("license:refresh", () =>
+    require("./license-manager").refreshServerLicense());
+
+  ipcMain.handle("service:get-settings", () =>
+    require("./service-client").getServiceSettings());
+  ipcMain.handle("service:test-connection", () =>
+    require("./service-client").testConnection());
 
   ipcMain.handle("updates:get-settings", () =>
     require("./update-manager").getUpdateSettings());
-  ipcMain.handle("updates:set-settings", (_event, payload) =>
-    require("./update-manager").setUpdateSettings(payload));
   ipcMain.handle("updates:check", () => {
     const licensed = require("./license-manager").requireValidLicense();
     if (!licensed.ok) return licensed;

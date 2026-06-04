@@ -17,6 +17,13 @@ function clip(text, max = 72) {
   return value.length > max ? `${value.slice(0, max)}...` : value;
 }
 
+function currentStatusText(viewState) {
+  const startedAt = viewState.turnStartedAt || Date.now();
+  const elapsedMs = Date.now() - startedAt;
+  if (elapsedMs >= 30000) return t("message.longWorking");
+  return viewState.activityLabel || t("message.continuing");
+}
+
 export function toolSummary(name, input = {}) {
   switch (name) {
     case "Read":
@@ -460,8 +467,7 @@ export function syncTurnProgress(viewState) {
   const slot = ensureTurnProgressSlot(activity);
   const waiting =
     store.get("isBusy") &&
-    countRunningTools(viewState.toolCards) === 0 &&
-    !turnHasStreamedText(viewState);
+    countRunningTools(viewState.toolCards) === 0;
 
   activity.querySelectorAll(".turn-progress").forEach((el) => {
     if (el.parentElement !== slot) el.remove();
@@ -475,6 +481,7 @@ export function syncTurnProgress(viewState) {
   }
 
   let progress = slot.querySelector(".turn-progress");
+  const labelText = currentStatusText(viewState);
   if (!progress) {
     progress = document.createElement("div");
     progress.className = "turn-progress tool-card tool-card-running";
@@ -482,10 +489,11 @@ export function syncTurnProgress(viewState) {
     dot.className = "tool-card-dot";
     const label = document.createElement("span");
     label.className = "tool-card-label";
-    label.textContent = t("message.continuing");
     progress.append(dot, label);
     slot.appendChild(progress);
   }
+  const label = progress.querySelector(".tool-card-label");
+  if (label) label.textContent = labelText;
 
   slot.hidden = false;
   activity.hidden = false;
@@ -512,7 +520,9 @@ export function refreshRunningActivityLabel(viewState) {
       : summary.title;
     return;
   }
-  if (store.get("isBusy") && !turnHasStreamedText(viewState)) {
-    viewState.activityLabel = t("message.continuing");
+  if (store.get("isBusy")) {
+    viewState.activityLabel = turnHasStreamedText(viewState)
+      ? t("message.organizingReply")
+      : t("message.continuing");
   }
 }

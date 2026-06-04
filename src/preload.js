@@ -21,9 +21,16 @@ contextBridge.exposeInMainWorld("assistantClient", {
       remember: Boolean(options.remember),
       message: options.message,
     }),
+  respondUserQuestion: (sessionId, requestId, answers, response) =>
+    ipcRenderer.invoke("assistant:question-response", {
+      sessionId,
+      requestId,
+      answers,
+      response,
+    }),
   getTurnState: (sessionId) =>
     ipcRenderer.invoke("assistant:turn-state:snapshot", { sessionId }),
-  interrupt: () => ipcRenderer.invoke("assistant:interrupt"),
+  interrupt: (sessionId) => ipcRenderer.invoke("assistant:interrupt", { sessionId }),
   cancelQueuedMessage: (sessionId, index) =>
     ipcRenderer.invoke("assistant:cancel-queued-message", { sessionId, index }),
 
@@ -50,8 +57,6 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("skills:set-enabled", { id, enabled }),
   refreshSkills: () => ipcRenderer.invoke("skills:refresh"),
   restoreBundledSkill: (id) => ipcRenderer.invoke("skills:restore-bundled", { id }),
-  getRegistryUrl: () => ipcRenderer.invoke("skills:get-registry-url"),
-  setRegistryUrl: (url) => ipcRenderer.invoke("skills:set-registry-url", { url }),
   checkSkillUpdates: () => ipcRenderer.invoke("skills:check-updates"),
   installSkill: (id, version) => ipcRenderer.invoke("skills:install", { id, version }),
   updateSkill: (id) => ipcRenderer.invoke("skills:update", { id }),
@@ -71,6 +76,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   renameSession: (sessionId, title) => ipcRenderer.invoke("session:rename", sessionId, title),
   deleteSession: (sessionId) => ipcRenderer.invoke("session:delete", sessionId),
   archiveSession: (sessionId) => ipcRenderer.invoke("session:archive", sessionId),
+  getSessionPermission: (sessionId) => ipcRenderer.invoke("session:get-permission", sessionId),
+  setSessionPermission: (sessionId, modeId) =>
+    ipcRenderer.invoke("session:set-permission", { sessionId, modeId }),
 
   pickFiles: () => ipcRenderer.invoke("files:pick"),
   stageFile: (filePath, fileName) => ipcRenderer.invoke("files:stage", filePath, fileName),
@@ -81,10 +89,13 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   getLicenseStatus: () => ipcRenderer.invoke("license:status"),
   activateLicense: (token) => ipcRenderer.invoke("license:activate", { token }),
+  refreshLicense: () => ipcRenderer.invoke("license:refresh"),
   clearLicense: () => ipcRenderer.invoke("license:clear"),
 
+  getServiceSettings: () => ipcRenderer.invoke("service:get-settings"),
+  testServiceConnection: () => ipcRenderer.invoke("service:test-connection"),
+
   getUpdateSettings: () => ipcRenderer.invoke("updates:get-settings"),
-  setUpdateSettings: (payload) => ipcRenderer.invoke("updates:set-settings", payload),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   openUpdateDownload: (url) => ipcRenderer.invoke("updates:open-download", { url }),
 
@@ -123,6 +134,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   },
   onPermissionRequest: (callback) => {
     ipcRenderer.on("assistant:permission-request", (_event, data) => callback(data));
+  },
+  onUserQuestion: (callback) => {
+    ipcRenderer.on("assistant:user-question", (_event, data) => callback(data));
   },
   onPermissionCancelled: (callback) => {
     ipcRenderer.on("assistant:permission-cancelled", (_event, data) => callback(data));

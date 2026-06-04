@@ -74,10 +74,6 @@ function hashContent(text) {
   return String(hash);
 }
 
-function hasHtmlTags(text) {
-  return /<[a-zA-Z][^>]*>/.test(text);
-}
-
 /**
  * 纯文本追加，不走 Markdown 解析和 Sanitize。
  */
@@ -130,11 +126,7 @@ export function renderMarkdownWithCache(element, markdownText) {
 
   const html = parser(markdownText || "", { renderer });
 
-  if (hasHtmlTags(html)) {
-    element.innerHTML = window.DOMPurify.sanitize(html);
-  } else {
-    element.textContent = markdownText || "";
-  }
+  element.innerHTML = window.DOMPurify.sanitize(html);
 
   return { cached: cachedCount > 0, cachedCount };
 }

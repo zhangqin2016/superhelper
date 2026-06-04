@@ -1,0 +1,11 @@
+node_modules
+server/node_modules
+web/node_modules
+web/.next
+dist
+release
+release-keys
+.git
+.DS_Store
+Archive.zip
+npm-debug.log*

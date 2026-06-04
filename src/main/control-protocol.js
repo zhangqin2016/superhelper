@@ -12,6 +12,8 @@ const EDIT_TOOLS = new Set([
   "NotebookEdit",
 ]);
 
+const READ_ONLY_TOOLS = new Set(["Read", "Glob", "Grep"]);
+
 function newRequestId(prefix = "req") {
   return `${prefix}_${crypto.randomUUID()}`;
 }
@@ -55,6 +57,13 @@ function parseCanUseToolRequest(ev) {
     description: typeof req.description === "string" ? req.description : "",
     decisionReason:
       typeof req.decision_reason === "string" ? req.decision_reason : "",
+    suggestions: Array.isArray(req.suggestions)
+      ? req.suggestions
+      : Array.isArray(req.permission_suggestions)
+        ? req.permission_suggestions
+        : Array.isArray(req.permissionSuggestions)
+          ? req.permissionSuggestions
+          : [],
   };
 }
 
@@ -64,7 +73,7 @@ function parseCanUseToolRequest(ev) {
  */
 function needsUserApproval(toolName, permissionMode) {
   if (permissionMode === "bypassPermissions") return false;
-  if (toolName === "Read") return false;
+  if (READ_ONLY_TOOLS.has(toolName)) return false;
   if (permissionMode === "acceptEdits" && EDIT_TOOLS.has(toolName)) return false;
   return true;
 }
@@ -181,6 +190,7 @@ function buildHookCallbackResponse(requestId, hookPayload = {}) {
 
 module.exports = {
   EDIT_TOOLS,
+  READ_ONLY_TOOLS,
   newRequestId,
   parseCanUseToolRequest,
   needsUserApproval,

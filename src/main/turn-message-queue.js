@@ -110,7 +110,7 @@ function takeQueueItemIfIdle(ctx, sessionId) {
   if (runner?.isBusy() || isRecoveryPending(sessionId)) return null;
 
   const phase = turnController.snapshot(sessionId).phase;
-  if (phase !== "idle" && phase !== "closing") return null;
+  if (phase !== "idle") return null;
 
   return dequeueMessage(sessionId);
 }

@@ -72,7 +72,9 @@ function migrateLegacyCliBinaries() {
 }
 
 /** Previous Electron userData folder names (package / product renames). */
-const LEGACY_USER_DATA_DIR_NAMES = ["terminal-chat-claude", "智能工作台"];
+const LEGACY_USER_DATA_DIR_NAMES = [
+  "terminal-chat-claude",
+];
 
 const APP_DATA_FILES = [
   "projects.json",
@@ -93,6 +95,7 @@ const APP_DATA_DIRS = [
   "runtime-bin",
   "skills-cache",
   "skills-backup",
+  "session-guides",
 ];
 
 function legacyUserDataRoots() {

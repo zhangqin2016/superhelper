@@ -1,13 +1,19 @@
 {
   "name": "lily-workbench",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
-  "description": "智能工作台桌面客户端",
+  "description": "Lily Workbench desktop client",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "start:dev": "DEV_USE_SYSTEM_AGENT=1 electron .",
-    "test:unit": "node scripts/test-turn-controller.mjs && node scripts/test-turn-boundary.mjs && node scripts/test-interrupt-and-send.mjs && node scripts/test-agent-runner.mjs && node scripts/test-agent-tool-lease.mjs && node scripts/test-license-update.mjs && node scripts/test-release-admin.mjs && node scripts/test-turn-auto-recovery.mjs && node scripts/test-turn-message-queue.mjs && node scripts/test-session-events.mjs && node scripts/test-runtime-python.mjs && node scripts/test-spawn-env-runtime.mjs && node scripts/test-locale-settings.mjs && node scripts/test-data-migration.mjs && node scripts/test-skill-root.mjs && node scripts/test-ship-ignore.mjs && node scripts/test-agent-guide-mirror.mjs && node scripts/test-vision-translator.mjs && node scripts/test-image-send-flow.mjs",
+    "server:dev": "npm --prefix server run dev",
+    "server:migrate": "npm --prefix server run migrate",
+    "server:smoke": "npm --prefix server run smoke",
+    "server:integration": "npm --prefix server run integration",
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "test:unit": "node scripts/test-turn-controller.mjs && node scripts/test-turn-boundary.mjs && node scripts/test-interrupt-and-send.mjs && node scripts/test-agent-runner.mjs && node scripts/test-claude-runtime-fixtures.mjs && node scripts/test-runtime-diagnostics.mjs && node scripts/test-agent-tool-lease.mjs && node scripts/test-license-update.mjs && node scripts/test-service-client.mjs && node scripts/test-release-admin.mjs && node scripts/test-web-admin-auth.mjs && node scripts/test-turn-auto-recovery.mjs && node scripts/test-turn-message-queue.mjs && node scripts/test-session-events.mjs && node scripts/test-session-permissions.mjs && node scripts/test-markdown-renderer.mjs && node scripts/test-runtime-python.mjs && node scripts/test-spawn-env-runtime.mjs && node scripts/test-locale-settings.mjs && node scripts/test-data-migration.mjs && node scripts/test-skill-root.mjs && node scripts/test-skill-catalog.mjs && node scripts/test-ship-ignore.mjs && node scripts/test-agent-guide-mirror.mjs && node scripts/test-vision-translator.mjs && node scripts/test-image-send-flow.mjs",
     "sync:skills-catalog": "node scripts/sync-skills-catalog.mjs",
     "sync:skills-bundle": "node scripts/sync-skills-catalog.mjs --bundle-only",
     "generate:skill-i18n": "node scripts/generate-skill-i18n.mjs",
@@ -15,6 +21,7 @@
     "license:generate": "node scripts/generate-license.mjs",
     "updates:sign-manifest": "node scripts/sign-update-manifest.mjs",
     "release:admin": "node scripts/release-admin.mjs",
+    "release:server": "node scripts/publish-release-server.mjs",
     "release:one": "node scripts/release-one-click.mjs",
     "release:all": "node scripts/release-one-click.mjs --target all --upload",
     "build:runtime": "node scripts/build-runtime-bundle.mjs",
@@ -23,10 +30,12 @@
     "rebuild:pty": "node scripts/rebuild-pty.mjs",
     "pack": "node scripts/purge-macos-junk.mjs && electron-builder --dir",
     "dist:win": "node scripts/verify-runtime-bundle.mjs --platform win32-x64 --allow-missing && node scripts/purge-macos-junk.mjs && bash scripts/dist-win.sh && node scripts/verify-win-pack.mjs",
-    "dist:mac": "node scripts/verify-runtime-bundle.mjs && node scripts/purge-macos-junk.mjs && bash scripts/dist-mac.sh && node scripts/verify-mac-pack.mjs && node scripts/build-mac-dmg.mjs && node scripts/verify-mac-dmg.mjs",
+    "dist:mac": "node scripts/verify-runtime-bundle.mjs && node scripts/purge-macos-junk.mjs && bash scripts/dist-mac.sh && node scripts/verify-mac-pack.mjs && node scripts/build-mac-dmg.mjs --arch arm64 && node scripts/verify-mac-dmg.mjs --arch arm64",
     "purge:macos-junk": "node scripts/purge-macos-junk.mjs",
     "build:runtime:win": "node scripts/build-runtime-bundle.mjs --platform win32-x64",
-    "dist:all": "npm run dist:mac && npm run dist:win"
+    "dist:all": "npm run dist:mac && npm run dist:win",
+    "test:runtime-fixtures": "node scripts/test-claude-runtime-fixtures.mjs",
+    "test:runtime-diagnostics": "node scripts/test-runtime-diagnostics.mjs"
   },
   "build": {
     "appId": "com.company.ai-super-terminal",
@@ -58,6 +67,7 @@
     ],
     "mac": {
       "icon": "icon.icns",
+      "executableName": "Lily Workbench",
       "category": "public.app-category.developer-tools",
       "extraResources": [
         {

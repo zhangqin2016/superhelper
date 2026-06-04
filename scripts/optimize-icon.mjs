@@ -12,6 +12,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SIZE = 1024;
 /** How much of the canvas the trimmed artwork should fill (macOS squircle safe zone ~85–90%). */
 const ARTWORK_FILL = 0.90;
+const CORNER_RADIUS = 190;
 const BLACK_THRESHOLD = 42;
 
 const sources = [path.join(root, "resources", "icon-source.png")];
@@ -38,10 +39,35 @@ for (let i = 0; i < data.length; i += 4) {
   }
 }
 
+let minX = info.width;
+let minY = info.height;
+let maxX = -1;
+let maxY = -1;
+for (let y = 0; y < info.height; y += 1) {
+  for (let x = 0; x < info.width; x += 1) {
+    const alpha = data[(y * info.width + x) * 4 + 3];
+    if (alpha <= 10) continue;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+}
+
+if (maxX < minX || maxY < minY) {
+  console.error("Icon source has no visible artwork after background removal");
+  process.exit(1);
+}
+
 const trimmed = await sharp(data, {
   raw: { width: info.width, height: info.height, channels: 4 },
 })
-  .trim({ threshold: 10 })
+  .extract({
+    left: minX,
+    top: minY,
+    width: maxX - minX + 1,
+    height: maxY - minY + 1,
+  })
   .toBuffer({ resolveWithObject: true });
 
 const maxSide = Math.max(trimmed.info.width, trimmed.info.height);
@@ -71,8 +97,20 @@ const backdrop = await sharp({
   .png()
   .toBuffer();
 
-await sharp(backdrop)
+const composed = await sharp(backdrop)
   .composite([{ input: flower, gravity: "center" }])
+  .png()
+  .toBuffer();
+
+await sharp(composed)
+  .composite([
+    {
+      input: Buffer.from(
+        `<svg width="${SIZE}" height="${SIZE}"><rect width="${SIZE}" height="${SIZE}" rx="${CORNER_RADIUS}" ry="${CORNER_RADIUS}" fill="#fff"/></svg>`,
+      ),
+      blend: "dest-in",
+    },
+  ])
   .png()
   .toFile(outPng);
 

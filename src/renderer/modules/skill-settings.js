@@ -1,5 +1,5 @@
 /**
- * Skill center (settings panel) — P1 installed + P2 registry URL.
+ * Skill center (settings panel).
  */
 
 import { $ } from "./dom.js";
@@ -313,11 +313,6 @@ function updateRegistryHint(catalog) {
   const hint = $("skillsRegistryHint");
   if (!hint) return;
 
-  if (!catalog?.registryUrl && !catalog?.bundledCatalog) {
-    hint.textContent = t("skills.registryHintCustom");
-    return;
-  }
-
   if (catalog?.bundledCatalog) {
     const parts = [t("skills.registryHintBundled")];
     if (catalog.publisher) parts.push(catalog.publisher);
@@ -342,6 +337,7 @@ function updateRegistryHint(catalog) {
   if (catalog.updatesCount > 0) {
     parts.push(t("skills.registryUpdates", { count: catalog.updatesCount }));
   }
+  if (catalog.available?.length) parts.push(t("skills.registryAvailable", { count: catalog.available.length }));
   hint.textContent = parts.join(" · ") || t("skills.registryConfigured");
 }
 
@@ -362,31 +358,7 @@ export async function refreshSkillsList() {
   }
 }
 
-async function loadRegistryUrl() {
-  const input = $("skillsRegistryUrl");
-  if (!input) return;
-  const data = await window.assistantClient.getRegistryUrl();
-  if (data?.ok) {
-    input.value = data.registryUrl || "";
-  }
-}
-
 export async function initSkillSettings() {
-  await loadRegistryUrl();
-
-  $("skillsSaveRegistryBtn")?.addEventListener("click", async () => {
-    const url = $("skillsRegistryUrl")?.value?.trim() || "";
-    const result = await window.assistantClient.setRegistryUrl(url);
-    if (!result.ok) {
-      showToast(skillErrorMessage(result.error), "error");
-      return;
-    }
-    showToast(url ? t("toast.skillsRegistrySaved") : t("toast.skillsRegistryCleared"), "success");
-    lastCatalog = null;
-    renderAvailableList([]);
-    updateRegistryHint({ registryUrl: url });
-  });
-
   $("skillsCheckUpdatesBtn")?.addEventListener("click", async () => {
     if (isBusy()) {
       showToast(t("toast.skillsCheckBusy"), "error");
@@ -418,10 +390,6 @@ export async function initSkillSettings() {
       filterAvailableByCategory(result.available || [], lastCatalog.activeCategory),
     );
 
-    if (!result.registryUrl && !result.bundledCatalog) {
-      showToast(t("toast.skillsNeedRegistry"), "error");
-      return;
-    }
     if ((result.available || []).length === 0 && (result.updatesCount || 0) === 0) {
       showToast(t("toast.skillsUpToDate"), "success");
     } else {
@@ -446,7 +414,7 @@ export async function initSkillSettings() {
     await refreshSkillsList();
   });
 
-  updateRegistryHint({ registryUrl: $("skillsRegistryUrl")?.value, bundledCatalog: true });
+  updateRegistryHint({ bundledCatalog: true });
   await refreshSkillsList();
   const bootstrap = await window.assistantClient.checkSkillUpdates();
   if (bootstrap?.ok) {

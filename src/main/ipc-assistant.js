@@ -154,14 +154,34 @@ function registerAssistantHandlers(ctx) {
     return handled ? { ok: true, sessionId, requestId } : { ok: false, error: "NOT_PENDING" };
   });
 
+  ipcMain.handle("assistant:question-response", (_event, payload) => {
+    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const requestId = payload?.requestId;
+    if (!sessionId || !requestId) {
+      return { ok: false, error: "INVALID_PAYLOAD" };
+    }
+
+    const runner = runnerPool.get(sessionId);
+    if (!runner) return { ok: false, error: "NO_RUNNER" };
+
+    const handled = runner.respondUserQuestion(requestId, {
+      answers: payload.answers,
+      response: payload.response,
+    });
+    return handled ? { ok: true, sessionId, requestId } : { ok: false, error: "NOT_PENDING" };
+  });
+
   ipcMain.handle("assistant:turn-state:snapshot", (_event, payload) => {
     const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
     if (!sessionId) return { ok: false, error: "NO_SESSION" };
     return { ok: true, ...turnController.snapshot(sessionId) };
   });
 
-  ipcMain.handle("assistant:interrupt", async () => {
-    const session = sessionManager.getActive();
+  ipcMain.handle("assistant:interrupt", async (_event, payload) => {
+    const requestedId = payload?.sessionId || null;
+    const session = requestedId
+      ? sessionManager.findById(requestedId)
+      : sessionManager.getActive();
     if (!session) return { ok: false, error: "NO_SESSION" };
 
     const runner = runnerPool.get(session.id);

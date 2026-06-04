@@ -50,8 +50,30 @@ function terminateIdleRunners(runnerPool) {
   }
 }
 
+/**
+ * @param {import("./session-runner-pool").SessionRunnerPool} runnerPool
+ */
+function reloadSkillsForIdleRunners(runnerPool) {
+  /** @type {string[]} */
+  const reloaded = [];
+  /** @type {string[]} */
+  const restarted = [];
+  for (const sessionId of [...runnerPool.getSessionIds()]) {
+    const runner = runnerPool.get(sessionId);
+    if (!runner?.isAlive() || runner.isBusy()) continue;
+    if (runner.reloadSkills()) {
+      reloaded.push(sessionId);
+    } else {
+      runnerPool.terminateSession(sessionId);
+      restarted.push(sessionId);
+    }
+  }
+  return { reloaded, restarted };
+}
+
 module.exports = {
   buildLiveEngineEnvPatch,
   applyLiveEnvToPool,
   terminateIdleRunners,
+  reloadSkillsForIdleRunners,
 };

@@ -155,6 +155,28 @@ export async function sendPrompt(opts = {}) {
     showToast(t("toast.sessionStopping"), "warning");
     return;
   }
+  if (!files.length) {
+    const { hasPendingUserQuestion, respondPendingUserQuestionFromComposer, syncComposerForActiveSession } =
+      await import("./message.js");
+    if (hasPendingUserQuestion(sessionId)) {
+      if (promptInput) promptInput.value = "";
+      try {
+        const result = await respondPendingUserQuestionFromComposer(sessionId, text);
+        if (!result?.ok) {
+          if (promptInput) promptInput.value = text;
+          showToast(t("question.respondFailed"), "error");
+          return;
+        }
+        syncComposerForActiveSession();
+        promptInput?.focus();
+        return;
+      } catch (err) {
+        if (promptInput) promptInput.value = text;
+        showToast(err?.message || t("question.respondFailed"), "error");
+        return;
+      }
+    }
+  }
   const displayFiles = files.map((f) => {
     const pending = (store.get("pendingFiles") || []).find((pf) => pf.id === f.id);
     return {
@@ -265,7 +287,7 @@ export function initComposer() {
 
   $("interruptBtn")?.addEventListener("click", async () => {
     const sessionId = store.get("activeSessionId");
-    await window.assistantClient.interrupt();
+    await window.assistantClient.interrupt(sessionId);
     renderPromptSuggestions(sessionId, []);
     $("promptInput")?.focus();
   });

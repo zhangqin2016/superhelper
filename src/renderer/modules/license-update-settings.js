@@ -55,21 +55,7 @@ export async function refreshLicenseStatus() {
 }
 
 export async function refreshUpdateSettings() {
-  const input = $("updateManifestUrl");
-  if (!input) return;
-  const result = await window.assistantClient.getUpdateSettings();
-  if (result?.ok) input.value = result.manifestUrl || "";
-}
-
-async function saveUpdateSettings() {
-  const manifestUrl = $("updateManifestUrl")?.value?.trim() || "";
-  const result = await window.assistantClient.setUpdateSettings({ manifestUrl });
-  if (!result?.ok) {
-    showToast(updateErrorMessage(result?.error), "error");
-    return false;
-  }
-  showToast(t("toast.updateSettingsSaved"), "success");
-  return true;
+  await window.assistantClient.getUpdateSettings?.();
 }
 
 async function checkUpdates() {
@@ -78,9 +64,6 @@ async function checkUpdates() {
   if (downloadBtn) downloadBtn.hidden = true;
   const statusEl = $("updateStatusText");
   if (statusEl) statusEl.textContent = t("settings.updateChecking");
-
-  const saved = await saveUpdateSettings();
-  if (!saved) return;
 
   const result = await window.assistantClient.checkForUpdates();
   if (!result?.ok) {
@@ -208,7 +191,6 @@ export function initLicenseUpdateSettings() {
     showToast(t("toast.licenseCleared"), "info");
   });
 
-  $("updateSaveBtn")?.addEventListener("click", () => void saveUpdateSettings());
   $("updateCheckBtn")?.addEventListener("click", () => void checkUpdates());
   $("updateDownloadBtn")?.addEventListener("click", async () => {
     if (!latestPackageUrl) return;

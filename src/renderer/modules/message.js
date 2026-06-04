@@ -17,6 +17,7 @@ import {
   canSend,
   canInterrupt,
   getTurnPhase,
+  getTurnId,
   applyTurnState as storeTurnState,
 } from "./session-busy.js";
 import { showToast } from "./toast.js";
@@ -54,6 +55,7 @@ const stackEl = () => $("sessionMessagesStack");
  *   activeMarkdown: string,
  *   activeBubble: HTMLElement | null,
  *   activityLabel: string,
+ *   turnStartedAt: number,
  * }>} */
 const sessionViews = new Map();
 
@@ -128,6 +130,10 @@ function isActiveSession(sessionId) {
   return store.get("activeSessionId") === sessionId;
 }
 
+function eventTurnId(payload) {
+  return payload?.turnId ? String(payload.turnId) : null;
+}
+
 function view(sessionId) {
   if (!sessionViews.has(sessionId)) {
     sessionViews.set(sessionId, {
@@ -139,10 +145,23 @@ function view(sessionId) {
       activeMarkdown: "",
       activeBubble: null,
       activityLabel: "",
+      turnStartedAt: 0,
       turnHadToolUse: false,
     });
   }
   return sessionViews.get(sessionId);
+}
+
+function acceptLiveTurnEvent(sessionId, payload) {
+  const incoming = eventTurnId(payload);
+  if (!incoming) return true;
+  const v = view(sessionId);
+  if (!v.activeTurn) return true;
+  if (!v.activeTurn.turnId) {
+    v.activeTurn.turnId = incoming;
+    return true;
+  }
+  return v.activeTurn.turnId === incoming;
 }
 
 function ensurePanel(sessionId) {
@@ -224,6 +243,10 @@ function softenStreamGlue(text) {
   return String(text || "")
     .replace(/([。！？!?])([^\s\n\r])/g, "$1\n\n$2")
     .replace(/\.(?=[A-Z\u4e00-\u9fff])/g, ".\n\n");
+}
+
+function hasMarkdownSyntax(text) {
+  return /(^|\s)(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\[[^\]]+\]\([^)]+\))/m.test(String(text || ""));
 }
 
 export function createMessage(sessionId, role, text = "", files = null, options = null) {
@@ -474,8 +497,8 @@ export function renderConversation(sessionId, { force = false } = {}) {
 
 // --- Tool card wrappers (delegate to tool-cards.js) ---
 
-function addToolCard(sessionId, id, name, input, parentToolUseId) {
-  if (!view(sessionId).activeTurn) beginAssistantTurn(sessionId);
+function addToolCard(sessionId, id, name, input, parentToolUseId, turnId = null) {
+  if (!view(sessionId).activeTurn) beginAssistantTurn(sessionId, turnId);
   const v = view(sessionId);
   v.turnHadToolUse = true;
   addToolCardImpl(v, id, name, input, parentToolUseId);
@@ -502,9 +525,12 @@ function syncTurnProgress(sessionId) {
   syncTurnProgressImpl(v);
 }
 
-export function beginAssistantTurn(sessionId) {
+export function beginAssistantTurn(sessionId, turnId = null) {
   const v = view(sessionId);
-  if (v.activeTurn) return v.activeTurn.bubble;
+  if (v.activeTurn) {
+    if (turnId && !v.activeTurn.turnId) v.activeTurn.turnId = turnId;
+    return v.activeTurn.bubble;
+  }
 
   const listEl = ensurePanel(sessionId).listEl;
   if (!listEl) return null;
@@ -537,11 +563,12 @@ export function beginAssistantTurn(sessionId) {
   article.append(avatar, body);
   listEl.appendChild(article);
 
-  v.activeTurn = { article, activity, bubble };
+  v.activeTurn = { article, activity, bubble, turnId: turnId || getTurnId(sessionId) || null };
   v._lastRenderedLength = 0;
   v.activeBubble = bubble;
   v.activeMarkdown = "";
   v.turnHadToolUse = false;
+  v.turnStartedAt = Date.now();
   if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
   scrollToBottom(false, v.panel);
   return bubble;
@@ -558,6 +585,7 @@ function finishActiveTurn(sessionId) {
   v.activeBubble = null;
   v.activeMarkdown = "";
   v.turnHadToolUse = false;
+  v.turnStartedAt = 0;
   if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
 }
 
@@ -793,10 +821,171 @@ function buildPermissionCard(sessionId, payload) {
   return card;
 }
 
+function questionTitle(question, index) {
+  const header = typeof question.header === "string" ? question.header.trim() : "";
+  const text = typeof question.question === "string" ? question.question.trim() : "";
+  if (header && text) return `${header}：${text}`;
+  return text || header || `${t("question.item")} ${index + 1}`;
+}
+
+function normalizeQuestionPayloadQuestions(payload) {
+  const raw = Array.isArray(payload?.questions) ? payload.questions : [];
+  const normalized = raw
+    .map((question, index) => {
+      if (typeof question === "string") {
+        const text = question.trim();
+        return text ? { id: `question_${index + 1}`, question: text, options: [] } : null;
+      }
+      if (!question || typeof question !== "object") return null;
+      const text = [
+        question.question,
+        question.prompt,
+        question.message,
+        question.text,
+        question.header,
+      ]
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .find(Boolean);
+      return {
+        ...question,
+        id: question.id || `question_${index + 1}`,
+        question: text || `${t("question.item")} ${index + 1}`,
+        options: Array.isArray(question.options) ? question.options : [],
+        multiSelect: Boolean(question.multiSelect || question.multi_select),
+      };
+    })
+    .filter(Boolean);
+  if (normalized.length) return normalized;
+  const fallback = payload?.input && typeof payload.input === "object" ? payload.input : {};
+  const fallbackText = [
+    fallback.question,
+    fallback.prompt,
+    fallback.message,
+    fallback.text,
+    fallback.description,
+    fallback.title,
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find(Boolean);
+  return [{ id: "answer", question: fallbackText || t("question.freeAnswerPrompt"), options: [] }];
+}
+
+function buildQuestionCard(sessionId, payload) {
+  const card = document.createElement("div");
+  card.className = "permission-prompt user-question-prompt";
+  card.dataset.requestId = payload.requestId;
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "permission-prompt-title";
+  titleEl.textContent = t("question.title");
+  card.appendChild(titleEl);
+
+  const questions = normalizeQuestionPayloadQuestions(payload);
+  const answerFields = [];
+
+  questions.forEach((question, index) => {
+    const block = document.createElement("div");
+    block.className = "user-question-block";
+
+    const label = document.createElement("div");
+    label.className = "permission-prompt-desc";
+    label.textContent = questionTitle(question, index);
+    block.appendChild(label);
+
+    const options = Array.isArray(question.options) ? question.options : [];
+    const inputName = `${payload.requestId}_${index}`;
+    const controls = [];
+
+    options.forEach((option, optionIndex) => {
+      const optionLabel =
+        typeof option?.label === "string" && option.label.trim()
+          ? option.label.trim()
+          : String(option || "");
+      if (!optionLabel) return;
+
+      const wrap = document.createElement("label");
+      wrap.className = "user-question-option";
+      const input = document.createElement("input");
+      input.type = question.multiSelect ? "checkbox" : "radio";
+      input.name = inputName;
+      input.value = optionLabel;
+      if (!question.multiSelect && optionIndex === 0) input.checked = true;
+
+      const text = document.createElement("span");
+      const desc =
+        typeof option?.description === "string" && option.description.trim()
+          ? ` - ${option.description.trim()}`
+          : "";
+      text.textContent = `${optionLabel}${desc}`;
+      wrap.append(input, text);
+      block.appendChild(wrap);
+      controls.push(input);
+    });
+
+    const free = document.createElement("input");
+    free.className = "user-question-free";
+    free.type = "text";
+    free.placeholder = t("question.otherPlaceholder");
+    block.appendChild(free);
+
+    answerFields.push({
+      key: question.question || question.header || question.id || `question_${index + 1}`,
+      multi: Boolean(question.multiSelect),
+      controls,
+      free,
+    });
+    card.appendChild(block);
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "permission-prompt-actions";
+
+  const submitBtn = document.createElement("button");
+  submitBtn.type = "button";
+  submitBtn.className = "permission-prompt-btn permission-prompt-btn-approve";
+  submitBtn.textContent = t("question.submit");
+  actions.appendChild(submitBtn);
+  card.appendChild(actions);
+
+  submitBtn.addEventListener("click", async () => {
+    if (card.classList.contains("permission-prompt-resolved")) return;
+    const answers = {};
+    for (const field of answerFields) {
+      const freeText = field.free.value.trim();
+      if (freeText) {
+        answers[field.key] = freeText;
+        continue;
+      }
+      const selected = field.controls.filter((input) => input.checked).map((input) => input.value);
+      answers[field.key] = field.multi ? selected : selected[0] || "";
+    }
+
+    card.classList.add("permission-prompt-resolved");
+    try {
+      const result = await window.assistantClient.respondUserQuestion(
+        sessionId,
+        payload.requestId,
+        answers,
+        "",
+      );
+      if (!result?.ok) {
+        card.classList.remove("permission-prompt-resolved");
+        showToast(t("question.respondFailed"), "error");
+      }
+    } catch (err) {
+      card.classList.remove("permission-prompt-resolved");
+      showToast(t("question.respondFailed"), "error");
+      console.warn("[question-response]", err);
+    }
+  });
+
+  return card;
+}
+
 function showPermissionPrompt(sessionId, payload) {
   if (!sessionId || !payload?.requestId) return;
 
-  beginAssistantTurn(sessionId);
+  beginAssistantTurn(sessionId, eventTurnId(payload));
   const v = view(sessionId);
   v.turnHadToolUse = true;
 
@@ -815,6 +1004,59 @@ function showPermissionPrompt(sessionId, payload) {
   }
 }
 
+export function hasPendingUserQuestion(sessionId) {
+  const pending = sessionId ? pendingPermissionBySession.get(sessionId) : null;
+  return Boolean(pending?.kind === "user-question" && pending.requestId);
+}
+
+export async function respondPendingUserQuestionFromComposer(sessionId, responseText) {
+  const pending = sessionId ? pendingPermissionBySession.get(sessionId) : null;
+  const response = typeof responseText === "string" ? responseText.trim() : "";
+  if (!pending?.requestId || pending.kind !== "user-question" || !response) {
+    return { ok: false, error: "NO_PENDING_QUESTION" };
+  }
+
+  const questions = Array.isArray(pending.questions) ? pending.questions : [];
+  const answers = {};
+  if (questions.length) {
+    const first = questions[0] || {};
+    const key = first.question || first.header || first.id || "answer";
+    answers[key] = response;
+  } else {
+    answers.answer = response;
+  }
+
+  const result = await window.assistantClient.respondUserQuestion(
+    sessionId,
+    pending.requestId,
+    answers,
+    response,
+  );
+  if (result?.ok) {
+    dismissPermissionPrompt(sessionId, pending.requestId);
+  }
+  return result;
+}
+
+function showUserQuestionPrompt(sessionId, payload) {
+  if (!sessionId || !payload?.requestId) return;
+
+  beginAssistantTurn(sessionId, eventTurnId(payload));
+  const v = view(sessionId);
+  v.turnHadToolUse = true;
+
+  const card = buildQuestionCard(sessionId, payload);
+  v.activeTurn.activity.querySelectorAll(".user-question-prompt").forEach((c) => c.remove());
+  v.activeTurn.activity.appendChild(card);
+  v.activeTurn.activity.hidden = false;
+
+  pendingPermissionBySession.set(sessionId, { ...payload, kind: "user-question" });
+  if (isActiveSession(sessionId)) {
+    refreshBusyIndicators(sessionId);
+    syncComposerForActiveSession();
+  }
+}
+
 function handleEngineNotice(sessionId, payload) {
   if (!sessionId || !payload) return;
 
@@ -822,7 +1064,7 @@ function handleEngineNotice(sessionId, payload) {
   const text = engineNoticeText(payload);
 
   if (showPanel) {
-    if (!hasLiveTurn(sessionId)) beginAssistantTurn(sessionId);
+    if (!hasLiveTurn(sessionId)) beginAssistantTurn(sessionId, eventTurnId(payload));
     addOrUpdateEngineNotice(view(sessionId), payload);
     const v = view(sessionId);
     // Meaningful progress (compaction, retry) updates the single activity line;
@@ -861,7 +1103,7 @@ function applyTurnState(payload) {
   const phase = getTurnPhase(sessionId);
 
   if (["streaming", "tool", "permission"].includes(phase) && !hasLiveTurn(sessionId)) {
-    beginAssistantTurn(sessionId);
+    beginAssistantTurn(sessionId, eventTurnId(payload));
   }
 
   if (phase === "streaming" && view(sessionId).activeBubble) {
@@ -965,6 +1207,7 @@ export function wireMessageIpc() {
   window.assistantClient.onTool((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
     const v = view(sessionId);
     if (!v.activeTurn) {
       import("./diff-panel.js").then((m) => m.clearDiffEntries(sessionId));
@@ -973,7 +1216,14 @@ export function wireMessageIpc() {
     if (v.toolCards.has(payload.id)) {
       finalizeToolCardInputImpl(v, payload.id, payload.input);
     } else {
-      addToolCard(sessionId, payload.id, payload.name, payload.input, payload.parentToolUseId);
+      addToolCard(
+        sessionId,
+        payload.id,
+        payload.name,
+        payload.input,
+        payload.parentToolUseId,
+        eventTurnId(payload),
+      );
     }
   });
 
@@ -981,8 +1231,9 @@ export function wireMessageIpc() {
   window.assistantClient.onToolUpcoming?.((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
     const v = view(sessionId);
-    if (!v.activeTurn) beginAssistantTurn(sessionId);
+    if (!v.activeTurn) beginAssistantTurn(sessionId, eventTurnId(payload));
     v.turnHadToolUse = true;
     addToolCardPlaceholderImpl(v, payload.id, payload.name, payload.parentToolUseId);
   });
@@ -991,6 +1242,7 @@ export function wireMessageIpc() {
   window.assistantClient.onToolInputDelta?.((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
     updateToolCardInputImpl(view(sessionId), payload.id, payload.partialJson);
   });
 
@@ -998,39 +1250,52 @@ export function wireMessageIpc() {
   window.assistantClient.onToolInputDone?.((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
     finalizeToolCardInputImpl(view(sessionId), payload.id, payload.input);
   });
 
   window.assistantClient.onToolDone((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
     updateToolCard(sessionId, payload.id, payload.status, payload.result);
   });
 
   window.assistantClient.onPermissionRequest((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
     showPermissionPrompt(sessionId, payload);
+  });
+
+  window.assistantClient.onUserQuestion?.((payload) => {
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
+    showUserQuestionPrompt(sessionId, payload);
   });
 
   window.assistantClient.onPermissionCancelled((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId || !payload.requestId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
     dismissPermissionPrompt(sessionId, payload.requestId);
   });
 
   window.assistantClient.onEngineNotice((payload) => {
+    if (payload?.sessionId && !acceptLiveTurnEvent(payload.sessionId, payload)) return;
     handleEngineNotice(payload.sessionId, payload);
   });
 
   window.assistantClient.onChunk((payload) => {
     const sessionId = payload.sessionId;
     if (!sessionId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
     const v = view(sessionId);
 
     let bubble = v.activeBubble;
     if (!bubble) {
-      bubble = beginAssistantTurn(sessionId);
+      bubble = beginAssistantTurn(sessionId, eventTurnId(payload));
       if (!bubble) return;
     }
 
@@ -1046,9 +1311,10 @@ export function wireMessageIpc() {
 
     const hasCodeFence = v.activeMarkdown.includes("```");
     const hasHtmlInNew = /<[a-zA-Z][^>]*>/.test(payload.text);
+    const hasMarkdown = hasMarkdownSyntax(v.activeMarkdown);
     const threshold = v.activeMarkdown.length - (v._lastRenderedLength || 0) > 200;
 
-    if (hasCodeFence || hasHtmlInNew || threshold) {
+    if (hasCodeFence || hasHtmlInNew || hasMarkdown || threshold) {
       renderMarkdownWithCache(bubble, v.activeMarkdown);
       v._lastRenderedLength = v.activeMarkdown.length;
     } else {
@@ -1070,6 +1336,11 @@ export function wireMessageIpc() {
 
     clearBusyHeartbeat(sessionId);
     view(sessionId).activityLabel = "";
+    const v = view(sessionId);
+    if (v.activeBubble && v.activeMarkdown) {
+      renderMarkdownWithCache(v.activeBubble, v.activeMarkdown);
+      v._lastRenderedLength = v.activeMarkdown.length;
+    }
 
     if (payload.stalled && isActiveSession(sessionId) && !payload.hadOutput) {
       showToast(t("message.stalledHint"), "info");
@@ -1090,8 +1361,9 @@ export function wireMessageIpc() {
   window.assistantClient.onStatus((status) => {
     const sessionId = status.sessionId;
     if (!sessionId) return;
+    if (!acceptLiveTurnEvent(sessionId, status)) return;
     if (status.state === "thinking") {
-      if (!view(sessionId).activeBubble) beginAssistantTurn(sessionId);
+      if (!view(sessionId).activeBubble) beginAssistantTurn(sessionId, eventTurnId(status));
       refreshBusyIndicators(sessionId);
     }
     if (isActiveSession(sessionId)) syncComposerForActiveSession();
@@ -1114,13 +1386,20 @@ export function wireMessageIpc() {
     }
   });
 
-  window.assistantClient.onFocusSession((payload) => {
+  window.assistantClient.onFocusSession(async (payload) => {
     const sessionId = payload?.sessionId;
     if (!sessionId) return;
-    store.set("activeSessionId", sessionId);
-    showSessionMessages(sessionId);
-    renderConversation(sessionId);
-    updateTopbarTitles();
+    try {
+      const sw = await window.assistantClient.switchSession(sessionId);
+      const { applySessionSwitch } = await import("./session-chrome.js");
+      await applySessionSwitch(sw, sessionId, sw?.projectId);
+    } catch (err) {
+      console.warn("[focus-session]", err);
+      store.set("activeSessionId", sessionId);
+      showSessionMessages(sessionId);
+      renderConversation(sessionId);
+      updateTopbarTitles();
+    }
   });
 }
 

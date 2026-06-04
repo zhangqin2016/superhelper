@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"sess_basic","cwd":"/workspace","model":"sonnet","permissionMode":"dontAsk","tools":["Read","Bash"]}
+{"type":"system","subtype":"thinking_tokens","estimated_tokens":120,"estimated_tokens_delta":120,"session_id":"sess_basic"}
+{"type":"assistant","session_id":"sess_basic","message":{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"可以。"}]}}
+{"type":"result","subtype":"success","session_id":"sess_basic","is_error":false,"result":"可以。","usage":{"input_tokens":10,"output_tokens":3}}

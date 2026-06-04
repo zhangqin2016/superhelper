@@ -124,11 +124,19 @@ function wireRunner(ctx, runner) {
   const sessionId = runner.sessionId;
   const { sessionManager } = ctx;
   const { notifySessionFinished } = require("./background-notify");
+  const currentTurnPayload = (payload = {}) => ({
+    sessionId,
+    turnId: turnController.getTurnId(sessionId),
+    ...payload,
+  });
+  const sendTurnEvent = (channel, payload = {}) => {
+    sendToRenderer(ctx.mainWindow, channel, currentTurnPayload(payload));
+  };
 
   runner.on("chunk", (text) => {
     turnController.transition(sessionId, "engineAccepted");
     turnState.append(sessionId, text);
-    sendToRenderer(ctx.mainWindow, "assistant:chunk", { sessionId, text });
+    sendTurnEvent("assistant:chunk", { text });
   });
 
   runner.on("stderr", (text) => {
@@ -140,30 +148,31 @@ function wireRunner(ctx, runner) {
   runner.on("tool-using", (data) => {
     turnController.transition(sessionId, "toolStart");
     emitTurnState(ctx, sessionId);
+    require("./usage-reporter").recordToolCall(sessionId, data);
     const { captureBeforeSnapshot } = require("./diff-capture");
     captureBeforeSnapshot(sessionId, data.id, data.name, data.input);
-    sendToRenderer(ctx.mainWindow, "assistant:tool", { sessionId, ...data });
+    sendTurnEvent("assistant:tool", data);
   });
 
   // Stream event: tool card placeholder (name/id before full input arrives)
   runner.on("tool-upcoming", (data) => {
-    sendToRenderer(ctx.mainWindow, "assistant:tool-upcoming", { sessionId, ...data });
+    sendTurnEvent("assistant:tool-upcoming", data);
   });
 
   // Stream event: incremental tool input
   runner.on("tool-input-delta", (data) => {
-    sendToRenderer(ctx.mainWindow, "assistant:tool-input-delta", { sessionId, ...data });
+    sendTurnEvent("assistant:tool-input-delta", data);
   });
 
   // Stream event: tool input complete (from assistant event, for pre-created cards)
   runner.on("tool-input-done", (data) => {
-    sendToRenderer(ctx.mainWindow, "assistant:tool-input-done", { sessionId, ...data });
+    sendTurnEvent("assistant:tool-input-done", data);
   });
 
   runner.on("tool-done", (data) => {
     turnController.transition(sessionId, "toolEnd");
     emitTurnState(ctx, sessionId);
-    sendToRenderer(ctx.mainWindow, "assistant:tool-done", { sessionId, ...data });
+    sendTurnEvent("assistant:tool-done", data);
     const { emitDiffForTool } = require("./diff-capture");
     emitDiffForTool(sessionId, data.id, ctx);
   });
@@ -171,26 +180,23 @@ function wireRunner(ctx, runner) {
   runner.on("permission-request", (data) => {
     turnController.transition(sessionId, "permissionRequest");
     emitTurnState(ctx, sessionId);
-    sendToRenderer(ctx.mainWindow, "assistant:permission-request", {
-      sessionId,
-      ...data,
-    });
+    sendTurnEvent("assistant:permission-request", data);
+  });
+
+  runner.on("ask-user-question", (data) => {
+    turnController.transition(sessionId, "permissionRequest");
+    emitTurnState(ctx, sessionId);
+    sendTurnEvent("assistant:user-question", data);
   });
 
   runner.on("permission-cancelled", (data) => {
     turnController.transition(sessionId, "permissionResolved");
     emitTurnState(ctx, sessionId);
-    sendToRenderer(ctx.mainWindow, "assistant:permission-cancelled", {
-      sessionId,
-      ...data,
-    });
+    sendTurnEvent("assistant:permission-cancelled", data);
   });
 
   runner.on("engine-notice", (data) => {
-    sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
-      sessionId,
-      ...data,
-    });
+    sendTurnEvent("assistant:engine-notice", data);
   });
 
   runner.on("prompt-suggestions", (data) => {
@@ -205,7 +211,7 @@ function wireRunner(ctx, runner) {
       turnController.transition(sessionId, "engineAccepted");
       emitTurnState(ctx, sessionId);
     }
-    sendToRenderer(ctx.mainWindow, "assistant:status", { state, sessionId });
+    sendTurnEvent("assistant:status", { state });
   });
 
   runner.on("agent-resume-id", (agentResumeId) => {
@@ -213,8 +219,7 @@ function wireRunner(ctx, runner) {
   });
 
   runner.on("resume-invalid", () => {
-    sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
-      sessionId,
+    sendTurnEvent("assistant:engine-notice", {
       code: "sessionRefresh",
       level: "info",
       panel: true,
@@ -366,6 +371,7 @@ function wireRunner(ctx, runner) {
       hadOutput: Boolean(normalized.text),
       assistant: assistantPayload,
     });
+    await require("./usage-reporter").flush(sessionId);
 
     sendToRenderer(ctx.mainWindow, "assistant:done", {
       code,
@@ -431,6 +437,7 @@ function wireRunner(ctx, runner) {
       hadOutput: true,
       assistant: { text: friendly, failed: true },
     });
+    await require("./usage-reporter").flush(sessionId);
   });
 }
 
@@ -504,6 +511,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     stagingDir,
     resumeSessionId: session.agentResumeId || null,
     configDir,
+    permissionMode: require("./permission-settings").resolveSessionPermissionMode(session),
   };
 
   try {
@@ -538,7 +546,10 @@ function applyPermissionModeLive(ctx, modeId) {
   }
   const r = require("./permission-settings").setActivePermissionMode(modeId);
   if (!r.ok) return r;
-  ctx.runnerPool.applyPermissionMode(modeId);
+  ctx.runnerPool.applyPermissionMode(modeId, (sessionId) => {
+    const session = ctx.sessionManager.findById(sessionId);
+    return !require("./permission-settings").normalizeSessionPermissionMode(session?.permissionModeId);
+  });
   return { ok: true, ...require("./permission-settings").listPermissionsPublic() };
 }
 
@@ -666,13 +677,19 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
 
   turnController.transition(session.id, "userSend");
   emitTurnState(ctx, session.id);
+  const sendPreflightNotice = (payload) => {
+    sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
+      sessionId: session.id,
+      turnId: turnController.getTurnId(session.id),
+      ...payload,
+    });
+  };
 
   // Enrich images after committing the user bubble, so slow OCR/vision never makes
   // the chat appear frozen. Keep original images in the payload for vision-capable models.
   const hasImages = (files || []).some((f) => f?.isImage);
   if (hasImages) {
-    sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
-      sessionId: session.id,
+    sendPreflightNotice({
       code: "visionPreparing",
       level: "progress",
       panel: true,
@@ -684,8 +701,7 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
       });
       if (visionResult?.ok === true && visionResult.text) {
         engineText = (displayText ? `${displayText}\n\n` : "") + visionResult.text;
-        sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
-          sessionId: session.id,
+        sendPreflightNotice({
           code: "visionReady",
           level: "progress",
           panel: true,
@@ -695,8 +711,7 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
         });
       } else if (visionResult?.ok === false) {
         console.warn("[vision-translator]", visionResult.reason, visionResult.detail || "");
-        sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
-          sessionId: session.id,
+        sendPreflightNotice({
           code: "visionSkipped",
           level: "warning",
           panel: true,
@@ -708,8 +723,7 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
       }
     } catch (err) {
       console.warn("[vision-translator]", err.message);
-      sendToRenderer(ctx.mainWindow, "assistant:engine-notice", {
-        sessionId: session.id,
+      sendPreflightNotice({
         code: "visionSkipped",
         level: "warning",
         panel: true,
@@ -732,6 +746,7 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
       detail: spawnHint || "助手引擎未接受消息，请重试。",
     };
   }
+  require("./usage-reporter").recordUserSend(session.id, files);
 
   emitTurnState(ctx, session.id);
 
@@ -763,10 +778,15 @@ async function withRunnerChange(ctx, action, opts = {}) {
     buildLiveEngineEnvPatch,
     applyLiveEnvToPool,
     terminateIdleRunners,
+    reloadSkillsForIdleRunners,
   } = require("./runner-live-config");
 
   if (opts.liveEnv === false) {
-    terminateIdleRunners(ctx.runnerPool);
+    if (opts.reloadSkills) {
+      reloadSkillsForIdleRunners(ctx.runnerPool);
+    } else {
+      terminateIdleRunners(ctx.runnerPool);
+    }
   } else {
     const patch = buildLiveEngineEnvPatch();
     const { failed } = applyLiveEnvToPool(ctx.runnerPool, patch);
