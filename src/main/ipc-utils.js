@@ -195,6 +195,18 @@ function wireRunner(ctx, runner) {
     sendTurnEvent("assistant:permission-cancelled", data);
   });
 
+  runner.on("hook-request", (data) => {
+    turnController.transition(sessionId, "permissionRequest");
+    emitTurnState(ctx, sessionId);
+    sendTurnEvent("assistant:hook-request", data);
+  });
+
+  runner.on("hook-resolved", (data) => {
+    turnController.transition(sessionId, "permissionResolved");
+    emitTurnState(ctx, sessionId);
+    sendTurnEvent("assistant:hook-resolved", data);
+  });
+
   runner.on("engine-notice", (data) => {
     sendTurnEvent("assistant:engine-notice", data);
   });
@@ -442,7 +454,7 @@ function wireRunner(ctx, runner) {
 }
 
 /**
- * @returns {{ runner: import('./agent-session').AgentSession | null, error?: string, detail?: string }}
+ * @returns {{ runner: import('./agent-session').AgentSession | null, error?: string, detail?: string, coldStart?: boolean, usedResume?: boolean, project?: Record<string, unknown> }}
  */
 function ensureSessionRunner(ctx, sessionId, opts = {}) {
   const { sessionManager, projectManager, runnerPool } = ctx;
@@ -494,6 +506,8 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     console.warn("[runner] could not create staging dir:", err.message);
   }
   const configDir = skillManager.writeSessionAgentGuide(sessionId, session);
+  const existingRunner = runnerPool.get(sessionId);
+  const wasAlive = Boolean(existingRunner?.isAlive?.());
   if (session.agentResumeId) {
     migrateGlobalResumeArtifacts(sessionId, session.agentResumeId);
     if (!hasResumeArtifacts(sessionId, session.agentResumeId)) {
@@ -506,10 +520,11 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
       runnerPool.terminateSession(sessionId);
     }
   }
+  const resumeSessionId = session.agentResumeId || null;
   const extra = {
     disallowedTools: skillManager.getDisallowedTools(),
     stagingDir,
-    resumeSessionId: session.agentResumeId || null,
+    resumeSessionId,
     configDir,
     permissionMode: require("./permission-settings").resolveSessionPermissionMode(session),
   };
@@ -524,7 +539,12 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
       return { runner: null, error: "RUNNER_ERROR", detail: hint };
     }
 
-    return { runner };
+    return {
+      runner,
+      coldStart: opts.spawn === true && !wasAlive,
+      usedResume: Boolean(resumeSessionId),
+      project,
+    };
   } catch (err) {
     console.error("[runner]", sessionId, err.message);
     if (err.stack) console.error(err.stack);
@@ -633,6 +653,15 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
     };
   }
 
+  const rehydrate = require("./session-bootstrap").withSessionRehydratePrefix({
+    coldStart: Boolean(ensured.coldStart),
+    usedResume: Boolean(ensured.usedResume),
+    session,
+    project: ensured.project,
+    userText: engineText,
+  });
+  engineText = rehydrate.text;
+
   if (shouldQueueUserLine(session.id, runner, opts)) {
     const length = enqueueMessage(session.id, {
       text: displayText,
@@ -684,6 +713,15 @@ async function dispatchUserLine(ctx, session, text, files = [], opts = {}) {
       ...payload,
     });
   };
+  if (rehydrate.rehydrated) {
+    sendPreflightNotice({
+      code: "sessionRehydrated",
+      level: "info",
+      panel: true,
+      replace: true,
+      done: true,
+    });
+  }
 
   // Enrich images after committing the user bubble, so slow OCR/vision never makes
   // the chat appear frozen. Keep original images in the payload for vision-capable models.

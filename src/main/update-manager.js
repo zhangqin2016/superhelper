@@ -8,16 +8,53 @@ const { loadPublicKey } = require("./license-manager");
 const { verifyDetached } = require("./crypto-signing");
 
 const FETCH_TIMEOUT_MS = 20_000;
-const DEFAULT_MANIFEST_URL = "https://lily.lanrensoft.cn/app/updates/latest.json";
+const DEFAULT_MANIFEST_URL = "https://qny.lanrensoft.cn/app/updates/latest.json";
+const DEFAULT_AUTO_UPDATE_BASE_URL = "https://qny.lanrensoft.cn/app/auto-updates";
+
+const PHASE = Object.freeze({
+  idle: "idle",
+  checking: "checking",
+  available: "available",
+  downloading: "downloading",
+  downloaded: "downloaded",
+  restartPending: "restart_pending",
+  installing: "installing",
+  error: "error",
+});
+
+/** @type {{ mainWindow?: import("electron").BrowserWindow | null, runnerPool?: any, sessionManager?: any }} */
+let runtimeContext = {};
+let updater = null;
+let updaterWired = false;
+let activeFeedUrl = "";
+let downloadReady = false;
+let idleInstallTimer = null;
+let updateState = createBaseState();
 
 function defaultManifestUrl() {
   return process.env.LILY_UPDATE_MANIFEST_URL || DEFAULT_MANIFEST_URL;
+}
+
+function defaultAutoUpdateBaseUrl() {
+  return process.env.LILY_AUTO_UPDATE_BASE_URL || DEFAULT_AUTO_UPDATE_BASE_URL;
+}
+
+function normalizeUrlBase(value) {
+  return String(value || "").replace(/\/+$/g, "");
+}
+
+function deriveAutoFeedUrl(platformKey = currentPlatformKey(), channel = "stable") {
+  const configured = String(process.env.LILY_AUTO_UPDATE_FEED_URL || "").trim();
+  if (configured) return normalizeUrlBase(configured);
+  return `${normalizeUrlBase(defaultAutoUpdateBaseUrl())}/${encodeURIComponent(platformKey)}/${encodeURIComponent(channel)}`;
 }
 
 function getUpdateSettings() {
   return {
     ok: true,
     manifestUrl: defaultManifestUrl(),
+    autoUpdateBaseUrl: defaultAutoUpdateBaseUrl(),
+    autoFeedUrl: deriveAutoFeedUrl(),
     configurable: false,
   };
 }
@@ -35,6 +72,144 @@ function compareVersions(a, b) {
 
 function currentPlatformKey() {
   return `${process.platform}-${process.arch}`;
+}
+
+function createBaseState() {
+  return {
+    ok: true,
+    phase: PHASE.idle,
+    currentVersion: safeAppVersion(),
+    latestVersion: safeAppVersion(),
+    platformKey: currentPlatformKey(),
+    hasUpdate: false,
+    source: null,
+    package: null,
+    notes: "",
+    force: false,
+    feedUrl: "",
+    canAutoInstall: false,
+    canManualDownload: false,
+    waitingForIdle: false,
+    progress: null,
+    error: null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function safeAppVersion() {
+  try {
+    return app.getVersion();
+  } catch {
+    return "0.0.0";
+  }
+}
+
+function setState(patch) {
+  updateState = {
+    ...updateState,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  };
+  broadcastState();
+  return getUpdateState();
+}
+
+function getUpdateState() {
+  return JSON.parse(JSON.stringify(updateState));
+}
+
+function sendToRenderer(channel, payload) {
+  const win = runtimeContext.mainWindow;
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(channel, payload);
+  }
+}
+
+function broadcastState() {
+  sendToRenderer("updates:state", getUpdateState());
+}
+
+function configure(ctx = {}) {
+  runtimeContext = { ...runtimeContext, ...ctx };
+  broadcastState();
+}
+
+function getAutoUpdater() {
+  if (updater) return updater;
+  try {
+    updater = require("electron-updater").autoUpdater;
+  } catch (err) {
+    setState({
+      phase: PHASE.error,
+      ok: false,
+      error: { code: "UPDATER_UNAVAILABLE", detail: err?.message || String(err) },
+      canAutoInstall: false,
+    });
+    return null;
+  }
+  return updater;
+}
+
+function wireAutoUpdater() {
+  const instance = getAutoUpdater();
+  if (!instance || updaterWired) return instance;
+  updaterWired = true;
+  instance.autoDownload = false;
+  instance.autoInstallOnAppQuit = false;
+  instance.on("checking-for-update", () => {
+    setState({ phase: PHASE.checking, error: null, progress: null });
+  });
+  instance.on("update-available", () => {
+    downloadReady = false;
+    setState({
+      phase: PHASE.available,
+      hasUpdate: true,
+      canAutoInstall: true,
+      error: null,
+    });
+  });
+  instance.on("update-not-available", () => {
+    downloadReady = false;
+    setState({
+      phase: PHASE.idle,
+      hasUpdate: false,
+      latestVersion: safeAppVersion(),
+      canAutoInstall: false,
+      progress: null,
+      error: null,
+    });
+  });
+  instance.on("download-progress", (progress) => {
+    setState({
+      phase: PHASE.downloading,
+      progress: {
+        percent: Number(progress?.percent || 0),
+        transferred: Number(progress?.transferred || 0),
+        total: Number(progress?.total || 0),
+        bytesPerSecond: Number(progress?.bytesPerSecond || 0),
+      },
+      error: null,
+    });
+  });
+  instance.on("update-downloaded", () => {
+    downloadReady = true;
+    setState({
+      phase: PHASE.downloaded,
+      progress: { ...(updateState.progress || {}), percent: 100 },
+      waitingForIdle: false,
+      canAutoInstall: true,
+      error: null,
+    });
+  });
+  instance.on("error", (err) => {
+    setState({
+      phase: PHASE.error,
+      ok: false,
+      error: { code: "AUTO_UPDATE_FAILED", detail: err?.message || String(err) },
+      canAutoInstall: false,
+    });
+  });
+  return instance;
 }
 
 async function fetchJson(url) {
@@ -82,6 +257,7 @@ async function checkForUpdates() {
       notes: release.notes || "",
       platformKey,
       source: "service",
+      feedUrl: release.feedUrl || deriveAutoFeedUrl(platformKey),
       package: release.url
         ? {
             url: release.url,
@@ -118,12 +294,162 @@ async function checkForUpdates() {
     force: Boolean(manifest.force),
     notes: manifest.notes || "",
     platformKey,
+    source: "static",
+    feedUrl: manifest.feedUrl || manifest.autoFeedUrl || deriveAutoFeedUrl(platformKey),
     package: {
       url: platform.url,
       sha256: platform.sha256 || "",
       size: platform.size || null,
     },
   };
+}
+
+async function checkForUpdatesState() {
+  setState({
+    ok: true,
+    phase: PHASE.checking,
+    currentVersion: safeAppVersion(),
+    platformKey: currentPlatformKey(),
+    error: null,
+    progress: null,
+  });
+
+  const result = await checkForUpdates();
+  if (!result?.ok) {
+    return setState({
+      ok: false,
+      phase: PHASE.error,
+      hasUpdate: false,
+      error: { code: result?.error || "CHECK_FAILED", detail: result?.detail || "" },
+      canAutoInstall: false,
+    });
+  }
+
+  const feedUrl = result.feedUrl || deriveAutoFeedUrl(result.platformKey);
+  const next = {
+    ok: true,
+    phase: result.hasUpdate ? PHASE.available : PHASE.idle,
+    hasUpdate: Boolean(result.hasUpdate),
+    currentVersion: result.currentVersion,
+    latestVersion: result.latestVersion,
+    platformKey: result.platformKey,
+    source: result.source || "static",
+    package: result.package || null,
+    notes: result.notes || "",
+    force: Boolean(result.force),
+    feedUrl,
+    canAutoInstall: Boolean(result.hasUpdate && feedUrl && app.isPackaged),
+    canManualDownload: Boolean(result.package?.url),
+    waitingForIdle: false,
+    progress: null,
+    error: null,
+  };
+  setState(next);
+
+  if (next.hasUpdate && next.canAutoInstall) {
+    const instance = wireAutoUpdater();
+    if (instance) {
+      activeFeedUrl = feedUrl;
+      instance.setFeedURL({ provider: "generic", url: feedUrl });
+    }
+  }
+  return getUpdateState();
+}
+
+async function downloadUpdate() {
+  if (!updateState.hasUpdate) {
+    const checked = await checkForUpdatesState();
+    if (!checked.hasUpdate) return checked;
+  }
+  if (!updateState.canAutoInstall) {
+    if (updateState.package?.url) return openUpdateDownload(updateState.package.url);
+    return setState({
+      phase: PHASE.error,
+      ok: false,
+      error: { code: "NO_AUTO_UPDATE_FEED", detail: "No automatic update feed is available." },
+    });
+  }
+
+  const instance = wireAutoUpdater();
+  if (!instance) return getUpdateState();
+  if (activeFeedUrl !== updateState.feedUrl) {
+    activeFeedUrl = updateState.feedUrl;
+    instance.setFeedURL({ provider: "generic", url: updateState.feedUrl });
+  }
+  setState({ phase: PHASE.downloading, progress: { percent: 0 }, error: null });
+  try {
+    await instance.checkForUpdates();
+    await instance.downloadUpdate();
+  } catch (err) {
+    setState({
+      phase: PHASE.available,
+      ok: true,
+      canAutoInstall: false,
+      canManualDownload: Boolean(updateState.package?.url),
+      error: { code: "AUTO_FEED_FAILED", detail: err?.message || String(err) },
+    });
+  }
+  return getUpdateState();
+}
+
+function hasBusyRunner() {
+  const runnerPool = runtimeContext.runnerPool;
+  if (!runnerPool?.getSessionIds) return false;
+  for (const sessionId of runnerPool.getSessionIds()) {
+    if (runnerPool.get(sessionId)?.isBusy?.()) return true;
+  }
+  return false;
+}
+
+function scheduleInstallWhenIdle() {
+  if (idleInstallTimer) return;
+  idleInstallTimer = setInterval(() => {
+    if (hasBusyRunner()) return;
+    clearInterval(idleInstallTimer);
+    idleInstallTimer = null;
+    installUpdate({ force: true }).catch((err) => {
+      setState({
+        phase: PHASE.error,
+        ok: false,
+        error: { code: "INSTALL_FAILED", detail: err?.message || String(err) },
+      });
+    });
+  }, 5_000);
+}
+
+async function installUpdate(options = {}) {
+  if (!downloadReady && updateState.phase !== PHASE.downloaded) {
+    return setState({
+      phase: PHASE.error,
+      ok: false,
+      error: { code: "UPDATE_NOT_DOWNLOADED", detail: "Update must be downloaded before installing." },
+    });
+  }
+  if (hasBusyRunner() && !options.force) {
+    const state = setState({
+      phase: PHASE.restartPending,
+      waitingForIdle: true,
+      error: null,
+    });
+    scheduleInstallWhenIdle();
+    return state;
+  }
+  if (idleInstallTimer) {
+    clearInterval(idleInstallTimer);
+    idleInstallTimer = null;
+  }
+  const instance = wireAutoUpdater();
+  if (!instance) return getUpdateState();
+  setState({ phase: PHASE.installing, waitingForIdle: false, error: null });
+  try {
+    runtimeContext.sessionManager?.saveImmediate?.();
+  } catch (err) {
+    console.warn("[updates] save before install failed", err?.message || err);
+  }
+  setTimeout(() => {
+    instance.quitAndInstall(false, true);
+  }, 150);
+  return getUpdateState();
 }
 
 async function openUpdateDownload(url) {
@@ -144,11 +470,18 @@ function createUpdateManifest(payload, privateKeyPem) {
 }
 
 module.exports = {
+  configure,
   getUpdateSettings,
+  getUpdateState,
   checkForUpdates,
+  checkForUpdatesState,
+  downloadUpdate,
+  installUpdate,
   openUpdateDownload,
   compareVersions,
   currentPlatformKey,
+  deriveAutoFeedUrl,
   createUpdateManifest,
   defaultManifestUrl,
+  defaultAutoUpdateBaseUrl,
 };

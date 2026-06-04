@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import crypto from "node:crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -16,6 +17,7 @@ const ROOT = path.resolve(__dirname, "..");
 const DEFAULT_BUCKET = "lanrensoft";
 const DEFAULT_DOMAIN = "https://qny.lanrensoft.cn";
 const DEFAULT_PREFIX = "app/updates";
+const DEFAULT_AUTO_PREFIX = "app/auto-updates";
 const DEFAULT_KEY = "release-keys/license-private-key.pem";
 
 function usage() {
@@ -27,6 +29,7 @@ defaults:
   --bucket ${DEFAULT_BUCKET}
   --domain ${DEFAULT_DOMAIN}
   --prefix ${DEFAULT_PREFIX}
+  --auto-prefix ${DEFAULT_AUTO_PREFIX}
   --key ${DEFAULT_KEY}
 
 examples:
@@ -127,6 +130,41 @@ function distFile(name) {
   return path.join("dist", name);
 }
 
+function sha512Base64(filePath) {
+  return crypto.createHash("sha512").update(fs.readFileSync(path.join(ROOT, filePath))).digest("base64");
+}
+
+function fileSize(filePath) {
+  return fs.statSync(path.join(ROOT, filePath)).size;
+}
+
+function yamlString(value) {
+  return JSON.stringify(String(value ?? ""));
+}
+
+function writeAutoUpdateYaml({ platform, version, artifact, notes }) {
+  const metadataName = platform === "darwin-arm64" ? "latest-mac.yml" : "latest.yml";
+  const releaseDir = path.join(ROOT, "release", version, "auto", platform);
+  fs.mkdirSync(releaseDir, { recursive: true });
+  const artifactName = path.basename(artifact);
+  const sha512 = sha512Base64(artifact);
+  const size = fileSize(artifact);
+  const lines = [
+    `version: ${yamlString(version)}`,
+    "files:",
+    `  - url: ${yamlString(artifactName)}`,
+    `    sha512: ${yamlString(sha512)}`,
+    `    size: ${size}`,
+    `path: ${yamlString(artifactName)}`,
+    `sha512: ${yamlString(sha512)}`,
+    `releaseDate: ${yamlString(new Date().toISOString())}`,
+  ];
+  if (notes) lines.push(`releaseNotes: ${yamlString(notes)}`);
+  const file = path.join(releaseDir, metadataName);
+  fs.writeFileSync(file, `${lines.join("\n")}\n`, "utf8");
+  return path.relative(ROOT, file);
+}
+
 function artifactCandidates(target, productName, version) {
   const items = [];
   if (target === "mac" || target === "all") {
@@ -160,6 +198,35 @@ function artifactCandidates(target, productName, version) {
   return items;
 }
 
+function autoUpdateCandidates(target, productName, version) {
+  const items = [];
+  if (target === "mac" || target === "all") {
+    const macZip = distFile(`${productName}-${version}-arm64.zip`);
+    if (fs.existsSync(path.join(ROOT, macZip))) {
+      items.push({
+        platform: "darwin-arm64",
+        artifact: macZip,
+        blockmap: fs.existsSync(path.join(ROOT, `${macZip}.blockmap`)) ? `${macZip}.blockmap` : "",
+      });
+    } else if (target === "mac" || target === "all") {
+      fail(`no mac auto-update zip found for ${version}: ${macZip}`);
+    }
+  }
+  if (target === "win" || target === "all") {
+    const winExe = distFile(`${productName}-${version}-x64.exe`);
+    if (fs.existsSync(path.join(ROOT, winExe))) {
+      items.push({
+        platform: "win32-x64",
+        artifact: winExe,
+        blockmap: fs.existsSync(path.join(ROOT, `${winExe}.blockmap`)) ? `${winExe}.blockmap` : "",
+      });
+    } else if (target === "win" || target === "all") {
+      fail(`no Windows auto-update installer found for ${version}: ${winExe}`);
+    }
+  }
+  return items;
+}
+
 function setPackageVersion(version) {
   const pkg = readJson("package.json");
   if (pkg.version === version) return;
@@ -185,6 +252,7 @@ parseVersion(nextVersion);
 const bucket = options.bucket || DEFAULT_BUCKET;
 const domain = options.domain || DEFAULT_DOMAIN;
 const prefix = options.prefix || DEFAULT_PREFIX;
+const autoPrefix = options["auto-prefix"] || DEFAULT_AUTO_PREFIX;
 const key = options.key || DEFAULT_KEY;
 const notes = options.notes || "";
 
@@ -233,8 +301,50 @@ try {
 
   run(process.execPath, publishArgs);
 
+  const autoUploads = [];
+  for (const item of autoUpdateCandidates(target, pkg.build?.productName || pkg.name, nextVersion)) {
+    const metadata = writeAutoUpdateYaml({
+      platform: item.platform,
+      version: nextVersion,
+      artifact: item.artifact,
+      notes,
+    });
+    const feedPrefix = `${String(autoPrefix).replace(/^\/+|\/+$/g, "")}/${item.platform}/stable`;
+    autoUploads.push(
+      { key: `${feedPrefix}/${path.basename(item.artifact)}`, file: item.artifact },
+      { key: `${feedPrefix}/${path.basename(metadata)}`, file: metadata },
+    );
+    if (item.blockmap) {
+      autoUploads.push({ key: `${feedPrefix}/${path.basename(item.blockmap)}`, file: item.blockmap });
+    }
+  }
+
+  if (autoUploads.length) {
+    console.log(`[release-one] auto update feeds:`);
+    for (const item of autoUploads) {
+      console.log(`  ${domain.replace(/\/+$/g, "")}/${item.key}`);
+      const uploadArgs = [
+        "scripts/release-admin.mjs",
+        "upload",
+        "--bucket",
+        bucket,
+        "--key",
+        item.key,
+        "--file",
+        item.file,
+      ];
+      if (options["dry-run"]) uploadArgs.push("--dry-run");
+      if (options.upload || options["dry-run"]) {
+        run(process.execPath, uploadArgs);
+      } else {
+        console.log(`  upload skipped: ${item.file}`);
+      }
+    }
+  }
+
   console.log(`[release-one] done ${nextVersion}`);
   console.log(`[release-one] manifest: ${domain.replace(/\/+$/g, "")}/${prefix.replace(/^\/+|\/+$/g, "")}/latest.json`);
+  console.log(`[release-one] auto feed base: ${domain.replace(/\/+$/g, "")}/${String(autoPrefix).replace(/^\/+|\/+$/g, "")}`);
 } catch (err) {
   restoreVersionFiles(versionSnapshot);
   fail(`${err.message}; restored package version files to ${currentVersion}`);

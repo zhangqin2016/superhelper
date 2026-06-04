@@ -402,10 +402,16 @@ protocol and normalize raw events before they reach turn state, IPC, or UI.
 
 ### Completed
 
-- Added `src/main/claude-event-normalizer.js` as the single adapter for Claude
-  CLI raw events.
-- `AgentSession` now dispatches normalized action kinds instead of switching
-  directly on raw `ev.type`.
+- Added `src/main/runtime/adapters/claude-cli-adapter.js` as the runtime backend
+  boundary for Claude CLI raw events. The older
+  `src/main/claude-event-normalizer.js` is now the Claude parser used by that
+  adapter, not the architecture boundary.
+- Added `src/main/runtime/runtime-events.js` for stable app-level Runtime Event
+  names and `src/main/runtime/runtime-activity.js` for shared background/shell
+  activity classification.
+- `AgentSession` now consumes Runtime adapter output instead of calling the
+  Claude parser directly. Compatibility action kinds are still projected to the
+  existing IPC/UI layer during migration.
 - AskUserQuestion normalization lives in the adapter, so loose CLI payloads
   (`question`, `prompt`, `message`, string questions, or `questions[]`) become a
   stable internal question shape.
@@ -413,19 +419,21 @@ protocol and normalize raw events before they reach turn state, IPC, or UI.
   disappearing. High-frequency known task telemetry remains silent.
 - Tests now cover normalized control requests, permissions, text deltas,
   unknown runtime events, unknown system subtypes, and fallback questions.
-- Runtime fixture replay is available under `fixtures/claude-runtime/` and runs
-  in `npm run test:unit`.
+- Runtime fixture replay is available under `fixtures/claude-runtime/`.
+  `scripts/test-runtime-adapter.mjs` additionally verifies the stable Runtime
+  Event contract. Both run in `npm run test:unit`.
 
 ### Contract
 
-All new Claude CLI event handling must enter through `normalizeClaudeEvent()`.
-Renderer, IPC, and turn orchestration must consume app-level actions/events, not
-raw Claude CLI shapes.
+All new Claude CLI event handling must enter through `ClaudeCliAdapter`.
+Renderer, IPC, and turn orchestration must consume app-level Runtime Events or
+their compatibility projection, not raw Claude CLI shapes.
 
 ### Verified
 
 - `node scripts/test-agent-runner.mjs`
 - `node scripts/test-claude-runtime-fixtures.mjs`
+- `node scripts/test-runtime-adapter.mjs`
 - `node scripts/test-agent-tool-lease.mjs`
 - `npm run test:unit`
 - `npm --prefix web run build`

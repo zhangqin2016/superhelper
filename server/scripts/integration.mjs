@@ -190,6 +190,19 @@ try {
   assert.equal(contact.statusCode, 201);
   assert.ok(contact.json().id);
 
+  const legacyContact = await app.inject({
+    method: "POST",
+    url: "/api/contact",
+    payload: {
+      name: "Legacy Contact",
+      email: "legacy@example.com",
+      message: "Please keep the old contact endpoint compatible.",
+      source: "legacy",
+    },
+  });
+  assert.equal(legacyContact.statusCode, 201);
+  assert.ok(legacyContact.json().id);
+
   const contacts = await app.inject({
     method: "GET",
     url: "/api/admin/contact-requests",
@@ -197,6 +210,7 @@ try {
   });
   assert.equal(contacts.statusCode, 200);
   assert.ok(contacts.json().contacts.some((item) => item.id === contact.json().id));
+  assert.ok(contacts.json().contacts.some((item) => item.id === legacyContact.json().id));
 
   const release = await app.inject({
     method: "POST",

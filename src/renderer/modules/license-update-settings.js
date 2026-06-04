@@ -8,6 +8,7 @@ import { t } from "../i18n/index.js";
 
 let latestPackageUrl = "";
 let autoUpdateTimer = null;
+let updateState = null;
 
 const AUTO_UPDATE_START_DELAY_MS = 15_000;
 const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -21,9 +22,12 @@ function licenseErrorMessage(error) {
 }
 
 function updateErrorMessage(error) {
-  const key = `update.error.${error || "GENERIC"}`;
+  const code = typeof error === "string" ? error : error?.code;
+  const key = `update.error.${code || "GENERIC"}`;
   const text = t(key);
-  return text === key ? t("update.error.GENERIC") : text;
+  if (text !== key) return text;
+  if (typeof error === "object" && error?.detail) return error.detail;
+  return t("update.error.GENERIC");
 }
 
 function formatDate(value) {
@@ -56,6 +60,8 @@ export async function refreshLicenseStatus() {
 
 export async function refreshUpdateSettings() {
   await window.assistantClient.getUpdateSettings?.();
+  const state = await window.assistantClient.getUpdateState?.();
+  if (state?.ok !== undefined) renderUpdateState(state);
 }
 
 async function checkUpdates() {
@@ -71,6 +77,7 @@ async function checkUpdates() {
     showToast(updateErrorMessage(result?.error), "error");
     return;
   }
+  renderUpdateState(result);
 
   if (!result.hasUpdate) {
     if (statusEl) {
@@ -120,6 +127,7 @@ function markUpdateReminder(latestVersion) {
 }
 
 function applyUpdateAvailable(result) {
+  renderUpdateState(result);
   latestPackageUrl = result.package?.url || "";
   const statusEl = $("updateStatusText");
   if (statusEl) {
@@ -148,10 +156,124 @@ async function autoCheckUpdates() {
   if (latestPackageUrl) {
     toast.style.cursor = "pointer";
     toast.addEventListener("click", async () => {
-      const opened = await window.assistantClient.openUpdateDownload(latestPackageUrl);
+      const opened = result.canAutoInstall
+        ? await window.assistantClient.downloadUpdate()
+        : await window.assistantClient.openUpdateDownload(latestPackageUrl);
       if (!opened?.ok) showToast(updateErrorMessage(opened?.error), "error");
     }, { once: true });
   }
+}
+
+function phaseText(state) {
+  if (!state?.hasUpdate && state?.phase !== "error") return "";
+  if (state.phase === "checking") return t("update.pillChecking");
+  if (state.phase === "downloading") {
+    const percent = Math.max(0, Math.min(100, Number(state.progress?.percent || 0)));
+    return t("update.pillDownloading", { percent: Math.round(percent) });
+  }
+  if (state.phase === "downloaded") return t("update.pillDownloaded");
+  if (state.phase === "restart_pending") return t("update.pillRestartPending");
+  if (state.phase === "error") return t("update.pillError");
+  return t("update.pillAvailable");
+}
+
+function updateDescription(state) {
+  if (state.phase === "checking") return t("update.descChecking");
+  if (state.phase === "downloading") return t("update.descDownloading");
+  if (state.phase === "downloaded") {
+    return t("update.descDownloaded", { version: state.latestVersion || "" });
+  }
+  if (state.phase === "restart_pending") return t("update.descRestartPending");
+  if (state.phase === "error") return updateErrorMessage(state.error);
+  if (state.canAutoInstall) {
+    return t("update.descAvailableAuto", {
+      current: state.currentVersion || "",
+      latest: state.latestVersion || "",
+    });
+  }
+  return t("update.descAvailableManual", {
+    current: state.currentVersion || "",
+    latest: state.latestVersion || "",
+  });
+}
+
+function primaryButtonText(state) {
+  if (state.phase === "downloaded" || state.phase === "restart_pending") return t("update.restart");
+  if (state.phase === "downloading" || state.phase === "checking" || state.phase === "installing") {
+    return t("update.working");
+  }
+  if (state.canAutoInstall) return t("update.downloadAndInstall");
+  return t("settings.updateDownload");
+}
+
+function renderUpdateState(state) {
+  updateState = state || updateState;
+  if (!updateState) return;
+  latestPackageUrl = updateState.package?.url || "";
+
+  const chrome = $("updateChrome");
+  const pillText = $("updatePillText");
+  const title = $("updatePopoverTitle");
+  const desc = $("updatePopoverDesc");
+  const progressTrack = $("updateProgressTrack");
+  const progressBar = $("updateProgressBar");
+  const primary = $("updatePrimaryBtn");
+  const statusEl = $("updateStatusText");
+  const downloadBtn = $("updateDownloadBtn");
+
+  const visible = updateState.hasUpdate || ["checking", "downloading", "downloaded", "restart_pending", "error"].includes(updateState.phase);
+  if (chrome) {
+    chrome.hidden = !visible;
+    chrome.dataset.phase = updateState.phase || "idle";
+  }
+  if (pillText) pillText.textContent = phaseText(updateState);
+  if (title) title.textContent = updateState.phase === "error" ? t("update.popoverErrorTitle") : t("update.popoverTitle");
+  if (desc) desc.textContent = updateDescription(updateState);
+
+  const percent = Math.max(0, Math.min(100, Number(updateState.progress?.percent || 0)));
+  if (progressTrack) progressTrack.hidden = updateState.phase !== "downloading";
+  if (progressBar) progressBar.style.width = `${percent}%`;
+
+  const primaryDisabled = ["checking", "downloading", "installing"].includes(updateState.phase);
+  if (primary) {
+    primary.textContent = primaryButtonText(updateState);
+    primary.disabled = primaryDisabled;
+  }
+
+  if (statusEl) {
+    if (updateState.phase === "error") {
+      statusEl.textContent = updateErrorMessage(updateState.error);
+    } else if (!updateState.hasUpdate) {
+      statusEl.textContent = t("settings.updateLatest", { version: updateState.currentVersion || "" });
+    } else {
+      statusEl.textContent = t("settings.updateAvailable", {
+        current: updateState.currentVersion || "",
+        latest: updateState.latestVersion || "",
+      });
+    }
+  }
+  if (downloadBtn) {
+    downloadBtn.hidden = !(updateState.hasUpdate && (updateState.canAutoInstall || updateState.canManualDownload || latestPackageUrl));
+    downloadBtn.textContent = primaryButtonText(updateState);
+    downloadBtn.disabled = primaryDisabled;
+  }
+}
+
+async function runPrimaryUpdateAction() {
+  const state = updateState || await window.assistantClient.getUpdateState?.();
+  if (!state) return;
+  let result;
+  if (state.phase === "downloaded" || state.phase === "restart_pending") {
+    result = await window.assistantClient.installUpdate({ force: false });
+  } else if (state.canAutoInstall) {
+    result = await window.assistantClient.downloadUpdate();
+  } else if (state.package?.url) {
+    result = await window.assistantClient.openUpdateDownload(state.package.url);
+  } else {
+    result = await window.assistantClient.checkForUpdates();
+  }
+  if (!result?.ok) showToast(updateErrorMessage(result?.error), "error");
+  else if (result.phase || result.hasUpdate !== undefined) renderUpdateState(result);
 }
 
 export function startAutoUpdateChecks() {
@@ -168,6 +290,23 @@ export function startAutoUpdateChecks() {
 }
 
 export function initLicenseUpdateSettings() {
+  window.assistantClient.onUpdateState?.((state) => {
+    renderUpdateState(state);
+  });
+  $("updatePillBtn")?.addEventListener("click", () => {
+    const popover = $("updatePopover");
+    if (popover) popover.hidden = !popover.hidden;
+  });
+  $("updatePopoverCloseBtn")?.addEventListener("click", () => {
+    const popover = $("updatePopover");
+    if (popover) popover.hidden = true;
+  });
+  $("updateSecondaryBtn")?.addEventListener("click", () => {
+    const popover = $("updatePopover");
+    if (popover) popover.hidden = true;
+  });
+  $("updatePrimaryBtn")?.addEventListener("click", () => void runPrimaryUpdateAction());
+
   $("licenseActivateBtn")?.addEventListener("click", async () => {
     const token = $("licenseTokenInput")?.value?.trim() || "";
     if (!token) {
@@ -192,9 +331,5 @@ export function initLicenseUpdateSettings() {
   });
 
   $("updateCheckBtn")?.addEventListener("click", () => void checkUpdates());
-  $("updateDownloadBtn")?.addEventListener("click", async () => {
-    if (!latestPackageUrl) return;
-    const result = await window.assistantClient.openUpdateDownload(latestPackageUrl);
-    if (!result?.ok) showToast(updateErrorMessage(result?.error), "error");
-  });
+  $("updateDownloadBtn")?.addEventListener("click", () => void runPrimaryUpdateAction());
 }

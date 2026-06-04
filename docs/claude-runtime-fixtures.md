@@ -11,16 +11,20 @@ Each scenario has two files:
 - `<name>.jsonl`: one raw Claude CLI JSON event per line.
 - `<name>.expected.json`: assertions for normalized app-level actions.
 
-The replay test runs every raw event through `normalizeClaudeEvent()` and checks
-the normalized action kinds, warning count, and scenario-specific fields.
+The replay test runs every raw event through the Claude parser and checks the
+normalized compatibility action kinds, warning count, and scenario-specific
+fields. The Runtime adapter contract is checked separately by
+`scripts/test-runtime-adapter.mjs`, which verifies that the same raw events also
+produce stable app-level Runtime Events.
 
 ## Run
 
 ```bash
 npm run test:runtime-fixtures
+node scripts/test-runtime-adapter.mjs
 ```
 
-`npm run test:unit` also runs the fixture suite.
+`npm run test:unit` also runs both suites.
 
 ## Current Coverage
 
@@ -31,6 +35,9 @@ npm run test:runtime-fixtures
 - AskUserQuestion loose payloads,
 - SDK permission requests,
 - hook callback control requests,
+- echoed control responses,
+- permission denied system events,
+- task progress/completion telemetry,
 - result error subtypes such as `error_max_budget_usd`,
 - unknown runtime/system protocol warnings.
 

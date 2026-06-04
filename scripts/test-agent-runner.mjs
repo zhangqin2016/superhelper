@@ -119,8 +119,17 @@ if (needsUserApproval("ExitPlanMode", "bypassPermissions")) {
 if (!needsUserApproval("ExitPlanMode", "default")) {
   throw new Error("ExitPlanMode should require approval in default mode");
 }
-if (needsUserApproval("Read", "default")) {
-  throw new Error("Read should not require approval in default mode");
+if (!needsUserApproval("Read", "default")) {
+  throw new Error("host must not auto-allow Read when Claude CLI explicitly asks for a decision");
+}
+if (!needsUserApproval("Edit", "acceptEdits")) {
+  throw new Error("host must not auto-allow Edit when Claude CLI explicitly asks for a decision");
+}
+if (!needsUserApproval("Bash", "auto")) {
+  throw new Error("auto mode decisions belong to Claude CLI; host prompts when asked");
+}
+if (!needsUserApproval("ExitPlanMode", "plan")) {
+  throw new Error("plan mode decisions belong to Claude CLI; host prompts when asked");
 }
 
 const allowLine = buildControlResponse("req_1", {
@@ -258,19 +267,59 @@ if (!retry || retry.code !== "apiRetry" || retry.attempt !== 2) {
   throw new Error(`api_retry classify failed: ${JSON.stringify(retry)}`);
 }
 
-const hook = noticeForControlSubtype("hook_callback");
-if (!hook || hook.code !== "hookCallback") {
-  throw new Error(`hook_callback notice failed: ${JSON.stringify(hook)}`);
+const permissionDenied = classifyEngineEvent({ type: "system", subtype: "permission_denied" });
+if (!permissionDenied || permissionDenied.code !== "permissionDenied" || permissionDenied.level !== "warning") {
+  throw new Error(`permission_denied classify failed: ${JSON.stringify(permissionDenied)}`);
 }
+
+	const hook = noticeForControlSubtype("hook_callback");
+	if (hook !== null) {
+	  throw new Error(`hook_callback notice should be null (per-hook-kind notices now in normalizer), got: ${JSON.stringify(hook)}`);
+	}
 
 const taskUpdated = classifyEngineEvent({ type: "system", subtype: "task_updated" });
-if (taskUpdated !== null) {
-  throw new Error(`task_updated should be silent, got ${JSON.stringify(taskUpdated)}`);
+if (!taskUpdated || taskUpdated.code !== "taskProgress" || taskUpdated.level !== "progress") {
+  throw new Error(`task_updated should be visible progress, got ${JSON.stringify(taskUpdated)}`);
 }
 
-const taskProgress = classifyEngineEvent({ type: "system", subtype: "task_progress" });
-if (taskProgress !== null) {
-  throw new Error(`task_progress should be silent, got ${JSON.stringify(taskProgress)}`);
+const taskProgress = classifyEngineEvent({
+  type: "system",
+  subtype: "task_progress",
+  message: "Writing chapter 41",
+});
+if (
+  !taskProgress ||
+  taskProgress.code !== "taskProgress" ||
+  taskProgress.detail !== "Writing chapter 41"
+) {
+  throw new Error(`task_progress should expose live task detail, got ${JSON.stringify(taskProgress)}`);
+}
+
+const systemStatus = classifyEngineEvent({
+  type: "system",
+  subtype: "status",
+  status: "Reading recent chapters",
+});
+if (
+  !systemStatus ||
+  systemStatus.code !== "taskProgress" ||
+  systemStatus.level !== "progress" ||
+  systemStatus.detail !== "Reading recent chapters"
+) {
+  throw new Error(`system/status should expose live task detail, got ${JSON.stringify(systemStatus)}`);
+}
+
+const requestingStatus = classifyEngineEvent({
+  type: "system",
+  subtype: "status",
+  status: "requesting",
+});
+if (
+  !requestingStatus ||
+  requestingStatus.code !== "thinkingProgress" ||
+  requestingStatus.level !== "progress"
+) {
+  throw new Error(`system/status requesting should merge into thinking progress, got ${JSON.stringify(requestingStatus)}`);
 }
 
 const unknownSystem = classifyEngineEvent({ type: "system", subtype: "some_new_internal" });
@@ -315,6 +364,17 @@ if (normalizedPermission[0]?.kind !== "permission_check" || normalizedPermission
   throw new Error(`normalizeClaudeEvent permission failed: ${JSON.stringify(normalizedPermission)}`);
 }
 
+const normalizedControlResponse = normalizeClaudeEvent({
+  type: "control_response",
+  response: { behavior: "allow" },
+});
+if (
+  normalizedControlResponse.length !== 1 ||
+  normalizedControlResponse[0]?.kind !== "control_response"
+) {
+  throw new Error(`normalizeClaudeEvent control_response failed: ${JSON.stringify(normalizedControlResponse)}`);
+}
+
 const normalizedText = normalizeClaudeEvent({
   type: "stream_event",
   event: {
@@ -340,9 +400,39 @@ if (unknownSystemNormalized[0]?.kind !== "protocol_warning") {
   throw new Error(`unknown system subtype should become protocol_warning: ${JSON.stringify(unknownSystemNormalized)}`);
 }
 
-const silentTaskNormalized = normalizeClaudeEvent({ type: "system", subtype: "task_progress" });
-if (silentTaskNormalized[0]?.notice !== null) {
-  throw new Error(`task_progress should stay silent: ${JSON.stringify(silentTaskNormalized)}`);
+const permissionDeniedNormalized = normalizeClaudeEvent({
+  type: "system",
+  subtype: "permission_denied",
+});
+if (
+  permissionDeniedNormalized[0]?.kind !== "system_notice" ||
+  permissionDeniedNormalized[0]?.notice?.code !== "permissionDenied"
+) {
+  throw new Error(`permission_denied should become known system_notice: ${JSON.stringify(permissionDeniedNormalized)}`);
+}
+
+const taskProgressNormalized = normalizeClaudeEvent({
+  type: "system",
+  subtype: "task_progress",
+  message: "Writing chapter 41",
+});
+if (
+  taskProgressNormalized[0]?.kind !== "system_notice" ||
+  taskProgressNormalized[0]?.notice?.code !== "taskProgress"
+) {
+  throw new Error(`task_progress should become visible progress: ${JSON.stringify(taskProgressNormalized)}`);
+}
+
+const statusNormalized = normalizeClaudeEvent({
+  type: "system",
+  subtype: "status",
+  status: "Reading recent chapters",
+});
+if (
+  statusNormalized[0]?.kind !== "system_notice" ||
+  statusNormalized[0]?.notice?.code !== "taskProgress"
+) {
+  throw new Error(`system/status should become visible progress: ${JSON.stringify(statusNormalized)}`);
 }
 
 const thinkingTokensNormalized = normalizeClaudeEvent({
@@ -350,8 +440,12 @@ const thinkingTokensNormalized = normalizeClaudeEvent({
   subtype: "thinking_tokens",
   estimated_tokens: 100,
 });
-if (thinkingTokensNormalized[0]?.notice !== null) {
-  throw new Error(`thinking_tokens should stay silent: ${JSON.stringify(thinkingTokensNormalized)}`);
+if (
+  thinkingTokensNormalized[0]?.kind !== "system_notice" ||
+  thinkingTokensNormalized[0]?.notice?.code !== "thinkingProgress" ||
+  thinkingTokensNormalized[0]?.notice?.detail !== "100 tokens"
+) {
+  throw new Error(`thinking_tokens should become visible thinking progress: ${JSON.stringify(thinkingTokensNormalized)}`);
 }
 
 const fallbackQuestions = normalizeAskUserQuestions({ prompt: "请补充方向" });

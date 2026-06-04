@@ -7,10 +7,15 @@ import {
   $,
   scrollToBottom,
   scrollToBottomAfterLayout,
+  scrollToBottomThrottled,
   bindPanelScroll,
   initScrollToBottom,
 } from "./dom.js";
-import { renderMarkdown, renderMarkdownWithCache, clearHighlightCache } from "./markdown.js";
+import {
+  renderMarkdown,
+  renderMarkdownWithCache,
+  clearHighlightCache,
+} from "./markdown.js";
 import { activeProject, updateTopbarTitles, refreshStateLight } from "./session-chrome.js";
 import { t } from "../i18n/index.js";
 import {
@@ -30,31 +35,35 @@ import {
   updateToolCardInput as updateToolCardInputImpl,
   finalizeToolCardInput as finalizeToolCardInputImpl,
   updateToolCard as updateToolCardImpl,
-  clearToolCards as clearToolCardsImpl,
-  collapseToolCards as collapseToolCardsImpl,
+  clearTimeline as clearToolCardsImpl,
+  collapseTimeline as collapseToolCardsImpl,
   updateToolCardProgress as updateToolCardProgressImpl,
   syncTurnProgress as syncTurnProgressImpl,
   refreshRunningActivityLabel,
   countRunningTools,
   toolSummary,
   syncActivityVisibility,
-} from "./tool-cards.js";
-import {
   addOrUpdateEngineNotice,
   engineNoticeText,
-} from "./engine-notices.js";
+  finishTimeline as finishEngineNotices,
+  addTextEntry,
+  updateTextEntry,
+  finalizeTextEntry,
+} from "./turn-timeline.js";
 
 const stackEl = () => $("sessionMessagesStack");
 
 /** @type {Map<string, {
  *   panel: HTMLElement,
  *   listEl: HTMLElement,
- *   activeTurn: { article: HTMLElement, activity: HTMLElement, bubble: HTMLElement } | null,
+ *   activeTurn: { article: HTMLElement, activity: HTMLElement, bubble: HTMLElement, queue: HTMLElement } | null,
  *   toolCards: Map<string, { card: HTMLElement, name: string, input: object, status: string }>,
- *   engineNotices: Map<string, { card: HTMLElement, code: string, status: string }>,
+ *   engineNotices: Map<string, { card: HTMLElement, code: string, status: string, payload?: object, startedAt?: number, timer?: ReturnType<typeof setInterval> | null }>,
+ *   timeline: object | null,
  *   activeMarkdown: string,
  *   activeBubble: HTMLElement | null,
  *   activityLabel: string,
+ *   activityLabelSource: string,
  *   turnStartedAt: number,
  * }>} */
 const sessionViews = new Map();
@@ -91,18 +100,71 @@ function setQueuedMessageItems(sessionId, items) {
   else queuedMessageItems.delete(sessionId);
 }
 
+function renderInlineTurnQueue(sessionId, items = []) {
+  const v = view(sessionId);
+  const turn = v.activeTurn;
+  if (!turn?.queue) return;
+
+  if (!items.length) {
+    turn.queue.hidden = true;
+    turn.queue.replaceChildren();
+    return;
+  }
+
+  turn.queue.hidden = false;
+  turn.queue.replaceChildren();
+
+  const header = document.createElement("div");
+  header.className = "turn-queue-header";
+  header.textContent = t("timeline.queuedTitle", { count: items.length });
+  turn.queue.appendChild(header);
+
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "turn-queue-item";
+
+    const badge = document.createElement("span");
+    badge.className = "message-queue-badge";
+    badge.textContent = t("composer.queueBadge");
+
+    const text = document.createElement("span");
+    text.className = "message-queue-preview";
+    const preview =
+      item.preview ||
+      (item.hasFiles ? t("composer.queueAttachmentOnly") : t("composer.queueEmptyText"));
+    text.textContent = preview;
+    text.title = preview;
+
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "message-queue-remove";
+    rm.innerHTML = "&times;";
+    rm.title = t("composer.cancelQueued");
+    rm.setAttribute("aria-label", t("composer.cancelQueued"));
+    rm.addEventListener("click", async () => {
+      try {
+        const result = await window.assistantClient.cancelQueuedMessage(sessionId, item.index);
+        if (!result?.ok) showToast(t("toast.queueCancelFailed"), "warning");
+      } catch (err) {
+        showToast(err?.message || t("toast.queueCancelFailed"), "error");
+      }
+    });
+
+    row.append(badge, text, rm);
+    turn.queue.appendChild(row);
+  }
+}
+
 /** Keep visible “still working” cues when the engine is silent (tools/subagents). */
 function refreshBusyIndicators(sessionId) {
   if (!sessionId || canSend(sessionId)) {
     clearBusyHeartbeat(sessionId);
+    const inactive = sessionId ? view(sessionId).activeTurn?.article : null;
+    inactive?.classList.remove("is-running");
     return;
   }
 
-  const phase = getTurnPhase(sessionId);
-  if (
-    ["streaming", "tool", "permission"].includes(phase) &&
-    !hasLiveTurn(sessionId)
-  ) {
+  if (!hasLiveTurn(sessionId)) {
     beginAssistantTurn(sessionId);
   }
 
@@ -110,6 +172,7 @@ function refreshBusyIndicators(sessionId) {
   if (v.activeBubble) {
     v.activeBubble.classList.add("pending");
   }
+  v.activeTurn?.article?.classList.add("is-running");
   syncTurnProgress(sessionId);
 
   if (!busyHeartbeats.has(sessionId)) {
@@ -142,11 +205,14 @@ function view(sessionId) {
       activeTurn: null,
       toolCards: new Map(),
       engineNotices: new Map(),
+      timeline: null,
       activeMarkdown: "",
       activeBubble: null,
       activityLabel: "",
+      activityLabelSource: "",
       turnStartedAt: 0,
       turnHadToolUse: false,
+      sessionId,
     });
   }
   return sessionViews.get(sessionId);
@@ -237,6 +303,10 @@ function appendMarkdownSegment(prev, next) {
   if (!base) return piece;
   if (base.endsWith("\n") || piece.startsWith("\n")) return base + piece;
   return `${base}\n\n${piece}`;
+}
+
+function appendStreamText(prev, next) {
+  return `${prev || ""}${String(next ?? "")}`;
 }
 
 function softenStreamGlue(text) {
@@ -409,7 +479,7 @@ export function syncComposerForActiveSession() {
   const sid = store.get("activeSessionId");
   const hasProject = (store.get("projects") || []).length > 0;
   const busy = Boolean(sid && !canSend(sid));
-  const awaitingPermission = Boolean(sid && pendingPermissionBySession.has(sid));
+  const awaitingPermission = Boolean(sid && (pendingPermissionBySession.has(sid) || pendingHookBySession.has(sid)));
   const queueCount = sid ? getQueuedMessageCount(sid) : 0;
   store.set("isBusy", busy);
   setBusyUI(busy);
@@ -420,6 +490,12 @@ export function syncComposerForActiveSession() {
     const el = $(id);
     if (el) el.disabled = blocked;
   }
+  const sendBtn = $("sendBtn");
+  if (sendBtn) {
+    sendBtn.textContent = busy ? t("composer.sendQueued") : t("composer.send");
+    sendBtn.classList.toggle("send-btn-queued", busy);
+  }
+  $("composer")?.classList.toggle("composer-busy", busy);
   if (promptInput) {
     promptInput.placeholder = awaitingPermission
       ? t("composer.placeholderPermission")
@@ -495,7 +571,7 @@ export function renderConversation(sessionId, { force = false } = {}) {
   scrollToBottomAfterLayout(v.panel);
 }
 
-// --- Tool card wrappers (delegate to tool-cards.js) ---
+// --- Turn timeline wrappers ---
 
 function addToolCard(sessionId, id, name, input, parentToolUseId, turnId = null) {
   if (!view(sessionId).activeTurn) beginAssistantTurn(sessionId, turnId);
@@ -558,12 +634,21 @@ export function beginAssistantTurn(sessionId, turnId = null) {
 
   const bubble = document.createElement("div");
   bubble.className = "msg-bubble pending";
+  bubble.hidden = true;
 
-  body.append(activity, divider, bubble);
+  const replyProgress = document.createElement("div");
+  replyProgress.className = "reply-progress-slot";
+  replyProgress.hidden = true;
+
+  const queue = document.createElement("div");
+  queue.className = "turn-queue-slot";
+  queue.hidden = true;
+
+  body.append(activity, divider, bubble, replyProgress, queue);
   article.append(avatar, body);
   listEl.appendChild(article);
 
-  v.activeTurn = { article, activity, bubble, turnId: turnId || getTurnId(sessionId) || null };
+  v.activeTurn = { article, activity, bubble, queue, turnId: turnId || getTurnId(sessionId) || null };
   v._lastRenderedLength = 0;
   v.activeBubble = bubble;
   v.activeMarkdown = "";
@@ -576,11 +661,18 @@ export function beginAssistantTurn(sessionId, turnId = null) {
 
 function finishActiveTurn(sessionId) {
   const v = view(sessionId);
+  finishEngineNotices(v);
   collapseToolCards(sessionId);
+  v.activeTurn?.article?.classList.remove("is-running");
   if (v.activeTurn?.activity) {
     v.activeTurn.activity.hidden = false;
   }
   v._lastRenderedLength = 0;
+  const replyProgress = v.activeTurn?.article?.querySelector(".reply-progress-slot");
+  replyProgress?.replaceChildren();
+  if (replyProgress) replyProgress.hidden = true;
+  v.activeTurn?.queue?.replaceChildren();
+  if (v.activeTurn?.queue) v.activeTurn.queue.hidden = true;
   v.activeTurn = null;
   v.activeBubble = null;
   v.activeMarkdown = "";
@@ -593,36 +685,24 @@ function finishActiveTurn(sessionId) {
 function materializeTurnEnded(sessionId, event) {
   const v = view(sessionId);
   const assistantText = event?.assistant?.text || "";
-  const hadTools = v.turnHadToolUse || v.toolCards.size > 0;
 
-  if (assistantText && v.activeTurn) {
-    let bubble = v.activeBubble;
-    if (!bubble && v.activeTurn.bubble) {
-      bubble = v.activeTurn.bubble;
-      v.activeBubble = bubble;
-    }
-    const domEmpty =
-      !v.activeMarkdown.trim() && !(bubble?.textContent?.trim().length > 0);
-    if (bubble && domEmpty) {
-      renderMarkdown(bubble, softenStreamGlue(assistantText));
-      v.activeMarkdown = assistantText;
-      if (hadTools && v.activeTurn?.article) {
-        const divider = v.activeTurn.article.querySelector(".turn-section-divider");
-        if (divider) divider.hidden = false;
-      }
-    }
+  // If text wasn't streamed (no chunk events), render it into the timeline now
+  if (assistantText && v.activeTurn && !v.activeMarkdown.trim()) {
+    v.activeMarkdown = assistantText;
+    addTextEntry(v);
+    updateTextEntry(v, assistantText);
+    finalizeTextEntry(v, softenStreamGlue(assistantText));
+  } else if (v.activeMarkdown && v.activeTurn && !v.timeline?._textCard?.isConnected) {
+    // Render accumulated markdown that wasn't finalized by onDone
+    addTextEntry(v);
+    updateTextEntry(v, v.activeMarkdown);
+    finalizeTextEntry(v, softenStreamGlue(v.activeMarkdown));
   }
 
-  const hadReply =
-    v.activeMarkdown.trim().length > 0 ||
-    (v.activeBubble?.textContent?.trim().length > 0) ||
-    Boolean(assistantText);
+  // Clean up legacy bubble
   if (v.activeBubble) {
     v.activeBubble.classList.remove("pending");
-    if (!hadReply && !hadTools) {
-      v.activeBubble.remove();
-      v.activeBubble = null;
-    }
+    v.activeBubble.hidden = true;
   }
 
   finishActiveTurn(sessionId);
@@ -680,10 +760,16 @@ function sealLastTurnArticle(sessionId) {
 
   activity.querySelector(".turn-progress-slot")?.replaceChildren();
   activity.querySelectorAll(".turn-progress").forEach((el) => el.remove());
+  const replyProgress = turn.querySelector(".reply-progress-slot");
+  replyProgress?.replaceChildren();
+  if (replyProgress) replyProgress.hidden = true;
+  const queue = turn.querySelector(".turn-queue-slot");
+  queue?.replaceChildren();
+  if (queue) queue.hidden = true;
 
-  const hasCards = activity.querySelector(".tool-card");
-  const hasEngine = activity.querySelector(".engine-notice-card");
-  const bar = activity.querySelector(".tool-summary-bar");
+  const hasCards = activity.querySelector(".turn-timeline .tool-card");
+  const hasEngine = activity.querySelector(".turn-timeline .engine-notice-card");
+  const bar = activity.querySelector(".turn-timeline .tool-summary-bar");
   const barVisible = bar && !bar.hidden;
   if (!hasCards && !hasEngine && !barVisible) {
     activity.hidden = true;
@@ -706,6 +792,28 @@ function permissionPromptCopy(toolName, payload) {
 
 /** Pending tool approvals keyed by session (survives session switch). */
 const pendingPermissionBySession = new Map();
+/** Pending hook decisions keyed by session. */
+const pendingHookBySession = new Map();
+
+function dismissHookPrompt(sessionId, requestId) {
+  if (sessionId) {
+    const pending = pendingHookBySession.get(sessionId);
+    if (!requestId || pending?.requestId === requestId) {
+      pendingHookBySession.delete(sessionId);
+    }
+  }
+  if (isActiveSession(sessionId)) {
+    syncComposerForActiveSession();
+  }
+
+  const turn = view(sessionId)?.activeTurn;
+  if (!turn?.activity) return;
+  const card = turn.activity.querySelector(
+    `.permission-prompt[data-request-id="${requestId}"]`,
+  );
+  card?.remove();
+  syncActivityVisibility(view(sessionId));
+}
 
 function dismissPermissionPrompt(sessionId, requestId) {
   if (sessionId) {
@@ -812,6 +920,80 @@ function buildPermissionCard(sessionId, payload) {
       card.classList.remove("permission-prompt-resolved");
       showToast(t("permission.respondFailed"), "error");
       console.warn("[permission-response]", err);
+    }
+  };
+
+  approveBtn.addEventListener("click", () => respond(true));
+  denyBtn.addEventListener("click", () => respond(false));
+
+  return card;
+}
+
+function buildHookCard(sessionId, payload) {
+  const hookName = payload.hookName || "";
+  const toolName = payload.toolName || "";
+  const decisionReason = payload.decisionReason || "";
+
+  const card = document.createElement("div");
+  card.className = "permission-prompt";
+  card.dataset.requestId = payload.requestId;
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "permission-prompt-title";
+  if (hookName === "PreToolUse") {
+    titleEl.textContent = t("hook.pretoolUseTitle", { tool: toolName });
+  } else if (hookName === "Stop" || hookName === "SubagentStop") {
+    titleEl.textContent = t("hook.stopTitle");
+  } else {
+    titleEl.textContent = `${t("hook.title")} · ${hookName}`;
+  }
+  card.appendChild(titleEl);
+
+  if (decisionReason) {
+    const reasonEl = document.createElement("div");
+    reasonEl.className = "permission-prompt-desc";
+    reasonEl.textContent = decisionReason;
+    card.appendChild(reasonEl);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "permission-prompt-actions";
+
+  const approveBtn = document.createElement("button");
+  approveBtn.type = "button";
+  approveBtn.className = "permission-prompt-btn permission-prompt-btn-approve";
+  approveBtn.textContent = hookName === "PreToolUse"
+    ? t("hook.allowTool")
+    : t("hook.approveStop");
+
+  const denyBtn = document.createElement("button");
+  denyBtn.type = "button";
+  denyBtn.className = "permission-prompt-btn";
+  denyBtn.textContent = hookName === "PreToolUse"
+    ? t("hook.denyTool")
+    : t("hook.blockStop");
+
+  actions.append(approveBtn, denyBtn);
+  card.appendChild(actions);
+
+  const respond = async (allow) => {
+    if (card.classList.contains("permission-prompt-resolved")) return;
+    card.classList.add("permission-prompt-resolved");
+    try {
+      const result = await window.assistantClient.respondHook(
+        sessionId,
+        payload.requestId,
+        allow,
+        {},
+      );
+      if (!result?.ok) {
+        card.classList.remove("permission-prompt-resolved");
+        showToast(t("hook.respondFailed"), "error");
+      }
+    } catch (err) {
+      card.classList.remove("permission-prompt-resolved");
+      showToast(t("hook.respondFailed"), "error");
+      console.warn("[hook-response]", err);
     }
   };
 
@@ -1004,6 +1186,26 @@ function showPermissionPrompt(sessionId, payload) {
   }
 }
 
+function showHookPrompt(sessionId, payload) {
+  if (!sessionId || !payload?.requestId) return;
+
+  beginAssistantTurn(sessionId, eventTurnId(payload));
+  const v = view(sessionId);
+  v.turnHadToolUse = true;
+
+  const card = buildHookCard(sessionId, payload);
+  v.activeTurn.activity.querySelectorAll(".permission-prompt").forEach((c) => c.remove());
+  v.activeTurn.activity.appendChild(card);
+  v.activeTurn.activity.hidden = false;
+
+  pendingHookBySession.set(sessionId, payload);
+
+  if (isActiveSession(sessionId)) {
+    refreshBusyIndicators(sessionId);
+    syncComposerForActiveSession();
+  }
+}
+
 export function hasPendingUserQuestion(sessionId) {
   const pending = sessionId ? pendingPermissionBySession.get(sessionId) : null;
   return Boolean(pending?.kind === "user-question" && pending.requestId);
@@ -1069,7 +1271,10 @@ function handleEngineNotice(sessionId, payload) {
     const v = view(sessionId);
     // Meaningful progress (compaction, retry) updates the single activity line;
     // do not overwrite tool-card-driven labels for generic engine codes.
-    if (text && payload.replace) v.activityLabel = text;
+    if (text && payload.replace) {
+      v.activityLabel = text;
+      v.activityLabelSource = "engine";
+    }
     refreshRunningActivityLabel(v);
     syncTurnProgressImpl(v);
     if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
@@ -1102,7 +1307,7 @@ function applyTurnState(payload) {
   const sessionId = payload.sessionId;
   const phase = getTurnPhase(sessionId);
 
-  if (["streaming", "tool", "permission"].includes(phase) && !hasLiveTurn(sessionId)) {
+  if (!canSend(sessionId) && !hasLiveTurn(sessionId)) {
     beginAssistantTurn(sessionId, eventTurnId(payload));
   }
 
@@ -1116,6 +1321,7 @@ function applyTurnState(payload) {
     if (bubble && phase === "idle") {
       bubble.classList.remove("pending");
     }
+    view(sessionId).activeTurn?.article?.classList.remove("is-running");
   }
 
   if (sessionId && !canSend(sessionId)) {
@@ -1171,6 +1377,10 @@ export function wireMessageIpc() {
     if (!sessionId) return;
     setQueuedMessageCount(sessionId, payload.queueLength || 0);
     setQueuedMessageItems(sessionId, payload.items || []);
+    if (!canSend(sessionId) && !hasLiveTurn(sessionId)) {
+      beginAssistantTurn(sessionId, eventTurnId(payload));
+    }
+    renderInlineTurnQueue(sessionId, payload.items || []);
     renderMessageQueue(sessionId, payload.items || []);
     if (isActiveSession(sessionId)) syncComposerForActiveSession();
   });
@@ -1188,6 +1398,7 @@ export function wireMessageIpc() {
 
     clearBusyHeartbeat(sessionId);
     view(sessionId).activityLabel = "";
+    view(sessionId).activityLabelSource = "";
     clearToolCards(sessionId);
     finishActiveTurn(sessionId);
 
@@ -1282,6 +1493,20 @@ export function wireMessageIpc() {
     dismissPermissionPrompt(sessionId, payload.requestId);
   });
 
+  window.assistantClient.onHookRequest?.((payload) => {
+    const sessionId = payload.sessionId;
+    if (!sessionId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
+    showHookPrompt(sessionId, payload);
+  });
+
+  window.assistantClient.onHookResolved?.((payload) => {
+    const sessionId = payload.sessionId;
+    if (!sessionId || !payload.requestId) return;
+    if (!acceptLiveTurnEvent(sessionId, payload)) return;
+    dismissHookPrompt(sessionId, payload.requestId);
+  });
+
   window.assistantClient.onEngineNotice((payload) => {
     if (payload?.sessionId && !acceptLiveTurnEvent(payload.sessionId, payload)) return;
     handleEngineNotice(payload.sessionId, payload);
@@ -1293,41 +1518,25 @@ export function wireMessageIpc() {
     if (!acceptLiveTurnEvent(sessionId, payload)) return;
     const v = view(sessionId);
 
-    let bubble = v.activeBubble;
-    if (!bubble) {
-      bubble = beginAssistantTurn(sessionId, eventTurnId(payload));
-      if (!bubble) return;
+    if (!v.activeTurn) {
+      beginAssistantTurn(sessionId, eventTurnId(payload));
+      if (!v.activeTurn) return;
     }
+    v.turnHadToolUse = true;
+    v.activeTurn?.article?.classList.add("is-running");
 
-    // Show divider between tool steps and reply on first text
-    if (v.turnHadToolUse && v.activeTurn) {
-      const divider = v.activeTurn.article.querySelector(".turn-section-divider");
-      if (divider) divider.hidden = false;
+    // Accumulate full markdown string
+    v.activeMarkdown = appendStreamText(v.activeMarkdown, payload.text);
+
+    // Stream into the timeline as a live text entry
+    if (v.activeMarkdown.length === (payload.text || "").length) {
+      addTextEntry(v);
     }
+    updateTextEntry(v, v.activeMarkdown);
 
-    v.activeMarkdown = softenStreamGlue(
-      appendMarkdownSegment(v.activeMarkdown, payload.text),
-    );
-
-    const hasCodeFence = v.activeMarkdown.includes("```");
-    const hasHtmlInNew = /<[a-zA-Z][^>]*>/.test(payload.text);
-    const hasMarkdown = hasMarkdownSyntax(v.activeMarkdown);
-    const threshold = v.activeMarkdown.length - (v._lastRenderedLength || 0) > 200;
-
-    if (hasCodeFence || hasHtmlInNew || hasMarkdown || threshold) {
-      renderMarkdownWithCache(bubble, v.activeMarkdown);
-      v._lastRenderedLength = v.activeMarkdown.length;
-    } else {
-      // 纯文本增量追加 — 不做 Markdown 解析
-      if (bubble.textContent) {
-        bubble.textContent += payload.text;
-      } else {
-        bubble.textContent = payload.text;
-      }
-    }
+    scrollToBottomThrottled(false, v.panel);
 
     if (isActiveSession(sessionId)) syncActiveStoreFromView(sessionId);
-    scrollToBottom(false, v.panel);
   });
 
   window.assistantClient.onDone(async (payload) => {
@@ -1335,11 +1544,24 @@ export function wireMessageIpc() {
     if (!sessionId) return;
 
     clearBusyHeartbeat(sessionId);
-    view(sessionId).activityLabel = "";
     const v = view(sessionId);
-    if (v.activeBubble && v.activeMarkdown) {
-      renderMarkdownWithCache(v.activeBubble, v.activeMarkdown);
-      v._lastRenderedLength = v.activeMarkdown.length;
+    v.activityLabel = "";
+    v.activityLabelSource = "";
+
+    // Finalize: render full reply with syntax highlighting into the timeline
+    if (v.activeMarkdown) {
+      finalizeTextEntry(v, softenStreamGlue(v.activeMarkdown));
+    }
+    if (v.activeTurn?.article) {
+      v.activeTurn.article.classList.remove("is-running");
+    }
+    finishEngineNotices(v);
+    collapseToolCards(sessionId);
+
+    // Clean up legacy bubble if it exists
+    if (v.activeBubble) {
+      v.activeBubble.classList.remove("pending");
+      v.activeBubble.hidden = true;
     }
 
     if (payload.stalled && isActiveSession(sessionId) && !payload.hadOutput) {
@@ -1404,11 +1626,6 @@ export function wireMessageIpc() {
 }
 
 export function setBusyUI(busy) {
-  for (const id of ["sendBtn", "promptInput", "attachBtn"]) {
-    const el = $(id);
-    if (el) el.disabled = busy;
-  }
-
   const sid = store.get("activeSessionId");
   const interruptBtn = $("interruptBtn");
   if (interruptBtn) interruptBtn.hidden = !canInterrupt(sid);
@@ -1421,6 +1638,7 @@ export function setBusyUI(busy) {
     if (meta) meta.textContent = t("message.processing");
   } else if (sid) {
     view(sid).activityLabel = "";
+    view(sid).activityLabelSource = "";
   }
 
   const meta = $("sessionMeta");

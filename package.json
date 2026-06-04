@@ -1,6 +1,6 @@
 {
   "name": "lily-workbench",
-  "version": "0.1.5",
+  "version": "0.1.12",
   "private": true,
   "description": "Lily Workbench desktop client",
   "main": "src/main.js",
@@ -13,7 +13,7 @@
     "server:integration": "npm --prefix server run integration",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web run build",
-    "test:unit": "node scripts/test-turn-controller.mjs && node scripts/test-turn-boundary.mjs && node scripts/test-interrupt-and-send.mjs && node scripts/test-agent-runner.mjs && node scripts/test-claude-runtime-fixtures.mjs && node scripts/test-runtime-diagnostics.mjs && node scripts/test-agent-tool-lease.mjs && node scripts/test-license-update.mjs && node scripts/test-service-client.mjs && node scripts/test-release-admin.mjs && node scripts/test-web-admin-auth.mjs && node scripts/test-turn-auto-recovery.mjs && node scripts/test-turn-message-queue.mjs && node scripts/test-session-events.mjs && node scripts/test-session-permissions.mjs && node scripts/test-markdown-renderer.mjs && node scripts/test-runtime-python.mjs && node scripts/test-spawn-env-runtime.mjs && node scripts/test-locale-settings.mjs && node scripts/test-data-migration.mjs && node scripts/test-skill-root.mjs && node scripts/test-skill-catalog.mjs && node scripts/test-ship-ignore.mjs && node scripts/test-agent-guide-mirror.mjs && node scripts/test-vision-translator.mjs && node scripts/test-image-send-flow.mjs",
+    "test:unit": "node scripts/test-turn-controller.mjs && node scripts/test-turn-boundary.mjs && node scripts/test-interrupt-and-send.mjs && node scripts/test-agent-runner.mjs && node scripts/test-claude-runtime-fixtures.mjs && node scripts/test-runtime-adapter.mjs && node scripts/test-runtime-diagnostics.mjs && node scripts/test-agent-tool-lease.mjs && node scripts/test-session-bootstrap.mjs && node scripts/test-license-update.mjs && node scripts/test-service-client.mjs && node scripts/test-release-admin.mjs && node scripts/test-web-admin-auth.mjs && node scripts/test-turn-auto-recovery.mjs && node scripts/test-turn-message-queue.mjs && node scripts/test-session-events.mjs && node scripts/test-session-permissions.mjs && node scripts/test-session-save-flush.mjs && node scripts/test-markdown-renderer.mjs && node scripts/test-agent-timeline-ui.mjs && node scripts/test-runtime-python.mjs && node scripts/test-spawn-env-runtime.mjs && node scripts/test-locale-settings.mjs && node scripts/test-data-migration.mjs && node scripts/test-skill-root.mjs && node scripts/test-skill-catalog.mjs && node scripts/test-ship-ignore.mjs && node scripts/test-agent-guide-mirror.mjs && node scripts/test-vision-translator.mjs && node scripts/test-image-send-flow.mjs",
     "sync:skills-catalog": "node scripts/sync-skills-catalog.mjs",
     "sync:skills-bundle": "node scripts/sync-skills-catalog.mjs --bundle-only",
     "generate:skill-i18n": "node scripts/generate-skill-i18n.mjs",
@@ -60,6 +60,9 @@
     "files": [
       "src/**/*",
       "resources/**/*",
+      "node_modules/dompurify/**/*",
+      "node_modules/highlight.js/**/*",
+      "node_modules/marked/**/*",
       "!**/__MACOSX/**",
       "!**/.DS_Store",
       "!**/._*",
@@ -75,6 +78,7 @@
           "to": "bundles/darwin-arm64",
           "filter": [
             "**/*",
+            "!runtime/libreoffice/**",
             "!**/__MACOSX/**",
             "!**/.DS_Store",
             "!**/._*"
@@ -85,6 +89,7 @@
           "to": "bundles/darwin-x64",
           "filter": [
             "**/*",
+            "!runtime/libreoffice/**",
             "!**/__MACOSX/**",
             "!**/.DS_Store",
             "!**/._*"
@@ -129,12 +134,6 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64"
-          ]
         }
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}"
@@ -156,6 +155,7 @@
   },
   "dependencies": {
     "dompurify": "^3.4.5",
+    "electron-updater": "^6.8.3",
     "highlight.js": "^11.11.1",
     "marked": "^18.0.4",
     "sharp": "^0.34.5"

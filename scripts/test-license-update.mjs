@@ -48,6 +48,8 @@ const {
   createUpdateManifest,
   compareVersions,
   defaultManifestUrl,
+  defaultAutoUpdateBaseUrl,
+  deriveAutoFeedUrl,
   getUpdateSettings,
 } = require("../src/main/update-manager.js");
 const { verifyDetached } = require("../src/main/crypto-signing.js");
@@ -188,11 +190,20 @@ if (compareVersions("0.1.0", "0.1.0") !== 0) {
   throw new Error("compareVersions equality failed");
 }
 
-if (defaultManifestUrl() !== "https://lily.lanrensoft.cn/app/updates/latest.json") {
+if (defaultManifestUrl() !== "https://qny.lanrensoft.cn/app/updates/latest.json") {
   throw new Error(`default manifest url mismatch: ${defaultManifestUrl()}`);
 }
 if (getUpdateSettings().manifestUrl !== defaultManifestUrl()) {
   throw new Error("update settings should expose the built-in manifest URL by default");
+}
+if (defaultAutoUpdateBaseUrl() !== "https://qny.lanrensoft.cn/app/auto-updates") {
+  throw new Error(`default auto update base url mismatch: ${defaultAutoUpdateBaseUrl()}`);
+}
+if (deriveAutoFeedUrl("darwin-arm64") !== "https://qny.lanrensoft.cn/app/auto-updates/darwin-arm64/stable") {
+  throw new Error(`default mac auto feed mismatch: ${deriveAutoFeedUrl("darwin-arm64")}`);
+}
+if (deriveAutoFeedUrl("win32-x64") !== "https://qny.lanrensoft.cn/app/auto-updates/win32-x64/stable") {
+  throw new Error(`default win auto feed mismatch: ${deriveAutoFeedUrl("win32-x64")}`);
 }
 fs.writeFileSync(
   path.join(tmp, "update-settings.json"),

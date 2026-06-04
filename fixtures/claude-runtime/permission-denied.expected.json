@@ -1,0 +1,11 @@
+{
+  "description": "Claude system permission_denied should be treated as a known permission notice, not a protocol warning.",
+  "mustIncludeKinds": ["system_notice", "assistant_text", "turn_result"],
+  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
+  "counts": {
+    "system_notice": 2,
+    "assistant_text": 1,
+    "turn_result": 1
+  },
+  "warningCount": 0
+}

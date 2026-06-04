@@ -103,6 +103,76 @@ function controlRequestId(ev) {
   );
 }
 
+/**
+ * Map hook_event.hook string → normalized action kind.
+ * @param {{ hook?: string, permissionDecision?: string, decision?: string }} hookEvent
+ * @returns {string}
+ */
+function normalizeHookKind(hookEvent) {
+  const hook = hookEvent?.hook || "";
+  const decision = hookEvent?.permissionDecision || hookEvent?.decision || "";
+  const interactive = decision === "ask";
+
+  switch (hook) {
+    case "PreToolUse":
+      return interactive ? "hook_pretool_use_ask" : "hook_pretool_use";
+    case "PostToolUse":
+      return "hook_posttool_use";
+    case "PostToolUseFailure":
+      return "hook_posttool_use_failure";
+    case "Stop":
+      return "hook_stop";
+    case "SubagentStop":
+      return "hook_subagent_stop";
+    case "SessionStart":
+      return "hook_session_start";
+    case "PreCompact":
+      return "hook_precompact";
+    case "Notification":
+      return "hook_notification";
+    case "UserPromptSubmit":
+      return interactive ? "hook_user_prompt_ask" : "hook_user_prompt";
+    default:
+      return "hook_callback";
+  }
+}
+
+/**
+ * Build a per-hook-kind engine notice.
+ * @param {string} hookKind
+ * @param {{ hook?: string, tool_name?: string, toolName?: string }} hookEvent
+ * @returns {{ code: string, level: string, panel: boolean, replace: boolean, done?: boolean, detail?: string }}
+ */
+function hookNoticeForKind(hookKind, hookEvent) {
+  const tool = hookEvent?.tool_name || hookEvent?.toolName || "";
+  const detail = tool ? `${hookEvent.hook || ""} · ${tool}` : (hookEvent.hook || "");
+
+  const map = {
+    hook_pretool_use:         { code: "hookPreToolUse",       level: "info",     panel: true, replace: true, done: true },
+    hook_pretool_use_ask:     { code: "hookPreToolUseAsk",    level: "progress", panel: true, replace: true },
+    hook_posttool_use:        { code: "hookPostToolUse",      level: "info",     panel: true, replace: true, done: true },
+    hook_posttool_use_failure:{ code: "hookPostToolUseFailure",level: "warning",  panel: true, replace: true, done: true },
+    hook_stop:                { code: "hookStop",             level: "progress", panel: true, replace: true },
+    hook_subagent_stop:       { code: "hookSubagentStop",     level: "progress", panel: true, replace: true },
+    hook_session_start:       { code: "hookSessionStart",     level: "info",     panel: true, replace: true, done: true },
+    hook_precompact:          { code: "hookPreCompact",       level: "progress", panel: true, replace: true, done: true },
+    hook_user_prompt:         { code: "hookUserPrompt",       level: "info",     panel: true, replace: true, done: true },
+    hook_user_prompt_ask:     { code: "hookUserPromptAsk",    level: "progress", panel: true, replace: true },
+    hook_notification:        { code: "hookNotification",     level: "info",     panel: false, toast: true, done: true },
+  };
+
+  const notice = map[hookKind] || {
+    code: "hookCallback",
+    level: "progress",
+    panel: true,
+    replace: true,
+    done: true,
+  };
+
+  if (detail && !notice.detail) notice.detail = detail;
+  return notice;
+}
+
 function normalizeControlEvent(ev) {
   const canUse = parseCanUseToolRequest(ev);
   if (canUse) {
@@ -127,14 +197,22 @@ function normalizeControlEvent(ev) {
     }];
   }
   if (requestId && subtype === "hook_callback") {
+    const hookEvent =
+      ev.request?.hook_event && typeof ev.request.hook_event === "object"
+        ? ev.request.hook_event
+        : {};
+    const hookKind = normalizeHookKind(hookEvent);
+    const notice = hookNoticeForKind(hookKind, hookEvent);
     return [{
-      kind: "hook_callback",
+      kind: hookKind,
       requestId,
-      hookEvent:
-        ev.request?.hook_event && typeof ev.request.hook_event === "object"
-          ? ev.request.hook_event
-          : {},
-      notice: noticeForControlSubtype(subtype),
+      hookEvent,
+      hookName: hookEvent.hook || "",
+      toolName: hookEvent.tool_name || hookEvent.toolName || "",
+      toolInput: hookEvent.tool_input || hookEvent.toolInput || null,
+      permissionDecision: hookEvent.permissionDecision || hookEvent.decision || "",
+      decisionReason: hookEvent.permissionDecisionReason || hookEvent.reason || "",
+      notice,
     }];
   }
   if (requestId) {
@@ -233,6 +311,12 @@ function normalizeStreamEvent(ev) {
       }];
     case "message_stop":
       return [{ kind: "stream_message_stop" }];
+    case "message_delta":
+      return [{
+        kind: "stream_message_delta",
+        stopReason: inner.delta?.stop_reason || "",
+        usage: inner.usage && typeof inner.usage === "object" ? inner.usage : {},
+      }];
     default:
       return [];
   }
@@ -305,6 +389,12 @@ function normalizeClaudeEvent(ev) {
     case "control_request":
     case "sdk_control_request":
       return normalizeControlEvent(ev);
+    case "control_response":
+      return [{
+        kind: "control_response",
+        response: ev.response && typeof ev.response === "object" ? ev.response : {},
+        requestId: ev.request_id || ev.response?.request_id || "",
+      }];
     default: {
       const notice = classifyEngineEvent(ev) || {
         code: "unknownEvent",

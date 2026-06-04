@@ -60,6 +60,16 @@ export function scrollToBottom(force = true, scrollEl) {
   updateScrollToBottomButton(messages);
 }
 
+/** Throttled variant — at most one scroll per animation frame. */
+let _scrollThrottle = null;
+export function scrollToBottomThrottled(force = false, scrollEl) {
+  if (_scrollThrottle) return;
+  _scrollThrottle = requestAnimationFrame(() => {
+    _scrollThrottle = null;
+    scrollToBottom(force, scrollEl);
+  });
+}
+
 export function bindPanelScroll(panel) {
   if (!panel || panel.dataset.scrollBound === "1") return;
   panel.dataset.scrollBound = "1";

@@ -8,6 +8,7 @@ import { activeSession } from "./session-chrome.js";
 
 function addModeOptions(select, modes, selectedModeId) {
   for (const mode of modes || []) {
+    if (mode.id === "dontAsk" && mode.id !== selectedModeId) continue;
     const option = document.createElement("option");
     option.value = mode.id;
     option.textContent = tPermission(mode);

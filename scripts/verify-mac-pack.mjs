@@ -48,6 +48,11 @@ if (fs.existsSync(bundlesRoot)) {
   if (fs.existsSync(path.join(bundlesRoot, forbiddenBundle))) {
     fail(`${appArch} Mac 包不应包含 bundles/${forbiddenBundle}`);
   }
+  const activeBundle = appArch === "arm64" ? "darwin-arm64" : "darwin-x64";
+  const libreOfficePath = path.join(bundlesRoot, activeBundle, "runtime", "libreoffice");
+  if (fs.existsSync(libreOfficePath)) {
+    fail("Mac 包暂不应内置 LibreOffice，等 Windows 版本支持后再放开");
+  }
 }
 
 const imgRoot = path.join(resources, "app.asar.unpacked", "node_modules", "@img");

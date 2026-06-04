@@ -334,7 +334,7 @@ export async function publicRoutes(app) {
     return reply.code(201).send({ ok: true, id });
   });
 
-  app.post("/api/contact-requests", async (request, reply) => {
+  async function createContactRequest(request, reply) {
     const input = contactRequestSchema.parse(request.body);
     const id = publicId("contact");
     await db
@@ -353,7 +353,10 @@ export async function publicRoutes(app) {
       })
       .execute();
     return reply.code(201).send({ ok: true, id });
-  });
+  }
+
+  app.post("/api/contact-requests", createContactRequest);
+  app.post("/api/contact", createContactRequest);
 
   app.get("/api/releases/latest", async (request) => {
     const platform = String(request.query?.platform || "");

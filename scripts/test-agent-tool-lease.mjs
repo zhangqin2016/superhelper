@@ -25,6 +25,8 @@ const runner = new AgentSession("sess_tool_lease");
 AgentSession.TOOL_LONG_TASK_NOTICE_MS = 5;
 AgentSession.FIRST_RESPONSE_NOTICE_MS = 5;
 AgentSession.LONG_WAIT_NOTICE_MS = 10;
+AgentSession.MESSAGE_STOP_GRACE_MS = 5;
+AgentSession.QUIESCE_MS = 5;
 
 const waitRunner = new AgentSession("sess_wait_notices");
 const waitNotices = [];
@@ -99,8 +101,110 @@ line(runner, {
 });
 runner._clearPostToolWaitTimer();
 
-if (!runner._canAutoCompleteTurn()) {
+if (runner._pendingToolIds.size !== 0 || runner._toolLeases.size !== 0) {
   throw new Error("tool_result should release Bash lease");
+}
+if (runner._canAutoCompleteTurn()) {
+  throw new Error("foreground tool turns should wait for final result or post-tool timeout");
+}
+
+const resultBeforeToolRunner = new AgentSession("sess_result_before_tool_done");
+const resultBeforeToolEvents = [];
+resultBeforeToolRunner.on("tool-done", () => {
+  resultBeforeToolEvents.push("tool-done");
+});
+resultBeforeToolRunner.on("done", () => {
+  resultBeforeToolEvents.push("done");
+});
+startSyntheticTurn(resultBeforeToolRunner);
+line(resultBeforeToolRunner, {
+  type: "stream_event",
+  event: {
+    type: "content_block_start",
+    index: 0,
+    content_block: { type: "tool_use", id: "tool_write_pending", name: "Write" },
+  },
+});
+line(resultBeforeToolRunner, {
+  type: "result",
+  subtype: "success",
+  result: "write finished",
+});
+if (resultBeforeToolEvents.includes("done") || !resultBeforeToolRunner.busy) {
+  throw new Error("result must not complete while a tool lease is still pending");
+}
+if (!resultBeforeToolRunner._deferredTurnResult) {
+  throw new Error("early result should be deferred until tool_result releases the lease");
+}
+line(resultBeforeToolRunner, {
+  type: "user",
+  message: {
+    content: [
+      {
+        type: "tool_result",
+        tool_use_id: "tool_write_pending",
+        content: [{ type: "text", text: "file written" }],
+      },
+    ],
+  },
+});
+if (resultBeforeToolEvents.join(",") !== "tool-done,done") {
+  throw new Error(`deferred result should complete after tool-done, got ${resultBeforeToolEvents.join(",")}`);
+}
+
+const toolTurnRunner = new AgentSession("sess_tool_message_stop");
+let completedAfterMessageStop = false;
+toolTurnRunner.on("done", () => {
+  completedAfterMessageStop = true;
+});
+startSyntheticTurn(toolTurnRunner);
+line(toolTurnRunner, {
+  type: "stream_event",
+  event: {
+    type: "content_block_start",
+    index: 2,
+    content_block: { type: "tool_use", id: "tool_write_1", name: "Write" },
+  },
+});
+line(toolTurnRunner, {
+  type: "user",
+  message: {
+    content: [
+      {
+        type: "tool_result",
+        tool_use_id: "tool_write_1",
+        content: [{ type: "text", text: "file written" }],
+      },
+    ],
+  },
+});
+line(toolTurnRunner, {
+  type: "stream_event",
+  event: { type: "message_stop" },
+});
+await new Promise((resolve) => setTimeout(resolve, 30));
+if (completedAfterMessageStop) {
+  throw new Error("tool turns must not complete from message_stop grace without final result");
+}
+toolTurnRunner._completeTurn({ code: 0, output: "" });
+
+const textFallbackRunner = new AgentSession("sess_text_message_stop");
+let textFallbackDone = false;
+textFallbackRunner.on("done", () => {
+  textFallbackDone = true;
+});
+startSyntheticTurn(textFallbackRunner);
+line(textFallbackRunner, {
+  type: "assistant",
+  message: { content: [{ type: "text", text: "plain text answer" }] },
+});
+line(textFallbackRunner, {
+  type: "stream_event",
+  event: { type: "message_stop" },
+});
+await new Promise((resolve) => setTimeout(resolve, 30));
+if (!textFallbackDone) {
+  throw new Error("pure text turns may still use message_stop fallback when result is missing");
 }
 
 const hugeToolRunner = new AgentSession("sess_huge_tool_output");
@@ -135,6 +239,8 @@ if (!hugeToolDone?.result?.truncated) {
 if (hugeToolDone.result.content.length > 12_500) {
   throw new Error("huge tool output should be capped before renderer");
 }
+hugeToolRunner._clearPostToolWaitTimer();
+hugeToolRunner._completeTurn({ code: 0, output: "" });
 
 startSyntheticTurn(runner);
 line(runner, {
@@ -254,8 +360,11 @@ line(foregroundCommandRunner, {
   },
 });
 foregroundCommandRunner._clearPostToolWaitTimer();
-if (!foregroundCommandRunner._canAutoCompleteTurn()) {
-  throw new Error("foreground command should release after tool_result");
+if (foregroundCommandRunner._pendingToolIds.size !== 0 || foregroundCommandRunner._toolLeases.size !== 0) {
+  throw new Error("foreground command should release lease after tool_result");
+}
+if (foregroundCommandRunner._canAutoCompleteTurn()) {
+  throw new Error("foreground command turn should wait for final result after tool_result");
 }
 foregroundCommandRunner._completeTurn({ code: 0, output: "" });
 
@@ -373,6 +482,102 @@ if (
   throw new Error(`fallback AskUserQuestion control payload failed: ${fallbackQuestionWrite}`);
 }
 
+const autoDeniedRunner = new AgentSession("sess_auto_denied");
+let autoDeniedNotice = null;
+let autoDeniedWrite = "";
+autoDeniedRunner.process = {
+  stdin: {
+    destroyed: false,
+    write: (line) => {
+      autoDeniedWrite = line;
+      return true;
+    },
+  },
+};
+autoDeniedRunner.spawnOptions = { permissionMode: "dontAsk" };
+autoDeniedRunner.on("engine-notice", (notice) => {
+  if (notice.code === "permissionAutoDenied") autoDeniedNotice = notice;
+});
+startSyntheticTurn(autoDeniedRunner);
+line(autoDeniedRunner, {
+  type: "control_request",
+  request_id: "req_auto_denied",
+  request: {
+    subtype: "can_use_tool",
+    tool_name: "Bash",
+    input: { command: "rm -rf tmp" },
+  },
+});
+if (autoDeniedNotice?.code !== "permissionAutoDenied") {
+  throw new Error(`dontAsk denial should explain auto skip: ${JSON.stringify(autoDeniedNotice)}`);
+}
+if (JSON.parse(autoDeniedWrite).response?.response?.behavior !== "deny") {
+  throw new Error(`dontAsk denial should deny control request: ${autoDeniedWrite}`);
+}
+
+const userDeniedRunner = new AgentSession("sess_user_denied");
+let userDeniedNotice = null;
+let userDeniedWrite = "";
+userDeniedRunner.process = {
+  stdin: {
+    destroyed: false,
+    write: (line) => {
+      userDeniedWrite = `${userDeniedWrite}${line}`;
+      return true;
+    },
+  },
+};
+userDeniedRunner.spawnOptions = { permissionMode: "default" };
+userDeniedRunner.on("engine-notice", (notice) => {
+  if (notice.code === "permissionUserDenied") userDeniedNotice = notice;
+});
+startSyntheticTurn(userDeniedRunner);
+line(userDeniedRunner, {
+  type: "control_request",
+  request_id: "req_user_denied",
+  request: {
+    subtype: "can_use_tool",
+    tool_name: "Bash",
+    input: { command: "rm -rf tmp" },
+  },
+});
+if (!userDeniedRunner.respondPermission("req_user_denied", { allow: false })) {
+  throw new Error("user denial should respond to pending permission");
+}
+if (userDeniedNotice?.code !== "permissionUserDenied") {
+  throw new Error(`user denial should explain manual denial: ${JSON.stringify(userDeniedNotice)}`);
+}
+if (!userDeniedWrite.includes('"behavior":"deny"')) {
+  throw new Error(`user denial should deny control request: ${userDeniedWrite}`);
+}
+
+const explicitReadPermissionRunner = new AgentSession("sess_explicit_read_permission");
+let explicitReadPrompt = null;
+explicitReadPermissionRunner.process = {
+  stdin: {
+    destroyed: false,
+    write: () => true,
+  },
+};
+explicitReadPermissionRunner.spawnOptions = { permissionMode: "default" };
+explicitReadPermissionRunner.on("permission-request", (payload) => {
+  explicitReadPrompt = payload;
+});
+startSyntheticTurn(explicitReadPermissionRunner);
+line(explicitReadPermissionRunner, {
+  type: "control_request",
+  request_id: "req_read_permission",
+  request: {
+    subtype: "can_use_tool",
+    tool_name: "Read",
+    input: { file_path: "/tmp/example.txt" },
+  },
+});
+if (explicitReadPrompt?.requestId !== "req_read_permission") {
+  throw new Error(`explicit Claude permission requests must reach UI, got ${JSON.stringify(explicitReadPrompt)}`);
+}
+explicitReadPermissionRunner.cancelPermissionRequest("req_read_permission");
+
 const resultErrorRunner = new AgentSession("sess_result_error");
 let resultErrorDone = null;
 startSyntheticTurn(resultErrorRunner);
@@ -433,6 +638,43 @@ if (!backgroundRunner._canAutoCompleteTurn()) {
   throw new Error("background task delay should expire");
 }
 backgroundRunner._clearIdleTimer();
+
+const backgroundResultRunner = new AgentSession("sess_background_result_deferred");
+let backgroundResultDone = false;
+backgroundResultRunner.on("done", () => {
+  backgroundResultDone = true;
+});
+startSyntheticTurn(backgroundResultRunner);
+line(backgroundResultRunner, { type: "system", subtype: "task_progress" });
+line(backgroundResultRunner, { type: "result", subtype: "success", result: "still working" });
+if (backgroundResultDone || !backgroundResultRunner.busy) {
+  throw new Error("result must not complete while background activity is still active");
+}
+backgroundResultRunner._backgroundActivityUntil = Date.now() - 1;
+backgroundResultRunner._maybeCompleteDeferredTurnResult();
+if (!backgroundResultDone || backgroundResultRunner.busy) {
+  throw new Error("deferred background result should complete after activity expires");
+}
+
+const adapterFailureRunner = new AgentSession("sess_adapter_failure");
+let adapterFailureNotice = null;
+adapterFailureRunner.on("engine-notice", (notice) => {
+  adapterFailureNotice = notice;
+});
+adapterFailureRunner._runtimeAdapter = {
+  normalizeEvent() {
+    throw new Error("synthetic adapter failure");
+  },
+};
+startSyntheticTurn(adapterFailureRunner);
+line(adapterFailureRunner, { type: "future_runtime_event", subtype: "bad_shape" });
+if (adapterFailureNotice?.code !== "unknownEvent") {
+  throw new Error(`adapter failure should degrade to visible warning: ${JSON.stringify(adapterFailureNotice)}`);
+}
+if (!adapterFailureRunner.busy || adapterFailureRunner._turnSettled) {
+  throw new Error("adapter failure must not settle or kill the active turn");
+}
+adapterFailureRunner._completeTurn({ code: 0, output: "" });
 
 const serviceClientPath = require.resolve("../src/main/service-client.js");
 const reportedUsage = [];

@@ -20,12 +20,24 @@ const context = {
   },
 };
 vm.createContext(context);
-vm.runInContext(`${source}\nwindow.__test = { renderMarkdownWithCache, renderMarkdown };`, context);
+vm.runInContext(`${source}\nwindow.__test = { appendStreamingText, renderMarkdownWithCache, renderMarkdown };`, context);
 
 function fakeElement() {
+  const classes = new Set();
   return {
     innerHTML: "",
     textContent: "",
+    classList: {
+      add(name) {
+        classes.add(name);
+      },
+      remove(name) {
+        classes.delete(name);
+      },
+      contains(name) {
+        return classes.has(name);
+      },
+    },
   };
 }
 
@@ -44,5 +56,24 @@ const plain = fakeElement();
 context.window.__test.renderMarkdownWithCache(plain, "普通文本");
 assert.match(plain.innerHTML, /普通文本/);
 assert.equal(plain.textContent, "");
+
+const streaming = fakeElement();
+streaming.dataset = {};
+context.window.__test.appendStreamingText(streaming, "请提供 **");
+context.window.__test.appendStreamingText(streaming, "出生日期**");
+assert.equal(streaming.textContent, "请提供 **出生日期**");
+assert.equal(streaming.innerHTML, "");
+assert.equal(streaming.dataset.streamMode, "text");
+context.window.__test.renderMarkdownWithCache(streaming, streaming.textContent);
+assert.match(streaming.innerHTML, /<strong>出生日期<\/strong>/);
+assert.equal(streaming.dataset.streamMode, undefined);
+
+const withoutParser = fakeElement();
+const savedMarked = context.window.marked;
+context.window.marked = null;
+context.window.__test.renderMarkdownWithCache(withoutParser, "### 标题\n\n- 第一项");
+assert.equal(withoutParser.textContent, "### 标题\n\n- 第一项");
+assert.equal(withoutParser.classList.contains("markdown-fallback"), true);
+context.window.marked = savedMarked;
 
 console.log("markdown-renderer: ok");

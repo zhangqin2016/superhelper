@@ -197,10 +197,7 @@ export async function sendPrompt(opts = {}) {
 
   let result;
   try {
-    const send = opts.interrupt
-      ? window.assistantClient.interruptAndSend
-      : window.assistantClient.sendMessage;
-    result = await send(
+    result = await window.assistantClient.sendMessage(
       text,
       files,
       sessionId,
@@ -250,10 +247,6 @@ function shouldSendOnEnter(event) {
   return true;
 }
 
-function shouldInterruptAndSend(event) {
-  return shouldSendOnEnter(event) && event.altKey;
-}
-
 export function initComposer() {
   const composer = $("composer");
   const promptInput = $("promptInput");
@@ -273,7 +266,7 @@ export function initComposer() {
     promptInput.addEventListener("keydown", (e) => {
       if (imeComposing || !shouldSendOnEnter(e)) return;
       e.preventDefault();
-      sendPrompt({ interrupt: shouldInterruptAndSend(e) });
+      sendPrompt();
     });
   }
 

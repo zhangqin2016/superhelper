@@ -1,0 +1,11 @@
+{
+  "description": "Claude task telemetry should become visible progress instead of being swallowed.",
+  "mustIncludeKinds": ["system_notice", "assistant_text", "turn_result"],
+  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
+  "counts": {
+    "system_notice": 6,
+    "assistant_text": 1,
+    "turn_result": 1
+  },
+  "warningCount": 0
+}

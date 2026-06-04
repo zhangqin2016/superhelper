@@ -15,6 +15,7 @@ const { wireExternalLinks } = require("./main/window-links");
 
 let mainWindow = null;
 let runnerPoolRef = null;
+let sessionManagerRef = null;
 /** @type {{ ok: boolean, mode?: string, error?: string, message?: string } | null} */
 let agentBootstrap = null;
 
@@ -42,6 +43,7 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   wireExternalLinks(mainWindow);
+  require("./main/update-manager").configure({ mainWindow });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -82,12 +84,17 @@ app.whenReady().then(async () => {
 
   const sessionManager = new SessionManager(projectManager);
   sessionManager.load();
+  sessionManagerRef = sessionManager;
 
   const stagingManager = new FileStagingManager();
   const runnerPool = new SessionRunnerPool();
   runnerPoolRef = runnerPool;
 
   createWindow();
+  require("./main/update-manager").configure({
+    runnerPool,
+    sessionManager,
+  });
 
   require("./main/service-client")
     .registerDevice()
@@ -123,6 +130,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  sessionManagerRef?.saveImmediate();
   runnerPoolRef?.terminateAll();
   try {
     const { fileStagingDir } = require("./main/config");

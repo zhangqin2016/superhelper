@@ -1,0 +1,6 @@
+{
+  "description": "SessionStart hook normalizes to hook_session_start.",
+  "mustIncludeKinds": ["hook_session_start"],
+  "mustNotIncludeKinds": ["protocol_warning", "hook_callback"],
+  "warningCount": 0
+}

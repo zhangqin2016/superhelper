@@ -20,6 +20,9 @@ export async function submitContactAction(_previousState, formData) {
   if (!payload.name || !payload.email || !payload.message) {
     return { ok: false, code: "required" };
   }
+  if (payload.message.length < 8) {
+    return { ok: false, code: "required" };
+  }
   const response = await fetch(`${API_BASE}/api/contact-requests`, {
     method: "POST",
     cache: "no-store",
@@ -27,7 +30,8 @@ export async function submitContactAction(_previousState, formData) {
     body: JSON.stringify(payload),
   }).catch(() => null);
   if (!response?.ok) {
-    return { ok: false, code: "failed" };
+    const json = await response?.json().catch(() => ({}));
+    return { ok: false, code: json?.code === "VALIDATION_ERROR" ? "required" : "failed" };
   }
   return { ok: true, code: "success" };
 }

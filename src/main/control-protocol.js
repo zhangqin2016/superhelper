@@ -68,13 +68,13 @@ function parseCanUseToolRequest(ev) {
 }
 
 /**
+ * Claude CLI owns the permission-mode classifier. If it sends can_use_tool to
+ * the host, the request needs a host decision; do not re-classify by tool name.
  * @param {string} toolName
  * @param {string} permissionMode
  */
-function needsUserApproval(toolName, permissionMode) {
+function needsUserApproval(_toolName, permissionMode) {
   if (permissionMode === "bypassPermissions") return false;
-  if (READ_ONLY_TOOLS.has(toolName)) return false;
-  if (permissionMode === "acceptEdits" && EDIT_TOOLS.has(toolName)) return false;
   return true;
 }
 
@@ -188,6 +188,46 @@ function buildHookCallbackResponse(requestId, hookPayload = {}) {
   });
 }
 
+/**
+ * Generic ack for informational hooks.
+ * @param {string} requestId
+ */
+function buildHookContinueResponse(requestId) {
+  return buildControlAck(requestId, {
+    hookSpecificOutput: { continue: true },
+  });
+}
+
+/**
+ * PreToolUse hook response with user decision.
+ * @param {string} requestId
+ * @param {{ allow: boolean, updatedInput?: Record<string, unknown> }} decision
+ */
+function buildHookPreToolUseResponse(requestId, decision) {
+  const output = { continue: true };
+  if (decision.allow) {
+    output.permissionDecision = "allow";
+    if (decision.updatedInput) output.updatedInput = decision.updatedInput;
+  } else {
+    output.permissionDecision = "deny";
+  }
+  return buildControlAck(requestId, { hookSpecificOutput: output });
+}
+
+/**
+ * Stop / SubagentStop hook response with user decision.
+ * @param {string} requestId
+ * @param {{ allow: boolean, reason?: string }} decision
+ */
+function buildHookStopResponse(requestId, decision) {
+  const output = { continue: true };
+  if (!decision.allow) {
+    output.decision = "block";
+    output.reason = decision.reason || "User blocked stop";
+  }
+  return buildControlAck(requestId, { hookSpecificOutput: output });
+}
+
 module.exports = {
   EDIT_TOOLS,
   READ_ONLY_TOOLS,
@@ -204,4 +244,7 @@ module.exports = {
   buildSetPermissionModeRequest,
   buildInitializeRequest,
   buildHookCallbackResponse,
+  buildHookContinueResponse,
+  buildHookPreToolUseResponse,
+  buildHookStopResponse,
 };

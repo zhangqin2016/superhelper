@@ -22,9 +22,11 @@ async function ensureHljs() {
 export async function renderMarkdown(element, markdownText) {
   const parser = window.marked && (window.marked.parse || window.marked);
   if (typeof parser !== "function" || !window.DOMPurify) {
+    element.classList?.add("markdown-fallback");
     element.textContent = markdownText || "";
     return;
   }
+  element.classList?.remove("markdown-fallback");
 
   const hl = await ensureHljs();
   const renderer = new window.marked.Renderer();
@@ -83,14 +85,57 @@ export function appendTextContent(element, text) {
 }
 
 /**
+ * Streaming text must not rebuild the bubble DOM on every token. Keep it as a
+ * plain text stream, then run full Markdown parsing once the turn completes.
+ */
+export function appendStreamingText(element, text) {
+  if (!element) return;
+  const piece = String(text ?? "");
+  if (!piece) return;
+  element.textContent = `${element.textContent || ""}${piece}`;
+  if (element.dataset) element.dataset.streamMode = "text";
+}
+
+/**
+ * Lightweight markdown render for streaming. Unlike renderMarkdown,
+ * this does NOT await highlight.js — code blocks render without syntax
+ * highlighting, keeping the render synchronous and fast. Full highlight
+ * is deferred to renderMarkdownWithCache at turn completion.
+ */
+export function renderStreamingMarkdown(element, markdownText) {
+  if (!element || !markdownText) return;
+  const parser = window.marked && (window.marked.parse || window.marked);
+  if (typeof parser !== "function" || !window.DOMPurify) {
+    element.textContent = markdownText;
+    element.classList?.add("markdown-fallback");
+    return;
+  }
+  element.classList?.remove("markdown-fallback");
+
+  const renderer = new window.marked.Renderer();
+  renderer.link = function ({ href, title, tokens }) {
+    const text = this.parser.parseInline(tokens);
+    if (!href) return text;
+    const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
+  };
+
+  const html = parser(markdownText, { renderer });
+  element.innerHTML = window.DOMPurify.sanitize(html);
+  if (element.dataset) element.dataset.streamMode = "rendered";
+}
+
+/**
  * 流式场景专用：对已渲染过的代码块复用缓存高亮结果。
  */
 export function renderMarkdownWithCache(element, markdownText) {
   const parser = window.marked && (window.marked.parse || window.marked);
   if (typeof parser !== "function" || !window.DOMPurify) {
+    element.classList?.add("markdown-fallback");
     element.textContent = markdownText || "";
     return { cached: false };
   }
+  element.classList?.remove("markdown-fallback");
 
   let cachedCount = 0;
   const renderer = new window.marked.Renderer();
@@ -127,6 +172,7 @@ export function renderMarkdownWithCache(element, markdownText) {
   const html = parser(markdownText || "", { renderer });
 
   element.innerHTML = window.DOMPurify.sanitize(html);
+  if (element.dataset) delete element.dataset.streamMode;
 
   return { cached: cachedCount > 0, cachedCount };
 }

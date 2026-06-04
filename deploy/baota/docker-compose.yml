@@ -19,6 +19,8 @@ services:
     build:
       context: ../..
       dockerfile: server/Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
     container_name: lily-api
     restart: unless-stopped
     depends_on:
@@ -50,6 +52,8 @@ services:
     build:
       context: ../..
       dockerfile: web/Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
     container_name: lily-web
     restart: unless-stopped
     depends_on:

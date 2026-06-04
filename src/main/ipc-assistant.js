@@ -171,6 +171,24 @@ function registerAssistantHandlers(ctx) {
     return handled ? { ok: true, sessionId, requestId } : { ok: false, error: "NOT_PENDING" };
   });
 
+  ipcMain.handle("assistant:hook-response", (_event, payload) => {
+    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const requestId = payload?.requestId;
+    if (!sessionId || !requestId) {
+      return { ok: false, error: "INVALID_PAYLOAD" };
+    }
+
+    const runner = runnerPool.get(sessionId);
+    if (!runner) return { ok: false, error: "NO_RUNNER" };
+
+    const handled = runner.respondHook(requestId, {
+      allow: Boolean(payload.allow),
+      message: typeof payload.message === "string" ? payload.message : undefined,
+      updatedInput: payload.updatedInput || undefined,
+    });
+    return handled ? { ok: true, sessionId, requestId } : { ok: false, error: "NOT_PENDING" };
+  });
+
   ipcMain.handle("assistant:turn-state:snapshot", (_event, payload) => {
     const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
     if (!sessionId) return { ok: false, error: "NO_SESSION" };

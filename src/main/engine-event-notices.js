@@ -7,15 +7,70 @@
 
 /** @typedef {{ code: string, level: "info" | "progress" | "warning", panel?: boolean, toast?: boolean, replace?: boolean, replacesCode?: string, done?: boolean, detail?: string, attempt?: number, maxRetries?: number, model?: string, subtype?: string, type?: string }} EngineNotice */
 
-/** Internal CLI task telemetry — not meaningful for office users. */
-const SILENT_SYSTEM_SUBTYPES = new Set([
+const TASK_PROGRESS_SUBTYPES = new Set([
   "task_updated",
-  "task_started",
   "task_progress",
   "task_notification",
-  "task_completed",
-  "task_failed",
+  "status",
 ]);
+
+function compactValue(value) {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (!value || typeof value !== "object") return "";
+
+  const keys = [
+    "message",
+    "summary",
+    "detail",
+    "title",
+    "name",
+    "description",
+    "status",
+    "current_step",
+    "currentStep",
+    "step",
+  ];
+  for (const key of keys) {
+    const text = compactValue(value[key]);
+    if (text) return text;
+  }
+  return "";
+}
+
+function extractTaskDetail(ev) {
+  const values = [
+    ev.message,
+    ev.summary,
+    ev.detail,
+    ev.title,
+    ev.name,
+    ev.description,
+    ev.status,
+    ev.current_step,
+    ev.currentStep,
+    ev.step,
+    ev.task,
+    ev.progress,
+  ];
+  const detail = values.map(compactValue).find(Boolean);
+  return detail ? detail.slice(0, 180) : "";
+}
+
+function formatTokenCount(value) {
+  const tokens = Number(value) || 0;
+  if (tokens <= 0) return "";
+  if (tokens >= 1000) {
+    const rounded = Math.round(tokens / 100) / 10;
+    return `${rounded}k tokens`;
+  }
+  return `${tokens} tokens`;
+}
+
+function isRequestingStatus(ev) {
+  return String(ev?.subtype || "") === "status" &&
+    String(ev?.status || "").trim().toLowerCase() === "requesting";
+}
 
 /**
  * @param {Record<string, unknown>} ev
@@ -97,8 +152,81 @@ function classifySystemEvent(ev) {
         detail: err || undefined,
       };
     }
+    case "thinking_tokens": {
+      const tokens = formatTokenCount(ev.estimated_tokens ?? ev.tokens ?? ev.total_tokens);
+      const delta = formatTokenCount(ev.estimated_tokens_delta ?? ev.tokens_delta);
+      return {
+        code: "thinkingProgress",
+        level: "progress",
+        panel: true,
+        replace: true,
+        detail: tokens || delta,
+        subtype,
+      };
+    }
+    case "permission_denied":
+      return {
+        code: "permissionDenied",
+        level: "warning",
+        panel: true,
+        replace: true,
+        done: true,
+        detail: extractTaskDetail(ev),
+        subtype,
+      };
+    case "task_started":
+      return {
+        code: "taskProgress",
+        level: "progress",
+        panel: true,
+        replace: true,
+        detail: extractTaskDetail(ev),
+        subtype,
+      };
+    case "task_completed":
+      return {
+        code: "taskCompleted",
+        level: "info",
+        panel: true,
+        replace: true,
+        replacesCode: "taskProgress",
+        done: true,
+        detail: extractTaskDetail(ev),
+        subtype,
+      };
+    case "task_failed":
+      return {
+        code: "taskFailed",
+        level: "warning",
+        panel: true,
+        replace: true,
+        replacesCode: "taskProgress",
+        done: true,
+        detail: extractTaskDetail(ev),
+        subtype,
+      };
     default:
-      if (!subtype || SILENT_SYSTEM_SUBTYPES.has(subtype)) return null;
+      if (isRequestingStatus(ev)) {
+        return {
+          code: "thinkingProgress",
+          level: "progress",
+          panel: true,
+          replace: true,
+          detail: "",
+          subtype,
+        };
+      }
+      if (TASK_PROGRESS_SUBTYPES.has(subtype)) {
+        return {
+          code: "taskProgress",
+          level: "progress",
+          panel: true,
+          replace: true,
+          detail: extractTaskDetail(ev),
+          subtype,
+        };
+      }
+      if (!subtype) return null;
       // Unknown system subtypes are CLI internals — do not append a card per event.
       return null;
   }
@@ -144,15 +272,8 @@ function classifyFallbackEvent(ev) {
  */
 function noticeForControlSubtype(controlSubtype) {
   if (!controlSubtype) return null;
-  if (controlSubtype === "hook_callback") {
-    return {
-      code: "hookCallback",
-      level: "progress",
-      panel: true,
-      replace: true,
-      done: true,
-    };
-  }
+  // hook_callback now handled by per-hook-kind notices in claude-event-normalizer
+  if (controlSubtype === "hook_callback") return null;
   if (controlSubtype === "initialize") return null;
   if (controlSubtype === "can_use_tool") return null;
   return {

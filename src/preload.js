@@ -28,6 +28,14 @@ contextBridge.exposeInMainWorld("assistantClient", {
       answers,
       response,
     }),
+  respondHook: (sessionId, requestId, allow, options = {}) =>
+    ipcRenderer.invoke("assistant:hook-response", {
+      sessionId,
+      requestId,
+      allow,
+      message: options.message,
+      updatedInput: options.updatedInput,
+    }),
   getTurnState: (sessionId) =>
     ipcRenderer.invoke("assistant:turn-state:snapshot", { sessionId }),
   interrupt: (sessionId) => ipcRenderer.invoke("assistant:interrupt", { sessionId }),
@@ -96,7 +104,10 @@ contextBridge.exposeInMainWorld("assistantClient", {
   testServiceConnection: () => ipcRenderer.invoke("service:test-connection"),
 
   getUpdateSettings: () => ipcRenderer.invoke("updates:get-settings"),
+  getUpdateState: () => ipcRenderer.invoke("updates:get-state"),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  downloadUpdate: () => ipcRenderer.invoke("updates:download"),
+  installUpdate: (options) => ipcRenderer.invoke("updates:install", options || {}),
   openUpdateDownload: (url) => ipcRenderer.invoke("updates:open-download", { url }),
 
   listDirectory: (dirPath) => ipcRenderer.invoke("filetree:list-dir", { dirPath }),
@@ -141,6 +152,12 @@ contextBridge.exposeInMainWorld("assistantClient", {
   onPermissionCancelled: (callback) => {
     ipcRenderer.on("assistant:permission-cancelled", (_event, data) => callback(data));
   },
+  onHookRequest: (callback) => {
+    ipcRenderer.on("assistant:hook-request", (_event, data) => callback(data));
+  },
+  onHookResolved: (callback) => {
+    ipcRenderer.on("assistant:hook-resolved", (_event, data) => callback(data));
+  },
   onEngineNotice: (callback) => {
     ipcRenderer.on("assistant:engine-notice", (_event, data) => callback(data));
   },
@@ -161,6 +178,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   },
   onQueueDispatchFailed: (callback) => {
     ipcRenderer.on("assistant:queue-dispatch-failed", (_event, data) => callback(data));
+  },
+  onUpdateState: (callback) => {
+    ipcRenderer.on("updates:state", (_event, data) => callback(data));
   },
   onFocusSession: (callback) => {
     ipcRenderer.on("assistant:focus-session", (_event, data) => callback(data));

@@ -12,11 +12,22 @@ import { refreshSkillsList } from "./skill-settings.js";
 import { refreshLicenseStatus, refreshUpdateSettings } from "./license-update-settings.js";
 import { anySessionRunning } from "./session-busy.js";
 import { activeSession, refreshStateLight } from "./session-chrome.js";
+import { confirmDialog } from "./confirm-dialog.js";
 
 const SETTINGS_PAGES = ["general", "model", "permission", "search", "skills", "license", "about"];
 
 let panelOpen = false;
 let activeSettingsPage = "general";
+
+async function confirmBypassPermission() {
+  return confirmDialog({
+    title: t("permission.bypassConfirmTitle"),
+    message: t("permission.bypassConfirmMessage"),
+    confirmText: t("permission.bypassConfirm"),
+    cancelText: t("prompt.cancel"),
+    danger: true,
+  });
+}
 
 function switchSettingsPage(pageId) {
   if (!SETTINGS_PAGES.includes(pageId)) return;
@@ -85,6 +96,10 @@ export async function initSettingsPanel() {
       return;
     }
     const modeId = $("permissionModeSelect").value;
+    if (modeId === "bypassPermissions" && !(await confirmBypassPermission())) {
+      await refreshPermissionSelect();
+      return;
+    }
     const result = await window.assistantClient.setActivePermission(modeId);
     if (!result.ok) {
       const msg =
@@ -107,6 +122,10 @@ export async function initSettingsPanel() {
       return;
     }
     const modeId = $("sessionPermissionModeSelect").value || "inherit";
+    if (modeId === "bypassPermissions" && !(await confirmBypassPermission())) {
+      await refreshSessionPermissionSelect();
+      return;
+    }
     const result = await window.assistantClient.setSessionPermission(sessionId, modeId);
     if (!result.ok) {
       const msg =

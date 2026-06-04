@@ -13,7 +13,6 @@ export function SiteNav({ initialLocale }) {
     ["/#scenarios", t.nav.scenarios],
     ["/#experts", t.nav.experts],
     ["/#product", t.nav.product],
-    ["/pricing", t.nav.pricing],
     ["/contact", t.nav.contact],
   ];
   return (

@@ -71,6 +71,26 @@
             </div>
           </div>
           <div class="topbar-actions">
+            <div id="updateChrome" class="update-chrome" hidden>
+              <button id="updatePillBtn" class="update-pill-btn" type="button" data-i18n-title="update.pillTitle" title="版本更新">
+                <span id="updatePillDot" class="update-pill-dot"></span>
+                <span id="updatePillText" data-i18n="update.pillAvailable">有新版本</span>
+              </button>
+              <div id="updatePopover" class="update-popover" hidden>
+                <div class="update-popover-head">
+                  <strong id="updatePopoverTitle" data-i18n="update.popoverTitle">发现新版本</strong>
+                  <button id="updatePopoverCloseBtn" class="icon-btn subtle" type="button" aria-label="Close">×</button>
+                </div>
+                <p id="updatePopoverDesc" class="update-popover-desc"></p>
+                <div id="updateProgressTrack" class="update-progress-track" hidden>
+                  <span id="updateProgressBar" class="update-progress-bar"></span>
+                </div>
+                <div class="update-popover-actions">
+                  <button id="updatePrimaryBtn" class="topbar-btn update-primary-btn" type="button"></button>
+                  <button id="updateSecondaryBtn" class="topbar-btn" type="button" data-i18n="update.later">稍后</button>
+                </div>
+              </div>
+            </div>
             <button id="interruptBtn" class="topbar-btn topbar-btn-stop" data-i18n-title="topbar.stopTitle" title="停止当前回复" hidden><span data-i18n="topbar.stop">停止</span></button>
             <button id="newChatBtn" class="topbar-btn" data-i18n-title="topbar.newChatTitle" title="开始新对话"><span data-i18n="topbar.newChat">新对话</span></button>
           </div>

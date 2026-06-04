@@ -1,0 +1,8 @@
+{
+  "mustIncludeKinds": ["control_response"],
+  "mustNotIncludeKinds": ["unknown_runtime_event", "unknown_control_request", "protocol_warning"],
+  "warningCount": 0,
+  "counts": {
+    "control_response": 1
+  }
+}
