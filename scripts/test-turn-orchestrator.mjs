@@ -6,6 +6,7 @@ import { EventEmitter } from "node:events";
 const require = createRequire(import.meta.url);
 const { RuntimeEventBus } = require("../src/main/runtime-event-bus.js");
 const { TranscriptStore } = require("../src/main/transcript-store.js");
+const { TurnArchive } = require("../src/main/turn-archive.js");
 const { TurnOrchestrator } = require("../src/main/turn-orchestrator.js");
 
 class FakeRunner extends EventEmitter {
@@ -27,7 +28,7 @@ class FakeRunner extends EventEmitter {
     return true;
   }
   finish(text = "done") {
-    this.emit("chunk", text);
+    ctx.turnOrchestrator.ingest(this.sessionId, [{ type: "assistant.delta", payload: { text } }]);
     this.busy = false;
     this.emit("done", { code: 0, output: text });
   }
@@ -85,14 +86,18 @@ const ctx = {
   },
 };
 ctx.transcriptStore = new TranscriptStore(ctx.sessionManager);
+ctx.turnArchive = new TurnArchive(ctx.sessionManager);
 ctx.turnOrchestrator = new TurnOrchestrator(ctx);
-ctx.turnOrchestrator.attachRunner(runner);
+ctx.turnOrchestrator.bindRunner(runner);
 
-runner.emit("tool-upcoming", { id: "orphan_tool", name: "Bash" });
+ctx.turnOrchestrator.ingest("s1", [{
+  type: "tool.started",
+  payload: { id: "orphan_tool", name: "Bash", input: {} },
+}]);
 ctx.eventBus.flush();
 let allEvents = sent.flatMap((entry) => entry.payload?.events || []);
-if (!allEvents.some((event) => event.type === "engine.warning" && event.payload?.notice?.originalType === "tool.started")) {
-  throw new Error("orphan tool event should be converted to a warning instead of crashing");
+if (allEvents.some((event) => event.type === "engine.warning")) {
+  throw new Error("orphan tool event should be dropped silently without user-visible warning");
 }
 sent.length = 0;
 
@@ -101,16 +106,20 @@ const result = await ctx.turnOrchestrator.sendUserMessage("s1", "hello", [], {
   skipPreflight: true,
 });
 if (!result.ok) throw new Error(`send failed: ${JSON.stringify(result)}`);
-runner.emit("tool-upcoming", { id: "tool_1", name: "Bash" });
-runner.emit("process-event", {
-  rawType: "stream_event",
-  rawSubtype: "content_block_start",
-  summary: "tool Bash",
-  actions: [{ kind: "stream_tool_start", id: "tool_1", name: "Bash" }],
+ctx.turnOrchestrator.ingest("s1", [
+  { type: "tool.started", payload: { id: "tool_1", name: "Bash", input: {} } },
+  { type: "process.event", payload: {
+    rawType: "stream_event",
+    rawSubtype: "content_block_start",
+    summary: "tool Bash",
+    actions: [{ kind: "stream_tool_start", id: "tool_1", name: "Bash" }],
+  } },
+  { type: "tool.input.done", payload: { id: "tool_1", input: { command: "echo ok" } } },
+  { type: "tool.done", payload: { id: "tool_1", status: "done", result: { output: "ok" } } },
+]);
+const queued = await ctx.turnOrchestrator.sendUserMessage("s1", "queued", [], {
+  skipPreflight: true,
 });
-runner.emit("tool-input-done", { id: "tool_1", input: { command: "echo ok" } });
-runner.emit("tool-done", { id: "tool_1", status: "done", result: { output: "ok" } });
-const queued = await ctx.turnOrchestrator.sendUserMessage("s1", "queued", [], {});
 if (!queued.queued || !queued.itemId) throw new Error("busy send should queue with id");
 const cancel = ctx.turnOrchestrator.cancelQueuedMessage("s1", queued.itemId);
 if (!cancel.ok || cancel.queueLength !== 0) throw new Error("queue cancel by id failed");
@@ -141,6 +150,10 @@ if (terminals.length !== 1 || terminals[0].type !== "turn.completed") {
 }
 if (messages.filter((m) => m.role === "assistant").length !== 1) {
   throw new Error("assistant transcript should be committed once");
+}
+const assistantMsg = messages.find((m) => m.role === "assistant");
+if (!assistantMsg?.record?.tools?.length) {
+  throw new Error("assistant record should persist tool timeline");
 }
 
 console.log("turn-orchestrator: ok");

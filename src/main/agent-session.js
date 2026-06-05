@@ -36,77 +36,14 @@ const { buildUserMessagePayload, hasSendableContent } = require("./user-message"
 const { resolvePlanPreview, PLAN_PREVIEW_MAX } = require("./plan-preview");
 const { buildAgentSpawnEnv } = require("./spawn-env");
 const { sameRespawnOptions } = require("./runner-spawn-options");
+const { appendPermissionSpawnArgs } = require("./permission-spawn-args");
+const {
+  truncateToolResultForUi,
+  processEventFromClaudeEvent,
+} = require("./cli-process-payload");
+const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
 const { getLogger } = require("./logger");
 const log = getLogger("agent-session");
-
-const TOOL_RESULT_UI_MAX_CHARS = 12_000;
-
-function truncateToolResultForUi(text) {
-  const value = String(text || "");
-  if (value.length <= TOOL_RESULT_UI_MAX_CHARS) return { content: value, truncated: false };
-  const head = value.slice(0, 6_000);
-  const tail = value.slice(-4_000);
-  return {
-    content: `${head}\n\n[...output truncated for display: ${value.length - head.length - tail.length} characters hidden...]\n\n${tail}`,
-    truncated: true,
-  };
-}
-
-function processEventFromClaudeEvent(ev, actions = []) {
-  const payload = {
-    rawType: String(ev?.type || ""),
-    rawSubtype: String(ev?.subtype || ev?.event?.type || ev?.request?.subtype || ""),
-    actions: actions.map((action) => ({
-      kind: action.kind || "",
-      id: action.id || action.requestId || "",
-      name: action.name || action.toolName || action.hookName || "",
-      text: action.text || "",
-      input: action.input || action.toolInput || null,
-      result: action.content || action.event?.result || null,
-      notice: action.notice || null,
-      stopReason: action.stopReason || action.event?.stop_reason || "",
-    })),
-    event: compactProcessEvent(ev),
-  };
-  payload.summary = processEventSummary(payload);
-  return payload;
-}
-
-function compactProcessEvent(ev) {
-  if (!ev || typeof ev !== "object") return {};
-  const out = {
-    type: ev.type,
-    subtype: ev.subtype,
-    session_id: ev.session_id,
-  };
-  if (ev.message !== undefined) out.message = ev.message;
-  if (ev.status !== undefined) out.status = ev.status;
-  if (ev.result !== undefined) out.result = ev.result;
-  if (ev.error !== undefined) out.error = ev.error;
-  if (ev.errors !== undefined) out.errors = ev.errors;
-  if (ev.usage !== undefined) out.usage = ev.usage;
-  if (ev.estimated_tokens !== undefined) out.estimated_tokens = ev.estimated_tokens;
-  if (ev.request !== undefined) out.request = ev.request;
-  if (ev.response !== undefined) out.response = ev.response;
-  if (ev.event !== undefined) out.event = ev.event;
-  if (ev.message?.content !== undefined) out.content = ev.message.content;
-  return out;
-}
-
-function processEventSummary(payload) {
-  const first = payload.actions.find((action) => action.kind);
-  if (!first) return payload.rawSubtype || payload.rawType || "runtime event";
-  if (first.kind === "assistant_thinking") return first.text || "thinking";
-  if (first.kind === "assistant_text") return first.text || "assistant text";
-  if (first.kind === "assistant_tool_use" || first.kind === "stream_tool_start") {
-    return first.name ? `tool ${first.name}` : "tool use";
-  }
-  if (first.kind === "tool_result") return first.name ? `tool result ${first.name}` : "tool result";
-  if (first.kind.startsWith("hook_")) return first.name ? `hook ${first.name}` : first.kind;
-  if (first.notice?.detail) return first.notice.detail;
-  if (first.kind === "turn_result") return first.stopReason || "turn result";
-  return first.kind;
-}
 
 /**
  * One long-lived engine process per app session (`stream-json` protocol).
@@ -176,7 +113,16 @@ class AgentSession extends EventEmitter {
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
     this._runtimeAdapter = new CliEventAdapter();
-    this._lastRuntimeEvents = [];
+    this._orchestrator = null;
+  }
+
+  bindOrchestrator(orchestrator) {
+    this._orchestrator = orchestrator;
+  }
+
+  _ingestRuntime(drafts) {
+    if (!this._orchestrator || !Array.isArray(drafts) || drafts.length === 0) return;
+    this._orchestrator.ingest(this.sessionId, drafts);
   }
 
   /** Pure-text fallback if CLI never sends `result`; tool turns are completed by result/error/timeout. */
@@ -342,7 +288,7 @@ class AgentSession extends EventEmitter {
     this._pendingPermissions.clear();
     if (notifyCancel) {
       for (const requestId of ids) {
-        this.emit("permission-cancelled", { requestId });
+        this._ingestRuntime([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
       }
     }
   }
@@ -353,7 +299,7 @@ class AgentSession extends EventEmitter {
     this._pendingHooks.clear();
     if (notifyCancel) {
       for (const requestId of ids) {
-        this.emit("hook-resolved", { requestId, cancelled: true });
+        this._ingestRuntime([{ type: "hook.resolved", payload: { requestId, cancelled: true } }]);
       }
     }
   }
@@ -447,17 +393,20 @@ class AgentSession extends EventEmitter {
       toolName: name,
       detail,
     });
-    this.emit("tool-done", {
-      id: toolId,
-      status: "done",
-      result: {
-        content: detail
-          ? `Command is running in the background: ${detail}`
-          : "Command is running in the background.",
-        truncated: false,
-        detached: true,
+    this._ingestRuntime([{
+      type: "tool.done",
+      payload: {
+        id: toolId,
+        status: "done",
+        result: {
+          content: detail
+            ? `Command is running in the background: ${detail}`
+            : "Command is running in the background.",
+          truncated: false,
+          detached: true,
+        },
       },
-    });
+    }]);
   }
 
   _trackToolLease(toolId, name, input = {}) {
@@ -665,11 +614,9 @@ class AgentSession extends EventEmitter {
       "stream-json",
       "--prompt-suggestions",
       "true",
-      "--permission-mode",
-      opts.permissionMode || "default",
-      "--permission-prompt-tool",
-      "stdio",
     ];
+    appendPermissionSpawnArgs(args, opts.permissionMode);
+    args.push("--permission-prompt-tool", "stdio");
 
     if (opts.disallowedTools?.length) {
       args.push("--disallowed-tools", ...opts.disallowedTools);
@@ -712,7 +659,7 @@ class AgentSession extends EventEmitter {
         this._failTurn("对话连接已刷新，请重新发送这条消息。");
         return;
       }
-      this.emit("engine-notice", {
+      this._emitEngineNotice({
         code: "stderr",
         level: "warning",
         message: text,
@@ -720,7 +667,7 @@ class AgentSession extends EventEmitter {
         toast: true,
         done: true,
       });
-      this.emit("stderr", text);
+      this._ingestRuntime([{ type: "engine.stderr", payload: { text } }]);
       if (text) this.lastSpawnError = text;
     });
 
@@ -765,9 +712,14 @@ class AgentSession extends EventEmitter {
   /**
    * @param {{ text?: string, files?: Array<Record<string, unknown>> }} payload
    */
+  /**
+   * Runner I/O boundary: serialize one user message and write it to Claude CLI stdin.
+   * TurnOrchestrator owns turnId, queue, transcript, and terminal events; this method
+   * owns the child process (busy flag, stdin write, CLI timeouts, tool leases).
+   */
   sendUserMessage(payload) {
     if (this.busy) {
-      this.emit("error", "BUSY");
+      this._orchestrator?.notifyRunnerError(this.sessionId, "BUSY");
       return false;
     }
 
@@ -779,7 +731,7 @@ class AgentSession extends EventEmitter {
     try {
       this._ensureAliveForSend();
     } catch (err) {
-      this.emit("error", sanitizeError(err.message));
+      this._orchestrator?.notifyRunnerError(this.sessionId, sanitizeError(err.message));
       return false;
     }
 
@@ -801,7 +753,7 @@ class AgentSession extends EventEmitter {
     this._streamingToolInputs.clear();
     this._emittedToolIds.clear();
     this._blockIndexToToolId.clear();
-    this.emit("status", "thinking");
+    this._ingestRuntime([{ type: "turn.accepted", payload: { status: "thinking" } }]);
     this._armWaitNoticeTimers();
 
     const userPayload = buildUserMessagePayload({
@@ -824,13 +776,6 @@ class AgentSession extends EventEmitter {
 
     const wrote = stdin.write(line, (err) => {
       if (err) this._failTurn(sanitizeError(err.message));
-    });
-    this._emitEngineNotice({
-      code: "sentToCli",
-      level: "progress",
-      panel: true,
-      replace: true,
-      detail: "已发送到 CLI，等待输出",
     });
     if (!wrote) {
       stdin.once("drain", () => {});
@@ -875,7 +820,7 @@ class AgentSession extends EventEmitter {
       );
       this._writeControlLine(buildControlCancelRequest(requestId));
     }
-    this.emit("permission-cancelled", { requestId });
+    this._ingestRuntime([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
     this._markStreamActivity();
     this._maybeCompleteDeferredTurnResult();
     return true;
@@ -904,7 +849,7 @@ class AgentSession extends EventEmitter {
         },
       }),
     );
-    this.emit("permission-cancelled", { requestId });
+    this._ingestRuntime([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
     this._markStreamActivity();
     this._maybeCompleteDeferredTurnResult();
     return true;
@@ -914,7 +859,7 @@ class AgentSession extends EventEmitter {
     if (!this._pendingPermissions.has(requestId)) return false;
     this._pendingPermissions.delete(requestId);
     this._writeControlLine(buildControlCancelRequest(requestId));
-    this.emit("permission-cancelled", { requestId });
+    this._ingestRuntime([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
     this._maybeCompleteDeferredTurnResult();
     return true;
   }
@@ -1052,7 +997,7 @@ class AgentSession extends EventEmitter {
     this._blockIndexToToolId.clear();
     this._turnSettled = true;
     this.busy = false;
-    this.emit("done", payload);
+    this._orchestrator?.notifyRunnerDone(this.sessionId, payload);
   }
 
   _failTurn(message) {
@@ -1081,7 +1026,7 @@ class AgentSession extends EventEmitter {
     this._blockIndexToToolId.clear();
     this._turnSettled = true;
     this.busy = false;
-    this.emit("error", message);
+    this._orchestrator?.notifyRunnerError(this.sessionId, message);
   }
 
   _onStdout(chunk) {
@@ -1126,7 +1071,7 @@ class AgentSession extends EventEmitter {
         }),
       );
       this._writeControlLine(buildControlCancelRequest(requestId));
-      this.emit("permission-cancelled", { requestId });
+      this._ingestRuntime([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
     }
     this._pendingPermissions.clear();
   }
@@ -1172,14 +1117,6 @@ class AgentSession extends EventEmitter {
         : notice.detail,
     });
 
-    this.emit("hook-request", {
-      requestId,
-      hookName: "PreToolUse",
-      toolName: toolName || "unknown",
-      toolInput: action.toolInput,
-      decisionReason,
-    });
-
     setTimeout(() => {
       if (!this._pendingHooks.has(requestId)) return;
       this._emitEngineNotice({
@@ -1207,11 +1144,6 @@ class AgentSession extends EventEmitter {
     this._clearIdleTimer();
 
     this._emitEngineNotice(notice);
-
-    this.emit("hook-request", {
-      requestId,
-      hookName: hookName || "Stop",
-    });
 
     setTimeout(() => {
       if (!this._pendingHooks.has(requestId)) return;
@@ -1248,7 +1180,7 @@ class AgentSession extends EventEmitter {
       this._writeControlLine(buildHookContinueResponse(requestId));
     }
 
-    this.emit("hook-resolved", { requestId, hookName: pending.hookName });
+    this._ingestRuntime([{ type: "hook.resolved", payload: { requestId, hookName: pending.hookName } }]);
     this._markStreamActivity();
     this._maybeCompleteDeferredTurnResult();
     return true;
@@ -1295,21 +1227,24 @@ class AgentSession extends EventEmitter {
     this._turnHadToolUse = true;
     this._clearIdleTimer();
     const planPreview = resolvePlanPreview(input, description);
-    this.emit("permission-request", {
-      requestId,
-      toolName,
-      input,
-      title,
-      description,
-      decisionReason,
-      suggestions,
-      planPreview,
-      planPreviewTruncated: planPreview.length >= PLAN_PREVIEW_MAX,
-    });
+    this._ingestRuntime([{
+      type: "permission.requested",
+      payload: {
+        requestId,
+        toolName,
+        input,
+        title,
+        description,
+        decisionReason,
+        suggestions,
+        planPreview,
+        planPreviewTruncated: planPreview.length >= PLAN_PREVIEW_MAX,
+      },
+    }]);
 
     setTimeout(() => {
       if (!this._pendingPermissions.has(requestId)) return;
-      this.emit("engine-notice", {
+      this._emitEngineNotice({
         code: "permissionTimeout",
         level: "warning",
         panel: true,
@@ -1334,16 +1269,35 @@ class AgentSession extends EventEmitter {
     });
     this._turnHadToolUse = true;
     this._clearIdleTimer();
-    this.emit("ask-user-question", {
-      requestId,
-      input,
-      questions,
-    });
+    this._ingestRuntime([{
+      type: "user_question.requested",
+      payload: {
+        requestId,
+        input,
+        questions,
+      },
+    }]);
   }
 
   _emitEngineNotice(notice) {
     if (!notice) return;
-    this.emit("engine-notice", notice);
+    notice = sanitizeNoticeForIngest(notice);
+    if (notice.code === "permissionTimeout") {
+      this._ingestRuntime([
+        {
+          type: "permission.timeout",
+          payload: {
+            requestId: notice.requestId || "",
+            toolName: notice.toolName || "",
+            notice,
+          },
+        },
+        { type: "engine.warning", payload: { notice } },
+      ]);
+      return;
+    }
+    const type = notice.level === "warning" ? "engine.warning" : "engine.notice";
+    this._ingestRuntime([{ type, payload: { notice } }]);
   }
 
   _appendTextPiece(piece) {
@@ -1353,7 +1307,6 @@ class AgentSession extends EventEmitter {
       return;
     }
     this.collectedOutput = appendTextSegment(this.collectedOutput, piece);
-    this.emit("chunk", piece);
     this._markStreamActivity();
   }
 
@@ -1362,7 +1315,7 @@ class AgentSession extends EventEmitter {
     this._flushLineBuffer();
     if (ev.modelUsage && typeof ev.modelUsage === "object") {
       require("./usage-reporter").recordModelUsage(this.sessionId, ev.modelUsage);
-      this.emit("usage-updated", { usage: ev.modelUsage });
+      this._ingestRuntime([{ type: "usage.updated", payload: { usage: ev.modelUsage } }]);
     }
     if (ev.subtype === "success" && ev.result) {
       const piece = String(ev.result);
@@ -1381,6 +1334,8 @@ class AgentSession extends EventEmitter {
       code: resultFailed ? 1 : 0,
       output,
       interrupted: Boolean(this._interruptPending || ev.interrupted),
+      durationMs: Number(ev.duration_ms) || undefined,
+      totalCostUsd: Number(ev.total_cost_usd) || undefined,
     };
     if (this._hasBlockingTurnWork()) {
       this._deferTurnResult(payload, "result-before-work-finished");
@@ -1424,14 +1379,9 @@ class AgentSession extends EventEmitter {
           this._cliInitialized = true;
           if (action.sessionId && this.agentResumeId !== action.sessionId) {
             this.agentResumeId = action.sessionId;
-            this.emit("agent-resume-id", action.sessionId);
           }
         }
         if (action.subtype === "thinking_tokens") {
-          this.emit("usage-updated", {
-            estimatedTokens: action.estimated_tokens,
-            estimatedTokensDelta: action.estimated_tokens_delta,
-          });
           break;
         }
         this._emitEngineNotice(action.notice);
@@ -1444,7 +1394,6 @@ class AgentSession extends EventEmitter {
       case "protocol_warning":
       case "unknown_runtime_event":
       case "unknown_control_request":
-        this._emitEngineNotice(action.notice);
         void require("./runtime-diagnostics").reportRuntimeProtocolIssue({
           normalizedKind: action.kind,
           event: action.event || null,
@@ -1461,12 +1410,16 @@ class AgentSession extends EventEmitter {
         break;
 
       case "assistant_text":
-        this._appendTextPiece(action.text || "");
+        if (this.busy && !this._turnSettled && isUpstreamApiFailure(action.text || "")) {
+          this._failTurn(sanitizeError(action.text));
+          return;
+        }
+        this.collectedOutput = appendTextSegment(this.collectedOutput, action.text || "");
+        this._markStreamActivity();
         break;
 
       case "assistant_thinking":
         this._markStreamActivity();
-        this.emit("thinking-delta", { text: action.text || "" });
         break;
 
       case "assistant_tool_use": {
@@ -1476,10 +1429,10 @@ class AgentSession extends EventEmitter {
         this._clearPostToolWaitTimer();
         this._markStreamActivity();
         if (this._emittedToolIds.has(action.id)) {
-          this.emit("tool-input-done", {
-            id: action.id,
-            input: action.input || {},
-          });
+          this._ingestRuntime([{
+            type: "tool.input.done",
+            payload: { id: action.id, input: action.input || {} },
+          }]);
           const updatedLease = this._updateToolLeaseInput(action.id, action.input || {});
           if (lease.becameDetached || updatedLease.becameDetached) {
             this._emitDetachedShellNotice(action.id, action.name, action.input || {});
@@ -1487,12 +1440,6 @@ class AgentSession extends EventEmitter {
           this._streamingToolInputs.delete(action.id);
           break;
         }
-        this.emit("tool-using", {
-          name: action.name,
-          input: action.input || {},
-          id: action.id,
-          parentToolUseId: action.parentToolUseId || null,
-        });
         if (lease.becameDetached) {
           this._emitDetachedShellNotice(action.id, action.name, action.input || {});
         }
@@ -1502,12 +1449,6 @@ class AgentSession extends EventEmitter {
       case "tool_result": {
         this._finishToolLease(action.id);
         this._maybeArmPostToolWaitTimer();
-        const uiResult = action.content ? truncateToolResultForUi(action.content) : null;
-        this.emit("tool-done", {
-          id: action.id,
-          status: action.isError ? "failed" : "done",
-          result: uiResult ? { ...uiResult, isError: action.isError } : null,
-        });
         this._markStreamActivity();
         this._maybeCompleteDeferredTurnResult();
         break;
@@ -1517,7 +1458,6 @@ class AgentSession extends EventEmitter {
         this._streamingToolInputs.clear();
         this._emittedToolIds.clear();
         this._blockIndexToToolId.clear();
-        this.emit("status", "thinking");
         break;
 
       case "stream_tool_start":
@@ -1530,11 +1470,6 @@ class AgentSession extends EventEmitter {
         if (typeof action.index === "number" && action.index >= 0) {
           this._blockIndexToToolId.set(action.index, action.id);
         }
-        this.emit("tool-upcoming", {
-          id: action.id,
-          name: action.name,
-          parentToolUseId: action.parentToolUseId || null,
-        });
         break;
 
       case "stream_tool_input_delta": {
@@ -1542,7 +1477,6 @@ class AgentSession extends EventEmitter {
         if (toolId) {
           const accumulated = (this._streamingToolInputs.get(toolId) || "") + action.partialJson;
           this._streamingToolInputs.set(toolId, accumulated);
-          this.emit("tool-input-delta", { id: toolId, partialJson: action.partialJson });
         }
         break;
       }
@@ -1552,9 +1486,12 @@ class AgentSession extends EventEmitter {
         const parsed = this._tryParseToolInputJson(toolId);
         if (parsed) {
           const lease = this._updateToolLeaseInput(toolId, parsed);
+          this._ingestRuntime([{
+            type: "tool.input.done",
+            payload: { id: toolId, input: parsed },
+          }]);
           if (lease.becameDetached) {
             const entry = this._toolLeases.get(toolId);
-            this.emit("tool-input-done", { id: toolId, input: parsed });
             this._emitDetachedShellNotice(toolId, entry?.name || "unknown", parsed);
           }
         }
@@ -1562,26 +1499,20 @@ class AgentSession extends EventEmitter {
       }
 
       case "stream_message_delta":
-        if (action.usage && typeof action.usage === "object" && Object.keys(action.usage).length) {
-          this.emit("usage-updated", { usage: action.usage, stopReason: action.stopReason || "" });
-        }
         this._markStreamActivity();
         break;
 
       case "stream_message_stop":
         this._markStreamActivity();
-        this.emit("message-stop", {});
         this._armMessageStopCompletionTimer();
         break;
 
       case "prompt_suggestions":
-        this.emit("prompt-suggestions", { suggestions: action.suggestions || [] });
         break;
 
       case "control_cancel":
         if (action.requestId && this._pendingPermissions.has(action.requestId)) {
           this._pendingPermissions.delete(action.requestId);
-          this.emit("permission-cancelled", { requestId: action.requestId });
         }
         break;
 
@@ -1597,7 +1528,10 @@ class AgentSession extends EventEmitter {
         this._cliInitialized = true;
         this._writeControlLine(buildControlAck(action.requestId, { promptSuggestions: true }));
         if (Array.isArray(action.suggestions) && action.suggestions.length) {
-          this.emit("prompt-suggestions", { suggestions: action.suggestions });
+          this._ingestRuntime([{
+            type: "prompt_suggestions.updated",
+            payload: { suggestions: action.suggestions },
+          }]);
         }
         break;
 
@@ -1670,19 +1604,6 @@ class AgentSession extends EventEmitter {
     }
 
     if (!ev?.type) return;
-    if (this.busy && !this._turnSettled && !this._sawStdoutForTurn) {
-      this._sawStdoutForTurn = true;
-      this._emitEngineNotice({
-        code: "cliOutputReceived",
-        level: "progress",
-        panel: true,
-        replace: true,
-        replacesCode: "sentToCli",
-        done: true,
-        detail: "已收到 CLI 输出",
-      });
-    }
-
     this._noteStreamContext(ev);
 
     if (this._internalCommand) {
@@ -1725,9 +1646,6 @@ class AgentSession extends EventEmitter {
       });
       return;
     }
-    this._lastRuntimeEvents = normalized.runtimeEvents;
-    this.emit("process-event", processEventFromClaudeEvent(ev, normalized.actions || []));
-
     if (normalized.backgroundActivity) {
       this._markBackgroundActivity(normalized.backgroundActivity.short);
     }
@@ -1735,6 +1653,20 @@ class AgentSession extends EventEmitter {
     for (const action of normalized.actions) {
       this._handleNormalizedAction(action);
     }
+
+    const drafts = [...(normalized.runtimeEvents || [])];
+    for (const draft of drafts) {
+      if (draft.type !== "tool.done") continue;
+      const raw = draft.payload?.content;
+      if (typeof raw !== "string" || !raw) continue;
+      draft.payload.result = truncateToolResultForUi(raw);
+      delete draft.payload.content;
+    }
+    drafts.push({
+      type: "process.event",
+      payload: processEventFromClaudeEvent(ev, normalized.actions || []),
+    });
+    this._ingestRuntime(drafts);
   }
 }
 

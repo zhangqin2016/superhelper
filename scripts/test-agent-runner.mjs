@@ -31,6 +31,26 @@ import {
   normalizeAskUserQuestions,
 } from "../src/main/claude-event-normalizer.js";
 
+function mockOrchestrator(hooks = {}) {
+  const notices = hooks.notices || [];
+  const usage = hooks.usage || [];
+  const done = hooks.done || (() => {});
+  return {
+    ingest(_sessionId, drafts) {
+      for (const draft of drafts || []) {
+        if (draft.type === "engine.notice" || draft.type === "engine.warning") {
+          notices.push(draft.payload?.notice || draft.payload);
+        }
+        if (draft.type === "usage.updated") {
+          usage.push(draft.payload || {});
+        }
+      }
+    },
+    notifyRunnerDone: done,
+    notifyRunnerError: () => {},
+  };
+}
+
 const merged = appendTextSegment("hello", "world");
 if (merged !== "hello\n\nworld") throw new Error(`appendTextSegment failed: ${merged}`);
 
@@ -462,10 +482,12 @@ try {
   const session = new AgentSession("timer_test");
   let doneCount = 0;
   const notices = [];
+  session.bindOrchestrator(mockOrchestrator({
+    notices,
+    done: () => { doneCount += 1; },
+  }));
   session.busy = true;
   session._turnSettled = false;
-  session.on("done", () => { doneCount += 1; });
-  session.on("engine-notice", (notice) => notices.push(notice));
   session._armTurnResponseTimer();
   await new Promise((resolve) => setTimeout(resolve, 20));
   session._clearTurnResponseTimer();
@@ -484,15 +506,16 @@ try {
   const session = new AgentSession("thinking_tokens_test");
   const notices = [];
   const usage = [];
-  session.on("engine-notice", (notice) => notices.push(notice));
-  session.on("usage-updated", (payload) => usage.push(payload));
-  session._handleNormalizedAction({
-    kind: "system_notice",
+  session.bindOrchestrator(mockOrchestrator({ notices, usage }));
+  session.busy = true;
+  session._turnSettled = false;
+  session._sawStdoutForTurn = true;
+  session._handleLine(JSON.stringify({
+    type: "system",
     subtype: "thinking_tokens",
     estimated_tokens: 126,
     estimated_tokens_delta: 2,
-    notice: { code: "thinkingProgress", detail: "126 tokens", panel: true },
-  });
+  }));
   if (notices.length !== 0) {
     throw new Error(`thinking token updates should not render as process notices: ${JSON.stringify(notices)}`);
   }
@@ -531,9 +554,18 @@ try {
 {
   const session = new AgentSession("process_event_test");
   const processEvents = [];
+  session.bindOrchestrator({
+    ingest(_sessionId, drafts) {
+      for (const draft of drafts || []) {
+        if (draft.type === "process.event") processEvents.push(draft.payload);
+      }
+    },
+    notifyRunnerDone: () => {},
+    notifyRunnerError: () => {},
+  });
   session.busy = true;
   session._turnSettled = false;
-  session.on("process-event", (event) => processEvents.push(event));
+  session._sawStdoutForTurn = true;
   session._handleLine(JSON.stringify({
     type: "stream_event",
     event: {

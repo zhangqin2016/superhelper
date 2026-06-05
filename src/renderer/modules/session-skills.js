@@ -5,7 +5,7 @@
 import { $ } from "./dom.js";
 import store from "./state.js";
 import { showToast } from "./toast.js";
-import { canSend } from "./session-busy.js";
+import { canSend } from "./session-runtime-store.js";
 import { t, tSkillName, tSkillDesc } from "../i18n/index.js";
 
 function isBusy() {

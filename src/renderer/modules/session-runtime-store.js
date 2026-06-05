@@ -1,10 +1,22 @@
 import store from "./state.js";
+import { sanitizeNoticeForIngest } from "./engine-notice-policy.js";
+import {
+  activityFromEngineNotice,
+  applyProcessEventToTimeline,
+  appendTimelineNotice,
+  hasRunningTool,
+  resetTimelineFields,
+  setActivityLabel,
+  upsertTimelineThinking,
+  upsertTimelineTool,
+} from "./turn-timeline.js";
 
 const sessions = new Map();
 const batchSeqBySession = new Map();
 const eventSeqBySession = new Map();
 const terminalTurns = new Set();
 const listeners = new Set();
+let notifyQueued = false;
 
 const TERMINAL_TYPES = new Set([
   "turn.completed",
@@ -20,6 +32,7 @@ function emptySession(sessionId) {
     turnId: null,
     liveTurn: null,
     queue: [],
+    promptSuggestions: [],
     committedMessages: [],
   };
 }
@@ -58,8 +71,18 @@ export function subscribeRuntime(fn) {
   return () => listeners.delete(fn);
 }
 
+function scheduleNotifyFlush(fn) {
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(fn);
+  else setTimeout(fn, 0);
+}
+
 function notify() {
-  for (const fn of listeners) fn();
+  if (notifyQueued) return;
+  notifyQueued = true;
+  scheduleNotifyFlush(() => {
+    notifyQueued = false;
+    for (const fn of listeners) fn();
+  });
 }
 
 function ensureLiveTurn(runtime, event) {
@@ -69,7 +92,13 @@ function ensureLiveTurn(runtime, event) {
       phase: "starting",
       assistantText: "",
       thinkingText: "",
+      contentBlocks: [],
+      protocolUnknown: [],
       processEvents: [],
+      timeline: [],
+      activityLabel: null,
+      durationMs: null,
+      totalCostUsd: null,
       tools: new Map(),
       notices: [],
       permissions: new Map(),
@@ -78,6 +107,7 @@ function ensureLiveTurn(runtime, event) {
       startedAt: event.ts || Date.now(),
       updatedAt: event.ts || Date.now(),
       final: null,
+      fileChanges: [],
       usage: null,
     };
   }
@@ -91,17 +121,24 @@ function noticeKey(event) {
 }
 
 function addNotice(live, event) {
-  const notice = event?.payload?.notice || event?.payload || {};
-  if (notice.panel === false) return;
+  const notice = sanitizeNoticeForIngest(event?.payload?.notice || event?.payload || {});
+  if (!notice || notice.panel === false) return;
+  const normalized = {
+    ...event,
+    payload: {
+      ...(event?.payload || {}),
+      notice,
+    },
+  };
   if (notice.replace || notice.replacesCode) {
-    const key = noticeKey(event);
+    const key = noticeKey(normalized);
     const index = live.notices.findIndex((existing) => noticeKey(existing) === key);
     if (index >= 0) {
-      live.notices[index] = event;
+      live.notices[index] = normalized;
       return;
     }
   }
-  live.notices.push(event);
+  live.notices.push(normalized);
   if (live.notices.length > 20) live.notices.splice(0, live.notices.length - 20);
 }
 
@@ -137,6 +174,10 @@ export function applyRuntimeEvent(event) {
     runtime.queue = event.payload.items || [];
     return;
   }
+  if (event.type === "prompt_suggestions.updated") {
+    runtime.promptSuggestions = event.payload.suggestions || [];
+    return;
+  }
   if (event.type === "turn.started") {
     runtime.phase = "starting";
     const live = ensureLiveTurn(runtime, event);
@@ -144,7 +185,7 @@ export function applyRuntimeEvent(event) {
     return;
   }
   if (!event.turnId && event.type.startsWith("engine.")) {
-    runtime.liveTurn?.notices.push(event);
+    if (runtime.liveTurn) addNotice(runtime.liveTurn, event);
     return;
   }
   if (!event.turnId) return;
@@ -168,9 +209,33 @@ export function applyRuntimeEvent(event) {
       runtime.phase = "streaming";
       live.phase = "streaming";
       live.thinkingText += event.payload.text || "";
+      upsertTimelineThinking(live, event.payload.text || "", event.ts || Date.now());
+      break;
+    case "content.block":
+      live.contentBlocks.push({
+        blockType: event.payload.blockType || "unknown",
+        mediaType: event.payload.mediaType || "",
+        data: event.payload.data || "",
+        ts: event.ts || Date.now(),
+      });
+      if (live.contentBlocks.length > 20) {
+        live.contentBlocks.splice(0, live.contentBlocks.length - 20);
+      }
+      break;
+    case "protocol.unknown":
+      live.protocolUnknown.push({
+        kind: event.payload.kind || "unknown_runtime_event",
+        notice: event.payload.notice || null,
+        event: event.payload.event || null,
+        ts: event.ts || Date.now(),
+      });
+      if (live.protocolUnknown.length > 20) {
+        live.protocolUnknown.splice(0, live.protocolUnknown.length - 20);
+      }
       break;
     case "process.event":
       live.processEvents.push(event);
+      applyProcessEventToTimeline(live, event.payload || {}, event.ts || Date.now());
       if (live.processEvents.length > 200) {
         live.processEvents.splice(0, live.processEvents.length - 200);
       }
@@ -179,17 +244,20 @@ export function applyRuntimeEvent(event) {
       runtime.phase = "tool_running";
       live.phase = "tool_running";
       live.tools.set(event.payload.id, { ...event.payload, status: "running" });
+      upsertTimelineTool(live, { ...event.payload, status: "running" }, event.ts || Date.now());
       break;
     case "tool.input.delta": {
       const tool = live.tools.get(event.payload.id) || { id: event.payload.id };
       tool.partialJson = (tool.partialJson || "") + (event.payload.partialJson || "");
       live.tools.set(event.payload.id, tool);
+      upsertTimelineTool(live, tool, event.ts || Date.now());
       break;
     }
     case "tool.input.done": {
       const tool = live.tools.get(event.payload.id) || { id: event.payload.id };
       tool.input = event.payload.input || {};
       live.tools.set(event.payload.id, tool);
+      upsertTimelineTool(live, tool, event.ts || Date.now());
       break;
     }
     case "tool.done": {
@@ -197,6 +265,7 @@ export function applyRuntimeEvent(event) {
       tool.status = event.payload.status || "done";
       tool.result = event.payload.result || null;
       live.tools.set(event.payload.id, tool);
+      upsertTimelineTool(live, tool, event.ts || Date.now());
       break;
     }
     case "permission.requested":
@@ -228,9 +297,14 @@ export function applyRuntimeEvent(event) {
     case "engine.stderr":
     case "permission.timeout":
     case "recovery.scheduled":
-    case "recovery.started":
+    case "recovery.started": {
+      const notice = sanitizeNoticeForIngest(event?.payload?.notice || event?.payload || {});
+      const activity = activityFromEngineNotice(notice);
+      if (activity && !hasRunningTool(live.tools)) setActivityLabel(live, activity);
+      if (notice) appendTimelineNotice(live, notice, event.ts || Date.now());
       addNotice(live, event);
       break;
+    }
     case "usage.updated":
       live.usage = event.payload || {};
       break;
@@ -241,16 +315,39 @@ export function applyRuntimeEvent(event) {
       if (TERMINAL_TYPES.has(event.type)) {
         live.phase = "done";
         live.final = event;
+        if (Number.isFinite(event.payload?.durationMs)) {
+          live.durationMs = event.payload.durationMs;
+        } else if (Number.isFinite(event.payload?.record?.durationMs)) {
+          live.durationMs = event.payload.record.durationMs;
+        }
+        if (Number.isFinite(event.payload?.totalCostUsd)) {
+          live.totalCostUsd = event.payload.totalCostUsd;
+        } else if (Number.isFinite(event.payload?.record?.totalCostUsd)) {
+          live.totalCostUsd = event.payload.record.totalCostUsd;
+        }
+        if (Array.isArray(event.payload?.record?.timeline) && event.payload.record.timeline.length) {
+          live.timeline = event.payload.record.timeline;
+        }
+        if (event.payload?.record?.activityLabel) {
+          live.activityLabel = event.payload.record.activityLabel;
+        }
+        if (Array.isArray(event.payload?.record?.fileChanges)) {
+          live.fileChanges = event.payload.record.fileChanges;
+        }
+        if (event.payload?.record?.usage) {
+          live.usage = event.payload.record.usage;
+        }
         runtime.phase = "idle";
         runtime.turnId = null;
         terminalTurns.add(turnKey);
         runtime.committedMessages.push({
           role: "assistant",
           content: event.payload.assistant || live.assistantText || "",
+          record: event.payload.record || null,
           failed: event.type === "turn.failed",
           turnId: event.turnId,
           timestamp: new Date(event.ts).toISOString(),
-          meta: {
+          meta: event.payload.record?.meta || {
             terminal: event.type,
             tools: event.payload.toolsSummary,
           },

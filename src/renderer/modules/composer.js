@@ -8,7 +8,7 @@ import { renderFilePreview, clearPendingFiles } from "./file-handler.js";
 import { promptSessionName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
-import { canSend, getTurnPhase } from "./session-busy.js";
+import { canSend, getTurnPhase, subscribeRuntime, getRuntimeSession } from "./session-runtime-store.js";
 import { t } from "../i18n/index.js";
 
 function messageQueueArea() {
@@ -77,7 +77,7 @@ async function cancelQueuedMessage(sessionId, itemId) {
   }
 }
 
-function renderPromptSuggestions(sessionId, suggestions = []) {
+export function renderPromptSuggestions(sessionId, suggestions = []) {
   const bar = $("promptSuggestions");
   if (!bar) return;
   const activeId = store.get("activeSessionId");
@@ -287,8 +287,9 @@ export function initComposer() {
     $("promptInput")?.focus();
   });
 
-  window.assistantClient.onPromptSuggestions?.((payload) => {
-    renderPromptSuggestions(payload?.sessionId, payload?.suggestions);
+  subscribeRuntime(() => {
+    const sid = store.get("activeSessionId");
+    if (sid) renderPromptSuggestions(sid, getRuntimeSession(sid).promptSuggestions || []);
   });
 
   $("newChatBtn")?.addEventListener("click", async () => {

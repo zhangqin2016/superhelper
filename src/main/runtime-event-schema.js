@@ -24,6 +24,8 @@ const RUNTIME_EVENT_TYPES = new Set([
   "assistant.delta",
   "assistant.message_stop",
   "assistant.final",
+  "content.block",
+  "protocol.unknown",
   "process.event",
   "tool.started",
   "tool.input.delta",

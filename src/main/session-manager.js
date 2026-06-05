@@ -387,6 +387,7 @@ class SessionManager {
     };
     if (extra?.failed) entry.failed = true;
     if (extra?.meta && typeof extra.meta === "object") entry.meta = extra.meta;
+    if (extra?.record && typeof extra.record === "object") entry.record = extra.record;
     session.messages.push(entry);
     session.updatedAt = new Date().toISOString();
     if (session.messages.length > 200) {

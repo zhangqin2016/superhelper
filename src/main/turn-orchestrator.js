@@ -3,6 +3,18 @@
 const crypto = require("node:crypto");
 const { normalizeAssistantOutput, sanitizeError } = require("./agent-runner");
 const { fileMetadataFromPayload } = require("./ipc-utils");
+const { getLogger } = require("./logger");
+const {
+  activityFromEngineNotice,
+  activityFromProcessPayload,
+  appendTimelineNotice,
+  resetTimelineState,
+  setActivityLabel,
+  upsertTimelineThinking,
+  upsertTimelineTool,
+} = require("./turn-timeline");
+
+const log = getLogger("turn-orchestrator");
 
 const TERMINAL_TYPES = new Set([
   "turn.completed",
@@ -50,8 +62,9 @@ class TurnOrchestrator {
     this.ctx = ctx;
     this.eventBus = ctx.eventBus;
     this.transcriptStore = ctx.transcriptStore;
+    this.turnArchive = ctx.turnArchive;
     this.states = new Map();
-    this.attachedRunners = new WeakSet();
+    this.boundRunners = new WeakSet();
   }
 
   snapshot(sessionId) {
@@ -73,172 +86,16 @@ class TurnOrchestrator {
     };
   }
 
-  attachRunner(runner) {
-    if (!runner || this.attachedRunners.has(runner)) return;
-    this.attachedRunners.add(runner);
+  bindRunner(runner) {
+    if (!runner || this.boundRunners.has(runner)) return;
+    this.boundRunners.add(runner);
+    runner.bindOrchestrator?.(this);
     const sessionId = runner.sessionId;
-
-    runner.on("status", (status) => {
-      if (status === "thinking") {
-        this._emit(sessionId, "turn.accepted", { status });
-      } else {
-        this._emit(sessionId, "engine.notice", { code: "status", status });
-      }
-    });
-
-    runner.on("chunk", (text) => {
-      const state = this._state(sessionId);
-      state.phase = "streaming";
-      state.assistantText += String(text || "");
-      this._emit(sessionId, "assistant.delta", { text: String(text || "") });
-    });
-
-    runner.on("thinking-delta", (data) => {
-      const state = this._state(sessionId);
-      state.phase = "streaming";
-      this._emit(sessionId, "assistant.thinking.delta", {
-        text: String(data?.text || ""),
-      });
-    });
-
-    runner.on("tool-upcoming", (data) => {
-      this._trackTool(sessionId, data.id, { name: data.name, input: {} });
-      this._emit(sessionId, "tool.started", {
-        id: data.id,
-        name: data.name || "unknown",
-        input: {},
-        parentToolUseId: data.parentToolUseId || null,
-      });
-    });
-
-    runner.on("tool-input-delta", (data) => {
-      const tool = this._trackTool(sessionId, data.id, {});
-      tool.partialJson = (tool.partialJson || "") + String(data.partialJson || "");
-      this._emit(sessionId, "tool.input.delta", {
-        id: data.id,
-        partialJson: String(data.partialJson || ""),
-      });
-    });
-
-    runner.on("tool-input-done", (data) => {
-      const tool = this._trackTool(sessionId, data.id, { input: data.input || {} });
-      tool.input = data.input || tool.input || {};
-      this._emit(sessionId, "tool.input.done", {
-        id: data.id,
-        input: compactToolInput(tool.input),
-      });
-    });
-
-    runner.on("tool-using", (data) => {
-      const state = this._state(sessionId);
-      state.phase = "tool_running";
-      this._trackTool(sessionId, data.id, {
-        name: data.name,
-        input: data.input || {},
-        status: "running",
-      });
-      require("./usage-reporter").recordToolCall(sessionId, data);
-      const { captureBeforeSnapshot } = require("./diff-capture");
-      captureBeforeSnapshot(sessionId, data.id, data.name, data.input);
-      this._emit(sessionId, "tool.started", {
-        id: data.id,
-        name: data.name || "unknown",
-        input: compactToolInput(data.input || {}),
-        parentToolUseId: data.parentToolUseId || null,
-      });
-      if (data.input) {
-        this._emit(sessionId, "tool.input.done", {
-          id: data.id,
-          input: compactToolInput(data.input),
-        });
-      }
-    });
-
-    runner.on("tool-done", (data) => {
-      const tool = this._trackTool(sessionId, data.id, {});
-      tool.status = data.status || "done";
-      tool.result = data.result || null;
-      this._emit(sessionId, "tool.done", {
-        id: data.id,
-        status: tool.status,
-        result: data.result || null,
-      });
-      const { emitDiffForTool } = require("./diff-capture");
-      emitDiffForTool(sessionId, data.id, this.ctx);
-    });
-
-    runner.on("permission-request", (data) => {
-      const state = this._state(sessionId);
-      state.phase = "awaiting_user";
-      state.pendingPermissions.set(data.requestId, data);
-      this._emit(sessionId, "permission.requested", data);
-    });
-
-    runner.on("ask-user-question", (data) => {
-      const state = this._state(sessionId);
-      state.phase = "awaiting_user";
-      state.pendingQuestions.set(data.requestId, data);
-      this._emit(sessionId, "user_question.requested", data);
-    });
-
-    runner.on("permission-cancelled", (data) => {
-      const state = this._state(sessionId);
-      state.pendingPermissions.delete(data.requestId);
-      state.pendingQuestions.delete(data.requestId);
-      if (state.phase === "awaiting_user") state.phase = "streaming";
-      this._emit(sessionId, "permission.resolved", {
-        requestId: data.requestId,
-        cancelled: Boolean(data.cancelled),
-      });
-    });
-
-    runner.on("hook-request", (data) => {
-      const state = this._state(sessionId);
-      state.phase = "awaiting_user";
-      state.pendingHooks.set(data.requestId, data);
-      this._emit(sessionId, "hook.requested", data);
-    });
-
-    runner.on("hook-resolved", (data) => {
-      const state = this._state(sessionId);
-      state.pendingHooks.delete(data.requestId);
-      if (state.phase === "awaiting_user") state.phase = "streaming";
-      this._emit(sessionId, "hook.resolved", data);
-    });
-
-    runner.on("engine-notice", (notice) => {
-      if (notice?.code === "permissionTimeout") {
-        this._emit(sessionId, "permission.timeout", {
-          requestId: notice.requestId || "",
-          toolName: notice.toolName || "",
-          notice,
-        });
-      }
-      this._emit(sessionId, notice?.level === "warning" ? "engine.warning" : "engine.notice", {
-        notice,
-      });
-    });
-
-    runner.on("usage-updated", (data) => {
-      this._emit(sessionId, "usage.updated", data || {});
-    });
-
-    runner.on("message-stop", () => {
-      this._emit(sessionId, "assistant.message_stop", {});
-    });
-
-    runner.on("process-event", (data) => {
-      this._emit(sessionId, "process.event", data || {});
-    });
 
     runner.on("message-stop-grace", () => {
       const state = this._state(sessionId);
       if (!state.turnId || state.terminalEmitted) return;
       runner.completeFromHost?.("message_stop_grace");
-    });
-
-    runner.on("stderr", (text) => {
-      this._emit(sessionId, "engine.stderr", { text: String(text || "") });
     });
 
     runner.on("agent-resume-id", (agentResumeId) => {
@@ -264,19 +121,6 @@ class TurnOrchestrator {
       }
     });
 
-    runner.on("prompt-suggestions", (data) => {
-      this.eventBus.emit(sessionId, {
-        type: "prompt_suggestions.updated",
-        turnId: null,
-        source: "orchestrator",
-        payload: { suggestions: data?.suggestions || [] },
-      });
-      const win = this.ctx.mainWindow;
-      if (win && !win.isDestroyed?.()) {
-        win.webContents.send("assistant:prompt-suggestions", { sessionId, ...data });
-      }
-    });
-
     runner.on("done", (payload) => {
       void this._handleDone(sessionId, payload);
     });
@@ -285,6 +129,260 @@ class TurnOrchestrator {
       void this._handleError(sessionId, message);
     });
   }
+
+  ingest(sessionId, drafts) {
+    if (!sessionId || !Array.isArray(drafts) || drafts.length === 0) return;
+    for (const draft of drafts) {
+      if (!draft?.type) continue;
+      this._applyDraft(sessionId, draft);
+    }
+  }
+
+  notifyRunnerDone(sessionId, payload) {
+    void this._handleDone(sessionId, payload);
+  }
+
+  notifyRunnerError(sessionId, message) {
+    void this._handleError(sessionId, message);
+  }
+
+  _resolveToolId(state, payload) {
+    if (payload?.id) return payload.id;
+    if (payload?.index != null && state.blockIndexToToolId.has(payload.index)) {
+      return state.blockIndexToToolId.get(payload.index);
+    }
+    return null;
+  }
+
+  _applyDraft(sessionId, draft) {
+    const type = draft.type;
+    const payload = draft.payload || {};
+    const state = this._state(sessionId);
+    if (!state.turnId && !TURN_OPTIONAL_TYPES.has(type)) {
+      log.debug("dropped orphan %s (no active turn)", type);
+      return;
+    }
+
+    switch (type) {
+      case "turn.accepted":
+        state.phase = "streaming";
+        this._emit(sessionId, "turn.accepted", { status: payload.status || "thinking" });
+        break;
+      case "assistant.delta":
+        state.phase = "streaming";
+        state.assistantText += String(payload.text || "");
+        this._emit(sessionId, "assistant.delta", { text: String(payload.text || "") });
+        break;
+      case "assistant.thinking.delta": {
+        const thinkingPiece = String(payload.text || "");
+        state.phase = "streaming";
+        state.thinkingText += thinkingPiece;
+        upsertTimelineThinking(state, thinkingPiece, Date.now());
+        this._emit(sessionId, "assistant.thinking.delta", { text: thinkingPiece });
+        break;
+      }
+      case "content.block": {
+        state.phase = "streaming";
+        const block = {
+          blockType: payload.blockType || "unknown",
+          mediaType: payload.mediaType || "",
+          data: payload.data || "",
+          ts: Date.now(),
+        };
+        state.contentBlocks.push(block);
+        if (state.contentBlocks.length > 20) {
+          state.contentBlocks.splice(0, state.contentBlocks.length - 20);
+        }
+        this._emit(sessionId, "content.block", payload);
+        break;
+      }
+      case "protocol.unknown": {
+        const entry = {
+          kind: payload.kind || "unknown_runtime_event",
+          notice: payload.notice || null,
+          event: payload.event || null,
+          ts: Date.now(),
+        };
+        state.protocolUnknown.push(entry);
+        if (state.protocolUnknown.length > 20) {
+          state.protocolUnknown.splice(0, state.protocolUnknown.length - 20);
+        }
+        this._emit(sessionId, "protocol.unknown", payload);
+        break;
+      }
+      case "tool.started": {
+        state.phase = "tool_running";
+        const toolId = payload.id || `tool_${state.tools.size + 1}`;
+        if (payload.index != null) state.blockIndexToToolId.set(payload.index, toolId);
+        const tool = this._trackTool(sessionId, toolId, {
+          name: payload.name,
+          input: payload.input || {},
+          status: "running",
+          parentToolUseId: payload.parentToolUseId || null,
+        });
+        if (payload.name && payload.input && Object.keys(payload.input).length) {
+          require("./usage-reporter").recordToolCall(sessionId, {
+            id: toolId,
+            name: payload.name,
+            input: payload.input,
+          });
+          const { captureBeforeSnapshot } = require("./diff-capture");
+          captureBeforeSnapshot(sessionId, toolId, payload.name, payload.input);
+        }
+        upsertTimelineTool(state, {
+          id: toolId,
+          name: tool.name || payload.name || "unknown",
+          input: tool.input || payload.input || {},
+          status: "running",
+        }, Date.now());
+        this._emit(sessionId, "tool.started", {
+          id: toolId,
+          name: tool.name || payload.name || "unknown",
+          input: compactToolInput(tool.input || payload.input || {}),
+          parentToolUseId: payload.parentToolUseId || null,
+        });
+        break;
+      }
+      case "tool.input.delta": {
+        const toolId = this._resolveToolId(state, payload);
+        if (!toolId) break;
+        const tool = this._trackTool(sessionId, toolId, {});
+        tool.partialJson = (tool.partialJson || "") + String(payload.partialJson || "");
+        upsertTimelineTool(state, tool, Date.now());
+        this._emit(sessionId, "tool.input.delta", {
+          id: toolId,
+          partialJson: String(payload.partialJson || ""),
+        });
+        break;
+      }
+      case "tool.input.done": {
+        const toolId = this._resolveToolId(state, payload);
+        if (!toolId) break;
+        const tool = this._trackTool(sessionId, toolId, { input: payload.input || {} });
+        tool.input = payload.input || tool.input || {};
+        upsertTimelineTool(state, tool, Date.now());
+        this._emit(sessionId, "tool.input.done", {
+          id: toolId,
+          input: compactToolInput(tool.input),
+        });
+        break;
+      }
+      case "tool.done": {
+        const toolId = payload.id || this._resolveToolId(state, payload);
+        if (!toolId) break;
+        const tool = this._trackTool(sessionId, toolId, {});
+        tool.status = payload.status || (payload.isError ? "failed" : "done");
+        tool.result = payload.result ?? payload.content ?? null;
+        upsertTimelineTool(state, tool, Date.now());
+        this._emit(sessionId, "tool.done", {
+          id: toolId,
+          status: tool.status,
+          result: tool.result,
+        });
+        const { emitDiffForTool } = require("./diff-capture");
+        emitDiffForTool(sessionId, toolId, this.ctx, state.turnId);
+        break;
+      }
+      case "permission.requested":
+        state.phase = "awaiting_user";
+        state.pendingPermissions.set(payload.requestId, payload);
+        this._emit(sessionId, "permission.requested", payload);
+        break;
+      case "user_question.requested":
+        state.phase = "awaiting_user";
+        state.pendingQuestions.set(payload.requestId, payload);
+        this._emit(sessionId, "user_question.requested", payload);
+        break;
+      case "permission.resolved":
+        state.pendingPermissions.delete(payload.requestId);
+        state.pendingQuestions.delete(payload.requestId);
+        if (state.phase === "awaiting_user") state.phase = "streaming";
+        this._emit(sessionId, "permission.resolved", payload);
+        break;
+      case "user_question.resolved":
+        state.pendingQuestions.delete(payload.requestId);
+        this._emit(sessionId, "user_question.resolved", payload);
+        break;
+      case "hook.requested":
+        state.phase = "awaiting_user";
+        state.pendingHooks.set(payload.requestId, payload);
+        this._emit(sessionId, "hook.requested", payload);
+        break;
+      case "hook.resolved":
+        state.pendingHooks.delete(payload.requestId);
+        if (state.phase === "awaiting_user") state.phase = "streaming";
+        this._emit(sessionId, "hook.resolved", payload);
+        break;
+      case "permission.timeout":
+        this._emit(sessionId, "permission.timeout", payload);
+        break;
+      case "engine.notice":
+      case "engine.warning": {
+        const notice = payload.notice || payload;
+        const activity = activityFromEngineNotice(notice);
+        if (activity) setActivityLabel(state, activity);
+        if (notice) appendTimelineNotice(state, notice, Date.now());
+        const noticeEvent = {
+          type,
+          turnId: state.turnId,
+          source: draft.source || "claude-cli",
+          payload,
+          ts: Date.now(),
+        };
+        if (state.turnId) state.notices.push(noticeEvent);
+        this._emit(sessionId, type, payload);
+        break;
+      }
+      case "engine.stderr":
+        this._emit(sessionId, "engine.stderr", payload);
+        break;
+      case "usage.updated":
+        state.usage = payload.usage || payload;
+        this._emit(sessionId, "usage.updated", payload);
+        break;
+      case "assistant.message_stop":
+        this._emit(sessionId, "assistant.message_stop", payload);
+        break;
+      case "process.event": {
+        const activity = activityFromProcessPayload(payload);
+        if (activity) setActivityLabel(state, activity);
+        if (payload.rawSubtype !== "thinking_tokens") {
+          const thinkingAction = (payload.actions || []).find((a) => a.kind === "assistant_thinking");
+          if (thinkingAction?.text) upsertTimelineThinking(state, thinkingAction.text, Date.now());
+        }
+        state.processEvents.push(payload);
+        if (state.processEvents.length > 200) {
+          state.processEvents.splice(0, state.processEvents.length - 200);
+        }
+        this._emit(sessionId, "process.event", payload);
+        break;
+      }
+      case "session.hydrated":
+        if (payload.agentResumeId) {
+          this.ctx.sessionManager.setAgentResumeId(sessionId, payload.agentResumeId);
+        }
+        this._emit(sessionId, "session.hydrated", payload, { turnId: null });
+        break;
+      case "resume.updated":
+        this._emit(sessionId, "resume.updated", payload, { turnId: null });
+        break;
+      case "prompt_suggestions.updated":
+        this._emit(sessionId, "prompt_suggestions.updated", payload, { turnId: null });
+        break;
+      case "runtime.control":
+        break;
+      default:
+        if (TERMINAL_TYPES.has(type)) break;
+        this._emit(sessionId, "engine.warning", {
+          notice: {
+            code: "unknownRuntimeDraft",
+            level: "warning",
+            detail: `Unhandled runtime draft ${type}`,
+          },
+        });
+    }
+  }
+
 
   async sendUserMessage(sessionId, text, files = [], opts = {}) {
     const session = this.ctx.sessionManager.findById(sessionId);
@@ -432,16 +530,24 @@ class TurnOrchestrator {
     state.phase = "starting";
     state.turnId = newTurnId();
     state.assistantText = "";
+    state.thinkingText = "";
+    state.contentBlocks = [];
+    state.protocolUnknown = [];
+    state.processEvents = [];
+    state.notices = [];
+    state.usage = null;
+    resetTimelineState(state);
+    state.blockIndexToToolId = new Map();
     state.terminalEmitted = false;
     state.pendingPermissions.clear();
     state.pendingQuestions.clear();
     state.pendingHooks.clear();
     state.tools.clear();
-    state.currentPayload = { text, files };
+    const displayFiles = opts.displayFiles || fileMetadataFromPayload(files);
+    state.currentPayload = { text, files, displayFiles };
     state.startedAt = Date.now();
     state.updatedAt = Date.now();
 
-    const displayFiles = opts.displayFiles || fileMetadataFromPayload(files);
     if (opts.recordUser !== false) {
       this.transcriptStore.commitUserMessage(session.id, {
         text,
@@ -487,6 +593,8 @@ class TurnOrchestrator {
     const interrupted = Boolean(payload?.interrupted);
     const stalled = Boolean(payload?.stalled);
     const failed = Boolean(normalized.failed || (!interrupted && !stalled && payload?.code && payload.code !== 0));
+    if (Number.isFinite(payload?.durationMs)) state.durationMs = payload.durationMs;
+    if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
 
     if (failed && !state.recoveryAttempted && isRecoverableFailure(payload?.output || "")) {
       state.recoveryAttempted = true;
@@ -498,25 +606,33 @@ class TurnOrchestrator {
       return;
     }
 
+    const terminalMeta = {
+      durationMs: state.durationMs ?? null,
+      totalCostUsd: state.totalCostUsd ?? null,
+    };
     if (interrupted) {
       this._finalize(sessionId, "turn.interrupted", {
         interrupted: true,
         assistant: normalized.text || state.assistantText,
+        ...terminalMeta,
       });
     } else if (stalled) {
       this._finalize(sessionId, "turn.stalled", {
         stalled: true,
         assistant: normalized.text || state.assistantText,
+        ...terminalMeta,
       });
     } else if (failed) {
       const friendly = normalized.text || "处理请求时遇到问题，请稍后再试。";
       this._finalize(sessionId, "turn.failed", {
         failed: true,
         assistant: friendly,
+        ...terminalMeta,
       });
     } else {
       this._finalize(sessionId, "turn.completed", {
         assistant: normalized.text || state.assistantText,
+        ...terminalMeta,
       });
     }
     await this._flushUsage(sessionId);
@@ -559,32 +675,34 @@ class TurnOrchestrator {
     if (!TERMINAL_TYPES.has(type)) throw new Error(`Invalid terminal event ${type}`);
     state.phase = "finalizing";
     const assistant = String(payload.assistant || state.assistantText || "").trim();
-    if (assistant) {
-      this._emit(sessionId, "assistant.final", {
-        assistant,
-        failed: type === "turn.failed",
-      });
-      this.transcriptStore.commitAssistantMessage(sessionId, {
-        text: assistant,
-        failed: type === "turn.failed",
-        turnId: state.turnId,
-        meta: {
-          terminal: type,
-          interrupted: type === "turn.interrupted",
-          stalled: type === "turn.stalled",
-          tools: state.tools.size,
-        },
-      });
+    const record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
+    if (record) {
+      if (assistant) {
+        this._emit(sessionId, "assistant.final", {
+          assistant,
+          failed: type === "turn.failed",
+        });
+      }
+      this.turnArchive.commit(sessionId, record);
     }
     state.terminalEmitted = true;
     this._emit(sessionId, type, {
       ...payload,
       assistant,
+      record,
       toolsSummary: { count: state.tools.size },
     });
     state.phase = "idle";
     state.turnId = null;
     state.assistantText = "";
+    state.thinkingText = "";
+    state.contentBlocks = [];
+    state.protocolUnknown = [];
+    state.processEvents = [];
+    state.notices = [];
+    state.usage = null;
+    resetTimelineState(state);
+    state.blockIndexToToolId = new Map();
     state.currentPayload = null;
     state.pendingPermissions.clear();
     state.pendingQuestions.clear();
@@ -635,19 +753,8 @@ class TurnOrchestrator {
     if (state.terminalEmitted && state.turnId && !TERMINAL_TYPES.has(type)) return null;
     const turnId = opts.turnId === undefined ? state.turnId : opts.turnId;
     if (!turnId && !TURN_OPTIONAL_TYPES.has(type)) {
-      return this.eventBus.emit(sessionId, {
-        type: "engine.warning",
-        turnId: null,
-        source: "orchestrator",
-        payload: {
-          notice: {
-            code: "orphanRuntimeEvent",
-            level: "warning",
-            detail: `Ignored ${type} without an active turn.`,
-            originalType: type,
-          },
-        },
-      })[0];
+      log.debug("dropped orphan %s emit (no active turn)", type);
+      return null;
     }
     return this.eventBus.emit(sessionId, {
       type,
@@ -664,6 +771,17 @@ class TurnOrchestrator {
         phase: "idle",
         turnId: null,
         assistantText: "",
+        thinkingText: "",
+        contentBlocks: [],
+        protocolUnknown: [],
+        processEvents: [],
+        notices: [],
+        usage: null,
+        timeline: [],
+        activityLabel: null,
+        durationMs: null,
+        totalCostUsd: null,
+        blockIndexToToolId: new Map(),
         queue: [],
         tools: new Map(),
         pendingPermissions: new Map(),

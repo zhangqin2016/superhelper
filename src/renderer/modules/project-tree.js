@@ -9,7 +9,7 @@ import { refreshState, updateTopbarTitles, applySessionSwitch } from "./session-
 import { removeSessionMessages } from "./message.js";
 import { promptSessionName, promptProjectName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
-import { isSessionRunning } from "./session-busy.js";
+import { isSessionRunning } from "./session-runtime-store.js";
 
 const container = () => $("projectTree");
 

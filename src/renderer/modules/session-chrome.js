@@ -14,7 +14,7 @@ import {
   resumeLiveSessionUi,
   syncComposerForActiveSession,
 } from "./message.js";
-import { syncRunningFromState } from "./session-busy.js";
+import { hydrateRuntimeFromState } from "./session-runtime-store.js";
 import { refreshSessionSkillsUi } from "./session-skills.js";
 
 export function activeProject() {
@@ -60,7 +60,7 @@ function applyStatePayload(state) {
   store.set("activeProjectId", state.activeProjectId);
   store.set("activeSessionId", state.activeSessionId);
   if (state.conversation) store.set("conversation", state.conversation);
-  syncRunningFromState(state);
+  hydrateRuntimeFromState(state);
 
   const allSessions = [];
   for (const p of state.projects || []) {

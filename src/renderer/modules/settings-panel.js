@@ -10,7 +10,7 @@ import { refreshPermissionSelect, refreshSessionPermissionSelect } from "./permi
 import { refreshSearchSettings } from "./search-settings.js";
 import { refreshSkillsList } from "./skill-settings.js";
 import { refreshLicenseStatus, refreshUpdateSettings } from "./license-update-settings.js";
-import { anySessionRunning } from "./session-busy.js";
+import { anySessionRunning } from "./session-runtime-store.js";
 import { activeSession, refreshStateLight } from "./session-chrome.js";
 import { confirmDialog } from "./confirm-dialog.js";
 

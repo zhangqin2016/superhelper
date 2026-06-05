@@ -88,7 +88,8 @@ function diagnoseSendBlocker(ctx, sessionId) {
 }
 
 function wireRunner(ctx, runner) {
-  ctx.turnOrchestrator?.attachRunner(runner);
+  runner.bindOrchestrator?.(ctx.turnOrchestrator);
+  ctx.turnOrchestrator?.bindRunner(runner);
 }
 
 function ensureSessionRunner(ctx, sessionId, opts = {}) {

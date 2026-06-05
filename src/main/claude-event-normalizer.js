@@ -242,6 +242,12 @@ function normalizeAssistantMessage(ev) {
   for (const block of blocks) {
     if (block?.type === "text") {
       actions.push({ kind: "assistant_text", text: block.text || "" });
+    } else if (block?.type === "image") {
+      actions.push({
+        kind: "assistant_image",
+        mediaType: block.source?.media_type || "image/png",
+        data: block.source?.data || "",
+      });
     } else if (block?.type === "tool_use") {
       actions.push({
         kind: "assistant_tool_use",
@@ -282,6 +288,13 @@ function normalizeStreamEvent(ev) {
       const block = inner.content_block;
       if (block?.type === "thinking" && block.thinking) {
         return [{ kind: "assistant_thinking", text: block.thinking || "" }];
+      }
+      if (block?.type === "image") {
+        return [{
+          kind: "assistant_image",
+          mediaType: block.source?.media_type || "image/png",
+          data: block.source?.data || "",
+        }];
       }
       if (block?.type !== "tool_use" || !block.id || !block.name) return [];
       return [{

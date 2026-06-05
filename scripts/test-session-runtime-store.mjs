@@ -86,17 +86,60 @@ if (runtime.liveTurn?.assistantText !== "hello") {
   throw new Error("duplicate batch should be ignored");
 }
 
+if (runtime.liveTurn?.timeline?.length !== 1 || runtime.liveTurn.timeline[0].kind !== "thinking") {
+  throw new Error(`thinking timeline failed: ${JSON.stringify(runtime.liveTurn?.timeline)}`);
+}
+
 store.applyRuntimeBatch({
   sessionId: "s1",
   batchSeq: 2,
+  events: [
+    {
+      id: "e-tool",
+      type: "tool.started",
+      sessionId: "s1",
+      turnId: "t1",
+      seq: 5,
+      ts: 1004,
+      source: "test",
+      payload: { id: "tool_1", name: "Read", input: { file_path: "src/a.js" } },
+    },
+    {
+      id: "e-status",
+      type: "process.event",
+      sessionId: "s1",
+      turnId: "t1",
+      seq: 6,
+      ts: 1005,
+      source: "test",
+      payload: {
+        rawSubtype: "status",
+        event: { status: "Reading recent chapters" },
+        actions: [],
+      },
+    },
+  ],
+});
+
+runtime = store.getRuntimeSession("s1");
+if (runtime.liveTurn?.activityLabel !== "Read src/a.js") {
+  throw new Error(`running tool should win over CLI status: ${runtime.liveTurn?.activityLabel}`);
+}
+if (runtime.liveTurn?.timeline?.length !== 2) {
+  throw new Error(`expected thinking + tool timeline, got ${runtime.liveTurn?.timeline?.length}`);
+}
+
+store.applyRuntimeBatch({
+  sessionId: "s1",
+  batchSeq: 3,
   events: [
     {
       id: "e-usage",
       type: "usage.updated",
       sessionId: "s1",
       turnId: "t1",
-      seq: 5,
-      ts: 1002,
+      seq: 7,
+      ts: 1006,
       source: "test",
       payload: { estimatedTokens: 203 },
     },
@@ -115,10 +158,10 @@ store.applyRuntimeBatch({
       type: "turn.completed",
       sessionId: "s1",
       turnId: "t1",
-      seq: 6,
-      ts: 1004,
+      seq: 8,
+      ts: 1007,
       source: "test",
-      payload: { assistant: "hello" },
+      payload: { assistant: "hello", durationMs: 30584, totalCostUsd: 0.12 },
     },
   ],
 });
@@ -127,21 +170,24 @@ runtime = store.getRuntimeSession("s1");
 if (runtime.committedMessages.filter((m) => m.role === "assistant").length !== 1) {
   throw new Error("terminal should commit one assistant message");
 }
+if (runtime.liveTurn?.durationMs !== 30584) {
+  throw new Error(`durationMs should flow from turn.completed: ${runtime.liveTurn?.durationMs}`);
+}
 if (runtime.liveTurn?.notices.some((event) => event.type === "usage.updated")) {
   throw new Error("usage updates should not be rendered as process notices");
 }
 
 store.applyRuntimeBatch({
   sessionId: "s1",
-  batchSeq: 3,
+  batchSeq: 4,
   events: [
     {
       id: "e-late",
       type: "assistant.delta",
       sessionId: "s1",
       turnId: "t1",
-      seq: 4,
-      ts: 1005,
+      seq: 9,
+      ts: 1008,
       source: "test",
       payload: { text: " late" },
     },
@@ -175,7 +221,7 @@ store.applyRuntimeBatch({
       seq: 2,
       ts: 2001,
       source: "test",
-      payload: { notice: { code: "waitingForFirstResponse", panel: true, replace: true } },
+      payload: { notice: { code: "permissionDenied", level: "warning", panel: true, replace: true, detail: "denied" } },
     },
     {
       id: "s2-notice-2",
@@ -185,7 +231,7 @@ store.applyRuntimeBatch({
       seq: 3,
       ts: 2002,
       source: "test",
-      payload: { notice: { code: "waitingForFirstResponse", panel: true, replace: true } },
+      payload: { notice: { code: "permissionDenied", level: "warning", panel: true, replace: true, detail: "denied again" } },
     },
     {
       id: "s2-hidden",
@@ -202,6 +248,21 @@ store.applyRuntimeBatch({
 runtime = store.getRuntimeSession("s2");
 if (runtime.liveTurn?.notices.length !== 1) {
   throw new Error(`replace notices should be aggregated, got ${runtime.liveTurn?.notices.length}`);
+}
+
+store.applyRuntimeEvent({
+  id: "s2-suggest",
+  type: "prompt_suggestions.updated",
+  sessionId: "s2",
+  turnId: null,
+  seq: 5,
+  ts: 2004,
+  source: "test",
+  payload: { suggestions: ["Try this", "Or that"] },
+});
+runtime = store.getRuntimeSession("s2");
+if (runtime.promptSuggestions.join(",") !== "Try this,Or that") {
+  throw new Error(`prompt suggestions should hydrate store, got ${JSON.stringify(runtime.promptSuggestions)}`);
 }
 
 console.log("session-runtime-store: ok");

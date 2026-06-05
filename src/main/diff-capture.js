@@ -8,7 +8,7 @@ const MAX_LINES = 5000;
 /** @type {Map<string, Map<string, {filePath: string, originalContent: string|null}>>} */
 const pendingSnapshots = new Map();
 
-/** @type {Map<string, Map<string, object>>} */
+/** @type {Map<string, Map<string, Map<string, object>>>} sessionId -> turnId -> filePath -> entry */
 const capturedDiffs = new Map();
 
 function isFileWriteTool(toolName) {
@@ -18,6 +18,17 @@ function isFileWriteTool(toolName) {
 function extractFilePath(toolName, input) {
   if (!input || typeof input !== "object") return null;
   return input.file_path || input.path || input.target_file || null;
+}
+
+function ensureTurnMap(sessionId, turnId) {
+  if (!capturedDiffs.has(sessionId)) {
+    capturedDiffs.set(sessionId, new Map());
+  }
+  const sessionTurns = capturedDiffs.get(sessionId);
+  if (!sessionTurns.has(turnId)) {
+    sessionTurns.set(turnId, new Map());
+  }
+  return sessionTurns.get(turnId);
 }
 
 function captureBeforeSnapshot(sessionId, toolId, toolName, input) {
@@ -43,7 +54,7 @@ function captureBeforeSnapshot(sessionId, toolId, toolName, input) {
   pendingSnapshots.get(sessionId).set(toolId, { filePath, originalContent });
 }
 
-function emitDiffForTool(sessionId, toolId, ctx) {
+function emitDiffForTool(sessionId, toolId, ctx, turnId = null) {
   const sessionSnapshots = pendingSnapshots.get(sessionId);
   if (!sessionSnapshots) return;
   const snapshot = sessionSnapshots.get(toolId);
@@ -79,15 +90,29 @@ function emitDiffForTool(sessionId, toolId, ctx) {
   const adds = diff.filter((h) => h.type === "add").length;
   const dels = diff.filter((h) => h.type === "del").length;
 
-  const diffEntry = { filePath, fileName, status, diff, originalContent, stats: { adds, dels } };
+  const resolvedTurnId = turnId ? String(turnId) : "_orphan";
+  const diffEntry = {
+    turnId: resolvedTurnId,
+    toolId,
+    filePath,
+    fileName,
+    status,
+    diff,
+    originalContent,
+    stats: { adds, dels },
+  };
 
-  if (!capturedDiffs.has(sessionId)) {
-    capturedDiffs.set(sessionId, new Map());
-  }
-  capturedDiffs.get(sessionId).set(filePath, diffEntry);
+  ensureTurnMap(sessionId, resolvedTurnId).set(filePath, diffEntry);
 
   const { sendToRenderer } = require("./ipc-utils");
   sendToRenderer(ctx.mainWindow, "assistant:file-diff", { sessionId, ...diffEntry });
+}
+
+function getDiffsForTurn(sessionId, turnId) {
+  if (!sessionId || !turnId) return [];
+  const turnMap = capturedDiffs.get(sessionId)?.get(String(turnId));
+  if (!turnMap) return [];
+  return [...turnMap.values()];
 }
 
 function computeLineDiff(oldLines, newLines) {
@@ -154,9 +179,12 @@ function clearDiffsForSession(sessionId) {
 }
 
 function removeAcceptedDiff(sessionId, filePath) {
-  const diffs = capturedDiffs.get(sessionId);
-  if (!diffs) return false;
-  return diffs.delete(filePath);
+  const sessionTurns = capturedDiffs.get(sessionId);
+  if (!sessionTurns) return false;
+  for (const turnMap of sessionTurns.values()) {
+    if (turnMap.delete(filePath)) return true;
+  }
+  return false;
 }
 
 module.exports = {
@@ -164,6 +192,7 @@ module.exports = {
   emitDiffForTool,
   clearDiffsForSession,
   removeAcceptedDiff,
+  getDiffsForTurn,
   isFileWriteTool,
   extractFilePath,
 };

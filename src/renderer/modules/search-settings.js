@@ -7,7 +7,7 @@ import { showToast } from "./toast.js";
 import store from "./state.js";
 import { t, tSearchProvider, tSearchProviderDesc } from "../i18n/index.js";
 
-import { anySessionRunning } from "./session-busy.js";
+import { anySessionRunning } from "./session-runtime-store.js";
 
 function isBusy() {
   return anySessionRunning();

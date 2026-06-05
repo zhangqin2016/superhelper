@@ -4,8 +4,12 @@
 import { $ } from "./dom.js";
 import store from "./state.js";
 import { t } from "../i18n/index.js";
+import { getTurnId } from "./session-runtime-store.js";
 
-const sessionDiffs = new Map(); // sessionId -> Map<filePath, entry>
+/** sessionId -> turnId -> Map<filePath, entry> */
+const sessionDiffs = new Map();
+/** sessionId -> Map<filePath, turnId> */
+const fileTurnIndex = new Map();
 
 function isBypassMode() {
   const select = document.getElementById("permissionModeSelect");
@@ -16,37 +20,91 @@ function isActiveSession(sessionId) {
   return store.get("activeSessionId") === sessionId;
 }
 
-export function addDiffEntry(sessionId, entry) {
+function ensureTurnMap(sessionId, turnId) {
   if (!sessionDiffs.has(sessionId)) {
     sessionDiffs.set(sessionId, new Map());
   }
-  const fileMap = sessionDiffs.get(sessionId);
+  const sessionTurns = sessionDiffs.get(sessionId);
+  const key = turnId || "_orphan";
+  if (!sessionTurns.has(key)) {
+    sessionTurns.set(key, new Map());
+  }
+  return sessionTurns.get(key);
+}
+
+function rememberFileTurn(sessionId, turnId, filePath) {
+  if (!fileTurnIndex.has(sessionId)) {
+    fileTurnIndex.set(sessionId, new Map());
+  }
+  fileTurnIndex.get(sessionId).set(filePath, turnId || "_orphan");
+}
+
+function forgetFileTurn(sessionId, filePath) {
+  fileTurnIndex.get(sessionId)?.delete(filePath);
+}
+
+export function addDiffEntry(sessionId, entry) {
+  const turnId = entry.turnId || "_orphan";
+  const fileMap = ensureTurnMap(sessionId, turnId);
   fileMap.set(entry.filePath, entry);
+  rememberFileTurn(sessionId, turnId, entry.filePath);
   renderInlineDiffForFile(sessionId, entry.filePath, entry);
 
-  // In bypass mode, auto-accept immediately — no panel flash needed
   if (isBypassMode()) {
     acceptFileChange(sessionId, entry.filePath);
     return;
   }
 
-  // Only show diff panel for the active session
   if (isActiveSession(sessionId)) {
     renderDiffPanel(sessionId);
     showDiffPanel();
   }
 }
 
+export function getSessionDiffEntries(sessionId, turnId = null) {
+  const sessionTurns = sessionDiffs.get(sessionId);
+  if (!sessionTurns) return [];
+  if (turnId) {
+    const turnMap = sessionTurns.get(turnId);
+    return turnMap ? [...turnMap.values()] : [];
+  }
+  const all = [];
+  for (const turnMap of sessionTurns.values()) {
+    all.push(...turnMap.values());
+  }
+  return all;
+}
+
+export function getActiveTurnDiffEntries(sessionId) {
+  const liveTurnId = getTurnId(sessionId);
+  if (liveTurnId) return getSessionDiffEntries(sessionId, liveTurnId);
+  return getSessionDiffEntries(sessionId);
+}
+
+export function reapplySessionInlineDiffs(sessionId, turnId = null) {
+  const entries = turnId
+    ? getSessionDiffEntries(sessionId, turnId)
+    : getActiveTurnDiffEntries(sessionId);
+  for (const entry of entries) {
+    renderInlineDiffForFile(sessionId, entry.filePath, entry);
+  }
+}
+
 function renderInlineDiffForFile(sessionId, filePath, entry) {
-  // Find the matching Write/Edit tool row in the runtime transcript.
   const panel = document.querySelector(
-    `.session-messages[data-session-id="${sessionId}"]`
+    `.session-messages[data-session-id="${sessionId}"]`,
   );
   if (!panel) return;
-  const toolRow = panel.querySelector(`.assistant-tool-row[data-tool-file-path="${CSS.escape(filePath)}"]`);
+
+  const turnId = entry.turnId;
+  const turnScope = turnId
+    ? `.assistant-turn-article[data-turn-id="${CSS.escape(turnId)}"] `
+    : "";
+  const toolRow = panel.querySelector(
+    `${turnScope}.assistant-tool-row[data-tool-file-path="${CSS.escape(filePath)}"]`,
+  );
   if (!toolRow) return;
 
-  // Remove existing inline diff
   const existing = toolRow.querySelector(".assistant-tool-diff");
   if (existing) existing.remove();
 
@@ -54,7 +112,7 @@ function renderInlineDiffForFile(sessionId, filePath, entry) {
   diffDiv.className = "assistant-tool-diff";
 
   if (entry.diff && entry.diff.length > 0) {
-    const lines = entry.diff.slice(0, 40); // inline: limit to first 40 hunks
+    const lines = entry.diff.slice(0, 40);
     for (const hunk of lines) {
       const line = document.createElement("div");
       line.className = `diff-hunk-${hunk.type}`;
@@ -64,7 +122,7 @@ function renderInlineDiffForFile(sessionId, filePath, entry) {
     if (entry.diff.length > 40) {
       const more = document.createElement("div");
       more.className = "assistant-tool-diff-more";
-      more.textContent = "... 查看更多";
+      more.textContent = t("diff.viewMore");
       diffDiv.appendChild(more);
     }
   } else {
@@ -75,16 +133,17 @@ function renderInlineDiffForFile(sessionId, filePath, entry) {
 }
 
 export function clearDiffEntries(sessionId) {
-  if (!sessionId || !sessionDiffs.has(sessionId)) return;
+  if (!sessionId) return;
   sessionDiffs.delete(sessionId);
+  fileTurnIndex.delete(sessionId);
   renderDiffPanel(sessionId);
   hideDiffPanel();
 }
 
 function showDiffPanel() {
   const sid = store.get("activeSessionId");
-  const fileMap = sid ? sessionDiffs.get(sid) : null;
-  if (fileMap && fileMap.size > 0) {
+  const entries = sid ? getActiveTurnDiffEntries(sid) : [];
+  if (entries.length > 0) {
     const panel = $("diffPanel");
     if (panel) panel.hidden = false;
   }
@@ -92,8 +151,8 @@ function showDiffPanel() {
 
 function hideDiffPanel() {
   const sid = store.get("activeSessionId");
-  const fileMap = sid ? sessionDiffs.get(sid) : null;
-  if (!fileMap || fileMap.size === 0) {
+  const entries = sid ? getActiveTurnDiffEntries(sid) : [];
+  if (!entries.length) {
     const panel = $("diffPanel");
     if (panel) panel.hidden = true;
   }
@@ -106,13 +165,13 @@ function renderDiffPanel(sessionId) {
   if (!listEl) return;
 
   listEl.textContent = "";
-  const fileMap = sessionDiffs.get(sid);
-  if (!fileMap || fileMap.size === 0) {
+  const entries = getActiveTurnDiffEntries(sid);
+  if (!entries.length) {
     hideDiffPanel();
     return;
   }
 
-  for (const [filePath, entry] of fileMap) {
+  for (const entry of entries) {
     listEl.appendChild(renderDiffFileCard(sid, entry));
   }
 }
@@ -174,45 +233,52 @@ function renderDiffFileCard(sessionId, entry) {
   return card;
 }
 
+function removeLocalDiff(sessionId, filePath) {
+  const turnId = fileTurnIndex.get(sessionId)?.get(filePath);
+  if (!turnId) return false;
+  const turnMap = sessionDiffs.get(sessionId)?.get(turnId);
+  if (!turnMap) return false;
+  const removed = turnMap.delete(filePath);
+  forgetFileTurn(sessionId, filePath);
+  if (turnMap.size === 0) {
+    sessionDiffs.get(sessionId)?.delete(turnId);
+  }
+  return removed;
+}
+
 async function acceptFileChange(sessionId, filePath) {
-  const fileMap = sessionDiffs.get(sessionId);
-  if (!fileMap) return;
+  if (!removeLocalDiff(sessionId, filePath)) return;
   await window.assistantClient.acceptChange(sessionId, filePath);
-  fileMap.delete(filePath);
-  // Always render for active session to avoid cross-session DOM contamination
-  renderDiffPanel();
+  renderDiffPanel(sessionId);
 }
 
 async function rejectFileChange(sessionId, filePath) {
-  const fileMap = sessionDiffs.get(sessionId);
-  if (!fileMap) return;
-  const entry = fileMap.get(filePath);
+  const turnId = fileTurnIndex.get(sessionId)?.get(filePath);
+  const entry = turnId
+    ? sessionDiffs.get(sessionId)?.get(turnId)?.get(filePath)
+    : null;
   if (!entry) return;
   if (entry.originalContent != null) {
     await window.assistantClient.rejectChange(sessionId, filePath, entry.originalContent);
   }
-  fileMap.delete(filePath);
-  renderDiffPanel();
+  removeLocalDiff(sessionId, filePath);
+  renderDiffPanel(sessionId);
 }
 
 async function acceptAllChanges(sessionId) {
-  const fileMap = sessionDiffs.get(sessionId);
-  if (!fileMap) return;
-  const paths = [...fileMap.keys()];
+  const paths = getActiveTurnDiffEntries(sessionId).map((e) => e.filePath);
   for (const fp of paths) {
     await acceptFileChange(sessionId, fp);
   }
 }
 
 async function rejectAllChanges(sessionId) {
-  const fileMap = sessionDiffs.get(sessionId);
-  if (!fileMap) return;
-  const entries = [...fileMap.values()];
+  const entries = [...getActiveTurnDiffEntries(sessionId)];
   for (const entry of entries) {
     if (entry.originalContent != null) {
       await window.assistantClient.rejectChange(sessionId, entry.filePath, entry.originalContent);
     }
-    fileMap.delete(entry.filePath);
+    removeLocalDiff(sessionId, entry.filePath);
   }
   renderDiffPanel(sessionId);
 }
@@ -245,11 +311,9 @@ export function initDiffPanel() {
   });
   $("diffToggleBtn")?.addEventListener("click", toggleDiffCollapse);
 
-  // Re-render diff panel on session switch
   store.on("activeSessionId", (newId) => {
     if (newId) {
       renderDiffPanel(newId);
-      // Refresh bypass-mode button visibility
       const bypass = isBypassMode();
       const acceptAll = $("diffAcceptAllBtn");
       const rejectAll = $("diffRejectAllBtn");
@@ -260,7 +324,6 @@ export function initDiffPanel() {
     }
   });
 
-  // Initial bypass check
   if (isBypassMode()) {
     const acceptAll = $("diffAcceptAllBtn");
     const rejectAll = $("diffRejectAllBtn");

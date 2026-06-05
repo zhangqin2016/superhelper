@@ -31,6 +31,20 @@ function runtimeEventFromAction(action) {
       return runtimeDraft("assistant.delta", { text: action.text || "" });
     case "assistant_thinking":
       return runtimeDraft("assistant.thinking.delta", { text: action.text || "" });
+    case "assistant_image":
+      return runtimeDraft("content.block", {
+        blockType: "image",
+        mediaType: action.mediaType || "image/png",
+        data: action.data || "",
+      });
+    case "unknown_runtime_event":
+    case "protocol_warning":
+    case "unknown_control_request":
+      return runtimeDraft("protocol.unknown", {
+        kind: action.kind || "unknown_runtime_event",
+        notice: action.notice || null,
+        event: action.event || null,
+      });
     case "assistant_tool_use":
     case "stream_tool_start":
       return runtimeDraft("tool.started", {
@@ -46,7 +60,7 @@ function runtimeEventFromAction(action) {
         partialJson: action.partialJson || "",
       });
     case "stream_content_block_stop":
-      return runtimeDraft("tool.input.done", { index: action.index });
+      return null;
     case "tool_result":
       return runtimeDraft("tool.done", {
         id: action.id || "",
@@ -54,20 +68,12 @@ function runtimeEventFromAction(action) {
         content: action.content || null,
       });
     case "permission_check":
-      return runtimeDraft("permission.requested", {
-        requestId: action.requestId || "",
-        toolName: action.toolName || "unknown",
-        input: action.input || {},
-        title: action.title || "",
-        description: action.description || "",
-        suggestions: action.suggestions || [],
-      });
+      return null;
     case "ask_user_question":
-      return runtimeDraft("user_question.requested", {
-        requestId: action.requestId || "",
-        input: action.input || {},
-        questions: action.questions || [],
-      });
+      return null;
+    case "turn_result":
+    case "runtime_error":
+      return null;
     case "control_cancel":
       return runtimeDraft("permission.resolved", {
         requestId: action.requestId || "",
@@ -93,14 +99,6 @@ function runtimeEventFromAction(action) {
         notice,
       });
     }
-    case "turn_result":
-      return runtimeDraft(action.event?.is_error ? "turn.failed" : "turn.completed", {
-        event: action.event || null,
-        assistant: action.event?.result || "",
-        usage: action.event?.usage || action.event?.modelUsage || null,
-      });
-    case "runtime_error":
-      return runtimeDraft("turn.failed", { event: action.event || null });
     case "hook_pretool_use_ask":
     case "hook_user_prompt_ask":
     case "hook_stop":

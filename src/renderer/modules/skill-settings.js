@@ -10,7 +10,7 @@ import { t, skillErrorMessage, tSkillCategory, getLocale, tSkillName, tSkillDesc
 /** @type {{ available: object[], categories?: object[], remoteIndexes?: object[], activeCategory?: string } | null} */
 let lastCatalog = null;
 
-import { anySessionRunning } from "./session-busy.js";
+import { anySessionRunning } from "./session-runtime-store.js";
 
 function isBusy() {
   return anySessionRunning();

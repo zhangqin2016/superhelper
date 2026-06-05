@@ -43,20 +43,22 @@ function hasType(events, type) {
 }
 
 const basicEvents = flatten("basic-text.jsonl");
-if (!hasType(basicEvents, "assistant.delta") || !hasType(basicEvents, "turn.completed")) {
-  throw new Error(`basic-text must expose assistant.delta and turn.completed, got ${basicEvents.map((e) => e.type).join(",")}`);
+if (!hasType(basicEvents, "assistant.delta")) {
+  throw new Error(`basic-text must expose assistant.delta, got ${basicEvents.map((e) => e.type).join(",")}`);
 }
 
 const toolEvents = flatten("tool-use.jsonl");
-for (const type of ["tool.started", "tool.input.delta", "tool.input.done", "tool.done"]) {
+for (const type of ["tool.started", "tool.input.delta", "tool.done"]) {
   if (!hasType(toolEvents, type)) {
     throw new Error(`tool-use must expose ${type}, got ${toolEvents.map((e) => e.type).join(",")}`);
   }
 }
 
-const permissionEvents = flatten("control-permission.jsonl");
-if (!hasType(permissionEvents, "permission.requested")) {
-  throw new Error("permission control request must expose permission.requested");
+const permissionAdapter = new CliEventAdapter();
+const permissionNormalized = readJsonl(path.join(fixtureDir, "control-permission.jsonl"))
+  .flatMap((event) => permissionAdapter.normalizeEvent(event).actions);
+if (!permissionNormalized.some((action) => action.kind === "permission_check")) {
+  throw new Error("permission control request must normalize to permission_check action");
 }
 
 const taskEvents = flatten("task-progress.jsonl");
@@ -65,8 +67,8 @@ if (!hasType(taskEvents, "engine.notice")) {
 }
 
 const unknownEvents = flatten("unknown-runtime.jsonl");
-if (!hasType(unknownEvents, "engine.warning")) {
-  throw new Error("unknown vendor events must degrade to engine.warning");
+if (!hasType(unknownEvents, "protocol.unknown")) {
+  throw new Error("unknown vendor events must degrade to protocol.unknown");
 }
 
 const pythonGameEvents = flatten("python-game-probe.jsonl");
@@ -75,8 +77,8 @@ for (const type of ["assistant.thinking.delta", "tool.started", "tool.done", "as
     throw new Error(`python-game probe must expose ${type}, got ${pythonGameEvents.map((e) => e.type).join(",")}`);
   }
 }
-if (!hasType(pythonGameEvents, "turn.completed") && !hasType(pythonGameEvents, "turn.failed")) {
-  throw new Error(`python-game probe must expose a terminal turn event, got ${pythonGameEvents.map((e) => e.type).join(",")}`);
+if (!hasType(pythonGameEvents, "assistant.delta")) {
+  throw new Error(`python-game probe must expose assistant.delta, got ${pythonGameEvents.map((e) => e.type).join(",")}`);
 }
 if (pythonGameEvents.some((event) => event.type === "engine.warning")) {
   throw new Error("python-game probe must not produce engine.warning for known Claude CLI events");

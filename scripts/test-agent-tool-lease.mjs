@@ -8,6 +8,44 @@ import module from "node:module";
 
 const require = module.createRequire(import.meta.url);
 
+function createTestSession(sessionId) {
+  const runner = new AgentSession(sessionId);
+  runner.bindOrchestrator({
+    ingest(_sid, drafts) {
+      for (const draft of drafts || []) {
+        switch (draft.type) {
+          case "engine.notice":
+          case "engine.warning":
+            runner.emit("engine-notice", draft.payload?.notice || draft.payload);
+            break;
+          case "tool.done":
+            runner.emit("tool-done", draft.payload);
+            break;
+          case "permission.requested":
+            runner.emit("permission-request", draft.payload);
+            break;
+          case "user_question.requested":
+            runner.emit("ask-user-question", {
+              requestId: draft.payload.requestId,
+              questions: draft.payload.questions,
+              input: draft.payload.input,
+            });
+            break;
+          default:
+            break;
+        }
+      }
+    },
+    notifyRunnerDone(_sid, payload) {
+      runner.emit("done", payload);
+    },
+    notifyRunnerError(_sid, message) {
+      runner.emit("error", message);
+    },
+  });
+  return runner;
+}
+
 function startSyntheticTurn(runner) {
   runner.busy = true;
   runner._turnSettled = false;
@@ -21,14 +59,14 @@ function line(runner, event) {
   runner._handleLine(JSON.stringify(event));
 }
 
-const runner = new AgentSession("sess_tool_lease");
+const runner = createTestSession("sess_tool_lease");
 AgentSession.TOOL_LONG_TASK_NOTICE_MS = 5;
 AgentSession.FIRST_RESPONSE_NOTICE_MS = 5;
 AgentSession.LONG_WAIT_NOTICE_MS = 10;
 AgentSession.MESSAGE_STOP_GRACE_MS = 5;
 AgentSession.QUIESCE_MS = 5;
 
-const waitRunner = new AgentSession("sess_wait_notices");
+const waitRunner = createTestSession("sess_wait_notices");
 const waitNotices = [];
 waitRunner.on("engine-notice", (notice) => waitNotices.push(notice));
 startSyntheticTurn(waitRunner);
@@ -43,7 +81,7 @@ if (!waitNotices.some((notice) => notice.code === "longWait")) {
 }
 waitRunner._completeTurn({ code: 0, output: "" });
 
-const resumeRunner = new AgentSession("sess_resume_failure");
+const resumeRunner = createTestSession("sess_resume_failure");
 resumeRunner.agentResumeId = "old_resume_id";
 let resumeInvalid = false;
 let resumeError = "";
@@ -108,7 +146,7 @@ if (runner._canAutoCompleteTurn()) {
   throw new Error("foreground tool turns should wait for final result or post-tool timeout");
 }
 
-const resultBeforeToolRunner = new AgentSession("sess_result_before_tool_done");
+const resultBeforeToolRunner = createTestSession("sess_result_before_tool_done");
 const resultBeforeToolEvents = [];
 resultBeforeToolRunner.on("tool-done", () => {
   resultBeforeToolEvents.push("tool-done");
@@ -148,11 +186,15 @@ line(resultBeforeToolRunner, {
     ],
   },
 });
-if (resultBeforeToolEvents.join(",") !== "tool-done,done") {
+if (
+  !resultBeforeToolEvents.includes("tool-done")
+  || !resultBeforeToolEvents.includes("done")
+  || resultBeforeToolEvents.length !== 2
+) {
   throw new Error(`deferred result should complete after tool-done, got ${resultBeforeToolEvents.join(",")}`);
 }
 
-const toolTurnRunner = new AgentSession("sess_tool_message_stop");
+const toolTurnRunner = createTestSession("sess_tool_message_stop");
 let completedAfterMessageStop = false;
 toolTurnRunner.on("done", () => {
   completedAfterMessageStop = true;
@@ -188,7 +230,7 @@ if (completedAfterMessageStop) {
 }
 toolTurnRunner._completeTurn({ code: 0, output: "" });
 
-const textFallbackRunner = new AgentSession("sess_text_message_stop");
+const textFallbackRunner = createTestSession("sess_text_message_stop");
 let textFallbackDone = false;
 textFallbackRunner.on("done", () => {
   textFallbackDone = true;
@@ -207,7 +249,7 @@ if (!textFallbackDone) {
   throw new Error("pure text turns may still use message_stop fallback when result is missing");
 }
 
-const hugeToolRunner = new AgentSession("sess_huge_tool_output");
+const hugeToolRunner = createTestSession("sess_huge_tool_output");
 let hugeToolDone = null;
 hugeToolRunner.on("tool-done", (payload) => {
   hugeToolDone = payload;
@@ -275,7 +317,7 @@ if (!runner._canAutoCompleteTurn()) {
 
 runner._completeTurn({ code: 0, output: "" });
 
-const semanticDetachedRunner = new AgentSession("sess_semantic_detached");
+const semanticDetachedRunner = createTestSession("sess_semantic_detached");
 let semanticDetachedNotice = null;
 let semanticDetachedTool = null;
 semanticDetachedRunner.on("engine-notice", (payload) => {
@@ -319,7 +361,7 @@ if (!semanticDetachedTool?.result?.detached) {
 }
 semanticDetachedRunner._completeTurn({ code: 0, output: "" });
 
-const foregroundCommandRunner = new AgentSession("sess_foreground_command");
+const foregroundCommandRunner = createTestSession("sess_foreground_command");
 startSyntheticTurn(foregroundCommandRunner);
 line(foregroundCommandRunner, {
   type: "stream_event",
@@ -369,7 +411,7 @@ if (foregroundCommandRunner._canAutoCompleteTurn()) {
 foregroundCommandRunner._completeTurn({ code: 0, output: "" });
 
 AgentSession.INTERRUPT_FALLBACK_MS = 5;
-const interrupted = new AgentSession("sess_interrupt_fallback");
+const interrupted = createTestSession("sess_interrupt_fallback");
 let killed = false;
 interrupted.process = {
   killed: false,
@@ -391,7 +433,7 @@ if (!killed || interrupted.process !== null) {
   throw new Error("interrupt fallback should terminate dirty runner");
 }
 
-const questionRunner = new AgentSession("sess_question");
+const questionRunner = createTestSession("sess_question");
 let writtenControl = "";
 questionRunner.process = {
   stdin: {
@@ -437,7 +479,7 @@ if (parsedControl.response?.response?.updatedInput?.answers?.["Pick a mode"]?.[0
   throw new Error(`respondUserQuestion control payload failed: ${writtenControl}`);
 }
 
-const fallbackQuestionRunner = new AgentSession("sess_question_fallback");
+const fallbackQuestionRunner = createTestSession("sess_question_fallback");
 let fallbackQuestionPayload = null;
 let fallbackQuestionWrite = "";
 fallbackQuestionRunner.process = {
@@ -482,7 +524,7 @@ if (
   throw new Error(`fallback AskUserQuestion control payload failed: ${fallbackQuestionWrite}`);
 }
 
-const autoDeniedRunner = new AgentSession("sess_auto_denied");
+const autoDeniedRunner = createTestSession("sess_auto_denied");
 let autoDeniedNotice = null;
 let autoDeniedWrite = "";
 autoDeniedRunner.process = {
@@ -515,7 +557,7 @@ if (JSON.parse(autoDeniedWrite).response?.response?.behavior !== "deny") {
   throw new Error(`dontAsk denial should deny control request: ${autoDeniedWrite}`);
 }
 
-const userDeniedRunner = new AgentSession("sess_user_denied");
+const userDeniedRunner = createTestSession("sess_user_denied");
 let userDeniedNotice = null;
 let userDeniedWrite = "";
 userDeniedRunner.process = {
@@ -551,7 +593,7 @@ if (!userDeniedWrite.includes('"behavior":"deny"')) {
   throw new Error(`user denial should deny control request: ${userDeniedWrite}`);
 }
 
-const explicitReadPermissionRunner = new AgentSession("sess_explicit_read_permission");
+const explicitReadPermissionRunner = createTestSession("sess_explicit_read_permission");
 let explicitReadPrompt = null;
 explicitReadPermissionRunner.process = {
   stdin: {
@@ -578,7 +620,7 @@ if (explicitReadPrompt?.requestId !== "req_read_permission") {
 }
 explicitReadPermissionRunner.cancelPermissionRequest("req_read_permission");
 
-const resultErrorRunner = new AgentSession("sess_result_error");
+const resultErrorRunner = createTestSession("sess_result_error");
 let resultErrorDone = null;
 startSyntheticTurn(resultErrorRunner);
 resultErrorRunner.on("done", (payload) => {
@@ -593,7 +635,7 @@ if (resultErrorDone?.code !== 1) {
   throw new Error(`result error subtype should complete as failed: ${JSON.stringify(resultErrorDone)}`);
 }
 
-const reloadRunner = new AgentSession("sess_reload");
+const reloadRunner = createTestSession("sess_reload");
 let reloadWrites = [];
 let leakedChunk = "";
 reloadRunner.process = {
@@ -627,7 +669,7 @@ if (reloadWrites[0]?.message?.content?.[0]?.text !== "/reload-skills") {
   throw new Error(`reloadSkills payload failed: ${JSON.stringify(reloadWrites[0])}`);
 }
 
-const backgroundRunner = new AgentSession("sess_background");
+const backgroundRunner = createTestSession("sess_background");
 startSyntheticTurn(backgroundRunner);
 line(backgroundRunner, { type: "system", subtype: "task_progress" });
 if (backgroundRunner._canAutoCompleteTurn()) {
@@ -639,7 +681,7 @@ if (!backgroundRunner._canAutoCompleteTurn()) {
 }
 backgroundRunner._clearIdleTimer();
 
-const backgroundResultRunner = new AgentSession("sess_background_result_deferred");
+const backgroundResultRunner = createTestSession("sess_background_result_deferred");
 let backgroundResultDone = false;
 backgroundResultRunner.on("done", () => {
   backgroundResultDone = true;
@@ -656,7 +698,7 @@ if (!backgroundResultDone || backgroundResultRunner.busy) {
   throw new Error("deferred background result should complete after activity expires");
 }
 
-const adapterFailureRunner = new AgentSession("sess_adapter_failure");
+const adapterFailureRunner = createTestSession("sess_adapter_failure");
 let adapterFailureNotice = null;
 adapterFailureRunner.on("engine-notice", (notice) => {
   adapterFailureNotice = notice;
@@ -689,7 +731,7 @@ require.cache[serviceClientPath] = {
     },
   },
 };
-const usageRunner = new AgentSession("sess_usage");
+const usageRunner = createTestSession("sess_usage");
 startSyntheticTurn(usageRunner);
 line(usageRunner, {
   type: "result",

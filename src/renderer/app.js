@@ -113,7 +113,7 @@ async function bindAppIcons() {
       console.warn("[app-icon] no runtime icon URL");
       return;
     }
-    for (const img of document.querySelectorAll(".app-logo, .settings-about-logo")) {
+    for (const img of document.querySelectorAll(".app-logo, .settings-about-logo, .assistant-turn-logo")) {
       img.src = url;
       img.addEventListener("error", () => {
         console.warn("[app-icon] failed to render logo");

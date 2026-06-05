@@ -54,6 +54,25 @@ const processEvent = createRuntimeEvent({
   },
 });
 assertRuntimeEvent(processEvent);
+
+const contentBlock = createRuntimeEvent({
+  type: "content.block",
+  sessionId: "s1",
+  turnId: "t1",
+  seq: 5,
+  payload: { blockType: "image", mediaType: "image/png", data: "abc" },
+});
+assertRuntimeEvent(contentBlock);
+
+const protocolUnknown = createRuntimeEvent({
+  type: "protocol.unknown",
+  sessionId: "s1",
+  turnId: "t1",
+  seq: 6,
+  payload: { kind: "unknown_runtime_event", notice: { detail: "x" }, event: { type: "foo" } },
+});
+assertRuntimeEvent(protocolUnknown);
+
 if (processEvent.payload.rawType !== "stream_event") {
   throw new Error("process.event should preserve CLI process metadata");
 }

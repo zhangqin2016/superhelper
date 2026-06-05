@@ -119,9 +119,6 @@ contextBridge.exposeInMainWorld("assistantClient", {
   onRuntimeEvents: (callback) => {
     ipcRenderer.on("assistant:runtime-events", (_event, batch) => callback(batch));
   },
-  onPromptSuggestions: (callback) => {
-    ipcRenderer.on("assistant:prompt-suggestions", (_event, data) => callback(data));
-  },
   onUpdateState: (callback) => {
     ipcRenderer.on("updates:state", (_event, data) => callback(data));
   },

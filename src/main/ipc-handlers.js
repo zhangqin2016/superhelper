@@ -14,6 +14,7 @@ const { registerAssistantHandlers } = require("./ipc-assistant");
 const { registerFileTreeHandlers } = require("./ipc-filetree");
 const { RuntimeEventBus } = require("./runtime-event-bus");
 const { TranscriptStore } = require("./transcript-store");
+const { TurnArchive } = require("./turn-archive");
 const { TurnOrchestrator } = require("./turn-orchestrator");
 
 function registerAll(ctx) {
@@ -23,6 +24,7 @@ function registerAll(ctx) {
   } = ctx;
   ctx.eventBus = new RuntimeEventBus(() => ctx.mainWindow);
   ctx.transcriptStore = new TranscriptStore(sessionManager);
+  ctx.turnArchive = new TurnArchive(sessionManager);
   ctx.turnOrchestrator = new TurnOrchestrator(ctx);
 
   // --- App ---------------------------------------------------------------

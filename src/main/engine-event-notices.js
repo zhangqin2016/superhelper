@@ -86,7 +86,7 @@ function classifyEngineEvent(ev) {
       return {
         code: "rateLimit",
         level: "progress",
-        panel: true,
+        panel: false,
         replace: true,
       };
     case "tool_use_summary":
@@ -94,7 +94,7 @@ function classifyEngineEvent(ev) {
         return {
           code: "toolSummary",
           level: "info",
-          panel: true,
+          panel: false,
           detail: ev.summary.trim().slice(0, 160),
           done: true,
         };
@@ -125,7 +125,7 @@ function classifySystemEvent(ev) {
       return {
         code: "compactBoundary",
         level: "progress",
-        panel: true,
+        panel: false,
         replace: true,
       };
     case "compact_complete":
@@ -133,7 +133,7 @@ function classifySystemEvent(ev) {
       return {
         code: "compactComplete",
         level: "info",
-        panel: true,
+        panel: false,
         replace: true,
         replacesCode: "compactBoundary",
         done: true,
@@ -145,7 +145,7 @@ function classifySystemEvent(ev) {
       return {
         code: "apiRetry",
         level: "progress",
-        panel: true,
+        panel: false,
         replace: true,
         attempt,
         maxRetries,
@@ -158,7 +158,7 @@ function classifySystemEvent(ev) {
       return {
         code: "thinkingProgress",
         level: "progress",
-        panel: true,
+        panel: false,
         replace: true,
         detail: tokens || delta,
         subtype,
@@ -178,7 +178,7 @@ function classifySystemEvent(ev) {
       return {
         code: "taskProgress",
         level: "progress",
-        panel: true,
+        panel: false,
         replace: true,
         detail: extractTaskDetail(ev),
         subtype,
@@ -187,7 +187,7 @@ function classifySystemEvent(ev) {
       return {
         code: "taskCompleted",
         level: "info",
-        panel: true,
+        panel: false,
         replace: true,
         replacesCode: "taskProgress",
         done: true,
@@ -210,7 +210,7 @@ function classifySystemEvent(ev) {
         return {
           code: "thinkingProgress",
           level: "progress",
-          panel: true,
+          panel: false,
           replace: true,
           detail: "",
           subtype,
@@ -220,7 +220,7 @@ function classifySystemEvent(ev) {
         return {
           code: "taskProgress",
           level: "progress",
-          panel: true,
+          panel: false,
           replace: true,
           detail: extractTaskDetail(ev),
           subtype,
@@ -259,7 +259,7 @@ function classifyFallbackEvent(ev) {
   return {
     code: "unknownEvent",
     level: "info",
-    panel: true,
+    panel: false,
     done: true,
     type,
     subtype: typeof ev.subtype === "string" ? ev.subtype : undefined,
@@ -279,7 +279,7 @@ function noticeForControlSubtype(controlSubtype) {
   return {
     code: "controlRequest",
     level: "info",
-    panel: true,
+    panel: false,
     done: true,
     subtype: controlSubtype,
   };
