@@ -41,7 +41,7 @@ export function initLocaleSettings() {
     const { refreshSearchSettings } = await import("./search-settings.js");
     const { refreshSkillsList } = await import("./skill-settings.js");
     const { refreshSessionSkillsUi } = await import("./session-skills.js");
-    const { syncComposerForActiveSession } = await import("./message.js");
+    const { syncComposerForActiveSession, refreshWorkbenchEmptyForActiveSession } = await import("./message.js");
 
     updateTopbarTitles();
     renderProjectTree();
@@ -51,5 +51,6 @@ export function initLocaleSettings() {
     await refreshSkillsList();
     await refreshSessionSkillsUi();
     syncComposerForActiveSession();
+    refreshWorkbenchEmptyForActiveSession();
   });
 }

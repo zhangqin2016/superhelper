@@ -864,15 +864,22 @@ function renderQueue(root, sessionId, queue) {
 }
 
 function renderFinal(article, liveTurn) {
-  if (article.querySelector(".assistant-turn-separator")) return;
+  if (article.querySelector(".assistant-turn-report")) return;
   if (!shouldShowFinal(liveTurn)) return;
   if (liveTurn.turnId) narrativeRenderState.delete(liveTurn.turnId);
-  const separator = document.createElement("div");
-  separator.className = "assistant-turn-separator";
+  const report = document.createElement("section");
+  report.className = "assistant-turn-report";
+
+  const label = document.createElement("p");
+  label.className = "assistant-turn-report-label";
+  label.textContent = t("message.resultLabel");
+
   const final = document.createElement("div");
-  final.className = "assistant-turn-final markdown-body";
+  final.className = "assistant-turn-final markdown-body assistant-turn-report-body";
   const text = liveTurn.final?.payload?.assistant || liveTurn.assistantText || "";
   void renderMarkdown(final, text);
-  article.append(separator, final);
+
+  report.append(label, final);
+  article.appendChild(report);
 }
 

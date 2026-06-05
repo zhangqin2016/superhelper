@@ -3,28 +3,37 @@
    ========================================================================= */
 
 .runtime-messages {
-  max-width: none;
-  margin: 0;
-  padding: 20px 12px 40px;
-  gap: 22px;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 16px 20px 40px;
+  gap: 16px;
   color-scheme: dark;
 }
 
 .runtime-user-message {
   display: block;
   width: 100%;
-  margin: 0 0 12px;
-  padding: 12px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  margin: 0 0 14px;
+  padding: 10px 12px 10px 14px;
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-surface-raised);
+}
+
+.runtime-user-label {
+  margin: 0 0 6px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
 }
 
 .runtime-user-body {
-  color: #e8ebf2;
-  font-size: 15px;
+  color: var(--text-primary);
+  font-size: var(--text-base);
   font-weight: 400;
-  line-height: 1.65;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -46,10 +55,10 @@
 
 .assistant-turn-article {
   width: 100%;
-  color: #eef1f7;
-  font-size: 15px;
-  line-height: 1.65;
-  margin: 0 0 12px;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  margin: 0 0 14px;
   padding: 0;
   border: none;
   border-radius: 0;
@@ -84,10 +93,10 @@
 .assistant-turn-narrative,
 .assistant-turn-narrative-text,
 .assistant-turn-final {
-  font-size: 15px;
+  font-size: var(--text-base);
   font-weight: 400;
-  color: #e8ebf2;
-  line-height: 1.65;
+  color: var(--text-primary);
+  line-height: 1.6;
 }
 
 .assistant-turn-narrative.markdown-body,
@@ -732,16 +741,30 @@
   font-size: 18px;
 }
 
-.assistant-turn-separator {
-  height: 1px;
-  background: var(--border, #303443);
-  margin: 24px 0 20px;
+.assistant-turn-report {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+
+.assistant-turn-report-label {
+  margin: 0 0 8px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.assistant-turn-report-body {
+  margin: 0;
 }
 
 .assistant-turn-final {
-  font-size: 15px;
+  font-size: var(--text-base);
   font-weight: 400;
-  color: #e8ebf2;
+  color: var(--text-primary);
 }
 
 .assistant-turn-article[data-failed="true"] .assistant-turn-status,

@@ -67,7 +67,10 @@
             </button>
             <div class="topbar-info">
               <h1 id="projectTitle" class="editable-title" data-i18n-title="topbar.renameSession" title="点击可修改对话名称">智能工作台</h1>
-              <p id="sessionMeta" data-i18n="app.ready">已就绪</p>
+              <div class="topbar-meta-row">
+                <span id="sessionStatus" class="session-status-pill is-idle" hidden></span>
+                <p id="sessionMeta" data-i18n="app.ready">已就绪</p>
+              </div>
             </div>
           </div>
           <div class="topbar-actions">
@@ -126,7 +129,7 @@
               id="promptInput"
               rows="2"
               data-i18n-placeholder="composer.placeholder"
-              placeholder="有什么想问的？"
+              placeholder="描述要完成的工作，例如：整理会议纪要、写一份周报…"
               autofocus
             ></textarea>
             <div class="composer-actionbar">

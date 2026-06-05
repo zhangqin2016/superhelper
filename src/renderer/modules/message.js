@@ -23,6 +23,7 @@ import { updateSessionRunningIndicators } from "./project-tree.js";
 import { updateTopbarTitles } from "./session-chrome.js";
 import { renderMessageQueue } from "./composer.js";
 import { addDiffEntry } from "./diff-panel.js";
+import { syncWorkbenchEmptyState } from "./workbench-empty.js";
 
 const sessionViews = new Map();
 const renderedMessageKeys = new Map();
@@ -129,6 +130,7 @@ export function showSessionMessages(sessionId) {
     el.classList.toggle("is-active", active);
     el.setAttribute("aria-hidden", active ? "false" : "true");
   }
+  syncWorkbenchEmptyState(view(sessionId).listEl);
   requestAnimationFrame(() => scrollToBottom(true, view(sessionId).panel));
 }
 
@@ -189,6 +191,7 @@ export function renderConversation(sessionId, opts = {}) {
 
   renderCommittedMessages(sessionId);
   renderRuntimeSession(sessionId);
+  syncWorkbenchEmptyState(v.listEl);
 }
 
 function renderCommittedMessages(sessionId) {
@@ -213,12 +216,16 @@ function appendUserMessage(sessionId, message) {
   const article = document.createElement("article");
   article.className = "msg msg-user runtime-user-message";
 
+  const label = document.createElement("p");
+  label.className = "runtime-user-label";
+  label.textContent = t("message.userTaskLabel");
+
   const body = document.createElement("div");
   body.className = "runtime-user-body";
   body.textContent = message.content || "";
   renderFiles(body, message.files || []);
 
-  article.append(body);
+  article.append(label, body);
   v.listEl?.appendChild(article);
 }
 
@@ -265,6 +272,7 @@ function renderRuntimeSession(sessionId, opts = {}) {
   const shouldFollow = isActiveSession(sessionId) && isNearBottom(panel);
   renderCommittedMessages(sessionId);
   if (runtime.liveTurn) renderLiveTurn(sessionId, runtime.liveTurn, runtime.queue);
+  syncWorkbenchEmptyState(view(sessionId).listEl);
   syncComposerForActiveSession();
   updateSessionRunningIndicators();
   updateTopbarTitles();
@@ -296,6 +304,15 @@ export async function respondPendingUserQuestionFromComposer(sessionId, text) {
   const first = live ? [...live.questions.values()][0] : null;
   if (!first) return { ok: false, error: "NO_PENDING_QUESTION" };
   return window.assistantClient.respondUserQuestion(sessionId, first.requestId, { answer: text }, text);
+}
+
+export function refreshWorkbenchEmptyForActiveSession() {
+  const sid = store.get("activeSessionId");
+  if (!sid) return;
+  const listEl = view(sid).listEl;
+  if (!listEl?.querySelector(".workbench-empty")) return;
+  listEl.querySelector(".workbench-empty")?.remove();
+  syncWorkbenchEmptyState(listEl);
 }
 
 export function syncComposerForActiveSession() {

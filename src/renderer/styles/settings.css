@@ -29,7 +29,7 @@
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  background: var(--bg-left);
+  background: var(--bg-center);
   border-left: 1px solid var(--border);
   box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
   animation: slide-up 0.2s ease;
@@ -46,7 +46,7 @@
   width: 168px;
   padding: 10px 8px;
   border-right: 1px solid var(--border);
-  background: #12152a;
+  background: var(--bg-left);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -73,9 +73,10 @@
 }
 
 .settings-nav-item.is-active {
-  background: rgba(108, 99, 255, 0.14);
-  color: #c4b5fd;
+  background: var(--accent-subtle);
+  color: var(--text-primary);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .settings-panel-body {
@@ -83,7 +84,7 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: var(--bg-left);
+  background: var(--bg-center);
 }
 
 .settings-page {
@@ -234,7 +235,7 @@
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #15182a;
+  background: var(--bg-input);
   color: var(--text-primary);
   font-size: 13px;
   cursor: pointer;
@@ -242,7 +243,7 @@
 
 .settings-select:focus {
   outline: none;
-  border-color: rgba(108, 99, 255, 0.5);
+  border-color: var(--accent-border);
 }
 
 .model-custom-id-label {
@@ -281,7 +282,7 @@
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #15182a;
+  background: var(--bg-input);
 }
 
 .model-custom-meta {
@@ -372,7 +373,7 @@
   padding: 8px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #1a1d30;
+  background: var(--bg-input);
   color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
@@ -401,7 +402,7 @@
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #15182a;
+  background: var(--bg-input);
   min-height: 100%;
 }
 
@@ -427,7 +428,7 @@
   font-size: 10px;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(108, 99, 255, 0.15);
+  background: var(--accent-subtle);
   color: #a29bfe;
 }
 
@@ -474,7 +475,7 @@
 
 .skills-restore-btn:hover {
   color: var(--text-primary);
-  border-color: rgba(108, 99, 255, 0.45);
+  border-color: var(--accent-border);
 }
 
 .skills-actions {
@@ -501,14 +502,14 @@
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #15182a;
+  background: var(--bg-input);
   color: var(--text-primary);
   font-size: 12px;
 }
 
 .skills-registry-input:focus {
   outline: none;
-  border-color: rgba(108, 99, 255, 0.5);
+  border-color: var(--accent-border);
 }
 
 .skills-registry-hint {
@@ -555,15 +556,15 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: #15182a;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
   min-width: 0;
 }
 
 .skills-preset-card--complete {
-  border-color: rgba(99, 102, 241, 0.35);
-  background: color-mix(in srgb, #15182a 90%, rgba(99, 102, 241, 0.12) 10%);
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
 }
 
 .skills-preset-card-head {
@@ -662,7 +663,7 @@
   padding: 4px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #1a1d30;
+  background: var(--bg-input);
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
@@ -680,7 +681,7 @@
 }
 
 .skills-action-btn--primary {
-  border-color: rgba(108, 99, 255, 0.45);
+  border-color: var(--accent-border);
   color: #a29bfe;
 }
 

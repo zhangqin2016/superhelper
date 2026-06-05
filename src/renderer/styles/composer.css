@@ -12,14 +12,14 @@
 }
 
 .composer.composer-busy {
-  border-top-color: rgba(108, 99, 255, 0.46);
-  background: linear-gradient(180deg, rgba(108, 99, 255, 0.08), var(--bg-topbar) 42%);
+  border-top-color: var(--accent-border);
+  background: var(--bg-topbar);
 }
 
 .composer.composer-busy textarea {
-  border-color: rgba(108, 99, 255, 0.72);
-  background: color-mix(in srgb, var(--bg-input) 84%, var(--accent) 16%);
-  box-shadow: 0 0 0 1px rgba(108, 99, 255, 0.1);
+  border-color: var(--accent-border);
+  background: var(--bg-input);
+  box-shadow: none;
 }
 
 .prompt-suggestions {
@@ -31,7 +31,7 @@
 .prompt-suggestions[hidden] { display: none; }
 .prompt-suggestion-btn {
   border: 1px solid var(--border);
-  background: #1a1d30;
+  background: var(--bg-input);
   color: var(--text-secondary);
   border-radius: 999px;
   padding: 4px 12px;
@@ -163,7 +163,7 @@
   height: 40px;
   display: grid;
   place-items: center;
-  background: #1a1d30;
+  background: var(--bg-input);
   border-radius: 4px;
 }
 
@@ -589,15 +589,15 @@ textarea {
   width: 100%;
   resize: none;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--bg-input);
   color: var(--text-primary);
   line-height: 1.5;
   min-height: 44px;
   max-height: 160px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   outline: none;
-  font-size: 14px;
+  font-size: var(--text-base);
   transition: border-color 0.15s;
 }
 
@@ -605,21 +605,23 @@ textarea:focus { border-color: var(--accent); }
 textarea:disabled { opacity: 0.5; }
 
 .send-btn {
-  min-width: 72px; height: 40px;
-  padding: 0 18px;
-  border: 0;
-  border-radius: 10px;
+  min-width: 72px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius);
   background: var(--accent);
   color: #fff;
-  font-size: 14px; font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 0.12s, border-color 0.12s;
 }
 .send-btn:hover { background: var(--accent-hover); }
 .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .send-btn.send-btn-queued {
-  background: linear-gradient(135deg, var(--accent), #7c72ff);
-  box-shadow: 0 10px 26px rgba(108, 99, 255, 0.24);
+  background: var(--accent);
+  box-shadow: none;
 }
 .confirm-dialog-danger {
   background: #dc2626;

@@ -14,7 +14,12 @@ import {
   resumeLiveSessionUi,
   syncComposerForActiveSession,
 } from "./message.js";
-import { hydrateRuntimeFromState } from "./session-runtime-store.js";
+import {
+  hydrateRuntimeFromState,
+  canSend,
+  canInterrupt,
+  getRuntimeSession,
+} from "./session-runtime-store.js";
 import { refreshSessionSkillsUi } from "./session-skills.js";
 
 export function activeProject() {
@@ -33,24 +38,62 @@ export function activeSession() {
   return null;
 }
 
+function resolveSessionStatus(sessionId) {
+  if (!sessionId) {
+    return { state: "idle", label: t("topbar.statusIdle") };
+  }
+  const runtime = getRuntimeSession(sessionId);
+  const questionCount = runtime.liveTurn?.questions?.size || 0;
+  if (questionCount > 0) {
+    return { state: "waiting", label: t("topbar.statusWaiting") };
+  }
+  if (!canSend(sessionId)) {
+    return {
+      state: "running",
+      label: canInterrupt(sessionId) ? t("topbar.statusRunning") : t("topbar.statusWaiting"),
+    };
+  }
+  return { state: "idle", label: t("topbar.statusIdle") };
+}
+
+function formatSessionMeta(project) {
+  const projects = store.get("projects") || [];
+  if (project?.path) {
+    const parts = String(project.path).split(/[/\\]/);
+    const leaf = parts[parts.length - 1] || project.path;
+    return t("topbar.workspacePath", { path: leaf });
+  }
+  if (project?.name) {
+    return t("app.folderLabel", { name: project.name });
+  }
+  if (projects.length === 0) {
+    return t("app.addWorkspace");
+  }
+  return t("topbar.statusHint");
+}
+
 export function updateTopbarTitles() {
   const project = activeProject();
   const session = activeSession();
+  const sessionId = store.get("activeSessionId");
   const titleEl = $("projectTitle");
   const metaEl = $("sessionMeta");
+  const statusEl = $("sessionStatus");
 
   if (titleEl) {
     titleEl.textContent = session?.title || project?.name || t("app.brand");
   }
-  if (metaEl && !store.get("isBusy")) {
-    const projects = store.get("projects") || [];
-    metaEl.textContent = project?.path
-      ? project.path
-      : project?.name
-        ? t("app.folderLabel", { name: project.name })
-        : projects.length === 0
-          ? t("app.addWorkspace")
-          : t("app.ready");
+
+  const status = resolveSessionStatus(sessionId);
+  if (statusEl) {
+    statusEl.hidden = !sessionId;
+    statusEl.textContent = status.label;
+    statusEl.className = `session-status-pill is-${status.state}`;
+    statusEl.dataset.state = status.state;
+  }
+
+  if (metaEl) {
+    metaEl.textContent = formatSessionMeta(project);
   }
 }
 
