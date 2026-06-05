@@ -137,13 +137,11 @@ line(runner, {
     ],
   },
 });
-runner._clearPostToolWaitTimer();
-
 if (runner._pendingToolIds.size !== 0 || runner._toolLeases.size !== 0) {
   throw new Error("tool_result should release Bash lease");
 }
 if (runner._canAutoCompleteTurn()) {
-  throw new Error("foreground tool turns should wait for final result or post-tool timeout");
+  throw new Error("foreground tool turns should wait for CLI result event");
 }
 
 const resultBeforeToolRunner = createTestSession("sess_result_before_tool_done");
@@ -281,7 +279,6 @@ if (!hugeToolDone?.result?.truncated) {
 if (hugeToolDone.result.content.length > 12_500) {
   throw new Error("huge tool output should be capped before renderer");
 }
-hugeToolRunner._clearPostToolWaitTimer();
 hugeToolRunner._completeTurn({ code: 0, output: "" });
 
 startSyntheticTurn(runner);
@@ -401,7 +398,6 @@ line(foregroundCommandRunner, {
     ],
   },
 });
-foregroundCommandRunner._clearPostToolWaitTimer();
 if (foregroundCommandRunner._pendingToolIds.size !== 0 || foregroundCommandRunner._toolLeases.size !== 0) {
   throw new Error("foreground command should release lease after tool_result");
 }

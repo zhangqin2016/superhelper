@@ -1,13 +1,13 @@
 /* =========================================================================
-   Diff Panel
+   Diff Panel — office surfaces; semantic green/red kept for accept/reject
    ========================================================================= */
 
 .diff-panel {
   flex-shrink: 0;
-  border-top: 2px solid var(--accent);
+  border-top: 1px solid var(--border-light);
   max-height: 45%;
   overflow-y: auto;
-  background: #12151f;
+  background: var(--bg-surface);
 }
 
 .diff-header {
@@ -17,43 +17,55 @@
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   position: sticky; top: 0;
-  background: #12151f;
+  background: var(--bg-surface-raised);
   z-index: 1;
 }
-.diff-header h3 { margin: 0; font-size: 14px; }
+.diff-header h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
 
 .diff-actions { display: flex; gap: 8px; }
 
 .diff-btn {
   height: 28px; padding: 0 12px;
   border-radius: var(--radius-sm);
-  font-size: 12px; font-weight: 600;
+  font-size: var(--text-sm); font-weight: 600;
   cursor: pointer;
-  border: 1px solid;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+}
+.diff-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-light);
 }
 .diff-btn-accept { background: #1a3a2a; border-color: #2a5a3a; color: #4ade80; }
 .diff-btn-accept:hover { background: #2a4a3a; }
 .diff-btn-reject { background: #3a1a1a; border-color: #5a2a2a; color: #f87171; }
 .diff-btn-reject:hover { background: #4a2a2a; }
 
-.diff-list { padding: 8px; }
+.diff-list { padding: 8px 12px; }
 
 .diff-file {
   margin-bottom: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius);
   overflow: hidden;
+  background: var(--bg-surface-raised);
 }
 
 .diff-file-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 12px;
-  background: #1a1d30;
-  font-size: 12px;
+  background: var(--bg-input);
+  font-size: var(--text-sm);
   font-family: var(--font-mono);
   cursor: pointer;
 }
-.diff-file-header:hover { background: #1e2240; }
+.diff-file-header:hover { background: color-mix(in srgb, var(--bg-input) 85%, var(--accent-subtle) 15%); }
 
 .diff-file-name { color: var(--text-primary); }
 .diff-file-status { font-size: 11px; padding: 1px 6px; border-radius: 3px; }
@@ -64,7 +76,7 @@
 .diff-file-actions { display: flex; gap: 4px; }
 .diff-file-actions button {
   height: 24px; padding: 0 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 11px; cursor: pointer;
   border: 1px solid;
 }
@@ -75,14 +87,15 @@
 
 .diff-file-content {
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-family: var(--font-mono);
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-x: auto;
   max-height: 300px;
   overflow-y: auto;
-  background: #0d1117;
+  background: var(--bg-body);
+  color: var(--text-secondary);
 }
 
 .diff-hunk-add { color: #4ade80; background: rgba(74, 222, 128, 0.08); }

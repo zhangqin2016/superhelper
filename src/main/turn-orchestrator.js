@@ -43,13 +43,13 @@ function newQueueId() {
   return `queue_${crypto.randomUUID()}`;
 }
 
-function compactToolInput(input) {
+const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
+
+function compactToolInput(input, name = "Tool") {
   if (!input || typeof input !== "object") return {};
-  const command = input.command || input.cmd || input.script || "";
-  const filePath = input.file_path || input.path || input.filePath || "";
   return {
     ...input,
-    preview: String(command || filePath || JSON.stringify(input)).slice(0, 300),
+    preview: buildToolPreviewLabel({ name, input }),
   };
 }
 
@@ -238,7 +238,7 @@ class TurnOrchestrator {
         this._emit(sessionId, "tool.started", {
           id: toolId,
           name: tool.name || payload.name || "unknown",
-          input: compactToolInput(tool.input || payload.input || {}),
+          input: compactToolInput(tool.input || payload.input || {}, tool.name || payload.name || "unknown"),
           parentToolUseId: payload.parentToolUseId || null,
         });
         break;
@@ -263,7 +263,7 @@ class TurnOrchestrator {
         upsertTimelineTool(state, tool, Date.now());
         this._emit(sessionId, "tool.input.done", {
           id: toolId,
-          input: compactToolInput(tool.input),
+          input: compactToolInput(tool.input, tool.name || "unknown"),
         });
         break;
       }
@@ -632,6 +632,7 @@ class TurnOrchestrator {
     } else {
       this._finalize(sessionId, "turn.completed", {
         assistant: normalized.text || state.assistantText,
+        resultFromCli: Boolean(payload?.resultFromCli),
         ...terminalMeta,
       });
     }

@@ -75,8 +75,6 @@ class AgentSession extends EventEmitter {
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._absoluteTurnTimer = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
-    this._postToolWaitTimer = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
     this._messageStopTimer = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._deferredTurnResultTimer = null;
@@ -136,8 +134,8 @@ class AgentSession extends EventEmitter {
   static LONG_WAIT_NOTICE_MS = 30_000;
   /** Hard cap — verbose logs must not extend a turn forever. */
   static TURN_ABSOLUTE_MAX_MS = 30 * 60_000;
-  /** After all tools finish, model must respond within this window. */
-  static POST_TOOL_SILENCE_MS = 45_000;
+  /** Poll while deferred CLI `result` waits for pending tools/permissions. */
+  static DEFERRED_TURN_RESULT_POLL_MS = 120_000;
   /** Wait after message_stop for a trailing `result` event before pure-text fallback. */
   static MESSAGE_STOP_GRACE_MS = 30_000;
   /** Long-running foreground shell commands need visible user feedback. */
@@ -169,13 +167,6 @@ class AgentSession extends EventEmitter {
     if (this._absoluteTurnTimer) {
       clearTimeout(this._absoluteTurnTimer);
       this._absoluteTurnTimer = null;
-    }
-  }
-
-  _clearPostToolWaitTimer() {
-    if (this._postToolWaitTimer) {
-      clearTimeout(this._postToolWaitTimer);
-      this._postToolWaitTimer = null;
     }
   }
 
@@ -237,30 +228,6 @@ class AgentSession extends EventEmitter {
       if (!this.busy || this._turnSettled) return;
       this._recoverStalledTurn("absolute");
     }, AgentSession.TURN_ABSOLUTE_MAX_MS);
-  }
-
-  _armPostToolWaitTimer() {
-    this._clearPostToolWaitTimer();
-    if (!this.busy || this._turnSettled) return;
-    if (this._pendingToolIds.size > 0) return;
-    if (!this._turnHadBlockingToolUse) return;
-    this._postToolWaitTimer = setTimeout(() => {
-      if (!this.busy || this._turnSettled) return;
-      if (this._pendingToolIds.size > 0) return;
-      if (Date.now() < this._backgroundActivityUntil) {
-        this._armPostToolWaitTimer();
-        return;
-      }
-      this._recoverStalledTurn("post-tool");
-    }, AgentSession.POST_TOOL_SILENCE_MS);
-  }
-
-  _maybeArmPostToolWaitTimer() {
-    if (this._pendingToolIds.size === 0 && this._turnHadBlockingToolUse) {
-      this._armPostToolWaitTimer();
-    } else {
-      this._clearPostToolWaitTimer();
-    }
   }
 
   _armTurnResponseTimer() {
@@ -342,8 +309,8 @@ class AgentSession extends EventEmitter {
     if (!this.busy || this._turnSettled || !this._deferredTurnResult) return;
     const backgroundMs = Math.max(0, this._backgroundActivityUntil - Date.now());
     const delay = this._pendingToolIds.size > 0 || this._pendingPermissions.size > 0
-      ? AgentSession.POST_TOOL_SILENCE_MS
-      : Math.max(25, Math.min(AgentSession.POST_TOOL_SILENCE_MS, backgroundMs || 25));
+      ? AgentSession.DEFERRED_TURN_RESULT_POLL_MS
+      : Math.max(25, Math.min(AgentSession.DEFERRED_TURN_RESULT_POLL_MS, backgroundMs || 25));
     this._deferredTurnResultTimer = setTimeout(() => {
       this._maybeCompleteDeferredTurnResult();
     }, delay);
@@ -366,7 +333,6 @@ class AgentSession extends EventEmitter {
     this._backgroundActivityUntil = Date.now() + (short ? 10_000 : 120_000);
     this._clearIdleTimer();
     this._clearMessageStopTimer();
-    this._clearPostToolWaitTimer();
     this._armDeferredTurnResultTimer();
   }
 
@@ -976,7 +942,6 @@ class AgentSession extends EventEmitter {
     this._clearIdleTimer();
     this._clearTurnResponseTimer();
     this._clearAbsoluteTurnTimer();
-    this._clearPostToolWaitTimer();
     this._clearMessageStopTimer();
     this._clearDeferredTurnResultTimer();
     this._clearInterruptFallback();
@@ -1006,7 +971,6 @@ class AgentSession extends EventEmitter {
     this._clearMessageStopTimer();
     this._clearTurnResponseTimer();
     this._clearAbsoluteTurnTimer();
-    this._clearPostToolWaitTimer();
     this._clearDeferredTurnResultTimer();
     this._clearInterruptFallback();
     this._clearToolLeaseNoticeTimers();
@@ -1333,6 +1297,7 @@ class AgentSession extends EventEmitter {
     const payload = {
       code: resultFailed ? 1 : 0,
       output,
+      resultFromCli: true,
       interrupted: Boolean(this._interruptPending || ev.interrupted),
       durationMs: Number(ev.duration_ms) || undefined,
       totalCostUsd: Number(ev.total_cost_usd) || undefined,
@@ -1426,7 +1391,6 @@ class AgentSession extends EventEmitter {
         this._turnHadToolUse = true;
         const lease = this._trackToolLease(action.id, action.name, action.input || {});
         this._clearIdleTimer();
-        this._clearPostToolWaitTimer();
         this._markStreamActivity();
         if (this._emittedToolIds.has(action.id)) {
           this._ingestRuntime([{
@@ -1448,7 +1412,6 @@ class AgentSession extends EventEmitter {
 
       case "tool_result": {
         this._finishToolLease(action.id);
-        this._maybeArmPostToolWaitTimer();
         this._markStreamActivity();
         this._maybeCompleteDeferredTurnResult();
         break;
@@ -1463,7 +1426,6 @@ class AgentSession extends EventEmitter {
       case "stream_tool_start":
         this._turnHadToolUse = true;
         this._clearIdleTimer();
-        this._clearPostToolWaitTimer();
         this._trackToolLease(action.id, action.name, action.input || {});
         this._emittedToolIds.add(action.id);
         this._streamingToolInputs.set(action.id, "");

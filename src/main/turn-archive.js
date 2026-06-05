@@ -60,6 +60,7 @@ class TurnArchive {
         interrupted: terminalType === "turn.interrupted",
         stalled: terminalType === "turn.stalled",
         failed: terminalType === "turn.failed",
+        resultFromCli: Boolean(payload.resultFromCli),
         toolsSummary: { count: tools.length },
       },
     };

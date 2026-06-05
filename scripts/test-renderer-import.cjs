@@ -32,6 +32,7 @@ app.whenReady().then(async () => {
         "./modules/turn-view-renderer.js",
         "./modules/session-runtime-store.js",
         "./modules/message.js",
+        "./modules/workbench-empty.js",
         "./app.js",
       ]) {
         try {

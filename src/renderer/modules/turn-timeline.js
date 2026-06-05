@@ -1,3 +1,5 @@
+import { buildToolPreviewLabel } from "./tool-preview-label.js";
+
 const GENERIC_STATUS = new Set(["requesting", ""]);
 const TOKEN_COUNT_RE = /^\d+(\.\d+)?k?\s*tokens$/i;
 const INTERNAL_ACTIVITY_LABELS = new Set([
@@ -45,23 +47,17 @@ export function isMeaningfulActivityLabel(text) {
 }
 
 export function toolPreview(tool = {}) {
-  const input = tool.input || {};
-  const name = tool.name || "Tool";
-  const lowerName = String(name).toLowerCase();
-  if (lowerName === "bash" && input.command) return `Bash ${input.command}`;
-  if ((lowerName === "glob" || lowerName === "grep") && input.pattern) {
-    return `${name} ${input.pattern}`;
+  if ((!tool.input || !Object.keys(tool.input).length) && tool.partialJson) {
+    try {
+      const parsed = JSON.parse(tool.partialJson);
+      if (parsed && typeof parsed === "object") {
+        return buildToolPreviewLabel({ ...tool, input: parsed });
+      }
+    } catch {
+      // streaming partial JSON
+    }
   }
-  if (lowerName === "read" && (input.file_path || input.path)) {
-    return `Read ${input.file_path || input.path}`;
-  }
-  if ((lowerName === "write" || lowerName === "edit" || lowerName === "multiedit") &&
-    (input.file_path || input.path || input.target_file)) {
-    const path = input.file_path || input.path || input.target_file;
-    const verb = lowerName === "write" ? "Write" : lowerName === "multiedit" ? "MultiEdit" : "Edit";
-    return `${verb} ${path}`;
-  }
-  return input.preview || input.command || input.file_path || input.path || name;
+  return buildToolPreviewLabel(tool);
 }
 
 const TASK_NOTICE_CODES = new Set(["taskProgress", "taskStarted", "taskCompleted", "thinkingProgress"]);

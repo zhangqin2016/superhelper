@@ -43,6 +43,22 @@
   color: var(--text-primary);
 }
 
+/* Reserved dock — permissions render in the turn timeline, not here */
+.permission-dock[hidden] {
+  display: none;
+}
+
+.permission-dock:not([hidden]) {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-left: 3px solid #d4b86a;
+  border-radius: var(--radius);
+  background: var(--bg-surface-raised);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
 .permission-prompt-remember {
   display: flex;
   align-items: center;

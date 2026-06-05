@@ -72,19 +72,49 @@ export function textMatchesFileToolBody(text, liveTurn = {}) {
   return bodies.some((body) => body === normalized || body.includes(normalized) || normalized.includes(body));
 }
 
+const CLI_ASSISTANT_TERMINALS = new Set([
+  "turn.stalled",
+  "turn.interrupted",
+  "turn.failed",
+]);
+
+/** Assistant text the CLI actually streamed or committed — no synthesis from tools. */
+export function resolveAssistantStreamText(liveTurn = {}) {
+  if (liveTurn.final?.payload?.assistant != null) {
+    return String(liveTurn.final.payload.assistant).trim();
+  }
+  return String(liveTurn.assistantText || "").trim();
+}
+
 export function shouldShowNarrative(liveTurn = {}) {
-  const text = (liveTurn.assistantText || "").trim();
+  const text = resolveAssistantStreamText(liveTurn);
   if (!text) return false;
-  if (Boolean(liveTurn.final)) return false;
+  if (Boolean(liveTurn.final)) {
+    if (liveTurn.final.type === "turn.completed") {
+      if (hasCliResult(liveTurn)) return false;
+      return !textMatchesFileToolBody(text, liveTurn);
+    }
+    if (CLI_ASSISTANT_TERMINALS.has(liveTurn.final.type)) {
+      return !textMatchesFileToolBody(text, liveTurn);
+    }
+    return false;
+  }
   if (textMatchesFileToolBody(text, liveTurn)) return false;
   return true;
 }
 
 export function resolveFinalText(liveTurn = {}) {
-  return String(liveTurn.final?.payload?.assistant || liveTurn.assistantText || "").trim();
+  return resolveAssistantStreamText(liveTurn);
+}
+
+/** True only when CLI emitted a `result` event for this turn. */
+export function hasCliResult(liveTurn = {}) {
+  return liveTurn.final?.payload?.resultFromCli === true;
 }
 
 export function shouldShowFinal(liveTurn = {}) {
+  if (liveTurn.final?.type !== "turn.completed") return false;
+  if (!hasCliResult(liveTurn)) return false;
   const finalText = resolveFinalText(liveTurn);
   if (!finalText) return false;
   if (textMatchesFileToolBody(finalText, liveTurn)) return false;
@@ -137,7 +167,7 @@ export function toolEntryToRenderTool(entry = {}) {
 }
 
 export function toolRowPreview(entry = {}) {
-  return entry.preview || toolPreview(toolEntryToRenderTool(entry));
+  return toolPreview(toolEntryToRenderTool(entry));
 }
 
 export function isFileWriteCategory(entry = {}) {

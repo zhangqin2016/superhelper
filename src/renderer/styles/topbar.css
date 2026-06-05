@@ -159,26 +159,26 @@
   align-items: center;
   gap: 7px;
   padding: 0 11px;
-  border: 1px solid rgba(108, 99, 255, 0.45);
+  border: 1px solid var(--accent-border);
   border-radius: 999px;
-  background: rgba(108, 99, 255, 0.12);
-  color: #e8e6ff;
+  background: var(--accent-subtle);
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
 }
 
 .update-pill-btn:hover {
-  background: rgba(108, 99, 255, 0.2);
-  border-color: rgba(108, 99, 255, 0.7);
+  background: var(--accent-dim);
+  border-color: var(--accent);
 }
 
 .update-pill-dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: #6c63ff;
-  box-shadow: 0 0 0 4px rgba(108, 99, 255, 0.18);
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-subtle);
 }
 
 .update-chrome[data-phase="downloading"] .update-pill-dot,
@@ -209,9 +209,9 @@
   z-index: 40;
   width: min(340px, calc(100vw - 32px));
   padding: 14px;
-  border: 1px solid rgba(108, 99, 255, 0.26);
-  border-radius: 14px;
-  background: #161929;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface-raised);
   color: var(--text-primary);
   box-shadow: 0 22px 70px rgba(0, 0, 0, 0.42);
 }
@@ -247,7 +247,7 @@
   width: 0%;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #6c63ff, #3ce17a);
+  background: linear-gradient(90deg, var(--accent), #3ce17a);
   transition: width 0.2s ease;
 }
 
@@ -259,12 +259,12 @@
 
 .update-primary-btn {
   color: #fff;
-  border-color: rgba(108, 99, 255, 0.75);
-  background: #6c63ff;
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
 .update-primary-btn:hover {
-  background: #7a72ff;
+  background: var(--accent-hover);
 }
 
 .model-preset-wrap {
@@ -286,7 +286,7 @@
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: #15182a;
+  background: var(--bg-input);
   color: var(--text-primary);
   font-size: 12px;
   cursor: pointer;
@@ -294,7 +294,7 @@
 
 .model-preset-select:focus {
   outline: none;
-  border-color: rgba(108, 99, 255, 0.5);
+  border-color: var(--accent-border);
 }
 
 .mode-switch {

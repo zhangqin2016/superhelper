@@ -460,7 +460,7 @@
   width: 18px;
   height: 18px;
   cursor: pointer;
-  accent-color: #6c63ff;
+  accent-color: var(--accent);
 }
 
 .skills-restore-btn {

@@ -320,6 +320,7 @@ export function syncComposerForActiveSession() {
   const busy = sid ? !canSend(sid) : false;
   store.set("isBusy", busy);
   store.set("runningSessionId", busy ? sid : null);
+  $("composer")?.classList.toggle("composer-busy", busy);
   const input = $("promptInput");
   const submit = $("sendBtn");
   const interrupt = $("interruptBtn");

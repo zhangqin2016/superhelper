@@ -581,7 +581,7 @@
   "turn.status.awaitingUser": "等待你确认",
   "turn.status.failed": "处理失败",
   "turn.status.interrupted": "已中断",
-  "turn.status.stalled": "已停止等待",
+  "turn.status.stalled": "助手未返回最终结果",
   "turn.thinking.title": "思考中",
   "turn.thinking.liveSummary": "思考中 · {preview}",
   "turn.footer.duration": "耗时 {seconds}s",

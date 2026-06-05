@@ -17,6 +17,7 @@ import {
   processGroupSummary,
   categorySummaryKey,
   shouldCollapseProcessGroups,
+  resolveAssistantStreamText,
   shouldShowFinal,
   shouldShowNarrative,
   toolEntryToRenderTool,
@@ -243,7 +244,8 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
   renderFooter(article.querySelector('[data-role="footer"]'), liveTurn, sealed);
 
   const narrativeKey = [
-    liveTurn.assistantText || "",
+    resolveAssistantStreamText(liveTurn),
+    liveTurn.final?.type || "",
     (liveTurn.contentBlocks || []).length,
     narrativeImageKey(liveTurn.contentBlocks || []),
   ].join("|");
@@ -288,10 +290,9 @@ function syncNarrativeImages(root, contentBlocks = []) {
 
 function renderNarrative(root, liveTurn) {
   if (!root) return;
-  const sealed = Boolean(liveTurn.final);
-  const text = liveTurn.assistantText || "";
+  const text = resolveAssistantStreamText(liveTurn);
   const hasImages = (liveTurn.contentBlocks || []).some((b) => b.blockType === "image" && b.data);
-  const show = !sealed && shouldShowNarrative(liveTurn);
+  const show = shouldShowNarrative(liveTurn);
   root.hidden = !show && !hasImages;
   if (root.hidden) {
     root.replaceChildren();
@@ -876,7 +877,7 @@ function renderFinal(article, liveTurn) {
 
   const final = document.createElement("div");
   final.className = "assistant-turn-final markdown-body assistant-turn-report-body";
-  const text = liveTurn.final?.payload?.assistant || liveTurn.assistantText || "";
+  const text = resolveAssistantStreamText(liveTurn);
   void renderMarkdown(final, text);
 
   report.append(label, final);

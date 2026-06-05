@@ -581,7 +581,7 @@
   "turn.status.awaitingUser": "Waiting for you",
   "turn.status.failed": "Failed",
   "turn.status.interrupted": "Interrupted",
-  "turn.status.stalled": "Stopped waiting",
+  "turn.status.stalled": "Assistant did not return a final result",
   "turn.thinking.title": "Thinking",
   "turn.thinking.liveSummary": "Thinking · {preview}",
   "turn.footer.duration": "Worked for {seconds}s",

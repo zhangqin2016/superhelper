@@ -5,11 +5,17 @@
 import { $ } from "./dom.js";
 import { t } from "../i18n/index.js";
 
-const EXAMPLE_KEYS = [
+export const WORKBENCH_EXAMPLE_KEYS = [
   "workbench.example1",
   "workbench.example2",
   "workbench.example3",
 ];
+
+/** @param {HTMLElement | null | undefined} listEl */
+export function listHasWorkbenchContent(listEl) {
+  if (!listEl) return false;
+  return [...listEl.children].some((el) => !el.classList.contains("workbench-empty"));
+}
 
 export function buildWorkbenchEmpty() {
   const root = document.createElement("div");
@@ -31,7 +37,7 @@ export function buildWorkbenchEmpty() {
   const examples = document.createElement("div");
   examples.className = "workbench-empty-examples";
 
-  for (const key of EXAMPLE_KEYS) {
+  for (const key of WORKBENCH_EXAMPLE_KEYS) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "workbench-empty-example";
@@ -56,8 +62,7 @@ export function buildWorkbenchEmpty() {
 /** @param {HTMLElement | null | undefined} listEl */
 export function syncWorkbenchEmptyState(listEl) {
   if (!listEl) return;
-  const contentNodes = [...listEl.children].filter((el) => !el.classList.contains("workbench-empty"));
-  const hasContent = contentNodes.length > 0;
+  const hasContent = listHasWorkbenchContent(listEl);
   let empty = listEl.querySelector(".workbench-empty");
 
   if (hasContent) {
