@@ -1,0 +1,409 @@
+/* =========================================================================
+   Runtime Chat Turn
+   ========================================================================= */
+
+.runtime-messages {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 34px 24px 48px;
+  gap: 22px;
+}
+
+.runtime-user-message {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.runtime-user-bubble {
+  max-width: min(720px, 78%);
+  border-radius: 18px;
+  padding: 14px 18px;
+  background: #6258ff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  line-height: 1.65;
+}
+
+.runtime-message-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.runtime-message-file {
+  font-size: 12px;
+  color: var(--muted, #9ca3af);
+  border: 1px solid var(--border, #2d3144);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
+.assistant-turn-article {
+  width: 100%;
+  color: #eef1f7;
+  line-height: 1.75;
+  padding: 4px 0 18px;
+}
+
+.assistant-turn-article + .assistant-turn-article,
+.runtime-user-message + .assistant-turn-article {
+  margin-top: 8px;
+}
+
+.assistant-turn-status {
+  color: #aeb6c7;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+
+.assistant-turn-narrative {
+  font-size: 16px;
+  color: #f3f5fb;
+}
+
+.assistant-turn-narrative.markdown-body,
+.assistant-turn-final.markdown-body {
+  color: #f3f5fb;
+}
+
+.assistant-turn-narrative.markdown-body p,
+.assistant-turn-final.markdown-body p,
+.assistant-turn-final.markdown-body li,
+.assistant-turn-final.markdown-body td,
+.assistant-turn-final.markdown-body th {
+  color: #f3f5fb;
+}
+
+.assistant-turn-process {
+  margin: 18px 0;
+}
+
+.assistant-process-group {
+  color: #b8c0d2;
+}
+
+.assistant-process-group > summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #b8c0d2;
+  user-select: none;
+}
+
+.assistant-process-summary-title {
+  color: #d2d8e8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+}
+
+.assistant-process-summary-meta {
+  color: #aeb6c7;
+  font-size: 13px;
+}
+
+.assistant-process-group > summary::before {
+  content: "›";
+  color: var(--muted, #8f96a3);
+  font-size: 22px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.assistant-process-group[open] > summary::before {
+  transform: rotate(90deg) translateX(-1px);
+}
+
+.assistant-tool-row {
+  margin-top: 10px;
+  border: 1px solid var(--border, #303443);
+  border-radius: 8px;
+  padding: 9px 10px 10px 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.assistant-tool-summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.assistant-tool-summary::-webkit-details-marker {
+  display: none;
+}
+
+.assistant-tool-summary::before {
+  content: "›";
+  display: inline-block;
+  margin-right: 8px;
+  color: #aeb6c7;
+  font-size: 18px;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.assistant-tool-row[open] .assistant-tool-summary::before {
+  transform: rotate(90deg);
+}
+
+.assistant-tool-row-head {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 28px);
+  vertical-align: middle;
+}
+
+.assistant-tool-command {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #dce2f1;
+}
+
+.assistant-tool-status {
+  color: #b8c0d2;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.assistant-process-thinking,
+.assistant-tool-detail {
+  margin: 10px 0 0;
+  max-height: none;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: #d5dbea;
+  font-size: 12px;
+  line-height: 1.55;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.assistant-process-thinking {
+  padding: 10px 12px;
+  border-left: 2px solid var(--border, #303443);
+}
+
+.assistant-process-notice {
+  margin-top: 8px;
+  color: #c9d0e2;
+  font-size: 14px;
+}
+
+.assistant-process-event {
+  margin-top: 10px;
+  border-left: 2px solid rgba(174, 182, 199, 0.35);
+  padding-left: 10px;
+  color: #dbe2f1;
+}
+
+.assistant-process-event > summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  max-width: 100%;
+}
+
+.assistant-process-event > summary::before {
+  content: "›";
+  color: #aeb6c7;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.assistant-process-event[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.assistant-process-event-label {
+  color: #eef1f7;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.assistant-process-event-kind {
+  color: #9fa8bc;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.assistant-process-event-kind:empty {
+  display: none;
+}
+
+.assistant-process-event-detail {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  color: #dce4f5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.55;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.assistant-turn-prompts {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.assistant-prompt-card {
+  border: 1px solid var(--border, #303443);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.assistant-prompt-card strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.assistant-prompt-card p {
+  margin: 0 0 10px;
+  color: var(--muted, #8f96a3);
+}
+
+.assistant-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.assistant-action-btn {
+  border: 1px solid var(--border, #303443);
+  border-radius: 8px;
+  background: var(--surface-raised, #202332);
+  color: var(--text, #f4f5f8);
+  padding: 7px 11px;
+  cursor: pointer;
+}
+
+.assistant-action-btn:hover {
+  border-color: var(--accent, #6c63ff);
+}
+
+.assistant-question-label {
+  display: block;
+  margin-top: 10px;
+  color: var(--text, #f4f5f8);
+}
+
+.assistant-question-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  border: 1px solid var(--border, #303443);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text, #f4f5f8);
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.assistant-turn-queue {
+  margin-top: 14px;
+  color: var(--muted, #8f96a3);
+  font-size: 14px;
+}
+
+.assistant-queue-title {
+  margin-bottom: 8px;
+}
+
+.assistant-queue-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border, #303443);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-top: 6px;
+}
+
+.assistant-queue-item button {
+  border: none;
+  background: transparent;
+  color: var(--muted, #8f96a3);
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.assistant-turn-separator {
+  height: 1px;
+  background: var(--border, #303443);
+  margin: 24px 0 20px;
+}
+
+.assistant-turn-final {
+  font-size: 16px;
+  color: #f3f5fb;
+}
+
+.assistant-turn-article[data-failed="true"] .assistant-turn-status,
+.assistant-turn-article .assistant-process-group .assistant-tool-row[data-status="failed"] {
+  color: var(--danger, #ff6b6b);
+}
+
+@media (prefers-color-scheme: light) {
+  .runtime-user-bubble {
+    background: #f5f6f8;
+    border-color: #d6d9df;
+    color: #2f3137;
+  }
+
+  .assistant-turn-article {
+    color: #303238;
+  }
+
+  .assistant-tool-row,
+  .assistant-prompt-card,
+  .assistant-queue-item {
+    background: #ffffff;
+    border-color: #d8dce3;
+  }
+}
+
+.assistant-turn-article .assistant-tool-row,
+.assistant-turn-article .assistant-prompt-card,
+.assistant-turn-article .assistant-queue-item {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--border, #303443);
+}
+
+.assistant-turn-article .assistant-tool-detail {
+  color: #dce4f5;
+}
+
+.assistant-tool-diff {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  background: rgba(0, 0, 0, 0.2);
+  color: #dce4f5;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.assistant-tool-diff-more {
+  margin-top: 6px;
+  color: #aeb6c7;
+  font-size: 11px;
+}

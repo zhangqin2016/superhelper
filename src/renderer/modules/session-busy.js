@@ -1,36 +1,32 @@
 /**
- * Per-session busy state — reads from turn-store (IPC-driven).
+ * Per-session busy state — driven by assistant:runtime-events.
  */
 
 import {
-  applyTurnState,
   canSend,
   canInterrupt,
   isSessionRunning,
   anySessionRunning,
   getTurnPhase,
   getTurnId,
-  hydrateTurnStoreFromState,
+  hydrateRuntimeFromState,
   isActiveSessionBusy,
-  enableTurnStoreDevCompare,
-} from "./turn-store.js";
+} from "./session-runtime-store.js";
 
 export {
-  applyTurnState,
   canSend,
   canInterrupt,
   isSessionRunning,
   anySessionRunning,
   getTurnPhase,
   getTurnId,
-  hydrateTurnStoreFromState,
   isActiveSessionBusy,
-  enableTurnStoreDevCompare,
 };
 
-/** @deprecated Busy is driven by assistant:turn-state — no-op. */
+export function applyTurnState(_payload) {}
 export function setSessionRunning(_sessionId, _running) {}
+export function enableTurnStoreDevCompare(_enabled = true) {}
 
 export function syncRunningFromState(state) {
-  hydrateTurnStoreFromState(state);
+  hydrateRuntimeFromState(state);
 }

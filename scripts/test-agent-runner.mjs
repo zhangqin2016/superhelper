@@ -21,7 +21,6 @@ import {
   hasSendableContent,
 } from "../src/main/user-message.js";
 import { resolvePlanPreview } from "../src/main/plan-preview.js";
-import { SessionTurnState } from "../src/main/session-turn-state.js";
 import { isResumeFailureMessage } from "../src/main/session-engine-recovery.js";
 import {
   classifyEngineEvent,
@@ -215,17 +214,6 @@ if (!planPreview.includes("Title")) {
   throw new Error("resolvePlanPreview inline failed");
 }
 
-const registry = new SessionTurnState();
-registry.begin("s1");
-if (!registry.has("s1")) throw new Error("SessionTurnState begin failed");
-registry.setPhase("s1", "permission");
-const snap = registry.snapshot("s1", null);
-if (!snap.active || snap.phase !== "permission") {
-  throw new Error(`SessionTurnState snapshot failed: ${JSON.stringify(snap)}`);
-}
-registry.end("s1");
-if (registry.has("s1")) throw new Error("SessionTurnState end failed");
-
 if (!isResumeFailureMessage("Failed to resume session abc")) {
   throw new Error("isResumeFailureMessage resume failed");
 }
@@ -239,6 +227,7 @@ const {
   resolveBundledCatalogDir,
   isBundledInCatalog,
 } = require("../src/main/skill-bundled-catalog.js");
+const { AgentSession } = require("../src/main/agent-session.js");
 
 const roots = bundledCatalogRoots();
 if (!roots.some((r) => r.includes("skills-catalog"))) {
@@ -387,6 +376,18 @@ if (normalizedText[0]?.kind !== "assistant_text" || normalizedText[0]?.text !== 
   throw new Error(`normalizeClaudeEvent text delta failed: ${JSON.stringify(normalizedText)}`);
 }
 
+const normalizedThinking = normalizeClaudeEvent({
+  type: "stream_event",
+  event: {
+    type: "content_block_delta",
+    index: 0,
+    delta: { type: "thinking_delta", thinking: "I should inspect the repo." },
+  },
+});
+if (normalizedThinking[0]?.kind !== "assistant_thinking" || normalizedThinking[0]?.text !== "I should inspect the repo.") {
+  throw new Error(`normalizeClaudeEvent thinking delta failed: ${JSON.stringify(normalizedThinking)}`);
+}
+
 const unknownRuntime = normalizeClaudeEvent({ type: "new_runtime_event", subtype: "mystery" });
 if (unknownRuntime[0]?.kind !== "unknown_runtime_event" || unknownRuntime[0]?.notice?.level !== "warning") {
   throw new Error(`unknown runtime event should be visible warning: ${JSON.stringify(unknownRuntime)}`);
@@ -451,6 +452,116 @@ if (
 const fallbackQuestions = normalizeAskUserQuestions({ prompt: "请补充方向" });
 if (fallbackQuestions[0]?.question !== "请补充方向") {
   throw new Error(`normalizeAskUserQuestions fallback failed: ${JSON.stringify(fallbackQuestions)}`);
+}
+
+const originalTurnResponseTimeout = AgentSession.TURN_RESPONSE_TIMEOUT_MS;
+const originalResumeTurnTimeout = AgentSession.RESUME_TURN_TIMEOUT_MS;
+AgentSession.TURN_RESPONSE_TIMEOUT_MS = 5;
+AgentSession.RESUME_TURN_TIMEOUT_MS = 5;
+try {
+  const session = new AgentSession("timer_test");
+  let doneCount = 0;
+  const notices = [];
+  session.busy = true;
+  session._turnSettled = false;
+  session.on("done", () => { doneCount += 1; });
+  session.on("engine-notice", (notice) => notices.push(notice));
+  session._armTurnResponseTimer();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  session._clearTurnResponseTimer();
+  if (doneCount !== 0 || !session.busy || session._turnSettled) {
+    throw new Error("silence timeout should not complete or stall an active turn");
+  }
+  if (!notices.some((notice) => notice.code === "longWait" && notice.reason === "silence")) {
+    throw new Error(`silence timeout should emit longWait notice: ${JSON.stringify(notices)}`);
+  }
+} finally {
+  AgentSession.TURN_RESPONSE_TIMEOUT_MS = originalTurnResponseTimeout;
+  AgentSession.RESUME_TURN_TIMEOUT_MS = originalResumeTurnTimeout;
+}
+
+{
+  const session = new AgentSession("thinking_tokens_test");
+  const notices = [];
+  const usage = [];
+  session.on("engine-notice", (notice) => notices.push(notice));
+  session.on("usage-updated", (payload) => usage.push(payload));
+  session._handleNormalizedAction({
+    kind: "system_notice",
+    subtype: "thinking_tokens",
+    estimated_tokens: 126,
+    estimated_tokens_delta: 2,
+    notice: { code: "thinkingProgress", detail: "126 tokens", panel: true },
+  });
+  if (notices.length !== 0) {
+    throw new Error(`thinking token updates should not render as process notices: ${JSON.stringify(notices)}`);
+  }
+  if (usage[0]?.estimatedTokens !== 126 || usage[0]?.estimatedTokensDelta !== 2) {
+    throw new Error(`thinking token updates should emit usage payload: ${JSON.stringify(usage)}`);
+  }
+}
+
+{
+  const session = new AgentSession("send_payload_test");
+  const written = [];
+  session.process = {
+    killed: false,
+    stdin: {
+      destroyed: false,
+      write(line, cb) {
+        written.push(JSON.parse(line));
+        cb?.();
+        return true;
+      },
+      once() {},
+    },
+  };
+  session.cwd = process.cwd();
+  session.spawnOptions = { agentCommand: "/tmp/fake", permissionMode: "default" };
+  const sent = session.sendUserMessage({ text: "hello", files: [] });
+  session._clearTurnResponseTimer();
+  session._clearAbsoluteTurnTimer();
+  session._clearWaitNoticeTimers();
+  if (!sent) throw new Error("sendUserMessage should accept text payload");
+  if (written.length !== 1 || written[0].type !== "user") {
+    throw new Error(`sendUserMessage should write only the user payload, got ${JSON.stringify(written)}`);
+  }
+}
+
+{
+  const session = new AgentSession("process_event_test");
+  const processEvents = [];
+  session.busy = true;
+  session._turnSettled = false;
+  session.on("process-event", (event) => processEvents.push(event));
+  session._handleLine(JSON.stringify({
+    type: "stream_event",
+    event: {
+      type: "content_block_delta",
+      index: 0,
+      delta: {
+        type: "thinking_delta",
+        thinking: "I should inspect files.",
+      },
+    },
+    session_id: "sess_process",
+  }));
+  if (processEvents.length !== 1) {
+    throw new Error(`CLI stdout should emit one process-event, got ${processEvents.length}`);
+  }
+  if (processEvents[0].rawType !== "stream_event" || processEvents[0].rawSubtype !== "content_block_delta") {
+    throw new Error(`process-event should preserve raw type/subtype: ${JSON.stringify(processEvents[0])}`);
+  }
+  if (processEvents[0].actions?.[0]?.kind !== "assistant_thinking") {
+    throw new Error(`process-event should include normalized action detail: ${JSON.stringify(processEvents[0])}`);
+  }
+  session.busy = false;
+  session._turnSettled = true;
+  session._clearTurnResponseTimer();
+  session._clearAbsoluteTurnTimer();
+  session._clearWaitNoticeTimers();
+  session._clearIdleTimer();
+  session._clearMessageStopTimer();
 }
 
 console.log("agent-runner: ok");

@@ -280,6 +280,9 @@ function normalizeStreamEvent(ev) {
       return [{ kind: "stream_message_start" }];
     case "content_block_start": {
       const block = inner.content_block;
+      if (block?.type === "thinking" && block.thinking) {
+        return [{ kind: "assistant_thinking", text: block.thinking || "" }];
+      }
       if (block?.type !== "tool_use" || !block.id || !block.name) return [];
       return [{
         kind: "stream_tool_start",
@@ -294,6 +297,9 @@ function normalizeStreamEvent(ev) {
       const delta = inner.delta;
       if (delta?.type === "text_delta") {
         return [{ kind: "assistant_text", text: delta.text || "" }];
+      }
+      if (delta?.type === "thinking_delta") {
+        return [{ kind: "assistant_thinking", text: delta.thinking || "" }];
       }
       if (delta?.type === "input_json_delta" && delta.partial_json) {
         return [{
@@ -352,6 +358,8 @@ function normalizeClaudeEvent(ev) {
         kind: "system_notice",
         subtype,
         sessionId: ev.session_id || "",
+        estimated_tokens: ev.estimated_tokens,
+        estimated_tokens_delta: ev.estimated_tokens_delta,
         notice,
       }];
     }

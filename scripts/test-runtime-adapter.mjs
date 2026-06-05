@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Runtime adapter contract: vendor-specific CLI events must become stable
- * runtime events while preserving compatibility actions for the current UI.
+ * RuntimeEvent drafts for the single runtime-events pipeline.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { ClaudeCliAdapter } = require("../src/main/runtime/adapters/claude-cli-adapter.js");
+const { CliEventAdapter } = require("../src/main/cli-event-adapter.js");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -31,7 +31,7 @@ function readJsonl(file) {
 }
 
 function flatten(file) {
-  const adapter = new ClaudeCliAdapter();
+  const adapter = new CliEventAdapter();
   return readJsonl(path.join(fixtureDir, file)).flatMap((event) => {
     const normalized = adapter.normalizeEvent(event);
     return normalized.runtimeEvents;
@@ -43,8 +43,8 @@ function hasType(events, type) {
 }
 
 const basicEvents = flatten("basic-text.jsonl");
-if (!hasType(basicEvents, "assistant.text") || !hasType(basicEvents, "turn.result")) {
-  throw new Error(`basic-text must expose assistant.text and turn.result, got ${basicEvents.map((e) => e.type).join(",")}`);
+if (!hasType(basicEvents, "assistant.delta") || !hasType(basicEvents, "turn.completed")) {
+  throw new Error(`basic-text must expose assistant.delta and turn.completed, got ${basicEvents.map((e) => e.type).join(",")}`);
 }
 
 const toolEvents = flatten("tool-use.jsonl");
@@ -60,26 +60,29 @@ if (!hasType(permissionEvents, "permission.requested")) {
 }
 
 const taskEvents = flatten("task-progress.jsonl");
-if (!hasType(taskEvents, "turn.progress")) {
-  throw new Error("task telemetry must expose turn.progress");
+if (!hasType(taskEvents, "engine.notice")) {
+  throw new Error("task telemetry must expose engine.notice");
 }
 
 const unknownEvents = flatten("unknown-runtime.jsonl");
-if (!hasType(unknownEvents, "runtime.warning")) {
-  throw new Error("unknown vendor events must degrade to runtime.warning");
+if (!hasType(unknownEvents, "engine.warning")) {
+  throw new Error("unknown vendor events must degrade to engine.warning");
 }
 
 const pythonGameEvents = flatten("python-game-probe.jsonl");
-for (const type of ["turn.progress", "tool.started", "tool.done", "assistant.text", "turn.result"]) {
+for (const type of ["assistant.thinking.delta", "tool.started", "tool.done", "assistant.delta"]) {
   if (!hasType(pythonGameEvents, type)) {
     throw new Error(`python-game probe must expose ${type}, got ${pythonGameEvents.map((e) => e.type).join(",")}`);
   }
 }
-if (pythonGameEvents.some((event) => event.type === "runtime.warning")) {
-  throw new Error("python-game probe must not produce runtime.warning for known Claude CLI events");
+if (!hasType(pythonGameEvents, "turn.completed") && !hasType(pythonGameEvents, "turn.failed")) {
+  throw new Error(`python-game probe must expose a terminal turn event, got ${pythonGameEvents.map((e) => e.type).join(",")}`);
+}
+if (pythonGameEvents.some((event) => event.type === "engine.warning")) {
+  throw new Error("python-game probe must not produce engine.warning for known Claude CLI events");
 }
 
-const adapter = new ClaudeCliAdapter();
+const adapter = new CliEventAdapter();
 const background = adapter.normalizeEvent({
   type: "system",
   subtype: "task_progress",
@@ -94,7 +97,7 @@ const status = adapter.normalizeEvent({
   subtype: "status",
   status: "Reading recent chapters",
 });
-if (!hasType(status.runtimeEvents, "turn.progress") || status.warnings.length !== 0) {
+if (!hasType(status.runtimeEvents, "engine.notice") || status.warnings.length !== 0) {
   throw new Error(`system/status must expose progress without warning, got ${JSON.stringify(status)}`);
 }
 if (!status.backgroundActivity || status.backgroundActivity.short) {
@@ -108,6 +111,35 @@ const completed = adapter.normalizeEvent({
 });
 if (!completed.backgroundActivity?.short) {
   throw new Error(`task_completed must shorten background activity, got ${JSON.stringify(completed.backgroundActivity)}`);
+}
+
+const init = adapter.normalizeEvent({
+  type: "system",
+  subtype: "init",
+  session_id: "resume_1",
+});
+if (!hasType(init.runtimeEvents, "session.hydrated")) {
+  throw new Error(`system/init must expose session.hydrated, got ${JSON.stringify(init.runtimeEvents)}`);
+}
+
+const usage = adapter.normalizeEvent({
+  type: "stream_event",
+  event: {
+    type: "message_delta",
+    delta: { stop_reason: "end_turn" },
+    usage: { output_tokens: 5 },
+  },
+});
+if (!hasType(usage.runtimeEvents, "usage.updated")) {
+  throw new Error(`message_delta usage must expose usage.updated, got ${JSON.stringify(usage.runtimeEvents)}`);
+}
+
+const suggestions = adapter.normalizeEvent({
+  type: "prompt_suggestions",
+  suggestions: ["A", "B"],
+});
+if (!hasType(suggestions.runtimeEvents, "prompt_suggestions.updated")) {
+  throw new Error(`prompt suggestions must expose prompt_suggestions.updated, got ${JSON.stringify(suggestions.runtimeEvents)}`);
 }
 
 console.log("runtime-adapter: ok");

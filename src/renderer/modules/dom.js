@@ -42,10 +42,10 @@ export function updateScrollToBottomButton(scrollEl) {
 }
 
 /** Scroll after layout/markdown rendering has settled. */
-export function scrollToBottomAfterLayout(scrollEl) {
+export function scrollToBottomAfterLayout(scrollEl, force = false) {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      scrollToBottom(true, scrollEl);
+      scrollToBottom(force, scrollEl);
     });
   });
 }

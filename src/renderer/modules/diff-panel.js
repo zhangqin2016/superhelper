@@ -38,20 +38,20 @@ export function addDiffEntry(sessionId, entry) {
 }
 
 function renderInlineDiffForFile(sessionId, filePath, entry) {
-  // Find the matching Write/Edit tool card in DOM
+  // Find the matching Write/Edit tool row in the runtime transcript.
   const panel = document.querySelector(
     `.session-messages[data-session-id="${sessionId}"]`
   );
   if (!panel) return;
-  const card = panel.querySelector(`.tool-card[data-tool-file-path="${CSS.escape(filePath)}"]`);
-  if (!card) return;
+  const toolRow = panel.querySelector(`.assistant-tool-row[data-tool-file-path="${CSS.escape(filePath)}"]`);
+  if (!toolRow) return;
 
   // Remove existing inline diff
-  const existing = card.querySelector(".tool-card-diff");
+  const existing = toolRow.querySelector(".assistant-tool-diff");
   if (existing) existing.remove();
 
   const diffDiv = document.createElement("div");
-  diffDiv.className = "tool-card-diff";
+  diffDiv.className = "assistant-tool-diff";
 
   if (entry.diff && entry.diff.length > 0) {
     const lines = entry.diff.slice(0, 40); // inline: limit to first 40 hunks
@@ -63,16 +63,15 @@ function renderInlineDiffForFile(sessionId, filePath, entry) {
     }
     if (entry.diff.length > 40) {
       const more = document.createElement("div");
-      more.className = "tool-card-result-toggle";
+      more.className = "assistant-tool-diff-more";
       more.textContent = "... 查看更多";
-      more.style.cssText = "color: var(--text-dim); font-size: 11px; cursor: pointer;";
       diffDiv.appendChild(more);
     }
   } else {
     diffDiv.textContent = entry.fileName;
   }
 
-  card.appendChild(diffDiv);
+  toolRow.appendChild(diffDiv);
 }
 
 export function clearDiffEntries(sessionId) {

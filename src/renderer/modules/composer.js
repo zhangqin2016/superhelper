@@ -1,6 +1,5 @@
 /**
- * Composer — sends user messages to the active Claude session.
- * PTY mode: sends text directly to terminal. Falls back to stream-json.
+ * Composer — sends user messages to the active Claude session (stream-json).
  */
 
 import store from "./state.js";
@@ -9,7 +8,6 @@ import { renderFilePreview, clearPendingFiles } from "./file-handler.js";
 import { promptSessionName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
-import { sendToTerminal } from "./message.js";
 import { canSend, getTurnPhase } from "./session-busy.js";
 import { t } from "../i18n/index.js";
 
@@ -46,6 +44,7 @@ export function renderMessageQueue(sessionId, items = []) {
     text.className = "message-queue-preview";
     const preview =
       item.preview ||
+      item.text ||
       (item.hasFiles ? t("composer.queueAttachmentOnly") : t("composer.queueEmptyText"));
     text.textContent = preview;
     text.title = preview;
@@ -57,17 +56,17 @@ export function renderMessageQueue(sessionId, items = []) {
     rm.innerHTML = "&times;";
     rm.title = t("composer.cancelQueued");
     rm.setAttribute("aria-label", t("composer.cancelQueued"));
-    rm.addEventListener("click", () => void cancelQueuedMessage(sessionId, item.index));
+    rm.addEventListener("click", () => void cancelQueuedMessage(sessionId, item.id));
     row.appendChild(rm);
 
     area.appendChild(row);
   }
 }
 
-async function cancelQueuedMessage(sessionId, index) {
+async function cancelQueuedMessage(sessionId, itemId) {
   if (!sessionId) return;
   try {
-    const result = await window.assistantClient.cancelQueuedMessage(sessionId, index);
+    const result = await window.assistantClient.cancelQueuedMessage(sessionId, itemId);
     if (!result?.ok) {
       showToast(t("toast.queueCancelFailed"), "warning");
       return;
@@ -154,13 +153,6 @@ export async function sendPrompt(opts = {}) {
     return;
   }
 
-  // PTY mode: send text directly to terminal
-  if (sendToTerminal(sessionId, text)) {
-    if (promptInput) promptInput.value = "";
-    return;
-  }
-
-  // Stream-json mode fallback
   if (sessionId && getTurnPhase(sessionId) === "stopping") {
     showToast(t("toast.sessionStopping"), "warning");
     return;

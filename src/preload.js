@@ -36,11 +36,11 @@ contextBridge.exposeInMainWorld("assistantClient", {
       message: options.message,
       updatedInput: options.updatedInput,
     }),
-  getTurnState: (sessionId) =>
-    ipcRenderer.invoke("assistant:turn-state:snapshot", { sessionId }),
+  getRuntimeSnapshot: (sessionId) =>
+    ipcRenderer.invoke("assistant:runtime-snapshot", { sessionId }),
   interrupt: (sessionId) => ipcRenderer.invoke("assistant:interrupt", { sessionId }),
-  cancelQueuedMessage: (sessionId, index) =>
-    ipcRenderer.invoke("assistant:cancel-queued-message", { sessionId, index }),
+  cancelQueuedMessage: (sessionId, itemId) =>
+    ipcRenderer.invoke("assistant:cancel-queued-message", { sessionId, itemId }),
 
   getFullState: () => ipcRenderer.invoke("state:full"),
 
@@ -116,68 +116,11 @@ contextBridge.exposeInMainWorld("assistantClient", {
   rejectChange: (sessionId, filePath, content) =>
     ipcRenderer.invoke("filetree:reject-change", { sessionId, filePath, content }),
 
-  onChunk: (callback) => {
-    ipcRenderer.on("assistant:chunk", (_event, data) => callback(data));
-  },
-  onDone: (callback) => {
-    ipcRenderer.on("assistant:done", (_event, data) => callback(data));
-  },
-  onError: (callback) => {
-    ipcRenderer.on("assistant:error", (_event, data) => callback(data));
-  },
-  onStatus: (callback) => {
-    ipcRenderer.on("assistant:status", (_event, data) => callback(data));
-  },
-  onTool: (callback) => {
-    ipcRenderer.on("assistant:tool", (_event, data) => callback(data));
-  },
-  onToolUpcoming: (callback) => {
-    ipcRenderer.on("assistant:tool-upcoming", (_event, data) => callback(data));
-  },
-  onToolInputDelta: (callback) => {
-    ipcRenderer.on("assistant:tool-input-delta", (_event, data) => callback(data));
-  },
-  onToolInputDone: (callback) => {
-    ipcRenderer.on("assistant:tool-input-done", (_event, data) => callback(data));
-  },
-  onToolDone: (callback) => {
-    ipcRenderer.on("assistant:tool-done", (_event, data) => callback(data));
-  },
-  onPermissionRequest: (callback) => {
-    ipcRenderer.on("assistant:permission-request", (_event, data) => callback(data));
-  },
-  onUserQuestion: (callback) => {
-    ipcRenderer.on("assistant:user-question", (_event, data) => callback(data));
-  },
-  onPermissionCancelled: (callback) => {
-    ipcRenderer.on("assistant:permission-cancelled", (_event, data) => callback(data));
-  },
-  onHookRequest: (callback) => {
-    ipcRenderer.on("assistant:hook-request", (_event, data) => callback(data));
-  },
-  onHookResolved: (callback) => {
-    ipcRenderer.on("assistant:hook-resolved", (_event, data) => callback(data));
-  },
-  onEngineNotice: (callback) => {
-    ipcRenderer.on("assistant:engine-notice", (_event, data) => callback(data));
+  onRuntimeEvents: (callback) => {
+    ipcRenderer.on("assistant:runtime-events", (_event, batch) => callback(batch));
   },
   onPromptSuggestions: (callback) => {
     ipcRenderer.on("assistant:prompt-suggestions", (_event, data) => callback(data));
-  },
-  onTurnState: (callback) => {
-    ipcRenderer.on("assistant:turn-state", (_event, data) => callback(data));
-  },
-  onAutoRecover: (callback) => {
-    ipcRenderer.on("assistant:auto-recover", (_event, data) => callback(data));
-  },
-  onSessionEvents: (callback) => {
-    ipcRenderer.on("assistant:session-events", (_event, data) => callback(data));
-  },
-  onQueueState: (callback) => {
-    ipcRenderer.on("assistant:queue-state", (_event, data) => callback(data));
-  },
-  onQueueDispatchFailed: (callback) => {
-    ipcRenderer.on("assistant:queue-dispatch-failed", (_event, data) => callback(data));
   },
   onUpdateState: (callback) => {
     ipcRenderer.on("updates:state", (_event, data) => callback(data));
@@ -189,18 +132,4 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.on("assistant:file-diff", (_event, data) => callback(data));
   },
 
-  // --- PTY terminal API ---
-  ptyCreate: (payload) => ipcRenderer.invoke("pty:create", payload),
-  ptyInput: (sessionId, data) => ipcRenderer.send("pty:input", { sessionId, data }),
-  ptyResize: (sessionId, cols, rows) => ipcRenderer.send("pty:resize", { sessionId, cols, rows }),
-  ptyDestroy: (sessionId) => ipcRenderer.invoke("pty:destroy", { sessionId }),
-  onPtyData: (callback) => {
-    ipcRenderer.on("pty:data", (_event, data) => callback(data));
-  },
-  onPtyExit: (callback) => {
-    ipcRenderer.on("pty:exit", (_event, data) => callback(data));
-  },
-  onPtyError: (callback) => {
-    ipcRenderer.on("pty:error", (_event, data) => callback(data));
-  },
 });

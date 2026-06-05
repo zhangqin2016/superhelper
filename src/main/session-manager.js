@@ -378,12 +378,15 @@ class SessionManager {
 
   _appendMessage(session, role, content, files = null, extra = null) {
     const entry = {
+      id: extra?.id,
       role,
       content,
       files: files && files.length > 0 ? files : undefined,
+      turnId: extra?.turnId,
       timestamp: new Date().toISOString(),
     };
     if (extra?.failed) entry.failed = true;
+    if (extra?.meta && typeof extra.meta === "object") entry.meta = extra.meta;
     session.messages.push(entry);
     session.updatedAt = new Date().toISOString();
     if (session.messages.length > 200) {

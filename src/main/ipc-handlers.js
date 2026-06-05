@@ -12,13 +12,18 @@ const { registerProjectHandlers } = require("./ipc-projects");
 const { registerSessionHandlers, registerSkillHandlers } = require("./ipc-sessions");
 const { registerAssistantHandlers } = require("./ipc-assistant");
 const { registerFileTreeHandlers } = require("./ipc-filetree");
-const { registerPtyHandlers } = require("./ipc-pty");
+const { RuntimeEventBus } = require("./runtime-event-bus");
+const { TranscriptStore } = require("./transcript-store");
+const { TurnOrchestrator } = require("./turn-orchestrator");
 
 function registerAll(ctx) {
   const {
     mainWindow, projectManager, sessionManager,
     stagingManager, runnerPool,
   } = ctx;
+  ctx.eventBus = new RuntimeEventBus(() => ctx.mainWindow);
+  ctx.transcriptStore = new TranscriptStore(sessionManager);
+  ctx.turnOrchestrator = new TurnOrchestrator(ctx);
 
   // --- App ---------------------------------------------------------------
 
@@ -50,6 +55,14 @@ function registerAll(ctx) {
       activeSessionId: sessionManager.activeSessionId,
       projects: projectsWithSessions,
       conversation: active?.messages || [],
+      runtime: {
+        sessions: Object.fromEntries(
+          runnerPool.getSessionIds().map((sessionId) => [
+            sessionId,
+            ctx.turnOrchestrator.snapshot(sessionId),
+          ]),
+        ),
+      },
       runnerSessionIds: runnerPool.getSessionIds(),
       agent: {
         ...agent,
@@ -112,7 +125,6 @@ function registerAll(ctx) {
   registerSkillHandlers(ctx);
   registerAssistantHandlers(ctx);
   registerFileTreeHandlers();
-  registerPtyHandlers(mainWindow);
 }
 
 module.exports = { registerAll };

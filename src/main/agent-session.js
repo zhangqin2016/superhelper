@@ -21,12 +21,11 @@ const {
   buildHookStopResponse,
   buildInterruptRequest,
   buildSetPermissionModeRequest,
-  buildInitializeRequest,
 } = require("./control-protocol");
 const {
   normalizeAskUserQuestions,
 } = require("./claude-event-normalizer");
-const { ClaudeCliAdapter } = require("./runtime/adapters/claude-cli-adapter");
+const { CliEventAdapter } = require("./cli-event-adapter");
 const {
   compactCommand,
   isShellTool,
@@ -51,6 +50,62 @@ function truncateToolResultForUi(text) {
     content: `${head}\n\n[...output truncated for display: ${value.length - head.length - tail.length} characters hidden...]\n\n${tail}`,
     truncated: true,
   };
+}
+
+function processEventFromClaudeEvent(ev, actions = []) {
+  const payload = {
+    rawType: String(ev?.type || ""),
+    rawSubtype: String(ev?.subtype || ev?.event?.type || ev?.request?.subtype || ""),
+    actions: actions.map((action) => ({
+      kind: action.kind || "",
+      id: action.id || action.requestId || "",
+      name: action.name || action.toolName || action.hookName || "",
+      text: action.text || "",
+      input: action.input || action.toolInput || null,
+      result: action.content || action.event?.result || null,
+      notice: action.notice || null,
+      stopReason: action.stopReason || action.event?.stop_reason || "",
+    })),
+    event: compactProcessEvent(ev),
+  };
+  payload.summary = processEventSummary(payload);
+  return payload;
+}
+
+function compactProcessEvent(ev) {
+  if (!ev || typeof ev !== "object") return {};
+  const out = {
+    type: ev.type,
+    subtype: ev.subtype,
+    session_id: ev.session_id,
+  };
+  if (ev.message !== undefined) out.message = ev.message;
+  if (ev.status !== undefined) out.status = ev.status;
+  if (ev.result !== undefined) out.result = ev.result;
+  if (ev.error !== undefined) out.error = ev.error;
+  if (ev.errors !== undefined) out.errors = ev.errors;
+  if (ev.usage !== undefined) out.usage = ev.usage;
+  if (ev.estimated_tokens !== undefined) out.estimated_tokens = ev.estimated_tokens;
+  if (ev.request !== undefined) out.request = ev.request;
+  if (ev.response !== undefined) out.response = ev.response;
+  if (ev.event !== undefined) out.event = ev.event;
+  if (ev.message?.content !== undefined) out.content = ev.message.content;
+  return out;
+}
+
+function processEventSummary(payload) {
+  const first = payload.actions.find((action) => action.kind);
+  if (!first) return payload.rawSubtype || payload.rawType || "runtime event";
+  if (first.kind === "assistant_thinking") return first.text || "thinking";
+  if (first.kind === "assistant_text") return first.text || "assistant text";
+  if (first.kind === "assistant_tool_use" || first.kind === "stream_tool_start") {
+    return first.name ? `tool ${first.name}` : "tool use";
+  }
+  if (first.kind === "tool_result") return first.name ? `tool result ${first.name}` : "tool result";
+  if (first.kind.startsWith("hook_")) return first.name ? `hook ${first.name}` : first.kind;
+  if (first.notice?.detail) return first.notice.detail;
+  if (first.kind === "turn_result") return first.stopReason || "turn result";
+  return first.kind;
 }
 
 /**
@@ -96,6 +151,7 @@ class AgentSession extends EventEmitter {
     this._pendingToolIds = new Set();
     this._turnHadToolUse = false;
     this._turnHadBlockingToolUse = false;
+    this._sawStdoutForTurn = false;
     this._turnSettled = true;
     /** @type {Map<string, { toolName: string, input: Record<string, unknown> }>} */
     this._pendingPermissions = new Map();
@@ -119,7 +175,7 @@ class AgentSession extends EventEmitter {
     this._internalCommandTimer = null;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
-    this._runtimeAdapter = new ClaudeCliAdapter();
+    this._runtimeAdapter = new CliEventAdapter();
     this._lastRuntimeEvents = [];
   }
 
@@ -269,7 +325,14 @@ class AgentSession extends EventEmitter {
       : AgentSession.TURN_RESPONSE_TIMEOUT_MS;
     this._turnResponseTimer = setTimeout(() => {
       if (!this.busy || this._turnSettled) return;
-      this._recoverStalledTurn("silence");
+      this._emitEngineNotice({
+        code: "longWait",
+        level: "progress",
+        panel: true,
+        replace: true,
+        reason: "silence",
+      });
+      this._armTurnResponseTimer();
     }, ms);
   }
 
@@ -494,14 +557,22 @@ class AgentSession extends EventEmitter {
     if (!this._canAutoCompleteTurn()) return;
     this._messageStopTimer = setTimeout(() => {
       if (!this._canAutoCompleteTurn()) return;
-      log.warn("turn completed via message_stop grace (no result event)");
-      this._flushLineBuffer();
-      this._completeTurn({
-        code: 0,
+      this.emit("message-stop-grace", {
         output: this.collectedOutput.trim(),
-        idle: true,
       });
     }, AgentSession.MESSAGE_STOP_GRACE_MS);
+  }
+
+  completeFromHost(reason = "host-finalized") {
+    if (!this.busy || this._turnSettled) return false;
+    this._flushLineBuffer();
+    this._completeTurn({
+      code: 0,
+      output: this.collectedOutput.trim(),
+      idle: true,
+      reason,
+    });
+    return true;
   }
 
   _markStreamActivity() {
@@ -691,14 +762,6 @@ class AgentSession extends EventEmitter {
     throw new Error("RUNNER_NOT_READY");
   }
 
-  _maybeSendInitialize() {
-    if (this._cliInitialized || !this.isAlive()) return;
-    // --resume sessions are initialized by the CLI; host initialize breaks resume.
-    if (this.agentResumeId) return;
-    this._cliInitialized = true;
-    this._writeControlLine(buildInitializeRequest());
-  }
-
   /**
    * @param {{ text?: string, files?: Array<Record<string, unknown>> }} payload
    */
@@ -730,6 +793,7 @@ class AgentSession extends EventEmitter {
     this._toolLeases.clear();
     this._turnHadToolUse = false;
     this._turnHadBlockingToolUse = false;
+    this._sawStdoutForTurn = false;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
     this._clearDeferredTurnResultTimer();
@@ -739,8 +803,6 @@ class AgentSession extends EventEmitter {
     this._blockIndexToToolId.clear();
     this.emit("status", "thinking");
     this._armWaitNoticeTimers();
-
-    this._maybeSendInitialize();
 
     const userPayload = buildUserMessagePayload({
       text,
@@ -762,6 +824,13 @@ class AgentSession extends EventEmitter {
 
     const wrote = stdin.write(line, (err) => {
       if (err) this._failTurn(sanitizeError(err.message));
+    });
+    this._emitEngineNotice({
+      code: "sentToCli",
+      level: "progress",
+      panel: true,
+      replace: true,
+      detail: "已发送到 CLI，等待输出",
     });
     if (!wrote) {
       stdin.once("drain", () => {});
@@ -1293,6 +1362,7 @@ class AgentSession extends EventEmitter {
     this._flushLineBuffer();
     if (ev.modelUsage && typeof ev.modelUsage === "object") {
       require("./usage-reporter").recordModelUsage(this.sessionId, ev.modelUsage);
+      this.emit("usage-updated", { usage: ev.modelUsage });
     }
     if (ev.subtype === "success" && ev.result) {
       const piece = String(ev.result);
@@ -1357,6 +1427,13 @@ class AgentSession extends EventEmitter {
             this.emit("agent-resume-id", action.sessionId);
           }
         }
+        if (action.subtype === "thinking_tokens") {
+          this.emit("usage-updated", {
+            estimatedTokens: action.estimated_tokens,
+            estimatedTokensDelta: action.estimated_tokens_delta,
+          });
+          break;
+        }
         this._emitEngineNotice(action.notice);
         break;
 
@@ -1385,6 +1462,11 @@ class AgentSession extends EventEmitter {
 
       case "assistant_text":
         this._appendTextPiece(action.text || "");
+        break;
+
+      case "assistant_thinking":
+        this._markStreamActivity();
+        this.emit("thinking-delta", { text: action.text || "" });
         break;
 
       case "assistant_tool_use": {
@@ -1480,11 +1562,15 @@ class AgentSession extends EventEmitter {
       }
 
       case "stream_message_delta":
+        if (action.usage && typeof action.usage === "object" && Object.keys(action.usage).length) {
+          this.emit("usage-updated", { usage: action.usage, stopReason: action.stopReason || "" });
+        }
         this._markStreamActivity();
         break;
 
       case "stream_message_stop":
         this._markStreamActivity();
+        this.emit("message-stop", {});
         this._armMessageStopCompletionTimer();
         break;
 
@@ -1584,6 +1670,18 @@ class AgentSession extends EventEmitter {
     }
 
     if (!ev?.type) return;
+    if (this.busy && !this._turnSettled && !this._sawStdoutForTurn) {
+      this._sawStdoutForTurn = true;
+      this._emitEngineNotice({
+        code: "cliOutputReceived",
+        level: "progress",
+        panel: true,
+        replace: true,
+        replacesCode: "sentToCli",
+        done: true,
+        detail: "已收到 CLI 输出",
+      });
+    }
 
     this._noteStreamContext(ev);
 
@@ -1628,6 +1726,7 @@ class AgentSession extends EventEmitter {
       return;
     }
     this._lastRuntimeEvents = normalized.runtimeEvents;
+    this.emit("process-event", processEventFromClaudeEvent(ev, normalized.actions || []));
 
     if (normalized.backgroundActivity) {
       this._markBackgroundActivity(normalized.backgroundActivity.short);

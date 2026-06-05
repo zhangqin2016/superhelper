@@ -1,0 +1,67 @@
+/* =========================================================================
+   Scrollbar
+   ========================================================================= */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2d45; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3d55; }
+
+/* =========================================================================
+   RTL (Arabic)
+   ========================================================================= */
+
+[dir="rtl"] .left-panel {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
+[dir="rtl"] .settings-panel {
+  justify-content: flex-start;
+}
+
+[dir="rtl"] .settings-panel-sheet {
+  border-left: none;
+  border-right: 1px solid var(--border);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.35);
+}
+
+[dir="rtl"] .settings-nav {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
+[dir="rtl"] .toast-container {
+  right: auto;
+  left: 16px;
+}
+
+[dir="rtl"] .toast {
+  transform: translateX(-120%);
+}
+
+[dir="rtl"] .toast-visible {
+  transform: translateX(0);
+}
+
+[dir="rtl"] .project-collapse-icon {
+  transform: scaleX(-1);
+}
+
+[dir="rtl"] .session-skills-popover {
+  left: auto !important;
+  right: 8px;
+}
+
+[dir="rtl"] .session-skills-card-input {
+  left: auto;
+  right: 8px;
+}
+
+[dir="rtl"] .session-skills-card {
+  padding: 10px 28px 10px 10px;
+}
+
+body.locale-ar {
+  font-family: "Noto Sans Arabic", "Geeza Pro", "SF Arabic", var(--font);
+}

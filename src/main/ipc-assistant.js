@@ -2,20 +2,10 @@
 
 const fs = require("node:fs");
 const { ipcMain } = require("electron");
-const {
-  sendToRenderer,
-  turnState,
-  emitTurnState,
-  dispatchUserLine,
-} = require("./ipc-utils");
-const { turnController } = require("./turn-controller");
-const { cancelAutoRecovery } = require("./turn-auto-recovery");
-const { clearMessageQueue, emitQueueState, removeQueuedMessage, queueLength } = require("./turn-message-queue");
-const { interruptAndSend, finishInterruptedTurnIfSettled } = require("./interrupt-and-send");
 const { requireValidLicense } = require("./license-manager");
 
 function registerAssistantHandlers(ctx) {
-  const { sessionManager, runnerPool, projectManager } = ctx;
+  const { sessionManager, projectManager, turnOrchestrator } = ctx;
 
   ipcMain.handle("assistant:input", async (_event, payload) => {
     const licensed = requireValidLicense();
@@ -44,7 +34,7 @@ function registerAssistantHandlers(ctx) {
         ? payload.displayFiles
         : [];
 
-    return await dispatchUserLine(ctx, session, text, files, {
+    return await turnOrchestrator.sendUserMessage(session.id, text, files, {
       recordUser: true,
       spawnEngine: true,
       displayFiles,
@@ -77,7 +67,7 @@ function registerAssistantHandlers(ctx) {
         ? payload.displayFiles
         : [];
 
-    return await interruptAndSend(ctx, session, text, files, {
+    return await turnOrchestrator.interruptAndSend(session.id, text, files, {
       displayFiles,
     });
   });
@@ -118,22 +108,7 @@ function registerAssistantHandlers(ctx) {
       };
     }
 
-    sessionManager.popLastAssistantMessage(session.id);
-
-    const result = await dispatchUserLine(ctx, session, lastUser.content, files, {
-      recordUser: false,
-      spawnEngine: true,
-    });
-    if (!result.ok) {
-      sessionManager.pushMessageTo(
-        session.id,
-        "assistant",
-        lastMsg.content,
-        lastMsg.files || null,
-        lastMsg.failed ? { failed: true } : null,
-      );
-    }
-    return result;
+    return await turnOrchestrator.retryLastMessage(session.id);
   });
 
   ipcMain.handle("assistant:permission-response", (_event, payload) => {
@@ -143,15 +118,11 @@ function registerAssistantHandlers(ctx) {
       return { ok: false, error: "INVALID_PAYLOAD" };
     }
 
-    const runner = runnerPool.get(sessionId);
-    if (!runner) return { ok: false, error: "NO_RUNNER" };
-
-    const handled = runner.respondPermission(requestId, {
+    return turnOrchestrator.respondPermission(sessionId, requestId, {
       allow: Boolean(payload.allow),
       message: typeof payload.message === "string" ? payload.message : undefined,
       remember: Boolean(payload.remember),
     });
-    return handled ? { ok: true, sessionId, requestId } : { ok: false, error: "NOT_PENDING" };
   });
 
   ipcMain.handle("assistant:question-response", (_event, payload) => {
@@ -161,14 +132,10 @@ function registerAssistantHandlers(ctx) {
       return { ok: false, error: "INVALID_PAYLOAD" };
     }
 
-    const runner = runnerPool.get(sessionId);
-    if (!runner) return { ok: false, error: "NO_RUNNER" };
-
-    const handled = runner.respondUserQuestion(requestId, {
+    return turnOrchestrator.respondUserQuestion(sessionId, requestId, {
       answers: payload.answers,
       response: payload.response,
     });
-    return handled ? { ok: true, sessionId, requestId } : { ok: false, error: "NOT_PENDING" };
   });
 
   ipcMain.handle("assistant:hook-response", (_event, payload) => {
@@ -178,21 +145,17 @@ function registerAssistantHandlers(ctx) {
       return { ok: false, error: "INVALID_PAYLOAD" };
     }
 
-    const runner = runnerPool.get(sessionId);
-    if (!runner) return { ok: false, error: "NO_RUNNER" };
-
-    const handled = runner.respondHook(requestId, {
+    return turnOrchestrator.respondHook(sessionId, requestId, {
       allow: Boolean(payload.allow),
       message: typeof payload.message === "string" ? payload.message : undefined,
       updatedInput: payload.updatedInput || undefined,
     });
-    return handled ? { ok: true, sessionId, requestId } : { ok: false, error: "NOT_PENDING" };
   });
 
-  ipcMain.handle("assistant:turn-state:snapshot", (_event, payload) => {
+  ipcMain.handle("assistant:runtime-snapshot", (_event, payload) => {
     const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
     if (!sessionId) return { ok: false, error: "NO_SESSION" };
-    return { ok: true, ...turnController.snapshot(sessionId) };
+    return turnOrchestrator.snapshot(sessionId);
   });
 
   ipcMain.handle("assistant:interrupt", async (_event, payload) => {
@@ -202,51 +165,20 @@ function registerAssistantHandlers(ctx) {
       : sessionManager.getActive();
     if (!session) return { ok: false, error: "NO_SESSION" };
 
-    const runner = runnerPool.get(session.id);
-    const hadTurn = turnState.has(session.id);
-
-    cancelAutoRecovery(session.id);
-    clearMessageQueue(session.id);
-    emitQueueState(ctx, session.id);
-
-    if (hadTurn) {
-      turnController.transition(session.id, "userInterrupt");
-      emitTurnState(ctx, session.id);
-    }
-
-    runner?.interrupt();
-
-    const settled = await finishInterruptedTurnIfSettled(ctx, session, runner, hadTurn);
-    if (settled) {
-      sendToRenderer(ctx.mainWindow, "assistant:done", {
-        code: null,
-        sessionId: session.id,
-        turnId: settled.turnId,
-        interrupted: true,
-        stalled: false,
-        hadOutput: settled.hadOutput,
-      });
-    }
-
-    return { ok: true };
+    return turnOrchestrator.interrupt(session.id);
   });
 
   ipcMain.handle("assistant:cancel-queued-message", (_event, payload) => {
     const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
-    const index = Number(payload?.index);
-    if (!sessionId || !Number.isInteger(index) || index < 0) {
+    const itemId = String(payload?.itemId || payload?.id || "");
+    if (!sessionId || !itemId) {
       return { ok: false, error: "INVALID_PAYLOAD" };
     }
 
     const session = sessionManager.findById(sessionId);
     if (!session) return { ok: false, error: "NO_SESSION" };
 
-    if (!removeQueuedMessage(sessionId, index)) {
-      return { ok: false, error: "NOT_FOUND" };
-    }
-
-    emitQueueState(ctx, sessionId);
-    return { ok: true, sessionId, queueLength: queueLength(sessionId) };
+    return turnOrchestrator.cancelQueuedMessage(sessionId, itemId);
   });
 }
 

@@ -9,7 +9,7 @@ let hljs = null;
 async function ensureHljs() {
   if (hljsReady) return hljs;
   try {
-    const mod = await import("../../node_modules/highlight.js/es/index.js");
+    const mod = await import("../../../node_modules/highlight.js/es/index.js");
     hljs = mod.default || mod;
     hljsReady = true;
     return hljs;

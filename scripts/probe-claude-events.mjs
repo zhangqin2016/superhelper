@@ -10,12 +10,12 @@ import os from "node:os";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const { ClaudeCliAdapter } = require("../src/main/runtime/adapters/claude-cli-adapter.js");
+const { CliEventAdapter } = require("../src/main/cli-event-adapter.js");
 
 const CLAUDE = process.env.CLAUDE_BIN || "claude";
 const TIMEOUT_MS = Number(process.env.CLAUDE_PROBE_TIMEOUT_MS || 30_000);
 const MAX_BUDGET = process.env.CLAUDE_PROBE_MAX_BUDGET_USD || "0.05";
-const adapter = new ClaudeCliAdapter();
+const adapter = new CliEventAdapter();
 
 function run(cmd, args, { inputLines = [], cwd = process.cwd() } = {}) {
   return new Promise((resolve) => {
