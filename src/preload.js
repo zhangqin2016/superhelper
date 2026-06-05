@@ -109,6 +109,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   getUpdateSettings: () => ipcRenderer.invoke("updates:get-settings"),
   getUpdateState: () => ipcRenderer.invoke("updates:get-state"),
+  getUsageSummary: () => ipcRenderer.invoke("usage:get-summary"),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   downloadUpdate: () => ipcRenderer.invoke("updates:download"),
   installUpdate: (options) => ipcRenderer.invoke("updates:install", options || {}),

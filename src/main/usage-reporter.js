@@ -2,6 +2,15 @@
 
 const pending = new Map();
 
+function mergeLocalSessionRecord(record) {
+  try {
+    require("./usage-local-store").mergeSessionRecord(record);
+  } catch {
+    // Local usage history is best-effort. Reporting must not fail when Electron
+    // app paths are unavailable in pure Node tests or early bootstrap.
+  }
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -88,6 +97,7 @@ async function flush(sessionId) {
   ) {
     return { ok: true, skipped: true };
   }
+  mergeLocalSessionRecord(record);
   const result = await require("./service-client").reportUsage(record);
   if (!result.ok && result.error !== "NO_SERVICE_URL") {
     pending.set(key, record);
@@ -95,9 +105,26 @@ async function flush(sessionId) {
   return result;
 }
 
+function getPendingTodayTotals() {
+  const date = today();
+  const totals = {
+    inputTokens: 0,
+    outputTokens: 0,
+    messageCount: 0,
+  };
+  for (const record of pending.values()) {
+    if (record.date !== date) continue;
+    totals.inputTokens += record.inputTokens;
+    totals.outputTokens += record.outputTokens;
+    totals.messageCount += record.messageCount;
+  }
+  return totals;
+}
+
 module.exports = {
   recordUserSend,
   recordToolCall,
   recordModelUsage,
   flush,
+  getPendingTodayTotals,
 };

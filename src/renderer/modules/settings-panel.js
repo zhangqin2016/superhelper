@@ -13,8 +13,9 @@ import { refreshLicenseStatus, refreshUpdateSettings } from "./license-update-se
 import { anySessionRunning } from "./session-runtime-store.js";
 import { activeSession, refreshStateLight } from "./session-chrome.js";
 import { confirmDialog } from "./confirm-dialog.js";
+import { refreshUsageSettings, initUsageSettings } from "./usage-settings.js";
 
-const SETTINGS_PAGES = ["general", "model", "permission", "search", "skills", "license", "about"];
+const SETTINGS_PAGES = ["general", "usage", "model", "permission", "search", "skills", "license", "about"];
 
 let panelOpen = false;
 let activeSettingsPage = "general";
@@ -87,6 +88,7 @@ export async function initSettingsPanel() {
     await refreshSkillsList();
     await refreshLicenseStatus();
     await refreshUpdateSettings();
+    await refreshUsageSettings();
     setPanelOpen(true);
   });
 
@@ -154,4 +156,6 @@ export async function initSettingsPanel() {
     const result = await window.assistantClient.clearStagingCache();
     showToast(result?.ok ? t("toast.cacheCleared") : t("toast.cacheClearFailed"), result?.ok ? "success" : "error");
   });
+
+  initUsageSettings();
 }

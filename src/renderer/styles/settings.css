@@ -692,3 +692,142 @@
 body.settings-open {
   overflow: hidden;
 }
+
+.settings-section-desc--compact {
+  margin-top: 6px;
+}
+
+.usage-device-id {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  font-size: 12px;
+}
+
+.usage-device-label {
+  color: var(--text-secondary);
+}
+
+.usage-device-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-primary);
+}
+
+.usage-device-copy {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.usage-device-copy:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.usage-data-source {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #d4b86a;
+}
+
+.usage-today-stats {
+  margin: 16px 0;
+}
+
+.usage-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.usage-stat-card {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.usage-stat-card--primary {
+  border-color: var(--accent-border);
+}
+
+.usage-stat-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.usage-stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.usage-stat-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.usage-range-summary {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.usage-history-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.usage-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.usage-history-table th,
+.usage-history-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.usage-history-table th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+}
+
+.usage-history-table tr.is-today td {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.usage-history-table tr:last-child td {
+  border-bottom: none;
+}
+
+.usage-table-empty {
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: 24px 12px !important;
+}

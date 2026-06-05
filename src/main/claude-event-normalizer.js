@@ -11,6 +11,12 @@ const SILENT_EVENT_TYPES = new Set([
   "control_cancel_request",
 ]);
 
+/** Known CLI `system/*` subtypes that need no notice and must not raise protocol_warning. */
+const SILENT_SYSTEM_SUBTYPES = new Set([
+  "thinking_tokens",
+  "commands_changed",
+]);
+
 function normalizeAskUserQuestions(input = {}) {
   const rawQuestions = Array.isArray(input?.questions) ? input.questions : [];
   const normalized = rawQuestions
@@ -354,7 +360,7 @@ function normalizeClaudeEvent(ev) {
     case "system": {
       const subtype = String(ev.subtype || "");
       const notice = classifyEngineEvent(ev);
-      if (!notice && subtype && !subtype.startsWith("task_") && subtype !== "thinking_tokens") {
+      if (!notice && subtype && !subtype.startsWith("task_") && !SILENT_SYSTEM_SUBTYPES.has(subtype)) {
         return [{
           kind: "protocol_warning",
           notice: {

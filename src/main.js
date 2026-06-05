@@ -12,6 +12,7 @@ const FileStagingManager = require("./main/file-staging-manager");
 const { SessionRunnerPool } = require("./main/session-runner-pool");
 const ipcHandlers = require("./main/ipc-handlers");
 const { wireExternalLinks } = require("./main/window-links");
+const { wireContextMenu } = require("./main/window-context-menu");
 
 let mainWindow = null;
 let runnerPoolRef = null;
@@ -43,6 +44,7 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   wireExternalLinks(mainWindow);
+  wireContextMenu(mainWindow);
   require("./main/update-manager").configure({ mainWindow });
   mainWindow.on("closed", () => {
     mainWindow = null;

@@ -289,6 +289,45 @@ export async function publicRoutes(app) {
     return reply.send({ ok: true });
   });
 
+  const usageSummarySchema = registerDeviceSchema.extend({
+    historyDays: z.number().int().min(1).max(90).optional().default(30),
+  });
+
+  app.post("/api/usage/summary", async (request, reply) => {
+    const input = usageSummarySchema.parse(request.body);
+    await upsertDevice(input);
+    const historyDays = Math.min(input.historyDays || 30, 90);
+    const since = new Date(Date.now() - historyDays * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    const rows = await db
+      .selectFrom("usage_daily")
+      .select((eb) => [
+        "usage_date",
+        eb.fn.sum("input_tokens").as("input_tokens"),
+        eb.fn.sum("output_tokens").as("output_tokens"),
+        eb.fn.sum("message_count").as("message_count"),
+      ])
+      .where("device_id", "=", input.deviceId)
+      .where("usage_date", ">=", since)
+      .groupBy("usage_date")
+      .orderBy("usage_date", "desc")
+      .execute();
+
+    return reply.send({
+      ok: true,
+      deviceId: input.deviceId,
+      historyDays,
+      days: rows.map((row) => ({
+        date: String(row.usage_date).slice(0, 10),
+        inputTokens: Number(row.input_tokens || 0),
+        outputTokens: Number(row.output_tokens || 0),
+        messageCount: Number(row.message_count || 0),
+      })),
+    });
+  });
+
   app.post("/api/plugins/events", async (request, reply) => {
     const input = pluginEventSchema.parse(request.body);
     await upsertDevice(input);

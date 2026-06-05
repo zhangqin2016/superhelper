@@ -432,6 +432,20 @@ if (
   throw new Error(`permission_denied should become known system_notice: ${JSON.stringify(permissionDeniedNormalized)}`);
 }
 
+const commandsChangedNormalized = normalizeClaudeEvent({
+  type: "system",
+  subtype: "commands_changed",
+});
+if (
+  commandsChangedNormalized[0]?.kind !== "system_notice" ||
+  commandsChangedNormalized[0]?.notice != null
+) {
+  throw new Error(`commands_changed should be silent system_notice: ${JSON.stringify(commandsChangedNormalized)}`);
+}
+if (commandsChangedNormalized.some((action) => action.kind === "protocol_warning")) {
+  throw new Error("commands_changed must not emit protocol_warning");
+}
+
 const taskProgressNormalized = normalizeClaudeEvent({
   type: "system",
   subtype: "task_progress",

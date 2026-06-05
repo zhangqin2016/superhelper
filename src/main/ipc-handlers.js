@@ -127,6 +127,8 @@ function registerAll(ctx) {
   registerSkillHandlers(ctx);
   registerAssistantHandlers(ctx);
   registerFileTreeHandlers();
+
+  ipcMain.handle("usage:get-summary", async () => require("./usage-settings").getUsageSettingsPublic());
 }
 
 module.exports = { registerAll };

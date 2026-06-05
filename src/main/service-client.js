@@ -143,6 +143,16 @@ async function reportUsage(payload) {
   });
 }
 
+async function fetchUsageSummary({ historyDays = 30 } = {}) {
+  return serviceFetch("/api/usage/summary", {
+    method: "POST",
+    body: JSON.stringify({
+      ...devicePayload(),
+      historyDays,
+    }),
+  });
+}
+
 async function skillRegistry() {
   return serviceFetch("/api/plugins/registry", {
     method: "GET",
@@ -215,6 +225,7 @@ module.exports = {
   activateLicenseKey,
   verifyLicense,
   reportUsage,
+  fetchUsageSummary,
   skillRegistry,
   reportSkillEvent,
   reportRuntimeDiagnostic,

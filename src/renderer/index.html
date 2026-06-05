@@ -191,6 +191,7 @@
         <div class="settings-panel-layout">
           <nav class="settings-nav" data-i18n-aria-label="settings.navLabel" aria-label="设置分类">
             <button type="button" class="settings-nav-item is-active" data-settings-page="general" data-i18n="settings.nav.general">通用</button>
+            <button type="button" class="settings-nav-item" data-settings-page="usage" data-i18n="settings.nav.usage">用量</button>
             <button type="button" class="settings-nav-item" data-settings-page="model" data-i18n="settings.nav.model">模型</button>
             <button type="button" class="settings-nav-item" data-settings-page="permission" data-i18n="settings.nav.permission">权限</button>
             <button type="button" class="settings-nav-item" data-settings-page="search" data-i18n="settings.nav.search">联网搜索</button>
@@ -211,6 +212,26 @@
                 <div class="settings-actions">
                   <button id="settingsClearCache" class="settings-action-btn" type="button" data-i18n="settings.clearCache">清理缓存</button>
                 </div>
+              </div>
+            </section>
+            <section id="settingsPageUsage" class="settings-page" data-settings-page="usage" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.usage">用量</h3>
+              <div id="usageDeviceId" class="usage-device-id" aria-live="polite"></div>
+              <p id="usageDataSource" class="usage-data-source" hidden></p>
+              <div id="usageTodayStats" class="usage-today-stats" aria-live="polite"></div>
+              <p id="usageRangeTotals" class="usage-range-summary"></p>
+              <div class="usage-history-wrap">
+                <table class="usage-history-table" aria-describedby="usageRangeTotals">
+                  <thead>
+                    <tr>
+                      <th scope="col" data-i18n="settings.usage.colDate">日期</th>
+                      <th scope="col" data-i18n="settings.usage.colTokens">Token</th>
+                      <th scope="col" data-i18n="settings.usage.colInOut">输入 / 输出</th>
+                      <th scope="col" data-i18n="settings.usage.colCost">估算费用</th>
+                    </tr>
+                  </thead>
+                  <tbody id="usageHistoryBody"></tbody>
+                </table>
               </div>
             </section>
             <section id="settingsPageModel" class="settings-page" data-settings-page="model" hidden>
