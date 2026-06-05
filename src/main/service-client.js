@@ -217,6 +217,13 @@ async function testConnection() {
   return serviceFetch("/health", { method: "GET", headers: {} });
 }
 
+async function submitContactRequest(payload) {
+  return serviceFetch("/api/contact-requests", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 module.exports = {
   getServiceSettings,
   getDeviceId,
@@ -231,4 +238,5 @@ module.exports = {
   reportRuntimeDiagnostic,
   latestRelease,
   testConnection,
+  submitContactRequest,
 };

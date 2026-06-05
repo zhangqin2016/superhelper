@@ -3,16 +3,13 @@
 /**
  * Manages file references for AI provider attachments.
  *
- * For files that already exist on disk (drag-drop, file picker), the original
- * path is returned directly — no copy is made.
- *
- * For clipboard pastes, the buffer is written to the OS temp directory.
+ * Files are copied into the app staging directory. The runner is launched with
+ * that directory in --add-dir, so attached files stay readable from the agent.
  */
 
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const os = require("node:os");
 const { fileStagingDir } = require("./config");
 
 // ---------------------------------------------------------------------------
@@ -61,13 +58,12 @@ const MIME_TYPES = {
 
 class FileStagingManager {
   constructor() {
-    // Temp dir for pasted clipboard images
-    this._pasteDir = path.join(os.tmpdir(), "ai-assistant-pastes");
-    fs.mkdirSync(this._pasteDir, { recursive: true });
+    this._stagingDir = fileStagingDir();
+    fs.mkdirSync(this._stagingDir, { recursive: true });
   }
 
   /**
-   * Copy a file to the paste temp directory, keeping its original name.
+   * Copy a file to the staging directory, keeping its original name.
    *
    * @param {string} srcPath  Absolute path to the source file.
    * @returns {Object} File metadata: { id, name, path, type, size, isImage }
@@ -93,12 +89,11 @@ class FileStagingManager {
 
     const name = path.basename(srcPath);
 
-    // Copy to paste dir with original name, deduplicate if needed
-    let destPath = path.join(this._pasteDir, name);
+    let destPath = path.join(this._stagingDir, name);
     let counter = 1;
     const base = path.basename(name, ext);
     while (fs.existsSync(destPath)) {
-      destPath = path.join(this._pasteDir, `${base}-${counter}${ext}`);
+      destPath = path.join(this._stagingDir, `${base}-${counter}${ext}`);
       counter++;
     }
 
@@ -115,14 +110,15 @@ class FileStagingManager {
   }
 
   /**
-   * Write a clipboard buffer to a temp file.
+   * Write a clipboard buffer to the staging directory.
    *
    * @param {Buffer|Uint8Array} buffer  Raw file data.
    * @param {string} name              Original filename (e.g., "image.png").
    * @returns {Object} File metadata.
    */
   stageFromBuffer(buffer, name) {
-    const ext = path.extname(name).toLowerCase() || ".png";
+    const safeName = name || "pasted-image.png";
+    const ext = path.extname(safeName).toLowerCase() || ".png";
     if (!ALL_SUPPORTED.has(ext)) {
       throw new Error("UNSUPPORTED_TYPE");
     }
@@ -132,12 +128,11 @@ class FileStagingManager {
       throw new Error("FILE_TOO_LARGE");
     }
 
-    // Write to temp dir with original name (deduplicate if needed)
-    let destPath = path.join(this._pasteDir, name);
+    let destPath = path.join(this._stagingDir, safeName);
     let counter = 1;
     while (fs.existsSync(destPath)) {
-      const base = path.basename(name, ext);
-      destPath = path.join(this._pasteDir, `${base}-${counter}${ext}`);
+      const base = path.basename(safeName, ext);
+      destPath = path.join(this._stagingDir, `${base}-${counter}${ext}`);
       counter++;
     }
 
@@ -146,7 +141,7 @@ class FileStagingManager {
     const stat = fs.statSync(destPath);
     return {
       id: crypto.randomUUID(),
-      name: name || `pasted-image${ext}`,
+      name: safeName,
       path: destPath,
       type: ext.slice(1),
       size: stat.size,
@@ -207,10 +202,10 @@ class FileStagingManager {
   cleanup(_ids) {}
 
   /**
-   * Get the paste temp directory path.
+   * Get the staging directory path.
    */
   getStagingDir() {
-    return this._pasteDir;
+    return this._stagingDir;
   }
 
   static getFileFilters() {

@@ -8,10 +8,11 @@ import { t } from "../i18n/index.js";
 
 let latestPackageUrl = "";
 let autoUpdateTimer = null;
+let lastRendererCheckAt = 0;
 let updateState = null;
 
-const AUTO_UPDATE_START_DELAY_MS = 15_000;
 const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const AUTO_UPDATE_FOCUS_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000;
 const AUTO_UPDATE_REMIND_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const AUTO_UPDATE_REMIND_KEY = "lily:last-update-reminder";
 
@@ -140,11 +141,8 @@ function applyUpdateAvailable(result) {
   if (downloadBtn) downloadBtn.hidden = !latestPackageUrl;
 }
 
-async function autoCheckUpdates() {
-  const result = await window.assistantClient.checkForUpdates();
-  if (!result?.ok || !result.hasUpdate) return;
-
-  applyUpdateAvailable(result);
+function maybeShowUpdateReminder(result) {
+  if (!result?.hasUpdate) return;
   if (!shouldRemindUpdate(result.latestVersion)) return;
   markUpdateReminder(result.latestVersion);
 
@@ -153,15 +151,39 @@ async function autoCheckUpdates() {
     "info",
     12000,
   );
-  if (latestPackageUrl) {
-    toast.style.cursor = "pointer";
-    toast.addEventListener("click", async () => {
-      const opened = result.canAutoInstall
-        ? await window.assistantClient.downloadUpdate()
-        : await window.assistantClient.openUpdateDownload(latestPackageUrl);
-      if (!opened?.ok) showToast(updateErrorMessage(opened?.error), "error");
-    }, { once: true });
-  }
+  const packageUrl = result.package?.url || latestPackageUrl;
+  if (!packageUrl) return;
+  toast.style.cursor = "pointer";
+  toast.addEventListener("click", async () => {
+    const opened = result.canAutoInstall
+      ? await window.assistantClient.downloadUpdate()
+      : await window.assistantClient.openUpdateDownload(packageUrl);
+    if (!opened?.ok) showToast(updateErrorMessage(opened?.error), "error");
+  }, { once: true });
+}
+
+function handleUpdateStatePush(state) {
+  renderUpdateState(state);
+  if (!state?.hasUpdate || state.phase !== "available") return;
+  applyUpdateAvailable(state);
+  maybeShowUpdateReminder(state);
+}
+
+async function autoCheckUpdates() {
+  const result = await window.assistantClient.checkForUpdates();
+  if (!result?.ok) return;
+  if (!result.hasUpdate) return;
+  applyUpdateAvailable(result);
+  maybeShowUpdateReminder(result);
+}
+
+async function kickUpdateCheckIfDue(minGapMs = AUTO_UPDATE_FOCUS_MIN_INTERVAL_MS) {
+  const now = Date.now();
+  if (now - lastRendererCheckAt < minGapMs) return;
+  lastRendererCheckAt = now;
+  const status = await window.assistantClient.getLicenseStatus?.();
+  if (!status?.valid) return;
+  await window.assistantClient.kickUpdateCheck?.();
 }
 
 function phaseText(state) {
@@ -279,19 +301,29 @@ async function runPrimaryUpdateAction() {
 export function startAutoUpdateChecks() {
   if (autoUpdateTimer) return;
 
-  const run = () => {
+  autoUpdateTimer = setInterval(() => {
+    lastRendererCheckAt = Date.now();
     autoCheckUpdates().catch((err) => {
       console.warn("[updates:auto-check]", err?.message || err);
     });
-  };
+  }, AUTO_UPDATE_INTERVAL_MS);
 
-  setTimeout(run, AUTO_UPDATE_START_DELAY_MS);
-  autoUpdateTimer = setInterval(run, AUTO_UPDATE_INTERVAL_MS);
+  const onVisible = () => {
+    if (document.visibilityState !== "visible") return;
+    void kickUpdateCheckIfDue();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  window.addEventListener("focus", onVisible);
+}
+
+export function kickAutoUpdateCheck() {
+  lastRendererCheckAt = 0;
+  void kickUpdateCheckIfDue(0);
 }
 
 export function initLicenseUpdateSettings() {
   window.assistantClient.onUpdateState?.((state) => {
-    renderUpdateState(state);
+    handleUpdateStatePush(state);
   });
   $("updatePillBtn")?.addEventListener("click", () => {
     const popover = $("updatePopover");
@@ -322,6 +354,7 @@ export function initLicenseUpdateSettings() {
     $("licenseTokenInput").value = "";
     await refreshLicenseStatus();
     showToast(t("toast.licenseActivated"), "success");
+    kickAutoUpdateCheck();
   });
 
   $("licenseClearBtn")?.addEventListener("click", async () => {

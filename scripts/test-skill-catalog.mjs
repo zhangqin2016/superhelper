@@ -32,6 +32,8 @@ require.cache[electronPath] = {
 };
 
 const skillManager = require(path.join(ROOT, "src/main/skill-manager.js"));
+const skillPresets = require(path.join(ROOT, "src/main/skill-presets.js"));
+const skillRegistry = require(path.join(ROOT, "src/main/skill-registry.js"));
 fs.mkdirSync(tmp, { recursive: true });
 fs.writeFileSync(
   path.join(tmp, "skills-state.json"),
@@ -42,6 +44,29 @@ fs.writeFileSync(
   }),
 );
 skillManager.bootstrapSkills();
+
+const mandatory = skillManager.MANDATORY_PLATFORM_SKILL_IDS;
+if (!mandatory.includes("lily-workbench-rules")) {
+  throw new Error("expected lily-workbench-rules in MANDATORY_PLATFORM_SKILL_IDS");
+}
+const disableMandatory = skillManager.setSkillEnabled("lily-workbench-rules", false);
+if (disableMandatory.ok) {
+  throw new Error("mandatory skill should not be disableable");
+}
+if (disableMandatory.error !== "MANDATORY_SKILL") {
+  throw new Error(`expected MANDATORY_SKILL, got ${disableMandatory.error}`);
+}
+const sessionIds = skillManager.resolveSessionSkillIds({ enabledSkillIds: [] });
+if (!sessionIds.includes("lily-workbench-rules")) {
+  throw new Error("mandatory skill should merge into empty session selection");
+}
+const bundledRegistry = skillRegistry.loadBundledRegistry();
+if (!bundledRegistry.skills.some((s) => s.id === "lily-engineering-rules")) {
+  throw new Error("registry should include lily-engineering-rules");
+}
+if (!skillPresets.SKILL_PRESETS.find((p) => p.id === "dev-starter")?.skillIds.includes("lily-engineering-rules")) {
+  throw new Error("dev-starter preset should include lily-engineering-rules");
+}
 
 const result = await skillManager.checkRegistryUpdates({ fetch: false });
 if (!result.ok) {
@@ -57,7 +82,6 @@ if ((result.available || []).length < 100) {
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("skill-catalog: ok", result.available.length, "available");
 
-const skillRegistry = require(path.join(ROOT, "src/main/skill-registry.js"));
 const bundled = skillRegistry.loadBundledRegistry();
 if (!bundled || (bundled.skills || []).length < 100) {
   throw new Error("bundled registry missing or too small");

@@ -14,8 +14,9 @@ import { anySessionRunning } from "./session-runtime-store.js";
 import { activeSession, refreshStateLight } from "./session-chrome.js";
 import { confirmDialog } from "./confirm-dialog.js";
 import { refreshUsageSettings, initUsageSettings } from "./usage-settings.js";
+import { initSupportSettings } from "./support-settings.js";
 
-const SETTINGS_PAGES = ["general", "usage", "model", "permission", "search", "skills", "license", "about"];
+const SETTINGS_PAGES = ["general", "usage", "model", "permission", "search", "skills", "license", "feedback", "contact", "about"];
 
 let panelOpen = false;
 let activeSettingsPage = "general";
@@ -158,4 +159,5 @@ export async function initSettingsPanel() {
   });
 
   initUsageSettings();
+  initSupportSettings();
 }

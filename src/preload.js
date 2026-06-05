@@ -1,6 +1,6 @@
 "use strict";
 
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("assistantClient", {
   getAppIconUrl: () => ipcRenderer.invoke("app:get-icon-url"),
@@ -93,7 +93,15 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("session:set-permission", { sessionId, modeId }),
 
   pickFiles: () => ipcRenderer.invoke("files:pick"),
+  getPathForFile: (file) => {
+    try {
+      return webUtils?.getPathForFile?.(file) || file?.path || "";
+    } catch {
+      return "";
+    }
+  },
   stageFile: (filePath, fileName) => ipcRenderer.invoke("files:stage", filePath, fileName),
+  pasteFile: (buffer, fileName) => ipcRenderer.invoke("files:paste", buffer, fileName),
   pasteImage: (buffer, fileName) => ipcRenderer.invoke("files:paste", buffer, fileName),
   getFileThumbnail: (fileId) => ipcRenderer.invoke("files:thumbnail", fileId),
   getImageDimensions: (fileId) => ipcRenderer.invoke("files:dimensions", fileId),
@@ -111,9 +119,13 @@ contextBridge.exposeInMainWorld("assistantClient", {
   getUpdateState: () => ipcRenderer.invoke("updates:get-state"),
   getUsageSummary: () => ipcRenderer.invoke("usage:get-summary"),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  kickUpdateCheck: () => ipcRenderer.invoke("updates:kick-check"),
   downloadUpdate: () => ipcRenderer.invoke("updates:download"),
   installUpdate: (options) => ipcRenderer.invoke("updates:install", options || {}),
   openUpdateDownload: (url) => ipcRenderer.invoke("updates:open-download", { url }),
+
+  submitFeedback: (payload) => ipcRenderer.invoke("support:submit-feedback", payload),
+  submitContact: (payload) => ipcRenderer.invoke("support:submit-contact", payload),
 
   listDirectory: (dirPath) => ipcRenderer.invoke("filetree:list-dir", { dirPath }),
   acceptChange: (sessionId, filePath) =>

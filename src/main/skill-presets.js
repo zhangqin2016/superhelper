@@ -10,6 +10,7 @@ const RELIABILITY_CORE_SKILL_IDS = [
 ];
 
 const DEV_STARTER_EXTRA_SKILL_IDS = [
+  "lily-engineering-rules",
   "superpowers-writing-plans",
   "superpowers-executing-plans",
   "superpowers-requesting-code-review",

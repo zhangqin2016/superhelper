@@ -19,6 +19,7 @@ import {
   canSend,
   canInterrupt,
   getRuntimeSession,
+  syncCommittedMessages,
 } from "./session-runtime-store.js";
 import { refreshSessionSkillsUi } from "./session-skills.js";
 
@@ -148,8 +149,10 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
   const messages = switchResult.conversation || [];
   store.set("conversation", messages);
   patchSessionMessagesInStore(nextSessionId, messages);
+  syncCommittedMessages(nextSessionId, messages);
 
   showSessionMessages(nextSessionId);
+  updateTopbarTitles();
 
   if (shouldPreserveSessionView(nextSessionId)) {
     resumeLiveSessionUi(nextSessionId);
@@ -159,15 +162,13 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
   }
 
   syncComposerForActiveSession();
-  updateTopbarTitles();
   const { clearPromptSuggestions } = await import("./composer.js");
   clearPromptSuggestions();
-  await refreshSessionSkillsUi();
 
   const { updateProjectTreeChrome } = await import("./project-tree.js");
   updateProjectTreeChrome();
-  const { refreshSessionPermissionSelect } = await import("./permission-settings.js");
-  await refreshSessionPermissionSelect();
+  void refreshSessionSkillsUi();
+  void import("./permission-settings.js").then((m) => m.refreshSessionPermissionSelect());
 }
 
 /** Refresh store from main; optionally rebuild active session chat from disk. */

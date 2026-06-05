@@ -100,6 +100,7 @@ function registerAll(ctx) {
     if (!licensed.ok) return licensed;
     return require("./update-manager").checkForUpdatesState();
   });
+  ipcMain.handle("updates:kick-check", () => require("./update-scheduler").kickUpdateCheck());
   ipcMain.handle("updates:download", () => {
     const licensed = require("./license-manager").requireValidLicense();
     if (!licensed.ok) return licensed;
@@ -129,6 +130,27 @@ function registerAll(ctx) {
   registerFileTreeHandlers();
 
   ipcMain.handle("usage:get-summary", async () => require("./usage-settings").getUsageSettingsPublic());
+
+  ipcMain.handle("support:submit-feedback", async (_event, payload) => {
+    const support = require("./support-contact");
+    const category = String(payload?.category || "").trim();
+    const subject = String(payload?.subject || category || "Feedback").trim().slice(0, 160);
+    return support.submitContactRequestPublic({
+      name: payload?.name || "Desktop User",
+      email: payload?.email,
+      subject,
+      message: payload?.message,
+      source: "desktop-feedback",
+      appendContext: support.getFeedbackContext(category),
+    });
+  });
+
+  ipcMain.handle("support:submit-contact", async (_event, payload) =>
+    require("./support-contact").submitContactRequestPublic({
+      ...payload,
+      source: payload?.source || "desktop-contact",
+    }),
+  );
 }
 
 module.exports = { registerAll };

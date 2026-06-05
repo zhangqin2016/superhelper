@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const { normalizeAssistantOutput, sanitizeError } = require("./agent-runner");
 const { fileMetadataFromPayload } = require("./ipc-utils");
 const { getLogger } = require("./logger");
+const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
 const {
   activityFromEngineNotice,
   activityFromProcessPayload,
@@ -560,6 +561,32 @@ class TurnOrchestrator {
       }, { turnId: null });
     }
 
+    if (!opts.skipVision) {
+      const vision = await this._runVisionPreflight(session.id, text, files);
+      if (!vision.ok) {
+        state.phase = "idle";
+        state.turnId = null;
+        state.currentPayload = null;
+        return vision;
+      }
+      text = vision.text;
+      files = vision.files;
+      state.currentPayload = { text, files, displayFiles };
+    }
+
+    if (!opts.skipDocument) {
+      const document = await this._runDocumentPreflight(session.id, text, files);
+      if (!document.ok) {
+        state.phase = "idle";
+        state.turnId = null;
+        state.currentPayload = null;
+        return document;
+      }
+      text = document.text;
+      files = document.files;
+      state.currentPayload = { text, files, displayFiles };
+    }
+
     this._emit(session.id, "turn.started", {
       text,
       queueLength: state.queue.length,
@@ -747,6 +774,145 @@ class TurnOrchestrator {
     Object.assign(existing, patch || {});
     state.tools.set(toolId, existing);
     return existing;
+  }
+
+  _emitEngineNotice(sessionId, notice) {
+    if (!notice) return;
+    notice = sanitizeNoticeForIngest(notice);
+    const state = this._state(sessionId);
+    const activity = activityFromEngineNotice(notice);
+    if (activity) setActivityLabel(state, activity);
+    appendTimelineNotice(state, notice, Date.now());
+    const type = notice.level === "warning" ? "engine.warning" : "engine.notice";
+    const payload = { notice };
+    if (state.turnId) {
+      state.notices.push({
+        type,
+        turnId: state.turnId,
+        source: "orchestrator",
+        payload,
+        ts: Date.now(),
+      });
+    }
+    this._emit(sessionId, type, payload);
+  }
+
+  async _runVisionPreflight(sessionId, text, files) {
+    const {
+      buildEnrichedUserText,
+      hasVisionInputFiles,
+      isImageOnlyUserMessage,
+      translateImages,
+    } = require("./vision-translator");
+    if (!hasVisionInputFiles(files)) {
+      return { ok: true, text, files };
+    }
+
+    this._emitEngineNotice(sessionId, {
+      code: "visionPreparing",
+      level: "progress",
+      panel: true,
+      replace: true,
+    });
+
+    const result = await translateImages(files, { userText: text });
+    if (result === null) {
+      return { ok: true, text, files };
+    }
+
+    if (!result.ok) {
+      this._emitEngineNotice(sessionId, {
+        code: "visionSkipped",
+        level: "warning",
+        panel: true,
+        replace: true,
+        replacesCode: "visionPreparing",
+        done: true,
+      });
+      if (isImageOnlyUserMessage(text, files)) {
+        if (result.reason === "NO_KEY") {
+          return { ok: false, error: "VISION_UNAVAILABLE" };
+        }
+        return {
+          ok: false,
+          error: "VISION_FAILED",
+          detail: result.detail || undefined,
+        };
+      }
+      return { ok: true, text, files };
+    }
+
+    this._emitEngineNotice(sessionId, {
+      code: "visionReady",
+      level: "info",
+      panel: true,
+      replace: true,
+      replacesCode: "visionPreparing",
+      done: true,
+    });
+
+    const enrichedText = buildEnrichedUserText(text, result.text);
+    const outboundFiles = result.keepOriginal ? files : [];
+    return { ok: true, text: enrichedText, files: outboundFiles };
+  }
+
+  async _runDocumentPreflight(sessionId, text, files) {
+    const {
+      buildEnrichedUserText,
+      extractDocuments,
+      hasDocumentInputFiles,
+      isDocumentOnlyUserMessage,
+    } = require("./document-translator");
+    if (!hasDocumentInputFiles(files)) {
+      return { ok: true, text, files };
+    }
+
+    this._emitEngineNotice(sessionId, {
+      code: "documentPreparing",
+      level: "progress",
+      panel: true,
+      replace: true,
+    });
+
+    const result = await extractDocuments(files);
+    if (result === null) {
+      return { ok: true, text, files };
+    }
+
+    if (!result.ok) {
+      this._emitEngineNotice(sessionId, {
+        code: "documentSkipped",
+        level: "warning",
+        panel: true,
+        replace: true,
+        replacesCode: "documentPreparing",
+        done: true,
+      });
+      if (isDocumentOnlyUserMessage(text, files)) {
+        return {
+          ok: false,
+          error: "DOCUMENT_FAILED",
+          detail: result.detail || undefined,
+        };
+      }
+      return { ok: true, text, files };
+    }
+
+    this._emitEngineNotice(sessionId, {
+      code: "documentReady",
+      level: "info",
+      panel: true,
+      replace: true,
+      replacesCode: "documentPreparing",
+      done: true,
+    });
+
+    const extracted = new Set(result.extractedPaths || []);
+    const outboundFiles = result.keepOriginal
+      ? files
+      : (files || []).filter((file) => !extracted.has(file.path));
+    const enrichedText = buildEnrichedUserText(text, result.text);
+    return { ok: true, text: enrichedText, files: outboundFiles };
   }
 
   _emit(sessionId, type, payload = {}, opts = {}) {

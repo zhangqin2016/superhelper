@@ -155,7 +155,10 @@ export function shouldPreserveSessionView(sessionId) {
 
 export function resumeLiveSessionUi(sessionId) {
   renderRuntimeSession(sessionId);
-  void refreshRuntimeSnapshot(sessionId);
+  const runtime = getRuntimeSession(sessionId);
+  if (runtime.liveTurn || !canSend(sessionId)) {
+    void refreshRuntimeSnapshot(sessionId);
+  }
   syncComposerForActiveSession();
 }
 
@@ -194,21 +197,52 @@ export function renderConversation(sessionId, opts = {}) {
   syncWorkbenchEmptyState(v.listEl);
 }
 
+const COMMITTED_RENDER_CHUNK = 5;
+
+function appendCommittedMessage(sessionId, runtime, message) {
+  if (message.role === "user") appendUserMessage(sessionId, message);
+  else if (message.role === "assistant") {
+    if (message.turnId && runtime.liveTurn?.turnId === message.turnId) return;
+    appendFinalAssistantArticle(sessionId, message);
+  }
+}
+
 function renderCommittedMessages(sessionId) {
   const runtime = getRuntimeSession(sessionId);
   const keys = renderedMessageKeys.get(sessionId) || new Set();
   renderedMessageKeys.set(sessionId, keys);
 
+  const pending = [];
   for (const [index, message] of runtime.committedMessages.entries()) {
     const key = messageKey(message, index);
     if (keys.has(key)) continue;
-    keys.add(key);
-    if (message.role === "user") appendUserMessage(sessionId, message);
-    else if (message.role === "assistant") {
-      if (message.turnId && runtime.liveTurn?.turnId === message.turnId) continue;
-      appendFinalAssistantArticle(sessionId, message);
-    }
+    pending.push({ key, message });
   }
+  if (pending.length === 0) return;
+
+  if (pending.length <= COMMITTED_RENDER_CHUNK) {
+    for (const { key, message } of pending) {
+      keys.add(key);
+      appendCommittedMessage(sessionId, runtime, message);
+    }
+    return;
+  }
+
+  let cursor = 0;
+  const pump = () => {
+    const end = Math.min(cursor + COMMITTED_RENDER_CHUNK, pending.length);
+    for (; cursor < end; cursor++) {
+      const { key, message } = pending[cursor];
+      keys.add(key);
+      appendCommittedMessage(sessionId, runtime, message);
+    }
+    if (cursor < pending.length) {
+      requestAnimationFrame(pump);
+    } else {
+      syncWorkbenchEmptyState(ensurePanel(sessionId).listEl);
+    }
+  };
+  pump();
 }
 
 function appendUserMessage(sessionId, message) {

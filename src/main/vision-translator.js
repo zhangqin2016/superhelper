@@ -407,14 +407,33 @@ async function translateImages(files, options = {}) {
   };
 }
 
+function hasVisionInputFiles(files) {
+  return (files || []).some((f) => f?.isImage && f?.path);
+}
+
+function isImageOnlyUserMessage(text, files) {
+  return !String(text || "").trim() && hasVisionInputFiles(files);
+}
+
+function buildEnrichedUserText(userText, visionText) {
+  const base = String(userText || "").trim();
+  const evidence = String(visionText || "").trim();
+  if (!evidence) return base;
+  if (!base) return evidence;
+  return `${evidence}\n\n---\n\n${base}`;
+}
+
 module.exports = {
+  buildEnrichedUserText,
   buildVisionPrompt,
   getVisionConfig,
   getVisionImageLimits,
   getVisionTimeoutMs,
   hasVisionApiKey,
+  hasVisionInputFiles,
   inferVisionMode,
   imageToDataUrl,
+  isImageOnlyUserMessage,
   translateImage,
   translateImages,
 };

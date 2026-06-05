@@ -87,6 +87,10 @@
     "name": "子代理驱动开发",
     "description": "当在当前会话中按实现计划执行可独立完成的任务时使用。"
   },
+  "lily-engineering-rules": {
+    "name": "工程协作 12 条",
+    "description": "研发任务的完整工程纪律：最小改动、先读再写、目标驱动验证、测试表达意图、冲突时做选择、未完成必须明说。写代码、改架构、调试、review 或非 trivial 改动时使用。"
+  },
   "superpowers-systematic-debugging": {
     "name": "系统化调试",
     "description": "当遇到任何 Bug、测试失败或意外行为时，在提出修复方案之前使用。"

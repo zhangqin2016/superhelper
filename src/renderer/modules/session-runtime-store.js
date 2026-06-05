@@ -43,6 +43,11 @@ export function getRuntimeSession(sessionId) {
   return sessions.get(sessionId);
 }
 
+export function syncCommittedMessages(sessionId, messages) {
+  if (!sessionId) return;
+  getRuntimeSession(sessionId).committedMessages = Array.isArray(messages) ? messages : [];
+}
+
 export function hydrateRuntimeFromState(state) {
   for (const project of state?.projects || []) {
     for (const session of project.sessions || []) {

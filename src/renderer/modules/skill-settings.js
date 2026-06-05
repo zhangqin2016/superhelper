@@ -65,6 +65,9 @@ function renderInstalledTreeRow(skill) {
   name.textContent = tSkillName(skill);
   top.append(name);
   appendChip(top, sourceLabel(skill.source));
+  if (skill.platformMandatory) {
+    appendChip(top, t("skills.badge.platformMandatory"), "skills-tree-row-chip skills-tree-row-chip--muted");
+  }
 
   if (skill.updateAvailable) {
     appendChip(top, t("skills.badge.update"), "skills-tree-row-chip skills-tree-row-chip--warn");
@@ -94,6 +97,7 @@ function renderInstalledTreeRow(skill) {
   toggle.type = "checkbox";
   toggle.className = "skills-toggle";
   toggle.checked = skill.enabled;
+  toggle.disabled = !skill.canDisable || Boolean(skill.platformMandatory);
   toggle.setAttribute(
     "aria-label",
     `${skill.enabled ? t("skills.disable") : t("skills.enable")}${tSkillName(skill)}`,
@@ -288,6 +292,7 @@ async function toggleInstalledGroup(group, enabled) {
     return;
   }
   for (const skill of group.skills) {
+    if (skill.platformMandatory && !enabled) continue;
     const result = await window.assistantClient.setSkillEnabled(skill.id, enabled);
     if (!result.ok) {
       showToast(skillErrorMessage(result.error), "error");

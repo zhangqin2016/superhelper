@@ -385,6 +385,78 @@
   color: var(--accent);
 }
 
+.settings-action-btn--primary {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+  color: #c4b5fd;
+  font-weight: 600;
+}
+
+.settings-action-btn--primary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.settings-form {
+  max-width: 560px;
+}
+
+.settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 12px;
+}
+
+@media (max-width: 560px) {
+  .settings-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settings-text-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.settings-text-input:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+
+.settings-textarea {
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.5;
+}
+
+.settings-form-status {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-form-status--success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+}
+
+.settings-form-status--error {
+  background: rgba(248, 113, 113, 0.12);
+  color: #fca5a5;
+}
+
+.settings-form-status[hidden] {
+  display: none;
+}
+
 .skills-list {
   display: block;
   margin-bottom: 12px;

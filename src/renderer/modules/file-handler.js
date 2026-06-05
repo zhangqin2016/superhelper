@@ -27,38 +27,46 @@ async function loadImageExtras(file) {
   } catch {}
 }
 
-async function addFilesFromPaths(paths) {
-  const pending = [...(store.get("pendingFiles") || [])];
-  for (const filePath of paths) {
-    try {
-      const result = await window.assistantClient.stageFile(filePath, filePath.split("/").pop());
-      if (result.ok) {
-        const file = result.file;
-        if (file.isImage) await loadImageExtras(file);
-        pending.push(file);
-      } else {
-        showToast(fileErrorMessage(result.error, filePath.split("/").pop()), "warning");
-      }
-    } catch (err) {
-      showToast(fileErrorMessage(err.message, filePath.split("/").pop()), "warning");
-    }
-  }
-  store.set("pendingFiles", pending);
-  renderFilePreview();
-}
-
-async function addFileFromPaste(buffer, fileName) {
+async function addFileFromBuffer(buffer, fileName) {
   try {
-    const result = await window.assistantClient.pasteImage(buffer, fileName);
+    const result = await window.assistantClient.pasteFile(buffer, fileName);
     if (result.ok) {
       const file = result.file;
       if (file.isImage) await loadImageExtras(file);
       store.set("pendingFiles", [...(store.get("pendingFiles") || []), file]);
       renderFilePreview();
+    } else {
+      showToast(fileErrorMessage(result.error, fileName), "warning");
     }
   } catch (err) {
     showToast(fileErrorMessage(err.message, fileName), "warning");
   }
+}
+
+async function addBrowserFiles(files) {
+  const list = [...(files || [])].filter(Boolean);
+  if (list.length === 0) return;
+  const pending = [...(store.get("pendingFiles") || [])];
+  for (const browserFile of list) {
+    const name = browserFile.name || `pasted-${Date.now()}`;
+    try {
+      const filePath = await window.assistantClient.getPathForFile?.(browserFile);
+      const result = filePath
+        ? await window.assistantClient.stageFile(filePath, name)
+        : await window.assistantClient.pasteFile(new Uint8Array(await browserFile.arrayBuffer()), name);
+      if (result.ok) {
+        const file = result.file;
+        if (file.isImage) await loadImageExtras(file);
+        pending.push(file);
+      } else {
+        showToast(fileErrorMessage(result.error, name), "warning");
+      }
+    } catch (err) {
+      showToast(fileErrorMessage(err.message, name), "warning");
+    }
+  }
+  store.set("pendingFiles", pending);
+  renderFilePreview();
 }
 
 function renderFilePreview() {
@@ -137,13 +145,11 @@ export function initFileHandler() {
 
   composer?.addEventListener("drop", async (e) => {
     e.preventDefault();
+    e.stopPropagation();
     composer.classList.remove("drag-over");
     if (dropOverlay) dropOverlay.hidden = true;
     const dtFiles = e.dataTransfer?.files;
-    if (!dtFiles || dtFiles.length === 0) return;
-    const paths = [];
-    for (const f of dtFiles) { if (f.path) paths.push(f.path); }
-    if (paths.length > 0) await addFilesFromPaths(paths);
+    if (dtFiles?.length) await addBrowserFiles(dtFiles);
   });
 
   // Global drag overlay
@@ -158,23 +164,32 @@ export function initFileHandler() {
     dragCounter--;
     if (dragCounter <= 0) { dragCounter = 0; if (dropOverlay) dropOverlay.hidden = true; }
   });
-  document.addEventListener("drop", (e) => {
+  document.addEventListener("drop", async (e) => {
+    e.preventDefault();
     dragCounter = 0;
+    composer?.classList.remove("drag-over");
     if (dropOverlay) dropOverlay.hidden = true;
+    const dtFiles = e.dataTransfer?.files;
+    if (dtFiles?.length) await addBrowserFiles(dtFiles);
   });
 
   // Clipboard paste
   document.addEventListener("paste", async (e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
+    const files = [...items]
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (files.length > 0) {
+      e.preventDefault();
+      await addBrowserFiles(files);
+      return;
+    }
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         const blob = item.getAsFile();
-        if (blob) {
-          const MIME_EXT = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg", "image/bmp": "bmp" };
-          const ext = MIME_EXT[item.type] || item.type.split("/")[1] || "png";
-          await addFileFromPaste(new Uint8Array(await blob.arrayBuffer()), `pasted-${Date.now()}.${ext}`);
-        }
+        if (blob) await addFileFromBuffer(new Uint8Array(await blob.arrayBuffer()), `pasted-${Date.now()}.png`);
       }
     }
   });

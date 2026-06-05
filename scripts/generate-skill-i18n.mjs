@@ -19,7 +19,7 @@ const ROOT = path.resolve(__dirname, "..");
 const REGISTRY = path.join(ROOT, "resources/skills-registry/registry.json");
 const OUT_DIR = path.join(ROOT, "src/renderer/i18n/locales/skills");
 const LOC_DIR = path.join(ROOT, "resources/skills-registry/skill-localization");
-const BUNDLED = ["lily-vision", "websearch", "webfetch"];
+const BUNDLED = ["lily-workbench-rules", "lily-vision", "websearch", "webfetch"];
 
 function readJson(filePath, fallback = null) {
   try {

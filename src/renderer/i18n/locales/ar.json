@@ -283,6 +283,7 @@
   "send.error.FILES_UNAVAILABLE": "المرفقات من الرسالة الأصلية لم تعد متاحة.",
   "send.error.VISION_UNAVAILABLE": "التعرف على الصور المدمج غير مهيأ. لا يمكن تحليل لقطات الشاشة.",
   "send.error.VISION_FAILED": "فشل التعرف على الصورة. يرجى المحاولة لاحقاً.",
+  "send.error.DOCUMENT_FAILED": "تعذر قراءة المستند. يرجى المحاولة لاحقاً.",
 
   "prompt.defaultTitle": "أدخل الاسم",
   "prompt.defaultLabel": "الاسم",
@@ -334,6 +335,9 @@
   "engine.visionPreparing": "جارٍ تحليل الصورة…",
   "engine.visionReady": "اكتمل تحليل الصورة",
   "engine.visionSkipped": "تحليل الصورة غير متاح حالياً — نتابع بالصورة الأصلية",
+  "engine.documentPreparing": "جارٍ قراءة المستند…",
+  "engine.documentReady": "المستند جاهز",
+  "engine.documentSkipped": "تم تخطي قراءة المستند",
   "engine.permissionDenied": "تم رفض الإذن — تم تخطي الخطوة",
   "engine.permissionAutoDenied": "التأكيدات متوقفة — تم تخطي الخطوة تلقائياً",
   "engine.permissionUserDenied": "رفضتَ الإذن — تم تخطي الخطوة",

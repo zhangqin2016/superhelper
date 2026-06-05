@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-workbench-rules",
+  "name": "工作台基础规则",
+  "version": "1.0.0",
+  "description": "所有会话强制生效的基础协作规则（不可关闭）。",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "permissions": {
+    "network": false,
+    "filesystem": "none",
+    "subprocess": "none"
+  },
+  "guideMd": {
+    "title": "工作原则（必读，适用所有任务）",
+    "priority": 5,
+    "body": "- **先弄清再动手**：需求、路径或约束不清楚时先问用户，不猜。\n- **改动尽量小**：只解决当前问题，不顺手重构、不扩大范围。\n- **先读再写**：改代码或文档前，先看现有写法和调用关系。\n- **能验证就说清**：能跑测试、命令或复现步骤就执行；没验证要说明。\n- **有冲突说真相**：两种做法矛盾时选一个并简短说明理由，不要和稀泥。\n- **完不成就直说**：不要假装完成；跳过步骤必须明确告知。\n\n## Windows 命令行（必读）\n\n在 Windows 上通过 Shell/PowerShell 访问 http(s) URL 时：\n- 使用 `Invoke-WebRequest` / `iwr` 时必须带 `-UseBasicParsing`，避免系统安全弹窗与网页脚本执行。\n- 示例：`Invoke-WebRequest -UseBasicParsing -Uri \"https://example.com\"`\n- 也可优先用 `curl.exe`：`curl.exe -fsS \"https://example.com\"`（不要用 PowerShell 的 `curl` 别名）。\n- 禁止不带 `-UseBasicParsing` 的 `Invoke-WebRequest` / `iwr`。"
+  }
+}

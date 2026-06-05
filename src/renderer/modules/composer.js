@@ -190,10 +190,6 @@ export async function sendPrompt(opts = {}) {
   const savedText = text;
   const savedFiles = [...(store.get("pendingFiles") || [])];
 
-  if (files.some((f) => f.isImage)) {
-    showToast(t("toast.visionPreparing"), "info", 5000);
-  }
-
   if (promptInput) promptInput.value = "";
   clearPendingFiles();
 

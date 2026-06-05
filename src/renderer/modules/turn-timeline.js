@@ -1,4 +1,5 @@
 import { buildToolPreviewLabel } from "./tool-preview-label.js";
+import { t } from "../i18n/index.js";
 
 const GENERIC_STATUS = new Set(["requesting", ""]);
 const TOKEN_COUNT_RE = /^\d+(\.\d+)?k?\s*tokens$/i;
@@ -61,6 +62,16 @@ export function toolPreview(tool = {}) {
 }
 
 const TASK_NOTICE_CODES = new Set(["taskProgress", "taskStarted", "taskCompleted", "thinkingProgress"]);
+
+export function resolveNoticeDetail(entry = {}) {
+  const detail = String(entry.detail || "").trim();
+  if (detail) return detail;
+  const code = String(entry.code || "").trim();
+  if (!code) return "";
+  const key = `engine.${code}`;
+  const translated = t(key);
+  return translated === key ? "" : translated;
+}
 
 export function activityFromProcessPayload(payload = {}) {
   const event = payload.event || {};
@@ -209,7 +220,7 @@ function filterRenderableTimeline(timeline = []) {
     if (entry.kind !== "notice") return true;
     if (entry.code === "thinkingProgress") return false;
     if (isTokenCountDetail(entry.detail)) return false;
-    return Boolean(entry.detail?.trim());
+    return Boolean(resolveNoticeDetail(entry));
   });
 }
 

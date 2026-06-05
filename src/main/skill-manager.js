@@ -11,7 +11,9 @@ const skillInstaller = require("./skill-installer");
 const skillPresets = require("./skill-presets");
 const { copyDirRecursiveShipSafe } = require("./ship-ignore");
 
-const BUNDLED_SKILL_IDS = ["lily-vision", "websearch", "webfetch"];
+const MANDATORY_PLATFORM_SKILL_IDS = ["lily-workbench-rules"];
+
+const BUNDLED_SKILL_IDS = ["lily-workbench-rules", "lily-vision", "websearch", "webfetch"];
 
 const PROTECTED_BUNDLED_IDS = new Set(BUNDLED_SKILL_IDS);
 
@@ -144,6 +146,10 @@ function ensureSkillsStateDefaults() {
       entry.enabled = true;
       changed = true;
     }
+    if (MANDATORY_PLATFORM_SKILL_IDS.includes(skillId) && entry.enabled === false) {
+      entry.enabled = true;
+      changed = true;
+    }
     if (!entry.source) {
       entry.source = "bundled";
       changed = true;
@@ -154,6 +160,7 @@ function ensureSkillsStateDefaults() {
 
 function isSkillEnabled(skillId) {
   ensureSkillsStateDefaults();
+  if (MANDATORY_PLATFORM_SKILL_IDS.includes(skillId)) return true;
   const entry = loadSkillsState().skills[skillId];
   if (!entry) return false;
   return entry.enabled !== false;
@@ -278,13 +285,19 @@ function sameIdSet(a, b) {
 
 function resolveSessionSkillIds(session) {
   const installed = new Set(getAllInstalledSkillIds());
+  let ids;
   if (!session || session.enabledSkillIds == null) {
-    return getGloballyEnabledSkillIds().filter((id) => installed.has(id));
+    ids = getGloballyEnabledSkillIds().filter((id) => installed.has(id));
+  } else if (!Array.isArray(session.enabledSkillIds)) {
+    ids = getGloballyEnabledSkillIds().filter((id) => installed.has(id));
+  } else {
+    ids = session.enabledSkillIds.filter((id) => installed.has(id));
   }
-  if (!Array.isArray(session.enabledSkillIds)) {
-    return getGloballyEnabledSkillIds().filter((id) => installed.has(id));
+  const merged = new Set(ids);
+  for (const skillId of MANDATORY_PLATFORM_SKILL_IDS) {
+    if (installed.has(skillId)) merged.add(skillId);
   }
-  return session.enabledSkillIds.filter((id) => installed.has(id));
+  return [...merged];
 }
 
 function isSessionSkillCustomized(session) {
@@ -330,16 +343,32 @@ function buildAgentGuideContent(enabledSkills) {
   return sections.join("\n").trim() + "\n";
 }
 
+/** Bump when static AGENT.md header changes so cached session guides refresh. */
+const AGENT_GUIDE_STATIC_VERSION = 3;
+
+/** @type {Map<string, string>} sessionId → sorted skill id signature */
+const sessionGuideWriteCache = new Map();
+
+function sessionGuideWriteSignature(session) {
+  const skillSig = resolveSessionSkillIds(session).slice().sort().join("\0");
+  return `${AGENT_GUIDE_STATIC_VERSION}\0${skillSig}`;
+}
+
 function writeSessionAgentGuide(sessionId, session) {
   ensureRuntimeNodeShim();
+  const configDir = sessionGuideDir(sessionId);
+  const signature = sessionGuideWriteSignature(session);
+  if (sessionGuideWriteCache.get(sessionId) === signature) {
+    return configDir;
+  }
   const skillIds = resolveSessionSkillIds(session);
   const skills = getSkillsForIds(skillIds);
-  const configDir = sessionGuideDir(sessionId);
   fs.mkdirSync(configDir, { recursive: true });
   ensureSessionConfigBridge(configDir);
   const guidePath = path.join(configDir, "AGENT.md");
   fs.writeFileSync(guidePath, buildAgentGuideContent(skills), "utf8");
   syncEngineGuideMirror(guidePath, configDir);
+  sessionGuideWriteCache.set(sessionId, signature);
   return configDir;
 }
 
@@ -350,7 +379,9 @@ function listSkillsForSessionPublic(session) {
   return {
     customized,
     effectiveIds: [...effectiveIds],
-    skills: installed.map((skill) => ({
+    skills: installed
+      .filter((skill) => !MANDATORY_PLATFORM_SKILL_IDS.includes(skill.id))
+      .map((skill) => ({
       id: skill.id,
       name: skill.name,
       description: skill.description,
@@ -455,24 +486,28 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
   const latestVersion = registryEntry?.latestVersion || null;
   const updateAvailable =
     latestVersion && compareSemver(latestVersion, installedVersion) > 0;
+  const platformMandatory = MANDATORY_PLATFORM_SKILL_IDS.includes(skillId);
 
   return {
     id: skillId,
     name: manifest?.name || registryEntry?.name || skillId,
-    description: manifest?.description || "",
+    description: manifest?.description || registryEntry?.description || "",
     version: installedVersion,
     latestVersion,
     source: entry?.source || (registryEntry ? "remote" : "local"),
-    enabled: entry?.enabled !== false,
+    enabled: platformMandatory ? true : entry?.enabled !== false,
     permissions: {
       network: Boolean(manifest?.permissions?.network ?? registryEntry?.permissions?.network),
       filesystem: manifest?.permissions?.filesystem || "none",
     },
-    canDisable: Boolean(manifest || entry),
+    canDisable: !platformMandatory && Boolean(manifest || entry),
+    platformMandatory,
     canRestore: PROTECTED_BUNDLED_IDS.has(skillId),
     canUninstall: entry?.source === "remote",
     updateAvailable,
     changelog: registryEntry?.changelog || "",
+    category: registryEntry?.category || null,
+    categoryLabel: registryEntry?.categoryLabel || null,
   };
 }
 
@@ -841,6 +876,9 @@ function bootstrapSkills() {
 
 function setSkillEnabled(skillId, enabled) {
   ensureSkillsStateDefaults();
+  if (MANDATORY_PLATFORM_SKILL_IDS.includes(skillId) && !enabled) {
+    return { ok: false, error: "MANDATORY_SKILL" };
+  }
   const state = loadSkillsState();
   if (!state.skills[skillId] && !BUNDLED_SKILL_IDS.includes(skillId)) {
     return { ok: false, error: "NOT_FOUND" };
@@ -891,6 +929,7 @@ function refreshSkillsConfig() {
 
 module.exports = {
   BUNDLED_SKILL_IDS,
+  MANDATORY_PLATFORM_SKILL_IDS,
   PROTECTED_BUNDLED_IDS,
   bootstrapSkills,
   listSkillsPublic,

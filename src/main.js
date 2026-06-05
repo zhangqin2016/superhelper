@@ -124,6 +124,8 @@ app.whenReady().then(async () => {
     runnerPool,
   });
 
+  require("./main/update-scheduler").startBackgroundUpdateChecks();
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

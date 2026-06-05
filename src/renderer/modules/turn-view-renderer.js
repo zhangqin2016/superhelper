@@ -8,6 +8,7 @@ import {
 } from "./tool-payload-renderer.js";
 import {
   getRenderableTimeline,
+  resolveNoticeDetail,
   toolPreview,
 } from "./turn-timeline.js";
 import {
@@ -561,10 +562,11 @@ function renderThinkingEntry(entry, live = false) {
 }
 
 function renderNoticeEntry(entry) {
-  if (!entry.detail) return null;
+  const detail = resolveNoticeDetail(entry);
+  if (!detail) return null;
   const row = document.createElement("div");
   row.className = `assistant-process-notice is-${entry.level || "info"}`;
-  row.textContent = entry.detail;
+  row.textContent = detail;
   return row;
 }
 
@@ -878,7 +880,15 @@ function renderFinal(article, liveTurn) {
   const final = document.createElement("div");
   final.className = "assistant-turn-final markdown-body assistant-turn-report-body";
   const text = resolveAssistantStreamText(liveTurn);
-  void renderMarkdown(final, text);
+  const sealed = article.classList.contains("is-sealed");
+  if (sealed) {
+    renderStreamingMarkdown(final, text);
+    const upgrade = () => { void renderMarkdown(final, text); };
+    if (typeof requestIdleCallback === "function") requestIdleCallback(upgrade);
+    else setTimeout(upgrade, 200);
+  } else {
+    void renderMarkdown(final, text);
+  }
 
   report.append(label, final);
   article.appendChild(report);

@@ -197,6 +197,25 @@
       "changelog": "来自 obra/superpowers"
     },
     {
+      "id": "lily-engineering-rules",
+      "name": "Engineering Rules 12",
+      "description": "Full 12-rule engineering discipline for coding, debugging, reviews, and non-trivial changes on Lily Workbench. Use when the user wants careful, minimal, verified delivery or mentions engineering standards.",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "engineering-rules",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.0",
+      "category": "dev",
+      "categoryLabel": "研发工程",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "智能工作台内置：工程协作 12 条"
+    },
+    {
       "id": "superpowers-dispatching-parallel-agents",
       "name": "Dispatching Parallel Agents",
       "description": "Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies",
