@@ -165,6 +165,10 @@
             </div>
             <div id="sessionSkillsPopoverList" class="session-skills-popover-list"></div>
             <div class="session-skills-popover-footer">
+              <div class="session-skills-bulk-actions">
+                <button id="sessionSkillsSelectAllBtn" type="button" class="session-skills-bulk-btn" data-i18n="composer.sessionSkillsSelectAll">全选</button>
+                <button id="sessionSkillsDeselectAllBtn" type="button" class="session-skills-bulk-btn" data-i18n="composer.sessionSkillsDeselectAll">全不选</button>
+              </div>
               <button id="sessionSkillsResetBtn" type="button" class="session-skills-reset-btn" hidden data-i18n="composer.resetSkills">恢复全局默认</button>
               <p class="session-skills-popover-hint" data-i18n="composer.sessionSkillsHint">未单独设置时，沿用设置中的全局技能。</p>
             </div>
@@ -375,10 +379,12 @@
                 <button id="skillsCheckUpdatesBtn" class="settings-action-btn" type="button" data-i18n="settings.skillsCheckUpdates">检查更新</button>
                 <button id="skillsRefreshBtn" class="settings-action-btn" type="button" data-i18n="settings.skillsRefresh">刷新配置</button>
               </div>
+              <h4 class="skills-subsection-title" data-i18n="skills.preset.sectionTitle">推荐岗位包</h4>
+              <p class="skills-preset-desc" data-i18n="skills.preset.sectionDesc">一键安装并启用常见岗位技能。办公、产品、市场、研发可按需选择。</p>
+              <div id="skillsPresetList" class="skills-preset-list"></div>
               <h4 class="skills-subsection-title" data-i18n="settings.skillsInstalled">已安装</h4>
               <div id="skillsList" class="skills-list"></div>
               <h4 id="skillsAvailableTitle" class="skills-subsection-title" hidden data-i18n="settings.skillsAvailable">可安装</h4>
-              <div id="skillsCategoryTabs" class="skills-category-tabs" hidden></div>
               <div id="skillsAvailableList" class="skills-list"></div>
               <div id="skillsRemoteIndexes" class="skills-remote-indexes" hidden></div>
             </section>

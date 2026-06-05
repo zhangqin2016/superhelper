@@ -8,7 +8,6 @@ import {
 } from "./tool-payload-renderer.js";
 import {
   getRenderableTimeline,
-  resolveActivityLabel,
   toolPreview,
 } from "./turn-timeline.js";
 import {
@@ -27,31 +26,19 @@ import {
   getSessionDiffEntries,
   reapplySessionInlineDiffs,
 } from "./diff-panel.js";
-import { formatTokenCount, summarizeTurnUsage } from "./turn-usage-summary.js";
+import {
+  buildLiveStatusText,
+  buildStatusFooterText,
+  buildStatusText,
+  buildThinkingSummaryLabel,
+  timelineForView,
+} from "./turn-view-status.js";
 
-let cachedAppIconUrl = null;
 const narrativeRenderState = new Map();
 const LIVE_STATUS_STYLE = "15px";
-const THINKING_SUMMARY_MAX = 72;
-
-function thinkingSummaryPreview(text = "", max = THINKING_SUMMARY_MAX) {
-  const normalized = String(text).replace(/\s+/g, " ").trim();
-  if (!normalized) return "";
-  if (normalized.length <= max) return normalized;
-  return `…${normalized.slice(-(max - 1))}`;
-}
 
 function thinkingSummaryLabel(text, live = false) {
-  if (!live) return t("turn.thinking.title");
-  const preview = thinkingSummaryPreview(text);
-  if (!preview) return t("turn.thinking.title");
-  return t("turn.thinking.liveSummary", { preview });
-}
-
-function timelineForView(liveTurn, sealed = false) {
-  const timeline = getRenderableTimeline(liveTurn).filter((entry) => entry.kind !== "status");
-  if (sealed) return timeline;
-  return timeline.filter((entry) => entry.kind !== "notice");
+  return buildThinkingSummaryLabel(text, live, t);
 }
 
 function applyStatusDisplay(statusEl, text, { sealed = false, live = false } = {}) {
@@ -112,21 +99,11 @@ function scheduleNarrativeMarkdown(textEl, text, turnId) {
   }, 120);
 }
 
-async function ensureAppIconUrl() {
-  if (cachedAppIconUrl !== null) return cachedAppIconUrl;
-  try {
-    cachedAppIconUrl = await window.assistantClient?.getAppIconUrl?.() || "";
-  } catch {
-    cachedAppIconUrl = "";
-  }
-  return cachedAppIconUrl;
-}
-
-function bindTurnLogo(img) {
-  if (!img) return;
-  void ensureAppIconUrl().then((url) => {
-    if (url) img.src = url;
-  });
+function narrativeImageKey(contentBlocks = []) {
+  return contentBlocks
+    .filter((b) => b.blockType === "image" && b.data)
+    .map((b) => `${b.mediaType || "image/png"}:${b.data.length}`)
+    .join("|");
 }
 
 /** Minimal liveTurn for assistant messages saved before TurnRecord existed. */
@@ -265,7 +242,11 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
 
   renderFooter(article.querySelector('[data-role="footer"]'), liveTurn, sealed);
 
-  const narrativeKey = `${liveTurn.assistantText || ""}|${(liveTurn.contentBlocks || []).length}`;
+  const narrativeKey = [
+    liveTurn.assistantText || "",
+    (liveTurn.contentBlocks || []).length,
+    narrativeImageKey(liveTurn.contentBlocks || []),
+  ].join("|");
   if (article.dataset.narrativeKey !== narrativeKey) {
     renderNarrative(article.querySelector('[data-role="narrative"]'), liveTurn);
     article.dataset.narrativeKey = narrativeKey;
@@ -340,74 +321,16 @@ function renderFooter(root, liveTurn, sealed) {
   root.hidden = true;
 }
 
-function liveElapsedSeconds(liveTurn) {
-  const start = Number(liveTurn.startedAt) || Number(liveTurn.updatedAt) || Date.now();
-  return Math.max(0, Math.floor((Date.now() - start) / 1000));
-}
-
-function resolveLiveStatusActivity(liveTurn) {
-  const explicit = resolveActivityLabel(liveTurn);
-  if (explicit) return explicit;
-
-  if ((liveTurn.thinkingText || "").trim()) return t("turn.status.thinking");
-
-  const timeline = getRenderableTimeline(liveTurn);
-  const doneTools = timeline.filter((entry) => entry.kind === "tool" && entry.status === "done");
-  const lastDone = doneTools[doneTools.length - 1];
-  if (lastDone) return toolRowPreview(lastDone);
-
-  if (liveTurn.phase === "starting") return t("turn.status.starting");
-  if (liveTurn.phase === "streaming") return t("turn.status.waiting");
-  return t("turn.status.working");
-}
-
 function liveStatusText(liveTurn) {
-  const activity = resolveLiveStatusActivity(liveTurn);
-  const seconds = liveElapsedSeconds(liveTurn);
-  if (seconds < 1) return activity;
-  return t("turn.status.live", { seconds, activity });
+  return buildLiveStatusText(liveTurn, t);
 }
 
 function statusText(liveTurn, failed = false, sealed = false) {
-  if (liveTurn.final) {
-    if (failed || liveTurn.final.type === "turn.failed") return t("turn.status.failed");
-    if (liveTurn.final.type === "turn.interrupted") return t("turn.status.interrupted");
-    if (liveTurn.final.type === "turn.stalled") return t("turn.status.stalled");
-    if (sealed) return statusFooterText(liveTurn);
-    return "";
-  }
-  if (liveTurn.phase === "awaiting_user") return t("turn.status.awaitingUser");
-  return liveStatusText(liveTurn);
-}
-
-function resolveTurnUsage(liveTurn) {
-  const raw = liveTurn.usage ??
-    liveTurn.final?.payload?.record?.usage ??
-    liveTurn.final?.payload?.usage ??
-    null;
-  return summarizeTurnUsage(raw);
+  return buildStatusText(liveTurn, { failed, sealed }, t);
 }
 
 function statusFooterText(liveTurn) {
-  const durationMs = liveTurn.durationMs ??
-    (liveTurn.final?.payload?.durationMs ?? liveTurn.final?.payload?.record?.durationMs);
-  const usage = resolveTurnUsage(liveTurn);
-  const parts = [];
-  if (Number.isFinite(durationMs) && durationMs > 0) {
-    const sec = Math.max(1, Math.round(durationMs / 1000));
-    parts.push(t("turn.footer.duration", { seconds: sec }));
-  }
-  if (usage?.total > 0) {
-    if (usage.input > 0 && usage.output > 0) {
-      parts.push(t("turn.footer.tokensDetail", {
-        input: formatTokenCount(usage.input),
-        output: formatTokenCount(usage.output),
-      }));
-    } else {
-      parts.push(t("turn.footer.tokens", { count: formatTokenCount(usage.total) }));
-    }
-  }
-  return parts.join(" · ");
+  return buildStatusFooterText(liveTurn, t);
 }
 
 function processStructureSig(liveTurn, sealed, sessionId) {
@@ -731,14 +654,14 @@ function appendToolResultBlock(row, tool, sealed = false) {
   const copyBtn = document.createElement("button");
   copyBtn.type = "button";
   copyBtn.className = "assistant-action-btn";
-  copyBtn.textContent = "Copy";
+  copyBtn.textContent = t("common.copy");
   copyBtn.addEventListener("click", async () => {
     const text = pre.dataset.expanded === "true" ? result.fullText : result.content;
     try {
       await navigator.clipboard.writeText(text);
-      showToast("Copied", "success");
+      showToast(t("common.copied"), "success");
     } catch {
-      showToast("Copy failed", "warning");
+      showToast(t("common.copyFailed"), "warning");
     }
   });
 
@@ -789,37 +712,43 @@ function renderPrompts(root, sessionId, liveTurn) {
 }
 
 function permissionCard(sessionId, item) {
-  const card = promptCard("需要你的确认", item.toolName || item.title || "工具调用");
+  const card = promptCard(
+    t("permission.approveActionTitle"),
+    item.toolName || item.title || t("turn.permission.toolFallback"),
+  );
   const actions = actionRow();
   actions.append(
-    button("批准", async () => window.assistantClient.respondPermission(sessionId, item.requestId, true)),
-    button("拒绝", async () => window.assistantClient.respondPermission(sessionId, item.requestId, false)),
-    button("批准并记住", async () => window.assistantClient.respondPermission(sessionId, item.requestId, true, { remember: true })),
+    button(t("permission.approve"), async () => window.assistantClient.respondPermission(sessionId, item.requestId, true)),
+    button(t("permission.deny"), async () => window.assistantClient.respondPermission(sessionId, item.requestId, false)),
+    button(t("permission.approveRememberShort"), async () => window.assistantClient.respondPermission(sessionId, item.requestId, true, { remember: true })),
   );
   card.appendChild(actions);
   return card;
 }
 
 function hookCard(sessionId, item) {
-  const card = promptCard("需要确认 Hook", item.hookName || "Hook");
+  const card = promptCard(
+    t("turn.hook.confirmTitle"),
+    item.hookName || t("hook.title"),
+  );
   const actions = actionRow();
   actions.append(
-    button("允许", async () => window.assistantClient.respondHook(sessionId, item.requestId, true)),
-    button("阻止", async () => window.assistantClient.respondHook(sessionId, item.requestId, false)),
+    button(t("hook.allowTool"), async () => window.assistantClient.respondHook(sessionId, item.requestId, true)),
+    button(t("hook.denyTool"), async () => window.assistantClient.respondHook(sessionId, item.requestId, false)),
   );
   card.appendChild(actions);
   return card;
 }
 
 function questionCard(sessionId, item) {
-  const card = promptCard("助手需要你补充信息", "");
+  const card = promptCard(t("turn.question.cardTitle"), "");
   const questions = item.questions || [];
   for (const question of questions) {
     const block = document.createElement("div");
     block.className = "assistant-question-block";
     const label = document.createElement("label");
     label.className = "assistant-question-label";
-    label.textContent = question.question || "请补充你的回答";
+    label.textContent = question.question || t("question.freeAnswerPrompt");
     block.appendChild(label);
 
     const options = Array.isArray(question.options) ? question.options.filter((o) => o?.label) : [];
@@ -840,9 +769,9 @@ function questionCard(sessionId, item) {
               { [question.id || "answer"]: option.label },
               option.label,
             );
-            if (!result?.ok) showToast(result?.detail || result?.error || "操作失败", "warning");
+            if (!result?.ok) showToast(result?.detail || result?.error || t("common.actionFailed"), "warning");
           } catch (err) {
-            showToast(err?.message || "操作失败", "error");
+            showToast(err?.message || t("common.actionFailed"), "error");
           }
         });
         optionsEl.appendChild(btn);
@@ -852,6 +781,7 @@ function questionCard(sessionId, item) {
       const input = document.createElement("textarea");
       input.className = "assistant-question-input";
       input.rows = 2;
+      input.placeholder = t("question.otherPlaceholder");
       input.dataset.questionId = question.id || "answer";
       block.appendChild(input);
     }
@@ -859,7 +789,7 @@ function questionCard(sessionId, item) {
   }
   if (card.querySelector(".assistant-question-input")) {
     const actions = actionRow();
-    actions.appendChild(button("提交", async () => {
+    actions.appendChild(button(t("question.submit"), async () => {
       const answers = {};
       for (const input of card.querySelectorAll(".assistant-question-input")) {
         answers[input.dataset.questionId] = input.value;
@@ -899,9 +829,9 @@ function button(label, action) {
   btn.addEventListener("click", async () => {
     try {
       const result = await action();
-      if (!result?.ok) showToast(result?.detail || result?.error || "操作失败", "warning");
+      if (!result?.ok) showToast(result?.detail || result?.error || t("common.actionFailed"), "warning");
     } catch (err) {
-      showToast(err?.message || "操作失败", "error");
+      showToast(err?.message || t("common.actionFailed"), "error");
     }
   });
   return btn;
@@ -914,13 +844,13 @@ function renderQueue(root, sessionId, queue) {
   if (!queue?.length) return;
   const title = document.createElement("div");
   title.className = "assistant-queue-title";
-  title.textContent = `队列中 ${queue.length} 条`;
+  title.textContent = t("timeline.queuedTitle", { count: queue.length });
   root.appendChild(title);
   for (const item of queue) {
     const row = document.createElement("div");
     row.className = "assistant-queue-item";
     const text = document.createElement("span");
-    text.textContent = item.text || "附件消息";
+    text.textContent = item.text || t("composer.queueAttachmentOnly");
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "×";

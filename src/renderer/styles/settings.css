@@ -385,10 +385,12 @@
 }
 
 .skills-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 10px;
+  display: block;
   margin-bottom: 12px;
+}
+
+.skills-list .skills-tree {
+  gap: 6px;
 }
 
 .skills-row {
@@ -532,6 +534,74 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.skills-preset-desc {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.skills-preset-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.skills-preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #15182a;
+  min-width: 0;
+}
+
+.skills-preset-card--complete {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: color-mix(in srgb, #15182a 90%, rgba(99, 102, 241, 0.12) 10%);
+}
+
+.skills-preset-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.skills-preset-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.skills-preset-card-progress {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.skills-preset-card-desc {
+  margin: 0;
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.skills-preset-apply-btn {
+  align-self: flex-start;
+}
+
+.skills-row-niche-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #c4a35a;
 }
 
 .skills-category-tabs {

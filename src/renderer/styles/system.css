@@ -53,13 +53,13 @@
   right: 8px;
 }
 
-[dir="rtl"] .session-skills-card-input {
-  left: auto;
-  right: 8px;
+[dir="rtl"] .skills-tree-row {
+  padding: 6px 28px 6px 10px;
 }
 
-[dir="rtl"] .session-skills-card {
-  padding: 10px 28px 10px 10px;
+[dir="rtl"] .skills-tree-row::before {
+  left: auto;
+  right: 18px;
 }
 
 body.locale-ar {

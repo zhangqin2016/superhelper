@@ -215,6 +215,38 @@ function registerSkillHandlers(ctx) {
     if (!id) return { ok: false, error: "NOT_FOUND" };
     return withRunnerChange(ctx, () => skillManager.uninstallRemoteSkill(id), { liveEnv: false, reloadSkills: true });
   });
+
+  ipcMain.handle("skills:get-preset-guide", () => ({
+    ok: true,
+    guide: skillManager.getSkillPresetGuideState(),
+  }));
+
+  ipcMain.handle("skills:set-preset-guide-status", (_event, payload) => {
+    const status = payload?.status;
+    return skillManager.setSkillPresetGuideStatus(status);
+  });
+
+  ipcMain.handle("skills:apply-preset", async (_event, payload) => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
+    const id = payload?.id;
+    if (!id) return { ok: false, error: "NOT_FOUND" };
+    return withRunnerChange(
+      ctx,
+      async () => {
+        const result = await skillManager.applySkillPreset(id);
+        if (result.ok && ctx.sessionManager) {
+          skillManager.syncInheritedSessionGuides(ctx.sessionManager);
+        }
+        return result;
+      },
+      { refreshState: true, liveEnv: false, reloadSkills: true },
+    );
+  });
 }
 
 module.exports = { registerSessionHandlers, registerSkillHandlers };

@@ -20,7 +20,7 @@ const context = {
   },
 };
 vm.createContext(context);
-vm.runInContext(`${source}\nwindow.__test = { appendStreamingText, renderMarkdownWithCache, renderMarkdown };`, context);
+vm.runInContext(`${source}\nwindow.__test = { appendStreamingText, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
 
 function fakeElement() {
   const classes = new Set();
@@ -75,5 +75,19 @@ context.window.__test.renderMarkdownWithCache(withoutParser, "### 标题\n\n- �
 assert.equal(withoutParser.textContent, "### 标题\n\n- 第一项");
 assert.equal(withoutParser.classList.contains("markdown-fallback"), true);
 context.window.marked = savedMarked;
+
+const repaired = context.window.__test.repairMarkdownTables(
+  "| 项目 | 状态 |\n| 📖 小说 | 100章完结 |",
+);
+assert.match(repaired, /\| --- \| --- \|/);
+
+const table = fakeElement();
+context.window.__test.renderMarkdownWithCache(
+  table,
+  "| 项目 | 状态 |\n| 📖 小说 | 100章完结 |",
+);
+assert.match(table.innerHTML, /<table>/);
+assert.match(table.innerHTML, /<th>项目<\/th>/);
+assert.match(table.innerHTML, /<td>📖 小说<\/td>/);
 
 console.log("markdown-renderer: ok");

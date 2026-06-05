@@ -4,13 +4,16 @@
 
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
-import store from "./state.js";
-import { t, skillErrorMessage, tSkillCategory, getLocale, tSkillName, tSkillDesc } from "../i18n/index.js";
-
-/** @type {{ available: object[], categories?: object[], remoteIndexes?: object[], activeCategory?: string } | null} */
-let lastCatalog = null;
-
+import { t, skillErrorMessage, getLocale, tSkillName, tSkillDesc } from "../i18n/index.js";
+import {
+  renderSkillTree,
+  syncAllSkillTreeGroupSelects,
+  syncSkillTreeGroupSelect,
+} from "./skills-tree-ui.js";
 import { anySessionRunning } from "./session-runtime-store.js";
+
+/** @type {{ available: object[], categories?: object[], remoteIndexes?: object[], featuredSkillIds?: string[] } | null} */
+let lastCatalog = null;
 
 function isBusy() {
   return anySessionRunning();
@@ -30,48 +33,71 @@ function permissionHint(skill) {
   return parts.join(" · ");
 }
 
-function renderInstalledRow(skill) {
+function isNicheBlockchainSkill(skillId) {
+  return /vulnerability-scanner|token-integration-analyzer/i.test(skillId);
+}
+
+function isFeaturedSkill(skillId) {
+  return (lastCatalog?.featuredSkillIds || []).includes(skillId);
+}
+
+function appendChip(parent, text, className = "skills-tree-row-chip") {
+  const chip = document.createElement("span");
+  chip.className = className;
+  chip.textContent = text;
+  parent.append(chip);
+  return chip;
+}
+
+function renderInstalledTreeRow(skill) {
   const row = document.createElement("div");
-  row.className = "skills-row";
+  row.className = "skills-tree-row skills-tree-row--settings";
   row.dataset.skillId = skill.id;
 
   const main = document.createElement("div");
-  main.className = "skills-row-main";
+  main.className = "skills-tree-row-settings-main";
 
-  const titleLine = document.createElement("div");
-  titleLine.className = "skills-row-title";
+  const top = document.createElement("div");
+  top.className = "skills-tree-row-settings-top";
 
   const name = document.createElement("span");
-  name.className = "skills-row-name";
+  name.className = "skills-tree-row-name";
   name.textContent = tSkillName(skill);
+  top.append(name);
+  appendChip(top, sourceLabel(skill.source));
 
-  const badge = document.createElement("span");
-  badge.className = "skills-row-badge";
-  badge.textContent = sourceLabel(skill.source);
-
-  titleLine.append(name, badge);
+  if (skill.updateAvailable) {
+    appendChip(top, t("skills.badge.update"), "skills-tree-row-chip skills-tree-row-chip--warn");
+  }
 
   const meta = document.createElement("div");
-  meta.className = "skills-row-meta";
+  meta.className = "skills-tree-row-settings-meta";
   const versionText = skill.updateAvailable
     ? `v${skill.version} → v${skill.latestVersion}`
     : `v${skill.version}`;
   meta.textContent = [versionText, permissionHint(skill)].filter(Boolean).join(" · ");
 
-  const desc = document.createElement("p");
-  desc.className = "skills-row-desc";
-  desc.textContent = tSkillDesc(skill) || "";
-
-  main.append(titleLine, meta, desc);
+  const descText = tSkillDesc(skill);
+  if (descText) {
+    const desc = document.createElement("p");
+    desc.className = "skills-tree-row-settings-desc";
+    desc.textContent = descText;
+    main.append(top, meta, desc);
+  } else {
+    main.append(top, meta);
+  }
 
   const actions = document.createElement("div");
-  actions.className = "skills-row-actions";
+  actions.className = "skills-tree-row-settings-actions";
 
   const toggle = document.createElement("input");
   toggle.type = "checkbox";
   toggle.className = "skills-toggle";
   toggle.checked = skill.enabled;
-  toggle.setAttribute("aria-label", `${skill.enabled ? t("skills.disable") : t("skills.enable")}${tSkillName(skill)}`);
+  toggle.setAttribute(
+    "aria-label",
+    `${skill.enabled ? t("skills.disable") : t("skills.enable")}${tSkillName(skill)}`,
+  );
 
   toggle.addEventListener("change", async () => {
     const nextEnabled = toggle.checked;
@@ -86,7 +112,28 @@ function renderInstalledRow(skill) {
       showToast(skillErrorMessage(result.error), "error");
       return;
     }
-    showToast(nextEnabled ? t("toast.skillsEnabled", { name: tSkillName(skill) }) : t("toast.skillsDisabled", { name: tSkillName(skill) }), "success");
+    showToast(
+      nextEnabled
+        ? t("toast.skillsEnabled", { name: tSkillName(skill) })
+        : t("toast.skillsDisabled", { name: tSkillName(skill) }),
+      "success",
+    );
+    const groupEl = row.closest(".skills-tree-group");
+    if (groupEl) {
+      syncSkillTreeGroupSelect(groupEl);
+      const rows = groupEl.querySelectorAll(".skills-tree-row");
+      let enabledCount = 0;
+      rows.forEach((r) => {
+        if (r.querySelector('input[type="checkbox"]')?.checked) enabledCount += 1;
+      });
+      const countEl = groupEl.querySelector(".skills-tree-group-count");
+      if (countEl) {
+        countEl.textContent = t("composer.sessionSkillsGroupCount", {
+          enabled: enabledCount,
+          total: rows.length,
+        });
+      }
+    }
   });
 
   actions.append(toggle);
@@ -160,46 +207,50 @@ function renderInstalledRow(skill) {
   return row;
 }
 
-function renderAvailableRow(skill) {
+function renderAvailableTreeRow(skill) {
   const row = document.createElement("div");
-  row.className = "skills-row skills-row--available";
+  row.className = "skills-tree-row skills-tree-row--settings skills-tree-row--available";
   row.dataset.skillId = skill.id;
 
   const main = document.createElement("div");
-  main.className = "skills-row-main";
+  main.className = "skills-tree-row-settings-main";
 
-  const titleLine = document.createElement("div");
-  titleLine.className = "skills-row-title";
+  const top = document.createElement("div");
+  top.className = "skills-tree-row-settings-top";
 
   const name = document.createElement("span");
-  name.className = "skills-row-name";
+  name.className = "skills-tree-row-name";
   name.textContent = tSkillName(skill);
+  top.append(name);
+  appendChip(top, t("skills.badge.catalog"));
 
-  const badge = document.createElement("span");
-  badge.className = "skills-row-badge";
-  badge.textContent = t("skills.badge.catalog");
-
-  if (skill.categoryLabel) {
-    const cat = document.createElement("span");
-    cat.className = "skills-row-category";
-    cat.textContent = tSkillCategory(skill.category) || skill.categoryLabel;
-    titleLine.append(name, badge, cat);
-  } else {
-    titleLine.append(name, badge);
+  if (isFeaturedSkill(skill.id)) {
+    appendChip(top, t("skills.badge.recommended"), "skills-tree-row-chip skills-tree-row-chip--accent");
   }
 
   const meta = document.createElement("div");
-  meta.className = "skills-row-meta";
+  meta.className = "skills-tree-row-settings-meta";
   meta.textContent = `v${skill.latestVersion}`;
 
-  const desc = document.createElement("p");
-  desc.className = "skills-row-desc";
-  desc.textContent = tSkillDesc(skill) || skill.changelog || "";
+  const descText = tSkillDesc(skill) || skill.changelog || "";
+  if (descText) {
+    const desc = document.createElement("p");
+    desc.className = "skills-tree-row-settings-desc";
+    desc.textContent = descText;
+    main.append(top, meta, desc);
+  } else {
+    main.append(top, meta);
+  }
 
-  main.append(titleLine, meta, desc);
+  if (skill.category === "security" && isNicheBlockchainSkill(skill.id)) {
+    const niche = document.createElement("p");
+    niche.className = "skills-tree-row-settings-niche";
+    niche.textContent = t("skills.nicheBlockchainHint");
+    main.append(niche);
+  }
 
   const actions = document.createElement("div");
-  actions.className = "skills-row-actions";
+  actions.className = "skills-tree-row-settings-actions";
 
   const installBtn = document.createElement("button");
   installBtn.type = "button";
@@ -230,44 +281,61 @@ function renderAvailableRow(skill) {
   return row;
 }
 
-function filterAvailableByCategory(available, categoryId) {
-  if (!categoryId || categoryId === "all") return available || [];
-  return (available || []).filter((skill) => skill.category === categoryId);
+async function toggleInstalledGroup(group, enabled) {
+  if (isBusy()) {
+    showToast(t("toast.sessionSkillsBusy"), "error");
+    syncAllSkillTreeGroupSelects($("skillsList"));
+    return;
+  }
+  for (const skill of group.skills) {
+    const result = await window.assistantClient.setSkillEnabled(skill.id, enabled);
+    if (!result.ok) {
+      showToast(skillErrorMessage(result.error), "error");
+      await refreshSkillsList();
+      return;
+    }
+  }
+  showToast(
+    enabled ? t("toast.skillsGroupEnabled") : t("toast.skillsGroupDisabled"),
+    "success",
+  );
+  await refreshSkillsList();
 }
 
-function renderCategoryTabs(catalog) {
-  const tabs = $("skillsCategoryTabs");
-  if (!tabs) return;
+function renderInstalledList(skills) {
+  const list = $("skillsList");
+  if (!list) return;
+  renderSkillTree(list, skills || [], {
+    enabledKey: "enabled",
+    countLabel: (group) =>
+      t("composer.sessionSkillsGroupCount", {
+        enabled: group.enabledCount,
+        total: group.skills.length,
+      }),
+    renderRow: renderInstalledTreeRow,
+    groupSelect: {
+      disabled: isBusy(),
+      onToggle: (group, groupEl, checked) => {
+        void toggleInstalledGroup(group, checked);
+      },
+    },
+  });
+  syncAllSkillTreeGroupSelects(list);
+}
 
-  const categories = catalog?.categories || [];
-  const available = catalog?.available || [];
-  tabs.replaceChildren();
-  tabs.hidden = available.length === 0 || categories.length === 0;
-  if (tabs.hidden) return;
+function renderAvailableList(available) {
+  const title = $("skillsAvailableTitle");
+  const list = $("skillsAvailableList");
+  if (!list || !title) return;
 
-  const active = lastCatalog?.activeCategory || "all";
+  const items = available || [];
+  title.hidden = (lastCatalog?.available || []).length === 0;
 
-  const makeTab = (id, label) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = `skills-category-tab${active === id ? " is-active" : ""}`;
-    btn.textContent = label;
-    btn.addEventListener("click", () => {
-      if (!lastCatalog) return;
-      lastCatalog.activeCategory = id;
-      renderCategoryTabs(lastCatalog);
-      renderAvailableList(filterAvailableByCategory(lastCatalog.available, id));
-    });
-    tabs.append(btn);
-  };
-
-  makeTab("all", `${t("skills.tab.all")} (${available.length})`);
-  for (const cat of categories) {
-    const count = available.filter((s) => s.category === cat.id).length;
-    if (count === 0) continue;
-    const label = tSkillCategory(cat.id) || cat.label;
-    makeTab(cat.id, `${label} (${count})`);
-  }
+  renderSkillTree(list, items, {
+    countLabel: (group) =>
+      t("skills.settingsGroupCount", { total: group.skills.length }),
+    renderRow: renderAvailableTreeRow,
+  });
 }
 
 function renderRemoteIndexes(indexes) {
@@ -296,16 +364,95 @@ function renderRemoteIndexes(indexes) {
   box.hidden = false;
 }
 
-function renderAvailableList(available) {
-  const title = $("skillsAvailableTitle");
-  const list = $("skillsAvailableList");
-  if (!list || !title) return;
+export function handlePresetApplyResult(result) {
+  if (lastCatalog) {
+    lastCatalog.presets = result.presets || lastCatalog.presets;
+    if (lastCatalog.available?.length && result.installed?.length) {
+      lastCatalog.available = lastCatalog.available.filter(
+        (skill) => !result.installed.includes(skill.id),
+      );
+    }
+  }
+  renderPresetList(result.presets || lastCatalog?.presets || []);
+  if (lastCatalog?.available) {
+    renderAvailableList(lastCatalog.available);
+  }
+}
 
-  const items = available || [];
-  title.hidden = (lastCatalog?.available || []).length === 0;
+function renderPresetList(presets) {
+  const list = $("skillsPresetList");
+  if (!list) return;
   list.replaceChildren();
-  for (const skill of items) {
-    list.append(renderAvailableRow(skill));
+  if (!presets?.length) {
+    list.hidden = true;
+    return;
+  }
+  list.hidden = false;
+
+  for (const preset of presets) {
+    const card = document.createElement("div");
+    card.className = `skills-preset-card${preset.complete ? " skills-preset-card--complete" : ""}`;
+    card.dataset.presetId = preset.id;
+
+    const head = document.createElement("div");
+    head.className = "skills-preset-card-head";
+
+    const title = document.createElement("span");
+    title.className = "skills-preset-card-title";
+    title.textContent = t(`skills.preset.${preset.id}.title`);
+
+    const progress = document.createElement("span");
+    progress.className = "skills-preset-card-progress";
+    progress.textContent = t("skills.preset.progress", {
+      enabled: preset.enabledCount,
+      total: preset.total,
+    });
+
+    head.append(title, progress);
+
+    const desc = document.createElement("p");
+    desc.className = "skills-preset-card-desc";
+    desc.textContent = t(`skills.preset.${preset.id}.desc`);
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "skills-action-btn skills-preset-apply-btn";
+    btn.textContent = preset.complete ? t("skills.preset.applied") : t("skills.preset.apply");
+    btn.disabled = preset.complete;
+
+    btn.addEventListener("click", async () => {
+      if (preset.complete || btn.disabled) return;
+      if (isBusy()) {
+        showToast(t("toast.sessionSkillsBusy"), "error");
+        return;
+      }
+      btn.disabled = true;
+      const result = await window.assistantClient.applySkillPreset(preset.id);
+      if (!result.ok) {
+        btn.disabled = false;
+        showToast(skillErrorMessage(result.error), "error");
+        return;
+      }
+      const presetName = t(`skills.preset.${preset.id}.title`);
+      const applied = result.presets?.find((p) => p.id === preset.id);
+      if (applied?.complete) {
+        showToast(t("toast.skillsPresetApplied", { name: presetName }), "success");
+      } else {
+        showToast(
+          t("toast.skillsPresetPartial", {
+            name: presetName,
+            enabled: applied?.enabledCount ?? result.enabled?.length ?? 0,
+            total: applied?.total ?? preset.total,
+          }),
+          "success",
+        );
+      }
+      handlePresetApplyResult(result);
+      await refreshSkillsList();
+    });
+
+    card.append(head, desc, btn);
+    list.append(card);
   }
 }
 
@@ -317,12 +464,18 @@ function updateRegistryHint(catalog) {
     const parts = [t("skills.registryHintBundled")];
     if (catalog.publisher) parts.push(catalog.publisher);
     if (catalog.fetchedAt) {
-      parts.push(t("skills.registryChecked", {
-        time: new Date(catalog.fetchedAt).toLocaleString(getLocale()),
-      }));
+      parts.push(
+        t("skills.registryChecked", {
+          time: new Date(catalog.fetchedAt).toLocaleString(getLocale()),
+        }),
+      );
     }
-    if (catalog.updatesCount > 0) parts.push(t("skills.registryUpdates", { count: catalog.updatesCount }));
-    if (catalog.available?.length) parts.push(t("skills.registryAvailable", { count: catalog.available.length }));
+    if (catalog.updatesCount > 0) {
+      parts.push(t("skills.registryUpdates", { count: catalog.updatesCount }));
+    }
+    if (catalog.available?.length) {
+      parts.push(t("skills.registryAvailable", { count: catalog.available.length }));
+    }
     hint.textContent = parts.join(" · ");
     return;
   }
@@ -330,28 +483,26 @@ function updateRegistryHint(catalog) {
   const parts = [];
   if (catalog.publisher) parts.push(catalog.publisher);
   if (catalog.fetchedAt) {
-    parts.push(t("skills.registryChecked", {
-      time: new Date(catalog.fetchedAt).toLocaleString(getLocale()),
-    }));
+    parts.push(
+      t("skills.registryChecked", {
+        time: new Date(catalog.fetchedAt).toLocaleString(getLocale()),
+      }),
+    );
   }
   if (catalog.updatesCount > 0) {
     parts.push(t("skills.registryUpdates", { count: catalog.updatesCount }));
   }
-  if (catalog.available?.length) parts.push(t("skills.registryAvailable", { count: catalog.available.length }));
+  if (catalog.available?.length) {
+    parts.push(t("skills.registryAvailable", { count: catalog.available.length }));
+  }
   hint.textContent = parts.join(" · ") || t("skills.registryConfigured");
 }
 
 export async function refreshSkillsList() {
-  const list = $("skillsList");
-  if (!list) return;
-
   const data = await window.assistantClient.listSkills();
   if (!data?.ok) return;
 
-  list.replaceChildren();
-  for (const skill of data.skills || []) {
-    list.append(renderInstalledRow(skill));
-  }
+  renderInstalledList(data.skills || []);
 
   if (lastCatalog?.available) {
     renderAvailableList(lastCatalog.available);
@@ -374,28 +525,23 @@ export async function initSkillSettings() {
       return;
     }
 
-    lastCatalog = { ...result, activeCategory: lastCatalog?.activeCategory || "all" };
+    lastCatalog = { ...result };
     updateRegistryHint(result);
-    renderCategoryTabs(lastCatalog);
+    renderPresetList(result.presets || []);
     renderRemoteIndexes(result.remoteIndexes || []);
-
-    const list = $("skillsList");
-    if (list) {
-      list.replaceChildren();
-      for (const skill of result.installed || []) {
-        list.append(renderInstalledRow(skill));
-      }
-    }
-    renderAvailableList(
-      filterAvailableByCategory(result.available || [], lastCatalog.activeCategory),
-    );
+    renderInstalledList(result.installed || []);
+    renderAvailableList(result.available || []);
 
     if ((result.available || []).length === 0 && (result.updatesCount || 0) === 0) {
       showToast(t("toast.skillsUpToDate"), "success");
     } else {
       const parts = [];
-      if (result.updatesCount) parts.push(t("skills.checkResultUpdates", { count: result.updatesCount }));
-      if (result.available?.length) parts.push(t("skills.checkResultAvailable", { count: result.available.length }));
+      if (result.updatesCount) {
+        parts.push(t("skills.checkResultUpdates", { count: result.updatesCount }));
+      }
+      if (result.available?.length) {
+        parts.push(t("skills.checkResultAvailable", { count: result.available.length }));
+      }
       showToast(parts.join("，"), "success");
     }
   });
@@ -418,10 +564,15 @@ export async function initSkillSettings() {
   await refreshSkillsList();
   const bootstrap = await window.assistantClient.checkSkillUpdates();
   if (bootstrap?.ok) {
-    lastCatalog = { ...bootstrap, activeCategory: "all" };
+    lastCatalog = { ...bootstrap };
     updateRegistryHint(bootstrap);
-    renderCategoryTabs(lastCatalog);
+    renderPresetList(bootstrap.presets || []);
     renderRemoteIndexes(bootstrap.remoteIndexes || []);
     renderAvailableList(bootstrap.available || []);
   }
+
+  const { maybeShowSkillPresetGuide } = await import("./skill-preset-guide.js");
+  window.setTimeout(() => {
+    maybeShowSkillPresetGuide().catch(() => {});
+  }, 400);
 }

@@ -56,3 +56,112 @@ if ((result.available || []).length < 100) {
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("skill-catalog: ok", result.available.length, "available");
+
+const skillRegistry = require(path.join(ROOT, "src/main/skill-registry.js"));
+const bundled = skillRegistry.loadBundledRegistry();
+if (!bundled || (bundled.skills || []).length < 100) {
+  throw new Error("bundled registry missing or too small");
+}
+
+const emptyService = {
+  schemaVersion: 1,
+  skills: [],
+  sourceUrl: "https://service.example.com/api/plugins/registry",
+  categories: [],
+};
+const emptyMerged = skillRegistry.mergeRegistries(emptyService, bundled);
+if (!emptyMerged?.bundledFallback) {
+  throw new Error("empty service registry should fall back to bundled catalog");
+}
+if ((emptyMerged.skills || []).length < 100) {
+  throw new Error(`empty service merge expected 100+ skills, got ${emptyMerged.skills?.length || 0}`);
+}
+
+const serviceWithOne = {
+  schemaVersion: 1,
+  skills: [
+    {
+      id: "corp-only-skill",
+      name: "Corp Skill",
+      latestVersion: "1.0.0",
+      sourceType: "zip",
+      downloadUrl: "https://cdn.example.com/corp.skillpack.zip",
+      sha256: "a".repeat(64),
+    },
+  ],
+  sourceUrl: "https://service.example.com/api/plugins/registry",
+  categories: [{ id: "dev", label: "Engineering" }],
+};
+const mixedMerged = skillRegistry.mergeRegistries(serviceWithOne, bundled);
+if (!mixedMerged.skills.some((skill) => skill.id === "corp-only-skill")) {
+  throw new Error("merged registry should keep service skill");
+}
+if (!mixedMerged.skills.some((skill) => skill.id === bundled.skills[0].id)) {
+  throw new Error("merged registry should supplement bundled skills");
+}
+if (!mixedMerged.bundledSupplement) {
+  throw new Error("mixed registry should mark bundled supplement");
+}
+
+const tmpService = fs.mkdtempSync(path.join(os.tmpdir(), "lily-skill-service-"));
+const serviceClientPath = require.resolve(path.join(ROOT, "src/main/service-client.js"));
+const skillManagerPath = require.resolve(path.join(ROOT, "src/main/skill-manager.js"));
+delete require.cache[skillManagerPath];
+require.cache[serviceClientPath] = {
+  id: serviceClientPath,
+  filename: serviceClientPath,
+  loaded: true,
+  exports: {
+    getServiceSettings: () => ({
+      ok: true,
+      apiBaseUrl: "https://service.example.com",
+      configurable: false,
+    }),
+    skillRegistry: async () => ({
+      ok: true,
+      json: {
+        schemaVersion: 1,
+        publisher: "Test Service",
+        skills: [],
+        categories: [],
+      },
+    }),
+    reportSkillEvent: async () => ({ ok: true }),
+  },
+};
+const skillManagerWithService = require(skillManagerPath);
+fs.mkdirSync(tmpService, { recursive: true });
+fs.writeFileSync(
+  path.join(tmpService, "skills-state.json"),
+  JSON.stringify({ schemaVersion: 1, skills: {} }),
+);
+process.resourcesPath = ROOT;
+require.cache[electronPath].exports.app.getPath = (name) => {
+  if (name === "userData") return tmpService;
+  if (name === "home") return os.homedir();
+  return os.tmpdir();
+};
+skillManagerWithService.bootstrapSkills();
+const serviceResult = await skillManagerWithService.checkRegistryUpdates({ fetch: true });
+if (!serviceResult.ok) {
+  throw new Error(`service fallback failed: ${JSON.stringify(serviceResult)}`);
+}
+if ((serviceResult.available || []).length < 100) {
+  throw new Error(
+    `empty service should still expose bundled catalog, got ${serviceResult.available?.length || 0}`,
+  );
+}
+if (!serviceResult.bundledCatalog) {
+  throw new Error("empty service fallback should mark bundledCatalog");
+}
+const categoryIds = new Set((serviceResult.categories || []).map((cat) => cat.id));
+if (!categoryIds.has("design") || categoryIds.size < 6) {
+  throw new Error(
+    `service fallback should keep bundled category tabs, got: ${[...categoryIds].join(",")}`,
+  );
+}
+
+fs.rmSync(tmpService, { recursive: true, force: true });
+delete require.cache[serviceClientPath];
+delete require.cache[skillManagerPath];
+console.log("skill-catalog: service fallback ok", serviceResult.available.length, "available");

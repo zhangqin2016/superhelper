@@ -1,5 +1,5 @@
 /**
- * Per-session skill picker in the composer (tags + popover).
+ * Per-session skill picker in the composer (tree + popover).
  */
 
 import { $ } from "./dom.js";
@@ -7,6 +7,11 @@ import store from "./state.js";
 import { showToast } from "./toast.js";
 import { canSend } from "./session-runtime-store.js";
 import { t, tSkillName, tSkillDesc } from "../i18n/index.js";
+import {
+  renderSkillTree,
+  syncAllSkillTreeGroupSelects,
+  syncSkillTreeGroupSelect,
+} from "./skills-tree-ui.js";
 
 function isBusy() {
   const sid = store.get("activeSessionId");
@@ -15,48 +20,6 @@ function isBusy() {
 
 /** @type {{ customized: boolean, effectiveIds: string[], skills: object[] } | null} */
 let lastPayload = null;
-
-// --- Category system ---
-
-const SKILL_CATEGORIES = {
-  tools: { label: "工具", icon: "🔧" },
-  workflow: { label: "开发流程", icon: "⚙️" },
-  collab: { label: "协作调试", icon: "🐛" },
-  other: { label: "其他", icon: "📦" },
-};
-
-const BUNDLED_SKILL_CATEGORIES = {
-  "lily-vision": "tools",
-  "websearch": "tools",
-  "webfetch": "tools",
-  "anthropics-web-artifacts-builder": "tools",
-  "superpowers-writing-plans": "workflow",
-  "superpowers-executing-plans": "workflow",
-  "superpowers-finishing-a-development-branch": "workflow",
-  "superpowers-test-driven-development": "workflow",
-  "superpowers-using-superpowers": "workflow",
-  "superpowers-brainstorming": "workflow",
-  "superpowers-receiving-code-review": "collab",
-  "superpowers-requesting-code-review": "collab",
-  "superpowers-systematic-debugging": "collab",
-  "superpowers-subagent-driven-development": "collab",
-};
-
-function getSkillCategory(skill) {
-  if (skill.category) return skill.category;
-  const mapped = BUNDLED_SKILL_CATEGORIES[skill.id];
-  return mapped && SKILL_CATEGORIES[mapped] ? mapped : "other";
-}
-
-function groupSkillsByCategory(skills) {
-  const groups = {};
-  for (const skill of skills) {
-    const cat = getSkillCategory(skill);
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(skill);
-  }
-  return groups;
-}
 
 function activeSessionId() {
   return store.get("activeSessionId");
@@ -71,13 +34,29 @@ function enabledSkillCount() {
   return (lastPayload?.skills || []).filter((s) => s.sessionEnabled).length;
 }
 
-function updateSkillButtonBadge() {
+function countCheckedInList(listEl) {
+  let count = 0;
+  listEl?.querySelectorAll(".skills-tree-row-input").forEach((input) => {
+    if (input.checked) count += 1;
+  });
+  return count;
+}
+
+function updateSkillButtonBadge(countOverride) {
   const btn = $("sessionSkillsBtn");
   const label = btn?.querySelector(".composer-skill-btn-label");
   if (!label) return;
-  const count = enabledSkillCount();
+  const count =
+    typeof countOverride === "number" ? countOverride : enabledSkillCount();
   const base = t("composer.skills");
   label.textContent = count > 0 ? `${base} (${count})` : base;
+}
+
+function applyRowSelectionState(row, checked) {
+  row.classList.toggle("skills-tree-row--selected", checked);
+  row.setAttribute("aria-checked", checked ? "true" : "false");
+  const mark = row.querySelector(".skills-tree-row-mark");
+  if (mark) mark.setAttribute("data-checked", checked ? "true" : "false");
 }
 
 function updateResetButton() {
@@ -87,12 +66,21 @@ function updateResetButton() {
   resetBtn.disabled = isBusy();
 }
 
+function updateBulkActionButtons(list) {
+  const busy = isBusy();
+  $("sessionSkillsSelectAllBtn")?.toggleAttribute("disabled", busy);
+  $("sessionSkillsDeselectAllBtn")?.toggleAttribute("disabled", busy);
+  list?.querySelectorAll(".skills-tree-group-select").forEach((select) => {
+    select.disabled = busy;
+  });
+}
+
 function collectEnabledIds(listEl) {
   const enabledIds = [];
-  listEl?.querySelectorAll(".session-skills-card").forEach((card) => {
-    const cb = card.querySelector('input[type="checkbox"]');
-    if (cb?.checked && card.dataset.skillId) {
-      enabledIds.push(card.dataset.skillId);
+  listEl?.querySelectorAll(".skills-tree-row").forEach((row) => {
+    const cb = row.querySelector('input[type="checkbox"]');
+    if (cb?.checked && row.dataset.skillId) {
+      enabledIds.push(row.dataset.skillId);
     }
   });
   return enabledIds;
@@ -102,6 +90,7 @@ function closePopover() {
   const popover = $("sessionSkillsPopover");
   if (!popover || popover.hidden) return;
   popover.hidden = true;
+  $("sessionSkillsBtn")?.classList.remove("is-open");
   hideSkillTags();
   updateSkillButtonBadge();
 }
@@ -117,6 +106,7 @@ function openPopover() {
   const composer = $("composer");
   if (!popover || !btn || !composer) return;
   popover.hidden = false;
+  btn.classList.add("is-open");
   const btnRect = btn.getBoundingClientRect();
   const composerRect = composer.getBoundingClientRect();
   popover.style.left = "8px";
@@ -129,20 +119,98 @@ function syncPopoverFromPayload() {
   if (!list || !lastPayload) return;
 
   const skillMap = new Map(lastPayload.skills.map((s) => [s.id, s]));
-  list.querySelectorAll(".session-skills-card").forEach((card) => {
-    const skill = skillMap.get(card.dataset.skillId);
+  list.querySelectorAll(".skills-tree-row").forEach((row) => {
+    const skill = skillMap.get(row.dataset.skillId);
     if (!skill) return;
-    const input = card.querySelector('input[type="checkbox"]');
+    const input = row.querySelector('input[type="checkbox"]');
     const checked = Boolean(skill.sessionEnabled);
     if (input) {
       input.checked = checked;
       input.disabled = isBusy();
     }
-    card.classList.toggle("session-skills-card--selected", checked);
-    card.classList.toggle("session-skills-card--global-off", !skill.globallyEnabled);
+    applyRowSelectionState(row, checked);
+    row.classList.toggle("skills-tree-row--global-off", !skill.globallyEnabled);
+    row.classList.toggle("skills-tree-row--busy", isBusy());
   });
+
+  list.querySelectorAll(".skills-tree-group").forEach((groupEl) => {
+    const rows = groupEl.querySelectorAll(".skills-tree-row");
+    let enabledCount = 0;
+    rows.forEach((row) => {
+      const skill = skillMap.get(row.dataset.skillId);
+      if (skill?.sessionEnabled) enabledCount += 1;
+    });
+    const countEl = groupEl.querySelector(".skills-tree-group-count");
+    if (countEl) {
+      countEl.textContent = t("composer.sessionSkillsGroupCount", {
+        enabled: enabledCount,
+        total: rows.length,
+      });
+    }
+    if (enabledCount > 0) {
+      groupEl.dataset.expanded = "true";
+      groupEl.classList.add("skills-tree-group--expanded");
+      groupEl.setAttribute("aria-expanded", "true");
+    }
+  });
+
+  syncAllSkillTreeGroupSelects(list);
+  updateBulkActionButtons(list);
   updateResetButton();
   updateSkillButtonBadge();
+}
+
+function updateGroupCount(groupEl, enabledCount, total) {
+  const countEl = groupEl.querySelector(".skills-tree-group-count");
+  if (countEl) {
+    countEl.textContent = t("composer.sessionSkillsGroupCount", {
+      enabled: enabledCount,
+      total,
+    });
+  }
+}
+
+async function setRowsChecked(rows, checked, list) {
+  if (isBusy()) {
+    showToast(t("toast.sessionSkillsBusy"), "error");
+    return false;
+  }
+  const scrollTop = list.scrollTop;
+  for (const row of rows) {
+    const input = row.querySelector('input[type="checkbox"]');
+    if (!input || input.disabled) continue;
+    input.checked = checked;
+    applyRowSelectionState(row, checked);
+  }
+  updateSkillButtonBadge(countCheckedInList(list));
+  const result = await enqueuePersist(collectEnabledIds(list));
+  if (!result) {
+    syncPopoverFromPayload();
+    return false;
+  }
+  list.querySelectorAll(".skills-tree-group").forEach((groupEl) => {
+    syncSkillTreeGroupSelect(groupEl);
+  });
+  list.scrollTop = scrollTop;
+  return true;
+}
+
+async function toggleSkillGroup(group, groupEl, checked, list) {
+  const rows = [...groupEl.querySelectorAll(".skills-tree-row")];
+  await setRowsChecked(rows, checked, list);
+}
+
+async function setAllSkillsChecked(list, checked) {
+  const rows = [...list.querySelectorAll(".skills-tree-row")];
+  await setRowsChecked(rows, checked, list);
+}
+
+let persistQueue = Promise.resolve();
+
+function enqueuePersist(enabledSkillIds) {
+  const next = persistQueue.then(() => persistSelection(enabledSkillIds));
+  persistQueue = next.catch(() => {});
+  return next;
 }
 
 async function persistSelection(enabledSkillIds) {
@@ -177,114 +245,127 @@ async function persistSelection(enabledSkillIds) {
   return result;
 }
 
-function buildSkillCard(skill, list) {
+async function toggleSkillRow(row, list) {
+  if (isBusy()) {
+    showToast(t("toast.sessionSkillsBusy"), "error");
+    return;
+  }
+
+  const input = row.querySelector('input[type="checkbox"]');
+  if (!input || input.disabled) return;
+
+  const scrollTop = list.scrollTop;
+  const nextChecked = !input.checked;
+  input.checked = nextChecked;
+  applyRowSelectionState(row, nextChecked);
+  row.classList.add("skills-tree-row--pulse");
+  window.setTimeout(() => row.classList.remove("skills-tree-row--pulse"), 220);
+  updateSkillButtonBadge(countCheckedInList(list));
+
+  const enabledIds = collectEnabledIds(list);
+  const result = await enqueuePersist(enabledIds);
+  if (!result) {
+    input.checked = !nextChecked;
+    applyRowSelectionState(row, input.checked);
+    updateSkillButtonBadge(countCheckedInList(list));
+  } else {
+    const groupEl = row.closest(".skills-tree-group");
+    if (groupEl) {
+      syncSkillTreeGroupSelect(groupEl);
+      const rows = groupEl.querySelectorAll(".skills-tree-row");
+      let enabledCount = 0;
+      rows.forEach((r) => {
+        if (r.querySelector('input[type="checkbox"]')?.checked) enabledCount += 1;
+      });
+      updateGroupCount(groupEl, enabledCount, rows.length);
+    }
+  }
+  list.scrollTop = scrollTop;
+}
+
+function buildSkillTreeRow(skill, list) {
   const busy = isBusy();
-  const card = document.createElement("label");
-  card.className = "session-skills-card";
-  card.dataset.skillId = skill.id;
-  if (skill.sessionEnabled) card.classList.add("session-skills-card--selected");
-  if (!skill.globallyEnabled) card.classList.add("session-skills-card--global-off");
+  const row = document.createElement("div");
+  row.className = "skills-tree-row skills-tree-row--pickable";
+  row.dataset.skillId = skill.id;
+  row.setAttribute("role", "treeitem");
+  row.tabIndex = busy ? -1 : 0;
+  if (skill.sessionEnabled) row.classList.add("skills-tree-row--selected");
+  if (!skill.globallyEnabled) row.classList.add("skills-tree-row--global-off");
+  if (busy) row.classList.add("skills-tree-row--busy");
+  applyRowSelectionState(row, Boolean(skill.sessionEnabled));
 
   const input = document.createElement("input");
   input.type = "checkbox";
-  input.className = "session-skills-card-input";
+  input.className = "skills-tree-row-input";
   input.checked = Boolean(skill.sessionEnabled);
   input.disabled = busy;
-  input.addEventListener("change", async () => {
-    const scrollTop = list.scrollTop;
-    card.classList.toggle("session-skills-card--selected", input.checked);
-    const enabledIds = collectEnabledIds(list);
-    const result = await persistSelection(enabledIds);
-    if (!result) {
-      input.checked = !input.checked;
-      card.classList.toggle("session-skills-card--selected", input.checked);
-    }
-    list.scrollTop = scrollTop;
+  input.tabIndex = -1;
+  input.setAttribute("aria-hidden", "true");
+
+  const mark = document.createElement("span");
+  mark.className = "skills-tree-row-mark";
+  mark.setAttribute("aria-hidden", "true");
+  mark.setAttribute("data-checked", skill.sessionEnabled ? "true" : "false");
+
+  row.addEventListener("click", (event) => {
+    event.preventDefault();
+    void toggleSkillRow(row, list);
+  });
+  row.addEventListener("keydown", (event) => {
+    if (event.key !== " " && event.key !== "Enter") return;
+    event.preventDefault();
+    void toggleSkillRow(row, list);
   });
 
-  const body = document.createElement("div");
-  body.className = "session-skills-card-body";
-
   const name = document.createElement("span");
-  name.className = "session-skills-card-name";
+  name.className = "skills-tree-row-name";
   name.textContent = tSkillName(skill);
 
-  const desc = document.createElement("span");
-  desc.className = "session-skills-card-desc";
   const descText = tSkillDesc(skill);
-  if (descText) {
-    desc.textContent = descText;
-  } else {
-    desc.hidden = true;
-  }
+  if (descText) row.title = descText;
 
-  body.append(name, desc);
-  card.append(input, body);
-
-  // Hover tooltip for description
-  if (descText) {
-    const tooltip = document.createElement("span");
-    tooltip.className = "session-skills-card-tooltip";
-    tooltip.textContent = descText;
-    card.appendChild(tooltip);
-  }
+  row.append(input, mark, name);
 
   if (!skill.globallyEnabled) {
     const badge = document.createElement("span");
-    badge.className = "session-skills-card-badge";
+    badge.className = "skills-tree-row-badge";
     badge.textContent = t("skills.globalOff");
-    card.append(badge);
+    row.append(badge);
   }
 
-  return card;
+  return row;
 }
 
 function renderPopoverList() {
   const list = $("sessionSkillsPopoverList");
   if (!list) return;
 
-  list.replaceChildren();
   const skills = lastPayload?.skills || [];
+  renderSkillTree(list, skills, {
+    enabledKey: "sessionEnabled",
+    countLabel: (group) =>
+      t("composer.sessionSkillsGroupCount", {
+        enabled: group.enabledCount,
+        total: group.skills.length,
+      }),
+    renderRow: (skill) => buildSkillTreeRow(skill, list),
+    groupSelect: {
+      disabled: isBusy(),
+      onToggle: (group, groupEl, checked) => {
+        void toggleSkillGroup(group, groupEl, checked, list);
+      },
+    },
+  });
 
-  if (!skills.length) {
-    updateResetButton();
-    updateSkillButtonBadge();
-    return;
-  }
-
-  const groups = groupSkillsByCategory(skills);
-  const catOrder = ["tools", "workflow", "collab", "other"];
-
-  for (const catId of catOrder) {
-    const catSkills = groups[catId];
-    if (!catSkills || !catSkills.length) continue;
-    const catInfo = SKILL_CATEGORIES[catId];
-    if (!catInfo) continue;
-
-    const section = document.createElement("div");
-    section.className = "session-skills-popover-section";
-
-    const header = document.createElement("div");
-    header.className = "session-skills-popover-section-header";
-    header.textContent = `${catInfo.icon} ${catInfo.label}`;
-    section.appendChild(header);
-
-    const grid = document.createElement("div");
-    grid.className = "session-skills-popover-section-grid";
-    for (const skill of catSkills) {
-      grid.appendChild(buildSkillCard(skill, list));
-    }
-    section.appendChild(grid);
-    list.appendChild(section);
-  }
-
+  syncAllSkillTreeGroupSelects(list);
+  updateBulkActionButtons(list);
   updateResetButton();
   updateSkillButtonBadge();
 }
 
 export async function refreshSessionSkillsUi() {
   const sessionId = activeSessionId();
-  const wrap = $("sessionSkillTagsWrap");
   const btn = $("sessionSkillsBtn");
   if (!sessionId) {
     lastPayload = null;
@@ -311,7 +392,11 @@ export async function refreshSessionSkillsUi() {
     };
     store.set("sessionSkills", lastPayload);
     if (isPopoverOpen()) {
-      syncPopoverFromPayload();
+      if (!listHasCurrentSkills($("sessionSkillsPopoverList"), lastPayload.skills)) {
+        renderPopoverList();
+      } else {
+        syncPopoverFromPayload();
+      }
     } else {
       hideSkillTags();
       updateSkillButtonBadge();
@@ -319,6 +404,16 @@ export async function refreshSessionSkillsUi() {
   } catch {
     lastPayload = null;
   }
+}
+
+function listHasCurrentSkills(listEl, skills) {
+  if (!listEl) return false;
+  const ids = new Set((skills || []).map((s) => s.id));
+  const rowIds = [...listEl.querySelectorAll(".skills-tree-row")].map(
+    (row) => row.dataset.skillId,
+  );
+  if (rowIds.length !== ids.size) return false;
+  return rowIds.every((id) => ids.has(id));
 }
 
 export function initSessionSkills() {
@@ -344,11 +439,22 @@ export function initSessionSkills() {
   $("sessionSkillsResetBtn")?.addEventListener("click", async () => {
     const list = $("sessionSkillsPopoverList");
     const scrollTop = list?.scrollTop ?? 0;
-    const result = await persistSelection(null);
+    const result = await enqueuePersist(null);
     if (result?.ok) {
       showToast(t("toast.sessionSkillsReset"), "success");
+      syncPopoverFromPayload();
       if (list) list.scrollTop = scrollTop;
     }
+  });
+
+  $("sessionSkillsSelectAllBtn")?.addEventListener("click", () => {
+    const list = $("sessionSkillsPopoverList");
+    if (list) void setAllSkillsChecked(list, true);
+  });
+
+  $("sessionSkillsDeselectAllBtn")?.addEventListener("click", () => {
+    const list = $("sessionSkillsPopoverList");
+    if (list) void setAllSkillsChecked(list, false);
   });
 
   document.addEventListener("click", (e) => {

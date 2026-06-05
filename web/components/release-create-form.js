@@ -6,7 +6,7 @@ import { CheckboxField, Field, SubmitButton } from "./admin-forms";
 import { useI18n } from "../lib/use-i18n";
 
 const initialState = { ok: null, message: "" };
-const platforms = ["darwin-arm64", "win32-x64"];
+const platforms = ["darwin-arm64", "darwin-x64", "win32-x64"];
 
 function joinUrl(...parts) {
   return parts

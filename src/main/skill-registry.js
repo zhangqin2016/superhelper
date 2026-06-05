@@ -206,6 +206,98 @@ function findRegistryEntry(registry, skillId, version) {
   return matches[0];
 }
 
+function mergeCategoryLists(...lists) {
+  const byId = new Map();
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const cat of list) {
+      if (!cat?.id) continue;
+      byId.set(String(cat.id), {
+        id: String(cat.id),
+        label: cat.label ? String(cat.label) : String(cat.id),
+      });
+    }
+  }
+  return Array.from(byId.values());
+}
+
+function categoriesForRegistry(registry) {
+  const merged = mergeCategoryLists(registry?.categories, loadBundledRegistry()?.categories);
+  if (merged.length > 0) return merged;
+
+  const byId = new Map();
+  for (const skill of registry?.skills || []) {
+    if (!skill?.category) continue;
+    if (byId.has(skill.category)) continue;
+    byId.set(skill.category, {
+      id: skill.category,
+      label: skill.categoryLabel || skill.category,
+    });
+  }
+  return Array.from(byId.values());
+}
+
+/** Service entries win on id collision; bundled fills gaps for offline catalog. */
+function mergeRegistries(primary, bundled) {
+  if (!bundled?.skills?.length) {
+    if (!primary) return null;
+    return {
+      ...primary,
+      categories: categoriesForRegistry(primary),
+    };
+  }
+  if (!primary?.skills?.length) {
+    return {
+      ...bundled,
+      sourceUrl: primary?.sourceUrl || bundled.sourceUrl,
+      fetchedAt: primary?.fetchedAt || bundled.fetchedAt || null,
+      publisher: primary?.publisher || bundled.publisher || "",
+      categories: mergeCategoryLists(primary?.categories, bundled.categories),
+      bundledFallback: true,
+    };
+  }
+
+  const byId = new Map(bundled.skills.map((entry) => [entry.id, entry]));
+  for (const entry of primary.skills) {
+    byId.set(entry.id, entry);
+  }
+
+  const categories = mergeCategoryLists(primary.categories, bundled.categories);
+
+  const seenIndexUrls = new Set();
+  const remoteIndexes = [];
+  for (const item of [...(primary.remoteIndexes || []), ...(bundled.remoteIndexes || [])]) {
+    const url = item?.url ? String(item.url) : "";
+    if (!url || seenIndexUrls.has(url)) continue;
+    seenIndexUrls.add(url);
+    remoteIndexes.push(item);
+  }
+
+  const bundledOnlyCount = bundled.skills.filter((entry) => {
+    return !primary.skills.some((primaryEntry) => primaryEntry.id === entry.id);
+  }).length;
+
+  return {
+    ...primary,
+    skills: Array.from(byId.values()),
+    categories,
+    remoteIndexes,
+    bundledSupplement: bundledOnlyCount > 0,
+    bundledFallback: false,
+  };
+}
+
+function supplementRegistryWithBundled(registry) {
+  const bundled = loadBundledRegistry() || ensureBundledRegistryCached();
+  if (!registry) return bundled;
+  const merged = mergeRegistries(registry, bundled);
+  if (!merged) return bundled;
+  return {
+    ...merged,
+    categories: categoriesForRegistry(merged),
+  };
+}
+
 function registrySourceMatches(state, cached) {
   if (!cached) return false;
   return cached.sourceUrl === BUNDLED_REGISTRY_SOURCE || cached.sourceUrl === state.serviceRegistryUrl;
@@ -220,6 +312,10 @@ module.exports = {
   parseRegistryJson,
   cacheRegistry,
   findRegistryEntry,
+  mergeRegistries,
+  mergeCategoryLists,
+  categoriesForRegistry,
+  supplementRegistryWithBundled,
   isValidRegistryUrl,
   normalizeRegistryEntry,
   registrySourceMatches,

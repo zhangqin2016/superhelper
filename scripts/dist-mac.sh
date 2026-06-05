@@ -7,8 +7,14 @@ cd "$ROOT"
 
 source "$(dirname "$0")/setup-proxy.sh"
 
-echo "[dist-mac] 打包 darwin-arm64（新款 Mac 默认架构，签名 bundles 已跳过）"
+ARCH="${1:-arm64}"
+if [[ "$ARCH" != "arm64" && "$ARCH" != "x64" ]]; then
+  echo "[dist-mac] 错误: 架构必须是 arm64 或 x64，当前: ${ARCH}" >&2
+  exit 1
+fi
+
+echo "[dist-mac] 打包 darwin-${ARCH}（签名 bundles 已跳过）"
 node scripts/fix-runtime-symlinks.mjs
 node scripts/purge-macos-junk.mjs --check
 
-exec npx electron-builder --mac --arm64 "$@"
+exec npx electron-builder --mac "--${ARCH}" "${@:2}"

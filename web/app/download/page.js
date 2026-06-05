@@ -20,11 +20,13 @@ export default async function DownloadPage() {
   const { locale, t } = await getI18n();
   const releases = await Promise.all([
     release("darwin-arm64"),
+    release("darwin-x64"),
     release("win32-x64"),
   ]);
   const cards = [
-    ["macOS Apple Silicon", "darwin-arm64", "Lily Workbench macOS DMG", releases[0]],
-    ["Windows x64", "win32-x64", "Lily Workbench Windows installer", releases[1]],
+    ["macOS Apple Silicon", "darwin-arm64", "M 系列芯片 Mac · DMG", releases[0]],
+    ["macOS Intel", "darwin-x64", "Intel 芯片 Mac · DMG", releases[1]],
+    ["Windows x64", "win32-x64", "Windows 10/11 · Installer", releases[2]],
   ];
 
   return (
@@ -34,7 +36,7 @@ export default async function DownloadPage() {
         <div className="shell py-16">
           <h1 className="text-5xl font-semibold text-slate-950">{t.pages.downloadTitle}</h1>
           <p className="mt-4 max-w-2xl text-lg text-slate-500">{t.pages.downloadDesc}</p>
-          <div className="mt-10 grid gap-5 md:grid-cols-2">
+          <div className="mt-10 grid gap-5 lg:grid-cols-3">
             {cards.map(([title, platform, file, item]) => (
               <div key={platform} className="table-card p-6">
                 <h2 className="text-2xl font-semibold">{title}</h2>

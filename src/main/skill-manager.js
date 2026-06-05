@@ -8,6 +8,7 @@ const { ensureRuntimeNodeShim, resolveRuntimeNodePath } = require("./runtime-nod
 const { compareSemver, isAppVersionCompatible } = require("./skill-version");
 const skillRegistry = require("./skill-registry");
 const skillInstaller = require("./skill-installer");
+const skillPresets = require("./skill-presets");
 const { copyDirRecursiveShipSafe } = require("./ship-ignore");
 
 const BUNDLED_SKILL_IDS = ["lily-vision", "websearch", "webfetch"];
@@ -353,6 +354,8 @@ function listSkillsForSessionPublic(session) {
       id: skill.id,
       name: skill.name,
       description: skill.description,
+      category: skill.category || null,
+      categoryLabel: skill.categoryLabel || null,
       globallyEnabled: skill.enabled,
       sessionEnabled: effectiveIds.has(skill.id),
     })),
@@ -501,17 +504,42 @@ function availableSkillToPublic(registryEntry, installedVersion) {
   };
 }
 
-async function resolveRegistry({ fetch = true, allowBundledFallback = true } = {}) {
+function finalizeResolvedRegistry(registry, { serviceUrl = "", fromService = false } = {}) {
+  const supplemented = skillRegistry.supplementRegistryWithBundled(registry);
+  if (!supplemented) {
+    return { ok: false, error: "NOT_FOUND", detail: "内置技能目录不可用" };
+  }
+  return {
+    ok: true,
+    registry: {
+      ...supplemented,
+      serviceCatalog: fromService && Boolean(registry?.skills?.length),
+      bundledCatalogFallback: Boolean(
+        supplemented.bundledFallback || supplemented.bundledSupplement,
+      ),
+      serviceRegistryUrl: serviceUrl || null,
+    },
+  };
+}
+
+async function resolveRegistry({ fetch = true } = {}) {
   const serviceUrl = getServiceRegistryUrl();
   if (serviceUrl) {
     if (fetch) {
       const service = await fetchServiceRegistry();
-      if (service.ok) return service;
-      if (!allowBundledFallback) return service;
+      if (service.ok) {
+        return finalizeResolvedRegistry(service.registry, {
+          serviceUrl,
+          fromService: true,
+        });
+      }
     } else {
       const cached = skillRegistry.loadCachedRegistry();
       if (cached?.sourceUrl === serviceUrl) {
-        return { ok: true, registry: cached };
+        return finalizeResolvedRegistry(cached, {
+          serviceUrl,
+          fromService: true,
+        });
       }
     }
   }
@@ -519,10 +547,7 @@ async function resolveRegistry({ fetch = true, allowBundledFallback = true } = {
   const bundled = fetch
     ? skillRegistry.ensureBundledRegistryCached()
     : skillRegistry.loadCachedRegistry() || skillRegistry.ensureBundledRegistryCached();
-  if (!bundled) {
-    return { ok: false, error: "NOT_FOUND", detail: "内置技能目录不可用" };
-  }
-  return { ok: true, registry: bundled };
+  return finalizeResolvedRegistry(bundled);
 }
 
 async function checkRegistryUpdates({ fetch = true } = {}) {
@@ -540,6 +565,8 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
         updatesCount: 0,
         categories: [],
         remoteIndexes: [],
+        presets: listSkillPresetsPublic(),
+        featuredSkillIds: skillPresets.FEATURED_SKILL_IDS,
         bundledCatalog: true,
       };
     }
@@ -584,26 +611,148 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
   state.registryCachedAt = fetchedAt;
   saveSkillsState();
 
+  const sortedAvailable = sortAvailableSkills(available);
+
   return {
     ok: true,
     registryUrl: registry.sourceUrl || serviceRegistryUrl || skillRegistry.BUNDLED_REGISTRY_SOURCE,
     publisher: registry.publisher || "",
     fetchedAt: registry.fetchedAt || state.registryCachedAt,
     installed,
-    available,
+    available: sortedAvailable,
     updates,
     updatesCount: updates.length,
-    categories: registry.categories || [],
+    categories: skillRegistry.categoriesForRegistry(registry),
     remoteIndexes: registry.remoteIndexes || [],
-    bundledCatalog: registry.sourceUrl === skillRegistry.BUNDLED_REGISTRY_SOURCE,
-    serviceCatalog: registry.sourceUrl === serviceRegistryUrl,
+    presets: listSkillPresetsPublic(),
+    featuredSkillIds: skillPresets.FEATURED_SKILL_IDS,
+    bundledCatalog:
+      registry.sourceUrl === skillRegistry.BUNDLED_REGISTRY_SOURCE ||
+      Boolean(registry.bundledCatalogFallback),
+    serviceCatalog:
+      Boolean(registry.serviceCatalog) || registry.sourceUrl === serviceRegistryUrl,
+  };
+}
+
+function sortAvailableSkills(available) {
+  const featured = new Set(skillPresets.FEATURED_SKILL_IDS);
+  return [...(available || [])].sort((a, b) => {
+    const aFeatured = featured.has(a.id) ? 0 : 1;
+    const bFeatured = featured.has(b.id) ? 0 : 1;
+    if (aFeatured !== bFeatured) return aFeatured - bFeatured;
+    return String(a.name || a.id).localeCompare(String(b.name || b.id), "zh-CN");
+  });
+}
+
+function listSkillPresetsPublic() {
+  ensureSkillsStateDefaults();
+  return skillPresets.listPresetProgress({
+    isInstalled: (skillId) => Boolean(readInstalledManifest(skillId)),
+    isEnabled: (skillId) => isSkillEnabled(skillId),
+  });
+}
+
+const SKILL_PRESET_GUIDE_STATUSES = new Set(["applied", "dismissed", "deferred"]);
+
+function normalizeSkillPresetGuideStatus(raw) {
+  if (typeof raw !== "string" || !SKILL_PRESET_GUIDE_STATUSES.has(raw)) return null;
+  return raw;
+}
+
+function getSkillPresetGuideState() {
+  ensureSkillsStateDefaults();
+  const state = loadSkillsState();
+  const status = normalizeSkillPresetGuideStatus(state.meta?.skillPresetGuide);
+  const guidePresetId = skillPresets.GUIDE_PRESET_ID;
+  const guidePreset = listSkillPresetsPublic().find((p) => p.id === guidePresetId);
+  const guidePresetComplete = Boolean(guidePreset?.complete);
+  const shouldShow =
+    !guidePresetComplete && status !== "applied" && status !== "dismissed";
+  return {
+    shouldShow,
+    status,
+    guidePresetId,
+    guidePresetComplete,
+    guidePreset,
+  };
+}
+
+function setSkillPresetGuideStatus(status) {
+  const normalized = normalizeSkillPresetGuideStatus(status);
+  if (!normalized) {
+    return { ok: false, error: "INVALID_STATUS" };
+  }
+  ensureSkillsStateDefaults();
+  const state = loadSkillsState();
+  if (!state.meta || typeof state.meta !== "object") {
+    state.meta = {};
+  }
+  state.meta.skillPresetGuide = normalized;
+  saveSkillsState();
+  return { ok: true, status: normalized, guide: getSkillPresetGuideState() };
+}
+
+async function applySkillPreset(presetId) {
+  const preset = skillPresets.getPresetById(presetId);
+  if (!preset) {
+    return { ok: false, error: "NOT_FOUND" };
+  }
+
+  const resolved = await resolveRegistry({
+    fetch: Boolean(getServiceRegistryUrl()),
+  });
+  if (!resolved.ok) return resolved;
+
+  const registry = resolved.registry;
+  const skillIds = skillPresets.filterSkillIdsInRegistry(registry, preset.skillIds);
+  if (skillIds.length === 0) {
+    return { ok: false, error: "PRESET_EMPTY" };
+  }
+
+  const installed = [];
+  const enabled = [];
+  const failed = [];
+
+  for (const skillId of skillIds) {
+    if (!readInstalledManifest(skillId)) {
+      const entry = skillRegistry.findRegistryEntry(registry, skillId);
+      if (!entry) {
+        failed.push({ id: skillId, error: "NOT_FOUND" });
+        continue;
+      }
+      const installResult = await skillInstaller.installFromRegistryEntry(entry);
+      if (!installResult.ok) {
+        failed.push({ id: skillId, error: installResult.error || "INSTALL_FAILED" });
+        continue;
+      }
+      installed.push(skillId);
+      reportSkillEvent("install", skillId, installResult.version, { presetId });
+    }
+
+    const enableResult = setSkillEnabled(skillId, true);
+    if (enableResult.ok) {
+      enabled.push(skillId);
+    } else {
+      failed.push({ id: skillId, error: enableResult.error || "ENABLE_FAILED" });
+    }
+  }
+
+  mergeAgentGuide();
+
+  return {
+    ok: enabled.length > 0,
+    presetId,
+    installed,
+    enabled,
+    failed,
+    presets: listSkillPresetsPublic(),
+    skills: listSkillsPublic(),
   };
 }
 
 async function installOrUpdateFromRegistry(skillId, version) {
   const resolved = await resolveRegistry({
     fetch: Boolean(getServiceRegistryUrl()),
-    allowBundledFallback: !getServiceRegistryUrl(),
   });
   if (!resolved.ok) return resolved;
 
@@ -755,6 +904,10 @@ module.exports = {
   ensureBundledPresent,
   getServiceRegistryUrl,
   checkRegistryUpdates,
+  listSkillPresetsPublic,
+  getSkillPresetGuideState,
+  setSkillPresetGuideStatus,
+  applySkillPreset,
   installFromRegistry,
   updateFromRegistry,
   uninstallRemoteSkill,

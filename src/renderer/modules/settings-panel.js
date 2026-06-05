@@ -54,6 +54,14 @@ function setPanelOpen(open) {
   if (open) switchSettingsPage(activeSettingsPage);
 }
 
+/** @param {string} [pageId] */
+export function openSettingsPage(pageId = "general") {
+  if (pageId && SETTINGS_PAGES.includes(pageId)) {
+    activeSettingsPage = pageId;
+  }
+  setPanelOpen(true);
+}
+
 export async function initSettingsPanel() {
   const openBtn = $("settingsBtn");
   const panel = $("settingsPanel");

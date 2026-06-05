@@ -143,7 +143,7 @@ function yamlString(value) {
 }
 
 function writeAutoUpdateYaml({ platform, version, artifact, notes }) {
-  const metadataName = platform === "darwin-arm64" ? "latest-mac.yml" : "latest.yml";
+  const metadataName = platform.startsWith("darwin-") ? "latest-mac.yml" : "latest.yml";
   const releaseDir = path.join(ROOT, "release", version, "auto", platform);
   fs.mkdirSync(releaseDir, { recursive: true });
   const artifactName = path.basename(artifact);
@@ -176,8 +176,11 @@ function artifactCandidates(target, productName, version) {
     if (fs.existsSync(path.join(ROOT, x64Dmg))) {
       items.push(["darwin-x64", x64Dmg]);
     }
-    if (target === "mac" && !items.some(([platform]) => platform.startsWith("darwin-"))) {
-      fail(`no mac DMG found for ${version} under dist/`);
+    if (!items.some(([platform]) => platform === "darwin-arm64")) {
+      fail(`no mac arm64 DMG found for ${version} under dist/`);
+    }
+    if (!items.some(([platform]) => platform === "darwin-x64")) {
+      fail(`no mac x64 DMG found for ${version} under dist/`);
     }
   }
   if (target === "win" || target === "all") {
@@ -201,15 +204,26 @@ function artifactCandidates(target, productName, version) {
 function autoUpdateCandidates(target, productName, version) {
   const items = [];
   if (target === "mac" || target === "all") {
-    const macZip = distFile(`${productName}-${version}-arm64.zip`);
-    if (fs.existsSync(path.join(ROOT, macZip))) {
+    const arm64Zip = distFile(`${productName}-${version}-arm64.zip`);
+    if (fs.existsSync(path.join(ROOT, arm64Zip))) {
       items.push({
         platform: "darwin-arm64",
-        artifact: macZip,
-        blockmap: fs.existsSync(path.join(ROOT, `${macZip}.blockmap`)) ? `${macZip}.blockmap` : "",
+        artifact: arm64Zip,
+        blockmap: fs.existsSync(path.join(ROOT, `${arm64Zip}.blockmap`)) ? `${arm64Zip}.blockmap` : "",
       });
-    } else if (target === "mac" || target === "all") {
-      fail(`no mac auto-update zip found for ${version}: ${macZip}`);
+    } else {
+      fail(`no mac arm64 auto-update zip found for ${version}: ${arm64Zip}`);
+    }
+
+    const x64Zip = distFile(`${productName}-${version}-x64.zip`);
+    if (fs.existsSync(path.join(ROOT, x64Zip))) {
+      items.push({
+        platform: "darwin-x64",
+        artifact: x64Zip,
+        blockmap: fs.existsSync(path.join(ROOT, `${x64Zip}.blockmap`)) ? `${x64Zip}.blockmap` : "",
+      });
+    } else {
+      fail(`no mac x64 auto-update zip found for ${version}: ${x64Zip}`);
     }
   }
   if (target === "win" || target === "all") {

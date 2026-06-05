@@ -50,6 +50,9 @@ function runtimeVisualSig(runtime) {
     live.timeline?.length || 0,
     toolSig,
     elapsed,
+    live.permissions?.size || 0,
+    live.questions?.size || 0,
+    live.hooks?.size || 0,
     runtime.queue?.length || 0,
   ].join("|");
 }
@@ -305,7 +308,7 @@ export function syncComposerForActiveSession() {
   const interrupt = $("interruptBtn");
   if (input) {
     input.placeholder = busy
-      ? canInterrupt(sid) ? "助手正在处理，继续发送会加入队列..." : "等待处理中..."
+      ? (canInterrupt(sid) ? t("composer.placeholderBusy") : t("composer.placeholderWaiting"))
       : t("composer.placeholder");
   }
   if (submit) submit.disabled = false;
