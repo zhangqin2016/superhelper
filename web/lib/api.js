@@ -1,15 +1,16 @@
 import { cookies } from "next/headers";
+import { adminCredentialHeaders } from "./admin-auth-shared.mjs";
 
 const API_BASE = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "https://lily.lanrensoft.cn";
 
 async function adminHeaders(extra = {}) {
   const store = await cookies().catch(() => null);
-  const token = process.env.ADMIN_TOKEN || store?.get("lily_admin_token")?.value || "";
+  const token = store?.get("lily_admin_token")?.value || "";
   const session = store?.get("lily_admin_session")?.value || "";
+  const credentials = adminCredentialHeaders({ token, session }) || {};
   return {
     ...extra,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(!token && session ? { Cookie: `lily_admin_session=${encodeURIComponent(session)}` } : {}),
+    ...credentials,
   };
 }
 

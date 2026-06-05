@@ -14,15 +14,14 @@ Environment:
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=https://lily.lanrensoft.cn
-ADMIN_TOKEN=change-me
 RELEASE_CDN_BASE_URL=https://qny.lanrensoft.cn
 RELEASE_CDN_PREFIX=app/updates
 ```
 
 Admin access:
 
-- If `ADMIN_TOKEN` is set in the web process, admin pages use it as the server-side API token.
-- If `ADMIN_TOKEN` is not set, open `/admin/login` and enter the API admin token. The web app stores it in an HttpOnly cookie after validating it against the server API.
+- Admin pages only trust the browser login cookie. Do not inject `ADMIN_TOKEN` into the web process.
+- Open `/admin/login` and sign in with the configured admin account. The web app stores a validated HttpOnly session cookie.
 - The API server must be running before login, otherwise the login page will show an API unavailable error.
 
 Routes:
@@ -34,7 +33,7 @@ Routes:
 /docs         Documentation
 /changelog    Release notes
 /admin        Admin dashboard
-/admin/login  Admin token login
+/admin/login  Admin login
 ```
 
 Release admin:

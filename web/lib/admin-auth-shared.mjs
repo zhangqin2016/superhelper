@@ -17,3 +17,9 @@ export async function readAdminSummaryResponse(response) {
   const json = await response.json().catch(() => null);
   return isAdminSummaryPayload(json) ? json : null;
 }
+
+export function adminCredentialHeaders({ token = "", session = "" } = {}) {
+  if (token) return { Authorization: `Bearer ${token}` };
+  if (session) return { Cookie: `lily_admin_session=${encodeURIComponent(session)}` };
+  return null;
+}
