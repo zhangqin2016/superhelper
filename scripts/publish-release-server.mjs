@@ -7,10 +7,15 @@ function usage() {
   console.error(`usage:
   node scripts/publish-release-server.mjs \\
     --api https://api.example.com \\
-    --token ADMIN_TOKEN \\
+    [--token ADMIN_TOKEN | --email admin@example.com --password ADMIN_PASSWORD] \\
     --version 0.2.0 \\
     --artifact darwin-arm64=dist/Lily\\ Workbench-0.2.0-arm64.dmg=https://cdn/app.dmg \\
     [--notes "release notes"] [--force] [--disabled]
+
+env:
+  RELEASE_ADMIN_TOKEN
+  RELEASE_ADMIN_EMAIL
+  RELEASE_ADMIN_PASSWORD
 `);
   process.exit(1);
 }
@@ -57,15 +62,40 @@ function parseArtifact(raw) {
 }
 
 const options = args();
-if (!options.api || !options.token || !options.version || !options.artifact.length) usage();
+options.token = options.token || process.env.RELEASE_ADMIN_TOKEN || "";
+options.email = options.email || process.env.RELEASE_ADMIN_EMAIL || "";
+options.password = options.password || process.env.RELEASE_ADMIN_PASSWORD || "";
+if (!options.api || !options.version || !options.artifact.length) usage();
+if (!options.token && (!options.email || !options.password)) usage();
 
 const api = String(options.api).replace(/\/+$/, "");
+let authHeaders = options.token ? { Authorization: `Bearer ${options.token}` } : null;
+
+if (!authHeaders) {
+  const loginResponse = await fetch(`${api}/api/admin/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: options.email,
+      password: options.password,
+    }),
+  });
+  const loginJson = await loginResponse.json().catch(() => ({}));
+  if (!loginResponse.ok) {
+    throw new Error(`admin login failed: ${loginResponse.status} ${loginJson.code || ""}`);
+  }
+  const setCookie = loginResponse.headers.get("set-cookie") || "";
+  const session = setCookie.match(/(?:^|,\s*)lily_admin_session=([^;]+)/)?.[1];
+  if (!session) throw new Error("admin login did not return lily_admin_session cookie");
+  authHeaders = { Cookie: `lily_admin_session=${session}` };
+}
+
 for (const artifact of options.artifact.map(parseArtifact)) {
   const response = await fetch(`${api}/api/admin/releases`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${options.token}`,
+      ...authHeaders,
     },
     body: JSON.stringify({
       version: options.version,

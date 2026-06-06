@@ -4,8 +4,6 @@
 const PANEL_HIDDEN_CODES = new Set([
   "sentToCli",
   "cliOutputReceived",
-  "waitingForFirstResponse",
-  "longWait",
   "thinkingProgress",
   "compactBoundary",
   "compactComplete",
@@ -20,6 +18,8 @@ const PANEL_HIDDEN_CODES = new Set([
 ]);
 
 const LIVE_PROGRESS_PANEL_CODES = new Set([
+  "waitingForFirstResponse",
+  "longWait",
   "taskProgress",
   "taskCompleted",
   "toolProgress",

@@ -219,16 +219,12 @@ export function createLiveTurnArticleShell(liveTurn) {
   prompts.className = "assistant-turn-prompts";
   prompts.dataset.role = "prompts";
 
-  const queue = document.createElement("div");
-  queue.className = "assistant-turn-queue";
-  queue.dataset.role = "queue";
-
-  article.append(header, narrative, process, footer, prompts, queue);
+  article.append(header, narrative, process, footer, prompts);
   return article;
 }
 
 export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
-  const { sessionId, queue, failed = false } = ctx;
+  const { sessionId, failed = false } = ctx;
   const sealed = Boolean(liveTurn.final) || ctx.sealed;
   article.classList.toggle("is-sealed", sealed);
   article.classList.toggle("is-live", !sealed);
@@ -257,7 +253,6 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
   renderProcess(article.querySelector('[data-role="process"]'), liveTurn, { sessionId, sealed });
   if (sessionId) {
     renderPrompts(article.querySelector('[data-role="prompts"]'), sessionId, liveTurn);
-    renderQueue(article.querySelector('[data-role="queue"]'), sessionId, queue);
   }
 
   if (liveTurn.final && !liveTurn.finalRendered) {
@@ -746,6 +741,9 @@ function hookCard(sessionId, item) {
 function questionCard(sessionId, item) {
   const card = promptCard(t("turn.question.cardTitle"), "");
   const questions = item.questions || [];
+  const requiresExplicitSubmit =
+    questions.length > 1 || questions.some((question) => Boolean(question.multiSelect));
+  let needsSubmit = false;
   for (const question of questions) {
     const block = document.createElement("div");
     block.className = "assistant-question-block";
@@ -756,6 +754,7 @@ function questionCard(sessionId, item) {
 
     const options = Array.isArray(question.options) ? question.options.filter((o) => o?.label) : [];
     if (options.length) {
+      if (requiresExplicitSubmit) needsSubmit = true;
       const optionsEl = document.createElement("div");
       optionsEl.className = "assistant-question-options";
       for (const option of options) {
@@ -763,45 +762,82 @@ function questionCard(sessionId, item) {
         btn.type = "button";
         btn.className = "assistant-question-option";
         btn.textContent = option.label;
+        btn.dataset.questionId = question.id || question.question || "answer";
+        btn.dataset.value = option.label;
+        btn.setAttribute("aria-pressed", "false");
         if (option.description) btn.title = option.description;
-        btn.addEventListener("click", async () => {
-          try {
-            const result = await window.assistantClient.respondUserQuestion(
-              sessionId,
-              item.requestId,
-              { [question.id || "answer"]: option.label },
-              option.label,
-            );
-            if (!result?.ok) showToast(result?.detail || result?.error || t("common.actionFailed"), "warning");
-          } catch (err) {
-            showToast(err?.message || t("common.actionFailed"), "error");
-          }
-        });
+        if (requiresExplicitSubmit) {
+          btn.addEventListener("click", () => {
+            if (!question.multiSelect) {
+              for (const sibling of optionsEl.querySelectorAll(".assistant-question-option")) {
+                sibling.classList.remove("is-selected");
+                sibling.setAttribute("aria-pressed", "false");
+              }
+            }
+            const selected = !btn.classList.contains("is-selected");
+            btn.classList.toggle("is-selected", selected);
+            btn.setAttribute("aria-pressed", selected ? "true" : "false");
+          });
+        } else {
+          btn.addEventListener("click", async () => {
+            try {
+              const result = await window.assistantClient.respondUserQuestion(
+                sessionId,
+                item.requestId,
+                { [question.id || question.question || "answer"]: option.label },
+                option.label,
+              );
+              if (!result?.ok) showToast(result?.detail || result?.error || t("common.actionFailed"), "warning");
+            } catch (err) {
+              showToast(err?.message || t("common.actionFailed"), "error");
+            }
+          });
+        }
         optionsEl.appendChild(btn);
       }
       block.appendChild(optionsEl);
     } else {
+      needsSubmit = true;
       const input = document.createElement("textarea");
       input.className = "assistant-question-input";
       input.rows = 2;
       input.placeholder = t("question.otherPlaceholder");
-      input.dataset.questionId = question.id || "answer";
+      input.dataset.questionId = question.id || question.question || "answer";
       block.appendChild(input);
     }
     card.appendChild(block);
   }
-  if (card.querySelector(".assistant-question-input")) {
+  if (needsSubmit) {
     const actions = actionRow();
     actions.appendChild(button(t("question.submit"), async () => {
       const answers = {};
+      for (const question of questions) {
+        const questionId = question.id || question.question || "answer";
+        const selected = Array.from(card.querySelectorAll(`.assistant-question-option.is-selected[data-question-id="${cssEscape(questionId)}"]`))
+          .map((btn) => btn.dataset.value)
+          .filter(Boolean);
+        if (selected.length) {
+          answers[questionId] = question.multiSelect ? selected : selected[0];
+        }
+      }
       for (const input of card.querySelectorAll(".assistant-question-input")) {
         answers[input.dataset.questionId] = input.value;
       }
-      return window.assistantClient.respondUserQuestion(sessionId, item.requestId, answers, Object.values(answers).join("\n"));
+      return window.assistantClient.respondUserQuestion(
+        sessionId,
+        item.requestId,
+        answers,
+        Object.values(answers).flat().filter(Boolean).join("\n"),
+      );
     }));
     card.appendChild(actions);
   }
   return card;
+}
+
+function cssEscape(value) {
+  if (globalThis.CSS?.escape) return globalThis.CSS.escape(String(value));
+  return String(value).replace(/["\\]/g, "\\$&");
 }
 
 function promptCard(title, detail) {
@@ -840,32 +876,6 @@ function button(label, action) {
   return btn;
 }
 
-function renderQueue(root, sessionId, queue) {
-  if (!root) return;
-  root.replaceChildren();
-  root.hidden = !queue?.length;
-  if (!queue?.length) return;
-  const title = document.createElement("div");
-  title.className = "assistant-queue-title";
-  title.textContent = t("timeline.queuedTitle", { count: queue.length });
-  root.appendChild(title);
-  for (const item of queue) {
-    const row = document.createElement("div");
-    row.className = "assistant-queue-item";
-    const text = document.createElement("span");
-    text.textContent = item.text || t("composer.queueAttachmentOnly");
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.textContent = "×";
-    remove.addEventListener("click", async () => {
-      const result = await window.assistantClient.cancelQueuedMessage(sessionId, item.id);
-      if (!result?.ok) showToast(t("toast.queueCancelFailed"), "warning");
-    });
-    row.append(text, remove);
-    root.appendChild(row);
-  }
-}
-
 function renderFinal(article, liveTurn) {
   if (article.querySelector(".assistant-turn-report")) return;
   if (!shouldShowFinal(liveTurn)) return;
@@ -893,4 +903,3 @@ function renderFinal(article, liveTurn) {
   report.append(label, final);
   article.appendChild(report);
 }
-

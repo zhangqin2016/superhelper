@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 "use strict";
 
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("node:path");
 
 const root = path.join(__dirname, "..");
+const capturedQuestionResponses = [];
+
+ipcMain.handle("assistant:question-response", (_event, payload) => {
+  capturedQuestionResponses.push(payload);
+  return { ok: true };
+});
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
@@ -49,6 +55,158 @@ app.whenReady().then(async () => {
   if (result.includes("FAIL")) {
     app.exitCode = 1;
   } else {
+    const liveTurnQueueResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const liveTurn = {
+          turnId: "turn_queue_regression",
+          phase: "tool_running",
+          assistantText: "正在处理",
+          thinkingText: "",
+          contentBlocks: [],
+          processEvents: [],
+          tools: new Map(),
+          timeline: [],
+          notices: [],
+          permissions: new Map(),
+          questions: new Map(),
+          hooks: new Map(),
+          startedAt: Date.now(),
+        };
+        const article = createLiveTurnArticleShell(liveTurn);
+        renderLiveTurnArticle(article, liveTurn, {
+          sessionId: "session_queue_regression",
+          queue: [{ id: "queue_1", text: "这条待发送不能出现在任务正文里" }],
+        });
+        if (article.textContent.includes("这条待发送不能出现在任务正文里")) {
+          throw new Error("queued messages leaked into live turn article");
+        }
+        if (article.querySelector("[data-role='queue']")) {
+          throw new Error("live turn article should not own queue UI");
+        }
+        return "live-turn-queue-regression: ok";
+      }
+    )()`);
+    console.log(liveTurnQueueResult);
+    const liveTurnPreserveResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { syncCommittedMessages, applyRuntimeEvent } = await import("./modules/session-runtime-store.js");
+        const { showSessionMessages, renderConversation } = await import("./modules/message.js");
+        const sessionId = "session_live_preserve_regression";
+        store.set("activeSessionId", sessionId);
+        syncCommittedMessages(sessionId, [
+          { role: "user", content: "第一条历史消息", timestamp: "2026-01-01T00:00:00.000Z" },
+        ]);
+        showSessionMessages(sessionId);
+        renderConversation(sessionId, { force: true });
+        applyRuntimeEvent({
+          sessionId,
+          type: "turn.started",
+          turnId: "turn_live_preserve_regression",
+          ts: Date.now(),
+          payload: { text: "正在跑的任务" },
+        });
+        renderConversation(sessionId);
+        syncCommittedMessages(sessionId, [
+          { role: "user", content: "第一条历史消息", timestamp: "2026-01-01T00:00:00.000Z" },
+          { role: "user", content: "切回来后补进来的历史消息", timestamp: "2026-01-01T00:00:01.000Z" },
+        ]);
+        renderConversation(sessionId);
+        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`);
+        const children = Array.from(panel?.children || []);
+        const liveIndex = children.findIndex((el) => el.classList.contains("assistant-turn-article"));
+        const lateIndex = children.findIndex((el) => el.textContent.includes("切回来后补进来的历史消息"));
+        if (liveIndex < 0) throw new Error("live turn article was not preserved");
+        if (lateIndex < 0) throw new Error("late committed message was not rendered");
+        if (lateIndex > liveIndex) {
+          throw new Error("late committed message rendered after live turn");
+        }
+        return "live-turn-preserve-regression: ok";
+      }
+    )()`);
+    console.log(liveTurnPreserveResult);
+    const initialConversationResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { syncCommittedMessages } = await import("./modules/session-runtime-store.js");
+        const { showSessionMessages, renderConversation, shouldPreserveSessionView } = await import("./modules/message.js");
+        const sessionId = "session_initial_conversation_regression";
+        store.set("activeSessionId", sessionId);
+        showSessionMessages(sessionId);
+        if (shouldPreserveSessionView(sessionId)) {
+          throw new Error("empty session placeholder should not preserve the session view");
+        }
+        syncCommittedMessages(sessionId, [
+          { role: "user", content: "默认会话首次加载的消息", timestamp: "2026-01-01T00:00:00.000Z" },
+        ]);
+        renderConversation(sessionId, { force: true, forceScrollBottom: true });
+        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`);
+        if (!panel?.textContent.includes("默认会话首次加载的消息")) {
+          throw new Error("initial conversation was not rendered");
+        }
+        return "initial-conversation-regression: ok";
+      }
+    )()`);
+    console.log(initialConversationResult);
+    const multiSelectQuestionResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const liveTurn = {
+          turnId: "turn_multiselect_question_regression",
+          phase: "tool_running",
+          assistantText: "",
+          thinkingText: "",
+          contentBlocks: [],
+          processEvents: [],
+          tools: new Map(),
+          timeline: [],
+          notices: [],
+          permissions: new Map(),
+          questions: new Map([
+            ["req_question_multi", {
+              requestId: "req_question_multi",
+              questions: [{
+                id: "mode",
+                question: "Pick modes",
+                multiSelect: true,
+                options: [{ label: "Fast" }, { label: "Careful" }],
+              }],
+            }],
+          ]),
+          hooks: new Map(),
+          startedAt: Date.now(),
+        };
+        const article = createLiveTurnArticleShell(liveTurn);
+        document.body.appendChild(article);
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "session_multiselect_question_regression" });
+        const optionButtons = Array.from(article.querySelectorAll(".assistant-question-option"));
+        if (optionButtons.length !== 2) throw new Error("multi-select options did not render");
+        optionButtons[0].click();
+        optionButtons[1].click();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        const submit = article.querySelector(".assistant-prompt-actions .assistant-action-btn");
+        if (!submit) throw new Error("multi-select question should render an explicit submit action");
+        submit.click();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        article.remove();
+        return "multi-select-question-regression: ok";
+      }
+    )()`);
+    console.log(multiSelectQuestionResult);
+    if (capturedQuestionResponses.length !== 1) {
+      throw new Error(`multi-select should submit exactly once, got ${capturedQuestionResponses.length}`);
+    }
+    const questionPayload = capturedQuestionResponses[0];
+    if (questionPayload.requestId !== "req_question_multi") {
+      throw new Error(`wrong request id submitted: ${questionPayload.requestId}`);
+    }
+    if (!Array.isArray(questionPayload.answers?.mode) || questionPayload.answers.mode.join(",") !== "Fast,Careful") {
+      throw new Error(`multi-select answers should submit an array: ${JSON.stringify(questionPayload.answers)}`);
+    }
+    if (questionPayload.response !== "Fast\nCareful") {
+      throw new Error(`multi-select response summary should include selected values: ${questionPayload.response}`);
+    }
     console.log("test-renderer-import: ok");
   }
   app.quit();

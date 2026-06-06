@@ -6,9 +6,9 @@ import {
   sanitizeNoticeForIngest,
 } from "../src/main/engine-notice-policy.js";
 
-assert.equal(noticeVisibleInPanel({ code: "waitingForFirstResponse", level: "progress", panel: true }), false);
+assert.equal(noticeVisibleInPanel({ code: "waitingForFirstResponse", level: "progress", panel: true }), true);
 assert.equal(noticeVisibleInPanel({ code: "permissionDenied", level: "warning", panel: true }), true);
-assert.equal(sanitizeNoticeForIngest({ code: "longWait", level: "progress", panel: true }).panel, false);
+assert.equal(sanitizeNoticeForIngest({ code: "longWait", level: "progress", panel: true }).panel, true);
 assert.equal(sanitizeNoticeForIngest({ code: "permissionDenied", level: "warning", panel: true }).panel, true);
 assert.equal(sanitizeNoticeForIngest({ code: "taskProgress", level: "progress", panel: true, detail: "上传 42%" }).panel, true);
 assert.equal(sanitizeNoticeForIngest({ code: "toolProgress", level: "progress", panel: true, detail: "uploaded 42%" }).panel, true);

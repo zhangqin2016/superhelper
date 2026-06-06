@@ -234,4 +234,45 @@ if (!messages.some((message) => message.role === "assistant" && message.content 
   throw new Error("priority replacement turn must commit its assistant response");
 }
 
+sent.length = 0;
+const queueState = ctx.turnOrchestrator._state("s1");
+queueState.queue = [
+  { id: "queue_failed", text: "will fail", files: [], displayFiles: [] },
+  { id: "queue_next", text: "will start", files: [], displayFiles: [] },
+];
+let dispatchAttempts = 0;
+const originalTryStartQueuedItem = ctx.turnOrchestrator._tryStartQueuedItem.bind(ctx.turnOrchestrator);
+ctx.turnOrchestrator._tryStartQueuedItem = async () => {
+  dispatchAttempts += 1;
+  return dispatchAttempts === 1
+    ? { ok: false, error: "SYNTHETIC_START_FAILURE" }
+    : { ok: true, turnId: "synthetic_next" };
+};
+try {
+  await ctx.turnOrchestrator._dispatchNext("s1");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+} finally {
+  ctx.turnOrchestrator._tryStartQueuedItem = originalTryStartQueuedItem;
+}
+if (dispatchAttempts !== 2) {
+  throw new Error(`queue dispatcher should continue after a failed queued item, attempts=${dispatchAttempts}`);
+}
+if (queueState.queue.length !== 0) {
+  throw new Error(`failed queued item should not stick at the queue head: ${JSON.stringify(queueState.queue)}`);
+}
+
+queueState.queue = [
+  { id: "queue_retry", text: "retry later", files: [], displayFiles: [] },
+];
+ctx.turnOrchestrator._tryStartQueuedItem = async () => ({ ok: false, retry: true, error: "RUNNER_BUSY" });
+try {
+  await ctx.turnOrchestrator._dispatchNext("s1");
+} finally {
+  ctx.turnOrchestrator._tryStartQueuedItem = originalTryStartQueuedItem;
+}
+if (queueState.queue.length !== 1 || queueState.queue[0]?.id !== "queue_retry") {
+  throw new Error("transient busy runner must not drop the queued message");
+}
+queueState.queue = [];
+
 console.log("turn-orchestrator: ok");

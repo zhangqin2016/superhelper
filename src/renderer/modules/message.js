@@ -161,16 +161,19 @@ export function removeSessionMessages(sessionId) {
 }
 
 export function shouldPreserveSessionView(sessionId) {
-  return Boolean(view(sessionId).listEl?.childElementCount);
+  const v = view(sessionId);
+  if ([...v.liveArticles.values()].some((article) => article?.isConnected)) return true;
+  return Boolean(v.listEl?.querySelector(".runtime-user-message, .assistant-turn-article"));
 }
 
-export function resumeLiveSessionUi(sessionId) {
+export function resumeLiveSessionUi(sessionId, opts = {}) {
   renderRuntimeSession(sessionId);
   const runtime = getRuntimeSession(sessionId);
   if (runtime.liveTurn || !canSend(sessionId)) {
     void refreshRuntimeSnapshot(sessionId);
   }
   syncComposerForActiveSession();
+  if (opts.forceScrollBottom) scrollToBottomAfterLayout(view(sessionId).panel, true);
 }
 
 async function refreshRuntimeSnapshot(sessionId) {
@@ -203,22 +206,36 @@ export function renderConversation(sessionId, opts = {}) {
     lastRuntimeVisualSig.delete(sessionId);
   }
 
-  renderCommittedMessages(sessionId);
+  const pendingCount = renderCommittedMessages(sessionId, {
+    onComplete: opts.forceScrollBottom
+      ? () => scrollToBottomAfterLayout(v.panel, true)
+      : null,
+  });
   renderRuntimeSession(sessionId, { preserveScroll: Boolean(opts.preserveScroll) });
   syncWorkbenchEmptyState(v.listEl);
+  if (opts.forceScrollBottom && pendingCount === 0) {
+    scrollToBottomAfterLayout(v.panel, true);
+  }
 }
 
 const COMMITTED_RENDER_CHUNK = 5;
 
 function appendCommittedMessage(sessionId, runtime, message) {
-  if (message.role === "user") appendUserMessage(sessionId, message);
+  const anchor = committedInsertAnchor(sessionId, runtime);
+  if (message.role === "user") appendUserMessage(sessionId, message, anchor);
   else if (message.role === "assistant") {
     if (message.turnId && runtime.liveTurn?.turnId === message.turnId) return;
-    appendFinalAssistantArticle(sessionId, message);
+    appendFinalAssistantArticle(sessionId, message, anchor);
   }
 }
 
-function renderCommittedMessages(sessionId) {
+function committedInsertAnchor(sessionId, runtime) {
+  if (!runtime.liveTurn?.turnId) return null;
+  const article = view(sessionId).liveArticles.get(runtime.liveTurn.turnId);
+  return article?.isConnected ? article : null;
+}
+
+function renderCommittedMessages(sessionId, opts = {}) {
   const runtime = getRuntimeSession(sessionId);
   const keys = renderedMessageKeys.get(sessionId) || new Set();
   renderedMessageKeys.set(sessionId, keys);
@@ -229,14 +246,15 @@ function renderCommittedMessages(sessionId) {
     if (keys.has(key)) continue;
     pending.push({ key, message });
   }
-  if (pending.length === 0) return;
+  if (pending.length === 0) return 0;
 
   if (pending.length <= COMMITTED_RENDER_CHUNK) {
     for (const { key, message } of pending) {
       keys.add(key);
       appendCommittedMessage(sessionId, runtime, message);
     }
-    return;
+    opts.onComplete?.();
+    return pending.length;
   }
 
   let cursor = 0;
@@ -251,12 +269,14 @@ function renderCommittedMessages(sessionId) {
       requestAnimationFrame(pump);
     } else {
       syncWorkbenchEmptyState(ensurePanel(sessionId).listEl);
+      opts.onComplete?.();
     }
   };
   pump();
+  return pending.length;
 }
 
-function appendUserMessage(sessionId, message) {
+function appendUserMessage(sessionId, message, beforeNode = null) {
   const v = ensurePanel(sessionId);
   const article = document.createElement("article");
   article.className = "msg msg-user runtime-user-message";
@@ -271,16 +291,18 @@ function appendUserMessage(sessionId, message) {
   renderFiles(body, message.files || []);
 
   article.append(label, body);
-  v.listEl?.appendChild(article);
+  if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
+  else v.listEl?.appendChild(article);
 }
 
-function appendFinalAssistantArticle(sessionId, message) {
+function appendFinalAssistantArticle(sessionId, message, beforeNode = null) {
   const v = ensurePanel(sessionId);
   const liveTurn = message.record
     ? liveTurnFromRecord(message.record)
     : legacyLiveTurnFromMessage(message);
   const article = renderSealedTurnArticle(liveTurn, Boolean(message.failed));
-  v.listEl?.appendChild(article);
+  if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
+  else v.listEl?.appendChild(article);
 }
 
 function renderFiles(container, files) {

@@ -721,34 +721,6 @@
   resize: vertical;
 }
 
-.assistant-turn-queue {
-  margin-top: 14px;
-  color: var(--muted, #8f96a3);
-  font-size: 14px;
-}
-
-.assistant-queue-title {
-  margin-bottom: 8px;
-}
-
-.assistant-queue-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  border: 1px solid var(--border, #303443);
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin-top: 6px;
-}
-
-.assistant-queue-item button {
-  border: none;
-  background: transparent;
-  color: var(--muted, #8f96a3);
-  cursor: pointer;
-  font-size: 18px;
-}
-
 .assistant-turn-report {
   margin-top: 10px;
   padding: 12px 14px;
@@ -780,8 +752,7 @@
   color: var(--danger, #ff6b6b);
 }
 
-.assistant-turn-article .assistant-prompt-card,
-.assistant-turn-article .assistant-queue-item {
+.assistant-turn-article .assistant-prompt-card {
   background: rgba(255, 255, 255, 0.035);
   border-color: var(--border, #303443);
 }
@@ -836,6 +807,13 @@
 .assistant-question-option:hover {
   border-color: rgba(96, 165, 250, 0.45);
   background: rgba(96, 165, 250, 0.12);
+}
+
+.assistant-question-option.is-selected {
+  border-color: rgba(99, 102, 241, 0.72);
+  background: rgba(99, 102, 241, 0.22);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(129, 140, 248, 0.2);
 }
 
 .assistant-content-image {

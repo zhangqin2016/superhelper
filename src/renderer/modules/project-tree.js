@@ -120,7 +120,6 @@ export function renderProjectTree() {
         showToast(result?.detail || t("toast.createSessionFailed"), "error");
         return;
       }
-      await window.assistantClient.switchProject(project.id);
       const sw = await window.assistantClient.switchSession(result.session.id);
       await refreshState();
       afterSessionListChanged(project.id);
@@ -181,9 +180,6 @@ export function renderProjectTree() {
           const visibleId = document.querySelector(".session-messages.is-active")?.dataset?.sessionId;
           if (s.id === store.get("activeSessionId") && s.id === visibleId) return;
           try {
-            if (project.id !== store.get("activeProjectId")) {
-              await window.assistantClient.switchProject(project.id);
-            }
             const sw = await window.assistantClient.switchSession(s.id);
             await applySessionSwitch(sw, s.id, project.id);
           } catch (err) {

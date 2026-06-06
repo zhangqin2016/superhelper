@@ -53,6 +53,20 @@ function queueDispatchOptions(opts = {}) {
   };
 }
 
+function preflightFailureText(error, detail) {
+  const suffix = detail ? `\n\n${String(detail).trim()}` : "";
+  switch (error) {
+    case "VISION_UNAVAILABLE":
+      return `图片识别服务暂时不可用，无法处理这张图片。请稍后重试，或补充文字描述后再发送。${suffix}`;
+    case "VISION_FAILED":
+      return `图片解析失败，未继续发送给助手。请稍后重试，或补充文字描述后再发送。${suffix}`;
+    case "DOCUMENT_FAILED":
+      return `文档解析失败，未继续发送给助手。请检查文件是否可打开，或补充文字描述后再发送。${suffix}`;
+    default:
+      return `发送前处理失败，未继续发送给助手。请稍后重试。${suffix}`;
+  }
+}
+
 const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
 
 function compactToolInput(input, name = "Tool") {
@@ -504,10 +518,10 @@ class TurnOrchestrator {
 
   async _tryStartQueuedItem(sessionId, item) {
     const runner = this.ctx.runnerPool.get(sessionId);
-    if (runner?.isBusy?.()) return false;
+    if (runner?.isBusy?.()) return { ok: false, retry: true, error: "RUNNER_BUSY" };
     const session = this.ctx.sessionManager.findById(sessionId);
-    if (!session) return false;
-    const result = await this._startTurn(session, item.text, item.files, {
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    return await this._startTurn(session, item.text, item.files, {
       fromQueue: true,
       displayFiles: item.displayFiles,
       recordUser: true,
@@ -516,7 +530,6 @@ class TurnOrchestrator {
       skipVision: Boolean(item.options?.skipVision),
       skipDocument: Boolean(item.options?.skipDocument),
     });
-    return Boolean(result?.ok);
   }
 
   cancelQueuedMessage(sessionId, itemId) {
@@ -585,10 +598,15 @@ class TurnOrchestrator {
     if (!opts.skipVision) {
       const vision = await this._runVisionPreflight(session.id, text, files);
       if (!vision.ok) {
-        state.phase = "idle";
-        state.turnId = null;
-        state.currentPayload = null;
-        return vision;
+        const assistant = preflightFailureText(vision.error, vision.detail);
+        const failedTurnId = state.turnId;
+        this._finalize(session.id, "turn.failed", {
+          failed: true,
+          assistant,
+          error: vision.error,
+          detail: vision.detail,
+        });
+        return { ok: true, failed: true, turnId: failedTurnId, error: vision.error, detail: vision.detail };
       }
       text = vision.text;
       files = vision.files;
@@ -598,10 +616,15 @@ class TurnOrchestrator {
     if (!opts.skipDocument) {
       const document = await this._runDocumentPreflight(session.id, text, files);
       if (!document.ok) {
-        state.phase = "idle";
-        state.turnId = null;
-        state.currentPayload = null;
-        return document;
+        const assistant = preflightFailureText(document.error, document.detail);
+        const failedTurnId = state.turnId;
+        this._finalize(session.id, "turn.failed", {
+          failed: true,
+          assistant,
+          error: document.error,
+          detail: document.detail,
+        });
+        return { ok: true, failed: true, turnId: failedTurnId, error: document.error, detail: document.detail };
       }
       text = document.text;
       files = document.files;
@@ -793,10 +816,21 @@ class TurnOrchestrator {
     const state = this._state(sessionId);
     if (state.phase !== "idle" || state.queue.length === 0) return;
     const next = state.queue[0];
-    const started = await this._tryStartQueuedItem(sessionId, next);
-    if (!started) return;
+    const result = await this._tryStartQueuedItem(sessionId, next);
+    if (result?.retry) return;
+    if (!result?.ok) {
+      state.queue.shift();
+      this._emitQueue(sessionId);
+      if (state.phase === "idle" && state.queue.length > 0) {
+        void this._dispatchNext(sessionId);
+      }
+      return;
+    }
     state.queue.shift();
     this._emitQueue(sessionId);
+    if (result.failed && state.phase === "idle" && state.queue.length > 0) {
+      void this._dispatchNext(sessionId);
+    }
   }
 
   _emitQueue(sessionId) {

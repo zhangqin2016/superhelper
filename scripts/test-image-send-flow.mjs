@@ -189,11 +189,23 @@ const blocked = await ctx.turnOrchestrator.sendUserMessage("s1", "", imageFiles,
   spawnEngine: false,
   skipPreflight: true,
 });
-if (blocked.ok || blocked.error !== "VISION_UNAVAILABLE") {
-  throw new Error(`image-only without vision key should block: ${JSON.stringify(blocked)}`);
+if (!blocked.ok || !blocked.failed || blocked.error !== "VISION_UNAVAILABLE") {
+  throw new Error(`image-only without vision key should become a failed turn: ${JSON.stringify(blocked)}`);
 }
 if (runnerPayloads.length !== 0) {
   throw new Error("runner should not receive payload when vision is unavailable");
+}
+ctx.eventBus.flush();
+if (!messages.some((message) => message.role === "user")) {
+  throw new Error("failed image preflight should still keep the user bubble");
+}
+const failedAssistant = messages.find((message) => message.role === "assistant");
+if (!failedAssistant?.failed || !failedAssistant.content.includes("图片识别服务暂时不可用")) {
+  throw new Error(`failed image preflight should commit a clear assistant failure: ${JSON.stringify(messages)}`);
+}
+const failedEvents = sent.flatMap((entry) => entry.payload?.events || []);
+if (!failedEvents.some((event) => event.type === "turn.failed")) {
+  throw new Error("failed image preflight should emit turn.failed");
 }
 
 console.log("test-image-send-flow: ok");

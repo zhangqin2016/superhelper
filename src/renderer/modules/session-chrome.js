@@ -210,12 +210,11 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
 
   showSessionMessages(nextSessionId);
   updateTopbarTitles();
-
   if (shouldPreserveSessionView(nextSessionId)) {
-    resumeLiveSessionUi(nextSessionId);
+    resumeLiveSessionUi(nextSessionId, { forceScrollBottom: true });
   } else {
-    renderConversation(nextSessionId, { force: true });
-    resumeLiveSessionUi(nextSessionId);
+    renderConversation(nextSessionId, { force: true, forceScrollBottom: true });
+    resumeLiveSessionUi(nextSessionId, { forceScrollBottom: true });
   }
 
   syncComposerForActiveSession();
@@ -238,8 +237,12 @@ export async function refreshStateLight({ reRenderActive = false } = {}) {
     if (sid) {
       await loadSessionConversation(sid);
       showSessionMessages(sid);
-      if (reRenderActive && !shouldPreserveSessionView(sid)) {
-        renderConversation(sid);
+      if (reRenderActive) {
+        if (shouldPreserveSessionView(sid)) {
+          resumeLiveSessionUi(sid, { forceScrollBottom: true });
+        } else {
+          renderConversation(sid, { force: true, forceScrollBottom: true });
+        }
       }
       syncComposerForActiveSession();
     } else {
