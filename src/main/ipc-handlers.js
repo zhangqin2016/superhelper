@@ -16,6 +16,7 @@ const { RuntimeEventBus } = require("./runtime-event-bus");
 const { TranscriptStore } = require("./transcript-store");
 const { TurnArchive } = require("./turn-archive");
 const { TurnOrchestrator } = require("./turn-orchestrator");
+const { buildFullStateSnapshot } = require("./state-snapshot");
 
 function registerAll(ctx) {
   const {
@@ -41,40 +42,20 @@ function registerAll(ctx) {
 
   ipcMain.handle("state:full", () => {
     const projectState = projectManager.getAppState();
-    const active = sessionManager.getActive();
-    const projectsWithSessions = projectState.projects.map((p) => ({
-      ...p,
-      sessions: sessionManager.listForProject(p.id).map((s) => {
-        const full = sessionManager.findById(s.id);
-        return { ...s, messages: full?.messages || [] };
-      }),
-    }));
     const cliPath = resolveAgentCommand();
     const agent = ctx.agentBootstrap || { ok: false };
     const cliReady = Boolean(cliPath && fs.existsSync(cliPath));
-    return {
-      activeProjectId: projectState.activeProjectId,
-      activeSessionId: sessionManager.activeSessionId,
-      projects: projectsWithSessions,
-      conversation: active?.messages || [],
-      runtime: {
-        sessions: Object.fromEntries(
-          runnerPool.getSessionIds().map((sessionId) => [
-            sessionId,
-            ctx.turnOrchestrator.snapshot(sessionId),
-          ]),
-        ),
-      },
-      runnerSessionIds: runnerPool.getSessionIds(),
-      agent: {
-        ...agent,
-        ok: cliReady,
-        cliPath: cliPath || agent.cliPath || null,
-        ready: cliReady,
-      },
+    return buildFullStateSnapshot({
+      projectState,
+      sessionManager,
+      runnerPool,
+      getRuntimeSnapshot: (sessionId) => ctx.turnOrchestrator.snapshot(sessionId),
+      agent,
+      cliPath,
+      cliReady,
       models: listPresetsPublic(),
       permissions: require("./permission-settings").listPermissionsPublic(),
-    };
+    });
   });
 
   ipcMain.handle("license:status", () =>

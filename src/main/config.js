@@ -55,6 +55,22 @@ function sessionsConfigPath() {
   return userDataPath("sessions.json");
 }
 
+function sessionsIndexPath() {
+  return userDataPath("sessions-index.json");
+}
+
+function sessionMessagesDir() {
+  return userDataPath("session-messages");
+}
+
+function sessionSummariesDir() {
+  return userDataPath("session-summaries");
+}
+
+function legacySessionsBackupPath() {
+  return userDataPath("sessions.legacy-backup.json");
+}
+
 function projectsConfigPath() {
   return userDataPath("projects.json");
 }
@@ -100,6 +116,10 @@ module.exports = {
   defaultWorkspacePath,
   userDataPath,
   sessionsConfigPath,
+  sessionsIndexPath,
+  sessionMessagesDir,
+  sessionSummariesDir,
+  legacySessionsBackupPath,
   projectsConfigPath,
   mcpConfigPath,
   userHome,

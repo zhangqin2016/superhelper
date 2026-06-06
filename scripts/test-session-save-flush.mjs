@@ -26,7 +26,7 @@ require.cache[electronPath] = {
 };
 
 const SessionManager = require("../src/main/session-manager.js");
-const { sessionsConfigPath } = require("../src/main/config.js");
+const { sessionMessagesDir, sessionsIndexPath } = require("../src/main/config.js");
 
 const projectManager = {
   projects: [{ id: "p1", name: "Workspace", path: tempRoot }],
@@ -44,15 +44,21 @@ try {
   manager.pushMessageTo(session.id, "user", "last question");
   manager.pushMessageTo(session.id, "assistant", "last answer");
 
-  const beforeFlush = JSON.parse(fs.readFileSync(sessionsConfigPath(), "utf8"));
-  const savedBefore = beforeFlush.sessions.p1[0].messages.map((message) => message.content);
+  const messagePath = path.join(sessionMessagesDir(), `${session.id}.json`);
+  const beforeFlush = JSON.parse(fs.readFileSync(messagePath, "utf8"));
+  const savedBefore = beforeFlush.messages.map((message) => message.content);
   if (savedBefore.includes("last answer")) {
     throw new Error("test setup invalid: pending assistant message was already persisted");
   }
 
   manager.saveImmediate();
-  const afterFlush = JSON.parse(fs.readFileSync(sessionsConfigPath(), "utf8"));
-  const savedAfter = afterFlush.sessions.p1[0].messages.map((message) => message.content);
+  const indexAfter = JSON.parse(fs.readFileSync(sessionsIndexPath(), "utf8"));
+  if ("messages" in indexAfter.sessions.p1[0]) {
+    throw new Error("session index must not persist full messages");
+  }
+
+  const afterFlush = JSON.parse(fs.readFileSync(messagePath, "utf8"));
+  const savedAfter = afterFlush.messages.map((message) => message.content);
   if (!savedAfter.includes("last question") || !savedAfter.includes("last answer")) {
     throw new Error(`saveImmediate did not flush pending messages: ${JSON.stringify(savedAfter)}`);
   }

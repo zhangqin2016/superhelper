@@ -38,6 +38,31 @@ if (!prompt.includes("Claude CLI 新会话恢复") || !prompt.includes("lily-wor
   throw new Error(`rehydrate prompt missing expected context: ${prompt}`);
 }
 
+const summaryPrompt = buildSessionRehydratePrompt({
+  session: { title: "默认对话", messages: [] },
+  project,
+  userText: "继续",
+  summary: {
+    lastUserIntent: "重写前三章",
+    lastAssistantResult: "已经完成第一章",
+    pendingTask: "继续第二章",
+    recentUserIntents: ["对比风格", "重写前三章"],
+    recentFiles: ["第1章.md"],
+  },
+});
+if (!summaryPrompt.includes("会话滚动摘要") || !summaryPrompt.includes("继续第二章") || !summaryPrompt.includes("第1章.md")) {
+  throw new Error(`summary rehydrate prompt missing expected context: ${summaryPrompt}`);
+}
+if (!shouldRehydrateSession({
+  coldStart: true,
+  usedResume: false,
+  session: { messages: [] },
+  summary: { lastUserIntent: "继续项目" },
+  userText: "继续",
+})) {
+  throw new Error("summary alone should allow cold-start rehydrate");
+}
+
 const prefixed = withSessionRehydratePrefix({
   coldStart: true,
   usedResume: false,

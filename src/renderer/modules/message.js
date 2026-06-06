@@ -116,6 +116,17 @@ function ensurePanel(sessionId) {
   panel.appendChild(listEl);
   root.appendChild(panel);
   bindPanelScroll(panel);
+  panel.addEventListener(
+    "scroll",
+    () => {
+      if (!panel.classList.contains("is-active")) return;
+      if (panel.scrollTop > 80) return;
+      void import("./session-chrome.js").then((m) =>
+        m.loadOlderConversationForSession?.(sessionId, panel),
+      );
+    },
+    { passive: true },
+  );
 
   v.panel = panel;
   v.listEl = listEl;
@@ -193,7 +204,7 @@ export function renderConversation(sessionId, opts = {}) {
   }
 
   renderCommittedMessages(sessionId);
-  renderRuntimeSession(sessionId);
+  renderRuntimeSession(sessionId, { preserveScroll: Boolean(opts.preserveScroll) });
   syncWorkbenchEmptyState(v.listEl);
 }
 
@@ -303,7 +314,7 @@ function renderRuntimeSession(sessionId, opts = {}) {
   lastRuntimeVisualSig.set(sessionId, sig);
 
   const panel = view(sessionId).panel;
-  const shouldFollow = isActiveSession(sessionId) && isNearBottom(panel);
+  const shouldFollow = !opts.preserveScroll && isActiveSession(sessionId) && isNearBottom(panel);
   renderCommittedMessages(sessionId);
   if (runtime.liveTurn) renderLiveTurn(sessionId, runtime.liveTurn, runtime.queue);
   syncWorkbenchEmptyState(view(sessionId).listEl);

@@ -27,9 +27,10 @@ function formatMessages(messages = []) {
     .join("\n");
 }
 
-function buildSessionRehydratePrompt({ session, project, userText }) {
+function buildSessionRehydratePrompt({ session, project, userText, summary = null }) {
   const history = formatMessages(session?.messages || []);
-  if (!history) return "";
+  const summaryText = require("./session-memory").formatSessionSummary(summary);
+  if (!history && !summaryText) return "";
 
   const title = trimText(session?.title || "默认对话", 120);
   const workspaceName = trimText(project?.name || "", 120);
@@ -49,7 +50,13 @@ function buildSessionRehydratePrompt({ session, project, userText }) {
     parts.push(`当前工作区：${workspaceName || "(未命名)"}${workspacePath ? `\n工作区路径：${workspacePath}` : ""}`);
   }
 
-  parts.push("", "最近会话记录：", history);
+  if (summaryText) {
+    parts.push("", "会话滚动摘要：", summaryText);
+  }
+
+  if (history) {
+    parts.push("", "最近会话记录：", history);
+  }
 
   if (currentUserText) {
     parts.push("", "用户本次真正要发送的问题：", currentUserText);
@@ -61,18 +68,19 @@ function buildSessionRehydratePrompt({ session, project, userText }) {
   return text.length <= MAX_BOOTSTRAP_CHARS ? text : `${text.slice(0, MAX_BOOTSTRAP_CHARS - 1)}…`;
 }
 
-function shouldRehydrateSession({ coldStart, usedResume, session, userText }) {
+function shouldRehydrateSession({ coldStart, usedResume, session, userText, summary = null }) {
   if (!coldStart || usedResume) return false;
   if (!String(userText || "").trim()) return false;
+  if (summary && typeof summary === "object") return true;
   const messages = Array.isArray(session?.messages) ? session.messages : [];
   return messages.some((message) => message?.role && String(message.content || "").trim());
 }
 
-function withSessionRehydratePrefix({ coldStart, usedResume, session, project, userText }) {
-  if (!shouldRehydrateSession({ coldStart, usedResume, session, userText })) {
+function withSessionRehydratePrefix({ coldStart, usedResume, session, project, userText, summary = null }) {
+  if (!shouldRehydrateSession({ coldStart, usedResume, session, userText, summary })) {
     return { text: userText, rehydrated: false };
   }
-  const bootstrap = buildSessionRehydratePrompt({ session, project, userText });
+  const bootstrap = buildSessionRehydratePrompt({ session, project, userText, summary });
   if (!bootstrap) return { text: userText, rehydrated: false };
   return {
     text: `${bootstrap}\n\n${String(userText || "").trim()}`,

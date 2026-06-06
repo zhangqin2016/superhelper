@@ -23,6 +23,16 @@ function registerSessionHandlers(ctx) {
     };
   });
 
+  ipcMain.handle("session:get-conversation", (_event, payload) => {
+    const sessionId = typeof payload === "string"
+      ? payload
+      : payload?.sessionId || sessionManager.activeSessionId;
+    return sessionManager.getConversationPage(sessionId, {
+      before: Number.isInteger(payload?.before) ? payload.before : undefined,
+      limit: Number.isInteger(payload?.limit) ? payload.limit : undefined,
+    });
+  });
+
   ipcMain.handle("session:create", (_event, title, projectId) => {
     const pid = projectId || projectManager.getActive()?.id;
     if (!pid) return { ok: false, error: "NO_PROJECT" };
@@ -44,7 +54,6 @@ function registerSessionHandlers(ctx) {
       ok: true,
       sessionId,
       projectId: session.projectId,
-      conversation: session.messages || [],
       runnerActive: runnerPool.has(sessionId),
     };
   });

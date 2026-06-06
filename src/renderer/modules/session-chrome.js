@@ -23,6 +23,9 @@ import {
 } from "./session-runtime-store.js";
 import { refreshSessionSkillsUi } from "./session-skills.js";
 
+const CONVERSATION_PAGE_SIZE = 50;
+const conversationPages = new Map();
+
 export function activeProject() {
   const id = store.get("activeProjectId");
   if (!id) return null;
@@ -136,6 +139,63 @@ function patchSessionMessagesInStore(sessionId, messages) {
   if (changed) store.set("projects", projects);
 }
 
+async function loadSessionConversation(sessionId) {
+  if (!sessionId) return [];
+  const result = await window.assistantClient.getSessionConversation(sessionId, {
+    limit: CONVERSATION_PAGE_SIZE,
+  });
+  const messages = result?.ok ? result.conversation || [] : [];
+  conversationPages.set(sessionId, {
+    hasMore: Boolean(result?.hasMore),
+    nextBefore: Number.isInteger(result?.nextBefore) ? result.nextBefore : 0,
+    loading: false,
+  });
+  store.set("conversation", messages);
+  patchSessionMessagesInStore(sessionId, messages);
+  syncCommittedMessages(sessionId, messages);
+  return messages;
+}
+
+export async function loadOlderConversationForSession(sessionId, panel = null) {
+  if (!sessionId) return false;
+  const page = conversationPages.get(sessionId);
+  if (!page?.hasMore || page.loading) return false;
+  page.loading = true;
+  const beforeHeight = panel?.scrollHeight || 0;
+  const beforeTop = panel?.scrollTop || 0;
+  try {
+    const result = await window.assistantClient.getSessionConversation(sessionId, {
+      before: page.nextBefore,
+      limit: CONVERSATION_PAGE_SIZE,
+    });
+    if (!result?.ok || !result.conversation?.length) {
+      page.hasMore = false;
+      return false;
+    }
+    const runtime = getRuntimeSession(sessionId);
+    const merged = [...result.conversation, ...runtime.committedMessages];
+    conversationPages.set(sessionId, {
+      hasMore: Boolean(result.hasMore),
+      nextBefore: Number.isInteger(result.nextBefore) ? result.nextBefore : 0,
+      loading: false,
+    });
+    store.set("conversation", merged);
+    patchSessionMessagesInStore(sessionId, merged);
+    syncCommittedMessages(sessionId, merged);
+    const { renderConversation } = await import("./message.js");
+    renderConversation(sessionId, { force: true, preserveScroll: true });
+    if (panel) {
+      requestAnimationFrame(() => {
+        panel.scrollTop = panel.scrollHeight - beforeHeight + beforeTop;
+      });
+    }
+    return true;
+  } finally {
+    const latest = conversationPages.get(sessionId);
+    if (latest) latest.loading = false;
+  }
+}
+
 export async function applySessionSwitch(switchResult, nextSessionId, nextProjectId) {
   if (!switchResult?.ok || !nextSessionId) {
     const { showToast } = await import("./toast.js");
@@ -146,10 +206,7 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
   if (nextProjectId) store.set("activeProjectId", nextProjectId);
   store.set("activeSessionId", nextSessionId);
 
-  const messages = switchResult.conversation || [];
-  store.set("conversation", messages);
-  patchSessionMessagesInStore(nextSessionId, messages);
-  syncCommittedMessages(nextSessionId, messages);
+  await loadSessionConversation(nextSessionId);
 
   showSessionMessages(nextSessionId);
   updateTopbarTitles();
@@ -179,6 +236,7 @@ export async function refreshStateLight({ reRenderActive = false } = {}) {
 
     const sid = state?.activeSessionId;
     if (sid) {
+      await loadSessionConversation(sid);
       showSessionMessages(sid);
       if (reRenderActive && !shouldPreserveSessionView(sid)) {
         renderConversation(sid);
@@ -195,11 +253,13 @@ export async function refreshStateLight({ reRenderActive = false } = {}) {
     await refreshSessionSkillsUi();
     const { refreshSessionPermissionSelect } = await import("./permission-settings.js");
     await refreshSessionPermissionSelect();
+    return state;
   } catch {
     // ignore
+    return null;
   }
 }
 
 export async function refreshState() {
-  await refreshStateLight({ reRenderActive: true });
+  return refreshStateLight({ reRenderActive: true });
 }

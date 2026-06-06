@@ -83,6 +83,11 @@ class TurnArchive {
       null,
       extra,
     );
+    try {
+      require("./session-memory").updateSessionSummaryFromRecord(sessionId, record);
+    } catch (err) {
+      console.warn("[session-memory] update failed:", err?.message || err);
+    }
     return extra;
   }
 }

@@ -3,7 +3,12 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { app } = require("electron");
-const { userDataPath, agentBinDir, agentConfigDir } = require("./config");
+const {
+  userDataPath,
+  agentBinDir,
+  agentConfigDir,
+  sessionsIndexPath,
+} = require("./config");
 const { LEGACY_TO_LILY } = require("./agent-env");
 
 const LEGACY_BIN_DIR = "claude-bin";
@@ -79,6 +84,7 @@ const LEGACY_USER_DATA_DIR_NAMES = [
 const APP_DATA_FILES = [
   "projects.json",
   "sessions.json",
+  "sessions-index.json",
   "workspaces.json",
   "mcp-active.json",
   "model-settings.json",
@@ -96,6 +102,8 @@ const APP_DATA_DIRS = [
   "skills-cache",
   "skills-backup",
   "session-guides",
+  "session-messages",
+  "session-summaries",
 ];
 
 function legacyUserDataRoots() {
@@ -456,7 +464,9 @@ function forEachPersistedSession(raw, fn) {
 }
 
 function migrateSessionsResumeId() {
-  const sessionsPath = userDataPath("sessions.json");
+  const sessionsPath = fs.existsSync(sessionsIndexPath())
+    ? sessionsIndexPath()
+    : userDataPath("sessions.json");
   if (!fs.existsSync(sessionsPath)) return;
 
   let raw;
@@ -520,7 +530,9 @@ function migrateEngineSessionCompatibility() {
 }
 
 function clearAllSessionResumeIds() {
-  const sessionsPath = userDataPath("sessions.json");
+  const sessionsPath = fs.existsSync(sessionsIndexPath())
+    ? sessionsIndexPath()
+    : userDataPath("sessions.json");
   if (!fs.existsSync(sessionsPath)) return 0;
 
   const raw = readJsonSafe(sessionsPath);

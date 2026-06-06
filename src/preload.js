@@ -85,6 +85,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
   listSessions: () => ipcRenderer.invoke("session:list"),
   createSession: (title, projectId) => ipcRenderer.invoke("session:create", title, projectId),
   switchSession: (sessionId) => ipcRenderer.invoke("session:switch", sessionId),
+  getSessionConversation: (sessionId, options = {}) =>
+    ipcRenderer.invoke("session:get-conversation", { sessionId, ...options }),
   renameSession: (sessionId, title) => ipcRenderer.invoke("session:rename", sessionId, title),
   deleteSession: (sessionId) => ipcRenderer.invoke("session:delete", sessionId),
   archiveSession: (sessionId) => ipcRenderer.invoke("session:archive", sessionId),

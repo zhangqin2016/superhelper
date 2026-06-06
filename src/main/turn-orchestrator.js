@@ -587,12 +587,38 @@ class TurnOrchestrator {
       state.currentPayload = { text, files, displayFiles };
     }
 
+    let engineText = text;
+    if (!opts.fromAutoRecovery) {
+      const { withSessionRehydratePrefix } = require("./session-bootstrap");
+      const { readSessionSummary } = require("./session-memory");
+      const committedMessages =
+        typeof this.ctx.sessionManager.getConversation === "function"
+          ? this.ctx.sessionManager.getConversation(session.id)
+          : session.messages || [];
+      const historySession = {
+        ...session,
+        messages: committedMessages.filter((message) => message.turnId !== state.turnId),
+      };
+      const rehydrate = withSessionRehydratePrefix({
+        coldStart: Boolean(ensured.coldStart),
+        usedResume: Boolean(ensured.usedResume),
+        session: historySession,
+        project: ensured.project,
+        userText: text,
+        summary: readSessionSummary(session.id),
+      });
+      engineText = rehydrate.text;
+      if (rehydrate.rehydrated) {
+        this._emit(session.id, "session.hydrated", { source: "local-bootstrap" }, { turnId: null });
+      }
+    }
+
     this._emit(session.id, "turn.started", {
-      text,
+      text: state.currentPayload?.text || text,
       queueLength: state.queue.length,
     });
 
-    const sent = runner.sendUserMessage({ text, files });
+    const sent = runner.sendUserMessage({ text: engineText, files });
     if (!sent) {
       this._finalize(session.id, "turn.failed", {
         failed: true,

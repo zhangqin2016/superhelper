@@ -174,8 +174,7 @@ async function init() {
   startAutoUpdateChecks();
   const licenseStatus = await window.assistantClient.getLicenseStatus?.();
   if (licenseStatus?.valid) kickAutoUpdateCheck();
-  await refreshState();
-  const state = await window.assistantClient.getFullState();
+  const state = await refreshState();
   if (state?.agent && !state.agent.ready) {
     showToast(state.agent.error || t("app.agentNotReady"), "error");
   }

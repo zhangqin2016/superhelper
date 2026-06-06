@@ -51,8 +51,7 @@ export function syncCommittedMessages(sessionId, messages) {
 export function hydrateRuntimeFromState(state) {
   for (const project of state?.projects || []) {
     for (const session of project.sessions || []) {
-      const runtime = getRuntimeSession(session.id);
-      runtime.committedMessages = session.messages || [];
+      getRuntimeSession(session.id);
     }
   }
   for (const [sessionId, snap] of Object.entries(state?.runtime?.sessions || {})) {
