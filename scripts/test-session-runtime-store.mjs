@@ -243,11 +243,32 @@ store.applyRuntimeBatch({
       source: "test",
       payload: { notice: { code: "sessionReady", panel: false } },
     },
+    {
+      id: "s2-long-running",
+      type: "engine.notice",
+      sessionId: "s2",
+      turnId: "t2",
+      seq: 5,
+      ts: 2004,
+      source: "test",
+      payload: {
+        notice: {
+          code: "shellLongRunning",
+          level: "progress",
+          panel: true,
+          replace: true,
+          detail: "docker push registry.example.com/app:latest",
+        },
+      },
+    },
   ],
 });
 runtime = store.getRuntimeSession("s2");
-if (runtime.liveTurn?.notices.length !== 1) {
+if (runtime.liveTurn?.notices.length !== 2) {
   throw new Error(`replace notices should be aggregated, got ${runtime.liveTurn?.notices.length}`);
+}
+if (!runtime.liveTurn?.notices.some((event) => event.payload?.notice?.code === "shellLongRunning")) {
+  throw new Error(`long-running shell notice should survive renderer policy: ${JSON.stringify(runtime.liveTurn?.notices)}`);
 }
 
 store.applyRuntimeEvent({
@@ -255,8 +276,8 @@ store.applyRuntimeEvent({
   type: "prompt_suggestions.updated",
   sessionId: "s2",
   turnId: null,
-  seq: 5,
-  ts: 2004,
+  seq: 6,
+  ts: 2005,
   source: "test",
   payload: { suggestions: ["Try this", "Or that"] },
 });

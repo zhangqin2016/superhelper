@@ -102,7 +102,7 @@ class AgentSession extends EventEmitter {
     this._emittedToolIds = new Set();
     /** @type {Map<number, string>} — content block index → tool_use id */
     this._blockIndexToToolId = new Map();
-    /** @type {Map<string, { name: string, input: Record<string, unknown>, detached: boolean }>} */
+    /** @type {Map<string, { name: string, input: Record<string, unknown>, detached: boolean, startedAt: number }>} */
     this._toolLeases = new Map();
     /** @type {Map<string, ReturnType<typeof setTimeout>>} */
     this._toolLeaseNoticeTimers = new Map();
@@ -140,6 +140,7 @@ class AgentSession extends EventEmitter {
   static MESSAGE_STOP_GRACE_MS = 30_000;
   /** Long-running foreground shell commands need visible user feedback. */
   static TOOL_LONG_TASK_NOTICE_MS = 30_000;
+  static TOOL_LONG_TASK_HEARTBEAT_MS = 5 * 60_000;
 
   _clearIdleTimer() {
     if (this._idleTimer) {
@@ -226,6 +227,11 @@ class AgentSession extends EventEmitter {
     if (!this.busy || this._turnSettled) return;
     this._absoluteTurnTimer = setTimeout(() => {
       if (!this.busy || this._turnSettled) return;
+      if (this._hasBlockingTurnWork()) {
+        this._emitBlockingWorkHeartbeat("absolute-timeout");
+        this._armAbsoluteTurnTimer();
+        return;
+      }
       this._recoverStalledTurn("absolute");
     }, AgentSession.TURN_ABSOLUTE_MAX_MS);
   }
@@ -375,6 +381,62 @@ class AgentSession extends EventEmitter {
     }]);
   }
 
+  _formatToolLeaseDetail(lease = {}) {
+    const command = compactCommand(lease.input || {}).slice(0, 160);
+    const elapsedMs = Math.max(0, Date.now() - Number(lease.startedAt || Date.now()));
+    const minutes = Math.floor(elapsedMs / 60_000);
+    const elapsed = minutes > 0 ? ` · running ${minutes}m` : "";
+    return `${command || lease.name || "command"}${elapsed}`;
+  }
+
+  _emitBlockingWorkHeartbeat(reason = "long-running") {
+    const shellLease = [...this._toolLeases.values()].find((lease) =>
+      !lease.detached && this._isShellTool(lease.name)
+    );
+    if (shellLease) {
+      this._emitEngineNotice({
+        code: "shellLongRunning",
+        level: "progress",
+        panel: true,
+        replace: true,
+        toolName: shellLease.name,
+        detail: this._formatToolLeaseDetail(shellLease),
+        reason,
+      });
+      return;
+    }
+    if (this._pendingToolIds.size > 0) {
+      this._emitEngineNotice({
+        code: "taskProgress",
+        level: "progress",
+        panel: true,
+        replace: true,
+        detail: "Task is still running",
+        reason,
+      });
+    }
+  }
+
+  _armToolLeaseNoticeTimer(toolId, delayMs) {
+    this._clearToolLeaseNoticeTimer(toolId);
+    const timer = setTimeout(() => {
+      this._toolLeaseNoticeTimers.delete(toolId);
+      if (!this.busy || this._turnSettled) return;
+      const lease = this._toolLeases.get(toolId);
+      if (!lease || lease.detached || !this._isShellTool(lease.name)) return;
+      this._emitEngineNotice({
+        code: "shellLongRunning",
+        level: "progress",
+        panel: true,
+        replace: true,
+        toolName: lease.name,
+        detail: this._formatToolLeaseDetail(lease),
+      });
+      this._armToolLeaseNoticeTimer(toolId, AgentSession.TOOL_LONG_TASK_HEARTBEAT_MS);
+    }, delayMs);
+    this._toolLeaseNoticeTimers.set(toolId, timer);
+  }
+
   _trackToolLease(toolId, name, input = {}) {
     if (!toolId) return { detached: false, becameDetached: false };
     const prev = this._toolLeases.get(toolId);
@@ -390,6 +452,7 @@ class AgentSession extends EventEmitter {
       name: nextName,
       input: nextInput,
       detached,
+      startedAt: prev?.startedAt || Date.now(),
     });
 
     if (detached) this._pendingToolIds.delete(toolId);
@@ -406,20 +469,7 @@ class AgentSession extends EventEmitter {
     if (detached) {
       this._clearToolLeaseNoticeTimer(toolId);
     } else if (this._isShellTool(nextName) && !this._toolLeaseNoticeTimers.has(toolId)) {
-      const detail = compactCommand(nextInput).slice(0, 160);
-      const timer = setTimeout(() => {
-        this._toolLeaseNoticeTimers.delete(toolId);
-        if (!this.busy || this._turnSettled || !this._toolLeases.has(toolId)) return;
-        this._emitEngineNotice({
-          code: "shellLongRunning",
-          level: "progress",
-          panel: true,
-          replace: true,
-          toolName: nextName,
-          detail,
-        });
-      }, AgentSession.TOOL_LONG_TASK_NOTICE_MS);
-      this._toolLeaseNoticeTimers.set(toolId, timer);
+      this._armToolLeaseNoticeTimer(toolId, AgentSession.TOOL_LONG_TASK_NOTICE_MS);
     }
     return { detached, becameDetached };
   }
@@ -1067,7 +1117,7 @@ class AgentSession extends EventEmitter {
     }
 
     this._pendingHooks.set(requestId, {
-      hookName: "PreToolUse",
+      hookName: action.hookName || "PreToolUse",
       toolName: toolName || "unknown",
       requestId,
     });

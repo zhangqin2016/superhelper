@@ -116,6 +116,8 @@ ctx.turnOrchestrator.ingest("s1", [
   } },
   { type: "tool.input.done", payload: { id: "tool_1", input: { command: "echo ok" } } },
   { type: "tool.done", payload: { id: "tool_1", status: "done", result: { output: "ok" } } },
+  { type: "tool.started", payload: { id: "tool_2", name: "TaskOutput", input: {} } },
+  { type: "tool.done", payload: { status: "done", result: { output: "uploaded 42%" } } },
 ]);
 const queued = await ctx.turnOrchestrator.sendUserMessage("s1", "queued", [], {
   skipPreflight: true,
@@ -144,6 +146,10 @@ const toolStarted = allEvents.find((event) => event.type === "tool.started");
 if (!toolStarted?.turnId || toolStarted.turnId !== result.turnId) {
   throw new Error("tool.started should be attached to the active turn");
 }
+const idlessToolDone = allEvents.find((event) => event.type === "tool.done" && event.payload?.id === "tool_2");
+if (!idlessToolDone || idlessToolDone.payload?.status !== "done") {
+  throw new Error("single running tool should be released by idless tool.done");
+}
 const terminals = allEvents.filter((event) => event.type.startsWith("turn.") && ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type));
 if (terminals.length !== 1 || terminals[0].type !== "turn.completed") {
   throw new Error(`expected one completed terminal event, got ${terminals.map((e) => e.type).join(",")}`);
@@ -154,6 +160,78 @@ if (messages.filter((m) => m.role === "assistant").length !== 1) {
 const assistantMsg = messages.find((m) => m.role === "assistant");
 if (!assistantMsg?.record?.tools?.length) {
   throw new Error("assistant record should persist tool timeline");
+}
+if (assistantMsg.record.tools.some((tool) => tool.status === "running")) {
+  throw new Error(`assistant record must not archive running tools: ${JSON.stringify(assistantMsg.record.tools)}`);
+}
+
+sent.length = 0;
+const interruptSource = await ctx.turnOrchestrator.sendUserMessage("s1", "long running", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!interruptSource.ok || !runner.isBusy()) {
+  throw new Error(`interrupt source turn should start and own the runner: ${JSON.stringify(interruptSource)}`);
+}
+const staleQueue = await ctx.turnOrchestrator.sendUserMessage("s1", "stale queued", [], {
+  skipPreflight: true,
+});
+if (!staleQueue.queued) {
+  throw new Error(`busy send should enter the current-session queue: ${JSON.stringify(staleQueue)}`);
+}
+ctx.turnOrchestrator.interrupt("s1");
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+if (!allEvents.some((event) => event.type === "turn.interrupted" && event.turnId === interruptSource.turnId)) {
+  throw new Error("stop must finalize the active turn as interrupted");
+}
+const clearQueueEvent = allEvents.findLast?.((event) => event.type === "queue.updated")
+  || [...allEvents].reverse().find((event) => event.type === "queue.updated");
+if (!clearQueueEvent || clearQueueEvent.payload?.items?.length !== 0) {
+  throw new Error(`stop must clear the current-session queue: ${JSON.stringify(clearQueueEvent)}`);
+}
+if (messages.some((message) => message.content === "stale queued")) {
+  throw new Error("stopped queued message must not be committed to transcript");
+}
+
+sent.length = 0;
+const originalTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "old work", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!originalTurn.ok || !runner.isBusy()) {
+  throw new Error(`priority source turn should start and own the runner: ${JSON.stringify(originalTurn)}`);
+}
+const priority = await ctx.turnOrchestrator.interruptAndSend("s1", "urgent follow-up", [], {
+  displayFiles: [],
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!priority.ok || !priority.priority || !priority.queued) {
+  throw new Error(`interruptAndSend should report a priority queued item: ${JSON.stringify(priority)}`);
+}
+await new Promise((resolve) => setTimeout(resolve, 0));
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+if (!allEvents.some((event) => event.type === "turn.interrupted" && event.turnId === originalTurn.turnId)) {
+  throw new Error("priority send must interrupt the active turn before dispatching");
+}
+const urgentStarted = allEvents.find((event) => event.type === "turn.started" && event.turnId !== originalTurn.turnId);
+if (!urgentStarted) {
+  throw new Error(`priority send must start a replacement turn: ${allEvents.map((event) => event.type).join(",")}`);
+}
+const urgentQueueEvent = allEvents.findLast?.((event) => event.type === "queue.updated")
+  || [...allEvents].reverse().find((event) => event.type === "queue.updated");
+if (!urgentQueueEvent || urgentQueueEvent.payload?.items?.length !== 0) {
+  throw new Error(`priority queue should flush only after replacement turn starts: ${JSON.stringify(urgentQueueEvent)}`);
+}
+runner.finish("urgent answer");
+ctx.eventBus.flush();
+if (!messages.some((message) => message.role === "user" && message.content === "urgent follow-up")) {
+  throw new Error("priority message must be committed as the next user turn");
+}
+if (!messages.some((message) => message.role === "assistant" && message.content === "urgent answer")) {
+  throw new Error("priority replacement turn must commit its assistant response");
 }
 
 console.log("turn-orchestrator: ok");

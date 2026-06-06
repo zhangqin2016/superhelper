@@ -106,6 +106,19 @@ if (!status.backgroundActivity || status.backgroundActivity.short) {
   throw new Error(`system/status must keep runtime active, got ${JSON.stringify(status.backgroundActivity)}`);
 }
 
+const toolProgress = adapter.normalizeEvent({
+  type: "tool_progress",
+  tool_name: "Bash",
+  message: "Uploading layer 42%",
+});
+if (!hasType(toolProgress.runtimeEvents, "engine.notice")) {
+  throw new Error(`tool_progress must expose engine.notice, got ${JSON.stringify(toolProgress.runtimeEvents)}`);
+}
+const toolProgressNotice = toolProgress.runtimeEvents.find((event) => event.type === "engine.notice")?.payload?.notice;
+if (toolProgressNotice?.code !== "toolProgress" || toolProgressNotice?.panel !== true) {
+  throw new Error(`tool_progress notice should be visible panel progress, got ${JSON.stringify(toolProgressNotice)}`);
+}
+
 const completed = adapter.normalizeEvent({
   type: "system",
   subtype: "task_completed",

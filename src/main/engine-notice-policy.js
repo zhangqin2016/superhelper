@@ -7,14 +7,11 @@ const PANEL_HIDDEN_CODES = new Set([
   "waitingForFirstResponse",
   "longWait",
   "thinkingProgress",
-  "taskProgress",
-  "taskCompleted",
   "compactBoundary",
   "compactComplete",
   "rateLimit",
   "apiRetry",
   "shellDetached",
-  "shellLongRunning",
   "sessionReady",
   "orphanRuntimeEvent",
   "controlRequest",
@@ -22,11 +19,19 @@ const PANEL_HIDDEN_CODES = new Set([
   "toolSummary",
 ]);
 
+const LIVE_PROGRESS_PANEL_CODES = new Set([
+  "taskProgress",
+  "taskCompleted",
+  "toolProgress",
+  "shellLongRunning",
+]);
+
 function noticeVisibleInPanel(notice) {
   if (!notice || typeof notice !== "object") return false;
   if (notice.panel === false) return false;
-  if (PANEL_HIDDEN_CODES.has(String(notice.code || ""))) return false;
-  if (notice.level === "progress") return false;
+  const code = String(notice.code || "");
+  if (PANEL_HIDDEN_CODES.has(code)) return false;
+  if (notice.level === "progress" && !LIVE_PROGRESS_PANEL_CODES.has(code)) return false;
   return notice.panel === true || notice.level === "warning";
 }
 
@@ -37,6 +42,7 @@ function sanitizeNoticeForIngest(notice) {
 }
 
 module.exports = {
+  LIVE_PROGRESS_PANEL_CODES,
   PANEL_HIDDEN_CODES,
   noticeVisibleInPanel,
   sanitizeNoticeForIngest,

@@ -267,20 +267,57 @@ function normalizeAssistantMessage(ev) {
   return actions;
 }
 
+function normalizeToolResultId(block = {}) {
+  return (
+    block.tool_use_id ||
+    block.toolUseId ||
+    block.tool_id ||
+    block.toolId ||
+    block.id ||
+    ""
+  );
+}
+
+function stringifyToolResultContent(content) {
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (!item || typeof item !== "object") return "";
+        if (typeof item.text === "string") return item.text;
+        if (typeof item.content === "string") return item.content;
+        if (typeof item.output === "string") return item.output;
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (typeof content === "string") return content;
+  if (!content || typeof content !== "object") return "";
+  const direct = [
+    content.text,
+    content.content,
+    content.output,
+    content.stdout,
+    content.stderr,
+  ].filter((value) => typeof value === "string" && value);
+  if (direct.length) return direct.join("\n");
+  try {
+    return JSON.stringify(content);
+  } catch {
+    return "";
+  }
+}
+
 function normalizeUserMessage(ev) {
   const blocks = Array.isArray(ev?.message?.content) ? ev.message.content : [];
   return blocks
     .filter((block) => block?.type === "tool_result")
     .map((block) => ({
       kind: "tool_result",
-      id: block.tool_use_id || "",
+      id: normalizeToolResultId(block),
       isError: Boolean(block.is_error),
-      content: Array.isArray(block.content)
-        ? block.content
-            .filter((c) => c.type === "text")
-            .map((c) => c.text)
-            .join("\n")
-        : null,
+      content: stringifyToolResultContent(block.content),
     }));
 }
 

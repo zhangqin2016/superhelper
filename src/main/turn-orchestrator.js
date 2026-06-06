@@ -44,6 +44,15 @@ function newQueueId() {
   return `queue_${crypto.randomUUID()}`;
 }
 
+function queueDispatchOptions(opts = {}) {
+  return {
+    spawnEngine: opts.spawnEngine,
+    skipPreflight: Boolean(opts.skipPreflight),
+    skipVision: Boolean(opts.skipVision),
+    skipDocument: Boolean(opts.skipDocument),
+  };
+}
+
 const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
 
 function compactToolInput(input, name = "Tool") {
@@ -153,6 +162,13 @@ class TurnOrchestrator {
       return state.blockIndexToToolId.get(payload.index);
     }
     return null;
+  }
+
+  _resolveToolDoneId(state, payload) {
+    const explicit = this._resolveToolId(state, payload);
+    if (explicit) return explicit;
+    const running = [...state.tools.values()].filter((tool) => tool?.status === "running");
+    return running.length === 1 ? running[0].id : null;
   }
 
   _applyDraft(sessionId, draft) {
@@ -269,7 +285,7 @@ class TurnOrchestrator {
         break;
       }
       case "tool.done": {
-        const toolId = payload.id || this._resolveToolId(state, payload);
+        const toolId = this._resolveToolDoneId(state, payload);
         if (!toolId) break;
         const tool = this._trackTool(sessionId, toolId, {});
         tool.status = payload.status || (payload.isError ? "failed" : "done");
@@ -398,6 +414,7 @@ class TurnOrchestrator {
         text: displayText,
         files,
         displayFiles: opts.displayFiles || fileMetadataFromPayload(files),
+        options: queueDispatchOptions(opts),
       };
       state.queue.push(item);
       this._emitQueue(sessionId);
@@ -476,6 +493,7 @@ class TurnOrchestrator {
       text: String(text || "").trim(),
       files,
       displayFiles: opts.displayFiles || fileMetadataFromPayload(files),
+      options: queueDispatchOptions(opts),
     };
     state.queue = [item];
     this._emitQueue(sessionId);
@@ -493,7 +511,10 @@ class TurnOrchestrator {
       fromQueue: true,
       displayFiles: item.displayFiles,
       recordUser: true,
-      spawnEngine: true,
+      spawnEngine: item.options?.spawnEngine !== false,
+      skipPreflight: Boolean(item.options?.skipPreflight),
+      skipVision: Boolean(item.options?.skipVision),
+      skipDocument: Boolean(item.options?.skipDocument),
     });
     return Boolean(result?.ok);
   }
@@ -728,6 +749,11 @@ class TurnOrchestrator {
     if (!state.turnId || state.terminalEmitted) return;
     if (!TERMINAL_TYPES.has(type)) throw new Error(`Invalid terminal event ${type}`);
     state.phase = "finalizing";
+    for (const tool of state.tools.values()) {
+      if (tool?.status !== "running") continue;
+      tool.status = type === "turn.completed" ? "done" : "failed";
+      upsertTimelineTool(state, tool, Date.now());
+    }
     const assistant = String(payload.assistant || state.assistantText || "").trim();
     const record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
     if (record) {

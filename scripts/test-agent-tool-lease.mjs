@@ -31,6 +31,9 @@ function createTestSession(sessionId) {
               input: draft.payload.input,
             });
             break;
+          case "hook.requested":
+            runner.emit("hook-request", draft.payload);
+            break;
           default:
             break;
         }
@@ -65,6 +68,8 @@ AgentSession.FIRST_RESPONSE_NOTICE_MS = 5;
 AgentSession.LONG_WAIT_NOTICE_MS = 10;
 AgentSession.MESSAGE_STOP_GRACE_MS = 5;
 AgentSession.QUIESCE_MS = 5;
+AgentSession.TOOL_LONG_TASK_HEARTBEAT_MS = 10;
+AgentSession.TURN_ABSOLUTE_MAX_MS = 10;
 
 const waitRunner = createTestSession("sess_wait_notices");
 const waitNotices = [];
@@ -406,6 +411,52 @@ if (foregroundCommandRunner._canAutoCompleteTurn()) {
 }
 foregroundCommandRunner._completeTurn({ code: 0, output: "" });
 
+const longPushRunner = createTestSession("sess_long_push");
+const longPushNotices = [];
+let longPushDone = false;
+longPushRunner.on("engine-notice", (notice) => {
+  if (notice.code === "shellLongRunning") longPushNotices.push(notice);
+});
+longPushRunner.on("done", () => {
+  longPushDone = true;
+});
+startSyntheticTurn(longPushRunner);
+line(longPushRunner, {
+  type: "stream_event",
+  event: {
+    type: "content_block_start",
+    index: 4,
+    content_block: { type: "tool_use", id: "tool_docker_push", name: "Bash" },
+  },
+});
+line(longPushRunner, {
+  type: "stream_event",
+  event: {
+    type: "content_block_delta",
+    index: 4,
+    delta: {
+      type: "input_json_delta",
+      partial_json: JSON.stringify({ command: "docker push registry.example.com/app:latest" }),
+    },
+  },
+});
+line(longPushRunner, {
+  type: "stream_event",
+  event: { type: "content_block_stop", index: 4 },
+});
+longPushRunner._armAbsoluteTurnTimer();
+await new Promise((resolve) => setTimeout(resolve, 35));
+if (longPushDone || !longPushRunner.busy || longPushRunner._turnSettled) {
+  throw new Error("long foreground shell task must not be completed by absolute timeout");
+}
+if (longPushNotices.length < 2) {
+  throw new Error(`long foreground shell task should emit repeated heartbeat notices, got ${longPushNotices.length}`);
+}
+if (!longPushNotices.some((entry) => String(entry.detail || "").includes("docker push"))) {
+  throw new Error(`long foreground shell task notice should include command detail: ${JSON.stringify(longPushNotices)}`);
+}
+longPushRunner._completeTurn({ code: 0, output: "" });
+
 AgentSession.INTERRUPT_FALLBACK_MS = 5;
 const interrupted = createTestSession("sess_interrupt_fallback");
 let killed = false;
@@ -615,6 +666,47 @@ if (explicitReadPrompt?.requestId !== "req_read_permission") {
   throw new Error(`explicit Claude permission requests must reach UI, got ${JSON.stringify(explicitReadPrompt)}`);
 }
 explicitReadPermissionRunner.cancelPermissionRequest("req_read_permission");
+
+const hookAskRunner = createTestSession("sess_hook_ask");
+let hookAskPrompt = null;
+let hookAskWrite = "";
+hookAskRunner.process = {
+  stdin: {
+    destroyed: false,
+    write: (line) => {
+      hookAskWrite = `${hookAskWrite}${line}`;
+      return true;
+    },
+  },
+};
+hookAskRunner.spawnOptions = { permissionMode: "default" };
+hookAskRunner.on("hook-request", (payload) => {
+  hookAskPrompt = payload;
+});
+startSyntheticTurn(hookAskRunner);
+line(hookAskRunner, {
+  type: "control_request",
+  request_id: "req_hook_ask",
+  request: {
+    subtype: "hook_callback",
+    hook_event: {
+      hook: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "rm -rf tmp" },
+      permissionDecision: "ask",
+      permissionDecisionReason: "Potentially dangerous command",
+    },
+  },
+});
+if (hookAskPrompt?.requestId !== "req_hook_ask" || hookAskPrompt?.toolName !== "Bash") {
+  throw new Error(`interactive hook permission requests must reach UI, got ${JSON.stringify(hookAskPrompt)}`);
+}
+if (!hookAskRunner.respondHook("req_hook_ask", { allow: true })) {
+  throw new Error("interactive hook permission should accept user approval");
+}
+if (!hookAskWrite.includes('"permissionDecision":"allow"')) {
+  throw new Error(`interactive hook approval should write allow response: ${hookAskWrite}`);
+}
 
 const resultErrorRunner = createTestSession("sess_result_error");
 let resultErrorDone = null;

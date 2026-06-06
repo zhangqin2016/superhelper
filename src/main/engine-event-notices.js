@@ -178,7 +178,7 @@ function classifySystemEvent(ev) {
       return {
         code: "taskProgress",
         level: "progress",
-        panel: false,
+        panel: true,
         replace: true,
         detail: extractTaskDetail(ev),
         subtype,
@@ -187,7 +187,7 @@ function classifySystemEvent(ev) {
       return {
         code: "taskCompleted",
         level: "info",
-        panel: false,
+        panel: true,
         replace: true,
         replacesCode: "taskProgress",
         done: true,
@@ -220,7 +220,7 @@ function classifySystemEvent(ev) {
         return {
           code: "taskProgress",
           level: "progress",
-          panel: false,
+          panel: true,
           replace: true,
           detail: extractTaskDetail(ev),
           subtype,

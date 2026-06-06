@@ -338,7 +338,8 @@
   "engine.documentPreparing": "جارٍ قراءة المستند…",
   "engine.documentReady": "المستند جاهز",
   "engine.documentSkipped": "تم تخطي قراءة المستند",
-  "engine.permissionDenied": "تم رفض الإذن — تم تخطي الخطوة",
+  "engine.hookPreToolUseAsk": "يتطلب الإجراء تأكيداً — بانتظار قرارك",
+  "engine.permissionDenied": "تم رفض الإذن، لذلك تم تخطي الخطوة. عدّل الصلاحيات ثم أعد المحاولة إذا أردت تنفيذها",
   "engine.permissionAutoDenied": "التأكيدات متوقفة — تم تخطي الخطوة تلقائياً",
   "engine.permissionUserDenied": "رفضتَ الإذن — تم تخطي الخطوة",
 
@@ -422,6 +423,8 @@
   "permission.respondFailed": "تعذّر إرسال الموافقة. أعد المحاولة.",
   "permission.timeout": "الموافقة تنتظر منذ فترة — يرجى الموافقة أو الرفض.",
   "permission.planTruncated": "(معاينة الخطة مقطوعة)",
+  "hook.allowTool": "سماح",
+  "hook.denyTool": "رفض",
   "question.title": "مطلوب إدخالك",
   "question.item": "سؤال",
   "question.submit": "متابعة",
@@ -453,6 +456,7 @@
   "search.provider.duckduckgo.desc": "DuckDuckGo Lite مباشرة، بلا مفتاح API.",
 
   "turn.reply": "الرد",
+  "turn.hook.confirmTitle": "يتطلب الإجراء تأكيداً",
   "turn.steps": "الخطوات",
   "timeline.statusRunning": "قيد التشغيل",
   "timeline.statusDone": "تم التشغيل",

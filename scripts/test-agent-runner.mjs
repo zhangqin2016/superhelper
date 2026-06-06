@@ -287,7 +287,7 @@ if (!permissionDenied || permissionDenied.code !== "permissionDenied" || permiss
 	}
 
 const taskUpdated = classifyEngineEvent({ type: "system", subtype: "task_updated" });
-if (!taskUpdated || taskUpdated.code !== "taskProgress" || taskUpdated.level !== "progress") {
+if (!taskUpdated || taskUpdated.code !== "taskProgress" || taskUpdated.level !== "progress" || taskUpdated.panel !== true) {
   throw new Error(`task_updated should be visible progress, got ${JSON.stringify(taskUpdated)}`);
 }
 
@@ -299,7 +299,8 @@ const taskProgress = classifyEngineEvent({
 if (
   !taskProgress ||
   taskProgress.code !== "taskProgress" ||
-  taskProgress.detail !== "Writing chapter 41"
+  taskProgress.detail !== "Writing chapter 41" ||
+  taskProgress.panel !== true
 ) {
   throw new Error(`task_progress should expose live task detail, got ${JSON.stringify(taskProgress)}`);
 }
@@ -313,7 +314,8 @@ if (
   !systemStatus ||
   systemStatus.code !== "taskProgress" ||
   systemStatus.level !== "progress" ||
-  systemStatus.detail !== "Reading recent chapters"
+  systemStatus.detail !== "Reading recent chapters" ||
+  systemStatus.panel !== true
 ) {
   throw new Error(`system/status should expose live task detail, got ${JSON.stringify(systemStatus)}`);
 }
@@ -408,6 +410,42 @@ if (normalizedThinking[0]?.kind !== "assistant_thinking" || normalizedThinking[0
   throw new Error(`normalizeClaudeEvent thinking delta failed: ${JSON.stringify(normalizedThinking)}`);
 }
 
+const normalizedStringToolResult = normalizeClaudeEvent({
+  type: "user",
+  message: {
+    content: [{
+      type: "tool_result",
+      toolUseId: "tool_string_result",
+      content: "uploaded 42%",
+    }],
+  },
+});
+if (
+  normalizedStringToolResult[0]?.kind !== "tool_result" ||
+  normalizedStringToolResult[0]?.id !== "tool_string_result" ||
+  normalizedStringToolResult[0]?.content !== "uploaded 42%"
+) {
+  throw new Error(`string tool_result should be preserved: ${JSON.stringify(normalizedStringToolResult)}`);
+}
+
+const normalizedObjectToolResult = normalizeClaudeEvent({
+  type: "user",
+  message: {
+    content: [{
+      type: "tool_result",
+      tool_id: "tool_object_result",
+      content: { stdout: "sent 1MB", stderr: "retry 1" },
+    }],
+  },
+});
+if (
+  normalizedObjectToolResult[0]?.kind !== "tool_result" ||
+  normalizedObjectToolResult[0]?.id !== "tool_object_result" ||
+  normalizedObjectToolResult[0]?.content !== "sent 1MB\nretry 1"
+) {
+  throw new Error(`object tool_result should expose stdout/stderr: ${JSON.stringify(normalizedObjectToolResult)}`);
+}
+
 const unknownRuntime = normalizeClaudeEvent({ type: "new_runtime_event", subtype: "mystery" });
 if (unknownRuntime[0]?.kind !== "unknown_runtime_event" || unknownRuntime[0]?.notice?.level !== "warning") {
   throw new Error(`unknown runtime event should be visible warning: ${JSON.stringify(unknownRuntime)}`);
@@ -456,6 +494,20 @@ if (
   taskProgressNormalized[0]?.notice?.code !== "taskProgress"
 ) {
   throw new Error(`task_progress should become visible progress: ${JSON.stringify(taskProgressNormalized)}`);
+}
+
+const toolProgressNormalized = normalizeClaudeEvent({
+  type: "tool_progress",
+  tool_name: "Bash",
+  message: "Uploading layer 42%",
+});
+if (
+  toolProgressNormalized[0]?.kind !== "engine_notice" ||
+  toolProgressNormalized[0]?.notice?.code !== "toolProgress" ||
+  toolProgressNormalized[0]?.notice?.panel !== true ||
+  toolProgressNormalized[0]?.notice?.detail !== "Uploading layer 42%"
+) {
+  throw new Error(`tool_progress should become visible tool progress: ${JSON.stringify(toolProgressNormalized)}`);
 }
 
 const statusNormalized = normalizeClaudeEvent({

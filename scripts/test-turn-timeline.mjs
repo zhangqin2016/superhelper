@@ -5,6 +5,7 @@ const require = module.createRequire(import.meta.url);
 const {
   activityFromProcessPayload,
   activityFromEngineNotice,
+  appendTimelineNotice,
   buildTimelineFromLegacy,
   isMeaningfulActivityLabel,
   setActivityLabel,
@@ -30,7 +31,7 @@ if (!isMeaningfulActivityLabel("Writing chapter 41")) {
 const taskNotice = activityFromEngineNotice({
   code: "taskProgress",
   detail: "Writing chapter 41",
-  panel: false,
+  panel: true,
 });
 if (taskNotice !== null) {
   throw new Error(`task progress must not drive status line: ${taskNotice}`);
@@ -53,6 +54,42 @@ if (activityFromProcessPayload(systemNoticePayload) !== null) {
 }
 if (isMeaningfulActivityLabel("system_notice")) {
   throw new Error("system_notice must not be a meaningful activity label");
+}
+
+const progressState = { timeline: [] };
+appendTimelineNotice(progressState, {
+  code: "taskProgress",
+  level: "progress",
+  panel: true,
+  replace: true,
+  detail: "Uploading 10%",
+}, 900);
+appendTimelineNotice(progressState, {
+  code: "taskProgress",
+  level: "progress",
+  panel: true,
+  replace: true,
+  detail: "Uploading 42%",
+}, 901);
+if (progressState.timeline.length !== 1 || progressState.timeline[0].detail !== "Uploading 42%") {
+  throw new Error(`task progress should replace in place: ${JSON.stringify(progressState.timeline)}`);
+}
+appendTimelineNotice(progressState, {
+  code: "taskCompleted",
+  level: "info",
+  panel: true,
+  replace: true,
+  replacesCode: "taskProgress",
+  done: true,
+  detail: "Upload complete",
+}, 902);
+if (
+  progressState.timeline.length !== 1 ||
+  progressState.timeline[0].code !== "taskCompleted" ||
+  progressState.timeline[0].detail !== "Upload complete" ||
+  progressState.timeline[0].done !== true
+) {
+  throw new Error(`task completion should replace progress: ${JSON.stringify(progressState.timeline)}`);
 }
 
 const state = { timeline: [], activityLabel: null, tools: new Map() };
