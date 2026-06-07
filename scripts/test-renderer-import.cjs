@@ -149,6 +149,28 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(initialConversationResult);
+    const sameTurnCommittedResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { syncCommittedMessages } = await import("./modules/session-runtime-store.js");
+        const { showSessionMessages, renderConversation } = await import("./modules/message.js");
+        const sessionId = "session_same_turn_committed_regression";
+        store.set("activeSessionId", sessionId);
+        showSessionMessages(sessionId);
+        syncCommittedMessages(sessionId, [
+          { role: "user", turnId: "turn_same_key", content: "同一轮用户问题", timestamp: "2026-01-01T00:00:00.000Z" },
+          { role: "assistant", turnId: "turn_same_key", content: "同一轮助手回答", timestamp: "2026-01-01T00:00:01.000Z" },
+        ]);
+        renderConversation(sessionId, { force: true, forceScrollBottom: true });
+        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`);
+        const text = panel?.textContent || "";
+        if (!text.includes("同一轮用户问题") || !text.includes("同一轮助手回答")) {
+          throw new Error("same-turn committed user and assistant messages must both render");
+        }
+        return "same-turn-committed-regression: ok";
+      }
+    )()`);
+    console.log(sameTurnCommittedResult);
     const multiSelectQuestionResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
@@ -194,6 +216,47 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(multiSelectQuestionResult);
+    const markdownRichResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { renderMarkdown, renderMarkdownWithCache } = await import("./modules/markdown.js");
+        const fence = String.fromCharCode(96).repeat(3);
+        const host = document.createElement("div");
+        host.className = "markdown-body";
+        document.body.appendChild(host);
+        renderMarkdownWithCache(host, [
+          fence + "js",
+          "console.log('copy me')",
+          fence,
+          "- [x] 已完成",
+        ].join("\\n"));
+        if (!host.querySelector(".markdown-code-copy")) {
+          throw new Error("code blocks should render a copy action");
+        }
+        if (!host.querySelector(".markdown-task-list-item")) {
+          throw new Error("task list items should receive rich markdown styling");
+        }
+        const rich = document.createElement("div");
+        rich.className = "markdown-body";
+        document.body.appendChild(rich);
+        await renderMarkdown(rich, [
+          "$$E=mc^2$$",
+          fence + "mermaid",
+          "graph TD",
+          "A-->B",
+          fence,
+        ].join("\\n"));
+        if (!rich.querySelector(".katex")) {
+          throw new Error("KaTeX math should render in async markdown: " + rich.innerHTML);
+        }
+        if (!rich.querySelector(".markdown-mermaid svg")) {
+          throw new Error("Mermaid blocks should render to SVG: " + rich.innerHTML);
+        }
+        host.remove();
+        rich.remove();
+        return "markdown-rich-regression: ok";
+      }
+    )()`);
+    console.log(markdownRichResult);
     if (capturedQuestionResponses.length !== 1) {
       throw new Error(`multi-select should submit exactly once, got ${capturedQuestionResponses.length}`);
     }

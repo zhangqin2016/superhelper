@@ -141,10 +141,20 @@ function patchSessionMessagesInStore(sessionId, messages) {
 
 async function loadSessionConversation(sessionId) {
   if (!sessionId) return [];
-  const result = await window.assistantClient.getSessionConversation(sessionId, {
-    limit: CONVERSATION_PAGE_SIZE,
-  });
-  const messages = result?.ok ? result.conversation || [] : [];
+  let result;
+  try {
+    result = await window.assistantClient.getSessionConversation(sessionId, {
+      limit: CONVERSATION_PAGE_SIZE,
+    });
+  } catch (err) {
+    console.warn("[session] failed to load conversation:", err);
+    return getRuntimeSession(sessionId).committedMessages;
+  }
+  if (!result?.ok) {
+    console.warn("[session] failed to load conversation:", result?.error || result);
+    return getRuntimeSession(sessionId).committedMessages;
+  }
+  const messages = result.conversation || [];
   conversationPages.set(sessionId, {
     hasMore: Boolean(result?.hasMore),
     nextBefore: Number.isInteger(result?.nextBefore) ? result.nextBefore : 0,

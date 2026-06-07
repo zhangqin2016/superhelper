@@ -193,7 +193,7 @@ async function refreshRuntimeSnapshot(sessionId) {
 }
 
 function messageKey(message, index) {
-  return message.id || message.turnId || `${message.role}:${message.timestamp || index}:${index}`;
+  return message.id || (message.turnId ? `${message.role}:${message.turnId}` : null) || `${message.role}:${message.timestamp || index}:${index}`;
 }
 
 export function renderConversation(sessionId, opts = {}) {

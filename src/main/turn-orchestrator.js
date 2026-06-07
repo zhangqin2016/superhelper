@@ -592,7 +592,7 @@ class TurnOrchestrator {
       this._emit(session.id, "user.committed", {
         text,
         files: displayFiles.length ? displayFiles : null,
-      }, { turnId: null });
+      }, { turnId: state.turnId });
     }
 
     if (!opts.skipVision) {

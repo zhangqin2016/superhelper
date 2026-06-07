@@ -132,6 +132,10 @@ allEvents = sent.flatMap((entry) => entry.payload?.events || []);
 if (!allEvents.some((event) => event.type === "turn.started")) {
   throw new Error("missing turn.started");
 }
+const committedUser = allEvents.find((event) => event.type === "user.committed");
+if (!committedUser || committedUser.turnId !== result.turnId) {
+  throw new Error(`user.committed should be attached to the active turn: ${JSON.stringify(committedUser)}`);
+}
 if (!allEvents.some((event) => event.type === "assistant.delta")) {
   throw new Error("missing assistant.delta");
 }

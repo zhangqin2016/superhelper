@@ -11,3 +11,5 @@
 @import "./styles/settings.css";
 @import "./styles/runtime-chat.css";
 @import "./styles/system.css";
+@import "../../node_modules/katex/dist/katex.min.css";
+@import "./styles/markdown-rich.css";

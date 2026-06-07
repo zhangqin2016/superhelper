@@ -5,8 +5,14 @@
 
 let hljsReady = false;
 let hljs = null;
+let katexReady = false;
+let katex = null;
+let mermaidReady = false;
+let mermaid = null;
 
 const MARKED_OPTIONS = { gfm: true, breaks: false };
+const MERMAID_LANGUAGES = new Set(["mermaid", "flowchart", "sequence", "sequenceDiagram", "classDiagram", "stateDiagram"]);
+const DIFF_LANGUAGES = new Set(["diff", "patch"]);
 
 function isTableSeparatorLine(line = "") {
   const trimmed = String(line).trim();
@@ -65,55 +71,43 @@ export function repairMarkdownTables(text = "") {
   return out.join("\n");
 }
 
-function prepareMarkdown(text = "") {
-  return repairMarkdownTables(text);
+function prepareMarkdown(text = "", { mathRenderer = null } = {}) {
+  return renderMathBlocks(repairMarkdownTables(text), mathRenderer);
 }
 
 function createMarkedRenderer({ hl = null, cacheCode = false } = {}) {
   const renderer = new window.marked.Renderer();
   renderer.link = function ({ href, title, tokens }) {
     const text = this.parser.parseInline(tokens);
-    if (!href) return text;
-    const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
-    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
+    const safeHref = sanitizeUrl(href, { allowRelative: true });
+    if (!safeHref) return text;
+    const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
+    return `<a href="${escapeAttribute(safeHref)}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
+  };
+  renderer.image = function ({ href, title, text }) {
+    const safeSrc = sanitizeUrl(href, { allowRelative: true, image: true });
+    const alt = escapeAttribute(text || "");
+    if (!safeSrc) return alt;
+    const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
+    return `<img class="markdown-image" src="${escapeAttribute(safeSrc)}" alt="${alt}" loading="lazy"${titleAttr}>`;
   };
 
-  if (cacheCode) {
-    renderer.code = function ({ text, lang }) {
-      const key = hashContent(`${lang || ""}:${text}`);
+  renderer.code = function ({ text, lang }) {
+    const normalizedLang = normalizeCodeLanguage(lang);
+    const rich = renderRichCodeBlock(text, normalizedLang);
+    if (rich) return rich;
+
+    if (cacheCode) {
+      const key = hashContent(`${normalizedLang || ""}:${text}`);
       const cached = codeCache.get(key);
-      if (cached) {
-        return cached;
-      }
-      let result;
-      if (window.hljs && lang && window.hljs.getLanguage(lang)) {
-        try {
-          result = `<pre><code class="hljs language-${lang}">${window.hljs.highlight(text, { language: lang }).value}</code></pre>`;
-        } catch {
-          result = `<pre><code>${escapeHtml(text)}</code></pre>`;
-        }
-      } else {
-        result = `<pre><code>${escapeHtml(text)}</code></pre>`;
-      }
+      if (cached) return cached;
+      const result = renderHighlightedCode(text, normalizedLang, window.hljs || hl);
       codeCache.set(key, result);
       return result;
-    };
-  } else if (hl) {
-    renderer.code = function ({ text, lang }) {
-      if (lang && hl.getLanguage(lang)) {
-        try {
-          const highlighted = hl.highlight(text, { language: lang }).value;
-          return `<pre><code class="hljs language-${lang}">${highlighted}</code></pre>`;
-        } catch {}
-      }
-      try {
-        const auto = hl.highlightAuto(text).value;
-        return `<pre><code class="hljs">${auto}</code></pre>`;
-      } catch {
-        return `<pre><code>${escapeHtml(text)}</code></pre>`;
-      }
-    };
-  }
+    }
+
+    return renderHighlightedCode(text, normalizedLang, hl);
+  };
   return renderer;
 }
 
@@ -130,6 +124,38 @@ async function ensureHljs() {
   }
 }
 
+async function ensureKatex() {
+  if (katexReady) return katex;
+  try {
+    const mod = await import("../../../node_modules/katex/dist/katex.mjs");
+    katex = mod.default || mod;
+    katexReady = true;
+    return katex;
+  } catch {
+    katexReady = true;
+    return null;
+  }
+}
+
+async function ensureMermaid() {
+  if (mermaidReady) return mermaid;
+  try {
+    const mod = await import("../../../node_modules/mermaid/dist/mermaid.esm.mjs");
+    mermaid = mod.default || mod;
+    const root = globalThis.document?.documentElement;
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: root?.classList?.contains("light") ? "default" : "dark",
+    });
+    mermaidReady = true;
+    return mermaid;
+  } catch {
+    mermaidReady = true;
+    return null;
+  }
+}
+
 export async function renderMarkdown(element, markdownText) {
   const parser = window.marked && (window.marked.parse || window.marked);
   if (typeof parser !== "function" || !window.DOMPurify) {
@@ -139,15 +165,225 @@ export async function renderMarkdown(element, markdownText) {
   }
   element.classList?.remove("markdown-fallback");
 
-  const hl = await ensureHljs();
+  const [hl, mathRenderer] = await Promise.all([ensureHljs(), ensureKatex()]);
   const renderer = createMarkedRenderer({ hl });
-  const html = parser(prepareMarkdown(markdownText || ""), { ...MARKED_OPTIONS, renderer });
+  const html = parser(prepareMarkdown(markdownText || "", { mathRenderer }), { ...MARKED_OPTIONS, renderer });
 
   element.innerHTML = window.DOMPurify.sanitize(html);
+  enhanceRenderedMarkdown(element, { interactive: true });
+  await renderMermaidBlocks(element);
 }
 
 function escapeHtml(text) {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return String(text ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function escapeAttribute(text) {
+  return escapeHtml(text).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function sanitizeUrl(value, { allowRelative = false, image = false } = {}) {
+  const href = String(value || "").trim();
+  if (!href) return "";
+  if (allowRelative && (href.startsWith("/") || href.startsWith("./") || href.startsWith("../") || href.startsWith("#"))) {
+    return href;
+  }
+  if (/^(https?:|mailto:)/i.test(href)) return href;
+  if (image && href.startsWith("data:image/")) return href;
+  if (image && /^(file:|blob:)/i.test(href)) return href;
+  try {
+    const url = new URL(href, window.location?.href || "file:///");
+    if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") return href;
+    if (image && (url.protocol === "file:" || url.protocol === "blob:")) return href;
+  } catch {}
+  return "";
+}
+
+function normalizeCodeLanguage(lang = "") {
+  return String(lang || "").trim().split(/\s+/)[0];
+}
+
+function renderRichCodeBlock(text = "", lang = "") {
+  if (DIFF_LANGUAGES.has(lang)) return renderDiffBlock(text);
+  if (MERMAID_LANGUAGES.has(lang)) {
+    return `<pre class="markdown-mermaid-source"><code class="language-mermaid">${escapeHtml(text)}</code></pre>`;
+  }
+  return null;
+}
+
+function renderHighlightedCode(text = "", lang = "", highlighter = null) {
+  if (highlighter && lang && highlighter.getLanguage?.(lang)) {
+    try {
+      const highlighted = highlighter.highlight(text, { language: lang }).value;
+      return `<pre><code class="hljs language-${escapeAttribute(lang)}">${highlighted}</code></pre>`;
+    } catch {}
+  }
+  if (highlighter?.highlightAuto) {
+    try {
+      const auto = highlighter.highlightAuto(text).value;
+      return `<pre><code class="hljs">${auto}</code></pre>`;
+    } catch {}
+  }
+  const languageClass = lang ? ` class="language-${escapeAttribute(lang)}"` : "";
+  return `<pre><code${languageClass}>${escapeHtml(text)}</code></pre>`;
+}
+
+function renderDiffBlock(text = "") {
+  const lines = String(text).split("\n");
+  const rendered = lines.map((line) => {
+    let kind = "context";
+    if (line.startsWith("+") && !line.startsWith("+++")) kind = "add";
+    else if (line.startsWith("-") && !line.startsWith("---")) kind = "del";
+    else if (line.startsWith("@@")) kind = "hunk";
+    else if (line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++")) kind = "meta";
+    return `<span class="markdown-diff-line markdown-diff-${kind}">${escapeHtml(line || " ")}</span>`;
+  }).join("");
+  return `<pre class="markdown-diff"><code>${rendered}</code></pre>`;
+}
+
+function renderMathBlocks(text = "", mathRenderer = null) {
+  if (!mathRenderer || typeof mathRenderer.renderToString !== "function") return text;
+  let prepared = String(text);
+  prepared = prepared.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => {
+    return `\n<div class="markdown-math-block">${renderMath(expr, mathRenderer, true)}</div>\n`;
+  });
+  prepared = prepared.replace(/\\\[([\s\S]+?)\\\]/g, (_, expr) => {
+    return `\n<div class="markdown-math-block">${renderMath(expr, mathRenderer, true)}</div>\n`;
+  });
+  prepared = prepared.replace(/\\\(([^]+?)\\\)/g, (_, expr) => {
+    return `<span class="markdown-math-inline">${renderMath(expr, mathRenderer, false)}</span>`;
+  });
+  prepared = prepared.replace(/(^|[\s([:：，。；；,])\$([^$\n]{1,500})\$(?=([\s)\].,;!?，。；！？]|$))/g, (match, prefix, expr) => {
+    if (/^\s*$/.test(expr)) return match;
+    return `${prefix}<span class="markdown-math-inline">${renderMath(expr, mathRenderer, false)}</span>`;
+  });
+  return prepared;
+}
+
+function renderMath(expr, mathRenderer, displayMode) {
+  try {
+    return mathRenderer.renderToString(String(expr).trim(), {
+      displayMode,
+      throwOnError: false,
+      trust: false,
+      strict: "ignore",
+    });
+  } catch {
+    return escapeHtml(String(expr));
+  }
+}
+
+async function renderMermaidBlocks(element) {
+  if (!element?.querySelectorAll) return;
+  const blocks = Array.from(element.querySelectorAll("pre.markdown-mermaid-source > code.language-mermaid"));
+  if (!blocks.length) return;
+  const engine = await ensureMermaid();
+  for (const code of blocks) {
+    const source = code.textContent || "";
+    const pre = code.closest("pre");
+    if (!pre) continue;
+    const container = document.createElement("div");
+    container.className = "markdown-mermaid";
+    container.textContent = "Rendering diagram...";
+    pre.replaceWith(container);
+    if (!engine) {
+      container.classList.add("markdown-mermaid-error");
+      container.textContent = source;
+      continue;
+    }
+    try {
+      const id = `lily_mermaid_${Math.abs(Number(hashContent(source)))}_${Date.now()}`;
+      const result = await engine.render(id, source);
+      container.innerHTML = window.DOMPurify.sanitize(result.svg || "");
+    } catch (error) {
+      console.warn("[markdown] Mermaid render failed", error);
+      container.classList.add("markdown-mermaid-error");
+      container.textContent = source;
+    }
+  }
+}
+
+function wireMarkdownImages(element) {
+  if (!element?.querySelectorAll) return;
+  for (const image of element.querySelectorAll("img.markdown-image")) {
+    if (image.dataset.viewerReady === "true") continue;
+    image.dataset.viewerReady = "true";
+    image.addEventListener("click", async () => {
+      try {
+        const mod = await import("./image-viewer.js");
+        mod.openImageViewer?.(image.currentSrc || image.src, image.alt || "");
+      } catch {}
+    });
+  }
+}
+
+function enhanceRenderedMarkdown(element, { interactive = false } = {}) {
+  wireMarkdownImages(element);
+  normalizeTaskLists(element);
+  if (interactive) wireCodeCopyButtons(element);
+}
+
+function normalizeTaskLists(element) {
+  if (!element?.querySelectorAll) return;
+  for (const checkbox of element.querySelectorAll('li > input[type="checkbox"]')) {
+    const item = checkbox.closest("li");
+    item?.classList.add("markdown-task-list-item");
+    checkbox.disabled = true;
+  }
+}
+
+function wireCodeCopyButtons(element) {
+  if (!element?.querySelectorAll) return;
+  for (const pre of element.querySelectorAll("pre")) {
+    if (pre.classList.contains("markdown-mermaid-source")) continue;
+    if (pre.closest(".markdown-code-frame")) continue;
+    const code = pre.querySelector("code");
+    if (!code) continue;
+
+    const frame = document.createElement("div");
+    frame.className = "markdown-code-frame";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "markdown-code-copy";
+    button.textContent = "复制";
+    button.setAttribute("aria-label", "复制代码");
+    button.addEventListener("click", async () => {
+      const text = code.textContent || "";
+      const ok = await copyText(text);
+      button.textContent = ok ? "已复制" : "复制失败";
+      button.classList.toggle("is-error", !ok);
+      setTimeout(() => {
+        button.textContent = "复制";
+        button.classList.remove("is-error");
+      }, 1400);
+    });
+
+    pre.parentNode?.insertBefore(frame, pre);
+    frame.append(pre, button);
+  }
+}
+
+async function copyText(text) {
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand("copy");
+    textarea.remove();
+    return ok;
+  } catch {
+    return false;
+  }
 }
 
 // --- 新增：流式渲染优化 ---
@@ -200,8 +436,9 @@ export function renderStreamingMarkdown(element, markdownText) {
   element.classList?.remove("markdown-fallback");
 
   const renderer = createMarkedRenderer();
-  const html = parser(prepareMarkdown(markdownText), { ...MARKED_OPTIONS, renderer });
+  const html = parser(prepareMarkdown(markdownText, { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
   element.innerHTML = window.DOMPurify.sanitize(html);
+  enhanceRenderedMarkdown(element, { interactive: false });
   if (element.dataset) element.dataset.streamMode = "rendered";
 }
 
@@ -226,9 +463,10 @@ export function renderMarkdownWithCache(element, markdownText) {
     return originalCode.call(this, args);
   };
 
-  const html = parser(prepareMarkdown(markdownText || ""), { ...MARKED_OPTIONS, renderer });
+  const html = parser(prepareMarkdown(markdownText || "", { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
 
   element.innerHTML = window.DOMPurify.sanitize(html);
+  enhanceRenderedMarkdown(element, { interactive: true });
   if (element.dataset) delete element.dataset.streamMode;
 
   return { cached: cachedCount > 0, cachedCount };

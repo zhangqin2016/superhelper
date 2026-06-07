@@ -1,245 +1,260 @@
-# Turn Event Architecture
+# Runtime Turn Event Architecture
 
-This document defines the message lifecycle for the desktop AI workbench.
-The goal is to make chat rendering, turn state, queue dispatch, and recovery
-deterministic enough that the UI cannot get stuck in a half-finished state.
+This document defines the current message lifecycle for the desktop AI workbench.
+The goal is to make chat rendering, turn state, queue dispatch, session switching,
+and recovery deterministic enough that the UI cannot look dead while the assistant
+is still working.
 
-## Goals
+## Current Contract
 
-1. Use one transcript mutation source: `assistant:session-events`.
-2. Use one busy/capability source: `assistant:turn-state`.
-3. Treat every turn ending path identically: completed, error, interrupted, and stalled.
-4. Dispatch queued messages only after the previous turn has been finalized.
-5. Keep renderer state as a projection of main-process events, not a second state machine.
-6. Test each terminal turn outcome and queue handoff.
+Lily Workbench no longer treats Claude CLI output as a terminal transcript and no
+longer uses legacy chat IPC such as `assistant:chunk`, `assistant:done`,
+`assistant:session-events`, or `assistant:turn-state` in production code.
 
-## Non-goals
+The current production chain is:
 
-- This does not change the engine protocol itself.
-- This does not redesign project/session persistence.
-- This does not remove streaming/tool IPC yet. Text deltas and tool cards can remain
-  live events, but committed transcript mutations must go through session-events.
+```text
+AgentSession / runtime adapter
+  -> TurnOrchestrator
+  -> RuntimeEventBus
+  -> assistant:runtime-events
+  -> SessionRuntimeStore
+  -> message / turn-view renderer
+```
+
+Durable history is loaded separately:
+
+```text
+SessionManager split message files
+  -> session:get-conversation
+  -> SessionRuntimeStore.syncCommittedMessages
+  -> renderer committed messages
+```
+
+Live repair after session switching is loaded through:
+
+```text
+TurnOrchestrator.snapshot(sessionId)
+  -> assistant:runtime-snapshot
+  -> RuntimeEventBus recent events replay
+  -> SessionRuntimeStore.applyRuntimeBatch
+```
 
 ## Authority Model
 
-### Transcript Authority
+### Durable Transcript Authority
 
-The persisted session held by `SessionManager` is the durable source of truth.
-The renderer updates the visible transcript only from ordered
-`assistant:session-events` batches:
+`SessionManager` is the durable transcript source. It owns persisted user and
+assistant messages, now stored as a session index plus per-session message files.
 
-- `user-committed`
-- `turn-ended`
+`TurnOrchestrator` is the only code path that commits a user turn or final
+assistant turn into `SessionManager` during runtime execution:
 
-Legacy transcript events such as `assistant:user-message` must not be emitted.
-Live streaming events may update an in-flight assistant bubble, but the final
-assistant message is materialized by `turn-ended`.
+- user messages are committed before the engine receives the prompt;
+- assistant messages are committed only from one terminal turn boundary;
+- queued messages are not committed until they actually start as a new turn.
 
-### Busy Authority
+The renderer may show live events before they are fully persisted, but persisted
+history remains the canonical source after a turn is idle.
 
-`TurnController` is the only authority for turn phase and send/interrupt
-capabilities. The renderer consumes `assistant:turn-state` through `turn-store`
-or the existing compatibility wrapper. Renderer code must not infer busy state
-from DOM bubbles, pending text, or queue length.
+### Live Runtime Authority
 
-Valid phases:
+`TurnOrchestrator` owns the current turn state for each session:
 
-- `idle`
-- `sending`
-- `streaming`
-- `tool`
-- `permission`
-- `stopping`
-- `closing`
+- `phase`
+- `turnId`
+- queue
+- pending permissions
+- pending user questions
+- pending hooks
+- running tools and shell/background leases
+- finalization state
 
-`closing` means engine output collection is done, but transcript boundary and
-queue handoff are still being committed. New direct user sends are queued while
-the phase is `closing`.
+`RuntimeEventBus` is the ordered event transport. It assigns per-session sequence
+numbers, batches UI delivery, remembers recent events for snapshot replay, and
+blocks non-allowed post-terminal events for a finished turn.
+
+`SessionRuntimeStore` is the renderer-side reducer. It consumes only normalized
+Runtime Events and exposes the active session projection for UI rendering and the
+composer.
+
+The renderer must not infer busy/running state from DOM nodes, visible text,
+scroll position, or local queue labels.
+
+## Runtime Events
+
+The renderer currently handles these stable event families:
+
+- `user.committed`
+- `turn.started`
+- `turn.accepted`
+- `assistant.delta`
+- `assistant.thinking.delta`
+- `assistant.final`
+- `content.block`
+- `process.event`
+- `tool.started`
+- `tool.input.delta`
+- `tool.input.done`
+- `tool.done`
+- `permission.requested`
+- `permission.resolved`
+- `user_question.requested`
+- `user_question.resolved`
+- `hook.requested`
+- `hook.resolved`
+- `engine.notice`
+- `engine.warning`
+- `engine.stderr`
+- `usage.updated`
+- `queue.updated`
+- `prompt_suggestions.updated`
+- `session.hydrated`
+- `resume.updated`
+- `resume.invalid`
+- `recovery.scheduled`
+- `recovery.started`
+- terminal events: `turn.completed`, `turn.failed`, `turn.interrupted`,
+  `turn.stalled`
+
+Unknown protocol shapes must be normalized into protocol warnings and reported
+through runtime diagnostics after sanitization. They must not silently disappear
+or mutate transcript state.
 
 ## Turn Lifecycle
 
 ### Normal Send
 
-1. `dispatchUserLine` validates session, project, runtime, API key, and content.
-2. If the turn is busy or closing, the message is queued and no transcript event is emitted.
-3. If the turn can start, `SessionManager` persists the user message.
-4. `assistant:session-events` emits `user-committed`.
-5. `TurnController` transitions with `userSend`.
-6. Main emits `assistant:turn-state`.
-7. `AgentSession.send` sends the message to the engine.
-8. Streaming/tool/permission live events update transient UI.
-9. Any terminal engine path calls the same completion helper.
+1. Renderer calls `assistant:input` with the active session id.
+2. `TurnOrchestrator.sendUserMessage` validates the session and content.
+3. If the session phase is not `idle`, the message enters the current session
+   queue and emits `queue.updated`. No transcript message is committed yet.
+4. If the session can start, `_startTurn` creates a new `turnId`, commits the
+   user message to `SessionManager`, and emits `user.committed` with that
+   `turnId`.
+5. Vision/document preflight may enrich the payload. Failure goes through the
+   same terminal finalize path.
+6. Session bootstrap/rehydrate may prepend local summary context only when Claude
+   resume cannot be used.
+7. `_startTurn` emits `turn.started` and sends the prompt to the runtime runner.
+8. Runtime adapter events are normalized and ingested into `TurnOrchestrator`.
+9. `RuntimeEventBus` sends ordered `assistant:runtime-events` batches to the
+   renderer.
+10. `SessionRuntimeStore` reduces the batch and `message.js` renders committed
+    messages plus the live turn article.
 
-### Completion Helper
+### Completion
 
-All terminal paths must call a single main-process helper conceptually named
-`completeTurnAndMaybeStartNext(ctx, sessionId, payload)`.
+Every terminal path must call `TurnOrchestrator._finalize` exactly once for the
+active `turnId`.
 
-The helper must:
+The finalizer:
 
-1. Move the active turn to `closing` using `TurnController.completeTurn`.
-2. Persist the assistant final message when there is one.
-3. Build exactly one `turn-ended` event.
-4. Finalize the turn using `TurnController.finalizeTurn`.
-5. Emit `assistant:turn-state` showing the session is sendable again.
-6. Only after finalization, dequeue and start at most one queued message.
-7. If a queued message starts, include its `user-committed` event in the same
-   ordered `assistant:session-events` batch after `turn-ended`.
-8. Emit `assistant:done` as a compatibility signal, not as transcript authority.
+1. moves the phase to `finalizing`;
+2. resolves any still-running tool timeline entries to a terminal state;
+3. builds a turn archive record;
+4. emits `assistant.final` when there is assistant text;
+5. commits the assistant record to `SessionManager`;
+6. emits exactly one terminal event;
+7. clears live turn state and returns the session to `idle`.
 
-The queue handoff is after finalize, never while the previous turn is still
-`closing`. This prevents the next `userSend` from being rejected by phase checks
-or inheriting stale turn state.
+Queue dispatch happens only after the previous turn has reached a terminal
+boundary and the orchestrator is idle. Starting the queued item commits that item
+as a new `user.committed` event with its own `turnId`.
 
-### Terminal Outcomes
+### Interrupt And Priority Send
 
-Every terminal outcome uses the same helper:
+Normal stop interrupts the active runner, clears the queue unless explicitly told
+otherwise, and finalizes the current turn as `turn.interrupted`.
 
-- `completed`: final assistant output is normal.
-- `error`: final assistant output is sanitized and marked failed.
-- `interrupted`: may persist partial output; no scary error if no output.
-- `stalled`: may persist partial output; no scary error if no output.
-- `send_failed`: no engine turn started; user message should be rolled back or
-  represented as a failed send outside the transcript.
+Priority send is `interruptAndSend`:
 
-### Priority Send
+1. replace the current session queue with the new priority item;
+2. emit `queue.updated`;
+3. interrupt the active turn without clearing that priority queue;
+4. let the interrupted turn finalize normally;
+5. dispatch the priority item only after the interrupted turn is idle.
 
-Priority send is the "interrupt and ask this instead" path. It is intentionally
-not a direct state-machine bypass.
+This preserves transcript order while still letting the user replace the current
+work with a more important instruction.
 
-1. Validate the new message against the same send blockers as a normal send.
-2. Clear the current session queue.
-3. Enqueue the new message as the only pending item.
-4. Transition the active turn to `stopping` and interrupt the runner.
-5. Let the active turn end through the normal `interrupted` boundary.
-6. Only after `finalizeTurn`, dispatch the queued priority message.
-7. Emit the interrupted `turn-ended` event before the priority
-   `user-committed` event.
+## Session Switching
 
-This preserves transcript order while giving the user the effect of replacing
-the current answer with a more important follow-up.
+Switching sessions must not stop a running session. A runner is session-scoped;
+background work continues even when the user views another session.
 
-## Event Contracts
+When a session becomes visible:
 
-### `user-committed`
+1. renderer calls `session:get-conversation` for the newest page of durable
+   messages;
+2. `syncCommittedMessages` updates the runtime store;
+3. if the session is running or has a live turn, local not-yet-persisted committed
+   messages are preserved instead of being overwritten by a stale disk page;
+4. `showSessionMessages` activates that session panel;
+5. `resumeLiveSessionUi` replays recent runtime snapshot events through the same
+   reducer;
+6. composer state is derived from `SessionRuntimeStore.canSend/canInterrupt`.
 
-Emitted only when a user message has been persisted.
-
-```json
-{
-  "type": "user-committed",
-  "sessionId": "session-id",
-  "text": "user text",
-  "files": null,
-  "fromQueue": false,
-  "immediate": true
-}
-```
-
-### `turn-ended`
-
-Emitted only after the engine turn has reached a terminal outcome and any
-assistant message has been persisted.
-
-```json
-{
-  "type": "turn-ended",
-  "sessionId": "session-id",
-  "turnId": "turn-id",
-  "endReason": "completed",
-  "interrupted": false,
-  "stalled": false,
-  "hadOutput": true,
-  "assistant": {
-    "text": "assistant text",
-    "failed": false
-  }
-}
-```
-
-`assistant` may be `null` for interrupted/stalled turns with no useful output.
+If durable conversation loading fails, renderer keeps the current runtime store
+messages and logs a warning. It must not treat load failure as an empty history.
 
 ## Renderer Rules
 
-1. Apply `assistant:session-events` batches in sequence order.
-2. Drop out-of-order or duplicate sequence batches.
-3. Render `user-committed` as a durable user bubble.
-4. Render `turn-ended` by replacing/removing the live assistant turn UI and
-   appending the durable final assistant bubble if present.
-5. Use `assistant:turn-state` to update composer enabled/disabled state.
-6. Do not use `assistant:done` or `assistant:error` to append transcript bubbles.
-7. Existing `assistant:chunk` can update live markdown only.
+1. Consume only `assistant:runtime-events` for live turn state.
+2. Use `session:get-conversation` only for durable history pages.
+3. Use `assistant:runtime-snapshot` only as a repair/replay path after switching
+   sessions or restoring a running session view.
+4. Use `role + turnId` as the stable committed message identity when a message has
+   a `turnId`; user and assistant messages from the same turn must both render.
+5. Insert late committed messages before the live turn article for that session.
+6. Render queue items only as queue metadata inside the live turn, not as committed
+   user messages.
+7. Do not clear existing runtime messages when history loading fails.
+8. Do not append transcript bubbles from terminal compatibility events; terminal
+   Runtime Events are the only final turn boundary.
 
 ## Queue Rules
 
-1. Queue while the active session is not sendable, including `closing`.
-2. Queue state is UI metadata only, not transcript authority.
-3. Dequeue only after `TurnController.finalizeTurn`.
-4. Start at most one queued message per boundary.
-5. If starting a queued message fails, requeue it at the front and emit
-   `assistant:queue-dispatch-failed`.
-6. Queueing is per session. A busy session does not force other sessions or
-   workspaces to queue.
+1. Queue only within the current session.
+2. A queued item is not transcript history.
+3. Stop clears queued items unless the caller is priority-send.
+4. Queue flush happens only after a terminal turn boundary.
+5. Failed queue dispatch removes the failed item and attempts the next one only
+   when the session is idle.
 
-## Tool Leases
+## Diagnostics
 
-The runner owns tool execution leases because it is the only layer that sees
-engine `tool_use` and `tool_result` events.
+Runtime protocol anomalies are sanitized and reported through the diagnostics
+pipeline. Reports include protocol shape, event type/subtype, device/app version,
+turn phase, and hashes, but not raw prompts, file contents, full tool inputs, or
+workspace paths.
 
-Rules:
+Fixtures under `fixtures/claude-runtime/` are the regression contract. New
+unknown runtime events found in production should be converted into sanitized
+fixtures before behavior is changed.
 
-1. Every tool gets a lease when `content_block_start` or full `tool_use`
-   arrives.
-2. Shell tools (`Bash`, `Shell`, `RunCommand`) are blocking by default.
-3. A blocking tool lease prevents idle/message-stop auto-completion.
-4. The lease is released only when the matching `tool_result` arrives.
-5. Explicitly detached shell commands are marked detached and do not block turn
-   completion after their command input is known.
-6. Detached detection is conservative: `nohup`, `setsid`, `disown`, or a
-   standalone trailing shell background `&`.
+## Verification
 
-This keeps a foreground script in the current session busy, so a second message
-to that same session queues instead of being sent as a new turn. Detached
-commands are treated as background work and should not hold the chat hostage.
+The minimum verification set for runtime/chat changes is:
 
-## User-Visible Wait Safeguards
+```bash
+npm run test:runtime
+npm run test:renderer
+```
 
-Long waits must be explainable in the UI. The app should avoid silent states
-where the user cannot tell whether work is running, queued, recovering, or
-stuck.
+When service diagnostics, remote config, or deployment descriptors change, also
+run:
 
-Current safeguards:
+```bash
+npm run test:service
+npm run deploy:baota:check
+DATABASE_URL=postgres://postgres:root@localhost:5432/lily_integration npm run server:integration
+```
 
-1. Image sends show a preflight toast before vision translation begins.
-2. Foreground shell tools emit a long-running progress notice after 30 seconds.
-3. Interrupt fallback completes the turn and restarts the dirty CLI process so
-   late output cannot leak into the next turn.
-4. The renderer runs a lightweight active-session turn-state watchdog to
-   re-calibrate controls if an IPC state update is missed.
-5. Recovery and queue events remain per session; other sessions can continue.
+## Known Remaining Work
 
-## Tests
-
-Required coverage:
-
-1. Completed turn finalizes to idle and emits one `turn-ended`.
-2. Error turn finalizes to idle and emits a failed `turn-ended`.
-3. Interrupted turn finalizes to idle and does not duplicate assistant output.
-4. Stalled turn finalizes to idle and does not block send.
-5. Queued message starts only after previous turn is finalized.
-6. Queued user message appears after previous `turn-ended` in the same ordered
-   session-events batch.
-7. Renderer ignores `assistant:done` for transcript materialization.
-8. Direct send during `closing` queues rather than returning a hard busy error.
-9. Running shell tool leases block auto-completion until `tool_result`.
-10. Detached shell commands do not block auto-completion once recognized.
-11. Long-running shell leases emit a visible progress notice.
-12. Interrupt fallback terminates the dirty runner after ending the turn.
-
-## Migration Plan
-
-1. Keep compatibility IPC events temporarily.
-2. Move queue handoff after `finalizeTurn`.
-3. Ensure all done/error/interrupted/stalled paths use the same boundary helper.
-4. Remove renderer transcript mutations from legacy events.
-5. Remove legacy `runningSessionIds` once all UI reads `turn-store`.
+- Plugin and MCP marketplace metadata exists, but full client-side automatic
+  install, permission approval, and runtime invocation is a separate product
+  loop.
+- `AgentSession` remains a large high-risk module. Do not refactor it broadly
+  without adding fixtures first.

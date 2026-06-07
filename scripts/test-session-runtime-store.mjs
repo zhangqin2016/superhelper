@@ -286,4 +286,74 @@ if (runtime.promptSuggestions.join(",") !== "Try this,Or that") {
   throw new Error(`prompt suggestions should hydrate store, got ${JSON.stringify(runtime.promptSuggestions)}`);
 }
 
+store.syncCommittedMessages("s3", [
+  {
+    role: "user",
+    content: "older persisted question",
+    timestamp: "2026-06-01T00:00:00.000Z",
+  },
+]);
+store.applyRuntimeBatch({
+  sessionId: "s3",
+  batchSeq: 1,
+  events: [
+    {
+      id: "s3-user",
+      type: "user.committed",
+      sessionId: "s3",
+      turnId: null,
+      seq: 1,
+      ts: 3000,
+      source: "test",
+      payload: { text: "local question while task is starting" },
+    },
+    {
+      id: "s3-start",
+      type: "turn.started",
+      sessionId: "s3",
+      turnId: "t3",
+      seq: 2,
+      ts: 3001,
+      source: "test",
+      payload: {},
+    },
+  ],
+});
+store.syncCommittedMessages("s3", [
+  {
+    role: "user",
+    content: "older persisted question",
+    timestamp: "2026-06-01T00:00:00.000Z",
+  },
+]);
+runtime = store.getRuntimeSession("s3");
+if (!runtime.committedMessages.some((message) => message.content === "local question while task is starting")) {
+  throw new Error("running session history sync must preserve not-yet-persisted local messages");
+}
+
+store.applyRuntimeEvent({
+  id: "s3-done",
+  type: "turn.completed",
+  sessionId: "s3",
+  turnId: "t3",
+  seq: 3,
+  ts: 3002,
+  source: "test",
+  payload: { assistant: "done" },
+});
+store.syncCommittedMessages("s3", [
+  {
+    role: "user",
+    content: "canonical persisted question",
+    timestamp: "2026-06-01T00:00:01.000Z",
+  },
+]);
+runtime = store.getRuntimeSession("s3");
+if (runtime.committedMessages.some((message) => message.content === "local question while task is starting")) {
+  throw new Error("idle session history sync should let persisted history become canonical");
+}
+if (runtime.committedMessages.length !== 1 || runtime.committedMessages[0].content !== "canonical persisted question") {
+  throw new Error(`idle session history sync should replace committed messages: ${JSON.stringify(runtime.committedMessages)}`);
+}
+
 console.log("session-runtime-store: ok");

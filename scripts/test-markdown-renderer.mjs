@@ -17,6 +17,11 @@ const context = {
         return html;
       },
     },
+    katex: {
+      renderToString(expr, options) {
+        return `<span class="katex" data-display="${options.displayMode ? "1" : "0"}">${expr}</span>`;
+      },
+    },
   },
 };
 vm.createContext(context);
@@ -89,5 +94,32 @@ context.window.__test.renderMarkdownWithCache(
 assert.match(table.innerHTML, /<table>/);
 assert.match(table.innerHTML, /<th>项目<\/th>/);
 assert.match(table.innerHTML, /<td>📖 小说<\/td>/);
+
+const diff = fakeElement();
+context.window.__test.renderMarkdownWithCache(diff, "```diff\n-旧内容\n+新内容\n@@ line\n```");
+assert.match(diff.innerHTML, /markdown-diff/);
+assert.match(diff.innerHTML, /markdown-diff-del/);
+assert.match(diff.innerHTML, /markdown-diff-add/);
+assert.match(diff.innerHTML, /markdown-diff-hunk/);
+
+const image = fakeElement();
+context.window.__test.renderMarkdownWithCache(image, "![截图](https://example.com/bug.png)");
+assert.match(image.innerHTML, /class="markdown-image"/);
+assert.match(image.innerHTML, /loading="lazy"/);
+
+const unsafeLink = fakeElement();
+context.window.__test.renderMarkdownWithCache(unsafeLink, "[危险](javascript:alert(1))");
+assert.doesNotMatch(unsafeLink.innerHTML, /href="javascript:/);
+
+const math = fakeElement();
+context.window.__test.renderMarkdownWithCache(math, "公式：$a^2+b^2=c^2$\n\n$$E=mc^2$$");
+assert.match(math.innerHTML, /class="markdown-math-inline"/);
+assert.match(math.innerHTML, /class="markdown-math-block"/);
+assert.match(math.innerHTML, /class="katex"/);
+
+const mermaid = fakeElement();
+context.window.__test.renderMarkdownWithCache(mermaid, "```mermaid\ngraph TD\nA-->B\n```");
+assert.match(mermaid.innerHTML, /markdown-mermaid-source/);
+assert.match(mermaid.innerHTML, /language-mermaid/);
 
 console.log("markdown-renderer: ok");

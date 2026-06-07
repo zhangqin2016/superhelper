@@ -43,9 +43,32 @@ export function getRuntimeSession(sessionId) {
   return sessions.get(sessionId);
 }
 
+function committedMessageKey(message) {
+  if (message?.id) return `id:${message.id}`;
+  if (message?.turnId && message?.role) return `turn:${message.role}:${message.turnId}`;
+  return ["fallback", message?.role || "", message?.timestamp || "", message?.content || ""].join(":");
+}
+
 export function syncCommittedMessages(sessionId, messages) {
   if (!sessionId) return;
-  getRuntimeSession(sessionId).committedMessages = Array.isArray(messages) ? messages : [];
+  const runtime = getRuntimeSession(sessionId);
+  const incoming = Array.isArray(messages) ? messages : [];
+  const hasActiveLiveTurn = runtime.liveTurn && runtime.liveTurn.phase !== "done";
+  const hasLiveState = runtime.phase !== "idle" || hasActiveLiveTurn || runtime.queue.length > 0;
+  if (!hasLiveState) {
+    runtime.committedMessages = incoming;
+    return;
+  }
+
+  const seen = new Set(incoming.map((message) => committedMessageKey(message)));
+  const localOnly = [];
+  for (const message of runtime.committedMessages) {
+    const key = committedMessageKey(message);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    localOnly.push(message);
+  }
+  runtime.committedMessages = [...incoming, ...localOnly];
 }
 
 export function hydrateRuntimeFromState(state) {
