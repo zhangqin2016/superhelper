@@ -3,6 +3,7 @@ import { t } from "../i18n/index.js";
 import { showToast } from "./toast.js";
 import {
   appendToolPayloadDetail,
+  parseGeneratedMedia,
   parseToolResult,
   toolInputHasRenderableDetail,
 } from "./tool-payload-renderer.js";
@@ -616,6 +617,11 @@ function appendToolResultBlock(row, tool, sealed = false) {
   if (!tool.result) return;
 
   const parsed = parseToolResult(tool.result);
+  const generatedMediaText = typeof parsed?.content === "string" ? parsed.content : "";
+  if (generatedMediaText && parseGeneratedMedia(generatedMediaText).length) {
+    appendToolPayloadDetail(row, tool, { role: "result" });
+    return;
+  }
   const resultKeys = parsed && typeof parsed === "object"
     ? Object.keys(parsed).filter((k) => k !== "truncated" && k !== "fullText")
     : [];

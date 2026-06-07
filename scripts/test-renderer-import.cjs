@@ -257,6 +257,35 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(markdownRichResult);
+    const generatedMediaResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { appendToolPayloadDetail, parseGeneratedMedia } = await import("./modules/tool-payload-renderer.js");
+        const output = '<generated_media type="image">\\n  <task_id>task_123</task_id>\\n  <file path="/tmp/generated image.png" bytes="1234" />\\n</generated_media>';
+        const parsed = parseGeneratedMedia(output);
+        if (parsed.length !== 1 || parsed[0].type !== "image" || parsed[0].files[0].path !== "/tmp/generated image.png") {
+          throw new Error("generated media parser did not extract image file");
+        }
+        const container = document.createElement("details");
+        document.body.appendChild(container);
+        const rendered = appendToolPayloadDetail(container, {
+          name: "Bash",
+          result: { content: output },
+        }, { role: "result" });
+        const img = container.querySelector(".assistant-generated-media img");
+        if (!rendered || !img) {
+          throw new Error("generated media result did not render image preview");
+        }
+        if (!String(img.getAttribute("src") || "").startsWith("file:///tmp/generated")) {
+          throw new Error("generated media preview should use a file URL: " + img.getAttribute("src"));
+        }
+        if (container.textContent.includes("<generated_media")) {
+          throw new Error("raw generated_media XML should not be shown to the user");
+        }
+        container.remove();
+        return "generated-media-preview-regression: ok";
+      }
+    )()`);
+    console.log(generatedMediaResult);
     if (capturedQuestionResponses.length !== 1) {
       throw new Error(`multi-select should submit exactly once, got ${capturedQuestionResponses.length}`);
     }

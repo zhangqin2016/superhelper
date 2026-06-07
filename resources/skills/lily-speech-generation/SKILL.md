@@ -20,6 +20,6 @@ echo '{"text":"要朗读的文本","voice":"longanyang","format":"wav"}' | "{{NO
 - `sample_rate`：默认 `24000`
 - `output_dir`：保存目录，默认当前工作区 `generated-assets`
 
-后台可通过 `DASHSCOPE_TTS_ENDPOINT` 覆盖完整接口地址；否则使用 `DASHSCOPE_TTS_BASE_URL` / `DASHSCOPE_BASE_URL` 拼接官方默认路径。
+后台可通过 `DASHSCOPE_TTS_ENDPOINT` 覆盖完整接口地址；否则使用 `DASHSCOPE_TTS_BASE_URL` 拼接官方默认路径。`DASHSCOPE_BASE_URL` 保留给聊天模型接口，不参与语音生成。
 
 脚本会调用阿里云百炼非实时语音合成接口，并把临时音频 URL 下载到本地。回复用户时只说明本地音频文件路径。

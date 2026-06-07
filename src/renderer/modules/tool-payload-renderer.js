@@ -25,6 +25,7 @@ const LONG_TEXT_KEYS = new Set([
   "description",
 ]);
 const MARKDOWN_KEYS = new Set(["content", "text", "body", "message", "instructions", "prompt"]);
+const GENERATED_MEDIA_TEXT_KEYS = ["content", "stdout", "output", "result", "text", "message"];
 
 export function parseToolInput(tool = {}) {
   if (tool.input && Object.keys(tool.input).length) {
@@ -61,6 +62,92 @@ export function parseToolResult(result) {
     }
   }
   return result;
+}
+
+function decodeXmlAttribute(value = "") {
+  return String(value)
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+function parseAttributes(raw = "") {
+  const attrs = {};
+  const pattern = /([a-zA-Z_:-][\w:.-]*)\s*=\s*"([^"]*)"/g;
+  let match;
+  while ((match = pattern.exec(String(raw)))) {
+    attrs[match[1]] = decodeXmlAttribute(match[2]);
+  }
+  return attrs;
+}
+
+export function parseGeneratedMedia(text = "") {
+  const source = String(text || "");
+  if (!source.includes("<generated_media")) return [];
+  const blocks = [];
+  const blockPattern = /<generated_media\b([^>]*)>([\s\S]*?)<\/generated_media>/g;
+  let blockMatch;
+  while ((blockMatch = blockPattern.exec(source))) {
+    const attrs = parseAttributes(blockMatch[1]);
+    const body = blockMatch[2] || "";
+    const taskId = decodeXmlAttribute((body.match(/<task_id>([\s\S]*?)<\/task_id>/) || [])[1] || "").trim();
+    const files = [];
+    const filePattern = /<file\b([^>]*)\/>/g;
+    let fileMatch;
+    while ((fileMatch = filePattern.exec(body))) {
+      const file = parseAttributes(fileMatch[1]);
+      if (!file.path) continue;
+      files.push({
+        path: file.path,
+        bytes: Number(file.bytes || 0) || 0,
+        mimeType: file.mimeType || file.mime_type || "",
+      });
+    }
+    if (files.length) {
+      blocks.push({
+        type: attrs.type || "file",
+        taskId,
+        files,
+      });
+    }
+  }
+  return blocks;
+}
+
+function generatedMediaFromPayload(payload) {
+  if (!payload) return [];
+  if (typeof payload === "string") return parseGeneratedMedia(payload);
+  if (typeof payload !== "object") return [];
+  const out = [];
+  for (const key of GENERATED_MEDIA_TEXT_KEYS) {
+    if (typeof payload[key] === "string") out.push(...parseGeneratedMedia(payload[key]));
+  }
+  return out;
+}
+
+function fileUrlFromPath(filePath = "") {
+  const value = String(filePath || "").trim();
+  if (!value) return "";
+  if (/^(?:https?|file|blob|data):/i.test(value)) return value;
+  if (/^[a-zA-Z]:[\\/]/.test(value)) return encodeURI(`file:///${value.replace(/\\/g, "/")}`);
+  if (value.startsWith("/")) return encodeURI(`file://${value}`);
+  return value;
+}
+
+function mediaTitle(type) {
+  if (type === "video") return t("tool.media.video");
+  if (type === "audio" || type === "speech") return t("tool.media.audio");
+  if (type === "image") return t("tool.media.image");
+  return t("tool.media.file");
+}
+
+function mediaAlt(type, index) {
+  if (type === "video") return t("tool.media.videoAlt", { index });
+  if (type === "audio" || type === "speech") return t("tool.media.audioAlt", { index });
+  if (type === "image") return t("tool.media.imageAlt", { index });
+  return t("tool.media.fileAlt", { index });
 }
 
 function toolKind(name = "") {
@@ -211,6 +298,10 @@ function renderGenericObject(root, obj, { skip = new Set() } = {}) {
     rendered = true;
     if (value == null) continue;
 
+    if (typeof value === "string" && parseGeneratedMedia(value).length) {
+      continue;
+    }
+
     if (typeof value === "string" && isLongText(value)) {
       appendTextBlock(root, key, value, { markdown: MARKDOWN_KEYS.has(key) });
       continue;
@@ -249,6 +340,69 @@ function renderGenericObject(root, obj, { skip = new Set() } = {}) {
     appendScalarRow(root, key, value);
   }
   return rendered;
+}
+
+function renderGeneratedMedia(root, mediaBlocks = []) {
+  if (!mediaBlocks.length) return false;
+  for (const media of mediaBlocks) {
+    const wrap = document.createElement("div");
+    wrap.className = `assistant-generated-media is-${media.type || "file"}`;
+
+    const head = document.createElement("div");
+    head.className = "assistant-generated-media-head";
+    const title = document.createElement("span");
+    title.textContent = mediaTitle(media.type);
+    head.appendChild(title);
+    if (media.taskId) {
+      const task = document.createElement("code");
+      task.textContent = media.taskId;
+      head.appendChild(task);
+    }
+    wrap.appendChild(head);
+
+    const grid = document.createElement("div");
+    grid.className = "assistant-generated-media-grid";
+    media.files.forEach((file, index) => {
+      const item = document.createElement("figure");
+      item.className = "assistant-generated-media-item";
+      const src = fileUrlFromPath(file.path);
+      const type = media.type || "file";
+      if (type === "image") {
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = mediaAlt(type, index + 1);
+        img.loading = "lazy";
+        img.addEventListener("click", async () => {
+          const mod = await import("./image-viewer.js");
+          mod.openImageViewer?.(src, img.alt);
+        });
+        item.appendChild(img);
+      } else if (type === "video") {
+        const video = document.createElement("video");
+        video.src = src;
+        video.controls = true;
+        video.preload = "metadata";
+        item.appendChild(video);
+      } else if (type === "audio" || type === "speech") {
+        const audio = document.createElement("audio");
+        audio.src = src;
+        audio.controls = true;
+        item.appendChild(audio);
+      }
+
+      const caption = document.createElement("figcaption");
+      const label = document.createElement("span");
+      label.textContent = t("tool.media.savedTo");
+      const pathCode = document.createElement("code");
+      pathCode.textContent = file.path;
+      caption.append(label, pathCode);
+      item.appendChild(caption);
+      grid.appendChild(item);
+    });
+    wrap.appendChild(grid);
+    root.appendChild(wrap);
+  }
+  return true;
 }
 
 function renderWritePayload(root, payload, { compact = false } = {}) {
@@ -298,6 +452,9 @@ function renderSearchPayload(root, payload) {
 
 function renderStructuredPayload(root, tool, payload, options = {}) {
   if (!payload) return false;
+  if (options.role === "result") {
+    renderGeneratedMedia(root, generatedMediaFromPayload(payload));
+  }
   const kind = toolKind(tool.name);
   if (kind === "write") renderWritePayload(root, payload, options);
   else if (kind === "edit") renderEditPayload(root, payload);
@@ -319,7 +476,7 @@ export function appendToolPayloadDetail(container, tool, { role = "input", compa
   if (!payload) return false;
 
   const root = createPayloadRoot(role === "result" ? "is-result" : "is-input");
-  const ok = renderStructuredPayload(root, tool, payload, { compact: compactFileContent });
+  const ok = renderStructuredPayload(root, tool, payload, { compact: compactFileContent, role });
   if (!ok) return false;
   container.appendChild(root);
   return true;

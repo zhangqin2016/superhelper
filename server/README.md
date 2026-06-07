@@ -55,12 +55,14 @@ Provider keys are configured with environment variables, not sent through
 
 ```env
 MODEL_GATEWAY_ENABLED=true
+MODEL_CONFIG_DELIVERY_MODE=gateway # gateway | direct
 MODEL_GATEWAY_TOKEN_SECRET=change-me-at-least-32-chars
 MODEL_GATEWAY_TOKEN_TTL_SECONDS=21600
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 DEEPSEEK_API_KEY=sk-...
-DASHSCOPE_API_KEY=sk-...
+DASHSCOPE_API_KEY=sk-... # media skills only: image/video/speech
+DASHSCOPE_CHAT_API_KEY=sk-... # optional: enable DashScope/Qwen as a chat gateway
 KIMI_API_KEY=sk-...
 GLM_API_KEY=sk-...
 LITELLM_BASE_URL=http://litellm:4000
@@ -70,14 +72,18 @@ LOCAL_ANTHROPIC_API_KEY=sk-local...
 ```
 
 When provider environment variables are present, the API server creates or
-updates a global `lily-default-runtime` config profile during startup. It keeps
-model provider secrets on the server by delivering Lily gateway URLs plus
-short-lived gateway tokens. DashScope media skill defaults are also included so
-the desktop app can enable built-in image, video, and speech generation without
+updates a global `lily-default-runtime` config profile during startup.
+`MODEL_CONFIG_DELIVERY_MODE=gateway` keeps model provider secrets on the
+server by delivering Lily gateway URLs plus short-lived gateway tokens.
+`MODEL_CONFIG_DELIVERY_MODE=direct` delivers Anthropic-compatible provider URLs
+and keys directly to the client for lower latency; OpenAI-compatible providers
+still fall back to the gateway because the desktop runtime speaks the Claude
+messages protocol. DashScope media skill defaults are also included so the
+desktop app can enable built-in image, video, and speech generation without
 manual client setup:
 
 ```env
-DASHSCOPE_MODEL=qwen3-coder-plus
+DASHSCOPE_MODEL=qwen3-coder-plus # used only when DASHSCOPE_CHAT_API_KEY is set
 DASHSCOPE_IMAGE_MODEL=qwen-image-2.0-pro
 DASHSCOPE_VIDEO_MODEL=wan2.7-t2v
 DASHSCOPE_TTS_MODEL=cosyvoice-v3-flash

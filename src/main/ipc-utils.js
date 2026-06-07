@@ -11,6 +11,9 @@ const {
 } = require("./session-engine-recovery");
 const skillManager = require("./skill-manager");
 
+let sendPreflightConfigRefresh = null;
+let lastSendPreflightConfigRefreshAt = 0;
+
 function sendToRenderer(window, channel, payload) {
   if (window && !window.isDestroyed()) {
     window.webContents.send(channel, payload);
@@ -85,6 +88,31 @@ function diagnoseSendBlocker(ctx, sessionId) {
   }
 
   return null;
+}
+
+async function refreshRemoteConfigForSend() {
+  const remoteConfig = require("./remote-config");
+  if (remoteConfig.hasRemoteModelCatalogSync()) return { ok: true, skipped: true };
+
+  const now = Date.now();
+  if (now - lastSendPreflightConfigRefreshAt < 10_000 && !sendPreflightConfigRefresh) {
+    return { ok: true, skipped: true };
+  }
+
+  if (!sendPreflightConfigRefresh) {
+    lastSendPreflightConfigRefreshAt = now;
+    sendPreflightConfigRefresh = remoteConfig
+      .refreshRemoteConfig({ reason: "send_preflight" })
+      .catch((err) => ({ ok: false, error: err?.message || String(err) }))
+      .finally(() => {
+        sendPreflightConfigRefresh = null;
+      });
+  }
+
+  return Promise.race([
+    sendPreflightConfigRefresh,
+    new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: "TIMEOUT" }), 1500)),
+  ]);
 }
 
 function wireRunner(ctx, runner) {
@@ -254,6 +282,7 @@ module.exports = {
   getRunningSessionIds,
   resolveProjectForSession,
   diagnoseSendBlocker,
+  refreshRemoteConfigForSend,
   wireRunner,
   ensureSessionRunner,
   warmupActiveRunner,

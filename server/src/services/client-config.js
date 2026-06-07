@@ -59,6 +59,54 @@ function providerLabel(provider) {
   return labels[provider.id] || `${provider.id} Gateway`;
 }
 
+function normalizeDeliveryMode(serverConfig) {
+  return serverConfig.modelConfigDeliveryMode === "direct" ? "direct" : "gateway";
+}
+
+function supportsDirectDelivery(provider) {
+  return provider?.type === "anthropic" && /^https?:\/\//i.test(String(provider.baseUrl || ""));
+}
+
+function providerPreset(provider, deliveryMode) {
+  const model = firstModel(provider);
+  if (deliveryMode === "direct" && supportsDirectDelivery(provider)) {
+    return {
+      id: `${provider.id}-direct`,
+      label: providerLabel(provider).replace(/ Gateway$/, " Direct"),
+      description: "客户端直连模型供应商。响应更快，但会向客户端下发长期模型密钥。",
+      env: {
+        LILY_API_BASE_URL: provider.baseUrl,
+        LILY_API_KEY: provider.apiKey,
+        ...(model ? {
+          LILY_MODEL: model,
+          LILY_MODEL_HAIKU: provider.models?.[1] || model,
+          LILY_MODEL_SONNET: model,
+          LILY_MODEL_OPUS: model,
+          LILY_SUBAGENT_MODEL: provider.models?.[1] || model,
+        } : {}),
+      },
+    };
+  }
+
+  return {
+    id: `${provider.id}-gateway`,
+    label: providerLabel(provider),
+    description: "由 Lily 服务端托管密钥并签发短期访问令牌。",
+    env: {
+      LILY_API_BASE_URL: `/llm/${provider.id}`,
+      LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
+      LILY_GATEWAY_PROVIDER: provider.id,
+      ...(model ? {
+        LILY_MODEL: model,
+        LILY_MODEL_HAIKU: provider.models?.[1] || model,
+        LILY_MODEL_SONNET: model,
+        LILY_MODEL_OPUS: model,
+        LILY_SUBAGENT_MODEL: provider.models?.[1] || model,
+      } : {}),
+    },
+  };
+}
+
 function runtimeEnvFromServerConfig(serverConfig) {
   const env = {};
   if (serverConfig.dashscopeApiKey) {
@@ -75,22 +123,14 @@ function runtimeEnvFromServerConfig(serverConfig) {
 }
 
 export function buildEnvManagedClientConfig(serverConfig = config, providers = listModelGatewayProviders()) {
+  const deliveryMode = normalizeDeliveryMode(serverConfig);
   const modelPresets = Object.values(providers || {})
     .filter((provider) => provider?.id && provider?.baseUrl && provider?.apiKey)
-    .map((provider) => ({
-      id: `${provider.id}-gateway`,
-      label: providerLabel(provider),
-      description: "由 Lily 服务端托管密钥并签发短期访问令牌。",
-      env: {
-        LILY_API_BASE_URL: `/llm/${provider.id}`,
-        LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
-        LILY_GATEWAY_PROVIDER: provider.id,
-        ...(firstModel(provider) ? { LILY_MODEL: firstModel(provider) } : {}),
-      },
-    }));
+    .map((provider) => providerPreset(provider, deliveryMode));
 
   const activeProviderId = serverConfig.modelGatewayDefaultProvider || modelPresets[0]?.id?.replace(/-gateway$/, "");
-  const activePresetId = modelPresets.find((preset) => preset.id === `${activeProviderId}-gateway`)?.id
+  const activePresetId = modelPresets.find((preset) => preset.id === `${activeProviderId}-${deliveryMode}`)?.id
+    || modelPresets.find((preset) => preset.id.startsWith(`${activeProviderId}-`))?.id
     || modelPresets[0]?.id
     || "";
   const runtimeEnv = runtimeEnvFromServerConfig(serverConfig);
@@ -224,4 +264,11 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
     }
   }
   return configCopy;
+}
+
+export function clientConfigTtlMs(serverConfig = config) {
+  const maxConfigTtlMs = 24 * 60 * 60 * 1000;
+  const gatewayTtlMs = Math.max(60, Number(serverConfig.modelGatewayTokenTtlSeconds) || 3600) * 1000;
+  const gatewaySafeTtlMs = Math.max(30 * 1000, gatewayTtlMs - 60 * 1000);
+  return Math.min(maxConfigTtlMs, gatewaySafeTtlMs);
 }

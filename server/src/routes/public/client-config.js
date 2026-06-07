@@ -4,6 +4,7 @@ import { db } from "../../db.js";
 import { signConfigPayload } from "../../services/security.js";
 import {
   DEFAULT_EFFECTIVE_CONFIG,
+  clientConfigTtlMs,
   deepMerge,
   rolloutAllows,
   withGatewayRuntimeConfig,
@@ -69,7 +70,7 @@ export function registerPublicClientConfigRoutes(app) {
     const payload = {
       schemaVersion: 1,
       configVersion: resolved.configVersion,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + clientConfigTtlMs(config)).toISOString(),
       effectiveConfig,
     };
 

@@ -11,6 +11,7 @@ const { buildUsageSummary, USAGE_PRICING_ID } = require(path.join(
   "../src/main/usage-summary.js",
 ));
 const { estimateCostRmb } = require(path.join(__dirname, "../src/main/usage-cost-estimate.js"));
+const { localDateKey } = require(path.join(__dirname, "../src/main/local-date-key.js"));
 
 if (USAGE_PRICING_ID !== "deepseek_x5") {
   throw new Error(`usage pricing must be deepseek_x5, got ${USAGE_PRICING_ID}`);
@@ -25,7 +26,7 @@ const summary = buildUsageSummary({
   pendingToday: { inputTokens: 2000, outputTokens: 1000, messageCount: 1 },
 });
 
-const today = new Date().toISOString().slice(0, 10);
+const today = localDateKey();
 if (summary.today.date !== today) {
   throw new Error(`today row date wrong: ${summary.today.date}`);
 }

@@ -476,5 +476,14 @@
   "tool.collapse": "طي",
   "tool.exitCode": "رمز الخروج",
   "tool.showMore": "عرض الكل",
-  "tool.showLess": "عرض أقل"
+  "tool.showLess": "عرض أقل",
+  "tool.media.image": "تم إنشاء الصورة",
+  "tool.media.video": "تم إنشاء الفيديو",
+  "tool.media.audio": "تم إنشاء الصوت",
+  "tool.media.file": "تم إنشاء الملف",
+  "tool.media.imageAlt": "صورة منشأة {index}",
+  "tool.media.videoAlt": "فيديو منشأ {index}",
+  "tool.media.audioAlt": "صوت منشأ {index}",
+  "tool.media.fileAlt": "ملف منشأ {index}",
+  "tool.media.savedTo": "تم الحفظ في"
 }

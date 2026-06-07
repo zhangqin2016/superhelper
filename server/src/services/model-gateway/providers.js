@@ -52,12 +52,12 @@ export function listModelGatewayProviders() {
       headers: {},
     };
   }
-  if (config.dashscopeApiKey && !normalized.dashscope) {
+  if (config.dashscopeChatApiKey && !normalized.dashscope) {
     normalized.dashscope = {
       id: "dashscope",
       type: "anthropic",
       baseUrl: cleanBaseUrl(config.dashscopeBaseUrl),
-      apiKey: config.dashscopeApiKey,
+      apiKey: config.dashscopeChatApiKey,
       models: [config.dashscopeModel || "qwen3-coder-plus"],
       headers: {},
     };

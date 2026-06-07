@@ -110,6 +110,7 @@ class AgentSession extends EventEmitter {
     this._internalCommandTimer = null;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
+    this._deferredTurnResultAt = 0;
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
     this._runtimeAdapter = new CliEventAdapter();
@@ -145,7 +146,7 @@ class AgentSession extends EventEmitter {
   /** Hard cap — verbose logs must not extend a turn forever. */
   static TURN_ABSOLUTE_MAX_MS = 30 * 60_000;
   /** Poll while deferred CLI `result` waits for pending tools/permissions. */
-  static DEFERRED_TURN_RESULT_POLL_MS = 120_000;
+  static DEFERRED_TURN_RESULT_GRACE_MS = 1_500;
   /** Wait after message_stop for a trailing `result` event before pure-text fallback. */
   static MESSAGE_STOP_GRACE_MS = 30_000;
   /** Long-running foreground shell commands need visible user feedback. */
@@ -308,9 +309,18 @@ class AgentSession extends EventEmitter {
     );
   }
 
+  _hasPendingRuntimeBlockers() {
+    return (
+      this._pendingToolIds.size > 0 ||
+      this._pendingPermissions.size > 0 ||
+      this._pendingHooks.size > 0
+    );
+  }
+
   _deferTurnResult(payload, reason) {
     this._deferredTurnResult = payload;
-    log.warn("turn result deferred until background work completes: %s", reason, {
+    this._deferredTurnResultAt = Date.now();
+    log.warn("turn result deferred until pending runtime blockers settle: %s", reason, {
       sessionId: this.sessionId,
       pendingTools: this._pendingToolIds.size,
       pendingPermissions: this._pendingPermissions.size,
@@ -323,10 +333,9 @@ class AgentSession extends EventEmitter {
   _armDeferredTurnResultTimer() {
     this._clearDeferredTurnResultTimer();
     if (!this.busy || this._turnSettled || !this._deferredTurnResult) return;
-    const backgroundMs = Math.max(0, this._backgroundActivityUntil - Date.now());
-    const delay = this._pendingToolIds.size > 0 || this._pendingPermissions.size > 0
-      ? AgentSession.DEFERRED_TURN_RESULT_POLL_MS
-      : Math.max(25, Math.min(AgentSession.DEFERRED_TURN_RESULT_POLL_MS, backgroundMs || 25));
+    const elapsedMs = Math.max(0, Date.now() - Number(this._deferredTurnResultAt || Date.now()));
+    const remainingGraceMs = Math.max(0, AgentSession.DEFERRED_TURN_RESULT_GRACE_MS - elapsedMs);
+    const delay = this._hasPendingRuntimeBlockers() ? Math.max(25, remainingGraceMs || 25) : 25;
     this._deferredTurnResultTimer = setTimeout(() => {
       this._maybeCompleteDeferredTurnResult();
     }, delay);
@@ -334,12 +343,24 @@ class AgentSession extends EventEmitter {
 
   _maybeCompleteDeferredTurnResult() {
     if (!this.busy || this._turnSettled || !this._deferredTurnResult) return false;
-    if (this._hasBlockingTurnWork()) {
-      this._armDeferredTurnResultTimer();
-      return false;
+    if (this._hasPendingRuntimeBlockers()) {
+      const elapsedMs = Math.max(0, Date.now() - Number(this._deferredTurnResultAt || Date.now()));
+      if (elapsedMs < AgentSession.DEFERRED_TURN_RESULT_GRACE_MS) {
+        this._armDeferredTurnResultTimer();
+        return false;
+      }
+      log.warn("turn result completed with stale pending runtime blockers", {
+        sessionId: this.sessionId,
+        pendingTools: [...this._pendingToolIds],
+        pendingPermissions: [...this._pendingPermissions.keys()],
+        pendingHooks: [...this._pendingHooks.keys()],
+      });
+    } else if (Date.now() < this._backgroundActivityUntil) {
+      this._backgroundActivityUntil = 0;
     }
     const payload = this._deferredTurnResult;
     this._deferredTurnResult = null;
+    this._deferredTurnResultAt = 0;
     this._clearDeferredTurnResultTimer();
     this._completeTurn(payload);
     return true;
@@ -492,10 +513,14 @@ class AgentSession extends EventEmitter {
   }
 
   _finishToolLease(toolId) {
-    if (!toolId) return;
-    this._pendingToolIds.delete(toolId);
-    this._toolLeases.delete(toolId);
-    this._clearToolLeaseNoticeTimer(toolId);
+    let id = toolId;
+    if (!id && this._pendingToolIds.size === 1) {
+      id = [...this._pendingToolIds][0];
+    }
+    if (!id) return;
+    this._pendingToolIds.delete(id);
+    this._toolLeases.delete(id);
+    this._clearToolLeaseNoticeTimer(id);
   }
 
   _tryParseToolInputJson(toolId) {
@@ -672,29 +697,7 @@ class AgentSession extends EventEmitter {
 
     this.process.stdout.on("data", (chunk) => this._onStdout(chunk));
     this.process.stderr.on("data", (chunk) => {
-      const raw = chunk.toString();
-      const text = sanitizeError(raw);
-      const { isResumeFailureMessage } = require("./session-engine-recovery");
-      if (
-        this.busy &&
-        !this._turnSettled &&
-        this.agentResumeId &&
-        isResumeFailureMessage(raw)
-      ) {
-        this.emit("resume-invalid", { message: raw });
-        this._failTurn("对话连接已刷新，请重新发送这条消息。");
-        return;
-      }
-      this._emitEngineNotice({
-        code: "stderr",
-        level: "warning",
-        message: text,
-        panel: true,
-        toast: true,
-        done: true,
-      });
-      this._ingestRuntime([{ type: "engine.stderr", payload: { text } }]);
-      if (text) this.lastSpawnError = text;
+      this._handleStderr(chunk.toString());
     });
 
     this.process.on("error", (err) => {
@@ -774,6 +777,7 @@ class AgentSession extends EventEmitter {
     this._sawStdoutForTurn = false;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
+    this._deferredTurnResultAt = 0;
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
     this._clearDeferredTurnResultTimer();
@@ -974,6 +978,7 @@ class AgentSession extends EventEmitter {
     this._turnHadBlockingToolUse = false;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
+    this._deferredTurnResultAt = 0;
     this._clearDeferredTurnResultTimer();
     if (!this.process) {
       this.cwd = null;
@@ -1023,6 +1028,7 @@ class AgentSession extends EventEmitter {
     this._turnHadBlockingToolUse = false;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
+    this._deferredTurnResultAt = 0;
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
     this._streamParentToolUseId = null;
@@ -1051,6 +1057,7 @@ class AgentSession extends EventEmitter {
     this._pendingToolIds.clear();
     this._toolLeases.clear();
     this._deferredTurnResult = null;
+    this._deferredTurnResultAt = 0;
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
     this._backgroundActivityUntil = 0;
@@ -1072,6 +1079,58 @@ class AgentSession extends EventEmitter {
     for (const line of lines) {
       this._handleLine(line);
     }
+  }
+
+  _refreshRemoteConfigAfterUpstreamFailure() {
+    try {
+      require("./remote-config")
+        .refreshRemoteConfig({ reason: "upstream_api_failure" })
+        .catch((err) => log.warn("remote config refresh after upstream failure failed: %s", err?.message || err));
+    } catch (err) {
+      log.warn("remote config refresh after upstream failure unavailable: %s", err?.message || err);
+    }
+  }
+
+  _handleStderr(raw) {
+    const text = sanitizeError(raw);
+    const { isResumeFailureMessage } = require("./session-engine-recovery");
+    if (
+      this.busy &&
+      !this._turnSettled &&
+      this.agentResumeId &&
+      isResumeFailureMessage(raw)
+    ) {
+      this.emit("resume-invalid", { message: raw });
+      this._failTurn("对话连接已刷新，请重新发送这条消息。");
+      return;
+    }
+
+    if (text) this.lastSpawnError = text;
+    this._ingestRuntime([{ type: "engine.stderr", payload: { text } }]);
+
+    if (this.busy && !this._turnSettled && isUpstreamApiFailure(raw)) {
+      this._emitEngineNotice({
+        code: "upstreamApiFailure",
+        level: "warning",
+        message: text,
+        panel: true,
+        toast: true,
+        done: true,
+      });
+      this._refreshRemoteConfigAfterUpstreamFailure();
+      this._failTurn(text);
+      this.terminate();
+      return;
+    }
+
+    this._emitEngineNotice({
+      code: "stderr",
+      level: "warning",
+      message: text,
+      panel: true,
+      toast: true,
+      done: true,
+    });
   }
 
   _flushLineBuffer() {
@@ -1374,9 +1433,12 @@ class AgentSession extends EventEmitter {
       durationMs: Number(ev.duration_ms) || undefined,
       totalCostUsd: Number(ev.total_cost_usd) || undefined,
     };
-    if (this._hasBlockingTurnWork()) {
+    if (this._hasPendingRuntimeBlockers()) {
       this._deferTurnResult(payload, "result-before-work-finished");
       return;
+    }
+    if (Date.now() < this._backgroundActivityUntil) {
+      this._backgroundActivityUntil = 0;
     }
     this._completeTurn(payload);
   }

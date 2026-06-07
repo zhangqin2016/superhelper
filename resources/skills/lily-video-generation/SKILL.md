@@ -24,6 +24,6 @@ echo '{"prompt":"要生成的视频描述","ratio":"16:9","resolution":"720P","d
 - `watermark`：默认 `false`
 - `output_dir`：保存目录，默认当前工作区 `generated-assets`
 
-后台可通过 `DASHSCOPE_VIDEO_ENDPOINT` 覆盖完整接口地址；否则使用 `DASHSCOPE_VIDEO_BASE_URL` / `DASHSCOPE_BASE_URL` 拼接官方默认路径。
+后台可通过 `DASHSCOPE_VIDEO_ENDPOINT` 覆盖完整接口地址；否则使用 `DASHSCOPE_VIDEO_BASE_URL` 拼接官方默认路径。`DASHSCOPE_BASE_URL` 保留给聊天模型接口，不参与视频生成。
 
 视频生成耗时较长。脚本会轮询百炼任务，完成后把临时视频 URL 下载到本地。回复用户时说明本地文件路径，不要直接返回临时 URL。

@@ -57,6 +57,30 @@ for (const mod of [renderer, main]) {
     "应优先 subject",
   );
 
+  assert.equal(
+    buildToolPreviewLabel({
+      name: "Bash",
+      input: { command: 'echo \'{"prompt":"画一张图"}\' | node /x/resources/skills/lily-image-generation/scripts/generate-image.cjs' },
+    }),
+    "生成图片",
+  );
+
+  assert.equal(
+    buildToolPreviewLabel({
+      name: "Bash",
+      input: { command: "node /x/lily-video-generation/scripts/generate-video.cjs" },
+    }),
+    "生成视频",
+  );
+
+  assert.equal(
+    buildToolPreviewLabel({
+      name: "Bash",
+      input: { command: "node /x/generate-speech.cjs" },
+    }),
+    "生成语音",
+  );
+
   assert.ok(looksLikeJsonPreview('{"a":1}'));
   assert.ok(!looksLikeJsonPreview("Read src/a.js"));
 }

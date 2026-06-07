@@ -543,8 +543,9 @@ class TurnOrchestrator {
   }
 
   async _startTurn(session, text, files, opts = {}) {
-    const { diagnoseSendBlocker, ensureSessionRunner } = require("./ipc-utils");
+    const { diagnoseSendBlocker, ensureSessionRunner, refreshRemoteConfigForSend } = require("./ipc-utils");
     if (!opts.skipPreflight) {
+      await refreshRemoteConfigForSend();
       const blocked = diagnoseSendBlocker(this.ctx, session.id);
       if (blocked) return { ok: false, error: blocked.error, detail: blocked.detail };
     }

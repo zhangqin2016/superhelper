@@ -21,6 +21,13 @@ echo '{"prompt":"要生成的图片描述","size":"2048*2048"}' | "{{NODE_BIN}}"
 - `output_dir`：保存目录，默认当前工作区 `generated-assets`
 - `model`：默认读取 `DASHSCOPE_IMAGE_MODEL`，否则使用 `qwen-image-2.0-pro`
 
-后台可通过 `DASHSCOPE_IMAGE_ENDPOINT` 覆盖完整接口地址；否则使用 `DASHSCOPE_IMAGE_BASE_URL` / `DASHSCOPE_BASE_URL` 拼接官方默认路径。
+后台可通过 `DASHSCOPE_IMAGE_ENDPOINT` 覆盖完整接口地址；否则使用 `DASHSCOPE_IMAGE_BASE_URL` 拼接官方默认路径。`DASHSCOPE_BASE_URL` 保留给聊天模型接口，不参与图片生成。
 
-脚本会调用阿里云百炼 Qwen-Image 官方接口，把 24 小时临时 URL 下载到本地，并在 stdout 输出 `<generated_media>`。回复用户时只展示本地文件路径，不要直接返回临时 URL。
+脚本会调用阿里云百炼 Qwen-Image 官方接口，把 24 小时临时 URL 下载到本地，并在 stdout 输出 `<generated_media>` 和本地 Markdown 图片预览。
+
+回复用户时必须使用本地图片预览，不要只给路径，也不要直接返回临时 URL。格式：
+
+```markdown
+![生成图片](/绝对路径/生成图片.png)
+已保存到：/绝对路径/生成图片.png
+```

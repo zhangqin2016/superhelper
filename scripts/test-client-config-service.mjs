@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildEnvManagedClientConfig,
   DEFAULT_EFFECTIVE_CONFIG,
+  clientConfigTtlMs,
   deepMerge,
   isGatewayBaseUrl,
   parseGatewayProvider,
@@ -39,6 +40,16 @@ assert.equal(isGatewayBaseUrl("https://api.deepseek.com/anthropic"), false);
 assert.equal(parseGatewayProvider("/llm/deepseek/v1/messages"), "deepseek");
 assert.equal(parseGatewayProvider("/llm/v1/messages"), "");
 assert.equal(parseGatewayProvider("https://gateway.example.com/anything", { LILY_GATEWAY_PROVIDER: "dashscope" }), "dashscope");
+assert.equal(
+  clientConfigTtlMs({ modelGatewayTokenTtlSeconds: 6 * 60 * 60 }),
+  (6 * 60 * 60 - 60) * 1000,
+  "signed client config must expire before short-lived gateway token",
+);
+assert.equal(
+  clientConfigTtlMs({ modelGatewayTokenTtlSeconds: 48 * 60 * 60 }),
+  24 * 60 * 60 * 1000,
+  "client config ttl should still cap at one day",
+);
 
 const request = {
   headers: {
@@ -79,9 +90,9 @@ assert.notEqual(managedEnv.LILY_API_KEY, "$LILY_GATEWAY_TOKEN");
 assert.equal(verifyModelGatewayToken(managedEnv.LILY_API_KEY, "deepseek").ok, true);
 assert.equal(directEnv.LILY_API_KEY, "sk-direct", "direct provider keys should not be replaced");
 
-const envManaged = buildEnvManagedClientConfig(
+const mediaOnly = buildEnvManagedClientConfig(
   {
-    modelGatewayDefaultProvider: "dashscope",
+    modelGatewayDefaultProvider: "deepseek",
     dashscopeApiKey: "sk-test-dashscope",
     dashscopeImageModel: "qwen-image-2.0-pro",
     dashscopeVideoModel: "wan2.7-t2v",
@@ -91,26 +102,78 @@ const envManaged = buildEnvManagedClientConfig(
     dashscopeVideoEndpoint: "",
     dashscopeTtsEndpoint: "",
   },
-  {
-    dashscope: {
-      id: "dashscope",
-      type: "anthropic",
-      baseUrl: "https://dashscope.aliyuncs.com/apps/anthropic",
-      apiKey: "sk-test-dashscope",
-      models: ["qwen3-coder-plus"],
-    },
-  },
+  {},
 );
-assert.equal(envManaged.models.activePresetId, "dashscope-gateway");
-assert.equal(envManaged.models.presets[0].env.LILY_API_KEY, "$LILY_GATEWAY_TOKEN");
-assert.equal(envManaged.models.presets[0].env.LILY_MODEL, "qwen3-coder-plus");
-assert.equal(envManaged.runtime.env.DASHSCOPE_API_KEY, "sk-test-dashscope");
-assert.equal(envManaged.runtime.env.DASHSCOPE_IMAGE_MODEL, "qwen-image-2.0-pro");
-assert.equal(envManaged.runtime.env.DASHSCOPE_IMAGE_ENDPOINT, "https://dashscope.example.test/image");
+assert.equal(mediaOnly.models, undefined, "DashScope media key must not create a Qwen chat preset");
+assert.equal(mediaOnly.runtime.env.DASHSCOPE_API_KEY, "sk-test-dashscope");
+assert.equal(mediaOnly.runtime.env.DASHSCOPE_IMAGE_MODEL, "qwen-image-2.0-pro");
+assert.equal(mediaOnly.runtime.env.DASHSCOPE_IMAGE_ENDPOINT, "https://dashscope.example.test/image");
 assert.equal(
-  envManaged.runtime.env.DASHSCOPE_BASE_URL,
+  mediaOnly.runtime.env.DASHSCOPE_BASE_URL,
   undefined,
   "media config must not inherit Claude-compatible DashScope base URL",
 );
+
+const deepseekManaged = buildEnvManagedClientConfig(
+  {
+    modelGatewayDefaultProvider: "deepseek",
+    modelConfigDeliveryMode: "gateway",
+    dashscopeApiKey: "sk-test-dashscope",
+  },
+  {
+    deepseek: {
+      id: "deepseek",
+      type: "anthropic",
+      baseUrl: "https://api.deepseek.com/anthropic",
+      apiKey: "sk-test-deepseek",
+      models: ["deepseek-v4-pro[1m]", "deepseek-v4-flash"],
+    },
+  },
+);
+assert.equal(deepseekManaged.models.activePresetId, "deepseek-gateway");
+assert.equal(deepseekManaged.models.presets[0].env.LILY_GATEWAY_PROVIDER, "deepseek");
+assert.equal(deepseekManaged.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro[1m]");
+assert.equal(deepseekManaged.runtime.env.DASHSCOPE_API_KEY, "sk-test-dashscope");
+
+const deepseekDirect = buildEnvManagedClientConfig(
+  {
+    modelGatewayDefaultProvider: "deepseek",
+    modelConfigDeliveryMode: "direct",
+    dashscopeApiKey: "sk-test-dashscope",
+  },
+  {
+    deepseek: {
+      id: "deepseek",
+      type: "anthropic",
+      baseUrl: "https://api.deepseek.com/anthropic",
+      apiKey: "sk-test-deepseek",
+      models: ["deepseek-v4-pro[1m]", "deepseek-v4-flash"],
+    },
+  },
+);
+assert.equal(deepseekDirect.models.activePresetId, "deepseek-direct");
+assert.equal(deepseekDirect.models.presets[0].env.LILY_API_BASE_URL, "https://api.deepseek.com/anthropic");
+assert.equal(deepseekDirect.models.presets[0].env.LILY_API_KEY, "sk-test-deepseek");
+assert.equal(deepseekDirect.models.presets[0].env.LILY_GATEWAY_PROVIDER, undefined);
+assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro[1m]");
+assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL_HAIKU, "deepseek-v4-flash");
+
+const openAiDirectFallback = buildEnvManagedClientConfig(
+  {
+    modelGatewayDefaultProvider: "openai",
+    modelConfigDeliveryMode: "direct",
+  },
+  {
+    openai: {
+      id: "openai",
+      type: "openai",
+      baseUrl: "https://api.openai.example/v1",
+      apiKey: "sk-test-openai",
+      models: ["gpt-test"],
+    },
+  },
+);
+assert.equal(openAiDirectFallback.models.activePresetId, "openai-gateway");
+assert.equal(openAiDirectFallback.models.presets[0].env.LILY_GATEWAY_PROVIDER, "openai");
 
 console.log("client-config-service: ok");

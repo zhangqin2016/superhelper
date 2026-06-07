@@ -18,6 +18,6 @@
   "guideMd": {
     "title": "图片生成（百炼）",
     "priority": 12,
-    "body": "用户要求生成图片、海报、插画、封面、头像、产品图或视觉稿时，用：\n\n```bash\necho '{\"prompt\":\"要生成的图片描述\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼 Qwen-Image，并把临时 URL 下载到当前工作区 generated-assets。回复用户时只给本地文件路径，不要直接返回临时 URL。"
+    "body": "用户要求生成图片、海报、插画、封面、头像、产品图或视觉稿时，用：\n\n```bash\necho '{\"prompt\":\"要生成的图片描述\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼 Qwen-Image，并把临时 URL 下载到当前工作区 generated-assets。回复用户时必须使用本地 Markdown 图片预览：`![生成图片](/绝对路径/生成图片.png)`，不要只给路径，也不要直接返回临时 URL。"
   }
 }

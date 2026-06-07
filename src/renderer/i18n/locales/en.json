@@ -655,5 +655,14 @@
   "tool.field.limit": "Limit",
   "tool.field.edits": "Edits",
   "tool.field.editItem": "Edit #{index}",
-  "tool.field.generic": "{key}"
+  "tool.field.generic": "{key}",
+  "tool.media.image": "Generated image",
+  "tool.media.video": "Generated video",
+  "tool.media.audio": "Generated audio",
+  "tool.media.file": "Generated file",
+  "tool.media.imageAlt": "Generated image {index}",
+  "tool.media.videoAlt": "Generated video {index}",
+  "tool.media.audioAlt": "Generated audio {index}",
+  "tool.media.fileAlt": "Generated file {index}",
+  "tool.media.savedTo": "Saved to"
 }

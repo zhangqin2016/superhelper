@@ -70,6 +70,7 @@ AgentSession.MESSAGE_STOP_GRACE_MS = 5;
 AgentSession.QUIESCE_MS = 5;
 AgentSession.TOOL_LONG_TASK_HEARTBEAT_MS = 10;
 AgentSession.TURN_ABSOLUTE_MAX_MS = 10;
+AgentSession.DEFERRED_TURN_RESULT_GRACE_MS = 5;
 
 const waitRunner = createTestSession("sess_wait_notices");
 const waitNotices = [];
@@ -106,6 +107,45 @@ if (!resumeInvalid) {
 }
 if (resumeError.includes("Session ID") || !resumeError.includes("连接已刷新")) {
   throw new Error(`resume failure should be user-friendly, got: ${resumeError}`);
+}
+
+const remoteConfigPath = require.resolve("../src/main/remote-config.js");
+let refreshReason = "";
+require.cache[remoteConfigPath] = {
+  id: remoteConfigPath,
+  filename: remoteConfigPath,
+  loaded: true,
+  exports: {
+    refreshRemoteConfig: async (payload = {}) => {
+      refreshReason = payload.reason || "";
+      return { ok: true };
+    },
+  },
+};
+const stderrFailureRunner = createTestSession("sess_stderr_model_failure");
+let stderrFailureError = "";
+let stderrFailureTerminated = false;
+stderrFailureRunner.process = {
+  kill: () => {
+    stderrFailureTerminated = true;
+  },
+};
+stderrFailureRunner.on("error", (message) => {
+  stderrFailureError = message;
+});
+startSyntheticTurn(stderrFailureRunner);
+stderrFailureRunner._handleStderr(
+  "There's an issue with the selected model (qwen3-coder-plus). It may not exist or you may not have access to it. Run --model to pick a different model.",
+);
+await new Promise((resolve) => setTimeout(resolve, 0));
+if (!stderrFailureError.includes("当前模型暂时不可用")) {
+  throw new Error(`model stderr failure should settle turn with sanitized error: ${stderrFailureError}`);
+}
+if (stderrFailureRunner.busy || !stderrFailureRunner._turnSettled || !stderrFailureTerminated) {
+  throw new Error("model stderr failure should end turn and restart the runner");
+}
+if (refreshReason !== "upstream_api_failure") {
+  throw new Error(`model stderr failure should refresh remote config, got: ${refreshReason}`);
 }
 
 startSyntheticTurn(runner);
@@ -195,6 +235,56 @@ if (
   || resultBeforeToolEvents.length !== 2
 ) {
   throw new Error(`deferred result should complete after tool-done, got ${resultBeforeToolEvents.join(",")}`);
+}
+
+const missingToolResultRunner = createTestSession("sess_missing_tool_result_grace");
+let missingToolResultDone = false;
+missingToolResultRunner.on("done", () => {
+  missingToolResultDone = true;
+});
+startSyntheticTurn(missingToolResultRunner);
+line(missingToolResultRunner, {
+  type: "stream_event",
+  event: {
+    type: "content_block_start",
+    index: 0,
+    content_block: { type: "tool_use", id: "tool_missing_result", name: "Bash" },
+  },
+});
+line(missingToolResultRunner, {
+  type: "result",
+  subtype: "success",
+  result: "final answer already visible",
+});
+if (missingToolResultDone) {
+  throw new Error("missing tool_result turn should not complete before grace");
+}
+await new Promise((resolve) => setTimeout(resolve, 30));
+if (!missingToolResultDone || missingToolResultRunner.busy || !missingToolResultRunner._turnSettled) {
+  throw new Error("missing tool_result turn should complete after short final-result grace");
+}
+
+const backgroundStatusRunner = createTestSession("sess_background_status_result");
+let backgroundStatusDone = false;
+backgroundStatusRunner.on("done", () => {
+  backgroundStatusDone = true;
+});
+startSyntheticTurn(backgroundStatusRunner);
+line(backgroundStatusRunner, {
+  type: "system",
+  subtype: "status",
+  status: "thinking",
+});
+if (backgroundStatusRunner._backgroundActivityUntil <= Date.now()) {
+  throw new Error("system/status should mark background activity");
+}
+line(backgroundStatusRunner, {
+  type: "result",
+  subtype: "success",
+  result: "summary is visible",
+});
+if (!backgroundStatusDone || backgroundStatusRunner.busy || !backgroundStatusRunner._turnSettled) {
+  throw new Error("final result should not wait for background activity window");
 }
 
 const toolTurnRunner = createTestSession("sess_tool_message_stop");
@@ -777,13 +867,8 @@ backgroundResultRunner.on("done", () => {
 startSyntheticTurn(backgroundResultRunner);
 line(backgroundResultRunner, { type: "system", subtype: "task_progress" });
 line(backgroundResultRunner, { type: "result", subtype: "success", result: "still working" });
-if (backgroundResultDone || !backgroundResultRunner.busy) {
-  throw new Error("result must not complete while background activity is still active");
-}
-backgroundResultRunner._backgroundActivityUntil = Date.now() - 1;
-backgroundResultRunner._maybeCompleteDeferredTurnResult();
-if (!backgroundResultDone || backgroundResultRunner.busy) {
-  throw new Error("deferred background result should complete after activity expires");
+if (!backgroundResultDone || backgroundResultRunner.busy || !backgroundResultRunner._turnSettled) {
+  throw new Error("final result should complete immediately despite background activity");
 }
 
 const adapterFailureRunner = createTestSession("sess_adapter_failure");

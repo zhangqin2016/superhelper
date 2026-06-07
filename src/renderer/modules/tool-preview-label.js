@@ -51,12 +51,31 @@ function pickText(input) {
   return "";
 }
 
+export function mediaGenerationPreview(command = "") {
+  const value = String(command || "");
+  if (!value) return "";
+  if (value.includes("lily-image-generation") || value.includes("generate-image.cjs")) {
+    return "生成图片";
+  }
+  if (value.includes("lily-video-generation") || value.includes("generate-video.cjs")) {
+    return "生成视频";
+  }
+  if (value.includes("lily-speech-generation") || value.includes("generate-speech.cjs")) {
+    return "生成语音";
+  }
+  return "";
+}
+
 export function buildToolPreviewLabel(tool = {}) {
   const input = tool.input || {};
   const name = tool.name || "Tool";
   const lowerName = String(name).toLowerCase();
 
-  if (lowerName === "bash" && input.command) return truncate(`Bash ${input.command}`, 260);
+  if (lowerName === "bash" && input.command) {
+    const mediaPreview = mediaGenerationPreview(input.command);
+    if (mediaPreview) return mediaPreview;
+    return truncate(`Bash ${input.command}`, 260);
+  }
   if ((lowerName === "glob" || lowerName === "grep") && input.pattern) {
     return truncate(`${name} ${input.pattern}`, 260);
   }
@@ -90,7 +109,11 @@ export function buildToolPreviewLabel(tool = {}) {
   if (tick) return tick;
 
   const command = String(input.command || input.cmd || input.script || "").trim();
-  if (command) return truncate(`Bash ${command}`, 260);
+  if (command) {
+    const mediaPreview = mediaGenerationPreview(command);
+    if (mediaPreview) return mediaPreview;
+    return truncate(`Bash ${command}`, 260);
+  }
 
   const filePath = String(input.file_path || input.path || input.target_file || "").trim();
   if (filePath) return truncate(`${name} ${filePath}`, 260);

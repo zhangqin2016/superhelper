@@ -123,13 +123,18 @@ const { server, base, seen } = await startMockServer();
 try {
   const env = {
     DASHSCOPE_API_KEY: "test-key",
-    DASHSCOPE_BASE_URL: base,
+    DASHSCOPE_BASE_URL: `${base}/apps/anthropic`,
+    DASHSCOPE_IMAGE_BASE_URL: base,
+    DASHSCOPE_VIDEO_BASE_URL: base,
+    DASHSCOPE_TTS_BASE_URL: base,
     LILY_MEDIA_POLL_INTERVAL_MS: "50",
   };
   const image = await runNode(scripts.image, { prompt: "一张莲花图", size: "1328*1328" }, env, tmp);
   assert.equal(image.code, 0, image.stderr);
   assert.match(image.stdout, /generated_media type="image"/);
   assert.match(image.stdout, /generated-assets\/image-/);
+  assert.match(image.stdout, /!\[生成图片\]\(/);
+  assert.match(image.stderr, /正在提交图片生成任务/);
 
   const video = await runNode(scripts.video, { prompt: "一段莲花盛开视频", timeout_ms: 5000 }, env, tmp);
   assert.equal(video.code, 0, video.stderr);
@@ -144,7 +149,12 @@ try {
   const aliyunAlias = await runNode(
     scripts.speech,
     { text: "百炼别名密钥测试", output_dir: "alias-assets" },
-    { DASHSCOPE_API_KEY: "", DASHSCOPE_BASE_URL: base, ALIYUN_BAILIAN_API_KEY: "test-key" },
+    {
+      DASHSCOPE_API_KEY: "",
+      DASHSCOPE_BASE_URL: `${base}/apps/anthropic`,
+      DASHSCOPE_TTS_BASE_URL: base,
+      ALIYUN_BAILIAN_API_KEY: "test-key",
+    },
     tmp,
   );
   assert.equal(aliyunAlias.code, 0, aliyunAlias.stderr);

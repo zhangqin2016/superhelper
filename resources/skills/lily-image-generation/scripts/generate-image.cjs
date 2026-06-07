@@ -22,6 +22,10 @@ function fail(message, detail) {
   process.exit(1);
 }
 
+function logProgress(message) {
+  process.stderr.write(`[lily-image-generation] ${message}\n`);
+}
+
 function jsonParse(raw) {
   try {
     return raw ? JSON.parse(raw) : {};
@@ -35,7 +39,7 @@ function apiKey() {
 }
 
 function baseUrl() {
-  return (process.env.DASHSCOPE_IMAGE_BASE_URL || process.env.DASHSCOPE_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  return (process.env.DASHSCOPE_IMAGE_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
 }
 
 function createUrl() {
@@ -46,6 +50,15 @@ function safeName(prefix, ext) {
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const rand = Math.random().toString(16).slice(2, 8);
   return `${prefix}-${ts}-${rand}.${ext}`;
+}
+
+function xmlEscape(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 async function requestJson(url, options) {
@@ -106,12 +119,17 @@ async function pollTask(taskId, key, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   const taskUrl = `${baseUrl()}/tasks/${encodeURIComponent(taskId)}`;
   const pollIntervalMs = Math.max(50, Number(process.env.LILY_MEDIA_POLL_INTERVAL_MS || 3000));
+  let lastStatus = "";
   while (Date.now() < deadline) {
     const data = await requestJson(taskUrl, {
       method: "GET",
       headers: { Authorization: `Bearer ${key}` },
     });
     const status = extractStatus(data);
+    if (status && status !== lastStatus) {
+      logProgress(`任务状态：${status}`);
+      lastStatus = status;
+    }
     if (status === "SUCCEEDED" || status === "SUCCESS") return data;
     if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED") {
       throw new Error(data?.output?.message || data?.message || `任务失败：${status}`);
@@ -166,6 +184,7 @@ async function main() {
     },
   };
 
+  logProgress("正在提交图片生成任务...");
   const create = await requestJson(createUrl(), {
     method: "POST",
     headers: {
@@ -175,6 +194,7 @@ async function main() {
     body: JSON.stringify(payload),
   });
   const taskId = extractTaskId(create);
+  if (taskId) logProgress(`任务已提交：${taskId}`);
   const result = taskId ? await pollTask(taskId, key, Number(input.timeout_ms || 240_000)) : create;
   const urls = collectImageUrls(result);
   if (!urls.length) fail("图片任务完成，但没有找到图片 URL。", JSON.stringify(result, null, 2));
@@ -183,16 +203,20 @@ async function main() {
   for (let i = 0; i < urls.length; i += 1) {
     const ext = detectExt(urls[i]);
     const filePath = path.join(outputDir, safeName(`image-${i + 1}`, ext));
+    logProgress(`正在下载生成图片 ${i + 1}/${urls.length}...`);
     const bytes = await downloadFile(urls[i], filePath);
     files.push({ path: filePath, bytes });
   }
 
   process.stdout.write("<generated_media type=\"image\">\n");
-  if (taskId) process.stdout.write(`  <task_id>${taskId}</task_id>\n`);
+  if (taskId) process.stdout.write(`  <task_id>${xmlEscape(taskId)}</task_id>\n`);
   for (const file of files) {
-    process.stdout.write(`  <file path="${file.path}" bytes="${file.bytes}" />\n`);
+    process.stdout.write(`  <file path="${xmlEscape(file.path)}" bytes="${file.bytes}" />\n`);
   }
   process.stdout.write("</generated_media>\n");
+  for (const file of files) {
+    process.stdout.write(`\n![生成图片](${file.path})\n已保存到：${file.path}\n`);
+  }
 }
 
 main().catch((error) => fail("图片生成失败。", error?.message || String(error)));

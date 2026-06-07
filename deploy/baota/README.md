@@ -147,13 +147,15 @@ Anthropic-compatible endpoint 的平台，直接在 `.env` 配置对应 key：
 ```env
 MODEL_GATEWAY_ENABLED=true
 MODEL_GATEWAY_DEFAULT_PROVIDER=deepseek
+MODEL_CONFIG_DELIVERY_MODE=gateway # gateway: 服务端托管 key；direct: 客户端直连，延迟低但会下发模型 key
 DEEPSEEK_API_KEY=sk-...
-DASHSCOPE_API_KEY=sk-...
+DASHSCOPE_API_KEY=sk-... # media skills only: image/video/speech
+DASHSCOPE_CHAT_API_KEY=sk-... # optional: enable DashScope/Qwen as a chat gateway
 KIMI_API_KEY=sk-...
 GLM_API_KEY=sk-...
 
 # 可选：阿里百炼媒体技能默认模型。留空 endpoint 时使用技能内置官方入口。
-DASHSCOPE_MODEL=qwen3-coder-plus
+DASHSCOPE_MODEL=qwen3-coder-plus # 仅在配置 DASHSCOPE_CHAT_API_KEY 时作为聊天模型使用
 DASHSCOPE_IMAGE_MODEL=qwen-image-2.0-pro
 DASHSCOPE_VIDEO_MODEL=wan2.7-t2v
 DASHSCOPE_TTS_MODEL=cosyvoice-v3-flash

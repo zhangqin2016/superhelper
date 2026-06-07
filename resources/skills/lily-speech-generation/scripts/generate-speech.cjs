@@ -35,7 +35,7 @@ function apiKey() {
 }
 
 function baseUrl() {
-  return (process.env.DASHSCOPE_TTS_BASE_URL || process.env.DASHSCOPE_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  return (process.env.DASHSCOPE_TTS_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
 }
 
 function createUrl() {

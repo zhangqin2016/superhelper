@@ -21,6 +21,10 @@ const ERROR_PATTERNS = [
     test: /rate.?limit|429|too many requests/i,
     message: "请求过于频繁，请稍后再试。",
   },
+  {
+    test: /selected model|pick a different model|model .*does not exist|model .*not found|model .*not supported|invalid model|may not have access to it/i,
+    message: "当前模型暂时不可用，已刷新配置。请稍后重试或切换模型。",
+  },
 ];
 
 function isUpstreamApiFailure(raw) {

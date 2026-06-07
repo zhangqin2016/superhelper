@@ -655,5 +655,14 @@
   "tool.field.limit": "行数",
   "tool.field.edits": "编辑",
   "tool.field.editItem": "编辑 #{index}",
-  "tool.field.generic": "{key}"
+  "tool.field.generic": "{key}",
+  "tool.media.image": "已生成图片",
+  "tool.media.video": "已生成视频",
+  "tool.media.audio": "已生成音频",
+  "tool.media.file": "已生成文件",
+  "tool.media.imageAlt": "生成图片 {index}",
+  "tool.media.videoAlt": "生成视频 {index}",
+  "tool.media.audioAlt": "生成音频 {index}",
+  "tool.media.fileAlt": "生成文件 {index}",
+  "tool.media.savedTo": "已保存到"
 }
