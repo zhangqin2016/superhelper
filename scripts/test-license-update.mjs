@@ -213,4 +213,18 @@ if (getUpdateSettings().manifestUrl !== defaultManifestUrl()) {
   throw new Error("update settings should ignore user-controlled manifest URL");
 }
 
+const ipcHandlersSource = fs.readFileSync(require.resolve("../src/main/ipc-handlers.js"), "utf8");
+for (const channel of ["updates:check", "updates:download", "updates:install", "updates:open-download"]) {
+  const start = ipcHandlersSource.indexOf(`ipcMain.handle("${channel}"`);
+  const end = ipcHandlersSource.indexOf("ipcMain.handle(", start + 1);
+  const block = ipcHandlersSource.slice(start, end > start ? end : undefined);
+  if (start < 0 || block.includes("requireValidLicense")) {
+    throw new Error(`${channel} must remain available before activation`);
+  }
+}
+const schedulerSource = fs.readFileSync(require.resolve("../src/main/update-scheduler.js"), "utf8");
+if (schedulerSource.includes("requireValidLicense")) {
+  throw new Error("background update checks must remain available before activation");
+}
+
 console.log("license-update: ok");

@@ -76,27 +76,15 @@ function registerAll(ctx) {
     require("./update-manager").getUpdateSettings());
   ipcMain.handle("updates:get-state", () =>
     require("./update-manager").getUpdateState());
-  ipcMain.handle("updates:check", () => {
-    const licensed = require("./license-manager").requireValidLicense();
-    if (!licensed.ok) return licensed;
-    return require("./update-manager").checkForUpdatesState();
-  });
+  ipcMain.handle("updates:check", () =>
+    require("./update-manager").checkForUpdatesState());
   ipcMain.handle("updates:kick-check", () => require("./update-scheduler").kickUpdateCheck());
-  ipcMain.handle("updates:download", () => {
-    const licensed = require("./license-manager").requireValidLicense();
-    if (!licensed.ok) return licensed;
-    return require("./update-manager").downloadUpdate();
-  });
-  ipcMain.handle("updates:install", (_event, payload) => {
-    const licensed = require("./license-manager").requireValidLicense();
-    if (!licensed.ok) return licensed;
-    return require("./update-manager").installUpdate(payload || {});
-  });
-  ipcMain.handle("updates:open-download", (_event, payload) => {
-    const licensed = require("./license-manager").requireValidLicense();
-    if (!licensed.ok) return licensed;
-    return require("./update-manager").openUpdateDownload(payload?.url || payload);
-  });
+  ipcMain.handle("updates:download", () =>
+    require("./update-manager").downloadUpdate());
+  ipcMain.handle("updates:install", (_event, payload) =>
+    require("./update-manager").installUpdate(payload || {}));
+  ipcMain.handle("updates:open-download", (_event, payload) =>
+    require("./update-manager").openUpdateDownload(payload?.url || payload));
 
   // --- Sub-module registrations ---
 

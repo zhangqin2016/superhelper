@@ -16,6 +16,9 @@ export const DEFAULT_EFFECTIVE_CONFIG = {
     permissionMode: "default",
     minAppVersion: "",
   },
+  runtime: {
+    env: {},
+  },
 };
 
 function plainObject(value) {

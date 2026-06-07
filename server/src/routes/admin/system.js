@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { config } from "../../config.js";
 import { db, pool } from "../../db.js";
+import { listModelGatewayProviders } from "../../services/model-gateway/providers.js";
 import { signLicensePayload } from "../../services/security.js";
 
 const updateSettingsSchema = z.object({
@@ -70,6 +71,37 @@ async function buildAdminHealth() {
 
   checks.push(await checkUpdateManifest());
 
+  const gatewayProviders = Object.values(listModelGatewayProviders()).map((provider) => ({
+    id: provider.id,
+    type: provider.type,
+    baseUrl: provider.baseUrl,
+    model: provider.model || "",
+    models: provider.models || [],
+    hasApiKey: Boolean(provider.apiKey),
+    ready: Boolean(provider.baseUrl && provider.apiKey),
+  }));
+  const readyGatewayProviders = gatewayProviders.filter((provider) => provider.ready).length;
+  checks.push(healthCheck(
+    "model_gateway",
+    !config.modelGatewayEnabled || readyGatewayProviders > 0,
+    config.modelGatewayEnabled
+      ? `${readyGatewayProviders}/${gatewayProviders.length} providers ready`
+      : "gateway disabled",
+    {
+      enabled: Boolean(config.modelGatewayEnabled),
+      providers: gatewayProviders,
+    },
+  ));
+  checks.push(healthCheck(
+    "config_delivery",
+    true,
+    "client config endpoint available",
+    {
+      endpoint: "/api/client/config",
+      pluginRegistryUrl: "/api/plugins/registry",
+    },
+  ));
+
   const failed = checks.filter((item) => !item.ok);
   const warnings = checks.filter((item) => item.unsigned);
   const status = failed.length ? "error" : warnings.length ? "warning" : "ok";
@@ -84,6 +116,9 @@ async function buildAdminHealth() {
       packageVersion: process.env.npm_package_version || "",
       qiniuPublicBaseUrl: config.qiniuPublicBaseUrl,
       allowUnsignedLicenses: config.allowUnsignedLicenses,
+      modelGatewayEnabled: config.modelGatewayEnabled,
+      modelGatewayDefaultProvider: config.modelGatewayDefaultProvider,
+      modelGatewayTokenTtlSeconds: config.modelGatewayTokenTtlSeconds,
     },
     checks,
   };

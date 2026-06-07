@@ -5,6 +5,7 @@
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
 import { t, tPermission } from "../i18n/index.js";
+import { refreshLocaleSelect } from "./locale-settings.js";
 import { refreshModelSelect } from "./model-settings.js";
 import { refreshPermissionSelect, refreshSessionPermissionSelect } from "./permission-settings.js";
 import { refreshSearchSettings } from "./search-settings.js";
@@ -20,6 +21,7 @@ const SETTINGS_PAGES = ["general", "usage", "model", "permission", "search", "sk
 
 let panelOpen = false;
 let activeSettingsPage = "general";
+let refreshInFlight = null;
 
 async function confirmBypassPermission() {
   return confirmDialog({
@@ -62,6 +64,32 @@ export function openSettingsPage(pageId = "general") {
     activeSettingsPage = pageId;
   }
   setPanelOpen(true);
+  refreshSettingsPanelData();
+}
+
+function refreshSettingsPanelData() {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = Promise.allSettled([
+    refreshLocaleSelect(),
+    refreshModelSelect(),
+    refreshPermissionSelect(),
+    refreshSearchSettings(),
+    refreshSkillsList(),
+    refreshLicenseStatus(),
+    refreshUpdateSettings(),
+    refreshUsageSettings(),
+  ])
+    .then((results) => {
+      for (const result of results) {
+        if (result.status === "rejected") {
+          console.warn("[settings] refresh failed:", result.reason?.message || result.reason);
+        }
+      }
+    })
+    .finally(() => {
+      refreshInFlight = null;
+    });
+  return refreshInFlight;
 }
 
 export async function initSettingsPanel() {
@@ -80,17 +108,9 @@ export async function initSettingsPanel() {
 
   switchSettingsPage(activeSettingsPage);
 
-  openBtn.addEventListener("click", async () => {
-    const { refreshLocaleSelect } = await import("./locale-settings.js");
-    await refreshLocaleSelect();
-    await refreshModelSelect();
-    await refreshPermissionSelect();
-    await refreshSearchSettings();
-    await refreshSkillsList();
-    await refreshLicenseStatus();
-    await refreshUpdateSettings();
-    await refreshUsageSettings();
+  openBtn.addEventListener("click", () => {
     setPanelOpen(true);
+    refreshSettingsPanelData();
   });
 
   closeBtn?.addEventListener("click", () => setPanelOpen(false));

@@ -85,6 +85,13 @@ function normalizeSearxngUrl(raw) {
 
 function resolveIqsApiKey() {
   try {
+    const remoteEnv = require("./remote-config").getRemoteRuntimeEnvSync();
+    const fromRemote = String(remoteEnv.IQS_API_KEY || remoteEnv.WEBSEARCH_IQS_API_KEY || "").trim();
+    if (fromRemote) return fromRemote;
+  } catch {
+    // fall through
+  }
+  try {
     const { loadSettingsEnv } = require("./agent-settings");
     const userEnv = loadSettingsEnv();
     const fromUser = String(userEnv.IQS_API_KEY || userEnv.WEBSEARCH_IQS_API_KEY || "").trim();

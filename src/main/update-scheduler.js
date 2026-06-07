@@ -14,11 +14,6 @@ async function runUpdateCheck(reason = "scheduled") {
   }
   lastCheckAt = now;
 
-  const licensed = require("./license-manager").requireValidLicense();
-  if (!licensed.ok) {
-    return { ok: false, error: licensed.error || "LICENSE_REQUIRED" };
-  }
-
   try {
     return await require("./update-manager").checkForUpdatesState();
   } catch (err) {

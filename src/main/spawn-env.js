@@ -15,8 +15,9 @@ function buildAgentSpawnEnv(options = {}) {
   const home = userHome();
   const lilyEnv = normalizeToLilyEnv({
     ...loadSettingsEnv(),
-    ...getUserApiEnv(),
+    ...require("./remote-config").getRemoteRuntimeEnvSync(),
     ...getActivePresetEnv(),
+    ...getUserApiEnv(),
   });
   const engineEnv = toEngineEnv(lilyEnv);
 

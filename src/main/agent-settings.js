@@ -33,6 +33,16 @@ function readBundledSettingsEnv() {
 
 /** Resolve env key from user settings, bundled defaults, then process.env. */
 function resolveSettingsEnvValue(...keys) {
+  let remoteEnv = {};
+  try {
+    remoteEnv = require("./remote-config").getRemoteRuntimeEnvSync();
+  } catch {
+    remoteEnv = {};
+  }
+  for (const key of keys) {
+    const value = String(remoteEnv[key] || "").trim();
+    if (value) return value;
+  }
   const userEnv = loadSettingsEnv();
   for (const key of keys) {
     const value = String(userEnv[key] || "").trim();

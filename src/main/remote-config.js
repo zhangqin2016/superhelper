@@ -117,6 +117,10 @@ function writeCache(state) {
   });
 }
 
+function reloadRemoteConfigCache() {
+  cachedState = null;
+}
+
 function normalizeRemoteCatalog(effectiveConfig) {
   const models = effectiveConfig?.models;
   if (!models || !Array.isArray(models.presets) || models.presets.length === 0) return null;
@@ -133,6 +137,18 @@ function normalizeRemoteCatalog(effectiveConfig) {
   };
 }
 
+function normalizeRuntimeEnv(effectiveConfig) {
+  const env = effectiveConfig?.runtime?.env;
+  if (!env || typeof env !== "object" || Array.isArray(env)) return {};
+  const normalized = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!/^[A-Z][A-Z0-9_]{1,80}$/.test(key)) continue;
+    if (value == null || value === "") continue;
+    normalized[key] = String(value);
+  }
+  return normalized;
+}
+
 function getRemoteModelCatalogSync() {
   const state = readCache();
   const expiresAt = Date.parse(String(state.expiresAt || ""));
@@ -140,11 +156,22 @@ function getRemoteModelCatalogSync() {
   return normalizeRemoteCatalog(state.effectiveConfig);
 }
 
+function hasRemoteModelCatalogSync() {
+  return Boolean(getRemoteModelCatalogSync()?.presets?.length);
+}
+
 function getRemoteEffectiveConfigSync() {
   const state = readCache();
   const expiresAt = Date.parse(String(state.expiresAt || ""));
   if (expiresAt && Date.now() > expiresAt) return null;
   return state.effectiveConfig || null;
+}
+
+function getRemoteRuntimeEnvSync() {
+  const state = readCache();
+  const expiresAt = Date.parse(String(state.expiresAt || ""));
+  if (expiresAt && Date.now() > expiresAt) return {};
+  return normalizeRuntimeEnv(state.effectiveConfig);
 }
 
 async function refreshRemoteConfig(payload = {}) {
@@ -169,6 +196,9 @@ async function refreshRemoteConfig(payload = {}) {
 
 module.exports = {
   refreshRemoteConfig,
+  reloadRemoteConfigCache,
   getRemoteModelCatalogSync,
+  hasRemoteModelCatalogSync,
   getRemoteEffectiveConfigSync,
+  getRemoteRuntimeEnvSync,
 };

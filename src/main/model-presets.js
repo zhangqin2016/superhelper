@@ -311,6 +311,27 @@ function getBuiltinPresets() {
   }));
 }
 
+function isRemoteManagedCatalog() {
+  try {
+    return require("./remote-config").hasRemoteModelCatalogSync();
+  } catch {
+    return false;
+  }
+}
+
+function usesManagedServicePreset(preset) {
+  if (!preset || preset.custom) return false;
+  const env = normalizeToLilyEnv(preset.env || {});
+  const baseUrl = String(env.LILY_API_BASE_URL || "").trim();
+  const apiKey = String(env.LILY_API_KEY || "").trim();
+  return Boolean(
+    env.LILY_GATEWAY_PROVIDER ||
+      baseUrl.startsWith("/llm/") ||
+      baseUrl === "/llm" ||
+      apiKey === "$LILY_GATEWAY_TOKEN",
+  );
+}
+
 function getAllPresets() {
   return [...getBuiltinPresets(), ...getCustomPresets()];
 }
@@ -356,6 +377,8 @@ function getUserApiEnv() {
     }
   }
 
+  if (usesManagedServicePreset(preset)) return {};
+
   const gateway = user.apiGateway || normalizeApiGateway(null);
   if (gateway.mode !== "custom") return {};
 
@@ -391,6 +414,7 @@ function listPresetsPublic() {
   return {
     activePresetId: getActivePresetId(),
     apiGateway: getApiGatewayPublic(),
+    managedByService: isRemoteManagedCatalog(),
     presets: getAllPresets().map((p) => ({
       id: p.id,
       label: p.label,
@@ -535,6 +559,11 @@ function setApiGateway({ mode, baseUrl, apiKey }) {
 function reloadPresets() {
   cachedCatalog = null;
   cachedUserChoice = null;
+  try {
+    require("./remote-config").reloadRemoteConfigCache();
+  } catch {
+    // remote config may not be loaded in isolated tests.
+  }
 }
 
 module.exports = {

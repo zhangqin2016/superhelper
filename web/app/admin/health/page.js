@@ -70,6 +70,9 @@ export default async function HealthPage() {
             ["packageVersion", runtime.packageVersion],
             ["qiniuPublicBaseUrl", runtime.qiniuPublicBaseUrl],
             ["allowUnsignedLicenses", String(Boolean(runtime.allowUnsignedLicenses))],
+            ["modelGatewayEnabled", String(Boolean(runtime.modelGatewayEnabled))],
+            ["modelGatewayDefaultProvider", runtime.modelGatewayDefaultProvider],
+            ["modelGatewayTokenTtlSeconds", runtime.modelGatewayTokenTtlSeconds],
           ].map(([key, value]) => (
             <div key={key} className="rounded-lg bg-slate-50 p-4">
               <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">{labels.runtimeFields[key] || key}</dt>
