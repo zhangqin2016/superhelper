@@ -4,6 +4,7 @@ import cookie from "@fastify/cookie";
 import { config } from "./config.js";
 import { publicRoutes } from "./routes/public.js";
 import { adminRoutes } from "./routes/admin.js";
+import { modelGatewayRoutes } from "./services/model-gateway.js";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
@@ -39,7 +40,7 @@ export async function buildApp() {
   });
 
   app.addHook("preHandler", async (request, reply) => {
-    if (!request.url.startsWith("/api/")) return;
+    if (!request.url.startsWith("/api/") && !request.url.startsWith("/llm/")) return;
     if (checkRateLimit(request)) return;
     reply.code(429).send({ ok: false, code: "RATE_LIMITED" });
   });
@@ -54,6 +55,7 @@ export async function buildApp() {
 
   await app.register(publicRoutes);
   await app.register(adminRoutes);
+  await app.register(modelGatewayRoutes);
 
   return app;
 }

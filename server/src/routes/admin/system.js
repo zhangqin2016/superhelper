@@ -1,0 +1,132 @@
+import { z } from "zod";
+import { config } from "../../config.js";
+import { db, pool } from "../../db.js";
+import { signLicensePayload } from "../../services/security.js";
+
+const updateSettingsSchema = z.object({
+  licenseTrialDays: z.number().int().min(0).max(3650),
+});
+
+function healthCheck(name, ok, detail = "", meta = {}) {
+  return {
+    name,
+    ok: Boolean(ok),
+    detail: String(detail || ""),
+    ...meta,
+  };
+}
+
+async function checkUpdateManifest() {
+  const url = `${config.qiniuPublicBaseUrl.replace(/\/+$/, "")}/app/updates/latest.json`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    return healthCheck(
+      "update_manifest",
+      response.ok,
+      response.ok ? "latest.json reachable" : `${response.status} ${response.statusText}`,
+      { url },
+    );
+  } catch (error) {
+    return healthCheck("update_manifest", false, error?.message || String(error), { url });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function buildAdminHealth() {
+  const checks = [];
+
+  try {
+    await pool.query("select 1");
+    checks.push(healthCheck("database", true, "database reachable"));
+  } catch (error) {
+    checks.push(healthCheck("database", false, error?.message || String(error)));
+  }
+
+  checks.push(healthCheck(
+    "license_private_key",
+    Boolean(config.licensePrivateKey),
+    config.licensePrivateKey ? "configured" : "missing",
+  ));
+  checks.push(healthCheck(
+    "license_public_key",
+    Boolean(config.licensePublicKey),
+    config.licensePublicKey ? "configured" : "missing",
+  ));
+
+  try {
+    const signature = signLicensePayload({ health: "check", issuedAt: new Date().toISOString() });
+    checks.push(healthCheck(
+      "license_signing",
+      Boolean(signature),
+      signature?.startsWith("dev.") ? "unsigned development signature" : "signing ok",
+      { unsigned: Boolean(signature?.startsWith("dev.")) },
+    ));
+  } catch (error) {
+    checks.push(healthCheck("license_signing", false, error?.message || String(error)));
+  }
+
+  checks.push(await checkUpdateManifest());
+
+  const failed = checks.filter((item) => !item.ok);
+  const warnings = checks.filter((item) => item.unsigned);
+  const status = failed.length ? "error" : warnings.length ? "warning" : "ok";
+
+  return {
+    ok: failed.length === 0,
+    status,
+    checkedAt: new Date().toISOString(),
+    runtime: {
+      nodeEnv: process.env.NODE_ENV || "development",
+      imageTag: process.env.IMAGE_TAG || "",
+      packageVersion: process.env.npm_package_version || "",
+      qiniuPublicBaseUrl: config.qiniuPublicBaseUrl,
+      allowUnsignedLicenses: config.allowUnsignedLicenses,
+    },
+    checks,
+  };
+}
+
+export function registerAdminSystemRoutes(app, { audit }) {
+  app.get("/api/admin/health", async () => {
+    return buildAdminHealth();
+  });
+
+  app.get("/api/admin/settings", async () => {
+    const row = await db
+      .selectFrom("app_settings")
+      .select("value")
+      .where("key", "=", "license_trial_days")
+      .executeTakeFirst();
+    const days = Number(row?.value ?? 3);
+    return {
+      settings: {
+        licenseTrialDays: Number.isFinite(days) ? days : 3,
+      },
+    };
+  });
+
+  app.patch("/api/admin/settings", async (request) => {
+    const input = updateSettingsSchema.parse(request.body);
+    await db
+      .insertInto("app_settings")
+      .values({
+        key: "license_trial_days",
+        value: JSON.stringify(input.licenseTrialDays),
+        updated_at: new Date(),
+      })
+      .onConflict((oc) =>
+        oc.column("key").doUpdateSet({
+          value: JSON.stringify(input.licenseTrialDays),
+          updated_at: new Date(),
+        }),
+      )
+      .execute();
+    await audit(request, "settings.update", "settings", "license_trial_days", {
+      licenseTrialDays: input.licenseTrialDays,
+    });
+    return { ok: true, settings: { licenseTrialDays: input.licenseTrialDays } };
+  });
+}

@@ -7,8 +7,10 @@ import { AdminDataTable, SortHeader } from "./admin-data-table";
 import { useI18n } from "../lib/use-i18n";
 import {
   removeLicenseDeviceAction,
+  rollbackConfigProfileAction,
   setLicenseDeviceStatusAction,
   setLicenseStatusAction,
+  setConfigProfileEnabledAction,
   setPluginEnabledAction,
   setReleaseEnabledAction,
 } from "../app/admin/actions";
@@ -147,4 +149,62 @@ export function PluginsTable({ rows, empty }) {
     },
   ];
   return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.plugins}`} />;
+}
+
+function configSummary(config) {
+  const value = typeof config === "string" ? tryParseJson(config) : config;
+  if (!value || typeof value !== "object") return "-";
+  const parts = [];
+  const models = Array.isArray(value.models?.presets)
+    ? value.models.presets.length
+    : Array.isArray(value.models?.catalog)
+      ? value.models.catalog.length
+      : 0;
+  if (models) parts.push(`${models} models`);
+  if (value.tools?.pluginRegistryUrl) parts.push("plugin registry");
+  if (value.policy?.permissionMode) parts.push(`policy: ${value.policy.permissionMode}`);
+  return parts.length ? parts.join(" · ") : JSON.stringify(value).slice(0, 80);
+}
+
+function tryParseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+export function ConfigProfilesTable({ rows, empty }) {
+  const { t } = useI18n();
+  const copy = t.admin.configProfiles;
+  const columns = [
+    { accessorKey: "id", header: ({ column }) => <SortHeader column={column}>ID</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.id}</span> },
+    { accessorKey: "name", header: copy.name },
+    { accessorKey: "scope", header: copy.scope, cell: ({ row }) => <Badge variant="brand">{row.original.scope}</Badge> },
+    { accessorKey: "target_id", header: copy.targetId, cell: ({ row }) => <span className="font-mono">{row.original.target_id || "-"}</span> },
+    { accessorKey: "priority", header: ({ column }) => <SortHeader column={column}>{copy.priority}</SortHeader> },
+    { accessorKey: "rollout_percent", header: copy.rolloutPercent, cell: ({ row }) => `${Number(row.original.rollout_percent ?? 100)}%` },
+    { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
+    { accessorKey: "config", header: copy.config, cell: ({ row }) => <span className="block max-w-[460px] truncate text-slate-500">{configSummary(row.original.config)}</span> },
+    {
+      id: "action",
+      header: t.admin.common.action,
+      cell: ({ row }) => (
+        <div className="flex gap-2">
+          <form action={setConfigProfileEnabledAction}>
+            <input type="hidden" name="id" value={row.original.id} />
+            <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
+            <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
+          </form>
+          <form action={rollbackConfigProfileAction} onSubmit={(event) => {
+            if (!window.confirm(copy.rollbackConfirm)) event.preventDefault();
+          }}>
+            <input type="hidden" name="id" value={row.original.id} />
+            <Button variant="outline" size="sm">{copy.rollback}</Button>
+          </form>
+        </div>
+      ),
+    },
+  ];
+  return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${copy.title}`} />;
 }

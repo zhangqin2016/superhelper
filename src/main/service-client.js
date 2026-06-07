@@ -4,8 +4,9 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { app } = require("electron");
+const { app, safeStorage } = require("electron");
 const { userDataPath } = require("./config");
+const { base64urlEncode, stableStringify } = require("./crypto-signing");
 
 const DEVICE_FILE = "device-state.json";
 const FETCH_TIMEOUT_MS = 15_000;
@@ -27,6 +28,31 @@ function readJson(filePath, fallback = {}) {
 function writeJson(filePath, data) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+}
+
+function protectText(text) {
+  if (safeStorage?.isEncryptionAvailable?.()) {
+    return {
+      encrypted: true,
+      data: safeStorage.encryptString(text).toString("base64"),
+    };
+  }
+  return {
+    encrypted: false,
+    data: Buffer.from(text, "utf8").toString("base64"),
+  };
+}
+
+function unprotectText(record) {
+  if (!record?.data) return "";
+  const buf = Buffer.from(record.data, "base64");
+  if (!record.encrypted) return buf.toString("utf8");
+  if (!safeStorage?.isEncryptionAvailable?.()) return "";
+  try {
+    return safeStorage.decryptString(buf);
+  } catch {
+    return "";
+  }
 }
 
 function normalizeBaseUrl(value) {
@@ -57,6 +83,44 @@ function getDeviceId() {
   return deviceId;
 }
 
+function getDeviceKeypair() {
+  const state = readJson(devicePath(), {});
+  const existingPrivateKey = unprotectText(state.privateKey);
+  if (state.publicKey && existingPrivateKey) {
+    return {
+      publicKey: String(state.publicKey),
+      privateKey: existingPrivateKey,
+      keyAlg: state.keyAlg || "ed25519",
+    };
+  }
+
+  const keypair = createDeviceKeypair();
+  storeDeviceKeypair(keypair, state);
+  return keypair;
+}
+
+function createDeviceKeypair() {
+  const pair = crypto.generateKeyPairSync("ed25519");
+  return {
+    publicKey: pair.publicKey.export({ type: "spki", format: "pem" }),
+    privateKey: pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+    keyAlg: "ed25519",
+  };
+}
+
+function storeDeviceKeypair(keypair, existingState = readJson(devicePath(), {})) {
+  const state = existingState || {};
+  writeJson(devicePath(), {
+    ...state,
+    deviceId: state.deviceId || `dev_${crypto.randomUUID()}`,
+    publicKey: keypair.publicKey,
+    privateKey: protectText(keypair.privateKey),
+    keyAlg: keypair.keyAlg || "ed25519",
+    createdAt: state.createdAt || new Date().toISOString(),
+    keyCreatedAt: new Date().toISOString(),
+  });
+}
+
 function fingerprintHash() {
   const source = [
     os.hostname(),
@@ -68,12 +132,56 @@ function fingerprintHash() {
 }
 
 function devicePayload() {
+  const keypair = getDeviceKeypair();
   return {
     deviceId: getDeviceId(),
     fingerprintHash: fingerprintHash(),
     platform: process.platform,
     arch: process.arch,
     appVersion: app.getVersion(),
+    publicKey: keypair.publicKey,
+    keyAlg: keypair.keyAlg,
+  };
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex");
+}
+
+function parseJsonBody(body) {
+  if (!body) return null;
+  try {
+    return JSON.parse(String(body));
+  } catch {
+    return null;
+  }
+}
+
+function requestSignatureHeaders(method, pathname, body) {
+  const keypair = getDeviceKeypair();
+  const timestamp = new Date().toISOString();
+  const nonce = crypto.randomUUID();
+  const bodyObject = parseJsonBody(body);
+  const bodyHash = sha256(bodyObject ? stableStringify(bodyObject) : "");
+  const canonical = {
+    method: String(method || "GET").toUpperCase(),
+    pathname: String(pathname || "").split("?")[0],
+    timestamp,
+    nonce,
+    bodyHash,
+  };
+  const signature = crypto.sign(
+    null,
+    Buffer.from(stableStringify(canonical)),
+    crypto.createPrivateKey(keypair.privateKey),
+  );
+  return {
+    "X-Lily-Device-Id": getDeviceId(),
+    "X-Lily-Key-Alg": keypair.keyAlg,
+    "X-Lily-Timestamp": timestamp,
+    "X-Lily-Nonce": nonce,
+    "X-Lily-Body-Sha256": bodyHash,
+    "X-Lily-Signature": base64urlEncode(signature),
   };
 }
 
@@ -83,12 +191,15 @@ async function serviceFetch(pathname, options = {}) {
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const method = String(options.method || "GET").toUpperCase();
+  const body = options.body || "";
   try {
     const response = await fetch(`${apiBaseUrl}${pathname}`, {
       ...options,
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
+        ...requestSignatureHeaders(method, pathname, body),
         ...(options.headers || {}),
       },
     });
@@ -202,6 +313,37 @@ async function reportRuntimeDiagnostic(payload) {
   });
 }
 
+async function fetchClientConfig(payload = {}) {
+  return serviceFetch("/api/client/config", {
+    method: "POST",
+    body: JSON.stringify({
+      ...devicePayload(),
+      licenseId: currentLicenseId(),
+      ...payload,
+      deviceId: getDeviceId(),
+    }),
+  });
+}
+
+async function rotateDeviceKeypair() {
+  const current = getDeviceKeypair();
+  const next = createDeviceKeypair();
+  const payload = {
+    ...devicePayload(),
+    keyAlg: current.keyAlg,
+    newPublicKey: next.publicKey,
+    newKeyAlg: next.keyAlg,
+  };
+  const result = await serviceFetch("/api/devices/rotate-key", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (result.ok) {
+    storeDeviceKeypair(next);
+  }
+  return result;
+}
+
 async function latestRelease(platformKey, version) {
   const params = new URLSearchParams({
     platform: String(platformKey || ""),
@@ -236,6 +378,8 @@ module.exports = {
   skillRegistry,
   reportSkillEvent,
   reportRuntimeDiagnostic,
+  fetchClientConfig,
+  rotateDeviceKeypair,
   latestRelease,
   testConnection,
   submitContactRequest,

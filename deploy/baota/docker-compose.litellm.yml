@@ -1,0 +1,17 @@
+services:
+  litellm:
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-latest}
+    container_name: lily-litellm
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY is required}
+      LOCAL_OPENAI_BASE_URL: ${LOCAL_OPENAI_BASE_URL:-http://host.docker.internal:8000/v1}
+      LOCAL_OPENAI_API_KEY: ${LOCAL_OPENAI_API_KEY:-local-dev-key}
+      LOCAL_QWEN_MODEL: ${LOCAL_QWEN_MODEL:-openai/local-qwen}
+      LOCAL_QWEN_FAST_MODEL: ${LOCAL_QWEN_FAST_MODEL:-openai/local-qwen-fast}
+      LOCAL_QWEN_STRONG_MODEL: ${LOCAL_QWEN_STRONG_MODEL:-openai/local-qwen-strong}
+    ports:
+      - "${LITELLM_PORT:-4000}:4000"
+    volumes:
+      - ./litellm.config.yaml:/app/config.yaml:ro

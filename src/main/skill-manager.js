@@ -457,6 +457,12 @@ function getDisallowedTools() {
 function getServiceRegistryUrl() {
   try {
     const service = require("./service-client").getServiceSettings();
+    const remoteConfig = require("./remote-config").getRemoteEffectiveConfigSync();
+    const configured = String(remoteConfig?.tools?.pluginRegistryUrl || "").trim();
+    if (configured) {
+      if (/^https?:\/\//i.test(configured)) return configured;
+      if (configured.startsWith("/") && service?.apiBaseUrl) return `${service.apiBaseUrl}${configured}`;
+    }
     if (service?.apiBaseUrl) return `${service.apiBaseUrl}/api/plugins/registry`;
   } catch {
     // fall back to bundled catalog
@@ -468,10 +474,20 @@ async function fetchServiceRegistry() {
   const sourceUrl = getServiceRegistryUrl();
   if (!sourceUrl) return { ok: false, error: "NO_SERVICE_URL" };
 
-  const response = await require("./service-client").skillRegistry();
-  if (!response.ok) return response;
+  let json = null;
+  try {
+    const response = await fetch(sourceUrl, {
+      headers: { "Content-Type": "application/json" },
+    });
+    json = await response.json().catch(() => null);
+    if (!response.ok || !json) {
+      return { ok: false, error: "SERVICE_REQUEST_FAILED", status: response.status };
+    }
+  } catch (error) {
+    return { ok: false, error: "SERVICE_REQUEST_FAILED", detail: error?.message || String(error) };
+  }
 
-  const parsed = skillRegistry.parseRegistryJson(response.json);
+  const parsed = skillRegistry.parseRegistryJson(json);
   if (!parsed.ok) return parsed;
 
   const fetchedAt = skillRegistry.cacheRegistry(parsed.registry, sourceUrl);

@@ -104,11 +104,23 @@ app.whenReady().then(async () => {
       if (!result.ok && result.error !== "NO_SERVICE_URL") {
         console.warn("[device-register]", result.error, result.detail || "");
       }
+      return require("./main/remote-config").refreshRemoteConfig();
+    })
+    .then((result) => {
+      if (result && !result.ok && result.error !== "NO_SERVICE_URL") {
+        console.warn("[remote-config]", result.error, result.detail || "");
+      }
     })
     .catch((err) => console.warn("[device-register]", err?.message || err));
 
   require("./main/license-manager")
     .refreshServerLicense()
+    .then(() => require("./main/remote-config").refreshRemoteConfig())
+    .then((result) => {
+      if (result && !result.ok && result.error !== "NO_SERVICE_URL") {
+        console.warn("[remote-config]", result.error, result.detail || "");
+      }
+    })
     .catch((err) => console.warn("[license-refresh]", err?.message || err));
 
   ipcHandlers.registerAll({

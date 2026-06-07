@@ -23,6 +23,7 @@ fi
 
 db_mode="$(grep '^DB_MODE=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
 gateway_mode="$(grep '^GATEWAY_MODE=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
+litellm_enabled="$(grep '^LITELLM_ENABLED=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
 
 if [ "$gateway_mode" = "external" ]; then
   compose_file="docker-compose.app-only.yml"
@@ -44,10 +45,19 @@ if [ "$db_mode" = "external" ]; then
   fi
 fi
 
+compose_args="-f $compose_file"
+if [ "${litellm_enabled:-false}" = "true" ]; then
+  if [ -z "$(grep '^LITELLM_MASTER_KEY=' .env 2>/dev/null | cut -d= -f2-)" ]; then
+    echo "LITELLM_ENABLED=true, but LITELLM_MASTER_KEY is missing."
+    exit 1
+  fi
+  compose_args="$compose_args -f docker-compose.litellm.yml"
+fi
+
 if docker compose version >/dev/null 2>&1; then
-  docker compose --env-file .env -f "$compose_file" up -d --build
+  docker compose --env-file .env $compose_args up -d --build
 else
-  docker-compose --env-file .env -f "$compose_file" up -d --build
+  docker-compose --env-file .env $compose_args up -d --build
 fi
 
 if ! command -v curl >/dev/null 2>&1; then
@@ -88,6 +98,7 @@ fi
 echo "Lily Workbench is starting."
 echo "Database mode: ${db_mode:-internal}"
 echo "Gateway mode: ${gateway_mode:-bundled}"
+echo "LiteLLM protocol layer: ${litellm_enabled:-false}"
 if [ "${gateway_mode:-bundled}" = "external" ]; then
   echo "API local port: http://127.0.0.1:$(grep '^API_PORT=' .env | cut -d= -f2)"
   echo "Web local port: http://127.0.0.1:$(grep '^WEB_PORT=' .env | cut -d= -f2)"

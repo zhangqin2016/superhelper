@@ -5,6 +5,7 @@
 - `/` 官网和管理后台前端
 - `/admin` 管理后台
 - `/api/*` 服务端 API，桌面端也连这个地址
+- `/llm/*` 模型网关，桌面端通过这里拿短期 token 访问模型
 
 ## 服务器准备
 
@@ -84,6 +85,18 @@ location /api/ {
   proxy_set_header X-Forwarded-Proto $scheme;
 }
 
+location /llm/ {
+  proxy_pass http://127.0.0.1:13000;
+  proxy_http_version 1.1;
+  proxy_buffering off;
+  proxy_read_timeout 3600s;
+  proxy_send_timeout 3600s;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+}
+
 location /health {
   proxy_pass http://127.0.0.1:13000/health;
 }
@@ -124,6 +137,61 @@ https://lily.yourdomain.com/api/health
 ```text
 https://lily.yourdomain.com
 ```
+
+## 模型网关和 LiteLLM
+
+默认部署只启动 Lily 自己的控制面和 `/llm` 网关。DeepSeek、阿里
+DashScope、Kimi/Moonshot、Z.AI/GLM 这类已经提供
+Anthropic-compatible endpoint 的平台，直接在 `.env` 配置对应 key：
+
+```env
+MODEL_GATEWAY_ENABLED=true
+MODEL_GATEWAY_DEFAULT_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-...
+DASHSCOPE_API_KEY=sk-...
+KIMI_API_KEY=sk-...
+GLM_API_KEY=sk-...
+```
+
+如果要接自建模型，建议先让自建模型暴露 OpenAI-compatible endpoint，
+再启用 LiteLLM 把它适配成 Anthropic-compatible endpoint：
+
+```env
+LITELLM_ENABLED=true
+LITELLM_MASTER_KEY=换成强随机密钥
+LITELLM_API_KEY=同上
+LITELLM_BASE_URL=http://litellm:4000
+LOCAL_OPENAI_BASE_URL=http://你的模型服务:8000/v1
+LOCAL_OPENAI_API_KEY=你的模型服务key
+LOCAL_QWEN_MODEL=openai/你的模型ID
+LOCAL_QWEN_FAST_MODEL=openai/你的快速模型ID
+LOCAL_QWEN_STRONG_MODEL=openai/你的强模型ID
+```
+
+执行：
+
+```bash
+./deploy.sh
+```
+
+脚本会自动追加 `docker-compose.litellm.yml`，启动：
+
+```text
+lily-litellm -> 4000
+```
+
+然后在管理后台的配置下发里选择 `LiteLLM Gateway` 预设。
+
+如果客户自建的服务已经原生支持 Anthropic-compatible `/v1/messages`，
+不需要 LiteLLM，直接配置：
+
+```env
+LOCAL_ANTHROPIC_BASE_URL=https://models.example.com/anthropic
+LOCAL_ANTHROPIC_API_KEY=server-side-secret
+LOCAL_ANTHROPIC_MODEL=local-qwen
+```
+
+然后在管理后台选择 `Local Anthropic Gateway` 预设。
 
 ## 使用宝塔已有 Postgres
 
@@ -231,6 +299,7 @@ docker compose ps
 docker compose logs -f api
 docker compose logs -f web
 docker compose logs -f gateway
+docker compose logs -f litellm
 docker compose restart
 docker compose down
 ```

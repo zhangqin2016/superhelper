@@ -87,6 +87,35 @@ export async function createPluginAction(_previousState, formData) {
   }
 }
 
+export async function createConfigProfileAction(_previousState, formData) {
+  formData = actionFormData(_previousState, formData);
+  try {
+    let parsedConfig = {};
+    const configText = text(formData, "config");
+    if (configText) {
+      parsedConfig = JSON.parse(configText);
+      if (!parsedConfig || Array.isArray(parsedConfig) || typeof parsedConfig !== "object") {
+        return { ok: false, message: "Config must be a JSON object." };
+      }
+    }
+    const scope = text(formData, "scope") || "global";
+    const result = await apiPost("/api/admin/config-profiles", {
+      id: text(formData, "id"),
+      name: text(formData, "name"),
+      scope,
+      targetId: scope === "global" ? null : text(formData, "targetId"),
+      priority: Number(text(formData, "priority") || 0),
+      rolloutPercent: Number(text(formData, "rolloutPercent") || 100),
+      enabled: !bool(formData, "disabled"),
+      config: parsedConfig,
+    });
+    revalidatePath("/admin/config");
+    return { ok: true, message: `Config profile ${result.id} saved.` };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to save config profile." };
+  }
+}
+
 export async function createReleaseStateAction(_previousState, formData) {
   return createReleaseAction(formData);
 }
@@ -131,6 +160,16 @@ export async function setReleaseEnabledAction(formData) {
 export async function setPluginEnabledAction(formData) {
   await apiPatch(`/api/admin/plugins/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
   revalidatePath("/admin/plugins");
+}
+
+export async function setConfigProfileEnabledAction(formData) {
+  await apiPatch(`/api/admin/config-profiles/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
+  revalidatePath("/admin/config");
+}
+
+export async function rollbackConfigProfileAction(formData) {
+  await apiPost(`/api/admin/config-profiles/${text(formData, "id")}/rollback`, {});
+  revalidatePath("/admin/config");
 }
 
 export async function updateSettingsAction(formData) {

@@ -15,9 +15,18 @@ const MODEL_ID_RE = /^[A-Za-z0-9._:/-]{1,128}$/;
 const URL_RE = /^https?:\/\/.+/i;
 const API_KEY_RE = /^[\x20-\x7E]{8,512}$/;
 
+function getSafeStorage() {
+  try {
+    return require("electron").safeStorage || null;
+  } catch {
+    return null;
+  }
+}
+
 function defaultCatalogPath() {
+  const resourcesRoot = process.resourcesPath || PROJECT_ROOT;
   return [
-    path.join(process.resourcesPath, "resources", "models.default.json"),
+    path.join(resourcesRoot, "resources", "models.default.json"),
     path.join(PROJECT_ROOT, "resources", "models.default.json"),
   ].find((p) => fs.existsSync(p)) || path.join(PROJECT_ROOT, "resources", "models.default.json");
 }
@@ -40,8 +49,103 @@ function writeJson(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 
+function protectSecret(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const safeStorage = getSafeStorage();
+  if (safeStorage?.isEncryptionAvailable?.()) {
+    return {
+      encrypted: true,
+      data: safeStorage.encryptString(text).toString("base64"),
+    };
+  }
+  return {
+    encrypted: false,
+    data: Buffer.from(text, "utf8").toString("base64"),
+  };
+}
+
+function unprotectSecret(record) {
+  if (!record?.data) return "";
+  const buf = Buffer.from(String(record.data), "base64");
+  if (!record.encrypted) return buf.toString("utf8");
+  const safeStorage = getSafeStorage();
+  if (!safeStorage?.isEncryptionAvailable?.()) return "";
+  try {
+    return safeStorage.decryptString(buf);
+  } catch {
+    return "";
+  }
+}
+
+function hydrateSecret(value, protectedRecord) {
+  const plain = String(value || "").trim();
+  if (plain) return plain;
+  return unprotectSecret(protectedRecord);
+}
+
+function hydrateUserChoice(raw) {
+  const apiGateway = raw?.apiGateway && typeof raw.apiGateway === "object"
+    ? {
+        ...raw.apiGateway,
+        apiKey: hydrateSecret(raw.apiGateway.apiKey, raw.apiGateway.apiKeyProtected),
+      }
+    : null;
+  const customPresets = Array.isArray(raw?.customPresets)
+    ? raw.customPresets.map((preset) => ({
+        ...preset,
+        apiKey: hydrateSecret(preset.apiKey, preset.apiKeyProtected),
+      }))
+    : [];
+  return {
+    activePresetId: raw?.activePresetId || null,
+    customPresets,
+    apiGateway,
+  };
+}
+
+function serializeUserChoice(user) {
+  const apiGateway = user?.apiGateway
+    ? {
+        ...user.apiGateway,
+        apiKeyProtected: protectSecret(user.apiGateway.apiKey),
+      }
+    : null;
+  if (apiGateway) delete apiGateway.apiKey;
+
+  const customPresets = (user?.customPresets || []).map((preset) => {
+    const entry = {
+      ...preset,
+      apiKeyProtected: protectSecret(preset.apiKey),
+    };
+    delete entry.apiKey;
+    return entry;
+  });
+
+  return {
+    activePresetId: user?.activePresetId || null,
+    customPresets,
+    apiGateway,
+  };
+}
+
+function hasPlaintextSecrets(raw) {
+  if (String(raw?.apiGateway?.apiKey || "").trim()) return true;
+  return (Array.isArray(raw?.customPresets) ? raw.customPresets : []).some((preset) =>
+    String(preset?.apiKey || "").trim());
+}
+
 function loadCatalog() {
   if (cachedCatalog) return cachedCatalog;
+  try {
+    const remoteCatalog = require("./remote-config").getRemoteModelCatalogSync();
+    if (remoteCatalog?.presets?.length) {
+      cachedCatalog = remoteCatalog;
+      return cachedCatalog;
+    }
+  } catch {
+    // fall back to packaged catalog
+  }
   const raw = readJson(defaultCatalogPath(), { activePresetId: "standard", presets: [] });
   cachedCatalog = {
     activePresetId: raw.activePresetId || "standard",
@@ -52,12 +156,16 @@ function loadCatalog() {
 
 function loadUserChoice() {
   if (cachedUserChoice) return cachedUserChoice;
-  const raw = readJson(userSettingsPath(), null);
+  const stored = readJson(userSettingsPath(), null);
+  const raw = hydrateUserChoice(stored);
   cachedUserChoice = {
     activePresetId: raw?.activePresetId || null,
     customPresets: Array.isArray(raw?.customPresets) ? raw.customPresets : [],
     apiGateway: normalizeApiGateway(raw?.apiGateway),
   };
+  if (hasPlaintextSecrets(stored)) {
+    writeJson(userSettingsPath(), serializeUserChoice(cachedUserChoice));
+  }
   return cachedUserChoice;
 }
 
@@ -116,7 +224,7 @@ function validateApiKey(apiKey, { required = false, existing = "" } = {}) {
 
 function persistUserChoice(user) {
   cachedUserChoice = user;
-  writeJson(userSettingsPath(), user);
+  writeJson(userSettingsPath(), serializeUserChoice(user));
 }
 
 function slugifyLabel(label) {
