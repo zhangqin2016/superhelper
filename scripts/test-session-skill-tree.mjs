@@ -14,6 +14,9 @@ const {
 if (resolveSkillTreeCategory({ id: "lily-vision" }) !== "tools") {
   throw new Error("bundled vision should map to tools");
 }
+if (resolveSkillTreeCategory({ id: "lily-image-generation" }) !== "tools") {
+  throw new Error("bundled media generation should map to tools");
+}
 if (resolveSkillTreeCategory({ id: "anthropics-docx", category: "office" }) !== "office") {
   throw new Error("registry category should be used");
 }

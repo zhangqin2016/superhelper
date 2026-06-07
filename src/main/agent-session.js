@@ -110,6 +110,8 @@ class AgentSession extends EventEmitter {
     this._internalCommandTimer = null;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
+    this._lastActualUsage = null;
+    this._usageRecordedForTurn = false;
     this._runtimeAdapter = new CliEventAdapter();
     this._orchestrator = null;
   }
@@ -121,6 +123,14 @@ class AgentSession extends EventEmitter {
   _ingestRuntime(drafts) {
     if (!this._orchestrator || !Array.isArray(drafts) || drafts.length === 0) return;
     this._orchestrator.ingest(this.sessionId, drafts);
+  }
+
+  _recordActualUsage(usage) {
+    if (this._usageRecordedForTurn || !usage || typeof usage !== "object") return;
+    const totals = require("./usage-reporter").recordModelUsage(this.sessionId, usage);
+    if (totals.inputTokens > 0 || totals.outputTokens > 0) {
+      this._usageRecordedForTurn = true;
+    }
   }
 
   /** Pure-text fallback if CLI never sends `result`; tool turns are completed by result/error/timeout. */
@@ -764,6 +774,8 @@ class AgentSession extends EventEmitter {
     this._sawStdoutForTurn = false;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
+    this._lastActualUsage = null;
+    this._usageRecordedForTurn = false;
     this._clearDeferredTurnResultTimer();
     this._clearPendingPermissions(true);
     this._streamingToolInputs.clear();
@@ -968,6 +980,8 @@ class AgentSession extends EventEmitter {
       this.spawnOptions = null;
       this.lineBuf = "";
       this.collectedOutput = "";
+      this._lastActualUsage = null;
+      this._usageRecordedForTurn = false;
       this.busy = false;
       this._turnSettled = true;
       return;
@@ -985,10 +999,13 @@ class AgentSession extends EventEmitter {
     this.spawnOptions = null;
     this.lineBuf = "";
     this.collectedOutput = "";
+    this._lastActualUsage = null;
+    this._usageRecordedForTurn = false;
   }
 
   _completeTurn(payload) {
     if (this._turnSettled) return;
+    this._recordActualUsage(this._lastActualUsage);
     this._clearIdleTimer();
     this._clearTurnResponseTimer();
     this._clearAbsoluteTurnTimer();
@@ -1006,6 +1023,8 @@ class AgentSession extends EventEmitter {
     this._turnHadBlockingToolUse = false;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
+    this._lastActualUsage = null;
+    this._usageRecordedForTurn = false;
     this._streamParentToolUseId = null;
     this._streamingToolInputs.clear();
     this._emittedToolIds.clear();
@@ -1017,6 +1036,7 @@ class AgentSession extends EventEmitter {
 
   _failTurn(message) {
     if (this._turnSettled) return;
+    this._recordActualUsage(this._lastActualUsage);
     this._clearIdleTimer();
     this._clearMessageStopTimer();
     this._clearTurnResponseTimer();
@@ -1031,6 +1051,8 @@ class AgentSession extends EventEmitter {
     this._pendingToolIds.clear();
     this._toolLeases.clear();
     this._deferredTurnResult = null;
+    this._lastActualUsage = null;
+    this._usageRecordedForTurn = false;
     this._backgroundActivityUntil = 0;
     this._turnHadToolUse = false;
     this._turnHadBlockingToolUse = false;
@@ -1328,7 +1350,7 @@ class AgentSession extends EventEmitter {
     this._clearMessageStopTimer();
     this._flushLineBuffer();
     if (ev.modelUsage && typeof ev.modelUsage === "object") {
-      require("./usage-reporter").recordModelUsage(this.sessionId, ev.modelUsage);
+      this._recordActualUsage(ev.modelUsage);
       this._ingestRuntime([{ type: "usage.updated", payload: { usage: ev.modelUsage } }]);
     }
     if (ev.subtype === "success" && ev.result) {
@@ -1511,6 +1533,9 @@ class AgentSession extends EventEmitter {
       }
 
       case "stream_message_delta":
+        if (action.usage && typeof action.usage === "object" && Object.keys(action.usage).length) {
+          this._lastActualUsage = action.usage;
+        }
         this._markStreamActivity();
         break;
 

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-speech-generation",
+  "name": "语音生成",
+  "version": "1.0.0",
+  "description": "使用阿里云百炼语音合成生成配音、旁白和音频。",
+  "minAppVersion": "0.1.0",
+  "runtime": "node",
+  "entry": "scripts/generate-speech.cjs",
+  "placeholders": {
+    "{{SPEECH_GENERATION_SCRIPT}}": "scripts/generate-speech.cjs"
+  },
+  "permissions": {
+    "network": true,
+    "filesystem": "write",
+    "subprocess": "entry-only"
+  },
+  "guideMd": {
+    "title": "语音生成（百炼 TTS）",
+    "priority": 14,
+    "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼语音合成，并把临时音频 URL 下载到当前工作区 generated-assets。"
+  }
+}
+

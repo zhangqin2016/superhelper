@@ -7,11 +7,10 @@ import { showToast } from "./toast.js";
 import { t } from "../i18n/index.js";
 
 let latestPackageUrl = "";
-let autoUpdateTimer = null;
+let autoUpdateListenersStarted = false;
 let lastRendererCheckAt = 0;
 let updateState = null;
 
-const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const AUTO_UPDATE_FOCUS_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000;
 const AUTO_UPDATE_REMIND_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const AUTO_UPDATE_REMIND_KEY = "lily:last-update-reminder";
@@ -169,20 +168,10 @@ function handleUpdateStatePush(state) {
   maybeShowUpdateReminder(state);
 }
 
-async function autoCheckUpdates() {
-  const result = await window.assistantClient.checkForUpdates();
-  if (!result?.ok) return;
-  if (!result.hasUpdate) return;
-  applyUpdateAvailable(result);
-  maybeShowUpdateReminder(result);
-}
-
 async function kickUpdateCheckIfDue(minGapMs = AUTO_UPDATE_FOCUS_MIN_INTERVAL_MS) {
   const now = Date.now();
   if (now - lastRendererCheckAt < minGapMs) return;
   lastRendererCheckAt = now;
-  const status = await window.assistantClient.getLicenseStatus?.();
-  if (!status?.valid) return;
   await window.assistantClient.kickUpdateCheck?.();
 }
 
@@ -299,14 +288,8 @@ async function runPrimaryUpdateAction() {
 }
 
 export function startAutoUpdateChecks() {
-  if (autoUpdateTimer) return;
-
-  autoUpdateTimer = setInterval(() => {
-    lastRendererCheckAt = Date.now();
-    autoCheckUpdates().catch((err) => {
-      console.warn("[updates:auto-check]", err?.message || err);
-    });
-  }, AUTO_UPDATE_INTERVAL_MS);
+  if (autoUpdateListenersStarted) return;
+  autoUpdateListenersStarted = true;
 
   const onVisible = () => {
     if (document.visibilityState !== "visible") return;

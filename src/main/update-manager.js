@@ -239,35 +239,7 @@ function verifyManifest(manifest) {
   return { ok: true };
 }
 
-async function checkForUpdates() {
-  const service = require("./service-client");
-  const serviceSettings = service.getServiceSettings();
-  if (serviceSettings.apiBaseUrl) {
-    const currentVersion = app.getVersion();
-    const platformKey = currentPlatformKey();
-    const latest = await service.latestRelease(platformKey, currentVersion);
-    if (!latest.ok) return latest;
-    const release = latest.json || {};
-    return {
-      ok: true,
-      hasUpdate: compareVersions(release.version, currentVersion) > 0,
-      currentVersion,
-      latestVersion: release.version || currentVersion,
-      force: Boolean(release.force),
-      notes: release.notes || "",
-      platformKey,
-      source: "service",
-      feedUrl: release.feedUrl || deriveAutoFeedUrl(platformKey),
-      package: release.url
-        ? {
-            url: release.url,
-            sha256: release.sha256 || "",
-            size: release.sizeBytes || null,
-          }
-        : null,
-    };
-  }
-
+async function checkStaticUpdates() {
   const { manifestUrl } = getUpdateSettings();
   if (!manifestUrl) return { ok: false, error: "NO_MANIFEST_URL" };
 
@@ -302,6 +274,60 @@ async function checkForUpdates() {
       size: platform.size || null,
     },
   };
+}
+
+async function checkServiceUpdates() {
+  const service = require("./service-client");
+  const serviceSettings = service.getServiceSettings();
+  if (!serviceSettings.apiBaseUrl) return { ok: false, error: "NO_SERVICE_URL" };
+  const currentVersion = app.getVersion();
+  const platformKey = currentPlatformKey();
+  const latest = await service.latestRelease(platformKey, currentVersion);
+  if (!latest.ok) return latest;
+  const release = latest.json || {};
+  return {
+    ok: true,
+    hasUpdate: compareVersions(release.version, currentVersion) > 0,
+    currentVersion,
+    latestVersion: release.version || currentVersion,
+    force: Boolean(release.force),
+    notes: release.notes || "",
+    platformKey,
+    source: "service",
+    feedUrl: release.feedUrl || deriveAutoFeedUrl(platformKey),
+    package: release.url
+      ? {
+          url: release.url,
+          sha256: release.sha256 || "",
+          size: release.sizeBytes || null,
+        }
+      : null,
+  };
+}
+
+function preferNewerUpdate(primary, fallback) {
+  if (primary?.ok && fallback?.ok) {
+    if (compareVersions(fallback.latestVersion, primary.latestVersion) > 0) return fallback;
+    if (!primary.hasUpdate && fallback.hasUpdate) return fallback;
+    return primary;
+  }
+  if (primary?.ok) return primary;
+  if (fallback?.ok) return fallback;
+  return primary || fallback || { ok: false, error: "CHECK_FAILED" };
+}
+
+async function checkForUpdates() {
+  const service = await checkServiceUpdates().catch((error) => ({
+    ok: false,
+    error: "SERVICE_UPDATE_FAILED",
+    detail: error?.message || String(error),
+  }));
+  const staticManifest = await checkStaticUpdates().catch((error) => ({
+    ok: false,
+    error: "STATIC_UPDATE_FAILED",
+    detail: error?.message || String(error),
+  }));
+  return preferNewerUpdate(service, staticManifest);
 }
 
 async function checkForUpdatesState() {

@@ -59,9 +59,29 @@
     "name": "جداول البيانات",
     "description": "استخدم هذه المهارة في أي مهمة يكون فيها ملف جدول بيانات هو المدخل أو المخرج الأساسي. يعني ذلك أي مهمة يريد فيها المستخدم: فتح أو قراءة أو تحرير أو إصلاح .xlsx أو .xlsm أو .csv أو .tsv (مثل إضافة أعمدة أو حساب صيغ أو تنسيق أو رسم بياني أو تنظيف بيانات فوضوية)؛ إنشاء جدول جديد من الصفر أو من مصادر أخرى؛ أو التحويل بين صيغ الجداول. يُفعَّل خصوصًا عندما يشير المستخدم إلى ملف جدول بالاسم أو المسار ويريد معالجته أو إنتاج شيء منه. كما يُفعَّل لتنظيف ملفات جدولية فوضوية إلى جداول سليمة. يجب أن يكون المُسلَّم ملف جدول. لا تُفعَّل عندما يكون المُسلَّم الأساسي مستند Word أو تقرير HTML أو سكربت Python مستقل أو خط أنابيب قاعدة بيانات أو تكامل Google Sheets API حتى لو شملت بيانات جدولية."
   },
+  "lily-engineering-rules": {
+    "name": "Engineering Rules 12",
+    "description": "Full 12-rule engineering discipline for coding, debugging, reviews, and non-trivial changes on Lily Workbench. Use when the user wants careful, minimal, verified delivery or mentions engineering standards."
+  },
+  "lily-image-generation": {
+    "name": "توليد الصور",
+    "description": "يولّد الصور عبر Alibaba Cloud Bailian Qwen-Image ويحفظها في مساحة العمل الحالية."
+  },
+  "lily-speech-generation": {
+    "name": "توليد الصوت",
+    "description": "يولّد التعليق الصوتي والسرد والصوت عبر Alibaba Cloud Bailian TTS."
+  },
+  "lily-video-generation": {
+    "name": "توليد الفيديو",
+    "description": "يولّد الفيديو عبر Alibaba Cloud Bailian Wan ويحفظه في مساحة العمل الحالية."
+  },
   "lily-vision": {
     "name": "التعرف على الصور",
     "description": "يوفّر التعرف على الصور للنماذج التي تفتقر إلى قدرات الرؤية الأصلية."
+  },
+  "lily-workbench-rules": {
+    "name": "工作台基础规则",
+    "description": "所有会话强制生效的基础协作规则（不可关闭）。"
   },
   "marketing-ab-testing": {
     "name": "اختبار A/B",

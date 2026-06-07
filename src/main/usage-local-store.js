@@ -5,6 +5,7 @@ const path = require("node:path");
 const { userDataPath } = require("./config");
 const { DEFAULT_PRICING_ID } = require("./usage-cost-estimate");
 const { buildUsageSummary, DEFAULT_HISTORY_DAYS } = require("./usage-summary");
+const { localDateKey } = require("./local-date-key");
 
 const SCHEMA_VERSION = 1;
 const MAX_DAYS = 90;
@@ -13,7 +14,7 @@ const MAX_DAYS = 90;
 let cached = null;
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey();
 }
 
 function storePath() {

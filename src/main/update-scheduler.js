@@ -6,20 +6,37 @@ const MIN_GAP_MS = 30 * 60 * 1000;
 
 let started = false;
 let lastCheckAt = 0;
+let inFlight = null;
+
+function warmServiceContext() {
+  Promise.allSettled([
+    require("./service-client").registerDevice(),
+    require("./license-manager").refreshServerLicense(),
+  ])
+    .then(() => require("./remote-config").refreshRemoteConfig())
+    .catch((err) => {
+      console.warn("[updates:scheduler] warmup", err?.message || err);
+    });
+}
 
 async function runUpdateCheck(reason = "scheduled") {
   const now = Date.now();
   if (reason !== "kick" && now - lastCheckAt < MIN_GAP_MS) {
     return getUpdateState();
   }
+  if (inFlight) return inFlight;
   lastCheckAt = now;
 
-  try {
-    return await require("./update-manager").checkForUpdatesState();
-  } catch (err) {
-    console.warn("[updates:scheduler]", reason, err?.message || err);
-    return { ok: false, error: "GENERIC", detail: err?.message || String(err) };
-  }
+  inFlight = require("./update-manager")
+    .checkForUpdatesState()
+    .catch((err) => {
+      console.warn("[updates:scheduler]", reason, err?.message || err);
+      return { ok: false, error: "GENERIC", detail: err?.message || String(err) };
+    })
+    .finally(() => {
+      inFlight = null;
+    });
+  return inFlight;
 }
 
 function getUpdateState() {
@@ -30,16 +47,12 @@ function startBackgroundUpdateChecks() {
   if (started) return;
   started = true;
 
-  Promise.allSettled([
-    require("./service-client").registerDevice(),
-    require("./license-manager").refreshServerLicense(),
-  ]).finally(() => {
-    setTimeout(() => {
-      runUpdateCheck("bootstrap").catch((err) => {
-        console.warn("[updates:scheduler] bootstrap", err?.message || err);
-      });
-    }, START_DELAY_MS);
-  });
+  warmServiceContext();
+  setTimeout(() => {
+    runUpdateCheck("bootstrap").catch((err) => {
+      console.warn("[updates:scheduler] bootstrap", err?.message || err);
+    });
+  }, START_DELAY_MS);
 
   setInterval(() => {
     runUpdateCheck("interval").catch((err) => {

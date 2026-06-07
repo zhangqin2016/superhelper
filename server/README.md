@@ -69,6 +69,28 @@ LOCAL_ANTHROPIC_BASE_URL=https://models.example.com/anthropic
 LOCAL_ANTHROPIC_API_KEY=sk-local...
 ```
 
+When provider environment variables are present, the API server creates or
+updates a global `lily-default-runtime` config profile during startup. It keeps
+model provider secrets on the server by delivering Lily gateway URLs plus
+short-lived gateway tokens. DashScope media skill defaults are also included so
+the desktop app can enable built-in image, video, and speech generation without
+manual client setup:
+
+```env
+DASHSCOPE_MODEL=qwen3-coder-plus
+DASHSCOPE_IMAGE_MODEL=qwen-image-2.0-pro
+DASHSCOPE_VIDEO_MODEL=wan2.7-t2v
+DASHSCOPE_TTS_MODEL=cosyvoice-v3-flash
+DASHSCOPE_TTS_VOICE=longanyang
+DASHSCOPE_IMAGE_ENDPOINT=
+DASHSCOPE_VIDEO_ENDPOINT=
+DASHSCOPE_TTS_ENDPOINT=
+```
+
+`DASHSCOPE_BASE_URL` is reserved for the Anthropic-compatible model gateway.
+Use the media-specific endpoint variables only when a media API needs a custom
+base URL.
+
 For custom providers, use JSON:
 
 ```env

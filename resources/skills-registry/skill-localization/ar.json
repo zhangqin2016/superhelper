@@ -555,6 +555,18 @@
     "name": "ماسح ثغرات TON",
     "description": "يفحص العقود الذكية TON (The Open Network) بحثًا عن 3 ثغرات حرجة بما في ذلك سوء استخدام الصحيح كمنطقي وعقود Jetton مزيفة وإعادة توجيه TON دون فحص gas. استخدمه عند تدقيق عقود FunC."
   },
+  "lily-image-generation": {
+    "name": "توليد الصور",
+    "description": "يولّد الصور عبر Alibaba Cloud Bailian Qwen-Image ويحفظها في مساحة العمل الحالية."
+  },
+  "lily-video-generation": {
+    "name": "توليد الفيديو",
+    "description": "يولّد الفيديو عبر Alibaba Cloud Bailian Wan ويحفظه في مساحة العمل الحالية."
+  },
+  "lily-speech-generation": {
+    "name": "توليد الصوت",
+    "description": "يولّد التعليق الصوتي والسرد والصوت عبر Alibaba Cloud Bailian TTS."
+  },
   "lily-vision": {
     "name": "التعرف على الصور",
     "description": "يوفّر التعرف على الصور للنماذج التي تفتقر إلى قدرات الرؤية الأصلية."

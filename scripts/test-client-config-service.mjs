@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import {
+  buildEnvManagedClientConfig,
   DEFAULT_EFFECTIVE_CONFIG,
   deepMerge,
   isGatewayBaseUrl,
@@ -77,5 +78,39 @@ assert.equal(managedEnv.LILY_API_BASE_URL, "https://lily.example.com/llm/deepsee
 assert.notEqual(managedEnv.LILY_API_KEY, "$LILY_GATEWAY_TOKEN");
 assert.equal(verifyModelGatewayToken(managedEnv.LILY_API_KEY, "deepseek").ok, true);
 assert.equal(directEnv.LILY_API_KEY, "sk-direct", "direct provider keys should not be replaced");
+
+const envManaged = buildEnvManagedClientConfig(
+  {
+    modelGatewayDefaultProvider: "dashscope",
+    dashscopeApiKey: "sk-test-dashscope",
+    dashscopeImageModel: "qwen-image-2.0-pro",
+    dashscopeVideoModel: "wan2.7-t2v",
+    dashscopeTtsModel: "cosyvoice-v3-flash",
+    dashscopeTtsVoice: "longanyang",
+    dashscopeImageEndpoint: "https://dashscope.example.test/image",
+    dashscopeVideoEndpoint: "",
+    dashscopeTtsEndpoint: "",
+  },
+  {
+    dashscope: {
+      id: "dashscope",
+      type: "anthropic",
+      baseUrl: "https://dashscope.aliyuncs.com/apps/anthropic",
+      apiKey: "sk-test-dashscope",
+      models: ["qwen3-coder-plus"],
+    },
+  },
+);
+assert.equal(envManaged.models.activePresetId, "dashscope-gateway");
+assert.equal(envManaged.models.presets[0].env.LILY_API_KEY, "$LILY_GATEWAY_TOKEN");
+assert.equal(envManaged.models.presets[0].env.LILY_MODEL, "qwen3-coder-plus");
+assert.equal(envManaged.runtime.env.DASHSCOPE_API_KEY, "sk-test-dashscope");
+assert.equal(envManaged.runtime.env.DASHSCOPE_IMAGE_MODEL, "qwen-image-2.0-pro");
+assert.equal(envManaged.runtime.env.DASHSCOPE_IMAGE_ENDPOINT, "https://dashscope.example.test/image");
+assert.equal(
+  envManaged.runtime.env.DASHSCOPE_BASE_URL,
+  undefined,
+  "media config must not inherit Claude-compatible DashScope base URL",
+);
 
 console.log("client-config-service: ok");

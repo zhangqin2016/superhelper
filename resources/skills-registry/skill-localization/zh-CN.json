@@ -559,6 +559,18 @@
     "name": "TON 漏洞扫描",
     "description": "扫描 TON（The Open Network）智能合约的 3 类关键漏洞，包括整数作布尔误用、伪造 Jetton 合约与转发 TON 未做 gas 检查。审计 FunC 合约时使用。"
   },
+  "lily-image-generation": {
+    "name": "图片生成",
+    "description": "使用阿里云百炼 Qwen-Image 生成图片并保存到当前工作区。"
+  },
+  "lily-video-generation": {
+    "name": "视频生成",
+    "description": "使用阿里云百炼万相生成视频并保存到当前工作区。"
+  },
+  "lily-speech-generation": {
+    "name": "语音生成",
+    "description": "使用阿里云百炼语音合成生成配音、旁白和音频。"
+  },
   "lily-vision": {
     "name": "识图",
     "description": "为无原生识图能力的模型提供图片识别。"

@@ -29,7 +29,7 @@ const LEGACY_TO_LILY = {
 };
 
 /** Keys passed through unchanged (vision, dashscope, timeouts, etc.). */
-const PASSTHROUGH_PREFIXES = ["VISION_", "DASHSCOPE_", "API_TIMEOUT"];
+const PASSTHROUGH_PREFIXES = ["VISION_", "DASHSCOPE_", "ALIYUN_BAILIAN_", "API_TIMEOUT"];
 
 function isPassthroughKey(key) {
   return PASSTHROUGH_PREFIXES.some((p) => key.startsWith(p));

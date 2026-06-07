@@ -1,5 +1,7 @@
 import { sha256 } from "./security.js";
+import { config } from "../config.js";
 import { signModelGatewayToken } from "./model-gateway/auth.js";
+import { listModelGatewayProviders } from "./model-gateway/providers.js";
 
 export const DEFAULT_EFFECTIVE_CONFIG = {
   schemaVersion: 1,
@@ -21,6 +23,8 @@ export const DEFAULT_EFFECTIVE_CONFIG = {
   },
 };
 
+const ENV_MANAGED_PROFILE_ID = "lily-default-runtime";
+
 function plainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -35,6 +39,125 @@ export function deepMerge(base, override) {
     }
   }
   return result;
+}
+
+function firstModel(provider) {
+  return provider?.models?.[0] || provider?.model || "";
+}
+
+function providerLabel(provider) {
+  const labels = {
+    anthropic: "Anthropic Gateway",
+    openai: "OpenAI Gateway",
+    deepseek: "DeepSeek Gateway",
+    dashscope: "阿里百炼 Gateway",
+    kimi: "Kimi Gateway",
+    glm: "GLM Gateway",
+    litellm: "LiteLLM Gateway",
+    local: "Local Gateway",
+  };
+  return labels[provider.id] || `${provider.id} Gateway`;
+}
+
+function runtimeEnvFromServerConfig(serverConfig) {
+  const env = {};
+  if (serverConfig.dashscopeApiKey) {
+    env.DASHSCOPE_API_KEY = serverConfig.dashscopeApiKey;
+    env.DASHSCOPE_IMAGE_MODEL = serverConfig.dashscopeImageModel || "qwen-image-2.0-pro";
+    env.DASHSCOPE_VIDEO_MODEL = serverConfig.dashscopeVideoModel || "wan2.7-t2v";
+    env.DASHSCOPE_TTS_MODEL = serverConfig.dashscopeTtsModel || "cosyvoice-v3-flash";
+    env.DASHSCOPE_TTS_VOICE = serverConfig.dashscopeTtsVoice || "longanyang";
+    if (serverConfig.dashscopeImageEndpoint) env.DASHSCOPE_IMAGE_ENDPOINT = serverConfig.dashscopeImageEndpoint;
+    if (serverConfig.dashscopeVideoEndpoint) env.DASHSCOPE_VIDEO_ENDPOINT = serverConfig.dashscopeVideoEndpoint;
+    if (serverConfig.dashscopeTtsEndpoint) env.DASHSCOPE_TTS_ENDPOINT = serverConfig.dashscopeTtsEndpoint;
+  }
+  return env;
+}
+
+export function buildEnvManagedClientConfig(serverConfig = config, providers = listModelGatewayProviders()) {
+  const modelPresets = Object.values(providers || {})
+    .filter((provider) => provider?.id && provider?.baseUrl && provider?.apiKey)
+    .map((provider) => ({
+      id: `${provider.id}-gateway`,
+      label: providerLabel(provider),
+      description: "由 Lily 服务端托管密钥并签发短期访问令牌。",
+      env: {
+        LILY_API_BASE_URL: `/llm/${provider.id}`,
+        LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
+        LILY_GATEWAY_PROVIDER: provider.id,
+        ...(firstModel(provider) ? { LILY_MODEL: firstModel(provider) } : {}),
+      },
+    }));
+
+  const activeProviderId = serverConfig.modelGatewayDefaultProvider || modelPresets[0]?.id?.replace(/-gateway$/, "");
+  const activePresetId = modelPresets.find((preset) => preset.id === `${activeProviderId}-gateway`)?.id
+    || modelPresets[0]?.id
+    || "";
+  const runtimeEnv = runtimeEnvFromServerConfig(serverConfig);
+  const effectiveConfig = {
+    schemaVersion: 1,
+    ...(modelPresets.length
+      ? {
+          models: {
+            source: "service",
+            activePresetId,
+            presets: modelPresets,
+          },
+        }
+      : {}),
+    tools: {
+      pluginRegistryUrl: "/api/plugins/registry",
+      enabledPluginIds: [
+        "lily-vision",
+        "lily-image-generation",
+        "lily-video-generation",
+        "lily-speech-generation",
+        "websearch",
+        "webfetch",
+      ],
+    },
+    policy: {
+      permissionMode: "default",
+      minAppVersion: "",
+    },
+    ...(Object.keys(runtimeEnv).length ? { runtime: { env: runtimeEnv } } : {}),
+  };
+
+  const hasContent = Boolean(modelPresets.length || Object.keys(runtimeEnv).length);
+  return hasContent ? effectiveConfig : null;
+}
+
+export async function ensureEnvManagedConfigProfile() {
+  const effectiveConfig = buildEnvManagedClientConfig();
+  if (!effectiveConfig) return { ok: true, skipped: true };
+  const { db } = await import("../db.js");
+  await db
+    .insertInto("config_profiles")
+    .values({
+      id: ENV_MANAGED_PROFILE_ID,
+      name: "Lily 默认运行配置",
+      scope: "global",
+      target_id: null,
+      priority: -100,
+      rollout_percent: 100,
+      enabled: true,
+      config: JSON.stringify(effectiveConfig),
+      updated_at: new Date(),
+    })
+    .onConflict((oc) =>
+      oc.column("id").doUpdateSet({
+        name: "Lily 默认运行配置",
+        scope: "global",
+        target_id: null,
+        priority: -100,
+        rollout_percent: 100,
+        enabled: true,
+        config: JSON.stringify(effectiveConfig),
+        updated_at: new Date(),
+      }),
+    )
+    .execute();
+  return { ok: true, id: ENV_MANAGED_PROFILE_ID };
 }
 
 export function rolloutAllows(profile, deviceId) {

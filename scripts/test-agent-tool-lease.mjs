@@ -840,8 +840,34 @@ line(usageRunner, {
   },
 });
 await require("../src/main/usage-reporter.js").flush("sess_usage");
-if (reportedUsage[0]?.inputTokens !== 130 || reportedUsage[0]?.outputTokens !== 48) {
+if (reportedUsage[0]?.inputTokens !== 147 || reportedUsage[0]?.outputTokens !== 48) {
   throw new Error(`result modelUsage should be reported as tokens: ${JSON.stringify(reportedUsage[0])}`);
+}
+
+const streamUsageRunner = createTestSession("sess_stream_usage");
+startSyntheticTurn(streamUsageRunner);
+line(streamUsageRunner, {
+  type: "stream_event",
+  event: {
+    type: "message_delta",
+    delta: { stop_reason: "end_turn" },
+    usage: {
+      input_tokens: 222,
+      output_tokens: 33,
+      cache_read_input_tokens: 11,
+      cache_creation_input_tokens: 4,
+    },
+  },
+});
+line(streamUsageRunner, {
+  type: "result",
+  subtype: "success",
+  result: "done",
+});
+await require("../src/main/usage-reporter.js").flush("sess_stream_usage");
+const streamReport = reportedUsage.find((item) => item.date && item.inputTokens === 237);
+if (!streamReport || streamReport.outputTokens !== 33) {
+  throw new Error(`stream message_delta usage should be reported once: ${JSON.stringify(reportedUsage)}`);
 }
 
 console.log("agent-tool-lease: ok");

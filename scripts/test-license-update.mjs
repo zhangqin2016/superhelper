@@ -45,6 +45,7 @@ const {
   verifyLicenseToken,
 } = require("../src/main/license-manager.js");
 const {
+  checkForUpdates,
   createUpdateManifest,
   compareVersions,
   defaultManifestUrl,
@@ -135,6 +136,8 @@ require.cache[serviceClientPath] = {
         },
       },
     }),
+    getServiceSettings: () => ({ ok: true, apiBaseUrl: "https://service.example.com" }),
+    latestRelease: async () => globalThis.__latestReleaseResponse || ({ ok: false, error: "SERVICE_REQUEST_FAILED" }),
   },
 };
 
@@ -183,6 +186,28 @@ if (!verifyDetached(unsigned, manifest.signature, publicKey)) {
   throw new Error("signed update manifest failed verification");
 }
 
+global.fetch = async () => ({
+  ok: true,
+  json: async () => manifest,
+});
+globalThis.__latestReleaseResponse = { ok: false, error: "SERVICE_REQUEST_FAILED" };
+const staticFallbackUpdate = await checkForUpdates();
+if (!staticFallbackUpdate.ok || staticFallbackUpdate.source !== "static" || staticFallbackUpdate.latestVersion !== "0.2.0") {
+  throw new Error(`service failure should fall back to static manifest: ${JSON.stringify(staticFallbackUpdate)}`);
+}
+globalThis.__latestReleaseResponse = {
+  ok: true,
+  json: {
+    version: "0.1.1",
+    url: "https://service.example.com/old.dmg",
+    sha256: "service-old",
+  },
+};
+const newerStaticUpdate = await checkForUpdates();
+if (!newerStaticUpdate.ok || newerStaticUpdate.source !== "static" || newerStaticUpdate.latestVersion !== "0.2.0") {
+  throw new Error(`newer static manifest should win over stale service release: ${JSON.stringify(newerStaticUpdate)}`);
+}
+
 if (compareVersions("0.2.0", "0.1.9") <= 0) {
   throw new Error("compareVersions should detect newer version");
 }
@@ -225,6 +250,25 @@ for (const channel of ["updates:check", "updates:download", "updates:install", "
 const schedulerSource = fs.readFileSync(require.resolve("../src/main/update-scheduler.js"), "utf8");
 if (schedulerSource.includes("requireValidLicense")) {
   throw new Error("background update checks must remain available before activation");
+}
+if (!schedulerSource.includes("setInterval") || !schedulerSource.includes("checkForUpdatesState")) {
+  throw new Error("main process must own the global background update check loop");
+}
+if (!schedulerSource.includes("inFlight")) {
+  throw new Error("background update checks should be coalesced to avoid overlapping update requests");
+}
+const updateSettingsSource = fs.readFileSync(
+  require.resolve("../src/renderer/modules/license-update-settings.js"),
+  "utf8",
+);
+const startAutoUpdateStart = updateSettingsSource.indexOf("export function startAutoUpdateChecks()");
+const startAutoUpdateEnd = updateSettingsSource.indexOf("export function kickAutoUpdateCheck()", startAutoUpdateStart);
+const startAutoUpdateBlock = updateSettingsSource.slice(startAutoUpdateStart, startAutoUpdateEnd);
+if (startAutoUpdateStart < 0 || startAutoUpdateBlock.includes("checkForUpdates(")) {
+  throw new Error("renderer must not own a separate periodic update check; it should consume main-process state");
+}
+if (updateSettingsSource.includes("getLicenseStatus?.()")) {
+  throw new Error("update checks must remain available before activation");
 }
 
 console.log("license-update: ok");

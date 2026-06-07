@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { publicRoutes } from "./routes/public.js";
 import { adminRoutes } from "./routes/admin.js";
 import { modelGatewayRoutes } from "./services/model-gateway.js";
+import { ensureEnvManagedConfigProfile } from "./services/client-config.js";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
@@ -53,6 +54,7 @@ export async function buildApp() {
     return reply.code(500).send({ ok: false, code: "INTERNAL_ERROR" });
   });
 
+  await ensureEnvManagedConfigProfile();
   await app.register(publicRoutes);
   await app.register(adminRoutes);
   await app.register(modelGatewayRoutes);

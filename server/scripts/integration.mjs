@@ -746,10 +746,26 @@ try {
     },
   });
   assert.equal(release.statusCode, 201);
+  const olderRelease = await app.inject({
+    method: "POST",
+    url: "/api/admin/releases",
+    headers: adminHeaders,
+    payload: {
+      version: "0.0.1",
+      platform: "darwin-arm64",
+      url: "https://example.com/old.dmg",
+      sha256: "abcdef1234567890",
+      sizeBytes: 1,
+      notes: "older release inserted after newest",
+      enabled: true,
+    },
+  });
+  assert.equal(olderRelease.statusCode, 201);
 
   const latest = await app.inject({ method: "GET", url: "/api/releases/latest?platform=darwin-arm64&version=0.0.0" });
   assert.equal(latest.statusCode, 200);
   assert.equal(latest.json().sizeBytes, 123);
+  assert.equal(latest.json().version, `9.9.9-integration-${runId}`);
 
   const restoredSettings = await app.inject({
     method: "PATCH",

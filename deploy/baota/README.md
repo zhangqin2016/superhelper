@@ -151,7 +151,23 @@ DEEPSEEK_API_KEY=sk-...
 DASHSCOPE_API_KEY=sk-...
 KIMI_API_KEY=sk-...
 GLM_API_KEY=sk-...
+
+# 可选：阿里百炼媒体技能默认模型。留空 endpoint 时使用技能内置官方入口。
+DASHSCOPE_MODEL=qwen3-coder-plus
+DASHSCOPE_IMAGE_MODEL=qwen-image-2.0-pro
+DASHSCOPE_VIDEO_MODEL=wan2.7-t2v
+DASHSCOPE_TTS_MODEL=cosyvoice-v3-flash
+DASHSCOPE_TTS_VOICE=longanyang
+DASHSCOPE_IMAGE_ENDPOINT=
+DASHSCOPE_VIDEO_ENDPOINT=
+DASHSCOPE_TTS_ENDPOINT=
 ```
+
+服务启动时会根据这些环境变量自动维护一个全局配置下发 profile：
+
+- 模型类供应商通过 Lily `/llm/:provider` 网关下发，客户端拿短期 token，真实模型 key 留在服务端。
+- 图片生成、视频生成、语音合成等本地技能会拿到百炼运行环境配置，用户无需手动配置。
+- 后台仍可新增更高优先级的授权级或设备级 profile，覆盖默认值。
 
 如果要接自建模型，建议先让自建模型暴露 OpenAI-compatible endpoint，
 再启用 LiteLLM 把它适配成 Anthropic-compatible endpoint：

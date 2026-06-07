@@ -1,6 +1,7 @@
 "use strict";
 
 const pending = new Map();
+const { localDateKey } = require("./local-date-key");
 
 function mergeLocalSessionRecord(record) {
   try {
@@ -12,7 +13,7 @@ function mergeLocalSessionRecord(record) {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey();
 }
 
 function activeModel() {
@@ -72,14 +73,61 @@ function numberValue(value) {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
 }
 
+function usageTokens(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return { inputTokens: 0, outputTokens: 0 };
+  }
+  const inputTokens =
+    numberValue(entry.inputTokens) +
+    numberValue(entry.input_tokens) +
+    numberValue(entry.prompt_tokens) +
+    numberValue(entry.cacheReadInputTokens) +
+    numberValue(entry.cache_read_input_tokens) +
+    numberValue(entry.cacheCreationInputTokens) +
+    numberValue(entry.cache_creation_input_tokens);
+  const outputTokens =
+    numberValue(entry.outputTokens) +
+    numberValue(entry.output_tokens) +
+    numberValue(entry.completion_tokens);
+  return { inputTokens, outputTokens };
+}
+
+function isUsageEntry(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+  return (
+    "inputTokens" in entry ||
+    "outputTokens" in entry ||
+    "input_tokens" in entry ||
+    "output_tokens" in entry ||
+    "prompt_tokens" in entry ||
+    "completion_tokens" in entry ||
+    "cacheReadInputTokens" in entry ||
+    "cache_read_input_tokens" in entry ||
+    "cacheCreationInputTokens" in entry ||
+    "cache_creation_input_tokens" in entry
+  );
+}
+
+function extractUsageTotals(usage = {}) {
+  if (!usage || typeof usage !== "object") return { inputTokens: 0, outputTokens: 0 };
+  if (isUsageEntry(usage)) return usageTokens(usage);
+
+  const totals = { inputTokens: 0, outputTokens: 0 };
+  for (const modelUsage of Object.values(usage)) {
+    if (!isUsageEntry(modelUsage)) continue;
+    const item = usageTokens(modelUsage);
+    totals.inputTokens += item.inputTokens;
+    totals.outputTokens += item.outputTokens;
+  }
+  return totals;
+}
+
 function recordModelUsage(sessionId, usage = {}) {
   const record = ensure(sessionId);
-  const models = usage && typeof usage === "object" ? Object.values(usage) : [];
-  for (const modelUsage of models) {
-    if (!modelUsage || typeof modelUsage !== "object") continue;
-    record.inputTokens += numberValue(modelUsage.inputTokens);
-    record.outputTokens += numberValue(modelUsage.outputTokens);
-  }
+  const totals = extractUsageTotals(usage);
+  record.inputTokens += totals.inputTokens;
+  record.outputTokens += totals.outputTokens;
+  return totals;
 }
 
 async function flush(sessionId) {
@@ -125,6 +173,7 @@ module.exports = {
   recordUserSend,
   recordToolCall,
   recordModelUsage,
+  extractUsageTotals,
   flush,
   getPendingTodayTotals,
 };

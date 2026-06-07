@@ -59,9 +59,29 @@
     "name": "电子表格",
     "description": "当电子表格文件是主要输入或输出时使用，包括：打开、读取、编辑或修复现有 .xlsx、.xlsm、.csv、.tsv（如增列、计算公式、格式化、制图、清洗数据）；从零或其他数据源创建新表格；或在表格格式间转换。尤其当用户以名称或路径引用表格文件并希望对其处理或基于其产出时触发。也适用于将格式混乱的表格数据清洗为规范表格。交付物必须是表格文件。若主要交付物为 Word、HTML 报告、独立脚本、数据库管道或 Google Sheets API 集成，即使涉及表格数据也不触发。"
   },
+  "lily-engineering-rules": {
+    "name": "工程协作 12 条",
+    "description": "研发任务的完整工程纪律：最小改动、先读再写、目标驱动验证、测试表达意图、冲突时做选择、未完成必须明说。写代码、改架构、调试、review 或非 trivial 改动时使用。"
+  },
+  "lily-image-generation": {
+    "name": "图片生成",
+    "description": "使用阿里云百炼 Qwen-Image 生成图片并保存到当前工作区。"
+  },
+  "lily-speech-generation": {
+    "name": "语音生成",
+    "description": "使用阿里云百炼语音合成生成配音、旁白和音频。"
+  },
+  "lily-video-generation": {
+    "name": "视频生成",
+    "description": "使用阿里云百炼万相生成视频并保存到当前工作区。"
+  },
   "lily-vision": {
     "name": "识图",
     "description": "为无原生识图能力的模型提供图片识别。"
+  },
+  "lily-workbench-rules": {
+    "name": "工作台基础规则",
+    "description": "所有会话强制生效的基础协作规则（不可关闭）。"
   },
   "marketing-ab-testing": {
     "name": "A/B 测试",

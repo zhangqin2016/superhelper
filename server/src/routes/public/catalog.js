@@ -33,6 +33,29 @@ async function createContactRequest(request, reply) {
   return reply.code(201).send({ ok: true, id });
 }
 
+function compareVersions(a, b) {
+  const pa = String(a || "0").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+  const pb = String(b || "0").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i += 1) {
+    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+  }
+  return 0;
+}
+
+function newestRelease(releases) {
+  return (releases || []).reduce((best, release) => {
+    if (!best) return release;
+    const versionOrder = compareVersions(release.version, best.version);
+    if (versionOrder > 0) return release;
+    if (versionOrder === 0 && new Date(release.created_at).getTime() > new Date(best.created_at).getTime()) {
+      return release;
+    }
+    return best;
+  }, null);
+}
+
 export async function publicCatalogRoutes(app) {
   app.post("/api/contact-requests", createContactRequest);
   app.post("/api/contact", createContactRequest);
@@ -40,17 +63,19 @@ export async function publicCatalogRoutes(app) {
   app.get("/api/releases/latest", async (request) => {
     const platform = String(request.query?.platform || "");
     const currentVersion = String(request.query?.version || "");
-    const release = await db
+    const releases = await db
       .selectFrom("releases")
       .selectAll()
       .where("platform", "=", platform)
       .where("enabled", "=", true)
       .orderBy("created_at", "desc")
-      .executeTakeFirst();
+      .limit(200)
+      .execute();
 
+    const release = newestRelease(releases);
     if (!release) return { hasUpdate: false };
     return {
-      hasUpdate: release.version !== currentVersion,
+      hasUpdate: compareVersions(release.version, currentVersion) > 0,
       version: release.version,
       platform: release.platform,
       url: release.url,

@@ -58,7 +58,7 @@ export function listModelGatewayProviders() {
       type: "anthropic",
       baseUrl: cleanBaseUrl(config.dashscopeBaseUrl),
       apiKey: config.dashscopeApiKey,
-      models: ["qwen3-coder-plus"],
+      models: [config.dashscopeModel || "qwen3-coder-plus"],
       headers: {},
     };
   }

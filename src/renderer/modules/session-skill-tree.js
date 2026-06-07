@@ -15,7 +15,14 @@ export const TREE_CATEGORY_ORDER = [
   "other",
 ];
 
-const BUNDLED_TOOL_IDS = new Set(["lily-vision", "websearch", "webfetch"]);
+const BUNDLED_TOOL_IDS = new Set([
+  "lily-vision",
+  "lily-image-generation",
+  "lily-video-generation",
+  "lily-speech-generation",
+  "websearch",
+  "webfetch",
+]);
 
 export function resolveSkillTreeCategory(skill) {
   if (!skill || typeof skill !== "object") return "other";

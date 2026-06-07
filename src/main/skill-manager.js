@@ -13,7 +13,15 @@ const { copyDirRecursiveShipSafe } = require("./ship-ignore");
 
 const MANDATORY_PLATFORM_SKILL_IDS = ["lily-workbench-rules"];
 
-const BUNDLED_SKILL_IDS = ["lily-workbench-rules", "lily-vision", "websearch", "webfetch"];
+const BUNDLED_SKILL_IDS = [
+  "lily-workbench-rules",
+  "lily-vision",
+  "lily-image-generation",
+  "lily-video-generation",
+  "lily-speech-generation",
+  "websearch",
+  "webfetch",
+];
 
 const PROTECTED_BUNDLED_IDS = new Set(BUNDLED_SKILL_IDS);
 
