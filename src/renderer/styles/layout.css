@@ -97,7 +97,7 @@
   transition: all 0.12s;
   text-align: center;
 }
-.left-action-btn:hover { background: var(--accent); color: #fff; }
+.left-action-btn:hover { background: var(--accent); color: var(--text-inverse); }
 
 .left-search {
   width: 100%;
@@ -124,9 +124,9 @@
   font-size: 11px;
   font-weight: 600;
 }
-.status-badge.idle { background: #1a3a2a; color: #4ade80; }
-.status-badge.running { background: #1a2a4a; color: #60a5fa; }
-.status-badge.error { background: #3a1a1a; color: #f87171; }
+.status-badge.idle { background: var(--success-bg); color: var(--success-text); }
+.status-badge.running { background: var(--info-bg); color: var(--info-text); }
+.status-badge.error { background: var(--danger-bg); color: var(--danger-text); }
 
 /* Left sections */
 
@@ -167,7 +167,7 @@
 }
 
 .left-settings-btn:hover {
-  background: #252840;
+  background: var(--bg-surface-hover);
   color: var(--text-primary);
   border-color: var(--border);
 }
@@ -196,7 +196,7 @@
   color: var(--text-dim);
   cursor: pointer;
 }
-.left-section-btn:hover { background: #252840; color: var(--text-secondary); }
+.left-section-btn:hover { background: var(--bg-surface-hover); color: var(--text-secondary); }
 
 /* Project Tree */
 
@@ -221,7 +221,7 @@
   transition: background 0.12s;
   user-select: none;
 }
-.project-header:hover { background: #1a1d32; }
+.project-header:hover { background: var(--bg-surface); }
 .project-group.active > .project-header {
   background: var(--accent-subtle);
   box-shadow: inset 3px 0 0 var(--accent);
@@ -283,7 +283,7 @@
   cursor: pointer;
   line-height: 1;
 }
-.project-action-btn:hover { background: #2a2d50; color: var(--text-primary); }
+.project-action-btn:hover { background: var(--bg-surface-active); color: var(--text-primary); }
 
 .project-sessions {
   padding: 2px 0 6px;
@@ -319,7 +319,7 @@
   transition: background 0.12s;
   font-size: 12px;
 }
-.project-sessions .session-item:hover { background: #1e2240; }
+.project-sessions .session-item:hover { background: var(--bg-surface-hover); }
 .project-sessions .session-item.active {
   background: var(--accent-subtle);
   color: var(--text-primary);
@@ -338,9 +338,9 @@
 .session-status {
   width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
 }
-.session-status.idle { background: #4ade80; }
-.session-status.running { background: #60a5fa; }
-.session-status.error { background: #f87171; }
+.session-status.idle { background: var(--success-text); }
+.session-status.running { background: var(--info-text); }
+.session-status.error { background: var(--danger-text); }
 
 /* Legacy flat session list */
 .session-list {
@@ -360,7 +360,7 @@
   font-size: 13px;
   justify-content: space-between;
 }
-.session-list .session-item:hover { background: #1e2240; }
+.session-list .session-item:hover { background: var(--bg-surface-hover); }
 .session-list .session-item.active {
   background: var(--accent-subtle);
   color: var(--text-primary);
@@ -387,11 +387,11 @@
   color: var(--text-secondary);
   transition: background 0.1s;
 }
-.file-tree-item:hover { background: #1a1d30; }
+.file-tree-item:hover { background: var(--bg-surface); }
 .file-tree-item .ft-icon { flex-shrink: 0; width: 16px; text-align: center; font-size: 11px; }
 .file-tree-item .ft-name { overflow: hidden; text-overflow: ellipsis; }
 .file-tree-item .ft-status { margin-left: auto; font-size: 10px; flex-shrink: 0; }
 
-.ft-modified { color: #60a5fa; }
-.ft-added { color: #4ade80; }
-.ft-conflict { color: #f87171; }
+.ft-modified { color: var(--info-text); }
+.ft-added { color: var(--success-text); }
+.ft-conflict { color: var(--danger-text); }

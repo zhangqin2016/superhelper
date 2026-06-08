@@ -27,7 +27,7 @@
   cursor: pointer;
   border-radius: 3px;
 }
-.status-bar-btn:hover { background: #252840; color: var(--text-secondary); }
+.status-bar-btn:hover { background: var(--bg-surface-hover); color: var(--text-secondary); }
 
 /* =========================================================================
    Modal Panels
@@ -40,7 +40,7 @@
   display: grid;
   place-items: center;
   padding: 28px;
-  background: rgba(5, 6, 12, 0.6);
+  background: var(--bg-backdrop);
   animation: fade-in 0.2s ease;
 }
 .modal-panel[hidden] { display: none; }
@@ -152,7 +152,7 @@
   font-size: 13px;
   cursor: pointer;
 }
-.modal-close-btn:hover { background: #252840; }
+.modal-close-btn:hover { background: var(--bg-surface-hover); }
 
 .plugin-list {
   overflow-y: auto;
@@ -165,7 +165,7 @@
   margin-bottom: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #1a1d30;
+  background: var(--bg-surface);
 }
 .plugin-card h3 { margin: 0; font-size: 14px; }
 .plugin-card p { margin: 3px 0 0; font-size: 12px; color: var(--text-dim); }
@@ -183,9 +183,9 @@
   background: transparent;
   color: var(--text-secondary);
 }
-.plugin-card .plugin-scope-actions button:hover { background: #252840; }
+.plugin-card .plugin-scope-actions button:hover { background: var(--bg-surface-hover); }
 .plugin-card .plugin-scope-actions button.enabled {
-  background: var(--accent); color: #fff; border-color: var(--accent);
+  background: var(--accent); color: var(--text-inverse); border-color: var(--accent);
 }
 
 /* =========================================================================
@@ -195,7 +195,7 @@
 .drop-overlay {
   position: fixed; inset: 0; z-index: 9999;
   display: grid; place-items: center;
-  background: rgba(10, 12, 22, 0.8);
+  background: var(--bg-drop-overlay);
   backdrop-filter: blur(4px);
 }
 .drop-overlay[hidden] { display: none; }
@@ -203,14 +203,14 @@
 .drop-overlay-content {
   display: grid; place-items: center; gap: 12px;
   padding: 48px 60px;
-  border: 2px dashed #5a55d0;
+  border: 2px dashed var(--accent);
   border-radius: 20px;
-  background: rgba(20, 22, 40, 0.9);
+  background: var(--bg-drop-card);
   text-align: center;
 }
-.drop-overlay-icon { color: #5a55d0; }
-.drop-overlay-title { color: #e0e0f8; font-size: 18px; font-weight: 700; margin: 0; }
-.drop-overlay-types { color: #7878b8; font-size: 13px; margin: 0; }
+.drop-overlay-icon { color: var(--accent); }
+.drop-overlay-title { color: var(--text-primary); font-size: 18px; font-weight: 700; margin: 0; }
+.drop-overlay-types { color: var(--text-dim); font-size: 13px; margin: 0; }
 
 /* =========================================================================
    Toast
@@ -233,10 +233,10 @@
   transition: transform 0.3s ease, opacity 0.2s ease;
 }
 .toast-visible { transform: translateX(0); opacity: 1; }
-.toast-error { background: #3a1a1a; border: 1px solid #5a2a2a; color: #fca5a5; }
-.toast-warning { background: #3a2a1a; border: 1px solid #5a4a2a; color: #fcd34d; }
-.toast-info { background: #1a2a3a; border: 1px solid #2a3a5a; color: #93c5fd; }
-.toast-success { background: #1a3a2a; border: 1px solid #2a5a3a; color: #86efac; }
+.toast-error { background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text-soft); }
+.toast-warning { background: var(--warning-bg); border: 1px solid var(--warning-border); color: var(--warning-text-soft); }
+.toast-info { background: var(--info-bg); border: 1px solid var(--info-border); color: var(--info-text-soft); }
+.toast-success { background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text-soft); }
 
 /* =========================================================================
    Animations

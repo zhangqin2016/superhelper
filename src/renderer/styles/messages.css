@@ -23,12 +23,12 @@
   padding: 0 14px 0 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(26, 29, 46, 0.96);
+  background: var(--bg-floating);
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-floating);
   transform: translateX(-50%);
   transition: opacity 0.15s, transform 0.15s, border-color 0.15s;
   backdrop-filter: blur(8px);
@@ -38,7 +38,7 @@
 }
 .scroll-to-bottom-btn:hover {
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text-inverse);
   transform: translateX(-50%) translateY(-1px);
 }
 .scroll-to-bottom-btn svg {
@@ -185,7 +185,7 @@
   place-items: center;
   width: 34px; height: 34px;
   border-radius: 50%;
-  background: #252840;
+  background: var(--bg-surface-hover);
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
@@ -234,13 +234,13 @@
 .msg-bubble p:last-child { margin-bottom: 0; }
 
 .msg-bubble a {
-  color: #7eb6ff;
+  color: var(--link);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
 }
 .msg-user .msg-bubble a {
-  color: #fff;
+  color: var(--text-inverse);
   font-weight: 600;
 }
 
@@ -249,22 +249,22 @@
 
 .msg-bubble code {
   border-radius: 4px;
-  background: #252840;
+  background: var(--bg-surface-hover);
   padding: 2px 5px;
   font: 13px/1.4 var(--font-mono);
-  color: #f0a060;
+  color: var(--code-text);
 }
 
 .msg-user .msg-bubble code {
-  background: rgba(255,255,255,0.15);
-  color: rgba(255,255,255,0.9);
+  background: var(--bg-user-chip);
+  color: var(--text-inverse);
 }
 
 .msg-bubble pre {
   overflow: auto;
   border-radius: var(--radius-sm);
-  background: #0d1117;
-  color: #d7e1ea;
+  background: var(--pre-bg);
+  color: var(--pre-text);
   padding: 12px 14px;
   margin: 0 0 10px;
   font-size: 13px;
@@ -281,7 +281,7 @@
 }
 
 .msg-bubble blockquote {
-  border-left: 3px solid #3a3d55;
+  border-left: 3px solid var(--border-strong);
   margin: 0 0 8px;
   padding: 4px 0 4px 12px;
   color: var(--text-secondary);
@@ -298,7 +298,7 @@
   padding: 5px 8px;
   text-align: left;
 }
-.msg-bubble th { background: #1a1d30; font-weight: 600; }
+.msg-bubble th { background: var(--bg-surface); font-weight: 600; }
 
 .msg-bubble hr {
   border: 0;
@@ -319,15 +319,15 @@
 }
 
 .msg-turn.is-running .msg-avatar {
-  color: #fff;
-  background: color-mix(in srgb, var(--accent) 48%, #252840);
+  color: var(--text-inverse);
+  background: color-mix(in srgb, var(--accent) 48%, var(--bg-surface-hover));
   box-shadow: 0 0 0 0 var(--accent-dim);
   animation: live-avatar-pulse 1.6s ease-in-out infinite;
 }
 
 .msg-turn.is-running .msg-bubble {
   border-color: var(--accent-border);
-  box-shadow: 0 0 0 1px var(--accent-subtle), 0 12px 34px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 0 0 1px var(--accent-subtle), 0 12px 34px var(--bg-tool-detail);
 }
 
 /* Bubble files */
@@ -337,16 +337,16 @@
   margin-top: 8px; padding-top: 8px;
   border-top: 1px solid var(--border);
 }
-.msg-user .msg-bubble-files { border-top-color: rgba(255,255,255,0.15); }
+.msg-user .msg-bubble-files { border-top-color: var(--bg-user-chip); }
 
 .msg-bubble-file {
   display: flex; align-items: center; gap: 4px;
   padding: 3px 8px;
   border-radius: var(--radius-sm);
-  background: #252840;
+  background: var(--bg-surface-hover);
   font-size: 12px;
 }
-.msg-user .msg-bubble-file { background: rgba(255,255,255,0.1); }
+.msg-user .msg-bubble-file { background: var(--bg-user-chip-soft); }
 
 .msg-actions {
   grid-column: 1 / -1;
@@ -371,7 +371,7 @@
 .msg-retry-btn:hover:not(:disabled) {
   color: var(--text);
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
+  background: var(--accent-subtle);
 }
 
 .msg-retry-btn:disabled {
@@ -380,5 +380,5 @@
 }
 
 .msg-assistant[data-failed="true"] .msg-bubble {
-  border-color: rgba(239, 68, 68, 0.35);
+  border-color: var(--danger-border);
 }

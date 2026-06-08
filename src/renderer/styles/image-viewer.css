@@ -23,7 +23,7 @@
 .image-viewer-bg {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: var(--image-backdrop);
   backdrop-filter: blur(4px);
 }
 
@@ -34,7 +34,7 @@
   max-height: 90vh;
   object-fit: contain;
   border-radius: 6px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-image);
 }
 
 .image-viewer-close {
@@ -49,12 +49,12 @@
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--image-control-bg);
+  color: var(--text-inverse);
   font-size: 22px;
   cursor: pointer;
   transition: background 0.15s;
 }
 .image-viewer-close:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--image-control-hover);
 }

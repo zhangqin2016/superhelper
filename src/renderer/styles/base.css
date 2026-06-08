@@ -1,10 +1,12 @@
 /* =========================================================================
-   Lily Workbench — Office-neutral dark theme (B + restrained accent)
+   Lily Workbench theme tokens
+   Raw color values belong here. Component CSS should consume semantic tokens.
    ========================================================================= */
 
 :root {
   --left-w: 280px;
   --right-w: 320px;
+  --color-scheme: dark;
 
   /* Accent: restrained blue-violet — actions & focus only */
   --accent: #5865c2;
@@ -12,6 +14,9 @@
   --accent-dim: rgba(88, 101, 194, 0.14);
   --accent-subtle: rgba(88, 101, 194, 0.08);
   --accent-border: rgba(88, 101, 194, 0.35);
+  --accent-strong-border: rgba(99, 102, 241, 0.72);
+  --accent-strong-bg: rgba(99, 102, 241, 0.22);
+  --accent-ring: rgba(129, 140, 248, 0.2);
 
   /* Surface ladder: shell → panel → workspace → input */
   --bg-body: #111318;
@@ -22,19 +27,90 @@
   --bg-input: #22242e;
   --bg-surface: #1e2029;
   --bg-surface-raised: #262830;
+  --bg-surface-hover: #252840;
+  --bg-surface-active: #2a2d50;
+  --bg-surface-muted: rgba(255, 255, 255, 0.035);
+  --bg-surface-subtle: rgba(255, 255, 255, 0.02);
   --bg-bubble-user: var(--bg-surface-raised);
   --bg-bubble-ai: var(--bg-surface);
   --bg-status: var(--bg-topbar);
+  --bg-floating: rgba(26, 29, 46, 0.96);
+  --bg-backdrop: rgba(0, 0, 0, 0.45);
+  --bg-drop-overlay: rgba(10, 12, 22, 0.8);
+  --bg-drop-card: rgba(20, 22, 40, 0.9);
+  --bg-tool-detail: rgba(0, 0, 0, 0.18);
+  --bg-tool-detail-strong: rgba(0, 0, 0, 0.22);
+  --bg-media: rgba(16, 18, 30, 0.72);
+  --bg-user-chip: rgba(255, 255, 255, 0.15);
+  --bg-user-chip-soft: rgba(255, 255, 255, 0.1);
 
   --text-primary: #e8eaef;
   --text-secondary: #9398a8;
   --text-dim: #5f6478;
   --text-muted: #787d90;
+  --text-inverse: #ffffff;
+  --text-strong: #f0f3fa;
+  --text-code: #f0a060;
+  --link: #7eb8f0;
 
   --border: #2a2d3a;
   --border-light: #323648;
+  --border-subtle: rgba(143, 150, 163, 0.28);
+  --border-strong: #3a3d55;
 
   --shadow: 0 4px 20px rgba(0, 0, 0, 0.28);
+  --shadow-floating: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-panel: -8px 0 32px rgba(0, 0, 0, 0.35);
+  --shadow-image: 0 8px 40px rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 22px 70px rgba(0, 0, 0, 0.42);
+
+  --success-bg: #1a3a2a;
+  --success-bg-hover: #2a4a3a;
+  --success-border: #2a5a3a;
+  --success-text: #4ade80;
+  --success-text-soft: #86efac;
+  --success-dot: #3ce17a;
+  --success-dot-ring: rgba(60, 225, 122, 0.18);
+  --danger-bg: #3a1a1a;
+  --danger-bg-hover: #4a2a2a;
+  --danger-border: #5a2a2a;
+  --danger-text: #f87171;
+  --danger-text-soft: #fca5a5;
+  --danger-dot-ring: rgba(248, 113, 113, 0.16);
+  --warning-bg: #3a2a1a;
+  --warning-bg-soft: rgba(251, 191, 36, 0.15);
+  --warning-border: #5a4a2a;
+  --warning-border-soft: rgba(251, 191, 36, 0.35);
+  --warning-text: #fbbf24;
+  --warning-text-soft: #fcd34d;
+  --info-bg: #1a2a4a;
+  --info-bg-soft: rgba(96, 165, 250, 0.12);
+  --info-border: #2a3a5a;
+  --info-border-soft: rgba(96, 165, 250, 0.35);
+  --info-text: #60a5fa;
+  --info-text-soft: #93c5fd;
+  --info-text-muted: #9eb4e8;
+
+  --diff-add-bg: rgba(34, 197, 94, 0.12);
+  --diff-add-text: #62d48b;
+  --diff-del-bg: rgba(239, 68, 68, 0.12);
+  --diff-del-text: #ff7b7b;
+  --diff-hunk-bg: rgba(99, 102, 241, 0.12);
+  --diff-hunk-text: #aeb8ff;
+  --diff-meta-bg: rgba(148, 163, 184, 0.08);
+  --diff-meta-text: #93a0b8;
+
+  --code-bg: var(--bg-surface-hover);
+  --code-text: var(--text-code);
+  --pre-bg: #0d1117;
+  --pre-text: #d7e1ea;
+  --copy-bg: rgba(15, 23, 42, 0.82);
+  --copy-bg-hover: rgba(30, 41, 59, 0.95);
+  --image-backdrop: rgba(0, 0, 0, 0.85);
+  --image-control-bg: rgba(255, 255, 255, 0.12);
+  --image-control-hover: rgba(255, 255, 255, 0.25);
+  --scrollbar-thumb: #2a2d45;
+
   --radius: 6px;
   --radius-sm: 4px;
   --radius-lg: 8px;
@@ -51,6 +127,109 @@
   background: var(--bg-body);
   color: var(--text-primary);
   font-size: var(--text-base);
+  color-scheme: var(--color-scheme);
+}
+
+:root[data-theme="light"] {
+  --color-scheme: light;
+
+  --accent: #4f5bd5;
+  --accent-hover: #444ec0;
+  --accent-dim: rgba(79, 91, 213, 0.14);
+  --accent-subtle: rgba(79, 91, 213, 0.08);
+  --accent-border: rgba(79, 91, 213, 0.34);
+  --accent-strong-border: rgba(79, 91, 213, 0.5);
+  --accent-strong-bg: rgba(79, 91, 213, 0.14);
+  --accent-ring: rgba(79, 91, 213, 0.16);
+
+  --bg-body: #f2f4f8;
+  --bg-left: #f8fafc;
+  --bg-center: #ffffff;
+  --bg-right: #f8fafc;
+  --bg-topbar: #ffffff;
+  --bg-input: #ffffff;
+  --bg-surface: #ffffff;
+  --bg-surface-raised: #f6f8fb;
+  --bg-surface-hover: #eef2f7;
+  --bg-surface-active: #e5eaf4;
+  --bg-surface-muted: rgba(15, 23, 42, 0.035);
+  --bg-surface-subtle: rgba(15, 23, 42, 0.02);
+  --bg-floating: rgba(255, 255, 255, 0.96);
+  --bg-backdrop: rgba(15, 23, 42, 0.28);
+  --bg-drop-overlay: rgba(15, 23, 42, 0.42);
+  --bg-drop-card: rgba(255, 255, 255, 0.96);
+  --bg-tool-detail: rgba(15, 23, 42, 0.04);
+  --bg-tool-detail-strong: rgba(15, 23, 42, 0.06);
+  --bg-media: rgba(248, 250, 252, 0.96);
+  --bg-user-chip: rgba(255, 255, 255, 0.22);
+  --bg-user-chip-soft: rgba(255, 255, 255, 0.16);
+
+  --text-primary: #111827;
+  --text-secondary: #475569;
+  --text-dim: #64748b;
+  --text-muted: #7b8496;
+  --text-inverse: #ffffff;
+  --text-strong: #0f172a;
+  --text-code: #b45309;
+  --link: #2563eb;
+
+  --border: #dbe2ee;
+  --border-light: #cfd8e6;
+  --border-subtle: rgba(100, 116, 139, 0.28);
+  --border-strong: #b8c3d4;
+
+  --shadow: 0 4px 18px rgba(15, 23, 42, 0.08);
+  --shadow-floating: 0 12px 28px rgba(15, 23, 42, 0.12);
+  --shadow-panel: -8px 0 32px rgba(15, 23, 42, 0.12);
+  --shadow-image: 0 8px 40px rgba(15, 23, 42, 0.22);
+  --shadow-modal: 0 22px 70px rgba(15, 23, 42, 0.18);
+
+  --success-bg: #e9f8ef;
+  --success-bg-hover: #d8f1e2;
+  --success-border: #a7dfba;
+  --success-text: #15803d;
+  --success-text-soft: #166534;
+  --success-dot: #16a34a;
+  --success-dot-ring: rgba(22, 163, 74, 0.16);
+  --danger-bg: #fef0f0;
+  --danger-bg-hover: #fde1e1;
+  --danger-border: #f8b4b4;
+  --danger-text: #dc2626;
+  --danger-text-soft: #b91c1c;
+  --danger-dot-ring: rgba(220, 38, 38, 0.14);
+  --warning-bg: #fff7e6;
+  --warning-bg-soft: rgba(217, 119, 6, 0.12);
+  --warning-border: #f4d58d;
+  --warning-border-soft: rgba(217, 119, 6, 0.35);
+  --warning-text: #b45309;
+  --warning-text-soft: #92400e;
+  --info-bg: #eef6ff;
+  --info-bg-soft: rgba(37, 99, 235, 0.1);
+  --info-border: #b9d5ff;
+  --info-border-soft: rgba(37, 99, 235, 0.28);
+  --info-text: #2563eb;
+  --info-text-soft: #1d4ed8;
+  --info-text-muted: #315fbe;
+
+  --diff-add-bg: rgba(22, 163, 74, 0.12);
+  --diff-add-text: #15803d;
+  --diff-del-bg: rgba(220, 38, 38, 0.1);
+  --diff-del-text: #dc2626;
+  --diff-hunk-bg: rgba(79, 91, 213, 0.1);
+  --diff-hunk-text: #4f46e5;
+  --diff-meta-bg: rgba(100, 116, 139, 0.1);
+  --diff-meta-text: #64748b;
+
+  --code-bg: #f1f5f9;
+  --code-text: var(--text-code);
+  --pre-bg: #f8fafc;
+  --pre-text: #1f2937;
+  --copy-bg: rgba(255, 255, 255, 0.86);
+  --copy-bg-hover: rgba(241, 245, 249, 0.96);
+  --image-backdrop: var(--copy-bg);
+  --image-control-bg: rgba(15, 23, 42, 0.56);
+  --image-control-hover: rgba(15, 23, 42, 0.72);
+  --scrollbar-thumb: #c0cad8;
 }
 
 * { box-sizing: border-box; }

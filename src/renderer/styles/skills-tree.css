@@ -186,8 +186,8 @@
 
 .skills-tree-row--selected .skills-tree-row-mark::after,
 .skills-tree-row-mark[data-checked="true"]::after {
-  border-right-color: #fff;
-  border-bottom-color: #fff;
+  border-right-color: var(--text-inverse);
+  border-bottom-color: var(--text-inverse);
   opacity: 1;
   transform: rotate(45deg) scale(1);
 }
@@ -256,13 +256,13 @@
 }
 
 .skills-tree-row-chip--warn {
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
+  background: var(--warning-bg-soft);
+  color: var(--warning-text);
 }
 
 .skills-tree-row-chip--accent {
   background: var(--accent-dim);
-  color: #818cf8;
+  color: var(--accent-hover);
 }
 
 .skills-tree-row-settings-meta {
@@ -280,7 +280,7 @@
 }
 
 .skills-tree-row-settings-niche {
-  color: #c4a35a;
+  color: var(--warning-text-soft);
 }
 
 .skills-tree-row-settings-actions {

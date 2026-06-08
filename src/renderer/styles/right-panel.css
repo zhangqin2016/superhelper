@@ -40,7 +40,7 @@
   font-size: 11px;
   cursor: pointer;
 }
-.right-section-btn:hover { background: #252840; color: var(--text-secondary); }
+.right-section-btn:hover { background: var(--bg-surface-hover); color: var(--text-secondary); }
 
 /* Task Panel */
 
@@ -62,7 +62,7 @@
   margin-bottom: 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #1a1d30;
+  background: var(--bg-surface);
   font-size: 12px;
 }
 .task-card-header {
@@ -71,10 +71,10 @@
 }
 .task-card-title { font-weight: 600; }
 .task-card-status { font-size: 10px; padding: 1px 6px; border-radius: 3px; }
-.task-card-status.running { background: #1a2a4a; color: #60a5fa; }
-.task-card-status.done { background: #1a3a2a; color: #4ade80; }
-.task-card-status.failed { background: #3a1a1a; color: #f87171; }
-.task-card-status.pending { background: #2a2a1a; color: #fbbf24; }
+.task-card-status.running { background: var(--info-bg); color: var(--info-text); }
+.task-card-status.done { background: var(--success-bg); color: var(--success-text); }
+.task-card-status.failed { background: var(--danger-bg); color: var(--danger-text); }
+.task-card-status.pending { background: var(--warning-bg); color: var(--warning-text); }
 .task-card-meta { color: var(--text-dim); font-size: 11px; }
 
 /* Changes Summary */
@@ -98,5 +98,5 @@
   font-size: 12px;
   color: var(--text-dim);
 }
-.change-stat .added { color: #4ade80; }
-.change-stat .deleted { color: #f87171; }
+.change-stat .added { color: var(--success-text); }
+.change-stat .deleted { color: var(--danger-text); }

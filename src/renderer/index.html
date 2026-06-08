@@ -5,6 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lily Workbench</title>
     <link rel="icon" type="image/png" href="" />
+    <script>
+      (() => {
+        try {
+          const mode = localStorage.getItem("lily.themeMode") || "system";
+          const wantsLight =
+            mode === "light" ||
+            (mode === "system" && window.matchMedia?.("(prefers-color-scheme: light)")?.matches);
+          document.documentElement.dataset.themeMode = mode;
+          document.documentElement.dataset.theme = wantsLight ? "light" : "dark";
+          document.documentElement.classList.toggle("light", wantsLight);
+          document.documentElement.classList.toggle("dark", !wantsLight);
+        } catch {
+          document.documentElement.dataset.themeMode = "system";
+          document.documentElement.dataset.theme = "dark";
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -208,6 +226,15 @@
                 <label class="settings-field-label" for="localeSelect" data-i18n="settings.language">界面语言</label>
                 <p class="settings-section-desc" data-i18n="settings.languageDesc">切换菜单与提示文字的语言。对话内容语言不受此影响。</p>
                 <select id="localeSelect" class="settings-select" data-i18n-aria-label="settings.language" aria-label="界面语言"></select>
+              </div>
+              <div class="settings-field">
+                <label class="settings-field-label" for="themeModeSelect" data-i18n="settings.theme">外观</label>
+                <p class="settings-section-desc" data-i18n="settings.themeDesc">选择深色、浅色，或跟随系统外观。</p>
+                <select id="themeModeSelect" class="settings-select" data-i18n-aria-label="settings.theme" aria-label="外观">
+                  <option value="system" data-i18n="settings.theme.system">跟随系统</option>
+                  <option value="dark" data-i18n="settings.theme.dark">深色</option>
+                  <option value="light" data-i18n="settings.theme.light">浅色</option>
+                </select>
               </div>
               <div class="settings-field settings-field--divider">
                 <h4 class="settings-subsection-title" data-i18n="settings.other">其他</h4>
@@ -454,6 +481,13 @@
                 <div class="settings-field">
                   <label class="settings-field-label" for="feedbackMessage" data-i18n="settings.feedbackMessage">详细描述</label>
                   <textarea id="feedbackMessage" class="settings-text-input settings-textarea" rows="5" required minlength="8" maxlength="4000"></textarea>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field-label" data-i18n="settings.feedbackAttachments">截图（可选）</label>
+                  <input id="feedbackAttachmentInput" class="settings-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+                  <button id="feedbackAttachmentBtn" class="settings-action-btn" type="button" data-i18n="settings.feedbackAttachmentAdd">添加图片</button>
+                  <p class="settings-field-hint" data-i18n="settings.feedbackAttachmentHint">最多 5 张，单张不超过 10MB。</p>
+                  <div id="feedbackAttachmentList" class="feedback-attachment-list" hidden></div>
                 </div>
                 <p id="feedbackFormStatus" class="settings-form-status" hidden></p>
                 <div class="settings-actions">

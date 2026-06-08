@@ -42,10 +42,10 @@
   color: var(--text-primary);
   border-color: var(--border-light);
 }
-.diff-btn-accept { background: #1a3a2a; border-color: #2a5a3a; color: #4ade80; }
-.diff-btn-accept:hover { background: #2a4a3a; }
-.diff-btn-reject { background: #3a1a1a; border-color: #5a2a2a; color: #f87171; }
-.diff-btn-reject:hover { background: #4a2a2a; }
+.diff-btn-accept { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
+.diff-btn-accept:hover { background: var(--success-bg-hover); }
+.diff-btn-reject { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-text); }
+.diff-btn-reject:hover { background: var(--danger-bg-hover); }
 
 .diff-list { padding: 8px 12px; }
 
@@ -69,9 +69,9 @@
 
 .diff-file-name { color: var(--text-primary); }
 .diff-file-status { font-size: 11px; padding: 1px 6px; border-radius: 3px; }
-.diff-file-status.added { background: #1a3a2a; color: #4ade80; }
-.diff-file-status.modified { background: #1a2a3a; color: #60a5fa; }
-.diff-file-status.deleted { background: #3a1a1a; color: #f87171; }
+.diff-file-status.added { background: var(--success-bg); color: var(--success-text); }
+.diff-file-status.modified { background: var(--info-bg); color: var(--info-text); }
+.diff-file-status.deleted { background: var(--danger-bg); color: var(--danger-text); }
 
 .diff-file-actions { display: flex; gap: 4px; }
 .diff-file-actions button {
@@ -80,10 +80,10 @@
   font-size: 11px; cursor: pointer;
   border: 1px solid;
 }
-.diff-accept-btn { background: transparent; border-color: #2a5a3a; color: #4ade80; }
-.diff-accept-btn:hover { background: #1a3a2a; }
-.diff-reject-btn { background: transparent; border-color: #5a2a2a; color: #f87171; }
-.diff-reject-btn:hover { background: #3a1a1a; }
+.diff-accept-btn { background: transparent; border-color: var(--success-border); color: var(--success-text); }
+.diff-accept-btn:hover { background: var(--success-bg); }
+.diff-reject-btn { background: transparent; border-color: var(--danger-border); color: var(--danger-text); }
+.diff-reject-btn:hover { background: var(--danger-bg); }
 
 .diff-file-content {
   padding: 8px 12px;
@@ -98,6 +98,6 @@
   color: var(--text-secondary);
 }
 
-.diff-hunk-add { color: #4ade80; background: rgba(74, 222, 128, 0.08); }
-.diff-hunk-del { color: #f87171; background: rgba(248, 113, 113, 0.08); }
-.diff-hunk-header { color: #60a5fa; }
+.diff-hunk-add { color: var(--success-text); background: var(--diff-add-bg); }
+.diff-hunk-del { color: var(--danger-text); background: var(--diff-del-bg); }
+.diff-hunk-header { color: var(--info-text); }

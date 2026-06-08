@@ -16,6 +16,7 @@ import { activeSession, refreshStateLight } from "./session-chrome.js";
 import { confirmDialog } from "./confirm-dialog.js";
 import { refreshUsageSettings, initUsageSettings } from "./usage-settings.js";
 import { initSupportSettings } from "./support-settings.js";
+import { initThemeSettings, refreshThemeSelect } from "./theme-settings.js";
 
 const SETTINGS_PAGES = ["general", "usage", "model", "permission", "search", "skills", "license", "feedback", "contact", "about"];
 
@@ -71,6 +72,7 @@ function refreshSettingsPanelData() {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = Promise.allSettled([
     refreshLocaleSelect(),
+    refreshThemeSelect(),
     refreshModelSelect(),
     refreshPermissionSelect(),
     refreshSearchSettings(),
@@ -180,4 +182,5 @@ export async function initSettingsPanel() {
 
   initUsageSettings();
   initSupportSettings();
+  initThemeSettings();
 }
