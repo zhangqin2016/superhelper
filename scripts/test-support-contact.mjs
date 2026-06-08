@@ -55,6 +55,28 @@ require.cache[serviceClientPath] = {
       capturedBody = payload;
       return { ok: true, json: { ok: true, id: "contact_test" } };
     },
+    requestFeedbackAttachmentUpload: async (payload) => ({
+      ok: true,
+      json: {
+        key: `feedback/dev_test/test/${payload.fileName}`,
+        token: "test-token",
+        uploadUrl: "https://upload.test",
+        publicUrl: `https://cdn.test/feedback/dev_test/test/${payload.fileName}`,
+      },
+    }),
+    uploadFeedbackAttachment: async (upload, attachment) => ({
+      ok: true,
+      attachment: {
+        key: upload.key,
+        url: upload.publicUrl,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        width: attachment.width,
+        height: attachment.height,
+        sha256: attachment.sha256,
+      },
+    }),
     getDeviceId: () => "dev_test",
     devicePayload: () => ({ platform: "darwin", arch: "arm64" }),
   },
@@ -74,6 +96,16 @@ const feedback = await supportWithMock.submitContactRequestPublic({
     arch: "arm64",
     category: "bug",
   },
+  attachments: [
+    {
+      name: "bug.png",
+      mimeType: "image/png",
+      sizeBytes: 4,
+      width: 120,
+      height: 80,
+      data: Uint8Array.from([1, 2, 3, 4]).buffer,
+    },
+  ],
 });
 
 if (!feedback.ok || feedback.id !== "contact_test") {
@@ -84,6 +116,12 @@ if (!capturedBody?.message.includes("App: 0.1.16") || !capturedBody.message.incl
 }
 if (capturedBody.source !== "desktop-feedback") {
   throw new Error("expected desktop-feedback source");
+}
+if (capturedBody.attachments?.[0]?.key !== "feedback/dev_test/test/bug.png") {
+  throw new Error(`expected uploaded attachment metadata, got ${JSON.stringify(capturedBody.attachments)}`);
+}
+if (capturedBody.attachments[0].data) {
+  throw new Error("feedback payload must not include raw attachment bytes");
 }
 
 console.log("support-contact: ok");

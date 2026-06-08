@@ -2,6 +2,7 @@ import { z } from "zod";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { requireSignedDeviceRequest, upsertDevice } from "../../services/device-identity.js";
+import { usageDateKey } from "../../services/usage-date.js";
 
 const registerDeviceSchema = z.object({
   deviceId: z.string().min(6).max(120),
@@ -118,7 +119,7 @@ export function registerPublicTelemetryRoutes(app) {
       deviceId: input.deviceId,
       historyDays,
       days: rows.map((row) => ({
-        date: String(row.usage_date).slice(0, 10),
+        date: usageDateKey(row.usage_date),
         inputTokens: Number(row.input_tokens || 0),
         outputTokens: Number(row.output_tokens || 0),
         messageCount: Number(row.message_count || 0),

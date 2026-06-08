@@ -11,10 +11,16 @@ const skillInstaller = require("./skill-installer");
 const skillPresets = require("./skill-presets");
 const { copyDirRecursiveShipSafe } = require("./ship-ignore");
 
-const MANDATORY_PLATFORM_SKILL_IDS = ["lily-workbench-rules"];
+const MANDATORY_PLATFORM_SKILL_IDS = [
+  "lily-workbench-rules",
+  "lily-context-rules",
+  "lily-task-execution-rules",
+];
 
 const BUNDLED_SKILL_IDS = [
   "lily-workbench-rules",
+  "lily-context-rules",
+  "lily-task-execution-rules",
   "lily-vision",
   "lily-image-generation",
   "lily-video-generation",

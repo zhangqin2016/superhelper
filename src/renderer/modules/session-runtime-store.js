@@ -44,8 +44,8 @@ export function getRuntimeSession(sessionId) {
 }
 
 function committedMessageKey(message) {
-  if (message?.id) return `id:${message.id}`;
   if (message?.turnId && message?.role) return `turn:${message.role}:${message.turnId}`;
+  if (message?.id) return `id:${message.id}`;
   return ["fallback", message?.role || "", message?.timestamp || "", message?.content || ""].join(":");
 }
 

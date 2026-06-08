@@ -6,6 +6,10 @@ process.env.DATABASE_URL ||= "postgres://integration:integration@localhost:5432/
 process.env.ADMIN_TOKEN ||= "integration-token";
 process.env.ALLOW_UNSIGNED_LICENSES ||= "true";
 process.env.PUBLIC_BASE_URL ||= "https://lily.integration.test";
+process.env.QINIU_ACCESS_KEY ||= "integration-qiniu-ak";
+process.env.QINIU_SECRET_KEY ||= "integration-qiniu-sk";
+process.env.QINIU_BUCKET ||= "integration-bucket";
+process.env.QINIU_PUBLIC_BASE_URL ||= "https://qiniu.integration.test";
 process.env.MODEL_GATEWAY_PROVIDERS ||= JSON.stringify({
   deepseek: {
     type: "anthropic",
@@ -704,10 +708,35 @@ try {
       subject: "Team deployment",
       message: "We need a managed Lily Workbench team deployment.",
       source: "integration",
+      attachments: [
+        {
+          key: "feedback/dev_integration/draft/example.png",
+          name: "example.png",
+          mimeType: "image/png",
+          sizeBytes: 128,
+          width: 320,
+          height: 200,
+        },
+      ],
     },
   });
   assert.equal(contact.statusCode, 201);
   assert.ok(contact.json().id);
+
+  const attachmentToken = await app.inject({
+    method: "POST",
+    url: "/api/contact-attachments/upload-token",
+    headers: { "X-Lily-Device-Id": "dev_integration" },
+    payload: {
+      draftId: "draft_integration",
+      fileName: "screenshot.png",
+      mimeType: "image/png",
+      sizeBytes: 256,
+    },
+  });
+  assert.equal(attachmentToken.statusCode, 200);
+  assert.ok(attachmentToken.json().token.includes("integration-qiniu-ak:"));
+  assert.ok(attachmentToken.json().key.startsWith("feedback/dev_integration/draft_integration/"));
 
   const legacyContact = await app.inject({
     method: "POST",
@@ -729,6 +758,12 @@ try {
   });
   assert.equal(contacts.statusCode, 200);
   assert.ok(contacts.json().contacts.some((item) => item.id === contact.json().id));
+  assert.ok(
+    contacts
+      .json()
+      .contacts.find((item) => item.id === contact.json().id)
+      ?.attachments?.some((item) => item.object_key === "feedback/dev_integration/draft/example.png"),
+  );
   assert.ok(contacts.json().contacts.some((item) => item.id === legacyContact.json().id));
 
   const release = await app.inject({

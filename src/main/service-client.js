@@ -10,6 +10,7 @@ const { base64urlEncode, stableStringify } = require("./crypto-signing");
 
 const DEVICE_FILE = "device-state.json";
 const FETCH_TIMEOUT_MS = 15_000;
+const ATTACHMENT_UPLOAD_TIMEOUT_MS = 60_000;
 const BUILTIN_SERVICE_API_BASE_URL = "https://lily.lanrensoft.cn";
 
 function devicePath() {
@@ -366,6 +367,50 @@ async function submitContactRequest(payload) {
   });
 }
 
+async function requestFeedbackAttachmentUpload(payload) {
+  return serviceFetch("/api/contact-attachments/upload-token", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function uploadFeedbackAttachment(upload, attachment) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ATTACHMENT_UPLOAD_TIMEOUT_MS);
+  try {
+    const form = new FormData();
+    form.append("token", upload.token);
+    form.append("key", upload.key);
+    form.append("file", new Blob([attachment.data], { type: attachment.mimeType }), attachment.name);
+    const response = await fetch(upload.uploadUrl, {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, error: json?.error || "ATTACHMENT_UPLOAD_FAILED", status: response.status };
+    }
+    return {
+      ok: true,
+      attachment: {
+        key: upload.key,
+        url: upload.publicUrl,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        width: attachment.width || null,
+        height: attachment.height || null,
+        sha256: attachment.sha256 || null,
+      },
+    };
+  } catch (error) {
+    return { ok: false, error: "ATTACHMENT_UPLOAD_FAILED", detail: error?.message || String(error) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 module.exports = {
   getServiceSettings,
   getDeviceId,
@@ -383,4 +428,6 @@ module.exports = {
   latestRelease,
   testConnection,
   submitContactRequest,
+  requestFeedbackAttachmentUpload,
+  uploadFeedbackAttachment,
 };

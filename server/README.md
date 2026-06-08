@@ -39,6 +39,20 @@ ALLOW_UNSIGNED_LICENSES=false
 the server temporarily falls back to the license signing key. Production should
 separate these keys.
 
+For feedback screenshots, set Qiniu upload credentials on the server only:
+
+```env
+QINIU_ACCESS_KEY=...
+QINIU_SECRET_KEY=...
+QINIU_BUCKET=lanrensoft
+QINIU_PUBLIC_BASE_URL=https://qny.lanrensoft.cn
+QINIU_UPLOAD_URL=https://upload.qiniup.com
+```
+
+The desktop client requests short-lived upload tokens from the server, uploads
+images directly to Qiniu, and submits only attachment metadata with the feedback
+record. Do not package Qiniu credentials into the desktop app.
+
 ## Model Gateway
 
 The server supports two model delivery modes:

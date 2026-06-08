@@ -80,11 +80,7 @@ function usageTokens(entry) {
   const inputTokens =
     numberValue(entry.inputTokens) +
     numberValue(entry.input_tokens) +
-    numberValue(entry.prompt_tokens) +
-    numberValue(entry.cacheReadInputTokens) +
-    numberValue(entry.cache_read_input_tokens) +
-    numberValue(entry.cacheCreationInputTokens) +
-    numberValue(entry.cache_creation_input_tokens);
+    numberValue(entry.prompt_tokens);
   const outputTokens =
     numberValue(entry.outputTokens) +
     numberValue(entry.output_tokens) +

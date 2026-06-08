@@ -46,19 +46,35 @@ fs.writeFileSync(
 skillManager.bootstrapSkills();
 
 const mandatory = skillManager.MANDATORY_PLATFORM_SKILL_IDS;
-if (!mandatory.includes("lily-workbench-rules")) {
-  throw new Error("expected lily-workbench-rules in MANDATORY_PLATFORM_SKILL_IDS");
-}
-const disableMandatory = skillManager.setSkillEnabled("lily-workbench-rules", false);
-if (disableMandatory.ok) {
-  throw new Error("mandatory skill should not be disableable");
-}
-if (disableMandatory.error !== "MANDATORY_SKILL") {
-  throw new Error(`expected MANDATORY_SKILL, got ${disableMandatory.error}`);
+const expectedMandatory = [
+  "lily-workbench-rules",
+  "lily-context-rules",
+  "lily-task-execution-rules",
+];
+for (const skillId of expectedMandatory) {
+  if (!mandatory.includes(skillId)) {
+    throw new Error(`expected ${skillId} in MANDATORY_PLATFORM_SKILL_IDS`);
+  }
+  const disableMandatory = skillManager.setSkillEnabled(skillId, false);
+  if (disableMandatory.ok) {
+    throw new Error(`${skillId} should not be disableable`);
+  }
+  if (disableMandatory.error !== "MANDATORY_SKILL") {
+    throw new Error(`expected MANDATORY_SKILL for ${skillId}, got ${disableMandatory.error}`);
+  }
 }
 const sessionIds = skillManager.resolveSessionSkillIds({ enabledSkillIds: [] });
-if (!sessionIds.includes("lily-workbench-rules")) {
-  throw new Error("mandatory skill should merge into empty session selection");
+for (const skillId of expectedMandatory) {
+  if (!sessionIds.includes(skillId)) {
+    throw new Error(`${skillId} should merge into empty session selection`);
+  }
+}
+const globalGuide = fs.readFileSync(path.join(tmp, "lily-config", "AGENT.md"), "utf8");
+const productRulesIndex = globalGuide.indexOf("## 工作原则");
+const contextRulesIndex = globalGuide.indexOf("## 上下文理解");
+const taskRulesIndex = globalGuide.indexOf("## 任务执行");
+if (!(productRulesIndex > -1 && contextRulesIndex > productRulesIndex && taskRulesIndex > contextRulesIndex)) {
+  throw new Error("mandatory rule guides should be injected in priority order");
 }
 const bundledRegistry = skillRegistry.loadBundledRegistry();
 if (!bundledRegistry.skills.some((s) => s.id === "lily-engineering-rules")) {

@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
+import {
+  createFeedbackUploadToken,
+  normalizeFeedbackAttachmentInput,
+  normalizeSubmittedAttachment,
+} from "../../services/qiniu-upload.js";
 
 const contactRequestSchema = z.object({
   name: z.string().min(1).max(120),
@@ -10,27 +15,64 @@ const contactRequestSchema = z.object({
   subject: z.string().max(160).optional().nullable(),
   message: z.string().min(8).max(4000),
   source: z.string().max(80).optional().nullable(),
+  attachments: z.array(z.unknown()).max(5).optional(),
+});
+
+const attachmentUploadSchema = z.object({
+  draftId: z.string().max(120).optional().nullable(),
+  fileName: z.string().min(1).max(160),
+  mimeType: z.string().min(1).max(80),
+  sizeBytes: z.number().int().positive(),
 });
 
 async function createContactRequest(request, reply) {
   const input = contactRequestSchema.parse(request.body);
   const id = publicId("contact");
-  await db
-    .insertInto("contact_requests")
-    .values({
-      id,
-      name: input.name,
-      email: input.email,
-      company: input.company || null,
-      phone: input.phone || null,
-      subject: input.subject || null,
-      message: input.message,
-      source: input.source || null,
-      ip: request.ip || null,
-      user_agent: request.headers["user-agent"] || null,
-    })
-    .execute();
+  const attachments = (input.attachments || []).map(normalizeSubmittedAttachment).filter(Boolean);
+  await db.transaction().execute(async (trx) => {
+    await trx
+      .insertInto("contact_requests")
+      .values({
+        id,
+        name: input.name,
+        email: input.email,
+        company: input.company || null,
+        phone: input.phone || null,
+        subject: input.subject || null,
+        message: input.message,
+        source: input.source || null,
+        ip: request.ip || null,
+        user_agent: request.headers["user-agent"] || null,
+      })
+      .execute();
+    if (attachments.length) {
+      await trx
+        .insertInto("contact_request_attachments")
+        .values(attachments.map((attachment) => ({ ...attachment, contact_request_id: id })))
+        .execute();
+    }
+  });
   return reply.code(201).send({ ok: true, id });
+}
+
+async function createContactAttachmentUploadToken(request, reply) {
+  const input = attachmentUploadSchema.parse(request.body);
+  const normalized = normalizeFeedbackAttachmentInput(input);
+  if (!normalized.ok) return reply.code(400).send({ ok: false, code: normalized.code });
+  try {
+    return createFeedbackUploadToken({
+      deviceId: request.headers["x-lily-device-id"] || "anonymous",
+      draftId: input.draftId,
+      fileName: normalized.fileName,
+      mimeType: normalized.mimeType,
+      sizeBytes: normalized.sizeBytes,
+    });
+  } catch (error) {
+    if (error?.code === "QINIU_UPLOAD_NOT_CONFIGURED") {
+      return reply.code(503).send({ ok: false, code: "QINIU_UPLOAD_NOT_CONFIGURED" });
+    }
+    return reply.code(400).send({ ok: false, code: error?.code || "UPLOAD_TOKEN_FAILED" });
+  }
 }
 
 function compareVersions(a, b) {
@@ -59,6 +101,7 @@ function newestRelease(releases) {
 export async function publicCatalogRoutes(app) {
   app.post("/api/contact-requests", createContactRequest);
   app.post("/api/contact", createContactRequest);
+  app.post("/api/contact-attachments/upload-token", createContactAttachmentUploadToken);
 
   app.get("/api/releases/latest", async (request) => {
     const platform = String(request.query?.platform || "");

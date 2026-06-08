@@ -925,7 +925,7 @@ line(usageRunner, {
   },
 });
 await require("../src/main/usage-reporter.js").flush("sess_usage");
-if (reportedUsage[0]?.inputTokens !== 147 || reportedUsage[0]?.outputTokens !== 48) {
+if (reportedUsage[0]?.inputTokens !== 130 || reportedUsage[0]?.outputTokens !== 48) {
   throw new Error(`result modelUsage should be reported as tokens: ${JSON.stringify(reportedUsage[0])}`);
 }
 
@@ -950,7 +950,7 @@ line(streamUsageRunner, {
   result: "done",
 });
 await require("../src/main/usage-reporter.js").flush("sess_stream_usage");
-const streamReport = reportedUsage.find((item) => item.date && item.inputTokens === 237);
+const streamReport = reportedUsage.find((item) => item.date && item.inputTokens === 222);
 if (!streamReport || streamReport.outputTokens !== 33) {
   throw new Error(`stream message_delta usage should be reported once: ${JSON.stringify(reportedUsage)}`);
 }

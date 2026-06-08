@@ -331,6 +331,47 @@ if (!runtime.committedMessages.some((message) => message.content === "local ques
   throw new Error("running session history sync must preserve not-yet-persisted local messages");
 }
 
+store.applyRuntimeBatch({
+  sessionId: "s4",
+  batchSeq: 1,
+  events: [
+    {
+      id: "s4-user",
+      type: "user.committed",
+      sessionId: "s4",
+      turnId: "t4",
+      seq: 1,
+      ts: 4000,
+      source: "test",
+      payload: { text: "question committed before session switch" },
+    },
+    {
+      id: "s4-start",
+      type: "turn.started",
+      sessionId: "s4",
+      turnId: "t4",
+      seq: 2,
+      ts: 4001,
+      source: "test",
+      payload: {},
+    },
+  ],
+});
+store.syncCommittedMessages("s4", [
+  {
+    id: "persisted-user-id",
+    role: "user",
+    turnId: "t4",
+    content: "question committed before session switch",
+    timestamp: "2026-06-01T00:00:02.000Z",
+  },
+]);
+runtime = store.getRuntimeSession("s4");
+const s4UserMessages = runtime.committedMessages.filter((message) => message.role === "user" && message.turnId === "t4");
+if (s4UserMessages.length !== 1) {
+  throw new Error(`running history sync must dedupe persisted/live user by turnId, got ${s4UserMessages.length}`);
+}
+
 store.applyRuntimeEvent({
   id: "s3-done",
   type: "turn.completed",

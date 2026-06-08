@@ -38,7 +38,46 @@ import {
 } from "./turn-view-status.js";
 
 const narrativeRenderState = new Map();
+const questionDrafts = new Map();
 const LIVE_STATUS_STYLE = "15px";
+
+function questionDraftKey(sessionId, requestId) {
+  return `${sessionId || ""}:${requestId || ""}`;
+}
+
+function getQuestionDraft(sessionId, requestId) {
+  const key = questionDraftKey(sessionId, requestId);
+  if (!questionDrafts.has(key)) {
+    questionDrafts.set(key, {
+      selections: new Map(),
+      text: new Map(),
+    });
+  }
+  return questionDrafts.get(key);
+}
+
+function pruneQuestionDrafts(sessionId, activeRequestIds) {
+  const prefix = `${sessionId || ""}:`;
+  for (const key of questionDrafts.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    const requestId = key.slice(prefix.length);
+    if (!activeRequestIds.has(requestId)) questionDrafts.delete(key);
+  }
+}
+
+function setQuestionSelection(draft, questionId, value, { multiSelect }) {
+  const current = new Set(draft.selections.get(questionId) || []);
+  if (multiSelect) {
+    if (current.has(value)) current.delete(value);
+    else current.add(value);
+  } else {
+    current.clear();
+    current.add(value);
+  }
+  if (current.size) draft.selections.set(questionId, current);
+  else draft.selections.delete(questionId);
+  return current;
+}
 
 function thinkingSummaryLabel(text, live = false) {
   return buildThinkingSummaryLabel(text, live, t);
@@ -707,6 +746,10 @@ function renderPrompts(root, sessionId, liveTurn) {
     ...liveTurn.questions.values(),
     ...liveTurn.hooks.values(),
   ];
+  pruneQuestionDrafts(
+    sessionId,
+    new Set(entries.filter((item) => item.questions).map((item) => String(item.requestId || ""))),
+  );
   root.hidden = entries.length === 0;
   for (const item of entries) {
     if (item.questions) root.appendChild(questionCard(sessionId, item));
@@ -746,6 +789,7 @@ function hookCard(sessionId, item) {
 
 function questionCard(sessionId, item) {
   const card = promptCard(t("turn.question.cardTitle"), "");
+  const draft = getQuestionDraft(sessionId, item.requestId);
   const questions = item.questions || [];
   const requiresExplicitSubmit =
     questions.length > 1 || questions.some((question) => Boolean(question.multiSelect));
@@ -764,25 +808,33 @@ function questionCard(sessionId, item) {
       const optionsEl = document.createElement("div");
       optionsEl.className = "assistant-question-options";
       for (const option of options) {
+        const questionId = question.id || question.question || "answer";
+        const selectedValues = draft.selections.get(questionId) || new Set();
+        const selected = selectedValues.has(option.label);
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "assistant-question-option";
+        btn.className = `assistant-question-option${selected ? " is-selected" : ""}`;
         btn.textContent = option.label;
-        btn.dataset.questionId = question.id || question.question || "answer";
+        btn.dataset.questionId = questionId;
         btn.dataset.value = option.label;
-        btn.setAttribute("aria-pressed", "false");
+        btn.setAttribute("aria-pressed", selected ? "true" : "false");
         if (option.description) btn.title = option.description;
         if (requiresExplicitSubmit) {
           btn.addEventListener("click", () => {
-            if (!question.multiSelect) {
+            const nextSelected = setQuestionSelection(draft, questionId, option.label, {
+              multiSelect: Boolean(question.multiSelect),
+            });
+            if (question.multiSelect) {
+              const isSelected = nextSelected.has(option.label);
+              btn.classList.toggle("is-selected", isSelected);
+              btn.setAttribute("aria-pressed", isSelected ? "true" : "false");
+            } else {
               for (const sibling of optionsEl.querySelectorAll(".assistant-question-option")) {
-                sibling.classList.remove("is-selected");
-                sibling.setAttribute("aria-pressed", "false");
+                const isSelected = sibling.dataset.value === option.label;
+                sibling.classList.toggle("is-selected", isSelected);
+                sibling.setAttribute("aria-pressed", isSelected ? "true" : "false");
               }
             }
-            const selected = !btn.classList.contains("is-selected");
-            btn.classList.toggle("is-selected", selected);
-            btn.setAttribute("aria-pressed", selected ? "true" : "false");
           });
         } else {
           btn.addEventListener("click", async () => {
@@ -809,6 +861,10 @@ function questionCard(sessionId, item) {
       input.rows = 2;
       input.placeholder = t("question.otherPlaceholder");
       input.dataset.questionId = question.id || question.question || "answer";
+      input.value = draft.text.get(input.dataset.questionId) || "";
+      input.addEventListener("input", () => {
+        draft.text.set(input.dataset.questionId, input.value);
+      });
       block.appendChild(input);
     }
     card.appendChild(block);
@@ -819,31 +875,28 @@ function questionCard(sessionId, item) {
       const answers = {};
       for (const question of questions) {
         const questionId = question.id || question.question || "answer";
-        const selected = Array.from(card.querySelectorAll(`.assistant-question-option.is-selected[data-question-id="${cssEscape(questionId)}"]`))
-          .map((btn) => btn.dataset.value)
-          .filter(Boolean);
+        const selected = Array.from(draft.selections.get(questionId) || []);
         if (selected.length) {
           answers[questionId] = question.multiSelect ? selected : selected[0];
         }
       }
       for (const input of card.querySelectorAll(".assistant-question-input")) {
-        answers[input.dataset.questionId] = input.value;
+        const value = input.value;
+        draft.text.set(input.dataset.questionId, value);
+        answers[input.dataset.questionId] = value;
       }
-      return window.assistantClient.respondUserQuestion(
+      const result = await window.assistantClient.respondUserQuestion(
         sessionId,
         item.requestId,
         answers,
         Object.values(answers).flat().filter(Boolean).join("\n"),
       );
+      if (!result?.ok) showToast(result?.detail || result?.error || t("common.actionFailed"), "warning");
+      return result;
     }));
     card.appendChild(actions);
   }
   return card;
-}
-
-function cssEscape(value) {
-  if (globalThis.CSS?.escape) return globalThis.CSS.escape(String(value));
-  return String(value).replace(/["\\]/g, "\\$&");
 }
 
 function promptCard(title, detail) {

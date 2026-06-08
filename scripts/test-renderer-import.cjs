@@ -206,6 +206,13 @@ app.whenReady().then(async () => {
         if (optionButtons.length !== 2) throw new Error("multi-select options did not render");
         optionButtons[0].click();
         optionButtons[1].click();
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "session_multiselect_question_regression" });
+        const selectedAfterRerender = Array.from(article.querySelectorAll(".assistant-question-option.is-selected"))
+          .map((btn) => btn.textContent)
+          .join(",");
+        if (selectedAfterRerender !== "Fast,Careful") {
+          throw new Error("question selections should survive live turn rerender: " + selectedAfterRerender);
+        }
         await new Promise((resolve) => setTimeout(resolve, 30));
         const submit = article.querySelector(".assistant-prompt-actions .assistant-action-btn");
         if (!submit) throw new Error("multi-select question should render an explicit submit action");

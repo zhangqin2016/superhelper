@@ -19,6 +19,7 @@ const DEFAULT_DOMAIN = "https://qny.lanrensoft.cn";
 const DEFAULT_PREFIX = "app/updates";
 const DEFAULT_AUTO_PREFIX = "app/auto-updates";
 const DEFAULT_KEY = "release-keys/license-private-key.pem";
+const DEFAULT_SERVER_API = "https://lily.lanrensoft.cn";
 
 function usage() {
   console.error(`usage:
@@ -31,6 +32,7 @@ defaults:
   --prefix ${DEFAULT_PREFIX}
   --auto-prefix ${DEFAULT_AUTO_PREFIX}
   --key ${DEFAULT_KEY}
+  --server-api ${DEFAULT_SERVER_API}
 
 examples:
   npm run release:one -- --bump patch --upload --notes "修复会话卡住问题"
@@ -46,7 +48,7 @@ function args() {
     const item = argv[i];
     if (!item.startsWith("--")) usage();
     const key = item.slice(2);
-    if (["upload", "dry-run", "force", "skip-build"].includes(key)) {
+    if (["upload", "dry-run", "force", "skip-build", "skip-server-publish"].includes(key)) {
       out[key] = true;
       continue;
     }
@@ -118,6 +120,19 @@ function run(command, argsList, options = {}) {
 function shellQuote(value) {
   const s = String(value);
   return /^[A-Za-z0-9_./:=@-]+$/.test(s) ? s : JSON.stringify(s);
+}
+
+function publicArtifactUrl({ domain, prefix, platform, version, file }) {
+  const base = String(domain || "").replace(/\/+$/g, "");
+  const normalizedPrefix = String(prefix || "").replace(/^\/+|\/+$/g, "");
+  return `${base}/${normalizedPrefix}/${platform}/${version}/${path.basename(file)}`;
+}
+
+function hasServerReleaseAuth() {
+  return Boolean(
+    process.env.RELEASE_ADMIN_TOKEN ||
+      (process.env.RELEASE_ADMIN_EMAIL && process.env.RELEASE_ADMIN_PASSWORD),
+  );
 }
 
 function ensureFile(filePath, label) {
@@ -269,10 +284,14 @@ const prefix = options.prefix || DEFAULT_PREFIX;
 const autoPrefix = options["auto-prefix"] || DEFAULT_AUTO_PREFIX;
 const key = options.key || DEFAULT_KEY;
 const notes = options.notes || "";
+const publishServerRelease = Boolean(options.upload && !options["dry-run"] && !options["skip-server-publish"]);
 
 ensureFile(key, "private key");
 if (!fs.existsSync(path.join(ROOT, "resources", "license-public-key.pem"))) {
   fail("resources/license-public-key.pem not found. Run `npm run release:admin -- keygen --out release-keys` and copy the public key first.");
+}
+if (publishServerRelease && !hasServerReleaseAuth()) {
+  fail("server release publish requires RELEASE_ADMIN_TOKEN or RELEASE_ADMIN_EMAIL + RELEASE_ADMIN_PASSWORD. Use --skip-server-publish only for static-only uploads.");
 }
 
 console.log(`[release-one] version ${currentVersion} -> ${nextVersion}`);
@@ -288,7 +307,7 @@ try {
   }
 
   const artifacts = artifactCandidates(target, pkg.build?.productName || pkg.name, nextVersion)
-    .map(([platform, file]) => `${platform}=${ensureFile(file, `artifact ${platform}`)}`);
+    .map(([platform, file]) => [platform, ensureFile(file, `artifact ${platform}`)]);
 
   const publishArgs = [
     "scripts/release-admin.mjs",
@@ -306,8 +325,8 @@ try {
     "--notes",
     notes,
   ];
-  for (const artifact of artifacts) {
-    publishArgs.push("--artifact", artifact);
+  for (const [platform, file] of artifacts) {
+    publishArgs.push("--artifact", `${platform}=${file}`);
   }
   if (options.force) publishArgs.push("--force");
   if (options.upload) publishArgs.push("--upload");
@@ -354,6 +373,27 @@ try {
         console.log(`  upload skipped: ${item.file}`);
       }
     }
+  }
+
+  if (publishServerRelease) {
+    const serverArgs = [
+      "scripts/publish-release-server.mjs",
+      "--api",
+      options["server-api"] || DEFAULT_SERVER_API,
+      "--version",
+      nextVersion,
+    ];
+    for (const [platform, file] of artifacts) {
+      serverArgs.push(
+        "--artifact",
+        `${platform}=${file}=${publicArtifactUrl({ domain, prefix, platform, version: nextVersion, file })}`,
+      );
+    }
+    if (notes) serverArgs.push("--notes", notes);
+    if (options.force) serverArgs.push("--force");
+    run(process.execPath, serverArgs);
+  } else if (options.upload && !options["dry-run"]) {
+    console.log("[release-one] server release publish skipped by --skip-server-publish.");
   }
 
   console.log(`[release-one] done ${nextVersion}`);
