@@ -9,16 +9,19 @@
       (() => {
         try {
           const mode = localStorage.getItem("lily.themeMode") || "system";
+          const textSize = localStorage.getItem("lily.textSizeMode") === "large" ? "large" : "standard";
           const wantsLight =
             mode === "light" ||
             (mode === "system" && window.matchMedia?.("(prefers-color-scheme: light)")?.matches);
           document.documentElement.dataset.themeMode = mode;
           document.documentElement.dataset.theme = wantsLight ? "light" : "dark";
+          document.documentElement.dataset.textSize = textSize;
           document.documentElement.classList.toggle("light", wantsLight);
           document.documentElement.classList.toggle("dark", !wantsLight);
         } catch {
           document.documentElement.dataset.themeMode = "system";
           document.documentElement.dataset.theme = "dark";
+          document.documentElement.dataset.textSize = "standard";
           document.documentElement.classList.add("dark");
         }
       })();
@@ -234,6 +237,14 @@
                   <option value="system" data-i18n="settings.theme.system">跟随系统</option>
                   <option value="dark" data-i18n="settings.theme.dark">深色</option>
                   <option value="light" data-i18n="settings.theme.light">浅色</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label class="settings-field-label" for="textSizeModeSelect" data-i18n="settings.textSize">字体大小</label>
+                <p class="settings-section-desc" data-i18n="settings.textSizeDesc">切换为更大的界面字体，适合需要更清晰阅读的场景。</p>
+                <select id="textSizeModeSelect" class="settings-select" data-i18n-aria-label="settings.textSize" aria-label="字体大小">
+                  <option value="standard" data-i18n="settings.textSize.standard">标准</option>
+                  <option value="large" data-i18n="settings.textSize.large">大号字体</option>
                 </select>
               </div>
               <div class="settings-field settings-field--divider">

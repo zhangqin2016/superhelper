@@ -10,7 +10,9 @@ import { showToast } from "./toast.js";
 import { t } from "../i18n/index.js";
 
 const THEME_STORAGE_KEY = "lily.themeMode";
+const TEXT_SIZE_STORAGE_KEY = "lily.textSizeMode";
 const THEME_MODES = new Set(["system", "dark", "light"]);
+const TEXT_SIZE_MODES = new Set(["standard", "large"]);
 
 let mediaQuery = null;
 
@@ -18,11 +20,23 @@ function normalizeThemeMode(value) {
   return THEME_MODES.has(value) ? value : "system";
 }
 
+function normalizeTextSizeMode(value) {
+  return TEXT_SIZE_MODES.has(value) ? value : "standard";
+}
+
 function getThemeMode() {
   try {
     return normalizeThemeMode(localStorage.getItem(THEME_STORAGE_KEY));
   } catch {
     return "system";
+  }
+}
+
+function getTextSizeMode() {
+  try {
+    return normalizeTextSizeMode(localStorage.getItem(TEXT_SIZE_STORAGE_KEY));
+  } catch {
+    return "standard";
   }
 }
 
@@ -41,6 +55,10 @@ function applyThemeMode(mode) {
   root.classList.toggle("dark", resolved === "dark");
 }
 
+function applyTextSizeMode(mode) {
+  document.documentElement.dataset.textSize = normalizeTextSizeMode(mode);
+}
+
 function saveThemeMode(mode) {
   const normalized = normalizeThemeMode(mode);
   try {
@@ -52,11 +70,27 @@ function saveThemeMode(mode) {
   return normalized;
 }
 
+function saveTextSizeMode(mode) {
+  const normalized = normalizeTextSizeMode(mode);
+  try {
+    localStorage.setItem(TEXT_SIZE_STORAGE_KEY, normalized);
+  } catch {
+    // Text size still applies for this runtime even if persistence is unavailable.
+  }
+  applyTextSizeMode(normalized);
+  return normalized;
+}
+
 export function refreshThemeSelect() {
   const select = $("themeModeSelect");
   const mode = getThemeMode();
   applyThemeMode(mode);
   if (select) select.value = mode;
+
+  const textSizeSelect = $("textSizeModeSelect");
+  const textSize = getTextSizeMode();
+  applyTextSizeMode(textSize);
+  if (textSizeSelect) textSizeSelect.value = textSize;
 }
 
 export function initThemeSettings() {
@@ -66,6 +100,12 @@ export function initThemeSettings() {
     const mode = saveThemeMode(event.target.value);
     event.target.value = mode;
     showToast(t("toast.themeSwitched"), "success");
+  });
+
+  $("textSizeModeSelect")?.addEventListener("change", (event) => {
+    const mode = saveTextSizeMode(event.target.value);
+    event.target.value = mode;
+    showToast(t("toast.textSizeSwitched"), "success");
   });
 
   mediaQuery = window.matchMedia?.("(prefers-color-scheme: light)") || null;

@@ -86,6 +86,10 @@
   "settings.theme.dark": "داكن",
   "settings.theme.light": "فاتح",
   "settings.themeDesc": "يبدّل مظهر مساحة العمل بالكامل، بما في ذلك المحادثة والإعدادات والنوافذ و Markdown.",
+  "settings.textSize": "حجم الخط",
+  "settings.textSize.standard": "قياسي",
+  "settings.textSize.large": "خط كبير",
+  "settings.textSizeDesc": "استخدم خطاً أكبر عندما تحتاج إلى قراءة أوضح للواجهة.",
   "settings.model": "النموذج",
   "settings.modelDesc": "اختر إعداداً أو أضف نموذجاً مخصصاً. اتصال API يطابق ANTHROPIC_BASE_URL و ANTHROPIC_AUTH_TOKEN في الإعداد الافتراضي.",
   "settings.modelSelect": "اختر النموذج",
@@ -275,6 +279,7 @@
   "toast.skillsInstalled": "تم التثبيت: {name}",
   "toast.localeSwitched": "تم تحديث لغة الواجهة",
   "toast.themeSwitched": "تم تحديث المظهر",
+  "toast.textSizeSwitched": "تم تحديث حجم الخط",
 
   "send.error.NO_CLI": "محرك المساعد غير جاهز. أغلق التطبيق وأعد فتحه.",
   "send.error.NO_PROJECT": "مجلد هذه المحادثة غير موجود. اختر مجلداً أو أنشئ محادثة جديدة.",

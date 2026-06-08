@@ -232,6 +232,13 @@
   --scrollbar-thumb: #c0cad8;
 }
 
+:root[data-text-size="large"] {
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-md: 18px;
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -242,3 +249,47 @@ html, body {
 }
 
 button, textarea, input { font: inherit; }
+
+:root[data-text-size="large"] button,
+:root[data-text-size="large"] input,
+:root[data-text-size="large"] select,
+:root[data-text-size="large"] textarea {
+  font-size: var(--text-base);
+}
+
+:root[data-text-size="large"] .left-panel,
+:root[data-text-size="large"] .topbar,
+:root[data-text-size="large"] .composer,
+:root[data-text-size="large"] .settings-panel,
+:root[data-text-size="large"] .modal,
+:root[data-text-size="large"] .runtime-messages,
+:root[data-text-size="large"] .msg-bubble {
+  font-size: var(--text-base);
+}
+
+:root[data-text-size="large"] .assistant-turn-status,
+:root[data-text-size="large"] .assistant-turn-narrative,
+:root[data-text-size="large"] .assistant-turn-narrative-text,
+:root[data-text-size="large"] .assistant-turn-final,
+:root[data-text-size="large"] .runtime-user-body,
+:root[data-text-size="large"] .msg-content,
+:root[data-text-size="large"] .msg-bubble,
+:root[data-text-size="large"] .message-input {
+  font-size: var(--text-base);
+  line-height: 1.7;
+}
+
+:root[data-text-size="large"] .assistant-turn-narrative.markdown-body table,
+:root[data-text-size="large"] .assistant-turn-final.markdown-body table,
+:root[data-text-size="large"] .markdown-body {
+  font-size: var(--text-base);
+}
+
+:root[data-text-size="large"] .assistant-tool-command,
+:root[data-text-size="large"] .assistant-tool-detail,
+:root[data-text-size="large"] .assistant-process-thinking,
+:root[data-text-size="large"] .assistant-tool-content.markdown-body,
+:root[data-text-size="large"] .assistant-tool-diff,
+:root[data-text-size="large"] .runtime-message-file {
+  font-size: var(--text-sm);
+}

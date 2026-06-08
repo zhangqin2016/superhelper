@@ -22,6 +22,10 @@ const baseCss = read(baseCssPath);
 
 for (const token of [
   "--color-scheme",
+  "--text-xs",
+  "--text-sm",
+  "--text-base",
+  "--text-md",
   "--bg-surface-hover",
   "--bg-backdrop",
   "--text-inverse",
@@ -39,6 +43,7 @@ for (const token of [
 }
 
 assert(baseCss.includes(':root[data-theme="light"]'), "base.css must define a light theme block");
+assert(baseCss.includes(':root[data-text-size="large"]'), "base.css must define a large text-size block");
 
 const selfReferencePattern = /^\s*(--[a-z0-9-]+):\s*var\(\1\)/gim;
 const selfReferences = [...baseCss.matchAll(selfReferencePattern)].map((match) => match[1]);
@@ -67,10 +72,13 @@ assert(
 
 const indexHtml = read(indexHtmlPath);
 assert(indexHtml.includes("lily.themeMode"), "index.html must apply persisted theme before CSS loads");
+assert(indexHtml.includes("lily.textSizeMode"), "index.html must apply persisted text size before CSS loads");
 assert(indexHtml.includes("themeModeSelect"), "settings UI must expose the theme selector");
+assert(indexHtml.includes("textSizeModeSelect"), "settings UI must expose the text-size selector");
 
 const themeModule = read(themeModulePath);
 assert(themeModule.includes("matchMedia"), "theme-settings.js must support system theme changes");
 assert(themeModule.includes("document.documentElement"), "theme-settings.js must apply theme on documentElement");
+assert(themeModule.includes("dataset.textSize"), "theme-settings.js must apply text size on documentElement");
 
 console.log("theme token contract ok");
