@@ -33,7 +33,7 @@ const MAX_TOTAL_CHARS = 200_000;
 function truncateText(text, limit = MAX_CHARS_PER_FILE) {
   const value = String(text || "");
   if (value.length <= limit) return value;
-  return `${value.slice(0, limit)}\n\n[内容已截断，原文共 ${value.length} 字符]`;
+  return `${value.slice(0, limit)}\n\n[Content truncated, original length: ${value.length} characters]`;
 }
 
 function decodeXmlEntities(text) {
@@ -189,7 +189,7 @@ async function extractDocuments(files) {
       const text = truncateText(result.text, Math.min(MAX_CHARS_PER_FILE, room));
       totalChars += text.length;
       extractedPaths.push(result.path);
-      sections.push(`[文档内容: "${result.label}"]\n${text}`);
+      sections.push(`[Document: "${result.label}"]\n${text}`);
     } catch (err) {
       failed += 1;
       console.warn(
@@ -203,7 +203,7 @@ async function extractDocuments(files) {
     return {
       ok: false,
       reason: failed === docFiles.length ? "ALL_FAILED" : "NO_CONTENT",
-      detail: "文档内容暂时无法读取，请稍后再试。",
+      detail: "Unable to read document content at this time. Please try again later.",
     };
   }
 

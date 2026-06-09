@@ -64,4 +64,8 @@ echo "[dist-win] 确保 sharp win32-x64 原生包已安装"
 npm install --os=win32 --cpu=x64 --include=optional
 
 # 必须打 x64：在 Apple Silicon 上省略 --x64 会产出 win-arm64，普通 Intel/AMD PC 无法运行。
+# electron-builder 对 NSIS 的 7z 包即使 compression=normal 仍会用 -mx=9。
+# Windows runtime 较大时最高压缩容易在 macOS/ARM 上被系统终止；显式降到 5 保持体积可控。
+export ELECTRON_BUILDER_COMPRESSION_LEVEL="${ELECTRON_BUILDER_COMPRESSION_LEVEL:-5}"
+
 exec npx electron-builder --win --x64 "$@"

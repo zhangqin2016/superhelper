@@ -7,33 +7,33 @@ const { userDataPath } = require("./config");
 const PERMISSION_MODES = [
   {
     id: "auto",
-    label: "智能确认",
-    description: "常规操作自动处理，拿不准或风险较高时再请你确认。",
+    label: "Auto (Smart)",
+    description: "Routine operations are handled automatically; confirmation is only requested for uncertain or high-risk actions.",
   },
   {
     id: "default",
-    label: "每次确认",
-    description: "执行可能影响文件或电脑的操作前，都会先问你。",
+    label: "Always Ask",
+    description: "Confirmation is requested before any operation that may affect files or system settings.",
   },
   {
     id: "acceptEdits",
-    label: "自动改文件",
-    description: "修改文件不用每次问你，其他重要操作仍会确认。",
+    label: "Auto-Edit Files",
+    description: "File modifications are allowed without per-edit confirmation; other important operations still require approval.",
   },
   {
     id: "plan",
-    label: "先写计划",
-    description: "先让助手说明准备怎么做，你同意后再开始执行。",
+    label: "Plan First",
+    description: "The assistant explains its approach first and only begins execution after your approval.",
   },
   {
     id: "dontAsk",
-    label: "少打扰",
-    description: "不弹出确认；不确定或有风险的操作会直接跳过。",
+    label: "Low Interruption",
+    description: "No confirmation prompts; uncertain or risky operations are skipped silently.",
   },
   {
     id: "bypassPermissions",
-    label: "完全放开",
-    description: "不再确认，直接读写文件和执行命令。只建议在可信项目里使用。",
+    label: "Full Access",
+    description: "No confirmations — direct file read/write and command execution. Recommended only for trusted projects.",
   },
 ];
 

@@ -4,7 +4,7 @@
 
 const SUPPORTED = ["zh-CN", "en", "ar"];
 const RTL = new Set(["ar"]);
-const FALLBACK = "zh-CN";
+const FALLBACK = "en";
 
 /** @type {string} */
 let currentLocale = FALLBACK;

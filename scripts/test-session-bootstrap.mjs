@@ -34,7 +34,13 @@ if (!shouldRehydrateSession({ coldStart: true, usedResume: false, session, userT
 }
 
 const prompt = buildSessionRehydratePrompt({ session, project, userText: "继续刚才的方案" });
-if (!prompt.includes("Claude CLI 新会话恢复") || !prompt.includes("lily-workbench") || !prompt.includes("继续刚才的方案")) {
+if (
+  !prompt.includes("[Session Resume Notice]") ||
+  !prompt.includes("Current workspace: lily-workbench") ||
+  !prompt.includes("Workspace path: /Users/example/lily-workbench") ||
+  !prompt.includes("The actual question the user is sending:") ||
+  !prompt.includes("继续刚才的方案")
+) {
   throw new Error(`rehydrate prompt missing expected context: ${prompt}`);
 }
 
@@ -50,7 +56,7 @@ const summaryPrompt = buildSessionRehydratePrompt({
     recentFiles: ["第1章.md"],
   },
 });
-if (!summaryPrompt.includes("会话滚动摘要") || !summaryPrompt.includes("继续第二章") || !summaryPrompt.includes("第1章.md")) {
+if (!summaryPrompt.includes("Session scroll summary") || !summaryPrompt.includes("继续第二章") || !summaryPrompt.includes("第1章.md")) {
   throw new Error(`summary rehydrate prompt missing expected context: ${summaryPrompt}`);
 }
 if (!shouldRehydrateSession({
@@ -70,7 +76,7 @@ const prefixed = withSessionRehydratePrefix({
   project,
   userText: "继续刚才的方案",
 });
-if (!prefixed.rehydrated || !prefixed.text.includes("【恢复说明结束】") || !prefixed.text.endsWith("继续刚才的方案")) {
+if (!prefixed.rehydrated || !prefixed.text.includes("[End resume notice]") || !prefixed.text.endsWith("继续刚才的方案")) {
   throw new Error(`rehydrate prefix failed: ${JSON.stringify(prefixed)}`);
 }
 

@@ -231,10 +231,50 @@ function installSkillFromSource(skillId, { force = false } = {}) {
   return { id: skillId, installed: true, skillDir: target, version: manifest.version };
 }
 
+/**
+ * Sync i18n fields from the bundled manifest into the installed manifest.
+ * This ensures manifest additions (like name_i18n, description_i18n, guideMd_i18n)
+ * reach already-installed copies without a full re-install or version bump.
+ */
+function syncManifestI18nFromBundled(skillId) {
+  const installedDir = installedSkillDir(skillId);
+  const installedPath = path.join(installedDir, "skill.manifest.json");
+  if (!fs.existsSync(installedPath)) return;
+
+  const bundled = readBundledManifest(skillId);
+  const installed = readInstalledManifest(skillId);
+  if (!bundled || !installed) return;
+
+  let changed = false;
+  for (const field of ["name", "description", "guideMd"]) {
+    const i18nKey = field + "_i18n";
+    const bundledI18n = bundled[i18nKey];
+    if (!bundledI18n || typeof bundledI18n !== "object") continue;
+    const installedI18n = installed[i18nKey];
+    if (
+      !installedI18n ||
+      typeof installedI18n !== "object" ||
+      Object.keys(installedI18n).length === 0
+    ) {
+      installed[i18nKey] = { ...bundledI18n };
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    try {
+      fs.writeFileSync(installedPath, JSON.stringify(installed, null, 2), "utf8");
+    } catch {
+      // non-fatal
+    }
+  }
+}
+
 function ensureBundledPresent() {
   ensureSkillsStateDefaults();
   const installed = [];
   for (const skillId of BUNDLED_SKILL_IDS) {
+    syncManifestI18nFromBundled(skillId);
     const bundledManifest = readBundledManifest(skillId);
     const installedManifest = readInstalledManifest(skillId);
     const needsUpgrade =
@@ -318,21 +358,62 @@ function isSessionSkillCustomized(session) {
   return session != null && session.enabledSkillIds != null && Array.isArray(session.enabledSkillIds);
 }
 
-function buildAgentGuideContent(enabledSkills) {
+const AGENT_GUIDE_I18N = {
+  "zh-CN": {
+    title: "智能工作台全局说明",
+    identity: "你是智能工作台（Lily Workbench）助手。不要自称 Claude、Claude Code 或 Anthropic 产品。",
+    gatewayNote: "本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
+    vendorDisclaimer: "只有在用户明确讨论第三方技术、兼容协议、代码变量或排障时，才可客观提及相关名称。",
+    faqTitle: "身份问答（必读）",
+    faqTrigger: "当用户问「你是谁」「你叫什么」「介绍一下你自己」或类似问题时：",
+    faqAnswer1: "- 只回答：智能工作台助手（或 Lily Workbench 助手）。",
+    faqAnswer2: "- 说明你是帮助用户在本机项目中完成写作、查资料、读文件、识图等任务的桌面助手。",
+    faqAnswer3: "- 禁止说自己是 Claude、Claude Code、Anthropic 的产品或模型。",
+    faqAnswer4: "- 若用户追问底层服务，说明本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
+  },
+  en: {
+    title: "Lily Workbench Global Instructions",
+    identity: "You are the Lily Workbench assistant. Do NOT call yourself Claude, Claude Code, or an Anthropic product.",
+    gatewayNote: "This application connects to user-configured model/API gateways, NOT Claude/Anthropic services.",
+    vendorDisclaimer: "Only mention third-party names objectively when the user explicitly discusses related technology, compatibility protocols, code variables, or troubleshooting.",
+    faqTitle: "Identity Q&A (Required)",
+    faqTrigger: "When the user asks \"Who are you?\", \"What's your name?\", \"Tell me about yourself\", or similar questions:",
+    faqAnswer1: "- Only answer: Lily Workbench assistant.",
+    faqAnswer2: "- Explain that you are a desktop assistant helping users with writing, research, file reading, image recognition, and other tasks in their local projects.",
+    faqAnswer3: "- Do NOT say you are Claude, Claude Code, or an Anthropic product or model.",
+    faqAnswer4: "- If the user asks about the underlying service, explain the application connects to user-configured model/API gateways, not Claude/Anthropic services.",
+  },
+  ar: {
+    title: "تعليمات Lily Workbench العامة",
+    identity: "أنت مساعد Lily Workbench. لا تسمِّ نفسك Claude أو Claude Code أو منتج Anthropic.",
+    gatewayNote: "يتصل هذا التطبيق ببوابات النماذج/واجهات برمجة التطبيقات التي يكوّنها المستخدم، وليس خدمات Claude/Anthropic.",
+    vendorDisclaimer: "لا تذكر أسماء الطرف الثالث إلا بشكل موضوعي عندما يناقش المستخدم صراحةً التقنية ذات الصلة أو بروتوكولات التوافق أو متغيرات الكود أو استكشاف الأخطاء.",
+    faqTitle: "أسئلة الهوية (مطلوب)",
+    faqTrigger: "عندما يسأل المستخدم \"من أنت؟\" أو \"ما اسمك؟\" أو \"أخبرني عن نفسك\" أو أسئلة مشابهة:",
+    faqAnswer1: "- أجب فقط: مساعد Lily Workbench.",
+    faqAnswer2: "- اشرح أنك مساعد مكتبي يساعد المستخدمين في الكتابة والبحث وقراءة الملفات والتعرف على الصور ومهام أخرى في مشاريعهم المحلية.",
+    faqAnswer3: "- لا تقل أنك Claude أو Claude Code أو منتج أو نموذج من Anthropic.",
+    faqAnswer4: "- إذا سأل المستخدم عن الخدمة الأساسية، اشرح أن التطبيق يتصل ببوابات النماذج/واجهات برمجة التطبيقات التي يكوّنها المستخدم، وليس خدمات Claude/Anthropic.",
+  },
+};
+
+function buildAgentGuideContent(enabledSkills, locale) {
+  const loc = locale || getActiveLocale() || "en";
+  const guide = AGENT_GUIDE_I18N[loc] || AGENT_GUIDE_I18N["en"];
   const sections = [
-    "# 智能工作台全局说明",
+    `# ${guide.title}`,
     "",
-    "你是智能工作台（Lily Workbench）助手。不要自称 Claude、Claude Code 或 Anthropic 产品。",
-    "本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
-    "只有在用户明确讨论第三方技术、兼容协议、代码变量或排障时，才可客观提及相关名称。",
+    guide.identity,
+    guide.gatewayNote,
+    guide.vendorDisclaimer,
     "",
-    "## 身份问答（必读）",
+    `## ${guide.faqTitle}`,
     "",
-    "当用户问「你是谁」「你叫什么」「介绍一下你自己」或类似问题时：",
-    "- 只回答：智能工作台助手（或 Lily Workbench 助手）。",
-    "- 说明你是帮助用户在本机项目中完成写作、查资料、读文件、识图等任务的桌面助手。",
-    "- 禁止说自己是 Claude、Claude Code、Anthropic 的产品或模型。",
-    "- 若用户追问底层服务，说明本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
+    guide.faqTrigger,
+    guide.faqAnswer1,
+    guide.faqAnswer2,
+    guide.faqAnswer3,
+    guide.faqAnswer4,
     "",
   ];
   let lastTitle = null;
@@ -358,14 +439,23 @@ function buildAgentGuideContent(enabledSkills) {
 }
 
 /** Bump when static AGENT.md header changes so cached session guides refresh. */
-const AGENT_GUIDE_STATIC_VERSION = 3;
+const AGENT_GUIDE_STATIC_VERSION = 4;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
 
+function getActiveLocale() {
+  try {
+    return require("./locale-settings").getLocale();
+  } catch {
+    return "en";
+  }
+}
+
 function sessionGuideWriteSignature(session) {
   const skillSig = resolveSessionSkillIds(session).slice().sort().join("\0");
-  return `${AGENT_GUIDE_STATIC_VERSION}\0${skillSig}`;
+  const locale = getActiveLocale();
+  return `${AGENT_GUIDE_STATIC_VERSION}\0${locale}\0${skillSig}`;
 }
 
 function writeSessionAgentGuide(sessionId, session) {
@@ -380,7 +470,8 @@ function writeSessionAgentGuide(sessionId, session) {
   fs.mkdirSync(configDir, { recursive: true });
   ensureSessionConfigBridge(configDir);
   const guidePath = path.join(configDir, "AGENT.md");
-  fs.writeFileSync(guidePath, buildAgentGuideContent(skills), "utf8");
+  const locale = getActiveLocale();
+  fs.writeFileSync(guidePath, buildAgentGuideContent(skills, locale), "utf8");
   syncEngineGuideMirror(guidePath, configDir);
   sessionGuideWriteCache.set(sessionId, signature);
   return configDir;
@@ -426,7 +517,28 @@ function syncInheritedSessionGuides(sessionManager) {
 }
 
 function manifestGuide(manifest) {
-  return manifest?.guideMd || manifest?.claudeMd || null;
+  if (!manifest) return null;
+  const locale = getActiveLocale();
+  const i18n = manifest.guideMd_i18n;
+  if (i18n && i18n[locale]) return i18n[locale];
+  return manifest.guideMd || manifest.claudeMd || null;
+}
+
+/**
+ * Resolve a locale-aware field from a manifest.
+ * Checks `field_i18n[locale]` first, falls back to `field`, then `defaultValue`.
+ */
+function resolveLocalized(manifest, field, defaultValue) {
+  if (!manifest) return defaultValue;
+  let locale;
+  try {
+    locale = getActiveLocale();
+  } catch {
+    return manifest[field] || defaultValue;
+  }
+  const i18n = manifest[field + "_i18n"];
+  if (i18n && typeof i18n === "object" && i18n[locale]) return i18n[locale];
+  return manifest[field] || defaultValue;
 }
 
 /** Link global skills/settings into per-session CLAUDE_CONFIG_DIR for engine discovery. */
@@ -460,7 +572,8 @@ function mergeAgentGuide() {
 
   const enabled = getEnabledInstalledSkills();
   const guidePath = agentGuidePath();
-  fs.writeFileSync(guidePath, buildAgentGuideContent(enabled), "utf8");
+  const locale = getActiveLocale();
+  fs.writeFileSync(guidePath, buildAgentGuideContent(enabled, locale), "utf8");
   syncEngineGuideMirror(guidePath, configDir);
 }
 
@@ -520,8 +633,8 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
 
   return {
     id: skillId,
-    name: manifest?.name || registryEntry?.name || skillId,
-    description: manifest?.description || registryEntry?.description || "",
+    name: resolveLocalized(manifest, "name", registryEntry?.name || skillId),
+    description: resolveLocalized(manifest, "description", registryEntry?.description || ""),
     version: installedVersion,
     latestVersion,
     source: entry?.source || (registryEntry ? "remote" : "local"),
@@ -572,7 +685,7 @@ function availableSkillToPublic(registryEntry, installedVersion) {
 function finalizeResolvedRegistry(registry, { serviceUrl = "", fromService = false } = {}) {
   const supplemented = skillRegistry.supplementRegistryWithBundled(registry);
   if (!supplemented) {
-    return { ok: false, error: "NOT_FOUND", detail: "内置技能目录不可用" };
+    return { ok: false, error: "NOT_FOUND", detail: "Built-in skill directory not available" };
   }
   return {
     ok: true,

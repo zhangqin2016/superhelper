@@ -82,7 +82,7 @@ function emitDiffForTool(sessionId, toolId, ctx, turnId = null) {
   const newLines = (newContent || "").split("\n");
   let diff;
   if (oldLines.length > MAX_LINES || newLines.length > MAX_LINES) {
-    diff = [{ type: "ctx", content: `[文件已修改，共 ${newLines.length} 行]` }];
+    diff = [{ type: "ctx", content: `[File modified, ${newLines.length} lines total]` }];
   } else {
     diff = computeLineDiff(oldLines, newLines);
   }

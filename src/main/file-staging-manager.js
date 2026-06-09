@@ -211,17 +211,17 @@ class FileStagingManager {
   static getFileFilters() {
     return [
       {
-        name: "支持的文档",
+        name: "Supported Documents",
         extensions: [
           ...IMAGE_EXTENSIONS,
           ...DOCUMENT_EXTENSIONS,
           ...CODE_EXTENSIONS,
         ].map((ext) => ext.slice(1)),
       },
-      { name: "图片", extensions: [...IMAGE_EXTENSIONS].map((ext) => ext.slice(1)) },
-      { name: "文档", extensions: [...DOCUMENT_EXTENSIONS].map((ext) => ext.slice(1)) },
-      { name: "代码", extensions: [...CODE_EXTENSIONS].map((ext) => ext.slice(1)) },
-      { name: "所有文件", extensions: ["*"] },
+      { name: "Images", extensions: [...IMAGE_EXTENSIONS].map((ext) => ext.slice(1)) },
+      { name: "Documents", extensions: [...DOCUMENT_EXTENSIONS].map((ext) => ext.slice(1)) },
+      { name: "Code", extensions: [...CODE_EXTENSIONS].map((ext) => ext.slice(1)) },
+      { name: "All Files", extensions: ["*"] },
     ];
   }
 }

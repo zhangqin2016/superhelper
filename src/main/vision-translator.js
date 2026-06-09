@@ -219,75 +219,75 @@ function inferVisionMode(userText = "", files = []) {
 }
 
 function buildVisionPrompt({ userText = "", mode = "general" } = {}) {
-  const question = String(userText || "").trim() || "用户只上传了图片，没有输入文字。";
+  const question = String(userText || "").trim() || "The user uploaded an image without providing text.";
   const base = [
-    "你是 AI 聊天产品中的图片理解工具。你的输出会作为后续主模型的证据上下文。",
-    "不要泛泛描述图片；优先回答用户真正关心的问题。",
-    "如果看不清、无法确定或只能推测，必须明确写在“不确定点”。",
+    "You are the image understanding tool in an AI chat product. Your output will serve as evidence context for the subsequent main model.",
+    "Do not give generic image descriptions; prioritize answering what the user actually wants to know.",
+    "If you cannot see clearly, cannot determine, or can only speculate, you MUST state this explicitly under \"Uncertainties\".",
     "",
-    `用户问题：${question}`,
-    `图片类型推断：${mode}`,
+    `User question: ${question}`,
+    `Inferred image type: ${mode}`,
     "",
   ];
 
   const sectionsByMode = {
     bug_screenshot: [
-      "请按以下结构输出：",
-      "[图片识别结果]",
-      "类型：",
-      "和用户问题相关的结论：",
-      "可见文字/OCR：",
-      "关键错误/异常：",
-      "可能的触发流程：",
-      "UI/布局线索：",
-      "可用于代码搜索的关键词：",
-      "建议优先检查的位置：",
-      "不确定点：",
+      "Please output using the following structure:",
+      "[Image Recognition Result]",
+      "Type:",
+      "Conclusion related to user question:",
+      "Visible text / OCR:",
+      "Key errors / exceptions:",
+      "Possible trigger flow:",
+      "UI / layout clues:",
+      "Keywords useful for code search:",
+      "Suggested priority areas to check:",
+      "Uncertainties:",
     ],
     code_screenshot: [
-      "请按以下结构输出：",
-      "[图片识别结果]",
-      "类型：",
-      "和用户问题相关的结论：",
-      "可见文字/OCR：",
-      "代码/命令/日志片段：",
-      "关键错误/异常：",
-      "可用于代码搜索的关键词：",
-      "不确定点：",
+      "Please output using the following structure:",
+      "[Image Recognition Result]",
+      "Type:",
+      "Conclusion related to user question:",
+      "Visible text / OCR:",
+      "Code / command / log snippets:",
+      "Key errors / exceptions:",
+      "Keywords useful for code search:",
+      "Uncertainties:",
     ],
     design_review: [
-      "请按以下结构输出：",
-      "[图片识别结果]",
-      "类型：",
-      "和用户问题相关的结论：",
-      "可见文字/OCR：",
-      "页面结构：",
-      "视觉问题：",
-      "交互状态/控件：",
-      "可用于代码搜索的关键词：",
-      "不确定点：",
+      "Please output using the following structure:",
+      "[Image Recognition Result]",
+      "Type:",
+      "Conclusion related to user question:",
+      "Visible text / OCR:",
+      "Page structure:",
+      "Visual issues:",
+      "Interaction state / controls:",
+      "Keywords useful for code search:",
+      "Uncertainties:",
     ],
     table_or_data: [
-      "请按以下结构输出：",
-      "[图片识别结果]",
-      "类型：",
-      "和用户问题相关的结论：",
-      "可见文字/OCR：",
-      "表格结构：",
-      "关键数值/字段：",
-      "异常数据：",
-      "不确定点：",
+      "Please output using the following structure:",
+      "[Image Recognition Result]",
+      "Type:",
+      "Conclusion related to user question:",
+      "Visible text / OCR:",
+      "Table structure:",
+      "Key values / fields:",
+      "Anomalous data:",
+      "Uncertainties:",
     ],
     general: [
-      "请按以下结构输出：",
-      "[图片识别结果]",
-      "类型：",
-      "和用户问题相关的结论：",
-      "可见文字/OCR：",
-      "关键对象/区域：",
-      "UI/布局线索：",
-      "可用于继续分析的关键词：",
-      "不确定点：",
+      "Please output using the following structure:",
+      "[Image Recognition Result]",
+      "Type:",
+      "Conclusion related to user question:",
+      "Visible text / OCR:",
+      "Key objects / regions:",
+      "UI / layout clues:",
+      "Keywords useful for further analysis:",
+      "Uncertainties:",
     ],
   };
 
@@ -346,7 +346,7 @@ async function translateImage(filePath, prompt) {
     throw new Error(`Image file not found: ${filePath}`);
   }
   const imageUrl = await imageToDataUrl(filePath);
-  const question = prompt || "请用中文详细描述这张图片的内容。";
+  const question = prompt || "Please describe the content of this image in detail.";
   return callVisionApi(config, {
     model: config.model,
     messages: [{
@@ -383,11 +383,11 @@ async function translateImages(files, options = {}) {
     try {
       const desc = await translateImage(f.path, prompt);
       const label = f.name || path.basename(f.path);
-      results.push(`[图片识别结果: "${label}"]\n${desc}`);
+      results.push(`[Image recognition result: "${label}"]\n${desc}`);
     } catch (err) {
       failed += 1;
       console.warn(`Vision translation failed for ${f.name || f.path}:`, err.message);
-      results.push(`[图片: ${f.name || path.basename(f.path)}]`);
+      results.push(`[Image: ${f.name || path.basename(f.path)}]`);
     }
   }
 
@@ -395,7 +395,7 @@ async function translateImages(files, options = {}) {
     return {
       ok: false,
       reason: "API_FAILED",
-      detail: "图片识别服务暂时不可用，请稍后再试。",
+      detail: "Image recognition service is temporarily unavailable. Please try again later.",
     };
   }
 

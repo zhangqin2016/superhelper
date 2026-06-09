@@ -64,15 +64,15 @@ function uniqueAppend(list, value, limit = MAX_ITEMS) {
 function formatSessionSummary(summary) {
   if (!summary || typeof summary !== "object") return "";
   const parts = [];
-  if (summary.lastUserIntent) parts.push(`- 最近用户意图：${trimText(summary.lastUserIntent)}`);
-  if (summary.lastAssistantResult) parts.push(`- 最近助手结果：${trimText(summary.lastAssistantResult)}`);
-  if (summary.pendingTask) parts.push(`- 未完成/需继续：${trimText(summary.pendingTask)}`);
+  if (summary.lastUserIntent) parts.push(`- Most recent user intent: ${trimText(summary.lastUserIntent)}`);
+  if (summary.lastAssistantResult) parts.push(`- Most recent assistant result: ${trimText(summary.lastAssistantResult)}`);
+  if (summary.pendingTask) parts.push(`- Incomplete/pending: ${trimText(summary.pendingTask)}`);
   if (Array.isArray(summary.recentUserIntents) && summary.recentUserIntents.length) {
-    parts.push("- 近期用户目标：");
+    parts.push("- Recent user goals:");
     for (const item of summary.recentUserIntents.slice(-5)) parts.push(`  - ${trimText(item, 260)}`);
   }
   if (Array.isArray(summary.recentFiles) && summary.recentFiles.length) {
-    parts.push(`- 最近涉及文件：${summary.recentFiles.slice(-8).join("、")}`);
+    parts.push(`- Recent files: ${summary.recentFiles.slice(-8).join(", ")}`);
   }
   return parts.join("\n");
 }

@@ -19,6 +19,32 @@
     "title": "视频生成（百炼万相）",
     "priority": 13,
     "body": "用户要求生成短视频、动画、分镜视频、图生视频、视频续写或视频编辑时，用：\n\n```bash\necho '{\"prompt\":\"要生成的视频描述\",\"ratio\":\"16:9\",\"resolution\":\"720P\",\"duration\":5}' | \"{{NODE_BIN}}\" \"{{VIDEO_GENERATION_SCRIPT}}\"\n```\n\n如需图生视频，把参考素材放入 media 数组。脚本会轮询百炼任务，并把临时视频 URL 下载到当前工作区 generated-assets。"
+  },
+  "name_i18n": {
+    "zh-CN": "视频生成",
+    "en": "Video Generation",
+    "ar": "توليد الفيديو"
+  },
+  "description_i18n": {
+    "zh-CN": "使用阿里云百炼万相生成视频并保存到当前工作区。",
+    "en": "Generate videos using Alibaba Cloud Bailian Wanxiang and save to the current workspace.",
+    "ar": "توليد الفيديوهات باستخدام Alibaba Cloud Bailian Wanxiang وحفظها في مساحة العمل الحالية."
+  },
+  "guideMd_i18n": {
+    "zh-CN": {
+      "title": "视频生成（百炼万相）",
+      "priority": 13,
+      "body": "用户要求生成短视频、动画、分镜视频、图生视频、视频续写或视频编辑时，用：\n\n```bash\necho '{\"prompt\":\"要生成的视频描述\",\"ratio\":\"16:9\",\"resolution\":\"720P\",\"duration\":5}' | \"{{NODE_BIN}}\" \"{{VIDEO_GENERATION_SCRIPT}}\"\n```\n\n如需图生视频，把参考素材放入 media 数组。脚本会轮询百炼任务，并把临时视频 URL 下载到当前工作区 generated-assets。"
+    },
+    "en": {
+      "title": "Video Generation (Bailian Wanxiang)",
+      "priority": 13,
+      "body": "When the user requests short video generation, animation, storyboard video, image-to-video, video continuation or video editing, use:\n\n```bash\necho '{\"prompt\":\"video description\",\"ratio\":\"16:9\",\"resolution\":\"720P\",\"duration\":5}' | \"{{NODE_BIN}}\" \"{{VIDEO_GEN_SCRIPT}}\"\n```\n\nFor image-to-video, add reference material to the media array. The script polls the Bailian task and downloads the temporary video URL to the current workspace's generated-assets directory."
+    },
+    "ar": {
+      "title": "توليد الفيديو (Bailian Wanxiang)",
+      "priority": 13,
+      "body": "عندما يطلب المستخدم توليد فيديو قصير أو رسوم متحركة أو فيديو Storyboard أو تحويل صورة إلى فيديو أو متابعة فيديو أو تحرير فيديو، استخدم:\n\n```bash\necho '{\"prompt\":\"وصف الفيديو\",\"ratio\":\"16:9\",\"resolution\":\"720P\",\"duration\":5}' | \"{{NODE_BIN}}\" \"{{VIDEO_GEN_SCRIPT}}\"\n```\n\nلتحويل الصورة إلى فيديو، أضف المواد المرجعية إلى مصفوفة media. يستطلع السكريبت مهمة Bailian وينزل رابط الفيديو المؤقت إلى مجلد generated-assets في مساحة العمل الحالية."
+    }
   }
 }
-

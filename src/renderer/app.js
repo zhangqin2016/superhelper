@@ -4,6 +4,7 @@
 
 import { initI18n, onLocaleChange, t, applyDomI18n } from "./i18n/index.js";
 import { initComposer } from "./modules/composer.js";
+import { initScheduledTasks } from "./modules/scheduled-tasks.js";
 import { initSessionSkills, refreshSessionSkillsUi } from "./modules/session-skills.js";
 import { initFileHandler } from "./modules/file-handler.js";
 import { refreshState, updateTopbarTitles } from "./modules/session-chrome.js";
@@ -151,6 +152,7 @@ async function init() {
   wireMessageIpc();
 
   initComposer();
+  initScheduledTasks();
   initFileHandler();
   initPanelToggles();
   initResizeHandles();

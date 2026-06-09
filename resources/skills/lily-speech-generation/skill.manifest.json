@@ -19,6 +19,32 @@
     "title": "语音生成（百炼 TTS）",
     "priority": 14,
     "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼语音合成，并把临时音频 URL 下载到当前工作区 generated-assets。"
+  },
+  "name_i18n": {
+    "zh-CN": "语音生成",
+    "en": "Speech Generation",
+    "ar": "توليد الصوت"
+  },
+  "description_i18n": {
+    "zh-CN": "使用阿里云百炼语音合成生成配音、旁白和音频。",
+    "en": "Generate voice, narration and audio using Alibaba Cloud Bailian TTS.",
+    "ar": "توليد الصوت والسرد والتعليق الصوتي باستخدام Alibaba Cloud Bailian TTS."
+  },
+  "guideMd_i18n": {
+    "zh-CN": {
+      "title": "语音生成（百炼 TTS）",
+      "priority": 14,
+      "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼语音合成，并把临时音频 URL 下载到当前工作区 generated-assets。"
+    },
+    "en": {
+      "title": "Speech Generation (Bailian TTS)",
+      "priority": 14,
+      "body": "When the user requests speech generation, reading aloud, narration, dubbing or TTS, use:\n\n```bash\necho '{\"text\":\"text to read\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GEN_SCRIPT}}\"\n```\n\nThe script calls Alibaba Cloud Bailian speech synthesis and downloads the temporary audio URL to the current workspace's generated-assets directory."
+    },
+    "ar": {
+      "title": "توليد الصوت (Bailian TTS)",
+      "priority": 14,
+      "body": "عندما يطلب المستخدم توليد الصوت أو القراءة بصوت عالٍ أو السرد أو الدبلجة أو TTS، استخدم:\n\n```bash\necho '{\"text\":\"النص المراد قراءته\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GEN_SCRIPT}}\"\n```\n\nيستدعي السكريبت تركيب الصوت من Alibaba Cloud Bailian وينزل رابط الصوت المؤقت إلى مجلد generated-assets في مساحة العمل الحالية."
+    }
   }
 }
-

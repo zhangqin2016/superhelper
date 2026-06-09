@@ -622,10 +622,10 @@ class AgentSession extends EventEmitter {
       throw new Error("RUNNER_MISSING_ARGS");
     }
     if (!fs.existsSync(cwd)) {
-      throw new Error(`工作目录不存在：${cwd}`);
+      throw new Error(`Working directory does not exist: ${cwd}`);
     }
     if (!fs.existsSync(options.agentCommand)) {
-      throw new Error(`找不到助手引擎：${options.agentCommand}`);
+      throw new Error(`Assistant engine not found: ${options.agentCommand}`);
     }
 
     if (options.resumeSessionId && !this.agentResumeId) {
@@ -720,6 +720,9 @@ class AgentSession extends EventEmitter {
           code,
           output: this.collectedOutput.trim(),
           interrupted: wasInterrupt,
+          interruptedByUser: wasInterrupt,
+          source: "process.close",
+          exitCode: code,
         });
       } else {
         this.busy = false;
@@ -795,14 +798,14 @@ class AgentSession extends EventEmitter {
       parentToolUseId: this._streamParentToolUseId,
     });
     if (!userPayload) {
-      this._failTurn("消息内容为空。");
+      this._failTurn("Message content is empty.");
       return false;
     }
 
     const line = `${JSON.stringify(userPayload)}\n`;
     const stdin = this.process.stdin;
     if (!stdin || stdin.destroyed) {
-      this._failTurn("助手连接已断开，请重试。");
+      this._failTurn("Assistant connection has been lost. Please retry.");
       return false;
     }
 
@@ -947,6 +950,8 @@ class AgentSession extends EventEmitter {
             code: null,
             output: this.collectedOutput.trim(),
             interrupted: true,
+            interruptedByUser: true,
+            source: "interrupt.timeout",
           });
           this.terminate();
         }
@@ -959,6 +964,8 @@ class AgentSession extends EventEmitter {
         code: null,
         output: this.collectedOutput.trim(),
         interrupted: true,
+        interruptedByUser: true,
+        source: "interrupt.local",
       });
     }
   }
@@ -1101,7 +1108,7 @@ class AgentSession extends EventEmitter {
       isResumeFailureMessage(raw)
     ) {
       this.emit("resume-invalid", { message: raw });
-      this._failTurn("对话连接已刷新，请重新发送这条消息。");
+      this._failTurn("Session connection has been refreshed. Please resend this message.");
       return;
     }
 
@@ -1421,15 +1428,25 @@ class AgentSession extends EventEmitter {
     const resultFailed =
       Boolean(ev.is_error) ||
       (typeof ev.subtype === "string" && ev.subtype.startsWith("error"));
+    const rawError = [
+      typeof ev.error === "string" ? ev.error : "",
+      typeof ev.message === "string" ? ev.message : "",
+      Array.isArray(ev.errors) ? ev.errors.join("\n") : "",
+      typeof ev.subtype === "string" && ev.subtype.startsWith("error") ? ev.subtype : "",
+    ].filter(Boolean).join("\n");
     const output =
       this.collectedOutput.trim() ||
-      (typeof ev.error === "string" ? sanitizeError(ev.error) : "") ||
-      (typeof ev.message === "string" ? sanitizeError(ev.message) : "");
+      (rawError ? sanitizeError(rawError) : "");
     const payload = {
       code: resultFailed ? 1 : 0,
       output,
+      error: resultFailed ? rawError : "",
+      resultSubtype: ev.subtype || "",
       resultFromCli: true,
-      interrupted: Boolean(this._interruptPending || ev.interrupted),
+      interrupted: Boolean(this._interruptPending),
+      interruptedByUser: Boolean(this._interruptPending),
+      engineInterrupted: Boolean(ev.interrupted && !this._interruptPending),
+      source: "cli.result",
       durationMs: Number(ev.duration_ms) || undefined,
       totalCostUsd: Number(ev.total_cost_usd) || undefined,
     };
@@ -1453,7 +1470,7 @@ class AgentSession extends EventEmitter {
       const { isResumeFailureMessage } = require("./session-engine-recovery");
       if (this.agentResumeId && isResumeFailureMessage(errMsg)) {
         this.emit("resume-invalid", { message: errMsg });
-        this._failTurn("对话连接已刷新，请重新发送这条消息。");
+        this._failTurn("Session connection has been refreshed. Please resend this message.");
         return;
       }
       this._failTurn(sanitizeError(errMsg || "Engine error"));

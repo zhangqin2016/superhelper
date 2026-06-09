@@ -8,7 +8,7 @@ import { renderFilePreview, clearPendingFiles } from "./file-handler.js";
 import { promptSessionName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
-import { canSend, getTurnPhase, subscribeRuntime, getRuntimeSession } from "./session-runtime-store.js";
+import { canSend, getTurnPhase, subscribeRuntime, getRuntimeSession, syncCommittedMessages } from "./session-runtime-store.js";
 import { t } from "../i18n/index.js";
 
 function messageQueueArea() {
@@ -218,6 +218,15 @@ export async function sendPrompt(opts = {}) {
       renderFilePreview();
     }
     showToast(sendErrorMessage(result), "error");
+    return;
+  }
+
+  if (result.scheduledDraft && Array.isArray(result.conversation)) {
+    syncCommittedMessages(sessionId, result.conversation);
+    const { renderConversation, syncComposerForActiveSession } = await import("./message.js");
+    renderConversation(sessionId, { force: true, forceScrollBottom: true });
+    syncComposerForActiveSession();
+    $("promptInput")?.focus();
     return;
   }
 

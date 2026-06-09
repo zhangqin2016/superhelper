@@ -16,8 +16,19 @@ const {
   sessionsIndexPath,
 } = require("./config");
 const { normalizeSessionPermissionMode } = require("./permission-settings");
+const { getLocale } = require("./locale-settings");
 
 const DEFAULT_CONVERSATION_LIMIT = 50;
+
+const DEFAULT_SESSION_TITLES = {
+  "zh-CN": "新对话",
+  en: "Chat",
+  ar: "محادثة جديدة",
+};
+
+function defaultSessionTitle() {
+  return DEFAULT_SESSION_TITLES[getLocale()] || DEFAULT_SESSION_TITLES.en;
+}
 
 class SessionManager {
   /**
@@ -36,11 +47,13 @@ class SessionManager {
   load() {
     this._loadPersistedStore();
 
-    // Ensure each project has at least one session
-    for (const project of this.pm.projects) {
-      const projectSessions = this._getProjectSessions(project.id);
-      if (projectSessions.length === 0) {
-        this.create(project.id, "默认对话");
+    // Only ensure the active project has a session — avoids flooding
+    // every project with a default when persisted data is missing/corrupt.
+    const activeProject = this.pm.getActive();
+    if (activeProject) {
+      const activeSessions = this._getProjectSessions(activeProject.id);
+      if (activeSessions.length === 0) {
+        this.create(activeProject.id, defaultSessionTitle());
       }
     }
 
@@ -127,7 +140,7 @@ class SessionManager {
       ...session,
       id: session?.id || crypto.randomUUID(),
       projectId: session?.projectId || projectId,
-      title: session?.title || "默认对话",
+      title: session?.title || defaultSessionTitle(),
       createdAt: session?.createdAt || new Date().toISOString(),
       updatedAt: session?.updatedAt || new Date().toISOString(),
       status: session?.status || "idle",
@@ -215,7 +228,7 @@ class SessionManager {
     const session = {
       id: crypto.randomUUID(),
       projectId,
-      title: "默认对话",
+      title: defaultSessionTitle(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       status: "idle",
@@ -261,9 +274,6 @@ class SessionManager {
       this.activeSessionId = list[0]?.id || null;
     }
 
-    for (const project of this.pm.projects) {
-      this.ensureDefaultForProject(project.id);
-    }
   }
 
   _resetStaleRunningStatus() {
@@ -445,7 +455,7 @@ class SessionManager {
     const session = {
       id: crypto.randomUUID(),
       projectId,
-      title: (title || "新对话").slice(0, 80),
+      title: (title || defaultSessionTitle()).slice(0, 80),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       status: "idle",
@@ -470,7 +480,7 @@ class SessionManager {
   rename(sessionId, title) {
     const session = this._find(sessionId);
     if (!session) return false;
-    session.title = (title || "未命名").slice(0, 80);
+    session.title = (title || "Unnamed").slice(0, 80);
     this.save();
     return true;
   }
@@ -540,6 +550,29 @@ class SessionManager {
     const session = this._find(sessionId);
     if (!session) return;
     this._appendMessage(session, role, content, files, extra);
+  }
+
+  findMessage(sessionId, messageId) {
+    const session = this._find(sessionId);
+    if (!session || !messageId) return null;
+    const messages = this._loadMessages(session);
+    return messages.find((message) => message.id === messageId) || null;
+  }
+
+  updateMessageMeta(sessionId, messageId, updater) {
+    const session = this._find(sessionId);
+    if (!session || !messageId) return null;
+    const messages = this._loadMessages(session);
+    const message = messages.find((item) => item.id === messageId);
+    if (!message) return null;
+    const current = message.meta && typeof message.meta === "object" ? message.meta : {};
+    const next = typeof updater === "function" ? updater(current, message) : updater;
+    if (!next || typeof next !== "object") return null;
+    message.meta = next;
+    session.updatedAt = new Date().toISOString();
+    this._markMessagesDirty(session);
+    this.save();
+    return message;
   }
 
   /** Last user message in this session (for retry). */
@@ -676,3 +709,4 @@ class SessionManager {
 }
 
 module.exports = SessionManager;
+module.exports.defaultSessionTitle = defaultSessionTitle;

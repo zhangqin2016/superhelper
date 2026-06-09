@@ -15,5 +15,32 @@
     "title": "上下文理解（必读，适用所有任务）",
     "priority": 10,
     "body": "- **先判断场景**：先判断用户是在问普通知识、工作区内容、文件资料、代码、办公文档、媒体生成、部署还是排障；再选择回答方式和工具。\n- **工作区问题先落地**：用户问「这个目录」「这个项目」「这些文件」「刚才的任务」时，必须基于当前工作区、最近会话摘要、当前任务状态或实际文件内容回答；不要凭空猜。\n- **最小必要读取**：需要读文件时，只读取完成任务所需的最小范围；先看目录、文件名、摘要或关键片段，再决定是否深入。\n- **不混会话**：切换工作区或会话后，不把其他工作区的任务、文件、结论当作当前上下文；引用历史内容时要确认它属于当前会话/工作区。\n- **少幻觉**：不知道就说不知道；能自己查证就先查证；不能查证时说明依据不足，并给出下一步。\n- **引用来源**：基于文件、目录、日志、网页或工具结果作答时，尽量说明依据来自哪里，避免只给结论。\n- **记忆要轻量**：不要把大量历史原文重复塞回回答；优先使用会话摘要、最近几轮和当前任务状态。"
+  },
+  "name_i18n": {
+    "zh-CN": "上下文理解规则",
+    "en": "Context Understanding Rules",
+    "ar": "قواعد فهم السياق"
+  },
+  "description_i18n": {
+    "zh-CN": "所有会话强制生效的上下文读取、工作区理解和防幻觉规则（不可关闭）。",
+    "en": "Mandatory context reading, workspace understanding and hallucination prevention rules for all sessions (cannot be disabled).",
+    "ar": "قواعد إلزامية لقراءة السياق وفهم مساحة العمل ومنع الهلوسة لجميع الجلسات (لا يمكن تعطيلها)."
+  },
+  "guideMd_i18n": {
+    "zh-CN": {
+      "title": "上下文理解（必读，适用所有任务）",
+      "priority": 10,
+      "body": "- **先判断场景**：先判断用户是在问普通知识、工作区内容、文件资料、代码、办公文档、媒体生成、部署还是排障；再选择回答方式和工具。\n- **工作区问题先落地**：用户问「这个目录」「这个项目」「这些文件」「刚才的任务」时，必须基于当前工作区、最近会话摘要、当前任务状态或实际文件内容回答；不要凭空猜。\n- **最小必要读取**：需要读文件时，只读取完成任务所需的最小范围；先看目录、文件名、摘要或关键片段，再决定是否深入。\n- **不混会话**：切换工作区或会话后，不把其他工作区的任务、文件、结论当作当前上下文；引用历史内容时要确认它属于当前会话/工作区。\n- **少幻觉**：不知道就说不知道；能自己查证就先查证；不能查证时说明依据不足，并给出下一步。\n- **引用来源**：基于文件、目录、日志、网页或工具结果作答时，尽量说明依据来自哪里，避免只给结论。\n- **记忆要轻量**：不要把大量历史原文重复塞回回答；优先使用会话摘要、最近几轮和当前任务状态。"
+    },
+    "en": {
+      "title": "Context Understanding (Required, applies to all tasks)",
+      "priority": 10,
+      "body": "- **Judge the scenario first**: First determine whether the user is asking about general knowledge, workspace content, file materials, code, office documents, media generation, deployment, or troubleshooting; then choose the response method and tools.\n- **Ground workspace questions first**: When the user asks about \"this directory\", \"this project\", \"these files\", or \"the previous task\", answer based on the current workspace, recent session summaries, current task status, or actual file content; don't guess.\n- **Minimal necessary reading**: When you need to read files, only read the minimum scope needed to complete the task; first look at directories, filenames, summaries, or key snippets, then decide whether to go deeper.\n- **Don't mix sessions**: After switching workspaces or sessions, don't treat tasks, files, or conclusions from other workspaces as current context; when referencing historical content, confirm it belongs to the current session/workspace.\n- **Minimize hallucinations**: Say you don't know if you don't know; verify yourself if you can; if you can't verify, explain the insufficient basis and give the next step.\n- **Cite sources**: When answering based on files, directories, logs, web pages, or tool results, try to indicate where the basis comes from, not just give conclusions.\n- **Keep memory lightweight**: Don't stuff large amounts of historical text back into answers; prioritize using session summaries, recent turns, and current task status.\n\n技能目录：`{{SKILL_DIR}}`"
+    },
+    "ar": {
+      "title": "فهم السياق (مطلوب، ينطبق على جميع المهام)",
+      "priority": 10,
+      "body": "- **احكم على السيناريو أولاً**\n- **أسئلة مساحة العمل مبنية على أرض الواقع أولاً**\n- **الحد الأدنى من القراءة الضرورية**\n- **لا تخلط الجلسات**\n- **قلل من الهلوسة**\n- **اذكر المصادر**\n\n技能目录：`{{SKILL_DIR}}`"
+    }
   }
 }

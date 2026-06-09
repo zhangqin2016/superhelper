@@ -38,7 +38,7 @@ function normalizeAskUserQuestions(input = {}) {
   return [
     {
       id: "answer",
-      question: fallbackText || "请补充你的回答。",
+      question: fallbackText || "Please complete your answer.",
       options: [],
       multiSelect: false,
     },
@@ -91,7 +91,7 @@ function normalizeAskUserQuestion(question, index) {
   return {
     ...question,
     id,
-    question: text || `问题 ${index + 1}`,
+    question: text || `Question ${index + 1}`,
     options,
     multiSelect: Boolean(question.multiSelect || question.multi_select),
   };

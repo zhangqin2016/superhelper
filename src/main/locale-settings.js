@@ -6,7 +6,7 @@ const { app } = require("electron");
 const { userDataPath } = require("./config");
 
 const SUPPORTED_LOCALES = ["zh-CN", "en", "ar"];
-const DEFAULT_LOCALE = "zh-CN";
+const DEFAULT_LOCALE = "en";
 
 /** @type {{ locale: string } | null} */
 let cached = null;
@@ -52,7 +52,7 @@ function mapToSupportedLocale(raw) {
 function detectSystemLocale() {
   const raw =
     (typeof app.getSystemLocale === "function" && app.getSystemLocale()) ||
-    app.getLocale() ||
+    (typeof app.getLocale === "function" && app.getLocale()) ||
     DEFAULT_LOCALE;
   return mapToSupportedLocale(raw);
 }

@@ -1,8 +1,10 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const { ipcMain } = require("electron");
 const { requireValidLicense } = require("./license-manager");
+const { looksLikeScheduledTaskIntent } = require("./scheduled-task-intent");
 
 function registerAssistantHandlers(ctx) {
   const { sessionManager, projectManager, turnOrchestrator } = ctx;
@@ -33,6 +35,46 @@ function registerAssistantHandlers(ctx) {
       typeof payload === "object" && Array.isArray(payload.displayFiles)
         ? payload.displayFiles
         : [];
+
+    if (ctx.scheduledTaskManager && looksLikeScheduledTaskIntent(text, files)) {
+      const draftResult = await ctx.scheduledTaskManager.parseDraftSmart({
+        text,
+        sessionId: session.id,
+        projectId: session.projectId,
+      });
+      if (draftResult?.ok) {
+        const assistantMessageId = `msg_${crypto.randomUUID()}`;
+        sessionManager.pushMessageTo(session.id, "user", text, null, {
+          id: `msg_${crypto.randomUUID()}`,
+        });
+        sessionManager.pushMessageTo(
+          session.id,
+          "assistant",
+          "I understand this as an automated task. Please confirm to create it.",
+          null,
+          {
+            id: assistantMessageId,
+            meta: {
+              scheduledDraft: {
+                status: "pending",
+                source: draftResult.source || "model",
+                originalText: text,
+                draft: draftResult.draft,
+                createdAt: new Date().toISOString(),
+              },
+            },
+          },
+        );
+        const page = sessionManager.getConversationPage(session.id, { limit: 80 });
+        return {
+          ok: true,
+          scheduledDraft: true,
+          sessionId: session.id,
+          assistantMessageId,
+          conversation: page.conversation,
+        };
+      }
+    }
 
     return await turnOrchestrator.sendUserMessage(session.id, text, files, {
       recordUser: true,
@@ -103,8 +145,8 @@ function registerAssistantHandlers(ctx) {
         ok: false,
         error: "FILES_UNAVAILABLE",
         detail: missing.length
-          ? `附件已失效：${missing.join("、")}`
-          : "原消息含附件，但路径已不可用，请重新添加附件后发送。",
+          ? `Attachments no longer available: ${missing.join(", ")}`
+          : "The original message contained attachments, but the paths are no longer accessible. Please re-add the attachments and resend.",
       };
     }
 

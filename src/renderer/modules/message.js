@@ -8,6 +8,7 @@ import { t } from "../i18n/index.js";
 import {
   applyRuntimeBatch,
   getRuntimeSession,
+  syncCommittedMessages,
   subscribeRuntime,
   canSend,
   canInterrupt,
@@ -296,6 +297,10 @@ function appendUserMessage(sessionId, message, beforeNode = null) {
 }
 
 function appendFinalAssistantArticle(sessionId, message, beforeNode = null) {
+  if (message?.meta?.scheduledDraft) {
+    appendScheduledDraftArticle(sessionId, message, beforeNode);
+    return;
+  }
   const v = ensurePanel(sessionId);
   const liveTurn = message.record
     ? liveTurnFromRecord(message.record)
@@ -303,6 +308,114 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null) {
   const article = renderSealedTurnArticle(liveTurn, Boolean(message.failed));
   if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
   else v.listEl?.appendChild(article);
+}
+
+function formatScheduleDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function appendScheduledDraftArticle(sessionId, message, beforeNode = null) {
+  const v = ensurePanel(sessionId);
+  const scheduled = message.meta.scheduledDraft || {};
+  const draft = scheduled.draft || {};
+  const created = scheduled.status === "created";
+
+  const article = document.createElement("article");
+  article.className = "assistant-turn-article scheduled-draft-article";
+  article.dataset.messageId = message.id || "";
+
+  const shell = document.createElement("div");
+  shell.className = "scheduled-draft-chat-card";
+
+  const title = document.createElement("div");
+  title.className = "scheduled-draft-title";
+  title.textContent = created ? t("scheduled.cardCreatedTitle") : t("scheduled.cardTitle");
+  shell.appendChild(title);
+
+  const rows = document.createElement("div");
+  rows.className = "scheduled-draft-rows";
+  appendScheduledDraftRow(rows, t("scheduled.previewTitle"), draft.title || t("scheduled.untitled"));
+  appendScheduledDraftRow(rows, t("scheduled.previewSchedule"), draft.scheduleText || "");
+  appendScheduledDraftRow(rows, t("scheduled.previewNextRun"), formatScheduleDateTime(draft.nextRunAt || scheduled.task?.nextRunAt));
+  appendScheduledDraftRow(rows, t("scheduled.previewScope"), t("scheduled.previewScopeValue"));
+  shell.appendChild(rows);
+
+  const actions = document.createElement("div");
+  actions.className = "scheduled-draft-actions";
+
+  if (created) {
+    const pill = document.createElement("span");
+    pill.className = "scheduled-draft-pill";
+    pill.textContent = t("scheduled.created");
+    actions.appendChild(pill);
+  } else {
+    const create = document.createElement("button");
+    create.type = "button";
+    create.className = "button-primary";
+    create.textContent = t("scheduled.cardCreate");
+    create.addEventListener("click", () => void createScheduledDraftFromMessage(sessionId, message.id, create));
+    actions.appendChild(create);
+  }
+  shell.appendChild(actions);
+
+  article.appendChild(shell);
+  if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
+  else v.listEl?.appendChild(article);
+}
+
+function appendScheduledDraftRow(container, label, value) {
+  if (!value) return;
+  const row = document.createElement("div");
+  row.className = "scheduled-draft-row";
+  const key = document.createElement("span");
+  key.textContent = label;
+  const val = document.createElement("strong");
+  val.textContent = value;
+  row.append(key, val);
+  container.appendChild(row);
+}
+
+async function createScheduledDraftFromMessage(sessionId, messageId, button) {
+  if (!sessionId || !messageId || !window.assistantClient?.createScheduledTaskFromDraftMessage) return;
+  const originalText = button?.textContent || "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = t("scheduled.creating");
+  }
+  try {
+    const result = await window.assistantClient.createScheduledTaskFromDraftMessage({
+      sessionId,
+      messageId,
+    });
+    if (!result?.ok) {
+      showScheduledToast(t("scheduled.createFailed"), "error");
+      return;
+    }
+    if (Array.isArray(result.conversation)) {
+      syncCommittedMessages(sessionId, result.conversation);
+      renderConversation(sessionId, { force: true, forceScrollBottom: true });
+    }
+    showScheduledToast(t("scheduled.created"), "success");
+  } catch (error) {
+    showScheduledToast(error?.message || t("scheduled.createFailed"), "error");
+  } finally {
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
+function showScheduledToast(message, type) {
+  void import("./toast.js").then((m) => m.showToast?.(message, type));
 }
 
 function renderFiles(container, files) {

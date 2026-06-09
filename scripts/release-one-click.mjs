@@ -224,7 +224,7 @@ function autoUpdateCandidates(target, productName, version) {
       items.push({
         platform: "darwin-arm64",
         artifact: arm64Zip,
-        blockmap: fs.existsSync(path.join(ROOT, `${arm64Zip}.blockmap`)) ? `${arm64Zip}.blockmap` : "",
+        blockmap: "",
       });
     } else {
       fail(`no mac arm64 auto-update zip found for ${version}: ${arm64Zip}`);
@@ -235,7 +235,7 @@ function autoUpdateCandidates(target, productName, version) {
       items.push({
         platform: "darwin-x64",
         artifact: x64Zip,
-        blockmap: fs.existsSync(path.join(ROOT, `${x64Zip}.blockmap`)) ? `${x64Zip}.blockmap` : "",
+        blockmap: "",
       });
     } else {
       fail(`no mac x64 auto-update zip found for ${version}: ${x64Zip}`);

@@ -3,7 +3,12 @@
  * Lightweight checks for stream-json helpers (no Electron / no engine binary).
  */
 import { createRequire } from "node:module";
-import { appendTextSegment, sanitizeError, isUpstreamApiFailure } from "../src/main/agent-runner.js";
+import {
+  appendTextSegment,
+  sanitizeError,
+  classifyAssistantError,
+  isUpstreamApiFailure,
+} from "../src/main/agent-runner.js";
 import { sameSpawnOptions, sameRespawnOptions } from "../src/main/runner-spawn-options.js";
 import {
   parseCanUseToolRequest,
@@ -55,16 +60,30 @@ const merged = appendTextSegment("hello", "world");
 if (merged !== "hello\n\nworld") throw new Error(`appendTextSegment failed: ${merged}`);
 
 const friendly = sanitizeError("engine-upstream: command not found");
-if (!friendly.includes("助手")) throw new Error(`sanitizeError failed: ${friendly}`);
+if (friendly.includes("engine-upstream") || friendly.includes("command not found")) {
+  throw new Error(`sanitizeError failed: ${friendly}`);
+}
 
 const socketErr = sanitizeError(
   "API Error: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()",
 );
-if (!socketErr.includes("连接中断")) {
+if (!socketErr.toLowerCase().includes("interrupted")) {
   throw new Error(`sanitizeError socket failed: ${socketErr}`);
 }
 if (!isUpstreamApiFailure("API Error: socket connection was closed")) {
   throw new Error("isUpstreamApiFailure failed");
+}
+const modelFailure = classifyAssistantError("There's an issue with the selected model. Run --model to pick a different model.");
+if (modelFailure?.code !== "MODEL_UNAVAILABLE" || modelFailure.retryable !== true) {
+  throw new Error(`classifyAssistantError model failed: ${JSON.stringify(modelFailure)}`);
+}
+const deniedFailure = classifyAssistantError("EACCES: permission denied, open /private/file");
+if (deniedFailure?.code !== "PERMISSION_DENIED" || deniedFailure.retryable !== false) {
+  throw new Error(`classifyAssistantError permission failed: ${JSON.stringify(deniedFailure)}`);
+}
+const budgetFailure = classifyAssistantError("Maximum budget exceeded");
+if (budgetFailure?.code !== "BUDGET_EXCEEDED" || budgetFailure.retryable !== false) {
+  throw new Error(`classifyAssistantError budget failed: ${JSON.stringify(budgetFailure)}`);
 }
 
 const baseOpts = {

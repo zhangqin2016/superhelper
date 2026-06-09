@@ -200,7 +200,7 @@ function bootstrapAgent() {
         ok: true,
         mode: "installed",
         cliPath: migrated || target,
-        message: "使用已安装的助手引擎",
+        message: "Using installed assistant engine",
         agentDefaults,
       };
     }
@@ -209,7 +209,7 @@ function bootstrapAgent() {
         ok: true,
         mode: "dev-system",
         cliPath: null,
-        message: "开发模式：将尝试使用本机助手 CLI（配置与 skill 已写入应用目录）",
+        message: "Dev mode: will attempt to use system assistant CLI (config and skills written to app directory)",
         agentDefaults,
       };
     }
@@ -217,7 +217,7 @@ function bootstrapAgent() {
       ok: false,
       mode: "missing-bundle",
       cliPath: null,
-      error: "未找到内置助手引擎。请确认安装包内含 bundles/ 目录，或联系管理员。",
+      error: "Built-in assistant engine not found. Please verify the installation package contains a bundles/ directory, or contact your administrator.",
       agentDefaults,
     };
   }
@@ -228,7 +228,7 @@ function bootstrapAgent() {
       ok: false,
       mode: "copy-failed",
       cliPath: null,
-      error: "助手引擎安装失败，请重新启动应用。",
+      error: "Assistant engine installation failed. Please restart the application.",
       agentDefaults,
     };
   }

@@ -449,45 +449,45 @@ function describeSchedule(schedule) {
   schedule = normalizeScheduleSpec(schedule);
   if (!schedule) return "";
   if (schedule.type === "once") {
-    return `一次性 ${new Date(schedule.at).toLocaleString("zh-CN", { hour12: false })}`;
+    return `Once at ${new Date(schedule.at).toLocaleString("en", { hour12: false })}`;
   }
   if (schedule.type === "daily") {
-    return `每天 ${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`;
+    return `Daily at ${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`;
   }
   if (schedule.type === "daily_times") {
     const times = uniqueSortedTimes(Array.isArray(schedule.times) ? schedule.times : []);
-    return `每天 ${times.map((time) => `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`).join(" / ")}`;
+    return `Daily at ${times.map((time) => `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`).join(" / ")}`;
   }
   if (schedule.type === "weekly") {
-    const names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-    return `每${names[schedule.weekday] || "周"} ${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`;
+    const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    return `${names[schedule.weekday] || "weekly"} at ${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`;
   }
   if (schedule.type === "weekdays_times") {
-    const names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+    const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const weekdays = schedule.weekdays.map((day) => names[day]).join(" / ");
     const times = schedule.times.map((time) => `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`).join(" / ");
-    return `每${weekdays} ${times}`;
+    return `${weekdays} at ${times}`;
   }
   if (schedule.type === "monthly") {
-    return `每月 ${schedule.dayOfMonth} 日 ${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`;
+    return `Monthly on day ${schedule.dayOfMonth} at ${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`;
   }
   if (schedule.type === "interval") {
-    const unit = schedule.unit === "minute" ? "分钟" : schedule.unit === "day" ? "天" : "小时";
-    return `每隔 ${schedule.every} ${unit}`;
+    const unit = schedule.unit === "minute" ? "min" : schedule.unit === "day" ? "day(s)" : "hour(s)";
+    return `Every ${schedule.every} ${unit}`;
   }
   if (schedule.type === "hourly") {
     const minute = Number(schedule.minute) || 0;
-    if (minute === 0) return schedule.every > 1 ? `每隔 ${schedule.every} 小时整点` : "每小时整点";
+    if (minute === 0) return schedule.every > 1 ? `Every ${schedule.every} hours on the hour` : "Every hour on the hour";
     return schedule.every > 1
-      ? `每隔 ${schedule.every} 小时 ${String(minute).padStart(2, "0")} 分`
-      : `每小时 ${String(minute).padStart(2, "0")} 分`;
+      ? `Every ${schedule.every} hours at ${String(minute).padStart(2, "0")} min past`
+      : `Every hour at ${String(minute).padStart(2, "0")} min past`;
   }
   if (schedule.type === "daily_window_interval") {
     const start = `${String(schedule.startHour).padStart(2, "0")}:${String(schedule.startMinute || 0).padStart(2, "0")}`;
     const end = `${String(schedule.endHour).padStart(2, "0")}:${String(schedule.endMinute || 0).padStart(2, "0")}`;
     const minute = Number(schedule.minute) || 0;
-    const cadence = minute === 0 ? "每小时整点" : `每小时 ${String(minute).padStart(2, "0")} 分`;
-    return `每天 ${start}-${end} ${cadence}`;
+    const cadence = minute === 0 ? "on the hour" : `at ${String(minute).padStart(2, "0")} min past`;
+    return `Daily ${start}-${end} ${cadence}`;
   }
   return "";
 }
@@ -631,15 +631,16 @@ function parseScheduleFromText(text, from = new Date()) {
 
 function buildTaskPrompt(task) {
   const cleanedPrompt = sanitizeScheduledTaskPrompt(task.prompt);
+  const cleanedTitle = sanitizeScheduledTaskPrompt(task.title) || "Scheduled Task";
   return [
-    `【自动任务执行】`,
-    `这是 Lily Workbench 已按计划触发的一次运行，不是创建或修改定时任务的请求。`,
-    `任务：${task.title}`,
+    `[Scheduled Task Execution]`,
+    `This is a scheduled run triggered by Lily Workbench. This is NOT a request to create or modify any scheduled task.`,
+    `Task: ${cleanedTitle}`,
     "",
-    "任务内容：",
+    "Task content:",
     cleanedPrompt,
     "",
-    "执行边界：只完成“任务内容”，不要创建、修改、删除或写入任何定时任务配置。",
+    "Execution boundary: Only complete the \"Task content\" above. Do NOT create, modify, delete, or write any scheduled task configuration.",
   ].join("\n");
 }
 
@@ -666,7 +667,7 @@ class ScheduledTaskManager {
       if (run.status === "running" || run.status === "queued") {
         run.status = "interrupted";
         run.finishedAt = now;
-        run.error = "应用关闭或重启，自动任务已中断。";
+        run.error = "Application closed or restarted. Scheduled task was interrupted.";
       }
     }
     this.save();
@@ -696,7 +697,7 @@ class ScheduledTaskManager {
     const parsed = parseScheduleFromText(prompt);
     if (!parsed.ok) return parsed;
     const taskPrompt = sanitizeScheduledTaskPrompt(prompt);
-    const title = taskPrompt.slice(0, 48) || "自动任务";
+    const title = taskPrompt.slice(0, 48) || "Scheduled Task";
     return {
       ok: true,
       draft: {
@@ -743,7 +744,7 @@ class ScheduledTaskManager {
   create(payload = {}) {
     const rawPrompt = safeText(payload.prompt, 4000);
     const prompt = sanitizeScheduledTaskPrompt(rawPrompt);
-    const title = safeText(payload.title, 80) || prompt.slice(0, 48) || "自动任务";
+    const title = safeText(sanitizeScheduledTaskPrompt(payload.title), 80) || prompt.slice(0, 48) || "Scheduled Task";
     const normalizedSchedule = normalizeScheduleSpec(payload.schedule);
     const parsed = normalizedSchedule
       ? { ok: true, schedule: normalizedSchedule, scheduleText: describeSchedule(normalizedSchedule), nextRunAt: computeNextRunAt(normalizedSchedule) }
@@ -863,7 +864,7 @@ class ScheduledTaskManager {
       task.status = "paused";
       task.updatedAt = nowIso();
       const run = this._appendRun(task, "skipped", {
-        error: !session ? "原会话不存在，自动任务已暂停。" : "原工作区不存在，自动任务已暂停。",
+        error: !session ? "Original session no longer exists. Scheduled task has been paused." : "Original workspace no longer exists. Scheduled task has been paused.",
       });
       this.save();
       return { ok: false, error: "SCOPE_MISSING", run };
@@ -888,7 +889,7 @@ class ScheduledTaskManager {
         if (!result?.ok) {
           run.status = "failed";
           run.finishedAt = nowIso();
-          run.error = result?.detail || result?.error || "自动任务启动失败。";
+          run.error = result?.detail || result?.error || "Scheduled task failed to start.";
           task.status = task.enabled ? "scheduled" : "paused";
           this.save();
           return;
@@ -906,7 +907,7 @@ class ScheduledTaskManager {
       .catch((err) => {
         run.status = "failed";
         run.finishedAt = nowIso();
-        run.error = err?.message || "自动任务启动失败。";
+        run.error = err?.message || "Scheduled task failed to start.";
         task.status = task.enabled ? "scheduled" : "paused";
         this.save();
       });
@@ -957,7 +958,7 @@ class ScheduledTaskManager {
       workspaceId: projectId,
       projectId,
       sessionId,
-      title: safeText(task.title, 80) || "自动任务",
+      title: safeText(task.title, 80) || "Scheduled Task",
       prompt,
       schedule,
       scheduleText: safeText(task.scheduleText, 120) || describeSchedule(schedule),

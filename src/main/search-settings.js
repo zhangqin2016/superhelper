@@ -7,18 +7,18 @@ const { PROJECT_ROOT, userDataPath } = require("./config");
 const SEARCH_PROVIDERS = [
   {
     id: "iqs",
-    label: "阿里 IQS",
-    description: "国内直连稳定、合规可商用，应用内置。",
+    label: "Alibaba IQS",
+    description: "Direct connection, stable, compliant for commercial use. Built-in.",
   },
   {
     id: "searxng",
     label: "SearXNG",
-    description: "开源元搜索，无追踪、无需 API Key。",
+    description: "Open-source metasearch engine, no tracking, no API key required.",
   },
   {
     id: "duckduckgo",
     label: "DuckDuckGo",
-    description: "直连 DuckDuckGo Lite，无需 API Key。",
+    description: "Direct DuckDuckGo Lite connection, no API key required.",
   },
 ];
 

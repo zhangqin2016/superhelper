@@ -17,4 +17,7 @@ echo "[dist-mac] 打包 darwin-${ARCH}（签名 bundles 已跳过）"
 node scripts/fix-runtime-symlinks.mjs
 node scripts/purge-macos-junk.mjs --check
 
+# mac zip 也走 7za。运行时变大后默认压缩级别容易在 Apple Silicon 上被系统终止。
+export ELECTRON_BUILDER_COMPRESSION_LEVEL="${ELECTRON_BUILDER_COMPRESSION_LEVEL:-5}"
+
 exec npx electron-builder --mac "--${ARCH}" "${@:2}"

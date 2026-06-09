@@ -42,6 +42,16 @@ contextBridge.exposeInMainWorld("assistantClient", {
   cancelQueuedMessage: (sessionId, itemId) =>
     ipcRenderer.invoke("assistant:cancel-queued-message", { sessionId, itemId }),
 
+  listScheduledTasks: (filter) => ipcRenderer.invoke("scheduled-tasks:list", filter || {}),
+  parseScheduledTaskDraft: (payload) => ipcRenderer.invoke("scheduled-tasks:parse-draft", payload || {}),
+  createScheduledTask: (payload) => ipcRenderer.invoke("scheduled-tasks:create", payload || {}),
+  createScheduledTaskFromDraftMessage: (payload) =>
+    ipcRenderer.invoke("scheduled-tasks:create-from-draft-message", payload || {}),
+  setScheduledTaskEnabled: (taskId, enabled) =>
+    ipcRenderer.invoke("scheduled-tasks:set-enabled", { taskId, enabled }),
+  removeScheduledTask: (taskId) => ipcRenderer.invoke("scheduled-tasks:remove", { taskId }),
+  runScheduledTaskNow: (taskId) => ipcRenderer.invoke("scheduled-tasks:run-now", { taskId }),
+
   getFullState: () => ipcRenderer.invoke("state:full"),
 
   listModels: () => ipcRenderer.invoke("models:list"),

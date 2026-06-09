@@ -1,7 +1,12 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { normalizeAssistantOutput, sanitizeError } = require("./agent-runner");
+const {
+  normalizeAssistantOutput,
+  sanitizeError,
+  classifyAssistantError,
+  scrubVendorNames,
+} = require("./agent-runner");
 const { fileMetadataFromPayload } = require("./ipc-utils");
 const { getLogger } = require("./logger");
 const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
@@ -50,6 +55,9 @@ function queueDispatchOptions(opts = {}) {
     skipPreflight: Boolean(opts.skipPreflight),
     skipVision: Boolean(opts.skipVision),
     skipDocument: Boolean(opts.skipDocument),
+    scheduledTaskId: opts.scheduledTaskId || null,
+    scheduledTaskRunId: opts.scheduledTaskRunId || null,
+    scheduledTaskTitle: opts.scheduledTaskTitle || null,
   };
 }
 
@@ -57,13 +65,13 @@ function preflightFailureText(error, detail) {
   const suffix = detail ? `\n\n${String(detail).trim()}` : "";
   switch (error) {
     case "VISION_UNAVAILABLE":
-      return `图片识别服务暂时不可用，无法处理这张图片。请稍后重试，或补充文字描述后再发送。${suffix}`;
+      return `Image recognition service is temporarily unavailable. The image could not be processed. Please try again later, or add a text description and resend.${suffix}`;
     case "VISION_FAILED":
-      return `图片解析失败，未继续发送给助手。请稍后重试，或补充文字描述后再发送。${suffix}`;
+      return `Image parsing failed and was not forwarded to the assistant. Please try again later, or add a text description and resend.${suffix}`;
     case "DOCUMENT_FAILED":
-      return `文档解析失败，未继续发送给助手。请检查文件是否可打开，或补充文字描述后再发送。${suffix}`;
+      return `Document parsing failed and was not forwarded to the assistant. Please check if the file can be opened, or add a text description and resend.${suffix}`;
     default:
-      return `发送前处理失败，未继续发送给助手。请稍后重试。${suffix}`;
+      return `Pre-send processing failed and was not forwarded to the assistant. Please try again later.${suffix}`;
   }
 }
 
@@ -79,6 +87,96 @@ function compactToolInput(input, name = "Tool") {
 
 function isRecoverableFailure(raw) {
   return /API Error:|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|502|503|504|rate.?limit|429/i.test(String(raw || ""));
+}
+
+function compactFailureDetail(raw) {
+  const text = scrubVendorNames(raw).replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text.length > 260 ? `${text.slice(0, 260)}…` : text;
+}
+
+function failureTextFromProcessEvent(event = {}) {
+  const rawSubtype = String(event.rawSubtype || event.event?.subtype || "");
+  const rawType = String(event.rawType || event.event?.type || "");
+  const values = [];
+  const raw = event.event || {};
+  if (typeof raw.error === "string") values.push(raw.error);
+  if (Array.isArray(raw.errors)) values.push(raw.errors.join("\n"));
+  if (typeof raw.message === "string" && (rawType === "error" || rawSubtype.startsWith("error"))) {
+    values.push(raw.message);
+  }
+  if (rawSubtype.startsWith("error")) values.push(rawSubtype);
+  for (const action of event.actions || []) {
+    if (typeof action?.notice?.detail === "string") values.push(action.notice.detail);
+    if (typeof action?.notice?.message === "string") values.push(action.notice.message);
+  }
+  return values.filter(Boolean).join("\n");
+}
+
+function failureTextFromNoticeEvent(event = {}) {
+  const notice = event.payload?.notice || event.notice || event.payload || event;
+  if (!notice || typeof notice !== "object") return "";
+  const level = String(notice.level || "");
+  const code = String(notice.code || "");
+  if (level !== "warning" && !/error|fail|denied|timeout/i.test(code)) return "";
+  return [notice.detail, notice.message, code].filter((value) => typeof value === "string" && value.trim()).join("\n");
+}
+
+function collectFailureTextFromState(state = {}) {
+  const parts = [];
+  for (const event of [...(state.processEvents || [])].reverse()) {
+    const text = failureTextFromProcessEvent(event);
+    if (text) {
+      parts.push(text);
+      break;
+    }
+  }
+  for (const event of [...(state.notices || [])].reverse()) {
+    const text = failureTextFromNoticeEvent(event);
+    if (text) {
+      parts.push(text);
+      break;
+    }
+  }
+  return parts.join("\n");
+}
+
+function classifyTurnFailure(payload, normalized, state) {
+  const rawError = [
+    payload?.error,
+    payload?.errorText,
+    payload?.message,
+    payload?.resultSubtype,
+    collectFailureTextFromState(state),
+  ].filter((value) => typeof value === "string" && value.trim()).join("\n");
+  const errorClassified = classifyAssistantError(rawError);
+  if (errorClassified) return errorClassified;
+  if (normalized?.failed) {
+    return {
+      code: normalized.errorCode || "ASSISTANT_ERROR",
+      message: normalized.text || "An error occurred while processing the request. Please try again.",
+      retryable: normalized.retryable !== false,
+    };
+  }
+  const classified = classifyAssistantError(payload?.output || state?.assistantText || "");
+  if (classified) return classified;
+  if (payload?.engineInterrupted) {
+    return {
+      code: "ENGINE_INTERRUPTED",
+      message: "The assistant engine interrupted this response. Please retry.",
+      retryable: true,
+    };
+  }
+  if (payload?.code && payload.code !== 0) {
+    return {
+      code: payload?.source === "process.close" ? "ENGINE_PROCESS_EXITED" : "ENGINE_RESULT_FAILED",
+      message: rawError
+        ? `Assistant engine returned failure: ${compactFailureDetail(rawError)}`
+        : "Assistant process exited unexpectedly. Please retry. If this persists, restart the application.",
+      retryable: true,
+    };
+  }
+  return null;
 }
 
 class TurnOrchestrator {
@@ -140,7 +238,7 @@ class TurnOrchestrator {
           failed: true,
           code: "RESUME_INVALID",
           retryable: true,
-          assistant: "连接已刷新，请重新发送。",
+          assistant: "Connection refreshed. Please resend your message.",
         });
       }
     });
@@ -365,6 +463,23 @@ class TurnOrchestrator {
         break;
       }
       case "engine.stderr":
+        if (state.turnId) {
+          const text = String(payload.text || payload.message || "").trim();
+          const notice = {
+            code: "stderr",
+            level: "warning",
+            message: text,
+            panel: true,
+            done: false,
+          };
+          state.notices.push({
+            type: "engine.stderr",
+            turnId: state.turnId,
+            source: draft.source || "claude-cli",
+            payload: { notice },
+            ts: Date.now(),
+          });
+        }
         this._emit(sessionId, "engine.stderr", payload);
         break;
       case "usage.updated":
@@ -529,6 +644,9 @@ class TurnOrchestrator {
       skipPreflight: Boolean(item.options?.skipPreflight),
       skipVision: Boolean(item.options?.skipVision),
       skipDocument: Boolean(item.options?.skipDocument),
+      scheduledTaskId: item.options?.scheduledTaskId || null,
+      scheduledTaskRunId: item.options?.scheduledTaskRunId || null,
+      scheduledTaskTitle: item.options?.scheduledTaskTitle || null,
     });
   }
 
@@ -558,7 +676,7 @@ class TurnOrchestrator {
       return {
         ok: false,
         error: ensured.error || "RUNNER_ERROR",
-        detail: ensured.detail || "无法启动助手进程，请查看终端日志或重启应用。",
+        detail: ensured.detail || "Unable to start the assistant process. Please check the terminal logs or restart the application.",
       };
     }
 
@@ -581,8 +699,18 @@ class TurnOrchestrator {
     state.tools.clear();
     const displayFiles = opts.displayFiles || fileMetadataFromPayload(files);
     state.currentPayload = { text, files, displayFiles };
+    state.scheduledTask = opts.scheduledTaskRunId
+      ? {
+          id: opts.scheduledTaskId || null,
+          runId: opts.scheduledTaskRunId,
+          title: opts.scheduledTaskTitle || "",
+        }
+      : null;
     state.startedAt = Date.now();
     state.updatedAt = Date.now();
+    if (state.scheduledTask?.runId) {
+      this.ctx.scheduledTaskManager?.markRunStarted?.(state.scheduledTask.runId, state.turnId);
+    }
 
     if (opts.recordUser !== false) {
       this.transcriptStore.commitUserMessage(session.id, {
@@ -667,10 +795,10 @@ class TurnOrchestrator {
     if (!sent) {
       this._finalize(session.id, "turn.failed", {
         failed: true,
-        assistant: "助手引擎未接受消息，请重试。",
+        assistant: "The assistant engine did not accept the message. Please retry.",
         code: "RUNNER_REJECTED",
       });
-      return { ok: false, error: "RUNNER_ERROR", detail: runner.lastSpawnError || "助手引擎未接受消息，请重试。" };
+      return { ok: false, error: "RUNNER_ERROR", detail: runner.lastSpawnError || "The assistant engine did not accept the message. Please retry." };
     }
     require("./usage-reporter").recordUserSend(session.id, files);
     return {
@@ -688,9 +816,12 @@ class TurnOrchestrator {
     }
 
     const normalized = normalizeAssistantOutput(payload?.output || state.assistantText);
-    const interrupted = Boolean(payload?.interrupted);
+    const interrupted = Boolean(payload?.interruptedByUser || payload?.userInterrupted);
     const stalled = Boolean(payload?.stalled);
-    const failed = Boolean(normalized.failed || (!interrupted && !stalled && payload?.code && payload.code !== 0));
+    const failure = interrupted || stalled
+      ? null
+      : classifyTurnFailure(payload, normalized, state);
+    const failed = Boolean(failure);
     if (Number.isFinite(payload?.durationMs)) state.durationMs = payload.durationMs;
     if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
 
@@ -721,10 +852,14 @@ class TurnOrchestrator {
         ...terminalMeta,
       });
     } else if (failed) {
-      const friendly = normalized.text || "处理请求时遇到问题，请稍后再试。";
+      const friendly = failure.message || normalized.text || "An error occurred while processing the request. Please try again.";
       this._finalize(sessionId, "turn.failed", {
         failed: true,
         assistant: friendly,
+        errorCode: failure.code,
+        retryable: failure.retryable !== false,
+        source: payload?.source || "",
+        exitCode: payload?.exitCode ?? null,
         ...terminalMeta,
       });
     } else {
@@ -741,10 +876,13 @@ class TurnOrchestrator {
   async _handleError(sessionId, message) {
     const state = this._state(sessionId);
     if (!state.turnId || state.terminalEmitted) return;
-    const text = sanitizeError(String(message || ""));
+    const classified = classifyAssistantError(String(message || ""));
+    const text = classified?.message || sanitizeError(String(message || ""));
     this._finalize(sessionId, "turn.failed", {
       failed: true,
       assistant: text,
+      errorCode: classified?.code || "ENGINE_ERROR",
+      retryable: classified?.retryable !== false,
       error: String(message || ""),
     });
     await this._flushUsage(sessionId);
@@ -761,7 +899,7 @@ class TurnOrchestrator {
     if (!runner) {
       this._finalize(sessionId, "turn.failed", {
         failed: true,
-        assistant: "连接恢复失败，请重新发送。",
+        assistant: "Connection recovery failed. Please resend your message.",
       });
       return;
     }
@@ -772,6 +910,8 @@ class TurnOrchestrator {
     const state = this._state(sessionId);
     if (!state.turnId || state.terminalEmitted) return;
     if (!TERMINAL_TYPES.has(type)) throw new Error(`Invalid terminal event ${type}`);
+    const completedTurnId = state.turnId;
+    const scheduledTaskRunId = state.scheduledTask?.runId || null;
     state.phase = "finalizing";
     for (const tool of state.tools.values()) {
       if (tool?.status !== "running") continue;
@@ -796,6 +936,9 @@ class TurnOrchestrator {
       record,
       toolsSummary: { count: state.tools.size },
     });
+    if (scheduledTaskRunId) {
+      this.ctx.scheduledTaskManager?.completeRun?.(sessionId, completedTurnId, type, payload);
+    }
     state.phase = "idle";
     state.turnId = null;
     state.assistantText = "";
@@ -808,6 +951,7 @@ class TurnOrchestrator {
     resetTimelineState(state);
     state.blockIndexToToolId = new Map();
     state.currentPayload = null;
+    state.scheduledTask = null;
     state.pendingPermissions.clear();
     state.pendingQuestions.clear();
     state.pendingHooks.clear();
@@ -1044,6 +1188,7 @@ class TurnOrchestrator {
         terminalEmitted: false,
         recoveryAttempted: false,
         currentPayload: null,
+        scheduledTask: null,
         startedAt: 0,
         updatedAt: 0,
       });

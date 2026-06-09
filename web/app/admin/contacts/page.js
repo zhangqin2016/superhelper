@@ -1,4 +1,5 @@
 import { AdminShell } from "../../../components/admin-shell";
+import { AdminContactAttachments } from "../../../components/admin-contact-attachments";
 import { AdminEmpty } from "../../../components/admin-empty";
 import { safeApiGet } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
@@ -45,31 +46,7 @@ export default async function ContactsPage() {
                   <td className="px-5 py-4">{contact.subject || "-"}</td>
                   <td className="max-w-xl whitespace-pre-wrap px-5 py-4 leading-6 text-slate-600">{contact.message}</td>
                   <td className="px-5 py-4">
-                    {contact.attachments?.length ? (
-                      <div className="grid max-w-[220px] grid-cols-2 gap-2">
-                        {contact.attachments.map((attachment) => (
-                          <a
-                            key={attachment.id}
-                            href={attachment.public_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="block overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
-                            title={attachment.original_name || attachment.object_key}
-                          >
-                            <img
-                              src={attachment.public_url}
-                              alt={attachment.original_name || "feedback attachment"}
-                              className="h-20 w-full object-cover"
-                            />
-                            <span className="block truncate px-2 py-1 text-xs text-slate-500">
-                              {attachment.original_name || "图片"}
-                            </span>
-                          </a>
-                        ))}
-                      </div>
-                    ) : (
-                      "-"
-                    )}
+                    <AdminContactAttachments attachments={contact.attachments || []} />
                   </td>
                   <td className="px-5 py-4">{contact.source || "-"}</td>
                 </tr>

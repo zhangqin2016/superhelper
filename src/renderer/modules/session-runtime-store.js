@@ -53,13 +53,19 @@ export function syncCommittedMessages(sessionId, messages) {
   if (!sessionId) return;
   const runtime = getRuntimeSession(sessionId);
   const incoming = Array.isArray(messages) ? messages : [];
-  const hasActiveLiveTurn = runtime.liveTurn && runtime.liveTurn.phase !== "done";
-  const hasLiveState = runtime.phase !== "idle" || hasActiveLiveTurn || runtime.queue.length > 0;
-  if (!hasLiveState) {
+
+  const shouldPreserveLocal =
+    runtime.phase !== "idle" ||
+    Boolean(runtime.turnId) ||
+    Boolean(runtime.queue?.length);
+  if (!shouldPreserveLocal) {
     runtime.committedMessages = incoming;
     return;
   }
 
+  // Busy sessions may have live user/task messages that the backend has not
+  // flushed yet. Merge them until the turn reaches idle, then let persisted
+  // history become canonical again.
   const seen = new Set(incoming.map((message) => committedMessageKey(message)));
   const localOnly = [];
   for (const message of runtime.committedMessages) {

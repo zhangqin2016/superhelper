@@ -58,7 +58,7 @@ function buildUserContentBlocks(text, files = []) {
       } catch {
         blocks.push({
           type: "text",
-          text: `[图片: ${f.name || path.basename(f.path)}] ${f.path}`,
+          text: `[Image: ${f.name || path.basename(f.path)}] ${f.path}`,
         });
       }
       continue;
@@ -87,7 +87,7 @@ function buildUserContentBlocks(text, files = []) {
     const label = f.name || path.basename(f.path);
     blocks.push({
       type: "text",
-      text: `[附件: ${label}]\n${f.path}`,
+      text: `[Attachment: ${label}]\n${f.path}`,
     });
   }
 

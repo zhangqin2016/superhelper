@@ -61,8 +61,8 @@ function buildManifestFromSkillMd({ skillId, skillMd, version = "1.0.0", priorit
       priority,
       body:
         (description ? `${description}\n\n` : "") +
-        (body || "按 SKILL.md 中的指引完成任务。") +
-        `\n\n技能目录：\`{{SKILL_DIR}}\``,
+        (body || "Follow the instructions in SKILL.md to complete the task.") +
+        `\n\nSkill directory: \`{{SKILL_DIR}}\``,
     },
   };
 }

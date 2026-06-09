@@ -40,7 +40,7 @@ const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 
 /** User-writable default workspace — never use PROJECT_ROOT in packaged builds (resolves to app.asar). */
 function defaultWorkspacePath() {
-  const folderName = "智能工作台";
+  const folderName = "Lily Workbench";
   if (process.platform === "win32") {
     return path.join(app.getPath("documents"), folderName);
   }
@@ -65,6 +65,10 @@ function sessionMessagesDir() {
 
 function sessionSummariesDir() {
   return userDataPath("session-summaries");
+}
+
+function scheduledTasksPath() {
+  return userDataPath("scheduled-tasks.json");
 }
 
 function legacySessionsBackupPath() {
@@ -119,6 +123,7 @@ module.exports = {
   sessionsIndexPath,
   sessionMessagesDir,
   sessionSummariesDir,
+  scheduledTasksPath,
   legacySessionsBackupPath,
   projectsConfigPath,
   mcpConfigPath,

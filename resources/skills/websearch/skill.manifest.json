@@ -10,7 +10,9 @@
   "placeholders": {
     "{{WEBSEARCH_SCRIPT}}": "scripts/websearch.cjs"
   },
-  "replaceNativeTools": ["WebSearch"],
+  "replaceNativeTools": [
+    "WebSearch"
+  ],
   "permissions": {
     "network": true,
     "filesystem": "none",
@@ -20,5 +22,32 @@
     "title": "联网能力（必读）",
     "priority": 20,
     "body": "内置 WebSearch / WebFetch 在本应用中不可用，不要调用这两个工具。\n需要查资料、新闻、实时信息时，用联网搜索脚本（默认阿里 IQS，应用已内置；亦可在「设置 → 联网搜索」切换 SearXNG / DuckDuckGo）。\n\n搜索示例：\n\n```\necho '{\"query\":\"搜索关键词\"}' | \"{{NODE_BIN}}\" \"{{WEBSEARCH_SCRIPT}}\"\n```"
+  },
+  "name_i18n": {
+    "zh-CN": "联网搜索",
+    "en": "Web Search",
+    "ar": "البحث على الويب"
+  },
+  "description_i18n": {
+    "zh-CN": "默认阿里 IQS 联网搜索，亦支持 SearXNG / DuckDuckGo。",
+    "en": "Web search (default: Alibaba IQS, also supports SearXNG / DuckDuckGo). Use when needing to look up information, news, or real-time data.",
+    "ar": "البحث على الويب (الافتراضي: Alibaba IQS، يدعم أيضًا SearXNG / DuckDuckGo)."
+  },
+  "guideMd_i18n": {
+    "zh-CN": {
+      "title": "联网能力（必读）",
+      "priority": 20,
+      "body": "内置 WebSearch / WebFetch 在本应用中不可用，不要调用这两个工具。\n需要查资料、新闻、实时信息时，用联网搜索脚本（默认阿里 IQS，应用已内置；亦可在「设置 → 联网搜索」切换 SearXNG / DuckDuckGo）。\n\n搜索示例：\n\n```\necho '{\"query\":\"搜索关键词\"}' | \"{{NODE_BIN}}\" \"{{WEBSEARCH_SCRIPT}}\"\n```"
+    },
+    "en": {
+      "title": "Web Access (Required)",
+      "priority": 20,
+      "body": "Built-in WebSearch / WebFetch are not available in this app. Do not call these two tools.\nWhen you need to look up information, news, or real-time data, use the web search script (default: Alibaba IQS, built into the app; can also switch to SearXNG / DuckDuckGo in Settings → Web Search).\n\nSearch example:\n\n```\necho '{\"query\":\"search keywords\"}' | \"{{NODE_BIN}}\" \"{{WEBSEARCH_SCRIPT}}\"\n```\n\nOpen links and read page content:\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"what the user wants to know\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\nCommon workflow: search first to find links, then webfetch to read specific pages, finally summarize in the user's language with sources cited."
+    },
+    "ar": {
+      "title": "الوصول إلى الويب (مطلوب)",
+      "priority": 20,
+      "body": "أدوات WebSearch / WebFetch المضمنة غير متاحة في هذا التطبيق. لا تستدع هاتين الأداتين.\nعند الحاجة للبحث عن معلومات أو أخبار أو بيانات فورية، استخدم سكريبت البحث على الويب (الافتراضي: Alibaba IQS، مدمج في التطبيق؛ يمكن أيضًا التبديل إلى SearXNG / DuckDuckGo في الإعدادات → البحث على الويب).\n\nمثال على البحث:\n\n```\necho '{\"query\":\"كلمات البحث\"}' | \"{{NODE_BIN}}\" \"{{WEBSEARCH_SCRIPT}}\"\n```\n\nفتح الروابط وقراءة محتوى الصفحات:\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"ما يريد المستخدم معرفته\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\nسير العمل الشائع: ابحث أولاً للعثور على الروابط، ثم webfetch لقراءة صفحات محددة، وأخيراً لخص بلغة المستخدم مع ذكر المصادر."
+    }
   }
 }

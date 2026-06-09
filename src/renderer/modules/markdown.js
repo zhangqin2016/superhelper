@@ -345,15 +345,15 @@ function wireCodeCopyButtons(element) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "markdown-code-copy";
-    button.textContent = "复制";
-    button.setAttribute("aria-label", "复制代码");
+    button.textContent = "Copy";
+    button.setAttribute("aria-label", "Copy code");
     button.addEventListener("click", async () => {
       const text = code.textContent || "";
       const ok = await copyText(text);
-      button.textContent = ok ? "已复制" : "复制失败";
+      button.textContent = ok ? "Copied" : "Copy failed";
       button.classList.toggle("is-error", !ok);
       setTimeout(() => {
-        button.textContent = "复制";
+        button.textContent = "Copy";
         button.classList.remove("is-error");
       }, 1400);
     });

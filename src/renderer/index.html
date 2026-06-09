@@ -167,6 +167,16 @@
                   </svg>
                   <span class="composer-skill-btn-label" data-i18n="composer.skills">技能</span>
                 </button>
+                <button id="scheduledTaskBtn" type="button" class="composer-icon-btn" data-i18n-title="scheduled.openTitle" data-i18n-aria-label="scheduled.openTitle" title="创建自动执行任务" aria-label="创建自动执行任务">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M8 2v4"/>
+                    <path d="M16 2v4"/>
+                    <rect width="18" height="18" x="3" y="4" rx="2"/>
+                    <path d="M3 10h18"/>
+                    <path d="m9 16 2 2 4-4"/>
+                  </svg>
+                  <span class="composer-icon-btn-label" data-i18n="scheduled.entryLabel">自动执行</span>
+                </button>
                 <button id="attachBtn" type="button" class="composer-icon-btn" data-i18n-title="composer.attach" title="添加图片或文件">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
@@ -201,6 +211,44 @@
       </section>
 
     </main>
+
+    <div id="scheduledTaskModal" class="modal-panel" hidden>
+      <section class="modal-card scheduled-task-card" role="dialog" aria-modal="true" aria-labelledby="scheduledTaskTitle">
+        <header class="modal-header">
+          <div>
+            <h2 id="scheduledTaskTitle" data-i18n="scheduled.title">自动执行</h2>
+            <p data-i18n="scheduled.subtitle">绑定当前工作区和当前对话，到点后自动把任务加入同一条会话队列。</p>
+          </div>
+          <button id="scheduledTaskCloseBtn" type="button" class="modal-close-btn" data-i18n="composer.close">关闭</button>
+        </header>
+        <div class="scheduled-task-body">
+          <label class="scheduled-task-label" for="scheduledTaskPrompt" data-i18n="scheduled.promptLabel">要定时执行什么？</label>
+          <textarea
+            id="scheduledTaskPrompt"
+            class="scheduled-task-textarea"
+            rows="4"
+            data-i18n-placeholder="scheduled.promptPlaceholder"
+            placeholder="例如：每天早上 9 点帮我整理昨天的工作日志"
+          ></textarea>
+          <div class="scheduled-task-examples" aria-label="常用示例">
+            <span data-i18n="scheduled.examplesLabel">可以这样说：</span>
+            <button type="button" data-scheduled-example="daily"></button>
+            <button type="button" data-scheduled-example="weekly"></button>
+            <button type="button" data-scheduled-example="interval"></button>
+          </div>
+          <div class="scheduled-task-actions">
+            <button id="scheduledTaskParseBtn" type="button" class="settings-action-btn" data-i18n="scheduled.parse">解析计划</button>
+            <button id="scheduledTaskCreateBtn" type="button" class="settings-action-btn settings-action-btn--primary" disabled data-i18n="scheduled.create">创建自动任务</button>
+          </div>
+          <div id="scheduledTaskPreview" class="scheduled-task-preview" hidden></div>
+          <p id="scheduledTaskStatus" class="scheduled-task-status" hidden></p>
+          <div class="scheduled-task-list-head">
+            <h3 data-i18n="scheduled.currentSessionTasks">当前对话的自动任务</h3>
+          </div>
+          <div id="scheduledTaskList" class="scheduled-task-list"></div>
+        </div>
+      </section>
+    </div>
 
     <div id="settingsPanel" class="settings-panel" hidden>
       <div id="settingsBackdrop" class="settings-panel-backdrop"></div>

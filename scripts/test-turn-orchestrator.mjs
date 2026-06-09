@@ -199,6 +199,77 @@ if (messages.some((message) => message.content === "stale queued")) {
 }
 
 sent.length = 0;
+const engineInterruptedTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "engine interrupted", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!engineInterruptedTurn.ok || !runner.isBusy()) {
+  throw new Error(`engine interrupted turn should start and own the runner: ${JSON.stringify(engineInterruptedTurn)}`);
+}
+runner.busy = false;
+runner.emit("done", {
+  code: 1,
+  output: "我已经完成了前面的检查。",
+  error: "There's an issue with the selected model. Run --model to pick a different model.",
+  interrupted: true,
+  interruptedByUser: false,
+  engineInterrupted: true,
+  source: "cli.result",
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+const engineInterruptedTerminal = allEvents.find((event) => (
+  event.turnId === engineInterruptedTurn.turnId
+  && ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type)
+));
+if (engineInterruptedTerminal?.type !== "turn.failed") {
+  throw new Error(`engine-side interrupted result must fail, not interrupt: ${JSON.stringify(engineInterruptedTerminal)}`);
+}
+if (engineInterruptedTerminal.payload?.errorCode !== "MODEL_UNAVAILABLE") {
+  throw new Error(`engine-side interrupted failure should keep model error code: ${JSON.stringify(engineInterruptedTerminal.payload)}`);
+}
+
+sent.length = 0;
+const processOnlyFailureTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "process event failure", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!processOnlyFailureTurn.ok || !runner.isBusy()) {
+  throw new Error(`process event failure turn should start: ${JSON.stringify(processOnlyFailureTurn)}`);
+}
+ctx.turnOrchestrator.ingest("s1", [{
+  type: "process.event",
+  payload: {
+    rawType: "result",
+    rawSubtype: "error_max_budget_usd",
+    event: {
+      type: "result",
+      subtype: "error_max_budget_usd",
+      is_error: true,
+      errors: ["Maximum budget exceeded"],
+    },
+    actions: [{ kind: "turn_result", stopReason: "end_turn" }],
+  },
+}]);
+runner.busy = false;
+runner.emit("done", {
+  code: 1,
+  output: "已经完成前面的分析。",
+  source: "cli.result",
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+const processOnlyTerminal = allEvents.find((event) => (
+  event.turnId === processOnlyFailureTurn.turnId
+  && ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type)
+));
+if (processOnlyTerminal?.type !== "turn.failed" || processOnlyTerminal.payload?.errorCode !== "BUDGET_EXCEEDED") {
+  throw new Error(`process event failure should classify from archived process event: ${JSON.stringify(processOnlyTerminal)}`);
+}
+
+sent.length = 0;
 const originalTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "old work", [], {
   spawnEngine: false,
   skipPreflight: true,

@@ -15,5 +15,32 @@
     "title": "任务执行（必读，适用所有任务）",
     "priority": 15,
     "body": "- **先给用户进度感**：任务开始后，尽快说明正在处理；耗时任务要持续给出简短阶段状态，例如读取、分析、生成、执行、等待授权、上传、验证。\n- **工具优先验证**：能用工具、文件、命令或接口验证的事情，不只靠模型猜；但不要为了形式而运行无意义命令。\n- **等待要说明**：等待模型、网络、长命令、上传、构建、部署或外部服务时，要明确告诉用户仍在处理中，而不是沉默。\n- **选择题必须等待选择**：当需要用户在多个方案/选项中选择时，先等待用户选择；不要默认点击第一个或自行继续。\n- **危险操作先确认**：删除、覆盖、大批量修改、部署、上传外网、花费 API 额度、停止服务、清理数据前必须确认。\n- **完成判定要闭环**：只有结果已经产出、必要验证已完成、路径/预览/下一步已说明，才算完成。\n- **失败可恢复**：失败时说明发生在哪一步、已完成什么、还能怎么重试或改用什么方案。\n- **不要重复空转**：同一错误连续出现时不要无限重试；收敛原因，换路径或请用户确认。"
+  },
+  "name_i18n": {
+    "zh-CN": "任务执行规则",
+    "en": "Task Execution Rules",
+    "ar": "قواعد تنفيذ المهام"
+  },
+  "description_i18n": {
+    "zh-CN": "所有会话强制生效的任务推进、状态反馈、完成判定和失败处理规则（不可关闭）。",
+    "en": "Mandatory task progress, feedback, completion verification and failure handling rules for all sessions (cannot be disabled).",
+    "ar": "قواعد إلزامية لتقدم المهام والتغذية الراجعة والتحقق من الإكمال ومعالجة الفشل لجميع الجلسات (لا يمكن تعطيلها)."
+  },
+  "guideMd_i18n": {
+    "zh-CN": {
+      "title": "任务执行（必读，适用所有任务）",
+      "priority": 15,
+      "body": "- **先给用户进度感**：任务开始后，尽快说明正在处理；耗时任务要持续给出简短阶段状态，例如读取、分析、生成、执行、等待授权、上传、验证。\n- **工具优先验证**：能用工具、文件、命令或接口验证的事情，不只靠模型猜；但不要为了形式而运行无意义命令。\n- **等待要说明**：等待模型、网络、长命令、上传、构建、部署或外部服务时，要明确告诉用户仍在处理中，而不是沉默。\n- **选择题必须等待选择**：当需要用户在多个方案/选项中选择时，先等待用户选择；不要默认点击第一个或自行继续。\n- **危险操作先确认**：删除、覆盖、大批量修改、部署、上传外网、花费 API 额度、停止服务、清理数据前必须确认。\n- **完成判定要闭环**：只有结果已经产出、必要验证已完成、路径/预览/下一步已说明，才算完成。\n- **失败可恢复**：失败时说明发生在哪一步、已完成什么、还能怎么重试或改用什么方案。\n- **不要重复空转**：同一错误连续出现时不要无限重试；收敛原因，换路径或请用户确认。"
+    },
+    "en": {
+      "title": "Task Execution (Required, applies to all tasks)",
+      "priority": 15,
+      "body": "- **Give the user a sense of progress first**: After the task starts, quickly indicate what's being processed; time-consuming tasks must continuously give brief phase status, such as reading, analyzing, generating, executing, waiting for authorization, uploading, verifying.\n- **Tools first for verification**: Things that can be verified with tools, files, commands, or interfaces should not rely on model guessing alone; but don't run meaningless commands just for formality.\n- **Explain when waiting**: When waiting for models, networks, long commands, uploads, builds, deployments, or external services, explicitly tell the user you're still processing, don't stay silent.\n- **Multiple choice must wait for selection**: When the user needs to choose between multiple options/approaches, wait for selection first; don't default-click the first option or continue on your own.\n- **Confirm dangerous operations first**: Before deleting, overwriting, bulk modifying, deploying, uploading to external networks, spending API quota, stopping services, or cleaning data, must confirm.\n- **Completion verification must be closed-loop**: Only when results have been produced, necessary verification completed, and paths/previews/next steps explained, is it considered complete.\n- **Failure should be recoverable**: When failing, explain at which step it occurred, what has been completed, how to retry or what alternative to use.\n- **Don't repeat idly**: When the same error occurs consecutively, don't retry infinitely; converge on the cause, change the path, or ask the user to confirm.\n\n技能目录：`{{SKILL_DIR}}`"
+    },
+    "ar": {
+      "title": "تنفيذ المهام (مطلوب، ينطبق على جميع المهام)",
+      "priority": 15,
+      "body": "- **أعط المستخدم إحساساً بالتقدم أولاً**\n- **الأدوات أولاً للتحقق**\n- **اشرح عند الانتظار**\n- **الاختيار من متعدد يجب أن ينتظر الاختيار**\n- **تأكيد العمليات الخطرة أولاً**\n- **التحقق من الإكمال يجب أن يكون حلقة مغلقة**\n- **الفشل يجب أن يكون قابلاً للاسترداد**\n- **لا تكرر بدون فائدة**\n\n技能目录：`{{SKILL_DIR}}`"
+    }
   }
 }

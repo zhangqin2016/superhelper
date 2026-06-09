@@ -758,12 +758,16 @@ try {
   });
   assert.equal(contacts.statusCode, 200);
   assert.ok(contacts.json().contacts.some((item) => item.id === contact.json().id));
-  assert.ok(
-    contacts
-      .json()
-      .contacts.find((item) => item.id === contact.json().id)
-      ?.attachments?.some((item) => item.object_key === "feedback/dev_integration/draft/example.png"),
+  const adminContact = contacts.json().contacts.find((item) => item.id === contact.json().id);
+  const adminAttachment = adminContact?.attachments?.find(
+    (item) => item.object_key === "feedback/dev_integration/draft/example.png",
   );
+  assert.ok(adminAttachment);
+  assert.equal(
+    adminAttachment.public_url,
+    "https://qiniu.integration.test/feedback/dev_integration/draft/example.png",
+  );
+  assert.equal(adminAttachment.publicUrl, adminAttachment.public_url);
   assert.ok(contacts.json().contacts.some((item) => item.id === legacyContact.json().id));
 
   const release = await app.inject({

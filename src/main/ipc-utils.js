@@ -47,13 +47,13 @@ function diagnoseSendBlocker(ctx, sessionId) {
   if (!cliPath) {
     return {
       error: "NO_CLI",
-      detail: "内置助手引擎未安装。请完全退出应用后重新打开。",
+      detail: "The built-in assistant engine is not installed. Please fully exit the application and reopen it.",
     };
   }
   if (!fs.existsSync(cliPath)) {
     return {
       error: "NO_CLI",
-      detail: `引擎文件不存在：${cliPath}`,
+      detail: `Engine file not found: ${cliPath}`,
     };
   }
 
@@ -68,22 +68,22 @@ function diagnoseSendBlocker(ctx, sessionId) {
   if (!String(lilyEnv.LILY_API_KEY || "").trim()) {
     return {
       error: "NO_API_KEY",
-      detail: "未配置 API Key。请在设置 → 模型/API 网关中填写密钥后再发送消息。",
+      detail: "No API key configured. Please enter your key in Settings → Model/API Gateway before sending messages.",
     };
   }
 
   const session =
     ctx.sessionManager.findById(sessionId) || ctx.sessionManager.getActive();
-  if (!session) return { error: "NO_SESSION", detail: "请先创建或选择一个对话。" };
+  if (!session) return { error: "NO_SESSION", detail: "Please create or select a conversation first." };
 
   const project = resolveProjectForSession(ctx.projectManager, session);
   if (!project) {
-    return { error: "NO_PROJECT", detail: "对话所属的文件夹已不存在，请重新添加文件夹。" };
+    return { error: "NO_PROJECT", detail: "The workspace folder for this conversation no longer exists. Please add the folder again." };
   }
   if (!fs.existsSync(project.path)) {
     return {
       error: "INVALID_WORKDIR",
-      detail: `工作目录不存在：${project.path}`,
+      detail: `Working directory does not exist: ${project.path}`,
     };
   }
 
@@ -127,7 +127,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     return {
       runner: null,
       error: "NO_SESSION",
-      detail: "对话不存在或已删除，请重新选择或新建对话。",
+      detail: "Conversation not found or has been deleted. Please select or create a new conversation.",
     };
   }
 
@@ -136,7 +136,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     return {
       runner: null,
       error: "NO_PROJECT",
-      detail: "对话所属的文件夹已不存在，请重新添加文件夹。",
+      detail: "The workspace folder for this conversation no longer exists. Please add the folder again.",
     };
   }
 
@@ -145,21 +145,21 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     return {
       runner: null,
       error: "NO_CLI",
-      detail: "内置助手引擎未安装。请完全退出应用后重新打开。",
+      detail: "The built-in assistant engine is not installed. Please fully exit the application and reopen it.",
     };
   }
   if (!fs.existsSync(cliPath)) {
     return {
       runner: null,
       error: "NO_CLI",
-      detail: `引擎文件不存在：${cliPath}`,
+      detail: `Engine file not found: ${cliPath}`,
     };
   }
   if (!fs.existsSync(project.path)) {
     return {
       runner: null,
       error: "INVALID_WORKDIR",
-      detail: `工作目录不存在：${project.path}`,
+      detail: `Working directory does not exist: ${project.path}`,
     };
   }
 
@@ -198,7 +198,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     wireRunner(ctx, runner);
 
     if (opts.spawn === true && !runner.isAlive()) {
-      const hint = runner.lastSpawnError || "助手引擎进程未能启动。";
+      const hint = runner.lastSpawnError || "The assistant engine process failed to start.";
       return { runner: null, error: "RUNNER_ERROR", detail: hint };
     }
 

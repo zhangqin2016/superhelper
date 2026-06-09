@@ -9,7 +9,7 @@ const { fileStagingDir } = require("./config");
 function registerFileHandlers(mainWindow, stagingManager) {
   ipcMain.handle("files:pick", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: "选择文件",
+      title: "Select File",
       properties: ["openFile", "multiSelections"],
       filters: FileStagingManager.getFileFilters(),
     });

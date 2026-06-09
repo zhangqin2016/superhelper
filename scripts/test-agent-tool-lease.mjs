@@ -105,7 +105,10 @@ line(resumeRunner, {
 if (!resumeInvalid) {
   throw new Error("resume failure should emit resume-invalid");
 }
-if (resumeError.includes("Session ID") || !resumeError.includes("连接已刷新")) {
+if (
+  resumeError.includes("Session ID") ||
+  !resumeError.toLowerCase().includes("connection has been refreshed")
+) {
   throw new Error(`resume failure should be user-friendly, got: ${resumeError}`);
 }
 
@@ -138,7 +141,10 @@ stderrFailureRunner._handleStderr(
   "There's an issue with the selected model (qwen3-coder-plus). It may not exist or you may not have access to it. Run --model to pick a different model.",
 );
 await new Promise((resolve) => setTimeout(resolve, 0));
-if (!stderrFailureError.includes("当前模型暂时不可用")) {
+if (
+  stderrFailureError.includes("qwen3-coder-plus") ||
+  !stderrFailureError.toLowerCase().includes("selected model")
+) {
   throw new Error(`model stderr failure should settle turn with sanitized error: ${stderrFailureError}`);
 }
 if (stderrFailureRunner.busy || !stderrFailureRunner._turnSettled || !stderrFailureTerminated) {
@@ -811,6 +817,12 @@ line(resultErrorRunner, {
 });
 if (resultErrorDone?.code !== 1) {
   throw new Error(`result error subtype should complete as failed: ${JSON.stringify(resultErrorDone)}`);
+}
+if (!String(resultErrorDone?.error || "").includes("Maximum budget exceeded")) {
+  throw new Error(`result error should preserve raw CLI failure reason: ${JSON.stringify(resultErrorDone)}`);
+}
+if (resultErrorDone?.resultSubtype !== "error_max_budget_usd") {
+  throw new Error(`result error should preserve subtype: ${JSON.stringify(resultErrorDone)}`);
 }
 
 const reloadRunner = createTestSession("sess_reload");

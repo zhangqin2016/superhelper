@@ -10,6 +10,7 @@ const ProjectManager = require("./main/project-manager");
 const SessionManager = require("./main/session-manager");
 const FileStagingManager = require("./main/file-staging-manager");
 const { SessionRunnerPool } = require("./main/session-runner-pool");
+const { ScheduledTaskManager } = require("./main/scheduled-tasks");
 const ipcHandlers = require("./main/ipc-handlers");
 const { wireExternalLinks } = require("./main/window-links");
 const { wireContextMenu } = require("./main/window-context-menu");
@@ -17,6 +18,7 @@ const { wireContextMenu } = require("./main/window-context-menu");
 let mainWindow = null;
 let runnerPoolRef = null;
 let sessionManagerRef = null;
+let scheduledTaskManagerRef = null;
 /** @type {{ ok: boolean, mode?: string, error?: string, message?: string } | null} */
 let agentBootstrap = null;
 
@@ -91,6 +93,9 @@ app.whenReady().then(async () => {
   const stagingManager = new FileStagingManager();
   const runnerPool = new SessionRunnerPool();
   runnerPoolRef = runnerPool;
+  const scheduledTaskManager = new ScheduledTaskManager();
+  scheduledTaskManager.load();
+  scheduledTaskManagerRef = scheduledTaskManager;
 
   createWindow();
   require("./main/update-manager").configure({
@@ -123,7 +128,7 @@ app.whenReady().then(async () => {
     })
     .catch((err) => console.warn("[license-refresh]", err?.message || err));
 
-  ipcHandlers.registerAll({
+  const appContext = {
     get mainWindow() {
       return mainWindow;
     },
@@ -134,7 +139,11 @@ app.whenReady().then(async () => {
     sessionManager,
     stagingManager,
     runnerPool,
-  });
+    scheduledTaskManager,
+  };
+
+  ipcHandlers.registerAll(appContext);
+  scheduledTaskManager.start(appContext);
 
   require("./main/update-scheduler").startBackgroundUpdateChecks();
 
@@ -146,6 +155,8 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  scheduledTaskManagerRef?.stop();
+  scheduledTaskManagerRef?.save();
   sessionManagerRef?.saveImmediate();
   runnerPoolRef?.terminateAll();
   try {

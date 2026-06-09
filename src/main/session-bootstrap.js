@@ -11,9 +11,9 @@ function trimText(value, limit = MAX_MESSAGE_CHARS) {
 }
 
 function roleLabel(role) {
-  if (role === "user") return "用户";
-  if (role === "assistant") return "助手";
-  return String(role || "消息");
+  if (role === "user") return "User";
+  if (role === "assistant") return "Assistant";
+  return String(role || "Message");
 }
 
 function formatMessages(messages = []) {
@@ -21,7 +21,7 @@ function formatMessages(messages = []) {
     .filter((message) => message && typeof message.content === "string" && message.content.trim())
     .slice(-MAX_HISTORY_MESSAGES)
     .map((message) => {
-      const failed = message.failed ? "（失败/未完成）" : "";
+      const failed = message.failed ? " (failed/incomplete)" : "";
       return `- ${roleLabel(message.role)}${failed}: ${trimText(message.content)}`;
     })
     .join("\n");
@@ -32,37 +32,37 @@ function buildSessionRehydratePrompt({ session, project, userText, summary = nul
   const summaryText = require("./session-memory").formatSessionSummary(summary);
   if (!history && !summaryText) return "";
 
-  const title = trimText(session?.title || "默认对话", 120);
+  const title = trimText(session?.title || require("./session-manager").defaultSessionTitle(), 120);
   const workspaceName = trimText(project?.name || "", 120);
   const workspacePath = trimText(project?.path || "", 300);
   const currentUserText = trimText(userText || "", 1_000);
 
   const parts = [
-    "【会话恢复说明】",
-    "这是一次 Claude CLI 新会话恢复：原 Claude CLI 会话无法 resume 或没有可用 resume id。",
-    "请把下面内容只当作继续当前工作的背景，不要复述这段说明，不要回答“恢复说明”本身。",
-    "如果历史里已有结论或已完成事项，请直接在此基础上继续；不要要求用户重新解释上下文，除非信息确实不足。",
+    "[Session Resume Notice]",
+    "This is a new Claude CLI session resume: the original Claude CLI session could not be resumed or has no resume ID available.",
+    "Treat the following content only as background to continue work. Do NOT repeat this notice, and do NOT respond to the \"resume notice\" itself.",
+    "If a conclusion or completed item already exists in history, continue directly from it. Do NOT ask the user to re-explain context unless information is truly insufficient.",
     "",
-    `当前 Lily 会话：${title}`,
+    `Current Lily session: ${title}`,
   ];
 
   if (workspaceName || workspacePath) {
-    parts.push(`当前工作区：${workspaceName || "(未命名)"}${workspacePath ? `\n工作区路径：${workspacePath}` : ""}`);
+    parts.push(`Current workspace: ${workspaceName || "(unnamed)"}${workspacePath ? `\nWorkspace path: ${workspacePath}` : ""}`);
   }
 
   if (summaryText) {
-    parts.push("", "会话滚动摘要：", summaryText);
+    parts.push("", "Session scroll summary:", summaryText);
   }
 
   if (history) {
-    parts.push("", "最近会话记录：", history);
+    parts.push("", "Recent session history:", history);
   }
 
   if (currentUserText) {
-    parts.push("", "用户本次真正要发送的问题：", currentUserText);
+    parts.push("", "The actual question the user is sending:", currentUserText);
   }
 
-  parts.push("", "【恢复说明结束】");
+  parts.push("", "[End resume notice]");
 
   const text = parts.join("\n");
   return text.length <= MAX_BOOTSTRAP_CHARS ? text : `${text.slice(0, MAX_BOOTSTRAP_CHARS - 1)}…`;

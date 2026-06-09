@@ -10,7 +10,9 @@
   "placeholders": {
     "{{WEBFETCH_SCRIPT}}": "scripts/webfetch.cjs"
   },
-  "replaceNativeTools": ["WebFetch"],
+  "replaceNativeTools": [
+    "WebFetch"
+  ],
   "permissions": {
     "network": true,
     "filesystem": "none",
@@ -20,5 +22,32 @@
     "title": "联网能力（必读）",
     "priority": 21,
     "body": "打开链接并读取正文：\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"用户想了解的问题\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\n常见流程：先搜索找到链接，再 webfetch 读具体页面，最后用中文总结并附上来源。"
+  },
+  "name_i18n": {
+    "zh-CN": "网页抓取",
+    "en": "Web Fetch",
+    "ar": "جلب صفحات الويب"
+  },
+  "description_i18n": {
+    "zh-CN": "打开链接并读取网页正文，无需 API Key。",
+    "en": "Open links and read webpage content. No API key required.",
+    "ar": "فتح الروابط وقراءة محتوى صفحات الويب. لا يتطلب مفتاح API."
+  },
+  "guideMd_i18n": {
+    "zh-CN": {
+      "title": "联网能力（必读）",
+      "priority": 21,
+      "body": "打开链接并读取正文：\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"用户想了解的问题\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\n常见流程：先搜索找到链接，再 webfetch 读具体页面，最后用中文总结并附上来源。"
+    },
+    "en": {
+      "title": "Web Access (Required)",
+      "priority": 21,
+      "body": "Built-in WebSearch / WebFetch are not available in this app. Do not call these two tools.\nWhen you need to open a link and read page content, use the web fetch script.\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"what the user wants to know\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\nCommon workflow: search first with websearch to find links, then webfetch to read specific pages, finally summarize in the user's language with sources cited."
+    },
+    "ar": {
+      "title": "الوصول إلى الويب (مطلوب)",
+      "priority": 21,
+      "body": "أدوات WebSearch / WebFetch المضمنة غير متاحة في هذا التطبيق. لا تستدع هاتين الأداتين.\nعند الحاجة لفتح رابط وقراءة محتوى الصفحة، استخدم سكريبت جلب الويب.\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"ما يريد المستخدم معرفته\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\nسير العمل الشائع: ابحث أولاً باستخدام websearch للعثور على الروابط، ثم webfetch لقراءة صفحات محددة، وأخيراً لخص بلغة المستخدم مع ذكر المصادر."
+    }
   }
 }

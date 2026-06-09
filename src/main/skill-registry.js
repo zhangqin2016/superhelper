@@ -160,7 +160,7 @@ async function fetchRegistry(url) {
     return { ok: true, registry: { ...parsed.registry, fetchedAt, sourceUrl: url.trim() } };
   } catch (err) {
     if (err.name === "AbortError") {
-      return { ok: false, error: "NETWORK", detail: "请求超时" };
+      return { ok: false, error: "NETWORK", detail: "Request timed out" };
     }
     return { ok: false, error: "NETWORK", detail: err.message };
   } finally {

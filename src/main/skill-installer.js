@@ -106,13 +106,13 @@ function validateManifest(manifest, expectedId) {
     return { ok: false, error: "INVALID_MANIFEST" };
   }
   if (manifest.id !== expectedId) {
-    return { ok: false, error: "INVALID_MANIFEST", detail: "技能 ID 与目录不一致" };
+    return { ok: false, error: "INVALID_MANIFEST", detail: "Skill ID does not match the directory" };
   }
   if (manifest.runtime && manifest.runtime !== "node") {
-    return { ok: false, error: "INVALID_MANIFEST", detail: "仅支持 node 运行时" };
+    return { ok: false, error: "INVALID_MANIFEST", detail: "Only node runtime is supported" };
   }
   if (manifest.minAppVersion && !isAppVersionCompatible(manifest.minAppVersion)) {
-    return { ok: false, error: "INVALID_MANIFEST", detail: "需要更高版本的应用" };
+    return { ok: false, error: "INVALID_MANIFEST", detail: "A newer version of the application is required" };
   }
   return { ok: true, manifest };
 }
@@ -154,7 +154,7 @@ async function installFromRegistryEntry(entry) {
     return { ok: false, error: "BUNDLED_PROTECTED" };
   }
   if (entry.minAppVersion && !isAppVersionCompatible(entry.minAppVersion)) {
-    return { ok: false, error: "INVALID_MANIFEST", detail: "需要更高版本的应用" };
+    return { ok: false, error: "INVALID_MANIFEST", detail: "A newer version of the application is required" };
   }
 
   if (entry.sourceType === "github") {
@@ -162,7 +162,7 @@ async function installFromRegistryEntry(entry) {
   }
 
   if (!entry.downloadUrl || !entry.sha256) {
-    return { ok: false, error: "INVALID_MANIFEST", detail: "技能源无效" };
+    return { ok: false, error: "INVALID_MANIFEST", detail: "Invalid skill source" };
   }
 
   const cacheDir = skillsCacheDir();
@@ -183,7 +183,7 @@ async function installFromRegistryEntry(entry) {
 
     const skillRoot = findSkillRootInArchive(extractDir);
     if (!skillRoot) {
-      return { ok: false, error: "INVALID_MANIFEST", detail: "压缩包结构无效（未找到 SKILL.md 或 skill.manifest.json）" };
+      return { ok: false, error: "INVALID_MANIFEST", detail: "Invalid archive structure (SKILL.md or skill.manifest.json not found)" };
     }
 
     const manifestPath = path.join(skillRoot, "skill.manifest.json");
@@ -192,14 +192,14 @@ async function installFromRegistryEntry(entry) {
     if (!validated.ok) return validated;
 
     if (fs.existsSync(path.join(skillRoot, "node_modules"))) {
-      return { ok: false, error: "INVALID_MANIFEST", detail: "禁止包含 node_modules" };
+      return { ok: false, error: "INVALID_MANIFEST", detail: "node_modules is not allowed in skill packages" };
     }
 
     if (compareSemver(validated.manifest.version, entry.latestVersion) !== 0) {
       return {
         ok: false,
         error: "INVALID_MANIFEST",
-        detail: "manifest 版本与 registry 不一致",
+        detail: "Manifest version does not match registry",
       };
     }
 
@@ -229,10 +229,10 @@ async function installFromRegistryEntry(entry) {
     return { ok: true, id: entry.id, version: validated.manifest.version };
   } catch (err) {
     if (err.message === "ZIP_SLIP") {
-      return { ok: false, error: "INVALID_MANIFEST", detail: "压缩包路径不安全" };
+      return { ok: false, error: "INVALID_MANIFEST", detail: "Archive path is unsafe" };
     }
     if (err.message === "SKILLPACK_TOO_LARGE") {
-      return { ok: false, error: "INVALID_MANIFEST", detail: "技能包超过大小上限" };
+      return { ok: false, error: "INVALID_MANIFEST", detail: "Skill package exceeds size limit" };
     }
     return { ok: false, error: "NETWORK", detail: err.message };
   } finally {

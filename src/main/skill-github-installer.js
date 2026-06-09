@@ -82,7 +82,7 @@ async function downloadGithubPath(repo, remotePath, ref, destDir) {
       fs.writeFileSync(destDir, text, "utf8");
       return;
     }
-    throw new Error("目录结构无效");
+    throw new Error("Invalid directory structure");
   }
 
   fs.mkdirSync(destDir, { recursive: true });
@@ -148,13 +148,13 @@ function finalizeInstalledSkill(entry, extractDir) {
     return {
       ok: false,
       error: "INVALID_MANIFEST",
-      detail: "未找到 SKILL.md 或 skill.manifest.json（目录结构无效）",
+      detail: "SKILL.md or skill.manifest.json not found (invalid directory structure)",
     };
   }
 
   const skillMdPath = path.join(skillRoot, "SKILL.md");
   if (!fs.existsSync(skillMdPath)) {
-    return { ok: false, error: "INVALID_MANIFEST", detail: "未找到 SKILL.md" };
+    return { ok: false, error: "INVALID_MANIFEST", detail: "SKILL.md not found" };
   }
 
   const skillMd = fs.readFileSync(skillMdPath, "utf8");
@@ -167,7 +167,7 @@ function finalizeInstalledSkill(entry, extractDir) {
         return {
           ok: false,
           error: "INVALID_MANIFEST",
-          detail: "技能 ID 与目录不一致",
+          detail: "Skill ID does not match the directory",
         };
       }
       manifest.id = entry.id;
@@ -176,7 +176,7 @@ function finalizeInstalledSkill(entry, extractDir) {
       return {
         ok: false,
         error: "INVALID_MANIFEST",
-        detail: `skill.manifest.json 无法解析：${err.message}`,
+        detail: `Failed to parse skill.manifest.json: ${err.message}`,
       };
     }
   } else {
@@ -220,9 +220,9 @@ function finalizeInstalledSkill(entry, extractDir) {
 function networkErrorDetail(err) {
   if (/HTTP 403/.test(err.message)) {
     if (app.isPackaged) {
-      return "内置技能包未找到且无法访问 GitHub。请更新到最新安装包，或检查是否完整安装。";
+      return "Built-in skill package not found and GitHub is unreachable. Please update to the latest app package or verify the installation is complete.";
     }
-    return "无法访问 GitHub（403/限流）。开发环境请运行 npm run sync:skills-bundle 使用离线包。";
+    return "Cannot access GitHub (403/rate limited). In dev mode, run npm run sync:skills-bundle to use the offline package.";
   }
   return err.message;
 }
@@ -236,10 +236,10 @@ async function installFromGithubEntry(entry) {
     return { ok: false, error: "BUNDLED_PROTECTED" };
   }
   if (!entry.github?.repo || !entry.github?.path) {
-    return { ok: false, error: "INVALID_MANIFEST", detail: "缺少 GitHub 源信息" };
+    return { ok: false, error: "INVALID_MANIFEST", detail: "Missing GitHub source information" };
   }
   if (entry.minAppVersion && !isAppVersionCompatible(entry.minAppVersion)) {
-    return { ok: false, error: "INVALID_MANIFEST", detail: "需要更高版本的应用" };
+    return { ok: false, error: "INVALID_MANIFEST", detail: "A newer version of the application is required" };
   }
 
   const cacheDir = skillsCacheDir();
@@ -254,7 +254,7 @@ async function installFromGithubEntry(entry) {
       return {
         ok: false,
         error: "BUNDLED_MISSING",
-        detail: `安装包内缺少技能「${entry.id}」的离线文件，请更新应用。`,
+        detail: `Offline files for skill "${entry.id}" are missing from the app package. Please update the application.`,
       };
     } else {
       await materializeFromGithub(entry, extractDir);
@@ -271,7 +271,7 @@ async function installFromGithubEntry(entry) {
     return result;
   } catch (err) {
     if (err.message === "SKILL_TOO_LARGE") {
-      return { ok: false, error: "INVALID_MANIFEST", detail: "技能包超过大小上限" };
+      return { ok: false, error: "INVALID_MANIFEST", detail: "Skill package exceeds size limit" };
     }
 
     // GitHub failed — fall back to bundled catalog when available (common in CN networks)

@@ -2,6 +2,7 @@
 
 const { ipcMain, dialog, shell } = require("electron");
 const { ensureSessionRunner } = require("./ipc-utils");
+const { defaultSessionTitle } = require("./session-manager");
 
 function registerProjectHandlers(ctx) {
   const { mainWindow, projectManager, sessionManager, runnerPool } = ctx;
@@ -10,14 +11,14 @@ function registerProjectHandlers(ctx) {
 
   ipcMain.handle("project:add", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: "选择文件夹",
+      title: "Select Folder",
       properties: ["openDirectory"],
     });
     if (result.canceled || result.filePaths.length === 0) {
       return { ok: false, canceled: true };
     }
     const project = projectManager.add(result.filePaths[0]);
-    sessionManager.create(project.id, "默认对话");
+    sessionManager.create(project.id, defaultSessionTitle());
     return { ok: true, state: projectManager.getAppState() };
   });
 
