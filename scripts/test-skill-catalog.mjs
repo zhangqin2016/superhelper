@@ -70,9 +70,24 @@ for (const skillId of expectedMandatory) {
   }
 }
 const globalGuide = fs.readFileSync(path.join(tmp, "lily-config", "AGENT.md"), "utf8");
-const productRulesIndex = globalGuide.indexOf("## 工作原则");
-const contextRulesIndex = globalGuide.indexOf("## 上下文理解");
-const taskRulesIndex = globalGuide.indexOf("## 任务执行");
+function firstGuideIndex(headings) {
+  const indexes = headings
+    .map((heading) => globalGuide.indexOf(heading))
+    .filter((index) => index >= 0);
+  return indexes.length ? Math.min(...indexes) : -1;
+}
+const productRulesIndex = firstGuideIndex([
+  "## 工作原则",
+  "## Work Principles",
+]);
+const contextRulesIndex = firstGuideIndex([
+  "## 上下文理解",
+  "## Context Understanding",
+]);
+const taskRulesIndex = firstGuideIndex([
+  "## 任务执行",
+  "## Task Execution",
+]);
 if (!(productRulesIndex > -1 && contextRulesIndex > productRulesIndex && taskRulesIndex > contextRulesIndex)) {
   throw new Error("mandatory rule guides should be injected in priority order");
 }

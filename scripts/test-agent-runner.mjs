@@ -8,6 +8,7 @@ import {
   sanitizeError,
   classifyAssistantError,
   isUpstreamApiFailure,
+  normalizeAssistantOutput,
 } from "../src/main/agent-runner.js";
 import { sameSpawnOptions, sameRespawnOptions } from "../src/main/runner-spawn-options.js";
 import {
@@ -84,6 +85,10 @@ if (deniedFailure?.code !== "PERMISSION_DENIED" || deniedFailure.retryable !== f
 const budgetFailure = classifyAssistantError("Maximum budget exceeded");
 if (budgetFailure?.code !== "BUDGET_EXCEEDED" || budgetFailure.retryable !== false) {
   throw new Error(`classifyAssistantError budget failed: ${JSON.stringify(budgetFailure)}`);
+}
+const quotedErrorAnswer = normalizeAssistantOutput("截图里写着 API Error: timeout。原因可能是网络。");
+if (quotedErrorAnswer.failed || !quotedErrorAnswer.text.includes("API Error")) {
+  throw new Error(`assistant text containing error words must stay normal output: ${JSON.stringify(quotedErrorAnswer)}`);
 }
 
 const baseOpts = {

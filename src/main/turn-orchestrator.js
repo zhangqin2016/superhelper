@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const path = require("node:path");
 const {
   normalizeAssistantOutput,
   sanitizeError,
@@ -95,6 +96,16 @@ function compactFailureDetail(raw) {
   return text.length > 260 ? `${text.slice(0, 260)}…` : text;
 }
 
+function withoutVisionFiles(files = []) {
+  const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
+  return (files || []).filter((file) => {
+    if (!file) return false;
+    if (file.isImage) return false;
+    const ext = path.extname(String(file.path || file.name || "")).toLowerCase();
+    return !imageExtensions.has(ext);
+  });
+}
+
 function failureTextFromProcessEvent(event = {}) {
   const rawSubtype = String(event.rawSubtype || event.event?.subtype || "");
   const rawType = String(event.rawType || event.event?.type || "");
@@ -154,12 +165,10 @@ function classifyTurnFailure(payload, normalized, state) {
   if (normalized?.failed) {
     return {
       code: normalized.errorCode || "ASSISTANT_ERROR",
-      message: normalized.text || "An error occurred while processing the request. Please try again.",
+      message: normalized.text || sanitizeError(collectFailureTextFromState(state)) || "The assistant engine encountered an error. Please retry.",
       retryable: normalized.retryable !== false,
     };
   }
-  const classified = classifyAssistantError(payload?.output || state?.assistantText || "");
-  if (classified) return classified;
   if (payload?.engineInterrupted) {
     return {
       code: "ENGINE_INTERRUPTED",
@@ -852,7 +861,7 @@ class TurnOrchestrator {
         ...terminalMeta,
       });
     } else if (failed) {
-      const friendly = failure.message || normalized.text || "An error occurred while processing the request. Please try again.";
+      const friendly = failure.message || normalized.text || sanitizeError(collectFailureTextFromState(state)) || "The assistant engine encountered an error. Please retry.";
       this._finalize(sessionId, "turn.failed", {
         failed: true,
         assistant: friendly,
@@ -876,14 +885,27 @@ class TurnOrchestrator {
   async _handleError(sessionId, message) {
     const state = this._state(sessionId);
     if (!state.turnId || state.terminalEmitted) return;
-    const classified = classifyAssistantError(String(message || ""));
-    const text = classified?.message || sanitizeError(String(message || ""));
+
+    // Attempt recovery for transient errors (network, API) — same as _handleDone.
+    const raw = String(message || "");
+    if (!state.recoveryAttempted && isRecoverableFailure(raw)) {
+      state.recoveryAttempted = true;
+      state.phase = "recovering";
+      this._emit(sessionId, "recovery.scheduled", { attempt: 1, maxAttempts: 1, source: "engine_error" });
+      setTimeout(() => {
+        void this._recover(sessionId);
+      }, 600);
+      return;
+    }
+
+    const classified = classifyAssistantError(raw);
+    const text = classified?.message || sanitizeError(raw);
     this._finalize(sessionId, "turn.failed", {
       failed: true,
       assistant: text,
       errorCode: classified?.code || "ENGINE_ERROR",
       retryable: classified?.retryable !== false,
-      error: String(message || ""),
+      error: raw,
     });
     await this._flushUsage(sessionId);
     void this._dispatchNext(sessionId);
@@ -895,15 +917,35 @@ class TurnOrchestrator {
     if (!payload || state.terminalEmitted) return;
     this._emit(sessionId, "recovery.started", { attempt: 1 });
     state.phase = "starting";
-    const runner = this.ctx.runnerPool.get(sessionId);
+
+    // Re-ensure the runner — if the engine process died, this spawns a fresh one.
+    const { ensureSessionRunner } = require("./ipc-utils");
+    const ensured = ensureSessionRunner(this.ctx, sessionId, { spawn: true });
+    const runner = ensured.runner;
     if (!runner) {
       this._finalize(sessionId, "turn.failed", {
         failed: true,
-        assistant: "Connection recovery failed. Please resend your message.",
+        assistant: "Connection recovery failed — engine could not be restarted. Please resend your message.",
+        errorCode: "RECOVERY_NO_RUNNER",
+        retryable: true,
       });
       return;
     }
-    runner.sendUserMessage(payload);
+
+    // If the engine was restarted, the resume ID is stale — clear it so we start fresh.
+    if (ensured.coldStart) {
+      this.ctx.sessionManager.clearAgentResumeId(sessionId);
+    }
+
+    const sent = runner.sendUserMessage(payload);
+    if (!sent) {
+      this._finalize(sessionId, "turn.failed", {
+        failed: true,
+        assistant: "Connection recovery failed. Please resend your message.",
+        errorCode: "RECOVERY_REJECTED",
+        retryable: true,
+      });
+    }
   }
 
   _finalize(sessionId, type, payload = {}) {
@@ -1036,7 +1078,7 @@ class TurnOrchestrator {
       translateImages,
     } = require("./vision-translator");
     if (!hasVisionInputFiles(files)) {
-      return { ok: true, text, files };
+      return { ok: true, text, files: withoutVisionFiles(files) };
     }
 
     this._emitEngineNotice(sessionId, {
@@ -1048,7 +1090,7 @@ class TurnOrchestrator {
 
     const result = await translateImages(files, { userText: text });
     if (result === null) {
-      return { ok: true, text, files };
+      return { ok: true, text, files: withoutVisionFiles(files) };
     }
 
     if (!result.ok) {
@@ -1070,7 +1112,7 @@ class TurnOrchestrator {
           detail: result.detail || undefined,
         };
       }
-      return { ok: true, text, files };
+      return { ok: true, text, files: withoutVisionFiles(files) };
     }
 
     this._emitEngineNotice(sessionId, {
@@ -1083,7 +1125,7 @@ class TurnOrchestrator {
     });
 
     const enrichedText = buildEnrichedUserText(text, result.text);
-    const outboundFiles = result.keepOriginal ? files : [];
+    const outboundFiles = result.keepOriginal ? files : withoutVisionFiles(files);
     return { ok: true, text: enrichedText, files: outboundFiles };
   }
 

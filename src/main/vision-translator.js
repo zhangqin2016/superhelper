@@ -2,7 +2,9 @@
 
 /**
  * Vision translation — enriches image files with task-aware text evidence via DashScope.
- * The send pipeline keeps the original image and adds this structured evidence when available.
+ * The send pipeline sends this structured evidence to the main model. Original images
+ * stay visible in the chat transcript, but are not forwarded by default because many
+ * Claude-compatible model gateways do not support image content blocks.
  *
  * Keys live in agent settings.json (bundled or userData), not only process.env.
  */
@@ -24,6 +26,13 @@ const MIME_MAP = {
   jpg: "jpeg", jpeg: "jpeg", png: "png",
   gif: "gif", webp: "webp", bmp: "bmp",
 };
+
+function isVisionInputFile(file) {
+  if (!file?.path) return false;
+  if (file.isImage) return true;
+  const ext = path.extname(file.path).toLowerCase().replace(/^\./, "");
+  return Boolean(MIME_MAP[ext]);
+}
 
 function getVisionConfig() {
   return {
@@ -367,7 +376,7 @@ async function translateImage(filePath, prompt) {
  * @returns {Promise<{ ok: true, text: string, mode: string, keepOriginal: boolean } | { ok: false, reason: string, detail?: string } | null>}
  */
 async function translateImages(files, options = {}) {
-  const imageFiles = (files || []).filter((f) => f?.isImage && f?.path && fs.existsSync(f.path));
+  const imageFiles = (files || []).filter((f) => isVisionInputFile(f) && fs.existsSync(f.path));
   if (imageFiles.length === 0) return null;
 
   const config = getVisionConfig();
@@ -403,12 +412,12 @@ async function translateImages(files, options = {}) {
     ok: true,
     text: results.join("\n\n"),
     mode,
-    keepOriginal: true,
+    keepOriginal: false,
   };
 }
 
 function hasVisionInputFiles(files) {
-  return (files || []).some((f) => f?.isImage && f?.path);
+  return (files || []).some((f) => isVisionInputFile(f));
 }
 
 function isImageOnlyUserMessage(text, files) {
@@ -434,6 +443,7 @@ module.exports = {
   inferVisionMode,
   imageToDataUrl,
   isImageOnlyUserMessage,
+  isVisionInputFile,
   translateImage,
   translateImages,
 };

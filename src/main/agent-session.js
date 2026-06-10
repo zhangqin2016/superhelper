@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const {
   appendTextSegment,
   sanitizeError,
+  classifyAssistantError,
   isUpstreamApiFailure,
 } = require("./agent-runner");
 const {
@@ -44,6 +45,18 @@ const {
 const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
 const { getLogger } = require("./logger");
 const log = getLogger("agent-session");
+
+const FATAL_STDERR_ERROR_CODES = new Set([
+  "AUTH_FAILED",
+  "BUDGET_EXCEEDED",
+  "CONTEXT_LIMIT",
+  "ENGINE_UNAVAILABLE",
+  "MODEL_UNAVAILABLE",
+  "PERMISSION_DENIED",
+  "QUOTA_EXCEEDED",
+  "SESSION_BUSY",
+  "SESSION_INVALID",
+]);
 
 /**
  * One long-lived engine process per app session (`stream-json` protocol).
@@ -1101,6 +1114,9 @@ class AgentSession extends EventEmitter {
   _handleStderr(raw) {
     const text = sanitizeError(raw);
     const { isResumeFailureMessage } = require("./session-engine-recovery");
+    const classified = classifyAssistantError(raw);
+
+    // Resume failures are fatal — the engine can't recover its session state.
     if (
       this.busy &&
       !this._turnSettled &&
@@ -1112,10 +1128,19 @@ class AgentSession extends EventEmitter {
       return;
     }
 
-    if (text) this.lastSpawnError = text;
+    // Only set lastSpawnError on errors that look fatal, not every stderr line.
+    if (classified || isResumeFailureMessage(raw)) {
+      this.lastSpawnError = text;
+    }
+
     this._ingestRuntime([{ type: "engine.stderr", payload: { text } }]);
 
-    if (this.busy && !this._turnSettled && isUpstreamApiFailure(raw)) {
+    if (
+      this.busy &&
+      !this._turnSettled &&
+      classified &&
+      FATAL_STDERR_ERROR_CODES.has(classified.code)
+    ) {
       this._emitEngineNotice({
         code: "upstreamApiFailure",
         level: "warning",
@@ -1127,6 +1152,24 @@ class AgentSession extends EventEmitter {
       this._refreshRemoteConfigAfterUpstreamFailure();
       this._failTurn(text);
       this.terminate();
+      return;
+    }
+
+    // Upstream API failures on stderr are often transient.
+    // Let the engine retry internally; only fail if it produces an error on stdout
+    // or exits with a non-zero code. This avoids killing the engine on every
+    // network hiccup, which forces a cold restart and loses context.
+    if (this.busy && !this._turnSettled && isUpstreamApiFailure(raw)) {
+      this._emitEngineNotice({
+        code: "upstreamApiFailure",
+        level: "warning",
+        message: text,
+        panel: true,
+        toast: true,
+        done: true,
+      });
+      this._refreshRemoteConfigAfterUpstreamFailure();
+      // Do NOT terminate the engine here — let it attempt internal recovery.
       return;
     }
 
@@ -1404,10 +1447,6 @@ class AgentSession extends EventEmitter {
 
   _appendTextPiece(piece) {
     if (!piece) return;
-    if (this.busy && !this._turnSettled && isUpstreamApiFailure(piece)) {
-      this._failTurn(sanitizeError(piece));
-      return;
-    }
     this.collectedOutput = appendTextSegment(this.collectedOutput, piece);
     this._markStreamActivity();
   }
@@ -1526,10 +1565,6 @@ class AgentSession extends EventEmitter {
         break;
 
       case "assistant_text":
-        if (this.busy && !this._turnSettled && isUpstreamApiFailure(action.text || "")) {
-          this._failTurn(sanitizeError(action.text));
-          return;
-        }
         this.collectedOutput = appendTextSegment(this.collectedOutput, action.text || "");
         this._markStreamActivity();
         break;

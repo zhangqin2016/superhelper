@@ -21,7 +21,7 @@ const ERROR_PATTERNS = [
   },
   {
     code: "MODEL_CONNECTION_FAILED",
-    test: /API Error:|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|timed? out|timeout|502|503|504/i,
+    test: /API Error:|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|timed? out|timeout|502|503|504|500\b|Internal Server Error|upstream.*error|backend.*error|aborted|request.*failed|connection.*refused|connection.*reset|SSL|TLS|certificate|DNS|ENOTFOUND|ECONNABORTED/i,
     message: "Connection to the model service was interrupted. Please check your network and API settings, then retry.",
     retryable: true,
   },
@@ -33,19 +33,19 @@ const ERROR_PATTERNS = [
   },
   {
     code: "QUOTA_EXCEEDED",
-    test: /quota|insufficient.*credit|credit.*insufficient|balance|billing/i,
+    test: /quota|insufficient.*credit|credit.*insufficient|balance|billing|account.*disabled|account.*suspended|payment.*required/i,
     message: "Insufficient model quota or billing issue. Please check your service quota, then retry.",
     retryable: false,
   },
   {
     code: "CONTEXT_LIMIT",
-    test: /context length|context window|maximum context|token limit|too many tokens|input too long/i,
+    test: /context length|context window|maximum context|token limit|too many tokens|input too long|input length exceeds|maximum.*length|max.*tokens|request too large|payload too large/i,
     message: "The context is too large for the assistant to process. Please reduce the task scope or start a new session, then retry.",
     retryable: false,
   },
   {
     code: "RATE_LIMITED",
-    test: /rate.?limit|429|too many requests/i,
+    test: /rate.?limit|429|too many requests|too many.*request|throttled|slow down/i,
     message: "Too many requests. Please try again in a moment.",
     retryable: true,
   },
@@ -56,10 +56,28 @@ const ERROR_PATTERNS = [
     retryable: true,
   },
   {
+    code: "AUTH_FAILED",
+    test: /unauthorized|401|403|auth.*failed|auth.*invalid|auth.*expired|key.*invalid|key.*expired|token.*invalid|token.*expired|api.?key|invalid.*api|not authenticated|access denied|forbidden/i,
+    message: "Authentication failed. Please check your API key in Settings, then retry.",
+    retryable: false,
+  },
+  {
     code: "PERMISSION_DENIED",
     test: /permission denied|EACCES|operation not permitted|not permitted/i,
     message: "Permission denied. Please check the session permissions or system permissions, then retry.",
     retryable: false,
+  },
+  {
+    code: "MODEL_OVERLOADED",
+    test: /overloaded|too busy|service unavailable|maintenance|temporarily unavailable/i,
+    message: "The model service is temporarily overloaded. Please wait a moment and retry.",
+    retryable: true,
+  },
+  {
+    code: "RESPONSE_ERROR",
+    test: /invalid.*response|empty.*response|unexpected.*response|JSON.*parse|parse.*error|malformed|bad.*response|no.*response/i,
+    message: "Received an unexpected response from the model service. Please retry.",
+    retryable: true,
   },
 ];
 
@@ -76,7 +94,14 @@ function scrubVendorNames(raw) {
 }
 
 function sanitizeError(raw) {
-  return classifyAssistantError(raw)?.message || "An error occurred while processing the request. Please try again.";
+  const classified = classifyAssistantError(raw);
+  if (classified) return classified.message;
+  const cleaned = scrubVendorNames(String(raw || "").trim());
+  if (cleaned) {
+    const detail = cleaned.length > 200 ? `${cleaned.slice(0, 200)}…` : cleaned;
+    return `Request failed: ${detail}`;
+  }
+  return "An error occurred while processing the request. Please try again.";
 }
 
 function classifyAssistantError(raw) {
@@ -98,15 +123,6 @@ function classifyAssistantError(raw) {
 function normalizeAssistantOutput(raw) {
   const text = String(raw || "").trim();
   if (!text) return { text: "", failed: false };
-  const classified = classifyAssistantError(text);
-  if (classified) {
-    return {
-      text: classified.message,
-      failed: true,
-      errorCode: classified.code,
-      retryable: classified.retryable,
-    };
-  }
   return { text, failed: false };
 }
 

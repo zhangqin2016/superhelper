@@ -154,6 +154,31 @@ if (refreshReason !== "upstream_api_failure") {
   throw new Error(`model stderr failure should refresh remote config, got: ${refreshReason}`);
 }
 
+const assistantErrorTextRunner = createTestSession("sess_assistant_text_error_words");
+let assistantTextError = "";
+assistantErrorTextRunner.on("error", (message) => {
+  assistantTextError = message;
+});
+startSyntheticTurn(assistantErrorTextRunner);
+line(assistantErrorTextRunner, {
+  type: "assistant",
+  message: {
+    content: [
+      {
+        type: "text",
+        text: "截图里写着 API Error: timeout。原因可能是网络。",
+      },
+    ],
+  },
+});
+if (assistantTextError || assistantErrorTextRunner._turnSettled) {
+  throw new Error(`assistant text containing error words must not fail the turn: ${assistantTextError}`);
+}
+assistantErrorTextRunner._completeTurn({
+  code: 0,
+  output: assistantErrorTextRunner.collectedOutput.trim(),
+});
+
 startSyntheticTurn(runner);
 line(runner, {
   type: "stream_event",

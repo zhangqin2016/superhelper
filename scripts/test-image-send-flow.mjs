@@ -22,7 +22,7 @@ require.cache[visionPath] = {
         ok: true,
         text: "[图片识别结果]\n可见文字/OCR：hello world",
         mode: "general",
-        keepOriginal: true,
+        keepOriginal: false,
       };
     },
   },
@@ -144,8 +144,8 @@ if (!outboundText.includes("[图片识别结果]")) {
 if (!outboundText.includes("请分析截图")) {
   throw new Error("runner should keep original user text");
 }
-if (!Array.isArray(runnerPayloads[0].files) || runnerPayloads[0].files.length !== 1) {
-  throw new Error("runner should still receive original image files");
+if (!Array.isArray(runnerPayloads[0].files) || runnerPayloads[0].files.length !== 0) {
+  throw new Error("runner should not receive original image files after successful vision translation");
 }
 
 ctx.eventBus.flush();
@@ -172,12 +172,58 @@ if (!(userCommittedIdx < visionPreparingIdx && visionPreparingIdx < turnStartedI
   throw new Error("expected user.committed → visionPreparing → turn.started ordering");
 }
 
+runnerPayloads.length = 0;
+sent.length = 0;
+messages.length = 0;
+runner.busy = false;
+ctx.turnOrchestrator.states.get("s1").phase = "idle";
+ctx.turnOrchestrator.states.get("s1").turnId = null;
+const untaggedImageFiles = [{
+  path: "/tmp/untagged.png",
+  name: "untagged.png",
+}];
+const untagged = await ctx.turnOrchestrator.sendUserMessage(
+  "s1",
+  "请分析这个图片",
+  untaggedImageFiles,
+  { spawnEngine: false, skipPreflight: true },
+);
+if (!untagged.ok) {
+  throw new Error(`untagged image send failed: ${JSON.stringify(untagged)}`);
+}
+if (!runnerPayloads[0]?.text?.includes("[图片识别结果]")) {
+  throw new Error("untagged image should still go through vision preflight");
+}
+if (!Array.isArray(runnerPayloads[0].files) || runnerPayloads[0].files.length !== 0) {
+  throw new Error("untagged image should not be forwarded to the main model");
+}
+
 require.cache[visionPath].exports = {
   ...originalVision,
   async translateImages() {
     return { ok: false, reason: "NO_KEY" };
   },
 };
+runnerPayloads.length = 0;
+sent.length = 0;
+messages.length = 0;
+runner.busy = false;
+ctx.turnOrchestrator.states.get("s1").phase = "idle";
+ctx.turnOrchestrator.states.get("s1").turnId = null;
+
+const textOnlyFallback = await ctx.turnOrchestrator.sendUserMessage("s1", "看一下这个截图", imageFiles, {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!textOnlyFallback.ok) {
+  throw new Error(`text+image without vision key should continue with text: ${JSON.stringify(textOnlyFallback)}`);
+}
+if (runnerPayloads.length !== 1 || runnerPayloads[0].text !== "看一下这个截图") {
+  throw new Error(`runner should receive original user text when vision is unavailable: ${JSON.stringify(runnerPayloads)}`);
+}
+if (!Array.isArray(runnerPayloads[0].files) || runnerPayloads[0].files.length !== 0) {
+  throw new Error("runner should not receive image files when vision is unavailable");
+}
 runnerPayloads.length = 0;
 sent.length = 0;
 messages.length = 0;
@@ -200,7 +246,12 @@ if (!messages.some((message) => message.role === "user")) {
   throw new Error("failed image preflight should still keep the user bubble");
 }
 const failedAssistant = messages.find((message) => message.role === "assistant");
-if (!failedAssistant?.failed || !failedAssistant.content.includes("图片识别服务暂时不可用")) {
+if (
+  !failedAssistant?.failed ||
+  !/(图片识别服务暂时不可用|image recognition service is temporarily unavailable)/i.test(
+    failedAssistant.content || "",
+  )
+) {
   throw new Error(`failed image preflight should commit a clear assistant failure: ${JSON.stringify(messages)}`);
 }
 const failedEvents = sent.flatMap((entry) => entry.payload?.events || []);

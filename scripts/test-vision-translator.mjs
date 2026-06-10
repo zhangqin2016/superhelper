@@ -61,6 +61,7 @@ const {
   hasVisionApiKey,
   imageToDataUrl,
   inferVisionMode,
+  isVisionInputFile,
   translateImages,
 } = require("../src/main/vision-translator.js");
 
@@ -73,6 +74,12 @@ if (config.model !== "qwen-vl-max") {
 }
 if (!hasVisionApiKey()) {
   throw new Error("hasVisionApiKey should be true");
+}
+if (!isVisionInputFile({ path: "/tmp/screen.png" })) {
+  throw new Error("png files should be treated as vision input even without isImage marker");
+}
+if (isVisionInputFile({ path: "/tmp/report.pdf" })) {
+  throw new Error("pdf files should not be treated as vision input");
 }
 
 const bugMode = inferVisionMode("这个 bug 截图报错 Session ID already in use", [
@@ -93,7 +100,13 @@ const prompt = buildVisionPrompt({
   userText: "这个截图为什么不能发送消息？",
   mode: "bug_screenshot",
 });
-for (const expected of ["用户问题：这个截图为什么不能发送消息？", "可见文字/OCR", "关键错误/异常", "可用于代码搜索的关键词", "不确定点"]) {
+for (const expected of [
+  "这个截图为什么不能发送消息？",
+  "Visible text / OCR",
+  "Key errors / exceptions",
+  "Keywords useful for code search",
+  "Uncertainties",
+]) {
   if (!prompt.includes(expected)) {
     throw new Error(`expected prompt to include ${expected}`);
   }
