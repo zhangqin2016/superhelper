@@ -301,7 +301,7 @@ store.applyRuntimeBatch({
       id: "s3-user",
       type: "user.committed",
       sessionId: "s3",
-      turnId: null,
+      turnId: "t3",
       seq: 1,
       ts: 3000,
       source: "test",
@@ -329,6 +329,53 @@ store.syncCommittedMessages("s3", [
 runtime = store.getRuntimeSession("s3");
 if (!runtime.committedMessages.some((message) => message.content === "local question while task is starting")) {
   throw new Error("running session history sync must preserve not-yet-persisted local messages");
+}
+
+store.applyRuntimeBatch({
+  sessionId: "s3b",
+  batchSeq: 1,
+  events: [
+    {
+      id: "s3b-current-user",
+      type: "user.committed",
+      sessionId: "s3b",
+      turnId: "current-turn",
+      seq: 1,
+      ts: 3100,
+      source: "test",
+      payload: { text: "current running question" },
+    },
+    {
+      id: "s3b-start",
+      type: "turn.started",
+      sessionId: "s3b",
+      turnId: "current-turn",
+      seq: 2,
+      ts: 3101,
+      source: "test",
+      payload: {},
+    },
+  ],
+});
+runtime = store.getRuntimeSession("s3b");
+runtime.committedMessages.push({
+  role: "user",
+  turnId: "queued-or-stale-turn",
+  content: "queued question must not render as current history",
+  timestamp: "2026-06-01T00:00:03.000Z",
+});
+store.syncCommittedMessages("s3b", [
+  {
+    id: "persisted-current-user",
+    role: "user",
+    turnId: "current-turn",
+    content: "current running question",
+    timestamp: "2026-06-01T00:00:02.000Z",
+  },
+]);
+runtime = store.getRuntimeSession("s3b");
+if (runtime.committedMessages.some((message) => message.content === "queued question must not render as current history")) {
+  throw new Error("busy session history sync must not preserve local messages from a different turn");
 }
 
 store.applyRuntimeBatch({

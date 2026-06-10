@@ -49,6 +49,12 @@ function committedMessageKey(message) {
   return ["fallback", message?.role || "", message?.timestamp || "", message?.content || ""].join(":");
 }
 
+function belongsToActiveTurn(runtime, message) {
+  const turnId = message?.turnId || "";
+  const activeTurnId = runtime.turnId || runtime.liveTurn?.turnId || "";
+  return Boolean(turnId && activeTurnId && turnId === activeTurnId);
+}
+
 export function syncCommittedMessages(sessionId, messages) {
   if (!sessionId) return;
   const runtime = getRuntimeSession(sessionId);
@@ -64,13 +70,16 @@ export function syncCommittedMessages(sessionId, messages) {
   }
 
   // Busy sessions may have live user/task messages that the backend has not
-  // flushed yet. Merge them until the turn reaches idle, then let persisted
-  // history become canonical again.
+  // flushed yet. Only preserve messages that can be proven to belong to the
+  // active turn. Unrelated local-only user messages are queued work and must
+  // not be appended to history, or session switches can visually attach the
+  // wrong question to the running turn.
   const seen = new Set(incoming.map((message) => committedMessageKey(message)));
   const localOnly = [];
   for (const message of runtime.committedMessages) {
     const key = committedMessageKey(message);
     if (seen.has(key)) continue;
+    if (!belongsToActiveTurn(runtime, message)) continue;
     seen.add(key);
     localOnly.push(message);
   }
