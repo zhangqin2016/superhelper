@@ -153,8 +153,14 @@ kind  = thinking | text | tool | todo | notice | permission | question
 - 块组件加 `content-visibility: auto` + `contain-intrinsic-size`。
 - IPC：同会话事件按帧攒批，同批文本 delta 合并；批带会话内单调序号，
   渲染端断号即拉 `state:full` 快照重建。
-- 回放 benchmark 进 CI：大 transcript 10 倍速回放真实渲染管线，统计主线程
-  总阻塞 / 最长帧 / 事件到上屏延迟，劣化即红。
+- ✅ 回放 benchmark 进 CI（`scripts/bench-replay.mjs` 主进程 +
+  `scripts/bench-replay-renderer.cjs` 真实 DOM，均入 test:unit）。
+  门禁设计：**扩展性断言**（4 倍事件量耗时须 <8x；late/early 单次渲染
+  增长 <6x）与机器快慢无关，专抓 O(n²) 级回归；绝对上限只兜灾难。
+  首跑即抓到并修复一个真实问题：`closeStreamingBlocks` 每个增量全量扫
+  timeline（潜伏 O(n²)，4x 数据 5.9x 耗时）→ 利用封口单调性反向扫描
+  提前退出后降至 3.6x（纯线性）；tool 条目查找同步改反向扫描。
+  当前基线：adapter ~340 万事件/秒；单次 live 渲染最差 10ms（帧预算内）。
 
 SLO：事件到上屏 p95 < 50ms；流式期间无 >100ms 长帧；打断响应 < 200ms；
 会话切换 < 100ms；任何等待 1s 内有可见状态。

@@ -136,10 +136,16 @@ function upsertTimelineThinking(target, text, ts = Date.now()) {
   });
 }
 
+// Seals are monotone: blocks only stream at the tail, so walking backward we
+// can stop at the first already-sealed thinking/text entry. This keeps the
+// per-delta cost O(1) instead of O(timeline) (caught by bench-replay).
 function closeStreamingBlocks(target, ts = Date.now(), kinds = ["thinking", "text"]) {
   if (!Array.isArray(target?.timeline)) return;
-  for (const entry of target.timeline) {
-    if (kinds.includes(entry?.kind) && entry.status === "streaming") {
+  for (let index = target.timeline.length - 1; index >= 0; index -= 1) {
+    const entry = target.timeline[index];
+    if (entry?.kind !== "thinking" && entry?.kind !== "text") continue;
+    if (entry.status !== "streaming") return;
+    if (kinds.includes(entry.kind)) {
       entry.status = "done";
       entry.ts = ts;
     }
@@ -174,10 +180,19 @@ function appendTimelineText(target, text, ts = Date.now()) {
   });
 }
 
+function findToolEntry(timeline, id) {
+  // Reverse scan: updates almost always target the newest tool.
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const item = timeline[index];
+    if (item.kind === "tool" && item.id === id) return item;
+  }
+  return null;
+}
+
 function upsertTimelineTool(target, tool, ts = Date.now()) {
   if (!tool?.id) return;
   const timeline = ensureTimeline(target);
-  let entry = timeline.find((item) => item.kind === "tool" && item.id === tool.id);
+  let entry = findToolEntry(timeline, tool.id);
   if (!entry) {
     closeStreamingBlocks(target, ts);
     entry = {
