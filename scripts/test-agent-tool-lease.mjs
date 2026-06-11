@@ -53,8 +53,7 @@ function startSyntheticTurn(runner) {
   runner.busy = true;
   runner._turnSettled = false;
   runner.collectedOutput = "partial answer";
-  runner._pendingToolIds.clear();
-  runner._toolLeases.clear();
+  runner._leaseTracker.reset();
   runner._pendingPermissions.clear();
 }
 
@@ -213,7 +212,7 @@ line(runner, {
     ],
   },
 });
-if (runner._pendingToolIds.size !== 0 || runner._toolLeases.size !== 0) {
+if (runner._leaseTracker.pendingCount() !== 0 || runner._leaseTracker.get("tool_fg") !== undefined) {
   throw new Error("tool_result should release Bash lease");
 }
 if (runner._canAutoCompleteTurn()) {
@@ -524,7 +523,10 @@ line(foregroundCommandRunner, {
     ],
   },
 });
-if (foregroundCommandRunner._pendingToolIds.size !== 0 || foregroundCommandRunner._toolLeases.size !== 0) {
+if (
+  foregroundCommandRunner._leaseTracker.pendingCount() !== 0 ||
+  foregroundCommandRunner._leaseTracker.get("tool_bash_test") !== undefined
+) {
   throw new Error("foreground command should release lease after tool_result");
 }
 if (foregroundCommandRunner._canAutoCompleteTurn()) {

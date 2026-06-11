@@ -45,6 +45,7 @@ const {
 } = require("./cli-process-payload");
 const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
 const { TimerBank } = require("./turn-timers");
+const { ToolLeaseTracker } = require("./tool-lease-tracker");
 const { getLogger } = require("./logger");
 const log = getLogger("agent-session");
 
@@ -84,9 +85,17 @@ class AgentSession extends EventEmitter {
     /** All watchdog timers live in one named bank (see turn-timers.js). */
     this._timers = new TimerBank();
     this._turnStartedAt = 0;
-    this._pendingToolIds = new Set();
     this._turnHadToolUse = false;
-    this._turnHadBlockingToolUse = false;
+    /** Lease-domain turn state lives in the tracker (see tool-lease-tracker.js). */
+    this._leaseTracker = new ToolLeaseTracker({
+      timers: this._timers,
+      emitNotice: (notice) => this._emitEngineNotice(notice),
+      isTurnLive: () => this.busy && !this._turnSettled,
+      delays: () => ({
+        noticeMs: AgentSession.TOOL_LONG_TASK_NOTICE_MS,
+        heartbeatMs: AgentSession.TOOL_LONG_TASK_HEARTBEAT_MS,
+      }),
+    });
     this._sawStdoutForTurn = false;
     this._turnSettled = true;
     /** @type {Map<string, { toolName: string, input: Record<string, unknown> }>} */
@@ -103,8 +112,6 @@ class AgentSession extends EventEmitter {
     this._emittedToolIds = new Set();
     /** @type {Map<number, string>} — content block index → tool_use id */
     this._blockIndexToToolId = new Map();
-    /** @type {Map<string, { name: string, input: Record<string, unknown>, detached: boolean, startedAt: number }>} */
-    this._toolLeases = new Map();
     this._internalCommand = null;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
@@ -261,8 +268,8 @@ class AgentSession extends EventEmitter {
     return (
       this.busy &&
       !this._turnSettled &&
-      !this._turnHadBlockingToolUse &&
-      this._pendingToolIds.size === 0 &&
+      !this._leaseTracker.hadBlockingToolUse() &&
+      this._leaseTracker.pendingCount() === 0 &&
       this._pendingPermissions.size === 0 &&
       this._pendingHooks.size === 0 &&
       Date.now() >= this._backgroundActivityUntil
@@ -271,7 +278,7 @@ class AgentSession extends EventEmitter {
 
   _hasBlockingTurnWork() {
     return (
-      this._pendingToolIds.size > 0 ||
+      this._leaseTracker.pendingCount() > 0 ||
       this._pendingPermissions.size > 0 ||
       this._pendingHooks.size > 0 ||
       Date.now() < this._backgroundActivityUntil
@@ -280,7 +287,7 @@ class AgentSession extends EventEmitter {
 
   _hasPendingRuntimeBlockers() {
     return (
-      this._pendingToolIds.size > 0 ||
+      this._leaseTracker.pendingCount() > 0 ||
       this._pendingPermissions.size > 0 ||
       this._pendingHooks.size > 0
     );
@@ -291,7 +298,7 @@ class AgentSession extends EventEmitter {
     this._deferredTurnResultAt = Date.now();
     log.warn("turn result deferred until pending runtime blockers settle: %s", reason, {
       sessionId: this.sessionId,
-      pendingTools: this._pendingToolIds.size,
+      pendingTools: this._leaseTracker.pendingCount(),
       pendingPermissions: this._pendingPermissions.size,
       pendingHooks: this._pendingHooks.size,
       backgroundMs: Math.max(0, this._backgroundActivityUntil - Date.now()),
@@ -320,7 +327,7 @@ class AgentSession extends EventEmitter {
       }
       log.warn("turn result completed with stale pending runtime blockers", {
         sessionId: this.sessionId,
-        pendingTools: [...this._pendingToolIds],
+        pendingTools: this._leaseTracker.pendingIds(),
         pendingPermissions: [...this._pendingPermissions.keys()],
         pendingHooks: [...this._pendingHooks.keys()],
       });
@@ -381,112 +388,20 @@ class AgentSession extends EventEmitter {
     }]);
   }
 
-  _formatToolLeaseDetail(lease = {}) {
-    const command = compactCommand(lease.input || {}).slice(0, 160);
-    const elapsedMs = Math.max(0, Date.now() - Number(lease.startedAt || Date.now()));
-    const minutes = Math.floor(elapsedMs / 60_000);
-    const elapsed = minutes > 0 ? ` · running ${minutes}m` : "";
-    return `${command || lease.name || "command"}${elapsed}`;
-  }
-
   _emitBlockingWorkHeartbeat(reason = "long-running") {
-    const shellLease = [...this._toolLeases.values()].find((lease) =>
-      !lease.detached && this._isShellTool(lease.name)
-    );
-    if (shellLease) {
-      this._emitEngineNotice({
-        code: "shellLongRunning",
-        level: "progress",
-        panel: true,
-        replace: true,
-        toolName: shellLease.name,
-        detail: this._formatToolLeaseDetail(shellLease),
-        reason,
-      });
-      return;
-    }
-    if (this._pendingToolIds.size > 0) {
-      this._emitEngineNotice({
-        code: "taskProgress",
-        level: "progress",
-        panel: true,
-        replace: true,
-        detail: "Task is still running",
-        reason,
-      });
-    }
-  }
-
-  _armToolLeaseNoticeTimer(toolId, delayMs) {
-    this._timers.arm(`lease:${toolId}`, delayMs, () => {
-      if (!this.busy || this._turnSettled) return;
-      const lease = this._toolLeases.get(toolId);
-      if (!lease || lease.detached || !this._isShellTool(lease.name)) return;
-      this._emitEngineNotice({
-        code: "shellLongRunning",
-        level: "progress",
-        panel: true,
-        replace: true,
-        toolName: lease.name,
-        detail: this._formatToolLeaseDetail(lease),
-      });
-      this._armToolLeaseNoticeTimer(toolId, AgentSession.TOOL_LONG_TASK_HEARTBEAT_MS);
-    });
+    this._leaseTracker.emitBlockingWorkHeartbeat(reason);
   }
 
   _trackToolLease(toolId, name, input = {}) {
-    if (!toolId) return { detached: false, becameDetached: false };
-    const prev = this._toolLeases.get(toolId);
-    const nextName = name || prev?.name || "unknown";
-    const nextInput =
-      input && Object.keys(input).length > 0
-        ? input
-        : prev?.input || {};
-    const detached = this._isDetachedShellInput(nextName, nextInput);
-    const becameDetached = detached && !prev?.detached;
-
-    this._toolLeases.set(toolId, {
-      name: nextName,
-      input: nextInput,
-      detached,
-      startedAt: prev?.startedAt || Date.now(),
-    });
-
-    if (detached) this._pendingToolIds.delete(toolId);
-    else {
-      this._pendingToolIds.add(toolId);
-      this._turnHadBlockingToolUse = true;
-    }
-    if (detached && becameDetached) {
-      this._turnHadBlockingToolUse = [...this._toolLeases.values()].some(
-        (entry) => !entry.detached,
-      );
-    }
-
-    if (detached) {
-      this._clearToolLeaseNoticeTimer(toolId);
-    } else if (this._isShellTool(nextName) && !this._timers.has(`lease:${toolId}`)) {
-      this._armToolLeaseNoticeTimer(toolId, AgentSession.TOOL_LONG_TASK_NOTICE_MS);
-    }
-    return { detached, becameDetached };
+    return this._leaseTracker.track(toolId, name, input);
   }
 
   _updateToolLeaseInput(toolId, input = {}) {
-    if (!toolId) return { detached: false, becameDetached: false };
-    const prev = this._toolLeases.get(toolId);
-    if (!prev) return { detached: false, becameDetached: false };
-    return this._trackToolLease(toolId, prev.name, input);
+    return this._leaseTracker.updateInput(toolId, input);
   }
 
   _finishToolLease(toolId) {
-    let id = toolId;
-    if (!id && this._pendingToolIds.size === 1) {
-      id = [...this._pendingToolIds][0];
-    }
-    if (!id) return;
-    this._pendingToolIds.delete(id);
-    this._toolLeases.delete(id);
-    this._clearToolLeaseNoticeTimer(id);
+    this._leaseTracker.finish(toolId);
   }
 
   _tryParseToolInputJson(toolId) {
@@ -739,10 +654,8 @@ class AgentSession extends EventEmitter {
     this.collectedOutput = "";
     this._backgroundActivityUntil = 0;
     this._streamParentToolUseId = null;
-    this._pendingToolIds.clear();
-    this._toolLeases.clear();
+    this._leaseTracker.reset();
     this._turnHadToolUse = false;
-    this._turnHadBlockingToolUse = false;
     this._sawStdoutForTurn = false;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
@@ -944,10 +857,8 @@ class AgentSession extends EventEmitter {
     this._clearToolLeaseNoticeTimers();
     this._clearWaitNoticeTimers();
     this._clearInternalCommandTimer();
-    this._pendingToolIds.clear();
-    this._toolLeases.clear();
+    this._leaseTracker.reset();
     this._turnHadToolUse = false;
-    this._turnHadBlockingToolUse = false;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
     this._deferredTurnResultAt = 0;
@@ -994,10 +905,8 @@ class AgentSession extends EventEmitter {
     this._clearInternalCommandTimer();
     this._clearPendingPermissions(true);
     this._clearPendingHooks(true);
-    this._pendingToolIds.clear();
-    this._toolLeases.clear();
+    this._leaseTracker.reset();
     this._turnHadToolUse = false;
-    this._turnHadBlockingToolUse = false;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
     this._deferredTurnResultAt = 0;
@@ -1026,15 +935,13 @@ class AgentSession extends EventEmitter {
     this._clearInternalCommandTimer();
     this._clearPendingPermissions(true);
     this._clearPendingHooks(true);
-    this._pendingToolIds.clear();
-    this._toolLeases.clear();
+    this._leaseTracker.reset();
     this._deferredTurnResult = null;
     this._deferredTurnResultAt = 0;
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
     this._backgroundActivityUntil = 0;
     this._turnHadToolUse = false;
-    this._turnHadBlockingToolUse = false;
     this._streamParentToolUseId = null;
     this._streamingToolInputs.clear();
     this._emittedToolIds.clear();
@@ -1588,7 +1495,7 @@ class AgentSession extends EventEmitter {
             payload: { id: toolId, input: parsed },
           }]);
           if (lease.becameDetached) {
-            const entry = this._toolLeases.get(toolId);
+            const entry = this._leaseTracker.get(toolId);
             this._emitDetachedShellNotice(toolId, entry?.name || "unknown", parsed);
           }
         }
