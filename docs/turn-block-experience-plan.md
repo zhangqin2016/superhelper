@@ -257,6 +257,22 @@ AgentSession：1825 → 1402 行（-23%），构造函数是一份"接线清单"
 剩余主体：进程生命周期 + stream 事件分发（_handleNormalizedAction）——
 这正是 Agent SDK 迁移要替换的部分，拆分已为其减负。
 
+## 智能提升（学习 Cursor 的 harness 路线）
+
+按"模型的一生"审计了全部智能触点（会话醒来→消息进入→执行反馈→回合
+验收→跨回合记忆→模型路由）。已有强项：媒体预翻译、定时任务 prompt
+清洗、AGENT.md→CLAUDE.md 注入通道、会话摘要记忆。
+
+1. ✅ **错误自动回灌（环节 C，杠杆最大）**：PostToolUse 校验 hook ——
+   `resources/hooks/verify-edit.cjs` 对引擎编辑过的 js/json/py 做确定性
+   语法检查，exit 2 把 stderr 直接喂回模型自纠；查不了的一律 fail-open
+   （hook 绝不误报/阻塞）。`verification-hooks.js` 幂等写入全局
+   settings.json（per-session 配置目录符号链接同一文件，一处生效），
+   保留用户自配 hooks，应用升级路径变化时原位更新。bootstrap 接线。
+2. 待做（按性价比）：workspace digest 注入 AGENT.md（复用
+   searchWorkspaceFiles）；"记住这个"→AGENT.md 约定区；技能运行时
+   验收+重试；网关任务路由 + 按模型质量度量。
+
 ## 守门纪律
 
 - ✅ Claude 适配层已落位 `src/main/runtime/adapters/`（claude-cli-adapter /

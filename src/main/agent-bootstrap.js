@@ -185,6 +185,24 @@ function bootstrapAgent() {
 
   const { installAgentDefaults } = require("./agent-settings");
   const agentDefaults = installAgentDefaults();
+
+  // Post-edit verification hook: the engine syntax-checks every file it
+  // edits and feeds failures back to the model (self-correction loop).
+  try {
+    const { ensureVerificationHooks } = require("./verification-hooks");
+    const { resolveRuntimeNodePath } = require("./runtime-node");
+    const hookScript = [
+      path.join(process.resourcesPath || "", "resources/hooks/verify-edit.cjs"),
+      path.join(PROJECT_ROOT, "resources/hooks/verify-edit.cjs"),
+    ].find((p) => fs.existsSync(p));
+    ensureVerificationHooks({
+      settingsPath: path.join(agentConfigDir(), "settings.json"),
+      nodePath: resolveRuntimeNodePath(),
+      scriptPath: hookScript,
+    });
+  } catch (err) {
+    log.warn("verification hook install failed: %s", err?.message || err);
+  }
   const { migrateSettingsEnvKeys, migrateLegacyGuideFile } = require("./data-migration");
   migrateSettingsEnvKeys();
   migrateLegacyGuideFile();
