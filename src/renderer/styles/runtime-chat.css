@@ -72,8 +72,13 @@
 
 .assistant-turn-header {
   display: block;
-  margin-bottom: 10px;
   min-height: 0;
+}
+
+/* Spacing rides on the status line itself: a hidden status (sealed turn with
+   no footer text) must not leave a phantom header margin behind. */
+.assistant-turn-status {
+  margin-bottom: 10px;
 }
 
 .assistant-turn-status {
@@ -291,17 +296,28 @@
   max-height: 96px;
 }
 
+/* Hover actions overlay the article's bottom margin instead of reserving
+   layout height — opacity:0 still occupied ~30px per message. */
+.assistant-turn-article {
+  position: relative;
+}
+
 .assistant-article-actions {
+  position: absolute;
+  left: 0;
+  bottom: -4px;
   display: flex;
   gap: 8px;
-  margin-top: 4px;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.15s ease;
+  z-index: 2;
 }
 
 .assistant-turn-article:hover .assistant-article-actions,
 .assistant-article-actions:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .runtime-user-message {
@@ -419,10 +435,20 @@
 }
 
 .assistant-turn-inline-text {
-  margin: 6px 0;
+  margin: 4px 0;
   font-size: 14px;
   line-height: 1.65;
   color: var(--text-primary);
+}
+
+/* Inline prose paragraphs use compact margins, not the browser's 1em
+   default — consecutive narration segments must read as one flow. */
+.assistant-turn-inline-text.markdown-body p {
+  margin: 0 0 8px;
+}
+
+.assistant-turn-inline-text.markdown-body p:last-child {
+  margin-bottom: 0;
 }
 
 .assistant-process-group {
@@ -867,6 +893,12 @@
   display: grid;
   gap: 12px;
   margin: 18px 0;
+}
+
+/* No pending cards → no reserved space. An empty grid still carries its
+   margins otherwise (~36px of phantom gap per sealed article). */
+.assistant-turn-prompts:empty {
+  display: none;
 }
 
 .assistant-prompt-card {
