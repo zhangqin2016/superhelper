@@ -1,0 +1,107 @@
+#!/usr/bin/env node
+/**
+ * Workspace capability packs: a pack must carry the workspace's files,
+ * exclude personal/noise dirs by location, ship learned conventions and a
+ * required-skills declaration, survive an export→import round trip, and
+ * reject zip-slip and future-schema packs on import.
+ */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+import JSZip from "jszip";
+
+const require = createRequire(import.meta.url);
+const share = require("../src/main/workspace-share.js");
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ws-share-test-"));
+
+try {
+  // Build a workspace with capability files + things that must be excluded.
+  const ws = path.join(tmp, "suanming");
+  fs.mkdirSync(path.join(ws, "knowledge/bazi"), { recursive: true });
+  fs.mkdirSync(path.join(ws, "scripts"), { recursive: true });
+  fs.mkdirSync(path.join(ws, "output"), { recursive: true });
+  fs.mkdirSync(path.join(ws, ".lily-work"), { recursive: true });
+  fs.mkdirSync(path.join(ws, "node_modules/pkg"), { recursive: true });
+  fs.writeFileSync(path.join(ws, "knowledge/bazi/rules.md"), "排盘规则");
+  fs.writeFileSync(path.join(ws, "scripts/generate.py"), "print(1)");
+  fs.writeFileSync(path.join(ws, ".cursorrules"), "用专业术语");
+  fs.writeFileSync(path.join(ws, "output", "张钦_命理.pdf"), "PRIVATE");
+  fs.writeFileSync(path.join(ws, ".lily-work", "tmp.txt"), "scratch");
+  fs.writeFileSync(path.join(ws, "node_modules/pkg/index.js"), "x");
+  fs.writeFileSync(path.join(ws, ".env"), "SECRET=1");
+
+  // Preview: personal/noise locations excluded; capability files kept.
+  const preview = share.previewExport(ws);
+  const rels = share.listShareableFiles(ws).map((f) => f.relPath).sort();
+  if (rels.some((r) => r.startsWith("output/") || r.startsWith(".lily-work/") || r.includes("node_modules") || r === ".env")) {
+    throw new Error(`excluded locations leaked: ${rels.join(", ")}`);
+  }
+  if (!rels.includes("knowledge/bazi/rules.md") || !rels.includes(".cursorrules") || !rels.includes("scripts/generate.py")) {
+    throw new Error(`capability files missing: ${rels.join(", ")}`);
+  }
+  if (preview.fileCount !== rels.length) throw new Error("preview count mismatch");
+
+  // Export → import round trip.
+  const buf = await share.exportWorkspacePack({
+    rootPath: ws,
+    name: "算命大师",
+    description: "八字命理工作区",
+    conventions: "- 报告用宋体\n- 先排盘再断语",
+    requiredSkills: ["lily-image-generation"],
+    exportedAt: "2026-06-12T00:00:00.000Z",
+  });
+  if (!Buffer.isBuffer(buf) || buf.length === 0) throw new Error("export produced no bytes");
+
+  const dest = path.join(tmp, "imported");
+  const { manifest, conventions } = await share.importWorkspacePack(buf, dest);
+  if (manifest.name !== "算命大师" || manifest.schemaVersion !== share.SCHEMA_VERSION) {
+    throw new Error(`manifest round trip failed: ${JSON.stringify(manifest)}`);
+  }
+  if (manifest.requiredSkills.join(",") !== "lily-image-generation") {
+    throw new Error("requiredSkills must survive the round trip");
+  }
+  if (!conventions.includes("报告用宋体")) throw new Error("conventions must travel with the pack");
+  if (fs.readFileSync(path.join(dest, "knowledge/bazi/rules.md"), "utf8") !== "排盘规则") {
+    throw new Error("capability file content corrupted on import");
+  }
+  if (fs.existsSync(path.join(dest, "output")) || fs.existsSync(path.join(dest, ".env"))) {
+    throw new Error("excluded files must not appear in the imported workspace");
+  }
+
+  // Security layer 1: safeJoin rejects any path resolving outside the target.
+  let guardFired = false;
+  try { share.safeJoin(path.join(tmp, "t"), "../../escaped.txt"); }
+  catch (e) { guardFired = e.message.includes("UNSAFE_PATH"); }
+  if (!guardFired) throw new Error("safeJoin must reject traversal paths");
+  if (share.safeJoin(path.join(tmp, "t"), "a/b.txt") !== path.resolve(tmp, "t/a/b.txt")) {
+    throw new Error("safeJoin must allow in-tree paths");
+  }
+
+  // Security layer 2: a crafted traversal entry must never escape to disk on
+  // a real import (JSZip normalization + the files/ prefix filter + safeJoin).
+  const evil = new JSZip();
+  evil.file(share.MANIFEST_NAME, JSON.stringify({ kind: "lily-workspace-pack", schemaVersion: 1, requiredSkills: [] }));
+  evil.file("files/../../escaped.txt", "pwned");
+  const evilBuf = await evil.generateAsync({ type: "nodebuffer" });
+  await share.importWorkspacePack(evilBuf, path.join(tmp, "evil-dest")).catch(() => {});
+  if (fs.existsSync(path.join(tmp, "escaped.txt"))) throw new Error("zip-slip wrote outside the target!");
+
+  // Reject non-packs and future schema versions.
+  const notPack = await new JSZip().generateAsync({ type: "nodebuffer" });
+  let rejectedPlain = false;
+  try { await share.readPackManifest(notPack); } catch (e) { rejectedPlain = e.message === "NOT_A_WORKSPACE_PACK"; }
+  if (!rejectedPlain) throw new Error("a plain zip must be rejected");
+
+  const future = new JSZip();
+  future.file(share.MANIFEST_NAME, JSON.stringify({ kind: "lily-workspace-pack", schemaVersion: 99 }));
+  let rejectedFuture = false;
+  try { await share.readPackManifest(await future.generateAsync({ type: "nodebuffer" })); }
+  catch (e) { rejectedFuture = e.message === "PACK_TOO_NEW"; }
+  if (!rejectedFuture) throw new Error("a newer-schema pack must be rejected");
+
+  console.log("workspace-share: ok");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

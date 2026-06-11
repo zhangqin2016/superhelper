@@ -77,6 +77,89 @@ function registerProjectHandlers(ctx) {
 
     return { ok: true, state: projectManager.getAppState() };
   });
+
+  // --- Workspace capability packs (.lilyspace.zip) ---------------------------
+  ipcMain.handle("project:export-preview", (_event, projectId) => {
+    const project = projectManager.find(projectId);
+    if (!project) return { ok: false, error: "NOT_FOUND" };
+    const { previewExport } = require("./workspace-share");
+    const skillManager = require("./skill-manager");
+    return {
+      ok: true,
+      name: project.name,
+      preview: previewExport(project.path),
+      requiredSkills: skillManager.getGloballyEnabledSkillIds(),
+    };
+  });
+
+  ipcMain.handle("project:export-pack", async (_event, projectId) => {
+    const project = projectManager.find(projectId);
+    if (!project) return { ok: false, error: "NOT_FOUND" };
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出工作空间能力包",
+      defaultPath: `${project.name}.lilyspace.zip`,
+      filters: [{ name: "Lily Workspace Pack", extensions: ["zip"] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    try {
+      const { exportWorkspacePack } = require("./workspace-share");
+      const { readLearnedConventions } = require("./learned-context");
+      const skillManager = require("./skill-manager");
+      const fs = require("node:fs");
+      const buf = await exportWorkspacePack({
+        rootPath: project.path,
+        name: project.name,
+        conventions: readLearnedConventions(project.id),
+        requiredSkills: skillManager.getGloballyEnabledSkillIds(),
+        exportedAt: new Date().toISOString(),
+      });
+      fs.writeFileSync(result.filePath, buf);
+      return { ok: true, filePath: result.filePath };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle("project:import-pack", async () => {
+    const picked = await dialog.showOpenDialog(mainWindow, {
+      title: "导入工作空间能力包",
+      properties: ["openFile"],
+      filters: [{ name: "Lily Workspace Pack", extensions: ["zip"] }],
+    });
+    if (picked.canceled || !picked.filePaths.length) return { ok: false, canceled: true };
+    try {
+      const fs = require("node:fs");
+      const path = require("node:path");
+      const { importWorkspacePack } = require("./workspace-share");
+      const { writeLearnedConventions } = require("./learned-context");
+      const skillManager = require("./skill-manager");
+
+      const zipBuffer = fs.readFileSync(picked.filePaths[0]);
+      // Land the new workspace next to existing ones, under a unique name.
+      const baseDir = path.dirname(projectManager.defaultPath || picked.filePaths[0]);
+      const { manifest: peek } = await require("./workspace-share").readPackManifest(zipBuffer);
+      let targetDir = path.join(baseDir, peek.name || "imported-workspace");
+      let n = 2;
+      while (fs.existsSync(targetDir)) targetDir = path.join(baseDir, `${peek.name}-${n++}`);
+
+      const { manifest, conventions } = await importWorkspacePack(zipBuffer, targetDir);
+      const project = projectManager.add(targetDir);
+      if (manifest.name) projectManager.rename(project.id, manifest.name);
+      if (conventions) writeLearnedConventions(project.id, conventions);
+      sessionManager.create(project.id, defaultSessionTitle());
+
+      const installed = new Set(skillManager.getGloballyEnabledSkillIds());
+      const missingSkills = (manifest.requiredSkills || []).filter((id) => !installed.has(id));
+      return {
+        ok: true,
+        state: projectManager.getAppState(),
+        projectId: project.id,
+        missingSkills,
+      };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
 }
 
 module.exports = { registerProjectHandlers };

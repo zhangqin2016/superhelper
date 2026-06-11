@@ -60,6 +60,16 @@ function appendLearnedConvention(projectId, text) {
   return entry;
 }
 
+/** Replace a project's learned conventions wholesale (used by pack import). */
+function writeLearnedConventions(projectId, text) {
+  const value = String(text || "").trim();
+  if (!value) return false;
+  const filePath = learnedConventionsPath(projectId);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${value}\n`, "utf8");
+  return true;
+}
+
 function buildLearnedSection(projectId) {
   const text = readLearnedConventions(projectId).trim();
   if (!text) return "";
@@ -211,4 +221,5 @@ module.exports = {
   contextSignature,
   learnedConventionsPath,
   readLearnedConventions,
+  writeLearnedConventions,
 };

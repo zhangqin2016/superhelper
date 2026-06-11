@@ -302,6 +302,10 @@ function showProjectMenu(e, project) {
       action: () => window.assistantClient.openProject(project.id),
     },
     {
+      label: t("ctx.sharePack"),
+      action: () => shareWorkspacePack(project),
+    },
+    {
       label: t("ctx.delete"),
       danger: true,
       action: async () => {
@@ -392,6 +396,64 @@ function showSessionMenu(x, y, sessionId, title) {
   setTimeout(() => document.addEventListener("click", closeMenu), 0);
 }
 
+// Export a workspace as a shareable capability pack: preview what travels
+// (privacy is an informed choice), confirm, then write the zip.
+async function shareWorkspacePack(project) {
+  // A rejected IPC (e.g. main process not restarted after an update) must not
+  // vanish silently — surface it so "nothing happened" never happens.
+  try {
+    if (typeof window.assistantClient.exportPackPreview !== "function") {
+      showToast(t("toast.exportPackFailed"), "error");
+      return;
+    }
+    const info = await window.assistantClient.exportPackPreview(project.id);
+    if (!info?.ok) {
+      showToast(info?.error || t("toast.exportPackFailed"), "error");
+      return;
+    }
+    const { confirmDialog } = await import("./confirm-dialog.js");
+    const sizeMb = (info.preview.totalBytes / (1024 * 1024)).toFixed(1);
+    const skills = info.requiredSkills?.length
+      ? `\n${t("pack.requiredSkills", { count: info.requiredSkills.length })}`
+      : "";
+    const confirmed = await confirmDialog({
+      title: t("pack.exportConfirmTitle"),
+      message: t("pack.exportConfirmBody", { count: info.preview.fileCount, size: sizeMb }) + skills,
+      confirmText: t("pack.exportConfirmOk"),
+    });
+    if (!confirmed) return;
+    const result = await window.assistantClient.exportPack(project.id);
+    if (result?.ok) showToast(t("toast.exportPackDone"), "success");
+    else if (!result?.canceled) showToast(result?.error || t("toast.exportPackFailed"), "error");
+  } catch (err) {
+    showToast(err?.message || t("toast.exportPackFailed"), "error");
+  }
+}
+
+async function importWorkspacePack() {
+  try {
+    if (typeof window.assistantClient.importPack !== "function") {
+      showToast(t("toast.importPackFailed"), "error");
+      return;
+    }
+    const result = await window.assistantClient.importPack();
+    if (!result?.ok) {
+      if (!result?.canceled) showToast(result?.error || t("toast.importPackFailed"), "error");
+      return;
+    }
+    await refreshState();
+    renderProjectTree();
+    updateTopbarTitles();
+    if (result.missingSkills?.length) {
+      showToast(t("toast.importPackMissingSkills", { skills: result.missingSkills.join(", ") }), "warning");
+    } else {
+      showToast(t("toast.importPackDone"), "success");
+    }
+  } catch (err) {
+    showToast(err?.message || t("toast.importPackFailed"), "error");
+  }
+}
+
 export function initAddProject() {
   $("addProjectBtn")?.addEventListener("click", async () => {
     const result = await window.assistantClient.addProject();
@@ -410,6 +472,26 @@ export function initAddProject() {
     await refreshState();
     renderProjectTree();
     updateTopbarTitles();
+  });
+
+  // Right-click the add button to import a shared capability pack.
+  $("addProjectBtn")?.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    const existing = document.querySelector(".ctx-menu");
+    if (existing) existing.remove();
+    const menu = document.createElement("div");
+    menu.className = "ctx-menu";
+    menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;z-index:10000;min-width:160px;padding:6px;background:#1e2140;border:1px solid #2a2d50;border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,0.5);`;
+    const btn = document.createElement("button");
+    btn.className = "ctx-menu-item";
+    btn.textContent = t("ctx.importPack");
+    btn.addEventListener("click", () => {
+      menu.remove();
+      void importWorkspacePack();
+    });
+    menu.appendChild(btn);
+    document.body.appendChild(menu);
+    setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }), 0);
   });
 }
 
