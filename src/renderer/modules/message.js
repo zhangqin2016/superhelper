@@ -115,25 +115,11 @@ function ensurePanel(sessionId) {
   const listEl = document.createElement("div");
   listEl.className = "messages runtime-messages";
   panel.appendChild(listEl);
-  // Floating "new messages" chip: shown when content arrives while the user
-  // is scrolled up reading history; sticky so it rides the scroll viewport.
-  const newChip = document.createElement("button");
-  newChip.type = "button";
-  newChip.className = "messages-new-chip";
-  newChip.hidden = true;
-  newChip.textContent = t("message.newBelow");
-  newChip.addEventListener("click", () => {
-    newChip.hidden = true;
-    scrollToBottomAfterLayout(panel, true);
-  });
-  panel.appendChild(newChip);
-  v.newChip = newChip;
   root.appendChild(panel);
   bindPanelScroll(panel);
   panel.addEventListener(
     "scroll",
     () => {
-      if (isNearBottom(panel)) newChip.hidden = true;
       if (!panel.classList.contains("is-active")) return;
       if (panel.scrollTop > 80) return;
       void import("./session-chrome.js").then((m) =>
@@ -545,12 +531,7 @@ function renderRuntimeSession(sessionId, opts = {}) {
   syncComposerForActiveSession();
   updateSessionRunningIndicators();
   updateTopbarTitles();
-  if (shouldFollow) {
-    scrollToBottomAfterLayout(panel, true);
-  } else if (isActiveSession(sessionId) && panel && !isNearBottom(panel)) {
-    const chip = view(sessionId).newChip;
-    if (chip) chip.hidden = false;
-  }
+  if (shouldFollow) scrollToBottomAfterLayout(panel, true);
 }
 
 function renderLiveTurn(sessionId, liveTurn, queue) {

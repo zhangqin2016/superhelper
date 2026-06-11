@@ -371,22 +371,6 @@
   color: var(--text-primary);
 }
 
-.messages-new-chip {
-  position: sticky;
-  bottom: 14px;
-  display: block;
-  margin: 0 auto;
-  padding: 5px 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: 13px;
-  cursor: pointer;
-  box-shadow: var(--shadow-floating);
-  z-index: 5;
-}
-
 .assistant-retry-btn {
   margin: 4px 0 0;
 }

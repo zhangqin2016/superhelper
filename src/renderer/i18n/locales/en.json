@@ -718,7 +718,6 @@
   "turn.retry": "Retry",
   "turn.retryStale": "A newer message exists; this turn can no longer be retried",
   "turn.retryFailed": "Retry failed — please resend",
-  "message.newBelow": "New messages ↓",
   "message.copyAnswer": "Copy answer",
   "message.reEdit": "Re-edit",
   "timeline.revertTurnUndo": "Undo restore",
