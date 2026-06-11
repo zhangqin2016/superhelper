@@ -17,6 +17,7 @@
   "sidebar.search": "Search chats...",
   "sidebar.myChats": "My chats",
   "sidebar.addFolder": "Add folder",
+  "sidebar.importPack": "Import capability pack",
   "sidebar.settings": "Settings",
   "sidebar.emptyWorkspace": "No workspace yet. Click + above to add a folder",
   "sidebar.noSessions": "No chats yet",

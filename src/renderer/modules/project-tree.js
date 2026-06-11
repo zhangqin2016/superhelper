@@ -474,25 +474,9 @@ export function initAddProject() {
     updateTopbarTitles();
   });
 
-  // Right-click the add button to import a shared capability pack.
-  $("addProjectBtn")?.addEventListener("contextmenu", (e) => {
-    e.preventDefault();
-    const existing = document.querySelector(".ctx-menu");
-    if (existing) existing.remove();
-    const menu = document.createElement("div");
-    menu.className = "ctx-menu";
-    menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;z-index:10000;min-width:160px;padding:6px;background:#1e2140;border:1px solid #2a2d50;border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,0.5);`;
-    const btn = document.createElement("button");
-    btn.className = "ctx-menu-item";
-    btn.textContent = t("ctx.importPack");
-    btn.addEventListener("click", () => {
-      menu.remove();
-      void importWorkspacePack();
-    });
-    menu.appendChild(btn);
-    document.body.appendChild(menu);
-    setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }), 0);
-  });
+  // Visible import entry next to "add folder" (discoverable — the old
+  // right-click affordance was invisible to users).
+  $("importPackBtn")?.addEventListener("click", () => void importWorkspacePack());
 }
 
 export function initTopbarSessionRename() {
