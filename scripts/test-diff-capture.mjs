@@ -12,6 +12,7 @@ const {
   getDiffsForTurn,
   clearDiffsForSession,
   revertTurnChanges,
+  undoRevertTurn,
 } = require("../src/main/diff-capture.js");
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diff-capture-test-"));
@@ -81,6 +82,22 @@ if (fs.existsSync(addedPath)) {
 }
 if (getDiffsForTurn(sessionId, revertTurnId).length !== 0) {
   throw new Error("reverted diffs must be cleared");
+}
+
+// Undo brings back the pre-revert state: edits restored, added files
+// recreated. The stash is one-shot.
+const undone = undoRevertTurn(sessionId, revertTurnId);
+if (!undone.ok) {
+  throw new Error(`undo revert failed: ${JSON.stringify(undone)}`);
+}
+if (fs.readFileSync(editedPath, "utf-8") !== "second edit\n") {
+  throw new Error("undo must restore the post-turn content");
+}
+if (fs.readFileSync(addedPath, "utf-8") !== "brand new\n") {
+  throw new Error("undo must recreate files deleted by the revert");
+}
+if (undoRevertTurn(sessionId, revertTurnId).ok) {
+  throw new Error("undo stash must be one-shot");
 }
 
 clearDiffsForSession(sessionId);

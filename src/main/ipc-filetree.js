@@ -177,6 +177,11 @@ function registerFileTreeHandlers() {
     const failed = results.filter((item) => !item.ok);
     return { ok: failed.length === 0, results, failed };
   });
+
+  ipcMain.handle("filetree:unrevert-turn", (_event, { sessionId, turnId }) => {
+    const { undoRevertTurn } = require("./diff-capture");
+    return undoRevertTurn(sessionId, turnId);
+  });
 }
 
 module.exports = { registerFileTreeHandlers, isTextFile, searchWorkspaceFiles };

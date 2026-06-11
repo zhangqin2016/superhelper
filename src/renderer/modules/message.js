@@ -305,6 +305,24 @@ function appendUserMessage(sessionId, message, beforeNode = null) {
   body.textContent = message.content || "";
   renderFiles(body, message.files || []);
 
+  // Re-edit: copies the text back into the composer (no conversation rewind —
+  // the edited text is sent as a new message).
+  if (String(message.content || "").trim()) {
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "runtime-user-edit";
+    edit.textContent = t("message.reEdit");
+    edit.addEventListener("click", () => {
+      const input = $("promptInput");
+      if (!input) return;
+      input.value = message.content || "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+    article.appendChild(edit);
+  }
+
   article.append(label, body);
   if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
   else v.listEl?.appendChild(article);
@@ -320,15 +338,38 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null) {
     ? liveTurnFromRecord(message.record)
     : legacyLiveTurnFromMessage(message);
   const article = renderSealedTurnArticle(liveTurn, Boolean(message.failed));
-  if (message.failed) appendRetryAction(article, sessionId, message);
+  appendArticleActions(article, sessionId, message);
   if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
   else v.listEl?.appendChild(article);
+}
+
+function appendArticleActions(article, sessionId, message) {
+  const actions = document.createElement("div");
+  actions.className = "assistant-article-actions";
+  const copyText = String(message.content || "").trim();
+  if (copyText) {
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "assistant-action-btn assistant-copy-answer-btn";
+    copy.textContent = t("message.copyAnswer");
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(copyText);
+        showScheduledToast(t("common.copied"), "success");
+      } catch {
+        showScheduledToast(t("common.copyFailed"), "warning");
+      }
+    });
+    actions.appendChild(copy);
+  }
+  if (message.failed) actions.appendChild(buildRetryAction(sessionId, message));
+  if (actions.childElementCount) article.appendChild(actions);
 }
 
 // A failed turn must offer a one-click retry. Retrying replays the LAST user
 // message, so the button verifies at click time that this is still the
 // newest committed message.
-function appendRetryAction(article, sessionId, message) {
+function buildRetryAction(sessionId, message) {
   const retry = document.createElement("button");
   retry.type = "button";
   retry.className = "assistant-action-btn assistant-retry-btn";
@@ -355,7 +396,7 @@ function appendRetryAction(article, sessionId, message) {
       showScheduledToast(err?.message || t("turn.retryFailed"), "error");
     }
   });
-  article.appendChild(retry);
+  return retry;
 }
 
 function formatScheduleDateTime(value) {

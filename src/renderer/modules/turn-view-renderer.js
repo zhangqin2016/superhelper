@@ -621,6 +621,18 @@ function renderChangedFilesGroup(entries, sealed, ctx = {}) {
     revertBtn.textContent = t("timeline.revertTurn");
     revertBtn.addEventListener("click", async (event) => {
       event.preventDefault();
+      // Toggle: after a revert the same button undoes it (one-shot stash).
+      if (revertBtn.dataset.reverted === "true") {
+        const undo = await window.assistantClient.unrevertTurn(ctx.sessionId, ctx.turnId);
+        if (undo?.ok) {
+          revertBtn.dataset.reverted = "false";
+          revertBtn.textContent = t("timeline.revertTurn");
+          showToast(t("timeline.revertTurnUndone"), "success");
+        } else {
+          showToast(t("timeline.revertTurnUndoFailed"), "error");
+        }
+        return;
+      }
       const confirmed = await confirmDialog({
         title: t("timeline.revertTurnConfirmTitle"),
         message: t("timeline.revertTurnConfirmMessage", { count: entries.length }),
@@ -629,6 +641,8 @@ function renderChangedFilesGroup(entries, sealed, ctx = {}) {
       if (!confirmed) return;
       const result = await window.assistantClient.revertTurn(ctx.sessionId, ctx.turnId);
       if (result?.ok) {
+        revertBtn.dataset.reverted = "true";
+        revertBtn.textContent = t("timeline.revertTurnUndo");
         showToast(t("timeline.revertTurnDone"), "success");
       } else {
         const failedNames = (result?.failed || []).map((item) => item.filePath).join(", ");

@@ -301,13 +301,20 @@ export function initComposer() {
       imeComposing = false;
     });
     promptInput.addEventListener("keydown", (e) => {
-      if (imeComposing || !shouldSendOnEnter(e)) return;
+      if (imeComposing) return;
+      // An open @-mention popover owns Enter (confirm selection), not send.
+      if (e.key === "Enter" && mentionState.open) {
+        e.preventDefault();
+        selectActiveMention();
+        return;
+      }
+      if (!shouldSendOnEnter(e)) return;
       e.preventDefault();
       sendPrompt();
     });
     // @-mention file completion: typing "@token" pops a workspace file list;
-    // selecting inserts the relative path into the prompt.
-    let mentionOpen = false;
+    // ↑↓ moves, Enter/Tab confirms, click also works.
+    const mentionState = { open: false, files: [], activeIndex: 0, token: null };
     let mentionTimer = null;
     const mentionBox = document.createElement("div");
     mentionBox.className = "composer-mention-popover";
@@ -330,9 +337,34 @@ export function initComposer() {
       return { query: match[2], start: caret - match[2].length - 1, caret };
     };
     const closeMention = () => {
-      mentionOpen = false;
+      mentionState.open = false;
+      mentionState.files = [];
+      mentionState.activeIndex = 0;
+      mentionState.token = null;
       mentionBox.hidden = true;
       mentionBox.replaceChildren();
+    };
+    const selectMention = (file) => {
+      const token = mentionState.token;
+      if (!file || !token) return;
+      const value = promptInput.value;
+      promptInput.value =
+        `${value.slice(0, token.start)}@${file.relPath} ${value.slice(token.caret)}`;
+      const pos = token.start + file.relPath.length + 2;
+      promptInput.setSelectionRange(pos, pos);
+      closeMention();
+      promptInput.focus();
+      promptInput.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const selectActiveMention = () => {
+      selectMention(mentionState.files[mentionState.activeIndex]);
+    };
+    const highlightActiveMention = () => {
+      const items = mentionBox.querySelectorAll(".composer-mention-item");
+      items.forEach((item, index) => {
+        item.classList.toggle("is-active", index === mentionState.activeIndex);
+      });
+      items[mentionState.activeIndex]?.scrollIntoView({ block: "nearest" });
     };
     const refreshMention = async () => {
       const token = mentionTokenAtCaret();
@@ -347,8 +379,11 @@ export function initComposer() {
         closeMention();
         return;
       }
+      mentionState.files = files;
+      mentionState.token = token;
+      mentionState.activeIndex = 0;
       mentionBox.replaceChildren();
-      for (const file of files) {
+      files.forEach((file) => {
         const item = document.createElement("button");
         item.type = "button";
         item.className = "composer-mention-item";
@@ -356,32 +391,39 @@ export function initComposer() {
         // mousedown so the textarea keeps focus (click would blur first).
         item.addEventListener("mousedown", (e) => {
           e.preventDefault();
-          const value = promptInput.value;
-          promptInput.value =
-            `${value.slice(0, token.start)}@${file.relPath} ${value.slice(token.caret)}`;
-          const pos = token.start + file.relPath.length + 2;
-          promptInput.setSelectionRange(pos, pos);
-          closeMention();
-          promptInput.focus();
-          promptInput.dispatchEvent(new Event("input", { bubbles: true }));
+          selectMention(file);
         });
         mentionBox.appendChild(item);
-      }
+      });
       mentionBox.hidden = false;
-      mentionOpen = true;
+      mentionState.open = true;
+      highlightActiveMention();
     };
     promptInput.addEventListener("input", () => {
       clearTimeout(mentionTimer);
       mentionTimer = setTimeout(() => void refreshMention(), 120);
     });
     promptInput.addEventListener("blur", () => setTimeout(closeMention, 150));
+    promptInput.addEventListener("keydown", (e) => {
+      if (!mentionState.open || imeComposing) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const total = mentionState.files.length;
+        const delta = e.key === "ArrowDown" ? 1 : -1;
+        mentionState.activeIndex = (mentionState.activeIndex + delta + total) % total;
+        highlightActiveMention();
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        selectActiveMention();
+      }
+    });
 
     // Esc in the composer: first closes the @-mention popover, then interrupts
     // the running turn (the status line advertises this). Scoped to the input
     // so dialog Escape handlers win.
     promptInput.addEventListener("keydown", (e) => {
       if (e.key !== "Escape" || imeComposing) return;
-      if (mentionOpen) {
+      if (mentionState.open) {
         e.preventDefault();
         closeMention();
         return;

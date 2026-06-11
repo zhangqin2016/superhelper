@@ -146,6 +146,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("filetree:reject-change", { sessionId, filePath, content, status }),
   revertTurn: (sessionId, turnId) =>
     ipcRenderer.invoke("filetree:revert-turn", { sessionId, turnId }),
+  unrevertTurn: (sessionId, turnId) =>
+    ipcRenderer.invoke("filetree:unrevert-turn", { sessionId, turnId }),
   searchFiles: (rootPath, query, limit) =>
     ipcRenderer.invoke("filetree:search-files", { rootPath, query, limit }),
 

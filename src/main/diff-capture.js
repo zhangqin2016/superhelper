@@ -193,28 +193,64 @@ function removeAcceptedDiff(sessionId, filePath) {
   return false;
 }
 
+/** Pre-revert file contents per session+turn so a revert can be undone. */
+const revertStash = new Map();
+
 /**
  * Restore every file the turn touched to its checkpoint state (the content
  * captured before the turn's first write). Added files are deleted. Reports
  * per-file results instead of failing the whole revert on one error.
+ * The pre-revert state is stashed so undoRevertTurn can restore it.
  */
 function revertTurnChanges(sessionId, turnId) {
   const entries = getDiffsForTurn(sessionId, turnId);
   const results = [];
+  const stash = [];
   for (const entry of entries) {
     try {
+      const current = fs.existsSync(entry.filePath)
+        ? fs.readFileSync(entry.filePath, "utf-8")
+        : null;
       if (entry.originalContent == null) {
         if (fs.existsSync(entry.filePath)) fs.unlinkSync(entry.filePath);
       } else {
         fs.writeFileSync(entry.filePath, entry.originalContent, "utf-8");
       }
+      stash.push({ filePath: entry.filePath, content: current });
       removeAcceptedDiff(sessionId, entry.filePath);
       results.push({ filePath: entry.filePath, ok: true });
     } catch (error) {
       results.push({ filePath: entry.filePath, ok: false, error: String(error?.message || error) });
     }
   }
+  if (stash.length) {
+    if (!revertStash.has(sessionId)) revertStash.set(sessionId, new Map());
+    revertStash.get(sessionId).set(String(turnId), stash);
+  }
   return results;
+}
+
+/** Undo a previous revertTurnChanges: write the stashed pre-revert contents
+ * back (a stashed null means the file had been created by the turn — recreate
+ * is the undo). One-shot: the stash entry is consumed. */
+function undoRevertTurn(sessionId, turnId) {
+  const stash = revertStash.get(sessionId)?.get(String(turnId));
+  if (!stash) return { ok: false, error: "NOTHING_TO_UNDO", results: [] };
+  const results = [];
+  for (const item of stash) {
+    try {
+      if (item.content == null) {
+        if (fs.existsSync(item.filePath)) fs.unlinkSync(item.filePath);
+      } else {
+        fs.writeFileSync(item.filePath, item.content, "utf-8");
+      }
+      results.push({ filePath: item.filePath, ok: true });
+    } catch (error) {
+      results.push({ filePath: item.filePath, ok: false, error: String(error?.message || error) });
+    }
+  }
+  revertStash.get(sessionId).delete(String(turnId));
+  return { ok: results.every((item) => item.ok), results };
 }
 
 module.exports = {
@@ -223,6 +259,7 @@ module.exports = {
   clearDiffsForSession,
   removeAcceptedDiff,
   revertTurnChanges,
+  undoRevertTurn,
   getDiffsForTurn,
   isFileWriteTool,
   extractFilePath,
