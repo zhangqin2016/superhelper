@@ -2,6 +2,20 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { adminCredentialHeaders, readAdminSummaryResponse } from "../web/lib/admin-auth-shared.mjs";
 
+// Polyfill Response for Node < 18
+if (typeof globalThis.Response === "undefined") {
+  globalThis.Response = class Response {
+    constructor(body, init = {}) {
+      this._body = body;
+      this.status = init.status || 200;
+      this.headers = new Map(Object.entries(init.headers || {}));
+      this.ok = this.status >= 200 && this.status < 300;
+    }
+    async json() { return JSON.parse(this._body); }
+    async text() { return String(this._body); }
+  };
+}
+
 function jsonResponse(body, init = {}) {
   return new Response(JSON.stringify(body), {
     status: init.status || 200,
