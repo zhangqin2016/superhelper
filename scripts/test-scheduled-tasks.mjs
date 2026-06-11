@@ -79,21 +79,21 @@ try {
     "stored scheduled task prompt must remove weekday/time intent",
   );
   const executionPrompt = buildTaskPrompt({ title: "创建每日 10:00 自动任务同步 Bug", prompt: "创建每日 10:00 自动任务同步 Bug" });
-  assert(executionPrompt.includes("任务：同步 Bug"), `execution prompt title should be sanitized: ${executionPrompt}`);
-  assert(executionPrompt.includes("任务内容：\n同步 Bug"), `execution prompt should contain only task content: ${executionPrompt}`);
-  assert(executionPrompt.includes("不是创建或修改定时任务的请求"), "execution prompt should declare scheduled-run boundary");
+  assert(executionPrompt.includes("Task: 同步 Bug"), `execution prompt title should be sanitized: ${executionPrompt}`);
+  assert(executionPrompt.includes("Task content:\n同步 Bug"), `execution prompt should contain only task content: ${executionPrompt}`);
+  assert(executionPrompt.includes("NOT a request to create or modify any scheduled task"), "execution prompt should declare scheduled-run boundary");
   assertSchedule("每天早上 9 点帮我整理昨天的工作日志", "daily");
   assertSchedule("每周一 10:30 生成周报", "weekly");
   assertSchedule("每隔 2 小时检查一次构建状态", "interval");
   const multiDaily = assertSchedule("每天 10点 13点 18点整理待办", "daily_times");
   assert(
-    multiDaily.scheduleText === "每天 10:00 / 13:00 / 18:00",
+    multiDaily.scheduleText === "Daily at 10:00 / 13:00 / 18:00",
     `multi daily schedule text should be readable: ${multiDaily.scheduleText}`,
   );
   assertLocalTime(multiDaily.nextRunAt, 10, 0, "multi daily should pick the next listed local time");
   const dailyWindow = assertSchedule("上午9点到12点 每个整点 整理我的待办", "daily_window_interval");
   assert(
-    dailyWindow.scheduleText === "每天 09:00-12:00 每小时整点",
+    dailyWindow.scheduleText === "Daily 09:00-12:00 on the hour",
     `daily window schedule text should be readable: ${dailyWindow.scheduleText}`,
   );
   assertLocalTime(dailyWindow.nextRunAt, 9, 0, "daily window should pick today's start when not reached");
@@ -130,7 +130,7 @@ try {
     },
   }, { text: "每周一到周五 10 点 11 点整理我的待办", sessionId: "s1", projectId: "p1" });
   assert(modelDraft.ok, `model draft JSON should normalize: ${JSON.stringify(modelDraft)}`);
-  assert(modelDraft.draft.scheduleText === "每周一 / 周二 / 周三 / 周四 / 周五 10:00 / 11:00", `model draft schedule text should be readable: ${modelDraft.draft.scheduleText}`);
+  assert(modelDraft.draft.scheduleText === "Mon / Tue / Wed / Thu / Fri at 10:00 / 11:00", `model draft schedule text should be readable: ${modelDraft.draft.scheduleText}`);
   assert(resolveMessagesUrl("/llm/deepseek") === "https://lily.lanrensoft.cn/llm/deepseek/v1/messages", "relative model base url should resolve against service api base");
   const invalidWindow = normalizeScheduleSpec({
     type: "daily_window_interval",
@@ -194,7 +194,7 @@ try {
   });
   assert(multiDraft.ok, `multi daily draft failed: ${JSON.stringify(multiDraft)}`);
   assert(multiDraft.draft.title === "整理待办", `multi daily title should be clean: ${multiDraft.draft.title}`);
-  assert(multiDraft.draft.scheduleText === "每天 10:00 / 13:00 / 18:00", `multi daily draft schedule should be readable: ${multiDraft.draft.scheduleText}`);
+  assert(multiDraft.draft.scheduleText === "Daily at 10:00 / 13:00 / 18:00", `multi daily draft schedule should be readable: ${multiDraft.draft.scheduleText}`);
   const windowDraft = manager.parseDraft({
     text: "上午9点到12点 每个整点 整理我的待办",
     sessionId: "s1",
@@ -202,7 +202,7 @@ try {
   });
   assert(windowDraft.ok, `daily window draft failed: ${JSON.stringify(windowDraft)}`);
   assert(windowDraft.draft.title === "整理我的待办", `daily window title should be clean: ${windowDraft.draft.title}`);
-  assert(windowDraft.draft.scheduleText === "每天 09:00-12:00 每小时整点", `daily window draft schedule should be readable: ${windowDraft.draft.scheduleText}`);
+  assert(windowDraft.draft.scheduleText === "Daily 09:00-12:00 on the hour", `daily window draft schedule should be readable: ${windowDraft.draft.scheduleText}`);
   manager.aiDraftParser = async () => ({
     ok: true,
     draft: {
@@ -229,7 +229,7 @@ try {
     projectId: "p1",
   });
   assert(minuteDraft.ok, `minute draft failed: ${JSON.stringify(minuteDraft)}`);
-  assert(minuteDraft.draft.scheduleText === "每天 10:13", `minute draft should preserve explicit minute: ${minuteDraft.draft.scheduleText}`);
+  assert(minuteDraft.draft.scheduleText === "Daily at 10:13", `minute draft should preserve explicit minute: ${minuteDraft.draft.scheduleText}`);
   const created = manager.create(draft.draft);
   assert(created.ok, `create failed: ${JSON.stringify(created)}`);
   const createdFromJson = manager.create({
@@ -246,7 +246,7 @@ try {
     },
   });
   assert(createdFromJson.ok, `create from model JSON failed: ${JSON.stringify(createdFromJson)}`);
-  assert(createdFromJson.task.scheduleText === "每天 09:00-12:00 每小时整点", `created JSON task should be readable: ${createdFromJson.task.scheduleText}`);
+  assert(createdFromJson.task.scheduleText === "Daily 09:00-12:00 on the hour", `created JSON task should be readable: ${createdFromJson.task.scheduleText}`);
   created.task.nextRunAt = "2026-01-01T00:00:00.000Z";
   await manager.tick();
   await flushMicrotasks();
