@@ -461,29 +461,52 @@ async function importWorkspacePack() {
   }
 }
 
-export function initAddProject() {
-  $("addProjectBtn")?.addEventListener("click", async () => {
-    const result = await window.assistantClient.addProject();
-    if (!result.ok) return;
+async function addFolderWorkspace() {
+  const result = await window.assistantClient.addProject();
+  if (!result.ok) return;
 
-    const project = (result.state?.projects || []).find(
-      (p) => p.id === result.state.activeProjectId,
-    );
-    if (project) {
-      const name = await promptProjectName(project.name);
-      if (name && name !== project.name) {
-        await window.assistantClient.renameProject(project.id, name);
-      }
+  const project = (result.state?.projects || []).find(
+    (p) => p.id === result.state.activeProjectId,
+  );
+  if (project) {
+    const name = await promptProjectName(project.name);
+    if (name && name !== project.name) {
+      await window.assistantClient.renameProject(project.id, name);
     }
+  }
 
-    await refreshState();
-    renderProjectTree();
-    updateTopbarTitles();
+  await refreshState();
+  renderProjectTree();
+  updateTopbarTitles();
+}
+
+export function initAddProject() {
+  // The add-workspace button offers both ways to get a new workspace —
+  // an existing folder, or an imported capability pack — in one menu, so
+  // the header stays a single uncluttered button.
+  $("addProjectBtn")?.addEventListener("click", (e) => {
+    const existing = document.querySelector(".ctx-menu");
+    if (existing) existing.remove();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const menu = document.createElement("div");
+    menu.className = "ctx-menu";
+    menu.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.bottom + 4}px;z-index:10000;min-width:180px;padding:6px;background:#1e2140;border:1px solid #2a2d50;border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,0.5);`;
+    for (const [label, action] of [
+      [t("ctx.addFolder"), addFolderWorkspace],
+      [t("ctx.importPack"), importWorkspacePack],
+    ]) {
+      const btn = document.createElement("button");
+      btn.className = "ctx-menu-item";
+      btn.textContent = label;
+      btn.addEventListener("click", () => {
+        menu.remove();
+        void action();
+      });
+      menu.appendChild(btn);
+    }
+    document.body.appendChild(menu);
+    setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }), 0);
   });
-
-  // Visible import entry next to "add folder" (discoverable — the old
-  // right-click affordance was invisible to users).
-  $("importPackBtn")?.addEventListener("click", () => void importWorkspacePack());
 }
 
 export function initTopbarSessionRename() {
