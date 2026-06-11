@@ -230,6 +230,22 @@ SLO：事件到上屏 p95 < 50ms；流式期间无 >100ms 长帧；打断响应 
 11. **恢复可撤销**：revert 前暂存 pre-revert 内容（一次性 stash），
     按钮变"取消恢复"可完整回到 revert 前；含被删新增文件的重建。
 
+## AgentSession 拆分（三刀已完成）
+
+上帝对象瘦身（1825 → 1663 行），三个独立可测模块，每刀单独提交+全量验证：
+
+1. **TimerBank**（turn-timers.js）：十种看门狗计时器统一为命名银行，
+   触发自清除保证心跳重挂正确；自带确定性测试。
+2. **ToolLeaseTracker**（tool-lease-tracker.js）：租约表、pending 集合、
+   阻塞标记、前台/后台分类、长任务心跳通知；时间配置触发时读取
+   （保留测试可缩短静态配置的旧语义）。
+3. **DeferredResultGate**（turn-settlement.js）：result 延迟释放状态机
+   （阻塞清除即放行 / 宽限到期强制放行 / 无阻塞快速放行）；
+   抽离前先用 test-turn-settlement.mjs 锁语义，抽离后原测试不改全过。
+
+AgentSession 构造函数现在是一份"接线清单"。剩余主体：进程生命周期 +
+control 协议面——这正是 Agent SDK 迁移要替换的部分，拆分已为其减负。
+
 ## 守门纪律
 
 - ✅ Claude 适配层已落位 `src/main/runtime/adapters/`（claude-cli-adapter /
