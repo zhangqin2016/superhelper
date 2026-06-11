@@ -73,6 +73,97 @@ function buildWorkspaceRulesSection(workspacePath) {
   return `\n## 工作区已有约定（用户仓库自带，必须遵循）\n\n${parts.join("\n\n")}\n`;
 }
 
+// --- Workspace digest (L0 map: the model wakes up knowing the terrain) ------
+const DIGEST_SKIP_DIRS = new Set([
+  "node_modules", "dist", "build", "release", "bundles", "__pycache__",
+  ".git", ".lily-work", "venv", ".venv",
+]);
+const DIGEST_MAX_ENTRIES = 50;
+const DIGEST_RECENT_FILES = 8;
+const DIGEST_SCAN_CAP = 2000;
+
+/** Bounded two-level tree summary plus the most recently modified files. */
+function buildWorkspaceDigest(workspacePath) {
+  let rootEntries;
+  try {
+    rootEntries = fs.readdirSync(workspacePath, { withFileTypes: true });
+  } catch {
+    return "";
+  }
+  const treeLines = [];
+  const recent = [];
+  let scanned = 0;
+  let truncated = false;
+
+  const noteRecent = (filePath, mtimeMs) => {
+    recent.push({ filePath, mtimeMs });
+    if (recent.length > DIGEST_RECENT_FILES * 4) {
+      recent.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      recent.length = DIGEST_RECENT_FILES;
+    }
+  };
+
+  for (const entry of rootEntries) {
+    if (entry.name.startsWith(".") && entry.name !== ".cursorrules") continue;
+    if (treeLines.length >= DIGEST_MAX_ENTRIES) {
+      truncated = true;
+      break;
+    }
+    const full = path.join(workspacePath, entry.name);
+    scanned += 1;
+    if (entry.isDirectory()) {
+      if (DIGEST_SKIP_DIRS.has(entry.name)) continue;
+      let children = [];
+      try {
+        children = fs.readdirSync(full, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      treeLines.push(`- ${entry.name}/（${children.length} 项）`);
+      for (const child of children) {
+        if (scanned > DIGEST_SCAN_CAP) break;
+        scanned += 1;
+        if (child.name.startsWith(".")) continue;
+        if (child.isDirectory()) {
+          if (treeLines.length < DIGEST_MAX_ENTRIES) treeLines.push(`  - ${entry.name}/${child.name}/`);
+          else truncated = true;
+        } else {
+          try {
+            noteRecent(path.join(entry.name, child.name), fs.statSync(path.join(full, child.name)).mtimeMs);
+          } catch {
+            // unreadable child: skip
+          }
+        }
+      }
+    } else {
+      treeLines.push(`- ${entry.name}`);
+      try {
+        noteRecent(entry.name, fs.statSync(full).mtimeMs);
+      } catch {
+        // unreadable file: skip
+      }
+    }
+  }
+
+  if (!treeLines.length) return "";
+  recent.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const recentLines = recent.slice(0, DIGEST_RECENT_FILES).map((item) => {
+    const day = new Date(item.mtimeMs).toISOString().slice(0, 10);
+    return `- ${item.filePath}（${day}）`;
+  });
+  const parts = ["目录结构：", ...treeLines];
+  if (truncated) parts.push("…（已截断）");
+  if (recentLines.length) parts.push("", "最近修改：", ...recentLines);
+  return parts.join("\n");
+}
+
+function buildWorkspaceDigestSection(workspacePath) {
+  if (!workspacePath) return "";
+  const digest = buildWorkspaceDigest(workspacePath);
+  if (!digest) return "";
+  return `\n## 工作区概览（自动生成的快照，定位文件先看这里）\n\n${clip(digest)}\n`;
+}
+
 /** Cache key fragment: changes whenever any learned/workspace source changes. */
 function contextSignature(projectId, workspacePath) {
   const pieces = [readLearnedConventions(projectId)];
@@ -85,6 +176,7 @@ function contextSignature(projectId, workspacePath) {
         pieces.push(`${name}:absent`);
       }
     }
+    pieces.push(buildWorkspaceDigest(workspacePath));
   }
   return pieces.join("\0");
 }
@@ -92,6 +184,7 @@ function contextSignature(projectId, workspacePath) {
 module.exports = {
   appendLearnedConvention,
   buildLearnedSection,
+  buildWorkspaceDigestSection,
   buildWorkspaceRulesSection,
   contextSignature,
   learnedConventionsPath,

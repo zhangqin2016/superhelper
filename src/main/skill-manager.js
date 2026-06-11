@@ -475,6 +475,7 @@ function writeSessionAgentGuide(sessionId, session, workspacePath = "") {
   const guidePath = path.join(configDir, "AGENT.md");
   const locale = getActiveLocale();
   const learnedSections =
+    learnedContext.buildWorkspaceDigestSection(workspacePath) +
     learnedContext.buildWorkspaceRulesSection(workspacePath) +
     learnedContext.buildLearnedSection(session?.projectId) +
     buildCrystallizationSection();

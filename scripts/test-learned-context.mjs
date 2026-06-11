@@ -28,6 +28,7 @@ require.cache[electronPath] = {
 const {
   appendLearnedConvention,
   buildLearnedSection,
+  buildWorkspaceDigestSection,
   buildWorkspaceRulesSection,
   contextSignature,
 } = require("../src/main/learned-context.js");
@@ -52,6 +53,28 @@ try {
   }
   if (buildWorkspaceRulesSection(path.join(tempRoot, "missing")) !== "") {
     throw new Error("missing workspace must yield an empty section");
+  }
+
+  // L0 digest: the model wakes up with a bounded map — dirs with counts,
+  // noisy dirs skipped, recent files listed.
+  fs.mkdirSync(path.join(workspace, "docs"), { recursive: true });
+  fs.mkdirSync(path.join(workspace, "node_modules", "x"), { recursive: true });
+  fs.writeFileSync(path.join(workspace, "docs", "方案.md"), "x");
+  fs.writeFileSync(path.join(workspace, "readme.md"), "x");
+  const digest = buildWorkspaceDigestSection(workspace);
+  if (!digest.includes("docs/（1 项）") || !digest.includes("readme.md")) {
+    throw new Error(`digest must map the workspace: ${digest}`);
+  }
+  if (digest.includes("node_modules")) {
+    throw new Error("digest must skip noisy directories");
+  }
+  if (!digest.includes("最近修改：") || !digest.includes("docs/方案.md")) {
+    throw new Error(`digest must list recent files: ${digest}`);
+  }
+  const sigA = contextSignature("proj_sig", workspace);
+  fs.writeFileSync(path.join(workspace, "新文件.txt"), "x");
+  if (contextSignature("proj_sig", workspace) === sigA) {
+    throw new Error("a new workspace file must change the digest signature");
   }
 
   // L1: conventions persist with provenance and change the signature.
