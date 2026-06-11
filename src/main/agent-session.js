@@ -10,24 +10,14 @@ const {
   isUpstreamApiFailure,
 } = require("./agent-runner");
 const {
-  needsUserApproval,
-  buildControlResponse,
-  buildRememberAllowPermissions,
-  withPersistentDestination,
-  buildControlCancelRequest,
   buildUpdateEnvironmentVariablesRequest,
   buildControlAck,
   buildHookCallbackResponse,
-  buildHookContinueResponse,
-  buildHookPreToolUseResponse,
-  buildHookStopResponse,
   buildInterruptRequest,
   buildSetPermissionModeRequest,
 } = require("./control-protocol");
-const {
-  normalizeAskUserQuestions,
-} = require("./runtime/adapters/claude-event-normalizer");
 const { CliEventAdapter } = require("./runtime/adapters/claude-cli-adapter");
+const { normalizeAskUserQuestions } = require("./runtime/adapters/claude-event-normalizer");
 const {
   compactCommand,
   isShellTool,
@@ -35,7 +25,6 @@ const {
   looksLikeLongRunningShellCommand,
 } = require("./runtime/runtime-activity");
 const { buildUserMessagePayload, hasSendableContent } = require("./user-message");
-const { resolvePlanPreview, PLAN_PREVIEW_MAX } = require("./plan-preview");
 const { buildAgentSpawnEnv } = require("./spawn-env");
 const { sameRespawnOptions } = require("./runner-spawn-options");
 const { appendPermissionSpawnArgs } = require("./permission-spawn-args");
@@ -47,6 +36,7 @@ const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
 const { TimerBank } = require("./turn-timers");
 const { ToolLeaseTracker } = require("./tool-lease-tracker");
 const { DeferredResultGate } = require("./turn-settlement");
+const { ApprovalBroker } = require("./approval-broker");
 const { getLogger } = require("./logger");
 const log = getLogger("agent-session");
 
@@ -99,10 +89,21 @@ class AgentSession extends EventEmitter {
     });
     this._sawStdoutForTurn = false;
     this._turnSettled = true;
-    /** @type {Map<string, { toolName: string, input: Record<string, unknown> }>} */
-    this._pendingPermissions = new Map();
-    /** @type {Map<string, { hookName: string, toolName: string, requestId: string }>} */
-    this._pendingHooks = new Map();
+    /** User-blocking control surface: permissions/questions/hooks (see approval-broker.js). */
+    this._approvals = new ApprovalBroker({
+      writeControl: (payload) => this._writeControlLine(payload),
+      ingest: (drafts) => this._ingestRuntime(drafts),
+      emitNotice: (notice) => this._emitEngineNotice(notice),
+      onBlockingRequest: () => {
+        this._turnHadToolUse = true;
+        this._clearIdleTimer();
+      },
+      onActivity: () => this._markStreamActivity(),
+      pollGate: () => this._resultGate.poll(),
+      permissionMode: () => this.spawnOptions?.permissionMode || "default",
+      timeoutMs: () => AgentSession.PERMISSION_UI_TIMEOUT_MS,
+      normalizeQuestions: normalizeAskUserQuestions,
+    });
     this._cliInitialized = false;
     this._interruptPending = false;
     /** @type {string | null} */
@@ -126,8 +127,8 @@ class AgentSession extends EventEmitter {
         log.warn("turn result completed with stale pending runtime blockers", {
           sessionId: this.sessionId,
           pendingTools: this._leaseTracker.pendingIds(),
-          pendingPermissions: [...this._pendingPermissions.keys()],
-          pendingHooks: [...this._pendingHooks.keys()],
+          pendingPermissions: this._approvals.permissionIds(),
+          pendingHooks: this._approvals.hookIds(),
         });
       },
       onCleanRelease: () => {
@@ -261,25 +262,11 @@ class AgentSession extends EventEmitter {
   }
 
   _clearPendingPermissions(notifyCancel = false) {
-    if (this._pendingPermissions.size === 0) return;
-    const ids = [...this._pendingPermissions.keys()];
-    this._pendingPermissions.clear();
-    if (notifyCancel) {
-      for (const requestId of ids) {
-        this._ingestRuntime([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
-      }
-    }
+    this._approvals.clearPermissions(notifyCancel);
   }
 
   _clearPendingHooks(notifyCancel = false) {
-    if (this._pendingHooks.size === 0) return;
-    const ids = [...this._pendingHooks.keys()];
-    this._pendingHooks.clear();
-    if (notifyCancel) {
-      for (const requestId of ids) {
-        this._ingestRuntime([{ type: "hook.resolved", payload: { requestId, cancelled: true } }]);
-      }
-    }
+    this._approvals.clearHooks(notifyCancel);
   }
 
   _canAutoCompleteTurn() {
@@ -288,8 +275,8 @@ class AgentSession extends EventEmitter {
       !this._turnSettled &&
       !this._leaseTracker.hadBlockingToolUse() &&
       this._leaseTracker.pendingCount() === 0 &&
-      this._pendingPermissions.size === 0 &&
-      this._pendingHooks.size === 0 &&
+      this._approvals.permissionCount() === 0 &&
+      this._approvals.hookCount() === 0 &&
       Date.now() >= this._backgroundActivityUntil
     );
   }
@@ -297,8 +284,8 @@ class AgentSession extends EventEmitter {
   _hasBlockingTurnWork() {
     return (
       this._leaseTracker.pendingCount() > 0 ||
-      this._pendingPermissions.size > 0 ||
-      this._pendingHooks.size > 0 ||
+      this._approvals.permissionCount() > 0 ||
+      this._approvals.hookCount() > 0 ||
       Date.now() < this._backgroundActivityUntil
     );
   }
@@ -306,8 +293,8 @@ class AgentSession extends EventEmitter {
   _hasPendingRuntimeBlockers() {
     return (
       this._leaseTracker.pendingCount() > 0 ||
-      this._pendingPermissions.size > 0 ||
-      this._pendingHooks.size > 0
+      this._approvals.permissionCount() > 0 ||
+      this._approvals.hookCount() > 0
     );
   }
 
@@ -315,8 +302,8 @@ class AgentSession extends EventEmitter {
     log.warn("turn result deferred until pending runtime blockers settle: %s", reason, {
       sessionId: this.sessionId,
       pendingTools: this._leaseTracker.pendingCount(),
-      pendingPermissions: this._pendingPermissions.size,
-      pendingHooks: this._pendingHooks.size,
+      pendingPermissions: this._approvals.permissionCount(),
+      pendingHooks: this._approvals.hookCount(),
       backgroundMs: Math.max(0, this._backgroundActivityUntil - Date.now()),
     });
     this._resultGate.defer(payload);
@@ -687,82 +674,15 @@ class AgentSession extends EventEmitter {
   }
 
   respondPermission(requestId, decision) {
-    const pending = this._pendingPermissions.get(requestId);
-    if (!pending) return false;
-
-    this._pendingPermissions.delete(requestId);
-    if (decision.allow) {
-      /** @type {{ behavior: "allow", updatedInput: Record<string, unknown>, updatedPermissions?: unknown[] }} */
-      const allowDecision = {
-        behavior: "allow",
-        updatedInput: pending.input,
-      };
-      if (decision.remember && pending.toolName) {
-        allowDecision.updatedPermissions =
-          Array.isArray(pending.suggestions) && pending.suggestions.length
-            ? withPersistentDestination(pending.suggestions)
-            : buildRememberAllowPermissions(pending.toolName);
-      }
-      this._writeControlLine(buildControlResponse(requestId, allowDecision));
-    } else {
-      this._emitEngineNotice({
-        code: "permissionUserDenied",
-        level: "warning",
-        panel: true,
-        replace: true,
-        done: true,
-        toolName: pending.toolName,
-      });
-      this._writeControlLine(
-        buildControlResponse(requestId, {
-          behavior: "deny",
-          message: decision.message || "User denied this action",
-        }),
-      );
-      this._writeControlLine(buildControlCancelRequest(requestId));
-    }
-    this._ingestRuntime([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
-    this._markStreamActivity();
-    this._maybeCompleteDeferredTurnResult();
-    return true;
+    return this._approvals.respondPermission(requestId, decision);
   }
 
   respondUserQuestion(requestId, payload = {}) {
-    const pending = this._pendingPermissions.get(requestId);
-    if (!pending || pending.toolName !== "AskUserQuestion") return false;
-
-    const questions = normalizeAskUserQuestions(pending.input || {});
-    const answers =
-      payload.answers && typeof payload.answers === "object"
-        ? payload.answers
-        : {};
-    const response =
-      typeof payload.response === "string" ? payload.response.trim() : "";
-
-    this._pendingPermissions.delete(requestId);
-    this._writeControlLine(
-      buildControlResponse(requestId, {
-        behavior: "allow",
-        updatedInput: {
-          questions,
-          answers,
-          ...(response ? { response } : {}),
-        },
-      }),
-    );
-    this._ingestRuntime([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
-    this._markStreamActivity();
-    this._maybeCompleteDeferredTurnResult();
-    return true;
+    return this._approvals.respondUserQuestion(requestId, payload);
   }
 
   cancelPermissionRequest(requestId) {
-    if (!this._pendingPermissions.has(requestId)) return false;
-    this._pendingPermissions.delete(requestId);
-    this._writeControlLine(buildControlCancelRequest(requestId));
-    this._ingestRuntime([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
-    this._maybeCompleteDeferredTurnResult();
-    return true;
+    return this._approvals.cancelPermission(requestId);
   }
 
   /**
@@ -1047,17 +967,7 @@ class AgentSession extends EventEmitter {
   }
 
   _denyAllPendingPermissions(message) {
-    for (const [requestId] of this._pendingPermissions) {
-      this._writeControlLine(
-        buildControlResponse(requestId, {
-          behavior: "deny",
-          message,
-        }),
-      );
-      this._writeControlLine(buildControlCancelRequest(requestId));
-      this._ingestRuntime([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
-    }
-    this._pendingPermissions.clear();
+    this._approvals.denyAllPermissions(message);
   }
 
   _noteStreamContext(ev) {
@@ -1067,200 +977,31 @@ class AgentSession extends EventEmitter {
   }
 
   _allowToolUse(requestId, input) {
-    this._writeControlLine(
-      buildControlResponse(requestId, {
-        behavior: "allow",
-        updatedInput: input || {},
-      }),
-    );
-    this._markStreamActivity();
+    this._approvals.allowToolUse(requestId, input);
   }
 
   _handleHookPreToolUse(action) {
-    const { requestId, toolName, permissionDecision, decisionReason, notice } = action;
-
-    if (permissionDecision !== "ask") {
-      const detail = toolName ? `${toolName}` : "";
-      this._emitEngineNotice({ ...notice, detail: detail || notice.detail, done: true });
-      this._writeControlLine(buildHookContinueResponse(requestId));
-      return;
-    }
-
-    this._pendingHooks.set(requestId, {
-      hookName: action.hookName || "PreToolUse",
-      toolName: toolName || "unknown",
-      requestId,
-    });
-    this._turnHadToolUse = true;
-    this._clearIdleTimer();
-
-    this._emitEngineNotice({
-      ...notice,
-      detail: toolName
-        ? `${toolName}${decisionReason ? ` — ${decisionReason}` : ""}`
-        : notice.detail,
-    });
-
-    setTimeout(() => {
-      if (!this._pendingHooks.has(requestId)) return;
-      this._emitEngineNotice({
-        code: "hookTimeout",
-        level: "warning",
-        panel: true,
-        toast: true,
-        done: true,
-        requestId,
-        detail: `${toolName}: Hook decision timed out, denied`,
-      });
-      this.respondHook(requestId, { allow: false });
-    }, AgentSession.PERMISSION_UI_TIMEOUT_MS);
+    this._approvals.handleHookPreToolUse(action);
   }
 
   _handleHookStop(action) {
-    const { requestId, hookName, notice } = action;
-
-    this._pendingHooks.set(requestId, {
-      hookName: hookName || "Stop",
-      requestId,
-      toolName: "",
-    });
-    this._turnHadToolUse = true;
-    this._clearIdleTimer();
-
-    this._emitEngineNotice(notice);
-
-    setTimeout(() => {
-      if (!this._pendingHooks.has(requestId)) return;
-      this.respondHook(requestId, { allow: true });
-    }, AgentSession.PERMISSION_UI_TIMEOUT_MS);
+    this._approvals.handleHookStop(action);
   }
 
   _handleHookInfoOnly(action) {
-    this._emitEngineNotice(action.notice);
-    this._writeControlLine(buildHookContinueResponse(action.requestId));
+    this._approvals.handleHookInfoOnly(action);
   }
 
   respondHook(requestId, decision) {
-    const pending = this._pendingHooks.get(requestId);
-    if (!pending) return false;
-
-    this._pendingHooks.delete(requestId);
-
-    if (pending.hookName === "PreToolUse") {
-      this._writeControlLine(
-        buildHookPreToolUseResponse(requestId, {
-          allow: Boolean(decision.allow),
-          updatedInput: decision.updatedInput || undefined,
-        }),
-      );
-    } else if (pending.hookName === "Stop" || pending.hookName === "SubagentStop") {
-      this._writeControlLine(
-        buildHookStopResponse(requestId, {
-          allow: Boolean(decision.allow),
-          reason: decision.reason,
-        }),
-      );
-    } else {
-      this._writeControlLine(buildHookContinueResponse(requestId));
-    }
-
-    this._ingestRuntime([{ type: "hook.resolved", payload: { requestId, hookName: pending.hookName } }]);
-    this._markStreamActivity();
-    this._maybeCompleteDeferredTurnResult();
-    return true;
+    return this._approvals.respondHook(requestId, decision);
   }
 
   _handleCanUseTool(canUse) {
-    const { requestId, toolName, input, title, description, decisionReason, suggestions } =
-      canUse;
-    const permissionMode = this.spawnOptions?.permissionMode || "default";
-
-    if (toolName === "AskUserQuestion") {
-      this._handleAskUserQuestion(canUse);
-      return;
-    }
-
-    log.info("permission-check tool=%s mode=%s needsApproval=%s",
-      toolName, permissionMode, needsUserApproval(toolName, permissionMode));
-
-    if (!needsUserApproval(toolName, permissionMode)) {
-      this._allowToolUse(requestId, input);
-      return;
-    }
-
-    if (permissionMode === "dontAsk") {
-      this._emitEngineNotice({
-        code: "permissionAutoDenied",
-        level: "warning",
-        panel: true,
-        replace: true,
-        done: true,
-        toolName,
-      });
-      this._writeControlLine(
-        buildControlResponse(requestId, {
-          behavior: "deny",
-          message: "Skipped because confirmations are turned off",
-        }),
-      );
-      this._markStreamActivity();
-      return;
-    }
-
-    this._pendingPermissions.set(requestId, { toolName, input, suggestions });
-    this._turnHadToolUse = true;
-    this._clearIdleTimer();
-    const planPreview = resolvePlanPreview(input, description);
-    this._ingestRuntime([{
-      type: "permission.requested",
-      payload: {
-        requestId,
-        toolName,
-        input,
-        title,
-        description,
-        decisionReason,
-        suggestions,
-        planPreview,
-        planPreviewTruncated: planPreview.length >= PLAN_PREVIEW_MAX,
-      },
-    }]);
-
-    setTimeout(() => {
-      if (!this._pendingPermissions.has(requestId)) return;
-      this._emitEngineNotice({
-        code: "permissionTimeout",
-        level: "warning",
-        panel: true,
-        toast: true,
-        done: true,
-        requestId,
-        toolName,
-      });
-      this.respondPermission(requestId, {
-        allow: false,
-        message: "Permission request timed out",
-      });
-    }, AgentSession.PERMISSION_UI_TIMEOUT_MS);
+    this._approvals.handleCanUseTool(canUse, log);
   }
 
   _handleAskUserQuestion(canUse) {
-    const { requestId, input } = canUse;
-    const questions = normalizeAskUserQuestions(input || {});
-    this._pendingPermissions.set(requestId, {
-      toolName: "AskUserQuestion",
-      input: { ...input, questions },
-    });
-    this._turnHadToolUse = true;
-    this._clearIdleTimer();
-    this._ingestRuntime([{
-      type: "user_question.requested",
-      payload: {
-        requestId,
-        input,
-        questions,
-      },
-    }]);
+    this._approvals.handleAskUserQuestion(canUse);
   }
 
   _emitEngineNotice(notice) {
@@ -1501,9 +1242,7 @@ class AgentSession extends EventEmitter {
         break;
 
       case "control_cancel":
-        if (action.requestId && this._pendingPermissions.has(action.requestId)) {
-          this._pendingPermissions.delete(action.requestId);
-        }
+        if (action.requestId) this._approvals.dropPermission(action.requestId);
         break;
 
       case "turn_result":

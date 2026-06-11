@@ -54,7 +54,7 @@ function startSyntheticTurn(runner) {
   runner._turnSettled = false;
   runner.collectedOutput = "partial answer";
   runner._leaseTracker.reset();
-  runner._pendingPermissions.clear();
+  runner._approvals.clearPermissions();
 }
 
 function line(runner, event) {

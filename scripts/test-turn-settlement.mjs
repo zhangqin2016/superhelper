@@ -30,7 +30,7 @@ function startTurn(runner) {
   runner._turnSettled = false;
   runner.collectedOutput = "answer";
   runner._leaseTracker.reset();
-  runner._pendingPermissions.clear();
+  runner._approvals.clearPermissions();
 }
 
 // 1. Deferred result releases as soon as the blocking tool finishes (well
