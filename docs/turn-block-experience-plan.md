@@ -167,12 +167,18 @@ SLO：事件到上屏 p95 < 50ms；流式期间无 >100ms 长帧；打断响应 
 
 ## M6：多引擎归一
 
-- 适配器声明 `capabilities = { emitsThinking, streamInput, hotEnvUpdate, ... }`，
+- ✅ 适配器 capability 声明：`CliEventAdapter.capabilities`（冻结布尔表：
+  streamInput / emitsThinking / hotEnvUpdate / permissionControl / resume），
   编排层按能力降级，无思考流的引擎优雅跳过，不伪造。
-- 网关把 OpenAI 风格 `reasoning_content`（DeepSeek/Qwen）映射为
-  `assistant.thinking.delta`。
-- 适配器认证测试：与引擎无关的"考卷"，断言任何 adapter 产出合法块序列
-  （delta 不指向已封口块、工具事件顺序、半行 JSON、进程中途被杀收敛到终态）。
+- ✅ 适配器认证考卷：`scripts/adapter-conformance.mjs`（引擎无关 harness，
+  导出 `runAdapterConformance(adapter, transcript)`）断言输出契约：
+  事件类型必须在 schema 内、载荷形状（delta 文本为串/工具有名有 id）、
+  敌意输入（null/垃圾类型/深层垃圾 12 连发）不抛异常、未知事件必须可见、
+  归一化确定性。Claude adapter 以全部 18 盘 fixture 作答（64 事件），
+  已入 test:unit。**QwenCodeAdapter 用自己的 fixture 答同一份卷即可上岗。**
+- 待做：网关把 OpenAI 风格 `reasoning_content`（DeepSeek/Qwen）映射为
+  `assistant.thinking.delta`（server 侧）；编排层 capability 降级路径
+  （等第二引擎落地时一并实现）。
 
 ## 与原生 Claude CLI 的差距收口（已完成第一轮）
 

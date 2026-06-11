@@ -152,6 +152,24 @@ function runtimeEventFromAction(action) {
 class CliEventAdapter {
   constructor() {
     this.name = "claude-cli";
+    /**
+     * Engine capability declaration. The orchestration layer must degrade per
+     * capability instead of assuming every engine behaves like Claude CLI
+     * (e.g. an engine without streamInput is restarted per turn; one without
+     * emitsThinking simply renders no thinking blocks — never fake them).
+     */
+    this.capabilities = Object.freeze({
+      /** Long-lived process accepts stream-json user messages on stdin. */
+      streamInput: true,
+      /** Emits thinking deltas that map to assistant.thinking.delta. */
+      emitsThinking: true,
+      /** Supports update_environment_variables control hot-swap. */
+      hotEnvUpdate: true,
+      /** Asks the host for tool permission decisions (canUseTool). */
+      permissionControl: true,
+      /** Supports --resume style conversation continuation. */
+      resume: true,
+    });
   }
 
   normalizeEvent(ev) {
