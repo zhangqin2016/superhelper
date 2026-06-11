@@ -44,6 +44,7 @@ const {
   processEventFromClaudeEvent,
 } = require("./cli-process-payload");
 const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
+const { TimerBank } = require("./turn-timers");
 const { getLogger } = require("./logger");
 const log = getLogger("agent-session");
 
@@ -80,22 +81,8 @@ class AgentSession extends EventEmitter {
     this.agentResumeId = null;
     this.spawnOptions = null;
     this.lastSpawnError = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._idleTimer = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._interruptFallbackTimer = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._turnResponseTimer = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._absoluteTurnTimer = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._messageStopTimer = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._deferredTurnResultTimer = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._firstResponseNoticeTimer = null;
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    this._longWaitNoticeTimer = null;
+    /** All watchdog timers live in one named bank (see turn-timers.js). */
+    this._timers = new TimerBank();
     this._turnStartedAt = 0;
     this._pendingToolIds = new Set();
     this._turnHadToolUse = false;
@@ -118,10 +105,7 @@ class AgentSession extends EventEmitter {
     this._blockIndexToToolId = new Map();
     /** @type {Map<string, { name: string, input: Record<string, unknown>, detached: boolean, startedAt: number }>} */
     this._toolLeases = new Map();
-    /** @type {Map<string, ReturnType<typeof setTimeout>>} */
-    this._toolLeaseNoticeTimers = new Map();
     this._internalCommand = null;
-    this._internalCommandTimer = null;
     this._backgroundActivityUntil = 0;
     this._deferredTurnResult = null;
     this._deferredTurnResultAt = 0;
@@ -168,70 +152,41 @@ class AgentSession extends EventEmitter {
   static TOOL_LONG_TASK_HEARTBEAT_MS = 5 * 60_000;
 
   _clearIdleTimer() {
-    if (this._idleTimer) {
-      clearTimeout(this._idleTimer);
-      this._idleTimer = null;
-    }
+    this._timers.clear("idle");
   }
 
   _clearInterruptFallback() {
-    if (this._interruptFallbackTimer) {
-      clearTimeout(this._interruptFallbackTimer);
-      this._interruptFallbackTimer = null;
-    }
+    this._timers.clear("interruptFallback");
     this._interruptPending = false;
   }
 
   _clearTurnResponseTimer() {
-    if (this._turnResponseTimer) {
-      clearTimeout(this._turnResponseTimer);
-      this._turnResponseTimer = null;
-    }
+    this._timers.clear("turnResponse");
   }
 
   _clearAbsoluteTurnTimer() {
-    if (this._absoluteTurnTimer) {
-      clearTimeout(this._absoluteTurnTimer);
-      this._absoluteTurnTimer = null;
-    }
+    this._timers.clear("absoluteTurn");
   }
 
   _clearDeferredTurnResultTimer() {
-    if (this._deferredTurnResultTimer) {
-      clearTimeout(this._deferredTurnResultTimer);
-      this._deferredTurnResultTimer = null;
-    }
+    this._timers.clear("deferredResult");
   }
 
   _clearMessageStopTimer() {
-    if (this._messageStopTimer) {
-      clearTimeout(this._messageStopTimer);
-      this._messageStopTimer = null;
-    }
+    this._timers.clear("messageStop");
   }
 
   _clearWaitNoticeTimers() {
-    if (this._firstResponseNoticeTimer) {
-      clearTimeout(this._firstResponseNoticeTimer);
-      this._firstResponseNoticeTimer = null;
-    }
-    if (this._longWaitNoticeTimer) {
-      clearTimeout(this._longWaitNoticeTimer);
-      this._longWaitNoticeTimer = null;
-    }
+    this._timers.clear("firstResponseNotice");
+    this._timers.clear("longWaitNotice");
   }
 
   _clearToolLeaseNoticeTimer(toolId) {
-    const timer = this._toolLeaseNoticeTimers.get(toolId);
-    if (timer) clearTimeout(timer);
-    this._toolLeaseNoticeTimers.delete(toolId);
+    this._timers.clear(`lease:${toolId}`);
   }
 
   _clearToolLeaseNoticeTimers() {
-    for (const timer of this._toolLeaseNoticeTimers.values()) {
-      clearTimeout(timer);
-    }
-    this._toolLeaseNoticeTimers.clear();
+    this._timers.clearPrefix("lease:");
   }
 
   /** End a stuck turn quietly — unlock UI without scary error bubbles. */
@@ -250,7 +205,7 @@ class AgentSession extends EventEmitter {
   _armAbsoluteTurnTimer() {
     this._clearAbsoluteTurnTimer();
     if (!this.busy || this._turnSettled) return;
-    this._absoluteTurnTimer = setTimeout(() => {
+    this._timers.arm("absoluteTurn", AgentSession.TURN_ABSOLUTE_MAX_MS, () => {
       if (!this.busy || this._turnSettled) return;
       if (this._hasBlockingTurnWork()) {
         this._emitBlockingWorkHeartbeat("absolute-timeout");
@@ -258,7 +213,7 @@ class AgentSession extends EventEmitter {
         return;
       }
       this._recoverStalledTurn("absolute");
-    }, AgentSession.TURN_ABSOLUTE_MAX_MS);
+    });
   }
 
   _armTurnResponseTimer() {
@@ -267,7 +222,7 @@ class AgentSession extends EventEmitter {
     const ms = this.agentResumeId
       ? AgentSession.RESUME_TURN_TIMEOUT_MS
       : AgentSession.TURN_RESPONSE_TIMEOUT_MS;
-    this._turnResponseTimer = setTimeout(() => {
+    this._timers.arm("turnResponse", ms, () => {
       if (!this.busy || this._turnSettled) return;
       this._emitEngineNotice({
         code: "longWait",
@@ -277,7 +232,7 @@ class AgentSession extends EventEmitter {
         reason: "silence",
       });
       this._armTurnResponseTimer();
-    }, ms);
+    });
   }
 
   _clearPendingPermissions(notifyCancel = false) {
@@ -350,9 +305,9 @@ class AgentSession extends EventEmitter {
     const elapsedMs = Math.max(0, Date.now() - Number(this._deferredTurnResultAt || Date.now()));
     const remainingGraceMs = Math.max(0, AgentSession.DEFERRED_TURN_RESULT_GRACE_MS - elapsedMs);
     const delay = this._hasPendingRuntimeBlockers() ? Math.max(25, remainingGraceMs || 25) : 25;
-    this._deferredTurnResultTimer = setTimeout(() => {
+    this._timers.arm("deferredResult", delay, () => {
       this._maybeCompleteDeferredTurnResult();
-    }, delay);
+    });
   }
 
   _maybeCompleteDeferredTurnResult() {
@@ -463,9 +418,7 @@ class AgentSession extends EventEmitter {
   }
 
   _armToolLeaseNoticeTimer(toolId, delayMs) {
-    this._clearToolLeaseNoticeTimer(toolId);
-    const timer = setTimeout(() => {
-      this._toolLeaseNoticeTimers.delete(toolId);
+    this._timers.arm(`lease:${toolId}`, delayMs, () => {
       if (!this.busy || this._turnSettled) return;
       const lease = this._toolLeases.get(toolId);
       if (!lease || lease.detached || !this._isShellTool(lease.name)) return;
@@ -478,8 +431,7 @@ class AgentSession extends EventEmitter {
         detail: this._formatToolLeaseDetail(lease),
       });
       this._armToolLeaseNoticeTimer(toolId, AgentSession.TOOL_LONG_TASK_HEARTBEAT_MS);
-    }, delayMs);
-    this._toolLeaseNoticeTimers.set(toolId, timer);
+    });
   }
 
   _trackToolLease(toolId, name, input = {}) {
@@ -513,7 +465,7 @@ class AgentSession extends EventEmitter {
 
     if (detached) {
       this._clearToolLeaseNoticeTimer(toolId);
-    } else if (this._isShellTool(nextName) && !this._toolLeaseNoticeTimers.has(toolId)) {
+    } else if (this._isShellTool(nextName) && !this._timers.has(`lease:${toolId}`)) {
       this._armToolLeaseNoticeTimer(toolId, AgentSession.TOOL_LONG_TASK_NOTICE_MS);
     }
     return { detached, becameDetached };
@@ -553,7 +505,7 @@ class AgentSession extends EventEmitter {
     this._clearIdleTimer();
     if (!this._canAutoCompleteTurn()) return;
     if (!this.collectedOutput.trim()) return;
-    this._idleTimer = setTimeout(() => {
+    this._timers.arm("idle", AgentSession.QUIESCE_MS, () => {
       if (!this._canAutoCompleteTurn()) return;
       if (!this.collectedOutput.trim()) return;
       log.warn("turn completed via idle quiesce (no result event)");
@@ -563,18 +515,18 @@ class AgentSession extends EventEmitter {
         output: this.collectedOutput.trim(),
         idle: true,
       });
-    }, AgentSession.QUIESCE_MS);
+    });
   }
 
   _armMessageStopCompletionTimer() {
     this._clearMessageStopTimer();
     if (!this._canAutoCompleteTurn()) return;
-    this._messageStopTimer = setTimeout(() => {
+    this._timers.arm("messageStop", AgentSession.MESSAGE_STOP_GRACE_MS, () => {
       if (!this._canAutoCompleteTurn()) return;
       this.emit("message-stop-grace", {
         output: this.collectedOutput.trim(),
       });
-    }, AgentSession.MESSAGE_STOP_GRACE_MS);
+    });
   }
 
   completeFromHost(reason = "host-finalized") {
@@ -599,7 +551,7 @@ class AgentSession extends EventEmitter {
   _armWaitNoticeTimers() {
     this._clearWaitNoticeTimers();
     if (!this.busy || this._turnSettled) return;
-    this._firstResponseNoticeTimer = setTimeout(() => {
+    this._timers.arm("firstResponseNotice", AgentSession.FIRST_RESPONSE_NOTICE_MS, () => {
       if (!this.busy || this._turnSettled || this.collectedOutput.trim()) return;
       this._emitEngineNotice({
         code: "waitingForFirstResponse",
@@ -607,8 +559,8 @@ class AgentSession extends EventEmitter {
         panel: true,
         replace: true,
       });
-    }, AgentSession.FIRST_RESPONSE_NOTICE_MS);
-    this._longWaitNoticeTimer = setTimeout(() => {
+    });
+    this._timers.arm("longWaitNotice", AgentSession.LONG_WAIT_NOTICE_MS, () => {
       if (!this.busy || this._turnSettled || this.collectedOutput.trim()) return;
       this._emitEngineNotice({
         code: "longWait",
@@ -616,7 +568,7 @@ class AgentSession extends EventEmitter {
         panel: true,
         replace: true,
       });
-    }, AgentSession.LONG_WAIT_NOTICE_MS);
+    });
   }
 
   isBusy() {
@@ -943,10 +895,9 @@ class AgentSession extends EventEmitter {
     if (!payload) return false;
     this._internalCommand = "reload-skills";
     this._writeControlLine(payload);
-    this._internalCommandTimer = setTimeout(() => {
+    this._timers.arm("internalCommand", 10_000, () => {
       this._internalCommand = null;
-      this._internalCommandTimer = null;
-    }, 10_000);
+    });
     return true;
   }
 
@@ -957,7 +908,7 @@ class AgentSession extends EventEmitter {
     if (this.busy && !this._turnSettled && this.isAlive()) {
       this._interruptPending = true;
       this._writeControlLine(buildInterruptRequest());
-      this._interruptFallbackTimer = setTimeout(() => {
+      this._timers.arm("interruptFallback", AgentSession.INTERRUPT_FALLBACK_MS, () => {
         if (this.busy && !this._turnSettled) {
           log.warn("interrupt control timed out; ending turn and restarting CLI");
           this._completeTurn({
@@ -969,7 +920,7 @@ class AgentSession extends EventEmitter {
           });
           this.terminate();
         }
-      }, AgentSession.INTERRUPT_FALLBACK_MS);
+      });
       return;
     }
 
@@ -1201,10 +1152,7 @@ class AgentSession extends EventEmitter {
   }
 
   _clearInternalCommandTimer() {
-    if (this._internalCommandTimer) {
-      clearTimeout(this._internalCommandTimer);
-      this._internalCommandTimer = null;
-    }
+    this._timers.clear("internalCommand");
     this._internalCommand = null;
   }
 
