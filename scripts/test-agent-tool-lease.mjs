@@ -244,7 +244,7 @@ line(resultBeforeToolRunner, {
 if (resultBeforeToolEvents.includes("done") || !resultBeforeToolRunner.busy) {
   throw new Error("result must not complete while a tool lease is still pending");
 }
-if (!resultBeforeToolRunner._deferredTurnResult) {
+if (!resultBeforeToolRunner._resultGate.pending) {
   throw new Error("early result should be deferred until tool_result releases the lease");
 }
 line(resultBeforeToolRunner, {

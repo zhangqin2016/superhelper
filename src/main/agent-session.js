@@ -46,6 +46,7 @@ const {
 const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
 const { TimerBank } = require("./turn-timers");
 const { ToolLeaseTracker } = require("./tool-lease-tracker");
+const { DeferredResultGate } = require("./turn-settlement");
 const { getLogger } = require("./logger");
 const log = getLogger("agent-session");
 
@@ -114,8 +115,25 @@ class AgentSession extends EventEmitter {
     this._blockIndexToToolId = new Map();
     this._internalCommand = null;
     this._backgroundActivityUntil = 0;
-    this._deferredTurnResult = null;
-    this._deferredTurnResultAt = 0;
+    /** Holds a CLI `result` until blocking work settles (see turn-settlement.js). */
+    this._resultGate = new DeferredResultGate({
+      timers: this._timers,
+      graceMs: () => AgentSession.DEFERRED_TURN_RESULT_GRACE_MS,
+      isTurnLive: () => this.busy && !this._turnSettled,
+      hasBlockers: () => this._hasPendingRuntimeBlockers(),
+      release: (payload) => this._completeTurn(payload),
+      onStaleRelease: () => {
+        log.warn("turn result completed with stale pending runtime blockers", {
+          sessionId: this.sessionId,
+          pendingTools: this._leaseTracker.pendingIds(),
+          pendingPermissions: [...this._pendingPermissions.keys()],
+          pendingHooks: [...this._pendingHooks.keys()],
+        });
+      },
+      onCleanRelease: () => {
+        if (Date.now() < this._backgroundActivityUntil) this._backgroundActivityUntil = 0;
+      },
+    });
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
     this._runtimeAdapter = new CliEventAdapter();
@@ -294,8 +312,6 @@ class AgentSession extends EventEmitter {
   }
 
   _deferTurnResult(payload, reason) {
-    this._deferredTurnResult = payload;
-    this._deferredTurnResultAt = Date.now();
     log.warn("turn result deferred until pending runtime blockers settle: %s", reason, {
       sessionId: this.sessionId,
       pendingTools: this._leaseTracker.pendingCount(),
@@ -303,43 +319,15 @@ class AgentSession extends EventEmitter {
       pendingHooks: this._pendingHooks.size,
       backgroundMs: Math.max(0, this._backgroundActivityUntil - Date.now()),
     });
-    this._armDeferredTurnResultTimer();
+    this._resultGate.defer(payload);
   }
 
   _armDeferredTurnResultTimer() {
-    this._clearDeferredTurnResultTimer();
-    if (!this.busy || this._turnSettled || !this._deferredTurnResult) return;
-    const elapsedMs = Math.max(0, Date.now() - Number(this._deferredTurnResultAt || Date.now()));
-    const remainingGraceMs = Math.max(0, AgentSession.DEFERRED_TURN_RESULT_GRACE_MS - elapsedMs);
-    const delay = this._hasPendingRuntimeBlockers() ? Math.max(25, remainingGraceMs || 25) : 25;
-    this._timers.arm("deferredResult", delay, () => {
-      this._maybeCompleteDeferredTurnResult();
-    });
+    this._resultGate.armPoll();
   }
 
   _maybeCompleteDeferredTurnResult() {
-    if (!this.busy || this._turnSettled || !this._deferredTurnResult) return false;
-    if (this._hasPendingRuntimeBlockers()) {
-      const elapsedMs = Math.max(0, Date.now() - Number(this._deferredTurnResultAt || Date.now()));
-      if (elapsedMs < AgentSession.DEFERRED_TURN_RESULT_GRACE_MS) {
-        this._armDeferredTurnResultTimer();
-        return false;
-      }
-      log.warn("turn result completed with stale pending runtime blockers", {
-        sessionId: this.sessionId,
-        pendingTools: this._leaseTracker.pendingIds(),
-        pendingPermissions: [...this._pendingPermissions.keys()],
-        pendingHooks: [...this._pendingHooks.keys()],
-      });
-    } else if (Date.now() < this._backgroundActivityUntil) {
-      this._backgroundActivityUntil = 0;
-    }
-    const payload = this._deferredTurnResult;
-    this._deferredTurnResult = null;
-    this._deferredTurnResultAt = 0;
-    this._clearDeferredTurnResultTimer();
-    this._completeTurn(payload);
-    return true;
+    return this._resultGate.poll();
   }
 
   _markBackgroundActivity(short = false) {
@@ -658,8 +646,7 @@ class AgentSession extends EventEmitter {
     this._turnHadToolUse = false;
     this._sawStdoutForTurn = false;
     this._backgroundActivityUntil = 0;
-    this._deferredTurnResult = null;
-    this._deferredTurnResultAt = 0;
+    this._resultGate.clear();
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
     this._clearDeferredTurnResultTimer();
@@ -860,9 +847,7 @@ class AgentSession extends EventEmitter {
     this._leaseTracker.reset();
     this._turnHadToolUse = false;
     this._backgroundActivityUntil = 0;
-    this._deferredTurnResult = null;
-    this._deferredTurnResultAt = 0;
-    this._clearDeferredTurnResultTimer();
+    this._resultGate.clear();
     if (!this.process) {
       this.cwd = null;
       this.spawnOptions = null;
@@ -908,8 +893,7 @@ class AgentSession extends EventEmitter {
     this._leaseTracker.reset();
     this._turnHadToolUse = false;
     this._backgroundActivityUntil = 0;
-    this._deferredTurnResult = null;
-    this._deferredTurnResultAt = 0;
+    this._resultGate.clear();
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
     this._streamParentToolUseId = null;
@@ -936,8 +920,7 @@ class AgentSession extends EventEmitter {
     this._clearPendingPermissions(true);
     this._clearPendingHooks(true);
     this._leaseTracker.reset();
-    this._deferredTurnResult = null;
-    this._deferredTurnResultAt = 0;
+    this._resultGate.clear();
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
     this._backgroundActivityUntil = 0;
