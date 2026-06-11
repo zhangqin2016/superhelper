@@ -15,6 +15,39 @@ import { chooseDialog } from "./confirm-dialog.js";
 /** Unsent composer text per session, restored on switch (in-memory only). */
 const sessionDrafts = new Map();
 
+const COMPOSER_HEIGHT_KEY = "composerInputHeight";
+const COMPOSER_MIN_INPUT_H = 44;
+
+function composerMaxInputHeight() {
+  return Math.max(COMPOSER_MIN_INPUT_H, Math.round(window.innerHeight * 0.5));
+}
+
+function setManualInputHeight(height) {
+  const input = $("promptInput");
+  if (!input) return;
+  const clamped = Math.min(Math.max(height, COMPOSER_MIN_INPUT_H), composerMaxInputHeight());
+  input.style.height = `${clamped}px`;
+  input.style.maxHeight = `${clamped}px`;
+}
+
+/** Auto-grow to fit content unless the user dragged a manual height. */
+export function syncComposerInputHeight() {
+  const input = $("promptInput");
+  if (!input) return;
+  const manual = Number(localStorage.getItem(COMPOSER_HEIGHT_KEY)) || 0;
+  if (manual) {
+    setManualInputHeight(manual);
+    return;
+  }
+  input.style.maxHeight = `${composerMaxInputHeight()}px`;
+  input.style.height = "auto";
+  const target = Math.min(
+    Math.max(input.scrollHeight + 2, COMPOSER_MIN_INPUT_H),
+    composerMaxInputHeight(),
+  );
+  input.style.height = `${target}px`;
+}
+
 function messageQueueArea() {
   return $("messageQueueArea");
 }
@@ -212,6 +245,7 @@ export async function sendPrompt(opts = {}) {
 
   if (promptInput) promptInput.value = "";
   sessionDrafts.delete(sessionId);
+  syncComposerInputHeight();
   clearPendingFiles();
 
   let result;
@@ -437,6 +471,42 @@ export function initComposer() {
       void window.assistantClient.interrupt(sessionId);
     });
 
+    // Input height: auto-grow with content (zero-learning, the ChatGPT/Claude
+    // norm) up to half the window. Dragging the top edge sets a MANUAL height
+    // that wins until the handle is double-clicked back to auto mode.
+    promptInput.addEventListener("input", syncComposerInputHeight);
+    syncComposerInputHeight();
+
+    const resizeHandle = document.createElement("div");
+    resizeHandle.className = "composer-resize-handle";
+    promptInput.parentElement?.insertBefore(resizeHandle, promptInput);
+    resizeHandle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startHeight = promptInput.getBoundingClientRect().height;
+      document.body.style.cursor = "ns-resize";
+      const onMove = (move) => {
+        setManualInputHeight(startHeight + (startY - move.clientY));
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        const height = Math.round(promptInput.getBoundingClientRect().height);
+        if (height > COMPOSER_MIN_INPUT_H) {
+          localStorage.setItem(COMPOSER_HEIGHT_KEY, String(height));
+        } else {
+          localStorage.removeItem(COMPOSER_HEIGHT_KEY);
+        }
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+    resizeHandle.addEventListener("dblclick", () => {
+      localStorage.removeItem(COMPOSER_HEIGHT_KEY);
+      syncComposerInputHeight();
+    });
+
     // Per-session draft: typing is saved as you go, switching sessions
     // restores what you were writing. In-memory only by design.
     promptInput.addEventListener("input", () => {
@@ -445,6 +515,7 @@ export function initComposer() {
     });
     store.on("activeSessionId", (nextId) => {
       promptInput.value = (nextId && sessionDrafts.get(nextId)) || "";
+      syncComposerInputHeight();
     });
   }
 
