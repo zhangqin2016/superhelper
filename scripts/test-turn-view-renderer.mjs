@@ -23,6 +23,7 @@ const translate = (key, params = {}) => {
     "turn.status.working": "处理中…",
     "turn.status.live": `${params.seconds}s · ${params.activity}`,
     "turn.status.awaitingUser": "等待你确认",
+    "turn.status.stopping": "正在停止…",
     "turn.status.failed": "处理失败",
     "turn.footer.duration": `耗时 ${params.seconds}s`,
     "turn.footer.tokens": `${params.count} tokens`,
@@ -126,6 +127,13 @@ assert.equal(
 assert.equal(
   buildStatusText({ phase: "awaiting_user" }, {}, translate, now),
   "等待你确认",
+);
+
+// The user pressed stop — the status line must say so instead of looking
+// like a frozen "thinking" state.
+assert.equal(
+  buildStatusText({ phase: "stopping" }, {}, translate, now),
+  "正在停止…",
 );
 
 assert.equal(

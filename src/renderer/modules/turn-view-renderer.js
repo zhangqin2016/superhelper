@@ -1125,10 +1125,24 @@ function button(label, action) {
   btn.className = "assistant-action-btn";
   btn.textContent = label;
   btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    // A double-click must not answer the same request twice — lock the whole
+    // action row while the response is in flight; unlock only on failure
+    // (success re-renders the card away).
+    const row = btn.closest(".assistant-prompt-actions");
+    const group = row ? [...row.querySelectorAll("button")] : [btn];
+    for (const item of group) item.disabled = true;
+    const unlock = () => {
+      for (const item of group) item.disabled = false;
+    };
     try {
       const result = await action();
-      if (!result?.ok) showToast(result?.detail || result?.error || t("common.actionFailed"), "warning");
+      if (!result?.ok) {
+        unlock();
+        showToast(result?.detail || result?.error || t("common.actionFailed"), "warning");
+      }
     } catch (err) {
+      unlock();
       showToast(err?.message || t("common.actionFailed"), "error");
     }
   });

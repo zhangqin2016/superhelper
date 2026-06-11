@@ -8,9 +8,12 @@ import { renderFilePreview, clearPendingFiles } from "./file-handler.js";
 import { promptSessionName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
-import { canSend, getTurnPhase, subscribeRuntime, getRuntimeSession, syncCommittedMessages } from "./session-runtime-store.js";
+import { canSend, getTurnPhase, markSessionStopping, subscribeRuntime, getRuntimeSession, syncCommittedMessages } from "./session-runtime-store.js";
 import { t } from "../i18n/index.js";
 import { chooseDialog } from "./confirm-dialog.js";
+
+/** Unsent composer text per session, restored on switch (in-memory only). */
+const sessionDrafts = new Map();
 
 function messageQueueArea() {
   return $("messageQueueArea");
@@ -208,6 +211,7 @@ export async function sendPrompt(opts = {}) {
   const savedFiles = [...(store.get("pendingFiles") || [])];
 
   if (promptInput) promptInput.value = "";
+  sessionDrafts.delete(sessionId);
   clearPendingFiles();
 
   let result;
@@ -227,6 +231,7 @@ export async function sendPrompt(opts = {}) {
         );
   } catch (err) {
     if (promptInput && savedText) promptInput.value = savedText;
+    if (savedText) sessionDrafts.set(sessionId, savedText);
     if (savedFiles.length) {
       store.set("pendingFiles", savedFiles);
       renderFilePreview();
@@ -237,6 +242,7 @@ export async function sendPrompt(opts = {}) {
 
   if (!result?.ok) {
     if (promptInput && savedText) promptInput.value = savedText;
+    if (savedText) sessionDrafts.set(sessionId, savedText);
     if (savedFiles.length) {
       store.set("pendingFiles", savedFiles);
       renderFilePreview();
@@ -385,7 +391,18 @@ export function initComposer() {
       const phase = getTurnPhase(sessionId);
       if (!phase || phase === "idle") return;
       e.preventDefault();
+      markSessionStopping(sessionId);
       void window.assistantClient.interrupt(sessionId);
+    });
+
+    // Per-session draft: typing is saved as you go, switching sessions
+    // restores what you were writing. In-memory only by design.
+    promptInput.addEventListener("input", () => {
+      const sid = store.get("activeSessionId");
+      if (sid) sessionDrafts.set(sid, promptInput.value);
+    });
+    store.on("activeSessionId", (nextId) => {
+      promptInput.value = (nextId && sessionDrafts.get(nextId)) || "";
     });
   }
 
@@ -399,6 +416,7 @@ export function initComposer() {
 
   $("interruptBtn")?.addEventListener("click", async () => {
     const sessionId = store.get("activeSessionId");
+    if (sessionId) markSessionStopping(sessionId);
     await window.assistantClient.interrupt(sessionId);
     renderPromptSuggestions(sessionId, []);
     $("promptInput")?.focus();

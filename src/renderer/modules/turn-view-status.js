@@ -112,6 +112,7 @@ export function buildStatusText(liveTurn, { failed = false, sealed = false } = {
     if (sealed) return buildStatusFooterText(liveTurn, translate);
     return "";
   }
+  if (liveTurn.phase === "stopping") return translate("turn.status.stopping");
   if (liveTurn.phase === "awaiting_user") return translate("turn.status.awaitingUser");
   return buildLiveStatusText(liveTurn, translate, now);
 }

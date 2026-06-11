@@ -115,11 +115,25 @@ function ensurePanel(sessionId) {
   const listEl = document.createElement("div");
   listEl.className = "messages runtime-messages";
   panel.appendChild(listEl);
+  // Floating "new messages" chip: shown when content arrives while the user
+  // is scrolled up reading history; sticky so it rides the scroll viewport.
+  const newChip = document.createElement("button");
+  newChip.type = "button";
+  newChip.className = "messages-new-chip";
+  newChip.hidden = true;
+  newChip.textContent = t("message.newBelow");
+  newChip.addEventListener("click", () => {
+    newChip.hidden = true;
+    scrollToBottomAfterLayout(panel, true);
+  });
+  panel.appendChild(newChip);
+  v.newChip = newChip;
   root.appendChild(panel);
   bindPanelScroll(panel);
   panel.addEventListener(
     "scroll",
     () => {
+      if (isNearBottom(panel)) newChip.hidden = true;
       if (!panel.classList.contains("is-active")) return;
       if (panel.scrollTop > 80) return;
       void import("./session-chrome.js").then((m) =>
@@ -306,8 +320,42 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null) {
     ? liveTurnFromRecord(message.record)
     : legacyLiveTurnFromMessage(message);
   const article = renderSealedTurnArticle(liveTurn, Boolean(message.failed));
+  if (message.failed) appendRetryAction(article, sessionId, message);
   if (beforeNode && v.listEl?.contains(beforeNode)) v.listEl.insertBefore(article, beforeNode);
   else v.listEl?.appendChild(article);
+}
+
+// A failed turn must offer a one-click retry. Retrying replays the LAST user
+// message, so the button verifies at click time that this is still the
+// newest committed message.
+function appendRetryAction(article, sessionId, message) {
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "assistant-action-btn assistant-retry-btn";
+  retry.textContent = t("turn.retry");
+  retry.addEventListener("click", async () => {
+    const committed = getRuntimeSession(sessionId).committedMessages;
+    const last = committed[committed.length - 1];
+    if (last !== message && (last?.turnId == null || last.turnId !== message.turnId)) {
+      showScheduledToast(t("turn.retryStale"), "warning");
+      retry.remove();
+      return;
+    }
+    retry.disabled = true;
+    try {
+      const result = await window.assistantClient.retryLastMessage(sessionId);
+      if (result?.ok) {
+        retry.remove();
+      } else {
+        retry.disabled = false;
+        showScheduledToast(result?.detail || result?.error || t("turn.retryFailed"), "error");
+      }
+    } catch (err) {
+      retry.disabled = false;
+      showScheduledToast(err?.message || t("turn.retryFailed"), "error");
+    }
+  });
+  article.appendChild(retry);
 }
 
 function formatScheduleDateTime(value) {
@@ -456,7 +504,12 @@ function renderRuntimeSession(sessionId, opts = {}) {
   syncComposerForActiveSession();
   updateSessionRunningIndicators();
   updateTopbarTitles();
-  if (shouldFollow) scrollToBottomAfterLayout(panel, true);
+  if (shouldFollow) {
+    scrollToBottomAfterLayout(panel, true);
+  } else if (isActiveSession(sessionId) && panel && !isNearBottom(panel)) {
+    const chip = view(sessionId).newChip;
+    if (chip) chip.hidden = false;
+  }
 }
 
 function renderLiveTurn(sessionId, liveTurn, queue) {

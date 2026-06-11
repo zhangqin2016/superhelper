@@ -429,6 +429,18 @@ export function getTurnPhase(sessionId) {
   return getRuntimeSession(sessionId).phase;
 }
 
+// Optimistic local state: the user pressed stop and must see "stopping" —
+// the terminal event from the main process later resolves the real outcome.
+export function markSessionStopping(sessionId) {
+  const runtime = getRuntimeSession(sessionId);
+  if (!runtime.turnId && !runtime.liveTurn) return;
+  runtime.phase = "stopping";
+  if (runtime.liveTurn && !runtime.liveTurn.final) {
+    runtime.liveTurn.phase = "stopping";
+  }
+  notify();
+}
+
 export function getTurnId(sessionId) {
   return getRuntimeSession(sessionId).turnId;
 }

@@ -291,6 +291,26 @@
   max-height: 96px;
 }
 
+.messages-new-chip {
+  position: sticky;
+  bottom: 14px;
+  display: block;
+  margin: 0 auto;
+  padding: 5px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: var(--shadow-floating);
+  z-index: 5;
+}
+
+.assistant-retry-btn {
+  margin: 4px 0 0;
+}
+
 .assistant-subagent-tools {
   margin: 2px 0 4px 18px;
   padding-left: 8px;
