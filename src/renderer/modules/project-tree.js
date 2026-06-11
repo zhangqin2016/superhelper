@@ -442,12 +442,19 @@ async function importWorkspacePack() {
       return;
     }
     await refreshState();
+    // Land the user IN the imported workspace so it's obvious where it went.
+    if (result.projectId) {
+      const sw = await window.assistantClient.switchProject(result.projectId);
+      const sessionId = sw?.sessions?.[0]?.id;
+      if (sessionId) await applySessionSwitch(sw, sessionId, result.projectId);
+      expandProjectGroup(result.projectId);
+    }
     renderProjectTree();
     updateTopbarTitles();
     if (result.missingSkills?.length) {
       showToast(t("toast.importPackMissingSkills", { skills: result.missingSkills.join(", ") }), "warning");
     } else {
-      showToast(t("toast.importPackDone"), "success");
+      showToast(t("toast.importPackDone", { name: result.projectName || "" }), "success");
     }
   } catch (err) {
     showToast(err?.message || t("toast.importPackFailed"), "error");

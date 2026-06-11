@@ -154,6 +154,7 @@ function registerProjectHandlers(ctx) {
         ok: true,
         state: projectManager.getAppState(),
         projectId: project.id,
+        projectName: manifest.name || project.name,
         missingSkills,
       };
     } catch (err) {

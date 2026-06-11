@@ -42,7 +42,7 @@
   "pack.requiredSkills": "Depends on {count} skill(s); the importer will be prompted to get them.",
   "toast.exportPackDone": "Capability pack exported",
   "toast.exportPackFailed": "Export failed",
-  "toast.importPackDone": "Workspace imported",
+  "toast.importPackDone": "Imported as new workspace “{name}” — opened for you",
   "toast.importPackFailed": "Import failed",
   "toast.importPackMissingSkills": "Imported. This workspace also needs skills: {skills} — get them from the Skill Center and enable them.",
   "ctx.archive": "Archive",

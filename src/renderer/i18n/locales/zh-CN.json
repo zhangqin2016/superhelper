@@ -42,7 +42,7 @@
   "pack.requiredSkills": "依赖 {count} 个技能，对方导入后会提示获取。",
   "toast.exportPackDone": "能力包已导出",
   "toast.exportPackFailed": "导出失败",
-  "toast.importPackDone": "工作空间已导入",
+  "toast.importPackDone": "已导入为新工作空间「{name}」，已为你打开",
   "toast.importPackFailed": "导入失败",
   "toast.importPackMissingSkills": "已导入。此工作空间还需要技能：{skills}，请到技能中心获取后启用。",
   "ctx.archive": "归档",
