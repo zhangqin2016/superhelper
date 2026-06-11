@@ -53,17 +53,36 @@ function pickText(input) {
   return "";
 }
 
+// Locale-aware media labels (the renderer mirror uses the i18n table; this
+// main-process copy reads the app locale directly).
+const MEDIA_PREVIEW_LABELS = {
+  image: { "zh-CN": "生成图片", en: "Generate image", ar: "إنشاء صورة" },
+  video: { "zh-CN": "生成视频", en: "Generate video", ar: "إنشاء فيديو" },
+  speech: { "zh-CN": "生成语音", en: "Generate speech", ar: "إنشاء صوت" },
+};
+
+function mediaLabel(kind) {
+  let locale = "en";
+  try {
+    locale = require("./locale-settings").getLocale() || "en";
+  } catch {
+    // settings unavailable (tests): default English
+  }
+  const table = MEDIA_PREVIEW_LABELS[kind] || {};
+  return table[locale] || table.en || "";
+}
+
 function mediaGenerationPreview(command = "") {
   const value = String(command || "");
   if (!value) return "";
   if (value.includes("lily-image-generation") || value.includes("generate-image.cjs")) {
-    return "生成图片";
+    return mediaLabel("image");
   }
   if (value.includes("lily-video-generation") || value.includes("generate-video.cjs")) {
-    return "生成视频";
+    return mediaLabel("video");
   }
   if (value.includes("lily-speech-generation") || value.includes("generate-speech.cjs")) {
-    return "生成语音";
+    return mediaLabel("speech");
   }
   return "";
 }

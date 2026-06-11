@@ -16,6 +16,9 @@ function readStdin() {
   });
 }
 
+const ZH = String(process.env.LILY_LOCALE || "").toLowerCase().startsWith("zh");
+function msg(zh, en) { return ZH ? zh : en; }
+
 function fail(message, detail) {
   const suffix = detail ? `\n${detail}` : "";
   process.stderr.write(`[lily-video-generation] ${message}${suffix}\n`);
@@ -26,7 +29,7 @@ function jsonParse(raw) {
   try {
     return raw ? JSON.parse(raw) : {};
   } catch (error) {
-    fail("stdin 必须是 JSON。", error.message);
+    fail(msg("stdin 必须是 JSON。", "stdin must be JSON."), error.message);
   }
 }
 
@@ -96,16 +99,16 @@ async function pollTask(taskId, key, timeoutMs) {
     const status = extractStatus(data);
     if (status === "SUCCEEDED" || status === "SUCCESS") return data;
     if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED") {
-      throw new Error(data?.output?.message || data?.message || `任务失败：${status}`);
+      throw new Error(data?.output?.message || data?.message || msg(`任务失败：${status}`, `Task failed: ${status}`));
     }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
-  throw new Error(`视频生成超时，task_id=${taskId}`);
+  throw new Error(msg(`视频生成超时，task_id=${taskId}`, `Video generation timed out, task_id=${taskId}`));
 }
 
 async function downloadFile(url, outputPath) {
   const response = await fetch(url, { signal: AbortSignal.timeout(300_000) });
-  if (!response.ok) throw new Error(`下载失败：${response.status} ${response.statusText}`);
+  if (!response.ok) throw new Error(msg(`下载失败：${response.status} ${response.statusText}`, `Download failed: ${response.status} ${response.statusText}`));
   const bytes = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(outputPath, bytes);
   return bytes.length;
@@ -120,9 +123,9 @@ function safeName(prefix, ext) {
 async function main() {
   const input = jsonParse(await readStdin());
   const prompt = String(input.prompt || "").trim();
-  if (!prompt) fail("缺少 prompt。");
+  if (!prompt) fail(msg("缺少 prompt。", "Missing prompt."));
   const key = apiKey();
-  if (!key) fail("缺少 DASHSCOPE_API_KEY。请在模型配置或环境变量中配置百炼 API Key。");
+  if (!key) fail(msg("缺少 DASHSCOPE_API_KEY。请在模型配置或环境变量中配置百炼 API Key。", "Missing DASHSCOPE_API_KEY. Configure the DashScope API key in model settings or environment variables."));
 
   const media = Array.isArray(input.media) ? input.media.filter((item) => item && item.type && item.url) : [];
   const model = input.model || process.env.DASHSCOPE_VIDEO_MODEL || (media.length ? "wan2.7-i2v-2026-04-25" : "wan2.7-t2v");
@@ -156,11 +159,11 @@ async function main() {
     body: JSON.stringify(payload),
   });
   const taskId = extractTaskId(create);
-  if (!taskId) fail("百炼未返回 task_id。", JSON.stringify(create, null, 2));
+  if (!taskId) fail(msg("百炼未返回 task_id。", "DashScope did not return a task_id."), JSON.stringify(create, null, 2));
 
   const result = await pollTask(taskId, key, Number(input.timeout_ms || 900_000));
   const urls = collectVideoUrls(result);
-  if (!urls.length) fail("视频任务完成，但没有找到视频 URL。", JSON.stringify(result, null, 2));
+  if (!urls.length) fail(msg("视频任务完成，但没有找到视频 URL。", "Video task finished but no video URL was returned."), JSON.stringify(result, null, 2));
 
   const files = [];
   for (let i = 0; i < urls.length; i += 1) {
@@ -177,4 +180,4 @@ async function main() {
   process.stdout.write("</generated_media>\n");
 }
 
-main().catch((error) => fail("视频生成失败。", error?.message || String(error)));
+main().catch((error) => fail(msg("视频生成失败。", "Video generation failed."), error?.message || String(error)));

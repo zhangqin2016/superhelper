@@ -62,13 +62,13 @@ try {
   fs.writeFileSync(path.join(workspace, "docs", "方案.md"), "x");
   fs.writeFileSync(path.join(workspace, "readme.md"), "x");
   const digest = buildWorkspaceDigestSection(workspace);
-  if (!digest.includes("docs/（1 项）") || !digest.includes("readme.md")) {
+  if (!digest.includes("docs/ (1)") || !digest.includes("readme.md")) {
     throw new Error(`digest must map the workspace: ${digest}`);
   }
   if (digest.includes("node_modules")) {
     throw new Error("digest must skip noisy directories");
   }
-  if (!digest.includes("最近修改：") || !digest.includes("docs/方案.md")) {
+  if (!/Recently modified:|最近修改：/.test(digest) || !digest.includes(path.join("docs", "方案.md"))) {
     throw new Error(`digest must list recent files: ${digest}`);
   }
   const sigA = contextSignature("proj_sig", workspace);

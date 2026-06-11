@@ -59,6 +59,13 @@ function buildAgentSpawnEnv(options = {}) {
     env.CLAUDE_CONFIG_DIR = options.configDir || agentConfigDir();
   }
 
+  // Skill scripts localize their user-visible output by this (en fallback).
+  try {
+    env.LILY_LOCALE = require("./locale-settings").getLocale() || "en";
+  } catch {
+    env.LILY_LOCALE = "en";
+  }
+
   return env;
 }
 

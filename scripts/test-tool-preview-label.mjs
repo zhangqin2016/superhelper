@@ -57,29 +57,19 @@ for (const mod of [renderer, main]) {
     "应优先 subject",
   );
 
-  assert.equal(
-    buildToolPreviewLabel({
-      name: "Bash",
-      input: { command: 'echo \'{"prompt":"画一张图"}\' | node /x/resources/skills/lily-image-generation/scripts/generate-image.cjs' },
-    }),
-    "生成图片",
-  );
-
-  assert.equal(
-    buildToolPreviewLabel({
-      name: "Bash",
-      input: { command: "node /x/lily-video-generation/scripts/generate-video.cjs" },
-    }),
-    "生成视频",
-  );
-
-  assert.equal(
-    buildToolPreviewLabel({
-      name: "Bash",
-      input: { command: "node /x/generate-speech.cjs" },
-    }),
-    "生成语音",
-  );
+  // Media commands must show a localized human label, never the raw Bash
+  // line. Renderer resolves via the i18n table (raw key under plain node);
+  // the main mirror reads the app locale with an English fallback.
+  const mediaCases = [
+    ['echo \'{"prompt":"画一张图"}\' | node /x/resources/skills/lily-image-generation/scripts/generate-image.cjs', /生成图片|Generate image|toolPreview\.generateImage/],
+    ["node /x/lily-video-generation/scripts/generate-video.cjs", /生成视频|Generate video|toolPreview\.generateVideo/],
+    ["node /x/generate-speech.cjs", /生成语音|Generate speech|toolPreview\.generateSpeech/],
+  ];
+  for (const [command, pattern] of mediaCases) {
+    const label = buildToolPreviewLabel({ name: "Bash", input: { command } });
+    assert.ok(pattern.test(label), `media label expected, got: ${label}`);
+    assert.ok(!label.startsWith("Bash "), `media command must not fall through to raw Bash: ${label}`);
+  }
 
   assert.ok(looksLikeJsonPreview('{"a":1}'));
   assert.ok(!looksLikeJsonPreview("Read src/a.js"));

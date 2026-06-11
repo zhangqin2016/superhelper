@@ -17,10 +17,20 @@ const { userDataPath } = require("./config");
 const MAX_SECTION_CHARS = 4000;
 const WORKSPACE_RULE_FILES = [".cursorrules", "AGENTS.md", ".windsurfrules"];
 
+/** Guide sections follow the app locale: a Chinese-language system prompt
+ * nudges the model into Chinese replies for English users. */
+function isZh() {
+  try {
+    return String(require("./locale-settings").getLocale() || "").startsWith("zh");
+  } catch {
+    return false;
+  }
+}
+
 function clip(text, limit = MAX_SECTION_CHARS) {
   const value = String(text || "").trim();
   if (value.length <= limit) return value;
-  return `${value.slice(0, limit)}\n…（已截断）`;
+  return `${value.slice(0, limit)}\n${isZh() ? "…（已截断）" : "… (truncated)"}`;
 }
 
 function safeProjectFile(projectId) {
@@ -53,7 +63,10 @@ function appendLearnedConvention(projectId, text) {
 function buildLearnedSection(projectId) {
   const text = readLearnedConventions(projectId).trim();
   if (!text) return "";
-  return `\n## 已学约定（用户明确要求记住的，必须遵循）\n\n${clip(text)}\n`;
+  const title = isZh()
+    ? "已学约定（用户明确要求记住的，必须遵循）"
+    : "Learned conventions (the user explicitly asked to remember these — follow them)";
+  return `\n## ${title}\n\n${clip(text)}\n`;
 }
 
 function buildWorkspaceRulesSection(workspacePath) {
@@ -64,13 +77,16 @@ function buildWorkspaceRulesSection(workspacePath) {
     try {
       if (!fs.existsSync(filePath)) continue;
       const text = fs.readFileSync(filePath, "utf8").trim();
-      if (text) parts.push(`### 来自 ${name}\n${clip(text)}`);
+      if (text) parts.push(`### ${isZh() ? "来自" : "From"} ${name}\n${clip(text)}`);
     } catch {
       // unreadable workspace file: skip silently
     }
   }
   if (!parts.length) return "";
-  return `\n## 工作区已有约定（用户仓库自带，必须遵循）\n\n${parts.join("\n\n")}\n`;
+  const title = isZh()
+    ? "工作区已有约定（用户仓库自带，必须遵循）"
+    : "Existing workspace conventions (from the user's repo — follow them)";
+  return `\n## ${title}\n\n${parts.join("\n\n")}\n`;
 }
 
 // --- Workspace digest (L0 map: the model wakes up knowing the terrain) ------
@@ -119,7 +135,7 @@ function buildWorkspaceDigest(workspacePath) {
       } catch {
         continue;
       }
-      treeLines.push(`- ${entry.name}/（${children.length} 项）`);
+      treeLines.push(`- ${entry.name}/ (${children.length})`);
       for (const child of children) {
         if (scanned > DIGEST_SCAN_CAP) break;
         scanned += 1;
@@ -146,14 +162,17 @@ function buildWorkspaceDigest(workspacePath) {
   }
 
   if (!treeLines.length) return "";
+  const zh = isZh();
   recent.sort((a, b) => b.mtimeMs - a.mtimeMs);
   const recentLines = recent.slice(0, DIGEST_RECENT_FILES).map((item) => {
     const day = new Date(item.mtimeMs).toISOString().slice(0, 10);
-    return `- ${item.filePath}（${day}）`;
+    return `- ${item.filePath} (${day})`;
   });
-  const parts = ["目录结构：", ...treeLines];
-  if (truncated) parts.push("…（已截断）");
-  if (recentLines.length) parts.push("", "最近修改：", ...recentLines);
+  const parts = [zh ? "目录结构：" : "Directory structure:", ...treeLines];
+  if (truncated) parts.push(zh ? "…（已截断）" : "… (truncated)");
+  if (recentLines.length) {
+    parts.push("", zh ? "最近修改：" : "Recently modified:", ...recentLines);
+  }
   return parts.join("\n");
 }
 
@@ -161,7 +180,10 @@ function buildWorkspaceDigestSection(workspacePath) {
   if (!workspacePath) return "";
   const digest = buildWorkspaceDigest(workspacePath);
   if (!digest) return "";
-  return `\n## 工作区概览（自动生成的快照，定位文件先看这里）\n\n${clip(digest)}\n`;
+  const title = isZh()
+    ? "工作区概览（自动生成的快照，定位文件先看这里）"
+    : "Workspace overview (auto-generated snapshot — check here before searching)";
+  return `\n## ${title}\n\n${clip(digest)}\n`;
 }
 
 /** Cache key fragment: changes whenever any learned/workspace source changes. */

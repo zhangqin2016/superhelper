@@ -17,18 +17,39 @@ function learnedSkillsInboxDir() {
   return userDataPath("learned-skills-inbox");
 }
 
+function isZh() {
+  try {
+    return String(require("./locale-settings").getLocale() || "").startsWith("zh");
+  } catch {
+    return false;
+  }
+}
+
 /** Injected into session AGENT.md so the model knows the contract. */
 function buildCrystallizationSection() {
   const inbox = learnedSkillsInboxDir();
+  if (isZh()) {
+    return [
+      "",
+      "## 把流程保存为技能",
+      "",
+      "当用户要求把当前流程/方法保存为可复用技能时：",
+      `1. 在 \`${inbox}\` 下创建目录 \`<技能英文id>\`（小写字母/数字/连字符）。`,
+      "2. 目录内写入 `SKILL.md`（frontmatter 含 name、description 与使用说明）和 `skill.manifest.json`（至少含 id、name、version、description 字段）。",
+      "3. 告诉用户：技能草稿已生成，需要在 设置 → 技能 中审核并启用后才会生效。",
+      "不要直接改动应用的技能安装目录。",
+      "",
+    ].join("\n");
+  }
   return [
     "",
-    "## 把流程保存为技能",
+    "## Saving a workflow as a skill",
     "",
-    "当用户要求把当前流程/方法保存为可复用技能时：",
-    `1. 在 \`${inbox}\` 下创建目录 \`<技能英文id>\`（小写字母/数字/连字符）。`,
-    "2. 目录内写入 `SKILL.md`（frontmatter 含 name、description 与使用说明）和 `skill.manifest.json`（至少含 id、name、version、description 字段）。",
-    "3. 告诉用户：技能草稿已生成，需要在 设置 → 技能 中审核并启用后才会生效。",
-    "不要直接改动应用的技能安装目录。",
+    "When the user asks to save the current workflow/method as a reusable skill:",
+    `1. Create a directory \`<skill-id>\` (lowercase letters/digits/hyphens) under \`${inbox}\`.`,
+    "2. Write `SKILL.md` (frontmatter with name, description and usage) and `skill.manifest.json` (at least id, name, version, description).",
+    "3. Tell the user the draft was created and must be reviewed and enabled in Settings → Skills before it takes effect.",
+    "Never modify the app's installed-skills directory directly.",
     "",
   ].join("\n");
 }

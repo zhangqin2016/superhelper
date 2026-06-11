@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lily-speech-generation",
   "name": "语音生成",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "使用阿里云百炼语音合成生成配音、旁白和音频。",
   "minAppVersion": "0.1.0",
   "runtime": "node",

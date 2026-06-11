@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lily-video-generation",
   "name": "视频生成",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "使用阿里云百炼万相生成视频并保存到当前工作区。",
   "minAppVersion": "0.1.0",
   "runtime": "node",

@@ -1,6 +1,7 @@
 /**
  * Human-readable one-line labels for tool timeline rows (never raw JSON dumps).
  */
+import { t } from "../i18n/index.js";
 
 const PREVIEW_MAX = 160;
 
@@ -55,13 +56,13 @@ export function mediaGenerationPreview(command = "") {
   const value = String(command || "");
   if (!value) return "";
   if (value.includes("lily-image-generation") || value.includes("generate-image.cjs")) {
-    return "生成图片";
+    return t("toolPreview.generateImage");
   }
   if (value.includes("lily-video-generation") || value.includes("generate-video.cjs")) {
-    return "生成视频";
+    return t("toolPreview.generateVideo");
   }
   if (value.includes("lily-speech-generation") || value.includes("generate-speech.cjs")) {
-    return "生成语音";
+    return t("toolPreview.generateSpeech");
   }
   return "";
 }

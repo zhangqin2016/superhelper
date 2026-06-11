@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lily-image-generation",
   "name": "图片生成",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "使用阿里云百炼 Qwen-Image 生成图片并保存到当前工作区。",
   "minAppVersion": "0.1.0",
   "runtime": "node",

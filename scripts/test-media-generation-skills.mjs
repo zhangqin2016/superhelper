@@ -122,6 +122,7 @@ assert.match(missingKey.stderr, /DASHSCOPE_API_KEY/);
 const { server, base, seen } = await startMockServer();
 try {
   const env = {
+    LILY_LOCALE: "zh-CN",
     DASHSCOPE_API_KEY: "test-key",
     DASHSCOPE_BASE_URL: `${base}/apps/anthropic`,
     DASHSCOPE_IMAGE_BASE_URL: base,

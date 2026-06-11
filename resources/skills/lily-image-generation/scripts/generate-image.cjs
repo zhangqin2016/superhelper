@@ -16,6 +16,9 @@ function readStdin() {
   });
 }
 
+const ZH = String(process.env.LILY_LOCALE || "").toLowerCase().startsWith("zh");
+function msg(zh, en) { return ZH ? zh : en; }
+
 function fail(message, detail) {
   const suffix = detail ? `\n${detail}` : "";
   process.stderr.write(`[lily-image-generation] ${message}${suffix}\n`);
@@ -30,7 +33,7 @@ function jsonParse(raw) {
   try {
     return raw ? JSON.parse(raw) : {};
   } catch (error) {
-    fail("stdin 必须是 JSON。", error.message);
+    fail(msg("stdin 必须是 JSON。", "stdin must be JSON."), error.message);
   }
 }
 
@@ -127,21 +130,21 @@ async function pollTask(taskId, key, timeoutMs) {
     });
     const status = extractStatus(data);
     if (status && status !== lastStatus) {
-      logProgress(`任务状态：${status}`);
+      logProgress(msg(`任务状态：${status}`, `Task status: ${status}`));
       lastStatus = status;
     }
     if (status === "SUCCEEDED" || status === "SUCCESS") return data;
     if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED") {
-      throw new Error(data?.output?.message || data?.message || `任务失败：${status}`);
+      throw new Error(data?.output?.message || data?.message || msg(`任务失败：${status}`, `Task failed: ${status}`));
     }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
-  throw new Error(`图片生成超时，task_id=${taskId}`);
+  throw new Error(msg(`图片生成超时，task_id=${taskId}`, `Image generation timed out, task_id=${taskId}`));
 }
 
 async function downloadFile(url, outputPath) {
   const response = await fetch(url, { signal: AbortSignal.timeout(120_000) });
-  if (!response.ok) throw new Error(`下载失败：${response.status} ${response.statusText}`);
+  if (!response.ok) throw new Error(msg(`下载失败：${response.status} ${response.statusText}`, `Download failed: ${response.status} ${response.statusText}`));
   const bytes = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(outputPath, bytes);
   return bytes.length;
@@ -157,9 +160,9 @@ function detectExt(url) {
 async function main() {
   const input = jsonParse(await readStdin());
   const prompt = String(input.prompt || "").trim();
-  if (!prompt) fail("缺少 prompt。");
+  if (!prompt) fail(msg("缺少 prompt。", "Missing prompt."));
   const key = apiKey();
-  if (!key) fail("缺少 DASHSCOPE_API_KEY。请在模型配置或环境变量中配置百炼 API Key。");
+  if (!key) fail(msg("缺少 DASHSCOPE_API_KEY。请在模型配置或环境变量中配置百炼 API Key。", "Missing DASHSCOPE_API_KEY. Configure the DashScope API key in model settings or environment variables."));
 
   const model = input.model || process.env.DASHSCOPE_IMAGE_MODEL || "qwen-image-2.0-pro";
   const outputDir = path.resolve(process.cwd(), input.output_dir || "generated-assets");
@@ -184,7 +187,7 @@ async function main() {
     },
   };
 
-  logProgress("正在提交图片生成任务...");
+  logProgress(msg("正在提交图片生成任务...", "Submitting image generation task..."));
   const create = await requestJson(createUrl(), {
     method: "POST",
     headers: {
@@ -194,16 +197,16 @@ async function main() {
     body: JSON.stringify(payload),
   });
   const taskId = extractTaskId(create);
-  if (taskId) logProgress(`任务已提交：${taskId}`);
+  if (taskId) logProgress(msg(`任务已提交：${taskId}`, `Task submitted: ${taskId}`));
   const result = taskId ? await pollTask(taskId, key, Number(input.timeout_ms || 240_000)) : create;
   const urls = collectImageUrls(result);
-  if (!urls.length) fail("图片任务完成，但没有找到图片 URL。", JSON.stringify(result, null, 2));
+  if (!urls.length) fail(msg("图片任务完成，但没有找到图片 URL。", "Image task finished but no image URL was returned."), JSON.stringify(result, null, 2));
 
   const files = [];
   for (let i = 0; i < urls.length; i += 1) {
     const ext = detectExt(urls[i]);
     const filePath = path.join(outputDir, safeName(`image-${i + 1}`, ext));
-    logProgress(`正在下载生成图片 ${i + 1}/${urls.length}...`);
+    logProgress(msg(`正在下载生成图片 ${i + 1}/${urls.length}...`, `Downloading image ${i + 1}/${urls.length}...`));
     const bytes = await downloadFile(urls[i], filePath);
     files.push({ path: filePath, bytes });
   }
@@ -215,8 +218,8 @@ async function main() {
   }
   process.stdout.write("</generated_media>\n");
   for (const file of files) {
-    process.stdout.write(`\n![生成图片](${file.path})\n已保存到：${file.path}\n`);
+    process.stdout.write(msg(`\n![生成图片](${file.path})\n已保存到：${file.path}\n`, `\n![Generated image](${file.path})\nSaved to: ${file.path}\n`));
   }
 }
 
-main().catch((error) => fail("图片生成失败。", error?.message || String(error)));
+main().catch((error) => fail(msg("图片生成失败。", "Image generation failed."), error?.message || String(error)));

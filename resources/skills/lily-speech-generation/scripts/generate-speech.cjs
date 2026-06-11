@@ -16,6 +16,9 @@ function readStdin() {
   });
 }
 
+const ZH = String(process.env.LILY_LOCALE || "").toLowerCase().startsWith("zh");
+function msg(zh, en) { return ZH ? zh : en; }
+
 function fail(message, detail) {
   const suffix = detail ? `\n${detail}` : "";
   process.stderr.write(`[lily-speech-generation] ${message}${suffix}\n`);
@@ -26,7 +29,7 @@ function jsonParse(raw) {
   try {
     return raw ? JSON.parse(raw) : {};
   } catch (error) {
-    fail("stdin 必须是 JSON。", error.message);
+    fail(msg("stdin 必须是 JSON。", "stdin must be JSON."), error.message);
   }
 }
 
@@ -83,7 +86,7 @@ function collectAudioUrls(data) {
 
 async function downloadFile(url, outputPath) {
   const response = await fetch(url, { signal: AbortSignal.timeout(180_000) });
-  if (!response.ok) throw new Error(`下载失败：${response.status} ${response.statusText}`);
+  if (!response.ok) throw new Error(msg(`下载失败：${response.status} ${response.statusText}`, `Download failed: ${response.status} ${response.statusText}`));
   const bytes = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(outputPath, bytes);
   return bytes.length;
@@ -92,9 +95,9 @@ async function downloadFile(url, outputPath) {
 async function main() {
   const input = jsonParse(await readStdin());
   const text = String(input.text || input.input || "").trim();
-  if (!text) fail("缺少 text。");
+  if (!text) fail(msg("缺少 text。", "Missing text."));
   const key = apiKey();
-  if (!key) fail("缺少 DASHSCOPE_API_KEY。请在模型配置或环境变量中配置百炼 API Key。");
+  if (!key) fail(msg("缺少 DASHSCOPE_API_KEY。请在模型配置或环境变量中配置百炼 API Key。", "Missing DASHSCOPE_API_KEY. Configure the DashScope API key in model settings or environment variables."));
 
   const model = input.model || process.env.DASHSCOPE_TTS_MODEL || "cosyvoice-v3-flash";
   const voice = input.voice || process.env.DASHSCOPE_TTS_VOICE || "longanyang";
@@ -128,7 +131,7 @@ async function main() {
     files.push({ path: filePath, bytes: result.bytes.length });
   } else {
     const urls = collectAudioUrls(result.json);
-    if (!urls.length) fail("语音合成完成，但没有找到音频 URL。", JSON.stringify(result.json, null, 2));
+    if (!urls.length) fail(msg("语音合成完成，但没有找到音频 URL。", "Speech synthesis finished but no audio URL was returned."), JSON.stringify(result.json, null, 2));
     for (let i = 0; i < urls.length; i += 1) {
       const filePath = path.join(outputDir, safeName(`speech-${i + 1}`, format));
       const bytes = await downloadFile(urls[i], filePath);
@@ -143,4 +146,4 @@ async function main() {
   process.stdout.write("</generated_media>\n");
 }
 
-main().catch((error) => fail("语音生成失败。", error?.message || String(error)));
+main().catch((error) => fail(msg("语音生成失败。", "Speech generation failed."), error?.message || String(error)));
