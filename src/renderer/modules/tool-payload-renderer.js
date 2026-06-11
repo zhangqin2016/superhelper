@@ -395,7 +395,18 @@ function renderGeneratedMedia(root, mediaBlocks = []) {
       label.textContent = t("tool.media.savedTo");
       const pathCode = document.createElement("code");
       pathCode.textContent = file.path;
-      caption.append(label, pathCode);
+      // A bare path is hard to act on — clicking it (or the reveal button)
+      // shows the file in the system file manager.
+      const reveal = document.createElement("button");
+      reveal.type = "button";
+      reveal.className = "assistant-reveal-btn";
+      reveal.textContent = t("file.reveal");
+      const doReveal = () => void window.assistantClient.revealInFolder(file.path);
+      reveal.addEventListener("click", doReveal);
+      pathCode.classList.add("is-clickable");
+      pathCode.title = t("file.reveal");
+      pathCode.addEventListener("click", doReveal);
+      caption.append(label, pathCode, reveal);
       item.appendChild(caption);
       grid.appendChild(item);
     });

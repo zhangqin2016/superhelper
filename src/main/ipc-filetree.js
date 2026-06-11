@@ -171,6 +171,19 @@ function registerFileTreeHandlers() {
     }
   });
 
+  ipcMain.handle("filetree:reveal", (_event, { filePath }) => {
+    try {
+      if (!filePath || typeof filePath !== "string" || !fs.existsSync(filePath)) {
+        return { ok: false, error: "NOT_FOUND" };
+      }
+      const { shell } = require("electron");
+      shell.showItemInFolder(filePath);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.handle("filetree:revert-turn", (_event, { sessionId, turnId }) => {
     const { revertTurnChanges } = require("./diff-capture");
     const results = revertTurnChanges(sessionId, turnId);

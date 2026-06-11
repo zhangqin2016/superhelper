@@ -152,6 +152,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("filetree:search-files", { rootPath, query, limit }),
   rememberConvention: (sessionId, text) =>
     ipcRenderer.invoke("assistant:remember-convention", { sessionId, text }),
+  revealInFolder: (filePath) =>
+    ipcRenderer.invoke("filetree:reveal", { filePath }),
 
   onRuntimeEvents: (callback) => {
     ipcRenderer.on("assistant:runtime-events", (_event, batch) => callback(batch));

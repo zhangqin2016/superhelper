@@ -609,9 +609,12 @@ function renderChangedFilesGroup(entries, sealed, ctx = {}) {
   list.className = "assistant-process-changes-list";
   for (const entry of entries) {
     const row = document.createElement("div");
-    row.className = "assistant-process-change-row";
+    row.className = "assistant-process-change-row is-clickable";
     row.textContent = entry.fileName || entry.filePath || "";
-    row.title = entry.filePath || "";
+    row.title = `${entry.filePath || ""} — ${t("file.reveal")}`;
+    if (entry.filePath) {
+      row.addEventListener("click", () => void window.assistantClient.revealInFolder(entry.filePath));
+    }
     list.appendChild(row);
   }
   details.appendChild(list);

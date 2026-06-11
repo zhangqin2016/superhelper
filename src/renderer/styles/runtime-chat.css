@@ -397,6 +397,33 @@
   color: var(--text-primary);
 }
 
+.assistant-reveal-btn {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.assistant-reveal-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.assistant-generated-media figcaption code.is-clickable,
+.assistant-process-change-row.is-clickable {
+  cursor: pointer;
+}
+
+.assistant-process-change-row.is-clickable:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
 .assistant-retry-btn {
   margin: 4px 0 0;
 }
