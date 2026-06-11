@@ -329,26 +329,41 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null) {
   else v.listEl?.appendChild(article);
 }
 
+const COPY_ICON_SVG =
+  '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5h-6a1 1 0 0 0-1 1v6"/></svg>';
+const COPIED_ICON_SVG =
+  '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+
+// A small right-aligned icon row under the answer (room for export-PDF etc.
+// later). Always visible but visually muted — hover discovery does not work
+// for non-technical users.
 function appendArticleActions(article, sessionId, message) {
   const actions = document.createElement("div");
   actions.className = "assistant-article-actions";
+  if (message.failed) actions.appendChild(buildRetryAction(sessionId, message));
   const copyText = String(message.content || "").trim();
   if (copyText) {
     const copy = document.createElement("button");
     copy.type = "button";
-    copy.className = "assistant-action-btn assistant-copy-answer-btn";
-    copy.textContent = t("message.copyAnswer");
+    copy.className = "assistant-icon-btn assistant-copy-answer-btn";
+    copy.title = t("message.copyAnswer");
+    copy.setAttribute("aria-label", t("message.copyAnswer"));
+    copy.innerHTML = COPY_ICON_SVG;
     copy.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(copyText);
-        showScheduledToast(t("common.copied"), "success");
+        copy.innerHTML = COPIED_ICON_SVG;
+        copy.classList.add("is-done");
+        setTimeout(() => {
+          copy.innerHTML = COPY_ICON_SVG;
+          copy.classList.remove("is-done");
+        }, 1500);
       } catch {
         showScheduledToast(t("common.copyFailed"), "warning");
       }
     });
     actions.appendChild(copy);
   }
-  if (message.failed) actions.appendChild(buildRetryAction(sessionId, message));
   if (actions.childElementCount) article.appendChild(actions);
 }
 

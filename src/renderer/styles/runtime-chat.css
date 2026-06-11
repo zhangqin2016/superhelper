@@ -296,28 +296,38 @@
   max-height: 96px;
 }
 
-/* Hover actions overlay the article's bottom margin instead of reserving
-   layout height — opacity:0 still occupied ~30px per message. */
-.assistant-turn-article {
-  position: relative;
-}
-
+/* Small always-visible icon row at the answer's bottom-right; intentionally
+   one compact line (extensible: export-PDF etc. join the same row). */
 .assistant-article-actions {
-  position: absolute;
-  left: 0;
-  bottom: -4px;
   display: flex;
-  gap: 8px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-  z-index: 2;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  min-height: 24px;
 }
 
-.assistant-turn-article:hover .assistant-article-actions,
-.assistant-article-actions:focus-within {
-  opacity: 1;
-  pointer-events: auto;
+.assistant-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.assistant-icon-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.assistant-icon-btn.is-done {
+  color: var(--text-primary);
 }
 
 .runtime-user-message {
