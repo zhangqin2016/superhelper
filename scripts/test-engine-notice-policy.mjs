@@ -15,4 +15,9 @@ assert.equal(sanitizeNoticeForIngest({ code: "toolProgress", level: "progress", 
 assert.equal(sanitizeNoticeForIngest({ code: "shellLongRunning", level: "progress", panel: true, detail: "curl upload" }).panel, true);
 assert.equal(sanitizeNoticeForIngest({ code: "thinkingProgress", level: "progress", panel: true, detail: "42 tokens" }).panel, false);
 
+// Context compaction must stay user-visible — it explains why the assistant
+// may have lost earlier conversation detail.
+assert.equal(noticeVisibleInPanel({ code: "compactBoundary", level: "progress", panel: true }), true);
+assert.equal(noticeVisibleInPanel({ code: "compactComplete", level: "info", panel: true }), true);
+
 console.log("test-engine-notice-policy: ALL_OK");

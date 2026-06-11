@@ -11,6 +11,7 @@ const {
   emitDiffForTool,
   getDiffsForTurn,
   clearDiffsForSession,
+  revertTurnChanges,
 } = require("../src/main/diff-capture.js");
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diff-capture-test-"));
@@ -39,6 +40,47 @@ if (diffs[0].filePath !== filePath) {
 const otherTurn = getDiffsForTurn(sessionId, "turn_other");
 if (otherTurn.length !== 0) {
   throw new Error("diffs should be scoped per turn");
+}
+
+clearDiffsForSession(sessionId);
+
+// Checkpoint semantics: several edits to one file in a turn keep the FIRST
+// before-state, and revertTurnChanges restores it. Added files are deleted.
+const revertTurnId = "turn_revert";
+const editedPath = path.join(tmpDir, "edited.txt");
+const addedPath = path.join(tmpDir, "added.txt");
+fs.writeFileSync(editedPath, "checkpoint\n", "utf-8");
+
+captureBeforeSnapshot(sessionId, "tool_e1", "Write", { file_path: editedPath });
+fs.writeFileSync(editedPath, "first edit\n", "utf-8");
+emitDiffForTool(sessionId, "tool_e1", { mainWindow: null }, revertTurnId);
+
+captureBeforeSnapshot(sessionId, "tool_e2", "Write", { file_path: editedPath });
+fs.writeFileSync(editedPath, "second edit\n", "utf-8");
+emitDiffForTool(sessionId, "tool_e2", { mainWindow: null }, revertTurnId);
+
+captureBeforeSnapshot(sessionId, "tool_a1", "Write", { file_path: addedPath });
+fs.writeFileSync(addedPath, "brand new\n", "utf-8");
+emitDiffForTool(sessionId, "tool_a1", { mainWindow: null }, revertTurnId);
+
+const revertEntries = getDiffsForTurn(sessionId, revertTurnId);
+const editedEntry = revertEntries.find((entry) => entry.filePath === editedPath);
+if (editedEntry?.originalContent !== "checkpoint\n") {
+  throw new Error(`turn checkpoint must keep the first before-state: ${JSON.stringify(editedEntry?.originalContent)}`);
+}
+
+const results = revertTurnChanges(sessionId, revertTurnId);
+if (results.some((item) => !item.ok)) {
+  throw new Error(`revert reported failures: ${JSON.stringify(results)}`);
+}
+if (fs.readFileSync(editedPath, "utf-8") !== "checkpoint\n") {
+  throw new Error("edited file must restore to the turn checkpoint");
+}
+if (fs.existsSync(addedPath)) {
+  throw new Error("added file must be deleted on revert");
+}
+if (getDiffsForTurn(sessionId, revertTurnId).length !== 0) {
+  throw new Error("reverted diffs must be cleared");
 }
 
 clearDiffsForSession(sessionId);

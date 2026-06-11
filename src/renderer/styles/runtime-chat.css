@@ -286,7 +286,59 @@
 }
 
 .assistant-process-thinking-group.is-live .assistant-process-thinking {
-  max-height: min(40vh, 320px);
+  /* Streaming thinking shows a narrow follow window (~6 lines), not a wall of
+     text — patchLiveProcessDom keeps it scrolled to the newest line. */
+  max-height: 96px;
+}
+
+.assistant-subagent-tools {
+  margin: 2px 0 4px 18px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.assistant-todo-card {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-secondary, transparent);
+}
+
+.assistant-todo-card > summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  user-select: none;
+}
+
+.assistant-todo-items {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assistant-todo-item {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.assistant-todo-item.is-completed {
+  color: var(--text-muted);
+}
+
+.assistant-todo-item.is-in_progress {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.assistant-turn-inline-text {
+  margin: 6px 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-primary);
 }
 
 .assistant-process-group {

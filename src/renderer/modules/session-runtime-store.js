@@ -4,6 +4,8 @@ import {
   activityFromEngineNotice,
   applyProcessEventToTimeline,
   appendTimelineNotice,
+  appendTimelineText,
+  closeStreamingBlocks,
   hasRunningTool,
   resetTimelineFields,
   setActivityLabel,
@@ -246,6 +248,7 @@ export function applyRuntimeEvent(event) {
       runtime.phase = "streaming";
       live.phase = "streaming";
       live.assistantText += event.payload.text || "";
+      appendTimelineText(live, event.payload.text || "", event.ts || Date.now());
       break;
     case "assistant.thinking.delta":
       runtime.phase = "streaming";
@@ -353,10 +356,14 @@ export function applyRuntimeEvent(event) {
     case "assistant.final":
       live.finalDraft = event.payload.assistant || live.assistantText;
       break;
+    case "assistant.message_stop":
+      closeStreamingBlocks(live, event.ts || Date.now());
+      break;
     default:
       if (TERMINAL_TYPES.has(event.type)) {
         live.phase = "done";
         live.final = event;
+        closeStreamingBlocks(live, event.ts || Date.now());
         if (Number.isFinite(event.payload?.durationMs)) {
           live.durationMs = event.payload.durationMs;
         } else if (Number.isFinite(event.payload?.record?.durationMs)) {

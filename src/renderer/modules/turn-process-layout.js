@@ -11,6 +11,32 @@ const COMMAND_TOOLS = new Set(["bash"]);
 const WEB_TOOLS = new Set(["websearch", "webfetch"]);
 const AGENT_TOOLS = new Set(["task"]);
 
+const TODO_TOOLS = new Set(["todowrite"]);
+
+export function isTodoTool(name = "") {
+  return TODO_TOOLS.has(String(name).toLowerCase());
+}
+
+// TodoWrite input is the model's plan; statuses outside the known set
+// degrade to pending so a malformed item never hides the plan.
+export function parseTodoEntries(tool = {}) {
+  let input = tool.input;
+  if ((!input || !Array.isArray(input.todos)) && tool.partialJson) {
+    try {
+      input = JSON.parse(tool.partialJson);
+    } catch {
+      return [];
+    }
+  }
+  const todos = Array.isArray(input?.todos) ? input.todos : [];
+  return todos
+    .map((todo) => ({
+      content: String(todo?.content || todo?.activeForm || "").trim(),
+      status: todo?.status === "completed" || todo?.status === "in_progress" ? todo.status : "pending",
+    }))
+    .filter((todo) => todo.content);
+}
+
 export function classifyToolCategory(name = "") {
   const n = String(name).toLowerCase();
   if (READ_TOOLS.has(n)) return "read";
@@ -26,12 +52,14 @@ export function partitionTimeline(timeline = []) {
   const thinking = [];
   const notices = [];
   const tools = [];
+  const texts = [];
   for (const entry of timeline) {
     if (entry.kind === "thinking") thinking.push(entry);
     else if (entry.kind === "notice") notices.push(entry);
     else if (entry.kind === "tool") tools.push(entry);
+    else if (entry.kind === "text") texts.push(entry);
   }
-  return { thinking, notices, tools };
+  return { thinking, notices, tools, texts };
 }
 
 export function groupToolsByCategory(tools = []) {
@@ -79,10 +107,26 @@ const CLI_ASSISTANT_TERMINALS = new Set([
 ]);
 
 /** Assistant text the CLI actually streamed or committed — no synthesis from tools. */
-export function resolveAssistantStreamText(liveTurn = {}) {
-  if (liveTurn.final?.payload?.assistant != null) {
-    return String(liveTurn.final.payload.assistant).trim();
+export function lastTimelineText(liveTurn = {}) {
+  const timeline = Array.isArray(liveTurn.timeline) ? liveTurn.timeline : [];
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    if (timeline[index]?.kind === "text") return String(timeline[index].text || "").trim();
   }
+  return null;
+}
+
+export function resolveAssistantStreamText(liveTurn = {}) {
+  const blockText = lastTimelineText(liveTurn);
+  if (liveTurn.final?.payload?.assistant != null) {
+    const finalText = String(liveTurn.final.payload.assistant).trim();
+    // The final payload is the full streamed aggregation unless something
+    // (e.g. an injected error message) overrode it. When it is just the
+    // aggregation, show only the last prose block — earlier blocks render
+    // inline in the timeline and must not duplicate here.
+    if (blockText && finalText.endsWith(blockText)) return blockText;
+    return finalText;
+  }
+  if (blockText != null) return blockText;
   return String(liveTurn.assistantText || "").trim();
 }
 

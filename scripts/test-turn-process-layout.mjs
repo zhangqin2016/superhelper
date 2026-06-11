@@ -10,7 +10,7 @@ import {
   partitionTimeline,
   resolveFinalText,
 } from "../src/renderer/modules/turn-process-layout.js";
-import { buildTimelineFromLegacy } from "../src/renderer/modules/turn-timeline.js";
+import { buildTimelineFromLegacy, getRenderableTimeline } from "../src/renderer/modules/turn-timeline.js";
 
 if (classifyToolCategory("Write") !== "write") {
   throw new Error("classifyToolCategory Write failed");
@@ -141,6 +141,76 @@ if (shouldShowFinal(idleCompletedTurn)) {
 }
 if (!shouldShowNarrative(idleCompletedTurn)) {
   throw new Error("idle-completed turn should keep assistant text in narrative");
+}
+
+// Interleaved block rendering: the bubble shows only the LAST prose block;
+// earlier prose stays in the timeline. A final override (e.g. injected error
+// text) that is not the streamed aggregation must still win the bubble.
+const interleavedTurn = {
+  assistantText: "先看下文件。结论：没有问题。",
+  timeline: [
+    { kind: "text", id: "text_1", ts: 1, text: "先看下文件。", status: "done" },
+    { kind: "tool", id: "t1", ts: 2, name: "Read", input: { file_path: "a.js" }, status: "done", preview: "Read a.js" },
+    { kind: "text", id: "text_2", ts: 3, text: "结论：没有问题。", status: "streaming" },
+  ],
+};
+if (resolveAssistantStreamText(interleavedTurn) !== "结论：没有问题。") {
+  throw new Error(`bubble must show only the last prose block: ${resolveAssistantStreamText(interleavedTurn)}`);
+}
+const renderable = getRenderableTimeline(interleavedTurn);
+const renderableKinds = renderable.map((entry) => `${entry.kind}:${entry.id}`).join(",");
+if (renderableKinds !== "text:text_1,tool:t1") {
+  throw new Error(`timeline must keep earlier prose and drop the bubble block: ${renderableKinds}`);
+}
+
+const sealedAggregation = {
+  ...interleavedTurn,
+  final: { type: "turn.completed", payload: { assistant: "先看下文件。结论：没有问题。" } },
+};
+if (resolveAssistantStreamText(sealedAggregation) !== "结论：没有问题。") {
+  throw new Error("sealed aggregation must not re-duplicate earlier prose in the bubble");
+}
+
+const errorOverride = {
+  ...interleavedTurn,
+  final: { type: "turn.failed", payload: { assistant: "连接已重置，请重新发送。" } },
+};
+if (resolveAssistantStreamText(errorOverride) !== "连接已重置，请重新发送。") {
+  throw new Error("an injected final message must override the streamed prose");
+}
+
+// TodoWrite plans degrade safely: unknown statuses become pending, partial
+// streamed JSON parses when complete and yields nothing when truncated.
+import { isTodoTool, parseTodoEntries } from "../src/renderer/modules/turn-process-layout.js";
+
+if (!isTodoTool("TodoWrite") || isTodoTool("Write")) {
+  throw new Error("isTodoTool must match only the todo tool");
+}
+const todos = parseTodoEntries({
+  name: "TodoWrite",
+  input: { todos: [
+    { content: "读取配置", status: "completed" },
+    { content: "修改代码", status: "in_progress" },
+    { content: "跑测试", status: "weird-status" },
+    { content: "  ", status: "pending" },
+  ] },
+});
+if (todos.length !== 3) {
+  throw new Error(`empty items must drop, got ${todos.length}`);
+}
+if (todos[0].status !== "completed" || todos[1].status !== "in_progress" || todos[2].status !== "pending") {
+  throw new Error(`status normalization failed: ${JSON.stringify(todos)}`);
+}
+const fromPartial = parseTodoEntries({
+  name: "TodoWrite",
+  input: {},
+  partialJson: '{"todos":[{"content":"a","status":"pending"}]}',
+});
+if (fromPartial.length !== 1 || fromPartial[0].content !== "a") {
+  throw new Error("complete partialJson must parse");
+}
+if (parseTodoEntries({ name: "TodoWrite", partialJson: '{"todos":[{"con' }).length !== 0) {
+  throw new Error("truncated partialJson must yield no items");
 }
 
 console.log("turn-process-layout: ok");

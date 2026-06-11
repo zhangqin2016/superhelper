@@ -15,6 +15,8 @@ const {
   activityFromEngineNotice,
   activityFromProcessPayload,
   appendTimelineNotice,
+  appendTimelineText,
+  closeStreamingBlocks,
   resetTimelineState,
   setActivityLabel,
   upsertTimelineThinking,
@@ -309,6 +311,7 @@ class TurnOrchestrator {
       case "assistant.delta":
         state.phase = "streaming";
         state.assistantText += String(payload.text || "");
+        appendTimelineText(state, String(payload.text || ""), Date.now());
         this._emit(sessionId, "assistant.delta", { text: String(payload.text || "") });
         break;
       case "assistant.thinking.delta": {
@@ -372,6 +375,7 @@ class TurnOrchestrator {
           name: tool.name || payload.name || "unknown",
           input: tool.input || payload.input || {},
           status: "running",
+          parentToolUseId: payload.parentToolUseId || null,
         }, Date.now());
         this._emit(sessionId, "tool.started", {
           id: toolId,
@@ -496,6 +500,7 @@ class TurnOrchestrator {
         this._emit(sessionId, "usage.updated", payload);
         break;
       case "assistant.message_stop":
+        closeStreamingBlocks(state, Date.now());
         this._emit(sessionId, "assistant.message_stop", payload);
         break;
       case "process.event": {
@@ -960,6 +965,7 @@ class TurnOrchestrator {
       tool.status = type === "turn.completed" ? "done" : "failed";
       upsertTimelineTool(state, tool, Date.now());
     }
+    closeStreamingBlocks(state, Date.now());
     const assistant = String(payload.assistant || state.assistantText || "").trim();
     const record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
     if (record) {

@@ -83,6 +83,37 @@ try {
     throw new Error(`listForProject permission fields failed: ${JSON.stringify(listItem)}`);
   }
 
+  // "批准并记住" must persist beyond the current runner process: rules carry a
+  // settings destination, and session-scoped CLI suggestions get promoted.
+  const {
+    buildRememberAllowPermissions,
+    withPersistentDestination,
+  } = require("../src/main/control-protocol.js");
+  const rememberRules = buildRememberAllowPermissions("Bash");
+  if (
+    rememberRules.length !== 1 ||
+    rememberRules[0].type !== "addRules" ||
+    rememberRules[0].behavior !== "allow" ||
+    rememberRules[0].destination !== "localSettings" ||
+    rememberRules[0].rules?.[0]?.toolName !== "Bash"
+  ) {
+    throw new Error(`remember rules must persist to localSettings: ${JSON.stringify(rememberRules)}`);
+  }
+  const promoted = withPersistentDestination([
+    { type: "addRules", behavior: "allow", destination: "session", rules: [{ toolName: "Read" }] },
+    { type: "addRules", behavior: "allow", destination: "userSettings", rules: [{ toolName: "Glob" }] },
+    { type: "addRules", behavior: "allow", rules: [{ toolName: "Grep" }] },
+  ]);
+  if (promoted[0].destination !== "localSettings") {
+    throw new Error("session-scoped suggestion must be promoted to localSettings");
+  }
+  if (promoted[1].destination !== "userSettings") {
+    throw new Error("explicit settings destination must be respected");
+  }
+  if (promoted[2].destination !== "localSettings") {
+    throw new Error("missing destination must default to localSettings");
+  }
+
   console.log("session-permissions: ok");
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });

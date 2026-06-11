@@ -142,8 +142,12 @@ contextBridge.exposeInMainWorld("assistantClient", {
   listDirectory: (dirPath) => ipcRenderer.invoke("filetree:list-dir", { dirPath }),
   acceptChange: (sessionId, filePath) =>
     ipcRenderer.invoke("filetree:accept-change", { sessionId, filePath }),
-  rejectChange: (sessionId, filePath, content) =>
-    ipcRenderer.invoke("filetree:reject-change", { sessionId, filePath, content }),
+  rejectChange: (sessionId, filePath, content, status) =>
+    ipcRenderer.invoke("filetree:reject-change", { sessionId, filePath, content, status }),
+  revertTurn: (sessionId, turnId) =>
+    ipcRenderer.invoke("filetree:revert-turn", { sessionId, turnId }),
+  searchFiles: (rootPath, query, limit) =>
+    ipcRenderer.invoke("filetree:search-files", { rootPath, query, limit }),
 
   onRuntimeEvents: (callback) => {
     ipcRenderer.on("assistant:runtime-events", (_event, batch) => callback(batch));

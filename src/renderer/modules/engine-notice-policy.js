@@ -4,8 +4,6 @@ const PANEL_HIDDEN_CODES = new Set([
   "sentToCli",
   "cliOutputReceived",
   "thinkingProgress",
-  "compactBoundary",
-  "compactComplete",
   "rateLimit",
   "apiRetry",
   "shellDetached",
@@ -17,6 +15,7 @@ const PANEL_HIDDEN_CODES = new Set([
 ]);
 
 const LIVE_PROGRESS_PANEL_CODES = new Set([
+  "compactBoundary",
   "waitingForFirstResponse",
   "longWait",
   "taskProgress",

@@ -121,11 +121,13 @@ function classifySystemEvent(ev) {
         done: true,
         model: typeof ev.model === "string" ? ev.model : "",
       };
+    // Context compaction must be user-visible: it explains why the assistant
+    // may lose earlier details ("为什么 AI 突然忘了前面说的").
     case "compact_boundary":
       return {
         code: "compactBoundary",
         level: "progress",
-        panel: false,
+        panel: true,
         replace: true,
       };
     case "compact_complete":
@@ -133,7 +135,7 @@ function classifySystemEvent(ev) {
       return {
         code: "compactComplete",
         level: "info",
-        panel: false,
+        panel: true,
         replace: true,
         replacesCode: "compactBoundary",
         done: true,

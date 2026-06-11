@@ -31,11 +31,11 @@ import { isResumeFailureMessage } from "../src/main/session-engine-recovery.js";
 import {
   classifyEngineEvent,
   noticeForControlSubtype,
-} from "../src/main/engine-event-notices.js";
+} from "../src/main/runtime/adapters/engine-event-notices.js";
 import {
   normalizeClaudeEvent,
   normalizeAskUserQuestions,
-} from "../src/main/claude-event-normalizer.js";
+} from "../src/main/runtime/adapters/claude-event-normalizer.js";
 
 function mockOrchestrator(hooks = {}) {
   const notices = hooks.notices || [];
@@ -210,8 +210,15 @@ if (!hasSendableContent("ok", [])) {
   throw new Error("hasSendableContent should be true for text");
 }
 
+// Remember-rules follow the CLI PermissionUpdate schema and persist to
+// localSettings so approval survives runner restarts.
 const remember = buildRememberAllowPermissions("Bash");
-if (!remember[0]?.tool_name || remember[0].tool_name !== "Bash") {
+if (
+  remember[0]?.type !== "addRules" ||
+  remember[0]?.rules?.[0]?.toolName !== "Bash" ||
+  remember[0]?.behavior !== "allow" ||
+  remember[0]?.destination !== "localSettings"
+) {
   throw new Error("buildRememberAllowPermissions failed");
 }
 

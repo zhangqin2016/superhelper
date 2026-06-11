@@ -86,8 +86,16 @@ if (runtime.liveTurn?.assistantText !== "hello") {
   throw new Error("duplicate batch should be ignored");
 }
 
-if (runtime.liveTurn?.timeline?.length !== 1 || runtime.liveTurn.timeline[0].kind !== "thinking") {
-  throw new Error(`thinking timeline failed: ${JSON.stringify(runtime.liveTurn?.timeline)}`);
+// Block model: prose and thinking are ordered content blocks, and a thinking
+// delta seals the open text block so the narrative order survives.
+{
+  const kinds = (runtime.liveTurn?.timeline || []).map((entry) => entry.kind).join(",");
+  if (kinds !== "text,thinking") {
+    throw new Error(`block timeline failed: ${JSON.stringify(runtime.liveTurn?.timeline)}`);
+  }
+  if (runtime.liveTurn.timeline[0].status !== "done") {
+    throw new Error("thinking delta must seal the open text block");
+  }
 }
 
 store.applyRuntimeBatch({
@@ -125,8 +133,11 @@ runtime = store.getRuntimeSession("s1");
 if (runtime.liveTurn?.activityLabel !== "Read src/a.js") {
   throw new Error(`running tool should win over CLI status: ${runtime.liveTurn?.activityLabel}`);
 }
-if (runtime.liveTurn?.timeline?.length !== 2) {
-  throw new Error(`expected thinking + tool timeline, got ${runtime.liveTurn?.timeline?.length}`);
+{
+  const kinds = (runtime.liveTurn?.timeline || []).map((entry) => entry.kind).join(",");
+  if (kinds !== "text,thinking,tool") {
+    throw new Error(`expected text + thinking + tool timeline, got ${kinds}`);
+  }
 }
 
 store.applyRuntimeBatch({

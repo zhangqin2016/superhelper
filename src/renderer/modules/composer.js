@@ -10,6 +10,7 @@ import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
 import { canSend, getTurnPhase, subscribeRuntime, getRuntimeSession, syncCommittedMessages } from "./session-runtime-store.js";
 import { t } from "../i18n/index.js";
+import { chooseDialog } from "./confirm-dialog.js";
 
 function messageQueueArea() {
   return $("messageQueueArea");
@@ -179,6 +180,22 @@ export async function sendPrompt(opts = {}) {
       }
     }
   }
+  // A send while the turn is running is a real decision: queue it for later
+  // or interrupt the current answer and send now. Dismissing keeps the draft.
+  const BUSY_PHASES = new Set(["starting", "streaming", "tool_running", "awaiting_user"]);
+  let sendMode = "send";
+  if (BUSY_PHASES.has(getTurnPhase(sessionId))) {
+    sendMode = await chooseDialog({
+      title: t("composer.busyChoiceTitle"),
+      message: t("composer.busyChoiceMessage"),
+      options: [
+        { value: "queue", label: t("composer.busyChoiceQueue") },
+        { value: "interrupt", label: t("composer.busyChoiceInterrupt"), danger: true },
+      ],
+    });
+    if (!sendMode) return;
+  }
+
   const displayFiles = files.map((f) => {
     const pending = (store.get("pendingFiles") || []).find((pf) => pf.id === f.id);
     return {
@@ -195,12 +212,19 @@ export async function sendPrompt(opts = {}) {
 
   let result;
   try {
-    result = await window.assistantClient.sendMessage(
-      text,
-      files,
-      sessionId,
-      displayFiles.length ? displayFiles : null,
-    );
+    result = sendMode === "interrupt"
+      ? await window.assistantClient.interruptAndSend(
+          text,
+          files,
+          sessionId,
+          displayFiles.length ? displayFiles : null,
+        )
+      : await window.assistantClient.sendMessage(
+          text,
+          files,
+          sessionId,
+          displayFiles.length ? displayFiles : null,
+        );
   } catch (err) {
     if (promptInput && savedText) promptInput.value = savedText;
     if (savedFiles.length) {
@@ -274,6 +298,94 @@ export function initComposer() {
       if (imeComposing || !shouldSendOnEnter(e)) return;
       e.preventDefault();
       sendPrompt();
+    });
+    // @-mention file completion: typing "@token" pops a workspace file list;
+    // selecting inserts the relative path into the prompt.
+    let mentionOpen = false;
+    let mentionTimer = null;
+    const mentionBox = document.createElement("div");
+    mentionBox.className = "composer-mention-popover";
+    mentionBox.hidden = true;
+    if (promptInput.parentElement && !promptInput.parentElement.style.position) {
+      promptInput.parentElement.style.position = "relative";
+    }
+    promptInput.parentElement?.appendChild(mentionBox);
+
+    const activeProjectRoot = () => {
+      const projectId = store.get("activeProjectId");
+      const project = (store.get("projects") || []).find((p) => p.id === projectId);
+      return project?.path || null;
+    };
+    const mentionTokenAtCaret = () => {
+      const caret = promptInput.selectionStart ?? promptInput.value.length;
+      const before = promptInput.value.slice(0, caret);
+      const match = before.match(/(^|\s)@([\w\-./\\]*)$/);
+      if (!match) return null;
+      return { query: match[2], start: caret - match[2].length - 1, caret };
+    };
+    const closeMention = () => {
+      mentionOpen = false;
+      mentionBox.hidden = true;
+      mentionBox.replaceChildren();
+    };
+    const refreshMention = async () => {
+      const token = mentionTokenAtCaret();
+      const root = activeProjectRoot();
+      if (!token || !root) {
+        closeMention();
+        return;
+      }
+      const result = await window.assistantClient.searchFiles(root, token.query, 12);
+      const files = result?.ok ? result.files || [] : [];
+      if (!files.length) {
+        closeMention();
+        return;
+      }
+      mentionBox.replaceChildren();
+      for (const file of files) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "composer-mention-item";
+        item.textContent = file.relPath;
+        // mousedown so the textarea keeps focus (click would blur first).
+        item.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          const value = promptInput.value;
+          promptInput.value =
+            `${value.slice(0, token.start)}@${file.relPath} ${value.slice(token.caret)}`;
+          const pos = token.start + file.relPath.length + 2;
+          promptInput.setSelectionRange(pos, pos);
+          closeMention();
+          promptInput.focus();
+          promptInput.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        mentionBox.appendChild(item);
+      }
+      mentionBox.hidden = false;
+      mentionOpen = true;
+    };
+    promptInput.addEventListener("input", () => {
+      clearTimeout(mentionTimer);
+      mentionTimer = setTimeout(() => void refreshMention(), 120);
+    });
+    promptInput.addEventListener("blur", () => setTimeout(closeMention, 150));
+
+    // Esc in the composer: first closes the @-mention popover, then interrupts
+    // the running turn (the status line advertises this). Scoped to the input
+    // so dialog Escape handlers win.
+    promptInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || imeComposing) return;
+      if (mentionOpen) {
+        e.preventDefault();
+        closeMention();
+        return;
+      }
+      const sessionId = store.get("activeSessionId");
+      if (!sessionId) return;
+      const phase = getTurnPhase(sessionId);
+      if (!phase || phase === "idle") return;
+      e.preventDefault();
+      void window.assistantClient.interrupt(sessionId);
     });
   }
 

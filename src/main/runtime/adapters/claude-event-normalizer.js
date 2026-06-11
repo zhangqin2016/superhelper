@@ -1,6 +1,6 @@
 "use strict";
 
-const { parseCanUseToolRequest } = require("./control-protocol");
+const { parseCanUseToolRequest } = require("../../control-protocol");
 const {
   classifyEngineEvent,
   noticeForControlSubtype,

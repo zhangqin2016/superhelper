@@ -14,6 +14,9 @@ const translate = (key, params = {}) => {
   const table = {
     "turn.thinking.title": "思考中",
     "turn.thinking.liveSummary": `思考中 · ${params.preview || ""}`,
+    "turn.thinking.doneSummary": `思考了 ${params.seconds} 秒`,
+    "turn.status.escHint": "Esc 停止",
+    "turn.thinking.liveSummaryTimed": `思考中 ${params.seconds}s · ${params.preview || ""}`,
     "turn.status.thinking": "思考中",
     "turn.status.starting": "正在启动…",
     "turn.status.waiting": "等待回复",
@@ -38,6 +41,42 @@ assert.equal(buildThinkingSummaryLabel("plan", false, translate), "思考中");
 assert.equal(
   buildThinkingSummaryLabel("先分析章节结构再写开场", true, translate),
   "思考中 · 先分析章节结构再写开场",
+);
+// Sealed thinking blocks summarize how long the model thought, so the
+// collapsed line carries information instead of a bare title.
+assert.equal(
+  buildThinkingSummaryLabel(
+    { kind: "thinking", text: "plan", startTs: 1000, ts: 13000, status: "done" },
+    false,
+    translate,
+  ),
+  "思考了 12 秒",
+);
+assert.equal(
+  buildThinkingSummaryLabel(
+    { kind: "thinking", text: "plan", startTs: 1000, ts: 1200, status: "done" },
+    false,
+    translate,
+  ),
+  "思考中",
+);
+// Streaming blocks tick with the latest delta timestamp so the user sees how
+// long the model has been thinking; sub-second blocks keep the plain label.
+assert.equal(
+  buildThinkingSummaryLabel(
+    { kind: "thinking", text: "正在推导方案", startTs: 1000, ts: 5000 },
+    true,
+    translate,
+  ),
+  "思考中 4s · 正在推导方案",
+);
+assert.equal(
+  buildThinkingSummaryLabel(
+    { kind: "thinking", text: "正在推导方案", startTs: 1000, ts: 1400 },
+    true,
+    translate,
+  ),
+  "思考中 · 正在推导方案",
 );
 
 const notice = {
@@ -69,9 +108,19 @@ assert.equal(timelineForView(liveTurn, false).length, 0, "live hides notices");
 assert.equal(timelineForView(sealedTurn, true).length, 1, "sealed keeps notices");
 
 const now = 16_000;
+// The live status line tells the user the turn is interruptible, and shows
+// token spend as soon as usage telemetry arrives.
 assert.equal(
   buildLiveStatusText({ ...liveTurn, thinkingText: "planning" }, translate, now),
-  "15s · 思考中",
+  "15s · 思考中 · Esc 停止",
+);
+assert.equal(
+  buildLiveStatusText(
+    { ...liveTurn, thinkingText: "planning", usage: { estimatedTokens: 1200 } },
+    translate,
+    now,
+  ),
+  "15s · 思考中 · 1.2k tokens · Esc 停止",
 );
 
 assert.equal(

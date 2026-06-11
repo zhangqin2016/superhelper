@@ -1,6 +1,7 @@
 import { renderMarkdown, renderStreamingMarkdown } from "./markdown.js";
 import { t } from "../i18n/index.js";
 import { showToast } from "./toast.js";
+import { confirmDialog } from "./confirm-dialog.js";
 import {
   appendToolPayloadDetail,
   parseGeneratedMedia,
@@ -15,6 +16,8 @@ import {
 import {
   classifyToolCategory,
   groupToolsByCategory,
+  isTodoTool,
+  parseTodoEntries,
   partitionTimeline,
   processGroupSummary,
   categorySummaryKey,
@@ -376,8 +379,9 @@ function processStructureSig(liveTurn, sealed, sessionId) {
   const collapsed = shouldCollapseProcessGroups(liveTurn, sealed);
   const parts = [collapsed ? "collapsed" : "flat", String(diffCount)];
   if (collapsed) {
-    const { thinking, notices, tools } = partitionTimeline(timeline);
-    parts.push(`thinking:${thinking.length > 0 ? 1 : 0}`);
+    const { thinking, notices, tools, texts } = partitionTimeline(timeline);
+    parts.push(`thinking:${thinking.map((entry) => `${entry.id || ""}.${entry.status || ""}`).join(",")}`);
+    parts.push(`texts:${texts.map((entry) => entry.id || "").join(",")}`);
     parts.push(`notices:${notices.length}`);
     for (const entry of tools) {
       parts.push(`tool:${entry.id}:${entry.status || ""}`);
@@ -390,22 +394,28 @@ function processStructureSig(liveTurn, sealed, sessionId) {
   return parts.join("|");
 }
 
+function detailsOpenStateKey(details) {
+  if (details.dataset.toolId) return details.dataset.toolId;
+  if (details.dataset.thinkingId) return `thinking:${details.dataset.thinkingId}`;
+  return details.className;
+}
+
 function collectDetailsOpenState(root) {
   const map = new Map();
   for (const details of root.querySelectorAll("details")) {
-    const key = details.dataset.toolId || details.className;
-    map.set(key, details.open);
+    map.set(detailsOpenStateKey(details), details.open);
   }
   return map;
 }
 
 function restoreDetailsOpenState(root, openState, { live = false } = {}) {
   for (const details of root.querySelectorAll("details")) {
-    if (live && details.classList.contains("assistant-process-thinking-group")) {
+    if (live && details.classList.contains("is-live") &&
+        details.classList.contains("assistant-process-thinking-group")) {
       details.open = true;
       continue;
     }
-    const key = details.dataset.toolId || details.className;
+    const key = detailsOpenStateKey(details);
     if (openState.has(key)) details.open = openState.get(key);
   }
 }
@@ -416,29 +426,40 @@ function patchLiveProcessDom(root, liveTurn, ctx) {
   const { thinking, notices, tools } = partitionTimeline(timeline);
   const summary = root.querySelector(".assistant-process-group summary");
   if (summary) {
-    const next = processGroupSummary(tools, notices, t);
+    const next = processGroupSummary(tools.filter((entry) => !isTodoTool(entry.name)), notices, t);
     if (summary.textContent !== next) summary.textContent = next;
   }
   for (const entry of timeline) {
-    if (entry.kind === "tool") {
+    if (entry.kind === "tool" && isTodoTool(entry.name)) {
+      const card = root.querySelector(`.assistant-todo-card[data-tool-id="${CSS.escape(entry.id)}"]`);
+      if (!card) return false;
+      const todos = parseTodoEntries(entry);
+      const done = todos.filter((todo) => todo.status === "completed").length;
+      const summaryEl = card.querySelector(".assistant-todo-summary");
+      const nextSummary = t("todo.summary", { done, total: todos.length });
+      if (summaryEl && summaryEl.textContent !== nextSummary) summaryEl.textContent = nextSummary;
+      renderTodoItems(card.querySelector(".assistant-todo-items"), todos);
+    } else if (entry.kind === "tool") {
       const row = root.querySelector(`.assistant-tool-row[data-tool-id="${CSS.escape(entry.id)}"]`);
       if (!row) return false;
       const preview = toolRowPreview(entry);
       const cmd = row.querySelector(".assistant-tool-command");
       const statusEl = row.querySelector(".assistant-tool-status");
       const tool = toolEntryToRenderTool(entry);
-      const statusLabel = toolStatusLabel(tool);
+      const statusLabel = toolStatusLabel(tool) + toolDurationSuffix(entry);
       if (cmd && cmd.textContent !== preview) cmd.textContent = preview;
       if (statusEl && statusEl.textContent !== statusLabel) statusEl.textContent = statusLabel;
       if (row.dataset.status !== (entry.status || "")) row.dataset.status = entry.status || "";
     } else if (entry.kind === "thinking") {
-      const group = root.querySelector(".assistant-process-thinking-group");
-      const pre = root.querySelector(".assistant-process-thinking");
+      const selector = `.assistant-process-thinking-group[data-thinking-id="${CSS.escape(entry.id || "")}"]`;
+      const group = root.querySelector(selector);
+      const pre = group?.querySelector(".assistant-process-thinking");
       const text = entry.text?.trim() || "";
       if (!pre || !group) return false;
-      if (!sealed) group.open = true;
+      const isLive = !sealed && entry.status !== "done";
+      if (isLive) group.open = true;
       const summaryEl = group.querySelector(".assistant-process-thinking-summary");
-      const nextSummary = thinkingSummaryLabel(text, !sealed);
+      const nextSummary = thinkingSummaryLabel(entry, isLive);
       if (summaryEl && summaryEl.textContent !== nextSummary) {
         summaryEl.textContent = nextSummary;
       }
@@ -446,6 +467,11 @@ function patchLiveProcessDom(root, liveTurn, ctx) {
         pre.textContent = text;
         pre.scrollTop = pre.scrollHeight;
       }
+    } else if (entry.kind === "text") {
+      // Inline prose blocks are immutable once renderable; a missing node
+      // means the structure changed and a full re-render is needed.
+      const node = root.querySelector(`.assistant-turn-inline-text[data-text-id="${CSS.escape(entry.id || "")}"]`);
+      if (!node) return false;
     }
   }
   return true;
@@ -471,7 +497,18 @@ function renderProcess(root, liveTurn, ctx = {}) {
   root.replaceChildren();
   root.dataset.processSig = structureSig;
   const timeline = timelineForView(liveTurn, sealed);
-  const { thinking, notices, tools } = partitionTimeline(timeline);
+  const { notices, tools } = partitionTimeline(timeline);
+  // Todo checklists are the plan, not process — they render chronologically
+  // outside the collapsed tool group. Subagent children nest under their
+  // parent Task card and leave the main flow.
+  const childTools = buildChildToolsMap(tools);
+  const childToolIds = new Set([...childTools.values()].flat().map((entry) => entry.id));
+  const processTools = tools.filter(
+    (entry) => !isTodoTool(entry.name) && !childToolIds.has(entry.id),
+  );
+  const latestTodoId = [...timeline].reverse()
+    .find((entry) => entry.kind === "tool" && isTodoTool(entry.name))?.id || null;
+  const entryCtx = { latestTodoId, childTools };
   const diffEntries = resolveTurnDiffEntries(liveTurn, sessionId);
   const hasContent = timeline.length > 0 || diffEntries.length > 0;
   root.hidden = !hasContent;
@@ -480,33 +517,46 @@ function renderProcess(root, liveTurn, ctx = {}) {
   const list = document.createElement("div");
   list.className = "assistant-turn-timeline";
 
-  for (const entry of thinking) {
-    const node = renderThinkingEntry(entry, !sealed);
-    if (node) list.appendChild(node);
-  }
-
   if (shouldCollapseProcessGroups(liveTurn, sealed)) {
+    // Thinking and prose keep their chronological spots; tools and notices
+    // collapse into one group anchored where the first of them happened.
     const group = document.createElement("details");
     group.className = "assistant-process-group";
     group.open = false;
     const summary = document.createElement("summary");
-    summary.textContent = processGroupSummary(tools, notices, t);
+    summary.textContent = processGroupSummary(processTools, notices, t);
     group.appendChild(summary);
     const body = document.createElement("div");
     body.className = "assistant-process-group-body";
-    renderGroupedTools(body, tools, notices, sealed);
+    renderGroupedTools(body, processTools, notices, sealed, childTools);
     group.appendChild(body);
-    list.appendChild(group);
+    let groupInserted = false;
+    for (const entry of timeline) {
+      if (entry.kind === "tool" && childToolIds.has(entry.id)) continue;
+      const inPlace = entry.kind === "thinking" || entry.kind === "text" ||
+        (entry.kind === "tool" && isTodoTool(entry.name));
+      if (inPlace) {
+        const node = renderTimelineEntry(entry, sealed, entryCtx);
+        if (node) list.appendChild(node);
+      } else if (!groupInserted) {
+        list.appendChild(group);
+        groupInserted = true;
+      }
+    }
+    if (!groupInserted && (processTools.length || notices.length)) list.appendChild(group);
   } else {
     for (const entry of timeline) {
-      if (entry.kind === "thinking") continue;
-      const node = renderTimelineEntry(entry, sealed);
+      if (entry.kind === "tool" && childToolIds.has(entry.id)) continue;
+      const node = renderTimelineEntry(entry, sealed, entryCtx);
       if (node) list.appendChild(node);
     }
   }
 
   if (diffEntries.length) {
-    const changes = renderChangedFilesGroup(diffEntries, sealed);
+    const changes = renderChangedFilesGroup(diffEntries, sealed, {
+      sessionId,
+      turnId: liveTurn.turnId || null,
+    });
     if (changes) list.appendChild(changes);
   }
 
@@ -515,13 +565,13 @@ function renderProcess(root, liveTurn, ctx = {}) {
   if (sessionId) reapplySessionInlineDiffs(sessionId, liveTurn.turnId || null);
 }
 
-function renderGroupedTools(container, tools, notices, sealed) {
+function renderGroupedTools(container, tools, notices, sealed, childTools) {
   const catGroups = groupToolsByCategory(tools);
   const categories = [...catGroups.entries()].filter(([, items]) => items.length);
 
   if (categories.length <= 1) {
     for (const entry of tools) {
-      container.appendChild(renderToolRowFromEntry(entry, sealed));
+      container.appendChild(renderToolWithChildren(entry, sealed, childTools));
     }
   } else {
     for (const [category, categoryTools] of categories) {
@@ -535,7 +585,7 @@ function renderGroupedTools(container, tools, notices, sealed) {
       const body = document.createElement("div");
       body.className = "assistant-process-subgroup-body";
       for (const entry of categoryTools) {
-        body.appendChild(renderToolRowFromEntry(entry, sealed));
+        body.appendChild(renderToolWithChildren(entry, sealed, childTools));
       }
       sub.appendChild(body);
       container.appendChild(sub);
@@ -548,7 +598,7 @@ function renderGroupedTools(container, tools, notices, sealed) {
   }
 }
 
-function renderChangedFilesGroup(entries, sealed) {
+function renderChangedFilesGroup(entries, sealed, ctx = {}) {
   const details = document.createElement("details");
   details.className = "assistant-process-group assistant-process-group-changes";
   details.open = false;
@@ -565,21 +615,128 @@ function renderChangedFilesGroup(entries, sealed) {
     list.appendChild(row);
   }
   details.appendChild(list);
+  if (ctx.sessionId && ctx.turnId) {
+    const revertBtn = document.createElement("button");
+    revertBtn.className = "assistant-turn-revert-btn";
+    revertBtn.textContent = t("timeline.revertTurn");
+    revertBtn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      const confirmed = await confirmDialog({
+        title: t("timeline.revertTurnConfirmTitle"),
+        message: t("timeline.revertTurnConfirmMessage", { count: entries.length }),
+        danger: true,
+      });
+      if (!confirmed) return;
+      const result = await window.assistantClient.revertTurn(ctx.sessionId, ctx.turnId);
+      if (result?.ok) {
+        showToast(t("timeline.revertTurnDone"), "success");
+      } else {
+        const failedNames = (result?.failed || []).map((item) => item.filePath).join(", ");
+        showToast(t("timeline.revertTurnFailed", { files: failedNames }), "error");
+      }
+    });
+    details.appendChild(revertBtn);
+  }
   return details;
 }
 
-function renderTimelineEntry(entry, sealed) {
+function renderTimelineEntry(entry, sealed, ctx = {}) {
   if (entry.kind === "thinking") return renderThinkingEntry(entry, !sealed);
-  if (entry.kind === "tool") return renderToolRowFromEntry(entry, sealed);
+  if (entry.kind === "tool") {
+    if (isTodoTool(entry.name)) {
+      return renderTodoEntry(entry, entry.id === ctx.latestTodoId);
+    }
+    return renderToolWithChildren(entry, sealed, ctx.childTools);
+  }
   if (entry.kind === "notice") return renderNoticeEntry(entry);
+  if (entry.kind === "text") return renderInlineTextEntry(entry);
   return null;
+}
+
+// Subagent (Task) tool calls nest their own tool activity inside the parent
+// card instead of flooding the main timeline.
+function buildChildToolsMap(toolEntries = []) {
+  const ids = new Set(toolEntries.map((entry) => entry.id));
+  const children = new Map();
+  for (const entry of toolEntries) {
+    const parent = entry.parentToolUseId;
+    if (!parent || !ids.has(parent) || parent === entry.id) continue;
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push(entry);
+  }
+  return children;
+}
+
+function renderToolWithChildren(entry, sealed, childTools) {
+  const row = renderToolRowFromEntry(entry, sealed);
+  const children = childTools?.get(entry.id);
+  if (row && children?.length) {
+    const nest = document.createElement("div");
+    nest.className = "assistant-subagent-tools";
+    for (const child of children) {
+      const childRow = renderToolWithChildren(child, sealed, childTools);
+      if (childRow) nest.appendChild(childRow);
+    }
+    row.appendChild(nest);
+  }
+  return row;
+}
+
+// The model's TodoWrite plan renders as a checklist card. Only the newest
+// snapshot stays expanded — earlier ones collapse to a progress line.
+function renderTodoEntry(entry, isLatest = true) {
+  const todos = parseTodoEntries(entry);
+  if (!todos.length) return null;
+  const details = document.createElement("details");
+  details.className = "assistant-todo-card";
+  details.dataset.toolId = entry.id || "";
+  details.open = isLatest;
+  const summary = document.createElement("summary");
+  summary.className = "assistant-todo-summary";
+  const done = todos.filter((todo) => todo.status === "completed").length;
+  summary.textContent = t("todo.summary", { done, total: todos.length });
+  details.appendChild(summary);
+  const list = document.createElement("ul");
+  list.className = "assistant-todo-items";
+  renderTodoItems(list, todos);
+  details.appendChild(list);
+  return details;
+}
+
+function renderTodoItems(list, todos) {
+  if (!list) return;
+  list.replaceChildren();
+  for (const todo of todos) {
+    const item = document.createElement("li");
+    item.className = `assistant-todo-item is-${todo.status}`;
+    const icon = todo.status === "completed" ? "✓" : todo.status === "in_progress" ? "▸" : "○";
+    item.textContent = `${icon} ${todo.content}`;
+    list.appendChild(item);
+  }
+}
+
+// Prose the assistant wrote before its final answer (between tool calls).
+// These blocks are sealed by the time they reach the renderable timeline,
+// so their content is immutable — render once, no patching.
+function renderInlineTextEntry(entry) {
+  const text = String(entry.text || "").trim();
+  if (!text) return null;
+  const node = document.createElement("div");
+  node.className = "assistant-turn-inline-text markdown-body";
+  node.dataset.textId = entry.id || "";
+  renderStreamingMarkdown(node, text);
+  return node;
 }
 
 function renderThinkingEntry(entry, live = false) {
   if (!entry.text?.trim()) return null;
+  // A sealed thinking block collapses even while the turn is still live —
+  // only the block that is actively streaming stays forced open.
+  const isLive = live && entry.status !== "done";
   const details = document.createElement("details");
   details.className = "assistant-process-thinking-group";
-  if (live) {
+  details.dataset.thinkingId = entry.id || "";
+  if (isLive) {
     details.classList.add("is-live");
     details.open = true;
   } else if (entry.collapsed !== false) {
@@ -587,7 +744,7 @@ function renderThinkingEntry(entry, live = false) {
   }
   const summary = document.createElement("summary");
   summary.className = "assistant-process-thinking-summary";
-  summary.textContent = thinkingSummaryLabel(entry.text, live);
+  summary.textContent = thinkingSummaryLabel(entry, isLive);
   details.appendChild(summary);
   const pre = document.createElement("pre");
   pre.className = "assistant-process-thinking";
@@ -605,19 +762,30 @@ function renderNoticeEntry(entry) {
   return row;
 }
 
-function renderToolRowFromEntry(entry, sealed = false) {
-  const tool = toolEntryToRenderTool(entry);
-  return renderToolRow(tool, toolRowPreview(entry), sealed);
+// A finished tool shows how long it ran (sub-100ms reads as instant — omit).
+function toolDurationSuffix(entry) {
+  if (entry.status !== "done" && entry.status !== "failed") return "";
+  const start = Number(entry.startTs);
+  const end = Number(entry.ts);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 100) return "";
+  return ` · ${((end - start) / 1000).toFixed(1)}s`;
 }
 
-function renderToolRow(tool, previewText = "", sealed = false) {
+function renderToolRowFromEntry(entry, sealed = false) {
+  const tool = toolEntryToRenderTool(entry);
+  return renderToolRow(tool, toolRowPreview(entry), sealed, toolDurationSuffix(entry));
+}
+
+function renderToolRow(tool, previewText = "", sealed = false, statusSuffix = "") {
   const row = document.createElement("details");
   row.className = "assistant-tool-row";
   row.dataset.toolId = tool.id || "";
   const filePath = toolFilePath(tool);
   if (filePath) row.dataset.toolFilePath = filePath;
   row.dataset.status = tool.status || "";
-  row.open = !sealed && tool.status === "running";
+  // Tool details stay collapsed by default — the preview line tells the story;
+  // users expand on click and restoreDetailsOpenState keeps their choice.
+  row.open = false;
   const summary = document.createElement("summary");
   summary.className = "assistant-tool-summary";
   const head = document.createElement("div");
@@ -627,7 +795,7 @@ function renderToolRow(tool, previewText = "", sealed = false) {
   cmd.textContent = previewText || toolPreview(tool);
   const status = document.createElement("span");
   status.className = "assistant-tool-status";
-  status.textContent = toolStatusLabel(tool);
+  status.textContent = toolStatusLabel(tool) + statusSuffix;
   head.append(cmd, status);
   summary.appendChild(head);
   row.appendChild(summary);
@@ -759,6 +927,9 @@ function renderPrompts(root, sessionId, liveTurn) {
 }
 
 function permissionCard(sessionId, item) {
+  if (String(item.toolName || "") === "ExitPlanMode") {
+    return planApprovalCard(sessionId, item);
+  }
   const card = promptCard(
     t("permission.approveActionTitle"),
     item.toolName || item.title || t("turn.permission.toolFallback"),
@@ -768,6 +939,35 @@ function permissionCard(sessionId, item) {
     button(t("permission.approve"), async () => window.assistantClient.respondPermission(sessionId, item.requestId, true)),
     button(t("permission.deny"), async () => window.assistantClient.respondPermission(sessionId, item.requestId, false)),
     button(t("permission.approveRememberShort"), async () => window.assistantClient.respondPermission(sessionId, item.requestId, true, { remember: true })),
+  );
+  card.appendChild(actions);
+  return card;
+}
+
+// Plan-mode review: the model finished planning and asks to start executing.
+// Show the plan itself, not a generic tool-permission prompt.
+function planApprovalCard(sessionId, item) {
+  const card = promptCard(t("plan.readyTitle"), "");
+  const planText = String(item.planPreview || item.input?.plan || "").trim();
+  if (planText) {
+    const body = document.createElement("div");
+    body.className = "assistant-plan-body markdown-body";
+    renderStreamingMarkdown(body, planText);
+    if (item.planPreviewTruncated) {
+      const more = document.createElement("p");
+      more.className = "assistant-plan-truncated";
+      more.textContent = t("plan.truncated");
+      body.appendChild(more);
+    }
+    card.appendChild(body);
+  }
+  const actions = actionRow();
+  actions.append(
+    button(t("plan.approve"), async () => window.assistantClient.respondPermission(sessionId, item.requestId, true)),
+    button(t("plan.keepPlanning"), async () =>
+      window.assistantClient.respondPermission(sessionId, item.requestId, false, {
+        message: t("plan.keepPlanningMessage"),
+      })),
   );
   card.appendChild(actions);
   return card;

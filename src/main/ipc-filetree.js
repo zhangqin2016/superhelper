@@ -40,7 +40,55 @@ function classifyEntry(entryPath, stats) {
   };
 }
 
+const SEARCH_SKIP_DIRS = new Set(["node_modules", "dist", "build", "release", "bundles", "__pycache__"]);
+const SEARCH_MAX_DEPTH = 6;
+const SEARCH_SCAN_CAP = 5000;
+
+/** Bounded workspace file search for @-mentions in the composer. */
+function searchWorkspaceFiles(rootPath, query, limit = 20) {
+  const needle = String(query || "").toLowerCase();
+  const matches = [];
+  let scanned = 0;
+  const walk = (dir, depth) => {
+    if (depth > SEARCH_MAX_DEPTH || scanned > SEARCH_SCAN_CAP || matches.length >= limit) return;
+    let names;
+    try {
+      names = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const dirent of names) {
+      if (matches.length >= limit || scanned > SEARCH_SCAN_CAP) return;
+      scanned += 1;
+      if (dirent.name.startsWith(".")) continue;
+      const fullPath = path.join(dir, dirent.name);
+      if (dirent.isDirectory()) {
+        if (!SEARCH_SKIP_DIRS.has(dirent.name)) walk(fullPath, depth + 1);
+        continue;
+      }
+      const relPath = path.relative(rootPath, fullPath);
+      if (!needle || relPath.toLowerCase().includes(needle)) {
+        matches.push({ relPath, absPath: fullPath, name: dirent.name });
+      }
+    }
+  };
+  walk(rootPath, 0);
+  return matches;
+}
+
 function registerFileTreeHandlers() {
+  ipcMain.handle("filetree:search-files", (_event, { rootPath, query, limit }) => {
+    try {
+      if (!rootPath || typeof rootPath !== "string") return { ok: false, error: "INVALID_PATH" };
+      const stat = fs.statSync(rootPath);
+      if (!stat.isDirectory()) return { ok: false, error: "NOT_A_DIRECTORY" };
+      const capped = Math.min(Number(limit) || 20, 50);
+      return { ok: true, files: searchWorkspaceFiles(rootPath, query, capped) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.handle("filetree:list-dir", async (_event, { dirPath }) => {
     try {
       if (!dirPath || typeof dirPath !== "string") {
@@ -107,10 +155,13 @@ function registerFileTreeHandlers() {
     return { ok: true };
   });
 
-  ipcMain.handle("filetree:reject-change", async (_event, { sessionId, filePath, content }) => {
+  ipcMain.handle("filetree:reject-change", async (_event, { sessionId, filePath, content, status }) => {
     try {
       if (content != null) {
         fs.writeFileSync(filePath, content, "utf-8");
+      } else if (status === "added" && fs.existsSync(filePath)) {
+        // Rejecting an added file means it should not exist.
+        fs.unlinkSync(filePath);
       }
       const { removeAcceptedDiff } = require("./diff-capture");
       removeAcceptedDiff(sessionId, filePath);
@@ -119,6 +170,13 @@ function registerFileTreeHandlers() {
       return { ok: false, error: err.message };
     }
   });
+
+  ipcMain.handle("filetree:revert-turn", (_event, { sessionId, turnId }) => {
+    const { revertTurnChanges } = require("./diff-capture");
+    const results = revertTurnChanges(sessionId, turnId);
+    const failed = results.filter((item) => !item.ok);
+    return { ok: failed.length === 0, results, failed };
+  });
 }
 
-module.exports = { registerFileTreeHandlers, isTextFile };
+module.exports = { registerFileTreeHandlers, isTextFile, searchWorkspaceFiles };

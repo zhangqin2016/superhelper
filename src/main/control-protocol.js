@@ -104,10 +104,35 @@ function buildControlResponse(requestId, decision) {
 }
 
 /**
+ * "批准并记住" must survive runner restarts: rules go to localSettings (the
+ * app-managed config dir), not the in-process session scope.
+ * Shape follows the CLI PermissionUpdate schema (addRules).
  * @param {string} toolName
  */
 function buildRememberAllowPermissions(toolName) {
-  return [{ type: "allow", tool_name: toolName }];
+  return [{
+    type: "addRules",
+    rules: [{ toolName }],
+    behavior: "allow",
+    destination: "localSettings",
+  }];
+}
+
+/**
+ * CLI-suggested permission updates default to session scope; promote them to
+ * localSettings so "remember" actually persists. Explicit settings
+ * destinations are respected.
+ * @param {unknown[]} suggestions
+ */
+function withPersistentDestination(suggestions) {
+  return suggestions.map((suggestion) => {
+    if (!suggestion || typeof suggestion !== "object") return suggestion;
+    const destination =
+      suggestion.destination && suggestion.destination !== "session"
+        ? suggestion.destination
+        : "localSettings";
+    return { ...suggestion, destination };
+  });
 }
 
 function buildControlCancelRequest(requestId) {
@@ -236,6 +261,7 @@ module.exports = {
   needsUserApproval,
   buildControlResponse,
   buildRememberAllowPermissions,
+  withPersistentDestination,
   buildControlCancelRequest,
   buildUpdateEnvironmentVariablesRequest,
   buildControlAck,

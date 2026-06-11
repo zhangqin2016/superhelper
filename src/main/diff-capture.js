@@ -91,18 +91,24 @@ function emitDiffForTool(sessionId, toolId, ctx, turnId = null) {
   const dels = diff.filter((h) => h.type === "del").length;
 
   const resolvedTurnId = turnId ? String(turnId) : "_orphan";
+  // Several edits to one file in a turn must keep the FIRST before-state so
+  // revert restores the turn checkpoint, not a mid-turn snapshot. The diff
+  // itself still shows the latest change.
+  const turnMap = ensureTurnMap(sessionId, resolvedTurnId);
+  const existing = turnMap.get(filePath);
+  const checkpointContent = existing ? existing.originalContent : originalContent;
   const diffEntry = {
     turnId: resolvedTurnId,
     toolId,
     filePath,
     fileName,
-    status,
+    status: existing?.status === "added" ? "added" : status,
     diff,
-    originalContent,
+    originalContent: checkpointContent,
     stats: { adds, dels },
   };
 
-  ensureTurnMap(sessionId, resolvedTurnId).set(filePath, diffEntry);
+  turnMap.set(filePath, diffEntry);
 
   const { sendToRenderer } = require("./ipc-utils");
   sendToRenderer(ctx.mainWindow, "assistant:file-diff", { sessionId, ...diffEntry });
@@ -187,11 +193,36 @@ function removeAcceptedDiff(sessionId, filePath) {
   return false;
 }
 
+/**
+ * Restore every file the turn touched to its checkpoint state (the content
+ * captured before the turn's first write). Added files are deleted. Reports
+ * per-file results instead of failing the whole revert on one error.
+ */
+function revertTurnChanges(sessionId, turnId) {
+  const entries = getDiffsForTurn(sessionId, turnId);
+  const results = [];
+  for (const entry of entries) {
+    try {
+      if (entry.originalContent == null) {
+        if (fs.existsSync(entry.filePath)) fs.unlinkSync(entry.filePath);
+      } else {
+        fs.writeFileSync(entry.filePath, entry.originalContent, "utf-8");
+      }
+      removeAcceptedDiff(sessionId, entry.filePath);
+      results.push({ filePath: entry.filePath, ok: true });
+    } catch (error) {
+      results.push({ filePath: entry.filePath, ok: false, error: String(error?.message || error) });
+    }
+  }
+  return results;
+}
+
 module.exports = {
   captureBeforeSnapshot,
   emitDiffForTool,
   clearDiffsForSession,
   removeAcceptedDiff,
+  revertTurnChanges,
   getDiffsForTurn,
   isFileWriteTool,
   extractFilePath,

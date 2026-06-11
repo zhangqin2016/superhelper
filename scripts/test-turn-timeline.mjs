@@ -6,7 +6,10 @@ const {
   activityFromProcessPayload,
   activityFromEngineNotice,
   appendTimelineNotice,
+  appendTimelineText,
   buildTimelineFromLegacy,
+  closeOpenThinkingBlocks,
+  closeStreamingBlocks,
   isMeaningfulActivityLabel,
   setActivityLabel,
   upsertTimelineThinking,
@@ -112,6 +115,115 @@ if (state.timeline.length !== 2) {
 }
 if (state.activityLabel !== "Read src/a.js") {
   throw new Error(`running tool should become activity label: ${state.activityLabel}`);
+}
+
+// Interleaved thinking must produce ordered blocks (think → act → think again),
+// matching the engine's content-block stream. A merged single blob would lose
+// the chronological narrative the turn view renders.
+const interleaved = { timeline: [], activityLabel: null, tools: new Map() };
+upsertTimelineThinking(interleaved, "first ", 2000);
+upsertTimelineThinking(interleaved, "thought", 2001);
+upsertTimelineTool(interleaved, {
+  id: "t1",
+  name: "Read",
+  input: { file_path: "a.js" },
+  status: "running",
+}, 2002);
+upsertTimelineThinking(interleaved, "second thought", 2003);
+if (interleaved.timeline.length !== 3) {
+  throw new Error(`interleaved thinking must create separate blocks: ${JSON.stringify(interleaved.timeline)}`);
+}
+const [firstThink, , secondThink] = interleaved.timeline;
+if (firstThink.text !== "first thought") {
+  throw new Error(`thinking deltas must append within an open block: ${firstThink.text}`);
+}
+if (firstThink.status !== "done") {
+  throw new Error("starting a tool must seal the open thinking block");
+}
+if (firstThink.id !== "think_1" || secondThink.id !== "think_2") {
+  throw new Error(`thinking blocks need stable ids for DOM patching: ${firstThink.id}/${secondThink.id}`);
+}
+if (secondThink.status !== "streaming") {
+  throw new Error("latest thinking block must stay open while streaming");
+}
+
+// Out-of-band notices (e.g. apiRetry) are not content blocks and must not
+// split a thinking block in two.
+appendTimelineNotice(interleaved, { code: "apiRetry", level: "warning", panel: true, detail: "retrying" }, 2004);
+upsertTimelineThinking(interleaved, " continues", 2005);
+if (interleaved.timeline.filter((entry) => entry.kind === "thinking").length !== 2) {
+  throw new Error("a notice must not split the open thinking block");
+}
+if (secondThink.text !== "second thought continues") {
+  throw new Error(`thinking must continue across notices: ${secondThink.text}`);
+}
+
+// message_stop / finalize close the open block; the next delta starts a new one.
+closeOpenThinkingBlocks(interleaved, 2006);
+if (secondThink.status !== "done") {
+  throw new Error("closeOpenThinkingBlocks must seal streaming blocks");
+}
+upsertTimelineThinking(interleaved, "third", 2007);
+if (interleaved.timeline.filter((entry) => entry.kind === "thinking").length !== 3) {
+  throw new Error("a delta after close must open a fresh thinking block");
+}
+
+// Assistant prose is a content block too: the timeline must keep the full
+// think → answer → act → answer order so live view and archive share one model.
+const blockTurn = { timeline: [], activityLabel: null, tools: new Map() };
+upsertTimelineThinking(blockTurn, "plan", 3000);
+appendTimelineText(blockTurn, "Here is ", 3001);
+appendTimelineText(blockTurn, "the answer.", 3002);
+if (blockTurn.timeline.length !== 2) {
+  throw new Error(`expected thinking + text blocks: ${JSON.stringify(blockTurn.timeline)}`);
+}
+if (blockTurn.timeline[0].status !== "done") {
+  throw new Error("a text delta must seal the open thinking block");
+}
+const textBlock = blockTurn.timeline[1];
+if (textBlock.kind !== "text" || textBlock.id !== "text_1" || textBlock.text !== "Here is the answer.") {
+  throw new Error(`text deltas must merge into one streaming block: ${JSON.stringify(textBlock)}`);
+}
+upsertTimelineThinking(blockTurn, "more thought", 3003);
+if (textBlock.status !== "done") {
+  throw new Error("a thinking delta must seal the open text block");
+}
+upsertTimelineTool(blockTurn, { id: "t9", name: "Bash", input: { command: "ls" }, status: "running" }, 3004);
+appendTimelineText(blockTurn, "Done.", 3005);
+const blockKinds = blockTurn.timeline.map((entry) => entry.kind).join(",");
+if (blockKinds !== "thinking,text,thinking,tool,text") {
+  throw new Error(`blocks must stay in chronological order: ${blockKinds}`);
+}
+if (blockTurn.timeline[4].id !== "text_2") {
+  throw new Error(`second prose block needs its own id: ${blockTurn.timeline[4].id}`);
+}
+closeStreamingBlocks(blockTurn, 3006);
+if (blockTurn.timeline.some((entry) => entry.status === "streaming")) {
+  throw new Error("closeStreamingBlocks must seal every open block");
+}
+
+// Subagent child tools carry their parent id so the renderer can nest them
+// under the Task card instead of flooding the main timeline.
+const subagentTurn = { timeline: [], activityLabel: null, tools: new Map() };
+upsertTimelineTool(subagentTurn, { id: "task_1", name: "Task", input: { prompt: "explore" }, status: "running" }, 4000);
+upsertTimelineTool(subagentTurn, {
+  id: "read_1",
+  name: "Read",
+  input: { file_path: "a.js" },
+  status: "running",
+  parentToolUseId: "task_1",
+}, 4001);
+const childEntry = subagentTurn.timeline.find((entry) => entry.id === "read_1");
+if (childEntry?.parentToolUseId !== "task_1") {
+  throw new Error(`tool entries must keep parentToolUseId: ${JSON.stringify(childEntry)}`);
+}
+// Tool entries carry startTs so the UI can show per-tool duration once done.
+if (childEntry.startTs !== 4001) {
+  throw new Error(`tool entries must record their start time: ${childEntry.startTs}`);
+}
+upsertTimelineTool(subagentTurn, { id: "read_1", status: "done", result: { content: "ok" } }, 5500);
+if (childEntry.startTs !== 4001 || childEntry.ts !== 5500) {
+  throw new Error(`tool completion must keep startTs and update ts: ${childEntry.startTs}/${childEntry.ts}`);
 }
 
 const legacy = buildTimelineFromLegacy({

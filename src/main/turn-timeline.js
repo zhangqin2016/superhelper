@@ -102,17 +102,76 @@ function ensureTimeline(target) {
   return target.timeline;
 }
 
+function lastThinkingEntry(timeline) {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    if (timeline[index]?.kind === "thinking") return timeline[index];
+  }
+  return null;
+}
+
+// Thinking blocks interleave with tool blocks (think → act → think again).
+// Deltas append to the latest still-streaming thinking block; tool entries and
+// explicit closes seal it so the next delta starts a new block. Notices do not
+// split a block — they are out-of-band, not content blocks.
 function upsertTimelineThinking(target, text, ts = Date.now()) {
   const piece = String(text || "");
   if (!piece) return;
+  closeStreamingBlocks(target, ts, ["text"]);
   const timeline = ensureTimeline(target);
-  const existing = timeline.find((entry) => entry.kind === "thinking");
-  if (existing) {
+  const existing = lastThinkingEntry(timeline);
+  if (existing && existing.status === "streaming") {
     existing.text = `${existing.text || ""}${piece}`;
     existing.ts = ts;
     return;
   }
-  timeline.push({ kind: "thinking", ts, text: piece, collapsed: true });
+  const count = timeline.filter((entry) => entry.kind === "thinking").length;
+  timeline.push({
+    kind: "thinking",
+    id: `think_${count + 1}`,
+    ts,
+    startTs: ts,
+    text: piece,
+    collapsed: true,
+    status: "streaming",
+  });
+}
+
+function closeStreamingBlocks(target, ts = Date.now(), kinds = ["thinking", "text"]) {
+  if (!Array.isArray(target?.timeline)) return;
+  for (const entry of target.timeline) {
+    if (kinds.includes(entry?.kind) && entry.status === "streaming") {
+      entry.status = "done";
+      entry.ts = ts;
+    }
+  }
+}
+
+function closeOpenThinkingBlocks(target, ts = Date.now()) {
+  closeStreamingBlocks(target, ts, ["thinking"]);
+}
+
+// Assistant prose is a content block like any other: a text delta seals the
+// open thinking block, and a later thinking/tool block seals the text block,
+// so the timeline keeps the think → act → answer order.
+function appendTimelineText(target, text, ts = Date.now()) {
+  const piece = String(text || "");
+  if (!piece) return;
+  closeStreamingBlocks(target, ts, ["thinking"]);
+  const timeline = ensureTimeline(target);
+  const last = timeline[timeline.length - 1];
+  if (last?.kind === "text" && last.status === "streaming") {
+    last.text = `${last.text || ""}${piece}`;
+    last.ts = ts;
+    return;
+  }
+  const count = timeline.filter((entry) => entry.kind === "text").length;
+  timeline.push({
+    kind: "text",
+    id: `text_${count + 1}`,
+    ts,
+    text: piece,
+    status: "streaming",
+  });
 }
 
 function upsertTimelineTool(target, tool, ts = Date.now()) {
@@ -120,16 +179,19 @@ function upsertTimelineTool(target, tool, ts = Date.now()) {
   const timeline = ensureTimeline(target);
   let entry = timeline.find((item) => item.kind === "tool" && item.id === tool.id);
   if (!entry) {
+    closeStreamingBlocks(target, ts);
     entry = {
       kind: "tool",
       id: tool.id,
       ts,
+      startTs: ts,
       name: tool.name || "Tool",
       preview: toolPreview(tool),
       input: tool.input || {},
       partialJson: tool.partialJson || "",
       status: tool.status || "running",
       result: tool.result || null,
+      parentToolUseId: tool.parentToolUseId || null,
     };
     if (entry.input && Object.keys(entry.input).length > 0) {
       entry.preview = toolPreview({ ...entry, partialJson: "" });
@@ -209,9 +271,11 @@ function buildTimelineFromLegacy(state = {}) {
   if (state.thinkingText?.trim()) {
     timeline.push({
       kind: "thinking",
+      id: "think_1",
       ts,
       text: state.thinkingText.trim(),
       collapsed: true,
+      status: "done",
     });
   }
   for (const tool of state.tools?.values?.() || state.tools || []) {
@@ -256,7 +320,10 @@ module.exports = {
   activityFromEngineNotice,
   activityFromProcessPayload,
   appendTimelineNotice,
+  appendTimelineText,
   buildTimelineFromLegacy,
+  closeOpenThinkingBlocks,
+  closeStreamingBlocks,
   ensureTimeline,
   isMeaningfulActivityLabel,
   resetTimelineState,

@@ -258,9 +258,8 @@ async function rejectFileChange(sessionId, filePath) {
     ? sessionDiffs.get(sessionId)?.get(turnId)?.get(filePath)
     : null;
   if (!entry) return;
-  if (entry.originalContent != null) {
-    await window.assistantClient.rejectChange(sessionId, filePath, entry.originalContent);
-  }
+  // Added files have no original content — rejecting them deletes the file.
+  await window.assistantClient.rejectChange(sessionId, filePath, entry.originalContent, entry.status);
   removeLocalDiff(sessionId, filePath);
   renderDiffPanel(sessionId);
 }

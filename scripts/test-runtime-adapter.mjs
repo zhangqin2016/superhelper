@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { CliEventAdapter } = require("../src/main/cli-event-adapter.js");
+const { CliEventAdapter } = require("../src/main/runtime/adapters/claude-cli-adapter.js");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");

@@ -1,7 +1,7 @@
 "use strict";
 
 const { normalizeClaudeEvent } = require("./claude-event-normalizer");
-const { backgroundActivityFromEvent } = require("./runtime/runtime-activity");
+const { backgroundActivityFromEvent } = require("../runtime-activity");
 
 const WARNING_ACTION_KINDS = new Set([
   "protocol_warning",

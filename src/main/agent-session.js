@@ -13,6 +13,7 @@ const {
   needsUserApproval,
   buildControlResponse,
   buildRememberAllowPermissions,
+  withPersistentDestination,
   buildControlCancelRequest,
   buildUpdateEnvironmentVariablesRequest,
   buildControlAck,
@@ -25,8 +26,8 @@ const {
 } = require("./control-protocol");
 const {
   normalizeAskUserQuestions,
-} = require("./claude-event-normalizer");
-const { CliEventAdapter } = require("./cli-event-adapter");
+} = require("./runtime/adapters/claude-event-normalizer");
+const { CliEventAdapter } = require("./runtime/adapters/claude-cli-adapter");
 const {
   compactCommand,
   isShellTool,
@@ -847,7 +848,7 @@ class AgentSession extends EventEmitter {
       if (decision.remember && pending.toolName) {
         allowDecision.updatedPermissions =
           Array.isArray(pending.suggestions) && pending.suggestions.length
-            ? pending.suggestions
+            ? withPersistentDestination(pending.suggestions)
             : buildRememberAllowPermissions(pending.toolName);
       }
       this._writeControlLine(buildControlResponse(requestId, allowDecision));

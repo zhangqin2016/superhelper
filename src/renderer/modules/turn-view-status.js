@@ -11,10 +11,26 @@ export function thinkingSummaryPreview(text = "", max = THINKING_SUMMARY_MAX) {
   return `…${normalized.slice(-(max - 1))}`;
 }
 
-export function buildThinkingSummaryLabel(text, live, translate) {
-  if (!live) return translate("turn.thinking.title");
-  const preview = thinkingSummaryPreview(text);
+function thinkingDurationSeconds(block) {
+  const start = Number(block.startTs);
+  const end = Number(block.ts);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return Math.round((end - start) / 1000);
+}
+
+// Accepts a thinking timeline entry; a plain string still works for callers
+// that only have text (no duration shown in that case).
+export function buildThinkingSummaryLabel(entry, live, translate) {
+  const block = typeof entry === "string" ? { text: entry } : entry || {};
+  if (!live) {
+    const seconds = thinkingDurationSeconds(block);
+    if (seconds >= 1) return translate("turn.thinking.doneSummary", { seconds });
+    return translate("turn.thinking.title");
+  }
+  const preview = thinkingSummaryPreview(block.text);
   if (!preview) return translate("turn.thinking.title");
+  const seconds = thinkingDurationSeconds(block);
+  if (seconds >= 1) return translate("turn.thinking.liveSummaryTimed", { seconds, preview });
   return translate("turn.thinking.liveSummary", { preview });
 }
 
@@ -49,7 +65,13 @@ export function buildLiveStatusText(liveTurn, translate, now = Date.now()) {
   const activity = resolveLiveStatusActivity(liveTurn, translate);
   const seconds = liveElapsedSeconds(liveTurn, now);
   if (seconds < 1) return activity;
-  return translate("turn.status.live", { seconds, activity });
+  const parts = [translate("turn.status.live", { seconds, activity })];
+  const usage = resolveTurnUsage(liveTurn);
+  if (usage?.total > 0) {
+    parts.push(translate("turn.footer.tokens", { count: formatTokenCount(usage.total) }));
+  }
+  parts.push(translate("turn.status.escHint"));
+  return parts.join(" · ");
 }
 
 function resolveTurnUsage(liveTurn) {
