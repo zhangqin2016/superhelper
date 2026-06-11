@@ -141,6 +141,11 @@ class ProjectManager {
     return project;
   }
 
+  /** True when this path is already a registered workspace. */
+  hasPath(projectPath) {
+    return this.projects.some((p) => p.path === projectPath);
+  }
+
   switchTo(projectId) {
     const project = this.find(projectId);
     if (!project) return false;

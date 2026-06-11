@@ -45,6 +45,7 @@
   "toast.exportPackFailed": "Export failed",
   "toast.importPackDone": "Imported as new workspace “{name}” — opened for you",
   "toast.importPackFailed": "Import failed",
+  "toast.folderAlreadyWorkspace": "That folder is already a workspace — switched to it",
   "toast.importPackMissingSkills": "Imported. This workspace also needs skills: {skills} — get them from the Skill Center and enable them.",
   "ctx.archive": "Archive",
 

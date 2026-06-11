@@ -260,13 +260,30 @@ export function updateProjectTreeChrome() {
   updateSessionMetaCounts();
 }
 
+const CTX_MENU_CSS = "position:fixed;z-index:10000;min-width:160px;padding:6px;background:#1e2140;border:1px solid #2a2d50;border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,0.5);";
+
+// Place a context menu at (x, y) but flip/clamp it back inside the viewport —
+// menus opened on the last list item used to overflow below the window and
+// get clipped.
+function placeContextMenu(menu, x, y) {
+  document.body.appendChild(menu);
+  const { width, height } = menu.getBoundingClientRect();
+  const margin = 8;
+  let left = x;
+  let top = y;
+  if (left + width > window.innerWidth - margin) left = Math.max(margin, x - width);
+  if (top + height > window.innerHeight - margin) top = Math.max(margin, y - height);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
 function showProjectMenu(e, project) {
   const existing = document.querySelector(".ctx-menu");
   if (existing) existing.remove();
 
   const menu = document.createElement("div");
   menu.className = "ctx-menu";
-  menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;z-index:10000;min-width:160px;padding:6px;background:#1e2140;border:1px solid #2a2d50;border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,0.5);`;
+  menu.style.cssText = CTX_MENU_CSS;
 
   const items = [
     {
@@ -333,7 +350,7 @@ function showProjectMenu(e, project) {
     menu.appendChild(btn);
   }
 
-  document.body.appendChild(menu);
+  placeContextMenu(menu, e.clientX, e.clientY);
 
   const closeMenu = (ev) => {
     if (!menu.contains(ev.target)) {
@@ -350,7 +367,7 @@ function showSessionMenu(x, y, sessionId, title) {
 
   const menu = document.createElement("div");
   menu.className = "ctx-menu";
-  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:10000;min-width:160px;padding:6px;background:#1e2140;border:1px solid #2a2d50;border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,0.5);`;
+  menu.style.cssText = CTX_MENU_CSS;
 
   const rename = document.createElement("button");
   rename.className = "ctx-menu-item";
@@ -385,7 +402,7 @@ function showSessionMenu(x, y, sessionId, title) {
   });
 
   menu.append(rename, archive, del);
-  document.body.appendChild(menu);
+  placeContextMenu(menu, x, y);
 
   const closeMenu = (e) => {
     if (!menu.contains(e.target)) {
@@ -465,6 +482,16 @@ async function addFolderWorkspace() {
   const result = await window.assistantClient.addProject();
   if (!result.ok) return;
 
+  // Re-adding an existing folder just switches to it — say so, skip the
+  // rename prompt (the workspace already has a name).
+  if (result.existed) {
+    await refreshState();
+    renderProjectTree();
+    updateTopbarTitles();
+    showToast(t("toast.folderAlreadyWorkspace"), "info");
+    return;
+  }
+
   const project = (result.state?.projects || []).find(
     (p) => p.id === result.state.activeProjectId,
   );
@@ -490,7 +517,7 @@ export function initAddProject() {
     const rect = e.currentTarget.getBoundingClientRect();
     const menu = document.createElement("div");
     menu.className = "ctx-menu";
-    menu.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.bottom + 4}px;z-index:10000;min-width:180px;padding:6px;background:#1e2140;border:1px solid #2a2d50;border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,0.5);`;
+    menu.style.cssText = CTX_MENU_CSS;
     for (const [label, action] of [
       [t("ctx.addFolder"), addFolderWorkspace],
       [t("ctx.importPack"), importWorkspacePack],
@@ -504,7 +531,7 @@ export function initAddProject() {
       });
       menu.appendChild(btn);
     }
-    document.body.appendChild(menu);
+    placeContextMenu(menu, rect.left, rect.bottom + 4);
     setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }), 0);
   });
 }

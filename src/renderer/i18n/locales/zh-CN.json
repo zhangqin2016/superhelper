@@ -45,6 +45,7 @@
   "toast.exportPackFailed": "导出失败",
   "toast.importPackDone": "已导入为新工作空间「{name}」，已为你打开",
   "toast.importPackFailed": "导入失败",
+  "toast.folderAlreadyWorkspace": "该文件夹已是工作空间，已为你切换过去",
   "toast.importPackMissingSkills": "已导入。此工作空间还需要技能：{skills}，请到技能中心获取后启用。",
   "ctx.archive": "归档",
 

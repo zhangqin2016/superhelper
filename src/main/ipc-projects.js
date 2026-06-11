@@ -17,9 +17,12 @@ function registerProjectHandlers(ctx) {
     if (result.canceled || result.filePaths.length === 0) {
       return { ok: false, canceled: true };
     }
+    // Adding an already-registered folder just switches to it — tell the
+    // renderer so it can say so instead of looking like nothing happened.
+    const alreadyExists = projectManager.hasPath(result.filePaths[0]);
     const project = projectManager.add(result.filePaths[0]);
-    sessionManager.create(project.id, defaultSessionTitle());
-    return { ok: true, state: projectManager.getAppState() };
+    if (!alreadyExists) sessionManager.create(project.id, defaultSessionTitle());
+    return { ok: true, state: projectManager.getAppState(), existed: alreadyExists, projectId: project.id };
   });
 
   ipcMain.handle("project:switch", (_event, projectId) => {
