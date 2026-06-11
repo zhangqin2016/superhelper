@@ -560,6 +560,9 @@ function manifestGuide(manifest) {
   const locale = getActiveLocale();
   const i18n = manifest.guideMd_i18n;
   if (i18n && i18n[locale]) return i18n[locale];
+  // Non-zh locales must never fall through to the Chinese base text —
+  // English is the universal fallback (zh keeps its base).
+  if (i18n && i18n.en && !String(locale).startsWith("zh")) return i18n.en;
   return manifest.guideMd || manifest.claudeMd || null;
 }
 
@@ -577,6 +580,10 @@ function resolveLocalized(manifest, field, defaultValue) {
   }
   const i18n = manifest[field + "_i18n"];
   if (i18n && typeof i18n === "object" && i18n[locale]) return i18n[locale];
+  // English before the (Chinese) base field for non-zh locales.
+  if (i18n && typeof i18n === "object" && i18n.en && !String(locale).startsWith("zh")) {
+    return i18n.en;
+  }
   return manifest[field] || defaultValue;
 }
 
