@@ -273,8 +273,19 @@ AgentSession：1825 → 1402 行（-23%），构造函数是一份"接线清单"
    魔数+非空结构校验（"工具成功"≠"文件没坏"）；Bash 输出里的
    `<generated_media>` 声明做兑现校验——声称生成的文件必须真实存在、
    非空、格式头与声明类型相符，否则带可执行指引喂回模型重做。
-2. 待做（按性价比）：workspace digest 注入 AGENT.md（复用
-   searchWorkspaceFiles）；"记住这个"→AGENT.md 约定区；技能运行时
+2. ✅ **自动学习三层**（对标 Cursor Memories / Devin Knowledge /
+   skill-creator，铁律：只提议不静默生效、来源可溯、作用域隔离）：
+   - **L2 仓库→知识**：工作区已有 `.cursorrules`/`AGENTS.md`/
+     `.windsurfrules` 吸收进会话 AGENT.md"工作区已有约定"区
+     （CLAUDE.md 跳过——引擎原生已读）；mtime 进缓存签名。
+   - **L1 会话→约定**：输入"记住：xxx" → 存 userData/learned-conventions/
+     <projectId>.md（带日期来源，绝不写用户目录）→ 注入"已学约定"区，
+     当场刷新在跑引擎的 guide。按项目隔离。
+   - **L3 任务→技能**：learned-skills-inbox 经 --add-dir 暴露给引擎，
+     AGENT.md 注入生成契约（SKILL.md+manifest 草稿）；turn 完成时扫描
+     注册为 source:"learned" **默认禁用**，时间线提示去 设置→技能 启用；
+     无效草稿留箱待修。`test-learned-context.mjs` 覆盖三层。
+3. 待做（按性价比）：workspace digest（文件树摘要）注入；技能运行时
    验收+重试；网关任务路由 + 按模型质量度量。
 
 ## 守门纪律

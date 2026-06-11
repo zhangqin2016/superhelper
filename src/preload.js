@@ -150,6 +150,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("filetree:unrevert-turn", { sessionId, turnId }),
   searchFiles: (rootPath, query, limit) =>
     ipcRenderer.invoke("filetree:search-files", { rootPath, query, limit }),
+  rememberConvention: (sessionId, text) =>
+    ipcRenderer.invoke("assistant:remember-convention", { sessionId, text }),
 
   onRuntimeEvents: (callback) => {
     ipcRenderer.on("assistant:runtime-events", (_event, batch) => callback(batch));

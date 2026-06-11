@@ -528,6 +528,11 @@ class AgentSession extends EventEmitter {
     if (opts.disallowedTools?.length) {
       args.push("--disallowed-tools", ...opts.disallowedTools);
     }
+    const { learnedSkillsInboxDir } = require("./learned-skills");
+    const skillInbox = learnedSkillsInboxDir();
+    if (fs.existsSync(skillInbox)) {
+      args.push("--add-dir", skillInbox);
+    }
     if (opts.stagingDir && fs.existsSync(opts.stagingDir)) {
       args.push("--add-dir", opts.stagingDir);
     }

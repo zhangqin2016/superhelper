@@ -170,7 +170,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     console.warn("[runner] could not create staging dir:", err.message);
   }
 
-  const configDir = skillManager.writeSessionAgentGuide(sessionId, session);
+  const configDir = skillManager.writeSessionAgentGuide(sessionId, session, project.path);
   const existingRunner = runnerPool.get(sessionId);
   const wasAlive = Boolean(existingRunner?.isAlive?.());
   if (session.agentResumeId) {

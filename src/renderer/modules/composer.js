@@ -180,6 +180,22 @@ export async function sendPrompt(opts = {}) {
     showToast(t("toast.sessionStopping"), "warning");
     return;
   }
+
+  // "记住：xxx" is a meta command: persist as a workspace convention instead
+  // of sending it to the model (it applies to every future session here).
+  const rememberMatch = text.match(/^(?:记住|remember)[:：]\s*(\S[\s\S]*)/);
+  if (rememberMatch && !files.length) {
+    const result = await window.assistantClient.rememberConvention(sessionId, rememberMatch[1].trim());
+    if (result?.ok) {
+      if (promptInput) promptInput.value = "";
+      sessionDrafts.delete(sessionId);
+      syncComposerInputHeight();
+      showToast(t("composer.conventionSaved"), "success");
+    } else {
+      showToast(t("composer.conventionSaveFailed"), "error");
+    }
+    return;
+  }
   if (!files.length) {
     const { hasPendingUserQuestion, respondPendingUserQuestionFromComposer, syncComposerForActiveSession } =
       await import("./message.js");

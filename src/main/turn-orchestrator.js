@@ -965,6 +965,23 @@ class TurnOrchestrator {
       tool.status = type === "turn.completed" ? "done" : "failed";
       upsertTimelineTool(state, tool, Date.now());
     }
+    if (type === "turn.completed") {
+      try {
+        const { collectLearnedSkillDrafts } = require("./learned-skills");
+        const { registerLearnedSkillDir } = require("./skill-manager");
+        const learned = collectLearnedSkillDrafts(registerLearnedSkillDir);
+        if (learned.length) {
+          appendTimelineNotice(state, {
+            code: "learnedSkillDraft",
+            level: "info",
+            panel: true,
+            done: true,
+          }, Date.now());
+        }
+      } catch (err) {
+        log.warn("learned skill draft collection failed: %s", err?.message || err);
+      }
+    }
     closeStreamingBlocks(state, Date.now());
     const assistant = String(payload.assistant || state.assistantText || "").trim();
     const record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });

@@ -179,6 +179,7 @@ function bootstrapAgent() {
 
   ensureDir(agentConfigDir());
   ensureDir(agentBinDir());
+  ensureDir(require("./learned-skills").learnedSkillsInboxDir());
 
   const { ensureRuntimeNodeShim } = require("./runtime-node");
   ensureRuntimeNodeShim();

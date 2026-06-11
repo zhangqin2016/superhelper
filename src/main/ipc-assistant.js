@@ -153,6 +153,22 @@ function registerAssistantHandlers(ctx) {
     return await turnOrchestrator.retryLastMessage(session.id);
   });
 
+  // L1 learned conventions: "记住：…" saves a per-project rule app-side and
+  // refreshes the session guide so the running engine picks it up.
+  ipcMain.handle("assistant:remember-convention", (_event, payload) => {
+    const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
+    const text = String(payload?.text || "").trim();
+    if (!sessionId || !text) return { ok: false, error: "INVALID_PAYLOAD" };
+    const session = sessionManager.findById(sessionId);
+    if (!session) return { ok: false, error: "NOT_FOUND" };
+    const { appendLearnedConvention } = require("./learned-context");
+    appendLearnedConvention(session.projectId, text);
+    const skillManager = require("./skill-manager");
+    const project = projectManager.find(session.projectId);
+    skillManager.writeSessionAgentGuide(sessionId, session, project?.path || "");
+    return { ok: true };
+  });
+
   ipcMain.handle("assistant:permission-response", (_event, payload) => {
     const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
     const requestId = payload?.requestId;

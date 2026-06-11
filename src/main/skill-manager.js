@@ -10,6 +10,8 @@ const skillRegistry = require("./skill-registry");
 const skillInstaller = require("./skill-installer");
 const skillPresets = require("./skill-presets");
 const { copyDirRecursiveShipSafe } = require("./ship-ignore");
+const learnedContext = require("./learned-context");
+const { buildCrystallizationSection } = require("./learned-skills");
 
 const MANDATORY_PLATFORM_SKILL_IDS = [
   "lily-workbench-rules",
@@ -452,16 +454,17 @@ function getActiveLocale() {
   }
 }
 
-function sessionGuideWriteSignature(session) {
+function sessionGuideWriteSignature(session, workspacePath = "") {
   const skillSig = resolveSessionSkillIds(session).slice().sort().join("\0");
   const locale = getActiveLocale();
-  return `${AGENT_GUIDE_STATIC_VERSION}\0${locale}\0${skillSig}`;
+  const learnedSig = learnedContext.contextSignature(session?.projectId, workspacePath);
+  return `${AGENT_GUIDE_STATIC_VERSION}\0${locale}\0${skillSig}\0${workspacePath}\0${learnedSig}`;
 }
 
-function writeSessionAgentGuide(sessionId, session) {
+function writeSessionAgentGuide(sessionId, session, workspacePath = "") {
   ensureRuntimeNodeShim();
   const configDir = sessionGuideDir(sessionId);
-  const signature = sessionGuideWriteSignature(session);
+  const signature = sessionGuideWriteSignature(session, workspacePath);
   if (sessionGuideWriteCache.get(sessionId) === signature) {
     return configDir;
   }
@@ -471,10 +474,45 @@ function writeSessionAgentGuide(sessionId, session) {
   ensureSessionConfigBridge(configDir);
   const guidePath = path.join(configDir, "AGENT.md");
   const locale = getActiveLocale();
-  fs.writeFileSync(guidePath, buildAgentGuideContent(skills, locale), "utf8");
+  const learnedSections =
+    learnedContext.buildWorkspaceRulesSection(workspacePath) +
+    learnedContext.buildLearnedSection(session?.projectId) +
+    buildCrystallizationSection();
+  fs.writeFileSync(guidePath, buildAgentGuideContent(skills, locale) + learnedSections, "utf8");
   syncEngineGuideMirror(guidePath, configDir);
   sessionGuideWriteCache.set(sessionId, signature);
   return configDir;
+}
+
+/**
+ * Register a learned-skill draft (L3 crystallization). Installed with source
+ * "learned" and enabled:false — enabling is the user's explicit action in
+ * Settings. Returns the final skill id, or null when rejected.
+ */
+function registerLearnedSkillDir(srcDir, manifest) {
+  const baseId = String(manifest?.id || "");
+  const id = baseId.startsWith("learned-") ? baseId : `learned-${baseId}`;
+  if (PROTECTED_BUNDLED_IDS.has(id) || PROTECTED_BUNDLED_IDS.has(baseId)) return null;
+  const target = installedSkillDir(id);
+  copyDirRecursiveShipSafe(srcDir, target);
+  if (id !== baseId) {
+    try {
+      const manifestPath = path.join(target, "skill.manifest.json");
+      const updated = { ...JSON.parse(fs.readFileSync(manifestPath, "utf8")), id };
+      fs.writeFileSync(manifestPath, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
+    } catch {
+      return null;
+    }
+  }
+  const state = loadSkillsState();
+  state.skills[id] = {
+    id,
+    enabled: false,
+    source: "learned",
+    installedVersion: String(manifest.version || "0.1.0"),
+  };
+  saveSkillsState();
+  return id;
 }
 
 function listSkillsForSessionPublic(session) {
@@ -1100,6 +1138,7 @@ module.exports = {
   readInstalledManifest,
   installedSkillDir,
   writeSessionAgentGuide,
+  registerLearnedSkillDir,
   resolveSessionSkillIds,
   normalizeSessionSkillSelection,
   syncInheritedSessionGuides,
