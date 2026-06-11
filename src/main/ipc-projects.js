@@ -127,6 +127,16 @@ function registerProjectHandlers(ctx) {
       filters: [{ name: "Lily Workspace Pack", extensions: ["zip"] }],
     });
     if (picked.canceled || !picked.filePaths.length) return { ok: false, canceled: true };
+
+    // Let the user choose where the new workspace lands; canceling falls back
+    // to the default workspace location.
+    const dirPick = await dialog.showOpenDialog(mainWindow, {
+      title: "选择导入到哪个文件夹",
+      properties: ["openDirectory", "createDirectory"],
+      buttonLabel: "导入到此处",
+    });
+    const chosenParent = dirPick.canceled || !dirPick.filePaths.length ? null : dirPick.filePaths[0];
+
     try {
       const fs = require("node:fs");
       const path = require("node:path");
@@ -135,8 +145,7 @@ function registerProjectHandlers(ctx) {
       const skillManager = require("./skill-manager");
 
       const zipBuffer = fs.readFileSync(picked.filePaths[0]);
-      // Land the new workspace next to existing ones, under a unique name.
-      const baseDir = path.dirname(projectManager.defaultPath || picked.filePaths[0]);
+      const baseDir = chosenParent || path.dirname(projectManager.defaultPath || picked.filePaths[0]);
       const { manifest: peek } = await require("./workspace-share").readPackManifest(zipBuffer);
       let targetDir = path.join(baseDir, peek.name || "imported-workspace");
       let n = 2;
