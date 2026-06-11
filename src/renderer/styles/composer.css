@@ -632,19 +632,6 @@ textarea {
 textarea:focus { border-color: var(--accent); }
 textarea:disabled { opacity: 0.5; }
 
-/* Grab strip on the input's top edge: drag up for a manual height,
-   double-click returns to auto-grow. */
-.composer-resize-handle {
-  height: 6px;
-  margin-bottom: -3px;
-  cursor: ns-resize;
-  border-radius: 3px;
-  z-index: 3;
-}
-
-.composer-resize-handle:hover {
-  background: var(--border);
-}
 
 .send-btn {
   min-width: 72px;
