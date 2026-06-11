@@ -12,7 +12,7 @@ function quoteArg(value) {
 
 function buildHookEntry(nodePath, scriptPath) {
   return {
-    matcher: "Edit|Write|MultiEdit",
+    matcher: "Edit|Write|MultiEdit|Bash",
     hooks: [
       {
         type: "command",

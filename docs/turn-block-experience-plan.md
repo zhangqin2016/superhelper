@@ -269,6 +269,10 @@ AgentSession：1825 → 1402 行（-23%），构造函数是一份"接线清单"
    （hook 绝不误报/阻塞）。`verification-hooks.js` 幂等写入全局
    settings.json（per-session 配置目录符号链接同一文件，一处生效），
    保留用户自配 hooks，应用升级路径变化时原位更新。bootstrap 接线。
+   **非代码产物同样覆盖**：Write 写出的 docx/xlsx/pptx/pdf/图片做
+   魔数+非空结构校验（"工具成功"≠"文件没坏"）；Bash 输出里的
+   `<generated_media>` 声明做兑现校验——声称生成的文件必须真实存在、
+   非空、格式头与声明类型相符，否则带可执行指引喂回模型重做。
 2. 待做（按性价比）：workspace digest 注入 AGENT.md（复用
    searchWorkspaceFiles）；"记住这个"→AGENT.md 约定区；技能运行时
    验收+重试；网关任务路由 + 按模型质量度量。
