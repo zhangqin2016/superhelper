@@ -243,8 +243,13 @@ SLO：事件到上屏 p95 < 50ms；流式期间无 >100ms 长帧；打断响应 
    （阻塞清除即放行 / 宽限到期强制放行 / 无阻塞快速放行）；
    抽离前先用 test-turn-settlement.mjs 锁语义，抽离后原测试不改全过。
 
-AgentSession 构造函数现在是一份"接线清单"。剩余主体：进程生命周期 +
-control 协议面——这正是 Agent SDK 迁移要替换的部分，拆分已为其减负。
+4. **ApprovalBroker**（approval-broker.js，第四刀）：权限/问题/hook 的
+   待决状态、UI 超时与全部 control 协议应答；normalizeQuestions 由宿主
+   注入（守门棘轮拦下了 broker 直接引 adapters 的初版——机制起效）。
+
+AgentSession：1825 → 1402 行（-23%），构造函数是一份"接线清单"。
+剩余主体：进程生命周期 + stream 事件分发（_handleNormalizedAction）——
+这正是 Agent SDK 迁移要替换的部分，拆分已为其减负。
 
 ## 守门纪律
 
