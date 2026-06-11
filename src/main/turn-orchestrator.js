@@ -61,6 +61,7 @@ function queueDispatchOptions(opts = {}) {
     scheduledTaskId: opts.scheduledTaskId || null,
     scheduledTaskRunId: opts.scheduledTaskRunId || null,
     scheduledTaskTitle: opts.scheduledTaskTitle || null,
+    permissionMode: opts.permissionMode || undefined,
   };
 }
 
@@ -684,7 +685,10 @@ class TurnOrchestrator {
 
     const ensured = opts.skipPreflight
       ? { runner: this.ctx.runnerPool.get(session.id) }
-      : ensureSessionRunner(this.ctx, session.id, { spawn: opts.spawnEngine !== false });
+      : ensureSessionRunner(this.ctx, session.id, {
+          spawn: opts.spawnEngine !== false,
+          permissionMode: opts.permissionMode,
+        });
     const runner = ensured.runner;
     if (!runner) {
       return {

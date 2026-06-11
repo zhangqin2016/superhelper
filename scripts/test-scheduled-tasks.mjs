@@ -252,12 +252,16 @@ try {
   await flushMicrotasks();
   assert(sent.length === 1, "due scheduled task should send exactly once");
   assert(sent[0].opts.scheduledTaskRunId, "scheduled run id should be passed into turn orchestrator");
+  // Unattended fire must be non-interactive — no permission prompt can hang it.
+  assert(sent[0].opts.permissionMode === "dontAsk",
+    `scheduled fire must force dontAsk, got: ${sent[0].opts.permissionMode}`);
   const runningRun = manager.runs.find((run) => run.id === sent[0].opts.scheduledTaskRunId);
   assert(runningRun?.status === "running", `run should be running: ${JSON.stringify(runningRun)}`);
   manager.completeRun("s1", runningRun.turnId, "turn.completed", {});
   assert(runningRun.status === "succeeded", `run should complete: ${JSON.stringify(runningRun)}`);
 
   const queuedManager = new ScheduledTaskManager();
+  const manualSent = [];
   queuedManager.load();
   queuedManager.start({
     sessionManager: {
@@ -267,7 +271,10 @@ try {
       find: () => ({ id: "p1", path: tempRoot }),
     },
     turnOrchestrator: {
-      sendUserMessage: async () => ({ ok: true, queued: true, itemId: "queue_1" }),
+      sendUserMessage: async (sessionId, text, files, opts) => {
+        manualSent.push({ opts });
+        return { ok: true, queued: true, itemId: "queue_1" };
+      },
     },
   });
   queuedManager.stop();
@@ -279,6 +286,9 @@ try {
   const queued = queuedManager.runNow(queuedTask.id);
   await flushMicrotasks();
   assert(queued.ok, `manual run should queue: ${JSON.stringify(queued)}`);
+  // Manual run-now: user is present, keep the session's mode (no override).
+  assert(manualSent[0]?.opts.permissionMode === undefined,
+    `manual run must not force a permission mode, got: ${manualSent[0]?.opts.permissionMode}`);
   const duplicate = queuedManager.runNow(queuedTask.id);
   assert(!duplicate.ok && duplicate.error === "ALREADY_RUNNING", `duplicate run should be blocked: ${JSON.stringify(duplicate)}`);
   const activeRemove = queuedManager.remove(queuedTask.id);

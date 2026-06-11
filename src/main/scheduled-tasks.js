@@ -875,6 +875,9 @@ class ScheduledTaskManager {
     task.updatedAt = nowIso();
     task.nextRunAt = computeNextRunAt(task.schedule, new Date());
     this.save();
+    // An unattended scheduled fire must never block on a permission prompt
+    // no one will answer — force "dontAsk" (no prompts; risky ops skipped).
+    // A manual "run now" keeps the session's mode because the user is present.
     const resultPromise = this.ctx.turnOrchestrator.sendUserMessage(task.sessionId, buildTaskPrompt(task), [], {
       recordUser: true,
       spawnEngine: true,
@@ -883,6 +886,7 @@ class ScheduledTaskManager {
       scheduledTaskId: task.id,
       scheduledTaskRunId: run.id,
       scheduledTaskTitle: task.title,
+      permissionMode: opts.manual ? undefined : "dontAsk",
     });
     Promise.resolve(resultPromise)
       .then((result) => {

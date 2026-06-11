@@ -189,7 +189,10 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     stagingDir,
     resumeSessionId,
     configDir,
-    permissionMode: require("./permission-settings").resolveSessionPermissionMode(session),
+    // An unattended (scheduled) run must not block on a permission prompt
+    // nobody will answer — callers can force a non-interactive mode.
+    permissionMode: opts.permissionMode
+      || require("./permission-settings").resolveSessionPermissionMode(session),
   };
 
   try {
