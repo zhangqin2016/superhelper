@@ -399,40 +399,58 @@ function showSessionMenu(x, y, sessionId, title) {
 // Export a workspace as a shareable capability pack: preview what travels
 // (privacy is an informed choice), confirm, then write the zip.
 async function shareWorkspacePack(project) {
-  const info = await window.assistantClient.exportPackPreview(project.id);
-  if (!info?.ok) {
-    showToast(t("toast.exportPackFailed"), "error");
-    return;
+  // A rejected IPC (e.g. main process not restarted after an update) must not
+  // vanish silently — surface it so "nothing happened" never happens.
+  try {
+    if (typeof window.assistantClient.exportPackPreview !== "function") {
+      showToast(t("toast.exportPackFailed"), "error");
+      return;
+    }
+    const info = await window.assistantClient.exportPackPreview(project.id);
+    if (!info?.ok) {
+      showToast(info?.error || t("toast.exportPackFailed"), "error");
+      return;
+    }
+    const { confirmDialog } = await import("./confirm-dialog.js");
+    const sizeMb = (info.preview.totalBytes / (1024 * 1024)).toFixed(1);
+    const skills = info.requiredSkills?.length
+      ? `\n${t("pack.requiredSkills", { count: info.requiredSkills.length })}`
+      : "";
+    const confirmed = await confirmDialog({
+      title: t("pack.exportConfirmTitle"),
+      message: t("pack.exportConfirmBody", { count: info.preview.fileCount, size: sizeMb }) + skills,
+      confirmText: t("pack.exportConfirmOk"),
+    });
+    if (!confirmed) return;
+    const result = await window.assistantClient.exportPack(project.id);
+    if (result?.ok) showToast(t("toast.exportPackDone"), "success");
+    else if (!result?.canceled) showToast(result?.error || t("toast.exportPackFailed"), "error");
+  } catch (err) {
+    showToast(err?.message || t("toast.exportPackFailed"), "error");
   }
-  const { confirmDialog } = await import("./confirm-dialog.js");
-  const sizeMb = (info.preview.totalBytes / (1024 * 1024)).toFixed(1);
-  const skills = info.requiredSkills?.length
-    ? `\n${t("pack.requiredSkills", { count: info.requiredSkills.length })}`
-    : "";
-  const confirmed = await confirmDialog({
-    title: t("pack.exportConfirmTitle"),
-    message: t("pack.exportConfirmBody", { count: info.preview.fileCount, size: sizeMb }) + skills,
-    confirmText: t("pack.exportConfirmOk"),
-  });
-  if (!confirmed) return;
-  const result = await window.assistantClient.exportPack(project.id);
-  if (result?.ok) showToast(t("toast.exportPackDone"), "success");
-  else if (!result?.canceled) showToast(result?.error || t("toast.exportPackFailed"), "error");
 }
 
 async function importWorkspacePack() {
-  const result = await window.assistantClient.importPack();
-  if (!result?.ok) {
-    if (!result?.canceled) showToast(result?.error || t("toast.importPackFailed"), "error");
-    return;
-  }
-  await refreshState();
-  renderProjectTree();
-  updateTopbarTitles();
-  if (result.missingSkills?.length) {
-    showToast(t("toast.importPackMissingSkills", { skills: result.missingSkills.join(", ") }), "warning");
-  } else {
-    showToast(t("toast.importPackDone"), "success");
+  try {
+    if (typeof window.assistantClient.importPack !== "function") {
+      showToast(t("toast.importPackFailed"), "error");
+      return;
+    }
+    const result = await window.assistantClient.importPack();
+    if (!result?.ok) {
+      if (!result?.canceled) showToast(result?.error || t("toast.importPackFailed"), "error");
+      return;
+    }
+    await refreshState();
+    renderProjectTree();
+    updateTopbarTitles();
+    if (result.missingSkills?.length) {
+      showToast(t("toast.importPackMissingSkills", { skills: result.missingSkills.join(", ") }), "warning");
+    } else {
+      showToast(t("toast.importPackDone"), "success");
+    }
+  } catch (err) {
+    showToast(err?.message || t("toast.importPackFailed"), "error");
   }
 }
 
