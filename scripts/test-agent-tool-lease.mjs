@@ -1024,4 +1024,32 @@ if (!stuckDone || stuckRunner.busy || !stuckRunner._turnSettled) {
   throw new Error("tool turn must settle after message_stop even without a result event");
 }
 
+// Regression: the engine goes silent right AFTER a tool returns — no summary
+// message, no result event (upstream call wedged). The turn must still settle
+// from the tool_result grace point, not lock for 30 minutes.
+const silentAfterToolRunner = createTestSession("sess_silent_after_tool");
+silentAfterToolRunner.on("message-stop-grace", () => silentAfterToolRunner.completeFromHost("message_stop_grace"));
+let silentAfterToolDone = false;
+silentAfterToolRunner.on("done", () => { silentAfterToolDone = true; });
+startSyntheticTurn(silentAfterToolRunner);
+line(silentAfterToolRunner, {
+  type: "stream_event",
+  event: {
+    type: "content_block_start",
+    index: 0,
+    content_block: { type: "tool_use", id: "tool_silent_after", name: "Write" },
+  },
+});
+line(silentAfterToolRunner, {
+  type: "user",
+  message: {
+    content: [{ type: "tool_result", tool_use_id: "tool_silent_after", content: [{ type: "text", text: "file written" }] }],
+  },
+});
+// No message_stop, no result — just silence after the tool finished.
+await new Promise((resolve) => setTimeout(resolve, 40));
+if (!silentAfterToolDone || silentAfterToolRunner.busy || !silentAfterToolRunner._turnSettled) {
+  throw new Error("a turn that goes silent after a tool returns must still settle");
+}
+
 console.log("agent-tool-lease: ok");

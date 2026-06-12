@@ -1201,6 +1201,13 @@ class AgentSession extends EventEmitter {
       case "tool_result": {
         this._finishToolLease(action.id);
         this._markStreamActivity();
+        // The tool is done. If nothing is pending now, the engine should
+        // either start a summary message or send `result` next — arm the
+        // grace fallback so a silent hang here (upstream call wedged after
+        // the tool returned) still settles instead of locking for 30 min.
+        // _armMessageStopCompletionTimer only arms when no work is pending,
+        // and any further stream output cancels it, so live work is safe.
+        this._armMessageStopCompletionTimer();
         this._maybeCompleteDeferredTurnResult();
         break;
       }
