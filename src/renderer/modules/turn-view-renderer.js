@@ -1,4 +1,4 @@
-import { renderMarkdown, renderStreamingMarkdown } from "./markdown.js";
+import { renderMarkdown, renderStreamingMarkdown, renderMarkdownWithCache } from "./markdown.js";
 import { t } from "../i18n/index.js";
 import { showToast } from "./toast.js";
 import { confirmDialog } from "./confirm-dialog.js";
@@ -666,7 +666,7 @@ function renderTimelineEntry(entry, sealed, ctx = {}) {
     return renderToolWithChildren(entry, sealed, ctx.childTools);
   }
   if (entry.kind === "notice") return renderNoticeEntry(entry);
-  if (entry.kind === "text") return renderInlineTextEntry(entry);
+  if (entry.kind === "text") return renderInlineTextEntry(entry, !sealed);
   return null;
 }
 
@@ -735,13 +735,18 @@ function renderTodoItems(list, todos) {
 // Prose the assistant wrote before its final answer (between tool calls).
 // These blocks are sealed by the time they reach the renderable timeline,
 // so their content is immutable — render once, no patching.
-function renderInlineTextEntry(entry) {
+function renderInlineTextEntry(entry, live = false) {
   const text = String(entry.text || "").trim();
   if (!text) return null;
   const node = document.createElement("div");
   node.className = "assistant-turn-inline-text markdown-body";
   node.dataset.textId = entry.id || "";
-  renderStreamingMarkdown(node, text);
+  // Sealed (history) prose must get the full render — syntax highlight,
+  // interactive enhancements — same as the answer bubble. The lightweight
+  // streaming path is only for the still-streaming live block. Regression:
+  // before interleaved rendering all prose went through the full path.
+  if (live) renderStreamingMarkdown(node, text);
+  else renderMarkdownWithCache(node, text);
   return node;
 }
 
