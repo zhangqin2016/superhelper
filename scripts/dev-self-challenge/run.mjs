@@ -96,6 +96,11 @@ async function main() {
         errorOutput: "",
         durationMs: Date.now() - execStart,
       };
+    } else if (!executor.hasEngine()) {
+      // No real engine available — skip execution gracefully
+      console.log("[challenge] skip: engine not available (install lily-workbench CLI)");
+      store.releaseLock();
+      return;
     } else {
       execResult = await executor.execute({
         prompt: challenge.prompt,

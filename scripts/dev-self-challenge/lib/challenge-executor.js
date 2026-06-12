@@ -34,6 +34,21 @@ class ChallengeExecutor {
   }
 
   /**
+   * Whether a real engine (not the echo fallback) is available.
+   * @returns {boolean}
+   */
+  hasEngine() {
+    if (this._command) return true;
+    for (const candidate of ENGINE_CANDIDATES) {
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return true;
+      } catch { /* continue */ }
+    }
+    return false;
+  }
+
+  /**
    * Resolve the engine CLI binary path.
    * Checks ENGINE_CANDIDATES paths; falls back to "echo" if none found.
    * @returns {string}
