@@ -281,6 +281,20 @@ class AgentSession extends EventEmitter {
     );
   }
 
+  // After the CLI emits message_stop (assistant message finished), a turn
+  // with no *currently* pending work should settle even if it used tools
+  // earlier — otherwise a missing/late `result` event leaves the UI locked
+  // while the files are already written. Unlike _canAutoCompleteTurn this
+  // ignores the historical hadBlockingToolUse flag.
+  _canSettleAfterMessageStop() {
+    return (
+      this.busy &&
+      !this._turnSettled &&
+      !this._hasPendingRuntimeBlockers() &&
+      Date.now() >= this._backgroundActivityUntil
+    );
+  }
+
   _hasBlockingTurnWork() {
     return (
       this._leaseTracker.pendingCount() > 0 ||
@@ -410,9 +424,9 @@ class AgentSession extends EventEmitter {
 
   _armMessageStopCompletionTimer() {
     this._clearMessageStopTimer();
-    if (!this._canAutoCompleteTurn()) return;
+    if (!this._canSettleAfterMessageStop()) return;
     this._timers.arm("messageStop", AgentSession.MESSAGE_STOP_GRACE_MS, () => {
-      if (!this._canAutoCompleteTurn()) return;
+      if (!this._canSettleAfterMessageStop()) return;
       this.emit("message-stop-grace", {
         output: this.collectedOutput.trim(),
       });
@@ -433,6 +447,9 @@ class AgentSession extends EventEmitter {
 
   _markStreamActivity() {
     if (!this.busy || this._turnSettled) return;
+    // Fresh stream output means the turn isn't actually finished — cancel the
+    // message_stop grace fallback; a later message_stop re-arms it.
+    this._clearMessageStopTimer();
     this._clearWaitNoticeTimers();
     this._armTurnResponseTimer();
     this._armIdleCompletionTimer();

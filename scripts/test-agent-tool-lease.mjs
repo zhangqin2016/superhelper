@@ -994,4 +994,34 @@ if (!streamReport || streamReport.outputTokens !== 33) {
   throw new Error(`stream message_delta usage should be reported once: ${JSON.stringify(reportedUsage)}`);
 }
 
+// Regression: a turn that used (and finished) a write tool but never gets a
+// `result` event must still settle after message_stop — otherwise the UI
+// stays locked while the files are already written. Before the fix the
+// message_stop fallback was gated on hadBlockingToolUse and never fired.
+const stuckRunner = createTestSession("sess_stuck_after_message_stop");
+stuckRunner.on("message-stop-grace", () => stuckRunner.completeFromHost("message_stop_grace"));
+let stuckDone = false;
+stuckRunner.on("done", () => { stuckDone = true; });
+startSyntheticTurn(stuckRunner);
+line(stuckRunner, {
+  type: "stream_event",
+  event: {
+    type: "content_block_start",
+    index: 0,
+    content_block: { type: "tool_use", id: "tool_stuck_write", name: "Write" },
+  },
+});
+line(stuckRunner, {
+  type: "user",
+  message: {
+    content: [{ type: "tool_result", tool_use_id: "tool_stuck_write", content: [{ type: "text", text: "file written" }] }],
+  },
+});
+// Assistant message ends, but NO result event ever arrives.
+line(stuckRunner, { type: "stream_event", event: { type: "message_stop" } });
+await new Promise((resolve) => setTimeout(resolve, 40));
+if (!stuckDone || stuckRunner.busy || !stuckRunner._turnSettled) {
+  throw new Error("tool turn must settle after message_stop even without a result event");
+}
+
 console.log("agent-tool-lease: ok");
