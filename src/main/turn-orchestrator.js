@@ -304,6 +304,7 @@ class TurnOrchestrator {
       return;
     }
 
+    try {
     switch (type) {
       case "turn.accepted":
         state.phase = "streaming";
@@ -541,6 +542,9 @@ class TurnOrchestrator {
             detail: `Unhandled runtime draft ${type}`,
           },
         });
+    }
+    } catch (err) {
+      log.warn("_applyDraft handler error: %s", err?.message || err);
     }
   }
 
@@ -996,7 +1000,7 @@ class TurnOrchestrator {
           failed: type === "turn.failed",
         });
       }
-      this.turnArchive.commit(sessionId, record);
+      try { this.turnArchive.commit(sessionId, record); } catch (err) { log.warn("turn archive commit failed: %s", err?.message || err); }
     }
     state.terminalEmitted = true;
     this._emit(sessionId, type, {
@@ -1006,7 +1010,7 @@ class TurnOrchestrator {
       toolsSummary: { count: state.tools.size },
     });
     if (scheduledTaskRunId) {
-      this.ctx.scheduledTaskManager?.completeRun?.(sessionId, completedTurnId, type, payload);
+      try { this.ctx.scheduledTaskManager?.completeRun?.(sessionId, completedTurnId, type, payload); } catch (err) { log.warn("scheduled task completeRun failed: %s", err?.message || err); }
     }
     state.phase = "idle";
     state.turnId = null;
@@ -1030,7 +1034,9 @@ class TurnOrchestrator {
     const state = this._state(sessionId);
     if (state.phase !== "idle" || state.queue.length === 0) return;
     const next = state.queue[0];
-    const result = await this._tryStartQueuedItem(sessionId, next);
+    let result;
+    try {
+    result = await this._tryStartQueuedItem(sessionId, next);
     if (result?.retry) return;
     if (!result?.ok) {
       state.queue.shift();
@@ -1044,6 +1050,11 @@ class TurnOrchestrator {
     this._emitQueue(sessionId);
     if (result.failed && state.phase === "idle" && state.queue.length > 0) {
       void this._dispatchNext(sessionId);
+    }
+    } catch (err) {
+      log.warn("_dispatchNext error: %s", err?.message || err);
+      state.queue.shift();
+      this._emitQueue(sessionId);
     }
   }
 
