@@ -158,8 +158,15 @@ class AgentSession extends EventEmitter {
     }
   }
 
-  /** Pure-text fallback if CLI never sends `result`; tool turns are completed by result/error/timeout. */
-  static QUIESCE_MS = 30_000;
+  /**
+   * Pure-text fallback if the CLI never sends `result`. Generous on purpose:
+   * a model pausing between messages while generating long content (e.g. a
+   * full chapter) legitimately goes quiet for tens of seconds, and completing
+   * early would DROP the content it is about to stream. A genuinely lost
+   * `result` is rare and still recovers within this window; any resumed
+   * output cancels the timer, so the window only bites on permanent silence.
+   */
+  static QUIESCE_MS = 180_000;
   static INTERRUPT_FALLBACK_MS = 2_000;
   static PERMISSION_UI_TIMEOUT_MS = 55_000;
   static TURN_RESPONSE_TIMEOUT_MS = 90_000;
@@ -171,8 +178,10 @@ class AgentSession extends EventEmitter {
   static TURN_ABSOLUTE_MAX_MS = 30 * 60_000;
   /** Poll while deferred CLI `result` waits for pending tools/permissions. */
   static DEFERRED_TURN_RESULT_GRACE_MS = 1_500;
-  /** Wait after message_stop for a trailing `result` event before pure-text fallback. */
-  static MESSAGE_STOP_GRACE_MS = 30_000;
+  /** Wait after message_stop for a trailing `result` (or a follow-up message)
+   * before the pure-text fallback. Generous so a multi-message turn — e.g.
+   * "OK, continuing" then a long chapter — is never cut between messages. */
+  static MESSAGE_STOP_GRACE_MS = 180_000;
   /** Long-running foreground shell commands need visible user feedback. */
   static TOOL_LONG_TASK_NOTICE_MS = 30_000;
   static TOOL_LONG_TASK_HEARTBEAT_MS = 5 * 60_000;
