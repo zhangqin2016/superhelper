@@ -202,7 +202,12 @@ class ScheduledTaskManager {
         continue;
       }
       if (Date.parse(task.nextRunAt) > now) continue;
-      await this._runTask(task, { scheduled: true });
+      try {
+        await this._runTask(task, { scheduled: true });
+      } catch (err) {
+        // Prevent one failed task from blocking the tick loop
+        console.warn("[scheduled-tasks] tick error for %s: %s", task.id, err?.message || err);
+      }
     }
   }
 
