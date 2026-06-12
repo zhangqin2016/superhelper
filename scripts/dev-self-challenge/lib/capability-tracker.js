@@ -160,6 +160,14 @@ class CapabilityTracker {
     };
 
     stored[key] = entry;
+
+    // Ensure all default dimensions are preserved in storage
+    for (const [dk, dv] of Object.entries(DEFAULT_DIMENSIONS)) {
+      if (!stored[dk]) {
+        stored[dk] = { score: dv.score, description: dv.description };
+      }
+    }
+
     this._writeStored(stored);
 
     return { key, ...entry };
