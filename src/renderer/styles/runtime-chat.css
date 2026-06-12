@@ -369,6 +369,10 @@
   z-index: 60;
 }
 
+.conversation-find-bar[hidden] {
+  display: none;
+}
+
 .conversation-find-input {
   width: 200px;
   padding: 4px 8px;

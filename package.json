@@ -42,8 +42,7 @@
     "purge:macos-junk": "node scripts/purge-macos-junk.mjs",
     "build:runtime:win": "node scripts/build-runtime-bundle.mjs --platform win32-x64",
     "dist:all": "npm run dist:mac && npm run dist:win",
-    "challenge": "node scripts/dev-self-challenge/run.mjs",
-    "challenge:dry": "CHALLENGE_DRY_RUN=1 node scripts/dev-self-challenge/run.mjs",
+
     "test:bench": "node scripts/bench-replay.mjs && npx electron scripts/bench-replay-renderer.cjs",
     "test:runtime-fixtures": "node scripts/test-claude-runtime-fixtures.mjs",
     "test:runtime-diagnostics": "node scripts/test-runtime-diagnostics.mjs"

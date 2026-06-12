@@ -117,6 +117,7 @@ function registerProjectHandlers(ctx) {
         exportedAt: new Date().toISOString(),
       });
       fs.writeFileSync(result.filePath, buf);
+      shell.showItemInFolder(result.filePath);
       return { ok: true, filePath: result.filePath };
     } catch (err) {
       return { ok: false, error: err.message };

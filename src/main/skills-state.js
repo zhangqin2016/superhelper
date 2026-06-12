@@ -3,6 +3,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { PROJECT_ROOT, userDataPath, agentConfigDir } = require("./config");
+const { ensureRuntimeNodeShim, resolveRuntimeNodePath } = require("./runtime-node");
+const { copyDirRecursiveShipSafe } = require("./ship-ignore");
 const MANDATORY_PLATFORM_SKILL_IDS = [
   "lily-workbench-rules",
   "lily-context-rules",
