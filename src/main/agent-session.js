@@ -3,6 +3,7 @@
 const { EventEmitter } = require("node:events");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
+const { LineBuffer } = require("./line-buffer");
 const {
   appendTextSegment,
   sanitizeError,
@@ -66,7 +67,7 @@ class AgentSession extends EventEmitter {
     /** @type {import('child_process').ChildProcess | null} */
     this.process = null;
     this.cwd = null;
-    this.lineBuf = "";
+    this._lineBuffer = new LineBuffer();
     this.busy = false;
     this.collectedOutput = "";
     this._backgroundActivityUntil = 0;
@@ -574,7 +575,7 @@ class AgentSession extends EventEmitter {
       windowsHide: true,
     });
 
-    this.lineBuf = "";
+    this._lineBuffer.reset();
     this.collectedOutput = "";
     this._turnSettled = true;
     this._cliInitialized = false;
@@ -802,7 +803,7 @@ class AgentSession extends EventEmitter {
     if (!this.process) {
       this.cwd = null;
       this.spawnOptions = null;
-      this.lineBuf = "";
+      this._lineBuffer.reset();
       this.collectedOutput = "";
       this._lastActualUsage = null;
       this._usageRecordedForTurn = false;
@@ -821,7 +822,7 @@ class AgentSession extends EventEmitter {
     this._cliInitialized = false;
     this.cwd = null;
     this.spawnOptions = null;
-    this.lineBuf = "";
+    this._lineBuffer.reset();
     this.collectedOutput = "";
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
@@ -886,10 +887,7 @@ class AgentSession extends EventEmitter {
   }
 
   _onStdout(chunk) {
-    this.lineBuf += chunk.toString();
-    const lines = this.lineBuf.split("\n");
-    this.lineBuf = lines.pop() || "";
-    for (const line of lines) {
+    for (const line of this._lineBuffer.push(chunk)) {
       this._handleLine(line);
     }
   }
@@ -977,9 +975,8 @@ class AgentSession extends EventEmitter {
   }
 
   _flushLineBuffer() {
-    const trimmed = this.lineBuf.trim();
-    this.lineBuf = "";
-    if (trimmed) this._handleLine(trimmed);
+    const line = this._lineBuffer.flush();
+    if (line) this._handleLine(line);
   }
 
   _writeControlLine(payload) {
