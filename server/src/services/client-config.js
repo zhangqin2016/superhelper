@@ -111,6 +111,7 @@ function runtimeEnvFromServerConfig(serverConfig) {
   const env = {};
   if (serverConfig.dashscopeApiKey) {
     env.DASHSCOPE_API_KEY = serverConfig.dashscopeApiKey;
+    env.VISION_MODEL = serverConfig.visionModel || "qwen3.7-plus";
     env.DASHSCOPE_IMAGE_MODEL = serverConfig.dashscopeImageModel || "qwen-image-2.0-pro";
     env.DASHSCOPE_VIDEO_MODEL = serverConfig.dashscopeVideoModel || "wan2.7-t2v";
     env.DASHSCOPE_TTS_MODEL = serverConfig.dashscopeTtsModel || "cosyvoice-v3-flash";
@@ -244,10 +245,38 @@ export function isGatewayBaseUrl(baseUrl, env = {}) {
 
 export function withGatewayRuntimeConfig(effectiveConfig, request, input, options = {}) {
   const configCopy = JSON.parse(JSON.stringify(effectiveConfig || {}));
-  const presets = configCopy?.models?.presets;
-  if (!Array.isArray(presets)) return configCopy;
   const configuredBaseUrl = String(options.publicBaseUrl || "").trim().replace(/\/+$/, "");
   const base = configuredBaseUrl || requestBaseUrl(request);
+
+  // Route vision + web search through the server-side proxies when the server
+  // holds the key, so the client uses a short-lived token instead of a raw key.
+  // Picked up by vision-translator (DASHSCOPE_BASE_URL/VISION_API_KEY) and
+  // websearch.cjs (WEBSEARCH_IQS_API_URL/WEBSEARCH_IQS_API_KEY) via runtime.env.
+  if (base && (config.dashscopeApiKey || config.webSearchIqsApiKey)) {
+    const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
+    const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
+    if (config.dashscopeApiKey) {
+      env.DASHSCOPE_BASE_URL = `${base}/llm/vision`;
+      env.VISION_API_KEY = signModelGatewayToken({
+        deviceId: input.deviceId,
+        licenseId: input.licenseId || "",
+        providerId: "vision",
+      });
+    }
+    if (config.webSearchIqsApiKey) {
+      env.WEBSEARCH_IQS_API_URL = `${base}/llm/search`;
+      env.WEBSEARCH_IQS_API_KEY = signModelGatewayToken({
+        deviceId: input.deviceId,
+        licenseId: input.licenseId || "",
+        providerId: "search",
+      });
+    }
+    runtime.env = env;
+    configCopy.runtime = runtime;
+  }
+
+  const presets = configCopy?.models?.presets;
+  if (!Array.isArray(presets)) return configCopy;
   for (const preset of presets) {
     const env = preset?.env && typeof preset.env === "object" ? preset.env : null;
     if (!env) continue;

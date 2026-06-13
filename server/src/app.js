@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { publicRoutes } from "./routes/public.js";
 import { adminRoutes } from "./routes/admin.js";
 import { modelGatewayRoutes } from "./services/model-gateway.js";
+import { mediaGatewayRoutes } from "./services/media-gateway.js";
 import { ensureEnvManagedConfigProfile } from "./services/client-config.js";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -30,6 +31,8 @@ function checkRateLimit(request) {
 export async function buildApp() {
   const app = Fastify({
     logger: true,
+    // Vision requests carry base64 images; default 1MB is too small.
+    bodyLimit: 26214400,
   });
 
   await app.register(cors, {
@@ -58,6 +61,7 @@ export async function buildApp() {
   await app.register(publicRoutes);
   await app.register(adminRoutes);
   await app.register(modelGatewayRoutes);
+  await app.register(mediaGatewayRoutes);
 
   return app;
 }
