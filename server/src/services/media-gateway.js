@@ -1,5 +1,25 @@
 import { config } from "../config.js";
 import { verifyModelGatewayToken } from "./model-gateway/auth.js";
+import { listModelGatewayProviders } from "./model-gateway/providers.js";
+
+// Resolve a service credential from the DB-backed gateway registry (reserved
+// ids "vision" / "search"), falling back to server env for back-compat. Keeping
+// these in the same registry means all keys live in the DB and are managed in
+// the one admin panel.
+function resolveCredential(id, fallbackKey, fallbackBaseUrl) {
+  let apiKey = "";
+  let baseUrl = "";
+  try {
+    const provider = listModelGatewayProviders()[id];
+    if (provider) {
+      apiKey = provider.apiKey || "";
+      baseUrl = provider.baseUrl || "";
+    }
+  } catch {
+    // registry unavailable — fall back to env below
+  }
+  return { apiKey: apiKey || fallbackKey || "", baseUrl: baseUrl || fallbackBaseUrl || "" };
+}
 
 // Server-side proxies for vision (image recognition) and web search, so their
 // API keys stay on the server. Clients call these with a short-lived gateway
@@ -31,16 +51,17 @@ async function handleVision(request, reply) {
   if (!token.ok) {
     return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
   }
-  if (!config.dashscopeApiKey) {
+  const { apiKey, baseUrl } = resolveCredential("vision", config.dashscopeApiKey, config.visionUpstreamBaseUrl);
+  if (!apiKey) {
     return reply.code(503).send({ error: { type: "configuration_error", message: "vision key not configured" } });
   }
-  const url = `${config.visionUpstreamBaseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
   let upstream;
   try {
     upstream = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.dashscopeApiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(request.body && typeof request.body === "object" ? request.body : {}),
@@ -59,15 +80,16 @@ async function handleSearch(request, reply) {
   if (!token.ok) {
     return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
   }
-  if (!config.webSearchIqsApiKey) {
+  const { apiKey, baseUrl } = resolveCredential("search", config.webSearchIqsApiKey, config.webSearchIqsApiUrl);
+  if (!apiKey) {
     return reply.code(503).send({ error: { type: "configuration_error", message: "search key not configured" } });
   }
   let upstream;
   try {
-    upstream = await fetch(config.webSearchIqsApiUrl, {
+    upstream = await fetch(baseUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.webSearchIqsApiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         Accept: "application/json",
       },

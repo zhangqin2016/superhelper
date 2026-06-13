@@ -12,7 +12,7 @@ import {
 const providerSchema = z.object({
   id: z.string().min(2).max(80).regex(/^[a-z0-9._-]+$/i),
   label: z.string().max(160).optional().default(""),
-  type: z.enum(["anthropic", "openai"]).default("anthropic"),
+  type: z.enum(["anthropic", "openai", "vision", "search"]).default("anthropic"),
   baseUrl: z.string().max(400).optional().default(""),
   apiKey: z.string().max(2000).optional(), // omitted/empty on update = keep existing
   defaultModel: z.string().max(160).optional().default(""),

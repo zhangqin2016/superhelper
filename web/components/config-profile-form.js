@@ -23,11 +23,15 @@ const FALLBACK_TEMPLATE = {
   models: [],
 };
 
+// Reserved gateway ids that are credentials for vision / web-search proxies,
+// not chat models — never offer them in the chat model picker.
+const RESERVED_PROVIDER_IDS = new Set(["vision", "search"]);
+
 function providersToTemplates(providers) {
   // Accepts either the merged gateway summary (env + DB, has hasApiKey) or raw
   // DB rows (has enabled). Only providers that can actually serve are offered.
   return (providers || [])
-    .filter((p) => p && p.enabled !== false && p.hasApiKey !== false)
+    .filter((p) => p && p.enabled !== false && p.hasApiKey !== false && !RESERVED_PROVIDER_IDS.has(p.id))
     .map((p) => {
       const models = Array.isArray(p.models) ? p.models.filter(Boolean) : [];
       const def = p.default_model || p.model || models[0] || "";

@@ -252,10 +252,13 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   // holds the key, so the client uses a short-lived token instead of a raw key.
   // Picked up by vision-translator (DASHSCOPE_BASE_URL/VISION_API_KEY) and
   // websearch.cjs (WEBSEARCH_IQS_API_URL/WEBSEARCH_IQS_API_KEY) via runtime.env.
-  if (base && (config.dashscopeApiKey || config.webSearchIqsApiKey)) {
+  const gatewayProviders = listModelGatewayProviders();
+  const visionKey = gatewayProviders.vision?.apiKey || config.dashscopeApiKey;
+  const searchKey = gatewayProviders.search?.apiKey || config.webSearchIqsApiKey;
+  if (base && (visionKey || searchKey)) {
     const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
     const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
-    if (config.dashscopeApiKey) {
+    if (visionKey) {
       env.DASHSCOPE_BASE_URL = `${base}/llm/vision`;
       env.VISION_API_KEY = signModelGatewayToken({
         deviceId: input.deviceId,
@@ -263,7 +266,7 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
         providerId: "vision",
       });
     }
-    if (config.webSearchIqsApiKey) {
+    if (searchKey) {
       env.WEBSEARCH_IQS_API_URL = `${base}/llm/search`;
       env.WEBSEARCH_IQS_API_KEY = signModelGatewayToken({
         deviceId: input.deviceId,

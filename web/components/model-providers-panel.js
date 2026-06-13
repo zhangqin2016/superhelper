@@ -129,6 +129,8 @@ export function ModelProvidersPanel({ providers = [] }) {
           <select className={fieldClass()} name="type" value={draft.type} onChange={(e) => set("type", e.target.value)}>
             <option value="anthropic">anthropic</option>
             <option value="openai">openai</option>
+            <option value="vision">vision</option>
+            <option value="search">search</option>
           </select>
         </Field>
         <div className="md:col-span-2">
