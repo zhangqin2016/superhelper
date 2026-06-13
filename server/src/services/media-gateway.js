@@ -101,7 +101,45 @@ async function handleSearch(request, reply) {
   return forwardJson(reply, upstream);
 }
 
+// Transparent proxy for DashScope async media (image / video / TTS). The skill
+// scripts hit ${base}/llm/dashscope-media + the DashScope path (create:
+// /services/..., poll: /tasks/{id}); we map that onto the real api/v1 host and
+// inject the key. Uses the same "vision" credential/token (same DashScope
+// account). Result files are public OSS URLs the client downloads directly.
+async function handleDashscopeMedia(request, reply) {
+  if (!config.modelGatewayEnabled) {
+    return reply.code(404).send({ error: { type: "not_found", message: "gateway disabled" } });
+  }
+  const token = verifyModelGatewayToken(bearerToken(request), "vision");
+  if (!token.ok) {
+    return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
+  }
+  const { apiKey } = resolveCredential("vision", config.dashscopeApiKey, "");
+  if (!apiKey) {
+    return reply.code(503).send({ error: { type: "configuration_error", message: "dashscope key not configured" } });
+  }
+  const rest = String(request.params["*"] || "").replace(/^\/+/, "");
+  const queryIndex = request.url.indexOf("?");
+  const query = queryIndex >= 0 ? request.url.slice(queryIndex) : "";
+  const url = `${config.dashscopeMediaBaseUrl.replace(/\/+$/, "")}/${rest}${query}`;
+  const headers = { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
+  if (request.headers["x-dashscope-async"]) headers["X-DashScope-Async"] = request.headers["x-dashscope-async"];
+  const init = { method: request.method, headers };
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    init.body = JSON.stringify(request.body && typeof request.body === "object" ? request.body : {});
+  }
+  let upstream;
+  try {
+    upstream = await fetch(url, init);
+  } catch (error) {
+    return reply.code(502).send({ error: { type: "upstream_error", message: String(error?.message || error) } });
+  }
+  return forwardJson(reply, upstream);
+}
+
 export async function mediaGatewayRoutes(app) {
   app.post("/llm/vision/chat/completions", handleVision);
   app.post("/llm/search", handleSearch);
+  app.post("/llm/dashscope-media/*", handleDashscopeMedia);
+  app.get("/llm/dashscope-media/*", handleDashscopeMedia);
 }

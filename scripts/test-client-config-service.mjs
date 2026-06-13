@@ -105,7 +105,12 @@ const mediaOnly = buildEnvManagedClientConfig(
   {},
 );
 assert.equal(mediaOnly.models, undefined, "DashScope media key must not create a Qwen chat preset");
-assert.equal(mediaOnly.runtime.env.DASHSCOPE_API_KEY, "sk-test-dashscope");
+assert.equal(
+  mediaOnly.runtime.env.DASHSCOPE_API_KEY,
+  undefined,
+  "raw DashScope key must NOT be delivered — a token + proxy base URLs are injected at request time",
+);
+assert.equal(mediaOnly.runtime.env.VISION_MODEL, "qwen3.7-plus");
 assert.equal(mediaOnly.runtime.env.DASHSCOPE_IMAGE_MODEL, "qwen-image-2.0-pro");
 assert.equal(mediaOnly.runtime.env.DASHSCOPE_IMAGE_ENDPOINT, "https://dashscope.example.test/image");
 assert.equal(
@@ -133,7 +138,7 @@ const deepseekManaged = buildEnvManagedClientConfig(
 assert.equal(deepseekManaged.models.activePresetId, "deepseek-gateway");
 assert.equal(deepseekManaged.models.presets[0].env.LILY_GATEWAY_PROVIDER, "deepseek");
 assert.equal(deepseekManaged.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro[1m]");
-assert.equal(deepseekManaged.runtime.env.DASHSCOPE_API_KEY, "sk-test-dashscope");
+assert.equal(deepseekManaged.runtime.env.DASHSCOPE_API_KEY, undefined, "raw DashScope key must NOT be delivered");
 
 const deepseekDirect = buildEnvManagedClientConfig(
   {

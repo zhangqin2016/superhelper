@@ -47,6 +47,7 @@ export const config = {
   // Server-side vision + web-search proxies (key stays on server; clients use a
   // gateway token). Vision reuses the DashScope key (dashscopeApiKey).
   visionUpstreamBaseUrl: process.env.VISION_UPSTREAM_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  dashscopeMediaBaseUrl: process.env.DASHSCOPE_MEDIA_BASE_URL || "https://dashscope.aliyuncs.com/api/v1",
   webSearchIqsApiKey: process.env.WEBSEARCH_IQS_API_KEY || process.env.IQS_API_KEY || "",
   webSearchIqsApiUrl: process.env.WEBSEARCH_IQS_API_URL || "https://cloud-iqs.aliyuncs.com/search/unified",
   dashscopeImageModel: process.env.DASHSCOPE_IMAGE_MODEL || "qwen-image-2.0-pro",

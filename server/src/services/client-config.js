@@ -110,7 +110,9 @@ function providerPreset(provider, deliveryMode) {
 function runtimeEnvFromServerConfig(serverConfig) {
   const env = {};
   if (serverConfig.dashscopeApiKey) {
-    env.DASHSCOPE_API_KEY = serverConfig.dashscopeApiKey;
+    // Note: the raw key is NOT delivered. withGatewayRuntimeConfig injects a
+    // short-lived token + proxy base URLs (vision + dashscope-media) at request
+    // time, so the client never receives the real DashScope key.
     env.VISION_MODEL = serverConfig.visionModel || "qwen3.7-plus";
     env.DASHSCOPE_IMAGE_MODEL = serverConfig.dashscopeImageModel || "qwen-image-2.0-pro";
     env.DASHSCOPE_VIDEO_MODEL = serverConfig.dashscopeVideoModel || "wan2.7-t2v";
@@ -259,12 +261,20 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
     const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
     const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
     if (visionKey) {
-      env.DASHSCOPE_BASE_URL = `${base}/llm/vision`;
-      env.VISION_API_KEY = signModelGatewayToken({
+      const visionToken = signModelGatewayToken({
         deviceId: input.deviceId,
         licenseId: input.licenseId || "",
         providerId: "vision",
       });
+      // Image recognition (compatible-mode chat/completions).
+      env.DASHSCOPE_BASE_URL = `${base}/llm/vision`;
+      env.VISION_API_KEY = visionToken;
+      // Image / video / TTS generation (DashScope async api/v1) — same account,
+      // routed through the media proxy so the raw key never reaches the client.
+      env.DASHSCOPE_API_KEY = visionToken;
+      env.DASHSCOPE_IMAGE_BASE_URL = `${base}/llm/dashscope-media`;
+      env.DASHSCOPE_VIDEO_BASE_URL = `${base}/llm/dashscope-media`;
+      env.DASHSCOPE_TTS_BASE_URL = `${base}/llm/dashscope-media`;
     }
     if (searchKey) {
       env.WEBSEARCH_IQS_API_URL = `${base}/llm/search`;
