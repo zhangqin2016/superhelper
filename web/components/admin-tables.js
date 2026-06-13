@@ -13,6 +13,7 @@ import {
   setConfigProfileEnabledAction,
   setPluginEnabledAction,
   setReleaseEnabledAction,
+  setDocumentPackEnabledAction,
 } from "../app/admin/actions";
 
 function statusBadge(active) {
@@ -126,6 +127,31 @@ export function ReleasesTable({ rows, empty }) {
     },
   ];
   return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.releases}`} />;
+}
+
+export function DocumentPacksTable({ rows, empty }) {
+  const { t } = useI18n();
+  const columns = [
+    { accessorKey: "pack_id", header: ({ column }) => <SortHeader column={column}>Pack</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.pack_id}</span> },
+    { accessorKey: "platform", header: "Platform" },
+    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>Version</SortHeader> },
+    { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
+    { accessorKey: "size_bytes", header: "Size", cell: ({ row }) => row.original.size_bytes ? `${(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB` : "-" },
+    { accessorKey: "url", header: "URL", cell: ({ row }) => <span className="block max-w-[360px] truncate text-slate-500">{row.original.url}</span> },
+    { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>Created</SortHeader>, cell: ({ row }) => formatDate(row.original.created_at) },
+    {
+      id: "action",
+      header: t.admin.common.action,
+      cell: ({ row }) => (
+        <form action={setDocumentPackEnabledAction}>
+          <input type="hidden" name="id" value={row.original.id} />
+          <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
+          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
+        </form>
+      ),
+    },
+  ];
+  return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.documentPacks}`} />;
 }
 
 export function PluginsTable({ rows, empty }) {

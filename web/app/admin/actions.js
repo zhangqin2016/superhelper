@@ -157,6 +157,11 @@ export async function setReleaseEnabledAction(formData) {
   revalidatePath("/admin/releases");
 }
 
+export async function setDocumentPackEnabledAction(formData) {
+  await apiPatch(`/api/admin/document-packs/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
+  revalidatePath("/admin/document-packs");
+}
+
 export async function setPluginEnabledAction(formData) {
   await apiPatch(`/api/admin/plugins/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
   revalidatePath("/admin/plugins");

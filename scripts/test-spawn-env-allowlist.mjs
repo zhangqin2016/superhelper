@@ -21,6 +21,8 @@ const host = {
   LC_ALL: "en_US.UTF-8",
   XDG_CONFIG_HOME: "/Users/me/.config",
   LILY_LOCALE: "zh-CN",
+  LILY_API_KEY: "lily_secret",
+  LILY_GATEWAY_TOKEN: "gateway_secret",
   HTTPS_PROXY: "http://proxy:8080",
   SSH_AUTH_SOCK: "/tmp/ssh-sock",
   // must be withheld
@@ -42,9 +44,9 @@ const env = pickInheritedEnv(host);
 for (const key of ["HOME", "USER", "SHELL", "TMPDIR", "LANG", "LC_ALL", "XDG_CONFIG_HOME", "LILY_LOCALE", "HTTPS_PROXY", "SSH_AUTH_SOCK"]) {
   assert(env[key] === host[key], `${key} preserved`);
 }
-for (const key of ["NODE_OPTIONS", "ELECTRON_RUN_AS_NODE", "NPM_CONFIG_REGISTRY", "NPM_TOKEN", "GIT_SSH_COMMAND", "AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN", "OPENAI_API_KEY", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "PATH"]) {
+for (const key of ["LILY_API_KEY", "LILY_GATEWAY_TOKEN", "NODE_OPTIONS", "ELECTRON_RUN_AS_NODE", "NPM_CONFIG_REGISTRY", "NPM_TOKEN", "GIT_SSH_COMMAND", "AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN", "OPENAI_API_KEY", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "PATH"]) {
   assert(!(key in env), `${key} withheld`);
 }
 assert(Object.keys(pickInheritedEnv({ FOO: undefined })).length === 0, "undefined values dropped");
 
-console.log("PASS: test-spawn-env-allowlist (22 tests)");
+console.log("PASS: test-spawn-env-allowlist");

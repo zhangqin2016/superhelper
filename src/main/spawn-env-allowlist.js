@@ -9,6 +9,10 @@
 const INHERIT_KEYS = new Set([
   // POSIX basics
   "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "TZ",
+  // App-local presentation preference. Secret-bearing LILY_* keys are supplied
+  // explicitly by spawn-env from settings/remote config, never inherited from
+  // the host shell wholesale.
+  "LILY_LOCALE",
   // Network proxies — agent traffic should follow the user's proxy setup
   "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
   "http_proxy", "https_proxy", "no_proxy", "all_proxy",
@@ -23,7 +27,7 @@ const INHERIT_KEYS = new Set([
   "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS", "OS",
 ]);
 
-const INHERIT_PREFIXES = ["LC_", "XDG_", "LILY_"];
+const INHERIT_PREFIXES = ["LC_", "XDG_"];
 
 function pickInheritedEnv(hostEnv = process.env) {
   const picked = {};

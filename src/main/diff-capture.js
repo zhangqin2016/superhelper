@@ -217,19 +217,24 @@ const revertStash = new Map();
  * per-file results instead of failing the whole revert on one error.
  * The pre-revert state is stashed so undoRevertTurn can restore it.
  */
-function revertTurnChanges(sessionId, turnId) {
+function revertTurnChanges(sessionId, turnId, options = {}) {
   const entries = getDiffsForTurn(sessionId, turnId);
   const results = [];
   const stash = [];
   for (const entry of entries) {
     try {
-      const current = fs.existsSync(entry.filePath)
-        ? fs.readFileSync(entry.filePath, "utf-8")
+      const targetPath = options.resolvePath ? options.resolvePath(entry.filePath) : entry.filePath;
+      if (!targetPath) {
+        results.push({ filePath: entry.filePath, ok: false, error: "PATH_OUTSIDE_PROJECT" });
+        continue;
+      }
+      const current = fs.existsSync(targetPath)
+        ? fs.readFileSync(targetPath, "utf-8")
         : null;
       if (entry.originalContent == null) {
-        if (fs.existsSync(entry.filePath)) fs.unlinkSync(entry.filePath);
+        if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath);
       } else {
-        fs.writeFileSync(entry.filePath, entry.originalContent, "utf-8");
+        fs.writeFileSync(targetPath, entry.originalContent, "utf-8");
       }
       stash.push({ filePath: entry.filePath, content: current });
       removeAcceptedDiff(sessionId, entry.filePath);
@@ -248,16 +253,21 @@ function revertTurnChanges(sessionId, turnId) {
 /** Undo a previous revertTurnChanges: write the stashed pre-revert contents
  * back (a stashed null means the file had been created by the turn — recreate
  * is the undo). One-shot: the stash entry is consumed. */
-function undoRevertTurn(sessionId, turnId) {
+function undoRevertTurn(sessionId, turnId, options = {}) {
   const stash = revertStash.get(sessionId)?.get(String(turnId));
   if (!stash) return { ok: false, error: "NOTHING_TO_UNDO", results: [] };
   const results = [];
   for (const item of stash) {
     try {
+      const targetPath = options.resolvePath ? options.resolvePath(item.filePath) : item.filePath;
+      if (!targetPath) {
+        results.push({ filePath: item.filePath, ok: false, error: "PATH_OUTSIDE_PROJECT" });
+        continue;
+      }
       if (item.content == null) {
-        if (fs.existsSync(item.filePath)) fs.unlinkSync(item.filePath);
+        if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath);
       } else {
-        fs.writeFileSync(item.filePath, item.content, "utf-8");
+        fs.writeFileSync(targetPath, item.content, "utf-8");
       }
       results.push({ filePath: item.filePath, ok: true });
     } catch (error) {

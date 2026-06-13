@@ -76,6 +76,45 @@ assert(rejectedEmpty, "empty requirements must reject with NO_REQUIREMENTS");
 // pack dir on PYTHONPATH. Served over localhost http; the server-resolved URL
 // is injected, exactly as the real service-client would supply it.
 
+// A malicious artifact must not be able to write outside the pack dir during
+// extraction, even after the download's sha256 matches the server metadata.
+const maliciousTar = path.join(tmp, "evil.tar.gz");
+execFileSync("python3", [
+  "-c",
+  [
+    "import io, tarfile, sys",
+    "with tarfile.open(sys.argv[1], 'w:gz') as tar:",
+    "    data=b'owned\\n'",
+    "    info=tarfile.TarInfo('../escape.txt')",
+    "    info.size=len(data)",
+    "    tar.addfile(info, io.BytesIO(data))",
+  ].join("\n"),
+  maliciousTar,
+]);
+const maliciousSha = crypto.createHash("sha256").update(fs.readFileSync(maliciousTar)).digest("hex");
+const maliciousServer = http.createServer((_req, res) => {
+  res.writeHead(200, { "content-type": "application/gzip" });
+  fs.createReadStream(maliciousTar).pipe(res);
+});
+await new Promise((resolve) => maliciousServer.listen(0, "127.0.0.1", resolve));
+try {
+  const { port } = maliciousServer.address();
+  let traversalRejected = false;
+  try {
+    await packs.installPackFromArtifact({
+      id: "pro-pdf",
+      url: `http://127.0.0.1:${port}/evil.tar.gz`,
+      sha256: maliciousSha,
+    });
+  } catch (err) {
+    traversalRejected = /PACK_EXTRACT_UNSAFE/.test(err.message);
+  }
+  assert(traversalRejected, "tar entries escaping the pack dir must be rejected");
+  assert(!fs.existsSync(path.join(tmp, "document-packs", "escape.txt")), "tar traversal must not write outside pack dir");
+} finally {
+  maliciousServer.close();
+}
+
 if (!resolveVenvPython()) {
   console.log("test-document-packs: (artifact flow SKIPPED — no bundled runtime)");
 } else {

@@ -213,12 +213,53 @@ async function downloadArtifact(url, dest, onProgress) {
 
 function extractTarball(tarPath, destDir) {
   return new Promise((resolve, reject) => {
-    // System tar handles multi-GB archives without buffering; -C confines output.
-    execFile("tar", ["-xzf", tarPath, "-C", destDir], (err) => {
-      if (err) return reject(new Error(`PACK_EXTRACT_FAILED:${err.message}`));
-      resolve();
+    validateTarball(tarPath)
+      .then(() => {
+        // System tar handles multi-GB archives without buffering. Safety is
+        // enforced by validateTarball before extraction; do not rely on tar's
+        // platform-specific path traversal behavior.
+        execFile("tar", ["-xzf", tarPath, "-C", destDir], (err) => {
+          if (err) return reject(new Error(`PACK_EXTRACT_FAILED:${err.message}`));
+          resolve();
+        });
+      })
+      .catch(reject);
+  });
+}
+
+function tarList(tarPath, args) {
+  return new Promise((resolve, reject) => {
+    execFile("tar", args, { maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => {
+      if (err) return reject(new Error(`PACK_EXTRACT_UNSAFE:${err.message}`));
+      resolve(String(stdout || ""));
     });
   });
+}
+
+function assertSafeTarEntryName(name) {
+  const raw = String(name || "").trim();
+  if (!raw || raw === "." || raw === "./") return;
+  if (raw.includes("\\")) throw new Error(`PACK_EXTRACT_UNSAFE:backslash:${raw}`);
+  if (raw.startsWith("/") || raw.startsWith("//")) throw new Error(`PACK_EXTRACT_UNSAFE:absolute:${raw}`);
+  if (/^[A-Za-z]:/.test(raw)) throw new Error(`PACK_EXTRACT_UNSAFE:drive:${raw}`);
+  const segments = raw.split("/").filter(Boolean);
+  if (segments.some((part) => part === "..")) throw new Error(`PACK_EXTRACT_UNSAFE:traversal:${raw}`);
+}
+
+async function validateTarball(tarPath) {
+  const names = await tarList(tarPath, ["-tzf", tarPath]);
+  for (const name of names.split(/\r?\n/)) {
+    if (name) assertSafeTarEntryName(name);
+  }
+
+  const verbose = await tarList(tarPath, ["-tvzf", tarPath]);
+  for (const line of verbose.split(/\r?\n/)) {
+    if (!line) continue;
+    const type = line[0];
+    if (type === "l" || type === "h" || line.includes(" -> ")) {
+      throw new Error("PACK_EXTRACT_UNSAFE:link-entry");
+    }
+  }
 }
 
 /**

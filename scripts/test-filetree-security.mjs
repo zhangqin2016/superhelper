@@ -39,7 +39,9 @@ registerFileTreeHandlers({
 });
 
 const reject = handlers.get("filetree:reject-change");
+const revert = handlers.get("filetree:revert-turn");
 assert(typeof reject === "function", "reject-change handler registered");
+assert(typeof revert === "function", "revert-turn handler registered");
 assert(!handlers.has("filetree:restore-file"), "arbitrary-write restore-file handler removed");
 
 function recordDiff(filePath, before, after) {
@@ -76,10 +78,16 @@ res = await reject(null, { sessionId, filePath: escapee });
 assert(res.ok === false && res.error === "PATH_OUTSIDE_PROJECT", "outside-project path refused");
 assert(fs.readFileSync(escapee, "utf-8") === "agent-edit\n", "outside file untouched");
 
-// 5. unknown session -> no project root -> refused
+// 5. whole-turn revert must apply the same containment rule, not write the
+// outside file through diff-capture's lower-level revert helper.
+res = revert(null, { sessionId, turnId: "turn1" });
+assert(res.ok === false, "turn revert with outside-project diff refused");
+assert(fs.readFileSync(escapee, "utf-8") === "agent-edit\n", "turn revert leaves outside file untouched");
+
+// 6. unknown session -> no project root -> refused
 res = await reject(null, { sessionId: "ghost", filePath: modified });
 assert(res.ok === false, "unknown session refused");
 
 fs.rmSync(projectRoot, { recursive: true, force: true });
 fs.rmSync(outside, { recursive: true, force: true });
-console.log("PASS: test-filetree-security (9 tests)");
+console.log("PASS: test-filetree-security");

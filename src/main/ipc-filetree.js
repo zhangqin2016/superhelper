@@ -182,13 +182,19 @@ function registerFileTreeHandlers(ctx = {}) {
   });
 
   ipcMain.handle("filetree:revert-turn", (_event, { sessionId, turnId }) => {
-    const results = revertTurnChanges(sessionId, turnId);
+    const root = sessionProjectRoot(sessionId);
+    const results = revertTurnChanges(sessionId, turnId, {
+      resolvePath: (filePath) => resolveContainedPath(root, filePath),
+    });
     const failed = results.filter((item) => !item.ok);
     return { ok: failed.length === 0, results, failed };
   });
 
   ipcMain.handle("filetree:unrevert-turn", (_event, { sessionId, turnId }) => {
-    return undoRevertTurn(sessionId, turnId);
+    const root = sessionProjectRoot(sessionId);
+    return undoRevertTurn(sessionId, turnId, {
+      resolvePath: (filePath) => resolveContainedPath(root, filePath),
+    });
   });
 }
 
