@@ -155,9 +155,22 @@ export function listModelGatewayProviders() {
       headers: {},
     };
   }
-  // DB-configured providers win over env so admin-UI edits take effect.
-  for (const [id, provider] of Object.entries(dbProvidersSync())) {
-    normalized[id] = provider;
+  // DB-configured providers override env per-field so admin-UI edits take
+  // effect — but an empty DB apiKey/baseUrl falls back to the env value, so a
+  // keyless "default" seed can enrich a provider's model list without disabling
+  // one whose key only lives in env.
+  for (const [id, dbProvider] of Object.entries(dbProvidersSync())) {
+    const envProvider = normalized[id];
+    normalized[id] = envProvider
+      ? {
+          ...envProvider,
+          ...dbProvider,
+          apiKey: dbProvider.apiKey || envProvider.apiKey,
+          baseUrl: dbProvider.baseUrl || envProvider.baseUrl,
+          model: dbProvider.model || envProvider.model,
+          models: dbProvider.models?.length ? dbProvider.models : envProvider.models,
+        }
+      : dbProvider;
   }
   return normalized;
 }
