@@ -87,32 +87,10 @@ function registerAll(ctx) {
   ipcMain.handle("updates:open-download", (_event, payload) =>
     require("./update-manager").openUpdateDownload(payload?.url || payload));
 
-  // --- Document capability packs (opt-in heavy engines, kept out of base) ---
-
-  ipcMain.handle("docpacks:list", () =>
-    ({ ok: true, packs: require("./document-packs").listPacks() }));
-  ipcMain.handle("docpacks:verify", (_event, payload) =>
-    ({ ok: true, installed: require("./document-packs").verifyPack(payload?.id || payload) }));
-  ipcMain.handle("docpacks:install", async (event, payload) => {
-    const id = payload?.id || payload;
-    try {
-      const result = await require("./document-packs").installPack(id, {
-        onProgress: (chunk) => event.sender.send("docpacks:progress", { id, chunk }),
-      });
-      return { ok: true, ...result };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
-  ipcMain.handle("docpacks:uninstall", async (_event, payload) => {
-    const id = payload?.id || payload;
-    try {
-      await require("./document-packs").uninstallPack(id);
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
+  // Runtime packs are installed by the agent (skill lily-runtime-packs), not by
+  // the app — so there is no install IPC here. The app only reads installed
+  // packs (runtime-packs.js → getRuntimePackPythonPaths) to upgrade the document
+  // extractor's PYTHONPATH; the server admin console manages the catalog.
 
   // --- Sub-module registrations ---
 
