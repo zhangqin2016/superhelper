@@ -308,6 +308,7 @@ function getBuiltinPresets() {
     description: p.description || "",
     model: pickModelId(normalizeToLilyEnv(p.env || {})) || "",
     custom: false,
+    capabilities: { vision: Boolean(p.capabilities?.vision) },
     env: p.env || {},
   }));
 }
@@ -350,6 +351,20 @@ function getActivePresetId() {
 
 function getActivePreset() {
   return findPresetById(getActivePresetId());
+}
+
+/**
+ * Whether the active model natively recognizes images. When true the vision
+ * preflight skips the Qwen bridge and lets images pass through as image blocks.
+ */
+function activePresetSupportsVision() {
+  try {
+    return Boolean(getActivePreset()?.capabilities?.vision);
+  } catch {
+    // Capability probe must never crash a turn; if presets can't be resolved
+    // (e.g. paths not bound yet), assume no native vision → use the bridge.
+    return false;
+  }
 }
 
 function getActivePresetEnv() {
@@ -563,6 +578,7 @@ remoteConfig.onRemoteConfigRefreshed(reloadPresets);
 
 module.exports = {
   getActivePreset,
+  activePresetSupportsVision,
   getActivePresetEnv,
   getUserApiEnv,
   getActivePresetId,

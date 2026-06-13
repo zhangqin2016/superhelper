@@ -5,6 +5,43 @@ export function sha256(value) {
   return crypto.createHash("sha256").update(String(value)).digest("hex");
 }
 
+// Symmetric encryption for secrets stored at rest (e.g. model-provider API keys
+// in the DB). Key is derived from SESSION_SECRET so no new required env is
+// introduced; rotating SESSION_SECRET invalidates stored ciphertexts.
+const SECRET_ENC_PREFIX = "gcm1:";
+
+function dataEncryptionKey() {
+  return crypto.createHash("sha256").update(`provider-secret::${config.sessionSecret}`).digest();
+}
+
+export function encryptSecret(plain) {
+  const text = String(plain ?? "");
+  if (!text) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", dataEncryptionKey(), iv);
+  const enc = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return SECRET_ENC_PREFIX + Buffer.concat([iv, tag, enc]).toString("base64");
+}
+
+export function decryptSecret(blob) {
+  const text = String(blob || "");
+  if (!text) return "";
+  // Tolerate legacy/plaintext values that predate encryption.
+  if (!text.startsWith(SECRET_ENC_PREFIX)) return text;
+  try {
+    const raw = Buffer.from(text.slice(SECRET_ENC_PREFIX.length), "base64");
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const enc = raw.subarray(28);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", dataEncryptionKey(), iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
 export function hashLicenseKey(key) {
   return sha256(String(key || "").trim().toUpperCase());
 }

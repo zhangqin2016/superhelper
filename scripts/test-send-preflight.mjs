@@ -18,8 +18,12 @@ const visionMock = {
   buildEnrichedUserText: (text, extracted) => `${text}\n[img:${extracted}]`,
   hasVisionInputFiles: (files) => (files || []).some((f) => f?.isImage),
   isImageOnlyUserMessage: (text, files) => !text && (files || []).some((f) => f?.isImage),
-  translateImages: async () => visionMock._next,
+  translateImages: async () => {
+    visionMock._calls += 1;
+    return visionMock._next;
+  },
   _next: null,
+  _calls: 0,
 };
 const documentMock = {
   buildEnrichedUserText: (text, extracted) => `${text}\n[doc:${extracted}]`,
@@ -71,6 +75,21 @@ assert(!r.ok && r.error === "VISION_FAILED" && r.detail === "timeout", "text+ima
 visionMock._next = { ok: false, reason: "NO_KEY" };
 r = await runVisionPreflight("分析这个布局", [img, txtFile], { emitNotice: () => {} });
 assert(r.ok && r.text === "分析这个布局" && !r.files.some((f) => f.isImage), "NO_KEY + text degrades to text-only (not a hard failure)");
+
+// NATIVE VISION: when the active model recognizes images itself, the Qwen
+// bridge is skipped entirely and the image passes through untouched — it must
+// reach the engine as a real image block, not a text description. Encodes WHY:
+// a multimodal model should see the actual pixels, so we neither call Qwen nor
+// strip the image.
+visionMock._calls = 0;
+visionMock._next = { ok: false, reason: "API_FAILED" }; // would fail the turn if Qwen were consulted
+r = await runVisionPreflight("分析这张图", [img, txtFile], {
+  nativeVision: true,
+  emitNotice: () => { throw new Error("native vision must not emit notices"); },
+});
+assert(r.ok && r.text === "分析这张图", "native vision passes text through unchanged");
+assert(r.files.includes(img) && r.files.includes(txtFile), "native vision keeps the image for the engine");
+assert(visionMock._calls === 0, "native vision never calls the Qwen bridge");
 
 // Vision success → enriched text + image pruned from outbound, ready notice.
 visionMock._next = { ok: true, text: "a cat", keepOriginal: false };

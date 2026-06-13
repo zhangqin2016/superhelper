@@ -638,6 +638,7 @@ class TurnOrchestrator {
     if (!opts.skipVision) {
       const vision = await runVisionPreflight(text, files, {
         emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
+        nativeVision: require("./model-presets").activePresetSupportsVision(),
       });
       if (!vision.ok) {
         const assistant = preflightFailureText(vision.error, vision.detail);

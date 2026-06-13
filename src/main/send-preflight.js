@@ -26,7 +26,7 @@ function withoutVisionFiles(files = []) {
   });
 }
 
-async function runVisionPreflight(text, files, { emitNotice } = {}) {
+async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}) {
   const {
     buildEnrichedUserText,
     hasVisionInputFiles,
@@ -34,6 +34,13 @@ async function runVisionPreflight(text, files, { emitNotice } = {}) {
     translateImages,
   } = require("./vision-translator");
   const notify = typeof emitNotice === "function" ? emitNotice : () => {};
+
+  // The active model recognizes images itself — skip the Qwen bridge entirely
+  // and let images pass through untouched so they reach the engine as image
+  // blocks (agent-session.buildUserMessagePayload).
+  if (nativeVision) {
+    return { ok: true, text, files };
+  }
 
   if (!hasVisionInputFiles(files)) {
     return { ok: true, text, files: withoutVisionFiles(files) };

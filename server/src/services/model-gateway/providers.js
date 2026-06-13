@@ -1,5 +1,58 @@
 import { config } from "../../config.js";
+import { decryptSecret } from "../security.js";
 import { cleanBaseUrl, parseJsonEnv } from "./utils.js";
+
+// DB-backed providers are cached and refreshed in the background so the sync
+// listModelGatewayProviders() (called on the /llm hot path) never blocks on a
+// query. The DB query is tiny, but a per-request await would ripple through
+// every caller's signature. Admin mutations call refreshModelGatewayProviders()
+// directly so edits take effect immediately.
+const DB_PROVIDER_TTL_MS = 30_000;
+let dbProviderCache = { at: 0, map: {} };
+let dbRefreshInFlight = null;
+
+function mapDbProviderRow(row) {
+  return {
+    id: String(row.id),
+    label: String(row.label || row.id),
+    type: String(row.type || "anthropic").toLowerCase(),
+    baseUrl: cleanBaseUrl(row.base_url),
+    apiKey: decryptSecret(row.api_key_encrypted),
+    model: String(row.default_model || ""),
+    models: Array.isArray(row.models) ? row.models.map(String).filter(Boolean) : [],
+    headers: row.headers && typeof row.headers === "object" && !Array.isArray(row.headers) ? row.headers : {},
+  };
+}
+
+export async function refreshModelGatewayProviders() {
+  try {
+    // Lazy import so merely importing this module (e.g. for env-provider/
+    // client-config logic in tests) does not pull in db.js, which requires
+    // DATABASE_URL at load time.
+    const { db } = await import("../../db.js");
+    const rows = await db
+      .selectFrom("model_gateway_providers")
+      .selectAll()
+      .where("enabled", "=", true)
+      .execute();
+    const map = {};
+    for (const row of rows) map[String(row.id)] = mapDbProviderRow(row);
+    dbProviderCache = { at: Date.now(), map };
+  } catch {
+    // Keep serving the last good map; bump the timestamp to avoid a retry storm.
+    dbProviderCache = { at: Date.now(), map: dbProviderCache.map };
+  }
+  return dbProviderCache.map;
+}
+
+function dbProvidersSync() {
+  if (Date.now() - dbProviderCache.at > DB_PROVIDER_TTL_MS && !dbRefreshInFlight) {
+    dbRefreshInFlight = refreshModelGatewayProviders().finally(() => {
+      dbRefreshInFlight = null;
+    });
+  }
+  return dbProviderCache.map;
+}
 
 function normalizeProvider(id, provider) {
   if (!provider || typeof provider !== "object") return null;
@@ -101,6 +154,10 @@ export function listModelGatewayProviders() {
       models: [config.localAnthropicModel],
       headers: {},
     };
+  }
+  // DB-configured providers win over env so admin-UI edits take effect.
+  for (const [id, provider] of Object.entries(dbProvidersSync())) {
+    normalized[id] = provider;
   }
   return normalized;
 }

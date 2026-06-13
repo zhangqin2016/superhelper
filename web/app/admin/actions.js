@@ -120,6 +120,34 @@ export async function createReleaseStateAction(_previousState, formData) {
   return createReleaseAction(formData);
 }
 
+export async function createModelProviderAction(_previousState, formData) {
+  formData = actionFormData(_previousState, formData);
+  try {
+    const result = await apiPost("/api/admin/model-providers", {
+      id: text(formData, "id"),
+      label: text(formData, "label") || text(formData, "id"),
+      type: text(formData, "type") || "anthropic",
+      baseUrl: text(formData, "baseUrl"),
+      apiKey: text(formData, "apiKey"), // empty = keep existing key
+      defaultModel: text(formData, "defaultModel"),
+      models: text(formData, "models")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+      enabled: !bool(formData, "disabled"),
+    });
+    revalidatePath("/admin/config");
+    return { ok: true, message: `Provider ${result.id} saved.` };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to save provider." };
+  }
+}
+
+export async function deleteModelProviderAction(formData) {
+  await apiDelete(`/api/admin/model-providers/${text(formData, "id")}`);
+  revalidatePath("/admin/config");
+}
+
 export async function createConfigGroupAction(_previousState, formData) {
   formData = actionFormData(_previousState, formData);
   try {

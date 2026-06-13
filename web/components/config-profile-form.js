@@ -7,129 +7,62 @@ import { useI18n } from "../lib/use-i18n";
 
 const initialState = { ok: null, message: "" };
 
-const providerTemplates = [
-  {
-    id: "deepseek-gateway",
-    label: { zh: "DeepSeek", en: "DeepSeek", ar: "DeepSeek" },
-    provider: "deepseek",
-    route: "/llm/deepseek",
-    description: {
-      zh: "通过 Lily 服务端网关调用 DeepSeek，客户端只拿短期 token。",
-      en: "Route DeepSeek through the Lily server gateway. Clients only receive short-lived tokens.",
-      ar: "توجيه DeepSeek عبر بوابة Lily. يحصل العميل على رموز قصيرة فقط.",
-    },
-    model: "deepseek-v4-pro[1m]",
-    fastModel: "deepseek-v4-flash",
-    strongModel: "deepseek-v4-pro[1m]",
-  },
-  {
-    id: "qwen-gateway",
-    label: { zh: "Qwen / 阿里", en: "Qwen / Alibaba", ar: "Qwen / Alibaba" },
-    provider: "dashscope",
-    route: "/llm/dashscope",
-    description: {
-      zh: "通过 Lily 服务端网关调用阿里 DashScope 兼容接口。",
-      en: "Route Alibaba DashScope-compatible models through the Lily server gateway.",
-      ar: "توجيه نماذج DashScope المتوافقة عبر بوابة Lily.",
-    },
-    model: "qwen3-coder-plus",
-    fastModel: "qwen3-coder-plus",
-    strongModel: "qwen3-coder-plus",
-  },
-  {
-    id: "kimi-gateway",
-    label: { zh: "Kimi", en: "Kimi", ar: "Kimi" },
-    provider: "kimi",
-    route: "/llm/kimi",
-    description: {
-      zh: "通过 Lily 服务端网关调用 Moonshot/Kimi 兼容接口。",
-      en: "Route Moonshot/Kimi-compatible models through the Lily server gateway.",
-      ar: "توجيه نماذج Moonshot/Kimi المتوافقة عبر بوابة Lily.",
-    },
-    model: "kimi-k2.5",
-    fastModel: "kimi-k2.5",
-    strongModel: "kimi-k2.5",
-  },
-  {
-    id: "glm-gateway",
-    label: { zh: "GLM / 智谱", en: "GLM / Z.AI", ar: "GLM / Z.AI" },
-    provider: "glm",
-    route: "/llm/glm",
-    description: {
-      zh: "通过 Lily 服务端网关调用 Z.AI/GLM 兼容接口。",
-      en: "Route Z.AI/GLM-compatible models through the Lily server gateway.",
-      ar: "توجيه نماذج Z.AI/GLM المتوافقة عبر بوابة Lily.",
-    },
-    model: "glm-4.7",
-    fastModel: "glm-4.5-air",
-    strongModel: "glm-4.7",
-  },
-  {
-    id: "litellm-gateway",
-    label: { zh: "LiteLLM", en: "LiteLLM", ar: "LiteLLM" },
-    provider: "litellm",
-    route: "/llm/litellm",
-    description: {
-      zh: "由服务端 LiteLLM 继续路由到自建或 OpenAI-compatible 模型。",
-      en: "Let server-side LiteLLM route to self-hosted or OpenAI-compatible models.",
-      ar: "استخدم LiteLLM على الخادم للتوجيه إلى نماذج ذاتية أو متوافقة مع OpenAI.",
-    },
-    model: "local-qwen",
-    fastModel: "local-qwen-fast",
-    strongModel: "local-qwen-strong",
-  },
-  {
-    id: "local-anthropic-gateway",
-    label: { zh: "自建网关", en: "Self-hosted gateway", ar: "بوابة ذاتية" },
-    provider: "local",
-    route: "/llm/local",
-    description: {
-      zh: "通过 Lily 服务端连接客户自建 Anthropic-compatible 网关。",
-      en: "Connect to a customer-hosted Anthropic-compatible gateway through Lily.",
-      ar: "الاتصال ببوابة متوافقة مع Anthropic مستضافة لدى العميل عبر Lily.",
-    },
-    model: "local-qwen",
-    fastModel: "local-qwen",
-    strongModel: "local-qwen",
-  },
-  {
-    id: "custom-direct",
-    label: { zh: "客户端直连", en: "Client direct", ar: "اتصال مباشر" },
-    provider: "",
-    route: "https://api.example.com/v1/messages",
-    description: {
-      zh: "不走 Lily 服务端，客户端使用本地或下发的直连接口配置。",
-      en: "Bypass Lily. The client uses local or delivered direct endpoint settings.",
-      ar: "تجاوز Lily. يستخدم العميل إعدادات اتصال مباشر محلية أو مرسلة.",
-    },
-    model: "custom-model",
-    fastModel: "custom-model-fast",
-    strongModel: "custom-model",
-    direct: true,
-  },
-];
+// Model "templates" are derived from the live provider registry (managed in the
+// Model providers panel), not hardcoded. Delivery is always via the gateway:
+// the client gets baseUrl=/llm/<provider> + a short-lived $LILY_GATEWAY_TOKEN,
+// and the server uses the provider's stored key to reach the model. No raw key
+// is ever typed into or delivered by a profile.
+const FALLBACK_TEMPLATE = {
+  id: "",
+  label: "",
+  provider: "",
+  route: "",
+  model: "",
+  fastModel: "",
+  strongModel: "",
+  models: [],
+};
+
+function providersToTemplates(providers) {
+  // Accepts either the merged gateway summary (env + DB, has hasApiKey) or raw
+  // DB rows (has enabled). Only providers that can actually serve are offered.
+  return (providers || [])
+    .filter((p) => p && p.enabled !== false && p.hasApiKey !== false)
+    .map((p) => {
+      const models = Array.isArray(p.models) ? p.models.filter(Boolean) : [];
+      const def = p.default_model || p.model || models[0] || "";
+      return {
+        id: p.id,
+        label: p.label || p.id,
+        provider: p.id,
+        route: `/llm/${p.id}`,
+        model: def,
+        fastModel: models[1] || def,
+        strongModel: def,
+        models,
+      };
+    });
+}
 
 const labels = {
   zh: {
     quickTitle: "配置要下发给谁",
-    quickDesc: "全局默认适合所有设备；授权和设备配置会覆盖全局配置。",
+    quickDesc: "全局默认适合所有设备；档位组/授权/设备配置会按优先级覆盖全局。",
     scopeGlobal: "所有客户端",
     scopeGroup: "某个档位组",
     scopeLicense: "某个授权",
     scopeDevice: "某台设备",
-    targetHelp: "全局配置不需要目标 ID；授权/设备配置必须填写对应 ID。",
-    modelTitle: "选择模型路线",
-    modelDesc: "推荐使用服务端网关。客户端拿短期 token，不暴露长期模型密钥。",
-    managed: "服务端托管",
-    direct: "客户端直连",
-    recommended: "推荐",
+    targetHelp: "全局配置不需要目标 ID；档位组填组 ID，授权/设备填对应 ID。",
+    modelTitle: "选择模型供应商",
+    modelDesc: "选择上方已配置好的供应商。客户端只走网关 + 短期 token，不下发任何密钥。",
+    providerEmpty: "请先在上方「模型供应商」里添加一个供应商。",
     activeModel: "默认模型",
     fastModel: "快速模型",
     strongModel: "强模型",
     subagentModel: "子任务模型",
-    baseUrl: "接口地址",
-    apiKey: "直连密钥",
-    apiKeyHelp: "只有客户端直连时才需要。服务端网关会自动签发短期 token。",
+    modelPick: "可直接选该供应商的模型，或手动输入。",
+    visionNative: "模型原生支持图片识别",
+    visionNativeHelp: "勾选后，带图片的消息直接发给该模型，跳过 Qwen 识图桥接。仅当该模型本身能看图时才勾。",
     toolsTitle: "插件和客户端策略",
     toolsDesc: "这里控制插件市场入口、默认权限和最低客户端版本。",
     registry: "插件市场地址",
@@ -141,37 +74,33 @@ const labels = {
     visionModel: "图片识别模型",
     previewTitle: "即将下发",
     previewDesc: "保存后，客户端启动或刷新授权时会拉取这份签名配置。",
-    preset: "模型 preset",
-    route: "请求路线",
+    preset: "供应商",
+    route: "网关路线",
     securityOk: "短期 token",
-    securityWarn: "会暴露直连 key",
     advanced: "高级：查看/编辑 JSON",
     advancedDesc: "正常不用改。只有需要下发自定义字段时才编辑。",
     jsonInvalid: "JSON 格式不正确，保存前需要修复。",
     defaultName: "团队默认配置",
-    directName: "客户端直连模型配置",
-    gatewayName: "服务端网关配置",
+    gatewayName: "网关配置",
   },
   en: {
     quickTitle: "Who receives this config",
-    quickDesc: "Global applies to every client. License and device configs override it.",
+    quickDesc: "Global applies to every client. Tier-group/license/device configs override it by priority.",
     scopeGlobal: "All clients",
     scopeGroup: "A tier group",
     scopeLicense: "A license",
     scopeDevice: "A device",
-    targetHelp: "Global config does not need a target ID. License/device configs require one.",
-    modelTitle: "Choose the model route",
-    modelDesc: "Server gateway is recommended. Clients get short-lived tokens instead of long-lived model keys.",
-    managed: "Server managed",
-    direct: "Client direct",
-    recommended: "Recommended",
+    targetHelp: "Global needs no target ID. Tier group takes a group ID; license/device take their IDs.",
+    modelTitle: "Choose a model provider",
+    modelDesc: "Pick a provider configured above. Clients only use the gateway + a short-lived token; no key is delivered.",
+    providerEmpty: "Add a provider above in “Model providers” first.",
     activeModel: "Default model",
     fastModel: "Fast model",
     strongModel: "Strong model",
     subagentModel: "Subtask model",
-    baseUrl: "Endpoint",
-    apiKey: "Direct API key",
-    apiKeyHelp: "Only needed for client direct mode. Server gateway signs short-lived tokens automatically.",
+    modelPick: "Pick one of the provider's models, or type your own.",
+    visionNative: "Model natively recognizes images",
+    visionNativeHelp: "When checked, messages with images go straight to this model and skip the Qwen vision bridge. Only check this if the model itself can see images.",
     toolsTitle: "Plugins and client policy",
     toolsDesc: "Control plugin registry, default permissions, and minimum client version.",
     registry: "Plugin registry",
@@ -183,37 +112,33 @@ const labels = {
     visionModel: "Vision model",
     previewTitle: "Delivery preview",
     previewDesc: "After saving, clients fetch this signed config on startup or license refresh.",
-    preset: "Model preset",
-    route: "Route",
+    preset: "Provider",
+    route: "Gateway route",
     securityOk: "Short-lived token",
-    securityWarn: "Direct key exposed",
     advanced: "Advanced: view/edit JSON",
     advancedDesc: "Normally leave this alone. Edit only when custom fields must be delivered.",
     jsonInvalid: "Invalid JSON. Fix it before saving.",
     defaultName: "Team default config",
-    directName: "Client direct model config",
-    gatewayName: "Server gateway config",
+    gatewayName: "gateway config",
   },
   ar: {
     quickTitle: "من يستلم هذا الإعداد",
-    quickDesc: "الإعداد العام لكل العملاء. إعداد الترخيص أو الجهاز يغطيه.",
+    quickDesc: "الإعداد العام لكل العملاء. إعداد المجموعة/الترخيص/الجهاز يغطيه حسب الأولوية.",
     scopeGlobal: "كل العملاء",
     scopeGroup: "مجموعة فئة",
     scopeLicense: "ترخيص محدد",
     scopeDevice: "جهاز محدد",
-    targetHelp: "الإعداد العام لا يحتاج هدفاً. الترخيص/الجهاز يحتاج معرفاً.",
-    modelTitle: "اختر مسار النموذج",
-    modelDesc: "بوابة الخادم هي الأفضل. يحصل العميل على رمز قصير بدلاً من مفتاح طويل.",
-    managed: "مدار بالخادم",
-    direct: "اتصال مباشر",
-    recommended: "مفضل",
+    targetHelp: "الإعداد العام لا يحتاج هدفاً. المجموعة تأخذ معرّف المجموعة؛ الترخيص/الجهاز يأخذ معرّفه.",
+    modelTitle: "اختر مزوّد النموذج",
+    modelDesc: "اختر مزوّداً مضبوطاً أعلاه. يستخدم العميل البوابة + رمزاً قصيراً فقط؛ لا يُرسَل أي مفتاح.",
+    providerEmpty: "أضف مزوّداً أعلاه في «مزوّدو النماذج» أولاً.",
     activeModel: "النموذج الافتراضي",
     fastModel: "النموذج السريع",
     strongModel: "النموذج القوي",
     subagentModel: "نموذج المهام الفرعية",
-    baseUrl: "عنوان الواجهة",
-    apiKey: "مفتاح مباشر",
-    apiKeyHelp: "مطلوب فقط في الاتصال المباشر. بوابة الخادم تصدر رموزاً قصيرة تلقائياً.",
+    modelPick: "اختر أحد نماذج المزوّد أو اكتب نموذجاً.",
+    visionNative: "النموذج يتعرف على الصور أصلاً",
+    visionNativeHelp: "عند التحديد، تُرسل الرسائل ذات الصور مباشرة إلى هذا النموذج متجاوزة جسر Qwen. حدّد فقط إذا كان النموذج نفسه يرى الصور.",
     toolsTitle: "الإضافات وسياسة العميل",
     toolsDesc: "تحكم بسجل الإضافات والصلاحيات الافتراضية والحد الأدنى للإصدار.",
     registry: "سجل الإضافات",
@@ -225,16 +150,14 @@ const labels = {
     visionModel: "نموذج الصور",
     previewTitle: "معاينة الإرسال",
     previewDesc: "بعد الحفظ يجلب العميل هذا الإعداد الموقع عند التشغيل أو تحديث الترخيص.",
-    preset: "إعداد النموذج",
-    route: "المسار",
+    preset: "المزوّد",
+    route: "مسار البوابة",
     securityOk: "رمز قصير",
-    securityWarn: "مفتاح مباشر مكشوف",
     advanced: "متقدم: عرض/تحرير JSON",
     advancedDesc: "اتركه كما هو غالباً. حرره فقط لإرسال حقول مخصصة.",
     jsonInvalid: "JSON غير صالح. أصلحه قبل الحفظ.",
     defaultName: "إعداد الفريق الافتراضي",
-    directName: "إعداد اتصال مباشر",
-    gatewayName: "إعداد بوابة الخادم",
+    gatewayName: "إعداد البوابة",
   },
 };
 
@@ -246,18 +169,14 @@ function fieldClass() {
   return "w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
 }
 
-function templateDescription(template, locale) {
-  return template.description?.[locale] || template.description?.zh || "";
+function templateLabel(template) {
+  return String(template?.label || template?.id || "");
 }
 
-function templateLabel(template, locale) {
-  return template.label?.[locale] || template.label?.zh || String(template.id || "");
-}
-
-function defaultDraft(copy) {
-  const template = providerTemplates[0];
+function defaultDraft(copy, templates) {
+  const template = templates[0] || FALLBACK_TEMPLATE;
   return {
-    id: "global-default",
+    id: template.id ? `${template.id}-global` : "global-default",
     name: copy.defaultName,
     scope: "global",
     targetId: "",
@@ -265,7 +184,6 @@ function defaultDraft(copy) {
     rolloutPercent: "100",
     selectedTemplateId: template.id,
     baseUrl: template.route,
-    apiKey: "",
     model: template.model,
     fastModel: template.fastModel,
     strongModel: template.strongModel,
@@ -276,12 +194,13 @@ function defaultDraft(copy) {
     minAppVersion: "",
     requestTimeoutMs: "300000",
     visionModel: "qwen3.7-plus",
+    supportsVision: false,
     disabled: false,
   };
 }
 
-function selectedTemplate(draft) {
-  return providerTemplates.find((template) => template.id === draft.selectedTemplateId) || providerTemplates[0];
+function selectedTemplate(draft, templates) {
+  return templates.find((template) => template.id === draft.selectedTemplateId) || templates[0] || FALLBACK_TEMPLATE;
 }
 
 function splitCsv(text) {
@@ -291,32 +210,31 @@ function splitCsv(text) {
     .filter(Boolean);
 }
 
-function buildConfig(draft, locale = "zh") {
-  const template = selectedTemplate(draft);
-  const direct = Boolean(template.direct);
-  const baseUrl = String(draft.baseUrl || template.route || "").trim();
-  const apiKey = direct ? String(draft.apiKey || "").trim() : "$LILY_GATEWAY_TOKEN";
+function buildConfig(draft, template) {
+  const providerId = template.provider || template.id || "";
+  const baseUrl = providerId ? `/llm/${providerId}` : "";
   const env = {
     LILY_API_BASE_URL: baseUrl,
-    LILY_API_KEY: apiKey,
+    LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
+    LILY_GATEWAY_PROVIDER: providerId,
     LILY_MODEL: String(draft.model || "").trim(),
     LILY_MODEL_HAIKU: String(draft.fastModel || draft.model || "").trim(),
     LILY_MODEL_SONNET: String(draft.strongModel || draft.model || "").trim(),
     LILY_MODEL_OPUS: String(draft.strongModel || draft.model || "").trim(),
     LILY_SUBAGENT_MODEL: String(draft.subagentModel || draft.fastModel || draft.model || "").trim(),
   };
-  if (!direct) env.LILY_GATEWAY_PROVIDER = template.provider;
 
   return {
     schemaVersion: 1,
     models: {
-      source: direct ? "client-direct" : "service-managed",
-      activePresetId: template.id,
+      source: "service-managed",
+      activePresetId: template.id || providerId,
       presets: [
         {
-          id: template.id,
-          label: templateLabel(template, locale),
-          description: templateDescription(template, locale),
+          id: template.id || providerId,
+          label: templateLabel(template),
+          description: "",
+          capabilities: { vision: Boolean(draft.supportsVision) },
           env,
         },
       ],
@@ -355,18 +273,20 @@ function ConfigField({ label, children, help }) {
   );
 }
 
-export function ConfigProfileForm() {
+export function ConfigProfileForm({ providers = [] }) {
   const [state, action, pending] = useActionState(createConfigProfileAction, initialState);
   const { locale, t } = useI18n();
   const adminCopy = t.admin.configProfiles;
   const copy = localeLabels(locale);
-  const [draft, setDraft] = useState(() => defaultDraft(copy));
+  const templates = useMemo(() => providersToTemplates(providers), [providers]);
+  const [draft, setDraft] = useState(() => defaultDraft(copy, templates));
   const [jsonOverride, setJsonOverride] = useState("");
 
-  const config = useMemo(() => buildConfig(draft, locale), [draft, locale]);
+  const activeTemplate = selectedTemplate(draft, templates);
+  const config = useMemo(() => buildConfig(draft, activeTemplate), [draft, activeTemplate]);
   const generatedJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
   const submittedJson = jsonOverride.trim() ? jsonOverride : generatedJson;
-  const activeTemplate = selectedTemplate(draft);
+  const modelListId = "provider-model-options";
   const jsonInvalid = useMemo(() => {
     if (!jsonOverride.trim()) return false;
     try {
@@ -386,15 +306,14 @@ export function ConfigProfileForm() {
     setDraft((current) => ({
       ...current,
       id: current.scope === "global" ? `${template.id}-global` : current.id,
-      name: template.direct ? copy.directName : `${templateLabel(template, locale)} ${copy.gatewayName}`,
+      name: `${templateLabel(template)} ${copy.gatewayName}`,
       selectedTemplateId: template.id,
       baseUrl: template.route,
-      apiKey: "",
       model: template.model,
       fastModel: template.fastModel,
       strongModel: template.strongModel,
       subagentModel: template.fastModel,
-      priority: template.direct ? "10" : "20",
+      priority: "20",
     }));
   }
 
@@ -474,52 +393,64 @@ export function ConfigProfileForm() {
               <h3 className="text-lg font-semibold text-slate-950">{copy.modelTitle}</h3>
               <p className="mt-1 text-sm text-slate-500">{copy.modelDesc}</p>
             </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {providerTemplates.map((template) => (
-                <button
-                  key={template.id}
-                  type="button"
-                  className={`rounded-2xl border p-4 text-start transition ${
-                    draft.selectedTemplateId === template.id
-                      ? "border-brand bg-brand/5 ring-4 ring-brand/10"
-                      : "border-slate-200 bg-white hover:border-brand/50"
-                  }`}
-                  onClick={() => chooseTemplate(template)}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-semibold text-slate-950">{templateLabel(template, locale)}</span>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${template.direct ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
-                      {template.direct ? copy.direct : copy.managed}
-                    </span>
-                  </div>
-                  <p className="mt-2 min-h-10 text-sm text-slate-500">{templateDescription(template, locale)}</p>
-                  <div className="mt-3 truncate font-mono text-xs text-slate-400">{template.route}</div>
-                </button>
+            {templates.length === 0 ? (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{copy.providerEmpty}</p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {templates.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    className={`rounded-2xl border p-4 text-start transition ${
+                      draft.selectedTemplateId === template.id
+                        ? "border-brand bg-brand/5 ring-4 ring-brand/10"
+                        : "border-slate-200 bg-white hover:border-brand/50"
+                    }`}
+                    onClick={() => chooseTemplate(template)}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-semibold text-slate-950">{templateLabel(template)}</span>
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">{copy.securityOk}</span>
+                    </div>
+                    <p className="mt-2 min-h-10 text-sm text-slate-500">{template.model || "—"}</p>
+                    <div className="mt-3 truncate font-mono text-xs text-slate-400">{template.route}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <datalist id={modelListId}>
+              {(activeTemplate.models || []).map((model) => (
+                <option key={model} value={model} />
               ))}
-            </div>
+            </datalist>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <ConfigField label={copy.activeModel}>
-                <input className={fieldClass()} value={draft.model} onChange={(event) => updateField("model", event.target.value)} />
+              <ConfigField label={copy.activeModel} help={copy.modelPick}>
+                <input className={fieldClass()} list={modelListId} value={draft.model} onChange={(event) => updateField("model", event.target.value)} />
               </ConfigField>
               <ConfigField label={copy.fastModel}>
-                <input className={fieldClass()} value={draft.fastModel} onChange={(event) => updateField("fastModel", event.target.value)} />
+                <input className={fieldClass()} list={modelListId} value={draft.fastModel} onChange={(event) => updateField("fastModel", event.target.value)} />
               </ConfigField>
               <ConfigField label={copy.strongModel}>
-                <input className={fieldClass()} value={draft.strongModel} onChange={(event) => updateField("strongModel", event.target.value)} />
+                <input className={fieldClass()} list={modelListId} value={draft.strongModel} onChange={(event) => updateField("strongModel", event.target.value)} />
               </ConfigField>
               <ConfigField label={copy.subagentModel}>
-                <input className={fieldClass()} value={draft.subagentModel} onChange={(event) => updateField("subagentModel", event.target.value)} />
+                <input className={fieldClass()} list={modelListId} value={draft.subagentModel} onChange={(event) => updateField("subagentModel", event.target.value)} />
               </ConfigField>
-              <div className="md:col-span-2">
-                <ConfigField label={copy.baseUrl}>
-                  <input className={fieldClass()} value={draft.baseUrl} onChange={(event) => updateField("baseUrl", event.target.value)} />
-                </ConfigField>
-              </div>
-              <div className="md:col-span-2">
-                <ConfigField label={copy.apiKey} help={copy.apiKeyHelp}>
-                  <input className={fieldClass()} disabled={!activeTemplate.direct} type="password" value={draft.apiKey} onChange={(event) => updateField("apiKey", event.target.value)} placeholder={activeTemplate.direct ? "sk-..." : "$LILY_GATEWAY_TOKEN"} />
-                </ConfigField>
+              <div className="md:col-span-2 xl:col-span-4">
+                <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4"
+                    checked={draft.supportsVision}
+                    onChange={(event) => updateField("supportsVision", event.target.checked)}
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-800">{copy.visionNative}</span>
+                    <span className="mt-1 block text-xs text-slate-500">{copy.visionNativeHelp}</span>
+                  </span>
+                </label>
               </div>
             </div>
           </div>
@@ -569,9 +500,7 @@ export function ConfigProfileForm() {
                 <h3 className="text-lg font-semibold">{copy.previewTitle}</h3>
                 <p className="mt-1 text-sm text-slate-400">{copy.previewDesc}</p>
               </div>
-              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${activeTemplate.direct ? "bg-amber-400/20 text-amber-200" : "bg-emerald-400/20 text-emerald-200"}`}>
-                {activeTemplate.direct ? copy.securityWarn : copy.securityOk}
-              </span>
+              <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-semibold text-emerald-200">{copy.securityOk}</span>
             </div>
             <dl className="mt-5 space-y-3 text-sm">
               <div className="rounded-xl bg-white/5 p-3">
@@ -580,12 +509,12 @@ export function ConfigProfileForm() {
               </div>
               <div className="rounded-xl bg-white/5 p-3">
                 <dt className="text-slate-400">{copy.preset}</dt>
-                <dd className="mt-1 font-semibold">{templateLabel(activeTemplate, locale)}</dd>
+                <dd className="mt-1 font-semibold">{templateLabel(activeTemplate) || "—"}</dd>
                 <dd className="mt-1 font-mono text-xs text-slate-400">{draft.model}</dd>
               </div>
               <div className="rounded-xl bg-white/5 p-3">
                 <dt className="text-slate-400">{copy.route}</dt>
-                <dd className="mt-1 break-all font-mono text-xs">{draft.baseUrl}</dd>
+                <dd className="mt-1 break-all font-mono text-xs">{draft.baseUrl || "—"}</dd>
               </div>
               <div className="rounded-xl bg-white/5 p-3">
                 <dt className="text-slate-400">{copy.registry}</dt>

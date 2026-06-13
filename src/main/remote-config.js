@@ -143,6 +143,10 @@ function normalizeRemoteCatalog(effectiveConfig) {
         id: String(preset.id),
         label: String(preset.label || preset.id),
         description: String(preset.description || ""),
+        // Native image support is a property of the model; when true the client
+        // skips the Qwen vision-to-text bridge and sends images straight to the
+        // (multimodal) engine. Defaults to false → bridge.
+        capabilities: { vision: Boolean(preset.capabilities?.vision) },
         env: { ...preset.env },
       })),
   };
