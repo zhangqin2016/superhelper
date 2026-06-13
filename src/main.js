@@ -26,6 +26,14 @@ let agentBootstrap = null;
 app.setPath("userData", path.join(app.getPath("appData"), "lily-workbench"));
 app.setName("Lily Workbench");
 
+// Hand the host's resolved base dirs to config once, so config (and everything
+// that imports it) needs no electron at call time — keeps it testable/reusable.
+require("./main/config").bindRuntimePaths({
+  userData: app.getPath("userData"),
+  home: app.getPath("home"),
+  documents: app.getPath("documents"),
+});
+
 function createWindow() {
   const appIcon = loadAppIconImage();
   mainWindow = new BrowserWindow({

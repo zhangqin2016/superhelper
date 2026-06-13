@@ -1,7 +1,41 @@
 "use strict";
 
-const { app } = require("electron");
 const path = require("node:path");
+
+// Base directories (userData/home/documents) are the ONLY thing config needs
+// from the runtime host. Rather than hard-require electron (which coupled all 41
+// modules that import config to electron and forced electron mocks in tests and
+// env hacks in CLIs), we resolve them lazily, in priority order:
+//   1. env override   — agent subprocesses / standalone CLIs / tests
+//   2. injected paths  — electron main calls bindRuntimePaths() at startup
+//   3. electron app    — defensive fallback if bind wasn't called in-process
+//   4. throw           — fail loud rather than silently use a wrong path
+// This makes config (and everything that depends on it) usable and testable
+// without electron.
+const ENV_KEYS = { userData: "LILY_USER_DATA_DIR", home: "LILY_HOME", documents: "LILY_DOCUMENTS_DIR" };
+let injectedPaths = null;
+
+/** Electron main injects the host's resolved base dirs once, at startup. */
+function bindRuntimePaths(paths = {}) {
+  injectedPaths = { ...(injectedPaths || {}), ...paths };
+}
+
+function resolveBasePath(name) {
+  const envKey = ENV_KEYS[name];
+  if (envKey && process.env[envKey]) return process.env[envKey];
+  if (injectedPaths && injectedPaths[name]) return injectedPaths[name];
+  try {
+    const electron = require("electron");
+    if (electron && electron.app && typeof electron.app.getPath === "function") {
+      return electron.app.getPath(name);
+    }
+  } catch {
+    /* not running under electron */
+  }
+  throw new Error(
+    `config: base path "${name}" is unavailable — call bindRuntimePaths() at startup or set ${envKey || "the host path"}.`,
+  );
+}
 
 const INSTALLED_CLI_STEM = "lily-workbench";
 const BUNDLED_CLI_STEM = "engine-upstream";
@@ -41,14 +75,12 @@ const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 /** User-writable default workspace — never use PROJECT_ROOT in packaged builds (resolves to app.asar). */
 function defaultWorkspacePath() {
   const folderName = "Lily Workbench";
-  if (process.platform === "win32") {
-    return path.join(app.getPath("documents"), folderName);
-  }
-  return path.join(app.getPath("home"), folderName);
+  const base = process.platform === "win32" ? resolveBasePath("documents") : resolveBasePath("home");
+  return path.join(base, folderName);
 }
 
 function userDataPath(...segments) {
-  return path.join(app.getPath("userData"), ...segments);
+  return path.join(resolveBasePath("userData"), ...segments);
 }
 
 function sessionsConfigPath() {
@@ -84,7 +116,7 @@ function mcpConfigPath() {
 }
 
 function userHome() {
-  return app.getPath("home");
+  return resolveBasePath("home");
 }
 
 function fileStagingDir() {
@@ -110,6 +142,7 @@ function sessionGuideDir(sessionId) {
 }
 
 module.exports = {
+  bindRuntimePaths,
   INSTALLED_CLI_STEM,
   BUNDLED_CLI_STEM,
   bundledCliBasename,
