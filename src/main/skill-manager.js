@@ -840,6 +840,7 @@ async function installOrUpdateFromRegistry(skillId, version) {
 
   const result = await skillInstaller.installFromRegistryEntry(entry);
   if (!result.ok) return result;
+  mergeAgentGuide();
   return { ok: true, skills: listSkillsPublic(), id: result.id, version: result.version };
 }
 
@@ -860,6 +861,7 @@ async function updateFromRegistry(skillId) {
 function uninstallRemoteSkill(skillId) {
   const result = skillInstaller.uninstallRemoteSkill(skillId);
   if (!result.ok) return result;
+  mergeAgentGuide();
   reportSkillEvent("uninstall", skillId, null);
   return { ok: true, skills: listSkillsPublic() };
 }

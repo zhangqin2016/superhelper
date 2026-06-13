@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { app, safeStorage } = require("electron");
 const { userDataPath, PROJECT_ROOT } = require("./config");
+const serviceClient = require("./service-client");
 const {
   base64urlDecode,
   base64urlEncode,
@@ -259,7 +260,7 @@ function requireValidLicense() {
 async function refreshServerLicense() {
   const state = readState();
   if (!state.serverLicense) {
-    const registered = await require("./service-client").registerDevice();
+    const registered = await serviceClient.registerDevice();
     if (!registered.ok) {
       if (isTransientServerLicenseError(registered.error)) {
         return { ...registered, transient: true };
@@ -276,7 +277,7 @@ async function refreshServerLicense() {
   }
   const current = normalizeServerLicense(state.serverLicense);
   if (!current.licenseId) return { ok: false, error: "INVALID_PAYLOAD" };
-  const verified = await require("./service-client").verifyLicense(current.licenseId);
+  const verified = await serviceClient.verifyLicense(current.licenseId);
   if (!verified.ok) {
     if (isTransientServerLicenseError(verified.error)) {
       writeState({
@@ -328,7 +329,7 @@ function activateLicense(token) {
   if (!checked.ok && String(token || "").includes(".")) return checked;
 
   if (!checked.ok) {
-    return require("./service-client").activateLicenseKey(token).then((activated) => {
+    return serviceClient.activateLicenseKey(token).then((activated) => {
       if (!activated.ok) return activated;
       const license = normalizeServerLicense(activated.json?.license || {});
       if (!license.licenseId || !parseIsoTime(license.expiresAt)) {
@@ -377,6 +378,10 @@ function createLicenseToken(payload, privateKeyPem) {
   );
   return `${payloadPart}.${base64urlEncode(sig)}`;
 }
+
+serviceClient.setLicenseIdProvider(
+  () => getLicenseStatus()?.license?.licenseId || null,
+);
 
 module.exports = {
   loadPublicKey,

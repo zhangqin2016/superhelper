@@ -35,6 +35,32 @@ Module._load = function patchedLoad(request, parent, isMain) {
 };
 
 const require = createRequire(import.meta.url);
+// Stub service-client BEFORE license-manager loads — it captures the module
+// at require time (top-level dependency), not per call.
+const serviceClientPath = require.resolve("../src/main/service-client.js");
+require.cache[serviceClientPath] = {
+  id: serviceClientPath,
+  filename: serviceClientPath,
+  loaded: true,
+  exports: {
+    setLicenseIdProvider: () => {},
+    verifyLicense: async () => ({ ok: false, error: "NO_SERVICE_URL" }),
+    registerDevice: async () => ({
+      ok: true,
+      json: {
+        ok: true,
+        trial: {
+          enabled: true,
+          valid: true,
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        },
+      },
+    }),
+    getServiceSettings: () => ({ ok: true, apiBaseUrl: "https://service.example.com" }),
+    latestRelease: async () => globalThis.__latestReleaseResponse || ({ ok: false, error: "SERVICE_REQUEST_FAILED" }),
+  },
+};
+
 const {
   activateLicense,
   clearLicense,
@@ -117,29 +143,6 @@ if (corruptStatus.activated || corruptStatus.error !== "DECRYPT_FAILED") {
 }
 globalThis.__safeStorageAvailable = false;
 globalThis.__safeStorageThrow = false;
-
-const serviceClientPath = require.resolve("../src/main/service-client.js");
-require.cache[serviceClientPath] = {
-  id: serviceClientPath,
-  filename: serviceClientPath,
-  loaded: true,
-  exports: {
-    verifyLicense: async () => ({ ok: false, error: "NO_SERVICE_URL" }),
-    registerDevice: async () => ({
-      ok: true,
-      json: {
-        ok: true,
-        trial: {
-          enabled: true,
-          valid: true,
-          expiresAt: "2099-01-01T00:00:00.000Z",
-        },
-      },
-    }),
-    getServiceSettings: () => ({ ok: true, apiBaseUrl: "https://service.example.com" }),
-    latestRelease: async () => globalThis.__latestReleaseResponse || ({ ok: false, error: "SERVICE_REQUEST_FAILED" }),
-  },
-};
 
 fs.writeFileSync(path.join(tmp, "license-state.json"), JSON.stringify({}, null, 2));
 const trialRefresh = await refreshServerLicense();

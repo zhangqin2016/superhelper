@@ -76,3 +76,30 @@ export function signConfigPayload(payload) {
   const signature = crypto.sign(null, Buffer.from(body), config.configSigningPrivateKey);
   return base64urlEncode(signature);
 }
+
+// --- Admin session tokens -------------------------------------------------
+// The admin cookie used to BE the session secret, so leaking one cookie was
+// equivalent to leaking the signing secret for everyone, forever. Tokens are
+// now per-login HMAC-signed values with an expiry: v1.<expires>.<nonce>.<mac>.
+// Stateless by design (single-admin self-hosted deployment) — rotation of
+// SESSION_SECRET still invalidates all outstanding sessions.
+
+const ADMIN_SESSION_VERSION = "v1";
+
+export function createAdminSessionToken(ttlMs = 7 * 24 * 60 * 60 * 1000) {
+  const expiresAt = Date.now() + ttlMs;
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const body = `${ADMIN_SESSION_VERSION}.${expiresAt}.${nonce}`;
+  const mac = crypto.createHmac("sha256", config.sessionSecret).update(body).digest("hex");
+  return `${body}.${mac}`;
+}
+
+export function verifyAdminSessionToken(token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 4 || parts[0] !== ADMIN_SESSION_VERSION) return false;
+  const [version, expiresAt, nonce, mac] = parts;
+  if (!/^\d+$/.test(expiresAt) || Number(expiresAt) < Date.now()) return false;
+  const body = `${version}.${expiresAt}.${nonce}`;
+  const expected = crypto.createHmac("sha256", config.sessionSecret).update(body).digest("hex");
+  return timingSafeEqualText(mac, expected);
+}

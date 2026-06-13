@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { PROJECT_ROOT, userDataPath } = require("./config");
 const { normalizeToLilyEnv, pickModelId } = require("./agent-env");
+const remoteConfig = require("./remote-config");
 
 /** @type {{ activePresetId: string, presets: Array<{id:string,label:string,description?:string,env:Record<string,string>}> } | null} */
 let cachedCatalog = null;
@@ -138,7 +139,7 @@ function hasPlaintextSecrets(raw) {
 function loadCatalog() {
   if (cachedCatalog) return cachedCatalog;
   try {
-    const remoteCatalog = require("./remote-config").getRemoteModelCatalogSync();
+    const remoteCatalog = remoteConfig.getRemoteModelCatalogSync();
     if (remoteCatalog?.presets?.length) {
       cachedCatalog = remoteCatalog;
       return cachedCatalog;
@@ -312,11 +313,7 @@ function getBuiltinPresets() {
 }
 
 function isRemoteManagedCatalog() {
-  try {
-    return require("./remote-config").hasRemoteModelCatalogSync();
-  } catch {
-    return false;
-  }
+  return remoteConfig.hasRemoteModelCatalogSync();
 }
 
 function usesManagedServicePreset(preset) {
@@ -559,12 +556,10 @@ function setApiGateway({ mode, baseUrl, apiKey }) {
 function reloadPresets() {
   cachedCatalog = null;
   cachedUserChoice = null;
-  try {
-    require("./remote-config").reloadRemoteConfigCache();
-  } catch {
-    // remote config may not be loaded in isolated tests.
-  }
+  remoteConfig.reloadRemoteConfigCache();
 }
+
+remoteConfig.onRemoteConfigRefreshed(reloadPresets);
 
 module.exports = {
   getActivePreset,

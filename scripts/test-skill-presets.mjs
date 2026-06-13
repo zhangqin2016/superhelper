@@ -89,7 +89,7 @@ if (guideBefore.guidePresetId !== "office-starter") {
 }
 
 const office = catalog.presets.find((p) => p.id === "office-starter");
-if (!office || office.total !== 5 || office.enabledCount !== 0) {
+if (!office || office.total !== 7 || office.enabledCount !== 0) {
   throw new Error(`unexpected office preset progress: ${JSON.stringify(office)}`);
 }
 
@@ -110,11 +110,11 @@ const applyResult = await skillManager.applySkillPreset("office-starter");
 if (!applyResult.ok) {
   throw new Error(`apply office-starter failed: ${JSON.stringify(applyResult)}`);
 }
-if ((applyResult.installed || []).length !== 5) {
-  throw new Error(`expected 5 installs, got ${applyResult.installed?.length}`);
+if ((applyResult.installed || []).length !== 7) {
+  throw new Error(`expected 7 installs, got ${applyResult.installed?.length}`);
 }
-if ((applyResult.enabled || []).length !== 5) {
-  throw new Error(`expected 5 enabled, got ${applyResult.enabled?.length}`);
+if ((applyResult.enabled || []).length !== 7) {
+  throw new Error(`expected 7 enabled, got ${applyResult.enabled?.length}`);
 }
 
 const after = skillManager.listSkillPresetsPublic().find((p) => p.id === "office-starter");

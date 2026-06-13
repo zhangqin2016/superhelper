@@ -492,7 +492,7 @@ const ENGINE_IDENTITY_FILE = "engine-identity.json";
 
 function bundledEngineFingerprint() {
   try {
-    const { findBundledCliSource } = require("./agent-bootstrap");
+    const { findBundledCliSource } = require("./bundle-locator");
     const source = findBundledCliSource();
     if (!source) return null;
     const st = fs.statSync(source);

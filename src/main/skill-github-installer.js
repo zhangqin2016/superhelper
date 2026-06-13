@@ -9,10 +9,14 @@ const { buildManifestFromSkillMd } = require("./skill-md-convert");
 const { resolveBundledCatalogDir } = require("./skill-bundled-catalog");
 const { findSkillRoot } = require("./skill-root");
 const { copyDirRecursiveShipSafe, isShipIgnoredEntry } = require("./ship-ignore");
-
-function skillManager() {
-  return require("./skill-manager");
-}
+const {
+  PROTECTED_BUNDLED_IDS,
+  applyPlaceholders,
+  buildReplacements,
+  installedSkillDir,
+  loadSkillsState,
+  saveSkillsState,
+} = require("./skills-state");
 
 const FETCH_TIMEOUT_MS = 60_000;
 const MAX_SKILL_DIR_BYTES = 3 * 1024 * 1024;
@@ -129,11 +133,10 @@ async function materializeFromGithub(entry, extractDir) {
 }
 
 function applySkillPlaceholders(skillDir, manifest) {
-  const mgr = skillManager();
-  const replacements = mgr.buildReplacements(skillDir, manifest);
+  const replacements = buildReplacements(skillDir, manifest);
   const skillMdPath = path.join(skillDir, "SKILL.md");
   if (fs.existsSync(skillMdPath)) {
-    const skillMd = mgr.applyPlaceholders(
+    const skillMd = applyPlaceholders(
       fs.readFileSync(skillMdPath, "utf8"),
       replacements,
     );
@@ -142,7 +145,6 @@ function applySkillPlaceholders(skillDir, manifest) {
 }
 
 function finalizeInstalledSkill(entry, extractDir) {
-  const mgr = skillManager();
   const skillRoot = findSkillRoot(extractDir);
   if (!skillRoot) {
     return {
@@ -192,14 +194,14 @@ function finalizeInstalledSkill(entry, extractDir) {
     );
   }
 
-  const target = mgr.installedSkillDir(entry.id);
+  const target = installedSkillDir(entry.id);
   if (fs.existsSync(target)) {
     fs.rmSync(target, { recursive: true, force: true });
   }
   copyDirRecursive(skillRoot, target);
   applySkillPlaceholders(target, manifest);
 
-  const state = mgr.loadSkillsState();
+  const state = loadSkillsState();
   const now = new Date().toISOString();
   const prev = state.skills[entry.id];
   state.skills[entry.id] = {
@@ -211,8 +213,7 @@ function finalizeInstalledSkill(entry, extractDir) {
     updatedAt: now,
     githubRef: `${entry.github.repo}@${entry.github.ref || "main"}:${entry.github.path}`,
   };
-  mgr.saveSkillsState();
-  mgr.mergeAgentGuide();
+  saveSkillsState();
 
   return { ok: true, id: entry.id, version: entry.latestVersion };
 }
@@ -231,8 +232,7 @@ function networkErrorDetail(err) {
  * @param {{ id: string, latestVersion: string, github: { repo: string, path: string, ref?: string }, minAppVersion?: string | null }} entry
  */
 async function installFromGithubEntry(entry) {
-  const mgr = skillManager();
-  if (mgr.PROTECTED_BUNDLED_IDS.has(entry.id)) {
+  if (PROTECTED_BUNDLED_IDS.has(entry.id)) {
     return { ok: false, error: "BUNDLED_PROTECTED" };
   }
   if (!entry.github?.repo || !entry.github?.path) {

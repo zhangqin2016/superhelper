@@ -135,7 +135,7 @@ kind  = thinking | text | tool | todo | notice | permission | question
 ## 测试基建（已完成）
 
 - `scripts/run-all-tests.mjs`：整链全部跑完并汇总失败（替代 && 链断裂）；
-  `test:unit` 现在指向 runner，原链保留为 `test:unit:chain` 数据源。
+  `test:unit` 现在指向 runner，按约定自动发现 `scripts/test-*.mjs/.cjs`，无需注册。
 - 修复 `test-scheduled-tasks` 既有失败：执行 prompt 与 scheduleText 已改英文
   （5c9403b 有意变更），测试断言同步到当前意图。**当前 55/55 全绿。**
 

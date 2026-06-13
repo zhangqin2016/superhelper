@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 import module from "node:module";
+import { assert } from "./lib/test-assert.mjs";
 const require = module.createRequire(import.meta.url);
 const { isFileWriteTool, extractFilePath } = require("../src/main/diff-capture.js");
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 try {
   assert(isFileWriteTool("Write"), "Write is a write tool");

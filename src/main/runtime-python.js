@@ -8,15 +8,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { PROJECT_ROOT } = require("./config");
-
-function platformBundleKeys() {
-  if (process.platform === "darwin") {
-    if (process.arch === "arm64") return ["darwin-arm64", "darwin-x64"];
-    return ["darwin-x64", "darwin-arm64"];
-  }
-  if (process.platform === "win32") return ["win32-x64"];
-  return ["linux-x64"];
-}
+const { platformBundleKeys } = require("./bundle-locator");
 
 function bundledRuntimeCandidates() {
   const resourcesPath =
@@ -55,6 +47,34 @@ function venvBinDir(runtimeRoot) {
 
 function runtimeBinDir(runtimeRoot) {
   return path.join(runtimeRoot, "bin");
+}
+
+/**
+ * Absolute path to the bundled venv Python interpreter, or null if no runtime
+ * is present. Lets the main process delegate document parsing to the
+ * best-in-class Python libraries that ship in the venv.
+ * @returns {string|null}
+ */
+function resolveVenvPython() {
+  const root = resolveBundledRuntimeRoot();
+  if (!root) return null;
+  const exe = process.platform === "win32" ? "python.exe" : "python3";
+  const candidate = path.join(venvBinDir(root), exe);
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
+/**
+ * Absolute path to the bundled `uv` binary, or null if no runtime is present.
+ * Lets on-demand capability packs install extra Python deps into the venv with
+ * the same tool the build uses (`uv pip install --python <venv>`).
+ * @returns {string|null}
+ */
+function resolveBundledUv() {
+  const root = resolveBundledRuntimeRoot();
+  if (!root) return null;
+  const exe = process.platform === "win32" ? "uv.exe" : "uv";
+  const candidate = path.join(runtimeBinDir(root), exe);
+  return fs.existsSync(candidate) ? candidate : null;
 }
 
 function resolveSofficeDir(runtimeRoot) {
@@ -139,6 +159,8 @@ function getRuntimeSummary() {
 module.exports = {
   platformBundleKeys,
   resolveBundledRuntimeRoot,
+  resolveVenvPython,
+  resolveBundledUv,
   getRuntimePathEntries,
   getRuntimeEnvExtras,
   getRuntimeSummary,

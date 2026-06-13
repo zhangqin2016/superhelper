@@ -49,6 +49,43 @@ function deriveAutoFeedUrl(platformKey = currentPlatformKey(), channel = "stable
   return `${normalizeUrlBase(defaultAutoUpdateBaseUrl())}/${encodeURIComponent(platformKey)}/${encodeURIComponent(channel)}`;
 }
 
+// Update feeds and download links may arrive from the service API. Restrict
+// them to origins we already trust for updates — a compromised or spoofed
+// service response must not be able to redirect the updater elsewhere.
+function trustedUpdateOrigins() {
+  const origins = new Set();
+  const candidates = [
+    defaultManifestUrl(),
+    defaultAutoUpdateBaseUrl(),
+    process.env.LILY_AUTO_UPDATE_FEED_URL,
+  ];
+  try {
+    const svc = require("./service-client").getServiceSettings();
+    if (svc?.apiBaseUrl) candidates.push(svc.apiBaseUrl);
+  } catch {
+    // service client unavailable in some test contexts
+  }
+  for (const value of candidates) {
+    try {
+      if (value) origins.add(new URL(String(value)).origin);
+    } catch {
+      // ignore malformed configured URLs
+    }
+  }
+  return origins;
+}
+
+function isTrustedUpdateUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+    if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) return false;
+    return trustedUpdateOrigins().has(parsed.origin);
+  } catch {
+    return false;
+  }
+}
+
 function getUpdateSettings() {
   return {
     ok: true,
@@ -351,7 +388,11 @@ async function checkForUpdatesState() {
     });
   }
 
-  const feedUrl = result.feedUrl || deriveAutoFeedUrl(result.platformKey);
+  let feedUrl = result.feedUrl || deriveAutoFeedUrl(result.platformKey);
+  if (!isTrustedUpdateUrl(feedUrl)) {
+    console.warn("[update-manager] untrusted feed url rejected: %s", feedUrl);
+    feedUrl = deriveAutoFeedUrl(result.platformKey);
+  }
   const next = {
     ok: true,
     phase: result.hasUpdate ? PHASE.available : PHASE.idle,
@@ -481,6 +522,7 @@ async function installUpdate(options = {}) {
 async function openUpdateDownload(url) {
   const target = String(url || "").trim();
   if (!/^https?:\/\//i.test(target)) return { ok: false, error: "INVALID_URL" };
+  if (!isTrustedUpdateUrl(target)) return { ok: false, error: "UNTRUSTED_DOWNLOAD_ORIGIN" };
   await shell.openExternal(target);
   return { ok: true };
 }
@@ -496,6 +538,8 @@ function createUpdateManifest(payload, privateKeyPem) {
 }
 
 module.exports = {
+  isTrustedUpdateUrl,
+  trustedUpdateOrigins,
   configure,
   getUpdateSettings,
   getUpdateState,

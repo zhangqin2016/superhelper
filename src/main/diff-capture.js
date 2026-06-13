@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { isTextFile } = require("./file-kinds");
 
 const MAX_LINES = 5000;
 
@@ -36,7 +37,6 @@ function captureBeforeSnapshot(sessionId, toolId, toolName, input) {
   const filePath = extractFilePath(toolName, input);
   if (!filePath) return;
 
-  const { isTextFile } = require("./ipc-filetree");
   if (!isTextFile(filePath)) return;
 
   let originalContent = null;
@@ -184,6 +184,21 @@ function clearDiffsForSession(sessionId) {
   capturedDiffs.delete(sessionId);
 }
 
+/**
+ * Authoritative lookup for a captured diff by session + file. IPC handlers use
+ * this instead of trusting renderer-supplied originalContent/status — the
+ * renderer's copy of a diff is display state, not authority.
+ */
+function findDiffEntry(sessionId, filePath) {
+  const sessionTurns = capturedDiffs.get(sessionId);
+  if (!sessionTurns) return null;
+  let found = null;
+  for (const turnMap of sessionTurns.values()) {
+    if (turnMap.has(filePath)) found = turnMap.get(filePath); // latest turn wins
+  }
+  return found;
+}
+
 function removeAcceptedDiff(sessionId, filePath) {
   const sessionTurns = capturedDiffs.get(sessionId);
   if (!sessionTurns) return false;
@@ -257,6 +272,7 @@ module.exports = {
   captureBeforeSnapshot,
   emitDiffForTool,
   clearDiffsForSession,
+  findDiffEntry,
   removeAcceptedDiff,
   revertTurnChanges,
   undoRevertTurn,

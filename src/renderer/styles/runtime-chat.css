@@ -359,41 +359,115 @@
   top: 56px;
   right: 24px;
   display: flex;
-  gap: 6px;
+  gap: 2px;
   align-items: center;
-  padding: 6px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: var(--bg-primary);
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--bg-floating);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow: var(--shadow-floating);
   z-index: 60;
+  animation: find-bar-in 0.16s ease-out;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.conversation-find-bar:focus-within {
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-floating), 0 0 0 3px var(--accent-ring);
+}
+
+@keyframes find-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .conversation-find-bar[hidden] {
   display: none;
 }
 
+.find-search-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-dim);
+}
+
+.find-search-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
 .conversation-find-input {
   width: 200px;
-  padding: 4px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-secondary);
+  padding: 4px 6px;
+  border: none;
+  outline: none;
+  background: transparent;
   color: var(--text-primary);
   font-size: 13px;
 }
 
+.conversation-find-input::placeholder {
+  color: var(--text-dim);
+}
+
 .conversation-find-counter {
-  min-width: 44px;
+  min-width: 40px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
   text-align: center;
+  white-space: nowrap;
+}
+
+.find-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.find-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.find-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.find-btn:active {
+  background: var(--bg-surface-active);
+}
+
+.find-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 .find-match-current {
-  outline: 2px solid var(--accent, var(--text-secondary));
+  outline: 2px solid var(--accent-strong-border);
   outline-offset: 2px;
   border-radius: 6px;
+  background: var(--accent-subtle);
 }
 
 .composer-mention-item.is-active {

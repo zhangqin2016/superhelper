@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import module from "node:module";
+import { assert } from "./lib/test-assert.mjs";
 const require = module.createRequire(import.meta.url);
 const {
   needsUserApproval,
@@ -9,10 +10,6 @@ const {
   parseCanUseToolRequest,
   withPersistentDestination,
 } = require("../src/main/control-protocol.js");
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 try {
   // needsUserApproval

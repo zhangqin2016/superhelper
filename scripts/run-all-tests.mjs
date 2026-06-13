@@ -1,22 +1,54 @@
 #!/usr/bin/env node
-// Runs every command in a package.json script chain ("a && b && c") to
-// completion and reports ALL failures, instead of stopping at the first one
-// the way the shell && chain does. Usage:
-//   node scripts/run-all-tests.mjs [chainScriptName]   (default: test:unit:chain)
+// Test runner with convention-based discovery. Default mode runs every test in
+// scripts/ — no package.json registration needed, so a test file can never be
+// silently orphaned:
+//   scripts/test-*.mjs  → node
+//   scripts/test-*.cjs  → npx electron   (renderer/electron-API tests)
+// plus the benchmark regressions listed in BENCH_COMMANDS.
+//
+// Every command runs to completion and ALL failures are reported, instead of
+// stopping at the first one the way a shell && chain does.
+//
+// Usage:
+//   node scripts/run-all-tests.mjs                 # discover and run everything
+//   node scripts/run-all-tests.mjs test:runtime    # run a curated package.json chain
 import { execSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const pkg = require("../package.json");
+const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 
-const chainName = process.argv[2] || "test:unit:chain";
-const chain = pkg.scripts?.[chainName];
-if (!chain) {
-  console.error(`No script named "${chainName}" in package.json`);
-  process.exit(2);
+// Benchmarks double as perf regressions but don't match the test-* convention.
+const BENCH_COMMANDS = [
+  "node scripts/bench-replay.mjs",
+  "npx electron scripts/bench-replay-renderer.cjs",
+];
+
+function discoverCommands() {
+  const files = readdirSync(scriptsDir).sort();
+  const commands = [];
+  for (const file of files) {
+    if (/^test-.*\.mjs$/.test(file)) commands.push(`node scripts/${file}`);
+    else if (/^test-.*\.cjs$/.test(file)) commands.push(`npx electron scripts/${file}`);
+  }
+  return [...commands, ...BENCH_COMMANDS];
 }
 
-const commands = chain.split("&&").map((part) => part.trim()).filter(Boolean);
+function chainCommands(chainName) {
+  const pkg = require("../package.json");
+  const chain = pkg.scripts?.[chainName];
+  if (!chain) {
+    console.error(`No script named "${chainName}" in package.json`);
+    process.exit(2);
+  }
+  return chain.split("&&").map((part) => part.trim()).filter(Boolean);
+}
+
+const chainName = process.argv[2];
+const commands = chainName ? chainCommands(chainName) : discoverCommands();
 const failures = [];
 const startedAt = Date.now();
 

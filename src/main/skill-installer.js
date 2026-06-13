@@ -9,10 +9,15 @@ const { compareSemver, isAppVersionCompatible } = require("./skill-version");
 const skillGithubInstaller = require("./skill-github-installer");
 const { findSkillRoot } = require("./skill-root");
 const { copyDirRecursiveShipSafe, isShipIgnoredEntry } = require("./ship-ignore");
-
-function skillManager() {
-  return require("./skill-manager");
-}
+const {
+  PROTECTED_BUNDLED_IDS,
+  applyPlaceholders,
+  buildReplacements,
+  installedSkillDir,
+  loadSkillsState,
+  readInstalledManifest,
+  saveSkillsState,
+} = require("./skills-state");
 
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 const MAX_SKILLPACK_BYTES = 10 * 1024 * 1024;
@@ -122,9 +127,8 @@ function copyDirRecursive(source, target) {
 }
 
 function backupInstalledSkill(skillId) {
-  const mgr = skillManager();
-  const source = mgr.installedSkillDir(skillId);
-  const manifest = mgr.readInstalledManifest(skillId);
+  const source = installedSkillDir(skillId);
+  const manifest = readInstalledManifest(skillId);
   if (!manifest || !fs.existsSync(source)) return;
 
   const backup = skillsBackupDir(skillId, manifest.version);
@@ -135,11 +139,10 @@ function backupInstalledSkill(skillId) {
 }
 
 function applySkillPlaceholders(skillDir, manifest) {
-  const mgr = skillManager();
-  const replacements = mgr.buildReplacements(skillDir, manifest);
+  const replacements = buildReplacements(skillDir, manifest);
   const skillMdPath = path.join(skillDir, "SKILL.md");
   if (fs.existsSync(skillMdPath)) {
-    const skillMd = mgr.applyPlaceholders(
+    const skillMd = applyPlaceholders(
       fs.readFileSync(skillMdPath, "utf8"),
       replacements,
     );
@@ -149,8 +152,7 @@ function applySkillPlaceholders(skillDir, manifest) {
 
 /** @param {object} entry registry entry (zip or github) */
 async function installFromRegistryEntry(entry) {
-  const mgr = skillManager();
-  if (mgr.PROTECTED_BUNDLED_IDS.has(entry.id)) {
+  if (PROTECTED_BUNDLED_IDS.has(entry.id)) {
     return { ok: false, error: "BUNDLED_PROTECTED" };
   }
   if (entry.minAppVersion && !isAppVersionCompatible(entry.minAppVersion)) {
@@ -205,14 +207,14 @@ async function installFromRegistryEntry(entry) {
 
     backupInstalledSkill(entry.id);
 
-    const target = mgr.installedSkillDir(entry.id);
+    const target = installedSkillDir(entry.id);
     if (fs.existsSync(target)) {
       fs.rmSync(target, { recursive: true, force: true });
     }
     copyDirRecursive(skillRoot, target);
     applySkillPlaceholders(target, validated.manifest);
 
-    const state = mgr.loadSkillsState();
+    const state = loadSkillsState();
     const now = new Date().toISOString();
     state.skills[entry.id] = {
       id: entry.id,
@@ -223,9 +225,8 @@ async function installFromRegistryEntry(entry) {
       updatedAt: now,
       sha256: entry.sha256.toLowerCase(),
     };
-    mgr.saveSkillsState();
-    mgr.mergeAgentGuide();
-
+    saveSkillsState();
+  
     return { ok: true, id: entry.id, version: validated.manifest.version };
   } catch (err) {
     if (err.message === "ZIP_SLIP") {
@@ -243,24 +244,22 @@ async function installFromRegistryEntry(entry) {
 }
 
 function uninstallRemoteSkill(skillId) {
-  const mgr = skillManager();
-  if (mgr.PROTECTED_BUNDLED_IDS.has(skillId)) {
+  if (PROTECTED_BUNDLED_IDS.has(skillId)) {
     return { ok: false, error: "BUNDLED_PROTECTED" };
   }
 
-  const state = mgr.loadSkillsState();
+  const state = loadSkillsState();
   const entry = state.skills[skillId];
   if (!entry || entry.source !== "remote") {
     return { ok: false, error: "NOT_FOUND" };
   }
 
-  const target = mgr.installedSkillDir(skillId);
+  const target = installedSkillDir(skillId);
   if (fs.existsSync(target)) {
     fs.rmSync(target, { recursive: true, force: true });
   }
   delete state.skills[skillId];
-  mgr.saveSkillsState();
-  mgr.mergeAgentGuide();
+  saveSkillsState();
 
   return { ok: true };
 }

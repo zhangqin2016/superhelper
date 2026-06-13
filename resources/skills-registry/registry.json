@@ -216,6 +216,63 @@
       "changelog": "智能工作台内置：工程协作 12 条"
     },
     {
+      "id": "lily-template-fill",
+      "name": "Template Fill",
+      "description": "Use this skill when the user wants to fill an existing Word (.docx) template with data — mail-merge style: contracts, offer letters, invoices, certificates, notices, or many documents from one template plus a data table. The template already contains {{ }} / {%p %} placeholders. Do NOT use to author a new document from scratch (use the docx skill) or to read/extract content.",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "template-fill",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.0",
+      "category": "office",
+      "categoryLabel": "办公文档",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "智能工作台内置：Word 模板填充"
+    },
+    {
+      "id": "lily-document-verify",
+      "name": "Document Verify",
+      "description": "Use this skill to visually verify a generated or edited document before delivering it — catch layout problems text extraction can't see: overflowed cells, broken tables, blank pages, content off the margin. Renders .docx/.xlsx/.pptx/.pdf to page images, then you inspect them. A final QA step, not text extraction.",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "document-verify",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.0",
+      "category": "office",
+      "categoryLabel": "办公文档",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "智能工作台内置：文档排版视觉校验"
+    },
+    {
+      "id": "lily-pdf-form",
+      "name": "PDF Form Fill",
+      "description": "Use this skill to fill a fillable PDF form (AcroForm) with named fields — government, bank, application, or registration forms supplied as a fillable .pdf. Inspect the field names, map data onto them, write a new filled PDF. Do NOT use to design a new PDF or for contracts/certificates — fill a Word template and convert to PDF for those.",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "pdf-form",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.0",
+      "category": "office",
+      "categoryLabel": "办公文档",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "智能工作台内置：可填写 PDF 表单填充"
+    },
+    {
       "id": "superpowers-dispatching-parallel-agents",
       "name": "Dispatching Parallel Agents",
       "description": "Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies",

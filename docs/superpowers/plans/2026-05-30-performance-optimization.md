@@ -1,3 +1,7 @@
+> **⚠️ 已归档（2026-06-13）**：本计划制定于 2026-05-30，34 个任务勾选框均未更新，
+> 文中行数、文件状态与当前代码已漂移（如 message.js 已非 772 行）。
+> **不要**让 agent 直接执行本计划；如需继续相关工作，先按当前代码重新评估。
+
 # 智能工作台性能与架构优化 实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

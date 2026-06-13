@@ -4,13 +4,10 @@
  * Pure logic — all side effects are injected, so no Electron needed.
  */
 import module from "node:module";
+import { assert } from "./lib/test-assert.mjs";
 
 const require = module.createRequire(import.meta.url);
 const { ApprovalBroker } = require("../src/main/approval-broker.js");
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function makeMocks() {
   const written = [];

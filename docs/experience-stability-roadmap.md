@@ -1,3 +1,7 @@
+> **⚠️ 已归档（2026-06-13）**：本文的"Current Architecture Baseline"基于已被替换的
+> `turn-controller` 旧架构，文中引用的 `test-turn-controller.mjs`、`test-turn-message-queue.mjs`
+> 等测试文件已不存在。现行架构见 `docs/turn-event-architecture.md`。仅作历史参考。
+
 # Lily Workbench Experience Stability Roadmap
 
 ## Purpose

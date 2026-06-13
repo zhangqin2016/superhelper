@@ -7,7 +7,7 @@ const {
   describeSchedule,
   normalizeScheduleSpec,
   sanitizeScheduledTaskPrompt,
-} = require("./scheduled-tasks");
+} = require("./schedule-parser");
 
 const REQUEST_TIMEOUT_MS = 12_000;
 

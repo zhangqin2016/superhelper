@@ -7,44 +7,21 @@ const {
   PROJECT_ROOT,
   agentBinDir,
   agentConfigDir,
-  bundledCliBasename,
   installedCliBasename,
   legacyInstalledCliBasenames,
-  legacyBundledCliBasenames,
 } = require("./config");
-const { runDataMigrations } = require("./data-migration");
+const {
+  runDataMigrations,
+  migrateSettingsEnvKeys,
+  migrateLegacyGuideFile,
+} = require("./data-migration");
+const {
+  platformBundleKeys,
+  platformBundleKey,
+  findBundledCliSource,
+} = require("./bundle-locator");
 const { getLogger } = require("./logger");
 const log = getLogger("agent-bootstrap");
-
-/** Platform keys to search for bundled CLI (order matters). */
-function platformBundleKeys() {
-  if (process.platform === "darwin") {
-    if (process.arch === "arm64") return ["darwin-arm64", "darwin-x64"];
-    return ["darwin-x64", "darwin-arm64"];
-  }
-  if (process.platform === "win32") return ["win32-x64"];
-  return ["linux-x64"];
-}
-
-function platformBundleKey() {
-  return platformBundleKeys()[0];
-}
-
-function bundledCliSourceCandidates() {
-  const names = [bundledCliBasename(), ...legacyBundledCliBasenames()];
-  const paths = [];
-  const resourcesPath =
-    typeof process.resourcesPath === "string" ? process.resourcesPath : null;
-  for (const key of platformBundleKeys()) {
-    for (const name of names) {
-      if (resourcesPath) {
-        paths.push(path.join(resourcesPath, "bundles", key, name));
-      }
-      paths.push(path.join(PROJECT_ROOT, "bundles", key, name));
-    }
-  }
-  return paths;
-}
 
 function installedCliPath() {
   return path.join(agentBinDir(), installedCliBasename());
@@ -70,13 +47,6 @@ function legacyInstalledCliPaths() {
 function findLegacyInstalledCli() {
   for (const legacy of legacyInstalledCliPaths()) {
     if (fs.existsSync(legacy)) return legacy;
-  }
-  return null;
-}
-
-function findBundledCliSource() {
-  for (const candidate of bundledCliSourceCandidates()) {
-    if (fs.existsSync(candidate)) return candidate;
   }
   return null;
 }
@@ -204,7 +174,6 @@ function bootstrapAgent() {
   } catch (err) {
     log.warn("verification hook install failed: %s", err?.message || err);
   }
-  const { migrateSettingsEnvKeys, migrateLegacyGuideFile } = require("./data-migration");
   migrateSettingsEnvKeys();
   migrateLegacyGuideFile();
 

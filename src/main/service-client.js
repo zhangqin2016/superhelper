@@ -272,10 +272,17 @@ async function skillRegistry() {
   });
 }
 
+// license-manager injects this at load time — service-client must not require
+// it back (license-manager is a client of this module, not a dependency).
+let licenseIdProvider = () => null;
+
+function setLicenseIdProvider(provider) {
+  licenseIdProvider = provider;
+}
+
 function currentLicenseId() {
   try {
-    const status = require("./license-manager").getLicenseStatus();
-    return status?.license?.licenseId || null;
+    return licenseIdProvider() || null;
   } catch {
     return null;
   }
@@ -356,6 +363,23 @@ async function latestRelease(platformKey, version) {
   });
 }
 
+/**
+ * Resolve the download for an optional document capability pack. The server
+ * decides the artifact URL (e.g. a Qiniu CDN object), so the source is
+ * configurable server-side and reachable inside China without hitting PyPI.
+ * @returns {Promise<{ ok: boolean, artifact?: { url: string, sha256: string, version?: string, size?: number } }>}
+ */
+async function documentPackArtifact(packId, platformKey) {
+  const params = new URLSearchParams({
+    pack: String(packId || ""),
+    platform: String(platformKey || ""),
+  });
+  return serviceFetch(`/api/document-packs/artifact?${params.toString()}`, {
+    method: "GET",
+    headers: {},
+  });
+}
+
 async function testConnection() {
   return serviceFetch("/health", { method: "GET", headers: {} });
 }
@@ -412,6 +436,7 @@ async function uploadFeedbackAttachment(upload, attachment) {
 }
 
 module.exports = {
+  setLicenseIdProvider,
   getServiceSettings,
   getDeviceId,
   devicePayload,
@@ -426,6 +451,7 @@ module.exports = {
   fetchClientConfig,
   rotateDeviceKeypair,
   latestRelease,
+  documentPackArtifact,
   testConnection,
   submitContactRequest,
   requestFeedbackAttachmentUpload,

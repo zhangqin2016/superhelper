@@ -8,6 +8,7 @@ const { getSearchSpawnEnv } = require("./search-settings");
 const { normalizeToLilyEnv, toEngineEnv } = require("./agent-env");
 const { ensureRuntimeNodeShim, runtimeBinDir } = require("./runtime-node");
 const { getRuntimePathEntries, getRuntimeEnvExtras } = require("./runtime-python");
+const { pickInheritedEnv } = require("./spawn-env-allowlist");
 
 function buildAgentSpawnEnv(options = {}) {
   ensureRuntimeNodeShim();
@@ -45,7 +46,7 @@ function buildAgentSpawnEnv(options = {}) {
   }
 
   const env = {
-    ...process.env,
+    ...pickInheritedEnv(process.env),
     ...engineEnv,
     ...getSearchSpawnEnv(),
     ...getRuntimeEnvExtras(),

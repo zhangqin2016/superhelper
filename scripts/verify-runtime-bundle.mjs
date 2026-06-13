@@ -121,10 +121,11 @@ if (!fs.existsSync(venvPython)) {
 const canRunSmokeTest =
   platform !== "win32-x64" || process.platform === "win32";
 if (canRunSmokeTest) {
-  const probe = spawnSync(venvPython, ["-c", "import pandas, openpyxl; print('ok')"], {
-    encoding: "utf8",
-    timeout: 15_000,
-  });
+  const probe = spawnSync(
+    venvPython,
+    ["-c", "import pandas, openpyxl, pdfplumber, pypdfium2, rapidocr_onnxruntime; print('ok')"],
+    { encoding: "utf8", timeout: 60_000 },
+  );
   if (probe.status !== 0) {
     const detail = probe.error?.message || probe.stderr || probe.stdout || probe.signal || "unknown error";
     console.warn(`[verify-runtime] warning: venv smoke test failed: ${detail}`);

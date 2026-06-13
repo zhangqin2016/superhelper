@@ -129,6 +129,33 @@ export async function publicCatalogRoutes(app) {
     };
   });
 
+  app.get("/api/document-packs/artifact", async (request) => {
+    const packId = String(request.query?.pack || "");
+    const platform = String(request.query?.platform || "");
+    if (!packId || !platform) return { artifact: null };
+    const rows = await db
+      .selectFrom("document_packs")
+      .selectAll()
+      .where("pack_id", "=", packId)
+      .where("platform", "=", platform)
+      .where("enabled", "=", true)
+      .orderBy("created_at", "desc")
+      .limit(200)
+      .execute();
+    // Reuse newest-by-version selection; document_packs has no created_at tie
+    // semantics beyond recency, which newestRelease already handles.
+    const pack = newestRelease(rows);
+    if (!pack) return { artifact: null };
+    return {
+      artifact: {
+        url: pack.url,
+        sha256: pack.sha256,
+        version: pack.version,
+        sizeBytes: Number(pack.size_bytes || 0),
+      },
+    };
+  });
+
   app.get("/api/releases", async (request) => {
     const platform = String(request.query?.platform || "").trim();
     let query = db

@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { db } from "../db.js";
 import { config } from "../config.js";
-import { timingSafeEqualText } from "../services/security.js";
+import { timingSafeEqualText, createAdminSessionToken, verifyAdminSessionToken } from "../services/security.js";
 import { registerAdminAuditRoutes } from "./admin/audit.js";
 import { registerAdminConfigProfileRoutes } from "./admin/config-profiles.js";
 import { registerAdminContactRoutes } from "./admin/contacts.js";
 import { registerAdminDeviceRoutes } from "./admin/devices.js";
 import { registerAdminDiagnosticsRoutes } from "./admin/diagnostics.js";
+import { registerAdminDocumentPackRoutes } from "./admin/document-packs.js";
 import { registerAdminLicenseRoutes } from "./admin/licenses.js";
 import { registerAdminPluginRoutes } from "./admin/plugins.js";
 import { registerAdminReleaseRoutes } from "./admin/releases.js";
@@ -25,7 +26,7 @@ function assertAdmin(request, reply) {
     if (auth === `Bearer ${config.adminToken}`) return true;
   }
   const session = request.cookies?.lily_admin_session;
-  if (session && session === config.sessionSecret) return true;
+  if (session && verifyAdminSessionToken(session)) return true;
   reply.code(401).send({ ok: false, code: "ADMIN_UNAUTHORIZED" });
   return false;
 }
@@ -60,7 +61,7 @@ export async function adminRoutes(app) {
       return reply.code(401).send({ ok: false, code: "INVALID_LOGIN" });
     }
 
-    reply.setCookie("lily_admin_session", config.sessionSecret, {
+    reply.setCookie("lily_admin_session", createAdminSessionToken(), {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
@@ -85,6 +86,7 @@ export async function adminRoutes(app) {
   registerAdminDiagnosticsRoutes(app);
   registerAdminContactRoutes(app);
   registerAdminReleaseRoutes(app, { audit });
+  registerAdminDocumentPackRoutes(app, { audit });
   registerAdminPluginRoutes(app, { audit });
   registerAdminConfigProfileRoutes(app, { audit });
   registerAdminAuditRoutes(app);

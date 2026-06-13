@@ -22,15 +22,26 @@ function bundledRegistryPath() {
   return candidates.find((p) => fs.existsSync(p)) || null;
 }
 
+// Registry metadata decides what code the agent will run later — treat its
+// transport as a supply-chain boundary: HTTPS only. Plain http is allowed
+// solely for loopback hosts (local registry development).
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
 function isValidRegistryUrl(url) {
   if (!url || typeof url !== "string") return false;
   try {
     const parsed = new URL(url.trim());
-    return parsed.protocol === "https:" || parsed.protocol === "http:";
+    if (parsed.protocol === "https:") return true;
+    return parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname);
   } catch {
     return false;
   }
 }
+
+// Git repo/refs reach download code paths — constrain charset and shape.
+const GITHUB_REPO_RE = /^[\w.-]+\/[\w.-]+$/;
+const GITHUB_REF_RE = /^[\w./-]{1,128}$/;
+const SHA256_RE = /^[0-9a-f]{64}$/;
 
 function normalizeRegistryEntry(raw) {
   if (!raw?.id || !raw.latestVersion) {
@@ -55,23 +66,29 @@ function normalizeRegistryEntry(raw) {
   if (raw.sourceType === "github" || raw.github) {
     const gh = raw.github || {};
     if (!gh.repo || !gh.path) return null;
+    const repo = String(gh.repo);
+    const ref = String(gh.ref || "main");
+    const ghPath = String(gh.path);
+    if (!GITHUB_REPO_RE.test(repo) || !GITHUB_REF_RE.test(ref)) return null;
+    if (ghPath.includes("..") || ghPath.startsWith("/")) return null;
     return {
       ...base,
       sourceType: "github",
-      github: {
-        repo: String(gh.repo),
-        path: String(gh.path),
-        ref: String(gh.ref || "main"),
-      },
+      github: { repo, path: ghPath, ref },
     };
   }
 
   if (raw.downloadUrl && raw.sha256) {
+    const downloadUrl = String(raw.downloadUrl);
+    const sha256 = String(raw.sha256).toLowerCase();
+    // The artifact URL rides the same trust rules as the registry itself, and
+    // a malformed hash must fail HERE, not pass a useless comparison later.
+    if (!isValidRegistryUrl(downloadUrl) || !SHA256_RE.test(sha256)) return null;
     return {
       ...base,
       sourceType: "zip",
-      downloadUrl: String(raw.downloadUrl),
-      sha256: String(raw.sha256).toLowerCase(),
+      downloadUrl,
+      sha256,
     };
   }
 

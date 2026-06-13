@@ -17,6 +17,7 @@ const {
   MISSED_GRACE_MS,
   DEFAULT_PERMISSION_MODE,
 } = require("./schedule-parser");
+const { parseScheduledTaskDraftWithModel } = require("./scheduled-task-ai-draft");
 
 class ScheduledTaskManager {
   constructor() {
@@ -90,7 +91,7 @@ class ScheduledTaskManager {
   async parseDraftSmart({ text, sessionId, projectId }) {
     const prompt = safeText(text, 4000);
     if (!prompt) return { ok: false, error: "EMPTY" };
-    const modelParser = this.aiDraftParser || require("./scheduled-task-ai-draft").parseScheduledTaskDraftWithModel;
+    const modelParser = this.aiDraftParser || parseScheduledTaskDraftWithModel;
     const modelResult = await modelParser({
       text: prompt,
       sessionId,
@@ -345,6 +346,9 @@ class ScheduledTaskManager {
       prompt,
       schedule,
       scheduleText: safeText(task.scheduleText, 120) || describeSchedule(schedule),
+      // Display-only. Unattended fires ALWAYS run with "dontAsk" (see
+      // _runTask) — a prompt nobody can answer must never hang a task; manual
+      // "run now" uses the session's own mode. This field never overrides that.
       permissionMode: task.permissionMode || DEFAULT_PERMISSION_MODE,
       enabled,
       status: enabled ? (task.status === "running" || task.status === "queued" ? "scheduled" : task.status || "scheduled") : "paused",

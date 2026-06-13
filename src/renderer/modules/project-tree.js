@@ -260,7 +260,7 @@ export function updateProjectTreeChrome() {
   updateSessionMetaCounts();
 }
 
-const CTX_MENU_CSS = "position:fixed;z-index:10000;min-width:160px;padding:6px;background:#1e2140;border:1px solid #2a2d50;border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,0.5);";
+const CTX_MENU_CSS = "position:fixed;z-index:10000;min-width:160px;padding:6px;background:var(--bg-floating);border:1px solid var(--border-light);border-radius:8px;box-shadow:var(--shadow-floating);";
 
 // Place a context menu at (x, y) but flip/clamp it back inside the viewport —
 // menus opened on the last list item used to overflow below the window and
@@ -559,9 +559,9 @@ const style = document.createElement("style");
 style.textContent = `
   .ctx-menu-item {
     display:block;width:100%;padding:6px 12px;border:0;border-radius:4px;
-    background:transparent;color:#e0e0f0;font-size:13px;text-align:start;cursor:pointer;
+    background:transparent;color:var(--text-primary);font-size:13px;text-align:start;cursor:pointer;
   }
-  .ctx-menu-item:hover { background:#2a2d50; }
+  .ctx-menu-item:hover { background:var(--bg-surface-hover); }
   .project-name-editable { cursor: text; }
   .project-name-editable:hover { color: var(--accent); }
 `;

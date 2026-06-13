@@ -7,7 +7,13 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFile } = require("node:child_process");
 const { buildEnrichedUserText } = require("./vision-translator");
+const { resolveVenvPython } = require("./runtime-python");
+const { PROJECT_ROOT } = require("./config");
+
+const PYTHON_EXTRACT_TIMEOUT_MS = 180_000;
+const MAX_EXTRACT_OUTPUT_BYTES = 32 * 1024 * 1024;
 
 const TEXT_EXTENSIONS = new Set([
   ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".rtf",
@@ -36,80 +42,55 @@ function truncateText(text, limit = MAX_CHARS_PER_FILE) {
   return `${value.slice(0, limit)}\n\n[Content truncated, original length: ${value.length} characters]`;
 }
 
-function decodeXmlEntities(text) {
-  return String(text || "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, "\"")
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
-}
-
-function stripXmlTags(xml) {
-  return decodeXmlEntities(
-    String(xml || "")
-      .replace(/<w:tab\/>/g, "\t")
-      .replace(/<\/w:p>/g, "\n")
-      .replace(/<\/a:p>/g, "\n")
-      .replace(/<[^>]+>/g, ""),
-  )
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-async function readZipEntry(zip, entryPath) {
-  const JSZip = require("jszip");
-  const data = fs.readFileSync(zip);
-  const archive = await JSZip.loadAsync(data);
-  const entry = archive.file(entryPath);
-  if (!entry) return null;
-  return entry.async("string");
-}
-
-async function extractDocxText(filePath) {
-  const xml = await readZipEntry(filePath, "word/document.xml");
-  if (!xml) throw new Error("invalid docx");
-  return stripXmlTags(xml);
-}
-
-async function extractXlsxText(filePath) {
-  const shared = await readZipEntry(filePath, "xl/sharedStrings.xml");
-  if (!shared) return "";
-  const parts = [];
-  const re = /<t[^>]*>([\s\S]*?)<\/t>/g;
-  let match = re.exec(shared);
-  while (match) {
-    parts.push(decodeXmlEntities(match[1]));
-    match = re.exec(shared);
+function extractorScriptPath() {
+  const rel = path.join("resources", "runtime-scripts", "extract_document.py");
+  const candidates = [];
+  if (typeof process.resourcesPath === "string" && process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, rel));
   }
-  return parts.join("\n").trim();
+  candidates.push(path.join(PROJECT_ROOT, rel));
+  return candidates.find((p) => fs.existsSync(p)) || null;
 }
 
-async function extractPptxText(filePath) {
-  const JSZip = require("jszip");
-  const data = fs.readFileSync(filePath);
-  const archive = await JSZip.loadAsync(data);
-  const slidePaths = Object.keys(archive.files)
-    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
-    .sort((a, b) => {
-      const ai = Number.parseInt(a.match(/slide(\d+)/)?.[1] || "0", 10);
-      const bi = Number.parseInt(b.match(/slide(\d+)/)?.[1] || "0", 10);
-      return ai - bi;
-    });
-  const chunks = [];
-  for (const slidePath of slidePaths) {
-    const xml = await archive.file(slidePath).async("string");
-    const text = stripXmlTags(xml);
-    if (text) chunks.push(text);
+/**
+ * Extract PDF/Office content via the bundled Python libraries (python-docx,
+ * openpyxl, python-pptx, pdfplumber; RapidOCR for scanned pages) — tables
+ * survive as Markdown. We do not hand-parse Office XML in JS: that flattened
+ * structure and broke on real files. Throws a clear reason if the runtime or
+ * script is unavailable.
+ */
+function extractOfficeText(filePath) {
+  const python = resolveVenvPython();
+  if (!python) throw new Error("RUNTIME_UNAVAILABLE");
+  const script = extractorScriptPath();
+  if (!script) throw new Error("EXTRACTOR_MISSING");
+
+  const env = { ...process.env };
+  // Put any installed capability packs (e.g. the pro-pdf Docling engine) on
+  // PYTHONPATH so extract_document.py's lazy import upgrades automatically.
+  const packPaths = require("./document-packs").getDocumentPackPythonPaths();
+  if (packPaths.length) {
+    env.PYTHONPATH = [...packPaths, env.PYTHONPATH].filter(Boolean).join(path.delimiter);
   }
-  return chunks.join("\n\n").trim();
-}
 
-async function extractPdfText(filePath) {
-  const pdfParse = require("pdf-parse");
-  const buffer = fs.readFileSync(filePath);
-  const result = await pdfParse(buffer);
-  return String(result?.text || "").trim();
+  return new Promise((resolve, reject) => {
+    execFile(
+      python,
+      [script, filePath],
+      { timeout: PYTHON_EXTRACT_TIMEOUT_MS, maxBuffer: MAX_EXTRACT_OUTPUT_BYTES, env },
+      (err, stdout) => {
+        if (err) return reject(new Error(`EXTRACT_FAILED:${err.message}`));
+        let parsed;
+        try {
+          parsed = JSON.parse(stdout);
+        } catch {
+          return reject(new Error("EXTRACT_BAD_OUTPUT"));
+        }
+        if (!parsed.ok) return reject(new Error(parsed.error || "EXTRACT_FAILED"));
+        resolve(String(parsed.text || ""));
+      },
+    );
+  });
 }
 
 function readPlainTextFile(filePath) {
@@ -132,14 +113,8 @@ async function extractDocumentFile(file) {
   let text = "";
   if (TEXT_EXTENSIONS.has(ext)) {
     text = readPlainTextFile(filePath);
-  } else if (ext === ".pdf") {
-    text = await extractPdfText(filePath);
-  } else if (ext === ".docx") {
-    text = await extractDocxText(filePath);
-  } else if (ext === ".xlsx") {
-    text = await extractXlsxText(filePath);
-  } else if (ext === ".pptx") {
-    text = await extractPptxText(filePath);
+  } else if (OFFICE_EXTENSIONS.has(ext)) {
+    text = await extractOfficeText(filePath);
   } else {
     throw new Error(`UNSUPPORTED:${ext}`);
   }

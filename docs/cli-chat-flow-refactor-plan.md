@@ -1,3 +1,8 @@
+> **⚠️ 已归档（2026-06-13）**：本文是已执行完毕的历史重构方案。文中"现状"描述的
+> `turn-controller` / `session-turn-state` / `turn-boundary` / `session-events` 等模块**均已不存在**，
+> 重构落地形态与本文目标也有出入（实际为 `turn-orchestrator.js`，见 `docs/turn-event-architecture.md`）。
+> 仅作历史参考，**不要**依据本文描述当前架构或执行其中步骤。
+
 # CLI 问答流程彻底重构方案
 
 ## 背景

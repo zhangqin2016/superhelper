@@ -39,6 +39,8 @@ const OFFICE_STARTER_SKILL_IDS = [
   "anthropics-pptx",
   "anthropics-xlsx",
   "anthropics-doc-coauthoring",
+  "lily-template-fill",
+  "lily-pdf-form",
 ];
 
 /** 首次引导与完成判定使用的默认岗位包（以普通办公场景为主） */

@@ -174,6 +174,25 @@ function getRemoteRuntimeEnvSync() {
   return normalizeRuntimeEnv(state.effectiveConfig);
 }
 
+// Modules that cache derived views of the remote config (e.g. model-presets)
+// subscribe here instead of being required from this file — keeps the
+// dependency one-directional: consumers depend on remote-config, never back.
+const refreshListeners = new Set();
+
+function onRemoteConfigRefreshed(listener) {
+  refreshListeners.add(listener);
+}
+
+function notifyRefreshed() {
+  for (const listener of refreshListeners) {
+    try {
+      listener();
+    } catch {
+      // one stale listener must not block the refresh
+    }
+  }
+}
+
 async function refreshRemoteConfig(payload = {}) {
   const service = require("./service-client");
   const result = await service.fetchClientConfig(payload);
@@ -186,16 +205,13 @@ async function refreshRemoteConfig(payload = {}) {
     appliedProfileIds: Array.isArray(result.json.appliedProfileIds) ? result.json.appliedProfileIds : [],
     receivedAt: new Date().toISOString(),
   });
-  try {
-    require("./model-presets").reloadPresets();
-  } catch {
-    // model presets may not be loaded yet.
-  }
+  notifyRefreshed();
   return { ok: true, configVersion: verified.payload.configVersion };
 }
 
 module.exports = {
   refreshRemoteConfig,
+  onRemoteConfigRefreshed,
   reloadRemoteConfigCache,
   getRemoteModelCatalogSync,
   hasRemoteModelCatalogSync,

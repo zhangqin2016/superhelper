@@ -14,17 +14,9 @@ const ICON_MAP = {
   ".zip": "archive", ".tar": "archive", ".gz": "archive",
 };
 
-const TEXT_EXTS = new Set([
-  ".md", ".txt", ".json", ".js", ".ts", ".py", ".html", ".htm", ".css",
-  ".csv", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".env",
-  ".sh", ".bat", ".ps1", ".rb", ".java", ".go", ".rs", ".c", ".cpp",
-  ".h", ".hpp", ".swift", ".kt",
-]);
-
-function isTextFile(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  return TEXT_EXTS.has(ext);
-}
+const { isTextFile } = require("./file-kinds");
+const { findDiffEntry, removeAcceptedDiff, revertTurnChanges, undoRevertTurn } = require("./diff-capture");
+const { resolveContainedPath } = require("./path-guard");
 
 function classifyEntry(entryPath, stats) {
   const isDir = stats.isDirectory();
@@ -76,7 +68,17 @@ function searchWorkspaceFiles(rootPath, query, limit = 20) {
   return matches;
 }
 
-function registerFileTreeHandlers() {
+function registerFileTreeHandlers(ctx = {}) {
+  const { sessionManager, projectManager } = ctx;
+
+  // Resolve the project root that owns a session — write/delete handlers must
+  // not touch anything outside it, no matter what path the renderer sends.
+  function sessionProjectRoot(sessionId) {
+    const session = sessionManager?.findById?.(sessionId);
+    const project = session ? projectManager?.find?.(session.projectId) : null;
+    return project?.path || null;
+  }
+
   ipcMain.handle("filetree:search-files", (_event, { rootPath, query, limit }) => {
     try {
       if (!rootPath || typeof rootPath !== "string") return { ok: false, error: "INVALID_PATH" };
@@ -137,33 +139,28 @@ function registerFileTreeHandlers() {
     }
   });
 
-  ipcMain.handle("filetree:restore-file", async (_event, { filePath, content }) => {
-    try {
-      if (!filePath || content == null) {
-        return { ok: false, error: "INVALID_PAYLOAD" };
-      }
-      fs.writeFileSync(filePath, content, "utf-8");
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
-
   ipcMain.handle("filetree:accept-change", (_event, { sessionId, filePath }) => {
-    const { removeAcceptedDiff } = require("./diff-capture");
     removeAcceptedDiff(sessionId, filePath);
     return { ok: true };
   });
 
-  ipcMain.handle("filetree:reject-change", async (_event, { sessionId, filePath, content, status }) => {
+  // Rejecting a change restores the BEFORE state recorded by diff capture.
+  // Original content and added/modified status come from the main-process diff
+  // record — never from the renderer — and the target must be a file that diff
+  // capture actually saw, inside the session's project root.
+  ipcMain.handle("filetree:reject-change", async (_event, { sessionId, filePath }) => {
     try {
-      if (content != null) {
-        fs.writeFileSync(filePath, content, "utf-8");
-      } else if (status === "added" && fs.existsSync(filePath)) {
+      const entry = findDiffEntry(sessionId, filePath);
+      if (!entry) return { ok: false, error: "NO_DIFF_RECORD" };
+      const root = sessionProjectRoot(sessionId);
+      const target = resolveContainedPath(root, entry.filePath);
+      if (!target) return { ok: false, error: "PATH_OUTSIDE_PROJECT" };
+      if (entry.originalContent != null) {
+        fs.writeFileSync(target, entry.originalContent, "utf-8");
+      } else if (fs.existsSync(target)) {
         // Rejecting an added file means it should not exist.
-        fs.unlinkSync(filePath);
+        fs.unlinkSync(target);
       }
-      const { removeAcceptedDiff } = require("./diff-capture");
       removeAcceptedDiff(sessionId, filePath);
       return { ok: true };
     } catch (err) {
@@ -185,16 +182,14 @@ function registerFileTreeHandlers() {
   });
 
   ipcMain.handle("filetree:revert-turn", (_event, { sessionId, turnId }) => {
-    const { revertTurnChanges } = require("./diff-capture");
     const results = revertTurnChanges(sessionId, turnId);
     const failed = results.filter((item) => !item.ok);
     return { ok: failed.length === 0, results, failed };
   });
 
   ipcMain.handle("filetree:unrevert-turn", (_event, { sessionId, turnId }) => {
-    const { undoRevertTurn } = require("./diff-capture");
     return undoRevertTurn(sessionId, turnId);
   });
 }
 
-module.exports = { registerFileTreeHandlers, isTextFile, searchWorkspaceFiles };
+module.exports = { registerFileTreeHandlers, searchWorkspaceFiles };

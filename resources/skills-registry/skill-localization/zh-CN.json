@@ -91,6 +91,18 @@
     "name": "工程协作 12 条",
     "description": "研发任务的完整工程纪律：最小改动、先读再写、目标驱动验证、测试表达意图、冲突时做选择、未完成必须明说。写代码、改架构、调试、review 或非 trivial 改动时使用。"
   },
+  "lily-template-fill": {
+    "name": "模板填充",
+    "description": "把带占位符的 Word 模板（.docx）+ 数据，确定性地渲染成填好的文档：合同、offer、发票、证书、通知书，或一张数据表批量生成多份。模板中已含 {{ }} / {%p %} 占位符时使用。不用于从零创建新文档（用 Word 文档技能）或提取内容。"
+  },
+  "lily-document-verify": {
+    "name": "文档校验",
+    "description": "交付前对生成或编辑好的文档做视觉校验，发现纯文本提取看不到的排版问题：单元格溢出、表格错位、空白页、内容超出页边距。把 .docx/.xlsx/.pptx/.pdf 渲染成逐页图片再由你查看。属于最终质检，不是内容提取。"
+  },
+  "lily-pdf-form": {
+    "name": "PDF 表单填充",
+    "description": "填写带命名字段的可填写 PDF 表单（AcroForm）：政府、银行、申请、登记类的可填写 .pdf。先识别字段名，映射数据后写出填好的新 PDF。不用于从零设计 PDF 或合同/证书——那些请填 Word 模板再转 PDF。"
+  },
   "superpowers-systematic-debugging": {
     "name": "系统化调试",
     "description": "当遇到任何 Bug、测试失败或意外行为时，在提出修复方案之前使用。"

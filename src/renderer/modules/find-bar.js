@@ -62,10 +62,33 @@ function openFindBar() {
   if (input.value) runSearch();
 }
 
+const ICONS = {
+  search:
+    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m13.5 13.5-3.2-3.2"/></svg>',
+  up: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4 9.5 4-4 4 4"/></svg>',
+  down: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6.5 4 4 4-4"/></svg>',
+  close:
+    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="m4.5 4.5 7 7m0-7-7 7"/></svg>',
+};
+
+function iconButton(icon, title, onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "find-btn";
+  btn.title = title;
+  btn.innerHTML = ICONS[icon];
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
 function buildBar() {
   bar = document.createElement("div");
   bar.className = "conversation-find-bar";
   bar.hidden = true;
+
+  const searchIcon = document.createElement("span");
+  searchIcon.className = "find-search-icon";
+  searchIcon.innerHTML = ICONS.search;
 
   input = document.createElement("input");
   input.type = "text";
@@ -89,25 +112,14 @@ function buildBar() {
   counter = document.createElement("span");
   counter.className = "conversation-find-counter";
 
-  const prev = document.createElement("button");
-  prev.type = "button";
-  prev.className = "topbar-btn";
-  prev.textContent = "↑";
-  prev.addEventListener("click", () => jumpTo(current - 1));
+  const divider = document.createElement("span");
+  divider.className = "find-divider";
 
-  const next = document.createElement("button");
-  next.type = "button";
-  next.className = "topbar-btn";
-  next.textContent = "↓";
-  next.addEventListener("click", () => jumpTo(current + 1));
+  const prev = iconButton("up", t("find.prev"), () => jumpTo(current - 1));
+  const next = iconButton("down", t("find.next"), () => jumpTo(current + 1));
+  const close = iconButton("close", t("find.close"), closeFindBar);
 
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "topbar-btn";
-  close.textContent = "✕";
-  close.addEventListener("click", closeFindBar);
-
-  bar.append(input, counter, prev, next, close);
+  bar.append(searchIcon, input, counter, divider, prev, next, close);
   document.body.appendChild(bar);
 }
 
