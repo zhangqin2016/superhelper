@@ -11,7 +11,7 @@ import {
 const configProfileSchema = z.object({
   id: z.string().min(2).max(80),
   name: z.string().min(1).max(160),
-  scope: z.enum(["global", "license", "device"]).default("global"),
+  scope: z.enum(["global", "group", "license", "device"]).default("global"),
   targetId: z.string().max(160).optional().nullable(),
   priority: z.number().int().min(-100000).max(100000).default(0),
   rolloutPercent: z.number().int().min(0).max(100).default(100),
@@ -21,7 +21,7 @@ const configProfileSchema = z.object({
 
 const updateConfigProfileSchema = z.object({
   name: z.string().min(1).max(160).optional(),
-  scope: z.enum(["global", "license", "device"]).optional(),
+  scope: z.enum(["global", "group", "license", "device"]).optional(),
   targetId: z.string().max(160).optional().nullable(),
   priority: z.number().int().min(-100000).max(100000).optional(),
   rolloutPercent: z.number().int().min(0).max(100).optional(),
@@ -32,6 +32,7 @@ const updateConfigProfileSchema = z.object({
 const effectivePreviewSchema = z.object({
   deviceId: z.string().max(160).optional().default(""),
   licenseId: z.string().max(160).optional().default(""),
+  groupId: z.string().max(160).optional().default(""),
 });
 
 function secretValueKind(value) {
@@ -99,6 +100,7 @@ async function resolveEffectivePreview(input) {
   const matching = profiles.filter((profile) => {
     if (input.deviceId && !rolloutAllows(profile, input.deviceId)) return false;
     if (profile.scope === "global") return !profile.target_id;
+    if (profile.scope === "group") return input.groupId && profile.target_id === input.groupId;
     if (profile.scope === "license") return input.licenseId && profile.target_id === input.licenseId;
     if (profile.scope === "device") return input.deviceId && profile.target_id === input.deviceId;
     return false;
@@ -111,6 +113,7 @@ async function resolveEffectivePreview(input) {
     target: {
       deviceId: input.deviceId || "",
       licenseId: input.licenseId || "",
+      groupId: input.groupId || "",
     },
     appliedProfiles: matching.map((profile) => ({
       id: profile.id,

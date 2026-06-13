@@ -23,8 +23,34 @@ const clientConfigSchema = registerDeviceSchema.extend({
   keyAlg: registerDeviceSchema.shape.keyAlg,
 });
 
+/**
+ * The group a device belongs to for config delivery: its own group_id wins,
+ * else it inherits the group of its license (the customer/tier group). Null when
+ * neither is set.
+ */
+async function resolveDeviceGroupId(deviceId, licenseId) {
+  if (deviceId) {
+    const device = await db
+      .selectFrom("devices")
+      .select("group_id")
+      .where("id", "=", deviceId)
+      .executeTakeFirst();
+    if (device?.group_id) return device.group_id;
+  }
+  if (licenseId) {
+    const license = await db
+      .selectFrom("licenses")
+      .select("group_id")
+      .where("id", "=", licenseId)
+      .executeTakeFirst();
+    if (license?.group_id) return license.group_id;
+  }
+  return null;
+}
+
 async function resolveEffectiveConfig(input) {
   const licenseId = await validLicenseScope(input);
+  const groupId = await resolveDeviceGroupId(input.deviceId, licenseId);
   const profiles = await db
     .selectFrom("config_profiles")
     .selectAll()
@@ -36,6 +62,7 @@ async function resolveEffectiveConfig(input) {
   const matching = profiles.filter((profile) => {
     if (!rolloutAllows(profile, input.deviceId)) return false;
     if (profile.scope === "global") return !profile.target_id;
+    if (profile.scope === "group") return groupId && profile.target_id === groupId;
     if (profile.scope === "license") return licenseId && profile.target_id === licenseId;
     if (profile.scope === "device") return profile.target_id === input.deviceId;
     return false;

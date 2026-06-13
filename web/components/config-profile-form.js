@@ -114,6 +114,7 @@ const labels = {
     quickTitle: "配置要下发给谁",
     quickDesc: "全局默认适合所有设备；授权和设备配置会覆盖全局配置。",
     scopeGlobal: "所有客户端",
+    scopeGroup: "某个档位组",
     scopeLicense: "某个授权",
     scopeDevice: "某台设备",
     targetHelp: "全局配置不需要目标 ID；授权/设备配置必须填写对应 ID。",
@@ -155,6 +156,7 @@ const labels = {
     quickTitle: "Who receives this config",
     quickDesc: "Global applies to every client. License and device configs override it.",
     scopeGlobal: "All clients",
+    scopeGroup: "A tier group",
     scopeLicense: "A license",
     scopeDevice: "A device",
     targetHelp: "Global config does not need a target ID. License/device configs require one.",
@@ -196,6 +198,7 @@ const labels = {
     quickTitle: "من يستلم هذا الإعداد",
     quickDesc: "الإعداد العام لكل العملاء. إعداد الترخيص أو الجهاز يغطيه.",
     scopeGlobal: "كل العملاء",
+    scopeGroup: "مجموعة فئة",
     scopeLicense: "ترخيص محدد",
     scopeDevice: "جهاز محدد",
     targetHelp: "الإعداد العام لا يحتاج هدفاً. الترخيص/الجهاز يحتاج معرفاً.",
@@ -272,7 +275,7 @@ function defaultDraft(copy) {
     permissionMode: "default",
     minAppVersion: "",
     requestTimeoutMs: "300000",
-    visionModel: "qwen-vl-plus",
+    visionModel: "qwen3.7-plus",
     disabled: false,
   };
 }
@@ -329,13 +332,14 @@ function buildConfig(draft, locale = "zh") {
     runtime: {
       env: {
         API_TIMEOUT_MS: String(draft.requestTimeoutMs || "300000").trim(),
-        VISION_MODEL: String(draft.visionModel || "qwen-vl-plus").trim(),
+        VISION_MODEL: String(draft.visionModel || "qwen3.7-plus").trim(),
       },
     },
   };
 }
 
 function scopeLabel(scope, copy) {
+  if (scope === "group") return copy.scopeGroup;
   if (scope === "license") return copy.scopeLicense;
   if (scope === "device") return copy.scopeDevice;
   return copy.scopeGlobal;
@@ -419,8 +423,8 @@ export function ConfigProfileForm() {
               <h3 className="text-lg font-semibold text-slate-950">{copy.quickTitle}</h3>
               <p className="mt-1 text-sm text-slate-500">{copy.quickDesc}</p>
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              {["global", "license", "device"].map((scope) => (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {["global", "group", "license", "device"].map((scope) => (
                 <button
                   key={scope}
                   type="button"
@@ -447,7 +451,7 @@ export function ConfigProfileForm() {
                   className={fieldClass()}
                   disabled={draft.scope === "global"}
                   name="targetId"
-                  placeholder="license id / device id"
+                  placeholder="group / license / device id"
                   required={draft.scope !== "global"}
                   value={draft.targetId}
                   onChange={(event) => updateField("targetId", event.target.value)}

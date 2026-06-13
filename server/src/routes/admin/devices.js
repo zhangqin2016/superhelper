@@ -15,6 +15,7 @@ export function registerAdminDeviceRoutes(app, { audit }) {
         "devices.platform",
         "devices.arch",
         "devices.app_version",
+        "devices.group_id",
         "devices.first_seen_at",
         "devices.last_seen_at",
         "devices.trial_ends_at",

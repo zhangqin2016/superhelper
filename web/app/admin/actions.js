@@ -120,6 +120,40 @@ export async function createReleaseStateAction(_previousState, formData) {
   return createReleaseAction(formData);
 }
 
+export async function createConfigGroupAction(_previousState, formData) {
+  formData = actionFormData(_previousState, formData);
+  try {
+    const result = await apiPost("/api/admin/config-groups", {
+      id: text(formData, "id"),
+      name: text(formData, "name"),
+    });
+    revalidatePath("/admin/config");
+    return { ok: true, message: `Group ${result.id} saved.` };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to save group." };
+  }
+}
+
+export async function assignConfigGroupAction(_previousState, formData) {
+  formData = actionFormData(_previousState, formData);
+  try {
+    await apiPost("/api/admin/config-groups/assign", {
+      kind: text(formData, "kind") || "device",
+      id: text(formData, "targetId"),
+      groupId: text(formData, "groupId") || null,
+    });
+    revalidatePath("/admin/config");
+    return { ok: true, message: "Membership updated." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to update membership." };
+  }
+}
+
+export async function deleteConfigGroupAction(formData) {
+  await apiDelete(`/api/admin/config-groups/${text(formData, "id")}`);
+  revalidatePath("/admin/config");
+}
+
 export async function setLicenseStatusAction(formData) {
   await apiPatch(`/api/admin/licenses/${text(formData, "id")}`, { status: text(formData, "status") });
   revalidatePath("/admin/licenses");
@@ -157,9 +191,9 @@ export async function setReleaseEnabledAction(formData) {
   revalidatePath("/admin/releases");
 }
 
-export async function setDocumentPackEnabledAction(formData) {
-  await apiPatch(`/api/admin/document-packs/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
-  revalidatePath("/admin/document-packs");
+export async function setRuntimePackEnabledAction(formData) {
+  await apiPatch(`/api/admin/runtime-packs/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
+  revalidatePath("/admin/runtime-packs");
 }
 
 export async function setPluginEnabledAction(formData) {

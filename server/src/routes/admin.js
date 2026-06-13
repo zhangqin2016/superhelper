@@ -3,6 +3,7 @@ import { db } from "../db.js";
 import { config } from "../config.js";
 import { timingSafeEqualText, createAdminSessionToken, verifyAdminSessionToken } from "../services/security.js";
 import { registerAdminAuditRoutes } from "./admin/audit.js";
+import { registerAdminConfigGroupRoutes } from "./admin/config-groups.js";
 import { registerAdminConfigProfileRoutes } from "./admin/config-profiles.js";
 import { registerAdminContactRoutes } from "./admin/contacts.js";
 import { registerAdminDeviceRoutes } from "./admin/devices.js";
@@ -88,6 +89,7 @@ export async function adminRoutes(app) {
   registerAdminReleaseRoutes(app, { audit });
   registerAdminDocumentPackRoutes(app, { audit });
   registerAdminPluginRoutes(app, { audit });
+  registerAdminConfigGroupRoutes(app, { audit });
   registerAdminConfigProfileRoutes(app, { audit });
   registerAdminAuditRoutes(app);
 }
