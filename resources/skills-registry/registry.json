@@ -273,6 +273,25 @@
       "changelog": "智能工作台内置：可填写 PDF 表单填充"
     },
     {
+      "id": "lily-document-packs",
+      "name": "Document Engine Packs",
+      "description": "Use this skill to install, check, or remove optional heavy document engines on demand — when the user wants higher-accuracy parsing of COMPLEX PDFs (multi-column layout, dense tables, scans) than the light built-in path, or mentions Docling / 专业 PDF 引擎. These are large downloads kept out of the base install. Not for ordinary PDFs.",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "document-packs",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.0",
+      "category": "office",
+      "categoryLabel": "办公文档",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "智能工作台内置：按需安装重型文档引擎(如 Docling)"
+    },
+    {
       "id": "superpowers-dispatching-parallel-agents",
       "name": "Dispatching Parallel Agents",
       "description": "Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies",

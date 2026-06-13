@@ -1,0 +1,14 @@
+---
+name: server-deploy-flow
+description: How the lily.lanrensoft.cn server actually deploys, and the document-pack release path
+metadata:
+  type: reference
+---
+
+Production server `lily.lanrensoft.cn` = Alibaba ECS `182.92.107.175` (host iZ2zejfpm4bzcaj6b1pnwcZ), baota + docker-compose, deploy dir `/www/wwwroot/lily-workbench`.
+
+**Actual deploy flow is source-build-on-server, NOT image-pull** (the user believed it was "build image → upload to Qiniu → server downloads", but the repo has no such pipeline and prod doesn't run that way). `deploy/baota/push-via-qiniu.sh` (run with `SSH_HOST=182.92.107.175`): tars `server/ web/ deploy/baota` (excludes node_modules/.env) → `release-admin.mjs upload` to Qiniu via local **qshell** (account `lanrensoft-user`, bucket `lanrensoft`, domain https://qny.lanrensoft.cn) → SSH to server → server `curl`s the tarball from Qiniu → `deploy.sh` → `docker compose up -d --build`. `.env` is preserved across deploys. Server `.env`: `DB_MODE=external`, `GATEWAY_MODE=external` → deploy.sh selects `docker-compose.app-only.yml` (builds `baota-api`/`baota-web` images, containers `lily-api`/`lily-web`, external DB, ports 13000/13001). Migrations auto-run on container start (`npm run migrate && npm run start`). deploy.sh ends with an `/api/admin/health` check (exit 0 only if healthy). An image-based flow (`docker save`→Qiniu→`docker load`→`images-app-only.yml` w/ IMAGE_TAG) does NOT exist yet — would be new work if desired.
+
+**SSH access for deploys:** dedicated passwordless key `~/.ssh/lily_deploy` (ed25519), authorized on the server, pinned via `~/.ssh/config` Host 182.92.107.175 → IdentityFile lily_deploy. The personal `~/.ssh/id_rsa` is passphrase-encrypted and useless non-interactively (don't rely on it / the ssh-agent in the Bash tool is separate from the interactive `!` shell's agent).
+
+**Document-pack release path (see [[office-runtime-delegation]]):** `node scripts/build-document-pack.mjs --pack <id>` → tar.gz in `dist/document-packs/` → `node scripts/release-admin.mjs upload --bucket lanrensoft --key app/document-packs/<file> --file <file>` (qshell) → register via admin API: `POST https://lily.lanrensoft.cn/api/admin/document-packs {packId, platform, version, url, sha256, sizeBytes}` (admin login: POST /api/admin/login). App resolves via public `GET /api/document-packs/artifact?pack=&platform=`. **pro-pdf darwin-arm64 2.102.1 is LIVE** (Qiniu app/document-packs/, registered dpack_37wtw9y35jkktc, end-to-end verified 2026-06-13). Still needed: win32/linux artifacts (build on each OS), and an agent-facing install trigger (no UI — see [[no-ui-natural-language]]).

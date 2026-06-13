@@ -103,6 +103,10 @@
     "name": "PDF 表单填充",
     "description": "填写带命名字段的可填写 PDF 表单（AcroForm）：政府、银行、申请、登记类的可填写 .pdf。先识别字段名，映射数据后写出填好的新 PDF。不用于从零设计 PDF 或合同/证书——那些请填 Word 模板再转 PDF。"
   },
+  "lily-document-packs": {
+    "name": "文档引擎扩展包",
+    "description": "按需安装/检查/卸载重型文档引擎。当用户需要比内置轻量路径更高精度地解析复杂 PDF（多栏版面、密集表格、扫描件），或提到 Docling、专业 PDF 引擎时使用。这些是体积较大、不内置的下载包。普通 PDF 不需要。"
+  },
   "superpowers-systematic-debugging": {
     "name": "系统化调试",
     "description": "当遇到任何 Bug、测试失败或意外行为时，在提出修复方案之前使用。"

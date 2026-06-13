@@ -26,7 +26,6 @@ const crypto = require("node:crypto");
 const { execFile, execFileSync } = require("node:child_process");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
-const { userDataPath } = require("./config");
 const { resolveVenvPython, resolveBundledUv } = require("./runtime-python");
 const { PACK_SPECS } = require("./document-pack-specs");
 
@@ -47,8 +46,19 @@ function platformKey() {
   return `${os}-${arch}`;
 }
 
+/**
+ * userData dir. Agent subprocesses (plain node, no electron) get it via the
+ * LILY_USER_DATA_DIR env var injected by spawn-env, so the CLI and the main
+ * process resolve the SAME location; in the main process we fall back to
+ * electron's app path.
+ */
+function userDataRoot() {
+  if (process.env.LILY_USER_DATA_DIR) return process.env.LILY_USER_DATA_DIR;
+  return require("./config").userDataPath();
+}
+
 function packsRoot() {
-  return userDataPath("document-packs");
+  return path.join(userDataRoot(), "document-packs");
 }
 
 function packDir(id) {
@@ -56,7 +66,7 @@ function packDir(id) {
 }
 
 function statePath() {
-  return userDataPath("document-packs.json");
+  return path.join(userDataRoot(), "document-packs.json");
 }
 
 function readState() {

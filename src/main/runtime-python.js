@@ -14,6 +14,12 @@ function bundledRuntimeCandidates() {
   const resourcesPath =
     typeof process.resourcesPath === "string" ? process.resourcesPath : null;
   const paths = [];
+  // Agent subprocesses (plain node, no process.resourcesPath) get the runtime
+  // root via this env var, injected by spawn-env's getRuntimeEnvExtras(). Lets
+  // a standalone CLI find the bundled venv/uv in packaged builds too.
+  if (process.env.LILY_RUNTIME_ROOT) {
+    paths.push(process.env.LILY_RUNTIME_ROOT);
+  }
   for (const key of platformBundleKeys()) {
     if (resourcesPath) {
       paths.push(path.join(resourcesPath, "bundles", key, "runtime"));
