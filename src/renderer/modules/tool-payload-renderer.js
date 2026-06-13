@@ -127,6 +127,35 @@ function generatedMediaFromPayload(payload) {
   return out;
 }
 
+// Skill scripts (template-fill, pdf-form, render_document, the office skills)
+// run via Bash and print JSON like {ok:true, output:"…/x.docx"} or
+// {ok:true, images:["…/page-1.png", …]}. Detect those output paths so the file
+// gets a "reveal in folder" affordance — the model never edited it via Write,
+// so it isn't in the changed-files group.
+const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp|gif|svg|html?|json|zip)$/i;
+
+function looksLikeGeneratedFilePath(value) {
+  if (typeof value !== "string") return false;
+  const text = value.trim();
+  return text.length > 3 && /[\\/]/.test(text) && GENERATED_FILE_EXTS.test(text);
+}
+
+function generatedFilesFromPayload(payload) {
+  if (!payload || typeof payload !== "object" || payload.ok === false) return [];
+  const paths = [];
+  if (looksLikeGeneratedFilePath(payload.output)) paths.push(payload.output.trim());
+  for (const key of ["images", "outputs"]) {
+    if (Array.isArray(payload[key])) {
+      for (const entry of payload[key]) {
+        const candidate = typeof entry === "string" ? entry : entry?.path;
+        if (looksLikeGeneratedFilePath(candidate)) paths.push(candidate.trim());
+      }
+    }
+  }
+  const seen = new Set();
+  return paths.filter((p) => (seen.has(p) ? false : seen.add(p))).map((path) => ({ path }));
+}
+
 function fileUrlFromPath(filePath = "") {
   const value = String(filePath || "").trim();
   if (!value) return "";
@@ -416,6 +445,31 @@ function renderGeneratedMedia(root, mediaBlocks = []) {
   return true;
 }
 
+function renderGeneratedFiles(root, files = []) {
+  if (!files.length) return false;
+  const wrap = document.createElement("div");
+  wrap.className = "assistant-generated-files";
+  for (const file of files) {
+    const row = document.createElement("div");
+    row.className = "assistant-generated-file-row";
+    const name = document.createElement("code");
+    name.className = "assistant-generated-file-path is-clickable";
+    name.textContent = file.path;
+    name.title = t("file.reveal");
+    const reveal = () => void window.assistantClient?.revealInFolder?.(file.path);
+    name.addEventListener("click", reveal);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "assistant-reveal-btn";
+    btn.textContent = t("file.reveal");
+    btn.addEventListener("click", reveal);
+    row.append(name, btn);
+    wrap.appendChild(row);
+  }
+  root.appendChild(wrap);
+  return true;
+}
+
 function renderWritePayload(root, payload, { compact = false } = {}) {
   const filePath = firstFilePath(payload);
   appendFilePathRow(root, filePath);
@@ -465,6 +519,7 @@ function renderStructuredPayload(root, tool, payload, options = {}) {
   if (!payload) return false;
   if (options.role === "result") {
     renderGeneratedMedia(root, generatedMediaFromPayload(payload));
+    renderGeneratedFiles(root, generatedFilesFromPayload(payload));
   }
   const kind = toolKind(tool.name);
   if (kind === "write") renderWritePayload(root, payload, options);

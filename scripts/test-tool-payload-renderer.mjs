@@ -62,4 +62,49 @@ if (!broken?.__partialJson) {
   process.exit(1);
 }
 
+// --- Generated-file detection (mirror of tool-payload-renderer internals) ---
+// Skill scripts print JSON with output paths; we surface those for "reveal in
+// folder". This is the pure detection logic; the DOM rendering isn't unit-tested
+// (same as generatedMediaFromPayload), but wrong detection = no reveal affordance.
+const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp|gif|svg|html?|json|zip)$/i;
+function looksLikeGeneratedFilePath(value) {
+  if (typeof value !== "string") return false;
+  const text = value.trim();
+  return text.length > 3 && /[\\/]/.test(text) && GENERATED_FILE_EXTS.test(text);
+}
+function generatedFilesFromPayload(payload) {
+  if (!payload || typeof payload !== "object" || payload.ok === false) return [];
+  const paths = [];
+  if (looksLikeGeneratedFilePath(payload.output)) paths.push(payload.output.trim());
+  for (const key of ["images", "outputs"]) {
+    if (Array.isArray(payload[key])) {
+      for (const entry of payload[key]) {
+        const candidate = typeof entry === "string" ? entry : entry?.path;
+        if (looksLikeGeneratedFilePath(candidate)) paths.push(candidate.trim());
+      }
+    }
+  }
+  const seen = new Set();
+  return paths.filter((p) => (seen.has(p) ? false : seen.add(p))).map((path) => ({ path }));
+}
+
+function expectPaths(payload, expected, label) {
+  const got = generatedFilesFromPayload(payload).map((f) => f.path);
+  if (JSON.stringify(got) !== JSON.stringify(expected)) {
+    console.error(`tool-payload-renderer: ${label} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(got)}`);
+    process.exit(1);
+  }
+}
+
+// template-fill / pdf-form emit {ok, output}; render emits {ok, images:[...]}.
+expectPaths({ ok: true, output: "/tmp/out/contract.docx", missing: [] }, ["/tmp/out/contract.docx"], "docx output");
+expectPaths({ ok: true, images: ["/tmp/v/page-1.png", "/tmp/v/page-2.png"] }, ["/tmp/v/page-1.png", "/tmp/v/page-2.png"], "render images");
+// A failed result must NOT offer a reveal to a file it didn't write.
+expectPaths({ ok: false, output: "/tmp/out/contract.docx" }, [], "failed result → no reveal");
+// Non-path strings (e.g. a status message) must not be mistaken for files.
+expectPaths({ ok: true, output: "done" }, [], "non-path output ignored");
+expectPaths({ ok: true, result: "Created the report." }, [], "prose result ignored");
+// De-dupe repeated paths.
+expectPaths({ ok: true, output: "/a/x.pdf", outputs: ["/a/x.pdf"] }, ["/a/x.pdf"], "dedupe");
+
 console.log("tool-payload-renderer: ok");
