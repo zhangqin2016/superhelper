@@ -59,6 +59,19 @@ r = await runVisionPreflight("", [img], { emitNotice: (n) => notices.push(n.code
 assert(!r.ok && r.error === "VISION_UNAVAILABLE", "image-only NO_KEY → VISION_UNAVAILABLE");
 assert(notices[0] === "visionPreparing" && notices.includes("visionSkipped"), "emits preparing then skipped on failure");
 
+// FAIL-LOUD FIX: vision failure WITH accompanying text must also fail (it used
+// to silently drop the image and send bare text, making the engine answer blind
+// — the screenshot-analyzed-the-directory bug).
+visionMock._next = { ok: false, reason: "API_FAILED", detail: "timeout" };
+r = await runVisionPreflight("分析这个布局", [img, txtFile], { emitNotice: () => {} });
+assert(!r.ok && r.error === "VISION_FAILED" && r.detail === "timeout", "text+image vision failure must fail loud, not drop the image");
+
+// But NO_KEY (vision not configured) WITH text still degrades to a text-only
+// answer — a deployment without vision should not be blocked.
+visionMock._next = { ok: false, reason: "NO_KEY" };
+r = await runVisionPreflight("分析这个布局", [img, txtFile], { emitNotice: () => {} });
+assert(r.ok && r.text === "分析这个布局" && !r.files.some((f) => f.isImage), "NO_KEY + text degrades to text-only (not a hard failure)");
+
 // Vision success → enriched text + image pruned from outbound, ready notice.
 visionMock._next = { ok: true, text: "a cat", keepOriginal: false };
 notices = [];
@@ -74,7 +87,7 @@ assert(r.ok && r.text === "review\n[doc:contract terms]", "document success enri
 assert(!r.files.some((f) => f.path === "/a/report.docx"), "extracted document pruned from outbound");
 assert(r.files.some((f) => f === txtFile), "non-extracted files kept");
 
-// Document-only failure → DOCUMENT_FAILED.
+// Document-only failure → DOCUMENT_FAILED (text+doc keeps degrading to text).
 documentMock._next = { ok: false, detail: "corrupt" };
 r = await runDocumentPreflight("", [docFile], {});
 assert(!r.ok && r.error === "DOCUMENT_FAILED" && r.detail === "corrupt", "doc-only failure → DOCUMENT_FAILED");

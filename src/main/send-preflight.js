@@ -55,11 +55,18 @@ async function runVisionPreflight(text, files, { emitNotice } = {}) {
       replacesCode: "visionPreparing",
       done: true,
     });
-    if (isImageOnlyUserMessage(text, files)) {
-      if (result.reason === "NO_KEY") return { ok: false, error: "VISION_UNAVAILABLE" };
-      return { ok: false, error: "VISION_FAILED", detail: result.detail || undefined };
+    if (result.reason === "NO_KEY") {
+      // Vision isn't configured for this deployment. With no text there's
+      // nothing to go on, so fail; with text, degrade to a text-only answer.
+      if (isImageOnlyUserMessage(text, files)) {
+        return { ok: false, error: "VISION_UNAVAILABLE", detail: result.detail || undefined };
+      }
+      return { ok: true, text, files: withoutVisionFiles(files) };
     }
-    return { ok: true, text, files: withoutVisionFiles(files) };
+    // Vision IS configured but the call failed (e.g. timeout). The main engine
+    // can't see the image, so DON'T silently drop it and answer blind — fail
+    // loud so the user retries instead of getting a confidently-wrong reply.
+    return { ok: false, error: "VISION_FAILED", detail: result.detail || undefined };
   }
 
   notify({

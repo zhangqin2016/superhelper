@@ -16,8 +16,11 @@ const http = require("node:http");
 const { resolveSettingsEnvValue } = require("./agent-settings");
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-const DEFAULT_MODEL = "qwen-vl-max";
-const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_MODEL = "qwen3.7-plus";
+// qwen-vl inference on a full-size screenshot routinely takes >15s; 15s timed
+// out mid-recognition and the image was silently dropped. 60s leaves headroom;
+// override with VISION_TIMEOUT_MS.
+const DEFAULT_TIMEOUT_MS = 60000;
 const DEFAULT_MAX_EDGE = 1800;
 const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 const DEFAULT_JPEG_QUALITY = 88;

@@ -9,9 +9,11 @@ const skillManager = require("./skill-manager");
 function bundledResourceCandidates(relativePath) {
   const { PROJECT_ROOT } = require("./config");
   return [
-    path.join(process.resourcesPath, relativePath),
+    // process.resourcesPath is undefined outside electron (CLIs/tests) — guard it
+    // so a bundled-default lookup never throws "path must be a string".
+    process.resourcesPath ? path.join(process.resourcesPath, relativePath) : null,
     path.join(PROJECT_ROOT, relativePath),
-  ].find((p) => fs.existsSync(p));
+  ].filter(Boolean).find((p) => fs.existsSync(p));
 }
 
 function readBundledFile(relativePath) {
