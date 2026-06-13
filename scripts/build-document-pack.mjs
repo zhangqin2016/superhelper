@@ -73,36 +73,57 @@ const spec = PACK_SPECS[packId];
 if (!spec) die(`unknown pack '${packId}'. Known: ${Object.keys(PACK_SPECS).join(", ")}`);
 
 const platform = args.platform || detectPlatform();
-if (platform !== detectPlatform()) {
-  die(
-    `requested platform ${platform} != current ${detectPlatform()}. Heavy wheels are platform-specific — run this on ${platform}.`,
-  );
-}
+// uv's --python-platform target for cross-builds (wheel-only, no execution).
+const UV_PYTHON_PLATFORM = {
+  "darwin-arm64": "aarch64-apple-darwin",
+  "darwin-x64": "x86_64-apple-darwin",
+  "win32-x64": "x86_64-pc-windows-msvc",
+  "linux-x64": "x86_64-unknown-linux-gnu",
+};
+const PY_VERSION = "3.12"; // matches the bundled runtime
 
-const isWin = platform.startsWith("win32");
-const runtimeRoot = path.join(ROOT, "bundles", platform, "runtime");
-const uv = path.join(runtimeRoot, "bin", isWin ? "uv.exe" : "uv");
-const venvPython = isWin
-  ? path.join(runtimeRoot, "venv", "Scripts", "python.exe")
-  : path.join(runtimeRoot, "venv", "bin", "python3");
+const cross = platform !== detectPlatform();
+// uv is the host's bundled binary either way — it resolves for any platform.
+const hostRoot = path.join(ROOT, "bundles", detectPlatform(), "runtime");
+const uv = path.join(hostRoot, "bin", "uv");
+const venvPython = path.join(hostRoot, "venv", "bin", "python3");
 if (!fs.existsSync(uv)) die(`bundled uv not found at ${uv} — build the runtime bundle first`);
-if (!fs.existsSync(venvPython)) die(`bundled venv python not found at ${venvPython}`);
+if (cross && !UV_PYTHON_PLATFORM[platform]) die(`no cross-build mapping for platform ${platform}`);
+if (!cross && !fs.existsSync(venvPython)) die(`bundled venv python not found at ${venvPython}`);
 
 const outDir = path.resolve(ROOT, args.out || path.join("dist", "document-packs"));
 fs.mkdirSync(outDir, { recursive: true });
 const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), `dpack-${packId}-`));
 
 try {
-  console.log(`[build-document-pack] installing ${spec.requirements.join(" ")} → ${stageDir}`);
-  execFileSync(uv, ["pip", "install", "--python", venvPython, "--target", stageDir, ...spec.requirements], {
-    stdio: "inherit",
-  });
-
-  console.log(`[build-document-pack] verifying probe: ${spec.probe}`);
-  execFileSync(venvPython, ["-c", spec.probe], {
-    stdio: "inherit",
-    env: { ...process.env, PYTHONPATH: [stageDir, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) },
-  });
+  if (cross) {
+    // Cross-build: download the target platform's wheels (no install/run). Every
+    // dep must ship a wheel for the target (--only-binary), else this errors —
+    // which is the right behavior, not a silently-wrong artifact.
+    console.log(`[build-document-pack] cross-building ${platform} (uv --python-platform ${UV_PYTHON_PLATFORM[platform]})`);
+    execFileSync(
+      uv,
+      [
+        "pip", "install", "--target", stageDir,
+        "--python-version", PY_VERSION,
+        "--python-platform", UV_PYTHON_PLATFORM[platform],
+        "--only-binary=:all:",
+        ...spec.requirements,
+      ],
+      { stdio: "inherit" },
+    );
+    console.warn(`[build-document-pack] NOTE: cross-built artifact NOT probe-verified on ${detectPlatform()} — verify on a real ${platform} host.`);
+  } else {
+    console.log(`[build-document-pack] installing ${spec.requirements.join(" ")} → ${stageDir}`);
+    execFileSync(uv, ["pip", "install", "--python", venvPython, "--target", stageDir, ...spec.requirements], {
+      stdio: "inherit",
+    });
+    console.log(`[build-document-pack] verifying probe: ${spec.probe}`);
+    execFileSync(venvPython, ["-c", spec.probe], {
+      stdio: "inherit",
+      env: { ...process.env, PYTHONPATH: [stageDir, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) },
+    });
+  }
 
   const mainPackage = spec.requirements[0].split(/[<>=!~ ]/)[0];
   const version = args.version || deriveVersion(stageDir, mainPackage) || "0.0.0";
