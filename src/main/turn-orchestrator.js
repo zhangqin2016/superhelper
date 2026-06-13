@@ -1,7 +1,6 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const path = require("node:path");
 const {
   normalizeAssistantOutput,
   sanitizeError,
@@ -27,6 +26,7 @@ const {
   preflightFailureText,
   collectFailureTextFromState,
 } = require("./turn-error-classify");
+const { runVisionPreflight, runDocumentPreflight } = require("./send-preflight");
 
 const log = getLogger("turn-orchestrator");
 
@@ -78,16 +78,6 @@ function compactToolInput(input, name = "Tool") {
     ...input,
     preview: buildToolPreviewLabel({ name, input }),
   };
-}
-
-function withoutVisionFiles(files = []) {
-  const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
-  return (files || []).filter((file) => {
-    if (!file) return false;
-    if (file.isImage) return false;
-    const ext = path.extname(String(file.path || file.name || "")).toLowerCase();
-    return !imageExtensions.has(ext);
-  });
 }
 
 class TurnOrchestrator {
@@ -646,7 +636,9 @@ class TurnOrchestrator {
     }
 
     if (!opts.skipVision) {
-      const vision = await this._runVisionPreflight(session.id, text, files);
+      const vision = await runVisionPreflight(text, files, {
+        emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
+      });
       if (!vision.ok) {
         const assistant = preflightFailureText(vision.error, vision.detail);
         const failedTurnId = state.turnId;
@@ -664,7 +656,9 @@ class TurnOrchestrator {
     }
 
     if (!opts.skipDocument) {
-      const document = await this._runDocumentPreflight(session.id, text, files);
+      const document = await runDocumentPreflight(text, files, {
+        emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
+      });
       if (!document.ok) {
         const assistant = preflightFailureText(document.error, document.detail);
         const failedTurnId = state.turnId;
@@ -1005,124 +999,6 @@ class TurnOrchestrator {
       });
     }
     this._emit(sessionId, type, payload);
-  }
-
-  async _runVisionPreflight(sessionId, text, files) {
-    const {
-      buildEnrichedUserText,
-      hasVisionInputFiles,
-      isImageOnlyUserMessage,
-      translateImages,
-    } = require("./vision-translator");
-    if (!hasVisionInputFiles(files)) {
-      return { ok: true, text, files: withoutVisionFiles(files) };
-    }
-
-    this._emitEngineNotice(sessionId, {
-      code: "visionPreparing",
-      level: "progress",
-      panel: true,
-      replace: true,
-    });
-
-    const result = await translateImages(files, { userText: text });
-    if (result === null) {
-      return { ok: true, text, files: withoutVisionFiles(files) };
-    }
-
-    if (!result.ok) {
-      this._emitEngineNotice(sessionId, {
-        code: "visionSkipped",
-        level: "warning",
-        panel: true,
-        replace: true,
-        replacesCode: "visionPreparing",
-        done: true,
-      });
-      if (isImageOnlyUserMessage(text, files)) {
-        if (result.reason === "NO_KEY") {
-          return { ok: false, error: "VISION_UNAVAILABLE" };
-        }
-        return {
-          ok: false,
-          error: "VISION_FAILED",
-          detail: result.detail || undefined,
-        };
-      }
-      return { ok: true, text, files: withoutVisionFiles(files) };
-    }
-
-    this._emitEngineNotice(sessionId, {
-      code: "visionReady",
-      level: "info",
-      panel: true,
-      replace: true,
-      replacesCode: "visionPreparing",
-      done: true,
-    });
-
-    const enrichedText = buildEnrichedUserText(text, result.text);
-    const outboundFiles = result.keepOriginal ? files : withoutVisionFiles(files);
-    return { ok: true, text: enrichedText, files: outboundFiles };
-  }
-
-  async _runDocumentPreflight(sessionId, text, files) {
-    const {
-      buildEnrichedUserText,
-      extractDocuments,
-      hasDocumentInputFiles,
-      isDocumentOnlyUserMessage,
-    } = require("./document-translator");
-    if (!hasDocumentInputFiles(files)) {
-      return { ok: true, text, files };
-    }
-
-    this._emitEngineNotice(sessionId, {
-      code: "documentPreparing",
-      level: "progress",
-      panel: true,
-      replace: true,
-    });
-
-    const result = await extractDocuments(files);
-    if (result === null) {
-      return { ok: true, text, files };
-    }
-
-    if (!result.ok) {
-      this._emitEngineNotice(sessionId, {
-        code: "documentSkipped",
-        level: "warning",
-        panel: true,
-        replace: true,
-        replacesCode: "documentPreparing",
-        done: true,
-      });
-      if (isDocumentOnlyUserMessage(text, files)) {
-        return {
-          ok: false,
-          error: "DOCUMENT_FAILED",
-          detail: result.detail || undefined,
-        };
-      }
-      return { ok: true, text, files };
-    }
-
-    this._emitEngineNotice(sessionId, {
-      code: "documentReady",
-      level: "info",
-      panel: true,
-      replace: true,
-      replacesCode: "documentPreparing",
-      done: true,
-    });
-
-    const extracted = new Set(result.extractedPaths || []);
-    const outboundFiles = result.keepOriginal
-      ? files
-      : (files || []).filter((file) => !extracted.has(file.path));
-    const enrichedText = buildEnrichedUserText(text, result.text);
-    return { ok: true, text: enrichedText, files: outboundFiles };
   }
 
   _emit(sessionId, type, payload = {}, opts = {}) {

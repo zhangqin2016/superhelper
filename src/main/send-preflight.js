@@ -1,0 +1,131 @@
+"use strict";
+
+/**
+ * Pre-send enrichment: turn images into recognized text (vision) and documents
+ * into extracted text (document) BEFORE the message reaches the engine. Factored
+ * out of turn-orchestrator so the orchestration (notice sequence + outbound file
+ * pruning + failure shapes) is unit-testable in isolation.
+ *
+ * Notices are emitted via an injected `emitNotice(notice)` callback rather than
+ * reaching into the orchestrator, so these are plain functions, not methods.
+ * Returns { ok: true, text, files } on success, or { ok: false, error, detail }
+ * when a media-only message could not be processed (caller turns that into a
+ * failed turn).
+ */
+
+const path = require("node:path");
+
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
+
+function withoutVisionFiles(files = []) {
+  return (files || []).filter((file) => {
+    if (!file) return false;
+    if (file.isImage) return false;
+    const ext = path.extname(String(file.path || file.name || "")).toLowerCase();
+    return !IMAGE_EXTENSIONS.has(ext);
+  });
+}
+
+async function runVisionPreflight(text, files, { emitNotice } = {}) {
+  const {
+    buildEnrichedUserText,
+    hasVisionInputFiles,
+    isImageOnlyUserMessage,
+    translateImages,
+  } = require("./vision-translator");
+  const notify = typeof emitNotice === "function" ? emitNotice : () => {};
+
+  if (!hasVisionInputFiles(files)) {
+    return { ok: true, text, files: withoutVisionFiles(files) };
+  }
+
+  notify({ code: "visionPreparing", level: "progress", panel: true, replace: true });
+
+  const result = await translateImages(files, { userText: text });
+  if (result === null) {
+    return { ok: true, text, files: withoutVisionFiles(files) };
+  }
+
+  if (!result.ok) {
+    notify({
+      code: "visionSkipped",
+      level: "warning",
+      panel: true,
+      replace: true,
+      replacesCode: "visionPreparing",
+      done: true,
+    });
+    if (isImageOnlyUserMessage(text, files)) {
+      if (result.reason === "NO_KEY") return { ok: false, error: "VISION_UNAVAILABLE" };
+      return { ok: false, error: "VISION_FAILED", detail: result.detail || undefined };
+    }
+    return { ok: true, text, files: withoutVisionFiles(files) };
+  }
+
+  notify({
+    code: "visionReady",
+    level: "info",
+    panel: true,
+    replace: true,
+    replacesCode: "visionPreparing",
+    done: true,
+  });
+
+  const enrichedText = buildEnrichedUserText(text, result.text);
+  const outboundFiles = result.keepOriginal ? files : withoutVisionFiles(files);
+  return { ok: true, text: enrichedText, files: outboundFiles };
+}
+
+async function runDocumentPreflight(text, files, { emitNotice } = {}) {
+  const {
+    buildEnrichedUserText,
+    extractDocuments,
+    hasDocumentInputFiles,
+    isDocumentOnlyUserMessage,
+  } = require("./document-translator");
+  const notify = typeof emitNotice === "function" ? emitNotice : () => {};
+
+  if (!hasDocumentInputFiles(files)) {
+    return { ok: true, text, files };
+  }
+
+  notify({ code: "documentPreparing", level: "progress", panel: true, replace: true });
+
+  const result = await extractDocuments(files);
+  if (result === null) {
+    return { ok: true, text, files };
+  }
+
+  if (!result.ok) {
+    notify({
+      code: "documentSkipped",
+      level: "warning",
+      panel: true,
+      replace: true,
+      replacesCode: "documentPreparing",
+      done: true,
+    });
+    if (isDocumentOnlyUserMessage(text, files)) {
+      return { ok: false, error: "DOCUMENT_FAILED", detail: result.detail || undefined };
+    }
+    return { ok: true, text, files };
+  }
+
+  notify({
+    code: "documentReady",
+    level: "info",
+    panel: true,
+    replace: true,
+    replacesCode: "documentPreparing",
+    done: true,
+  });
+
+  const extracted = new Set(result.extractedPaths || []);
+  const outboundFiles = result.keepOriginal
+    ? files
+    : (files || []).filter((file) => !extracted.has(file.path));
+  const enrichedText = buildEnrichedUserText(text, result.text);
+  return { ok: true, text: enrichedText, files: outboundFiles };
+}
+
+module.exports = { runVisionPreflight, runDocumentPreflight, withoutVisionFiles };
