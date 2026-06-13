@@ -4,8 +4,18 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { app, safeStorage } = require("electron");
-const { userDataPath } = require("./config");
+const { userDataPath, appVersion } = require("./config");
+
+// safeStorage is electron-only; lazy-require it inside the crypto functions so
+// this module loads in plain node (tests/CLIs). Absent → graceful plaintext
+// fallback via the `?.` guards below.
+function electronSafeStorage() {
+  try {
+    return require("electron").safeStorage || null;
+  } catch {
+    return null;
+  }
+}
 const { base64urlEncode, stableStringify } = require("./crypto-signing");
 
 const DEVICE_FILE = "device-state.json";
@@ -32,6 +42,7 @@ function writeJson(filePath, data) {
 }
 
 function protectText(text) {
+  const safeStorage = electronSafeStorage();
   if (safeStorage?.isEncryptionAvailable?.()) {
     return {
       encrypted: true,
@@ -48,6 +59,7 @@ function unprotectText(record) {
   if (!record?.data) return "";
   const buf = Buffer.from(record.data, "base64");
   if (!record.encrypted) return buf.toString("utf8");
+  const safeStorage = electronSafeStorage();
   if (!safeStorage?.isEncryptionAvailable?.()) return "";
   try {
     return safeStorage.decryptString(buf);
@@ -139,7 +151,7 @@ function devicePayload() {
     fingerprintHash: fingerprintHash(),
     platform: process.platform,
     arch: process.arch,
-    appVersion: app.getVersion(),
+    appVersion: appVersion(),
     publicKey: keypair.publicKey,
     keyAlg: keypair.keyAlg,
   };
@@ -364,17 +376,17 @@ async function latestRelease(platformKey, version) {
 }
 
 /**
- * Resolve the download for an optional document capability pack. The server
+ * Resolve the download for an optional runtime pack. The server
  * decides the artifact URL (e.g. a Qiniu CDN object), so the source is
  * configurable server-side and reachable inside China without hitting PyPI.
  * @returns {Promise<{ ok: boolean, artifact?: { url: string, sha256: string, version?: string, size?: number } }>}
  */
-async function documentPackArtifact(packId, platformKey) {
+async function runtimePackArtifact(packId, platformKey) {
   const params = new URLSearchParams({
     pack: String(packId || ""),
     platform: String(platformKey || ""),
   });
-  return serviceFetch(`/api/document-packs/artifact?${params.toString()}`, {
+  return serviceFetch(`/api/runtime-packs/artifact?${params.toString()}`, {
     method: "GET",
     headers: {},
   });
@@ -451,7 +463,7 @@ module.exports = {
   fetchClientConfig,
   rotateDeviceKeypair,
   latestRelease,
-  documentPackArtifact,
+  runtimePackArtifact,
   testConnection,
   submitContactRequest,
   requestFeedbackAttachmentUpload,

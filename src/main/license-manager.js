@@ -2,9 +2,18 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { app, safeStorage } = require("electron");
 const { userDataPath, PROJECT_ROOT } = require("./config");
 const serviceClient = require("./service-client");
+
+// safeStorage is electron-only; lazy-require it so this module loads in plain
+// node (tests). Absent → graceful plaintext fallback via the `?.` guards.
+function electronSafeStorage() {
+  try {
+    return require("electron").safeStorage || null;
+  } catch {
+    return null;
+  }
+}
 const {
   base64urlDecode,
   base64urlEncode,
@@ -117,6 +126,7 @@ function statePath() {
 
 function protectText(text) {
   const buf = Buffer.from(text, "utf8");
+  const safeStorage = electronSafeStorage();
   if (safeStorage?.isEncryptionAvailable?.()) {
     return {
       encrypted: true,
@@ -130,6 +140,7 @@ function unprotectText(record) {
   if (!record?.data) return "";
   const buf = Buffer.from(record.data, "base64");
   if (record.encrypted) {
+    const safeStorage = electronSafeStorage();
     if (!safeStorage?.isEncryptionAvailable?.()) return "";
     try {
       return safeStorage.decryptString(buf);

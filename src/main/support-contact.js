@@ -1,7 +1,7 @@
 "use strict";
 
-const { app } = require("electron");
 const crypto = require("node:crypto");
+const { appVersion } = require("./config");
 const {
   submitContactRequest,
   requestFeedbackAttachmentUpload,
@@ -134,7 +134,7 @@ function getFeedbackContext(category) {
   const { getDeviceId, devicePayload } = require("./service-client");
   const device = devicePayload();
   return {
-    appVersion: app.getVersion(),
+    appVersion: appVersion(),
     deviceId: getDeviceId(),
     platform: device.platform,
     arch: device.arch,

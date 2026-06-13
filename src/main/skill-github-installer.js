@@ -2,8 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { app } = require("electron");
-const { userDataPath } = require("./config");
+const { userDataPath, isPackaged } = require("./config");
 const { isAppVersionCompatible } = require("./skill-version");
 const { buildManifestFromSkillMd } = require("./skill-md-convert");
 const { resolveBundledCatalogDir } = require("./skill-bundled-catalog");
@@ -220,7 +219,7 @@ function finalizeInstalledSkill(entry, extractDir) {
 
 function networkErrorDetail(err) {
   if (/HTTP 403/.test(err.message)) {
-    if (app.isPackaged) {
+    if (isPackaged()) {
       return "Built-in skill package not found and GitHub is unreachable. Please update to the latest app package or verify the installation is complete.";
     }
     return "Cannot access GitHub (403/rate limited). In dev mode, run npm run sync:skills-bundle to use the offline package.";
@@ -250,7 +249,7 @@ async function installFromGithubEntry(entry) {
     let usedGithub = false;
     if (materializeFromBundled(entry, extractDir)) {
       // offline catalog
-    } else if (app.isPackaged) {
+    } else if (isPackaged()) {
       return {
         ok: false,
         error: "BUNDLED_MISSING",
@@ -289,7 +288,7 @@ async function installFromGithubEntry(entry) {
       }
     }
 
-    if (app.isPackaged) {
+    if (isPackaged()) {
       return {
         ok: false,
         error: "BUNDLED_MISSING",

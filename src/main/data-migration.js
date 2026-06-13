@@ -2,9 +2,9 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { app } = require("electron");
 const {
   userDataPath,
+  appVersion,
   agentBinDir,
   agentConfigDir,
   sessionsIndexPath,
@@ -107,7 +107,7 @@ const APP_DATA_DIRS = [
 ];
 
 function legacyUserDataRoots() {
-  const currentRoot = app.getPath("userData");
+  const currentRoot = userDataPath();
   const parent = path.dirname(currentRoot);
   return LEGACY_USER_DATA_DIR_NAMES.map((name) => path.join(parent, name)).filter(
     (root) => root !== currentRoot && fs.existsSync(root),
@@ -338,7 +338,7 @@ function removeLegacyUserDataRoot(legacyRoot) {
  * Merge projects/sessions/config from pre-rename userData roots, then delete the legacy folder.
  */
 function migrateLegacyUserDataRoot() {
-  const currentRoot = app.getPath("userData");
+  const currentRoot = userDataPath();
   for (const legacyRoot of legacyUserDataRoots()) {
     let changed = migrateLegacyProjectsAndSessions(legacyRoot, currentRoot);
     changed = migrateLegacyConfigFiles(legacyRoot, currentRoot) || changed;
@@ -499,7 +499,7 @@ function bundledEngineFingerprint() {
     return {
       size: st.size,
       mtimeMs: Math.floor(st.mtimeMs),
-      appVersion: app.getVersion(),
+      appVersion: appVersion(),
     };
   } catch {
     return null;

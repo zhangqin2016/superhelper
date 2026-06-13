@@ -3,8 +3,17 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { app, safeStorage } = require("electron");
-const { PROJECT_ROOT, userDataPath } = require("./config");
+const { PROJECT_ROOT, userDataPath, isPackaged } = require("./config");
+
+// safeStorage is electron-only; lazy-require it so this module loads in plain
+// node (tests). Absent → graceful plaintext fallback via the `?.` guards.
+function electronSafeStorage() {
+  try {
+    return require("electron").safeStorage || null;
+  } catch {
+    return null;
+  }
+}
 const { stableStringify, verifyDetached } = require("./crypto-signing");
 
 const CACHE_FILE = "remote-config-cache.json";
@@ -49,6 +58,7 @@ function loadPublicKey() {
 }
 
 function protectText(text) {
+  const safeStorage = electronSafeStorage();
   if (safeStorage?.isEncryptionAvailable?.()) {
     return {
       encrypted: true,
@@ -65,6 +75,7 @@ function unprotectText(record) {
   if (!record?.data) return "";
   const buf = Buffer.from(record.data, "base64");
   if (!record.encrypted) return buf.toString("utf8");
+  const safeStorage = electronSafeStorage();
   if (!safeStorage?.isEncryptionAvailable?.()) return "";
   try {
     return safeStorage.decryptString(buf);
@@ -86,7 +97,7 @@ function verifyConfigResponse(json) {
   };
   if (json?.signature?.startsWith("dev.")) {
     const expected = `dev.${hashPayload(payload)}`;
-    return !app.isPackaged && json.signature === expected ? { ok: true, payload } : { ok: false };
+    return !isPackaged() && json.signature === expected ? { ok: true, payload } : { ok: false };
   }
   return verifyDetached(payload, json?.signature, loadPublicKey())
     ? { ok: true, payload }

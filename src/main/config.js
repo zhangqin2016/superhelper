@@ -119,6 +119,35 @@ function userHome() {
   return resolveBasePath("home");
 }
 
+/**
+ * App version / packaged flag — the other two things business modules used to
+ * reach into electron for. Resolved like paths (env → electron → default) so
+ * those modules can depend on config instead of hard-requiring electron.
+ */
+function appVersion() {
+  if (process.env.LILY_APP_VERSION) return process.env.LILY_APP_VERSION;
+  try {
+    const electron = require("electron");
+    if (electron && electron.app && typeof electron.app.getVersion === "function") {
+      return electron.app.getVersion();
+    }
+  } catch {
+    /* not under electron */
+  }
+  return "0.0.0";
+}
+
+function isPackaged() {
+  if (process.env.LILY_IS_PACKAGED) return process.env.LILY_IS_PACKAGED === "1";
+  try {
+    const electron = require("electron");
+    if (electron && electron.app) return Boolean(electron.app.isPackaged);
+  } catch {
+    /* not under electron */
+  }
+  return false;
+}
+
 function fileStagingDir() {
   return userDataPath("file-staging");
 }
@@ -143,6 +172,8 @@ function sessionGuideDir(sessionId) {
 
 module.exports = {
   bindRuntimePaths,
+  appVersion,
+  isPackaged,
   INSTALLED_CLI_STEM,
   BUNDLED_CLI_STEM,
   bundledCliBasename,

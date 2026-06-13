@@ -2,7 +2,6 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { app } = require("electron");
 const { userDataPath } = require("./config");
 
 const SUPPORTED_LOCALES = ["zh-CN", "en", "ar"];
@@ -50,10 +49,18 @@ function mapToSupportedLocale(raw) {
 }
 
 function detectSystemLocale() {
-  const raw =
-    (typeof app.getSystemLocale === "function" && app.getSystemLocale()) ||
-    (typeof app.getLocale === "function" && app.getLocale()) ||
-    DEFAULT_LOCALE;
+  // electron's locale APIs only — lazy-required so this module loads in plain
+  // node (tests/CLIs); falls back to the default when electron isn't present.
+  let raw = DEFAULT_LOCALE;
+  try {
+    const { app } = require("electron");
+    raw =
+      (typeof app?.getSystemLocale === "function" && app.getSystemLocale()) ||
+      (typeof app?.getLocale === "function" && app.getLocale()) ||
+      DEFAULT_LOCALE;
+  } catch {
+    /* not under electron → default */
+  }
   return mapToSupportedLocale(raw);
 }
 
