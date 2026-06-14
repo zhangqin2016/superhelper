@@ -153,6 +153,7 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
       enabledPluginIds: [
         "lily-vision",
         "lily-image-generation",
+        "lily-diagrams",
         "lily-video-generation",
         "lily-speech-generation",
         "websearch",

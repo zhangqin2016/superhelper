@@ -17,6 +17,7 @@ const BUNDLED_SKILL_IDS = [
   "lily-task-execution-rules",
   "lily-vision",
   "lily-image-generation",
+  "lily-diagrams",
   "lily-video-generation",
   "lily-speech-generation",
   "websearch",
