@@ -160,6 +160,21 @@ function setSearxngUrl(rawUrl) {
   return { ok: true, searxngUrl: normalized };
 }
 
+// Server-delivered search proxy endpoint. When present, the IQS key resolves to
+// a short-lived gateway token (resolveIqsApiKey reads it from the same remote
+// runtime env), so the token must be sent here (our proxy verifies it and
+// injects the real IQS key) — NOT to the default direct IQS endpoint. This key
+// is not a passthrough prefix, so the spawn env (not the engine env) must carry
+// it for websearch.cjs to see it.
+function resolveIqsApiUrl() {
+  try {
+    const remoteEnv = require("./remote-config").getRemoteRuntimeEnvSync();
+    return String(remoteEnv.WEBSEARCH_IQS_API_URL || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 /** Env vars injected when spawning the agent (picked up by websearch.cjs). */
 function getSearchSpawnEnv() {
   const settings = loadSettings();
@@ -173,6 +188,10 @@ function getSearchSpawnEnv() {
   const iqsKey = resolveIqsApiKey();
   if (iqsKey) {
     env.WEBSEARCH_IQS_API_KEY = iqsKey;
+  }
+  const iqsUrl = resolveIqsApiUrl();
+  if (iqsUrl) {
+    env.WEBSEARCH_IQS_API_URL = iqsUrl;
   }
   return env;
 }

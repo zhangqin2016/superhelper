@@ -246,6 +246,25 @@ export function isGatewayBaseUrl(baseUrl, env = {}) {
   }
 }
 
+// Minimum client version that forwards WEBSEARCH_IQS_API_URL to the search
+// skill. Older clients drop that key (it's not a passthrough prefix), so the
+// gateway token would be sent to the real IQS endpoint and rejected — those
+// clients must fall back to their local IQS key instead, so we don't inject the
+// search proxy for them.
+const SEARCH_PROXY_MIN_APP_VERSION = "0.1.37";
+
+function appVersionAtLeast(version, min) {
+  const parse = (v) => String(v || "").split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const a = parse(version);
+  const b = parse(min);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const x = a[i] || 0;
+    const y = b[i] || 0;
+    if (x !== y) return x > y;
+  }
+  return true;
+}
+
 export function withGatewayRuntimeConfig(effectiveConfig, request, input, options = {}) {
   const configCopy = JSON.parse(JSON.stringify(effectiveConfig || {}));
   const configuredBaseUrl = String(options.publicBaseUrl || "").trim().replace(/\/+$/, "");
@@ -258,7 +277,10 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   const gatewayProviders = listModelGatewayProviders();
   const visionKey = gatewayProviders.vision?.apiKey || config.dashscopeApiKey;
   const searchKey = gatewayProviders.search?.apiKey || config.webSearchIqsApiKey;
-  if (base && (visionKey || searchKey)) {
+  // Only route search through the proxy for clients new enough to forward the
+  // proxy URL to the search skill; older clients fall back to their local key.
+  const searchEnabled = Boolean(searchKey) && appVersionAtLeast(input.appVersion, SEARCH_PROXY_MIN_APP_VERSION);
+  if (base && (visionKey || searchEnabled)) {
     const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
     const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
     if (visionKey) {
@@ -277,7 +299,7 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
       env.DASHSCOPE_VIDEO_BASE_URL = `${base}/llm/dashscope-media`;
       env.DASHSCOPE_TTS_BASE_URL = `${base}/llm/dashscope-media`;
     }
-    if (searchKey) {
+    if (searchEnabled) {
       env.WEBSEARCH_IQS_API_URL = `${base}/llm/search`;
       env.WEBSEARCH_IQS_API_KEY = signModelGatewayToken({
         deviceId: input.deviceId,
