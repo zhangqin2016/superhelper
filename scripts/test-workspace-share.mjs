@@ -33,6 +33,8 @@ try {
   fs.writeFileSync(path.join(ws, ".lily-work", "tmp.txt"), "scratch");
   fs.writeFileSync(path.join(ws, "node_modules/pkg/index.js"), "x");
   fs.writeFileSync(path.join(ws, ".env"), "SECRET=1");
+  // Env template (config shape, no real secret) — must travel so the source runs.
+  fs.writeFileSync(path.join(ws, ".env.example"), "OPENAI_API_KEY=\nPORT=3000\n");
   // The program's build artifacts ARE part of the deliverable — must ship.
   fs.writeFileSync(path.join(ws, "dist/index.html"), "<html>built site</html>");
   fs.writeFileSync(path.join(ws, "build/app.js"), "console.log('built')");
@@ -53,6 +55,9 @@ try {
   if (!rels.includes("dist/index.html") || !rels.includes("build/app.js")) {
     throw new Error(`program build artifacts must be included: ${rels.join(", ")}`);
   }
+  // Env template kept (so source is runnable); real .env still excluded.
+  if (!rels.includes(".env.example")) throw new Error(".env.example template must be included");
+  if (rels.includes(".env")) throw new Error("real .env must stay excluded");
   // The hardcoded key must be flagged so the author can scrub before sharing.
   if (!preview.secretWarnings?.some((w) => w.relPath === "scripts/config.js")) {
     throw new Error(`secret content scan must flag scripts/config.js: ${JSON.stringify(preview.secretWarnings)}`);

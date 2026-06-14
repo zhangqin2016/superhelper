@@ -58,10 +58,16 @@ const SCANNABLE_EXT = new Set([
 ]);
 const SECRET_SCAN_MAX_BYTES = 512 * 1024;
 
+// Env templates carry the config *shape* (which vars to set), not real
+// secrets — keep them so the recipient can actually run the shared source.
+const ENV_TEMPLATE_RE = /^\.env\.(example|sample|template|dist)$/i;
+
 function isExcluded(relPath) {
   const segments = relPath.split(/[\\/]/);
   if (segments.some((seg) => EXCLUDED_DIRS.has(seg))) return true;
-  return EXCLUDED_FILE_RE.test(segments[segments.length - 1] || "");
+  const name = segments[segments.length - 1] || "";
+  if (ENV_TEMPLATE_RE.test(name)) return false;
+  return EXCLUDED_FILE_RE.test(name);
 }
 
 /** Walk the workspace, honoring exclusions, returning {relPath, size}. */
