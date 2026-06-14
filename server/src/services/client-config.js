@@ -284,20 +284,32 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
     const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
     const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
     if (visionKey) {
-      const visionToken = signModelGatewayToken({
-        deviceId: input.deviceId,
-        licenseId: input.licenseId || "",
-        providerId: "vision",
-      });
-      // Image recognition (compatible-mode chat/completions).
-      env.DASHSCOPE_BASE_URL = `${base}/llm/vision`;
-      env.VISION_API_KEY = visionToken;
-      // Image / video / TTS generation (DashScope async api/v1) — same account,
-      // routed through the media proxy so the raw key never reaches the client.
-      env.DASHSCOPE_API_KEY = visionToken;
-      env.DASHSCOPE_IMAGE_BASE_URL = `${base}/llm/dashscope-media`;
-      env.DASHSCOPE_VIDEO_BASE_URL = `${base}/llm/dashscope-media`;
-      env.DASHSCOPE_TTS_BASE_URL = `${base}/llm/dashscope-media`;
+      // Media (vision/image/video/TTS) delivery mode is admin-configurable
+      // (media_delivery_mode). Default direct: deliver the real DashScope key +
+      // real endpoints so the client connects straight to DashScope, no gateway
+      // hop (faster, but the key reaches the device). Gateway keeps the key
+      // server-side behind /llm/vision + /llm/dashscope-media + a short token.
+      if (options.mediaDeliveryMode === "gateway") {
+        const visionToken = signModelGatewayToken({
+          deviceId: input.deviceId,
+          licenseId: input.licenseId || "",
+          providerId: "vision",
+        });
+        env.DASHSCOPE_BASE_URL = `${base}/llm/vision`;
+        env.VISION_API_KEY = visionToken;
+        env.DASHSCOPE_API_KEY = visionToken;
+        env.DASHSCOPE_IMAGE_BASE_URL = `${base}/llm/dashscope-media`;
+        env.DASHSCOPE_VIDEO_BASE_URL = `${base}/llm/dashscope-media`;
+        env.DASHSCOPE_TTS_BASE_URL = `${base}/llm/dashscope-media`;
+      } else {
+        env.DASHSCOPE_API_KEY = visionKey;
+        env.VISION_API_KEY = visionKey;
+        env.DASHSCOPE_BASE_URL = config.visionUpstreamBaseUrl;
+        // image/video/TTS skills fall back to their real api/v1 default endpoint.
+        delete env.DASHSCOPE_IMAGE_BASE_URL;
+        delete env.DASHSCOPE_VIDEO_BASE_URL;
+        delete env.DASHSCOPE_TTS_BASE_URL;
+      }
     }
     if (searchEnabled) {
       env.WEBSEARCH_IQS_API_URL = `${base}/llm/search`;

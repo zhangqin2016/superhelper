@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { API_BASE, apiDelete, apiPatch, apiPost } from "../../lib/api";
+import { API_BASE, apiDelete, apiPatch, apiPost, apiPostForm } from "../../lib/api";
 
 function text(formData, key) {
   const value = formData.get(key);
@@ -67,23 +67,36 @@ export async function createReleaseAction(formData) {
   }
 }
 
-export async function createPluginAction(_previousState, formData) {
+export async function createSkillPackageAction(_previousState, formData) {
   formData = actionFormData(_previousState, formData);
   try {
-    const result = await apiPost("/api/admin/plugins", {
-      id: text(formData, "id"),
-      name: text(formData, "name"),
-      version: text(formData, "version"),
-      type: text(formData, "type") || "mcp",
-      description: text(formData, "description") || null,
-      manifestUrl: text(formData, "manifestUrl"),
-      sha256: text(formData, "sha256") || null,
-      enabled: !bool(formData, "disabled"),
-    });
-    revalidatePath("/admin/plugins");
-    return { ok: true, message: `Plugin ${result.id} saved.` };
+    const uploadForm = new FormData();
+    for (const key of [
+      "skillId",
+      "name",
+      "description",
+      "version",
+      "category",
+      "capabilityLayer",
+      "publisher",
+      "sourceRepo",
+      "minAppVersion",
+      "channel",
+      "riskLevel",
+    ]) {
+      uploadForm.set(key, text(formData, key));
+    }
+    uploadForm.set("sourceKind", "lily");
+    if (bool(formData, "defaultEligible")) uploadForm.set("defaultEligible", "true");
+    if (bool(formData, "featured")) uploadForm.set("featured", "true");
+    if (bool(formData, "disabled")) uploadForm.set("disabled", "true");
+    const artifact = formData.get("artifact");
+    if (artifact) uploadForm.set("artifact", artifact);
+    const result = await apiPostForm("/api/admin/skill-packages/upload", uploadForm);
+    revalidatePath("/admin/skill-packages");
+    return { ok: true, message: `Skill package ${result.skillId} uploaded.` };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to save plugin." };
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to upload skill package." };
   }
 }
 
@@ -224,9 +237,9 @@ export async function setRuntimePackEnabledAction(formData) {
   revalidatePath("/admin/runtime-packs");
 }
 
-export async function setPluginEnabledAction(formData) {
-  await apiPatch(`/api/admin/plugins/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
-  revalidatePath("/admin/plugins");
+export async function setSkillPackageEnabledAction(formData) {
+  await apiPatch(`/api/admin/skill-packages/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
+  revalidatePath("/admin/skill-packages");
 }
 
 export async function setConfigProfileEnabledAction(formData) {
@@ -242,6 +255,14 @@ export async function rollbackConfigProfileAction(formData) {
 export async function updateSettingsAction(formData) {
   await apiPatch("/api/admin/settings", {
     licenseTrialDays: Number(text(formData, "licenseTrialDays") || 0),
+    mediaDeliveryMode: text(formData, "mediaDeliveryMode") || undefined,
+    qiniu: {
+      publicBaseUrl: text(formData, "qiniuPublicBaseUrl"),
+      accessKey: text(formData, "qiniuAccessKey"),
+      secretKey: text(formData, "qiniuSecretKey") || null,
+      bucket: text(formData, "qiniuBucket"),
+      uploadUrl: text(formData, "qiniuUploadUrl") || "https://upload.qiniup.com",
+    },
   });
   revalidatePath("/admin/settings");
   revalidatePath("/admin/devices");

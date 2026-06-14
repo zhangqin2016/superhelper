@@ -1,11 +1,20 @@
 import { z } from "zod";
 import { config } from "../../config.js";
 import { db, pool } from "../../db.js";
+import { getMediaDeliveryMode, getQiniuAdminSettings, getQiniuConfig, setAppSetting, setQiniuConfig } from "../../services/app-settings.js";
 import { listModelGatewayProviders } from "../../services/model-gateway/providers.js";
 import { signLicensePayload } from "../../services/security.js";
 
 const updateSettingsSchema = z.object({
   licenseTrialDays: z.number().int().min(0).max(3650),
+  mediaDeliveryMode: z.enum(["direct", "gateway"]).optional(),
+  qiniu: z.object({
+    publicBaseUrl: z.string().url().max(400),
+    accessKey: z.string().max(200),
+    secretKey: z.string().max(200).optional().nullable(),
+    bucket: z.string().min(1).max(120),
+    uploadUrl: z.string().url().max(400),
+  }).optional(),
 });
 
 function healthCheck(name, ok, detail = "", meta = {}) {
@@ -17,8 +26,8 @@ function healthCheck(name, ok, detail = "", meta = {}) {
   };
 }
 
-async function checkUpdateManifest() {
-  const url = `${config.qiniuPublicBaseUrl.replace(/\/+$/, "")}/app/updates/latest.json`;
+async function checkUpdateManifest(qiniu) {
+  const url = `${qiniu.publicBaseUrl.replace(/\/+$/, "")}/app/updates/latest.json`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
@@ -38,6 +47,7 @@ async function checkUpdateManifest() {
 
 async function buildAdminHealth() {
   const checks = [];
+  const qiniu = await getQiniuConfig();
 
   try {
     await pool.query("select 1");
@@ -69,7 +79,7 @@ async function buildAdminHealth() {
     checks.push(healthCheck("license_signing", false, error?.message || String(error)));
   }
 
-  checks.push(await checkUpdateManifest());
+  checks.push(await checkUpdateManifest(qiniu));
 
   const gatewayProviders = Object.values(listModelGatewayProviders()).map((provider) => ({
     id: provider.id,
@@ -98,7 +108,7 @@ async function buildAdminHealth() {
     "client config endpoint available",
     {
       endpoint: "/api/client/config",
-      pluginRegistryUrl: "/api/plugins/registry",
+      pluginRegistryUrl: "/api/skills/registry",
     },
   ));
 
@@ -114,7 +124,7 @@ async function buildAdminHealth() {
       nodeEnv: process.env.NODE_ENV || "development",
       imageTag: process.env.IMAGE_TAG || "",
       packageVersion: process.env.npm_package_version || "",
-      qiniuPublicBaseUrl: config.qiniuPublicBaseUrl,
+      qiniuPublicBaseUrl: qiniu.publicBaseUrl,
       allowUnsignedLicenses: config.allowUnsignedLicenses,
       modelGatewayEnabled: config.modelGatewayEnabled,
       modelGatewayDefaultProvider: config.modelGatewayDefaultProvider,
@@ -139,29 +149,32 @@ export function registerAdminSystemRoutes(app, { audit }) {
     return {
       settings: {
         licenseTrialDays: Number.isFinite(days) ? days : 3,
+        mediaDeliveryMode: await getMediaDeliveryMode(),
+        qiniu: await getQiniuAdminSettings(),
       },
     };
   });
 
   app.patch("/api/admin/settings", async (request) => {
     const input = updateSettingsSchema.parse(request.body);
-    await db
-      .insertInto("app_settings")
-      .values({
-        key: "license_trial_days",
-        value: JSON.stringify(input.licenseTrialDays),
-        updated_at: new Date(),
-      })
-      .onConflict((oc) =>
-        oc.column("key").doUpdateSet({
-          value: JSON.stringify(input.licenseTrialDays),
-          updated_at: new Date(),
-        }),
-      )
-      .execute();
+    await setAppSetting("license_trial_days", input.licenseTrialDays);
+    if (input.mediaDeliveryMode) {
+      await setAppSetting("media_delivery_mode", input.mediaDeliveryMode);
+    }
+    let qiniu = null;
+    if (input.qiniu) {
+      qiniu = await setQiniuConfig(input.qiniu);
+    }
     await audit(request, "settings.update", "settings", "license_trial_days", {
       licenseTrialDays: input.licenseTrialDays,
+      qiniuUpdated: Boolean(input.qiniu),
     });
-    return { ok: true, settings: { licenseTrialDays: input.licenseTrialDays } };
+    return {
+      ok: true,
+      settings: {
+        licenseTrialDays: input.licenseTrialDays,
+        qiniu: qiniu ? await getQiniuAdminSettings() : undefined,
+      },
+    };
   });
 }

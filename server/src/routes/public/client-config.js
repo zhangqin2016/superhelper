@@ -91,8 +91,10 @@ export function registerPublicClientConfigRoutes(app) {
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;
 
     const resolved = await resolveEffectiveConfig(input);
+    const { getMediaDeliveryMode } = await import("../../services/app-settings.js");
     const effectiveConfig = withGatewayRuntimeConfig(resolved.effectiveConfig, request, input, {
       publicBaseUrl: config.publicBaseUrl,
+      mediaDeliveryMode: await getMediaDeliveryMode(),
     });
     const payload = {
       schemaVersion: 1,
