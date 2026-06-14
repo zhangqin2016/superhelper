@@ -316,6 +316,17 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   for (const preset of presets) {
     const env = preset?.env && typeof preset.env === "object" ? preset.env : null;
     if (!env) continue;
+    // Direct delivery: the form ships $LILY_PROVIDER_KEY (it never holds the
+    // real key). Inject the provider's real key + endpoint from the registry so
+    // the client connects directly to the provider.
+    if (env.LILY_API_KEY === "$LILY_PROVIDER_KEY") {
+      const provider = gatewayProviders[String(env.LILY_GATEWAY_PROVIDER || "")];
+      env.LILY_API_KEY = provider?.apiKey || "";
+      if (provider?.baseUrl && !String(env.LILY_API_BASE_URL || "").trim()) {
+        env.LILY_API_BASE_URL = provider.baseUrl;
+      }
+      continue;
+    }
     const baseUrl = String(env.LILY_API_BASE_URL || "").trim();
     if (!isGatewayBaseUrl(baseUrl, env)) continue;
     const providerId = parseGatewayProvider(baseUrl, env);

@@ -17,6 +17,7 @@ const FALLBACK_TEMPLATE = {
   label: "",
   provider: "",
   route: "",
+  baseUrl: "",
   model: "",
   fastModel: "",
   strongModel: "",
@@ -40,6 +41,7 @@ function providersToTemplates(providers) {
         label: p.label || p.id,
         provider: p.id,
         route: `/llm/${p.id}`,
+        baseUrl: p.base_url || p.baseUrl || "",
         model: def,
         fastModel: models[1] || def,
         strongModel: def,
@@ -58,8 +60,13 @@ const labels = {
     scopeDevice: "某台设备",
     targetHelp: "全局配置不需要目标 ID；档位组填组 ID，授权/设备填对应 ID。",
     modelTitle: "选择模型供应商",
-    modelDesc: "选择上方已配置好的供应商。客户端只走网关 + 短期 token，不下发任何密钥。",
+    modelDesc: "选择上方已配置好的供应商，再选投递方式与模型。",
     providerEmpty: "请先在上方「模型供应商」里添加一个供应商。",
+    modeTitle: "投递方式",
+    modeDirect: "直连（更快）",
+    modeGateway: "走网关（更安全）",
+    modeDirectHint: "客户端直接连供应商，响应更快、不经我们服务器。真实密钥会下发到设备（由服务端从供应商注册表自动注入，你不用手填）。",
+    modeGatewayHint: "客户端只拿短期 token，真实密钥留在服务端；多一跳，弱网下可能偏慢。",
     activeModel: "默认模型",
     fastModel: "快速模型",
     strongModel: "强模型",
@@ -67,11 +74,11 @@ const labels = {
     modelPick: "可直接选该供应商的模型，或手动输入。",
     visionNative: "模型原生支持图片识别",
     visionNativeHelp: "勾选后，带图片的消息直接发给该模型，跳过 Qwen 识图桥接。仅当该模型本身能看图时才勾。",
-    toolsTitle: "插件和客户端策略",
-    toolsDesc: "这里控制插件市场入口、默认权限和最低客户端版本。",
-    registry: "插件市场地址",
-    pluginIds: "默认启用插件",
-    pluginIdsHelp: "多个插件用英文逗号分隔。",
+    toolsTitle: "技能包和客户端策略",
+    toolsDesc: "这里控制技能包 registry、默认权限和最低客户端版本。",
+    registry: "技能包 registry",
+    pluginIds: "默认启用技能包",
+    pluginIdsHelp: "多个技能包 ID 用英文逗号分隔。",
     permissionMode: "权限模式",
     minVersion: "最低客户端版本",
     timeout: "请求超时",
@@ -96,8 +103,13 @@ const labels = {
     scopeDevice: "A device",
     targetHelp: "Global needs no target ID. Tier group takes a group ID; license/device take their IDs.",
     modelTitle: "Choose a model provider",
-    modelDesc: "Pick a provider configured above. Clients only use the gateway + a short-lived token; no key is delivered.",
+    modelDesc: "Pick a provider configured above, then the delivery mode and models.",
     providerEmpty: "Add a provider above in “Model providers” first.",
+    modeTitle: "Delivery",
+    modeDirect: "Direct (faster)",
+    modeGateway: "Gateway (safer)",
+    modeDirectHint: "Client connects to the provider directly — faster, no server hop. The real key is delivered to the device (the server injects it from the provider registry; you don't type it).",
+    modeGatewayHint: "Client gets a short-lived token; the real key stays on the server. One extra hop — can be slower on weak networks.",
     activeModel: "Default model",
     fastModel: "Fast model",
     strongModel: "Strong model",
@@ -105,11 +117,11 @@ const labels = {
     modelPick: "Pick one of the provider's models, or type your own.",
     visionNative: "Model natively recognizes images",
     visionNativeHelp: "When checked, messages with images go straight to this model and skip the Qwen vision bridge. Only check this if the model itself can see images.",
-    toolsTitle: "Plugins and client policy",
-    toolsDesc: "Control plugin registry, default permissions, and minimum client version.",
-    registry: "Plugin registry",
-    pluginIds: "Default enabled plugins",
-    pluginIdsHelp: "Separate multiple plugin IDs with commas.",
+    toolsTitle: "Skill packages and client policy",
+    toolsDesc: "Control skill registry, default permissions, and minimum client version.",
+    registry: "Skill registry",
+    pluginIds: "Default enabled skill packages",
+    pluginIdsHelp: "Separate multiple skill package IDs with commas.",
     permissionMode: "Permission mode",
     minVersion: "Minimum app version",
     timeout: "Request timeout",
@@ -134,8 +146,13 @@ const labels = {
     scopeDevice: "جهاز محدد",
     targetHelp: "الإعداد العام لا يحتاج هدفاً. المجموعة تأخذ معرّف المجموعة؛ الترخيص/الجهاز يأخذ معرّفه.",
     modelTitle: "اختر مزوّد النموذج",
-    modelDesc: "اختر مزوّداً مضبوطاً أعلاه. يستخدم العميل البوابة + رمزاً قصيراً فقط؛ لا يُرسَل أي مفتاح.",
+    modelDesc: "اختر مزوّداً مضبوطاً أعلاه، ثم وضع الإرسال والنماذج.",
     providerEmpty: "أضف مزوّداً أعلاه في «مزوّدو النماذج» أولاً.",
+    modeTitle: "الإرسال",
+    modeDirect: "مباشر (أسرع)",
+    modeGateway: "بوابة (أأمن)",
+    modeDirectHint: "يتصل العميل بالمزوّد مباشرة — أسرع. يُرسَل المفتاح الحقيقي إلى الجهاز (يحقنه الخادم من سجل المزوّدين).",
+    modeGatewayHint: "يحصل العميل على رمز قصير؛ يبقى المفتاح على الخادم. قفزة إضافية قد تكون أبطأ على الشبكات الضعيفة.",
     activeModel: "النموذج الافتراضي",
     fastModel: "النموذج السريع",
     strongModel: "النموذج القوي",
@@ -143,11 +160,11 @@ const labels = {
     modelPick: "اختر أحد نماذج المزوّد أو اكتب نموذجاً.",
     visionNative: "النموذج يتعرف على الصور أصلاً",
     visionNativeHelp: "عند التحديد، تُرسل الرسائل ذات الصور مباشرة إلى هذا النموذج متجاوزة جسر Qwen. حدّد فقط إذا كان النموذج نفسه يرى الصور.",
-    toolsTitle: "الإضافات وسياسة العميل",
-    toolsDesc: "تحكم بسجل الإضافات والصلاحيات الافتراضية والحد الأدنى للإصدار.",
-    registry: "سجل الإضافات",
-    pluginIds: "الإضافات المفعلة افتراضياً",
-    pluginIdsHelp: "افصل المعرفات بفواصل إنجليزية.",
+    toolsTitle: "حزم المهارات وسياسة العميل",
+    toolsDesc: "تحكم بسجل حزم المهارات والصلاحيات الافتراضية والحد الأدنى للإصدار.",
+    registry: "سجل حزم المهارات",
+    pluginIds: "حزم المهارات المفعلة افتراضياً",
+    pluginIdsHelp: "افصل معرفات حزم المهارات بفواصل إنجليزية.",
     permissionMode: "وضع الصلاحيات",
     minVersion: "أقل إصدار للتطبيق",
     timeout: "مهلة الطلب",
@@ -187,12 +204,13 @@ function defaultDraft(copy, templates) {
     priority: "0",
     rolloutPercent: "100",
     selectedTemplateId: template.id,
+    deliveryMode: "direct",
     baseUrl: template.route,
     model: template.model,
     fastModel: template.fastModel,
     strongModel: template.strongModel,
     subagentModel: template.fastModel,
-    pluginRegistryUrl: "/api/plugins/registry",
+    pluginRegistryUrl: "/api/skills/registry",
     enabledPluginIds: "",
     permissionMode: "default",
     minAppVersion: "",
@@ -216,22 +234,35 @@ function splitCsv(text) {
 
 function buildConfig(draft, template) {
   const providerId = template.provider || template.id || "";
-  const baseUrl = providerId ? `/llm/${providerId}` : "";
-  const env = {
-    LILY_API_BASE_URL: baseUrl,
-    LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
-    LILY_GATEWAY_PROVIDER: providerId,
+  // Direct delivers the provider's real endpoint; the server injects the real
+  // key in place of $LILY_PROVIDER_KEY (the form never holds the key). Gateway
+  // keeps the key server-side and the client gets a short-lived token.
+  const direct = draft.deliveryMode === "direct" && Boolean(template.baseUrl);
+  const models = {
     LILY_MODEL: String(draft.model || "").trim(),
     LILY_MODEL_HAIKU: String(draft.fastModel || draft.model || "").trim(),
     LILY_MODEL_SONNET: String(draft.strongModel || draft.model || "").trim(),
     LILY_MODEL_OPUS: String(draft.strongModel || draft.model || "").trim(),
     LILY_SUBAGENT_MODEL: String(draft.subagentModel || draft.fastModel || draft.model || "").trim(),
   };
+  const env = direct
+    ? {
+        LILY_API_BASE_URL: template.baseUrl,
+        LILY_API_KEY: "$LILY_PROVIDER_KEY",
+        LILY_GATEWAY_PROVIDER: providerId,
+        ...models,
+      }
+    : {
+        LILY_API_BASE_URL: providerId ? `/llm/${providerId}` : "",
+        LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
+        LILY_GATEWAY_PROVIDER: providerId,
+        ...models,
+      };
 
   return {
     schemaVersion: 1,
     models: {
-      source: "service-managed",
+      source: direct ? "client-direct" : "service-managed",
       activePresetId: template.id || providerId,
       presets: [
         {
@@ -244,7 +275,7 @@ function buildConfig(draft, template) {
       ],
     },
     tools: {
-      pluginRegistryUrl: String(draft.pluginRegistryUrl || "/api/plugins/registry").trim(),
+      pluginRegistryUrl: String(draft.pluginRegistryUrl || "/api/skills/registry").trim(),
       enabledPluginIds: splitCsv(draft.enabledPluginIds),
     },
     policy: {
@@ -428,6 +459,30 @@ export function ConfigProfileForm({ providers = [] }) {
                 <option key={model} value={model} />
               ))}
             </datalist>
+
+            <div className="mt-5">
+              <div className="mb-2 text-sm font-semibold text-slate-800">{copy.modeTitle}</div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  ["direct", copy.modeDirect, copy.modeDirectHint],
+                  ["gateway", copy.modeGateway, copy.modeGatewayHint],
+                ].map(([mode, label, hint]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => updateField("deliveryMode", mode)}
+                    className={`rounded-xl border p-3 text-start transition ${
+                      draft.deliveryMode === mode
+                        ? "border-brand bg-brand/5 ring-2 ring-brand/10"
+                        : "border-slate-200 bg-white hover:border-brand/50"
+                    }`}
+                  >
+                    <span className="block text-sm font-semibold text-slate-900">{label}</span>
+                    <span className="mt-1 block text-xs text-slate-500">{hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <ConfigField label={copy.activeModel} help={copy.modelPick}>
