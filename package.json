@@ -54,6 +54,7 @@
     },
     "asar": true,
     "afterPack": "scripts/electron-after-pack.cjs",
+    "afterSign": "build/notarize.cjs",
     "extraResources": [
       {
         "from": "resources",
@@ -111,8 +112,10 @@
         "dir"
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "signIgnore": [
         ".*/Resources/bundles/.*"
       ]
@@ -177,6 +180,7 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
+    "@electron/notarize": "^2.5.0",
     "electron": "^41.7.0",
     "electron-builder": "^26.8.1"
   }

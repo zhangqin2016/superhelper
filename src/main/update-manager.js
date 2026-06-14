@@ -29,7 +29,19 @@ let updaterWired = false;
 let activeFeedUrl = "";
 let downloadReady = false;
 let idleInstallTimer = null;
+let autoDownloadStartedFor = "";
 let updateState = createBaseState();
+
+// Silent auto-update (default on for packaged builds): when a newer version is
+// found we download it in the background and let electron-updater install it on
+// the next normal quit (autoInstallOnAppQuit) — zero clicks, no forced restart.
+// Disable with LILY_UPDATE_SILENT=0 to fall back to the manual download/install
+// flow driven from the UI.
+function isSilentAutoUpdate() {
+  const raw = String(process.env.LILY_UPDATE_SILENT || "").trim().toLowerCase();
+  if (raw === "0" || raw === "false" || raw === "off") return false;
+  return true;
+}
 
 function defaultManifestUrl() {
   return process.env.LILY_UPDATE_MANIFEST_URL || DEFAULT_MANIFEST_URL;
@@ -192,7 +204,10 @@ function wireAutoUpdater() {
   if (!instance || updaterWired) return instance;
   updaterWired = true;
   instance.autoDownload = false;
-  instance.autoInstallOnAppQuit = false;
+  // Install a background-downloaded update on the next normal quit (no forced
+  // restart). Silent zero-click delivery on Windows; on macOS it also requires
+  // a signed + notarized build for Squirrel.Mac to accept the update.
+  instance.autoInstallOnAppQuit = true;
   instance.on("checking-for-update", () => {
     setState({ phase: PHASE.checking, error: null, progress: null });
   });
@@ -395,7 +410,9 @@ async function checkForUpdatesState() {
   }
   const next = {
     ok: true,
-    phase: result.hasUpdate ? PHASE.available : PHASE.idle,
+    // Keep "downloaded" sticky so a periodic re-check doesn't drop a staged
+    // update back to "available".
+    phase: result.hasUpdate ? (downloadReady ? PHASE.downloaded : PHASE.available) : PHASE.idle,
     hasUpdate: Boolean(result.hasUpdate),
     currentVersion: result.currentVersion,
     latestVersion: result.latestVersion,
@@ -418,6 +435,14 @@ async function checkForUpdatesState() {
     if (instance) {
       activeFeedUrl = feedUrl;
       instance.setFeedURL({ provider: "generic", url: feedUrl });
+      // Silent zero-click: download in the background once per discovered
+      // version; the staged update installs on the next normal quit.
+      if (isSilentAutoUpdate() && !downloadReady && autoDownloadStartedFor !== next.latestVersion) {
+        autoDownloadStartedFor = next.latestVersion;
+        downloadUpdate().catch((err) => {
+          console.warn("[update-manager] silent download failed", err?.message || err);
+        });
+      }
     }
   }
   return getUpdateState();
