@@ -30,6 +30,7 @@
     "release:server": "node scripts/publish-release-server.mjs",
     "release:one": "node scripts/release-one-click.mjs",
     "release:all": "node scripts/release-one-click.mjs --target all --upload",
+    "publish:libreoffice-runtime": "node scripts/publish-libreoffice-runtime.mjs",
     "deploy:baota:check": "node scripts/check-baota-compose.mjs",
     "build:runtime": "node scripts/build-runtime-bundle.mjs",
     "verify:runtime": "node scripts/verify-runtime-bundle.mjs",
