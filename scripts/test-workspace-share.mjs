@@ -24,6 +24,8 @@ try {
   fs.mkdirSync(path.join(ws, "output"), { recursive: true });
   fs.mkdirSync(path.join(ws, ".lily-work"), { recursive: true });
   fs.mkdirSync(path.join(ws, "node_modules/pkg"), { recursive: true });
+  fs.mkdirSync(path.join(ws, "dist"), { recursive: true });
+  fs.mkdirSync(path.join(ws, "build"), { recursive: true });
   fs.writeFileSync(path.join(ws, "knowledge/bazi/rules.md"), "排盘规则");
   fs.writeFileSync(path.join(ws, "scripts/generate.py"), "print(1)");
   fs.writeFileSync(path.join(ws, ".cursorrules"), "用专业术语");
@@ -31,8 +33,14 @@ try {
   fs.writeFileSync(path.join(ws, ".lily-work", "tmp.txt"), "scratch");
   fs.writeFileSync(path.join(ws, "node_modules/pkg/index.js"), "x");
   fs.writeFileSync(path.join(ws, ".env"), "SECRET=1");
+  // The program's build artifacts ARE part of the deliverable — must ship.
+  fs.writeFileSync(path.join(ws, "dist/index.html"), "<html>built site</html>");
+  fs.writeFileSync(path.join(ws, "build/app.js"), "console.log('built')");
+  // A key hardcoded into a shared source file — must be flagged (not silently shipped).
+  fs.writeFileSync(path.join(ws, "scripts/config.js"), 'const apiKey = "sk-ant-abc123def456ghi789jkl";');
 
-  // Preview: personal/noise locations excluded; capability files kept.
+  // Preview: personal/noise/secret-file locations excluded; capability files +
+  // build artifacts kept; content secrets flagged.
   const preview = share.previewExport(ws);
   const rels = share.listShareableFiles(ws).map((f) => f.relPath).sort();
   if (rels.some((r) => r.startsWith("output/") || r.startsWith(".lily-work/") || r.includes("node_modules") || r === ".env")) {
@@ -40,6 +48,14 @@ try {
   }
   if (!rels.includes("knowledge/bazi/rules.md") || !rels.includes(".cursorrules") || !rels.includes("scripts/generate.py")) {
     throw new Error(`capability files missing: ${rels.join(", ")}`);
+  }
+  // Build artifacts (the actual program) must travel — not be excluded like before.
+  if (!rels.includes("dist/index.html") || !rels.includes("build/app.js")) {
+    throw new Error(`program build artifacts must be included: ${rels.join(", ")}`);
+  }
+  // The hardcoded key must be flagged so the author can scrub before sharing.
+  if (!preview.secretWarnings?.some((w) => w.relPath === "scripts/config.js")) {
+    throw new Error(`secret content scan must flag scripts/config.js: ${JSON.stringify(preview.secretWarnings)}`);
   }
   if (preview.fileCount !== rels.length) throw new Error("preview count mismatch");
 

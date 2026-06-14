@@ -23,15 +23,40 @@ const SCHEMA_VERSION = 1;
 const FILES_PREFIX = "files/";
 const CONVENTIONS_ENTRY = "conventions.md";
 
-// Positional privacy + noise exclusions. output/ holds personal deliverables
-// (e.g. someone's birth-chart report); .lily-work is scratch.
+// Exclude noise + personal deliverables + secret files — NOT the program.
+// dist/build ARE kept (build artifacts are part of running the program, so a
+// shared workspace opens the same as the author's). output/ is still excluded:
+// it holds personal deliverables (reports, generated files) that don't affect
+// how the program runs, and may be private. node_modules is regenerable (npm
+// install). Secrets are excluded by filename here + flagged by a content scan
+// in the export preview so the author can scrub before sharing.
 const EXCLUDED_DIRS = new Set([
   "output", ".lily-work", ".git", "node_modules", "__pycache__",
-  ".venv", "venv", "dist", "build", ".DS_Store",
+  ".venv", "venv", ".DS_Store",
 ]);
-const EXCLUDED_FILE_RE = /(^\.env|\.(key|pem|p12|pfx)$|\.DS_Store$)/i;
+const EXCLUDED_FILE_RE =
+  /(^\.env|\.(key|pem|p12|pfx|crt|cer|keystore|jks)$|^\.npmrc$|^\.netrc$|^id_rsa|^\.git-credentials$|\.DS_Store$)/i;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_TOTAL_FILES = 5000;
+
+// Content secret scan: flag (don't auto-strip) likely secrets baked into shared
+// files (e.g. a hardcoded key in config.js), so the author can scrub before
+// sharing. High-signal patterns only, to keep false positives low.
+const SECRET_PATTERNS = [
+  [/sk-(?:ant-)?[A-Za-z0-9_-]{16,}/, "API key (sk-)"],
+  [/\bAKIA[0-9A-Z]{16}\b/, "AWS access key"],
+  [/\bgh[pousr]_[A-Za-z0-9]{20,}\b/, "GitHub token"],
+  [/\bAIza[0-9A-Za-z_-]{20,}\b/, "Google API key"],
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, "private key"],
+  [/\bBearer\s+[A-Za-z0-9_\-.]{20,}/, "bearer token"],
+  [/\b(?:api[_-]?key|secret|token|password|passwd|access[_-]?key)\b\s*[:=]\s*["'][^"']{12,}["']/i, "key/secret value"],
+];
+const SCANNABLE_EXT = new Set([
+  ".js", ".cjs", ".mjs", ".ts", ".tsx", ".jsx", ".vue", ".json", ".py", ".txt",
+  ".md", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".sh", ".html",
+  ".xml", ".properties", ".java", ".go", ".rb", ".php", ".env",
+]);
+const SECRET_SCAN_MAX_BYTES = 512 * 1024;
 
 function isExcluded(relPath) {
   const segments = relPath.split(/[\\/]/);
@@ -73,6 +98,33 @@ function listShareableFiles(rootPath) {
 }
 
 /**
+ * Scan the (already filtered) shareable files for secrets baked into content
+ * the pack would carry. Returns [{ relPath, kinds }] — advisory only; the
+ * author decides whether to scrub and re-export.
+ */
+function scanForSecrets(files) {
+  const warnings = [];
+  for (const file of files) {
+    if (file.size > SECRET_SCAN_MAX_BYTES) continue;
+    const base = path.basename(file.relPath).toLowerCase();
+    const ext = path.extname(base);
+    if (!SCANNABLE_EXT.has(ext) && !base.startsWith(".env")) continue;
+    let text;
+    try {
+      text = fs.readFileSync(file.fullPath, "utf8");
+    } catch {
+      continue;
+    }
+    const kinds = new Set();
+    for (const [re, label] of SECRET_PATTERNS) {
+      if (re.test(text)) kinds.add(label);
+    }
+    if (kinds.size) warnings.push({ relPath: file.relPath, kinds: [...kinds] });
+  }
+  return warnings;
+}
+
+/**
  * Preview what an export would contain — shown to the user before they
  * commit, so privacy is an informed choice, not a silent promise.
  */
@@ -88,6 +140,7 @@ function previewExport(rootPath) {
     fileCount: files.length,
     totalBytes: files.reduce((sum, f) => sum + f.size, 0),
     groups: [...byTopDir.entries()].map(([name, count]) => ({ name, count })),
+    secretWarnings: scanForSecrets(files),
     excludedDirs: [...EXCLUDED_DIRS],
   };
 }
@@ -184,6 +237,7 @@ module.exports = {
   EXCLUDED_DIRS,
   isExcluded,
   listShareableFiles,
+  scanForSecrets,
   previewExport,
   exportWorkspacePack,
   readPackManifest,

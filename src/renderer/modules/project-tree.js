@@ -433,9 +433,16 @@ async function shareWorkspacePack(project) {
     const skills = info.requiredSkills?.length
       ? `\n${t("pack.requiredSkills", { count: info.requiredSkills.length })}`
       : "";
+    const warns = info.preview.secretWarnings || [];
+    const secretWarn = warns.length
+      ? `\n\n⚠️ 检测到 ${warns.length} 个文件可能含密钥(如 ${warns
+          .slice(0, 5)
+          .map((w) => w.relPath)
+          .join("、")}),分享前请确认是否需要移除。`
+      : "";
     const confirmed = await confirmDialog({
       title: t("pack.exportConfirmTitle"),
-      message: t("pack.exportConfirmBody", { count: info.preview.fileCount, size: sizeMb }) + skills,
+      message: t("pack.exportConfirmBody", { count: info.preview.fileCount, size: sizeMb }) + skills + secretWarn,
       confirmText: t("pack.exportConfirmOk"),
     });
     if (!confirmed) return;
