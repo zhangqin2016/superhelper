@@ -125,4 +125,8 @@ npm install --os=win32 --cpu=x64 --include=optional
 # Windows runtime 较大时最高压缩容易在 macOS/ARM 上被系统终止；显式降到 5 保持体积可控。
 export ELECTRON_BUILDER_COMPRESSION_LEVEL="${ELECTRON_BUILDER_COMPRESSION_LEVEL:-5}"
 
-exec npx electron-builder --win --x64 "${builder_args[@]}" "$@"
+if [[ "${#builder_args[@]}" -gt 0 ]]; then
+  exec npx electron-builder --win --x64 "${builder_args[@]}" "$@"
+fi
+
+exec npx electron-builder --win --x64 "$@"
