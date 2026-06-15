@@ -3,6 +3,7 @@
 const { ipcMain, dialog, shell } = require("electron");
 const { ensureSessionRunner } = require("./ipc-utils");
 const { defaultSessionTitle } = require("./session-manager");
+const { fetchArtifactBuffer } = require("./artifact-download");
 
 const WORKSPACE_APP_DOWNLOAD_LIMIT = 50 * 1024 * 1024;
 const WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS = 120_000;
@@ -21,18 +22,19 @@ async function downloadWorkspaceApp(app) {
   if (!/^https:\/\//i.test(url)) {
     throw new Error("INVALID_APP_DOWNLOAD_URL");
   }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) throw new Error(`DOWNLOAD_FAILED_${response.status}`);
-    const length = Number(response.headers.get("content-length") || 0);
-    if (length > WORKSPACE_APP_DOWNLOAD_LIMIT) throw new Error("WORKSPACE_APP_TOO_LARGE");
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > WORKSPACE_APP_DOWNLOAD_LIMIT) throw new Error("WORKSPACE_APP_TOO_LARGE");
-    return buffer;
-  } finally {
-    clearTimeout(timer);
+    return await fetchArtifactBuffer(url, {
+      timeoutMs: WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS,
+      maxBytes: WORKSPACE_APP_DOWNLOAD_LIMIT,
+    });
+  } catch (error) {
+    if (error?.message === "ARTIFACT_TOO_LARGE") {
+      throw new Error("WORKSPACE_APP_TOO_LARGE");
+    }
+    if (/^HTTP \d+/.test(error?.message || "")) {
+      throw new Error(`DOWNLOAD_FAILED_${error.message.replace("HTTP ", "")}`);
+    }
+    throw error;
   }
 }
 
@@ -226,7 +228,18 @@ function registerProjectHandlers(ctx) {
       }
 
       const { manifest: peek } = await readPackManifest(zipBuffer);
-      const baseDir = path.join(path.dirname(projectManager.defaultPath), "Lily Apps");
+      const defaultBaseDir = workspaceAppInstalls.installRoot(projectManager.defaultPath);
+      fs.mkdirSync(defaultBaseDir, { recursive: true });
+      const dirPick = await dialog.showOpenDialog(mainWindow, {
+        title: "选择应用工作空间保存位置",
+        defaultPath: defaultBaseDir,
+        properties: ["openDirectory", "createDirectory"],
+        buttonLabel: "创建到此处",
+      });
+      if (dirPick.canceled || !dirPick.filePaths.length) {
+        return { ok: false, canceled: true };
+      }
+      const baseDir = dirPick.filePaths[0];
       fs.mkdirSync(baseDir, { recursive: true });
       const baseName = safeFolderName(peek.name || app?.name || app?.id || "workspace-app");
       let targetDir = path.join(baseDir, baseName);
@@ -281,8 +294,14 @@ function registerProjectHandlers(ctx) {
         manifest,
         project,
         targetDir,
+        installParentDir: baseDir,
         installedDependencies,
       });
+      if (installedRecord?.supersededProjectId && installedRecord.supersededProjectId !== project.id) {
+        const sessionIds = sessionManager.purgeProject(installedRecord.supersededProjectId);
+        for (const sessionId of sessionIds) runnerPool.terminateSession(sessionId);
+        projectManager.remove(installedRecord.supersededProjectId);
+      }
 
       return {
         ok: true,
@@ -318,7 +337,7 @@ function registerProjectHandlers(ctx) {
     const workspaceAppInstalls = require("./workspace-app-installs");
     const record = workspaceAppInstalls.readState().apps[appId];
     if (!record) return { ok: false, error: "NOT_FOUND" };
-    if (!workspaceAppInstalls.isInsideInstallRoot(projectManager.defaultPath, record.path)) {
+    if (!workspaceAppInstalls.canRemoveInstalledWorkspace(projectManager.defaultPath, record)) {
       return { ok: false, error: "UNSAFE_APP_PATH" };
     }
 

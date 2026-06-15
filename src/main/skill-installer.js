@@ -10,6 +10,7 @@ const skillGithubInstaller = require("./skill-github-installer");
 const { buildManifestFromSkillMd } = require("./skill-md-convert");
 const { findSkillRoot } = require("./skill-root");
 const { copyDirRecursiveShipSafe, isShipIgnoredEntry } = require("./ship-ignore");
+const { downloadArtifactToFile } = require("./artifact-download");
 const {
   PROTECTED_BUNDLED_IDS,
   applyPlaceholders,
@@ -42,22 +43,16 @@ function sha256Buffer(buffer) {
 }
 
 async function downloadToFile(url, destPath) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > MAX_SKILLPACK_BYTES) {
+    return await downloadArtifactToFile(url, destPath, {
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+      maxBytes: MAX_SKILLPACK_BYTES,
+    });
+  } catch (error) {
+    if (error?.message === "ARTIFACT_TOO_LARGE") {
       throw new Error("SKILLPACK_TOO_LARGE");
     }
-    fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    fs.writeFileSync(destPath, buffer);
-    return buffer;
-  } finally {
-    clearTimeout(timer);
+    throw error;
   }
 }
 

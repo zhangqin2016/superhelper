@@ -168,6 +168,7 @@ async function installWorkspaceApp(app, button) {
   try {
     const result = await window.assistantClient.installWorkspaceApp(app);
     if (!result?.ok) {
+      if (result?.canceled) return;
       if (result?.failedDependencies) {
         const parts = [];
         if (result.failedDependencies.skills?.length) {

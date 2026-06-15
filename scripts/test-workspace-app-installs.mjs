@@ -27,6 +27,7 @@ try {
     manifest: { name: "Stock Dashboard", version: "1.0.0" },
     project,
     targetDir: appDir,
+    installParentDir: path.dirname(appDir),
     installedDependencies: { skills: ["lily-research"], runtimePacks: ["pro-pdf"] },
   });
   assert.equal(record.id, "stock-dashboard");
@@ -34,6 +35,25 @@ try {
   assert.equal(installs.listInstalled().length, 1);
   assert.equal(installs.isInsideInstallRoot(defaultWorkspace, appDir), true);
   assert.equal(installs.isInsideInstallRoot(defaultWorkspace, path.join(tmp, "Other", "x")), false);
+  assert.equal(installs.canRemoveInstalledWorkspace(defaultWorkspace, record), true);
+
+  const customParent = path.join(tmp, "Custom Apps");
+  const customDir = path.join(customParent, "Custom Stock");
+  const customRecord = {
+    ...record,
+    path: customDir,
+    installParentDir: customParent,
+    managedByAppStore: true,
+  };
+  assert.equal(installs.canRemoveInstalledWorkspace(defaultWorkspace, customRecord), true);
+  assert.equal(installs.canRemoveInstalledWorkspace(defaultWorkspace, {
+    ...customRecord,
+    path: customParent,
+  }), false);
+  assert.equal(installs.canRemoveInstalledWorkspace(defaultWorkspace, {
+    ...customRecord,
+    path: path.join(customParent, "nested", "Custom Stock"),
+  }), false);
 
   const result = installs.attachInstalledState({
     ok: true,
@@ -51,6 +71,26 @@ try {
   assert.equal(result.json.apps[0].installedVersion, "1.0.0");
   assert.equal(result.json.apps[0].updateAvailable, true);
   assert.equal(result.json.apps[0].installedAvailable, true);
+
+  const updatedDir = path.join(tmp, "Custom Apps", "Stock Dashboard 1.1");
+  fs.mkdirSync(updatedDir, { recursive: true });
+  const updatedRecord = installs.recordInstalled({
+    app: {
+      id: "stock-dashboard",
+      name: "Stock Dashboard",
+      latestVersion: "1.1.0",
+      sha256: "b".repeat(64),
+      downloadUrl: "https://cdn.example.com/stock-1.1.zip",
+    },
+    manifest: { name: "Stock Dashboard", version: "1.1.0" },
+    project: { id: "project-2", name: "Stock Dashboard" },
+    targetDir: updatedDir,
+    installParentDir: path.dirname(updatedDir),
+    installedDependencies: { skills: [], runtimePacks: [] },
+  });
+  assert.equal(updatedRecord.supersededProjectId, "project-1");
+  assert.equal(updatedRecord.supersededPath, appDir);
+  assert.equal(installs.readState().history.length, 1);
 
   const removed = installs.forgetInstalled("stock-dashboard");
   assert.equal(removed.id, "stock-dashboard");

@@ -46,7 +46,22 @@ function isInsideInstallRoot(defaultWorkspacePath, targetPath) {
   return target === root || target.startsWith(root + path.sep);
 }
 
-function recordInstalled({ app, manifest, project, targetDir, installedDependencies }) {
+function isDirectChild(parentDir, targetPath) {
+  if (!parentDir || !targetPath) return false;
+  const parent = path.resolve(parentDir);
+  const target = path.resolve(targetPath);
+  if (target === parent) return false;
+  return path.dirname(target) === parent;
+}
+
+function canRemoveInstalledWorkspace(defaultWorkspacePath, record) {
+  if (!record?.path) return false;
+  if (isInsideInstallRoot(defaultWorkspacePath, record.path)) return true;
+  if (!record.managedByAppStore) return false;
+  return isDirectChild(record.installParentDir, record.path);
+}
+
+function recordInstalled({ app, manifest, project, targetDir, installParentDir, installedDependencies }) {
   const appId = String(app?.id || manifest?.appId || "").trim();
   if (!appId) return null;
   const state = readState();
@@ -65,6 +80,8 @@ function recordInstalled({ app, manifest, project, targetDir, installedDependenc
     projectId: project.id,
     projectName: project.name,
     path: targetDir,
+    installParentDir: installParentDir || path.dirname(targetDir),
+    managedByAppStore: true,
     sha256: String(app?.sha256 || "").toLowerCase(),
     downloadUrl: app?.downloadUrl || "",
     installedAt: new Date().toISOString(),
@@ -73,7 +90,11 @@ function recordInstalled({ app, manifest, project, targetDir, installedDependenc
   };
   state.apps[appId] = record;
   writeState(state);
-  return record;
+  return {
+    ...record,
+    supersededProjectId: previous?.projectId || null,
+    supersededPath: previous?.path || null,
+  };
 }
 
 function forgetInstalled(appId) {
@@ -128,6 +149,7 @@ module.exports = {
   writeState,
   installRoot,
   isInsideInstallRoot,
+  canRemoveInstalledWorkspace,
   recordInstalled,
   forgetInstalled,
   attachInstalledState,

@@ -18,6 +18,46 @@ ipcMain.handle("filetree:reveal", (_event, payload) => {
   return { ok: true };
 });
 
+ipcMain.handle("apps:catalog", () => ({
+  ok: true,
+  json: {
+    apps: [
+      {
+        id: "stock-starter",
+        name: "Stock Starter",
+        latestVersion: "1.0.0",
+        category: "finance",
+        appType: "dashboard",
+        riskLevel: "medium",
+        sizeBytes: 1024,
+        summary: "A stock analysis workspace app",
+        downloadUrl: "https://cdn.example.com/stock.zip",
+        installed: false,
+        requiredRuntimePacks: [],
+        requiredSkillPackages: [],
+        tags: [],
+      },
+      {
+        id: "installed-app",
+        name: "Installed App",
+        latestVersion: "1.0.0",
+        category: "finance",
+        appType: "dashboard",
+        riskLevel: "low",
+        sizeBytes: 2048,
+        summary: "An installed workspace app",
+        installed: true,
+        installedAvailable: true,
+        installedPath: "/tmp/Lily Apps/Installed App",
+        updateAvailable: false,
+        requiredRuntimePacks: [],
+        requiredSkillPackages: [],
+        tags: [],
+      },
+    ],
+  },
+}));
+
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
     show: false,
@@ -376,59 +416,15 @@ app.whenReady().then(async () => {
         const { refreshWorkspaceApps } = await import("./modules/workspace-apps.js");
         const list = document.getElementById("workspaceAppsList");
         if (!list) throw new Error("workspace app list should exist");
-        const originalClient = window.assistantClient;
-        window.assistantClient = {
-          ...originalClient,
-          listWorkspaceApps: async () => ({
-            ok: true,
-            json: {
-              apps: [
-                {
-                  id: "stock-starter",
-                  name: "Stock Starter",
-                  latestVersion: "1.0.0",
-                  category: "finance",
-                  appType: "dashboard",
-                  riskLevel: "medium",
-                  sizeBytes: 1024,
-                  summary: "A stock analysis workspace app",
-                  downloadUrl: "https://cdn.example.com/stock.zip",
-                  installed: false,
-                  requiredRuntimePacks: [],
-                  requiredSkillPackages: [],
-                  tags: [],
-                },
-                {
-                  id: "installed-app",
-                  name: "Installed App",
-                  latestVersion: "1.0.0",
-                  category: "finance",
-                  appType: "dashboard",
-                  riskLevel: "low",
-                  sizeBytes: 2048,
-                  summary: "An installed workspace app",
-                  installed: true,
-                  installedAvailable: true,
-                  installedPath: "/tmp/Lily Apps/Installed App",
-                  updateAvailable: false,
-                  requiredRuntimePacks: [],
-                  requiredSkillPackages: [],
-                  tags: [],
-                },
-              ],
-            },
-          }),
-        };
         await refreshWorkspaceApps();
         const text = list.textContent || "";
-        window.assistantClient = originalClient;
-        if (!text.includes("Create workspace")) {
+        if (!text.includes("Create workspace") && !text.includes("创建工作空间")) {
           throw new Error("install action should be framed as creating a workspace");
         }
         if (!text.includes("/tmp/Lily Apps/Installed App")) {
           throw new Error("installed app card should show its workspace path");
         }
-        if (!text.includes("Show in folder")) {
+        if (!text.includes("Show in folder") && !text.includes("在文件夹中显示")) {
           throw new Error("installed app card should expose a reveal-in-folder action");
         }
         return "workspace-app-install-ux: ok";
