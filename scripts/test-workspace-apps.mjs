@@ -53,6 +53,19 @@ assert.equal(inspected.manifest.name, "Stock Dashboard");
 assert.deepEqual(inspected.manifest.requiredSkills, ["lily-research-synthesis"]);
 assert.deepEqual(inspected.manifest.requiredRuntimePacks, ["pro-pdf"]);
 
+const emptyWorkspaceZip = new JSZip();
+emptyWorkspaceZip.file("lily-workspace.json", JSON.stringify({
+  kind: "lily-workspace-app",
+  schemaVersion: 1,
+  name: "Empty App",
+}));
+emptyWorkspaceZip.file("source/README.md", "# This is not under files/\n");
+assert.equal(
+  (await inspectWorkspaceAppArtifact(await emptyWorkspaceZip.generateAsync({ type: "nodebuffer" }))).code,
+  "WORKSPACE_APP_FILES_MISSING",
+  "workspace app artifacts must contain at least one files/ entry so installs cannot create empty folders",
+);
+
 const plainZip = new JSZip();
 plainZip.file("README.md", "plain zip");
 assert.equal(

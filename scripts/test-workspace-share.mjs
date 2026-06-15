@@ -110,6 +110,13 @@ try {
   if (fs.existsSync(path.join(tmp, "escaped.txt"))) throw new Error("zip-slip wrote outside the target!");
 
   // Reject non-packs and future schema versions.
+  const emptyPack = new JSZip();
+  emptyPack.file(share.MANIFEST_NAME, JSON.stringify({ kind: "lily-workspace-pack", schemaVersion: 1, requiredSkills: [] }));
+  let rejectedEmpty = false;
+  try { await share.importWorkspacePack(await emptyPack.generateAsync({ type: "nodebuffer" }), path.join(tmp, "empty-dest")); }
+  catch (e) { rejectedEmpty = e.message === "WORKSPACE_PACK_EMPTY"; }
+  if (!rejectedEmpty) throw new Error("an empty workspace pack must be rejected before creating a misleading empty workspace");
+
   const notPack = await new JSZip().generateAsync({ type: "nodebuffer" });
   let rejectedPlain = false;
   try { await share.readPackManifest(notPack); } catch (e) { rejectedPlain = e.message === "NOT_A_WORKSPACE_PACK"; }

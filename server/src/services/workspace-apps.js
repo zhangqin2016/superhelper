@@ -102,6 +102,10 @@ export async function inspectWorkspaceAppArtifact(buffer) {
   if (manifest.schemaVersion > SUPPORTED_WORKSPACE_APP_SCHEMA) {
     return { ok: false, code: "WORKSPACE_APP_SCHEMA_TOO_NEW" };
   }
+  const files = Object.values(zip.files).filter((entry) => !entry.dir && entry.name.startsWith("files/"));
+  if (files.length === 0) {
+    return { ok: false, code: "WORKSPACE_APP_FILES_MISSING" };
+  }
 
   return {
     ok: true,

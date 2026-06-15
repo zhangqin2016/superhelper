@@ -223,6 +223,9 @@ async function importWorkspacePack(zipBuffer, targetDir) {
   fs.mkdirSync(targetDir, { recursive: true });
 
   const entries = Object.values(zip.files).filter((e) => !e.dir && e.name.startsWith(FILES_PREFIX));
+  if (entries.length === 0) {
+    throw new Error("WORKSPACE_PACK_EMPTY");
+  }
   for (const entry of entries) {
     const rel = entry.name.slice(FILES_PREFIX.length);
     if (!rel) continue;
