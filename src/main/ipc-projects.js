@@ -228,30 +228,47 @@ function registerProjectHandlers(ctx) {
       }
 
       const { manifest: peek } = await readPackManifest(zipBuffer);
+      const existingRecord = workspaceAppInstalls.readState().apps[String(app?.id || peek?.appId || "").trim()] || null;
       const defaultBaseDir = workspaceAppInstalls.installRoot(projectManager.defaultPath);
+      const dialogDefaultPath = workspaceAppInstalls.preferredInstallDialogPath(projectManager.defaultPath, existingRecord);
       fs.mkdirSync(defaultBaseDir, { recursive: true });
       const dirPick = await dialog.showOpenDialog(mainWindow, {
-        title: "选择应用工作空间保存位置",
-        defaultPath: defaultBaseDir,
+        title: existingRecord ? "选择要更新的应用工作空间" : "选择应用工作空间保存位置",
+        defaultPath: dialogDefaultPath,
         properties: ["openDirectory", "createDirectory"],
-        buttonLabel: "创建到此处",
+        buttonLabel: existingRecord ? "更新此处" : "创建到此处",
       });
       if (dirPick.canceled || !dirPick.filePaths.length) {
         return { ok: false, canceled: true };
       }
-      const baseDir = dirPick.filePaths[0];
-      fs.mkdirSync(baseDir, { recursive: true });
+      const selectedDir = dirPick.filePaths[0];
       const baseName = safeFolderName(peek.name || app?.name || app?.id || "workspace-app");
-      let targetDir = path.join(baseDir, baseName);
+      const resolvedTarget = workspaceAppInstalls.resolveInstallTarget({
+        selectedDir,
+        defaultWorkspacePath: projectManager.defaultPath,
+        record: existingRecord,
+        baseName,
+      });
+      const baseDir = resolvedTarget.baseDir;
+      fs.mkdirSync(baseDir, { recursive: true });
+      let targetDir = resolvedTarget.targetDir;
       let n = 2;
-      while (fs.existsSync(targetDir)) targetDir = path.join(baseDir, `${baseName}-${n++}`);
+      while (!resolvedTarget.replaceExisting && fs.existsSync(targetDir)) {
+        targetDir = path.join(baseDir, `${baseName}-${n++}`);
+      }
 
+      const skillUpdateState = await skillManager.checkRegistryUpdates({ fetch: true });
       const installedSkills = new Set(skillManager.getGloballyEnabledSkillIds());
       const manifestSkills = Array.isArray(peek.requiredSkills) ? peek.requiredSkills : [];
       const catalogSkills = Array.isArray(app?.requiredSkillPackages) ? app.requiredSkillPackages : [];
       const requiredSkills = [...new Set([...manifestSkills, ...catalogSkills])];
-      const missingSkills = requiredSkills
-        .filter((id) => !installedSkills.has(id));
+      const updateSkillIds = new Set(
+        (skillUpdateState.ok ? skillUpdateState.updates : [])
+          .map((skill) => skill.id)
+          .filter((id) => requiredSkills.includes(id)),
+      );
+      const skillsToInstall = requiredSkills
+        .filter((id) => !installedSkills.has(id) || updateSkillIds.has(id));
 
       const installedRuntimePacks = runtimePackInstaller.installedRuntimePackIds();
       const manifestRuntimePacks = Array.isArray(peek.requiredRuntimePacks) ? peek.requiredRuntimePacks : [];
@@ -262,10 +279,16 @@ function registerProjectHandlers(ctx) {
       const installedDependencies = { skills: [], runtimePacks: [] };
       const failedDependencies = { skills: [], runtimePacks: [] };
 
-      for (const skillId of missingSkills) {
+      for (const skillId of skillsToInstall) {
         const install = await skillManager.installFromRegistry(skillId);
         if (install.ok) installedDependencies.skills.push(skillId);
         else failedDependencies.skills.push({ id: skillId, error: install.error || "INSTALL_FAILED" });
+      }
+      for (const skillId of requiredSkills) {
+        const enabled = skillManager.setSkillEnabled(skillId, true);
+        if (!enabled.ok) {
+          failedDependencies.skills.push({ id: skillId, error: enabled.error || "ENABLE_FAILED" });
+        }
       }
 
       for (const packId of missingRuntimePacks) {
@@ -275,7 +298,9 @@ function registerProjectHandlers(ctx) {
       }
 
       if (failedDependencies.skills.length || failedDependencies.runtimePacks.length) {
-        fs.rmSync(targetDir, { recursive: true, force: true });
+        if (!resolvedTarget.replaceExisting) {
+          fs.rmSync(targetDir, { recursive: true, force: true });
+        }
         return {
           ok: false,
           error: "APP_DEPENDENCY_INSTALL_FAILED",
@@ -284,7 +309,23 @@ function registerProjectHandlers(ctx) {
         };
       }
 
-      const { manifest, conventions } = await importWorkspacePack(zipBuffer, targetDir);
+      let backupDir = null;
+      if (resolvedTarget.replaceExisting && fs.existsSync(targetDir)) {
+        backupDir = `${targetDir}.backup-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+        fs.renameSync(targetDir, backupDir);
+      }
+
+      let manifest;
+      let conventions;
+      try {
+        ({ manifest, conventions } = await importWorkspacePack(zipBuffer, targetDir));
+      } catch (err) {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+        if (backupDir && fs.existsSync(backupDir) && !fs.existsSync(targetDir)) {
+          fs.renameSync(backupDir, targetDir);
+        }
+        throw err;
+      }
       const project = projectManager.add(targetDir);
       if (manifest.name) projectManager.rename(project.id, manifest.name);
       if (conventions) writeLearnedConventions(project.id, conventions);
@@ -297,6 +338,9 @@ function registerProjectHandlers(ctx) {
         installParentDir: baseDir,
         installedDependencies,
       });
+      if (backupDir && installedRecord) {
+        installedRecord.backupPath = backupDir;
+      }
       if (installedRecord?.supersededProjectId && installedRecord.supersededProjectId !== project.id) {
         const sessionIds = sessionManager.purgeProject(installedRecord.supersededProjectId);
         for (const sessionId of sessionIds) runnerPool.terminateSession(sessionId);

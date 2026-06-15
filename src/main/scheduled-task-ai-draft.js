@@ -106,6 +106,7 @@ function systemPrompt() {
     "Return JSON only. No markdown. No explanation.",
     "The user may write Chinese, English, or Arabic. Preserve the task language in title/prompt.",
     "Never execute the task. Only draft a schedule.",
+    "If the user says not to create/schedule/remind, or only describes content such as hourly forecasts, hourly charts, or plan text, return {}.",
     "Use local time unless the user explicitly gives a timezone.",
     "Supported schedule schemas:",
     '{"type":"once","at":"ISO-8601 datetime"}',

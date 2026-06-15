@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-stock-research",
+  "name": "Lily Stock Research",
+  "description": "股票、ETF、指数、自选股和市场复盘研究时使用，复用平台搜索、模型、表格分析和股票应用工作区，区分事实、推断和非投资建议风险提示。",
+  "version": "1.0.1",
+  "minAppVersion": "0.1.43",
+  "runtime": "none",
+  "category": "research",
+  "categoryLabel": "金融投研",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "workflow",
+  "riskLevel": "medium",
+  "permissions": {
+    "network": true,
+    "filesystem": "workspace",
+    "subprocess": "workspace"
+  },
+  "guideMd": {
+    "title": "股票研究",
+    "priority": 19,
+    "body": "用户要求股票、ETF、指数、自选股、市场复盘、财报、新闻催化或投资研究时使用。必须说明这不是投资建议；事实、模型推断和行动观察分开写。优先使用 Lily 平台搜索/模型环境和股票应用工作区；实时价格、新闻、政策、财报必须联网核验并标注来源。不要把 Bocha/Tavily/SerpAPI 等第三方搜索 Key 当成普通用户的待改进项；平台搜索可用时直接用平台搜索。交易历史短、yfinance 字段缺失、新闻不足等只写入“本次数据限制”和置信度影响，不要输出泛泛的“待改进项”清单。运行股票应用脚本前先读 README/AGENTS/.env.example，先小样本 dry-run，再扩大范围；不要全局 pip install，缺依赖时使用 bundled uv/python 创建工作区本地环境。"
+  }
+}

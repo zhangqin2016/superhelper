@@ -5,6 +5,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { scheduledTasksPath } = require("./config");
 const {
+  hasScheduledTaskNegation,
   buildTaskPrompt,
   computeNextRunAt,
   describeSchedule,
@@ -69,6 +70,7 @@ class ScheduledTaskManager {
   parseDraft({ text, sessionId, projectId }) {
     const prompt = safeText(text, 4000);
     if (!prompt) return { ok: false, error: "EMPTY" };
+    if (hasScheduledTaskNegation(prompt)) return { ok: false, error: "SCHEDULE_NEGATED" };
     const parsed = parseScheduleFromText(prompt);
     if (!parsed.ok) return parsed;
     const taskPrompt = sanitizeScheduledTaskPrompt(prompt);
@@ -91,6 +93,7 @@ class ScheduledTaskManager {
   async parseDraftSmart({ text, sessionId, projectId }) {
     const prompt = safeText(text, 4000);
     if (!prompt) return { ok: false, error: "EMPTY" };
+    if (hasScheduledTaskNegation(prompt)) return { ok: false, error: "SCHEDULE_NEGATED" };
     const modelParser = this.aiDraftParser || parseScheduledTaskDraftWithModel;
     const modelResult = await modelParser({
       text: prompt,

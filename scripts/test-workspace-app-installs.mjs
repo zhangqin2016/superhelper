@@ -36,6 +36,33 @@ try {
   assert.equal(installs.isInsideInstallRoot(defaultWorkspace, appDir), true);
   assert.equal(installs.isInsideInstallRoot(defaultWorkspace, path.join(tmp, "Other", "x")), false);
   assert.equal(installs.canRemoveInstalledWorkspace(defaultWorkspace, record), true);
+  assert.equal(installs.preferredInstallDialogPath(defaultWorkspace, record), appDir);
+  assert.deepEqual(
+    installs.resolveInstallTarget({
+      selectedDir: appDir,
+      defaultWorkspacePath: defaultWorkspace,
+      record,
+      baseName: "Stock Dashboard",
+    }),
+    {
+      baseDir: path.dirname(appDir),
+      targetDir: appDir,
+      replaceExisting: true,
+    },
+  );
+  assert.deepEqual(
+    installs.resolveInstallTarget({
+      selectedDir: path.join(tmp, "Other Apps"),
+      defaultWorkspacePath: defaultWorkspace,
+      record,
+      baseName: "Stock Dashboard",
+    }),
+    {
+      baseDir: path.join(tmp, "Other Apps"),
+      targetDir: path.join(tmp, "Other Apps", "Stock Dashboard"),
+      replaceExisting: false,
+    },
+  );
 
   const customParent = path.join(tmp, "Custom Apps");
   const customDir = path.join(customParent, "Custom Stock");

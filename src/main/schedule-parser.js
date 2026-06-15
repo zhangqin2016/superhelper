@@ -17,6 +17,18 @@ function safeText(value, max = 2000) {
   return String(value || "").trim().slice(0, max);
 }
 
+function hasScheduledTaskNegation(text) {
+  const source = String(text || "").trim();
+  if (!source) return false;
+  const chinese =
+    /(?:不是|并非|非|不|别|不要|无需|不需要|不用|禁止|别给我|不要给我)\s*(?:创建|建立|新增|设置|安排|配置|生成|开启|启用)?\s*(?:定时|自动执行|计划任务|任务|提醒|日程|闹钟)|(?:定时|自动执行|计划任务|提醒|日程|闹钟)\s*(?:不是|别|不要|无需|不需要|不用|禁止)|不是(?:要|让你)?\s*(?:创建|建立|新增|设置|安排|配置|生成)\s*(?:定时|自动|计划|提醒|任务)/;
+  const english =
+    /\b(?:do\s+not|don't|dont|not|never|no)\s+(?:create\s+)?(?:schedule|scheduled\s+task|reminder|automation)|\bnot\s+a\s+(?:scheduled\s+task|reminder|schedule)\b/i;
+  const arabic =
+    /(لا\s+(?:تنشئ|تجدول|تذكرني)|ليس\s+(?:جدول|تذكير|مهمة\s+مجدولة))/i;
+  return chinese.test(source) || english.test(source) || arabic.test(source);
+}
+
 function parseChineseNumber(input) {
   const raw = String(input || "").trim();
   if (!raw) return NaN;
@@ -518,6 +530,7 @@ function sanitizeScheduledTaskPrompt(text) {
 
 function parseScheduleFromText(text, from = new Date()) {
   const source = safeText(text, 2000);
+  if (hasScheduledTaskNegation(source)) return { ok: false, error: "SCHEDULE_NEGATED" };
 
   const hourlyWindow = extractChineseHourlyWindow(source);
   if (hourlyWindow) {
@@ -645,6 +658,7 @@ function buildTaskPrompt(task) {
 }
 
 module.exports = {
+  hasScheduledTaskNegation,
   buildTaskPrompt,
   computeNextRunAt,
   describeSchedule,

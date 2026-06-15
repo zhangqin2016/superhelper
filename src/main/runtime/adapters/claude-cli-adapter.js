@@ -21,6 +21,10 @@ function runtimeDraft(type, payload = {}) {
   };
 }
 
+function normalizeEchoText(text = "") {
+  return String(text || "").trim().replace(/\s+/g, " ");
+}
+
 function runtimeEventFromAction(action) {
   if (!action || typeof action !== "object") return null;
 
@@ -191,6 +195,10 @@ class CliEventAdapter {
     this.name = "claude-cli";
     this.cliVersion = options.cliVersion || null;
     this.versionText = options.versionText || "";
+    this._activeStreamMessageId = "";
+    this._streamedTextMessageIds = new Set();
+    this._activeStreamText = "";
+    this._recentStreamTexts = [];
     /**
      * Engine capability declaration. The orchestration layer must degrade per
      * capability instead of assuming every engine behaves like Claude CLI
@@ -217,8 +225,69 @@ class CliEventAdapter {
     });
   }
 
+  _noteStreamEvent(ev) {
+    const inner = ev?.event;
+    if (!inner || typeof inner !== "object") return;
+    if (inner.type === "message_start") {
+      this._activeStreamMessageId = String(inner.message?.id || "");
+      return;
+    }
+    if (inner.type === "content_block_start" && inner.content_block?.type === "text") {
+      this._activeStreamText = String(inner.content_block?.text || "");
+      return;
+    }
+    if (inner.type === "content_block_delta" && inner.delta?.type === "text_delta" && this._activeStreamMessageId) {
+      this._streamedTextMessageIds.add(this._activeStreamMessageId);
+      this._activeStreamText += String(inner.delta?.text || "");
+      return;
+    }
+    if (inner.type === "content_block_delta" && inner.delta?.type === "text_delta") {
+      this._activeStreamText += String(inner.delta?.text || "");
+      return;
+    }
+    if (inner.type === "content_block_stop" && this._activeStreamText) {
+      this._rememberStreamText(this._activeStreamText);
+      this._activeStreamText = "";
+      return;
+    }
+    if (inner.type === "message_stop") {
+      if (this._activeStreamText) {
+        this._rememberStreamText(this._activeStreamText);
+        this._activeStreamText = "";
+      }
+      this._activeStreamMessageId = "";
+    }
+  }
+
+  _rememberStreamText(text) {
+    const normalized = normalizeEchoText(text);
+    if (!normalized) return;
+    this._recentStreamTexts.push(normalized);
+    if (this._recentStreamTexts.length > 8) {
+      this._recentStreamTexts.splice(0, this._recentStreamTexts.length - 8);
+    }
+  }
+
+  _isTranscriptTextEcho(text) {
+    const normalized = normalizeEchoText(text);
+    if (!normalized) return false;
+    if (normalizeEchoText(this._activeStreamText) === normalized) return true;
+    return this._recentStreamTexts.includes(normalized);
+  }
+
+  _filterTranscriptEchoes(ev, actions) {
+    if (ev?.type !== "assistant" || !Array.isArray(actions) || actions.length === 0) return actions;
+    const messageId = String(ev.message?.id || ev.id || "");
+    const hasStreamedMessageText = Boolean(messageId && this._streamedTextMessageIds.has(messageId));
+    return actions.filter((action) => {
+      if (action?.kind !== "assistant_text") return true;
+      return !(hasStreamedMessageText || this._isTranscriptTextEcho(action.text || ""));
+    });
+  }
+
   normalizeEvent(ev) {
-    const actions = normalizeClaudeEvent(ev);
+    this._noteStreamEvent(ev);
+    const actions = this._filterTranscriptEchoes(ev, normalizeClaudeEvent(ev));
     const runtimeEvents = actions
       .map((action) => runtimeEventFromAction(action))
       .filter(Boolean);

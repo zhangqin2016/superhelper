@@ -54,11 +54,39 @@ function isDirectChild(parentDir, targetPath) {
   return path.dirname(target) === parent;
 }
 
+function isSamePath(a, b) {
+  if (!a || !b) return false;
+  return path.resolve(a) === path.resolve(b);
+}
+
 function canRemoveInstalledWorkspace(defaultWorkspacePath, record) {
   if (!record?.path) return false;
   if (isInsideInstallRoot(defaultWorkspacePath, record.path)) return true;
   if (!record.managedByAppStore) return false;
   return isDirectChild(record.installParentDir, record.path);
+}
+
+function preferredInstallDialogPath(defaultWorkspacePath, record) {
+  if (record?.path && fs.existsSync(record.path) && canRemoveInstalledWorkspace(defaultWorkspacePath, record)) {
+    return record.path;
+  }
+  return installRoot(defaultWorkspacePath);
+}
+
+function resolveInstallTarget({ selectedDir, defaultWorkspacePath, record, baseName }) {
+  const chosen = path.resolve(selectedDir || installRoot(defaultWorkspacePath));
+  if (record?.path && canRemoveInstalledWorkspace(defaultWorkspacePath, record) && isSamePath(chosen, record.path)) {
+    return {
+      baseDir: path.dirname(record.path),
+      targetDir: record.path,
+      replaceExisting: true,
+    };
+  }
+  return {
+    baseDir: chosen,
+    targetDir: path.join(chosen, baseName || "workspace-app"),
+    replaceExisting: false,
+  };
 }
 
 function recordInstalled({ app, manifest, project, targetDir, installParentDir, installedDependencies }) {
@@ -149,7 +177,10 @@ module.exports = {
   writeState,
   installRoot,
   isInsideInstallRoot,
+  isSamePath,
   canRemoveInstalledWorkspace,
+  preferredInstallDialogPath,
+  resolveInstallTarget,
   recordInstalled,
   forgetInstalled,
   attachInstalledState,

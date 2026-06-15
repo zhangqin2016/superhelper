@@ -68,7 +68,11 @@ try {
   fs.mkdirSync(userData, { recursive: true });
   assert(looksLikeScheduledTaskIntent("每天上午 9 点到 12 点，每个整点提醒我整理待办"), "chat intent should catch natural scheduled task text");
   assert(looksLikeScheduledTaskIntent("每周一到周五 早上10点 11点整理我的待办"), "chat intent should catch weekday range text");
+  assert(looksLikeScheduledTaskIntent("帮我创建定时任务，每小时检查一次服务状态"), "chat intent should catch explicit scheduled task creation");
   assert(!looksLikeScheduledTaskIntent("今天下午帮我分析这个设计是否合理"), "chat intent should not catch ordinary time references");
+  assert(!looksLikeScheduledTaskIntent("知识方案里需要有逐小时预报，不是创建定时任务"), "chat intent must honor explicit scheduled-task negation");
+  assert(!looksLikeScheduledTaskIntent("这个天气页面要展示逐小时预报和每天趋势"), "chat intent should not catch schedule words used as content description");
+  assert(!looksLikeScheduledTaskIntent("方案里包含每小时价格刷新，但不是创建定时任务"), "chat intent should not catch negated hourly feature descriptions");
   assert(!looksLikeScheduledTaskIntent("每天整理重点", [{ name: "a.txt" }]), "chat intent should not intercept attached-file turns");
   assert(
     sanitizeScheduledTaskPrompt("创建每日 10:00 自动任务同步 Bug") === "同步 Bug",
@@ -278,6 +282,12 @@ try {
     },
   });
   queuedManager.stop();
+  const negatedDraft = await queuedManager.parseDraftSmart({
+    text: "知识方案里需要有逐小时预报，不是创建定时任务",
+    sessionId: "s1",
+    projectId: "p1",
+  });
+  assert(!negatedDraft.ok && negatedDraft.error === "SCHEDULE_NEGATED", `negated draft should be rejected before model parsing: ${JSON.stringify(negatedDraft)}`);
   const queuedTask = queuedManager.create({
     prompt: "每隔 1 小时检查状态",
     sessionId: "s1",

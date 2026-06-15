@@ -7,6 +7,63 @@ cd "$ROOT"
 
 source "$(dirname "$0")/setup-proxy.sh"
 
+builder_args=()
+
+if [[ "${LILY_REQUIRE_WIN_SIGNING:-0}" == "1" ]]; then
+  has_pfx=0
+  if { [[ -n "${WIN_CSC_LINK:-}" ]] || [[ -n "${CSC_LINK:-}" ]]; } && \
+     { [[ -n "${WIN_CSC_KEY_PASSWORD:-}" ]] || [[ -n "${CSC_KEY_PASSWORD:-}" ]]; }; then
+    has_pfx=1
+  fi
+
+  has_azure=0
+  if [[ -n "${AZURE_TENANT_ID:-}" && -n "${AZURE_CLIENT_ID:-}" && -n "${AZURE_CLIENT_SECRET:-}" && \
+        -n "${LILY_AZURE_SIGN_ENDPOINT:-}" && -n "${LILY_AZURE_SIGN_ACCOUNT:-}" && \
+        -n "${LILY_AZURE_SIGN_PROFILE:-}" && -n "${LILY_AZURE_SIGN_PUBLISHER:-}" ]]; then
+    has_azure=1
+  fi
+
+  if [[ "$has_pfx" == "0" && "$has_azure" == "0" ]]; then
+    cat >&2 <<'EOF'
+[dist-win] 错误: 已要求 Windows 强制签名，但没有找到签名配置。
+
+任选一种方式配置后重试:
+
+1) PFX/OV 证书:
+   export WIN_CSC_LINK=/absolute/path/codesign.pfx
+   export WIN_CSC_KEY_PASSWORD='pfx-password'
+   export LILY_WIN_PUBLISHER_NAME='证书里的发布者名称'
+
+2) Microsoft Trusted Signing:
+   export AZURE_TENANT_ID='...'
+   export AZURE_CLIENT_ID='...'
+   export AZURE_CLIENT_SECRET='...'
+   export LILY_AZURE_SIGN_ENDPOINT='https://...codesigning.azure.net/'
+   export LILY_AZURE_SIGN_ACCOUNT='...'
+   export LILY_AZURE_SIGN_PROFILE='...'
+   export LILY_AZURE_SIGN_PUBLISHER='证书里的发布者名称'
+EOF
+    exit 1
+  fi
+
+  builder_args+=("-c.forceCodeSigning=true")
+
+  if [[ "$has_azure" == "1" ]]; then
+    echo "[dist-win] 使用 Microsoft Trusted Signing 签名"
+    builder_args+=(
+      "-c.win.azureSignOptions.endpoint=${LILY_AZURE_SIGN_ENDPOINT}"
+      "-c.win.azureSignOptions.codeSigningAccountName=${LILY_AZURE_SIGN_ACCOUNT}"
+      "-c.win.azureSignOptions.certificateProfileName=${LILY_AZURE_SIGN_PROFILE}"
+      "-c.win.azureSignOptions.publisherName=${LILY_AZURE_SIGN_PUBLISHER}"
+    )
+  else
+    echo "[dist-win] 使用 PFX/CSC 证书签名"
+    if [[ -n "${LILY_WIN_PUBLISHER_NAME:-}" ]]; then
+      builder_args+=("-c.win.signtoolOptions.publisherName=${LILY_WIN_PUBLISHER_NAME}")
+    fi
+  fi
+fi
+
 ELECTRON_VERSION="$(node -p "require('electron/package.json').version")"
 CACHE_ZIP="${HOME}/Library/Caches/electron/electron-v${ELECTRON_VERSION}-win32-x64.zip"
 
@@ -68,4 +125,4 @@ npm install --os=win32 --cpu=x64 --include=optional
 # Windows runtime 较大时最高压缩容易在 macOS/ARM 上被系统终止；显式降到 5 保持体积可控。
 export ELECTRON_BUILDER_COMPRESSION_LEVEL="${ELECTRON_BUILDER_COMPRESSION_LEVEL:-5}"
 
-exec npx electron-builder --win --x64 "$@"
+exec npx electron-builder --win --x64 "${builder_args[@]}" "$@"

@@ -83,6 +83,13 @@ if (!hasType(pythonGameEvents, "assistant.delta")) {
 if (pythonGameEvents.some((event) => event.type === "engine.warning")) {
   throw new Error("python-game probe must not produce engine.warning for known Claude CLI events");
 }
+const pythonText = pythonGameEvents
+  .filter((event) => event.type === "assistant.delta")
+  .map((event) => event.payload?.text || "")
+  .join("");
+if (pythonText !== "已创建并检查 number_game.py。") {
+  throw new Error(`stream + top-level assistant text must render once, got ${JSON.stringify(pythonText)}`);
+}
 
 const adapter = new CliEventAdapter();
 const background = adapter.normalizeEvent({

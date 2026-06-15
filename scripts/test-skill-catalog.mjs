@@ -241,8 +241,11 @@ if (!result.ok) {
 if (!result.bundledCatalog) {
   throw new Error("expected bundled catalog");
 }
-if ((result.available || []).length !== 24) {
-  throw new Error(`expected 24 curated available skills, got ${result.available?.length || 0}`);
+if ((result.available || []).length !== 25) {
+  throw new Error(`expected 25 curated available skills, got ${result.available?.length || 0}`);
+}
+if (!result.available.find((skill) => skill.id === "lily-stock-research")) {
+  throw new Error("curated catalog should include the stock research skill used by the stock app");
 }
 for (const staleId of ["anthropics-algorithmic-art", "marketing-referrals"]) {
   if (!(bootstrapResult.pruned || []).includes(staleId)) {
@@ -285,8 +288,11 @@ fs.rmSync(tmp, { recursive: true, force: true });
 console.log("skill-catalog: ok", result.available.length, "available");
 
 const bundled = skillRegistry.loadBundledRegistry();
-if (!bundled || (bundled.skills || []).length !== 24) {
-  throw new Error(`bundled registry should contain 24 curated skills, got ${bundled?.skills?.length || 0}`);
+if (!bundled || (bundled.skills || []).length !== 25) {
+  throw new Error(`bundled registry should contain 25 curated skills, got ${bundled?.skills?.length || 0}`);
+}
+if (!bundled.skills.find((skill) => skill.id === "lily-stock-research")) {
+  throw new Error("bundled registry should include lily-stock-research");
 }
 
 const emptyService = {
@@ -299,8 +305,8 @@ const emptyMerged = skillRegistry.mergeRegistries(emptyService, bundled);
 if (!emptyMerged?.bundledFallback) {
   throw new Error("empty service registry should fall back to bundled catalog");
 }
-if ((emptyMerged.skills || []).length !== 24) {
-  throw new Error(`empty service merge expected 24 curated skills, got ${emptyMerged.skills?.length || 0}`);
+if ((emptyMerged.skills || []).length !== 25) {
+  throw new Error(`empty service merge expected 25 curated skills, got ${emptyMerged.skills?.length || 0}`);
 }
 
 const serviceWithOne = {
@@ -372,10 +378,13 @@ const serviceResult = await skillManagerWithService.checkRegistryUpdates({ fetch
 if (!serviceResult.ok) {
   throw new Error(`service fallback failed: ${JSON.stringify(serviceResult)}`);
 }
-if ((serviceResult.available || []).length !== 24) {
+if ((serviceResult.available || []).length !== 25) {
   throw new Error(
     `empty service should still expose curated bundled catalog, got ${serviceResult.available?.length || 0}`,
   );
+}
+if (!serviceResult.available.find((skill) => skill.id === "lily-stock-research")) {
+  throw new Error("empty service fallback should include lily-stock-research");
 }
 if (!serviceResult.bundledCatalog) {
   throw new Error("empty service fallback should mark bundledCatalog");

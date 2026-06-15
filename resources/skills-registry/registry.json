@@ -42,7 +42,7 @@
       "id": "lily-coding-core",
       "name": "编程核心",
       "description": "编程、改代码、做应用、修 Bug、前端页面和自动化任务的核心规则，强调先理解目标、最小改动、可运行验证和交付质量。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -348,6 +348,30 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
+      "sourceKind": "lily"
+    },
+    {
+      "id": "lily-stock-research",
+      "name": "股票研究",
+      "description": "股票、ETF、指数、自选股和市场复盘研究时使用，复用平台搜索、模型、表格分析和股票应用工作区，区分事实、推断和非投资建议风险提示。",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "lily-stock-research",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.43",
+      "category": "research",
+      "categoryLabel": "金融投研",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "强化 Lily 平台搜索优先规则；禁止把 Bocha/Tavily/SerpAPI 等第三方搜索 Key 当成普通用户待改进项，数据缺口统一写入本次数据限制。",
+      "capabilityLayer": "workflow",
+      "riskLevel": "medium",
+      "defaultEligible": false,
+      "featured": false,
       "sourceKind": "lily"
     },
     {
