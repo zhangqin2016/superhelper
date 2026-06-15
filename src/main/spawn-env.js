@@ -54,7 +54,7 @@ function buildAgentSpawnEnv(options = {}) {
     NO_COLOR: "1",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     PATH: pathSegments.join(path.delimiter),
-    // Lets agent-run CLIs (e.g. document-pack-cli) resolve the same userData
+    // Lets agent-run CLIs (e.g. runtime-pack-cli) resolve the same userData
     // dir the main process uses — they run as plain node without electron.
     LILY_USER_DATA_DIR: app.getPath("userData"),
   };

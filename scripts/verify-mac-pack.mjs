@@ -51,7 +51,7 @@ if (fs.existsSync(bundlesRoot)) {
   const activeBundle = appArch === "arm64" ? "darwin-arm64" : "darwin-x64";
   const libreOfficePath = path.join(bundlesRoot, activeBundle, "runtime", "libreoffice");
   if (fs.existsSync(libreOfficePath)) {
-    fail("Mac 包暂不应内置 LibreOffice，等 Windows 版本支持后再放开");
+    fail("Mac 包不应内置 LibreOffice；Office 能力统一通过运行时包按需安装");
   }
 }
 

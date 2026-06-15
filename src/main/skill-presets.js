@@ -3,45 +3,38 @@
 /** @typedef {{ id: string, skillIds: string[] }} SkillPreset */
 
 const RELIABILITY_CORE_SKILL_IDS = [
-  "tob-ask-questions-if-underspecified-ask-questions-if-underspecified",
-  "superpowers-systematic-debugging",
-  "superpowers-verification-before-completion",
-  "superpowers-test-driven-development",
-];
-
-const DEV_STARTER_EXTRA_SKILL_IDS = [
-  "lily-engineering-rules",
-  "superpowers-writing-plans",
-  "superpowers-executing-plans",
-  "superpowers-requesting-code-review",
-  "anthropics-webapp-testing",
-];
-
-const PM_STARTER_SKILL_IDS = [
-  "pm-problem-framing-canvas",
-  "pm-prd-development",
-  "pm-user-story-mapping",
-  "pm-roadmap-planning",
-  "anthropics-doc-coauthoring",
-];
-
-const MARKETING_STARTER_SKILL_IDS = [
-  "marketing-copywriting",
-  "marketing-seo-audit",
-  "marketing-analytics",
-  "marketing-product-marketing",
-  "marketing-emails",
+  "lily-coding-core",
+  "lily-app-builder",
+  "lily-code-repair",
+  "lily-ui-quality",
+  "lily-browser-qa",
 ];
 
 const OFFICE_STARTER_SKILL_IDS = [
+  "lily-office-intent",
+  "lily-pdf-extraction-router",
+  "lily-excel-data-analysis",
+  "lily-ppt-design-qa",
   "anthropics-docx",
   "anthropics-pdf",
   "anthropics-pptx",
   "anthropics-xlsx",
   "anthropics-doc-coauthoring",
   "lily-template-fill",
+  "lily-document-verify",
   "lily-pdf-form",
-  "lily-document-packs",
+  "lily-runtime-packs",
+];
+
+const CREATIVE_STARTER_SKILL_IDS = [
+  "lily-creative-director",
+  "lily-prompt-enhancer",
+  "lily-image-qa",
+  "lily-ui-quality",
+];
+
+const RESEARCH_STARTER_SKILL_IDS = [
+  "lily-research-synthesis",
 ];
 
 /** 首次引导与完成判定使用的默认岗位包（以普通办公场景为主） */
@@ -62,16 +55,16 @@ const SKILL_PRESETS = [
     skillIds: RELIABILITY_CORE_SKILL_IDS,
   },
   {
-    id: "pm-starter",
-    skillIds: PM_STARTER_SKILL_IDS,
-  },
-  {
-    id: "marketing-starter",
-    skillIds: MARKETING_STARTER_SKILL_IDS,
-  },
-  {
     id: "dev-starter",
-    skillIds: uniqueSkillIds([...RELIABILITY_CORE_SKILL_IDS, ...DEV_STARTER_EXTRA_SKILL_IDS]),
+    skillIds: RELIABILITY_CORE_SKILL_IDS,
+  },
+  {
+    id: "creative-starter",
+    skillIds: CREATIVE_STARTER_SKILL_IDS,
+  },
+  {
+    id: "research-starter",
+    skillIds: RESEARCH_STARTER_SKILL_IDS,
   },
 ];
 
@@ -82,11 +75,6 @@ const PRESET_BY_ID = Object.fromEntries(SKILL_PRESETS.map((p) => [p.id, p]));
 function getPresetById(presetId) {
   if (!presetId || typeof presetId !== "string") return null;
   return PRESET_BY_ID[presetId] || null;
-}
-
-function isNicheBlockchainSecuritySkill(skillId) {
-  if (!skillId || typeof skillId !== "string") return false;
-  return /vulnerability-scanner|token-integration-analyzer/i.test(skillId);
 }
 
 function filterSkillIdsInRegistry(registry, skillIds) {
@@ -122,8 +110,9 @@ module.exports = {
   GUIDE_PRESET_ID,
   OFFICE_STARTER_SKILL_IDS,
   RELIABILITY_CORE_SKILL_IDS,
+  CREATIVE_STARTER_SKILL_IDS,
+  RESEARCH_STARTER_SKILL_IDS,
   getPresetById,
-  isNicheBlockchainSecuritySkill,
   filterSkillIdsInRegistry,
   listPresetProgress,
 };

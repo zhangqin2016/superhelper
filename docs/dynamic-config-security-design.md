@@ -66,7 +66,7 @@ The client receives only the resolved effective config.
     ]
   },
   "tools": {
-    "pluginRegistryUrl": "https://lily.lanrensoft.cn/api/plugins/registry",
+    "pluginRegistryUrl": "https://lily.lanrensoft.cn/api/skills/registry",
     "enabledPluginIds": ["websearch", "webfetch"]
   },
   "policy": {

@@ -44,6 +44,18 @@ assert(
   normalizeRegistryEntry({ ...zipBase, downloadUrl: "https://cdn.example.com/s1.zip" })?.sourceType === "zip",
   "https zip entry accepted",
 );
+const packageMetadata = normalizeRegistryEntry({
+  ...zipBase,
+  downloadUrl: "https://cdn.example.com/s1.zip",
+  capabilityLayer: "workflow",
+  riskLevel: "medium",
+  defaultEligible: true,
+  featured: true,
+});
+assert(packageMetadata?.capabilityLayer === "workflow", "skill package capability layer preserved");
+assert(packageMetadata?.riskLevel === "medium", "skill package risk level preserved");
+assert(packageMetadata?.defaultEligible === true, "skill package default eligibility preserved");
+assert(packageMetadata?.featured === true, "skill package featured flag preserved");
 assert(
   normalizeRegistryEntry({ ...zipBase, downloadUrl: "http://cdn.example.com/s1.zip" }) === null,
   "http zip artifact rejected",
@@ -79,4 +91,4 @@ assert(!isTrustedUpdateUrl("https://evil.example.com/feed"), "unknown origin rej
 assert(!isTrustedUpdateUrl("http://qny.lanrensoft.cn/app/auto-updates"), "http downgrade of trusted host rejected");
 assert(!isTrustedUpdateUrl("not a url"), "garbage feed rejected");
 
-console.log("PASS: test-supply-chain-trust (17 tests)");
+console.log("PASS: test-supply-chain-trust (21 tests)");

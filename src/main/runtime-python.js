@@ -101,22 +101,35 @@ function resolveSofficeDir(runtimeRoot) {
   return null;
 }
 
+function resolveUnoPath(sofficeDir) {
+  if (!sofficeDir) return null;
+  if (process.platform === "darwin" && path.basename(sofficeDir) === "MacOS") {
+    const resources = path.join(path.dirname(sofficeDir), "Resources");
+    if (fs.existsSync(resources)) return resources;
+  }
+  return sofficeDir;
+}
+
 /**
  * PATH segments to prepend when a bundled runtime exists (highest priority first).
  * @returns {string[]}
  */
 function getRuntimePathEntries() {
   const root = resolveBundledRuntimeRoot();
-  if (!root) return [];
-
   const entries = [];
-  const bin = runtimeBinDir(root);
-  const venvBin = venvBinDir(root);
-  const sofficeDir = resolveSofficeDir(root);
+  if (root) {
+    const bin = runtimeBinDir(root);
+    const venvBin = venvBinDir(root);
+    const sofficeDir = resolveSofficeDir(root);
 
-  if (fs.existsSync(bin)) entries.push(bin);
-  if (fs.existsSync(venvBin)) entries.push(venvBin);
-  if (sofficeDir) entries.push(sofficeDir);
+    if (fs.existsSync(bin)) entries.push(bin);
+    if (fs.existsSync(venvBin)) entries.push(venvBin);
+    if (sofficeDir) entries.push(sofficeDir);
+  }
+  const packLibreOfficeDirs = require("./runtime-packs").getRuntimePackLibreOfficeDirs();
+  for (const dir of packLibreOfficeDirs) {
+    if (!entries.includes(dir)) entries.push(dir);
+  }
 
   return entries;
 }
@@ -127,26 +140,13 @@ function getRuntimePathEntries() {
  */
 function getRuntimeEnvExtras() {
   const root = resolveBundledRuntimeRoot();
-  if (!root) return {};
-
-  const extras = { LILY_RUNTIME_ROOT: root };
-  const sofficeDir = resolveSofficeDir(root);
+  const extras = {};
+  if (root) extras.LILY_RUNTIME_ROOT = root;
+  const packLibreOfficeDir = require("./runtime-packs").getRuntimePackLibreOfficeDirs()[0];
+  const sofficeDir = (root && resolveSofficeDir(root)) || packLibreOfficeDir || null;
   if (sofficeDir) {
     extras.LILY_LIBREOFFICE_PROGRAM = sofficeDir;
-    if (process.platform === "darwin") {
-      const resources = path.join(
-        root,
-        "libreoffice",
-        "LibreOffice.app",
-        "Contents",
-        "Resources",
-      );
-      if (fs.existsSync(resources)) {
-        extras.UNO_PATH = resources;
-      }
-    } else {
-      extras.UNO_PATH = sofficeDir;
-    }
+    extras.UNO_PATH = resolveUnoPath(sofficeDir);
   }
   return extras;
 }

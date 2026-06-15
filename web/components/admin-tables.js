@@ -11,9 +11,10 @@ import {
   setLicenseDeviceStatusAction,
   setLicenseStatusAction,
   setConfigProfileEnabledAction,
-  setPluginEnabledAction,
   setReleaseEnabledAction,
-  setDocumentPackEnabledAction,
+  setRuntimePackEnabledAction,
+  setSkillPackageEnabledAction,
+  setWorkspaceAppEnabledAction,
 } from "../app/admin/actions";
 
 function statusBadge(active) {
@@ -129,7 +130,7 @@ export function ReleasesTable({ rows, empty }) {
   return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.releases}`} />;
 }
 
-export function DocumentPacksTable({ rows, empty }) {
+export function RuntimePacksTable({ rows, empty }) {
   const { t } = useI18n();
   const columns = [
     { accessorKey: "pack_id", header: ({ column }) => <SortHeader column={column}>Pack</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.pack_id}</span> },
@@ -143,7 +144,7 @@ export function DocumentPacksTable({ rows, empty }) {
       id: "action",
       header: t.admin.common.action,
       cell: ({ row }) => (
-        <form action={setDocumentPackEnabledAction}>
+        <form action={setRuntimePackEnabledAction}>
           <input type="hidden" name="id" value={row.original.id} />
           <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
           <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
@@ -151,22 +152,25 @@ export function DocumentPacksTable({ rows, empty }) {
       ),
     },
   ];
-  return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.documentPacks}`} />;
+  return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.runtimePacks}`} />;
 }
 
-export function PluginsTable({ rows, empty }) {
+export function SkillPackagesTable({ rows, empty }) {
   const { t } = useI18n();
   const columns = [
-    { accessorKey: "id", header: ({ column }) => <SortHeader column={column}>ID</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.id}</span> },
+    { accessorKey: "skill_id", header: ({ column }) => <SortHeader column={column}>Skill ID</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.skill_id}</span> },
     { accessorKey: "name", header: "Name" },
-    { accessorKey: "type", header: "Type", cell: ({ row }) => <Badge variant="brand">{row.original.type}</Badge> },
     { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>Version</SortHeader> },
+    { accessorKey: "capability_layer", header: "Capability", cell: ({ row }) => <Badge variant="brand">{row.original.capability_layer}</Badge> },
+    { accessorKey: "risk_level", header: "Risk", cell: ({ row }) => <Badge variant={row.original.risk_level === "high" ? "danger" : row.original.risk_level === "medium" ? "brand" : "success"}>{row.original.risk_level}</Badge> },
+    { accessorKey: "default_eligible", header: "Default", cell: ({ row }) => row.original.default_eligible ? <Badge variant="success">yes</Badge> : <span className="text-slate-400">no</span> },
     { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
+    { accessorKey: "artifact_url", header: "Qiniu URL", cell: ({ row }) => <span className="block max-w-[320px] truncate text-slate-500">{row.original.artifact_url}</span> },
     {
       id: "action",
       header: t.admin.common.action,
       cell: ({ row }) => (
-        <form action={setPluginEnabledAction}>
+        <form action={setSkillPackageEnabledAction}>
           <input type="hidden" name="id" value={row.original.id} />
           <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
           <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
@@ -174,7 +178,34 @@ export function PluginsTable({ rows, empty }) {
       ),
     },
   ];
-  return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.plugins}`} />;
+  return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.skillPackages}`} />;
+}
+
+export function WorkspaceAppsTable({ rows, empty }) {
+  const { t } = useI18n();
+  const columns = [
+    { accessorKey: "app_id", header: ({ column }) => <SortHeader column={column}>App ID</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.app_id}</span> },
+    { accessorKey: "name", header: "Name" },
+    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>Version</SortHeader> },
+    { accessorKey: "category", header: "Category", cell: ({ row }) => <Badge variant="brand">{row.original.category}</Badge> },
+    { accessorKey: "app_type", header: "Type" },
+    { accessorKey: "risk_level", header: "Risk", cell: ({ row }) => <Badge variant={row.original.risk_level === "high" ? "danger" : row.original.risk_level === "medium" ? "brand" : "success"}>{row.original.risk_level}</Badge> },
+    { accessorKey: "featured", header: "Featured", cell: ({ row }) => row.original.featured ? <Badge variant="success">yes</Badge> : <span className="text-slate-400">no</span> },
+    { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
+    { accessorKey: "artifact_url", header: "Qiniu URL", cell: ({ row }) => <span className="block max-w-[320px] truncate text-slate-500">{row.original.artifact_url}</span> },
+    {
+      id: "action",
+      header: t.admin.common.action,
+      cell: ({ row }) => (
+        <form action={setWorkspaceAppEnabledAction}>
+          <input type="hidden" name="id" value={row.original.id} />
+          <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
+          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
+        </form>
+      ),
+    },
+  ];
+  return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.apps}`} />;
 }
 
 function configSummary(config) {
@@ -187,7 +218,7 @@ function configSummary(config) {
       ? value.models.catalog.length
       : 0;
   if (models) parts.push(`${models} models`);
-  if (value.tools?.pluginRegistryUrl) parts.push("plugin registry");
+  if (value.tools?.pluginRegistryUrl) parts.push("skill registry");
   if (value.policy?.permissionMode) parts.push(`policy: ${value.policy.permissionMode}`);
   return parts.length ? parts.join(" · ") : JSON.stringify(value).slice(0, 80);
 }

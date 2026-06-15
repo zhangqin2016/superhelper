@@ -5,7 +5,6 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const { LineBuffer } = require("./line-buffer");
 const {
-  appendTextSegment,
   sanitizeError,
   classifyAssistantError,
   isUpstreamApiFailure,
@@ -27,6 +26,7 @@ const {
 } = require("./runtime/runtime-activity");
 const { buildUserMessagePayload, hasSendableContent } = require("./user-message");
 const { buildAgentSpawnEnv } = require("./spawn-env");
+const { detectCliCapabilities } = require("./cli-capabilities");
 const { sameRespawnOptions } = require("./runner-spawn-options");
 const { appendPermissionSpawnArgs } = require("./permission-spawn-args");
 const {
@@ -109,6 +109,7 @@ class AgentSession extends EventEmitter {
     this._interruptPending = false;
     /** @type {string | null} */
     this._streamParentToolUseId = null;
+    this._cliInfo = null;
     /** @type {Map<string, string>} — accumulated partial_json per tool_use id */
     this._streamingToolInputs = new Map();
     /** @type {Set<string>} — tool_use ids already emitted from content_block_start */
@@ -522,6 +523,7 @@ class AgentSession extends EventEmitter {
       stagingDir: options.stagingDir,
       configDir: options.configDir,
     };
+    this._setCliInfo(detectCliCapabilities(options.agentCommand));
 
     if (this.isAlive() && this.cwd === cwd && this.spawnOptions) {
       if (sameRespawnOptions(this.spawnOptions, spawnOpts)) {
@@ -537,6 +539,15 @@ class AgentSession extends EventEmitter {
     this._spawn();
   }
 
+  _setCliInfo(info) {
+    this._cliInfo = info || null;
+    this._runtimeAdapter = new CliEventAdapter({
+      cliVersion: info?.version || null,
+      versionText: info?.versionText || "",
+      capabilities: info?.capabilities || {},
+    });
+  }
+
   _spawn() {
     const opts = this.spawnOptions;
     const args = [
@@ -546,6 +557,7 @@ class AgentSession extends EventEmitter {
       "stream-json",
       "--output-format",
       "stream-json",
+      "--include-partial-messages",
       "--prompt-suggestions",
       "true",
     ];
@@ -586,6 +598,9 @@ class AgentSession extends EventEmitter {
     this.process.stdout.on("data", (chunk) => this._onStdout(chunk));
     this.process.stderr.on("data", (chunk) => {
       this._handleStderr(chunk.toString());
+    });
+    this.process.stdin.on("error", (err) => {
+      this._handleStdinWriteError(err, "stdin-error");
     });
 
     this.process.on("error", (err) => {
@@ -688,17 +703,10 @@ class AgentSession extends EventEmitter {
     }
 
     const line = `${JSON.stringify(userPayload)}\n`;
-    const stdin = this.process.stdin;
-    if (!stdin || stdin.destroyed) {
+    const writeResult = this._writeStdinLine(line, "user-message");
+    if (!writeResult.ok) {
       this._failTurn("Assistant connection has been lost. Please retry.");
       return false;
-    }
-
-    const wrote = stdin.write(line, (err) => {
-      if (err) this._failTurn(sanitizeError(err.message));
-    });
-    if (!wrote) {
-      stdin.once("drain", () => {});
     }
     this._armTurnResponseTimer();
     this._armAbsoluteTurnTimer();
@@ -979,14 +987,37 @@ class AgentSession extends EventEmitter {
     if (line) this._handleLine(line);
   }
 
-  _writeControlLine(payload) {
+  _handleStdinWriteError(err, context) {
+    const message = sanitizeError(err?.message || "Assistant connection has been lost.");
+    log.warn("stdin write failed (%s): %s", context, err?.message || err);
+    this.lastSpawnError = message;
+    if (this.busy && !this._turnSettled) {
+      this._failTurn(message);
+    }
+  }
+
+  _writeStdinLine(line, context) {
     const stdin = this.process?.stdin;
     if (!stdin || stdin.destroyed) {
-      log.warn("control line skipped: stdin unavailable");
-      return false;
+      log.warn("stdin line skipped: stdin unavailable (%s)", context);
+      return { ok: false };
     }
-    stdin.write(`${JSON.stringify(payload)}\n`);
-    return true;
+    try {
+      const wrote = stdin.write(line, (err) => {
+        if (err) this._handleStdinWriteError(err, context);
+      });
+      if (!wrote && typeof stdin.once === "function") {
+        stdin.once("drain", () => {});
+      }
+      return { ok: true };
+    } catch (err) {
+      this._handleStdinWriteError(err, context);
+      return { ok: false };
+    }
+  }
+
+  _writeControlLine(payload) {
+    return this._writeStdinLine(`${JSON.stringify(payload)}\n`, "control-line").ok;
   }
 
   _clearInternalCommandTimer() {
@@ -1032,6 +1063,10 @@ class AgentSession extends EventEmitter {
     this._approvals.handleAskUserQuestion(canUse);
   }
 
+  _handleUserInputRequest(action) {
+    this._approvals.handleUserInputRequest(action);
+  }
+
   _emitEngineNotice(notice) {
     if (!notice) return;
     notice = sanitizeNoticeForIngest(notice);
@@ -1053,12 +1088,6 @@ class AgentSession extends EventEmitter {
     this._ingestRuntime([{ type, payload: { notice } }]);
   }
 
-  _appendTextPiece(piece) {
-    if (!piece) return;
-    this.collectedOutput = appendTextSegment(this.collectedOutput, piece);
-    this._markStreamActivity();
-  }
-
   _handleTurnResult(ev) {
     this._clearMessageStopTimer();
     this._flushLineBuffer();
@@ -1066,12 +1095,9 @@ class AgentSession extends EventEmitter {
       this._recordActualUsage(ev.modelUsage);
       this._ingestRuntime([{ type: "usage.updated", payload: { usage: ev.modelUsage } }]);
     }
-    if (ev.subtype === "success" && ev.result) {
-      const piece = String(ev.result);
-      if (piece && !this.collectedOutput.includes(piece)) {
-        this._appendTextPiece(piece);
-      }
-    }
+    const resultText = ev.subtype === "success" && ev.result
+      ? String(ev.result).trim()
+      : "";
     const resultFailed =
       Boolean(ev.is_error) ||
       (typeof ev.subtype === "string" && ev.subtype.startsWith("error"));
@@ -1082,6 +1108,7 @@ class AgentSession extends EventEmitter {
       typeof ev.subtype === "string" && ev.subtype.startsWith("error") ? ev.subtype : "",
     ].filter(Boolean).join("\n");
     const output =
+      resultText ||
       this.collectedOutput.trim() ||
       (rawError ? sanitizeError(rawError) : "");
     const payload = {
@@ -1173,11 +1200,16 @@ class AgentSession extends EventEmitter {
         break;
 
       case "assistant_text":
-        this.collectedOutput = appendTextSegment(this.collectedOutput, action.text || "");
+        this.collectedOutput += String(action.text || "");
         this._markStreamActivity();
         break;
 
       case "assistant_thinking":
+        this._markStreamActivity();
+        break;
+
+      case "assistant_supersedes":
+      case "stream_metadata_delta":
         this._markStreamActivity();
         break;
 
@@ -1301,15 +1333,38 @@ class AgentSession extends EventEmitter {
 
       case "hook_pretool_use":
       case "hook_pretool_use_ask":
+      case "hook_permission_request_ask":
+      case "hook_elicitation_ask":
         this._handleHookPreToolUse(action);
         break;
 
       case "hook_posttool_use":
       case "hook_posttool_use_failure":
+      case "hook_posttool_batch":
       case "hook_session_start":
+      case "hook_session_end":
       case "hook_precompact":
+      case "hook_postcompact":
       case "hook_user_prompt":
+      case "hook_user_prompt_expansion":
       case "hook_notification":
+      case "hook_stop_failure":
+      case "hook_subagent_start":
+      case "hook_permission_request":
+      case "hook_permission_denied":
+      case "hook_setup":
+      case "hook_teammate_idle":
+      case "hook_task_created":
+      case "hook_task_completed":
+      case "hook_elicitation":
+      case "hook_elicitation_result":
+      case "hook_config_change":
+      case "hook_worktree_create":
+      case "hook_worktree_remove":
+      case "hook_instructions_loaded":
+      case "hook_cwd_changed":
+      case "hook_file_changed":
+      case "hook_message_display":
         this._handleHookInfoOnly(action);
         break;
 
@@ -1332,12 +1387,20 @@ class AgentSession extends EventEmitter {
         // the protocol handshake and should not surface as a user warning.
         break;
 
+      case "control_request":
+        this._writeControlLine(buildControlAck(action.requestId));
+        break;
+
       case "permission_check":
         this._handleCanUseTool(action);
         break;
 
       case "ask_user_question":
         this._handleAskUserQuestion(action);
+        break;
+
+      case "user_input_request":
+        this._handleUserInputRequest(action);
         break;
 
       default:

@@ -1,10 +1,10 @@
 "use strict";
 
-const { estimateCostRmb } = require("./usage-cost-estimate");
+const { DEFAULT_PRICING_ID, estimateCostRmb } = require("./usage-cost-estimate");
 const { localDateKey } = require("./local-date-key");
 
 /** Fixed estimate basis for user-facing cost display. */
-const USAGE_PRICING_ID = "deepseek_x5";
+const USAGE_PRICING_ID = DEFAULT_PRICING_ID;
 const DEFAULT_HISTORY_DAYS = 30;
 
 function today() {

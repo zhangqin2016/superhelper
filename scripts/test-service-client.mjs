@@ -41,6 +41,7 @@ const {
   getServiceSettings,
   registerDevice,
   fetchClientConfig,
+  workspaceAppCatalog,
   rotateDeviceKeypair,
   reportSkillEvent,
   reportRuntimeDiagnostic,
@@ -71,10 +72,11 @@ global.fetch = async (url, options = {}) => {
 
 await registerDevice();
 await fetchClientConfig();
+await workspaceAppCatalog();
 await reportSkillEvent({
   eventType: "install",
-  pluginId: "example-skill",
-  pluginVersion: "1.2.3",
+  skillId: "example-skill",
+  skillVersion: "1.2.3",
   metadata: { source: "test" },
 });
 await reportRuntimeDiagnostic({
@@ -115,30 +117,44 @@ for (const header of [
     throw new Error(`client config request missing signature header ${header}`);
   }
 }
-if (requests[2]?.url !== "https://service.example.com/api/plugins/events") {
-  throw new Error(`skill event URL mismatch: ${requests[2]?.url}`);
+if (requests[2]?.url !== "https://service.example.com/api/apps/catalog") {
+  throw new Error(`workspace app catalog URL mismatch: ${requests[2]?.url}`);
 }
-if (requests[2].body.eventType !== "install" || requests[2].body.pluginId !== "example-skill") {
-  throw new Error(`skill event body mismatch: ${JSON.stringify(requests[2].body)}`);
+for (const header of [
+  "X-Lily-Device-Id",
+  "X-Lily-Timestamp",
+  "X-Lily-Nonce",
+  "X-Lily-Body-Sha256",
+  "X-Lily-Signature",
+]) {
+  if (!requests[2].options.headers?.[header]) {
+    throw new Error(`workspace app catalog request missing signature header ${header}`);
+  }
 }
-if (!requests[2].body.deviceId || !requests[2].body.fingerprintHash) {
-  throw new Error(`skill event should include device identity: ${JSON.stringify(requests[2].body)}`);
+if (requests[3]?.url !== "https://service.example.com/api/skills/events") {
+  throw new Error(`skill event URL mismatch: ${requests[3]?.url}`);
 }
-if (requests[3]?.url !== "https://service.example.com/api/diagnostics/runtime-traces") {
-  throw new Error(`runtime diagnostic URL mismatch: ${requests[3]?.url}`);
+if (requests[3].body.eventType !== "install" || requests[3].body.skillId !== "example-skill") {
+  throw new Error(`skill event body mismatch: ${JSON.stringify(requests[3].body)}`);
+}
+if (!requests[3].body.deviceId || !requests[3].body.fingerprintHash) {
+  throw new Error(`skill event should include device identity: ${JSON.stringify(requests[3].body)}`);
+}
+if (requests[4]?.url !== "https://service.example.com/api/diagnostics/runtime-traces") {
+  throw new Error(`runtime diagnostic URL mismatch: ${requests[4]?.url}`);
 }
 if (
-  requests[3].body.normalizedKind !== "protocol_warning" ||
-  requests[3].body.eventSubtype !== "new_protocol_shape" ||
-  requests[3].body.trace?.event?.type !== "system"
+  requests[4].body.normalizedKind !== "protocol_warning" ||
+  requests[4].body.eventSubtype !== "new_protocol_shape" ||
+  requests[4].body.trace?.event?.type !== "system"
 ) {
-  throw new Error(`runtime diagnostic body mismatch: ${JSON.stringify(requests[3].body)}`);
+  throw new Error(`runtime diagnostic body mismatch: ${JSON.stringify(requests[4].body)}`);
 }
-if (requests[4]?.url !== "https://service.example.com/api/devices/rotate-key") {
-  throw new Error(`device key rotation URL mismatch: ${requests[4]?.url}`);
+if (requests[5]?.url !== "https://service.example.com/api/devices/rotate-key") {
+  throw new Error(`device key rotation URL mismatch: ${requests[5]?.url}`);
 }
-if (!requests[4].body.newPublicKey || requests[4].body.newKeyAlg !== "ed25519") {
-  throw new Error(`device key rotation should include new public key: ${JSON.stringify(requests[4].body)}`);
+if (!requests[5].body.newPublicKey || requests[5].body.newKeyAlg !== "ed25519") {
+  throw new Error(`device key rotation should include new public key: ${JSON.stringify(requests[5].body)}`);
 }
 if (!beforeRotation || beforeRotation === afterRotation) {
   throw new Error("device key rotation should persist a new public key after service confirmation");

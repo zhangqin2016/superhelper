@@ -4,14 +4,14 @@ import { Badge } from "./ui/badge";
 const labelsByLocale = {
   zh: {
     overview: "配置中心",
-    overviewDesc: "这里管理客户端启动时拉取的模型、插件和权限策略。",
+    overviewDesc: "这里管理客户端启动时拉取的模型、技能包和权限策略。",
     activeProfiles: "启用配置",
     globalProfiles: "全局",
     licenseProfiles: "授权",
     deviceProfiles: "设备",
     gateway: "模型网关",
     providersReady: "可用 Provider",
-    pluginRegistry: "插件市场入口",
+    pluginRegistry: "技能包入口",
     delivery: "下发链路",
     ready: "已就绪",
     attention: "需处理",
@@ -24,7 +24,7 @@ const labelsByLocale = {
     modelProviders: "模型 Provider",
     noProfiles: "还没有配置。先用下面模板创建全局默认配置。",
     noProviders: "没有检测到模型 provider。请在服务端环境变量里配置 provider key。",
-    managePlugins: "管理插件",
+    managePlugins: "管理技能包",
     health: "查看健康检查",
     effectiveTitle: "当前生效配置",
     effectiveDesc: "默认显示全局配置。输入授权 ID 或设备 ID 后，可以看到该客户端实际会拿到什么。",
@@ -34,7 +34,7 @@ const labelsByLocale = {
     appliedProfiles: "命中的配置层",
     modelRoute: "模型请求路线",
     security: "安全状态",
-    pluginIds: "启用插件",
+    pluginIds: "启用技能包",
     noAppliedProfiles: "当前没有命中任何后台配置，客户端会使用安装包内默认配置。",
     noModels: "没有下发模型 preset。",
     noRuntimeSecrets: "没有 runtime 级长期密钥",
@@ -45,14 +45,14 @@ const labelsByLocale = {
   },
   en: {
     overview: "Config center",
-    overviewDesc: "Manage the model, plugin, and policy config fetched by clients at startup.",
+    overviewDesc: "Manage the model, skill package, and policy config fetched by clients at startup.",
     activeProfiles: "Enabled profiles",
     globalProfiles: "Global",
     licenseProfiles: "License",
     deviceProfiles: "Device",
     gateway: "Model gateway",
     providersReady: "Ready providers",
-    pluginRegistry: "Plugin registry",
+    pluginRegistry: "Skill registry",
     delivery: "Delivery path",
     ready: "Ready",
     attention: "Needs attention",
@@ -65,7 +65,7 @@ const labelsByLocale = {
     modelProviders: "Model providers",
     noProfiles: "No config yet. Create the global default with a template below.",
     noProviders: "No model provider detected. Configure provider keys in server env.",
-    managePlugins: "Manage plugins",
+    managePlugins: "Manage skill packages",
     health: "Open health",
     effectiveTitle: "Effective client config",
     effectiveDesc: "Defaults to the global config. Enter a license or device ID to preview what that client will receive.",
@@ -75,7 +75,7 @@ const labelsByLocale = {
     appliedProfiles: "Applied layers",
     modelRoute: "Model route",
     security: "Security",
-    pluginIds: "Enabled plugins",
+    pluginIds: "Enabled skill packages",
     noAppliedProfiles: "No admin config applies. The client will use packaged defaults.",
     noModels: "No model preset delivered.",
     noRuntimeSecrets: "No runtime long-lived secret",
@@ -86,14 +86,14 @@ const labelsByLocale = {
   },
   ar: {
     overview: "مركز الإعدادات",
-    overviewDesc: "إدارة إعدادات النماذج والإضافات والسياسات التي يجلبها العميل عند التشغيل.",
+    overviewDesc: "إدارة إعدادات النماذج وحزم المهارات والسياسات التي يجلبها العميل عند التشغيل.",
     activeProfiles: "إعدادات مفعلة",
     globalProfiles: "عام",
     licenseProfiles: "ترخيص",
     deviceProfiles: "جهاز",
     gateway: "بوابة النماذج",
     providersReady: "مزودون جاهزون",
-    pluginRegistry: "سجل الإضافات",
+    pluginRegistry: "سجل حزم المهارات",
     delivery: "مسار الإرسال",
     ready: "جاهز",
     attention: "يتطلب انتباهاً",
@@ -106,7 +106,7 @@ const labelsByLocale = {
     modelProviders: "مزودو النماذج",
     noProfiles: "لا توجد إعدادات بعد. أنشئ الإعداد العام الافتراضي من القالب أدناه.",
     noProviders: "لم يتم العثور على مزود نماذج. أضف مفاتيح المزود في بيئة الخادم.",
-    managePlugins: "إدارة الإضافات",
+    managePlugins: "إدارة حزم المهارات",
     health: "فحص الصحة",
     effectiveTitle: "الإعداد الفعّال للعميل",
     effectiveDesc: "يعرض الإعداد العام افتراضياً. أدخل ترخيصاً أو جهازاً لمعرفة ما سيستلمه العميل.",
@@ -116,7 +116,7 @@ const labelsByLocale = {
     appliedProfiles: "الطبقات المطبقة",
     modelRoute: "مسار النموذج",
     security: "الأمان",
-    pluginIds: "الإضافات المفعلة",
+    pluginIds: "حزم المهارات المفعلة",
     noAppliedProfiles: "لا يوجد إعداد إداري مطابق. سيستخدم العميل الإعدادات المضمنة.",
     noModels: "لا توجد إعدادات نموذج مرسلة.",
     noRuntimeSecrets: "لا توجد أسرار طويلة الأمد",
@@ -285,7 +285,7 @@ export function ConfigCenterPanels({ rows = [], health = {}, preview = null, loc
         {[
           [copy.activeProfiles, enabledRows.length, `${copy.globalProfiles} ${countByScope(rows, "global")} · ${copy.licenseProfiles} ${countByScope(rows, "license")} · ${copy.deviceProfiles} ${countByScope(rows, "device")}`],
           [copy.gateway, `${readyProviders.length}/${providers.length}`, gateway.enabled === false ? "disabled" : copy.providersReady],
-          [copy.pluginRegistry, delivery.pluginRegistryUrl || "/api/plugins/registry", copy.delivery],
+          [copy.pluginRegistry, delivery.pluginRegistryUrl || "/api/skills/registry", copy.delivery],
           [copy.delivery, delivery.endpoint || "/api/client/config", health.status || "unknown"],
         ].map(([title, value, detail]) => (
           <div key={title} className="metric-card rounded-xl p-5">
@@ -306,7 +306,7 @@ export function ConfigCenterPanels({ rows = [], health = {}, preview = null, loc
               <p className="mt-2 text-sm text-slate-500">{copy.overviewDesc}</p>
             </div>
             <div className="flex gap-2">
-              <Link className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-brand hover:text-brand" href="/admin/plugins">
+              <Link className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-brand hover:text-brand" href="/admin/skill-packages">
                 {copy.managePlugins}
               </Link>
               <Link className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-brand hover:text-brand" href="/admin/health">

@@ -139,6 +139,36 @@ function ensureBundledPresent() {
   return installed;
 }
 
+function pruneInstalledSkillsNotInRegistry(registry) {
+  if (!registry || !Array.isArray(registry.skills)) {
+    return [];
+  }
+
+  ensureSkillsStateDefaults();
+  const allowedIds = new Set(registry.skills.map((skill) => skill.id));
+  for (const skillId of PROTECTED_BUNDLED_IDS) {
+    allowedIds.add(skillId);
+  }
+
+  const state = loadSkillsState();
+  const pruned = [];
+  for (const skillId of Object.keys(state.skills || {})) {
+    if (allowedIds.has(skillId)) continue;
+    const skillDir = installedSkillDir(skillId);
+    if (fs.existsSync(skillDir)) {
+      fs.rmSync(skillDir, { recursive: true, force: true });
+    }
+    delete state.skills[skillId];
+    pruned.push(skillId);
+  }
+
+  if (pruned.length > 0) {
+    saveSkillsState();
+    mergeAgentGuide();
+  }
+  return pruned;
+}
+
 function getEnabledInstalledSkills() {
   return getSkillsForIds(getGloballyEnabledSkillIds());
 }
@@ -487,7 +517,7 @@ function getServiceRegistryUrl() {
       if (/^https?:\/\//i.test(configured)) return configured;
       if (configured.startsWith("/") && service?.apiBaseUrl) return `${service.apiBaseUrl}${configured}`;
     }
-    if (service?.apiBaseUrl) return `${service.apiBaseUrl}/api/plugins/registry`;
+    if (service?.apiBaseUrl) return `${service.apiBaseUrl}/api/skills/registry`;
   } catch {
     // fall back to bundled catalog
   }
@@ -527,11 +557,16 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
   const updateAvailable =
     latestVersion && compareSemver(latestVersion, installedVersion) > 0;
   const platformMandatory = MANDATORY_PLATFORM_SKILL_IDS.includes(skillId);
+  const manifestName = resolveLocalized(manifest, "name", registryEntry?.name || skillId);
+  const manifestDescription = resolveLocalized(manifest, "description", registryEntry?.description || "");
+  const preferRegistryDisplay = entry?.source === "remote" && Boolean(registryEntry);
 
   return {
     id: skillId,
-    name: resolveLocalized(manifest, "name", registryEntry?.name || skillId),
-    description: resolveLocalized(manifest, "description", registryEntry?.description || ""),
+    name: preferRegistryDisplay ? (registryEntry.name || manifestName) : manifestName,
+    description: preferRegistryDisplay
+      ? (registryEntry.description || manifestDescription)
+      : manifestDescription,
     version: installedVersion,
     latestVersion,
     source: entry?.source || (registryEntry ? "remote" : "local"),
@@ -548,6 +583,10 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
     changelog: registryEntry?.changelog || "",
     category: registryEntry?.category || null,
     categoryLabel: registryEntry?.categoryLabel || null,
+    capabilityLayer: registryEntry?.capabilityLayer || "core",
+    riskLevel: registryEntry?.riskLevel || "low",
+    defaultEligible: Boolean(registryEntry?.defaultEligible),
+    featured: Boolean(registryEntry?.featured),
   };
 }
 
@@ -576,10 +615,27 @@ function availableSkillToPublic(registryEntry, installedVersion) {
     categoryLabel: registryEntry.categoryLabel || null,
     publisher: registryEntry.publisher || null,
     sourceType: registryEntry.sourceType || "zip",
+    capabilityLayer: registryEntry.capabilityLayer || "core",
+    riskLevel: registryEntry.riskLevel || "low",
+    defaultEligible: Boolean(registryEntry.defaultEligible),
+    featured: Boolean(registryEntry.featured),
   };
 }
 
 function finalizeResolvedRegistry(registry, { serviceUrl = "", fromService = false } = {}) {
+  if (fromService && registry?.skills?.length) {
+    return {
+      ok: true,
+      registry: {
+        ...registry,
+        categories: skillRegistry.categoriesForRegistry(registry),
+        serviceCatalog: true,
+        bundledCatalogFallback: false,
+        serviceRegistryUrl: serviceUrl || null,
+      },
+    };
+  }
+
   const supplemented = skillRegistry.supplementRegistryWithBundled(registry);
   if (!supplemented) {
     return { ok: false, error: "NOT_FOUND", detail: "Built-in skill directory not available" };
@@ -619,9 +675,7 @@ async function resolveRegistry({ fetch = true } = {}) {
     }
   }
 
-  const bundled = fetch
-    ? skillRegistry.ensureBundledRegistryCached()
-    : skillRegistry.loadCachedRegistry() || skillRegistry.ensureBundledRegistryCached();
+  const bundled = skillRegistry.ensureBundledRegistryCached();
   return finalizeResolvedRegistry(bundled);
 }
 
@@ -651,6 +705,7 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
   const registry = resolved.registry;
 
   ensureSkillsStateDefaults();
+  const pruned = pruneInstalledSkillsNotInRegistry(registry);
   const state = loadSkillsState();
   const registryById = Object.fromEntries(registry.skills.map((s) => [s.id, s]));
 
@@ -697,6 +752,7 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
     available: sortedAvailable,
     updates,
     updatesCount: updates.length,
+    pruned,
     categories: skillRegistry.categoriesForRegistry(registry),
     remoteIndexes: registry.remoteIndexes || [],
     presets: listSkillPresetsPublic(),
@@ -712,11 +768,86 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
 function sortAvailableSkills(available) {
   const featured = new Set(skillPresets.FEATURED_SKILL_IDS);
   return [...(available || [])].sort((a, b) => {
-    const aFeatured = featured.has(a.id) ? 0 : 1;
-    const bFeatured = featured.has(b.id) ? 0 : 1;
+    const aFeatured = (a.featured || a.defaultEligible || featured.has(a.id)) ? 0 : 1;
+    const bFeatured = (b.featured || b.defaultEligible || featured.has(b.id)) ? 0 : 1;
     if (aFeatured !== bFeatured) return aFeatured - bFeatured;
     return String(a.name || a.id).localeCompare(String(b.name || b.id), "zh-CN");
   });
+}
+
+async function loadServiceRegistryForSync({ fetch = true } = {}) {
+  const serviceUrl = getServiceRegistryUrl();
+  if (!serviceUrl) return { ok: false, error: "NO_SERVICE_URL" };
+  if (fetch) return fetchServiceRegistry();
+  const cached = skillRegistry.loadCachedRegistry();
+  if (cached?.sourceUrl === serviceUrl) return { ok: true, registry: cached };
+  return { ok: false, error: "NO_SERVICE_REGISTRY" };
+}
+
+async function syncServiceSkillPackages({ fetch = true } = {}) {
+  const service = await loadServiceRegistryForSync({ fetch });
+  if (!service.ok) {
+    return { ok: true, skipped: true, reason: service.error };
+  }
+
+  const entries = (service.registry.skills || [])
+    .filter((entry) => !PROTECTED_BUNDLED_IDS.has(entry.id))
+    .filter((entry) => isAppVersionCompatible(entry.minAppVersion));
+
+  const installed = [];
+  const updated = [];
+  const skipped = [];
+  const failed = [];
+
+  for (const entry of entries) {
+    const manifest = readInstalledManifest(entry.id);
+    const stateEntry = loadSkillsState().skills[entry.id];
+    const isInstalled = Boolean(manifest);
+    const updateAvailable =
+      isInstalled && compareSemver(entry.latestVersion, manifest.version || "0.0.0") > 0;
+    const shouldInstall = !isInstalled && Boolean(entry.defaultEligible);
+    const shouldUpdate = isInstalled && stateEntry?.source === "remote" && updateAvailable;
+
+    if (!shouldInstall && !shouldUpdate) {
+      skipped.push(entry.id);
+      continue;
+    }
+
+    const result = await skillInstaller.installFromRegistryEntry(entry);
+    if (!result.ok) {
+      failed.push({ id: entry.id, error: result.error || "INSTALL_FAILED", detail: result.detail || "" });
+      continue;
+    }
+
+    if (shouldInstall) {
+      installed.push(entry.id);
+      reportSkillEvent("install", entry.id, result.version, { reason: "auto-sync" });
+    } else {
+      updated.push(entry.id);
+      reportSkillEvent("update", entry.id, result.version, { reason: "auto-sync" });
+    }
+  }
+
+  const state = loadSkillsState();
+  state.meta = {
+    ...(state.meta && typeof state.meta === "object" ? state.meta : {}),
+    serviceSkillSyncAt: new Date().toISOString(),
+    serviceSkillSyncSource: service.registry.sourceUrl || getServiceRegistryUrl(),
+  };
+  saveSkillsState();
+
+  if (installed.length || updated.length) {
+    mergeAgentGuide();
+  }
+
+  return {
+    ok: failed.length === 0,
+    registryUrl: service.registry.sourceUrl || getServiceRegistryUrl(),
+    installed,
+    updated,
+    skipped,
+    failed,
+  };
 }
 
 function listSkillPresetsPublic() {
@@ -866,9 +997,9 @@ function uninstallRemoteSkill(skillId) {
   return { ok: true, skills: listSkillsPublic() };
 }
 
-function reportSkillEvent(eventType, pluginId, pluginVersion, metadata = {}) {
+function reportSkillEvent(eventType, skillId, skillVersion, metadata = {}) {
   require("./service-client")
-    .reportSkillEvent({ eventType, pluginId, pluginVersion, metadata })
+    .reportSkillEvent({ eventType, skillId, skillVersion, metadata })
     .catch((err) => console.warn("[skills-report]", err?.message || err));
 }
 
@@ -882,10 +1013,8 @@ function listSkillsPublic() {
     saveSkillsState();
   }
   const cached = skillRegistry.loadCachedRegistry();
-  const registryById =
-    cached && skillRegistry.registrySourceMatches(state, cached)
-      ? Object.fromEntries((cached.skills || []).map((s) => [s.id, s]))
-      : {};
+  const registry = skillRegistry.supplementRegistryWithBundled(cached) || skillRegistry.ensureBundledRegistryCached();
+  const registryById = Object.fromEntries((registry?.skills || []).map((s) => [s.id, s]));
   const skills = [];
 
   for (const skillId of BUNDLED_SKILL_IDS) {
@@ -910,10 +1039,11 @@ function listSkillsPublic() {
 
 function bootstrapSkills() {
   ensureSkillsStateDefaults();
-  skillRegistry.ensureBundledRegistryCached();
+  const bundledRegistry = skillRegistry.ensureBundledRegistryCached();
   const installed = ensureBundledPresent();
+  const pruned = pruneInstalledSkillsNotInRegistry(bundledRegistry);
   mergeAgentGuide();
-  return { installed };
+  return { installed, pruned };
 }
 
 function setSkillEnabled(skillId, enabled) {
@@ -985,6 +1115,7 @@ module.exports = {
   ensureBundledPresent,
   getServiceRegistryUrl,
   checkRegistryUpdates,
+  syncServiceSkillPackages,
   listSkillPresetsPublic,
   getSkillPresetGuideState,
   setSkillPresetGuideStatus,

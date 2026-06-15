@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { fileURLToPath } = require("node:url");
 const { ipcMain } = require("electron");
 
 const ICON_MAP = {
@@ -77,6 +78,20 @@ function registerFileTreeHandlers(ctx = {}) {
     const session = sessionManager?.findById?.(sessionId);
     const project = session ? projectManager?.find?.(session.projectId) : null;
     return project?.path || null;
+  }
+
+  function resolveRevealPath(filePath) {
+    const raw = String(filePath || "").trim();
+    if (!raw) return null;
+    let candidate = raw;
+    if (/^file:/i.test(raw)) {
+      try {
+        candidate = fileURLToPath(raw);
+      } catch {
+        return null;
+      }
+    }
+    return path.isAbsolute(candidate) ? candidate : null;
   }
 
   ipcMain.handle("filetree:search-files", (_event, { rootPath, query, limit }) => {
@@ -170,11 +185,16 @@ function registerFileTreeHandlers(ctx = {}) {
 
   ipcMain.handle("filetree:reveal", (_event, { filePath }) => {
     try {
-      if (!filePath || typeof filePath !== "string" || !fs.existsSync(filePath)) {
+      const target = resolveRevealPath(filePath);
+      if (!target || !fs.existsSync(target)) {
         return { ok: false, error: "NOT_FOUND" };
       }
       const { shell } = require("electron");
-      shell.showItemInFolder(filePath);
+      if (fs.statSync(target).isDirectory()) {
+        void shell.openPath(target);
+      } else {
+        shell.showItemInFolder(target);
+      }
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err.message };

@@ -5,12 +5,18 @@
 /** @typedef {{ id: string, category?: string | null, globallyEnabled?: boolean, sessionEnabled?: boolean }} SessionSkill */
 
 export const TREE_CATEGORY_ORDER = [
+  "core",
   "office",
   "tools",
+  "coding",
+  "design",
+  "media",
+  "research",
+  "quality",
   "pm",
   "marketing",
-  "design",
   "dev",
+  "professional",
   "security",
   "other",
 ];
@@ -51,7 +57,15 @@ export function groupSkillsForTree(skills, options = {}) {
   for (const id of TREE_CATEGORY_ORDER) {
     const items = buckets[id];
     if (!items.length) continue;
-    items.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), "zh-CN"));
+    items.sort((a, b) => {
+      const aEnabled = a[enabledKey] ? 0 : 1;
+      const bEnabled = b[enabledKey] ? 0 : 1;
+      if (aEnabled !== bEnabled) return aEnabled - bEnabled;
+      const aRecommended = (a.featured || a.defaultEligible) ? 0 : 1;
+      const bRecommended = (b.featured || b.defaultEligible) ? 0 : 1;
+      if (aRecommended !== bRecommended) return aRecommended - bRecommended;
+      return String(a.name || a.id).localeCompare(String(b.name || b.id), "zh-CN");
+    });
     let enabledCount = 0;
     for (const skill of items) {
       if (skill[enabledKey]) enabledCount += 1;

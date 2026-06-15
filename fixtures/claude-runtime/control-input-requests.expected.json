@@ -1,0 +1,10 @@
+{
+  "description": "Interactive control requests normalize to answerable user input requests instead of unknown control warnings.",
+  "mustIncludeKinds": ["user_input_request"],
+  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
+  "warningCount": 0,
+  "counts": {
+    "user_input_request": 2
+  },
+  "firstQuestion": "请选择输出格式"
+}

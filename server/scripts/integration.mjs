@@ -153,7 +153,7 @@ try {
       plan: "pro",
       seats: 1,
       expiresAt: new Date(Date.now() + 86400_000).toISOString(),
-      features: ["updates", "plugins", "usage"],
+      features: ["updates", "skill-packages", "usage"],
     },
   });
   assert.equal(created.statusCode, 201);
@@ -615,7 +615,7 @@ try {
   assert.equal(usageSummary.statusCode, 200);
   assert.equal(usageSummary.json().deviceId, activationPayload.deviceId);
 
-  const pluginEventPayload = {
+  const skillEventPayload = {
     deviceId: activationPayload.deviceId,
     licenseId,
     fingerprintHash: "integration-hash",
@@ -625,23 +625,23 @@ try {
     publicKey,
     keyAlg: "ed25519",
     eventType: "install",
-    pluginId: "integration-plugin",
-    pluginVersion: "1.0.0",
+    skillId: "integration-skill",
+    skillVersion: "1.0.0",
     metadata: { source: "integration" },
   };
-  const pluginEvent = await app.inject({
+  const skillEvent = await app.inject({
     method: "POST",
-    url: "/api/plugins/events",
+    url: "/api/skills/events",
     headers: signedHeaders({
       method: "POST",
-      pathname: "/api/plugins/events",
-      payload: pluginEventPayload,
+      pathname: "/api/skills/events",
+      payload: skillEventPayload,
       deviceId: activationPayload.deviceId,
       privateKey: rotatedPrivateKey,
     }),
-    payload: pluginEventPayload,
+    payload: skillEventPayload,
   });
-  assert.equal(pluginEvent.statusCode, 200);
+  assert.equal(skillEvent.statusCode, 200);
 
   const diagnosticPayload = {
     deviceId: activationPayload.deviceId,

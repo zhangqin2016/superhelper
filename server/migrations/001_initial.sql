@@ -62,19 +62,6 @@ create table if not exists releases (
   unique (version, platform)
 );
 
-create table if not exists plugins (
-  id text primary key,
-  name text not null,
-  version text not null,
-  type text not null,
-  description text,
-  manifest_url text not null,
-  sha256 text,
-  enabled boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
 create table if not exists admin_users (
   id text primary key,
   email text not null unique,

@@ -13,8 +13,8 @@ const { buildUsageSummary, normalizeUsageDateKey, USAGE_PRICING_ID } = require(p
 const { estimateCostRmb } = require(path.join(__dirname, "../src/main/usage-cost-estimate.js"));
 const { localDateKey } = require(path.join(__dirname, "../src/main/local-date-key.js"));
 
-if (USAGE_PRICING_ID !== "deepseek_x5") {
-  throw new Error(`usage pricing must be deepseek_x5, got ${USAGE_PRICING_ID}`);
+if (USAGE_PRICING_ID !== "deepseek_standard") {
+  throw new Error(`usage pricing must be deepseek_standard, got ${USAGE_PRICING_ID}`);
 }
 
 const summary = buildUsageSummary({
@@ -34,7 +34,7 @@ if (summary.today.inputTokens !== 2000 || summary.today.outputTokens !== 1000) {
   throw new Error(`pending today merge failed: ${JSON.stringify(summary.today)}`);
 }
 
-const expectedTodayCost = estimateCostRmb(2000, 1000, "deepseek_x5");
+const expectedTodayCost = estimateCostRmb(2000, 1000, "deepseek_standard");
 if (summary.today.costRmb !== expectedTodayCost) {
   throw new Error(`today cost ${summary.today.costRmb}, want ${expectedTodayCost}`);
 }

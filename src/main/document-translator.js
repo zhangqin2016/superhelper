@@ -66,9 +66,9 @@ function extractOfficeText(filePath) {
   if (!script) throw new Error("EXTRACTOR_MISSING");
 
   const env = { ...process.env };
-  // Put any installed capability packs (e.g. the pro-pdf Docling engine) on
+  // Put any installed runtime packs (e.g. the pro-pdf Docling engine) on
   // PYTHONPATH so extract_document.py's lazy import upgrades automatically.
-  const packPaths = require("./document-packs").getDocumentPackPythonPaths();
+  const packPaths = require("./runtime-packs").getRuntimePackPythonPaths();
   if (packPaths.length) {
     env.PYTHONPATH = [...packPaths, env.PYTHONPATH].filter(Boolean).join(path.delimiter);
   }

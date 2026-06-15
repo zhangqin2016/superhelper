@@ -72,6 +72,9 @@ function registerAll(ctx) {
     require("./service-client").getServiceSettings());
   ipcMain.handle("service:test-connection", () =>
     require("./service-client").testConnection());
+  ipcMain.handle("apps:catalog", () =>
+    require("./service-client").workspaceAppCatalog()
+      .then((result) => require("./workspace-app-installs").attachInstalledState(result, projectManager)));
 
   ipcMain.handle("updates:get-settings", () =>
     require("./update-manager").getUpdateSettings());

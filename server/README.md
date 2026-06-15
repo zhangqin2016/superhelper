@@ -1,7 +1,7 @@
 # Lily Workbench Server
 
 Lightweight API for license activation, device registration, usage reporting,
-release metadata, plugin metadata, and admin dashboards.
+release metadata, skill package metadata, and admin dashboards.
 
 ## Setup
 
@@ -69,7 +69,7 @@ Provider keys are configured with environment variables, not sent through
 
 ```env
 MODEL_GATEWAY_ENABLED=true
-MODEL_CONFIG_DELIVERY_MODE=gateway # gateway | direct
+MODEL_CONFIG_DELIVERY_MODE=direct # direct | gateway
 MODEL_GATEWAY_TOKEN_SECRET=change-me-at-least-32-chars
 MODEL_GATEWAY_TOKEN_TTL_SECONDS=21600
 ANTHROPIC_API_KEY=sk-ant-...
@@ -87,12 +87,13 @@ LOCAL_ANTHROPIC_API_KEY=sk-local...
 
 When provider environment variables are present, the API server creates or
 updates a global `lily-default-runtime` config profile during startup.
-`MODEL_CONFIG_DELIVERY_MODE=gateway` keeps model provider secrets on the
-server by delivering Lily gateway URLs plus short-lived gateway tokens.
-`MODEL_CONFIG_DELIVERY_MODE=direct` delivers Anthropic-compatible provider URLs
-and keys directly to the client for lower latency; OpenAI-compatible providers
-still fall back to the gateway because the desktop runtime speaks the Claude
-messages protocol. DashScope media skill defaults are also included so the
+`MODEL_CONFIG_DELIVERY_MODE=direct` is the default: it delivers
+Anthropic-compatible provider URLs and keys directly to the client for lower
+latency and fewer moving parts. `MODEL_CONFIG_DELIVERY_MODE=gateway` keeps model
+provider secrets on the server by delivering Lily gateway URLs plus short-lived
+gateway tokens; OpenAI-compatible providers still fall back to the gateway
+because the desktop runtime speaks the Claude messages protocol. DashScope media
+skill defaults are also included so the
 desktop app can enable built-in image, video, and speech generation without
 manual client setup:
 
@@ -192,19 +193,18 @@ POST /api/licenses/activate
 POST /api/licenses/verify
 POST /api/client/config
 POST /api/usage/report
-POST /api/plugins/events
+POST /api/skills/events
 GET  /api/releases/latest
 GET  /api/releases
-GET  /api/plugins
-GET  /api/plugins/registry
+GET  /api/skills/registry
 POST /llm/:provider/v1/messages
 POST /llm/:provider/v1/messages/count_tokens
 GET  /llm/:provider/v1/models
 ```
 
-`/api/plugins/registry` emits the existing desktop client's skill registry format.
-Only enabled `type=skill` entries with both package URL and SHA256 are installable.
-`/api/plugins/events` records install, update, uninstall, enable, and disable
+`/api/skills/registry` emits the desktop client's skill package registry format.
+Only enabled skill package entries with both package URL and SHA256 are installable.
+`/api/skills/events` records install, update, uninstall, enable, and disable
 actions so operations can be monitored without exposing chat content or model
 API keys.
 
@@ -221,8 +221,9 @@ GET  /api/admin/devices
 GET  /api/admin/usage
 GET  /api/admin/releases
 POST /api/admin/releases
-GET  /api/admin/plugins
-POST /api/admin/plugins
+GET  /api/admin/skill-packages
+POST /api/admin/skill-packages
+PATCH /api/admin/skill-packages/:id
 GET  /api/admin/config-profiles
 POST /api/admin/config-profiles
 PATCH /api/admin/config-profiles/:id
@@ -248,15 +249,15 @@ After the service URL is configured:
 
 - Activation uses `POST /api/licenses/activate`.
 - Update checks prefer `GET /api/releases/latest`.
-- The skill market uses `GET /api/plugins/registry`.
-- Skill operations report to `POST /api/plugins/events`.
+- The skill market uses `GET /api/skills/registry`.
+- Skill operations report to `POST /api/skills/events`.
 - Usage reports use `POST /api/usage/report`.
 - Startup registers the device with `POST /api/devices/register`.
 - Startup also pulls signed dynamic config from `POST /api/client/config`.
 - Device-state APIs require request signing after registration:
   `POST /api/client/config`, `POST /api/licenses/verify`,
   `POST /api/usage/report`, `POST /api/usage/summary`,
-  `POST /api/plugins/events`, `POST /api/diagnostics/runtime-traces`, and
+  `POST /api/skills/events`, `POST /api/diagnostics/runtime-traces`, and
   `POST /api/devices/rotate-key`.
   The device public key is registered during device registration or license
   activation; every protected request must include timestamp, nonce, body hash,
@@ -265,7 +266,7 @@ After the service URL is configured:
   If the old private key is lost, the device must bootstrap again through
   license activation.
 - Public website/update APIs stay public: contact submission, release metadata,
-  and plugin registry reads do not require device signing.
+  and skill registry reads do not require device signing.
 
 Dynamic config profiles resolve in this order:
 
@@ -283,7 +284,7 @@ Every config profile save creates a revision snapshot. The admin console can
 restore the previous revision if a rollout or model setting is wrong.
 
 The desktop client verifies the server signature before applying model presets
-or plugin registry overrides. If the remote config is missing or invalid, it
+or skill registry overrides. If the remote config is missing or invalid, it
 falls back to packaged defaults.
 
 If the service URL is empty, the client keeps using the static Qiniu update
@@ -312,5 +313,5 @@ COPY . .
 CMD ["node", "src/index.js"]
 ```
 
-Put Nginx/Caddy in front for HTTPS. Keep installer files and plugin packages on
+Put Nginx/Caddy in front for HTTPS. Keep installer files and skill packages on
 Qiniu; the API stores only metadata and hashes.

@@ -20,6 +20,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-runtime-packs-"));
 process.env.LILY_USER_DATA_DIR = tmp; // config resolves userData from this (no electron)
 
 const packs = require(path.join(ROOT, "src/main/runtime-packs.js"));
+const runtimePython = require(path.join(ROOT, "src/main/runtime-python.js"));
 
 // No state file yet → nothing installed.
 assert(Array.isArray(packs.getRuntimePackPythonPaths()), "should return an array");
@@ -29,6 +30,15 @@ assert(packs.getRuntimePackPythonPaths().length === 0, "fresh userData → no pa
 const proDir = packs.packDir("pro-pdf");
 fs.mkdirSync(proDir, { recursive: true });
 fs.writeFileSync(path.join(proDir, "marker.txt"), "x"); // dir exists on disk
+const libreOfficeProgramDir =
+  process.platform === "darwin"
+    ? path.join(packs.packDir("libreoffice"), "LibreOffice.app", "Contents", "MacOS")
+    : path.join(packs.packDir("libreoffice"), "program");
+fs.mkdirSync(libreOfficeProgramDir, { recursive: true });
+fs.writeFileSync(path.join(libreOfficeProgramDir, process.platform === "win32" ? "soffice.exe" : "soffice"), "x");
+const libreOfficeResourcesDir =
+  process.platform === "darwin" ? path.join(packs.packDir("libreoffice"), "LibreOffice.app", "Contents", "Resources") : null;
+if (libreOfficeResourcesDir) fs.mkdirSync(libreOfficeResourcesDir, { recursive: true });
 // A pip-source record (installs into the venv, no PYTHONPATH entry) and a record
 // whose dir was deleted (must not be returned) — both must be excluded.
 fs.writeFileSync(
@@ -37,6 +47,7 @@ fs.writeFileSync(
     schemaVersion: 1,
     installed: {
       "pro-pdf": { source: "artifact", version: "2.102.1" },
+      libreoffice: { source: "artifact", version: "25.8.7" },
       "legacy-pip": { source: "pip", version: "1.0.0" },
       "ghost": { source: "artifact", version: "9.9.9" }, // no dir on disk
     },
@@ -49,6 +60,25 @@ assert(paths.length === 1, `expected exactly one usable pack path, got ${JSON.st
 assert(paths[0] === proDir, "should return the artifact pack dir that exists on disk");
 assert(!paths.some((p) => p.includes("legacy-pip")), "pip-source packs must be excluded (they install into the venv)");
 assert(!paths.some((p) => p.includes("ghost")), "records without an on-disk dir must be excluded");
+
+const libreOfficeDirs = packs.getRuntimePackLibreOfficeDirs();
+assert(libreOfficeDirs.length === 1, `expected one LibreOffice program dir, got ${JSON.stringify(libreOfficeDirs)}`);
+assert(libreOfficeDirs[0] === libreOfficeProgramDir, "should resolve installed LibreOffice program dir");
+assert(
+  runtimePython.getRuntimePathEntries().includes(libreOfficeProgramDir),
+  "runtime PATH entries should include installed LibreOffice runtime pack",
+);
+const runtimeEnv = runtimePython.getRuntimeEnvExtras();
+assert(
+  runtimeEnv.LILY_LIBREOFFICE_PROGRAM,
+  `runtime env should expose a LibreOffice program dir, got ${JSON.stringify(runtimeEnv)}`,
+);
+if (libreOfficeResourcesDir && runtimeEnv.LILY_LIBREOFFICE_PROGRAM === libreOfficeProgramDir) {
+  assert(
+    runtimeEnv.UNO_PATH === libreOfficeResourcesDir,
+    `darwin UNO_PATH should point to LibreOffice.app Resources, got ${JSON.stringify(runtimeEnv)}`,
+  );
+}
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("runtime-packs: ok (reader contract, no electron mock)");

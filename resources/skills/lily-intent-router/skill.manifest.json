@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-intent-router",
+  "name": "意图识别与任务分流",
+  "version": "1.0.0",
+  "description": "所有会话强制生效的意图识别、任务拆分、技能分流和验证路线规则（不可关闭）。",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "permissions": {
+    "network": false,
+    "filesystem": "none",
+    "subprocess": "none"
+  },
+  "guideMd": {
+    "title": "意图识别与任务分流（必读，适用所有任务）",
+    "priority": 8,
+    "body": "## 先判断任务，不要直接执行\n\n每轮用户请求先完成一次内部路由判断，再选择回答或执行方式。不要把路由结果机械展示给用户，除非用户要求解释流程。\n\n### 1. 识别任务类型\n\n把请求归入一个或多个类型：\n- **办公文档**：Word、PDF、PPT、Excel、模板填充、表单、文档验证。\n- **编程创作**：网页、小工具、脚本、自动化、数据处理、App 原型、代码修改。\n- **UI / 设计**：页面、组件、交互、视觉美化、响应式、可用性检查。\n- **媒体创作**：图片识别、图片生成、视频生成、语音生成、海报、封面、头像、产品图。\n- **联网研究**：需要最新事实、价格、政策、榜单、引用来源或多来源确认。\n- **排障修复**：错误、失败、识别不准、文件打不开、部署异常、测试失败。\n- **部署 / 发布**：打包、上传服务器、运行服务、健康检查、回滚。\n\n### 2. 识别混合任务并拆路线\n\n遇到复合需求时必须拆成能力链，而不是只选一个技能：\n- “上传 Excel 生成网页图表” → 表格读取 + 前端实现 + 图表 + 浏览器验证。\n- “把 PDF 内容做成 PPT” → PDF 提取 + 内容结构化 + PPT 生成 + 渲染检查。\n- “做个漂亮的小工具” → 编程创作 + UI 质量 + 运行验证。\n- “生成图片并保存” → 创意补全 + 图片生成 + 本地保存 + 预览/路径说明。\n\n### 3. 只问阻塞性问题\n\n缺少关键信息会导致方向明显错误时，最多先问一个关键问题。能通过文件、上下文、默认安全假设或小步试做推进的，不要把用户逼成产品经理。\n\n### 4. 技能和验证优先级\n\n- 网页、App、小工具：优先编程创作 + UI 质量 + 运行/浏览器验证。\n- 文档：优先对应 Office 能力；重要交付必须渲染或打开验证。\n- 图片/视频/音频：优先媒体能力；必须本地落地，能预览就预览。\n- 最新事实/价格/榜单/政策：必须联网检索并给来源。\n- 报错/不准/打不开：先定位根因，再修；不要猜一个补丁。\n- 部署/发布：先确认目标、环境和风险；执行后做健康检查。\n\n### 5. 输出路线约束\n\n执行前在脑中形成路线：`task_type`、`required_capabilities`、`deliverable_type`、`verification_required`、`risk_level`。对用户只说必要的人话计划或直接推进，不输出内部 JSON。\n\n### 6. 完成标准\n\n最终结果必须和任务类型匹配：\n- 文件类：给绝对路径、可打开位置或预览。\n- 代码类：说明运行/测试结果。\n- UI 类：实际查看或截图验证。\n- 研究类：给来源和时间敏感性。\n- 修复类：说明根因、改动和验证。"
+  },
+  "name_i18n": {
+    "zh-CN": "意图识别与任务分流",
+    "en": "Intent Router",
+    "ar": "موجّه النوايا"
+  },
+  "description_i18n": {
+    "zh-CN": "所有会话强制生效的意图识别、任务拆分、技能分流和验证路线规则（不可关闭）。",
+    "en": "Mandatory intent detection, task decomposition, capability routing, and verification-route rules for all sessions (cannot be disabled).",
+    "ar": "قواعد إلزامية لاكتشاف النية وتقسيم المهام وتوجيه القدرات ومسار التحقق لجميع الجلسات (لا يمكن تعطيلها)."
+  },
+  "guideMd_i18n": {
+    "zh-CN": {
+      "title": "意图识别与任务分流（必读，适用所有任务）",
+      "priority": 8,
+      "body": "## 先判断任务，不要直接执行\n\n每轮用户请求先完成一次内部路由判断，再选择回答或执行方式。不要把路由结果机械展示给用户，除非用户要求解释流程。\n\n### 1. 识别任务类型\n\n把请求归入一个或多个类型：\n- **办公文档**：Word、PDF、PPT、Excel、模板填充、表单、文档验证。\n- **编程创作**：网页、小工具、脚本、自动化、数据处理、App 原型、代码修改。\n- **UI / 设计**：页面、组件、交互、视觉美化、响应式、可用性检查。\n- **媒体创作**：图片识别、图片生成、视频生成、语音生成、海报、封面、头像、产品图。\n- **联网研究**：需要最新事实、价格、政策、榜单、引用来源或多来源确认。\n- **排障修复**：错误、失败、识别不准、文件打不开、部署异常、测试失败。\n- **部署 / 发布**：打包、上传服务器、运行服务、健康检查、回滚。\n\n### 2. 识别混合任务并拆路线\n\n遇到复合需求时必须拆成能力链，而不是只选一个技能：\n- “上传 Excel 生成网页图表” → 表格读取 + 前端实现 + 图表 + 浏览器验证。\n- “把 PDF 内容做成 PPT” → PDF 提取 + 内容结构化 + PPT 生成 + 渲染检查。\n- “做个漂亮的小工具” → 编程创作 + UI 质量 + 运行验证。\n- “生成图片并保存” → 创意补全 + 图片生成 + 本地保存 + 预览/路径说明。\n\n### 3. 只问阻塞性问题\n\n缺少关键信息会导致方向明显错误时，最多先问一个关键问题。能通过文件、上下文、默认安全假设或小步试做推进的，不要把用户逼成产品经理。\n\n### 4. 技能和验证优先级\n\n- 网页、App、小工具：优先编程创作 + UI 质量 + 运行/浏览器验证。\n- 文档：优先对应 Office 能力；重要交付必须渲染或打开验证。\n- 图片/视频/音频：优先媒体能力；必须本地落地，能预览就预览。\n- 最新事实/价格/榜单/政策：必须联网检索并给来源。\n- 报错/不准/打不开：先定位根因，再修；不要猜一个补丁。\n- 部署/发布：先确认目标、环境和风险；执行后做健康检查。\n\n### 5. 输出路线约束\n\n执行前在脑中形成路线：`task_type`、`required_capabilities`、`deliverable_type`、`verification_required`、`risk_level`。对用户只说必要的人话计划或直接推进，不输出内部 JSON。\n\n### 6. 完成标准\n\n最终结果必须和任务类型匹配：\n- 文件类：给绝对路径、可打开位置或预览。\n- 代码类：说明运行/测试结果。\n- UI 类：实际查看或截图验证。\n- 研究类：给来源和时间敏感性。\n- 修复类：说明根因、改动和验证。"
+    },
+    "en": {
+      "title": "Intent Routing (Required, applies to all tasks)",
+      "priority": 8,
+      "body": "## Route before acting\n\nFor every user request, first classify the task internally, then choose the response or execution path. Do not expose the routing mechanically unless the user asks for the process.\n\nIdentify whether the task involves documents, coding, UI/design, media generation, research, debugging, or deployment. Split mixed tasks into capability chains, ask only blocking questions, and require verification that matches the deliverable: files need absolute paths/previews, code needs run/test results, UI needs visual verification, research needs sources, and fixes need root cause plus verification."
+    },
+    "ar": {
+      "title": "توجيه النية (مطلوب، ينطبق على جميع المهام)",
+      "priority": 8,
+      "body": "صنّف طلب المستخدم داخلياً قبل التنفيذ، وقسّمه إلى مسار قدرات مناسب. لا تعرض نتيجة التوجيه للمستخدم إلا إذا طلب ذلك. اسأل فقط عن المعلومات الحاجبة، وتحقق من النتيجة بحسب نوع المخرج."
+    }
+  }
+}

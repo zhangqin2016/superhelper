@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-prompt-enhancer",
+  "name": "Lily Prompt Enhancer",
+  "description": "把简短创意需求扩写成高质量图片或视频提示词，覆盖头像、产品图、海报、封面、国风角色、PPT 配图和视频分镜。",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "category": "media",
+  "categoryLabel": "媒体创意",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "workflow",
+  "riskLevel": "low",
+  "permissions": {
+    "network": false,
+    "filesystem": "none",
+    "subprocess": "none"
+  },
+  "guideMd": {
+    "title": "创意提示增强",
+    "priority": 13,
+    "body": "用户给出简短创意需求并要求优化/扩写提示词时使用。不要机械翻译，要补全用途、主体、构图、风格、光线、比例、负面约束和迭代方向；覆盖头像、产品图、海报、封面、国风角色、PPT 配图、视频分镜。lily-creative-director 负责上层创意判断，本技能负责把方向落成 prompt。"
+  }
+}

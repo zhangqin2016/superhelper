@@ -100,7 +100,9 @@ for (const file of jsonlFiles) {
   }
 
   if (expected.firstQuestion) {
-    const question = actions.find((action) => action.kind === "ask_user_question");
+    const question = actions.find((action) =>
+      action.kind === "ask_user_question" || action.kind === "user_input_request"
+    );
     if (question?.questions?.[0]?.question !== expected.firstQuestion) {
       throw new Error(`${file} expected first question ${expected.firstQuestion}, got ${JSON.stringify(question)}`);
     }
@@ -110,6 +112,12 @@ for (const file of jsonlFiles) {
     const result = actions.find((action) => action.kind === "turn_result");
     if (result?.event?.subtype !== expected.resultSubtype) {
       throw new Error(`${file} expected result subtype ${expected.resultSubtype}, got ${result?.event?.subtype}`);
+    }
+  }
+
+  for (const code of expected.noticeCodes || []) {
+    if (!actions.some((action) => action.notice?.code === code)) {
+      throw new Error(`${file} expected notice code ${code}`);
     }
   }
 

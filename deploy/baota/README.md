@@ -277,17 +277,19 @@ cd deploy/baota
 
 ## 从本地一键打包推送到服务器
 
-如果不想在服务器上 `git pull`，可以本地直接打包上传并部署：
+如果不想在服务器上 `git pull`，标准流程是本地打包、上传七牛云，服务器再从七牛云下载并部署。这样避免大包直接走 SSH/SCP，网络断开时也更容易重试。
 
 ```bash
 cd /Users/zhangqin/aicode/ceshitermianl
-chmod +x deploy/baota/push-to-server.sh
+chmod +x deploy/baota/push-via-qiniu.sh
 SSH_HOST=你的服务器IP \
 SSH_USER=root \
 SSH_PORT=22 \
 REMOTE_DIR=/www/wwwroot/lily-workbench \
-deploy/baota/push-to-server.sh
+deploy/baota/push-via-qiniu.sh
 ```
+
+`push-to-server.sh` 只保留为兼容入口，实际也会转到 `push-via-qiniu.sh`。
 
 第一次部署前，服务器上的 `.env` 仍然要配置好：
 

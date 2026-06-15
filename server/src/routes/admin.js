@@ -8,14 +8,15 @@ import { registerAdminConfigProfileRoutes } from "./admin/config-profiles.js";
 import { registerAdminContactRoutes } from "./admin/contacts.js";
 import { registerAdminDeviceRoutes } from "./admin/devices.js";
 import { registerAdminDiagnosticsRoutes } from "./admin/diagnostics.js";
-import { registerAdminDocumentPackRoutes } from "./admin/document-packs.js";
+import { registerAdminRuntimePackRoutes } from "./admin/runtime-packs.js";
 import { registerAdminLicenseRoutes } from "./admin/licenses.js";
 import { registerAdminModelProviderRoutes } from "./admin/model-providers.js";
-import { registerAdminPluginRoutes } from "./admin/plugins.js";
 import { registerAdminReleaseRoutes } from "./admin/releases.js";
 import { registerAdminSummaryRoutes } from "./admin/summary.js";
 import { registerAdminSystemRoutes } from "./admin/system.js";
+import { registerAdminSkillPackageRoutes } from "./admin/skill-packages.js";
 import { registerAdminUsageRoutes } from "./admin/usage.js";
+import { registerAdminWorkspaceAppRoutes } from "./admin/workspace-apps.js";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -88,8 +89,9 @@ export async function adminRoutes(app) {
   registerAdminDiagnosticsRoutes(app);
   registerAdminContactRoutes(app);
   registerAdminReleaseRoutes(app, { audit });
-  registerAdminDocumentPackRoutes(app, { audit });
-  registerAdminPluginRoutes(app, { audit });
+  registerAdminRuntimePackRoutes(app, { audit });
+  registerAdminSkillPackageRoutes(app, { audit });
+  registerAdminWorkspaceAppRoutes(app, { audit });
   registerAdminModelProviderRoutes(app, { audit });
   registerAdminConfigGroupRoutes(app, { audit });
   registerAdminConfigProfileRoutes(app, { audit });

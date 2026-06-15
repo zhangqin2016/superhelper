@@ -16,7 +16,7 @@ const http = require("node:http");
 const { resolveSettingsEnvValue } = require("./agent-settings");
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-const DEFAULT_MODEL = "qwen3.7-plus";
+const DEFAULT_MODEL = "qwen3-vl-plus";
 // qwen-vl inference on a full-size screenshot routinely takes >15s; 15s timed
 // out mid-recognition and the image was silently dropped. 60s leaves headroom;
 // override with VISION_TIMEOUT_MS.
@@ -37,11 +37,22 @@ function isVisionInputFile(file) {
   return Boolean(MIME_MAP[ext]);
 }
 
+function normalizeVisionModel(model) {
+  const value = String(model || "").trim();
+  if (!value) return DEFAULT_MODEL;
+  const legacyAliases = {
+    "qwen3.7-plus": "qwen3-vl-plus",
+    "qwen3.7-max": "qwen3-vl-plus",
+    "qwen3.7-flash": "qwen3-vl-flash",
+  };
+  return legacyAliases[value.toLowerCase()] || value;
+}
+
 function getVisionConfig() {
   return {
     baseUrl: resolveSettingsEnvValue("DASHSCOPE_BASE_URL") || DEFAULT_BASE_URL,
     apiKey: resolveSettingsEnvValue("VISION_API_KEY", "DASHSCOPE_API_KEY"),
-    model: resolveSettingsEnvValue("VISION_MODEL") || DEFAULT_MODEL,
+    model: normalizeVisionModel(resolveSettingsEnvValue("VISION_MODEL")),
   };
 }
 
@@ -447,6 +458,7 @@ module.exports = {
   imageToDataUrl,
   isImageOnlyUserMessage,
   isVisionInputFile,
+  normalizeVisionModel,
   translateImage,
   translateImages,
 };

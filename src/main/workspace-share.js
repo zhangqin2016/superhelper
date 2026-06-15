@@ -20,6 +20,7 @@ const JSZip = require("jszip");
 
 const MANIFEST_NAME = "lily-workspace.json";
 const SCHEMA_VERSION = 1;
+const SUPPORTED_KINDS = new Set(["lily-workspace-pack", "lily-workspace-app"]);
 const FILES_PREFIX = "files/";
 const CONVENTIONS_ENTRY = "conventions.md";
 
@@ -205,7 +206,7 @@ async function readPackManifest(zipBuffer) {
   } catch {
     throw new Error("MANIFEST_CORRUPT");
   }
-  if (manifest?.kind !== "lily-workspace-pack" || !Number.isInteger(manifest.schemaVersion)) {
+  if (!SUPPORTED_KINDS.has(manifest?.kind) || !Number.isInteger(manifest.schemaVersion)) {
     throw new Error("NOT_A_WORKSPACE_PACK");
   }
   if (manifest.schemaVersion > SCHEMA_VERSION) throw new Error("PACK_TOO_NEW");
@@ -240,6 +241,7 @@ async function importWorkspacePack(zipBuffer, targetDir) {
 module.exports = {
   MANIFEST_NAME,
   SCHEMA_VERSION,
+  SUPPORTED_KINDS,
   EXCLUDED_DIRS,
   isExcluded,
   listShareableFiles,

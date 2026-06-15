@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-research-synthesis",
+  "name": "Lily Research Synthesis",
+  "description": "需要最新信息、排行榜、价格、政策法规、竞品调研、资料汇总或带来源事实核验时使用，要求联网、多来源交叉验证和引用来源。",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "category": "research",
+  "categoryLabel": "研究事实",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "workflow",
+  "riskLevel": "low",
+  "permissions": {
+    "network": true,
+    "filesystem": "none",
+    "subprocess": "none"
+  },
+  "guideMd": {
+    "title": "研究事实核验",
+    "priority": 18,
+    "body": "用户要最新信息、排行榜、价格、政策、竞品、资料汇总或带来源事实时使用。必须联网，不要凭记忆回答可变事实；用可替换的搜索后端检索，打开并阅读来源，多来源交叉验证，标注检索日期、来源链接、冲突和不确定点。纯创意方向交给 lily-creative-director；真实资料和事实底座由本技能负责。"
+  }
+}

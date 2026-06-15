@@ -42,8 +42,8 @@ Release admin:
 - The download URL is prefilled as `{RELEASE_CDN_BASE_URL}/{RELEASE_CDN_PREFIX}/{platform}/{version}/{filename}`.
 - The file still needs to be uploaded to CDN/Qiniu before the release is enabled.
 
-Plugin marketplace:
+Skill package marketplace:
 
-- Admin `/admin/plugins` can publish plugin metadata.
-- Enabled `type=skill` entries with package URL and SHA256 are exposed at `/api/plugins/registry` by the API server.
+- Admin `/admin/skill-packages` publishes skill package metadata.
+- Enabled skill package entries with package URL and SHA256 are exposed at `/api/skills/registry` by the API server.
 - The desktop client can use that registry URL in Settings -> Skills to check, install, update, and enable skills.

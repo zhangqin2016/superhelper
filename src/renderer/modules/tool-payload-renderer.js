@@ -4,6 +4,7 @@
 
 import { renderMarkdown } from "./markdown.js";
 import { t } from "../i18n/index.js";
+import { revealLocalFileInFolder } from "./file-reveal.js";
 
 const FILE_PATH_KEYS = ["file_path", "path", "target_file"];
 const LONG_TEXT_KEYS = new Set([
@@ -163,6 +164,19 @@ function fileUrlFromPath(filePath = "") {
   if (/^[a-zA-Z]:[\\/]/.test(value)) return encodeURI(`file:///${value.replace(/\\/g, "/")}`);
   if (value.startsWith("/")) return encodeURI(`file://${value}`);
   return value;
+}
+
+function revealSessionId(root, options = {}) {
+  return options.sessionId || root?.closest?.("[data-session-id]")?.dataset?.sessionId || "";
+}
+
+function revealFileInFolder(root, filePath, options = {}) {
+  return revealLocalFileInFolder(filePath, revealSessionId(root, options));
+}
+
+function isRevealableLocalPath(filePath = "") {
+  const value = String(filePath || "").trim();
+  return /^file:/i.test(value) || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
 }
 
 function mediaTitle(type) {
@@ -371,7 +385,7 @@ function renderGenericObject(root, obj, { skip = new Set() } = {}) {
   return rendered;
 }
 
-function renderGeneratedMedia(root, mediaBlocks = []) {
+function renderGeneratedMedia(root, mediaBlocks = [], options = {}) {
   if (!mediaBlocks.length) return false;
   for (const media of mediaBlocks) {
     const wrap = document.createElement("div");
@@ -424,18 +438,19 @@ function renderGeneratedMedia(root, mediaBlocks = []) {
       label.textContent = t("tool.media.savedTo");
       const pathCode = document.createElement("code");
       pathCode.textContent = file.path;
-      // A bare path is hard to act on — clicking it (or the reveal button)
-      // shows the file in the system file manager.
-      const reveal = document.createElement("button");
-      reveal.type = "button";
-      reveal.className = "assistant-reveal-btn";
-      reveal.textContent = t("file.reveal");
-      const doReveal = () => void window.assistantClient.revealInFolder(file.path);
-      reveal.addEventListener("click", doReveal);
-      pathCode.classList.add("is-clickable");
-      pathCode.title = t("file.reveal");
-      pathCode.addEventListener("click", doReveal);
-      caption.append(label, pathCode, reveal);
+      caption.append(label, pathCode);
+      if (isRevealableLocalPath(file.path)) {
+        const reveal = document.createElement("button");
+        reveal.type = "button";
+        reveal.className = "assistant-reveal-btn";
+        reveal.textContent = t("file.reveal");
+        const doReveal = () => void revealFileInFolder(root, file.path, options);
+        reveal.addEventListener("click", doReveal);
+        pathCode.classList.add("is-clickable");
+        pathCode.title = t("file.reveal");
+        pathCode.addEventListener("click", doReveal);
+        caption.appendChild(reveal);
+      }
       item.appendChild(caption);
       grid.appendChild(item);
     });
@@ -445,7 +460,7 @@ function renderGeneratedMedia(root, mediaBlocks = []) {
   return true;
 }
 
-function renderGeneratedFiles(root, files = []) {
+function renderGeneratedFiles(root, files = [], options = {}) {
   if (!files.length) return false;
   const wrap = document.createElement("div");
   wrap.className = "assistant-generated-files";
@@ -453,17 +468,21 @@ function renderGeneratedFiles(root, files = []) {
     const row = document.createElement("div");
     row.className = "assistant-generated-file-row";
     const name = document.createElement("code");
-    name.className = "assistant-generated-file-path is-clickable";
+    name.className = "assistant-generated-file-path";
     name.textContent = file.path;
-    name.title = t("file.reveal");
-    const reveal = () => void window.assistantClient?.revealInFolder?.(file.path);
-    name.addEventListener("click", reveal);
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "assistant-reveal-btn";
-    btn.textContent = t("file.reveal");
-    btn.addEventListener("click", reveal);
-    row.append(name, btn);
+    row.appendChild(name);
+    if (isRevealableLocalPath(file.path)) {
+      name.classList.add("is-clickable");
+      name.title = t("file.reveal");
+      const reveal = () => void revealFileInFolder(root, file.path, options);
+      name.addEventListener("click", reveal);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "assistant-reveal-btn";
+      btn.textContent = t("file.reveal");
+      btn.addEventListener("click", reveal);
+      row.appendChild(btn);
+    }
     wrap.appendChild(row);
   }
   root.appendChild(wrap);
@@ -518,8 +537,8 @@ function renderSearchPayload(root, payload) {
 function renderStructuredPayload(root, tool, payload, options = {}) {
   if (!payload) return false;
   if (options.role === "result") {
-    renderGeneratedMedia(root, generatedMediaFromPayload(payload));
-    renderGeneratedFiles(root, generatedFilesFromPayload(payload));
+    renderGeneratedMedia(root, generatedMediaFromPayload(payload), options);
+    renderGeneratedFiles(root, generatedFilesFromPayload(payload), options);
   }
   const kind = toolKind(tool.name);
   if (kind === "write") renderWritePayload(root, payload, options);
@@ -535,14 +554,14 @@ function renderStructuredPayload(root, tool, payload, options = {}) {
 /**
  * Append structured tool input/result into a tool row. Returns true if rendered.
  */
-export function appendToolPayloadDetail(container, tool, { role = "input", compactFileContent = false } = {}) {
+export function appendToolPayloadDetail(container, tool, { role = "input", compactFileContent = false, sessionId = "" } = {}) {
   if (!container) return false;
 
   const payload = role === "result" ? parseToolResult(tool.result) : parseToolInput(tool);
   if (!payload) return false;
 
   const root = createPayloadRoot(role === "result" ? "is-result" : "is-input");
-  const ok = renderStructuredPayload(root, tool, payload, { compact: compactFileContent, role });
+  const ok = renderStructuredPayload(root, tool, payload, { compact: compactFileContent, role, sessionId });
   if (!ok) return false;
   container.appendChild(root);
   return true;

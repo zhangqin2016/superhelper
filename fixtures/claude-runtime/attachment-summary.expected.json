@@ -1,0 +1,10 @@
+{
+  "description": "Claude attachment and summary top-level events are protocol-known metadata, not unknown runtime warnings.",
+  "mustIncludeKinds": ["system_notice", "engine_notice", "turn_result"],
+  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
+  "warningCount": 0,
+  "counts": {
+    "engine_notice": 2,
+    "turn_result": 1
+  }
+}

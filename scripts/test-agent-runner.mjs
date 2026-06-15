@@ -284,10 +284,10 @@ const roots = bundledCatalogRoots();
 if (!roots.some((r) => r.includes("skills-catalog"))) {
   throw new Error(`bundledCatalogRoots missing skills-catalog: ${roots.join("|")}`);
 }
-if (!isBundledInCatalog("anthropics-algorithmic-art")) {
+if (!isBundledInCatalog("anthropics-docx")) {
   throw new Error("isBundledInCatalog sample skill failed");
 }
-if (!resolveBundledCatalogDir("anthropics-algorithmic-art")) {
+if (!resolveBundledCatalogDir("anthropics-docx")) {
   throw new Error("resolveBundledCatalogDir sample skill failed");
 }
 
@@ -645,6 +645,42 @@ try {
   if (!sent) throw new Error("sendUserMessage should accept text payload");
   if (written.length !== 1 || written[0].type !== "user") {
     throw new Error(`sendUserMessage should write only the user payload, got ${JSON.stringify(written)}`);
+  }
+}
+
+{
+  const session = new AgentSession("send_epipe_test");
+  const errors = [];
+  session.bindOrchestrator({
+    ingest: () => {},
+    notifyRunnerDone: () => {},
+    notifyRunnerError(_sessionId, message) {
+      errors.push(message);
+    },
+  });
+  session.process = {
+    killed: false,
+    stdin: {
+      destroyed: false,
+      write() {
+        const err = new Error("write EPIPE");
+        err.code = "EPIPE";
+        throw err;
+      },
+      once() {},
+      on() {},
+    },
+  };
+  session.cwd = process.cwd();
+  session.spawnOptions = { agentCommand: "/tmp/fake", permissionMode: "default" };
+  const sent = session.sendUserMessage({ text: "hello", files: [] });
+  session._clearTurnResponseTimer();
+  session._clearAbsoluteTurnTimer();
+  session._clearWaitNoticeTimers();
+  if (sent) throw new Error("sendUserMessage should reject EPIPE writes");
+  if (session.isBusy()) throw new Error("EPIPE should settle the turn");
+  if (!errors.some((message) => /EPIPE|connection/i.test(message))) {
+    throw new Error(`EPIPE should notify runner error, got ${JSON.stringify(errors)}`);
   }
 }
 

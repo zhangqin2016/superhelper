@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-intent-eval",
+  "name": "Lily Intent Eval",
+  "description": "为 Lily 意图路由维护黄金样例和回归测试，覆盖 Office、编程、UI、媒体、研究、运行时和混合任务。",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "category": "quality",
+  "categoryLabel": "质量评测",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "quality",
+  "riskLevel": "low",
+  "permissions": {
+    "network": false,
+    "filesystem": "none",
+    "subprocess": "none"
+  },
+  "guideMd": {
+    "title": "意图路由评测",
+    "priority": 3,
+    "body": "用于维护意图路由黄金样例和回归测试。样例需声明 prompt、预期意图、预期路由、禁止路由、追问要求和验收证据，覆盖 Office、Coding、UI、Media、Research、Runtime 与混合任务。"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-app-builder",
+  "name": "Lily App Builder",
+  "description": "普通用户一句话做网页、小工具、脚本、自动化或本地应用时使用，从自然语言到可运行产物、启动验证和绝对路径交付。",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "category": "dev",
+  "categoryLabel": "编程研发",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "workflow",
+  "riskLevel": "low",
+  "permissions": {
+    "network": false,
+    "filesystem": "none",
+    "subprocess": "none"
+  }
+}

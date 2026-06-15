@@ -2,6 +2,7 @@
  * Enhanced markdown rendering with syntax highlighting.
  * Uses highlight.js via dynamic ESM import.
  */
+import { revealLocalFileInFolder } from "./file-reveal.js";
 
 let hljsReady = false;
 let hljs = null;
@@ -13,6 +14,11 @@ let mermaid = null;
 const MARKED_OPTIONS = { gfm: true, breaks: false };
 const MERMAID_LANGUAGES = new Set(["mermaid", "flowchart", "sequence", "sequenceDiagram", "classDiagram", "stateDiagram"]);
 const DIFF_LANGUAGES = new Set(["diff", "patch"]);
+const LOCAL_FILE_EXTENSIONS = "png|jpe?g|gif|webp|bmp|svg|pdf|docx?|xlsx?|pptx?|csv|txt|md|json|html?|zip|tar|gz|mp4|mov|mp3|wav";
+const LOCAL_FILE_PATH_RE = new RegExp(
+  "(^|[\\s([{：:，,])((?:/|[A-Za-z]:[\\\\/])[^<>\\n\"'`]*?\\.(?:" + LOCAL_FILE_EXTENSIONS + "))(?![A-Za-z0-9._-])",
+  "gi",
+);
 
 function isTableSeparatorLine(line = "") {
   const trimmed = String(line).trim();
@@ -82,14 +88,23 @@ function createMarkedRenderer({ hl = null, cacheCode = false } = {}) {
     const safeHref = sanitizeUrl(href, { allowRelative: true });
     if (!safeHref) return text;
     const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
-    return `<a href="${escapeAttribute(safeHref)}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
+    const localPath = localFilePathFromUrl(safeHref);
+    const localAttrs = localPath
+      ? ` class="markdown-local-file-link" data-local-file-path="${escapeAttribute(localPath)}"`
+      : "";
+    return `<a href="${escapeAttribute(safeHref)}"${localAttrs} target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
   };
   renderer.image = function ({ href, title, text }) {
     const safeSrc = sanitizeUrl(href, { allowRelative: true, image: true });
     const alt = escapeAttribute(text || "");
     if (!safeSrc) return alt;
     const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
-    return `<img class="markdown-image" src="${escapeAttribute(safeSrc)}" alt="${alt}" loading="lazy"${titleAttr}>`;
+    const localPath = localFilePathFromUrl(safeSrc);
+    const localAttrs = localPath
+      ? ` data-local-file-path="${escapeAttribute(localPath)}"`
+      : "";
+    const classes = localPath ? "markdown-image markdown-local-file-image" : "markdown-image";
+    return `<img class="${classes}" src="${escapeAttribute(safeSrc)}" alt="${alt}" loading="lazy"${localAttrs}${titleAttr}>`;
   };
 
   renderer.code = function ({ text, lang }) {
@@ -185,17 +200,35 @@ function escapeAttribute(text) {
 function sanitizeUrl(value, { allowRelative = false, image = false } = {}) {
   const href = String(value || "").trim();
   if (!href) return "";
-  if (allowRelative && (href.startsWith("/") || href.startsWith("./") || href.startsWith("../") || href.startsWith("#"))) {
+  if (allowRelative && (href.startsWith("/") || href.startsWith("#"))) {
     return href;
   }
   if (/^(https?:|mailto:)/i.test(href)) return href;
+  if (/^file:/i.test(href)) return href;
   if (image && href.startsWith("data:image/")) return href;
   if (image && /^(file:|blob:)/i.test(href)) return href;
   try {
     const url = new URL(href, window.location?.href || "file:///");
     if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") return href;
+    if (url.protocol === "file:" && localFilePathFromUrl(href)) return href;
     if (image && (url.protocol === "file:" || url.protocol === "blob:")) return href;
   } catch {}
+  return "";
+}
+
+function localFilePathFromUrl(value = "") {
+  const href = String(value || "").trim();
+  if (!href || href.startsWith("#")) return "";
+  if (/^file:/i.test(href)) {
+    try {
+      new URL(href);
+      return href;
+    } catch {
+      return "";
+    }
+  }
+  if (/^\/(?!\/)/.test(href)) return href;
+  if (/^[A-Za-z]:[\\/]/.test(href)) return href;
   return "";
 }
 
@@ -309,6 +342,11 @@ function wireMarkdownImages(element) {
     if (image.dataset.viewerReady === "true") continue;
     image.dataset.viewerReady = "true";
     image.addEventListener("click", async () => {
+      const localPath = image.dataset.localFilePath || "";
+      if (localPath) {
+        await revealLocalFileInFolder(localPath, markdownSessionId(image));
+        return;
+      }
       try {
         const mod = await import("./image-viewer.js");
         mod.openImageViewer?.(image.currentSrc || image.src, image.alt || "");
@@ -317,8 +355,69 @@ function wireMarkdownImages(element) {
   }
 }
 
+function wireMarkdownLocalFileLinks(element) {
+  if (!element?.querySelectorAll) return;
+  for (const link of element.querySelectorAll("a.markdown-local-file-link[data-local-file-path]")) {
+    if (link.dataset.revealReady === "true") continue;
+    link.dataset.revealReady = "true";
+    link.title ||= link.dataset.localFilePath || "";
+    link.addEventListener("click", (event) => {
+      const filePath = link.dataset.localFilePath || "";
+      if (!filePath) return;
+      event.preventDefault();
+      void revealLocalFileInFolder(filePath, markdownSessionId(link));
+    });
+  }
+}
+
+function markdownSessionId(node) {
+  return node?.closest?.("[data-session-id]")?.dataset?.sessionId || "";
+}
+
+function shouldSkipPathAutolink(node) {
+  const parent = node?.parentElement;
+  if (!parent) return true;
+  return Boolean(parent.closest("a, code, pre, button, textarea, input, script, style, .markdown-code-frame"));
+}
+
+function autolinkLocalFilePaths(element) {
+  if (!element?.ownerDocument?.createTreeWalker) return;
+  const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (!shouldSkipPathAutolink(node) && LOCAL_FILE_PATH_RE.test(node.nodeValue || "")) {
+      nodes.push(node);
+    }
+    LOCAL_FILE_PATH_RE.lastIndex = 0;
+  }
+
+  for (const node of nodes) {
+    const text = node.nodeValue || "";
+    const fragment = element.ownerDocument.createDocumentFragment();
+    let lastIndex = 0;
+    for (const match of text.matchAll(LOCAL_FILE_PATH_RE)) {
+      const prefix = match[1] || "";
+      const rawPath = match[2] || "";
+      const start = (match.index || 0) + prefix.length;
+      if (start > lastIndex) fragment.append(text.slice(lastIndex, start));
+      const link = element.ownerDocument.createElement("a");
+      link.className = "markdown-local-file-link";
+      link.href = rawPath;
+      link.dataset.localFilePath = rawPath;
+      link.textContent = rawPath;
+      fragment.append(link);
+      lastIndex = start + rawPath.length;
+    }
+    if (lastIndex < text.length) fragment.append(text.slice(lastIndex));
+    node.parentNode?.replaceChild(fragment, node);
+  }
+}
+
 function enhanceRenderedMarkdown(element, { interactive = false } = {}) {
   wireMarkdownImages(element);
+  autolinkLocalFilePaths(element);
+  wireMarkdownLocalFileLinks(element);
   normalizeTaskLists(element);
   if (interactive) wireCodeCopyButtons(element);
 }

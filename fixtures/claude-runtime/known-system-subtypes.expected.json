@@ -1,0 +1,10 @@
+{
+  "description": "Known Claude CLI system subtypes from v2.1.177 should normalize as notices without protocol warnings.",
+  "mustIncludeKinds": ["system_notice", "turn_result"],
+  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
+  "warningCount": 0,
+  "counts": {
+    "system_notice": 6,
+    "turn_result": 1
+  }
+}

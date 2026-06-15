@@ -14,7 +14,18 @@ try { require("dotenv").config({ path: path.resolve(__dirname, ".env") }); } cat
 
 const BASE_URL = process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const API_KEY = process.env.VISION_API_KEY || process.env.DASHSCOPE_API_KEY || "";
-const MODEL = process.env.VISION_MODEL || "qwen-vl-plus";
+const MODEL = normalizeVisionModel(process.env.VISION_MODEL);
+
+function normalizeVisionModel(model) {
+  const value = String(model || "").trim();
+  if (!value) return "qwen3-vl-plus";
+  const legacyAliases = {
+    "qwen3.7-plus": "qwen3-vl-plus",
+    "qwen3.7-max": "qwen3-vl-plus",
+    "qwen3.7-flash": "qwen3-vl-flash",
+  };
+  return legacyAliases[value.toLowerCase()] || value;
+}
 
 function parseArgs() {
   const argv = process.argv.slice(2);

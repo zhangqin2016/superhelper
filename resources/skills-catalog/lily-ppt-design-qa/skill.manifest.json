@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-ppt-design-qa",
+  "name": "Lily PPT Design QA",
+  "description": "PPT 生成或编辑后检查层级、版式、溢出、一致性、文字密度、图片/图表质量、导出渲染和交付状态。",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "category": "office",
+  "categoryLabel": "办公文档",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "quality",
+  "riskLevel": "low",
+  "permissions": {
+    "network": false,
+    "filesystem": "none",
+    "subprocess": "none"
+  }
+}

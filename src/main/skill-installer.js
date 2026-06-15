@@ -7,6 +7,7 @@ const { execFileSync } = require("node:child_process");
 const { userDataPath, agentConfigDir } = require("./config");
 const { compareSemver, isAppVersionCompatible } = require("./skill-version");
 const skillGithubInstaller = require("./skill-github-installer");
+const { buildManifestFromSkillMd } = require("./skill-md-convert");
 const { findSkillRoot } = require("./skill-root");
 const { copyDirRecursiveShipSafe, isShipIgnoredEntry } = require("./ship-ignore");
 const {
@@ -113,13 +114,42 @@ function validateManifest(manifest, expectedId) {
   if (manifest.id !== expectedId) {
     return { ok: false, error: "INVALID_MANIFEST", detail: "Skill ID does not match the directory" };
   }
-  if (manifest.runtime && manifest.runtime !== "node") {
+  if (manifest.runtime && manifest.runtime !== "node" && manifest.runtime !== "none") {
     return { ok: false, error: "INVALID_MANIFEST", detail: "Only node runtime is supported" };
   }
   if (manifest.minAppVersion && !isAppVersionCompatible(manifest.minAppVersion)) {
     return { ok: false, error: "INVALID_MANIFEST", detail: "A newer version of the application is required" };
   }
   return { ok: true, manifest };
+}
+
+function normalizeManifestFromRegistry(entry, manifest, skillMd) {
+  const base = manifest && typeof manifest === "object"
+    ? { ...manifest }
+    : buildManifestFromSkillMd({
+      skillId: entry.id,
+      skillMd,
+      version: entry.latestVersion,
+    });
+  return {
+    ...base,
+    schemaVersion: 1,
+    id: entry.id,
+    name: entry.name || base.name || entry.id,
+    description: entry.description || base.description || "",
+    version: base.version || entry.latestVersion,
+    minAppVersion: entry.minAppVersion || base.minAppVersion || "0.1.0",
+    category: entry.category || base.category || null,
+    categoryLabel: entry.categoryLabel || base.categoryLabel || null,
+    publisher: entry.publisher || base.publisher || "Lily Workbench",
+    capabilityLayer: entry.capabilityLayer || base.capabilityLayer || "tool",
+    riskLevel: entry.riskLevel || base.riskLevel || "low",
+    permissions: {
+      network: Boolean(base.permissions?.network),
+      filesystem: base.permissions?.filesystem || "none",
+      subprocess: base.permissions?.subprocess || "none",
+    },
+  };
 }
 
 function copyDirRecursive(source, target) {
@@ -188,8 +218,21 @@ async function installFromRegistryEntry(entry) {
       return { ok: false, error: "INVALID_MANIFEST", detail: "Invalid archive structure (SKILL.md or skill.manifest.json not found)" };
     }
 
+    const skillMdPath = path.join(skillRoot, "SKILL.md");
+    if (!fs.existsSync(skillMdPath)) {
+      return { ok: false, error: "INVALID_MANIFEST", detail: "SKILL.md not found" };
+    }
     const manifestPath = path.join(skillRoot, "skill.manifest.json");
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    let manifest = null;
+    if (fs.existsSync(manifestPath)) {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    }
+    manifest = normalizeManifestFromRegistry(
+      entry,
+      manifest,
+      fs.readFileSync(skillMdPath, "utf8"),
+    );
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     const validated = validateManifest(manifest, entry.id);
     if (!validated.ok) return validated;
 

@@ -1,0 +1,2 @@
+{"type":"control_request","request_id":"req_dialog_1","request":{"subtype":"request_user_dialog","message":"请选择输出格式","options":[{"label":"PDF"},{"label":"Word"}]}}
+{"type":"control_request","request_id":"req_elicit_1","request":{"subtype":"elicitation","prompt":"请补充客户名称"}}

@@ -5,14 +5,14 @@ export default async function DocsPage() {
   const { locale, t } = await getI18n();
   const sections = [
     ["Install", "Download the macOS Apple Silicon or Windows x64 installer from the download page. The client stores workspaces, sessions, and device identity locally."],
-    ["Connect service", "Open Settings, set the Service API URL, then use Test connection. When healthy, activation, updates, plugin marketplace, and usage reporting prefer the service API."],
+    ["Connect service", "Open Settings, set the Service API URL, then use Test connection. When healthy, activation, updates, skill package sync, and usage reporting prefer the service API."],
     ["Activate", "Create a license in the admin console, copy the one-time key, and paste it into the desktop app. Seats are enforced by device binding."],
     ["Workspaces", "Each workspace maps to a local folder and owns its own chat sessions, history, skills, and working context."],
-    ["Plugins", "Skill packages can be published through the admin console and installed by the desktop client. MCP/tool entries are listed as catalog metadata until runtime installers are enabled."],
+    ["Skill packages", "Skill packages are published through the admin console and synced by the desktop client like resource packs."],
     ["Updates", "Upload installers to Qiniu, create release metadata in the admin console, and clients will check the release API. Static Qiniu latest.json remains available as a fallback."],
   ];
   const faqs = [
-    ["Do you store prompts?", "No. The usage API stores aggregate counts only: device id, license id, model, message count, image count, tool count, plugin count, and token counts."],
+    ["Do you store prompts?", "No. The usage API stores aggregate counts only: device id, license id, model, message count, image count, tool count, skill count, and token counts."],
     ["Can a disabled license keep working?", "The client refreshes server licenses on startup and when the service connection is tested. A disabled license or device binding is marked invalid."],
     ["Can this run without a server?", "Yes. Offline signed activation codes and static Qiniu update manifests still work when the service URL is empty."],
   ];

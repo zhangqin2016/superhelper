@@ -54,8 +54,8 @@ if (!day || day.inputTokens !== 3000 || day.outputTokens !== 1500 || day.message
   throw new Error(`merged day record wrong: ${JSON.stringify(day)}`);
 }
 
-if (summary.pricingId !== "deepseek_x5") {
-  throw new Error(`pricingId should be deepseek_x5, got ${summary.pricingId}`);
+if (summary.pricingId !== "deepseek_standard") {
+  throw new Error(`pricingId should be deepseek_standard, got ${summary.pricingId}`);
 }
 
 fs.rmSync(tmpRoot, { recursive: true, force: true });

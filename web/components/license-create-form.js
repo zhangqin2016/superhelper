@@ -21,7 +21,7 @@ export function LicenseCreateForm() {
         <SelectField label="Plan" name="plan" defaultValue="pro" options={["trial", "pro", "team", "enterprise"]} />
         <Field label="Seats" name="seats" type="number" defaultValue="1" required />
         <Field label="Expires at" name="expiresAt" type="datetime-local" required />
-        <Field label="Features" name="features" defaultValue="updates,plugins,usage" />
+        <Field label="Features" name="features" defaultValue="updates,skill-packages,usage" />
         <div className="flex items-end">
           <SubmitButton disabled={pending}>{pending ? "..." : t.admin.pages.licenses[0]}</SubmitButton>
         </div>

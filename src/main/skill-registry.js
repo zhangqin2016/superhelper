@@ -61,6 +61,10 @@ function normalizeRegistryEntry(raw) {
     categoryLabel: raw.categoryLabel ? String(raw.categoryLabel) : null,
     publisher: raw.publisher ? String(raw.publisher) : null,
     sourceRepo: raw.sourceRepo ? String(raw.sourceRepo) : null,
+    capabilityLayer: raw.capabilityLayer ? String(raw.capabilityLayer) : "core",
+    riskLevel: raw.riskLevel ? String(raw.riskLevel) : "low",
+    defaultEligible: Boolean(raw.defaultEligible),
+    featured: Boolean(raw.featured),
   };
 
   if (raw.sourceType === "github" || raw.github) {
@@ -192,6 +196,7 @@ function loadCachedRegistry() {
     return {
       fetchedAt: raw.fetchedAt || null,
       sourceUrl: raw.sourceUrl || null,
+      updatedAt: raw.updatedAt || null,
       publisher: raw.publisher || "",
       categories: Array.isArray(raw.categories) ? raw.categories : [],
       remoteIndexes: Array.isArray(raw.remoteIndexes) ? raw.remoteIndexes : [],
@@ -206,7 +211,14 @@ function ensureBundledRegistryCached() {
   const bundled = loadBundledRegistry();
   if (!bundled) return null;
   const cached = loadCachedRegistry();
-  if (!cached || cached.sourceUrl !== BUNDLED_REGISTRY_SOURCE) {
+  const cachedIds = (cached?.skills || []).map((entry) => entry.id).join("\n");
+  const bundledIds = (bundled.skills || []).map((entry) => entry.id).join("\n");
+  if (
+    !cached ||
+    cached.sourceUrl !== BUNDLED_REGISTRY_SOURCE ||
+    cached.updatedAt !== bundled.updatedAt ||
+    cachedIds !== bundledIds
+  ) {
     const fetchedAt = cacheRegistry(bundled, BUNDLED_REGISTRY_SOURCE);
     return { ...bundled, fetchedAt };
   }
@@ -239,8 +251,8 @@ function mergeCategoryLists(...lists) {
 }
 
 function categoriesForRegistry(registry) {
-  const merged = mergeCategoryLists(registry?.categories, loadBundledRegistry()?.categories);
-  if (merged.length > 0) return merged;
+  const explicit = mergeCategoryLists(registry?.categories);
+  if (explicit.length > 0) return explicit;
 
   const byId = new Map();
   for (const skill of registry?.skills || []) {
@@ -251,7 +263,9 @@ function categoriesForRegistry(registry) {
       label: skill.categoryLabel || skill.category,
     });
   }
-  return Array.from(byId.values());
+  const derived = Array.from(byId.values());
+  if (derived.length > 0) return derived;
+  return mergeCategoryLists(loadBundledRegistry()?.categories);
 }
 
 /** Service entries win on id collision; bundled fills gaps for offline catalog. */

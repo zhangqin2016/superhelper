@@ -1,0 +1,6 @@
+{"type":"control_request","request_id":"req_mcp_1","request":{"subtype":"mcp_message","server":"demo","message":{"type":"ping"}}}
+{"type":"control_request","request_id":"req_oauth_1","request":{"subtype":"oauth_token_refresh","provider":"demo"}}
+{"type":"control_request","request_id":"req_host_auth_1","request":{"subtype":"host_auth_token_refresh","provider":"demo"}}
+{"type":"control_request","request_id":"req_color_1","request":{"subtype":"set_color","color":"purple"}}
+{"type":"control_request","request_id":"req_mcp_toggle_1","request":{"subtype":"mcp_toggle","server":"demo","enabled":true}}
+{"type":"control_request","request_id":"req_rating_1","request":{"subtype":"message_rated","message_id":"msg_1","rating":"up"}}

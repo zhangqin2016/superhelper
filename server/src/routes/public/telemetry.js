@@ -35,11 +35,11 @@ const usageSummarySchema = registerDeviceSchema.extend({
   historyDays: z.number().int().min(1).max(90).optional().default(30),
 });
 
-const pluginEventSchema = registerDeviceSchema.extend({
+const skillEventSchema = registerDeviceSchema.extend({
   licenseId: z.string().max(80).optional().nullable(),
   eventType: z.enum(["install", "update", "uninstall", "enable", "disable"]),
-  pluginId: z.string().min(1).max(160),
-  pluginVersion: z.string().max(80).optional().nullable(),
+  skillId: z.string().min(1).max(160),
+  skillVersion: z.string().max(80).optional().nullable(),
   metadata: z.record(z.any()).optional().default({}),
 });
 
@@ -127,16 +127,16 @@ export function registerPublicTelemetryRoutes(app) {
     });
   });
 
-  app.post("/api/plugins/events", async (request, reply) => {
-    const input = pluginEventSchema.parse(request.body);
+  app.post("/api/skills/events", async (request, reply) => {
+    const input = skillEventSchema.parse(request.body);
     await upsertDevice(input);
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;
     await db
-      .insertInto("plugin_events")
+      .insertInto("skill_events")
       .values({
         event_type: input.eventType,
-        plugin_id: input.pluginId,
-        plugin_version: input.pluginVersion || null,
+        skill_id: input.skillId,
+        skill_version: input.skillVersion || null,
         license_id: input.licenseId || null,
         device_id: input.deviceId,
         app_version: input.appVersion || null,

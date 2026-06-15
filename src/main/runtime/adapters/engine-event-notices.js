@@ -14,6 +14,20 @@ const TASK_PROGRESS_SUBTYPES = new Set([
   "status",
 ]);
 
+const KNOWN_SILENT_SYSTEM_SUBTYPES = new Set([
+  "apply_flag_settings",
+  "informational",
+  "reload_plugins",
+  "session_state_changed",
+  "set_max_thinking_tokens",
+  "set_model",
+  "set_permission_mode",
+  "task_summary",
+  "turn_duration",
+  "turn_starting",
+  "ultrareview_launch",
+]);
+
 function compactValue(value) {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" || typeof value === "boolean") return String(value);
@@ -140,6 +154,57 @@ function classifySystemEvent(ev) {
         replacesCode: "compactBoundary",
         done: true,
       };
+    case "model_fallback":
+    case "model_refusal_fallback":
+      return {
+        code: "modelFallback",
+        level: "info",
+        panel: true,
+        replace: true,
+        done: true,
+        detail: extractTaskDetail(ev),
+        model: typeof ev.model === "string" ? ev.model : "",
+        subtype,
+      };
+    case "interrupt":
+      return {
+        code: "interrupted",
+        level: "warning",
+        panel: true,
+        replace: true,
+        done: true,
+        detail: extractTaskDetail(ev),
+        subtype,
+      };
+    case "read_file":
+      return {
+        code: "readFile",
+        level: "progress",
+        panel: false,
+        replace: true,
+        detail: extractTaskDetail(ev),
+        subtype,
+      };
+    case "side_question":
+      return {
+        code: "sideQuestion",
+        level: "progress",
+        panel: true,
+        replace: true,
+        detail: extractTaskDetail(ev),
+        subtype,
+      };
+    case "error":
+    case "error_during_execution":
+      return {
+        code: "engineError",
+        level: "warning",
+        panel: true,
+        replace: true,
+        done: true,
+        detail: extractTaskDetail(ev),
+        subtype,
+      };
     case "api_retry": {
       const attempt = Number(ev.attempt) || 1;
       const maxRetries = Number(ev.max_retries ?? ev.maxRetries) || 0;
@@ -224,6 +289,17 @@ function classifySystemEvent(ev) {
           level: "progress",
           panel: true,
           replace: true,
+          detail: extractTaskDetail(ev),
+          subtype,
+        };
+      }
+      if (KNOWN_SILENT_SYSTEM_SUBTYPES.has(subtype)) {
+        return {
+          code: subtype,
+          level: "info",
+          panel: false,
+          replace: true,
+          done: true,
           detail: extractTaskDetail(ev),
           subtype,
         };

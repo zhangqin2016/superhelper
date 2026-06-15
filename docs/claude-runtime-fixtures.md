@@ -33,9 +33,14 @@ node scripts/test-runtime-adapter.mjs
 - streaming tool use,
 - tool input delta and tool result,
 - AskUserQuestion loose payloads,
+- interactive `request_user_dialog` / `elicitation` control requests,
+- non-blocking control requests such as MCP, OAuth refresh, color/theme, and
+  message rating handshakes,
 - SDK permission requests,
-- hook callback control requests,
+- documented hook callback families including tool, session, compact,
+  permission, task, elicitation, config, worktree, cwd/file, and display hooks,
 - echoed control responses,
+- assistant `supersedes` metadata,
 - permission denied system events,
 - task progress/completion telemetry,
 - result error subtypes such as `error_max_budget_usd`,
@@ -46,8 +51,32 @@ node scripts/test-runtime-adapter.mjs
 Use the probe script to inspect the installed Claude CLI:
 
 ```bash
+CLAUDE_PROBE_OUT_DIR=/tmp/lily-claude-events \
+CLAUDE_PROBE_TIMEOUT_MS=60000 \
+CLAUDE_PROBE_MAX_BUDGET_USD=0.04 \
 node scripts/probe-claude-events.mjs
 ```
+
+When `CLAUDE_PROBE_OUT_DIR` is set, the probe writes:
+
+- `<case>.jsonl`: sanitized raw material to turn into fixtures.
+- `event-catalog.json`: merged event shape inventory across all cases.
+- `summary.json`: per-case exit status, normalized action counts, and warnings.
+
+The probe currently covers:
+
+- plain assistant text,
+- stream-json stdin input,
+- file reads and bash/tool use,
+- stdio permission prompt mode when the installed CLI emits control requests,
+- multi-step local file generation,
+- user interruption with `SIGINT`.
+
+The event inventory is intentionally treated as discovery output, not a golden
+test. Claude CLI versions can add new telemetry events at any time. If a probe
+run discovers a useful new event shape, convert the smallest sanitized JSONL into
+a permanent fixture under `fixtures/claude-runtime/` and add assertions for the
+app-level behavior.
 
 For a real issue, save a sanitized JSONL trace as a new fixture. Remove private
 paths, user text, tokens, hostnames, and file contents. Keep event structure,

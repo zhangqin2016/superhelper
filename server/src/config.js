@@ -32,7 +32,7 @@ export const config = {
   modelGatewayClientToken: process.env.MODEL_GATEWAY_CLIENT_TOKEN || "",
   modelGatewayProviders: process.env.MODEL_GATEWAY_PROVIDERS || "",
   modelGatewayDefaultProvider: process.env.MODEL_GATEWAY_DEFAULT_PROVIDER || "deepseek",
-  modelConfigDeliveryMode: String(process.env.MODEL_CONFIG_DELIVERY_MODE || "gateway").toLowerCase(),
+  modelConfigDeliveryMode: String(process.env.MODEL_CONFIG_DELIVERY_MODE || "direct").toLowerCase(),
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "",
   anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com",
   openaiApiKey: process.env.OPENAI_API_KEY || "",
@@ -43,7 +43,7 @@ export const config = {
   dashscopeChatApiKey: process.env.DASHSCOPE_CHAT_API_KEY || process.env.DASHSCOPE_LLM_API_KEY || "",
   dashscopeBaseUrl: process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/apps/anthropic",
   dashscopeModel: process.env.DASHSCOPE_MODEL || "qwen3-coder-plus",
-  visionModel: process.env.VISION_MODEL || "qwen3.7-plus",
+  visionModel: process.env.VISION_MODEL || "qwen3-vl-plus",
   // Server-side vision + web-search proxies (key stays on server; clients use a
   // gateway token). Vision reuses the DashScope key (dashscopeApiKey).
   visionUpstreamBaseUrl: process.env.VISION_UPSTREAM_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1",

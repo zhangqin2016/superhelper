@@ -150,7 +150,7 @@ def _try_pro_pdf(path):
     # Opt-in upgrade: if the "pro-pdf" pack is installed (Docling importable),
     # use its layout/reading-order/table-structure analysis for complex PDFs.
     # Absent or failing, return None so the light path below handles it — the
-    # base install is never burdened with the heavy import. See document-packs.js.
+    # base install is never burdened with the heavy import. See runtime-packs.js.
     try:
         from docling.document_converter import DocumentConverter
     except Exception:  # noqa: BLE001 — pack not installed; this is the normal base case

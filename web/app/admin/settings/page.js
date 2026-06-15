@@ -40,6 +40,20 @@ export default async function SettingsPage() {
           </div>
           <div className="lg:col-span-2 max-w-md">
             <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-slate-800">聊天模型投递方式</span>
+              <select
+                name="modelDeliveryMode"
+                defaultValue={settings.modelDeliveryMode || "direct"}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
+              >
+                <option value="direct">直连（更快；真实密钥下发到客户端）</option>
+                <option value="gateway">走网关（密钥只在服务端，客户端拿短期 token，多一跳）</option>
+              </select>
+              <span className="mt-1 block text-xs text-slate-500">主聊天模型如何下发。直连绕开网关、弱网更稳；网关把密钥留在服务端但多一跳。改后默认配置会即时重建。</span>
+            </label>
+          </div>
+          <div className="lg:col-span-2 max-w-md">
+            <label className="block">
               <span className="mb-2 block text-sm font-semibold text-slate-800">媒体投递方式（图片 / 视频 / 识图 / 语音）</span>
               <select
                 name="mediaDeliveryMode"

@@ -37,6 +37,23 @@ function readJson(req) {
   });
 }
 
+function generatedFilePaths(stdout) {
+  return [...String(stdout || "").matchAll(/<file\b[^>]*\bpath="([^"]+)"/g)].map((match) => match[1]);
+}
+
+function assertGeneratedPath(stdout, expectedDirName) {
+  const [filePath] = generatedFilePaths(stdout);
+  assert.ok(filePath, `missing generated file path in stdout: ${stdout}`);
+  assert.ok(path.isAbsolute(filePath), `generated file path must be absolute: ${filePath}`);
+  const expectedRoot = fs.realpathSync(path.join(tmp, expectedDirName));
+  const generatedDir = fs.realpathSync(path.dirname(filePath));
+  assert.ok(
+    generatedDir === expectedRoot,
+    `generated file path should stay under ${expectedDirName}: ${filePath}`,
+  );
+  return filePath;
+}
+
 async function startMockServer() {
   const seen = { image: 0, video: 0, speech: 0 };
   const server = http.createServer(async (req, res) => {
@@ -133,19 +150,19 @@ try {
   const image = await runNode(scripts.image, { prompt: "一张莲花图", size: "1328*1328" }, env, tmp);
   assert.equal(image.code, 0, image.stderr);
   assert.match(image.stdout, /generated_media type="image"/);
-  assert.match(image.stdout, /generated-assets\/image-/);
+  assert.match(assertGeneratedPath(image.stdout, "generated-assets"), /generated-assets\/image-/);
   assert.match(image.stdout, /!\[生成图片\]\(/);
   assert.match(image.stderr, /正在提交图片生成任务/);
 
   const video = await runNode(scripts.video, { prompt: "一段莲花盛开视频", timeout_ms: 5000 }, env, tmp);
   assert.equal(video.code, 0, video.stderr);
   assert.match(video.stdout, /generated_media type="video"/);
-  assert.match(video.stdout, /generated-assets\/video-/);
+  assert.match(assertGeneratedPath(video.stdout, "generated-assets"), /generated-assets\/video-/);
 
   const speech = await runNode(scripts.speech, { text: "你好，欢迎使用 Lily Workbench" }, env, tmp);
   assert.equal(speech.code, 0, speech.stderr);
   assert.match(speech.stdout, /generated_media type="speech"/);
-  assert.match(speech.stdout, /generated-assets\/speech-/);
+  assert.match(assertGeneratedPath(speech.stdout, "generated-assets"), /generated-assets\/speech-/);
 
   const aliyunAlias = await runNode(
     scripts.speech,
@@ -159,7 +176,7 @@ try {
     tmp,
   );
   assert.equal(aliyunAlias.code, 0, aliyunAlias.stderr);
-  assert.match(aliyunAlias.stdout, /alias-assets\/speech-/);
+  assert.match(assertGeneratedPath(aliyunAlias.stdout, "alias-assets"), /alias-assets\/speech-/);
 
   assert.equal(seen.image, 1);
   assert.equal(seen.video, 1);

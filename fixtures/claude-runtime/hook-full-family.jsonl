@@ -1,0 +1,16 @@
+{"type":"control_request","request_id":"req_hook_1","request":{"subtype":"hook_callback","hook_event":{"hook":"PostToolBatch"}}}
+{"type":"control_request","request_id":"req_hook_2","request":{"subtype":"hook_callback","hook_event":{"hook":"StopFailure"}}}
+{"type":"control_request","request_id":"req_hook_3","request":{"subtype":"hook_callback","hook_event":{"hook":"SubagentStart"}}}
+{"type":"control_request","request_id":"req_hook_4","request":{"subtype":"hook_callback","hook_event":{"hook":"SessionEnd"}}}
+{"type":"control_request","request_id":"req_hook_5","request":{"subtype":"hook_callback","hook_event":{"hook":"PostCompact"}}}
+{"type":"control_request","request_id":"req_hook_6","request":{"subtype":"hook_callback","hook_event":{"hook":"PermissionDenied"}}}
+{"type":"control_request","request_id":"req_hook_7","request":{"subtype":"hook_callback","hook_event":{"hook":"TaskCreated"}}}
+{"type":"control_request","request_id":"req_hook_8","request":{"subtype":"hook_callback","hook_event":{"hook":"TaskCompleted"}}}
+{"type":"control_request","request_id":"req_hook_9","request":{"subtype":"hook_callback","hook_event":{"hook":"Elicitation"}}}
+{"type":"control_request","request_id":"req_hook_10","request":{"subtype":"hook_callback","hook_event":{"hook":"ConfigChange"}}}
+{"type":"control_request","request_id":"req_hook_11","request":{"subtype":"hook_callback","hook_event":{"hook":"WorktreeCreate"}}}
+{"type":"control_request","request_id":"req_hook_12","request":{"subtype":"hook_callback","hook_event":{"hook":"WorktreeRemove"}}}
+{"type":"control_request","request_id":"req_hook_13","request":{"subtype":"hook_callback","hook_event":{"hook":"InstructionsLoaded"}}}
+{"type":"control_request","request_id":"req_hook_14","request":{"subtype":"hook_callback","hook_event":{"hook":"CwdChanged"}}}
+{"type":"control_request","request_id":"req_hook_15","request":{"subtype":"hook_callback","hook_event":{"hook":"FileChanged"}}}
+{"type":"control_request","request_id":"req_hook_16","request":{"subtype":"hook_callback","hook_event":{"hook":"MessageDisplay"}}}

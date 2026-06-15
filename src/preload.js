@@ -129,6 +129,10 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   getServiceSettings: () => ipcRenderer.invoke("service:get-settings"),
   testServiceConnection: () => ipcRenderer.invoke("service:test-connection"),
+  listWorkspaceApps: () => ipcRenderer.invoke("apps:catalog"),
+  installWorkspaceApp: (app) => ipcRenderer.invoke("apps:install", app),
+  openInstalledWorkspaceApp: (appId) => ipcRenderer.invoke("apps:open-installed", { id: appId }),
+  uninstallWorkspaceApp: (appId) => ipcRenderer.invoke("apps:uninstall", { id: appId }),
 
   getUpdateSettings: () => ipcRenderer.invoke("updates:get-settings"),
   getUpdateState: () => ipcRenderer.invoke("updates:get-state"),
@@ -155,8 +159,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("filetree:search-files", { rootPath, query, limit }),
   rememberConvention: (sessionId, text) =>
     ipcRenderer.invoke("assistant:remember-convention", { sessionId, text }),
-  revealInFolder: (filePath) =>
-    ipcRenderer.invoke("filetree:reveal", { filePath }),
+  revealInFolder: (filePath, sessionId = "") =>
+    ipcRenderer.invoke("filetree:reveal", { filePath, sessionId }),
 
   onRuntimeEvents: (callback) => {
     ipcRenderer.on("assistant:runtime-events", (_event, batch) => callback(batch));

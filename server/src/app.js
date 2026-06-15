@@ -1,12 +1,14 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
+import multipart from "@fastify/multipart";
 import { config } from "./config.js";
 import { publicRoutes } from "./routes/public.js";
 import { adminRoutes } from "./routes/admin.js";
 import { modelGatewayRoutes } from "./services/model-gateway.js";
 import { mediaGatewayRoutes } from "./services/media-gateway.js";
 import { ensureEnvManagedConfigProfile } from "./services/client-config.js";
+import { ensureEnvQiniuConfigSeeded } from "./services/app-settings.js";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
@@ -42,6 +44,13 @@ export async function buildApp() {
   await app.register(cookie, {
     secret: config.sessionSecret,
   });
+  await app.register(multipart, {
+    limits: {
+      fileSize: 50 * 1024 * 1024,
+      files: 1,
+      fields: 32,
+    },
+  });
 
   app.addHook("preHandler", async (request, reply) => {
     if (!request.url.startsWith("/api/") && !request.url.startsWith("/llm/")) return;
@@ -58,6 +67,7 @@ export async function buildApp() {
   });
 
   await ensureEnvManagedConfigProfile();
+  await ensureEnvQiniuConfigSeeded();
   await app.register(publicRoutes);
   await app.register(adminRoutes);
   await app.register(modelGatewayRoutes);

@@ -37,6 +37,20 @@ export async function apiPost(path, body) {
   return json;
 }
 
+export async function apiPostForm(path, formData) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    cache: "no-store",
+    headers: await adminHeaders(),
+    body: formData,
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.code || `API ${path} failed: ${response.status}`);
+  }
+  return json;
+}
+
 export async function apiPatch(path, body) {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "PATCH",

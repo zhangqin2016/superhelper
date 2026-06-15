@@ -1,0 +1,6 @@
+{
+  "description": "Assistant supersedes metadata is preserved so the UI can replace stale assistant output instead of duplicating it.",
+  "mustIncludeKinds": ["assistant_supersedes", "assistant_text", "turn_result"],
+  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
+  "warningCount": 0
+}

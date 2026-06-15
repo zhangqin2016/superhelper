@@ -4,6 +4,38 @@ const { ipcMain, dialog, shell } = require("electron");
 const { ensureSessionRunner } = require("./ipc-utils");
 const { defaultSessionTitle } = require("./session-manager");
 
+const WORKSPACE_APP_DOWNLOAD_LIMIT = 50 * 1024 * 1024;
+const WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS = 120_000;
+
+function safeFolderName(value) {
+  return String(value || "workspace-app")
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1f]+/g, "-")
+    .replace(/^\.+/, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 80) || "workspace-app";
+}
+
+async function downloadWorkspaceApp(app) {
+  const url = String(app?.downloadUrl || "").trim();
+  if (!/^https:\/\//i.test(url)) {
+    throw new Error("INVALID_APP_DOWNLOAD_URL");
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`DOWNLOAD_FAILED_${response.status}`);
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > WORKSPACE_APP_DOWNLOAD_LIMIT) throw new Error("WORKSPACE_APP_TOO_LARGE");
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > WORKSPACE_APP_DOWNLOAD_LIMIT) throw new Error("WORKSPACE_APP_TOO_LARGE");
+    return buffer;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function registerProjectHandlers(ctx) {
   const { mainWindow, projectManager, sessionManager, runnerPool } = ctx;
 
@@ -173,6 +205,132 @@ function registerProjectHandlers(ctx) {
     } catch (err) {
       return { ok: false, error: err.message };
     }
+  });
+
+  ipcMain.handle("apps:install", async (_event, app) => {
+    try {
+      const crypto = require("node:crypto");
+      const fs = require("node:fs");
+      const path = require("node:path");
+      const { importWorkspacePack, readPackManifest } = require("./workspace-share");
+      const { writeLearnedConventions } = require("./learned-context");
+      const skillManager = require("./skill-manager");
+      const runtimePackInstaller = require("./runtime-pack-installer");
+      const workspaceAppInstalls = require("./workspace-app-installs");
+
+      const zipBuffer = await downloadWorkspaceApp(app);
+      const expectedSha = String(app?.sha256 || "").toLowerCase();
+      const actualSha = crypto.createHash("sha256").update(zipBuffer).digest("hex");
+      if (expectedSha && actualSha !== expectedSha) {
+        return { ok: false, error: "CHECKSUM_MISMATCH" };
+      }
+
+      const { manifest: peek } = await readPackManifest(zipBuffer);
+      const baseDir = path.join(path.dirname(projectManager.defaultPath), "Lily Apps");
+      fs.mkdirSync(baseDir, { recursive: true });
+      const baseName = safeFolderName(peek.name || app?.name || app?.id || "workspace-app");
+      let targetDir = path.join(baseDir, baseName);
+      let n = 2;
+      while (fs.existsSync(targetDir)) targetDir = path.join(baseDir, `${baseName}-${n++}`);
+
+      const installedSkills = new Set(skillManager.getGloballyEnabledSkillIds());
+      const manifestSkills = Array.isArray(peek.requiredSkills) ? peek.requiredSkills : [];
+      const catalogSkills = Array.isArray(app?.requiredSkillPackages) ? app.requiredSkillPackages : [];
+      const requiredSkills = [...new Set([...manifestSkills, ...catalogSkills])];
+      const missingSkills = requiredSkills
+        .filter((id) => !installedSkills.has(id));
+
+      const installedRuntimePacks = runtimePackInstaller.installedRuntimePackIds();
+      const manifestRuntimePacks = Array.isArray(peek.requiredRuntimePacks) ? peek.requiredRuntimePacks : [];
+      const catalogRuntimePacks = Array.isArray(app?.requiredRuntimePacks) ? app.requiredRuntimePacks : [];
+      const requiredRuntimePacks = [...new Set([...manifestRuntimePacks, ...catalogRuntimePacks])];
+      const missingRuntimePacks = requiredRuntimePacks
+        .filter((id) => !installedRuntimePacks.has(id));
+      const installedDependencies = { skills: [], runtimePacks: [] };
+      const failedDependencies = { skills: [], runtimePacks: [] };
+
+      for (const skillId of missingSkills) {
+        const install = await skillManager.installFromRegistry(skillId);
+        if (install.ok) installedDependencies.skills.push(skillId);
+        else failedDependencies.skills.push({ id: skillId, error: install.error || "INSTALL_FAILED" });
+      }
+
+      for (const packId of missingRuntimePacks) {
+        const install = await runtimePackInstaller.installRuntimePack(packId);
+        if (install.ok) installedDependencies.runtimePacks.push(packId);
+        else failedDependencies.runtimePacks.push({ id: packId, error: install.error || "INSTALL_FAILED" });
+      }
+
+      if (failedDependencies.skills.length || failedDependencies.runtimePacks.length) {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+        return {
+          ok: false,
+          error: "APP_DEPENDENCY_INSTALL_FAILED",
+          failedDependencies,
+          installedDependencies,
+        };
+      }
+
+      const { manifest, conventions } = await importWorkspacePack(zipBuffer, targetDir);
+      const project = projectManager.add(targetDir);
+      if (manifest.name) projectManager.rename(project.id, manifest.name);
+      if (conventions) writeLearnedConventions(project.id, conventions);
+      sessionManager.create(project.id, defaultSessionTitle());
+      const installedRecord = workspaceAppInstalls.recordInstalled({
+        app,
+        manifest,
+        project,
+        targetDir,
+        installedDependencies,
+      });
+
+      return {
+        ok: true,
+        state: projectManager.getAppState(),
+        projectId: project.id,
+        projectName: manifest.name || project.name,
+        workspacePath: targetDir,
+        missingSkills: [],
+        missingRuntimePacks: [],
+        installedDependencies,
+        installedApp: installedRecord,
+      };
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle("apps:open-installed", async (_event, payload) => {
+    const appId = String(payload?.id || payload?.appId || "").trim();
+    const record = require("./workspace-app-installs").readState().apps[appId];
+    if (!record) return { ok: false, error: "NOT_FOUND" };
+    const project = projectManager.find(record.projectId);
+    if (!project) return { ok: false, error: "PROJECT_NOT_FOUND" };
+    projectManager.switchTo(project.id);
+    const sessions = sessionManager.listForProject(project.id);
+    if (sessions.length > 0) sessionManager.switchTo(sessions[0].id);
+    return { ok: true, state: projectManager.getAppState(), projectId: project.id, projectName: project.name, workspacePath: project.path, sessions };
+  });
+
+  ipcMain.handle("apps:uninstall", async (_event, payload) => {
+    const fs = require("node:fs");
+    const appId = String(payload?.id || payload?.appId || "").trim();
+    const workspaceAppInstalls = require("./workspace-app-installs");
+    const record = workspaceAppInstalls.readState().apps[appId];
+    if (!record) return { ok: false, error: "NOT_FOUND" };
+    if (!workspaceAppInstalls.isInsideInstallRoot(projectManager.defaultPath, record.path)) {
+      return { ok: false, error: "UNSAFE_APP_PATH" };
+    }
+
+    const project = projectManager.find(record.projectId);
+    if (project) {
+      const sessionIds = sessionManager.purgeProject(project.id);
+      for (const sessionId of sessionIds) runnerPool.terminateSession(sessionId);
+      projectManager.remove(project.id);
+    }
+    fs.rmSync(record.path, { recursive: true, force: true });
+    workspaceAppInstalls.forgetInstalled(appId);
+    return { ok: true, state: projectManager.getAppState(), appId };
   });
 }
 

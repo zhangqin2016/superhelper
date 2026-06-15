@@ -100,6 +100,44 @@ export async function createSkillPackageAction(_previousState, formData) {
   }
 }
 
+export async function createWorkspaceAppAction(_previousState, formData) {
+  formData = actionFormData(_previousState, formData);
+  try {
+    const uploadForm = new FormData();
+    for (const key of [
+      "appId",
+      "name",
+      "summary",
+      "description",
+      "version",
+      "category",
+      "appType",
+      "entryKind",
+      "publisher",
+      "sourceRepo",
+      "minAppVersion",
+      "channel",
+      "riskLevel",
+      "tags",
+      "requiredRuntimePacks",
+      "requiredSkillPackages",
+      "notes",
+    ]) {
+      uploadForm.set(key, text(formData, key));
+    }
+    uploadForm.set("sourceKind", "lily");
+    if (bool(formData, "featured")) uploadForm.set("featured", "true");
+    if (bool(formData, "disabled")) uploadForm.set("disabled", "true");
+    const artifact = formData.get("artifact");
+    if (artifact) uploadForm.set("artifact", artifact);
+    const result = await apiPostForm("/api/admin/workspace-apps/upload", uploadForm);
+    revalidatePath("/admin/apps");
+    return { ok: true, message: `Workspace app ${result.appId} uploaded.` };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to upload workspace app." };
+  }
+}
+
 export async function createConfigProfileAction(_previousState, formData) {
   formData = actionFormData(_previousState, formData);
   try {
@@ -242,6 +280,11 @@ export async function setSkillPackageEnabledAction(formData) {
   revalidatePath("/admin/skill-packages");
 }
 
+export async function setWorkspaceAppEnabledAction(formData) {
+  await apiPatch(`/api/admin/workspace-apps/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
+  revalidatePath("/admin/apps");
+}
+
 export async function setConfigProfileEnabledAction(formData) {
   await apiPatch(`/api/admin/config-profiles/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
   revalidatePath("/admin/config");
@@ -255,6 +298,7 @@ export async function rollbackConfigProfileAction(formData) {
 export async function updateSettingsAction(formData) {
   await apiPatch("/api/admin/settings", {
     licenseTrialDays: Number(text(formData, "licenseTrialDays") || 0),
+    modelDeliveryMode: text(formData, "modelDeliveryMode") || undefined,
     mediaDeliveryMode: text(formData, "mediaDeliveryMode") || undefined,
     qiniu: {
       publicBaseUrl: text(formData, "qiniuPublicBaseUrl"),

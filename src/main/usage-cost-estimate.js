@@ -9,15 +9,15 @@ const PRICING = {
     inputPerMillion: 0.8,
     outputPerMillion: 2,
   },
-  /** DeepSeek list-style reference × 5 (CNY per 1M tokens). */
-  deepseek_x5: {
-    id: "deepseek_x5",
-    inputPerMillion: 10,
-    outputPerMillion: 40,
+  /** DeepSeek standard reference price (CNY per 1M tokens). */
+  deepseek_standard: {
+    id: "deepseek_standard",
+    inputPerMillion: 2,
+    outputPerMillion: 8,
   },
 };
 
-const DEFAULT_PRICING_ID = "deepseek_x5";
+const DEFAULT_PRICING_ID = "deepseek_standard";
 
 function numberValue(value) {
   const n = Number(value || 0);

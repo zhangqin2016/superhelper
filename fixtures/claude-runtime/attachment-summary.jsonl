@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"sess_attachment_summary","cwd":"/workspace","model":"sonnet"}
+{"type":"attachment","uuid":"att_goal","timestamp":"2026-06-15T00:00:00.000Z","attachment":{"type":"goal_status","met":false,"sentinel":"done","condition":"finish the report"}}
+{"type":"summary","searchCount":3,"readCount":12,"replCount":1,"uuid":"summary-init"}
+{"type":"result","subtype":"success","session_id":"sess_attachment_summary","is_error":false,"result":"done"}

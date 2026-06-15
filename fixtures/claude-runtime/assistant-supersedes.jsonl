@@ -1,0 +1,2 @@
+{"type":"assistant","supersedes":"msg_old","message":{"id":"msg_new","type":"message","role":"assistant","content":[{"type":"text","text":"替换后的回复"}]}}
+{"type":"result","subtype":"success","session_id":"sess_supersedes","is_error":false,"result":"替换后的回复"}

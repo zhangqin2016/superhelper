@@ -30,6 +30,31 @@ require.cache[electronPath] = {
     },
   },
 };
+const isolatedServiceClientPath = path.join(ROOT, "src/main/service-client.js");
+require.cache[isolatedServiceClientPath] = {
+  id: isolatedServiceClientPath,
+  filename: isolatedServiceClientPath,
+  loaded: true,
+  exports: {
+    getServiceSettings() {
+      return { ok: true, apiBaseUrl: "", configurable: false };
+    },
+    reportSkillEvent() {
+      return Promise.resolve({ ok: true, skipped: true });
+    },
+  },
+};
+const isolatedRemoteConfigPath = path.join(ROOT, "src/main/remote-config.js");
+require.cache[isolatedRemoteConfigPath] = {
+  id: isolatedRemoteConfigPath,
+  filename: isolatedRemoteConfigPath,
+  loaded: true,
+  exports: {
+    getRemoteEffectiveConfigSync() {
+      return null;
+    },
+  },
+};
 
 const skillManager = require(path.join(ROOT, "src/main/skill-manager.js"));
 const skillPresets = require(path.join(ROOT, "src/main/skill-presets.js"));
@@ -40,14 +65,69 @@ fs.writeFileSync(
   JSON.stringify({
     schemaVersion: 1,
     registryUrl: "https://stale-user-registry.example.com/registry.json",
-    skills: {},
+    skills: {
+      "anthropics-algorithmic-art": {
+        id: "anthropics-algorithmic-art",
+        enabled: true,
+        source: "remote",
+        installedVersion: "1.0.0",
+      },
+      "marketing-referrals": {
+        id: "marketing-referrals",
+        enabled: true,
+        source: "remote",
+        installedVersion: "1.0.0",
+      },
+    },
   }),
 );
-skillManager.bootstrapSkills();
+for (const skillId of ["anthropics-algorithmic-art", "marketing-referrals"]) {
+  const skillDir = path.join(tmp, "lily-config", "skills", skillId);
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(path.join(skillDir, "SKILL.md"), `# ${skillId}\n`, "utf8");
+  fs.writeFileSync(
+    path.join(skillDir, "skill.manifest.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: skillId,
+      name: skillId,
+      description: "",
+      version: "1.0.0",
+    }, null, 2),
+    "utf8",
+  );
+}
+fs.mkdirSync(path.join(tmp, "skills-cache"), { recursive: true });
+fs.writeFileSync(
+  path.join(tmp, "skills-cache", "registry.json"),
+  JSON.stringify({
+    fetchedAt: "2026-01-01T00:00:00.000Z",
+    sourceUrl: skillRegistry.BUNDLED_REGISTRY_SOURCE,
+    schemaVersion: 1,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    publisher: "stale bundled catalog",
+    categories: [{ id: "design", label: "Design" }],
+    skills: [
+      {
+        id: "anthropics-algorithmic-art",
+        name: "Algorithmic Art",
+        latestVersion: "1.0.0",
+        sourceType: "github",
+        github: {
+          repo: "anthropics/skills",
+          path: "skills/algorithmic-art",
+          ref: "main",
+        },
+      },
+    ],
+  }),
+);
+const bootstrapResult = skillManager.bootstrapSkills();
 
 const mandatory = skillManager.MANDATORY_PLATFORM_SKILL_IDS;
 const expectedMandatory = [
   "lily-workbench-rules",
+  "lily-intent-router",
   "lily-context-rules",
   "lily-task-execution-rules",
 ];
@@ -80,6 +160,10 @@ const productRulesIndex = firstGuideIndex([
   "## 工作原则",
   "## Work Principles",
 ]);
+const intentRulesIndex = firstGuideIndex([
+  "## 先判断任务",
+  "## Route before acting",
+]);
 const contextRulesIndex = firstGuideIndex([
   "## 上下文理解",
   "## Context Understanding",
@@ -88,15 +172,66 @@ const taskRulesIndex = firstGuideIndex([
   "## 任务执行",
   "## Task Execution",
 ]);
-if (!(productRulesIndex > -1 && contextRulesIndex > productRulesIndex && taskRulesIndex > contextRulesIndex)) {
+if (!(
+  productRulesIndex > -1 &&
+  intentRulesIndex > productRulesIndex &&
+  contextRulesIndex > intentRulesIndex &&
+  taskRulesIndex > contextRulesIndex
+)) {
   throw new Error("mandatory rule guides should be injected in priority order");
 }
 const bundledRegistry = skillRegistry.loadBundledRegistry();
-if (!bundledRegistry.skills.some((s) => s.id === "lily-engineering-rules")) {
-  throw new Error("registry should include lily-engineering-rules");
+if (!bundledRegistry.skills.some((s) => s.id === "lily-coding-core")) {
+  throw new Error("registry should include lily-coding-core");
 }
-if (!skillPresets.SKILL_PRESETS.find((p) => p.id === "dev-starter")?.skillIds.includes("lily-engineering-rules")) {
-  throw new Error("dev-starter preset should include lily-engineering-rules");
+if (!bundledRegistry.skills.some((s) => s.id === "lily-office-intent")) {
+  throw new Error("registry should include lily-office-intent");
+}
+if (!bundledRegistry.skills.some((s) => s.id === "lily-ui-quality")) {
+  throw new Error("registry should include lily-ui-quality");
+}
+if (!bundledRegistry.skills.some((s) => s.id === "lily-browser-qa")) {
+  throw new Error("registry should include lily-browser-qa");
+}
+if (!bundledRegistry.skills.some((s) => s.id === "lily-creative-director")) {
+  throw new Error("registry should include lily-creative-director");
+}
+for (const skillId of [
+  "lily-app-builder",
+  "lily-code-repair",
+  "lily-research-synthesis",
+  "lily-image-qa",
+  "lily-prompt-enhancer",
+  "lily-pdf-extraction-router",
+  "lily-excel-data-analysis",
+  "lily-ppt-design-qa",
+  "lily-skill-quality-gate",
+  "lily-intent-eval",
+]) {
+  if (!bundledRegistry.skills.some((s) => s.id === skillId)) {
+    throw new Error(`registry should include ${skillId}`);
+  }
+}
+if (!skillPresets.SKILL_PRESETS.find((p) => p.id === "dev-starter")?.skillIds.includes("lily-coding-core")) {
+  throw new Error("dev-starter preset should include lily-coding-core");
+}
+if (!skillPresets.SKILL_PRESETS.find((p) => p.id === "dev-starter")?.skillIds.includes("lily-app-builder")) {
+  throw new Error("dev-starter preset should include lily-app-builder");
+}
+if (!skillPresets.SKILL_PRESETS.find((p) => p.id === "dev-starter")?.skillIds.includes("lily-code-repair")) {
+  throw new Error("dev-starter preset should include lily-code-repair");
+}
+if (!skillPresets.SKILL_PRESETS.find((p) => p.id === "dev-starter")?.skillIds.includes("lily-ui-quality")) {
+  throw new Error("dev-starter preset should include lily-ui-quality");
+}
+if (!skillPresets.SKILL_PRESETS.find((p) => p.id === "dev-starter")?.skillIds.includes("lily-browser-qa")) {
+  throw new Error("dev-starter preset should include lily-browser-qa");
+}
+if (skillPresets.SKILL_PRESETS.find((p) => p.id === "dev-starter")?.skillIds.includes("lily-creative-director")) {
+  throw new Error("dev-starter preset should not include lily-creative-director");
+}
+if (!skillPresets.SKILL_PRESETS.find((p) => p.id === "creative-starter")?.skillIds.includes("lily-creative-director")) {
+  throw new Error("creative-starter preset should include lily-creative-director");
 }
 
 const result = await skillManager.checkRegistryUpdates({ fetch: false });
@@ -106,30 +241,66 @@ if (!result.ok) {
 if (!result.bundledCatalog) {
   throw new Error("expected bundled catalog");
 }
-if ((result.available || []).length < 100) {
-  throw new Error(`expected 100+ available skills, got ${result.available?.length || 0}`);
+if ((result.available || []).length !== 24) {
+  throw new Error(`expected 24 curated available skills, got ${result.available?.length || 0}`);
+}
+for (const staleId of ["anthropics-algorithmic-art", "marketing-referrals"]) {
+  if (!(bootstrapResult.pruned || []).includes(staleId)) {
+    throw new Error(`expected stale installed skill ${staleId} to be pruned on bootstrap`);
+  }
+  if (skillManager.listSkillsPublic().some((skill) => skill.id === staleId)) {
+    throw new Error(`stale installed skill ${staleId} should not remain visible`);
+  }
+  if (fs.existsSync(path.join(tmp, "lily-config", "skills", staleId))) {
+    throw new Error(`stale installed skill directory ${staleId} should be removed`);
+  }
+}
+for (const skill of result.available || []) {
+  if (/^(marketing|pm|tob|superpowers)-/.test(skill.id)) {
+    throw new Error(`curated catalog should not expose low-signal skill ${skill.id}`);
+  }
+  if (/^Lily\s/.test(skill.name) || ["Docx", "Xlsx", "Pdf", "Pptx"].includes(skill.name)) {
+    throw new Error(`curated catalog should expose user-facing skill names, got ${skill.id}: ${skill.name}`);
+  }
+}
+for (const rawDevSkillId of [
+  "lily-engineering-rules",
+  "anthropics-frontend-design",
+  "anthropics-webapp-testing",
+]) {
+  if ((result.available || []).some((skill) => skill.id === rawDevSkillId)) {
+    throw new Error(`default catalog should expose lily-coding-core instead of raw skill ${rawDevSkillId}`);
+  }
+}
+const installedDocx = await skillManager.installFromRegistry("anthropics-docx");
+if (!installedDocx.ok) {
+  throw new Error(`expected anthropics-docx install to succeed: ${JSON.stringify(installedDocx)}`);
+}
+const publicDocx = skillManager.listSkillsPublic().find((skill) => skill.id === "anthropics-docx");
+if (publicDocx?.category !== "office") {
+  throw new Error(`installed registry skill should keep category metadata, got ${publicDocx?.category || "empty"}`);
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("skill-catalog: ok", result.available.length, "available");
 
 const bundled = skillRegistry.loadBundledRegistry();
-if (!bundled || (bundled.skills || []).length < 100) {
-  throw new Error("bundled registry missing or too small");
+if (!bundled || (bundled.skills || []).length !== 24) {
+  throw new Error(`bundled registry should contain 24 curated skills, got ${bundled?.skills?.length || 0}`);
 }
 
 const emptyService = {
   schemaVersion: 1,
   skills: [],
-  sourceUrl: "https://service.example.com/api/plugins/registry",
+  sourceUrl: "https://service.example.com/api/skills/registry",
   categories: [],
 };
 const emptyMerged = skillRegistry.mergeRegistries(emptyService, bundled);
 if (!emptyMerged?.bundledFallback) {
   throw new Error("empty service registry should fall back to bundled catalog");
 }
-if ((emptyMerged.skills || []).length < 100) {
-  throw new Error(`empty service merge expected 100+ skills, got ${emptyMerged.skills?.length || 0}`);
+if ((emptyMerged.skills || []).length !== 24) {
+  throw new Error(`empty service merge expected 24 curated skills, got ${emptyMerged.skills?.length || 0}`);
 }
 
 const serviceWithOne = {
@@ -144,7 +315,7 @@ const serviceWithOne = {
       sha256: "a".repeat(64),
     },
   ],
-  sourceUrl: "https://service.example.com/api/plugins/registry",
+  sourceUrl: "https://service.example.com/api/skills/registry",
   categories: [{ id: "dev", label: "Engineering" }],
 };
 const mixedMerged = skillRegistry.mergeRegistries(serviceWithOne, bundled);
@@ -201,18 +372,26 @@ const serviceResult = await skillManagerWithService.checkRegistryUpdates({ fetch
 if (!serviceResult.ok) {
   throw new Error(`service fallback failed: ${JSON.stringify(serviceResult)}`);
 }
-if ((serviceResult.available || []).length < 100) {
+if ((serviceResult.available || []).length !== 24) {
   throw new Error(
-    `empty service should still expose bundled catalog, got ${serviceResult.available?.length || 0}`,
+    `empty service should still expose curated bundled catalog, got ${serviceResult.available?.length || 0}`,
   );
 }
 if (!serviceResult.bundledCatalog) {
   throw new Error("empty service fallback should mark bundledCatalog");
 }
 const categoryIds = new Set((serviceResult.categories || []).map((cat) => cat.id));
-if (!categoryIds.has("design") || categoryIds.size < 6) {
+if (
+  !categoryIds.has("office") ||
+  !categoryIds.has("dev") ||
+  !categoryIds.has("design") ||
+  !categoryIds.has("media") ||
+  !categoryIds.has("research") ||
+  !categoryIds.has("quality") ||
+  categoryIds.size !== 6
+) {
   throw new Error(
-    `service fallback should keep bundled category tabs, got: ${[...categoryIds].join(",")}`,
+    `service fallback should keep curated category tabs, got: ${[...categoryIds].join(",")}`,
   );
 }
 
@@ -220,3 +399,111 @@ fs.rmSync(tmpService, { recursive: true, force: true });
 delete require.cache[serviceClientPath];
 delete require.cache[skillManagerPath];
 console.log("skill-catalog: service fallback ok", serviceResult.available.length, "available");
+
+const tmpServiceCurated = fs.mkdtempSync(path.join(os.tmpdir(), "lily-skill-service-curated-"));
+delete require.cache[skillManagerPath];
+const originalFetch = global.fetch;
+const curatedSkill = {
+  id: "corp-default-skill",
+  name: "Corp Default Skill",
+  latestVersion: "1.0.0",
+  sourceType: "zip",
+  downloadUrl: "https://cdn.example.com/corp-default.skillpack.zip",
+  sha256: "b".repeat(64),
+  category: "coding",
+  categoryLabel: "编程创作",
+  capabilityLayer: "workflow",
+  riskLevel: "low",
+  defaultEligible: true,
+  featured: true,
+};
+require.cache[serviceClientPath] = {
+  id: serviceClientPath,
+  filename: serviceClientPath,
+  loaded: true,
+  exports: {
+    getServiceSettings: () => ({
+      ok: true,
+      apiBaseUrl: "https://service.example.com",
+      configurable: false,
+    }),
+    reportSkillEvent: async () => ({ ok: true }),
+  },
+};
+global.fetch = async (url) => {
+  if (String(url) !== "https://service.example.com/api/skills/registry") {
+    throw new Error(`unexpected fetch ${url}`);
+  }
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      schemaVersion: 1,
+      publisher: "Test Service",
+      registryUrl: "https://service.example.com/api/skills/registry",
+      skills: [curatedSkill],
+      categories: [{ id: "coding", label: "编程创作" }],
+    }),
+  };
+};
+require.cache[electronPath].exports.app.getPath = (name) => {
+  if (name === "userData") return tmpServiceCurated;
+  if (name === "home") return os.homedir();
+  return os.tmpdir();
+};
+const skillManagerCurated = require(skillManagerPath);
+const skillInstaller = require(path.join(ROOT, "src/main/skill-installer.js"));
+skillInstaller.installFromRegistryEntry = async (entry) => {
+  const dir = skillManagerCurated.installedSkillDir(entry.id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "SKILL.md"), `# ${entry.name}\n`, "utf8");
+  fs.writeFileSync(
+    path.join(dir, "skill.manifest.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: entry.id,
+      name: "Stale Manifest Name",
+      description: "Stale manifest description",
+      version: entry.latestVersion,
+    }, null, 2),
+    "utf8",
+  );
+  const state = skillManagerCurated.loadSkillsState();
+  state.skills[entry.id] = {
+    id: entry.id,
+    enabled: true,
+    source: "remote",
+    installedVersion: entry.latestVersion,
+    sha256: entry.sha256,
+  };
+  skillManagerCurated.saveSkillsState();
+  return { ok: true, id: entry.id, version: entry.latestVersion };
+};
+
+skillManagerCurated.bootstrapSkills();
+const curatedResult = await skillManagerCurated.checkRegistryUpdates({ fetch: true });
+if (!curatedResult.serviceCatalog || curatedResult.bundledCatalog) {
+  throw new Error("non-empty service registry should be authoritative, not bundled fallback");
+}
+if ((curatedResult.available || []).length !== 1 || curatedResult.available[0].id !== curatedSkill.id) {
+  throw new Error(`curated service registry should expose only service skills, got ${curatedResult.available?.length}`);
+}
+if (!curatedResult.available[0].defaultEligible || curatedResult.available[0].capabilityLayer !== "workflow") {
+  throw new Error("curated skill metadata should be preserved for UI and auto-sync");
+}
+const syncResult = await skillManagerCurated.syncServiceSkillPackages({ fetch: true });
+if (!syncResult.ok || !syncResult.installed.includes(curatedSkill.id)) {
+  throw new Error(`defaultEligible service skill should auto-install: ${JSON.stringify(syncResult)}`);
+}
+const installedCurated = skillManagerCurated.listSkillsPublic().find((skill) => skill.id === curatedSkill.id);
+if (!installedCurated?.enabled || !installedCurated.defaultEligible || installedCurated.category !== "coding") {
+  throw new Error("auto-synced skill should be installed, enabled, and keep service metadata");
+}
+if (installedCurated.name !== curatedSkill.name) {
+  throw new Error(`remote installed skill should prefer registry display name, got ${installedCurated.name}`);
+}
+fs.rmSync(tmpServiceCurated, { recursive: true, force: true });
+global.fetch = originalFetch;
+delete require.cache[serviceClientPath];
+delete require.cache[skillManagerPath];
+console.log("skill-catalog: curated service registry ok", curatedResult.available.length, "available");

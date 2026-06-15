@@ -7,12 +7,14 @@ const { ensureRuntimeNodeShim, resolveRuntimeNodePath } = require("./runtime-nod
 const { copyDirRecursiveShipSafe } = require("./ship-ignore");
 const MANDATORY_PLATFORM_SKILL_IDS = [
   "lily-workbench-rules",
+  "lily-intent-router",
   "lily-context-rules",
   "lily-task-execution-rules",
 ];
 
 const BUNDLED_SKILL_IDS = [
   "lily-workbench-rules",
+  "lily-intent-router",
   "lily-context-rules",
   "lily-task-execution-rules",
   "lily-vision",

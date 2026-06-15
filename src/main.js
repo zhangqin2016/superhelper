@@ -153,7 +153,10 @@ app.whenReady().then(async () => {
   ipcHandlers.registerAll(appContext);
   scheduledTaskManager.start(appContext);
 
-  require("./main/update-scheduler").startBackgroundUpdateChecks();
+  require("./main/update-scheduler").startBackgroundUpdateChecks({
+    runnerPool,
+    sessionManager,
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

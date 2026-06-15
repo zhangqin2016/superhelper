@@ -15,6 +15,7 @@ import { initModelSettings } from "./modules/model-settings.js";
 import { initPermissionSettings } from "./modules/permission-settings.js";
 import { initSearchSettings } from "./modules/search-settings.js";
 import { initSkillSettings, refreshSkillsList } from "./modules/skill-settings.js";
+import { initWorkspaceApps, refreshWorkspaceApps } from "./modules/workspace-apps.js";
 import { initLocaleSettings, refreshLocaleSelect } from "./modules/locale-settings.js";
 import {
   initLicenseUpdateSettings,
@@ -138,6 +139,7 @@ function wireLocaleRefresh() {
     updateTopbarTitles();
     renderProjectTree();
     await refreshSkillsList();
+    await refreshWorkspaceApps();
     await refreshSessionSkillsUi();
     syncComposerForActiveSession();
   });
@@ -166,6 +168,7 @@ async function init() {
   initPermissionSettings();
   initSearchSettings();
   initSkillSettings();
+  initWorkspaceApps();
   initLicenseUpdateSettings();
   initSessionSkills();
 

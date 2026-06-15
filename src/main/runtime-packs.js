@@ -57,9 +57,44 @@ function readState() {
 function getRuntimePackPythonPaths() {
   const state = readState();
   return Object.keys(state.installed)
+    .filter((id) => id !== "libreoffice")
     .filter((id) => state.installed[id]?.source !== "pip")
     .map((id) => packDir(id))
     .filter((dir) => fs.existsSync(dir));
 }
 
-module.exports = { getRuntimePackPythonPaths, packDir, statePath };
+function executableExists(dir) {
+  const exe = process.platform === "win32" ? "soffice.exe" : "soffice";
+  return fs.existsSync(path.join(dir, exe));
+}
+
+function getRuntimePackLibreOfficeDirs() {
+  const state = readState();
+  const rec = state.installed.libreoffice;
+  if (!rec || rec.source === "pip") return [];
+  const root = packDir("libreoffice");
+  const candidates = [
+    path.join(root, "LibreOffice.app", "Contents", "MacOS"),
+    path.join(root, "program"),
+    path.join(root, "Program"),
+    path.join(root, "libreoffice", "LibreOffice.app", "Contents", "MacOS"),
+    path.join(root, "libreoffice", "program"),
+    path.join(root, "libreoffice", "Program"),
+    path.join(root, "opt", "libreoffice", "program"),
+  ];
+  const seen = new Set();
+  return candidates.filter((dir) => {
+    if (!executableExists(dir)) return false;
+    const key = fs.realpathSync.native?.(dir) || fs.realpathSync(dir);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+module.exports = {
+  getRuntimePackPythonPaths,
+  getRuntimePackLibreOfficeDirs,
+  packDir,
+  statePath,
+};

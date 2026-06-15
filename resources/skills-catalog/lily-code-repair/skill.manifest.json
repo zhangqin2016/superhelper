@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-code-repair",
+  "name": "Lily Code Repair",
+  "description": "代码、网页、应用、测试、构建、部署或自动化失败时使用，先分类和复现，再定位根因、最小修复并重跑验证。",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "category": "dev",
+  "categoryLabel": "编程研发",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "quality",
+  "riskLevel": "low",
+  "permissions": {
+    "network": false,
+    "filesystem": "none",
+    "subprocess": "none"
+  }
+}

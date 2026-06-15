@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-skill-quality-gate",
+  "name": "Lily Skill Quality Gate",
+  "description": "发布前评测 Lily 技能是否真正提升平台能力，检查触发边界、输入输出、执行步骤、验证路径、失败自救、安全可控、可观测和维护性。",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "category": "quality",
+  "categoryLabel": "质量评测",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "quality",
+  "riskLevel": "low",
+  "permissions": {
+    "network": false,
+    "filesystem": "none",
+    "subprocess": "none"
+  },
+  "guideMd": {
+    "title": "技能质量评测",
+    "priority": 3,
+    "body": "用于发布前评审技能质量。按能力增益、触发边界、输入输出、执行步骤、验证方式、失败自救、安全可控、可观测性和维护性评分，并输出通过、条件通过、退回修改或拒绝发布。"
+  }
+}

@@ -36,8 +36,10 @@ require.cache[electronPath] = {
 
 const prevDash = process.env.DASHSCOPE_API_KEY;
 const prevVision = process.env.VISION_API_KEY;
+const prevVisionModel = process.env.VISION_MODEL;
 delete process.env.DASHSCOPE_API_KEY;
 delete process.env.VISION_API_KEY;
+delete process.env.VISION_MODEL;
 
 const { agentConfigDir } = require("../src/main/config.js");
 const agentDir = agentConfigDir();
@@ -71,6 +73,21 @@ if (config.apiKey !== "user-dash-key") {
 }
 if (config.model !== "qwen-vl-max") {
   throw new Error(`expected qwen-vl-max, got ${config.model}`);
+}
+fs.writeFileSync(
+  path.join(agentDir, "settings.json"),
+  JSON.stringify({
+    env: {
+      DASHSCOPE_API_KEY: "user-dash-key",
+      VISION_MODEL: "qwen3.7-plus",
+      DASHSCOPE_BASE_URL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    },
+  }),
+  "utf8",
+);
+const legacyConfig = getVisionConfig();
+if (legacyConfig.model !== "qwen3-vl-plus") {
+  throw new Error(`expected legacy settings model to normalize to qwen3-vl-plus, got ${legacyConfig.model}`);
 }
 if (!hasVisionApiKey()) {
   throw new Error("hasVisionApiKey should be true");
@@ -151,6 +168,13 @@ if (largePayloadBytes >= fs.statSync(largeImage).size) {
   delete require.cache[require.resolve("../src/main/agent-settings.js")];
   delete require.cache[require.resolve("../src/main/vision-translator.js")];
   const vision = require("../src/main/vision-translator.js");
+  const fallbackConfig = vision.getVisionConfig();
+  if (fallbackConfig.model !== "qwen3-vl-plus") {
+    throw new Error(`expected fallback vision model qwen3-vl-plus, got ${fallbackConfig.model}`);
+  }
+  if (vision.normalizeVisionModel("qwen3.7-plus") !== "qwen3-vl-plus") {
+    throw new Error("legacy qwen3.7-plus should normalize to qwen3-vl-plus");
+  }
   if (!vision.hasVisionApiKey()) {
     const noKeyResult = await vision.translateImages([
       { isImage: true, path: fileURLToPath(import.meta.url), name: "x.png" },
@@ -163,6 +187,7 @@ if (largePayloadBytes >= fs.statSync(largeImage).size) {
   .then(() => {
     if (prevDash) process.env.DASHSCOPE_API_KEY = prevDash;
     if (prevVision) process.env.VISION_API_KEY = prevVision;
+    if (prevVisionModel) process.env.VISION_MODEL = prevVisionModel;
     fs.rmSync(mockUserData, { recursive: true, force: true });
     fs.rmSync(emptyResources, { recursive: true, force: true });
     console.log("test-vision-translator: ok");

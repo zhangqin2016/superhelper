@@ -29,6 +29,11 @@ function runtimeEventFromAction(action) {
       return runtimeDraft("turn.accepted", {});
     case "assistant_text":
       return runtimeDraft("assistant.delta", { text: action.text || "" });
+    case "assistant_supersedes":
+      return runtimeDraft("assistant.supersedes", {
+        supersedes: action.supersedes || "",
+        messageId: action.messageId || "",
+      });
     case "assistant_thinking":
       return runtimeDraft("assistant.thinking.delta", { text: action.text || "" });
     case "assistant_image":
@@ -59,6 +64,11 @@ function runtimeEventFromAction(action) {
         index: action.index,
         partialJson: action.partialJson || "",
       });
+    case "stream_metadata_delta":
+      return runtimeDraft("stream.metadata", {
+        index: action.index,
+        deltaType: action.deltaType || "",
+      });
     case "stream_content_block_stop":
       return null;
     case "tool_result":
@@ -70,6 +80,8 @@ function runtimeEventFromAction(action) {
     case "permission_check":
       return null;
     case "ask_user_question":
+      return null;
+    case "user_input_request":
       return null;
     case "turn_result":
     case "runtime_error":
@@ -101,6 +113,8 @@ function runtimeEventFromAction(action) {
     }
     case "hook_pretool_use_ask":
     case "hook_user_prompt_ask":
+    case "hook_permission_request_ask":
+    case "hook_elicitation_ask":
     case "hook_stop":
     case "hook_subagent_stop":
       return runtimeDraft("hook.requested", {
@@ -113,10 +127,31 @@ function runtimeEventFromAction(action) {
     case "hook_pretool_use":
     case "hook_posttool_use":
     case "hook_posttool_use_failure":
+    case "hook_posttool_batch":
     case "hook_session_start":
+    case "hook_session_end":
     case "hook_precompact":
+    case "hook_postcompact":
     case "hook_user_prompt":
+    case "hook_user_prompt_expansion":
     case "hook_notification":
+    case "hook_stop_failure":
+    case "hook_subagent_start":
+    case "hook_permission_request":
+    case "hook_permission_denied":
+    case "hook_setup":
+    case "hook_teammate_idle":
+    case "hook_task_created":
+    case "hook_task_completed":
+    case "hook_elicitation":
+    case "hook_elicitation_result":
+    case "hook_config_change":
+    case "hook_worktree_create":
+    case "hook_worktree_remove":
+    case "hook_instructions_loaded":
+    case "hook_cwd_changed":
+    case "hook_file_changed":
+    case "hook_message_display":
     case "hook_callback":
       return runtimeDraft("engine.notice", { notice: action.notice || null });
     case "stream_message_delta":
@@ -137,9 +172,11 @@ function runtimeEventFromAction(action) {
       });
     case "control_response":
     case "initialize_request":
+    case "control_request":
       return runtimeDraft("runtime.control", {
         kind: action.kind,
         requestId: action.requestId || "",
+        subtype: action.subtype || "",
       });
     default:
       return runtimeDraft("engine.warning", {
@@ -150,8 +187,10 @@ function runtimeEventFromAction(action) {
 }
 
 class CliEventAdapter {
-  constructor() {
+  constructor(options = {}) {
     this.name = "claude-cli";
+    this.cliVersion = options.cliVersion || null;
+    this.versionText = options.versionText || "";
     /**
      * Engine capability declaration. The orchestration layer must degrade per
      * capability instead of assuming every engine behaves like Claude CLI
@@ -169,6 +208,12 @@ class CliEventAdapter {
       permissionControl: true,
       /** Supports --resume style conversation continuation. */
       resume: true,
+      /** CLI can disable all customizations for troubleshooting. */
+      safeMode: Boolean(options.capabilities?.safeMode),
+      /** CLI documents/supports Fable model alias family. */
+      fableModelAlias: Boolean(options.capabilities?.fableModelAlias),
+      /** CLI may emit top-level rate_limit_event telemetry. */
+      rateLimitEvent: Boolean(options.capabilities?.rateLimitEvent),
     });
   }
 

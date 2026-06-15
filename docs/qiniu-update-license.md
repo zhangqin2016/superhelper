@@ -34,7 +34,7 @@ npm run release:admin -- license \
   --expires-at 2026-12-31T23:59:59Z \
   --plan pro \
   --seats 20 \
-  --features workspace,mcp,plugins
+  --features workspace,mcp,skill-packages
 ```
 
 The lower-level command is also available:
@@ -47,7 +47,7 @@ npm run license:generate -- \
   --expires-at 2026-12-31T23:59:59Z \
   --plan pro \
   --seats 20 \
-  --features workspace,mcp,plugins
+  --features workspace,mcp,skill-packages
 ```
 
 The command prints a token:
@@ -64,9 +64,12 @@ Recommended object keys:
 
 ```text
 app/updates/latest.json
-app/updates/mac/0.2.0/Lily Workbench-0.2.0-arm64.dmg
-app/updates/mac/0.2.0/Lily Workbench-0.2.0-x64.dmg
-app/updates/win/0.2.0/Lily Workbench-0.2.0-x64.exe
+app/updates/darwin-arm64/0.2.0/Lily Workbench-0.2.0-arm64.dmg
+app/updates/darwin-x64/0.2.0/Lily Workbench-0.2.0-x64.dmg
+app/updates/win32-x64/0.2.0/Lily Workbench-0.2.0-x64.exe
+app/auto-updates/darwin-arm64/stable/latest-mac.yml
+app/auto-updates/darwin-x64/stable/latest-mac.yml
+app/auto-updates/win32-x64/stable/latest.yml
 ```
 
 `latest.unsigned.json`:
@@ -78,15 +81,15 @@ app/updates/win/0.2.0/Lily Workbench-0.2.0-x64.exe
   "notes": "Stability fixes and update support.",
   "platforms": {
     "darwin-arm64": {
-      "url": "https://cdn.example.com/app/updates/mac/0.2.0/app-arm64.dmg",
+      "url": "https://cdn.example.com/app/updates/darwin-arm64/0.2.0/app-arm64.dmg",
       "sha256": "..."
     },
     "darwin-x64": {
-      "url": "https://cdn.example.com/app/updates/mac/0.2.0/app-x64.dmg",
+      "url": "https://cdn.example.com/app/updates/darwin-x64/0.2.0/app-x64.dmg",
       "sha256": "..."
     },
     "win32-x64": {
-      "url": "https://cdn.example.com/app/updates/win/0.2.0/setup-x64.exe",
+      "url": "https://cdn.example.com/app/updates/win32-x64/0.2.0/setup-x64.exe",
       "sha256": "..."
     }
   }
@@ -110,6 +113,19 @@ Install and log in to Qiniu Qshell on the release machine first:
 
 ```bash
 qshell account <AccessKey> <SecretKey> release
+```
+
+The release helpers default to the HTTPS upload host that is stable for this
+project:
+
+```text
+https://upload.qiniup.com
+```
+
+Override only if Qiniu changes the bucket region or upload endpoint:
+
+```bash
+QINIU_UP_HOST=https://upload.qiniup.com npm run release:one -- --version 0.2.0 --upload
 ```
 
 You can build the installer separately:
@@ -171,7 +187,9 @@ and uploads the signed manifest to:
 
 For normal releases, use the one-click command. It bumps `package.json`,
 builds installers, finds the matching files under `dist/`, signs
-`latest.json`, and uploads everything to Qiniu.
+`latest.json`, uploads everything to Qiniu, publishes API release rows when
+admin credentials are present, refreshes CDN metadata, and verifies the public
+URLs.
 
 Patch release:
 
@@ -188,7 +206,7 @@ Specific version:
 npm run release:one -- \
   --version 0.2.0 \
   --upload \
-  --notes "新增插件市场和工作区体验"
+  --notes "新增技能包下发和工作区体验"
 ```
 
 Shortcut for both Windows and Mac:
@@ -213,7 +231,9 @@ Defaults:
 bucket: lanrensoft
 domain: https://qny.lanrensoft.cn
 prefix: app/updates
+auto-prefix: app/auto-updates
 key: release-keys/license-private-key.pem
+qiniu-up-host: https://upload.qiniup.com
 ```
 
 Dry run without building or uploading:
@@ -227,13 +247,11 @@ npm run release:one -- \
 
 ## Client Flow
 
-In Settings -> About -> Updates:
+The app has a built-in update URL:
 
-1. Paste the Qiniu `latest.json` public URL.
-2. Click Save URL.
-3. Click Check updates.
-4. If a signed newer version exists for the current platform, click Open download.
+```text
+https://qny.lanrensoft.cn/app/updates/latest.json
+```
 
-The first implementation intentionally opens the Qiniu package URL instead of
-downloading silently. That keeps large installer failures visible and avoids
-partial update state.
+It checks the static manifest and the platform auto-update feed. When a newer
+version is available, users can update from the in-app update prompt.

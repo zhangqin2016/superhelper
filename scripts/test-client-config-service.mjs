@@ -23,6 +23,11 @@ const merged = deepMerge(DEFAULT_EFFECTIVE_CONFIG, {
 });
 
 assert.equal(DEFAULT_EFFECTIVE_CONFIG.models.activePresetId, "", "deepMerge must not mutate packaged defaults");
+assert.equal(
+  DEFAULT_EFFECTIVE_CONFIG.tools.pluginRegistryUrl,
+  "/api/skills/registry",
+  "packaged defaults must use the server-managed skill package registry",
+);
 assert.deepEqual(DEFAULT_EFFECTIVE_CONFIG.tools.enabledPluginIds, [], "deepMerge must preserve default arrays");
 assert.equal(merged.models.activePresetId, "managed");
 assert.deepEqual(merged.tools.enabledPluginIds, ["weather"]);
@@ -110,7 +115,7 @@ assert.equal(
   undefined,
   "raw DashScope key must NOT be delivered — a token + proxy base URLs are injected at request time",
 );
-assert.equal(mediaOnly.runtime.env.VISION_MODEL, "qwen3.7-plus");
+assert.equal(mediaOnly.runtime.env.VISION_MODEL, "qwen3-vl-plus");
 assert.equal(mediaOnly.runtime.env.DASHSCOPE_IMAGE_MODEL, "qwen-image-2.0-pro");
 assert.equal(mediaOnly.runtime.env.DASHSCOPE_IMAGE_ENDPOINT, "https://dashscope.example.test/image");
 assert.equal(

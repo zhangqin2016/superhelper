@@ -8,7 +8,7 @@ const createLicenseSchema = z.object({
   plan: z.string().min(1).max(40).default("pro"),
   seats: z.number().int().min(1).max(100000).default(1),
   expiresAt: z.string().datetime(),
-  features: z.array(z.string()).default(["updates", "plugins", "usage"]),
+  features: z.array(z.string()).default(["updates", "skill-packages", "usage"]),
 });
 
 const updateLicenseSchema = z.object({

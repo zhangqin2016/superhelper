@@ -15,6 +15,7 @@ const require = module.createRequire(import.meta.url);
 
 // Mock electron: capture registered handlers so we can invoke them directly.
 const handlers = new Map();
+const revealed = [];
 const electronPath = require.resolve("electron");
 require.cache[electronPath] = {
   id: electronPath,
@@ -22,7 +23,10 @@ require.cache[electronPath] = {
   loaded: true,
   exports: {
     ipcMain: { handle: (channel, fn) => handlers.set(channel, fn) },
-    shell: { showItemInFolder() {} },
+    shell: {
+      showItemInFolder(filePath) { revealed.push(filePath); },
+      openPath(filePath) { revealed.push(filePath); return ""; },
+    },
   },
 };
 
@@ -40,8 +44,10 @@ registerFileTreeHandlers({
 
 const reject = handlers.get("filetree:reject-change");
 const revert = handlers.get("filetree:revert-turn");
+const reveal = handlers.get("filetree:reveal");
 assert(typeof reject === "function", "reject-change handler registered");
 assert(typeof revert === "function", "revert-turn handler registered");
+assert(typeof reveal === "function", "reveal handler registered");
 assert(!handlers.has("filetree:restore-file"), "arbitrary-write restore-file handler removed");
 
 function recordDiff(filePath, before, after) {
@@ -87,6 +93,26 @@ assert(fs.readFileSync(escapee, "utf-8") === "agent-edit\n", "turn revert leaves
 // 6. unknown session -> no project root -> refused
 res = await reject(null, { sessionId: "ghost", filePath: modified });
 assert(res.ok === false, "unknown session refused");
+
+// 7. reveal only accepts absolute local paths. Generated media scripts must
+// emit absolute paths; renderer/main must not guess a base directory.
+const generated = path.join(projectRoot, "generated-assets", "image.png");
+fs.mkdirSync(path.dirname(generated), { recursive: true });
+fs.writeFileSync(generated, "png");
+res = await reveal(null, { sessionId, filePath: generated });
+assert(res.ok === true, "absolute generated output reveal succeeds");
+assert(revealed.includes(generated), "absolute reveal opens generated file");
+
+revealed.length = 0;
+res = await reveal(null, { sessionId, filePath: `file://${generated}` });
+assert(res.ok === true, "file URL generated output reveal succeeds");
+assert(revealed.includes(generated), "file URL reveal opens generated file");
+
+res = await reveal(null, { sessionId, filePath: "../escape.txt" });
+assert(res.ok === false, "relative reveal refused");
+
+res = await reveal(null, { sessionId, filePath: "generated-assets/image.png" });
+assert(res.ok === false, "relative generated output reveal refused");
 
 fs.rmSync(projectRoot, { recursive: true, force: true });
 fs.rmSync(outside, { recursive: true, force: true });

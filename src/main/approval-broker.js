@@ -6,6 +6,7 @@ const {
   buildRememberAllowPermissions,
   withPersistentDestination,
   buildControlCancelRequest,
+  buildControlAck,
   buildHookContinueResponse,
   buildHookPreToolUseResponse,
   buildHookStopResponse,
@@ -141,7 +142,7 @@ class ApprovalBroker {
 
   respondUserQuestion(requestId, payload = {}) {
     const pending = this._pendingPermissions.get(requestId);
-    if (!pending || pending.toolName !== "AskUserQuestion") return false;
+    if (!pending || (pending.toolName !== "AskUserQuestion" && pending.toolName !== "__user_input_request")) return false;
 
     const questions = this._normalizeQuestions(pending.input || {});
     const answers =
@@ -149,6 +150,17 @@ class ApprovalBroker {
     const response = typeof payload.response === "string" ? payload.response.trim() : "";
 
     this._pendingPermissions.delete(requestId);
+    if (pending.toolName === "__user_input_request") {
+      this._writeControl(buildControlAck(requestId, {
+        questions,
+        answers,
+        ...(response ? { response } : {}),
+      }));
+      this._ingest([{ type: "user_question.resolved", payload: { requestId } }]);
+      this._onActivity();
+      this._pollGate();
+      return true;
+    }
     this._writeControl(
       buildControlResponse(requestId, {
         behavior: "allow",
@@ -275,6 +287,25 @@ class ApprovalBroker {
         requestId,
         input,
         questions,
+      },
+    }]);
+  }
+
+  handleUserInputRequest(action) {
+    const { requestId, input, questions, subtype } = action;
+    this._pendingPermissions.set(requestId, {
+      toolName: "__user_input_request",
+      input: { ...(input || {}), questions },
+      subtype,
+    });
+    this._onBlockingRequest();
+    this._ingest([{
+      type: "user_question.requested",
+      payload: {
+        requestId,
+        input,
+        questions,
+        subtype,
       },
     }]);
   }

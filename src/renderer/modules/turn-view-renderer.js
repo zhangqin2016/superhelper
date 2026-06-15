@@ -2,6 +2,7 @@ import { renderMarkdown, renderStreamingMarkdown, renderMarkdownWithCache } from
 import { t } from "../i18n/index.js";
 import { showToast } from "./toast.js";
 import { confirmDialog } from "./confirm-dialog.js";
+import { revealLocalFileInFolder } from "./file-reveal.js";
 import {
   appendToolPayloadDetail,
   parseGeneratedMedia,
@@ -508,7 +509,7 @@ function renderProcess(root, liveTurn, ctx = {}) {
   );
   const latestTodoId = [...timeline].reverse()
     .find((entry) => entry.kind === "tool" && isTodoTool(entry.name))?.id || null;
-  const entryCtx = { latestTodoId, childTools };
+  const entryCtx = { latestTodoId, childTools, sessionId };
   const diffEntries = resolveTurnDiffEntries(liveTurn, sessionId);
   const hasContent = timeline.length > 0 || diffEntries.length > 0;
   root.hidden = !hasContent;
@@ -528,7 +529,7 @@ function renderProcess(root, liveTurn, ctx = {}) {
     group.appendChild(summary);
     const body = document.createElement("div");
     body.className = "assistant-process-group-body";
-    renderGroupedTools(body, processTools, notices, sealed, childTools);
+    renderGroupedTools(body, processTools, notices, sealed, childTools, entryCtx);
     group.appendChild(body);
     let groupInserted = false;
     for (const entry of timeline) {
@@ -565,13 +566,13 @@ function renderProcess(root, liveTurn, ctx = {}) {
   if (sessionId) reapplySessionInlineDiffs(sessionId, liveTurn.turnId || null);
 }
 
-function renderGroupedTools(container, tools, notices, sealed, childTools) {
+function renderGroupedTools(container, tools, notices, sealed, childTools, ctx = {}) {
   const catGroups = groupToolsByCategory(tools);
   const categories = [...catGroups.entries()].filter(([, items]) => items.length);
 
   if (categories.length <= 1) {
     for (const entry of tools) {
-      container.appendChild(renderToolWithChildren(entry, sealed, childTools));
+      container.appendChild(renderToolWithChildren(entry, sealed, childTools, ctx));
     }
   } else {
     for (const [category, categoryTools] of categories) {
@@ -585,7 +586,7 @@ function renderGroupedTools(container, tools, notices, sealed, childTools) {
       const body = document.createElement("div");
       body.className = "assistant-process-subgroup-body";
       for (const entry of categoryTools) {
-        body.appendChild(renderToolWithChildren(entry, sealed, childTools));
+        body.appendChild(renderToolWithChildren(entry, sealed, childTools, ctx));
       }
       sub.appendChild(body);
       container.appendChild(sub);
@@ -613,7 +614,7 @@ function renderChangedFilesGroup(entries, sealed, ctx = {}) {
     row.textContent = entry.fileName || entry.filePath || "";
     row.title = `${entry.filePath || ""} — ${t("file.reveal")}`;
     if (entry.filePath) {
-      row.addEventListener("click", () => void window.assistantClient.revealInFolder(entry.filePath));
+      row.addEventListener("click", () => void revealLocalFileInFolder(entry.filePath));
     }
     list.appendChild(row);
   }
@@ -663,7 +664,7 @@ function renderTimelineEntry(entry, sealed, ctx = {}) {
     if (isTodoTool(entry.name)) {
       return renderTodoEntry(entry, entry.id === ctx.latestTodoId);
     }
-    return renderToolWithChildren(entry, sealed, ctx.childTools);
+    return renderToolWithChildren(entry, sealed, ctx.childTools, ctx);
   }
   if (entry.kind === "notice") return renderNoticeEntry(entry);
   if (entry.kind === "text") return renderInlineTextEntry(entry, !sealed);
@@ -684,14 +685,14 @@ function buildChildToolsMap(toolEntries = []) {
   return children;
 }
 
-function renderToolWithChildren(entry, sealed, childTools) {
-  const row = renderToolRowFromEntry(entry, sealed);
+function renderToolWithChildren(entry, sealed, childTools, ctx = {}) {
+  const row = renderToolRowFromEntry(entry, sealed, ctx);
   const children = childTools?.get(entry.id);
   if (row && children?.length) {
     const nest = document.createElement("div");
     nest.className = "assistant-subagent-tools";
     for (const child of children) {
-      const childRow = renderToolWithChildren(child, sealed, childTools);
+      const childRow = renderToolWithChildren(child, sealed, childTools, ctx);
       if (childRow) nest.appendChild(childRow);
     }
     row.appendChild(nest);
@@ -793,12 +794,12 @@ function toolDurationSuffix(entry) {
   return ` · ${((end - start) / 1000).toFixed(1)}s`;
 }
 
-function renderToolRowFromEntry(entry, sealed = false) {
+function renderToolRowFromEntry(entry, sealed = false, ctx = {}) {
   const tool = toolEntryToRenderTool(entry);
-  return renderToolRow(tool, toolRowPreview(entry), sealed, toolDurationSuffix(entry));
+  return renderToolRow(tool, toolRowPreview(entry), sealed, toolDurationSuffix(entry), ctx);
 }
 
-function renderToolRow(tool, previewText = "", sealed = false, statusSuffix = "") {
+function renderToolRow(tool, previewText = "", sealed = false, statusSuffix = "", ctx = {}) {
   const row = document.createElement("details");
   row.className = "assistant-tool-row";
   row.dataset.toolId = tool.id || "";
@@ -821,7 +822,7 @@ function renderToolRow(tool, previewText = "", sealed = false, statusSuffix = ""
   head.append(cmd, status);
   summary.appendChild(head);
   row.appendChild(summary);
-  appendToolResultBlock(row, tool, sealed);
+  appendToolResultBlock(row, tool, sealed, ctx);
   return row;
 }
 
@@ -838,17 +839,17 @@ function toolStatusLabel(toolOrStatus) {
   return t("tool.status.done");
 }
 
-function appendToolResultBlock(row, tool, sealed = false) {
+function appendToolResultBlock(row, tool, sealed = false, ctx = {}) {
   const compactFileContent = sealed && classifyToolCategory(tool.name) === "write";
   if (toolInputHasRenderableDetail(tool)) {
-    appendToolPayloadDetail(row, tool, { role: "input", compactFileContent });
+    appendToolPayloadDetail(row, tool, { role: "input", compactFileContent, sessionId: ctx.sessionId || "" });
   }
   if (!tool.result) return;
 
   const parsed = parseToolResult(tool.result);
   const generatedMediaText = typeof parsed?.content === "string" ? parsed.content : "";
   if (generatedMediaText && parseGeneratedMedia(generatedMediaText).length) {
-    appendToolPayloadDetail(row, tool, { role: "result" });
+    appendToolPayloadDetail(row, tool, { role: "result", sessionId: ctx.sessionId || "" });
     return;
   }
   const resultKeys = parsed && typeof parsed === "object"
@@ -857,7 +858,7 @@ function appendToolResultBlock(row, tool, sealed = false) {
   const hasStructuredResult = resultKeys.length > 1 ||
     (resultKeys.length === 1 && resultKeys[0] !== "content");
   if (hasStructuredResult && parsed) {
-    appendToolPayloadDetail(row, tool, { role: "result" });
+    appendToolPayloadDetail(row, tool, { role: "result", sessionId: ctx.sessionId || "" });
     return;
   }
 

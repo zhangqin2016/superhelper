@@ -11,7 +11,7 @@ export const DEFAULT_EFFECTIVE_CONFIG = {
     presets: [],
   },
   tools: {
-    pluginRegistryUrl: "/api/plugins/registry",
+    pluginRegistryUrl: "/api/skills/registry",
     enabledPluginIds: [],
   },
   policy: {
@@ -67,6 +67,17 @@ function supportsDirectDelivery(provider) {
   return provider?.type === "anthropic" && /^https?:\/\//i.test(String(provider.baseUrl || ""));
 }
 
+function normalizeVisionModel(model) {
+  const value = String(model || "").trim();
+  if (!value) return "qwen3-vl-plus";
+  const legacyAliases = {
+    "qwen3.7-plus": "qwen3-vl-plus",
+    "qwen3.7-max": "qwen3-vl-plus",
+    "qwen3.7-flash": "qwen3-vl-flash",
+  };
+  return legacyAliases[value.toLowerCase()] || value;
+}
+
 function providerPreset(provider, deliveryMode) {
   const model = firstModel(provider);
   if (deliveryMode === "direct" && supportsDirectDelivery(provider)) {
@@ -113,7 +124,7 @@ function runtimeEnvFromServerConfig(serverConfig) {
     // Note: the raw key is NOT delivered. withGatewayRuntimeConfig injects a
     // short-lived token + proxy base URLs (vision + dashscope-media) at request
     // time, so the client never receives the real DashScope key.
-    env.VISION_MODEL = serverConfig.visionModel || "qwen3.7-plus";
+    env.VISION_MODEL = normalizeVisionModel(serverConfig.visionModel);
     env.DASHSCOPE_IMAGE_MODEL = serverConfig.dashscopeImageModel || "qwen-image-2.0-pro";
     env.DASHSCOPE_VIDEO_MODEL = serverConfig.dashscopeVideoModel || "wan2.7-t2v";
     env.DASHSCOPE_TTS_MODEL = serverConfig.dashscopeTtsModel || "cosyvoice-v3-flash";
@@ -125,10 +136,14 @@ function runtimeEnvFromServerConfig(serverConfig) {
   return env;
 }
 
-export function buildEnvManagedClientConfig(serverConfig = config, providers = listModelGatewayProviders()) {
-  const deliveryMode = normalizeDeliveryMode(serverConfig);
+// vision/search are media credentials, not chat models — never build chat
+// presets for them.
+const RESERVED_MODEL_PROVIDER_IDS = new Set(["vision", "search"]);
+
+export function buildEnvManagedClientConfig(serverConfig = config, providers = listModelGatewayProviders(), deliveryModeOverride = null) {
+  const deliveryMode = deliveryModeOverride || normalizeDeliveryMode(serverConfig);
   const modelPresets = Object.values(providers || {})
-    .filter((provider) => provider?.id && provider?.baseUrl && provider?.apiKey)
+    .filter((provider) => provider?.id && provider?.baseUrl && provider?.apiKey && !RESERVED_MODEL_PROVIDER_IDS.has(provider.id))
     .map((provider) => providerPreset(provider, deliveryMode));
 
   const activeProviderId = serverConfig.modelGatewayDefaultProvider || modelPresets[0]?.id?.replace(/-gateway$/, "");
@@ -149,7 +164,7 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
         }
       : {}),
     tools: {
-      pluginRegistryUrl: "/api/plugins/registry",
+      pluginRegistryUrl: "/api/skills/registry",
       enabledPluginIds: [
         "lily-vision",
         "lily-image-generation",
@@ -172,7 +187,8 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
 }
 
 export async function ensureEnvManagedConfigProfile() {
-  const effectiveConfig = buildEnvManagedClientConfig();
+  const { getModelDeliveryMode } = await import("./app-settings.js");
+  const effectiveConfig = buildEnvManagedClientConfig(config, listModelGatewayProviders(), await getModelDeliveryMode());
   if (!effectiveConfig) return { ok: true, skipped: true };
   const { db } = await import("../db.js");
   await db
@@ -270,16 +286,16 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   const configuredBaseUrl = String(options.publicBaseUrl || "").trim().replace(/\/+$/, "");
   const base = configuredBaseUrl || requestBaseUrl(request);
 
-  // Route vision + web search through the server-side proxies when the server
-  // holds the key, so the client uses a short-lived token instead of a raw key.
+  // Route media/search either direct or through the server-side proxies,
+  // matching the admin-controlled media delivery mode. Direct is the product
+  // default for latency/stability; gateway is explicit when secrets must stay
+  // server-side.
   // Picked up by vision-translator (DASHSCOPE_BASE_URL/VISION_API_KEY) and
   // websearch.cjs (WEBSEARCH_IQS_API_URL/WEBSEARCH_IQS_API_KEY) via runtime.env.
   const gatewayProviders = listModelGatewayProviders();
   const visionKey = gatewayProviders.vision?.apiKey || config.dashscopeApiKey;
   const searchKey = gatewayProviders.search?.apiKey || config.webSearchIqsApiKey;
-  // Only route search through the proxy for clients new enough to forward the
-  // proxy URL to the search skill; older clients fall back to their local key.
-  const searchEnabled = Boolean(searchKey) && appVersionAtLeast(input.appVersion, SEARCH_PROXY_MIN_APP_VERSION);
+  const searchEnabled = Boolean(searchKey);
   if (base && (visionKey || searchEnabled)) {
     const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
     const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
@@ -312,12 +328,17 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
       }
     }
     if (searchEnabled) {
-      env.WEBSEARCH_IQS_API_URL = `${base}/llm/search`;
-      env.WEBSEARCH_IQS_API_KEY = signModelGatewayToken({
-        deviceId: input.deviceId,
-        licenseId: input.licenseId || "",
-        providerId: "search",
-      });
+      if (options.mediaDeliveryMode === "gateway" && appVersionAtLeast(input.appVersion, SEARCH_PROXY_MIN_APP_VERSION)) {
+        env.WEBSEARCH_IQS_API_URL = `${base}/llm/search`;
+        env.WEBSEARCH_IQS_API_KEY = signModelGatewayToken({
+          deviceId: input.deviceId,
+          licenseId: input.licenseId || "",
+          providerId: "search",
+        });
+      } else {
+        env.WEBSEARCH_IQS_API_URL = config.webSearchIqsApiUrl;
+        env.WEBSEARCH_IQS_API_KEY = searchKey;
+      }
     }
     runtime.env = env;
     configCopy.runtime = runtime;

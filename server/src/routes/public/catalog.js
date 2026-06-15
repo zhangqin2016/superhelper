@@ -28,7 +28,7 @@ const attachmentUploadSchema = z.object({
 async function createContactRequest(request, reply) {
   const input = contactRequestSchema.parse(request.body);
   const id = publicId("contact");
-  const attachments = (input.attachments || []).map(normalizeSubmittedAttachment).filter(Boolean);
+  const attachments = (await Promise.all((input.attachments || []).map(normalizeSubmittedAttachment))).filter(Boolean);
   await db.transaction().execute(async (trx) => {
     await trx
       .insertInto("contact_requests")
@@ -60,7 +60,7 @@ async function createContactAttachmentUploadToken(request, reply) {
   const normalized = normalizeFeedbackAttachmentInput(input);
   if (!normalized.ok) return reply.code(400).send({ ok: false, code: normalized.code });
   try {
-    return createFeedbackUploadToken({
+    return await createFeedbackUploadToken({
       deviceId: request.headers["x-lily-device-id"] || "anonymous",
       draftId: input.draftId,
       fileName: normalized.fileName,
@@ -129,12 +129,12 @@ export async function publicCatalogRoutes(app) {
     };
   });
 
-  app.get("/api/document-packs/artifact", async (request) => {
+  app.get("/api/runtime-packs/artifact", async (request) => {
     const packId = String(request.query?.pack || "");
     const platform = String(request.query?.platform || "");
     if (!packId || !platform) return { artifact: null };
     const rows = await db
-      .selectFrom("document_packs")
+      .selectFrom("runtime_packs")
       .selectAll()
       .where("pack_id", "=", packId)
       .where("platform", "=", platform)
@@ -142,7 +142,7 @@ export async function publicCatalogRoutes(app) {
       .orderBy("created_at", "desc")
       .limit(200)
       .execute();
-    // Reuse newest-by-version selection; document_packs has no created_at tie
+    // Reuse newest-by-version selection; runtime_packs has no created_at tie
     // semantics beyond recency, which newestRelease already handles.
     const pack = newestRelease(rows);
     if (!pack) return { artifact: null };
@@ -180,63 +180,4 @@ export async function publicCatalogRoutes(app) {
     };
   });
 
-  app.get("/api/plugins", async () => {
-    const plugins = await db
-      .selectFrom("plugins")
-      .selectAll()
-      .where("enabled", "=", true)
-      .orderBy("created_at", "desc")
-      .execute();
-    return {
-      plugins: plugins.map((plugin) => ({
-        id: plugin.id,
-        name: plugin.name,
-        version: plugin.version,
-        type: plugin.type,
-        description: plugin.description || "",
-        manifestUrl: plugin.manifest_url,
-        sha256: plugin.sha256 || "",
-        enabled: plugin.enabled,
-      })),
-    };
-  });
-
-  app.get("/api/plugins/registry", async (request) => {
-    const baseUrl = `${request.protocol}://${request.hostname}`;
-    const plugins = await db
-      .selectFrom("plugins")
-      .selectAll()
-      .where("enabled", "=", true)
-      .where("type", "=", "skill")
-      .where("sha256", "is not", null)
-      .orderBy("created_at", "desc")
-      .execute();
-
-    return {
-      schemaVersion: 1,
-      publisher: "Lily Workbench",
-      registryUrl: `${baseUrl}/api/plugins/registry`,
-      updatedAt: new Date().toISOString(),
-      categories: [
-        { id: "office", label: "Office" },
-        { id: "dev", label: "Engineering" },
-        { id: "pm", label: "Product" },
-        { id: "marketing", label: "Marketing" },
-        { id: "security", label: "Security" },
-      ],
-      skills: plugins.map((plugin) => ({
-        id: plugin.id,
-        name: plugin.name,
-        description: plugin.description || "",
-        latestVersion: plugin.version,
-        sourceType: "zip",
-        downloadUrl: plugin.manifest_url,
-        sha256: plugin.sha256,
-        category: "dev",
-        categoryLabel: "Engineering",
-        publisher: "Lily Workbench",
-        changelog: plugin.description || "",
-      })),
-    };
-  });
 }

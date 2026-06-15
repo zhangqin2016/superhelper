@@ -30,13 +30,38 @@ require.cache[electronPath] = {
     },
   },
 };
+const serviceClientPath = path.join(ROOT, "src/main/service-client.js");
+require.cache[serviceClientPath] = {
+  id: serviceClientPath,
+  filename: serviceClientPath,
+  loaded: true,
+  exports: {
+    getServiceSettings() {
+      return { ok: true, apiBaseUrl: "", configurable: false };
+    },
+    reportSkillEvent() {
+      return Promise.resolve({ ok: true, skipped: true });
+    },
+  },
+};
+const remoteConfigPath = path.join(ROOT, "src/main/remote-config.js");
+require.cache[remoteConfigPath] = {
+  id: remoteConfigPath,
+  filename: remoteConfigPath,
+  loaded: true,
+  exports: {
+    getRemoteEffectiveConfigSync() {
+      return null;
+    },
+  },
+};
 
 const skillPresets = require(path.join(ROOT, "src/main/skill-presets.js"));
 const skillRegistry = require(path.join(ROOT, "src/main/skill-registry.js"));
 const skillManager = require(path.join(ROOT, "src/main/skill-manager.js"));
 
 if (skillPresets.SKILL_PRESETS.length !== 5) {
-  throw new Error(`expected 5 presets, got ${skillPresets.SKILL_PRESETS.length}`);
+  throw new Error(`expected 5 curated presets, got ${skillPresets.SKILL_PRESETS.length}`);
 }
 if (skillPresets.SKILL_PRESETS[0].id !== "office-starter") {
   throw new Error("office-starter should be the first preset");
@@ -53,15 +78,8 @@ for (const preset of skillPresets.SKILL_PRESETS) {
   }
 }
 
-if (skillPresets.FEATURED_SKILL_IDS.length < 22) {
-  throw new Error(`expected 22+ featured skills, got ${skillPresets.FEATURED_SKILL_IDS.length}`);
-}
-
-if (!skillPresets.isNicheBlockchainSecuritySkill("tob-building-secure-contracts-solana-vulnerability-scanner")) {
-  throw new Error("expected blockchain niche detector");
-}
-if (skillPresets.isNicheBlockchainSecuritySkill("tob-ask-questions-if-underspecified-ask-questions-if-underspecified")) {
-  throw new Error("ask-questions should not be niche blockchain");
+if (skillPresets.FEATURED_SKILL_IDS.length !== 22) {
+  throw new Error(`expected 22 featured skills, got ${skillPresets.FEATURED_SKILL_IDS.length}`);
 }
 
 fs.mkdirSync(tmp, { recursive: true });
@@ -74,9 +92,9 @@ skillManager.bootstrapSkills();
 const catalog = await skillManager.checkRegistryUpdates({ fetch: false });
 if (!catalog.ok) throw new Error("catalog bootstrap failed");
 if (!Array.isArray(catalog.presets) || catalog.presets.length !== 5) {
-  throw new Error("catalog should expose 5 presets");
+  throw new Error("catalog should expose 5 curated presets");
 }
-if (!Array.isArray(catalog.featuredSkillIds) || catalog.featuredSkillIds.length < 22) {
+if (!Array.isArray(catalog.featuredSkillIds) || catalog.featuredSkillIds.length !== 22) {
   throw new Error("catalog should expose featuredSkillIds");
 }
 
@@ -89,7 +107,7 @@ if (guideBefore.guidePresetId !== "office-starter") {
 }
 
 const office = catalog.presets.find((p) => p.id === "office-starter");
-if (!office || office.total !== 8 || office.enabledCount !== 0) {
+if (!office || office.total !== 13 || office.enabledCount !== 0) {
   throw new Error(`unexpected office preset progress: ${JSON.stringify(office)}`);
 }
 
@@ -110,11 +128,16 @@ const applyResult = await skillManager.applySkillPreset("office-starter");
 if (!applyResult.ok) {
   throw new Error(`apply office-starter failed: ${JSON.stringify(applyResult)}`);
 }
-if ((applyResult.installed || []).length !== 8) {
-  throw new Error(`expected 8 installs, got ${applyResult.installed?.length}`);
+const officePresetIds = new Set(skillPresets.getPresetById("office-starter").skillIds);
+const unexpectedInstall = (applyResult.installed || []).find((id) => !officePresetIds.has(id));
+if (unexpectedInstall) {
+  throw new Error(`office-starter installed unexpected skill: ${unexpectedInstall}`);
 }
-if ((applyResult.enabled || []).length !== 8) {
-  throw new Error(`expected 8 enabled, got ${applyResult.enabled?.length}`);
+const enabledIds = new Set(applyResult.enabled || []);
+for (const skillId of officePresetIds) {
+  if (!enabledIds.has(skillId)) {
+    throw new Error(`office-starter did not enable ${skillId}: ${JSON.stringify(applyResult)}`);
+  }
 }
 
 const after = skillManager.listSkillPresetsPublic().find((p) => p.id === "office-starter");

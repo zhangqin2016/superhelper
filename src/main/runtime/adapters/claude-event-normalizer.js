@@ -8,13 +8,26 @@ const {
 
 const SILENT_EVENT_TYPES = new Set([
   "keep_alive",
-  "control_cancel_request",
 ]);
 
 /** Known CLI `system/*` subtypes that need no notice and must not raise protocol_warning. */
 const SILENT_SYSTEM_SUBTYPES = new Set([
   "thinking_tokens",
   "commands_changed",
+]);
+
+const INFO_ONLY_CONTROL_SUBTYPES = new Set([
+  "mcp_message",
+  "oauth_token_refresh",
+  "host_auth_token_refresh",
+  "set_color",
+  "mcp_toggle",
+  "message_rated",
+]);
+
+const INPUT_CONTROL_SUBTYPES = new Set([
+  "request_user_dialog",
+  "elicitation",
 ]);
 
 function normalizeAskUserQuestions(input = {}) {
@@ -43,6 +56,26 @@ function normalizeAskUserQuestions(input = {}) {
       multiSelect: false,
     },
   ];
+}
+
+function normalizeDialogQuestions(input = {}, fallback = "Please complete your answer.") {
+  const direct = normalizeAskUserQuestions(input);
+  if (direct.length && direct[0]?.question !== "Please complete your answer.") return direct;
+  return normalizeAskUserQuestions({
+    questions: [
+      {
+        question:
+          input.question ||
+          input.prompt ||
+          input.message ||
+          input.title ||
+          input.description ||
+          fallback,
+        options: input.options,
+        multiSelect: input.multiSelect || input.multi_select,
+      },
+    ],
+  });
 }
 
 function normalizeAskUserQuestion(question, index) {
@@ -126,18 +159,60 @@ function normalizeHookKind(hookEvent) {
       return "hook_posttool_use";
     case "PostToolUseFailure":
       return "hook_posttool_use_failure";
+    case "PostToolBatch":
+      return "hook_posttool_batch";
     case "Stop":
       return "hook_stop";
+    case "StopFailure":
+      return "hook_stop_failure";
+    case "SubagentStart":
+      return "hook_subagent_start";
     case "SubagentStop":
       return "hook_subagent_stop";
     case "SessionStart":
       return "hook_session_start";
+    case "SessionEnd":
+      return "hook_session_end";
     case "PreCompact":
       return "hook_precompact";
+    case "PostCompact":
+      return "hook_postcompact";
     case "Notification":
       return "hook_notification";
     case "UserPromptSubmit":
       return interactive ? "hook_user_prompt_ask" : "hook_user_prompt";
+    case "UserPromptExpansion":
+      return "hook_user_prompt_expansion";
+    case "PermissionRequest":
+      return interactive ? "hook_permission_request_ask" : "hook_permission_request";
+    case "PermissionDenied":
+      return "hook_permission_denied";
+    case "Setup":
+      return "hook_setup";
+    case "TeammateIdle":
+      return "hook_teammate_idle";
+    case "TaskCreated":
+      return "hook_task_created";
+    case "TaskCompleted":
+      return "hook_task_completed";
+    case "Elicitation":
+      return interactive ? "hook_elicitation_ask" : "hook_elicitation";
+    case "ElicitationResult":
+      return "hook_elicitation_result";
+    case "ConfigChange":
+      return "hook_config_change";
+    case "WorktreeCreate":
+      return "hook_worktree_create";
+    case "WorktreeRemove":
+      return "hook_worktree_remove";
+    case "InstructionsLoaded":
+      return "hook_instructions_loaded";
+    case "CwdChanged":
+      return "hook_cwd_changed";
+    case "FileChanged":
+      return "hook_file_changed";
+    case "MessageDisplay":
+      return "hook_message_display";
     default:
       return "hook_callback";
   }
@@ -158,13 +233,25 @@ function hookNoticeForKind(hookKind, hookEvent) {
     hook_pretool_use_ask:     { code: "hookPreToolUseAsk",    level: "progress", panel: true, replace: true },
     hook_posttool_use:        { code: "hookPostToolUse",      level: "info",     panel: true, replace: true, done: true },
     hook_posttool_use_failure:{ code: "hookPostToolUseFailure",level: "warning",  panel: true, replace: true, done: true },
+    hook_posttool_batch:      { code: "hookPostToolBatch",    level: "info",     panel: true, replace: true, done: true },
     hook_stop:                { code: "hookStop",             level: "progress", panel: true, replace: true },
+    hook_stop_failure:        { code: "hookStopFailure",      level: "warning",  panel: true, replace: true, done: true },
+    hook_subagent_start:      { code: "hookSubagentStart",    level: "info",     panel: true, replace: true, done: true },
     hook_subagent_stop:       { code: "hookSubagentStop",     level: "progress", panel: true, replace: true },
     hook_session_start:       { code: "hookSessionStart",     level: "info",     panel: true, replace: true, done: true },
+    hook_session_end:         { code: "hookSessionEnd",       level: "info",     panel: true, replace: true, done: true },
     hook_precompact:          { code: "hookPreCompact",       level: "progress", panel: true, replace: true, done: true },
+    hook_postcompact:         { code: "hookPostCompact",      level: "info",     panel: true, replace: true, done: true },
     hook_user_prompt:         { code: "hookUserPrompt",       level: "info",     panel: true, replace: true, done: true },
     hook_user_prompt_ask:     { code: "hookUserPromptAsk",    level: "progress", panel: true, replace: true },
     hook_notification:        { code: "hookNotification",     level: "info",     panel: false, toast: true, done: true },
+    hook_permission_request:  { code: "hookPermissionRequest",level: "info",     panel: true, replace: true, done: true },
+    hook_permission_request_ask:{ code: "hookPermissionRequestAsk",level: "progress",panel: true, replace: true },
+    hook_permission_denied:   { code: "hookPermissionDenied", level: "warning",  panel: true, replace: true, done: true },
+    hook_task_created:        { code: "hookTaskCreated",      level: "info",     panel: true, replace: true, done: true },
+    hook_task_completed:      { code: "hookTaskCompleted",    level: "info",     panel: true, replace: true, done: true },
+    hook_elicitation:         { code: "hookElicitation",      level: "info",     panel: true, replace: true, done: true },
+    hook_elicitation_ask:     { code: "hookElicitationAsk",   level: "progress", panel: true, replace: true },
   };
 
   const notice = map[hookKind] || {
@@ -221,6 +308,25 @@ function normalizeControlEvent(ev) {
       notice,
     }];
   }
+  if (requestId && INPUT_CONTROL_SUBTYPES.has(subtype)) {
+    const request = ev.request && typeof ev.request === "object" ? ev.request : {};
+    return [{
+      kind: "user_input_request",
+      requestId,
+      subtype,
+      questions: normalizeDialogQuestions(request, subtype === "elicitation" ? "Please provide the requested information." : "Please choose how to continue."),
+      input: request,
+    }];
+  }
+  if (requestId && INFO_ONLY_CONTROL_SUBTYPES.has(subtype)) {
+    return [{
+      kind: "control_request",
+      requestId,
+      subtype,
+      request: ev.request && typeof ev.request === "object" ? ev.request : {},
+      notice: noticeForControlSubtype(subtype),
+    }];
+  }
   if (requestId) {
     return [{
       kind: "unknown_control_request",
@@ -245,6 +351,13 @@ function normalizeControlEvent(ev) {
 function normalizeAssistantMessage(ev) {
   const blocks = Array.isArray(ev?.message?.content) ? ev.message.content : [];
   const actions = [];
+  if (ev.supersedes || ev.message?.supersedes) {
+    actions.push({
+      kind: "assistant_supersedes",
+      supersedes: ev.supersedes || ev.message?.supersedes || "",
+      messageId: ev.message?.id || ev.id || "",
+    });
+  }
   for (const block of blocks) {
     if (block?.type === "text") {
       actions.push({ kind: "assistant_text", text: block.text || "" });
@@ -261,6 +374,8 @@ function normalizeAssistantMessage(ev) {
         name: block.name || "unknown",
         input: block.input || {},
         parentToolUseId: ev.parent_tool_use_id || null,
+        subagentType: ev.subagent_type || ev.message?.subagent_type || "",
+        taskDescription: ev.task_description || ev.message?.task_description || "",
       });
     }
   }
@@ -347,6 +462,8 @@ function normalizeStreamEvent(ev) {
         name: block.name,
         input: block.input || {},
         parentToolUseId: ev.parent_tool_use_id || null,
+        subagentType: ev.subagent_type || "",
+        taskDescription: ev.task_description || "",
       }];
     }
     case "content_block_delta": {
@@ -362,6 +479,13 @@ function normalizeStreamEvent(ev) {
           kind: "stream_tool_input_delta",
           index: typeof inner.index === "number" ? inner.index : -1,
           partialJson: delta.partial_json,
+        }];
+      }
+      if (delta?.type === "signature_delta" || delta?.type === "citations_delta") {
+        return [{
+          kind: "stream_metadata_delta",
+          index: typeof inner.index === "number" ? inner.index : -1,
+          deltaType: delta.type,
         }];
       }
       return [];
@@ -422,6 +546,32 @@ function normalizeClaudeEvent(ev) {
     case "rate_limit_event":
     case "tool_use_summary":
       return [{ kind: "engine_notice", notice: classifyEngineEvent(ev) }];
+    case "attachment":
+      return [{
+        kind: "engine_notice",
+        notice: {
+          code: `attachment:${String(ev.attachment?.type || "unknown")}`,
+          level: "info",
+          panel: false,
+          done: true,
+          detail: String(ev.attachment?.condition || ev.attachment?.sentinel || "").slice(0, 160),
+        },
+      }];
+    case "summary":
+      return [{
+        kind: "engine_notice",
+        notice: {
+          code: "sessionSummary",
+          level: "info",
+          panel: false,
+          done: true,
+          detail: [
+            ev.searchCount != null ? `search ${ev.searchCount}` : "",
+            ev.readCount != null ? `read ${ev.readCount}` : "",
+            ev.replCount != null ? `repl ${ev.replCount}` : "",
+          ].filter(Boolean).join(", "),
+        },
+      }];
     case "assistant":
       return normalizeAssistantMessage(ev);
     case "user":
@@ -453,6 +603,8 @@ function normalizeClaudeEvent(ev) {
     case "control_request":
     case "sdk_control_request":
       return normalizeControlEvent(ev);
+    case "control_cancel_request":
+      return [{ kind: "control_cancel", requestId: ev.request_id || ev.request?.request_id || "" }];
     case "control_response":
       return [{
         kind: "control_response",

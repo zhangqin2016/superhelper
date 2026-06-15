@@ -13,7 +13,7 @@ chat with streaming replies and tool cards, where each conversation drives a
 long-lived `claude` CLI subprocess (`stream-json` protocol). It bundles a Python
 runtime + LibreOffice so it can read/write/convert Office & PDF documents
 locally, ships a curated skills catalog, and has its own server (licensing,
-releases, skill registry, document-pack distribution) plus a Next.js web site.
+releases, skill registry, runtime-pack distribution) plus a Next.js web site.
 
 Product stance worth knowing up front: **operations are driven by natural
 language to the agent, not by piling on UI** (see `memory/no-ui-natural-language.md`),
@@ -35,7 +35,7 @@ are opt-in downloads, not bundled (see `memory/office-runtime-delegation.md`).
 | `src/main/` | **Electron main process** — the heart. ~97 modules: agent sessions, IPC, document pipeline, packs, runtime resolution, skills, sessions. | ✅ source |
 | `src/renderer/` | **UI** (chat bubbles, tool cards, settings). `app.js`, `modules/`, `styles/`, `i18n/`. | ✅ source |
 | `src/main.js`, `src/preload.js` | Main entry + preload bridge. | ✅ source |
-| `server/` | **Backend** (Fastify): licensing, releases, skill registry, document-pack distribution. `src/routes/{admin,public}`, `src/services`, `migrations/`. | ✅ source |
+| `server/` | **Backend** (Fastify): licensing, releases, skill registry, runtime-pack distribution. `src/routes/{admin,public}`, `src/services`, `migrations/`. | ✅ source |
 | `web/` | **Marketing/admin web site** (Next.js). | ✅ source |
 | `resources/` | Bundled assets: `runtime/` (Python reqs), `runtime-scripts/` (extract/render Python), `skills-catalog/` (skill content), `skills-registry/` (catalog JSON + i18n), `hooks/`, `agent-defaults/`. | ✅ source |
 | `scripts/` | 115+ dev scripts: `test-*.mjs/.cjs` (the test suite), build/release/runtime tooling. | ✅ source |
@@ -57,10 +57,12 @@ are opt-in downloads, not bundled (see `memory/office-runtime-delegation.md`).
   pre-send enrichment. Digital PDF via pdfplumber/pypdfium2, scans via RapidOCR (no torch).
   `vision-translator.js` routes images to the multimodal model. See `memory/office-runtime-delegation.md`.
 - **Document render/verify** (`resources/runtime-scripts/render_document.py`): doc → page PNGs (LibreOffice→PDF→pypdfium2).
-- **Optional engine packs** (`src/main/document-packs.js` + `document-pack-specs.js`):
-  opt-in heavy engines (Docling) downloaded from a server-resolved Qiniu URL.
-  Agent-facing install: skill `resources/skills-catalog/lily-document-packs/scripts/manage_pack.py`.
-  Build artifacts: `scripts/build-document-pack.mjs` (supports cross-platform). See `memory/server-deploy-flow.md`.
+- **Runtime packs** (`src/main/runtime-packs.js` + `runtime-pack-specs.js`):
+  opt-in local engines/runtimes (first: Docling `pro-pdf`) downloaded from a
+  server-resolved Qiniu URL. Agent-facing install: skill
+  `resources/skills-catalog/lily-runtime-packs/scripts/manage_runtime_pack.py`.
+  Build artifacts: `scripts/build-runtime-pack.mjs` (supports cross-platform).
+  See `memory/server-deploy-flow.md`.
 - **Bundled runtime** (`src/main/runtime-python.js`, `runtime-node.js`, `spawn-env.js`):
   resolves the bundled venv/uv/LibreOffice/node for agent subprocesses; built from
   `resources/runtime/requirements-runtime.txt` by `scripts/build-runtime-bundle.mjs`.
@@ -104,6 +106,6 @@ gracefully (and say so) when it's absent.
 | Add/adjust document reading or OCR | `resources/runtime-scripts/extract_document.py`, `src/main/document-translator.js` |
 | Add a Python dep to the runtime | `resources/runtime/requirements-runtime.txt`, then `npm run build:runtime` |
 | Add a first-party skill | mirror `resources/skills-catalog/lily-template-fill/`; register in `resources/skills-registry/registry.json` + `skill-localization/zh-CN.json`; maybe `src/main/skill-presets.js` |
-| Add/ship an optional engine pack | `src/main/document-pack-specs.js`, `scripts/build-document-pack.mjs`, server `routes/{public,admin}/document-pack*`; see `memory/server-deploy-flow.md` |
+| Add/ship a runtime pack | `src/main/runtime-pack-specs.js`, `scripts/build-runtime-pack.mjs`, server `routes/{public,admin}/runtime-pack*`; see `memory/server-deploy-flow.md` |
 | Add a server endpoint | `server/src/routes/`, add a migration in `server/migrations/` if needed |
 | Add an IPC channel | `src/main/ipc-handlers.js` (or an `ipc-*.js` module) |

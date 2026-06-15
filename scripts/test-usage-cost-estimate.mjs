@@ -15,13 +15,17 @@ if (qwenCost !== qwenExpected) {
   throw new Error(`qwen_plus cost ${qwenCost}, want ${qwenExpected}`);
 }
 
-// DeepSeek ×5: ¥10/M in, ¥40/M out
-const dsCost = estimateCostRmb(100_000, 200_000, "deepseek_x5");
+// DeepSeek standard reference: ¥2/M in, ¥8/M out
+const dsCost = estimateCostRmb(100_000, 200_000, "deepseek_standard");
 const dsExpected =
-  (100_000 / 1_000_000) * PRICING.deepseek_x5.inputPerMillion +
-  (200_000 / 1_000_000) * PRICING.deepseek_x5.outputPerMillion;
+  (100_000 / 1_000_000) * PRICING.deepseek_standard.inputPerMillion +
+  (200_000 / 1_000_000) * PRICING.deepseek_standard.outputPerMillion;
 if (dsCost !== Math.round(dsExpected * 100) / 100) {
-  throw new Error(`deepseek_x5 cost ${dsCost}, want ${dsExpected}`);
+  throw new Error(`deepseek_standard cost ${dsCost}, want ${dsExpected}`);
+}
+
+if (PRICING.deepseek_standard.inputPerMillion !== 2 || PRICING.deepseek_standard.outputPerMillion !== 8) {
+  throw new Error(`deepseek_standard should use normal list price, got ${JSON.stringify(PRICING.deepseek_standard)}`);
 }
 
 // Zero / invalid tokens should not produce negative costs

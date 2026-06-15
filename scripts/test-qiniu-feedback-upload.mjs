@@ -5,6 +5,13 @@ process.env.QINIU_SECRET_KEY = "test-sk";
 process.env.QINIU_BUCKET = "test-bucket";
 process.env.QINIU_PUBLIC_BASE_URL = "https://cdn.test";
 process.env.QINIU_UPLOAD_URL = "https://upload.test";
+const qiniuConfig = {
+  publicBaseUrl: "https://cdn.test",
+  accessKey: "test-ak",
+  secretKey: "test-sk",
+  bucket: "test-bucket",
+  uploadUrl: "https://upload.test",
+};
 
 const {
   createFeedbackUploadToken,
@@ -12,16 +19,21 @@ const {
   normalizeSubmittedAttachment,
 } = await import("../server/src/services/qiniu-upload.js");
 
-const token = createFeedbackUploadToken({
+const token = await createFeedbackUploadToken({
   deviceId: "dev_test",
   draftId: "draft_test",
   fileName: "bug screenshot.png",
   mimeType: "image/png",
   sizeBytes: 1024,
+  qiniuConfig,
 });
 
 if (!token.token.startsWith("test-ak:")) {
   throw new Error(`unexpected upload token: ${token.token}`);
+}
+const tokenParts = token.token.split(":");
+if (tokenParts.length !== 3 || !tokenParts[1].endsWith("=")) {
+  throw new Error("qiniu upload token signature must keep URL-safe base64 padding for form upload compatibility");
 }
 if (!token.key.startsWith("feedback/dev_test/draft_test/")) {
   throw new Error(`unexpected object key: ${token.key}`);
@@ -36,12 +48,12 @@ if (normalizeFeedbackAttachmentInput({ mimeType: "image/png", sizeBytes: 11 * 10
   throw new Error("oversized image must not be accepted");
 }
 
-const submitted = normalizeSubmittedAttachment({
+const submitted = await normalizeSubmittedAttachment({
   key: token.key,
   mimeType: "image/png",
   sizeBytes: 1024,
   name: "bug.png",
-});
+}, qiniuConfig);
 if (!submitted || submitted.object_key !== token.key || submitted.public_url !== token.publicUrl) {
   throw new Error(`submitted attachment was not normalized: ${JSON.stringify(submitted)}`);
 }

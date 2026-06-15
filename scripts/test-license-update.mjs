@@ -233,6 +233,18 @@ if (deriveAutoFeedUrl("darwin-arm64") !== "https://qny.lanrensoft.cn/app/auto-up
 if (deriveAutoFeedUrl("win32-x64") !== "https://qny.lanrensoft.cn/app/auto-updates/win32-x64/stable") {
   throw new Error(`default win auto feed mismatch: ${deriveAutoFeedUrl("win32-x64")}`);
 }
+const updateManagerSource = fs.readFileSync(require.resolve("../src/main/update-manager.js"), "utf8");
+if (!updateManagerSource.includes("disableDifferentialDownload = true")) {
+  throw new Error("auto updater must avoid Windows differential downloads; missing blockmap metadata breaks silent updates");
+}
+const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
+if (packageJson.build?.nsis?.differentialPackage !== false) {
+  throw new Error("Windows release builds must keep the stable zip-backed NSIS installer; generate blockmap separately");
+}
+const releaseOneSource = fs.readFileSync(path.join(process.cwd(), "scripts/release-one-click.mjs"), "utf8");
+if (!releaseOneSource.includes("generating Windows blockmap for stable installer")) {
+  throw new Error("release script must generate Windows blockmap without switching NSIS to differentialPackage mode");
+}
 fs.writeFileSync(
   path.join(tmp, "update-settings.json"),
   JSON.stringify({ manifestUrl: "https://user-controlled.example.com/latest.json" }),

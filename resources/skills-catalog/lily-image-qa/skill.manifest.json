@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-image-qa",
+  "name": "Lily Image QA",
+  "description": "图片生成、编辑、识别或视觉资产交付后使用，检查主体完整、清晰度、手脸文字产品边缘、构图、用途适配并判断是否需要重试。",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "category": "media",
+  "categoryLabel": "媒体创意",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "quality",
+  "riskLevel": "low",
+  "permissions": {
+    "network": false,
+    "filesystem": "none",
+    "subprocess": "none"
+  },
+  "guideMd": {
+    "title": "图片验收",
+    "priority": 14,
+    "body": "图片生成、编辑、识别或视觉资产交付后使用。必须实际查看图片，检查主体完整、清晰度、手脸/文字/Logo/产品边缘、构图和用途适配。输出通过、可用但建议微调或需要重试，并给出具体返工方向。lily-creative-director 负责创意方向，本技能负责产后验收。"
+  }
+}

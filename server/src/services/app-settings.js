@@ -55,6 +55,21 @@ export async function getMediaDeliveryMode() {
   return value === "gateway" ? "gateway" : "direct";
 }
 
+// Chat model delivery mode. "direct" delivers the provider's real endpoint +
+// key to the client (fast, no gateway hop); "gateway" routes via /llm/<provider>
+// + a short-lived token (key stays server-side, but adds a hop). Default direct.
+export async function getModelDeliveryMode() {
+  let value = await getAppSetting("model_delivery_mode", null);
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      // bare string
+    }
+  }
+  return value === "gateway" ? "gateway" : "direct";
+}
+
 export function normalizeQiniuConfig(value, fallback = envQiniuConfig()) {
   const raw = value && typeof value === "object" ? value : {};
   return {

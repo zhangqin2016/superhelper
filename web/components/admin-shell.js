@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, BarChart3, Boxes, ClipboardList, DownloadCloud, Gauge, KeyRound, Laptop, LogOut, Mail, Plug, Radar, Settings, SlidersHorizontal } from "lucide-react";
+import { Activity, BarChart3, Boxes, ClipboardList, DownloadCloud, Gauge, KeyRound, Laptop, LogOut, Mail, PackageCheck, Radar, Settings, SlidersHorizontal, Store } from "lucide-react";
 import { logoutAction } from "../app/admin/actions";
 import { LanguageSwitcher } from "./language-switcher";
 import { getI18n } from "../lib/i18n.mjs";
@@ -13,8 +13,9 @@ export async function AdminShell({ children, title, subtitle }) {
     ["/admin/usage", BarChart3, t.admin.nav.usage],
     ["/admin/contacts", Mail, t.admin.nav.contacts],
     ["/admin/releases", DownloadCloud, t.admin.nav.releases],
-    ["/admin/document-packs", Boxes, t.admin.nav.documentPacks],
-    ["/admin/plugins", Plug, t.admin.nav.plugins],
+    ["/admin/runtime-packs", Boxes, t.admin.nav.runtimePacks],
+    ["/admin/skill-packages", PackageCheck, t.admin.nav.skillPackages],
+    ["/admin/apps", Store, t.admin.nav.apps],
     ["/admin/config", SlidersHorizontal, t.admin.nav.config],
     ["/admin/health", Activity, t.admin.nav.health],
     ["/admin/diagnostics", Radar, t.admin.nav.diagnostics],

@@ -278,7 +278,14 @@ async function fetchUsageSummary({ historyDays = 30 } = {}) {
 }
 
 async function skillRegistry() {
-  return serviceFetch("/api/plugins/registry", {
+  return serviceFetch("/api/skills/registry", {
+    method: "GET",
+    headers: {},
+  });
+}
+
+async function workspaceAppCatalog() {
+  return serviceFetch("/api/apps/catalog", {
     method: "GET",
     headers: {},
   });
@@ -301,14 +308,14 @@ function currentLicenseId() {
 }
 
 async function reportSkillEvent(payload) {
-  return serviceFetch("/api/plugins/events", {
+  return serviceFetch("/api/skills/events", {
     method: "POST",
     body: JSON.stringify({
       ...devicePayload(),
       licenseId: currentLicenseId(),
       eventType: payload?.eventType,
-      pluginId: payload?.pluginId,
-      pluginVersion: payload?.pluginVersion || null,
+      skillId: payload?.skillId,
+      skillVersion: payload?.skillVersion || null,
       metadata: payload?.metadata || {},
     }),
   });
@@ -458,6 +465,7 @@ module.exports = {
   reportUsage,
   fetchUsageSummary,
   skillRegistry,
+  workspaceAppCatalog,
   reportSkillEvent,
   reportRuntimeDiagnostic,
   fetchClientConfig,

@@ -1,13 +1,15 @@
 import { z } from "zod";
 import { config } from "../../config.js";
 import { db, pool } from "../../db.js";
-import { getMediaDeliveryMode, getQiniuAdminSettings, getQiniuConfig, setAppSetting, setQiniuConfig } from "../../services/app-settings.js";
+import { getMediaDeliveryMode, getModelDeliveryMode, getQiniuAdminSettings, getQiniuConfig, setAppSetting, setQiniuConfig } from "../../services/app-settings.js";
+import { ensureEnvManagedConfigProfile } from "../../services/client-config.js";
 import { listModelGatewayProviders } from "../../services/model-gateway/providers.js";
 import { signLicensePayload } from "../../services/security.js";
 
 const updateSettingsSchema = z.object({
   licenseTrialDays: z.number().int().min(0).max(3650),
   mediaDeliveryMode: z.enum(["direct", "gateway"]).optional(),
+  modelDeliveryMode: z.enum(["direct", "gateway"]).optional(),
   qiniu: z.object({
     publicBaseUrl: z.string().url().max(400),
     accessKey: z.string().max(200),
@@ -149,6 +151,7 @@ export function registerAdminSystemRoutes(app, { audit }) {
     return {
       settings: {
         licenseTrialDays: Number.isFinite(days) ? days : 3,
+        modelDeliveryMode: await getModelDeliveryMode(),
         mediaDeliveryMode: await getMediaDeliveryMode(),
         qiniu: await getQiniuAdminSettings(),
       },
@@ -160,6 +163,12 @@ export function registerAdminSystemRoutes(app, { audit }) {
     await setAppSetting("license_trial_days", input.licenseTrialDays);
     if (input.mediaDeliveryMode) {
       await setAppSetting("media_delivery_mode", input.mediaDeliveryMode);
+    }
+    if (input.modelDeliveryMode) {
+      await setAppSetting("model_delivery_mode", input.modelDeliveryMode);
+      // Rebuild the env-managed default profile so chat presets switch
+      // direct/gateway immediately.
+      await ensureEnvManagedConfigProfile();
     }
     let qiniu = null;
     if (input.qiniu) {

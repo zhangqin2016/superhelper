@@ -145,6 +145,7 @@
         <form id="composer" class="composer">
           <div id="promptSuggestions" class="prompt-suggestions" hidden></div>
           <div id="permissionDock" class="permission-dock" hidden></div>
+          <div id="messageQueueArea" class="message-queue-area" hidden></div>
           <div class="composer-row">
             <textarea
               id="promptInput"
@@ -186,7 +187,6 @@
               <button id="sendBtn" type="submit" class="send-btn" data-i18n="composer.send">发送</button>
             </div>
           </div>
-          <div id="messageQueueArea" class="message-queue-area" hidden></div>
           <div id="filePreviewArea" class="file-preview-area" hidden></div>
           <div id="sessionSkillTagsWrap" class="session-skill-tags-wrap" hidden>
             <div id="sessionSkillTags" class="session-skill-tags"></div>
@@ -265,6 +265,7 @@
             <button type="button" class="settings-nav-item" data-settings-page="permission" data-i18n="settings.nav.permission">权限</button>
             <button type="button" class="settings-nav-item" data-settings-page="search" data-i18n="settings.nav.search">联网搜索</button>
             <button type="button" class="settings-nav-item" data-settings-page="skills" data-i18n="settings.nav.skills">技能</button>
+            <button type="button" class="settings-nav-item" data-settings-page="apps" data-i18n="settings.nav.apps">应用商店</button>
             <button type="button" class="settings-nav-item" data-settings-page="license" data-i18n="settings.nav.license">授权</button>
             <button type="button" class="settings-nav-item" data-settings-page="feedback" data-i18n="settings.nav.feedback">意见反馈</button>
             <button type="button" class="settings-nav-item" data-settings-page="contact" data-i18n="settings.nav.contact">联系我们</button>
@@ -491,14 +492,20 @@
                 <button id="skillsCheckUpdatesBtn" class="settings-action-btn" type="button" data-i18n="settings.skillsCheckUpdates">检查更新</button>
                 <button id="skillsRefreshBtn" class="settings-action-btn" type="button" data-i18n="settings.skillsRefresh">刷新配置</button>
               </div>
-              <h4 class="skills-subsection-title" data-i18n="skills.preset.sectionTitle">推荐岗位包</h4>
-              <p class="skills-preset-desc" data-i18n="skills.preset.sectionDesc">一键安装并启用常见岗位技能。办公、产品、市场、研发可按需选择。</p>
-              <div id="skillsPresetList" class="skills-preset-list"></div>
               <h4 class="skills-subsection-title" data-i18n="settings.skillsInstalled">已安装</h4>
               <div id="skillsList" class="skills-list"></div>
               <h4 id="skillsAvailableTitle" class="skills-subsection-title" hidden data-i18n="settings.skillsAvailable">可安装</h4>
               <div id="skillsAvailableList" class="skills-list"></div>
               <div id="skillsRemoteIndexes" class="skills-remote-indexes" hidden></div>
+            </section>
+            <section id="settingsPageApps" class="settings-page" data-settings-page="apps" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.apps">应用商店</h3>
+              <p class="settings-section-desc" data-i18n="settings.appsDesc">查看服务端发布的工作空间应用、模板和看板。应用由工作空间导出，依赖的 runtime 与 skill 会在卡片里显示。</p>
+              <p id="workspaceAppsHint" class="skills-registry-hint"></p>
+              <div class="settings-actions workspace-app-actions">
+                <button id="workspaceAppsRefreshBtn" class="settings-action-btn" type="button" data-i18n="settings.appsRefresh">刷新目录</button>
+              </div>
+              <div id="workspaceAppsList" class="workspace-app-list"></div>
             </section>
             <section id="settingsPageLicense" class="settings-page" data-settings-page="license" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.license">授权</h3>
@@ -556,7 +563,7 @@
             </section>
             <section id="settingsPageContact" class="settings-page" data-settings-page="contact" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.contact">联系我们</h3>
-              <p class="settings-section-desc" data-i18n="settings.contactDesc">团队授权、私有部署、插件市场或版本管理需求，可直接在此留言；也可访问官网联系页或发送邮件。</p>
+              <p class="settings-section-desc" data-i18n="settings.contactDesc">团队授权、私有部署、技能包下发或版本管理需求，可直接在此留言；也可访问官网联系页或发送邮件。</p>
               <p class="settings-section-desc settings-section-desc--compact">
                 <a class="settings-about-link" href="https://lily.lanrensoft.cn/contact" target="_blank" rel="noreferrer" data-i18n="settings.contactWebsite">官网联系页</a>
                 ·

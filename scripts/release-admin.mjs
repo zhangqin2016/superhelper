@@ -35,13 +35,13 @@ function usage() {
     --artifact darwin-arm64="dist/Lily Workbench-0.2.0-arm64.dmg" \\
     [--artifact darwin-x64="dist/Lily Workbench-0.2.0-x64.dmg"] \\
     [--artifact win32-x64="dist/Lily Workbench-0.2.0-x64.exe"] \\
-    [--prefix app/updates] [--notes "release notes"] [--force] [--build mac|win|all] [--upload] [--dry-run]
+    [--prefix app/updates] [--notes "release notes"] [--force] [--build mac|win|all] [--up-host https://upload.qiniup.com] [--upload] [--dry-run]
 
   node scripts/release-admin.mjs upload \\
     --bucket your-qiniu-bucket \\
     --key app/updates/latest.json \\
     --file release/latest.json \\
-    [--dry-run]
+    [--up-host https://upload.qiniup.com] [--dry-run]
 `);
   process.exit(1);
 }
@@ -119,7 +119,7 @@ function joinUrl(base, key) {
   return `${String(base || "").replace(/\/+$/g, "")}/${String(key || "").replace(/^\/+/g, "")}`;
 }
 
-function uploadQiniu({ bucket, key, file, dryRun }) {
+function uploadQiniu({ bucket, key, file, dryRun, upHost }) {
   const localFile = path.resolve(ROOT, file);
   if (!bucket || !key || !file) usage();
   if (!fs.existsSync(localFile)) fail(`upload file not found: ${file}`);
@@ -127,16 +127,15 @@ function uploadQiniu({ bucket, key, file, dryRun }) {
     ? localFile
     : path.relative(ROOT, localFile);
 
-  const sizeMb = fileSize(localFile) / 1024 / 1024;
-  const subcommand = sizeMb >= 100 ? "rput" : "fput";
-  const command = ["qshell", subcommand, bucket, key, uploadFile, "--overwrite"];
+  const resolvedUpHost = upHost || process.env.QINIU_UP_HOST || "https://upload.qiniup.com";
+  const command = ["qshell", "rput", bucket, key, uploadFile, "--overwrite", "--up-host", resolvedUpHost];
   console.log(`[release-admin] upload: ${command.map(shellQuote).join(" ")}`);
   if (dryRun) return;
 
   let result = spawnSync(command[0], command.slice(1), { stdio: "inherit" });
   if (result.status === 0) return;
 
-  const legacy = ["qshell", subcommand, bucket, key, uploadFile, "true"];
+  const legacy = ["qshell", "rput", bucket, key, uploadFile, "true"];
   console.log(`[release-admin] retry legacy qshell syntax: ${legacy.map(shellQuote).join(" ")}`);
   result = spawnSync(legacy[0], legacy.slice(1), { stdio: "inherit" });
   if (result.status !== 0) fail(`qshell upload failed for ${key}`);
@@ -279,12 +278,15 @@ function publish(options) {
 
   if (options.upload || options["dry-run"]) {
     for (const item of uploads) {
-      uploadQiniu({ ...item, dryRun: Boolean(options["dry-run"]) });
+      uploadQiniu({ ...item, dryRun: Boolean(options["dry-run"]), upHost: options["up-host"] });
     }
   } else {
     console.log("[release-admin] upload skipped. Add --upload to publish to Qiniu.");
+    const resolvedUpHost = options["up-host"] || process.env.QINIU_UP_HOST || "https://upload.qiniup.com";
     for (const item of uploads) {
-      console.log(`  qshell rput ${shellQuote(item.bucket)} ${shellQuote(item.key)} ${shellQuote(item.file)} --overwrite`);
+      console.log(
+        `  qshell rput ${shellQuote(item.bucket)} ${shellQuote(item.key)} ${shellQuote(item.file)} --overwrite --up-host ${shellQuote(resolvedUpHost)}`,
+      );
     }
   }
 }
@@ -304,6 +306,7 @@ if (command === "keygen") {
     key: options.key,
     file: options.file,
     dryRun: Boolean(options["dry-run"]),
+    upHost: options["up-host"],
   });
 } else {
   usage();

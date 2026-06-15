@@ -204,6 +204,10 @@ function wireAutoUpdater() {
   if (!instance || updaterWired) return instance;
   updaterWired = true;
   instance.autoDownload = false;
+  // We publish full NSIS installers for Windows. Keep the client off
+  // differential downloads so automatic updates do not depend on optional
+  // blockmap metadata being available at the edge.
+  instance.disableDifferentialDownload = true;
   // Install a background-downloaded update on the next normal quit (no forced
   // restart). Silent zero-click delivery on Windows; on macOS it also requires
   // a signed + notarized build for Squirrel.Mac to accept the update.

@@ -205,6 +205,10 @@ class TurnOrchestrator {
         appendTimelineText(state, String(payload.text || ""), Date.now());
         this._emit(sessionId, "assistant.delta", { text: String(payload.text || "") });
         break;
+      case "assistant.supersedes":
+        state.supersedes = payload.supersedes || "";
+        this._emit(sessionId, "assistant.supersedes", payload);
+        break;
       case "assistant.thinking.delta": {
         const thinkingPiece = String(payload.text || "");
         state.phase = "streaming";
@@ -228,6 +232,9 @@ class TurnOrchestrator {
         this._emit(sessionId, "content.block", payload);
         break;
       }
+      case "stream.metadata":
+        this._emit(sessionId, "stream.metadata", payload);
+        break;
       case "protocol.unknown": {
         const entry = {
           kind: payload.kind || "unknown_runtime_event",

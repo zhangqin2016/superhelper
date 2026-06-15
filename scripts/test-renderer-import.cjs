@@ -6,9 +6,15 @@ const path = require("node:path");
 
 const root = path.join(__dirname, "..");
 const capturedQuestionResponses = [];
+const capturedRevealPaths = [];
 
 ipcMain.handle("assistant:question-response", (_event, payload) => {
   capturedQuestionResponses.push(payload);
+  return { ok: true };
+});
+
+ipcMain.handle("filetree:reveal", (_event, payload) => {
+  capturedRevealPaths.push(`${payload?.sessionId || ""}:${payload?.filePath || ""}`);
   return { ok: true };
 });
 
@@ -55,9 +61,25 @@ app.whenReady().then(async () => {
   if (result.includes("FAIL")) {
     app.exitCode = 1;
   } else {
+    const skillSettingsPresetResult = await win.webContents.executeJavaScript(`(
+      () => {
+        const page = document.getElementById("settingsPageSkills");
+        if (!page) throw new Error("skills settings page should exist");
+        if (page.querySelector("#skillsPresetList, .skills-preset-list, .skills-preset-card")) {
+          throw new Error("skills settings should not show capability pack preset cards");
+        }
+        return "skill-settings-no-preset-cards: ok";
+      }
+    )()`);
+    console.log(skillSettingsPresetResult);
     const liveTurnQueueResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const queueArea = document.getElementById("messageQueueArea");
+        const composerRow = document.querySelector("#composer .composer-row");
+        if (!queueArea || !composerRow || queueArea.compareDocumentPosition(composerRow) !== Node.DOCUMENT_POSITION_FOLLOWING) {
+          throw new Error("message queue area should sit above the composer input row");
+        }
         const liveTurn = {
           turnId: "turn_queue_regression",
           phase: "tool_running",
@@ -242,6 +264,31 @@ app.whenReady().then(async () => {
         if (!host.querySelector(".markdown-task-list-item")) {
           throw new Error("task list items should receive rich markdown styling");
         }
+        const pathShell = document.createElement("div");
+        pathShell.dataset.sessionId = "session_markdown_reveal";
+        document.body.appendChild(pathShell);
+        const pathHost = document.createElement("div");
+        pathHost.className = "markdown-body";
+        pathShell.appendChild(pathHost);
+        renderMarkdownWithCache(pathHost, "已生成文件：/tmp/lily-output/generated image.png");
+        const localPathLink = pathHost.querySelector(".markdown-local-file-link[data-local-file-path]");
+        if (!localPathLink || localPathLink.dataset.localFilePath !== "/tmp/lily-output/generated image.png") {
+          throw new Error("plain local file paths should become reveal links: " + pathHost.innerHTML);
+        }
+        localPathLink.click();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        renderMarkdownWithCache(pathHost, "[打开图片](file:///C:/Users/lily/generated-assets/image.png)");
+        const windowsFileUrlLink = pathHost.querySelector(".markdown-local-file-link[data-local-file-path]");
+        if (!windowsFileUrlLink || windowsFileUrlLink.dataset.localFilePath !== "file:///C:/Users/lily/generated-assets/image.png") {
+          throw new Error("Windows file URLs should be passed to main as file URLs, got: " + pathHost.innerHTML);
+        }
+        windowsFileUrlLink.click();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        renderMarkdownWithCache(pathHost, "已保存到：generated-assets/image-1-2026.png");
+        const relativePathLink = pathHost.querySelector('.markdown-local-file-link[data-local-file-path="generated-assets/image-1-2026.png"]');
+        if (relativePathLink) {
+          throw new Error("relative generated-assets paths should not become reveal links: " + pathHost.innerHTML);
+        }
         const rich = document.createElement("div");
         rich.className = "markdown-body";
         document.body.appendChild(rich);
@@ -259,15 +306,25 @@ app.whenReady().then(async () => {
           throw new Error("Mermaid blocks should render to SVG: " + rich.innerHTML);
         }
         host.remove();
+        pathShell.remove();
         rich.remove();
         return "markdown-rich-regression: ok";
       }
     )()`);
     console.log(markdownRichResult);
+    if (!capturedRevealPaths.includes("session_markdown_reveal:/tmp/lily-output/generated image.png")) {
+      throw new Error("local file path click should reveal in folder, got: " + capturedRevealPaths.join(","));
+    }
+    if (!capturedRevealPaths.includes("session_markdown_reveal:file:///C:/Users/lily/generated-assets/image.png")) {
+      throw new Error("Windows file URL click should reveal via file URL, got: " + capturedRevealPaths.join(","));
+    }
+    if (capturedRevealPaths.some((path) => path.includes("generated-assets/image-1-2026.png"))) {
+      throw new Error("relative generated path should not reveal, got: " + capturedRevealPaths.join(","));
+    }
     const generatedMediaResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { appendToolPayloadDetail, parseGeneratedMedia } = await import("./modules/tool-payload-renderer.js");
-        const output = '<generated_media type="image">\\n  <task_id>task_123</task_id>\\n  <file path="/tmp/generated image.png" bytes="1234" />\\n</generated_media>';
+        const output = '<generated_media type="image">\\n  <task_id>task_123</task_id>\\n  <file path="/tmp/generated image.png" bytes="1234" />\\n  <file path="generated-assets/image-1-2026.png" bytes="1234" />\\n</generated_media>';
         const parsed = parseGeneratedMedia(output);
         if (parsed.length !== 1 || parsed[0].type !== "image" || parsed[0].files[0].path !== "/tmp/generated image.png") {
           throw new Error("generated media parser did not extract image file");
@@ -277,7 +334,7 @@ app.whenReady().then(async () => {
         const rendered = appendToolPayloadDetail(container, {
           name: "Bash",
           result: { content: output },
-        }, { role: "result" });
+        }, { role: "result", sessionId: "session_media_reveal" });
         const img = container.querySelector(".assistant-generated-media img");
         if (!rendered || !img) {
           throw new Error("generated media result did not render image preview");
@@ -288,11 +345,96 @@ app.whenReady().then(async () => {
         if (container.textContent.includes("<generated_media")) {
           throw new Error("raw generated_media XML should not be shown to the user");
         }
+        const absolutePath = [...container.querySelectorAll(".assistant-generated-media code")]
+          .find((node) => node.textContent === "/tmp/generated image.png");
+        if (!absolutePath || !absolutePath.classList.contains("is-clickable")) {
+          throw new Error("absolute generated media path should be clickable");
+        }
+        absolutePath.click();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const relativePath = [...container.querySelectorAll(".assistant-generated-media code")]
+          .find((node) => node.textContent === "generated-assets/image-1-2026.png");
+        if (!relativePath) {
+          throw new Error("relative generated media path should be rendered");
+        }
+        if (relativePath.classList.contains("is-clickable")) {
+          throw new Error("relative generated media path should not be clickable");
+        }
         container.remove();
         return "generated-media-preview-regression: ok";
       }
     )()`);
     console.log(generatedMediaResult);
+    if (!capturedRevealPaths.includes("session_media_reveal:/tmp/generated image.png")) {
+      throw new Error("absolute generated media path should reveal, got: " + capturedRevealPaths.join(","));
+    }
+    if (capturedRevealPaths.some((path) => path.includes("generated-assets/image-1-2026.png"))) {
+      throw new Error("relative generated media path should not reveal, got: " + capturedRevealPaths.join(","));
+    }
+    const workspaceAppInstallUxResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { refreshWorkspaceApps } = await import("./modules/workspace-apps.js");
+        const list = document.getElementById("workspaceAppsList");
+        if (!list) throw new Error("workspace app list should exist");
+        const originalClient = window.assistantClient;
+        window.assistantClient = {
+          ...originalClient,
+          listWorkspaceApps: async () => ({
+            ok: true,
+            json: {
+              apps: [
+                {
+                  id: "stock-starter",
+                  name: "Stock Starter",
+                  latestVersion: "1.0.0",
+                  category: "finance",
+                  appType: "dashboard",
+                  riskLevel: "medium",
+                  sizeBytes: 1024,
+                  summary: "A stock analysis workspace app",
+                  downloadUrl: "https://cdn.example.com/stock.zip",
+                  installed: false,
+                  requiredRuntimePacks: [],
+                  requiredSkillPackages: [],
+                  tags: [],
+                },
+                {
+                  id: "installed-app",
+                  name: "Installed App",
+                  latestVersion: "1.0.0",
+                  category: "finance",
+                  appType: "dashboard",
+                  riskLevel: "low",
+                  sizeBytes: 2048,
+                  summary: "An installed workspace app",
+                  installed: true,
+                  installedAvailable: true,
+                  installedPath: "/tmp/Lily Apps/Installed App",
+                  updateAvailable: false,
+                  requiredRuntimePacks: [],
+                  requiredSkillPackages: [],
+                  tags: [],
+                },
+              ],
+            },
+          }),
+        };
+        await refreshWorkspaceApps();
+        const text = list.textContent || "";
+        window.assistantClient = originalClient;
+        if (!text.includes("Create workspace")) {
+          throw new Error("install action should be framed as creating a workspace");
+        }
+        if (!text.includes("/tmp/Lily Apps/Installed App")) {
+          throw new Error("installed app card should show its workspace path");
+        }
+        if (!text.includes("Show in folder")) {
+          throw new Error("installed app card should expose a reveal-in-folder action");
+        }
+        return "workspace-app-install-ux: ok";
+      }
+    )()`);
+    console.log(workspaceAppInstallUxResult);
     if (capturedQuestionResponses.length !== 1) {
       throw new Error(`multi-select should submit exactly once, got ${capturedQuestionResponses.length}`);
     }

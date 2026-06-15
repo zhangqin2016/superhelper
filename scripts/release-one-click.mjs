@@ -6,6 +6,7 @@
  * 3. publish signed latest.json + installers to Qiniu
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -33,6 +34,16 @@ defaults:
   --auto-prefix ${DEFAULT_AUTO_PREFIX}
   --key ${DEFAULT_KEY}
   --server-api ${DEFAULT_SERVER_API}
+  --qiniu-up-host https://upload.qiniup.com
+
+release flow:
+  build -> Qiniu upload -> server release rows -> CDN refresh -> public verification
+
+useful options:
+  --skip-build             reuse existing dist artifacts
+  --skip-server-publish    upload Qiniu only, do not write server release rows
+  --skip-cdn-refresh       do not refresh Qiniu CDN metadata
+  --skip-verify            do not verify public manifest/feed/API after upload
 
 examples:
   npm run release:one -- --bump patch --upload --notes "修复会话卡住问题"
@@ -48,7 +59,17 @@ function args() {
     const item = argv[i];
     if (!item.startsWith("--")) usage();
     const key = item.slice(2);
-    if (["upload", "dry-run", "force", "skip-build", "skip-server-publish"].includes(key)) {
+    if (
+      [
+        "upload",
+        "dry-run",
+        "force",
+        "skip-build",
+        "skip-server-publish",
+        "skip-cdn-refresh",
+        "skip-verify",
+      ].includes(key)
+    ) {
       out[key] = true;
       continue;
     }
@@ -126,6 +147,122 @@ function publicArtifactUrl({ domain, prefix, platform, version, file }) {
   const base = String(domain || "").replace(/\/+$/g, "");
   const normalizedPrefix = String(prefix || "").replace(/^\/+|\/+$/g, "");
   return `${base}/${normalizedPrefix}/${platform}/${version}/${path.basename(file)}`;
+}
+
+function appBuilderBinPath() {
+  if (process.env.USE_SYSTEM_APP_BUILDER === "true") return "app-builder";
+  if (process.env.CUSTOM_APP_BUILDER_PATH) return path.resolve(process.env.CUSTOM_APP_BUILDER_PATH);
+  const { platform, arch } = process;
+  if (platform === "darwin") {
+    return path.join(ROOT, "node_modules", "app-builder-bin", "mac", `app-builder_${arch === "x64" ? "amd64" : arch}`);
+  }
+  if (platform === "win32") {
+    return path.join(ROOT, "node_modules", "app-builder-bin", "win", arch, "app-builder.exe");
+  }
+  return path.join(ROOT, "node_modules", "app-builder-bin", "linux", arch, "app-builder");
+}
+
+function ensureBlockmap(inputFile) {
+  const outputFile = `${inputFile}.blockmap`;
+  const absoluteInput = path.join(ROOT, inputFile);
+  const absoluteOutput = path.join(ROOT, outputFile);
+  if (fs.existsSync(absoluteOutput)) return outputFile;
+  console.log(`[release-one] generating Windows blockmap for stable installer: ${outputFile}`);
+  run(appBuilderBinPath(), ["blockmap", "--input", absoluteInput, "--output", absoluteOutput]);
+  if (!fs.existsSync(absoluteOutput)) {
+    fail(`Windows blockmap generation did not create ${outputFile}`);
+  }
+  return outputFile;
+}
+
+function runCapture(command, argsList, options = {}) {
+  const result = spawnSync(command, argsList, {
+    cwd: ROOT,
+    encoding: "utf8",
+    ...options,
+  });
+  if (result.status !== 0) {
+    const output = `${result.stdout || ""}${result.stderr || ""}`.trim();
+    throw new Error(`${command} ${argsList.join(" ")} failed${output ? `: ${output}` : ""}`);
+  }
+  return result.stdout || "";
+}
+
+function refreshCdn(urls) {
+  if (!urls.length) return;
+  const file = path.join(os.tmpdir(), `lily-cdn-refresh-${Date.now()}.txt`);
+  fs.writeFileSync(file, `${urls.join("\n")}\n`, "utf8");
+  try {
+    run("qshell", ["cdnrefresh", "-i", file]);
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+}
+
+function fetchUrl(url) {
+  return runCapture("curl", ["-fsS", "--connect-timeout", "15", "--max-time", "45", url]);
+}
+
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function withRetry(label, fn, { attempts = 5, delayMs = 3000 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt >= attempts) break;
+      console.log(`[release-one] ${label} failed, retry ${attempt}/${attempts - 1}: ${err.message}`);
+      sleepMs(delayMs);
+    }
+  }
+  throw new Error(`${label} failed after ${attempts} attempts: ${lastError?.message || "unknown error"}`);
+}
+
+function verifyStaticManifest({ domain, prefix, version, platforms }) {
+  const url = `${String(domain).replace(/\/+$/g, "")}/${String(prefix).replace(/^\/+|\/+$/g, "")}/latest.json`;
+  const json = JSON.parse(fetchUrl(url));
+  if (json.version !== version) {
+    throw new Error(`static manifest version mismatch: expected ${version}, got ${json.version || "<empty>"}`);
+  }
+  for (const platform of platforms) {
+    if (!json.platforms?.[platform]?.url) {
+      throw new Error(`static manifest missing platform: ${platform}`);
+    }
+  }
+  console.log(`[release-one] verified static manifest: ${url}`);
+}
+
+function verifyAutoFeeds({ domain, autoPrefix, version, platforms }) {
+  const base = `${String(domain).replace(/\/+$/g, "")}/${String(autoPrefix).replace(/^\/+|\/+$/g, "")}`;
+  for (const platform of platforms) {
+    const metadataName = platform.startsWith("darwin-") ? "latest-mac.yml" : "latest.yml";
+    const url = `${base}/${platform}/stable/${metadataName}`;
+    const text = fetchUrl(url);
+    if (!text.includes(`version: "${version}"`) && !text.includes(`version: ${version}`)) {
+      throw new Error(`auto update feed version mismatch for ${platform}: ${url}`);
+    }
+    console.log(`[release-one] verified auto feed: ${url}`);
+  }
+}
+
+function verifyServerReleases({ api, version, platforms }) {
+  const base = String(api).replace(/\/+$/g, "");
+  for (const platform of platforms) {
+    const url = `${base}/api/releases/latest?platform=${encodeURIComponent(platform)}&version=0.0.0`;
+    const json = JSON.parse(fetchUrl(url));
+    const gotVersion = json.version || json.release?.version;
+    const gotPlatform = json.platform || json.release?.platform;
+    if (gotVersion !== version || gotPlatform !== platform) {
+      throw new Error(
+        `server release mismatch for ${platform}: expected ${version}/${platform}, got ${gotVersion || "<empty>"}/${gotPlatform || "<empty>"}`,
+      );
+    }
+    console.log(`[release-one] verified server release: ${platform}`);
+  }
 }
 
 function hasServerReleaseAuth() {
@@ -244,10 +381,11 @@ function autoUpdateCandidates(target, productName, version) {
   if (target === "win" || target === "all") {
     const winExe = distFile(`${productName}-${version}-x64.exe`);
     if (fs.existsSync(path.join(ROOT, winExe))) {
+      const winBlockmap = ensureBlockmap(winExe);
       items.push({
         platform: "win32-x64",
         artifact: winExe,
-        blockmap: fs.existsSync(path.join(ROOT, `${winExe}.blockmap`)) ? `${winExe}.blockmap` : "",
+        blockmap: winBlockmap,
       });
     } else if (target === "win" || target === "all") {
       fail(`no Windows auto-update installer found for ${version}: ${winExe}`);
@@ -284,6 +422,7 @@ const prefix = options.prefix || DEFAULT_PREFIX;
 const autoPrefix = options["auto-prefix"] || DEFAULT_AUTO_PREFIX;
 const key = options.key || DEFAULT_KEY;
 const notes = options.notes || "";
+const qiniuUpHost = options["qiniu-up-host"] || process.env.QINIU_UP_HOST || "https://upload.qiniup.com";
 const publishServerRelease = Boolean(options.upload && !options["dry-run"] && !options["skip-server-publish"]);
 
 ensureFile(key, "private key");
@@ -324,6 +463,8 @@ try {
     prefix,
     "--notes",
     notes,
+    "--up-host",
+    qiniuUpHost,
   ];
   for (const [platform, file] of artifacts) {
     publishArgs.push("--artifact", `${platform}=${file}`);
@@ -365,6 +506,8 @@ try {
         item.key,
         "--file",
         item.file,
+        "--up-host",
+        qiniuUpHost,
       ];
       if (options["dry-run"]) uploadArgs.push("--dry-run");
       if (options.upload || options["dry-run"]) {
@@ -394,6 +537,48 @@ try {
     run(process.execPath, serverArgs);
   } else if (options.upload && !options["dry-run"]) {
     console.log("[release-one] server release publish skipped by --skip-server-publish.");
+  }
+
+  if (options.upload && !options["dry-run"]) {
+    const cdnUrls = [
+      `${domain.replace(/\/+$/g, "")}/${prefix.replace(/^\/+|\/+$/g, "")}/latest.json`,
+      ...autoUploads
+        .filter((item) => path.basename(item.file) === "latest-mac.yml" || path.basename(item.file) === "latest.yml")
+        .map((item) => `${domain.replace(/\/+$/g, "")}/${item.key}`),
+    ];
+    if (options["skip-cdn-refresh"]) {
+      console.log("[release-one] CDN refresh skipped by --skip-cdn-refresh.");
+    } else {
+      refreshCdn(cdnUrls);
+    }
+
+    if (options["skip-verify"]) {
+      console.log("[release-one] public verification skipped by --skip-verify.");
+    } else {
+      const artifactPlatforms = artifacts.map(([platform]) => platform);
+      withRetry("static manifest verification", () =>
+        verifyStaticManifest({ domain, prefix, version: nextVersion, platforms: artifactPlatforms }),
+      );
+      withRetry("auto feed verification", () =>
+        verifyAutoFeeds({
+          domain,
+          autoPrefix,
+          version: nextVersion,
+          platforms: autoUpdateCandidates(target, pkg.build?.productName || pkg.name, nextVersion).map(
+            (item) => item.platform,
+          ),
+        }),
+      );
+      if (publishServerRelease) {
+        withRetry("server release verification", () =>
+          verifyServerReleases({
+            api: options["server-api"] || DEFAULT_SERVER_API,
+            version: nextVersion,
+            platforms: artifactPlatforms,
+          }),
+        );
+      }
+    }
   }
 
   console.log(`[release-one] done ${nextVersion}`);

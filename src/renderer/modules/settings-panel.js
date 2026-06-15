@@ -10,6 +10,7 @@ import { refreshModelSelect } from "./model-settings.js";
 import { refreshPermissionSelect, refreshSessionPermissionSelect } from "./permission-settings.js";
 import { refreshSearchSettings } from "./search-settings.js";
 import { refreshSkillsList } from "./skill-settings.js";
+import { refreshWorkspaceApps } from "./workspace-apps.js";
 import { refreshLicenseStatus, refreshUpdateSettings } from "./license-update-settings.js";
 import { anySessionRunning } from "./session-runtime-store.js";
 import { activeSession, refreshStateLight } from "./session-chrome.js";
@@ -18,7 +19,7 @@ import { refreshUsageSettings, initUsageSettings } from "./usage-settings.js";
 import { initSupportSettings } from "./support-settings.js";
 import { initThemeSettings, refreshThemeSelect } from "./theme-settings.js";
 
-const SETTINGS_PAGES = ["general", "usage", "model", "permission", "search", "skills", "license", "feedback", "contact", "about"];
+const SETTINGS_PAGES = ["general", "usage", "model", "permission", "search", "skills", "apps", "license", "feedback", "contact", "about"];
 
 let panelOpen = false;
 let activeSettingsPage = "general";
@@ -77,6 +78,7 @@ function refreshSettingsPanelData() {
     refreshPermissionSelect(),
     refreshSearchSettings(),
     refreshSkillsList(),
+    refreshWorkspaceApps(),
     refreshLicenseStatus(),
     refreshUpdateSettings(),
     refreshUsageSettings(),

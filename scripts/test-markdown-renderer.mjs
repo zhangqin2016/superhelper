@@ -5,11 +5,16 @@ import { marked } from "marked";
 
 const source = fs
   .readFileSync(new URL("../src/renderer/modules/markdown.js", import.meta.url), "utf8")
+  .replace('import { revealLocalFileInFolder } from "./file-reveal.js";', "")
   .replaceAll("export async function", "async function")
   .replaceAll("export function", "function");
 
 const context = {
   console,
+  URL,
+  revealLocalFileInFolder() {
+    return Promise.resolve({ ok: true });
+  },
   window: {
     marked,
     DOMPurify: {
@@ -106,6 +111,25 @@ const image = fakeElement();
 context.window.__test.renderMarkdownWithCache(image, "![截图](https://example.com/bug.png)");
 assert.match(image.innerHTML, /class="markdown-image"/);
 assert.match(image.innerHTML, /loading="lazy"/);
+
+const localLink = fakeElement();
+context.window.__test.renderMarkdownWithCache(localLink, "[报告](/Users/zhangqin/out/report.docx)");
+assert.match(localLink.innerHTML, /class="markdown-local-file-link"/);
+assert.match(localLink.innerHTML, /data-local-file-path="\/Users\/zhangqin\/out\/report\.docx"/);
+
+const fileUrlLink = fakeElement();
+context.window.__test.renderMarkdownWithCache(fileUrlLink, "[报告](file:///Users/zhangqin/out/report.docx)");
+assert.match(fileUrlLink.innerHTML, /class="markdown-local-file-link"/);
+assert.match(fileUrlLink.innerHTML, /data-local-file-path="file:\/\/\/Users\/zhangqin\/out\/report\.docx"/);
+
+const relativeGeneratedPath = fakeElement();
+context.window.__test.renderMarkdownWithCache(relativeGeneratedPath, "已保存到：generated-assets/image-1-2026.png");
+assert.doesNotMatch(relativeGeneratedPath.innerHTML, /markdown-local-file-link/);
+
+const localImage = fakeElement();
+context.window.__test.renderMarkdownWithCache(localImage, "![生成图](/Users/zhangqin/out/image.png)");
+assert.match(localImage.innerHTML, /class="markdown-image markdown-local-file-image"/);
+assert.match(localImage.innerHTML, /data-local-file-path="\/Users\/zhangqin\/out\/image\.png"/);
 
 const unsafeLink = fakeElement();
 context.window.__test.renderMarkdownWithCache(unsafeLink, "[危险](javascript:alert(1))");
