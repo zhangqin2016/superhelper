@@ -376,6 +376,7 @@ export function applyRuntimeEvent(event) {
         }
         if (Array.isArray(event.payload?.record?.timeline) && event.payload.record.timeline.length) {
           live.timeline = event.payload.record.timeline;
+          closeStreamingBlocks(live, event.ts || Date.now());
         }
         if (event.payload?.record?.activityLabel) {
           live.activityLabel = event.payload.record.activityLabel;

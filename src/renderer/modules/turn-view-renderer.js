@@ -409,11 +409,15 @@ function collectDetailsOpenState(root) {
   return map;
 }
 
-function restoreDetailsOpenState(root, openState, { live = false } = {}) {
+function restoreDetailsOpenState(root, openState, { live = false, collapseFinishedThinking = false } = {}) {
   for (const details of root.querySelectorAll("details")) {
     if (live && details.classList.contains("is-live") &&
         details.classList.contains("assistant-process-thinking-group")) {
       details.open = true;
+      continue;
+    }
+    if (collapseFinishedThinking && details.classList.contains("assistant-process-thinking-group")) {
+      details.open = false;
       continue;
     }
     const key = detailsOpenStateKey(details);
@@ -481,6 +485,7 @@ function patchLiveProcessDom(root, liveTurn, ctx) {
 function renderProcess(root, liveTurn, ctx = {}) {
   if (!root) return;
   const { sessionId, sealed = Boolean(liveTurn.final) } = ctx;
+  const wasSealed = root.dataset.sealed === "true";
   const structureSig = processStructureSig(liveTurn, sealed, sessionId);
   if (!sealed && root.dataset.processSig === structureSig && patchLiveProcessDom(root, liveTurn, ctx)) {
     const timeline = timelineForView(liveTurn, sealed);
@@ -496,6 +501,7 @@ function renderProcess(root, liveTurn, ctx = {}) {
 
   const openState = collectDetailsOpenState(root);
   root.replaceChildren();
+  root.dataset.sealed = sealed ? "true" : "false";
   root.dataset.processSig = structureSig;
   const timeline = timelineForView(liveTurn, sealed);
   const { notices, tools } = partitionTimeline(timeline);
@@ -562,7 +568,10 @@ function renderProcess(root, liveTurn, ctx = {}) {
   }
 
   root.appendChild(list);
-  restoreDetailsOpenState(root, openState, { live: !sealed });
+  restoreDetailsOpenState(root, openState, {
+    live: !sealed,
+    collapseFinishedThinking: sealed && !wasSealed,
+  });
   if (sessionId) reapplySessionInlineDiffs(sessionId, liveTurn.turnId || null);
 }
 

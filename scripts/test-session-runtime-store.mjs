@@ -187,6 +187,9 @@ if (runtime.liveTurn?.durationMs !== 30584) {
 if (runtime.liveTurn?.notices.some((event) => event.type === "usage.updated")) {
   throw new Error("usage updates should not be rendered as process notices");
 }
+if (runtime.liveTurn?.timeline.some((entry) => entry.status === "streaming")) {
+  throw new Error("terminal events must seal streaming timeline blocks");
+}
 
 store.applyRuntimeBatch({
   sessionId: "s1",
@@ -208,6 +211,45 @@ runtime = store.getRuntimeSession("s1");
 const assistant = runtime.committedMessages.find((m) => m.role === "assistant");
 if (assistant.content !== "hello") {
   throw new Error("late post-terminal delta must not mutate committed assistant");
+}
+
+store.applyRuntimeBatch({
+  sessionId: "s1_record_timeline",
+  batchSeq: 1,
+  events: [
+    {
+      id: "s1-record-start",
+      type: "turn.started",
+      sessionId: "s1_record_timeline",
+      turnId: "t_record",
+      seq: 1,
+      ts: 5000,
+      source: "test",
+      payload: {},
+    },
+    {
+      id: "s1-record-done",
+      type: "turn.completed",
+      sessionId: "s1_record_timeline",
+      turnId: "t_record",
+      seq: 2,
+      ts: 5001,
+      source: "test",
+      payload: {
+        assistant: "done",
+        record: {
+          timeline: [
+            { kind: "thinking", id: "think_1", text: "plan", status: "streaming", startTs: 5000, ts: 5000 },
+            { kind: "text", id: "text_1", text: "done", status: "streaming", ts: 5000 },
+          ],
+        },
+      },
+    },
+  ],
+});
+runtime = store.getRuntimeSession("s1_record_timeline");
+if (runtime.liveTurn?.timeline.some((entry) => entry.status === "streaming")) {
+  throw new Error("record timeline replacement must also seal streaming blocks");
 }
 
 store.applyRuntimeBatch({
