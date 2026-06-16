@@ -29,8 +29,41 @@ assert.equal(
   "packaged defaults must use the server-managed skill package registry",
 );
 assert.deepEqual(DEFAULT_EFFECTIVE_CONFIG.tools.enabledPluginIds, [], "deepMerge must preserve default arrays");
+assert.equal(DEFAULT_EFFECTIVE_CONFIG.taskIntelligence.enabled, true);
+assert.equal(DEFAULT_EFFECTIVE_CONFIG.taskIntelligence.version, "server-default");
 assert.equal(merged.models.activePresetId, "managed");
 assert.deepEqual(merged.tools.enabledPluginIds, ["weather"]);
+
+const taskIntelligenceMerged = deepMerge(DEFAULT_EFFECTIVE_CONFIG, {
+  taskIntelligence: {
+    version: "ops-2026-06",
+    categories: {
+      ops: {
+        terms: ["巡检"],
+      },
+    },
+    workspaceProfiles: [
+      {
+        id: "ops-workspace",
+        markerFiles: ["ops.yaml"],
+      },
+    ],
+    workspaceSignals: [
+      {
+        id: "ops-signal",
+        markerFiles: ["ops.yaml"],
+      },
+    ],
+    verificationStrategies: {
+      server_change: ["ops audit"],
+    },
+  },
+});
+assert.equal(taskIntelligenceMerged.taskIntelligence.version, "ops-2026-06");
+assert.deepEqual(taskIntelligenceMerged.taskIntelligence.categories.ops.terms, ["巡检"]);
+assert.equal(taskIntelligenceMerged.taskIntelligence.workspaceProfiles[0].id, "ops-workspace");
+assert.equal(taskIntelligenceMerged.taskIntelligence.workspaceSignals[0].id, "ops-signal");
+assert.deepEqual(taskIntelligenceMerged.taskIntelligence.verificationStrategies.server_change, ["ops audit"]);
 
 assert.equal(rolloutAllows({ id: "blocked", rollout_percent: 0 }, "device-a"), false);
 assert.equal(rolloutAllows({ id: "full", rollout_percent: 100 }, "device-a"), true);

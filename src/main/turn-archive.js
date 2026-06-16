@@ -62,6 +62,16 @@ class TurnArchive {
         failed: terminalType === "turn.failed",
         resultFromCli: Boolean(payload.resultFromCli),
         toolsSummary: { count: tools.length },
+        taskContract: state.taskContract
+          ? {
+              kind: state.taskContract.kind,
+              taskType: state.taskContract.taskType || "",
+              categories: state.taskContract.categories || [],
+              workspaceProfile: state.taskContract.workspaceProfile || "",
+              workspaceSignals: state.taskContract.workspaceSignals || [],
+              verificationStrategy: state.taskContract.verificationStrategy || [],
+            }
+          : null,
       },
     };
   }

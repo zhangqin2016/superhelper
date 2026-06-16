@@ -21,6 +21,22 @@ export const DEFAULT_EFFECTIVE_CONFIG = {
   runtime: {
     env: {},
   },
+  taskIntelligence: {
+    schemaVersion: 1,
+    enabled: true,
+    version: "server-default",
+    fileExtensions: [],
+    priority: [],
+    activatingCategories: [],
+    categories: {},
+    workspaceSignals: [],
+    workspaceProfiles: [],
+    verificationStrategies: {},
+    checklists: {
+      base: [],
+      byCategory: {},
+    },
+  },
 };
 
 const ENV_MANAGED_PROFILE_ID = "lily-default-runtime";

@@ -27,6 +27,7 @@ const {
   collectFailureTextFromState,
 } = require("./turn-error-classify");
 const { runVisionPreflight, runDocumentPreflight } = require("./send-preflight");
+const { buildTaskContract, withTaskContractPrefix } = require("./task-contract");
 
 const log = getLogger("turn-orchestrator");
 
@@ -404,10 +405,6 @@ class TurnOrchestrator {
       case "process.event": {
         const activity = activityFromProcessPayload(payload);
         if (activity) setActivityLabel(state, activity);
-        if (payload.rawSubtype !== "thinking_tokens") {
-          const thinkingAction = (payload.actions || []).find((a) => a.kind === "assistant_thinking");
-          if (thinkingAction?.text) upsertTimelineThinking(state, thinkingAction.text, Date.now());
-        }
         state.processEvents.push(payload);
         if (state.processEvents.length > 200) {
           state.processEvents.splice(0, state.processEvents.length - 200);
@@ -608,6 +605,9 @@ class TurnOrchestrator {
     state.processEvents = [];
     state.notices = [];
     state.usage = null;
+    state.taskContract = null;
+    state.enginePayload = null;
+    state.recoveryAttempted = false;
     resetTimelineState(state);
     state.blockIndexToToolId = new Map();
     state.terminalEmitted = false;
@@ -683,6 +683,14 @@ class TurnOrchestrator {
       state.currentPayload = { text, files, displayFiles };
     }
 
+    const project =
+      ensured.project ||
+      (session?.projectId && typeof this.ctx.projectManager?.find === "function"
+        ? this.ctx.projectManager.find(session.projectId)
+        : null);
+    const taskContract = buildTaskContract({ text, files, session, project });
+    state.taskContract = taskContract.active ? taskContract : null;
+
     let engineText = text;
     if (!opts.fromAutoRecovery) {
       const { withSessionRehydratePrefix } = require("./session-bootstrap");
@@ -699,7 +707,7 @@ class TurnOrchestrator {
         coldStart: Boolean(ensured.coldStart),
         usedResume: Boolean(ensured.usedResume),
         session: historySession,
-        project: ensured.project,
+        project,
         userText: text,
         summary: readSessionSummary(session.id),
       });
@@ -708,13 +716,24 @@ class TurnOrchestrator {
         this._emit(session.id, "session.hydrated", { source: "local-bootstrap" }, { turnId: null });
       }
     }
+    engineText = withTaskContractPrefix(engineText, taskContract);
+    state.enginePayload = { text: engineText, files };
 
     this._emit(session.id, "turn.started", {
       text: state.currentPayload?.text || text,
       queueLength: state.queue.length,
+      taskContract: state.taskContract
+        ? {
+            kind: state.taskContract.kind,
+            taskType: state.taskContract.taskType,
+            categories: state.taskContract.categories,
+            workspaceProfile: state.taskContract.workspaceProfile,
+            workspaceSignals: state.taskContract.workspaceSignals || [],
+          }
+        : null,
     });
 
-    const sent = runner.sendUserMessage({ text: engineText, files });
+    const sent = runner.sendUserMessage(state.enginePayload);
     if (!sent) {
       this._finalize(session.id, "turn.failed", {
         failed: true,
@@ -851,7 +870,7 @@ class TurnOrchestrator {
       this.ctx.sessionManager.clearAgentResumeId(sessionId);
     }
 
-    const sent = runner.sendUserMessage(payload);
+    const sent = runner.sendUserMessage(state.enginePayload || payload);
     if (!sent) {
       this._finalize(sessionId, "turn.failed", {
         failed: true,
@@ -922,6 +941,9 @@ class TurnOrchestrator {
     state.processEvents = [];
     state.notices = [];
     state.usage = null;
+    state.taskContract = null;
+    state.enginePayload = null;
+    state.recoveryAttempted = false;
     resetTimelineState(state);
     state.blockIndexToToolId = new Map();
     state.currentPayload = null;
@@ -1038,6 +1060,8 @@ class TurnOrchestrator {
         processEvents: [],
         notices: [],
         usage: null,
+        taskContract: null,
+        enginePayload: null,
         timeline: [],
         activityLabel: null,
         durationMs: null,
