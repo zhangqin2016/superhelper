@@ -205,6 +205,8 @@ export function applyRuntimeEvent(event) {
 
   const runtime = getRuntimeSession(event.sessionId);
   if (event.type === "user.committed") {
+    const turnKey = event.turnId ? `${event.sessionId}:${event.turnId}` : "";
+    if (turnKey && terminalTurns.has(turnKey)) return;
     runtime.committedMessages.push({
       role: "user",
       content: event.payload.text || "",
@@ -234,6 +236,7 @@ export function applyRuntimeEvent(event) {
   }
   if (!event.turnId) return;
   const turnKey = `${event.sessionId}:${event.turnId}`;
+  if (terminalTurns.has(turnKey) && TERMINAL_TYPES.has(event.type)) return;
   if (terminalTurns.has(turnKey) && !TERMINAL_TYPES.has(event.type)) return;
 
   const live = ensureLiveTurn(runtime, event);

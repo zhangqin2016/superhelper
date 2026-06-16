@@ -218,6 +218,39 @@ const assistant = runtime.committedMessages.find((m) => m.role === "assistant");
 if (assistant.content !== "hello") {
   throw new Error("late post-terminal delta must not mutate committed assistant");
 }
+store.applyRuntimeBatch({
+  sessionId: "s1",
+  batchSeq: 5,
+  events: [
+    {
+      id: "e-duplicate-terminal",
+      type: "turn.failed",
+      sessionId: "s1",
+      turnId: "t1",
+      seq: 10,
+      ts: 1009,
+      source: "test",
+      payload: { assistant: "duplicate terminal" },
+    },
+    {
+      id: "e-late-user",
+      type: "user.committed",
+      sessionId: "s1",
+      turnId: "t1",
+      seq: 11,
+      ts: 1010,
+      source: "test",
+      payload: { text: "late user for completed turn" },
+    },
+  ],
+});
+runtime = store.getRuntimeSession("s1");
+if (runtime.committedMessages.filter((m) => m.role === "assistant" && m.turnId === "t1").length !== 1) {
+  throw new Error(`duplicate terminal must not append another assistant: ${JSON.stringify(runtime.committedMessages)}`);
+}
+if (runtime.committedMessages.some((m) => m.content === "late user for completed turn")) {
+  throw new Error(`late user.committed for completed turn must be ignored: ${JSON.stringify(runtime.committedMessages)}`);
+}
 
 store.applyRuntimeBatch({
   sessionId: "s1_record_timeline",
