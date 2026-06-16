@@ -86,8 +86,8 @@ fs.writeFileSync(
   "utf8",
 );
 const legacyConfig = getVisionConfig();
-if (legacyConfig.model !== "qwen3-vl-plus") {
-  throw new Error(`expected legacy settings model to normalize to qwen3-vl-plus, got ${legacyConfig.model}`);
+if (legacyConfig.model !== "qwen-vl-max") {
+  throw new Error(`expected legacy settings model to normalize to qwen-vl-max, got ${legacyConfig.model}`);
 }
 if (!hasVisionApiKey()) {
   throw new Error("hasVisionApiKey should be true");
@@ -113,6 +113,13 @@ if (designMode !== "design_review") {
   throw new Error(`expected design_review, got ${designMode}`);
 }
 
+const uiScreenshotMode = inferVisionMode("检查这个 UI 截图哪里不合理", [
+  { name: "screenshot.png" },
+]);
+if (uiScreenshotMode !== "design_review") {
+  throw new Error(`expected UI screenshot to use design_review JSON mode, got ${uiScreenshotMode}`);
+}
+
 const prompt = buildVisionPrompt({
   userText: "这个截图为什么不能发送消息？",
   mode: "bug_screenshot",
@@ -126,6 +133,23 @@ for (const expected of [
 ]) {
   if (!prompt.includes(expected)) {
     throw new Error(`expected prompt to include ${expected}`);
+  }
+}
+
+const designPrompt = buildVisionPrompt({
+  userText: "帮我检查这个 UI 页面布局并给修改建议",
+  mode: "design_review",
+});
+for (const expected of [
+  "Return JSON only",
+  "\"mode\": \"ui_screenshot\"",
+  "\"components\"",
+  "\"issues\"",
+  "\"keywords_for_code_search\"",
+  "Do not write implementation code",
+]) {
+  if (!designPrompt.includes(expected)) {
+    throw new Error(`expected design prompt to include ${expected}`);
   }
 }
 
@@ -169,11 +193,11 @@ if (largePayloadBytes >= fs.statSync(largeImage).size) {
   delete require.cache[require.resolve("../src/main/vision-translator.js")];
   const vision = require("../src/main/vision-translator.js");
   const fallbackConfig = vision.getVisionConfig();
-  if (fallbackConfig.model !== "qwen3-vl-plus") {
-    throw new Error(`expected fallback vision model qwen3-vl-plus, got ${fallbackConfig.model}`);
+  if (fallbackConfig.model !== "qwen-vl-max") {
+    throw new Error(`expected fallback vision model qwen-vl-max, got ${fallbackConfig.model}`);
   }
-  if (vision.normalizeVisionModel("qwen3.7-plus") !== "qwen3-vl-plus") {
-    throw new Error("legacy qwen3.7-plus should normalize to qwen3-vl-plus");
+  if (vision.normalizeVisionModel("qwen3.7-plus") !== "qwen-vl-max") {
+    throw new Error("legacy qwen3.7-plus should normalize to qwen-vl-max");
   }
   if (!vision.hasVisionApiKey()) {
     const noKeyResult = await vision.translateImages([

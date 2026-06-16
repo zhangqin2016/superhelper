@@ -85,10 +85,10 @@ function supportsDirectDelivery(provider) {
 
 function normalizeVisionModel(model) {
   const value = String(model || "").trim();
-  if (!value) return "qwen3-vl-plus";
+  if (!value) return "qwen-vl-max";
   const legacyAliases = {
-    "qwen3.7-plus": "qwen3-vl-plus",
-    "qwen3.7-max": "qwen3-vl-plus",
+    "qwen3.7-plus": "qwen-vl-max",
+    "qwen3.7-max": "qwen-vl-max",
     "qwen3.7-flash": "qwen3-vl-flash",
   };
   return legacyAliases[value.toLowerCase()] || value;
@@ -316,6 +316,7 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
     const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
     const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
     if (visionKey) {
+      env.VISION_MODEL = normalizeVisionModel(env.VISION_MODEL || config.visionModel);
       // Media (vision/image/video/TTS) delivery mode is admin-configurable
       // (media_delivery_mode). Default direct: deliver the real DashScope key +
       // real endpoints so the client connects straight to DashScope, no gateway

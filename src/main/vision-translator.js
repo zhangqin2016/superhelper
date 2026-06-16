@@ -16,7 +16,7 @@ const http = require("node:http");
 const { resolveSettingsEnvValue } = require("./agent-settings");
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-const DEFAULT_MODEL = "qwen3-vl-plus";
+const DEFAULT_MODEL = "qwen-vl-max";
 // qwen-vl inference on a full-size screenshot routinely takes >15s; 15s timed
 // out mid-recognition and the image was silently dropped. 60s leaves headroom;
 // override with VISION_TIMEOUT_MS.
@@ -41,8 +41,8 @@ function normalizeVisionModel(model) {
   const value = String(model || "").trim();
   if (!value) return DEFAULT_MODEL;
   const legacyAliases = {
-    "qwen3.7-plus": "qwen3-vl-plus",
-    "qwen3.7-max": "qwen3-vl-plus",
+    "qwen3.7-plus": "qwen-vl-max",
+    "qwen3.7-max": "qwen-vl-max",
     "qwen3.7-flash": "qwen3-vl-flash",
   };
   return legacyAliases[value.toLowerCase()] || value;
@@ -213,7 +213,7 @@ function inferVisionMode(userText = "", files = []) {
 
   if (includesAny(haystack, [
     "bug", "报错", "错误", "异常", "失败", "不能用", "卡住", "崩溃", "闪退",
-    "截图", "issue", "session id", "already in use", "error",
+    "issue", "session id", "already in use", "error",
   ])) {
     return "bug_screenshot";
   }
@@ -244,7 +244,8 @@ function inferVisionMode(userText = "", files = []) {
 function buildVisionPrompt({ userText = "", mode = "general" } = {}) {
   const question = String(userText || "").trim() || "The user uploaded an image without providing text.";
   const base = [
-    "You are the image understanding tool in an AI chat product. Your output will serve as evidence context for the subsequent main model.",
+    "You are the visual recognition layer in an AI chat product. Your output will serve as evidence context for the subsequent main CLI model.",
+    "Do not write implementation code, CSS, or full plans. Extract structured facts and let the downstream CLI model decide how to act.",
     "Do not give generic image descriptions; prioritize answering what the user actually wants to know.",
     "If you cannot see clearly, cannot determine, or can only speculate, you MUST state this explicitly under \"Uncertainties\".",
     "",
@@ -279,16 +280,40 @@ function buildVisionPrompt({ userText = "", mode = "general" } = {}) {
       "Uncertainties:",
     ],
     design_review: [
-      "Please output using the following structure:",
-      "[Image Recognition Result]",
-      "Type:",
-      "Conclusion related to user question:",
-      "Visible text / OCR:",
-      "Page structure:",
-      "Visual issues:",
-      "Interaction state / controls:",
-      "Keywords useful for code search:",
-      "Uncertainties:",
+      "Return JSON only. Do not wrap it in Markdown fences.",
+      "Use this exact schema:",
+      "{",
+      "  \"schema_version\": 1,",
+      "  \"mode\": \"ui_screenshot\",",
+      "  \"page_type\": \"\",",
+      "  \"answer_to_user_question\": \"\",",
+      "  \"layout\": {",
+      "    \"structure\": [],",
+      "    \"main_problem\": \"\"",
+      "  },",
+      "  \"components\": [",
+      "    {",
+      "      \"type\": \"\",",
+      "      \"text\": \"\",",
+      "      \"position\": \"\",",
+      "      \"state\": \"\",",
+      "      \"problem\": \"\",",
+      "      \"evidence\": \"\"",
+      "    }",
+      "  ],",
+      "  \"issues\": [",
+      "    {",
+      "      \"level\": \"high|medium|low\",",
+      "      \"problem\": \"\",",
+      "      \"suggestion\": \"\",",
+      "      \"evidence\": \"\"",
+      "    }",
+      "  ],",
+      "  \"visible_text\": [],",
+      "  \"keywords_for_code_search\": [],",
+      "  \"uncertainties\": []",
+      "}",
+      "Only include problems visible in the image. If no issue is visible, return an empty issues array.",
     ],
     table_or_data: [
       "Please output using the following structure:",

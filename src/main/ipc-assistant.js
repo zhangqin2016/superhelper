@@ -5,6 +5,11 @@ const fs = require("node:fs");
 const { ipcMain } = require("electron");
 const { requireValidLicense } = require("./license-manager");
 const { looksLikeScheduledTaskIntent } = require("./scheduled-task-intent");
+const {
+  buildWebSystemLearningPrompt,
+  ensureWebSystemLearningSkillForSession,
+  looksLikeWebSystemLearningIntent,
+} = require("./web-system-learning-intent");
 
 function registerAssistantHandlers(ctx) {
   const { sessionManager, projectManager, turnOrchestrator } = ctx;
@@ -76,10 +81,27 @@ function registerAssistantHandlers(ctx) {
       }
     }
 
+    const webLearningIntent = looksLikeWebSystemLearningIntent(text, files);
+    const engineText = webLearningIntent ? buildWebSystemLearningPrompt(text) : null;
+    let reloadSkillsBeforeStart = false;
+    if (webLearningIntent) {
+      const ensured = ensureWebSystemLearningSkillForSession(ctx, session.id);
+      if (!ensured.ok) {
+        return {
+          ok: false,
+          error: ensured.error,
+          detail: "Web system learning skill is not available. Please refresh the skill catalog and try again.",
+        };
+      }
+      reloadSkillsBeforeStart = Boolean(ensured.needsReloadBeforeNextTurn);
+    }
+
     return await turnOrchestrator.sendUserMessage(session.id, text, files, {
       recordUser: true,
       spawnEngine: true,
       displayFiles,
+      engineText,
+      reloadSkillsBeforeStart,
     });
   });
 
@@ -109,8 +131,25 @@ function registerAssistantHandlers(ctx) {
         ? payload.displayFiles
         : [];
 
+    const webLearningIntent = looksLikeWebSystemLearningIntent(text, files);
+    const engineText = webLearningIntent ? buildWebSystemLearningPrompt(text) : null;
+    let reloadSkillsBeforeStart = false;
+    if (webLearningIntent) {
+      const ensured = ensureWebSystemLearningSkillForSession(ctx, session.id);
+      if (!ensured.ok) {
+        return {
+          ok: false,
+          error: ensured.error,
+          detail: "Web system learning skill is not available. Please refresh the skill catalog and try again.",
+        };
+      }
+      reloadSkillsBeforeStart = Boolean(ensured.needsReloadBeforeNextTurn);
+    }
+
     return await turnOrchestrator.interruptAndSend(session.id, text, files, {
       displayFiles,
+      engineText,
+      reloadSkillsBeforeStart,
     });
   });
 

@@ -43,7 +43,7 @@ export const config = {
   dashscopeChatApiKey: process.env.DASHSCOPE_CHAT_API_KEY || process.env.DASHSCOPE_LLM_API_KEY || "",
   dashscopeBaseUrl: process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/apps/anthropic",
   dashscopeModel: process.env.DASHSCOPE_MODEL || "qwen3-coder-plus",
-  visionModel: process.env.VISION_MODEL || "qwen3-vl-plus",
+  visionModel: process.env.VISION_MODEL || "qwen-vl-max",
   // Server-side vision + web-search proxies (key stays on server; clients use a
   // gateway token). Vision reuses the DashScope key (dashscopeApiKey).
   visionUpstreamBaseUrl: process.env.VISION_UPSTREAM_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1",

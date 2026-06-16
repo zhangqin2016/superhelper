@@ -375,6 +375,30 @@
       "sourceKind": "lily"
     },
     {
+      "id": "lily-web-system-learning",
+      "name": "网页系统学习",
+      "description": "学习 OA、ERP、CRM、后台等 Web 系统，把只读探索得到的页面/动作地图生成当前工作区可审核技能，后续用自然语言操作。",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "lily-web-system-learning",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.48",
+      "category": "dev",
+      "categoryLabel": "网页自动化",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "Lily 自研：自动学习 Web/OA 系统的页面和动作地图，并生成需要用户审核启用的工作区技能草稿。",
+      "capabilityLayer": "workflow",
+      "riskLevel": "high",
+      "defaultEligible": false,
+      "featured": true,
+      "sourceKind": "lily"
+    },
+    {
       "id": "lily-skill-quality-gate",
       "name": "技能质量门禁",
       "description": "发布前评测技能是否真正提升平台能力，检查触发边界、输入输出、执行步骤、验证路径、安全可控和维护性。",

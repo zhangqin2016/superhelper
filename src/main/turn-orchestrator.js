@@ -60,6 +60,8 @@ function newQueueId() {
 
 function queueDispatchOptions(opts = {}) {
   return {
+    engineText: typeof opts.engineText === "string" ? opts.engineText : null,
+    reloadSkillsBeforeStart: Boolean(opts.reloadSkillsBeforeStart),
     spawnEngine: opts.spawnEngine,
     skipPreflight: Boolean(opts.skipPreflight),
     skipVision: Boolean(opts.skipVision),
@@ -546,6 +548,9 @@ class TurnOrchestrator {
   async _tryStartQueuedItem(sessionId, item) {
     const runner = this.ctx.runnerPool.get(sessionId);
     if (runner?.isBusy?.()) return { ok: false, retry: true, error: "RUNNER_BUSY" };
+    if (item.options?.reloadSkillsBeforeStart && runner?.isAlive?.() && !runner.reloadSkills()) {
+      this.ctx.runnerPool.terminateSession(sessionId);
+    }
     const session = this.ctx.sessionManager.findById(sessionId);
     if (!session) return { ok: false, error: "NO_SESSION" };
     return await this._startTurn(session, item.text, item.files, {
@@ -559,6 +564,7 @@ class TurnOrchestrator {
       scheduledTaskId: item.options?.scheduledTaskId || null,
       scheduledTaskRunId: item.options?.scheduledTaskRunId || null,
       scheduledTaskTitle: item.options?.scheduledTaskTitle || null,
+      engineText: item.options?.engineText || null,
     });
   }
 
@@ -691,7 +697,10 @@ class TurnOrchestrator {
     const taskContract = buildTaskContract({ text, files, session, project });
     state.taskContract = taskContract.active ? taskContract : null;
 
-    let engineText = text;
+    let engineText =
+      typeof opts.engineText === "string" && opts.engineText.trim()
+        ? opts.engineText.trim()
+        : text;
     if (!opts.fromAutoRecovery) {
       const { withSessionRehydratePrefix } = require("./session-bootstrap");
       const { readSessionSummary } = require("./session-memory");
@@ -708,7 +717,7 @@ class TurnOrchestrator {
         usedResume: Boolean(ensured.usedResume),
         session: historySession,
         project,
-        userText: text,
+        userText: engineText,
         summary: readSessionSummary(session.id),
       });
       engineText = rehydrate.text;

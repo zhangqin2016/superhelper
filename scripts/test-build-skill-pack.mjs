@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -60,6 +60,31 @@ const synthesizedManifest = JSON.parse(await noManifestZip.file("skill.manifest.
 assert.equal(synthesizedManifest.schemaVersion, 1);
 assert.equal(synthesizedManifest.id, "lily-no-manifest");
 assert.equal(synthesizedManifest.name, "lily-no-manifest");
+
+const webSystemLearningDir = path.join(ROOT, "resources/skills-catalog/lily-web-system-learning");
+if (fs.existsSync(webSystemLearningDir)) {
+  const webSystemStdout = execFileSync(
+    process.execPath,
+    [path.join(ROOT, "scripts/build-skill-pack.mjs"), "--skill", webSystemLearningDir, "--out", outDir],
+    { cwd: ROOT, encoding: "utf8" },
+  );
+  const webSystemMeta = JSON.parse(webSystemStdout);
+  assert.equal(webSystemMeta.skillId, "lily-web-system-learning");
+  assert.equal(webSystemMeta.version, "1.0.0");
+  assert.ok(webSystemMeta.fileCount >= 4, "web system learning pack should include scripts and manifest");
+}
+
+const pycacheDir = path.join(tmp, "lily-pycache");
+fs.mkdirSync(path.join(pycacheDir, "__pycache__"), { recursive: true });
+fs.writeFileSync(path.join(pycacheDir, "SKILL.md"), "# Pycache\n\nUse for pack tests.\n", "utf8");
+fs.writeFileSync(path.join(pycacheDir, "__pycache__", "scan.cpython-312.pyc"), "cache", "utf8");
+const blockedPycache = spawnSync(
+  process.execPath,
+  [path.join(ROOT, "scripts/build-skill-pack.mjs"), "--skill", pycacheDir, "--out", outDir],
+  { cwd: ROOT, encoding: "utf8" },
+);
+assert.notEqual(blockedPycache.status, 0);
+assert.match(blockedPycache.stderr, /blocked directory/);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("build-skill-pack: ok");

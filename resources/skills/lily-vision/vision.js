@@ -18,10 +18,10 @@ const MODEL = normalizeVisionModel(process.env.VISION_MODEL);
 
 function normalizeVisionModel(model) {
   const value = String(model || "").trim();
-  if (!value) return "qwen3-vl-plus";
+  if (!value) return "qwen-vl-max";
   const legacyAliases = {
-    "qwen3.7-plus": "qwen3-vl-plus",
-    "qwen3.7-max": "qwen3-vl-plus",
+    "qwen3.7-plus": "qwen-vl-max",
+    "qwen3.7-max": "qwen-vl-max",
     "qwen3.7-flash": "qwen3-vl-flash",
   };
   return legacyAliases[value.toLowerCase()] || value;

@@ -148,13 +148,27 @@ assert.equal(
   undefined,
   "raw DashScope key must NOT be delivered — a token + proxy base URLs are injected at request time",
 );
-assert.equal(mediaOnly.runtime.env.VISION_MODEL, "qwen3-vl-plus");
+assert.equal(mediaOnly.runtime.env.VISION_MODEL, "qwen-vl-max");
 assert.equal(mediaOnly.runtime.env.DASHSCOPE_IMAGE_MODEL, "qwen-image-2.0-pro");
 assert.equal(mediaOnly.runtime.env.DASHSCOPE_IMAGE_ENDPOINT, "https://dashscope.example.test/image");
 assert.equal(
   mediaOnly.runtime.env.DASHSCOPE_BASE_URL,
   undefined,
   "media config must not inherit Claude-compatible DashScope base URL",
+);
+
+const legacyVisionModel = buildEnvManagedClientConfig(
+  {
+    modelGatewayDefaultProvider: "deepseek",
+    dashscopeApiKey: "sk-test-dashscope",
+    visionModel: "qwen3.7-plus",
+  },
+  {},
+);
+assert.equal(
+  legacyVisionModel.runtime.env.VISION_MODEL,
+  "qwen-vl-max",
+  "legacy vision model aliases must route to Qwen-VL-Max",
 );
 
 const deepseekManaged = buildEnvManagedClientConfig(
