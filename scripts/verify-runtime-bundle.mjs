@@ -10,9 +10,12 @@ import {
   findExternalRuntimeSymlinks,
   relativizeRuntimeSymlinks,
 } from "./fix-runtime-symlinks.mjs";
+import { createRequire } from "node:module";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
+const require = createRequire(import.meta.url);
+const { findAppOnlyRuntimePackages } = require("../src/main/runtime-bundle-policy.js");
 
 function platformCandidates() {
   if (process.platform === "darwin") {
@@ -116,6 +119,15 @@ const venvPython = venvPythonPath(runtimeRoot, platform);
 
 if (!fs.existsSync(venvPython)) {
   fail(`venv python missing at ${venvPython}`);
+}
+
+const appOnlyPackages = findAppOnlyRuntimePackages(runtimeRoot, platform);
+if (appOnlyPackages.length) {
+  const names = appOnlyPackages.map((item) => `${item.name} (${item.reason})`).join(", ");
+  fail(
+    `bundles/${platform}/runtime contains app-only Python package(s): ${names}. ` +
+      "Move stock/agent/search app dependencies into the workspace app or a dedicated runtime pack, then rebuild the base runtime.",
+  );
 }
 
 const canRunSmokeTest =

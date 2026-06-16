@@ -411,6 +411,36 @@ app.whenReady().then(async () => {
     if (capturedRevealPaths.some((path) => path.includes("generated-assets/image-1-2026.png"))) {
       throw new Error("relative generated media path should not reveal, got: " + capturedRevealPaths.join(","));
     }
+    const generatedFileImageResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { appendToolPayloadDetail } = await import("./modules/tool-payload-renderer.js");
+        const container = document.createElement("details");
+        document.body.appendChild(container);
+        const rendered = appendToolPayloadDetail(container, {
+          name: "Bash",
+          result: { content: JSON.stringify({ ok: true, output: "/tmp/out/icon.svg" }) },
+        }, { role: "result", sessionId: "session_generated_file_image" });
+        const img = container.querySelector(".assistant-generated-file-preview img");
+        if (!rendered || !img) {
+          throw new Error("generated SVG output should render an image preview: " + container.innerHTML);
+        }
+        if (!String(img.getAttribute("src") || "").startsWith("file:///tmp/out/icon.svg")) {
+          throw new Error("generated SVG preview should use a file URL: " + img.getAttribute("src"));
+        }
+        const path = container.querySelector(".assistant-generated-file-preview code.is-clickable");
+        if (!path || path.textContent !== "/tmp/out/icon.svg") {
+          throw new Error("generated SVG preview should keep a clickable reveal path");
+        }
+        path.click();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        container.remove();
+        return "generated-file-svg-preview-regression: ok";
+      }
+    )()`);
+    console.log(generatedFileImageResult);
+    if (!capturedRevealPaths.includes("session_generated_file_image:/tmp/out/icon.svg")) {
+      throw new Error("generated SVG output path should reveal, got: " + capturedRevealPaths.join(","));
+    }
     const workspaceAppInstallUxResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { refreshWorkspaceApps } = await import("./modules/workspace-apps.js");

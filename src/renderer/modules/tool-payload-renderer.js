@@ -134,6 +134,7 @@ function generatedMediaFromPayload(payload) {
 // gets a "reveal in folder" affordance — the model never edited it via Write,
 // so it isn't in the changed-files group.
 const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp|gif|svg|html?|json|zip)$/i;
+const GENERATED_IMAGE_EXTS = /\.(png|jpe?g|webp|gif|svg)$/i;
 
 function looksLikeGeneratedFilePath(value) {
   if (typeof value !== "string") return false;
@@ -155,6 +156,10 @@ function generatedFilesFromPayload(payload) {
   }
   const seen = new Set();
   return paths.filter((p) => (seen.has(p) ? false : seen.add(p))).map((path) => ({ path }));
+}
+
+function isGeneratedImagePath(filePath = "") {
+  return GENERATED_IMAGE_EXTS.test(String(filePath || "").trim());
 }
 
 function fileUrlFromPath(filePath = "") {
@@ -465,6 +470,42 @@ function renderGeneratedFiles(root, files = [], options = {}) {
   const wrap = document.createElement("div");
   wrap.className = "assistant-generated-files";
   for (const file of files) {
+    if (isGeneratedImagePath(file.path)) {
+      const figure = document.createElement("figure");
+      figure.className = "assistant-generated-file-row assistant-generated-file-preview";
+      const img = document.createElement("img");
+      const src = fileUrlFromPath(file.path);
+      img.src = src;
+      img.alt = file.path;
+      img.loading = "lazy";
+      img.addEventListener("click", async () => {
+        const mod = await import("./image-viewer.js");
+        mod.openImageViewer?.(src, img.alt);
+      });
+      figure.appendChild(img);
+
+      const caption = document.createElement("figcaption");
+      const name = document.createElement("code");
+      name.className = "assistant-generated-file-path";
+      name.textContent = file.path;
+      caption.appendChild(name);
+      if (isRevealableLocalPath(file.path)) {
+        name.classList.add("is-clickable");
+        name.title = t("file.reveal");
+        const reveal = () => void revealFileInFolder(root, file.path, options);
+        name.addEventListener("click", reveal);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "assistant-reveal-btn";
+        btn.textContent = t("file.reveal");
+        btn.addEventListener("click", reveal);
+        caption.appendChild(btn);
+      }
+      figure.appendChild(caption);
+      wrap.appendChild(figure);
+      continue;
+    }
+
     const row = document.createElement("div");
     row.className = "assistant-generated-file-row";
     const name = document.createElement("code");

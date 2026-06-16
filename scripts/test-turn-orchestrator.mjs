@@ -107,6 +107,13 @@ const result = await ctx.turnOrchestrator.sendUserMessage("s1", "hello", [], {
 });
 if (!result.ok) throw new Error(`send failed: ${JSON.stringify(result)}`);
 ctx.turnOrchestrator.ingest("s1", [
+  { type: "assistant.thinking.delta", payload: { text: "Inspect files." } },
+  { type: "process.event", payload: {
+    rawType: "stream_event",
+    rawSubtype: "content_block_delta",
+    summary: "Inspect files.",
+    actions: [{ kind: "assistant_thinking", text: "Inspect files." }],
+  } },
   { type: "tool.started", payload: { id: "tool_1", name: "Bash", input: {} } },
   { type: "process.event", payload: {
     rawType: "stream_event",
@@ -142,7 +149,10 @@ if (!allEvents.some((event) => event.type === "assistant.delta")) {
 if (!allEvents.some((event) => event.type === "assistant.final")) {
   throw new Error("missing assistant.final");
 }
-const processEvent = allEvents.find((event) => event.type === "process.event");
+const processEvent = allEvents.find((event) => (
+  event.type === "process.event" &&
+  event.payload?.rawSubtype === "content_block_start"
+));
 if (!processEvent?.turnId || processEvent.payload?.rawSubtype !== "content_block_start") {
   throw new Error("process.event should be attached to the active turn");
 }
@@ -167,6 +177,10 @@ if (!assistantMsg?.record?.tools?.length) {
 }
 if (assistantMsg.record.tools.some((tool) => tool.status === "running")) {
   throw new Error(`assistant record must not archive running tools: ${JSON.stringify(assistantMsg.record.tools)}`);
+}
+const archivedThinking = assistantMsg.record.timeline.filter((entry) => entry.kind === "thinking");
+if (archivedThinking.length !== 1 || archivedThinking[0].text !== "Inspect files.") {
+  throw new Error(`process.event must not duplicate archived thinking: ${JSON.stringify(assistantMsg.record.timeline)}`);
 }
 
 sent.length = 0;

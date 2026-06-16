@@ -64,6 +64,12 @@ if (runtime.liveTurn?.thinkingText !== "I should inspect files.") {
 if (runtime.liveTurn?.processEvents.length !== 1) {
   throw new Error(`process.event should be retained, got ${runtime.liveTurn?.processEvents.length}`);
 }
+{
+  const thinkingBlocks = (runtime.liveTurn?.timeline || []).filter((entry) => entry.kind === "thinking");
+  if (thinkingBlocks.length !== 1 || thinkingBlocks[0].text !== "I should inspect files.") {
+    throw new Error(`process.event must not duplicate thinking deltas: ${JSON.stringify(runtime.liveTurn?.timeline)}`);
+  }
+}
 
 store.applyRuntimeBatch({
   sessionId: "s1",

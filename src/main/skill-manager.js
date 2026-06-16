@@ -321,8 +321,8 @@ function buildAgentGuideContent(enabledSkills, locale) {
   return sections.join("\n").trim() + "\n";
 }
 
-/** Bump when static AGENT.md header changes so cached session guides refresh. */
-const AGENT_GUIDE_STATIC_VERSION = 4;
+/** Bump when static AGENT.md header or mandatory guide semantics change. */
+const AGENT_GUIDE_STATIC_VERSION = 5;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();

@@ -283,11 +283,6 @@ export function appendTimelineNotice(target, notice, ts = Date.now()) {
 export function applyProcessEventToTimeline(target, payload, ts = Date.now()) {
   const label = activityFromProcessPayload(payload);
   if (label && !runningToolActivity(target.tools)) setActivityLabel(target, label);
-  if (payload.rawSubtype === "thinking_tokens") return;
-  const actions = payload.actions || [];
-  if (actions.length === 1 && actions[0]?.kind === "assistant_thinking") {
-    upsertTimelineThinking(target, actions[0].text || "", ts);
-  }
 }
 
 function runningToolActivity(tools) {

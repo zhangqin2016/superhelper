@@ -961,6 +961,31 @@
   word-break: break-all;
 }
 
+.assistant-generated-file-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.assistant-generated-file-preview img {
+  display: block;
+  width: min(360px, 100%);
+  max-height: 360px;
+  object-fit: contain;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: var(--image-backdrop);
+  cursor: zoom-in;
+}
+
+.assistant-generated-file-preview figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .assistant-process-thinking {
   padding: 10px 12px;
   border-left: 2px solid var(--border, var(--border));
