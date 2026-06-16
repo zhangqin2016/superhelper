@@ -24,8 +24,17 @@ fi
 db_mode="$(grep '^DB_MODE=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
 gateway_mode="$(grep '^GATEWAY_MODE=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
 litellm_enabled="$(grep '^LITELLM_ENABLED=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
+deploy_mode="$(grep '^DEPLOY_MODE=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
+compose_build_arg="--build"
 
-if [ "$gateway_mode" = "external" ]; then
+if [ "$deploy_mode" = "images" ]; then
+  compose_file="docker-compose.images-app-only.yml"
+  compose_build_arg=""
+  if [ "$db_mode" != "external" ]; then
+    echo "DEPLOY_MODE=images currently expects DB_MODE=external. Set DB_MODE=external and DATABASE_URL in .env."
+    exit 1
+  fi
+elif [ "$gateway_mode" = "external" ]; then
   compose_file="docker-compose.app-only.yml"
   if [ "$db_mode" != "external" ]; then
     echo "GATEWAY_MODE=external currently expects DB_MODE=external. Set DB_MODE=external and DATABASE_URL in .env."
@@ -55,9 +64,9 @@ if [ "${litellm_enabled:-false}" = "true" ]; then
 fi
 
 if docker compose version >/dev/null 2>&1; then
-  docker compose --env-file .env $compose_args up -d --build
+  docker compose --env-file .env $compose_args up -d $compose_build_arg
 else
-  docker-compose --env-file .env $compose_args up -d --build
+  docker-compose --env-file .env $compose_args up -d $compose_build_arg
 fi
 
 if ! command -v curl >/dev/null 2>&1; then
@@ -98,6 +107,7 @@ fi
 echo "Lily Workbench is starting."
 echo "Database mode: ${db_mode:-internal}"
 echo "Gateway mode: ${gateway_mode:-bundled}"
+echo "Deploy mode: ${deploy_mode:-source}"
 echo "LiteLLM protocol layer: ${litellm_enabled:-false}"
 if [ "${gateway_mode:-bundled}" = "external" ]; then
   echo "API local port: http://127.0.0.1:$(grep '^API_PORT=' .env | cut -d= -f2)"

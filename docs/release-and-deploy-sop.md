@@ -13,7 +13,7 @@ There are three separate release lines:
 | Line | What Ships | Primary Entry Point | Production Target |
 | --- | --- | --- | --- |
 | Desktop app release | macOS/Windows installers, static update manifest, auto-update feed, optional server release rows | `npm run release:one` | Qiniu CDN + API `releases` table |
-| Server/web deploy | Fastify API, Next.js web/admin, Baota compose descriptors | `deploy/baota/push-via-qiniu.sh` | `lily.lanrensoft.cn` server |
+| Server/web deploy | Fastify API, Next.js web/admin, Baota compose descriptors | `deploy/baota/push-images-via-qiniu.sh` | `lily.lanrensoft.cn` server |
 | Runtime pack release | Optional heavy Python runtime pack, e.g. `pro-pdf` | `npm run build:runtime-pack -- --pack <id>` + `release-admin.mjs upload` + admin API register | Qiniu CDN + API `runtime_packs` table |
 
 These lines can be deployed independently:
@@ -189,20 +189,22 @@ Production server:
 - deploy dir: `/www/wwwroot/lily-workbench`
 - stack: Baota + Docker Compose
 
-The current deploy is source-build-on-server:
+The preferred production deploy is image-artifact-through-Qiniu:
 
 ```text
-local tar server/ web/ deploy/baota
-  -> upload tarball to Qiniu
+local buildx builds linux/amd64 api/web image tarballs
+  -> upload image tarballs + deploy/baota tarball to Qiniu
   -> SSH server
-  -> server downloads tarball
+  -> server downloads tarballs
+  -> docker load api/web images
   -> deploy/baota/deploy.sh
-  -> docker compose up -d --build
+  -> docker compose -f docker-compose.images-app-only.yml up -d
   -> /api/admin/health check
 ```
 
-This is not an image-pull deployment. The image-based flow mentioned in some
-plans does not exist yet.
+The older `push-via-qiniu.sh` source-build path still exists for fallback, but
+production pushes should use the image path so the server only downloads and
+loads prebuilt images.
 
 ### Prerequisites
 
@@ -218,6 +220,8 @@ GATEWAY_MODE=external
 API_PORT=13000
 WEB_PORT=13001
 PUBLIC_API_BASE_URL=https://lily.lanrensoft.cn
+DEPLOY_MODE=images
+IMAGE_TAG=<current-release-or-commit-tag>
 ```
 
 ### Pre-Deploy Gate
@@ -240,13 +244,16 @@ SSH_HOST=182.92.107.175 \
 SSH_USER=root \
 SSH_PORT=22 \
 REMOTE_DIR=/www/wwwroot/lily-workbench \
-deploy/baota/push-via-qiniu.sh
+deploy/baota/push-images-via-qiniu.sh
 ```
 
 The script:
 
-- excludes `server/.env`, `web/.env`, `node_modules`, and `.next`;
+- builds `lily-workbench-api:<tag>` and `lily-workbench-web:<tag>` for linux/amd64;
+- uploads both image tarballs and `deploy/baota` to Qiniu;
+- downloads and `docker load`s the images on the server;
 - preserves remote `deploy/baota/.env`;
+- writes `DEPLOY_MODE=images` and `IMAGE_TAG=<tag>`;
 - runs `deploy/baota/deploy.sh` remotely;
 - exits non-zero if the admin health check fails.
 
@@ -264,18 +271,19 @@ On the server:
 ```bash
 ssh 182.92.107.175
 cd /www/wwwroot/lily-workbench/deploy/baota
-docker compose --env-file .env -f docker-compose.app-only.yml ps
-docker compose --env-file .env -f docker-compose.app-only.yml logs --tail=100 api
-docker compose --env-file .env -f docker-compose.app-only.yml logs --tail=100 web
+docker compose --env-file .env -f docker-compose.images-app-only.yml ps
+docker compose --env-file .env -f docker-compose.images-app-only.yml logs --tail=100 api
+docker compose --env-file .env -f docker-compose.images-app-only.yml logs --tail=100 web
 ```
 
-Important gotcha: the remote Docker build runs inside the SSH session. If SSH
-drops mid-build, deployment may abort before containers are recreated. Verify
-container uptime changed when you expected a service to rebuild.
+Important gotcha: if SSH or server networking drops while images are loading or
+compose is restarting, deployment may abort before containers are recreated.
+Verify container uptime changed and images are `lily-workbench-api:<tag>` /
+`lily-workbench-web:<tag>`.
 
 ### Server Rollback
 
-The current source-build deploy has no one-command rollback.
+The current image deploy has no one-command rollback.
 
 Manual rollback:
 
@@ -444,7 +452,7 @@ Server deploy:
 npm run test:unit
 npm run deploy:baota:check
 npm --prefix web run build
-SSH_HOST=182.92.107.175 deploy/baota/push-via-qiniu.sh
+SSH_HOST=182.92.107.175 deploy/baota/push-images-via-qiniu.sh
 ```
 
 Runtime pack:
