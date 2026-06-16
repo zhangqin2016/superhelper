@@ -9,12 +9,12 @@ services:
     environment:
       NODE_ENV: production
       IMAGE_TAG: ${IMAGE_TAG:-latest}
-      PORT: 3000
+      PORT: ${API_PORT:-3000}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://127.0.0.1:4000}
     command: sh -c "npm run migrate && npm run start"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${API_PORT:-3000}/health >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -29,9 +29,9 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      PORT: 3001
-      API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://127.0.0.1:3000}
-      NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://127.0.0.1:3000}
+      PORT: ${WEB_PORT:-3001}
+      API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://127.0.0.1:${API_PORT:-3000}}
+      NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://127.0.0.1:${API_PORT:-3000}}
       RELEASE_CDN_BASE_URL: ${QINIU_PUBLIC_BASE_URL:-https://qny.lanrensoft.cn}
       NEXT_PUBLIC_RELEASE_CDN_BASE_URL: ${QINIU_PUBLIC_BASE_URL:-https://qny.lanrensoft.cn}
       RELEASE_CDN_PREFIX: ${RELEASE_CDN_PREFIX:-app/updates}
