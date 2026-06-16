@@ -76,7 +76,14 @@ const prefixed = withSessionRehydratePrefix({
   project,
   userText: "继续刚才的方案",
 });
-if (!prefixed.rehydrated || !prefixed.text.includes("[End resume notice]") || !prefixed.text.endsWith("继续刚才的方案")) {
+if (
+  !prefixed.rehydrated ||
+  !prefixed.text.includes("[End resume notice]") ||
+  !prefixed.text.includes('title="platform_context"') ||
+  !prefixed.text.includes('title="user_original_request"') ||
+  !prefixed.text.includes("Highest priority") ||
+  !prefixed.text.includes("继续刚才的方案")
+) {
   throw new Error(`rehydrate prefix failed: ${JSON.stringify(prefixed)}`);
 }
 

@@ -15,7 +15,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // --- Mocks for the lazily-required translators ---
 const visionMock = {
-  buildEnrichedUserText: (text, extracted) => `${text}\n[img:${extracted}]`,
+  buildEnrichedUserText: (text, extracted) => require(path.join(ROOT, "src/main/engine-message-layers.js")).appendExtractedContext(text, `[img:${extracted}]`, "Image recognition result"),
   hasVisionInputFiles: (files) => (files || []).some((f) => f?.isImage),
   isImageOnlyUserMessage: (text, files) => !text && (files || []).some((f) => f?.isImage),
   translateImages: async () => {
@@ -26,7 +26,7 @@ const visionMock = {
   _calls: 0,
 };
 const documentMock = {
-  buildEnrichedUserText: (text, extracted) => `${text}\n[doc:${extracted}]`,
+  buildEnrichedUserText: (text, extracted) => require(path.join(ROOT, "src/main/engine-message-layers.js")).appendExtractedContext(text, `[doc:${extracted}]`, "Document extraction result"),
   extractDocuments: async () => documentMock._next,
   hasDocumentInputFiles: (files) => (files || []).some((f) => /\.docx$/.test(f?.path || "")),
   isDocumentOnlyUserMessage: (text, files) => !text && (files || []).some((f) => /\.docx$/.test(f?.path || "")),
@@ -95,14 +95,16 @@ assert(visionMock._calls === 0, "native vision never calls the Qwen bridge");
 visionMock._next = { ok: true, text: "a cat", keepOriginal: false };
 notices = [];
 r = await runVisionPreflight("look", [img, txtFile], { emitNotice: (n) => notices.push(n.code) });
-assert(r.ok && r.text === "look\n[img:a cat]", "vision success enriches text");
+assert(r.ok && r.text.includes('title="extracted_attachments"') && r.text.includes("[img:a cat]"), "vision success enriches text in extraction layer");
+assert(r.text.includes('title="user_original_request"') && r.text.includes("look"), "vision success preserves original request layer");
 assert(!r.files.some((f) => f.isImage), "image pruned from outbound files on success");
 assert(notices.includes("visionReady"), "emits ready on success");
 
 // Document success → enriched + extracted file pruned.
 documentMock._next = { ok: true, text: "contract terms", extractedPaths: ["/a/report.docx"], keepOriginal: false };
 r = await runDocumentPreflight("review", [docFile, txtFile], {});
-assert(r.ok && r.text === "review\n[doc:contract terms]", "document success enriches text");
+assert(r.ok && r.text.includes('title="extracted_attachments"') && r.text.includes("[doc:contract terms]"), "document success enriches text in extraction layer");
+assert(r.text.includes('title="user_original_request"') && r.text.includes("review"), "document success preserves original request layer");
 assert(!r.files.some((f) => f.path === "/a/report.docx"), "extracted document pruned from outbound");
 assert(r.files.some((f) => f === txtFile), "non-extracted files kept");
 

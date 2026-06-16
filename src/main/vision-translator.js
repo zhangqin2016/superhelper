@@ -439,11 +439,11 @@ function isImageOnlyUserMessage(text, files) {
 }
 
 function buildEnrichedUserText(userText, visionText) {
-  const base = String(userText || "").trim();
-  const evidence = String(visionText || "").trim();
-  if (!evidence) return base;
-  if (!base) return evidence;
-  return `${evidence}\n\n---\n\n${base}`;
+  return require("./engine-message-layers").appendExtractedContext(
+    userText,
+    visionText,
+    "Image recognition result",
+  );
 }
 
 module.exports = {

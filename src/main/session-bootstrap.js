@@ -82,8 +82,11 @@ function withSessionRehydratePrefix({ coldStart, usedResume, session, project, u
   }
   const bootstrap = buildSessionRehydratePrompt({ session, project, userText, summary });
   if (!bootstrap) return { text: userText, rehydrated: false };
+  const { addLayersToEngineText } = require("./engine-message-layers");
   return {
-    text: `${bootstrap}\n\n${String(userText || "").trim()}`,
+    text: addLayersToEngineText(userText, {
+      platformContext: bootstrap,
+    }),
     rehydrated: true,
   };
 }

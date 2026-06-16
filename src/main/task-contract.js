@@ -537,9 +537,11 @@ function buildTaskContract({ text = "", files = [], session = null, project = nu
 
 function withTaskContractPrefix(text, contract) {
   if (!contract?.active) return String(text || "");
-  const lines = [
+  const { addLayersToEngineText } = require("./engine-message-layers");
+  const contractText = [
     "<lily_task_contract>",
     "This internal contract improves execution quality. Do not quote it back unless the user asks about process.",
+    "The user's original request remains the highest-priority instruction, especially explicit negations.",
     `task_kind: ${contract.kind}`,
     `task_type: ${contract.taskType || "general"}`,
     `categories: ${contract.categories.join(", ") || "general"}`,
@@ -568,10 +570,10 @@ function withTaskContractPrefix(text, contract) {
     "Verification strategy:",
     ...(contract.verificationStrategy || []).map((item) => `- ${item}`),
     "</lily_task_contract>",
-    "",
-    String(text || ""),
-  ];
-  return lines.join("\n");
+  ].join("\n");
+  return addLayersToEngineText(text, {
+    executionConstraints: contractText,
+  });
 }
 
 module.exports = {

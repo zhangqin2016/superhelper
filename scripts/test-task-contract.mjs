@@ -89,6 +89,8 @@ assert.equal(contract.modelDraft.requested, true);
 assert.equal(contract.modelDraft.localFallback.taskType, "runtime_protocol");
 
 const prefixed = withTaskContractPrefix("用户原始问题", contract);
+assert(prefixed.includes('title="execution_constraints"'));
+assert(prefixed.includes('title="user_original_request"'));
 assert(prefixed.includes("<lily_task_contract>"));
 assert(prefixed.includes("Platform baseline rules:"));
 assert(prefixed.includes("Model task draft:"));
@@ -96,7 +98,8 @@ assert(prefixed.includes("task_type: runtime_protocol"));
 assert(prefixed.includes("Impact checklist:"));
 assert(prefixed.includes("Verification strategy:"));
 assert(prefixed.includes("registry_version: local-default"));
-assert(prefixed.endsWith("用户原始问题"));
+assert(prefixed.includes("Highest priority"));
+assert(prefixed.includes("用户原始问题"));
 
 const plain = withTaskContractPrefix("你好", buildTaskContract({ text: "你好" }));
 assert.equal(plain, "你好");
