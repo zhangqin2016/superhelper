@@ -188,7 +188,7 @@ You are working inside the Lily Workbench stock analysis app.
 ## Startup Checklist
 
 1. Read \`README.md\`, \`source/.env.example\`, and \`source/README.md\`.
-2. Check whether \`source/.env\` exists. If missing, use Lily platform model/search env where possible and ask only for stock/data-provider keys that are truly required by the upstream script.
+2. Use Lily platform model/search env. Do not ask ordinary users to configure upstream OpenAI/Anthropic/search keys.
 3. Check whether \`python\` and \`uv\` resolve from Lily's bundled runtime.
 4. If app dependencies are missing, create \`source/.venv-lily-stock\` and install the package with \`uv pip install -e .\`.
 5. Run a tiny dry run before any full analysis.
@@ -217,6 +217,25 @@ python lily_run.py --stocks 600519,AAPL --dry-run
 - For tables or watchlists, create reviewable CSV/XLSX outputs when useful.
 - If data is thin, use "本次数据限制" wording. Do not frame platform search keys or third-party provider keys as customer setup requirements.
 - Always include: "This is research assistance, not investment advice."
+`;
+}
+
+function lilyMainWrapper() {
+  return `#!/usr/bin/env python3
+"""Compatibility wrapper for Lily Workbench stock analysis.
+
+The upstream TradingAgents sample used provider defaults directly. In Lily, all
+manual and agent-driven runs must go through lily_run.py so platform-managed
+model/search configuration is applied before TradingAgents is imported.
+"""
+
+from __future__ import annotations
+
+from lily_run import main
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 `;
 }
 
@@ -272,9 +291,22 @@ The app entrypoint is \`source/lily_run.py\`. It maps Lily's \`LILY_API_KEY\`,
 non-interactive \`TRADINGAGENTS_*\` configuration, so ordinary users do not need
 to configure upstream provider keys.
 
+\`source/main.py\` is packaged as a Lily compatibility wrapper that delegates to
+\`source/lily_run.py\`; do not replace it with the upstream demo script.
+
 Future versions may move these dependencies into a dedicated \`stock-analysis\`
 runtime pack once artifacts exist for macOS, Windows, and Linux.
 `;
+}
+
+function assertRequiredSource(sourceDir) {
+  const required = ["source/lily_run.py", "source/lily_adapter.py", "source/pyproject.toml"];
+  for (const rel of required) {
+    const fullPath = path.join(sourceDir, ...rel.split("/"));
+    if (!fs.existsSync(fullPath)) {
+      throw new Error(`stock app source missing required Lily integration file: ${rel}`);
+    }
+  }
 }
 
 async function build({ sourceDir, outDir, version, exportedAt }) {
@@ -284,6 +316,7 @@ async function build({ sourceDir, outDir, version, exportedAt }) {
   if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
     throw new Error(`source dir not found: ${sourceDir}`);
   }
+  assertRequiredSource(sourceDir);
 
   const files = walkFiles(sourceDir);
   const zip = new JSZip();
@@ -304,6 +337,7 @@ async function build({ sourceDir, outDir, version, exportedAt }) {
   zip.file("files/README.md", rootReadme(), { createFolders: false, date: fixedDate, unixPermissions: 0o644 });
   zip.file("files/AGENTS.md", agentsMd(), { createFolders: false, date: fixedDate, unixPermissions: 0o644 });
   zip.file("files/source/LILY_PLATFORM.md", platformGuide(), { createFolders: false, date: fixedDate, unixPermissions: 0o644 });
+  zip.file("files/source/main.py", lilyMainWrapper(), { createFolders: false, date: fixedDate, unixPermissions: 0o755 });
   zip.file("conventions.md", conventions(), { createFolders: false, date: fixedDate, unixPermissions: 0o644 });
 
   const manifest = {

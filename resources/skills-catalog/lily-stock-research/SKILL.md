@@ -53,11 +53,14 @@ uv venv .venv-lily-stock
 uv pip install -r requirements.txt
 ```
 
-5. Run a tiny dry run before any full watchlist:
+5. Run the Lily-native entrypoint for a tiny dry run before any full watchlist:
 
 ```bash
-python main.py --stocks 600519,AAPL --dry-run
+python lily_run.py --stocks 600519,AAPL --dry-run
 ```
+
+Do not run upstream `main.py` for Lily app analysis. It is only a compatibility
+wrapper/example path and can bypass Lily's platform-managed model configuration.
 
 6. For table outputs, apply `lily-excel-data-analysis` behavior: create
    reviewable CSV/XLSX summaries with source columns and a cleaning/assumption
