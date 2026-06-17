@@ -10,16 +10,15 @@ const initialState = { ok: null, message: "" };
 export function WorkspaceAppCreateForm() {
   const [state, action, pending] = useActionState(createWorkspaceAppAction, initialState);
   const { t } = useI18n();
+  const copy = t.admin.uploadForms.workspaceApp;
 
   return (
     <div className="table-card mb-6 p-6">
       <h2 className="mb-5 text-xl font-semibold">{t.admin.pages.apps[0]}</h2>
-      <p className="mb-4 text-sm text-slate-500">
-        上传工作空间导出的应用或连接器 zip，后台会发布到七牛云并进入应用商店目录。
-      </p>
+      <p className="mb-4 text-sm text-slate-500">{copy.description}</p>
       <form action={action} className="grid gap-4 lg:grid-cols-6">
         <Field label="App ID" name="appId" placeholder="stock-research-dashboard" required />
-        <Field label="Name" name="name" placeholder="股票投研看板" required />
+        <Field label="Name" name="name" placeholder={copy.namePlaceholder} required />
         <Field label="Version" name="version" defaultValue="1.0.0" required />
         <SelectField label="Category" name="category" defaultValue="productivity" options={["productivity", "office", "connectors", "data", "finance", "creative", "developer", "business", "education"]} />
         <SelectField label="App type" name="appType" defaultValue="workspace" options={["workspace", "template", "tool", "dashboard", "connector"]} />
@@ -35,13 +34,13 @@ export function WorkspaceAppCreateForm() {
         <Field label="Runtime deps" name="requiredRuntimePacks" placeholder="quant-runtime,browser-runtime" />
         <Field label="Skill deps" name="requiredSkillPackages" placeholder="lily-research-synthesis,lily-ui-quality" />
         <div className="lg:col-span-3">
-          <Field label="Summary" name="summary" placeholder="输入股票代码，生成行情、财报、估值和风险摘要。" required />
+          <Field label="Summary" name="summary" placeholder={copy.summaryPlaceholder} required />
         </div>
         <div className="lg:col-span-3">
-          <TextAreaField label="Description" name="description" rows={4} placeholder="说明这个应用解决什么问题、需要什么输入、会输出什么结果、有哪些限制。" />
+          <TextAreaField label="Description" name="description" rows={4} placeholder={copy.descriptionPlaceholder} />
         </div>
         <div className="lg:col-span-4">
-          <Field label="Notes" name="notes" placeholder="本版本更新说明" />
+          <Field label="Notes" name="notes" placeholder={copy.notesPlaceholder} />
         </div>
         <input type="hidden" name="entryKind" value="zip" />
         <div className="flex items-end">

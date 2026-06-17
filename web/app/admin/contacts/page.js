@@ -6,9 +6,10 @@ import { getI18n } from "../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
 
-function formatTime(value) {
+function formatTime(value, locale) {
   if (!value) return "";
-  return new Intl.DateTimeFormat("zh-CN", {
+  const intlLocale = locale === "zh" ? "zh-CN" : locale;
+  return new Intl.DateTimeFormat(intlLocale, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -18,9 +19,10 @@ function formatTime(value) {
 }
 
 export default async function ContactsPage() {
-  const { t } = await getI18n();
+  const { locale, t } = await getI18n();
   const data = await safeApiGet("/api/admin/contact-requests", { contacts: [] });
   const contacts = data.contacts || [];
+  const copy = t.admin.contacts;
   return (
     <AdminShell title={t.admin.pages.contacts[0]} subtitle={t.admin.pages.contacts[1]}>
       <div className="table-card p-6">
@@ -28,7 +30,7 @@ export default async function ContactsPage() {
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
-                {["时间", "联系人", "公司", "主题", "内容", "附件", "来源"].map((heading) => (
+                {copy.headings.map((heading) => (
                   <th key={heading} className="px-5 py-4">{heading}</th>
                 ))}
               </tr>
@@ -36,7 +38,7 @@ export default async function ContactsPage() {
             <tbody>
               {contacts.map((contact) => (
                 <tr key={contact.id} className="border-t border-slate-100 align-top">
-                  <td className="whitespace-nowrap px-5 py-4 text-slate-500">{formatTime(contact.created_at)}</td>
+                  <td className="whitespace-nowrap px-5 py-4 text-slate-500">{formatTime(contact.created_at, locale)}</td>
                   <td className="px-5 py-4">
                     <div className="font-semibold text-slate-950">{contact.name}</div>
                     <div className="mt-1 text-slate-500">{contact.email}</div>
@@ -54,7 +56,7 @@ export default async function ContactsPage() {
             </tbody>
           </table>
         ) : (
-          <AdminEmpty title="暂无联系咨询" description="官网联系表单提交后会显示在这里。" />
+          <AdminEmpty title={copy.emptyTitle} description={copy.emptyDesc} />
         )}
       </div>
     </AdminShell>

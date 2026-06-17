@@ -23,9 +23,10 @@ export default async function DownloadPage() {
     release("darwin-x64"),
     release("win32-x64"),
   ]);
+  const chipCopy = t.pages.downloadPlatforms;
   const cards = [
-    ["macOS Apple Silicon", "darwin-arm64", "M 系列芯片 Mac · DMG", releases[0]],
-    ["macOS Intel", "darwin-x64", "Intel 芯片 Mac · DMG", releases[1]],
+    ["macOS Apple Silicon", "darwin-arm64", chipCopy.macArm, releases[0]],
+    ["macOS Intel", "darwin-x64", chipCopy.macIntel, releases[1]],
     ["Windows x64", "win32-x64", "Windows 10/11 · Installer", releases[2]],
   ];
 

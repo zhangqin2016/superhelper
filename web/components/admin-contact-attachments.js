@@ -2,13 +2,14 @@
 
 import { ExternalLink, ImageIcon, X } from "lucide-react";
 import { useState } from "react";
+import { useI18n } from "../lib/use-i18n";
 
 function attachmentUrl(attachment) {
   return String(attachment?.public_url || attachment?.publicUrl || "").trim();
 }
 
-function attachmentName(attachment) {
-  return attachment?.original_name || attachment?.object_key?.split("/").pop() || "反馈图片";
+function attachmentName(attachment, copy) {
+  return attachment?.original_name || attachment?.object_key?.split("/").pop() || copy.fallbackName;
 }
 
 function formatSize(bytes) {
@@ -19,10 +20,10 @@ function formatSize(bytes) {
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function AttachmentThumb({ attachment, onPreview }) {
+function AttachmentThumb({ attachment, onPreview, copy }) {
   const [failed, setFailed] = useState(false);
   const url = attachmentUrl(attachment);
-  const name = attachmentName(attachment);
+  const name = attachmentName(attachment, copy);
   const canPreview = Boolean(url) && !failed;
 
   return (
@@ -47,13 +48,13 @@ function AttachmentThumb({ attachment, onPreview }) {
         ) : (
           <div className="flex flex-col items-center gap-2 text-slate-400">
             <ImageIcon className="h-6 w-6" />
-            <span className="text-xs">{url ? "预览失败" : "缺少链接"}</span>
+            <span className="text-xs">{url ? copy.previewFailed : copy.missingUrl}</span>
           </div>
         )}
       </div>
       <div className="mt-2 truncate text-xs font-semibold text-slate-700">{name}</div>
       <div className="mt-1 truncate text-[11px] text-slate-400">
-        {formatSize(attachment?.size_bytes) || attachment?.object_key || "图片附件"}
+        {formatSize(attachment?.size_bytes) || attachment?.object_key || copy.attachmentLabel}
       </div>
     </button>
   );
@@ -61,6 +62,8 @@ function AttachmentThumb({ attachment, onPreview }) {
 
 export function AdminContactAttachments({ attachments = [] }) {
   const [preview, setPreview] = useState(null);
+  const { t } = useI18n();
+  const copy = t.admin.attachments;
   const items = Array.isArray(attachments) ? attachments : [];
   const previewUrl = attachmentUrl(preview);
 
@@ -73,6 +76,7 @@ export function AdminContactAttachments({ attachments = [] }) {
           <AttachmentThumb
             key={attachment.id || attachment.object_key}
             attachment={attachment}
+            copy={copy}
             onPreview={setPreview}
           />
         ))}
@@ -91,7 +95,7 @@ export function AdminContactAttachments({ attachments = [] }) {
           >
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div className="min-w-0">
-                <div className="truncate font-semibold text-slate-950">{attachmentName(preview)}</div>
+                <div className="truncate font-semibold text-slate-950">{attachmentName(preview, copy)}</div>
                 <div className="mt-1 truncate text-xs text-slate-500">{preview.object_key}</div>
               </div>
               <div className="ml-4 flex shrink-0 items-center gap-2">
@@ -102,13 +106,13 @@ export function AdminContactAttachments({ attachments = [] }) {
                   className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   <ExternalLink className="h-4 w-4" />
-                  打开原图
+                  {copy.openOriginal}
                 </a>
                 <button
                   type="button"
                   onClick={() => setPreview(null)}
                   className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                  aria-label="关闭预览"
+                  aria-label={copy.closePreview}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -117,7 +121,7 @@ export function AdminContactAttachments({ attachments = [] }) {
             <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-slate-950 p-4">
               <img
                 src={previewUrl}
-                alt={attachmentName(preview)}
+                alt={attachmentName(preview, copy)}
                 className="max-h-[78vh] max-w-full rounded-lg object-contain"
               />
             </div>
