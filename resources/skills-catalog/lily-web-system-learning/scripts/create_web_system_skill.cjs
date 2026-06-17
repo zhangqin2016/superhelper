@@ -235,6 +235,183 @@ function buildPlaybook(spec) {
   };
 }
 
+function actionKeywords(action) {
+  const source = [action.name, action.entry, ...action.intentExamples, ...action.steps].join(" ");
+  return [...new Set(String(source).match(/[\p{Letter}\p{Number}_-]{2,}/gu) || [])].slice(0, 24);
+}
+
+function inferBusinessObjects(spec) {
+  const objects = new Map();
+  for (const action of spec.actions) {
+    const entryParts = String(action.entry || "")
+      .split(/[>/>｜|,，]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const objectName = entryParts.at(-1) || action.name;
+    const key = objectName.toLowerCase();
+    const existing = objects.get(key) || {
+      id: action.id,
+      name: objectName,
+      sourceActions: [],
+      fields: [],
+      riskNotes: [],
+    };
+    existing.sourceActions.push(`web.${action.id}`);
+    existing.fields.push(
+      ...action.steps
+        .filter((step) => /(field|form|date|keyword|status|amount|reason|字段|表单|日期|关键词|状态|金额|原因)/i.test(step))
+        .map((step) => ({ name: step.slice(0, 80), source: "action-step", confidence: "low" })),
+    );
+    if (action.risk !== "read") existing.riskNotes.push(`${action.name} is ${action.risk} and requires ${action.confirmation}`);
+    objects.set(key, existing);
+  }
+  return [...objects.values()].map((object) => ({
+    ...object,
+    fields: object.fields.slice(0, 20),
+    riskNotes: [...new Set(object.riskNotes)],
+  }));
+}
+
+function buildSystemProfile(spec) {
+  return {
+    schemaVersion: 1,
+    id: spec.id,
+    systemName: spec.systemName,
+    displayName: spec.name,
+    summary: spec.summary,
+    baseUrl: spec.baseUrl,
+    allowedDomains: spec.allowedDomains,
+    learningState: "draft",
+    generatedAt: new Date().toISOString(),
+    credentialPolicy: {
+      login: "interactive-browser-session",
+      chatSecrets: false,
+      storedSecrets: false,
+      notes: "Users sign in through an interactive browser/profile. Passwords, cookies, tokens, and one-time codes must never be written to chat, logs, prompts, or generated files.",
+    },
+    supportedCapabilities: [...new Set(spec.actions.map((action) => action.risk))],
+    actionCount: spec.actions.length,
+    highRiskActionCount: spec.actions.filter((action) => action.risk === "submit" || action.risk === "destructive").length,
+    files: {
+      pageMap: "page-map.json",
+      domainModel: "domain-model.json",
+      actionPlaybook: "web-system-playbook.json",
+      riskPolicy: "risk-policy.json",
+      examples: "examples.jsonl",
+      changeLog: "change-log.json",
+    },
+  };
+}
+
+function buildPageMap(spec) {
+  return {
+    schemaVersion: 1,
+    systemId: spec.id,
+    baseUrl: spec.baseUrl,
+    allowedDomains: spec.allowedDomains,
+    pages: spec.actions.map((action) => ({
+      id: action.id,
+      title: action.entry || action.name,
+      urlPattern: spec.baseUrl,
+      role: action.risk === "read" ? "query" : action.risk,
+      source: "action-spec",
+      confidence: action.entry ? "medium" : "low",
+      actions: [`web.${action.id}`],
+      anchors: {
+        entry: action.entry || "",
+        labels: actionKeywords(action),
+        selectors: action.selectors || [],
+      },
+    })),
+    relationships: spec.actions.map((action) => ({
+      from: "base",
+      to: action.id,
+      via: action.entry || action.name,
+      risk: action.risk,
+    })),
+  };
+}
+
+function buildDomainModel(spec) {
+  return {
+    schemaVersion: 1,
+    systemId: spec.id,
+    objects: inferBusinessObjects(spec),
+    vocabulary: spec.actions.map((action) => ({
+      action: `web.${action.id}`,
+      phrases: [...new Set([action.name, ...action.intentExamples])],
+      keywords: actionKeywords(action),
+    })),
+    unresolvedQuestions: [
+      "字段含义、状态枚举、权限差异和业务对象关系需要在真实页面扫描后继续补全。",
+      "如果页面包含低代码表格、Canvas 或图片按钮，需要补充视觉锚点。",
+    ],
+  };
+}
+
+function buildRiskPolicy(spec) {
+  return {
+    schemaVersion: 1,
+    systemId: spec.id,
+    defaultMode: "read-only-learning",
+    allowedDomains: spec.allowedDomains,
+    forbiddenDuringLearning: [
+      "submit",
+      "approve",
+      "reject",
+      "delete",
+      "pay",
+      "upload",
+      "notify",
+      "permission-change",
+    ],
+    credentialRules: [
+      "Never request passwords, cookies, tokens, OAuth codes, or one-time codes in chat.",
+      "Never write credentials or login state to generated workspace files.",
+      "If login is required, ask the user to complete it in an interactive browser.",
+    ],
+    actionPolicies: spec.actions.map((action) => ({
+      action: `web.${action.id}`,
+      risk: action.risk,
+      confirmation: action.confirmation,
+      canRunDuringLearning: action.risk === "read",
+      requiresUserReview: action.confirmation !== "none",
+    })),
+  };
+}
+
+function buildExamplesJsonl(spec) {
+  const rows = [];
+  for (const action of spec.actions) {
+    const examples = action.intentExamples.length ? action.intentExamples : [action.name];
+    for (const phrase of examples) {
+      rows.push({
+        schemaVersion: 1,
+        utterance: phrase,
+        action: `web.${action.id}`,
+        risk: action.risk,
+        confirmation: action.confirmation,
+      });
+    }
+  }
+  return rows.map((row) => JSON.stringify(row)).join("\n") + "\n";
+}
+
+function buildChangeLog(spec) {
+  return {
+    schemaVersion: 1,
+    systemId: spec.id,
+    entries: [
+      {
+        at: new Date().toISOString(),
+        type: "initial-draft",
+        source: "web-system-spec.json",
+        summary: "Generated system profile, page map, domain model, action playbook, risk policy, examples, and skill draft.",
+      },
+    ],
+  };
+}
+
 function main() {
   const args = parseArgs(process.argv);
   const spec = validateSpec(readJson(args.spec));
@@ -255,7 +432,13 @@ function main() {
     fs.mkdirSync(path.join(draftDir, "scripts"), { recursive: true });
     fs.writeFileSync(path.join(draftDir, "SKILL.md"), buildSkillMd(spec), "utf8");
     fs.writeFileSync(path.join(draftDir, "skill.manifest.json"), JSON.stringify(buildManifest(spec), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "system-profile.json"), JSON.stringify(buildSystemProfile(spec), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "page-map.json"), JSON.stringify(buildPageMap(spec), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "domain-model.json"), JSON.stringify(buildDomainModel(spec), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "web-system-playbook.json"), JSON.stringify(playbook, null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "risk-policy.json"), JSON.stringify(buildRiskPolicy(spec), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "examples.jsonl"), buildExamplesJsonl(spec), "utf8");
+    fs.writeFileSync(path.join(draftDir, "change-log.json"), JSON.stringify(buildChangeLog(spec), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "web-system-spec.json"), JSON.stringify(spec, null, 2) + "\n", "utf8");
     fs.copyFileSync(path.join(__dirname, "execute_web_playbook.cjs"), path.join(draftDir, "scripts/execute_web_playbook.cjs"));
   }

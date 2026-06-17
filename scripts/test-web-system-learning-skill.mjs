@@ -82,7 +82,13 @@ if (result.status !== 0) {
 const draftDir = path.join(outDir, "demo-oa");
 const skillMd = fs.readFileSync(path.join(draftDir, "SKILL.md"), "utf8");
 const manifest = JSON.parse(fs.readFileSync(path.join(draftDir, "skill.manifest.json"), "utf8"));
+const systemProfile = JSON.parse(fs.readFileSync(path.join(draftDir, "system-profile.json"), "utf8"));
+const pageMap = JSON.parse(fs.readFileSync(path.join(draftDir, "page-map.json"), "utf8"));
+const domainModel = JSON.parse(fs.readFileSync(path.join(draftDir, "domain-model.json"), "utf8"));
 const playbook = JSON.parse(fs.readFileSync(path.join(draftDir, "web-system-playbook.json"), "utf8"));
+const riskPolicy = JSON.parse(fs.readFileSync(path.join(draftDir, "risk-policy.json"), "utf8"));
+const examplesJsonl = fs.readFileSync(path.join(draftDir, "examples.jsonl"), "utf8");
+const changeLog = JSON.parse(fs.readFileSync(path.join(draftDir, "change-log.json"), "utf8"));
 const draftExecutor = path.join(draftDir, "scripts/execute_web_playbook.cjs");
 const normalizedPlaybook = normalizePlaybookSpec(playbook);
 if (!skillMd.includes("Allowed domains") || !skillMd.includes("explicit confirmation")) {
@@ -99,6 +105,25 @@ if (normalizedPlaybook.connector.kind !== "web" || normalizedPlaybook.actions[0]
 }
 if (normalizedPlaybook.actions[1].confirmation !== "explicit") {
   throw new Error("submit action confirmation must survive playbook normalization");
+}
+if (systemProfile.systemName !== "Demo OA" || systemProfile.files.pageMap !== "page-map.json") {
+  throw new Error(`generated system profile should index the learned archive: ${JSON.stringify(systemProfile)}`);
+}
+if (!pageMap.pages.some((page) => page.actions.includes("web.query-approval"))) {
+  throw new Error(`page map should connect pages to actions: ${JSON.stringify(pageMap)}`);
+}
+if (!domainModel.objects.length || !domainModel.vocabulary.some((item) => item.action === "web.submit-leave")) {
+  throw new Error(`domain model should include business objects and action vocabulary: ${JSON.stringify(domainModel)}`);
+}
+if (!riskPolicy.forbiddenDuringLearning.includes("approve") || !riskPolicy.actionPolicies.some((policy) => policy.action === "web.submit-leave" && policy.requiresUserReview)) {
+  throw new Error(`risk policy should encode learning-time red lines and confirmations: ${JSON.stringify(riskPolicy)}`);
+}
+const examples = examplesJsonl.trim().split("\n").map((line) => JSON.parse(line));
+if (!examples.some((example) => example.utterance === "查审批状态" && example.action === "web.query-approval")) {
+  throw new Error(`examples should map natural language to actions: ${examplesJsonl}`);
+}
+if (changeLog.entries[0]?.type !== "initial-draft") {
+  throw new Error(`change log should record initial learning draft: ${JSON.stringify(changeLog)}`);
 }
 if (!fs.existsSync(draftExecutor)) {
   throw new Error("generated web system skill should carry a local playbook executor");

@@ -79,6 +79,12 @@ function readme() {
 
 | 文件 | 作用 |
 |---|---|
+| \`system-profile.json\` | 系统画像、范围、登录策略和档案索引 |
+| \`page-map.json\` | 页面地图、入口、锚点和页面关系 |
+| \`domain-model.json\` | 业务对象、字段语义、词汇表和待补问题 |
+| \`risk-policy.json\` | 域名白名单、学习期禁区和动作确认策略 |
+| \`examples.jsonl\` | 用户自然语言说法到动作的样例映射 |
+| \`change-log.json\` | 学习、重学和页面变化记录 |
 | \`web-system-learning-playbook.template.json\` | 连接器 Playbook 模板 |
 | \`web-system-learning-checklist.md\` | 学习前检查清单 |
 | \`AGENTS.md\` | 当前工作区的执行边界 |

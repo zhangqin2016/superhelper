@@ -109,6 +109,12 @@ The script writes:
 
 - `web-system-playbook.json`: the standard connector/action contract.
 - `web-system-spec.json`: the legacy learning spec for human review.
+- `system-profile.json`: the system identity, scope, credential policy, and file index.
+- `page-map.json`: learned pages, entries, anchors, and page/action relationships.
+- `domain-model.json`: inferred business objects, vocabulary, fields, and open questions.
+- `risk-policy.json`: domain allowlist, forbidden learning-time actions, and confirmation rules.
+- `examples.jsonl`: natural language examples mapped to standard `web.*` actions.
+- `change-log.json`: learning and re-learning history for change detection.
 - `SKILL.md` and `skill.manifest.json`: the workspace skill draft.
 - `scripts/execute_web_playbook.cjs`: the local, domain-checked, confirmation-gated
   execution helper for the generated playbook.
