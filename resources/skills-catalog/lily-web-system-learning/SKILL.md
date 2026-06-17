@@ -14,10 +14,13 @@ or any browser-based internal tool.
 The goal is not "AI clicks a website freely." The goal is:
 
 1. Learn the system within a user-approved scope.
-2. Produce a page/action map.
-3. Generate a standard connector playbook.
-4. Generate a workspace skill draft that references the playbook contract.
-5. Let the user review and enable the skill before future use.
+2. Produce a page/action/API map.
+3. Generate a standard connector playbook with action contracts.
+4. Execute future natural-language requests through API-first actions when a
+   safe contract exists, and fall back to browser automation when the API is
+   stale, missing, or UI-only.
+5. Generate a workspace skill draft that references the playbook contract.
+6. Let the user review and enable the skill before future use.
 
 Never store passwords in a skill, prompt, log, or generated file. The user must
 log in through an interactive browser/profile, SSO, or existing session. Treat
@@ -77,9 +80,8 @@ Learning modes:
 
 - `read-only` is the default. It learns pages, navigation, fields, forms, and
   static API contracts without submitting anything.
-- `contract-probe` is reserved for future network-request discovery. It may
-  observe request intent, but must abort unsafe network requests and redact
-  payload values.
+- `contract-probe` observes request intent for API-contract discovery, but must
+  abort unsafe network requests and redact payload values.
 - `test-lab` is only for non-production systems. It requires both
   `--test-environment <name>` and `--allow-mutating-learning`; generated
   contracts may mark submit/delete/approve flows as learnable in that test
@@ -159,7 +161,7 @@ node scripts/create_web_system_skill.cjs \
 
 The script writes:
 
-- `web-system-playbook.json`: the standard connector/action contract.
+- `web-system-playbook.json`: the standard connector/action/API contract.
 - `web-system-spec.json`: the legacy learning spec for human review.
 - `web-system-scan.json`: the normalized read-only learning archive.
 - `system-profile.json`: the system identity, scope, credential policy, and file index.
@@ -193,17 +195,25 @@ has reviewed the exact action target and final field values.
 
 The executor supports these plan operations:
 
+- Fast API path: `apiRequest`. Prefer this when
+  `web-system-playbook.json` marks the action strategy as `api-first`.
 - Read/state: `goto`, `wait`, `waitForUrl`, `waitForText`,
   `waitForResponse`, `assertText`, `extract`, `screenshot`.
 - Draft/write controls: `click`, `fill`, `select`, `check`, `uncheck`,
   `upload`, `press`.
 
+For `apiRequest`, use a learned `contractId` when available. The plan may fill
+query/body values, but must never include credential headers, cookies, tokens,
+passwords, or one-time codes. The executor checks every API target against the
+allowed domains and keeps non-read API calls behind the same confirmation gate
+as browser submit actions.
+
 Use robust locators before brittle CSS: `testId`, `role/name`, `label`,
 `placeholder`, `text`, then `selector`. For `select`, use `label` to find the
 control and `optionLabel` or `value` to pick the option. If execution reports
-`LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, or `WEB_ACTION_FAILED`, treat the
-learned skill as stale and re-run learning before retrying submit/destructive
-actions.
+`API_STATUS_MISMATCH`, `LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, or
+`WEB_ACTION_FAILED`, treat the learned skill as stale and re-run learning before
+retrying submit/destructive actions.
 
 ## Action Rules
 
@@ -242,6 +252,23 @@ pause and hand control back to the user.
 - In `test-lab` mode only, generated policies may allow real submit/delete
   learning for the declared test environment. Production learning must never
   complete mutating actions.
+
+## API Contract Rules
+
+- Learn business-action APIs, not every request on the page. Prioritize list,
+  search, detail, export, submit, approve, and other endpoints that directly
+  support a user-facing action.
+- Store endpoint, method, risk, field schema, response shape when known,
+  pagination hints, and stale/fallback policy. Never store payload values,
+  credentials, cookies, or tokens.
+- Read-only `GET`/`HEAD` contracts may be used automatically for read actions.
+  Mutating contracts (`POST`, `PUT`, `PATCH`, `DELETE`) require the action's
+  normal review or explicit confirmation.
+- If an API contract returns unexpected status, requires a dynamic token, or no
+  longer matches the learned response shape, fall back to the browser plan and
+  mark the skill as needing re-learning.
+- For production systems, contract probing must avoid completing business
+  submits. Full submit/delete API learning belongs in `test-lab` mode only.
 
 ## Interactive Read-only Rules
 

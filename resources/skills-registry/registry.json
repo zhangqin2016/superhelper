@@ -378,7 +378,7 @@
       "id": "lily-web-system-learning",
       "name": "网页系统学习",
       "description": "学习 OA、ERP、CRM、后台等 Web 系统，生成系统画像、页面地图、业务对象模型、动作 Playbook、风险策略和当前工作区可审核技能。",
-      "latestVersion": "1.0.7",
+      "latestVersion": "1.0.8",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -391,7 +391,7 @@
       "categoryLabel": "网页自动化",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
-      "changelog": "Lily 自研：自动学习 Web/OA 系统，输出系统画像、页面地图、业务对象模型、风险策略、自然语言样例、变更记录和标准连接器 playbook；扫描档案会进入生成技能，保留页面指纹、覆盖度、候选动作、业务字段、表单契约和 API 契约；表单学习记录 endpoint、method、字段 schema、提交按钮和探针策略；新增 read-only / contract-probe / test-lab 学习模式，生产默认禁止提交，测试环境可显式开启提交/删除/审批闭环学习；新增交互式只读学习，可安全展开菜单、Tab、详情和分页等非提交控件；生成技能明确标记为当前工作区技能，默认需要用户审核启用。",
+      "changelog": "Lily 自研：自动学习 Web/OA 系统，输出系统画像、页面地图、业务对象模型、风险策略、自然语言样例、变更记录和标准连接器 playbook；扫描档案会进入生成技能，保留页面指纹、覆盖度、候选动作、业务字段、表单契约和 API 契约；新增 API-first 执行策略，生成 playbook 会提升可用 API 合约，运行时优先 apiRequest，失败或过期时回退浏览器操作；apiRequest 受域名白名单、风险等级和确认门槛约束，禁止模型计划携带密码、Cookie、Token 或授权头；表单学习记录 endpoint、method、字段 schema、提交按钮和探针策略；新增 read-only / contract-probe / test-lab 学习模式，生产默认禁止提交，测试环境可显式开启提交/删除/审批闭环学习；新增交互式只读学习，可安全展开菜单、Tab、详情和分页等非提交控件；生成技能明确标记为当前工作区技能，默认需要用户审核启用。",
       "capabilityLayer": "workflow",
       "riskLevel": "high",
       "defaultEligible": false,

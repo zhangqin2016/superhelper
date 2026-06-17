@@ -119,6 +119,34 @@ function normalizeActionSpec(input) {
     resultSchema: requireObject(source.resultSchema || {}, "resultSchema"),
     steps: normalizeArray(source.steps || [], "steps", { required: false }),
     selectors: Array.isArray(source.selectors) ? source.selectors.filter(Boolean) : [],
+    metadata: requireObject(source.metadata || {}, "metadata"),
+  };
+}
+
+function normalizeApiContract(input, index) {
+  const source = requireObject(input, `apiContracts[${index}]`);
+  const id = normalizeString(source.id || `api-${index + 1}`, `apiContracts[${index}].id`, { max: 100 });
+  const endpoint = normalizeUrl(source.endpoint, `apiContracts[${index}].endpoint`);
+  const method = String(source.method || "GET").trim().toUpperCase();
+  if (!["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    throw new Error(`apiContracts[${index}].method is invalid: ${method}`);
+  }
+  const risk = String(source.risk || (method === "GET" || method === "HEAD" ? "read" : "submit")).trim();
+  if (!RISK_LEVELS.has(risk)) throw new Error(`apiContracts[${index}].risk is invalid: ${risk}`);
+  return {
+    id,
+    source: normalizeString(source.source || "", `apiContracts[${index}].source`, { required: false, max: 120 }),
+    endpoint,
+    method,
+    risk,
+    contentType: normalizeString(source.contentType || "json", `apiContracts[${index}].contentType`, { required: false, max: 80 }),
+    requestFields: Array.isArray(source.requestFields) ? source.requestFields.slice(0, 200) : [],
+    responseShape: requireObject(source.responseShape || {}, `apiContracts[${index}].responseShape`),
+    submitButtons: normalizeArray(source.submitButtons || [], `apiContracts[${index}].submitButtons`, { required: false }),
+    knownStaticEndpoint: Boolean(source.knownStaticEndpoint),
+    needsSubmitProbe: Boolean(source.needsSubmitProbe),
+    probePolicy: requireObject(source.probePolicy || {}, `apiContracts[${index}].probePolicy`),
+    sourcePage: requireObject(source.sourcePage || {}, `apiContracts[${index}].sourcePage`),
   };
 }
 
@@ -137,6 +165,16 @@ function normalizePlaybookSpec(input) {
   const actions = source.actions.map((action) =>
     normalizeActionSpec({ ...action, connectorKind: action.connectorKind || connector.kind }),
   );
+  const apiContracts = Array.isArray(source.apiContracts)
+    ? source.apiContracts.map((contract, index) => {
+        const normalized = normalizeApiContract(contract, index);
+        const host = normalizeDomain(normalized.endpoint);
+        if (!hostAllowed(host, allowedDomains)) {
+          throw new Error(`apiContracts[${index}].endpoint is outside allowedDomains`);
+        }
+        return normalized;
+      })
+    : [];
   return {
     schemaVersion: Number(source.schemaVersion || 1),
     id: normalizeId(source.id),
@@ -145,6 +183,7 @@ function normalizePlaybookSpec(input) {
     baseUrl,
     allowedDomains,
     connector,
+    apiContracts,
     actions,
     createdAt: source.createdAt || new Date().toISOString(),
   };

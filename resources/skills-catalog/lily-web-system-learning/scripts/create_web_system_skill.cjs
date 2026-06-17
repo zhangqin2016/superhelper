@@ -171,11 +171,13 @@ function defaultInboxDir() {
   return path.join(os.tmpdir(), "lily-learned-skills-inbox");
 }
 
-function buildSkillMd(spec) {
+function buildSkillMd(spec, scan) {
+  const apiContracts = buildApiContractCatalog(spec, scan);
   const actionRows = spec.actions
     .map((action) => {
       const examples = action.intentExamples.length ? action.intentExamples.join(" / ") : action.name;
-      return `| ${escapeMarkdown(action.name)} | ${escapeMarkdown(action.risk)} | ${escapeMarkdown(action.confirmation)} | ${escapeMarkdown(examples)} |`;
+      const strategy = executionStrategyForAction(action, apiContracts).preferred;
+      return `| ${escapeMarkdown(action.name)} | ${escapeMarkdown(action.risk)} | ${escapeMarkdown(action.confirmation)} | ${escapeMarkdown(strategy)} | ${escapeMarkdown(examples)} |`;
     })
     .join("\n");
 
@@ -198,14 +200,16 @@ function buildSkillMd(spec) {
     .join("\n\n");
 
   const runtimePlanRules = [
-    "Allowed operation types are `goto`, `click`, `fill`, `select`, `check`, `uncheck`, `upload`, `press`, `wait`, `waitForUrl`, `waitForText`, `waitForResponse`, `assertText`, `extract`, and `screenshot`.",
+    "Allowed operation types are `apiRequest`, `goto`, `click`, `fill`, `select`, `check`, `uncheck`, `upload`, `press`, `wait`, `waitForUrl`, `waitForText`, `waitForResponse`, `assertText`, `extract`, and `screenshot`.",
+    "Prefer `apiRequest` when the action metadata says `executionStrategy.preferred` is `api-first`; use browser operations only when the API contract is missing, stale, logged out, or needs UI-only validation.",
+    "`apiRequest` may use `contractId` from `web-system-playbook.json.apiContracts`; never add credential headers, cookies, tokens, or passwords to the action plan.",
     "Prefer robust locator fields in this order: `testId`, `role/name`, `label`, `placeholder`, `text`, then `selector`.",
     "For `select`, use `label` to find the control and `optionLabel` or `value` to choose the option.",
-    "Every `goto` and response wait is checked against the allowed domains. A read action may only contain read-risk operations.",
-    "If execution returns `LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, or `WEB_ACTION_FAILED`, treat the skill as stale: explain the failed operation and re-run learning for this workspace before retrying high-risk actions.",
+    "Every `apiRequest`, `goto`, and response wait is checked against the allowed domains. A read action may only contain read-risk operations.",
+    "If execution returns `API_STATUS_MISMATCH`, `LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, or `WEB_ACTION_FAILED`, treat the skill as stale: explain the failed operation and re-run learning for this workspace before retrying high-risk actions.",
   ].join("\n\n");
 
-  return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, or one-time codes.\n- If the session is logged out, ask the user to log in interactively.\n- Do not leave the allowed domains.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Example triggers |\n|---|---|---|---|\n${actionRows}\n\n## Execution Rules\n\n- For \`read\` actions, return concise source-backed results from the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If labels/selectors no longer match, re-run read-only discovery for the action and explain what changed.\n\n## Runtime Plan Contract\n\nWhen executing an action, create an \`action-plan.json\` with this shape and run the local executor:\n\n\`\`\`bash\nnode scripts/execute_web_playbook.cjs \\\n  --playbook web-system-playbook.json \\\n  --action web.<action-id> \\\n  --plan action-plan.json \\\n  --dry-run\n\`\`\`\n\nOnly run without \`--dry-run\` after the plan validates. For non-read actions, add \`--confirmed\` only after the user has reviewed the exact fields or target.\n\n${runtimePlanRules}\n\n## Action Details\n\n${actionDetails}\n`;
+  return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, or one-time codes.\n- If the session is logged out, ask the user to log in interactively.\n- Do not leave the allowed domains.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Preferred execution | Example triggers |\n|---|---|---|---|---|\n${actionRows}\n\n## Execution Rules\n\n- Prefer API-first execution for actions with learned API contracts; this is the fast path for searches, lists, detail reads, exports, and reviewed submissions.\n- For \`read\` actions, return concise source-backed results from API responses or the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting or calling a mutating API.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If API contracts fail or labels/selectors no longer match, re-run discovery for the action and explain what changed.\n\n## Runtime Plan Contract\n\nWhen executing an action, create an \`action-plan.json\` with this shape and run the local executor:\n\n\`\`\`bash\nnode scripts/execute_web_playbook.cjs \\\n  --playbook web-system-playbook.json \\\n  --action web.<action-id> \\\n  --plan action-plan.json \\\n  --dry-run\n\`\`\`\n\nOnly run without \`--dry-run\` after the plan validates. For non-read actions, add \`--confirmed\` only after the user has reviewed the exact fields or target.\n\n${runtimePlanRules}\n\n## Action Details\n\n${actionDetails}\n`;
 }
 
 function buildManifest(spec) {
@@ -233,7 +237,75 @@ function buildManifest(spec) {
   };
 }
 
-function buildPlaybook(spec) {
+function buildApiContractCatalog(spec, scan) {
+  if (!scan) return [];
+  const byId = new Map();
+  const add = (contract, sourcePage = {}) => {
+    if (!contract || typeof contract !== "object") return;
+    const endpoint = String(contract.endpoint || "").trim();
+    if (!endpoint) return;
+    let url;
+    try {
+      url = new URL(endpoint, spec.baseUrl).href;
+    } catch {
+      return;
+    }
+    const host = normalizeHost(url);
+    if (!isHostAllowed(host, spec.allowedDomains)) return;
+    const method = String(contract.method || "GET").toUpperCase();
+    const risk = method === "GET" || method === "HEAD" ? "read" : "submit";
+    const id = String(contract.id || `${method.toLowerCase()}-${url.replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 48)}`).slice(0, 80);
+    const normalized = {
+      id,
+      source: contract.source || "scan",
+      endpoint: url,
+      method,
+      risk,
+      contentType: contract.contentType || (method === "GET" ? "query" : "form"),
+      requestFields: Array.isArray(contract.requestFields) ? contract.requestFields.slice(0, 120) : [],
+      responseShape: contract.responseShape || {},
+      submitButtons: Array.isArray(contract.submitButtons) ? contract.submitButtons.slice(0, 20) : [],
+      knownStaticEndpoint: Boolean(contract.knownStaticEndpoint),
+      needsSubmitProbe: Boolean(contract.needsSubmitProbe),
+      probePolicy: contract.probePolicy || {},
+      sourcePage: {
+        title: sourcePage.title || "",
+        url: sourcePage.url || "",
+        urlPattern: sourcePage.urlPattern || "",
+      },
+    };
+    byId.set(id, normalized);
+  };
+  for (const contract of scan.apiContracts || []) add(contract);
+  for (const page of scan.pages || []) {
+    for (const form of page.formContracts || []) add(form.apiContract, page);
+  }
+  return [...byId.values()];
+}
+
+function contractsForAction(action, apiContracts) {
+  return apiContracts
+    .filter((contract) => {
+      if (action.risk === "read") return contract.risk === "read";
+      if (action.risk === "prepare") return contract.risk === "read";
+      if (action.risk === "submit") return contract.risk === "read" || contract.risk === "submit";
+      return true;
+    })
+    .slice(0, action.risk === "read" ? 3 : 5);
+}
+
+function executionStrategyForAction(action, apiContracts) {
+  const matches = contractsForAction(action, apiContracts);
+  return {
+    preferred: matches.length ? "api-first" : "browser-first",
+    fallback: "browser",
+    apiContractRefs: matches.map((contract) => contract.id),
+    stalePolicy: "retry-browser-then-relearn",
+  };
+}
+
+function buildPlaybook(spec, scan) {
+  const apiContracts = buildApiContractCatalog(spec, scan);
   return {
     schemaVersion: 1,
     id: spec.id,
@@ -247,7 +319,7 @@ function buildPlaybook(spec) {
       name: `${spec.systemName} Web`,
       kind: "web",
       description: `Browser connector for ${spec.systemName}.`,
-      capabilities: ["web.open", "web.extract", "web.prepare", "web.submit"],
+      capabilities: ["web.api", "web.open", "web.extract", "web.prepare", "web.submit"],
       auth: {
         type: "browser-session",
         secretRefs: [],
@@ -259,7 +331,10 @@ function buildPlaybook(spec) {
         generatedBy: "lily-web-system-learning",
       },
     },
-    actions: spec.actions.map((action) => ({
+    apiContracts,
+    actions: spec.actions.map((action) => {
+      const executionStrategy = executionStrategyForAction(action, apiContracts);
+      return ({
       action: `web.${action.id}`,
       title: action.name,
       connectorKind: "web",
@@ -273,8 +348,11 @@ function buildPlaybook(spec) {
       metadata: {
         entry: action.entry || "",
         legacyActionId: action.id,
+        executionStrategy,
+        apiContractRefs: executionStrategy.apiContractRefs,
       },
-    })),
+    });
+    }),
     createdAt: new Date().toISOString(),
   };
 }
@@ -589,7 +667,7 @@ function main() {
   const args = parseArgs(process.argv);
   const spec = validateSpec(readJson(args.spec));
   const scan = args.scan ? normalizeScan(readJson(args.scan), spec) : null;
-  const playbook = buildPlaybook(spec);
+  const playbook = buildPlaybook(spec, scan);
   const root = path.resolve(args.out || defaultInboxDir());
   const draftDir = path.join(root, spec.id);
   const result = {
@@ -605,7 +683,7 @@ function main() {
   if (!args.dryRun) {
     fs.mkdirSync(draftDir, { recursive: true });
     fs.mkdirSync(path.join(draftDir, "scripts"), { recursive: true });
-    fs.writeFileSync(path.join(draftDir, "SKILL.md"), buildSkillMd(spec), "utf8");
+    fs.writeFileSync(path.join(draftDir, "SKILL.md"), buildSkillMd(spec, scan), "utf8");
     fs.writeFileSync(path.join(draftDir, "skill.manifest.json"), JSON.stringify(buildManifest(spec), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "system-profile.json"), JSON.stringify(buildSystemProfile(spec, scan), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "page-map.json"), JSON.stringify(buildPageMap(spec, scan), null, 2) + "\n", "utf8");

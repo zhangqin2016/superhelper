@@ -271,6 +271,21 @@ if (normalizedPlaybook.connector.kind !== "web" || normalizedPlaybook.actions[0]
 if (normalizedPlaybook.actions[1].confirmation !== "explicit") {
   throw new Error("submit action confirmation must survive playbook normalization");
 }
+if (!normalizedPlaybook.apiContracts?.some((contract) => contract.id === "leave-api" && contract.risk === "submit")) {
+  throw new Error(`normalized connector playbook should preserve API contracts: ${JSON.stringify(normalizedPlaybook)}`);
+}
+if (normalizedPlaybook.actions[1].metadata?.executionStrategy?.preferred !== "api-first") {
+  throw new Error(`normalized connector action should preserve execution strategy metadata: ${JSON.stringify(normalizedPlaybook.actions[1])}`);
+}
+if (!playbook.apiContracts?.some((contract) => contract.id === "leave-api" && contract.endpoint === "https://oa.example.com/leave/submit")) {
+  throw new Error(`generated playbook should promote learned API contracts: ${JSON.stringify(playbook)}`);
+}
+if (playbook.connector.capabilities.includes("web.api") !== true) {
+  throw new Error(`web connector should advertise API execution: ${JSON.stringify(playbook.connector)}`);
+}
+if (playbook.actions[1].metadata?.executionStrategy?.preferred !== "api-first" || !playbook.actions[1].metadata?.apiContractRefs?.includes("leave-api")) {
+  throw new Error(`submit action should prefer learned API contract with browser fallback: ${JSON.stringify(playbook.actions[1])}`);
+}
 if (systemProfile.systemName !== "Demo OA" || systemProfile.files.pageMap !== "page-map.json") {
   throw new Error(`generated system profile should index the learned archive: ${JSON.stringify(systemProfile)}`);
 }
@@ -397,6 +412,60 @@ if (!reviewPayload.reviewRequired || reviewPayload.risk !== "submit") {
 }
 if (!reviewPayload.operations.some((op) => op.type === "select" && op.optionLabel === "Annual leave")) {
   throw new Error(`submit review payload should preserve validated form controls: ${result.stdout}`);
+}
+
+const apiSubmitPlanPath = path.join(tmp, "api-submit-plan.json");
+fs.writeFileSync(
+  apiSubmitPlanPath,
+  JSON.stringify({
+    action: "web.submit-leave",
+    operations: [
+      {
+        type: "apiRequest",
+        contractId: "leave-api",
+        method: "POST",
+        risk: "submit",
+        contentType: "form",
+        body: { leaveType: "annual", startDate: "2026-06-17", reason: "annual leave" },
+      },
+    ],
+  }),
+);
+result = spawnSync(process.execPath, [draftExecutor, "--playbook", path.join(draftDir, "web-system-playbook.json"), "--action", "web.submit-leave", "--plan", apiSubmitPlanPath, "--dry-run"], {
+  cwd: draftDir,
+  encoding: "utf8",
+});
+if (result.status !== 0) {
+  throw new Error(`api submit dry-run should validate and require review: ${result.stderr || result.stdout}`);
+}
+const apiReviewPayload = JSON.parse(result.stdout);
+if (!apiReviewPayload.reviewRequired || apiReviewPayload.operations[0].url !== "https://oa.example.com/leave/submit") {
+  throw new Error(`api submit should resolve contract URL and keep confirmation gate: ${result.stdout}`);
+}
+
+const apiCredentialPlanPath = path.join(tmp, "api-credential-plan.json");
+fs.writeFileSync(
+  apiCredentialPlanPath,
+  JSON.stringify({
+    action: "web.submit-leave",
+    operations: [
+      {
+        type: "apiRequest",
+        contractId: "leave-api",
+        method: "POST",
+        risk: "submit",
+        headers: { Authorization: "Bearer should-not-be-here" },
+        body: { reason: "annual leave" },
+      },
+    ],
+  }),
+);
+result = spawnSync(process.execPath, [draftExecutor, "--playbook", path.join(draftDir, "web-system-playbook.json"), "--action", "web.submit-leave", "--plan", apiCredentialPlanPath, "--dry-run"], {
+  cwd: draftDir,
+  encoding: "utf8",
+});
+if (result.status === 0 || !result.stderr.includes("must not include credential header")) {
+  throw new Error("apiRequest should reject credential-bearing model plans");
 }
 
 const invalidSubmitPlanPath = path.join(tmp, "invalid-submit-plan.json");

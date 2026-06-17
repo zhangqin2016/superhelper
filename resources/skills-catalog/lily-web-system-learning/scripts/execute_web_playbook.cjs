@@ -5,8 +5,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const RISK_ORDER = { read: 0, prepare: 1, submit: 2, destructive: 3 };
-const READ_OPS = new Set(["goto", "wait", "waitForUrl", "waitForText", "waitForResponse", "assertText", "extract", "screenshot"]);
+const READ_OPS = new Set(["goto", "apiRequest", "wait", "waitForUrl", "waitForText", "waitForResponse", "assertText", "extract", "screenshot"]);
 const PLAN_OPS = new Set([
+  "apiRequest",
   "goto",
   "click",
   "fill",
@@ -105,7 +106,7 @@ function normalizeOperation(op, index, actionRisk) {
   }
   const type = String(op.type || "").trim();
   if (!PLAN_OPS.has(type)) throw new Error(`operations[${index}].type is invalid: ${type}`);
-  const declaredRisk = String(op.risk || (READ_OPS.has(type) ? "read" : type === "fill" ? "prepare" : "submit")).trim();
+  const declaredRisk = String(op.risk || defaultRiskForOperation(op, type)).trim();
   if (!(declaredRisk in RISK_ORDER)) throw new Error(`operations[${index}].risk is invalid: ${declaredRisk}`);
   if (RISK_ORDER[declaredRisk] > RISK_ORDER[actionRisk]) {
     throw new Error(`operations[${index}] risk ${declaredRisk} exceeds action risk ${actionRisk}`);
@@ -125,6 +126,7 @@ function normalizeOperation(op, index, actionRisk) {
     throw new Error(`operations[${index}] upload requires a locator and a non-empty files array`);
   }
   if (type === "press" && !op.key) throw new Error(`operations[${index}].key is required for press`);
+  if (type === "apiRequest") validateApiRequestShape(op, index);
   if (type === "click" && !hasLocator(op)) {
     throw new Error(`operations[${index}] click requires selector, role, label, placeholder, testId, or text`);
   }
@@ -138,6 +140,36 @@ function normalizeOperation(op, index, actionRisk) {
     throw new Error(`operations[${index}] waitForResponse requires url, urlContains, or urlPattern`);
   }
   return { ...op, type, risk: declaredRisk };
+}
+
+function defaultRiskForOperation(op, type) {
+  if (type === "apiRequest") {
+    const method = String(op.method || "GET").toUpperCase();
+    return method === "GET" || method === "HEAD" ? "read" : "submit";
+  }
+  if (READ_OPS.has(type)) return "read";
+  return type === "fill" ? "prepare" : "submit";
+}
+
+function validateApiRequestShape(op, index) {
+  if (!op.contractId && !op.url && !op.path) {
+    throw new Error(`operations[${index}] apiRequest requires contractId, url, or path`);
+  }
+  const method = String(op.method || "GET").toUpperCase();
+  if (!["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    throw new Error(`operations[${index}] apiRequest method is invalid: ${method}`);
+  }
+  if (op.headers && typeof op.headers !== "object") {
+    throw new Error(`operations[${index}] apiRequest headers must be an object`);
+  }
+  for (const key of Object.keys(op.headers || {})) {
+    if (/(authorization|cookie|token|secret|api-key|apikey|password)/i.test(key)) {
+      throw new Error(`operations[${index}] apiRequest must not include credential header: ${key}`);
+    }
+  }
+  if (op.body !== undefined && method === "GET") {
+    throw new Error(`operations[${index}] GET apiRequest cannot include body`);
+  }
 }
 
 function hasLocator(op) {
@@ -166,6 +198,25 @@ function validatePlan(playbook, action, plan, { confirmed }) {
   }
   const operations = plan.operations.map((op, index) => {
     const normalized = normalizeOperation(op, index, actionRisk);
+    if (normalized.type === "apiRequest") {
+      const contract = resolveApiContract(playbook, actionSpec, normalized);
+      const targetUrl = resolveApiRequestUrl(playbook, normalized, contract);
+      if (!isAllowedUrl(targetUrl, allowedDomains)) {
+        throw new Error(`operations[${index}] apiRequest target is outside allowedDomains`);
+      }
+      const method = String(normalized.method || contract?.method || "GET").toUpperCase();
+      const contractRisk = contract?.risk || (method === "GET" || method === "HEAD" ? "read" : "submit");
+      if (RISK_ORDER[contractRisk] > RISK_ORDER[actionRisk]) {
+        throw new Error(`operations[${index}] API contract risk ${contractRisk} exceeds action risk ${actionRisk}`);
+      }
+      return {
+        ...normalized,
+        contractId: normalized.contractId || contract?.id || "",
+        method,
+        url: targetUrl,
+        contentType: normalized.contentType || contract?.contentType || "json",
+      };
+    }
     if (normalized.type === "goto") {
       const targetUrl = resolveTargetUrl(playbook, normalized);
       if (!isAllowedUrl(targetUrl, allowedDomains)) {
@@ -214,6 +265,37 @@ function validatePlan(playbook, action, plan, { confirmed }) {
   };
 }
 
+function resolveApiContract(playbook, actionSpec, op) {
+  const contracts = Array.isArray(playbook.apiContracts) ? playbook.apiContracts : [];
+  if (op.contractId) {
+    const found = contracts.find((contract) => contract.id === op.contractId);
+    if (!found) throw new Error(`apiRequest contractId was not found: ${op.contractId}`);
+    return found;
+  }
+  const refs = Array.isArray(actionSpec.metadata?.apiContractRefs) ? actionSpec.metadata.apiContractRefs : [];
+  if (refs.length === 1 && !op.url && !op.path) {
+    return contracts.find((contract) => contract.id === refs[0]) || null;
+  }
+  return null;
+}
+
+function resolveApiRequestUrl(playbook, op, contract) {
+  const baseUrl = String(playbook.baseUrl || "");
+  const raw = op.url || op.path || contract?.endpoint || "";
+  if (!raw) throw new Error("apiRequest target URL is missing");
+  const url = new URL(String(raw), baseUrl);
+  const query = { ...(contract?.defaultQuery || {}), ...(op.query || {}) };
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === "") continue;
+    if (Array.isArray(value)) {
+      for (const item of value) url.searchParams.append(key, String(item));
+    } else {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  return url.href;
+}
+
 async function runBrowser(playbook, validated, args) {
   let chromium;
   try {
@@ -233,6 +315,7 @@ async function runBrowser(playbook, validated, args) {
   const context = await browser.newContext(contextOptions);
   const page = await context.newPage();
   const extracted = [];
+  const apiResponses = [];
   const screenshots = [];
   const events = [];
   const network = [];
@@ -256,7 +339,29 @@ async function runBrowser(playbook, validated, args) {
       const op = validated.operations[index];
       events.push({ type: "operation:start", index, operation: op.type, target: targetDescriptor(op) });
       try {
-        if (op.type === "goto") {
+        if (op.type === "apiRequest") {
+          const response = await context.request.fetch(op.url, apiRequestOptions(op));
+          const body = await readApiResponseBody(response, op);
+          const record = {
+            label: op.label || op.contractId || op.url,
+            contractId: op.contractId || "",
+            method: op.method,
+            url: redactUrl(op.url),
+            status: response.status(),
+            ok: response.ok(),
+            body,
+          };
+          apiResponses.push(record);
+          if (op.extract !== false) {
+            extracted.push({ label: record.label, text: stringifyApiBody(body, Number(op.maxChars || 6000)) });
+          }
+          events.push({ type: "apiRequest", method: op.method, url: redactUrl(op.url), status: response.status() });
+          if (op.expectStatus && response.status() !== Number(op.expectStatus)) {
+            const error = new Error(`API response status ${response.status()} did not match expected ${op.expectStatus}`);
+            error.code = "API_STATUS_MISMATCH";
+            throw error;
+          }
+        } else if (op.type === "goto") {
         await page.goto(op.url, { waitUntil: "domcontentloaded", timeout: Number(op.timeoutMs || 30000) });
         events.push({ type: "goto", url: page.url() });
       } else if (op.type === "click") {
@@ -316,7 +421,7 @@ async function runBrowser(playbook, validated, args) {
         return actionFailure(err, { validated, op, index, page, events, extracted, screenshots, network });
       }
     }
-    return { ok: true, action: validated.action, events, extracted, screenshots, network, finalUrl: page.url() };
+    return { ok: true, action: validated.action, events, extracted, apiResponses, screenshots, network, finalUrl: page.url() };
   } finally {
     await context.close();
     await browser.close();
@@ -430,6 +535,41 @@ function targetDescriptor(op) {
   return op.type || "operation";
 }
 
+function apiRequestOptions(op) {
+  const options = {
+    method: op.method || "GET",
+    timeout: Number(op.timeoutMs || 30000),
+  };
+  const headers = { ...(op.headers || {}) };
+  if (Object.keys(headers).length) options.headers = headers;
+  if (op.body !== undefined) {
+    if (String(op.contentType || "json").toLowerCase() === "form") {
+      options.form = op.body;
+    } else {
+      options.data = op.body;
+    }
+  }
+  return options;
+}
+
+async function readApiResponseBody(response, op) {
+  const contentType = String(response.headers()["content-type"] || "");
+  const maxChars = Number(op.maxChars || 12000);
+  if (contentType.includes("application/json")) {
+    try {
+      return await response.json();
+    } catch {
+      return String(await response.text()).slice(0, maxChars);
+    }
+  }
+  return String(await response.text()).slice(0, maxChars);
+}
+
+function stringifyApiBody(body, maxChars) {
+  const text = typeof body === "string" ? body : JSON.stringify(body, null, 2);
+  return String(text || "").slice(0, maxChars);
+}
+
 function actionFailure(err, { validated, op, index, page, events, extracted, screenshots, network }) {
   return {
     ok: false,
@@ -452,6 +592,13 @@ function actionFailure(err, { validated, op, index, page, events, extracted, scr
 }
 
 function recoveryHints(err, op) {
+  if (err.code === "API_STATUS_MISMATCH" || op.type === "apiRequest") {
+    return [
+      "The learned API contract may be stale, the browser session may be logged out, or this endpoint now requires a dynamic token.",
+      "Retry after confirming the system is logged in. If it fails again, re-run web-system learning with an interactive pass or test-lab contract probe.",
+      "For write actions, fall back to the browser plan and keep the user confirmation gate.",
+    ];
+  }
   if (err.code === "LOCATOR_NOT_FOUND") {
     return [
       "The page likely changed, the user is not logged in, or the action plan used a brittle selector.",
