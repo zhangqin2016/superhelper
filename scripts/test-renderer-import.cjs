@@ -285,6 +285,36 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(multiSelectQuestionResult);
+    const sealedTurnLayoutResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { liveTurnFromRecord, renderSealedTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const turn = liveTurnFromRecord({
+          turnId: "turn_sealed_layout_regression",
+          terminal: "turn.completed",
+          assistantText: "先说过程。\\n\\n最终答案。",
+          startedAt: 1000,
+          endedAt: 5000,
+          timeline: [
+            { kind: "text", id: "text_1", ts: 1000, text: "先说过程。", status: "done" },
+            { kind: "thinking", id: "think_1", startTs: 1100, ts: 2100, text: "分析中", status: "done" },
+            { kind: "tool", id: "read_1", ts: 2200, name: "Read", input: { file_path: "a.md" }, status: "done" },
+            { kind: "text", id: "text_2", ts: 3000, text: "最终答案。", status: "done" },
+          ],
+        });
+        const article = renderSealedTurnArticle(turn, false);
+        document.body.appendChild(article);
+        const process = article.querySelector("[data-role='process']");
+        const narrative = article.querySelector("[data-role='narrative']");
+        if (!process || !narrative) throw new Error("sealed article missing core regions");
+        const order = process.compareDocumentPosition(narrative);
+        article.remove();
+        if (!(order & Node.DOCUMENT_POSITION_FOLLOWING)) {
+          throw new Error("sealed process details must render before the answer after reload");
+        }
+        return "sealed-turn-layout-regression: ok";
+      }
+    )()`);
+    console.log(sealedTurnLayoutResult);
     const markdownRichResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { renderMarkdown, renderMarkdownWithCache } = await import("./modules/markdown.js");

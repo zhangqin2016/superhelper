@@ -140,6 +140,11 @@ assert.equal(newest[0].version, "1.1.0", "catalog must publish newest enabled ap
 const catalog = buildWorkspaceAppCatalog(rows, { catalogUrl: "https://service.example.com/api/apps/catalog" });
 assert.equal(catalog.schemaVersion, 1);
 assert.equal(catalog.catalogUrl, "https://service.example.com/api/apps/catalog");
+assert.equal(
+  catalog.categories.some((category) => category.id === "connectors"),
+  true,
+  "public app catalog must expose connectors as a first-class marketplace category",
+);
 assert.equal(catalog.apps.length, 1);
 assert.equal(catalog.apps[0].id, "stock-dashboard");
 assert.equal(catalog.apps[0].sourceType, "zip");
@@ -167,6 +172,19 @@ const highQualityInput = {
 };
 const highQuality = evaluateWorkspaceAppQuality(highQualityInput);
 assert.equal(highQuality.ok, true, `high-quality app should pass: ${highQuality.issues.join(", ")}`);
+
+const connectorQuality = evaluateWorkspaceAppQuality({
+  ...highQualityInput,
+  appId: "gmail-mail-connector",
+  name: "Gmail Mail Connector",
+  summary: "连接 Gmail 邮箱，让工作区可以搜索邮件、读取邮件、总结内容并起草回复。",
+  description: "这个连接器通过受控凭据和确认流程连接 Gmail。读取类动作自动执行，发送类动作必须经过用户确认，适合邮件助手和办公自动化工作流。",
+  category: "connectors",
+  appType: "connector",
+  riskLevel: "medium",
+  featured: false,
+});
+assert.equal(connectorQuality.ok, true, `connector app should pass: ${connectorQuality.issues.join(", ")}`);
 
 const highRiskFeatured = evaluateWorkspaceAppQuality({
   ...highQualityInput,

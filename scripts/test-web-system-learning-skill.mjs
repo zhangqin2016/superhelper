@@ -2,11 +2,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 
 const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const require = createRequire(import.meta.url);
+const { normalizePlaybookSpec } = require("../src/main/connector-protocol.js");
 const skillDir = path.join(ROOT, "resources/skills-catalog/lily-web-system-learning");
 const script = path.join(skillDir, "scripts/create_web_system_skill.cjs");
 const scanner = path.join(skillDir, "scripts/scan_web_system.py");
+const executor = path.join(skillDir, "scripts/execute_web_playbook.cjs");
 
 if (!fs.existsSync(path.join(skillDir, "SKILL.md"))) {
   throw new Error("lily-web-system-learning SKILL.md missing");
@@ -16,6 +20,9 @@ if (!fs.existsSync(path.join(skillDir, "skill.manifest.json"))) {
 }
 if (!fs.existsSync(scanner)) {
   throw new Error("lily-web-system-learning scanner missing");
+}
+if (!fs.existsSync(executor)) {
+  throw new Error("lily-web-system-learning executor missing");
 }
 
 function findPython() {
@@ -75,6 +82,9 @@ if (result.status !== 0) {
 const draftDir = path.join(outDir, "demo-oa");
 const skillMd = fs.readFileSync(path.join(draftDir, "SKILL.md"), "utf8");
 const manifest = JSON.parse(fs.readFileSync(path.join(draftDir, "skill.manifest.json"), "utf8"));
+const playbook = JSON.parse(fs.readFileSync(path.join(draftDir, "web-system-playbook.json"), "utf8"));
+const draftExecutor = path.join(draftDir, "scripts/execute_web_playbook.cjs");
+const normalizedPlaybook = normalizePlaybookSpec(playbook);
 if (!skillMd.includes("Allowed domains") || !skillMd.includes("explicit confirmation")) {
   throw new Error("generated skill should include domain and confirmation guardrails");
 }
@@ -83,6 +93,74 @@ if (skillMd.includes("password") && !skillMd.includes("Never ask for or store pa
 }
 if (manifest.id !== "demo-oa" || manifest.riskLevel !== "high") {
   throw new Error(`unexpected manifest: ${JSON.stringify(manifest)}`);
+}
+if (normalizedPlaybook.connector.kind !== "web" || normalizedPlaybook.actions[0].action !== "web.query-approval") {
+  throw new Error(`generated playbook should use the connector protocol: ${JSON.stringify(playbook)}`);
+}
+if (normalizedPlaybook.actions[1].confirmation !== "explicit") {
+  throw new Error("submit action confirmation must survive playbook normalization");
+}
+if (!fs.existsSync(draftExecutor)) {
+  throw new Error("generated web system skill should carry a local playbook executor");
+}
+
+const readPlanPath = path.join(tmp, "read-plan.json");
+fs.writeFileSync(
+  readPlanPath,
+  JSON.stringify({
+    action: "web.query-approval",
+    operations: [
+      { type: "goto", path: "/approvals", risk: "read" },
+      { type: "extract", selector: "body", label: "approval list" },
+    ],
+  }),
+);
+result = spawnSync(process.execPath, [draftExecutor, "--playbook", path.join(draftDir, "web-system-playbook.json"), "--action", "web.query-approval", "--plan", readPlanPath, "--dry-run"], {
+  cwd: draftDir,
+  encoding: "utf8",
+});
+if (result.status !== 0) {
+  throw new Error(`web playbook executor dry-run failed: ${result.stderr || result.stdout}`);
+}
+const validatedReadPlan = JSON.parse(result.stdout);
+if (!validatedReadPlan.ok || validatedReadPlan.reviewRequired || validatedReadPlan.operations[0].url !== "https://oa.example.com/approvals") {
+  throw new Error(`unexpected validated read plan: ${result.stdout}`);
+}
+
+const unsafeReadPlanPath = path.join(tmp, "unsafe-read-plan.json");
+fs.writeFileSync(
+  unsafeReadPlanPath,
+  JSON.stringify({
+    action: "web.query-approval",
+    operations: [{ type: "fill", selector: "#amount", value: "100", risk: "prepare" }],
+  }),
+);
+result = spawnSync(process.execPath, [draftExecutor, "--playbook", path.join(draftDir, "web-system-playbook.json"), "--action", "web.query-approval", "--plan", unsafeReadPlanPath, "--dry-run"], {
+  cwd: draftDir,
+  encoding: "utf8",
+});
+if (result.status === 0 || !result.stderr.includes("risk prepare exceeds action risk read")) {
+  throw new Error("read action should reject prepare/write browser operations");
+}
+
+const submitPlanPath = path.join(tmp, "submit-plan.json");
+fs.writeFileSync(
+  submitPlanPath,
+  JSON.stringify({
+    action: "web.submit-leave",
+    operations: [{ type: "fill", selector: "#reason", value: "annual leave", risk: "prepare" }],
+  }),
+);
+result = spawnSync(process.execPath, [draftExecutor, "--playbook", path.join(draftDir, "web-system-playbook.json"), "--action", "web.submit-leave", "--plan", submitPlanPath, "--dry-run"], {
+  cwd: draftDir,
+  encoding: "utf8",
+});
+if (result.status !== 0) {
+  throw new Error(`submit dry-run should return review-required payload: ${result.stderr || result.stdout}`);
+}
+const reviewPayload = JSON.parse(result.stdout);
+if (!reviewPayload.reviewRequired || reviewPayload.risk !== "submit") {
+  throw new Error(`submit action should require review before execution: ${result.stdout}`);
 }
 
 const parentSpecPath = path.join(tmp, "parent-domain.json");

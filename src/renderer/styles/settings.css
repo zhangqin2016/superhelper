@@ -756,6 +756,77 @@
   display: none;
 }
 
+.connector-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.connector-checkbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 10px 0 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.connector-accounts-list {
+  display: grid;
+  gap: 10px;
+}
+
+.connector-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+
+.connector-account-meta {
+  min-width: 0;
+}
+
+.connector-account-name {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.connector-account-details,
+.connector-account-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.connector-account-empty {
+  margin: 0;
+}
+
+.connector-account-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .connector-form-grid,
+  .connector-account-row {
+    grid-template-columns: 1fr;
+  }
+
+  .connector-account-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .skills-subsection-title {
   margin: 0 0 10px;
   font-size: 12px;

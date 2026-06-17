@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-mail-assistant",
+  "name": "Lily Mail Assistant",
+  "description": "连接 Gmail、Outlook/Microsoft 365 或 IMAP/SMTP，支持邮件搜索、总结、附件查找、回复草稿和确认后发送。",
+  "version": "1.0.1",
+  "minAppVersion": "0.1.48",
+  "runtime": "node",
+  "category": "office",
+  "categoryLabel": "办公协作",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "workflow",
+  "riskLevel": "high",
+  "permissions": {
+    "network": true,
+    "filesystem": "workspace",
+    "subprocess": "workspace"
+  },
+  "guideMd": {
+    "title": "邮件助手",
+    "priority": 23,
+    "body": "用户要求搜索、总结、分析、草拟或发送邮件时使用。邮件连接器必须通过 Gmail OAuth、Outlook/Microsoft Graph OAuth 或 IMAP/SMTP app password/token 配置；不要让用户把密码、Cookie、OAuth code 或 API token 粘贴到聊天里。默认只读或生成草稿；发送、删除、归档、批量移动等动作必须显式确认。"
+  }
+}

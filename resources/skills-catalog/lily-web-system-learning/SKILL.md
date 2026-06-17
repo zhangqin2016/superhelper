@@ -15,8 +15,9 @@ The goal is not "AI clicks a website freely." The goal is:
 
 1. Learn the system within a user-approved scope.
 2. Produce a page/action map.
-3. Generate a workspace skill draft.
-4. Let the user review and enable the skill before future use.
+3. Generate a standard connector playbook.
+4. Generate a workspace skill draft that references the playbook contract.
+5. Let the user review and enable the skill before future use.
 
 Never store passwords in a skill, prompt, log, or generated file. The user must
 log in through an interactive browser/profile, SSO, or existing session. Treat
@@ -98,14 +99,37 @@ invent a skill from memory or screenshots alone.
 }
 ```
 
-7. Validate and create the skill draft:
+7. Validate and create the connector playbook plus skill draft:
 
 ```bash
 node scripts/create_web_system_skill.cjs --spec web-system-spec.json
 ```
 
-The script writes a draft into Lily's learned-skills inbox. Tell the user they
-must review and enable it in Settings -> Skills before it becomes active.
+The script writes:
+
+- `web-system-playbook.json`: the standard connector/action contract.
+- `web-system-spec.json`: the legacy learning spec for human review.
+- `SKILL.md` and `skill.manifest.json`: the workspace skill draft.
+- `scripts/execute_web_playbook.cjs`: the local, domain-checked, confirmation-gated
+  execution helper for the generated playbook.
+
+Tell the user they must review and enable the draft in Settings -> Skills before
+it becomes active.
+
+8. Future execution must be plan-driven. The assistant creates an
+   `action-plan.json`, validates it first, then executes only if the risk and
+   confirmation policy allow it:
+
+```bash
+node scripts/execute_web_playbook.cjs \
+  --playbook web-system-playbook.json \
+  --action web.query-expense-status \
+  --plan action-plan.json \
+  --dry-run
+```
+
+For `submit` and `destructive` actions, never add `--confirmed` until the user
+has reviewed the exact action target and final field values.
 
 ## Action Rules
 

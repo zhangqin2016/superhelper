@@ -242,11 +242,14 @@ if (!result.ok) {
 if (!result.bundledCatalog) {
   throw new Error("expected bundled catalog");
 }
-if ((result.available || []).length !== 26) {
-  throw new Error(`expected 26 curated available skills, got ${result.available?.length || 0}`);
+if ((result.available || []).length !== 27) {
+  throw new Error(`expected 27 curated available skills, got ${result.available?.length || 0}`);
 }
 if (!result.available.find((skill) => skill.id === "lily-stock-research")) {
   throw new Error("curated catalog should include the stock research skill used by the stock app");
+}
+if (!result.available.find((skill) => skill.id === "lily-mail-assistant")) {
+  throw new Error("curated catalog should include the mail assistant connector skill");
 }
 for (const staleId of ["anthropics-algorithmic-art", "marketing-referrals"]) {
   if (!(bootstrapResult.pruned || []).includes(staleId)) {
@@ -289,11 +292,14 @@ fs.rmSync(tmp, { recursive: true, force: true });
 console.log("skill-catalog: ok", result.available.length, "available");
 
 const bundled = skillRegistry.loadBundledRegistry();
-if (!bundled || (bundled.skills || []).length !== 26) {
-  throw new Error(`bundled registry should contain 26 curated skills, got ${bundled?.skills?.length || 0}`);
+if (!bundled || (bundled.skills || []).length !== 27) {
+  throw new Error(`bundled registry should contain 27 curated skills, got ${bundled?.skills?.length || 0}`);
 }
 if (!bundled.skills.find((skill) => skill.id === "lily-stock-research")) {
   throw new Error("bundled registry should include lily-stock-research");
+}
+if (!bundled.skills.find((skill) => skill.id === "lily-mail-assistant")) {
+  throw new Error("bundled registry should include lily-mail-assistant");
 }
 
 const emptyService = {
@@ -306,8 +312,8 @@ const emptyMerged = skillRegistry.mergeRegistries(emptyService, bundled);
 if (!emptyMerged?.bundledFallback) {
   throw new Error("empty service registry should fall back to bundled catalog");
 }
-if ((emptyMerged.skills || []).length !== 26) {
-  throw new Error(`empty service merge expected 26 curated skills, got ${emptyMerged.skills?.length || 0}`);
+if ((emptyMerged.skills || []).length !== 27) {
+  throw new Error(`empty service merge expected 27 curated skills, got ${emptyMerged.skills?.length || 0}`);
 }
 
 const serviceWithOne = {
@@ -379,13 +385,16 @@ const serviceResult = await skillManagerWithService.checkRegistryUpdates({ fetch
 if (!serviceResult.ok) {
   throw new Error(`service fallback failed: ${JSON.stringify(serviceResult)}`);
 }
-if ((serviceResult.available || []).length !== 26) {
+if ((serviceResult.available || []).length !== 27) {
   throw new Error(
     `empty service should still expose curated bundled catalog, got ${serviceResult.available?.length || 0}`,
   );
 }
 if (!serviceResult.available.find((skill) => skill.id === "lily-stock-research")) {
   throw new Error("empty service fallback should include lily-stock-research");
+}
+if (!serviceResult.available.find((skill) => skill.id === "lily-mail-assistant")) {
+  throw new Error("empty service fallback should include lily-mail-assistant");
 }
 if (!serviceResult.bundledCatalog) {
   throw new Error("empty service fallback should mark bundledCatalog");
@@ -492,13 +501,17 @@ skillInstaller.installFromRegistryEntry = async (entry) => {
 
 skillManagerCurated.bootstrapSkills();
 const curatedResult = await skillManagerCurated.checkRegistryUpdates({ fetch: true });
-if (!curatedResult.serviceCatalog || curatedResult.bundledCatalog) {
-  throw new Error("non-empty service registry should be authoritative, not bundled fallback");
+if (!curatedResult.serviceCatalog || !curatedResult.bundledCatalog) {
+  throw new Error("service registry should stay authoritative while bundled catalog fills missing built-ins");
 }
-if ((curatedResult.available || []).length !== 1 || curatedResult.available[0].id !== curatedSkill.id) {
-  throw new Error(`curated service registry should expose only service skills, got ${curatedResult.available?.length}`);
+if (!curatedResult.available.find((skill) => skill.id === curatedSkill.id)) {
+  throw new Error("curated service registry should keep service skills");
 }
-if (!curatedResult.available[0].defaultEligible || curatedResult.available[0].capabilityLayer !== "workflow") {
+if (!curatedResult.available.find((skill) => skill.id === "lily-web-system-learning")) {
+  throw new Error("service registry should be supplemented with bundled-only skills");
+}
+const curatedAvailable = curatedResult.available.find((skill) => skill.id === curatedSkill.id);
+if (!curatedAvailable?.defaultEligible || curatedAvailable.capabilityLayer !== "workflow") {
   throw new Error("curated skill metadata should be preserved for UI and auto-sync");
 }
 const syncResult = await skillManagerCurated.syncServiceSkillPackages({ fetch: true });

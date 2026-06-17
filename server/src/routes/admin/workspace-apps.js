@@ -23,7 +23,7 @@ const createWorkspaceAppSchema = z.object({
   description: z.string().max(4000).optional().nullable(),
   version: z.string().min(1).max(40),
   category: z.string().min(1).max(60).default("productivity"),
-  appType: z.enum(["workspace", "template", "tool", "dashboard"]).default("workspace"),
+  appType: z.enum(["workspace", "template", "tool", "dashboard", "connector"]).default("workspace"),
   entryKind: z.enum(["zip", "url"]).default("zip"),
   publisher: z.string().min(1).max(120).default("Lily Workbench"),
   sourceKind: z.string().min(1).max(60).default("lily"),

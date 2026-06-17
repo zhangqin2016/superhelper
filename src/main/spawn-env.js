@@ -50,6 +50,7 @@ function buildAgentSpawnEnv(options = {}) {
     ...engineEnv,
     ...getSearchSpawnEnv(),
     ...getRuntimeEnvExtras(),
+    ...require("./connector-bridge").getConnectorBridgeEnvSync(),
     TERM: "dumb",
     NO_COLOR: "1",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",

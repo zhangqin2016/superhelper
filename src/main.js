@@ -11,6 +11,7 @@ const SessionManager = require("./main/session-manager");
 const FileStagingManager = require("./main/file-staging-manager");
 const { SessionRunnerPool } = require("./main/session-runner-pool");
 const { ScheduledTaskManager } = require("./main/scheduled-tasks");
+const { ensureConnectorBridgeStarted, stopConnectorBridge } = require("./main/connector-bridge");
 const ipcHandlers = require("./main/ipc-handlers");
 const { wireExternalLinks } = require("./main/window-links");
 const { wireContextMenu } = require("./main/window-context-menu");
@@ -104,6 +105,9 @@ app.whenReady().then(async () => {
   const scheduledTaskManager = new ScheduledTaskManager();
   scheduledTaskManager.load();
   scheduledTaskManagerRef = scheduledTaskManager;
+  await ensureConnectorBridgeStarted().catch((err) => {
+    console.warn("[connector-bridge]", err?.message || err);
+  });
 
   createWindow();
   require("./main/update-manager").configure({
@@ -170,6 +174,7 @@ app.on("before-quit", () => {
   scheduledTaskManagerRef?.save();
   sessionManagerRef?.saveImmediate();
   runnerPoolRef?.terminateAll();
+  stopConnectorBridge();
   try {
     const { fileStagingDir } = require("./main/config");
     const fs = require("node:fs");

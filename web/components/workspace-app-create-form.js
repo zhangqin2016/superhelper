@@ -15,14 +15,14 @@ export function WorkspaceAppCreateForm() {
     <div className="table-card mb-6 p-6">
       <h2 className="mb-5 text-xl font-semibold">{t.admin.pages.apps[0]}</h2>
       <p className="mb-4 text-sm text-slate-500">
-        上传工作空间导出的应用 zip，后台会发布到七牛云并进入应用商店目录。
+        上传工作空间导出的应用或连接器 zip，后台会发布到七牛云并进入应用商店目录。
       </p>
       <form action={action} className="grid gap-4 lg:grid-cols-6">
         <Field label="App ID" name="appId" placeholder="stock-research-dashboard" required />
         <Field label="Name" name="name" placeholder="股票投研看板" required />
         <Field label="Version" name="version" defaultValue="1.0.0" required />
-        <SelectField label="Category" name="category" defaultValue="productivity" options={["productivity", "office", "data", "finance", "creative", "developer", "business", "education"]} />
-        <SelectField label="App type" name="appType" defaultValue="workspace" options={["workspace", "template", "tool", "dashboard"]} />
+        <SelectField label="Category" name="category" defaultValue="productivity" options={["productivity", "office", "connectors", "data", "finance", "creative", "developer", "business", "education"]} />
+        <SelectField label="App type" name="appType" defaultValue="workspace" options={["workspace", "template", "tool", "dashboard", "connector"]} />
         <SelectField label="Risk" name="riskLevel" defaultValue="low" options={["low", "medium", "high"]} />
         <div className="lg:col-span-3">
           <Field label="App artifact zip" name="artifact" type="file" required />

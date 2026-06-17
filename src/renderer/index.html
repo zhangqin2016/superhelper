@@ -264,6 +264,7 @@
             <button type="button" class="settings-nav-item" data-settings-page="model" data-i18n="settings.nav.model">模型</button>
             <button type="button" class="settings-nav-item" data-settings-page="permission" data-i18n="settings.nav.permission">权限</button>
             <button type="button" class="settings-nav-item" data-settings-page="search" data-i18n="settings.nav.search">联网搜索</button>
+            <button type="button" class="settings-nav-item" data-settings-page="connectors" data-i18n="settings.nav.connectors">连接器</button>
             <button type="button" class="settings-nav-item" data-settings-page="skills" data-i18n="settings.nav.skills">技能</button>
             <button type="button" class="settings-nav-item" data-settings-page="apps" data-i18n="settings.nav.apps">应用商店</button>
             <button type="button" class="settings-nav-item" data-settings-page="license" data-i18n="settings.nav.license">授权</button>
@@ -483,6 +484,74 @@
                 <button id="searchSaveSearxngUrlBtn" class="settings-action-btn" type="button" data-i18n="settings.searxngSave">保存</button>
               </div>
               <p id="searchSearxngHint" class="skills-registry-hint" data-i18n="settings.searxngHint">填写自定义 SearXNG 实例后将优先使用；留空则自动尝试内置公共实例。</p>
+            </section>
+            <section id="settingsPageConnectors" class="settings-page" data-settings-page="connectors" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.connectors">连接器</h3>
+              <p class="settings-section-desc" data-i18n="settings.connectorsDesc">授权邮箱、OA、网页系统等外部能力。密钥只保存在本机主进程，助手只能通过受控连接器执行。</p>
+              <div class="settings-field">
+                <h4 class="settings-subsection-title" data-i18n="settings.connectors.mailTitle">邮箱账号</h4>
+                <p class="settings-section-desc" data-i18n="settings.connectors.mailDesc">IMAP/SMTP 可立即测试连接。Gmail 与 Microsoft 365 需要先配置 OAuth 应用信息。</p>
+                <div class="connector-form-grid">
+                  <div>
+                    <label class="settings-field-label" for="connectorProviderSelect" data-i18n="settings.connectors.provider">提供商</label>
+                    <select id="connectorProviderSelect" class="settings-select">
+                      <option value="imap-smtp" data-i18n="settings.connectors.provider.imap">IMAP / SMTP</option>
+                      <option value="gmail" data-i18n="settings.connectors.provider.gmail">Gmail</option>
+                      <option value="outlook" data-i18n="settings.connectors.provider.outlook">Outlook</option>
+                      <option value="microsoft-365" data-i18n="settings.connectors.provider.microsoft365">Microsoft 365</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="settings-field-label" for="connectorAccountLabel" data-i18n="settings.connectors.label">显示名称</label>
+                    <input id="connectorAccountLabel" class="settings-text-input" type="text" maxlength="80" data-i18n-placeholder="settings.connectors.labelPlaceholder" placeholder="例如 公司邮箱" />
+                  </div>
+                </div>
+                <label class="settings-field-label" for="connectorAccountEmail" data-i18n="settings.connectors.email">邮箱地址</label>
+                <input id="connectorAccountEmail" class="settings-text-input" type="email" autocomplete="email" maxlength="160" placeholder="name@example.com" />
+                <div id="connectorImapFields">
+                  <div class="connector-form-grid">
+                    <div>
+                      <label class="settings-field-label" for="connectorImapHost" data-i18n="settings.connectors.imapHost">IMAP 主机</label>
+                      <input id="connectorImapHost" class="settings-text-input" type="text" placeholder="imap.example.com" spellcheck="false" />
+                    </div>
+                    <div>
+                      <label class="settings-field-label" for="connectorImapPort" data-i18n="settings.connectors.imapPort">IMAP 端口</label>
+                      <input id="connectorImapPort" class="settings-text-input" type="number" min="1" max="65535" value="993" />
+                    </div>
+                  </div>
+                  <div class="connector-form-grid">
+                    <div>
+                      <label class="settings-field-label" for="connectorSmtpHost" data-i18n="settings.connectors.smtpHost">SMTP 主机</label>
+                      <input id="connectorSmtpHost" class="settings-text-input" type="text" placeholder="smtp.example.com" spellcheck="false" />
+                    </div>
+                    <div>
+                      <label class="settings-field-label" for="connectorSmtpPort" data-i18n="settings.connectors.smtpPort">SMTP 端口</label>
+                      <input id="connectorSmtpPort" class="settings-text-input" type="number" min="1" max="65535" value="465" />
+                    </div>
+                  </div>
+                  <div class="connector-checkbox-row">
+                    <label><input id="connectorImapSecure" type="checkbox" checked /> <span data-i18n="settings.connectors.imapTls">IMAP 使用 TLS</span></label>
+                    <label><input id="connectorSmtpSecure" type="checkbox" checked /> <span data-i18n="settings.connectors.smtpTls">SMTP 使用 TLS</span></label>
+                  </div>
+                  <label class="settings-field-label" for="connectorAccountSecret" data-i18n="settings.connectors.secret">应用专用密码 / Token</label>
+                  <input id="connectorAccountSecret" class="settings-text-input" type="password" maxlength="512" autocomplete="off" data-i18n-placeholder="settings.connectors.secretPlaceholder" placeholder="不会展示给助手" />
+                </div>
+                <div id="connectorOauthFields" hidden>
+                  <p class="settings-section-desc" data-i18n="settings.connectors.oauthHint">OAuth 需要在对应平台创建桌面应用或服务端回调应用。保存后会显示为“已配置”，完成授权流程后才会变成“已连接”。</p>
+                  <label class="settings-field-label" for="connectorOauthClientId" data-i18n="settings.connectors.oauthClientId">OAuth Client ID</label>
+                  <input id="connectorOauthClientId" class="settings-text-input" type="text" maxlength="256" spellcheck="false" autocomplete="off" />
+                  <label class="settings-field-label" for="connectorOauthTenantId" data-i18n="settings.connectors.oauthTenantId">Tenant ID（Microsoft 可选）</label>
+                  <input id="connectorOauthTenantId" class="settings-text-input" type="text" maxlength="160" spellcheck="false" autocomplete="off" />
+                </div>
+                <p id="connectorSettingsStatus" class="settings-form-status" hidden></p>
+                <div class="settings-actions">
+                  <button id="connectorSaveAccountBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.connectors.save">保存账号</button>
+                </div>
+              </div>
+              <div class="settings-field settings-field--divider">
+                <h4 class="settings-subsection-title" data-i18n="settings.connectors.accounts">已授权账号</h4>
+                <div id="connectorAccountsList" class="connector-accounts-list"></div>
+              </div>
             </section>
             <section id="settingsPageSkills" class="settings-page" data-settings-page="skills" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.skills">技能</h3>

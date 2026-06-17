@@ -63,6 +63,7 @@ assert.equal(synthesizedManifest.name, "lily-no-manifest");
 
 const webSystemLearningDir = path.join(ROOT, "resources/skills-catalog/lily-web-system-learning");
 if (fs.existsSync(webSystemLearningDir)) {
+  const expectedManifest = JSON.parse(fs.readFileSync(path.join(webSystemLearningDir, "skill.manifest.json"), "utf8"));
   const webSystemStdout = execFileSync(
     process.execPath,
     [path.join(ROOT, "scripts/build-skill-pack.mjs"), "--skill", webSystemLearningDir, "--out", outDir],
@@ -70,7 +71,7 @@ if (fs.existsSync(webSystemLearningDir)) {
   );
   const webSystemMeta = JSON.parse(webSystemStdout);
   assert.equal(webSystemMeta.skillId, "lily-web-system-learning");
-  assert.equal(webSystemMeta.version, "1.0.0");
+  assert.equal(webSystemMeta.version, expectedManifest.version);
   assert.ok(webSystemMeta.fileCount >= 4, "web system learning pack should include scripts and manifest");
 }
 

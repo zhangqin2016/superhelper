@@ -12,6 +12,7 @@ const SUPPORTED_WORKSPACE_APP_KINDS = new Set(["lily-workspace-pack", "lily-work
 export const WORKSPACE_APP_CATEGORIES = [
   { id: "productivity", label: "效率工具" },
   { id: "office", label: "办公文档" },
+  { id: "connectors", label: "连接器" },
   { id: "data", label: "数据分析" },
   { id: "finance", label: "金融投研" },
   { id: "creative", label: "设计创意" },
@@ -153,8 +154,8 @@ export function evaluateWorkspaceAppQuality(input) {
   if (CATEGORY_IDS.has(String(input.category || ""))) score += 4;
   else issues.push(`Category must be one of: ${[...CATEGORY_IDS].join(", ")}`);
 
-  if (["workspace", "template", "tool", "dashboard"].includes(String(input.appType || ""))) score += 3;
-  else issues.push("App type must be workspace, template, tool, or dashboard");
+  if (["workspace", "template", "tool", "dashboard", "connector"].includes(String(input.appType || ""))) score += 3;
+  else issues.push("App type must be workspace, template, tool, dashboard, or connector");
 
   if (["zip", "url"].includes(String(input.entryKind || ""))) score += 3;
   else issues.push("Entry kind must be zip or url");

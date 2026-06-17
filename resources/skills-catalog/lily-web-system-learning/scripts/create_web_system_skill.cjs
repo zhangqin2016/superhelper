@@ -164,7 +164,7 @@ function buildSkillMd(spec) {
     })
     .join("\n\n");
 
-  return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, or one-time codes.\n- If the session is logged out, ask the user to log in interactively.\n- Do not leave the allowed domains.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Example triggers |\n|---|---|---|---|\n${actionRows}\n\n## Execution Rules\n\n- For \`read\` actions, return concise source-backed results from the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If labels/selectors no longer match, re-run read-only discovery for the action and explain what changed.\n\n## Action Details\n\n${actionDetails}\n`;
+  return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, or one-time codes.\n- If the session is logged out, ask the user to log in interactively.\n- Do not leave the allowed domains.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Example triggers |\n|---|---|---|---|\n${actionRows}\n\n## Execution Rules\n\n- For \`read\` actions, return concise source-backed results from the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If labels/selectors no longer match, re-run read-only discovery for the action and explain what changed.\n\n## Runtime Plan Contract\n\nWhen executing an action, create an \`action-plan.json\` with this shape and run the local executor:\n\n\`\`\`bash\nnode scripts/execute_web_playbook.cjs \\\n  --playbook web-system-playbook.json \\\n  --action web.<action-id> \\\n  --plan action-plan.json \\\n  --dry-run\n\`\`\`\n\nOnly run without \`--dry-run\` after the plan validates. For non-read actions, add \`--confirmed\` only after the user has reviewed the exact fields or target.\n\nAllowed operation types are \`goto\`, \`click\`, \`fill\`, \`press\`, \`wait\`, \`extract\`, and \`screenshot\`. Every \`goto\` URL is checked against the allowed domains. A read action may only contain read-risk operations.\n\n## Action Details\n\n${actionDetails}\n`;
 }
 
 function buildManifest(spec) {
@@ -189,9 +189,56 @@ function buildManifest(spec) {
   };
 }
 
+function buildPlaybook(spec) {
+  return {
+    schemaVersion: 1,
+    id: spec.id,
+    name: spec.name,
+    description: spec.summary,
+    baseUrl: spec.baseUrl,
+    allowedDomains: spec.allowedDomains,
+    connector: {
+      schemaVersion: 1,
+      id: `${spec.id}-web`,
+      name: `${spec.systemName} Web`,
+      kind: "web",
+      description: `Browser connector for ${spec.systemName}.`,
+      capabilities: ["web.open", "web.extract", "web.prepare", "web.submit"],
+      auth: {
+        type: "browser-session",
+        secretRefs: [],
+        scopes: [],
+        notes: "User signs in interactively. Credentials, cookies, and tokens are never stored in this playbook.",
+      },
+      allowRemoteConfig: false,
+      metadata: {
+        generatedBy: "lily-web-system-learning",
+      },
+    },
+    actions: spec.actions.map((action) => ({
+      action: `web.${action.id}`,
+      title: action.name,
+      connectorKind: "web",
+      risk: action.risk,
+      confirmation: action.confirmation,
+      intentExamples: action.intentExamples,
+      steps: action.steps,
+      selectors: action.selectors,
+      paramsSchema: {},
+      resultSchema: {},
+      metadata: {
+        entry: action.entry || "",
+        legacyActionId: action.id,
+      },
+    })),
+    createdAt: new Date().toISOString(),
+  };
+}
+
 function main() {
   const args = parseArgs(process.argv);
   const spec = validateSpec(readJson(args.spec));
+  const playbook = buildPlaybook(spec);
   const root = path.resolve(args.out || defaultInboxDir());
   const draftDir = path.join(root, spec.id);
   const result = {
@@ -205,9 +252,12 @@ function main() {
 
   if (!args.dryRun) {
     fs.mkdirSync(draftDir, { recursive: true });
+    fs.mkdirSync(path.join(draftDir, "scripts"), { recursive: true });
     fs.writeFileSync(path.join(draftDir, "SKILL.md"), buildSkillMd(spec), "utf8");
     fs.writeFileSync(path.join(draftDir, "skill.manifest.json"), JSON.stringify(buildManifest(spec), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "web-system-playbook.json"), JSON.stringify(playbook, null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "web-system-spec.json"), JSON.stringify(spec, null, 2) + "\n", "utf8");
+    fs.copyFileSync(path.join(__dirname, "execute_web_playbook.cjs"), path.join(draftDir, "scripts/execute_web_playbook.cjs"));
   }
 
   console.log(JSON.stringify(result, null, 2));

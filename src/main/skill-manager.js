@@ -623,19 +623,6 @@ function availableSkillToPublic(registryEntry, installedVersion) {
 }
 
 function finalizeResolvedRegistry(registry, { serviceUrl = "", fromService = false } = {}) {
-  if (fromService && registry?.skills?.length) {
-    return {
-      ok: true,
-      registry: {
-        ...registry,
-        categories: skillRegistry.categoriesForRegistry(registry),
-        serviceCatalog: true,
-        bundledCatalogFallback: false,
-        serviceRegistryUrl: serviceUrl || null,
-      },
-    };
-  }
-
   const supplemented = skillRegistry.supplementRegistryWithBundled(registry);
   if (!supplemented) {
     return { ok: false, error: "NOT_FOUND", detail: "Built-in skill directory not available" };

@@ -273,6 +273,7 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
   article.classList.toggle("is-sealed", sealed);
   article.classList.toggle("is-live", !sealed);
   article.classList.toggle("is-working", !sealed && liveTurn.phase === "starting");
+  normalizeTurnArticleLayout(article, sealed);
 
   const status = article.querySelector('[data-role="status"]');
   const header = article.querySelector('[data-role="header"]');
@@ -311,6 +312,21 @@ export function renderSealedTurnArticle(liveTurn, failed = false) {
   if (failed) article.dataset.failed = "true";
   renderLiveTurnArticle(article, liveTurn, { failed, sealed: true });
   return article;
+}
+
+function normalizeTurnArticleLayout(article, sealed) {
+  const header = article.querySelector('[data-role="header"]');
+  const narrative = article.querySelector('[data-role="narrative"]');
+  const process = article.querySelector('[data-role="process"]');
+  const footer = article.querySelector('[data-role="footer"]');
+  const prompts = article.querySelector('[data-role="prompts"]');
+  if (!header || !narrative || !process || !footer || !prompts) return;
+
+  if (sealed) {
+    article.append(header, process, narrative, footer, prompts);
+  } else {
+    article.append(header, narrative, process, footer, prompts);
+  }
 }
 
 function syncNarrativeImages(root, contentBlocks = []) {

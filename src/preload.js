@@ -67,6 +67,18 @@ contextBridge.exposeInMainWorld("assistantClient", {
   setSearchProvider: (providerId) => ipcRenderer.invoke("search:set-provider", providerId),
   setSearxngUrl: (url) => ipcRenderer.invoke("search:set-searxng-url", url),
 
+  listConnectors: () => ipcRenderer.invoke("connectors:list-playbooks"),
+  saveConnectorPlaybook: (payload) => ipcRenderer.invoke("connectors:save-playbook", payload),
+  removeConnectorPlaybook: (id) => ipcRenderer.invoke("connectors:remove-playbook", id),
+  listMailAccounts: () => ipcRenderer.invoke("mail-accounts:list"),
+  saveMailAccount: (payload) => ipcRenderer.invoke("mail-accounts:save", payload),
+  removeMailAccount: (id) => ipcRenderer.invoke("mail-accounts:remove", id),
+  testMailAccount: (id) => ipcRenderer.invoke("mail-accounts:test", id),
+  authorizeMailAccount: (id) => ipcRenderer.invoke("mail-accounts:oauth-start", id),
+  searchMailAccount: (payload) => ipcRenderer.invoke("mail-accounts:search", payload),
+  readMailAccountMessage: (payload) => ipcRenderer.invoke("mail-accounts:read", payload),
+  sendMailAccount: (payload) => ipcRenderer.invoke("mail-accounts:send", payload),
+
   listSkills: () => ipcRenderer.invoke("skills:list"),
   getSessionSkills: (sessionId) => ipcRenderer.invoke("session:get-skills", sessionId),
   setSessionSkills: (sessionId, enabledSkillIds) =>

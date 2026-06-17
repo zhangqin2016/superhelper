@@ -13,6 +13,7 @@ const { registerSessionHandlers, registerSkillHandlers } = require("./ipc-sessio
 const { registerAssistantHandlers } = require("./ipc-assistant");
 const { registerFileTreeHandlers } = require("./ipc-filetree");
 const { registerScheduledTaskHandlers } = require("./ipc-scheduled-tasks");
+const { registerConnectorHandlers } = require("./ipc-connectors");
 const { RuntimeEventBus } = require("./runtime-event-bus");
 const { TranscriptStore } = require("./transcript-store");
 const { TurnArchive } = require("./turn-archive");
@@ -107,6 +108,7 @@ function registerAll(ctx) {
   registerAssistantHandlers(ctx);
   registerFileTreeHandlers(ctx);
   registerScheduledTaskHandlers(ctx);
+  registerConnectorHandlers(ctx);
 
   ipcMain.handle("usage:get-summary", async () => require("./usage-settings").getUsageSettingsPublic());
 

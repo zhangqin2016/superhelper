@@ -66,7 +66,7 @@
       "id": "lily-app-builder",
       "name": "应用构建",
       "description": "把一句话需求落成可运行网页、小工具、脚本、自动化或本地应用，要求启动验证、截图检查和可打开产物路径。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -391,11 +391,35 @@
       "categoryLabel": "网页自动化",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
-      "changelog": "Lily 自研：自动学习 Web/OA 系统的页面和动作地图，并生成需要用户审核启用的工作区技能草稿。",
+      "changelog": "Lily 自研：自动学习 Web/OA 系统的页面和动作地图，输出标准连接器 playbook，并生成需要用户审核启用的工作区技能草稿。",
       "capabilityLayer": "workflow",
       "riskLevel": "high",
       "defaultEligible": false,
-      "featured": true,
+      "featured": false,
+      "sourceKind": "lily"
+    },
+    {
+      "id": "lily-mail-assistant",
+      "name": "邮件助手",
+      "description": "连接 Gmail、Outlook/Microsoft 365 或 IMAP/SMTP，支持邮件搜索、总结、附件查找、回复草稿和确认后发送。",
+      "latestVersion": "1.0.1",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "lily-mail-assistant",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.48",
+      "category": "office",
+      "categoryLabel": "办公协作",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "Lily 自研：邮件连接器统一协议，覆盖 Gmail、Outlook/Microsoft 365、IMAP/SMTP 的搜索、读取、总结、草稿和确认发送；技能通过本地安全 bridge 调用真实账号。",
+      "capabilityLayer": "workflow",
+      "riskLevel": "high",
+      "defaultEligible": false,
+      "featured": false,
       "sourceKind": "lily"
     },
     {
