@@ -315,6 +315,38 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(sealedTurnLayoutResult);
+    const thinkingStackResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { liveTurnFromRecord, renderSealedTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const turn = liveTurnFromRecord({
+          turnId: "turn_thinking_stack_regression",
+          terminal: "turn.completed",
+          assistantText: "完成。",
+          startedAt: 1000,
+          endedAt: 9000,
+          timeline: [
+            { kind: "thinking", id: "think_1", startTs: 1000, ts: 2000, text: "第一段思考", status: "done" },
+            { kind: "thinking", id: "think_2", startTs: 2100, ts: 5100, text: "第二段思考", status: "done" },
+            { kind: "thinking", id: "think_3", startTs: 5200, ts: 8200, text: "第三段思考", status: "done" },
+            { kind: "text", id: "text_1", ts: 8300, text: "完成。", status: "done" },
+          ],
+        });
+        const article = renderSealedTurnArticle(turn, false);
+        document.body.appendChild(article);
+        const process = article.querySelector("[data-role='process']");
+        const stack = process?.querySelector(".assistant-process-thinking-stack");
+        if (!stack) throw new Error("sealed multi-thinking turn should render one thinking stack");
+        if (stack.open) throw new Error("sealed thinking stack should be collapsed by default");
+        const topThinkingRows = Array.from(process.querySelector(".assistant-turn-timeline")?.children || [])
+          .filter((el) => el.classList.contains("assistant-process-thinking-group"));
+        article.remove();
+        if (topThinkingRows.length !== 1 || topThinkingRows[0] !== stack) {
+          throw new Error("sealed thinking entries should not flood the top-level process timeline");
+        }
+        return "thinking-stack-regression: ok";
+      }
+    )()`);
+    console.log(thinkingStackResult);
     const markdownRichResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { renderMarkdown, renderMarkdownWithCache } = await import("./modules/markdown.js");

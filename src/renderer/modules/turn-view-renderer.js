@@ -87,6 +87,30 @@ function thinkingSummaryLabel(text, live = false) {
   return buildThinkingSummaryLabel(text, live, t);
 }
 
+function thinkingDurationMs(entry = {}) {
+  const start = Number(entry.startTs);
+  const end = Number(entry.ts);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return end - start;
+}
+
+function renderableThinkingEntries(entries = []) {
+  return entries.filter((entry) => entry?.kind === "thinking" && String(entry.text || "").trim());
+}
+
+function shouldGroupFinishedThinking(entries = [], sealed = false) {
+  return sealed && renderableThinkingEntries(entries).length >= 2;
+}
+
+function thinkingGroupSummary(entries = []) {
+  const renderable = renderableThinkingEntries(entries);
+  const seconds = Math.round(renderable.reduce((sum, entry) => sum + thinkingDurationMs(entry), 0) / 1000);
+  if (seconds >= 1) {
+    return t("timeline.thinkingGroupTimed", { count: renderable.length, seconds });
+  }
+  return t("timeline.thinkingGroup", { count: renderable.length });
+}
+
 function applyStatusDisplay(statusEl, text, { sealed = false, live = false } = {}) {
   if (!statusEl) return;
   statusEl.hidden = !text;
@@ -394,9 +418,11 @@ function processStructureSig(liveTurn, sealed, sessionId) {
   const timeline = timelineForView(liveTurn, sealed);
   const diffCount = resolveTurnDiffEntries(liveTurn, sessionId).length;
   const collapsed = shouldCollapseProcessGroups(liveTurn, sealed);
-  const parts = [collapsed ? "collapsed" : "flat", String(diffCount)];
+  const { thinking } = partitionTimeline(timeline);
+  const groupedThinking = shouldGroupFinishedThinking(thinking, sealed);
+  const parts = [collapsed ? "collapsed" : "flat", groupedThinking ? "thinking-grouped" : "thinking-flat", String(diffCount)];
   if (collapsed) {
-    const { thinking, notices, tools, texts } = partitionTimeline(timeline);
+    const { notices, tools, texts } = partitionTimeline(timeline);
     parts.push(`thinking:${thinking.map((entry) => `${entry.id || ""}.${entry.status || ""}`).join(",")}`);
     parts.push(`texts:${texts.map((entry) => entry.id || "").join(",")}`);
     parts.push(`notices:${notices.length}`);
@@ -520,7 +546,8 @@ function renderProcess(root, liveTurn, ctx = {}) {
   root.dataset.sealed = sealed ? "true" : "false";
   root.dataset.processSig = structureSig;
   const timeline = timelineForView(liveTurn, sealed);
-  const { notices, tools } = partitionTimeline(timeline);
+  const { thinking, notices, tools } = partitionTimeline(timeline);
+  const groupThinking = shouldGroupFinishedThinking(thinking, sealed);
   // Todo checklists are the plan, not process — they render chronologically
   // outside the collapsed tool group. Subagent children nest under their
   // parent Task card and leave the main flow.
@@ -554,8 +581,16 @@ function renderProcess(root, liveTurn, ctx = {}) {
     renderGroupedTools(body, processTools, notices, sealed, childTools, entryCtx);
     group.appendChild(body);
     let groupInserted = false;
+    let thinkingInserted = false;
     for (const entry of timeline) {
       if (entry.kind === "tool" && childToolIds.has(entry.id)) continue;
+      if (groupThinking && entry.kind === "thinking") {
+        if (!thinkingInserted) {
+          list.appendChild(renderThinkingStack(thinking));
+          thinkingInserted = true;
+        }
+        continue;
+      }
       const inPlace = entry.kind === "thinking" || entry.kind === "text" ||
         (entry.kind === "tool" && isTodoTool(entry.name));
       if (inPlace) {
@@ -568,8 +603,16 @@ function renderProcess(root, liveTurn, ctx = {}) {
     }
     if (!groupInserted && (processTools.length || notices.length)) list.appendChild(group);
   } else {
+    let thinkingInserted = false;
     for (const entry of timeline) {
       if (entry.kind === "tool" && childToolIds.has(entry.id)) continue;
+      if (groupThinking && entry.kind === "thinking") {
+        if (!thinkingInserted) {
+          list.appendChild(renderThinkingStack(thinking));
+          thinkingInserted = true;
+        }
+        continue;
+      }
       const node = renderTimelineEntry(entry, sealed, entryCtx);
       if (node) list.appendChild(node);
     }
@@ -589,6 +632,27 @@ function renderProcess(root, liveTurn, ctx = {}) {
     collapseFinishedThinking: sealed && !wasSealed,
   });
   if (sessionId) reapplySessionInlineDiffs(sessionId, liveTurn.turnId || null);
+}
+
+function renderThinkingStack(thinkingEntries = []) {
+  const entries = renderableThinkingEntries(thinkingEntries);
+  if (!entries.length) return null;
+  const details = document.createElement("details");
+  details.className = "assistant-process-thinking-group assistant-process-thinking-stack";
+  details.dataset.thinkingGroup = "true";
+  details.open = false;
+  const summary = document.createElement("summary");
+  summary.className = "assistant-process-thinking-summary";
+  summary.textContent = thinkingGroupSummary(entries);
+  details.appendChild(summary);
+  const body = document.createElement("div");
+  body.className = "assistant-process-thinking-stack-body";
+  for (const entry of entries) {
+    const node = renderThinkingEntry(entry, false);
+    if (node) body.appendChild(node);
+  }
+  details.appendChild(body);
+  return details;
 }
 
 function renderGroupedTools(container, tools, notices, sealed, childTools, ctx = {}) {

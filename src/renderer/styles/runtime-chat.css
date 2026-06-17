@@ -296,6 +296,23 @@
   max-height: 96px;
 }
 
+.assistant-process-thinking-stack {
+  padding-left: 12px;
+}
+
+.assistant-process-thinking-stack-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.assistant-process-thinking-stack-body .assistant-process-thinking-group {
+  padding-left: 0;
+}
+
 /* Small always-visible icon row at the answer's bottom-right; intentionally
    one compact line (extensible: export-PDF etc. join the same row). */
 .assistant-article-actions {

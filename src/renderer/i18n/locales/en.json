@@ -784,6 +784,8 @@
   "timeline.processNotices": "{count} process notices",
   "timeline.changedFiles": "{count} changed files",
   "timeline.queuedTitle": "{count} queued",
+  "timeline.thinkingGroup": "Thinking process · {count} blocks",
+  "timeline.thinkingGroupTimed": "Thinking process · {count} blocks · {seconds}s",
   "tool.summaryBar": "{count} steps completed",
   "tool.expand": "Expand",
   "tool.collapse": "Collapse",

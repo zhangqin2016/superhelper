@@ -601,6 +601,8 @@
   "timeline.summaryAgent": "استخدام {count} مساعدين",
   "timeline.summaryOther": "إكمال {count} خطوات",
   "timeline.queuedTitle": "{count} في الانتظار",
+  "timeline.thinkingGroup": "عملية التفكير · {count} مقاطع",
+  "timeline.thinkingGroupTimed": "عملية التفكير · {count} مقاطع · {seconds} ث",
   "tool.summaryBar": "اكتملت {count} خطوات",
   "tool.expand": "توسيع",
   "tool.collapse": "طي",

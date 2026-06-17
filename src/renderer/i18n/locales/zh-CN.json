@@ -784,6 +784,8 @@
   "timeline.processNotices": "过程消息 {count}",
   "timeline.changedFiles": "{count} 个变更文件",
   "timeline.queuedTitle": "待发送 {count} 条",
+  "timeline.thinkingGroup": "思考过程 · {count} 段",
+  "timeline.thinkingGroupTimed": "思考过程 · {count} 段 · {seconds} 秒",
   "tool.summaryBar": "已完成 {count} 个步骤",
   "tool.expand": "展开",
   "tool.collapse": "收起",
