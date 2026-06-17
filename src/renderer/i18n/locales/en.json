@@ -660,6 +660,7 @@
 
   "skills.category.office": "Office",
   "skills.category.core": "Core",
+  "skills.category.workspace": "Workspace skills",
   "skills.category.coding": "Coding",
   "skills.category.design": "Design",
   "skills.category.media": "Media",
@@ -687,6 +688,7 @@
   "apps.installed": "Installed",
   "apps.updateAvailable": "Update available",
   "apps.install": "Create workspace",
+  "apps.createAnother": "New workspace",
   "apps.upgrade": "Update workspace",
   "apps.openInstalled": "Open workspace",
   "apps.showInFolder": "Show in folder",
@@ -694,6 +696,7 @@
   "apps.uninstallConfirm": "Uninstall “{name}”? This removes the workspace files installed by the app store.",
   "apps.openDownload": "Open download",
   "apps.installedPath": "Workspace: {path}",
+  "apps.installedCount": "Created: {count} workspaces",
   "apps.runtimeDeps": "Runtime: {items}",
   "apps.skillDeps": "Skills: {items}",
   "apps.missingSkills": "Missing skills: {items}",

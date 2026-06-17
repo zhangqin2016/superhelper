@@ -47,6 +47,7 @@ try {
   const playbook = JSON.parse(await zip.file("files/mail-playbook.example.json").async("string"));
 
   assert(rawManifest.appId === "mail-assistant", "raw manifest has stable app id");
+  assert(rawManifest.folderName === "mail-assistant", "raw manifest has stable English folder name");
   assert(readme.includes("Gmail"), "README documents Gmail provider");
   assert(readme.includes("Outlook / Microsoft 365"), "README documents Microsoft 365 provider");
   assert(readme.includes("IMAP/SMTP"), "README documents IMAP/SMTP provider");

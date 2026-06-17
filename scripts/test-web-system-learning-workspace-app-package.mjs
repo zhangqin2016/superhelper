@@ -48,6 +48,7 @@ try {
   const playbook = JSON.parse(await zip.file("files/web-system-learning-playbook.template.json").async("string"));
 
   assert(rawManifest.appId === "web-system-learning", "raw manifest has stable app id");
+  assert(rawManifest.folderName === "web-system-learning", "raw manifest has stable English folder name");
   assert(readme.includes("OA、ERP、CRM"), "README explains target systems");
   assert(readme.includes("用户在浏览器里自己完成登录"), "README keeps credentials out of chat");
   assert(readme.includes("提交、审批、删除、上传、付款、通知"), "README requires confirmation for high-risk actions");

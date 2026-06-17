@@ -6,6 +6,7 @@
 
 export const TREE_CATEGORY_ORDER = [
   "core",
+  "workspace",
   "office",
   "tools",
   "coding",
@@ -32,6 +33,13 @@ const BUNDLED_TOOL_IDS = new Set([
 
 export function resolveSkillTreeCategory(skill) {
   if (!skill || typeof skill !== "object") return "other";
+  if (
+    skill.origin === "workspace" ||
+    skill.workspaceOnly === true ||
+    skill.source === "learned"
+  ) {
+    return "workspace";
+  }
   const raw = skill.category;
   if (typeof raw === "string" && raw.trim()) {
     return TREE_CATEGORY_ORDER.includes(raw) ? raw : "other";
@@ -80,6 +88,6 @@ export function groupSkillsForTree(skills, options = {}) {
  */
 export function shouldExpandTreeGroup(group, { totalSkills }) {
   if (group.enabledCount > 0) return true;
-  if (group.id === "office" || group.id === "tools") return true;
+  if (group.id === "workspace" || group.id === "office" || group.id === "tools") return true;
   return (totalSkills || 0) <= 12;
 }

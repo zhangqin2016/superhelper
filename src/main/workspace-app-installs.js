@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { userDataPath } = require("./config");
 const { compareSemver } = require("./skill-version");
 
@@ -15,16 +16,27 @@ function readState() {
   try {
     const raw = JSON.parse(fs.readFileSync(statePath(), "utf8"));
     if (raw && typeof raw === "object" && raw.apps && typeof raw.apps === "object") {
+      const instances = raw.instances && typeof raw.instances === "object"
+        ? raw.instances
+        : Object.fromEntries(
+          Object.values(raw.apps)
+            .filter((record) => record && typeof record === "object")
+            .map((record) => [record.instanceId || `${record.id}:${record.projectId || record.path || "default"}`, {
+              ...record,
+              instanceId: record.instanceId || `${record.id}:${record.projectId || record.path || "default"}`,
+            }]),
+        );
       return {
         schemaVersion: STATE_SCHEMA_VERSION,
         apps: raw.apps,
+        instances,
         history: Array.isArray(raw.history) ? raw.history : [],
       };
     }
   } catch {
     // no state yet
   }
-  return { schemaVersion: STATE_SCHEMA_VERSION, apps: {}, history: [] };
+  return { schemaVersion: STATE_SCHEMA_VERSION, apps: {}, instances: {}, history: [] };
 }
 
 function writeState(state) {
@@ -32,6 +44,7 @@ function writeState(state) {
   fs.writeFileSync(statePath(), `${JSON.stringify({
     schemaVersion: STATE_SCHEMA_VERSION,
     apps: state.apps || {},
+    instances: state.instances || {},
     history: Array.isArray(state.history) ? state.history.slice(-100) : [],
   }, null, 2)}\n`, "utf8");
 }
@@ -89,19 +102,34 @@ function resolveInstallTarget({ selectedDir, defaultWorkspacePath, record, baseN
   };
 }
 
-function recordInstalled({ app, manifest, project, targetDir, installParentDir, installedDependencies }) {
+function getAppInstances(state, appId) {
+  return Object.values(state.instances || {})
+    .filter((record) => record?.id === appId)
+    .sort((a, b) => String(b.updatedAt || b.installedAt || "").localeCompare(String(a.updatedAt || a.installedAt || "")));
+}
+
+function activeRecordForApp(state, appId) {
+  return state.apps?.[appId] || getAppInstances(state, appId)[0] || null;
+}
+
+function recordInstalled({ app, manifest, project, targetDir, installParentDir, installedDependencies, replaceInstanceId }) {
   const appId = String(app?.id || manifest?.appId || "").trim();
   if (!appId) return null;
   const state = readState();
-  const previous = state.apps[appId] || null;
+  const previous = replaceInstanceId
+    ? state.instances?.[replaceInstanceId] || state.apps[appId] || null
+    : null;
   if (previous) {
     state.history.push({
       ...previous,
       supersededAt: new Date().toISOString(),
     });
   }
+  const now = new Date().toISOString();
+  const instanceId = previous?.instanceId || crypto.randomUUID();
   const record = {
     id: appId,
+    instanceId,
     name: manifest?.name || app?.name || appId,
     version: manifest?.version || app?.latestVersion || "",
     catalogVersion: app?.latestVersion || "",
@@ -112,10 +140,12 @@ function recordInstalled({ app, manifest, project, targetDir, installParentDir, 
     managedByAppStore: true,
     sha256: String(app?.sha256 || "").toLowerCase(),
     downloadUrl: app?.downloadUrl || "",
-    installedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    installedAt: previous?.installedAt || now,
+    updatedAt: now,
     installedDependencies: installedDependencies || { skills: [], runtimePacks: [] },
   };
+  if (!state.instances || typeof state.instances !== "object") state.instances = {};
+  state.instances[instanceId] = record;
   state.apps[appId] = record;
   writeState(state);
   return {
@@ -127,10 +157,14 @@ function recordInstalled({ app, manifest, project, targetDir, installParentDir, 
 
 function forgetInstalled(appId) {
   const state = readState();
-  const record = state.apps[appId];
-  if (!record) return null;
+  const record = activeRecordForApp(state, appId);
+  const records = getAppInstances(state, appId);
+  if (!record && records.length === 0) return null;
   delete state.apps[appId];
-  state.history.push({ ...record, removedAt: new Date().toISOString() });
+  for (const item of records) {
+    delete state.instances[item.instanceId];
+    state.history.push({ ...item, removedAt: new Date().toISOString() });
+  }
   writeState(state);
   return record;
 }
@@ -140,9 +174,23 @@ function attachInstalledState(result, projectManager) {
   if (!Array.isArray(apps)) return result;
   const state = readState();
   const enriched = apps.map((app) => {
-    const installed = state.apps[app.id] || null;
-    if (!installed) return { ...app, installed: false, updateAvailable: false };
-    const project = projectManager?.find?.(installed.projectId);
+    const instances = getAppInstances(state, app.id);
+    const installed = activeRecordForApp(state, app.id);
+    if (!installed) return { ...app, installed: false, installedCount: 0, installedInstances: [], updateAvailable: false };
+    const enrichedInstances = instances.map((instance) => {
+      const project = projectManager?.find?.(instance.projectId);
+      return {
+        instanceId: instance.instanceId,
+        projectId: instance.projectId,
+        projectName: instance.projectName,
+        path: instance.path,
+        version: instance.version || instance.catalogVersion || "",
+        available: Boolean(project && fs.existsSync(instance.path || "")),
+        installedAt: instance.installedAt,
+        updatedAt: instance.updatedAt,
+      };
+    });
+    const availableInstance = enrichedInstances.find((instance) => instance.available) || null;
     const installedVersion = installed.version || installed.catalogVersion || "";
     const latestVersion = app.latestVersion || "";
     return {
@@ -152,7 +200,11 @@ function attachInstalledState(result, projectManager) {
       installedAt: installed.installedAt,
       installedProjectId: installed.projectId,
       installedPath: installed.path,
-      installedAvailable: Boolean(project && fs.existsSync(installed.path || "")),
+      installedCount: instances.length,
+      installedInstances: enrichedInstances,
+      installedAvailable: Boolean(availableInstance),
+      installedAvailableProjectId: availableInstance?.projectId || null,
+      installedAvailablePath: availableInstance?.path || null,
       updateAvailable: latestVersion && installedVersion
         ? compareSemver(latestVersion, installedVersion) > 0
         : false,
@@ -168,7 +220,7 @@ function attachInstalledState(result, projectManager) {
 }
 
 function listInstalled() {
-  return Object.values(readState().apps || {});
+  return Object.values(readState().instances || {});
 }
 
 module.exports = {
@@ -181,6 +233,8 @@ module.exports = {
   canRemoveInstalledWorkspace,
   preferredInstallDialogPath,
   resolveInstallTarget,
+  getAppInstances,
+  activeRecordForApp,
   recordInstalled,
   forgetInstalled,
   attachInstalledState,

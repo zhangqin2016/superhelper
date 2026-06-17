@@ -12,7 +12,7 @@ const CONFIRMATION_LEVELS = new Set(["none", "review", "explicit"]);
 function usage() {
   return [
     "Usage:",
-    "  node scripts/create_web_system_skill.cjs --spec web-system-spec.json [--out <dir>] [--dry-run]",
+    "  node scripts/create_web_system_skill.cjs --spec web-system-spec.json [--scan web-system-scan.json] [--out <dir>] [--dry-run]",
     "",
     "The spec must contain id, name/systemName, baseUrl, allowedDomains[], and actions[].",
     "If --out is omitted, the draft is written to Lily's learned-skills inbox.",
@@ -20,11 +20,13 @@ function usage() {
 }
 
 function parseArgs(argv) {
-  const args = { spec: null, out: null, dryRun: false };
+  const args = { spec: null, scan: null, out: null, dryRun: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--spec") {
       args.spec = argv[++i];
+    } else if (arg === "--scan") {
+      args.scan = argv[++i];
     } else if (arg === "--out") {
       args.out = argv[++i];
     } else if (arg === "--dry-run") {
@@ -131,6 +133,37 @@ function validateSpec(input) {
   return spec;
 }
 
+function normalizeScan(input, spec) {
+  if (!input) return null;
+  if (input.ok !== true || input.schemaVersion !== 1) {
+    throw new Error("scan must be a successful schemaVersion 1 scan payload");
+  }
+  const allowedDomains = new Set(spec.allowedDomains);
+  const scanDomains = Array.isArray(input.allowedDomains) ? input.allowedDomains.map(normalizeHost).filter(Boolean) : [];
+  for (const domain of scanDomains) {
+    if (!allowedDomains.has(domain) && ![...allowedDomains].some((allowed) => domain.endsWith(`.${allowed}`) || allowed.endsWith(`.${domain}`))) {
+      throw new Error(`scan allowed domain is outside spec allowedDomains: ${domain}`);
+    }
+  }
+  const pages = Array.isArray(input.pages) ? input.pages.filter((page) => page && !page.error) : [];
+  return {
+    schemaVersion: 1,
+    mode: input.mode || "read-only-scan",
+    learningMode: input.learningMode || input.coverage?.learningMode || "read-only",
+    testEnvironment: input.testEnvironment || input.coverage?.testEnvironment || "",
+    allowMutatingLearning: Boolean(input.allowMutatingLearning || input.coverage?.allowMutatingLearning),
+    baseUrl: input.baseUrl || spec.baseUrl,
+    allowedDomains: scanDomains,
+    coverage: input.coverage || {},
+    siteMap: input.siteMap || { nodes: [], edges: [] },
+    pages,
+    actionCandidates: Array.isArray(input.actionCandidates) ? input.actionCandidates : [],
+    businessObjects: Array.isArray(input.businessObjects) ? input.businessObjects : [],
+    apiContracts: Array.isArray(input.apiContracts) ? input.apiContracts : [],
+    warnings: Array.isArray(input.warnings) ? input.warnings : [],
+  };
+}
+
 function defaultInboxDir() {
   if (process.env.LILY_LEARNED_SKILLS_INBOX) return process.env.LILY_LEARNED_SKILLS_INBOX;
   const userData = process.env.LILY_USER_DATA_DIR;
@@ -164,7 +197,15 @@ function buildSkillMd(spec) {
     })
     .join("\n\n");
 
-  return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, or one-time codes.\n- If the session is logged out, ask the user to log in interactively.\n- Do not leave the allowed domains.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Example triggers |\n|---|---|---|---|\n${actionRows}\n\n## Execution Rules\n\n- For \`read\` actions, return concise source-backed results from the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If labels/selectors no longer match, re-run read-only discovery for the action and explain what changed.\n\n## Runtime Plan Contract\n\nWhen executing an action, create an \`action-plan.json\` with this shape and run the local executor:\n\n\`\`\`bash\nnode scripts/execute_web_playbook.cjs \\\n  --playbook web-system-playbook.json \\\n  --action web.<action-id> \\\n  --plan action-plan.json \\\n  --dry-run\n\`\`\`\n\nOnly run without \`--dry-run\` after the plan validates. For non-read actions, add \`--confirmed\` only after the user has reviewed the exact fields or target.\n\nAllowed operation types are \`goto\`, \`click\`, \`fill\`, \`press\`, \`wait\`, \`extract\`, and \`screenshot\`. Every \`goto\` URL is checked against the allowed domains. A read action may only contain read-risk operations.\n\n## Action Details\n\n${actionDetails}\n`;
+  const runtimePlanRules = [
+    "Allowed operation types are `goto`, `click`, `fill`, `select`, `check`, `uncheck`, `upload`, `press`, `wait`, `waitForUrl`, `waitForText`, `waitForResponse`, `assertText`, `extract`, and `screenshot`.",
+    "Prefer robust locator fields in this order: `testId`, `role/name`, `label`, `placeholder`, `text`, then `selector`.",
+    "For `select`, use `label` to find the control and `optionLabel` or `value` to choose the option.",
+    "Every `goto` and response wait is checked against the allowed domains. A read action may only contain read-risk operations.",
+    "If execution returns `LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, or `WEB_ACTION_FAILED`, treat the skill as stale: explain the failed operation and re-run learning for this workspace before retrying high-risk actions.",
+  ].join("\n\n");
+
+  return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, or one-time codes.\n- If the session is logged out, ask the user to log in interactively.\n- Do not leave the allowed domains.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Example triggers |\n|---|---|---|---|\n${actionRows}\n\n## Execution Rules\n\n- For \`read\` actions, return concise source-backed results from the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If labels/selectors no longer match, re-run read-only discovery for the action and explain what changed.\n\n## Runtime Plan Contract\n\nWhen executing an action, create an \`action-plan.json\` with this shape and run the local executor:\n\n\`\`\`bash\nnode scripts/execute_web_playbook.cjs \\\n  --playbook web-system-playbook.json \\\n  --action web.<action-id> \\\n  --plan action-plan.json \\\n  --dry-run\n\`\`\`\n\nOnly run without \`--dry-run\` after the plan validates. For non-read actions, add \`--confirmed\` only after the user has reviewed the exact fields or target.\n\n${runtimePlanRules}\n\n## Action Details\n\n${actionDetails}\n`;
 }
 
 function buildManifest(spec) {
@@ -176,9 +217,12 @@ function buildManifest(spec) {
     version: "1.0.0",
     minAppVersion: "0.1.48",
     runtime: "none",
-    category: "dev",
-    categoryLabel: "网页自动化",
+    category: "workspace",
+    categoryLabel: "工作区技能",
     publisher: "Workspace",
+    origin: "workspace",
+    workspaceOnly: true,
+    generatedBy: "lily-web-system-learning",
     capabilityLayer: "workflow",
     riskLevel: spec.actions.some((a) => a.risk === "destructive" || a.risk === "submit") ? "high" : "medium",
     permissions: {
@@ -272,7 +316,7 @@ function inferBusinessObjects(spec) {
   }));
 }
 
-function buildSystemProfile(spec) {
+function buildSystemProfile(spec, scan) {
   return {
     schemaVersion: 1,
     id: spec.id,
@@ -292,6 +336,24 @@ function buildSystemProfile(spec) {
     supportedCapabilities: [...new Set(spec.actions.map((action) => action.risk))],
     actionCount: spec.actions.length,
     highRiskActionCount: spec.actions.filter((action) => action.risk === "submit" || action.risk === "destructive").length,
+    learningCoverage: scan
+      ? {
+          mode: scan.mode,
+          learningMode: scan.learningMode,
+          testEnvironment: scan.testEnvironment,
+          allowMutatingLearning: scan.allowMutatingLearning,
+          pageCount: scan.coverage.pageCount ?? scan.pages.length,
+          errorCount: scan.coverage.errorCount ?? 0,
+          warningCount: scan.coverage.warningCount ?? scan.warnings.length,
+          actionCandidateCount: scan.coverage.actionCandidateCount ?? scan.actionCandidates.length,
+          businessObjectCount: scan.coverage.businessObjectCount ?? scan.businessObjects.length,
+          formContractCount: scan.pages.reduce((sum, page) => sum + (Array.isArray(page.formContracts) ? page.formContracts.length : 0), 0),
+          apiContractCount: scan.coverage.apiContractCount ?? scan.apiContracts.length,
+          interactivePageCount: scan.pages.filter((page) => page.source === "interactive-readonly").length,
+          fingerprint: scan.coverage.fingerprint || "",
+          limitations: scan.coverage.limitations || [],
+        }
+      : null,
     files: {
       pageMap: "page-map.json",
       domainModel: "domain-model.json",
@@ -299,44 +361,123 @@ function buildSystemProfile(spec) {
       riskPolicy: "risk-policy.json",
       examples: "examples.jsonl",
       changeLog: "change-log.json",
+      scanArchive: scan ? "web-system-scan.json" : "",
     },
   };
 }
 
-function buildPageMap(spec) {
+function buildPageMap(spec, scan) {
+  const scannedPages = scan
+    ? scan.pages.map((page) => ({
+        id: page.id || `scan-${String(page.url || "").replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 48)}`,
+        title: page.title || page.urlPattern || page.url,
+        urlPattern: page.urlPattern || page.url || spec.baseUrl,
+        role: page.forms?.length ? "form-or-workflow" : page.tables?.length ? "list-or-report" : "page",
+        source: page.source || "scan",
+        sourceInteraction: page.sourceInteraction || null,
+        confidence: "medium",
+        fingerprint: page.fingerprint || "",
+        actions: [],
+        anchors: {
+          headings: (page.headings || []).map((heading) => heading.text).filter(Boolean).slice(0, 12),
+          navItems: (page.navItems || []).map((item) => item.text).filter(Boolean).slice(0, 24),
+          labels: [
+            ...(page.buttons || []).map((button) => button.text),
+            ...(page.inputs || []).map((input) => input.label || input.name),
+            ...(page.formContracts || []).flatMap((form) => (form.fields || []).map((field) => field.label || field.name)),
+            ...(page.tables || []).flatMap((table) => table.headers || []),
+          ].filter(Boolean).slice(0, 60),
+          selectors: [],
+        },
+        formContracts: (page.formContracts || []).map((form) => ({
+          id: form.id || "",
+          label: form.label || "form",
+          action: form.action || "",
+          method: form.method || "get",
+          riskHint: form.riskHint || "read",
+          fieldCount: form.fieldCount || 0,
+          submitButtons: form.submitButtons || [],
+          fields: (form.fields || []).map((field) => ({
+            label: field.label || field.name || "",
+            type: field.type || "",
+            required: Boolean(field.required),
+            readonly: Boolean(field.readonly),
+            disabled: Boolean(field.disabled),
+            options: (field.options || []).slice(0, 40),
+          })).slice(0, 80),
+          apiContract: form.apiContract || null,
+          executionPolicy: form.executionPolicy || {
+            learnOnly: true,
+            fillDraftAllowed: true,
+            canSubmitDuringLearning: false,
+            submitRequiresConfirmation: true,
+          },
+        })).slice(0, 20),
+        riskCandidates: (page.actionCandidates || []).map((candidate) => ({
+          kind: candidate.kind,
+          label: candidate.label,
+          riskHint: candidate.riskHint,
+        })).slice(0, 40),
+      }))
+    : [];
+
   return {
     schemaVersion: 1,
     systemId: spec.id,
     baseUrl: spec.baseUrl,
     allowedDomains: spec.allowedDomains,
-    pages: spec.actions.map((action) => ({
-      id: action.id,
-      title: action.entry || action.name,
-      urlPattern: spec.baseUrl,
-      role: action.risk === "read" ? "query" : action.risk,
-      source: "action-spec",
-      confidence: action.entry ? "medium" : "low",
-      actions: [`web.${action.id}`],
-      anchors: {
-        entry: action.entry || "",
-        labels: actionKeywords(action),
-        selectors: action.selectors || [],
-      },
-    })),
-    relationships: spec.actions.map((action) => ({
-      from: "base",
-      to: action.id,
-      via: action.entry || action.name,
-      risk: action.risk,
-    })),
+    pages: [
+      ...scannedPages,
+      ...spec.actions.map((action) => ({
+        id: action.id,
+        title: action.entry || action.name,
+        urlPattern: spec.baseUrl,
+        role: action.risk === "read" ? "query" : action.risk,
+        source: "action-spec",
+        confidence: action.entry ? "medium" : "low",
+        actions: [`web.${action.id}`],
+        anchors: {
+          entry: action.entry || "",
+          labels: actionKeywords(action),
+          selectors: action.selectors || [],
+        },
+      })),
+    ],
+    relationships: [
+      ...(scan?.siteMap?.edges || []).map((edge) => ({
+        from: edge.from,
+        to: edge.to,
+        via: edge.label || "link",
+        risk: "read",
+        source: "scan",
+      })),
+      ...spec.actions.map((action) => ({
+        from: "base",
+        to: action.id,
+        via: action.entry || action.name,
+        risk: action.risk,
+        source: "action-spec",
+      })),
+    ],
   };
 }
 
-function buildDomainModel(spec) {
+function buildDomainModel(spec, scan) {
+  const scanObjects = scan
+    ? scan.businessObjects.map((object) => ({
+        id: object.id || String(object.name || "scan-object").toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        name: object.name || "Scanned object",
+        sourceActions: [],
+        source: "scan",
+        sourceUrl: object.sourceUrl || "",
+        fields: Array.isArray(object.fields) ? object.fields.slice(0, 80) : [],
+        riskNotes: [],
+      }))
+    : [];
   return {
     schemaVersion: 1,
     systemId: spec.id,
-    objects: inferBusinessObjects(spec),
+    objects: [...scanObjects, ...inferBusinessObjects(spec)],
     vocabulary: spec.actions.map((action) => ({
       action: `web.${action.id}`,
       phrases: [...new Set([action.name, ...action.intentExamples])],
@@ -349,22 +490,51 @@ function buildDomainModel(spec) {
   };
 }
 
-function buildRiskPolicy(spec) {
+function buildRiskPolicy(spec, scan) {
+  const testLabEnabled = Boolean(scan && scan.learningMode === "test-lab" && scan.allowMutatingLearning);
+  const learnedFormPolicies = scan
+    ? scan.pages.flatMap((page) =>
+        (page.formContracts || []).map((form) => ({
+          pageUrl: page.url || "",
+          pageTitle: page.title || "",
+          formId: form.id || "",
+          formLabel: form.label || "form",
+          method: form.method || "get",
+          riskHint: form.riskHint || "read",
+          fieldCount: form.fieldCount || 0,
+          submitButtons: form.submitButtons || [],
+          apiContract: form.apiContract || null,
+          learningPolicy: {
+            canInspectFields: true,
+            canFillDraft: true,
+            canSubmitDuringLearning: Boolean(form.executionPolicy?.canSubmitDuringLearning || testLabEnabled),
+            submitRequiresConfirmation: true,
+            mode: scan.learningMode || "read-only",
+            testEnvironment: scan.testEnvironment || "",
+          },
+        })),
+      )
+    : [];
   return {
     schemaVersion: 1,
     systemId: spec.id,
-    defaultMode: "read-only-learning",
+    defaultMode: testLabEnabled ? "test-lab-learning" : "read-only-learning",
+    learningMode: scan?.learningMode || "read-only",
+    testEnvironment: scan?.testEnvironment || "",
+    allowMutatingLearning: testLabEnabled,
     allowedDomains: spec.allowedDomains,
-    forbiddenDuringLearning: [
-      "submit",
-      "approve",
-      "reject",
-      "delete",
-      "pay",
-      "upload",
-      "notify",
-      "permission-change",
-    ],
+    forbiddenDuringLearning: testLabEnabled
+      ? ["permission-change", "credential-export", "outside-domain"]
+      : [
+          "submit",
+          "approve",
+          "reject",
+          "delete",
+          "pay",
+          "upload",
+          "notify",
+          "permission-change",
+        ],
     credentialRules: [
       "Never request passwords, cookies, tokens, OAuth codes, or one-time codes in chat.",
       "Never write credentials or login state to generated workspace files.",
@@ -377,6 +547,7 @@ function buildRiskPolicy(spec) {
       canRunDuringLearning: action.risk === "read",
       requiresUserReview: action.confirmation !== "none",
     })),
+    learnedFormPolicies,
   };
 }
 
@@ -397,7 +568,7 @@ function buildExamplesJsonl(spec) {
   return rows.map((row) => JSON.stringify(row)).join("\n") + "\n";
 }
 
-function buildChangeLog(spec) {
+function buildChangeLog(spec, scan) {
   return {
     schemaVersion: 1,
     systemId: spec.id,
@@ -406,7 +577,9 @@ function buildChangeLog(spec) {
         at: new Date().toISOString(),
         type: "initial-draft",
         source: "web-system-spec.json",
-        summary: "Generated system profile, page map, domain model, action playbook, risk policy, examples, and skill draft.",
+        summary: scan
+          ? `Generated learned skill from reviewed action spec and read-only scan (${scan.pages.length} pages, ${scan.actionCandidates.length} action candidates).`
+          : "Generated system profile, page map, domain model, action playbook, risk policy, examples, and skill draft.",
       },
     ],
   };
@@ -415,6 +588,7 @@ function buildChangeLog(spec) {
 function main() {
   const args = parseArgs(process.argv);
   const spec = validateSpec(readJson(args.spec));
+  const scan = args.scan ? normalizeScan(readJson(args.scan), spec) : null;
   const playbook = buildPlaybook(spec);
   const root = path.resolve(args.out || defaultInboxDir());
   const draftDir = path.join(root, spec.id);
@@ -424,6 +598,7 @@ function main() {
     outDir: draftDir,
     dryRun: args.dryRun,
     actions: spec.actions.length,
+    scannedPages: scan ? scan.pages.length : 0,
     allowedDomains: spec.allowedDomains,
   };
 
@@ -432,14 +607,15 @@ function main() {
     fs.mkdirSync(path.join(draftDir, "scripts"), { recursive: true });
     fs.writeFileSync(path.join(draftDir, "SKILL.md"), buildSkillMd(spec), "utf8");
     fs.writeFileSync(path.join(draftDir, "skill.manifest.json"), JSON.stringify(buildManifest(spec), null, 2) + "\n", "utf8");
-    fs.writeFileSync(path.join(draftDir, "system-profile.json"), JSON.stringify(buildSystemProfile(spec), null, 2) + "\n", "utf8");
-    fs.writeFileSync(path.join(draftDir, "page-map.json"), JSON.stringify(buildPageMap(spec), null, 2) + "\n", "utf8");
-    fs.writeFileSync(path.join(draftDir, "domain-model.json"), JSON.stringify(buildDomainModel(spec), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "system-profile.json"), JSON.stringify(buildSystemProfile(spec, scan), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "page-map.json"), JSON.stringify(buildPageMap(spec, scan), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "domain-model.json"), JSON.stringify(buildDomainModel(spec, scan), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "web-system-playbook.json"), JSON.stringify(playbook, null, 2) + "\n", "utf8");
-    fs.writeFileSync(path.join(draftDir, "risk-policy.json"), JSON.stringify(buildRiskPolicy(spec), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "risk-policy.json"), JSON.stringify(buildRiskPolicy(spec, scan), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "examples.jsonl"), buildExamplesJsonl(spec), "utf8");
-    fs.writeFileSync(path.join(draftDir, "change-log.json"), JSON.stringify(buildChangeLog(spec), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "change-log.json"), JSON.stringify(buildChangeLog(spec, scan), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "web-system-spec.json"), JSON.stringify(spec, null, 2) + "\n", "utf8");
+    if (scan) fs.writeFileSync(path.join(draftDir, "web-system-scan.json"), JSON.stringify(scan, null, 2) + "\n", "utf8");
     fs.copyFileSync(path.join(__dirname, "execute_web_playbook.cjs"), path.join(draftDir, "scripts/execute_web_playbook.cjs"));
   }
 

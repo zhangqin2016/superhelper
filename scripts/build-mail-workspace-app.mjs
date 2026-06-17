@@ -171,6 +171,7 @@ async function build(args) {
     kind: "lily-workspace-app",
     appId: APP_ID,
     name: APP_NAME,
+    folderName: APP_ID,
     description:
       "连接 Gmail、Outlook/Microsoft 365 或 IMAP/SMTP，用自然语言搜索、总结、查找附件、草拟回复，并在确认后发送邮件。",
     exportedAt: exportedAt.toISOString(),

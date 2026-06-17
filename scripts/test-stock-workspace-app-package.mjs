@@ -29,10 +29,13 @@ try {
   assert(fs.existsSync(artifact), "stock app package is built");
 
   const zip = await JSZip.loadAsync(fs.readFileSync(artifact));
+  const rawManifest = JSON.parse(await zip.file("lily-workspace.json").async("string"));
   const mainPy = await zip.file("files/source/main.py").async("string");
   const agentsMd = await zip.file("files/AGENTS.md").async("string");
   const platformGuide = await zip.file("files/source/LILY_PLATFORM.md").async("string");
 
+  assert(rawManifest.appId === "daily-stock-analysis", "raw manifest has stable app id");
+  assert(rawManifest.folderName === "daily-stock-analysis", "raw manifest has stable English folder name");
   assert(mainPy.includes("from lily_run import main"), "packaged main.py delegates to Lily runner");
   assert(!mainPy.includes("TradingAgentsGraph"), "packaged main.py does not run upstream OpenAI-default demo");
   assert(agentsMd.includes("Do not ask ordinary users to configure upstream OpenAI/Anthropic/search keys"), "AGENTS forbids upstream key setup");

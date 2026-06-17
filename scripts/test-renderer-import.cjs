@@ -49,6 +49,7 @@ ipcMain.handle("apps:catalog", () => ({
         installed: true,
         installedAvailable: true,
         installedPath: "/tmp/Lily Apps/Installed App",
+        installedCount: 2,
         updateAvailable: false,
         requiredRuntimePacks: [],
         requiredSkillPackages: [],
@@ -518,6 +519,12 @@ app.whenReady().then(async () => {
         }
         if (!text.includes("Show in folder") && !text.includes("在文件夹中显示")) {
           throw new Error("installed app card should expose a reveal-in-folder action");
+        }
+        if (!text.includes("New workspace") && !text.includes("新建工作空间")) {
+          throw new Error("installed app card should allow creating another workspace instance");
+        }
+        if (!text.includes("2 workspaces") && !text.includes("2 个工作空间")) {
+          throw new Error("installed app card should show multiple workspace instances");
         }
         return "workspace-app-install-ux: ok";
       }

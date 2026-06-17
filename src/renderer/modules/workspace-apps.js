@@ -95,6 +95,9 @@ function renderAppCard(app) {
   if (app.installedPath) {
     depParts.push(t("apps.installedPath", { path: app.installedPath }));
   }
+  if (Number(app.installedCount || 0) > 1) {
+    depParts.push(t("apps.installedCount", { count: app.installedCount }));
+  }
   if (app.requiredRuntimePacks?.length) {
     depParts.push(t("apps.runtimeDeps", { items: app.requiredRuntimePacks.join(", ") }));
   }
@@ -116,6 +119,15 @@ function renderAppCard(app) {
     open.addEventListener("click", () => void openInstalledWorkspaceApp(app, open));
     actions.append(open);
 
+    const createAnother = document.createElement("button");
+    createAnother.type = "button";
+    createAnother.className = "settings-action-btn settings-action-btn--primary";
+    createAnother.textContent = t("apps.createAnother");
+    createAnother.addEventListener("click", () => {
+      void installWorkspaceApp({ ...app, forceNewInstance: true }, createAnother);
+    });
+    actions.append(createAnother);
+
     if (app.installedPath) {
       const reveal = document.createElement("button");
       reveal.type = "button";
@@ -133,6 +145,17 @@ function renderAppCard(app) {
     uninstall.addEventListener("click", () => void uninstallWorkspaceApp(app, uninstall));
     actions.append(uninstall);
   } else {
+    if (app.installed && app.updateAvailable) {
+      const createAnother = document.createElement("button");
+      createAnother.type = "button";
+      createAnother.className = "settings-action-btn";
+      createAnother.textContent = t("apps.createAnother");
+      createAnother.addEventListener("click", () => {
+        void installWorkspaceApp({ ...app, forceNewInstance: true }, createAnother);
+      });
+      actions.append(createAnother);
+    }
+
     const download = document.createElement("button");
     download.type = "button";
     download.className = "settings-action-btn settings-action-btn--primary workspace-app-download";

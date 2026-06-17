@@ -17,6 +17,18 @@ function safeFolderName(value) {
     .slice(0, 80) || "workspace-app";
 }
 
+function workspaceAppFolderName({ manifest, app }) {
+  return safeFolderName(
+    manifest?.folderName ||
+    app?.folderName ||
+    manifest?.appId ||
+    app?.id ||
+    manifest?.name ||
+    app?.name ||
+    "workspace-app",
+  );
+}
+
 async function downloadWorkspaceApp(app) {
   const url = String(app?.downloadUrl || "").trim();
   if (!/^https:\/\//i.test(url)) {
@@ -228,7 +240,9 @@ function registerProjectHandlers(ctx) {
       }
 
       const { manifest: peek } = await readPackManifest(zipBuffer);
-      const existingRecord = workspaceAppInstalls.readState().apps[String(app?.id || peek?.appId || "").trim()] || null;
+      const appId = String(app?.id || peek?.appId || "").trim();
+      const state = workspaceAppInstalls.readState();
+      const existingRecord = app?.forceNewInstance ? null : workspaceAppInstalls.activeRecordForApp(state, appId);
       const defaultBaseDir = workspaceAppInstalls.installRoot(projectManager.defaultPath);
       const dialogDefaultPath = workspaceAppInstalls.preferredInstallDialogPath(projectManager.defaultPath, existingRecord);
       fs.mkdirSync(defaultBaseDir, { recursive: true });
@@ -242,7 +256,7 @@ function registerProjectHandlers(ctx) {
         return { ok: false, canceled: true };
       }
       const selectedDir = dirPick.filePaths[0];
-      const baseName = safeFolderName(peek.name || app?.name || app?.id || "workspace-app");
+      const baseName = workspaceAppFolderName({ manifest: peek, app });
       const resolvedTarget = workspaceAppInstalls.resolveInstallTarget({
         selectedDir,
         defaultWorkspacePath: projectManager.defaultPath,
@@ -337,6 +351,7 @@ function registerProjectHandlers(ctx) {
         targetDir,
         installParentDir: baseDir,
         installedDependencies,
+        replaceInstanceId: resolvedTarget.replaceExisting ? existingRecord?.instanceId : null,
       });
       if (backupDir && installedRecord) {
         installedRecord.backupPath = backupDir;
@@ -365,7 +380,12 @@ function registerProjectHandlers(ctx) {
 
   ipcMain.handle("apps:open-installed", async (_event, payload) => {
     const appId = String(payload?.id || payload?.appId || "").trim();
-    const record = require("./workspace-app-installs").readState().apps[appId];
+    const fs = require("node:fs");
+    const workspaceAppInstalls = require("./workspace-app-installs");
+    const state = workspaceAppInstalls.readState();
+    const record = workspaceAppInstalls.getAppInstances(state, appId)
+      .find((item) => projectManager.find(item.projectId) && fs.existsSync(item.path || ""))
+      || workspaceAppInstalls.activeRecordForApp(state, appId);
     if (!record) return { ok: false, error: "NOT_FOUND" };
     const project = projectManager.find(record.projectId);
     if (!project) return { ok: false, error: "PROJECT_NOT_FOUND" };
@@ -379,19 +399,22 @@ function registerProjectHandlers(ctx) {
     const fs = require("node:fs");
     const appId = String(payload?.id || payload?.appId || "").trim();
     const workspaceAppInstalls = require("./workspace-app-installs");
-    const record = workspaceAppInstalls.readState().apps[appId];
-    if (!record) return { ok: false, error: "NOT_FOUND" };
-    if (!workspaceAppInstalls.canRemoveInstalledWorkspace(projectManager.defaultPath, record)) {
+    const state = workspaceAppInstalls.readState();
+    const records = workspaceAppInstalls.getAppInstances(state, appId);
+    if (!records.length) return { ok: false, error: "NOT_FOUND" };
+    if (records.some((record) => !workspaceAppInstalls.canRemoveInstalledWorkspace(projectManager.defaultPath, record))) {
       return { ok: false, error: "UNSAFE_APP_PATH" };
     }
 
-    const project = projectManager.find(record.projectId);
-    if (project) {
-      const sessionIds = sessionManager.purgeProject(project.id);
-      for (const sessionId of sessionIds) runnerPool.terminateSession(sessionId);
-      projectManager.remove(project.id);
+    for (const record of records) {
+      const project = projectManager.find(record.projectId);
+      if (project) {
+        const sessionIds = sessionManager.purgeProject(project.id);
+        for (const sessionId of sessionIds) runnerPool.terminateSession(sessionId);
+        projectManager.remove(project.id);
+      }
+      fs.rmSync(record.path, { recursive: true, force: true });
     }
-    fs.rmSync(record.path, { recursive: true, force: true });
     workspaceAppInstalls.forgetInstalled(appId);
     return { ok: true, state: projectManager.getAppState(), appId };
   });

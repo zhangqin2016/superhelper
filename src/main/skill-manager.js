@@ -412,6 +412,9 @@ function listSkillsForSessionPublic(session) {
       description: skill.description,
       category: skill.category || null,
       categoryLabel: skill.categoryLabel || null,
+      source: skill.source || null,
+      origin: skill.origin || null,
+      workspaceOnly: Boolean(skill.workspaceOnly),
       globallyEnabled: skill.enabled,
       sessionEnabled: effectiveIds.has(skill.id),
     })),
@@ -560,6 +563,12 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
   const manifestName = resolveLocalized(manifest, "name", registryEntry?.name || skillId);
   const manifestDescription = resolveLocalized(manifest, "description", registryEntry?.description || "");
   const preferRegistryDisplay = entry?.source === "remote" && Boolean(registryEntry);
+  const origin =
+    manifest?.origin ||
+    (entry?.source === "learned" || manifest?.publisher === "Workspace" ? "workspace" : "platform");
+  const workspaceOnly = Boolean(manifest?.workspaceOnly || origin === "workspace");
+  const category =
+    workspaceOnly ? "workspace" : (registryEntry?.category || manifest?.category || null);
 
   return {
     id: skillId,
@@ -581,12 +590,17 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
     canUninstall: entry?.source === "remote",
     updateAvailable,
     changelog: registryEntry?.changelog || "",
-    category: registryEntry?.category || null,
-    categoryLabel: registryEntry?.categoryLabel || null,
+    category,
+    categoryLabel:
+      workspaceOnly
+        ? (manifest?.categoryLabel || null)
+        : (registryEntry?.categoryLabel || manifest?.categoryLabel || null),
     capabilityLayer: registryEntry?.capabilityLayer || "core",
     riskLevel: registryEntry?.riskLevel || "low",
     defaultEligible: Boolean(registryEntry?.defaultEligible),
     featured: Boolean(registryEntry?.featured),
+    origin,
+    workspaceOnly,
   };
 }
 

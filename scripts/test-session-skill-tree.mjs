@@ -20,21 +20,31 @@ if (resolveSkillTreeCategory({ id: "lily-image-generation" }) !== "tools") {
 if (resolveSkillTreeCategory({ id: "anthropics-docx", category: "office" }) !== "office") {
   throw new Error("registry category should be used");
 }
+if (resolveSkillTreeCategory({ id: "learned-demo-oa", source: "learned", category: "dev" }) !== "workspace") {
+  throw new Error("learned skills should be grouped as workspace skills");
+}
+if (resolveSkillTreeCategory({ id: "demo-oa", origin: "workspace", category: "dev" }) !== "workspace") {
+  throw new Error("workspace-origin skills should be grouped as workspace skills");
+}
 
 const groups = groupSkillsForTree([
   { id: "anthropics-pdf", name: "Pdf", category: "office", sessionEnabled: true },
+  { id: "learned-demo-oa", name: "Demo OA", source: "learned", category: "dev", sessionEnabled: true },
   { id: "lily-vision", name: "Vision", sessionEnabled: false },
   { id: "superpowers-systematic-debugging", name: "Debug", category: "dev", sessionEnabled: false },
 ]);
 
-if (groups.length !== 3) {
-  throw new Error(`expected 3 groups, got ${groups.length}`);
+if (groups.length !== 4) {
+  throw new Error(`expected 4 groups, got ${groups.length}`);
 }
-if (groups[0].id !== "office" || groups[0].enabledCount !== 1) {
-  throw new Error("office group should be first with one enabled");
+if (groups[0].id !== "workspace" || groups[0].enabledCount !== 1) {
+  throw new Error("workspace group should be first with one enabled workspace skill");
 }
-if (groups[1].id !== "tools") {
-  throw new Error("tools group should be second");
+if (groups[1].id !== "office" || groups[1].enabledCount !== 1) {
+  throw new Error("office group should follow workspace with one enabled");
+}
+if (groups[2].id !== "tools") {
+  throw new Error("tools group should follow workspace and office");
 }
 
 const collapsed = shouldExpandTreeGroup(

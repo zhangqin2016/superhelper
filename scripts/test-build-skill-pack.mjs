@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -79,13 +79,14 @@ const pycacheDir = path.join(tmp, "lily-pycache");
 fs.mkdirSync(path.join(pycacheDir, "__pycache__"), { recursive: true });
 fs.writeFileSync(path.join(pycacheDir, "SKILL.md"), "# Pycache\n\nUse for pack tests.\n", "utf8");
 fs.writeFileSync(path.join(pycacheDir, "__pycache__", "scan.cpython-312.pyc"), "cache", "utf8");
-const blockedPycache = spawnSync(
+const pycacheStdout = execFileSync(
   process.execPath,
   [path.join(ROOT, "scripts/build-skill-pack.mjs"), "--skill", pycacheDir, "--out", outDir],
   { cwd: ROOT, encoding: "utf8" },
 );
-assert.notEqual(blockedPycache.status, 0);
-assert.match(blockedPycache.stderr, /blocked directory/);
+const pycacheMeta = JSON.parse(pycacheStdout);
+const pycacheZip = await JSZip.loadAsync(fs.readFileSync(pycacheMeta.artifactPath));
+assert.ok(!pycacheZip.file("__pycache__/scan.cpython-312.pyc"), "skill pack should ignore Python bytecode caches");
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("build-skill-pack: ok");

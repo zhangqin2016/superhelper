@@ -660,6 +660,7 @@
 
   "skills.category.office": "办公文档",
   "skills.category.core": "核心能力",
+  "skills.category.workspace": "工作区技能",
   "skills.category.coding": "编程创作",
   "skills.category.design": "设计创意",
   "skills.category.media": "媒体创意",
@@ -687,6 +688,7 @@
   "apps.installed": "已安装",
   "apps.updateAvailable": "可升级",
   "apps.install": "创建工作空间",
+  "apps.createAnother": "新建工作空间",
   "apps.upgrade": "更新工作空间",
   "apps.openInstalled": "打开工作空间",
   "apps.showInFolder": "在文件夹中显示",
@@ -694,6 +696,7 @@
   "apps.uninstallConfirm": "卸载应用「{name}」？这会移除由应用商店安装的工作区文件。",
   "apps.openDownload": "打开下载",
   "apps.installedPath": "工作空间：{path}",
+  "apps.installedCount": "已创建：{count} 个工作空间",
   "apps.runtimeDeps": "Runtime：{items}",
   "apps.skillDeps": "技能：{items}",
   "apps.missingSkills": "缺少技能：{items}",

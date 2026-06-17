@@ -345,6 +345,7 @@ async function build({ sourceDir, outDir, version, exportedAt }) {
     kind: "lily-workspace-app",
     appId: APP_ID,
     name: APP_NAME,
+    folderName: APP_ID,
     description: "基于 MIT 高星项目 TauricResearch/TradingAgents 的 Lily 原生多 Agent 股票研究工作区，自动依赖平台股票研究、联网核验、表格分析和代码修复技能。",
     version,
     exportedAt: String(exportedAt || "2026-06-15T00:00:00.000Z"),

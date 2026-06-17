@@ -114,6 +114,7 @@ export async function inspectWorkspaceAppArtifact(buffer) {
       kind: manifest.kind,
       schemaVersion: manifest.schemaVersion,
       name: manifest.name || "",
+      folderName: manifest.folderName || "",
       description: manifest.description || "",
       requiredSkills: Array.isArray(manifest.requiredSkills) ? manifest.requiredSkills.filter(Boolean) : [],
       requiredRuntimePacks: Array.isArray(manifest.requiredRuntimePacks) ? manifest.requiredRuntimePacks.filter(Boolean) : [],

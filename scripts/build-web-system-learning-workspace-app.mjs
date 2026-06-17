@@ -223,6 +223,7 @@ async function build(args) {
     kind: "lily-workspace-app",
     appId: APP_ID,
     name: APP_NAME,
+    folderName: APP_ID,
     description:
       "学习 OA、ERP、CRM、后台等 Web 系统，生成页面地图、动作地图、连接器 Playbook 和当前工作区可审核技能。",
     exportedAt: exportedAt.toISOString(),
