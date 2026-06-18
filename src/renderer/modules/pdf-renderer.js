@@ -159,9 +159,16 @@ export function renderPdfBlock(block = {}) {
   queueMicrotask(async () => {
     try {
       const pdfjs = await loadPdfjs();
-      const source = block.data
-        ? { data: base64ToBytes(block.data) }
-        : fileUrlFromPath(block.path || block.url || "");
+      // pdf.js v6's getDocument reads src.url / src.data — it no longer accepts
+      // a bare string URL, so a path-based PDF must be passed as { url }.
+      let source = null;
+      if (block.data) {
+        source = { data: base64ToBytes(block.data) };
+      } else {
+        const url = fileUrlFromPath(block.path || block.url || "");
+        if (url) source = { url };
+      }
+      if (!source) throw new Error("no PDF source (missing path/data)");
       loadingTask = pdfjs.getDocument(source);
       state.pdf = await loadingTask.promise;
       await paint();
