@@ -73,7 +73,6 @@
     "files": [
       "src/**/*",
       "resources/**/*",
-      "node_modules/@tanstack/virtual-core/**/*",
       "node_modules/diff/**/*",
       "node_modules/dompurify/**/*",
       "node_modules/echarts/**/*",
@@ -180,7 +179,6 @@
     }
   },
   "dependencies": {
-    "@tanstack/virtual-core": "^3.17.1",
     "diff": "^7.0.0",
     "dompurify": "^3.4.5",
     "echarts": "^6.1.0",
@@ -188,7 +186,7 @@
     "highlight.js": "^11.11.1",
     "jszip": "^3.10.1",
     "katex": "^0.17.0",
-    "lit": "^3.3.3",
+    "lit-html": "^3.3.3",
     "marked": "^18.0.4",
     "mermaid": "^11.15.0",
     "pdf-parse": "^2.4.5",
