@@ -1,24 +1,26 @@
 ---
 name: websearch
-description: 联网搜索（默认阿里 IQS，国内稳定合规；亦支持 SearXNG / DuckDuckGo）。用户需要查资料、新闻、实时信息时使用；内置 WebSearch 不可用时必须用本 skill。
+description: Search the web when the user needs current facts, news, references, or external sources. Default provider is Alibaba IQS; SearXNG and DuckDuckGo can also be configured. Use this skill when the built-in WebSearch tool is unavailable.
 allowed-tools: Bash(node *)
 ---
 
-# 联网搜索
+# Web Search
 
-内置 WebSearch 在本应用中不可用。需要搜索互联网时，用 Bash 执行：
+Use this skill when the user needs up-to-date or externally sourced information.
+
+Run:
 
 ```bash
-echo '{"query":"搜索关键词"}' | "{{NODE_BIN}}" "{{WEBSEARCH_SCRIPT}}"
+echo '{"query":"search keywords"}' | "{{NODE_BIN}}" "{{WEBSEARCH_SCRIPT}}"
 ```
 
-默认使用 **阿里 IQS**（信息查询服务，国内直连、合规可商用，应用已内置）。亦可在 **设置 → 联网搜索** 切换为 SearXNG 或 DuckDuckGo。
+The default provider is Alibaba IQS, which is configured by the app. The user can switch the provider in Settings -> Web Search.
 
-可选参数（JSON）：
+Optional JSON parameters:
 
-- `allowed_domains`：只保留这些域名的结果（字符串数组）
-- `blocked_domains`：排除这些域名（字符串数组）
+- `allowed_domains`: only keep results from these domains.
+- `blocked_domains`: exclude results from these domains.
 
-`allowed_domains` 与 `blocked_domains` 不能同时使用。
+Do not send both `allowed_domains` and `blocked_domains` in the same request.
 
-脚本在 stdout 输出 `<search_results>` XML（含 title、url、snippet）。用搜索结果回答用户，并附上来源链接。
+The script writes `<search_results>` XML to stdout with `title`, `url`, and `snippet` fields. Answer in the user's current language and include source links when the answer relies on search results.

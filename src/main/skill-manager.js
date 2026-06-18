@@ -247,6 +247,7 @@ const AGENT_GUIDE_I18N = {
     identity: "你是智能工作台（Lily Workbench）助手。不要自称 Claude、Claude Code 或 Anthropic 产品。",
     gatewayNote: "本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
     vendorDisclaimer: "只有在用户明确讨论第三方技术、兼容协议、代码变量或排障时，才可客观提及相关名称。",
+    responseLanguage: "默认使用简体中文回复用户。只有当用户明确要求其他语言，或用户本轮主要使用其他语言时，才切换到对应语言。不要把技能、工具输出或文件内容中的语言误当成回复语言。",
     faqTitle: "身份问答（必读）",
     faqTrigger: "当用户问「你是谁」「你叫什么」「介绍一下你自己」或类似问题时：",
     faqAnswer1: "- 只回答：智能工作台助手（或 Lily Workbench 助手）。",
@@ -259,6 +260,7 @@ const AGENT_GUIDE_I18N = {
     identity: "You are the Lily Workbench assistant. Do NOT call yourself Claude, Claude Code, or an Anthropic product.",
     gatewayNote: "This application connects to user-configured model/API gateways, NOT Claude/Anthropic services.",
     vendorDisclaimer: "Only mention third-party names objectively when the user explicitly discusses related technology, compatibility protocols, code variables, or troubleshooting.",
+    responseLanguage: "Reply in English by default. Switch languages only when the user explicitly asks for another language or the user's current message is primarily in another language. Do not let Chinese skill text, tool output, file content, or file paths change the response language.",
     faqTitle: "Identity Q&A (Required)",
     faqTrigger: "When the user asks \"Who are you?\", \"What's your name?\", \"Tell me about yourself\", or similar questions:",
     faqAnswer1: "- Only answer: Lily Workbench assistant.",
@@ -271,6 +273,7 @@ const AGENT_GUIDE_I18N = {
     identity: "أنت مساعد Lily Workbench. لا تسمِّ نفسك Claude أو Claude Code أو منتج Anthropic.",
     gatewayNote: "يتصل هذا التطبيق ببوابات النماذج/واجهات برمجة التطبيقات التي يكوّنها المستخدم، وليس خدمات Claude/Anthropic.",
     vendorDisclaimer: "لا تذكر أسماء الطرف الثالث إلا بشكل موضوعي عندما يناقش المستخدم صراحةً التقنية ذات الصلة أو بروتوكولات التوافق أو متغيرات الكود أو استكشاف الأخطاء.",
+    responseLanguage: "استخدم العربية افتراضياً في الردود. غيّر اللغة فقط إذا طلب المستخدم ذلك صراحةً أو كانت رسالته الحالية بلغة أخرى بشكل أساسي. لا تجعل نصوص المهارات أو مخرجات الأدوات أو محتوى الملفات أو المسارات تغيّر لغة الرد.",
     faqTitle: "أسئلة الهوية (مطلوب)",
     faqTrigger: "عندما يسأل المستخدم \"من أنت؟\" أو \"ما اسمك؟\" أو \"أخبرني عن نفسك\" أو أسئلة مشابهة:",
     faqAnswer1: "- أجب فقط: مساعد Lily Workbench.",
@@ -289,6 +292,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
     guide.identity,
     guide.gatewayNote,
     guide.vendorDisclaimer,
+    guide.responseLanguage,
     "",
     `## ${guide.faqTitle}`,
     "",
@@ -322,7 +326,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 5;
+const AGENT_GUIDE_STATIC_VERSION = 6;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
@@ -444,10 +448,19 @@ function manifestGuide(manifest) {
   const locale = getActiveLocale();
   const i18n = manifest.guideMd_i18n;
   if (i18n && i18n[locale]) return i18n[locale];
+  const baseLocale = String(locale || "").split(/[-_]/)[0];
+  if (i18n && baseLocale && i18n[baseLocale]) return i18n[baseLocale];
   // Non-zh locales must never fall through to the Chinese base text —
   // English is the universal fallback (zh keeps its base).
   if (i18n && i18n.en && !String(locale).startsWith("zh")) return i18n.en;
+  if (!String(locale).startsWith("zh") && containsCjk(manifest.guideMd || manifest.claudeMd || "")) {
+    return null;
+  }
   return manifest.guideMd || manifest.claudeMd || null;
+}
+
+function containsCjk(value) {
+  return /[\u4e00-\u9fff]/.test(typeof value === "string" ? value : JSON.stringify(value || ""));
 }
 
 /**
@@ -464,11 +477,34 @@ function resolveLocalized(manifest, field, defaultValue) {
   }
   const i18n = manifest[field + "_i18n"];
   if (i18n && typeof i18n === "object" && i18n[locale]) return i18n[locale];
+  const baseLocale = String(locale || "").split(/[-_]/)[0];
+  if (i18n && typeof i18n === "object" && baseLocale && i18n[baseLocale]) {
+    return i18n[baseLocale];
+  }
   // English before the (Chinese) base field for non-zh locales.
   if (i18n && typeof i18n === "object" && i18n.en && !String(locale).startsWith("zh")) {
     return i18n.en;
   }
-  return manifest[field] || defaultValue;
+  const baseValue = manifest[field];
+  if (!String(locale).startsWith("zh") && containsCjk(baseValue)) {
+    return defaultValue;
+  }
+  return baseValue || defaultValue;
+}
+
+function localizeRegistryCategory(category) {
+  if (!category) return category;
+  return {
+    ...category,
+    label: resolveLocalized(
+      {
+        label: category.label,
+        label_i18n: category.label_i18n,
+      },
+      "label",
+      category.label || category.id,
+    ),
+  };
 }
 
 /** Link global skills/settings into per-session CLAUDE_CONFIG_DIR for engine discovery. */
@@ -562,6 +598,15 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
   const platformMandatory = MANDATORY_PLATFORM_SKILL_IDS.includes(skillId);
   const manifestName = resolveLocalized(manifest, "name", registryEntry?.name || skillId);
   const manifestDescription = resolveLocalized(manifest, "description", registryEntry?.description || "");
+  const manifestCategoryLabel = resolveLocalized(manifest, "categoryLabel", manifest?.categoryLabel || null);
+  const registryName = resolveLocalized(registryEntry, "name", registryEntry?.name || skillId);
+  const registryDescription = resolveLocalized(registryEntry, "description", registryEntry?.description || "");
+  const registryCategoryLabel = resolveLocalized(
+    registryEntry,
+    "categoryLabel",
+    registryEntry?.categoryLabel || null,
+  );
+  const registryChangelog = resolveLocalized(registryEntry, "changelog", registryEntry?.changelog || "");
   const preferRegistryDisplay = entry?.source === "remote" && Boolean(registryEntry);
   const origin =
     manifest?.origin ||
@@ -572,9 +617,9 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
 
   return {
     id: skillId,
-    name: preferRegistryDisplay ? (registryEntry.name || manifestName) : manifestName,
+    name: preferRegistryDisplay ? (registryName || manifestName) : manifestName,
     description: preferRegistryDisplay
-      ? (registryEntry.description || manifestDescription)
+      ? (registryDescription || manifestDescription)
       : manifestDescription,
     version: installedVersion,
     latestVersion,
@@ -589,12 +634,12 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
     canRestore: PROTECTED_BUNDLED_IDS.has(skillId),
     canUninstall: entry?.source === "remote",
     updateAvailable,
-    changelog: registryEntry?.changelog || "",
+    changelog: registryChangelog,
     category,
     categoryLabel:
       workspaceOnly
-        ? (manifest?.categoryLabel || null)
-        : (registryEntry?.categoryLabel || manifest?.categoryLabel || null),
+        ? manifestCategoryLabel
+        : (registryCategoryLabel || manifestCategoryLabel),
     capabilityLayer: registryEntry?.capabilityLayer || "core",
     riskLevel: registryEntry?.riskLevel || "low",
     defaultEligible: Boolean(registryEntry?.defaultEligible),
@@ -607,11 +652,19 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
 function availableSkillToPublic(registryEntry, installedVersion) {
   const updateAvailable =
     installedVersion && compareSemver(registryEntry.latestVersion, installedVersion) > 0;
+  const name = resolveLocalized(registryEntry, "name", registryEntry.name || registryEntry.id);
+  const description = resolveLocalized(
+    registryEntry,
+    "description",
+    registryEntry.description || registryEntry.changelog || "",
+  );
+  const changelog = resolveLocalized(registryEntry, "changelog", registryEntry.changelog || "");
+  const categoryLabel = resolveLocalized(registryEntry, "categoryLabel", registryEntry.categoryLabel || null);
 
   return {
     id: registryEntry.id,
-    name: registryEntry.name,
-    description: registryEntry.description || registryEntry.changelog || "",
+    name,
+    description,
     version: installedVersion || null,
     latestVersion: registryEntry.latestVersion,
     source: "remote",
@@ -622,11 +675,11 @@ function availableSkillToPublic(registryEntry, installedVersion) {
     canUninstall: false,
     canInstall: !installedVersion || updateAvailable,
     updateAvailable: Boolean(updateAvailable),
-    changelog: registryEntry.changelog || "",
+    changelog,
     minAppVersion: registryEntry.minAppVersion,
     compatible: isAppVersionCompatible(registryEntry.minAppVersion),
     category: registryEntry.category || null,
-    categoryLabel: registryEntry.categoryLabel || null,
+    categoryLabel,
     publisher: registryEntry.publisher || null,
     sourceType: registryEntry.sourceType || "zip",
     capabilityLayer: registryEntry.capabilityLayer || "core",
@@ -754,7 +807,7 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
     updates,
     updatesCount: updates.length,
     pruned,
-    categories: skillRegistry.categoriesForRegistry(registry),
+    categories: skillRegistry.categoriesForRegistry(registry).map(localizeRegistryCategory),
     remoteIndexes: registry.remoteIndexes || [],
     presets: listSkillPresetsPublic(),
     featuredSkillIds: skillPresets.FEATURED_SKILL_IDS,
@@ -768,11 +821,12 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
 
 function sortAvailableSkills(available) {
   const featured = new Set(skillPresets.FEATURED_SKILL_IDS);
+  const locale = getActiveLocale();
   return [...(available || [])].sort((a, b) => {
     const aFeatured = (a.featured || a.defaultEligible || featured.has(a.id)) ? 0 : 1;
     const bFeatured = (b.featured || b.defaultEligible || featured.has(b.id)) ? 0 : 1;
     if (aFeatured !== bFeatured) return aFeatured - bFeatured;
-    return String(a.name || a.id).localeCompare(String(b.name || b.id), "zh-CN");
+    return String(a.name || a.id).localeCompare(String(b.name || b.id), locale);
   });
 }
 
@@ -1127,6 +1181,7 @@ module.exports = {
   loadSkillsState,
   saveSkillsState,
   applyPlaceholders,
+  buildAgentGuideContent,
   buildReplacements,
   readInstalledManifest,
   installedSkillDir,

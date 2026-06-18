@@ -20,5 +20,29 @@
     "title": "意图路由评测",
     "priority": 3,
     "body": "用于维护意图路由黄金样例和回归测试。样例需声明 prompt、预期意图、预期路由、禁止路由、追问要求和验收证据，覆盖 Office、Coding、UI、Media、Research、Runtime 与混合任务。"
+  },
+  "name_i18n": {
+    "en": "Intent Routing Eval",
+    "ar": "تقييم توجيه النوايا"
+  },
+  "description_i18n": {
+    "en": "Maintains golden examples and regression tests for Lily intent routing across Office, coding, UI, media, research, runtime, and mixed tasks.",
+    "ar": "يحافظ على أمثلة ذهبية واختبارات تراجع لتوجيه النوايا عبر المكتب والبرمجة والواجهات والوسائط والبحث والتشغيل والمهام المختلطة."
+  },
+  "categoryLabel_i18n": {
+    "en": "Quality Review",
+    "ar": "مراجعة الجودة"
+  },
+  "guideMd_i18n": {
+    "en": {
+      "title": "Intent Routing Eval",
+      "priority": 3,
+      "body": "Maintains golden examples and regression tests for Lily intent routing across Office, coding, UI, media, research, runtime, and mixed tasks."
+    },
+    "ar": {
+      "title": "تقييم توجيه النوايا",
+      "priority": 3,
+      "body": "يحافظ على أمثلة ذهبية واختبارات تراجع لتوجيه النوايا عبر المكتب والبرمجة والواجهات والوسائط والبحث والتشغيل والمهام المختلطة."
+    }
   }
 }

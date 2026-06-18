@@ -3,46 +3,46 @@ name: lily-app-builder
 description: Use when the user describes a webpage, small tool, script, automation, or local app in plain language and expects a runnable result. Turns natural-language intent into the smallest working deliverable, starts it when possible, verifies it with browser or command output, and returns exact local paths.
 ---
 
-# Lily 普通人 App Builder
+# Lily App Builder
 
-本技能把“一句话做个东西”转成可运行产物。目标是替用户完成从自然语言到文件、启动、验证、交付的闭环，而不是让用户先学项目结构或技术选型。
+Use this skill to turn a plain-language request into a runnable artifact. The user should not need to understand project structure, framework choices, or build tooling before getting something useful.
 
-## 何时使用
+## When to Use
 
-- 用户说“做一个网页 / 小工具 / 脚本 / 自动化 / 本地 App / 数据处理程序 / 原型”。
-- 用户只描述业务目标，没有指定技术栈，但期望能打开、能运行、能使用。
-- 用户要把现有资料变成一个可交互页面、HTML 报告、表单、计算器、批处理脚本或轻量本地工具。
-- 用户要求“直接帮我做出来”“给我能运行的文件”“打开看看”。
+- The user asks for a webpage, small tool, script, automation, prototype, local app, data processor, or generated HTML report.
+- The user describes the business outcome but not the technical stack.
+- The user wants something they can open, run, or reuse.
+- The request is phrased like "build it", "make a runnable file", "open it for me", or "turn this material into an interactive page".
 
-## 何时不用
+## When Not to Use
 
-- 只是解释概念、写伪代码、做方案讨论，不要求落地文件。
-- 纯 Word/PDF/PPT/Excel 交付，除非最终产物是网页、脚本或自动化。
-- 用户报告已有代码报错、打不开、测试失败；这类先用 `lily-code-repair`。
-- 大型产品规划、复杂后端系统或多人长期工程，不要假装一次生成完整产品。
+- The user only wants explanation, pseudocode, or planning.
+- The deliverable is purely Word, PDF, PPT, or Excel unless a webpage/script/automation is part of the output.
+- Existing code is broken; use lily-code-repair first.
+- The request is a large long-term product or backend platform that cannot honestly be completed in one pass.
 
-## 工作流
+## Workflow
 
-1. **确认交付物**：判断最终应是单文件 HTML、前端项目、Node/Python 脚本、Shell 自动化、Electron/本地 App 原型，还是修改现有项目。只有方向会明显错时才问一个阻塞问题。
-2. **选择最小技术**：优先用现有项目技术；新建时优先选择能本地直接运行、依赖少、用户容易再次打开的方案。不要为小工具引入重框架。
-3. **规划文件位置**：在当前工作区放到清晰目录；避免散落临时文件。交付物、入口文件和生成资产路径要可解释。
-4. **生成或修改文件**：先读现有结构再写；只做完成核心用途需要的文件和代码，不顺手重构无关内容。
-5. **让它跑起来**：脚本就执行最小样例；网页/应用需要服务就启动 dev server，单文件 HTML 可直接打开。
-6. **实际验证**：浏览器产物配合 `lily-browser-qa` 打开检查；有 UI 时配合 `lily-ui-quality` 检查层级、状态、响应式、文字不溢出。非 UI 脚本要跑命令或样例输入。
-7. **修一轮明显问题**：启动、控制台、布局或命令失败时，先看错误再做最小修复；不要无限试错。
-8. **交付绝对路径**：最终说明改了哪些文件、怎么打开或运行、验证结果；文件路径必须是绝对路径。
+1. Identify the smallest useful deliverable: single HTML file, existing frontend change, Node/Python script, shell automation, lightweight local app, or project modification.
+2. Choose the simplest technology that fits the existing workspace. For new tools, prefer low-dependency outputs the user can reopen later.
+3. Put files in a clear workspace location. Do not scatter temporary deliverables.
+4. Read the existing structure before editing. Make only the files required for the core use case.
+5. Run the artifact: execute scripts with a tiny sample; start a dev server for app pages; open single HTML files when possible.
+6. Verify visible artifacts with browser QA and UI quality checks. Verify non-UI scripts with command output or sample input.
+7. Fix one round of obvious startup, console, layout, or command failures by reading the actual error.
+8. Deliver absolute paths, run/open instructions, and verification evidence.
 
-## 质量红线
+## Quality Bar
 
-- 没有可运行入口，不算完成。
-- 网页没有打开验证或说明无法打开，不算完成。
-- UI 文字重叠、按钮不可点、移动端明显坏掉，不算完成。
-- 只给代码片段不落文件，除非用户明确只要片段。
-- 不要把普通用户任务包装成复杂工程流程；技术说明只保留运行和维护必需信息。
+- No runnable entrypoint means the task is not complete.
+- Browser artifacts must be opened or the reason they could not be opened must be stated.
+- UI text must not overlap, overflow, or break on obvious desktop/mobile sizes.
+- Do not return only snippets unless the user explicitly asked for snippets.
+- Keep technical explanation limited to what the user needs to run and maintain the result.
 
-## 与其他技能配合
+## Related Skills
 
-- `lily-coding-core`：作为底层工程纪律，负责读代码、最小改动、验证和交付说明。
-- `lily-browser-qa`：任何浏览器可见产物都要用它做打开、点击、控制台和响应式检查。
-- `lily-ui-quality`：任何界面都要用它把视觉层级、状态、布局和可用性拉到可交付水平。
-- `lily-code-repair`：构建、启动、测试或浏览器验证失败时，切换为修复模式定位根因。
+- lily-coding-core for engineering discipline.
+- lily-browser-qa for browser-visible outputs.
+- lily-ui-quality for interface polish and responsive behavior.
+- lily-code-repair when verification fails.

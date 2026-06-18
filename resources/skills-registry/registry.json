@@ -6,27 +6,51 @@
   "categories": [
     {
       "id": "office",
-      "label": "办公文档"
+      "label": "办公文档",
+      "label_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "dev",
-      "label": "编程研发"
+      "label": "编程研发",
+      "label_i18n": {
+        "en": "Development",
+        "ar": "التطوير"
+      }
     },
     {
       "id": "design",
-      "label": "设计创作"
+      "label": "设计创作",
+      "label_i18n": {
+        "en": "Design & UI",
+        "ar": "التصميم والواجهات"
+      }
     },
     {
       "id": "media",
-      "label": "媒体创意"
+      "label": "媒体创意",
+      "label_i18n": {
+        "en": "Media & Creative",
+        "ar": "الوسائط والإبداع"
+      }
     },
     {
       "id": "research",
-      "label": "研究事实"
+      "label": "研究事实",
+      "label_i18n": {
+        "en": "Research",
+        "ar": "البحث"
+      }
     },
     {
       "id": "quality",
-      "label": "质量评测"
+      "label": "质量评测",
+      "label_i18n": {
+        "en": "Quality Review",
+        "ar": "مراجعة الجودة"
+      }
     }
   ],
   "remoteIndexes": [
@@ -60,7 +84,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Coding Core",
+        "ar": "أساسيات البرمجة"
+      },
+      "description_i18n": {
+        "en": "Core rules for coding, app building, bug fixes, frontend pages, and automation. Emphasizes understanding the goal, minimal changes, runnable verification, and delivery quality.",
+        "ar": "قواعد أساسية للبرمجة وبناء التطبيقات وإصلاح الأخطاء والواجهات والأتمتة، مع التركيز على فهم الهدف والتعديل المحدود والتحقق القابل للتشغيل."
+      },
+      "categoryLabel_i18n": {
+        "en": "Development",
+        "ar": "التطوير"
+      }
     },
     {
       "id": "lily-app-builder",
@@ -84,7 +120,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "App Builder",
+        "ar": "بناء التطبيقات"
+      },
+      "description_i18n": {
+        "en": "Turns plain-language requests into runnable webpages, small tools, scripts, automations, or local apps with startup verification, screenshot checks, and exact output paths.",
+        "ar": "يحوّل الطلبات الطبيعية إلى صفحات وأدوات وسكربتات وأتمتة وتطبيقات محلية قابلة للتشغيل مع تحقق ولقطات شاشة ومسارات واضحة."
+      },
+      "categoryLabel_i18n": {
+        "en": "Development",
+        "ar": "التطوير"
+      }
     },
     {
       "id": "lily-code-repair",
@@ -108,7 +156,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Code Repair",
+        "ar": "إصلاح الكود"
+      },
+      "description_i18n": {
+        "en": "Use when code, webpages, apps, tests, builds, deployments, or automations fail. Reproduce first, find root cause, apply the smallest fix, and rerun verification.",
+        "ar": "يُستخدم عند فشل الكود أو الصفحات أو الاختبارات أو البناء أو النشر أو الأتمتة: إعادة إنتاج، تحديد السبب، إصلاح محدود، ثم تحقق."
+      },
+      "categoryLabel_i18n": {
+        "en": "Development",
+        "ar": "التطوير"
+      }
     },
     {
       "id": "lily-office-intent",
@@ -132,7 +192,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Office Intent Router",
+        "ar": "توجيه مهام المكتب"
+      },
+      "description_i18n": {
+        "en": "Detects Word, PDF, PPT, Excel, template, form, and document verification tasks before routing to the right office capability.",
+        "ar": "يتعرف على مهام Word وPDF وPPT وExcel والقوالب والنماذج والتحقق من المستندات ثم يوجهها للمسار المناسب."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "lily-pdf-extraction-router",
@@ -156,7 +228,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "PDF Extraction Router",
+        "ar": "توجيه استخراج PDF"
+      },
+      "description_i18n": {
+        "en": "Chooses the right path before reading PDFs, including digital PDFs, scanned files, multi-column layout, dense tables, contracts, papers, and pro PDF runtime suggestions.",
+        "ar": "يختار طريقة قراءة PDF المناسبة للملفات الرقمية والممسوحة والأعمدة والجداول الكثيفة والعقود والأبحاث وحزم PDF المتقدمة."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "lily-excel-data-analysis",
@@ -180,7 +264,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Excel Data Analysis",
+        "ar": "تحليل بيانات Excel"
+      },
+      "description_i18n": {
+        "en": "Analyzes spreadsheet data, detects anomalies, cleans data, identifies fields, charts trends, summarizes findings, compares sheets, and produces reviewable Excel/CSV results.",
+        "ar": "يحلل الجداول، يكتشف الشذوذ، ينظف البيانات، يتعرف على الحقول، يرسم الاتجاهات، يلخص النتائج، ويولد ملفات Excel/CSV قابلة للمراجعة."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "lily-ppt-design-qa",
@@ -204,7 +300,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "PPT Design QA",
+        "ar": "فحص تصميم العروض"
+      },
+      "description_i18n": {
+        "en": "Checks hierarchy, layout, overflow, consistency, text density, image/chart quality, export rendering, and delivery readiness after PPT generation or edits.",
+        "ar": "يفحص التسلسل البصري والتخطيط والتجاوز والاتساق وكثافة النص وجودة الصور والمخططات وجاهزية التسليم للعروض."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "lily-ui-quality",
@@ -228,7 +336,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "UI Quality Review",
+        "ar": "مراجعة جودة الواجهة"
+      },
+      "description_i18n": {
+        "en": "Reviews visual hierarchy, spacing, responsive behavior, usability, empty/error states, and interaction quality before delivering web/app interfaces.",
+        "ar": "يراجع التسلسل البصري والمسافات والاستجابة وقابلية الاستخدام وحالات الفراغ والخطأ وجودة التفاعل قبل تسليم الواجهات."
+      },
+      "categoryLabel_i18n": {
+        "en": "Design & UI",
+        "ar": "التصميم والواجهات"
+      }
     },
     {
       "id": "lily-browser-qa",
@@ -252,7 +372,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Browser QA",
+        "ar": "اختبار المتصفح"
+      },
+      "description_i18n": {
+        "en": "Opens local or live pages in a real browser, clicks, types, screenshots, checks console errors, and verifies regressions instead of trusting code alone.",
+        "ar": "يفتح الصفحات في متصفح حقيقي، ينقر ويكتب ويلتقط صورا ويفحص أخطاء الكونسول ويتحقق من التراجعات بدلا من الاعتماد على الكود فقط."
+      },
+      "categoryLabel_i18n": {
+        "en": "Quality Review",
+        "ar": "مراجعة الجودة"
+      }
     },
     {
       "id": "lily-creative-director",
@@ -276,7 +408,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Creative Director",
+        "ar": "المدير الإبداعي"
+      },
+      "description_i18n": {
+        "en": "Expands vague visual/audio requests into production-ready creative direction for images, posters, covers, avatars, product shots, videos, and voiceovers.",
+        "ar": "يحوّل الطلبات البصرية أو الصوتية العامة إلى توجيه إبداعي جاهز للإنتاج للصور والملصقات والأغلفة والشخصيات والفيديو والصوت."
+      },
+      "categoryLabel_i18n": {
+        "en": "Media & Creative",
+        "ar": "الوسائط والإبداع"
+      }
     },
     {
       "id": "lily-prompt-enhancer",
@@ -300,7 +444,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Prompt Enhancer",
+        "ar": "تحسين الأوامر"
+      },
+      "description_i18n": {
+        "en": "Expands short creative requests into high-quality image/video prompts for avatars, product shots, posters, covers, character art, presentation visuals, and storyboards.",
+        "ar": "يوسع الطلبات الإبداعية القصيرة إلى أوامر عالية الجودة للصور والفيديو والشخصيات والمنتجات والملصقات والعروض والقصص المصورة."
+      },
+      "categoryLabel_i18n": {
+        "en": "Media & Creative",
+        "ar": "الوسائط والإبداع"
+      }
     },
     {
       "id": "lily-image-qa",
@@ -324,7 +480,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Image Quality Review",
+        "ar": "مراجعة جودة الصور"
+      },
+      "description_i18n": {
+        "en": "Reviews generated or edited visual assets for subject completeness, clarity, hands/faces/text/product edges, composition, use-case fit, and whether a retry is needed.",
+        "ar": "يراجع الصور المولدة أو المعدلة من حيث اكتمال الموضوع والوضوح والأيدي والوجوه والنصوص وحواف المنتج والتكوين والحاجة لإعادة المحاولة."
+      },
+      "categoryLabel_i18n": {
+        "en": "Media & Creative",
+        "ar": "الوسائط والإبداع"
+      }
     },
     {
       "id": "lily-research-synthesis",
@@ -348,7 +516,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Research Synthesis",
+        "ar": "تلخيص الأبحاث"
+      },
+      "description_i18n": {
+        "en": "Uses search and multiple sources for current facts, rankings, prices, policies, competitor research, source-backed summaries, and verifiable conclusions.",
+        "ar": "يستخدم البحث ومصادر متعددة للحقائق الحديثة والتصنيفات والأسعار والسياسات ودراسة المنافسين والملخصات المدعومة بالمصادر."
+      },
+      "categoryLabel_i18n": {
+        "en": "Research",
+        "ar": "البحث"
+      }
     },
     {
       "id": "lily-stock-research",
@@ -372,7 +552,19 @@
       "riskLevel": "medium",
       "defaultEligible": false,
       "featured": false,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Stock Research",
+        "ar": "بحث الأسهم"
+      },
+      "description_i18n": {
+        "en": "Researches stocks, ETFs, indexes, watchlists, and market reviews while separating facts, inference, and non-investment-advice risk notes.",
+        "ar": "يبحث الأسهم والصناديق والمؤشرات وقوائم المتابعة والسوق مع فصل الحقائق عن الاستنتاجات والتنبيه إلى أنه ليس نصيحة استثمارية."
+      },
+      "categoryLabel_i18n": {
+        "en": "Research",
+        "ar": "البحث"
+      }
     },
     {
       "id": "lily-web-system-learning",
@@ -396,7 +588,19 @@
       "riskLevel": "high",
       "defaultEligible": false,
       "featured": false,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Web System Learning",
+        "ar": "تعلم أنظمة الويب"
+      },
+      "description_i18n": {
+        "en": "Learns OA, ERP, CRM, admin, and other web systems, then produces reviewable workspace skills from page, action, and API maps for natural-language operation.",
+        "ar": "يتعلم أنظمة OA وERP وCRM ولوحات الإدارة ويولد مهارات مساحة عمل قابلة للمراجعة من خرائط الصفحات والإجراءات والواجهات."
+      },
+      "categoryLabel_i18n": {
+        "en": "Automation",
+        "ar": "الأتمتة"
+      }
     },
     {
       "id": "lily-mail-assistant",
@@ -420,7 +624,19 @@
       "riskLevel": "high",
       "defaultEligible": false,
       "featured": false,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Mail Assistant",
+        "ar": "مساعد البريد"
+      },
+      "description_i18n": {
+        "en": "Connects Gmail, Outlook/Microsoft 365, or IMAP/SMTP for email search, summaries, attachment lookup, reply drafts, and confirmed sending.",
+        "ar": "يتصل بـ Gmail وOutlook/Microsoft 365 أو IMAP/SMTP للبحث في البريد وتلخيصه وفحص المرفقات وصياغة الردود والإرسال بعد التأكيد."
+      },
+      "categoryLabel_i18n": {
+        "en": "Automation",
+        "ar": "الأتمتة"
+      }
     },
     {
       "id": "lily-skill-quality-gate",
@@ -444,7 +660,19 @@
       "riskLevel": "low",
       "defaultEligible": false,
       "featured": false,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Skill Quality Gate",
+        "ar": "بوابة جودة المهارات"
+      },
+      "description_i18n": {
+        "en": "Reviews whether a Lily skill truly improves platform capability before release, checking triggers, IO, execution steps, verification, recovery, safety, observability, and maintainability.",
+        "ar": "يراجع ما إذا كانت المهارة تضيف قدرة حقيقية قبل الإصدار عبر فحص المشغلات والمدخلات والمخرجات والتنفيذ والتحقق والسلامة والصيانة."
+      },
+      "categoryLabel_i18n": {
+        "en": "Quality Review",
+        "ar": "مراجعة الجودة"
+      }
     },
     {
       "id": "lily-intent-eval",
@@ -468,7 +696,19 @@
       "riskLevel": "low",
       "defaultEligible": false,
       "featured": false,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Intent Routing Eval",
+        "ar": "تقييم توجيه النوايا"
+      },
+      "description_i18n": {
+        "en": "Maintains golden examples and regression tests for Lily intent routing across Office, coding, UI, media, research, runtime, and mixed tasks.",
+        "ar": "يحافظ على أمثلة ذهبية واختبارات تراجع لتوجيه النوايا عبر المكتب والبرمجة والواجهات والوسائط والبحث والتشغيل والمهام المختلطة."
+      },
+      "categoryLabel_i18n": {
+        "en": "Quality Review",
+        "ar": "مراجعة الجودة"
+      }
     },
     {
       "id": "lily-template-fill",
@@ -492,7 +732,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Template Fill",
+        "ar": "تعبئة القوالب"
+      },
+      "description_i18n": {
+        "en": "Fills existing Word templates with structured data, supports batch generation, and keeps deterministic placeholder replacement separate from model judgment.",
+        "ar": "يملأ قوالب Word الحالية ببيانات منظمة ويدعم الإنشاء الدفعي ويفصل استبدال الحقول الحتمي عن حكم النموذج."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "lily-document-verify",
@@ -516,7 +768,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Document Verify",
+        "ar": "التحقق من المستندات"
+      },
+      "description_i18n": {
+        "en": "Renders generated or edited documents to page images and visually checks layout issues that text extraction cannot catch.",
+        "ar": "يعرض المستندات المولدة أو المعدلة كصور صفحات ويفحص مشاكل التخطيط التي لا يكشفها استخراج النص."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "lily-pdf-form",
@@ -540,7 +804,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "PDF Form Fill",
+        "ar": "تعبئة نماذج PDF"
+      },
+      "description_i18n": {
+        "en": "Fills existing fillable PDF AcroForm fields with structured data and produces a new PDF without redesigning the document.",
+        "ar": "يملأ حقول PDF AcroForm القابلة للتعبئة ببيانات منظمة وينتج ملف PDF جديدا دون إعادة تصميم المستند."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "lily-runtime-packs",
@@ -564,7 +840,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Runtime Packs",
+        "ar": "حزم التشغيل"
+      },
+      "description_i18n": {
+        "en": "Installs, checks, or removes optional local engines such as pro PDF parsing or LibreOffice runtime only when the user needs them.",
+        "ar": "يثبت أو يفحص أو يزيل محركات محلية اختيارية مثل تحليل PDF المتقدم أو LibreOffice عند الحاجة فقط."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "anthropics-doc-coauthoring",
@@ -588,7 +876,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Document Coauthoring",
+        "ar": "المشاركة في كتابة المستندات"
+      },
+      "description_i18n": {
+        "en": "Helps write, edit, comment, and refine long-form documents with structured collaboration.",
+        "ar": "يساعد في كتابة المستندات الطويلة وتحريرها والتعليق عليها وتحسينها بتعاون منظم."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "anthropics-docx",
@@ -612,7 +912,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Word Document",
+        "ar": "مستند Word"
+      },
+      "description_i18n": {
+        "en": "Creates, edits, and verifies Word documents.",
+        "ar": "ينشئ ويحرر ويتحقق من مستندات Word."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "anthropics-pdf",
@@ -636,7 +948,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "PDF Document",
+        "ar": "مستند PDF"
+      },
+      "description_i18n": {
+        "en": "Reads, creates, inspects, renders, and verifies PDF files.",
+        "ar": "يقرأ وينشئ ويفحص ويعرض ويتحقق من ملفات PDF."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "anthropics-pptx",
@@ -660,7 +984,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Presentation Decks",
+        "ar": "العروض التقديمية"
+      },
+      "description_i18n": {
+        "en": "Creates, edits, renders, verifies, and exports PowerPoint presentations.",
+        "ar": "ينشئ ويحرر ويعرض ويتحقق ويصدر عروض PowerPoint."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     },
     {
       "id": "anthropics-xlsx",
@@ -684,7 +1020,19 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily"
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Spreadsheets",
+        "ar": "جداول البيانات"
+      },
+      "description_i18n": {
+        "en": "Creates, edits, analyzes, visualizes, renders, and exports spreadsheets.",
+        "ar": "ينشئ ويحرر ويحلل ويصور ويعرض ويصدر جداول البيانات."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
     }
   ]
 }

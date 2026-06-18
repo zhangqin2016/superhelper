@@ -15,5 +15,17 @@
     "network": false,
     "filesystem": "none",
     "subprocess": "none"
+  },
+  "name_i18n": {
+    "en": "App Builder",
+    "ar": "بناء التطبيقات"
+  },
+  "description_i18n": {
+    "en": "Turns plain-language requests into runnable webpages, small tools, scripts, automations, or local apps with startup verification, screenshot checks, and exact output paths.",
+    "ar": "يحوّل الطلبات الطبيعية إلى صفحات وأدوات وسكربتات وأتمتة وتطبيقات محلية قابلة للتشغيل مع تحقق ولقطات شاشة ومسارات واضحة."
+  },
+  "categoryLabel_i18n": {
+    "en": "Development",
+    "ar": "التطوير"
   }
 }

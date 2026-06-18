@@ -62,10 +62,10 @@ function readme() {
 1. 用户提供系统入口 URL、业务目标和允许访问的域名。
 2. 用户在浏览器里自己完成登录；不要把账号、密码、Cookie、Token 或验证码粘贴到聊天里。
 3. Lily 默认只读扫描页面：菜单、列表、详情、表单字段、按钮、导出入口。
-4. Lily 生成页面/动作地图和 \`web-system-playbook.json\`。
-5. Lily 生成当前工作区专属技能草稿。
+4. Lily 生成能力地图、API 地图、页面/动作地图和 \`web-system-playbook.json\`。
+5. Lily 生成健康报告和当前工作区专属技能草稿。
 6. 用户审核并启用技能。
-7. 后续自然语言执行时，查询类动作可直接执行；提交、审批、删除、上传、付款、通知等动作必须二次确认。
+7. 后续自然语言执行时，先匹配能力、补齐必填参数、dry-run 校验，再按 API 优先 / 浏览器兜底执行；提交、审批、删除、上传、付款、通知等动作必须二次确认。
 
 ## 安全边界
 
@@ -80,6 +80,9 @@ function readme() {
 | 文件 | 作用 |
 |---|---|
 | \`system-profile.json\` | 系统画像、范围、登录策略和档案索引 |
+| \`capability-map.json\` | 能力路由、必填参数、确认策略、成功信号、过期信号和恢复策略 |
+| \`api-map.json\` | 学到的 API 合约、请求字段和可复用能力映射 |
+| \`health.json\` | 学习覆盖率、API 优先能力数量、风险动作和建议补学项 |
 | \`page-map.json\` | 页面地图、入口、锚点和页面关系 |
 | \`domain-model.json\` | 业务对象、字段语义、词汇表和待补问题 |
 | \`risk-policy.json\` | 域名白名单、学习期禁区和动作确认策略 |
@@ -111,6 +114,7 @@ Use \`${REQUIRED_SKILLS.join("`, `")}\` for all OA / ERP / CRM / admin system le
 - Never ask users to paste passwords, cookies, tokens, OAuth codes, or one-time codes into chat.
 - Ask the user to log in through an interactive browser/profile when needed.
 - Produce a page map, action map, connector playbook, and workspace skill draft.
+- Produce a capability map, API map, health report, page map, action map, connector playbook, and workspace skill draft.
 - Generated skills are drafts until the user reviews and enables them.
 
 ## Risk Rules
@@ -127,6 +131,7 @@ Use \`${REQUIRED_SKILLS.join("`, `")}\` for all OA / ERP / CRM / admin system le
 - If selectors become unstable, re-run read-only discovery for that action.
 - If the system exposes unrelated sensitive data, stop and narrow the scope.
 - If a CAPTCHA, 2FA, SSO re-auth, or permission prompt appears, hand control back to the user.
+- During execution, always route through the generated capability map first. Missing required parameters must be collected before browser/API execution.
 `;
 }
 
@@ -144,6 +149,7 @@ function checklist() {
 ## 学习中
 
 - [ ] 只读扫描菜单、列表、详情、表单字段和按钮。
+- [ ] 记录可复用 API 合约、请求字段、响应形状和对应能力。
 - [ ] 不提交表单。
 - [ ] 不删除、不审批、不付款、不上传、不发通知。
 - [ ] 记录稳定选择器、页面标题、URL 模式和可读标签。
@@ -153,6 +159,9 @@ function checklist() {
 
 - [ ] 生成页面地图。
 - [ ] 生成动作地图。
+- [ ] 生成 \`capability-map.json\`，包含能力、必填参数、确认策略和过期信号。
+- [ ] 生成 \`api-map.json\`，把可复用接口映射到能力。
+- [ ] 生成 \`health.json\`，标明覆盖率、缺口和建议补学项。
 - [ ] 生成 \`web-system-playbook.json\`。
 - [ ] 生成当前工作区专属技能草稿。
 - [ ] 用户审核后再启用技能。
@@ -172,7 +181,7 @@ function playbookTemplate() {
       },
       actions: [
         {
-          id: "web.query-status",
+          action: "web.query-status",
           name: "查询状态",
           risk: "read",
           confirmation: "none",
@@ -183,7 +192,7 @@ function playbookTemplate() {
           ],
         },
         {
-          id: "web.prepare-form",
+          action: "web.prepare-form",
           name: "准备表单",
           risk: "prepare",
           confirmation: "review",
@@ -194,6 +203,7 @@ function playbookTemplate() {
           ],
         },
       ],
+      apiContracts: [],
       credentialPolicy: {
         chatSecrets: false,
         login: "interactive-browser-session",

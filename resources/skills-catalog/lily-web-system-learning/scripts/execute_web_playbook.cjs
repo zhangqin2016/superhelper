@@ -29,19 +29,30 @@ const LOCATOR_FIELDS = ["selector", "role", "label", "placeholder", "testId", "t
 function usage() {
   return [
     "Usage:",
-    "  node scripts/execute_web_playbook.cjs --playbook web-system-playbook.json --action web.query-status --plan action-plan.json [--storage-state state.json] [--confirmed] [--headful] [--dry-run]",
+    "  node scripts/execute_web_playbook.cjs --playbook web-system-playbook.json --action web.query-status --plan action-plan.json [--capability-map capability-map.json] [--storage-state state.json] [--confirmed] [--headful] [--dry-run]",
     "",
-    "The action plan is model-generated JSON, but this executor validates domain, risk, confirmation, and operation shape before touching the browser.",
+    "The action plan is model-generated JSON, but this executor validates capability, required parameters, domain, risk, confirmation, and operation shape before touching the browser.",
   ].join("\n");
 }
 
 function parseArgs(argv) {
-  const args = { playbook: null, action: null, plan: null, storageState: null, confirmed: false, headful: false, dryRun: false, out: null };
+  const args = {
+    playbook: null,
+    action: null,
+    plan: null,
+    capabilityMap: null,
+    storageState: null,
+    confirmed: false,
+    headful: false,
+    dryRun: false,
+    out: null,
+  };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--playbook") args.playbook = argv[++i];
     else if (arg === "--action") args.action = argv[++i];
     else if (arg === "--plan") args.plan = argv[++i];
+    else if (arg === "--capability-map") args.capabilityMap = argv[++i];
     else if (arg === "--storage-state") args.storageState = argv[++i];
     else if (arg === "--confirmed") args.confirmed = true;
     else if (arg === "--headful") args.headful = true;
@@ -98,6 +109,84 @@ function resolveTargetUrl(playbook, op) {
 
 function actionByName(playbook, actionName) {
   return (playbook.actions || []).find((action) => action.action === actionName || action.metadata?.legacyActionId === actionName);
+}
+
+function capabilityByAction(capabilityMap, actionName) {
+  if (!capabilityMap) return null;
+  const capabilities = Array.isArray(capabilityMap.capabilities) ? capabilityMap.capabilities : [];
+  return capabilities.find((capability) => {
+    const playbookAction = capability.execution?.playbookAction;
+    return capability.id === actionName || capability.action === actionName || playbookAction === actionName;
+  }) || null;
+}
+
+function validateCapabilityMap(capabilityMap, actionName) {
+  if (!capabilityMap) return null;
+  if (capabilityMap.schemaVersion !== 1 || !Array.isArray(capabilityMap.capabilities)) {
+    throw new Error("capability-map must be schemaVersion 1 and contain capabilities[]");
+  }
+  const capability = capabilityByAction(capabilityMap, actionName);
+  if (!capability) {
+    throw new Error(`capability not found for action: ${actionName}`);
+  }
+  return capability;
+}
+
+function validateCapabilityParams(capability, plan) {
+  if (!capability || !plan) return null;
+  const required = Array.isArray(capability.params?.required) ? capability.params.required : [];
+  if (required.length === 0) return null;
+  const params = plan.params && typeof plan.params === "object" && !Array.isArray(plan.params) ? plan.params : {};
+  const missing = required.filter((paramId) => isMissingParamValue(params[paramId]));
+  if (missing.length === 0) return null;
+  const askWhenMissing = (Array.isArray(capability.askWhenMissing) ? capability.askWhenMissing : [])
+    .filter((item) => missing.includes(item.param));
+  return {
+    ok: true,
+    inputRequired: true,
+    action: capability.execution?.playbookAction || capability.action || capability.id,
+    capability: capabilitySummary(capability),
+    missingParams: missing,
+    askWhenMissing,
+    message: "Required input is missing before this capability can run.",
+  };
+}
+
+function isMissingParamValue(value) {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function enrichWithCapability(validated, capability) {
+  if (!capability) return validated;
+  return {
+    ...validated,
+    capability: capabilitySummary(capability),
+    successSignal: capability.successSignal || null,
+    staleSignals: Array.isArray(capability.staleSignals) ? capability.staleSignals : [],
+    recovery: capability.recovery || null,
+    audit: capability.audit || null,
+  };
+}
+
+function capabilitySummary(capability) {
+  return {
+    id: capability.id || "",
+    action: capability.action || capability.execution?.playbookAction || "",
+    title: capability.title || "",
+    risk: capability.risk || "",
+    confirmation: capability.confirmation || "",
+    execution: capability.execution
+      ? {
+          preferred: capability.execution.preferred || "",
+          fallback: capability.execution.fallback || "",
+          apiContractRefs: Array.isArray(capability.execution.apiContractRefs) ? capability.execution.apiContractRefs : [],
+          playbookAction: capability.execution.playbookAction || "",
+        }
+      : null,
+  };
 }
 
 function normalizeOperation(op, index, actionRisk) {
@@ -660,7 +749,14 @@ async function main() {
   const args = parseArgs(process.argv);
   const playbook = readJson(args.playbook, "playbook");
   const plan = readJson(args.plan, "plan");
-  const validated = validatePlan(playbook, args.action, plan, { confirmed: args.confirmed });
+  const capabilityMap = args.capabilityMap ? readJson(args.capabilityMap, "capability-map") : null;
+  const capability = validateCapabilityMap(capabilityMap, args.action);
+  const missingInput = validateCapabilityParams(capability, plan);
+  if (missingInput) {
+    output(missingInput, args);
+    return;
+  }
+  const validated = enrichWithCapability(validatePlan(playbook, args.action, plan, { confirmed: args.confirmed }), capability);
   if (args.dryRun || validated.reviewRequired) {
     output(validated, args);
     return;

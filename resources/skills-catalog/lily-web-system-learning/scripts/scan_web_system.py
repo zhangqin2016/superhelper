@@ -29,6 +29,7 @@ SAFE_INTERACTION_TEXT_RE = re.compile(
 
 ID_SEGMENT_RE = re.compile(r"^(?:\d+|[0-9a-f]{8,}|[0-9a-f-]{20,})$", re.IGNORECASE)
 LEARNING_MODES = {"read-only", "contract-probe", "test-lab"}
+SENSITIVE_KEY_RE = re.compile(r"(authorization|cookie|token|secret|api[-_]?key|password|passwd|credential|session)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -201,6 +202,170 @@ def build_api_contract(current_url: str, form: dict[str, Any], config: ScanConfi
             "allowRealSubmitInTestLab": test_lab,
         },
     }
+
+
+def shape_value(value: Any, depth: int = 0) -> Any:
+    if depth > 3:
+        return "<nested>"
+    if isinstance(value, dict):
+        shaped: dict[str, Any] = {}
+        for key in list(value.keys())[:80]:
+            if SENSITIVE_KEY_RE.search(str(key)):
+                shaped[str(key)] = "<redacted>"
+            else:
+                shaped[str(key)] = shape_value(value.get(key), depth + 1)
+        return shaped
+    if isinstance(value, list):
+        if not value:
+            return []
+        return [shape_value(value[0], depth + 1)]
+    if isinstance(value, bool):
+        return "<boolean>"
+    if isinstance(value, (int, float)):
+        return "<number>"
+    if value is None:
+        return "<null>"
+    return "<string>"
+
+
+def parse_request_body_shape(post_data: str) -> dict[str, Any]:
+    text = str(post_data or "")
+    if not text:
+        return {"type": "empty", "fields": []}
+    try:
+        parsed = json.loads(text)
+        return {"type": "json", "shape": shape_value(parsed), "fields": request_fields_from_shape(parsed)}
+    except Exception:
+        pass
+    try:
+        from urllib.parse import parse_qs
+
+        parsed_qs = parse_qs(text, keep_blank_values=True)
+        fields = [
+            {"name": key, "type": "string", "required": False, "sensitive": bool(SENSITIVE_KEY_RE.search(key))}
+            for key in sorted(parsed_qs.keys())[:120]
+        ]
+        return {"type": "form", "fields": fields}
+    except Exception:
+        return {"type": "text", "length": len(text), "fields": []}
+
+
+def request_fields_from_shape(value: Any, prefix: str = "") -> list[dict[str, Any]]:
+    fields: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        for key, child in list(value.items())[:120]:
+            name = f"{prefix}.{key}" if prefix else str(key)
+            if SENSITIVE_KEY_RE.search(name):
+                fields.append({"name": name, "type": "secret", "required": False, "sensitive": True})
+                continue
+            if isinstance(child, dict):
+                fields.extend(request_fields_from_shape(child, name))
+            elif isinstance(child, list) and child and isinstance(child[0], dict):
+                fields.extend(request_fields_from_shape(child[0], f"{name}[]"))
+            else:
+                fields.append({"name": name, "type": inferred_json_type(child), "required": False, "sensitive": False})
+    return fields[:120]
+
+
+def inferred_json_type(value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, list):
+        return "array"
+    if value is None:
+        return "null"
+    return "string"
+
+
+def query_fields_from_url(url: str) -> list[dict[str, Any]]:
+    parsed = urlparse(url)
+    from urllib.parse import parse_qs
+
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    return [
+        {"name": key, "type": "string", "required": False, "sensitive": bool(SENSITIVE_KEY_RE.search(key))}
+        for key in sorted(query.keys())[:120]
+    ]
+
+
+def response_shape_from_body(content_type: str, body: str) -> dict[str, Any]:
+    text = str(body or "")
+    if not text:
+        return {"type": "empty"}
+    if "json" in str(content_type).lower():
+        try:
+            return {"type": "json", "shape": shape_value(json.loads(text))}
+        except Exception:
+            return {"type": "json", "parseError": True, "length": len(text)}
+    return {"type": "text", "length": len(text)}
+
+
+class NetworkRecorder:
+    def __init__(self, config: ScanConfig) -> None:
+        self.config = config
+        self.events: list[dict[str, Any]] = []
+
+    def attach(self, page: Any) -> None:
+        page.on("requestfinished", self._on_request_finished)
+
+    def clear(self) -> None:
+        self.events.clear()
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        by_id: dict[str, dict[str, Any]] = {}
+        for event in self.events:
+            by_id[event["id"]] = event
+        return list(by_id.values())[:80]
+
+    def _on_request_finished(self, request: Any) -> None:
+        try:
+            if request.resource_type not in {"xhr", "fetch"}:
+                return
+            url = normalize_url(request.url)
+            if not is_allowed_url(url, self.config.allowed_domains):
+                return
+            method = str(request.method or "GET").upper()
+            response = request.response()
+            status = int(response.status) if response else 0
+            content_type = str((response.headers if response else {}).get("content-type", ""))
+            body = ""
+            if response and status < 400:
+                try:
+                    body = response.text()[:12000]
+                except Exception:
+                    body = ""
+            body_shape = parse_request_body_shape(request.post_data or "")
+            request_fields = query_fields_from_url(url)
+            request_fields.extend(field for field in body_shape.get("fields", []) if isinstance(field, dict))
+            parsed = urlparse(url)
+            endpoint = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            risk = "read" if method in {"GET", "HEAD"} else "submit"
+            event = {
+                "id": stable_hash([method, endpoint, sorted(field.get("name", "") for field in request_fields)], 12),
+                "source": "network-observed",
+                "endpoint": endpoint,
+                "method": method,
+                "contentType": "json" if body_shape.get("type") == "json" else body_shape.get("type", ""),
+                "risk": risk,
+                "resourceType": request.resource_type,
+                "status": status,
+                "requestFields": request_fields[:120],
+                "requestBodyShape": {key: value for key, value in body_shape.items() if key != "fields"},
+                "responseShape": response_shape_from_body(content_type, body),
+                "queryFieldCount": len(query_fields_from_url(url)),
+                "observedUrlPattern": url_pattern(url),
+                "learningMode": self.config.learning_mode,
+                "probePolicy": {
+                    "capturedValues": False,
+                    "credentialHeadersStored": False,
+                    "sameDomainOnly": True,
+                },
+            }
+            self.events.append(event)
+        except Exception:
+            return
 
 
 def interaction_reason(candidate: dict[str, Any]) -> str:
@@ -625,6 +790,7 @@ def build_scan_summary(config: ScanConfig, pages: list[dict[str, Any]], warnings
         action_candidates.extend(page.get("actionCandidates", []))
         business_objects.extend(page.get("businessObjects", []))
         api_contracts.extend([form.get("apiContract") for form in page.get("formContracts", []) if form.get("apiContract")])
+        api_contracts.extend(page.get("networkContracts", []))
         for link in page.get("links", []):
             edges.append({"from": page.get("url"), "to": link.get("url"), "label": link.get("text", "")})
 
@@ -673,6 +839,7 @@ def explore_readonly_interactions(
     config: ScanConfig,
     timeout_ms: int,
     max_new_pages: int,
+    network_recorder: NetworkRecorder | None = None,
 ) -> list[dict[str, Any]]:
     discovered: list[dict[str, Any]] = []
     source_url = source_page.get("url") or ""
@@ -686,6 +853,8 @@ def explore_readonly_interactions(
         if not source_url:
             continue
         try:
+            if network_recorder:
+                network_recorder.clear()
             page.goto(source_url, wait_until="domcontentloaded", timeout=timeout_ms)
             refreshed_page = extract_page(page, normalize_url(page.url), config.allowed_domains, config)
             refreshed_page.pop("_nextUrls", None)
@@ -700,12 +869,17 @@ def explore_readonly_interactions(
             scan_id = (refreshed_candidate or candidate).get("scanId")
             if not scan_id:
                 continue
+            if network_recorder:
+                network_recorder.clear()
             page.locator(f'[data-lily-scan-id="{scan_id}"]').first.click(timeout=min(timeout_ms, 5000), no_wait_after=True)
             page.wait_for_timeout(500)
             current_url = normalize_url(page.url)
             if not is_allowed_url(current_url, config.allowed_domains):
                 continue
             discovered_page = extract_page(page, current_url, config.allowed_domains, config)
+            if network_recorder:
+                discovered_page["networkContracts"] = network_recorder.snapshot()
+                discovered_page["metrics"]["networkContracts"] = len(discovered_page["networkContracts"])
             discovered_page.pop("_nextUrls", None)
             if discovered_page.get("fingerprint") == source_fingerprint and discovered_page.get("url") == source_url:
                 continue
@@ -756,6 +930,8 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
                 context_kwargs["storage_state"] = config.storage_state
             context = browser.new_context(**context_kwargs)
             page = context.new_page()
+            network_recorder = NetworkRecorder(config)
+            network_recorder.attach(page)
 
             while queue and len(pages) < config.max_pages:
                 url = queue.popleft()
@@ -765,15 +941,19 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
                 page_record: dict[str, Any]
                 interactive_pages: list[dict[str, Any]] = []
                 try:
+                    network_recorder.clear()
                     page.goto(url, wait_until="domcontentloaded", timeout=config.timeout_ms)
+                    page.wait_for_timeout(300)
                     page_record = extract_page(page, normalize_url(page.url), config.allowed_domains, config)
+                    page_record["networkContracts"] = network_recorder.snapshot()
+                    page_record["metrics"]["networkContracts"] = len(page_record["networkContracts"])
                     for next_url in page_record.pop("_nextUrls", []):
                         if next_url not in seen and len(seen) + len(queue) < config.max_pages * 4:
                             queue.append(next_url)
                     if config.interactive_readonly and len(pages) < config.max_pages:
                         remaining = config.max_pages - len(pages) - 1
                         if remaining > 0:
-                            interactive_pages = explore_readonly_interactions(page, page_record, config, config.timeout_ms, remaining)
+                            interactive_pages = explore_readonly_interactions(page, page_record, config, config.timeout_ms, remaining, network_recorder)
                 except PlaywrightTimeoutError:
                     page_record = {"url": url, "error": "TIMEOUT"}
                     warnings.append({"url": url, "code": "TIMEOUT"})

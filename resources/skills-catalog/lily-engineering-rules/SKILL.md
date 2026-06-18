@@ -1,96 +1,66 @@
 ---
 name: lily-engineering-rules
-description: >-
-  研发与工程任务的完整协作规范（12 条）。在写代码、改架构、调试、写测试、做 code review、
-  或用户明确要求「按工程规范」「谨慎改动」「 surgical change」时使用。
-  非 trivial 的编码、重构、排障、文档与发布相关工作均应遵循。
-intent: >-
-  为 Lily Workbench 上的研发类任务提供可执行的工程纪律：先澄清再动手、最小改动、
-  目标驱动验证、冲突时做选择而非折中、测试表达意图、阶段性 checkpoint、
-  遵循仓库既有约定、未完成或跳过步骤必须明说。
+description: Engineering collaboration rules for non-trivial development, debugging, architecture changes, tests, code review, documentation, and release work. Use when the user asks for careful engineering, surgical changes, root-cause debugging, or project-standard implementation.
+intent: Provide executable engineering discipline: clarify assumptions, keep changes minimal, verify against goals, choose coherent designs over compromises, encode intent in tests, checkpoint long tasks, follow local conventions, and state skipped work.
 type: reference
 best_for:
-  - "非 trivial 的功能开发或 bug 修复"
-  - "需要控制改动范围的重构或迁移"
-  - "写测试、做 review、或用户要求按工程规范交付"
+  - Non-trivial feature work or bug fixes
+  - Refactors or migrations that need tight scope control
+  - Tests, reviews, or tasks requiring project engineering standards
 scenarios:
-  - "帮我改这个模块，但别动无关代码"
-  - "按我们项目的工程规范实现这个功能"
-  - "这个 bug 先查根因再修"
+  - Change this module without touching unrelated code
+  - Implement this according to our project standards
+  - Find the root cause before fixing this bug
 ---
 
-# 工程协作 12 条
+# Engineering Collaboration Rules
 
-适用于本仓库及用户指定的研发任务。若与用户当次明确要求冲突，以用户当次要求为准，并简短说明取舍。
+Use these rules for development tasks unless the user's current instruction explicitly overrides them.
 
-## 规则 1 — 先想再写
+## 1. Think Before Writing
 
-明确写出假设；不确定就问，不要猜。
-存在多种理解时并列说明；有更简单做法时要指出。
-感到混乱就停下，点明哪里不清楚。
+State assumptions. Ask when ambiguity would change the solution. If several interpretations exist, name them. If a simpler route exists, point it out.
 
-## 规则 2 — 简单优先
+## 2. Prefer Simplicity
 
-用最少代码解决问题；不做 speculative 功能。
-不超出需求范围；不为一次性逻辑抽象。
-自检：资深工程师会不会觉得 over-engineered？若是，就简化。
+Use the least code that solves the problem. Avoid speculative features and one-off abstractions. If a senior engineer would call it over-engineered, simplify.
 
-## 规则 3 — 手术式改动
+## 3. Make Surgical Changes
 
-只动必须动的；只清理自己引入的 mess。
-不顺手「改善」相邻代码、注释或格式。
-不重构没坏的东西；匹配现有风格。
+Touch only what is required. Clean up only the mess you introduce. Match existing style and avoid unrelated formatting churn.
 
-## 规则 4 — 目标驱动
+## 4. Work From the Goal
 
-先定义成功标准，再循环直到验证通过。
-不要机械跟步骤；用成功标准驱动迭代。
-清晰的成功标准应能支持独立推进。
+Define success criteria, then iterate until they are met. Do not follow steps mechanically when evidence changes.
 
-## 规则 5 — 模型只做判断，代码做确定性事
+## 5. Use Models for Judgment, Code for Determinism
 
-适合用推理的：分类、起草、摘要、抽取。
-不要用推理替代：路由、重试策略、可代码化的确定性变换。
-能由代码/工具/测试回答的，就让它们回答。
+Use reasoning for classification, drafting, summarization, and extraction. Use code, tools, and tests for routing, retries, transforms, and anything deterministic.
 
-## 规则 6 — 长任务要阶段性收束
+## 6. Checkpoint Long Work
 
-复杂任务分阶段交付；接近上下文或步骤上限时主动总结并说明剩余工作。
-不要 silent 丢步骤或假装已全部完成。
-需要用户决策或缺少信息时明确列出。
+Break complex work into phases. Summarize remaining work before context or time pressure causes silent loss. State blockers plainly.
 
-## 规则 7 — 冲突要表态，不要和稀泥
+## 7. Choose When Designs Conflict
 
-两种模式矛盾时选一个（优先更新、更常用、或测试覆盖更充分者）。
-说明为什么；把未选方案标记待清理。
-不要 blend 成四不像。
+When two patterns conflict, choose one based on recency, usage, ownership, or test coverage. Explain the choice and mark the losing path for cleanup.
 
-## 规则 8 — 先读再写
+## 8. Read Before Writing
 
-加代码前：读 exports、直接调用方、共享工具。
-「看起来正交」很危险；不理解结构就先问。
-改 bug 前尽量定位根因，避免只对症状打补丁。
+Before adding code, read exports, direct callers, shared helpers, and tests. For bugs, find root cause instead of patching only symptoms.
 
-## 规则 9 — 测试要表达意图
+## 9. Tests Encode Intent
 
-测试应编码「为什么重要」，不只是「做了什么」。
-业务逻辑变了测试仍能通过 — 这样的测试是坏的。
-修 bug 时优先补能抓住回归的测试（若项目已有测试习惯）。
+Tests should prove why behavior matters, not just that lines executed. For bug fixes, add or run a regression check when the project has a test habit.
 
-## 规则 10 — 关键步骤后 checkpoint
+## 10. Checkpoint After Critical Steps
 
-每完成重要一步：总结做了什么、验证了什么、还剩什么。
-不要从无法向用户描述的状态继续推进。
-跟丢了就停下并重述当前状态。
+After migrations, protocol changes, state-machine changes, or broad UI changes, verify that the next step still matches the goal.
 
-## 规则 11 — 遵循仓库约定
+## 11. State Skipped Work
 
-仓库内一致性优先于个人偏好。
-若认为某约定有害，要提出来；不要 silent fork 风格。
-新代码应像原作者写的一样读起来。
+If a test, build, deploy, or browser verification could not run, say why. Do not imply completion beyond evidence.
 
-## 规则 12 — 失败要大声
+## 12. Preserve User Work
 
-有步骤被跳过却报「完成」 — 错误。
-测试被 skip 却报「全绿」 — 错误。
-默认暴露不确定性，而不是隐藏。
+Do not revert, delete, or overwrite unrelated user changes. If they block the task, work with them or ask for direction.

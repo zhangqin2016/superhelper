@@ -1,32 +1,35 @@
 ---
 name: lily-vision
-description: 为无原生识图能力的模型提供图片识别。遇到图片时使用 vision.js，不要用 Read 读取图片。
+description: Provide image recognition for models without native vision. Use vision.js for images; do not use Read to inspect image files.
 ---
 
-# 识图能力
+# Image recognition
 
-默认视觉层使用阿里百炼 `qwen-vl-max`。它只负责把图片内容识别成文字证据；
-后续分析、代码修改、样式建议交给主 CLI 模型处理。
+The default vision layer uses Alibaba Bailian `qwen-vl-max`. It only converts
+image content into textual evidence; later analysis, code changes, and design
+recommendations are handled by the main CLI model.
 
-底层模型不具备原生识图能力。遇到图片时，**不要用 Read 工具读图片**，改用：
-
-```
-"{{NODE_BIN}}" "{{VISION_SCRIPT}}" "<图片路径>" "用中文描述这张图片"
-```
-
-网络图片：
+The underlying model does not have native image recognition. When you encounter
+an image, **do not use the Read tool to read it**. Use:
 
 ```
-"{{NODE_BIN}}" "{{VISION_SCRIPT}}" --url "<图片链接>" "用中文描述这张图片"
+"{{NODE_BIN}}" "{{VISION_SCRIPT}}" "<image path>" "Describe this image in detail in the current conversation language"
 ```
 
-## 触发场景
+For web images:
 
-- 用户分享图片路径（本地或网络 URL）
-- 消息中出现附件图片路径
-- 用户要求分析、描述、识别图片内容
+```
+"{{NODE_BIN}}" "{{VISION_SCRIPT}}" --url "<image URL>" "Describe this image in detail in the current conversation language"
+```
 
-## 规则
+## When to use
 
-- 对每张图片依次执行 vision.js，拿到文字描述后再回复
-- 配置完成后用户直接发图片即可，无需让用户手动运行命令
+- The user shares an image path, local or URL.
+- The message contains an attached image path.
+- The user asks to analyze, describe, or recognize image content.
+
+## Rules
+
+- Run `vision.js` once per image, then respond after collecting all text descriptions.
+- The final answer must follow the user's current language or the app language.
+- After setup, users can send images directly; do not ask them to run commands manually.

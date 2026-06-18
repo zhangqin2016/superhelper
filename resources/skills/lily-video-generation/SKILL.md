@@ -1,29 +1,36 @@
 ---
 name: lily-video-generation
-description: 使用阿里云百炼万相生成视频。用户要求生成短视频、动画、分镜视频、图生视频、视频续写或视频编辑时使用。
+description: Generate videos with Alibaba Bailian Wanxiang. Use when the user asks for short videos, animations, storyboard videos, image-to-video, video continuation, or video editing.
 allowed-tools: Bash(node *)
 ---
 
-# 视频生成
+# Video generation
 
-用户要求生成短视频、动画、分镜视频、图生视频、视频续写或视频编辑时，用 Bash 执行：
+When the user asks to generate a short video, animation, storyboard video,
+image-to-video output, video continuation, or video edit, run:
 
 ```bash
-echo '{"prompt":"要生成的视频描述","ratio":"16:9","resolution":"720P","duration":5}' | "{{NODE_BIN}}" "{{VIDEO_GENERATION_SCRIPT}}"
+echo '{"prompt":"video description","ratio":"16:9","resolution":"720P","duration":5}' | "{{NODE_BIN}}" "{{VIDEO_GENERATION_SCRIPT}}"
 ```
 
-可选参数：
+Optional parameters:
 
-- `model`：默认读取 `DASHSCOPE_VIDEO_MODEL`，否则使用 `wan2.7-t2v`
-- `media`：参考素材数组，例如 `[{"type":"first_frame","url":"https://.../image.png"}]`
-- `negative_prompt`：反向提示词
-- `ratio`：`16:9`、`9:16`、`1:1` 等
-- `resolution`：默认 `720P`
-- `duration`：视频秒数，默认 `5`
-- `prompt_extend`：默认 `true`
-- `watermark`：默认 `false`
-- `output_dir`：保存目录，默认当前工作区 `generated-assets`
+- `model`: defaults to `DASHSCOPE_VIDEO_MODEL`, otherwise `wan2.7-t2v`
+- `media`: reference media array, for example `[{"type":"first_frame","url":"https://.../image.png"}]`
+- `negative_prompt`: negative prompt
+- `ratio`: `16:9`, `9:16`, `1:1`, and similar ratios
+- `resolution`: default `720P`
+- `duration`: seconds, default `5`
+- `prompt_extend`: default `true`
+- `watermark`: default `false`
+- `output_dir`: save directory, default current workspace `generated-assets`
 
-后台可通过 `DASHSCOPE_VIDEO_ENDPOINT` 覆盖完整接口地址；否则使用 `DASHSCOPE_VIDEO_BASE_URL` 拼接官方默认路径。`DASHSCOPE_BASE_URL` 保留给聊天模型接口，不参与视频生成。
+`DASHSCOPE_VIDEO_ENDPOINT` can override the full endpoint. Otherwise the script
+uses `DASHSCOPE_VIDEO_BASE_URL` with the official default path. `DASHSCOPE_BASE_URL`
+is reserved for chat model APIs and is not used for video generation.
 
-视频生成耗时较长。脚本会轮询百炼任务，完成后把临时视频 URL 下载到本地。回复用户时说明本地文件路径，不要直接返回临时 URL。
+Video generation can take a long time. The script polls the Bailian task and
+downloads the temporary video URL to a local file when complete. Reply with the
+local file path and preview when available. Do not return the temporary URL.
+
+Use the user's current language or app language for the surrounding explanation.

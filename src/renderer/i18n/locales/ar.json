@@ -654,5 +654,6 @@
   "apps.type.template": "Template",
   "apps.type.tool": "Tool",
   "apps.type.dashboard": "Dashboard",
-  "apps.type.connector": "Connector"
+  "apps.type.connector": "Connector",
+  "pack.secretWarning": "⚠️ قد يحتوي {count} ملفاً على مفاتيح أو أسرار، مثل {files}. تحقق مما إذا كان يجب إزالتها قبل المشاركة."
 }

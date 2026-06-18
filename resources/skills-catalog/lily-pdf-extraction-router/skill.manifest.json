@@ -15,5 +15,17 @@
     "network": false,
     "filesystem": "none",
     "subprocess": "none"
+  },
+  "name_i18n": {
+    "en": "PDF Extraction Router",
+    "ar": "توجيه استخراج PDF"
+  },
+  "description_i18n": {
+    "en": "Chooses the right path before reading PDFs, including digital PDFs, scanned files, multi-column layout, dense tables, contracts, papers, and pro PDF runtime suggestions.",
+    "ar": "يختار طريقة قراءة PDF المناسبة للملفات الرقمية والممسوحة والأعمدة والجداول الكثيفة والعقود والأبحاث وحزم PDF المتقدمة."
+  },
+  "categoryLabel_i18n": {
+    "en": "Office Documents",
+    "ar": "مستندات المكتب"
   }
 }

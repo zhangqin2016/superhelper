@@ -15,5 +15,17 @@
     "network": false,
     "filesystem": "none",
     "subprocess": "none"
+  },
+  "name_i18n": {
+    "en": "PPT Design QA",
+    "ar": "فحص تصميم العروض"
+  },
+  "description_i18n": {
+    "en": "Checks hierarchy, layout, overflow, consistency, text density, image/chart quality, export rendering, and delivery readiness after PPT generation or edits.",
+    "ar": "يفحص التسلسل البصري والتخطيط والتجاوز والاتساق وكثافة النص وجودة الصور والمخططات وجاهزية التسليم للعروض."
+  },
+  "categoryLabel_i18n": {
+    "en": "Office Documents",
+    "ar": "مستندات المكتب"
   }
 }

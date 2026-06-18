@@ -3,55 +3,44 @@ name: lily-code-repair
 description: Use when the user reports that code, a webpage, an app, tests, build, deployment, or automation failed: errors, blank pages, cannot open, does not work, test failures, CI failures, deploy failures, broken scripts, or regressions. Classifies the failure, reproduces it, finds root cause, applies the smallest fix, and reruns verification without blind rewrites or infinite retries.
 ---
 
-# Lily 代码修复
+# Lily Code Repair
 
-本技能用于“报错 / 不行 / 打不开 / 测试失败 / 部署失败”场景。目标是先复现和定位根因，再做最小修复并重跑验证，避免凭感觉大改或反复试同一种补丁。
+Use this skill for failures: errors, broken pages, failed tests, failed builds, failed deploys, scripts that do not run, or regressions. The goal is evidence, root cause, minimal fix, and verification.
 
-## 何时使用
+## When to Use
 
-- 用户说“报错了、不行、没反应、打不开、空白、崩了、测试没过、构建失败、部署失败、CI 红了”。
-- 用户贴了错误栈、日志、截图、失败命令或失败页面。
-- 新建或修改产物后，启动、测试、构建、浏览器 QA 或部署验证失败。
-- 需要修复已有代码、配置、依赖、脚本、页面交互、接口调用或环境问题。
+- The user says it failed, broke, cannot open, is blank, does nothing, crashed, tests failed, build failed, deploy failed, or CI failed.
+- The user provides a stack trace, log, screenshot, failing command, or failing page.
+- A new artifact fails during startup, test, build, browser QA, or deployment verification.
 
-## 何时不用
+## When Not to Use
 
-- 用户要从零做一个网页、小工具、脚本或本地 App；先用 `lily-app-builder`。
-- 用户只是问如何使用某个工具或解释一段代码，没有失败现象。
-- 纯文档排版或 Office 文件打不开，除非根因在代码、脚本或自动化流程。
+- Starting a new app or tool from scratch; use lily-app-builder.
+- Explaining code without a failure symptom.
+- Pure document layout issues unless the failure is in code or automation.
 
-## 失败分类
+## Failure Classes
 
-先把问题归到一个或多个类型，再决定验证路线：
+- Startup failure: dependency, port, env var, command exit, missing runtime.
+- Runtime failure: exception, console error, 4xx/5xx, permission, bad path.
+- Test failure: assertion, snapshot, timeout, test environment mismatch.
+- Build failure: type error, bundler config, module resolution, asset path.
+- Page failure: blank page, unclickable control, broken layout, mobile overflow.
+- Deploy failure: CI, image, migration, health check, production config.
 
-- **启动失败**：命令退出、依赖缺失、端口冲突、环境变量缺失。
-- **运行时报错**：异常栈、控制台错误、接口 4xx/5xx、权限或路径问题。
-- **测试失败**：断言失败、快照变化、超时、测试环境不一致。
-- **构建失败**：类型错误、打包配置、模块解析、资源路径。
-- **页面失败**：空白页、按钮无效、布局坏、移动端溢出。
-- **部署失败**：CI、镜像、迁移、健康检查、生产配置。
+## Workflow
 
-## 修复流程
+1. Collect evidence: user error, changed files, command, environment, and relevant logs.
+2. Reproduce the original failure when possible; otherwise run the closest local verification and state the limit.
+3. Trace to root cause from the first real error or failing assertion.
+4. Apply the smallest fix. Do not rewrite unrelated code or reformat unrelated files.
+5. Rerun the original failing command, then the smallest affected tests or browser checks.
+6. If the same hypothesis fails twice, stop and re-analyze evidence.
+7. Report root cause, changed files, verification, and any remaining risk.
 
-1. **收集证据**：读取用户给的错误、相关文件、最近改动、运行命令和环境。缺少复现入口时只问一个关键问题。
-2. **复现失败**：尽量运行同一命令、打开同一页面或执行同一测试；不能复现时说明限制并找最接近的本地验证。
-3. **定位根因**：从第一条真实错误、失败断言或用户路径入手，追到具体文件和调用关系。不要只根据症状猜补丁。
-4. **做最小修复**：只改导致失败的代码、配置或数据；不借机重构、不批量格式化、不改无关文件。
-5. **重跑验证**：优先重跑原失败命令；再跑受影响的最小测试、构建或浏览器检查。
-6. **失败后换假设**：同一修复思路失败两次就停下来重新分析证据；不要无限重试。
-7. **交付结论**：说明根因、改动、验证命令和结果；没能验证或仍有风险必须明说。
+## Guardrails
 
-## 质量红线
-
-- 没有复现或证据，不要声称找到根因。
-- 不要因为一个错误就全局重装依赖、删除锁文件、清空缓存或大范围改配置。
-- 不要回滚或覆盖用户/其他 worker 的改动，除非用户明确要求。
-- 不要忽略测试失败、控制台致命错误、部署健康检查失败。
-- 不要把环境问题伪装成代码已修好；需要用户提供凭据、服务或外部权限时说清楚。
-
-## 与其他技能配合
-
-- `lily-coding-core`：提供读前写、最小改动、测试验证和交付纪律。
-- `lily-browser-qa`：页面空白、按钮无效、控制台错误、布局异常时用它复现和复验。
-- `lily-ui-quality`：修复界面问题后，用它检查视觉、响应式、状态和可用性是否达标。
-- `lily-app-builder`：修复完成后如果用户继续要求扩展功能，再切回构建模式。
+- Do not claim root cause without reproduction or evidence.
+- Do not globally reinstall dependencies, delete lockfiles, clear caches, or rewrite config unless evidence requires it.
+- Do not revert user work unless explicitly asked.
+- Do not hide skipped tests, failed checks, or environment limits.

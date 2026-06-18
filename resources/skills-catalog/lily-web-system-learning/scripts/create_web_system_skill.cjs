@@ -203,13 +203,14 @@ function buildSkillMd(spec, scan) {
     "Allowed operation types are `apiRequest`, `goto`, `click`, `fill`, `select`, `check`, `uncheck`, `upload`, `press`, `wait`, `waitForUrl`, `waitForText`, `waitForResponse`, `assertText`, `extract`, and `screenshot`.",
     "Prefer `apiRequest` when the action metadata says `executionStrategy.preferred` is `api-first`; use browser operations only when the API contract is missing, stale, logged out, or needs UI-only validation.",
     "`apiRequest` may use `contractId` from `web-system-playbook.json.apiContracts`; never add credential headers, cookies, tokens, or passwords to the action plan.",
+    "When `capability-map.json` lists required parameters, the action plan must include a top-level `params` object with those values; missing required parameters are blocked before any browser or API action runs.",
     "Prefer robust locator fields in this order: `testId`, `role/name`, `label`, `placeholder`, `text`, then `selector`.",
     "For `select`, use `label` to find the control and `optionLabel` or `value` to choose the option.",
     "Every `apiRequest`, `goto`, and response wait is checked against the allowed domains. A read action may only contain read-risk operations.",
     "If execution returns `API_STATUS_MISMATCH`, `LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, or `WEB_ACTION_FAILED`, treat the skill as stale: explain the failed operation and re-run learning for this workspace before retrying high-risk actions.",
   ].join("\n\n");
 
-  return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, or one-time codes.\n- If the session is logged out, ask the user to log in interactively.\n- Do not leave the allowed domains.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Preferred execution | Example triggers |\n|---|---|---|---|---|\n${actionRows}\n\n## Execution Rules\n\n- Prefer API-first execution for actions with learned API contracts; this is the fast path for searches, lists, detail reads, exports, and reviewed submissions.\n- For \`read\` actions, return concise source-backed results from API responses or the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting or calling a mutating API.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If API contracts fail or labels/selectors no longer match, re-run discovery for the action and explain what changed.\n\n## Runtime Plan Contract\n\nWhen executing an action, create an \`action-plan.json\` with this shape and run the local executor:\n\n\`\`\`bash\nnode scripts/execute_web_playbook.cjs \\\n  --playbook web-system-playbook.json \\\n  --action web.<action-id> \\\n  --plan action-plan.json \\\n  --dry-run\n\`\`\`\n\nOnly run without \`--dry-run\` after the plan validates. For non-read actions, add \`--confirmed\` only after the user has reviewed the exact fields or target.\n\n${runtimePlanRules}\n\n## Action Details\n\n${actionDetails}\n`;
+  return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, or one-time codes.\n- If the session is logged out, ask the user to log in interactively.\n- Do not leave the allowed domains.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Preferred execution | Example triggers |\n|---|---|---|---|---|\n${actionRows}\n\n## Capability Package\n\nBefore executing, load these generated files as one reviewed capability package:\n\n- \`capability-map.json\`: natural-language routing, required parameters, confirmation rules, success signals, stale signals, and recovery policy.\n- \`api-map.json\`: learned API contracts and which capabilities can use them.\n- \`web-system-playbook.json\`: executable connector actions and validator input.\n- \`risk-policy.json\`: production/test learning boundaries and high-risk action gates.\n- \`health.json\`: learning coverage, API/browser fallback coverage, and stale state.\n\n## Execution Rules\n\n- First map the user's request to exactly one capability in \`capability-map.json\`. If confidence is low, ask one focused question.\n- Collect the capability's required parameters before execution. If values are missing, ask only for the missing fields listed in \`askWhenMissing\`.\n- Build an action plan from the capability contract, validate it with \`scripts/execute_web_playbook.cjs --dry-run\`, then execute only after validation succeeds.\n- Prefer API-first execution for actions with learned API contracts; this is the fast path for searches, lists, detail reads, exports, and reviewed submissions.\n- For \`read\` actions, return concise source-backed results from API responses or the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting or calling a mutating API.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If API contracts fail or labels/selectors no longer match, re-run discovery for the action and explain what changed.\n- Never invent hidden pages, endpoints, fields, or permissions. Unknowns must be recorded as missing capability coverage, not guessed.\n\n## Runtime Plan Contract\n\nWhen executing an action, create an \`action-plan.json\` with this shape and run the local executor:\n\n\`\`\`bash\nnode scripts/execute_web_playbook.cjs \\\n  --playbook web-system-playbook.json \\\n  --capability-map capability-map.json \\\n  --action web.<action-id> \\\n  --plan action-plan.json \\\n  --dry-run\n\`\`\`\n\nOnly run without \`--dry-run\` after the plan validates. For non-read actions, add \`--confirmed\` only after the user has reviewed the exact fields or target.\n\n${runtimePlanRules}\n\n## Action Details\n\n${actionDetails}\n`;
 }
 
 function buildManifest(spec) {
@@ -278,6 +279,7 @@ function buildApiContractCatalog(spec, scan) {
   };
   for (const contract of scan.apiContracts || []) add(contract);
   for (const page of scan.pages || []) {
+    for (const contract of page.networkContracts || []) add(contract, page);
     for (const form of page.formContracts || []) add(form.apiContract, page);
   }
   return [...byId.values()];
@@ -343,7 +345,7 @@ function buildPlaybook(spec, scan) {
       intentExamples: action.intentExamples,
       steps: action.steps,
       selectors: action.selectors,
-      paramsSchema: {},
+      paramsSchema: paramsFromAction(action, apiContracts),
       resultSchema: {},
       metadata: {
         entry: action.entry || "",
@@ -360,6 +362,301 @@ function buildPlaybook(spec, scan) {
 function actionKeywords(action) {
   const source = [action.name, action.entry, ...action.intentExamples, ...action.steps].join(" ");
   return [...new Set(String(source).match(/[\p{Letter}\p{Number}_-]{2,}/gu) || [])].slice(0, 24);
+}
+
+function slugify(value, fallback = "field") {
+  const slug = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/['"]/g, "")
+    .replace(/[^\p{Letter}\p{Number}a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return slug || fallback;
+}
+
+function inferParamType(field) {
+  const type = String(field?.type || "").toLowerCase();
+  if (type.includes("date") || type.includes("time")) return "date";
+  if (type.includes("number") || type.includes("amount") || type.includes("money")) return "number";
+  if (type.includes("checkbox") || type.includes("radio") || type === "boolean") return "boolean";
+  if (type.includes("file") || type.includes("upload")) return "file";
+  if (type.includes("select") || (Array.isArray(field?.options) && field.options.length)) return "enum";
+  return "string";
+}
+
+function inputFieldToParam(field, source = "field") {
+  const label = String(field?.label || field?.name || field?.id || "").trim();
+  const id = slugify(field?.name || label || field?.id, "param");
+  const options = Array.isArray(field?.options)
+    ? field.options
+        .map((option) => ({
+          label: String(option?.label || option?.text || option?.value || "").trim(),
+          value: String(option?.value || option?.label || option?.text || "").trim(),
+        }))
+        .filter((option) => option.label || option.value)
+        .slice(0, 80)
+    : [];
+  return {
+    id,
+    name: String(field?.name || id).trim() || id,
+    label: label || id,
+    type: inferParamType(field),
+    required: Boolean(field?.required),
+    readonly: Boolean(field?.readonly),
+    disabled: Boolean(field?.disabled),
+    options,
+    source,
+  };
+}
+
+function mergeParams(params) {
+  const byId = new Map();
+  for (const param of params) {
+    if (!param || param.disabled || param.readonly) continue;
+    const existing = byId.get(param.id);
+    if (!existing) {
+      byId.set(param.id, { ...param });
+      continue;
+    }
+    existing.required = Boolean(existing.required || param.required);
+    existing.options = existing.options?.length ? existing.options : param.options;
+    existing.source = [...new Set([existing.source, param.source].filter(Boolean))].join("+");
+  }
+  return [...byId.values()];
+}
+
+function paramsFromAction(action, apiContracts) {
+  const contractParams = contractsForAction(action, apiContracts).flatMap((contract) =>
+    (contract.requestFields || []).map((field) => inputFieldToParam(field, `api:${contract.id}`)),
+  );
+  const selectorParams = Array.isArray(action.selectors)
+    ? action.selectors
+        .filter((selector) => selector && typeof selector === "object")
+        .map((selector) => inputFieldToParam(selector, "selector"))
+    : [];
+  const params = mergeParams([...contractParams, ...selectorParams]);
+  return {
+    required: params.filter((param) => param.required).map((param) => param.id),
+    optional: params.filter((param) => !param.required).map((param) => param.id),
+    properties: params.reduce((acc, param) => {
+      acc[param.id] = param;
+      return acc;
+    }, {}),
+  };
+}
+
+function successSignalForAction(action, apiContracts) {
+  const contracts = contractsForAction(action, apiContracts);
+  if (action.risk === "read") {
+    return {
+      type: contracts.length ? "api-response-or-extracted-content" : "extracted-content",
+      evidence: ["non-empty result", "source page or endpoint recorded"],
+    };
+  }
+  if (action.risk === "prepare") {
+    return {
+      type: "draft-ready",
+      evidence: ["draft fields visible", "no submit performed"],
+    };
+  }
+  if (action.risk === "submit") {
+    return {
+      type: contracts.length ? "mutation-confirmed" : "ui-confirmation",
+      evidence: ["success message, status change, redirect, or accepted API response"],
+    };
+  }
+  return {
+    type: "destructive-action-confirmed",
+    evidence: ["explicit user confirmation", "target identity recorded", "success message or accepted response"],
+  };
+}
+
+function staleSignalsForAction(action) {
+  const signals = ["auth_expired", "selector_not_found", "assert_text_failed", "web_action_failed"];
+  if (action.risk !== "read") signals.push("confirmation_contract_changed");
+  signals.push("api_401", "api_403", "api_404", "api_status_mismatch");
+  return signals;
+}
+
+function recoveryForAction(action) {
+  return {
+    onAuthExpired: "Ask the user to log in interactively, then retry the same validated plan.",
+    onApiFailure: "Fall back to browser execution when safe; otherwise mark the capability stale.",
+    onSelectorFailure: "Run partial re-learning for this action before retrying.",
+    onAmbiguousTarget: action.risk === "read" ? "Ask one clarifying question." : "Stop and ask the user to identify the exact target before any write.",
+  };
+}
+
+function inferActionObject(action, scan) {
+  const scanned = scan?.businessObjects || [];
+  const source = [action.name, action.entry, ...action.intentExamples, ...action.steps].join(" ").toLowerCase();
+  const match = scanned.find((object) => {
+    const name = String(object.name || object.id || "").toLowerCase();
+    return name && source.includes(name);
+  });
+  if (match) {
+    return {
+      id: match.id || slugify(match.name, action.id),
+      name: match.name || match.id || action.name,
+      source: "scan",
+    };
+  }
+  const entryParts = String(action.entry || "")
+    .split(/[>/>｜|,，]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const name = entryParts.at(-1) || action.name;
+  return {
+    id: slugify(name, action.id),
+    name,
+    source: action.entry ? "entry" : "action",
+  };
+}
+
+function buildCapabilityMap(spec, scan, playbook) {
+  const apiContracts = playbook.apiContracts || [];
+  const capabilities = spec.actions.map((action) => {
+    const executionStrategy = executionStrategyForAction(action, apiContracts);
+    const paramsSchema = paramsFromAction(action, apiContracts);
+    const requiredParams = paramsSchema.required.map((id) => paramsSchema.properties[id]).filter(Boolean);
+    return {
+      id: `web.${action.id}`,
+      action: `web.${action.id}`,
+      title: action.name,
+      object: inferActionObject(action, scan),
+      risk: action.risk,
+      confirmation: action.confirmation,
+      intents: action.intentExamples.length ? action.intentExamples : [action.name],
+      keywords: actionKeywords(action),
+      params: paramsSchema,
+      askWhenMissing: requiredParams.map((param) => ({
+        param: param.id,
+        question: `Please provide ${param.label}.`,
+        type: param.type,
+        options: param.options || [],
+      })),
+      execution: {
+        preferred: executionStrategy.preferred,
+        fallback: executionStrategy.fallback,
+        apiContractRefs: executionStrategy.apiContractRefs,
+        playbookAction: `web.${action.id}`,
+        executor: "scripts/execute_web_playbook.cjs",
+        planContract: {
+          validateFirst: true,
+          dryRunRequired: true,
+          confirmedFlagRequired: action.confirmation !== "none",
+        },
+      },
+      successSignal: successSignalForAction(action, apiContracts),
+      staleSignals: staleSignalsForAction(action),
+      recovery: recoveryForAction(action),
+      audit: {
+        recordInputSummary: true,
+        recordResultSummary: true,
+        redactSecrets: true,
+        includeEndpointIds: true,
+      },
+      resultPresentation: {
+        mode: action.risk === "read" ? "answer-with-sources" : "action-result",
+        includeWhatChanged: action.risk !== "read",
+        includeNextStep: action.risk !== "read",
+      },
+    };
+  });
+  return {
+    schemaVersion: 1,
+    systemId: spec.id,
+    systemName: spec.systemName,
+    generatedAt: new Date().toISOString(),
+    baseUrl: spec.baseUrl,
+    allowedDomains: spec.allowedDomains,
+    defaultExecutionMode: "capability-contract",
+    routing: {
+      strategy: "intent-then-keyword-then-ask",
+      lowConfidencePolicy: "ask-one-focused-question",
+      examplesFile: "examples.jsonl",
+    },
+    capabilities,
+    maintenance: {
+      stalePolicy: "partial-relearn-action-before-retry",
+      loginPolicy: "interactive-browser-session",
+      secretsPolicy: "never-store-credentials",
+      reviewGeneratedPlans: true,
+    },
+  };
+}
+
+function buildApiMap(spec, playbook) {
+  const actionRefsByContract = new Map();
+  for (const action of playbook.actions || []) {
+    for (const ref of action.metadata?.apiContractRefs || []) {
+      const refs = actionRefsByContract.get(ref) || [];
+      refs.push(action.action);
+      actionRefsByContract.set(ref, refs);
+    }
+  }
+  return {
+    schemaVersion: 1,
+    systemId: spec.id,
+    baseUrl: spec.baseUrl,
+    allowedDomains: spec.allowedDomains,
+    auth: {
+      type: "browser-session-or-server-proxy",
+      credentialStorage: "forbidden-in-skill-files",
+      credentialHeadersInPlans: "forbidden",
+    },
+    contracts: (playbook.apiContracts || []).map((contract) => ({
+      id: contract.id,
+      method: contract.method,
+      endpoint: contract.endpoint,
+      risk: contract.risk,
+      contentType: contract.contentType,
+      requestFields: contract.requestFields || [],
+      responseShape: contract.responseShape || {},
+      submitButtons: contract.submitButtons || [],
+      source: contract.source,
+      sourcePage: contract.sourcePage,
+      capabilities: actionRefsByContract.get(contract.id) || [],
+      staleSignals: ["api_401", "api_403", "api_404", "api_status_mismatch"],
+    })),
+  };
+}
+
+function buildHealth(spec, scan, capabilityMap, playbook) {
+  const apiFirstCount = capabilityMap.capabilities.filter((capability) => capability.execution.preferred === "api-first").length;
+  const status = scan && scan.warnings.length === 0 ? "ready-for-review" : "partial";
+  return {
+    schemaVersion: 1,
+    systemId: spec.id,
+    status,
+    generatedAt: new Date().toISOString(),
+    coverage: {
+      actionCount: spec.actions.length,
+      capabilityCount: capabilityMap.capabilities.length,
+      pageCount: scan ? scan.pages.length : 0,
+      apiContractCount: playbook.apiContracts.length,
+      apiFirstCount,
+      browserFallbackCount: capabilityMap.capabilities.length - apiFirstCount,
+      highRiskActionCount: spec.actions.filter((action) => action.risk === "submit" || action.risk === "destructive").length,
+      requiredParamCount: capabilityMap.capabilities.reduce((sum, capability) => sum + capability.params.required.length, 0),
+    },
+    checks: {
+      domainAllowlist: spec.allowedDomains.length > 0 ? "pass" : "fail",
+      credentialPolicy: "pass",
+      apiCoverage: apiFirstCount > 0 ? "partial" : "missing",
+      pageCoverage: scan?.pages?.length ? "partial" : "spec-only",
+      riskPolicy: spec.actions.every((action) => action.risk === "read" || action.confirmation !== "none") ? "pass" : "fail",
+      reviewRequired: spec.actions.some((action) => action.confirmation !== "none") ? "yes" : "no",
+    },
+    stale: [],
+    warnings: scan?.warnings || [],
+    recommendedNextSteps: [
+      apiFirstCount === 0 ? "Run API discovery for frequently used read/search actions." : "",
+      scan ? "" : "Run a read-only scan to increase page and selector coverage.",
+      spec.actions.some((action) => action.risk !== "read") ? "Test mutating flows only in a confirmed test environment before production use." : "",
+    ].filter(Boolean),
+  };
 }
 
 function inferBusinessObjects(spec) {
@@ -433,6 +730,9 @@ function buildSystemProfile(spec, scan) {
         }
       : null,
     files: {
+      capabilityMap: "capability-map.json",
+      apiMap: "api-map.json",
+      health: "health.json",
       pageMap: "page-map.json",
       domainModel: "domain-model.json",
       actionPlaybook: "web-system-playbook.json",
@@ -668,6 +968,9 @@ function main() {
   const spec = validateSpec(readJson(args.spec));
   const scan = args.scan ? normalizeScan(readJson(args.scan), spec) : null;
   const playbook = buildPlaybook(spec, scan);
+  const capabilityMap = buildCapabilityMap(spec, scan, playbook);
+  const apiMap = buildApiMap(spec, playbook);
+  const health = buildHealth(spec, scan, capabilityMap, playbook);
   const root = path.resolve(args.out || defaultInboxDir());
   const draftDir = path.join(root, spec.id);
   const result = {
@@ -677,6 +980,8 @@ function main() {
     dryRun: args.dryRun,
     actions: spec.actions.length,
     scannedPages: scan ? scan.pages.length : 0,
+    capabilities: capabilityMap.capabilities.length,
+    apiContracts: apiMap.contracts.length,
     allowedDomains: spec.allowedDomains,
   };
 
@@ -686,6 +991,9 @@ function main() {
     fs.writeFileSync(path.join(draftDir, "SKILL.md"), buildSkillMd(spec, scan), "utf8");
     fs.writeFileSync(path.join(draftDir, "skill.manifest.json"), JSON.stringify(buildManifest(spec), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "system-profile.json"), JSON.stringify(buildSystemProfile(spec, scan), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "capability-map.json"), JSON.stringify(capabilityMap, null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "api-map.json"), JSON.stringify(apiMap, null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "health.json"), JSON.stringify(health, null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "page-map.json"), JSON.stringify(buildPageMap(spec, scan), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "domain-model.json"), JSON.stringify(buildDomainModel(spec, scan), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "web-system-playbook.json"), JSON.stringify(playbook, null, 2) + "\n", "utf8");

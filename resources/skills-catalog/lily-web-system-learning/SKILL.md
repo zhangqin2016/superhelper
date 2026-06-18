@@ -5,296 +5,65 @@ description: Use when the user wants Lily to learn a web/OA/ERP/CRM/admin system
 
 # Lily Web System Learning
 
-Use this skill when the user asks to learn or automate a web system: OA, ERP,
-CRM, finance, HR, support portals, admin dashboards, government/vendor portals,
-or any browser-based internal tool.
+Use this skill when the user wants Lily to learn or automate a browser-based system such as OA, ERP, CRM, finance, HR, support portals, admin dashboards, vendor portals, or internal tools.
 
 ## Product Contract
 
-The goal is not "AI clicks a website freely." The goal is:
+The goal is not free-form clicking. The goal is a reviewable operating model:
 
-1. Learn the system within a user-approved scope.
-2. Produce a page/action/API map.
-3. Generate a standard connector playbook with action contracts.
-4. Execute future natural-language requests through API-first actions when a
-   safe contract exists, and fall back to browser automation when the API is
-   stale, missing, or UI-only.
-5. Generate a workspace skill draft that references the playbook contract.
-6. Let the user review and enable the skill before future use.
+1. Learn the system within an approved scope.
+2. Build a page, action, and API map.
+3. Generate a connector playbook with action contracts.
+4. Prefer API-first execution when safe contracts exist; fall back to browser automation for UI-only or stale API paths.
+5. Generate a workspace skill draft that references the playbook.
+6. Let the user review and enable it before future use.
 
-Never store passwords in a skill, prompt, log, or generated file. The user must
-log in through an interactive browser/profile, SSO, or existing session. Treat
-all credentials, cookies, tokens, screenshots, exports, and personal data as
-sensitive.
+Never store passwords in a skill, prompt, log, or generated file. The user should log in through an interactive browser/profile, SSO, or existing session. Treat credentials, cookies, tokens, screenshots, exports, and personal data as sensitive.
 
 ## Learning Modes
 
-- **Read-only scan**: default. Open pages, inspect menus/forms/lists, collect
-  labels and stable selectors. Do not submit forms or mutate data.
-- **Dry-run rehearsal**: fill fields only when safe, but stop before submit.
-- **Authorized execution**: only after the generated skill is reviewed and the
-  specific action has an explicit confirmation policy.
+- Read-only scan: default. Open pages, menus, lists, filters, and detail views. Do not submit forms or mutate data.
+- Dry-run rehearsal: fill fields only when safe, then stop before submit.
+- Authorized execution: perform writes only after the user explicitly approves the action and risk policy.
+- Test-environment learning: when the user confirms the environment is safe, submit/create/update/delete flows may be explored to learn real APIs and validation behavior.
 
-If a Playwright MCP/browser runner is available, prefer it for exploration
-because accessibility snapshots and locators are more stable than screenshots.
-Use visual recognition only as fallback for canvas/low-code pages or unlabeled
-controls.
+## Learning Flow
 
-## Automatic Learning Flow
+1. Confirm base URL, business scope, allowed domains, forbidden areas, and whether the environment is production or test.
+2. Require a domain allowlist. Never follow links outside it.
+3. Ask the user to log in interactively if no active session exists.
+4. Run a read-only dry run before deeper exploration.
+5. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
+6. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
+7. Classify actions by risk: read, export, draft, submit, update, delete, financial, identity/security, and bulk operations.
+8. Build an action map and playbook. Each action needs inputs, preconditions, execution path, confirmation policy, success signal, rollback/recovery, and audit fields.
+9. Generate a workspace skill draft and summary for user review.
+10. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
 
-1. Confirm the base URL, business scope, and forbidden areas.
-2. Require a domain allowlist. Never follow links outside the allowlist.
-3. Ask the user to log in interactively if the session is not already active.
-4. Validate the read-only scanner configuration:
+## Output Artifacts
 
-```bash
-python scripts/scan_web_system.py \
-  --base-url https://oa.example.com \
-  --allowed-domain oa.example.com \
-  --dry-run
-```
+Place generated artifacts in the workspace learning area, using stable English directory names and localized display labels:
 
-5. Explore read-only:
+- system-profile.json: app name, domains, roles, navigation, risks.
+- page-map.json: pages, routes, labels, selectors, forms, tables, actions.
+- api-map.json: observed endpoints, methods, request/response shapes, auth hints, mutation flags.
+- capability-map.json: natural-language capability routing, required parameters, confirmation gates, success signals, stale signals, and recovery policy.
+- action-playbook.json: natural-language intents mapped to safe actions.
+- health.json: learning coverage, API/browser fallback coverage, stale state, and recommended next steps.
+- skill-draft/SKILL.md: workspace skill draft for review and enablement.
+- audit-log.jsonl: learning actions, timestamps, scope, and redacted evidence.
 
-```bash
-python scripts/scan_web_system.py \
-  --base-url https://oa.example.com \
-  --allowed-domain oa.example.com \
-  --max-pages 20 \
-  --out web-system-scan.json
-```
+## Safety Rules
 
-For systems where menus, tabs, details, or pagination are hidden behind
-non-submit controls, run an interactive read-only pass:
+- Production systems default to read-only learning.
+- Mutating actions require explicit user approval and clear risk labels.
+- High-risk actions always need confirmation at execution time: delete, submit, payment, payroll, permission, account, bulk update, external send, and irreversible actions.
+- Do not store raw secrets or cookies in generated artifacts.
+- If the system changes, detect stale selectors/API and trigger re-learning rather than guessing.
 
-```bash
-python scripts/scan_web_system.py \
-  --base-url https://oa.example.com \
-  --allowed-domain oa.example.com \
-  --max-pages 40 \
-  --interactive-readonly \
-  --out web-system-scan.json
-```
+## Execution Rules
 
-Learning modes:
-
-- `read-only` is the default. It learns pages, navigation, fields, forms, and
-  static API contracts without submitting anything.
-- `contract-probe` observes request intent for API-contract discovery, but must
-  abort unsafe network requests and redact payload values.
-- `test-lab` is only for non-production systems. It requires both
-  `--test-environment <name>` and `--allow-mutating-learning`; generated
-  contracts may mark submit/delete/approve flows as learnable in that test
-  environment, but credentials and field values must still be redacted.
-
-Example test environment learning declaration:
-
-```bash
-python scripts/scan_web_system.py \
-  --base-url https://qa-oa.example.com \
-  --allowed-domain qa-oa.example.com \
-  --learning-mode test-lab \
-  --test-environment qa \
-  --allow-mutating-learning \
-  --interactive-readonly \
-  --out web-system-scan.json
-```
-
-The scanner creates a read-only learning archive. It collects page structure only:
-   - menus and top-level navigation
-   - search/list/detail pages
-   - form labels, required fields, buttons
-   - export/download actions
-   - obvious destructive or submit actions
-   - page fingerprints, URL patterns, table headers, iframe hints, and coverage metrics
-   - candidate business objects and action candidates that still require review
-   - form contracts: field labels, required flags, select/radio/checkbox options,
-     submit buttons, and the rule that learning never submits
-   - API contracts from forms: endpoint, method, request field schema, submit
-     buttons, and whether the API still needs a dynamic submit probe
-   - interactive read-only discoveries from safe menu/tab/detail controls when
-     `--interactive-readonly` is enabled
-
-If the browser runtime is missing, stop and report the structured error. Do not
-invent a skill from memory or screenshots alone.
-
-6. Read `web-system-scan.json` and produce a reviewed JSON spec using this shape.
-   The spec must be grounded in the scan archive; do not invent unsupported
-   pages or actions. If the scan coverage is weak, tell the user which areas
-   need another login/session or a deeper interactive pass.
-
-```json
-{
-  "id": "company-oa",
-  "name": "Company OA",
-  "systemName": "Company OA",
-  "baseUrl": "https://oa.example.com",
-  "allowedDomains": ["oa.example.com"],
-  "summary": "Internal OA system for approvals and expense lookups.",
-  "actions": [
-    {
-      "id": "query-expense-status",
-      "name": "Query expense status",
-      "intentExamples": ["查报销进度", "本周报销有没有通过"],
-      "risk": "read",
-      "entry": "Expense > My reimbursements",
-      "steps": [
-        "Open the expense list page.",
-        "Search by date range or keyword.",
-        "Return status, amount, approver, and latest comment."
-      ],
-      "confirmation": "none"
-    }
-  ]
-}
-```
-
-7. Validate and create the connector playbook plus skill draft. Pass the scan
-   archive so the generated skill includes the real page map, domain model, and
-   coverage report:
-
-```bash
-node scripts/create_web_system_skill.cjs \
-  --spec web-system-spec.json \
-  --scan web-system-scan.json
-```
-
-The script writes:
-
-- `web-system-playbook.json`: the standard connector/action/API contract.
-- `web-system-spec.json`: the legacy learning spec for human review.
-- `web-system-scan.json`: the normalized read-only learning archive.
-- `system-profile.json`: the system identity, scope, credential policy, and file index.
-- `page-map.json`: learned pages, entries, anchors, and page/action relationships.
-- `domain-model.json`: inferred business objects, vocabulary, fields, and open questions.
-- `risk-policy.json`: domain allowlist, forbidden learning-time actions, learned form
-  policies, and confirmation rules.
-- `examples.jsonl`: natural language examples mapped to standard `web.*` actions.
-- `change-log.json`: learning and re-learning history for change detection.
-- `SKILL.md` and `skill.manifest.json`: the workspace skill draft.
-- `scripts/execute_web_playbook.cjs`: the local, domain-checked, confirmation-gated
-  execution helper for the generated playbook.
-
-Tell the user they must review and enable the draft in Settings -> Skills before
-it becomes active.
-
-8. Future execution must be plan-driven. The assistant creates an
-   `action-plan.json`, validates it first, then executes only if the risk and
-   confirmation policy allow it:
-
-```bash
-node scripts/execute_web_playbook.cjs \
-  --playbook web-system-playbook.json \
-  --action web.query-expense-status \
-  --plan action-plan.json \
-  --dry-run
-```
-
-For `submit` and `destructive` actions, never add `--confirmed` until the user
-has reviewed the exact action target and final field values.
-
-The executor supports these plan operations:
-
-- Fast API path: `apiRequest`. Prefer this when
-  `web-system-playbook.json` marks the action strategy as `api-first`.
-- Read/state: `goto`, `wait`, `waitForUrl`, `waitForText`,
-  `waitForResponse`, `assertText`, `extract`, `screenshot`.
-- Draft/write controls: `click`, `fill`, `select`, `check`, `uncheck`,
-  `upload`, `press`.
-
-For `apiRequest`, use a learned `contractId` when available. The plan may fill
-query/body values, but must never include credential headers, cookies, tokens,
-passwords, or one-time codes. The executor checks every API target against the
-allowed domains and keeps non-read API calls behind the same confirmation gate
-as browser submit actions.
-
-Use robust locators before brittle CSS: `testId`, `role/name`, `label`,
-`placeholder`, `text`, then `selector`. For `select`, use `label` to find the
-control and `optionLabel` or `value` to pick the option. If execution reports
-`API_STATUS_MISMATCH`, `LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, or
-`WEB_ACTION_FAILED`, treat the learned skill as stale and re-run learning before
-retrying submit/destructive actions.
-
-## Action Rules
-
-Risk levels:
-
-- `read`: query, search, open detail, export non-sensitive data.
-- `prepare`: fill a form but do not submit.
-- `submit`: submit, send, create, upload, comment.
-- `destructive`: delete, approve/reject, pay, change permission, revoke.
-
-Confirmation:
-
-- `none` is allowed only for read-only actions.
-- `review` means show the final fields/result before execution.
-- `explicit` means the user must confirm the exact submit/destructive action.
-
-Generated skills must keep submit/destructive actions behind confirmation. If
-the learned page has CAPTCHA, 2FA, SSO re-auth, or unknown permission prompts,
-pause and hand control back to the user.
-
-## Form Learning Rules
-
-- During learning, inspect form structure only. Never click submit/save/send.
-- Record field labels, input types, required flags, disabled/readonly state, and
-  visible options. Do not record existing field values.
-- Treat POST forms or forms with submit/save/send/approve/delete/pay/upload
-  buttons as mutating candidates.
-- Record static API contracts from forms even when the action is submit/delete:
-  endpoint, method, request field schema, submit buttons, and probe policy.
-- If a SPA form has no static endpoint, mark `needsSubmitProbe: true` instead
-  of guessing an API.
-- Generated playbooks may fill drafts for `prepare` actions, but every submit
-  button remains behind user review or explicit confirmation.
-- For multi-step forms, record each discovered step as a separate page/form
-  contract and require a dry-run validation before real execution.
-- In `test-lab` mode only, generated policies may allow real submit/delete
-  learning for the declared test environment. Production learning must never
-  complete mutating actions.
-
-## API Contract Rules
-
-- Learn business-action APIs, not every request on the page. Prioritize list,
-  search, detail, export, submit, approve, and other endpoints that directly
-  support a user-facing action.
-- Store endpoint, method, risk, field schema, response shape when known,
-  pagination hints, and stale/fallback policy. Never store payload values,
-  credentials, cookies, or tokens.
-- Read-only `GET`/`HEAD` contracts may be used automatically for read actions.
-  Mutating contracts (`POST`, `PUT`, `PATCH`, `DELETE`) require the action's
-  normal review or explicit confirmation.
-- If an API contract returns unexpected status, requires a dynamic token, or no
-  longer matches the learned response shape, fall back to the browser plan and
-  mark the skill as needing re-learning.
-- For production systems, contract probing must avoid completing business
-  submits. Full submit/delete API learning belongs in `test-lab` mode only.
-
-## Interactive Read-only Rules
-
-- Only click controls classified as read-only menu, tab, tree, summary, detail,
-  next/previous, search/filter, or expand actions.
-- Never click a control inside a form during learning.
-- Never click text that looks like submit/save/send/delete/approve/reject/pay/
-  upload/create.
-- Store the discovered page or panel with `source: interactive-readonly` and
-  `sourceInteraction` so the generated skill can explain how it was found.
-- If a click leaves the allowed domains, discard it.
-
-## Failure Handling
-
-- If selectors are unstable, record multiple anchors: label text, role/name,
-  URL pattern, nearby heading, and fallback visual note.
-- If the page changes, the skill should re-run read-only discovery for that
-  action before failing.
-- If a field is ambiguous, ask the user instead of guessing.
-- If the system exposes private data unrelated to the task, stop collecting and
-  narrow the scope.
-
-## Red Lines
-
-- Do not ask the user to paste passwords into chat.
-- Do not write credentials or cookies into generated skills.
-- Do not auto-submit, approve, delete, pay, upload, or notify during learning.
-- Do not browse outside the allowed domains.
-- Do not generate a skill that bypasses the user's future confirmation choices.
+- Prefer learned API actions for speed and reliability when they are verified and safe.
+- Use browser automation when an API is missing, UI-only, or must be visually confirmed.
+- For ambiguous natural-language requests, ask one focused question instead of guessing a destructive action.
+- Always show what will happen before a mutating action and record the result in audit logs.

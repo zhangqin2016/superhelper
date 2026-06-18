@@ -43,6 +43,17 @@ const GITHUB_REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 const GITHUB_REF_RE = /^[\w./-]{1,128}$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 
+function normalizeStringMap(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out = {};
+  for (const [locale, value] of Object.entries(raw)) {
+    if (!locale || typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) out[String(locale)] = trimmed;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 function normalizeRegistryEntry(raw) {
   if (!raw?.id || !raw.latestVersion) {
     return null;
@@ -51,7 +62,9 @@ function normalizeRegistryEntry(raw) {
   const base = {
     id: String(raw.id),
     name: String(raw.name || raw.id),
+    name_i18n: normalizeStringMap(raw.name_i18n),
     description: raw.description ? String(raw.description) : "",
+    description_i18n: normalizeStringMap(raw.description_i18n),
     latestVersion: String(raw.latestVersion),
     minAppVersion: raw.minAppVersion ? String(raw.minAppVersion) : null,
     sizeBytes: typeof raw.sizeBytes === "number" ? raw.sizeBytes : null,
@@ -59,12 +72,14 @@ function normalizeRegistryEntry(raw) {
     channel: raw.channel ? String(raw.channel) : "stable",
     category: raw.category ? String(raw.category) : null,
     categoryLabel: raw.categoryLabel ? String(raw.categoryLabel) : null,
+    categoryLabel_i18n: normalizeStringMap(raw.categoryLabel_i18n),
     publisher: raw.publisher ? String(raw.publisher) : null,
     sourceRepo: raw.sourceRepo ? String(raw.sourceRepo) : null,
     capabilityLayer: raw.capabilityLayer ? String(raw.capabilityLayer) : "core",
     riskLevel: raw.riskLevel ? String(raw.riskLevel) : "low",
     defaultEligible: Boolean(raw.defaultEligible),
     featured: Boolean(raw.featured),
+    changelog_i18n: normalizeStringMap(raw.changelog_i18n),
   };
 
   if (raw.sourceType === "github" || raw.github) {
@@ -117,7 +132,7 @@ function parseRegistryJson(body) {
       updatedAt: parsed.updatedAt || null,
       publisher: parsed.publisher || "",
       registryUrl: parsed.registryUrl || null,
-      categories: Array.isArray(parsed.categories) ? parsed.categories : [],
+      categories: mergeCategoryLists(parsed.categories),
       remoteIndexes: Array.isArray(parsed.remoteIndexes) ? parsed.remoteIndexes : [],
       skills,
     },
@@ -244,6 +259,7 @@ function mergeCategoryLists(...lists) {
       byId.set(String(cat.id), {
         id: String(cat.id),
         label: cat.label ? String(cat.label) : String(cat.id),
+        label_i18n: normalizeStringMap(cat.label_i18n),
       });
     }
   }
@@ -261,6 +277,7 @@ function categoriesForRegistry(registry) {
     byId.set(skill.category, {
       id: skill.category,
       label: skill.categoryLabel || skill.category,
+      label_i18n: skill.categoryLabel_i18n || null,
     });
   }
   const derived = Array.from(byId.values());

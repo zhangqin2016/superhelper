@@ -1,25 +1,32 @@
 ---
 name: lily-speech-generation
-description: 使用阿里云百炼语音合成生成配音、旁白和音频。用户要求生成语音、朗读、旁白、配音或 TTS 时使用。
+description: Generate voice-over, narration, and audio with Alibaba Bailian speech synthesis. Use when the user asks for speech, reading aloud, narration, dubbing, or TTS.
 allowed-tools: Bash(node *)
 ---
 
-# 语音生成
+# Speech generation
 
-用户要求生成语音、朗读、旁白、配音或 TTS 时，用 Bash 执行：
+When the user asks to generate speech, read text aloud, create narration,
+dubbing, or TTS audio, run:
 
 ```bash
-echo '{"text":"要朗读的文本","voice":"longanyang","format":"wav"}' | "{{NODE_BIN}}" "{{SPEECH_GENERATION_SCRIPT}}"
+echo '{"text":"text to read aloud","voice":"longanyang","format":"wav"}' | "{{NODE_BIN}}" "{{SPEECH_GENERATION_SCRIPT}}"
 ```
 
-可选参数：
+Optional parameters:
 
-- `model`：默认读取 `DASHSCOPE_TTS_MODEL`，否则使用 `cosyvoice-v3-flash`
-- `voice`：默认读取 `DASHSCOPE_TTS_VOICE`，否则使用 `longanyang`
-- `format`：`wav`、`mp3`、`pcm`，默认 `wav`
-- `sample_rate`：默认 `24000`
-- `output_dir`：保存目录，默认当前工作区 `generated-assets`
+- `model`: defaults to `DASHSCOPE_TTS_MODEL`, otherwise `cosyvoice-v3-flash`
+- `voice`: defaults to `DASHSCOPE_TTS_VOICE`, otherwise `longanyang`
+- `format`: `wav`, `mp3`, or `pcm`; default `wav`
+- `sample_rate`: default `24000`
+- `output_dir`: save directory, default current workspace `generated-assets`
 
-后台可通过 `DASHSCOPE_TTS_ENDPOINT` 覆盖完整接口地址；否则使用 `DASHSCOPE_TTS_BASE_URL` 拼接官方默认路径。`DASHSCOPE_BASE_URL` 保留给聊天模型接口，不参与语音生成。
+`DASHSCOPE_TTS_ENDPOINT` can override the full endpoint. Otherwise the script
+uses `DASHSCOPE_TTS_BASE_URL` with the official default path. `DASHSCOPE_BASE_URL`
+is reserved for chat model APIs and is not used for speech generation.
 
-脚本会调用阿里云百炼非实时语音合成接口，并把临时音频 URL 下载到本地。回复用户时只说明本地音频文件路径。
+The script calls Alibaba Bailian asynchronous speech synthesis, downloads the
+temporary audio URL to a local file, and reports the local audio path. Reply with
+the local file path and preview when available. Do not return the temporary URL.
+
+Use the user's current language or app language for the surrounding explanation.

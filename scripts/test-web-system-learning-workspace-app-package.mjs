@@ -51,9 +51,13 @@ try {
   assert(rawManifest.folderName === "web-system-learning", "raw manifest has stable English folder name");
   assert(readme.includes("OA、ERP、CRM"), "README explains target systems");
   assert(readme.includes("用户在浏览器里自己完成登录"), "README keeps credentials out of chat");
+  assert(readme.includes("capability-map.json") && readme.includes("api-map.json") && readme.includes("health.json"), "README documents the capability package");
+  assert(readme.includes("API 优先 / 浏览器兜底"), "README explains the fast execution path");
   assert(readme.includes("提交、审批、删除、上传、付款、通知"), "README requires confirmation for high-risk actions");
   assert(agentsMd.includes("Generated skills are drafts until the user reviews and enables them"), "AGENTS enforces review-before-enable");
+  assert(agentsMd.includes("route through the generated capability map first"), "AGENTS enforces capability-first execution");
   assert(checklist.includes("域名白名单"), "checklist requires domain allowlist");
+  assert(checklist.includes("capability-map.json") && checklist.includes("api-map.json") && checklist.includes("health.json"), "checklist requires capability/API/health artifacts");
   assert(playbook.connector === "web-system", "playbook uses web-system connector");
   assert(playbook.actions.some((action) => action.risk === "prepare" && action.confirmation === "review"), "playbook models prepare actions with review");
   assert(playbook.credentialPolicy.chatSecrets === false, "playbook forbids chat secrets");

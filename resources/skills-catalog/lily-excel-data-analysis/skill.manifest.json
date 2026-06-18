@@ -15,5 +15,17 @@
     "network": false,
     "filesystem": "none",
     "subprocess": "none"
+  },
+  "name_i18n": {
+    "en": "Excel Data Analysis",
+    "ar": "تحليل بيانات Excel"
+  },
+  "description_i18n": {
+    "en": "Analyzes spreadsheet data, detects anomalies, cleans data, identifies fields, charts trends, summarizes findings, compares sheets, and produces reviewable Excel/CSV results.",
+    "ar": "يحلل الجداول، يكتشف الشذوذ، ينظف البيانات، يتعرف على الحقول، يرسم الاتجاهات، يلخص النتائج، ويولد ملفات Excel/CSV قابلة للمراجعة."
+  },
+  "categoryLabel_i18n": {
+    "en": "Office Documents",
+    "ar": "مستندات المكتب"
   }
 }

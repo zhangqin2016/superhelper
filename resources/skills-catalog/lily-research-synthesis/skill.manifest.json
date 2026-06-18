@@ -20,5 +20,29 @@
     "title": "研究事实核验",
     "priority": 18,
     "body": "用户要最新信息、排行榜、价格、政策、竞品、资料汇总或带来源事实时使用。必须联网，不要凭记忆回答可变事实；用可替换的搜索后端检索，打开并阅读来源，多来源交叉验证，标注检索日期、来源链接、冲突和不确定点。纯创意方向交给 lily-creative-director；真实资料和事实底座由本技能负责。"
+  },
+  "name_i18n": {
+    "en": "Research Synthesis",
+    "ar": "تلخيص الأبحاث"
+  },
+  "description_i18n": {
+    "en": "Uses search and multiple sources for current facts, rankings, prices, policies, competitor research, source-backed summaries, and verifiable conclusions.",
+    "ar": "يستخدم البحث ومصادر متعددة للحقائق الحديثة والتصنيفات والأسعار والسياسات ودراسة المنافسين والملخصات المدعومة بالمصادر."
+  },
+  "categoryLabel_i18n": {
+    "en": "Research",
+    "ar": "البحث"
+  },
+  "guideMd_i18n": {
+    "en": {
+      "title": "Research Synthesis",
+      "priority": 18,
+      "body": "Uses search and multiple sources for current facts, rankings, prices, policies, competitor research, source-backed summaries, and verifiable conclusions."
+    },
+    "ar": {
+      "title": "تلخيص الأبحاث",
+      "priority": 18,
+      "body": "يستخدم البحث ومصادر متعددة للحقائق الحديثة والتصنيفات والأسعار والسياسات ودراسة المنافسين والملخصات المدعومة بالمصادر."
+    }
   }
 }

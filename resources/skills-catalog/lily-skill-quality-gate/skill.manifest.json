@@ -20,5 +20,29 @@
     "title": "技能质量评测",
     "priority": 3,
     "body": "用于发布前评审技能质量。按能力增益、触发边界、输入输出、执行步骤、验证方式、失败自救、安全可控、可观测性和维护性评分，并输出通过、条件通过、退回修改或拒绝发布。"
+  },
+  "name_i18n": {
+    "en": "Skill Quality Gate",
+    "ar": "بوابة جودة المهارات"
+  },
+  "description_i18n": {
+    "en": "Reviews whether a Lily skill truly improves platform capability before release, checking triggers, IO, execution steps, verification, recovery, safety, observability, and maintainability.",
+    "ar": "يراجع ما إذا كانت المهارة تضيف قدرة حقيقية قبل الإصدار عبر فحص المشغلات والمدخلات والمخرجات والتنفيذ والتحقق والسلامة والصيانة."
+  },
+  "categoryLabel_i18n": {
+    "en": "Quality Review",
+    "ar": "مراجعة الجودة"
+  },
+  "guideMd_i18n": {
+    "en": {
+      "title": "Skill Quality Gate",
+      "priority": 3,
+      "body": "Reviews whether a Lily skill truly improves platform capability before release, checking triggers, IO, execution steps, verification, recovery, safety, observability, and maintainability."
+    },
+    "ar": {
+      "title": "بوابة جودة المهارات",
+      "priority": 3,
+      "body": "يراجع ما إذا كانت المهارة تضيف قدرة حقيقية قبل الإصدار عبر فحص المشغلات والمدخلات والمخرجات والتنفيذ والتحقق والسلامة والصيانة."
+    }
   }
 }

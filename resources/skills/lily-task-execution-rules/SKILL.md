@@ -3,8 +3,10 @@ name: lily-task-execution-rules
 description: Platform mandatory task execution rules for every Lily Workbench session. Not user-toggleable.
 ---
 
-# 任务执行规则
+# Task execution rules
 
-本技能由平台强制注入每个会话的 AGENT.md，用户无法在设置或本对话技能中关闭。
+This skill is injected by the platform into every session's AGENT.md. Users
+cannot disable it from Settings or per-chat skill selection.
 
-它只定义任务推进、状态反馈、完成判定和失败处理方式，不提供具体业务工具。
+It defines task progress, status feedback, completion checks, and failure
+handling. It does not provide domain-specific tools.

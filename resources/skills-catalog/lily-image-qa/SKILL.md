@@ -3,49 +3,26 @@ name: lily-image-qa
 description: Use after image generation, image editing, visual recognition, or visual asset delivery to inspect whether the result is acceptable. Checks subject completeness, clarity, hands/faces/text/product edges, composition, artifacting, use-case fit, and whether the image should be retried or revised.
 ---
 
-# Lily 图片验收
+# Lily Image QA
 
-本技能用于图片生成、编辑、识别或视觉资产交付后的质量验收。目标是判断“能不能交付”，不是替代创意发想。
+Use this skill after visual generation, editing, recognition, or asset delivery. The goal is to decide whether the image is fit for the intended use.
 
-## 何时使用
+## When to Use
 
-- 生成或编辑了头像、产品图、海报、封面、插画、PPT 配图、角色图、视频关键帧等图片后。
-- 用户让你检查图片是否清晰、是否像、有没有瑕疵、能不能用、是否需要重做。
-- 视觉识别后需要确认图片内容、文字、产品、人物或构图是否满足用途。
+- After generating or editing avatars, product images, posters, covers, illustrations, PPT images, characters, or video keyframes.
+- When the user asks whether an image is clear, accurate, usable, flawed, or should be redone.
+- After visual recognition when content, text, product details, people, or composition must be confirmed.
 
-## 何时不用
+## Review Checklist
 
-- 还没有图片可看，只是在写创意提示；这时用 `lily-prompt-enhancer` 或 `lily-creative-director`。
-- 用户只要事实检索或文字总结。
-- 图片质量无关紧要，且用户明确要求跳过验收。
+- Subject: main object/person/product is complete and recognizable.
+- Text: visible text is readable and not garbled.
+- People: faces, eyes, hands, pose, clothing, and scale are plausible.
+- Products: edges, logos, labels, materials, and proportions are intact.
+- Composition: crop, balance, background, lighting, and focus match the use case.
+- Artifacts: no obvious blur, duplicated parts, warped shapes, extra limbs, or broken details.
+- Use-case fit: avatar, poster, slide, product shot, cover, or thumbnail requirements are met.
 
-## 验收流程
+## Output
 
-1. **实际查看图片**：不要凭文件名或生成提示判断。打开图片或使用可用视觉能力检查。
-2. **确认用途**：头像、商品展示、海报、PPT、封面、社媒、证件照、角色设定等用途不同，验收标准不同。
-3. **检查主体完整**：主体是否被裁断、遮挡、变形；人物是否缺身体关键部位；产品是否完整露出。
-4. **检查清晰度**：焦点是否落在主体，是否过糊、过暗、噪点重、压缩痕迹明显。
-5. **检查高风险细节**：手、脸、眼睛、牙齿、文字、Logo、产品边缘、透明/反光材质、几何结构是否异常。
-6. **检查构图和用途适配**：留白、比例、背景干扰、视觉重心、可裁切性、是否适合后续排字或展示。
-7. **决定交付或重试**：能交付就说明通过；有问题要指出具体位置和重试方向，不要只说“不好”。
-
-## 质量红线
-
-- 人脸明显崩坏、手指/肢体畸形、主体缺失或产品边缘糊成一团，不可交付。
-- 用户要求文字可读但图中文字乱码、错字、变形，不可交付；建议后期排字或重生成无文字底图。
-- 产品图用于售卖/展示时，材质、轮廓、比例明显不可信，不可交付。
-- 海报/封面/PPT 图遮挡主信息区、没有排字空间或比例不匹配，不可交付。
-- 没有实际查看图片就声称“看起来没问题”，不可交付。
-
-## 输出要求
-
-- 给出验收结论：`通过`、`可用但建议微调`、`需要重试`。
-- 简短列出问题位置和影响，例如“右手手指异常，会影响头像可信度”。
-- 给出下一步：保留、局部编辑、重新生成、改提示词、后期排字或换比例。
-- 如果重试，提供针对性修改点，而不是完全换风格。
-
-## 和 lily-creative-director 的关系
-
-- `lily-creative-director` 定义目标画面和审美方向。
-- 本技能在图片产出后做验收，判断结果是否达到目标。
-- 返工时，把本技能发现的问题反馈给 `lily-creative-director` 或 `lily-prompt-enhancer`，让下一轮提示更具体。
+State one of: pass, usable with minor caveat, revise, or regenerate. Include the specific issue and the shortest corrective prompt or edit instruction.

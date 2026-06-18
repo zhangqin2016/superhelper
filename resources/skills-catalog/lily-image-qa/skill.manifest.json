@@ -20,5 +20,29 @@
     "title": "图片验收",
     "priority": 14,
     "body": "图片生成、编辑、识别或视觉资产交付后使用。必须实际查看图片，检查主体完整、清晰度、手脸/文字/Logo/产品边缘、构图和用途适配。输出通过、可用但建议微调或需要重试，并给出具体返工方向。lily-creative-director 负责创意方向，本技能负责产后验收。"
+  },
+  "name_i18n": {
+    "en": "Image Quality Review",
+    "ar": "مراجعة جودة الصور"
+  },
+  "description_i18n": {
+    "en": "Reviews generated or edited visual assets for subject completeness, clarity, hands/faces/text/product edges, composition, use-case fit, and whether a retry is needed.",
+    "ar": "يراجع الصور المولدة أو المعدلة من حيث اكتمال الموضوع والوضوح والأيدي والوجوه والنصوص وحواف المنتج والتكوين والحاجة لإعادة المحاولة."
+  },
+  "categoryLabel_i18n": {
+    "en": "Media & Creative",
+    "ar": "الوسائط والإبداع"
+  },
+  "guideMd_i18n": {
+    "en": {
+      "title": "Image Quality Review",
+      "priority": 14,
+      "body": "Reviews generated or edited visual assets for subject completeness, clarity, hands/faces/text/product edges, composition, use-case fit, and whether a retry is needed."
+    },
+    "ar": {
+      "title": "مراجعة جودة الصور",
+      "priority": 14,
+      "body": "يراجع الصور المولدة أو المعدلة من حيث اكتمال الموضوع والوضوح والأيدي والوجوه والنصوص وحواف المنتج والتكوين والحاجة لإعادة المحاولة."
+    }
   }
 }

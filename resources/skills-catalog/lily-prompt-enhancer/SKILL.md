@@ -1,61 +1,61 @@
 ---
 name: lily-prompt-enhancer
-description: Use when the user gives a short creative request and needs it expanded into a high-quality prompt or brief for images, avatars, product shots, posters, covers, Chinese-style characters, PPT illustrations, video storyboards, or visual generation. Avoid mechanical translation; enrich intent, subject, composition, style, lighting, constraints, aspect ratio, and iteration notes.
+description: Use when the user gives a short creative request and needs it expanded into a high-quality prompt or brief for images, avatars, product shots, posters, covers, cultural-style characters, presentation illustrations, video storyboards, or visual generation. Avoid mechanical translation; enrich intent, subject, composition, style, lighting, constraints, aspect ratio, and iteration notes.
 ---
 
-# Lily 创意提示增强
+# Lily Prompt Enhancer
 
-本技能把一句很短的创意需求扩成可执行的高质量提示词或创意 brief。重点是补全表达，不是机械翻译。
+Use this skill to expand a short creative request into an executable high-quality prompt or creative brief. Preserve the user's intent; add missing details that improve generation quality.
 
-## 何时使用
+## When To Use
 
-- 用户说“帮我优化提示词 / 扩写 prompt / 生成图片提示词 / 来个视频分镜 / 做个头像提示”。
-- 用户只有简短方向：头像、产品图、海报、封面、国风角色、PPT 配图、视频镜头、社媒图、插画等。
-- 需要把中文需求变成适合图像/视频模型的结构化提示，但仍保留用户原意。
+- The user asks to improve, expand, or write a prompt for images, videos, avatars, posters, covers, storyboards, or visual generation.
+- The user provides only a short direction, such as an avatar, product image, poster, cover, character, presentation artwork, social image, or illustration.
+- A creative request needs subject, composition, style, lighting, constraints, aspect ratio, or iteration notes before generation.
 
-## 何时不用
+## When Not To Use
 
-- 用户已经要求直接生成图片，且提示足够明确；可交给生成技能，生成后用 `lily-image-qa`。
-- 用户需要真实资料、趋势、竞品或政策支撑；先用 `lily-research-synthesis`。
-- 用户要完整创意策略、品牌调性或多轮审美判断；优先用 `lily-creative-director`，本技能只负责提示文本增强。
+- The user already asks to generate an image and the prompt is specific enough; use the generation skill and then quality-check the result.
+- The user needs real-world facts, trends, competitors, or policy support; research first.
+- The user needs a full creative strategy or repeated taste decisions; use `lily-creative-director` first, then use this skill to turn the direction into prompt text.
 
-## 流程
+## Process
 
-1. **识别用途**：头像、产品图、海报、封面、国风角色、PPT 配图、视频分镜等，先确定输出场景。
-2. **保留用户核心意图**：不要擅自改主题、品牌、人物身份、产品类型或画面目标。
-3. **补全画面要素**：主体、动作、环境、视角、构图、材质、服饰、情绪、色彩、光线、风格和清晰度。
-4. **补全规格**：比例、镜头景别、是否留白、是否适合排字、是否需要透明背景或纯色背景。
-5. **加入负面约束**：避免水印、乱码文字、畸形手脸、主体裁切、低清晰度、过度塑料感、产品边缘糊。
-6. **按模型弱点调整**：海报文字建议后期排版；产品图强调边缘和真实材质；人物图强调自然手脸。
-7. **给出可迭代版本**：必要时提供“稳妥版 / 风格强化版 / 视频版”，但不要堆太多无关词。
+1. **Identify the use case**: avatar, product shot, poster, cover, character, presentation artwork, video storyboard, etc.
+2. **Preserve the core intent**: do not change the subject, brand, identity, product type, or visual goal without permission.
+3. **Add visual details**: subject, action, environment, viewpoint, composition, material, clothing, emotion, color, lighting, style, and clarity.
+4. **Add output specs**: aspect ratio, shot size, negative space, text-safe area, transparent background, or plain background.
+5. **Add negative constraints**: no watermark, no garbled text, no distorted hands/faces, no cropped subject, no low clarity, no fake product edges.
+6. **Adapt to model weaknesses**: exact poster text should usually be handled in layout; product shots need crisp edges and believable material; people need natural hands and faces.
+7. **Provide variants only when useful**: for example safe version, stronger style version, or video version. Do not dump many unrelated variants.
 
-## 类型要点
+## Type Notes
 
-- **头像**：脸部清晰、身份感、表情、服装、背景简洁、1:1、安全裁切。
-- **产品图**：真实材质、清晰边缘、棚拍光、干净背景、卖点可见、不要遮挡产品。
-- **海报/封面**：主视觉强、标题区域留白、信息层级清楚；复杂文字交给后期排版。
-- **国风角色**：时代感、服饰纹样、气质、场景、镜头、色调；避免符号堆砌。
-- **PPT 配图**：干净、可做背景、不抢正文、构图留白、风格与商务/教育/汇报场景匹配。
-- **视频分镜**：每镜头写主体动作、镜头运动、时长、景别、节奏、转场和画面连续性。
+- **Avatar**: clear face, identity signal, expression, clothing, clean background, 1:1 ratio, safe crop.
+- **Product shot**: realistic material, crisp edges, studio lighting, clean background, visible selling point, no occlusion.
+- **Poster / cover**: strong key visual, title-safe area, clear hierarchy; use post-production layout when complex text must be exact.
+- **Character art**: era, clothing, temperament, scene, camera angle, color palette, and consistent identity.
+- **Presentation artwork**: clean, useful as a background, does not fight the text, composition leaves room for content.
+- **Video storyboard**: each shot should include subject action, camera motion, duration, shot size, rhythm, transition, and continuity.
 
-## 质量红线
+## Quality Bar
 
-- 只把中文机械翻译成英文，不算完成。
-- 提示词堆砌流行形容词但没有主体、构图和用途，不算完成。
-- 海报类提示要求模型直接生成大量精确文字，不算完成。
-- 产品图忽略真实材质、边缘和展示用途，不算完成。
-- 视频分镜没有镜头运动、时长或动作变化，不算完成。
+- Do not merely translate a short request.
+- Do not stack fashionable adjectives without subject, composition, and use case.
+- Do not ask an image model to render large amounts of exact text.
+- Do not ignore realism, product edges, or display use cases for product images.
+- Do not produce a video storyboard without camera motion, duration, or changing action.
 
-## 输出要求
+## Output Requirements
 
-- 先给增强后的主提示词；需要时再给负面提示词。
-- 保留用户语言；如果给英文提示，要附中文说明或结构解释。
-- 明确比例和用途，例如“1:1 头像”“16:9 PPT 横版配图”“9:16 短视频镜头”。
-- 需要生成多张时，保持主体一致，只改变角度、构图或细节。
-- 如果用户需求太模糊，直接给一个合理默认版本，并标出可调参数。
+- Provide the enhanced main prompt first; include negative prompt only when useful.
+- Use the user's current language for explanations unless the user asks for another language.
+- Clearly state ratio and use case, such as 1:1 avatar, 16:9 presentation artwork, or 9:16 short video.
+- For multiple outputs, keep the subject consistent and vary only angle, composition, or selected details.
+- If the request is vague, provide a reasonable default version and mark the adjustable parameters.
 
-## 和 lily-creative-director 的关系
+## Relationship To Lily Creative Director
 
-- `lily-creative-director` 是上层创意判断：定方向、审美、媒介策略和迭代取舍。
-- 本技能是提示文本执行层：把方向扩写成图像/视频模型更容易执行的 prompt。
-- 当用户要“更高级、更好看、换风格”时，先用 `lily-creative-director` 判断方向，再用本技能落成提示词。
+- `lily-creative-director` decides direction, taste, medium strategy, and iteration tradeoffs.
+- This skill turns that direction into executable prompt text.
+- When the user asks for a higher-end look, a different style, or stronger taste judgment, use `lily-creative-director` first.

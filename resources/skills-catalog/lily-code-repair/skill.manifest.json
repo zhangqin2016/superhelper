@@ -15,5 +15,17 @@
     "network": false,
     "filesystem": "none",
     "subprocess": "none"
+  },
+  "name_i18n": {
+    "en": "Code Repair",
+    "ar": "إصلاح الكود"
+  },
+  "description_i18n": {
+    "en": "Use when code, webpages, apps, tests, builds, deployments, or automations fail. Reproduce first, find root cause, apply the smallest fix, and rerun verification.",
+    "ar": "يُستخدم عند فشل الكود أو الصفحات أو الاختبارات أو البناء أو النشر أو الأتمتة: إعادة إنتاج، تحديد السبب، إصلاح محدود، ثم تحقق."
+  },
+  "categoryLabel_i18n": {
+    "en": "Development",
+    "ar": "التطوير"
   }
 }

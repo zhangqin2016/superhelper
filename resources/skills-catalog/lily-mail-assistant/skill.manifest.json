@@ -20,5 +20,29 @@
     "title": "邮件助手",
     "priority": 23,
     "body": "用户要求搜索、总结、分析、草拟或发送邮件时使用。邮件连接器必须通过 Gmail OAuth、Outlook/Microsoft Graph OAuth 或 IMAP/SMTP app password/token 配置；不要让用户把密码、Cookie、OAuth code 或 API token 粘贴到聊天里。默认只读或生成草稿；发送、删除、归档、批量移动等动作必须显式确认。"
+  },
+  "name_i18n": {
+    "en": "Mail Assistant",
+    "ar": "مساعد البريد"
+  },
+  "description_i18n": {
+    "en": "Connects Gmail, Outlook/Microsoft 365, or IMAP/SMTP for email search, summaries, attachment lookup, reply drafts, and confirmed sending.",
+    "ar": "يتصل بـ Gmail وOutlook/Microsoft 365 أو IMAP/SMTP للبحث في البريد وتلخيصه وفحص المرفقات وصياغة الردود والإرسال بعد التأكيد."
+  },
+  "categoryLabel_i18n": {
+    "en": "Automation",
+    "ar": "الأتمتة"
+  },
+  "guideMd_i18n": {
+    "en": {
+      "title": "Mail Assistant",
+      "priority": 23,
+      "body": "Connects Gmail, Outlook/Microsoft 365, or IMAP/SMTP for email search, summaries, attachment lookup, reply drafts, and confirmed sending."
+    },
+    "ar": {
+      "title": "مساعد البريد",
+      "priority": 23,
+      "body": "يتصل بـ Gmail وOutlook/Microsoft 365 أو IMAP/SMTP للبحث في البريد وتلخيصه وفحص المرفقات وصياغة الردود والإرسال بعد التأكيد."
+    }
   }
 }

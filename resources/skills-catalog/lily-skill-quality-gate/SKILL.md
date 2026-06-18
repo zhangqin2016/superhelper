@@ -3,62 +3,31 @@ name: lily-skill-quality-gate
 description: Use when a Lily skill is being proposed, reviewed, prepared for release, or compared against existing skills, especially before publishing from the admin console or accepting a developer-submitted skill.
 ---
 
-# Lily 技能质量评测
+# Lily Skill Quality Gate
 
-本技能用于判断一个技能是否真的提升 Lily 平台能力，而不只是增加一段提示词。结论必须可执行：通过、带条件通过、退回修改，或拒绝发布。
+Use this skill to decide whether a skill truly improves Lily's platform capability rather than adding another prompt file.
 
-## 何时使用
+## When to Use
 
-- 发布前评审新技能、技能升级、技能目录入库或管理后台提交。
-- 比较多个相似技能，判断是否合并、替换或下架。
-- 需要确认技能触发边界、产出质量、安全性、可观测性和可维护性。
+- Reviewing a new skill or skill update before publishing.
+- Comparing similar skills for merge, replacement, or removal.
+- Checking trigger boundaries, output quality, safety, observability, and maintainability.
 
-## 何时不用
+## Required Input
 
-- 普通代码审查、UI 视觉审查、文档内容润色。
-- 用户只是要运行某个技能，而不是评测技能本身。
-- 机械字段校验可由脚本完成时，不用本技能代替自动校验。
+Skill directory or SKILL.md, manifest, target user and use cases, typical trigger requests, expected output, risk boundaries, and required permissions. If key information is missing, mark the review as insufficient information instead of guessing.
 
-## 输入与输出
+## Output Format
 
-输入至少包含：技能目录或 `SKILL.md`、manifest、目标用户、典型触发请求、预期产物、风险边界。缺少关键信息时，先标为“信息不足”，不要猜测通过。
+- Decision: pass, conditional pass, revise, or reject.
+- Scores: 0-5 per dimension, total score, blockers.
+- Evidence: concrete references to the skill text or missing parts.
+- Required changes: minimum release-blocking fixes.
+- Suggested changes: follow-up improvements.
+- Regression examples: at least three should-trigger, two should-not-trigger, and one mixed-boundary example.
 
-输出使用固定结构：
-- **结论**：通过 / 条件通过 / 退回修改 / 拒绝发布。
-- **评分**：各维度 0-5 分，给总分和阻断项。
-- **主要依据**：引用技能中的具体条款或缺口。
-- **必须修改**：发布前必须完成的最小修改。
-- **建议修改**：可后续优化的问题。
-- **回归样例**：至少 3 条应触发、2 条不应触发、1 条混合边界样例。
+## Scoring Dimensions
 
-## 评分维度
+Capability gain, trigger boundary, input/output clarity, execution specificity, verification path, failure recovery, safety and least privilege, observability, and maintainability.
 
-| 维度 | 5 分标准 |
-| --- | --- |
-| 能力增益 | 明确解决现有技能做不稳的问题，并有可观察的产物改进。 |
-| 触发边界 | 何时使用、何时不用、混合任务边界清楚，不抢占无关任务。 |
-| 输入输出 | 说明需要哪些输入、产出什么格式、缺信息时如何处理。 |
-| 执行步骤 | 步骤足够具体，可被不同 agent 稳定复现。 |
-| 验证方式 | 定义可运行、可检查或可人工验收的验证路径。 |
-| 失败自救 | 说明识别失败、工具失败、信息不足、质量不达标时的下一步。 |
-| 安全可控 | 权限最小化，不诱导越权、联网、破坏文件或泄露敏感数据。 |
-| 可观测性 | 要求记录证据、输出判定理由、暴露跳过项和残余风险。 |
-| 维护性 | 文档精炼，不复制大段通用知识，不和现有技能职责冲突。 |
-
-阻断项：权限明显过宽、触发描述会误召回、缺少验收标准、要求执行危险操作、承诺无法验证的效果。
-
-## 工作流
-
-1. 读取技能正文和 manifest，只评审当前版本，不脑补隐藏实现。
-2. 明确技能要改善的能力缺口：路由、生成、验证、工具使用、质量门禁或故障恢复。
-3. 用评分维度逐项打分；低于 3 分必须说明具体证据。
-4. 构造正例、反例和混合样例，检查触发边界是否会抢错任务。
-5. 检查权限、网络、文件和子进程需求是否与技能产物匹配。
-6. 给出最小可发布修改；无法验证时明确列为残余风险。
-
-## 验收标准
-
-- 总分 36/45 以上且无阻断项，可通过。
-- 总分 30-35 且阻断项已转为明确修改项，可条件通过。
-- 低于 30、边界不清、没有验证路径或权限不合理，退回修改。
-- 存在危险授权、误导性承诺、明显数据泄露风险，拒绝发布。
+Blockers include broad unsafe permissions, vague triggers, no verification path, dangerous operations, or unverifiable promises.

@@ -3,43 +3,34 @@ name: lily-coding-core
 description: Use when the user wants to build, modify, debug, or verify code, webpages, small tools, scripts, automations, local apps, UI prototypes, or data-processing programs. Wraps planning, systematic debugging, TDD, completion verification, frontend design, and browser QA into one Lily workflow.
 ---
 
-# Lily 编程创作核心
+# Lily Coding Core
 
-本技能把经过验证的工程实践包装成 Lily 的普通用户编程工作流。目标不是让用户理解工程流程，而是让自然语言提出的网页、小工具、脚本、自动化、App 原型和代码修改更容易一次跑通。
+This is Lily's baseline engineering discipline for ordinary-language coding work. It makes pages, tools, scripts, automations, local app prototypes, and code changes more likely to work on the first useful pass.
 
-## 何时使用
+## When to Use
 
-- 用户要“做一个网页 / 小工具 / 脚本 / 自动化 / App 原型 / 数据处理程序”。
-- 用户要修改、调试、解释、重构或验证代码。
-- 用户提到页面不好看、交互不顺、按钮/表单/布局有问题。
-- 用户说“不行、报错、没反应、打不开、部署失败、测试失败”。
+- Building or changing a webpage, component, script, automation, tool, local app prototype, or data-processing program.
+- Debugging, explaining, refactoring, or verifying code.
+- Improving a page that looks wrong or has weak interaction.
+- Handling user reports such as failed, broken, blank, cannot open, test failed, build failed, or deploy failed.
 
-不要用于纯 Word/PDF/PPT/Excel 交付，除非任务同时包含代码或网页。
+Do not use for pure Word/PDF/PPT/Excel tasks unless code or a web artifact is also involved.
 
-## 工作流
+## Workflow
 
-1. **识别交付物**：确认是脚本、网页、组件、工具、服务、配置修复，还是数据处理程序。
-2. **只问阻塞问题**：缺失信息会导致方向明显错误时才问；能合理小步推进就先推进。
-3. **先读现有结构**：改现有项目时先看入口、调用方、测试和既有风格。
-4. **最小可运行改动**：优先让核心路径跑通，不顺手重构，不引入多余框架。
-5. **内置审美约束**：有 UI 时必须考虑信息层级、状态、空态、错误、响应式、文字不溢出、交互可预期。
-6. **验证优先**：能启动就启动，能跑测试就跑测试；网页/应用要用浏览器或截图验证。
-7. **失败自动修一轮**：报错时先定位根因，再修；同一错误不要无限重试。
-8. **交付说人话**：说明改了什么、怎么验证、文件位置或运行方式；没验证必须明说。
+1. Identify the deliverable: script, page, component, tool, service, config fix, or data processor.
+2. Ask only blocking questions. If a safe small step is possible, proceed.
+3. Read current structure, entrypoints, callers, tests, and style before writing.
+4. Make the smallest runnable change. Avoid unrelated refactors and new frameworks.
+5. Apply UI quality rules when a visible interface is involved: hierarchy, states, empty/error cases, responsive layout, and text fit.
+6. Verify with a command, test, build, or browser check whenever possible.
+7. If verification fails, find root cause before patching.
+8. Explain changes, verification, paths, and any unverified risk in plain language.
 
-## 质量门槛
+## Quality Bar
 
-- 代码能运行或说明为什么此环境无法运行。
-- 测试、lint、构建或最小复现至少跑一项；没有可用验证时给可执行检查步骤。
-- UI 不能文字重叠、按钮挤压、移动端明显坏掉。
-- 生成文件、图片或产物必须给绝对路径或可打开位置。
-- 用户要的是普通可用结果时，不输出复杂工程术语堆叠。
-
-## 吸收的巨人肩膀
-
-- 计划：复杂任务先形成可执行步骤，但不要让用户承担过多决策。
-- 系统化调试：先找根因，再改代码。
-- 测试驱动：业务逻辑和 bug 修复要有测试或明确验证。
-- 完成前验证：没有证据不要声称完成。
-- 前端设计：界面要有层级、状态和响应式，不要模板感。
-- 浏览器 QA：能实际打开的网页必须实际检查。
+- The result runs, or the exact reason it cannot run in this environment is stated.
+- At least one meaningful verification is run when available.
+- UI must not overlap, overflow, or visibly break at normal sizes.
+- Generated artifacts must have absolute paths or clear open/run instructions.
+- Avoid excessive engineering vocabulary when the user only needs the result.

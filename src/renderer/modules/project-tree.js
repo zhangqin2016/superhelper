@@ -435,10 +435,13 @@ async function shareWorkspacePack(project) {
       : "";
     const warns = info.preview.secretWarnings || [];
     const secretWarn = warns.length
-      ? `\n\n⚠️ 检测到 ${warns.length} 个文件可能含密钥(如 ${warns
-          .slice(0, 5)
-          .map((w) => w.relPath)
-          .join("、")}),分享前请确认是否需要移除。`
+      ? `\n\n${t("pack.secretWarning", {
+          count: warns.length,
+          files: warns
+            .slice(0, 5)
+            .map((w) => w.relPath)
+            .join(", "),
+        })}`
       : "";
     const confirmed = await confirmDialog({
       title: t("pack.exportConfirmTitle"),

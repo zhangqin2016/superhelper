@@ -882,5 +882,6 @@
   "tool.media.videoAlt": "Generated video {index}",
   "tool.media.audioAlt": "Generated audio {index}",
   "tool.media.fileAlt": "Generated file {index}",
-  "tool.media.savedTo": "Saved to"
+  "tool.media.savedTo": "Saved to",
+  "pack.secretWarning": "⚠️ {count} file(s) may contain secrets, such as {files}. Check whether they should be removed before sharing."
 }

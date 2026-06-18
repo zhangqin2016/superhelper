@@ -882,5 +882,6 @@
   "tool.media.videoAlt": "生成视频 {index}",
   "tool.media.audioAlt": "生成音频 {index}",
   "tool.media.fileAlt": "生成文件 {index}",
-  "tool.media.savedTo": "已保存到"
+  "tool.media.savedTo": "已保存到",
+  "pack.secretWarning": "⚠️ 检测到 {count} 个文件可能含密钥（如 {files}），分享前请确认是否需要移除。"
 }

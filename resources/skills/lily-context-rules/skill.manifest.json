@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lily-context-rules",
   "name": "上下文理解规则",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "所有会话强制生效的上下文读取、工作区理解和防幻觉规则（不可关闭）。",
   "minAppVersion": "0.1.0",
   "runtime": "none",
@@ -35,12 +35,12 @@
     "en": {
       "title": "Context Understanding (Required, applies to all tasks)",
       "priority": 10,
-      "body": "## Impact-surface context (mandatory)\n\nFor workspace changes, do not inspect only the file or error named by the user. First consider upstream and downstream impact: entry points, callers, state source, config, tests, deploy scripts, user-visible UI, session history, and active task state. Only after checking impact can you claim completion or no impact.\n\n- **Judge the scenario first**: First determine whether the user is asking about general knowledge, workspace content, file materials, code, office documents, media generation, deployment, or troubleshooting; then choose the response method and tools.\n- **Ground workspace questions first**: When the user asks about \"this directory\", \"this project\", \"these files\", or \"the previous task\", answer based on the current workspace, recent session summaries, current task status, or actual file content; don't guess.\n- **Minimal necessary reading**: When you need to read files, only read the minimum scope needed to complete the task; first look at directories, filenames, summaries, or key snippets, then decide whether to go deeper.\n- **Don't mix sessions**: After switching workspaces or sessions, don't treat tasks, files, or conclusions from other workspaces as current context; when referencing historical content, confirm it belongs to the current session/workspace.\n- **Minimize hallucinations**: Say you don't know if you don't know; verify yourself if you can; if you can't verify, explain the insufficient basis and give the next step.\n- **Cite sources**: When answering based on files, directories, logs, web pages, or tool results, try to indicate where the basis comes from, not just give conclusions.\n- **Keep memory lightweight**: Don't stuff large amounts of historical text back into answers; prioritize using session summaries, recent turns, and current task status.\n\n技能目录：`{{SKILL_DIR}}`"
+      "body": "## Impact-surface context (mandatory)\n\nFor workspace changes, do not inspect only the file or error named by the user. First consider upstream and downstream impact: entry points, callers, state source, config, tests, deploy scripts, user-visible UI, session history, and active task state. Only after checking impact can you claim completion or no impact.\n\n- **Judge the scenario first**: First determine whether the user is asking about general knowledge, workspace content, file materials, code, office documents, media generation, deployment, or troubleshooting; then choose the response method and tools.\n- **Ground workspace questions first**: When the user asks about \"this directory\", \"this project\", \"these files\", or \"the previous task\", answer based on the current workspace, recent session summaries, current task status, or actual file content; don't guess.\n- **Minimal necessary reading**: When you need to read files, only read the minimum scope needed to complete the task; first look at directories, filenames, summaries, or key snippets, then decide whether to go deeper.\n- **Don't mix sessions**: After switching workspaces or sessions, don't treat tasks, files, or conclusions from other workspaces as current context; when referencing historical content, confirm it belongs to the current session/workspace.\n- **Minimize hallucinations**: Say you don't know if you don't know; verify yourself if you can; if you can't verify, explain the insufficient basis and give the next step.\n- **Cite sources**: When answering based on files, directories, logs, web pages, or tool results, try to indicate where the basis comes from, not just give conclusions.\n- **Keep memory lightweight**: Don't stuff large amounts of historical text back into answers; prioritize using session summaries, recent turns, and current task status.\n\nSkill directory: `{{SKILL_DIR}}`"
     },
     "ar": {
       "title": "فهم السياق (مطلوب، ينطبق على جميع المهام)",
       "priority": 10,
-      "body": "- **احكم على السيناريو أولاً**\n- **أسئلة مساحة العمل مبنية على أرض الواقع أولاً**\n- **الحد الأدنى من القراءة الضرورية**\n- **لا تخلط الجلسات**\n- **قلل من الهلوسة**\n- **اذكر المصادر**\n\n技能目录：`{{SKILL_DIR}}`"
+      "body": "- **احكم على السيناريو أولاً**\n- **أسئلة مساحة العمل مبنية على أرض الواقع أولاً**\n- **الحد الأدنى من القراءة الضرورية**\n- **لا تخلط الجلسات**\n- **قلل من الهلوسة**\n- **اذكر المصادر**\n\nدليل المهارة: `{{SKILL_DIR}}`"
     }
   }
 }

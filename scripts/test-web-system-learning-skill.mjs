@@ -109,6 +109,26 @@ fs.writeFileSync(
           buttons: [{ text: "Search", riskHint: "read" }],
           inputs: [{ label: "Keyword", type: "search", name: "q", required: false }],
           tables: [],
+          networkContracts: [
+            {
+              id: "approval-search-api",
+              source: "network-observed",
+              endpoint: "https://oa.example.com/api/approvals/search",
+              method: "GET",
+              contentType: "empty",
+              risk: "read",
+              status: 200,
+              requestFields: [{ name: "keyword", type: "string", required: false, sensitive: false }],
+              responseShape: { type: "json", shape: { items: [{ title: "<string>", status: "<string>" }] } },
+              observedUrlPattern: "https://oa.example.com/api/approvals/search",
+              learningMode: "read-only",
+              probePolicy: {
+                capturedValues: false,
+                credentialHeadersStored: false,
+                sameDomainOnly: true,
+              },
+            },
+          ],
           actionCandidates: [{ kind: "button", label: "Search", riskHint: "read", sourceUrl: "https://oa.example.com/home" }],
           interactionCandidates: [{ scanId: "i0", text: "More approvals", tag: "button", role: "button", riskHint: "read", reason: "safe-text" }],
         },
@@ -244,6 +264,9 @@ const draftDir = path.join(outDir, "demo-oa");
 const skillMd = fs.readFileSync(path.join(draftDir, "SKILL.md"), "utf8");
 const manifest = JSON.parse(fs.readFileSync(path.join(draftDir, "skill.manifest.json"), "utf8"));
 const systemProfile = JSON.parse(fs.readFileSync(path.join(draftDir, "system-profile.json"), "utf8"));
+const capabilityMap = JSON.parse(fs.readFileSync(path.join(draftDir, "capability-map.json"), "utf8"));
+const apiMap = JSON.parse(fs.readFileSync(path.join(draftDir, "api-map.json"), "utf8"));
+const health = JSON.parse(fs.readFileSync(path.join(draftDir, "health.json"), "utf8"));
 const pageMap = JSON.parse(fs.readFileSync(path.join(draftDir, "page-map.json"), "utf8"));
 const domainModel = JSON.parse(fs.readFileSync(path.join(draftDir, "domain-model.json"), "utf8"));
 const playbook = JSON.parse(fs.readFileSync(path.join(draftDir, "web-system-playbook.json"), "utf8"));
@@ -255,6 +278,9 @@ const draftExecutor = path.join(draftDir, "scripts/execute_web_playbook.cjs");
 const normalizedPlaybook = normalizePlaybookSpec(playbook);
 if (!skillMd.includes("Allowed domains") || !skillMd.includes("explicit confirmation")) {
   throw new Error("generated skill should include domain and confirmation guardrails");
+}
+if (!skillMd.includes("capability-map.json") || !skillMd.includes("First map the user's request to exactly one capability")) {
+  throw new Error("generated skill should instruct agents to use the capability package first");
 }
 if (skillMd.includes("password") && !skillMd.includes("Never ask for or store passwords")) {
   throw new Error("generated skill must not store credentials");
@@ -286,8 +312,51 @@ if (playbook.connector.capabilities.includes("web.api") !== true) {
 if (playbook.actions[1].metadata?.executionStrategy?.preferred !== "api-first" || !playbook.actions[1].metadata?.apiContractRefs?.includes("leave-api")) {
   throw new Error(`submit action should prefer learned API contract with browser fallback: ${JSON.stringify(playbook.actions[1])}`);
 }
+if (!playbook.actions[1].paramsSchema?.required?.includes("leave-type") || !playbook.actions[1].paramsSchema?.required?.includes("reason")) {
+  throw new Error(`playbook submit action should carry learned request parameters: ${JSON.stringify(playbook.actions[1])}`);
+}
+const queryCapability = capabilityMap.capabilities.find((capability) => capability.id === "web.query-approval");
+const submitCapability = capabilityMap.capabilities.find((capability) => capability.id === "web.submit-leave");
+if (!queryCapability || queryCapability.risk !== "read" || queryCapability.confirmation !== "none") {
+  throw new Error(`capability map should expose the read action contract: ${JSON.stringify(capabilityMap)}`);
+}
+if (queryCapability.successSignal?.type !== "api-response-or-extracted-content" && queryCapability.successSignal?.type !== "extracted-content") {
+  throw new Error(`read capability should have a result success signal: ${JSON.stringify(queryCapability)}`);
+}
+if (
+  !submitCapability ||
+  submitCapability.execution?.preferred !== "api-first" ||
+  !submitCapability.execution?.apiContractRefs?.includes("leave-api") ||
+  submitCapability.confirmation !== "explicit"
+) {
+  throw new Error(`submit capability should be API-first with explicit confirmation: ${JSON.stringify(submitCapability)}`);
+}
+if (!submitCapability.params?.required?.includes("leave-type") || !submitCapability.askWhenMissing?.some((item) => item.param === "reason")) {
+  throw new Error(`submit capability should include required params and missing-field prompts: ${JSON.stringify(submitCapability)}`);
+}
+if (!submitCapability.staleSignals?.includes("selector_not_found") || !submitCapability.staleSignals?.includes("api_status_mismatch")) {
+  throw new Error(`submit capability should include stale detection signals: ${JSON.stringify(submitCapability)}`);
+}
+if (!apiMap.contracts?.some((contract) => contract.id === "leave-api" && contract.capabilities.includes("web.submit-leave"))) {
+  throw new Error(`api map should link learned endpoints back to capabilities: ${JSON.stringify(apiMap)}`);
+}
+if (!apiMap.contracts?.some((contract) => contract.id === "approval-search-api" && contract.source === "network-observed" && contract.capabilities.includes("web.query-approval"))) {
+  throw new Error(`api map should include observed XHR/fetch contracts for fast read actions: ${JSON.stringify(apiMap)}`);
+}
+if (apiMap.auth?.credentialHeadersInPlans !== "forbidden") {
+  throw new Error(`api map must keep credential headers out of generated plans: ${JSON.stringify(apiMap.auth)}`);
+}
+if (health.coverage?.capabilityCount !== 2 || health.coverage?.apiFirstCount < 2 || health.coverage?.apiContractCount < 2 || health.coverage?.highRiskActionCount !== 1) {
+  throw new Error(`health file should summarize capability/API/risk coverage: ${JSON.stringify(health)}`);
+}
+if (health.checks?.credentialPolicy !== "pass" || !["ready-for-review", "partial"].includes(health.status)) {
+  throw new Error(`health file should include reviewable checks: ${JSON.stringify(health)}`);
+}
 if (systemProfile.systemName !== "Demo OA" || systemProfile.files.pageMap !== "page-map.json") {
   throw new Error(`generated system profile should index the learned archive: ${JSON.stringify(systemProfile)}`);
+}
+if (systemProfile.files.capabilityMap !== "capability-map.json" || systemProfile.files.apiMap !== "api-map.json" || systemProfile.files.health !== "health.json") {
+  throw new Error(`system profile should index the capability package: ${JSON.stringify(systemProfile.files)}`);
 }
 if (systemProfile.files.scanArchive !== "web-system-scan.json" || systemProfile.learningCoverage?.pageCount !== 3) {
   throw new Error(`generated system profile should include scan coverage: ${JSON.stringify(systemProfile)}`);
@@ -357,7 +426,18 @@ fs.writeFileSync(
     ],
   }),
 );
-result = spawnSync(process.execPath, [draftExecutor, "--playbook", path.join(draftDir, "web-system-playbook.json"), "--action", "web.query-approval", "--plan", readPlanPath, "--dry-run"], {
+result = spawnSync(process.execPath, [
+  draftExecutor,
+  "--playbook",
+  path.join(draftDir, "web-system-playbook.json"),
+  "--capability-map",
+  path.join(draftDir, "capability-map.json"),
+  "--action",
+  "web.query-approval",
+  "--plan",
+  readPlanPath,
+  "--dry-run",
+], {
   cwd: draftDir,
   encoding: "utf8",
 });
@@ -365,7 +445,13 @@ if (result.status !== 0) {
   throw new Error(`web playbook executor dry-run failed: ${result.stderr || result.stdout}`);
 }
 const validatedReadPlan = JSON.parse(result.stdout);
-if (!validatedReadPlan.ok || validatedReadPlan.reviewRequired || validatedReadPlan.operations[0].url !== "https://oa.example.com/approvals") {
+if (
+  !validatedReadPlan.ok ||
+  validatedReadPlan.reviewRequired ||
+  validatedReadPlan.operations[0].url !== "https://oa.example.com/approvals" ||
+  validatedReadPlan.capability?.id !== "web.query-approval" ||
+  !["api-response-or-extracted-content", "extracted-content"].includes(validatedReadPlan.successSignal?.type)
+) {
   throw new Error(`unexpected validated read plan: ${result.stdout}`);
 }
 
@@ -390,6 +476,7 @@ fs.writeFileSync(
   submitPlanPath,
   JSON.stringify({
     action: "web.submit-leave",
+    params: { "leave-type": "annual", "start-date": "2026-06-17", reason: "annual leave" },
     operations: [
       { type: "goto", path: "/leave/new", risk: "read" },
       { type: "fill", label: "Reason", value: "annual leave", risk: "prepare" },
@@ -399,7 +486,18 @@ fs.writeFileSync(
     ],
   }),
 );
-result = spawnSync(process.execPath, [draftExecutor, "--playbook", path.join(draftDir, "web-system-playbook.json"), "--action", "web.submit-leave", "--plan", submitPlanPath, "--dry-run"], {
+result = spawnSync(process.execPath, [
+  draftExecutor,
+  "--playbook",
+  path.join(draftDir, "web-system-playbook.json"),
+  "--capability-map",
+  path.join(draftDir, "capability-map.json"),
+  "--action",
+  "web.submit-leave",
+  "--plan",
+  submitPlanPath,
+  "--dry-run",
+], {
   cwd: draftDir,
   encoding: "utf8",
 });
@@ -410,8 +508,52 @@ const reviewPayload = JSON.parse(result.stdout);
 if (!reviewPayload.reviewRequired || reviewPayload.risk !== "submit") {
   throw new Error(`submit action should require review before execution: ${result.stdout}`);
 }
+if (reviewPayload.capability?.execution?.preferred !== "api-first" || !reviewPayload.staleSignals?.includes("api_status_mismatch")) {
+  throw new Error(`submit review payload should include capability execution and stale signals: ${result.stdout}`);
+}
 if (!reviewPayload.operations.some((op) => op.type === "select" && op.optionLabel === "Annual leave")) {
   throw new Error(`submit review payload should preserve validated form controls: ${result.stdout}`);
+}
+
+const missingParamsPlanPath = path.join(tmp, "missing-params-plan.json");
+fs.writeFileSync(
+  missingParamsPlanPath,
+  JSON.stringify({
+    action: "web.submit-leave",
+    params: { "leave-type": "annual" },
+    operations: [
+      {
+        type: "apiRequest",
+        contractId: "leave-api",
+        method: "POST",
+        risk: "submit",
+        contentType: "form",
+        body: { leaveType: "annual" },
+      },
+    ],
+  }),
+);
+result = spawnSync(process.execPath, [
+  draftExecutor,
+  "--playbook",
+  path.join(draftDir, "web-system-playbook.json"),
+  "--capability-map",
+  path.join(draftDir, "capability-map.json"),
+  "--action",
+  "web.submit-leave",
+  "--plan",
+  missingParamsPlanPath,
+  "--dry-run",
+], {
+  cwd: draftDir,
+  encoding: "utf8",
+});
+if (result.status !== 0) {
+  throw new Error(`missing params dry-run should return an input request: ${result.stderr || result.stdout}`);
+}
+const missingParamsPayload = JSON.parse(result.stdout);
+if (!missingParamsPayload.inputRequired || !missingParamsPayload.missingParams?.includes("reason")) {
+  throw new Error(`capability-map should block execution until required params are collected: ${result.stdout}`);
 }
 
 const apiSubmitPlanPath = path.join(tmp, "api-submit-plan.json");
@@ -419,6 +561,7 @@ fs.writeFileSync(
   apiSubmitPlanPath,
   JSON.stringify({
     action: "web.submit-leave",
+    params: { "leave-type": "annual", "start-date": "2026-06-17", reason: "annual leave" },
     operations: [
       {
         type: "apiRequest",
@@ -431,7 +574,18 @@ fs.writeFileSync(
     ],
   }),
 );
-result = spawnSync(process.execPath, [draftExecutor, "--playbook", path.join(draftDir, "web-system-playbook.json"), "--action", "web.submit-leave", "--plan", apiSubmitPlanPath, "--dry-run"], {
+result = spawnSync(process.execPath, [
+  draftExecutor,
+  "--playbook",
+  path.join(draftDir, "web-system-playbook.json"),
+  "--capability-map",
+  path.join(draftDir, "capability-map.json"),
+  "--action",
+  "web.submit-leave",
+  "--plan",
+  apiSubmitPlanPath,
+  "--dry-run",
+], {
   cwd: draftDir,
   encoding: "utf8",
 });

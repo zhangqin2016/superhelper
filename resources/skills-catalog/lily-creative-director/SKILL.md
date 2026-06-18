@@ -3,51 +3,52 @@ name: lily-creative-director
 description: Use when the user asks to create, improve, evaluate, or iterate visual/audio creative output: images, posters, covers, avatars, product shots, illustrations, concept art, video prompts, voiceover direction, thumbnails, brand visuals, or “make it prettier/more cinematic/more professional”. Expands vague prompts into production-ready creative direction with composition, style, lighting, mood, aspect ratio, usage context, local save/preview expectations, and feedback iteration.
 ---
 
-# Lily 创意导演
+# Lily Creative Director
 
-本技能把“做张图 / 做个封面 / 来个视频 / 生成配音”从简单翻译提示词，升级为可复用的创意指导流程。
+Use this skill to turn short creative requests into reusable creative direction for images, covers, posters, videos, voiceovers, and similar media. The goal is not translation; the goal is to preserve the user's intent and add the missing production details.
 
-## 何时使用
+## When To Use
 
-- 用户要生成或优化图片、海报、封面、头像、产品图、插画、概念图、缩略图。
-- 用户要生成视频、动画、分镜、镜头描述或视频提示词。
-- 用户要语音、旁白、配音风格、语速、情绪、角色声音。
-- 用户反馈“不好看、不像、太假、风格不对、再高级点、换个感觉”。
+- The user wants to generate or improve images, posters, covers, avatars, product shots, illustrations, concepts, or thumbnails.
+- The user wants video prompts, animation direction, storyboards, shot descriptions, or motion guidance.
+- The user wants voice, narration, voiceover style, pacing, emotion, or character voice direction.
+- The user says the output is not attractive, inaccurate, fake-looking, off-style, not professional enough, or needs a different feeling.
 
-纯文档、纯代码或纯事实检索不用本技能，除非最终产物包含创意视觉/声音。
+Do not use this for pure documents, code, or factual research unless the final deliverable includes creative visual or audio work.
 
-## 创意补全
+## Creative Brief
 
-用户描述很短时，不要只翻译。根据用途补齐：
+When the user's request is short, add the missing details:
 
-- **用途**：头像、封面、海报、产品图、插画、社媒图、PPT 配图、角色设定、视频镜头。
-- **主体**：人物/产品/场景/动作/视角/材质/服装/表情。
-- **构图**：近景/中景/远景、居中/三分法、留白、前中后景、视觉焦点。
-- **光线**：自然光、棚拍、逆光、柔光、霓虹、电影感、低调/高调。
-- **风格**：写实、商业摄影、国风、二次元、扁平插画、3D、电影海报、极简。
-- **比例**：头像 1:1，手机壁纸 9:16，海报 3:4，横幅 16:9，产品图按用途定。
-- **质量约束**：清晰、主体完整、文字少或不生成文字、避免多手多指、避免畸形、避免水印。
+- **Use case**: avatar, cover, poster, product shot, illustration, social image, presentation artwork, character concept, video shot.
+- **Subject**: person, product, scene, action, viewpoint, material, clothing, expression.
+- **Composition**: close/medium/wide shot, centered, rule of thirds, negative space, foreground/midground/background, focal point.
+- **Lighting**: natural light, studio light, backlight, soft light, neon, cinematic, low-key, high-key.
+- **Style**: realistic, commercial photography, traditional cultural style, anime, flat illustration, 3D, film poster, minimal.
+- **Aspect ratio**: 1:1 for avatars, 9:16 for mobile, 3:4 for posters, 16:9 for banners, or a ratio chosen for the user's use case.
+- **Quality constraints**: sharp, complete subject, little or no generated text, no extra fingers, no distorted anatomy, no watermark.
 
-## 按类型处理
+## Type-Specific Guidance
 
-- **人物/头像**：强调脸部清晰、五官自然、服装和背景服务身份；避免过度磨皮和塑料感。
-- **产品图**：强调真实材质、边缘清晰、光影可信、可用于电商/展示；不要遮挡产品。
-- **海报/封面**：先确定主视觉、标题留白、信息层级；图片模型不擅长文字时，建议后期排字或用 HTML/设计工具排版。
-- **国风/角色图**：明确时代、服饰、场景、气质、镜头和色调；保持人物身份一致。
-- **视频**：补镜头运动、时长、节奏、主体动作、场景变化和负面约束。
-- **语音**：补角色、情绪、语速、停顿、使用场景和听感目标。
+- **People / avatars**: clear face, natural features, outfit and background that support the identity; avoid excessive smoothing or plastic texture.
+- **Product shots**: believable material, clean edges, credible lighting, usable for commerce or display; do not hide the product.
+- **Posters / covers**: define the key visual, title area, and hierarchy; if exact text matters, recommend post-production layout instead of asking an image model to render lots of text.
+- **Characters / cultural styles**: specify era, clothing, scene, temperament, camera angle, and color palette; keep identity consistent.
+- **Video**: include camera motion, duration, rhythm, subject action, scene changes, and negative constraints.
+- **Voice**: include character, emotion, pace, pauses, usage context, and desired listening impression.
 
-## 交付要求
+## Delivery Requirements
 
-- 生成的媒体必须保存到当前工作区或用户指定位置。
-- 能预览就直接预览；不能预览则给绝对路径。
-- 用户要求“打开所在位置”或“能打开”时，必须给可打开路径，不给相对路径。
-- 如果结果不满意，根据用户反馈提取具体问题：主体、风格、构图、颜色、真实感、清晰度、比例，再定向迭代。
+- Generated media must be saved to the current workspace or the user's requested location.
+- Preview directly when possible; otherwise provide an absolute path.
+- If the user asks to open or locate the result, provide a path that can be opened.
+- When iterating, extract the concrete issue from feedback: subject, style, composition, color, realism, clarity, or ratio, then revise in that direction.
+- Surrounding explanations should follow the user's current language or the app language.
 
-## 严禁
+## Do Not
 
-- 把用户一句话机械翻译成英文提示词就结束。
-- 生成后不给路径或只给相对路径。
-- 海报类产物让图片模型生成大量文字。
-- 用户要真实产品/人物可辨识时使用模糊、暗黑、裁切严重的图。
-- 每次返工都随机换风格，导致越改越偏。
+- End with a mechanically translated prompt when the user needed creative direction.
+- Generate media without a saved path.
+- Ask an image model to render large amounts of exact poster text.
+- Use blurry, dark, or heavily cropped visuals when the user needs a recognizable real product or person.
+- Randomly change the entire style on every revision.
