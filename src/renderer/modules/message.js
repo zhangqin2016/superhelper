@@ -25,6 +25,7 @@ import { updateTopbarTitles } from "./session-chrome.js";
 import { renderMessageQueue } from "./composer.js";
 import { addDiffEntry } from "./diff-panel.js";
 import { syncWorkbenchEmptyState } from "./workbench-empty.js";
+import { collectUnrenderedCommittedMessages } from "./message-render-keys.js";
 
 const sessionViews = new Map();
 const renderedMessageKeys = new Map();
@@ -96,6 +97,7 @@ function view(sessionId) {
       panel: null,
       listEl: null,
       liveArticles: new Map(),
+      renderGeneration: 0,
     });
   }
   return sessionViews.get(sessionId);
@@ -193,14 +195,11 @@ async function refreshRuntimeSnapshot(sessionId) {
   }
 }
 
-function messageKey(message, index) {
-  return (message.turnId ? `${message.role}:${message.turnId}` : null) || message.id || `${message.role}:${message.timestamp || index}:${index}`;
-}
-
 export function renderConversation(sessionId, opts = {}) {
   const v = ensurePanel(sessionId);
   if (!v.listEl) return;
   if (opts.force) {
+    v.renderGeneration += 1;
     v.listEl.replaceChildren();
     v.liveArticles.clear();
     renderedMessageKeys.set(sessionId, new Set());
@@ -241,17 +240,11 @@ function renderCommittedMessages(sessionId, opts = {}) {
   const keys = renderedMessageKeys.get(sessionId) || new Set();
   renderedMessageKeys.set(sessionId, keys);
 
-  const pending = [];
-  for (const [index, message] of runtime.committedMessages.entries()) {
-    const key = messageKey(message, index);
-    if (keys.has(key)) continue;
-    pending.push({ key, message });
-  }
+  const pending = collectUnrenderedCommittedMessages(runtime.committedMessages, keys);
   if (pending.length === 0) return 0;
 
   if (pending.length <= COMMITTED_RENDER_CHUNK) {
-    for (const { key, message } of pending) {
-      keys.add(key);
+    for (const { message } of pending) {
       appendCommittedMessage(sessionId, runtime, message);
     }
     opts.onComplete?.();
@@ -259,11 +252,12 @@ function renderCommittedMessages(sessionId, opts = {}) {
   }
 
   let cursor = 0;
+  const generation = view(sessionId).renderGeneration;
   const pump = () => {
+    if (view(sessionId).renderGeneration !== generation) return;
     const end = Math.min(cursor + COMMITTED_RENDER_CHUNK, pending.length);
     for (; cursor < end; cursor++) {
-      const { key, message } = pending[cursor];
-      keys.add(key);
+      const { message } = pending[cursor];
       appendCommittedMessage(sessionId, runtime, message);
     }
     if (cursor < pending.length) {
