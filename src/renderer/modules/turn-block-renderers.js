@@ -1,3 +1,4 @@
+import { html, render } from "../../../node_modules/lit-html/lit-html.js";
 import { renderMarkdownContent } from "./content-blocks.js";
 import { t } from "../i18n/index.js";
 import { revealLocalFileInFolder } from "./file-reveal.js";
@@ -12,6 +13,15 @@ const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".sv
 function tr(key, fallback, params) {
   const value = t(key, params);
   return value === key ? fallback : value;
+}
+
+// Render a one-shot lit-html template and return its root element. lit-html is
+// the sanctioned templating foundation for block renderers — declarative,
+// auto-escaping, standards-based, and self-contained (no bundler/import map).
+function el(template) {
+  const host = document.createElement("div");
+  render(template, host);
+  return host.firstElementChild || host;
 }
 
 function fileUrlFromPath(filePath = "") {
@@ -101,20 +111,16 @@ function renderMarkdown(block) {
 }
 
 function renderCode(block) {
-  const wrap = document.createElement("figure");
-  wrap.className = `assistant-renderer-block assistant-renderer-code${block.type === "diff" ? " is-diff" : ""}`;
-  if (block.title || block.language) {
-    const caption = document.createElement("figcaption");
-    caption.textContent = block.title || block.language || "";
-    wrap.appendChild(caption);
-  }
-  const pre = document.createElement("pre");
-  const code = document.createElement("code");
-  code.textContent = block.code || block.text || block.diff || "";
-  pre.appendChild(code);
-  wrap.appendChild(pre);
-  wrap.appendChild(copyButton(() => code.textContent));
-  return wrap;
+  const code = block.code || block.text || block.diff || "";
+  const caption = block.title || block.language || "";
+  const node = el(html`
+    <figure class="assistant-renderer-block assistant-renderer-code${block.type === "diff" ? " is-diff" : ""}">
+      ${caption ? html`<figcaption>${caption}</figcaption>` : ""}
+      <pre><code>${code}</code></pre>
+    </figure>
+  `);
+  node.appendChild(copyButton(() => code));
+  return node;
 }
 
 function renderTable(block) {
@@ -194,42 +200,30 @@ function renderArtifact(block) {
 }
 
 function renderForm(block) {
-  const card = document.createElement("section");
-  card.className = "assistant-renderer-block assistant-renderer-form";
-  const title = document.createElement("h4");
-  title.textContent = block.title || tr("renderer.form", "Form");
-  card.appendChild(title);
   const fields = Array.isArray(block.fields) ? block.fields : [];
-  for (const field of fields) {
-    const row = document.createElement("div");
-    row.className = "assistant-renderer-form-row";
-    const label = document.createElement("span");
-    label.textContent = field.label || field.name || "";
-    const value = document.createElement("strong");
-    value.textContent = field.value == null ? "" : String(field.value);
-    row.append(label, value);
-    card.appendChild(row);
-  }
-  if (block.description) {
-    const desc = document.createElement("p");
-    desc.textContent = block.description;
-    card.appendChild(desc);
-  }
-  return card;
+  return el(html`
+    <section class="assistant-renderer-block assistant-renderer-form">
+      <h4>${block.title || tr("renderer.form", "Form")}</h4>
+      ${fields.map(
+        (field) => html`
+          <div class="assistant-renderer-form-row">
+            <span>${field.label || field.name || ""}</span>
+            <strong>${field.value == null ? "" : String(field.value)}</strong>
+          </div>
+        `,
+      )}
+      ${block.description ? html`<p>${block.description}</p>` : ""}
+    </section>
+  `);
 }
 
 function renderActionResult(block) {
-  const card = document.createElement("section");
-  card.className = `assistant-renderer-block assistant-renderer-action-result is-${block.status || "info"}`;
-  const title = document.createElement("h4");
-  title.textContent = block.title || tr("renderer.actionResult", "Result");
-  card.appendChild(title);
-  if (block.message) {
-    const body = document.createElement("p");
-    body.textContent = block.message;
-    card.appendChild(body);
-  }
-  return card;
+  return el(html`
+    <section class="assistant-renderer-block assistant-renderer-action-result is-${block.status || "info"}">
+      <h4>${block.title || tr("renderer.actionResult", "Result")}</h4>
+      ${block.message ? html`<p>${block.message}</p>` : ""}
+    </section>
+  `);
 }
 
 const RENDERERS = new Map([
@@ -286,10 +280,8 @@ function blockKey(block = {}) {
 }
 
 function fallbackBlock(block) {
-  const node = document.createElement("pre");
-  node.className = "assistant-renderer-block assistant-renderer-unknown";
-  node.textContent = typeof block === "string" ? block : JSON.stringify(block, null, 2);
-  return node;
+  const text = typeof block === "string" ? block : JSON.stringify(block, null, 2);
+  return el(html`<pre class="assistant-renderer-block assistant-renderer-unknown">${text}</pre>`);
 }
 
 function renderBlockNode(block) {

@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const Diff = require("diff");
 const { isTextFile } = require("./file-kinds");
 
 const MAX_LINES = 5000;
@@ -121,60 +122,14 @@ function getDiffsForTurn(sessionId, turnId) {
   return [...turnMap.values()];
 }
 
+// Myers diff via jsdiff (O(nd)) — replaces a hand-rolled O(m·n) DP LCS whose
+// dp matrix was ~25M cells at the 5000-line cap. Output shape is preserved:
+// an ordered list of { type: "del" | "add" | "ctx", content } per line.
 function computeLineDiff(oldLines, newLines) {
-  const lcs = longestCommonSubsequence(oldLines, newLines);
   const result = [];
-  let oi = 0;
-  let ni = 0;
-
-  for (const common of lcs) {
-    while (oi < oldLines.length && oldLines[oi] !== common) {
-      result.push({ type: "del", content: oldLines[oi] });
-      oi++;
-    }
-    while (ni < newLines.length && newLines[ni] !== common) {
-      result.push({ type: "add", content: newLines[ni] });
-      ni++;
-    }
-    result.push({ type: "ctx", content: oldLines[oi] });
-    oi++;
-    ni++;
-  }
-  while (oi < oldLines.length) {
-    result.push({ type: "del", content: oldLines[oi] });
-    oi++;
-  }
-  while (ni < newLines.length) {
-    result.push({ type: "add", content: newLines[ni] });
-    ni++;
-  }
-  return result;
-}
-
-function longestCommonSubsequence(a, b) {
-  const m = a.length;
-  const n = b.length;
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i - 1] === b[j - 1]
-        ? dp[i - 1][j - 1] + 1
-        : Math.max(dp[i - 1][j], dp[i][j - 1]);
-    }
-  }
-  const result = [];
-  let i = m;
-  let j = n;
-  while (i > 0 && j > 0) {
-    if (a[i - 1] === b[j - 1]) {
-      result.unshift(a[i - 1]);
-      i--;
-      j--;
-    } else if (dp[i - 1][j] > dp[i][j - 1]) {
-      i--;
-    } else {
-      j--;
-    }
+  for (const part of Diff.diffArrays(oldLines, newLines)) {
+    const type = part.added ? "add" : part.removed ? "del" : "ctx";
+    for (const content of part.value) result.push({ type, content });
   }
   return result;
 }
