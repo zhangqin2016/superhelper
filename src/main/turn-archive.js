@@ -40,9 +40,28 @@ class TurnArchive {
       workspacePath,
     });
     const contentBlocks = (state.contentBlocks || []).slice(-20);
+    // Typed blocks a tool/skill declared in its result — rendered directly, no
+    // path-scraping (the protocol's "tools emit blocks" path toward zero
+    // derivation). A tool opts in by returning result.blocks / result.resultBlocks.
+    const extraBlocks = [];
+    for (const tool of tools) {
+      const r = tool.result;
+      if (!r || typeof r !== "object") continue;
+      const declared = Array.isArray(r.blocks)
+        ? r.blocks
+        : Array.isArray(r.resultBlocks)
+          ? r.resultBlocks
+          : null;
+      if (declared) {
+        for (const block of declared) {
+          if (block && block.type) extraBlocks.push(block);
+        }
+      }
+    }
     const resultBlocks = buildTurnResultBlocks({
       artifacts,
       contentBlocks,
+      extraBlocks,
     });
 
     return {
