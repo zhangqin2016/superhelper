@@ -43,6 +43,12 @@ class SessionManager {
     this._savePending = false;
     this._legacyMigrationPending = false;
     this._messageStore = null;
+    this._progressNotifier = null;
+  }
+
+  /** Host hook (set by main) to surface migration progress to the UI. */
+  setProgressNotifier(fn) {
+    this._progressNotifier = typeof fn === "function" ? fn : null;
   }
 
   /** Lazily-opened SQLite-backed message store (single source of truth for messages). */
@@ -122,11 +128,19 @@ class SessionManager {
   _startBackgroundImport() {
     // Defer so first paint + the active session's load finish before the sweep
     // starts importing (and re-parsing) large legacy files in the background.
+    // Only surface a progress UI when there's a real backlog; small migrations
+    // stay silent (they finish in well under a second, lazily on open).
+    const PROGRESS_MIN = 8;
     setTimeout(() => {
       try {
         legacyImport.sweepInBackground(this._store(), {
-          onDone: ({ sessions }) => {
+          onProgress: ({ done, total }) => {
+            if (total < PROGRESS_MIN) return;
+            this._progressNotifier?.({ phase: done >= total ? "done" : "migrating", done, total });
+          },
+          onDone: ({ sessions, total }) => {
             if (sessions > 0) console.info(`[sessions] migrated ${sessions} legacy file(s) to sqlite`);
+            if (total >= PROGRESS_MIN) this._progressNotifier?.({ phase: "done", done: total, total });
           },
         });
       } catch (err) {

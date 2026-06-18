@@ -9,6 +9,7 @@ import { initSessionSkills, refreshSessionSkillsUi } from "./modules/session-ski
 import { initFileHandler } from "./modules/file-handler.js";
 import { refreshState, updateTopbarTitles } from "./modules/session-chrome.js";
 import { wireMessageIpc, initMessageUi, syncComposerForActiveSession } from "./modules/message.js";
+import { initMigrationProgress } from "./modules/migration-progress.js";
 import { renderProjectTree, initAddProject, initTopbarSessionRename } from "./modules/project-tree.js";
 import { initSettingsPanel } from "./modules/settings-panel.js";
 import { initModelSettings } from "./modules/model-settings.js";
@@ -153,6 +154,7 @@ async function init() {
   await bindAppIcons();
   initMessageUi();
   wireMessageIpc();
+  initMigrationProgress();
 
   initComposer();
   initScheduledTasks();

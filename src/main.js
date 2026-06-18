@@ -131,6 +131,12 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+  // Surface legacy-message migration progress to the renderer (non-blocking).
+  sessionManager.setProgressNotifier((payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("sessions:migration-progress", payload);
+    }
+  });
   require("./main/update-manager").configure({
     runnerPool,
     sessionManager,

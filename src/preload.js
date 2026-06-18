@@ -186,5 +186,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
   onFileDiff: (callback) => {
     ipcRenderer.on("assistant:file-diff", (_event, data) => callback(data));
   },
+  onMigrationProgress: (callback) => {
+    ipcRenderer.on("sessions:migration-progress", (_event, data) => callback(data));
+  },
 
 });

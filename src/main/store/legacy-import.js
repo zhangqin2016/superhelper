@@ -102,20 +102,27 @@ function pendingSessionIds() {
 
 /**
  * Drain remaining legacy files in the background, one per tick, so a large
- * backlog never blocks the main thread for long. `isImported` lets the caller
- * skip sessions already handled lazily.
+ * backlog never blocks the main thread for long.
+ *
+ * @param {object} [opts]
+ * @param {(p:{done:number,total:number})=>void} [opts.onProgress]  after each file
+ * @param {(p:{sessions:number,total:number})=>void} [opts.onDone]
+ * @param {(sessionId:string)=>Function} [opts.transformForSession]  optional per-message hook
  */
-function sweepInBackground(store, { onDone, transformForSession } = {}) {
+function sweepInBackground(store, { onDone, onProgress, transformForSession } = {}) {
   const queue = pendingSessionIds();
-  if (queue.length === 0) {
-    onDone?.({ sessions: 0 });
+  const total = queue.length;
+  if (total === 0) {
+    onDone?.({ sessions: 0, total: 0 });
     return;
   }
   let sessions = 0;
+  let done = 0;
+  onProgress?.({ done: 0, total });
   const step = () => {
     const sessionId = queue.shift();
     if (!sessionId) {
-      onDone?.({ sessions });
+      onDone?.({ sessions, total });
       return;
     }
     try {
@@ -125,6 +132,8 @@ function sweepInBackground(store, { onDone, transformForSession } = {}) {
     } catch (err) {
       console.warn("[legacy-import] sweep failed for", sessionId, err?.message || err);
     }
+    done += 1;
+    onProgress?.({ done, total });
     setTimeout(step, 0);
   };
   setTimeout(step, 0);
