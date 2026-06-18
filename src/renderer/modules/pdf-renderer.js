@@ -49,6 +49,19 @@ async function loadPdfjs() {
   return pdfjsPromise;
 }
 
+// Without these, CJK text renders as garbage glyphs (no character maps) and
+// scanned PDFs (JBIG2/JPEG2000) fail to decode. pdfjs-dist ships them and
+// build.files packages them, so point getDocument at the bundled copies.
+function pdfResourceOptions() {
+  const base = "../../../node_modules/pdfjs-dist/";
+  return {
+    cMapUrl: new URL(`${base}cmaps/`, import.meta.url).href,
+    cMapPacked: true,
+    standardFontDataUrl: new URL(`${base}standard_fonts/`, import.meta.url).href,
+    wasmUrl: new URL(`${base}wasm/`, import.meta.url).href,
+  };
+}
+
 function makeAction(label, disabled, handler) {
   const button = document.createElement("button");
   button.type = "button";
@@ -169,7 +182,7 @@ export function renderPdfBlock(block = {}) {
         if (url) source = { url };
       }
       if (!source) throw new Error("no PDF source (missing path/data)");
-      loadingTask = pdfjs.getDocument(source);
+      loadingTask = pdfjs.getDocument({ ...source, ...pdfResourceOptions() });
       state.pdf = await loadingTask.promise;
       await paint();
     } catch (error) {
