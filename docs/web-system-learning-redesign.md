@@ -82,13 +82,33 @@ server + 打包），作为后续独立项；本阶段先让现有执行器兑�
 注册 @playwright/mcp，SKILL.md 改为驱动其 a11y 工具；execute_web_playbook.cjs 保留为
 确定性编译路径。
 
-### Phase 3 — 智能探索 + 覆盖率评审（待办）
+### Phase 3a — 探索/覆盖率协议 ✅（本次，SKILL.md，模型驱动）
 
-Claude 经 MCP 走 a11y 树系统遍历，loop-until-dry；测试环境受控写学真实写 API（配 CDP/HAR 捕获）。
+SKILL.md 新增「Coverage Completeness」：像 QA 工程师系统遍历（菜单/标签/列表/筛选/详情/
+对话框/分页），每轮自问「还有什么没看到」并再跑前台扫描，连续无新增才停；权威契约定 API/
+数据结构上限，UI 扫描补 UI-only 流程；health.json 诚实记录覆盖与缺口（有缺口=草稿）。
 
-### Phase 4 — 编译成确定性代码 + 自愈 + 语义路由 + 注册表 diff（待办）
+### Phase 3b — HAR/a11y 深度捕获（待办，浏览器代码）
 
-codegen 确定性脚本、偏差时模型自愈；embedding 语义路由；契约注册表 + 重学 diff 检测漂移。
+`scan_web_system.py` 加 CDP/HAR 全量网络录制 + a11y snapshot + 测试环境受控写学写路径 API。
+只能真实浏览器集成测。
+
+### Phase 4a — 契约注册表 + 重学 diff ✅（本次）
+
+新增 `diff_contracts.cjs`：比对新旧 `api-contracts.json`，报告 added/removed/changed 的
+endpoint 与 dataSchema，标记 `breaking`（删除/风险升级/必填字段丢失）→ 依赖能力需重验。
+纯 cjs、完全可测（`test-web-system-contract-diff.mjs`，15）。随技能分发；SKILL.md 加重学 diff 步骤。
+
+### Phase 4b — 路由协议（模型即路由器）✅（本次，SKILL.md）
+
+**不引入 embedding 基础设施**——Claude CLI 本就在回路里、读 capability-map 即可按语义精准
+路由，比余弦相似更灵活。SKILL.md 新增「Natural-Language Routing」：读 capability-map 按意图
+匹配、歧义时定向追问、缺必填参数先问、无匹配则提议重学不臆造。embedding 检索预筛仅在
+「能力多到塞不进上下文」时作为规模优化，带明确触发条件，现在不做。
+
+### Phase 4c — 编译确定性代码 + 自愈（待办，浏览器代码）
+
+codegen 把 playbook 编译成确定性 Playwright 脚本，偏差时模型经 a11y 自愈并回写。只能集成测。
 
 ## 诚实的硬墙
 

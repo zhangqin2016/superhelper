@@ -1103,6 +1103,7 @@ function main() {
     if (discovered) fs.writeFileSync(path.join(draftDir, "api-contracts.json"), JSON.stringify(discovered, null, 2) + "\n", "utf8");
     fs.copyFileSync(path.join(__dirname, "execute_web_playbook.cjs"), path.join(draftDir, "scripts/execute_web_playbook.cjs"));
     fs.copyFileSync(path.join(__dirname, "discover_contracts.cjs"), path.join(draftDir, "scripts/discover_contracts.cjs"));
+    fs.copyFileSync(path.join(__dirname, "diff_contracts.cjs"), path.join(draftDir, "scripts/diff_contracts.cjs"));
   }
 
   console.log(JSON.stringify(result, null, 2));

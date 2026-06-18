@@ -98,3 +98,52 @@ Place generated artifacts in the workspace learning area, using stable English d
   rather than blindly retrying.
 - For ambiguous natural-language requests, ask one focused question instead of guessing a destructive action.
 - Always show what will happen before a mutating action and record the result in audit logs.
+
+## Natural-Language Routing
+
+You are the router. Do not rely on keyword tables — read `capability-map.json`
+and match the user's request to a capability by meaning:
+
+1. Load `capability-map.json`. Each capability has `intents`, a description,
+   `params` (with `required`/`askWhenMissing`), `execution`, and `successSignal`.
+2. Pick the single best-matching capability by intent. If two are plausible, ask
+   one focused disambiguating question rather than guessing — especially when one
+   candidate is a write/destructive action.
+3. Fill `params` from the request; for any missing `required` param, ask using
+   its `askWhenMissing` prompt before executing.
+4. Execute through the playbook (api-first, with the declared browser fallback).
+5. If no capability matches, say so and offer to re-learn that area — never
+   invent an endpoint or selector.
+
+(For very large systems where the full capability set will not fit in context,
+add a retrieval pre-filter to shortlist candidates before this step. Not needed
+for typical systems — the model routes directly.)
+
+## Coverage Completeness
+
+Learning is not done after one pass. Explore like a QA engineer mapping the
+whole system, then critique coverage:
+
+- Systematically walk every menu, tab, list, filter, detail, dialog, and
+  pagination within scope — not just the landing pages.
+- After each pass, ask "what have I NOT seen yet?" (modules behind permissions,
+  routes only reached via buttons/JS, write flows, error/validation states) and
+  run another foreground pass to cover them. Stop only when consecutive passes
+  surface nothing new.
+- Authoritative contracts (`api-contracts.json`) define the API/data-structure
+  ceiling; use the UI scan to map which capability each contract serves and to
+  cover UI-only flows the contract omits.
+- Record coverage and known gaps in `health.json` honestly. A skill with gaps is
+  a reviewable draft, not a finished operator — say what is not yet covered.
+
+## Re-learning & Drift
+
+When re-learning a system, diff the new contracts against the persisted ones:
+
+```
+node scripts/diff_contracts.cjs --old api-contracts.json --new api-contracts.new.json
+```
+
+Treat `removed`/`changed` endpoints (and anything under `breaking`) as stale:
+re-verify or disable the capabilities bound to them before reuse. Record the
+drift summary in `change-log.json`.
