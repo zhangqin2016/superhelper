@@ -124,7 +124,7 @@ function getVisibleSessionId() {
   return active?.dataset?.sessionId || null;
 }
 
-function patchSessionMessagesInStore(sessionId, messages) {
+function patchSessionMessagesInStore(sessionId, messages, total) {
   if (!sessionId) return;
   const projects = store.get("projects") || [];
   let changed = false;
@@ -132,7 +132,10 @@ function patchSessionMessagesInStore(sessionId, messages) {
     for (const session of project.sessions || []) {
       if (session.id === sessionId) {
         session.messages = messages || [];
-        session.messageCount = session.messages.length;
+        // Keep the TRUE total (the conversation is paginated — only the latest
+        // page is loaded here, so messages.length is just the page size). Using
+        // the page size would make the sidebar count drop, e.g. 325 → 50.
+        session.messageCount = Number.isInteger(total) ? total : session.messages.length;
         changed = true;
       }
     }
@@ -162,7 +165,7 @@ async function loadSessionConversation(sessionId) {
     loading: false,
   });
   store.set("conversation", messages);
-  patchSessionMessagesInStore(sessionId, messages);
+  patchSessionMessagesInStore(sessionId, messages, result.total);
   syncCommittedMessages(sessionId, messages);
   return messages;
 }
@@ -191,7 +194,7 @@ export async function loadOlderConversationForSession(sessionId, panel = null) {
       loading: false,
     });
     store.set("conversation", merged);
-    patchSessionMessagesInStore(sessionId, merged);
+    patchSessionMessagesInStore(sessionId, merged, result.total);
     syncCommittedMessages(sessionId, merged);
     const { renderConversation } = await import("./message.js");
     renderConversation(sessionId, { force: true, preserveScroll: true });
