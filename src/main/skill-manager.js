@@ -33,6 +33,17 @@ const {
   copyDirRecursive,
 } = require("./skills-state");
 
+const SKILL_ID_RE = /^[a-z][a-z0-9-]{1,99}$/;
+
+function isWorkspaceSkillEntry(_skillId, entry, manifest) {
+  return Boolean(
+    entry?.source === "learned" ||
+    manifest?.origin === "workspace" ||
+    manifest?.workspaceOnly === true ||
+    manifest?.publisher === "Workspace"
+  );
+}
+
 function installSkillFromSource(skillId, { force = false } = {}) {
   const source = bundledSkillSource(skillId);
   const target = installedSkillDir(skillId);
@@ -156,12 +167,7 @@ function pruneInstalledSkillsNotInRegistry(registry) {
     if (allowedIds.has(skillId)) continue;
     const entry = state.skills[skillId] || {};
     const manifest = readInstalledManifest(skillId);
-    const isWorkspaceSkill =
-      entry.source === "learned" ||
-      manifest?.origin === "workspace" ||
-      manifest?.workspaceOnly === true ||
-      manifest?.publisher === "Workspace";
-    if (isWorkspaceSkill) continue;
+    if (isWorkspaceSkillEntry(skillId, entry, manifest)) continue;
     const skillDir = installedSkillDir(skillId);
     if (fs.existsSync(skillDir)) {
       fs.rmSync(skillDir, { recursive: true, force: true });
@@ -406,6 +412,69 @@ function registerLearnedSkillDir(srcDir, manifest) {
     installedVersion: String(manifest.version || "0.1.0"),
   };
   saveSkillsState();
+  return id;
+}
+
+function listWorkspaceSkillExports() {
+  ensureSkillsStateDefaults();
+  const state = loadSkillsState();
+  const out = [];
+  for (const [skillId, entry] of Object.entries(state.skills || {})) {
+    if (PROTECTED_BUNDLED_IDS.has(skillId)) continue;
+    const manifest = readInstalledManifest(skillId);
+    if (!manifest || !isWorkspaceSkillEntry(skillId, entry, manifest)) continue;
+    const dir = installedSkillDir(skillId);
+    if (!fs.existsSync(path.join(dir, "SKILL.md"))) continue;
+    out.push({
+      id: skillId,
+      dir,
+      manifest,
+      enabled: entry?.enabled !== false,
+    });
+  }
+  out.sort((a, b) => a.id.localeCompare(b.id));
+  return out;
+}
+
+function restoreWorkspaceSkillDir(srcDir, manifest, { enabled = false } = {}) {
+  const id = String(manifest?.id || "").trim();
+  if (!SKILL_ID_RE.test(id) || PROTECTED_BUNDLED_IDS.has(id)) return null;
+  if (!srcDir || !fs.existsSync(path.join(srcDir, "SKILL.md"))) return null;
+  const target = installedSkillDir(id);
+  fs.rmSync(target, { recursive: true, force: true });
+  copyDirRecursiveShipSafe(srcDir, target);
+  const installedManifestPath = path.join(target, "skill.manifest.json");
+  let installedManifest;
+  try {
+    installedManifest = JSON.parse(fs.readFileSync(installedManifestPath, "utf8"));
+  } catch {
+    fs.rmSync(target, { recursive: true, force: true });
+    return null;
+  }
+  if (String(installedManifest?.id || "") !== id) {
+    fs.rmSync(target, { recursive: true, force: true });
+    return null;
+  }
+  installedManifest = {
+    ...installedManifest,
+    id,
+    origin: installedManifest.origin || "workspace",
+    workspaceOnly: true,
+    publisher: installedManifest.publisher || "Workspace",
+  };
+  fs.writeFileSync(installedManifestPath, `${JSON.stringify(installedManifest, null, 2)}\n`, "utf8");
+
+  const state = loadSkillsState();
+  state.skills[id] = {
+    ...(state.skills[id] || {}),
+    id,
+    enabled: Boolean(enabled),
+    source: "learned",
+    installedVersion: String(installedManifest.version || manifest.version || "0.1.0"),
+    restoredAt: new Date().toISOString(),
+  };
+  saveSkillsState();
+  mergeAgentGuide();
   return id;
 }
 
@@ -1195,6 +1264,8 @@ module.exports = {
   installedSkillDir,
   writeSessionAgentGuide,
   registerLearnedSkillDir,
+  listWorkspaceSkillExports,
+  restoreWorkspaceSkillDir,
   resolveSessionSkillIds,
   normalizeSessionSkillSelection,
   syncInheritedSessionGuides,

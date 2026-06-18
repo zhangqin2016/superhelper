@@ -3,6 +3,7 @@
  * Uses highlight.js via dynamic ESM import.
  */
 import { revealLocalFileInFolder } from "./file-reveal.js";
+import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage } from "./mermaid-detect.js";
 
 let hljsReady = false;
 let hljs = null;
@@ -12,7 +13,6 @@ let mermaidReady = false;
 let mermaid = null;
 
 const MARKED_OPTIONS = { gfm: true, breaks: false };
-const MERMAID_LANGUAGES = new Set(["mermaid", "flowchart", "sequence", "sequenceDiagram", "classDiagram", "stateDiagram"]);
 const DIFF_LANGUAGES = new Set(["diff", "patch"]);
 const LOCAL_FILE_EXTENSIONS = "png|jpe?g|gif|webp|bmp|svg|pdf|docx?|xlsx?|pptx?|csv|txt|md|json|html?|zip|tar|gz|mp4|mov|mp3|wav";
 const LOCAL_FILE_PATH_RE = new RegExp(
@@ -232,13 +232,9 @@ function localFilePathFromUrl(value = "") {
   return "";
 }
 
-function normalizeCodeLanguage(lang = "") {
-  return String(lang || "").trim().split(/\s+/)[0];
-}
-
 function renderRichCodeBlock(text = "", lang = "") {
   if (DIFF_LANGUAGES.has(lang)) return renderDiffBlock(text);
-  if (MERMAID_LANGUAGES.has(lang)) {
+  if (isMermaidLanguage(lang) || (!lang && looksLikeMermaidCode(text))) {
     return `<pre class="markdown-mermaid-source"><code class="language-mermaid">${escapeHtml(text)}</code></pre>`;
   }
   return null;
@@ -334,6 +330,13 @@ async function renderMermaidBlocks(element) {
       container.textContent = source;
     }
   }
+}
+
+function scheduleMermaidRender(element) {
+  if (!element?.querySelectorAll) return;
+  if (!element.querySelectorAll("pre.markdown-mermaid-source > code.language-mermaid").length) return;
+  const schedule = typeof queueMicrotask === "function" ? queueMicrotask : (fn) => setTimeout(fn, 0);
+  schedule(() => { void renderMermaidBlocks(element); });
 }
 
 function wireMarkdownImages(element) {
@@ -566,6 +569,7 @@ export function renderMarkdownWithCache(element, markdownText) {
 
   element.innerHTML = window.DOMPurify.sanitize(html);
   enhanceRenderedMarkdown(element, { interactive: true });
+  scheduleMermaidRender(element);
   if (element.dataset) delete element.dataset.streamMode;
 
   return { cached: cachedCount > 0, cachedCount };

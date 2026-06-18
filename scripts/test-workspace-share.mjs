@@ -41,6 +41,19 @@ try {
   // A key hardcoded into a shared source file — must be flagged (not silently shipped).
   fs.writeFileSync(path.join(ws, "scripts/config.js"), 'const apiKey = "sk-ant-abc123def456ghi789jkl";');
 
+  const skillDir = path.join(tmp, "skills", "learned-oa-portal");
+  fs.mkdirSync(path.join(skillDir, "scripts"), { recursive: true });
+  fs.writeFileSync(path.join(skillDir, "SKILL.md"), "# OA Portal\n\nUse the learned OA playbook.");
+  fs.writeFileSync(path.join(skillDir, "scripts", "run.cjs"), "console.log('oa')");
+  fs.writeFileSync(path.join(skillDir, "skill.manifest.json"), JSON.stringify({
+    id: "learned-oa-portal",
+    name: "OA Portal",
+    version: "1.0.0",
+    publisher: "Workspace",
+    origin: "workspace",
+    workspaceOnly: true,
+  }, null, 2));
+
   // Preview: personal/noise/secret-file locations excluded; capability files +
   // build artifacts kept; content secrets flagged.
   const preview = share.previewExport(ws);
@@ -71,12 +84,17 @@ try {
     description: "八字命理工作区",
     conventions: "- 报告用宋体\n- 先排盘再断语",
     requiredSkills: ["lily-image-generation"],
+    workspaceSkills: [{
+      id: "learned-oa-portal",
+      dir: skillDir,
+      enabled: true,
+    }],
     exportedAt: "2026-06-12T00:00:00.000Z",
   });
   if (!Buffer.isBuffer(buf) || buf.length === 0) throw new Error("export produced no bytes");
 
   const dest = path.join(tmp, "imported");
-  const { manifest, conventions } = await share.importWorkspacePack(buf, dest);
+  const { manifest, conventions, workspaceSkills } = await share.importWorkspacePack(buf, dest);
   if (manifest.name !== "算命大师" || manifest.schemaVersion !== share.SCHEMA_VERSION) {
     throw new Error(`manifest round trip failed: ${JSON.stringify(manifest)}`);
   }
@@ -84,6 +102,15 @@ try {
     throw new Error("requiredSkills must survive the round trip");
   }
   if (!conventions.includes("报告用宋体")) throw new Error("conventions must travel with the pack");
+  if (!manifest.workspaceSkills?.some((skill) => skill.id === "learned-oa-portal" && skill.enabled === true)) {
+    throw new Error(`workspace skill manifest must travel: ${JSON.stringify(manifest.workspaceSkills)}`);
+  }
+  if (workspaceSkills.length !== 1 || workspaceSkills[0].id !== "learned-oa-portal") {
+    throw new Error(`workspace skill import metadata missing: ${JSON.stringify(workspaceSkills)}`);
+  }
+  if (!fs.existsSync(path.join(dest, ".lily-work/imported-skills/learned-oa-portal/SKILL.md"))) {
+    throw new Error("workspace skill files must be extracted into the imported workspace");
+  }
   if (fs.readFileSync(path.join(dest, "knowledge/bazi/rules.md"), "utf8") !== "排盘规则") {
     throw new Error("capability file content corrupted on import");
   }

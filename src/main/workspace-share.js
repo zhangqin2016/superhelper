@@ -22,7 +22,9 @@ const MANIFEST_NAME = "lily-workspace.json";
 const SCHEMA_VERSION = 1;
 const SUPPORTED_KINDS = new Set(["lily-workspace-pack", "lily-workspace-app"]);
 const FILES_PREFIX = "files/";
+const SKILLS_PREFIX = "skills/";
 const CONVENTIONS_ENTRY = "conventions.md";
+const SKILL_ID_RE = /^[a-z][a-z0-9-]{1,99}$/;
 
 // Exclude noise + personal deliverables + secret files — NOT the program.
 // dist/build ARE kept (build artifacts are part of running the program, so a
@@ -104,6 +106,39 @@ function listShareableFiles(rootPath) {
   return out;
 }
 
+function listSkillFiles(skillDir) {
+  const files = listShareableFiles(skillDir);
+  return files.filter((file) => file.relPath !== "skill.export.json");
+}
+
+function normalizeWorkspaceSkillExport(skill) {
+  const id = String(skill?.id || skill?.manifest?.id || "").trim();
+  const dir = String(skill?.dir || "").trim();
+  if (!SKILL_ID_RE.test(id) || !dir || !fs.existsSync(dir)) return null;
+  const manifestPath = path.join(dir, "skill.manifest.json");
+  const skillMdPath = path.join(dir, "SKILL.md");
+  if (!fs.existsSync(manifestPath) || !fs.existsSync(skillMdPath)) return null;
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  } catch {
+    return null;
+  }
+  if (String(manifest?.id || "") !== id) return null;
+  return {
+    id,
+    dir,
+    enabled: skill?.enabled !== false,
+    manifest: {
+      ...manifest,
+      id,
+      origin: manifest.origin || "workspace",
+      workspaceOnly: true,
+      publisher: manifest.publisher || "Workspace",
+    },
+  };
+}
+
 /**
  * Scan the (already filtered) shareable files for secrets baked into content
  * the pack would carry. Returns [{ relPath, kinds }] — advisory only; the
@@ -159,10 +194,11 @@ function previewExport(rootPath) {
  * @param {string} [opts.description]
  * @param {string} [opts.conventions] learned-conventions text
  * @param {string[]} [opts.requiredSkills] skill ids the workspace relies on
+ * @param {{ id: string, dir: string, manifest?: object, enabled?: boolean }[]} [opts.workspaceSkills]
  * @param {string} opts.exportedAt ISO timestamp (passed in — main owns time)
  * @returns {Promise<Buffer>} zip bytes
  */
-async function exportWorkspacePack({ rootPath, name, description, conventions, requiredSkills, exportedAt }) {
+async function exportWorkspacePack({ rootPath, name, description, conventions, requiredSkills, workspaceSkills, exportedAt }) {
   if (!rootPath || !fs.existsSync(rootPath)) throw new Error("WORKSPACE_NOT_FOUND");
   const zip = new JSZip();
   const files = listShareableFiles(rootPath);
@@ -171,6 +207,29 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
   }
   const conv = String(conventions || "").trim();
   if (conv) zip.file(CONVENTIONS_ENTRY, conv);
+
+  const exportedWorkspaceSkills = [];
+  for (const rawSkill of Array.isArray(workspaceSkills) ? workspaceSkills : []) {
+    const skill = normalizeWorkspaceSkillExport(rawSkill);
+    if (!skill) continue;
+    const skillFiles = listSkillFiles(skill.dir);
+    if (!skillFiles.some((file) => file.relPath === "SKILL.md")) continue;
+    if (!skillFiles.some((file) => file.relPath === "skill.manifest.json")) continue;
+    for (const file of skillFiles) {
+      if (file.relPath === "skill.manifest.json") {
+        zip.file(`${SKILLS_PREFIX}${skill.id}/${file.relPath}`, `${JSON.stringify(skill.manifest, null, 2)}\n`);
+      } else {
+        zip.file(`${SKILLS_PREFIX}${skill.id}/${file.relPath}`, fs.readFileSync(file.fullPath));
+      }
+    }
+    exportedWorkspaceSkills.push({
+      id: skill.id,
+      name: String(skill.manifest.name || skill.id),
+      version: String(skill.manifest.version || "0.1.0"),
+      enabled: skill.enabled,
+      workspaceOnly: true,
+    });
+  }
 
   const manifest = {
     schemaVersion: SCHEMA_VERSION,
@@ -181,6 +240,7 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
     fileCount: files.length,
     hasConventions: Boolean(conv),
     requiredSkills: Array.isArray(requiredSkills) ? requiredSkills.filter(Boolean) : [],
+    workspaceSkills: exportedWorkspaceSkills,
   };
   zip.file(MANIFEST_NAME, JSON.stringify(manifest, null, 2));
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
@@ -213,17 +273,77 @@ async function readPackManifest(zipBuffer) {
   return { zip, manifest };
 }
 
+function manifestWorkspaceSkillIds(manifest) {
+  return (Array.isArray(manifest?.workspaceSkills) ? manifest.workspaceSkills : [])
+    .map((skill) => String(skill?.id || "").trim())
+    .filter((id) => SKILL_ID_RE.test(id));
+}
+
+async function importWorkspaceSkills(zip, manifest, targetDir) {
+  const ids = new Set(manifestWorkspaceSkillIds(manifest));
+  const imported = [];
+  if (!ids.size) return imported;
+
+  const root = path.join(targetDir, ".lily-work", "imported-skills");
+  const byId = new Map();
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || !entry.name.startsWith(SKILLS_PREFIX)) continue;
+    const rest = entry.name.slice(SKILLS_PREFIX.length);
+    const slash = rest.indexOf("/");
+    if (slash <= 0) continue;
+    const skillId = rest.slice(0, slash);
+    if (!ids.has(skillId)) continue;
+    const rel = rest.slice(slash + 1);
+    if (!rel) continue;
+    const dest = safeJoin(path.join(root, skillId), rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, await entry.async("nodebuffer"));
+    byId.set(skillId, path.join(root, skillId));
+  }
+
+  for (const skillId of ids) {
+    const dir = byId.get(skillId);
+    if (!dir) continue;
+    const manifestPath = path.join(dir, "skill.manifest.json");
+    const skillMdPath = path.join(dir, "SKILL.md");
+    if (!fs.existsSync(manifestPath) || !fs.existsSync(skillMdPath)) continue;
+    let skillManifest;
+    try {
+      skillManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    } catch {
+      continue;
+    }
+    if (String(skillManifest?.id || "") !== skillId) continue;
+    const manifestEntry = (manifest.workspaceSkills || []).find((skill) => skill?.id === skillId) || {};
+    imported.push({
+      id: skillId,
+      dir,
+      enabled: manifestEntry.enabled !== false,
+      manifest: {
+        ...skillManifest,
+        id: skillId,
+        origin: skillManifest.origin || "workspace",
+        workspaceOnly: true,
+        publisher: skillManifest.publisher || "Workspace",
+      },
+    });
+  }
+  return imported;
+}
+
 /**
- * Extract a pack's files into targetDir (must be empty/new). Returns manifest
- * plus the conventions text (caller re-maps it to the new project id).
- * @returns {Promise<{ manifest: object, conventions: string }>}
+ * Extract a pack's files into targetDir (must be empty/new). Returns manifest,
+ * conventions text (caller re-maps it to the new project id), and embedded
+ * workspace skills restored into a temporary import area.
+ * @returns {Promise<{ manifest: object, conventions: string, workspaceSkills: object[] }>}
  */
 async function importWorkspacePack(zipBuffer, targetDir) {
   const { zip, manifest } = await readPackManifest(zipBuffer);
   fs.mkdirSync(targetDir, { recursive: true });
 
   const entries = Object.values(zip.files).filter((e) => !e.dir && e.name.startsWith(FILES_PREFIX));
-  if (entries.length === 0) {
+  const declaredWorkspaceSkillIds = manifestWorkspaceSkillIds(manifest);
+  if (entries.length === 0 && declaredWorkspaceSkillIds.length === 0) {
     throw new Error("WORKSPACE_PACK_EMPTY");
   }
   for (const entry of entries) {
@@ -237,17 +357,20 @@ async function importWorkspacePack(zipBuffer, targetDir) {
   let conventions = "";
   const convEntry = zip.file(CONVENTIONS_ENTRY);
   if (convEntry) conventions = await convEntry.async("string");
+  const workspaceSkills = await importWorkspaceSkills(zip, manifest, targetDir);
 
-  return { manifest, conventions };
+  return { manifest, conventions, workspaceSkills };
 }
 
 module.exports = {
   MANIFEST_NAME,
   SCHEMA_VERSION,
   SUPPORTED_KINDS,
+  SKILLS_PREFIX,
   EXCLUDED_DIRS,
   isExcluded,
   listShareableFiles,
+  listSkillFiles,
   scanForSecrets,
   previewExport,
   exportWorkspacePack,

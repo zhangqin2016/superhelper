@@ -29,6 +29,15 @@ function workspaceAppFolderName({ manifest, app }) {
   );
 }
 
+function restoreWorkspaceSkills(skillManager, workspaceSkills) {
+  const restored = [];
+  for (const skill of Array.isArray(workspaceSkills) ? workspaceSkills : []) {
+    const id = skillManager.restoreWorkspaceSkillDir(skill.dir, skill.manifest, { enabled: skill.enabled });
+    if (id) restored.push(id);
+  }
+  return restored;
+}
+
 async function downloadWorkspaceApp(app) {
   const url = String(app?.downloadUrl || "").trim();
   if (!/^https:\/\//i.test(url)) {
@@ -138,6 +147,12 @@ function registerProjectHandlers(ctx) {
       name: project.name,
       preview: previewExport(project.path),
       requiredSkills: skillManager.getGloballyEnabledSkillIds(),
+      workspaceSkills: skillManager.listWorkspaceSkillExports().map((skill) => ({
+        id: skill.id,
+        name: skill.manifest?.name || skill.id,
+        enabled: skill.enabled,
+        version: skill.manifest?.version || null,
+      })),
     };
   });
 
@@ -160,6 +175,7 @@ function registerProjectHandlers(ctx) {
         name: project.name,
         conventions: readLearnedConventions(project.id),
         requiredSkills: skillManager.getGloballyEnabledSkillIds(),
+        workspaceSkills: skillManager.listWorkspaceSkillExports(),
         exportedAt: new Date().toISOString(),
       });
       fs.writeFileSync(result.filePath, buf);
@@ -201,7 +217,8 @@ function registerProjectHandlers(ctx) {
       let n = 2;
       while (fs.existsSync(targetDir)) targetDir = path.join(baseDir, `${peek.name}-${n++}`);
 
-      const { manifest, conventions } = await importWorkspacePack(zipBuffer, targetDir);
+      const { manifest, conventions, workspaceSkills } = await importWorkspacePack(zipBuffer, targetDir);
+      const restoredWorkspaceSkills = restoreWorkspaceSkills(skillManager, workspaceSkills);
       const project = projectManager.add(targetDir);
       if (manifest.name) projectManager.rename(project.id, manifest.name);
       if (conventions) writeLearnedConventions(project.id, conventions);
@@ -215,6 +232,7 @@ function registerProjectHandlers(ctx) {
         projectId: project.id,
         projectName: manifest.name || project.name,
         missingSkills,
+        restoredWorkspaceSkills,
       };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -331,8 +349,9 @@ function registerProjectHandlers(ctx) {
 
       let manifest;
       let conventions;
+      let workspaceSkills;
       try {
-        ({ manifest, conventions } = await importWorkspacePack(zipBuffer, targetDir));
+        ({ manifest, conventions, workspaceSkills } = await importWorkspacePack(zipBuffer, targetDir));
       } catch (err) {
         fs.rmSync(targetDir, { recursive: true, force: true });
         if (backupDir && fs.existsSync(backupDir) && !fs.existsSync(targetDir)) {
@@ -340,6 +359,7 @@ function registerProjectHandlers(ctx) {
         }
         throw err;
       }
+      const restoredWorkspaceSkills = restoreWorkspaceSkills(skillManager, workspaceSkills);
       const project = projectManager.add(targetDir);
       if (manifest.name) projectManager.rename(project.id, manifest.name);
       if (conventions) writeLearnedConventions(project.id, conventions);
@@ -372,6 +392,7 @@ function registerProjectHandlers(ctx) {
         missingRuntimePacks: [],
         installedDependencies,
         installedApp: installedRecord,
+        restoredWorkspaceSkills,
       };
     } catch (err) {
       return { ok: false, error: err?.message || String(err) };

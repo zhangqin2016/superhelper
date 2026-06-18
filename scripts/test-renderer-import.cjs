@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 "use strict";
 
-const { app, BrowserWindow, ipcMain } = require("electron");
+const electron = require("electron");
+const { app, BrowserWindow, ipcMain } = electron;
 const path = require("node:path");
+
+if (!app?.whenReady || !BrowserWindow || !ipcMain?.handle) {
+  console.error("test-renderer-import must run under Electron. Use: npx electron scripts/test-renderer-import.cjs");
+  process.exit(2);
+}
 
 const root = path.join(__dirname, "..");
 const capturedQuestionResponses = [];
@@ -17,6 +23,30 @@ ipcMain.handle("filetree:reveal", (_event, payload) => {
   capturedRevealPaths.push(`${payload?.sessionId || ""}:${payload?.filePath || ""}`);
   return { ok: true };
 });
+
+ipcMain.handle("app:get-locale", () => ({ ok: true, locale: "zh-CN" }));
+ipcMain.handle("app:get-version", () => ({ ok: true, version: "0.0.0-test" }));
+ipcMain.handle("app:get-icon-url", () => ({ ok: true, url: "" }));
+ipcMain.handle("mail-accounts:list", () => ({ ok: true, accounts: [] }));
+ipcMain.handle("models:list", () => ({ ok: true, presets: [], activePresetId: "" }));
+ipcMain.handle("permissions:list", () => ({ ok: true, modes: [], currentMode: "" }));
+ipcMain.handle("search:list", () => ({ ok: true, providers: [], activeProviderId: "" }));
+ipcMain.handle("skills:list", () => ({ ok: true, groups: [], skills: [] }));
+ipcMain.handle("skills:check-updates", () => ({ ok: true, updates: [] }));
+ipcMain.handle("skills:get-preset-guide", () => ({ ok: true, guide: null }));
+ipcMain.handle("license:status", () => ({ ok: true, status: "active", source: "test" }));
+ipcMain.handle("updates:get-settings", () => ({ ok: true, settings: { autoCheck: true } }));
+ipcMain.handle("updates:get-state", () => ({ ok: true, state: { status: "idle" } }));
+ipcMain.handle("updates:kick-check", () => ({ ok: true, state: { status: "idle" } }));
+ipcMain.handle("state:full", () => ({
+  ok: true,
+  state: {
+    workspaces: [],
+    sessions: [],
+    activeSessionId: "",
+    settings: {},
+  },
+}));
 
 ipcMain.handle("apps:catalog", () => ({
   ok: true,
@@ -348,6 +378,50 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(thinkingStackResult);
+    const sealedProcessTextMermaidResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { liveTurnFromRecord, renderSealedTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const turn = liveTurnFromRecord({
+          turnId: "turn_sealed_process_text_mermaid_regression",
+          terminal: "turn.completed",
+          assistantText: "最终说明。",
+          startedAt: 1000,
+          endedAt: 5000,
+          timeline: [
+            {
+              kind: "text",
+              id: "text_1",
+              ts: 2000,
+              status: "done",
+              text: [
+                "SVG 文件已在浏览器中打开。另外用 Mermaid 在聊天里直接渲染：",
+                "",
+                "    pie showData",
+                "        title 事件发生地点分布",
+                "        \\\"Abu Dhabi\\\" : 8",
+              ].join("\\n"),
+            },
+            { kind: "text", id: "text_2", ts: 3000, status: "done", text: "最终说明。" },
+          ],
+        });
+        const article = renderSealedTurnArticle(turn, false);
+        document.body.appendChild(article);
+        const process = article.querySelector("[data-role='process']");
+        if (!process?.querySelector(".markdown-mermaid-source code.language-mermaid")) {
+          throw new Error("sealed process text mermaid should render through the full markdown content path: " + (process?.innerHTML || ""));
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        if (!process?.querySelector(".markdown-mermaid svg")) {
+          throw new Error("sealed process text mermaid should render to SVG: " + (process?.innerHTML || ""));
+        }
+        if (process.innerHTML.includes("<code>pie showData")) {
+          throw new Error("sealed process text mermaid should not remain a raw indented code block: " + process.innerHTML);
+        }
+        article.remove();
+        return "sealed-process-text-mermaid-regression: ok";
+      }
+    )()`);
+    console.log(sealedProcessTextMermaidResult);
     const markdownRichResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { renderMarkdown, renderMarkdownWithCache } = await import("./modules/markdown.js");

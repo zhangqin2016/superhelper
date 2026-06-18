@@ -2,7 +2,7 @@
  * Structured rendering for tool input/result JSON — not raw stringify dumps.
  */
 
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdownContent } from "./content-blocks.js";
 import { t } from "../i18n/index.js";
 import { revealLocalFileInFolder } from "./file-reveal.js";
 
@@ -273,8 +273,7 @@ function appendTextBlock(root, key, text, { markdown = false } = {}) {
   if (markdown) {
     const body = document.createElement("div");
     body.className = "assistant-tool-content markdown-body";
-    body.textContent = String(text);
-    void renderMarkdown(body, String(text));
+    renderMarkdownContent(body, String(text));
     block.appendChild(body);
   } else {
     const pre = document.createElement("pre");

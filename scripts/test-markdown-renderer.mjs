@@ -6,12 +6,37 @@ import { marked } from "marked";
 const source = fs
   .readFileSync(new URL("../src/renderer/modules/markdown.js", import.meta.url), "utf8")
   .replace('import { revealLocalFileInFolder } from "./file-reveal.js";', "")
+  .replace('import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage } from "./mermaid-detect.js";', "")
   .replaceAll("export async function", "async function")
   .replaceAll("export function", "function");
 
+const MERMAID_START_RE = /^(?:graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline|quadrantChart|requirementDiagram|gitGraph|C4Context|sankey-beta|xychart-beta|block-beta|packet-beta)\b/;
+const MERMAID_LANGUAGES = new Set([
+  "mermaid",
+  "flowchart",
+  "sequence",
+  "sequenceDiagram",
+  "classDiagram",
+  "stateDiagram",
+  "erDiagram",
+  "journey",
+  "gantt",
+  "pie",
+  "pieChart",
+]);
 const context = {
   console,
   URL,
+  normalizeCodeLanguage(lang = "") {
+    return String(lang || "").trim().split(/\s+/)[0];
+  },
+  looksLikeMermaidCode(source = "") {
+    const firstLine = String(source).split("\n").map((line) => line.trim()).find(Boolean) || "";
+    return MERMAID_START_RE.test(firstLine);
+  },
+  isMermaidLanguage(lang = "") {
+    return MERMAID_LANGUAGES.has(String(lang || "").trim().split(/\s+/)[0]);
+  },
   revealLocalFileInFolder() {
     return Promise.resolve({ ok: true });
   },
@@ -145,5 +170,23 @@ const mermaid = fakeElement();
 context.window.__test.renderMarkdownWithCache(mermaid, "```mermaid\ngraph TD\nA-->B\n```");
 assert.match(mermaid.innerHTML, /markdown-mermaid-source/);
 assert.match(mermaid.innerHTML, /language-mermaid/);
+
+const mermaidPie = fakeElement();
+context.window.__test.renderMarkdownWithCache(
+  mermaidPie,
+  "```pie\npie showData\n    title 攻击类型分布\n    \"Rocket\" : 16\n```",
+);
+assert.match(mermaidPie.innerHTML, /markdown-mermaid-source/);
+assert.match(mermaidPie.innerHTML, /language-mermaid/);
+assert.doesNotMatch(mermaidPie.innerHTML, /language-pie/);
+
+const indentedMermaidPie = fakeElement();
+context.window.__test.renderMarkdownWithCache(
+  indentedMermaidPie,
+  "地点分布\n\n    pie showData\n        title 事件发生地点分布\n        \"Abu Dhabi\" : 8\n",
+);
+assert.match(indentedMermaidPie.innerHTML, /markdown-mermaid-source/);
+assert.match(indentedMermaidPie.innerHTML, /language-mermaid/);
+assert.doesNotMatch(indentedMermaidPie.innerHTML, /<code>pie showData/);
 
 console.log("markdown-renderer: ok");

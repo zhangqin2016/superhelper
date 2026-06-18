@@ -1,4 +1,5 @@
-import { renderMarkdown, renderStreamingMarkdown, renderMarkdownWithCache } from "./markdown.js";
+import { renderStreamingMarkdown } from "./markdown.js";
+import { renderMarkdownContent } from "./content-blocks.js";
 import { t } from "../i18n/index.js";
 import { showToast } from "./toast.js";
 import { confirmDialog } from "./confirm-dialog.js";
@@ -140,7 +141,7 @@ function resolveTurnDiffEntries(liveTurn, sessionId) {
   return [];
 }
 
-function scheduleNarrativeMarkdown(textEl, text, turnId) {
+function scheduleNarrativeMarkdown(textEl, text, turnId, { sealed = false } = {}) {
   if (!textEl || !turnId) return;
   const key = turnId;
   let state = narrativeRenderState.get(key);
@@ -152,6 +153,12 @@ function scheduleNarrativeMarkdown(textEl, text, turnId) {
   }
 
   if (textEl.dataset.streamText === text) return;
+
+  if (sealed) {
+    renderMarkdownContent(textEl, text);
+    textEl.dataset.streamText = text;
+    return;
+  }
 
   if (!textEl.dataset.streamText) {
     renderStreamingMarkdown(textEl, text);
@@ -316,7 +323,7 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     narrativeImageKey(liveTurn.contentBlocks || []),
   ].join("|");
   if (article.dataset.narrativeKey !== narrativeKey) {
-    renderNarrative(article.querySelector('[data-role="narrative"]'), liveTurn);
+    renderNarrative(article.querySelector('[data-role="narrative"]'), liveTurn, { sealed });
     article.dataset.narrativeKey = narrativeKey;
   }
   renderProcess(article.querySelector('[data-role="process"]'), liveTurn, { sessionId, sealed });
@@ -368,7 +375,7 @@ function syncNarrativeImages(root, contentBlocks = []) {
   }
 }
 
-function renderNarrative(root, liveTurn) {
+function renderNarrative(root, liveTurn, { sealed = false } = {}) {
   if (!root) return;
   const text = resolveAssistantStreamText(liveTurn);
   const hasImages = (liveTurn.contentBlocks || []).some((b) => b.blockType === "image" && b.data);
@@ -387,7 +394,7 @@ function renderNarrative(root, liveTurn) {
       textEl.className = "assistant-turn-narrative-text markdown-body";
       root.prepend(textEl);
     }
-    scheduleNarrativeMarkdown(textEl, text, liveTurn.turnId || "live");
+    scheduleNarrativeMarkdown(textEl, text, liveTurn.turnId || "live", { sealed });
   } else if (textEl) {
     textEl.remove();
     if (liveTurn.turnId) narrativeRenderState.delete(liveTurn.turnId);
@@ -836,7 +843,7 @@ function renderInlineTextEntry(entry, live = false) {
   // streaming path is only for the still-streaming live block. Regression:
   // before interleaved rendering all prose went through the full path.
   if (live) renderStreamingMarkdown(node, text);
-  else renderMarkdownWithCache(node, text);
+  else renderMarkdownContent(node, text);
   return node;
 }
 
@@ -1278,11 +1285,11 @@ function renderFinal(article, liveTurn) {
   const sealed = article.classList.contains("is-sealed");
   if (sealed) {
     renderStreamingMarkdown(final, text);
-    const upgrade = () => { void renderMarkdown(final, text); };
+    const upgrade = () => { renderMarkdownContent(final, text); };
     if (typeof requestIdleCallback === "function") requestIdleCallback(upgrade);
     else setTimeout(upgrade, 200);
   } else {
-    void renderMarkdown(final, text);
+    renderMarkdownContent(final, text);
   }
 
   report.append(label, final);
