@@ -138,15 +138,12 @@ function renderMermaidChart(block) {
 function renderChart(block) {
   if ((block.chartType || "").toLowerCase() === "mermaid") return renderMermaidChart(block);
   if (isEChartsBlock(block)) return renderEChartsBlock(block);
-  const node = document.createElement("div");
-  node.className = "assistant-renderer-block assistant-renderer-chart assistant-renderer-json-fallback";
-  const title = document.createElement("div");
-  title.className = "assistant-renderer-label";
-  title.textContent = block.title || tr("renderer.chart", "Chart");
-  const pre = document.createElement("pre");
-  pre.textContent = JSON.stringify(block.spec || block.data || block, null, 2);
-  node.append(title, pre);
-  return node;
+  return el(html`
+    <div class="assistant-renderer-block assistant-renderer-chart assistant-renderer-json-fallback">
+      <div class="assistant-renderer-label">${block.title || tr("renderer.chart", "Chart")}</div>
+      <pre>${JSON.stringify(block.spec || block.data || block, null, 2)}</pre>
+    </div>
+  `);
 }
 
 function disposeRendererTree(root) {
@@ -167,36 +164,24 @@ function disposeRendererTree(root) {
 }
 
 function renderArtifact(block) {
-  const artifactType = inferArtifactType(block);
-  const isImage = artifactType === "image";
-  const figure = document.createElement("figure");
-  figure.className = `assistant-renderer-block assistant-renderer-artifact${isImage ? " is-image" : " is-file"}`;
-  if (isImage) {
-    const img = document.createElement("img");
-    img.alt = displayName(block);
-    img.loading = "lazy";
-    img.src = dataUrl(block) || fileUrlFromPath(block.path || "");
-    img.addEventListener("click", async () => {
-      const mod = await import("./image-viewer.js");
-      mod.openImageViewer?.(img.src, img.alt);
-    });
-    figure.appendChild(img);
-  }
-  const caption = document.createElement("figcaption");
-  const name = document.createElement("code");
-  name.className = "assistant-generated-file-path";
-  name.textContent = displayName(block);
+  const isImage = inferArtifactType(block) === "image";
+  const name = displayName(block);
   const size = bytesText(block.bytes);
-  caption.appendChild(name);
-  if (size) {
-    const meta = document.createElement("span");
-    meta.className = "assistant-renderer-meta";
-    meta.textContent = size;
-    caption.appendChild(meta);
-  }
-  caption.appendChild(revealButton(block));
-  figure.appendChild(caption);
-  return figure;
+  const src = isImage ? dataUrl(block) || fileUrlFromPath(block.path || "") : "";
+  const openViewer = async () => {
+    const mod = await import("./image-viewer.js");
+    mod.openImageViewer?.(src, name);
+  };
+  return el(html`
+    <figure class="assistant-renderer-block assistant-renderer-artifact${isImage ? " is-image" : " is-file"}">
+      ${isImage ? html`<img alt=${name} loading="lazy" src=${src} @click=${openViewer} />` : ""}
+      <figcaption>
+        <code class="assistant-generated-file-path">${name}</code>
+        ${size ? html`<span class="assistant-renderer-meta">${size}</span>` : ""}
+        ${revealButton(block)}
+      </figcaption>
+    </figure>
+  `);
 }
 
 function renderForm(block) {
