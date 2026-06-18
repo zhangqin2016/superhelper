@@ -12,21 +12,24 @@ const CONFIRMATION_LEVELS = new Set(["none", "review", "explicit"]);
 function usage() {
   return [
     "Usage:",
-    "  node scripts/create_web_system_skill.cjs --spec web-system-spec.json [--scan web-system-scan.json] [--out <dir>] [--dry-run]",
+    "  node scripts/create_web_system_skill.cjs --spec web-system-spec.json [--scan web-system-scan.json] [--contracts api-contracts.json] [--out <dir>] [--dry-run]",
     "",
+    "  --contracts: authoritative published contracts from discover_contracts.cjs (OpenAPI/GraphQL).",
     "The spec must contain id, name/systemName, baseUrl, allowedDomains[], and actions[].",
     "If --out is omitted, the draft is written to Lily's learned-skills inbox.",
   ].join("\n");
 }
 
 function parseArgs(argv) {
-  const args = { spec: null, scan: null, out: null, dryRun: false };
+  const args = { spec: null, scan: null, contracts: null, out: null, dryRun: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--spec") {
       args.spec = argv[++i];
     } else if (arg === "--scan") {
       args.scan = argv[++i];
+    } else if (arg === "--contracts") {
+      args.contracts = argv[++i];
     } else if (arg === "--out") {
       args.out = argv[++i];
     } else if (arg === "--dry-run") {
@@ -40,6 +43,28 @@ function parseArgs(argv) {
   }
   if (!args.spec) throw new Error("Missing --spec");
   return args;
+}
+
+/**
+ * Authoritative API contracts from discover_contracts.cjs (the system's own
+ * published OpenAPI/GraphQL). Validated and re-clamped to the spec allowlist so
+ * a stale or wrong contracts file can never widen the operating scope.
+ */
+function normalizeDiscovered(input, spec) {
+  if (!input || input.ok !== true || input.schemaVersion !== 1 || !Array.isArray(input.contracts)) {
+    throw new Error("Invalid --contracts file (expected discover_contracts.cjs output)");
+  }
+  const contracts = input.contracts.filter((c) => {
+    const host = normalizeHost(c?.endpoint);
+    return host && isHostAllowed(host, spec.allowedDomains);
+  });
+  return {
+    schemaVersion: 1,
+    sources: Array.isArray(input.sources) ? input.sources : [],
+    contracts,
+    dataSchemas: input.dataSchemas && typeof input.dataSchemas === "object" ? input.dataSchemas : {},
+    coverage: input.coverage || {},
+  };
 }
 
 function readJson(file) {
@@ -258,10 +283,11 @@ function buildManifest(spec) {
   };
 }
 
-function buildApiContractCatalog(spec, scan) {
-  if (!scan) return [];
-  const byId = new Map();
-  const add = (contract, sourcePage = {}) => {
+function buildApiContractCatalog(spec, scan, discovered) {
+  if (!scan && !discovered) return [];
+  const byKey = new Map();
+  const keyOf = (method, url) => `${method} ${url}`;
+  const add = (contract, sourcePage = {}, authoritative = false) => {
     if (!contract || typeof contract !== "object") return;
     const endpoint = String(contract.endpoint || "").trim();
     if (!endpoint) return;
@@ -274,16 +300,24 @@ function buildApiContractCatalog(spec, scan) {
     const host = normalizeHost(url);
     if (!isHostAllowed(host, spec.allowedDomains)) return;
     const method = String(contract.method || "GET").toUpperCase();
-    const risk = method === "GET" || method === "HEAD" ? "read" : "submit";
+    const risk = contract.risk || (method === "GET" || method === "HEAD" ? "read" : "submit");
     const id = String(contract.id || `${method.toLowerCase()}-${url.replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 48)}`).slice(0, 80);
     const normalized = {
       id,
-      source: contract.source || "scan",
+      source: contract.source || (authoritative ? "openapi" : "scan"),
+      authoritative: authoritative || Boolean(contract.authoritative) || undefined,
       endpoint: url,
       method,
       risk,
+      operationId: contract.operationId || undefined,
+      summary: contract.summary || undefined,
+      graphqlOperation: contract.graphqlOperation || undefined,
       contentType: contract.contentType || (method === "GET" ? "query" : "form"),
       requestFields: Array.isArray(contract.requestFields) ? contract.requestFields.slice(0, 120) : [],
+      // Real JSON Schema from a published contract — the basis for accurate
+      // param validation and result parsing at runtime.
+      requestSchema: contract.requestSchema || undefined,
+      responseSchema: contract.responseSchema || undefined,
       responseShape: contract.responseShape || {},
       submitButtons: Array.isArray(contract.submitButtons) ? contract.submitButtons.slice(0, 20) : [],
       knownStaticEndpoint: Boolean(contract.knownStaticEndpoint),
@@ -295,14 +329,22 @@ function buildApiContractCatalog(spec, scan) {
         urlPattern: sourcePage.urlPattern || "",
       },
     };
-    byId.set(id, normalized);
+    const key = keyOf(method, url);
+    const existing = byKey.get(key);
+    // Authoritative contracts win; inferred ones never clobber them.
+    if (existing && existing.authoritative && !authoritative) return;
+    byKey.set(key, normalized);
   };
-  for (const contract of scan.apiContracts || []) add(contract);
-  for (const page of scan.pages || []) {
-    for (const contract of page.networkContracts || []) add(contract, page);
-    for (const form of page.formContracts || []) add(form.apiContract, page);
+  // Authoritative (published) contracts first, then inferred scan contracts.
+  for (const contract of discovered?.contracts || []) add(contract, {}, true);
+  if (scan) {
+    for (const contract of scan.apiContracts || []) add(contract);
+    for (const page of scan.pages || []) {
+      for (const contract of page.networkContracts || []) add(contract, page);
+      for (const form of page.formContracts || []) add(form.apiContract, page);
+    }
   }
-  return [...byId.values()];
+  return [...byKey.values()];
 }
 
 function contractsForAction(action, apiContracts) {
@@ -326,8 +368,18 @@ function executionStrategyForAction(action, apiContracts) {
   };
 }
 
-function buildPlaybook(spec, scan) {
-  const apiContracts = buildApiContractCatalog(spec, scan);
+/**
+ * The result shape the runtime can parse/validate. Prefer a real responseSchema
+ * from a matched contract (authoritative published schema), so the model knows
+ * exactly what comes back instead of guessing from raw output.
+ */
+function resultSchemaForAction(action, apiContracts) {
+  const match = contractsForAction(action, apiContracts).find((contract) => contract.responseSchema);
+  return match ? { source: match.id, schema: match.responseSchema } : {};
+}
+
+function buildPlaybook(spec, scan, discovered) {
+  const apiContracts = buildApiContractCatalog(spec, scan, discovered);
   return {
     schemaVersion: 1,
     id: spec.id,
@@ -366,7 +418,7 @@ function buildPlaybook(spec, scan) {
       steps: action.steps,
       selectors: action.selectors,
       paramsSchema: paramsFromAction(action, apiContracts),
-      resultSchema: {},
+      resultSchema: resultSchemaForAction(action, apiContracts),
       metadata: {
         entry: action.entry || "",
         legacyActionId: action.id,
@@ -397,26 +449,34 @@ function slugify(value, fallback = "field") {
 
 function inferParamType(field) {
   const type = String(field?.type || "").toLowerCase();
+  const hasEnum =
+    (Array.isArray(field?.options) && field.options.length) ||
+    (Array.isArray(field?.enum) && field.enum.length);
   if (type.includes("date") || type.includes("time")) return "date";
-  if (type.includes("number") || type.includes("amount") || type.includes("money")) return "number";
+  if (type.includes("number") || type.includes("integer") || type.includes("amount") || type.includes("money")) return "number";
   if (type.includes("checkbox") || type.includes("radio") || type === "boolean") return "boolean";
   if (type.includes("file") || type.includes("upload")) return "file";
-  if (type.includes("select") || (Array.isArray(field?.options) && field.options.length)) return "enum";
+  if (type.includes("select") || hasEnum) return "enum";
   return "string";
 }
 
 function inputFieldToParam(field, source = "field") {
   const label = String(field?.label || field?.name || field?.id || "").trim();
   const id = slugify(field?.name || label || field?.id, "param");
-  const options = Array.isArray(field?.options)
+  // A published-contract field carries `enum` (scalar values); a scanned form
+  // field carries `options` ({label,value}). Normalize both into options.
+  const enumOptions = Array.isArray(field?.enum)
+    ? field.enum.map((value) => ({ label: String(value), value: String(value) }))
+    : [];
+  const options = (Array.isArray(field?.options)
     ? field.options
         .map((option) => ({
           label: String(option?.label || option?.text || option?.value || "").trim(),
           value: String(option?.value || option?.label || option?.text || "").trim(),
         }))
         .filter((option) => option.label || option.value)
-        .slice(0, 80)
-    : [];
+    : enumOptions
+  ).slice(0, 80);
   return {
     id,
     name: String(field?.name || id).trim() || id,
@@ -607,7 +667,7 @@ function buildCapabilityMap(spec, scan, playbook) {
   };
 }
 
-function buildApiMap(spec, playbook) {
+function buildApiMap(spec, playbook, discovered) {
   const actionRefsByContract = new Map();
   for (const action of playbook.actions || []) {
     for (const ref of action.metadata?.apiContractRefs || []) {
@@ -626,13 +686,23 @@ function buildApiMap(spec, playbook) {
       credentialStorage: "forbidden-in-skill-files",
       credentialHeadersInPlans: "forbidden",
     },
+    // Provenance: which published contracts (OpenAPI/GraphQL) were ingested.
+    sources: discovered?.sources || [],
+    // Reusable data structures (component/definition/GraphQL type schemas) so
+    // the runtime can validate inputs and parse results against real models.
+    dataSchemas: discovered?.dataSchemas || {},
     contracts: (playbook.apiContracts || []).map((contract) => ({
       id: contract.id,
       method: contract.method,
       endpoint: contract.endpoint,
       risk: contract.risk,
+      authoritative: Boolean(contract.authoritative),
+      operationId: contract.operationId,
+      summary: contract.summary,
       contentType: contract.contentType,
       requestFields: contract.requestFields || [],
+      requestSchema: contract.requestSchema,
+      responseSchema: contract.responseSchema,
       responseShape: contract.responseShape || {},
       submitButtons: contract.submitButtons || [],
       source: contract.source,
@@ -987,9 +1057,10 @@ function main() {
   const args = parseArgs(process.argv);
   const spec = validateSpec(readJson(args.spec));
   const scan = args.scan ? normalizeScan(readJson(args.scan), spec) : null;
-  const playbook = buildPlaybook(spec, scan);
+  const discovered = args.contracts ? normalizeDiscovered(readJson(args.contracts), spec) : null;
+  const playbook = buildPlaybook(spec, scan, discovered);
   const capabilityMap = buildCapabilityMap(spec, scan, playbook);
-  const apiMap = buildApiMap(spec, playbook);
+  const apiMap = buildApiMap(spec, playbook, discovered);
   const health = buildHealth(spec, scan, capabilityMap, playbook);
   const root = path.resolve(args.out || defaultInboxDir());
   const draftDir = path.join(root, spec.id);
@@ -1002,6 +1073,7 @@ function main() {
     scannedPages: scan ? scan.pages.length : 0,
     capabilities: capabilityMap.capabilities.length,
     apiContracts: apiMap.contracts.length,
+    authoritativeContracts: apiMap.contracts.filter((c) => c.authoritative).length,
     allowedDomains: spec.allowedDomains,
   };
 
@@ -1026,7 +1098,11 @@ function main() {
     fs.writeFileSync(path.join(draftDir, "change-log.json"), JSON.stringify(buildChangeLog(spec, scan), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "web-system-spec.json"), JSON.stringify(spec, null, 2) + "\n", "utf8");
     if (scan) fs.writeFileSync(path.join(draftDir, "web-system-scan.json"), JSON.stringify(scan, null, 2) + "\n", "utf8");
+    // Persist the authoritative published contracts verbatim so the learned
+    // knowledge is durably stored, reviewable, and diffable on re-learn.
+    if (discovered) fs.writeFileSync(path.join(draftDir, "api-contracts.json"), JSON.stringify(discovered, null, 2) + "\n", "utf8");
     fs.copyFileSync(path.join(__dirname, "execute_web_playbook.cjs"), path.join(draftDir, "scripts/execute_web_playbook.cjs"));
+    fs.copyFileSync(path.join(__dirname, "discover_contracts.cjs"), path.join(draftDir, "scripts/discover_contracts.cjs"));
   }
 
   console.log(JSON.stringify(result, null, 2));

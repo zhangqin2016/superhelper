@@ -32,7 +32,15 @@ Never store passwords in a skill, prompt, log, or generated file. The user shoul
 1. Confirm base URL, business scope, allowed domains, forbidden areas, and whether the environment is production or test.
 2. Require a domain allowlist. Never follow links outside it.
 3. Ask the user to log in interactively if no active session exists.
-4. Run a read-only dry run before deeper exploration.
+4. **Contract discovery first (authoritative > inferred).** Before scanning the
+   UI, run `scripts/discover_contracts.cjs --base-url <url> --allow-domain <host>`
+   (pass `--storage-state` to reuse the logged-in session) to probe for the
+   system's own published OpenAPI/Swagger or GraphQL schema. A published contract
+   is a complete, authoritative source of APIs and data structures — prefer it
+   over DOM/HAR inference. Pass its `api-contracts.json` to
+   `create_web_system_skill.cjs --contracts`. Fall back to the UI scan only for
+   what the published contract does not cover.
+5. Run a read-only dry run before deeper exploration.
 5. Run every scanner/executor command in the foreground and wait for it to finish before claiming the scan is running, complete, failed, or waiting for analysis.
 6. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
 7. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
@@ -58,7 +66,8 @@ Place generated artifacts in the workspace learning area, using stable English d
 
 - system-profile.json: app name, domains, roles, navigation, risks.
 - page-map.json: pages, routes, labels, selectors, forms, tables, actions.
-- api-map.json: observed endpoints, methods, request/response shapes, auth hints, mutation flags.
+- api-contracts.json: authoritative published contracts (OpenAPI/GraphQL) from discover_contracts.cjs, with real request/response JSON Schema (types, enums, required) and reusable data schemas. Persisted verbatim for review and re-learn diffing.
+- api-map.json: merged endpoint catalog (authoritative contracts take precedence over observed/inferred), methods, request/response schemas, data schemas, auth hints, mutation flags.
 - capability-map.json: natural-language capability routing, required parameters, confirmation gates, success signals, stale signals, and recovery policy.
 - action-playbook.json: natural-language intents mapped to safe actions.
 - health.json: learning coverage, API/browser fallback coverage, stale state, and recommended next steps.
