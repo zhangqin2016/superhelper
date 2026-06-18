@@ -504,13 +504,8 @@ function collectDetailsOpenState(root) {
   return map;
 }
 
-function restoreDetailsOpenState(root, openState, { live = false, collapseFinishedThinking = false } = {}) {
+function restoreDetailsOpenState(root, openState, { collapseFinishedThinking = false } = {}) {
   for (const details of root.querySelectorAll("details")) {
-    if (live && details.classList.contains("is-live") &&
-        details.classList.contains("assistant-process-thinking-group")) {
-      details.open = true;
-      continue;
-    }
     if (collapseFinishedThinking && details.classList.contains("assistant-process-thinking-group")) {
       details.open = false;
       continue;
@@ -557,7 +552,8 @@ function patchLiveProcessDom(root, liveTurn, ctx) {
       const text = entry.text?.trim() || "";
       if (!pre || !group) return false;
       const isLive = !sealed && entry.status !== "done";
-      if (isLive) group.open = true;
+      // Live thinking stays collapsed by default — never force it open; the
+      // summary conveys progress and the user controls expansion.
       const summaryEl = group.querySelector(".assistant-process-thinking-summary");
       const nextSummary = thinkingSummaryLabel(entry, isLive);
       if (summaryEl && summaryEl.textContent !== nextSummary) {
@@ -681,7 +677,6 @@ function renderProcess(root, liveTurn, ctx = {}) {
 
   root.appendChild(list);
   restoreDetailsOpenState(root, openState, {
-    live: !sealed,
     collapseFinishedThinking: sealed && !wasSealed,
   });
   if (sessionId) reapplySessionInlineDiffs(sessionId, liveTurn.turnId || null);
@@ -901,12 +896,11 @@ function renderThinkingEntry(entry, live = false) {
   const details = document.createElement("details");
   details.className = "assistant-process-thinking-group";
   details.dataset.thinkingId = entry.id || "";
-  if (isLive) {
-    details.classList.add("is-live");
-    details.open = true;
-  } else if (entry.collapsed !== false) {
-    details.open = false;
-  }
+  if (isLive) details.classList.add("is-live");
+  // Thinking stays collapsed by default — live or finished — so reasoning never
+  // floods the main view. The summary shows live progress ("思考中 · …"); users
+  // expand to read, and restoreDetailsOpenState preserves that choice.
+  details.open = false;
   const summary = document.createElement("summary");
   summary.className = "assistant-process-thinking-summary";
   summary.textContent = thinkingSummaryLabel(entry, isLive);
