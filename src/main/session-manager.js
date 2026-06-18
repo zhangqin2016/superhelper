@@ -18,6 +18,7 @@ const {
 } = require("./config");
 const { normalizeSessionPermissionMode } = require("./permission-settings");
 const { getLocale } = require("./locale-settings");
+const { backfillMessageArtifacts } = require("./session-artifact-backfill");
 const { MessageStore } = require("./store/message-store");
 const legacyImport = require("./store/legacy-import");
 
@@ -141,12 +142,57 @@ class SessionManager {
           onDone: ({ sessions, total }) => {
             if (sessions > 0) console.info(`[sessions] migrated ${sessions} legacy file(s) to sqlite`);
             if (total >= PROGRESS_MIN) this._progressNotifier?.({ phase: "done", done: total, total });
+            this._startBackgroundEnrichment();
           },
         });
       } catch (err) {
         console.warn("[sessions] background import failed:", err?.message || err);
       }
     }, 5000);
+  }
+
+  /**
+   * After migration, re-derive artifacts for legacy records that predate the
+   * artifact feature — off the hot path, one session per tick. Idempotent
+   * (per-session flag) and cheap now that derivation is bounded. This is the
+   * proper home for backfill: never on the read path, never blocking.
+   */
+  _startBackgroundEnrichment() {
+    let pending;
+    try {
+      pending = this.iterateSessions().filter((s) => !this._store().meta(`enriched:${s.id}`));
+    } catch {
+      return;
+    }
+    const step = () => {
+      const session = pending.shift();
+      if (!session) return;
+      try {
+        this._enrichSession(session);
+      } catch (err) {
+        console.warn("[sessions] enrichment failed for", session.id, err?.message || err);
+      }
+      setTimeout(step, 0);
+    };
+    if (pending.length) setTimeout(step, 0);
+  }
+
+  _enrichSession(session) {
+    const store = this._store();
+    const flag = `enriched:${session.id}`;
+    if (store.meta(flag)) return;
+    const workspacePath = this.pm?.find?.(session.projectId)?.path || "";
+    if (!workspacePath) return; // retry next launch once a workspace is known
+    let enriched = 0;
+    for (const message of store.getAll(session.id)) {
+      if (!message?.record || !message.id) continue;
+      if (backfillMessageArtifacts(message, workspacePath)) {
+        store.updateById(message.id, () => message);
+        enriched += 1;
+      }
+    }
+    store.setMeta(flag, `1:${enriched}`);
+    if (enriched > 0) console.info(`[sessions] enriched ${enriched} record(s) for ${session.id}`);
   }
 
   _loadPersistedStore() {

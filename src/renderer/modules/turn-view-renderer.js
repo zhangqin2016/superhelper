@@ -392,9 +392,17 @@ function normalizeTurnArticleLayout(article, sealed) {
   }
 }
 
+// `data` may be raw base64 (live stream) or an already-resolved URL such as
+// app-blob:// (rehydrated from the store) — use it directly in the latter case.
+function contentImageSrc(block) {
+  const data = String(block.data || "");
+  if (/^(app-blob:|data:|https?:|file:|blob:)/i.test(data)) return data;
+  return `data:${block.mediaType || block.mimeType || "image/png"};base64,${data}`;
+}
+
 function syncNarrativeImages(root, contentBlocks = []) {
   const images = contentBlocks.filter((b) => b.blockType === "image" && b.data);
-  const imageKey = images.map((b) => `${b.mediaType || "image/png"}:${b.data.length}`).join("|");
+  const imageKey = images.map((b) => `${b.mediaType || "image/png"}:${String(b.data).length}`).join("|");
   if (root.dataset.imageKey === imageKey) return;
   root.dataset.imageKey = imageKey;
   root.querySelectorAll(".assistant-content-image").forEach((node) => node.remove());
@@ -402,7 +410,7 @@ function syncNarrativeImages(root, contentBlocks = []) {
     const img = document.createElement("img");
     img.className = "assistant-content-image";
     img.alt = "Assistant image";
-    img.src = `data:${block.mediaType || "image/png"};base64,${block.data}`;
+    img.src = contentImageSrc(block);
     root.appendChild(img);
   }
 }

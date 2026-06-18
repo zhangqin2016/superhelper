@@ -39,8 +39,19 @@ const MIME_BY_EXT = {
   ".htm": "text/html",
 };
 
+// Linear (no nested quantifier): a path-ish prefix, then a single run of
+// non-delimiter chars (which may include slashes), then a known extension.
+// The previous `(?:…+[\\/])*…+?` form had catastrophic backtracking that made
+// scanning large records take seconds per record.
 const PATH_LIKE_RE =
-  /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|[\w@.-]+[\\/])(?:[^\s"'`<>|]+[\\/])*[^\s"'`<>|]+?\.(?:png|jpe?g|webp|gif|svg|pdf|docx?|xlsx?|pptx?|csv|html?))/gi;
+  /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|[\w@.-]+[\\/])[^\s"'`<>|]*?\.(?:png|jpe?g|webp|gif|svg|pdf|docx?|xlsx?|pptx?|csv|html?))/gi;
+
+// Bounds so artifact derivation stays cheap even over large/many records:
+// a single huge tool result (e.g. a file dump) is only scanned up to a cap, and
+// the total candidate set is capped. This keeps the regex (which can backtrack
+// on pathological input) and the follow-up statSync count predictable.
+const MAX_STRING_SCAN = 64 * 1024;
+const MAX_CANDIDATES = 64;
 
 function stableArtifactId(filePath) {
   return `artifact_${crypto.createHash("sha1").update(filePath).digest("hex").slice(0, 16)}`;
@@ -132,19 +143,30 @@ function addArtifact(map, artifact) {
 }
 
 function collectPathStrings(value, out, depth = 0) {
-  if (depth > 8 || value == null) return;
+  if (depth > 8 || value == null || out.size >= MAX_CANDIDATES) return;
   if (typeof value === "string") {
-    for (const match of value.matchAll(PATH_LIKE_RE)) {
+    // Only scan the head of very large strings — a path reference near the end
+    // of a multi-MB file dump isn't worth scanning the whole blob (and bounds
+    // regex backtracking cost).
+    const text = value.length > MAX_STRING_SCAN ? value.slice(0, MAX_STRING_SCAN) : value;
+    for (const match of text.matchAll(PATH_LIKE_RE)) {
       out.add(match[1]);
+      if (out.size >= MAX_CANDIDATES) return;
     }
     return;
   }
   if (Array.isArray(value)) {
-    value.forEach((item) => collectPathStrings(item, out, depth + 1));
+    for (const item of value) {
+      if (out.size >= MAX_CANDIDATES) return;
+      collectPathStrings(item, out, depth + 1);
+    }
     return;
   }
   if (typeof value === "object") {
-    Object.values(value).forEach((item) => collectPathStrings(item, out, depth + 1));
+    for (const item of Object.values(value)) {
+      if (out.size >= MAX_CANDIDATES) return;
+      collectPathStrings(item, out, depth + 1);
+    }
   }
 }
 
@@ -152,6 +174,13 @@ function addCandidate(map, candidate, source, workspacePath, { requireWorkspace 
   const resolved = resolveCandidatePath(candidate, workspacePath);
   if (!resolved) return;
   if (requireWorkspace && workspacePath && !isInsidePath(workspacePath, resolved)) return;
+  // Skip the statSync entirely if this path was already resolved this build —
+  // just merge the source on the existing artifact.
+  const key = path.resolve(resolved);
+  if (map.has(key)) {
+    addArtifact(map, { path: key, source });
+    return;
+  }
   addArtifact(map, toArtifact(resolved, source, workspacePath));
 }
 

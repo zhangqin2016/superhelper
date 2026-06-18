@@ -57,23 +57,43 @@ function externalize(message, blobStore) {
   const refs = [];
   const seen = new Map(); // hash -> ref (dedupe within one message)
 
+  const externalizeBuffer = (buffer, mime) => {
+    const { hash, bytes } = blobStore.write(buffer);
+    if (!seen.has(hash)) {
+      seen.set(hash, true);
+      refs.push({ hash, bytes, mime });
+    }
+    return { [REF_KEY]: hash, mime, bytes };
+  };
+
   const walk = (value) => {
     if (typeof value === "string") {
       if (!shouldExternalize(value)) return value;
       const parsed = parseDataUrl(value);
       if (!parsed) return value;
-      const { hash, bytes } = blobStore.write(parsed.buffer);
-      if (!seen.has(hash)) {
-        seen.set(hash, true);
-        refs.push({ hash, bytes, mime: parsed.mime });
-      }
-      return { [REF_KEY]: hash, mime: parsed.mime, bytes };
+      return externalizeBuffer(parsed.buffer, parsed.mime);
     }
     if (Array.isArray(value)) return value.map(walk);
     if (isBlobRef(value)) return value; // already externalized — pass through
     if (value && typeof value === "object") {
+      // Content-image shape: a raw base64 `data` field paired with an image
+      // mime. Externalize the bytes (same blob pipeline as data: URLs) so
+      // assistant-generated images never live as base64 in the record/memory.
+      const mime = value.mediaType || value.mimeType;
+      const isImageData =
+        typeof value.data === "string" &&
+        value.data.length >= INLINE_THRESHOLD &&
+        typeof mime === "string" &&
+        /^image\//i.test(mime) &&
+        !value.data.startsWith("data:");
       const out = {};
-      for (const [k, v] of Object.entries(value)) out[k] = walk(v);
+      for (const [k, v] of Object.entries(value)) {
+        if (isImageData && k === "data") {
+          out[k] = externalizeBuffer(Buffer.from(v, "base64"), mime);
+        } else {
+          out[k] = walk(v);
+        }
+      }
       return out;
     }
     return value;

@@ -24,7 +24,10 @@ function fileUrlFromPath(filePath = "") {
 
 function dataUrl(block = {}) {
   if (!block.data) return "";
-  return `data:${block.mimeType || "image/png"};base64,${block.data}`;
+  const data = String(block.data);
+  // Already a usable URL (e.g. app-blob:// rehydrated from the store) — use as-is.
+  if (/^(app-blob:|data:|https?:|file:|blob:)/i.test(data)) return data;
+  return `data:${block.mimeType || "image/png"};base64,${data}`;
 }
 
 function normalizeExtension(value = "") {
@@ -257,7 +260,20 @@ function rendererForBlock(block = {}) {
   return RENDERERS.get(type) || RENDERERS.get(artifactType);
 }
 
+// djb2 — cheap, stable hash so the key doesn't embed (and re-allocate) the full
+// text/code of large blocks on every diff check.
+function hashStr(s = "") {
+  let h = 5381;
+  for (let i = 0; i < s.length; i += 1) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+function blockTextOf(block = {}) {
+  return block.text || block.source || block.code || block.diff || "";
+}
+
 function blockKey(block = {}) {
+  const text = blockTextOf(block);
   return [
     block.id || "",
     block.type || "",
@@ -265,7 +281,7 @@ function blockKey(block = {}) {
     block.path || "",
     block.updatedAt || "",
     block.bytes || "",
-    block.text || block.source || block.code || "",
+    `${text.length}:${hashStr(text)}`,
   ].join(":");
 }
 
@@ -276,19 +292,47 @@ function fallbackBlock(block) {
   return node;
 }
 
+function renderBlockNode(block) {
+  const renderer = rendererForBlock(block);
+  const node = renderer ? renderer(block) : fallbackBlock(block);
+  node.dataset.blockKey = blockKey(block);
+  return node;
+}
+
 export function renderResultBlocks(root, blocks = []) {
   if (!root) return;
   const normalized = Array.isArray(blocks) ? blocks.filter((block) => block?.type) : [];
-  const key = normalized.map(blockKey).join("|");
-  if (root.dataset.resultBlockKey === key) return;
-  root.dataset.resultBlockKey = key;
-  disposeRendererTree(root);
-  root.replaceChildren();
+  const keys = normalized.map(blockKey);
+  const listKey = keys.join("|");
+  if (root.dataset.resultBlockKey === listKey) return;
+  root.dataset.resultBlockKey = listKey;
   root.hidden = normalized.length === 0;
-  for (const block of normalized) {
-    const renderer = rendererForBlock(block);
-    root.appendChild(renderer ? renderer(block) : fallbackBlock(block));
+
+  // Keyed reconciliation: reuse the existing DOM node for any block whose key
+  // is unchanged (preserves live ECharts/PDF instances + scroll state), render
+  // only new blocks, and dispose only the ones that actually went away.
+  const prev = new Map();
+  for (const node of Array.from(root.children)) {
+    const k = node.dataset?.blockKey;
+    if (k && !prev.has(k)) prev.set(k, node);
   }
+
+  const next = [];
+  for (let i = 0; i < normalized.length; i += 1) {
+    const k = keys[i];
+    const reused = prev.get(k);
+    if (reused) {
+      prev.delete(k);
+      next.push(reused);
+    } else {
+      next.push(renderBlockNode(normalized[i]));
+    }
+  }
+
+  // Dispose nodes that are no longer present (and only those).
+  for (const stale of prev.values()) disposeRendererTree(stale);
+
+  root.replaceChildren(...next);
 }
 
 export function artifactBlocksFromArtifacts(artifacts = []) {
