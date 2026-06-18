@@ -6,10 +6,11 @@ const {
   buildRememberAllowPermissions,
   withPersistentDestination,
   buildControlCancelRequest,
-  buildControlAck,
   buildHookContinueResponse,
   buildHookPreToolUseResponse,
   buildHookStopResponse,
+  buildUserDialogResponse,
+  buildElicitationResponse,
 } = require("./control-protocol");
 const { resolvePlanPreview, PLAN_PREVIEW_MAX } = require("./plan-preview");
 
@@ -151,11 +152,16 @@ class ApprovalBroker {
 
     this._pendingPermissions.delete(requestId);
     if (pending.toolName === "__user_input_request") {
-      this._writeControl(buildControlAck(requestId, {
-        questions,
-        answers,
-        ...(response ? { response } : {}),
-      }));
+      // Only elicitation is parked here (handleUserInputRequest fails other
+      // input-control subtypes closed before they reach a prompt). Answer with
+      // the MCP elicitation schema {action, content}, not the old {questions,
+      // answers} shape, which matched no SDK schema and was silently dropped.
+      const content = { ...answers, ...(response ? { response } : {}) };
+      this._writeControl(
+        pending.subtype === "elicitation"
+          ? buildElicitationResponse(requestId, { action: "accept", content })
+          : buildUserDialogResponse(requestId, { behavior: "cancelled" }),
+      );
       this._ingest([{ type: "user_question.resolved", payload: { requestId } }]);
       this._onActivity();
       this._pollGate();
@@ -293,6 +299,18 @@ class ApprovalBroker {
 
   handleUserInputRequest(action) {
     const { requestId, input, questions, subtype } = action;
+    // Only elicitation has both a faithful generic renderer (a question with
+    // answers) and a schema we can satisfy from those answers. Every other
+    // input control — notably request_user_dialog, whose `result` is opaque and
+    // per-dialog_kind — cannot be answered correctly without modeling the kind,
+    // so fail closed per the protocol ("answer unrecognized kinds with
+    // {behavior: 'cancelled'}") instead of parking a prompt whose answer we
+    // would have to drop.
+    if (subtype !== "elicitation") {
+      this._writeControl(buildUserDialogResponse(requestId, { behavior: "cancelled" }));
+      this._onActivity();
+      return;
+    }
     this._pendingPermissions.set(requestId, {
       toolName: "__user_input_request",
       input: { ...(input || {}), questions },

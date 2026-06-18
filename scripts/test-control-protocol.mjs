@@ -9,6 +9,8 @@ const {
   buildControlCancelRequest,
   parseCanUseToolRequest,
   withPersistentDestination,
+  buildUserDialogResponse,
+  buildElicitationResponse,
 } = require("../src/main/control-protocol.js");
 
 try {
@@ -62,7 +64,36 @@ try {
   assert(parseCanUseToolRequest(null) === null, "null returns null");
   assert(parseCanUseToolRequest("str") === null, "string returns null");
 
-  console.log("PASS: test-control-protocol (17 tests)");
+  // buildUserDialogResponse — the CLI's W6K schema is {behavior, result?}; a
+  // response that is not exactly this shape is dropped as response_ignored.
+  const dlgCancel = buildUserDialogResponse("rd1");
+  assert(dlgCancel.type === "control_response", "dialog response is a control_response");
+  assert(dlgCancel.response.subtype === "success", "dialog response wraps success");
+  assert(dlgCancel.response.request_id === "rd1", "dialog request_id propagated");
+  assert(dlgCancel.response.response.behavior === "cancelled", "default dialog behavior is cancelled");
+  assert(!("result" in dlgCancel.response.response), "cancelled dialog carries no result");
+  const dlgDone = buildUserDialogResponse("rd2", { behavior: "completed", result: "retry_fallback" });
+  assert(dlgDone.response.response.behavior === "completed", "completed behavior passes through");
+  assert(dlgDone.response.response.result === "retry_fallback", "completed result passes through");
+  // completed with no result must still omit the key (don't send result:undefined)
+  assert(!("result" in buildUserDialogResponse("rd3", { behavior: "completed" }).response.response),
+    "completed without result omits the key");
+  // unknown behavior is coerced to cancelled (fail closed), never echoed raw
+  assert(buildUserDialogResponse("rd4", { behavior: "weird" }).response.response.behavior === "cancelled",
+    "unknown dialog behavior fails closed to cancelled");
+
+  // buildElicitationResponse — the CLI's X6K schema is {action, content?}.
+  const elAccept = buildElicitationResponse("re1", { action: "accept", content: { name: "x" } });
+  assert(elAccept.response.response.action === "accept", "elicitation accept action");
+  assert(elAccept.response.response.content.name === "x", "elicitation accept content passes through");
+  const elCancel = buildElicitationResponse("re2");
+  assert(elCancel.response.response.action === "cancel", "default elicitation action is cancel");
+  assert(!("content" in elCancel.response.response), "cancel elicitation carries no content");
+  // content is only attached on accept (decline/cancel must not leak answers)
+  assert(!("content" in buildElicitationResponse("re3", { action: "decline", content: { a: 1 } }).response.response),
+    "decline elicitation drops content");
+
+  console.log("PASS: test-control-protocol (29 tests)");
 } catch (err) {
   console.error("FAIL:", err.message);
   process.exit(1);

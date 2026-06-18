@@ -253,6 +253,46 @@ function buildHookStopResponse(requestId, decision) {
   return buildControlAck(requestId, { hookSpecificOutput: output });
 }
 
+/**
+ * Response to a CLI `request_user_dialog` control request.
+ *
+ * The SDK schema is `{ behavior: "completed" | "cancelled", result? }`. `result`
+ * is opaque and defined per `dialog_kind`; the CLI's internal caller expects an
+ * exact per-kind shape, so we only attach it when a caller has actually modeled
+ * the kind. For any kind we cannot render faithfully the protocol mandates
+ * `{ behavior: "cancelled" }` — fail closed rather than feed the caller a guessed
+ * `result`, which is worse than the documented no-dialog degradation.
+ * @param {string} requestId
+ * @param {{ behavior?: "completed" | "cancelled", result?: unknown }} [decision]
+ */
+function buildUserDialogResponse(requestId, decision = {}) {
+  const completed = decision.behavior === "completed";
+  const body = { behavior: completed ? "completed" : "cancelled" };
+  if (completed && decision.result !== undefined) body.result = decision.result;
+  return buildControlAck(requestId, body);
+}
+
+/**
+ * Response to a CLI MCP `elicitation` control request.
+ *
+ * The SDK schema is `{ action: "accept" | "decline" | "cancel", content? }`.
+ * `content` is a free record whose keys are the elicitation's requested fields;
+ * we pass the user's answers through best-effort and only attach it on "accept".
+ * @param {string} requestId
+ * @param {{ action?: "accept" | "decline" | "cancel", content?: Record<string, unknown> }} [decision]
+ */
+function buildElicitationResponse(requestId, decision = {}) {
+  const action =
+    decision.action === "accept" || decision.action === "decline"
+      ? decision.action
+      : "cancel";
+  const body = { action };
+  if (action === "accept" && decision.content && typeof decision.content === "object") {
+    body.content = decision.content;
+  }
+  return buildControlAck(requestId, body);
+}
+
 module.exports = {
   EDIT_TOOLS,
   READ_ONLY_TOOLS,
@@ -273,4 +313,6 @@ module.exports = {
   buildHookContinueResponse,
   buildHookPreToolUseResponse,
   buildHookStopResponse,
+  buildUserDialogResponse,
+  buildElicitationResponse,
 };

@@ -178,7 +178,44 @@ try {
   assert(broker.hookCount() === 0, "should clear hooks");
   assert(m.getAllIngested().some(e => e.type === "hook.resolved"), "should notify hook cancel");
 
-  console.log("PASS: test-approval-broker (14 tests)");
+  // ===== Test 15: request_user_dialog fails closed without prompting =====
+  // We declare no supportedDialogKinds and cannot synthesize a per-kind result,
+  // so the only correct answer is {behavior:"cancelled"} — and parking a prompt
+  // whose answer we'd drop would be a misleading dead-end, so it must not park.
+  broker.clearPermissions(false); // drop leftover pending from earlier tests
+  m.reset();
+  broker.handleUserInputRequest({ requestId: "dlg_1", subtype: "request_user_dialog", input: {}, questions: [] });
+  assert(broker.permissionCount() === 0, "request_user_dialog must not park a pending prompt");
+  assert(m.getBlockingCalls() === 0, "request_user_dialog must not mark a blocking request");
+  assert(!m.getAllIngested().some(e => e.type === "user_question.requested"), "request_user_dialog must not surface a question");
+  const dlgResp = m.getAllWritten().find(c => c?.response?.response?.behavior === "cancelled");
+  assert(dlgResp, "request_user_dialog answered with behavior:cancelled");
+  assert(dlgResp.response.request_id === "dlg_1", "cancelled response targets the dialog request");
+
+  // ===== Test 16: elicitation parks and prompts the user =====
+  m.reset();
+  broker.handleUserInputRequest({
+    requestId: "el_1",
+    subtype: "elicitation",
+    input: { question: "Name?" },
+    questions: [{ id: "name", question: "Name?" }],
+  });
+  assert(broker.permissionCount() === 1, "elicitation should wait for an answer");
+  assert(m.getBlockingCalls() === 1, "elicitation marks a blocking request");
+  assert(m.getAllIngested().some(e => e.type === "user_question.requested"), "elicitation surfaces a question");
+
+  // ===== Test 17: elicitation answer uses the {action, content} schema =====
+  // The old code answered {questions, answers}, which matched no SDK schema and
+  // was dropped; the answer must reach the MCP server as accept + content.
+  m.reset();
+  const elAnswered = broker.respondUserQuestion("el_1", { answers: { name: "Ada" } });
+  assert(elAnswered === true, "elicitation answer accepted");
+  assert(broker.permissionCount() === 0, "elicitation cleared after answer");
+  const elCtl = m.getAllWritten().find(c => c?.response?.response?.action === "accept");
+  assert(elCtl, "elicitation answered with action:accept");
+  assert(elCtl.response.response.content.name === "Ada", "elicitation content carries the user's answer");
+
+  console.log("PASS: test-approval-broker (17 tests)");
 } catch (err) {
   console.error("FAIL:", err.message);
   process.exit(1);
