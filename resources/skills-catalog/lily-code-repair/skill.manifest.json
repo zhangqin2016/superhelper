@@ -6,7 +6,7 @@
   "version": "1.0.0",
   "minAppVersion": "0.1.0",
   "runtime": "none",
-  "category": "dev",
+  "category": "coding",
   "categoryLabel": "编程研发",
   "publisher": "Lily Workbench",
   "capabilityLayer": "quality",

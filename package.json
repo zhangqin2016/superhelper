@@ -164,6 +164,7 @@
       "shortcutName": "Lily Workbench",
       "unicode": true,
       "useZip": true,
+      "include": "build/installer.nsh",
       "installerLanguages": [
         "zh_CN",
         "en_US"

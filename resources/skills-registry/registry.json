@@ -75,7 +75,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "dev",
+      "category": "coding",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -111,7 +111,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "dev",
+      "category": "coding",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -147,7 +147,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "dev",
+      "category": "coding",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -363,7 +363,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "dev",
+      "category": "coding",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -390,7 +390,7 @@
       "id": "lily-creative-director",
       "name": "创意总监",
       "description": "图片、视频、海报、封面、角色、产品图和视觉概念任务的创意方向把关，先定风格、构图和用途，再输出可执行提示词。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -534,7 +534,7 @@
       "id": "lily-stock-research",
       "name": "股票研究",
       "description": "股票、ETF、指数、自选股和市场复盘研究时使用，复用平台搜索、模型、表格分析和股票应用工作区，区分事实、推断和非投资建议风险提示。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -579,7 +579,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.48",
-      "category": "dev",
+      "category": "coding",
       "categoryLabel": "网页自动化",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
