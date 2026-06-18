@@ -86,5 +86,15 @@ Place generated artifacts in the workspace learning area, using stable English d
 
 - Prefer learned API actions for speed and reliability when they are verified and safe.
 - Use browser automation when an API is missing, UI-only, or must be visually confirmed.
+- When an action has both an API path and a browser path, put the API steps in
+  `operations` and the browser equivalent in `plan.fallbackOperations`; the
+  executor runs the fallback automatically if the API path fails or goes stale
+  (401/403/404/status-mismatch/locator-not-found).
+- For write actions, supply `plan.rollbackOperations` (compensating steps); the
+  executor runs them best-effort if a write fails after mutating state.
+- Always pass `--audit-log <file>` so every step is appended to a durable JSONL
+  trail (inputs redacted). A failed run reports `stale`/`staleSignal`/
+  `relearnRecommended` — when `relearnRecommended` is true, re-run learning
+  rather than blindly retrying.
 - For ambiguous natural-language requests, ask one focused question instead of guessing a destructive action.
 - Always show what will happen before a mutating action and record the result in audit logs.

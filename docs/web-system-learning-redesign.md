@@ -58,9 +58,29 @@ Status: Phase 1 已落地；Phase 2–4 待办
 价值：任何带 Swagger/GraphQL 的系统，一条 introspection / 一个 swagger.json 即可直接拿到**全量
 API + 数据结构**，立刻逼近「学到所有 API/数据结构」目标，且权威优先、不被样本推断污染。
 
-### Phase 2 — 执行器接 @playwright/mcp（待办）
+### Phase 2 — 执行器兑现契约 ✅（本次）
 
-真 API→浏览器回退、a11y 健壮定位、trace 审计；退役自研 ops。
+`execute_web_playbook.cjs` 关闭审计发现的执行器缺口（重构出 `executeOperation` /
+`runOperationList` 复用执行）：
+
+- **真 API→浏览器回退**：`plan.fallbackOperations`（浏览器路径）在主路径（通常 API）失败/
+  stale 时自动执行（401/403/404/状态不符/定位失败），不再硬停。
+- **回滚**：`plan.rollbackOperations` 在写操作已改动状态后失败时 best-effort 执行补偿。
+- **stale 主动检测**：API 返回 401/403/404 即判 stale；失败结果带 `stale`/`staleSignal`/
+  `relearnRecommended`，驱动重学而非盲目重试。
+- **持久审计**：`--audit-log` 把每步追加成脱敏 JSONL（含验证、回退、回滚阶段）。
+- 三条执行路径（主/回退/回滚）共用同一套风险上限 + 域名白名单校验。
+
+测试：`scripts/test-web-system-executor-contract.mjs`（9，dry-run 校验契约面 + 审计）。
+注：真浏览器回退/回滚的执行路径需真实浏览器，属手工集成验证（套件用 dry-run）。
+
+注：完整改用 @playwright/mcp（a11y 工具集）是更大的运行时/配置迁移（需在 CLI 注册 MCP
+server + 打包），作为后续独立项；本阶段先让现有执行器兑现契约。
+
+### Phase 2b — 改用 @playwright/mcp（待办，可选）
+
+注册 @playwright/mcp，SKILL.md 改为驱动其 a11y 工具；execute_web_playbook.cjs 保留为
+确定性编译路径。
 
 ### Phase 3 — 智能探索 + 覆盖率评审（待办）
 

@@ -29,9 +29,10 @@ const LOCATOR_FIELDS = ["selector", "role", "label", "placeholder", "testId", "t
 function usage() {
   return [
     "Usage:",
-    "  node scripts/execute_web_playbook.cjs --playbook web-system-playbook.json --action web.query-status --plan action-plan.json [--capability-map capability-map.json] [--storage-state state.json] [--confirmed] [--headful] [--dry-run]",
+    "  node scripts/execute_web_playbook.cjs --playbook web-system-playbook.json --action web.query-status --plan action-plan.json [--capability-map capability-map.json] [--storage-state state.json] [--audit-log audit.jsonl] [--confirmed] [--headful] [--dry-run]",
     "",
     "The action plan is model-generated JSON, but this executor validates capability, required parameters, domain, risk, confirmation, and operation shape before touching the browser.",
+    "plan.fallbackOperations run if the primary (API) path fails/goes stale; plan.rollbackOperations run if a write fails after mutating state; --audit-log appends a durable JSONL trail.",
   ].join("\n");
 }
 
@@ -46,6 +47,7 @@ function parseArgs(argv) {
     headful: false,
     dryRun: false,
     out: null,
+    auditLog: null,
   };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -58,6 +60,7 @@ function parseArgs(argv) {
     else if (arg === "--headful") args.headful = true;
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--out") args.out = argv[++i];
+    else if (arg === "--audit-log") args.auditLog = argv[++i];
     else if (arg === "--help" || arg === "-h") {
       console.log(usage());
       process.exit(0);
@@ -285,18 +288,63 @@ function validatePlan(playbook, action, plan, { confirmed }) {
   if (!Array.isArray(plan.operations) || plan.operations.length === 0) {
     throw new Error("plan.operations must be a non-empty array");
   }
-  const operations = plan.operations.map((op, index) => {
+  const operations = resolveOperations(playbook, actionSpec, actionRisk, allowedDomains, plan.operations, "operations");
+  // Optional declared fallback (browser path when the API path fails/stale) and
+  // rollback (compensating steps when a write fails mid-way). Both are held to
+  // the same risk ceiling and domain allowlist as the primary operations.
+  const fallbackOperations = Array.isArray(plan.fallbackOperations) && plan.fallbackOperations.length
+    ? resolveOperations(playbook, actionSpec, actionRisk, allowedDomains, plan.fallbackOperations, "fallbackOperations")
+    : [];
+  const rollbackOperations = Array.isArray(plan.rollbackOperations) && plan.rollbackOperations.length
+    ? resolveOperations(playbook, actionSpec, actionRisk, allowedDomains, plan.rollbackOperations, "rollbackOperations")
+    : [];
+
+  if (actionRisk !== "read" && !confirmed) {
+    return {
+      ok: true,
+      reviewRequired: true,
+      action: actionSpec.action,
+      risk: actionRisk,
+      confirmation,
+      message: "This action requires user review/confirmation before browser execution.",
+      operations,
+      fallbackOperations,
+      rollbackOperations,
+      allowedDomains,
+    };
+  }
+
+  return {
+    ok: true,
+    reviewRequired: false,
+    action: actionSpec.action,
+    risk: actionRisk,
+    confirmation,
+    operations,
+    fallbackOperations,
+    rollbackOperations,
+    allowedDomains,
+  };
+}
+
+/**
+ * Normalize + safety-resolve a list of plan operations (risk ceiling, domain
+ * allowlist, contract resolution). Shared by primary/fallback/rollback lists so
+ * every executable path is validated identically. `label` scopes error messages.
+ */
+function resolveOperations(playbook, actionSpec, actionRisk, allowedDomains, opList, label) {
+  return opList.map((op, index) => {
     const normalized = normalizeOperation(op, index, actionRisk);
     if (normalized.type === "apiRequest") {
       const contract = resolveApiContract(playbook, actionSpec, normalized);
       const targetUrl = resolveApiRequestUrl(playbook, normalized, contract);
       if (!isAllowedUrl(targetUrl, allowedDomains)) {
-        throw new Error(`operations[${index}] apiRequest target is outside allowedDomains`);
+        throw new Error(`${label}[${index}] apiRequest target is outside allowedDomains`);
       }
       const method = String(normalized.method || contract?.method || "GET").toUpperCase();
       const contractRisk = contract?.risk || (method === "GET" || method === "HEAD" ? "read" : "submit");
       if (RISK_ORDER[contractRisk] > RISK_ORDER[actionRisk]) {
-        throw new Error(`operations[${index}] API contract risk ${contractRisk} exceeds action risk ${actionRisk}`);
+        throw new Error(`${label}[${index}] API contract risk ${contractRisk} exceeds action risk ${actionRisk}`);
       }
       return {
         ...normalized,
@@ -309,49 +357,26 @@ function validatePlan(playbook, action, plan, { confirmed }) {
     if (normalized.type === "goto") {
       const targetUrl = resolveTargetUrl(playbook, normalized);
       if (!isAllowedUrl(targetUrl, allowedDomains)) {
-        throw new Error(`operations[${index}] target URL is outside allowedDomains`);
+        throw new Error(`${label}[${index}] target URL is outside allowedDomains`);
       }
       return { ...normalized, url: targetUrl };
     }
     if (normalized.type === "waitForUrl" && (normalized.url || normalized.path)) {
       const targetUrl = resolveTargetUrl(playbook, normalized);
       if (!isAllowedUrl(targetUrl, allowedDomains)) {
-        throw new Error(`operations[${index}] waitForUrl target is outside allowedDomains`);
+        throw new Error(`${label}[${index}] waitForUrl target is outside allowedDomains`);
       }
       return { ...normalized, url: targetUrl };
     }
     if (normalized.type === "waitForResponse" && normalized.url) {
       const targetUrl = resolveTargetUrl(playbook, normalized);
       if (!isAllowedUrl(targetUrl, allowedDomains)) {
-        throw new Error(`operations[${index}] waitForResponse target is outside allowedDomains`);
+        throw new Error(`${label}[${index}] waitForResponse target is outside allowedDomains`);
       }
       return { ...normalized, url: targetUrl };
     }
     return normalized;
   });
-
-  if (actionRisk !== "read" && !confirmed) {
-    return {
-      ok: true,
-      reviewRequired: true,
-      action: actionSpec.action,
-      risk: actionRisk,
-      confirmation,
-      message: "This action requires user review/confirmation before browser execution.",
-      operations,
-      allowedDomains,
-    };
-  }
-
-  return {
-    ok: true,
-    reviewRequired: false,
-    action: actionSpec.action,
-    risk: actionRisk,
-    confirmation,
-    operations,
-    allowedDomains,
-  };
 }
 
 function resolveApiContract(playbook, actionSpec, op) {
@@ -403,117 +428,201 @@ async function runBrowser(playbook, validated, args) {
   if (args.storageState) contextOptions.storageState = path.resolve(args.storageState);
   const context = await browser.newContext(contextOptions);
   const page = await context.newPage();
-  const extracted = [];
-  const apiResponses = [];
-  const screenshots = [];
-  const events = [];
-  const network = [];
+  const sinks = { extracted: [], apiResponses: [], screenshots: [], events: [], network: [], mutated: [] };
 
   page.on("request", (request) => {
     const resourceType = request.resourceType();
     if (!["document", "xhr", "fetch"].includes(resourceType)) return;
-    const method = request.method();
-    if (method === "GET" && resourceType !== "xhr" && resourceType !== "fetch") return;
-    network.push({
+    sinks.network.push({
       type: "request",
-      method,
+      method: request.method(),
       url: redactUrl(request.url()),
       resourceType,
       postDataShape: shapePostData(request.postData() || ""),
     });
   });
 
+  const opts = { action: validated.action, allowedDomains: validated.allowedDomains, auditLog: args.auditLog };
   try {
-    for (let index = 0; index < validated.operations.length; index += 1) {
-      const op = validated.operations[index];
-      events.push({ type: "operation:start", index, operation: op.type, target: targetDescriptor(op) });
-      try {
-        if (op.type === "apiRequest") {
-          const response = await context.request.fetch(op.url, apiRequestOptions(op));
-          const body = await readApiResponseBody(response, op);
-          const record = {
-            label: op.label || op.contractId || op.url,
-            contractId: op.contractId || "",
-            method: op.method,
-            url: redactUrl(op.url),
-            status: response.status(),
-            ok: response.ok(),
-            body,
-          };
-          apiResponses.push(record);
-          if (op.extract !== false) {
-            extracted.push({ label: record.label, text: stringifyApiBody(body, Number(op.maxChars || 6000)) });
-          }
-          events.push({ type: "apiRequest", method: op.method, url: redactUrl(op.url), status: response.status() });
-          if (op.expectStatus && response.status() !== Number(op.expectStatus)) {
-            const error = new Error(`API response status ${response.status()} did not match expected ${op.expectStatus}`);
-            error.code = "API_STATUS_MISMATCH";
-            throw error;
-          }
-        } else if (op.type === "goto") {
-        await page.goto(op.url, { waitUntil: "domcontentloaded", timeout: Number(op.timeoutMs || 30000) });
-        events.push({ type: "goto", url: page.url() });
-      } else if (op.type === "click") {
-        const locator = await locatorFor(page, op);
-        await locator.click({ timeout: Number(op.timeoutMs || 15000) });
-        events.push({ type: "click", target: targetDescriptor(op) });
-      } else if (op.type === "fill") {
-        const locator = await locatorFor(page, op);
-        await locator.fill(String(op.value || ""), { timeout: Number(op.timeoutMs || 15000) });
-        events.push({ type: "fill", target: targetDescriptor(op), redacted: true });
-      } else if (op.type === "select") {
-        const locator = await locatorFor(page, op);
-        await locator.selectOption(selectOptionValue(op), { timeout: Number(op.timeoutMs || 15000) });
-        events.push({ type: "select", target: targetDescriptor(op), redacted: true });
-      } else if (op.type === "check") {
-        const locator = await locatorFor(page, op);
-        await locator.check({ timeout: Number(op.timeoutMs || 15000) });
-        events.push({ type: "check", target: targetDescriptor(op) });
-      } else if (op.type === "uncheck") {
-        const locator = await locatorFor(page, op);
-        await locator.uncheck({ timeout: Number(op.timeoutMs || 15000) });
-        events.push({ type: "uncheck", target: targetDescriptor(op) });
-      } else if (op.type === "upload") {
-        const locator = await locatorFor(page, op);
-        await locator.setInputFiles(op.files.map((file) => path.resolve(file)), { timeout: Number(op.timeoutMs || 15000) });
-        events.push({ type: "upload", target: targetDescriptor(op), fileCount: op.files.length });
-      } else if (op.type === "press") {
-        await page.keyboard.press(String(op.key));
-        events.push({ type: "press", key: op.key });
-      } else if (op.type === "wait") {
-        await page.waitForTimeout(Math.max(0, Math.min(Number(op.ms || 1000), 10000)));
-        events.push({ type: "wait", ms: Number(op.ms || 1000) });
-      } else if (op.type === "waitForUrl") {
-        await waitForUrl(page, op);
-        events.push({ type: "waitForUrl", url: page.url() });
-      } else if (op.type === "waitForText") {
-        await waitForText(page, op);
-        events.push({ type: "waitForText", target: targetDescriptor(op) });
-      } else if (op.type === "waitForResponse") {
-        await waitForResponse(page, op, validated.allowedDomains);
-        events.push({ type: "waitForResponse", target: targetDescriptor(op) });
-      } else if (op.type === "assertText") {
-        await assertText(page, op);
-        events.push({ type: "assertText", target: targetDescriptor(op) });
-      } else if (op.type === "extract") {
-        const text = op.selector
-          ? await page.locator(op.selector).innerText({ timeout: Number(op.timeoutMs || 15000) })
-          : await page.locator("body").innerText({ timeout: Number(op.timeoutMs || 15000) });
-        extracted.push({ label: op.label || op.selector || "page", text: String(text || "").slice(0, Number(op.maxChars || 6000)) });
-      } else if (op.type === "screenshot") {
-        const file = path.resolve(op.path || `web-connector-${Date.now()}.png`);
-        await page.screenshot({ path: file, fullPage: Boolean(op.fullPage) });
-        screenshots.push(file);
-      }
-        events.push({ type: "operation:complete", index, operation: op.type });
-      } catch (err) {
-        return actionFailure(err, { validated, op, index, page, events, extracted, screenshots, network });
+    const primary = await runOperationList(page, context, validated.operations, sinks, { ...opts, phase: "primary" });
+    if (!primary.failed) {
+      appendAudit(args.auditLog, { ts: new Date().toISOString(), action: validated.action, phase: "primary", result: "ok" });
+      return { ok: true, action: validated.action, finalUrl: page.url(), ...sinkResult(sinks) };
+    }
+
+    const stale = classifyStale(primary.err, primary.op, validated.staleSignals);
+
+    // Real API→browser fallback: when the primary (often API) path fails or goes
+    // stale and a browser fallback was declared, run it instead of hard-failing.
+    if (validated.fallbackOperations?.length && isFallbackEligible(primary.err, primary.op)) {
+      sinks.events.push({ type: "fallback:start", reason: primary.err.code || "error" });
+      const fb = await runOperationList(page, context, validated.fallbackOperations, sinks, { ...opts, phase: "fallback" });
+      if (!fb.failed) {
+        appendAudit(args.auditLog, { ts: new Date().toISOString(), action: validated.action, phase: "fallback", result: "ok", recoveredFrom: primary.err.code || "error" });
+        return {
+          ok: true,
+          action: validated.action,
+          fellBack: true,
+          recoveredFrom: { code: primary.err.code || "", op: primary.op.type },
+          finalUrl: page.url(),
+          ...sinkResult(sinks),
+        };
       }
     }
-    return { ok: true, action: validated.action, events, extracted, apiResponses, screenshots, network, finalUrl: page.url() };
+
+    // Rollback: if a write already mutated state before failing, run the
+    // declared compensating steps best-effort so we don't leave partial writes.
+    let rolledBack = false;
+    if (validated.risk !== "read" && sinks.mutated.length && validated.rollbackOperations?.length) {
+      sinks.events.push({ type: "rollback:start", mutatedCount: sinks.mutated.length });
+      const rb = await runOperationList(page, context, validated.rollbackOperations, sinks, { ...opts, phase: "rollback" });
+      rolledBack = !rb.failed;
+      appendAudit(args.auditLog, { ts: new Date().toISOString(), action: validated.action, phase: "rollback", result: rolledBack ? "ok" : "failed" });
+    }
+
+    return actionFailure(primary.err, { validated, op: primary.op, index: primary.index, page, sinks, stale, rolledBack });
   } finally {
     await context.close();
     await browser.close();
+  }
+}
+
+/** Execute one operation list, recording into shared sinks. Returns failure info instead of throwing. */
+async function runOperationList(page, context, operations, sinks, opts) {
+  for (let index = 0; index < operations.length; index += 1) {
+    const op = operations[index];
+    sinks.events.push({ type: "operation:start", phase: opts.phase, index, operation: op.type, target: targetDescriptor(op) });
+    appendAudit(opts.auditLog, { ts: new Date().toISOString(), action: opts.action, phase: opts.phase, index, op: op.type, risk: op.risk, target: targetDescriptor(op) });
+    try {
+      await executeOperation(page, context, op, sinks, opts.allowedDomains);
+      if (RISK_ORDER[op.risk] >= RISK_ORDER.submit) sinks.mutated.push({ phase: opts.phase, index, op: op.type });
+      sinks.events.push({ type: "operation:complete", phase: opts.phase, index, operation: op.type });
+    } catch (err) {
+      appendAudit(opts.auditLog, { ts: new Date().toISOString(), action: opts.action, phase: opts.phase, index, op: op.type, error: err.code || "ERROR", message: err.message });
+      return { failed: true, err, op, index };
+    }
+  }
+  return { failed: false };
+}
+
+async function executeOperation(page, context, op, sinks, allowedDomains) {
+  if (op.type === "apiRequest") {
+    const response = await context.request.fetch(op.url, apiRequestOptions(op));
+    const body = await readApiResponseBody(response, op);
+    const record = {
+      label: op.label || op.contractId || op.url,
+      contractId: op.contractId || "",
+      method: op.method,
+      url: redactUrl(op.url),
+      status: response.status(),
+      ok: response.ok(),
+      body,
+    };
+    sinks.apiResponses.push(record);
+    if (op.extract !== false) {
+      sinks.extracted.push({ label: record.label, text: stringifyApiBody(body, Number(op.maxChars || 6000)) });
+    }
+    sinks.events.push({ type: "apiRequest", method: op.method, url: redactUrl(op.url), status: response.status() });
+    // Proactive stale/auth detection: a learned contract that now returns
+    // 401/403/404 is logged out or gone — fail so fallback/relearn can kick in.
+    if ([401, 403, 404].includes(response.status())) {
+      const error = new Error(`API responded ${response.status()} (stale contract or logged out)`);
+      error.code = `API_${response.status()}`;
+      throw error;
+    }
+    if (op.expectStatus && response.status() !== Number(op.expectStatus)) {
+      const error = new Error(`API response status ${response.status()} did not match expected ${op.expectStatus}`);
+      error.code = "API_STATUS_MISMATCH";
+      throw error;
+    }
+  } else if (op.type === "goto") {
+    await page.goto(op.url, { waitUntil: "domcontentloaded", timeout: Number(op.timeoutMs || 30000) });
+    sinks.events.push({ type: "goto", url: page.url() });
+  } else if (op.type === "click") {
+    await (await locatorFor(page, op)).click({ timeout: Number(op.timeoutMs || 15000) });
+    sinks.events.push({ type: "click", target: targetDescriptor(op) });
+  } else if (op.type === "fill") {
+    await (await locatorFor(page, op)).fill(String(op.value || ""), { timeout: Number(op.timeoutMs || 15000) });
+    sinks.events.push({ type: "fill", target: targetDescriptor(op), redacted: true });
+  } else if (op.type === "select") {
+    await (await locatorFor(page, op)).selectOption(selectOptionValue(op), { timeout: Number(op.timeoutMs || 15000) });
+    sinks.events.push({ type: "select", target: targetDescriptor(op), redacted: true });
+  } else if (op.type === "check") {
+    await (await locatorFor(page, op)).check({ timeout: Number(op.timeoutMs || 15000) });
+    sinks.events.push({ type: "check", target: targetDescriptor(op) });
+  } else if (op.type === "uncheck") {
+    await (await locatorFor(page, op)).uncheck({ timeout: Number(op.timeoutMs || 15000) });
+    sinks.events.push({ type: "uncheck", target: targetDescriptor(op) });
+  } else if (op.type === "upload") {
+    await (await locatorFor(page, op)).setInputFiles(op.files.map((file) => path.resolve(file)), { timeout: Number(op.timeoutMs || 15000) });
+    sinks.events.push({ type: "upload", target: targetDescriptor(op), fileCount: op.files.length });
+  } else if (op.type === "press") {
+    await page.keyboard.press(String(op.key));
+    sinks.events.push({ type: "press", key: op.key });
+  } else if (op.type === "wait") {
+    await page.waitForTimeout(Math.max(0, Math.min(Number(op.ms || 1000), 10000)));
+    sinks.events.push({ type: "wait", ms: Number(op.ms || 1000) });
+  } else if (op.type === "waitForUrl") {
+    await waitForUrl(page, op);
+    sinks.events.push({ type: "waitForUrl", url: page.url() });
+  } else if (op.type === "waitForText") {
+    await waitForText(page, op);
+    sinks.events.push({ type: "waitForText", target: targetDescriptor(op) });
+  } else if (op.type === "waitForResponse") {
+    await waitForResponse(page, op, allowedDomains);
+    sinks.events.push({ type: "waitForResponse", target: targetDescriptor(op) });
+  } else if (op.type === "assertText") {
+    await assertText(page, op);
+    sinks.events.push({ type: "assertText", target: targetDescriptor(op) });
+  } else if (op.type === "extract") {
+    const text = op.selector
+      ? await page.locator(op.selector).innerText({ timeout: Number(op.timeoutMs || 15000) })
+      : await page.locator("body").innerText({ timeout: Number(op.timeoutMs || 15000) });
+    sinks.extracted.push({ label: op.label || op.selector || "page", text: String(text || "").slice(0, Number(op.maxChars || 6000)) });
+  } else if (op.type === "screenshot") {
+    const file = path.resolve(op.path || `web-connector-${Date.now()}.png`);
+    await page.screenshot({ path: file, fullPage: Boolean(op.fullPage) });
+    sinks.screenshots.push(file);
+  }
+}
+
+function sinkResult(sinks) {
+  return {
+    events: sinks.events,
+    extracted: sinks.extracted,
+    apiResponses: sinks.apiResponses,
+    screenshots: sinks.screenshots,
+    network: sinks.network,
+  };
+}
+
+const FALLBACK_ELIGIBLE_CODES = new Set(["API_STATUS_MISMATCH", "API_401", "API_403", "API_404", "LOCATOR_NOT_FOUND"]);
+const DEFAULT_STALE_SIGNALS = ["api_401", "api_403", "api_404", "api_status_mismatch", "locator_not_found"];
+const STALE_CODE_TO_SIGNAL = {
+  API_STATUS_MISMATCH: "api_status_mismatch",
+  API_401: "api_401",
+  API_403: "api_403",
+  API_404: "api_404",
+  LOCATOR_NOT_FOUND: "locator_not_found",
+};
+
+function isFallbackEligible(err, op) {
+  return op.type === "apiRequest" || FALLBACK_ELIGIBLE_CODES.has(String(err.code || ""));
+}
+
+function classifyStale(err, op, staleSignals) {
+  const signals = Array.isArray(staleSignals) && staleSignals.length ? staleSignals : DEFAULT_STALE_SIGNALS;
+  const signal = STALE_CODE_TO_SIGNAL[String(err.code || "")] || "";
+  const stale = signal ? signals.includes(signal) : false;
+  return { stale, staleSignal: stale ? signal : "" };
+}
+
+function appendAudit(auditLog, entry) {
+  if (!auditLog) return;
+  try {
+    fs.appendFileSync(path.resolve(auditLog), `${JSON.stringify(entry)}\n`);
+  } catch {
+    /* audit must never break execution */
   }
 }
 
@@ -659,12 +768,18 @@ function stringifyApiBody(body, maxChars) {
   return String(text || "").slice(0, maxChars);
 }
 
-function actionFailure(err, { validated, op, index, page, events, extracted, screenshots, network }) {
+function actionFailure(err, { validated, op, index, page, sinks, stale, rolledBack }) {
   return {
     ok: false,
     action: validated.action,
     code: err.code || "WEB_ACTION_FAILED",
     message: err.message,
+    // Stale classification drives the relearn loop instead of a blind retry.
+    stale: Boolean(stale?.stale),
+    staleSignal: stale?.staleSignal || "",
+    relearnRecommended: Boolean(stale?.stale),
+    fellBack: false,
+    rolledBack: Boolean(rolledBack),
     failedOperation: {
       index,
       type: op.type,
@@ -672,10 +787,7 @@ function actionFailure(err, { validated, op, index, page, events, extracted, scr
       target: targetDescriptor(op),
     },
     recovery: recoveryHints(err, op),
-    events,
-    extracted,
-    screenshots,
-    network,
+    ...sinkResult(sinks),
     finalUrl: page.url(),
   };
 }
@@ -758,6 +870,15 @@ async function main() {
   }
   const validated = enrichWithCapability(validatePlan(playbook, args.action, plan, { confirmed: args.confirmed }), capability);
   if (args.dryRun || validated.reviewRequired) {
+    appendAudit(args.auditLog, {
+      ts: new Date().toISOString(),
+      action: validated.action,
+      phase: "validate",
+      result: validated.reviewRequired ? "review-required" : "validated",
+      operations: validated.operations?.length || 0,
+      fallbackOperations: validated.fallbackOperations?.length || 0,
+      rollbackOperations: validated.rollbackOperations?.length || 0,
+    });
     output(validated, args);
     return;
   }
