@@ -22,19 +22,15 @@ function ensureEl() {
   el = document.createElement("div");
   el.className = "migration-progress";
   el.setAttribute("role", "status");
-  el.style.cssText =
-    "position:fixed;bottom:16px;left:16px;z-index:9999;display:none;" +
-    "min-width:220px;max-width:320px;padding:10px 12px;border-radius:10px;" +
-    "background:rgba(23,26,33,.96);color:#e6e8ec;border:1px solid #2a2f3a;" +
-    "box-shadow:0 6px 24px rgba(0,0,0,.35);font-size:12.5px;backdrop-filter:blur(4px);";
+  el.hidden = true;
 
   textNode = document.createElement("div");
-  textNode.style.cssText = "margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+  textNode.className = "migration-progress-text";
 
   const track = document.createElement("div");
-  track.style.cssText = "height:4px;border-radius:3px;background:#2a2f3a;overflow:hidden;";
+  track.className = "migration-progress-track";
   barFill = document.createElement("div");
-  barFill.style.cssText = "height:100%;width:0%;background:#5b9dff;border-radius:3px;transition:width .25s ease;";
+  barFill.className = "migration-progress-fill";
   track.appendChild(barFill);
 
   el.append(textNode, track);
@@ -47,7 +43,7 @@ function render({ phase, done, total }) {
   ensureEl();
   textNode.textContent = label(done, total);
   barFill.style.width = `${Math.min(100, Math.round((done / total) * 100))}%`;
-  el.style.display = "block";
+  el.hidden = false;
   if (hideTimer) {
     clearTimeout(hideTimer);
     hideTimer = null;
@@ -55,7 +51,7 @@ function render({ phase, done, total }) {
   if (phase === "done" || done >= total) {
     barFill.style.width = "100%";
     hideTimer = setTimeout(() => {
-      if (el) el.style.display = "none";
+      if (el) el.hidden = true;
     }, 2500);
   }
 }

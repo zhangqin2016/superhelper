@@ -238,6 +238,34 @@
 .toast-info { background: var(--info-bg); border: 1px solid var(--info-border); color: var(--info-text-soft); }
 .toast-success { background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text-soft); }
 
+/* Non-blocking legacy-message migration progress (bottom-left). */
+.migration-progress {
+  position: fixed; bottom: 16px; left: 16px; z-index: 10000;
+  min-width: 220px; max-width: 320px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-floating);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-floating);
+  font-size: 12.5px;
+  backdrop-filter: blur(4px);
+}
+.migration-progress[hidden] { display: none; }
+.migration-progress-text {
+  margin-bottom: 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+.migration-progress-track {
+  height: 4px; border-radius: var(--radius-sm);
+  background: var(--bg-surface-raised); overflow: hidden;
+}
+.migration-progress-fill {
+  height: 100%; width: 0; border-radius: var(--radius-sm);
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
 /* =========================================================================
    Animations
    ========================================================================= */

@@ -44,6 +44,11 @@
   transform: translateX(0);
 }
 
+[dir="rtl"] .migration-progress {
+  left: auto;
+  right: 16px;
+}
+
 [dir="rtl"] .project-collapse-icon {
   transform: scaleX(-1);
 }
