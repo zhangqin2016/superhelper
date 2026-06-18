@@ -61,6 +61,22 @@ if (!permissionNormalized.some((action) => action.kind === "permission_check")) 
   throw new Error("permission control request must normalize to permission_check action");
 }
 
+const hookNameNormalized = permissionAdapter.normalizeEvent({
+  type: "control_request",
+  request_id: "hook_1",
+  request: {
+    type: "hook",
+    hook_event: {
+      hook_event_name: "TaskCreated",
+      task_id: "task_1",
+      task_name: "scan website",
+    },
+  },
+}).actions;
+if (!hookNameNormalized.some((action) => action.kind === "hook_task_created" && action.hookName === "TaskCreated")) {
+  throw new Error(`hook_event_name must normalize to hook_task_created, got ${JSON.stringify(hookNameNormalized)}`);
+}
+
 const taskEvents = flatten("task-progress.jsonl");
 if (!hasType(taskEvents, "engine.notice")) {
   throw new Error("task telemetry must expose engine.notice");

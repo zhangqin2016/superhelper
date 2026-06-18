@@ -30,6 +30,7 @@ function startTurn(runner) {
   runner._turnSettled = false;
   runner.collectedOutput = "answer";
   runner._leaseTracker.reset();
+  runner._lifecycleTracker.reset();
   runner._approvals.clearPermissions();
 }
 
@@ -82,13 +83,13 @@ function startTurn(runner) {
 {
   const { runner } = createTestSession("settle_background");
   startTurn(runner);
-  runner._backgroundActivityUntil = Date.now() + 30;
+  runner._markRuntimeLifecycleActivity({ type: "system", subtype: "status", detail: "background work" });
   if (runner._canAutoCompleteTurn()) {
-    throw new Error("background activity window must block auto completion");
+    throw new Error("runtime lifecycle activity must block auto completion");
   }
-  await sleep(45);
+  runner._markRuntimeLifecycleActivity({ type: "system", subtype: "task_completed" });
   if (!runner._canAutoCompleteTurn()) {
-    throw new Error("auto completion must unblock after the background window");
+    throw new Error("auto completion must unblock after runtime lifecycle completion");
   }
 }
 

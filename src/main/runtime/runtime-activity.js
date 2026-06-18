@@ -68,6 +68,17 @@ function backgroundActivityFromEvent(ev) {
     short: isBackgroundCompletionEvent(ev),
     type: ev?.type || "",
     subtype: ev?.subtype || "",
+    id: ev?.task_id || ev?.taskId || ev?.task?.id || "",
+    detail:
+      ev?.message ||
+      ev?.summary ||
+      ev?.detail ||
+      ev?.title ||
+      ev?.status ||
+      ev?.current_step ||
+      ev?.currentStep ||
+      ev?.step ||
+      "",
   };
 }
 

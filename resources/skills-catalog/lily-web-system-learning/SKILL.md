@@ -33,12 +33,24 @@ Never store passwords in a skill, prompt, log, or generated file. The user shoul
 2. Require a domain allowlist. Never follow links outside it.
 3. Ask the user to log in interactively if no active session exists.
 4. Run a read-only dry run before deeper exploration.
-5. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
-6. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
-7. Classify actions by risk: read, export, draft, submit, update, delete, financial, identity/security, and bulk operations.
-8. Build an action map and playbook. Each action needs inputs, preconditions, execution path, confirmation policy, success signal, rollback/recovery, and audit fields.
-9. Generate a workspace skill draft and summary for user review.
-10. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
+5. Run every scanner/executor command in the foreground and wait for it to finish before claiming the scan is running, complete, failed, or waiting for analysis.
+6. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
+7. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
+8. Classify actions by risk: read, export, draft, submit, update, delete, financial, identity/security, and bulk operations.
+9. Build an action map and playbook. Each action needs inputs, preconditions, execution path, confirmation policy, success signal, rollback/recovery, and audit fields.
+10. Generate a workspace skill draft and summary for user review.
+11. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
+
+## Runtime Lifecycle Rules
+
+The chat UI can only show "running" while a real foreground tool is active. Keep the assistant state honest:
+
+- Do not say "scan is running", "waiting for scan completion", or "I will analyze when it finishes" unless the scanner command is still executing as a foreground Bash/tool call in the same turn.
+- Never start `scan_web_system.py`, `execute_web_playbook.cjs`, Playwright, browser learning, or skill generation with `&`, `nohup`, `setsid`, `disown`, a detached terminal, or a separate background shell.
+- If a scan may take minutes, tell the user what will be scanned, then run the foreground command and wait for its JSON/output before summarizing.
+- If the environment cannot keep a foreground tool alive, stop and explain the exact blocker instead of pretending a background scan is active.
+- A follow-up such as "deeper scan" or "continue scanning" must either run another foreground scanner command or ask for the missing scope. It must not be treated as a separate idle chat while the previous scan is supposedly pending.
+- After a scanner command finishes, read the output file before generating `system-profile.json`, `page-map.json`, `api-map.json`, `capability-map.json`, `action-playbook.json`, `health.json`, and `skill-draft/SKILL.md`.
 
 ## Output Artifacts
 

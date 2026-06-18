@@ -15,6 +15,16 @@ const executor = path.join(skillDir, "scripts/execute_web_playbook.cjs");
 if (!fs.existsSync(path.join(skillDir, "SKILL.md"))) {
   throw new Error("lily-web-system-learning SKILL.md missing");
 }
+const skillMarkdown = fs.readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
+if (!skillMarkdown.includes("Run every scanner/executor command in the foreground")) {
+  throw new Error("web system learning skill must require foreground scan execution");
+}
+if (!skillMarkdown.includes("Do not say \"scan is running\"")) {
+  throw new Error("web system learning skill must forbid fake async scan status");
+}
+if (!skillMarkdown.includes("Never start `scan_web_system.py`")) {
+  throw new Error("web system learning skill must forbid detached scanner execution");
+}
 if (!fs.existsSync(path.join(skillDir, "skill.manifest.json"))) {
   throw new Error("lily-web-system-learning manifest missing");
 }

@@ -54,6 +54,7 @@ function startSyntheticTurn(runner) {
   runner._turnSettled = false;
   runner.collectedOutput = "partial answer";
   runner._leaseTracker.reset();
+  runner._lifecycleTracker.reset();
   runner._approvals.clearPermissions();
 }
 
@@ -305,8 +306,8 @@ line(backgroundStatusRunner, {
   subtype: "status",
   status: "thinking",
 });
-if (backgroundStatusRunner._backgroundActivityUntil <= Date.now()) {
-  throw new Error("system/status should mark background activity");
+if (backgroundStatusRunner._lifecycleTracker.pendingCount() !== 1) {
+  throw new Error("system/status should hold a runtime lifecycle lease");
 }
 line(backgroundStatusRunner, {
   type: "result",
@@ -892,11 +893,35 @@ line(backgroundRunner, { type: "system", subtype: "task_progress" });
 if (backgroundRunner._canAutoCompleteTurn()) {
   throw new Error("background task activity should delay auto completion");
 }
-backgroundRunner._backgroundActivityUntil = Date.now() - 1;
+if (backgroundRunner._lifecycleTracker.pendingCount() !== 1) {
+  throw new Error("background task activity should create a lifecycle lease");
+}
+line(backgroundRunner, { type: "system", subtype: "task_completed", message: "done" });
 if (!backgroundRunner._canAutoCompleteTurn()) {
-  throw new Error("background task delay should expire");
+  throw new Error("background task completion should release lifecycle lease");
 }
 backgroundRunner._clearIdleTimer();
+
+const lifecycleMessageStopRunner = createTestSession("sess_lifecycle_message_stop");
+let lifecycleMessageStopDone = false;
+lifecycleMessageStopRunner.on("done", () => {
+  lifecycleMessageStopDone = true;
+});
+lifecycleMessageStopRunner.on("message-stop-grace", () => {
+  lifecycleMessageStopRunner.completeFromHost("message_stop_grace");
+});
+startSyntheticTurn(lifecycleMessageStopRunner);
+line(lifecycleMessageStopRunner, { type: "system", subtype: "status", status: "deep scanning" });
+line(lifecycleMessageStopRunner, { type: "stream_event", event: { type: "message_stop" } });
+await new Promise((resolve) => setTimeout(resolve, 30));
+if (lifecycleMessageStopDone) {
+  throw new Error("message_stop must not complete while runtime lifecycle work is active");
+}
+line(lifecycleMessageStopRunner, { type: "system", subtype: "task_completed", message: "scan done" });
+await new Promise((resolve) => setTimeout(resolve, 30));
+if (!lifecycleMessageStopDone || lifecycleMessageStopRunner.busy || !lifecycleMessageStopRunner._turnSettled) {
+  throw new Error("runtime lifecycle completion should allow message_stop fallback");
+}
 
 const backgroundResultRunner = createTestSession("sess_background_result_deferred");
 let backgroundResultDone = false;

@@ -36,6 +36,7 @@ const {
 const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
 const { TimerBank } = require("./turn-timers");
 const { ToolLeaseTracker } = require("./tool-lease-tracker");
+const { RuntimeLifecycleTracker } = require("./runtime-lifecycle-tracker");
 const { DeferredResultGate } = require("./turn-settlement");
 const { ApprovalBroker } = require("./approval-broker");
 const { getLogger } = require("./logger");
@@ -70,7 +71,6 @@ class AgentSession extends EventEmitter {
     this._lineBuffer = new LineBuffer();
     this.busy = false;
     this.collectedOutput = "";
-    this._backgroundActivityUntil = 0;
     this.agentResumeId = null;
     this.spawnOptions = null;
     this.lastSpawnError = null;
@@ -88,7 +88,14 @@ class AgentSession extends EventEmitter {
         heartbeatMs: AgentSession.TOOL_LONG_TASK_HEARTBEAT_MS,
       }),
     });
+    this._lifecycleTracker = new RuntimeLifecycleTracker({
+      timers: this._timers,
+      emitNotice: (notice) => this._emitEngineNotice(notice),
+      isTurnLive: () => this.busy && !this._turnSettled,
+      heartbeatMs: () => AgentSession.RUNTIME_LIFECYCLE_HEARTBEAT_MS,
+    });
     this._sawStdoutForTurn = false;
+    this._messageStopObserved = false;
     this._turnSettled = true;
     /** User-blocking control surface: permissions/questions/hooks (see approval-broker.js). */
     this._approvals = new ApprovalBroker({
@@ -117,7 +124,6 @@ class AgentSession extends EventEmitter {
     /** @type {Map<number, string>} — content block index → tool_use id */
     this._blockIndexToToolId = new Map();
     this._internalCommand = null;
-    this._backgroundActivityUntil = 0;
     /** Holds a CLI `result` until blocking work settles (see turn-settlement.js). */
     this._resultGate = new DeferredResultGate({
       timers: this._timers,
@@ -133,9 +139,7 @@ class AgentSession extends EventEmitter {
           pendingHooks: this._approvals.hookIds(),
         });
       },
-      onCleanRelease: () => {
-        if (Date.now() < this._backgroundActivityUntil) this._backgroundActivityUntil = 0;
-      },
+      onCleanRelease: () => {},
     });
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
@@ -187,6 +191,7 @@ class AgentSession extends EventEmitter {
   /** Long-running foreground shell commands need visible user feedback. */
   static TOOL_LONG_TASK_NOTICE_MS = 30_000;
   static TOOL_LONG_TASK_HEARTBEAT_MS = 5 * 60_000;
+  static RUNTIME_LIFECYCLE_HEARTBEAT_MS = 60_000;
 
   _clearIdleTimer() {
     this._timers.clear("idle");
@@ -286,9 +291,9 @@ class AgentSession extends EventEmitter {
       !this._turnSettled &&
       !this._leaseTracker.hadBlockingToolUse() &&
       this._leaseTracker.pendingCount() === 0 &&
+      this._lifecycleTracker.pendingCount() === 0 &&
       this._approvals.permissionCount() === 0 &&
-      this._approvals.hookCount() === 0 &&
-      Date.now() >= this._backgroundActivityUntil
+      this._approvals.hookCount() === 0
     );
   }
 
@@ -302,16 +307,16 @@ class AgentSession extends EventEmitter {
       this.busy &&
       !this._turnSettled &&
       !this._hasPendingRuntimeBlockers() &&
-      Date.now() >= this._backgroundActivityUntil
+      this._lifecycleTracker.pendingCount() === 0
     );
   }
 
   _hasBlockingTurnWork() {
     return (
       this._leaseTracker.pendingCount() > 0 ||
+      this._lifecycleTracker.pendingCount() > 0 ||
       this._approvals.permissionCount() > 0 ||
-      this._approvals.hookCount() > 0 ||
-      Date.now() < this._backgroundActivityUntil
+      this._approvals.hookCount() > 0
     );
   }
 
@@ -327,9 +332,9 @@ class AgentSession extends EventEmitter {
     log.warn("turn result deferred until pending runtime blockers settle: %s", reason, {
       sessionId: this.sessionId,
       pendingTools: this._leaseTracker.pendingCount(),
+      pendingRuntime: this._lifecycleTracker.pendingCount(),
       pendingPermissions: this._approvals.permissionCount(),
       pendingHooks: this._approvals.hookCount(),
-      backgroundMs: Math.max(0, this._backgroundActivityUntil - Date.now()),
     });
     this._resultGate.defer(payload);
   }
@@ -342,11 +347,17 @@ class AgentSession extends EventEmitter {
     return this._resultGate.poll();
   }
 
-  _markBackgroundActivity(short = false) {
-    this._backgroundActivityUntil = Date.now() + (short ? 10_000 : 120_000);
+  _markRuntimeLifecycleActivity(activity) {
+    const result = this._lifecycleTracker.ingestActivity(activity);
+    if (!result.changed) return;
     this._clearIdleTimer();
     this._clearMessageStopTimer();
-    this._armDeferredTurnResultTimer();
+    if (result.active) {
+      this._armDeferredTurnResultTimer();
+      return;
+    }
+    this._maybeCompleteDeferredTurnResult();
+    if (this._messageStopObserved) this._armMessageStopCompletionTimer();
   }
 
   _isShellTool(name) {
@@ -674,12 +685,11 @@ class AgentSession extends EventEmitter {
     this._turnSettled = false;
     this._turnStartedAt = Date.now();
     this.collectedOutput = "";
-    this._backgroundActivityUntil = 0;
     this._streamParentToolUseId = null;
     this._leaseTracker.reset();
     this._turnHadToolUse = false;
     this._sawStdoutForTurn = false;
-    this._backgroundActivityUntil = 0;
+    this._messageStopObserved = false;
     this._resultGate.clear();
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
@@ -805,17 +815,18 @@ class AgentSession extends EventEmitter {
     this._clearWaitNoticeTimers();
     this._clearInternalCommandTimer();
     this._leaseTracker.reset();
+    this._lifecycleTracker.reset();
     this._turnHadToolUse = false;
-    this._backgroundActivityUntil = 0;
     this._resultGate.clear();
     if (!this.process) {
       this.cwd = null;
       this.spawnOptions = null;
       this._lineBuffer.reset();
       this.collectedOutput = "";
-      this._lastActualUsage = null;
-      this._usageRecordedForTurn = false;
-      this.busy = false;
+    this._lastActualUsage = null;
+    this._usageRecordedForTurn = false;
+    this._messageStopObserved = false;
+    this.busy = false;
       this._turnSettled = true;
       return;
     }
@@ -851,11 +862,12 @@ class AgentSession extends EventEmitter {
     this._clearPendingPermissions(true);
     this._clearPendingHooks(true);
     this._leaseTracker.reset();
+    this._lifecycleTracker.reset();
     this._turnHadToolUse = false;
-    this._backgroundActivityUntil = 0;
     this._resultGate.clear();
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
+    this._messageStopObserved = false;
     this._streamParentToolUseId = null;
     this._streamingToolInputs.clear();
     this._emittedToolIds.clear();
@@ -880,10 +892,11 @@ class AgentSession extends EventEmitter {
     this._clearPendingPermissions(true);
     this._clearPendingHooks(true);
     this._leaseTracker.reset();
+    this._lifecycleTracker.reset();
     this._resultGate.clear();
     this._lastActualUsage = null;
     this._usageRecordedForTurn = false;
-    this._backgroundActivityUntil = 0;
+    this._messageStopObserved = false;
     this._turnHadToolUse = false;
     this._streamParentToolUseId = null;
     this._streamingToolInputs.clear();
@@ -1128,9 +1141,7 @@ class AgentSession extends EventEmitter {
       this._deferTurnResult(payload, "result-before-work-finished");
       return;
     }
-    if (Date.now() < this._backgroundActivityUntil) {
-      this._backgroundActivityUntil = 0;
-    }
+    this._lifecycleTracker.completeAll();
     this._completeTurn(payload);
   }
 
@@ -1162,7 +1173,21 @@ class AgentSession extends EventEmitter {
     }
   }
 
+  _trackRuntimeLifecycleHook(action) {
+    const result = this._lifecycleTracker.ingestHook(action);
+    if (!result.changed) return;
+    this._clearIdleTimer();
+    this._clearMessageStopTimer();
+    if (result.active) {
+      this._armDeferredTurnResultTimer();
+      return;
+    }
+    this._maybeCompleteDeferredTurnResult();
+    if (this._messageStopObserved) this._armMessageStopCompletionTimer();
+  }
+
   _handleNormalizedAction(action) {
+    this._trackRuntimeLifecycleHook(action);
     switch (action.kind) {
       case "system_notice":
         if (action.subtype === "init") {
@@ -1251,6 +1276,7 @@ class AgentSession extends EventEmitter {
       }
 
       case "stream_message_start":
+        this._messageStopObserved = false;
         this._streamingToolInputs.clear();
         this._emittedToolIds.clear();
         this._blockIndexToToolId.clear();
@@ -1301,6 +1327,7 @@ class AgentSession extends EventEmitter {
         break;
 
       case "stream_message_stop":
+        this._messageStopObserved = true;
         this._markStreamActivity();
         this._armMessageStopCompletionTimer();
         break;
@@ -1474,7 +1501,7 @@ class AgentSession extends EventEmitter {
       return;
     }
     if (normalized.backgroundActivity) {
-      this._markBackgroundActivity(normalized.backgroundActivity.short);
+      this._markRuntimeLifecycleActivity(normalized.backgroundActivity);
     }
 
     for (const action of normalized.actions) {

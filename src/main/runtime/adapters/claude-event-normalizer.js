@@ -142,13 +142,21 @@ function controlRequestId(ev) {
   );
 }
 
+function hookEventName(hookEvent = {}) {
+  return hookEvent.hook || hookEvent.hook_event_name || hookEvent.hookEventName || "";
+}
+
+function isHookControlRequest(ev, subtype) {
+  return subtype === "hook_callback" || ev?.request?.type === "hook";
+}
+
 /**
  * Map hook_event.hook string → normalized action kind.
  * @param {{ hook?: string, permissionDecision?: string, decision?: string }} hookEvent
  * @returns {string}
  */
 function normalizeHookKind(hookEvent) {
-  const hook = hookEvent?.hook || "";
+  const hook = hookEventName(hookEvent);
   const decision = hookEvent?.permissionDecision || hookEvent?.decision || "";
   const interactive = decision === "ask";
 
@@ -226,7 +234,8 @@ function normalizeHookKind(hookEvent) {
  */
 function hookNoticeForKind(hookKind, hookEvent) {
   const tool = hookEvent?.tool_name || hookEvent?.toolName || "";
-  const detail = tool ? `${hookEvent.hook || ""} · ${tool}` : (hookEvent.hook || "");
+  const hook = hookEventName(hookEvent);
+  const detail = tool ? `${hook} · ${tool}` : hook;
 
   const map = {
     hook_pretool_use:         { code: "hookPreToolUse",       level: "info",     panel: true, replace: true, done: true },
@@ -289,7 +298,7 @@ function normalizeControlEvent(ev) {
         [],
     }];
   }
-  if (requestId && subtype === "hook_callback") {
+  if (requestId && isHookControlRequest(ev, subtype)) {
     const hookEvent =
       ev.request?.hook_event && typeof ev.request.hook_event === "object"
         ? ev.request.hook_event
@@ -300,7 +309,7 @@ function normalizeControlEvent(ev) {
       kind: hookKind,
       requestId,
       hookEvent,
-      hookName: hookEvent.hook || "",
+      hookName: hookEventName(hookEvent),
       toolName: hookEvent.tool_name || hookEvent.toolName || "",
       toolInput: hookEvent.tool_input || hookEvent.toolInput || null,
       permissionDecision: hookEvent.permissionDecision || hookEvent.decision || "",
