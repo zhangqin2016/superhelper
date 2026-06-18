@@ -44,6 +44,7 @@ class ScanConfig:
     learning_mode: str
     test_environment: str
     allow_mutating_learning: bool
+    har_path: str | None
 
 
 def emit(payload: dict[str, Any], code: int = 0) -> None:
@@ -125,6 +126,7 @@ def validate_config(args: argparse.Namespace) -> ScanConfig:
         learning_mode=learning_mode,
         test_environment=test_environment,
         allow_mutating_learning=allow_mutating_learning,
+        har_path=args.har_path,
     )
 
 
@@ -928,6 +930,11 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
             context_kwargs: dict[str, Any] = {}
             if config.storage_state:
                 context_kwargs["storage_state"] = config.storage_state
+            if config.har_path:
+                # Record full traffic (with bodies) so har_to_contracts.cjs can
+                # learn APIs from real requests/responses, including write paths.
+                context_kwargs["record_har_path"] = config.har_path
+                context_kwargs["record_har_content"] = "embed"
             context = browser.new_context(**context_kwargs)
             page = context.new_page()
             network_recorder = NetworkRecorder(config)
@@ -991,6 +998,7 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
         "baseUrl": config.base_url,
         "allowedDomains": config.allowed_domains,
         "maxPages": config.max_pages,
+        "harPath": config.har_path,
         "pages": pages,
         "coverage": {key: value for key, value in summary.items() if key not in {"siteMap", "actionCandidates", "businessObjects", "apiContracts"}},
         "siteMap": summary["siteMap"],
@@ -1015,6 +1023,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allow-mutating-learning", action="store_true", help="Only valid in test-lab mode. Allows generated contracts to model real submit/delete flows.")
     parser.add_argument("--dry-run", action="store_true", help="Validate scan config without launching a browser.")
     parser.add_argument("--out", help="Write scan JSON to this path.")
+    parser.add_argument("--har-path", help="Record all network traffic to this HAR file (feed to har_to_contracts.cjs to learn APIs from real traffic, including write paths).")
     return parser.parse_args()
 
 

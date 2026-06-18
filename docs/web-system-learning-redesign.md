@@ -88,10 +88,18 @@ SKILL.md 新增「Coverage Completeness」：像 QA 工程师系统遍历（菜�
 对话框/分页），每轮自问「还有什么没看到」并再跑前台扫描，连续无新增才停；权威契约定 API/
 数据结构上限，UI 扫描补 UI-only 流程；health.json 诚实记录覆盖与缺口（有缺口=草稿）。
 
-### Phase 3b — HAR/a11y 深度捕获（待办，浏览器代码）
+### Phase 3b — 从真实流量学 API（含写路径）✅（本次，核心可测）
 
-`scan_web_system.py` 加 CDP/HAR 全量网络录制 + a11y snapshot + 测试环境受控写学写路径 API。
-只能真实浏览器集成测。
+补 Phase 1 的另一半：**没公布契约的系统**和**写路径 API**。
+
+- 新增 `har_to_contracts.cjs`：解析 Playwright HAR，按 method+endpoint 分组，从样本**合并推断
+  JSON Schema**（类型/枚举/必填/可空）、脱敏、allowlist；与 `api-contracts.json` 合并时
+  **权威契约永不被覆盖**，HAR 只填空。推断核心是纯函数、完全可测
+  （`test-web-system-har-contracts.mjs`，20）。
+- `scan_web_system.py` 加 `--har-path`：用 Playwright `record_har_path`+`record_har_content`
+  录全量流量（含 body）。这一步是浏览器代码（手工集成验证）。
+- SKILL.md 流程加 HAR 学习步骤；写路径只在确认的测试环境里 exercise 才会被捕获。
+- a11y snapshot 推迟到 4c（自愈）——那里才有消费者，现在加是过度设计。
 
 ### Phase 4a — 契约注册表 + 重学 diff ✅（本次）
 

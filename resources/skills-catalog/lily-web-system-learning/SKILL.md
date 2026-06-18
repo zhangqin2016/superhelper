@@ -40,7 +40,15 @@ Never store passwords in a skill, prompt, log, or generated file. The user shoul
    over DOM/HAR inference. Pass its `api-contracts.json` to
    `create_web_system_skill.cjs --contracts`. Fall back to the UI scan only for
    what the published contract does not cover.
-5. Run a read-only dry run before deeper exploration.
+5. **Learn APIs from real traffic (for systems without a published contract, and
+   for write paths).** Run the scan with `--har-path scan.har` to record traffic,
+   then `node scripts/har_to_contracts.cjs --har scan.har --base-url <url>
+   --allow-domain <host> --merge api-contracts.json --out api-contracts.json` to
+   infer request/response schemas from observed requests and merge them in
+   (authoritative published contracts are never overridden). Write-path APIs
+   (POST/PUT/DELETE) are only captured when those flows actually run — exercise
+   them only in a confirmed test environment.
+6. Run a read-only dry run before deeper exploration.
 5. Run every scanner/executor command in the foreground and wait for it to finish before claiming the scan is running, complete, failed, or waiting for analysis.
 6. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
 7. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
