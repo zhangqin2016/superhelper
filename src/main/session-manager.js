@@ -18,7 +18,6 @@ const {
 } = require("./config");
 const { normalizeSessionPermissionMode } = require("./permission-settings");
 const { getLocale } = require("./locale-settings");
-const { backfillMessageArtifacts } = require("./session-artifact-backfill");
 const { MessageStore } = require("./store/message-store");
 const legacyImport = require("./store/legacy-import");
 
@@ -54,33 +53,25 @@ class SessionManager {
     return this._messageStore;
   }
 
-  /** Per-message hook applied during migration: upgrade old records in place. */
-  _backfillTransformFor(session) {
-    if (!session) return null;
-    const workspacePath = this.pm?.find?.(session.projectId)?.path || "";
-    if (!workspacePath) return null;
-    return (message) => {
-      backfillMessageArtifacts(message, workspacePath);
-      return message;
-    };
-  }
-
   /**
    * Ensure a session's history lives in the message store. Idempotent and
    * cheap after the first call (gated by a schema_meta flag). Migrates both a
    * legacy per-session JSON file and any inline messages from the old
    * sessions.json format, then drops the in-memory array.
+   *
+   * Records are stored verbatim — artifact backfill (buildTurnArtifacts) is
+   * deliberately NOT run here: it does per-path fs.statSync and costs ~200ms
+   * per record, which would re-freeze the app during migration. Backfill for
+   * legacy records is the artifact feature's concern, not the storage layer's.
    */
   _ensureImported(session) {
     if (!session) return;
     const store = this._store();
-    const transform = this._backfillTransformFor(session);
-    legacyImport.importSession(store, session.id, { transform });
+    legacyImport.importSession(store, session.id);
     if (Array.isArray(session.messages)) {
       if (session.messages.length && store.count(session.id) === 0) {
-        const msgs = transform ? session.messages.map(transform) : session.messages;
-        store.bulkInsert(session.id, msgs);
-        store.setMeta(`imported:${session.id}`, `inline:${msgs.length}`);
+        store.bulkInsert(session.id, session.messages);
+        store.setMeta(`imported:${session.id}`, `inline:${session.messages.length}`);
       }
       delete session.messages;
     }
@@ -129,16 +120,19 @@ class SessionManager {
 
   /** Drain remaining legacy per-session files without blocking startup. */
   _startBackgroundImport() {
-    try {
-      legacyImport.sweepInBackground(this._store(), {
-        transformForSession: (sid) => this._backfillTransformFor(this._find(sid, { loadMessages: false })),
-        onDone: ({ sessions }) => {
-          if (sessions > 0) console.info(`[sessions] migrated ${sessions} legacy file(s) to sqlite`);
-        },
-      });
-    } catch (err) {
-      console.warn("[sessions] background import failed:", err?.message || err);
-    }
+    // Defer so first paint + the active session's load finish before the sweep
+    // starts importing (and re-parsing) large legacy files in the background.
+    setTimeout(() => {
+      try {
+        legacyImport.sweepInBackground(this._store(), {
+          onDone: ({ sessions }) => {
+            if (sessions > 0) console.info(`[sessions] migrated ${sessions} legacy file(s) to sqlite`);
+          },
+        });
+      } catch (err) {
+        console.warn("[sessions] background import failed:", err?.message || err);
+      }
+    }, 5000);
   }
 
   _loadPersistedStore() {

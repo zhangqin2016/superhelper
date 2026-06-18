@@ -80,7 +80,13 @@ function importSession(store, sessionId, opts = {}) {
   return { imported: true, count };
 }
 
-/** Session ids that still have a legacy file on disk. */
+/**
+ * Session ids that still have a legacy file on disk, derived from the FILE NAME
+ * only — never by reading file contents. Reading every file here would re-parse
+ * the very multi-MB JSON blobs this migration exists to avoid, stalling startup.
+ * Files are named `<sessionId>.json` (session ids are UUIDs, which the safe-name
+ * sanitizer leaves untouched), so the basename is the session id.
+ */
 function pendingSessionIds() {
   let entries = [];
   try {
@@ -88,18 +94,10 @@ function pendingSessionIds() {
   } catch {
     return [];
   }
-  const ids = [];
-  for (const name of entries) {
-    if (!name.endsWith(".json")) continue;
-    const filePath = path.join(sessionMessagesDir(), name);
-    try {
-      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      if (parsed?.sessionId) ids.push(parsed.sessionId);
-    } catch {
-      /* skip unreadable */
-    }
-  }
-  return ids;
+  return entries
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => name.slice(0, -".json".length))
+    .filter(Boolean);
 }
 
 /**

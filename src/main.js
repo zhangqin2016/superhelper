@@ -58,6 +58,21 @@ function createWindow() {
     },
   });
 
+  if (process.env.LILY_DEBUG_RENDERER) {
+    mainWindow.webContents.on("console-message", (_e, level, message, line, source) => {
+      console.log(`[renderer:${level}] ${message} (${source}:${line})`);
+    });
+    mainWindow.webContents.on("render-process-gone", (_e, details) => {
+      console.log(`[renderer-gone] ${JSON.stringify(details)}`);
+    });
+    mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
+      console.log(`[did-fail-load] ${code} ${desc} ${url}`);
+    });
+    mainWindow.webContents.on("preload-error", (_e, p, err) => {
+      console.log(`[preload-error] ${p} ${err?.stack || err}`);
+    });
+  }
+
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   wireExternalLinks(mainWindow);
   wireContextMenu(mainWindow);
