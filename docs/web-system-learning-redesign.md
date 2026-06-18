@@ -77,10 +77,19 @@ API + 数据结构**，立刻逼近「学到所有 API/数据结构」目标，�
 注：完整改用 @playwright/mcp（a11y 工具集）是更大的运行时/配置迁移（需在 CLI 注册 MCP
 server + 打包），作为后续独立项；本阶段先让现有执行器兑现契约。
 
-### Phase 2b — 改用 @playwright/mcp（待办，可选）
+### Phase 2b — @playwright/mcp：可用即用（本次，MCP-ready）✅／全量打包（不建议，按需）
 
-注册 @playwright/mcp，SKILL.md 改为驱动其 a11y 工具；execute_web_playbook.cjs 保留为
-确定性编译路径。
+诚实判断：把 @playwright/mcp **强行打包进生产 app + 改全局 MCP 配置**，在 Phase 2（执行器硬化）
++ 4c（编译确定性脚本）之后**没有用户可感知的新能力**，却引入全应用风险、且套件无法测——
+不符合"最顶级"。最顶级恰恰包括"不为零收益加风险"。
+
+本次落地为 **MCP-ready**：SKILL.md 新增「Browser Engine」——若会话已注册 @playwright/mcp，
+则探索/即席操作优先用其 a11y 工具，验证过的可重复流程仍走确定性执行器/编译脚本；未注册则
+全部照常走确定性路径（增强项，非必需）。零新增依赖、零 app 配置改动、零风险。
+
+**全量打包+注册**（让 app 默认带 @playwright/mcp）作为**显式可选项**保留：只有当你确定要让
+模型对所有会话做 a11y 自由浏览、并愿意承担打包体积/全局 MCP 配置影响时再做。它是
+maintainability/ad-hoc 增强，不是能力地基。
 
 ### Phase 3a — 探索/覆盖率协议 ✅（本次，SKILL.md，模型驱动）
 

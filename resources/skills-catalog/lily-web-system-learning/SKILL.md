@@ -116,6 +116,25 @@ Place generated artifacts in the workspace learning area, using stable English d
   replays without the model (faster, cheaper, reproducible) and keeps the domain
   allowlist + no-credential rules inlined. Re-compile after a re-learn.
 
+## Browser Engine (@playwright/mcp, optional)
+
+Two complementary browser paths — pick by task:
+
+- **Deterministic path (default for verified/repeatable flows):** the validated
+  executor (`execute_web_playbook.cjs`) and compiled scripts. Use this for
+  learned, confirmed actions — it is safe, fast, and reproducible.
+- **Accessibility-tree path (optional, for exploration / ad-hoc operation):** if
+  this session has Microsoft's `@playwright/mcp` server registered, prefer its
+  accessibility-snapshot tools to navigate and act on pages the way a person
+  reads them — better for first-time exploration and one-off requests where no
+  compiled flow exists yet. It is free/open-source (Apache-2.0) and runs locally.
+
+When `@playwright/mcp` is available, use it for discovery/coverage passes and
+ad-hoc steps, then capture the result as a learned action so future runs use the
+deterministic path. Never put credentials in MCP tool calls; rely on the shared
+browser session. If `@playwright/mcp` is not registered, everything still works
+through the deterministic executor — it is an enhancement, not a requirement.
+
 ## Natural-Language Routing
 
 You are the router. Do not rely on keyword tables — read `capability-map.json`
