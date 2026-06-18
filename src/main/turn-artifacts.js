@@ -184,6 +184,15 @@ function addCandidate(map, candidate, source, workspacePath, { requireWorkspace 
   addArtifact(map, toArtifact(resolved, source, workspacePath));
 }
 
+// Tools that only READ — their result is file content / search hits, which is
+// full of path-like strings that were NOT produced this turn. Scraping those
+// is the main source of false-positive artifacts, so we skip it for these.
+const READ_ONLY_TOOLS = new Set(["read", "grep", "glob", "ls", "webfetch", "websearch", "notebookread"]);
+// Tools that write files — their input carries the produced path explicitly, so
+// we trust the structured input rather than guessing from text.
+const FILE_WRITE_TOOLS = new Set(["write", "edit", "multiedit", "notebookedit"]);
+const FILE_WRITE_INPUT_KEYS = ["file_path", "path", "target_file", "notebook_path"];
+
 function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], workspacePath = "" } = {}) {
   const artifacts = new Map();
   const root = workspacePath ? path.resolve(workspacePath) : "";
@@ -193,13 +202,24 @@ function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], 
   }
 
   for (const tool of tools || []) {
-    const candidates = new Set();
-    collectPathStrings(tool?.result, candidates);
-    if (toolInputMayCreateArtifacts(tool?.name)) {
-      collectPathStrings(tool?.input, candidates);
+    const name = String(tool?.name || "").toLowerCase();
+
+    // Structured: a file-writing tool declares its target in the input.
+    if (FILE_WRITE_TOOLS.has(name) && tool?.input && typeof tool.input === "object") {
+      for (const key of FILE_WRITE_INPUT_KEYS) {
+        if (typeof tool.input[key] === "string") addCandidate(artifacts, tool.input[key], "tool", root);
+      }
     }
-    for (const candidate of candidates) {
-      addCandidate(artifacts, candidate, "tool", root);
+
+    // Result represents what the tool produced — scrape it, except for pure
+    // read tools whose result is just content the model looked at.
+    if (!READ_ONLY_TOOLS.has(name)) {
+      const candidates = new Set();
+      collectPathStrings(tool?.result, candidates);
+      if (toolInputMayCreateArtifacts(name)) collectPathStrings(tool?.input, candidates);
+      for (const candidate of candidates) {
+        addCandidate(artifacts, candidate, "tool", root);
+      }
     }
   }
 
