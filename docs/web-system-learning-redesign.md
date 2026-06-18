@@ -114,9 +114,14 @@ endpoint 与 dataSchema，标记 `breaking`（删除/风险升级/必填字段�
 匹配、歧义时定向追问、缺必填参数先问、无匹配则提议重学不臆造。embedding 检索预筛仅在
 「能力多到塞不进上下文」时作为规模优化，带明确触发条件，现在不做。
 
-### Phase 4c — 编译确定性代码 + 自愈（待办，浏览器代码）
+### Phase 4c — 编译成确定性代码 + 定位韧性 ✅（本次，codegen 可测）
 
-codegen 把 playbook 编译成确定性 Playwright 脚本，偏差时模型经 a11y 自愈并回写。只能集成测。
+- 新增 `compile_playbook.cjs`：把已验证的 plan **codegen 成独立的确定性 Playwright 脚本**——
+  重放零模型、快、稳、可复现，且把域名白名单 + 禁凭据头**内联**进生成脚本。codegen 是纯函数、
+  完全可测（`test-web-system-compile-playbook.mjs`，13；含生成脚本语法有效性校验）。随技能分发。
+- 定位韧性：执行器本就多候选定位（selector→testId→role→label→placeholder→text），即一种自愈；
+  硬失败报 `relearnRecommended`。**真·a11y 自动自愈（运行中无模型重定位）** 需 a11y 捕获 + 模型，
+  属浏览器项，留作后续；当前由"多候选定位 + 重学循环（Phase 2/4a）"覆盖大部分场景。
 
 ## 诚实的硬墙
 

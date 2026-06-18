@@ -106,6 +106,15 @@ Place generated artifacts in the workspace learning area, using stable English d
   rather than blindly retrying.
 - For ambiguous natural-language requests, ask one focused question instead of guessing a destructive action.
 - Always show what will happen before a mutating action and record the result in audit logs.
+- Locator resilience is built in: the executor tries selector → testId → role →
+  label → placeholder → text candidates before failing, so a single brittle
+  selector does not break a step. On a hard failure it reports
+  `relearnRecommended` rather than guessing.
+- For a frequently-repeated, verified flow, compile it to a deterministic script
+  with `node scripts/compile_playbook.cjs --playbook web-system-playbook.json
+  --action web.x --plan plan.json --out flows/x.cjs`. The compiled script
+  replays without the model (faster, cheaper, reproducible) and keeps the domain
+  allowlist + no-credential rules inlined. Re-compile after a re-learn.
 
 ## Natural-Language Routing
 
