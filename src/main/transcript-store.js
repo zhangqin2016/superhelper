@@ -18,7 +18,7 @@ class TranscriptStore {
   }
 
   getCommittedMessages(sessionId) {
-    return this.sessionManager.findById(sessionId)?.messages || [];
+    return this.sessionManager.getConversation(sessionId) || [];
   }
 }
 

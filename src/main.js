@@ -15,6 +15,11 @@ const { ensureConnectorBridgeStarted, stopConnectorBridge } = require("./main/co
 const ipcHandlers = require("./main/ipc-handlers");
 const { wireExternalLinks } = require("./main/window-links");
 const { wireContextMenu } = require("./main/window-context-menu");
+const { registerBlobScheme, installBlobProtocol } = require("./main/blob-protocol");
+
+// Custom scheme privileges must be declared before app `ready`; the request
+// handler itself is installed in whenReady() below.
+registerBlobScheme();
 
 let mainWindow = null;
 let runnerPoolRef = null;
@@ -63,6 +68,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  installBlobProtocol();
   const appIcon = loadAppIconImage();
   if (appIcon && process.platform === "darwin" && app.dock) {
     const ok = app.dock.setIcon(appIcon);

@@ -905,9 +905,28 @@ class TurnOrchestrator {
     if (type === "turn.completed") {
       try {
         const { collectLearnedSkillDrafts } = require("./learned-skills");
-        const { registerLearnedSkillDir } = require("./skill-manager");
-        const learned = collectLearnedSkillDrafts(registerLearnedSkillDir);
+        const skillManager = require("./skill-manager");
+        const session = this.ctx.sessionManager?.findById?.(sessionId) || null;
+        const project = session?.projectId && this.ctx.projectManager?.find
+          ? this.ctx.projectManager.find(session.projectId)
+          : null;
+        const learned = collectLearnedSkillDrafts(
+          skillManager.registerLearnedSkillDir,
+          undefined,
+          {
+            sessionId,
+            projectId: session?.projectId || "",
+            workspacePath: project?.path || "",
+          },
+        );
         if (learned.length) {
+          if (session) {
+            try {
+              skillManager.writeSessionAgentGuide(sessionId, session, project?.path || "");
+            } catch (err) {
+              log.warn("learned skill guide refresh failed: %s", err?.message || err);
+            }
+          }
           appendTimelineNotice(state, {
             code: "learnedSkillDraft",
             level: "info",

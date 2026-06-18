@@ -41,6 +41,10 @@ import {
   buildThinkingSummaryLabel,
   timelineForView,
 } from "./turn-view-status.js";
+import {
+  mergeResultBlocks,
+  renderResultBlocks,
+} from "./turn-block-renderers.js";
 
 const narrativeRenderState = new Map();
 const questionDrafts = new Map();
@@ -183,6 +187,13 @@ function narrativeImageKey(contentBlocks = []) {
     .join("|");
 }
 
+function hasContentImageResultBlock(liveTurn = {}) {
+  return (liveTurn.resultBlocks || []).some((block) => (
+    block?.source === "content_block" &&
+    (block.type === "image" || block.artifactType === "image" || /^image\//i.test(block.mimeType || ""))
+  ));
+}
+
 /** Minimal liveTurn for assistant messages saved before TurnRecord existed. */
 export function legacyLiveTurnFromMessage(message) {
   const ts = message?.timestamp ? Date.parse(message.timestamp) : Date.now();
@@ -196,6 +207,7 @@ export function legacyLiveTurnFromMessage(message) {
     assistantText: message?.content || "",
     thinkingText: "",
     contentBlocks: [],
+    artifacts: [],
     protocolUnknown: [],
     processEvents: [],
     timeline: [],
@@ -204,6 +216,7 @@ export function legacyLiveTurnFromMessage(message) {
     totalCostUsd: null,
     usage: null,
     tools: new Map(),
+    resultBlocks: [],
     notices: [],
     permissions: new Map(),
     questions: new Map(),
@@ -237,6 +250,8 @@ export function liveTurnFromRecord(record) {
     assistantText: record.assistantText || "",
     thinkingText: record.thinkingText || "",
     contentBlocks: record.contentBlocks || [],
+    artifacts: record.artifacts || [],
+    resultBlocks: record.resultBlocks || [],
     protocolUnknown: record.protocolUnknown || [],
     processEvents,
     timeline: record.timeline || [],
@@ -285,6 +300,11 @@ export function createLiveTurnArticleShell(liveTurn) {
   process.className = "assistant-turn-process";
   process.dataset.role = "process";
 
+  const artifacts = document.createElement("div");
+  artifacts.className = "assistant-turn-artifacts";
+  artifacts.dataset.role = "artifacts";
+  artifacts.hidden = true;
+
   const footer = document.createElement("div");
   footer.className = "assistant-turn-footer";
   footer.dataset.role = "footer";
@@ -294,7 +314,7 @@ export function createLiveTurnArticleShell(liveTurn) {
   prompts.className = "assistant-turn-prompts";
   prompts.dataset.role = "prompts";
 
-  article.append(header, narrative, process, footer, prompts);
+  article.append(header, narrative, process, artifacts, footer, prompts);
   return article;
 }
 
@@ -321,6 +341,7 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     liveTurn.final?.type || "",
     (liveTurn.contentBlocks || []).length,
     narrativeImageKey(liveTurn.contentBlocks || []),
+    hasContentImageResultBlock(liveTurn) ? "artifact-images" : "",
   ].join("|");
   if (article.dataset.narrativeKey !== narrativeKey) {
     renderNarrative(article.querySelector('[data-role="narrative"]'), liveTurn, { sealed });
@@ -335,6 +356,10 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     renderFinal(article, liveTurn);
     liveTurn.finalRendered = true;
   }
+  renderResultBlocks(
+    article.querySelector('[data-role="artifacts"]'),
+    mergeResultBlocks(liveTurn.resultBlocks || [], liveTurn.artifacts || []),
+  );
 }
 
 export function renderSealedTurnArticle(liveTurn, failed = false) {
@@ -349,14 +374,21 @@ function normalizeTurnArticleLayout(article, sealed) {
   const header = article.querySelector('[data-role="header"]');
   const narrative = article.querySelector('[data-role="narrative"]');
   const process = article.querySelector('[data-role="process"]');
+  let artifacts = article.querySelector('[data-role="artifacts"]');
   const footer = article.querySelector('[data-role="footer"]');
   const prompts = article.querySelector('[data-role="prompts"]');
+  if (!artifacts) {
+    artifacts = document.createElement("div");
+    artifacts.className = "assistant-turn-artifacts";
+    artifacts.dataset.role = "artifacts";
+    artifacts.hidden = true;
+  }
   if (!header || !narrative || !process || !footer || !prompts) return;
 
   if (sealed) {
-    article.append(header, process, narrative, footer, prompts);
+    article.append(header, process, narrative, artifacts, footer, prompts);
   } else {
-    article.append(header, narrative, process, footer, prompts);
+    article.append(header, narrative, process, artifacts, footer, prompts);
   }
 }
 
@@ -378,7 +410,8 @@ function syncNarrativeImages(root, contentBlocks = []) {
 function renderNarrative(root, liveTurn, { sealed = false } = {}) {
   if (!root) return;
   const text = resolveAssistantStreamText(liveTurn);
-  const hasImages = (liveTurn.contentBlocks || []).some((b) => b.blockType === "image" && b.data);
+  const imageBlocksPromoted = hasContentImageResultBlock(liveTurn);
+  const hasImages = !imageBlocksPromoted && (liveTurn.contentBlocks || []).some((b) => b.blockType === "image" && b.data);
   const show = shouldShowNarrative(liveTurn);
   root.hidden = !show && !hasImages;
   if (root.hidden) {
@@ -400,7 +433,12 @@ function renderNarrative(root, liveTurn, { sealed = false } = {}) {
     if (liveTurn.turnId) narrativeRenderState.delete(liveTurn.turnId);
   }
 
-  syncNarrativeImages(root, liveTurn.contentBlocks || []);
+  if (imageBlocksPromoted) {
+    root.querySelectorAll(".assistant-content-image").forEach((node) => node.remove());
+    delete root.dataset.imageKey;
+  } else {
+    syncNarrativeImages(root, liveTurn.contentBlocks || []);
+  }
 }
 
 function renderFooter(root, liveTurn, sealed) {
@@ -1293,5 +1331,7 @@ function renderFinal(article, liveTurn) {
   }
 
   report.append(label, final);
-  article.appendChild(report);
+  const artifacts = article.querySelector('[data-role="artifacts"]');
+  if (artifacts) article.insertBefore(report, artifacts);
+  else article.appendChild(report);
 }

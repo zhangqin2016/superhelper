@@ -26,7 +26,7 @@ require.cache[electronPath] = {
 };
 
 const SessionManager = require("../src/main/session-manager.js");
-const { sessionMessagesDir, sessionsIndexPath } = require("../src/main/config.js");
+const { sessionsIndexPath } = require("../src/main/config.js");
 
 const projectManager = {
   projects: [{ id: "p1", name: "Workspace", path: tempRoot }],
@@ -44,23 +44,30 @@ try {
   manager.pushMessageTo(session.id, "user", "last question");
   manager.pushMessageTo(session.id, "assistant", "last answer");
 
-  const messagePath = path.join(sessionMessagesDir(), `${session.id}.json`);
-  const beforeFlush = JSON.parse(fs.readFileSync(messagePath, "utf8"));
-  const savedBefore = beforeFlush.messages.map((message) => message.content);
-  if (savedBefore.includes("last answer")) {
-    throw new Error("test setup invalid: pending assistant message was already persisted");
+  // Messages persist durably the instant they're appended (single-row insert),
+  // not via a debounced full-file rewrite — that O(1) append is what kills the
+  // old O(n²) save cost. Verify they are immediately retrievable.
+  const persisted = manager.getConversation(session.id).map((m) => m.content);
+  if (!persisted.includes("last question") || !persisted.includes("last answer")) {
+    throw new Error(`messages not persisted on append: ${JSON.stringify(persisted)}`);
   }
 
+  // The session index file must remain a lightweight catalog with no bodies.
   manager.saveImmediate();
   const indexAfter = JSON.parse(fs.readFileSync(sessionsIndexPath(), "utf8"));
   if ("messages" in indexAfter.sessions.p1[0]) {
     throw new Error("session index must not persist full messages");
   }
+  if (indexAfter.sessions.p1[0].messageCount !== 2) {
+    throw new Error(`index messageCount should track appends: ${indexAfter.sessions.p1[0].messageCount}`);
+  }
 
-  const afterFlush = JSON.parse(fs.readFileSync(messagePath, "utf8"));
-  const savedAfter = afterFlush.messages.map((message) => message.content);
-  if (!savedAfter.includes("last question") || !savedAfter.includes("last answer")) {
-    throw new Error(`saveImmediate did not flush pending messages: ${JSON.stringify(savedAfter)}`);
+  // Durability across a fresh process: a new manager sees the same history.
+  const reopened = new SessionManager(projectManager);
+  reopened.load();
+  const afterReopen = reopened.getConversation(session.id).map((m) => m.content);
+  if (!afterReopen.includes("last question") || !afterReopen.includes("last answer")) {
+    throw new Error(`messages did not survive reopen: ${JSON.stringify(afterReopen)}`);
   }
 
   console.log("session-save-flush: ok");

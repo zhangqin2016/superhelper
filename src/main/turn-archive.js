@@ -1,6 +1,9 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { buildTurnArtifacts } = require("./turn-artifacts");
+const { ARTIFACT_SCHEMA_VERSION } = require("./session-artifact-backfill");
+const { buildTurnResultBlocks, RESULT_BLOCK_SCHEMA_VERSION } = require("./turn-result-blocks");
 
 class TurnArchive {
   constructor(sessionManager) {
@@ -29,6 +32,18 @@ class TurnArchive {
       status: tool.status || "done",
       parentToolUseId: tool.parentToolUseId || null,
     }));
+    const workspacePath = this._resolveWorkspacePath(state.sessionId);
+    const artifacts = buildTurnArtifacts({
+      assistantText,
+      fileChanges,
+      tools,
+      workspacePath,
+    });
+    const contentBlocks = (state.contentBlocks || []).slice(-20);
+    const resultBlocks = buildTurnResultBlocks({
+      artifacts,
+      contentBlocks,
+    });
 
     return {
       turnId: state.turnId,
@@ -44,10 +59,14 @@ class TurnArchive {
         : null,
       assistantText,
       thinkingText: state.thinkingText || "",
-      contentBlocks: (state.contentBlocks || []).slice(-20),
+      contentBlocks,
       protocolUnknown: (state.protocolUnknown || []).slice(-20),
       tools,
       fileChanges,
+      artifacts,
+      artifactSchemaVersion: ARTIFACT_SCHEMA_VERSION,
+      resultBlocks,
+      resultBlockSchemaVersion: RESULT_BLOCK_SCHEMA_VERSION,
       timeline: (state.timeline || []).slice(-100),
       activityLabel: state.activityLabel || null,
       durationMs: payload.durationMs ?? state.durationMs ?? null,
@@ -99,6 +118,18 @@ class TurnArchive {
       console.warn("[session-memory] update failed:", err?.message || err);
     }
     return extra;
+  }
+
+  _resolveWorkspacePath(sessionId) {
+    try {
+      const session = this.sessionManager?.findById?.(sessionId);
+      const project = session?.projectId
+        ? this.sessionManager?.pm?.find?.(session.projectId)
+        : null;
+      return project?.path || session?.workspacePath || "";
+    } catch {
+      return "";
+    }
   }
 }
 

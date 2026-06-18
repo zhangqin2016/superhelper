@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会话存储架构设计</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d212b; --border:#2a2f3a;
+    --fg:#e6e8ec; --muted:#9aa3b2; --accent:#5b9dff; --good:#43c59e; --warn:#f5a623; --bad:#ff6b6b;
+    --code-bg:#0b0d11; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;line-height:1.65;font-size:15px}
+  .wrap{max-width:980px;margin:0 auto;padding:40px 22px 80px}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:15px;margin-bottom:34px}
+  h2{font-size:21px;margin:46px 0 14px;padding-top:18px;border-top:1px solid var(--border);letter-spacing:-.01em}
+  h2 .n{color:var(--accent);font-variant-numeric:tabular-nums;margin-right:10px}
+  h3{font-size:16px;margin:26px 0 10px;color:#cdd3dd}
+  p{margin:10px 0}
+  code{font-family:var(--mono);background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:.88em;color:#d7def0}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:10px;padding:16px 18px;overflow-x:auto;margin:14px 0}
+  pre code{background:none;padding:0;font-size:13px;line-height:1.55;color:#cfd6e4}
+  .kw{color:#c792ea}.str{color:#c3e88d}.com{color:#637184;font-style:italic}.fn{color:#82aaff}.num{color:#f78c6c}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin:16px 0}
+  .grid{display:grid;gap:14px}
+  @media(min-width:720px){.cols-3{grid-template-columns:repeat(3,1fr)}}
+  .layer{border-left:3px solid var(--accent);padding-left:14px;margin:14px 0}
+  .layer.l2{border-color:var(--good)}.layer.l3{border-color:var(--warn)}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;background:var(--panel2);color:var(--muted);border:1px solid var(--border);vertical-align:middle}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+  th,td{border:1px solid var(--border);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600}
+  td.good{color:var(--good)}td.bad{color:var(--bad)}
+  .flow{font-family:var(--mono);font-size:12.5px;color:var(--muted);white-space:pre;overflow-x:auto;display:block;background:var(--code-bg);border:1px solid var(--border);border-radius:10px;padding:16px}
+  ul{margin:8px 0;padding-left:22px}li{margin:5px 0}
+  .pill{font-size:12px;color:var(--good);font-weight:600}
+  .muted{color:var(--muted)}
+  .scroll{overflow-x:auto}
+  b,strong{color:#fff}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>会话存储架构设计</h1>
+  <div class="sub">从"单 JSON 全量解析"到 SQLite + 内容寻址 Blob 仓 —— 一套不需要再推倒重来的终局设计</div>
+
+  <div class="card">
+    <b>问题回顾</b>：当前每个会话的全部历史（含完整 record：timeline / tools / processEvents / 内嵌附件 base64）存在一个 JSON 文件里。实测单文件已达 <b style="color:var(--bad)">52.7&nbsp;MB / 212 条</b>。点击会话 → 主进程同步 <code>JSON.parse(readFileSync(52MB))</code> → 事件循环阻塞数秒 → <b>整窗口卡死</b>；每回合 append 又整文件重写，长会话 O(n²)。
+  </div>
+
+  <h2><span class="n">1</span>核心原则</h2>
+  <div class="grid cols-3">
+    <div class="card"><b>① 有界读取</b><br><span class="muted">永远不一次性加载整个会话。任何读取都带 <code>LIMIT</code>，代价与历史长度无关。</span></div>
+    <div class="card"><b>② 冷热分离</b><br><span class="muted">列表只读"热"字段（角色/预览/排序）；重型 record 按需水合（滚入视口才取）。</span></div>
+    <div class="card"><b>③ 大体积外置</b><br><span class="muted">图片/文件/大工具输出不进 record，存内容寻址 Blob 仓，按需流式加载。</span></div>
+  </div>
+
+  <h2><span class="n">2</span>三层架构</h2>
+
+  <div class="layer">
+    <h3>Layer 1 — SQLite <span class="tag">better-sqlite3 · WAL</span></h3>
+    结构化数据的唯一真相源：会话元数据、消息索引、压缩后的 record、全文索引。<code>better-sqlite3</code> 同步预编译语句，带 <code>LIMIT</code> 的分页查询在 10 万行下仍是亚毫秒级——<b>卡死从根上消失，因为再也不会读超过一页</b>。WAL 模式提供并发读写与崩溃安全。
+  </div>
+  <div class="layer l2">
+    <h3>Layer 2 — 内容寻址 Blob 仓 <span class="tag">filesystem · sha256</span></h3>
+    重型二进制/大文本（粘贴的图片、附件、文件 <code>originalContent</code>、超阈值工具结果）按 <code>sha256</code> 落盘到 <code>blobs/&lt;hash[0:2]&gt;/&lt;hash&gt;</code>，DB 里只存哈希引用。<b>天然去重</b>（同一张图贴两次只存一份）+ 引用计数 GC。渲染端通过自定义协议 <code>app-blob://&lt;hash&gt;</code> 流式加载，Chromium 自动缓存，<b>内存里不再有 base64</b>。
+  </div>
+  <div class="layer l3">
+    <h3>Layer 3 — Record 压缩 <span class="tag">gzip / zstd</span></h3>
+    外置大附件后，单回合 record（timeline / tools 元数据 / processEvents）通常 10–50&nbsp;KB，gzip 后几 KB，作为 <code>BLOB</code> 列存储。解析一页 = 解压 50 个几 KB 的块，毫秒级。
+  </div>
+
+  <h2><span class="n">3</span>数据库 Schema</h2>
+  <div class="scroll">
+  <pre><code><span class="com">-- 模式版本，迁移用</span>
+<span class="kw">CREATE TABLE</span> schema_meta (key <span class="kw">TEXT PRIMARY KEY</span>, value <span class="kw">TEXT</span>);
+
+<span class="com">-- 会话元数据（轻量，列表/侧栏用，永不含 messages）</span>
+<span class="kw">CREATE TABLE</span> sessions (
+  id            <span class="kw">TEXT PRIMARY KEY</span>,
+  project_id    <span class="kw">TEXT</span>,
+  title         <span class="kw">TEXT</span>,
+  status        <span class="kw">TEXT</span>,
+  agent_resume_id <span class="kw">TEXT</span>,
+  created_at    <span class="kw">INTEGER</span>,
+  updated_at    <span class="kw">INTEGER</span>,
+  last_activity_at <span class="kw">INTEGER</span>,
+  message_count <span class="kw">INTEGER DEFAULT</span> <span class="num">0</span>,
+  archived      <span class="kw">INTEGER DEFAULT</span> <span class="num">0</span>
+);
+
+<span class="com">-- 消息：核心表。冷热字段同表，重 record 压缩进 record_blob</span>
+<span class="kw">CREATE TABLE</span> messages (
+  session_id  <span class="kw">TEXT NOT NULL</span>,
+  seq         <span class="kw">INTEGER NOT NULL</span>,          <span class="com">-- 会话内单调序号 = 排序键</span>
+  id          <span class="kw">TEXT NOT NULL</span>,             <span class="com">-- msg_uuid（稳定，对外引用）</span>
+  role        <span class="kw">TEXT NOT NULL</span>,             <span class="com">-- user | assistant</span>
+  turn_id     <span class="kw">TEXT</span>,
+  created_at  <span class="kw">INTEGER NOT NULL</span>,
+  <span class="com">-- 热字段：列表/搜索直接读，便宜</span>
+  preview     <span class="kw">TEXT</span>,                      <span class="com">-- content / assistantText 截断</span>
+  failed      <span class="kw">INTEGER DEFAULT</span> <span class="num">0</span>,
+  terminal    <span class="kw">TEXT</span>,
+  cost_usd    <span class="kw">REAL</span>,
+  duration_ms <span class="kw">INTEGER</span>,
+  <span class="com">-- 冷字段：gzip(JSON(record 去附件后))，仅水合时取</span>
+  record_blob <span class="kw">BLOB</span>,
+  <span class="kw">PRIMARY KEY</span> (session_id, seq)
+);
+<span class="kw">CREATE UNIQUE INDEX</span> idx_msg_id <span class="kw">ON</span> messages(id);
+<span class="kw">CREATE INDEX</span> idx_msg_page <span class="kw">ON</span> messages(session_id, seq <span class="kw">DESC</span>);
+
+<span class="com">-- Blob 目录（实际字节在磁盘 blobs/ 下）</span>
+<span class="kw">CREATE TABLE</span> blobs (
+  hash       <span class="kw">TEXT PRIMARY KEY</span>,           <span class="com">-- sha256</span>
+  bytes      <span class="kw">INTEGER</span>,
+  mime       <span class="kw">TEXT</span>,
+  refcount   <span class="kw">INTEGER DEFAULT</span> <span class="num">0</span>,
+  created_at <span class="kw">INTEGER</span>
+);
+
+<span class="com">-- 消息 ↔ Blob，支持 GC 与按类型列举</span>
+<span class="kw">CREATE TABLE</span> message_blobs (
+  message_id <span class="kw">TEXT NOT NULL</span>,
+  hash       <span class="kw">TEXT NOT NULL</span>,
+  role       <span class="kw">TEXT</span>,                      <span class="com">-- user_file | image | tool_result | original_content</span>
+  name       <span class="kw">TEXT</span>,
+  ord        <span class="kw">INTEGER</span>,
+  <span class="kw">PRIMARY KEY</span> (message_id, hash, role)
+);
+
+<span class="com">-- 全文搜索（未来需求，零额外成本预埋）</span>
+<span class="kw">CREATE VIRTUAL TABLE</span> messages_fts <span class="kw">USING</span> fts5(
+  preview, content=<span class="str">'messages'</span>, content_rowid=<span class="str">'rowid'</span>
+);</code></pre>
+  </div>
+
+  <h2><span class="n">4</span>读写路径</h2>
+
+  <h3>打开会话（消除卡死的关键）</h3>
+  <span class="flow">click → IPC getConversationPage(sessionId, limit=50)
+     │
+     └─▶ SELECT seq,id,role,turn_id,preview,failed,terminal,cost_usd,duration_ms
+           FROM messages WHERE session_id=? ORDER BY seq DESC LIMIT 50   ← 索引命中，亚毫秒
+     │
+     └─▶ 渲染端拿到 50 条骨架，立即出列表
+           │
+           └─▶ 滚入视口的 assistant turn 才水合：
+                 SELECT record_blob FROM messages WHERE id=?  → gunzip → JSON
+                 record 内的图片/附件 = app-blob://&lt;hash&gt; ，浏览器按需流式拉取</span>
+
+  <h3>追加一回合（消除 O(n²)）</h3>
+  <pre><code><span class="kw">const</span> tx = db.<span class="fn">transaction</span>((record) => {
+  <span class="com">// 1. 外置大体积字段 → blob 仓（user.files / 大 tool.result / originalContent）</span>
+  <span class="kw">for</span> (<span class="kw">const</span> big <span class="kw">of</span> <span class="fn">extractHeavy</span>(record)) {
+    <span class="kw">const</span> hash = <span class="fn">sha256</span>(big.bytes);
+    <span class="kw">if</span> (!<span class="fn">blobExists</span>(hash)) <span class="fn">writeBlobFile</span>(hash, big.bytes);
+    <span class="fn">upsertBlobRefcount</span>(hash, +<span class="num">1</span>);
+    big.replaceWith({ blobRef: hash });          <span class="com">// record 里只留引用</span>
+  }
+  <span class="com">// 2. 瘦身后的 record 压缩入列</span>
+  <span class="kw">const</span> blob = <span class="fn">gzip</span>(<span class="fn">JSON.stringify</span>(record));
+  insertMsg.<span class="fn">run</span>({ session_id, seq: <span class="fn">nextSeq</span>(session_id), id, role, ..., record_blob: blob });
+  bumpSession.<span class="fn">run</span>(session_id);             <span class="com">// message_count / last_activity_at</span>
+});
+<span class="fn">tx</span>(record);   <span class="com">// 单事务，微秒级，无整文件重写</span></code></pre>
+
+  <h3>向上翻页（加载更早）</h3>
+  <pre><code>SELECT ... FROM messages
+  WHERE session_id=? AND seq &lt; ?       <span class="com">-- 上一页最小 seq</span>
+  ORDER BY seq DESC LIMIT 50;</code></pre>
+
+  <h2><span class="n">5</span>线程与不阻塞保证</h2>
+  <table>
+    <tr><th>关注点</th><th>方案</th></tr>
+    <tr><td>查询会不会阻塞主进程？</td><td class="good">带 LIMIT 的查询命中索引，亚毫秒级——这正是 VS Code 在主进程用 better-sqlite3 的原因。卡死来自"无界解析"，有界查询不存在该问题。</td></tr>
+    <tr><td>极端规模 / 想彻底零阻塞</td><td>把 DB 访问放进 <code>utilityProcess</code>（独立进程），主进程纯转发。可作为后续可选增强，接口不变。</td></tr>
+    <tr><td>崩溃安全</td><td class="good">WAL + 单事务写入；写一半崩溃不会损坏库，旧 JSON 的"半个文件即损坏"问题消失。</td></tr>
+    <tr><td>大附件加载</td><td class="good">注册 <code>app-blob://</code> Electron 自定义协议，从磁盘流式返回，Chromium 缓存，懒加载，主存零 base64。</td></tr>
+  </table>
+
+  <h2><span class="n">6</span>迁移方案（兼容现有数据）</h2>
+  <ul>
+    <li><b>一次性导入器</b>：遍历现有 <code>session-messages/*.json</code>，逐条 INSERT；按数组下标赋 <code>seq</code>；把内嵌附件/大字段抽出落 blob 仓；建 FTS 索引。</li>
+    <li><b>幂等 + 可恢复</b>：以 <code>schema_meta.migrated_files</code> 记录已迁移文件；中断可续跑。</li>
+    <li><b>渐进式</b>：启动时后台迁移（带进度条），或"首次打开某会话时懒迁移该会话"，避免一次性卡顿。</li>
+    <li><b>安全网</b>：迁移成功后把旧 JSON 移到 <code>session-messages.bak/</code>，保留一个版本周期再清理。</li>
+  </ul>
+
+  <h2><span class="n">7</span>这套设计如何吸收未来需求（不再重构）</h2>
+  <table>
+    <tr><th>未来需求</th><th>已预埋</th></tr>
+    <tr><td>跨会话全文搜索</td><td class="good">FTS5 虚拟表，建表即支持</td></tr>
+    <tr><td>百万级消息</td><td class="good">B-tree 索引分页，规模无关</td></tr>
+    <tr><td>用量/成本统计、报表</td><td class="good">SQL 聚合（cost_usd / duration_ms 已是列）</td></tr>
+    <tr><td>导出 / 归档</td><td class="good">查询即导出；blob 按引用打包</td></tr>
+    <tr><td>多设备同步（远期）</td><td class="good">单调 seq + 内容寻址 blob = 天然增量同步基础</td></tr>
+    <tr><td>Schema 演进</td><td class="good"><code>schema_meta.version</code> + 迁移运行器</td></tr>
+  </table>
+
+  <h2><span class="n">8</span>渲染端配套（次要，独立可做）</h2>
+  <p>存储改造后渲染窗口已被 <code>LIMIT 50</code> 天然限制。再补一层<b>真·虚拟化</b>收尾：<code>IntersectionObserver</code> 仅渲染视口内 turn；echarts / pdf.js / mermaid 滚入视口才初始化；离屏 turn 延迟 markdown 解析。窗口内的二次卡顿随之消失。</p>
+
+  <h2><span class="n">9</span>落地顺序（按风险递增）</h2>
+  <ol>
+    <li><b>引入 DB 层</b>：加 <code>better-sqlite3</code>，建 schema + 迁移运行器（不改调用方）。</li>
+    <li><b>双写 / 影子读</b>：写入同时写 JSON 与 SQLite，读仍走 JSON，校验一致。</li>
+    <li><b>切读</b>：<code>getConversationPage</code> / 翻页改走 SQLite，删 JSON 全量解析路径。<span class="pill">← 卡死在此消失</span></li>
+    <li><b>外置 blob</b>：附件/大字段落 blob 仓 + <code>app-blob://</code> 协议。</li>
+    <li><b>下线 JSON</b>：迁移完成，旧文件归档。</li>
+    <li><b>（可选）</b>渲染虚拟化；DB 移入 utilityProcess。</li>
+  </ol>
+
+</div>
+</body>
+</html>

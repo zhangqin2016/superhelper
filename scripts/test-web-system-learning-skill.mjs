@@ -289,8 +289,14 @@ const normalizedPlaybook = normalizePlaybookSpec(playbook);
 if (!skillMd.includes("Allowed domains") || !skillMd.includes("explicit confirmation")) {
   throw new Error("generated skill should include domain and confirmation guardrails");
 }
-if (!skillMd.includes("capability-map.json") || !skillMd.includes("First map the user's request to exactly one capability")) {
+if (!skillMd.includes("{{WEB_SYSTEM_CAPABILITY_MAP}}") || !skillMd.includes("First map the user's request to exactly one capability")) {
   throw new Error("generated skill should instruct agents to use the capability package first");
+}
+if (!skillMd.includes("{{WEB_SYSTEM_EXECUTOR}}") || !skillMd.includes("{{WEB_SYSTEM_PLAYBOOK}}")) {
+  throw new Error("generated workspace skill should use install-time placeholders for executable paths");
+}
+if (skillMd.includes("node scripts/execute_web_playbook.cjs")) {
+  throw new Error("generated workspace skill must not use relative executor paths");
 }
 if (skillMd.includes("password") && !skillMd.includes("Never ask for or store passwords")) {
   throw new Error("generated skill must not store credentials");
@@ -300,6 +306,12 @@ if (manifest.id !== "demo-oa" || manifest.riskLevel !== "high") {
 }
 if (manifest.origin !== "workspace" || manifest.workspaceOnly !== true || manifest.category !== "workspace") {
   throw new Error(`generated web system skills must be workspace-scoped: ${JSON.stringify(manifest)}`);
+}
+if (
+  manifest.placeholders?.["{{WEB_SYSTEM_EXECUTOR}}"] !== "scripts/execute_web_playbook.cjs" ||
+  manifest.placeholders?.["{{WEB_SYSTEM_PLAYBOOK}}"] !== "web-system-playbook.json"
+) {
+  throw new Error(`generated web system skill should declare install-time placeholders: ${JSON.stringify(manifest)}`);
 }
 if (normalizedPlaybook.connector.kind !== "web" || normalizedPlaybook.actions[0].action !== "web.query-approval") {
   throw new Error(`generated playbook should use the connector protocol: ${JSON.stringify(playbook)}`);

@@ -14,6 +14,35 @@ const root = path.join(__dirname, "..");
 const capturedQuestionResponses = [];
 const capturedRevealPaths = [];
 
+function makeTinyPdf() {
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+    [
+      "3 0 obj",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 240 160]",
+      "/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+      "endobj\n",
+    ].join("\n"),
+    "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+    "5 0 obj\n<< /Length 44 >>\nstream\nBT /F1 18 Tf 48 90 Td (Hello PDF) Tj ET\nendstream\nendobj\n",
+  ];
+  let body = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(body, "utf8"));
+    body += object;
+  }
+  const xrefOffset = Buffer.byteLength(body, "utf8");
+  body += `xref\n0 ${objects.length + 1}\n`;
+  body += "0000000000 65535 f \n";
+  for (const offset of offsets.slice(1)) {
+    body += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(body, "utf8").toString("base64");
+}
+
 ipcMain.handle("assistant:question-response", (_event, payload) => {
   capturedQuestionResponses.push(payload);
   return { ok: true };
@@ -90,6 +119,7 @@ ipcMain.handle("apps:catalog", () => ({
 }));
 
 app.whenReady().then(async () => {
+  const tinyPdfBase64 = makeTinyPdf();
   const win = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -112,6 +142,7 @@ app.whenReady().then(async () => {
       for (const spec of [
         "./modules/engine-notice-policy.js",
         "./modules/tool-payload-renderer.js",
+        "./modules/turn-block-renderers.js",
         "./modules/turn-view-renderer.js",
         "./modules/session-runtime-store.js",
         "./modules/message.js",
@@ -264,6 +295,58 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(sameTurnCommittedResult);
+    const largeConversationWindowResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { syncCommittedMessages } = await import("./modules/session-runtime-store.js");
+        const { showSessionMessages, renderConversation } = await import("./modules/message.js");
+        const sessionId = "session_large_history_window_regression";
+        const messages = Array.from({ length: 240 }, (_, index) => ({
+          id: "msg_large_" + index,
+          role: index % 2 === 0 ? "user" : "assistant",
+          content: "large history message " + index,
+          timestamp: new Date(2026, 0, 1, 0, 0, index).toISOString(),
+        }));
+        store.set("activeSessionId", sessionId);
+        showSessionMessages(sessionId);
+        syncCommittedMessages(sessionId, messages);
+        renderConversation(sessionId, { force: true, forceScrollBottom: true });
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`);
+        const count = panel?.children?.length || 0;
+        const text = panel?.textContent || "";
+        if (count > 90) {
+          throw new Error("large history switch should mount a bounded recent window, got " + count);
+        }
+        if (!text.includes("large history message 239")) {
+          throw new Error("large history window should keep the latest message");
+        }
+        if (text.includes("large history message 0")) {
+          throw new Error("large history window should not mount the oldest message on first paint");
+        }
+        return "large-history-window-regression: ok";
+      }
+    )()`);
+    console.log(largeConversationWindowResult);
+    const largeConversationPreserveScrollResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { renderConversation } = await import("./modules/message.js");
+        const sessionId = "session_large_history_window_regression";
+        renderConversation(sessionId, { force: true, preserveScroll: true });
+        await new Promise((resolve) => setTimeout(resolve, 3500));
+        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`);
+        const text = panel?.textContent || "";
+        const count = panel?.children?.length || 0;
+        if (!text.includes("large history message 0") || !text.includes("large history message 239")) {
+          throw new Error("preserve-scroll rerender should keep the loaded history range");
+        }
+        if (count < 220) {
+          throw new Error("preserve-scroll rerender should mount the loaded older page, got " + count);
+        }
+        return "large-history-preserve-scroll-regression: ok";
+      }
+    )()`);
+    console.log(largeConversationPreserveScrollResult);
     const multiSelectQuestionResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
@@ -346,6 +429,157 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(sealedTurnLayoutResult);
+    const sealedTurnArtifactResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { liveTurnFromRecord, renderSealedTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const turn = liveTurnFromRecord({
+          turnId: "turn_artifact_slot_regression",
+          terminal: "turn.completed",
+          assistantText: "SVG 已生成：output/chart.svg",
+          startedAt: 1000,
+          endedAt: 3000,
+          artifacts: [{
+            id: "artifact_chart",
+            kind: "image",
+            path: "/tmp/lily-renderer-artifact.svg",
+            relativePath: "output/chart.svg",
+            fileName: "chart.svg",
+            ext: ".svg",
+            mimeType: "image/svg+xml",
+            bytes: 128,
+            updatedAt: 1000,
+          }],
+          resultBlocks: [{
+            id: "artifact:artifact_chart",
+            type: "artifact",
+            artifactType: "image",
+            path: "/tmp/lily-renderer-artifact.svg",
+            relativePath: "output/chart.svg",
+            fileName: "chart.svg",
+            mimeType: "image/svg+xml",
+            bytes: 128,
+            updatedAt: 1000,
+          }],
+          timeline: [{ kind: "text", id: "text_1", ts: 2000, text: "SVG 已生成：output/chart.svg", status: "done" }],
+        });
+        const article = renderSealedTurnArticle(turn, false);
+        document.body.appendChild(article);
+        const artifactSlot = article.querySelector("[data-role='artifacts']");
+        const imgs = artifactSlot ? Array.from(artifactSlot.querySelectorAll(".assistant-renderer-artifact img")) : [];
+        const img = imgs[0];
+        const final = article.querySelector(".assistant-turn-report");
+        if (!artifactSlot || artifactSlot.hidden || imgs.length !== 1 || !img) {
+          throw new Error("sealed turn artifacts should render in a dedicated slot: " + article.innerHTML);
+        }
+        if (!String(img.getAttribute("src") || "").startsWith("file:///tmp/lily-renderer-artifact.svg")) {
+          throw new Error("artifact image should use file URL: " + img.getAttribute("src"));
+        }
+        if (final && !(final.compareDocumentPosition(artifactSlot) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+          throw new Error("artifact slot should render after the final answer");
+        }
+        article.remove();
+        return "sealed-turn-artifact-slot-regression: ok";
+      }
+    )()`);
+    console.log(sealedTurnArtifactResult);
+    const multiRendererResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { renderResultBlocks } = await import("./modules/turn-block-renderers.js");
+        const host = document.createElement("div");
+        document.body.appendChild(host);
+        const tinyPdfBase64 = ${JSON.stringify(tinyPdfBase64)};
+        renderResultBlocks(host, [
+          { id: "md", type: "markdown", text: "**正文**" },
+          { id: "table", type: "table", columns: ["name", "count"], rows: [{ name: "Dubai", count: 2 }] },
+          { id: "form", type: "form", title: "确认信息", fields: [{ label: "城市", value: "Dubai" }] },
+          { id: "code", type: "code", language: "js", code: "console.log('ok')" },
+          { id: "pdf", type: "pdf", title: "Tiny PDF", data: tinyPdfBase64, mimeType: "application/pdf" },
+          { id: "html", type: "html", title: "Tiny HTML", html: "<h1>HTML Report</h1><p>ok</p>" },
+          {
+            id: "echarts",
+            type: "chart",
+            chartType: "pie",
+            title: "Cities",
+            columns: ["city", "count"],
+            rows: [{ city: "Dubai", count: 2 }, { city: "Abu Dhabi", count: 1 }],
+          },
+          { id: "chart", type: "chart", chartType: "mermaid", source: "pie showData\\n  title Cities\\n  \\"Dubai\\" : 2" },
+          { id: "legacy-chart", type: "artifact", artifactType: "chart", chartType: "mermaid", source: "graph TD\\n  A-->B" },
+        ]);
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        if (!host.querySelector(".assistant-renderer-markdown strong")) {
+          throw new Error("markdown result block did not render rich markdown");
+        }
+        if (!host.querySelector(".assistant-renderer-table")) {
+          throw new Error("table result block did not render a table container");
+        }
+        if (!host.querySelector(".assistant-data-table-grid.tabulator, .assistant-data-table-grid .tabulator")) {
+          throw new Error("table result block should render through Tabulator");
+        }
+        if (!host.textContent.includes("Dubai")) {
+          throw new Error("table result block did not preserve row content");
+        }
+        if (!host.querySelector(".assistant-renderer-form-row")) {
+          throw new Error("form result block did not render fields");
+        }
+        if (!host.querySelector(".assistant-renderer-code code")) {
+          throw new Error("code result block did not render code");
+        }
+        if (!host.querySelector(".assistant-renderer-pdf canvas")) {
+          throw new Error("pdf result block did not render a PDF canvas");
+        }
+        if (!host.querySelector(".assistant-renderer-html iframe")) {
+          throw new Error("html result block did not render a sandboxed iframe");
+        }
+        if (!host.querySelector(".assistant-renderer-echarts canvas")) {
+          throw new Error("structured chart result block should render through ECharts");
+        }
+        const mermaidCount = host.querySelectorAll(".markdown-mermaid-source code.language-mermaid, .markdown-mermaid").length;
+        if (mermaidCount !== 2) {
+          throw new Error("chart result block should route mermaid through markdown renderer");
+        }
+        renderResultBlocks(host, []);
+        if (!host.hidden || host.querySelector("canvas") || host.querySelector("iframe")) {
+          throw new Error("result block rerender should clear and dispose previous chart DOM");
+        }
+        host.remove();
+        return "multi-renderer-result-blocks-regression: ok";
+      }
+    )()`);
+    console.log(multiRendererResult);
+    const contentImagePromotionResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { liveTurnFromRecord, renderSealedTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const tinyPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lGj0GQAAAABJRU5ErkJggg==";
+        const turn = liveTurnFromRecord({
+          turnId: "turn_content_image_promotion",
+          terminal: "turn.completed",
+          assistantText: "图片已生成。",
+          startedAt: 1000,
+          endedAt: 3000,
+          contentBlocks: [{ blockType: "image", mediaType: "image/png", data: tinyPng }],
+          resultBlocks: [{
+            id: "content:image:0",
+            type: "artifact",
+            artifactType: "image",
+            data: tinyPng,
+            mimeType: "image/png",
+            alt: "Generated image",
+            source: "content_block",
+          }],
+        });
+        const article = renderSealedTurnArticle(turn, false);
+        document.body.appendChild(article);
+        const narrativeImages = article.querySelectorAll("[data-role='narrative'] .assistant-content-image");
+        const artifactImages = article.querySelectorAll("[data-role='artifacts'] .assistant-renderer-artifact img");
+        if (narrativeImages.length !== 0 || artifactImages.length !== 1) {
+          throw new Error("content image should be promoted to artifact layer exactly once: " + article.innerHTML);
+        }
+        article.remove();
+        return "content-image-promotion-regression: ok";
+      }
+    )()`);
+    console.log(contentImagePromotionResult);
     const thinkingStackResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { liveTurnFromRecord, renderSealedTurnArticle } = await import("./modules/turn-view-renderer.js");

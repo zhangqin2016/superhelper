@@ -104,7 +104,8 @@ function registerSessionHandlers(ctx) {
       return { ok: false, error: "NOT_FOUND" };
     }
     const updated = sessionManager.findById(sessionId);
-    skillManager.writeSessionAgentGuide(sessionId, updated);
+    const project = projectManager.find(updated?.projectId);
+    skillManager.writeSessionAgentGuide(sessionId, updated, project?.path || "");
     const runner = runnerPool.get(sessionId);
     if (runner?.isAlive() && !runner.isBusy()) {
       if (!runner.reloadSkills()) runnerPool.terminateSession(sessionId);

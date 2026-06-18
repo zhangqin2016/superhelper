@@ -207,6 +207,7 @@ export function renderConversation(sessionId, opts = {}) {
   }
 
   const pendingCount = renderCommittedMessages(sessionId, {
+    preserveScroll: Boolean(opts.preserveScroll),
     onComplete: opts.forceScrollBottom
       ? () => scrollToBottomAfterLayout(v.panel, true)
       : null,
@@ -219,6 +220,15 @@ export function renderConversation(sessionId, opts = {}) {
 }
 
 const COMMITTED_RENDER_CHUNK = 5;
+const COMMITTED_INITIAL_WINDOW = 80;
+const COMMITTED_WINDOW_THRESHOLD = 160;
+
+function committedMessagesForRender(messages = [], opts = {}) {
+  if (!Array.isArray(messages)) return [];
+  if (opts.preserveScroll) return messages;
+  if (messages.length <= COMMITTED_WINDOW_THRESHOLD) return messages;
+  return messages.slice(-COMMITTED_INITIAL_WINDOW);
+}
 
 function appendCommittedMessage(sessionId, runtime, message) {
   const anchor = committedInsertAnchor(sessionId, runtime);
@@ -240,7 +250,8 @@ function renderCommittedMessages(sessionId, opts = {}) {
   const keys = renderedMessageKeys.get(sessionId) || new Set();
   renderedMessageKeys.set(sessionId, keys);
 
-  const pending = collectUnrenderedCommittedMessages(runtime.committedMessages, keys);
+  const renderMessages = committedMessagesForRender(runtime.committedMessages, opts);
+  const pending = collectUnrenderedCommittedMessages(renderMessages, keys);
   if (pending.length === 0) return 0;
 
   if (pending.length <= COMMITTED_RENDER_CHUNK) {

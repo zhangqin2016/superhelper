@@ -107,6 +107,7 @@
   --copy-bg: rgba(15, 23, 42, 0.82);
   --copy-bg-hover: rgba(30, 41, 59, 0.95);
   --image-backdrop: rgba(0, 0, 0, 0.85);
+  --document-page-bg: #ffffff;
   --image-control-bg: rgba(255, 255, 255, 0.12);
   --image-control-hover: rgba(255, 255, 255, 0.25);
   --scrollbar-thumb: #2a2d45;
@@ -227,6 +228,7 @@
   --copy-bg: rgba(255, 255, 255, 0.86);
   --copy-bg-hover: rgba(241, 245, 249, 0.96);
   --image-backdrop: var(--copy-bg);
+  --document-page-bg: #ffffff;
   --image-control-bg: rgba(15, 23, 42, 0.56);
   --image-control-hover: rgba(15, 23, 42, 0.72);
   --scrollbar-thumb: #c0cad8;

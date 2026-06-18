@@ -22,6 +22,7 @@ import {
   syncCommittedMessages,
 } from "./session-runtime-store.js";
 import { refreshSessionSkillsUi } from "./session-skills.js";
+import { hydrateBlobRefs } from "./blob-refs.js";
 
 const CONVERSATION_PAGE_SIZE = 50;
 const conversationPages = new Map();
@@ -154,7 +155,7 @@ async function loadSessionConversation(sessionId) {
     console.warn("[session] failed to load conversation:", result?.error || result);
     return getRuntimeSession(sessionId).committedMessages;
   }
-  const messages = result.conversation || [];
+  const messages = (result.conversation || []).map(hydrateBlobRefs);
   conversationPages.set(sessionId, {
     hasMore: Boolean(result?.hasMore),
     nextBefore: Number.isInteger(result?.nextBefore) ? result.nextBefore : 0,
@@ -183,7 +184,7 @@ export async function loadOlderConversationForSession(sessionId, panel = null) {
       return false;
     }
     const runtime = getRuntimeSession(sessionId);
-    const merged = [...result.conversation, ...runtime.committedMessages];
+    const merged = [...result.conversation.map(hydrateBlobRefs), ...runtime.committedMessages];
     conversationPages.set(sessionId, {
       hasMore: Boolean(result.hasMore),
       nextBefore: Number.isInteger(result.nextBefore) ? result.nextBefore : 0,

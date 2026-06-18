@@ -85,6 +85,9 @@ const APP_DATA_FILES = [
   "projects.json",
   "sessions.json",
   "sessions-index.json",
+  "messages.db",
+  "messages.db-wal",
+  "messages.db-shm",
   "workspaces.json",
   "mcp-active.json",
   "model-settings.json",
@@ -103,6 +106,8 @@ const APP_DATA_DIRS = [
   "skills-backup",
   "session-guides",
   "session-messages",
+  "session-messages.imported",
+  "blobs",
   "session-summaries",
 ];
 

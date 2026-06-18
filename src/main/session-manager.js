@@ -11,14 +11,16 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const {
   legacySessionsBackupPath,
-  sessionMessagesDir,
   sessionsConfigPath,
   sessionsIndexPath,
+  messageDbPath,
+  blobStoreDir,
 } = require("./config");
 const { normalizeSessionPermissionMode } = require("./permission-settings");
 const { getLocale } = require("./locale-settings");
-
-const DEFAULT_CONVERSATION_LIMIT = 50;
+const { backfillMessageArtifacts } = require("./session-artifact-backfill");
+const { MessageStore } = require("./store/message-store");
+const legacyImport = require("./store/legacy-import");
 
 const DEFAULT_SESSION_TITLES = {
   "zh-CN": "新对话",
@@ -40,8 +42,48 @@ class SessionManager {
     this.activeSessionId = null;
     this._saveTimer = null;
     this._savePending = false;
-    this._dirtyMessageSessionIds = new Set();
     this._legacyMigrationPending = false;
+    this._messageStore = null;
+  }
+
+  /** Lazily-opened SQLite-backed message store (single source of truth for messages). */
+  _store() {
+    if (!this._messageStore) {
+      this._messageStore = new MessageStore(messageDbPath(), blobStoreDir());
+    }
+    return this._messageStore;
+  }
+
+  /** Per-message hook applied during migration: upgrade old records in place. */
+  _backfillTransformFor(session) {
+    if (!session) return null;
+    const workspacePath = this.pm?.find?.(session.projectId)?.path || "";
+    if (!workspacePath) return null;
+    return (message) => {
+      backfillMessageArtifacts(message, workspacePath);
+      return message;
+    };
+  }
+
+  /**
+   * Ensure a session's history lives in the message store. Idempotent and
+   * cheap after the first call (gated by a schema_meta flag). Migrates both a
+   * legacy per-session JSON file and any inline messages from the old
+   * sessions.json format, then drops the in-memory array.
+   */
+  _ensureImported(session) {
+    if (!session) return;
+    const store = this._store();
+    const transform = this._backfillTransformFor(session);
+    legacyImport.importSession(store, session.id, { transform });
+    if (Array.isArray(session.messages)) {
+      if (session.messages.length && store.count(session.id) === 0) {
+        const msgs = transform ? session.messages.map(transform) : session.messages;
+        store.bulkInsert(session.id, msgs);
+        store.setMeta(`imported:${session.id}`, `inline:${msgs.length}`);
+      }
+      delete session.messages;
+    }
   }
 
   load() {
@@ -73,7 +115,30 @@ class SessionManager {
       }
     }
     this._resetStaleRunningStatus();
+    this._migrateInlineMessages();
     this.saveImmediate();
+    this._startBackgroundImport();
+  }
+
+  /** Move any in-memory (legacy sessions.json) messages into the store at startup. */
+  _migrateInlineMessages() {
+    for (const session of this.iterateSessions()) {
+      if (Array.isArray(session.messages)) this._ensureImported(session);
+    }
+  }
+
+  /** Drain remaining legacy per-session files without blocking startup. */
+  _startBackgroundImport() {
+    try {
+      legacyImport.sweepInBackground(this._store(), {
+        transformForSession: (sid) => this._backfillTransformFor(this._find(sid, { loadMessages: false })),
+        onDone: ({ sessions }) => {
+          if (sessions > 0) console.info(`[sessions] migrated ${sessions} legacy file(s) to sqlite`);
+        },
+      });
+    } catch (err) {
+      console.warn("[sessions] background import failed:", err?.message || err);
+    }
   }
 
   _loadPersistedStore() {
@@ -150,9 +215,10 @@ class SessionManager {
     };
     delete normalized.messages;
     if (messages) {
+      // Legacy inline messages (old sessions.json). Kept on the in-memory
+      // session only until _ensureImported migrates them into the store.
       normalized.messages = messages;
       normalized.messageCount = messages.length;
-      this._dirtyMessageSessionIds.add(normalized.id);
     }
     return normalized;
   }
@@ -165,32 +231,33 @@ class SessionManager {
     }
   }
 
-  _safeMessageFileName(sessionId) {
-    return `${String(sessionId || "").replace(/[^a-zA-Z0-9._-]/g, "_")}.json`;
-  }
-
-  _messageFilePath(sessionId) {
-    return path.join(sessionMessagesDir(), this._safeMessageFileName(sessionId));
-  }
-
-  _loadMessages(session) {
+  /** All messages for a session (chronological), migrating legacy data on first touch. */
+  _messages(session) {
     if (!session) return [];
-    if (Array.isArray(session.messages)) return session.messages;
-    const filePath = this._messageFilePath(session.id);
-    const parsed = this._readJson(filePath);
-    const messages = Array.isArray(parsed?.messages) ? parsed.messages : [];
-    session.messages = messages;
-    session.messageCount = messages.length;
-    return session.messages;
+    this._ensureImported(session);
+    return this._store().getAll(session.id);
   }
 
-  _markMessagesDirty(session) {
-    if (session?.id) this._dirtyMessageSessionIds.add(session.id);
+  /** Append one message through the store; keeps the cached count in sync. */
+  _appendToStore(session, message) {
+    this._ensureImported(session);
+    const stored = this._store().append(session.id, message);
+    session.messageCount = this._store().count(session.id);
+    session.updatedAt = new Date().toISOString();
+    this.save();
+    return stored;
   }
 
+  /** Drop a session's history (rows + blobs) and any not-yet-imported legacy file. */
   _deleteMessageFile(sessionId) {
     try {
-      fs.rmSync(this._messageFilePath(sessionId), { force: true });
+      this._store().clear(sessionId);
+      this._store().setMeta(`imported:${sessionId}`, "deleted");
+    } catch (err) {
+      console.warn("[sessions] failed to clear messages for", sessionId, err?.message || err);
+    }
+    try {
+      fs.rmSync(legacyImport.legacyFilePath(sessionId), { force: true });
     } catch {
       // ignore
     }
@@ -238,7 +305,6 @@ class SessionManager {
     if (!this.sessions[projectId]) this.sessions[projectId] = [];
     this.sessions[projectId].push(session);
     if (!this.activeSessionId) this.activeSessionId = session.id;
-    this._markMessagesDirty(session);
     this.saveImmediate();
     return session;
   }
@@ -302,7 +368,6 @@ class SessionManager {
   _doSave() {
     const dir = path.dirname(sessionsIndexPath());
     fs.mkdirSync(dir, { recursive: true });
-    this._writeDirtyMessageFiles();
     fs.writeFileSync(
       sessionsIndexPath(),
       JSON.stringify(
@@ -330,30 +395,6 @@ class SessionManager {
       });
     }
     return index;
-  }
-
-  _writeDirtyMessageFiles() {
-    if (this._dirtyMessageSessionIds.size === 0) return;
-    fs.mkdirSync(sessionMessagesDir(), { recursive: true });
-    for (const sessionId of [...this._dirtyMessageSessionIds]) {
-      const session = this._find(sessionId, { loadMessages: false });
-      if (!session) {
-        this._deleteMessageFile(sessionId);
-        this._dirtyMessageSessionIds.delete(sessionId);
-        continue;
-      }
-      const messages = Array.isArray(session.messages)
-        ? session.messages
-        : this._loadMessages(session);
-      session.messages = messages;
-      session.messageCount = messages.length;
-      fs.writeFileSync(
-        this._messageFilePath(session.id),
-        JSON.stringify({ sessionId: session.id, messages }, null, 2),
-        "utf8",
-      );
-      this._dirtyMessageSessionIds.delete(sessionId);
-    }
   }
 
   _backupLegacySessionsFileIfNeeded() {
@@ -395,7 +436,6 @@ class SessionManager {
     if (!project) return null;
     const list = this._getProjectSessions(project.id);
     const session = list.find((s) => s.id === this.activeSessionId) || list[0] || null;
-    if (session) this._loadMessages(session);
     return session;
   }
 
@@ -467,7 +507,6 @@ class SessionManager {
     }
     this.sessions[projectId].push(session);
     this.activeSessionId = session.id;
-    this._markMessagesDirty(session);
     this.saveImmediate();
     return session;
   }
@@ -555,49 +594,52 @@ class SessionManager {
   findMessage(sessionId, messageId) {
     const session = this._find(sessionId);
     if (!session || !messageId) return null;
-    const messages = this._loadMessages(session);
-    return messages.find((message) => message.id === messageId) || null;
+    this._ensureImported(session);
+    return this._store().getById(messageId);
   }
 
   updateMessageMeta(sessionId, messageId, updater) {
     const session = this._find(sessionId);
     if (!session || !messageId) return null;
-    const messages = this._loadMessages(session);
-    const message = messages.find((item) => item.id === messageId);
-    if (!message) return null;
-    const current = message.meta && typeof message.meta === "object" ? message.meta : {};
-    const next = typeof updater === "function" ? updater(current, message) : updater;
-    if (!next || typeof next !== "object") return null;
-    message.meta = next;
+    this._ensureImported(session);
+    const updated = this._store().updateById(messageId, (message) => {
+      const current = message.meta && typeof message.meta === "object" ? message.meta : {};
+      const next = typeof updater === "function" ? updater(current, message) : updater;
+      if (!next || typeof next !== "object") return null;
+      message.meta = next;
+      return message;
+    });
+    if (!updated) return null;
     session.updatedAt = new Date().toISOString();
-    this._markMessagesDirty(session);
     this.save();
-    return message;
+    return updated;
+  }
+
+  /** Most recent message in this session, or null. */
+  getLastMessage(sessionId) {
+    const session = this._find(sessionId);
+    if (!session) return null;
+    this._ensureImported(session);
+    const page = this._store().getPage(session.id, { limit: 1 });
+    return page.conversation[page.conversation.length - 1] || null;
   }
 
   /** Last user message in this session (for retry). */
   getLastUserMessage(sessionId) {
     const session = this._find(sessionId);
     if (!session) return null;
-    const messages = this._loadMessages(session);
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const msg = messages[i];
-      if (msg.role === "user") return msg;
-    }
-    return null;
+    this._ensureImported(session);
+    return this._store().lastOfRole(session.id, "user");
   }
 
   /** Remove trailing assistant message (failed turn before retry). */
   popLastAssistantMessage(sessionId) {
     const session = this._find(sessionId);
-    const messages = this._loadMessages(session);
-    if (!session || messages.length === 0) return false;
-    const last = messages[messages.length - 1];
-    if (last.role !== "assistant") return false;
-    messages.pop();
-    session.messageCount = messages.length;
+    if (!session) return false;
+    this._ensureImported(session);
+    if (!this._store().removeLast(session.id, "assistant")) return false;
+    session.messageCount = this._store().count(session.id);
     session.updatedAt = new Date().toISOString();
-    this._markMessagesDirty(session);
     this.save();
     return true;
   }
@@ -605,21 +647,18 @@ class SessionManager {
   /** Remove the last message if it is from the user (e.g. send to CLI failed). */
   popLastUserMessage(sessionId) {
     const session = this._find(sessionId);
-    const messages = this._loadMessages(session);
-    if (!session || messages.length === 0) return false;
-    const last = messages[messages.length - 1];
-    if (last.role !== "user") return false;
-    messages.pop();
-    session.messageCount = messages.length;
+    if (!session) return false;
+    this._ensureImported(session);
+    if (!this._store().removeLast(session.id, "user")) return false;
+    session.messageCount = this._store().count(session.id);
     session.updatedAt = new Date().toISOString();
-    this._markMessagesDirty(session);
     this.save();
     return true;
   }
 
   _appendMessage(session, role, content, files = null, extra = null) {
     const entry = {
-      id: extra?.id,
+      id: extra?.id || `msg_${crypto.randomUUID()}`,
       role,
       content,
       files: files && files.length > 0 ? files : undefined,
@@ -629,18 +668,12 @@ class SessionManager {
     if (extra?.failed) entry.failed = true;
     if (extra?.meta && typeof extra.meta === "object") entry.meta = extra.meta;
     if (extra?.record && typeof extra.record === "object") entry.record = extra.record;
-    const messages = this._loadMessages(session);
-    messages.push(entry);
-    session.updatedAt = new Date().toISOString();
-    session.messages = messages;
-    session.messageCount = session.messages.length;
-    this._markMessagesDirty(session);
-    this.save();
+    this._appendToStore(session, entry);
   }
 
   getConversation(sessionId) {
     const session = sessionId ? this._find(sessionId) : this.getActive();
-    return session ? this._loadMessages(session) : [];
+    return session ? this._messages(session) : [];
   }
 
   getConversationPage(sessionId, opts = {}) {
@@ -657,21 +690,18 @@ class SessionManager {
         total: 0,
       };
     }
-    const messages = this._loadMessages(session);
-    const total = messages.length;
-    const limit = Math.max(1, Math.min(Number(opts.limit) || DEFAULT_CONVERSATION_LIMIT, 200));
-    const beforeRaw = Number.isInteger(opts.before) ? opts.before : total;
-    const before = Math.max(0, Math.min(beforeRaw, total));
-    const start = Math.max(0, before - limit);
+    this._ensureImported(session);
+    const page = this._store().getPage(session.id, {
+      before: Number.isInteger(opts.before) ? opts.before : undefined,
+      limit: opts.limit,
+    });
+    // Keep the cached count fresh for listForProject without a separate query.
+    session.messageCount = page.total;
     return {
       ok: true,
       sessionId: session.id,
       projectId: session.projectId,
-      conversation: messages.slice(start, before),
-      hasMore: start > 0,
-      before,
-      nextBefore: start,
-      total,
+      ...page,
     };
   }
 
@@ -682,22 +712,23 @@ class SessionManager {
   clearConversation(sessionId) {
     const session = this._find(sessionId) || this.getActive();
     if (!session) return;
-    session.messages = [];
+    this._store().clear(session.id);
+    this._store().setMeta(`imported:${session.id}`, "cleared");
+    try {
+      fs.rmSync(legacyImport.legacyFilePath(session.id), { force: true });
+    } catch {
+      // ignore
+    }
     session.messageCount = 0;
     delete session.agentResumeId;
     this._deleteSummaryFile(session.id);
-    this._markMessagesDirty(session);
     this.save();
   }
 
-  _find(sessionId, opts = {}) {
-    const loadMessages = opts.loadMessages !== false;
+  _find(sessionId) {
     for (const list of Object.values(this.sessions)) {
       const found = list.find((s) => s.id === sessionId);
-      if (found) {
-        if (loadMessages) this._loadMessages(found);
-        return found;
-      }
+      if (found) return found;
     }
     return null;
   }

@@ -213,6 +213,17 @@ function buildSkillMd(spec, scan) {
   return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, or one-time codes.\n- If the session is logged out, ask the user to log in interactively.\n- Do not leave the allowed domains.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Preferred execution | Example triggers |\n|---|---|---|---|---|\n${actionRows}\n\n## Capability Package\n\nBefore executing, load these generated files as one reviewed capability package:\n\n- \`capability-map.json\`: natural-language routing, required parameters, confirmation rules, success signals, stale signals, and recovery policy.\n- \`api-map.json\`: learned API contracts and which capabilities can use them.\n- \`web-system-playbook.json\`: executable connector actions and validator input.\n- \`risk-policy.json\`: production/test learning boundaries and high-risk action gates.\n- \`health.json\`: learning coverage, API/browser fallback coverage, and stale state.\n\n## Execution Rules\n\n- First map the user's request to exactly one capability in \`capability-map.json\`. If confidence is low, ask one focused question.\n- Collect the capability's required parameters before execution. If values are missing, ask only for the missing fields listed in \`askWhenMissing\`.\n- Build an action plan from the capability contract, validate it with \`scripts/execute_web_playbook.cjs --dry-run\`, then execute only after validation succeeds.\n- Prefer API-first execution for actions with learned API contracts; this is the fast path for searches, lists, detail reads, exports, and reviewed submissions.\n- For \`read\` actions, return concise source-backed results from API responses or the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting or calling a mutating API.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If API contracts fail or labels/selectors no longer match, re-run discovery for the action and explain what changed.\n- Never invent hidden pages, endpoints, fields, or permissions. Unknowns must be recorded as missing capability coverage, not guessed.\n\n## Runtime Plan Contract\n\nWhen executing an action, create an \`action-plan.json\` with this shape and run the local executor:\n\n\`\`\`bash\nnode scripts/execute_web_playbook.cjs \\\n  --playbook web-system-playbook.json \\\n  --capability-map capability-map.json \\\n  --action web.<action-id> \\\n  --plan action-plan.json \\\n  --dry-run\n\`\`\`\n\nOnly run without \`--dry-run\` after the plan validates. For non-read actions, add \`--confirmed\` only after the user has reviewed the exact fields or target.\n\n${runtimePlanRules}\n\n## Action Details\n\n${actionDetails}\n`;
 }
 
+function buildInstallPortableSkillMd(markdown) {
+  return markdown
+    .replaceAll("node scripts/execute_web_playbook.cjs", "\"{{NODE_BIN}}\" \"{{WEB_SYSTEM_EXECUTOR}}\"")
+    .replaceAll("scripts/execute_web_playbook.cjs", "{{WEB_SYSTEM_EXECUTOR}}")
+    .replaceAll("web-system-playbook.json", "{{WEB_SYSTEM_PLAYBOOK}}")
+    .replaceAll("capability-map.json", "{{WEB_SYSTEM_CAPABILITY_MAP}}")
+    .replaceAll("api-map.json", "{{WEB_SYSTEM_API_MAP}}")
+    .replaceAll("risk-policy.json", "{{WEB_SYSTEM_RISK_POLICY}}")
+    .replaceAll("health.json", "{{WEB_SYSTEM_HEALTH}}");
+}
+
 function buildManifest(spec) {
   return {
     schemaVersion: 1,
@@ -227,6 +238,15 @@ function buildManifest(spec) {
     publisher: "Workspace",
     origin: "workspace",
     workspaceOnly: true,
+    placeholders: {
+      "{{WEB_SYSTEM_EXECUTOR}}": "scripts/execute_web_playbook.cjs",
+      "{{WEB_SYSTEM_PLAYBOOK}}": "web-system-playbook.json",
+      "{{WEB_SYSTEM_CAPABILITY_MAP}}": "capability-map.json",
+      "{{WEB_SYSTEM_API_MAP}}": "api-map.json",
+      "{{WEB_SYSTEM_RISK_POLICY}}": "risk-policy.json",
+      "{{WEB_SYSTEM_HEALTH}}": "health.json",
+      "{{WEB_SYSTEM_PROFILE}}": "system-profile.json",
+    },
     generatedBy: "lily-web-system-learning",
     capabilityLayer: "workflow",
     riskLevel: spec.actions.some((a) => a.risk === "destructive" || a.risk === "submit") ? "high" : "medium",
@@ -988,7 +1008,11 @@ function main() {
   if (!args.dryRun) {
     fs.mkdirSync(draftDir, { recursive: true });
     fs.mkdirSync(path.join(draftDir, "scripts"), { recursive: true });
-    fs.writeFileSync(path.join(draftDir, "SKILL.md"), buildSkillMd(spec, scan), "utf8");
+    fs.writeFileSync(
+      path.join(draftDir, "SKILL.md"),
+      buildInstallPortableSkillMd(buildSkillMd(spec, scan)),
+      "utf8",
+    );
     fs.writeFileSync(path.join(draftDir, "skill.manifest.json"), JSON.stringify(buildManifest(spec), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "system-profile.json"), JSON.stringify(buildSystemProfile(spec, scan), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "capability-map.json"), JSON.stringify(capabilityMap, null, 2) + "\n", "utf8");

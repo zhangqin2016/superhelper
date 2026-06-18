@@ -7,8 +7,9 @@ const { userDataPath } = require("./config");
 /**
  * L3 skill crystallization: the engine writes skill DRAFTS into an inbox
  * directory (exposed via --add-dir); after a turn completes, valid drafts are
- * registered as installed skills with source "learned" and enabled:false —
- * the user reviews and enables them in Settings. Never auto-enabled.
+ * registered as installed skills with source "learned". Workspace-origin
+ * drafts are bound to the current workspace so new chats in that workspace can
+ * use them immediately, without leaking the capability into unrelated spaces.
  */
 
 const DRAFT_ID_RE = /^[a-z][a-z0-9-]{1,63}$/;
@@ -72,11 +73,12 @@ function readDraftManifest(dir) {
  * Scan the inbox and register every valid draft via the injected callback
  * (skillManager.registerLearnedSkillDir). Successful drafts are consumed;
  * invalid ones are left in place for the model to fix on a later attempt.
- * @param {(dir: string, manifest: object) => string | null} registerSkillDir
+ * @param {(dir: string, manifest: object, context?: object) => string | null} registerSkillDir
  * @param {string} [inboxDir] test override
+ * @param {object} [context] registration context, e.g. { projectId, sessionId }
  * @returns {string[]} registered skill ids
  */
-function collectLearnedSkillDrafts(registerSkillDir, inboxDir = learnedSkillsInboxDir()) {
+function collectLearnedSkillDrafts(registerSkillDir, inboxDir = learnedSkillsInboxDir(), context = {}) {
   let names = [];
   try {
     names = fs.readdirSync(inboxDir);
@@ -90,7 +92,7 @@ function collectLearnedSkillDrafts(registerSkillDir, inboxDir = learnedSkillsInb
       if (!fs.statSync(dir).isDirectory()) continue;
       const manifest = readDraftManifest(dir);
       if (!manifest) continue;
-      const id = registerSkillDir(dir, manifest);
+      const id = registerSkillDir(dir, manifest, context);
       if (id) {
         fs.rmSync(dir, { recursive: true, force: true });
         registered.push(id);

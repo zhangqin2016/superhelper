@@ -29,10 +29,13 @@ function workspaceAppFolderName({ manifest, app }) {
   );
 }
 
-function restoreWorkspaceSkills(skillManager, workspaceSkills) {
+function restoreWorkspaceSkills(skillManager, workspaceSkills, projectId = "") {
   const restored = [];
   for (const skill of Array.isArray(workspaceSkills) ? workspaceSkills : []) {
-    const id = skillManager.restoreWorkspaceSkillDir(skill.dir, skill.manifest, { enabled: skill.enabled });
+    const id = skillManager.restoreWorkspaceSkillDir(skill.dir, skill.manifest, {
+      enabled: skill.enabled,
+      projectId,
+    });
     if (id) restored.push(id);
   }
   return restored;
@@ -147,7 +150,7 @@ function registerProjectHandlers(ctx) {
       name: project.name,
       preview: previewExport(project.path),
       requiredSkills: skillManager.getGloballyEnabledSkillIds(),
-      workspaceSkills: skillManager.listWorkspaceSkillExports().map((skill) => ({
+      workspaceSkills: skillManager.listWorkspaceSkillExports(project.id).map((skill) => ({
         id: skill.id,
         name: skill.manifest?.name || skill.id,
         enabled: skill.enabled,
@@ -175,7 +178,7 @@ function registerProjectHandlers(ctx) {
         name: project.name,
         conventions: readLearnedConventions(project.id),
         requiredSkills: skillManager.getGloballyEnabledSkillIds(),
-        workspaceSkills: skillManager.listWorkspaceSkillExports(),
+        workspaceSkills: skillManager.listWorkspaceSkillExports(project.id),
         exportedAt: new Date().toISOString(),
       });
       fs.writeFileSync(result.filePath, buf);
@@ -218,10 +221,10 @@ function registerProjectHandlers(ctx) {
       while (fs.existsSync(targetDir)) targetDir = path.join(baseDir, `${peek.name}-${n++}`);
 
       const { manifest, conventions, workspaceSkills } = await importWorkspacePack(zipBuffer, targetDir);
-      const restoredWorkspaceSkills = restoreWorkspaceSkills(skillManager, workspaceSkills);
       const project = projectManager.add(targetDir);
       if (manifest.name) projectManager.rename(project.id, manifest.name);
       if (conventions) writeLearnedConventions(project.id, conventions);
+      const restoredWorkspaceSkills = restoreWorkspaceSkills(skillManager, workspaceSkills, project.id);
       sessionManager.create(project.id, defaultSessionTitle());
 
       const installed = new Set(skillManager.getGloballyEnabledSkillIds());
@@ -359,10 +362,10 @@ function registerProjectHandlers(ctx) {
         }
         throw err;
       }
-      const restoredWorkspaceSkills = restoreWorkspaceSkills(skillManager, workspaceSkills);
       const project = projectManager.add(targetDir);
       if (manifest.name) projectManager.rename(project.id, manifest.name);
       if (conventions) writeLearnedConventions(project.id, conventions);
+      const restoredWorkspaceSkills = restoreWorkspaceSkills(skillManager, workspaceSkills, project.id);
       sessionManager.create(project.id, defaultSessionTitle());
       const installedRecord = workspaceAppInstalls.recordInstalled({
         app,

@@ -83,6 +83,7 @@ fs.writeFileSync(
         enabled: false,
         source: "learned",
         installedVersion: "0.1.0",
+        enabledProjectIds: ["p1"],
       },
     },
   }),
@@ -280,6 +281,63 @@ if (!learnedSkill || learnedSkill.source !== "learned" || learnedSkill.origin !=
 }
 if (!fs.existsSync(path.join(tmp, "lily-config", "skills", "learned-demo-oa"))) {
   throw new Error("learned workspace skill directory should survive registry refresh");
+}
+const projectBoundIds = skillManager.resolveSessionSkillIds({ projectId: "p1", enabledSkillIds: null });
+if (!projectBoundIds.includes("learned-demo-oa")) {
+  throw new Error("learned workspace skill should auto-enable for new chats in its bound project");
+}
+const customProjectBoundIds = skillManager.resolveSessionSkillIds({ projectId: "p1", enabledSkillIds: [] });
+if (!customProjectBoundIds.includes("learned-demo-oa")) {
+  throw new Error("learned workspace skill should stay available even when a session customizes skill selection");
+}
+const otherProjectIds = skillManager.resolveSessionSkillIds({ projectId: "p2", enabledSkillIds: null });
+if (otherProjectIds.includes("learned-demo-oa")) {
+  throw new Error("learned workspace skill should not auto-enable in unrelated projects");
+}
+const exportsForP1 = skillManager.listWorkspaceSkillExports("p1");
+const exportsForP2 = skillManager.listWorkspaceSkillExports("p2");
+if (!exportsForP1.some((skill) => skill.id === "learned-demo-oa")) {
+  throw new Error("workspace skill export should include skills bound to the selected project");
+}
+if (exportsForP2.some((skill) => skill.id === "learned-demo-oa")) {
+  throw new Error("workspace skill export should not leak skills from another project");
+}
+const draftDir = path.join(tmp, "draft-web-skill");
+fs.mkdirSync(path.join(draftDir, "scripts"), { recursive: true });
+fs.writeFileSync(
+  path.join(draftDir, "SKILL.md"),
+  'run "{{NODE_BIN}}" "{{WEB_SYSTEM_EXECUTOR}}" --playbook "{{WEB_SYSTEM_PLAYBOOK}}"\n',
+  "utf8",
+);
+fs.writeFileSync(
+  path.join(draftDir, "skill.manifest.json"),
+  JSON.stringify({
+    schemaVersion: 1,
+    id: "demo-web",
+    name: "Demo Web",
+    description: "",
+    version: "1.0.0",
+    origin: "workspace",
+    workspaceOnly: true,
+    placeholders: {
+      "{{WEB_SYSTEM_EXECUTOR}}": "scripts/execute_web_playbook.cjs",
+      "{{WEB_SYSTEM_PLAYBOOK}}": "web-system-playbook.json",
+    },
+  }, null, 2),
+  "utf8",
+);
+fs.writeFileSync(path.join(draftDir, "scripts/execute_web_playbook.cjs"), "console.log('ok')\n", "utf8");
+fs.writeFileSync(path.join(draftDir, "web-system-playbook.json"), "{}\n", "utf8");
+const learnedId = skillManager.registerLearnedSkillDir(draftDir, { id: "demo-web", version: "1.0.0" }, { projectId: "p1" });
+if (learnedId !== "learned-demo-web") {
+  throw new Error(`learned skill should be normalized with learned- prefix, got ${learnedId}`);
+}
+const installedMd = fs.readFileSync(path.join(tmp, "lily-config", "skills", "learned-demo-web", "SKILL.md"), "utf8");
+if (installedMd.includes("{{WEB_SYSTEM") || installedMd.includes("{{NODE_BIN}}")) {
+  throw new Error(`learned skill placeholders should be resolved at install time: ${installedMd}`);
+}
+if (!installedMd.includes(path.join(tmp, "lily-config", "skills", "learned-demo-web", "scripts", "execute_web_playbook.cjs"))) {
+  throw new Error(`learned skill should resolve executor to its installed absolute path: ${installedMd}`);
 }
 for (const skill of result.available || []) {
   if (/^(marketing|pm|tob|superpowers)-/.test(skill.id)) {

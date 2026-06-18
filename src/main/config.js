@@ -95,6 +95,21 @@ function sessionMessagesDir() {
   return userDataPath("session-messages");
 }
 
+/** SQLite database holding all conversation messages, blob catalog, and FTS index. */
+function messageDbPath() {
+  return userDataPath("messages.db");
+}
+
+/** Content-addressed blob store (images / attachments / large payloads). */
+function blobStoreDir() {
+  return userDataPath("blobs");
+}
+
+/** Where legacy per-session JSON files are moved after a successful import. */
+function sessionMessagesImportedDir() {
+  return userDataPath("session-messages.imported");
+}
+
 function sessionSummariesDir() {
   return userDataPath("session-summaries");
 }
@@ -186,6 +201,9 @@ module.exports = {
   sessionsConfigPath,
   sessionsIndexPath,
   sessionMessagesDir,
+  messageDbPath,
+  blobStoreDir,
+  sessionMessagesImportedDir,
   sessionSummariesDir,
   scheduledTasksPath,
   legacySessionsBackupPath,

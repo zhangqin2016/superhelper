@@ -164,7 +164,7 @@ function registerAssistantHandlers(ctx) {
     const lastUser = sessionManager.getLastUserMessage(session.id);
     if (!lastUser) return { ok: false, error: "NO_USER_MESSAGE" };
 
-    const lastMsg = session.messages[session.messages.length - 1];
+    const lastMsg = sessionManager.getLastMessage(session.id);
     if (lastMsg?.role !== "assistant") {
       return { ok: false, error: "NOTHING_TO_RETRY" };
     }

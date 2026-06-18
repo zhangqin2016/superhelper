@@ -208,6 +208,40 @@ function getGloballyEnabledSkillIds() {
   return ids;
 }
 
+function normalizeProjectId(projectId) {
+  return String(projectId || "").trim();
+}
+
+function uniqueStrings(values) {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean))];
+}
+
+function isSkillEnabledForProject(entry, projectId) {
+  const pid = normalizeProjectId(projectId);
+  if (!pid) return false;
+  const disabledProjectIds = new Set(uniqueStrings(entry?.disabledProjectIds));
+  if (disabledProjectIds.has(pid)) return false;
+  return uniqueStrings(entry?.enabledProjectIds).includes(pid);
+}
+
+function getWorkspaceEnabledSkillIds(projectId) {
+  const pid = normalizeProjectId(projectId);
+  if (!pid) return [];
+  ensureSkillsStateDefaults();
+  const installed = new Set(getAllInstalledSkillIds());
+  const state = loadSkillsState();
+  const ids = [];
+  for (const [skillId, entry] of Object.entries(state.skills || {})) {
+    if (!installed.has(skillId)) continue;
+    const manifest = readInstalledManifest(skillId);
+    if (!manifest || !isWorkspaceSkillEntry(skillId, entry, manifest)) continue;
+    if (isSkillEnabledForProject(entry, pid)) ids.push(skillId);
+  }
+  return ids;
+}
+
 function getSkillsForIds(skillIds) {
   const skills = [];
   for (const skillId of skillIds || []) {
@@ -245,6 +279,9 @@ function resolveSessionSkillIds(session) {
     ids = session.enabledSkillIds.filter((id) => installed.has(id));
   }
   const merged = new Set(ids);
+  for (const skillId of getWorkspaceEnabledSkillIds(session?.projectId)) {
+    if (installed.has(skillId)) merged.add(skillId);
+  }
   for (const skillId of MANDATORY_PLATFORM_SKILL_IDS) {
     if (installed.has(skillId)) merged.add(skillId);
   }
@@ -385,37 +422,63 @@ function writeSessionAgentGuide(sessionId, session, workspacePath = "") {
 }
 
 /**
- * Register a learned-skill draft (L3 crystallization). Installed with source
- * "learned" and enabled:false — enabling is the user's explicit action in
- * Settings. Returns the final skill id, or null when rejected.
+ * Register a learned-skill draft (L3 crystallization). Workspace-origin drafts
+ * are installed as learned skills and bound to the current project so new chats
+ * in that workspace can use the generated capability immediately. They are not
+ * globally enabled unless the user explicitly enables them in Settings.
  */
-function registerLearnedSkillDir(srcDir, manifest) {
+function registerLearnedSkillDir(srcDir, manifest, context = {}) {
   const baseId = String(manifest?.id || "");
   const id = baseId.startsWith("learned-") ? baseId : `learned-${baseId}`;
   if (PROTECTED_BUNDLED_IDS.has(id) || PROTECTED_BUNDLED_IDS.has(baseId)) return null;
   const target = installedSkillDir(id);
   copyDirRecursiveShipSafe(srcDir, target);
+  let installedManifest;
   if (id !== baseId) {
     try {
       const manifestPath = path.join(target, "skill.manifest.json");
-      const updated = { ...JSON.parse(fs.readFileSync(manifestPath, "utf8")), id };
+      installedManifest = { ...JSON.parse(fs.readFileSync(manifestPath, "utf8")), id };
+      const updated = installedManifest;
       fs.writeFileSync(manifestPath, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
     } catch {
       return null;
     }
+  } else {
+    installedManifest = loadManifestFromDir(target);
   }
+  if (!installedManifest) return null;
+
+  const skillMdPath = path.join(target, "SKILL.md");
+  if (fs.existsSync(skillMdPath)) {
+    const replacements = buildReplacements(target, installedManifest);
+    const skillMd = applyPlaceholders(fs.readFileSync(skillMdPath, "utf8"), replacements);
+    fs.writeFileSync(skillMdPath, skillMd, "utf8");
+  }
+
   const state = loadSkillsState();
+  const existing = state.skills[id] || {};
+  const projectId = normalizeProjectId(context.projectId);
+  const enabledProjectIds = uniqueStrings([
+    ...uniqueStrings(existing.enabledProjectIds),
+    ...(projectId ? [projectId] : []),
+  ]);
   state.skills[id] = {
+    ...existing,
     id,
-    enabled: false,
+    enabled: existing.enabled === true,
     source: "learned",
     installedVersion: String(manifest.version || "0.1.0"),
+    workspaceOnly: Boolean(installedManifest.workspaceOnly || installedManifest.origin === "workspace"),
+    enabledProjectIds,
+    createdForProjectId: existing.createdForProjectId || projectId || undefined,
+    updatedAt: new Date().toISOString(),
   };
   saveSkillsState();
   return id;
 }
 
-function listWorkspaceSkillExports() {
+function listWorkspaceSkillExports(projectId = "") {
+  const pid = normalizeProjectId(projectId);
   ensureSkillsStateDefaults();
   const state = loadSkillsState();
   const out = [];
@@ -423,20 +486,24 @@ function listWorkspaceSkillExports() {
     if (PROTECTED_BUNDLED_IDS.has(skillId)) continue;
     const manifest = readInstalledManifest(skillId);
     if (!manifest || !isWorkspaceSkillEntry(skillId, entry, manifest)) continue;
+    const projectBindings = uniqueStrings(entry?.enabledProjectIds);
+    const legacyGlobalWorkspaceSkill = projectBindings.length === 0 && entry?.enabled !== false;
+    const enabledForProject = isSkillEnabledForProject(entry, pid);
+    if (pid && !enabledForProject && !legacyGlobalWorkspaceSkill) continue;
     const dir = installedSkillDir(skillId);
     if (!fs.existsSync(path.join(dir, "SKILL.md"))) continue;
     out.push({
       id: skillId,
       dir,
       manifest,
-      enabled: entry?.enabled !== false,
+      enabled: pid ? enabledForProject || legacyGlobalWorkspaceSkill : entry?.enabled !== false,
     });
   }
   out.sort((a, b) => a.id.localeCompare(b.id));
   return out;
 }
 
-function restoreWorkspaceSkillDir(srcDir, manifest, { enabled = false } = {}) {
+function restoreWorkspaceSkillDir(srcDir, manifest, { enabled = false, projectId = "" } = {}) {
   const id = String(manifest?.id || "").trim();
   if (!SKILL_ID_RE.test(id) || PROTECTED_BUNDLED_IDS.has(id)) return null;
   if (!srcDir || !fs.existsSync(path.join(srcDir, "SKILL.md"))) return null;
@@ -465,12 +532,19 @@ function restoreWorkspaceSkillDir(srcDir, manifest, { enabled = false } = {}) {
   fs.writeFileSync(installedManifestPath, `${JSON.stringify(installedManifest, null, 2)}\n`, "utf8");
 
   const state = loadSkillsState();
+  const existing = state.skills[id] || {};
+  const pid = normalizeProjectId(projectId);
   state.skills[id] = {
-    ...(state.skills[id] || {}),
+    ...existing,
     id,
-    enabled: Boolean(enabled),
+    enabled: Boolean(existing.enabled || (!pid && enabled)),
     source: "learned",
     installedVersion: String(installedManifest.version || manifest.version || "0.1.0"),
+    workspaceOnly: true,
+    enabledProjectIds: uniqueStrings([
+      ...uniqueStrings(existing.enabledProjectIds),
+      ...(pid && enabled !== false ? [pid] : []),
+    ]),
     restoredAt: new Date().toISOString(),
   };
   saveSkillsState();
@@ -1267,6 +1341,7 @@ module.exports = {
   listWorkspaceSkillExports,
   restoreWorkspaceSkillDir,
   resolveSessionSkillIds,
+  getWorkspaceEnabledSkillIds,
   normalizeSessionSkillSelection,
   syncInheritedSessionGuides,
   getGloballyEnabledSkillIds,

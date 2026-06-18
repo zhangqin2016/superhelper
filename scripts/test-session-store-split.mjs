@@ -28,7 +28,6 @@ require.cache[electronPath] = {
 const SessionManager = require("../src/main/session-manager.js");
 const {
   legacySessionsBackupPath,
-  sessionMessagesDir,
   sessionsConfigPath,
   sessionsIndexPath,
 } = require("../src/main/config.js");
@@ -78,29 +77,36 @@ try {
   if (!indexedSession || indexedSession.messageCount !== 205) {
     throw new Error(`session index missing messageCount: ${JSON.stringify(indexedSession)}`);
   }
+  // The lightweight index must never carry message bodies — that separation is
+  // what keeps session listing cheap regardless of history size.
   if ("messages" in indexedSession) {
     throw new Error("session index must not contain message bodies");
   }
 
-  const messagesFile = path.join(sessionMessagesDir(), "s1.json");
-  const messageStore = JSON.parse(fs.readFileSync(messagesFile, "utf8"));
-  if (messageStore.messages.length !== 205 || messageStore.messages[0].content !== "旧消息 1") {
-    throw new Error(`message file did not preserve history: ${JSON.stringify(messageStore)}`);
-  }
-
+  // Legacy inline messages must migrate into the SQLite store without loss
+  // and in original order.
   const conversation = manager.getConversation("s1");
-  if (conversation.length !== 205 || conversation[204].content !== "旧消息 205") {
-    throw new Error(`manager should load migrated conversation: ${JSON.stringify(conversation)}`);
+  if (conversation.length !== 205 || conversation[0].content !== "旧消息 1" || conversation[204].content !== "旧消息 205") {
+    throw new Error(`manager should load migrated conversation: ${conversation.length}`);
   }
 
+  // Opening a large session returns only the newest page (bounded read — the
+  // fix for the freeze), with a keyset cursor for loading older messages.
   const page = manager.getConversationPage("s1");
   if (
     page.conversation.length !== 50 ||
     page.conversation[0].content !== "旧消息 156" ||
-    page.nextBefore !== 155 ||
-    !page.hasMore
+    page.conversation[49].content !== "旧消息 205" ||
+    !page.hasMore ||
+    !Number.isInteger(page.nextBefore)
   ) {
-    throw new Error(`default conversation page should return latest 50: ${JSON.stringify(page)}`);
+    throw new Error(`default conversation page should return latest 50: ${JSON.stringify({ len: page.conversation.length, first: page.conversation[0]?.content, hasMore: page.hasMore, nextBefore: page.nextBefore })}`);
+  }
+
+  // The cursor walks backwards through history.
+  const older = manager.getConversationPage("s1", { before: page.nextBefore, limit: 50 });
+  if (older.conversation.length !== 50 || older.conversation[49].content !== "旧消息 155") {
+    throw new Error(`older page should precede the newest: ${older.conversation[49]?.content}`);
   }
 
   console.log("session-store-split: ok");
