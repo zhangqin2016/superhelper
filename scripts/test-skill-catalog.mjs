@@ -78,10 +78,16 @@ fs.writeFileSync(
         source: "remote",
         installedVersion: "1.0.0",
       },
+      "learned-demo-oa": {
+        id: "learned-demo-oa",
+        enabled: false,
+        source: "learned",
+        installedVersion: "0.1.0",
+      },
     },
   }),
 );
-for (const skillId of ["anthropics-algorithmic-art", "marketing-referrals"]) {
+for (const skillId of ["anthropics-algorithmic-art", "marketing-referrals", "learned-demo-oa"]) {
   const skillDir = path.join(tmp, "lily-config", "skills", skillId);
   fs.mkdirSync(skillDir, { recursive: true });
   fs.writeFileSync(path.join(skillDir, "SKILL.md"), `# ${skillId}\n`, "utf8");
@@ -93,6 +99,9 @@ for (const skillId of ["anthropics-algorithmic-art", "marketing-referrals"]) {
       name: skillId,
       description: "",
       version: "1.0.0",
+      ...(skillId === "learned-demo-oa"
+        ? { origin: "workspace", workspaceOnly: true, category: "workspace", publisher: "Workspace" }
+        : {}),
     }, null, 2),
     "utf8",
   );
@@ -261,6 +270,16 @@ for (const staleId of ["anthropics-algorithmic-art", "marketing-referrals"]) {
   if (fs.existsSync(path.join(tmp, "lily-config", "skills", staleId))) {
     throw new Error(`stale installed skill directory ${staleId} should be removed`);
   }
+}
+if ((bootstrapResult.pruned || []).includes("learned-demo-oa")) {
+  throw new Error("learned workspace skills must not be pruned by registry refresh");
+}
+const learnedSkill = skillManager.listSkillsPublic().find((skill) => skill.id === "learned-demo-oa");
+if (!learnedSkill || learnedSkill.source !== "learned" || learnedSkill.origin !== "workspace") {
+  throw new Error(`learned workspace skill should survive registry refresh: ${JSON.stringify(learnedSkill)}`);
+}
+if (!fs.existsSync(path.join(tmp, "lily-config", "skills", "learned-demo-oa"))) {
+  throw new Error("learned workspace skill directory should survive registry refresh");
 }
 for (const skill of result.available || []) {
   if (/^(marketing|pm|tob|superpowers)-/.test(skill.id)) {

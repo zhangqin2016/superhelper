@@ -154,6 +154,14 @@ function pruneInstalledSkillsNotInRegistry(registry) {
   const pruned = [];
   for (const skillId of Object.keys(state.skills || {})) {
     if (allowedIds.has(skillId)) continue;
+    const entry = state.skills[skillId] || {};
+    const manifest = readInstalledManifest(skillId);
+    const isWorkspaceSkill =
+      entry.source === "learned" ||
+      manifest?.origin === "workspace" ||
+      manifest?.workspaceOnly === true ||
+      manifest?.publisher === "Workspace";
+    if (isWorkspaceSkill) continue;
     const skillDir = installedSkillDir(skillId);
     if (fs.existsSync(skillDir)) {
       fs.rmSync(skillDir, { recursive: true, force: true });
