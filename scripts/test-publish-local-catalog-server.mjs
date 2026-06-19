@@ -9,6 +9,7 @@ import {
   localSkillDirs,
   registryMetadataUploadFields,
   skillUploadFields,
+  workspaceAppBuildArgs,
   workspaceAppArtifactPath,
 } from "./publish-local-catalog-server.mjs";
 
@@ -80,6 +81,10 @@ assert(
   webAppFields.requiredSkillPackages.includes("lily-web-system-learning"),
   "web learning app should declare its required skill package",
 );
+assert(
+  workspaceAppBuildArgs(webApp, { version: "0.1.57" }).includes("1.0.9"),
+  "workspace app publisher should keep app package versions independent from desktop release versions",
+);
 
 assertEqual(
   workspaceAppArtifactPath({ artifactPath: "/tmp/app.lilyspace.zip" }),
@@ -131,4 +136,4 @@ assertEqual(JSON.parse(metadataFields.nameI18n).en, "Spreadsheets", "metadata sy
 assertEqual(JSON.parse(metadataFields.categoryLabelI18n).en, "Office Documents", "metadata sync should include localized category label");
 assertEqual(metadataFields.displayInCatalog, "true", "metadata sync should keep registry entries catalog-visible by default");
 
-finish("publish-local-catalog-server", 26);
+finish("publish-local-catalog-server", 27);

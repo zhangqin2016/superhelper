@@ -194,6 +194,34 @@ function runCapture(command, argsList, options = {}) {
   return result.stdout || "";
 }
 
+function majorNodeVersion(command) {
+  try {
+    const stdout = runCapture(command, ["-e", "console.log(process.versions.node)"], { stdio: "pipe" }).trim();
+    const major = Number.parseInt(stdout.split(".")[0], 10);
+    return Number.isFinite(major) ? major : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function findModernNode() {
+  const nvmNodes =
+    fs
+      .globSync?.(path.join(os.homedir(), ".nvm", "versions", "node", "v*", "bin", "node"))
+      ?.sort((a, b) => b.localeCompare(a, undefined, { numeric: true })) ?? [];
+  const candidates = [
+    process.env.RELEASE_NODE_PATH,
+    "node",
+    process.execPath,
+    ...nvmNodes,
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (majorNodeVersion(candidate) >= 18) return candidate;
+  }
+  fail("release scripts require Node.js 18+ for fetch/FormData support. Set RELEASE_NODE_PATH to a modern node binary.");
+}
+
 function refreshCdn(urls) {
   if (!urls.length) return;
   const file = path.join(os.tmpdir(), `lily-cdn-refresh-${Date.now()}.txt`);
@@ -441,6 +469,7 @@ if (!fs.existsSync(path.join(ROOT, "resources", "license-public-key.pem"))) {
 if ((publishServerRelease || (publishLocalCatalog && !options["dry-run"])) && !hasServerReleaseAuth()) {
   fail("server release publish requires RELEASE_ADMIN_TOKEN or RELEASE_ADMIN_EMAIL + RELEASE_ADMIN_PASSWORD. Use --skip-server-publish only for static-only uploads.");
 }
+const scriptNode = findModernNode();
 
 console.log(`[release-one] version ${currentVersion} -> ${nextVersion}`);
 const versionSnapshot = snapshotVersionFiles();
@@ -470,11 +499,10 @@ try {
     nextVersion,
     "--prefix",
     prefix,
-    "--notes",
-    notes,
     "--up-host",
     qiniuUpHost,
   ];
+  if (notes) publishArgs.push("--notes", notes);
   for (const [platform, file] of artifacts) {
     publishArgs.push("--artifact", `${platform}=${file}`);
   }
@@ -482,7 +510,7 @@ try {
   if (options.upload) publishArgs.push("--upload");
   if (options["dry-run"]) publishArgs.push("--dry-run");
 
-  run(process.execPath, publishArgs);
+  run(scriptNode, publishArgs);
 
   const autoUploads = [];
   for (const item of autoUpdateCandidates(target, pkg.build?.productName || pkg.name, nextVersion)) {
@@ -520,7 +548,7 @@ try {
       ];
       if (options["dry-run"]) uploadArgs.push("--dry-run");
       if (options.upload || options["dry-run"]) {
-        run(process.execPath, uploadArgs);
+        run(scriptNode, uploadArgs);
       } else {
         console.log(`  upload skipped: ${item.file}`);
       }
@@ -543,7 +571,7 @@ try {
     }
     if (notes) serverArgs.push("--notes", notes);
     if (options.force) serverArgs.push("--force");
-    run(process.execPath, serverArgs);
+    run(scriptNode, serverArgs);
   } else if (options.upload && !options["dry-run"]) {
     console.log("[release-one] server release publish skipped by --skip-server-publish.");
   }
@@ -563,7 +591,7 @@ try {
     if (options["skip-app-publish"]) catalogArgs.push("--skip-apps");
     if (options["dry-run"]) catalogArgs.push("--dry-run");
     else catalogArgs.push("--upload");
-    run(process.execPath, catalogArgs);
+    run(scriptNode, catalogArgs);
   } else if (options["skip-catalog-publish"]) {
     console.log("[release-one] local skill/app catalog publish skipped by --skip-catalog-publish.");
   }

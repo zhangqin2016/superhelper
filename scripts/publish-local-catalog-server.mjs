@@ -18,6 +18,7 @@ const DIRECT_APP_UPLOAD_THRESHOLD_BYTES = 40 * 1024 * 1024;
 const WORKSPACE_APP_BUILDERS = [
   {
     appId: "mail-assistant",
+    version: "1.0.1",
     script: "scripts/build-mail-workspace-app.mjs",
     name: "邮件助手",
     summary: "连接 Gmail、Outlook/Microsoft 365 和 IMAP/SMTP，用自然语言搜索、总结、草拟和确认发送邮件。",
@@ -33,6 +34,7 @@ const WORKSPACE_APP_BUILDERS = [
   },
   {
     appId: "web-system-learning",
+    version: "1.0.9",
     script: "scripts/build-web-system-learning-workspace-app.mjs",
     name: "网页系统学习",
     summary: "学习 OA、ERP、CRM 和后台系统，生成页面地图、动作地图、API 地图和工作区技能。",
@@ -48,6 +50,7 @@ const WORKSPACE_APP_BUILDERS = [
   },
   {
     appId: "daily-stock-analysis",
+    version: "1.0.5",
     script: "scripts/build-stock-workspace-app.mjs",
     name: "股票智能分析 Starter",
     summary: "安装股票投研示范工作区，结合联网研究、Excel 分析和多 Agent 流程生成结构化报告。",
@@ -370,6 +373,13 @@ function workspaceAppArtifactPath(artifact) {
     || "";
 }
 
+function workspaceAppBuildArgs(app, options = {}) {
+  const args = [app.script, "--out", DEFAULT_APP_OUT];
+  const version = app.version || options.version || "";
+  if (version) args.push("--version", version);
+  return args;
+}
+
 function existingByKey(rows, idKey, channel) {
   const byKey = new Map();
   for (const row of rows || []) {
@@ -564,8 +574,7 @@ async function publishApps(options, auth) {
       results.push({ kind: "app", id: app.appId, version: "", action: "skipped-source-missing" });
       continue;
     }
-    const args = [app.script, "--out", DEFAULT_APP_OUT];
-    if (options.version) args.push("--version", options.version);
+    const args = workspaceAppBuildArgs(app, options);
     const artifact = buildJson(process.execPath, args);
     const current = existing.get(`${artifact.appId}@${artifact.version}`);
     if (!options.force && current?.sha256?.toLowerCase() === artifact.sha256.toLowerCase()) {
@@ -622,6 +631,7 @@ export {
   localSkillDirs,
   registryMetadataUploadFields,
   skillUploadFields,
+  workspaceAppBuildArgs,
   workspaceAppArtifactPath,
 };
 
