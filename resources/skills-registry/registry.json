@@ -570,7 +570,7 @@
       "id": "lily-web-system-learning",
       "name": "网页系统学习",
       "description": "学习 OA、ERP、CRM、后台等 Web 系统，生成系统画像、页面地图、业务对象模型、动作 Playbook、风险策略和当前工作区可审核技能。",
-      "latestVersion": "1.0.8",
+      "latestVersion": "1.0.9",
       "channel": "stable",
       "sourceType": "github",
       "github": {
