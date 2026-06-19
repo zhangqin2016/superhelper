@@ -11,6 +11,7 @@ const {
 } = require("./mail-imap-smtp-executor");
 const { startOAuthLoopback } = require("./mail-oauth-executor");
 const { searchOAuthMessages, readOAuthMessage, sendOAuthMessage } = require("./mail-oauth-api");
+const { autodiscover } = require("./mail-autoconfig");
 
 function registerConnectorHandlers() {
   const connectorStore = createConnectorStore();
@@ -37,6 +38,18 @@ function registerConnectorHandlers() {
     ok: true,
     accounts: mailStore.listAccountsPublic(),
   }));
+
+  // Foolproof add-flow: caller passes only an email; we return ready-to-use
+  // IMAP/SMTP settings + how to get an app-password, so no host/port is typed.
+  ipcMain.handle("mail-accounts:autodiscover", async (_event, email) => {
+    try {
+      const config = await autodiscover(String(email || ""));
+      if (!config) return { ok: false, error: "INVALID_EMAIL" };
+      return { ok: true, config };
+    } catch (err) {
+      return { ok: false, error: "AUTODISCOVER_FAILED", message: err?.message || String(err) };
+    }
+  });
 
   ipcMain.handle("mail-accounts:save", (_event, payload) => {
     try {

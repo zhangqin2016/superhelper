@@ -14,6 +14,95 @@ function checked(id) {
   return Boolean($(id)?.checked);
 }
 
+function setVal(id, v) {
+  const el = $(id);
+  if (el) el.value = v == null ? "" : String(v);
+}
+
+function setChecked(id, v) {
+  const el = $(id);
+  if (el) el.checked = Boolean(v);
+}
+
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+// Foolproof add-flow: the moment a valid email is entered, fill IMAP/SMTP from
+// autodiscovery and surface app-password guidance, so the user only enters the
+// password/授权码 and never touches a host or port.
+async function autodiscoverEmail() {
+  const provider = value("connectorProviderSelect") || "imap-smtp";
+  if (provider !== "imap-smtp") return;
+  const email = value("connectorAccountEmail");
+  if (!EMAIL_RE.test(email)) return;
+  let res;
+  try {
+    res = await window.assistantClient.autodiscoverMailAccount(email);
+  } catch {
+    return;
+  }
+  const config = res?.ok ? res.config : null;
+  if (!config) return;
+
+  setVal("connectorImapHost", config.imap.host);
+  setVal("connectorImapPort", config.imap.port);
+  setChecked("connectorImapSecure", config.imap.secure);
+  setVal("connectorSmtpHost", config.smtp.host);
+  setVal("connectorSmtpPort", config.smtp.port);
+  setChecked("connectorSmtpSecure", config.smtp.secure);
+
+  // Collapse the technical fields once auto-filled; offer a manual override.
+  const fields = $("connectorImapFields");
+  if (fields) fields.hidden = true;
+  renderAutoGuidance(config);
+
+  const secretLabel = document.querySelector('label[for="connectorAccountSecret"]');
+  if (secretLabel) {
+    secretLabel.textContent = config.secretKind === "app-password" ? "授权码 / 应用专用密码" : "邮箱密码";
+  }
+}
+
+function renderAutoGuidance(config) {
+  const anchor = $("connectorAccountEmail");
+  if (!anchor) return;
+  let box = $("connectorAutoGuidance");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "connectorAutoGuidance";
+    box.className = "settings-section-desc";
+    anchor.insertAdjacentElement("afterend", box);
+  }
+  box.replaceChildren();
+  const summary = document.createElement("p");
+  summary.textContent = `已自动识别服务器:收件 ${config.imap.host} · 发件 ${config.smtp.host}`;
+  box.appendChild(summary);
+
+  if (config.secretKind === "app-password" || config.guidance) {
+    const tip = document.createElement("p");
+    tip.textContent = config.guidance?.text
+      || "此邮箱需使用「授权码 / 应用专用密码」,而非登录密码。";
+    if (config.guidance?.url) {
+      const link = document.createElement("a");
+      link.href = config.guidance.url;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = " 查看图文步骤";
+      tip.appendChild(link);
+    }
+    box.appendChild(tip);
+  }
+
+  const manual = document.createElement("button");
+  manual.type = "button";
+  manual.className = "settings-link-button";
+  manual.textContent = "手动调整服务器";
+  manual.addEventListener("click", () => {
+    const fields = $("connectorImapFields");
+    if (fields) fields.hidden = !fields.hidden;
+  });
+  box.appendChild(manual);
+  box.hidden = false;
+}
+
 function setStatus(text, kind = "") {
   const el = $("connectorSettingsStatus");
   if (!el) return;
@@ -173,6 +262,8 @@ export async function initConnectorSettings() {
   await refreshConnectorSettings();
 
   $("connectorProviderSelect")?.addEventListener("change", updateProviderFields);
+  $("connectorAccountEmail")?.addEventListener("change", () => void autodiscoverEmail());
+  $("connectorAccountEmail")?.addEventListener("blur", () => void autodiscoverEmail());
   $("connectorSaveAccountBtn")?.addEventListener("click", async () => {
     setStatus("");
     const button = $("connectorSaveAccountBtn");

@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   saveConnectorPlaybook: (payload) => ipcRenderer.invoke("connectors:save-playbook", payload),
   removeConnectorPlaybook: (id) => ipcRenderer.invoke("connectors:remove-playbook", id),
   listMailAccounts: () => ipcRenderer.invoke("mail-accounts:list"),
+  autodiscoverMailAccount: (email) => ipcRenderer.invoke("mail-accounts:autodiscover", email),
   saveMailAccount: (payload) => ipcRenderer.invoke("mail-accounts:save", payload),
   removeMailAccount: (id) => ipcRenderer.invoke("mail-accounts:remove", id),
   testMailAccount: (id) => ipcRenderer.invoke("mail-accounts:test", id),
