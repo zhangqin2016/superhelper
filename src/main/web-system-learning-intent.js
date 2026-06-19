@@ -52,15 +52,31 @@ function buildWebSystemLearningPrompt(userText) {
   ].filter(Boolean).join("\n");
 }
 
-function ensureWebSystemLearningSkillForSession(ctx, sessionId) {
+async function ensureWebSystemLearningSkillForSession(ctx, sessionId) {
   const { sessionManager, projectManager, runnerPool } = ctx;
   const skillManager = require("./skill-manager");
   const session = sessionManager.findById(sessionId);
   if (!session) return { ok: false, error: "NO_SESSION" };
 
-  const publicSkills = skillManager.listSkillsForSessionPublic(session);
-  const target = publicSkills.skills.find((skill) => skill.id === WEB_SYSTEM_LEARNING_SKILL_ID);
-  if (!target) return { ok: false, error: "SKILL_NOT_AVAILABLE" };
+  let publicSkills = skillManager.listSkillsForSessionPublic(session);
+  let target = publicSkills.skills.find((skill) => skill.id === WEB_SYSTEM_LEARNING_SKILL_ID);
+
+  // This is a heavy, opt-in marketplace skill (defaultEligible:false), so it is
+  // not pre-installed. When the user actually expresses learning intent, install
+  // it on demand from the registry instead of dead-ending with "not available".
+  // Keep it globally disabled afterward (honoring "don't enable by default") and
+  // let the per-session selection below turn it on only for this chat.
+  if (!target) {
+    const installed = await skillManager.installFromRegistry(WEB_SYSTEM_LEARNING_SKILL_ID);
+    if (!installed.ok) {
+      return { ok: false, error: "SKILL_NOT_AVAILABLE", detail: installed.error || null };
+    }
+    skillManager.setSkillEnabled(WEB_SYSTEM_LEARNING_SKILL_ID, false);
+    publicSkills = skillManager.listSkillsForSessionPublic(session);
+    target = publicSkills.skills.find((skill) => skill.id === WEB_SYSTEM_LEARNING_SKILL_ID);
+    if (!target) return { ok: false, error: "SKILL_NOT_AVAILABLE" };
+  }
+
   if (target.sessionEnabled) return { ok: true, changed: false };
 
   const nextIds = [...new Set([...(publicSkills.effectiveIds || []), WEB_SYSTEM_LEARNING_SKILL_ID])];

@@ -85,7 +85,7 @@ function registerAssistantHandlers(ctx) {
     const engineText = webLearningIntent ? buildWebSystemLearningPrompt(text) : null;
     let reloadSkillsBeforeStart = false;
     if (webLearningIntent) {
-      const ensured = ensureWebSystemLearningSkillForSession(ctx, session.id);
+      const ensured = await ensureWebSystemLearningSkillForSession(ctx, session.id);
       if (!ensured.ok) {
         return {
           ok: false,
@@ -135,7 +135,7 @@ function registerAssistantHandlers(ctx) {
     const engineText = webLearningIntent ? buildWebSystemLearningPrompt(text) : null;
     let reloadSkillsBeforeStart = false;
     if (webLearningIntent) {
-      const ensured = ensureWebSystemLearningSkillForSession(ctx, session.id);
+      const ensured = await ensureWebSystemLearningSkillForSession(ctx, session.id);
       if (!ensured.ok) {
         return {
           ok: false,

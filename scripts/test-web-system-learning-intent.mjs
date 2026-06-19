@@ -91,7 +91,7 @@ try {
     writes.push({ sessionId, session, workspacePath });
   };
 
-  const ensured = ensureWebSystemLearningSkillForSession(fakeCtx, fakeSession.id);
+  const ensured = await ensureWebSystemLearningSkillForSession(fakeCtx, fakeSession.id);
   assert.deepEqual(ensured, {
     ok: true,
     changed: true,
@@ -104,6 +104,79 @@ try {
   skillManager.listSkillsForSessionPublic = originalList;
   skillManager.normalizeSessionSkillSelection = originalNormalize;
   skillManager.writeSessionAgentGuide = originalWrite;
+}
+
+// On-demand install fallback: the skill is a heavy opt-in marketplace skill
+// (defaultEligible:false), so it may not be installed yet. When learning intent
+// fires and it is missing, it must be installed from the registry on the spot,
+// kept globally disabled (not enabled by default), then enabled for this session
+// only — never dead-end with SKILL_NOT_AVAILABLE while it is installable.
+const onDemandSession = {
+  id: "session_2",
+  projectId: "project_2",
+  enabledSkillIds: null,
+};
+const onDemandCtx = {
+  sessionManager: {
+    findById: (id) => (id === onDemandSession.id ? onDemandSession : null),
+    setEnabledSkillIds: (id, ids) => {
+      onDemandSession.enabledSkillIds = ids;
+      return true;
+    },
+  },
+  projectManager: { find: (id) => ({ id, path: "/tmp/ws2" }) },
+  runnerPool: { get: () => null, terminateSession: () => {} },
+};
+const origList2 = skillManager.listSkillsForSessionPublic;
+const origNormalize2 = skillManager.normalizeSessionSkillSelection;
+const origWrite2 = skillManager.writeSessionAgentGuide;
+const origInstall = skillManager.installFromRegistry;
+const origSetEnabled = skillManager.setSkillEnabled;
+const calls = { install: 0, setEnabledFalse: 0 };
+let installed = false;
+try {
+  skillManager.listSkillsForSessionPublic = () => ({
+    effectiveIds: [],
+    // skill appears only after the on-demand install runs
+    skills: installed ? [{ id: WEB_SYSTEM_LEARNING_SKILL_ID, sessionEnabled: false }] : [],
+  });
+  skillManager.normalizeSessionSkillSelection = (ids) => ids;
+  skillManager.writeSessionAgentGuide = () => {};
+  skillManager.installFromRegistry = async (id) => {
+    assert.equal(id, WEB_SYSTEM_LEARNING_SKILL_ID);
+    calls.install += 1;
+    installed = true;
+    return { ok: true, id, version: "1.0.9" };
+  };
+  skillManager.setSkillEnabled = (id, enabled) => {
+    assert.equal(id, WEB_SYSTEM_LEARNING_SKILL_ID);
+    assert.equal(enabled, false, "on-demand install must keep the skill globally disabled");
+    calls.setEnabledFalse += 1;
+    return { ok: true };
+  };
+
+  const ensured = await ensureWebSystemLearningSkillForSession(onDemandCtx, onDemandSession.id);
+  assert.equal(ensured.ok, true, "missing-but-installable skill should not dead-end");
+  assert.equal(calls.install, 1, "skill installed on demand exactly once");
+  assert.equal(calls.setEnabledFalse, 1, "skill kept globally disabled after install");
+  assert.equal(
+    onDemandSession.enabledSkillIds.includes(WEB_SYSTEM_LEARNING_SKILL_ID),
+    true,
+    "skill enabled for this session",
+  );
+
+  // When the registry has nothing to install, the honest error stays.
+  installed = false;
+  skillManager.installFromRegistry = async () => ({ ok: false, error: "NOT_FOUND" });
+  const failed = await ensureWebSystemLearningSkillForSession(onDemandCtx, onDemandSession.id);
+  assert.equal(failed.ok, false);
+  assert.equal(failed.error, "SKILL_NOT_AVAILABLE");
+} finally {
+  skillManager.listSkillsForSessionPublic = origList2;
+  skillManager.normalizeSessionSkillSelection = origNormalize2;
+  skillManager.writeSessionAgentGuide = origWrite2;
+  skillManager.installFromRegistry = origInstall;
+  skillManager.setSkillEnabled = origSetEnabled;
 }
 
 console.log("web-system-learning-intent: ok");
