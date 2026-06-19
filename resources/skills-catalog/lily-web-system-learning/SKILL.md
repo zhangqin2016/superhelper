@@ -31,7 +31,13 @@ Never store passwords in a skill, prompt, log, or generated file. The user shoul
 
 1. Confirm base URL, business scope, allowed domains, forbidden areas, and whether the environment is production or test.
 2. Require a domain allowlist. Never follow links outside it.
-3. Ask the user to log in interactively if no active session exists.
+3. Capture the login ONCE. If no saved session exists for this system, run
+   `node scripts/capture_session.cjs --base-url <url> --system-id <id>
+   --allow-domain <host>` — it opens one real browser window for the user to log
+   in, then saves the session to a local, per-system file (printed as
+   `sessionPath`, stored 0600 under userData, never exported). Pass that
+   `sessionPath` as `--storage-state` to every later scan/discover/execute call.
+   Re-run capture only when a call reports `stale`/`relearnRecommended` (401/403).
 4. **Contract discovery first (authoritative > inferred).** Before scanning the
    UI, run `scripts/discover_contracts.cjs --base-url <url> --allow-domain <host>`
    (pass `--storage-state` to reuse the logged-in session) to probe for the

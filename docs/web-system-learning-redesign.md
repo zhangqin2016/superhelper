@@ -136,10 +136,13 @@ endpoint 与 dataSchema，标记 `breaking`（删除/风险升级/必填字段�
   浏览器动作、或 API 失败且声明了浏览器 fallback 时才开浏览器。顺带修掉"没装 playwright 时
   API 动作也失败"。测试 `test-web-system-api-execution.mjs`（8，对真实本地 server，验证零浏览器
   + 404→relearn）。
-- ⏳ **持久登录（待办，需登录捕获 UI）**：开一次 headful 浏览器让用户登录 → 抓 storageState 存到
-  按系统区分的固定位置（如 `userData/web-sessions/<systemId>.json`）→ 之后 scan/discover/execute
-  全部 `--storage-state` 复用，只有 401/403 过期才重登。执行器/发现器已支持传入 storageState 复用；
-  缺的是"捕获并持久化"那一步（浏览器+应用 UI）。
+- ✅ **持久登录捕获**：新增 `capture_session.cjs`——开一次 headful 浏览器让用户登录，检测登录完成
+  （精确信号 success-url/session-cookie + 启发式兜底），把 storageState 存到
+  `userData/web-sessions/<systemId>.json`（**权限 0600、仅本机、不进技能目录、不随工作空间导出**），
+  落盘前按 allowlist 过滤 cookie。之后 scan/discover/execute 全程 `--storage-state` 复用，只有
+  401/403 过期才重登。纯逻辑（路径/登录信号/安全写入）单测 `test-web-system-session-capture.mjs`（11）；
+  headful 登录手工验证。SKILL.md 流程已把"先登录捕获"列为第一步。
+  → 完整理想态达成：**点一次登录 → 之后问答/操作走 API、不再弹浏览器。**
 
 ### Phase 4c — 编译成确定性代码 + 定位韧性 ✅（本次，codegen 可测）
 
