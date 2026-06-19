@@ -3,13 +3,7 @@
 const crypto = require("node:crypto");
 const http = require("node:http");
 const { createMailAccountStore } = require("./mail-accounts");
-const {
-  testImapConnection,
-  searchImapMessages,
-  readImapMessage,
-  sendSmtpMessage,
-} = require("./mail-imap-smtp-executor");
-const { searchOAuthMessages, readOAuthMessage, sendOAuthMessage } = require("./mail-oauth-api");
+const { runMailAction } = require("./mail-actions");
 
 let bridge = null;
 
@@ -78,40 +72,6 @@ async function handleRequest(req, res, deps) {
   } catch (err) {
     return sendJson(res, 500, { ok: false, error: "BRIDGE_ERROR", message: err?.message || String(err) });
   }
-}
-
-async function runMailAction(mailStore, action, payload = {}) {
-  const account = mailStore.getAccountWithSecret(String(payload.accountId || payload.id || ""));
-  if (!account) return { ok: false, error: "ACCOUNT_NOT_FOUND" };
-  try {
-    if (account.provider === "imap-smtp") {
-      if (action === "test") return await testImapConnection(account);
-      if (action === "search") return await searchImapMessages(account, payload.query || {});
-      if (action === "read") return await readImapMessage(account, payload.query || {});
-      if (action === "send") return await sendSmtpMessage(account, { ...(payload.message || {}), confirmed: payload.confirmed === true });
-    } else {
-      if (action === "test") return { ok: true, provider: account.provider, status: account.status };
-      if (action === "search") return withoutInternalToken(await searchOAuthMessages(account, payload.query || {}), mailStore, account);
-      if (action === "read") return withoutInternalToken(await readOAuthMessage(account, payload.query || {}), mailStore, account);
-      if (action === "send") {
-        return withoutInternalToken(
-          await sendOAuthMessage(account, { ...(payload.message || {}), confirmed: payload.confirmed === true }),
-          mailStore,
-          account,
-        );
-      }
-    }
-    return { ok: false, error: "UNSUPPORTED_ACTION" };
-  } catch (err) {
-    return { ok: false, error: `${action.toUpperCase()}_FAILED`, message: err?.message || String(err) };
-  }
-}
-
-function withoutInternalToken(result, mailStore, account) {
-  if (result?.refreshedToken) mailStore.saveOAuthToken(account.id, result.refreshedToken);
-  const copy = { ...(result || {}) };
-  delete copy.refreshedToken;
-  return copy;
 }
 
 function readJsonBody(req) {
