@@ -1,5 +1,28 @@
 /* Shared rich Markdown blocks for chat bubbles and runtime turns. */
 
+/*
+ * Stabilize horizontal scrollbars inside streaming chat content.
+ *
+ * The global scrollbar (system.css) is a classic, space-taking 6px bar. On a
+ * content-sized block (turn body, code block, table wrapper, mermaid/math),
+ * a horizontal scrollbar appearing adds 6px to the block height; as markdown
+ * re-renders during streaming the content width crosses the container edge
+ * repeatedly, so the bar toggles on/off and the whole timeline jumps up and
+ * down. Give these containers a zero-height horizontal scrollbar so toggling
+ * never changes layout. Horizontal scrolling still works via trackpad /
+ * shift+wheel; vertical scrollbars keep their styled width.
+ */
+.markdown-body::-webkit-scrollbar:horizontal,
+.markdown-body pre::-webkit-scrollbar:horizontal,
+.markdown-body .markdown-diff::-webkit-scrollbar:horizontal,
+.markdown-mermaid::-webkit-scrollbar:horizontal,
+.markdown-math-block::-webkit-scrollbar:horizontal,
+.markdown-math-inline::-webkit-scrollbar:horizontal,
+.msg-bubble pre::-webkit-scrollbar:horizontal,
+.msg-bubble .markdown-diff::-webkit-scrollbar:horizontal {
+  height: 0;
+}
+
 .markdown-body .markdown-image,
 .msg-bubble .markdown-image {
   display: block;
