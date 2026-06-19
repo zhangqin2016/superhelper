@@ -25,6 +25,7 @@ let mainWindow = null;
 let runnerPoolRef = null;
 let sessionManagerRef = null;
 let scheduledTaskManagerRef = null;
+let shouldFocusMainWindowWhenReady = false;
 /** @type {{ ok: boolean, mode?: string, error?: string, message?: string } | null} */
 let agentBootstrap = null;
 
@@ -39,6 +40,33 @@ require("./main/config").bindRuntimePaths({
   home: app.getPath("home"),
   documents: app.getPath("documents"),
 });
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
+
+function focusMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+  mainWindow.focus();
+  return true;
+}
+
+if (hasSingleInstanceLock) {
+  app.on("second-instance", () => {
+    if (!focusMainWindow()) {
+      shouldFocusMainWindowWhenReady = true;
+    }
+  });
+}
 
 function createWindow() {
   const appIcon = loadAppIconImage();
@@ -80,9 +108,17 @@ function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+  if (shouldFocusMainWindowWhenReady) {
+    shouldFocusMainWindowWhenReady = false;
+    focusMainWindow();
+  }
 }
 
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) {
+    return;
+  }
+
   installBlobProtocol();
   const appIcon = loadAppIconImage();
   if (appIcon && process.platform === "darwin" && app.dock) {

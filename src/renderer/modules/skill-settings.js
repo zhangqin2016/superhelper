@@ -14,9 +14,37 @@ import { anySessionRunning } from "./session-runtime-store.js";
 
 /** @type {{ available: object[], categories?: object[], remoteIndexes?: object[], featuredSkillIds?: string[] } | null} */
 let lastCatalog = null;
+/** Full installed list kept so the search filter can re-render without a refetch. */
+let lastInstalledSkills = [];
+/** Lowercased, trimmed search query; "" means show everything. */
+let searchQuery = "";
 
 function isBusy() {
   return anySessionRunning();
+}
+
+/** Match a skill against the current search query by name, description, id and category. */
+function matchesSearch(skill) {
+  if (!searchQuery) return true;
+  const haystack = [
+    tSkillName(skill),
+    tSkillDesc(skill),
+    skill?.id,
+    skill?.categoryLabel,
+    skill?.category,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(searchQuery);
+}
+
+/** Show a "no results" line when the active query filters a list down to nothing. */
+function appendSearchEmpty(list) {
+  const hint = document.createElement("p");
+  hint.className = "skills-search-empty";
+  hint.textContent = t("skills.searchNoResults");
+  list.appendChild(hint);
 }
 
 function sourceLabel(source) {
@@ -344,8 +372,14 @@ async function toggleInstalledGroup(group, enabled) {
 function renderInstalledList(skills) {
   const list = $("skillsList");
   if (!list) return;
-  const manageableSkills = (skills || []).filter((skill) => !skill.canRestore && !skill.platformMandatory);
-  renderSkillTree(list, manageableSkills, {
+  // Cache the full list only when called with fresh data; search re-renders
+  // pass nothing and reuse the cache so the filter never narrows the source.
+  if (skills) lastInstalledSkills = skills;
+  const manageableSkills = (lastInstalledSkills || []).filter(
+    (skill) => !skill.canRestore && !skill.platformMandatory,
+  );
+  const visible = manageableSkills.filter(matchesSearch);
+  renderSkillTree(list, visible, {
     enabledKey: "enabled",
     countLabel: (group) =>
       t("composer.sessionSkillsGroupCount", {
@@ -360,6 +394,7 @@ function renderInstalledList(skills) {
       },
     },
   });
+  if (!visible.length && searchQuery && manageableSkills.length) appendSearchEmpty(list);
   syncAllSkillTreeGroupSelects(list);
 }
 
@@ -371,11 +406,13 @@ function renderAvailableList(available) {
   const items = available || [];
   title.hidden = (lastCatalog?.available || []).length === 0;
 
-  renderSkillTree(list, items, {
+  const visible = items.filter(matchesSearch);
+  renderSkillTree(list, visible, {
     countLabel: (group) =>
       t("skills.settingsGroupCount", { total: group.skills.length }),
     renderRow: renderAvailableTreeRow,
   });
+  if (!visible.length && searchQuery && items.length) appendSearchEmpty(list);
 }
 
 function renderRemoteIndexes(indexes) {
@@ -519,6 +556,12 @@ export async function initSkillSettings() {
     }
     showToast(t("toast.skillsRefreshed"), "success");
     await refreshSkillsList();
+  });
+
+  $("skillsSearchInput")?.addEventListener("input", (event) => {
+    searchQuery = String(event.target.value || "").trim().toLowerCase();
+    renderInstalledList();
+    renderAvailableList(lastCatalog?.available || []);
   });
 
   updateRegistryHint({ bundledCatalog: true });
