@@ -387,6 +387,15 @@ export function applyRuntimeEvent(event) {
         if (Array.isArray(event.payload?.record?.fileChanges)) {
           live.fileChanges = event.payload.record.fileChanges;
         }
+        // Carry the record's derived artifacts/result blocks onto the live turn
+        // so a just-completed turn shows its previews immediately — matching the
+        // reload-from-record render instead of only appearing after a restart.
+        if (Array.isArray(event.payload?.record?.artifacts)) {
+          live.artifacts = event.payload.record.artifacts;
+        }
+        if (Array.isArray(event.payload?.record?.resultBlocks)) {
+          live.resultBlocks = event.payload.record.resultBlocks;
+        }
         if (event.payload?.record?.usage) {
           live.usage = event.payload.record.usage;
         }
