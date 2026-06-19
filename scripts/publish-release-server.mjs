@@ -1,7 +1,50 @@
 #!/usr/bin/env node
 import crypto from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
+import http from "node:http";
+import https from "node:https";
+
+const fetchImpl = globalThis.fetch || nodeFetch;
+
+function nodeFetch(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const transport = target.protocol === "http:" ? http : https;
+    const request = transport.request(
+      target,
+      {
+        method: options.method || "GET",
+        headers: options.headers || {},
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          resolve({
+            ok: response.statusCode >= 200 && response.statusCode < 300,
+            status: response.statusCode,
+            headers: {
+              get(name) {
+                const value = response.headers[String(name).toLowerCase()];
+                return Array.isArray(value) ? value.join(", ") : value || null;
+              },
+            },
+            async text() {
+              return text;
+            },
+            async json() {
+              return JSON.parse(text);
+            },
+          });
+        });
+      },
+    );
+    request.on("error", reject);
+    if (options.body) request.write(options.body);
+    request.end();
+  });
+}
 
 function usage() {
   console.error(`usage:
@@ -72,7 +115,7 @@ const api = String(options.api).replace(/\/+$/, "");
 let authHeaders = options.token ? { Authorization: `Bearer ${options.token}` } : null;
 
 if (!authHeaders) {
-  const loginResponse = await fetch(`${api}/api/admin/login`, {
+  const loginResponse = await fetchImpl(`${api}/api/admin/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -91,7 +134,7 @@ if (!authHeaders) {
 }
 
 for (const artifact of options.artifact.map(parseArtifact)) {
-  const response = await fetch(`${api}/api/admin/releases`, {
+  const response = await fetchImpl(`${api}/api/admin/releases`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
