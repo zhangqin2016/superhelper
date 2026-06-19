@@ -477,7 +477,11 @@ function registerLearnedSkillDir(srcDir, manifest, context = {}) {
   return id;
 }
 
-function listWorkspaceSkillExports(projectId = "") {
+// `includeInstalled` widens the set from only workspace-learned skills to every
+// enabled, non-protected installed skill — used when the author opts to bundle
+// the project's skills into the pack (so the recipient needs no network fetch).
+// Protected built-in skills are always skipped (the recipient already has them).
+function listWorkspaceSkillExports(projectId = "", { includeInstalled = false } = {}) {
   const pid = normalizeProjectId(projectId);
   ensureSkillsStateDefaults();
   const state = loadSkillsState();
@@ -485,7 +489,8 @@ function listWorkspaceSkillExports(projectId = "") {
   for (const [skillId, entry] of Object.entries(state.skills || {})) {
     if (PROTECTED_BUNDLED_IDS.has(skillId)) continue;
     const manifest = readInstalledManifest(skillId);
-    if (!manifest || !isWorkspaceSkillEntry(skillId, entry, manifest)) continue;
+    if (!manifest) continue;
+    if (!includeInstalled && !isWorkspaceSkillEntry(skillId, entry, manifest)) continue;
     const projectBindings = uniqueStrings(entry?.enabledProjectIds);
     const legacyGlobalWorkspaceSkill = projectBindings.length === 0 && entry?.enabled !== false;
     const enabledForProject = isSkillEnabledForProject(entry, pid);

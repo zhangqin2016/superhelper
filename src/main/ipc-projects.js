@@ -145,7 +145,7 @@ function registerProjectHandlers(ctx) {
     if (!project) return { ok: false, error: "NOT_FOUND" };
     const { previewExport, previewWorkspaceSkills } = require("./workspace-share");
     const skillManager = require("./skill-manager");
-    const workspaceSkills = skillManager.listWorkspaceSkillExports(project.id);
+    const workspaceSkills = skillManager.listWorkspaceSkillExports(project.id, { includeInstalled: true });
     return {
       ok: true,
       name: project.name,
@@ -175,7 +175,7 @@ function registerProjectHandlers(ctx) {
         name: project.name,
         conventions: readLearnedConventions(project.id),
         requiredSkills: skillManager.getGloballyEnabledSkillIds(),
-        workspaceSkills: includeWorkspaceSkills ? skillManager.listWorkspaceSkillExports(project.id) : [],
+        workspaceSkills: includeWorkspaceSkills ? skillManager.listWorkspaceSkillExports(project.id, { includeInstalled: true }) : [],
         exportedAt: new Date().toISOString(),
       });
       fs.writeFileSync(result.filePath, buf);
