@@ -783,7 +783,9 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
     canDisable: !platformMandatory && Boolean(manifest || entry),
     platformMandatory,
     canRestore: PROTECTED_BUNDLED_IDS.has(skillId),
-    canUninstall: entry?.source === "remote",
+    // The user can uninstall what they installed or learned — remote skills and
+    // their own learned/workspace skills. Bundled platform skills stay protected.
+    canUninstall: entry?.source === "remote" || entry?.source === "learned",
     updateAvailable,
     changelog: registryChangelog,
     category,

@@ -281,6 +281,8 @@ async function installFromRegistryEntry(entry) {
   }
 }
 
+// Uninstalls a user-owned skill: a remote (installed) skill or the user's own
+// learned/workspace skill. Bundled platform skills stay protected.
 function uninstallRemoteSkill(skillId) {
   if (PROTECTED_BUNDLED_IDS.has(skillId)) {
     return { ok: false, error: "BUNDLED_PROTECTED" };
@@ -288,7 +290,7 @@ function uninstallRemoteSkill(skillId) {
 
   const state = loadSkillsState();
   const entry = state.skills[skillId];
-  if (!entry || entry.source !== "remote") {
+  if (!entry || (entry.source !== "remote" && entry.source !== "learned")) {
     return { ok: false, error: "NOT_FOUND" };
   }
 

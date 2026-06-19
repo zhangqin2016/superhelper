@@ -339,6 +339,24 @@ if (installedMd.includes("{{WEB_SYSTEM") || installedMd.includes("{{NODE_BIN}}")
 if (!installedMd.includes(path.join(tmp, "lily-config", "skills", "learned-demo-web", "scripts", "execute_web_playbook.cjs"))) {
   throw new Error(`learned skill should resolve executor to its installed absolute path: ${installedMd}`);
 }
+
+// Regression: the user must be able to uninstall a skill they learned. The bug
+// was canUninstall=false (no button) + an uninstall guard that rejected any
+// non-"remote" source, so learned skills were impossible to remove.
+const learnedBeforeUninstall = skillManager.listSkillsPublic().find((s) => s.id === "learned-demo-web");
+if (!learnedBeforeUninstall || learnedBeforeUninstall.canUninstall !== true) {
+  throw new Error(`learned skill must report canUninstall=true, got ${JSON.stringify(learnedBeforeUninstall)}`);
+}
+const learnedUninstall = skillManager.uninstallRemoteSkill("learned-demo-web");
+if (!learnedUninstall || learnedUninstall.ok !== true) {
+  throw new Error(`learned skill uninstall should succeed, got ${JSON.stringify(learnedUninstall)}`);
+}
+if (fs.existsSync(path.join(tmp, "lily-config", "skills", "learned-demo-web"))) {
+  throw new Error("learned skill directory should be removed after uninstall");
+}
+if (skillManager.listSkillsPublic().some((s) => s.id === "learned-demo-web")) {
+  throw new Error("learned skill should be gone from the skills list after uninstall");
+}
 for (const skill of result.available || []) {
   if (/^(marketing|pm|tob|superpowers)-/.test(skill.id)) {
     throw new Error(`curated catalog should not expose low-signal skill ${skill.id}`);
