@@ -156,17 +156,30 @@ function scheduleNarrativeMarkdown(textEl, text, turnId, { sealed = false } = {}
     state.pending = text;
   }
 
-  if (textEl.dataset.streamText === text) return;
-
   if (sealed) {
+    // Sealing must upgrade to the full render (syntax highlight, etc.) even when
+    // the text is unchanged from the streaming render — otherwise a just-finished
+    // turn keeps the lightweight streaming markup while the SAME message renders
+    // fully after reload (the live-vs-history mismatch). Skip only when already
+    // full-rendered with the same text. Cancel any queued streaming render so it
+    // can't overwrite the full one.
+    if (textEl.dataset.renderMode === "full" && textEl.dataset.streamText === text) return;
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
     renderMarkdownContent(textEl, text);
     textEl.dataset.streamText = text;
+    textEl.dataset.renderMode = "full";
     return;
   }
+
+  if (textEl.dataset.streamText === text) return;
 
   if (!textEl.dataset.streamText) {
     renderStreamingMarkdown(textEl, text);
     textEl.dataset.streamText = text;
+    textEl.dataset.renderMode = "stream";
     return;
   }
 
@@ -177,6 +190,7 @@ function scheduleNarrativeMarkdown(textEl, text, turnId, { sealed = false } = {}
     if (!next || textEl.dataset.streamText === next) return;
     renderStreamingMarkdown(textEl, next);
     textEl.dataset.streamText = next;
+    textEl.dataset.renderMode = "stream";
   }, 120);
 }
 

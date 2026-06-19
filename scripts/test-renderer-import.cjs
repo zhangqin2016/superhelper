@@ -212,6 +212,44 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(liveTurnQueueResult);
+    const narrativeUpgradeResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const liveTurn = {
+          turnId: "turn_md_upgrade",
+          phase: "responding",
+          assistantText: "渲染一致性测试正文",
+          thinkingText: "",
+          contentBlocks: [],
+          processEvents: [],
+          tools: new Map(),
+          timeline: [],
+          notices: [],
+          permissions: new Map(),
+          questions: new Map(),
+          hooks: new Map(),
+          startedAt: Date.now(),
+        };
+        const article = createLiveTurnArticleShell(liveTurn);
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "s_md_upgrade" });
+        const liveEl = article.querySelector(".assistant-turn-narrative-text");
+        if (!liveEl || liveEl.dataset.renderMode !== "stream") {
+          throw new Error("live narrative should use the streaming render, got " + (liveEl && liveEl.dataset.renderMode));
+        }
+        // Seal the SAME turn (same DOM element reused) with unchanged text — must
+        // upgrade to the full render so live output matches the reloaded history.
+        liveTurn.phase = "done";
+        liveTurn.final = { type: "turn.completed", payload: { assistant: liveTurn.assistantText }, ts: Date.now() };
+        liveTurn.finalRendered = false;
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "s_md_upgrade", sealed: true });
+        const sealedEl = article.querySelector(".assistant-turn-narrative-text");
+        if (!sealedEl || sealedEl.dataset.renderMode !== "full") {
+          throw new Error("sealing must upgrade narrative to the full render, got " + (sealedEl && sealedEl.dataset.renderMode));
+        }
+        return "narrative-markdown-upgrade-regression: ok";
+      }
+    )()`);
+    console.log(narrativeUpgradeResult);
     const liveTurnPreserveResult = await win.webContents.executeJavaScript(`(
       async () => {
         const store = (await import("./modules/state.js")).default;
