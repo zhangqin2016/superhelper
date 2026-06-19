@@ -230,6 +230,20 @@
   color: var(--text-dim);
 }
 
+/* Inline text-style action (e.g. "manually fill server settings"). */
+.settings-link-button {
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--link);
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-link-button:hover {
+  text-decoration: underline;
+}
+
 .settings-select {
   width: 100%;
   padding: 10px 12px;

@@ -50,7 +50,7 @@ async function autodiscoverEmail() {
   setVal("connectorSmtpPort", config.smtp.port);
   setChecked("connectorSmtpSecure", config.smtp.secure);
 
-  // Collapse the technical fields once auto-filled; offer a manual override.
+  // Server fields stay collapsed (auto-filled); the user only enters the secret.
   const fields = $("connectorImapFields");
   if (fields) fields.hidden = true;
   renderAutoGuidance(config);
@@ -61,9 +61,21 @@ async function autodiscoverEmail() {
   }
 }
 
-function renderAutoGuidance(config) {
+function manualToggleButton() {
+  const manual = document.createElement("button");
+  manual.type = "button";
+  manual.className = "settings-link-button";
+  manual.textContent = "手动填写服务器";
+  manual.addEventListener("click", () => {
+    const fields = $("connectorImapFields");
+    if (fields) fields.hidden = !fields.hidden;
+  });
+  return manual;
+}
+
+function ensureGuidanceBox() {
   const anchor = $("connectorAccountEmail");
-  if (!anchor) return;
+  if (!anchor) return null;
   let box = $("connectorAutoGuidance");
   if (!box) {
     box = document.createElement("div");
@@ -71,15 +83,35 @@ function renderAutoGuidance(config) {
     box.className = "settings-section-desc";
     anchor.insertAdjacentElement("afterend", box);
   }
+  return box;
+}
+
+function hideAutoGuidance() {
+  const box = $("connectorAutoGuidance");
+  if (box) box.hidden = true;
+}
+
+// config === null → initial hint (before an email is entered).
+function renderAutoGuidance(config) {
+  const box = ensureGuidanceBox();
+  if (!box) return;
   box.replaceChildren();
+
+  if (!config) {
+    const hint = document.createElement("p");
+    hint.textContent = "输入邮箱地址将自动识别收发服务器,你只需填写密码或授权码。";
+    box.append(hint, manualToggleButton());
+    box.hidden = false;
+    return;
+  }
+
   const summary = document.createElement("p");
   summary.textContent = `已自动识别服务器:收件 ${config.imap.host} · 发件 ${config.smtp.host}`;
   box.appendChild(summary);
 
   if (config.secretKind === "app-password" || config.guidance) {
     const tip = document.createElement("p");
-    tip.textContent = config.guidance?.text
-      || "此邮箱需使用「授权码 / 应用专用密码」,而非登录密码。";
+    tip.textContent = config.guidance?.text || "此邮箱需使用「授权码 / 应用专用密码」,而非登录密码。";
     if (config.guidance?.url) {
       const link = document.createElement("a");
       link.href = config.guidance.url;
@@ -91,15 +123,7 @@ function renderAutoGuidance(config) {
     box.appendChild(tip);
   }
 
-  const manual = document.createElement("button");
-  manual.type = "button";
-  manual.className = "settings-link-button";
-  manual.textContent = "手动调整服务器";
-  manual.addEventListener("click", () => {
-    const fields = $("connectorImapFields");
-    if (fields) fields.hidden = !fields.hidden;
-  });
-  box.appendChild(manual);
+  box.appendChild(manualToggleButton());
   box.hidden = false;
 }
 
@@ -223,10 +247,15 @@ export async function refreshConnectorSettings() {
 
 function updateProviderFields() {
   const provider = value("connectorProviderSelect") || "imap-smtp";
-  const imapFields = $("connectorImapFields");
-  const oauthFields = $("connectorOauthFields");
-  if (imapFields) imapFields.hidden = provider !== "imap-smtp";
-  if (oauthFields) oauthFields.hidden = provider === "imap-smtp";
+  const isImap = provider === "imap-smtp";
+  // Foolproof default for IMAP: the server block stays collapsed (auto-filled
+  // from the email); the user sees only email + secret. The guidance box offers
+  // a "manual" reveal. OAuth shows its own fields.
+  if ($("connectorImapFields")) $("connectorImapFields").hidden = true;
+  if ($("connectorSecretField")) $("connectorSecretField").hidden = !isImap;
+  if ($("connectorOauthFields")) $("connectorOauthFields").hidden = isImap;
+  if (isImap) renderAutoGuidance(null);
+  else hideAutoGuidance();
 }
 
 function buildPayload() {
