@@ -4,6 +4,7 @@
  */
 import { revealLocalFileInFolder } from "./file-reveal.js";
 import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage } from "./mermaid-detect.js";
+import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";
 
 let hljsReady = false;
 let hljs = null;
@@ -539,7 +540,13 @@ export function renderStreamingMarkdown(element, markdownText) {
 
   const renderer = createMarkedRenderer();
   const html = parser(prepareMarkdown(markdownText, { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
-  element.innerHTML = window.DOMPurify.sanitize(html);
+  const sanitized = window.DOMPurify.sanitize(html);
+  // Patch in place via morphdom instead of replacing innerHTML: streaming text
+  // grows by extending the trailing nodes, so the block doesn't tear down and
+  // rebuild every tick — no flicker, smooth incremental output.
+  const next = document.createElement(element.tagName || "DIV");
+  next.innerHTML = sanitized;
+  morphdom(element, next, { childrenOnly: true });
   enhanceRenderedMarkdown(element, { interactive: false });
   if (element.dataset) element.dataset.streamMode = "rendered";
 }
