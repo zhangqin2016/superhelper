@@ -1,3 +1,4 @@
+import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";
 import { renderStreamingMarkdown } from "./markdown.js";
 import { renderMarkdownContent } from "./content-blocks.js";
 import { t } from "../i18n/index.js";
@@ -604,8 +605,6 @@ function renderProcess(root, liveTurn, ctx = {}) {
     return;
   }
 
-  const openState = collectDetailsOpenState(root);
-  root.replaceChildren();
   root.dataset.sealed = sealed ? "true" : "false";
   root.dataset.processSig = structureSig;
   const timeline = timelineForView(liveTurn, sealed);
@@ -625,7 +624,10 @@ function renderProcess(root, liveTurn, ctx = {}) {
   const diffEntries = resolveTurnDiffEntries(liveTurn, sessionId);
   const hasContent = timeline.length > 0 || diffEntries.length > 0;
   root.hidden = !hasContent;
-  if (!hasContent) return;
+  if (!hasContent) {
+    root.replaceChildren();
+    return;
+  }
 
   const list = document.createElement("div");
   list.className = "assistant-turn-timeline";
@@ -689,11 +691,37 @@ function renderProcess(root, liveTurn, ctx = {}) {
     if (changes) list.appendChild(changes);
   }
 
-  root.appendChild(list);
-  restoreDetailsOpenState(root, openState, {
-    collapseFinishedThinking: sealed && !wasSealed,
-  });
+  commitProcessDom(root, list, { sealed, wasSealed });
   if (sessionId) reapplySessionInlineDiffs(sessionId, liveTurn.turnId || null);
+}
+
+// Commit the freshly-built timeline into the process root. A live turn changes
+// structure constantly (each new tool/entry), so a full replaceChildren would
+// tear the whole section down and flash on every step. morphdom patches only
+// what changed (new rows appended, stable rows untouched) — no flicker — while
+// onBeforeElUpdated keeps any <details> the user expanded open. The sealed
+// render runs once, so it keeps the simpler replace + collapse-on-seal path.
+function commitProcessDom(root, list, { sealed, wasSealed }) {
+  if (sealed) {
+    const openState = collectDetailsOpenState(root);
+    root.replaceChildren(list);
+    restoreDetailsOpenState(root, openState, { collapseFinishedThinking: !wasSealed });
+    return;
+  }
+  const nextRoot = root.cloneNode(false);
+  nextRoot.appendChild(list);
+  morphdom(root, nextRoot, {
+    childrenOnly: true,
+    onBeforeElUpdated(fromEl, toEl) {
+      if (fromEl.tagName === "DETAILS") toEl.open = fromEl.open; // keep user-toggled open
+      return !fromEl.isEqualNode(toEl); // skip subtrees that didn't change
+    },
+    onNodeDiscarded(node) {
+      if (typeof node.__disposeRenderer === "function") {
+        try { node.__disposeRenderer(); } catch { /* ignore */ }
+      }
+    },
+  });
 }
 
 function renderThinkingStack(thinkingEntries = []) {
