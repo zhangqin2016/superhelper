@@ -15,6 +15,7 @@ const {
   buildHookCallbackResponse,
   buildInterruptRequest,
   buildSetPermissionModeRequest,
+  buildMcpToggleRequest,
 } = require("./control-protocol");
 const { CliEventAdapter } = require("./runtime/adapters/claude-cli-adapter");
 const { normalizeAskUserQuestions } = require("./runtime/adapters/claude-event-normalizer");
@@ -772,6 +773,17 @@ class AgentSession extends EventEmitter {
     this.spawnOptions.permissionMode = mode;
     if (!this.isAlive()) return true;
     return this._writeControlLine(buildSetPermissionModeRequest(mode));
+  }
+
+  /**
+   * Enable/disable an MCP server mid-session (CLI `mcp_toggle`) — lets the host
+   * scope the active tool set to the relevant learned system without respawning.
+   * @param {string} serverName
+   * @param {boolean} enabled
+   */
+  setMcpServerEnabled(serverName, enabled) {
+    if (!serverName || !this.isAlive()) return false;
+    return this._writeControlLine(buildMcpToggleRequest(serverName, enabled));
   }
 
   reloadSkills() {

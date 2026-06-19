@@ -196,6 +196,21 @@ function buildSetPermissionModeRequest(mode) {
   });
 }
 
+/**
+ * Enable/disable an MCP server at runtime (CLI `mcp_toggle` control). Lets the
+ * host scope the active tool set per context — activate only the relevant
+ * learned system's server so the model isn't shown 10 systems' tools at once.
+ * @param {string} serverName
+ * @param {boolean} enabled
+ */
+function buildMcpToggleRequest(serverName, enabled) {
+  return buildOutboundControlRequest(newRequestId("mcp"), {
+    subtype: "mcp_toggle",
+    serverName: String(serverName || ""),
+    enabled: Boolean(enabled),
+  });
+}
+
 function buildInitializeRequest() {
   return buildOutboundControlRequest(newRequestId("init"), {
     subtype: "initialize",
@@ -308,6 +323,7 @@ module.exports = {
   buildOutboundControlRequest,
   buildInterruptRequest,
   buildSetPermissionModeRequest,
+  buildMcpToggleRequest,
   buildInitializeRequest,
   buildHookCallbackResponse,
   buildHookContinueResponse,

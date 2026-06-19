@@ -11,6 +11,7 @@ const {
   withPersistentDestination,
   buildUserDialogResponse,
   buildElicitationResponse,
+  buildMcpToggleRequest,
 } = require("../src/main/control-protocol.js");
 
 try {
@@ -93,7 +94,16 @@ try {
   assert(!("content" in buildElicitationResponse("re3", { action: "decline", content: { a: 1 } }).response.response),
     "decline elicitation drops content");
 
-  console.log("PASS: test-control-protocol (29 tests)");
+  // buildMcpToggleRequest — runtime scope the active learned-system server set
+  const mcpOn = buildMcpToggleRequest("web_learned_demo_erp", true);
+  assert(mcpOn.type === "control_request", "mcp_toggle is an outbound control_request");
+  assert(typeof mcpOn.request_id === "string" && mcpOn.request_id.startsWith("mcp_"), "mcp_toggle has a request id");
+  assert(mcpOn.request.subtype === "mcp_toggle", "mcp_toggle subtype");
+  assert(mcpOn.request.serverName === "web_learned_demo_erp", "mcp_toggle carries the server name");
+  assert(mcpOn.request.enabled === true, "mcp_toggle enable=true");
+  assert(buildMcpToggleRequest("x", 0).request.enabled === false, "mcp_toggle coerces enabled to boolean");
+
+  console.log("PASS: test-control-protocol (35 tests)");
 } catch (err) {
   console.error("FAIL:", err.message);
   process.exit(1);
