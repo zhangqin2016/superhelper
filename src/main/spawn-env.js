@@ -45,12 +45,34 @@ function buildAgentSpawnEnv(options = {}) {
     pathSegments.push("/usr/bin", "/bin");
   }
 
+  // Built-in browser runtime (node + playwright + bundled Chromium) for the web
+  // learning skill's foreground tools. Gated on the platform bundle actually
+  // shipping it → a no-op on builds without it.
+  const webRuntimeEnv = {};
+  try {
+    const fs = require("node:fs");
+    const { bundleRuntimeDir } = require("./bundle-locator");
+    const { nodeBinaryPath, bundledNodeModulesDir, bundledBrowsersDir } = require("./mcp-config");
+    const runtimeDir = bundleRuntimeDir();
+    if (runtimeDir) {
+      const nodeBin = nodeBinaryPath(runtimeDir);
+      if (nodeBin) pathSegments.unshift(path.dirname(nodeBin));
+      const nodeModules = bundledNodeModulesDir(runtimeDir);
+      if (fs.existsSync(nodeModules)) webRuntimeEnv.NODE_PATH = nodeModules;
+      const browsers = bundledBrowsersDir(runtimeDir);
+      if (fs.existsSync(browsers)) webRuntimeEnv.PLAYWRIGHT_BROWSERS_PATH = browsers;
+    }
+  } catch {
+    /* browser runtime is optional; never block spawn env on it */
+  }
+
   const env = {
     ...pickInheritedEnv(process.env),
     ...engineEnv,
     ...getSearchSpawnEnv(),
     ...getRuntimeEnvExtras(),
     ...require("./connector-bridge").getConnectorBridgeEnvSync(),
+    ...webRuntimeEnv,
     TERM: "dumb",
     NO_COLOR: "1",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",

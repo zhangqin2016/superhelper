@@ -49,9 +49,25 @@ function findBundledCliSource() {
   return null;
 }
 
+/** First existing `bundles/<key>/runtime` directory (resources or repo), or "". */
+function bundleRuntimeDir() {
+  const resourcesPath =
+    typeof process.resourcesPath === "string" ? process.resourcesPath : null;
+  for (const key of platformBundleKeys()) {
+    const candidates = [];
+    if (resourcesPath) candidates.push(path.join(resourcesPath, "bundles", key, "runtime"));
+    candidates.push(path.join(PROJECT_ROOT, "bundles", key, "runtime"));
+    for (const dir of candidates) {
+      if (fs.existsSync(dir)) return dir;
+    }
+  }
+  return "";
+}
+
 module.exports = {
   platformBundleKeys,
   platformBundleKey,
   bundledCliSourceCandidates,
   findBundledCliSource,
+  bundleRuntimeDir,
 };

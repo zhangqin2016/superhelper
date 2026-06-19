@@ -589,6 +589,21 @@ class AgentSession extends EventEmitter {
     if (this.agentResumeId) {
       args.push("--resume", this.agentResumeId);
     }
+    // Register the bundled @playwright/mcp server, if (and only if) the platform
+    // runtime bundle actually carries it. Gated on existence → a hard no-op on
+    // builds without the browser runtime, so this never affects current sessions.
+    try {
+      const { bundleRuntimeDir } = require("./bundle-locator");
+      const { writeActiveMcpConfig } = require("./mcp-config");
+      const { mcpConfigPath } = require("./config");
+      const runtimeDir = bundleRuntimeDir();
+      if (runtimeDir) {
+        const written = writeActiveMcpConfig(runtimeDir, mcpConfigPath());
+        if (written) args.push("--mcp-config", written);
+      }
+    } catch {
+      /* MCP is an enhancement; never block engine spawn on it */
+    }
 
     this.lastSpawnError = null;
     this.process = spawn(opts.agentCommand, args, {

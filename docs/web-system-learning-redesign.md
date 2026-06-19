@@ -87,9 +87,12 @@ server + 打包），作为后续独立项；本阶段先让现有执行器兑�
 则探索/即席操作优先用其 a11y 工具，验证过的可重复流程仍走确定性执行器/编译脚本；未注册则
 全部照常走确定性路径（增强项，非必需）。零新增依赖、零 app 配置改动、零风险。
 
-**全量打包+注册**（让 app 默认带 @playwright/mcp）作为**显式可选项**保留：只有当你确定要让
-模型对所有会话做 a11y 自由浏览、并愿意承担打包体积/全局 MCP 配置影响时再做。它是
-maintainability/ad-hoc 增强，不是能力地基。
+**决策更新（内置）**：改为**完全内置**浏览器运行时（node + playwright + @playwright/mcp +
+Chromium），不按需下载——用户机器可能没有 Chrome。app 侧接线已实现并门控（`mcp-config.js` /
+`bundle-locator.bundleRuntimeDir` / `_spawn` 加 `--mcp-config` / `spawn-env` 注入
+NODE_PATH+PLAYWRIGHT_BROWSERS_PATH），**bundle 未到位时全部 no-op、对现有构建零影响**
+（`test-mcp-config.mjs`，16）。构建侧（把 node/playwright/mcp/chromium 真正打进 bundle，
+每平台 +150–300MB）是发布工程，规格见 `docs/playwright-builtin-plan.md`，由构建机执行验证。
 
 ### Phase 3a — 探索/覆盖率协议 ✅（本次，SKILL.md，模型驱动）
 
