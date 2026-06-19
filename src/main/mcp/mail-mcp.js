@@ -76,13 +76,29 @@ function createMailMcpServer(run) {
       inputSchema: {
         accountId: z.string().describe("account id from list_mail_accounts"),
         to: z.string().describe("recipient(s), comma-separated"),
+        cc: z.string().optional().describe("cc recipient(s), comma-separated"),
+        bcc: z.string().optional().describe("bcc recipient(s), comma-separated"),
         subject: z.string(),
         text: z.string().describe("plain-text body"),
+        html: z.string().optional().describe("optional HTML body (text is kept as the plain-text fallback)"),
+        attachments: z
+          .array(
+            z.object({
+              path: z.string().describe("absolute local file path to attach"),
+              filename: z.string().optional().describe("display name; defaults to the file's basename"),
+            }),
+          )
+          .optional()
+          .describe("files to attach, given by local path (read from disk at send time)"),
       },
       annotations: { destructiveHint: true, openWorldHint: true },
     },
-    async ({ accountId, to, subject, text }) =>
-      asText(await run("send", { accountId, confirmed: true, message: { to, subject, text } })),
+    async ({ accountId, to, cc, bcc, subject, text, html, attachments }) =>
+      asText(await run("send", {
+        accountId,
+        confirmed: true,
+        message: { to, cc, bcc, subject, text, html, attachments },
+      })),
   );
 
   return server;

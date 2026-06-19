@@ -15,11 +15,38 @@
  * on it): config = { account, secret, imap:{host,port,secure}, smtp:{host,port,secure} }.
  */
 
+const fs = require("node:fs");
+const path = require("node:path");
 const { ImapFlow } = require("imapflow");
 const nodemailer = require("nodemailer");
 const { simpleParser } = require("mailparser");
 
 const SEARCH_MAX = 50;
+const ATTACHMENT_MAX = 20;
+
+// Turn the tool's attachment list (local file paths) into nodemailer attachment
+// specs. nodemailer streams each file from disk — no base64 round-trips through
+// MCP. Missing files fail loud rather than silently sending without them.
+function buildAttachments(list) {
+  if (list == null) return [];
+  const items = Array.isArray(list) ? list : [list];
+  if (items.length > ATTACHMENT_MAX) {
+    throw new Error(`too many attachments (max ${ATTACHMENT_MAX})`);
+  }
+  return items.map((item) => {
+    const filePath = typeof item === "string" ? item : String(item?.path || "");
+    if (!filePath) throw new Error("attachment path is required");
+    let stat;
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      throw new Error(`attachment not found: ${filePath}`);
+    }
+    if (!stat.isFile()) throw new Error(`attachment is not a file: ${filePath}`);
+    const filename = (typeof item === "object" && item?.filename) || path.basename(filePath);
+    return { filename, path: filePath };
+  });
+}
 
 function formatAddrs(list) {
   if (!Array.isArray(list)) return "";
@@ -172,11 +199,14 @@ async function sendSmtpMessage(config, message = {}, options = {}) {
   }
   const to = normalizeRecipients(message.to);
   if (!to.length) throw new Error("at least one recipient is required");
+  const cc = normalizeRecipients(message.cc);
+  const bcc = normalizeRecipients(message.bcc);
   const subject = String(message.subject || "").trim();
   if (!subject) throw new Error("subject is required");
   const text = String(message.text || "").trim();
   const html = typeof message.html === "string" ? message.html : undefined;
   if (!text && !html) throw new Error("message text is required");
+  const attachments = buildAttachments(message.attachments);
 
   const transport = nodemailer.createTransport({
     host: config.smtp.host,
@@ -189,9 +219,12 @@ async function sendSmtpMessage(config, message = {}, options = {}) {
     const info = await transport.sendMail({
       from: config.account,
       to,
+      cc: cc.length ? cc : undefined,
+      bcc: bcc.length ? bcc : undefined,
       subject,
       text: text || undefined,
       html,
+      attachments: attachments.length ? attachments : undefined,
     });
     return { ok: true, accepted: info.accepted?.length ? info.accepted : to, messageId: info.messageId || "" };
   } finally {

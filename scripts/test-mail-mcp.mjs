@@ -29,7 +29,13 @@ const TOOL_NAMES = ["list_mail_accounts", "read_mail", "search_mail", "send_mail
 
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((t) => t.name).sort(), TOOL_NAMES);
-  assert.ok(tools.find((t) => t.name === "send_mail").annotations?.destructiveHint, "send_mail is destructive (governed)");
+  const sendTool = tools.find((t) => t.name === "send_mail");
+  assert.ok(sendTool.annotations?.destructiveHint, "send_mail is destructive (governed)");
+  // Attachments + cc/bcc/html must be sendable (regression: the MCP schema
+  // previously exposed only to/subject/text, so attachments were impossible).
+  assert.ok(sendTool.inputSchema?.properties?.attachments, "send_mail accepts attachments");
+  assert.ok(sendTool.inputSchema?.properties?.cc, "send_mail accepts cc");
+  assert.ok(sendTool.inputSchema?.properties?.html, "send_mail accepts html");
 
   const listed = await client.callTool({ name: "list_mail_accounts", arguments: {} });
   assert.ok(listed.content[0].text.includes("alice@163.com"));
