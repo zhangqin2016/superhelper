@@ -16,7 +16,8 @@ function usage() {
     "",
     "  --contracts: authoritative published contracts from discover_contracts.cjs (OpenAPI/GraphQL).",
     "The spec must contain id, name/systemName, baseUrl, allowedDomains[], and actions[].",
-    "If --out is omitted, the draft is written to Lily's learned-skills inbox.",
+    "If --out is omitted, the draft is written to Lily's learned-skills inbox (recommended).",
+    "--out must be the inbox/parent directory; the skill id is appended automatically. Do not pass a path that already ends in the skill id.",
   ].join("\n");
 }
 
@@ -1063,7 +1064,10 @@ function main() {
   const apiMap = buildApiMap(spec, playbook, discovered);
   const health = buildHealth(spec, scan, capabilityMap, playbook);
   const root = path.resolve(args.out || defaultInboxDir());
-  const draftDir = path.join(root, spec.id);
+  // Append the id under the inbox root, but stay idempotent: if --out already
+  // points at <root>/<id>, reuse it instead of nesting a second <id> level
+  // (the latter leaves the draft stuck where the inbox collector can't find it).
+  const draftDir = path.basename(root) === spec.id ? root : path.join(root, spec.id);
   const result = {
     ok: true,
     id: spec.id,

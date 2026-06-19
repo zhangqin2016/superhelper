@@ -271,6 +271,25 @@ if (result.status !== 0) {
 }
 
 const draftDir = path.join(outDir, "demo-oa");
+
+// Idempotent --out: passing a path that already ends in the skill id must NOT
+// nest a second id level (demo-oa/demo-oa), which used to leave the draft stuck
+// where the inbox collector could not find it.
+const nestedOut = path.join(tmp, "inbox-nested", "demo-oa");
+const nestedResult = spawnSync(process.execPath, [script, "--spec", specPath, "--scan", scanPath, "--out", nestedOut], {
+  cwd: ROOT,
+  encoding: "utf8",
+});
+if (nestedResult.status !== 0) {
+  throw new Error(`create_web_system_skill (nested --out) failed: ${nestedResult.stderr || nestedResult.stdout}`);
+}
+if (!fs.existsSync(path.join(nestedOut, "skill.manifest.json"))) {
+  throw new Error("--out ending in the skill id should hold the draft directly");
+}
+if (fs.existsSync(path.join(nestedOut, "demo-oa"))) {
+  throw new Error("--out ending in the skill id must not nest a second id level");
+}
+
 const skillMd = fs.readFileSync(path.join(draftDir, "SKILL.md"), "utf8");
 const manifest = JSON.parse(fs.readFileSync(path.join(draftDir, "skill.manifest.json"), "utf8"));
 const systemProfile = JSON.parse(fs.readFileSync(path.join(draftDir, "system-profile.json"), "utf8"));
