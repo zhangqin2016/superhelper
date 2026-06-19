@@ -136,6 +136,126 @@
   gap: 8px;
   padding: 16px 20px 0;
 }
+
+.workspace-export-card {
+  width: min(920px, 94vw);
+}
+
+.workspace-export-body {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+  overflow: auto;
+}
+
+.workspace-export-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.workspace-export-warning,
+.workspace-export-danger {
+  padding: 10px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.workspace-export-skills {
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-export-skills h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.workspace-export-skills p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workspace-export-skill-list {
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-export-skill {
+  display: grid;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.workspace-export-skill.has-risk {
+  border-color: var(--danger-border);
+}
+
+.workspace-export-skill-head {
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-export-skill-head strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.workspace-export-skill-head span,
+.workspace-export-risk-title {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.workspace-export-risk-title {
+  color: var(--danger-text);
+  font-weight: 700;
+}
+
+.workspace-export-risk-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--danger-text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workspace-export-include {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.workspace-export-include input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.workspace-export-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 20px 18px;
+}
 .session-title-editable { cursor: text; }
 .session-title-editable:hover { color: var(--accent); }
 .topbar-info h1.editable-title {

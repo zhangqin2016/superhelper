@@ -60,6 +60,9 @@ const SCANNABLE_EXT = new Set([
   ".xml", ".properties", ".java", ".go", ".rb", ".php", ".env",
 ]);
 const SECRET_SCAN_MAX_BYTES = 512 * 1024;
+const DOMAIN_RE = /\bhttps?:\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::\d+)?/ig;
+const CREDENTIAL_TERM_RE =
+  /\b(cookie|cookies|token|refresh[_-]?token|access[_-]?token|authorization|bearer|password|passwd|account|username|login|email|tenant|customer|client|secret|session|credential)\b/ig;
 
 // Env templates carry the config *shape* (which vars to set), not real
 // secrets — keep them so the recipient can actually run the shared source.
@@ -164,6 +167,129 @@ function scanForSecrets(files) {
     if (kinds.size) warnings.push({ relPath: file.relPath, kinds: [...kinds] });
   }
   return warnings;
+}
+
+function isWorkspaceLearnedSkill(skill) {
+  const manifest = skill?.manifest || {};
+  const id = String(skill?.id || "").toLowerCase();
+  const text = [
+    id,
+    manifest.id,
+    manifest.name,
+    manifest.description,
+    manifest.origin,
+    manifest.category,
+    ...(Array.isArray(manifest.tags) ? manifest.tags : []),
+  ].join(" ").toLowerCase();
+  return manifest.workspaceOnly === true
+    || manifest.origin === "workspace"
+    || text.includes("learned")
+    || text.includes("web-system")
+    || text.includes("oa")
+    || text.includes("erp")
+    || text.includes("crm")
+    || text.includes("admin");
+}
+
+function addUniqueWarning(warnings, warning) {
+  const key = [
+    warning.kind,
+    warning.relPath || "",
+    warning.label || "",
+    warning.value || "",
+  ].join("\u0000");
+  if (warnings.some((item) => [
+    item.kind,
+    item.relPath || "",
+    item.label || "",
+    item.value || "",
+  ].join("\u0000") === key)) return;
+  warnings.push(warning);
+}
+
+function scanWorkspaceSkillRisks(skill, files) {
+  const warnings = [];
+  if (!isWorkspaceLearnedSkill(skill)) return warnings;
+
+  const skillName = String(skill.manifest?.name || skill.id || "").trim();
+  if (skillName && skillName !== String(skill.id || "")) {
+    addUniqueWarning(warnings, {
+      kind: "workspace-identity",
+      label: "workspace/customer-specific skill name",
+      value: skillName,
+    });
+  }
+
+  for (const file of files) {
+    if (file.size > SECRET_SCAN_MAX_BYTES) continue;
+    const base = path.basename(file.relPath).toLowerCase();
+    const ext = path.extname(base);
+    if (!SCANNABLE_EXT.has(ext) && !base.startsWith(".env")) continue;
+    let text;
+    try {
+      text = fs.readFileSync(file.fullPath, "utf8");
+    } catch {
+      continue;
+    }
+
+    for (const [re, label] of SECRET_PATTERNS) {
+      if (re.test(text)) {
+        addUniqueWarning(warnings, {
+          kind: "secret",
+          relPath: file.relPath,
+          label,
+        });
+      }
+    }
+
+    DOMAIN_RE.lastIndex = 0;
+    for (const match of text.matchAll(DOMAIN_RE)) {
+      const domain = String(match[1] || "").toLowerCase();
+      if (!domain) continue;
+      addUniqueWarning(warnings, {
+        kind: "domain",
+        relPath: file.relPath,
+        label: "domain/base URL",
+        value: domain,
+      });
+    }
+
+    CREDENTIAL_TERM_RE.lastIndex = 0;
+    for (const match of text.matchAll(CREDENTIAL_TERM_RE)) {
+      const term = String(match[1] || "").toLowerCase();
+      if (!term) continue;
+      addUniqueWarning(warnings, {
+        kind: "credential-term",
+        relPath: file.relPath,
+        label: "credential/account field",
+        value: term,
+      });
+      if (warnings.filter((item) => item.relPath === file.relPath && item.kind === "credential-term").length >= 6) break;
+    }
+  }
+
+  return warnings.slice(0, 50);
+}
+
+function previewWorkspaceSkills(workspaceSkills) {
+  const previews = [];
+  for (const rawSkill of Array.isArray(workspaceSkills) ? workspaceSkills : []) {
+    const skill = normalizeWorkspaceSkillExport(rawSkill);
+    if (!skill) continue;
+    const files = listSkillFiles(skill.dir);
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    previews.push({
+      id: skill.id,
+      name: String(skill.manifest.name || skill.id),
+      version: String(skill.manifest.version || "0.1.0"),
+      enabled: skill.enabled,
+      workspaceOnly: true,
+      fileCount: files.length,
+      totalBytes,
+      riskWarnings: scanWorkspaceSkillRisks(skill, files),
+    });
+  }
+  return previews;
 }
 
 /**
@@ -372,6 +498,7 @@ module.exports = {
   listShareableFiles,
   listSkillFiles,
   scanForSecrets,
+  previewWorkspaceSkills,
   previewExport,
   exportWorkspacePack,
   readPackManifest,

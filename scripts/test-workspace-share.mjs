@@ -44,7 +44,7 @@ try {
   const skillDir = path.join(tmp, "skills", "learned-oa-portal");
   fs.mkdirSync(path.join(skillDir, "scripts"), { recursive: true });
   fs.writeFileSync(path.join(skillDir, "SKILL.md"), "# OA Portal\n\nUse the learned OA playbook.");
-  fs.writeFileSync(path.join(skillDir, "scripts", "run.cjs"), "console.log('oa')");
+  fs.writeFileSync(path.join(skillDir, "scripts", "run.cjs"), "const baseUrl = 'https://oa.customer.example.com'; console.log('portal_token')");
   fs.writeFileSync(path.join(skillDir, "skill.manifest.json"), JSON.stringify({
     id: "learned-oa-portal",
     name: "OA Portal",
@@ -76,6 +76,19 @@ try {
     throw new Error(`secret content scan must flag scripts/config.js: ${JSON.stringify(preview.secretWarnings)}`);
   }
   if (preview.fileCount !== rels.length) throw new Error("preview count mismatch");
+
+  const skillPreview = share.previewWorkspaceSkills([{
+    id: "learned-oa-portal",
+    dir: skillDir,
+    enabled: true,
+  }]);
+  if (skillPreview.length !== 1 || skillPreview[0].id !== "learned-oa-portal") {
+    throw new Error(`workspace skill preview missing: ${JSON.stringify(skillPreview)}`);
+  }
+  const riskKinds = new Set((skillPreview[0].riskWarnings || []).map((warning) => warning.kind));
+  if (!riskKinds.has("domain") || !riskKinds.has("credential-term") || !riskKinds.has("workspace-identity")) {
+    throw new Error(`learned web skill risks must be surfaced: ${JSON.stringify(skillPreview[0].riskWarnings)}`);
+  }
 
   // Export → import round trip.
   const buf = await share.exportWorkspacePack({
@@ -116,6 +129,20 @@ try {
   }
   if (fs.existsSync(path.join(dest, "output")) || fs.existsSync(path.join(dest, ".env"))) {
     throw new Error("excluded files must not appear in the imported workspace");
+  }
+
+  // Workspace skills are opt-in. The safe default export carries no learned
+  // local skills, even when the workspace has them available.
+  const noSkillBuf = await share.exportWorkspacePack({
+    rootPath: ws,
+    name: "算命大师",
+    workspaceSkills: [],
+    exportedAt: "2026-06-12T00:00:00.000Z",
+  });
+  const noSkillDest = path.join(tmp, "imported-no-skills");
+  const noSkillImport = await share.importWorkspacePack(noSkillBuf, noSkillDest);
+  if (noSkillImport.workspaceSkills.length !== 0 || noSkillImport.manifest.workspaceSkills.length !== 0) {
+    throw new Error(`workspace skills must be excluded unless explicitly requested: ${JSON.stringify(noSkillImport.manifest.workspaceSkills)}`);
   }
 
   // Security layer 1: safeJoin rejects any path resolving outside the target.

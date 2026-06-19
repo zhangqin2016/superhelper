@@ -143,25 +143,22 @@ function registerProjectHandlers(ctx) {
   ipcMain.handle("project:export-preview", (_event, projectId) => {
     const project = projectManager.find(projectId);
     if (!project) return { ok: false, error: "NOT_FOUND" };
-    const { previewExport } = require("./workspace-share");
+    const { previewExport, previewWorkspaceSkills } = require("./workspace-share");
     const skillManager = require("./skill-manager");
+    const workspaceSkills = skillManager.listWorkspaceSkillExports(project.id);
     return {
       ok: true,
       name: project.name,
       preview: previewExport(project.path),
       requiredSkills: skillManager.getGloballyEnabledSkillIds(),
-      workspaceSkills: skillManager.listWorkspaceSkillExports(project.id).map((skill) => ({
-        id: skill.id,
-        name: skill.manifest?.name || skill.id,
-        enabled: skill.enabled,
-        version: skill.manifest?.version || null,
-      })),
+      workspaceSkills: previewWorkspaceSkills(workspaceSkills),
     };
   });
 
-  ipcMain.handle("project:export-pack", async (_event, projectId) => {
+  ipcMain.handle("project:export-pack", async (_event, projectId, options = {}) => {
     const project = projectManager.find(projectId);
     if (!project) return { ok: false, error: "NOT_FOUND" };
+    const includeWorkspaceSkills = options?.includeWorkspaceSkills === true;
     const result = await dialog.showSaveDialog(mainWindow, {
       title: "导出工作空间能力包",
       defaultPath: `${project.name}.lilyspace.zip`,
@@ -178,7 +175,7 @@ function registerProjectHandlers(ctx) {
         name: project.name,
         conventions: readLearnedConventions(project.id),
         requiredSkills: skillManager.getGloballyEnabledSkillIds(),
-        workspaceSkills: skillManager.listWorkspaceSkillExports(project.id),
+        workspaceSkills: includeWorkspaceSkills ? skillManager.listWorkspaceSkillExports(project.id) : [],
         exportedAt: new Date().toISOString(),
       });
       fs.writeFileSync(result.filePath, buf);
