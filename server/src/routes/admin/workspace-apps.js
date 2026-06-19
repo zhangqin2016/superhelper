@@ -8,12 +8,12 @@ import {
   inspectWorkspaceAppArtifact,
   isValidWorkspaceAppArtifactUrl,
   isValidWorkspaceAppSha256,
+  MAX_WORKSPACE_APP_BYTES,
   parseList,
   validateWorkspaceAppArtifact,
   workspaceAppObjectKey,
 } from "../../services/workspace-apps.js";
 
-const WORKSPACE_APP_DOWNLOAD_LIMIT = 50 * 1024 * 1024;
 const WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS = 30_000;
 
 const createWorkspaceAppSchema = z.object({
@@ -180,11 +180,11 @@ async function downloadWorkspaceAppForInspection(url) {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) return { ok: false, code: "ARTIFACT_DOWNLOAD_FAILED" };
     const length = Number(response.headers.get("content-length") || 0);
-    if (length > WORKSPACE_APP_DOWNLOAD_LIMIT) {
+    if (length > MAX_WORKSPACE_APP_BYTES) {
       return { ok: false, code: "WORKSPACE_APP_TOO_LARGE" };
     }
     const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > WORKSPACE_APP_DOWNLOAD_LIMIT) {
+    if (buffer.length > MAX_WORKSPACE_APP_BYTES) {
       return { ok: false, code: "WORKSPACE_APP_TOO_LARGE" };
     }
     return { ok: true, buffer };
