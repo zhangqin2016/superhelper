@@ -22,4 +22,16 @@ assertSpawnArgs("bypassPermissions", "bypassPermissions");
 assertSpawnArgs("auto", "auto");
 assertSpawnArgs(undefined, "default");
 
+// Native CLI modes pass through unchanged.
+assertSpawnArgs("acceptEdits", "acceptEdits");
+assertSpawnArgs("plan", "plan");
+
+// Regression: "dontAsk" is an app-internal mode the approval broker enforces; it
+// is NOT a CLI --permission-mode choice. Passing it raw made the CLI reject the
+// arg and exit at startup, which broke every unattended scheduled run. It must
+// be mapped to a valid CLI mode (the broker still receives the real "dontAsk").
+assertSpawnArgs("dontAsk", "default");
+// Any other unknown/app-only value also fails closed to a valid CLI mode.
+assertSpawnArgs("someFutureAppMode", "default");
+
 console.log("permission-spawn-args: ok");

@@ -75,6 +75,14 @@ class AgentSession extends EventEmitter {
     this.agentResumeId = null;
     this.spawnOptions = null;
     this.lastSpawnError = null;
+    /**
+     * Rolling tail of the engine's most recent stderr lines. Most stderr is
+     * non-fatal chatter, but when the process exits non-zero with no classified
+     * error we need *something* to explain why — without this the failure is just
+     * "exited unexpectedly" with no forensic trail (e.g. unattended scheduled runs).
+     * @type {string[]}
+     */
+    this._recentStderr = [];
     /** All watchdog timers live in one named bank (see turn-timers.js). */
     this._timers = new TimerBank();
     this._turnStartedAt = 0;
@@ -185,6 +193,8 @@ class AgentSession extends EventEmitter {
   static TURN_ABSOLUTE_MAX_MS = 30 * 60_000;
   /** Poll while deferred CLI `result` waits for pending tools/permissions. */
   static DEFERRED_TURN_RESULT_GRACE_MS = 1_500;
+  /** How many recent stderr lines to retain for diagnosing an unexpected exit. */
+  static RECENT_STDERR_MAX_LINES = 40;
   /** Wait after message_stop for a trailing `result` (or a follow-up message)
    * before the pure-text fallback. Generous so a multi-message turn — e.g.
    * "OK, continuing" then a long chapter — is never cut between messages. */
@@ -562,6 +572,7 @@ class AgentSession extends EventEmitter {
 
   _spawn() {
     const opts = this.spawnOptions;
+    this._recentStderr = [];
     const args = [
       "-p",
       "--verbose",
@@ -646,9 +657,20 @@ class AgentSession extends EventEmitter {
       this._clearInterruptFallback();
       if (this.busy && !this._turnSettled) {
         this._flushLineBuffer();
+        // A non-zero exit with no classified error would otherwise surface as a
+        // bare "exited unexpectedly" with no trail — fatal for unattended
+        // scheduled runs nobody is watching. Log the code and carry the retained
+        // stderr tail into the failure so the real reason is captured and shown.
+        const stderrTail = this._recentStderr.join("\n").trim();
+        if (!wasInterrupt && code !== 0) {
+          log.warn("engine process exited code=%s signal-less; stderr tail: %s", code, stderrTail || "(none)", {
+            sessionId: this.sessionId,
+          });
+        }
         this._completeTurn({
           code,
           output: this.collectedOutput.trim(),
+          errorText: !wasInterrupt && code !== 0 ? stderrTail : "",
           interrupted: wasInterrupt,
           interruptedByUser: wasInterrupt,
           source: "process.close",
@@ -952,6 +974,12 @@ class AgentSession extends EventEmitter {
 
   _handleStderr(raw) {
     const text = sanitizeError(raw);
+    if (text) {
+      this._recentStderr.push(text);
+      if (this._recentStderr.length > AgentSession.RECENT_STDERR_MAX_LINES) {
+        this._recentStderr.shift();
+      }
+    }
     const { isResumeFailureMessage } = require("./session-engine-recovery");
     const classified = classifyAssistantError(raw);
 
