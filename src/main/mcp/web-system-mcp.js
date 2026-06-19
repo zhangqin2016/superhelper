@@ -98,6 +98,40 @@ function buildSystemTools(systemId, systemName, capabilities) {
 }
 
 /**
+ * Deterministically materialize a validated execution plan for an API capability
+ * from its contract + the (schema-validated) tool params. No model authoring —
+ * the handler binds params into the learned contract's request and runs it.
+ * @param {object} capability
+ * @param {object} contract  resolved api contract (id/method/contentType)
+ * @param {object} params    tool arguments
+ */
+function buildApiPlan(capability, contract, params) {
+  const method = String(contract?.method || "GET").toUpperCase();
+  const values = params && typeof params === "object" && !Array.isArray(params) ? params : {};
+  const op = {
+    type: "apiRequest",
+    contractId: contract?.id || "",
+    method,
+    risk: capability?.risk || "read",
+  };
+  if (method === "GET" || method === "HEAD") {
+    op.query = values;
+  } else {
+    op.body = values;
+    op.contentType = contract?.contentType === "form" ? "form" : "json";
+  }
+  return { action: capability?.action || capability?.id || "", operations: [op] };
+}
+
+/** Resolve the API contract a capability should use (its first api-first ref). */
+function resolveCapabilityContract(capability, apiContracts) {
+  const refs = capability?.execution?.apiContractRefs;
+  const id = Array.isArray(refs) && refs.length ? refs[0] : null;
+  if (!id || !Array.isArray(apiContracts)) return null;
+  return apiContracts.find((c) => c && c.id === id) || null;
+}
+
+/**
  * @param {{ systemId: string, systemName?: string, capabilities: object[],
  *   run: (capabilityId: string, params: object) => Promise<any> }} opts
  * @returns {import('@modelcontextprotocol/sdk/server/mcp.js').McpServer}
@@ -121,6 +155,8 @@ module.exports = {
   buildToolInputSchema,
   annotationsForRisk,
   buildSystemTools,
+  buildApiPlan,
+  resolveCapabilityContract,
   createWebSystemMcpServer,
   asText,
 };

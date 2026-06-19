@@ -100,12 +100,61 @@ function buildMailMcpEntry() {
   };
 }
 
+/** MCP server entry for one learned web system (its capabilities as typed tools). */
+function webSystemMcpEntry(draftDir) {
+  if (
+    !draftDir ||
+    !fs.existsSync(path.join(draftDir, "capability-map.json")) ||
+    !fs.existsSync(path.join(draftDir, "web-system-playbook.json"))
+  ) {
+    return null;
+  }
+  return {
+    command: process.execPath,
+    args: [path.join(__dirname, "mcp", "web-system-mcp-stdio.js"), "--system", draftDir],
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  };
+}
+
+function serverNameForSystem(draftDir) {
+  const base = path.basename(String(draftDir || "")).replace(/[^a-z0-9]+/gi, "_").toLowerCase();
+  return `web_${base || "system"}`.slice(0, 64);
+}
+
+/** Installed learned skills that carry a web-system playbook (one per system). */
+function learnedWebSystemDirs() {
+  try {
+    const { agentConfigDir } = require("./config");
+    const root = path.join(agentConfigDir(), "skills");
+    return fs
+      .readdirSync(root)
+      .filter((name) => name.startsWith("learned-"))
+      .map((name) => path.join(root, name))
+      .filter((dir) => fs.existsSync(path.join(dir, "web-system-playbook.json")));
+  } catch {
+    return [];
+  }
+}
+
+/** {serverName: entry} for the given learned-system dirs. */
+function buildWebSystemMcpEntries(systemDirs) {
+  const out = {};
+  for (const dir of Array.isArray(systemDirs) ? systemDirs : []) {
+    const entry = webSystemMcpEntry(dir);
+    if (entry) out[serverNameForSystem(dir)] = entry;
+  }
+  return out;
+}
+
 function writeActiveMcpConfig(runtimeDir, outPath) {
   const mcpServers = {};
   const playwright = runtimeDir ? buildPlaywrightMcpConfig(runtimeDir) : null;
   if (playwright?.mcpServers) Object.assign(mcpServers, playwright.mcpServers);
   const mail = buildMailMcpEntry();
   if (mail) mcpServers.mail = mail;
+  // Each learned web system becomes its own MCP server (typed tools); the host
+  // can later scope which are active per context via mcp_toggle.
+  Object.assign(mcpServers, buildWebSystemMcpEntries(learnedWebSystemDirs()));
   if (!Object.keys(mcpServers).length) return null;
   fs.writeFileSync(outPath, `${JSON.stringify({ mcpServers }, null, 2)}\n`);
   return outPath;
@@ -119,5 +168,8 @@ module.exports = {
   bundledNodeModulesDir,
   playwrightMcpAvailable,
   buildPlaywrightMcpConfig,
+  webSystemMcpEntry,
+  buildWebSystemMcpEntries,
+  learnedWebSystemDirs,
   writeActiveMcpConfig,
 };

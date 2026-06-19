@@ -6,11 +6,15 @@
  * learned params (required/enum/types enforced), and risk→annotation mapping so
  * writes stay gated.
  */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import module from "node:module";
 import { assert } from "./lib/test-assert.mjs";
 
 const require = module.createRequire(import.meta.url);
-const { toolNameForCapability, buildToolInputSchema, annotationsForRisk, buildSystemTools } = require("../src/main/mcp/web-system-mcp.js");
+const { toolNameForCapability, buildToolInputSchema, annotationsForRisk, buildSystemTools, buildApiPlan, resolveCapabilityContract } = require("../src/main/mcp/web-system-mcp.js");
+const { buildWebSystemMcpEntries } = require("../src/main/mcp-config.js");
 
 try {
   // namespacing: <system>__<capability>, sanitized, no "web." prefix
@@ -58,7 +62,42 @@ try {
   assert(read.description.includes("查请假"), "tool description carries intents for routing");
   assert(write.capabilityId === "web.create-leave", "tool maps back to its capability id");
 
-  console.log("PASS: test-web-system-mcp (18 tests)");
+  // deterministic plan materialization (handler binds params into the contract)
+  const getCap = { id: "web.query-leaves", action: "web.query-leaves", risk: "read", execution: { apiContractRefs: ["list-leaves"] } };
+  const postCap = { id: "web.create-leave", action: "web.create-leave", risk: "submit", execution: { apiContractRefs: ["create-leave"] } };
+  const contracts = [
+    { id: "list-leaves", method: "GET", contentType: "query" },
+    { id: "create-leave", method: "POST", contentType: "json" },
+  ];
+  assert(resolveCapabilityContract(getCap, contracts).id === "list-leaves", "resolves first api contract ref");
+  assert(resolveCapabilityContract({ execution: {} }, contracts) === null, "no refs → no contract");
+
+  const getPlan = buildApiPlan(getCap, contracts[0], { status: "open" });
+  assert(getPlan.action === "web.query-leaves" && getPlan.operations.length === 1, "plan has the action + one op");
+  assert(getPlan.operations[0].type === "apiRequest" && getPlan.operations[0].method === "GET", "GET apiRequest op");
+  assert(JSON.stringify(getPlan.operations[0].query) === JSON.stringify({ status: "open" }) && getPlan.operations[0].body === undefined, "GET binds params to query, no body");
+
+  const postPlan = buildApiPlan(postCap, contracts[1], { days: 2 });
+  assert(postPlan.operations[0].method === "POST" && postPlan.operations[0].risk === "submit", "POST plan carries write risk");
+  assert(JSON.stringify(postPlan.operations[0].body) === JSON.stringify({ days: 2 }) && postPlan.operations[0].contentType === "json", "write binds params to JSON body");
+
+  // mcp-config: a learned system dir with playbook+capability-map → one server entry
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-mcp-entries-"));
+  const sysDir = path.join(tmp, "learned-demo-erp");
+  fs.mkdirSync(sysDir, { recursive: true });
+  fs.writeFileSync(path.join(sysDir, "capability-map.json"), "{}");
+  fs.writeFileSync(path.join(sysDir, "web-system-playbook.json"), "{}");
+  const emptyDir = path.join(tmp, "not-a-system");
+  fs.mkdirSync(emptyDir, { recursive: true });
+  const entries = buildWebSystemMcpEntries([sysDir, emptyDir]);
+  const names = Object.keys(entries);
+  assert(names.length === 1, `only the real system gets an entry, got ${names.join(",")}`);
+  assert(names[0] === "web_learned_demo_erp", `server name namespaced, got ${names[0]}`);
+  assert(entries[names[0]].args.includes("--system") && entries[names[0]].args.includes(sysDir), "entry launches the stdio server for that system dir");
+  assert(entries[names[0]].env.ELECTRON_RUN_AS_NODE === "1", "entry runs the app binary in node mode");
+  fs.rmSync(tmp, { recursive: true, force: true });
+
+  console.log("PASS: test-web-system-mcp (29 tests)");
 } catch (err) {
   console.error("FAIL:", err.message);
   process.exit(1);
