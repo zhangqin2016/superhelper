@@ -10,6 +10,10 @@ const DEFAULT_API = "https://lily.lanrensoft.cn";
 const DEFAULT_CHANNEL = "stable";
 const DEFAULT_SKILL_OUT = path.join(ROOT, "dist", "skill-packs");
 const DEFAULT_APP_OUT = path.join(ROOT, "dist", "workspace-apps");
+const DEFAULT_QINIU_BUCKET = "lanrensoft";
+const DEFAULT_QINIU_DOMAIN = "https://qny.lanrensoft.cn";
+const DEFAULT_QINIU_UP_HOST = "https://upload.qiniup.com";
+const DIRECT_APP_UPLOAD_THRESHOLD_BYTES = 40 * 1024 * 1024;
 
 const WORKSPACE_APP_BUILDERS = [
   {
@@ -82,6 +86,9 @@ options:
   --skip-skills
   --skip-apps
   --app app-id
+  --bucket ${DEFAULT_QINIU_BUCKET}
+  --domain ${DEFAULT_QINIU_DOMAIN}
+  --qiniu-up-host ${DEFAULT_QINIU_UP_HOST}
   --force
   --dry-run
 `);
@@ -99,6 +106,9 @@ function parseArgs(argv) {
     apps: true,
     version: "",
     appId: "",
+    bucket: process.env.RELEASE_QINIU_BUCKET || process.env.QINIU_BUCKET || DEFAULT_QINIU_BUCKET,
+    domain: process.env.RELEASE_QINIU_DOMAIN || process.env.QINIU_PUBLIC_BASE_URL || DEFAULT_QINIU_DOMAIN,
+    qiniuUpHost: process.env.QINIU_UP_HOST || DEFAULT_QINIU_UP_HOST,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const item = argv[i];
@@ -115,6 +125,9 @@ function parseArgs(argv) {
     else if (key === "channel") out.channel = argv[++i] || "";
     else if (key === "version") out.version = argv[++i] || "";
     else if (key === "app") out.appId = argv[++i] || "";
+    else if (key === "bucket") out.bucket = argv[++i] || "";
+    else if (key === "domain") out.domain = argv[++i] || "";
+    else if (key === "qiniu-up-host") out.qiniuUpHost = argv[++i] || "";
     else if (key === "help" || key === "h") usage();
     else usage();
   }
@@ -148,6 +161,55 @@ function runCapture(command, argsList) {
 function shellQuote(value) {
   const s = String(value);
   return /^[A-Za-z0-9_./:=@-]+$/.test(s) ? s : JSON.stringify(s);
+}
+
+function joinPublicUrl(domain, objectKey) {
+  return `${String(domain || "").replace(/\/+$/g, "")}/${String(objectKey || "").replace(/^\/+/g, "")}`;
+}
+
+function normalizeObjectSegment(value, fallback) {
+  return String(value || fallback)
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || fallback;
+}
+
+function workspaceAppObjectKey({ appId, version, filePath }) {
+  const safeAppId = normalizeObjectSegment(appId, "workspace-app");
+  const safeVersion = normalizeObjectSegment(version, "0.0.0");
+  const safeFile = normalizeObjectSegment(path.basename(filePath), "workspace-app.zip");
+  return `workspace-apps/${safeAppId}/${safeVersion}/${safeFile}`;
+}
+
+function qshellAvailable() {
+  const result = spawnSync("qshell", ["--version"], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return result.status === 0;
+}
+
+function uploadQiniuWithQshell({ bucket, objectKey, filePath, upHost }) {
+  const localFile = path.resolve(ROOT, filePath);
+  const uploadFile = path.relative(ROOT, localFile).startsWith("..") ? localFile : path.relative(ROOT, localFile);
+  const args = ["rput", bucket, objectKey, uploadFile, "--overwrite", "--up-host", upHost || DEFAULT_QINIU_UP_HOST];
+  console.log(`[publish-local-catalog] qiniu upload: qshell ${args.map(shellQuote).join(" ")}`);
+  const result = spawnSync("qshell", args, {
+    cwd: ROOT,
+    stdio: "inherit",
+  });
+  if (result.status === 0) return;
+
+  const legacyArgs = ["rput", bucket, objectKey, uploadFile, "true"];
+  console.log(`[publish-local-catalog] qiniu upload retry: qshell ${legacyArgs.map(shellQuote).join(" ")}`);
+  const legacy = spawnSync("qshell", legacyArgs, {
+    cwd: ROOT,
+    stdio: "inherit",
+  });
+  if (legacy.status !== 0) {
+    throw new Error(`qshell upload failed for ${objectKey}`);
+  }
 }
 
 function buildJson(command, argsList) {
@@ -295,6 +357,22 @@ async function fetchJson(api, auth, route) {
   return response.json();
 }
 
+async function postJson(api, auth, route, body) {
+  const response = await fetch(`${api}${route}`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(auth),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`POST ${route} failed: HTTP ${response.status}${detail ? ` ${detail}` : ""}`);
+  }
+  return response.json();
+}
+
 async function uploadMultipart(api, auth, route, fields, filePath) {
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) {
@@ -392,7 +470,30 @@ async function publishApps(options, auth) {
       results.push({ kind: "app", id: artifact.appId, version: artifact.version, action: "built" });
       continue;
     }
-    const uploaded = await uploadMultipart(api, auth, "/api/admin/workspace-apps/upload", fields, artifactPath);
+    const artifactSize = fs.statSync(artifactPath).size;
+    let uploaded;
+    if (artifactSize >= DIRECT_APP_UPLOAD_THRESHOLD_BYTES && qshellAvailable()) {
+      const objectKey = workspaceAppObjectKey({
+        appId: artifact.appId || app.appId,
+        version: artifact.version,
+        filePath: artifactPath,
+      });
+      uploadQiniuWithQshell({
+        bucket: options.bucket,
+        objectKey,
+        filePath: artifactPath,
+        upHost: options.qiniuUpHost,
+      });
+      uploaded = await postJson(api, auth, "/api/admin/workspace-apps", {
+        ...fields,
+        artifactUrl: joinPublicUrl(options.domain, objectKey),
+        sha256: artifact.sha256 || "",
+        sizeBytes: artifactSize,
+        enabled: true,
+      });
+    } else {
+      uploaded = await uploadMultipart(api, auth, "/api/admin/workspace-apps/upload", fields, artifactPath);
+    }
     console.log(`[publish-local-catalog] app uploaded: ${uploaded.appId}@${artifact.version}`);
     results.push({ kind: "app", id: artifact.appId, version: artifact.version, action: "uploaded" });
   }

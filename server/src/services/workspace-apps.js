@@ -2,7 +2,7 @@ import JSZip from "jszip";
 
 const SHA256_RE = /^[0-9a-f]{64}$/i;
 const TRUSTED_ARTIFACT_PROTOCOLS = new Set(["https:"]);
-const MAX_WORKSPACE_APP_BYTES = 50 * 1024 * 1024;
+const MAX_WORKSPACE_APP_BYTES = 100 * 1024 * 1024;
 const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 const APP_ID_RE = /^[a-z][a-z0-9-]{1,99}$/;
 const WORKSPACE_APP_MANIFEST = "lily-workspace.json";
