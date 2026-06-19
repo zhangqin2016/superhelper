@@ -202,12 +202,6 @@ function narrativeImageKey(contentBlocks = []) {
     .join("|");
 }
 
-function hasContentImageResultBlock(liveTurn = {}) {
-  return (liveTurn.resultBlocks || []).some((block) => (
-    block?.source === "content_block" &&
-    (block.type === "image" || block.artifactType === "image" || /^image\//i.test(block.mimeType || ""))
-  ));
-}
 
 /** Minimal liveTurn for assistant messages saved before TurnRecord existed. */
 export function legacyLiveTurnFromMessage(message) {
@@ -356,7 +350,6 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     liveTurn.final?.type || "",
     (liveTurn.contentBlocks || []).length,
     narrativeImageKey(liveTurn.contentBlocks || []),
-    hasContentImageResultBlock(liveTurn) ? "artifact-images" : "",
   ].join("|");
   if (article.dataset.narrativeKey !== narrativeKey) {
     renderNarrative(article.querySelector('[data-role="narrative"]'), liveTurn, { sealed });
@@ -371,44 +364,24 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     renderFinal(article, liveTurn);
     liveTurn.finalRendered = true;
   }
-  // The artifacts slot is the canonical deliverable preview. When a generated
-  // file is ALSO shown inline in a visible tool result above, don't render the
-  // same image again here. If the process group is collapsed (tool media
-  // hidden), keep it — the slot is then the only visible copy.
+  // Images render inline in the answer, in output order (content-block images in
+  // the narrative, tool-generated images in their tool row). They are NEVER
+  // surfaced again as a card in the result slot below. The slot keeps only
+  // non-image deliverables (html / pdf / file / chart) that have no inline form.
   const resultBlocks = mergeResultBlocks(liveTurn.resultBlocks || [], liveTurn.artifacts || []);
-  const inlineNames = shouldCollapseProcessGroups(liveTurn, sealed)
-    ? null
-    : collectInlineMediaBasenames(liveTurn);
-  const dedupedBlocks = inlineNames
-    ? resultBlocks.filter((block) => !(block.path && inlineNames.has(basenameOf(block.path))))
-    : resultBlocks;
-  renderResultBlocks(article.querySelector('[data-role="artifacts"]'), dedupedBlocks);
+  renderResultBlocks(
+    article.querySelector('[data-role="artifacts"]'),
+    resultBlocks.filter((block) => !isImageResultBlock(block)),
+  );
 }
 
-function basenameOf(filePath) {
-  return String(filePath || "").split(/[\\/]/).pop();
-}
+const IMAGE_BLOCK_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
 
-// File basenames already shown inline as tool-generated media — used to avoid
-// rendering the same image a second time in the artifacts slot.
-function collectInlineMediaBasenames(liveTurn) {
-  const names = new Set();
-  const tools = liveTurn?.tools;
-  const list = tools && typeof tools.values === "function"
-    ? [...tools.values()]
-    : Array.isArray(tools) ? tools : [];
-  for (const tool of list) {
-    if (!tool?.result) continue;
-    const parsed = parseToolResult(tool.result);
-    const text = typeof parsed?.content === "string" ? parsed.content : "";
-    if (!text) continue;
-    for (const media of parseGeneratedMedia(text)) {
-      for (const file of media.files || []) {
-        if (file.path) names.add(basenameOf(file.path));
-      }
-    }
-  }
-  return names;
+function isImageResultBlock(block = {}) {
+  if (block.type === "image" || block.artifactType === "image") return true;
+  if (/^image\//i.test(block.mimeType || "")) return true;
+  const ext = String(block.ext || block.path || "").toLowerCase().match(/\.[^./\\]+$/)?.[0] || "";
+  return IMAGE_BLOCK_EXTS.has(ext);
 }
 
 export function renderSealedTurnArticle(liveTurn, failed = false) {
@@ -467,8 +440,7 @@ function syncNarrativeImages(root, contentBlocks = []) {
 function renderNarrative(root, liveTurn, { sealed = false } = {}) {
   if (!root) return;
   const text = resolveAssistantStreamText(liveTurn);
-  const imageBlocksPromoted = hasContentImageResultBlock(liveTurn);
-  const hasImages = !imageBlocksPromoted && (liveTurn.contentBlocks || []).some((b) => b.blockType === "image" && b.data);
+  const hasImages = (liveTurn.contentBlocks || []).some((b) => b.blockType === "image" && b.data);
   const show = shouldShowNarrative(liveTurn);
   root.hidden = !show && !hasImages;
   if (root.hidden) {
@@ -490,12 +462,7 @@ function renderNarrative(root, liveTurn, { sealed = false } = {}) {
     if (liveTurn.turnId) narrativeRenderState.delete(liveTurn.turnId);
   }
 
-  if (imageBlocksPromoted) {
-    root.querySelectorAll(".assistant-content-image").forEach((node) => node.remove());
-    delete root.dataset.imageKey;
-  } else {
-    syncNarrativeImages(root, liveTurn.contentBlocks || []);
-  }
+  syncNarrativeImages(root, liveTurn.contentBlocks || []);
 }
 
 function renderFooter(root, liveTurn, sealed) {

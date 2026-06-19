@@ -1,0 +1,249 @@
+# Full release pipeline: build all platforms on their own runners, collect the
+# installers, then publish to Qiniu + the update server via the existing
+# release-one-click.mjs --skip-build path.
+#
+#   Actions → "Release (all platforms)" → Run workflow
+#
+# Builds are UNSIGNED (no Apple cert): macOS DMGs open via right-click → Open.
+# Built-in Chromium/Playwright is intentionally NOT bundled yet — when
+# build-runtime-bundle.mjs starts emitting it, it flows through here unchanged.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   QINIU_ACCESS_KEY            Qiniu AK   (for `qshell account`)
+#   QINIU_SECRET_KEY            Qiniu SK
+#   RELEASE_ADMIN_TOKEN         server admin token (writes release rows)
+#   RELEASE_SIGNING_KEY_B64     base64 of release-keys/license-private-key.pem
+#                               (signs latest.json for auto-update)
+
+name: Release (all platforms)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_version:
+        description: "App version to stamp/publish (empty = package.json version)"
+        required: false
+        type: string
+      claude_version:
+        description: "@anthropic-ai/claude-code engine version (empty = latest)"
+        required: false
+        type: string
+      skip_libreoffice:
+        description: "Skip LibreOffice in runtime (faster smoke build)"
+        required: false
+        type: boolean
+        default: false
+      notes:
+        description: "Release notes"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ----------------------------------------------------------------- macOS arm64
+  build-mac-arm64:
+    runs-on: macos-14
+    timeout-minutes: 120
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"   # unsigned: don't hunt for a cert
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Stamp version
+        run: |
+          VER="${{ inputs.app_version }}"
+          [ -z "$VER" ] && VER=$(node -p "require('./package.json').version")
+          npm version "$VER" --no-git-tag-version --allow-same-version
+          echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
+      - run: npm run test:unit
+      - name: Fetch macOS engine binary (darwin-arm64)
+        run: bash .github/scripts/fetch-mac-engine.sh darwin-arm64 "${{ inputs.claude_version }}"
+      - name: Build runtime bundle (darwin-arm64)
+        run: |
+          ARGS="--platform darwin-arm64"
+          [ "${{ inputs.skip_libreoffice }}" = "true" ] && ARGS="$ARGS --skip-libreoffice"
+          node scripts/build-runtime-bundle.mjs $ARGS
+      - name: Build DMG + ZIP (arm64)
+        run: npm run dist:mac:arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-darwin-arm64
+          path: |
+            dist/*-arm64.dmg
+            dist/*-arm64.zip
+            dist/*-arm64.dmg.blockmap
+          if-no-files-found: error
+          retention-days: 14
+
+  # ------------------------------------------------------------------ macOS x64
+  build-mac-x64:
+    runs-on: macos-13
+    timeout-minutes: 120
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Stamp version
+        run: |
+          VER="${{ inputs.app_version }}"
+          [ -z "$VER" ] && VER=$(node -p "require('./package.json').version")
+          npm version "$VER" --no-git-tag-version --allow-same-version
+          echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
+      - run: npm run test:unit
+      - name: Fetch macOS engine binary (darwin-x64)
+        run: bash .github/scripts/fetch-mac-engine.sh darwin-x64 "${{ inputs.claude_version }}"
+      - name: Build runtime bundle (darwin-x64)
+        run: |
+          ARGS="--platform darwin-x64"
+          [ "${{ inputs.skip_libreoffice }}" = "true" ] && ARGS="$ARGS --skip-libreoffice"
+          node scripts/build-runtime-bundle.mjs $ARGS
+      - name: Build DMG + ZIP (x64)
+        run: npm run dist:mac:x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-darwin-x64
+          path: |
+            dist/*-x64.dmg
+            dist/*-x64.zip
+            dist/*-x64.dmg.blockmap
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------------------------------------------------------------- Windows x64
+  build-win-x64:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Stamp version
+        shell: pwsh
+        run: |
+          $ver = "${{ inputs.app_version }}".Trim()
+          if (-not $ver) { $ver = (node -p "require('./package.json').version") }
+          npm version $ver --no-git-tag-version --allow-same-version
+          "APP_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - run: npm run test:unit
+      - name: Install + copy Windows engine binary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "${{ inputs.claude_version }}".Trim()
+          if ($version) {
+            npm install -g "@anthropic-ai/claude-code@$version" --include=optional
+            npm install -g "@anthropic-ai/claude-code-win32-x64@$version"
+          } else {
+            npm install -g @anthropic-ai/claude-code --include=optional
+            npm install -g @anthropic-ai/claude-code-win32-x64
+          }
+          $globalModules = (npm root -g).Trim()
+          node (Join-Path $globalModules "@anthropic-ai/claude-code/install.cjs")
+          $destDir = "bundles/win32-x64"
+          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+          $dest = Join-Path $destDir "engine-upstream.exe"
+          $candidates = @(
+            (Join-Path $globalModules "@anthropic-ai\claude-code-win32-x64\claude.exe"),
+            (Join-Path $globalModules "@anthropic-ai\claude-code\node_modules\@anthropic-ai\claude-code-win32-x64\claude.exe")
+          )
+          $source = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $source) {
+            $source = Get-ChildItem -Path $globalModules -Recurse -Filter "claude.exe" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "claude-code-win32-x64" } |
+              Sort-Object Length -Descending | Select-Object -ExpandProperty FullName -First 1
+          }
+          if (-not $source) { throw "Could not locate claude-code-win32-x64/claude.exe" }
+          Copy-Item -Force $source $dest
+          & $dest --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build runtime bundle (win32-x64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $a = @("--platform", "win32-x64")
+          if ("${{ inputs.skip_libreoffice }}" -eq "true") { $a += "--skip-libreoffice" }
+          node scripts/build-runtime-bundle.mjs @a
+      - name: Verify runtime bundle
+        run: node scripts/verify-runtime-bundle.mjs --platform win32-x64
+      - name: Purge macOS junk before pack
+        run: node scripts/purge-macos-junk.mjs
+      - name: Build Windows installer (NSIS + ZIP)
+        run: npx electron-builder --win --x64
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+      - name: Verify installer contents
+        run: node scripts/verify-win-pack.mjs --expect-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-win32-x64
+          path: |
+            dist/*-x64.exe
+            dist/*-x64.zip
+            dist/*-x64.exe.blockmap
+          if-no-files-found: error
+          retention-days: 14
+
+  # --------------------------------------------------------- Publish to Qiniu + server
+  publish:
+    needs: [build-mac-arm64, build-mac-x64, build-win-x64]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      RELEASE_ADMIN_TOKEN: ${{ secrets.RELEASE_ADMIN_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Resolve version
+        run: |
+          VER="${{ inputs.app_version }}"
+          [ -z "$VER" ] && VER=$(node -p "require('./package.json').version")
+          echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
+      - name: Collect installers into dist/
+        uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - name: Restore latest.json signing key
+        run: |
+          mkdir -p release-keys
+          echo "${{ secrets.RELEASE_SIGNING_KEY_B64 }}" | base64 -d > release-keys/license-private-key.pem
+          test -s release-keys/license-private-key.pem
+      - name: Install qshell + configure Qiniu account
+        run: |
+          QSHELL_VER="2.14.0"
+          curl -fsSL -o qshell.tar.gz "https://github.com/qiniu/qshell/releases/download/v${QSHELL_VER}/qshell-v${QSHELL_VER}-linux-amd64.tar.gz"
+          tar -xzf qshell.tar.gz
+          sudo install -m 0755 qshell /usr/local/bin/qshell
+          qshell account "${{ secrets.QINIU_ACCESS_KEY }}" "${{ secrets.QINIU_SECRET_KEY }}" ci-release
+      - name: Publish (Qiniu + server + CDN refresh + verify)
+        run: |
+          node scripts/release-one-click.mjs \
+            --version "$APP_VERSION" \
+            --target all \
+            --skip-build \
+            --upload \
+            ${{ inputs.notes && format('--notes "{0}"', inputs.notes) || '' }}
