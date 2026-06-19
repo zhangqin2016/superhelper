@@ -536,4 +536,36 @@ if (runtime.committedMessages.length !== 1 || runtime.committedMessages[0].conte
   throw new Error(`idle session history sync should replace committed messages: ${JSON.stringify(runtime.committedMessages)}`);
 }
 
+// --- session-list "needs attention" flag ---------------------------------
+// A background turn that finishes (not the viewed session) flags the list.
+store.applyRuntimeBatch({
+  sessionId: "att1",
+  batchSeq: 1,
+  events: [
+    { id: "a1", type: "turn.started", sessionId: "att1", turnId: "t1", seq: 1, ts: 4000, source: "test", payload: {} },
+    { id: "a2", type: "turn.completed", sessionId: "att1", turnId: "t1", seq: 2, ts: 4001, source: "test", payload: { assistant: "ok" } },
+  ],
+});
+if (store.getSessionAttention("att1") !== "done") {
+  throw new Error(`background completion should flag "done", got ${store.getSessionAttention("att1")}`);
+}
+store.clearSessionAttention("att1");
+if (store.getSessionAttention("att1") !== null) {
+  throw new Error("viewing a session should clear its attention flag");
+}
+
+// Replayed (load-time) terminals must NOT flag — else every session would light
+// up on startup.
+store.applyRuntimeBatch({
+  sessionId: "att2",
+  batchSeq: 1,
+  events: [
+    { id: "b1", type: "turn.started", sessionId: "att2", turnId: "t1", seq: 1, ts: 5000, source: "test", payload: {} },
+    { id: "b2", type: "turn.failed", sessionId: "att2", turnId: "t1", seq: 2, ts: 5001, source: "test", payload: {} },
+  ],
+}, { allowReplay: true });
+if (store.getSessionAttention("att2") !== null) {
+  throw new Error("replayed terminals must not raise the attention flag");
+}
+
 console.log("session-runtime-store: ok");

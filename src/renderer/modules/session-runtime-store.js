@@ -36,6 +36,9 @@ function emptySession(sessionId) {
     queue: [],
     promptSuggestions: [],
     committedMessages: [],
+    // Session-list "needs attention" flag set when a BACKGROUND turn finishes:
+    // null | "done" (completed) | "failed". Cleared when the user views it.
+    attention: null,
   };
 }
 
@@ -193,12 +196,12 @@ export function applyRuntimeBatch(batch, opts = {}) {
   if (batch.batchSeq) batchSeqBySession.set(batch.sessionId, batch.batchSeq);
 
   for (const event of batch.events) {
-    applyRuntimeEvent(event);
+    applyRuntimeEvent(event, opts);
   }
   if (opts.notifyAfter !== false) notify();
 }
 
-export function applyRuntimeEvent(event) {
+export function applyRuntimeEvent(event, opts = {}) {
   const lastSeq = eventSeqBySession.get(event.sessionId) || 0;
   if (Number.isInteger(event.seq) && event.seq <= lastSeq) return;
   if (Number.isInteger(event.seq)) eventSeqBySession.set(event.sessionId, event.seq);
@@ -226,6 +229,7 @@ export function applyRuntimeEvent(event) {
   }
   if (event.type === "turn.started") {
     runtime.phase = "starting";
+    runtime.attention = null; // new activity supersedes any stale "finished" flag
     const live = ensureLiveTurn(runtime, event);
     live.phase = "starting";
     return;
@@ -402,6 +406,14 @@ export function applyRuntimeEvent(event) {
         runtime.phase = "idle";
         runtime.turnId = null;
         terminalTurns.add(turnKey);
+        // Flag the session list when a BACKGROUND session finishes (not the one
+        // being viewed) on a LIVE event — so the user knows to come look. Skips
+        // load-time replay (allowReplay) and the active session. An interrupt is
+        // user-initiated, so it raises no flag.
+        if (!opts.allowReplay && event.sessionId !== store.get("activeSessionId")) {
+          if (event.type === "turn.completed") runtime.attention = "done";
+          else if (event.type === "turn.failed" || event.type === "turn.stalled") runtime.attention = "failed";
+        }
         runtime.committedMessages.push({
           role: "assistant",
           content: event.payload.assistant || live.assistantText || "",
@@ -460,4 +472,18 @@ export function getTurnId(sessionId) {
 
 export function isActiveSessionBusy() {
   return !canSend(store.get("activeSessionId"));
+}
+
+// Session-list "needs attention" flag: "done" | "failed" | null.
+export function getSessionAttention(sessionId) {
+  return getRuntimeSession(sessionId).attention || null;
+}
+
+// Clear the flag once the user views the session (call on switch/focus).
+export function clearSessionAttention(sessionId) {
+  const runtime = getRuntimeSession(sessionId);
+  if (runtime.attention) {
+    runtime.attention = null;
+    notify();
+  }
 }

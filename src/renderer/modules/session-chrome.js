@@ -20,6 +20,7 @@ import {
   canInterrupt,
   getRuntimeSession,
   syncCommittedMessages,
+  clearSessionAttention,
 } from "./session-runtime-store.js";
 import { refreshSessionSkillsUi } from "./session-skills.js";
 import { hydrateBlobRefs } from "./blob-refs.js";
@@ -219,6 +220,7 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
 
   if (nextProjectId) store.set("activeProjectId", nextProjectId);
   store.set("activeSessionId", nextSessionId);
+  clearSessionAttention(nextSessionId); // viewing it clears the list "finished" flag
 
   await loadSessionConversation(nextSessionId);
 

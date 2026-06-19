@@ -23,6 +23,8 @@
   "sidebar.noSessions": "暂无对话",
   "sidebar.messageCount": "{count}条",
   "sidebar.processing": "正在处理",
+  "sidebar.sessionDone": "已完成 · 点击查看",
+  "sidebar.sessionFailed": "执行失败 · 点击查看",
   "sidebar.renameFolderHint": "双击可修改文件夹名称",
   "sidebar.renameSessionHint": "双击可修改名称",
   "sidebar.newSession": "新建对话",

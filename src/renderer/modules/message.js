@@ -639,5 +639,12 @@ export function wireMessageIpc() {
   });
   subscribeRuntime(() => {
     for (const sessionId of sessionViews.keys()) renderRuntimeForSession(sessionId);
+    // Any runtime change must refresh the sidebar status dots — including a
+    // BACKGROUND session finishing while another is viewed. Otherwise the dot
+    // repaint is gated behind the viewed session re-rendering (which no-ops when
+    // its own signature is unchanged), so a completed/failed background session
+    // keeps showing "processing" instead of the done/failed dot. Cheap: it only
+    // toggles classes on the existing dots.
+    updateSessionRunningIndicators();
   });
 }

@@ -22,6 +22,8 @@
   "sidebar.noSessions": "لا توجد محادثات",
   "sidebar.messageCount": "{count} رسالة",
   "sidebar.processing": "قيد المعالجة",
+  "sidebar.sessionDone": "اكتمل · انقر للعرض",
+  "sidebar.sessionFailed": "فشل · انقر للعرض",
   "sidebar.renameFolderHint": "انقر مرتين لإعادة تسمية المجلد",
   "sidebar.renameSessionHint": "انقر مرتين لإعادة التسمية",
   "sidebar.newSession": "محادثة جديدة",

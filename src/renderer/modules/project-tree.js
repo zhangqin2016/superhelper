@@ -9,7 +9,7 @@ import { refreshState, updateTopbarTitles, applySessionSwitch } from "./session-
 import { removeSessionMessages } from "./message.js";
 import { promptSessionName, promptProjectName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
-import { isSessionRunning } from "./session-runtime-store.js";
+import { isSessionRunning, getSessionAttention } from "./session-runtime-store.js";
 
 const container = () => $("projectTree");
 
@@ -327,9 +327,8 @@ export function renderProjectTree() {
         item.dataset.projectId = project.id;
 
         const status = document.createElement("span");
-        const isRunning = isSessionRunning(s.id);
-        status.className = `session-status ${isRunning ? "running" : "idle"}`;
-        status.title = isRunning ? t("sidebar.processing") : "";
+        status.className = "session-status";
+        applySessionStatusDot(status, s.id);
         item.appendChild(status);
 
         const title = document.createElement("span");
@@ -388,24 +387,29 @@ export function updateProjectTreeSelection() {
   });
 }
 
-export function updateSessionRunningIndicators() {
-  const sessionById = new Map();
-  for (const project of store.get("projects") || []) {
-    for (const session of project.sessions || []) {
-      sessionById.set(session.id, session);
-    }
-  }
-  const runningIds = new Set(
-    [...sessionById.keys()].filter((id) => isSessionRunning(id)),
-  );
+// Paint a session-list status dot. Precedence: running > finished-unviewed
+// (done/failed) > idle. "done"/"failed" come from getSessionAttention, set when
+// a background turn finishes and cleared when the user views the session.
+function applySessionStatusDot(dot, sessionId) {
+  const running = isSessionRunning(sessionId);
+  const attention = running ? null : getSessionAttention(sessionId);
+  dot.classList.toggle("running", running);
+  dot.classList.toggle("done", attention === "done");
+  dot.classList.toggle("error", attention === "failed");
+  dot.classList.toggle("idle", !running && !attention);
+  dot.title = running
+    ? t("sidebar.processing")
+    : attention === "done"
+      ? t("sidebar.sessionDone")
+      : attention === "failed"
+        ? t("sidebar.sessionFailed")
+        : "";
+}
 
+export function updateSessionRunningIndicators() {
   container()?.querySelectorAll(".session-item").forEach((item) => {
     const dot = item.querySelector(".session-status");
-    if (!dot) return;
-    const isRunning = runningIds.has(item.dataset.sessionId);
-    dot.classList.toggle("running", isRunning);
-    dot.classList.toggle("idle", !isRunning);
-    dot.title = isRunning ? t("sidebar.processing") : "";
+    if (dot) applySessionStatusDot(dot, item.dataset.sessionId);
   });
 }
 

@@ -23,6 +23,8 @@
   "sidebar.noSessions": "No chats yet",
   "sidebar.messageCount": "{count} msgs",
   "sidebar.processing": "Processing",
+  "sidebar.sessionDone": "Done · click to view",
+  "sidebar.sessionFailed": "Failed · click to view",
   "sidebar.renameFolderHint": "Double-click to rename folder",
   "sidebar.renameSessionHint": "Double-click to rename",
   "sidebar.newSession": "New chat",
