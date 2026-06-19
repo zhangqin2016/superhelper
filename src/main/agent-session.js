@@ -597,10 +597,10 @@ class AgentSession extends EventEmitter {
       const { writeActiveMcpConfig } = require("./mcp-config");
       const { mcpConfigPath } = require("./config");
       const runtimeDir = bundleRuntimeDir();
-      if (runtimeDir) {
-        const written = writeActiveMcpConfig(runtimeDir, mcpConfigPath());
-        if (written) args.push("--mcp-config", written);
-      }
+      // Registers playwright (when its bundle exists) AND the mail connector
+      // (when the bridge is up) — so run even without a runtime bundle.
+      const written = writeActiveMcpConfig(runtimeDir || "", mcpConfigPath());
+      if (written) args.push("--mcp-config", written);
     } catch {
       /* MCP is an enhancement; never block engine spawn on it */
     }

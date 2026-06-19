@@ -6,24 +6,27 @@
  * This is the connector "on MCP rails": instead of a private HTTP side-channel,
  * the engine sees mail as native MCP tools (discovery + JSON schemas), and the
  * engine's tool-permission flow (approval-broker) governs calls — `send_mail` is
- * a write tool, so it goes through the same human-in-the-loop confirmation as
- * any other tool. Runs in the Electron main process (where account secrets are
- * available via safeStorage) and dispatches through the shared mail-actions.
+ * annotated destructive, so it goes through the same human-in-the-loop
+ * confirmation as any other tool.
+ *
+ * The data access is injected as `run(action, payload)` so the same tool
+ * definitions work in two deployments:
+ *   - in-process (Electron main): run dispatches via mail-actions (safeStorage).
+ *   - stdio proxy (mail-mcp-stdio): run forwards to the connector bridge over HTTP.
  */
 
 const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
 const { z } = require("zod");
-const { runMailAction } = require("../mail-actions");
 
 function asText(value) {
   return { content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] };
 }
 
 /**
- * @param {object} mailStore  the mail account store (listAccountsPublic / getAccountWithSecret / saveOAuthToken)
+ * @param {(action: "accounts"|"search"|"read"|"send", payload: object) => Promise<any>} run
  * @returns {import('@modelcontextprotocol/sdk/server/mcp.js').McpServer}
  */
-function createMailMcpServer(mailStore) {
+function createMailMcpServer(run) {
   const server = new McpServer({ name: "lily-mail", version: "1.0.0" });
 
   server.registerTool(
@@ -32,7 +35,7 @@ function createMailMcpServer(mailStore) {
       description: "List the user's connected mail accounts. Returns id, email, provider and status. Call this first to get an accountId.",
       inputSchema: {},
     },
-    async () => asText(mailStore.listAccountsPublic()),
+    async () => asText(await run("accounts", {})),
   );
 
   server.registerTool(
@@ -49,7 +52,7 @@ function createMailMcpServer(mailStore) {
       },
     },
     async ({ accountId, subject, from, unread, limit, mailbox }) =>
-      asText(await runMailAction(mailStore, "search", { accountId, query: { subject, from, unread, limit, mailbox } })),
+      asText(await run("search", { accountId, query: { subject, from, unread, limit, mailbox } })),
   );
 
   server.registerTool(
@@ -63,7 +66,7 @@ function createMailMcpServer(mailStore) {
       },
     },
     async ({ accountId, uid, mailbox }) =>
-      asText(await runMailAction(mailStore, "read", { accountId, query: { uid, mailbox } })),
+      asText(await run("read", { accountId, query: { uid, mailbox } })),
   );
 
   server.registerTool(
@@ -79,10 +82,19 @@ function createMailMcpServer(mailStore) {
       annotations: { destructiveHint: true, openWorldHint: true },
     },
     async ({ accountId, to, subject, text }) =>
-      asText(await runMailAction(mailStore, "send", { accountId, confirmed: true, message: { to, subject, text } })),
+      asText(await run("send", { accountId, confirmed: true, message: { to, subject, text } })),
   );
 
   return server;
 }
 
-module.exports = { createMailMcpServer };
+/** In-process run: dispatch via mail-actions (Electron main, secrets available). */
+function inProcessRun(mailStore) {
+  const { runMailAction } = require("../mail-actions");
+  return async (action, payload) => {
+    if (action === "accounts") return { ok: true, accounts: mailStore.listAccountsPublic() };
+    return runMailAction(mailStore, action, payload);
+  };
+}
+
+module.exports = { createMailMcpServer, inProcessRun };

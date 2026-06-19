@@ -79,16 +79,42 @@ function buildPlaywrightMcpConfig(runtimeDir) {
  * @param {string} runtimeDir
  * @param {string} outPath
  */
+
+/**
+ * The mail connector MCP server entry, or null when the connector bridge isn't
+ * running. Launched via the app binary in node mode (ELECTRON_RUN_AS_NODE) so it
+ * can require the bundled MCP SDK; it proxies to the bridge for credentials.
+ */
+function buildMailMcpEntry() {
+  let env;
+  try {
+    env = require("./connector-bridge").getConnectorBridgeEnvSync();
+  } catch {
+    return null;
+  }
+  if (!env?.LILY_CONNECTOR_BRIDGE_URL || !env?.LILY_CONNECTOR_BRIDGE_TOKEN) return null;
+  return {
+    command: process.execPath,
+    args: [path.join(__dirname, "mcp", "mail-mcp-stdio.js")],
+    env: { ELECTRON_RUN_AS_NODE: "1", ...env },
+  };
+}
+
 function writeActiveMcpConfig(runtimeDir, outPath) {
-  const config = buildPlaywrightMcpConfig(runtimeDir);
-  if (!config) return null;
-  fs.writeFileSync(outPath, `${JSON.stringify(config, null, 2)}\n`);
+  const mcpServers = {};
+  const playwright = runtimeDir ? buildPlaywrightMcpConfig(runtimeDir) : null;
+  if (playwright?.mcpServers) Object.assign(mcpServers, playwright.mcpServers);
+  const mail = buildMailMcpEntry();
+  if (mail) mcpServers.mail = mail;
+  if (!Object.keys(mcpServers).length) return null;
+  fs.writeFileSync(outPath, `${JSON.stringify({ mcpServers }, null, 2)}\n`);
   return outPath;
 }
 
 module.exports = {
   nodeBinaryPath,
   playwrightMcpEntry,
+  buildMailMcpEntry,
   bundledBrowsersDir,
   bundledNodeModulesDir,
   playwrightMcpAvailable,
