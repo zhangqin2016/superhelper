@@ -36,13 +36,23 @@ function base64ToBytes(value = "") {
   return out;
 }
 
+function ensureSumPrecisePolyfill() {
+  if (typeof Math.sumPrecise !== "function") {
+    Math.sumPrecise = (values) => {
+      let sum = 0;
+      for (const value of values) sum += Number(value);
+      return sum;
+    };
+  }
+}
+
 async function loadPdfjs() {
+  ensureSumPrecisePolyfill(); // main thread
   if (!pdfjsPromise) {
     pdfjsPromise = import("../../../node_modules/pdfjs-dist/build/pdf.mjs").then((pdfjs) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-        "../../../node_modules/pdfjs-dist/build/pdf.worker.mjs",
-        import.meta.url,
-      ).href;
+      // Load the worker through a shim that polyfills Math.sumPrecise in the
+      // worker context before pdf.worker.mjs runs.
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL("./pdf-worker-shim.mjs", import.meta.url).href;
       return pdfjs;
     });
   }
