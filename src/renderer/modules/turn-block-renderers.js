@@ -331,16 +331,37 @@ export function artifactBlocksFromArtifacts(artifacts = []) {
 }
 
 export function mergeResultBlocks(resultBlocks = [], artifacts = []) {
-  const seen = new Set();
-  const out = [];
+  const byKey = new Map();
+  const order = [];
   for (const block of [...(resultBlocks || []), ...artifactBlocksFromArtifacts(artifacts)]) {
     if (!block?.type) continue;
+    // A deliverable is identified by its file PATH, not by type/artifactType:
+    // the same file can be frozen early as "file" and enriched later to "html",
+    // and those representations must collapse into one card. Path-less blocks
+    // (e.g. inline data-URL images) fall back to type/id keying.
     const key = block.path
-      ? `${block.type}:${block.artifactType || ""}:${block.path}`
+      ? `path:${block.path}`
       : `${block.type}:${block.artifactType || ""}:${block.id || block.data || blockKey(block)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(block);
+    const prev = byKey.get(key);
+    if (prev) {
+      byKey.set(key, fillMissingBlockFields(prev, block));
+    } else {
+      byKey.set(key, block);
+      order.push(key);
+    }
+  }
+  return order.map((k) => byKey.get(k));
+}
+
+// Fill fields absent on `base` from `extra`, so the surviving merged block keeps
+// the richest metadata (ext/mimeType/fileName/bytes) regardless of source order.
+function fillMissingBlockFields(base, extra) {
+  const out = { ...base };
+  for (const [k, v] of Object.entries(extra)) {
+    const cur = out[k];
+    const curEmpty = cur === undefined || cur === null || cur === "" || cur === 0;
+    const valOk = v !== undefined && v !== null && v !== "" && v !== 0;
+    if (curEmpty && valOk) out[k] = v;
   }
   return out;
 }

@@ -47,4 +47,17 @@ assert.deepEqual(types, ["chart:pie", "artifact:image", "artifact:image"]);
 assert.equal(blocks.filter((b) => b.path === "/ws/out.png").length, 1, "dup file path deduped");
 assert.ok(blocks.every((b) => b.id), "every block has an id");
 
+// Regression: the same file declared via an extraBlock whose type diverges from
+// the artifact-derived type (e.g. "file" before enrichment vs "html" after) MUST
+// still collapse to one block — duplicate cards were rendering otherwise.
+const sameFile = buildResultBlocks({
+  extraBlocks: [{ type: BLOCK_TYPES.ARTIFACT, artifactType: "file", path: "/ws/page.html", id: "x" }],
+  artifacts: [{ path: "/ws/page.html", ext: ".html", mimeType: "text/html" }],
+});
+assert.equal(
+  sameFile.filter((b) => b.path === "/ws/page.html").length,
+  1,
+  "same path with divergent artifactType dedups to one block",
+);
+
 console.log("block-protocol: ok");

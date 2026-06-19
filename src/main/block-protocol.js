@@ -117,8 +117,11 @@ function dedupeResultBlocks(blocks = []) {
   const out = [];
   for (const block of blocks) {
     if (!block?.type) continue;
+    // Key on the file PATH (stable identity) rather than type/artifactType, so
+    // the same file declared with a divergent type (e.g. "file" vs "html")
+    // collapses to one block instead of duplicating.
     const key = block.path
-      ? `${block.type}:${block.artifactType || ""}:${block.path}`
+      ? `path:${block.path}`
       : `${block.type}:${block.id || JSON.stringify(block).slice(0, 200)}`;
     if (seen.has(key)) continue;
     seen.add(key);
