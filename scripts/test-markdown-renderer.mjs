@@ -5,6 +5,7 @@ import { marked } from "marked";
 
 const source = fs
   .readFileSync(new URL("../src/renderer/modules/markdown.js", import.meta.url), "utf8")
+  .replace('import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";', "")
   .replace('import { revealLocalFileInFolder } from "./file-reveal.js";', "")
   .replace('import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage } from "./mermaid-detect.js";', "")
   .replaceAll("export async function", "async function")
@@ -27,6 +28,14 @@ const MERMAID_LANGUAGES = new Set([
 const context = {
   console,
   URL,
+  // markdown.js patches streaming output in place via morphdom; stub it to the
+  // observable result (childrenOnly → element HTML becomes the next HTML).
+  morphdom(fromEl, toEl, opts) {
+    if (fromEl && toEl) {
+      fromEl.innerHTML = opts && opts.childrenOnly ? toEl.innerHTML : (typeof toEl === "string" ? toEl : toEl.innerHTML);
+    }
+    return fromEl;
+  },
   normalizeCodeLanguage(lang = "") {
     return String(lang || "").trim().split(/\s+/)[0];
   },
