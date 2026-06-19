@@ -12,6 +12,7 @@ import { ensureEnvQiniuConfigSeeded } from "./services/app-settings.js";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
+const ADMIN_UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
 const rateBuckets = new Map();
 
 function clientKey(request) {
@@ -33,8 +34,8 @@ function checkRateLimit(request) {
 export async function buildApp() {
   const app = Fastify({
     logger: true,
-    // Vision requests carry base64 images; default 1MB is too small.
-    bodyLimit: 26214400,
+    // Vision requests carry base64 images, and admin catalog uploads can carry workspace apps.
+    bodyLimit: ADMIN_UPLOAD_LIMIT_BYTES,
   });
 
   await app.register(cors, {
@@ -46,7 +47,7 @@ export async function buildApp() {
   });
   await app.register(multipart, {
     limits: {
-      fileSize: 50 * 1024 * 1024,
+      fileSize: ADMIN_UPLOAD_LIMIT_BYTES,
       files: 1,
       fields: 32,
     },

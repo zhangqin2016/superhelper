@@ -37,11 +37,14 @@ defaults:
   --qiniu-up-host https://upload.qiniup.com
 
 release flow:
-  build -> Qiniu upload -> server release rows -> CDN refresh -> public verification
+  build -> Qiniu upload -> server release rows -> local skills/apps publish -> CDN refresh -> public verification
 
 useful options:
   --skip-build             reuse existing dist artifacts
   --skip-server-publish    upload Qiniu only, do not write server release rows
+  --skip-catalog-publish   do not publish local skill/app catalog packages to the server
+  --skip-skill-publish     publish workspace apps but skip local skill packages
+  --skip-app-publish       publish skill packages but skip local workspace apps
   --skip-cdn-refresh       do not refresh Qiniu CDN metadata
   --skip-verify            do not verify public manifest/feed/API after upload
 
@@ -66,6 +69,9 @@ function args() {
         "force",
         "skip-build",
         "skip-server-publish",
+        "skip-catalog-publish",
+        "skip-skill-publish",
+        "skip-app-publish",
         "skip-cdn-refresh",
         "skip-verify",
       ].includes(key)
@@ -424,12 +430,15 @@ const key = options.key || DEFAULT_KEY;
 const notes = options.notes || "";
 const qiniuUpHost = options["qiniu-up-host"] || process.env.QINIU_UP_HOST || "https://upload.qiniup.com";
 const publishServerRelease = Boolean(options.upload && !options["dry-run"] && !options["skip-server-publish"]);
+const publishLocalCatalog = Boolean(
+  options.upload && !options["skip-server-publish"] && !options["skip-catalog-publish"],
+);
 
 ensureFile(key, "private key");
 if (!fs.existsSync(path.join(ROOT, "resources", "license-public-key.pem"))) {
   fail("resources/license-public-key.pem not found. Run `npm run release:admin -- keygen --out release-keys` and copy the public key first.");
 }
-if (publishServerRelease && !hasServerReleaseAuth()) {
+if ((publishServerRelease || (publishLocalCatalog && !options["dry-run"])) && !hasServerReleaseAuth()) {
   fail("server release publish requires RELEASE_ADMIN_TOKEN or RELEASE_ADMIN_EMAIL + RELEASE_ADMIN_PASSWORD. Use --skip-server-publish only for static-only uploads.");
 }
 
@@ -537,6 +546,26 @@ try {
     run(process.execPath, serverArgs);
   } else if (options.upload && !options["dry-run"]) {
     console.log("[release-one] server release publish skipped by --skip-server-publish.");
+  }
+
+  if (publishLocalCatalog) {
+    const catalogArgs = [
+      "scripts/publish-local-catalog-server.mjs",
+      "--api",
+      options["server-api"] || DEFAULT_SERVER_API,
+      "--channel",
+      "stable",
+      "--version",
+      nextVersion,
+    ];
+    if (options.force) catalogArgs.push("--force");
+    if (options["skip-skill-publish"]) catalogArgs.push("--skip-skills");
+    if (options["skip-app-publish"]) catalogArgs.push("--skip-apps");
+    if (options["dry-run"]) catalogArgs.push("--dry-run");
+    else catalogArgs.push("--upload");
+    run(process.execPath, catalogArgs);
+  } else if (options["skip-catalog-publish"]) {
+    console.log("[release-one] local skill/app catalog publish skipped by --skip-catalog-publish.");
   }
 
   if (options.upload && !options["dry-run"]) {
