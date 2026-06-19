@@ -40,9 +40,11 @@ function runtimeVisualSig(runtime) {
   const toolSig = [...(live.tools || new Map()).values()]
     .map((tool) => `${tool.id}:${tool.status || ""}`)
     .join(",");
-  const elapsed = live.final
-    ? 0
-    : Math.floor((Date.now() - (Number(live.startedAt) || Date.now())) / 1000);
+  // NOTE: deliberately NOT keyed on elapsed time. The live turn does not show a
+  // per-second clock, so including a ticking elapsed value here forced a full
+  // re-render (and scroll-to-bottom) every second — visible as the timeline
+  // jittering up and down during execution even when nothing was streaming.
+  // The signature must change only when something on screen actually changes.
   return [
     live.turnId,
     live.phase,
@@ -52,7 +54,6 @@ function runtimeVisualSig(runtime) {
     live.activityLabel || "",
     live.timeline?.length || 0,
     toolSig,
-    elapsed,
     live.permissions?.size || 0,
     live.questions?.size || 0,
     live.hooks?.size || 0,
