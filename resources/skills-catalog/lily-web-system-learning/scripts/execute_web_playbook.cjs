@@ -857,6 +857,145 @@ function output(payload, args) {
   process.stdout.write(text);
 }
 
+// Operations that need no browser. An all-API plan runs over plain HTTP with the
+// reused session — zero browser launches. This is the fast path the product
+// expects: log in once, then operate via learned APIs.
+const API_ONLY_OPS = new Set(["apiRequest", "wait"]);
+
+function planNeedsBrowser(operations) {
+  return (Array.isArray(operations) ? operations : []).some((op) => !API_ONLY_OPS.has(op.type));
+}
+
+function loadStorageState(file) {
+  if (!file) return null;
+  try {
+    return JSON.parse(fs.readFileSync(path.resolve(file), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** Reuse the logged-in session's cookies as a Cookie header (no creds in plans). */
+function cookieHeaderFor(url, storageState) {
+  if (!storageState || !Array.isArray(storageState.cookies)) return "";
+  let host;
+  let pathname;
+  try {
+    const parsed = new URL(url);
+    host = parsed.hostname.toLowerCase();
+    pathname = parsed.pathname || "/";
+  } catch {
+    return "";
+  }
+  const pairs = [];
+  for (const cookie of storageState.cookies) {
+    if (!cookie || !cookie.name) continue;
+    const domain = String(cookie.domain || "").replace(/^\./, "").toLowerCase();
+    if (!domain) continue;
+    if (host !== domain && !host.endsWith(`.${domain}`)) continue;
+    if (!pathname.startsWith(String(cookie.path || "/"))) continue;
+    pairs.push(`${cookie.name}=${cookie.value}`);
+  }
+  return pairs.join("; ");
+}
+
+async function execApiRequestHttp(op, sinks, storageState) {
+  const headers = { ...(op.headers || {}) };
+  const cookie = cookieHeaderFor(op.url, storageState);
+  if (cookie) headers.cookie = cookie;
+  let body;
+  const method = String(op.method || "GET").toUpperCase();
+  if (op.body !== undefined && method !== "GET" && method !== "HEAD") {
+    if (String(op.contentType || "json").toLowerCase() === "form") {
+      body = new URLSearchParams(op.body).toString();
+      headers["content-type"] = headers["content-type"] || "application/x-www-form-urlencoded";
+    } else {
+      body = JSON.stringify(op.body);
+      headers["content-type"] = headers["content-type"] || "application/json";
+    }
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Number(op.timeoutMs || 30000));
+  let res;
+  try {
+    res = await fetch(op.url, { method, headers, body, redirect: "follow", signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+  const contentType = String(res.headers.get("content-type") || "");
+  const text = await res.text();
+  let parsed = text;
+  if (contentType.includes("json")) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      /* keep text */
+    }
+  }
+  sinks.apiResponses.push({
+    label: op.label || op.contractId || op.url,
+    contractId: op.contractId || "",
+    method,
+    url: redactUrl(op.url),
+    status: res.status,
+    ok: res.ok,
+    body: parsed,
+  });
+  if (op.extract !== false) {
+    sinks.extracted.push({ label: op.label || op.contractId || op.url, text: stringifyApiBody(parsed, Number(op.maxChars || 6000)) });
+  }
+  sinks.events.push({ type: "apiRequest", method, url: redactUrl(op.url), status: res.status, transport: "http" });
+  if ([401, 403, 404].includes(res.status)) {
+    const error = new Error(`API responded ${res.status} (stale contract or logged out)`);
+    error.code = `API_${res.status}`;
+    throw error;
+  }
+  if (op.expectStatus && res.status !== Number(op.expectStatus)) {
+    const error = new Error(`API response status ${res.status} did not match expected ${op.expectStatus}`);
+    error.code = "API_STATUS_MISMATCH";
+    throw error;
+  }
+}
+
+/** Execute an all-API plan over HTTP — no browser launch. */
+async function runApiOnly(playbook, validated, args) {
+  const storageState = loadStorageState(args.storageState);
+  const sinks = { extracted: [], apiResponses: [], events: [], network: [], mutated: [] };
+  for (let index = 0; index < validated.operations.length; index += 1) {
+    const op = validated.operations[index];
+    sinks.events.push({ type: "operation:start", phase: "primary", index, operation: op.type, target: targetDescriptor(op) });
+    appendAudit(args.auditLog, { ts: new Date().toISOString(), action: validated.action, phase: "primary", transport: "http", index, op: op.type, risk: op.risk });
+    try {
+      if (op.type === "apiRequest") {
+        await execApiRequestHttp(op, sinks, storageState);
+        if (RISK_ORDER[op.risk] >= RISK_ORDER.submit) sinks.mutated.push({ index, op: op.type });
+      } else if (op.type === "wait") {
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.min(Number(op.ms || 1000), 10000))));
+        sinks.events.push({ type: "wait", ms: Number(op.ms || 1000) });
+      }
+      sinks.events.push({ type: "operation:complete", phase: "primary", index, operation: op.type });
+    } catch (err) {
+      appendAudit(args.auditLog, { ts: new Date().toISOString(), action: validated.action, phase: "primary", transport: "http", index, op: op.type, error: err.code || "ERROR", message: err.message });
+      const stale = classifyStale(err, op, validated.staleSignals);
+      return {
+        ok: false,
+        action: validated.action,
+        transport: "http",
+        code: err.code || "WEB_ACTION_FAILED",
+        message: err.message,
+        stale: Boolean(stale.stale),
+        staleSignal: stale.staleSignal,
+        relearnRecommended: Boolean(stale.stale),
+        failedOperation: { index, type: op.type, risk: op.risk, target: targetDescriptor(op) },
+        recovery: recoveryHints(err, op),
+        ...sinkResult(sinks),
+      };
+    }
+  }
+  appendAudit(args.auditLog, { ts: new Date().toISOString(), action: validated.action, phase: "primary", transport: "http", result: "ok" });
+  return { ok: true, action: validated.action, transport: "http", ...sinkResult(sinks) };
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const playbook = readJson(args.playbook, "playbook");
@@ -880,6 +1019,21 @@ async function main() {
       rollbackOperations: validated.rollbackOperations?.length || 0,
     });
     output(validated, args);
+    return;
+  }
+  // Fast path: an all-API plan runs over plain HTTP with the reused session —
+  // no browser launch at all. Only fall back to a browser if the API path fails
+  // and a browser fallback was declared.
+  if (!planNeedsBrowser(validated.operations)) {
+    const apiResult = await runApiOnly(playbook, validated, args);
+    if (apiResult.ok || !validated.fallbackOperations?.length) {
+      output(apiResult, args);
+      return;
+    }
+    appendAudit(args.auditLog, { ts: new Date().toISOString(), action: validated.action, phase: "fallback", reason: apiResult.code || "api-failed" });
+    const fallbackValidated = { ...validated, operations: validated.fallbackOperations, fallbackOperations: [] };
+    const fb = await runBrowser(playbook, fallbackValidated, args);
+    output({ ...fb, fellBack: true, recoveredFrom: { code: apiResult.code || "", transport: "http" } }, args);
     return;
   }
   output(await runBrowser(playbook, validated, args), args);

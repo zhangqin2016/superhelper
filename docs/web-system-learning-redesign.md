@@ -126,6 +126,21 @@ endpoint 与 dataSchema，标记 `breaking`（删除/风险升级/必填字段�
 匹配、歧义时定向追问、缺必填参数先问、无匹配则提议重学不臆造。embedding 检索预筛仅在
 「能力多到塞不进上下文」时作为规模优化，带明确触发条件，现在不做。
 
+### Phase 5 — 浏览器免启的 API 执行（本次）✅ + 持久登录（待办）
+
+修正用户实测痛点"问个问题开好多次浏览器"。根因：执行器**无条件 `chromium.launch()`**、
+连 API 也走浏览器上下文；且**没有"登录一次持久复用"机制**。
+
+- ✅ `execute_web_playbook.cjs`：**全 API 的计划走纯 HTTP（node fetch）+ 复用会话 cookie，
+  零浏览器**（`planNeedsBrowser`/`runApiOnly`/`execApiRequestHttp`/`cookieHeaderFor`）；只有含
+  浏览器动作、或 API 失败且声明了浏览器 fallback 时才开浏览器。顺带修掉"没装 playwright 时
+  API 动作也失败"。测试 `test-web-system-api-execution.mjs`（8，对真实本地 server，验证零浏览器
+  + 404→relearn）。
+- ⏳ **持久登录（待办，需登录捕获 UI）**：开一次 headful 浏览器让用户登录 → 抓 storageState 存到
+  按系统区分的固定位置（如 `userData/web-sessions/<systemId>.json`）→ 之后 scan/discover/execute
+  全部 `--storage-state` 复用，只有 401/403 过期才重登。执行器/发现器已支持传入 storageState 复用；
+  缺的是"捕获并持久化"那一步（浏览器+应用 UI）。
+
 ### Phase 4c — 编译成确定性代码 + 定位韧性 ✅（本次，codegen 可测）
 
 - 新增 `compile_playbook.cjs`：把已验证的 plan **codegen 成独立的确定性 Playwright 脚本**——

@@ -92,8 +92,16 @@ Place generated artifacts in the workspace learning area, using stable English d
 
 ## Execution Rules
 
-- Prefer learned API actions for speed and reliability when they are verified and safe.
-- Use browser automation when an API is missing, UI-only, or must be visually confirmed.
+- Log in ONCE, then reuse the session. Capture the logged-in session to a
+  storageState file (e.g. `web-session.json`) and pass `--storage-state` to every
+  scan/discover/execute call. Do not reopen a browser to log in for each action;
+  only re-capture when the session actually expires (a run reports
+  `stale`/`relearnRecommended` from a 401/403).
+- Prefer learned API actions: an all-API plan runs over plain HTTP with the
+  reused session cookies and launches NO browser (fast, no flicker, no repeated
+  windows). Asking a question that maps to a learned API = one HTTP call.
+- Use browser automation only when an action is UI-only, must be visually
+  confirmed, or the API path failed/went stale (then it falls back automatically).
 - When an action has both an API path and a browser path, put the API steps in
   `operations` and the browser equivalent in `plan.fallbackOperations`; the
   executor runs the fallback automatically if the API path fails or goes stale
