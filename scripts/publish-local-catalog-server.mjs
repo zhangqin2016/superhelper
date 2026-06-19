@@ -254,6 +254,19 @@ function extendedDescription(entry = {}, manifest = {}) {
     : `${joined} Lily 官方维护技能包，用于提升工作区助手的稳定执行、可审计操作、可复用能力和跨版本一致体验。该描述由发布脚本补齐，确保服务端质量门禁可以稳定校验。`;
 }
 
+function stringMapField(...candidates) {
+  const out = {};
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+    for (const [locale, value] of Object.entries(candidate)) {
+      if (!locale || typeof value !== "string") continue;
+      const text = value.trim();
+      if (text) out[String(locale)] = text;
+    }
+  }
+  return Object.keys(out).length > 0 ? JSON.stringify(out) : "";
+}
+
 function skillUploadFields({ pack, skillDir, channel }) {
   const manifest = readJson(path.join(skillDir, "skill.manifest.json"), {});
   const entry = registryById().get(pack.skillId) || {};
@@ -263,10 +276,13 @@ function skillUploadFields({ pack, skillDir, channel }) {
   return {
     skillId: pack.skillId,
     name: entry.name || manifest.name || pack.name || pack.skillId,
+    nameI18n: stringMapField(manifest.name_i18n, entry.name_i18n),
     description: extendedDescription(entry, manifest),
+    descriptionI18n: stringMapField(manifest.description_i18n, entry.description_i18n),
     version: pack.version,
     category: entry.category || manifest.category || "core",
     categoryLabel: entry.categoryLabel || manifest.categoryLabel || "",
+    categoryLabelI18n: stringMapField(manifest.categoryLabel_i18n, entry.categoryLabel_i18n),
     capabilityLayer: entry.capabilityLayer || manifest.capabilityLayer || "core",
     publisher: entry.publisher || manifest.publisher || "Lily Workbench",
     sourceKind: entry.sourceKind || manifest.sourceKind || "lily",

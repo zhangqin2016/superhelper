@@ -4,14 +4,14 @@ const MAX_SKILL_PACKAGE_BYTES = 50 * 1024 * 1024;
 const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
 export const SKILL_CATEGORIES = [
-  { id: "core", label: "核心能力" },
-  { id: "coding", label: "编程创作" },
-  { id: "design", label: "设计交互" },
-  { id: "media", label: "媒体创意" },
-  { id: "office", label: "办公文档" },
-  { id: "research", label: "联网研究" },
-  { id: "quality", label: "质量评测" },
-  { id: "professional", label: "专业扩展" },
+  { id: "core", label: "核心能力", label_i18n: { en: "Core", ar: "القدرات الأساسية" } },
+  { id: "coding", label: "编程创作", label_i18n: { en: "Development", ar: "التطوير" } },
+  { id: "design", label: "设计交互", label_i18n: { en: "Design & UI", ar: "التصميم والواجهات" } },
+  { id: "media", label: "媒体创意", label_i18n: { en: "Media & Creative", ar: "الوسائط والإبداع" } },
+  { id: "office", label: "办公文档", label_i18n: { en: "Office Documents", ar: "مستندات المكتب" } },
+  { id: "research", label: "联网研究", label_i18n: { en: "Research", ar: "البحث" } },
+  { id: "quality", label: "质量评测", label_i18n: { en: "Quality Review", ar: "مراجعة الجودة" } },
+  { id: "professional", label: "专业扩展", label_i18n: { en: "Professional", ar: "احترافي" } },
 ];
 
 const CATEGORY_IDS = new Set(SKILL_CATEGORIES.map((category) => category.id));
@@ -155,11 +155,31 @@ export function newestSkillPackages(rows = []) {
   return [...bySkillId.values()];
 }
 
+function normalizeStringMap(raw) {
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out = {};
+  for (const [locale, value] of Object.entries(raw)) {
+    if (!locale || typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) out[String(locale)] = trimmed;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 export function skillPackageToRegistryEntry(row) {
   return {
     id: row.skill_id,
     name: row.name,
+    name_i18n: normalizeStringMap(row.name_i18n),
     description: row.description || "",
+    description_i18n: normalizeStringMap(row.description_i18n),
     latestVersion: row.version,
     minAppVersion: row.min_app_version || null,
     sizeBytes: Number(row.size_bytes || 0) || null,
@@ -170,6 +190,7 @@ export function skillPackageToRegistryEntry(row) {
     sha256: String(row.sha256 || "").toLowerCase(),
     category: row.category || "core",
     categoryLabel: row.category_label || row.category || "core",
+    categoryLabel_i18n: normalizeStringMap(row.category_label_i18n),
     publisher: row.publisher || "Lily Workbench",
     sourceRepo: row.source_repo || null,
     capabilityLayer: row.capability_layer || "core",

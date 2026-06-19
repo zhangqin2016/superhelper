@@ -14,10 +14,13 @@ import {
 const createSkillPackageSchema = z.object({
   skillId: z.string().min(2).max(100),
   name: z.string().min(1).max(160),
+  nameI18n: z.record(z.string().min(1).max(240)).optional().nullable(),
   description: z.string().max(2000).optional().nullable(),
+  descriptionI18n: z.record(z.string().min(1).max(3000)).optional().nullable(),
   version: z.string().min(1).max(40),
   category: z.string().min(1).max(60).default("core"),
   categoryLabel: z.string().max(80).optional().nullable(),
+  categoryLabelI18n: z.record(z.string().min(1).max(160)).optional().nullable(),
   capabilityLayer: z.string().min(1).max(80).default("core"),
   publisher: z.string().min(1).max(120).default("Lily Workbench"),
   sourceKind: z.string().min(1).max(60).default("lily"),
@@ -49,14 +52,38 @@ function formNumber(value, fallback = null) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function formStringMap(value) {
+  let parsed = value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const out = {};
+  for (const [locale, item] of Object.entries(parsed)) {
+    if (!locale || typeof item !== "string") continue;
+    const text = item.trim();
+    if (text) out[String(locale)] = text;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 function normalizeCreateInput(raw) {
   return createSkillPackageSchema.parse({
     skillId: raw.skillId,
     name: raw.name,
+    nameI18n: formStringMap(raw.nameI18n || raw.name_i18n),
     description: raw.description || null,
+    descriptionI18n: formStringMap(raw.descriptionI18n || raw.description_i18n),
     version: raw.version,
     category: raw.category || "core",
     categoryLabel: raw.categoryLabel || null,
+    categoryLabelI18n: formStringMap(raw.categoryLabelI18n || raw.categoryLabel_i18n || raw.category_label_i18n),
     capabilityLayer: raw.capabilityLayer || "core",
     publisher: raw.publisher || "Lily Workbench",
     sourceKind: raw.sourceKind || "lily",
@@ -81,10 +108,13 @@ async function upsertSkillPackage(input, preferredId = publicId("skillpkg")) {
       id: preferredId,
       skill_id: input.skillId,
       name: input.name,
+      name_i18n: input.nameI18n ? JSON.stringify(input.nameI18n) : null,
       description: input.description || null,
+      description_i18n: input.descriptionI18n ? JSON.stringify(input.descriptionI18n) : null,
       version: input.version,
       category: input.category,
       category_label: input.categoryLabel || null,
+      category_label_i18n: input.categoryLabelI18n ? JSON.stringify(input.categoryLabelI18n) : null,
       capability_layer: input.capabilityLayer,
       publisher: input.publisher,
       source_kind: input.sourceKind,
@@ -103,9 +133,12 @@ async function upsertSkillPackage(input, preferredId = publicId("skillpkg")) {
     .onConflict((oc) =>
       oc.columns(["skill_id", "version", "channel"]).doUpdateSet({
         name: input.name,
+        name_i18n: input.nameI18n ? JSON.stringify(input.nameI18n) : null,
         description: input.description || null,
+        description_i18n: input.descriptionI18n ? JSON.stringify(input.descriptionI18n) : null,
         category: input.category,
         category_label: input.categoryLabel || null,
+        category_label_i18n: input.categoryLabelI18n ? JSON.stringify(input.categoryLabelI18n) : null,
         capability_layer: input.capabilityLayer,
         publisher: input.publisher,
         source_kind: input.sourceKind,

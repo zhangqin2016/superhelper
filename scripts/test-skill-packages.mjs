@@ -88,11 +88,17 @@ const rows = [
   {
     skill_id: "lily-code",
     name: "Code",
+    name_i18n: { en: "Code Repair", ar: "إصلاح الكود" },
     version: "1.1.0",
     artifact_url: "https://cdn.example.com/lily-code-1.1.skillpack.zip",
     sha256: "b".repeat(64),
     category: "coding",
     category_label: "编程创作",
+    category_label_i18n: { en: "Development", ar: "التطوير" },
+    description_i18n: {
+      en: "Fix code, tests, builds, and deployments with root-cause verification.",
+      ar: "إصلاح الكود والاختبارات والبناء والنشر مع التحقق من السبب الجذري.",
+    },
     capability_layer: "workflow",
     risk_level: "medium",
     default_eligible: true,
@@ -124,10 +130,30 @@ assert.equal(registry.skills[0].sourceType, "zip");
 assert.equal(registry.skills[0].downloadUrl, "https://cdn.example.com/lily-code-1.1.skillpack.zip");
 assert.equal(registry.skills[0].sha256, "b".repeat(64));
 assert.equal(registry.skills[0].category, "coding");
+assert.equal(
+  registry.skills[0].name_i18n.en,
+  "Code Repair",
+  "server-managed skill registry must preserve localized skill names",
+);
+assert.equal(
+  registry.skills[0].description_i18n.ar,
+  "إصلاح الكود والاختبارات والبناء والنشر مع التحقق من السبب الجذري.",
+  "server-managed skill registry must preserve localized descriptions",
+);
+assert.equal(
+  registry.skills[0].categoryLabel_i18n.en,
+  "Development",
+  "server-managed skill registry must preserve localized category labels",
+);
 assert.equal(registry.skills[0].capabilityLayer, "workflow");
 assert.equal(registry.skills[0].riskLevel, "medium");
 assert.equal(registry.skills[0].defaultEligible, true);
 assert.equal(registry.skills[0].featured, true);
+assert.equal(
+  registry.categories.find((category) => category.id === "coding")?.label_i18n?.en,
+  "Development",
+  "public skill categories must include localized labels for non-Chinese clients",
+);
 
 const highQualityInput = {
   skillId: "lily-app-builder",

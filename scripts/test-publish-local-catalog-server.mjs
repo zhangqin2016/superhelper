@@ -35,6 +35,20 @@ assertEqual(mailFields.riskLevel, "high", "mail skill risk");
 assertEqual(mailFields.defaultEligible, "false", "high-risk skill should not be default eligible");
 assertEqual(mailFields.featured, "false", "high-risk skill should not be featured by automatic publish");
 assert(mailFields.description.length >= 80, "skill description should satisfy server quality gate");
+assertEqual(
+  JSON.parse(mailFields.nameI18n).en,
+  "Mail Assistant",
+  "skill publisher should send localized names to the server",
+);
+assert(
+  JSON.parse(mailFields.descriptionI18n).en.includes("email"),
+  "skill publisher should send localized descriptions to the server",
+);
+assertEqual(
+  JSON.parse(mailFields.categoryLabelI18n).en,
+  "Automation",
+  "skill publisher should send localized category labels to the server",
+);
 
 const webApp = WORKSPACE_APP_BUILDERS.find((item) => item.appId === "web-system-learning");
 assert(webApp, "workspace app builders should include web system learning");
@@ -68,4 +82,4 @@ assertEqual(
 const shortDescription = extendedDescription({}, { description: "short" });
 assert(shortDescription.length >= 80, "short manifest descriptions should be expanded for publish");
 
-finish("publish-local-catalog-server", 15);
+finish("publish-local-catalog-server", 18);
