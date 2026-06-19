@@ -799,11 +799,24 @@
   margin: 4px 0 0;
   max-height: none;
   overflow: auto;
+  /* Reserve the vertical scrollbar's gutter permanently. These boxes stream text
+     into a fixed max-height follow window; without a stable gutter the scrollbar
+     appearing mid-stream shrinks the wrap width, re-wraps the pre-wrap text, and
+     the height oscillates around the cap — the thinking box flickers every token. */
+  scrollbar-gutter: stable;
   white-space: pre-wrap;
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.45;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Horizontal scrollbar must not take layout height here either (a long
+   unbreakable token would otherwise toggle it and flash). Mirrors the chat
+   markdown fix; vertical scrollbar keeps its width. */
+.assistant-process-thinking::-webkit-scrollbar:horizontal,
+.assistant-tool-detail::-webkit-scrollbar:horizontal {
+  height: 0;
 }
 
 .assistant-tool-row > .assistant-tool-detail {
