@@ -371,10 +371,44 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     renderFinal(article, liveTurn);
     liveTurn.finalRendered = true;
   }
-  renderResultBlocks(
-    article.querySelector('[data-role="artifacts"]'),
-    mergeResultBlocks(liveTurn.resultBlocks || [], liveTurn.artifacts || []),
-  );
+  // The artifacts slot is the canonical deliverable preview. When a generated
+  // file is ALSO shown inline in a visible tool result above, don't render the
+  // same image again here. If the process group is collapsed (tool media
+  // hidden), keep it — the slot is then the only visible copy.
+  const resultBlocks = mergeResultBlocks(liveTurn.resultBlocks || [], liveTurn.artifacts || []);
+  const inlineNames = shouldCollapseProcessGroups(liveTurn, sealed)
+    ? null
+    : collectInlineMediaBasenames(liveTurn);
+  const dedupedBlocks = inlineNames
+    ? resultBlocks.filter((block) => !(block.path && inlineNames.has(basenameOf(block.path))))
+    : resultBlocks;
+  renderResultBlocks(article.querySelector('[data-role="artifacts"]'), dedupedBlocks);
+}
+
+function basenameOf(filePath) {
+  return String(filePath || "").split(/[\\/]/).pop();
+}
+
+// File basenames already shown inline as tool-generated media — used to avoid
+// rendering the same image a second time in the artifacts slot.
+function collectInlineMediaBasenames(liveTurn) {
+  const names = new Set();
+  const tools = liveTurn?.tools;
+  const list = tools && typeof tools.values === "function"
+    ? [...tools.values()]
+    : Array.isArray(tools) ? tools : [];
+  for (const tool of list) {
+    if (!tool?.result) continue;
+    const parsed = parseToolResult(tool.result);
+    const text = typeof parsed?.content === "string" ? parsed.content : "";
+    if (!text) continue;
+    for (const media of parseGeneratedMedia(text)) {
+      for (const file of media.files || []) {
+        if (file.path) names.add(basenameOf(file.path));
+      }
+    }
+  }
+  return names;
 }
 
 export function renderSealedTurnArticle(liveTurn, failed = false) {
