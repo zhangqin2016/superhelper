@@ -78,6 +78,29 @@ function readDraftManifest(dir) {
  * @param {object} [context] registration context, e.g. { projectId, sessionId }
  * @returns {string[]} registered skill ids
  */
+/**
+ * Tolerate one level of nesting. A draft written to `inbox/<id>/<id>/` (e.g. the
+ * generator invoked with --out already including the id) has no manifest at the
+ * top dir; descend into a single child that is a valid draft so the skill still
+ * registers instead of getting stuck invisibly in the inbox.
+ */
+function singleNestedDraft(dir) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const childDrafts = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const childDir = path.join(dir, entry.name);
+    const manifest = readDraftManifest(childDir);
+    if (manifest) childDrafts.push({ dir: childDir, manifest });
+  }
+  return childDrafts.length === 1 ? childDrafts[0] : null;
+}
+
 function collectLearnedSkillDrafts(registerSkillDir, inboxDir = learnedSkillsInboxDir(), context = {}) {
   let names = [];
   try {
@@ -90,9 +113,17 @@ function collectLearnedSkillDrafts(registerSkillDir, inboxDir = learnedSkillsInb
     const dir = path.join(inboxDir, name);
     try {
       if (!fs.statSync(dir).isDirectory()) continue;
-      const manifest = readDraftManifest(dir);
+      let target = dir;
+      let manifest = readDraftManifest(dir);
+      if (!manifest) {
+        const nested = singleNestedDraft(dir);
+        if (nested) {
+          target = nested.dir;
+          manifest = nested.manifest;
+        }
+      }
       if (!manifest) continue;
-      const id = registerSkillDir(dir, manifest, context);
+      const id = registerSkillDir(target, manifest, context);
       if (id) {
         fs.rmSync(dir, { recursive: true, force: true });
         registered.push(id);
