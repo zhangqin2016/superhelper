@@ -936,6 +936,7 @@ async function checkRegistryUpdates({ fetch = true } = {}) {
   const available = [];
   for (const regEntry of registry.skills) {
     if (PROTECTED_BUNDLED_IDS.has(regEntry.id)) continue;
+    if (regEntry.displayInCatalog === false) continue;
     if (!isAppVersionCompatible(regEntry.minAppVersion)) continue;
     if (readInstalledManifest(regEntry.id)) continue;
     available.push(availableSkillToPublic(regEntry, null));

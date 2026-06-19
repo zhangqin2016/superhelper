@@ -229,6 +229,11 @@ function registryById() {
   return byId;
 }
 
+function registryEntries() {
+  const registry = readJson(path.join(ROOT, "resources", "skills-registry", "registry.json"), { skills: [] });
+  return Array.isArray(registry.skills) ? registry.skills : [];
+}
+
 function localSkillDirs() {
   const catalogDir = path.join(ROOT, "resources", "skills-catalog");
   return fs
@@ -292,7 +297,41 @@ function skillUploadFields({ pack, skillDir, channel }) {
     riskLevel,
     defaultEligible: String(defaultEligible),
     featured: String(featured),
+    displayInCatalog: String(entry.displayInCatalog !== false && manifest.displayInCatalog !== false),
     notes: entry.changelog || `Published from ${path.relative(ROOT, skillDir)}`,
+  };
+}
+
+function registryMetadataUploadFields({ entry, existing, channel }) {
+  if (!entry?.id) throw new Error("registry entry is missing id");
+  if (!existing?.artifact_url && !existing?.download_url) {
+    throw new Error(`existing skill package ${entry.id} is missing artifact_url`);
+  }
+  return {
+    skillId: entry.id,
+    name: entry.name || entry.id,
+    nameI18n: stringMapField(entry.name_i18n),
+    description: extendedDescription(entry, {}),
+    descriptionI18n: stringMapField(entry.description_i18n),
+    version: existing.version || entry.latestVersion || "1.0.0",
+    category: entry.category || existing.category || "core",
+    categoryLabel: entry.categoryLabel || existing.category_label || "",
+    categoryLabelI18n: stringMapField(entry.categoryLabel_i18n),
+    capabilityLayer: entry.capabilityLayer || existing.capability_layer || "core",
+    publisher: entry.publisher || existing.publisher || "Lily Workbench",
+    sourceKind: entry.sourceKind || existing.source_kind || "lily",
+    sourceRepo: entry.sourceRepo || existing.source_repo || "",
+    minAppVersion: entry.minAppVersion || existing.min_app_version || "0.1.0",
+    channel,
+    riskLevel: entry.riskLevel || existing.risk_level || "low",
+    defaultEligible: String(Boolean(entry.defaultEligible ?? existing.default_eligible)),
+    featured: String(Boolean(entry.featured ?? existing.featured)),
+    displayInCatalog: String(entry.displayInCatalog !== false),
+    notes: entry.changelog || existing.notes || `Metadata synchronized from bundled registry for ${entry.id}`,
+    artifactUrl: existing.artifact_url || existing.download_url,
+    sha256: existing.sha256,
+    sizeBytes: existing.size_bytes,
+    enabled: existing.enabled !== false,
   };
 }
 
@@ -338,6 +377,20 @@ function existingByKey(rows, idKey, channel) {
     byKey.set(`${row[idKey]}@${row.version}`, row);
   }
   return byKey;
+}
+
+function latestExistingById(rows, idKey, channel) {
+  const byId = new Map();
+  for (const row of rows || []) {
+    if ((row.channel || DEFAULT_CHANNEL) !== channel) continue;
+    const id = row[idKey];
+    if (!id) continue;
+    const current = byId.get(id);
+    if (!current || String(row.version || "").localeCompare(String(current.version || ""), undefined, { numeric: true }) > 0) {
+      byId.set(id, row);
+    }
+  }
+  return byId;
 }
 
 async function login(api) {
@@ -430,10 +483,17 @@ async function uploadMultipart(api, auth, route, fields, filePath) {
 
 async function publishSkills(options, auth) {
   const api = normalizeBaseUrl(options.api);
+  const existingRows = options.upload && !options.dryRun
+    ? (await fetchJson(api, auth, "/api/admin/skill-packages")).skillPackages
+    : [];
   const existing = options.upload && !options.dryRun
-    ? existingByKey((await fetchJson(api, auth, "/api/admin/skill-packages")).skillPackages, "skill_id", options.channel)
+    ? existingByKey(existingRows, "skill_id", options.channel)
+    : new Map();
+  const existingLatest = options.upload && !options.dryRun
+    ? latestExistingById(existingRows, "skill_id", options.channel)
     : new Map();
   const results = [];
+  const localSkillIds = new Set();
   for (const skillDir of localSkillDirs()) {
     const pack = buildJson(process.execPath, [
       "scripts/build-skill-pack.mjs",
@@ -442,6 +502,7 @@ async function publishSkills(options, auth) {
       "--out",
       DEFAULT_SKILL_OUT,
     ]);
+    localSkillIds.add(pack.skillId);
     const current = existing.get(`${pack.skillId}@${pack.version}`);
     if (!options.force && current?.sha256?.toLowerCase() === pack.sha256.toLowerCase()) {
       console.log(`[publish-local-catalog] skill unchanged: ${pack.skillId}@${pack.version}`);
@@ -463,6 +524,24 @@ async function publishSkills(options, auth) {
     );
     console.log(`[publish-local-catalog] skill uploaded: ${uploaded.skillId}@${pack.version}`);
     results.push({ kind: "skill", id: pack.skillId, version: pack.version, action: "uploaded" });
+  }
+  for (const entry of registryEntries()) {
+    if (!entry?.id || localSkillIds.has(entry.id)) continue;
+    const current = existing.get(`${entry.id}@${entry.latestVersion}`) || existingLatest.get(entry.id);
+    if (!current) {
+      console.log(`[publish-local-catalog] skill metadata skipped, no server artifact: ${entry.id}`);
+      results.push({ kind: "skill-metadata", id: entry.id, version: entry.latestVersion || "", action: "skipped-missing-artifact" });
+      continue;
+    }
+    const fields = registryMetadataUploadFields({ entry, existing: current, channel: options.channel });
+    if (!options.upload || options.dryRun) {
+      console.log(`[publish-local-catalog] skill metadata ready: ${entry.id}@${fields.version}`);
+      results.push({ kind: "skill-metadata", id: entry.id, version: fields.version, action: "metadata-built" });
+      continue;
+    }
+    await postJson(api, auth, "/api/admin/skill-packages", fields);
+    console.log(`[publish-local-catalog] skill metadata synced: ${entry.id}@${fields.version}`);
+    results.push({ kind: "skill-metadata", id: entry.id, version: fields.version, action: "metadata-synced" });
   }
   return results;
 }
@@ -541,6 +620,7 @@ export {
   appUploadFields,
   extendedDescription,
   localSkillDirs,
+  registryMetadataUploadFields,
   skillUploadFields,
   workspaceAppArtifactPath,
 };

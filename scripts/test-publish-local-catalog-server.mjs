@@ -7,6 +7,7 @@ import {
   appUploadFields,
   extendedDescription,
   localSkillDirs,
+  registryMetadataUploadFields,
   skillUploadFields,
   workspaceAppArtifactPath,
 } from "./publish-local-catalog-server.mjs";
@@ -49,6 +50,18 @@ assertEqual(
   "Automation",
   "skill publisher should send localized category labels to the server",
 );
+assertEqual(mailFields.displayInCatalog, "true", "regular skills should stay visible in the catalog");
+
+const engineeringFields = skillUploadFields({
+  pack: {
+    skillId: "lily-engineering-rules",
+    name: "Engineering Rules",
+    version: "1.0.0",
+  },
+  skillDir: path.join(ROOT, "resources", "skills-catalog", "lily-engineering-rules"),
+  channel: "stable",
+});
+assertEqual(engineeringFields.displayInCatalog, "false", "platform rule bundles should sync but stay hidden from the user-facing catalog");
 
 const webApp = WORKSPACE_APP_BUILDERS.find((item) => item.appId === "web-system-learning");
 assert(webApp, "workspace app builders should include web system learning");
@@ -82,4 +95,40 @@ assertEqual(
 const shortDescription = extendedDescription({}, { description: "short" });
 assert(shortDescription.length >= 80, "short manifest descriptions should be expanded for publish");
 
-finish("publish-local-catalog-server", 18);
+const metadataFields = registryMetadataUploadFields({
+  entry: {
+    id: "anthropics-xlsx",
+    name: "Excel 表格",
+    description: "创建、读取、编辑或修复 Excel/CSV/TSV 表格。",
+    latestVersion: "1.0.0",
+    category: "office",
+    categoryLabel: "办公文档",
+    capabilityLayer: "tool",
+    publisher: "Lily Workbench",
+    sourceKind: "lily",
+    sourceRepo: "anthropics/skills",
+    minAppVersion: "0.1.0",
+    riskLevel: "low",
+    defaultEligible: true,
+    featured: true,
+    name_i18n: { en: "Spreadsheets", ar: "جداول البيانات" },
+    description_i18n: { en: "Creates and edits spreadsheets.", ar: "ينشئ ويحرر جداول البيانات." },
+    categoryLabel_i18n: { en: "Office Documents", ar: "مستندات المكتب" },
+  },
+  existing: {
+    version: "1.0.0",
+    artifact_url: "https://cdn.example.com/anthropics-xlsx.skillpack.zip",
+    sha256: "a".repeat(64),
+    size_bytes: 1234,
+    enabled: true,
+  },
+  channel: "stable",
+});
+assertEqual(metadataFields.artifactUrl, "https://cdn.example.com/anthropics-xlsx.skillpack.zip", "metadata sync should preserve artifact URL");
+assertEqual(metadataFields.sha256, "a".repeat(64), "metadata sync should preserve artifact checksum");
+assertEqual(metadataFields.sizeBytes, 1234, "metadata sync should preserve artifact size");
+assertEqual(JSON.parse(metadataFields.nameI18n).en, "Spreadsheets", "metadata sync should include localized names");
+assertEqual(JSON.parse(metadataFields.categoryLabelI18n).en, "Office Documents", "metadata sync should include localized category label");
+assertEqual(metadataFields.displayInCatalog, "true", "metadata sync should keep registry entries catalog-visible by default");
+
+finish("publish-local-catalog-server", 26);

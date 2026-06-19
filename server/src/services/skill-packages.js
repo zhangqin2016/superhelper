@@ -197,6 +197,7 @@ export function skillPackageToRegistryEntry(row) {
     riskLevel: row.risk_level || "low",
     defaultEligible: Boolean(row.default_eligible),
     featured: Boolean(row.featured),
+    displayInCatalog: row.display_in_catalog !== false,
   };
 }
 

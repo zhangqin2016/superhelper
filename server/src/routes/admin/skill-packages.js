@@ -33,6 +33,7 @@ const createSkillPackageSchema = z.object({
   riskLevel: z.enum(["low", "medium", "high"]).default("low"),
   defaultEligible: z.boolean().default(false),
   featured: z.boolean().default(false),
+  displayInCatalog: z.boolean().default(true),
   enabled: z.boolean().default(true),
   notes: z.string().max(2000).optional().nullable(),
 });
@@ -96,6 +97,7 @@ function normalizeCreateInput(raw) {
     riskLevel: raw.riskLevel || "low",
     defaultEligible: formBool(raw.defaultEligible),
     featured: formBool(raw.featured),
+    displayInCatalog: formBool(raw.displayInCatalog ?? raw.display_in_catalog, true),
     enabled: formBool(raw.enabled, true),
     notes: raw.notes || null,
   });
@@ -127,6 +129,7 @@ async function upsertSkillPackage(input, preferredId = publicId("skillpkg")) {
       risk_level: input.riskLevel,
       default_eligible: input.defaultEligible,
       featured: input.featured,
+      display_in_catalog: input.displayInCatalog,
       enabled: input.enabled,
       notes: input.notes || null,
     })
@@ -150,6 +153,7 @@ async function upsertSkillPackage(input, preferredId = publicId("skillpkg")) {
         risk_level: input.riskLevel,
         default_eligible: input.defaultEligible,
         featured: input.featured,
+        display_in_catalog: input.displayInCatalog,
         enabled: input.enabled,
         notes: input.notes || null,
         updated_at: new Date(),

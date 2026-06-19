@@ -855,6 +855,43 @@
       }
     },
     {
+      "id": "lily-engineering-rules",
+      "name": "工程协作规则",
+      "description": "非简单开发、调试、架构调整、测试、代码评审、文档和发布任务的工程协作规则，强调先澄清、最小改动、根因定位、验证和交付边界。",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "engineering-rules",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.0",
+      "category": "coding",
+      "categoryLabel": "编程创作",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "智能工作台内置：复杂开发、调试、架构、测试、评审和发布任务的工程执行纪律。",
+      "capabilityLayer": "workflow",
+      "riskLevel": "low",
+      "defaultEligible": true,
+      "featured": true,
+      "displayInCatalog": false,
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Engineering Rules",
+        "ar": "قواعد الهندسة"
+      },
+      "description_i18n": {
+        "en": "Engineering collaboration rules for non-trivial development, debugging, architecture changes, tests, code review, documentation, and release work.",
+        "ar": "قواعد تعاون هندسي للمهام غير البسيطة في التطوير وتصحيح الأخطاء والتغييرات المعمارية والاختبارات ومراجعة الكود والتوثيق والإصدار."
+      },
+      "categoryLabel_i18n": {
+        "en": "Development",
+        "ar": "التطوير"
+      }
+    },
+    {
       "id": "anthropics-doc-coauthoring",
       "name": "文档协作撰写",
       "description": "引导用户完成结构化文档、提案、技术规格和决策文档的协作撰写流程，帮助传递上下文并迭代成稿。",

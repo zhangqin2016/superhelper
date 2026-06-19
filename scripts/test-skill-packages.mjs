@@ -103,6 +103,7 @@ const rows = [
     risk_level: "medium",
     default_eligible: true,
     featured: true,
+    display_in_catalog: false,
     enabled: true,
     created_at: "2026-01-02T00:00:00.000Z",
   },
@@ -149,6 +150,11 @@ assert.equal(registry.skills[0].capabilityLayer, "workflow");
 assert.equal(registry.skills[0].riskLevel, "medium");
 assert.equal(registry.skills[0].defaultEligible, true);
 assert.equal(registry.skills[0].featured, true);
+assert.equal(
+  registry.skills[0].displayInCatalog,
+  false,
+  "server-managed skill registry must preserve catalog visibility for platform-only bundles",
+);
 assert.equal(
   registry.categories.find((category) => category.id === "coding")?.label_i18n?.en,
   "Development",

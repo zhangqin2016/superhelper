@@ -387,14 +387,17 @@ fs.rmSync(tmp, { recursive: true, force: true });
 console.log("skill-catalog: ok", result.available.length, "available");
 
 const bundled = skillRegistry.loadBundledRegistry();
-if (!bundled || (bundled.skills || []).length !== 27) {
-  throw new Error(`bundled registry should contain 27 curated skills, got ${bundled?.skills?.length || 0}`);
+if (!bundled || (bundled.skills || []).length !== 28) {
+  throw new Error(`bundled registry should contain 28 curated skills, got ${bundled?.skills?.length || 0}`);
 }
 if (!bundled.skills.find((skill) => skill.id === "lily-stock-research")) {
   throw new Error("bundled registry should include lily-stock-research");
 }
 if (!bundled.skills.find((skill) => skill.id === "lily-mail-assistant")) {
   throw new Error("bundled registry should include lily-mail-assistant");
+}
+if (!bundled.skills.find((skill) => skill.id === "lily-engineering-rules")) {
+  throw new Error("bundled registry should include lily-engineering-rules");
 }
 
 const emptyService = {
@@ -407,8 +410,8 @@ const emptyMerged = skillRegistry.mergeRegistries(emptyService, bundled);
 if (!emptyMerged?.bundledFallback) {
   throw new Error("empty service registry should fall back to bundled catalog");
 }
-if ((emptyMerged.skills || []).length !== 27) {
-  throw new Error(`empty service merge expected 27 curated skills, got ${emptyMerged.skills?.length || 0}`);
+if ((emptyMerged.skills || []).length !== 28) {
+  throw new Error(`empty service merge expected 28 curated skills, got ${emptyMerged.skills?.length || 0}`);
 }
 
 const serviceWithOne = {

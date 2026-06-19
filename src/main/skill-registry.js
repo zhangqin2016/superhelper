@@ -79,6 +79,7 @@ function normalizeRegistryEntry(raw) {
     riskLevel: raw.riskLevel ? String(raw.riskLevel) : "low",
     defaultEligible: Boolean(raw.defaultEligible),
     featured: Boolean(raw.featured),
+    displayInCatalog: raw.displayInCatalog !== false,
     changelog_i18n: normalizeStringMap(raw.changelog_i18n),
   };
 
