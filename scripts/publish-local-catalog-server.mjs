@@ -357,20 +357,40 @@ async function fetchJson(api, auth, route) {
   return response.json();
 }
 
-async function postJson(api, auth, route, body) {
-  const response = await fetch(`${api}${route}`, {
-    method: "POST",
-    headers: {
-      ...authHeaders(auth),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
   });
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`POST ${route} failed: HTTP ${response.status}${detail ? ` ${detail}` : ""}`);
+}
+
+async function postJson(api, auth, route, body) {
+  const maxAttempts = 3;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(`${api}${route}`, {
+        method: "POST",
+        headers: {
+          ...authHeaders(auth),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        const error = new Error(`POST ${route} failed: HTTP ${response.status}${detail ? ` ${detail}` : ""}`);
+        error.status = response.status;
+        throw error;
+      }
+      return response.json();
+    } catch (error) {
+      lastError = error;
+      if (error?.status && error.status < 500) throw error;
+      if (attempt === maxAttempts) break;
+      await wait(1_000 * attempt);
+    }
   }
-  return response.json();
+  throw lastError;
 }
 
 async function uploadMultipart(api, auth, route, fields, filePath) {

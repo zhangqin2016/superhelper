@@ -14,7 +14,7 @@ import {
   workspaceAppObjectKey,
 } from "../../services/workspace-apps.js";
 
-const WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS = 30_000;
+const WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS = 120_000;
 
 const createWorkspaceAppSchema = z.object({
   appId: z.string().min(2).max(100),
