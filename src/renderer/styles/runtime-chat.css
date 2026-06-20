@@ -117,10 +117,10 @@
 .assistant-turn-narrative,
 .assistant-turn-narrative-text,
 .assistant-turn-final {
-  font-size: var(--text-base);
+  font-size: var(--chat-answer-size);
   font-weight: 400;
   color: var(--text-primary);
-  line-height: 1.6;
+  line-height: 1.65;
 }
 
 .assistant-turn-narrative.markdown-body,

@@ -130,6 +130,9 @@
   --chat-col: 860px;
   --chat-prose: 704px;
   --chat-media: 600px;
+  /* The assistant's answer is the focal content — render it larger than the dense
+     desktop chrome (13px) so it reads premium, like the answer body in Claude/ChatGPT. */
+  --chat-answer-size: 15px;
 
   --text-xs: 11px;
   --text-sm: 12px;
@@ -258,6 +261,7 @@
   --text-sm: 14px;
   --text-base: 16px;
   --text-md: 18px;
+  --chat-answer-size: 18px;
 }
 
 * { box-sizing: border-box; }

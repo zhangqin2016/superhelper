@@ -31,7 +31,7 @@ import { collectUnrenderedCommittedMessages } from "./message-render-keys.js";
 const sessionViews = new Map();
 const renderedMessageKeys = new Map();
 const liveRenderTimers = new Map();
-const LIVE_RENDER_THROTTLE_MS = 300;
+const LIVE_RENDER_THROTTLE_MS = 150;
 let runtimeHeartbeat = null;
 const lastRuntimeVisualSig = new Map();
 
@@ -611,19 +611,35 @@ export function syncComposerForActiveSession() {
   if (sid) renderMessageQueue(sid, getRuntimeSession(sid).queue);
 }
 
-export function initMessageUi() {
-  initScrollToBottom();
-  if (!runtimeHeartbeat) {
+/** Fallback re-render for the active session at most once/sec, in case a render
+ *  was missed. Only runs WHILE the active session has a live turn — started and
+ *  stopped on demand instead of ticking forever. */
+function manageHeartbeat() {
+  const sid = store.get("activeSessionId");
+  const live = sid && (() => {
+    const lt = getRuntimeSession(sid).liveTurn;
+    return lt && !lt.final;
+  })();
+  if (live && !runtimeHeartbeat) {
     runtimeHeartbeat = setInterval(() => {
-      const sid = store.get("activeSessionId");
-      if (!sid) return;
-      const runtime = getRuntimeSession(sid);
+      const s = store.get("activeSessionId");
+      if (!s) return;
+      const runtime = getRuntimeSession(s);
       if (runtime.liveTurn && !runtime.liveTurn.final) {
         const sig = runtimeVisualSig(runtime);
-        if (lastRuntimeVisualSig.get(sid) !== sig) renderRuntimeSession(sid);
+        if (lastRuntimeVisualSig.get(s) !== sig) renderRuntimeSession(s);
+      } else {
+        manageHeartbeat(); // turn ended → stop ticking
       }
     }, 1000);
+  } else if (!live && runtimeHeartbeat) {
+    clearInterval(runtimeHeartbeat);
+    runtimeHeartbeat = null;
   }
+}
+
+export function initMessageUi() {
+  initScrollToBottom();
 }
 
 export function wireMessageIpc() {
@@ -639,13 +655,15 @@ export function wireMessageIpc() {
     }
   });
   subscribeRuntime(() => {
-    for (const sessionId of sessionViews.keys()) renderRuntimeForSession(sessionId);
-    // Any runtime change must refresh the sidebar status dots — including a
-    // BACKGROUND session finishing while another is viewed. Otherwise the dot
-    // repaint is gated behind the viewed session re-rendering (which no-ops when
-    // its own signature is unchanged), so a completed/failed background session
-    // keeps showing "processing" instead of the done/failed dot. Cheap: it only
-    // toggles classes on the existing dots.
+    // Only re-render the ACTIVE session's live turn. Background (hidden) sessions
+    // would otherwise run morphdom off-screen on every event for no visible gain;
+    // they re-render from committed + live state when switched to (applySessionSwitch).
+    const activeId = store.get("activeSessionId");
+    if (activeId && sessionViews.has(activeId)) renderRuntimeForSession(activeId);
+    manageHeartbeat();
+    // Status dots must still refresh for ALL sessions — including a BACKGROUND
+    // session finishing while another is viewed — so the sidebar shows done/failed
+    // instead of a stuck "processing". Cheap: it only toggles classes on the dots.
     updateSessionRunningIndicators();
   });
 }
