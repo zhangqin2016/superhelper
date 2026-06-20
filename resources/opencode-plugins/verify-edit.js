@@ -74,6 +74,37 @@ function readHead(file, bytes = 16) {
 const matchesAny = (head, magics) => magics.some((m) => head.length >= m.length && head.subarray(0, m.length).equals(m));
 const isVideoHead = (head) => matchesAny(head, MEDIA_MAGIC.video) || (head.length >= 8 && head.subarray(4, 8).toString("binary") === "ftyp");
 
+const OOXML_EXTS = new Set([".docx", ".xlsx", ".pptx"]);
+const DEEP_SCAN_MAX = 20 * 1024 * 1024; // skip the deep read on huge files (fail open)
+
+// Deep, deterministic validity beyond magic bytes. A file can have the right
+// header yet be a broken deliverable (truncated OOXML zip, a PDF that never
+// finished writing). Fail open: only flag when we're confident it's bad.
+function checkDeepStructure(file, ext, size) {
+  try {
+    if (size > DEEP_SCAN_MAX) return "";
+    if (OOXML_EXTS.has(ext)) {
+      // Every valid OOXML package stores "[Content_Types].xml"; the entry name is
+      // kept uncompressed in the zip, so a literal byte scan is reliable.
+      const buf = fs.readFileSync(file);
+      if (!buf.includes("[Content_Types].xml")) {
+        return `File ${file} is not a valid ${ext} (missing [Content_Types].xml — the archive is truncated or not real OOXML). Regenerate it.`;
+      }
+    } else if (ext === ".pdf") {
+      const tail = Buffer.alloc(Math.min(size, 1024));
+      const fd = fs.openSync(file, "r");
+      fs.readSync(fd, tail, 0, tail.length, Math.max(0, size - tail.length));
+      fs.closeSync(fd);
+      if (!tail.includes("%%EOF")) {
+        return `File ${file} is a truncated PDF (no %%EOF trailer). Regenerate it.`;
+      }
+    }
+  } catch {
+    /* fail open */
+  }
+  return "";
+}
+
 function checkStructure(file) {
   const ext = (file.match(/\.[a-z0-9]+$/i) || [""])[0].toLowerCase();
   const magics = EXT_MAGIC[ext];
@@ -83,7 +114,10 @@ function checkStructure(file) {
   if (size === 0) return `Generated file is empty: ${file}`;
   const head = readHead(file);
   if (!head) return "";
-  return matchesAny(head, magics) ? "" : `File ${file} does not look like a valid ${ext} (wrong header). Regenerate it properly.`;
+  if (!matchesAny(head, magics)) {
+    return `File ${file} does not look like a valid ${ext} (wrong header). Regenerate it properly.`;
+  }
+  return checkDeepStructure(file, ext, size);
 }
 
 // --- generated_media declarations (in bash/tool output) ---------------------

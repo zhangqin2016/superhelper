@@ -32,6 +32,41 @@ const { getLogger } = require("./logger");
 
 const log = getLogger("opencode-agent-session");
 
+// Deliverable extensions worth gating on — things the user asked to be produced.
+const DELIVERABLE_EXT = "docx|xlsx|pptx|pdf|png|jpe?g|gif|webp|svg|mp3|wav|mp4|webm|html|csv|zip";
+// Absolute paths only (POSIX /… or Windows X:\…) ending in a deliverable ext, so
+// we never misread a relative mention or a bare filename in prose.
+const DELIVERABLE_PATH_RE = new RegExp(
+  String.raw`(?:^|[\s"'` + "`" + String.raw`(>])((?:/|[A-Za-z]:\\)[^\s"'` + "`" + String.raw`)<>|]+\.(?:${DELIVERABLE_EXT}))`,
+  "gi",
+);
+
+/**
+ * High-precision, fail-open check for a turn that claims a file deliverable which
+ * is actually missing or empty. Returns { path, reason } for the first violation,
+ * or null. Conservative by design: only absolute paths with a deliverable
+ * extension, and only flagged when the file is genuinely absent or zero-byte.
+ * @param {string} output assistant's final text for the turn
+ */
+function detectIncompleteDeliverable(output) {
+  const text = String(output || "");
+  if (!text) return null;
+  const seen = new Set();
+  for (const m of text.matchAll(DELIVERABLE_PATH_RE)) {
+    const p = m[1];
+    if (seen.has(p)) continue;
+    seen.add(p);
+    if (seen.size > 12) break; // bound the work
+    try {
+      if (!fs.existsSync(p)) return { path: p, reason: "does not exist" };
+      if (fs.statSync(p).size === 0) return { path: p, reason: "is empty" };
+    } catch {
+      /* fail open — unreadable path is not a confident violation */
+    }
+  }
+  return null;
+}
+
 class OpencodeAgentSession extends EventEmitter {
   /**
    * @param {string} sessionId App session id (not the OpenCode server session id).
@@ -52,6 +87,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._starting = null;
     this._sawActivity = false;
     this.collectedOutput = "";
+    /** Completion gate (Pillar 3-B) fires at most ONCE per turn — guards against loops. */
+    this._gatedThisTurn = false;
     /** @type {Set<string>} pending permission request ids awaiting a host reply. */
     this._pendingPermissions = new Set();
     /** @type {Map<string, Array>} pending question id -> its questions (for answer mapping). */
@@ -158,6 +195,7 @@ class OpencodeAgentSession extends EventEmitter {
     this.busy = true;
     this._turnSettled = false;
     this._sawActivity = false;
+    this._gatedThisTurn = false;
     this.collectedOutput = "";
     this._armResponseTimer();
 
@@ -355,6 +393,44 @@ class OpencodeAgentSession extends EventEmitter {
 
   _completeTurn(payload) {
     if (this._turnSettled) return;
+    // Pillar 3-B completion gate: on a clean turn end, if the assistant claimed a
+    // file deliverable that is actually missing/empty, inject ONE corrective
+    // follow-up so the turn doesn't settle on a broken/hallucinated result. Fires
+    // at most once per turn (_gatedThisTurn) so it can never loop, and only on a
+    // success exit — never on errors/interrupts.
+    if (
+      !payload?.interrupted &&
+      payload?.code === 0 &&
+      !this._gatedThisTurn &&
+      this._server &&
+      process.env.LILY_DISABLE_COMPLETION_GATE !== "1"
+    ) {
+      const violation = detectIncompleteDeliverable(payload.output);
+      if (violation) {
+        this._gatedThisTurn = true;
+        this._armResponseTimer();
+        const note =
+          `Completion check: you indicated the deliverable "${violation.path}" ` +
+          `but it ${violation.reason}. Actually produce a valid file at that path ` +
+          `(or correct your statement if no file was meant), then confirm. Do not claim done until it is real.`;
+        (async () => {
+          try {
+            await this._server.sendPrompt({ text: note, files: [] });
+          } catch (err) {
+            // If the corrective prompt can't land, settle on the original result
+            // rather than hang the turn.
+            log.warn("completion gate follow-up failed: %s", err?.message || String(err));
+            if (this.busy && !this._turnSettled) this._settleTurn(payload);
+          }
+        })();
+        return; // keep the turn open for the corrective round
+      }
+    }
+    this._settleTurn(payload);
+  }
+
+  _settleTurn(payload) {
+    if (this._turnSettled) return;
     this._clearResponseTimer();
     this._clearPendingPermissions();
     this._adapter.reset();
@@ -442,4 +518,4 @@ function toOpencodeAnswers(response, questions) {
   });
 }
 
-module.exports = { OpencodeAgentSession };
+module.exports = { OpencodeAgentSession, detectIncompleteDeliverable };

@@ -216,4 +216,61 @@ async function newSession() {
   assert(orch.calls.done.length === 1 && orch.calls.done[0].interrupted === true, "interrupt completes turn as interrupted");
 }
 
+// --- Pillar 3-B: completion gate ------------------------------------------
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-session.js");
+
+// detector: high precision, fail open
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gate-detect-"));
+  const real = path.join(tmp, "out.docx");
+  fs.writeFileSync(real, "PK realish content");
+  const empty = path.join(tmp, "empty.pdf");
+  fs.writeFileSync(empty, "");
+  const missing = path.join(tmp, "nope.pptx");
+  assert(detectIncompleteDeliverable(`Saved to ${missing}`)?.reason === "does not exist", "missing deliverable detected");
+  assert(detectIncompleteDeliverable(`wrote ${empty} ok`)?.reason === "is empty", "empty deliverable detected");
+  assert(detectIncompleteDeliverable(`see ${real}`) === null, "existing deliverable not flagged");
+  assert(detectIncompleteDeliverable("all done, no paths") === null, "no false positive without a path");
+  assert(detectIncompleteDeliverable("edited src/app.docx") === null, "relative path not flagged");
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// gate fires once on a missing deliverable, then settles on the next idle (no loop)
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "make a doc" });
+  await tick();
+  const missing = path.join(os.tmpdir(), "lily-gate-missing-zzz.docx");
+  try { fs.rmSync(missing, { force: true }); } catch { /* ignore */ }
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: `Done. Saved to ${missing}` } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await tick();
+  assert(orch.calls.done.length === 0, "gate keeps the turn open instead of settling on a missing deliverable");
+  assert(fake.prompts.length === 2 && /Completion check/.test(fake.prompts[1].text), "gate posts exactly one corrective follow-up");
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await tick();
+  assert(orch.calls.done.length === 1, "second idle settles the turn — gate is single-shot, never loops");
+  session.terminate();
+}
+
+// gate does NOT fire when the claimed deliverable actually exists
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gate-ok-"));
+  const real = path.join(tmp, "report.docx");
+  fs.writeFileSync(real, "PK realish content");
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "make a doc" });
+  await tick();
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: `Created ${real}` } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await tick();
+  assert(orch.calls.done.length === 1, "a valid deliverable settles immediately (no gate)");
+  assert(fake.prompts.length === 1, "no corrective prompt when the deliverable is valid");
+  session.terminate();
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
 console.log("opencode-agent-session: ok");
