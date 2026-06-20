@@ -211,6 +211,10 @@ if (!clearQueueEvent || clearQueueEvent.payload?.items?.length !== 0) {
 if (messages.some((message) => message.content === "stale queued")) {
   throw new Error("stopped queued message must not be committed to transcript");
 }
+// An interrupt before any output must not leave an empty assistant bubble in history.
+if (messages.some((message) => message.role === "assistant" && message.turnId === interruptSource.turnId)) {
+  throw new Error("interrupt with no output must not commit an empty assistant message");
+}
 
 sent.length = 0;
 const engineInterruptedTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "engine interrupted", [], {

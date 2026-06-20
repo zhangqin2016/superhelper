@@ -214,6 +214,9 @@ async function newSession() {
   session.interrupt();
   assert(fake.aborted === true, "interrupt calls server.abort");
   assert(orch.calls.done.length === 1 && orch.calls.done[0].interrupted === true, "interrupt completes turn as interrupted");
+  // Must flag user-initiated so the orchestrator classifies it as turn.interrupted,
+  // not an engine abort (turn.failed). Without this a user stop was misclassified.
+  assert(orch.calls.done[0].interruptedByUser === true, "user interrupt is flagged interruptedByUser");
 }
 
 // --- Pillar 3-B: completion gate ------------------------------------------

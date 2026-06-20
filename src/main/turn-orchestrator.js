@@ -940,7 +940,18 @@ class TurnOrchestrator {
     }
     closeStreamingBlocks(state, Date.now());
     const assistant = String(payload.assistant || state.assistantText || "").trim();
-    const record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
+    let record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
+    // Don't archive a turn that produced literally nothing — e.g. an interrupt
+    // before any output. Otherwise an empty assistant bubble lands in history.
+    // Any real content (text, a tool call, a file change, a result block) makes
+    // it worth keeping; failed turns carry a friendly error string as `assistant`.
+    const meaningful = Boolean(
+      assistant ||
+      state.tools?.size ||
+      record?.fileChanges?.length ||
+      record?.resultBlocks?.length,
+    );
+    if (!meaningful) record = null;
     if (record) {
       if (assistant) {
         this._emit(sessionId, "assistant.final", {

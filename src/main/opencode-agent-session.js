@@ -275,7 +275,16 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearPendingPermissions();
     if (this._server) void this._server.abort().catch(() => {});
     if (this.busy && !this._turnSettled) {
-      this._completeTurn({ code: null, output: this.collectedOutput.trim(), interrupted: true });
+      // interrupt() is only ever called for a user-initiated stop, so mark it as
+      // such: the orchestrator distinguishes a user interrupt (turn.interrupted)
+      // from an engine-side abort (turn.failed) by interruptedByUser. Without this
+      // flag a user stop was misclassified as completed/failed.
+      this._completeTurn({
+        code: null,
+        output: this.collectedOutput.trim(),
+        interrupted: true,
+        interruptedByUser: true,
+      });
     }
   }
 
