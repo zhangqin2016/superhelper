@@ -4,6 +4,7 @@
 
 import store from "./state.js";
 import { $, scrollToBottom, scrollToBottomAfterLayout, bindPanelScroll, initScrollToBottom, isNearBottom } from "./dom.js";
+import { shouldLoadOlderOnScroll } from "./scroll-geometry.js";
 import { t } from "../i18n/index.js";
 import {
   applyRuntimeBatch,
@@ -124,7 +125,7 @@ function ensurePanel(sessionId) {
     "scroll",
     () => {
       if (!panel.classList.contains("is-active")) return;
-      if (panel.scrollTop > 80) return;
+      if (!shouldLoadOlderOnScroll(panel)) return;
       void import("./session-chrome.js").then((m) =>
         m.loadOlderConversationForSession?.(sessionId, panel),
       );
