@@ -131,23 +131,11 @@ Ask if this structure works, or if they want to adjust it.
 
 Create the initial document structure with placeholder text for all sections.
 
-**If access to artifacts is available:**
-Create the document file (with the write tool). This gives both you and the user a scaffold to work from.
+Create a markdown file in the working directory with the write tool. Name it
+appropriately (e.g., `decision-doc.md`, `technical-spec.md`), with all section
+headers and brief placeholder text like "[To be written]" or "[Content here]".
 
-Inform them that the initial structure with placeholders for all sections will be created.
-
-Create artifact with all section headers and brief placeholder text like "[To be written]" or "[Content here]".
-
-Provide the scaffold link and indicate it's time to fill in each section.
-
-**If no access to artifacts:**
-Create a markdown file in the working directory. Name it appropriately (e.g., `decision-doc.md`, `technical-spec.md`).
-
-Inform them that the initial structure with placeholders for all sections will be created.
-
-Create file with all section headers and placeholder text.
-
-Confirm the filename has been created and indicate it's time to fill in each section.
+Confirm the filename and its path, and indicate it's time to fill in each section.
 
 **For each section:**
 
@@ -189,15 +177,9 @@ Edit the file in place to replace the placeholder text for this section with the
 
 Announce the [SECTION NAME] section will be drafted now based on what they've selected.
 
-**If using artifacts:**
-After drafting, provide a link to the artifact.
-
-Ask them to read through it and indicate what to change. Note that being specific helps learning for the next sections.
-
-**If using a file (no artifacts):**
-After drafting, confirm completion.
-
-Inform them the [SECTION NAME] section has been drafted in [filename]. Ask them to read through it and indicate what to change. Note that being specific helps learning for the next sections.
+After drafting, confirm completion and tell them the [SECTION NAME] section has
+been written to [filename]. Ask them to read through it and indicate what to
+change. Note that being specific helps learning for the next sections.
 
 **Key instruction for user (include when drafting the first section):**
 Provide a note: Instead of editing the doc directly, ask them to indicate what to change. This helps learning of their style for future sections. For example: "Remove the X bullet - already covered by Y" or "Make the third paragraph more concise".
@@ -206,9 +188,8 @@ Provide a note: Instead of editing the doc directly, ask them to indicate what t
 
 As user provides feedback:
 - Edit the file in place to make changes (never reprint the whole doc)
-- **If using artifacts:** Provide link to artifact after each edit
-- **If using files:** Just confirm edits are complete
-- If user edits doc directly and asks to read it: mentally note the changes they made and keep them in mind for future sections (this shows their preferences)
+- After each edit, just confirm it's complete
+- If user edits the doc directly and asks you to read it: mentally note the changes they made and keep them in mind for future sections (this shows their preferences)
 
 **Continue iterating** until user is satisfied with the section.
 
@@ -363,11 +344,11 @@ Announce document completion. Provide a few final tips:
 - Throughout, if context is missing on something mentioned, proactively ask
 - Don't let gaps accumulate - address them as they come up
 
-**Artifact Management:**
+**File Management:**
 - Write the file when drafting full sections
 - Edit the file in place for all changes
-- Provide artifact link after every change
-- Never use artifacts for brainstorming lists - that's just conversation
+- Confirm the file path after every change
+- Keep brainstorming lists in the conversation — never write them to the file
 
 **Quality over Speed:**
 - Don't rush through stages
