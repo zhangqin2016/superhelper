@@ -132,7 +132,7 @@ Ask if this structure works, or if they want to adjust it.
 Create the initial document structure with placeholder text for all sections.
 
 **If access to artifacts is available:**
-Use `create_file` to create an artifact. This gives both you and the user a scaffold to work from.
+Create the document file (with the write tool). This gives both you and the user a scaffold to work from.
 
 Inform them that the initial structure with placeholders for all sections will be created.
 
@@ -185,7 +185,7 @@ Based on what they've selected, ask if there's anything important missing for th
 
 ### Step 5: Drafting
 
-Use `str_replace` to replace the placeholder text for this section with the actual drafted content.
+Edit the file in place to replace the placeholder text for this section with the actual drafted content.
 
 Announce the [SECTION NAME] section will be drafted now based on what they've selected.
 
@@ -205,7 +205,7 @@ Provide a note: Instead of editing the doc directly, ask them to indicate what t
 ### Step 6: Iterative Refinement
 
 As user provides feedback:
-- Use `str_replace` to make edits (never reprint the whole doc)
+- Edit the file in place to make changes (never reprint the whole doc)
 - **If using artifacts:** Provide link to artifact after each edit
 - **If using files:** Just confirm edits are complete
 - If user edits doc directly and asks to read it: mentally note the changes they made and keep them in mind for future sections (this shows their preferences)
@@ -364,8 +364,8 @@ Announce document completion. Provide a few final tips:
 - Don't let gaps accumulate - address them as they come up
 
 **Artifact Management:**
-- Use `create_file` for drafting full sections
-- Use `str_replace` for all edits
+- Write the file when drafting full sections
+- Edit the file in place for all changes
 - Provide artifact link after every change
 - Never use artifacts for brainstorming lists - that's just conversation
 
