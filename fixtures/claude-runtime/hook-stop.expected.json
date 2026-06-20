@@ -1,6 +1,0 @@
-{
-  "description": "Stop hook normalizes to hook_stop.",
-  "mustIncludeKinds": ["hook_stop"],
-  "mustNotIncludeKinds": ["protocol_warning", "hook_callback"],
-  "warningCount": 0
-}

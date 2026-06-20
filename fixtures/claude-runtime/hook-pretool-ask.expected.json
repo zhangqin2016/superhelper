@@ -1,6 +1,0 @@
-{
-  "description": "PreToolUse with ask decision normalizes to hook_pretool_use_ask.",
-  "mustIncludeKinds": ["hook_pretool_use_ask"],
-  "mustNotIncludeKinds": ["protocol_warning", "hook_callback", "unknown_control_request"],
-  "warningCount": 0
-}

@@ -1,1 +1,0 @@
-{"type":"control_request","request_id":"req_hook_pt_2","request":{"subtype":"hook_callback","hook_event":{"hook":"PreToolUse","tool_name":"Edit","tool_input":{"file":"test.txt"},"permissionDecision":"allow"}}}

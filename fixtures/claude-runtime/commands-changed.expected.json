@@ -1,6 +1,0 @@
-{
-  "description": "CLI command registry refresh is a silent system event.",
-  "mustIncludeKinds": ["system_notice"],
-  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
-  "maxWarnings": 0
-}

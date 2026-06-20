@@ -19,5 +19,4 @@ the code and `memory/` first. For the live project map, see the root
 | `qiniu-update-license.md` | Notes on Qiniu-hosted updates + licensing. |
 | `skill-center-prd.md` | PRD for the skill center. |
 | `skill-pack-spec-v1.md` | Spec for the skill-pack format. |
-| `claude-runtime-fixtures.md` | Notes on Claude runtime test fixtures. |
 | `superpowers/` | Vendored "superpowers" skill plans/material. |

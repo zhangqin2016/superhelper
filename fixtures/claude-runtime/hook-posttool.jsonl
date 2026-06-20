@@ -1,1 +1,0 @@
-{"type":"control_request","request_id":"req_hook_post_1","request":{"subtype":"hook_callback","hook_event":{"hook":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"ok","exitCode":0}}}}

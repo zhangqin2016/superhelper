@@ -1,7 +1,0 @@
-{
-  "description": "Result error subtype is still a turn_result action and must be handled as failed by AgentSession.",
-  "mustIncludeKinds": ["assistant_text", "turn_result"],
-  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
-  "warningCount": 0,
-  "resultSubtype": "error_max_budget_usd"
-}

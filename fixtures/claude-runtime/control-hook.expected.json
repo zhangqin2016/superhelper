@@ -1,6 +1,0 @@
-{
-  "description": "PostToolUse hook normalizes to hook_posttool_use.",
-  "mustIncludeKinds": ["hook_posttool_use"],
-  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "hook_callback"],
-  "warningCount": 0
-}

@@ -1,22 +1,15 @@
 "use strict";
 
-const { AgentSession } = require("./agent-session");
 const { OpencodeAgentSession } = require("./opencode-agent-session");
-const { resolveAgentCommand, resolveOpencodeCommand } = require("./agent-command");
+const { resolveOpencodeCommand } = require("./agent-command");
 const { getActivePermissionMode } = require("./permission-settings");
 const { getLogger } = require("./logger");
 
 const log = getLogger("runner-pool");
 
-/** Which engine to run: persisted user choice (engine-settings), overridable by
- *  the LILY_ENGINE env var. Defaults to the Claude CLI. */
-function selectedEngine() {
-  return require("./engine-settings").getEngine();
-}
-
 class SessionRunnerPool {
   constructor() {
-    /** @type {Map<string, AgentSession>} */
+    /** @type {Map<string, OpencodeAgentSession>} */
     this._sessions = new Map();
   }
 
@@ -29,52 +22,20 @@ class SessionRunnerPool {
   }
 
   /**
+   * Get-or-create the runner for a session. The app runs the OpenCode engine:
+   * this translates Lily's distributed model config into an OpenCode provider
+   * override and runs OpencodeAgentSession.
    * @param {string} sessionId
    * @param {string} cwd
    * @param {{ stagingDir?: string, disallowedTools?: string[], resumeSessionId?: string | null, configDir?: string, permissionMode?: string }} [extra]
    */
   ensure(sessionId, cwd, extra = {}, callOpts = {}) {
-    if (selectedEngine() === "opencode") {
-      return this._ensureOpencode(sessionId, cwd, extra, callOpts);
-    }
-
-    const agentCommand = resolveAgentCommand();
-    if (!agentCommand) {
-      throw new Error("AGENT_NOT_READY");
-    }
-
-    let runner = this._sessions.get(sessionId);
-    if (!runner) {
-      runner = new AgentSession(sessionId);
-      this._sessions.set(sessionId, runner);
-    }
-
-    runner.ensureProcess(cwd, {
-      agentCommand,
-      permissionMode: extra.permissionMode || getActivePermissionMode(),
-      disallowedTools: extra.disallowedTools || [],
-      stagingDir: extra.stagingDir,
-      resumeSessionId: extra.resumeSessionId || null,
-      configDir: extra.configDir,
-    }, { lazy: Boolean(callOpts.lazy) });
-
-    return runner;
-  }
-
-  /** OpenCode-engine variant of ensure(); translates Lily's distributed model
-   *  config into an OpenCode provider override and runs OpencodeAgentSession. */
-  _ensureOpencode(sessionId, cwd, extra = {}, callOpts = {}) {
     const agentCommand = resolveOpencodeCommand();
     if (!agentCommand) {
       throw new Error("OPENCODE_NOT_READY");
     }
 
     let runner = this._sessions.get(sessionId);
-    if (runner && !(runner instanceof OpencodeAgentSession)) {
-      runner.terminate();
-      this._sessions.delete(sessionId);
-      runner = null;
-    }
     if (!runner) {
       runner = new OpencodeAgentSession(sessionId);
       this._sessions.set(sessionId, runner);

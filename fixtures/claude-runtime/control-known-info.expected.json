@@ -1,9 +1,0 @@
-{
-  "description": "Known non-blocking control requests are protocol events and should be auto-ackable, not unknown warnings.",
-  "mustIncludeKinds": ["control_request"],
-  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
-  "warningCount": 0,
-  "counts": {
-    "control_request": 6
-  }
-}

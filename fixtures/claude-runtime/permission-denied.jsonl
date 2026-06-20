@@ -1,4 +1,0 @@
-{"type":"system","subtype":"init","session_id":"sess_permission_denied","cwd":"/workspace","model":"sonnet"}
-{"type":"system","subtype":"permission_denied","session_id":"sess_permission_denied"}
-{"type":"assistant","session_id":"sess_permission_denied","message":{"id":"msg_permission_denied","type":"message","role":"assistant","content":[{"type":"text","text":"权限被拒绝，我已跳过该步骤。"}]}}
-{"type":"result","subtype":"success","session_id":"sess_permission_denied","is_error":false,"result":"权限被拒绝，我已跳过该步骤。"}

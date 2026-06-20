@@ -226,7 +226,7 @@ async function renderEngineSelect() {
     modelSelect.parentElement.insertBefore(wrap, modelSelect);
   }
 
-  const names = { claude: "Claude", opencode: "OpenCode" };
+  const names = { opencode: "OpenCode" };
   select.replaceChildren();
   for (const id of data.supported || []) {
     const option = document.createElement("option");

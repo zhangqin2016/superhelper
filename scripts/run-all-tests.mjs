@@ -23,7 +23,6 @@ const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 
 // Benchmarks double as perf regressions but don't match the test-* convention.
 const BENCH_COMMANDS = [
-  "node scripts/bench-replay.mjs",
   "npx electron scripts/bench-replay-renderer.cjs",
 ];
 

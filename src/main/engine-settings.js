@@ -1,15 +1,15 @@
 "use strict";
 
-// Which assistant engine the app runs: the Claude CLI (default) or OpenCode.
-// Persisted as a tiny standalone preference; read by SessionRunnerPool to pick
-// the runner. The LILY_ENGINE env var, when set, overrides the stored choice
-// (dev/CI escape hatch).
+// Which assistant engine the app runs. OpenCode is the only engine; this stays
+// a tiny standalone preference (read by SessionRunnerPool, surfaced in settings)
+// so additional engines can be slotted in later. The LILY_ENGINE env var, when
+// set, overrides the stored choice (dev/CI escape hatch).
 
 const fs = require("node:fs");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 
-const SUPPORTED_ENGINES = ["claude", "opencode"];
+const SUPPORTED_ENGINES = ["opencode"];
 const DEFAULT_ENGINE = "opencode";
 
 /** @type {string | null} */

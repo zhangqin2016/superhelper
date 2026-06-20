@@ -1,7 +1,11 @@
 "use strict";
 
-const { normalizeClaudeEvent } = require("./claude-event-normalizer");
-const { backgroundActivityFromEvent } = require("../runtime-activity");
+/**
+ * Engine-neutral translator: maps the normalized *action* vocabulary (produced
+ * by an engine's event normalizer) into runtime-event drafts consumed by the
+ * orchestration layer. Actions are already engine-agnostic, so this layer has no
+ * Claude/OpenCode protocol knowledge — each adapter stamps its own `source`.
+ */
 
 const WARNING_ACTION_KINDS = new Set([
   "protocol_warning",
@@ -16,13 +20,9 @@ function isWarningAction(action) {
 function runtimeDraft(type, payload = {}) {
   return {
     type,
-    source: payload.source || "claude-cli",
+    source: payload.source || "runtime",
     payload,
   };
-}
-
-function normalizeEchoText(text = "") {
-  return String(text || "").trim().replace(/\s+/g, " ");
 }
 
 function runtimeEventFromAction(action) {
@@ -190,123 +190,9 @@ function runtimeEventFromAction(action) {
   }
 }
 
-class CliEventAdapter {
-  constructor(options = {}) {
-    this.name = "claude-cli";
-    this.cliVersion = options.cliVersion || null;
-    this.versionText = options.versionText || "";
-    this._activeStreamMessageId = "";
-    this._streamedTextMessageIds = new Set();
-    this._activeStreamText = "";
-    this._recentStreamTexts = [];
-    /**
-     * Engine capability declaration. The orchestration layer must degrade per
-     * capability instead of assuming every engine behaves like Claude CLI
-     * (e.g. an engine without streamInput is restarted per turn; one without
-     * emitsThinking simply renders no thinking blocks — never fake them).
-     */
-    this.capabilities = Object.freeze({
-      /** Long-lived process accepts stream-json user messages on stdin. */
-      streamInput: true,
-      /** Emits thinking deltas that map to assistant.thinking.delta. */
-      emitsThinking: true,
-      /** Supports update_environment_variables control hot-swap. */
-      hotEnvUpdate: true,
-      /** Asks the host for tool permission decisions (canUseTool). */
-      permissionControl: true,
-      /** Supports --resume style conversation continuation. */
-      resume: true,
-      /** CLI can disable all customizations for troubleshooting. */
-      safeMode: Boolean(options.capabilities?.safeMode),
-      /** CLI documents/supports Fable model alias family. */
-      fableModelAlias: Boolean(options.capabilities?.fableModelAlias),
-      /** CLI may emit top-level rate_limit_event telemetry. */
-      rateLimitEvent: Boolean(options.capabilities?.rateLimitEvent),
-    });
-  }
-
-  _noteStreamEvent(ev) {
-    const inner = ev?.event;
-    if (!inner || typeof inner !== "object") return;
-    if (inner.type === "message_start") {
-      this._activeStreamMessageId = String(inner.message?.id || "");
-      return;
-    }
-    if (inner.type === "content_block_start" && inner.content_block?.type === "text") {
-      this._activeStreamText = String(inner.content_block?.text || "");
-      return;
-    }
-    if (inner.type === "content_block_delta" && inner.delta?.type === "text_delta" && this._activeStreamMessageId) {
-      this._streamedTextMessageIds.add(this._activeStreamMessageId);
-      this._activeStreamText += String(inner.delta?.text || "");
-      return;
-    }
-    if (inner.type === "content_block_delta" && inner.delta?.type === "text_delta") {
-      this._activeStreamText += String(inner.delta?.text || "");
-      return;
-    }
-    if (inner.type === "content_block_stop" && this._activeStreamText) {
-      this._rememberStreamText(this._activeStreamText);
-      this._activeStreamText = "";
-      return;
-    }
-    if (inner.type === "message_stop") {
-      if (this._activeStreamText) {
-        this._rememberStreamText(this._activeStreamText);
-        this._activeStreamText = "";
-      }
-      this._activeStreamMessageId = "";
-    }
-  }
-
-  _rememberStreamText(text) {
-    const normalized = normalizeEchoText(text);
-    if (!normalized) return;
-    this._recentStreamTexts.push(normalized);
-    if (this._recentStreamTexts.length > 8) {
-      this._recentStreamTexts.splice(0, this._recentStreamTexts.length - 8);
-    }
-  }
-
-  _isTranscriptTextEcho(text) {
-    const normalized = normalizeEchoText(text);
-    if (!normalized) return false;
-    if (normalizeEchoText(this._activeStreamText) === normalized) return true;
-    return this._recentStreamTexts.includes(normalized);
-  }
-
-  _filterTranscriptEchoes(ev, actions) {
-    if (ev?.type !== "assistant" || !Array.isArray(actions) || actions.length === 0) return actions;
-    const messageId = String(ev.message?.id || ev.id || "");
-    const hasStreamedMessageText = Boolean(messageId && this._streamedTextMessageIds.has(messageId));
-    return actions.filter((action) => {
-      if (action?.kind !== "assistant_text") return true;
-      return !(hasStreamedMessageText || this._isTranscriptTextEcho(action.text || ""));
-    });
-  }
-
-  normalizeEvent(ev) {
-    this._noteStreamEvent(ev);
-    const actions = this._filterTranscriptEchoes(ev, normalizeClaudeEvent(ev));
-    const runtimeEvents = actions
-      .map((action) => runtimeEventFromAction(action))
-      .filter(Boolean);
-    const warnings = actions.filter(isWarningAction);
-    const backgroundActivity = backgroundActivityFromEvent(ev);
-    return {
-      adapter: this.name,
-      rawType: ev?.type || "",
-      rawSubtype: ev?.subtype || "",
-      actions,
-      runtimeEvents,
-      warnings,
-      backgroundActivity,
-    };
-  }
-}
-
 module.exports = {
-  CliEventAdapter,
-  runtimeEventFromAction,
+  WARNING_ACTION_KINDS,
   isWarningAction,
+  runtimeDraft,
+  runtimeEventFromAction,
 };

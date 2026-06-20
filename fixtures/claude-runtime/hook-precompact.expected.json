@@ -1,6 +1,0 @@
-{
-  "description": "PreCompact hook normalizes to hook_precompact.",
-  "mustIncludeKinds": ["hook_precompact"],
-  "mustNotIncludeKinds": ["protocol_warning", "hook_callback"],
-  "warningCount": 0
-}

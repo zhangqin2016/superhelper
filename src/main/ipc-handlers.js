@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const { ipcMain } = require("electron");
-const { resolveAgentCommand } = require("./agent-command");
+const { resolveOpencodeCommand } = require("./agent-command");
 const { listPresetsPublic } = require("./model-presets");
 const { resolveRuntimeIconDataUrl } = require("./app-icon");
 const { listLocalesPublic, setLocale } = require("./locale-settings");
@@ -44,7 +44,7 @@ function registerAll(ctx) {
 
   ipcMain.handle("state:full", () => {
     const projectState = projectManager.getAppState();
-    const cliPath = resolveAgentCommand();
+    const cliPath = resolveOpencodeCommand();
     const agent = ctx.agentBootstrap || { ok: false };
     const cliReady = Boolean(cliPath && fs.existsSync(cliPath));
     return buildFullStateSnapshot({

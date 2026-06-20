@@ -1,6 +1,0 @@
-{
-  "description": "Documented Claude hook family normalizes to known hook actions instead of generic unknown warnings.",
-  "mustIncludeKinds": ["hook_posttool_batch", "hook_stop_failure", "hook_subagent_start", "hook_session_end", "hook_postcompact", "hook_permission_denied", "hook_task_created", "hook_task_completed", "hook_elicitation", "hook_config_change", "hook_worktree_create", "hook_worktree_remove", "hook_instructions_loaded", "hook_cwd_changed", "hook_file_changed", "hook_message_display"],
-  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event", "unknown_control_request"],
-  "warningCount": 0
-}

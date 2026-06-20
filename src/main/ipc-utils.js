@@ -1,7 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
-const { resolveAgentCommand } = require("./agent-command");
+const { resolveOpencodeCommand } = require("./agent-command");
 const { sanitizeError } = require("./agent-runner");
 const { fileStagingDir } = require("./config");
 const {
@@ -43,7 +43,7 @@ function resolveProjectForSession(projectManager, session) {
 }
 
 function diagnoseSendBlocker(ctx, sessionId) {
-  const cliPath = resolveAgentCommand();
+  const cliPath = resolveOpencodeCommand();
   if (!cliPath) {
     return {
       error: "NO_CLI",
@@ -140,7 +140,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     };
   }
 
-  const cliPath = resolveAgentCommand();
+  const cliPath = resolveOpencodeCommand();
   if (!cliPath) {
     return {
       runner: null,

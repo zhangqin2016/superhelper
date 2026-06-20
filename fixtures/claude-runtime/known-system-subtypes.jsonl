@@ -1,7 +1,0 @@
-{"type":"system","subtype":"init","session_id":"sess_known_system","cwd":"/workspace","model":"sonnet"}
-{"type":"system","subtype":"model_fallback","session_id":"sess_known_system","content":"Switched model","model":"sonnet"}
-{"type":"system","subtype":"read_file","session_id":"sess_known_system","path":"/workspace/notes.md","content":"Reading notes.md"}
-{"type":"system","subtype":"side_question","session_id":"sess_known_system","question":"quick check"}
-{"type":"system","subtype":"error_during_execution","session_id":"sess_known_system","content":"temporary error"}
-{"type":"system","subtype":"set_model","session_id":"sess_known_system","model":"sonnet"}
-{"type":"result","subtype":"success","session_id":"sess_known_system","is_error":false,"result":"done"}

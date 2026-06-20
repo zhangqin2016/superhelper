@@ -1,19 +1,19 @@
 "use strict";
 
 /**
- * OpenCode engine adapter. Sibling of CliEventAdapter (claude-cli-adapter.js):
- * same `normalizeEvent(ev) -> envelope` contract, same action vocabulary, so
- * the orchestration layer (agent-session.js) is engine-neutral. The transport
- * differs — OpenCode is driven over HTTP + SSE rather than stdin/stdout
- * stream-json — but that lives in the server manager, not here. This class only
- * turns one SSE event into normalized actions + runtime-event drafts.
+ * OpenCode engine adapter: turns one OpenCode SSE event into normalized actions
+ * + runtime-event drafts. The `normalizeEvent(ev) -> envelope` contract and the
+ * action vocabulary are engine-neutral (shared via runtime-event-translator), so
+ * the orchestration layer stays engine-agnostic. OpenCode is driven over HTTP +
+ * SSE rather than stdin/stdout stream-json, but that transport lives in the
+ * server manager, not here.
  */
 
 const { normalizeOpencodeEvent } = require("./opencode-event-normalizer");
 const {
   runtimeEventFromAction,
   isWarningAction,
-} = require("./claude-cli-adapter");
+} = require("./runtime-event-translator");
 
 class OpencodeEventAdapter {
   constructor(options = {}) {
@@ -24,9 +24,8 @@ class OpencodeEventAdapter {
      *  are classified by their owning part, not the (sometimes wrong) delta field. */
     this._state = { tools: new Map(), parts: new Map() };
     /**
-     * Capability declaration consumed by the orchestration layer. These differ
-     * from Claude CLI and the host MUST honour them instead of assuming Claude
-     * semantics (see CliEventAdapter.capabilities for the rationale).
+     * Capability declaration consumed by the orchestration layer. The host MUST
+     * honour these instead of assuming a stdin/stream-json CLI's semantics.
      */
     this.capabilities = Object.freeze({
       /**
@@ -68,7 +67,7 @@ class OpencodeEventAdapter {
     const runtimeEvents = actions
       .map((action) => {
         const draft = runtimeEventFromAction(action);
-        if (draft && draft.source === "claude-cli") draft.source = this.name;
+        if (draft) draft.source = this.name;
         return draft;
       })
       .filter(Boolean);

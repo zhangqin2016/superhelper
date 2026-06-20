@@ -1,7 +1,0 @@
-{
-  "description": "Claude CLI 2.1.177 emits rate_limit_event before model output; Lily must surface it as a non-blocking engine notice, not a protocol warning.",
-  "mustIncludeKinds": ["engine_notice"],
-  "mustNotIncludeKinds": ["protocol_warning", "unknown_runtime_event"],
-  "noticeCodes": ["rateLimit"],
-  "warningCount": 0
-}

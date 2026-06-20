@@ -1,5 +1,0 @@
-{
-  "description": "Unknown runtime and system protocol shapes become visible warnings.",
-  "mustIncludeKinds": ["unknown_runtime_event", "protocol_warning"],
-  "warningCount": 2
-}
