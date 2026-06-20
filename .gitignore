@@ -21,8 +21,14 @@ bundles/*/claude
 bundles/*/claude.exe
 bundles/*/engine-upstream
 bundles/*/engine-upstream.exe
+bundles/*/opencode/
 bundles/*/runtime/
 bundles/*.iml
+
+# Vendored OpenCode source — local reference only (4.5GB w/ deps). The shippable
+# engine is the prebuilt binary fetched by scripts/fetch-opencode-engine.mjs.
+/opencode/
+/opencode-analysis.md
 .idea
 # 本地密钥，勿提交（见 settings.example.json）
 resources/agent-defaults/settings.json
