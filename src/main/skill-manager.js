@@ -354,6 +354,84 @@ const AGENT_GUIDE_I18N = {
   },
 };
 
+/** Locale → base ("zh-CN" → "zh") for i18n field fallbacks. */
+function baseLocale(loc) {
+  return String(loc || "").split("-")[0];
+}
+
+/** Read the YAML frontmatter (name/description/…) from a skill's SKILL.md.
+ *  Lightweight single-line parser — every skill in this repo uses flat keys. */
+function readSkillFrontmatter(skillDir) {
+  try {
+    const raw = fs.readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
+    const m = /^---\s*\n([\s\S]*?)\n---/.exec(raw);
+    if (!m) return null;
+    const out = {};
+    for (const line of m[1].split("\n")) {
+      const kv = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
+      if (!kv) continue;
+      let v = kv[2].trim();
+      if (v.length >= 2 && ((v[0] === '"' && v.endsWith('"')) || (v[0] === "'" && v.endsWith("'")))) {
+        v = v.slice(1, -1);
+      }
+      out[kv[1]] = v;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve a skill's index entry (display name + when-to-use + on-demand guide
+ *  path), preferring localized manifest fields, then SKILL.md frontmatter. */
+function skillIndexEntry(skill, loc) {
+  const fm = readSkillFrontmatter(skill.skillDir) || {};
+  const m = skill.manifest || {};
+  const pick = (i18n, fallback) =>
+    (i18n && (i18n[loc] || i18n[baseLocale(loc)])) || fallback || "";
+  const name = pick(m.name_i18n, m.name) || fm.name || skill.id;
+  const desc = pick(m.description_i18n, fm.description || m.description);
+  const guidePath = path.join(skill.skillDir, "SKILL.md");
+  return { id: skill.id, name, desc: String(desc).trim(), guidePath, hasGuide: fs.existsSync(guidePath) };
+}
+
+const SKILL_INDEX_I18N = {
+  "zh-CN": {
+    title: "技能目录（使用前先读取对应指南）",
+    intro:
+      "以下是本会话可用的全部技能。对每个用户请求：先按“适用场景”匹配技能（可多选并组合成能力链），在动手前用 Read 工具读取该技能的指南文件以获得完整步骤，再执行。未列出的技能不可用。",
+    guideLabel: "指南",
+  },
+  en: {
+    title: "Skill Catalog (read the guide before using a skill)",
+    intro:
+      "These are all skills available in this session. For each user request: match skills by their \"use when\" description (you may pick several and compose a capability chain), then READ the skill's guide file with the Read tool to get the full steps before acting. Skills not listed here are not available.",
+    guideLabel: "Guide",
+  },
+  ar: {
+    title: "فهرس المهارات (اقرأ الدليل قبل استخدام المهارة)",
+    intro:
+      "هذه جميع المهارات المتاحة في هذه الجلسة. لكل طلب: طابِق المهارات حسب وصف \"استخدمها عند\" (يمكنك اختيار عدة مهارات وتركيبها)، ثم اقرأ ملف دليل المهارة بأداة Read للحصول على الخطوات الكاملة قبل التنفيذ. المهارات غير المدرجة هنا غير متاحة.",
+    guideLabel: "الدليل",
+  },
+};
+
+/** Build the progressive-disclosure skill index: every enabled skill listed with
+ *  its when-to-use and the path to its full guide (loaded on demand). This is what
+ *  makes skills WITHOUT an inlined guideMd discoverable instead of invisible. */
+function buildSkillIndexSection(enabledSkills, loc) {
+  const head = SKILL_INDEX_I18N[loc] || SKILL_INDEX_I18N.en;
+  const lines = [];
+  for (const skill of enabledSkills) {
+    const e = skillIndexEntry(skill, loc);
+    if (!e.desc) continue;
+    const guide = e.hasGuide ? ` (${head.guideLabel}: ${e.guidePath})` : "";
+    lines.push(`- **${e.name}** — ${e.desc}${guide}`);
+  }
+  if (!lines.length) return "";
+  return [`## ${head.title}`, "", head.intro, "", ...lines].join("\n");
+}
+
 function buildAgentGuideContent(enabledSkills, locale) {
   const loc = locale || getActiveLocale() || "en";
   const guide = AGENT_GUIDE_I18N[loc] || AGENT_GUIDE_I18N["en"];
@@ -393,11 +471,14 @@ function buildAgentGuideContent(enabledSkills, locale) {
     }
   }
 
+  const index = buildSkillIndexSection(enabledSkills, loc);
+  if (index) sections.push(index, "");
+
   return sections.join("\n").trim() + "\n";
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 6;
+const AGENT_GUIDE_STATIC_VERSION = 7;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();

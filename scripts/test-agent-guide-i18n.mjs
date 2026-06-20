@@ -188,4 +188,30 @@ assert.equal(
   "parser dropped category label_i18n.en",
 );
 
+// Progressive-disclosure skill index: a skill WITHOUT an inlined guideMd (e.g. the
+// catalog/anthropics skills) must still be discoverable via the Skill Catalog, with
+// its when-to-use description and the path to its full guide. Before this, such
+// skills were silently dropped from AGENT.md and the model never knew they existed.
+function skillObj(rootDir, id) {
+  const dir = path.join(rootDir, id);
+  const mp = path.join(dir, "skill.manifest.json");
+  const manifest = fs.existsSync(mp) ? JSON.parse(fs.readFileSync(mp, "utf8")) : { id, name: id };
+  return { id, skillDir: dir, manifest };
+}
+const indexSkill = skillObj(skillsCatalogDir, "anthropics-docx");
+assert.ok(
+  !indexSkill.manifest.guideMd && !indexSkill.manifest.guideMd_i18n,
+  "fixture precondition: anthropics-docx should have no inlined guideMd",
+);
+const indexGuideEn = skillManager.buildAgentGuideContent([indexSkill], "en");
+assert.match(indexGuideEn, /## Skill Catalog/, "missing skill index section");
+assert.match(
+  indexGuideEn,
+  /anthropics-docx[/\\]SKILL\.md/,
+  "skill without guideMd must be discoverable via its guide path",
+);
+assert.match(indexGuideEn, /Word document/i, "skill index must carry the when-to-use description");
+const indexGuideZh = skillManager.buildAgentGuideContent([indexSkill], "zh-CN");
+assert.match(indexGuideZh, /技能目录/, "zh-CN skill index title missing");
+
 console.log("agent guide i18n: ok");
