@@ -171,8 +171,10 @@ const productRulesIndex = firstGuideIndex([
   "## Work Principles",
 ]);
 const intentRulesIndex = firstGuideIndex([
-  "## 先判断任务",
-  "## Route before acting",
+  "## 意图识别与任务分流",
+  "## 意图识别与技能路由",
+  "## Intent Routing",
+  "## Intent routing & skill selection",
 ]);
 const contextRulesIndex = firstGuideIndex([
   "## 上下文理解",
