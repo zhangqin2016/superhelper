@@ -155,7 +155,7 @@ function registerProjectHandlers(ctx) {
       ok: true,
       name: project.name,
       preview: previewExport(project.path),
-      requiredSkills: skillManager.getGloballyEnabledSkillIds(),
+      requiredSkills: skillManager.getEnabledRegistrySkillIds(),
       workspaceSkills: previewWorkspaceSkills(workspaceSkills),
     };
   });
@@ -179,7 +179,7 @@ function registerProjectHandlers(ctx) {
         rootPath: project.path,
         name: project.name,
         conventions: readLearnedConventions(project.id),
-        requiredSkills: skillManager.getGloballyEnabledSkillIds(),
+        requiredSkills: skillManager.getEnabledRegistrySkillIds(),
         workspaceSkills: includeWorkspaceSkills ? skillManager.listWorkspaceSkillExports(project.id) : [],
         exportedAt: new Date().toISOString(),
       });

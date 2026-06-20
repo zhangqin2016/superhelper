@@ -208,6 +208,26 @@ function getGloballyEnabledSkillIds() {
   return ids;
 }
 
+/**
+ * Enabled skills that can be (re)installed from the registry — the correct set
+ * for a pack's `requiredSkills` dependency list. Excludes workspace/learned
+ * skills: those travel INSIDE the pack and are not in any registry, so declaring
+ * them as a dependency would make the importer try to fetch them and abort the
+ * whole import when the fetch fails.
+ */
+function getEnabledRegistrySkillIds() {
+  ensureSkillsStateDefaults();
+  const state = loadSkillsState();
+  const ids = [];
+  for (const skillId of getGloballyEnabledSkillIds()) {
+    const entry = state.skills[skillId] || {};
+    const manifest = readInstalledManifest(skillId);
+    if (isWorkspaceSkillEntry(skillId, entry, manifest)) continue;
+    ids.push(skillId);
+  }
+  return ids;
+}
+
 function normalizeProjectId(projectId) {
   return String(projectId || "").trim();
 }
@@ -1353,4 +1373,5 @@ module.exports = {
   normalizeSessionSkillSelection,
   syncInheritedSessionGuides,
   getGloballyEnabledSkillIds,
+  getEnabledRegistrySkillIds,
 };
