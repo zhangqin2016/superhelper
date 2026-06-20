@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Engine selection persistence. The pool reads getEngine() to pick the runner,
- * so: an unknown value must NOT silently route to a missing engine (normalize to
- * default), the LILY_ENGINE env must override the stored choice (dev/CI escape
- * hatch), and a set must round-trip.
+ * Engine selection persistence. OpenCode is the only supported engine, so: any
+ * unknown or removed value (e.g. the retired "claude") must normalize to the
+ * default and never persist as selectable, a valid set must round-trip, and the
+ * LILY_ENGINE env must be honored + normalized (dev/CI escape hatch).
  */
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -20,23 +20,23 @@ try {
   assert(es.normalizeEngine("") === es.DEFAULT_ENGINE, "empty -> default");
   assert(es.DEFAULT_ENGINE === "opencode", "default engine is opencode");
 
-  // round-trip
+  // round-trip + removed engine normalizes to the only supported engine
   delete process.env.LILY_ENGINE;
   assert(es.setEngine("opencode").engine === "opencode", "set returns normalized engine");
   assert(es.getEngine() === "opencode", "stored choice read back");
-  es.setEngine("claude");
-  assert(es.getEngine() === "claude", "switch back persists");
+  assert(es.setEngine("claude").engine === "opencode", "removed engine (claude) normalizes to opencode");
+  assert(es.getEngine() === "opencode", "a removed engine never persists as selectable");
 
-  // env override wins over stored
-  es.setEngine("claude");
-  process.env.LILY_ENGINE = "opencode";
-  assert(es.getEngine() === "opencode", "LILY_ENGINE env overrides stored choice");
+  // env override is honored and normalized
+  process.env.LILY_ENGINE = "OpenCode";
+  assert(es.getEngine() === "opencode", "LILY_ENGINE env honored + normalized (case-insensitive)");
+  process.env.LILY_ENGINE = "bogus";
+  assert(es.getEngine() === "opencode", "unknown LILY_ENGINE normalizes to default");
   delete process.env.LILY_ENGINE;
-  assert(es.getEngine() === "claude", "without env, stored choice applies again");
 
-  // public list shape
+  // public list shape: opencode is the only engine
   const pub = es.listEnginesPublic();
-  assert(pub.supported.includes("claude") && pub.supported.includes("opencode"), "lists supported engines");
+  assert(pub.supported.includes("opencode") && !pub.supported.includes("claude"), "opencode is the only supported engine");
   assert(pub.defaultEngine === "opencode", "default is opencode");
 } finally {
   es.setEngine(original);
