@@ -49,6 +49,26 @@ function findBundledCliSource() {
   return null;
 }
 
+/** Locate a bundled OpenCode engine binary at bundles/<key>/opencode/bin/opencode
+ *  (prebuilt opencode-ai layout), or null if not bundled. */
+function findBundledOpencodeBinary() {
+  const resourcesPath =
+    typeof process.resourcesPath === "string" ? process.resourcesPath : null;
+  const exe = process.platform === "win32" ? "opencode.exe" : "opencode";
+  const rels = [path.join("opencode", "bin", exe), path.join("opencode", exe)];
+  for (const key of platformBundleKeys()) {
+    for (const rel of rels) {
+      if (resourcesPath) {
+        const inRes = path.join(resourcesPath, "bundles", key, rel);
+        if (fs.existsSync(inRes)) return inRes;
+      }
+      const inRepo = path.join(PROJECT_ROOT, "bundles", key, rel);
+      if (fs.existsSync(inRepo)) return inRepo;
+    }
+  }
+  return null;
+}
+
 /** First existing `bundles/<key>/runtime` directory (resources or repo), or "". */
 function bundleRuntimeDir() {
   const resourcesPath =
@@ -69,5 +89,6 @@ module.exports = {
   platformBundleKey,
   bundledCliSourceCandidates,
   findBundledCliSource,
+  findBundledOpencodeBinary,
   bundleRuntimeDir,
 };

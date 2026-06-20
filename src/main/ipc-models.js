@@ -28,6 +28,20 @@ function registerModelHandlers(ctx) {
   ipcMain.handle("models:set-api-gateway", (_event, payload) => {
     return withRunnerChange(ctx, () => setApiGateway(payload || {}));
   });
+
+  ipcMain.handle("engine:list", () => ({
+    ok: true,
+    ...require("./engine-settings").listEnginesPublic(),
+  }));
+
+  // Switching engine requires fresh runners (different runner class), so route
+  // it through withRunnerChange: rejected while busy, idle runners torn down.
+  ipcMain.handle("engine:set-active", (_event, engineId) => {
+    return withRunnerChange(ctx, () => {
+      const r = require("./engine-settings").setEngine(engineId);
+      return r.ok ? { ok: true, ...require("./engine-settings").listEnginesPublic() } : r;
+    });
+  });
 }
 
 function registerPermissionHandlers(ctx) {

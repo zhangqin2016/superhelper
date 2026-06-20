@@ -10,16 +10,26 @@ const { ensureRuntimeNodeShim, runtimeBinDir } = require("./runtime-node");
 const { getRuntimePathEntries, getRuntimeEnvExtras } = require("./runtime-python");
 const { pickInheritedEnv } = require("./spawn-env-allowlist");
 
-function buildAgentSpawnEnv(options = {}) {
-  ensureRuntimeNodeShim();
+/**
+ * Resolve the distributed model config in LILY_* form (gateway URL / token /
+ * model), from the same sources buildAgentSpawnEnv uses. Shared so non-Claude
+ * engines (OpenCode) translate the SAME "下发的模型" instead of re-resolving it.
+ * @returns {Record<string, string>}
+ */
+function resolveLilyEnv() {
   const { loadSettingsEnv } = require("./agent-settings");
-  const home = userHome();
-  const lilyEnv = normalizeToLilyEnv({
+  return normalizeToLilyEnv({
     ...loadSettingsEnv(),
     ...require("./remote-config").getRemoteRuntimeEnvSync(),
     ...getActivePresetEnv(),
     ...getUserApiEnv(),
   });
+}
+
+function buildAgentSpawnEnv(options = {}) {
+  ensureRuntimeNodeShim();
+  const home = userHome();
+  const lilyEnv = resolveLilyEnv();
   const engineEnv = toEngineEnv(lilyEnv);
 
   const runtimePaths = getRuntimePathEntries();
@@ -96,4 +106,4 @@ function buildAgentSpawnEnv(options = {}) {
   return env;
 }
 
-module.exports = { buildAgentSpawnEnv };
+module.exports = { buildAgentSpawnEnv, resolveLilyEnv };

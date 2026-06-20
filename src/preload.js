@@ -60,6 +60,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   deleteCustomModel: (presetId) => ipcRenderer.invoke("models:delete-custom", presetId),
   setModelApiGateway: (payload) => ipcRenderer.invoke("models:set-api-gateway", payload),
 
+  listEngines: () => ipcRenderer.invoke("engine:list"),
+  setActiveEngine: (engineId) => ipcRenderer.invoke("engine:set-active", engineId),
+
   listPermissions: () => ipcRenderer.invoke("permissions:list"),
   setActivePermission: (modeId) => ipcRenderer.invoke("permissions:set-active", modeId),
 
