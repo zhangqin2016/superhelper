@@ -173,6 +173,8 @@ jobs:
           Copy-Item -Force $source $dest
           & $dest --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Rebrand engine version resource (no "claude" on the surface)
+        run: node scripts/rebrand-win-engine.mjs bundles/win32-x64/engine-upstream.exe
       - name: Build runtime bundle (win32-x64)
         shell: pwsh
         run: |

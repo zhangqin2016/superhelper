@@ -112,6 +112,9 @@ jobs:
           Copy-Item -Force $source $dest
           Get-Item $dest | Format-List FullName, Length
 
+      - name: Rebrand engine version resource (no "claude" on the surface)
+        run: node scripts/rebrand-win-engine.mjs bundles/win32-x64/engine-upstream.exe
+
       - name: Smoke test
         shell: pwsh
         run: |

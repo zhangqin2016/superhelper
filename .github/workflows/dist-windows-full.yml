@@ -85,6 +85,9 @@ jobs:
           & $dest --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Rebrand engine version resource (no "claude" on the surface)
+        run: node scripts/rebrand-win-engine.mjs bundles/win32-x64/engine-upstream.exe
+
       - name: Build win32-x64 runtime bundle
         shell: pwsh
         run: |
