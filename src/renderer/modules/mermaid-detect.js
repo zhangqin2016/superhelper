@@ -26,3 +26,18 @@ export function looksLikeMermaidCode(source = "") {
 export function isMermaidLanguage(lang = "") {
   return MERMAID_LANGUAGES.has(normalizeCodeLanguage(lang));
 }
+
+// A line that is ONLY pipes / dashes / colons / whitespace (e.g. a stray markdown
+// table separator "| --- | --- | --- |") — never valid Mermaid. Models sometimes
+// interleave these into a diagram and break the whole render; drop them so the
+// rest still parses. A real edge label line like `A -->|fail| B` has other chars
+// and is NOT matched.
+const TABLE_SEPARATOR_LINE_RE = /^\s*\|[\s|:-]*\|\s*$/;
+
+export function sanitizeMermaidSource(source = "") {
+  return String(source)
+    .split("\n")
+    .filter((line) => !TABLE_SEPARATOR_LINE_RE.test(line))
+    .join("\n")
+    .trim();
+}

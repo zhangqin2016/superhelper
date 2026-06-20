@@ -3,7 +3,7 @@
  * Uses highlight.js via dynamic ESM import.
  */
 import { revealLocalFileInFolder } from "./file-reveal.js";
-import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage } from "./mermaid-detect.js";
+import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitizeMermaidSource } from "./mermaid-detect.js";
 import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";
 
 let hljsReady = false;
@@ -309,7 +309,7 @@ async function renderMermaidBlocks(element) {
   if (!blocks.length) return;
   const engine = await ensureMermaid();
   for (const code of blocks) {
-    const source = code.textContent || "";
+    const source = sanitizeMermaidSource(code.textContent || "");
     const pre = code.closest("pre");
     if (!pre) continue;
     const container = document.createElement("div");

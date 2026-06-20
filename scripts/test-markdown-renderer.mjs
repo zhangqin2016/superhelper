@@ -7,7 +7,7 @@ const source = fs
   .readFileSync(new URL("../src/renderer/modules/markdown.js", import.meta.url), "utf8")
   .replace('import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";', "")
   .replace('import { revealLocalFileInFolder } from "./file-reveal.js";', "")
-  .replace('import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage } from "./mermaid-detect.js";', "")
+  .replace('import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitizeMermaidSource } from "./mermaid-detect.js";', "")
   .replaceAll("export async function", "async function")
   .replaceAll("export function", "function");
 
@@ -42,6 +42,13 @@ const context = {
   looksLikeMermaidCode(source = "") {
     const firstLine = String(source).split("\n").map((line) => line.trim()).find(Boolean) || "";
     return MERMAID_START_RE.test(firstLine);
+  },
+  sanitizeMermaidSource(source = "") {
+    return String(source)
+      .split("\n")
+      .filter((line) => !/^\s*\|[\s|:-]*\|\s*$/.test(line))
+      .join("\n")
+      .trim();
   },
   isMermaidLanguage(lang = "") {
     return MERMAID_LANGUAGES.has(String(lang || "").trim().split(/\s+/)[0]);
