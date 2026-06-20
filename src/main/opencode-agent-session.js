@@ -284,6 +284,13 @@ class OpencodeAgentSession extends EventEmitter {
   // --- inbound: SSE event -> actions -> drafts -----------------------------
 
   _handleEvent(ev) {
+    // Any event is a sign the stream is alive: reset the stall watchdog so a long
+    // but active turn (extended thinking, a slow tool, a subagent) is never killed
+    // mid-work. Only true silence — no events for the full window — trips the
+    // stalled completion. (Before this, the timer was a hard cap on total turn
+    // duration, so a >2min agentic turn reported "no final result" while running.)
+    this._armResponseTimer();
+
     let normalized;
     try {
       normalized = this._adapter.normalizeEvent(ev);
@@ -497,7 +504,12 @@ class OpencodeAgentSession extends EventEmitter {
   }
 }
 
-OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 120_000;
+// Stall watchdog: how long with NO events at all before a turn is treated as
+// stuck. It resets on every event (see _handleEvent), so this is a silence
+// threshold, not a cap on turn length — it must outlast a single long, quiet
+// tool (e.g. a multi-minute build/test). Override with LILY_OPENCODE_TURN_TIMEOUT_MS.
+OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
+  Number(process.env.LILY_OPENCODE_TURN_TIMEOUT_MS) || 300_000;
 
 /**
  * Coerce the host's question response ({ answers, response? }) into OpenCode's

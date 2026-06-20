@@ -273,4 +273,29 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
+// --- stall watchdog resets on activity (a long-but-active turn must not stall) ---
+{
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const saved = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 100;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "a long agentic task" });
+    await tick();
+    // Stream stays alive for ~250ms (2.5x the timeout) via periodic events.
+    for (let i = 0; i < 10; i++) {
+      fake.emitEvent({ type: "message.part.delta", properties: { field: "reasoning", delta: "thinking " } });
+      await sleep(25);
+    }
+    assert(orch.calls.done.length === 0, "active turn (events within the window) must NOT stall past the timeout");
+    // Now go silent past the window: the watchdog should fire exactly once.
+    await sleep(170);
+    assert(orch.calls.done.length === 1, "true silence past the window settles the turn");
+    assert(orch.calls.done[0].stalled === true, "the silence settlement is marked stalled");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = saved;
+  }
+}
+
 console.log("opencode-agent-session: ok");
