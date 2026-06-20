@@ -1,4 +1,4 @@
-# Build win32 runtime + engine CLI on Windows, then produce the full NSIS/ZIP installer.
+# Build win32 runtime + OpenCode engine on Windows, then produce the full NSIS/ZIP installer.
 # Manual run: Actions → "Windows Full Installer" → Run workflow
 # Artifacts: 智能工作台-*-x64.exe / .zip (includes Python + LibreOffice runtime)
 
@@ -7,10 +7,6 @@ name: Windows Full Installer
 on:
   workflow_dispatch:
     inputs:
-      package_version:
-        description: "@anthropic-ai/claude-code version (empty = latest)"
-        required: false
-        type: string
       skip_libreoffice:
         description: Skip LibreOffice in runtime (faster smoke builds)
         required: false
@@ -44,49 +40,8 @@ jobs:
       - name: Ship dirs must not contain macOS junk
         run: node scripts/purge-macos-junk.mjs --check
 
-      - name: Install Claude Code CLI (engine-upstream source)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $version = "${{ inputs.package_version }}".Trim()
-          if ($version) {
-            npm install -g "@anthropic-ai/claude-code@$version" --include=optional
-            npm install -g "@anthropic-ai/claude-code-win32-x64@$version"
-          } else {
-            npm install -g @anthropic-ai/claude-code --include=optional
-            npm install -g @anthropic-ai/claude-code-win32-x64
-          }
-          $globalModules = npm root -g
-          node (Join-Path $globalModules "@anthropic-ai/claude-code/install.cjs")
-
-      - name: Copy engine-upstream.exe
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $destDir = "bundles/win32-x64"
-          $dest = Join-Path $destDir "engine-upstream.exe"
-          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-
-          $globalModules = (npm root -g).Trim()
-          $candidates = @(
-            (Join-Path $globalModules "@anthropic-ai\claude-code-win32-x64\claude.exe"),
-            (Join-Path $globalModules "@anthropic-ai\claude-code\node_modules\@anthropic-ai\claude-code-win32-x64\claude.exe")
-          )
-          $source = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $source) {
-            $source = Get-ChildItem -Path $globalModules -Recurse -Filter "claude.exe" -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "claude-code-win32-x64" } |
-              Sort-Object Length -Descending |
-              Select-Object -ExpandProperty FullName -First 1
-          }
-          if (-not $source) { throw "Could not locate claude-code-win32-x64/claude.exe" }
-
-          Copy-Item -Force $source $dest
-          & $dest --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Rebrand engine version resource (no "claude" on the surface)
-        run: node scripts/rebrand-win-engine.mjs bundles/win32-x64/engine-upstream.exe
+      - name: Fetch OpenCode engine binary (win32-x64)
+        run: node scripts/fetch-opencode-engine.mjs --platform win32-x64
 
       - name: Build win32-x64 runtime bundle
         shell: pwsh

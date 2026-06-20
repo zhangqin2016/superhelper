@@ -1,8 +1,8 @@
 "use strict";
 
 /**
- * Expose Electron's bundled Node (v24 in Electron 41) as `node` for Claude/bash skills.
- * Uses ELECTRON_RUN_AS_NODE — same pattern as VS Code / Claude Code desktop shells.
+ * Expose Electron's bundled Node (v24 in Electron 41) as `node` for engine/bash skills.
+ * Uses ELECTRON_RUN_AS_NODE — the same pattern VS Code uses for its desktop shells.
  */
 
 const fs = require("node:fs");

@@ -4,7 +4,7 @@
  * Vision translation — enriches image files with task-aware text evidence via DashScope.
  * The send pipeline sends this structured evidence to the main model. Original images
  * stay visible in the chat transcript, but are not forwarded by default because many
- * Claude-compatible model gateways do not support image content blocks.
+ * many model gateways do not support image content blocks.
  *
  * Keys live in agent settings.json (bundled or userData), not only process.env.
  */

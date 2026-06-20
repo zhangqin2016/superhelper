@@ -19,10 +19,11 @@ const CURRENT_SKILL_ID = "lily-vision";
 function migrateLegacyCliBinaries() {
   const {
     agentBinDir,
-    bundledCliBasename,
     installedCliBasename,
     legacyInstalledCliBasenames,
   } = require("./config");
+  // Stray un-renamed copies of the old bundled engine binary to delete.
+  const strayBundleName = process.platform === "win32" ? "engine-upstream.exe" : "engine-upstream";
 
   const targetName = installedCliBasename();
   const primaryTarget = path.join(agentBinDir(), targetName);
@@ -61,7 +62,7 @@ function migrateLegacyCliBinaries() {
       }
     }
 
-    const strayUpstream = path.join(dir, bundledCliBasename());
+    const strayUpstream = path.join(dir, strayBundleName);
     if (
       fs.existsSync(strayUpstream) &&
       path.normalize(strayUpstream) !== path.normalize(primaryTarget)
@@ -497,8 +498,8 @@ const ENGINE_IDENTITY_FILE = "engine-identity.json";
 
 function bundledEngineFingerprint() {
   try {
-    const { findBundledCliSource } = require("./bundle-locator");
-    const source = findBundledCliSource();
+    const { resolveOpencodeCommand } = require("./agent-command");
+    const source = resolveOpencodeCommand();
     if (!source) return null;
     const st = fs.statSync(source);
     return {

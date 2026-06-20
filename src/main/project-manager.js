@@ -2,7 +2,7 @@
 
 /**
  * Manages local projects (directories) that serve as working directories
- * for Claude CLI sessions. Persisted to userData/projects.json.
+ * for assistant sessions. Persisted to userData/projects.json.
  */
 
 const fs = require("node:fs");

@@ -5,7 +5,7 @@ const path = require("node:path");
 
 const { defaultWorkspacePath } = require("./main/config");
 const { loadAppIconImage } = require("./main/app-icon");
-const { bootstrapAgent } = require("./main/agent-bootstrap");
+const { resolveOpencodeCommand } = require("./main/agent-command");
 const ProjectManager = require("./main/project-manager");
 const SessionManager = require("./main/session-manager");
 const FileStagingManager = require("./main/file-staging-manager");
@@ -128,15 +128,14 @@ app.whenReady().then(async () => {
     }
   }
 
-  agentBootstrap = bootstrapAgent();
+  const enginePath = resolveOpencodeCommand();
+  agentBootstrap = enginePath
+    ? { ok: true, mode: "opencode", cliPath: enginePath }
+    : { ok: false, error: "OPENCODE_ENGINE_MISSING" };
   if (!agentBootstrap.ok) {
-    console.error("[agent-bootstrap]", agentBootstrap.error);
+    console.error("[engine]", agentBootstrap.error);
   } else {
-    console.info(
-      "[agent-bootstrap]",
-      agentBootstrap.mode,
-      agentBootstrap.cliPath || "(dev-system)",
-    );
+    console.info("[engine]", agentBootstrap.mode, agentBootstrap.cliPath);
   }
 
   const { getRuntimeSummary } = require("./main/runtime-python");

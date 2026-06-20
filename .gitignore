@@ -17,10 +17,6 @@ __pycache__/
 release/
 release-keys/
 generated-assets/
-bundles/*/claude
-bundles/*/claude.exe
-bundles/*/engine-upstream
-bundles/*/engine-upstream.exe
 bundles/*/opencode/
 bundles/*/runtime/
 bundles/*.iml

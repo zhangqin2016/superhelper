@@ -24,10 +24,6 @@ on:
         description: "App version to stamp/publish (empty = package.json version)"
         required: false
         type: string
-      claude_version:
-        description: "@anthropic-ai/claude-code engine version (empty = latest)"
-        required: false
-        type: string
       skip_libreoffice:
         description: "Skip LibreOffice in runtime (faster smoke build)"
         required: false
@@ -65,8 +61,6 @@ jobs:
           npm version "$VER" --no-git-tag-version --allow-same-version
           echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
       - run: npm run test:unit
-      - name: Fetch macOS engine binary (darwin-arm64)
-        run: bash .github/scripts/fetch-mac-engine.sh darwin-arm64 "${{ inputs.claude_version }}"
       - name: Build runtime bundle (darwin-arm64)
         run: |
           ARGS="--platform darwin-arm64"
@@ -104,8 +98,6 @@ jobs:
           npm version "$VER" --no-git-tag-version --allow-same-version
           echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
       - run: npm run test:unit
-      - name: Fetch macOS engine binary (darwin-x64)
-        run: bash .github/scripts/fetch-mac-engine.sh darwin-x64 "${{ inputs.claude_version }}"
       - name: Build runtime bundle (darwin-x64)
         run: |
           ARGS="--platform darwin-x64"
@@ -142,39 +134,8 @@ jobs:
           npm version $ver --no-git-tag-version --allow-same-version
           "APP_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
       - run: npm run test:unit
-      - name: Install + copy Windows engine binary
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $version = "${{ inputs.claude_version }}".Trim()
-          if ($version) {
-            npm install -g "@anthropic-ai/claude-code@$version" --include=optional
-            npm install -g "@anthropic-ai/claude-code-win32-x64@$version"
-          } else {
-            npm install -g @anthropic-ai/claude-code --include=optional
-            npm install -g @anthropic-ai/claude-code-win32-x64
-          }
-          $globalModules = (npm root -g).Trim()
-          node (Join-Path $globalModules "@anthropic-ai/claude-code/install.cjs")
-          $destDir = "bundles/win32-x64"
-          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-          $dest = Join-Path $destDir "engine-upstream.exe"
-          $candidates = @(
-            (Join-Path $globalModules "@anthropic-ai\claude-code-win32-x64\claude.exe"),
-            (Join-Path $globalModules "@anthropic-ai\claude-code\node_modules\@anthropic-ai\claude-code-win32-x64\claude.exe")
-          )
-          $source = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $source) {
-            $source = Get-ChildItem -Path $globalModules -Recurse -Filter "claude.exe" -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "claude-code-win32-x64" } |
-              Sort-Object Length -Descending | Select-Object -ExpandProperty FullName -First 1
-          }
-          if (-not $source) { throw "Could not locate claude-code-win32-x64/claude.exe" }
-          Copy-Item -Force $source $dest
-          & $dest --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Rebrand engine version resource (no "claude" on the surface)
-        run: node scripts/rebrand-win-engine.mjs bundles/win32-x64/engine-upstream.exe
+      - name: Fetch OpenCode engine binary (win32-x64)
+        run: node scripts/fetch-opencode-engine.mjs --platform win32-x64
       - name: Build runtime bundle (win32-x64)
         shell: pwsh
         run: |

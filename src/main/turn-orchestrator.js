@@ -368,7 +368,7 @@ class TurnOrchestrator {
         const noticeEvent = {
           type,
           turnId: state.turnId,
-          source: draft.source || "claude-cli",
+          source: draft.source || "runtime",
           payload,
           ts: Date.now(),
         };
@@ -389,7 +389,7 @@ class TurnOrchestrator {
           state.notices.push({
             type: "engine.stderr",
             turnId: state.turnId,
-            source: draft.source || "claude-cli",
+            source: draft.source || "runtime",
             payload: { notice },
             ts: Date.now(),
           });

@@ -107,9 +107,9 @@ fi
 export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 export ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
 
-if [[ ! -f "bundles/win32-x64/engine-upstream.exe" && ! -f "bundles/win32-x64/claude.exe" ]]; then
-  echo "[dist-win] 错误: 缺少 bundles/win32-x64/engine-upstream.exe"
-  echo "[dist-win] 从 GitHub Actions「Bundle Windows CLI」下载 artifact 后放入该路径"
+if [[ ! -e "bundles/win32-x64/opencode/bin/opencode.exe" && ! -e "bundles/win32-x64/opencode/bin/opencode" ]]; then
+  echo "[dist-win] 错误: 缺少 bundles/win32-x64/opencode 引擎"
+  echo "[dist-win] 先运行: node scripts/fetch-opencode-engine.mjs --platform win32-x64"
   exit 1
 fi
 

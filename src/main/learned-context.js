@@ -7,7 +7,7 @@ const { userDataPath } = require("./config");
 /**
  * Workspace-learned context for session guides:
  *  - L2: conventions the user's repo already carries (.cursorrules, AGENTS.md
- *    — CLAUDE.md is skipped because the engine reads it natively from cwd)
+ *    — AGENTS.md/CLAUDE.md are skipped because the engine reads them natively from cwd)
  *  - L1: conventions the user explicitly asked us to remember ("记住：…"),
  *    stored app-side per project so we never write into the user's folders.
  * Both sections are injected into the per-session AGENT.md; the signature

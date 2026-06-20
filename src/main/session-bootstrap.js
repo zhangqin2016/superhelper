@@ -39,7 +39,7 @@ function buildSessionRehydratePrompt({ session, project, userText, summary = nul
 
   const parts = [
     "[Session Resume Notice]",
-    "This is a new Claude CLI session resume: the original Claude CLI session could not be resumed or has no resume ID available.",
+    "This is a new session resume: the original session could not be resumed or has no resume ID available.",
     "Treat the following content only as background to continue work. Do NOT repeat this notice, and do NOT respond to the \"resume notice\" itself.",
     "If a conclusion or completed item already exists in history, continue directly from it. Do NOT ask the user to re-explain context unless information is truly insufficient.",
     "",

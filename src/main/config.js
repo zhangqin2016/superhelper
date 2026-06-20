@@ -38,14 +38,6 @@ function resolveBasePath(name) {
 }
 
 const INSTALLED_CLI_STEM = "lily-workbench";
-const BUNDLED_CLI_STEM = "engine-upstream";
-
-/** Upstream bundle filename in repo / CI artifact (before install rename). */
-function bundledCliBasename() {
-  return process.platform === "win32"
-    ? `${BUNDLED_CLI_STEM}.exe`
-    : BUNDLED_CLI_STEM;
-}
 
 /** Installed copy under userData; shown in Task Manager / Activity Monitor. */
 function installedCliBasename() {
@@ -54,7 +46,7 @@ function installedCliBasename() {
     : INSTALLED_CLI_STEM;
 }
 
-/** Older installed engine binary names to migrate away from. */
+/** Older installed engine binary names to clean up from past installs. */
 function legacyInstalledCliBasenames() {
   const win = [
     "智能工作台.exe",
@@ -63,11 +55,6 @@ function legacyInstalledCliBasenames() {
   ];
   const unix = ["workbench-agent", "claude"];
   return process.platform === "win32" ? win : unix;
-}
-
-/** Older bundled source names (pre-rebrand artifacts). */
-function legacyBundledCliBasenames() {
-  return process.platform === "win32" ? ["claude.exe"] : ["claude"];
 }
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
@@ -190,11 +177,8 @@ module.exports = {
   appVersion,
   isPackaged,
   INSTALLED_CLI_STEM,
-  BUNDLED_CLI_STEM,
-  bundledCliBasename,
   installedCliBasename,
   legacyInstalledCliBasenames,
-  legacyBundledCliBasenames,
   PROJECT_ROOT,
   defaultWorkspacePath,
   userDataPath,
