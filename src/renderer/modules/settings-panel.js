@@ -133,7 +133,7 @@ export async function initSettingsPanel() {
       return;
     }
     const modeId = $("permissionModeSelect").value;
-    if (modeId === "bypassPermissions" && !(await confirmBypassPermission())) {
+    if (modeId === "full" && !(await confirmBypassPermission())) {
       await refreshPermissionSelect();
       return;
     }
@@ -159,7 +159,7 @@ export async function initSettingsPanel() {
       return;
     }
     const modeId = $("sessionPermissionModeSelect").value || "inherit";
-    if (modeId === "bypassPermissions" && !(await confirmBypassPermission())) {
+    if (modeId === "full" && !(await confirmBypassPermission())) {
       await refreshSessionPermissionSelect();
       return;
     }

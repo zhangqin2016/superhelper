@@ -39,14 +39,14 @@ const projectManager = {
 };
 
 try {
-  setActivePermissionMode("auto");
+  setActivePermissionMode("ask");
   const manager = new SessionManager(projectManager);
   manager.load();
   const session = manager.getActive();
   if (!session) throw new Error("expected default session");
 
   let publicState = listSessionPermissionsPublic(session);
-  if (!publicState.inherited || publicState.modeId !== null || publicState.effectiveModeId !== "auto") {
+  if (!publicState.inherited || publicState.modeId !== null || publicState.effectiveModeId !== "ask") {
     throw new Error(`default inherit failed: ${JSON.stringify(publicState)}`);
   }
 
@@ -59,9 +59,9 @@ try {
     throw new Error(`session override failed: ${JSON.stringify(publicState)}`);
   }
 
-  setActivePermissionMode("default");
+  setActivePermissionMode("full");
   publicState = listSessionPermissionsPublic(overridden);
-  if (publicState.effectiveModeId !== "plan" || publicState.globalModeId !== "default") {
+  if (publicState.effectiveModeId !== "plan" || publicState.globalModeId !== "full") {
     throw new Error(`override should not follow global: ${JSON.stringify(publicState)}`);
   }
 
@@ -70,7 +70,7 @@ try {
   }
   const inherited = manager.findById(session.id);
   publicState = listSessionPermissionsPublic(inherited);
-  if (!publicState.inherited || publicState.effectiveModeId !== "default") {
+  if (!publicState.inherited || publicState.effectiveModeId !== "full") {
     throw new Error(`inherit after clear failed: ${JSON.stringify(publicState)}`);
   }
 

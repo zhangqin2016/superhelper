@@ -163,11 +163,15 @@ class SessionRunnerPool {
       if (filter && !filter(sessionId)) continue;
       const runner = this._sessions.get(sessionId);
       if (!runner) continue;
-      if (runner.isAlive() && runner.setPermissionMode(modeId)) continue;
-      if (runner.isAlive()) {
+      runner.setPermissionMode(modeId);
+      // OpenCode can't hot-swap the permission ruleset. Restart IDLE runners now so
+      // the new mode applies immediately; leave a busy runner alone — its current
+      // turn finishes uninterrupted and the next send rebuilds the config with the
+      // new mode (ensureProcess/_ensureStarted restarts on the config change).
+      if (runner.isAlive() && !runner.isBusy()) {
         runner.terminate();
+        restarted.push(sessionId);
       }
-      restarted.push(sessionId);
     }
     return { ok: true, restarted };
   }

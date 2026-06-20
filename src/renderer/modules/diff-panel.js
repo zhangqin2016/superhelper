@@ -13,7 +13,7 @@ const fileTurnIndex = new Map();
 
 function isBypassMode() {
   const select = document.getElementById("permissionModeSelect");
-  return select?.value === "bypassPermissions";
+  return select?.value === "full";
 }
 
 function isActiveSession(sessionId) {

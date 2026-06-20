@@ -257,8 +257,9 @@ try {
   assert(sent.length === 1, "due scheduled task should send exactly once");
   assert(sent[0].opts.scheduledTaskRunId, "scheduled run id should be passed into turn orchestrator");
   // Unattended fire must be non-interactive — no permission prompt can hang it.
-  assert(sent[0].opts.permissionMode === "dontAsk",
-    `scheduled fire must force dontAsk, got: ${sent[0].opts.permissionMode}`);
+  // "plan" never prompts (mutations are denied rather than asked).
+  assert(sent[0].opts.permissionMode === "plan",
+    `scheduled fire must force plan (non-interactive), got: ${sent[0].opts.permissionMode}`);
   const runningRun = manager.runs.find((run) => run.id === sent[0].opts.scheduledTaskRunId);
   assert(runningRun?.status === "running", `run should be running: ${JSON.stringify(runningRun)}`);
   manager.completeRun("s1", runningRun.turnId, "turn.completed", {});

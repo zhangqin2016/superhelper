@@ -138,7 +138,15 @@ class OpencodeAgentSession extends EventEmitter {
 
   /** Idempotently start the serve process, create a session, and subscribe. */
   _ensureStarted() {
-    if (this._server && this._server.sessionID) return Promise.resolve(this._server);
+    const desiredConfig = this.spawnOptions?.opencodeConfig || "";
+    if (this._server && this._server.sessionID) {
+      if (this._serverConfigSig === desiredConfig) return Promise.resolve(this._server);
+      // Config changed (e.g. the permission ruleset) — OpenCode can't hot-swap it,
+      // so restart the serve to apply. Safe: _ensureStarted runs only when idle or
+      // about to send, never mid-turn; the resume id is kept so context survives.
+      log.info("opencode config changed -> restarting serve", { sessionId: this.sessionId });
+      this.terminate();
+    }
     if (this._starting) return this._starting;
     this._starting = (async () => {
       const server = this._createServer({
@@ -158,6 +166,7 @@ class OpencodeAgentSession extends EventEmitter {
       const id = await server.createSession();
       server.subscribe();
       this._server = server;
+      this._serverConfigSig = desiredConfig;
       this.agentResumeId = id;
       this.emit("agent-resume-id", id);
       return server;
@@ -255,8 +264,11 @@ class OpencodeAgentSession extends EventEmitter {
 
   setPermissionMode(mode) {
     if (this.spawnOptions) this.spawnOptions.permissionMode = mode;
-    // OpenCode evaluates permission policy server-side; nothing to hot-swap.
-    return true;
+    // OpenCode bakes the permission ruleset into the config at serve start and
+    // cannot hot-swap it. Report "not applied live" so the pool restarts the
+    // runner; the next ensure()/send rebuilds the config with the new mode (and
+    // _ensureStarted also restarts on its own when the config string changes).
+    return false;
   }
 
   interrupt() {

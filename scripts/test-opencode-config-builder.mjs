@@ -27,12 +27,14 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 // --- permission mode -> per-tool ruleset ------------------------------------
 {
-  assert(translatePermission("bypassPermissions").bash === "allow", "bypass -> allow");
-  assert(translatePermission("acceptEdits").edit === "allow", "acceptEdits -> edit allow");
+  assert(translatePermission("full").bash === "allow", "full -> bash allow");
+  assert(translatePermission("full").edit === "allow", "full -> edit allow");
   assert(translatePermission("plan").edit === "deny", "plan -> edit deny");
-  assert(translatePermission("default").bash === "ask", "default -> bash ask");
+  assert(translatePermission("plan").websearch === "allow", "plan -> research still allowed");
+  assert(translatePermission("ask").bash === "ask", "ask -> bash ask");
+  assert(translatePermission("does-not-exist").bash === "ask", "unknown mode -> safe ask default");
   // disallowedTools force deny, with Claude->OpenCode name mapping.
-  const p = translatePermission("default", ["WebSearch", "WebFetch"]);
+  const p = translatePermission("ask", ["WebSearch", "WebFetch"]);
   assert(p.websearch === "deny" && p.webfetch === "deny", "disallowedTools -> deny (mapped names)");
 }
 
@@ -54,7 +56,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   const r = buildOpencodeConfig({
     lilyEnv: { LILY_API_BASE_URL: "https://api.deepseek.com", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-chat" },
     mcpServers: { mail: { command: "/node", args: ["/mail.js"], env: {} } },
-    permissionMode: "default",
+    permissionMode: "ask",
     disallowedTools: ["WebSearch"],
     instructionsPaths: ["/data/session-guides/s1/AGENT.md", ""],
     pluginPaths: ["/app/resources/opencode-plugins/verify-edit.js", ""],

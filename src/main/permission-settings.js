@@ -4,40 +4,44 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 
+// One autonomy spectrum, three modes — no overlap. Plan (look only) → Ask
+// (confirm before acting, the safe default) → Auto (full autonomy).
 const PERMISSION_MODES = [
   {
-    id: "auto",
-    label: "Auto (Smart)",
-    description: "Routine operations are handled automatically; confirmation is only requested for uncertain or high-risk actions.",
-  },
-  {
-    id: "default",
-    label: "Always Ask",
-    description: "Confirmation is requested before any operation that may affect files or system settings.",
-  },
-  {
-    id: "acceptEdits",
-    label: "Auto-Edit Files",
-    description: "File modifications are allowed without per-edit confirmation; other important operations still require approval.",
-  },
-  {
     id: "plan",
-    label: "Plan First",
-    description: "The assistant explains its approach first and only begins execution after your approval.",
+    label: "Plan",
+    description: "Read-only: analyze the workspace and propose a plan without changing files or running commands.",
   },
   {
-    id: "dontAsk",
-    label: "Low Interruption",
-    description: "No confirmation prompts; uncertain or risky operations are skipped silently.",
+    id: "ask",
+    label: "Ask",
+    description: "Confirm before editing files or running commands. Reading and research stay automatic.",
   },
   {
-    id: "bypassPermissions",
-    label: "Full Access",
-    description: "No confirmations — direct file read/write and command execution. Recommended only for trusted projects.",
+    id: "full",
+    label: "Auto",
+    description: "Full autonomy: edit files and run commands without asking. Use only in trusted workspaces.",
   },
 ];
 
-const DEFAULT_MODE = "auto";
+const DEFAULT_MODE = "ask";
+
+// Retired modes map onto the new spectrum. Only a prior explicit full-access
+// choice keeps full autonomy; everything else lands on the safe confirm-first
+// default so a migration never silently grants more power.
+const LEGACY_MODE_MAP = {
+  bypassPermissions: "full",
+  auto: "ask",
+  acceptEdits: "ask",
+  dontAsk: "ask",
+  default: "ask",
+};
+
+/** Resolve a stored/raw mode id to a current one, or null if unrecognizable. */
+function migrateMode(modeId) {
+  if (isValidMode(modeId)) return modeId;
+  return LEGACY_MODE_MAP[modeId] || null;
+}
 
 /** @type {{ activeModeId: string } | null} */
 let cachedChoice = null;
@@ -66,14 +70,15 @@ function isValidMode(modeId) {
 
 function normalizeSessionPermissionMode(modeId) {
   if (modeId == null || modeId === "" || modeId === "inherit") return null;
-  return isValidMode(modeId) ? modeId : undefined;
+  return migrateMode(modeId) || undefined;
 }
 
 function getActivePermissionMode() {
   const user = cachedChoice ?? readJson(userSettingsPath(), null);
-  if (user?.activeModeId && isValidMode(user.activeModeId)) {
-    cachedChoice = user;
-    return user.activeModeId;
+  const migrated = migrateMode(user?.activeModeId);
+  if (migrated) {
+    cachedChoice = { activeModeId: migrated };
+    return migrated;
   }
   return DEFAULT_MODE;
 }

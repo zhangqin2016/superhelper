@@ -52,26 +52,18 @@ const TOOL_NAME_MAP = {
 function translatePermission(mode, disallowedTools) {
   let base;
   switch (mode) {
-    case "bypassPermissions":
+    case "full":
+      // Full autonomy: act without asking.
       base = { bash: "allow", edit: "allow", write: "allow", webfetch: "allow", websearch: "allow" };
       break;
-    case "acceptEdits":
-      base = { edit: "allow", write: "allow", bash: "ask" };
-      break;
     case "plan":
-      // Plan-first: no mutations until approved.
-      base = { edit: "deny", write: "deny", bash: "deny" };
+      // Read-only: research is fine, no system mutations.
+      base = { bash: "deny", edit: "deny", write: "deny", webfetch: "allow", websearch: "allow" };
       break;
-    case "dontAsk":
-      // No prompts; risky ops skipped rather than asked.
-      base = { bash: "deny", edit: "deny", write: "deny" };
-      break;
-    case "auto":
-      base = { bash: "ask", edit: "allow" };
-      break;
-    case "default":
+    case "ask":
     default:
-      base = { bash: "ask", edit: "ask", write: "ask" };
+      // Confirm before touching the system; reads/research stay automatic.
+      base = { bash: "ask", edit: "ask", write: "ask", webfetch: "allow", websearch: "allow" };
       break;
   }
   for (const t of disallowedTools || []) {
