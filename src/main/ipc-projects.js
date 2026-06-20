@@ -145,7 +145,12 @@ function registerProjectHandlers(ctx) {
     if (!project) return { ok: false, error: "NOT_FOUND" };
     const { previewExport, previewWorkspaceSkills } = require("./workspace-share");
     const skillManager = require("./skill-manager");
-    const workspaceSkills = skillManager.listWorkspaceSkillExports(project.id, { includeInstalled: true });
+    // Bundle ONLY locally-authored workspace/learned skills — the recipient
+    // can't get those anywhere else. Registry-available skills (anthropics/*,
+    // lily-*, superpowers/*) are declared as requiredSkills and fetched from the
+    // same registry on import, so their third-party code and LICENSE files never
+    // travel inside the pack (and the pack stays small).
+    const workspaceSkills = skillManager.listWorkspaceSkillExports(project.id);
     return {
       ok: true,
       name: project.name,
@@ -175,7 +180,7 @@ function registerProjectHandlers(ctx) {
         name: project.name,
         conventions: readLearnedConventions(project.id),
         requiredSkills: skillManager.getGloballyEnabledSkillIds(),
-        workspaceSkills: includeWorkspaceSkills ? skillManager.listWorkspaceSkillExports(project.id, { includeInstalled: true }) : [],
+        workspaceSkills: includeWorkspaceSkills ? skillManager.listWorkspaceSkillExports(project.id) : [],
         exportedAt: new Date().toISOString(),
       });
       fs.writeFileSync(result.filePath, buf);
