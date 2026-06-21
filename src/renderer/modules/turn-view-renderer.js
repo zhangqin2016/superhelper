@@ -1138,13 +1138,36 @@ function renderPrompts(root, sessionId, liveTurn) {
   }
 }
 
+const PERMISSION_KIND_KEYS = {
+  bash: "permission.kind.bash",
+  edit: "permission.kind.edit",
+  write: "permission.kind.write",
+  read: "permission.kind.read",
+  webfetch: "permission.kind.webfetch",
+  websearch: "permission.kind.websearch",
+  external_directory: "permission.kind.externalDirectory",
+};
+
+/** Human-readable label for a permission request instead of the raw engine key
+ *  (e.g. "external_directory" -> "访问工作区以外的目录"). Falls back to any
+ *  detail title, then the raw key. */
+function permissionLabel(item) {
+  const key = String(item.toolName || "").trim();
+  const i18nKey = PERMISSION_KIND_KEYS[key];
+  if (i18nKey) {
+    const label = t(i18nKey);
+    if (label !== i18nKey) return item.title ? `${label}（${item.title}）` : label;
+  }
+  return item.title || key || t("turn.permission.toolFallback");
+}
+
 function permissionCard(sessionId, item) {
   if (String(item.toolName || "") === "ExitPlanMode") {
     return planApprovalCard(sessionId, item);
   }
   const card = promptCard(
     t("permission.approveActionTitle"),
-    item.toolName || item.title || t("turn.permission.toolFallback"),
+    permissionLabel(item),
   );
   const actions = actionRow();
   actions.append(

@@ -27,13 +27,18 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 // --- permission mode -> per-tool ruleset ------------------------------------
 {
-  assert(translatePermission("full").bash === "allow", "full -> bash allow");
-  assert(translatePermission("full").edit === "allow", "full -> edit allow");
+  // full uses a "*" catch-all so EVERY permission type (incl. external_directory)
+  // is allowed, not just the common tools — otherwise OpenCode's "ask" default
+  // still prompts a fully-authorized session.
+  assert(translatePermission("full")["*"] === "allow", "full -> wildcard allow");
   assert(translatePermission("plan").edit === "deny", "plan -> edit deny");
   assert(translatePermission("plan").websearch === "allow", "plan -> research still allowed");
   assert(translatePermission("ask").bash === "ask", "ask -> bash ask");
   assert(translatePermission("does-not-exist").bash === "ask", "unknown mode -> safe ask default");
-  // disallowedTools force deny, with Claude->OpenCode name mapping.
+  // disallowedTools force deny even under full's "*" allow — evaluate() takes the
+  // LAST matching rule, and the deny keys are appended after "*".
+  const full = translatePermission("full", ["WebSearch"]);
+  assert(full["*"] === "allow" && full.websearch === "deny", "full + disallowed -> wildcard allow but tool denied");
   const p = translatePermission("ask", ["WebSearch", "WebFetch"]);
   assert(p.websearch === "deny" && p.webfetch === "deny", "disallowedTools -> deny (mapped names)");
 }

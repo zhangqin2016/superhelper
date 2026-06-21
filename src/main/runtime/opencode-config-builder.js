@@ -53,8 +53,13 @@ function translatePermission(mode, disallowedTools) {
   let base;
   switch (mode) {
     case "full":
-      // Full autonomy: act without asking.
-      base = { bash: "allow", edit: "allow", write: "allow", webfetch: "allow", websearch: "allow" };
+      // Full autonomy: allow EVERY permission type, not just the common tools.
+      // OpenCode defaults any unlisted permission (e.g. external_directory) to
+      // "ask", so without the "*" catch-all a fully-authorized session still
+      // prompted for things like reading a dir outside the workspace. The "*" rule
+      // matches all permission names via Wildcard; per-tool denials below still win
+      // because evaluate() takes the LAST matching rule.
+      base = { "*": "allow" };
       break;
     case "plan":
       // Read-only: research is fine, no system mutations.
