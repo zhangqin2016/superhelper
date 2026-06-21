@@ -324,7 +324,13 @@ async function renderMermaidBlocks(element) {
     try {
       const id = `lily_mermaid_${Math.abs(Number(hashContent(source)))}_${Date.now()}`;
       const result = await engine.render(id, source);
-      container.innerHTML = window.DOMPurify.sanitize(result.svg || "");
+      // Insert Mermaid's SVG as-is. It is already sanitized internally (we run
+      // mermaid with securityLevel:"strict", which encodes label text and strips
+      // scripts/handlers). Do NOT re-run DOMPurify here: its HTML profile drops
+      // the <foreignObject> node labels (the xhtml <div>/<span> inside), leaving
+      // boxes and arrows but no text — every multi-word/CJK flowchart label
+      // vanished. Native innerHTML parsing preserves foreignObject correctly.
+      container.innerHTML = result.svg || "";
     } catch (error) {
       console.warn("[markdown] Mermaid render failed", error);
       container.classList.add("markdown-mermaid-error");
