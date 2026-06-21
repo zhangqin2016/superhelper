@@ -87,6 +87,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
   getSessionSkills: (sessionId) => ipcRenderer.invoke("session:get-skills", sessionId),
   rewindSession: (sessionId, turnId, engineMessageId = null) =>
     ipcRenderer.invoke("session:rewind", { sessionId, turnId, engineMessageId }),
+  listCommands: (sessionId) => ipcRenderer.invoke("commands:list", sessionId),
+  expandCommand: (sessionId, input) => ipcRenderer.invoke("commands:expand", { sessionId, input }),
   setSessionSkills: (sessionId, enabledSkillIds) =>
     ipcRenderer.invoke("session:set-skills", { sessionId, enabledSkillIds }),
   setSkillEnabled: (id, enabled) =>

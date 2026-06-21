@@ -3,6 +3,7 @@
 const { ipcMain } = require("electron");
 const { ensureSessionRunner, isSessionBusy, withRunnerChange, anyRunnerBusy } = require("./ipc-utils");
 const skillManager = require("./skill-manager");
+const slashCommands = require("./commands");
 const { requireValidLicense } = require("./license-manager");
 const {
   listSessionPermissionsPublic,
@@ -128,6 +129,24 @@ function registerSessionHandlers(ctx) {
       sessionId: sid,
       ...listSessionPermissionsPublic(session),
     };
+  });
+
+  // Slash commands available for a session's workspace (for the composer "/" menu).
+  ipcMain.handle("commands:list", (_event, sessionId) => {
+    const sid = sessionId || sessionManager.activeSessionId;
+    const session = sid ? sessionManager.findById(sid) : null;
+    const project = session?.projectId ? projectManager.find(session.projectId) : null;
+    const list = slashCommands.loadCommands(project?.path || "");
+    return { ok: true, commands: list.map(({ name, description, argHint }) => ({ name, description, argHint })) };
+  });
+
+  // Expand a "/name args" composer input into its template (null if not a command).
+  ipcMain.handle("commands:expand", (_event, payload) => {
+    const sid = payload?.sessionId || sessionManager.activeSessionId;
+    const session = sid ? sessionManager.findById(sid) : null;
+    const project = session?.projectId ? projectManager.find(session.projectId) : null;
+    const list = slashCommands.loadCommands(project?.path || "");
+    return { ok: true, expanded: slashCommands.expandCommand(payload?.input || "", list) };
   });
 
   // Rewind the conversation to a turn: revert the engine session (files + dropped
