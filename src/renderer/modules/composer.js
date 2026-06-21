@@ -158,7 +158,7 @@ function sendErrorMessage(result) {
 
 export async function sendPrompt(opts = {}) {
   const promptInput = $("promptInput");
-  const text = promptInput?.value.trim() || "";
+  let text = promptInput?.value.trim() || "";
   const files = (store.get("pendingFiles") || []).map((f) => ({
     id: f.id, name: f.name, path: f.path,
     type: f.type, size: f.size, isImage: f.isImage,
@@ -196,6 +196,17 @@ export async function sendPrompt(opts = {}) {
     }
     return;
   }
+  // Slash command: "/name args" expands to its template (reusable prompt) before
+  // sending. Unknown "/x" or normal text passes through untouched.
+  if (text.startsWith("/")) {
+    try {
+      const res = await window.assistantClient.expandCommand(sessionId, text);
+      if (res?.expanded?.prompt) text = res.expanded.prompt;
+    } catch {
+      /* expansion is best-effort — fall back to sending the raw text */
+    }
+  }
+
   if (!files.length) {
     const { hasPendingUserQuestion, respondPendingUserQuestionFromComposer, syncComposerForActiveSession } =
       await import("./message.js");
@@ -338,10 +349,15 @@ export function initComposer() {
     });
     promptInput.addEventListener("keydown", (e) => {
       if (imeComposing) return;
-      // An open @-mention popover owns Enter (confirm selection), not send.
+      // An open @-mention / slash-command popover owns Enter (confirm), not send.
       if (e.key === "Enter" && mentionState.open) {
         e.preventDefault();
         selectActiveMention();
+        return;
+      }
+      if (e.key === "Enter" && commandState.open) {
+        e.preventDefault();
+        selectActiveCommand();
         return;
       }
       if (!shouldSendOnEnter(e)) return;
@@ -359,6 +375,78 @@ export function initComposer() {
       promptInput.parentElement.style.position = "relative";
     }
     promptInput.parentElement?.appendChild(mentionBox);
+
+    // "/" slash-command completion: typing "/name" at the start of the composer
+    // pops a list of available commands (reusable prompt templates). Mirrors the
+    // @-mention popover; commands are fetched once per session and cached.
+    const commandState = { open: false, items: [], activeIndex: 0 };
+    let commandsCache = null;
+    let commandsCacheSession = null;
+    const commandBox = document.createElement("div");
+    commandBox.className = "composer-mention-popover composer-command-popover";
+    commandBox.hidden = true;
+    promptInput.parentElement?.appendChild(commandBox);
+
+    const closeCommand = () => {
+      commandState.open = false;
+      commandState.items = [];
+      commandState.activeIndex = 0;
+      commandBox.hidden = true;
+      commandBox.replaceChildren();
+    };
+    const selectCommand = (cmd) => {
+      if (!cmd) return;
+      promptInput.value = `/${cmd.name} `;
+      const pos = promptInput.value.length;
+      promptInput.setSelectionRange(pos, pos);
+      closeCommand();
+      promptInput.focus();
+      promptInput.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const selectActiveCommand = () => selectCommand(commandState.items[commandState.activeIndex]);
+    const highlightActiveCommand = () => {
+      const items = commandBox.querySelectorAll(".composer-mention-item");
+      items.forEach((item, index) => item.classList.toggle("is-active", index === commandState.activeIndex));
+      items[commandState.activeIndex]?.scrollIntoView({ block: "nearest" });
+    };
+    const refreshCommand = async () => {
+      // Only while typing the command NAME — "/" then word chars, no space yet.
+      const m = /^\/([\w:-]*)$/.exec(promptInput.value);
+      if (!m) { closeCommand(); return; }
+      const sessionId = store.get("activeSessionId");
+      if (!sessionId) { closeCommand(); return; }
+      if (commandsCache === null || commandsCacheSession !== sessionId) {
+        const res = await window.assistantClient.listCommands(sessionId).catch(() => null);
+        commandsCache = res?.ok ? (res.commands || []) : [];
+        commandsCacheSession = sessionId;
+      }
+      const q = m[1].toLowerCase();
+      const items = commandsCache.filter((c) => c.name.toLowerCase().startsWith(q)).slice(0, 12);
+      if (!items.length) { closeCommand(); return; }
+      commandState.items = items;
+      commandState.activeIndex = 0;
+      commandBox.replaceChildren();
+      items.forEach((cmd) => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "composer-mention-item composer-command-item";
+        const name = document.createElement("span");
+        name.className = "composer-command-name";
+        name.textContent = `/${cmd.name}`;
+        item.appendChild(name);
+        if (cmd.description) {
+          const desc = document.createElement("span");
+          desc.className = "composer-command-desc";
+          desc.textContent = cmd.description;
+          item.appendChild(desc);
+        }
+        item.addEventListener("mousedown", (e) => { e.preventDefault(); selectCommand(cmd); });
+        commandBox.appendChild(item);
+      });
+      commandBox.hidden = false;
+      commandState.open = true;
+      highlightActiveCommand();
+    };
 
     const activeProjectRoot = () => {
       const projectId = store.get("activeProjectId");
@@ -438,19 +526,25 @@ export function initComposer() {
     promptInput.addEventListener("input", () => {
       clearTimeout(mentionTimer);
       mentionTimer = setTimeout(() => void refreshMention(), 120);
+      void refreshCommand();
     });
-    promptInput.addEventListener("blur", () => setTimeout(closeMention, 150));
+    promptInput.addEventListener("blur", () => setTimeout(() => { closeMention(); closeCommand(); }, 150));
     promptInput.addEventListener("keydown", (e) => {
-      if (!mentionState.open || imeComposing) return;
+      if (imeComposing) return;
+      const popup = mentionState.open
+        ? { state: mentionState, total: mentionState.files.length, highlight: highlightActiveMention, select: selectActiveMention }
+        : commandState.open
+          ? { state: commandState, total: commandState.items.length, highlight: highlightActiveCommand, select: selectActiveCommand }
+          : null;
+      if (!popup) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
-        const total = mentionState.files.length;
         const delta = e.key === "ArrowDown" ? 1 : -1;
-        mentionState.activeIndex = (mentionState.activeIndex + delta + total) % total;
-        highlightActiveMention();
+        popup.state.activeIndex = (popup.state.activeIndex + delta + popup.total) % popup.total;
+        popup.highlight();
       } else if (e.key === "Tab") {
         e.preventDefault();
-        selectActiveMention();
+        popup.select();
       }
     });
 
@@ -462,6 +556,11 @@ export function initComposer() {
       if (mentionState.open) {
         e.preventDefault();
         closeMention();
+        return;
+      }
+      if (commandState.open) {
+        e.preventDefault();
+        closeCommand();
         return;
       }
       const sessionId = store.get("activeSessionId");
