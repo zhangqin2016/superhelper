@@ -418,6 +418,19 @@ class OpencodeServerManager extends EventEmitter {
     return this._request("POST", `/session/${this.sessionID}/unrevert`, {});
   }
 
+  /** Liveness probe — GET /global/health with a short timeout. True = the server
+   *  answered healthy; false = dead, wedged, or unreachable. Used to distinguish a
+   *  genuinely stuck server from a model that's just thinking quietly. */
+  async checkHealth() {
+    if (!this.baseUrl) return false;
+    try {
+      const res = await this._request("GET", "/global/health", null, {}, 5_000);
+      return Boolean(res && res.healthy);
+    } catch {
+      return false;
+    }
+  }
+
   /** Best-effort graceful abort; terminate() is the guaranteed stop. */
   async abort() {
     if (!this.sessionID) return false;

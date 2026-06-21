@@ -39,6 +39,7 @@ class FakeServer extends EventEmitter {
   async abort() { this.aborted = true; return true; }
   async revert(messageID) { this.reverted = messageID; return {}; }
   async unrevert() { this.unreverted = true; return {}; }
+  async checkHealth() { return this.healthy !== false; }
   terminate() { this.process = null; }
   emitEvent(ev) { this.emit("event", ev); }
 }
@@ -369,6 +370,20 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   fake.process.exitCode = 1; // crashed; exit event not yet delivered
   assert(session.isAlive() === false, "lifecycle: isAlive() false once the child has exited");
   session.terminate(); // clear the in-flight turn's watchdog so the test process exits
+}
+
+// --- health probe: a wedged engine (health keeps failing) fails the turn fast --
+{
+  OpencodeAgentSession.HEALTH_PROBE_MS = 5;
+  OpencodeAgentSession.HEALTH_MAX_FAILS = 2;
+  const { fake, session, orch } = await newSession();
+  fake.healthy = false; // engine alive but health probe fails (wedged/unreachable)
+  session.sendUserMessage({ text: "go" });
+  await tick();
+  await new Promise((r) => setTimeout(r, 40)); // let ~2 probe ticks run
+  assert(orch.calls.error.length === 1, "health probe fails the turn when the engine stays unhealthy");
+  assert(session.isAlive() === false, "server dropped after repeated health failure");
+  session.terminate();
 }
 
 console.log("opencode-agent-session: ok");

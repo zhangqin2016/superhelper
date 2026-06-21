@@ -217,6 +217,7 @@ class OpencodeAgentSession extends EventEmitter {
     // undoes the whole exchange (the engine anchors back to the preceding user msg).
     this._turnEngineMessageId = null;
     this._armResponseTimer();
+    this._armHealthProbe();
 
     (async () => {
       try {
@@ -301,6 +302,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   terminate() {
     this._clearResponseTimer();
+    this._clearHealthProbe();
     this._clearPendingPermissions();
     if (this._server) {
       this._server.terminate();
@@ -477,6 +479,7 @@ class OpencodeAgentSession extends EventEmitter {
   _settleTurn(payload) {
     if (this._turnSettled) return;
     this._clearResponseTimer();
+    this._clearHealthProbe();
     this._clearPendingPermissions();
     this._adapter.reset();
     this._turnSettled = true;
@@ -510,6 +513,7 @@ class OpencodeAgentSession extends EventEmitter {
   _failTurn(message) {
     if (this._turnSettled) return;
     this._clearResponseTimer();
+    this._clearHealthProbe();
     this._clearPendingPermissions();
     this._adapter.reset();
     this._turnSettled = true;
@@ -573,6 +577,43 @@ class OpencodeAgentSession extends EventEmitter {
     }
   }
 
+  /** Active liveness probe during a turn. The silence watchdog can't tell a wedged
+   *  server from a model thinking quietly; this polls /global/health and fails the
+   *  turn fast ONLY when health actually fails N times in a row — so a slow-but-
+   *  healthy turn is never killed, but a dead/wedged engine is caught in ~90s
+   *  instead of the 300s silence timeout. */
+  _armHealthProbe() {
+    this._clearHealthProbe();
+    this._healthFails = 0;
+    const tick = async () => {
+      this._healthTimer = null;
+      if (!this.busy || this._turnSettled || !this._server) return;
+      const ok = await this._server.checkHealth().catch(() => false);
+      if (!this.busy || this._turnSettled || !this._server) return;
+      if (ok) {
+        this._healthFails = 0;
+      } else if (++this._healthFails >= OpencodeAgentSession.HEALTH_MAX_FAILS) {
+        log.warn("opencode health probe failed %d× — engine wedged/unreachable", this._healthFails, {
+          sessionId: this.sessionId,
+        });
+        this._onServerError(new Error("engine health check failed (wedged or unreachable)"));
+        return;
+      }
+      this._healthTimer = setTimeout(tick, OpencodeAgentSession.HEALTH_PROBE_MS);
+      this._healthTimer.unref?.();
+    };
+    this._healthTimer = setTimeout(tick, OpencodeAgentSession.HEALTH_PROBE_MS);
+    this._healthTimer.unref?.();
+  }
+
+  _clearHealthProbe() {
+    if (this._healthTimer) {
+      clearTimeout(this._healthTimer);
+      this._healthTimer = null;
+    }
+    this._healthFails = 0;
+  }
+
   _sanitize(message) {
     return require("./agent-runner").sanitizeError(message);
   }
@@ -584,6 +625,10 @@ class OpencodeAgentSession extends EventEmitter {
 // tool (e.g. a multi-minute build/test). Override with LILY_OPENCODE_TURN_TIMEOUT_MS.
 OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
   Number(process.env.LILY_OPENCODE_TURN_TIMEOUT_MS) || 300_000;
+// Active health probe during a turn: poll every PROBE_MS, declare the engine dead
+// only after MAX_FAILS consecutive failures (so a slow-but-healthy turn survives).
+OpencodeAgentSession.HEALTH_PROBE_MS = Number(process.env.LILY_OPENCODE_HEALTH_PROBE_MS) || 30_000;
+OpencodeAgentSession.HEALTH_MAX_FAILS = Number(process.env.LILY_OPENCODE_HEALTH_MAX_FAILS) || 3;
 
 /**
  * Coerce the host's question response ({ answers, response? }) into OpenCode's
