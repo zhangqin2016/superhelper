@@ -1,0 +1,134 @@
+# Build runnable installers for Windows + macOS (arm64 & Intel x64) and expose
+# them as downloadable ARTIFACTS. No publishing — for testing a build / handing
+# someone an installer without touching the release pipeline (release.yml does
+# the Qiniu + update-server publish).
+#
+#   Actions → "Build installers" → Run workflow
+#
+# Builds are UNSIGNED but RUNNABLE:
+#   - macOS .dmg/.zip → open via right-click → Open (unsigned, Gatekeeper)
+#   - Windows .exe/.zip → installs/runs directly (SmartScreen may warn)
+# Each job builds its own Python+LibreOffice runtime and fetches the OpenCode
+# engine binary, so the installers are fully self-contained.
+
+name: Build installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_libreoffice:
+        description: "Skip LibreOffice for a faster smoke build (installer won't do doc conversion)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ----------------------------------------------------------------- macOS arm64
+  mac-arm64:
+    runs-on: macos-14
+    timeout-minutes: 120
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"   # unsigned: don't hunt for a cert
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+      - name: Build runtime bundle (darwin-arm64)
+        run: |
+          ARGS="--platform darwin-arm64"
+          [ "${{ inputs.skip_libreoffice }}" = "true" ] && ARGS="$ARGS --skip-libreoffice"
+          node scripts/build-runtime-bundle.mjs $ARGS
+      - name: Build DMG + ZIP (arm64)
+        run: npm run dist:mac:arm64        # fetches engine, packages, verifies
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-darwin-arm64
+          path: |
+            dist/*-arm64.dmg
+            dist/*-arm64.zip
+            dist/*-arm64.dmg.blockmap
+          if-no-files-found: error
+          retention-days: 14
+
+  # ------------------------------------------------------------------ macOS x64
+  mac-x64:
+    runs-on: macos-13                      # Intel runner
+    timeout-minutes: 120
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+      - name: Build runtime bundle (darwin-x64)
+        run: |
+          ARGS="--platform darwin-x64"
+          [ "${{ inputs.skip_libreoffice }}" = "true" ] && ARGS="$ARGS --skip-libreoffice"
+          node scripts/build-runtime-bundle.mjs $ARGS
+      - name: Build DMG + ZIP (x64)
+        run: npm run dist:mac:x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-darwin-x64
+          path: |
+            dist/*-x64.dmg
+            dist/*-x64.zip
+            dist/*-x64.dmg.blockmap
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------------------------------------------------------------- Windows x64
+  win-x64:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+      - name: Fetch OpenCode engine binary (win32-x64)
+        run: node scripts/fetch-opencode-engine.mjs --platform win32-x64
+      - name: Build runtime bundle (win32-x64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $a = @("--platform", "win32-x64")
+          if ("${{ inputs.skip_libreoffice }}" -eq "true") { $a += "--skip-libreoffice" }
+          node scripts/build-runtime-bundle.mjs @a
+      - name: Verify runtime bundle
+        run: node scripts/verify-runtime-bundle.mjs --platform win32-x64
+      - name: Purge macOS junk before pack
+        run: node scripts/purge-macos-junk.mjs
+      - name: Build Windows installer (NSIS + ZIP)
+        run: npx electron-builder --win --x64
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+      - name: Verify installer contents
+        run: node scripts/verify-win-pack.mjs --expect-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-win32-x64
+          path: |
+            dist/*-x64.exe
+            dist/*-x64.zip
+            dist/*-x64.exe.blockmap
+          if-no-files-found: error
+          retention-days: 14
