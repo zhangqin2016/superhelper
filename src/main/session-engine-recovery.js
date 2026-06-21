@@ -81,9 +81,24 @@ function treeContainsNeedle(root, needle) {
   return walk(root);
 }
 
-/** True when local engine cache contains files for this resume id. */
+/** True when local engine cache can still resume this session.
+ *
+ * For the OpenCode engine the resume artifact is the per-session SQLite at
+ * `opencodeSessionDir/opencode.db` — the session row + messages live there, keyed
+ * by the `ses_…` id. (The Claude-era check below grepped jsonl transcripts under
+ * the guide dir; those never contain an OpenCode id, so it always reported "stale"
+ * and the caller would wipe a perfectly good db on every reopen — total context
+ * loss. The db-existence check is the correct signal; a stale/missing id past this
+ * point is handled gracefully by createSession falling through to a fresh session.) */
 function hasResumeArtifacts(sessionId, resumeId) {
   if (!resumeId) return false;
+  try {
+    const db = path.join(opencodeSessionDir(sessionId), "opencode.db");
+    const st = fs.statSync(db);
+    if (st.isFile() && st.size > 0) return true;
+  } catch {
+    // no per-session db -> fall back to the legacy guide-tree scan below
+  }
   const sessionRoot = sessionGuideDir(sessionId);
   const globalRoot = agentConfigDir();
   const candidates = [
