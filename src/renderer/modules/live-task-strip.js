@@ -3,8 +3,7 @@
 // never scrolls away — answering the "is it still working / how much is left?"
 // question. Sealed/history turns keep their inline card (turn-view-renderer skips
 // the inline card only while live, so there's no duplication).
-import { isTodoTool } from "./turn-timeline.js";
-import { parseTodoEntries } from "./turn-process-layout.js";
+import { isTodoTool, parseTodoEntries } from "./turn-process-layout.js";
 import { t } from "../i18n/index.js";
 
 let collapsed = false;
