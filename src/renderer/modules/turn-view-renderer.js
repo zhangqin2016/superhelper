@@ -323,7 +323,9 @@ export function createLiveTurnArticleShell(liveTurn) {
   prompts.className = "assistant-turn-prompts";
   prompts.dataset.role = "prompts";
 
-  article.append(header, narrative, process, artifacts, footer, prompts);
+  // process (work) above, narrative (answer) below — same order normalize keeps,
+  // so the live article is born in its final layout and never reorders.
+  article.append(header, process, narrative, artifacts, footer, prompts);
   return article;
 }
 
@@ -407,11 +409,17 @@ function normalizeTurnArticleLayout(article, sealed) {
   }
   if (!header || !narrative || !process || !footer || !prompts) return;
 
-  if (sealed) {
-    article.append(header, process, narrative, artifacts, footer, prompts);
-  } else {
-    article.append(header, narrative, process, artifacts, footer, prompts);
-  }
+  // Same region order whether live or sealed — process (what it's doing) above,
+  // the answer below. The answer therefore streams into its FINAL position and
+  // never jumps from top to bottom (with a reflow flicker) when the turn seals.
+  // Sealed history already used this order, so only the live view changes.
+  const desired = [header, process, narrative, artifacts, footer, prompts];
+  // Idempotent: only touch the DOM when the order is actually wrong. Re-appending
+  // identical nodes every render (~every 150ms while streaming) detaches/reattaches
+  // rendered markdown + images and makes them flicker.
+  const current = Array.from(article.children);
+  const sameOrder = current.length === desired.length && desired.every((n, i) => current[i] === n);
+  if (!sameOrder) article.append(...desired);
 }
 
 // `data` may be raw base64 (live stream) or an already-resolved URL such as
