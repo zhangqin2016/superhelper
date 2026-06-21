@@ -236,4 +236,20 @@ if (legacy.length !== 3) {
   throw new Error(`legacy rebuild failed: ${legacy.length}`);
 }
 
+// todowrite updates coalesce into ONE timeline entry (the task-list card updates
+// in place) instead of stacking a new card per update; other tools stay separate.
+{
+  const s = { timeline: [], activityLabel: null, tools: new Map() };
+  upsertTimelineTool(s, { id: "todo_1", name: "todowrite", status: "completed",
+    input: { todos: [{ content: "A", status: "completed" }, { content: "B", status: "pending" }] } }, 1);
+  upsertTimelineTool(s, { id: "todo_2", name: "todowrite", status: "completed",
+    input: { todos: [{ content: "A", status: "completed" }, { content: "B", status: "completed" }] } }, 2);
+  upsertTimelineTool(s, { id: "bash_1", name: "bash", status: "completed", input: { command: "ls" } }, 3);
+  const todos = s.timeline.filter((e) => e.kind === "tool" && String(e.name).toLowerCase() === "todowrite");
+  if (todos.length !== 1) throw new Error(`todowrite must coalesce to one entry, got ${todos.length}`);
+  if (todos[0].id !== "todo_1") throw new Error(`coalesced todo keeps the first id (stable card), got ${todos[0].id}`);
+  if (todos[0].input.todos[1].status !== "completed") throw new Error("coalesced todo must show the latest list state");
+  if (s.timeline.filter((e) => e.kind === "tool").length !== 2) throw new Error("non-todo tool must stay a separate entry");
+}
+
 console.log("turn-timeline: ok");

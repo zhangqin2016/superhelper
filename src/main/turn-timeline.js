@@ -189,10 +189,26 @@ function findToolEntry(timeline, id) {
   return null;
 }
 
+/** The todo/task-list is ONE evolving list, but OpenCode emits a fresh todowrite
+ *  call (new callID) for every update. Coalesce them onto a single timeline entry
+ *  so the task-list card updates in place instead of stacking a new card each time. */
+function isTodoTool(name) {
+  return String(name || "").toLowerCase() === "todowrite";
+}
+function findTodoEntry(timeline) {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const item = timeline[index];
+    if (item.kind === "tool" && isTodoTool(item.name)) return item;
+  }
+  return null;
+}
+
 function upsertTimelineTool(target, tool, ts = Date.now()) {
   if (!tool?.id) return;
   const timeline = ensureTimeline(target);
-  let entry = findToolEntry(timeline, tool.id);
+  // todowrite updates all land on the first todo entry (its id stays stable so the
+  // renderer reuses the same card); other tools key by their own call id.
+  let entry = isTodoTool(tool.name) ? findTodoEntry(timeline) : findToolEntry(timeline, tool.id);
   if (!entry) {
     closeStreamingBlocks(target, ts);
     entry = {
