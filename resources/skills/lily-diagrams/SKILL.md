@@ -19,8 +19,9 @@ editable. Use one of these vector paths instead.
 2. **Mermaid cannot express the required custom layout → write SVG** for precise
    layout, custom icons, information graphics, geometric/spatial diagrams, or
    branded visuals.
-3. Use `lily-image-generation` only for scene and texture images such as people,
-   posters, illustrations, and product visuals.
+3. Not a diagram? Defer to the intent router's "Visual / graphic output" rubric:
+   perceptual/creative work (people, scenes, posters, textures) → `lily-image-generation`;
+   a real, usable UI or web page → `frontend-design` (code), not a diagram or a picture.
 
 ## Mermaid (preferred)
 

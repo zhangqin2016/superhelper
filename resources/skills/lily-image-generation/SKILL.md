@@ -1,6 +1,6 @@
 ---
 name: lily-image-generation
-description: Generate bitmap images with Alibaba Bailian Qwen-Image. Use for scene/texture images such as portraits, posters, illustrations, product shots, avatars, covers, and concept art. For structural content such as flowcharts, architecture diagrams, charts, and icons, use lily-diagrams instead.
+description: Generate bitmap images with Alibaba Bailian Qwen-Image. Use for scene/texture/creative work where realism, style, or mood is what matters — portraits, people, scenes, landscapes, background art, textures, posters, illustrations, product shots, avatars, covers, concept art. NOT for structural content (flowcharts, architecture diagrams, charts, icons, wireframes → lily-diagrams) and NOT for a real/usable UI or web page (landing page, dashboard, component → frontend-design). See the intent router's visual-output rubric.
 allowed-tools: Bash(node *)
 ---
 
@@ -10,11 +10,12 @@ This tool generates **bitmap images**. It is appropriate for scene and texture
 work: people, portraits, photorealistic images, posters, illustrations, product
 shots, concept art, and covers.
 
-If the user asks for structural content such as a flowchart, architecture
-diagram, sequence diagram, state machine, mind map, data chart, ER diagram,
-Gantt chart, or UI wireframe, do **not** use this tool. Use `lily-diagrams`
-instead, preferring Mermaid first and SVG only when Mermaid cannot express the
-layout.
+Route by what makes the output correct (full rubric: the intent router's
+"Visual / graphic output" section). In short: structural content whose
+correctness is exact text/data/geometry — flowcharts, architecture, charts,
+icons, wireframes — is **not** a bitmap → use `lily-diagrams`. A real, usable
+UI or web page → use `frontend-design` (code), not a picture of one. Use this
+tool only when realism, style, or mood is what matters.
 
 ## Ground the request in context — don't interrogate
 
