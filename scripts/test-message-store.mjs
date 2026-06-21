@@ -115,6 +115,17 @@ try {
   ok(!store.blobs.exists(hash), "blob file GC'd after last ref removed");
   ok(!store.db.get("SELECT 1 FROM blobs WHERE hash=?", hash), "blob catalog row GC'd");
 
+  // --- deleteFromTurn: rewind truncation (the turn + everything after) ---
+  for (const t of ["t1", "t2", "t3"]) {
+    store.append("S3", { id: `${t}_u`, role: "user", content: `${t} user`, turnId: t });
+    store.append("S3", { id: `${t}_a`, role: "assistant", content: `${t} reply`, turnId: t });
+  }
+  ok(store.count("S3") === 6, "S3 seeded with 3 turns (6 messages)");
+  ok(store.deleteFromTurn("S3", "t2") === 4, "deleteFromTurn(t2) removes t2 + t3 (4 messages)");
+  ok(store.count("S3") === 2, "only t1 remains after rewind to t2");
+  ok(store.getAll("S3").every((m) => m.content.startsWith("t1")), "remaining messages are all t1");
+  ok(store.deleteFromTurn("S3", "nope") === 0, "deleteFromTurn on unknown turn is a no-op");
+
   // --- persistence across reopen ---
   store.close();
   const store2 = new MessageStore(dbPath, blobDir);

@@ -274,6 +274,29 @@ class MessageStore {
     })();
   }
 
+  /** Rewind support: delete the given turn and EVERY message after it (higher
+   *  seq), releasing their blobs. Returns how many messages were removed. Keeps
+   *  Lily's transcript in lock-step with the engine's revert to the same turn. */
+  deleteFromTurn(sessionId, turnId) {
+    if (!turnId) return 0;
+    return this.db.transaction(() => {
+      const anchor = this.db.get(
+        `SELECT MIN(seq) AS seq FROM messages WHERE session_id = ? AND turn_id = ?`,
+        sessionId,
+        turnId,
+      );
+      if (!anchor || anchor.seq == null) return 0;
+      const rows = this.db.all(
+        `SELECT id FROM messages WHERE session_id = ? AND seq >= ?`,
+        sessionId,
+        anchor.seq,
+      );
+      for (const { id } of rows) this._unlinkMessageBlobs(id);
+      this.db.run(`DELETE FROM messages WHERE session_id = ? AND seq >= ?`, sessionId, anchor.seq);
+      return rows.length;
+    })();
+  }
+
   /** Delete every message for a session and release its blobs. */
   clear(sessionId) {
     return this.db.transaction(() => {

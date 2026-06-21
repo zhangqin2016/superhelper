@@ -130,6 +130,32 @@ function registerSessionHandlers(ctx) {
     };
   });
 
+  // Rewind the conversation to a turn: revert the engine session (files + dropped
+  // context) AND truncate Lily's transcript to the same point, in lock-step.
+  ipcMain.handle("session:rewind", async (_event, payload) => {
+    const sessionId = payload?.sessionId || sessionManager.activeSessionId;
+    const turnId = payload?.turnId;
+    const engineMessageId = payload?.engineMessageId || null;
+    const session = sessionId ? sessionManager.findById(sessionId) : null;
+    if (!session || !turnId) return { ok: false, error: "NOT_FOUND" };
+    if (isSessionBusy(runnerPool, sessionId)) return { ok: false, error: "BUSY" };
+
+    // Revert the ENGINE first; only truncate Lily's store if that succeeds, so the
+    // two never diverge (a mismatch is the context-corruption class we guard against).
+    if (engineMessageId) {
+      try {
+        ensureSessionRunner(ctx, sessionId, { spawn: true });
+        const runner = runnerPool.get(sessionId);
+        const reverted = runner ? await runner.revert(engineMessageId) : false;
+        if (!reverted) return { ok: false, error: "REWIND_ENGINE_FAILED" };
+      } catch (err) {
+        return { ok: false, error: "REWIND_ENGINE_FAILED", detail: String(err?.message || err) };
+      }
+    }
+    const removed = sessionManager.deleteMessagesFromTurn(sessionId, turnId);
+    return { ok: true, sessionId, turnId, removed };
+  });
+
   ipcMain.handle("session:set-permission", (_event, payload) => {
     const sessionId = payload?.sessionId || sessionManager.activeSessionId;
     const session = sessionId ? sessionManager.findById(sessionId) : null;

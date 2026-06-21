@@ -481,17 +481,20 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   /** Rewind the engine session to a turn's anchor message (files + dropped
-   *  context). Returns false if the server isn't up. */
+   *  context). Ensures the server is up/resumed first so a cold session can be
+   *  rewound. Refuses while a turn is in flight. */
   async revert(engineMessageId) {
-    if (!this._server || !engineMessageId) return false;
-    await this._server.revert(engineMessageId);
+    if (!engineMessageId || this.busy) return false;
+    const server = await this._ensureStarted();
+    await server.revert(engineMessageId);
     return true;
   }
 
   /** Undo the last rewind (restore reverted messages + files). */
   async unrevert() {
-    if (!this._server) return false;
-    await this._server.unrevert();
+    if (this.busy) return false;
+    const server = await this._ensureStarted();
+    await server.unrevert();
     return true;
   }
 

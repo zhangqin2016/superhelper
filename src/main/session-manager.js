@@ -693,6 +693,21 @@ class SessionManager {
     return this._store().getById(messageId);
   }
 
+  /** Rewind support: drop the given turn and every message after it, and keep the
+   *  session's messageCount in sync. Returns how many messages were removed. */
+  deleteMessagesFromTurn(sessionId, turnId) {
+    const session = this._find(sessionId);
+    if (!session || !turnId) return 0;
+    this._ensureImported(session);
+    const removed = this._store().deleteFromTurn(session.id, turnId);
+    if (removed > 0) {
+      session.messageCount = this._store().count(session.id);
+      session.updatedAt = new Date().toISOString();
+      this.save();
+    }
+    return removed;
+  }
+
   updateMessageMeta(sessionId, messageId, updater) {
     const session = this._find(sessionId);
     if (!session || !messageId) return null;
