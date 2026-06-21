@@ -90,6 +90,8 @@ class TurnArchive {
       activityLabel: state.activityLabel || null,
       durationMs: payload.durationMs ?? state.durationMs ?? null,
       totalCostUsd: payload.totalCostUsd ?? state.totalCostUsd ?? null,
+      // Engine message id for session:rewind (revert the engine to this turn).
+      engineMessageId: payload.engineMessageId ?? null,
       processEvents: (state.processEvents || []).slice(-100),
       notices: (state.notices || []).slice(-20),
       usage: state.usage || null,

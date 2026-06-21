@@ -392,6 +392,25 @@ class OpencodeServerManager extends EventEmitter {
     return this._request("POST", `/question/${requestID}/reply${q}`, { answers });
   }
 
+  /**
+   * Rewind the session to a message: the engine rolls its file snapshots back to
+   * that point and marks every message from it onward as reverted (dropped from
+   * model context, restorable via unrevert). Reverting to an assistant message
+   * undoes its whole exchange (the engine anchors to the preceding user message).
+   * @param {string} messageID engine message id (msg_…)
+   */
+  async revert(messageID) {
+    if (!this.sessionID) throw new Error("no session");
+    if (!messageID) throw new Error("revert needs a messageID");
+    return this._request("POST", `/session/${this.sessionID}/revert`, { messageID });
+  }
+
+  /** Restore all previously reverted messages (undo a rewind). */
+  async unrevert() {
+    if (!this.sessionID) throw new Error("no session");
+    return this._request("POST", `/session/${this.sessionID}/unrevert`, {});
+  }
+
   /** Best-effort graceful abort; terminate() is the guaranteed stop. */
   async abort() {
     if (!this.sessionID) return false;

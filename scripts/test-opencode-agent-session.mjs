@@ -37,6 +37,8 @@ class FakeServer extends EventEmitter {
   async respondPermission(id, d) { this.permissionReplies.push({ id, ...d }); }
   async respondQuestion(id, answers) { this.questionReplies = this.questionReplies || []; this.questionReplies.push({ id, answers }); }
   async abort() { this.aborted = true; return true; }
+  async revert(messageID) { this.reverted = messageID; return {}; }
+  async unrevert() { this.unreverted = true; return {}; }
   terminate() { this.process = null; }
   emitEvent(ev) { this.emit("event", ev); }
 }
@@ -327,6 +329,22 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   await tick();
   assert(serverCount === 1, "config change does NOT respawn the server (context stays threaded)");
   assert(made[0].prompts.length === 2 && made[0].prompts[1].text === "turn two", "turn two POSTs to the same session");
+  session.terminate();
+}
+
+// --- rewind: capture the turn's engine message id; pass revert/unrevert through
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "do it" });
+  await tick();
+  fake.emitEvent({ type: "message.part.delta", properties: { messageID: "msg_anchor", field: "text", delta: "ok" } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  assert(orch.calls.done.length === 1, "rewind: turn completes");
+  assert(orch.calls.done[0].engineMessageId === "msg_anchor", "rewind: done payload carries the turn's engine message id (anchor)");
+  assert((await session.revert("msg_anchor")) === true, "rewind: revert returns true when server is up");
+  assert(fake.reverted === "msg_anchor", "rewind: revert hits the engine with the anchor id");
+  await session.unrevert();
+  assert(fake.unreverted === true, "rewind: unrevert hits the engine");
   session.terminate();
 }
 

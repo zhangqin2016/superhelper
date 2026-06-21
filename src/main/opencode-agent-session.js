@@ -204,6 +204,9 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawActivity = false;
     this._gatedThisTurn = false;
     this.collectedOutput = "";
+    // First engine message id of this turn — the rewind anchor. Reverting to it
+    // undoes the whole exchange (the engine anchors back to the preceding user msg).
+    this._turnEngineMessageId = null;
     this._armResponseTimer();
 
     (async () => {
@@ -310,6 +313,12 @@ class OpencodeAgentSession extends EventEmitter {
     // stalled completion. (Before this, the timer was a hard cap on total turn
     // duration, so a >2min agentic turn reported "no final result" while running.)
     this._armResponseTimer();
+
+    // Capture the turn's first engine message id (rewind anchor) before normalize.
+    if (!this._turnEngineMessageId) {
+      const mid = ev?.properties?.messageID || ev?.properties?.part?.messageID || ev?.properties?.info?.id;
+      if (typeof mid === "string" && mid.startsWith("msg_")) this._turnEngineMessageId = mid;
+    }
 
     let normalized;
     try {
@@ -463,7 +472,27 @@ class OpencodeAgentSession extends EventEmitter {
     this._adapter.reset();
     this._turnSettled = true;
     this.busy = false;
+    // Carry the turn's rewind anchor (engine message id) so the orchestrator can
+    // record it on the turn — that's what session:rewind reverts to later.
+    if (payload && typeof payload === "object" && this._turnEngineMessageId && !payload.engineMessageId) {
+      payload.engineMessageId = this._turnEngineMessageId;
+    }
     this._orchestrator?.notifyRunnerDone(this.sessionId, payload);
+  }
+
+  /** Rewind the engine session to a turn's anchor message (files + dropped
+   *  context). Returns false if the server isn't up. */
+  async revert(engineMessageId) {
+    if (!this._server || !engineMessageId) return false;
+    await this._server.revert(engineMessageId);
+    return true;
+  }
+
+  /** Undo the last rewind (restore reverted messages + files). */
+  async unrevert() {
+    if (!this._server) return false;
+    await this._server.unrevert();
+    return true;
   }
 
   _failTurn(message) {

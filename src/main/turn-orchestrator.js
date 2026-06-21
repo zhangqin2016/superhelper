@@ -789,6 +789,9 @@ class TurnOrchestrator {
     const terminalMeta = {
       durationMs: state.durationMs ?? null,
       totalCostUsd: state.totalCostUsd ?? null,
+      // Rewind anchor: the engine message id of this turn (session:rewind reverts
+      // the engine session to it). Null on turns that never reached the engine.
+      engineMessageId: payload?.engineMessageId || null,
     };
     if (interrupted) {
       this._finalize(sessionId, "turn.interrupted", {
