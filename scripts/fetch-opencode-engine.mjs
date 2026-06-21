@@ -20,11 +20,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 
 const args = process.argv.slice(2);
-const version = args.find((a) => !a.startsWith("--")) || "1.17.8";
-const platArg = (() => {
-  const i = args.indexOf("--platform");
-  return i >= 0 ? args[i + 1] : null;
-})();
+const platIdx = args.indexOf("--platform");
+const platArg = platIdx >= 0 ? args[platIdx + 1] : null;
+// The positional version arg — but never the value that follows --platform
+// (otherwise `--platform darwin-arm64` is misread as version "darwin-arm64").
+const version = args.find((a, i) => !a.startsWith("--") && i !== platIdx + 1) || "1.17.8";
 
 // Map our bundle platform key -> the opencode-ai optional-dep package name.
 const KEY_TO_PKG = {
