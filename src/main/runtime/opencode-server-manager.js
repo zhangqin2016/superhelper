@@ -208,10 +208,21 @@ class OpencodeServerManager extends EventEmitter {
       });
       this.process = child;
 
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error("opencode serve did not report a listening port in time"));
-      }, timeoutMs);
+      // Settle the start() promise exactly once (ready / timeout / early death),
+      // and stop parsing stdout for the listening line — but DO NOT detach the
+      // exit/error handlers: they must persist for the process's whole life so a
+      // crash AFTER the server is ready is still detected. (Previously they were
+      // removed on ready, so a post-ready crash went unnoticed — this.process
+      // stayed set, isAlive() lied, and the turn hung until the silence watchdog.)
+      let startSettled = false;
+      let timer = null;
+      const settleStart = (fn) => {
+        if (startSettled) return;
+        startSettled = true;
+        if (timer) clearTimeout(timer);
+        child.stdout.off("data", onStdout);
+        fn();
+      };
 
       const onStdout = (chunk) => {
         this._stdoutBuf += chunk.toString();
@@ -222,35 +233,31 @@ class OpencodeServerManager extends EventEmitter {
           if (addr) {
             this.host = addr.host === "0.0.0.0" ? "127.0.0.1" : addr.host;
             this.port = addr.port;
-            cleanup();
             log.info("opencode serve ready on %s", this.baseUrl);
-            resolve({ host: this.host, port: this.port });
+            settleStart(() => resolve({ host: this.host, port: this.port }));
             return;
           }
         }
       };
       const onStderr = (chunk) => log.warn("serve stderr: %s", chunk.toString().trim().slice(0, 200));
-      const onExit = (code) => {
-        clearTimeout(timer);
-        this.process = null;
-        if (!this._terminated) this.emit("exit", { code });
-        reject(new Error(`opencode serve exited before listening (code ${code})`));
-      };
-      const onError = (err) => {
-        cleanup();
-        reject(err);
-      };
-      const cleanup = () => {
-        clearTimeout(timer);
-        child.stdout.off("data", onStdout);
-        child.removeListener("exit", onExit);
-        child.removeListener("error", onError);
-      };
+
+      timer = setTimeout(
+        () => settleStart(() => reject(new Error("opencode serve did not report a listening port in time"))),
+        timeoutMs,
+      );
 
       child.stdout.on("data", onStdout);
       child.stderr.on("data", onStderr);
-      child.once("exit", onExit);
-      child.once("error", onError);
+      // Persistent — fire for the whole process lifetime, not just startup.
+      child.on("exit", (code) => {
+        this.process = null;
+        if (!this._terminated) this.emit("exit", { code });
+        settleStart(() => reject(new Error(`opencode serve exited before listening (code ${code})`)));
+      });
+      child.on("error", (err) => {
+        if (!this._terminated) this.emit("error", err);
+        settleStart(() => reject(err));
+      });
     });
   }
 

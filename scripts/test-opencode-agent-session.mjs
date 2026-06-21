@@ -348,4 +348,27 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   session.terminate();
 }
 
+// --- lifecycle: a post-ready engine crash / unreachable must not hang ---------
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "go" });
+  await tick();
+  assert(session.isAlive() === true, "lifecycle: alive after start");
+  // Engine becomes unreachable mid-turn (SSE gave up after retries).
+  fake.emit("error", new Error("SSE reconnect gave up after 30 attempts"));
+  assert(orch.calls.error.length === 1, "lifecycle: unreachable engine FAILS the in-flight turn (no hang)");
+  assert(session.isAlive() === false, "lifecycle: server dropped after unreachable error");
+}
+{
+  // isAlive() must reflect a crashed child (non-null exitCode), not just that a
+  // process object lingers — otherwise a dead engine reads as alive.
+  const { fake, session } = await newSession();
+  session.sendUserMessage({ text: "go" });
+  await tick();
+  assert(session.isAlive() === true, "lifecycle: alive while running");
+  fake.process.exitCode = 1; // crashed; exit event not yet delivered
+  assert(session.isAlive() === false, "lifecycle: isAlive() false once the child has exited");
+  session.terminate(); // clear the in-flight turn's watchdog so the test process exits
+}
+
 console.log("opencode-agent-session: ok");

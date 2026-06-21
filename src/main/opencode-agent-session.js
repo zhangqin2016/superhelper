@@ -160,13 +160,17 @@ class OpencodeAgentSession extends EventEmitter {
       });
       server.on("event", (ev) => this._handleEvent(ev));
       server.on("exit", ({ code }) => this._onServerExit(code));
-      server.on("error", (err) => log.warn("server error: %s", err?.message || String(err)));
+      server.on("error", (err) => this._onServerError(err));
       await server.start();
       const id = await server.createSession();
       server.subscribe();
       this._server = server;
       this.agentResumeId = id;
       this.emit("agent-resume-id", id);
+      // Started — clear the "starting" flag so isAlive() keys on the live process,
+      // not a resolved start promise that never gets reset (which would mask a
+      // later crash and report a dead engine as alive).
+      this._starting = null;
       return server;
     })();
     this._starting.catch((err) => {
@@ -183,7 +187,12 @@ class OpencodeAgentSession extends EventEmitter {
     // returns before the server is ready. Treating an in-flight start as alive
     // lets the orchestrator's spawn:true preflight pass (otherwise every send
     // fails "Unable to start the assistant process").
-    return Boolean((this._server && this._server.process) || this._starting);
+    const p = this._server && this._server.process;
+    // Verify the child is actually running — not just that a (possibly dead)
+    // process object lingers. A crashed serve leaves the object set with a
+    // non-null exitCode; without this check isAlive() reported it as alive.
+    const running = Boolean(p && p.exitCode == null && p.signalCode == null && !p.killed);
+    return running || Boolean(this._starting);
   }
 
   isBusy() {
@@ -512,6 +521,19 @@ class OpencodeAgentSession extends EventEmitter {
     if (this.busy && !this._turnSettled) {
       this._failTurn(`The assistant engine stopped unexpectedly (code ${code}).`);
     }
+    this._server = null;
+    this._starting = null;
+  }
+
+  /** The engine became unreachable (SSE gave up after retries, or a spawn error).
+   *  Treat it as down: fail any in-flight turn so it can't hang, and drop the
+   *  server so the next send spawns fresh and resumes the same session id. */
+  _onServerError(err) {
+    log.warn("server error: %s", err?.message || String(err));
+    if (this.busy && !this._turnSettled) {
+      this._failTurn("The assistant engine became unreachable. Please retry.");
+    }
+    try { this._server?.terminate?.(); } catch { /* best effort */ }
     this._server = null;
     this._starting = null;
   }
