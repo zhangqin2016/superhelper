@@ -123,14 +123,21 @@ function applyStatusDisplay(statusEl, text, { sealed = false, live = false } = {
   statusEl.hidden = !text;
   if (!text) return;
   statusEl.classList.toggle("is-sealed-duration", sealed && live === false);
-  if (live) {
-    statusEl.style.fontSize = LIVE_STATUS_STYLE;
-    statusEl.style.fontWeight = "500";
-    statusEl.style.lineHeight = "1.65";
-  } else {
-    statusEl.style.fontSize = "";
-    statusEl.style.fontWeight = "";
-    statusEl.style.lineHeight = "";
+  // The live/sealed inline style only differs across that one transition — write
+  // it once when the mode flips, not on every streaming tick (the status sits at
+  // the answer head; a per-tick style write forces a recalc there each frame).
+  const liveFlag = live ? "1" : "0";
+  if (statusEl.dataset.liveStyle !== liveFlag) {
+    statusEl.dataset.liveStyle = liveFlag;
+    if (live) {
+      statusEl.style.fontSize = LIVE_STATUS_STYLE;
+      statusEl.style.fontWeight = "500";
+      statusEl.style.lineHeight = "1.65";
+    } else {
+      statusEl.style.fontSize = "";
+      statusEl.style.fontWeight = "";
+      statusEl.style.lineHeight = "";
+    }
   }
   if (statusEl.dataset.lastText === text) return;
   statusEl.textContent = text;
@@ -1125,16 +1132,27 @@ function toolFilePath(tool) {
 
 function renderPrompts(root, sessionId, liveTurn) {
   if (!root) return;
-  root.replaceChildren();
   const entries = [
     ...liveTurn.permissions.values(),
     ...liveTurn.questions.values(),
     ...liveTurn.hooks.values(),
   ];
+  // Pruning stale question drafts is cheap (a Set diff) — always do it.
   pruneQuestionDrafts(
     sessionId,
     new Set(entries.filter((item) => item.questions).map((item) => String(item.requestId || ""))),
   );
+  // Rebuild the cards ONLY when the set of pending prompts actually changes.
+  // These cards hold interactive state (question drafts, focus, permission
+  // buttons); replaceChildren() every ~150ms streaming tick tore them down and
+  // rebuilt them, making an awaiting permission/question card flicker and lose
+  // input. Keyed by request id + kind, which is stable for a given prompt.
+  const sig = entries
+    .map((item) => `${item.questions ? "q" : item.hookName ? "h" : "p"}:${item.requestId || ""}`)
+    .join("|");
+  if (root.dataset.promptsSig === sig) return;
+  root.dataset.promptsSig = sig;
+  root.replaceChildren();
   root.hidden = entries.length === 0;
   for (const item of entries) {
     if (item.questions) root.appendChild(questionCard(sessionId, item));

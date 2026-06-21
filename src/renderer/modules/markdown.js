@@ -528,6 +528,22 @@ export function appendStreamingText(element, text) {
   if (element.dataset) element.dataset.streamMode = "text";
 }
 
+// Shared morphdom options for the in-place markdown patches. childrenOnly keeps
+// the host element; onBeforeElUpdated avoids two flicker sources:
+//  1. identical subtrees — the stable prefix of a streaming answer and any
+//     already-loaded <img> are left untouched instead of re-diffed/repainted
+//     (no ghosting, no image reload as text grows);
+//  2. an already-rendered Mermaid diagram is never reverted to its source <pre>
+//     (a fresh markdown render re-emits the source) and re-rendered with a flash.
+const MARKDOWN_MORPH_OPTS = {
+  childrenOnly: true,
+  onBeforeElUpdated(from, to) {
+    if (from.isEqualNode(to)) return false;
+    if (from.classList?.contains("markdown-mermaid")) return false;
+    return true;
+  },
+};
+
 /**
  * Lightweight markdown render for streaming. Unlike renderMarkdown,
  * this does NOT await highlight.js — code blocks render without syntax
@@ -552,7 +568,7 @@ export function renderStreamingMarkdown(element, markdownText) {
   // rebuild every tick — no flicker, smooth incremental output.
   const next = document.createElement(element.tagName || "DIV");
   next.innerHTML = sanitized;
-  morphdom(element, next, { childrenOnly: true });
+  morphdom(element, next, MARKDOWN_MORPH_OPTS);
   enhanceRenderedMarkdown(element, { interactive: false });
   if (element.dataset) element.dataset.streamMode = "rendered";
 }
@@ -607,7 +623,7 @@ export function renderMarkdownFinal(element, markdownText) {
   const html = parser(prepareMarkdown(markdownText || "", { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
   const next = document.createElement(element.tagName || "DIV");
   next.innerHTML = window.DOMPurify.sanitize(html);
-  morphdom(element, next, { childrenOnly: true });
+  morphdom(element, next, MARKDOWN_MORPH_OPTS);
   enhanceRenderedMarkdown(element, { interactive: true });
   scheduleMermaidRender(element);
   if (element.dataset) delete element.dataset.streamMode;

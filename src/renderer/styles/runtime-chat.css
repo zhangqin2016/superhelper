@@ -21,23 +21,17 @@
   background: var(--bg-surface-raised);
 }
 
+/* Layout/paint isolation only. We deliberately do NOT use content-visibility:auto
+ * here: its contain-intrinsic-size placeholder (was 260px) is far smaller than a
+ * real answer, so off-screen articles flip between the estimate and their measured
+ * height as you scroll — scrollHeight jitters, scrollTop gets repositioned, and the
+ * view jumps (most visibly to the head of the current answer after a reload/switch).
+ * Plain containment gives the perf isolation without the size estimation that caused
+ * the jump. */
 .runtime-user-message,
 .assistant-turn-article.is-sealed,
 .scheduled-draft-article {
-  content-visibility: auto;
-  contain: layout style paint;
-}
-
-.runtime-user-message {
-  contain-intrinsic-size: auto 96px;
-}
-
-.assistant-turn-article.is-sealed {
-  contain-intrinsic-size: auto 260px;
-}
-
-.scheduled-draft-article {
-  contain-intrinsic-size: auto 220px;
+  contain: layout style;
 }
 
 .runtime-user-label {
