@@ -115,10 +115,16 @@ function syncManifestI18nFromBundled(skillId) {
     const bundledI18n = bundled[i18nKey];
     if (!bundledI18n || typeof bundledI18n !== "object") continue;
     const installedI18n = installed[i18nKey];
+    // Update when missing/empty OR when the bundled content actually changed —
+    // platform guide edits (these manifests are ours, not user-editable) must
+    // reach already-installed copies on the next launch without a version bump.
+    // The old code only filled when missing, so every guide edit silently stayed
+    // in the repo and never reached the running app.
     if (
       !installedI18n ||
       typeof installedI18n !== "object" ||
-      Object.keys(installedI18n).length === 0
+      Object.keys(installedI18n).length === 0 ||
+      JSON.stringify(installedI18n) !== JSON.stringify(bundledI18n)
     ) {
       installed[i18nKey] = { ...bundledI18n };
       changed = true;
@@ -485,7 +491,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 7;
+const AGENT_GUIDE_STATIC_VERSION = 8;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
