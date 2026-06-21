@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const semver = require("semver");
 const { app, shell } = require("electron");
 const { userDataPath } = require("./config");
 const { loadPublicKey } = require("./license-manager");
@@ -108,15 +109,15 @@ function getUpdateSettings() {
   };
 }
 
+// Proper semver ordering (honors pre-release tags like 1.0.0-beta < 1.0.0),
+// via the `semver` lib. Parses strict versions when present, coerces loose ones
+// (e.g. "v1.2"), and returns 0 on anything unparseable — staying fail-safe like
+// the previous hand-rolled split-on-[.-] comparison, but correct.
 function compareVersions(a, b) {
-  const pa = String(a || "0").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
-  const pb = String(b || "0").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i += 1) {
-    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
-    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
-  }
-  return 0;
+  const pa = semver.parse(String(a || "").trim()) || semver.coerce(String(a || "0"));
+  const pb = semver.parse(String(b || "").trim()) || semver.coerce(String(b || "0"));
+  if (!pa || !pb) return 0;
+  return semver.compare(pa, pb);
 }
 
 function currentPlatformKey() {

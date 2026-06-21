@@ -55,7 +55,10 @@ async function fetchArtifactBuffer(url, options = {}) {
       lastError = error;
       const retry = attempt < attempts && isRetryableError(error);
       if (!retry) break;
-      await sleep(500 * attempt);
+      // Exponential backoff with jitter (500ms, 1s, 2s… capped at 8s) so repeated
+      // transient failures don't hammer the server in lockstep.
+      const backoff = Math.min(8000, 500 * 2 ** (attempt - 1));
+      await sleep(backoff + Math.floor(Math.random() * 250));
     } finally {
       clearTimeout(timer);
     }

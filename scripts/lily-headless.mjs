@@ -21,29 +21,31 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { parseCliArgs } from "./lib/cli-args.mjs";
 
 const require = createRequire(import.meta.url);
 const { buildOpencodeConfig } = require("../src/main/runtime/opencode-config-builder.js");
 const { findBundledOpencodeBinary } = require("../src/main/bundle-locator.js");
 
-const argv = process.argv.slice(2);
-const valFlag = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : null; };
-const boolFlag = (name) => argv.includes(name);
+const USAGE = 'lily-headless [--cwd DIR] [--json] [--model P/M] [--command NAME] [--db FILE] "prompt"';
+const { values, positionals } = parseCliArgs({
+  usage: USAGE,
+  options: {
+    cwd: { type: "string" },
+    json: { type: "boolean", default: false },
+    model: { type: "string" },
+    command: { type: "string" },
+    db: { type: "string" },
+  },
+});
 
-const cwd = valFlag("--cwd") || process.cwd();
-const asJson = boolFlag("--json");
-const model = valFlag("--model");
-const command = valFlag("--command");
-const dbPath = valFlag("--db");
-
-// Positional prompt = everything not consumed by a flag.
-const consumed = new Set();
-for (const f of ["--cwd", "--model", "--command", "--db"]) {
-  const i = argv.indexOf(f);
-  if (i >= 0) { consumed.add(i); consumed.add(i + 1); }
-}
-{ const i = argv.indexOf("--json"); if (i >= 0) consumed.add(i); }
-const prompt = argv.filter((_, i) => !consumed.has(i)).join(" ").trim();
+const cwd = values.cwd || process.cwd();
+const asJson = values.json;
+const model = values.model || null;
+const command = values.command || null;
+const dbPath = values.db || null;
+// Positional args form the prompt (quoting optional: "fix the bug" or fix the bug).
+const prompt = positionals.join(" ").trim();
 
 function die(code, msg) { console.error(`[lily-headless] ${msg}`); process.exit(code); }
 

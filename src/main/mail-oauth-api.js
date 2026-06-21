@@ -1,5 +1,6 @@
 "use strict";
 
+const { convert: htmlToText } = require("html-to-text");
 const { refreshOAuthToken } = require("./mail-oauth-executor");
 
 async function searchOAuthMessages(account, query = {}, options = {}) {
@@ -256,16 +257,24 @@ function encodeHeader(value) {
     : `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
 }
 
+// Outlook/Graph returns HTML bodies; render them to readable plain text via
+// html-to-text (already shipped as a mailparser dep) instead of a regex strip
+// that mangled entities, nested tags, lists and tables.
 function stripHtml(value) {
-  return String(value || "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .trim();
+  const html = String(value || "");
+  if (!html) return "";
+  try {
+    return htmlToText(html, {
+      wordwrap: false,
+      selectors: [
+        { selector: "a", options: { ignoreHref: true } },
+        { selector: "img", format: "skip" },
+      ],
+    }).trim();
+  } catch {
+    // Never let a malformed body break message reading.
+    return html.replace(/<[^>]+>/g, "").trim();
+  }
 }
 
 function escapeOData(value) {
