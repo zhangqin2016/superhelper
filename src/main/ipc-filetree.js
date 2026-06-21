@@ -80,7 +80,7 @@ function registerFileTreeHandlers(ctx = {}) {
     return project?.path || null;
   }
 
-  function resolveRevealPath(filePath) {
+  function resolveRevealPath(filePath, sessionId = "") {
     const raw = String(filePath || "").trim();
     if (!raw) return null;
     let candidate = raw;
@@ -91,7 +91,25 @@ function registerFileTreeHandlers(ctx = {}) {
         return null;
       }
     }
-    return path.isAbsolute(candidate) ? candidate : null;
+    if (path.isAbsolute(candidate)) {
+      return fs.existsSync(candidate) ? candidate : null;
+    }
+    // Relative path (e.g. "output/x.svg" the model printed in its answer) —
+    // resolve against the session's workspace, then fall back to searching the
+    // workspace by basename so a bare filename (no dir) still resolves.
+    const root = sessionProjectRoot(sessionId);
+    if (!root) return null;
+    try {
+      const direct = path.resolve(root, candidate);
+      if ((direct === root || direct.startsWith(root + path.sep)) && fs.existsSync(direct)) {
+        return direct;
+      }
+    } catch {
+      /* fall through to search */
+    }
+    const base = path.basename(candidate);
+    const hit = searchWorkspaceFiles(root, base, 8).find((f) => f.name === base);
+    return hit ? hit.absPath : null;
   }
 
   ipcMain.handle("filetree:search-files", (_event, { rootPath, query, limit }) => {
@@ -183,9 +201,9 @@ function registerFileTreeHandlers(ctx = {}) {
     }
   });
 
-  ipcMain.handle("filetree:reveal", (_event, { filePath }) => {
+  ipcMain.handle("filetree:reveal", (_event, { filePath, sessionId }) => {
     try {
-      const target = resolveRevealPath(filePath);
+      const target = resolveRevealPath(filePath, sessionId);
       if (!target || !fs.existsSync(target)) {
         return { ok: false, error: "NOT_FOUND" };
       }
@@ -194,6 +212,27 @@ function registerFileTreeHandlers(ctx = {}) {
         void shell.openPath(target);
       } else {
         shell.showItemInFolder(target);
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // Open a file in the OS default app (the "quick preview" for svg/pdf/html/img/…).
+  // Falls back to revealing a directory. Path resolution is the same workspace-aware
+  // logic as reveal, so a relative or bare filename from the answer still opens.
+  ipcMain.handle("filetree:open", (_event, { filePath, sessionId }) => {
+    try {
+      const target = resolveRevealPath(filePath, sessionId);
+      if (!target || !fs.existsSync(target)) {
+        return { ok: false, error: "NOT_FOUND" };
+      }
+      const { shell } = require("electron");
+      if (fs.statSync(target).isDirectory()) {
+        void shell.openPath(target);
+      } else {
+        void shell.openPath(target);
       }
       return { ok: true };
     } catch (err) {

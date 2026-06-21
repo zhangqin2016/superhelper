@@ -228,6 +228,30 @@
   color: var(--code-text);
 }
 
+/* Inline preview/reveal affordance after a file mention in the answer. */
+.file-mention-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-inline-start: 4px;
+  padding: 1px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+.file-mention-action:hover {
+  opacity: 1;
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
 .assistant-turn-narrative.markdown-body pre,
 .assistant-turn-final.markdown-body pre {
   overflow: auto;

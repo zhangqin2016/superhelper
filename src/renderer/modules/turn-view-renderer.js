@@ -5,6 +5,7 @@ import { t } from "../i18n/index.js";
 import { showToast } from "./toast.js";
 import { confirmDialog } from "./confirm-dialog.js";
 import { revealLocalFileInFolder } from "./file-reveal.js";
+import { enhanceFileMentions } from "./file-mentions.js";
 import {
   appendToolPayloadDetail,
   parseGeneratedMedia,
@@ -356,7 +357,11 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     narrativeImageKey(liveTurn.contentBlocks || []),
   ].join("|");
   if (article.dataset.narrativeKey !== narrativeKey) {
-    renderNarrative(article.querySelector('[data-role="narrative"]'), liveTurn, { sealed });
+    const narrativeEl = article.querySelector('[data-role="narrative"]');
+    renderNarrative(narrativeEl, liveTurn, { sealed });
+    // Once the answer is final, give inline file mentions a preview/reveal icon.
+    // (Only when sealed — mid-stream filenames are still incomplete.)
+    if (sealed) enhanceFileMentions(narrativeEl, sessionId);
     article.dataset.narrativeKey = narrativeKey;
   }
   renderProcess(article.querySelector('[data-role="process"]'), liveTurn, { sessionId, sealed });

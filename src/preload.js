@@ -177,6 +177,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("assistant:remember-convention", { sessionId, text }),
   revealInFolder: (filePath, sessionId = "") =>
     ipcRenderer.invoke("filetree:reveal", { filePath, sessionId }),
+  openLocalFile: (filePath, sessionId = "") =>
+    ipcRenderer.invoke("filetree:open", { filePath, sessionId }),
 
   onRuntimeEvents: (callback) => {
     ipcRenderer.on("assistant:runtime-events", (_event, batch) => callback(batch));

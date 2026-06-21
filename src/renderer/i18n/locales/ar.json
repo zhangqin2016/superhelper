@@ -563,6 +563,8 @@
   "permission.kind.webfetch": "جلب صفحة ويب",
   "permission.kind.websearch": "البحث على الويب",
   "permission.kind.externalDirectory": "الوصول إلى مجلد خارج مساحة العمل",
+  "file.reveal": "إظهار في المجلد",
+  "file.preview": "معاينة",
   "permission.approve": "موافقة",
   "permission.deny": "رفض",
   "permission.approveRemember": "موافقة وتذكّر (تخطي طلبات مستقبلية لهذه الأداة)",
