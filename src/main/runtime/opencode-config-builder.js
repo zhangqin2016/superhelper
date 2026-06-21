@@ -45,30 +45,70 @@ const TOOL_NAME_MAP = {
   Grep: "grep",
 };
 
+// Shell commands that are genuinely risky — confirmed even in "ask" mode's
+// otherwise-automatic workspace shell. Matched (via OpenCode's Wildcard) against
+// the parsed command source AND the command-prefix glob the shell tool presents.
+const DESTRUCTIVE_BASH = [
+  "rm -rf*", "rm -fr*", "rm -r *",
+  "sudo *",
+  "git push*", "git reset --hard*", "git clean -f*",
+  "npm publish*", "pnpm publish*", "yarn publish*",
+  "mkfs*", "dd *", "shutdown*", "reboot*",
+  "curl * | sh*", "curl * | bash*", "wget * | sh*", "wget * | bash*",
+];
+
+// Irreversible catastrophes — confirmed even under full autonomy. Deliberately
+// narrow (root/home wipe, raw disk ops) so "Auto" stays prompt-free for real work.
+const CATASTROPHIC_BASH = [
+  "rm -rf /*", "rm -fr /*", "rm -rf ~*", "rm -rf ~/*", "rm -rf $HOME*",
+  "mkfs*", "dd *of=/dev*",
+];
+
+/** A per-tool rule object: catch-all FIRST, specific "ask" patterns AFTER, so
+ *  evaluate() (last match wins) lets the specific patterns override the default. */
+function bashRules(baseAction, askPatterns) {
+  const rules = { "*": baseAction };
+  for (const p of askPatterns) rules[p] = "ask";
+  return rules;
+}
+
 /**
  * Map a Lily permission mode + disallowedTools to an OpenCode per-tool ruleset.
- * Approximate — OpenCode is per-tool ask/allow/deny, Lily modes are coarser.
+ * OpenCode permissions are per-tool and pattern-aware (Action | {pattern: Action});
+ * the shell tool keys on "bash" (command source + prefix), edit/write on "edit"
+ * (workspace-RELATIVE path — outside the workspace begins with "../"), read on
+ * "read". We exploit that for path/command-scoped rules instead of one flat action.
  */
 function translatePermission(mode, disallowedTools) {
   let base;
   switch (mode) {
     case "full":
-      // Full autonomy: allow EVERY permission type, not just the common tools.
-      // OpenCode defaults any unlisted permission (e.g. external_directory) to
-      // "ask", so without the "*" catch-all a fully-authorized session still
-      // prompted for things like reading a dir outside the workspace. The "*" rule
-      // matches all permission names via Wildcard; per-tool denials below still win
-      // because evaluate() takes the LAST matching rule.
-      base = { "*": "allow" };
+      // Autonomous: allow everything, but still confirm irreversible disasters
+      // (disk wipe, root/home deletion). Normal work stays prompt-free.
+      base = { "*": "allow", bash: bashRules("allow", CATASTROPHIC_BASH) };
       break;
     case "plan":
-      // Read-only: research is fine, no system mutations.
-      base = { bash: "deny", edit: "deny", write: "deny", webfetch: "allow", websearch: "allow" };
+      // Read-only: navigation + research allowed (explicitly, so reads don't hit
+      // OpenCode's "ask" default), all mutations denied.
+      base = {
+        read: "allow", grep: "allow", glob: "allow", list: "allow", lsp: "allow",
+        webfetch: "allow", websearch: "allow",
+        edit: "deny", bash: "deny", task: "deny",
+      };
       break;
     case "ask":
     default:
-      // Confirm before touching the system; reads/research stay automatic.
-      base = { bash: "ask", edit: "ask", write: "ask", webfetch: "allow", websearch: "allow" };
+      // Balanced default: normal work INSIDE this workspace runs automatically;
+      // confirm only genuinely risky shell commands and edits OUTSIDE the
+      // workspace (relative path starts with "../"). Reads/research are free.
+      base = {
+        read: "allow", grep: "allow", glob: "allow", list: "allow", lsp: "allow",
+        webfetch: "allow", websearch: "allow",
+        task: "allow",
+        edit: { "*": "allow", "../*": "ask" },
+        external_directory: "ask",
+        bash: bashRules("allow", DESTRUCTIVE_BASH),
+      };
       break;
   }
   for (const t of disallowedTools || []) {

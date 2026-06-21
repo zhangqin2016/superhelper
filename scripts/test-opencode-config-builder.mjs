@@ -31,10 +31,18 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   // is allowed, not just the common tools — otherwise OpenCode's "ask" default
   // still prompts a fully-authorized session.
   assert(translatePermission("full")["*"] === "allow", "full -> wildcard allow");
+  // Even full confirms irreversible catastrophes (bash is now a pattern ruleset).
+  assert(translatePermission("full").bash["*"] === "allow", "full -> bash allowed by default");
+  assert(translatePermission("full").bash["rm -rf /*"] === "ask", "full -> root wipe still asks");
   assert(translatePermission("plan").edit === "deny", "plan -> edit deny");
+  assert(translatePermission("plan").read === "allow", "plan -> reads explicitly allowed (no ask-default nag)");
   assert(translatePermission("plan").websearch === "allow", "plan -> research still allowed");
-  assert(translatePermission("ask").bash === "ask", "ask -> bash ask");
-  assert(translatePermission("does-not-exist").bash === "ask", "unknown mode -> safe ask default");
+  // ask: automatic inside the workspace, confirm risky shell + out-of-workspace edits.
+  assert(translatePermission("ask").bash["*"] === "allow", "ask -> safe shell runs automatically");
+  assert(translatePermission("ask").bash["rm -rf*"] === "ask", "ask -> destructive shell confirmed");
+  assert(translatePermission("ask").edit["*"] === "allow", "ask -> in-workspace edits automatic");
+  assert(translatePermission("ask").edit["../*"] === "ask", "ask -> edits outside the workspace confirmed");
+  assert(translatePermission("does-not-exist").bash["*"] === "allow", "unknown mode -> ask default ruleset");
   // disallowedTools force deny even under full's "*" allow — evaluate() takes the
   // LAST matching rule, and the deny keys are appended after "*".
   const full = translatePermission("full", ["WebSearch"]);
@@ -72,7 +80,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(cfg.provider.lily.options.baseURL === "https://api.deepseek.com", "provider carried");
   assert(cfg.model === "lily/deepseek-chat", "default model carried");
   assert(cfg.mcp.mail.type === "local", "mcp merged in");
-  assert(cfg.permission.bash === "ask" && cfg.permission.websearch === "deny", "permission merged in");
+  assert(cfg.permission.bash["*"] === "allow" && cfg.permission.websearch === "deny", "permission merged in (ask ruleset + disallowed deny)");
   assert(cfg.instructions.length === 1 && cfg.instructions[0].endsWith("AGENT.md"), "fallback: instructions paths used when no agentPrompt");
 }
 

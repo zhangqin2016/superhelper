@@ -15,12 +15,12 @@ const PERMISSION_MODES = [
   {
     id: "ask",
     label: "Ask",
-    description: "Confirm before editing files or running commands. Reading and research stay automatic.",
+    description: "Works automatically inside this workspace; only confirms risky commands (delete/push/publish) and changes outside the workspace. Reading and research stay automatic.",
   },
   {
     id: "full",
     label: "Auto",
-    description: "Full autonomy: edit files and run commands without asking. Use only in trusted workspaces.",
+    description: "Full autonomy: edits files and runs commands without asking; still confirms a few irreversible disasters (wiping root/home, formatting disks). Use only in trusted workspaces.",
   },
 ];
 
