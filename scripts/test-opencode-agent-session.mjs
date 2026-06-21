@@ -386,19 +386,28 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   session.terminate();
 }
 
-// --- hard cap: a turn that emits but NEVER completes is force-ended -----------
+// --- no-progress: busy heartbeats (no actions) still force-end the turn --------
+// A turn pinging "busy" but doing nothing is caught even though events keep
+// arriving — the case a reset-on-every-event watchdog would miss, and without a
+// blunt wall-clock cap that would kill a legit long-but-progressing task.
 {
-  OpencodeAgentSession.TURN_HARD_CAP_MS = 20;
-  const { fake, session, orch } = await newSession();
-  session.sendUserMessage({ text: "loop forever" });
-  await tick();
-  // Keep emitting events — this resets the silence watchdog, proving the hard cap
-  // fires DESPITE ongoing activity (the case the silence watchdog can't catch).
-  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "x" } });
-  await new Promise((r) => setTimeout(r, 50)); // > hard cap
-  assert(orch.calls.done.length === 1, "hard cap force-ends a turn that emits but never completes");
-  assert(fake.aborted === true, "hard cap aborts the engine before settling");
-  session.terminate();
+  const saved = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 60;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "stuck but noisy" });
+    await tick();
+    for (let i = 0; i < 6; i++) {
+      fake.emitEvent({ type: "session.status", properties: { status: { type: "busy" } } });
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert(orch.calls.done.length === 1, "busy-only heartbeats (no progress) force-end the turn");
+    assert(orch.calls.done[0].stalled === true, "no-progress force-end is marked stalled");
+    assert(fake.aborted === true, "force-end aborts the engine");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = saved;
+  }
 }
 
 console.log("opencode-agent-session: ok");

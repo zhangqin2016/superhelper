@@ -218,7 +218,6 @@ class OpencodeAgentSession extends EventEmitter {
     this._turnEngineMessageId = null;
     this._armResponseTimer();
     this._armHealthProbe();
-    this._armTurnDeadline();
 
     (async () => {
       try {
@@ -304,7 +303,6 @@ class OpencodeAgentSession extends EventEmitter {
   terminate() {
     this._clearResponseTimer();
     this._clearHealthProbe();
-    this._clearTurnDeadline();
     this._clearPendingPermissions();
     if (this._server) {
       this._server.terminate();
@@ -320,13 +318,6 @@ class OpencodeAgentSession extends EventEmitter {
   // --- inbound: SSE event -> actions -> drafts -----------------------------
 
   _handleEvent(ev) {
-    // Any event is a sign the stream is alive: reset the stall watchdog so a long
-    // but active turn (extended thinking, a slow tool, a subagent) is never killed
-    // mid-work. Only true silence — no events for the full window — trips the
-    // stalled completion. (Before this, the timer was a hard cap on total turn
-    // duration, so a >2min agentic turn reported "no final result" while running.)
-    this._armResponseTimer();
-
     // Capture the turn's first engine message id (rewind anchor) before normalize.
     if (!this._turnEngineMessageId) {
       const mid = ev?.properties?.messageID || ev?.properties?.part?.messageID || ev?.properties?.info?.id;
@@ -341,9 +332,16 @@ class OpencodeAgentSession extends EventEmitter {
       return;
     }
 
-    // Any meaningful action means the engine is actively handling our turn —
-    // a later message-POST hiccup must not fail it (see sendUserMessage).
-    if (normalized.actions.length) this._sawActivity = true;
+    // Meaningful actions = the engine is making PROGRESS (text, thinking, a tool
+    // call/update/result). Reset the no-progress watchdog only on these — NOT on
+    // every event. Busy/heartbeat events carry no actions, so a turn that just
+    // pings "busy" without doing anything still times out, while a genuinely long
+    // task that keeps progressing (an hour of converting files, etc.) resets the
+    // watchdog on each step and runs to completion.
+    if (normalized.actions.length) {
+      this._sawActivity = true;
+      this._armResponseTimer();
+    }
 
     for (const action of normalized.actions) {
       this._handleAction(action);
@@ -483,7 +481,6 @@ class OpencodeAgentSession extends EventEmitter {
     if (this._turnSettled) return;
     this._clearResponseTimer();
     this._clearHealthProbe();
-    this._clearTurnDeadline();
     this._clearPendingPermissions();
     this._adapter.reset();
     this._turnSettled = true;
@@ -518,7 +515,6 @@ class OpencodeAgentSession extends EventEmitter {
     if (this._turnSettled) return;
     this._clearResponseTimer();
     this._clearHealthProbe();
-    this._clearTurnDeadline();
     this._clearPendingPermissions();
     this._adapter.reset();
     this._turnSettled = true;
@@ -565,11 +561,14 @@ class OpencodeAgentSession extends EventEmitter {
     this._pendingQuestions.clear();
   }
 
+  // No-progress watchdog: re-armed on each progress action (see _handleEvent), so
+  // it only fires after a full window with NO forward movement — a stuck/silent
+  // turn — never during a long task that keeps progressing.
   _armResponseTimer() {
     this._clearResponseTimer();
     if (!this.busy || this._turnSettled) return;
     this._responseTimer = setTimeout(() => {
-      this._forceEndTurn("no events for the silence window");
+      this._forceEndTurn("no progress for the no-progress window");
     }, OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS);
   }
 
@@ -577,25 +576,6 @@ class OpencodeAgentSession extends EventEmitter {
     if (this._responseTimer) {
       clearTimeout(this._responseTimer);
       this._responseTimer = null;
-    }
-  }
-
-  /** Absolute per-turn ceiling — armed ONCE at turn start and NEVER reset by
-   *  events. The silence watchdog only catches QUIET stalls; this catches a turn
-   *  that keeps emitting but never finishes (runaway/doom loop, a tool stuck in a
-   *  retry loop, a blocked permission nobody answers). Guarantees every turn ends
-   *  within the cap no matter what — the "never hang" backstop. */
-  _armTurnDeadline() {
-    this._clearTurnDeadline();
-    this._turnDeadline = setTimeout(() => {
-      this._forceEndTurn("exceeded the hard turn-duration cap");
-    }, OpencodeAgentSession.TURN_HARD_CAP_MS);
-  }
-
-  _clearTurnDeadline() {
-    if (this._turnDeadline) {
-      clearTimeout(this._turnDeadline);
-      this._turnDeadline = null;
     }
   }
 
@@ -654,13 +634,14 @@ class OpencodeAgentSession extends EventEmitter {
 // stuck. It resets on every event (see _handleEvent), so this is a silence
 // threshold, not a cap on turn length — it must outlast a single long, quiet
 // tool (e.g. a multi-minute build/test). Override with LILY_OPENCODE_TURN_TIMEOUT_MS.
+// No-PROGRESS window: how long with no meaningful action (text/thinking/tool
+// activity) before a turn is treated as stuck and force-ended. It resets on every
+// progress action — NOT on heartbeats — so a long task that keeps making progress
+// (e.g. an hour of file conversion) runs to completion, while a turn that's only
+// pinging "busy" with nothing happening is caught. Generous so a single slow step
+// isn't killed; the engine's own per-tool timeout bounds a truly silent command.
 OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
-  Number(process.env.LILY_OPENCODE_TURN_TIMEOUT_MS) || 300_000;
-// Absolute per-turn ceiling (NOT reset by events). The universal "never hang"
-// backstop: any turn force-ends within this, even a noisy runaway the silence
-// watchdog can't catch. Generous so real long agentic work finishes normally.
-OpencodeAgentSession.TURN_HARD_CAP_MS =
-  Number(process.env.LILY_OPENCODE_TURN_HARD_CAP_MS) || 900_000;
+  Number(process.env.LILY_OPENCODE_TURN_TIMEOUT_MS) || 600_000;
 // Active health probe during a turn: poll every PROBE_MS, declare the engine dead
 // only after MAX_FAILS consecutive failures (so a slow-but-healthy turn survives).
 OpencodeAgentSession.HEALTH_PROBE_MS = Number(process.env.LILY_OPENCODE_HEALTH_PROBE_MS) || 30_000;
