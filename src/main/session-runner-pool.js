@@ -73,6 +73,23 @@ class SessionRunnerPool {
       env = {};
     }
 
+    // OpenCode installs node-based language servers (pyright/tsserver) on demand
+    // via an embedded arborist, which honors `npm_config_registry`. Default that
+    // to a China-reachable mirror so the code-intelligence loop's first-edit
+    // download actually succeeds for our users instead of dead-ending on a slow/
+    // blocked registry.npmjs.org (then silently producing no diagnostics).
+    // Scoped to the engine env only; respects a registry the user already set,
+    // overridable via LILY_NPM_REGISTRY, and disablable with LILY_NPM_REGISTRY=off.
+    const npmRegistry = process.env.LILY_NPM_REGISTRY || "https://registry.npmmirror.com";
+    if (
+      npmRegistry !== "off" &&
+      !env.npm_config_registry &&
+      !process.env.npm_config_registry &&
+      !process.env.NPM_CONFIG_REGISTRY
+    ) {
+      env.npm_config_registry = npmRegistry;
+    }
+
     runner.ensureProcess(cwd, {
       agentCommand,
       permissionMode,

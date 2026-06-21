@@ -83,6 +83,46 @@ function resolveBundledUv() {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
+/**
+ * Directory holding a usable `node` binary inside the bundle, or null.
+ *
+ * The runtime bundle does not ship a standalone node, but Playwright vendors a
+ * full Node runtime under its driver dir (every platform). The OpenCode engine
+ * spawns node-based language servers (pyright, typescript-language-server) whose
+ * bins are `#!/usr/bin/env node` scripts — without `node` on PATH they fail to
+ * start, so the code-intelligence loop silently no-ops. Surfacing this node dir
+ * on the agent PATH is what makes that loop actually run on packaged builds.
+ * @returns {string|null}
+ */
+function resolveBundledNodeDir(runtimeRoot) {
+  const exe = process.platform === "win32" ? "node.exe" : "node";
+  const driverDirs = [];
+  // Windows venv: venv/Lib/site-packages/...; POSIX: venv/lib/python3.X/site-packages/...
+  if (process.platform === "win32") {
+    driverDirs.push(
+      path.join(runtimeRoot, "venv", "Lib", "site-packages", "playwright", "driver"),
+    );
+  } else {
+    const libDir = path.join(runtimeRoot, "venv", "lib");
+    let pythonDirs = [];
+    try {
+      pythonDirs = fs
+        .readdirSync(libDir)
+        .filter((name) => name.startsWith("python3."))
+        .map((name) => path.join(libDir, name));
+    } catch {
+      pythonDirs = [];
+    }
+    for (const dir of pythonDirs) {
+      driverDirs.push(path.join(dir, "site-packages", "playwright", "driver"));
+    }
+  }
+  for (const dir of driverDirs) {
+    if (fs.existsSync(path.join(dir, exe))) return dir;
+  }
+  return null;
+}
+
 function resolveSofficeDir(runtimeRoot) {
   const candidates = [
     path.join(runtimeRoot, "libreoffice", "LibreOffice.app", "Contents", "MacOS"),
@@ -121,10 +161,13 @@ function getRuntimePathEntries() {
     const bin = runtimeBinDir(root);
     const venvBin = venvBinDir(root);
     const sofficeDir = resolveSofficeDir(root);
+    const nodeDir = resolveBundledNodeDir(root);
 
     if (fs.existsSync(bin)) entries.push(bin);
     if (fs.existsSync(venvBin)) entries.push(venvBin);
     if (sofficeDir) entries.push(sofficeDir);
+    // node for the engine's node-based language servers (pyright/tsserver).
+    if (nodeDir) entries.push(nodeDir);
   }
   const packLibreOfficeDirs = require("./runtime-packs").getRuntimePackLibreOfficeDirs();
   for (const dir of packLibreOfficeDirs) {
@@ -167,6 +210,7 @@ module.exports = {
   resolveBundledRuntimeRoot,
   resolveVenvPython,
   resolveBundledUv,
+  resolveBundledNodeDir,
   getRuntimePathEntries,
   getRuntimeEnvExtras,
   getRuntimeSummary,

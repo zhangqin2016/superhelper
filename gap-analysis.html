@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lily Workbench vs Claude Code — 能力对标</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d212b; --line:#2a2f3a;
+    --text:#e6e9ef; --muted:#9aa4b2; --faint:#6b7484;
+    --ahead:#3fb950; --parity:#d29922; --behind:#f85149; --accent:#7c8cff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:.3px}
+  .sub{color:var(--muted);margin:0 0 28px;font-size:14px}
+  h2{font-size:18px;margin:36px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .tl{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:10px;vertical-align:middle;margin-left:8px}
+  .tl.a{background:rgba(63,185,80,.15);color:var(--ahead)}
+  .tl.b{background:rgba(248,81,73,.15);color:var(--behind)}
+  .tl.p{background:rgba(210,153,34,.15);color:var(--parity)}
+  .verdict{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:10px;padding:16px 18px;margin:0 0 8px}
+  .verdict p{margin:8px 0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card h3{margin:0 0 8px;font-size:14px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  .card.ahead{border-top:2px solid var(--ahead)}
+  .card.behind{border-top:2px solid var(--behind)}
+  ul{margin:6px 0;padding-left:18px}
+  li{margin:5px 0}
+  .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin:12px 0}
+  table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  tr:last-child td{border-bottom:none}
+  td.dim{color:var(--muted)}
+  .dot{font-weight:700}
+  .dot.a{color:var(--ahead)} .dot.b{color:var(--behind)} .dot.p{color:var(--parity)}
+  .pri{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:14px 16px;margin:10px 0}
+  .pri .n{flex:0 0 30px;height:30px;border-radius:50%;background:var(--accent);color:#0b0d12;
+    font-weight:700;display:flex;align-items:center;justify-content:center}
+  .pri .body{flex:1}
+  .pri h4{margin:2px 0 4px;font-size:15px}
+  .pri .why{color:var(--muted);font-size:13.5px;margin:4px 0 0}
+  .eff{font-size:12px;font-weight:600;padding:1px 7px;border-radius:8px;background:var(--panel2);color:var(--muted);white-space:nowrap}
+  .done{font-size:12px;font-weight:700;padding:1px 8px;border-radius:8px;background:rgba(63,185,80,.16);color:var(--ahead);white-space:nowrap}
+  .pri.shipped .n{background:var(--ahead);color:#0b0d12}
+  .commit{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--faint)}
+  .shipbanner{background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.35);border-radius:10px;padding:12px 16px;margin:0 0 8px;color:var(--text)}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .legend{font-size:12.5px;color:var(--faint);margin:6px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Lily Workbench vs Claude Code — 能力对标</h1>
+  <p class="sub">三个视角:Agent 能力 · 工程开发 · 用户使用闭环。引擎 = vendored OpenCode;对比基准 = Claude Code (Anthropic CLI)。<span class="dot a">●</span> 领先 · <span class="dot p">●</span> 持平 · <span class="dot b">●</span> 落后</p>
+
+  <div class="verdict">
+    <p><b>一句话结论:</b>引擎层(OpenCode)能力其实接近 Claude Code,甚至在多模态/学习型技能上更宽;真正的差距在<b>我们这层(harness)对开发者工效的接线</b>——把引擎的细粒度权限收敛成三档、没有 slash/自定义命令、没有 checkpoint/rewind、没有 IDE/headless、测试输出没结构化解析。<b>(代码智能的诊断闭环其实引擎原生就有,见②)</b></p>
+    <p><b>定位差异(不是都该补):</b>Claude Code 是<b>开发者 CLI</b>(默认信任、headless/CI、IDE);Lily 是<b>桌面助手</b>(GUI 优先、护栏优先、面向含非技术用户)。所以部分"落后"是有意分流。</p>
+    <p style="color:var(--ahead);font-weight:600">✅ 下方 5 条优先级差距已全部实现并提交(权限 · 代码智能 · rewind · slash 命令 · headless)。</p>
+  </div>
+
+  <h2>① Agent 能力 <span class="tl p">总体持平</span></h2>
+  <div class="grid">
+    <div class="card ahead"><h3>我们领先 / 独有</h3>
+      <ul>
+        <li><b>学习型技能(L3 结晶化)</b>:把流程自动沉淀成可复用技能并绑定工作区。Claude Code 无自动学习。</li>
+        <li><b>多模态技能</b>:图片/视频/语音生成、Office(LibreOffice)、视觉理解。Claude Code 仅文本/代码。</li>
+        <li><b>预接线 MCP</b>:邮件、浏览器(Playwright)、学习型 web 系统,开箱即用。</li>
+        <li><b>工作区 digest + 学习约定</b>注入提示。</li>
+      </ul>
+    </div>
+    <div class="card behind"><h3>引擎有、但我们没接/没开</h3>
+      <ul>
+        <li><b>显式 lsp 导航工具</b>(主动定义跳转/引用/hover 当工具调)experimental,Lily 未 surface。<b>注</b>:这只是锦上添花;真正的<b>编辑→诊断→自纠闭环已是引擎原生且默认开</b>(见②),不在此列。</li>
+        <li><b>plan agent 流</b>:引擎有 plan/plan_exit 双 agent,Lily 的"Plan"只是权限只读档,非引擎的计划-审批流。</li>
+        <li><b>后台子代理</b>:引擎支持 async background task,Lily 未暴露给用户。</li>
+        <li>引擎的<b>细粒度 per-tool 权限</b>被我们收敛成三档(见②)。</li>
+      </ul>
+    </div>
+  </div>
+  <p class="legend">注:子代理(task)、read/edit/write/bash/grep/glob、web 搜索、todo、自动上下文压缩、会话恢复 — 引擎与 Claude Code 基本持平。</p>
+
+  <h2>② 工程开发 <span class="tl b">主要差距在此</span></h2>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>维度</th><th>Claude Code</th><th>Lily Workbench</th><th>判定</th></tr></thead>
+    <tbody>
+      <tr><td>代码智能进闭环<br><span class="dim">诊断/类型/符号</span></td><td>IDE 诊断回灌 + 跑 tsc/lint;模型据此自纠</td><td><b>引擎原生 LSP 回灌</b>:OpenCode 每次 edit/write/apply_patch 后自动跑 LSP(pyright/tsserver/eslint…)并把诊断拼进工具结果让模型同回合自纠 —— 默认开、非 experimental;另加 Lily post-edit 结构/lint 校验。<b>注</b>:打包后需 node 在 PATH + 现拉 LSP server(已接线,见补齐进展)</td><td><span class="dot p">● 持平</span></td></tr>
+      <tr><td>测试/命令输出</td><td>原始输出 + 模型解读</td><td>原始 stderr 回灌,<b>无结构化解析</b>、无"测试失败→自动重试"</td><td><span class="dot p">● 持平偏弱</span></td></tr>
+      <tr><td>权限粒度</td><td>per-path/per-tool allow/deny 规则(settings.json)</td><td><b>仅 plan/ask/full 三档</b>,引擎本可细粒度却被收敛 → ask 频繁打断、full 全有全无</td><td><span class="dot b">● 落后 🔴</span></td></tr>
+      <tr><td>可复用工作流</td><td>slash 命令 + 自定义命令 + 复用 prompt</td><td><b>无</b> slash/自定义命令(仅"记住:"拦截);技能部分替代</td><td><span class="dot b">● 落后</span></td></tr>
+      <tr><td>checkpoint / rewind</td><td>会话级回退到任意 turn</td><td>仅<b>单 turn 文件 revert + undo</b>(diff 快照),无会话级 rewind</td><td><span class="dot b">● 落后</span></td></tr>
+      <tr><td>用户可配 hooks</td><td>可在 settings 定义 pre/post hooks</td><td>hooks 由 app 托管,用户不可配</td><td><span class="dot b">● 落后</span></td></tr>
+      <tr><td>IDE 集成</td><td>VSCode / JetBrains</td><td>无(独立 Electron)</td><td><span class="dot b">● 落后</span></td></tr>
+      <tr><td>headless / CI</td><td>有(脚本/批处理/CI)</td><td>无(GUI only);仅 scheduled-tasks 做无人值守</td><td><span class="dot b">● 落后</span></td></tr>
+      <tr><td>大仓导航</td><td>Explore/Task 模式 + 模型</td><td>靠引擎 grep/glob;冷启动仅留最近~12 条上下文</td><td><span class="dot p">● 持平偏弱</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="grid">
+    <div class="card ahead"><h3>这块我们也有亮点</h3>
+      <ul>
+        <li><b>post-edit 验证 hook</b>:每次写文件后跑确定性结构校验,失败<b>同回合</b>回灌让模型自纠(fail-open)。</li>
+        <li><b>完成度闸门</b>:模型声称产出文件却缺失/为空 → 自动纠正提示(一次性)。</li>
+        <li><b>diff 快照 + 一键 revert/undo</b>,full 模式自动接受。</li>
+        <li>瞬时失败(网络/超时)<b>自动一次性重试</b>(重生 runner + 重发)。</li>
+      </ul>
+    </div>
+    <div class="card behind"><h3>核心短板</h3>
+      <ul>
+        <li>Lily 是 <b>OpenCode 之上的 UI+编排 harness</b> —— <b>LSP 诊断闭环靠引擎原生提供</b>(已接线:node 上 PATH + 现拉 LSP server),但<b>测试失败结构化解析、符号索引</b>仍未集成。</li>
+        <li>结果:<b>语义错误已能编辑后即时回灌自纠</b>;<b>测试失败</b>仍只回灌原始输出、无主动重试,"跑了才知道"。</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>③ 用户使用闭环 <span class="tl a">面向终端用户反而更强</span></h2>
+  <div class="grid">
+    <div class="card ahead"><h3>领先(对非开发者尤其)</h3>
+      <ul>
+        <li><b>权限模式 UI</b>(Plan/Ask/Full)比 CLI flags 友好。</li>
+        <li><b>交付物闭环</b>:自动识别产出文件 + 预览/打开目录 + 图片内联。</li>
+        <li><b>进度感</b>:turn 时间线、活动标签、思考/工具实时展示。</li>
+        <li><b>scheduled/cron 任务</b>:无人值守定时跑。</li>
+        <li><b>SQLite 消息存储</b>:扛大会话不卡。</li>
+        <li>diff 审阅 + revert/undo 的可视化恢复。</li>
+      </ul>
+    </div>
+    <div class="card behind"><h3>对开发者闭环偏薄</h3>
+      <ul>
+        <li><b>编辑→诊断→修</b> 已由引擎原生 LSP 回灌打通(见②);仍缺的是 <b>测试</b> 这一环的结构化解析与自动重试。</li>
+        <li>权限信任工效差:无"src 自动、tests 询问"这种 per-path 自动。</li>
+        <li>无会话级 rewind,探索式开发回退成本高。</li>
+        <li>无 slash/自定义命令,重复性开发流程要每次手敲。</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>补齐进展 — 5 步全部已实现 ✅</h2>
+  <div class="shipbanner">按 价值/成本 优先级依次落地,每步独立提交 + 验证。后端逻辑单测覆盖;标注「待实跑」的是 UI / 跨进程 / 真实模型部分,需在 app 内验证。</div>
+
+  <div class="pri shipped"><div class="n">1</div><div class="body">
+    <h4>细粒度权限 <span class="done">✅ 已实现</span> <span class="commit">60f21be</span></h4>
+    <p class="why">plan/ask/full 改为 <b>path+命令感知规则集</b>:ask 在工作区内自动、仅危险命令(rm -rf/sudo/push/publish)+ 工作区外编辑(<code>../*</code>)询问;full 仍拦不可逆灾难(rm -rf //~、mkfs、dd)。模式描述三语同步更新。<b>单测 ✅</b></p>
+  </div></div>
+
+  <div class="pri shipped"><div class="n">2</div><div class="body">
+    <h4>代码智能进闭环 <span class="done">✅ 已实现</span> <span class="commit">d997096</span></h4>
+    <p class="why"><b>两层叠加</b>:① 引擎原生 —— OpenCode edit/write/apply_patch 后自动跑 LSP(pyright/tsserver/eslint…)把诊断拼进工具结果,同回合自纠,默认开。② Lily post-edit hook 再加文件级语义 lint(项目自带 eslint/ruff 才跑,errors-only,fail-open;<code>LILY_SKIP_LINT_VERIFY</code> 可关)。<br><b>打包接线(新)</b>:引擎的 LSP server 是 node 脚本、需 node 在 PATH —— 复用 bundle 里 playwright 的 node;并配 <code>registry.npmmirror.com</code> 让首编现拉 server 在国内拉得动。<b>单测 ✅ / 端到端待真机实跑</b></p>
+  </div></div>
+
+  <div class="pri shipped"><div class="n">3</div><div class="body">
+    <h4>会话级 rewind <span class="done">✅ 已实现</span> <span class="commit">f73a944 · 4402a32 · 9331359</span></h4>
+    <p class="why">逐轮原生捕获引擎 anchor → "回退到此"按钮:<b>先 revert 引擎(文件快照+丢弃上下文)、成功才截断 Lily 存储</b>,lock-step 杜绝两侧不一致。<b>后端单测 ✅ / UI 待实跑</b></p>
+  </div></div>
+
+  <div class="pri shipped"><div class="n">4</div><div class="body">
+    <h4>slash / 自定义命令 <span class="done">✅ 已实现</span> <span class="commit">72b16a9 · 51acd4d</span></h4>
+    <p class="why"><code>/name args</code> 可复用模板(<code>.md</code>,兼容 <code>.claude/commands/</code>);composer <code>/</code> 补全菜单 + 发送时展开;内置 <code>/review</code> <code>/explain</code> <code>/test-fix</code>。<b>后端单测 ✅ / UI 待实跑</b></p>
+  </div></div>
+
+  <div class="pri shipped"><div class="n">5</div><div class="body">
+    <h4>headless / CI 脚本模式 <span class="done">✅ 已实现</span> <span class="commit">6099711</span></h4>
+    <p class="why"><code>npm run headless "prompt"</code> —— 复用同一引擎配置(模型+权限+MCP)无 GUI 跑;<code>--json/--model/--command</code>;清晰退出码。<b>smoke ✅ / E2E 需真实模型</b>。注:暂未编译完整 per-session 技能 AGENT.md(后续独立项)。</p>
+  </div></div>
+
+  <p class="legend" style="margin-top:22px">仍故意暂缓:IDE 集成、用户可配 hooks、headless 的全套技能注入 —— 与"面向非技术用户的桌面助手"定位偏离或属独立较大项,拉开发者群体时再评估。</p>
+</div>
+</body>
+</html>
