@@ -288,9 +288,17 @@ const projectBoundIds = skillManager.resolveSessionSkillIds({ projectId: "p1", e
 if (!projectBoundIds.includes("learned-demo-oa")) {
   throw new Error("learned workspace skill should auto-enable for new chats in its bound project");
 }
+// An explicit per-conversation selection is authoritative: a workspace skill the
+// user left unchecked must NOT be silently re-added (otherwise the "本对话技能"
+// checkbox lies and the assistant keeps seeing a system turned off for this chat).
 const customProjectBoundIds = skillManager.resolveSessionSkillIds({ projectId: "p1", enabledSkillIds: [] });
-if (!customProjectBoundIds.includes("learned-demo-oa")) {
-  throw new Error("learned workspace skill should stay available even when a session customizes skill selection");
+if (customProjectBoundIds.includes("learned-demo-oa")) {
+  throw new Error("explicit selection must be authoritative — an unchecked workspace skill must not be re-added");
+}
+// ...but a workspace skill the user explicitly keeps checked is honored.
+const customKeepWsIds = skillManager.resolveSessionSkillIds({ projectId: "p1", enabledSkillIds: ["learned-demo-oa"] });
+if (!customKeepWsIds.includes("learned-demo-oa")) {
+  throw new Error("an explicitly selected workspace skill should be present");
 }
 const otherProjectIds = skillManager.resolveSessionSkillIds({ projectId: "p2", enabledSkillIds: null });
 if (otherProjectIds.includes("learned-demo-oa")) {

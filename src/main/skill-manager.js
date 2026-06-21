@@ -290,18 +290,25 @@ function sameIdSet(a, b) {
 
 function resolveSessionSkillIds(session) {
   const installed = new Set(getAllInstalledSkillIds());
-  let ids;
-  if (!session || session.enabledSkillIds == null) {
-    ids = getGloballyEnabledSkillIds().filter((id) => installed.has(id));
-  } else if (!Array.isArray(session.enabledSkillIds)) {
-    ids = getGloballyEnabledSkillIds().filter((id) => installed.has(id));
+  let merged;
+  if (isSessionSkillCustomized(session)) {
+    // The conversation has an explicit skill selection ("本对话技能"). It is
+    // authoritative: exactly what the user left checked. We deliberately do NOT
+    // re-merge project-bound workspace skills here — doing so silently undid
+    // unchecking a workspace skill, so the checkbox lied and the assistant kept
+    // "seeing" a system the user turned off for this chat.
+    merged = new Set(session.enabledSkillIds.filter((id) => installed.has(id)));
   } else {
-    ids = session.enabledSkillIds.filter((id) => installed.has(id));
+    // Fresh chat (no explicit selection): default to globally-enabled skills plus
+    // this project's workspace skills, so new chats in a workspace get its learned
+    // capabilities without manual setup. Once the user customizes, the branch
+    // above takes over and this auto-merge no longer overrides their choice.
+    merged = new Set(getGloballyEnabledSkillIds().filter((id) => installed.has(id)));
+    for (const skillId of getWorkspaceEnabledSkillIds(session?.projectId)) {
+      if (installed.has(skillId)) merged.add(skillId);
+    }
   }
-  const merged = new Set(ids);
-  for (const skillId of getWorkspaceEnabledSkillIds(session?.projectId)) {
-    if (installed.has(skillId)) merged.add(skillId);
-  }
+  // Platform-mandatory skills are always on (and are hidden from the panel).
   for (const skillId of MANDATORY_PLATFORM_SKILL_IDS) {
     if (installed.has(skillId)) merged.add(skillId);
   }
