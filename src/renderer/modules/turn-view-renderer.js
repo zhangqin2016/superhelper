@@ -564,14 +564,9 @@ function patchLiveProcessDom(root, liveTurn, ctx) {
   }
   for (const entry of timeline) {
     if (entry.kind === "tool" && isTodoTool(entry.name)) {
-      const card = root.querySelector(`.assistant-todo-card[data-tool-id="${CSS.escape(entry.id)}"]`);
-      if (!card) return false;
-      const todos = parseTodoEntries(entry);
-      const done = todos.filter((todo) => todo.status === "completed").length;
-      const summaryEl = card.querySelector(".assistant-todo-summary");
-      const nextSummary = t("todo.summary", { done, total: todos.length });
-      if (summaryEl && summaryEl.textContent !== nextSummary) summaryEl.textContent = nextSummary;
-      renderTodoItems(card.querySelector(".assistant-todo-items"), todos);
+      // Live todos render in the pinned task strip (above the composer), not
+      // inline — patchLiveProcessDom only runs for live turns, so always skip.
+      continue;
     } else if (entry.kind === "tool") {
       const row = root.querySelector(`.assistant-tool-row[data-tool-id="${CSS.escape(entry.id)}"]`);
       if (!row) return false;
@@ -864,6 +859,9 @@ function renderTimelineEntry(entry, sealed, ctx = {}) {
   if (entry.kind === "thinking") return renderThinkingEntry(entry, !sealed);
   if (entry.kind === "tool") {
     if (isTodoTool(entry.name)) {
+      // Live turn: the task list lives in the pinned strip above the composer, so
+      // skip the inline card to avoid showing it twice. History keeps it inline.
+      if (!sealed) return null;
       return renderTodoEntry(entry, entry.id === ctx.latestTodoId);
     }
     return renderToolWithChildren(entry, sealed, ctx.childTools, ctx);

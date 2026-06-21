@@ -28,6 +28,7 @@ import { addDiffEntry } from "./diff-panel.js";
 import { syncWorkbenchEmptyState } from "./workbench-empty.js";
 import { collectUnrenderedCommittedMessages } from "./message-render-keys.js";
 import { confirmDialog } from "./confirm-dialog.js";
+import { renderLiveTaskStrip } from "./live-task-strip.js";
 
 const sessionViews = new Map();
 const renderedMessageKeys = new Map();
@@ -585,6 +586,10 @@ function ensureLiveArticle(sessionId, liveTurn) {
 
 function renderRuntimeSession(sessionId, opts = {}) {
   const runtime = getRuntimeSession(sessionId);
+  // Keep the pinned task strip current for the active session even when the
+  // visual-signature dedup skips the heavier render below (to-do progress can
+  // change without changing that signature).
+  if (isActiveSession(sessionId)) renderLiveTaskStrip(runtime.liveTurn || null);
   const sig = runtimeVisualSig(runtime);
   if (!opts.force && lastRuntimeVisualSig.get(sessionId) === sig) return;
   lastRuntimeVisualSig.set(sessionId, sig);

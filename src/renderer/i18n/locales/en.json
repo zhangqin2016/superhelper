@@ -843,6 +843,7 @@
   "turn.thinking.liveSummary": "Thinking · {preview}",
   "turn.thinking.doneSummary": "Thought for {seconds}s",
   "turn.thinking.liveSummaryTimed": "Thinking {seconds}s · {preview}",
+  "task.strip.current": "Now: {item}",
   "todo.summary": "Tasks · {done}/{total} done",
   "timeline.revertTurn": "Restore original",
   "timeline.revertTurnConfirmTitle": "Revert all changes from this turn?",

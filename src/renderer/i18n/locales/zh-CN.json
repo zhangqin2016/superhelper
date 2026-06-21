@@ -843,6 +843,7 @@
   "turn.thinking.liveSummary": "思考中 · {preview}",
   "turn.thinking.doneSummary": "思考了 {seconds} 秒",
   "turn.thinking.liveSummaryTimed": "思考中 {seconds}s · {preview}",
+  "task.strip.current": "正在:{item}",
   "todo.summary": "任务清单 · {done}/{total} 完成",
   "timeline.revertTurn": "恢复原样",
   "timeline.revertTurnConfirmTitle": "恢复这轮的全部改动？",

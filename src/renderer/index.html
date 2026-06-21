@@ -143,6 +143,13 @@
         </section>
 
         <form id="composer" class="composer">
+          <div id="liveTaskStrip" class="live-task-strip" hidden>
+            <button type="button" id="liveTaskStripHeader" class="live-task-strip-header" aria-expanded="true">
+              <span class="live-task-strip-caret">▾</span>
+              <span class="live-task-strip-summary"></span>
+            </button>
+            <ol class="live-task-strip-items"></ol>
+          </div>
           <div id="promptSuggestions" class="prompt-suggestions" hidden></div>
           <div id="permissionDock" class="permission-dock" hidden></div>
           <div id="messageQueueArea" class="message-queue-area" hidden></div>
