@@ -7,6 +7,8 @@ description: Use when the user asks to create, improve, evaluate, or iterate vis
 
 Use this skill to turn short creative requests into reusable creative direction for images, covers, posters, videos, voiceovers, and similar media. The goal is not translation; the goal is to preserve the user's intent and add the missing production details.
 
+**Fill the missing details from context — do not interrogate the user.** When the request is bare (e.g. just "make an image" with no subject), infer it from the CURRENT conversation and the latest deliverable (the report, dataset, or topic just discussed), pick sensible defaults, and proceed to produce the work. Do NOT reply with a generic subject/style/size questionnaire. Ask at most ONE short, context-aware question, and only when there is genuinely no usable context to infer a subject.
+
 ## When To Use
 
 - The user wants to generate or improve images, posters, covers, avatars, product shots, illustrations, concepts, or thumbnails.

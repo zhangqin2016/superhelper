@@ -16,6 +16,18 @@ Gantt chart, or UI wireframe, do **not** use this tool. Use `lily-diagrams`
 instead, preferring Mermaid first and SVG only when Mermaid cannot express the
 layout.
 
+## Ground the request in context — don't interrogate
+
+When the request is bare or short (e.g. just "generate an image" with no
+explicit subject), do NOT reply with a generic questionnaire (subject / style /
+size / preferences). First infer the subject from the CURRENT conversation and
+the latest deliverable: if a report or dataset was just produced, generate a
+relevant cover, hero image, or illustration for it. Choose sensible defaults
+(size 2048*2048, a style that fits the content) and generate directly. Ask at
+most ONE short, context-aware question, and only when there is genuinely no
+usable context to infer a subject. (To visualize the report's actual numbers as
+a chart/diagram, use lily-diagrams, not this bitmap tool.)
+
 When the user asks to generate an image, poster, illustration, cover, avatar,
 product shot, or visual concept, run:
 
