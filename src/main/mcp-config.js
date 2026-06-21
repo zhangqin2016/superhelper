@@ -121,14 +121,21 @@ function serverNameForSystem(draftDir) {
   return `web_${base || "system"}`.slice(0, 64);
 }
 
-/** Installed learned skills that carry a web-system playbook (one per system). */
-function learnedWebSystemDirs() {
+/** Installed learned skills that carry a web-system playbook (one per system).
+ *  `allowedSkillIds` (when provided) scopes this to the skills ACTIVE for the
+ *  current session — a learned workspace skill the user disabled / did not select
+ *  must not expose its web-system MCP tools, otherwise the assistant "sees" a
+ *  connected system the skills panel shows as off and offers to operate it.
+ *  Null (e.g. tests / no session) keeps the old behavior of returning all. */
+function learnedWebSystemDirs(allowedSkillIds = null) {
   try {
     const { agentConfigDir } = require("./config");
     const root = path.join(agentConfigDir(), "skills");
+    const allow = allowedSkillIds ? new Set(allowedSkillIds) : null;
     return fs
       .readdirSync(root)
       .filter((name) => name.startsWith("learned-"))
+      .filter((name) => !allow || allow.has(name))
       .map((name) => path.join(root, name))
       .filter((dir) => fs.existsSync(path.join(dir, "web-system-playbook.json")));
   } catch {
@@ -146,15 +153,15 @@ function buildWebSystemMcpEntries(systemDirs) {
   return out;
 }
 
-function writeActiveMcpConfig(runtimeDir, outPath) {
+function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null) {
   const mcpServers = {};
   const playwright = runtimeDir ? buildPlaywrightMcpConfig(runtimeDir) : null;
   if (playwright?.mcpServers) Object.assign(mcpServers, playwright.mcpServers);
   const mail = buildMailMcpEntry();
   if (mail) mcpServers.mail = mail;
-  // Each learned web system becomes its own MCP server (typed tools); the host
-  // can later scope which are active per context via mcp_toggle.
-  Object.assign(mcpServers, buildWebSystemMcpEntries(learnedWebSystemDirs()));
+  // Each learned web system becomes its own MCP server (typed tools), but only
+  // for the learned skills active in this session — see learnedWebSystemDirs.
+  Object.assign(mcpServers, buildWebSystemMcpEntries(learnedWebSystemDirs(allowedSkillIds)));
   if (!Object.keys(mcpServers).length) return null;
   fs.writeFileSync(outPath, `${JSON.stringify({ mcpServers }, null, 2)}\n`);
   return outPath;

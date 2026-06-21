@@ -186,6 +186,11 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
   const resumeSessionId = session.agentResumeId || null;
   const extra = {
     disallowedTools: skillManager.getDisallowedTools(),
+    // Skills active for THIS session — scopes which learned web-system MCP
+    // servers get loaded, so a disabled/unselected workspace skill no longer
+    // exposes its tools (and the assistant no longer "sees" a system the user
+    // turned off).
+    activeSkillIds: skillManager.resolveSessionSkillIds(session),
     stagingDir,
     resumeSessionId,
     configDir,

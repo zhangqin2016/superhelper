@@ -48,7 +48,7 @@ class SessionRunnerPool {
     // (mail/playwright/web) + permission policy + system-prompt/skill guidance.
     const cfg = buildOpencodeConfig({
       lilyEnv: resolveLilyEnv(),
-      mcpServers: this._opencodeMcpServers(),
+      mcpServers: this._opencodeMcpServers(extra.activeSkillIds),
       permissionMode,
       disallowedTools: extra.disallowedTools || [],
       // Lily's AGENT.md (identity + rules + skills) as the AUTHORITATIVE agent
@@ -91,13 +91,13 @@ class SessionRunnerPool {
 
   /** Lily's active MCP servers (mail/playwright/web) as a {name:{command,args,env}}
    *  map, for translation into OpenCode's mcp config. Empty on any failure. */
-  _opencodeMcpServers() {
+  _opencodeMcpServers(activeSkillIds = null) {
     try {
       const fs = require("node:fs");
       const { bundleRuntimeDir } = require("./bundle-locator");
       const { writeActiveMcpConfig } = require("./mcp-config");
       const out = require("./config").userDataPath("opencode-mcp.json");
-      const written = writeActiveMcpConfig(bundleRuntimeDir(), out);
+      const written = writeActiveMcpConfig(bundleRuntimeDir(), out, activeSkillIds);
       if (!written) return {};
       return JSON.parse(fs.readFileSync(out, "utf8")).mcpServers || {};
     } catch (err) {

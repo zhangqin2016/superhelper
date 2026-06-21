@@ -14,7 +14,7 @@ import { assert } from "./lib/test-assert.mjs";
 
 const require = module.createRequire(import.meta.url);
 const { toolNameForCapability, buildToolInputSchema, annotationsForRisk, buildSystemTools, buildApiPlan, resolveCapabilityContract } = require("../src/main/mcp/web-system-mcp.js");
-const { buildWebSystemMcpEntries } = require("../src/main/mcp-config.js");
+const { buildWebSystemMcpEntries, learnedWebSystemDirs } = require("../src/main/mcp-config.js");
 
 try {
   // namespacing: <system>__<capability>, sanitized, no "web." prefix
@@ -97,7 +97,30 @@ try {
   assert(entries[names[0]].env.ELECTRON_RUN_AS_NODE === "1", "entry runs the app binary in node mode");
   fs.rmSync(tmp, { recursive: true, force: true });
 
-  console.log("PASS: test-web-system-mcp (29 tests)");
+  // A disabled/unselected learned web-system must NOT be loaded. Otherwise the
+  // skills panel shows the skill off yet the assistant still "sees" the connected
+  // system (its typed tools) and offers to operate it — the reported bug.
+  const udir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-ud-"));
+  const skillsRoot = path.join(udir, "lily-config", "skills");
+  for (const id of ["learned-on", "learned-off"]) {
+    fs.mkdirSync(path.join(skillsRoot, id), { recursive: true });
+    fs.writeFileSync(path.join(skillsRoot, id, "web-system-playbook.json"), "{}");
+  }
+  const prevUserData = process.env.LILY_USER_DATA_DIR;
+  process.env.LILY_USER_DATA_DIR = udir;
+  try {
+    const all = learnedWebSystemDirs().map((d) => path.basename(d)).sort();
+    assert(JSON.stringify(all) === JSON.stringify(["learned-off", "learned-on"]), `null allow = all systems, got ${all.join(",")}`);
+    const scoped = learnedWebSystemDirs(["learned-on", "lily-diagrams"]).map((d) => path.basename(d));
+    assert(JSON.stringify(scoped) === JSON.stringify(["learned-on"]), `only active learned systems load, got ${scoped.join(",")}`);
+    assert(learnedWebSystemDirs([]).length === 0, "no active skills => no learned systems load");
+  } finally {
+    if (prevUserData === undefined) delete process.env.LILY_USER_DATA_DIR;
+    else process.env.LILY_USER_DATA_DIR = prevUserData;
+    fs.rmSync(udir, { recursive: true, force: true });
+  }
+
+  console.log("PASS: test-web-system-mcp (32 tests)");
 } catch (err) {
   console.error("FAIL:", err.message);
   process.exit(1);
