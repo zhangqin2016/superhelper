@@ -218,6 +218,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._turnEngineMessageId = null;
     this._armResponseTimer();
     this._armHealthProbe();
+    this._armTurnDeadline();
 
     (async () => {
       try {
@@ -303,6 +304,7 @@ class OpencodeAgentSession extends EventEmitter {
   terminate() {
     this._clearResponseTimer();
     this._clearHealthProbe();
+    this._clearTurnDeadline();
     this._clearPendingPermissions();
     if (this._server) {
       this._server.terminate();
@@ -447,6 +449,7 @@ class OpencodeAgentSession extends EventEmitter {
     // success exit — never on errors/interrupts.
     if (
       !payload?.interrupted &&
+      !payload?.stalled &&
       payload?.code === 0 &&
       !this._gatedThisTurn &&
       this._server &&
@@ -480,6 +483,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (this._turnSettled) return;
     this._clearResponseTimer();
     this._clearHealthProbe();
+    this._clearTurnDeadline();
     this._clearPendingPermissions();
     this._adapter.reset();
     this._turnSettled = true;
@@ -514,6 +518,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (this._turnSettled) return;
     this._clearResponseTimer();
     this._clearHealthProbe();
+    this._clearTurnDeadline();
     this._clearPendingPermissions();
     this._adapter.reset();
     this._turnSettled = true;
@@ -564,9 +569,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearResponseTimer();
     if (!this.busy || this._turnSettled) return;
     this._responseTimer = setTimeout(() => {
-      if (!this.busy || this._turnSettled) return;
-      log.warn("opencode turn timed out with no terminal event", { sessionId: this.sessionId });
-      this._completeTurn({ code: 0, output: this.collectedOutput.trim(), stalled: true });
+      this._forceEndTurn("no events for the silence window");
     }, OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS);
   }
 
@@ -575,6 +578,34 @@ class OpencodeAgentSession extends EventEmitter {
       clearTimeout(this._responseTimer);
       this._responseTimer = null;
     }
+  }
+
+  /** Absolute per-turn ceiling — armed ONCE at turn start and NEVER reset by
+   *  events. The silence watchdog only catches QUIET stalls; this catches a turn
+   *  that keeps emitting but never finishes (runaway/doom loop, a tool stuck in a
+   *  retry loop, a blocked permission nobody answers). Guarantees every turn ends
+   *  within the cap no matter what — the "never hang" backstop. */
+  _armTurnDeadline() {
+    this._clearTurnDeadline();
+    this._turnDeadline = setTimeout(() => {
+      this._forceEndTurn("exceeded the hard turn-duration cap");
+    }, OpencodeAgentSession.TURN_HARD_CAP_MS);
+  }
+
+  _clearTurnDeadline() {
+    if (this._turnDeadline) {
+      clearTimeout(this._turnDeadline);
+      this._turnDeadline = null;
+    }
+  }
+
+  /** Give up on a stuck turn: abort the engine (so it isn't left working/looping
+   *  orphaned) then settle, so the UI can't sit in "正在处理" forever. */
+  _forceEndTurn(reason) {
+    if (!this.busy || this._turnSettled) return;
+    log.warn("opencode turn force-ended: %s", reason, { sessionId: this.sessionId });
+    try { void this._server?.abort?.().catch(() => {}); } catch { /* best effort */ }
+    this._completeTurn({ code: 0, output: this.collectedOutput.trim(), stalled: true });
   }
 
   /** Active liveness probe during a turn. The silence watchdog can't tell a wedged
@@ -625,6 +656,11 @@ class OpencodeAgentSession extends EventEmitter {
 // tool (e.g. a multi-minute build/test). Override with LILY_OPENCODE_TURN_TIMEOUT_MS.
 OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
   Number(process.env.LILY_OPENCODE_TURN_TIMEOUT_MS) || 300_000;
+// Absolute per-turn ceiling (NOT reset by events). The universal "never hang"
+// backstop: any turn force-ends within this, even a noisy runaway the silence
+// watchdog can't catch. Generous so real long agentic work finishes normally.
+OpencodeAgentSession.TURN_HARD_CAP_MS =
+  Number(process.env.LILY_OPENCODE_TURN_HARD_CAP_MS) || 900_000;
 // Active health probe during a turn: poll every PROBE_MS, declare the engine dead
 // only after MAX_FAILS consecutive failures (so a slow-but-healthy turn survives).
 OpencodeAgentSession.HEALTH_PROBE_MS = Number(process.env.LILY_OPENCODE_HEALTH_PROBE_MS) || 30_000;

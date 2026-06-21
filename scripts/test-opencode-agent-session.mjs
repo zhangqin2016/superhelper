@@ -386,4 +386,19 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   session.terminate();
 }
 
+// --- hard cap: a turn that emits but NEVER completes is force-ended -----------
+{
+  OpencodeAgentSession.TURN_HARD_CAP_MS = 20;
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "loop forever" });
+  await tick();
+  // Keep emitting events — this resets the silence watchdog, proving the hard cap
+  // fires DESPITE ongoing activity (the case the silence watchdog can't catch).
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "x" } });
+  await new Promise((r) => setTimeout(r, 50)); // > hard cap
+  assert(orch.calls.done.length === 1, "hard cap force-ends a turn that emits but never completes");
+  assert(fake.aborted === true, "hard cap aborts the engine before settling");
+  session.terminate();
+}
+
 console.log("opencode-agent-session: ok");
