@@ -136,17 +136,16 @@ class OpencodeAgentSession extends EventEmitter {
     return path.join(base, "opencode.db");
   }
 
-  /** Idempotently start the serve process, create a session, and subscribe. */
+  /** Idempotently start the serve process, create a session, and subscribe.
+   *  The server is REUSED across turns — that's what threads the conversation
+   *  (every turn POSTs to the same session id, so OpenCode keeps full context).
+   *  Do NOT restart it just because the config string changed: AGENT.md varies
+   *  per turn (workspace digest, learned context), so a config-diff restart fired
+   *  every turn and broke continuity ("every question treated as new"). A genuine
+   *  permission-mode change applies via applyPermissionMode terminating the idle
+   *  runner, after which this spawns fresh and resumes the same session id. */
   _ensureStarted() {
-    const desiredConfig = this.spawnOptions?.opencodeConfig || "";
-    if (this._server && this._server.sessionID) {
-      if (this._serverConfigSig === desiredConfig) return Promise.resolve(this._server);
-      // Config changed (e.g. the permission ruleset) — OpenCode can't hot-swap it,
-      // so restart the serve to apply. Safe: _ensureStarted runs only when idle or
-      // about to send, never mid-turn; the resume id is kept so context survives.
-      log.info("opencode config changed -> restarting serve", { sessionId: this.sessionId });
-      this.terminate();
-    }
+    if (this._server && this._server.sessionID) return Promise.resolve(this._server);
     if (this._starting) return this._starting;
     this._starting = (async () => {
       const server = this._createServer({
@@ -166,7 +165,6 @@ class OpencodeAgentSession extends EventEmitter {
       const id = await server.createSession();
       server.subscribe();
       this._server = server;
-      this._serverConfigSig = desiredConfig;
       this.agentResumeId = id;
       this.emit("agent-resume-id", id);
       return server;
@@ -265,9 +263,10 @@ class OpencodeAgentSession extends EventEmitter {
   setPermissionMode(mode) {
     if (this.spawnOptions) this.spawnOptions.permissionMode = mode;
     // OpenCode bakes the permission ruleset into the config at serve start and
-    // cannot hot-swap it. Report "not applied live" so the pool restarts the
-    // runner; the next ensure()/send rebuilds the config with the new mode (and
-    // _ensureStarted also restarts on its own when the config string changes).
+    // cannot hot-swap it. Report "not applied live" so the pool (applyPermissionMode)
+    // terminates the idle runner; the next send then spawns fresh with the new mode
+    // and resumes the same session id, so the permission change applies without
+    // losing conversation context.
     return false;
   }
 

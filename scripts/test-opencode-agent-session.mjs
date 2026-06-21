@@ -301,4 +301,33 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   }
 }
 
+// --- context continuity: a config change must NOT respawn the server ---------
+// The server is reused across turns so every turn POSTs to the same session id
+// (that is what threads the conversation). AGENT.md varies per turn, so restarting
+// on any config diff broke continuity ("every question treated as new").
+{
+  let serverCount = 0;
+  const made = [];
+  const session = new OpencodeAgentSession("ctx_continuity", {
+    createServer: () => { serverCount += 1; const s = new FakeServer(); made.push(s); return s; },
+  });
+  const orch = makeOrchestrator();
+  session.bindOrchestrator(orch);
+
+  session.ensureProcess(process.cwd(), { agentCommand: "/bin/true", opencodeConfig: "CONFIG_A" }, { lazy: true });
+  session.sendUserMessage({ text: "turn one" });
+  await tick();
+  assert(serverCount === 1, "first send starts exactly one server");
+  made[0].emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  assert(orch.calls.done.length === 1, "turn one completes");
+
+  // Config changes between turns (AGENT.md/digest churn) — must NOT respawn.
+  session.ensureProcess(process.cwd(), { agentCommand: "/bin/true", opencodeConfig: "CONFIG_B_DIFFERENT" }, { lazy: true });
+  session.sendUserMessage({ text: "turn two" });
+  await tick();
+  assert(serverCount === 1, "config change does NOT respawn the server (context stays threaded)");
+  assert(made[0].prompts.length === 2 && made[0].prompts[1].text === "turn two", "turn two POSTs to the same session");
+  session.terminate();
+}
+
 console.log("opencode-agent-session: ok");
