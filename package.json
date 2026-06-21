@@ -33,6 +33,7 @@
     "release:libreoffice-runtime": "node scripts/publish-libreoffice-runtime.mjs",
     "deploy:baota:check": "node scripts/check-baota-compose.mjs",
     "build:runtime": "node scripts/build-runtime-bundle.mjs",
+    "headless": "node scripts/lily-headless.mjs",
     "engine:opencode": "node scripts/fetch-opencode-engine.mjs",
     "engine:opencode:all": "node scripts/fetch-opencode-engine.mjs --platform darwin-arm64 && node scripts/fetch-opencode-engine.mjs --platform darwin-x64 && node scripts/fetch-opencode-engine.mjs --platform win32-x64",
     "build:runtime-pack": "node scripts/build-runtime-pack.mjs",
