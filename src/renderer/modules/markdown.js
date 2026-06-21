@@ -583,6 +583,31 @@ export function renderMarkdownWithCache(element, markdownText) {
 }
 
 /**
+ * Full render (highlight + interactive + mermaid) committed via morphdom, so a
+ * sealing turn UPGRADES the streamed markup in place rather than tearing the
+ * whole answer down (innerHTML/replaceChildren) — which flashes/ghosts for a
+ * frame. morphdom diffs streamed→full, touching only what actually changed.
+ */
+export function renderMarkdownFinal(element, markdownText) {
+  if (!element) return;
+  const parser = window.marked && (window.marked.parse || window.marked);
+  if (typeof parser !== "function" || !window.DOMPurify) {
+    element.textContent = markdownText || "";
+    element.classList?.add("markdown-fallback");
+    return;
+  }
+  element.classList?.remove("markdown-fallback");
+  const renderer = createMarkedRenderer({ cacheCode: true });
+  const html = parser(prepareMarkdown(markdownText || "", { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
+  const next = document.createElement(element.tagName || "DIV");
+  next.innerHTML = window.DOMPurify.sanitize(html);
+  morphdom(element, next, { childrenOnly: true });
+  enhanceRenderedMarkdown(element, { interactive: true });
+  scheduleMermaidRender(element);
+  if (element.dataset) delete element.dataset.streamMode;
+}
+
+/**
  * 清理代码高亮缓存（切换会话或清空对话时调用）。
  */
 export function clearHighlightCache() {

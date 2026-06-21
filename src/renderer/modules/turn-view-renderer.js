@@ -1,5 +1,5 @@
 import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";
-import { renderStreamingMarkdown } from "./markdown.js";
+import { renderStreamingMarkdown, renderMarkdownFinal } from "./markdown.js";
 import { renderMarkdownContent } from "./content-blocks.js";
 import { t } from "../i18n/index.js";
 import { showToast } from "./toast.js";
@@ -169,7 +169,9 @@ function scheduleNarrativeMarkdown(textEl, text, turnId, { sealed = false } = {}
       clearTimeout(state.timer);
       state.timer = null;
     }
-    renderMarkdownContent(textEl, text);
+    // morphdom-based full render: upgrades the streamed DOM in place (no
+    // replaceChildren tear-down) so the answer doesn't flash/ghost when sealing.
+    renderMarkdownFinal(textEl, text);
     textEl.dataset.streamText = text;
     textEl.dataset.renderMode = "full";
     return;
@@ -1376,7 +1378,7 @@ function renderFinal(article, liveTurn) {
   const sealed = article.classList.contains("is-sealed");
   if (sealed) {
     renderStreamingMarkdown(final, text);
-    const upgrade = () => { renderMarkdownContent(final, text); };
+    const upgrade = () => { renderMarkdownFinal(final, text); };
     if (typeof requestIdleCallback === "function") requestIdleCallback(upgrade);
     else setTimeout(upgrade, 200);
   } else {
