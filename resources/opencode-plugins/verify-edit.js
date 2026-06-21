@@ -4,10 +4,13 @@
 // FAIL OPEN: anything we can't check confidently is left alone (never block, never
 // false-positive). Runs inside the OpenCode (Bun) server process.
 import fs from "node:fs";
+import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 const CHECK_TIMEOUT_MS = 10_000;
 const EDIT_TOOLS = new Set(["edit", "write", "patch", "apply_patch", "multiedit"]);
+// Per-edit lint adds latency; let latency-sensitive users opt out.
+const LINT_DISABLED = process.env.LILY_SKIP_LINT_VERIFY === "1";
 
 function which(bin) {
   const r = spawnSync(process.platform === "win32" ? "where" : "which", [bin], { encoding: "utf8" });
@@ -34,6 +37,49 @@ function checkSyntax(file) {
   if (lower.endsWith(".py")) {
     const err = runCheck(which("python3") || which("python"), ["-m", "py_compile", file]);
     return err ? `Python syntax error in ${file}:\n${err}` : "";
+  }
+  return "";
+}
+
+// --- semantic lint (errors only, project's OWN linter, fail open) -----------
+// Walk up from the edited file to find a project-local linter binary so we only
+// run a linter the project already uses (never impose a global one).
+function findLocalBin(name, fromFile) {
+  let dir = path.dirname(path.resolve(fromFile));
+  for (let i = 0; i < 8; i++) {
+    const cand = path.join(dir, "node_modules", ".bin", name);
+    if (fs.existsSync(cand)) return cand;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return "";
+}
+
+// Catch real defects (undefined vars, bad imports, unused) the SAME turn, beyond
+// pure syntax. Errors only (no style noise). Toolchain-gated: nothing runs unless
+// the project ships the linter, and any non-lint failure (e.g. eslint exit 2 =
+// no config) is treated as "can't check" → fail open.
+function checkLint(file) {
+  if (LINT_DISABLED) return "";
+  const lower = file.toLowerCase();
+  if (/\.(c|m)?[jt]sx?$/.test(lower)) {
+    const bin = findLocalBin(process.platform === "win32" ? "eslint.cmd" : "eslint", file);
+    if (!bin) return ""; // project doesn't use eslint → don't impose it
+    const r = spawnSync(bin, ["--quiet", "--format", "compact", file], { timeout: CHECK_TIMEOUT_MS, encoding: "utf8" });
+    if (r.error || r.signal || r.status === 2 || r.status === null) return ""; // unavailable / no config / fatal → fail open
+    if (r.status === 0) return ""; // clean (warnings suppressed by --quiet)
+    const out = String(r.stdout || "").trim();
+    return out ? `Lint errors in ${file}:\n${out}` : "";
+  }
+  if (lower.endsWith(".py")) {
+    const bin = findLocalBin("ruff", file) || which("ruff");
+    if (!bin) return "";
+    const r = spawnSync(bin, ["check", "--quiet", file], { timeout: CHECK_TIMEOUT_MS, encoding: "utf8" });
+    if (r.error || r.signal || r.status === null) return "";
+    if (r.status === 0) return "";
+    const out = String(r.stdout || r.stderr || "").trim();
+    return out ? `Ruff issues in ${file}:\n${out}` : "";
   }
   return "";
 }
@@ -154,7 +200,7 @@ export const VerifyEditPlugin = async () => ({
       if (EDIT_TOOLS.has(tool)) {
         const file = targetFile(input?.args);
         if (file && fs.existsSync(file)) {
-          notes.push(checkSyntax(file), checkStructure(file));
+          notes.push(checkSyntax(file), checkStructure(file), checkLint(file));
         }
       }
       if (tool === "bash") {

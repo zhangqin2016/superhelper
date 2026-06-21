@@ -46,6 +46,29 @@ try {
   const emptyDocx = write("empty.docx", Buffer.alloc(0));
   assert.match(await verify(emptyDocx), /empty/i, "empty deliverable must be flagged");
 
+  // Lint (step 2): a project's OWN eslint reporting an error is surfaced same-turn.
+  // Use a fake project-local eslint (exit 1 + message) so the wiring is tested
+  // deterministically without a real eslint install.
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), "verify-lint-"));
+  const binDir = path.join(proj, "node_modules", ".bin");
+  fs.mkdirSync(binDir, { recursive: true });
+  const fakeEslint = path.join(binDir, "eslint");
+  fs.writeFileSync(fakeEslint, "#!/bin/sh\necho \"$1: line 1, Error - 'x' is not defined (no-undef)\"\nexit 1\n");
+  fs.chmodSync(fakeEslint, 0o755);
+  fs.mkdirSync(path.join(proj, "src"), { recursive: true });
+  const codeFile = path.join(proj, "src", "code.js");
+  fs.writeFileSync(codeFile, "const y = 1;\n");
+  {
+    const out = { output: "" };
+    await hook({ tool: "write", args: { filePath: codeFile } }, out);
+    assert.match(out.output, /Lint errors/, "project-local eslint errors surfaced same-turn");
+  }
+  fs.rmSync(proj, { recursive: true, force: true });
+
+  // Fail open: a valid JS file with NO project linter must never be flagged.
+  const plainJs = write("plain.js", "const z = 2;\n");
+  assert.equal((await verify(plainJs)).trim(), "", "valid JS with no project linter is not flagged");
+
   console.log("verify-edit-plugin: ok");
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
