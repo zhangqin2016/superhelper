@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { agentConfigDir, sessionGuideDir } = require("./config");
+const { agentConfigDir, sessionGuideDir, opencodeSessionDir } = require("./config");
 
 const ENGINE_ARTIFACT_DIRS = [
   "sessions",
@@ -106,6 +106,15 @@ function isResumeFailureMessage(text) {
 
 /** Drop broken resume linkage and local engine cache (keep AGENT.md / CLAUDE.md). */
 function resetSessionEngineCache(sessionId) {
+  // The OpenCode engine's per-session SQLite is its resume cache. When resume is
+  // broken, wipe it so the next turn starts a fresh server-side session instead of
+  // failing to resume a stale/corrupt one. Lily's messages.db keeps the transcript.
+  try {
+    fs.rmSync(opencodeSessionDir(sessionId), { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+
   const dir = sessionGuideDir(sessionId);
   if (!fs.existsSync(dir)) return;
   for (const name of ENGINE_ARTIFACT_DIRS) {

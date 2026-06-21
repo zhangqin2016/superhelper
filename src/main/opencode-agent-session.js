@@ -128,7 +128,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (this.spawnOptions?.dataDir) return this.spawnOptions.dataDir;
     let base;
     try {
-      base = require("./config").userDataPath("opencode-sessions", this.sessionId);
+      base = require("./config").opencodeSessionDir(this.sessionId);
     } catch {
       base = path.join(os.tmpdir(), "lily-opencode", this.sessionId);
     }

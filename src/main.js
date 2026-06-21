@@ -154,6 +154,9 @@ app.whenReady().then(async () => {
   const sessionManager = new SessionManager(projectManager);
   sessionManager.load();
   sessionManagerRef = sessionManager;
+  // Drop OpenCode engine caches left by deleted sessions / crashes (orphans).
+  const gcRemoved = sessionManager.gcOrphanEngineSessions();
+  if (gcRemoved) console.info("[engine] cleaned", gcRemoved, "orphan opencode session cache(s)");
 
   const stagingManager = new FileStagingManager();
   const runnerPool = new SessionRunnerPool();

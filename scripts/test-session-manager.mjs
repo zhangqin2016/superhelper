@@ -105,11 +105,26 @@ try {
   manager.switchTo(session2.id);
   assert(manager.getActive().id === session2.id, "should switch active session");
 
-  // Test 12: delete session
+  // Test 12: delete session — must also drop the OpenCode engine resume cache
+  const engRoot = path.join(userData, "opencode-sessions");
+  const session2Dir = path.join(engRoot, session2.id);
+  fs.mkdirSync(session2Dir, { recursive: true });
+  fs.writeFileSync(path.join(session2Dir, "opencode.db"), "x");
   manager.delete(session2.id);
   const afterDelete = manager.findById(session2.id);
   assert(!afterDelete, "deleted session should not be found");
   assert(manager.getActive().id === session.id, "active should revert to remaining session");
+  assert(!fs.existsSync(session2Dir), "deleting a session must remove its opencode engine cache");
+
+  // Test 13: orphan GC keeps live sessions, removes the rest
+  const liveDir = path.join(engRoot, session.id);
+  const orphanDir = path.join(engRoot, "ses_orphan_does_not_exist");
+  fs.mkdirSync(liveDir, { recursive: true });
+  fs.mkdirSync(orphanDir, { recursive: true });
+  const removed = manager.gcOrphanEngineSessions();
+  assert(removed === 1, `gc should remove exactly the 1 orphan, removed ${removed}`);
+  assert(fs.existsSync(liveDir), "gc must keep a live session's engine cache");
+  assert(!fs.existsSync(orphanDir), "gc must remove an orphan engine cache");
 
   // Test 13: clearConversation
   manager.clearConversation(session.id);

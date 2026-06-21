@@ -325,6 +325,45 @@ class SessionManager {
     }
   }
 
+  /** Remove the OpenCode engine's per-session resume cache (its isolated SQLite).
+   *  Lily's messages.db is the source of truth; this dir is disposable, so deleting
+   *  the session must also drop it instead of leaving an orphan under userData. */
+  _deleteOpencodeSession(sessionId) {
+    try {
+      fs.rmSync(require("./config").opencodeSessionDir(sessionId), { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  }
+
+  /** Remove OpenCode engine caches whose session no longer exists — cleans up
+   *  orphans from crashes or pre-cleanup builds. Safe to run after load(): every
+   *  live/archived session is in this.sessions, so only true orphans are removed. */
+  gcOrphanEngineSessions() {
+    try {
+      const { opencodeSessionsDir } = require("./config");
+      const root = opencodeSessionsDir();
+      if (!fs.existsSync(root)) return 0;
+      const live = new Set();
+      for (const list of Object.values(this.sessions)) {
+        for (const s of list || []) live.add(s.id);
+      }
+      let removed = 0;
+      for (const entry of fs.readdirSync(root)) {
+        if (live.has(entry)) continue;
+        try {
+          fs.rmSync(path.join(root, entry), { recursive: true, force: true });
+          removed += 1;
+        } catch {
+          // ignore
+        }
+      }
+      return removed;
+    } catch {
+      return 0;
+    }
+  }
+
   /** Remove sessions for a deleted project (do not merge into other projects). */
   purgeProject(projectId) {
     const list = this.sessions[projectId];
@@ -339,6 +378,7 @@ class SessionManager {
     delete this.sessions[projectId];
     for (const id of ids) this._deleteMessageFile(id);
     for (const id of ids) this._deleteSummaryFile(id);
+    for (const id of ids) this._deleteOpencodeSession(id);
     this.saveImmediate();
     return ids;
   }
@@ -597,6 +637,7 @@ class SessionManager {
     }
     this._deleteMessageFile(sessionId);
     this._deleteSummaryFile(sessionId);
+    this._deleteOpencodeSession(sessionId);
     this.saveImmediate();
     return "OK";
   }
