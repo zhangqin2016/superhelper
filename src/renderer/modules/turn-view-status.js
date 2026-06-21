@@ -1,6 +1,40 @@
-import { getRenderableTimeline, resolveActivityLabel } from "./turn-timeline.js";
-import { toolRowPreview } from "./turn-process-layout.js";
+import { getRenderableTimeline } from "./turn-timeline.js";
 import { formatTokenCount, summarizeTurnUsage } from "./turn-usage-summary.js";
+
+// The live status line shows a STABLE activity by tool TYPE — not the streaming
+// tool arguments. Piping the raw preview (e.g. a half-streamed command/query)
+// made the status flicker out meaningless fragments char-by-char ("Maybe", stray
+// symbols). The detailed args still live in the timeline rows. Matches the
+// official OpenCode clients, which show a plain spinner + "Working…".
+const TOOL_STATUS_KEY = {
+  bash: "turn.status.tool.bash",
+  read: "turn.status.tool.read",
+  write: "turn.status.tool.edit",
+  edit: "turn.status.tool.edit",
+  multiedit: "turn.status.tool.edit",
+  patch: "turn.status.tool.edit",
+  apply_patch: "turn.status.tool.edit",
+  notebookedit: "turn.status.tool.edit",
+  glob: "turn.status.tool.search",
+  grep: "turn.status.tool.search",
+  list: "turn.status.tool.search",
+  ls: "turn.status.tool.search",
+  webfetch: "turn.status.tool.web",
+  websearch: "turn.status.tool.web",
+  task: "turn.status.tool.task",
+};
+
+function runningToolStatusLabel(liveTurn, translate) {
+  const tools = liveTurn.tools;
+  if (!tools) return null;
+  const values = tools instanceof Map ? tools.values() : tools;
+  for (const tool of values) {
+    if (tool?.status !== "running") continue;
+    const name = String(tool.name || "").toLowerCase();
+    return translate(TOOL_STATUS_KEY[name] || "turn.status.tool.generic");
+  }
+  return null;
+}
 
 export const THINKING_SUMMARY_MAX = 72;
 
@@ -46,15 +80,11 @@ export function liveElapsedSeconds(liveTurn, now = Date.now()) {
 }
 
 export function resolveLiveStatusActivity(liveTurn, translate) {
-  const explicit = resolveActivityLabel(liveTurn);
-  if (explicit) return explicit;
+  // A running tool → a stable verb for its TYPE (no streaming args).
+  const running = runningToolStatusLabel(liveTurn, translate);
+  if (running) return running;
 
   if ((liveTurn.thinkingText || "").trim()) return translate("turn.status.thinking");
-
-  const timeline = getRenderableTimeline(liveTurn);
-  const doneTools = timeline.filter((entry) => entry.kind === "tool" && entry.status === "done");
-  const lastDone = doneTools[doneTools.length - 1];
-  if (lastDone) return toolRowPreview(lastDone);
 
   if (liveTurn.phase === "starting") return translate("turn.status.starting");
   if (liveTurn.phase === "streaming") return translate("turn.status.waiting");

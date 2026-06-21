@@ -21,6 +21,8 @@ const translate = (key, params = {}) => {
     "turn.status.starting": "正在启动…",
     "turn.status.waiting": "等待回复",
     "turn.status.working": "处理中…",
+    "turn.status.tool.bash": "运行命令…",
+    "turn.status.tool.generic": "调用工具…",
     "turn.status.live": `${params.seconds}s · ${params.activity}`,
     "turn.status.awaitingUser": "等待你确认",
     "turn.status.stopping": "正在停止…",
@@ -122,6 +124,16 @@ assert.equal(
     now,
   ),
   "15s · 思考中 · 1.2k tokens · Esc 停止",
+);
+// A running tool shows a STABLE verb for its type — NOT the streaming command/args
+// (which used to flicker out fragments like "Maybe" char-by-char).
+assert.equal(
+  buildLiveStatusText(
+    { ...liveTurn, tools: new Map([["t1", { name: "bash", status: "running", input: { command: "git log --oneline | head" } }]]) },
+    translate,
+    now,
+  ),
+  "15s · 运行命令… · Esc 停止",
 );
 
 assert.equal(
