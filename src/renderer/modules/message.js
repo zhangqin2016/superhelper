@@ -27,6 +27,7 @@ import { renderMessageQueue } from "./composer.js";
 import { addDiffEntry } from "./diff-panel.js";
 import { syncWorkbenchEmptyState } from "./workbench-empty.js";
 import { collectUnrenderedCommittedMessages } from "./message-render-keys.js";
+import { confirmDialog } from "./confirm-dialog.js";
 
 const sessionViews = new Map();
 const renderedMessageKeys = new Map();
@@ -340,6 +341,47 @@ const COPY_ICON_SVG =
   '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5h-6a1 1 0 0 0-1 1v6"/></svg>';
 const COPIED_ICON_SVG =
   '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+const REWIND_ICON_SVG =
+  '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a5 5 0 1 0 1.5-3.5"/><path d="M3 2.5V5h2.5"/></svg>';
+
+// "Rewind to here": undo this turn and everything after — in the engine session
+// (files + dropped context) and Lily's transcript together. Only offered when the
+// turn carries an engine anchor (engineMessageId), and never mid-turn.
+function buildRewindAction(sessionId, message) {
+  const turnId = message.turnId || message.record?.turnId || "";
+  const engineMessageId = message.record?.engineMessageId || "";
+  if (!turnId || !engineMessageId) return null;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "assistant-icon-btn assistant-rewind-btn";
+  btn.title = t("message.rewind");
+  btn.setAttribute("aria-label", t("message.rewind"));
+  btn.innerHTML = REWIND_ICON_SVG;
+  btn.addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: t("message.rewindTitle"),
+      message: t("message.rewindConfirm"),
+      confirmText: t("message.rewind"),
+      danger: true,
+    });
+    if (!ok) return;
+    btn.disabled = true;
+    try {
+      const res = await window.assistantClient.rewindSession(sessionId, turnId, engineMessageId);
+      if (res?.ok) {
+        syncCommittedMessages(sessionId, res.conversation || []);
+        renderConversation(sessionId, { force: true, forceScrollBottom: true });
+      } else {
+        showScheduledToast(res?.error === "BUSY" ? t("message.rewindBusy") : t("message.rewindFailed"), "warning");
+      }
+    } catch (err) {
+      showScheduledToast(err?.message || t("message.rewindFailed"), "warning");
+    } finally {
+      if (btn.isConnected) btn.disabled = false;
+    }
+  });
+  return btn;
+}
 
 // A small right-aligned icon row under the answer (room for export-PDF etc.
 // later). Always visible but visually muted — hover discovery does not work
@@ -371,6 +413,8 @@ function appendArticleActions(article, sessionId, message) {
     });
     actions.appendChild(copy);
   }
+  const rewind = buildRewindAction(sessionId, message);
+  if (rewind) actions.appendChild(rewind);
   if (actions.childElementCount) article.appendChild(actions);
 }
 

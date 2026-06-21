@@ -153,7 +153,9 @@ function registerSessionHandlers(ctx) {
       }
     }
     const removed = sessionManager.deleteMessagesFromTurn(sessionId, turnId);
-    return { ok: true, sessionId, turnId, removed };
+    // Hand back the truncated transcript so the renderer can resync in lock-step.
+    const page = sessionManager.getConversationPage(sessionId, {});
+    return { ok: true, sessionId, turnId, removed, conversation: page?.conversation || [] };
   });
 
   ipcMain.handle("session:set-permission", (_event, payload) => {
