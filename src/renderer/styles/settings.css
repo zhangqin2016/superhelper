@@ -718,6 +718,27 @@
   pointer-events: none;
 }
 
+/* Installing… — keep the button readable (not greyed out like plain disabled)
+   and show a spinner so a long download/unpack reads as progress, not a freeze. */
+.workspace-app-download[data-busy="1"]:disabled {
+  opacity: 1;
+}
+.workspace-app-download[data-busy="1"]::before {
+  content: "";
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: lily-btn-spin 0.6s linear infinite;
+}
+@keyframes lily-btn-spin {
+  to { transform: rotate(360deg); }
+}
+
 .skills-actions {
   margin-top: 0;
   margin-bottom: 16px;

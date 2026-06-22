@@ -175,72 +175,10 @@ function renderCustomList(presets, activePresetId) {
   }
 }
 
-async function onEngineChange() {
-  if (isBusy()) {
-    showToast(t("toast.modelBusy"), "error");
-    await renderEngineSelect();
-    return;
-  }
-  const select = $("engineSelect");
-  const engineId = select?.value;
-  const result = await window.assistantClient.setActiveEngine?.(engineId);
-  if (!result?.ok) {
-    showToast(t("toast.engineSwitchFailed"), "error");
-    await renderEngineSelect();
-    return;
-  }
-  showToast(
-    t("toast.engineSwitched", { label: select.selectedOptions[0]?.textContent || engineId }),
-    "success",
-  );
-  await refreshModelSelect();
-}
-
-/** Engine picker (Claude vs OpenCode), injected just above the model select.
- *  Self-contained so it needs no index.html change; degrades to a plain control
- *  if the surrounding markup differs. */
-async function renderEngineSelect() {
-  if (!window.assistantClient?.listEngines) return;
-  const modelSelect = $("modelPresetSelect");
-  if (!modelSelect || !modelSelect.parentElement) return;
-
-  const data = await window.assistantClient.listEngines();
-  if (!data?.ok) return;
-
-  let select = $("engineSelect");
-  if (!select) {
-    const wrap = document.createElement("div");
-    wrap.id = "engineSelectWrap";
-    wrap.className = "model-engine-row";
-    const label = document.createElement("label");
-    label.className = "settings-subtitle";
-    label.textContent = t("settings.engine");
-    label.setAttribute("for", "engineSelect");
-    const desc = document.createElement("p");
-    desc.className = "settings-hint";
-    desc.textContent = t("settings.engineDesc");
-    select = document.createElement("select");
-    select.id = "engineSelect";
-    select.addEventListener("change", onEngineChange);
-    wrap.append(label, desc, select);
-    modelSelect.parentElement.insertBefore(wrap, modelSelect);
-  }
-
-  const names = { opencode: "OpenCode" };
-  select.replaceChildren();
-  for (const id of data.supported || []) {
-    const option = document.createElement("option");
-    option.value = id;
-    option.textContent = names[id] || id;
-    if (id === data.engine) option.selected = true;
-    select.appendChild(option);
-  }
-  // A LILY_ENGINE env override pins the engine — reflect that the UI can't change it.
-  select.disabled = Boolean(data.envOverride);
-}
+// Engine picker removed: OpenCode is the only engine, so there's nothing to pick.
+// The engine still resolves server/env-side (LILY_ENGINE); it's just not a UI choice.
 
 export async function refreshModelSelect() {
-  await renderEngineSelect();
   const select = $("modelPresetSelect");
   if (!select) return;
 

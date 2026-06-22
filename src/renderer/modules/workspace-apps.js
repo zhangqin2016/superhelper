@@ -163,7 +163,10 @@ function renderAppCard(app) {
     download.type = "button";
     download.className = "settings-action-btn settings-action-btn--primary workspace-app-download";
     download.textContent = app.installed && app.updateAvailable ? t("apps.upgrade") : t("apps.install");
-    download.disabled = !app.downloadUrl;
+    // Gated apps carry no inline downloadUrl (resolved via the signed endpoint at
+    // install time), so they must stay clickable — only disable when there is no
+    // way to obtain the artifact at all.
+    download.disabled = !app.downloadUrl && !app.gated;
     download.addEventListener("click", () => {
       void installWorkspaceApp(app, download);
     });
@@ -190,7 +193,14 @@ async function installWorkspaceApp(app, button) {
     showToast(t("toast.appInstallFailed"), "error");
     return;
   }
-  if (button) button.disabled = true;
+  // Busy state: downloading + unpacking a large app can take a while, so show a
+  // clear "installing…" label + spinner instead of a dead, unchanged button.
+  const prevLabel = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.dataset.busy = "1";
+    button.textContent = t("apps.installing");
+  }
   try {
     const result = await window.assistantClient.installWorkspaceApp(app);
     if (!result?.ok) {
@@ -231,7 +241,11 @@ async function installWorkspaceApp(app, button) {
   } catch (err) {
     showToast(err?.message || t("toast.appInstallFailed"), "error");
   } finally {
-    if (button) button.disabled = false;
+    if (button) {
+      button.disabled = false;
+      delete button.dataset.busy;
+      button.textContent = prevLabel;
+    }
   }
 }
 

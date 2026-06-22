@@ -653,6 +653,7 @@
   "apps.installed": "Installed",
   "apps.updateAvailable": "Update available",
   "apps.install": "Create workspace",
+  "apps.installing": "جارٍ التثبيت…",
   "apps.createAnother": "New workspace",
   "apps.upgrade": "Update workspace",
   "apps.openInstalled": "Open workspace",

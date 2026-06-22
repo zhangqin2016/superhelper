@@ -729,7 +729,7 @@ style.textContent = `
     background:transparent;color:var(--text-primary);font-size:13px;text-align:start;cursor:pointer;
   }
   .ctx-menu-item:hover { background:var(--bg-surface-hover); }
-  .project-name-editable { cursor: text; }
+  .project-name-editable { cursor: pointer; }
   .project-name-editable:hover { color: var(--accent); }
 `;
 document.head.appendChild(style);

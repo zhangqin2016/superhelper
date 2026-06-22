@@ -720,6 +720,7 @@
   "apps.installed": "已安装",
   "apps.updateAvailable": "可升级",
   "apps.install": "创建工作空间",
+  "apps.installing": "安装中…",
   "apps.createAnother": "新建工作空间",
   "apps.upgrade": "更新工作空间",
   "apps.openInstalled": "打开工作空间",

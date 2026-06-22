@@ -256,7 +256,9 @@
   gap: 8px;
   padding: 0 20px 18px;
 }
-.session-title-editable { cursor: text; }
+/* Primary action on a session row is single-click→switch, so show the pointer;
+   double-click swaps in an <input> which carries its own text caret for rename. */
+.session-title-editable { cursor: pointer; }
 .session-title-editable:hover { color: var(--accent); }
 .topbar-info h1.editable-title {
   cursor: pointer;

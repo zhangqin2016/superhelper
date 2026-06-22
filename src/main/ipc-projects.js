@@ -282,18 +282,31 @@ function registerProjectHandlers(ctx) {
       const state = workspaceAppInstalls.readState();
       const existingRecord = app?.forceNewInstance ? null : workspaceAppInstalls.activeRecordForApp(state, appId);
       const defaultBaseDir = workspaceAppInstalls.installRoot(projectManager.defaultPath);
-      const dialogDefaultPath = workspaceAppInstalls.preferredInstallDialogPath(projectManager.defaultPath, existingRecord);
       fs.mkdirSync(defaultBaseDir, { recursive: true });
-      const dirPick = await dialog.showOpenDialog(mainWindow, {
-        title: existingRecord ? "选择要更新的应用工作空间" : "选择应用工作空间保存位置",
-        defaultPath: dialogDefaultPath,
-        properties: ["openDirectory", "createDirectory"],
-        buttonLabel: existingRecord ? "更新此处" : "创建到此处",
-      });
-      if (dirPick.canceled || !dirPick.filePaths.length) {
-        return { ok: false, canceled: true };
+      // Upgrade in place: when the app is already installed at a managed location,
+      // update it right there instead of making the user re-pick a directory.
+      // (preferredInstallDialogPath returns the record path only when it exists and
+      // is safely replaceable.) Prompt only for a fresh install or "create another".
+      const inPlacePath =
+        existingRecord &&
+        workspaceAppInstalls.preferredInstallDialogPath(projectManager.defaultPath, existingRecord) === existingRecord.path
+          ? existingRecord.path
+          : null;
+      let selectedDir;
+      if (inPlacePath) {
+        selectedDir = inPlacePath;
+      } else {
+        const dirPick = await dialog.showOpenDialog(mainWindow, {
+          title: existingRecord ? "选择要更新的应用工作空间" : "选择应用工作空间保存位置",
+          defaultPath: workspaceAppInstalls.preferredInstallDialogPath(projectManager.defaultPath, existingRecord),
+          properties: ["openDirectory", "createDirectory"],
+          buttonLabel: existingRecord ? "更新此处" : "创建到此处",
+        });
+        if (dirPick.canceled || !dirPick.filePaths.length) {
+          return { ok: false, canceled: true };
+        }
+        selectedDir = dirPick.filePaths[0];
       }
-      const selectedDir = dirPick.filePaths[0];
       const baseName = workspaceAppFolderName({ manifest: peek, app });
       const resolvedTarget = workspaceAppInstalls.resolveInstallTarget({
         selectedDir,
