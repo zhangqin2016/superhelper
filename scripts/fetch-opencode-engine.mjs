@@ -70,4 +70,29 @@ const dest = path.join(destDir, exe);
 fs.copyFileSync(src, dest);
 fs.chmodSync(dest, 0o755);
 fs.rmSync(tmp, { recursive: true, force: true });
+
+// macOS: the opencode binary is bun "linker-signed" ad-hoc but WITHOUT entitlements.
+// On Apple Silicon a signed binary that JITs — which `opencode serve` does — is
+// SIGKILLed by the kernel ("Code Signature Invalid") unless its signature carries
+// com.apple.security.cs.allow-jit. `opencode --version` survives (barely JITs),
+// `serve` dies — surfacing in the app as "engine stopped unexpectedly (code null)".
+// Re-sign with our entitlements so the engine actually starts. Dev runs use this
+// binary directly; packaging (dist-mac.sh) re-signs again with the app identity.
+if (key.startsWith("darwin") && process.platform === "darwin") {
+  const entitlements = path.join(repoRoot, "build", "entitlements.mac.inherit.plist");
+  try {
+    execFileSync(
+      "codesign",
+      ["--force", "--options", "runtime", "--entitlements", entitlements, "--sign", "-", dest],
+      { stdio: "inherit" },
+    );
+    execFileSync("codesign", ["--verify", "--strict", dest], { stdio: "inherit" });
+    console.log("[codesign] engine re-signed with allow-jit entitlements");
+  } catch (err) {
+    console.warn(
+      `[codesign] WARNING: could not sign the engine — on Apple Silicon it may be SIGKILLed at startup. ${err?.message || err}`,
+    );
+  }
+}
+
 console.log(`[done] ${path.relative(repoRoot, dest)}`);

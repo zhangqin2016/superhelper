@@ -53,6 +53,24 @@ if (fs.existsSync(bundlesRoot)) {
   if (fs.existsSync(libreOfficePath)) {
     fail("Mac 包不应内置 LibreOffice；Office 能力统一通过运行时包按需安装");
   }
+
+  // The OpenCode engine is excluded from electron-builder signing (signIgnore),
+  // so dist-mac.sh re-signs it with the hardened-runtime entitlements. If that
+  // step is missing/broken, macOS SIGKILLs the engine at launch ("Code Signature
+  // Invalid" → "engine stopped unexpectedly (code null)"). Fail loud here so an
+  // unrunnable build never ships.
+  const engine = path.join(bundlesRoot, activeBundle, "opencode", "bin", "opencode");
+  if (!fs.existsSync(engine)) {
+    fail(`缺少 OpenCode 引擎二进制: ${path.relative(ROOT, engine)}`);
+  }
+  try {
+    execFileSync("codesign", ["--verify", "--strict", engine], { stdio: "pipe" });
+  } catch (err) {
+    fail(
+      `OpenCode 引擎签名无效，运行时会被 macOS SIGKILL（hardenedRuntime）。` +
+        `dist-mac.sh 的补签步骤未生效：${String(err?.stderr || err?.message || err).trim()}`,
+    );
+  }
 }
 
 const imgRoot = path.join(resources, "app.asar.unpacked", "node_modules", "@img");
