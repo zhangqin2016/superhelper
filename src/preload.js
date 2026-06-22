@@ -193,6 +193,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   onFocusSession: (callback) => {
     ipcRenderer.on("assistant:focus-session", (_event, data) => callback(data));
   },
+  getNotificationSettings: () => ipcRenderer.invoke("notifications:get"),
+  setNotificationSettings: (patch) => ipcRenderer.invoke("notifications:set", patch),
+  notifyTaskDone: (payload) => ipcRenderer.invoke("notifications:task-done", payload),
   onFileDiff: (callback) => {
     ipcRenderer.on("assistant:file-diff", (_event, data) => callback(data));
   },

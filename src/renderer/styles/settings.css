@@ -739,6 +739,16 @@
   to { transform: rotate(360deg); }
 }
 
+.settings-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.settings-check-row input { cursor: pointer; flex-shrink: 0; }
+
 .skills-actions {
   margin-top: 0;
   margin-bottom: 16px;

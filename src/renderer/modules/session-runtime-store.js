@@ -1,5 +1,6 @@
 import store from "./state.js";
 import { sanitizeNoticeForIngest } from "./engine-notice-policy.js";
+import { alertTaskDone } from "./task-alert.js";
 import {
   activityFromEngineNotice,
   applyProcessEventToTimeline,
@@ -159,6 +160,7 @@ function ensureLiveTurn(runtime, event) {
     };
   }
   runtime.turnId = event.turnId;
+  if (!runtime._turnStartedAt) runtime._turnStartedAt = Date.now(); // for the completion-alert duration gate
   return runtime.liveTurn;
 }
 
@@ -414,6 +416,20 @@ export function applyRuntimeEvent(event, opts = {}) {
           if (event.type === "turn.completed") runtime.attention = "done";
           else if (event.type === "turn.failed" || event.type === "turn.stalled") runtime.attention = "failed";
         }
+        // Attention-aware completion alert (sound + OS notification). Fires on live
+        // terminal events only; alertTaskDone() itself decides whether to actually
+        // notify based on window focus / active session / duration.
+        if (!opts.allowReplay) {
+          const durationMs = runtime._turnStartedAt ? Date.now() - runtime._turnStartedAt : 0;
+          alertTaskDone({
+            sessionId: event.sessionId,
+            ok: event.type === "turn.completed",
+            durationMs,
+            activeSessionId: store.get("activeSessionId"),
+            snippet: String(event.payload?.assistant || live.assistantText || ""),
+          });
+        }
+        runtime._turnStartedAt = 0;
         runtime.committedMessages.push({
           role: "assistant",
           content: event.payload.assistant || live.assistantText || "",

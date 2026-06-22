@@ -32,6 +32,40 @@ function registerAll(ctx) {
 
   // --- App ---------------------------------------------------------------
 
+  const { getNotificationSettings, setNotificationSettings } = require("./notification-settings");
+  ipcMain.handle("notifications:get", () => ({ ok: true, ...getNotificationSettings() }));
+  ipcMain.handle("notifications:set", (_event, patch) => ({ ok: true, ...setNotificationSettings(patch || {}) }));
+  // The renderer decides WHETHER a turn warrants an alert (it owns the attention
+  // context); main only posts the OS notification — and only when the window is
+  // not already focused (a focused window would just be noise). Title/body arrive
+  // pre-localized. Clicking brings the app forward and switches to that session.
+  // `silent` because the renderer plays its own chime.
+  ipcMain.handle("notifications:task-done", (_event, payload = {}) => {
+    try {
+      if (!getNotificationSettings().notify) return { ok: true, shown: false };
+      const win = ctx.mainWindow;
+      if (win && !win.isDestroyed() && win.isFocused()) return { ok: true, shown: false };
+      const { Notification } = require("electron");
+      if (!Notification.isSupported()) return { ok: true, shown: false };
+      const n = new Notification({
+        title: String(payload.title || "").slice(0, 120) || "Lily Workbench",
+        body: String(payload.body || "").slice(0, 220),
+        silent: true,
+      });
+      n.on("click", () => {
+        if (!win || win.isDestroyed()) return;
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+        if (payload.sessionId) win.webContents.send("assistant:focus-session", { sessionId: payload.sessionId });
+      });
+      n.show();
+      return { ok: true, shown: true };
+    } catch {
+      return { ok: false };
+    }
+  });
+
   ipcMain.handle("app:get-icon-url", () => resolveRuntimeIconDataUrl());
   ipcMain.handle("app:get-version", () => ({ ok: true, version: require("electron").app.getVersion() }));
   ipcMain.handle("app:get-locale", () => ({ ok: true, ...listLocalesPublic() }));
