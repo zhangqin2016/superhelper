@@ -94,22 +94,10 @@ function registerFileTreeHandlers(ctx = {}) {
     if (path.isAbsolute(candidate)) {
       return fs.existsSync(candidate) ? candidate : null;
     }
-    // Relative path (e.g. "output/x.svg" the model printed in its answer) —
-    // resolve against the session's workspace, then fall back to searching the
-    // workspace by basename so a bare filename (no dir) still resolves.
-    const root = sessionProjectRoot(sessionId);
-    if (!root) return null;
-    try {
-      const direct = path.resolve(root, candidate);
-      if ((direct === root || direct.startsWith(root + path.sep)) && fs.existsSync(direct)) {
-        return direct;
-      }
-    } catch {
-      /* fall through to search */
-    }
-    const base = path.basename(candidate);
-    const hit = searchWorkspaceFiles(root, base, 8).find((f) => f.name === base);
-    return hit ? hit.absPath : null;
+    // Reveal only accepts absolute local paths. Generated media scripts must
+    // emit absolute paths; renderer/main must not guess a base directory for a
+    // relative string (it could resolve to an unintended workspace file).
+    return null;
   }
 
   ipcMain.handle("filetree:search-files", (_event, { rootPath, query, limit }) => {

@@ -51,7 +51,9 @@ function assertGeneratedPath(stdout, expectedDirName) {
     generatedDir === expectedRoot,
     `generated file path should stay under ${expectedDirName}: ${filePath}`,
   );
-  return filePath;
+  // Containment is verified above via realpath; the format assertions match on
+  // POSIX separators, so normalize the absolute path before returning it.
+  return filePath.split(path.sep).join("/");
 }
 
 async function startMockServer() {

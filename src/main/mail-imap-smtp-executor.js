@@ -80,6 +80,10 @@ function imapConfig(config, options = {}) {
 
 async function withClient(config, options, fn) {
   const client = new ImapFlow(imapConfig(config, options));
+  // ImapFlow emits 'error' on socket failures (timeout, reset). Without a
+  // listener Node turns that into an uncaught exception that crashes the whole
+  // process; swallow it here so the awaited operation rejects cleanly instead.
+  client.on("error", () => {});
   await client.connect();
   try {
     return await fn(client);

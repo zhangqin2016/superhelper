@@ -111,7 +111,7 @@ function toArtifact(filePath, source, workspacePath) {
   const absolutePath = path.resolve(filePath);
   const ext = path.extname(absolutePath).toLowerCase();
   const relativePath = workspacePath && isInsidePath(workspacePath, absolutePath)
-    ? path.relative(workspacePath, absolutePath)
+    ? path.relative(workspacePath, absolutePath).split(path.sep).join("/")
     : "";
   return {
     id: stableArtifactId(absolutePath),

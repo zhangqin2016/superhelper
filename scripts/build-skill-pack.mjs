@@ -3,9 +3,10 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_OUT_DIR = path.join(ROOT, "dist", "skill-packs");
 const BLOCKED_DIRS = new Set([".git", "node_modules", "dist", "release", ".cache", ".lily-work"]);
 const IGNORED_DIRS = new Set(["__pycache__"]);

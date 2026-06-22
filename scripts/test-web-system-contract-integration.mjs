@@ -10,8 +10,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const script = path.join(ROOT, "resources/skills-catalog/lily-web-system-learning/scripts/create_web_system_skill.cjs");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-contract-int-"));

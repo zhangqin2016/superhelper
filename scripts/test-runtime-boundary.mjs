@@ -22,16 +22,14 @@ const WIRE_MARKERS = [
   /(?<!unknown_)control_request\b/,
 ];
 
-// Documented legacy debt (shrink-only). Both are slated to disappear into the
-// adapter layer / official Agent SDK migration.
-const LEGACY_WIRE_FILES = new Set([
-  "src/main/agent-session.js",
-  "src/main/control-protocol.js",
-]);
+// Documented legacy debt (shrink-only). Emptied once the Claude CLI engine was
+// removed and OpenCode became the only runtime — keep the ratchet so any new
+// raw-wire file is flagged rather than silently exempted.
+const LEGACY_WIRE_FILES = new Set([]);
 
 // Only the session host may instantiate the engine adapter.
 const ADAPTER_REQUIRE_ALLOWED = new Set([
-  "src/main/agent-session.js",
+  "src/main/opencode-agent-session.js",
 ]);
 
 function walk(dir, files = []) {

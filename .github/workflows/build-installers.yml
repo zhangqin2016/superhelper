@@ -26,7 +26,8 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: "20"
+  # 22, not 20: the test suite uses node:sqlite (stable in Node 22), matching ci.yml.
+  NODE_VERSION: "22"
 
 jobs:
   # ----------------------------------------------------------------- macOS arm64
@@ -42,6 +43,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
+      - run: npm --prefix server ci   # test:unit discovers server tests (pg, nanoid)
       - run: npm run test:unit
       - name: Build runtime bundle (darwin-arm64)
         run: |
@@ -73,6 +75,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
+      - run: npm --prefix server ci   # test:unit discovers server tests (pg, nanoid)
       - run: npm run test:unit
       - name: Build runtime bundle (darwin-x64)
         run: |
@@ -102,6 +105,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
+      - run: npm --prefix server ci   # test:unit discovers server tests (pg, nanoid)
       - run: npm run test:unit
       - name: Fetch OpenCode engine binary (win32-x64)
         run: node scripts/fetch-opencode-engine.mjs --platform win32-x64

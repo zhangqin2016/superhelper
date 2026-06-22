@@ -429,12 +429,19 @@ function handleLine(socket, line, messages) {
   const [tag, command] = line.split(/\s+/, 2);
   const upper = String(command || "").toUpperCase();
   if (upper === "CAPABILITY") {
-    socket.write("* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n");
+    // No AUTH=PLAIN: imapflow then authenticates with the plain LOGIN command
+    // (handled below) instead of AUTHENTICATE PLAIN's SASL continuation flow.
+    socket.write("* CAPABILITY IMAP4rev1\r\n");
     socket.write(`${tag} OK capability done\r\n`);
     return;
   }
   if (upper === "LOGIN") {
     socket.write(`${tag} OK login done\r\n`);
+    return;
+  }
+  if (upper === "LIST") {
+    socket.write('* LIST () "/" "INBOX"\r\n');
+    socket.write(`${tag} OK list done\r\n`);
     return;
   }
   if (upper === "SELECT") {
@@ -453,7 +460,22 @@ function handleLine(socket, line, messages) {
       for (const id of match[1].split(",").map((value) => Number(value.trim())).filter(Boolean)) {
         const msg = messages.get(id);
         if (!msg) continue;
-        if (/\bBODY\.PEEK\[TEXT\]/i.test(line)) {
+        if (/\bBODY(\.PEEK)?\[\]/i.test(line)) {
+          // fetchOne({ source: true }) requests the full RFC822 body — return a
+          // complete message so simpleParser can read subject + text.
+          const source = [
+            `From: ${msg.from}`,
+            `To: ${msg.to}`,
+            `Subject: ${msg.subject}`,
+            `Date: ${msg.date}`,
+            `Message-ID: ${msg.messageId}`,
+            "",
+            `Body for ${msg.subject.toLowerCase()}`,
+            "",
+          ].join("\r\n");
+          const n = Buffer.byteLength(source, "utf8");
+          socket.write(`* ${id} FETCH (UID ${id} RFC822.SIZE ${msg.size} BODY[] {${n}}\r\n${source})\r\n`);
+        } else if (/\bBODY\.PEEK\[TEXT\]/i.test(line)) {
           socket.write(`* ${id} FETCH (UID ${id} RFC822.SIZE ${msg.size} ENVELOPE ("${msg.date}" "${msg.subject}" (("Alice" NIL "alice" "example.com")) (("Alice" NIL "alice" "example.com")) (("Alice" NIL "alice" "example.com")) (("Ops" NIL "ops" "example.com")) NIL NIL NIL "${msg.messageId}") BODY[TEXT] {24}\r\n`);
           socket.write(`Body for second update\r\n)\r\n`);
         } else {
@@ -470,5 +492,8 @@ function handleLine(socket, line, messages) {
     socket.end();
     return;
   }
-  socket.write(`${tag || "x"} BAD unsupported\r\n`);
+  // Anything else imapflow probes during its handshake (LSUB, ENABLE, ID,
+  // NAMESPACE, …) gets a benign OK so the connection completes — the commands
+  // that need untagged data (LIST/SELECT/SEARCH/FETCH) are handled explicitly.
+  socket.write(`${tag || "x"} OK ignored\r\n`);
 }

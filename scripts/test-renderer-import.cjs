@@ -349,8 +349,14 @@ app.whenReady().then(async () => {
         showSessionMessages(sessionId);
         syncCommittedMessages(sessionId, messages);
         renderConversation(sessionId, { force: true, forceScrollBottom: true });
-        await new Promise((resolve) => setTimeout(resolve, 2500));
-        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`);
+        // Poll instead of a fixed sleep: committed history paints in chunks, so
+        // the latest message lands last — a fixed wait is flaky on slow CI runners.
+        const sel = \`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`;
+        let panel = document.querySelector(sel);
+        for (let i = 0; i < 200 && !(panel?.textContent || "").includes("large history message 239"); i++) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          panel = document.querySelector(sel);
+        }
         const count = panel?.children?.length || 0;
         const text = panel?.textContent || "";
         if (count > 90) {
@@ -371,8 +377,18 @@ app.whenReady().then(async () => {
         const { renderConversation } = await import("./modules/message.js");
         const sessionId = "session_large_history_window_regression";
         renderConversation(sessionId, { force: true, preserveScroll: true });
-        await new Promise((resolve) => setTimeout(resolve, 3500));
-        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`);
+        // Poll until the full history range has painted (flaky as a fixed sleep
+        // on CI): wait for both the oldest and newest message text to be present.
+        const sel = \`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`;
+        let panel = document.querySelector(sel);
+        const ready = () => {
+          const t = panel?.textContent || "";
+          return t.includes("large history message 0") && t.includes("large history message 239");
+        };
+        for (let i = 0; i < 200 && !ready(); i++) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          panel = document.querySelector(sel);
+        }
         const text = panel?.textContent || "";
         const count = panel?.children?.length || 0;
         if (!text.includes("large history message 0") || !text.includes("large history message 239")) {
@@ -473,9 +489,17 @@ app.whenReady().then(async () => {
         const turn = liveTurnFromRecord({
           turnId: "turn_artifact_slot_regression",
           terminal: "turn.completed",
-          assistantText: "SVG 已生成：output/chart.svg",
+          assistantText: "图片如下：output/chart.svg",
           startedAt: 1000,
           endedAt: 3000,
+          // The generated image streams inline into the answer (content-block image).
+          contentBlocks: [{
+            blockType: "image",
+            mediaType: "image/png",
+            data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+          }],
+          // …and is ALSO recorded as a turn artifact. Inline-only image rendering
+          // (feat: bab421d) must NOT re-card it as a separate deliverables card.
           artifacts: [{
             id: "artifact_chart",
             kind: "image",
@@ -487,35 +511,21 @@ app.whenReady().then(async () => {
             bytes: 128,
             updatedAt: 1000,
           }],
-          resultBlocks: [{
-            id: "artifact:artifact_chart",
-            type: "artifact",
-            artifactType: "image",
-            path: "/tmp/lily-renderer-artifact.svg",
-            relativePath: "output/chart.svg",
-            fileName: "chart.svg",
-            mimeType: "image/svg+xml",
-            bytes: 128,
-            updatedAt: 1000,
-          }],
-          timeline: [{ kind: "text", id: "text_1", ts: 2000, text: "SVG 已生成：output/chart.svg", status: "done" }],
+          timeline: [{ kind: "text", id: "text_1", ts: 2000, text: "图片如下：output/chart.svg", status: "done" }],
         });
         const article = renderSealedTurnArticle(turn, false);
         document.body.appendChild(article);
+        const inlineImgs = article.querySelectorAll("[data-role='narrative'] img.assistant-content-image");
         const artifactSlot = article.querySelector("[data-role='artifacts']");
-        const imgs = artifactSlot ? Array.from(artifactSlot.querySelectorAll(".assistant-renderer-artifact img")) : [];
-        const img = imgs[0];
-        const final = article.querySelector(".assistant-turn-report");
-        if (!artifactSlot || artifactSlot.hidden || imgs.length !== 1 || !img) {
-          throw new Error("sealed turn artifacts should render in a dedicated slot: " + article.innerHTML);
-        }
-        if (!String(img.getAttribute("src") || "").startsWith("file:///tmp/lily-renderer-artifact.svg")) {
-          throw new Error("artifact image should use file URL: " + img.getAttribute("src"));
-        }
-        if (final && !(final.compareDocumentPosition(artifactSlot) & Node.DOCUMENT_POSITION_FOLLOWING)) {
-          throw new Error("artifact slot should render after the final answer");
-        }
+        const slotImgs = artifactSlot ? artifactSlot.querySelectorAll(".assistant-renderer-artifact img") : [];
+        const html = article.innerHTML;
         article.remove();
+        if (inlineImgs.length !== 1) {
+          throw new Error("generated image should render inline in the answer: " + html);
+        }
+        if (slotImgs.length !== 0) {
+          throw new Error("inline image must not be re-carded in the artifacts slot: " + html);
+        }
         return "sealed-turn-artifact-slot-regression: ok";
       }
     )()`);
@@ -610,11 +620,13 @@ app.whenReady().then(async () => {
         document.body.appendChild(article);
         const narrativeImages = article.querySelectorAll("[data-role='narrative'] .assistant-content-image");
         const artifactImages = article.querySelectorAll("[data-role='artifacts'] .assistant-renderer-artifact img");
-        if (narrativeImages.length !== 0 || artifactImages.length !== 1) {
-          throw new Error("content image should be promoted to artifact layer exactly once: " + article.innerHTML);
+        // Inline-only image rendering (feat: bab421d): a content-block image renders
+        // once in the answer and is NOT also promoted to a deliverables-slot card.
+        if (narrativeImages.length !== 1 || artifactImages.length !== 0) {
+          throw new Error("content image should render inline exactly once, not promoted to the slot: " + article.innerHTML);
         }
         article.remove();
-        return "content-image-promotion-regression: ok";
+        return "content-image-inline-regression: ok";
       }
     )()`);
     console.log(contentImagePromotionResult);

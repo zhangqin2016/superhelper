@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -9,7 +9,7 @@ const {
   groupSkillsForTree,
   resolveSkillTreeCategory,
   shouldExpandTreeGroup,
-} = await import(path.join(ROOT, "src/renderer/modules/session-skill-tree.js"));
+} = await import(pathToFileURL(path.join(ROOT, "src/renderer/modules/session-skill-tree.js")).href);
 
 if (resolveSkillTreeCategory({ id: "lily-vision" }) !== "tools") {
   throw new Error("bundled vision should map to tools");

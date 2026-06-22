@@ -177,10 +177,12 @@ const manifest = createUpdateManifest({
   version: "0.2.0",
   force: false,
   platforms: {
-    "darwin-arm64": {
-      url: "https://cdn.example.com/app.dmg",
-      sha256: "abc",
-    },
+    // Cover every runner arch so checkStaticUpdates() finds the current
+    // platform's package regardless of where the suite runs (Windows/mac x64).
+    "darwin-arm64": { url: "https://cdn.example.com/app.dmg", sha256: "abc" },
+    "darwin-x64": { url: "https://cdn.example.com/app-x64.dmg", sha256: "abc" },
+    "win32-x64": { url: "https://cdn.example.com/app.exe", sha256: "abc" },
+    "linux-x64": { url: "https://cdn.example.com/app.AppImage", sha256: "abc" },
   },
 }, privateKey);
 const unsigned = { ...manifest };

@@ -23,6 +23,16 @@ function runCheck(bin, args) {
   return r.status === 0 ? "" : (r.stderr || r.stdout || "check failed");
 }
 
+// node_modules/.bin shims are .cmd batch files on Windows; spawnSync can't exec
+// them directly (EINVAL) — they must go through the shell. Quote bin + args so a
+// project path containing spaces survives cmd.exe word-splitting.
+function spawnLocalBin(bin, args, opts) {
+  if (process.platform === "win32") {
+    return spawnSync(`"${bin}"`, args.map((a) => `"${a}"`), { ...opts, shell: true, windowsHide: true });
+  }
+  return spawnSync(bin, args, opts);
+}
+
 // --- syntax checks ----------------------------------------------------------
 function checkSyntax(file) {
   const lower = file.toLowerCase();
@@ -66,7 +76,7 @@ function checkLint(file) {
   if (/\.(c|m)?[jt]sx?$/.test(lower)) {
     const bin = findLocalBin(process.platform === "win32" ? "eslint.cmd" : "eslint", file);
     if (!bin) return ""; // project doesn't use eslint → don't impose it
-    const r = spawnSync(bin, ["--quiet", "--format", "compact", file], { timeout: CHECK_TIMEOUT_MS, encoding: "utf8" });
+    const r = spawnLocalBin(bin, ["--quiet", "--format", "compact", file], { timeout: CHECK_TIMEOUT_MS, encoding: "utf8" });
     if (r.error || r.signal || r.status === 2 || r.status === null) return ""; // unavailable / no config / fatal → fail open
     if (r.status === 0) return ""; // clean (warnings suppressed by --quiet)
     const out = String(r.stdout || "").trim();
@@ -75,7 +85,7 @@ function checkLint(file) {
   if (lower.endsWith(".py")) {
     const bin = findLocalBin("ruff", file) || which("ruff");
     if (!bin) return "";
-    const r = spawnSync(bin, ["check", "--quiet", file], { timeout: CHECK_TIMEOUT_MS, encoding: "utf8" });
+    const r = spawnLocalBin(bin, ["check", "--quiet", file], { timeout: CHECK_TIMEOUT_MS, encoding: "utf8" });
     if (r.error || r.signal || r.status === null) return "";
     if (r.status === 0) return "";
     const out = String(r.stdout || r.stderr || "").trim();

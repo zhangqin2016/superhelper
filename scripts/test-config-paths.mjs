@@ -42,8 +42,8 @@ assert(config.defaultWorkspacePath() === expectedWs, "defaultWorkspacePath shoul
 // 3. Env override wins over injection (this is how agent subprocesses/CLIs get
 //    the SAME userData as the main process — see runtime-packs).
 process.env.LILY_USER_DATA_DIR = "/tmp/env-ud";
-assert(config.userDataPath() === "/tmp/env-ud", "LILY_USER_DATA_DIR must override the injected userData");
+assert(config.userDataPath() === path.join("/tmp/env-ud"), "LILY_USER_DATA_DIR must override the injected userData");
 delete process.env.LILY_USER_DATA_DIR;
-assert(config.userDataPath() === "/tmp/ud", "without env, injected userData applies again");
+assert(config.userDataPath() === path.join("/tmp/ud"), "without env, injected userData applies again");
 
 console.log("config-paths: ok (resolves without electron — injection + env + fail-loud)");

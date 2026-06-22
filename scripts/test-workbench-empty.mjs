@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
 const { WORKBENCH_EXAMPLE_KEYS, listHasWorkbenchContent } = await import(
-  path.join(ROOT, "src/renderer/modules/workbench-empty.js")
+  pathToFileURL(path.join(ROOT, "src/renderer/modules/workbench-empty.js")).href
 );
 
 assert.equal(WORKBENCH_EXAMPLE_KEYS.length, 3, "workbench should expose three example prompts");

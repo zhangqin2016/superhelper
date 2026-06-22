@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const require = createRequire(import.meta.url);
 
-const renderer = await import(path.join(ROOT, "src/renderer/modules/tool-preview-label.js"));
+const renderer = await import(pathToFileURL(path.join(ROOT, "src/renderer/modules/tool-preview-label.js")).href);
 const main = require(path.join(ROOT, "src/main/tool-preview-label.cjs"));
 
 for (const mod of [renderer, main]) {

@@ -12,12 +12,13 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import module from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require = module.createRequire(import.meta.url);
 const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
 const { StdioClientTransport } = require("@modelcontextprotocol/sdk/client/stdio.js");
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SKILL = path.join(ROOT, "resources/skills-catalog/lily-web-system-learning/scripts");
 const stdioServer = path.join(ROOT, "src/main/mcp/web-system-mcp-stdio.js");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-mcp-e2e-"));
