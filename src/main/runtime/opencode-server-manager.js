@@ -348,12 +348,18 @@ class OpencodeServerManager extends EventEmitter {
 
   async sendPrompt({ text, files, guidance }) {
     if (!this.sessionID) throw new Error("no session");
+    // prompt_async forks the turn in the BACKGROUND and returns 204 immediately;
+    // the turn is driven entirely by SSE (session.idle -> turn_result, session.error
+    // -> runtime_error). The old blocking /message held one request open for the
+    // whole turn — fine for a per-session serve, but on the SHARED serve that
+    // serialized turns (a long turn in one session blocked every other session's
+    // prompt). Async returns at once, so sessions run truly concurrently.
     return this._request(
       "POST",
-      `/session/${this.sessionID}/message`,
+      `/session/${this.sessionID}/prompt_async`,
       buildInstanceMessageBody({ text, files, guidance, agent: this.agent, model: this.model }),
       {},
-      0, // no timeout — this request blocks for the whole turn (can be minutes)
+      30_000, // returns immediately now — a normal timeout, not the whole turn
     );
   }
 
