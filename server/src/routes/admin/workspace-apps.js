@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { z } from "zod";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
+import { signWorkspaceApp } from "../../services/security.js";
 import { uploadBufferToQiniu } from "../../services/qiniu-upload.js";
 import {
   evaluateWorkspaceAppQuality,
@@ -88,6 +89,10 @@ function normalizeCreateInput(raw) {
 }
 
 async function upsertWorkspaceApp(input, preferredId = publicId("app")) {
+  const sha256 = input.sha256.toLowerCase();
+  // Publisher attestation over {appId, sha256} — the client verifies authenticity,
+  // not just integrity. "" when the signing key isn't configured.
+  const signature = signWorkspaceApp({ appId: input.appId, sha256 });
   await db
     .insertInto("workspace_apps")
     .values({
@@ -104,7 +109,8 @@ async function upsertWorkspaceApp(input, preferredId = publicId("app")) {
       source_kind: input.sourceKind,
       source_repo: input.sourceRepo || null,
       artifact_url: input.artifactUrl,
-      sha256: input.sha256.toLowerCase(),
+      sha256,
+      signature,
       size_bytes: input.sizeBytes || null,
       min_app_version: input.minAppVersion || null,
       channel: input.channel,
@@ -129,7 +135,8 @@ async function upsertWorkspaceApp(input, preferredId = publicId("app")) {
         source_kind: input.sourceKind,
         source_repo: input.sourceRepo || null,
         artifact_url: input.artifactUrl,
-        sha256: input.sha256.toLowerCase(),
+        sha256,
+        signature,
         size_bytes: input.sizeBytes || null,
         min_app_version: input.minAppVersion || null,
         min_plan: input.minPlan,

@@ -243,6 +243,7 @@ export function workspaceAppToCatalogEntry(row) {
     minPlan,
     gated,
     sha256: String(row.sha256 || "").toLowerCase(),
+    signature: String(row.signature || ""),
     category: row.category || "productivity",
     appType: row.app_type || "workspace",
     publisher: row.publisher || "Lily Workbench",

@@ -277,6 +277,30 @@ function registerProjectHandlers(ctx) {
         return { ok: false, error: "CHECKSUM_MISMATCH" };
       }
 
+      // Authenticity: a workspace app carries executable skills/scripts, so verify
+      // the publisher's signature over {appId, sha256} — not just integrity. A
+      // present-but-invalid signature is always rejected. A missing signature is
+      // rejected only when LILY_REQUIRE_APP_SIGNATURE=1 (strict mode); otherwise it
+      // installs with a loud warning (transition until the catalog is re-signed).
+      {
+        const signature = String(app?.signature || "");
+        const signedAppId = String(app?.id || "").trim();
+        if (signature) {
+          const { verifyDetached } = require("./crypto-signing");
+          const publicKey = require("./license-manager").loadPublicKey();
+          const ok = verifyDetached({ appId: signedAppId, sha256: actualSha }, signature, publicKey);
+          if (!ok) {
+            return { ok: false, error: "SIGNATURE_INVALID" };
+          }
+        } else if (process.env.LILY_REQUIRE_APP_SIGNATURE === "1") {
+          return { ok: false, error: "SIGNATURE_MISSING" };
+        } else {
+          require("./logger")
+            .getLogger("apps")
+            .warn("installing UNSIGNED workspace app %s — no publisher signature", signedAppId || "?");
+        }
+      }
+
       const { manifest: peek } = await readPackManifest(zipBuffer);
       const appId = String(app?.id || peek?.appId || "").trim();
       const state = workspaceAppInstalls.readState();

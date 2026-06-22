@@ -8,6 +8,29 @@ import { t, getLocale } from "../i18n/index.js";
 import { refreshState, applySessionSwitch, updateTopbarTitles } from "./session-chrome.js";
 import { expandProjectGroup, renderProjectTree } from "./project-tree.js";
 import { revealLocalFileInFolder } from "./file-reveal.js";
+import { confirmDialog } from "./confirm-dialog.js";
+
+// Disclose what an app will GRANT before installing it — a workspace app brings
+// skills (which run scripts) and runtime packs. Consent only when there's
+// actually something to disclose; a plain low-risk app with no skills/packs
+// installs without a prompt.
+async function confirmInstallCapabilities(app) {
+  const skills = Array.isArray(app.requiredSkillPackages) ? app.requiredSkillPackages : [];
+  const packs = Array.isArray(app.requiredRuntimePacks) ? app.requiredRuntimePacks : [];
+  const risky = app.riskLevel && app.riskLevel !== "low";
+  if (!skills.length && !packs.length && !risky) return true;
+  const parts = [];
+  if (skills.length) parts.push(t("apps.consentSkills", { items: skills.join("、") }));
+  if (packs.length) parts.push(t("apps.consentRuntimePacks", { items: packs.join("、") }));
+  parts.push(t("apps.consentCode"));
+  if (risky) parts.push(t("apps.consentRisk", { level: riskLabel(app.riskLevel) }));
+  return confirmDialog({
+    title: t("apps.consentTitle", { name: app.name || app.id }),
+    message: parts.join(" "),
+    confirmText: t("apps.consentConfirm"),
+    danger: Boolean(risky),
+  });
+}
 
 let lastCatalog = null;
 
@@ -193,6 +216,7 @@ async function installWorkspaceApp(app, button) {
     showToast(t("toast.appInstallFailed"), "error");
     return;
   }
+  if (!(await confirmInstallCapabilities(app))) return;
   // Busy state: downloading + unpacking a large app can take a while, so show a
   // clear "installing…" label + spinner instead of a dead, unchanged button.
   const prevLabel = button ? button.textContent : "";
@@ -218,6 +242,10 @@ async function installWorkspaceApp(app, button) {
       }
       if (result?.error === "WORKSPACE_APP_NOT_ENTITLED") {
         showToast(t("apps.notEntitled"), "error");
+        return;
+      }
+      if (result?.error === "SIGNATURE_INVALID" || result?.error === "SIGNATURE_MISSING") {
+        showToast(t("apps.untrusted"), "error");
         return;
       }
       showToast(result?.error || t("toast.appInstallFailed"), "error");

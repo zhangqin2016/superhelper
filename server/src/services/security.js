@@ -102,6 +102,16 @@ export function signLicensePayload(payload) {
   return signature.toString("base64");
 }
 
+// Sign a workspace-app attestation ({ appId, sha256 }) with the LICENSE key, so
+// the desktop client verifies it with the license public key it already bundles
+// (crypto-signing.verifyDetached → stableStringify + base64url). Returns "" when
+// no key is configured; the client then treats the app as unverified.
+export function signWorkspaceApp(payload) {
+  if (!config.licensePrivateKey) return "";
+  const signature = crypto.sign(null, Buffer.from(stableStringify(payload)), config.licensePrivateKey);
+  return base64urlEncode(signature);
+}
+
 export function signConfigPayload(payload) {
   const body = stableStringify(payload);
   if (!config.configSigningPrivateKey) {
