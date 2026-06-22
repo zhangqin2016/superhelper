@@ -139,6 +139,31 @@ function buildInstanceMessageBody(opts = {}) {
   return body;
 }
 
+/**
+ * Resolve which session + message an event belongs to, across the several
+ * shapes opencode uses, so the shared stream can be demuxed per session:
+ *   session.*               properties.info.id IS the session id
+ *   message.updated         properties.info.{sessionID,id=messageID}
+ *   message.part.updated    properties.part.{sessionID,messageID}  (tools/todos)
+ *   permission.asked        properties.tool.messageID (no sessionID)
+ *   message.part.delta      properties.messageID ONLY — no session id at all
+ * Delta events therefore can't be attributed by themselves; the caller learns
+ * which messageIDs are its own from the session-tagged events and routes deltas
+ * by that set (this is how the official per-directory store resolves them too).
+ * @returns {{ sid: string|null, mid: string|null }}
+ */
+function extractEventRouting(event) {
+  const type = typeof event?.type === "string" ? event.type : "";
+  const p = (event && event.properties) || {};
+  let sid = p.sessionID || (p.part && p.part.sessionID) || (p.info && p.info.sessionID) || null;
+  if (!sid && type.startsWith("session.") && p.info && p.info.id) sid = p.info.id;
+  let mid = p.messageID || (p.part && p.part.messageID) || (p.tool && p.tool.messageID) || null;
+  if (!mid && type.startsWith("message.") && !type.startsWith("message.part") && p.info && p.info.id) {
+    mid = p.info.id;
+  }
+  return { sid, mid };
+}
+
 // ---------------------------------------------------------------------------
 // Server manager
 // ---------------------------------------------------------------------------
@@ -176,6 +201,9 @@ class OpencodeServerManager extends EventEmitter {
     this._shared = null;
     /** @type {(()=>void)|null} unsubscribe from the shared event stream */
     this._unsub = null;
+    /** @type {Set<string>} messageIDs known to belong to this session — used to
+     *  route session-less events (message.part.delta) on a shared serve. */
+    this._ownedMessages = new Set();
     this._terminated = false;
   }
 
@@ -301,10 +329,20 @@ class OpencodeServerManager extends EventEmitter {
     this._unsub = this._shared.onEvent((directory, event) => {
       if (this._terminated) return;
       if (directory && this.cwd && directory !== this.cwd) return;
-      // A directory can host multiple sessions now — never cross-feed events.
-      const sid = event?.properties?.sessionID || event?.properties?.info?.sessionID;
-      if (sid && this.sessionID && sid !== this.sessionID) return;
-      this.emit("event", event);
+      // A directory can host multiple sessions now — demux so we never cross-feed.
+      const { sid, mid } = extractEventRouting(event);
+      if (sid) {
+        if (this.sessionID && sid !== this.sessionID) return; // another session here
+        if (mid) this._ownedMessages.add(mid); // learn our messages for delta routing
+        this.emit("event", event);
+        return;
+      }
+      if (mid) {
+        // Session-less event (e.g. message.part.delta): route by owning message.
+        if (this._ownedMessages.has(mid)) this.emit("event", event);
+        return;
+      }
+      this.emit("event", event); // directory-level event, already matched
     });
   }
 
@@ -404,6 +442,7 @@ class OpencodeServerManager extends EventEmitter {
       } catch { /* best effort */ }
     }
     this._shared = null;
+    this._ownedMessages.clear();
     this.process = null;
   }
 }
@@ -413,4 +452,5 @@ module.exports = {
   parseListeningAddress,
   createSseFrameParser,
   buildInstanceMessageBody,
+  extractEventRouting,
 };
