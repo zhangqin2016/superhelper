@@ -235,11 +235,36 @@ class OpencodeSharedServer extends EventEmitter {
 // ---------------------------------------------------------------------------
 let _singleton = null;
 
-/** Get (creating on first call) the app's single shared serve. */
+/** Signature of the serve-defining opts. If these change (the user switched
+ *  model / gateway / skills, so providers + MCP differ), the running serve is
+ *  stale and must be rebuilt — otherwise it keeps talking to the OLD gateway and
+ *  every turn fails to reach the model. (The old one-serve-per-session model got
+ *  this for free; a frozen singleton does not.) */
+function serveSignature(opts) {
+  return JSON.stringify({
+    cmd: opts.serverCommand || "",
+    cfg: opts.configContent || "",
+  });
+}
+
+/** Get the app's single shared serve, creating it on first use and REBUILDING it
+ *  when the serve-defining config changes (so config edits take effect, matching
+ *  the official client's live per-directory config resolution). */
 function getSharedServer(opts) {
-  if (!_singleton || _singleton._terminated) {
-    _singleton = new OpencodeSharedServer(opts);
+  const sig = serveSignature(opts);
+  if (_singleton && !_singleton._terminated && _singleton._sig === sig) {
+    return _singleton;
   }
+  if (_singleton && !_singleton._terminated) {
+    log.info("shared serve config changed — rebuilding");
+    try {
+      _singleton.terminate();
+    } catch {
+      /* best effort */
+    }
+  }
+  _singleton = new OpencodeSharedServer(opts);
+  _singleton._sig = sig;
   return _singleton;
 }
 
