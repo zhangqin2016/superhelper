@@ -1,6 +1,6 @@
 {
   "name": "lily-workbench",
-  "version": "0.1.60",
+  "version": "0.1.61",
   "private": true,
   "description": "Lily Workbench desktop client",
   "main": "src/main.js",
@@ -76,6 +76,8 @@
       "src/**/*",
       "resources/**/*",
       "node_modules/@modelcontextprotocol/**/*",
+      "node_modules/@opencode-ai/**/*",
+      "node_modules/cross-spawn/**/*",
       "node_modules/zod/**/*",
       "node_modules/diff/**/*",
       "node_modules/dompurify/**/*",
@@ -195,6 +197,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opencode-ai/sdk": "^1.17.9",
     "diff": "^7.0.0",
     "dompurify": "^3.4.5",
     "echarts": "^6.1.0",

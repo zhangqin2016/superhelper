@@ -223,6 +223,25 @@ export function renderConversation(sessionId, opts = {}) {
   }
 }
 
+/**
+ * True when the session's panel already shows exactly the current committed-message
+ * window — so a session switch can just reveal it instead of tearing it down and
+ * re-parsing every message (the costly `force` rebuild). Conservative: any
+ * pending (added) message, or a count mismatch (removed message / shifted window),
+ * returns false so the caller still does a clean rebuild.
+ */
+export function isConversationRenderCurrent(sessionId) {
+  if (!sessionViews.has(sessionId)) return false;
+  const v = sessionViews.get(sessionId);
+  if (!v.listEl || !v.listEl.firstChild) return false;
+  const keys = renderedMessageKeys.get(sessionId);
+  if (!keys || keys.size === 0) return false;
+  const runtime = getRuntimeSession(sessionId);
+  const renderMessages = committedMessagesForRender(runtime.committedMessages);
+  if (keys.size !== renderMessages.length) return false;
+  return collectUnrenderedCommittedMessages(renderMessages, keys).length === 0;
+}
+
 const COMMITTED_RENDER_CHUNK = 5;
 const COMMITTED_INITIAL_WINDOW = 80;
 const COMMITTED_WINDOW_THRESHOLD = 160;

@@ -27,6 +27,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { OpencodeServerManager } = require("./runtime/opencode-server-manager");
 const { OpencodeEventAdapter } = require("./runtime/adapters/opencode-cli-adapter");
+const { decidePermission } = require("./runtime/opencode-permission-policy");
 const { truncateToolResultForUi, processEventFromClaudeEvent } = require("./cli-process-payload");
 const { getLogger } = require("./logger");
 
@@ -165,6 +166,9 @@ class OpencodeAgentSession extends EventEmitter {
       const id = await server.createSession();
       server.subscribe();
       this._server = server;
+      // Inject Lily's skill guidance once, only for a brand-new session — a
+      // resumed session already carries it in its message history.
+      this._guidancePending = !server.wasResumed && Boolean(this.spawnOptions?.guidance);
       this.agentResumeId = id;
       this.emit("agent-resume-id", id);
       // Started — clear the "starting" flag so isAlive() keys on the live process,
@@ -222,7 +226,11 @@ class OpencodeAgentSession extends EventEmitter {
     (async () => {
       try {
         const server = await this._ensureStarted();
-        await server.sendPrompt({ text, files });
+        // Skill guidance rides the FIRST message of a fresh session, then never
+        // again (the engine keeps it in context for the rest of the session).
+        const guidance = this._guidancePending ? this.spawnOptions?.guidance || "" : "";
+        await server.sendPrompt({ text, files, guidance });
+        if (guidance) this._guidancePending = false;
       } catch (err) {
         // The turn is driven by SSE (session.idle/events). If events already
         // arrived, a hiccup on the blocking message POST is NOT a turn failure —
@@ -233,6 +241,15 @@ class OpencodeAgentSession extends EventEmitter {
       }
     })();
     return true;
+  }
+
+  /** Host-side auto-decision for a gated tool (no user dialog). reply is the
+   *  engine response: "once" (allow this call) or "reject" (deny). The serve
+   *  asked; the session's mode answered. */
+  _autoRespondPermission(requestId, reply) {
+    void this._server
+      ?.respondPermission(requestId, { reply })
+      .catch((err) => log.warn("auto permission reply failed: %s", err?.message || String(err)));
   }
 
   respondPermission(requestId, decision = {}) {
@@ -275,12 +292,10 @@ class OpencodeAgentSession extends EventEmitter {
 
   setPermissionMode(mode) {
     if (this.spawnOptions) this.spawnOptions.permissionMode = mode;
-    // OpenCode bakes the permission ruleset into the config at serve start and
-    // cannot hot-swap it. Report "not applied live" so the pool (applyPermissionMode)
-    // terminates the idle runner; the next send then spawns fresh with the new mode
-    // and resumes the same session id, so the permission change applies without
-    // losing conversation context.
-    return false;
+    // Permission is now enforced host-side (decidePermission reads permissionMode
+    // live on each gated tool call), so a mode change applies IMMEDIATELY — no
+    // serve restart, no session-resume dance. Report applied-live.
+    return true;
   }
 
   interrupt() {
@@ -372,9 +387,20 @@ class OpencodeAgentSession extends EventEmitter {
         this._armResponseTimer();
         break;
 
-      case "permission_check":
-        // capability permissionAlwaysAsk: the server only asks once it has
-        // already decided to; the host always surfaces the dialog.
+      case "permission_check": {
+        // The shared serve asks for every mutation; the session's MODE is
+        // enforced HERE (host-side), mirroring the official client. Auto-allow /
+        // auto-deny without bothering the user; only "ask" surfaces the dialog.
+        const mode = this.spawnOptions?.permissionMode || "ask";
+        const verdict = decidePermission(mode, action.toolName, action.input || {});
+        if (verdict === "allow") {
+          this._autoRespondPermission(action.requestId, "once");
+          break;
+        }
+        if (verdict === "deny") {
+          this._autoRespondPermission(action.requestId, "reject");
+          break;
+        }
         this._pendingPermissions.add(action.requestId);
         this._ingest([{
           type: "permission.requested",
@@ -391,6 +417,7 @@ class OpencodeAgentSession extends EventEmitter {
           },
         }]);
         break;
+      }
 
       case "ask_user_question": {
         const questions = (action.input && action.input.questions) || [];

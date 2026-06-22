@@ -1,28 +1,32 @@
 "use strict";
 
 /**
- * Owns ONE `opencode serve` child process and drives it over HTTP + SSE.
+ * Per-session VIEW over the app's single shared `opencode serve`.
  *
- * Architecture: one server per app session (1:1 with the previous one-CLI-per-
- * session model), each with an isolated SQLite via OPENCODE_DB, so sessions stay
- * fully isolated (env, cwd, crash blast-radius, storage) — see the design notes
- * in the engine-swap plan. This class is the transport only; turning SSE events
- * into the host's action vocabulary is OpencodeEventAdapter's job.
+ * Architecture (matches the official desktop client): ONE serve hosts every
+ * session across every directory. This class no longer spawns a process — it
+ * acquires the shared serve (OpencodeSharedServer singleton) and scopes all of
+ * its calls to this session's directory via the `X-OpenCode-Directory` header,
+ * and to this session's id by filtering the shared event stream. It remains the
+ * transport only; turning events into the host's action vocabulary is
+ * OpencodeEventAdapter's job. (Previously: one serve per session with an
+ * isolated OPENCODE_DB — replaced because that didn't scale and diverged from
+ * upstream, which is multi-session/multi-directory on a single serve.)
  *
  * Wire contracts confirmed from vendored source (opencode/packages/server):
- *   POST /api/session                          { id?, agent?, model, location } -> { data:{ id } }
- *   POST /api/session/:id/prompt               { prompt:{ text, files? }, delivery?, resume? }
- *   POST /api/session/:id/permission/:rid/reply{ reply:"once"|"always"|"reject", message? } -> 204
- *   GET  /api/event                            SSE; scope via X-OpenCode-Directory header
- *   POST /session/:id/abort                    (legacy instance API) — best-effort; terminate() is the hard stop
+ *   POST /session                              {} -> { id, directory, ... }   (honors X-OpenCode-Directory)
+ *   POST /session/:id/message                  { agent, model?, parts } — runs the turn
+ *   POST /session/:id/permissions/:rid         { response:"once"|"always"|"reject", message? }
+ *   shared global event stream                 demuxed by directory + sessionID
+ *   POST /session/:id/abort                    best-effort; terminate() just detaches this view
  */
 
 const { EventEmitter } = require("node:events");
-const { spawn } = require("node:child_process");
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const { getLogger } = require("../logger");
+const { getSharedServer } = require("./opencode-shared-server");
 
 const log = getLogger("opencode-server");
 
@@ -116,6 +120,11 @@ function fileToPart(f) {
  */
 function buildInstanceMessageBody(opts = {}) {
   const parts = [];
+  // Lily's AGENT.md guidance (identity + rules + enabled skills), injected once
+  // on the session's first message as the leading instruction part — per-session
+  // by construction, so a single shared serve needs no per-session agent config.
+  const guidance = typeof opts.guidance === "string" ? opts.guidance.trim() : "";
+  if (guidance) parts.push({ type: "text", text: guidance });
   if (Array.isArray(opts.files)) {
     for (const f of opts.files) {
       const part = fileToPart(f);
@@ -163,102 +172,51 @@ class OpencodeServerManager extends EventEmitter {
     this.host = "127.0.0.1";
     this.port = 0;
     this.sessionID = null;
-    this._sse = null;
-    this._stdoutBuf = "";
+    /** @type {OpencodeSharedServer|null} the shared serve this session is bound to */
+    this._shared = null;
+    /** @type {(()=>void)|null} unsubscribe from the shared event stream */
+    this._unsub = null;
     this._terminated = false;
   }
 
   get baseUrl() {
+    if (this._shared) return this._shared.baseUrl;
     return `http://${this.host}:${this.port}`;
   }
 
-  /** Spawn `opencode serve` and resolve once it reports its listening port. */
-  start({ timeoutMs = 20_000 } = {}) {
-    return new Promise((resolve, reject) => {
-      // OPENCODE_DB needs its parent dir to exist or serve dies "unable to open
-      // database file"; the manager owns the data path so it owns creating it.
-      try {
-        if (this.dataDir && this.dataDir !== ":memory:") {
-          fs.mkdirSync(path.dirname(this.dataDir), { recursive: true });
-        }
-      } catch (err) {
-        reject(err);
-        return;
-      }
-      // Write the (potentially large) config to a file and point OPENCODE_CONFIG
-      // at it — a file has no size limit, unlike the OPENCODE_CONFIG_CONTENT env var.
-      const serveEnv = { ...process.env, ...this.env, OPENCODE_DB: this.dataDir };
-      if (this.configContent) {
-        try {
-          const cfgPath = path.join(path.dirname(this.dataDir), "opencode-config.json");
-          fs.writeFileSync(cfgPath, this.configContent);
-          serveEnv.OPENCODE_CONFIG = cfgPath;
-          delete serveEnv.OPENCODE_CONFIG_CONTENT;
-        } catch (err) {
-          reject(err);
-          return;
-        }
-      }
-      const args = ["serve", "--hostname", this.host, "--port", "0"];
-      const child = spawn(this.serverCommand, args, {
-        cwd: this.cwd,
-        env: serveEnv,
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true,
-      });
-      this.process = child;
-
-      // Settle the start() promise exactly once (ready / timeout / early death),
-      // and stop parsing stdout for the listening line — but DO NOT detach the
-      // exit/error handlers: they must persist for the process's whole life so a
-      // crash AFTER the server is ready is still detected. (Previously they were
-      // removed on ready, so a post-ready crash went unnoticed — this.process
-      // stayed set, isAlive() lied, and the turn hung until the silence watchdog.)
-      let startSettled = false;
-      let timer = null;
-      const settleStart = (fn) => {
-        if (startSettled) return;
-        startSettled = true;
-        if (timer) clearTimeout(timer);
-        child.stdout.off("data", onStdout);
-        fn();
-      };
-
-      const onStdout = (chunk) => {
-        this._stdoutBuf += chunk.toString();
-        const lines = this._stdoutBuf.split("\n");
-        this._stdoutBuf = lines.pop() || "";
-        for (const line of lines) {
-          const addr = parseListeningAddress(line);
-          if (addr) {
-            this.host = addr.host === "0.0.0.0" ? "127.0.0.1" : addr.host;
-            this.port = addr.port;
-            log.info("opencode serve ready on %s", this.baseUrl);
-            settleStart(() => resolve({ host: this.host, port: this.port }));
-            return;
-          }
-        }
-      };
-      const onStderr = (chunk) => log.warn("serve stderr: %s", chunk.toString().trim().slice(0, 200));
-
-      timer = setTimeout(
-        () => settleStart(() => reject(new Error("opencode serve did not report a listening port in time"))),
-        timeoutMs,
-      );
-
-      child.stdout.on("data", onStdout);
-      child.stderr.on("data", onStderr);
-      // Persistent — fire for the whole process lifetime, not just startup.
-      child.on("exit", (code) => {
-        this.process = null;
-        if (!this._terminated) this.emit("exit", { code });
-        settleStart(() => reject(new Error(`opencode serve exited before listening (code ${code})`)));
-      });
-      child.on("error", (err) => {
-        if (!this._terminated) this.emit("error", err);
-        settleStart(() => reject(err));
-      });
+  /** Acquire the app's shared serve (start it on first use) instead of spawning
+   *  a per-session process. The first caller's opts define the serve; this
+   *  session is scoped onto it purely by its `cwd` (the X-OpenCode-Directory
+   *  header on every request) + its own sessionID. Mirrors the official desktop
+   *  client: one serve, many directories, many sessions. */
+  async start({ timeoutMs = 20_000 } = {}) {
+    const shared = getSharedServer({
+      serverCommand: this.serverCommand,
+      cwd: this.cwd, // serve root for the first caller; per-session dir is per-request
+      dataDir: this.dataDir,
+      env: this.env,
+      configContent: this.configContent,
     });
+    this._shared = shared;
+
+    // A crash of the shared serve is a crash for every session on it: re-emit
+    // "exit"/"error" so each session's existing crash handling still fires.
+    this._onSharedExit = ({ code }) => {
+      this.process = null;
+      if (!this._terminated) this.emit("exit", { code });
+    };
+    this._onSharedError = (err) => {
+      if (!this._terminated) this.emit("error", err);
+    };
+    shared.on("exit", this._onSharedExit);
+    shared.on("error", this._onSharedError);
+
+    await shared.ensureStarted({ timeoutMs });
+    this.host = shared.host;
+    this.port = shared.port;
+    this.process = shared.process; // for isAlive() liveness probes
+    log.info("session bound to shared serve %s (dir %s)", this.baseUrl, this.cwd);
+    return { host: this.host, port: this.port };
   }
 
   /** Minimal promise wrapper over node:http for JSON request/response.
@@ -274,6 +232,9 @@ class OpencodeServerManager extends EventEmitter {
           method,
           headers: {
             accept: "application/json",
+            // Scope every instance-API call to THIS session's directory on the
+            // shared serve (verified: /session, /session/:id/* honor this header).
+            ...(this.cwd ? { "X-OpenCode-Directory": this.cwd } : {}),
             ...(payload ? { "content-type": "application/json", "content-length": payload.length } : {}),
             ...extraHeaders,
           },
@@ -316,6 +277,7 @@ class OpencodeServerManager extends EventEmitter {
         const existing = await this._request("GET", `/session/${this.resumeSessionID}`);
         if (existing && existing.id) {
           this.sessionID = existing.id;
+          this.wasResumed = true; // history already holds the skill guidance
           return existing.id;
         }
       } catch {
@@ -326,50 +288,32 @@ class OpencodeServerManager extends EventEmitter {
     const id = res?.id;
     if (!id) throw new Error("session create returned no id");
     this.sessionID = id;
+    this.wasResumed = false; // fresh session — guidance must be injected once
     return id;
   }
 
-  /** Open the SSE stream and emit one "event" per parsed server event. The
-   *  instance event stream is live (not replayed); if it drops while the server
-   *  is still up we auto-reconnect with backoff so long sessions stay subscribed. */
+  /** Attach to the shared serve's single event stream and re-emit only the
+   *  events for THIS session — events tagged with our directory and either no
+   *  sessionID (directory-level) or our own sessionID. The shared server owns
+   *  the one SSE connection + its reconnect; we just demux. */
   subscribe() {
-    if (this._sse) return;
-    const parser = createSseFrameParser();
-    const reconnect = () => {
-      this._sse = null;
-      if (this._terminated || !this.process) return;
-      this._sseRetries = (this._sseRetries || 0) + 1;
-      if (this._sseRetries > 30) {
-        this.emit("error", new Error("SSE reconnect gave up after 30 attempts"));
-        return;
-      }
-      const delay = Math.min(5000, 250 * this._sseRetries);
-      this._sseTimer = setTimeout(() => this.subscribe(), delay);
-    };
-    const req = http.request(
-      `${this.baseUrl}/event`,
-      { method: "GET", headers: { accept: "text/event-stream" } },
-      (res) => {
-        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) this._sseRetries = 0;
-        res.setEncoding("utf8");
-        res.on("data", (chunk) => {
-          for (const ev of parser.feed(chunk)) this.emit("event", ev);
-        });
-        res.on("end", reconnect);
-        res.on("close", reconnect);
-      },
-    );
-    req.on("error", () => reconnect());
-    req.end();
-    this._sse = req;
+    if (this._unsub || !this._shared) return;
+    this._unsub = this._shared.onEvent((directory, event) => {
+      if (this._terminated) return;
+      if (directory && this.cwd && directory !== this.cwd) return;
+      // A directory can host multiple sessions now — never cross-feed events.
+      const sid = event?.properties?.sessionID || event?.properties?.info?.sessionID;
+      if (sid && this.sessionID && sid !== this.sessionID) return;
+      this.emit("event", event);
+    });
   }
 
-  async sendPrompt({ text, files }) {
+  async sendPrompt({ text, files, guidance }) {
     if (!this.sessionID) throw new Error("no session");
     return this._request(
       "POST",
       `/session/${this.sessionID}/message`,
-      buildInstanceMessageBody({ text, files, agent: this.agent, model: this.model }),
+      buildInstanceMessageBody({ text, files, guidance, agent: this.agent, model: this.model }),
       {},
       0, // no timeout — this request blocks for the whole turn (can be minutes)
     );
@@ -443,20 +387,24 @@ class OpencodeServerManager extends EventEmitter {
     }
   }
 
+  /** Detach this session from the shared serve. Does NOT kill the serve — other
+   *  sessions are still on it (the shared server is torn down on app quit via
+   *  resetSharedServer). The opencode session row persists in the shared DB for
+   *  resume. Best-effort abort happens via abort() before this. */
   terminate() {
     this._terminated = true;
-    if (this._sseTimer) {
-      clearTimeout(this._sseTimer);
-      this._sseTimer = null;
+    if (this._unsub) {
+      try { this._unsub(); } catch { /* already gone */ }
+      this._unsub = null;
     }
-    if (this._sse) {
-      try { this._sse.destroy(); } catch { /* already closed */ }
-      this._sse = null;
+    if (this._shared) {
+      try {
+        if (this._onSharedExit) this._shared.off("exit", this._onSharedExit);
+        if (this._onSharedError) this._shared.off("error", this._onSharedError);
+      } catch { /* best effort */ }
     }
-    if (this.process) {
-      try { this.process.kill("SIGTERM"); } catch { /* already dead */ }
-      this.process = null;
-    }
+    this._shared = null;
+    this.process = null;
   }
 }
 

@@ -176,4 +176,69 @@ function buildOpencodeConfig(opts = {}) {
   return { ok: true, model: modelCfg.model, configContent: JSON.stringify(config) };
 }
 
-module.exports = { buildOpencodeConfig, translateMcpServers, translatePermission };
+/**
+ * Permission policy for the SINGLE SHARED serve: reads/research run free; every
+ * mutation is "ask", so the host receives a permission event and enforces the
+ * session's MODE by auto-responding (see opencode-permission-policy). One policy
+ * for all sessions — the per-session mode lives host-side, never in the serve.
+ */
+function baseSharedPermission() {
+  return {
+    read: "allow", grep: "allow", glob: "allow", list: "allow", lsp: "allow",
+    webfetch: "allow", websearch: "allow", task: "allow",
+    edit: "ask", write: "ask", bash: "ask", external_directory: "ask",
+  };
+}
+
+/**
+ * The config for the app's ONE shared serve — only truly app-wide pieces:
+ * provider(s) + model tiers, the UNION of all skills' MCP servers, local
+ * plugins, and the single "ask every mutation" base permission. Per-session
+ * bits (skill guidance, permission mode) are delivered per-request + host-side,
+ * NOT baked here — that's what lets one serve host every session/directory
+ * without cross-session config bleed.
+ * @param {{ lilyEnv: Record<string,string>, mcpServers?: object, pluginPaths?: string[], disallowedTools?: string[] }} opts
+ * @returns {{ ok:boolean, reason?:string, model:object|null, configContent:string|null }}
+ */
+function buildSharedBaseConfig(opts = {}) {
+  const modelCfg = resolveOpencodeModelConfig(opts.lilyEnv || {});
+  if (!modelCfg.ok) {
+    return { ok: false, reason: modelCfg.reason, model: modelCfg.model, configContent: null };
+  }
+  const config = JSON.parse(modelCfg.configContent); // { $schema, model, provider }
+
+  const pid = modelCfg.model.providerID;
+  const tiers = modelCfg.tiers || {};
+  if (tiers.haiku) config.small_model = `${pid}/${tiers.haiku}`;
+  if (tiers.subagent) {
+    config.agent = config.agent || {};
+    for (const name of SUBAGENT_AGENTS) {
+      config.agent[name] = { ...(config.agent[name] || {}), model: `${pid}/${tiers.subagent}` };
+    }
+  }
+
+  const mcp = translateMcpServers(opts.mcpServers);
+  if (Object.keys(mcp).length) config.mcp = mcp;
+
+  config.permission = baseSharedPermission();
+  // App-wide disabled tools (e.g. WebSearch/WebFetch) — a constant policy, so it
+  // belongs in the shared base. Denied outright (no host-side gate needed).
+  for (const t of opts.disallowedTools || []) {
+    config.permission[TOOL_NAME_MAP[t] || String(t).toLowerCase()] = "deny";
+  }
+
+  const plugins = (opts.pluginPaths || []).filter(Boolean);
+  if (plugins.length) config.plugin = plugins;
+
+  return { ok: true, model: modelCfg.model, configContent: JSON.stringify(config) };
+}
+
+module.exports = {
+  buildOpencodeConfig,
+  buildSharedBaseConfig,
+  baseSharedPermission,
+  translateMcpServers,
+  translatePermission,
+  DESTRUCTIVE_BASH,
+  CATASTROPHIC_BASH,
+};

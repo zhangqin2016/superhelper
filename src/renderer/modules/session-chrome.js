@@ -11,6 +11,7 @@ import {
   removeSessionMessages,
   renderConversation,
   shouldPreserveSessionView,
+  isConversationRenderCurrent,
   resumeLiveSessionUi,
   syncComposerForActiveSession,
 } from "./message.js";
@@ -226,7 +227,10 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
 
   showSessionMessages(nextSessionId);
   updateTopbarTitles();
-  if (shouldPreserveSessionView(nextSessionId)) {
+  if (shouldPreserveSessionView(nextSessionId) || isConversationRenderCurrent(nextSessionId)) {
+    // Live session, or the panel already shows the current window — just reveal
+    // it. Skips a full teardown + markdown/highlight rebuild of up to 80 messages
+    // on every switch (the main cause of "clicking a session is janky").
     resumeLiveSessionUi(nextSessionId, { forceScrollBottom: true });
   } else {
     renderConversation(nextSessionId, { force: true, forceScrollBottom: true });
