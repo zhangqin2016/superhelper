@@ -79,6 +79,9 @@ function renderAppCard(app) {
 
   const chips = document.createElement("div");
   chips.className = "workspace-app-chips";
+  if (app.minPlan && app.minPlan !== "free") {
+    appendChip(chips, t("apps.planBadge", { plan: app.minPlan.toUpperCase() }), "workspace-app-chip workspace-app-chip--accent");
+  }
   if (app.featured) appendChip(chips, t("apps.featured"), "workspace-app-chip workspace-app-chip--accent");
   if (app.installed) appendChip(chips, app.updateAvailable ? t("apps.updateAvailable") : t("apps.installed"), "workspace-app-chip workspace-app-chip--accent");
   for (const tag of app.tags || []) appendChip(chips, tag);
@@ -201,6 +204,10 @@ async function installWorkspaceApp(app, button) {
           parts.push(t("apps.failedRuntimePacks", { items: result.failedDependencies.runtimePacks.map((item) => item.id).join(", ") }));
         }
         showToast(parts.join(" · ") || t("toast.appInstallFailed"), "error");
+        return;
+      }
+      if (result?.error === "WORKSPACE_APP_NOT_ENTITLED") {
+        showToast(t("apps.notEntitled"), "error");
         return;
       }
       showToast(result?.error || t("toast.appInstallFailed"), "error");

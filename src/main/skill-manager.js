@@ -338,6 +338,14 @@ const AGENT_GUIDE_I18N = {
     faqAnswer2: "- 说明你是帮助用户在本机项目中完成写作、查资料、读文件、识图等任务的桌面助手。",
     faqAnswer3: "- 禁止说自己是 Claude、Claude Code、Anthropic 的产品或模型。",
     faqAnswer4: "- 若用户追问底层服务，说明本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
+    envTitle: "运行环境（重要）",
+    envNote: [
+      "命令 `python3` 直接指向本应用内置的 Python 虚拟环境，已预装常用数据/文档库：pandas、numpy、openpyxl、python-docx、python-pptx、pdfplumber、rapidocr（扫描件 OCR）、Pillow、mammoth、markitdown 等。",
+      "处理 Excel/CSV、Word/PPT、PDF 文本或扫描件、图片识别等任务时，优先直接写并运行 `python3` 脚本——这些库已就绪，**不要**重新 `pip install` 它们。",
+      "仅当确实需要未预装的库时才 `pip install`（会装进内置 venv）；`uv` 也可用于安装额外依赖。",
+      "注意：**LibreOffice（soffice）默认不随包**。需要它的办公功能——xlsx 公式重算、docx 接受修订、pptx 缩略图、文档转 PDF/图片或渲染校验——必须先用「Runtime 能力包」技能（lily-runtime-packs）安装 libreoffice 运行包；未安装时不要直接调 soffice，应先安装或告知用户。",
+      "浏览器自动化（web 系统学习、网页测试等）需要 Chromium，默认可能未随包：python-playwright 类技能可先运行 `python3 -m playwright install chromium` 现装（需联网，国内可能较慢）；前台浏览器/MCP 工具依赖 web 运行时（本构建可能未含，且没有可单独安装的浏览器运行包）。无法获得浏览器时如实告知用户，不要静默失败。",
+    ],
   },
   en: {
     title: "Lily Workbench Global Instructions",
@@ -351,6 +359,14 @@ const AGENT_GUIDE_I18N = {
     faqAnswer2: "- Explain that you are a desktop assistant helping users with writing, research, file reading, image recognition, and other tasks in their local projects.",
     faqAnswer3: "- Do NOT say you are Claude, Claude Code, or an Anthropic product or model.",
     faqAnswer4: "- If the user asks about the underlying service, explain the application connects to user-configured model/API gateways, not Claude/Anthropic services.",
+    envTitle: "Runtime Environment (Important)",
+    envNote: [
+      "The `python3` command points to this app's bundled Python virtualenv, which ships common data/document libraries pre-installed: pandas, numpy, openpyxl, python-docx, python-pptx, pdfplumber, rapidocr (scanned-PDF OCR), Pillow, mammoth, markitdown, and more.",
+      "For Excel/CSV, Word/PPT, PDF text or scans, image recognition, and similar tasks, prefer writing and running a `python3` script directly — these libraries are ready, do NOT `pip install` them again.",
+      "Only `pip install` when you genuinely need a library that isn't pre-installed (it installs into the bundled venv); `uv` is also available for extra dependencies.",
+      "Note: **LibreOffice (soffice) is NOT bundled by default.** Office features that need it — xlsx formula recalculation, docx accept-changes, pptx thumbnails, document→PDF/image conversion or render-based verification — require installing the libreoffice runtime pack first via the Runtime Packs skill (lily-runtime-packs). Do NOT call soffice when it isn't installed; install it first or tell the user.",
+      "Browser automation (web-system-learning, webapp-testing) needs Chromium, which may not be bundled: for python-playwright skills you can run `python3 -m playwright install chromium` first (network required); the foreground browser/MCP tools depend on the web runtime (this build may not include it, and there is no separately installable browser runtime pack). If no browser is available, tell the user instead of failing silently.",
+    ],
   },
   ar: {
     title: "تعليمات Lily Workbench العامة",
@@ -364,6 +380,14 @@ const AGENT_GUIDE_I18N = {
     faqAnswer2: "- اشرح أنك مساعد مكتبي يساعد المستخدمين في الكتابة والبحث وقراءة الملفات والتعرف على الصور ومهام أخرى في مشاريعهم المحلية.",
     faqAnswer3: "- لا تقل أنك Claude أو Claude Code أو منتج أو نموذج من Anthropic.",
     faqAnswer4: "- إذا سأل المستخدم عن الخدمة الأساسية، اشرح أن التطبيق يتصل ببوابات النماذج/واجهات برمجة التطبيقات التي يكوّنها المستخدم، وليس خدمات Claude/Anthropic.",
+    envTitle: "بيئة التشغيل (مهم)",
+    envNote: [
+      "الأمر `python3` يشير إلى بيئة Python الافتراضية المضمّنة في التطبيق، والمزوّدة مسبقاً بمكتبات بيانات/مستندات شائعة: pandas وnumpy وopenpyxl وpython-docx وpython-pptx وpdfplumber وrapidocr (OCR للملفات الممسوحة) وPillow وmammoth وmarkitdown وغيرها.",
+      "لمهام Excel/CSV وWord/PPT ونصوص PDF أو المسح الضوئي والتعرف على الصور، يُفضَّل كتابة وتشغيل سكربت `python3` مباشرةً — هذه المكتبات جاهزة، لا تُعد تثبيتها عبر `pip install`.",
+      "استخدم `pip install` فقط عند الحاجة إلى مكتبة غير مثبّتة مسبقاً (تُثبَّت في البيئة المضمّنة)؛ كما يتوفّر `uv` للاعتمادات الإضافية.",
+      "ملاحظة: **LibreOffice (soffice) غير مضمّن افتراضياً.** ميزات Office التي تحتاجه — إعادة حساب صيغ xlsx، وقبول تغييرات docx، وصور pptx المصغّرة، وتحويل المستندات إلى PDF/صور أو التحقق بالعرض — تتطلب أولاً تثبيت حزمة تشغيل libreoffice عبر مهارة Runtime Packs (lily-runtime-packs). لا تستدعِ soffice عندما لا يكون مثبّتاً؛ ثبّته أولاً أو أبلغ المستخدم.",
+      "أتمتة المتصفح (web-system-learning، webapp-testing) تحتاج Chromium الذي قد لا يكون مضمّناً: لمهارات python-playwright يمكنك تشغيل `python3 -m playwright install chromium` أولاً (يتطلب اتصالاً)؛ أما أدوات المتصفح/MCP الأمامية فتعتمد على بيئة تشغيل الويب (قد لا يتضمّنها هذا البناء، ولا توجد حزمة تشغيل متصفح قابلة للتثبيت بشكل منفصل). إذا لم يتوفّر متصفح، أبلغ المستخدم بدل الفشل الصامت.",
+    ],
   },
 };
 
@@ -376,7 +400,7 @@ function baseLocale(loc) {
  *  Lightweight single-line parser — every skill in this repo uses flat keys. */
 function readSkillFrontmatter(skillDir) {
   try {
-    const raw = fs.readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
+    const raw = fs.readFileSync(path.join(skillDir, "SKILL.md"), "utf8").replace(/\r\n/g, "\n");
     const m = /^---\s*\n([\s\S]*?)\n---/.exec(raw);
     if (!m) return null;
     const out = {};
@@ -465,6 +489,22 @@ function buildAgentGuideContent(enabledSkills, locale) {
     guide.faqAnswer4,
     "",
   ];
+
+  // Tell the model the bundled Python venv exists (with its pre-installed libs)
+  // ONLY when a runtime actually ships — otherwise (dev / runtime-less build)
+  // `python3` is the system interpreter and the claim would be false.
+  if (guide.envTitle && Array.isArray(guide.envNote)) {
+    let hasBundledRuntime = false;
+    try {
+      hasBundledRuntime = Boolean(require("./runtime-python").resolveBundledRuntimeRoot());
+    } catch {
+      hasBundledRuntime = false;
+    }
+    if (hasBundledRuntime) {
+      sections.push(`## ${guide.envTitle}`, "", ...guide.envNote, "");
+    }
+  }
+
   let lastTitle = null;
 
   for (const skill of enabledSkills) {
@@ -491,7 +531,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 9;
+const AGENT_GUIDE_STATIC_VERSION = 12;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();

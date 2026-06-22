@@ -117,6 +117,7 @@ export async function createWorkspaceAppAction(_previousState, formData) {
       "sourceRepo",
       "minAppVersion",
       "channel",
+      "minPlan",
       "riskLevel",
       "tags",
       "requiredRuntimePacks",

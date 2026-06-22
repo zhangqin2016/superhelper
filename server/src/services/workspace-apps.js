@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { planAllows } from "./entitlements.js";
 
 const SHA256_RE = /^[0-9a-f]{64}$/i;
 const TRUSTED_ARTIFACT_PROTOCOLS = new Set(["https:"]);
@@ -222,6 +223,11 @@ export function newestWorkspaceApps(rows = []) {
 }
 
 export function workspaceAppToCatalogEntry(row) {
+  const minPlan = String(row.min_plan || "free");
+  // Gated apps never expose their artifact URL in the catalog — the client must
+  // obtain it from the signed, entitlement-checked POST /api/apps/:id/download.
+  // Free apps keep the inline URL (direct install, no round-trip).
+  const gated = minPlan !== "free";
   return {
     id: row.app_id,
     name: row.name,
@@ -233,7 +239,9 @@ export function workspaceAppToCatalogEntry(row) {
     changelog: row.notes || "",
     channel: row.channel || "stable",
     sourceType: row.entry_kind || "zip",
-    downloadUrl: row.artifact_url,
+    downloadUrl: gated ? null : row.artifact_url,
+    minPlan,
+    gated,
     sha256: String(row.sha256 || "").toLowerCase(),
     category: row.category || "productivity",
     appType: row.app_type || "workspace",
@@ -247,13 +255,20 @@ export function workspaceAppToCatalogEntry(row) {
   };
 }
 
-export function buildWorkspaceAppCatalog(rows = [], { catalogUrl = "" } = {}) {
+export function buildWorkspaceAppCatalog(rows = [], { catalogUrl = "", viewerPlan = "free" } = {}) {
+  // Server-side visibility filter: an app the viewer's plan can't reach is
+  // dropped entirely, so VIP apps never appear for non-VIP viewers. (The client
+  // applies the same filter offline from its signed license; the hard gate is
+  // the entitlement check at download time.)
+  const apps = newestWorkspaceApps(rows)
+    .map(workspaceAppToCatalogEntry)
+    .filter((app) => planAllows(viewerPlan, app.minPlan));
   return {
     schemaVersion: 1,
     publisher: "Lily Workbench",
     catalogUrl: catalogUrl || null,
     updatedAt: new Date().toISOString(),
     categories: WORKSPACE_APP_CATEGORIES,
-    apps: newestWorkspaceApps(rows).map(workspaceAppToCatalogEntry),
+    apps,
   };
 }

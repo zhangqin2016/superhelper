@@ -648,6 +648,8 @@
   "apps.catalogCount": "{count} app(s)",
   "apps.empty": "No apps are available yet. Upload exported workspace apps in the admin console.",
   "apps.featured": "Featured",
+  "apps.planBadge": "{plan}",
+  "apps.notEntitled": "يتطلب هذا التطبيق خطة أعلى. قم بالترقية لتثبيته.",
   "apps.installed": "Installed",
   "apps.updateAvailable": "Update available",
   "apps.install": "Create workspace",

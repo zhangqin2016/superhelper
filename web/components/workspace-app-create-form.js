@@ -23,6 +23,7 @@ export function WorkspaceAppCreateForm() {
         <SelectField label="Category" name="category" defaultValue="productivity" options={["productivity", "office", "connectors", "data", "finance", "creative", "developer", "business", "education"]} />
         <SelectField label="App type" name="appType" defaultValue="workspace" options={["workspace", "template", "tool", "dashboard", "connector"]} />
         <SelectField label="Risk" name="riskLevel" defaultValue="low" options={["low", "medium", "high"]} />
+        <SelectField label="Min plan (access tier)" name="minPlan" defaultValue="free" options={["free", "pro", "vip"]} />
         <div className="lg:col-span-3">
           <Field label="App artifact zip" name="artifact" type="file" required />
         </div>

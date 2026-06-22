@@ -23,7 +23,10 @@ function isRetryableError(error) {
 
 async function fetchArtifactBuffer(url, options = {}) {
   const timeoutMs = Number(options.timeoutMs || 120_000);
-  const maxBytes = Number(options.maxBytes || 50 * 1024 * 1024);
+  // Memory guard. Callers may pass Infinity (or <= 0) to opt out entirely and
+  // defer to the source's own size limit; default stays 50MB for everyone else.
+  const maxBytes = options.maxBytes != null ? Number(options.maxBytes) : 50 * 1024 * 1024;
+  const enforceMax = Number.isFinite(maxBytes) && maxBytes > 0;
   const attempts = Math.max(1, Number(options.attempts || DEFAULT_ATTEMPTS));
   let lastError = null;
 
@@ -43,11 +46,11 @@ async function fetchArtifactBuffer(url, options = {}) {
         throw new Error(`HTTP ${response.status}`);
       }
       const length = Number(response.headers.get("content-length") || 0);
-      if (length > maxBytes) {
+      if (enforceMax && length > maxBytes) {
         throw new Error("ARTIFACT_TOO_LARGE");
       }
       const buffer = Buffer.from(await response.arrayBuffer());
-      if (buffer.length > maxBytes) {
+      if (enforceMax && buffer.length > maxBytes) {
         throw new Error("ARTIFACT_TOO_LARGE");
       }
       return buffer;

@@ -715,6 +715,8 @@
   "apps.catalogCount": "{count} 个应用",
   "apps.empty": "暂无可安装应用。可在管理后台上传工作空间导出的应用。",
   "apps.featured": "推荐",
+  "apps.planBadge": "{plan}",
+  "apps.notEntitled": "该应用需要更高的会员等级,升级后才能安装。",
   "apps.installed": "已安装",
   "apps.updateAvailable": "可升级",
   "apps.install": "创建工作空间",

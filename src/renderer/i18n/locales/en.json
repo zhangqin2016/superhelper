@@ -715,6 +715,8 @@
   "apps.catalogCount": "{count} app(s)",
   "apps.empty": "No apps are available yet. Upload exported workspace apps in the admin console.",
   "apps.featured": "Featured",
+  "apps.planBadge": "{plan}",
+  "apps.notEntitled": "This app requires a higher plan. Upgrade to install it.",
   "apps.installed": "Installed",
   "apps.updateAvailable": "Update available",
   "apps.install": "Create workspace",

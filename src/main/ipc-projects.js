@@ -5,8 +5,10 @@ const { ensureSessionRunner } = require("./ipc-utils");
 const { defaultSessionTitle } = require("./session-manager");
 const { fetchArtifactBuffer } = require("./artifact-download");
 
-const WORKSPACE_APP_DOWNLOAD_LIMIT = 50 * 1024 * 1024;
-const WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS = 120_000;
+// No client-side size cap on workspace-app downloads — the server is the
+// authority (it enforces a max at publish time) and the zip is sha256-verified
+// after download. A generous timeout so a large, server-approved app still lands.
+const WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS = 600_000;
 
 function safeFolderName(value) {
   return String(value || "workspace-app")
@@ -42,14 +44,27 @@ function restoreWorkspaceSkills(skillManager, workspaceSkills, projectId = "") {
 }
 
 async function downloadWorkspaceApp(app) {
-  const url = String(app?.downloadUrl || "").trim();
+  let url = String(app?.downloadUrl || "").trim();
+  // Gated (VIP/pro) apps carry no inline URL in the catalog — resolve it through
+  // the signed, entitlement-checked endpoint. A non-entitled device gets 403,
+  // which we surface as NOT_ENTITLED so the UI can explain it needs an upgrade.
+  if (!url && app?.gated) {
+    const res = await require("./service-client").workspaceAppDownload(app?.id, app?.channel);
+    if (!res.ok) {
+      if (res.status === 403 || res.error === "NOT_ENTITLED") {
+        throw new Error("WORKSPACE_APP_NOT_ENTITLED");
+      }
+      throw new Error("WORKSPACE_APP_DOWNLOAD_UNAVAILABLE");
+    }
+    url = String(res.json?.app?.downloadUrl || "").trim();
+  }
   if (!/^https:\/\//i.test(url)) {
     throw new Error("INVALID_APP_DOWNLOAD_URL");
   }
   try {
     return await fetchArtifactBuffer(url, {
       timeoutMs: WORKSPACE_APP_DOWNLOAD_TIMEOUT_MS,
-      maxBytes: WORKSPACE_APP_DOWNLOAD_LIMIT,
+      maxBytes: Infinity, // no client cap — defer to the server's published-size limit
     });
   } catch (error) {
     if (error?.message === "ARTIFACT_TOO_LARGE") {

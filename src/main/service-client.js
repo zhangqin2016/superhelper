@@ -291,6 +291,17 @@ async function workspaceAppCatalog() {
   });
 }
 
+// Resolve the artifact URL for a gated (VIP/pro) app. serviceFetch signs the
+// request with this device's key; the server checks the device's license tier
+// and returns the URL only if entitled (else 403 NOT_ENTITLED). Free apps don't
+// need this — their URL is inline in the catalog.
+async function workspaceAppDownload(appId, channel = "stable") {
+  return serviceFetch(`/api/apps/${encodeURIComponent(String(appId || ""))}/download`, {
+    method: "POST",
+    body: JSON.stringify({ deviceId: getDeviceId(), channel: channel || "stable" }),
+  });
+}
+
 // license-manager injects this at load time — service-client must not require
 // it back (license-manager is a client of this module, not a dependency).
 let licenseIdProvider = () => null;
@@ -466,6 +477,7 @@ module.exports = {
   fetchUsageSummary,
   skillRegistry,
   workspaceAppCatalog,
+  workspaceAppDownload,
   reportSkillEvent,
   reportRuntimeDiagnostic,
   fetchClientConfig,
