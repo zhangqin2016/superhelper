@@ -4,7 +4,7 @@
 
 import store from "./state.js";
 import { $, scrollToBottom, scrollToBottomAfterLayout, bindPanelScroll, initScrollToBottom, isNearBottom } from "./dom.js";
-import { shouldLoadOlderOnScroll } from "./scroll-geometry.js";
+import { revealScrollIntent, shouldLoadOlderOnScroll } from "./scroll-geometry.js";
 import { t } from "../i18n/index.js";
 import {
   applyRuntimeBatch,
@@ -102,6 +102,7 @@ function view(sessionId) {
       listEl: null,
       liveArticles: new Map(),
       renderGeneration: 0,
+      savedScrollTop: null,
     });
   }
   return sessionViews.get(sessionId);
@@ -127,6 +128,7 @@ function ensurePanel(sessionId) {
     "scroll",
     () => {
       if (!panel.classList.contains("is-active")) return;
+      v.savedScrollTop = panel.scrollTop;
       if (!shouldLoadOlderOnScroll(panel)) return;
       void import("./session-chrome.js").then((m) =>
         m.loadOlderConversationForSession?.(sessionId, panel),
@@ -149,7 +151,19 @@ export function showSessionMessages(sessionId) {
     el.setAttribute("aria-hidden", active ? "false" : "true");
   }
   syncWorkbenchEmptyState(view(sessionId).listEl);
-  requestAnimationFrame(() => scrollToBottom(true, view(sessionId).panel));
+  const v = view(sessionId);
+  requestAnimationFrame(() => {
+    if (!v.panel) return;
+    const intent = revealScrollIntent({
+      savedScrollTop: v.savedScrollTop,
+      hasRenderedContent: Boolean(v.listEl?.firstChild),
+    });
+    if (intent.mode === "restore") {
+      v.panel.scrollTop = intent.scrollTop;
+    } else {
+      scrollToBottom(true, v.panel);
+    }
+  });
 }
 
 export function hideAllSessionMessages() {

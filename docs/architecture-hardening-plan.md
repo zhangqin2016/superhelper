@@ -189,7 +189,8 @@ vision, and document-flow coverage.
 
 ## Non-goals
 
-- Do not replace Claude CLI runtime in this cleanup.
+- Do not add another ad hoc runtime transport beside OpenCode official SDK +
+  shared event stream in this cleanup.
 - Do not redesign the chat UI in this cleanup.
 - Do not rewrite the session storage format again unless a failing case proves
   it is needed.

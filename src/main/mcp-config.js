@@ -100,6 +100,23 @@ function buildMailMcpEntry() {
   };
 }
 
+/**
+ * Session-scoped Lily tool broker entry. This is opt-in while OpenCode shared
+ * serve does not yet pass a Lily session id per MCP request. Without
+ * LILY_TOOL_BROKER_CONTEXT the broker fails closed and exposes no tools.
+ */
+function buildToolBrokerMcpEntry() {
+  const env = { ELECTRON_RUN_AS_NODE: "1" };
+  if (process.env.LILY_TOOL_BROKER_CONTEXT) {
+    env.LILY_TOOL_BROKER_CONTEXT = process.env.LILY_TOOL_BROKER_CONTEXT;
+  }
+  return {
+    command: process.execPath,
+    args: [path.join(__dirname, "mcp", "tool-broker-stdio.js")],
+    env,
+  };
+}
+
 /** MCP server entry for one learned web system (its capabilities as typed tools). */
 function webSystemMcpEntry(draftDir) {
   if (
@@ -155,6 +172,11 @@ function buildWebSystemMcpEntries(systemDirs) {
 
 function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null) {
   const mcpServers = {};
+  if (process.env.LILY_TOOL_BROKER === "1") {
+    mcpServers.lily_tool_broker = buildToolBrokerMcpEntry();
+    fs.writeFileSync(outPath, `${JSON.stringify({ mcpServers }, null, 2)}\n`);
+    return outPath;
+  }
   const playwright = runtimeDir ? buildPlaywrightMcpConfig(runtimeDir) : null;
   if (playwright?.mcpServers) Object.assign(mcpServers, playwright.mcpServers);
   const mail = buildMailMcpEntry();
@@ -171,6 +193,7 @@ module.exports = {
   nodeBinaryPath,
   playwrightMcpEntry,
   buildMailMcpEntry,
+  buildToolBrokerMcpEntry,
   bundledBrowsersDir,
   bundledNodeModulesDir,
   playwrightMcpAvailable,

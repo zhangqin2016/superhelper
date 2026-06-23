@@ -12,10 +12,11 @@ import module from "node:module";
 import { assert } from "./lib/test-assert.mjs";
 
 const require = module.createRequire(import.meta.url);
-const { playwrightMcpAvailable, buildPlaywrightMcpConfig, writeActiveMcpConfig } = require("../src/main/mcp-config.js");
+const { playwrightMcpAvailable, buildPlaywrightMcpConfig, buildToolBrokerMcpEntry, writeActiveMcpConfig } = require("../src/main/mcp-config.js");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-mcp-cfg-"));
 const isWin = process.platform === "win32";
+process.env.LILY_USER_DATA_DIR = path.join(tmp, "user-data");
 
 function makeBundle(root, { withBrowsers = true } = {}) {
   fs.mkdirSync(path.join(root, "node", "bin"), { recursive: true });
@@ -62,7 +63,40 @@ try {
   const parsed = JSON.parse(fs.readFileSync(out, "utf8"));
   assert(parsed.mcpServers.playwright.command, "written config is valid JSON with the server");
 
-  console.log("PASS: test-mcp-config (16 tests)");
+  const learnedRoot = path.join(process.env.LILY_USER_DATA_DIR, "lily-config", "skills");
+  const enabled = path.join(learnedRoot, "learned-enabled");
+  const disabled = path.join(learnedRoot, "learned-disabled");
+  for (const dir of [enabled, disabled]) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "capability-map.json"), "{}");
+    fs.writeFileSync(path.join(dir, "web-system-playbook.json"), "{}");
+  }
+  const scopedOut = path.join(tmp, "mcp-scoped.json");
+  writeActiveMcpConfig(full, scopedOut, ["learned-enabled"]);
+  const scoped = JSON.parse(fs.readFileSync(scopedOut, "utf8"));
+  assert(scoped.mcpServers.web_learned_enabled, "active learned skill exposes its web-system MCP");
+  assert(!scoped.mcpServers.web_learned_disabled, "disabled learned skill does not expose its web-system MCP");
+
+  const prevBroker = process.env.LILY_TOOL_BROKER;
+  const prevBrokerContext = process.env.LILY_TOOL_BROKER_CONTEXT;
+  try {
+    process.env.LILY_TOOL_BROKER = "1";
+    process.env.LILY_TOOL_BROKER_CONTEXT = JSON.stringify({ sessionId: "s1", activeSkillIds: ["lily-runtime-packs"] });
+    const brokerEntry = buildToolBrokerMcpEntry();
+    assert(brokerEntry.args[0].endsWith(path.join("mcp", "tool-broker-stdio.js")), "broker entry launches the broker stdio server");
+    assert(brokerEntry.env.LILY_TOOL_BROKER_CONTEXT.includes("lily-runtime-packs"), "broker entry carries explicit context when provided");
+    const brokerOut = path.join(tmp, "mcp-broker.json");
+    writeActiveMcpConfig(full, brokerOut, ["learned-enabled"]);
+    const brokerCfg = JSON.parse(fs.readFileSync(brokerOut, "utf8"));
+    assert(JSON.stringify(Object.keys(brokerCfg.mcpServers)) === JSON.stringify(["lily_tool_broker"]), "broker mode emits only the Lily broker");
+  } finally {
+    if (prevBroker === undefined) delete process.env.LILY_TOOL_BROKER;
+    else process.env.LILY_TOOL_BROKER = prevBroker;
+    if (prevBrokerContext === undefined) delete process.env.LILY_TOOL_BROKER_CONTEXT;
+    else process.env.LILY_TOOL_BROKER_CONTEXT = prevBrokerContext;
+  }
+
+  console.log("PASS: test-mcp-config (21 tests)");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

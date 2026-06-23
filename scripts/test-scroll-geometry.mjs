@@ -4,7 +4,13 @@
 // has scrollTop ~0, so the streaming auto-scroll-to-bottom spuriously triggered a
 // history load that yanked the view to the very top.
 import assert from "node:assert/strict";
-import { shouldLoadOlderOnScroll, OLDER_LOAD_TOP_THRESHOLD } from "../src/renderer/modules/scroll-geometry.js";
+import {
+  normalizeWheelDelta,
+  revealScrollIntent,
+  shouldLoadOlderOnScroll,
+  shouldMarkBoundaryGesture,
+  OLDER_LOAD_TOP_THRESHOLD,
+} from "../src/renderer/modules/scroll-geometry.js";
 
 const panel = (scrollHeight, clientHeight, scrollTop) => ({ scrollHeight, clientHeight, scrollTop });
 
@@ -19,5 +25,17 @@ assert.equal(shouldLoadOlderOnScroll(panel(2000, 500, OLDER_LOAD_TOP_THRESHOLD +
 assert.equal(shouldLoadOlderOnScroll(panel(2000, 500, 1490)), false, "overflowing + at bottom must not load older");
 
 assert.equal(shouldLoadOlderOnScroll(null), false, "null panel is safe");
+
+assert.equal(normalizeWheelDelta({ deltaY: 2, deltaMode: 1, rootHeight: 500 }), 80, "line wheel delta matches OpenCode behavior");
+assert.equal(normalizeWheelDelta({ deltaY: 1, deltaMode: 2, rootHeight: 500 }), 500, "page wheel delta uses root height");
+assert.equal(normalizeWheelDelta({ deltaY: 12, deltaMode: 0, rootHeight: 500 }), 12, "pixel wheel delta passes through");
+
+assert.equal(shouldMarkBoundaryGesture({ delta: -10, scrollTop: 0, scrollHeight: 2000, clientHeight: 500 }), true, "wheeling upward at top marks boundary");
+assert.equal(shouldMarkBoundaryGesture({ delta: -10, scrollTop: 300, scrollHeight: 2000, clientHeight: 500 }), false, "middle upward wheel is not boundary");
+assert.equal(shouldMarkBoundaryGesture({ delta: 100, scrollTop: 1460, scrollHeight: 2000, clientHeight: 500 }), true, "wheeling past bottom marks boundary");
+
+assert.deepEqual(revealScrollIntent({ savedScrollTop: 320, hasRenderedContent: true }), { mode: "restore", scrollTop: 320 }, "existing session restores saved scroll");
+assert.deepEqual(revealScrollIntent({ savedScrollTop: 320, hasRenderedContent: false }), { mode: "bottom" }, "empty session still opens at bottom");
+assert.deepEqual(revealScrollIntent({ savedScrollTop: null, hasRenderedContent: true }), { mode: "bottom" }, "first reveal opens at bottom");
 
 console.log("scroll-geometry: ok");

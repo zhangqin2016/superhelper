@@ -44,9 +44,9 @@ class SessionRunnerPool {
     const { resolveLilyEnv, buildAgentSpawnEnv } = require("./spawn-env");
     const { buildSharedBaseConfig } = require("./runtime/opencode-config-builder");
     const permissionMode = extra.permissionMode || getActivePermissionMode();
-    // The SHARED serve's base config — app-wide only: distributed model + the
-    // UNION of all skills' MCP servers (`null` = all) + plugins + a single
-    // "ask every mutation" policy. Per-session bits are delivered per-request:
+    // The SHARED serve's base config — app-wide only for model/provider +
+    // plugins, with Lily extension MCPs scoped to this session's active skills.
+    // Other per-session bits are delivered per-request:
     //   - permission MODE  -> enforced host-side (opencode-permission-policy)
     //   - skill guidance   -> injected as a context part on the session's first
     //     message (see `guidance` below)
@@ -54,7 +54,7 @@ class SessionRunnerPool {
     // bleed (a single global OPENCODE_CONFIG can only hold one session's config).
     const cfg = buildSharedBaseConfig({
       lilyEnv: resolveLilyEnv(),
-      mcpServers: this._opencodeMcpServers(null),
+      mcpServers: this._opencodeMcpServers(extra.activeSkillIds || []),
       pluginPaths: this._opencodePlugins(),
       disallowedTools: extra.disallowedTools || [],
     });

@@ -25,6 +25,7 @@ import {
 } from "./session-runtime-store.js";
 import { refreshSessionSkillsUi } from "./session-skills.js";
 import { hydrateBlobRefs } from "./blob-refs.js";
+import { mergeOlderConversationPage, shouldContinueLoadingOlder } from "./conversation-pagination.js";
 
 const CONVERSATION_PAGE_SIZE = 50;
 const conversationPages = new Map();
@@ -180,23 +181,45 @@ export async function loadOlderConversationForSession(sessionId, panel = null) {
   const beforeHeight = panel?.scrollHeight || 0;
   const beforeTop = panel?.scrollTop || 0;
   try {
-    const result = await window.assistantClient.getSessionConversation(sessionId, {
-      before: page.nextBefore,
-      limit: CONVERSATION_PAGE_SIZE,
-    });
-    if (!result?.ok || !result.conversation?.length) {
-      page.hasMore = false;
+    let cursor = page.nextBefore;
+    const runtime = getRuntimeSession(sessionId);
+    let merged = runtime.committedMessages;
+    let total = null;
+    let loadedAny = false;
+    let hasMore = page.hasMore;
+    do {
+      const previousCount = merged.length;
+      const result = await window.assistantClient.getSessionConversation(sessionId, {
+        before: cursor,
+        limit: CONVERSATION_PAGE_SIZE,
+      });
+      if (!result?.ok || !result.conversation?.length) {
+        hasMore = false;
+        break;
+      }
+      const older = result.conversation.map(hydrateBlobRefs);
+      merged = mergeOlderConversationPage(older, merged);
+      total = Number.isInteger(result.total) ? result.total : total;
+      hasMore = Boolean(result.hasMore);
+      cursor = Number.isInteger(result.nextBefore) ? result.nextBefore : 0;
+      loadedAny = true;
+      if (!shouldContinueLoadingOlder({
+        hasMore,
+        pageSize: older.length,
+        previousCount,
+        mergedCount: merged.length,
+      })) {
+        break;
+      }
+    } while (hasMore);
+
+    if (!loadedAny) {
+      conversationPages.set(sessionId, { hasMore: false, nextBefore: 0, loading: false });
       return false;
     }
-    const runtime = getRuntimeSession(sessionId);
-    const merged = [...result.conversation.map(hydrateBlobRefs), ...runtime.committedMessages];
-    conversationPages.set(sessionId, {
-      hasMore: Boolean(result.hasMore),
-      nextBefore: Number.isInteger(result.nextBefore) ? result.nextBefore : 0,
-      loading: false,
-    });
+    conversationPages.set(sessionId, { hasMore, nextBefore: cursor, loading: false });
     store.set("conversation", merged);
-    patchSessionMessagesInStore(sessionId, merged, result.total);
+    patchSessionMessagesInStore(sessionId, merged, total);
     syncCommittedMessages(sessionId, merged);
     const { renderConversation } = await import("./message.js");
     renderConversation(sessionId, { force: true, preserveScroll: true });

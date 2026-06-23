@@ -15,11 +15,13 @@ import {
 } from "./turn-timeline.js";
 
 const sessions = new Map();
+const sessionAccessOrder = new Set();
 const batchSeqBySession = new Map();
 const eventSeqBySession = new Map();
 const terminalTurns = new Set();
 const listeners = new Set();
 let notifyQueued = false;
+export const SESSION_RUNTIME_CACHE_LIMIT = 40;
 
 const TERMINAL_TYPES = new Set([
   "turn.completed",
@@ -46,7 +48,48 @@ function emptySession(sessionId) {
 export function getRuntimeSession(sessionId) {
   if (!sessionId) return emptySession("");
   if (!sessions.has(sessionId)) sessions.set(sessionId, emptySession(sessionId));
+  touchRuntimeSession(sessionId);
   return sessions.get(sessionId);
+}
+
+function touchRuntimeSession(sessionId) {
+  if (sessionAccessOrder.has(sessionId)) sessionAccessOrder.delete(sessionId);
+  sessionAccessOrder.add(sessionId);
+  evictRuntimeSessionCaches();
+}
+
+function shouldPreserveRuntimeSession(sessionId) {
+  if (!sessionId) return true;
+  if (sessionId === store.get("activeSessionId")) return true;
+  const runtime = sessions.get(sessionId);
+  if (!runtime) return false;
+  return runtime.phase !== "idle" || Boolean(runtime.turnId) || Boolean(runtime.liveTurn);
+}
+
+function dropRuntimeSessionCache(sessionId) {
+  sessions.delete(sessionId);
+  batchSeqBySession.delete(sessionId);
+  eventSeqBySession.delete(sessionId);
+  sessionAccessOrder.delete(sessionId);
+  for (const key of [...terminalTurns]) {
+    if (key.startsWith(`${sessionId}:`)) terminalTurns.delete(key);
+  }
+}
+
+export function evictRuntimeSessionCaches(limit = SESSION_RUNTIME_CACHE_LIMIT) {
+  if (sessions.size <= limit) return [];
+  const evicted = [];
+  for (const sessionId of [...sessionAccessOrder]) {
+    if (sessions.size <= limit) break;
+    if (shouldPreserveRuntimeSession(sessionId)) continue;
+    dropRuntimeSessionCache(sessionId);
+    evicted.push(sessionId);
+  }
+  return evicted;
+}
+
+export function getCachedRuntimeSessionIds() {
+  return [...sessions.keys()];
 }
 
 function committedMessageKey(message) {

@@ -65,6 +65,41 @@ const fallbackCtx = {
 };
 assert.equal((await getConversationPageFromSource(fallbackCtx, "s1", {})).source, "lily", "falls back without runner");
 
+let ensuredSessionId = "";
+const resumableSession = { ...baseSession, agentResumeId: "ses_resume" };
+const passiveCtx = {
+  ensureConversationRunner: async (_ctx, sessionId) => {
+    ensuredSessionId = sessionId;
+    return {
+      runner: {
+        isAlive: () => true,
+        getConversationPage: async () => ({
+          ok: true,
+          source: "opencode",
+          sessionId,
+          conversation: [{
+            id: "msg_engine",
+            role: "assistant",
+            content: "fresh after restart",
+            record: { assistantText: "fresh after restart", engineMessageId: "msg_engine", meta: { opencode: { messageId: "msg_engine" } } },
+          }],
+        }),
+      },
+    };
+  },
+  sessionManager: {
+    findById: () => resumableSession,
+    getActive: () => resumableSession,
+    getConversationPage: () => fallbackPage,
+    getConversation: () => [legacy],
+  },
+  runnerPool: { get: () => null },
+};
+const passivePage = await getConversationPageFromSource(passiveCtx, "s1", {});
+assert.equal(ensuredSessionId, "s1", "passive history read starts an idle OpenCode view when resume id exists");
+assert.equal(passivePage.source, "opencode", "resumable session uses official OpenCode history even without a live runner");
+assert.equal(passivePage.conversation[0].content, "fresh after restart");
+
 const ctx = {
   sessionManager: {
     findById: () => baseSession,

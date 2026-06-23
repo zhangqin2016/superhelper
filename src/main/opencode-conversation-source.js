@@ -63,7 +63,20 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
   }
 
   const fallback = () => ctx.sessionManager.getConversationPage(session.id, opts);
-  const runner = ctx.runnerPool?.get?.(session.id);
+  let runner = ctx.runnerPool?.get?.(session.id);
+  if ((!runner?.getConversationPage || !runner?.isAlive?.()) && session.agentResumeId) {
+    try {
+      const ensureConversationRunner =
+        ctx.ensureConversationRunner ||
+        ((targetCtx, targetSessionId) => require("./ipc-utils").ensureSessionRunner(targetCtx, targetSessionId, { spawn: true }));
+      const ensured = await ensureConversationRunner(ctx, session.id);
+      if (ensured?.runner) runner = ensured.runner;
+    } catch {
+      // Official OpenCode history is best-effort here. If the engine cannot be
+      // started for a passive read, Lily's metadata/legacy store remains the
+      // offline fallback.
+    }
+  }
   if (!runner?.getConversationPage || !runner?.isAlive?.()) return fallback();
 
   try {

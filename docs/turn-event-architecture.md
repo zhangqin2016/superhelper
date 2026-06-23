@@ -14,7 +14,8 @@ longer uses legacy chat IPC such as `assistant:chunk`, `assistant:done`,
 The current production chain is:
 
 ```text
-AgentSession / runtime adapter
+OpenCode shared serve / official SDK
+  -> OpencodeAgentSession / runtime reducer
   -> TurnOrchestrator
   -> RuntimeEventBus
   -> assistant:runtime-events
@@ -25,7 +26,8 @@ AgentSession / runtime adapter
 Durable history is loaded separately:
 
 ```text
-SessionManager split message files
+OpenCode session.messages
+  + Lily metadata / legacy fallback from MessageStore
   -> session:get-conversation
   -> SessionRuntimeStore.syncCommittedMessages
   -> renderer committed messages
@@ -44,18 +46,24 @@ TurnOrchestrator.snapshot(sessionId)
 
 ### Durable Transcript Authority
 
-`SessionManager` is the durable transcript source. It owns persisted user and
-assistant messages, now stored as a session index plus per-session message files.
+OpenCode `session.messages` is the durable transcript source for OpenCode-backed
+sessions. Lily's `SessionManager` / `MessageStore` owns session metadata,
+legacy fallback messages, and product enhancement metadata such as artifacts,
+file diffs, process timelines, result blocks, usage summaries, and failure
+classification.
 
 `TurnOrchestrator` is the only code path that commits a user turn or final
-assistant turn into `SessionManager` during runtime execution:
+assistant metadata record into Lily storage during runtime execution:
 
-- user messages are committed before the engine receives the prompt;
-- assistant messages are committed only from one terminal turn boundary;
+- user messages are committed before the engine receives the prompt as the Lily
+  local view/fallback;
+- assistant metadata records are committed only from one terminal turn boundary;
 - queued messages are not committed until they actually start as a new turn.
 
 The renderer may show live events before they are fully persisted, but persisted
-history remains the canonical source after a turn is idle.
+OpenCode history plus merged Lily metadata remains the canonical source after a
+turn is idle. If OpenCode history cannot be read, Lily falls back to local
+metadata/legacy messages rather than showing an empty conversation.
 
 ### Live Runtime Authority
 
@@ -186,7 +194,8 @@ background work continues even when the user views another session.
 When a session becomes visible:
 
 1. renderer calls `session:get-conversation` for the newest page of durable
-   messages;
+   messages; main tries OpenCode `session.messages` first, starting an idle
+   OpenCode view when a resume id exists and no runner is currently live;
 2. `syncCommittedMessages` updates the runtime store;
 3. if the session is running or has a live turn, local not-yet-persisted committed
    messages are preserved instead of being overwritten by a stale disk page;

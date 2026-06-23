@@ -568,4 +568,28 @@ if (store.getSessionAttention("att2") !== null) {
   throw new Error("replayed terminals must not raise the attention flag");
 }
 
+// OpenCode Desktop keeps a bounded client-side session cache. Lily should do
+// the same for runtime/timeline state: many idle sessions must not accumulate
+// forever, but running sessions must survive eviction.
+store.applyRuntimeBatch({
+  sessionId: "cache-running",
+  batchSeq: 1,
+  events: [
+    { id: "cache-running-start", type: "turn.started", sessionId: "cache-running", turnId: "tr", seq: 1, ts: 6000, source: "test", payload: {} },
+  ],
+});
+for (let index = 0; index < store.SESSION_RUNTIME_CACHE_LIMIT + 12; index += 1) {
+  store.getRuntimeSession(`cache-idle-${index}`);
+}
+const cachedIds = store.getCachedRuntimeSessionIds();
+if (cachedIds.length > store.SESSION_RUNTIME_CACHE_LIMIT) {
+  throw new Error(`runtime cache should be bounded at ${store.SESSION_RUNTIME_CACHE_LIMIT}, got ${cachedIds.length}`);
+}
+if (!cachedIds.includes("cache-running")) {
+  throw new Error("runtime cache eviction must preserve running sessions");
+}
+if (cachedIds.includes("cache-idle-0")) {
+  throw new Error("runtime cache eviction should drop the oldest idle session first");
+}
+
 console.log("session-runtime-store: ok");
