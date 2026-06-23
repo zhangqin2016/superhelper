@@ -71,7 +71,7 @@ export function buildThinkingSummaryLabel(entry, live, translate) {
 export function timelineForView(liveTurn, sealed = false) {
   const timeline = getRenderableTimeline(liveTurn).filter((entry) => entry.kind !== "status");
   if (sealed) return timeline;
-  return timeline.filter((entry) => entry.kind !== "notice");
+  return timeline.filter((entry) => entry.kind !== "notice" || entry.level === "progress");
 }
 
 export function liveElapsedSeconds(liveTurn, now = Date.now()) {

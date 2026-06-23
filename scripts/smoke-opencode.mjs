@@ -9,14 +9,16 @@
  *   OPENCODE_BIN   path to the opencode binary (default: "opencode" on PATH)
  *   SMOKE_MS       how long to stream events before exiting (default 15000)
  *
- * It prints every raw SSE event `type` and, alongside, what our
- * OpencodeEventAdapter normalizes it to — so we can confirm the live event
- * names match what the normalizer was written against.
+ * It prints every raw SSE event `type` and, alongside, what the OpenCode runtime
+ * reducer emits — so we can confirm the live event names match the reducer.
  */
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { OpencodeServerManager } = require("../src/main/runtime/opencode-server-manager.js");
-const { OpencodeEventAdapter } = require("../src/main/runtime/adapters/opencode-cli-adapter.js");
+const {
+  createOpencodeRuntimeState,
+  reduceOpencodeRuntimeEvent,
+} = require("../src/main/runtime/opencode-runtime-reducer.js");
 
 const prompt = process.argv.slice(2).join(" ").trim();
 const bin = process.env.OPENCODE_BIN || "opencode";
@@ -46,7 +48,7 @@ if (process.env.OPENCODE_GATEWAY_URL) {
   }
 }
 
-const adapter = new OpencodeEventAdapter();
+const reducerState = createOpencodeRuntimeState();
 const server = new OpencodeServerManager({
   serverCommand: bin,
   cwd: process.cwd(),
@@ -61,9 +63,12 @@ let unknownTypes = new Set();
 server.on("event", (ev) => {
   const type = ev?.type || "(no-type)";
   if (!seenTypes.has(type)) {
-    const { actions } = adapter.normalizeEvent(ev);
-    const kinds = actions.map((a) => a.kind).join(",") || "(silent)";
-    if (actions.some((a) => a.kind === "unknown_runtime_event")) unknownTypes.add(type);
+    const reduced = reduceOpencodeRuntimeEvent(ev, reducerState);
+    const kinds = [
+      ...reduced.drafts.map((d) => d.type),
+      ...reduced.effects.map((e) => e.kind),
+    ].join(",") || "(silent)";
+    if (reduced.effects.some((e) => e.kind === "unknown")) unknownTypes.add(type);
     console.log(`  SSE ${type.padEnd(38)} -> ${kinds}`);
     seenTypes.add(type);
   }

@@ -805,8 +805,10 @@ getFullState()
 - `src/renderer/modules/session-busy.js`
   - 只保留兼容导出一版，最终删除。
 
-- `src/main/runtime/runtime-events.js`
-  - 目前是 `normalizeClaudeEvent(action) -> runtimeEventFromAction(action)` 的第二层映射。新 adapter 直接输出 RuntimeEvent 后删除。
+- `src/main/runtime/opencode-runtime-reducer.js`
+  - OpenCode 路径已经改为“官方事件 -> Lily runtime drafts/会话副作用”的直接 reducer。
+  - 不再保留 `OpencodeEventAdapter`、`opencode-event-normalizer`、`runtime-event-translator` 这类 action 中转层。
+  - Claude CLI 路径如后续重构，也应采用同样原则：协议事件直接归约成 RuntimeEvent draft，而不是再绕一套通用 action vocabulary。
 
 - `src/main/runtime/adapters/claude-cli-adapter.js`
   - 合并进 `cli-event-adapter.js`，避免 adapter 套 adapter。
@@ -887,12 +889,12 @@ isUserBlockingEvent(event)
 
 但 expected 结果改成 RuntimeEvent。
 
-当前代码映射关系：
+旧代码映射关系：
 
 ```text
 claude-event-normalizer.normalizeClaudeEvent()
   -> actions
-runtime-events.runtimeEventFromAction()
+runtime-events action-to-runtime mapper
   -> runtimeEvents
 AgentSession._onJsonEvent()
   -> emit("chunk/tool/permission/done/notice")

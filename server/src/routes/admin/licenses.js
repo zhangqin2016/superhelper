@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { db } from "../../db.js";
+import { zodBody, okResponse } from "../../openapi.js";
 import { licenseKey, publicId } from "../../services/ids.js";
 import { hashLicenseKey } from "../../services/security.js";
 
@@ -21,13 +22,33 @@ const updateLicenseSchema = z.object({
 });
 
 export function registerAdminLicenseRoutes(app, { audit }) {
-  app.get("/api/admin/licenses", async () => {
+  app.get(
+    "/api/admin/licenses",
+    {
+      schema: {
+        tags: ["admin:licenses"],
+        summary: "List licenses",
+        description: "Returns the 200 most recently created licenses.",
+        response: { 200: okResponse({ licenses: { type: "array" } }) },
+      },
+    },
+    async () => {
     return {
       licenses: await db.selectFrom("licenses").selectAll().orderBy("created_at", "desc").limit(200).execute(),
     };
   });
 
-  app.get("/api/admin/licenses/:id", async (request, reply) => {
+  app.get(
+    "/api/admin/licenses/:id",
+    {
+      schema: {
+        tags: ["admin:licenses"],
+        summary: "Get a license with its devices and usage",
+        description: "Returns the license record plus its bound devices and aggregated usage totals.",
+        response: { 200: okResponse({ license: { type: "object" }, devices: { type: "array" }, usage: { type: "object" } }) },
+      },
+    },
+    async (request, reply) => {
     const license = await db
       .selectFrom("licenses")
       .selectAll()
@@ -68,7 +89,18 @@ export function registerAdminLicenseRoutes(app, { audit }) {
     return { license, devices, usage };
   });
 
-  app.post("/api/admin/licenses", async (request, reply) => {
+  app.post(
+    "/api/admin/licenses",
+    {
+      schema: {
+        tags: ["admin:licenses"],
+        summary: "Create a license",
+        description: "Generates a license key, stores its hash, and returns the new license id and key.",
+        body: zodBody(createLicenseSchema),
+        response: { 201: okResponse({ licenseId: { type: "string" }, licenseKey: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = createLicenseSchema.parse(request.body);
     const key = licenseKey();
     const id = publicId("lic");
@@ -88,7 +120,18 @@ export function registerAdminLicenseRoutes(app, { audit }) {
     return reply.code(201).send({ ok: true, licenseId: id, licenseKey: key });
   });
 
-  app.patch("/api/admin/licenses/:id", async (request) => {
+  app.patch(
+    "/api/admin/licenses/:id",
+    {
+      schema: {
+        tags: ["admin:licenses"],
+        summary: "Update a license",
+        description: "Updates the provided license fields (status, seats, plan, expiry, customer, features).",
+        body: zodBody(updateLicenseSchema),
+        response: { 200: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request) => {
     const input = updateLicenseSchema.parse(request.body);
     const updates = {
       ...(input.status ? { status: input.status } : {}),

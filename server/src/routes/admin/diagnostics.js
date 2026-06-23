@@ -1,7 +1,18 @@
 import { db } from "../../db.js";
+import { okResponse } from "../../openapi.js";
 
 export function registerAdminDiagnosticsRoutes(app) {
-  app.get("/api/admin/diagnostics", async (request) => {
+  app.get(
+    "/api/admin/diagnostics",
+    {
+      schema: {
+        tags: ["admin:diagnostics"],
+        summary: "List runtime diagnostics with a breakdown by kind",
+        description: "Returns recent runtime diagnostics over the requested window plus aggregate counts grouped by kind and severity.",
+        response: { 200: okResponse({ diagnostics: { type: "array" }, byKind: { type: "array" } }) },
+      },
+    },
+    async (request) => {
     const days = Math.min(Number(request.query?.days || 30), 120);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     let query = db
@@ -40,7 +51,17 @@ export function registerAdminDiagnosticsRoutes(app) {
     };
   });
 
-  app.get("/api/admin/diagnostics/:id", async (request, reply) => {
+  app.get(
+    "/api/admin/diagnostics/:id",
+    {
+      schema: {
+        tags: ["admin:diagnostics"],
+        summary: "Get a single runtime diagnostic",
+        description: "Returns one runtime diagnostic record by id.",
+        response: { 200: okResponse({ diagnostic: { type: "object" } }) },
+      },
+    },
+    async (request, reply) => {
     const diagnostic = await db
       .selectFrom("runtime_diagnostics")
       .selectAll()

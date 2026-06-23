@@ -169,6 +169,11 @@ class SessionRunnerPool {
     return this._sessions.get(sessionId) || null;
   }
 
+  diagnostics(sessionId) {
+    const runner = this._sessions.get(sessionId);
+    return runner?.diagnostics?.() || null;
+  }
+
   sendMessage(sessionId, payload) {
     const runner = this._sessions.get(sessionId);
     if (!runner) throw new Error("NO_RUNNER");

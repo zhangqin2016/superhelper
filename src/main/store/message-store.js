@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * MessageStore — the single source of truth for conversation messages.
+ * MessageStore — Lily metadata + legacy/fallback transcript store.
  *
  * Replaces the per-session JSON files (which were parsed in full on every
  * session open — the cause of multi-second freezes on large sessions). Reads
@@ -9,6 +9,9 @@
  * O(page) regardless of total history. Writes are single-row inserts in a
  * transaction — O(1), no file rewrite (kills the old O(n²) save).
  *
+ * OpenCode owns the canonical engine transcript for OpenCode-backed sessions.
+ * Lily keeps this store for old installs, offline fallback, and product metadata
+ * (artifacts, diffs, result blocks, usage summaries) keyed by engineMessageId.
  * Each stored row keeps cheap "hot" columns (for listing / search / analytics)
  * plus `envelope_blob` = gzip(JSON(message)) with oversized data: URLs swapped
  * for blob refs. A page read decompresses only the rows it returns.

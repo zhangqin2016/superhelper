@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { db } from "../../db.js";
+import { zodBody, okResponse } from "../../openapi.js";
 import { encryptSecret } from "../../services/security.js";
 import {
   listModelGatewayProviders,
@@ -22,7 +23,23 @@ const providerSchema = z.object({
 });
 
 export function registerAdminModelProviderRoutes(app, { audit }) {
-  app.get("/api/admin/model-providers", async () => {
+  app.get(
+    "/api/admin/model-providers",
+    {
+      schema: {
+        tags: ["admin:model-providers"],
+        summary: "List model gateway providers",
+        description:
+          "Lists DB-configured providers (without keys) plus the merged env+DB list the gateway can route.",
+        response: {
+          200: okResponse({
+            providers: { type: "array", items: { type: "object" } },
+            gateway: { type: "array", items: { type: "object" } },
+          }),
+        },
+      },
+    },
+    async () => {
     const rows = await db
       .selectFrom("model_gateway_providers")
       .select([
@@ -63,7 +80,19 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
     };
   });
 
-  app.post("/api/admin/model-providers", async (request, reply) => {
+  app.post(
+    "/api/admin/model-providers",
+    {
+      schema: {
+        tags: ["admin:model-providers"],
+        summary: "Create or update a model gateway provider",
+        description:
+          "Upserts a provider, encrypting the API key (kept if omitted) and refreshing the gateway.",
+        body: zodBody(providerSchema),
+        response: { 201: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = providerSchema.parse(request.body);
     const existing = await db
       .selectFrom("model_gateway_providers")
@@ -113,7 +142,17 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
     return reply.code(201).send({ ok: true, id: input.id });
   });
 
-  app.delete("/api/admin/model-providers/:id", async (request) => {
+  app.delete(
+    "/api/admin/model-providers/:id",
+    {
+      schema: {
+        tags: ["admin:model-providers"],
+        summary: "Delete a model gateway provider",
+        description: "Deletes a provider and refreshes the gateway provider list.",
+        response: { 200: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request) => {
     await db.deleteFrom("model_gateway_providers").where("id", "=", request.params.id).execute();
     await refreshModelGatewayProviders();
     await audit(request, "model_provider.delete", "model_provider", request.params.id);

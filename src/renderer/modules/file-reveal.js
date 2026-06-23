@@ -20,3 +20,17 @@ export async function revealLocalFileInFolder(filePath, sessionId = "") {
     return { ok: false, error: "FAILED" };
   }
 }
+
+export async function openLocalFile(filePath, sessionId = "") {
+  if (!filePath || !window.assistantClient?.openLocalFile) return { ok: false, error: "INVALID_PATH" };
+  try {
+    const result = await window.assistantClient.openLocalFile(filePath, sessionId);
+    if (!result?.ok) {
+      showToast(revealErrorMessage(result?.error), "warning");
+    }
+    return result || { ok: false, error: "UNKNOWN" };
+  } catch {
+    showToast(t("file.revealFailed"), "warning");
+    return { ok: false, error: "FAILED" };
+  }
+}

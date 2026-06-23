@@ -440,8 +440,6 @@
   "message.errorGeneric": "حدث خطأ أثناء معالجة الطلب.",
   "message.toolFailed": "فشل {title}",
   "message.retry": "إعادة المحاولة",
-  "engine.autoRecoverDone": "تمت استعادة الاتصال — جارٍ المتابعة",
-  "engine.autoRecoverFailed": "فشل الاسترداد التلقائي. يرجى إعادة المحاولة.",
   "engine.waitingForFirstResponse": "جارٍ الاتصال بالمساعد، يرجى الانتظار…",
   "engine.longWait": "الاستجابة بطيئة. ما زلت أنتظر؛ يمكنك الإيقاف أو متابعة إضافة الرسائل إلى الصف.",
   "engine.sessionRehydrated": "تمت استعادة سياق المحادثة — جارٍ المتابعة",

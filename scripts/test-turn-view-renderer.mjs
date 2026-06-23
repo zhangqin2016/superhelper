@@ -88,13 +88,19 @@ const notice = {
   level: "warning",
   detail: "retrying request",
 };
+const progressNotice = {
+  kind: "notice",
+  code: "shellLongRunning",
+  level: "progress",
+  detail: "python3 report.py",
+};
 const liveTurn = {
   phase: "streaming",
   thinkingText: "",
   startedAt: 1_000,
   updatedAt: 1_000,
   tools: new Map(),
-  timeline: [notice],
+  timeline: [notice, progressNotice],
 };
 const sealedTurn = {
   ...liveTurn,
@@ -107,7 +113,7 @@ const sealedTurn = {
   usage: { estimatedTokens: 1200 },
 };
 
-assert.equal(timelineForView(liveTurn, false).length, 0, "live hides notices");
+assert.equal(timelineForView(liveTurn, false).length, 1, "live keeps progress notices only");
 assert.equal(timelineForView(sealedTurn, true).length, 1, "sealed keeps notices");
 
 const now = 16_000;
@@ -118,6 +124,10 @@ assert.equal(
   "15s · 思考中 · Esc 停止",
 );
 assert.equal(
+  buildLiveStatusText({ ...liveTurn, activityLabel: '- "If the' }, translate, now),
+  "15s · 等待回复 · Esc 停止",
+);
+assert.equal(
   buildLiveStatusText(
     { ...liveTurn, thinkingText: "planning", usage: { estimatedTokens: 1200 } },
     translate,
@@ -125,8 +135,8 @@ assert.equal(
   ),
   "15s · 思考中 · 1.2k tokens · Esc 停止",
 );
-// A running tool shows a STABLE verb for its type — NOT the streaming command/args
-// (which used to flicker out fragments like "Maybe" char-by-char).
+// Tool input can be long, partial, or noisy. The top status stays stable; the
+// detailed command belongs in the process timeline row.
 assert.equal(
   buildLiveStatusText(
     { ...liveTurn, tools: new Map([["t1", { name: "bash", status: "running", input: { command: "git log --oneline | head" } }]]) },

@@ -16,6 +16,7 @@ import {
   validLicenseScope,
 } from "../../services/device-identity.js";
 import { registerDeviceSchema } from "./devices.js";
+import { zodBody, okResponse } from "../../openapi.js";
 
 const clientConfigSchema = registerDeviceSchema.extend({
   licenseId: z.string().max(80).optional().nullable(),
@@ -85,7 +86,27 @@ async function resolveEffectiveConfig(input) {
 }
 
 export function registerPublicClientConfigRoutes(app) {
-  app.post("/api/client/config", async (request, reply) => {
+  app.post("/api/client/config", {
+    schema: {
+      tags: ["public:client-config"],
+      summary: "Resolve a device's effective client configuration",
+      description:
+        "Upserts the device, verifies the signed request, and returns the signed effective config and trial status.",
+      body: zodBody(clientConfigSchema),
+      response: {
+        200: okResponse({
+          schemaVersion: { type: "number" },
+          configVersion: { type: "string" },
+          expiresAt: { type: "string" },
+          effectiveConfig: { type: "object", additionalProperties: true },
+          deviceId: { type: "string" },
+          trial: { type: "object", additionalProperties: true },
+          appliedProfileIds: { type: "array", items: { type: "string" } },
+          signature: { type: "string" },
+        }),
+      },
+    },
+  }, async (request, reply) => {
     const input = clientConfigSchema.parse(request.body);
     const device = await upsertDevice(input);
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;

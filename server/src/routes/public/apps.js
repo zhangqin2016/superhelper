@@ -4,6 +4,7 @@ import { config } from "../../config.js";
 import { buildWorkspaceAppCatalog, newestWorkspaceApps } from "../../services/workspace-apps.js";
 import { planRank, planAllows } from "../../services/entitlements.js";
 import { requireSignedDeviceRequest } from "../../services/device-identity.js";
+import { zodBody, okResponse } from "../../openapi.js";
 
 const downloadSchema = z.object({
   deviceId: z.string().min(6).max(120),
@@ -47,7 +48,14 @@ function requestBaseUrl(request) {
 }
 
 export function registerPublicWorkspaceAppRoutes(app) {
-  app.get("/api/apps/catalog", async (request) => {
+  app.get("/api/apps/catalog", {
+    schema: {
+      tags: ["public:apps"],
+      summary: "List the workspace-app catalog",
+      description: "Returns enabled workspace apps for a channel, scoped to the viewer's plan.",
+      response: { 200: { type: "object", additionalProperties: true } },
+    },
+  }, async (request) => {
     const channel = String(request.query?.channel || "stable").trim() || "stable";
     const rows = await db
       .selectFrom("workspace_apps")
@@ -69,7 +77,20 @@ export function registerPublicWorkspaceAppRoutes(app) {
   // returns the public URL after the check; switching gated artifacts to a private
   // bucket later only changes what this handler RETURNS (a signed, expiring URL) —
   // the client contract is unchanged.
-  app.post("/api/apps/:appId/download", async (request, reply) => {
+  app.post("/api/apps/:appId/download", {
+    schema: {
+      tags: ["public:apps"],
+      summary: "Resolve a workspace app's download URL",
+      description:
+        "Enforces license entitlement for a signed device and returns the app's artifact download URL.",
+      body: zodBody(downloadSchema),
+      response: {
+        200: okResponse({
+          app: { type: "object", additionalProperties: true },
+        }),
+      },
+    },
+  }, async (request, reply) => {
     const appId = String(request.params?.appId || "").trim();
     if (!appId) return reply.code(400).send({ ok: false, code: "APP_ID_REQUIRED" });
     let input;

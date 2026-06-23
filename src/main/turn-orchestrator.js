@@ -22,7 +22,6 @@ const {
 } = require("./turn-timeline");
 const {
   classifyTurnFailure,
-  isRecoverableFailure,
   preflightFailureText,
   collectFailureTextFromState,
 } = require("./turn-error-classify");
@@ -451,7 +450,7 @@ class TurnOrchestrator {
     if (!displayText && (!files || files.length === 0)) return { ok: false, error: "EMPTY" };
 
     const state = this._state(sessionId);
-    if (state.phase !== "idle" && !opts.fromQueue && !opts.fromAutoRecovery) {
+    if (state.phase !== "idle" && !opts.fromQueue) {
       const item = {
         id: newQueueId(),
         text: displayText,
@@ -579,6 +578,7 @@ class TurnOrchestrator {
   }
 
   async _startTurn(session, text, files, opts = {}) {
+    const rawUserText = String(text || "").trim();
     const { diagnoseSendBlocker, ensureSessionRunner, refreshRemoteConfigForSend } = require("./ipc-utils");
     if (!opts.skipPreflight) {
       await refreshRemoteConfigForSend();
@@ -613,7 +613,6 @@ class TurnOrchestrator {
     state.usage = null;
     state.taskContract = null;
     state.enginePayload = null;
-    state.recoveryAttempted = false;
     resetTimelineState(state);
     state.blockIndexToToolId = new Map();
     state.terminalEmitted = false;
@@ -622,7 +621,12 @@ class TurnOrchestrator {
     state.pendingHooks.clear();
     state.tools.clear();
     const displayFiles = opts.displayFiles || fileMetadataFromPayload(files);
-    state.currentPayload = { text, files, displayFiles };
+    state.currentPayload = {
+      rawText: rawUserText,
+      text: rawUserText,
+      files,
+      displayFiles,
+    };
     state.scheduledTask = opts.scheduledTaskRunId
       ? {
           id: opts.scheduledTaskId || null,
@@ -638,12 +642,12 @@ class TurnOrchestrator {
 
     if (opts.recordUser !== false) {
       this.transcriptStore.commitUserMessage(session.id, {
-        text,
+        text: rawUserText,
         files: displayFiles,
         turnId: state.turnId,
       });
       this._emit(session.id, "user.committed", {
-        text,
+        text: rawUserText,
         files: displayFiles.length ? displayFiles : null,
       }, { turnId: state.turnId });
     }
@@ -666,7 +670,7 @@ class TurnOrchestrator {
       }
       text = vision.text;
       files = vision.files;
-      state.currentPayload = { text, files, displayFiles };
+      state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
     }
 
     if (!opts.skipDocument) {
@@ -686,7 +690,7 @@ class TurnOrchestrator {
       }
       text = document.text;
       files = document.files;
-      state.currentPayload = { text, files, displayFiles };
+      state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
     }
 
     const project =
@@ -701,7 +705,9 @@ class TurnOrchestrator {
       typeof opts.engineText === "string" && opts.engineText.trim()
         ? opts.engineText.trim()
         : text;
-    if (!opts.fromAutoRecovery) {
+    const preRehydrateText = engineText;
+    let rehydrated = false;
+    {
       const { withSessionRehydratePrefix } = require("./session-bootstrap");
       const { readSessionSummary } = require("./session-memory");
       const committedMessages =
@@ -722,15 +728,34 @@ class TurnOrchestrator {
       });
       engineText = rehydrate.text;
       if (rehydrate.rehydrated) {
+        rehydrated = true;
         this._emit(session.id, "session.hydrated", { source: "local-bootstrap" }, { turnId: null });
       }
     }
     engineText = withTaskContractPrefix(engineText, taskContract);
-    state.enginePayload = { text: engineText, files };
+    state.enginePayload = {
+      rawText: rawUserText,
+      text: engineText,
+      files,
+      displayFiles,
+      trace: {
+        preflightTextChanged: text !== rawUserText,
+        customEngineText: preRehydrateText !== text,
+        rehydrated,
+        taskContract: Boolean(state.taskContract),
+      },
+    };
 
     this._emit(session.id, "turn.started", {
-      text: state.currentPayload?.text || text,
+      text: rawUserText,
       queueLength: state.queue.length,
+      engine: {
+        textChanged: engineText !== rawUserText,
+        preflightTextChanged: text !== rawUserText,
+        customEngineText: preRehydrateText !== text,
+        rehydrated,
+        taskContract: Boolean(state.taskContract),
+      },
       taskContract: state.taskContract
         ? {
             kind: state.taskContract.kind,
@@ -755,7 +780,7 @@ class TurnOrchestrator {
     return {
       ok: true,
       turnId: state.turnId,
-      userCommitted: opts.recordUser === false ? null : { text, files: displayFiles },
+      userCommitted: opts.recordUser === false ? null : { text: rawUserText, files: displayFiles },
     };
   }
 
@@ -775,16 +800,6 @@ class TurnOrchestrator {
     const failed = Boolean(failure);
     if (Number.isFinite(payload?.durationMs)) state.durationMs = payload.durationMs;
     if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
-
-    if (failed && !state.recoveryAttempted && isRecoverableFailure(payload?.output || "")) {
-      state.recoveryAttempted = true;
-      state.phase = "recovering";
-      this._emit(sessionId, "recovery.scheduled", { attempt: 1, maxAttempts: 1 });
-      setTimeout(() => {
-        void this._recover(sessionId);
-      }, 600);
-      return;
-    }
 
     const terminalMeta = {
       durationMs: state.durationMs ?? null,
@@ -811,6 +826,7 @@ class TurnOrchestrator {
         failed: true,
         assistant: friendly,
         errorCode: failure.code,
+        errorCategory: failure.category || "",
         retryable: failure.retryable !== false,
         source: payload?.source || "",
         exitCode: payload?.exitCode ?? null,
@@ -831,66 +847,19 @@ class TurnOrchestrator {
     const state = this._state(sessionId);
     if (!state.turnId || state.terminalEmitted) return;
 
-    // Attempt recovery for transient errors (network, API) — same as _handleDone.
     const raw = String(message || "");
-    if (!state.recoveryAttempted && isRecoverableFailure(raw)) {
-      state.recoveryAttempted = true;
-      state.phase = "recovering";
-      this._emit(sessionId, "recovery.scheduled", { attempt: 1, maxAttempts: 1, source: "engine_error" });
-      setTimeout(() => {
-        void this._recover(sessionId);
-      }, 600);
-      return;
-    }
-
     const classified = classifyAssistantError(raw);
     const text = classified?.message || sanitizeError(raw);
     this._finalize(sessionId, "turn.failed", {
       failed: true,
       assistant: text,
       errorCode: classified?.code || "ENGINE_ERROR",
+      errorCategory: classified?.category || "",
       retryable: classified?.retryable !== false,
       error: raw,
     });
     await this._flushUsage(sessionId);
     void this._dispatchNext(sessionId);
-  }
-
-  async _recover(sessionId) {
-    const state = this._state(sessionId);
-    const payload = state.currentPayload;
-    if (!payload || state.terminalEmitted) return;
-    this._emit(sessionId, "recovery.started", { attempt: 1 });
-    state.phase = "starting";
-
-    // Re-ensure the runner — if the engine process died, this spawns a fresh one.
-    const { ensureSessionRunner } = require("./ipc-utils");
-    const ensured = ensureSessionRunner(this.ctx, sessionId, { spawn: true });
-    const runner = ensured.runner;
-    if (!runner) {
-      this._finalize(sessionId, "turn.failed", {
-        failed: true,
-        assistant: "Connection recovery failed — engine could not be restarted. Please resend your message.",
-        errorCode: "RECOVERY_NO_RUNNER",
-        retryable: true,
-      });
-      return;
-    }
-
-    // If the engine was restarted, the resume ID is stale — clear it so we start fresh.
-    if (ensured.coldStart) {
-      this.ctx.sessionManager.clearAgentResumeId(sessionId);
-    }
-
-    const sent = runner.sendUserMessage(state.enginePayload || payload);
-    if (!sent) {
-      this._finalize(sessionId, "turn.failed", {
-        failed: true,
-        assistant: "Connection recovery failed. Please resend your message.",
-        errorCode: "RECOVERY_REJECTED",
-        retryable: true,
-      });
-    }
   }
 
   _finalize(sessionId, type, payload = {}) {
@@ -985,7 +954,6 @@ class TurnOrchestrator {
     state.usage = null;
     state.taskContract = null;
     state.enginePayload = null;
-    state.recoveryAttempted = false;
     resetTimelineState(state);
     state.blockIndexToToolId = new Map();
     state.currentPayload = null;
@@ -1115,7 +1083,6 @@ class TurnOrchestrator {
         pendingQuestions: new Map(),
         pendingHooks: new Map(),
         terminalEmitted: false,
-        recoveryAttempted: false,
         currentPayload: null,
         scheduledTask: null,
         startedAt: 0,

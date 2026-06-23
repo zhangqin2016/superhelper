@@ -1,5 +1,6 @@
 import { config } from "../../config.js";
 import { db } from "../../db.js";
+import { okResponse } from "../../openapi.js";
 
 function publicUrlFromObjectKey(objectKey) {
   const key = String(objectKey || "").trim().replace(/^\/+/, "");
@@ -20,7 +21,17 @@ export function normalizeAttachmentForAdmin(attachment) {
 }
 
 export function registerAdminContactRoutes(app) {
-  app.get("/api/admin/contact-requests", async () => {
+  app.get(
+    "/api/admin/contact-requests",
+    {
+      schema: {
+        tags: ["admin:contacts"],
+        summary: "List contact/support requests",
+        description: "Lists recent contact requests with their normalized attachments.",
+        response: { 200: okResponse({ contacts: { type: "array", items: { type: "object" } } }) },
+      },
+    },
+    async () => {
     const contacts = await db
       .selectFrom("contact_requests")
       .selectAll()

@@ -85,7 +85,9 @@ function registerProjectHandlers(ctx) {
   ipcMain.handle("project:add", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "Select Folder",
-      properties: ["openDirectory"],
+      // createDirectory shows the "New Folder" button in the macOS dialog so a
+      // workspace can be created on the spot; Windows' folder picker has it natively.
+      properties: ["openDirectory", "createDirectory"],
     });
     if (result.canceled || result.filePaths.length === 0) {
       return { ok: false, canceled: true };

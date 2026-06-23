@@ -8,161 +8,23 @@
  * acquires the shared serve (OpencodeSharedServer singleton) and scopes all of
  * its calls to this session's directory via the `X-OpenCode-Directory` header,
  * and to this session's id by filtering the shared event stream. It remains the
- * transport only; turning events into the host's action vocabulary is
- * OpencodeEventAdapter's job. (Previously: one serve per session with an
- * isolated OPENCODE_DB — replaced because that didn't scale and diverged from
- * upstream, which is multi-session/multi-directory on a single serve.)
+ * transport only; raw events are reduced by opencode-runtime-reducer in the
+ * session runner. (Previously: one serve per session with an isolated
+ * OPENCODE_DB — replaced because that didn't scale and diverged from upstream,
+ * which is multi-session/multi-directory on a single serve.)
  *
- * Wire contracts confirmed from vendored source (opencode/packages/server):
- *   POST /session                              {} -> { id, directory, ... }   (honors X-OpenCode-Directory)
- *   POST /session/:id/message                  { agent, model?, parts } — runs the turn
- *   POST /session/:id/permissions/:rid         { response:"once"|"always"|"reject", message? }
- *   shared global event stream                 demuxed by directory + sessionID
- *   POST /session/:id/abort                    best-effort; terminate() just detaches this view
+ * All session/control calls go through the official SDK via opencode-sdk-session.
+ * This class only owns session view lifecycle and global-event demux.
  */
 
 const { EventEmitter } = require("node:events");
-const http = require("node:http");
-const fs = require("node:fs");
-const path = require("node:path");
 const { getLogger } = require("../logger");
 const { getSharedServer } = require("./opencode-shared-server");
+const { buildOpencodePromptBody } = require("./opencode-message-parts");
+const { createOpencodeSdkSession } = require("./opencode-sdk-session");
+const { classifyOpencodeEventOwnership } = require("./opencode-event-ownership");
 
 const log = getLogger("opencode-server");
-
-// ---------------------------------------------------------------------------
-// Pure helpers (exported for unit testing — no process/network side effects).
-// ---------------------------------------------------------------------------
-
-/**
- * Parse the "server listening on <host>:<port>" line OpenCode prints on stdout.
- * Tolerant of surrounding text and an optional http:// scheme.
- * @param {string} line
- * @returns {{ host: string, port: number } | null}
- */
-function parseListeningAddress(line) {
-  const text = String(line || "");
-  const match = text.match(/listening on\s+(?:https?:\/\/)?([^\s:]+):(\d{2,5})/i);
-  if (!match) return null;
-  const port = Number(match[2]);
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
-  return { host: match[1], port };
-}
-
-/**
- * Stateful SSE frame parser. Feed raw chunks; get back fully-received events,
- * each parsed from its `data:` payload. Handles multi-line data and partial
- * chunks split across reads.
- * @returns {{ feed: (chunk: string) => Array<Record<string, unknown>> }}
- */
-function createSseFrameParser() {
-  let buffer = "";
-  return {
-    feed(chunk) {
-      buffer += String(chunk || "");
-      const events = [];
-      let sep;
-      // SSE frames are separated by a blank line (\n\n).
-      while ((sep = buffer.indexOf("\n\n")) !== -1) {
-        const frame = buffer.slice(0, sep);
-        buffer = buffer.slice(sep + 2);
-        const data = frame
-          .split("\n")
-          .filter((l) => l.startsWith("data:"))
-          .map((l) => l.slice(5).trimStart())
-          .join("\n");
-        if (!data) continue;
-        try {
-          events.push(JSON.parse(data));
-        } catch {
-          log.warn("dropped unparseable SSE frame: %s", data.slice(0, 160));
-        }
-      }
-      return events;
-    },
-  };
-}
-
-const FILE_MIME = {
-  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
-  ".webp": "image/webp", ".bmp": "image/bmp", ".pdf": "application/pdf", ".txt": "text/plain",
-  ".md": "text/markdown", ".json": "application/json", ".csv": "text/csv",
-};
-
-/**
- * Turn one Lily file ({path,name,isImage} from the composer, or {uri,mime})
- * into an OpenCode FilePart { type:"file", mime, filename, url }. Local files
- * become base64 `data:` URLs (universally accepted), so vision/document skills
- * receive the actual bytes. Returns null if unreadable.
- */
-function fileToPart(f) {
-  if (!f || typeof f !== "object") return null;
-  if (f.uri && f.mime) {
-    return { type: "file", url: f.uri, mime: f.mime, ...(f.name ? { filename: f.name } : {}) };
-  }
-  const filePath = f.path || f.filePath;
-  if (!filePath || !fs.existsSync(filePath)) return null;
-  const ext = path.extname(filePath).toLowerCase();
-  const mime = f.mime || FILE_MIME[ext] || "application/octet-stream";
-  try {
-    const data = fs.readFileSync(filePath).toString("base64");
-    return { type: "file", mime, filename: f.name || path.basename(filePath), url: `data:${mime};base64,${data}` };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Body for the instance API `POST /session/:id/message` — the endpoint that
- * actually RUNS the agent loop (verified: the v2 `/api/.../prompt` only admits).
- * Mirrors what the SDK/`opencode run` send: { agent, model, parts }.
- * @param {{ text: string, agent?: string, model?: {providerID:string, modelID:string}|null, files?: Array<object> }} opts
- */
-function buildInstanceMessageBody(opts = {}) {
-  const parts = [];
-  // Lily's AGENT.md guidance (identity + rules + enabled skills), injected once
-  // on the session's first message as the leading instruction part — per-session
-  // by construction, so a single shared serve needs no per-session agent config.
-  const guidance = typeof opts.guidance === "string" ? opts.guidance.trim() : "";
-  if (guidance) parts.push({ type: "text", text: guidance });
-  if (Array.isArray(opts.files)) {
-    for (const f of opts.files) {
-      const part = fileToPart(f);
-      if (part) parts.push(part);
-    }
-  }
-  parts.push({ type: "text", text: String(opts.text || "") });
-  const body = { agent: opts.agent || "build", parts };
-  if (opts.model && opts.model.providerID && opts.model.modelID) {
-    body.model = { providerID: opts.model.providerID, modelID: opts.model.modelID };
-  }
-  return body;
-}
-
-/**
- * Resolve which session + message an event belongs to, across the several
- * shapes opencode uses, so the shared stream can be demuxed per session:
- *   session.*               properties.info.id IS the session id
- *   message.updated         properties.info.{sessionID,id=messageID}
- *   message.part.updated    properties.part.{sessionID,messageID}  (tools/todos)
- *   permission.asked        properties.tool.messageID (no sessionID)
- *   message.part.delta      properties.messageID ONLY — no session id at all
- * Delta events therefore can't be attributed by themselves; the caller learns
- * which messageIDs are its own from the session-tagged events and routes deltas
- * by that set (this is how the official per-directory store resolves them too).
- * @returns {{ sid: string|null, mid: string|null }}
- */
-function extractEventRouting(event) {
-  const type = typeof event?.type === "string" ? event.type : "";
-  const p = (event && event.properties) || {};
-  let sid = p.sessionID || (p.part && p.part.sessionID) || (p.info && p.info.sessionID) || null;
-  if (!sid && type.startsWith("session.") && p.info && p.info.id) sid = p.info.id;
-  let mid = p.messageID || (p.part && p.part.messageID) || (p.tool && p.tool.messageID) || null;
-  if (!mid && type.startsWith("message.") && !type.startsWith("message.part") && p.info && p.info.id) {
-    mid = p.info.id;
-  }
-  return { sid, mid };
-}
 
 // ---------------------------------------------------------------------------
 // Server manager
@@ -205,6 +67,10 @@ class OpencodeServerManager extends EventEmitter {
      *  route session-less events (message.part.delta) on a shared serve. */
     this._ownedMessages = new Set();
     this._terminated = false;
+    this._sdkSession = null;
+    this._releaseSharedView = null;
+    this._routingStats = { delivered: 0, dropped: 0, byReason: new Map() };
+    this._recentRouting = [];
   }
 
   get baseUrl() {
@@ -225,6 +91,7 @@ class OpencodeServerManager extends EventEmitter {
       env: this.env,
       configContent: this.configContent,
     });
+    if (!this._releaseSharedView) this._releaseSharedView = shared.retainView();
     this._shared = shared;
 
     // A crash of the shared serve is a crash for every session on it: re-emit
@@ -239,70 +106,31 @@ class OpencodeServerManager extends EventEmitter {
     shared.on("exit", this._onSharedExit);
     shared.on("error", this._onSharedError);
 
-    await shared.ensureStarted({ timeoutMs });
-    this.host = shared.host;
-    this.port = shared.port;
-    this.process = shared.process; // for isAlive() liveness probes
-    log.info("session bound to shared serve %s (dir %s)", this.baseUrl, this.cwd);
-    return { host: this.host, port: this.port };
-  }
-
-  /** Minimal promise wrapper over node:http for JSON request/response.
-   *  timeoutMs: 0 disables the timeout — REQUIRED for the message POST, which
-   *  blocks until the whole turn completes (can be minutes for long/reasoning
-   *  turns); a short timeout there aborts a healthy turn as "connection interrupted". */
-  _request(method, path, body, extraHeaders = {}, timeoutMs = 60_000) {
-    return new Promise((resolve, reject) => {
-      const payload = body == null ? null : Buffer.from(JSON.stringify(body));
-      const req = http.request(
-        `${this.baseUrl}${path}`,
-        {
-          method,
-          headers: {
-            accept: "application/json",
-            // Scope every instance-API call to THIS session's directory on the
-            // shared serve (verified: /session, /session/:id/* honor this header).
-            ...(this.cwd ? { "X-OpenCode-Directory": this.cwd } : {}),
-            ...(payload ? { "content-type": "application/json", "content-length": payload.length } : {}),
-            ...extraHeaders,
-          },
-        },
-        (res) => {
-          let data = "";
-          res.on("data", (c) => (data += c));
-          res.on("end", () => {
-            const status = res.statusCode || 0;
-            if (status < 200 || status >= 300) {
-              reject(new Error(`${method} ${path} -> ${status}: ${data.slice(0, 200)}`));
-              return;
-            }
-            if (!data) return resolve(null);
-            try {
-              resolve(JSON.parse(data));
-            } catch {
-              resolve(null);
-            }
-          });
-        },
-      );
-      req.on("error", reject);
-      // Short timeout only for quick control calls; the message POST passes 0
-      // (no timeout) because it stays open for the entire turn.
-      if (timeoutMs > 0) {
-        req.setTimeout(timeoutMs, () => req.destroy(new Error(`${method} ${path} timed out`)));
+    try {
+      await shared.ensureStarted({ timeoutMs });
+      this.host = shared.host;
+      this.port = shared.port;
+      this.process = shared.process; // for isAlive() liveness probes
+      this._sdkSession = createOpencodeSdkSession(shared.clientFor(this.cwd), this.cwd);
+      log.info("session bound to shared serve %s (dir %s)", this.baseUrl, this.cwd);
+      return { host: this.host, port: this.port };
+    } catch (err) {
+      if (this._releaseSharedView) {
+        try { this._releaseSharedView(); } catch { /* best effort */ }
+        this._releaseSharedView = null;
       }
-      if (payload) req.write(payload);
-      req.end();
-    });
+      throw err;
+    }
   }
 
   /** Resume the prior session if its DB row survived (persistent OPENCODE_DB),
    *  else create a fresh one. Instance API: POST /session returns {id} at top level;
    *  GET /session/:id confirms an existing session. */
   async createSession() {
+    if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
     if (this.resumeSessionID) {
       try {
-        const existing = await this._request("GET", `/session/${this.resumeSessionID}`);
+        const existing = await this._sdkSession.get(this.resumeSessionID);
         if (existing && existing.id) {
           this.sessionID = existing.id;
           this.wasResumed = true; // history already holds the skill guidance
@@ -312,7 +140,11 @@ class OpencodeServerManager extends EventEmitter {
         /* not found in this DB -> fall through to a fresh session */
       }
     }
-    const res = await this._request("POST", "/session", {});
+    // Match the official desktop flow: create only the session row; choose
+    // agent/model per promptAsync. OpenCode's session.create schema uses
+    // model.id, while promptAsync uses model.modelID. Passing our prompt model
+    // shape at create time breaks fresh sessions while resumed sessions work.
+    const res = await this._sdkSession.create();
     const id = res?.id;
     if (!id) throw new Error("session create returned no id");
     this.sessionID = id;
@@ -328,38 +160,52 @@ class OpencodeServerManager extends EventEmitter {
     if (this._unsub || !this._shared) return;
     this._unsub = this._shared.onEvent((directory, event) => {
       if (this._terminated) return;
-      if (directory && this.cwd && directory !== this.cwd) return;
-      // A directory can host multiple sessions now — demux so we never cross-feed.
-      const { sid, mid } = extractEventRouting(event);
-      if (sid) {
-        if (this.sessionID && sid !== this.sessionID) return; // another session here
-        if (mid) this._ownedMessages.add(mid); // learn our messages for delta routing
+      const ownership = classifyOpencodeEventOwnership({
+        directory,
+        cwd: this.cwd,
+        event,
+        sessionID: this.sessionID,
+        ownedMessages: this._ownedMessages,
+      });
+      this._recordRoutingDecision(directory, event, ownership);
+      if (ownership.rememberMessage) this._ownedMessages.add(ownership.rememberMessage);
+      if (ownership.action === "deliver") {
         this.emit("event", event);
-        return;
       }
-      if (mid) {
-        // Session-less event (e.g. message.part.delta): route by owning message.
-        if (this._ownedMessages.has(mid)) this.emit("event", event);
-        return;
-      }
-      this.emit("event", event); // directory-level event, already matched
     });
+  }
+
+  _recordRoutingDecision(directory, event, ownership) {
+    const delivered = ownership?.action === "deliver";
+    if (delivered) this._routingStats.delivered += 1;
+    else this._routingStats.dropped += 1;
+    const reason = ownership?.reason || "unknown";
+    this._routingStats.byReason.set(reason, (this._routingStats.byReason.get(reason) || 0) + 1);
+    this._recentRouting.push({
+      ts: Date.now(),
+      action: ownership?.action || "drop",
+      scope: ownership?.scope || "",
+      reason,
+      directory: directory || "",
+      type: String(event?.type || ""),
+      sessionID: ownership?.sid || event?.properties?.sessionID || event?.properties?.part?.sessionID || event?.properties?.info?.sessionID || "",
+      messageID: ownership?.mid || event?.properties?.messageID || event?.properties?.part?.messageID || event?.properties?.info?.id || "",
+    });
+    if (this._recentRouting.length > 120) this._recentRouting.splice(0, this._recentRouting.length - 120);
   }
 
   async sendPrompt({ text, files, guidance }) {
     if (!this.sessionID) throw new Error("no session");
+    if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
     // prompt_async forks the turn in the BACKGROUND and returns 204 immediately;
     // the turn is driven entirely by SSE (session.idle -> turn_result, session.error
     // -> runtime_error). The old blocking /message held one request open for the
     // whole turn — fine for a per-session serve, but on the SHARED serve that
     // serialized turns (a long turn in one session blocked every other session's
     // prompt). Async returns at once, so sessions run truly concurrently.
-    return this._request(
-      "POST",
-      `/session/${this.sessionID}/prompt_async`,
-      buildInstanceMessageBody({ text, files, guidance, agent: this.agent, model: this.model }),
-      {},
-      30_000, // returns immediately now — a normal timeout, not the whole turn
+    return this._sdkSession.promptAsync(
+      this.sessionID,
+      buildOpencodePromptBody({ text, files, guidance, agent: this.agent, model: this.model }),
     );
   }
 
@@ -369,11 +215,8 @@ class OpencodeServerManager extends EventEmitter {
    */
   async respondPermission(requestID, decision) {
     if (!this.sessionID) throw new Error("no session");
-    return this._request(
-      "POST",
-      `/session/${this.sessionID}/permissions/${requestID}`,
-      { response: decision.reply, ...(decision.message ? { message: decision.message } : {}) },
-    );
+    if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
+    return this._sdkSession.respondPermission(this.sessionID, requestID, decision);
   }
 
   /**
@@ -383,8 +226,8 @@ class OpencodeServerManager extends EventEmitter {
    * @param {string[][]} answers
    */
   async respondQuestion(requestID, answers) {
-    const q = this.cwd ? `?directory=${encodeURIComponent(this.cwd)}` : "";
-    return this._request("POST", `/question/${requestID}/reply${q}`, { answers });
+    if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
+    return this._sdkSession.respondQuestion(requestID, answers);
   }
 
   /**
@@ -397,13 +240,15 @@ class OpencodeServerManager extends EventEmitter {
   async revert(messageID) {
     if (!this.sessionID) throw new Error("no session");
     if (!messageID) throw new Error("revert needs a messageID");
-    return this._request("POST", `/session/${this.sessionID}/revert`, { messageID });
+    if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
+    return this._sdkSession.revert(this.sessionID, messageID);
   }
 
   /** Restore all previously reverted messages (undo a rewind). */
   async unrevert() {
     if (!this.sessionID) throw new Error("no session");
-    return this._request("POST", `/session/${this.sessionID}/unrevert`, {});
+    if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
+    return this._sdkSession.unrevert(this.sessionID);
   }
 
   /** Liveness probe — GET /global/health with a short timeout. True = the server
@@ -412,18 +257,53 @@ class OpencodeServerManager extends EventEmitter {
   async checkHealth() {
     if (!this.baseUrl) return false;
     try {
-      const res = await this._request("GET", "/global/health", null, {}, 5_000);
+      if (!this._sdkSession) return false;
+      const res = await this._sdkSession.health();
       return Boolean(res && res.healthy);
     } catch {
       return false;
     }
   }
 
+  async isSessionIdle() {
+    if (!this.sessionID || !this._sdkSession?.status) return true;
+    try {
+      const status = await this._sdkSession.status();
+      const item = status?.[this.sessionID];
+      return !item || item.type === "idle";
+    } catch (err) {
+      log.warn("session status check failed (%s); falling back to idle", err?.message || err);
+      return true;
+    }
+  }
+
+  async messages(opts = {}) {
+    if (!this.sessionID) throw new Error("no session");
+    if (!this._sdkSession?.messages) throw new Error("opencode SDK session is not ready");
+    return this._sdkSession.messages(this.sessionID, opts);
+  }
+
+  diagnostics() {
+    return {
+      sessionID: this.sessionID || "",
+      cwd: this.cwd || "",
+      baseUrl: this.baseUrl,
+      routing: {
+        delivered: this._routingStats.delivered,
+        dropped: this._routingStats.dropped,
+        byReason: Object.fromEntries(this._routingStats.byReason.entries()),
+        recent: [...this._recentRouting],
+      },
+      shared: this._shared?.diagnostics?.() || null,
+    };
+  }
+
   /** Best-effort graceful abort; terminate() is the guaranteed stop. */
   async abort() {
     if (!this.sessionID) return false;
     try {
-      await this._request("POST", `/session/${this.sessionID}/abort`, null);
+      if (!this._sdkSession) return false;
+      await this._sdkSession.abort(this.sessionID);
       return true;
     } catch (err) {
       log.warn("graceful abort failed (%s); caller should terminate", err.message);
@@ -447,7 +327,12 @@ class OpencodeServerManager extends EventEmitter {
         if (this._onSharedError) this._shared.off("error", this._onSharedError);
       } catch { /* best effort */ }
     }
+    if (this._releaseSharedView) {
+      try { this._releaseSharedView(); } catch { /* best effort */ }
+      this._releaseSharedView = null;
+    }
     this._shared = null;
+    this._sdkSession = null;
     this._ownedMessages.clear();
     this.process = null;
   }
@@ -455,8 +340,4 @@ class OpencodeServerManager extends EventEmitter {
 
 module.exports = {
   OpencodeServerManager,
-  parseListeningAddress,
-  createSseFrameParser,
-  buildInstanceMessageBody,
-  extractEventRouting,
 };

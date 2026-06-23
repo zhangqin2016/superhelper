@@ -52,7 +52,7 @@ class SessionManager {
     this._progressNotifier = typeof fn === "function" ? fn : null;
   }
 
-  /** Lazily-opened SQLite-backed message store (single source of truth for messages). */
+  /** Lazily-opened SQLite-backed message store for Lily metadata + legacy/fallback transcript. */
   _store() {
     if (!this._messageStore) {
       this._messageStore = new MessageStore(messageDbPath(), blobStoreDir());
@@ -325,9 +325,9 @@ class SessionManager {
     }
   }
 
-  /** Remove the OpenCode engine's per-session resume cache (its isolated SQLite).
-   *  Lily's messages.db is the source of truth; this dir is disposable, so deleting
-   *  the session must also drop it instead of leaving an orphan under userData. */
+  /** Remove the old per-session OpenCode cache directory from pre-shared-server builds.
+   *  Current OpenCode-backed conversations use the shared OpenCode DB for canonical
+   *  transcript and messages.db only for Lily metadata / legacy fallback. */
   _deleteOpencodeSession(sessionId) {
     try {
       fs.rmSync(require("./config").opencodeSessionDir(sessionId), { recursive: true, force: true });

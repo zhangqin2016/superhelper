@@ -14,7 +14,21 @@ function requestBaseUrl(request) {
 }
 
 export function registerPublicSkillRoutes(app) {
-  app.get("/api/skills/registry", async (request) => {
+  app.get(
+    "/api/skills/registry",
+    {
+      schema: {
+        tags: ["public:skills"],
+        summary: "Get the public skill registry",
+        description:
+          "Returns enabled skill packages for the requested channel as a signed skill registry.",
+        querystring: {
+          type: "object",
+          properties: { channel: { type: "string", default: "stable" } },
+        },
+      },
+    },
+    async (request) => {
     const channel = String(request.query?.channel || "stable").trim() || "stable";
     const rows = await db
       .selectFrom("skill_packages")

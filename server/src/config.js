@@ -32,7 +32,7 @@ export const config = {
   modelGatewayClientToken: process.env.MODEL_GATEWAY_CLIENT_TOKEN || "",
   modelGatewayProviders: process.env.MODEL_GATEWAY_PROVIDERS || "",
   modelGatewayDefaultProvider: process.env.MODEL_GATEWAY_DEFAULT_PROVIDER || "deepseek",
-  modelConfigDeliveryMode: String(process.env.MODEL_CONFIG_DELIVERY_MODE || "direct").toLowerCase(),
+  modelConfigDeliveryMode: String(process.env.MODEL_CONFIG_DELIVERY_MODE || "gateway").toLowerCase(),
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "",
   anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com",
   openaiApiKey: process.env.OPENAI_API_KEY || "",

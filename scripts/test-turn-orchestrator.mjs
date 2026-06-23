@@ -14,6 +14,7 @@ class FakeRunner extends EventEmitter {
     super();
     this.sessionId = sessionId;
     this.busy = false;
+    this.sentPayloads = [];
   }
   isBusy() {
     return this.busy;
@@ -21,9 +22,10 @@ class FakeRunner extends EventEmitter {
   isAlive() {
     return true;
   }
-  sendUserMessage() {
+  sendUserMessage(payload) {
     if (this.busy) return false;
     this.busy = true;
+    this.sentPayloads.push(payload);
     this.emit("status", "thinking");
     return true;
   }
@@ -104,8 +106,19 @@ sent.length = 0;
 const result = await ctx.turnOrchestrator.sendUserMessage("s1", "hello", [], {
   spawnEngine: false,
   skipPreflight: true,
+  engineText: "[contract]\nhello",
 });
 if (!result.ok) throw new Error(`send failed: ${JSON.stringify(result)}`);
+if (result.userCommitted?.text !== "hello") {
+  throw new Error(`userCommitted must preserve raw user text: ${JSON.stringify(result.userCommitted)}`);
+}
+const firstEnginePayload = runner.sentPayloads.at(-1);
+if (firstEnginePayload?.text !== "[contract]\nhello") {
+  throw new Error(`runner should receive effective engine text: ${JSON.stringify(firstEnginePayload)}`);
+}
+if (firstEnginePayload?.rawText !== "hello") {
+  throw new Error(`engine payload must retain raw user text: ${JSON.stringify(firstEnginePayload)}`);
+}
 ctx.turnOrchestrator.ingest("s1", [
   { type: "assistant.thinking.delta", payload: { text: "Inspect files." } },
   { type: "process.event", payload: {
@@ -139,9 +152,16 @@ allEvents = sent.flatMap((entry) => entry.payload?.events || []);
 if (!allEvents.some((event) => event.type === "turn.started")) {
   throw new Error("missing turn.started");
 }
+const started = allEvents.find((event) => event.type === "turn.started" && event.turnId === result.turnId);
+if (started?.payload?.text !== "hello" || started?.payload?.engine?.customEngineText !== true) {
+  throw new Error(`turn.started should expose raw text and engine trace: ${JSON.stringify(started)}`);
+}
 const committedUser = allEvents.find((event) => event.type === "user.committed");
 if (!committedUser || committedUser.turnId !== result.turnId) {
   throw new Error(`user.committed should be attached to the active turn: ${JSON.stringify(committedUser)}`);
+}
+if (committedUser.payload?.text !== "hello") {
+  throw new Error(`user.committed must preserve raw user text: ${JSON.stringify(committedUser)}`);
 }
 if (!allEvents.some((event) => event.type === "assistant.delta")) {
   throw new Error("missing assistant.delta");
@@ -174,6 +194,12 @@ if (messages.filter((m) => m.role === "assistant").length !== 1) {
 const assistantMsg = messages.find((m) => m.role === "assistant");
 if (!assistantMsg?.record?.tools?.length) {
   throw new Error("assistant record should persist tool timeline");
+}
+if (assistantMsg.record.user?.text !== "hello") {
+  throw new Error(`archived record must preserve raw user text: ${JSON.stringify(assistantMsg.record.user)}`);
+}
+if (assistantMsg.record.meta?.engine?.textChanged !== true) {
+  throw new Error(`archived record must retain engine augmentation trace: ${JSON.stringify(assistantMsg.record.meta?.engine)}`);
 }
 if (assistantMsg.record.tools.some((tool) => tool.status === "running")) {
   throw new Error(`assistant record must not archive running tools: ${JSON.stringify(assistantMsg.record.tools)}`);

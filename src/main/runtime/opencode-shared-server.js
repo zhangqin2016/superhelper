@@ -58,10 +58,52 @@ class OpencodeSharedServer extends EventEmitter {
     this._eventHandlers = new Set();
     this._sseRetries = 0;
     this._sseAbort = null;
+    this._eventStreamReady = false;
+    this._eventStreamReadyPromise = null;
+    this._resolveEventStreamReady = null;
+    this._rejectEventStreamReady = null;
+    this._activeViews = 0;
+    this._eventQueue = [];
+    this._eventTimer = null;
+    this._coalesced = new Map();
+    this._deltaCoalesced = new Map();
+    this._staleDeltas = new Set();
+    this._lastFlushAt = 0;
+    this._retireWhenIdle = false;
+    this._eventStats = {
+      received: 0,
+      delivered: 0,
+      coalesced: 0,
+      droppedStaleDelta: 0,
+      lastReceivedAt: 0,
+      lastDeliveredAt: 0,
+      byType: new Map(),
+    };
+    this._recentEvents = [];
   }
 
   get baseUrl() {
     return `http://${this.host}:${this.port}`;
+  }
+
+  retainView() {
+    this._activeViews += 1;
+    return () => {
+      this._activeViews = Math.max(0, this._activeViews - 1);
+      if (this._retireWhenIdle && this._activeViews === 0) {
+        log.info("retired shared opencode serve has no attached views — terminating");
+        this.terminate();
+      }
+    };
+  }
+
+  hasActiveViews() {
+    return this._activeViews > 0;
+  }
+
+  retireWhenIdle() {
+    this._retireWhenIdle = true;
+    if (this._activeViews === 0) this.terminate();
   }
 
   /** Spawn the serve once; resolve when it reports its listening port. Idempotent. */
@@ -119,7 +161,8 @@ class OpencodeSharedServer extends EventEmitter {
             const { createOpencodeClient } = await loadSdk();
             this._createOpencodeClient = createOpencodeClient;
             this._baseClient = createOpencodeClient({ baseUrl: this.baseUrl });
-            this._subscribeEvents();
+            this._startEventStream();
+            await this._waitForEventStreamReady();
             log.info("shared opencode serve ready on %s (cwd %s)", this.baseUrl, this.cwd);
             resolve(this);
           } catch (err) {
@@ -170,6 +213,194 @@ class OpencodeSharedServer extends EventEmitter {
     return () => this._eventHandlers.delete(handler);
   }
 
+  diagnostics() {
+    return {
+      baseUrl: this._baseClient ? this.baseUrl : "",
+      activeViews: this._activeViews,
+      queuedEvents: this._eventQueue.length,
+      eventStats: {
+        received: this._eventStats.received,
+        delivered: this._eventStats.delivered,
+        coalesced: this._eventStats.coalesced,
+        droppedStaleDelta: this._eventStats.droppedStaleDelta,
+        lastReceivedAt: this._eventStats.lastReceivedAt,
+        lastDeliveredAt: this._eventStats.lastDeliveredAt,
+        byType: Object.fromEntries(this._eventStats.byType.entries()),
+      },
+      recentEvents: [...this._recentEvents],
+    };
+  }
+
+  _recordReceived(directory, event) {
+    const type = String(event?.type || "");
+    this._eventStats.received += 1;
+    this._eventStats.lastReceivedAt = Date.now();
+    this._eventStats.byType.set(type, (this._eventStats.byType.get(type) || 0) + 1);
+    this._recentEvents.push({
+      direction: "received",
+      ts: this._eventStats.lastReceivedAt,
+      directory: directory || "",
+      type,
+      sessionID: event?.properties?.sessionID || event?.properties?.part?.sessionID || event?.properties?.info?.sessionID || "",
+      messageID: event?.properties?.messageID || event?.properties?.part?.messageID || event?.properties?.info?.id || "",
+      partID: event?.properties?.partID || event?.properties?.part?.id || "",
+    });
+    if (this._recentEvents.length > 80) this._recentEvents.splice(0, this._recentEvents.length - 80);
+  }
+
+  _recordDelivered(directory, event) {
+    this._eventStats.delivered += 1;
+    this._eventStats.lastDeliveredAt = Date.now();
+    this._recentEvents.push({
+      direction: "delivered",
+      ts: this._eventStats.lastDeliveredAt,
+      directory: directory || "",
+      type: String(event?.type || ""),
+      sessionID: event?.properties?.sessionID || event?.properties?.part?.sessionID || event?.properties?.info?.sessionID || "",
+      messageID: event?.properties?.messageID || event?.properties?.part?.messageID || event?.properties?.info?.id || "",
+      partID: event?.properties?.partID || event?.properties?.part?.id || "",
+    });
+    if (this._recentEvents.length > 80) this._recentEvents.splice(0, this._recentEvents.length - 80);
+  }
+
+  _deltaKey(directory, messageID, partID) {
+    return `${directory || "global"}:${messageID || ""}:${partID || ""}`;
+  }
+
+  _coalesceKey(directory, event) {
+    if (event?.type === "session.status") {
+      return `session.status:${directory || "global"}:${event.properties?.sessionID || ""}`;
+    }
+    if (event?.type === "lsp.updated") return `lsp.updated:${directory || "global"}`;
+    if (event?.type === "message.part.updated") {
+      const part = event.properties?.part || {};
+      return `message.part.updated:${directory || "global"}:${part.messageID || ""}:${part.id || ""}`;
+    }
+    if (event?.type === "message.part.delta") {
+      const p = event.properties || {};
+      return `message.part.delta:${this._deltaKey(directory, p.messageID, p.partID)}:${p.field || ""}`;
+    }
+    return "";
+  }
+
+  _enqueueEvent(directory, event) {
+    if (!event?.type || event.type === "sync") return;
+    this._recordReceived(directory, event);
+    const key = this._coalesceKey(directory, event);
+    if (event.type === "message.part.delta" && key) {
+      const existingIndex = this._deltaCoalesced.get(key);
+      const existing = existingIndex === undefined ? null : this._eventQueue[existingIndex];
+      if (existing && existing.event?.type === "message.part.delta") {
+        existing.event = {
+          ...existing.event,
+          properties: {
+            ...(existing.event.properties || {}),
+            delta: String(existing.event.properties?.delta || "") + String(event.properties?.delta || ""),
+          },
+        };
+        this._eventStats.coalesced += 1;
+        this._scheduleEventFlush();
+        return;
+      }
+      this._deltaCoalesced.set(key, this._eventQueue.length);
+      this._eventQueue.push({ directory, event });
+      this._scheduleEventFlush();
+      return;
+    }
+
+    this._deltaCoalesced.clear();
+    if (key) {
+      const existingIndex = this._coalesced.get(key);
+      if (existingIndex !== undefined) {
+        this._eventQueue[existingIndex] = { directory, event };
+        if (event.type === "message.part.updated") {
+          const part = event.properties?.part || {};
+          this._staleDeltas.add(this._deltaKey(directory, part.messageID, part.id));
+        }
+        this._eventStats.coalesced += 1;
+        this._scheduleEventFlush();
+        return;
+      }
+      this._coalesced.set(key, this._eventQueue.length);
+    }
+    this._eventQueue.push({ directory, event });
+    this._scheduleEventFlush();
+  }
+
+  _startEventStream() {
+    if (!this._eventStreamReadyPromise) {
+      this._eventStreamReadyPromise = new Promise((resolve, reject) => {
+        this._resolveEventStreamReady = resolve;
+        this._rejectEventStreamReady = reject;
+      });
+      void this._subscribeEvents();
+    }
+    return this._eventStreamReadyPromise;
+  }
+
+  _markEventStreamReady() {
+    if (this._eventStreamReady) return;
+    this._eventStreamReady = true;
+    try { this._resolveEventStreamReady?.(); } catch { /* best effort */ }
+  }
+
+  async _waitForEventStreamReady(timeoutMs = Number(process.env.LILY_OPENCODE_EVENT_READY_TIMEOUT_MS) || 5_000) {
+    if (this._eventStreamReady) return true;
+    if (!this._eventStreamReadyPromise) this._startEventStream();
+    let timer = null;
+    try {
+      await Promise.race([
+        this._eventStreamReadyPromise,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error("opencode event stream did not become ready in time")), timeoutMs);
+          timer.unref?.();
+        }),
+      ]);
+      return true;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  _scheduleEventFlush() {
+    if (this._eventTimer) return;
+    const elapsed = Date.now() - this._lastFlushAt;
+    this._eventTimer = setTimeout(() => this._flushEvents(), Math.max(0, 16 - elapsed));
+  }
+
+  _flushEvents() {
+    if (this._eventTimer) {
+      clearTimeout(this._eventTimer);
+      this._eventTimer = null;
+    }
+    if (!this._eventQueue.length) return;
+    const events = this._eventQueue;
+    const staleDeltas = new Set(this._staleDeltas);
+    this._eventQueue = [];
+    this._coalesced.clear();
+    this._deltaCoalesced.clear();
+    this._staleDeltas.clear();
+    this._lastFlushAt = Date.now();
+
+    for (const { directory, event } of events) {
+      if (event?.type === "message.part.delta") {
+        const p = event.properties || {};
+        if (staleDeltas.has(this._deltaKey(directory, p.messageID, p.partID))) {
+          this._eventStats.droppedStaleDelta += 1;
+          continue;
+        }
+      }
+      this._recordDelivered(directory, event);
+      for (const handler of this._eventHandlers) {
+        try {
+          handler(directory, event);
+        } catch (err) {
+          log.warn("event handler threw: %s", err?.message || err);
+        }
+      }
+    }
+  }
+
   /** Consume the single global event stream and fan out to handlers. Mirrors the
    *  official `serverSDK.event.listen`: each event carries `name` (directory) and
    *  `details` (the event, whose properties include sessionID). Auto-reconnects. */
@@ -179,6 +410,7 @@ class OpencodeSharedServer extends EventEmitter {
       // Global SSE — every event across all directories, tagged with `name`
       // (directory) + `details`. Same stream the official client listens on.
       const result = await this._baseClient.global.event();
+      this._markEventStreamReady();
       this._sseRetries = 0;
       // Raw global-stream frame shape: { directory, project, payload:{ id, type,
       // properties:{ sessionID, info, ... } } }. Demux on `directory` + the event's
@@ -186,31 +418,27 @@ class OpencodeSharedServer extends EventEmitter {
       for await (const ev of result.stream) {
         const directory = ev?.directory;
         const event = ev?.payload ?? ev;
-        for (const handler of this._eventHandlers) {
-          try {
-            handler(directory, event);
-          } catch (err) {
-            log.warn("event handler threw: %s", err?.message || err);
-          }
-        }
+        this._enqueueEvent(directory, event);
       }
     } catch (err) {
       if (this._terminated) return;
       log.warn("event stream error: %s", err?.message || err);
     }
     // Stream ended/failed — reconnect with backoff while the serve is alive.
+    // Do NOT emit a fatal shared-server error for event-stream reconnect churn:
+    // that broadcasts to every attached session and can fail unrelated active
+    // turns. The official desktop client keeps retrying the global event stream;
+    // actual process death is still reported by child exit/error and per-turn
+    // health probes.
     if (this._terminated || !this._baseClient) return;
     this._sseRetries += 1;
-    if (this._sseRetries > 30) {
-      this.emit("error", new Error("event stream reconnect gave up after 30 attempts"));
-      return;
-    }
     const delay = Math.min(5000, 250 * this._sseRetries);
     setTimeout(() => this._subscribeEvents(), delay);
   }
 
   terminate() {
     this._terminated = true;
+    this._flushEvents();
     this._eventHandlers.clear();
     this._clients.clear();
     this._baseClient = null;
@@ -256,11 +484,16 @@ function getSharedServer(opts) {
     return _singleton;
   }
   if (_singleton && !_singleton._terminated) {
-    log.info("shared serve config changed — rebuilding");
-    try {
-      _singleton.terminate();
-    } catch {
-      /* best effort */
+    if (_singleton.hasActiveViews()) {
+      log.info("shared serve config changed — starting replacement and retiring old serve when idle");
+      _singleton.retireWhenIdle();
+    } else {
+      log.info("shared serve config changed — rebuilding");
+      try {
+        _singleton.terminate();
+      } catch {
+        /* best effort */
+      }
     }
   }
   _singleton = new OpencodeSharedServer(opts);

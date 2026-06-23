@@ -4,8 +4,8 @@
  * Pure turn-failure classification + failure-text extraction, factored out of
  * turn-orchestrator so it can be unit-tested in isolation (no electron, no
  * orchestrator state machine). Depends only on agent-runner's pure string
- * helpers. The orchestrator uses: classifyTurnFailure, isRecoverableFailure,
- * preflightFailureText, collectFailureTextFromState.
+ * helpers. The orchestrator uses: classifyTurnFailure, preflightFailureText,
+ * collectFailureTextFromState.
  */
 
 const { sanitizeError, classifyAssistantError, scrubVendorNames } = require("./agent-runner");
@@ -23,11 +23,6 @@ function preflightFailureText(error, detail) {
     default:
       return `Pre-send processing failed and was not forwarded to the assistant. Please try again later.${suffix}`;
   }
-}
-
-/** Transient/network-ish failures worth one automatic recovery attempt. */
-function isRecoverableFailure(raw) {
-  return /API Error:|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|502|503|504|rate.?limit|429/i.test(String(raw || ""));
 }
 
 function compactFailureDetail(raw) {
@@ -125,7 +120,6 @@ function classifyTurnFailure(payload, normalized, state) {
 
 module.exports = {
   preflightFailureText,
-  isRecoverableFailure,
   collectFailureTextFromState,
   classifyTurnFailure,
   // exported for focused testing

@@ -41,8 +41,6 @@ const RUNTIME_EVENT_TYPES = new Set([
   "hook.requested",
   "hook.resolved",
   "queue.updated",
-  "recovery.scheduled",
-  "recovery.started",
   "engine.notice",
   "engine.warning",
   "engine.stderr",

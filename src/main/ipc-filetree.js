@@ -208,20 +208,17 @@ function registerFileTreeHandlers(ctx = {}) {
   });
 
   // Open a file in the OS default app (the "quick preview" for svg/pdf/html/img/…).
-  // Falls back to revealing a directory. Path resolution is the same workspace-aware
-  // logic as reveal, so a relative or bare filename from the answer still opens.
-  ipcMain.handle("filetree:open", (_event, { filePath, sessionId }) => {
+  // Uses the same strict local-path rule as reveal: the renderer must pass a
+  // declared absolute/file:// artifact path, not guess a base for relative text.
+  ipcMain.handle("filetree:open", async (_event, { filePath, sessionId }) => {
     try {
       const target = resolveRevealPath(filePath, sessionId);
       if (!target || !fs.existsSync(target)) {
         return { ok: false, error: "NOT_FOUND" };
       }
       const { shell } = require("electron");
-      if (fs.statSync(target).isDirectory()) {
-        void shell.openPath(target);
-      } else {
-        void shell.openPath(target);
-      }
+      const error = await shell.openPath(target);
+      if (error) return { ok: false, error };
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err.message };

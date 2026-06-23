@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
     }),
   getRuntimeSnapshot: (sessionId) =>
     ipcRenderer.invoke("assistant:runtime-snapshot", { sessionId }),
+  getEngineDiagnostics: (sessionId) =>
+    ipcRenderer.invoke("assistant:engine-diagnostics", { sessionId }),
   interrupt: (sessionId) => ipcRenderer.invoke("assistant:interrupt", { sessionId }),
   cancelQueuedMessage: (sessionId, itemId) =>
     ipcRenderer.invoke("assistant:cancel-queued-message", { sessionId, itemId }),

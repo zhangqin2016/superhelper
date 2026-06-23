@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { uploadBufferToQiniu } from "../../services/qiniu-upload.js";
+import { zodBody, okResponse } from "../../openapi.js";
 import {
   isValidSkillArtifactUrl,
   isValidSkillSha256,
@@ -194,16 +195,38 @@ function enforceSkillPackageQuality(input, reply) {
 }
 
 export function registerAdminSkillPackageRoutes(app, { audit }) {
-  app.get("/api/admin/skill-packages", async () => ({
-    skillPackages: await db
-      .selectFrom("skill_packages")
-      .selectAll()
-      .orderBy("created_at", "desc")
-      .limit(300)
-      .execute(),
-  }));
+  app.get(
+    "/api/admin/skill-packages",
+    {
+      schema: {
+        tags: ["admin:skill-packages"],
+        summary: "List skill packages",
+        description: "Returns the most recent skill packages ordered by creation time.",
+        response: { 200: okResponse({ skillPackages: { type: "array" } }) },
+      },
+    },
+    async () => ({
+      skillPackages: await db
+        .selectFrom("skill_packages")
+        .selectAll()
+        .orderBy("created_at", "desc")
+        .limit(300)
+        .execute(),
+    }),
+  );
 
-  app.post("/api/admin/skill-packages", async (request, reply) => {
+  app.post(
+    "/api/admin/skill-packages",
+    {
+      schema: {
+        tags: ["admin:skill-packages"],
+        summary: "Upsert a skill package",
+        description: "Creates or updates a skill package from a JSON body, gated by URL/sha256/quality checks.",
+        body: zodBody(createSkillPackageSchema),
+        response: { 201: okResponse({ id: { type: "string" }, skillId: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = normalizeCreateInput(request.body || {});
     if (!isValidSkillArtifactUrl(input.artifactUrl)) {
       return reply.code(400).send({ ok: false, code: "INVALID_ARTIFACT_URL" });
@@ -221,9 +244,21 @@ export function registerAdminSkillPackageRoutes(app, { audit }) {
       enabled: input.enabled,
     });
     return reply.code(201).send({ ok: true, id, skillId: input.skillId });
-  });
+    },
+  );
 
-  app.post("/api/admin/skill-packages/upload", async (request, reply) => {
+  app.post(
+    "/api/admin/skill-packages/upload",
+    {
+      schema: {
+        tags: ["admin:skill-packages"],
+        summary: "Upload and upsert a skill package",
+        description:
+          "Accepts a multipart artifact upload, stores it, and upserts the skill package from the form fields.",
+        response: { 201: okResponse({ id: { type: "string" }, skillId: { type: "string" }, artifactUrl: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const { fields, artifact } = await readSkillPackageUpload(request);
     if (!artifact) {
       return reply.code(400).send({ ok: false, code: "MISSING_ARTIFACT" });
@@ -278,18 +313,31 @@ export function registerAdminSkillPackageRoutes(app, { audit }) {
       sha256,
       sizeBytes: checked.sizeBytes,
     });
-  });
+    },
+  );
 
-  app.patch("/api/admin/skill-packages/:id", async (request) => {
-    const input = updateEnabledSchema.parse(request.body);
-    await db
-      .updateTable("skill_packages")
-      .set({ enabled: input.enabled, updated_at: new Date() })
-      .where("id", "=", request.params.id)
-      .execute();
-    await audit(request, "skill_package.update", "skill_package", request.params.id, {
-      enabled: input.enabled,
-    });
-    return { ok: true, id: request.params.id };
-  });
+  app.patch(
+    "/api/admin/skill-packages/:id",
+    {
+      schema: {
+        tags: ["admin:skill-packages"],
+        summary: "Enable or disable a skill package",
+        description: "Toggles the enabled flag on an existing skill package.",
+        body: zodBody(updateEnabledSchema),
+        response: { 200: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request) => {
+      const input = updateEnabledSchema.parse(request.body);
+      await db
+        .updateTable("skill_packages")
+        .set({ enabled: input.enabled, updated_at: new Date() })
+        .where("id", "=", request.params.id)
+        .execute();
+      await audit(request, "skill_package.update", "skill_package", request.params.id, {
+        enabled: input.enabled,
+      });
+      return { ok: true, id: request.params.id };
+    },
+  );
 }

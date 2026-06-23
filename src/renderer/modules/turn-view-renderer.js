@@ -342,6 +342,7 @@ export function createLiveTurnArticleShell(liveTurn) {
 export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
   const { sessionId, failed = false } = ctx;
   const sealed = Boolean(liveTurn.final) || ctx.sealed;
+  const resultBlocks = mergeResultBlocks(liveTurn.resultBlocks || [], liveTurn.artifacts || []);
   article.classList.toggle("is-sealed", sealed);
   article.classList.toggle("is-live", !sealed);
   article.classList.toggle("is-working", !sealed && liveTurn.phase === "starting");
@@ -368,7 +369,7 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     renderNarrative(narrativeEl, liveTurn, { sealed });
     // Once the answer is final, give inline file mentions a preview/reveal icon.
     // (Only when sealed — mid-stream filenames are still incomplete.)
-    if (sealed) enhanceFileMentions(narrativeEl, sessionId);
+    if (sealed) enhanceFileMentions(narrativeEl, sessionId, resultBlocks);
     article.dataset.narrativeKey = narrativeKey;
   }
   renderProcess(article.querySelector('[data-role="process"]'), liveTurn, { sessionId, sealed });
@@ -380,18 +381,23 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     renderFinal(article, liveTurn);
     liveTurn.finalRendered = true;
   }
-  // Images render inline in the answer, in output order (content-block images in
-  // the narrative, tool-generated images in their tool row). They are NEVER
-  // surfaced again as a card in the result slot below. The slot keeps only
-  // non-image deliverables (html / pdf / file / chart) that have no inline form.
-  const resultBlocks = mergeResultBlocks(liveTurn.resultBlocks || [], liveTurn.artifacts || []);
+  // Content-block images render inline in the answer. File-derived images
+  // (SVG/PNG/etc. discovered from artifacts/resultBlocks) still need a result
+  // card when there is no inline image; otherwise generated files referenced
+  // only by path have no preview or reveal affordance in the chat.
+  const hasInlineImages = (liveTurn.contentBlocks || []).some((b) => b.blockType === "image" && b.data);
   renderResultBlocks(
     article.querySelector('[data-role="artifacts"]'),
-    resultBlocks.filter((block) => !isImageResultBlock(block)),
+    resultBlocks.filter((block) => !shouldHideImageResultBlock(block, { hasInlineImages })),
   );
 }
 
 const IMAGE_BLOCK_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
+
+function shouldHideImageResultBlock(block = {}, { hasInlineImages = false } = {}) {
+  if (block.source === "content_block") return true;
+  return hasInlineImages && isImageResultBlock(block);
+}
 
 function isImageResultBlock(block = {}) {
   if (block.type === "image" || block.artifactType === "image") return true;

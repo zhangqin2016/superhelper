@@ -21,12 +21,6 @@ assert(/Document parsing failed/.test(ec.preflightFailureText("DOCUMENT_FAILED")
 assert(/Pre-send processing failed/.test(ec.preflightFailureText("WHATEVER")), "default preflight text");
 assert(ec.preflightFailureText("VISION_FAILED", "boom").endsWith("boom"), "detail is appended");
 
-// isRecoverableFailure — transient/network only, not arbitrary prose.
-assert(ec.isRecoverableFailure("API Error: 503 Service Unavailable") === true, "503 is recoverable");
-assert(ec.isRecoverableFailure("ECONNRESET") === true, "ECONNRESET is recoverable");
-assert(ec.isRecoverableFailure("rate limit exceeded") === true, "rate limit is recoverable");
-assert(ec.isRecoverableFailure("the user asked a question") === false, "ordinary text is not recoverable");
-
 // collectFailureTextFromState — pulls the latest failure-bearing text.
 const text = ec.collectFailureTextFromState({
   processEvents: [{ rawSubtype: "error_max_turns", event: { error: "hit the limit" } }],
@@ -50,5 +44,14 @@ assert(resultFail?.code === "ENGINE_RESULT_FAILED", "non-zero result code branch
 
 const normalizedFail = ec.classifyTurnFailure({}, { failed: true, text: "engine said no", retryable: false }, {});
 assert(normalizedFail?.message === "engine said no" && normalizedFail.retryable === false, "normalized failure branch");
+
+const skillParse = ec.classifyTurnFailure(
+  { error: "Failed to parse skill /workspace/.claude/skills/bad/SKILL.md" },
+  {},
+  {},
+);
+assert(skillParse?.code === "RUNTIME_SKILL_PARSE_FAILED", "skill parse failures are not model connection failures");
+assert(skillParse?.category === "runtime_diagnostic", "skill parse failures carry runtime diagnostic category");
+assert(skillParse.retryable === false, "skill parse failures are not blindly retried as network errors");
 
 console.log("turn-error-classify: ok");

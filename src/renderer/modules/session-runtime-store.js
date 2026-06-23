@@ -349,9 +349,7 @@ export function applyRuntimeEvent(event, opts = {}) {
     case "engine.notice":
     case "engine.warning":
     case "engine.stderr":
-    case "permission.timeout":
-    case "recovery.scheduled":
-    case "recovery.started": {
+    case "permission.timeout": {
       const notice = sanitizeNoticeForIngest(event?.payload?.notice || event?.payload || {});
       const activity = activityFromEngineNotice(notice);
       if (activity && !hasRunningTool(live.tools)) setActivityLabel(live, activity);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { zodBody, okResponse } from "../../openapi.js";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { requireSignedDeviceRequest, upsertDevice } from "../../services/device-identity.js";
@@ -57,7 +58,19 @@ const runtimeDiagnosticSchema = registerDeviceSchema.extend({
 });
 
 export function registerPublicTelemetryRoutes(app) {
-  app.post("/api/usage/report", async (request, reply) => {
+  app.post(
+    "/api/usage/report",
+    {
+      schema: {
+        tags: ["public:telemetry"],
+        summary: "Report daily usage counters",
+        description:
+          "Upserts per-device, per-day, per-model usage counters (messages, images, tool/plugin calls, tokens).",
+        body: zodBody(usageSchema),
+        response: { 200: okResponse() },
+      },
+    },
+    async (request, reply) => {
     const input = usageSchema.parse(request.body);
     await upsertDevice(input);
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;
@@ -91,7 +104,25 @@ export function registerPublicTelemetryRoutes(app) {
     return reply.send({ ok: true });
   });
 
-  app.post("/api/usage/summary", async (request, reply) => {
+  app.post(
+    "/api/usage/summary",
+    {
+      schema: {
+        tags: ["public:telemetry"],
+        summary: "Get a device's usage summary",
+        description:
+          "Returns aggregated daily token and message counts for the device over the requested history window.",
+        body: zodBody(usageSummarySchema),
+        response: {
+          200: okResponse({
+            deviceId: { type: "string" },
+            historyDays: { type: "integer" },
+            days: { type: "array", items: { type: "object" } },
+          }),
+        },
+      },
+    },
+    async (request, reply) => {
     const input = usageSummarySchema.parse(request.body);
     await upsertDevice(input);
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;
@@ -127,7 +158,19 @@ export function registerPublicTelemetryRoutes(app) {
     });
   });
 
-  app.post("/api/skills/events", async (request, reply) => {
+  app.post(
+    "/api/skills/events",
+    {
+      schema: {
+        tags: ["public:telemetry"],
+        summary: "Record a skill lifecycle event",
+        description:
+          "Stores a skill install/update/uninstall/enable/disable event reported by a device.",
+        body: zodBody(skillEventSchema),
+        response: { 200: okResponse() },
+      },
+    },
+    async (request, reply) => {
     const input = skillEventSchema.parse(request.body);
     await upsertDevice(input);
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;
@@ -146,7 +189,19 @@ export function registerPublicTelemetryRoutes(app) {
     return reply.send({ ok: true });
   });
 
-  app.post("/api/diagnostics/runtime-traces", async (request, reply) => {
+  app.post(
+    "/api/diagnostics/runtime-traces",
+    {
+      schema: {
+        tags: ["public:telemetry"],
+        summary: "Submit a runtime diagnostic trace",
+        description:
+          "Persists a runtime diagnostic/trace event from a device and returns its generated id.",
+        body: zodBody(runtimeDiagnosticSchema),
+        response: { 201: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = runtimeDiagnosticSchema.parse(request.body);
     await upsertDevice(input);
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;

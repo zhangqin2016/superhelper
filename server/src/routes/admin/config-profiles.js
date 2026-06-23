@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { db } from "../../db.js";
+import { zodBody, okResponse } from "../../openapi.js";
 import {
   DEFAULT_EFFECTIVE_CONFIG,
   deepMerge,
@@ -151,7 +152,17 @@ async function saveConfigProfileRevision(profileId) {
 }
 
 export function registerAdminConfigProfileRoutes(app, { audit }) {
-  app.get("/api/admin/config-profiles", async () => ({
+  app.get(
+    "/api/admin/config-profiles",
+    {
+      schema: {
+        tags: ["admin:config-profiles"],
+        summary: "List config profiles",
+        description: "Lists config profiles ordered by scope, priority and last update.",
+        response: { 200: okResponse({ profiles: { type: "array", items: { type: "object" } } }) },
+      },
+    },
+    async () => ({
     profiles: await db
       .selectFrom("config_profiles")
       .selectAll()
@@ -162,12 +173,34 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
       .execute(),
   }));
 
-  app.get("/api/admin/config-profiles/effective-preview", async (request) => {
+  app.get(
+    "/api/admin/config-profiles/effective-preview",
+    {
+      schema: {
+        tags: ["admin:config-profiles"],
+        summary: "Preview the effective config for a target",
+        description:
+          "Resolves and merges matching profiles for a device/license/group and summarizes the result.",
+        querystring: zodBody(effectivePreviewSchema),
+      },
+    },
+    async (request) => {
     const input = effectivePreviewSchema.parse(request.query || {});
     return resolveEffectivePreview(input);
   });
 
-  app.post("/api/admin/config-profiles", async (request, reply) => {
+  app.post(
+    "/api/admin/config-profiles",
+    {
+      schema: {
+        tags: ["admin:config-profiles"],
+        summary: "Create or update a config profile",
+        description: "Upserts a config profile and records a revision for rollback.",
+        body: zodBody(configProfileSchema),
+        response: { 201: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = configProfileSchema.parse(request.body);
     await db
       .insertInto("config_profiles")
@@ -206,7 +239,18 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
     return reply.code(201).send({ ok: true, id: input.id });
   });
 
-  app.patch("/api/admin/config-profiles/:id", async (request, reply) => {
+  app.patch(
+    "/api/admin/config-profiles/:id",
+    {
+      schema: {
+        tags: ["admin:config-profiles"],
+        summary: "Update a config profile",
+        description: "Applies partial updates to a config profile and records a revision.",
+        body: zodBody(updateConfigProfileSchema),
+        response: { 200: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = updateConfigProfileSchema.parse(request.body);
     const existing = await db
       .selectFrom("config_profiles")
@@ -231,7 +275,17 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
     return { ok: true, id: request.params.id };
   });
 
-  app.post("/api/admin/config-profiles/:id/rollback", async (request, reply) => {
+  app.post(
+    "/api/admin/config-profiles/:id/rollback",
+    {
+      schema: {
+        tags: ["admin:config-profiles"],
+        summary: "Roll back a config profile to its previous revision",
+        description: "Restores the config profile to the revision before the current one.",
+        response: { 200: okResponse({ id: { type: "string" }, revisionId: { type: "integer" } }) },
+      },
+    },
+    async (request, reply) => {
     const revisions = await db
       .selectFrom("config_profile_revisions")
       .selectAll()

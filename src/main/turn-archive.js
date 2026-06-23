@@ -63,6 +63,26 @@ class TurnArchive {
       contentBlocks,
       extraBlocks,
     });
+    const userPayload = state.currentPayload || null;
+    const rawUserText = userPayload
+      ? String(userPayload.rawText || userPayload.displayText || userPayload.text || "")
+      : "";
+    const enginePayload = state.enginePayload || null;
+    const engineText = String(enginePayload?.text || "");
+    const effectiveTextPreview =
+      engineText && engineText !== rawUserText
+        ? engineText.slice(0, 1200)
+        : null;
+    const failureMeta = terminalType === "turn.failed"
+      ? {
+          error: typeof payload.error === "string" ? payload.error : "",
+          errorCode: payload.errorCode || payload.code || "",
+          errorCategory: payload.errorCategory || payload.category || "",
+          retryable: payload.retryable !== false,
+          source: payload.source || "",
+          exitCode: payload.exitCode ?? null,
+        }
+      : null;
 
     return {
       turnId: state.turnId,
@@ -70,10 +90,10 @@ class TurnArchive {
       startedAt: state.startedAt || Date.now(),
       endedAt: Date.now(),
       terminal: terminalType,
-      user: state.currentPayload
+      user: userPayload
         ? {
-            text: state.currentPayload.text || "",
-            files: state.currentPayload.displayFiles || null,
+            text: rawUserText,
+            files: userPayload.displayFiles || null,
           }
         : null,
       assistantText,
@@ -100,6 +120,7 @@ class TurnArchive {
         interrupted: terminalType === "turn.interrupted",
         stalled: terminalType === "turn.stalled",
         failed: terminalType === "turn.failed",
+        failure: failureMeta,
         resultFromCli: Boolean(payload.resultFromCli),
         toolsSummary: { count: tools.length },
         taskContract: state.taskContract
@@ -112,6 +133,13 @@ class TurnArchive {
               verificationStrategy: state.taskContract.verificationStrategy || [],
             }
           : null,
+        engine: enginePayload
+          ? {
+              textChanged: Boolean(engineText && engineText !== rawUserText),
+              effectiveTextPreview,
+              trace: enginePayload.trace || null,
+            }
+          : null,
       },
     };
   }
@@ -119,12 +147,30 @@ class TurnArchive {
   commit(sessionId, record) {
     if (!record) return null;
     const failed = record.terminal === "turn.failed";
+    const isOpencodeBacked = Boolean(record.engineMessageId);
     const extra = {
       id: `msg_${crypto.randomUUID()}`,
       turnId: record.turnId,
-      record,
+      record: isOpencodeBacked
+        ? {
+            ...record,
+            meta: {
+              ...(record.meta || {}),
+              canonicalSource: "opencode",
+              lilyStorageRole: "metadata",
+            },
+          }
+        : record,
       ...(failed ? { failed: true } : {}),
-      meta: record.meta || undefined,
+      meta: {
+        ...(record.meta || {}),
+        ...(isOpencodeBacked
+          ? {
+              canonicalSource: "opencode",
+              lilyStorageRole: "metadata",
+            }
+          : {}),
+      },
     };
     this.sessionManager.pushMessageTo(
       sessionId,

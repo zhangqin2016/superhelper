@@ -9,6 +9,7 @@ import { modelGatewayRoutes } from "./services/model-gateway.js";
 import { mediaGatewayRoutes } from "./services/media-gateway.js";
 import { ensureEnvManagedConfigProfile } from "./services/client-config.js";
 import { ensureEnvQiniuConfigSeeded } from "./services/app-settings.js";
+import { installDocOnlyCompilers, registerOpenapi } from "./openapi.js";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
@@ -69,10 +70,29 @@ export async function buildApp() {
 
   await ensureEnvManagedConfigProfile();
   await ensureEnvQiniuConfigSeeded();
+  await registerRoutes(app);
+
+  return app;
+}
+
+// Swagger + the four route plugins, in the order the OpenAPI doc and the app both
+// need. Split out from buildApp() (which also seeds the DB at boot) so the API-doc
+// test can enumerate every route without a live database.
+export async function registerRoutes(app) {
+  installDocOnlyCompilers(app);
+  await registerOpenapi(app);
   await app.register(publicRoutes);
   await app.register(adminRoutes);
   await app.register(modelGatewayRoutes);
   await app.register(mediaGatewayRoutes);
+}
 
+// A logger-less app with only Swagger + routes wired (no CORS/cookie/multipart, no
+// DB seeding) so tooling can read the generated OpenAPI via app.swagger() without a
+// database. Used by the API-documentation coverage test.
+export async function buildDocApp() {
+  const app = Fastify({ logger: false });
+  await registerRoutes(app);
+  await app.ready();
   return app;
 }

@@ -45,9 +45,11 @@ registerFileTreeHandlers({
 const reject = handlers.get("filetree:reject-change");
 const revert = handlers.get("filetree:revert-turn");
 const reveal = handlers.get("filetree:reveal");
+const open = handlers.get("filetree:open");
 assert(typeof reject === "function", "reject-change handler registered");
 assert(typeof revert === "function", "revert-turn handler registered");
 assert(typeof reveal === "function", "reveal handler registered");
+assert(typeof open === "function", "open handler registered");
 assert(!handlers.has("filetree:restore-file"), "arbitrary-write restore-file handler removed");
 
 function recordDiff(filePath, before, after) {
@@ -107,6 +109,14 @@ revealed.length = 0;
 res = await reveal(null, { sessionId, filePath: `file://${generated}` });
 assert(res.ok === true, "file URL generated output reveal succeeds");
 assert(revealed.includes(generated), "file URL reveal opens generated file");
+
+revealed.length = 0;
+res = await open(null, { sessionId, filePath: generated });
+assert(res.ok === true, "absolute generated output open succeeds");
+assert(revealed.includes(generated), "absolute open opens generated file");
+
+res = await open(null, { sessionId, filePath: "generated-assets/image.png" });
+assert(res.ok === false, "relative generated output open refused");
 
 res = await reveal(null, { sessionId, filePath: "../escape.txt" });
 assert(res.ok === false, "relative reveal refused");

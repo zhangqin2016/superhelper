@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { db } from "../../db.js";
+import { zodBody, okResponse } from "../../openapi.js";
 import { publicId } from "../../services/ids.js";
 import {
   createFeedbackUploadToken,
@@ -99,11 +100,53 @@ function newestRelease(releases) {
 }
 
 export async function publicCatalogRoutes(app) {
-  app.post("/api/contact-requests", createContactRequest);
-  app.post("/api/contact", createContactRequest);
-  app.post("/api/contact-attachments/upload-token", createContactAttachmentUploadToken);
+  app.post(
+    "/api/contact-requests",
+    {
+      schema: {
+        tags: ["public:contacts"],
+        summary: "Submit a contact / support request",
+        description: "Stores a contact request with optional uploaded attachments.",
+        body: zodBody(contactRequestSchema),
+        response: { 201: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    createContactRequest,
+  );
+  app.post(
+    "/api/contact",
+    {
+      schema: {
+        tags: ["public:contacts"],
+        summary: "Submit a contact / support request (alias)",
+        description: "Alias of POST /api/contact-requests.",
+        body: zodBody(contactRequestSchema),
+        response: { 201: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    createContactRequest,
+  );
+  app.post(
+    "/api/contact-attachments/upload-token",
+    {
+      schema: {
+        tags: ["public:contacts"],
+        summary: "Issue an upload token for a contact attachment",
+        description: "Returns a Qiniu upload token for a pending contact-request attachment.",
+        body: zodBody(attachmentUploadSchema),
+      },
+    },
+    createContactAttachmentUploadToken,
+  );
 
-  app.get("/api/releases/latest", async (request) => {
+  app.get("/api/releases/latest", {
+    schema: {
+      tags: ["public:releases"],
+      summary: "Get the latest release for a platform",
+      description: "Returns whether an update is available for the given platform and current version.",
+      response: { 200: { type: "object", additionalProperties: true } },
+    },
+  }, async (request) => {
     const platform = String(request.query?.platform || "");
     const currentVersion = String(request.query?.version || "");
     const releases = await db
@@ -129,7 +172,14 @@ export async function publicCatalogRoutes(app) {
     };
   });
 
-  app.get("/api/runtime-packs/artifact", async (request) => {
+  app.get("/api/runtime-packs/artifact", {
+    schema: {
+      tags: ["public:runtime-packs"],
+      summary: "Resolve the latest runtime-pack artifact",
+      description: "Returns the newest enabled runtime-pack artifact for a pack id and platform.",
+      response: { 200: { type: "object", additionalProperties: true } },
+    },
+  }, async (request) => {
     const packId = String(request.query?.pack || "");
     const platform = String(request.query?.platform || "");
     if (!packId || !platform) return { artifact: null };
@@ -156,7 +206,14 @@ export async function publicCatalogRoutes(app) {
     };
   });
 
-  app.get("/api/releases", async (request) => {
+  app.get("/api/releases", {
+    schema: {
+      tags: ["public:releases"],
+      summary: "List enabled releases",
+      description: "Returns the recent enabled releases, optionally filtered by platform.",
+      response: { 200: { type: "object", additionalProperties: true } },
+    },
+  }, async (request) => {
     const platform = String(request.query?.platform || "").trim();
     let query = db
       .selectFrom("releases")

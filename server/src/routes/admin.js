@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { zodBody, okResponse } from "../openapi.js";
 import { db } from "../db.js";
 import { config } from "../config.js";
 import { timingSafeEqualText, createAdminSessionToken, verifyAdminSessionToken } from "../services/security.js";
@@ -54,7 +55,18 @@ async function audit(request, action, targetType, targetId = null, metadata = {}
 }
 
 export async function adminRoutes(app) {
-  app.post("/api/admin/login", async (request, reply) => {
+  app.post(
+    "/api/admin/login",
+    {
+      schema: {
+        tags: ["admin:auth"],
+        summary: "Authenticate an admin and set a session cookie",
+        description: "Validates admin credentials and, on success, sets the lily_admin_session cookie.",
+        body: zodBody(loginSchema),
+        response: { 200: okResponse() },
+      },
+    },
+    async (request, reply) => {
     const input = loginSchema.parse(request.body);
     if (
       !timingSafeEqualText(input.email, config.adminEmail) ||

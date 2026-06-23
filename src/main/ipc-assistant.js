@@ -11,8 +11,23 @@ const {
   looksLikeWebSystemLearningIntent,
 } = require("./web-system-learning-intent");
 
+function resolveTargetSession(sessionManager, requestedId) {
+  return requestedId
+    ? sessionManager.findById(requestedId)
+    : sessionManager.getActive();
+}
+
+function attachRouting(result, session) {
+  if (!result || typeof result !== "object") return result;
+  return {
+    ...result,
+    sessionId: result.sessionId || session.id,
+    projectId: result.projectId || session.projectId || null,
+  };
+}
+
 function registerAssistantHandlers(ctx) {
-  const { sessionManager, projectManager, turnOrchestrator } = ctx;
+  const { sessionManager, projectManager, turnOrchestrator, runnerPool } = ctx;
 
   ipcMain.handle("assistant:input", async (_event, payload) => {
     const licensed = requireValidLicense();
@@ -23,18 +38,8 @@ function registerAssistantHandlers(ctx) {
     const requestedId =
       typeof payload === "object" && payload?.sessionId ? payload.sessionId : null;
 
-    let session = requestedId
-      ? sessionManager.findById(requestedId)
-      : sessionManager.getActive();
+    const session = resolveTargetSession(sessionManager, requestedId);
     if (!session) return { ok: false, error: "NO_SESSION" };
-
-    if (requestedId && requestedId !== sessionManager.activeSessionId) {
-      sessionManager.switchTo(requestedId);
-    }
-    const { projectManager } = ctx;
-    if (session.projectId !== projectManager.getActive()?.id) {
-      projectManager.switchTo(session.projectId);
-    }
 
     const displayFiles =
       typeof payload === "object" && Array.isArray(payload.displayFiles)
@@ -75,6 +80,7 @@ function registerAssistantHandlers(ctx) {
           ok: true,
           scheduledDraft: true,
           sessionId: session.id,
+          projectId: session.projectId || null,
           assistantMessageId,
           conversation: page.conversation,
         };
@@ -96,13 +102,14 @@ function registerAssistantHandlers(ctx) {
       reloadSkillsBeforeStart = Boolean(ensured.needsReloadBeforeNextTurn);
     }
 
-    return await turnOrchestrator.sendUserMessage(session.id, text, files, {
+    const result = await turnOrchestrator.sendUserMessage(session.id, text, files, {
       recordUser: true,
       spawnEngine: true,
       displayFiles,
       engineText,
       reloadSkillsBeforeStart,
     });
+    return attachRouting(result, session);
   });
 
   ipcMain.handle("assistant:interrupt-and-send", async (_event, payload) => {
@@ -114,17 +121,8 @@ function registerAssistantHandlers(ctx) {
     const requestedId =
       typeof payload === "object" && payload?.sessionId ? payload.sessionId : null;
 
-    let session = requestedId
-      ? sessionManager.findById(requestedId)
-      : sessionManager.getActive();
+    const session = resolveTargetSession(sessionManager, requestedId);
     if (!session) return { ok: false, error: "NO_SESSION" };
-
-    if (requestedId && requestedId !== sessionManager.activeSessionId) {
-      sessionManager.switchTo(requestedId);
-    }
-    if (session.projectId !== projectManager.getActive()?.id) {
-      projectManager.switchTo(session.projectId);
-    }
 
     const displayFiles =
       typeof payload === "object" && Array.isArray(payload.displayFiles)
@@ -146,11 +144,12 @@ function registerAssistantHandlers(ctx) {
       reloadSkillsBeforeStart = Boolean(ensured.needsReloadBeforeNextTurn);
     }
 
-    return await turnOrchestrator.interruptAndSend(session.id, text, files, {
+    const result = await turnOrchestrator.interruptAndSend(session.id, text, files, {
       displayFiles,
       engineText,
       reloadSkillsBeforeStart,
     });
+    return attachRouting(result, session);
   });
 
   ipcMain.handle("assistant:retry", async (_event, payload) => {
@@ -253,6 +252,17 @@ function registerAssistantHandlers(ctx) {
     const sessionId = payload?.sessionId || sessionManager.getActive()?.id;
     if (!sessionId) return { ok: false, error: "NO_SESSION" };
     return turnOrchestrator.snapshot(sessionId);
+  });
+
+  ipcMain.handle("assistant:engine-diagnostics", (_event, payload) => {
+    const session = resolveTargetSession(sessionManager, payload?.sessionId || null);
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    return {
+      ok: true,
+      sessionId: session.id,
+      projectId: session.projectId || null,
+      diagnostics: runnerPool?.diagnostics?.(session.id) || null,
+    };
   });
 
   ipcMain.handle("assistant:interrupt", async (_event, payload) => {

@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { agentConfigDir, sessionGuideDir, opencodeSessionDir } = require("./config");
+const { agentConfigDir, sessionGuideDir, opencodeDbPath, opencodeSessionDir } = require("./config");
 
 const ENGINE_ARTIFACT_DIRS = [
   "sessions",
@@ -83,21 +83,26 @@ function treeContainsNeedle(root, needle) {
 
 /** True when local engine cache can still resume this session.
  *
- * For the OpenCode engine the resume artifact is the per-session SQLite at
- * `opencodeSessionDir/opencode.db` — the session row + messages live there, keyed
- * by the `ses_…` id. (The Claude-era check below grepped jsonl transcripts under
- * the guide dir; those never contain an OpenCode id, so it always reported "stale"
- * and the caller would wipe a perfectly good db on every reopen — total context
- * loss. The db-existence check is the correct signal; a stale/missing id past this
- * point is handled gracefully by createSession falling through to a fresh session.) */
+ * For the OpenCode engine the resume artifact is the app-level SQLite used by
+ * the shared serve. OpenCode session rows/messages are keyed by the `ses_...`
+ * id inside that DB. Older builds used per-session DBs, so we also accept the
+ * legacy path during migration. A stale/missing id past this point is handled by
+ * createSession falling through to a fresh session. */
 function hasResumeArtifacts(sessionId, resumeId) {
   if (!resumeId) return false;
   try {
-    const db = path.join(opencodeSessionDir(sessionId), "opencode.db");
+    const db = opencodeDbPath();
     const st = fs.statSync(db);
     if (st.isFile() && st.size > 0) return true;
   } catch {
-    // no per-session db -> fall back to the legacy guide-tree scan below
+    // no shared db -> try legacy per-session db below
+  }
+  try {
+    const legacyDb = path.join(opencodeSessionDir(sessionId), "opencode.db");
+    const st = fs.statSync(legacyDb);
+    if (st.isFile() && st.size > 0) return true;
+  } catch {
+    // no legacy db -> fall back to the legacy guide-tree scan below
   }
   const sessionRoot = sessionGuideDir(sessionId);
   const globalRoot = agentConfigDir();
@@ -119,11 +124,12 @@ function isResumeFailureMessage(text) {
   );
 }
 
-/** Drop broken resume linkage and local engine cache (keep AGENT.md / CLAUDE.md). */
+/** Drop broken legacy engine cache (keep AGENT.md / CLAUDE.md).
+ *
+ * Do NOT remove the app-level OpenCode DB here: it is shared by every Lily
+ * session. The caller clears this session's `agentResumeId`; OpenCode will create
+ * a new session row on the next prompt if the old id is stale. */
 function resetSessionEngineCache(sessionId) {
-  // The OpenCode engine's per-session SQLite is its resume cache. When resume is
-  // broken, wipe it so the next turn starts a fresh server-side session instead of
-  // failing to resume a stale/corrupt one. Lily's messages.db keeps the transcript.
   try {
     fs.rmSync(opencodeSessionDir(sessionId), { recursive: true, force: true });
   } catch {

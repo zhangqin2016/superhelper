@@ -83,6 +83,14 @@ function supportsDirectDelivery(provider) {
   return provider?.type === "anthropic" && /^https?:\/\//i.test(String(provider.baseUrl || ""));
 }
 
+function opencodeProtocolFor(provider, deliveryMode) {
+  // The Lily gateway exposes Anthropic-compatible /messages to the client even
+  // when the upstream provider is OpenAI-compatible. Direct mode speaks the
+  // provider's own protocol.
+  if (deliveryMode !== "direct") return "anthropic";
+  return provider?.type === "openai" ? "openai" : "anthropic";
+}
+
 function normalizeVisionModel(model) {
   const value = String(model || "").trim();
   if (!value) return "qwen-vl-max";
@@ -104,6 +112,7 @@ function providerPreset(provider, deliveryMode) {
       env: {
         LILY_API_BASE_URL: provider.baseUrl,
         LILY_API_KEY: provider.apiKey,
+        LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, deliveryMode),
         ...(model ? {
           LILY_MODEL: model,
           LILY_MODEL_HAIKU: provider.models?.[1] || model,
@@ -115,6 +124,7 @@ function providerPreset(provider, deliveryMode) {
     };
   }
 
+  const effectiveDeliveryMode = "gateway";
   return {
     id: `${provider.id}-gateway`,
     label: providerLabel(provider),
@@ -123,6 +133,7 @@ function providerPreset(provider, deliveryMode) {
       LILY_API_BASE_URL: `/llm/${provider.id}`,
       LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
       LILY_GATEWAY_PROVIDER: provider.id,
+      LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, effectiveDeliveryMode),
       ...(model ? {
         LILY_MODEL: model,
         LILY_MODEL_HAIKU: provider.models?.[1] || model,

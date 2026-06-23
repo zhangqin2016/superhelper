@@ -1,10 +1,11 @@
 /**
  * Turn inline file mentions in an answer (e.g. `output/chart.svg`) into a small
  * affordance: previewable files open in the OS default app (quick preview),
- * everything else reveals in its folder. Bare/relative paths are resolved against
- * the session workspace on the main side (filetree:open / filetree:reveal).
+ * everything else reveals in its folder. Relative mentions are opened only when
+ * they match a declared result block/artifact, so the renderer never guesses a
+ * workspace base directory for arbitrary text.
  */
-import { revealLocalFileInFolder } from "./file-reveal.js";
+import { openLocalFile, revealLocalFileInFolder } from "./file-reveal.js";
 import { t } from "../i18n/index.js";
 
 // Curated deliverable extensions only — NOT any "word.ext" token, so version
@@ -30,18 +31,51 @@ export function fileMentionInfo(text) {
   return null;
 }
 
+function isOpenableLocalPath(filePath = "") {
+  const value = String(filePath || "").trim();
+  return /^file:/i.test(value) || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+}
+
+function addPathAlias(map, alias, target) {
+  const key = String(alias || "").trim();
+  const value = String(target || "").trim();
+  if (!key || !value || map.has(key)) return;
+  map.set(key, value);
+}
+
+function artifactPathMap(blocks = []) {
+  const map = new Map();
+  for (const block of Array.isArray(blocks) ? blocks : []) {
+    const target = block?.path;
+    if (!isOpenableLocalPath(target)) continue;
+    addPathAlias(map, block.path, target);
+    addPathAlias(map, block.relativePath, target);
+    addPathAlias(map, block.fileName, target);
+  }
+  return map;
+}
+
+function actionPathForMention(pathText, pathMap) {
+  const raw = String(pathText || "").trim();
+  if (isOpenableLocalPath(raw)) return raw;
+  return pathMap.get(raw) || "";
+}
+
 const ICON_PREVIEW =
   '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
 const ICON_FOLDER =
   '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1z"/></svg>';
 
 /** Append a small preview/reveal button after each inline file mention in `root`. */
-export function enhanceFileMentions(root, sessionId = "") {
+export function enhanceFileMentions(root, sessionId = "", blocks = []) {
   if (!root) return;
+  const pathMap = artifactPathMap(blocks);
   for (const code of root.querySelectorAll("code")) {
     if (code.dataset.fileAction === "1" || code.closest("pre")) continue;
     const info = fileMentionInfo(code.textContent);
     if (!info) continue;
+    const actionPath = actionPathForMention(info.path, pathMap);
+    if (!actionPath) continue;
     code.dataset.fileAction = "1";
     const btn = document.createElement("button");
     btn.type = "button";
@@ -51,10 +85,10 @@ export function enhanceFileMentions(root, sessionId = "") {
     btn.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (info.previewable && window.assistantClient?.openLocalFile) {
-        void window.assistantClient.openLocalFile(info.path, sessionId);
+      if (info.previewable) {
+        void openLocalFile(actionPath, sessionId);
       } else {
-        void revealLocalFileInFolder(info.path, sessionId);
+        void revealLocalFileInFolder(actionPath, sessionId);
       }
     });
     code.insertAdjacentElement("afterend", btn);

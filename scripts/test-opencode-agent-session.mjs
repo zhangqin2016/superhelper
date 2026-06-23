@@ -20,6 +20,10 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 const tick = () => new Promise((r) => setImmediate(r));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function waitIdleSettle() {
+  await sleep(OpencodeAgentSession.IDLE_SETTLE_MS + 10);
+}
 
 class FakeServer extends EventEmitter {
   constructor() {
@@ -29,17 +33,60 @@ class FakeServer extends EventEmitter {
     this.aborted = false;
     this.process = { killed: false };
     this.sessionID = null;
+    this.idleChecks = [];
+    this.idleState = true;
   }
   async start() { return { host: "127.0.0.1", port: 4096 }; }
   async createSession() { this.sessionID = "ses_test"; return this.sessionID; }
   subscribe() { this.subscribed = true; }
-  async sendPrompt(p) { this.prompts.push(p); }
+  async sendPrompt(p) {
+    this.prompts.push(p);
+    if (this.failPrompt) {
+      if (typeof this.failPrompt === "function") this.failPrompt();
+      else throw new Error(this.failPrompt);
+    }
+  }
   async respondPermission(id, d) { this.permissionReplies.push({ id, ...d }); }
   async respondQuestion(id, answers) { this.questionReplies = this.questionReplies || []; this.questionReplies.push({ id, answers }); }
   async abort() { this.aborted = true; return true; }
   async revert(messageID) { this.reverted = messageID; return {}; }
   async unrevert() { this.unreverted = true; return {}; }
+  async messages() {
+    if (this.historyMessages) {
+      return {
+        data: this.historyMessages,
+        response: { headers: { get: () => null } },
+      };
+    }
+    return {
+      data: [{
+        info: {
+          id: "msg_history_1",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: 1_765_000_000_000, completed: 1_765_000_001_000 },
+          tokens: { input: 10, output: 2, reasoning: 3, cache: { read: 1, write: 0 } },
+        },
+        parts: [
+          { type: "reasoning", text: "thinking" },
+          { type: "text", text: "answer" },
+        ],
+      }],
+      response: { headers: { get: (name) => (name === "x-next-cursor" ? "older_cursor" : null) } },
+    };
+  }
   async checkHealth() { return this.healthy !== false; }
+  async isSessionIdle() {
+    this.idleChecks.push(Date.now());
+    return this.idleState !== false;
+  }
+  diagnostics() {
+    return {
+      fake: true,
+      sessionID: this.sessionID || "",
+      prompts: this.prompts.length,
+    };
+  }
   terminate() { this.process = null; }
   emitEvent(ev) { this.emit("event", ev); }
 }
@@ -82,8 +129,254 @@ async function newSession() {
   assert(draftTypes(orch).includes("usage.updated"), "step-finish surfaces usage.updated to renderer");
 
   fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
   assert(orch.calls.done.length === 1, "session.idle completes the turn exactly once");
   assert(session.isBusy() === false, "session idle after completion");
+}
+
+// --- status snapshots must not terminate a turn -----------------------------
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "status only" });
+  await tick();
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "not done" } });
+  fake.emitEvent({ type: "session.status", properties: { status: { type: "idle" }, sessionID: "s" } });
+  await waitIdleSettle();
+  assert(orch.calls.done.length === 0, "session.status idle does not complete the turn");
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(orch.calls.done.length === 1, "real session.idle completes the turn");
+  session.terminate();
+}
+
+// --- promptAsync transport error: wait for SSE before failing ---------------
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 40;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.failPrompt = "socket connection was closed";
+    session.sendUserMessage({ text: "landed despite transport error" });
+    await tick();
+    await tick();
+    assert(orch.calls.error.length === 0, "dispatch failure is not emitted immediately");
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "hello" } });
+    await sleep(60);
+    assert(orch.calls.error.length === 0, "SSE activity cancels dispatch failure");
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "hello", "turn completes from SSE after transport error");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- promptAsync transport error: busy engine means the turn landed ----------
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.failPrompt = "socket connection was closed";
+    fake.idleState = false;
+    session.sendUserMessage({ text: "accepted but response errored" });
+    await tick();
+    await sleep(60);
+    assert(orch.calls.error.length === 0, "busy engine after dispatch failure must not fail the turn");
+    fake.failPrompt = null;
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "landed" } });
+    fake.idleState = true;
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "landed", "turn completes after late events");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- promptAsync transport error: any owned engine event means landed --------
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.failPrompt = "socket connection was closed";
+    session.sendUserMessage({ text: "status event proves landed" });
+    await tick();
+    fake.emitEvent({ type: "session.status", properties: { sessionID: "s", status: { type: "busy" } } });
+    await sleep(60);
+    assert(orch.calls.error.length === 0, "owned engine event cancels dispatch failure");
+    assert(fake.prompts.length === 1, "landed prompt must not be submitted twice");
+    fake.failPrompt = null;
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "event landed" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "event landed", "turn continues after status-only proof");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- promptAsync transport error after owned event must not schedule failure -
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.failPrompt = () => {
+      fake.emitEvent({ type: "session.status", properties: { sessionID: "s", status: { type: "busy" } } });
+      throw new Error("socket connection was closed");
+    };
+    session.sendUserMessage({ text: "cold first turn" });
+    await tick();
+    await sleep(60);
+    assert(orch.calls.error.length === 0, "owned event before promptAsync rejection must not become a visible failure");
+    assert(fake.prompts.length === 1, "accepted prompt must not be retried after owned event");
+    fake.failPrompt = null;
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "cold turn ok" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "cold turn ok", "cold turn continues after promptAsync transport error");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- cold-start server hiccup after owned event: recover from official history
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 200;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "cold start" });
+    await tick();
+    fake.emitEvent({ type: "session.status", properties: { sessionID: "s", status: { type: "busy" } } });
+    fake.historyMessages = [{
+      info: {
+        id: "msg_recovered_after_hiccup",
+        role: "assistant",
+        sessionID: "ses_test",
+        time: { created: Date.now(), completed: Date.now() + 1 },
+      },
+      parts: [{ type: "text", text: "recovered answer" }],
+    }];
+    fake.emit("error", new Error("SSE reconnect gave up after socket connection was closed"));
+    assert(orch.calls.error.length === 0, "landed server hiccup is not shown as a visible failure");
+    assert(session.isAlive() === true, "landed server hiccup keeps the official serve alive for recovery");
+    await sleep(60);
+    assert(orch.calls.error.length === 0, "recovery avoids user-visible model interruption");
+    assert(orch.calls.done.length === 1, "recovery completes the turn from official history");
+    assert(orch.calls.done[0].output === "recovered answer", "recovered answer is preserved");
+    assert(orch.calls.done[0].engineMessageId === "msg_recovered_after_hiccup", "recovered engine message id is preserved");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
+// --- promptAsync transport error: catalog noise does not prove prompt landed -
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    let failures = 0;
+    fake.failPrompt = () => {
+      failures += 1;
+      if (failures === 1) throw new Error("socket connection was closed");
+    };
+    session.sendUserMessage({ text: "ignore catalog noise" });
+    await tick();
+    fake.emitEvent({ type: "catalog.updated", properties: { source: "background" } });
+    await sleep(60);
+    assert(fake.prompts.length === 2, "global catalog events must not cancel the dispatch retry");
+    assert(orch.calls.error.length === 0, "retry path avoids a visible failure while retry is pending");
+    fake.failPrompt = null;
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "retried after noise" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "retried after noise", "turn completes after real owned event");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- promptAsync transport error: if not landed, retry submit once -----------
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    let failures = 0;
+    fake.failPrompt = () => {
+      failures += 1;
+      if (failures === 1) throw new Error("fetch failed");
+    };
+    session.sendUserMessage({ text: "retry submit" });
+    await tick();
+    await sleep(60);
+    assert(fake.prompts.length === 2, "failed promptAsync is retried once when no engine activity appears");
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "retried ok" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.error.length === 0, "retry success avoids user-visible dispatch error");
+    assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "retried ok", "retried turn completes");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- idle settle grace: late deltas behind idle must not be truncated --------
+{
+  const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 25;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "finish cleanly" });
+    await tick();
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "hello " } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    assert(orch.calls.done.length === 0, "idle does not finalize on the same tick");
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "world" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1, "idle settles after the drain window");
+    assert(orch.calls.done[0].output === "hello world", `late delta preserved: ${orch.calls.done[0].output}`);
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
+}
+
+// --- idle confirmation: status busy delays completion like official client ---
+{
+  const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "wait for true idle" });
+    await tick();
+    fake.idleState = false;
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "still running" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await sleep(60);
+    assert(orch.calls.done.length === 0, "busy session.status delays idle completion");
+    assert(fake.idleChecks.length >= 1, "idle confirmation checked session status");
+    fake.idleState = true;
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1, "turn completes after session.status becomes idle");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
 }
 
 // --- spawn:true preflight: isAlive() true during async startup --------------
@@ -100,6 +393,21 @@ async function newSession() {
   assert(session.isAlive() === true, "isAlive() true while serve is still starting (preflight passes)");
   resolveStart();
   await tick();
+  session.terminate();
+}
+
+// --- diagnostics: runner exposes per-session engine state without payload text
+{
+  const { session, fake } = await newSession();
+  const cold = session.diagnostics();
+  assert(cold.sessionId === "app_session_1", "diagnostics carries app session id");
+  assert(cold.busy === false && cold.server === null, "cold diagnostics has no server before lazy start");
+  session.sendUserMessage({ text: "diagnose me" });
+  await tick();
+  const live = session.diagnostics();
+  assert(live.alive === true && live.busy === true, "live diagnostics reflects runner state");
+  assert(live.server?.fake === true && live.server.sessionID === "ses_test", "live diagnostics includes server snapshot");
+  assert(live.server.prompts === fake.prompts.length, "server diagnostics is current");
   session.terminate();
 }
 
@@ -134,7 +442,7 @@ async function newSession() {
   await tick();
   fake.emitEvent({
     type: "permission.asked",
-    properties: { id: "per_1", permission: "bash", metadata: { command: "rm x" }, tool: { callID: "c9" } },
+    properties: { id: "per_1", permission: "bash", metadata: { command: "rm -rf x" }, tool: { callID: "c9" } },
   });
   const req = draft(orch, "permission.requested");
   assert(req && req.payload.requestId === "per_1", "permission.requested surfaced to UI");
@@ -157,7 +465,10 @@ async function newSession() {
   const { fake, session } = await newSession();
   session.sendUserMessage({ text: "x" });
   await tick();
-  fake.emitEvent({ type: "permission.asked", properties: { id: "per_2", permission: "edit", metadata: {}, tool: {} } });
+  fake.emitEvent({
+    type: "permission.asked",
+    properties: { id: "per_2", permission: "bash", metadata: { command: "rm -rf x" }, tool: {} },
+  });
   session.respondPermission("per_2", { allow: false });
   await tick();
   assert(fake.permissionReplies[0].reply === "reject", "deny maps to reply=reject");
@@ -191,8 +502,21 @@ async function newSession() {
   session.sendUserMessage({ text: "x" });
   await tick();
   fake.emitEvent({ type: "message.error", properties: { error: { message: "model exploded" } } });
+  await tick();
   assert(orch.calls.error.length === 1, "message.error triggers notifyRunnerError");
+  assert(fake.aborted === false, "message.error is already terminal and must not issue a second abort");
   assert(session.isBusy() === false, "session idle after failure");
+}
+
+// --- promptAsync dispatch does not pre-poll status -------------------------
+{
+  const { fake, session } = await newSession();
+  fake.idleState = false;
+  session.sendUserMessage({ text: "post through promptAsync immediately" });
+  await tick();
+  assert(fake.prompts.length === 1, "promptAsync is posted immediately; SSE/session.idle owns completion");
+  assert(fake.prompts[0].text === "post through promptAsync immediately", "prompt text is preserved");
+  session.terminate();
 }
 
 // --- resume: prior OpenCode session id flows to the server for continuity ---
@@ -206,6 +530,21 @@ async function newSession() {
   await tick();
   assert(captured && captured.resumeSessionID === "ses_prev123", "resumeSessionId -> server resumeSessionID (model context continuity)");
   assert(captured.dataDir && captured.dataDir.endsWith(".db"), "per-session persistent db path passed");
+  session.terminate();
+}
+
+// --- conversation history reads from official session.messages -------------
+{
+  const { session } = await newSession();
+  const page = await session.getConversationPage({ limit: 1 });
+  assert(page.source === "opencode", "history page is OpenCode-backed");
+  assert(page.hasMore === true && page.nextBefore === "older_cursor", "history cursor preserved");
+  assert(page.conversation.length === 1, "history message adapted");
+  const message = page.conversation[0];
+  assert(message.id === "msg_history_1", "OpenCode message id is canonical");
+  assert(message.content === "answer", "assistant text adapted");
+  assert(message.record.thinkingText === "thinking", "reasoning text adapted");
+  assert(message.record.usage.output_tokens === 5, "reasoning tokens included in output usage");
   session.terminate();
 }
 
@@ -253,10 +592,12 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   try { fs.rmSync(missing, { force: true }); } catch { /* ignore */ }
   fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: `Done. Saved to ${missing}` } });
   fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
   await tick();
   assert(orch.calls.done.length === 0, "gate keeps the turn open instead of settling on a missing deliverable");
   assert(fake.prompts.length === 2 && /Completion check/.test(fake.prompts[1].text), "gate posts exactly one corrective follow-up");
   fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
   await tick();
   assert(orch.calls.done.length === 1, "second idle settles the turn — gate is single-shot, never loops");
   session.terminate();
@@ -272,6 +613,7 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   await tick();
   fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: `Created ${real}` } });
   fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
   await tick();
   assert(orch.calls.done.length === 1, "a valid deliverable settles immediately (no gate)");
   assert(fake.prompts.length === 1, "no corrective prompt when the deliverable is valid");
@@ -281,7 +623,6 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
 
 // --- stall watchdog resets on activity (a long-but-active turn must not stall) ---
 {
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const saved = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
   OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 100;
   try {
@@ -304,6 +645,29 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   }
 }
 
+// --- visible no-progress notice: quiet turns must not look frozen -----------
+{
+  const savedNotice = OpencodeAgentSession.PROGRESS_NOTICE_MS;
+  const savedTimeout = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  OpencodeAgentSession.PROGRESS_NOTICE_MS = 25;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 500;
+  try {
+    const { session, orch } = await newSession();
+    session.sendUserMessage({ text: "quiet but still running" });
+    await tick();
+    await new Promise((r) => setTimeout(r, 60));
+    const notice = orch.calls.ingest.find((d) => d.type === "engine.notice" && d.payload?.notice?.code === "longWait");
+    assert(notice, "quiet in-flight turn emits a visible longWait progress notice");
+    assert(notice.payload.notice.level === "progress", "longWait is a progress notice");
+    assert(notice.payload.notice.replace === true, "longWait notice is replaceable, not stack-building");
+    assert(orch.calls.done.length === 0, "visible progress notice does not settle the turn");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.PROGRESS_NOTICE_MS = savedNotice;
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = savedTimeout;
+  }
+}
+
 // --- context continuity: a config change must NOT respawn the server ---------
 // The server is reused across turns so every turn POSTs to the same session id
 // (that is what threads the conversation). AGENT.md varies per turn, so restarting
@@ -322,6 +686,7 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   await tick();
   assert(serverCount === 1, "first send starts exactly one server");
   made[0].emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
   assert(orch.calls.done.length === 1, "turn one completes");
 
   // Config changes between turns (AGENT.md/digest churn) — must NOT respawn.
@@ -340,6 +705,7 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   await tick();
   fake.emitEvent({ type: "message.part.delta", properties: { messageID: "msg_anchor", field: "text", delta: "ok" } });
   fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
   assert(orch.calls.done.length === 1, "rewind: turn completes");
   assert(orch.calls.done[0].engineMessageId === "msg_anchor", "rewind: done payload carries the turn's engine message id (anchor)");
   assert((await session.revert("msg_anchor")) === true, "rewind: revert returns true when server is up");

@@ -4,6 +4,7 @@ import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { signWorkspaceApp } from "../../services/security.js";
 import { uploadBufferToQiniu } from "../../services/qiniu-upload.js";
+import { zodBody, okResponse } from "../../openapi.js";
 import {
   evaluateWorkspaceAppQuality,
   inspectWorkspaceAppArtifact,
@@ -207,16 +208,39 @@ async function downloadWorkspaceAppForInspection(url) {
 }
 
 export function registerAdminWorkspaceAppRoutes(app, { audit }) {
-  app.get("/api/admin/workspace-apps", async () => ({
-    workspaceApps: await db
-      .selectFrom("workspace_apps")
-      .selectAll()
-      .orderBy("created_at", "desc")
-      .limit(300)
-      .execute(),
-  }));
+  app.get(
+    "/api/admin/workspace-apps",
+    {
+      schema: {
+        tags: ["admin:workspace-apps"],
+        summary: "List workspace apps",
+        description: "Returns the most recent workspace apps ordered by creation time.",
+        response: { 200: okResponse({ workspaceApps: { type: "array" } }) },
+      },
+    },
+    async () => ({
+      workspaceApps: await db
+        .selectFrom("workspace_apps")
+        .selectAll()
+        .orderBy("created_at", "desc")
+        .limit(300)
+        .execute(),
+    }),
+  );
 
-  app.post("/api/admin/workspace-apps", async (request, reply) => {
+  app.post(
+    "/api/admin/workspace-apps",
+    {
+      schema: {
+        tags: ["admin:workspace-apps"],
+        summary: "Upsert a workspace app",
+        description:
+          "Creates or updates a workspace app from a JSON body after downloading and verifying the artifact.",
+        body: zodBody(createWorkspaceAppSchema),
+        response: { 201: okResponse({ id: { type: "string" }, appId: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = normalizeCreateInput(request.body || {});
     if (!isValidWorkspaceAppArtifactUrl(input.artifactUrl)) {
       return reply.code(400).send({ ok: false, code: "INVALID_ARTIFACT_URL" });
@@ -242,9 +266,21 @@ export function registerAdminWorkspaceAppRoutes(app, { audit }) {
       enabled: input.enabled,
     });
     return reply.code(201).send({ ok: true, id, appId: input.appId });
-  });
+    },
+  );
 
-  app.post("/api/admin/workspace-apps/upload", async (request, reply) => {
+  app.post(
+    "/api/admin/workspace-apps/upload",
+    {
+      schema: {
+        tags: ["admin:workspace-apps"],
+        summary: "Upload and upsert a workspace app",
+        description:
+          "Accepts a multipart artifact upload, stores it, and upserts the workspace app from the form fields.",
+        response: { 201: okResponse({ id: { type: "string" }, appId: { type: "string" }, artifactUrl: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const { fields, artifact } = await readWorkspaceAppUpload(request);
     if (!artifact) {
       return reply.code(400).send({ ok: false, code: "MISSING_ARTIFACT" });
@@ -303,18 +339,31 @@ export function registerAdminWorkspaceAppRoutes(app, { audit }) {
       sha256,
       sizeBytes: checked.sizeBytes,
     });
-  });
+    },
+  );
 
-  app.patch("/api/admin/workspace-apps/:id", async (request) => {
-    const input = updateEnabledSchema.parse(request.body);
-    await db
-      .updateTable("workspace_apps")
-      .set({ enabled: input.enabled, updated_at: new Date() })
-      .where("id", "=", request.params.id)
-      .execute();
-    await audit(request, "workspace_app.update", "workspace_app", request.params.id, {
-      enabled: input.enabled,
-    });
-    return { ok: true, id: request.params.id };
-  });
+  app.patch(
+    "/api/admin/workspace-apps/:id",
+    {
+      schema: {
+        tags: ["admin:workspace-apps"],
+        summary: "Enable or disable a workspace app",
+        description: "Toggles the enabled flag on an existing workspace app.",
+        body: zodBody(updateEnabledSchema),
+        response: { 200: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request) => {
+      const input = updateEnabledSchema.parse(request.body);
+      await db
+        .updateTable("workspace_apps")
+        .set({ enabled: input.enabled, updated_at: new Date() })
+        .where("id", "=", request.params.id)
+        .execute();
+      await audit(request, "workspace_app.update", "workspace_app", request.params.id, {
+        enabled: input.enabled,
+      });
+      return { ok: true, id: request.params.id };
+    },
+  );
 }

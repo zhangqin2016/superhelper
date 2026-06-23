@@ -9,16 +9,10 @@
  *   bindOrchestrator(orchestrator)
  * and the same public methods turn-orchestrator / session-runner-pool call.
  *
- * It is deliberately SIMPLER than AgentSession: OpenCode emits explicit
- * step.ended / tool.success / permission events, so none of Claude CLI's
- * quiesce/idle/message-stop heuristics are needed. Turn completion is driven by
- * the normalizer's `turn_result` action (emitted only on a terminal,
- * non-tool-calls step), not by silence timers.
- *
- * Transport (HTTP/SSE + the serve process) is OpencodeServerManager; SSE -> the
- * shared action vocabulary is OpencodeEventAdapter. This class is the glue:
- * lifecycle + dispatch + the runtime-draft egress, mirroring AgentSession's
- * _handleLine tail exactly so the renderer is byte-for-byte engine-neutral.
+ * Transport (HTTP/SSE + the serve process) is OpencodeServerManager. Raw
+ * OpenCode events are reduced directly into Lily runtime drafts by
+ * opencode-runtime-reducer; there is no Claude-style stream-json/action adapter
+ * in this path.
  */
 
 const { EventEmitter } = require("node:events");
@@ -26,12 +20,17 @@ const os = require("node:os");
 const path = require("node:path");
 const fs = require("node:fs");
 const { OpencodeServerManager } = require("./runtime/opencode-server-manager");
-const { OpencodeEventAdapter } = require("./runtime/adapters/opencode-cli-adapter");
+const {
+  createOpencodeRuntimeState,
+  reduceOpencodeRuntimeEvent,
+  resetOpencodeRuntimeState,
+} = require("./runtime/opencode-runtime-reducer");
 const { decidePermission } = require("./runtime/opencode-permission-policy");
-const { truncateToolResultForUi, processEventFromClaudeEvent } = require("./cli-process-payload");
+const { truncateToolResultForUi } = require("./cli-process-payload");
 const { getLogger } = require("./logger");
 
 const log = getLogger("opencode-agent-session");
+const TRANSIENT_ERROR_RE = /unreachable|interrupted|socket|fetch|connection|network|ECONN|ETIMEDOUT|ENOTFOUND|timeout|temporarily unavailable|unexpected response/i;
 
 // Deliverable extensions worth gating on — things the user asked to be produced.
 const DELIVERABLE_EXT = "docx|xlsx|pptx|pdf|png|jpe?g|gif|webp|svg|mp3|wav|mp4|webm|html|csv|zip";
@@ -68,6 +67,17 @@ function detectIncompleteDeliverable(output) {
   return null;
 }
 
+function isTurnOwnedEngineEvent(ev) {
+  const type = String(ev?.type || "");
+  const props = ev?.properties || {};
+  if (type.startsWith("message.")) return true;
+  if (type.startsWith("permission.") || type.startsWith("question.")) return true;
+  if (type.startsWith("session.")) {
+    return Boolean(props.sessionID || props.sessionId || props.info?.id || props.session?.id);
+  }
+  return false;
+}
+
 class OpencodeAgentSession extends EventEmitter {
   /**
    * @param {string} sessionId App session id (not the OpenCode server session id).
@@ -79,7 +89,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._createServer = deps.createServer || ((opts) => new OpencodeServerManager(opts));
     /** @type {OpencodeServerManager | null} */
     this._server = null;
-    this._adapter = new OpencodeEventAdapter();
+    this._eventState = createOpencodeRuntimeState();
     this.cwd = null;
     this.spawnOptions = null;
     this.agentResumeId = null;
@@ -87,6 +97,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._turnSettled = true;
     this._starting = null;
     this._sawActivity = false;
+    this._sawEngineEvent = false;
     this.collectedOutput = "";
     /** Completion gate (Pillar 3-B) fires at most ONCE per turn — guards against loops. */
     this._gatedThisTurn = false;
@@ -97,6 +108,20 @@ class OpencodeAgentSession extends EventEmitter {
     this._orchestrator = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._responseTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._progressNoticeTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._idleSettleTimer = null;
+    this._pendingCompletePayload = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._dispatchFailureTimer = null;
+    this._pendingDispatchFailure = null;
+    this._pendingPromptPayload = null;
+    this._dispatchRetryCount = 0;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._transientFailureTimer = null;
+    this._pendingTransientFailure = null;
+    this._turnStartedAt = 0;
   }
 
   bindOrchestrator(orchestrator) {
@@ -123,18 +148,17 @@ class OpencodeAgentSession extends EventEmitter {
     void this._ensureStarted();
   }
 
-  /** Per-session SQLite path — persistent (userData) so conversation history
-   *  survives restarts; falls back to a temp dir when userData isn't bound. */
+  /** App-level SQLite path for the shared OpenCode serve. OpenCode session rows
+   *  are already keyed by their `ses_...` id; using a per-Lily-session DB with a
+   *  shared serve made multi-session resume depend on whichever session started
+   *  the serve first. */
   _dataDir() {
     if (this.spawnOptions?.dataDir) return this.spawnOptions.dataDir;
-    let base;
     try {
-      base = require("./config").opencodeSessionDir(this.sessionId);
+      return require("./config").opencodeDbPath();
     } catch {
-      base = path.join(os.tmpdir(), "lily-opencode", this.sessionId);
+      return path.join(os.tmpdir(), "lily-opencode", "opencode.db");
     }
-    fs.mkdirSync(base, { recursive: true });
-    return path.join(base, "opencode.db");
   }
 
   /** Idempotently start the serve process, create a session, and subscribe.
@@ -180,7 +204,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._starting.catch((err) => {
       this._starting = null;
       log.warn("opencode start failed: %s", err?.message || String(err));
-      if (this.busy && !this._turnSettled) this._failTurn(this._sanitize(err?.message));
+      if (this.busy && !this._turnSettled) this._failTurn(this._sanitize(err?.message), err);
     });
     return this._starting;
   }
@@ -203,6 +227,28 @@ class OpencodeAgentSession extends EventEmitter {
     return this.busy;
   }
 
+  diagnostics() {
+    return {
+      sessionId: this.sessionId,
+      cwd: this.cwd || "",
+      alive: this.isAlive(),
+      busy: this.busy,
+      turnSettled: this._turnSettled,
+      sawActivity: this._sawActivity,
+      collectedOutputLength: this.collectedOutput.length,
+      pendingPermissions: this._pendingPermissions.size,
+      pendingQuestions: this._pendingQuestions.size,
+      pendingComplete: Boolean(this._pendingCompletePayload),
+      timers: {
+        response: Boolean(this._responseTimer),
+        progressNotice: Boolean(this._progressNoticeTimer),
+        idleSettle: Boolean(this._idleSettleTimer),
+        health: Boolean(this._healthTimer),
+      },
+      server: this._server?.diagnostics?.() || null,
+    };
+  }
+
   // --- outbound ------------------------------------------------------------
 
   /** @param {{ text?: string, files?: Array<object> } | string} payload */
@@ -215,12 +261,18 @@ class OpencodeAgentSession extends EventEmitter {
     this.busy = true;
     this._turnSettled = false;
     this._sawActivity = false;
+    this._sawEngineEvent = false;
     this._gatedThisTurn = false;
+    this._dispatchRetryCount = 0;
     this.collectedOutput = "";
+    this._turnStartedAt = Date.now();
+    this._pendingTransientFailure = null;
+    this._clearTransientFailureTimer();
     // First engine message id of this turn — the rewind anchor. Reverting to it
     // undoes the whole exchange (the engine anchors back to the preceding user msg).
     this._turnEngineMessageId = null;
     this._armResponseTimer();
+    this._armProgressNoticeTimer();
     this._armHealthProbe();
 
     (async () => {
@@ -229,14 +281,18 @@ class OpencodeAgentSession extends EventEmitter {
         // Skill guidance rides the FIRST message of a fresh session, then never
         // again (the engine keeps it in context for the rest of the session).
         const guidance = this._guidancePending ? this.spawnOptions?.guidance || "" : "";
-        await server.sendPrompt({ text, files, guidance });
+        this._pendingPromptPayload = { text, files, guidance };
+        await server.sendPrompt(this._pendingPromptPayload);
         if (guidance) this._guidancePending = false;
       } catch (err) {
         // The turn is driven by SSE (session.idle/events). If events already
         // arrived, a hiccup on the blocking message POST is NOT a turn failure —
-        // let SSE finish. Only fail if nothing ever came through (prompt didn't land).
-        if (this.busy && !this._turnSettled && !this._sawActivity) {
-          this._failTurn(this._sanitize(err?.message));
+        // let SSE finish. promptAsync can surface a transport error after OpenCode
+        // already accepted the turn, so give the event stream a short proof window
+        // before declaring the prompt lost.
+        log.warn("opencode prompt dispatch failed: %s", err?.message || String(err));
+        if (this.busy && !this._turnSettled && !this._sawActivity && !this._sawEngineEvent) {
+          this._scheduleDispatchFailure(err);
         }
       }
     })();
@@ -316,7 +372,12 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   terminate() {
+    this._clearIdleSettleTimer();
+    this._pendingCompletePayload = null;
+    this._clearDispatchFailureTimer();
+    this._clearTransientFailureTimer();
     this._clearResponseTimer();
+    this._clearProgressNoticeTimer();
     this._clearHealthProbe();
     this._clearPendingPermissions();
     if (this._server) {
@@ -328,44 +389,58 @@ class OpencodeAgentSession extends EventEmitter {
     this._turnSettled = true;
     this.cwd = null;
     this.spawnOptions = null;
+    this._pendingPromptPayload = null;
+    this._dispatchRetryCount = 0;
+    this._pendingTransientFailure = null;
+    this._turnStartedAt = 0;
   }
 
-  // --- inbound: SSE event -> actions -> drafts -----------------------------
+  // --- inbound: OpenCode event -> runtime drafts + host effects ------------
 
   _handleEvent(ev) {
+    if (!this.busy || this._turnSettled) return;
+    if (isTurnOwnedEngineEvent(ev)) {
+      this._sawEngineEvent = true;
+      this._clearDispatchFailureTimer();
+    }
+
     // Capture the turn's first engine message id (rewind anchor) before normalize.
     if (!this._turnEngineMessageId) {
       const mid = ev?.properties?.messageID || ev?.properties?.part?.messageID || ev?.properties?.info?.id;
       if (typeof mid === "string" && mid.startsWith("msg_")) this._turnEngineMessageId = mid;
     }
 
-    let normalized;
+    let reduced;
     try {
-      normalized = this._adapter.normalizeEvent(ev);
+      reduced = reduceOpencodeRuntimeEvent(ev, this._eventState);
     } catch (err) {
-      log.warn("opencode adapter failed: %s", err?.message || String(err));
+      log.warn("opencode event reducer failed: %s", err?.message || String(err));
       return;
     }
 
-    // Meaningful actions = the engine is making PROGRESS (text, thinking, a tool
-    // call/update/result). Reset the no-progress watchdog only on these — NOT on
+    // Meaningful reducer progress = the engine is making forward movement (text,
+    // thinking, a tool call/update/result, permission/question, completion, or
+    // usage). Reset the no-progress watchdog only on these — NOT on
     // every event. Busy/heartbeat events carry no actions, so a turn that just
     // pings "busy" without doing anything still times out, while a genuinely long
     // task that keeps progressing (an hour of converting files, etc.) resets the
     // watchdog on each step and runs to completion.
-    if (normalized.actions.length) {
+    if (reduced.progress) {
       this._sawActivity = true;
+      this._clearDispatchFailureTimer();
+      this._clearTransientFailureTimer();
       this._armResponseTimer();
+      this._armProgressNoticeTimer();
     }
 
-    for (const action of normalized.actions) {
-      this._handleAction(action);
+    for (const effect of reduced.effects || []) {
+      this._handleEffect(effect);
     }
 
-    // Mirror AgentSession._handleLine's draft egress so the renderer pipeline is
-    // identical: relocate tool.done content -> result (truncated), append the
-    // process.event timeline draft, then hand the batch to the orchestrator.
-    const drafts = [...(normalized.runtimeEvents || [])];
+    // Keep the renderer contract stable: relocate tool.done content -> result
+    // (truncated), append the process.event timeline draft, then hand the batch
+    // to the orchestrator.
+    const drafts = [...(reduced.drafts || [])];
     for (const draft of drafts) {
       if (draft.type !== "tool.done") continue;
       const raw = draft.payload?.content;
@@ -373,45 +448,42 @@ class OpencodeAgentSession extends EventEmitter {
       draft.payload.result = truncateToolResultForUi(raw);
       delete draft.payload.content;
     }
-    drafts.push({
-      type: "process.event",
-      payload: processEventFromClaudeEvent(ev, normalized.actions || []),
-    });
+    if (reduced.processEvent) drafts.push(reduced.processEvent);
     this._ingest(drafts);
   }
 
-  _handleAction(action) {
-    switch (action.kind) {
+  _handleEffect(effect) {
+    switch (effect.kind) {
       case "assistant_text":
-        this.collectedOutput += action.text || "";
+        this.collectedOutput += effect.text || "";
         this._armResponseTimer();
         break;
 
-      case "permission_check": {
+      case "permission": {
         // The shared serve asks for every mutation; the session's MODE is
         // enforced HERE (host-side), mirroring the official client. Auto-allow /
         // auto-deny without bothering the user; only "ask" surfaces the dialog.
         const mode = this.spawnOptions?.permissionMode || "ask";
-        const verdict = decidePermission(mode, action.toolName, action.input || {});
+        const verdict = decidePermission(mode, effect.toolName, effect.input || {});
         if (verdict === "allow") {
-          this._autoRespondPermission(action.requestId, "once");
+          this._autoRespondPermission(effect.requestId, "once");
           break;
         }
         if (verdict === "deny") {
-          this._autoRespondPermission(action.requestId, "reject");
+          this._autoRespondPermission(effect.requestId, "reject");
           break;
         }
-        this._pendingPermissions.add(action.requestId);
+        this._pendingPermissions.add(effect.requestId);
         this._ingest([{
           type: "permission.requested",
           payload: {
-            requestId: action.requestId,
-            toolName: action.toolName,
-            input: action.input || {},
-            title: action.title || "",
-            description: action.description || "",
-            decisionReason: action.decisionReason || "",
-            suggestions: action.suggestions || [],
+            requestId: effect.requestId,
+            toolName: effect.toolName,
+            input: effect.input || {},
+            title: effect.title || "",
+            description: effect.description || "",
+            decisionReason: effect.decisionReason || "",
+            suggestions: effect.suggestions || [],
             planPreview: "",
             planPreviewTruncated: false,
           },
@@ -419,51 +491,234 @@ class OpencodeAgentSession extends EventEmitter {
         break;
       }
 
-      case "ask_user_question": {
-        const questions = (action.input && action.input.questions) || [];
-        this._pendingQuestions.set(action.requestId, questions);
+      case "question": {
+        const questions = effect.questions || [];
+        this._pendingQuestions.set(effect.requestId, questions);
         this._ingest([{
           type: "user_question.requested",
-          payload: { requestId: action.requestId, questions },
+          payload: { requestId: effect.requestId, questions },
         }]);
         break;
       }
 
-      case "turn_result": {
-        const ev = action.event || {};
-        this._completeTurn({
-          code: ev.is_error ? 1 : 0,
+      case "complete": {
+        this._scheduleCompleteTurn({
+          code: effect.code || 0,
           output: this.collectedOutput.trim(),
           interrupted: false,
         });
         break;
       }
 
-      case "stream_message_delta":
-        // Token usage from a step-finish — record it for cost/usage tracking.
-        // (The usage.updated runtime draft for the renderer is produced
-        // engine-agnostically by runtimeEventFromAction.)
-        if (action.usage && typeof action.usage === "object") {
+      case "usage":
+        // Token usage from a step-finish — record it for cost/usage tracking;
+        // the reducer already produced usage.updated for the renderer.
+        if (effect.usage && typeof effect.usage === "object") {
           try {
-            require("./usage-reporter").recordModelUsage(this.sessionId, action.usage);
+            require("./usage-reporter").recordModelUsage(this.sessionId, effect.usage);
           } catch (err) {
             log.warn("usage record failed: %s", err?.message || String(err));
           }
         }
         break;
 
-      case "runtime_error":
-        this._failTurn(this._sanitize(action.event?.message) || "Engine error");
+      case "error":
+        this._failTurn(this._sanitize(effect.message) || "Engine error");
         break;
 
       default:
-        // Streaming text/thinking/tool actions need no extra state here — their
+        // Thinking/tool/unknown effects need no host-side state here; their
         // runtime drafts already carry everything the renderer needs.
         break;
     }
   }
 
   // --- turn settlement -----------------------------------------------------
+
+  _scheduleCompleteTurn(payload) {
+    if (this._turnSettled) return;
+    this._pendingCompletePayload = payload;
+    this._clearIdleSettleTimer();
+    this._idleSettleTimer = setTimeout(() => {
+      this._idleSettleTimer = null;
+      void this._confirmIdleAndComplete();
+    }, OpencodeAgentSession.IDLE_SETTLE_MS);
+    this._idleSettleTimer.unref?.();
+  }
+
+  async _confirmIdleAndComplete() {
+    const next = this._pendingCompletePayload;
+    if (!next || this._turnSettled) return;
+    let idle = true;
+    try {
+      idle = this._server?.isSessionIdle ? await this._server.isSessionIdle() : true;
+    } catch (err) {
+      log.warn("opencode idle confirmation failed: %s", err?.message || String(err));
+      idle = true;
+    }
+    if (!this._pendingCompletePayload || this._turnSettled) return;
+    if (!idle) {
+      this._scheduleCompleteTurn(next);
+      return;
+    }
+    this._pendingCompletePayload = null;
+    this._completeTurn({ ...next, output: this.collectedOutput.trim() });
+  }
+
+  _clearIdleSettleTimer() {
+    if (this._idleSettleTimer) {
+      clearTimeout(this._idleSettleTimer);
+      this._idleSettleTimer = null;
+    }
+  }
+
+  _scheduleDispatchFailure(cause) {
+    this._pendingDispatchFailure = cause;
+    this._clearDispatchFailureTimer(false);
+    this._dispatchFailureTimer = setTimeout(() => {
+      this._dispatchFailureTimer = null;
+      void this._confirmDispatchFailure();
+    }, OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS);
+    this._dispatchFailureTimer.unref?.();
+  }
+
+  async _confirmDispatchFailure() {
+    const pending = this._pendingDispatchFailure;
+    if (!this.busy || this._turnSettled || this._sawActivity || this._sawEngineEvent) {
+      this._pendingDispatchFailure = null;
+      return;
+    }
+
+    // promptAsync is fire-and-forget. A transport error can mean either "the
+    // request did not arrive" or "the client lost the response after OpenCode
+    // accepted it". Ask OpenCode before showing a model failure; if the session
+    // is busy, the turn landed and SSE/health timers own the outcome.
+    try {
+      if (this._server?.isSessionIdle && !(await this._server.isSessionIdle())) {
+        this._pendingDispatchFailure = null;
+        return;
+      }
+    } catch {
+      // If status itself is unavailable, fall through to the bounded retry.
+    }
+
+    if (this._dispatchRetryCount < 1 && this._server && this._pendingPromptPayload) {
+      this._dispatchRetryCount += 1;
+      try {
+        await this._server.sendPrompt(this._pendingPromptPayload);
+        this._pendingDispatchFailure = null;
+        return;
+      } catch (err) {
+        this._pendingDispatchFailure = err;
+        this._scheduleDispatchFailure(err);
+        return;
+      }
+    }
+
+    this._pendingDispatchFailure = null;
+    if (this.busy && !this._turnSettled && !this._sawActivity) {
+      this._failTurn(this._sanitize(pending?.message), pending);
+    }
+  }
+
+  _clearDispatchFailureTimer(clearPending = true) {
+    if (this._dispatchFailureTimer) {
+      clearTimeout(this._dispatchFailureTimer);
+      this._dispatchFailureTimer = null;
+    }
+    if (clearPending) this._pendingDispatchFailure = null;
+  }
+
+  _scheduleTransientFailureRecovery(message, cause) {
+    this._pendingTransientFailure = {
+      message,
+      cause,
+      startedAt: Date.now(),
+    };
+    this._clearTransientFailureTimer(false);
+    this._clearDispatchFailureTimer();
+    this._transientFailureTimer = setTimeout(() => {
+      this._transientFailureTimer = null;
+      void this._recoverOrContinueAfterTransientFailure();
+    }, OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS);
+    this._transientFailureTimer.unref?.();
+  }
+
+  _clearTransientFailureTimer(clearPending = true) {
+    if (this._transientFailureTimer) {
+      clearTimeout(this._transientFailureTimer);
+      this._transientFailureTimer = null;
+    }
+    if (clearPending) this._pendingTransientFailure = null;
+  }
+
+  async _recoverOrContinueAfterTransientFailure() {
+    const pending = this._pendingTransientFailure;
+    if (!pending || !this.busy || this._turnSettled) {
+      this._pendingTransientFailure = null;
+      return;
+    }
+
+    const recovered = await this._recoverCompletedAssistantFromHistory().catch((err) => {
+      log.warn("opencode transient recovery history read failed: %s", err?.message || String(err));
+      return null;
+    });
+    if (!this.busy || this._turnSettled) return;
+    if (recovered?.output) {
+      this._pendingTransientFailure = null;
+      this._completeTurn({
+        code: 0,
+        output: recovered.output,
+        interrupted: false,
+        engineMessageId: recovered.engineMessageId,
+      });
+      return;
+    }
+
+    let idle = false;
+    try {
+      idle = this._server?.isSessionIdle ? await this._server.isSessionIdle() : false;
+    } catch (err) {
+      log.warn("opencode transient recovery status read failed: %s", err?.message || String(err));
+    }
+    if (!this.busy || this._turnSettled) return;
+    if (idle && this.collectedOutput.trim()) {
+      this._pendingTransientFailure = null;
+      this._completeTurn({ code: 0, output: this.collectedOutput.trim(), interrupted: false });
+      return;
+    }
+
+    const elapsed = Date.now() - pending.startedAt;
+    if (elapsed < OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS) {
+      this._scheduleTransientFailureRecovery(pending.message, pending.cause);
+      return;
+    }
+
+    this._pendingTransientFailure = null;
+    this._failTurn(pending.message, pending.cause, { force: true });
+  }
+
+  async _recoverCompletedAssistantFromHistory() {
+    if (!this._server?.messages || !this._turnStartedAt) return null;
+    const raw = await this._server.messages({ limit: 12 });
+    const items = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
+    const minCreatedAt = this._turnStartedAt - 10_000;
+    for (const item of items) {
+      const info = item?.info || {};
+      if (info.role !== "assistant") continue;
+      const created = Number(info.time?.created || info.created || 0);
+      if (Number.isFinite(created) && created > 0 && created < minCreatedAt) continue;
+      const parts = Array.isArray(item?.parts) ? item.parts : [];
+      const output = parts
+        .filter((part) => part?.type === "text" && typeof part.text === "string")
+        .map((part) => part.text)
+        .join("")
+        .trim();
+      if (!output) continue;
+      return { output, engineMessageId: typeof info.id === "string" ? info.id : null };
+    }
+    return null;
+  }
 
   _completeTurn(payload) {
     if (this._turnSettled) return;
@@ -484,6 +739,7 @@ class OpencodeAgentSession extends EventEmitter {
       if (violation) {
         this._gatedThisTurn = true;
         this._armResponseTimer();
+        this._armProgressNoticeTimer();
         const note =
           `Completion check: you indicated the deliverable "${violation.path}" ` +
           `but it ${violation.reason}. Actually produce a valid file at that path ` +
@@ -506,12 +762,20 @@ class OpencodeAgentSession extends EventEmitter {
 
   _settleTurn(payload) {
     if (this._turnSettled) return;
+    this._clearIdleSettleTimer();
+    this._pendingCompletePayload = null;
+    this._clearDispatchFailureTimer();
+    this._clearTransientFailureTimer();
     this._clearResponseTimer();
+    this._clearProgressNoticeTimer();
     this._clearHealthProbe();
     this._clearPendingPermissions();
-    this._adapter.reset();
+    resetOpencodeRuntimeState(this._eventState);
     this._turnSettled = true;
     this.busy = false;
+    this._pendingPromptPayload = null;
+    this._sawEngineEvent = false;
+    this._turnStartedAt = 0;
     // Carry the turn's rewind anchor (engine message id) so the orchestrator can
     // record it on the turn — that's what session:rewind reverts to later.
     if (payload && typeof payload === "object" && this._turnEngineMessageId && !payload.engineMessageId) {
@@ -538,15 +802,66 @@ class OpencodeAgentSession extends EventEmitter {
     return true;
   }
 
-  _failTurn(message) {
-    if (this._turnSettled) return;
+  async getConversationPage(opts = {}) {
+    const server = await this._ensureStarted();
+    const raw = await server.messages({
+      limit: Number.isInteger(opts.limit) ? opts.limit : 50,
+      before: opts.before || undefined,
+    });
+    const items = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
+    const cursor = raw?.response?.headers?.get?.("x-next-cursor") || raw?.cursor || raw?.next || null;
+    const { adaptOpencodeMessagesPage } = require("./runtime/opencode-conversation-adapter");
+    return adaptOpencodeMessagesPage({
+      items,
+      sessionId: this.sessionId,
+      cursor,
+      complete: !cursor,
+      before: opts.before || null,
+    });
+  }
+
+  _failTurn(message, cause = null, opts = {}) {
+    if (this._turnSettled) return false;
+    if (!opts.force && this._shouldDeferTransientFailure(message, cause)) {
+      this._scheduleTransientFailureRecovery(message, cause);
+      return true;
+    }
+    if (cause) log.warn("opencode turn failed: %s", cause?.message || String(cause));
+    this._clearIdleSettleTimer();
+    this._pendingCompletePayload = null;
+    this._clearDispatchFailureTimer();
+    this._clearTransientFailureTimer();
     this._clearResponseTimer();
+    this._clearProgressNoticeTimer();
     this._clearHealthProbe();
     this._clearPendingPermissions();
-    this._adapter.reset();
+    resetOpencodeRuntimeState(this._eventState);
     this._turnSettled = true;
     this.busy = false;
+    this._pendingPromptPayload = null;
+    this._sawEngineEvent = false;
+    this._turnStartedAt = 0;
     this._orchestrator?.notifyRunnerError(this.sessionId, message);
+    return false;
+  }
+
+  _shouldDeferTransientFailure(message, cause) {
+    if (!this.busy || this._turnSettled || !this._server) return false;
+    if (!this._sawEngineEvent || this.collectedOutput.trim()) return false;
+    if (!cause) return false;
+    const raw = [message, cause?.message || cause].filter(Boolean).join("\n");
+    const classified = require("./agent-runner").classifyAssistantError(raw);
+    if (classified && classified.retryable === false) return false;
+    if (classified && [
+      "MODEL_CONNECTION_FAILED",
+      "ENGINE_UNAVAILABLE",
+      "MODEL_OVERLOADED",
+      "RESPONSE_ERROR",
+      "RATE_LIMITED",
+    ].includes(classified.code)) {
+      return true;
+    }
+    return TRANSIENT_ERROR_RE.test(raw);
   }
 
   _onServerExit(code) {
@@ -563,7 +878,8 @@ class OpencodeAgentSession extends EventEmitter {
   _onServerError(err) {
     log.warn("server error: %s", err?.message || String(err));
     if (this.busy && !this._turnSettled) {
-      this._failTurn("The assistant engine became unreachable. Please retry.");
+      const deferred = this._failTurn("The assistant engine became unreachable. Please retry.", err);
+      if (deferred) return;
     }
     try { this._server?.terminate?.(); } catch { /* best effort */ }
     this._server = null;
@@ -604,6 +920,42 @@ class OpencodeAgentSession extends EventEmitter {
       clearTimeout(this._responseTimer);
       this._responseTimer = null;
     }
+  }
+
+  // Visible no-progress heartbeat: this is UX feedback only. It does not settle
+  // or abort the turn; the generous no-progress watchdog remains responsible for
+  // stopping genuinely stuck runs.
+  _armProgressNoticeTimer() {
+    this._clearProgressNoticeTimer();
+    if (!this.busy || this._turnSettled) return;
+    this._progressNoticeTimer = setTimeout(() => {
+      this._emitLongWaitNotice();
+    }, OpencodeAgentSession.PROGRESS_NOTICE_MS);
+    this._progressNoticeTimer.unref?.();
+  }
+
+  _clearProgressNoticeTimer() {
+    if (this._progressNoticeTimer) {
+      clearTimeout(this._progressNoticeTimer);
+      this._progressNoticeTimer = null;
+    }
+  }
+
+  _emitLongWaitNotice() {
+    this._progressNoticeTimer = null;
+    if (!this.busy || this._turnSettled) return;
+    this._ingest([{
+      type: "engine.notice",
+      payload: {
+        notice: {
+          code: "longWait",
+          level: "progress",
+          panel: true,
+          replace: true,
+          replacesCode: "longWait",
+        },
+      },
+    }]);
   }
 
   /** Give up on a stuck turn: abort the engine (so it isn't left working/looping
@@ -669,6 +1021,28 @@ class OpencodeAgentSession extends EventEmitter {
 // isn't killed; the engine's own per-tool timeout bounds a truly silent command.
 OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
   Number(process.env.LILY_OPENCODE_TURN_TIMEOUT_MS) || 600_000;
+// Shorter visible no-progress window. This only feeds the live process panel so
+// users can see the engine is still alive while OpenCode is quiet.
+OpencodeAgentSession.PROGRESS_NOTICE_MS =
+  Number(process.env.LILY_OPENCODE_PROGRESS_NOTICE_MS) || 45_000;
+// Mirrors OpenCode's own "confirm idle after events have drained" behavior:
+// do not finalize on the same tick as session.idle, because late text deltas can
+// still be queued behind it in the shared event stream.
+OpencodeAgentSession.IDLE_SETTLE_MS =
+  Number(process.env.LILY_OPENCODE_IDLE_SETTLE_MS) || 750;
+// promptAsync is fire-and-forget: a transport-level failure can be reported
+// after OpenCode already accepted the turn. Wait briefly for SSE activity before
+// telling the user the model connection failed.
+OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS =
+  Number(process.env.LILY_OPENCODE_DISPATCH_FAILURE_GRACE_MS) || 12_000;
+// If a transient transport/server error arrives after the turn is already proven
+// to have reached OpenCode, do not fail the UI immediately. The official session
+// state/history is authoritative; poll briefly and either recover the completed
+// assistant message or keep waiting for live events.
+OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS =
+  Number(process.env.LILY_OPENCODE_TRANSIENT_RECOVERY_POLL_MS) || 2_000;
+OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS =
+  Number(process.env.LILY_OPENCODE_TRANSIENT_RECOVERY_MS) || 120_000;
 // Active health probe during a turn: poll every PROBE_MS, declare the engine dead
 // only after MAX_FAILS consecutive failures (so a slow-but-healthy turn survives).
 OpencodeAgentSession.HEALTH_PROBE_MS = Number(process.env.LILY_OPENCODE_HEALTH_PROBE_MS) || 30_000;

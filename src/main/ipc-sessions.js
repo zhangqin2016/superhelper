@@ -9,6 +9,7 @@ const {
   listSessionPermissionsPublic,
   resolveSessionPermissionMode,
 } = require("./permission-settings");
+const { getConversationPageFromSource } = require("./opencode-conversation-source");
 
 function registerSessionHandlers(ctx) {
   const { sessionManager, projectManager, runnerPool } = ctx;
@@ -24,11 +25,11 @@ function registerSessionHandlers(ctx) {
     };
   });
 
-  ipcMain.handle("session:get-conversation", (_event, payload) => {
+  ipcMain.handle("session:get-conversation", async (_event, payload) => {
     const sessionId = typeof payload === "string"
       ? payload
       : payload?.sessionId || sessionManager.activeSessionId;
-    return sessionManager.getConversationPage(sessionId, {
+    return getConversationPageFromSource(ctx, sessionId, {
       before: Number.isInteger(payload?.before) ? payload.before : undefined,
       limit: Number.isInteger(payload?.limit) ? payload.limit : undefined,
     });
@@ -173,7 +174,7 @@ function registerSessionHandlers(ctx) {
     }
     const removed = sessionManager.deleteMessagesFromTurn(sessionId, turnId);
     // Hand back the truncated transcript so the renderer can resync in lock-step.
-    const page = sessionManager.getConversationPage(sessionId, {});
+    const page = await getConversationPageFromSource(ctx, sessionId, {});
     return { ok: true, sessionId, turnId, removed, conversation: page?.conversation || [] };
   });
 

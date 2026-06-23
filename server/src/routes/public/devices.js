@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { zodBody, okResponse } from "../../openapi.js";
 import {
   requireSignedDeviceRequest,
   setDevicePublicKey,
@@ -23,14 +24,41 @@ const rotateDeviceKeySchema = registerDeviceSchema.extend({
 });
 
 export function registerPublicDeviceRoutes(app) {
-  app.post("/api/devices/register", async (request, reply) => {
+  app.post(
+    "/api/devices/register",
+    {
+      schema: {
+        tags: ["public:devices"],
+        summary: "Register or upsert a device",
+        description: "Upserts the device record and public key, returning trial status.",
+        body: zodBody(registerDeviceSchema),
+        response: { 200: okResponse({ trial: { type: "object" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = registerDeviceSchema.parse(request.body);
     const device = await upsertDevice(input);
     await upsertDevicePublicKey(input);
     return reply.send({ ok: true, trial: trialPayload(device) });
   });
 
-  app.post("/api/devices/rotate-key", async (request, reply) => {
+  app.post(
+    "/api/devices/rotate-key",
+    {
+      schema: {
+        tags: ["public:devices"],
+        summary: "Rotate a device's public key",
+        description: "Verifies the signed request then replaces the device's public key.",
+        body: zodBody(rotateDeviceKeySchema),
+        response: {
+          200: okResponse({
+            deviceId: { type: "string" },
+            keyAlg: { type: "string" },
+          }),
+        },
+      },
+    },
+    async (request, reply) => {
     const input = rotateDeviceKeySchema.parse(request.body);
     await upsertDevice(input);
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { db } from "../../db.js";
+import { zodBody, okResponse } from "../../openapi.js";
 
 // Tier/config groups. A group is just a named target for the existing config
 // profiles (scope: "group"), so a model preset / runtime env / policy can be
@@ -19,7 +20,17 @@ const assignSchema = z.object({
 });
 
 export function registerAdminConfigGroupRoutes(app, { audit }) {
-  app.get("/api/admin/config-groups", async () => {
+  app.get(
+    "/api/admin/config-groups",
+    {
+      schema: {
+        tags: ["admin:config-groups"],
+        summary: "List config groups",
+        description: "Lists config groups with their device and license member counts.",
+        response: { 200: okResponse({ groups: { type: "array", items: { type: "object" } } }) },
+      },
+    },
+    async () => {
     const [groups, deviceCounts, licenseCounts] = await Promise.all([
       db.selectFrom("config_groups").selectAll().orderBy("name", "asc").limit(300).execute(),
       db
@@ -46,7 +57,18 @@ export function registerAdminConfigGroupRoutes(app, { audit }) {
     };
   });
 
-  app.post("/api/admin/config-groups", async (request, reply) => {
+  app.post(
+    "/api/admin/config-groups",
+    {
+      schema: {
+        tags: ["admin:config-groups"],
+        summary: "Create or update a config group",
+        description: "Upserts a config group by id, setting its display name.",
+        body: zodBody(groupSchema),
+        response: { 201: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = groupSchema.parse(request.body);
     await db
       .insertInto("config_groups")
@@ -57,7 +79,17 @@ export function registerAdminConfigGroupRoutes(app, { audit }) {
     return reply.code(201).send({ ok: true, id: input.id });
   });
 
-  app.delete("/api/admin/config-groups/:id", async (request) => {
+  app.delete(
+    "/api/admin/config-groups/:id",
+    {
+      schema: {
+        tags: ["admin:config-groups"],
+        summary: "Delete a config group",
+        description: "Detaches member devices and licenses, then deletes the group.",
+        response: { 200: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request) => {
     const groupId = request.params.id;
     // Detach members so nothing keeps pointing at a deleted group.
     await db.updateTable("devices").set({ group_id: null }).where("group_id", "=", groupId).execute();
@@ -68,7 +100,18 @@ export function registerAdminConfigGroupRoutes(app, { audit }) {
   });
 
   // Put a device or a license (customer/tier) into a group, or clear it (null).
-  app.post("/api/admin/config-groups/assign", async (request, reply) => {
+  app.post(
+    "/api/admin/config-groups/assign",
+    {
+      schema: {
+        tags: ["admin:config-groups"],
+        summary: "Assign a device or license to a group",
+        description: "Sets or clears the group membership of a device or license.",
+        body: zodBody(assignSchema),
+        response: { 200: okResponse({ id: { type: "string" }, groupId: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = assignSchema.parse(request.body);
     const groupId = input.groupId || null;
     if (groupId) {

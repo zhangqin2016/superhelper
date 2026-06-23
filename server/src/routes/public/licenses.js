@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { zodBody, okResponse } from "../../openapi.js";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { hashLicenseKey, signLicensePayload } from "../../services/security.js";
@@ -19,7 +20,19 @@ const verifySchema = registerDeviceSchema.extend({
 });
 
 export function registerPublicLicenseRoutes(app) {
-  app.post("/api/licenses/activate", async (request, reply) => {
+  app.post(
+    "/api/licenses/activate",
+    {
+      schema: {
+        tags: ["public:licenses"],
+        summary: "Activate a license on a device",
+        description:
+          "Binds the device to the license (enforcing seat limits) and returns a signed license payload.",
+        body: zodBody(activateSchema),
+        response: { 200: okResponse({ license: { type: "object" } }) },
+      },
+    },
+    async (request, reply) => {
     const input = activateSchema.parse(request.body);
     await upsertDevice(input);
     await upsertDevicePublicKey(input);
@@ -90,7 +103,21 @@ export function registerPublicLicenseRoutes(app) {
     });
   });
 
-  app.post("/api/licenses/verify", async (request, reply) => {
+  app.post(
+    "/api/licenses/verify",
+    {
+      schema: {
+        tags: ["public:licenses"],
+        summary: "Verify a license/device binding",
+        description:
+          "Checks that the signed device is still bound to an active, unexpired license and returns its details.",
+        body: zodBody(verifySchema),
+        response: {
+          200: okResponse({ trial: { type: "object" }, license: { type: "object" } }),
+        },
+      },
+    },
+    async (request, reply) => {
     const input = verifySchema.parse(request.body);
     const device = await upsertDevice(input);
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;

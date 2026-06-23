@@ -1,8 +1,30 @@
 import { sql } from "kysely";
 import { db } from "../../db.js";
+import { okResponse } from "../../openapi.js";
 
 export function registerAdminSummaryRoutes(app) {
-  app.get("/api/admin/summary", async () => {
+  app.get(
+    "/api/admin/summary",
+    {
+      schema: {
+        tags: ["admin:summary"],
+        summary: "Get the admin dashboard summary",
+        description: "Returns license/device counts, today's usage, top models and a 30-day usage trend.",
+        response: {
+          200: okResponse({
+            licenses: { type: "number" },
+            activeLicenses: { type: "number" },
+            devices: { type: "number" },
+            activeDevicesToday: { type: "number" },
+            todayMessages: { type: "number" },
+            todayTokens: { type: "number" },
+            models: { type: "array", items: { type: "object" } },
+            trend: { type: "array", items: { type: "object" } },
+          }),
+        },
+      },
+    },
+    async () => {
     const today = new Date().toISOString().slice(0, 10);
     const since = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const [licenses, activeLicenses, devices, activeDevices, todayUsage, models, trend] = await Promise.all([

@@ -5,6 +5,7 @@ import { getMediaDeliveryMode, getModelDeliveryMode, getQiniuAdminSettings, getQ
 import { ensureEnvManagedConfigProfile } from "../../services/client-config.js";
 import { listModelGatewayProviders } from "../../services/model-gateway/providers.js";
 import { signLicensePayload } from "../../services/security.js";
+import { zodBody, okResponse } from "../../openapi.js";
 
 const updateSettingsSchema = z.object({
   licenseTrialDays: z.number().int().min(0).max(3650),
@@ -137,11 +138,38 @@ async function buildAdminHealth() {
 }
 
 export function registerAdminSystemRoutes(app, { audit }) {
-  app.get("/api/admin/health", async () => {
+  app.get(
+    "/api/admin/health",
+    {
+      schema: {
+        tags: ["admin:system"],
+        summary: "Run system health checks",
+        description: "Probes the database, license keys/signing, update manifest and model gateway, returning per-check status.",
+        response: {
+          200: okResponse({
+            status: { type: "string" },
+            checkedAt: { type: "string" },
+            runtime: { type: "object" },
+            checks: { type: "array", items: { type: "object" } },
+          }),
+        },
+      },
+    },
+    async () => {
     return buildAdminHealth();
   });
 
-  app.get("/api/admin/settings", async () => {
+  app.get(
+    "/api/admin/settings",
+    {
+      schema: {
+        tags: ["admin:system"],
+        summary: "Get system settings",
+        description: "Returns the license trial days, model/media delivery modes and Qiniu storage settings.",
+        response: { 200: okResponse({ settings: { type: "object" } }) },
+      },
+    },
+    async () => {
     const row = await db
       .selectFrom("app_settings")
       .select("value")
@@ -158,7 +186,18 @@ export function registerAdminSystemRoutes(app, { audit }) {
     };
   });
 
-  app.patch("/api/admin/settings", async (request) => {
+  app.patch(
+    "/api/admin/settings",
+    {
+      schema: {
+        tags: ["admin:system"],
+        summary: "Update system settings",
+        description: "Updates license trial days, delivery modes and Qiniu config; writes an audit log entry.",
+        body: zodBody(updateSettingsSchema),
+        response: { 200: okResponse({ settings: { type: "object" } }) },
+      },
+    },
+    async (request) => {
     const input = updateSettingsSchema.parse(request.body);
     await setAppSetting("license_trial_days", input.licenseTrialDays);
     if (input.mediaDeliveryMode) {

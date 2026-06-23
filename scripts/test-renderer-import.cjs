@@ -13,6 +13,7 @@ if (!app?.whenReady || !BrowserWindow || !ipcMain?.handle) {
 const root = path.join(__dirname, "..");
 const capturedQuestionResponses = [];
 const capturedRevealPaths = [];
+const capturedOpenPaths = [];
 
 function makeTinyPdf() {
   const objects = [
@@ -50,6 +51,11 @@ ipcMain.handle("assistant:question-response", (_event, payload) => {
 
 ipcMain.handle("filetree:reveal", (_event, payload) => {
   capturedRevealPaths.push(`${payload?.sessionId || ""}:${payload?.filePath || ""}`);
+  return { ok: true };
+});
+
+ipcMain.handle("filetree:open", (_event, payload) => {
+  capturedOpenPaths.push(`${payload?.sessionId || ""}:${payload?.filePath || ""}`);
   return { ok: true };
 });
 
@@ -530,6 +536,82 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(sealedTurnArtifactResult);
+    const artifactOnlyImageResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { liveTurnFromRecord, renderSealedTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const turn = liveTurnFromRecord({
+          turnId: "turn_artifact_only_image_regression",
+          terminal: "turn.completed",
+          assistantText: "SVG 文件：output/location-pie-chart.svg",
+          startedAt: 1000,
+          endedAt: 3000,
+          resultBlocks: [{
+            id: "artifact_svg_only",
+            type: "artifact",
+            artifactType: "image",
+            path: "/tmp/lily-renderer-artifact-only.svg",
+            relativePath: "output/location-pie-chart.svg",
+            fileName: "location-pie-chart.svg",
+            ext: ".svg",
+            mimeType: "image/svg+xml",
+            bytes: 128,
+            updatedAt: 1000,
+          }],
+        });
+        const article = renderSealedTurnArticle(turn, false);
+        document.body.appendChild(article);
+        const artifactSlot = article.querySelector("[data-role='artifacts']");
+        const slotImgs = artifactSlot ? artifactSlot.querySelectorAll(".assistant-renderer-artifact img") : [];
+        const reveal = artifactSlot ? artifactSlot.querySelector(".assistant-renderer-action") : null;
+        const html = article.innerHTML;
+        article.remove();
+        if (slotImgs.length !== 1) {
+          throw new Error("artifact-only image should render a preview card: " + html);
+        }
+        if (!reveal || reveal.disabled) {
+          throw new Error("artifact-only image card should keep a reveal action: " + html);
+        }
+        return "artifact-only-image-preview-regression: ok";
+      }
+    )()`);
+    console.log(artifactOnlyImageResult);
+    const fileMentionPreviewPathResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { liveTurnFromRecord, renderSealedTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const turn = liveTurnFromRecord({
+          turnId: "turn_file_mention_preview_path_regression",
+          terminal: "turn.completed",
+          assistantText: "SVG 文件：\`output/location-pie-chart.svg\`",
+          startedAt: 1000,
+          endedAt: 3000,
+          resultBlocks: [{
+            id: "artifact_svg_mention",
+            type: "artifact",
+            artifactType: "image",
+            path: "/tmp/lily-renderer-file-mention.svg",
+            relativePath: "output/location-pie-chart.svg",
+            fileName: "location-pie-chart.svg",
+            ext: ".svg",
+            mimeType: "image/svg+xml",
+            bytes: 128,
+            updatedAt: 1000,
+          }],
+        });
+        const article = renderSealedTurnArticle(turn, false);
+        document.body.appendChild(article);
+        const button = article.querySelector(".file-mention-action");
+        const html = article.innerHTML;
+        if (!button) throw new Error("relative file mention with artifact mapping should render a preview action: " + html);
+        button.click();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        article.remove();
+        return "file-mention-preview-path-regression: ok";
+      }
+    )()`);
+    console.log(fileMentionPreviewPathResult);
+    if (!capturedOpenPaths.includes(":/tmp/lily-renderer-file-mention.svg")) {
+      throw new Error("file mention preview should open the artifact absolute path, got: " + JSON.stringify(capturedOpenPaths));
+    }
     const multiRendererResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { renderResultBlocks } = await import("./modules/turn-block-renderers.js");

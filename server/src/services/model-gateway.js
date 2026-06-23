@@ -136,12 +136,35 @@ async function handleModelsRequest(request, reply) {
 }
 
 export async function modelGatewayRoutes(app) {
-  app.post("/llm/:provider/v1/messages", handleGatewayRequest);
-  app.post("/llm/:provider/messages", handleGatewayRequest);
-  app.post("/llm/v1/messages", handleGatewayRequest);
-  app.post("/llm/messages", handleGatewayRequest);
-  app.post("/llm/:provider/v1/messages/count_tokens", handleCountTokensRequest);
-  app.post("/llm/v1/messages/count_tokens", handleCountTokensRequest);
-  app.get("/llm/:provider/v1/models", handleModelsRequest);
-  app.get("/llm/v1/models", handleModelsRequest);
+  const messagesSchema = {
+    schema: {
+      tags: ["gateway:model"],
+      summary: "Proxy a chat/messages request to a model provider",
+      description:
+        "Authenticates the gateway token and forwards the Anthropic-compatible messages body to the upstream provider, streaming the response when requested.",
+    },
+  };
+  const countTokensSchema = {
+    schema: {
+      tags: ["gateway:model"],
+      summary: "Count input tokens for a messages request",
+      description:
+        "Forwards the request to the provider's count_tokens endpoint (or approximates for non-Anthropic providers).",
+    },
+  };
+  const modelsSchema = {
+    schema: {
+      tags: ["gateway:model"],
+      summary: "List models available for a provider",
+      description: "Returns the provider's model list, synthesised from config when not fetched upstream.",
+    },
+  };
+  app.post("/llm/:provider/v1/messages", messagesSchema, handleGatewayRequest);
+  app.post("/llm/:provider/messages", messagesSchema, handleGatewayRequest);
+  app.post("/llm/v1/messages", messagesSchema, handleGatewayRequest);
+  app.post("/llm/messages", messagesSchema, handleGatewayRequest);
+  app.post("/llm/:provider/v1/messages/count_tokens", countTokensSchema, handleCountTokensRequest);
+  app.post("/llm/v1/messages/count_tokens", countTokensSchema, handleCountTokensRequest);
+  app.get("/llm/:provider/v1/models", modelsSchema, handleModelsRequest);
+  app.get("/llm/v1/models", modelsSchema, handleModelsRequest);
 }

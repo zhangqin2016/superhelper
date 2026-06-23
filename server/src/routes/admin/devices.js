@@ -1,12 +1,23 @@
 import { z } from "zod";
 import { db } from "../../db.js";
+import { zodBody, okResponse } from "../../openapi.js";
 
 const updateDeviceBindingSchema = z.object({
   status: z.enum(["active", "disabled"]),
 });
 
 export function registerAdminDeviceRoutes(app, { audit }) {
-  app.get("/api/admin/devices", async () => {
+  app.get(
+    "/api/admin/devices",
+    {
+      schema: {
+        tags: ["admin:devices"],
+        summary: "List devices",
+        description: "Returns up to 300 devices with their most recent license binding, newest first.",
+        response: { 200: okResponse({ devices: { type: "array" } }) },
+      },
+    },
+    async () => {
     const devices = await db
       .selectFrom("devices")
       .leftJoin("license_devices", "license_devices.device_id", "devices.id")
@@ -29,7 +40,17 @@ export function registerAdminDeviceRoutes(app, { audit }) {
     return { devices };
   });
 
-  app.get("/api/admin/devices/:id", async (request, reply) => {
+  app.get(
+    "/api/admin/devices/:id",
+    {
+      schema: {
+        tags: ["admin:devices"],
+        summary: "Get a device with its licenses and usage",
+        description: "Returns the device record plus its license bindings and recent daily usage.",
+        response: { 200: okResponse({ device: { type: "object" }, licenses: { type: "array" }, usage: { type: "array" } }) },
+      },
+    },
+    async (request, reply) => {
     const device = await db
       .selectFrom("devices")
       .selectAll()
@@ -64,7 +85,18 @@ export function registerAdminDeviceRoutes(app, { audit }) {
     return { device, licenses, usage };
   });
 
-  app.patch("/api/admin/license-devices/:id", async (request) => {
+  app.patch(
+    "/api/admin/license-devices/:id",
+    {
+      schema: {
+        tags: ["admin:devices"],
+        summary: "Update a license-device binding status",
+        description: "Sets the binding's status (active or disabled) and refreshes its last-seen timestamp.",
+        body: zodBody(updateDeviceBindingSchema),
+        response: { 200: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request) => {
     const input = updateDeviceBindingSchema.parse(request.body);
     await db
       .updateTable("license_devices")
@@ -75,7 +107,17 @@ export function registerAdminDeviceRoutes(app, { audit }) {
     return { ok: true, id: request.params.id };
   });
 
-  app.delete("/api/admin/license-devices/:id", async (request) => {
+  app.delete(
+    "/api/admin/license-devices/:id",
+    {
+      schema: {
+        tags: ["admin:devices"],
+        summary: "Delete a license-device binding",
+        description: "Removes the license-device binding record.",
+        response: { 200: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request) => {
     await db.deleteFrom("license_devices").where("id", "=", request.params.id).execute();
     await audit(request, "license_device.delete", "license_device", request.params.id);
     return { ok: true, id: request.params.id };

@@ -125,6 +125,7 @@ const managedEnv = runtimeConfig.models.presets[0].env;
 const directEnv = runtimeConfig.models.presets[1].env;
 assert.equal(managedEnv.LILY_API_BASE_URL, "https://lily.example.com/llm/deepseek/v1/messages");
 assert.notEqual(managedEnv.LILY_API_KEY, "$LILY_GATEWAY_TOKEN");
+assert.equal(managedEnv.LILY_OPENCODE_PROTOCOL, undefined, "legacy managed config should remain untouched");
 assert.equal(verifyModelGatewayToken(managedEnv.LILY_API_KEY, "deepseek").ok, true);
 assert.equal(directEnv.LILY_API_KEY, "sk-direct", "direct provider keys should not be replaced");
 
@@ -189,6 +190,7 @@ const deepseekManaged = buildEnvManagedClientConfig(
 );
 assert.equal(deepseekManaged.models.activePresetId, "deepseek-gateway");
 assert.equal(deepseekManaged.models.presets[0].env.LILY_GATEWAY_PROVIDER, "deepseek");
+assert.equal(deepseekManaged.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
 assert.equal(deepseekManaged.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro[1m]");
 assert.equal(deepseekManaged.runtime.env.DASHSCOPE_API_KEY, undefined, "raw DashScope key must NOT be delivered");
 
@@ -212,6 +214,7 @@ assert.equal(deepseekDirect.models.activePresetId, "deepseek-direct");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_API_BASE_URL, "https://api.deepseek.com/anthropic");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_API_KEY, "sk-test-deepseek");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_GATEWAY_PROVIDER, undefined);
+assert.equal(deepseekDirect.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro[1m]");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL_HAIKU, "deepseek-v4-flash");
 
@@ -232,5 +235,24 @@ const openAiDirectFallback = buildEnvManagedClientConfig(
 );
 assert.equal(openAiDirectFallback.models.activePresetId, "openai-gateway");
 assert.equal(openAiDirectFallback.models.presets[0].env.LILY_GATEWAY_PROVIDER, "openai");
+assert.equal(openAiDirectFallback.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
+
+const openAiDirect = buildEnvManagedClientConfig(
+  {
+    modelGatewayDefaultProvider: "openai",
+    modelConfigDeliveryMode: "direct",
+  },
+  {
+    openai: {
+      id: "openai",
+      type: "anthropic",
+      baseUrl: "https://openai-anthropic.example",
+      apiKey: "sk-test-openai",
+      models: ["gpt-test"],
+    },
+  },
+);
+assert.equal(openAiDirect.models.activePresetId, "openai-direct");
+assert.equal(openAiDirect.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
 
 console.log("client-config-service: ok");

@@ -138,8 +138,50 @@ async function handleDashscopeMedia(request, reply) {
 }
 
 export async function mediaGatewayRoutes(app) {
-  app.post("/llm/vision/chat/completions", handleVision);
-  app.post("/llm/search", handleSearch);
-  app.post("/llm/dashscope-media/*", handleDashscopeMedia);
-  app.get("/llm/dashscope-media/*", handleDashscopeMedia);
+  app.post(
+    "/llm/vision/chat/completions",
+    {
+      schema: {
+        tags: ["gateway:media"],
+        summary: "Proxy a vision chat/completions request",
+        description:
+          "Injects the server-side vision key and forwards the OpenAI-compatible chat/completions body upstream.",
+      },
+    },
+    handleVision,
+  );
+  app.post(
+    "/llm/search",
+    {
+      schema: {
+        tags: ["gateway:media"],
+        summary: "Proxy a web search request",
+        description: "Injects the server-side search key and forwards the request to the upstream search API.",
+      },
+    },
+    handleSearch,
+  );
+  app.post(
+    "/llm/dashscope-media/*",
+    {
+      schema: {
+        tags: ["gateway:media"],
+        summary: "Proxy a DashScope media request",
+        description:
+          "Transparently proxies DashScope async media (image/video/TTS) create/poll calls, injecting the server-side key.",
+      },
+    },
+    handleDashscopeMedia,
+  );
+  app.get(
+    "/llm/dashscope-media/*",
+    {
+      schema: {
+        tags: ["gateway:media"],
+        summary: "Poll a DashScope media task",
+        description: "Transparently proxies DashScope async media task-status polls, injecting the server-side key.",
+      },
+    },
+    handleDashscopeMedia,
+  );
 }

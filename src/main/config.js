@@ -92,15 +92,24 @@ function blobStoreDir() {
   return userDataPath("blobs");
 }
 
-/** Parent dir for the OpenCode engine's per-session SQLite (its resume cache). */
+/** Legacy parent dir for older per-session OpenCode SQLite caches. */
 function opencodeSessionsDir() {
   return userDataPath("opencode-sessions");
 }
 
-/** The OpenCode engine's isolated data dir for one session (OPENCODE_DB lives here).
- *  This is a disposable resume cache — Lily's messages.db is the source of truth. */
+/** Legacy OpenCode engine data dir for one session. Kept for cleanup/migration only. */
 function opencodeSessionDir(sessionId) {
   return userDataPath("opencode-sessions", sessionId);
+}
+
+/** App-level OpenCode data dir. The shared serve hosts every Lily session. */
+function opencodeSharedDir() {
+  return userDataPath("opencode-shared");
+}
+
+/** App-level OpenCode SQLite path used as OPENCODE_DB for the shared serve. */
+function opencodeDbPath() {
+  return path.join(opencodeSharedDir(), "opencode.db");
 }
 
 /** Where legacy per-session JSON files are moved after a successful import. */
@@ -200,6 +209,8 @@ module.exports = {
   blobStoreDir,
   opencodeSessionsDir,
   opencodeSessionDir,
+  opencodeSharedDir,
+  opencodeDbPath,
   sessionMessagesImportedDir,
   sessionSummariesDir,
   scheduledTasksPath,
