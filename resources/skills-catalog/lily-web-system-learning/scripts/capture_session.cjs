@@ -24,6 +24,7 @@ const { normalizeHost, isUrlAllowed } = require("./discover_contracts.cjs");
 
 const DEFAULT_TIMEOUT_MS = 300000; // 5 min for a human to log in
 const POLL_MS = 1000;
+const STORAGE_AUTH_KEY_RE = /(token|auth|session|jwt|access|refresh|csrf|xsrf|user|account|profile)/i;
 
 function slugifySystem(value) {
   return String(value || "system")
@@ -44,19 +45,74 @@ function sessionInfo(file) {
   try {
     const stat = fs.statSync(file);
     const state = JSON.parse(fs.readFileSync(file, "utf8"));
-    const cookieCount = Array.isArray(state.cookies) ? state.cookies.length : 0;
-    return { exists: true, cookieCount, ageMs: Date.now() - stat.mtimeMs };
+    const signals = authSignalsFromStorageState(state);
+    return { exists: true, ...signals, ageMs: Date.now() - stat.mtimeMs };
   } catch {
-    return { exists: false, cookieCount: 0, ageMs: Infinity };
+    return { exists: false, cookieCount: 0, localStorageCount: 0, sessionStorageCount: 0, authSignalCount: 0, ageMs: Infinity };
   }
+}
+
+function localStorageEntriesFromState(state) {
+  const entries = [];
+  for (const origin of state?.origins || []) {
+    for (const item of origin?.localStorage || []) {
+      if (!item?.name || item.value === undefined) continue;
+      entries.push({ origin: origin.origin || "", name: item.name, value: String(item.value) });
+    }
+  }
+  return entries;
+}
+
+function sessionStorageEntriesFromState(state) {
+  const entries = [];
+  for (const origin of state?.lilySessionStorage || []) {
+    for (const item of origin?.sessionStorage || []) {
+      if (!item?.name || item.value === undefined) continue;
+      entries.push({ origin: origin.origin || "", name: item.name, value: String(item.value) });
+    }
+  }
+  return entries;
+}
+
+function authLikeStorageEntry(entry = {}) {
+  const key = String(entry.name || "");
+  const value = String(entry.value || "");
+  if (!value) return false;
+  if (STORAGE_AUTH_KEY_RE.test(key)) return true;
+  if (/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\./.test(value)) return true;
+  return value.length >= 24 && /[A-Za-z]/.test(value) && /\d/.test(value);
+}
+
+function authSignalsFromStorageState(state = {}) {
+  const cookieCount = Array.isArray(state.cookies) ? state.cookies.length : 0;
+  const localStorage = localStorageEntriesFromState(state);
+  const sessionStorage = sessionStorageEntriesFromState(state);
+  const authStorageCount = [...localStorage, ...sessionStorage].filter(authLikeStorageEntry).length;
+  return {
+    cookieCount,
+    localStorageCount: localStorage.length,
+    sessionStorageCount: sessionStorage.length,
+    authSignalCount: cookieCount + authStorageCount,
+  };
 }
 
 /**
  * Decide whether login has completed, from the current URL + captured cookies.
  * Precise signals (successUrlContains / sessionCookie) win; otherwise heuristic:
- * the user has left the login page AND a cookie exists on an allowed domain.
+ * a cookie exists and either the user left an explicit login page, or the
+ * current URL does not look like a login/sign-in page. This avoids hanging when
+ * the configured entry URL is also the logged-in app shell.
  */
-function loginComplete({ url, loginUrl, cookies, opts = {} }) {
+function looksLikeLoginUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return /(?:^|[/_-])(login|signin|sign-in|auth|sso)(?:$|[/_.-])/i.test(parsed.pathname);
+  } catch {
+    return /(?:login|signin|sign-in|auth|sso)/i.test(String(value || ""));
+  }
+}
+
+function loginComplete({ url, loginUrl, cookies, storageState, opts = {} }) {
   const cookieList = Array.isArray(cookies) ? cookies : [];
   if (opts.sessionCookie) {
     return cookieList.some((c) => c && c.name === opts.sessionCookie && c.value);
@@ -64,9 +120,65 @@ function loginComplete({ url, loginUrl, cookies, opts = {} }) {
   if (opts.successUrlContains) {
     return String(url || "").includes(opts.successUrlContains);
   }
-  // Heuristic: have at least one cookie AND we are no longer on the login URL.
+  const signals = authSignalsFromStorageState({
+    cookies: cookieList,
+    origins: storageState?.origins || [],
+    lilySessionStorage: storageState?.lilySessionStorage || [],
+  });
+  if (signals.authSignalCount <= 0) return false;
+  // Heuristic: have a cookie AND either left the login URL, or the current URL
+  // is an already-authenticated app shell at the configured entry URL.
   const leftLogin = Boolean(loginUrl) && String(url || "") !== String(loginUrl);
-  return cookieList.length > 0 && leftLogin;
+  return leftLogin || !looksLikeLoginUrl(url);
+}
+
+function originAllowed(origin, allowedDomains) {
+  return isUrlAllowed(origin, allowedDomains);
+}
+
+async function captureBrowserStorage(page, allowedDomains = []) {
+  let origin = "";
+  try {
+    origin = page.url() ? new URL(page.url()).origin : "";
+  } catch {
+    origin = "";
+  }
+  if (!origin || !originAllowed(origin, allowedDomains)) return null;
+  const stores = await page.evaluate(() => {
+    const read = (storage) => {
+      const items = [];
+      for (let i = 0; i < storage.length; i += 1) {
+        const name = storage.key(i);
+        if (!name) continue;
+        items.push({ name, value: storage.getItem(name) || "" });
+      }
+      return items;
+    };
+    return {
+      localStorage: read(window.localStorage),
+      sessionStorage: read(window.sessionStorage),
+    };
+  }).catch(() => ({ localStorage: [], sessionStorage: [] }));
+  return { origin, ...stores };
+}
+
+function mergeCapturedStorage(state, captured, allowedDomains = []) {
+  const next = {
+    ...state,
+    origins: Array.isArray(state.origins) ? [...state.origins] : [],
+  };
+  if (!captured?.origin || !originAllowed(captured.origin, allowedDomains)) return next;
+  if (Array.isArray(captured.localStorage) && captured.localStorage.length) {
+    const existing = next.origins.find((item) => item?.origin === captured.origin);
+    if (existing) existing.localStorage = captured.localStorage;
+    else next.origins.push({ origin: captured.origin, localStorage: captured.localStorage });
+  }
+  if (Array.isArray(captured.sessionStorage) && captured.sessionStorage.length) {
+    next.lilySessionStorage = (Array.isArray(next.lilySessionStorage) ? next.lilySessionStorage : [])
+      .filter((item) => item?.origin !== captured.origin);
+    next.lilySessionStorage.push({ origin: captured.origin, sessionStorage: captured.sessionStorage });
+  }
+  return next;
 }
 
 function writeSessionFileSecure(file, state) {
@@ -160,21 +272,29 @@ async function main() {
         break; // page/window closed by user
       }
       const cookies = await context.cookies().catch(() => []);
-      if (loginComplete({ url, loginUrl: args.loginUrl, cookies, opts: { successUrlContains: args.successUrlContains, sessionCookie: args.sessionCookie } })) {
+      const state = mergeCapturedStorage(
+        { cookies, origins: [] },
+        await captureBrowserStorage(page, args.allowDomains),
+        args.allowDomains,
+      );
+      if (loginComplete({ url, loginUrl: args.loginUrl, cookies, storageState: state, opts: { successUrlContains: args.successUrlContains, sessionCookie: args.sessionCookie } })) {
         done = true;
         break;
       }
     }
-    const state = await context.storageState();
+    const state = mergeCapturedStorage(await context.storageState(), await captureBrowserStorage(page, args.allowDomains), args.allowDomains);
     // Drop anything outside the allowlist before persisting.
     state.cookies = (state.cookies || []).filter((c) => isUrlAllowed(`https://${String(c.domain || "").replace(/^\./, "")}/`, args.allowDomains));
-    if (!state.cookies.length) {
-      emit({ ok: false, code: "NO_SESSION_CAPTURED", message: "No session cookies were captured. Log in fully, then retry.", sessionPath: args.out });
+    state.origins = (state.origins || []).filter((origin) => originAllowed(origin.origin, args.allowDomains));
+    state.lilySessionStorage = (state.lilySessionStorage || []).filter((origin) => originAllowed(origin.origin, args.allowDomains));
+    const signals = authSignalsFromStorageState(state);
+    if (signals.authSignalCount <= 0) {
+      emit({ ok: false, code: "NO_SESSION_CAPTURED", message: "No login session was captured. Log in fully, then retry.", sessionPath: args.out, ...signals });
       process.exitCode = 1;
       return;
     }
     writeSessionFileSecure(args.out, state);
-    emit({ ok: true, systemId: args.systemId, sessionPath: args.out, cookieCount: state.cookies.length, completedSignal: done, note: "Reuse this file via --storage-state for scan/discover/execute. Re-run only when a call reports stale/relearn (401/403)." });
+    emit({ ok: true, systemId: args.systemId, sessionPath: args.out, ...signals, completedSignal: done, note: "Reuse this file via --storage-state for scan/discover/execute. Re-run only when a call reports stale/relearn (401/403)." });
   } finally {
     await context.close();
     await browser.close();
@@ -188,4 +308,13 @@ if (require.main === module) {
   });
 }
 
-module.exports = { slugifySystem, sessionStorePath, sessionInfo, loginComplete, writeSessionFileSecure };
+module.exports = {
+  slugifySystem,
+  sessionStorePath,
+  sessionInfo,
+  loginComplete,
+  looksLikeLoginUrl,
+  writeSessionFileSecure,
+  authSignalsFromStorageState,
+  mergeCapturedStorage,
+};

@@ -29,7 +29,10 @@ assert.equal(
 
 const prompt = buildWebSystemLearningPrompt("学习 https://oa.example.com 这个 OA 系统");
 assert.match(prompt, /lily-web-system-learning/);
-assert.match(prompt, /不要让用户把密码、Cookie、Token 粘贴到聊天里/);
+assert.match(prompt, /不要让用户把密码、Cookie、Token、OAuth Code、CSRF 值或任何凭据头粘贴到聊天里/);
+assert.match(prompt, /不要问用户“如何获取 token”/);
+assert.match(prompt, /sessionPath/);
+assert.match(prompt, /普通用户执行时禁止临场生成脚本、选择器或操作计划/);
 assert.match(prompt, /https:\/\/oa\.example\.com/);
 assert.match(prompt, /扫描必须以前台 Bash\/tool 命令执行并等待完成/);
 assert.match(prompt, /只有真实工具还在运行时才可以说“扫描正在运行\/等待完成”/);

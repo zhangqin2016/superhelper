@@ -12,6 +12,7 @@ const skillDir = path.join(ROOT, "resources/skills-catalog/lily-web-system-learn
 const script = path.join(skillDir, "scripts/create_web_system_skill.cjs");
 const scanner = path.join(skillDir, "scripts/scan_web_system.py");
 const executor = path.join(skillDir, "scripts/execute_web_playbook.cjs");
+const finalizer = path.join(skillDir, "scripts/finalize_web_system_learning.cjs");
 
 if (!fs.existsSync(path.join(skillDir, "SKILL.md"))) {
   throw new Error("lily-web-system-learning SKILL.md missing");
@@ -26,6 +27,9 @@ if (!skillMarkdown.includes("Do not say \"scan is running\"")) {
 if (!skillMarkdown.includes("Never start `scan_web_system.py`")) {
   throw new Error("web system learning skill must forbid detached scanner execution");
 }
+if (!skillMarkdown.includes("finalize_web_system_learning.cjs")) {
+  throw new Error("web system learning skill must require deterministic finalization");
+}
 if (!fs.existsSync(path.join(skillDir, "skill.manifest.json"))) {
   throw new Error("lily-web-system-learning manifest missing");
 }
@@ -34,6 +38,9 @@ if (!fs.existsSync(scanner)) {
 }
 if (!fs.existsSync(executor)) {
   throw new Error("lily-web-system-learning executor missing");
+}
+if (!fs.existsSync(finalizer)) {
+  throw new Error("lily-web-system-learning finalizer missing");
 }
 
 function findPython() {
@@ -305,6 +312,7 @@ const examplesJsonl = fs.readFileSync(path.join(draftDir, "examples.jsonl"), "ut
 const changeLog = JSON.parse(fs.readFileSync(path.join(draftDir, "change-log.json"), "utf8"));
 const scanArchive = JSON.parse(fs.readFileSync(path.join(draftDir, "web-system-scan.json"), "utf8"));
 const draftExecutor = path.join(draftDir, "scripts/execute_web_playbook.cjs");
+const draftFinalizer = path.join(draftDir, "scripts/finalize_web_system_learning.cjs");
 const normalizedPlaybook = normalizePlaybookSpec(playbook);
 if (!skillMd.includes("Allowed domains") || !skillMd.includes("explicit confirmation")) {
   throw new Error("generated skill should include domain and confirmation guardrails");
@@ -315,8 +323,23 @@ if (!skillMd.includes("{{WEB_SYSTEM_CAPABILITY_MAP}}") || !skillMd.includes("Fir
 if (!skillMd.includes("{{WEB_SYSTEM_EXECUTOR}}") || !skillMd.includes("{{WEB_SYSTEM_PLAYBOOK}}")) {
   throw new Error("generated workspace skill should use install-time placeholders for executable paths");
 }
+if (!skillMd.includes("{{WEB_SYSTEM_SESSION_CAPTURE}}") || !skillMd.includes("--storage-state <sessionPath>")) {
+  throw new Error("generated workspace skill should include session capture and storage-state reuse instructions");
+}
+if (!skillMd.includes("{{WEB_SYSTEM_AUTH_RECIPE}}") || !skillMd.includes("--auth-recipe <authRecipePath>")) {
+  throw new Error("generated workspace skill should include auth recipe learning and runtime injection instructions");
+}
+if (!skillMd.includes("never ask the user how to obtain the token")) {
+  throw new Error("generated workspace skill must not ask users to obtain website tokens manually");
+}
 if (skillMd.includes("node scripts/execute_web_playbook.cjs")) {
   throw new Error("generated workspace skill must not use relative executor paths");
+}
+if (skillMd.includes("node scripts/capture_session.cjs")) {
+  throw new Error("generated workspace skill must not use relative session-capture paths");
+}
+if (skillMd.includes("node scripts/learn_auth_recipe.cjs")) {
+  throw new Error("generated workspace skill must not use relative auth-recipe paths");
 }
 if (skillMd.includes("password") && !skillMd.includes("Never ask for or store passwords")) {
   throw new Error("generated skill must not store credentials");
@@ -329,6 +352,8 @@ if (manifest.origin !== "workspace" || manifest.workspaceOnly !== true || manife
 }
 if (
   manifest.placeholders?.["{{WEB_SYSTEM_EXECUTOR}}"] !== "scripts/execute_web_playbook.cjs" ||
+  manifest.placeholders?.["{{WEB_SYSTEM_SESSION_CAPTURE}}"] !== "scripts/capture_session.cjs" ||
+  manifest.placeholders?.["{{WEB_SYSTEM_AUTH_RECIPE}}"] !== "scripts/learn_auth_recipe.cjs" ||
   manifest.placeholders?.["{{WEB_SYSTEM_PLAYBOOK}}"] !== "web-system-playbook.json"
 ) {
   throw new Error(`generated web system skill should declare install-time placeholders: ${JSON.stringify(manifest)}`);
@@ -344,6 +369,14 @@ if (!normalizedPlaybook.apiContracts?.some((contract) => contract.id === "leave-
 }
 if (normalizedPlaybook.actions[1].metadata?.executionStrategy?.preferred !== "api-first") {
   throw new Error(`normalized connector action should preserve execution strategy metadata: ${JSON.stringify(normalizedPlaybook.actions[1])}`);
+}
+if (
+  normalizedPlaybook.actions[1].metadata?.executionMode !== "api-direct" ||
+  normalizedPlaybook.actions[1].metadata?.runtimePlanPolicy !== "materialize-from-learned-graph-only" ||
+  normalizedPlaybook.actions[1].metadata?.allowRuntimeGeneratedScripts !== false ||
+  normalizedPlaybook.actions[1].metadata?.learnedFlow?.status !== "ready"
+) {
+  throw new Error(`normalized connector action should carry learned-flow runtime policy: ${JSON.stringify(normalizedPlaybook.actions[1].metadata)}`);
 }
 if (!playbook.apiContracts?.some((contract) => contract.id === "leave-api" && contract.endpoint === "https://oa.example.com/leave/submit")) {
   throw new Error(`generated playbook should promote learned API contracts: ${JSON.stringify(playbook)}`);
@@ -368,10 +401,17 @@ if (queryCapability.successSignal?.type !== "api-response-or-extracted-content" 
 if (
   !submitCapability ||
   submitCapability.execution?.preferred !== "api-first" ||
+  submitCapability.execution?.executionMode !== "api-direct" ||
+  submitCapability.execution?.runtimePlanPolicy !== "materialize-from-learned-graph-only" ||
+  submitCapability.execution?.allowRuntimeGeneratedScripts !== false ||
+  submitCapability.execution?.learnedFlow?.operationTemplate?.contractId !== "leave-api" ||
   !submitCapability.execution?.apiContractRefs?.includes("leave-api") ||
   submitCapability.confirmation !== "explicit"
 ) {
   throw new Error(`submit capability should be API-first with explicit confirmation: ${JSON.stringify(submitCapability)}`);
+}
+if (capabilityMap.runtimePolicy?.runtimeModelAuthoredPlansAllowed !== false || capabilityMap.runtimePolicy?.runtimeScriptGenerationAllowed !== false) {
+  throw new Error(`capability map should forbid runtime-authored plans/scripts: ${JSON.stringify(capabilityMap.runtimePolicy)}`);
 }
 if (!submitCapability.params?.required?.includes("leave-type") || !submitCapability.askWhenMissing?.some((item) => item.param === "reason")) {
   throw new Error(`submit capability should include required params and missing-field prompts: ${JSON.stringify(submitCapability)}`);
@@ -455,6 +495,39 @@ if (scanArchive.coverage.pageCount !== 3 || scanArchive.actionCandidates.length 
 }
 if (!fs.existsSync(draftExecutor)) {
   throw new Error("generated web system skill should carry a local playbook executor");
+}
+if (!fs.existsSync(draftFinalizer)) {
+  throw new Error("generated web system skill should carry the deterministic learning finalizer");
+}
+
+const finalizedOut = path.join(tmp, "finalized-inbox");
+result = spawnSync(process.execPath, [
+  finalizer,
+  "--scan",
+  scanPath,
+  "--system-id",
+  "demo-finalized",
+  "--name",
+  "Demo Finalized",
+  "--out",
+  finalizedOut,
+], {
+  cwd: ROOT,
+  encoding: "utf8",
+});
+if (result.status !== 0) {
+  throw new Error(`finalize_web_system_learning failed: ${result.stderr || result.stdout}`);
+}
+const finalized = JSON.parse(result.stdout);
+if (!finalized.ok || finalized.systemId !== "demo-finalized" || finalized.capabilities < 1) {
+  throw new Error(`unexpected finalizer output: ${result.stdout}`);
+}
+if (!fs.existsSync(path.join(finalizedOut, "demo-finalized", "web-system-spec.json"))) {
+  throw new Error("finalizer should write web-system-spec.json through the generated skill draft");
+}
+const finalizedSpec = JSON.parse(fs.readFileSync(path.join(finalizedOut, "demo-finalized", "web-system-spec.json"), "utf8"));
+if (!finalizedSpec.actions.some((action) => action.id.startsWith("query-approval-search-api") || action.id.startsWith("open-search"))) {
+  throw new Error(`finalizer should derive actions from scan/API evidence: ${JSON.stringify(finalizedSpec)}`);
 }
 
 const readPlanPath = path.join(tmp, "read-plan.json");

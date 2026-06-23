@@ -43,6 +43,7 @@ function parseArgs(argv) {
     plan: null,
     capabilityMap: null,
     storageState: null,
+    authRecipe: null,
     confirmed: false,
     headful: false,
     dryRun: false,
@@ -56,6 +57,7 @@ function parseArgs(argv) {
     else if (arg === "--plan") args.plan = argv[++i];
     else if (arg === "--capability-map") args.capabilityMap = argv[++i];
     else if (arg === "--storage-state") args.storageState = argv[++i];
+    else if (arg === "--auth-recipe") args.authRecipe = argv[++i];
     else if (arg === "--confirmed") args.confirmed = true;
     else if (arg === "--headful") args.headful = true;
     else if (arg === "--dry-run") args.dryRun = true;
@@ -425,8 +427,10 @@ async function runBrowser(playbook, validated, args) {
 
   const browser = await chromium.launch({ headless: !args.headful });
   const contextOptions = {};
-  if (args.storageState) contextOptions.storageState = path.resolve(args.storageState);
+  const storageState = loadStorageState(args.storageState);
+  if (storageState) contextOptions.storageState = playwrightStorageState(storageState);
   const context = await browser.newContext(contextOptions);
+  await installSessionStorageInitScript(context, storageState);
   const page = await context.newPage();
   const sinks = { extracted: [], apiResponses: [], screenshots: [], events: [], network: [], mutated: [] };
 
@@ -795,8 +799,9 @@ function actionFailure(err, { validated, op, index, page, sinks, stale, rolledBa
 function recoveryHints(err, op) {
   if (err.code === "API_STATUS_MISMATCH" || op.type === "apiRequest") {
     return [
-      "The learned API contract may be stale, the browser session may be logged out, or this endpoint now requires a dynamic token.",
-      "Retry after confirming the system is logged in. If it fails again, re-run web-system learning with an interactive pass or test-lab contract probe.",
+      "The learned API contract may be stale, the local browser session may be expired, or this endpoint may require a dynamic CSRF/OAuth token learned from browser traffic.",
+      "Do not ask the user to fetch cookies, tokens, or credential headers. Refresh the local session with capture_session.cjs and pass the printed sessionPath as --storage-state.",
+      "If it still fails, re-run web-system learning with the authenticated browser flow or test-lab contract probe so dynamic token handling is learned by the platform.",
       "For write actions, fall back to the browser plan and keep the user confirmation gate.",
     ];
   }
@@ -875,6 +880,52 @@ function loadStorageState(file) {
   }
 }
 
+function playwrightStorageState(storageState) {
+  if (!storageState || typeof storageState !== "object") return undefined;
+  return {
+    cookies: Array.isArray(storageState.cookies) ? storageState.cookies : [],
+    origins: Array.isArray(storageState.origins)
+      ? storageState.origins.map((origin) => ({
+          origin: origin.origin,
+          localStorage: Array.isArray(origin.localStorage) ? origin.localStorage : [],
+        })).filter((origin) => origin.origin)
+      : [],
+  };
+}
+
+async function installSessionStorageInitScript(context, storageState) {
+  const entries = Array.isArray(storageState?.lilySessionStorage)
+    ? storageState.lilySessionStorage
+        .map((origin) => ({
+          origin: String(origin?.origin || ""),
+          items: Array.isArray(origin?.sessionStorage) ? origin.sessionStorage : [],
+        }))
+        .filter((origin) => origin.origin && origin.items.length)
+    : [];
+  if (!entries.length) return;
+  await context.addInitScript((captured) => {
+    const match = captured.find((item) => item.origin === window.location.origin);
+    if (!match) return;
+    for (const entry of match.items || []) {
+      if (!entry?.name) continue;
+      try {
+        window.sessionStorage.setItem(entry.name, String(entry.value || ""));
+      } catch {
+        /* ignore storage quota/security errors */
+      }
+    }
+  }, entries);
+}
+
+function loadAuthRecipe(file) {
+  if (!file) return null;
+  try {
+    return JSON.parse(fs.readFileSync(path.resolve(file), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 /** Reuse the logged-in session's cookies as a Cookie header (no creds in plans). */
 function cookieHeaderFor(url, storageState) {
   if (!storageState || !Array.isArray(storageState.cookies)) return "";
@@ -899,10 +950,77 @@ function cookieHeaderFor(url, storageState) {
   return pairs.join("; ");
 }
 
-async function execApiRequestHttp(op, sinks, storageState) {
+function cookieValueFor(url, storageState, name) {
+  if (!storageState || !Array.isArray(storageState.cookies) || !name) return "";
+  let host;
+  let pathname;
+  try {
+    const parsed = new URL(url);
+    host = parsed.hostname.toLowerCase();
+    pathname = parsed.pathname || "/";
+  } catch {
+    return "";
+  }
+  for (const cookie of storageState.cookies) {
+    if (!cookie || cookie.name !== name) continue;
+    const domain = String(cookie.domain || "").replace(/^\./, "").toLowerCase();
+    if (!domain) continue;
+    if (host !== domain && !host.endsWith(`.${domain}`)) continue;
+    if (!pathname.startsWith(String(cookie.path || "/"))) continue;
+    return String(cookie.value || "");
+  }
+  return "";
+}
+
+function localStorageValueFor(url, storageState, key) {
+  if (!storageState || !Array.isArray(storageState.origins) || !key) return "";
+  let originUrl = "";
+  try {
+    originUrl = new URL(url).origin;
+  } catch {
+    return "";
+  }
+  const origin = storageState.origins.find((item) => item && item.origin === originUrl);
+  const values = Array.isArray(origin?.localStorage) ? origin.localStorage : [];
+  const found = values.find((item) => item && item.name === key);
+  return found ? String(found.value || "") : "";
+}
+
+function sessionStorageValueFor(url, storageState, key) {
+  if (!storageState || !Array.isArray(storageState.lilySessionStorage) || !key) return "";
+  let originUrl = "";
+  try {
+    originUrl = new URL(url).origin;
+  } catch {
+    return "";
+  }
+  const origin = storageState.lilySessionStorage.find((item) => item && item.origin === originUrl);
+  const values = Array.isArray(origin?.sessionStorage) ? origin.sessionStorage : [];
+  const found = values.find((item) => item && item.name === key);
+  return found ? String(found.value || "") : "";
+}
+
+function applyAuthRecipeHeaders(headers, url, storageState, authRecipe) {
+  const rules = Array.isArray(authRecipe?.headerRules) ? authRecipe.headerRules : [];
+  for (const rule of rules) {
+    const name = String(rule?.name || "").trim();
+    if (!name) continue;
+    let value = "";
+    if (rule.source === "localStorage") value = localStorageValueFor(url, storageState, rule.key);
+    else if (rule.source === "sessionStorage") value = sessionStorageValueFor(url, storageState, rule.key);
+    else if (rule.source === "cookie") value = cookieValueFor(url, storageState, rule.key);
+    if (!value) continue;
+    const formatted = String(rule.format || "{{value}}").replaceAll("{{value}}", value);
+    if (formatted) headers[name] = formatted;
+  }
+  return headers;
+}
+
+async function execApiRequestHttp(op, sinks, storageState, authRecipe) {
   const headers = { ...(op.headers || {}) };
   const cookie = cookieHeaderFor(op.url, storageState);
   if (cookie) headers.cookie = cookie;
+  applyAuthRecipeHeaders(headers, op.url, storageState, authRecipe);
   let body;
   const method = String(op.method || "GET").toUpperCase();
   if (op.body !== undefined && method !== "GET" && method !== "HEAD") {
@@ -960,6 +1078,7 @@ async function execApiRequestHttp(op, sinks, storageState) {
 /** Execute an all-API plan over HTTP — no browser launch. */
 async function runApiOnly(playbook, validated, args) {
   const storageState = loadStorageState(args.storageState);
+  const authRecipe = loadAuthRecipe(args.authRecipe);
   const sinks = { extracted: [], apiResponses: [], events: [], network: [], mutated: [] };
   for (let index = 0; index < validated.operations.length; index += 1) {
     const op = validated.operations[index];
@@ -967,7 +1086,7 @@ async function runApiOnly(playbook, validated, args) {
     appendAudit(args.auditLog, { ts: new Date().toISOString(), action: validated.action, phase: "primary", transport: "http", index, op: op.type, risk: op.risk });
     try {
       if (op.type === "apiRequest") {
-        await execApiRequestHttp(op, sinks, storageState);
+        await execApiRequestHttp(op, sinks, storageState, authRecipe);
         if (RISK_ORDER[op.risk] >= RISK_ORDER.submit) sinks.mutated.push({ index, op: op.type });
       } else if (op.type === "wait") {
         await new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.min(Number(op.ms || 1000), 10000))));

@@ -178,6 +178,8 @@ function oneEffect(type, properties, state) {
   assert(oneEffect("session.idle", { sessionID: "s" }).kind === "complete", "session.idle -> complete");
   assert(reduce("session.status", { status: { type: "idle" } }).effects.length === 0, "session.status idle is a snapshot, not completion");
   assert(reduce("session.status", { status: { type: "busy" } }).effects.length === 0, "session.status busy -> nothing");
+  assert(reduce("session.status", { status: { type: "busy" } }).processEvent.payload.handled === true,
+    "session.status is explicitly handled");
 }
 
 // --- engine error -----------------------------------------------------------
@@ -200,6 +202,10 @@ function oneEffect(type, properties, state) {
   assert(p.toolName === "bash", "toolName from permission field");
   assert(p.callId === "c9", "callID from tool.callID");
   assert(p.input.command === "rm" && p.description === "remove", "metadata surfaced");
+
+  const resolved = oneDraft("permission.replied", { id: "perm_1", allow: true });
+  assert(resolved.type === "permission.resolved" && resolved.payload.requestId === "perm_1",
+    "permission.replied -> permission.resolved draft");
 }
 
 // --- question tool ----------------------------------------------------------
@@ -213,17 +219,50 @@ function oneEffect(type, properties, state) {
   assert(q.questions[0].header === "DB", "question carried");
   assert(q.questions[0].multiSelect === false && q.questions[0].allowCustom === true, "multiple/custom mapped");
   assert(q.questions[0].options.length === 2, "options carried");
+
+  const answered = oneDraft("question.replied", { id: "que_1" });
+  assert(answered.type === "user_question.resolved" && answered.payload.requestId === "que_1",
+    "question.replied -> user_question.resolved");
+  const rejected = oneDraft("question.rejected", { requestID: "que_2" });
+  assert(rejected.type === "user_question.resolved" && rejected.payload.requestId === "que_2" && rejected.payload.rejected === true,
+    "question.rejected -> resolved draft with rejected marker");
 }
 
-// --- noise events are silent; unknown events surface for diagnostics --------
+// --- official app state events that Lily must explicitly understand ---------
+{
+  const todo = oneDraft("todo.updated", {
+    sessionID: "s1",
+    todos: [{ content: "Read code", status: "completed" }, { content: "Patch reducer", status: "in_progress" }],
+  });
+  assert(todo.type === "todo.updated" && todo.payload.id === "todo_s1", "todo.updated -> todo draft");
+  assert(todo.payload.todos.length === 2, "todo list carried");
+
+  const state = createOpencodeRuntimeState();
+  reduce("message.part.updated", { part: { id: "prt_del", messageID: "msg_del", type: "text", text: "gone" } }, state);
+  const removedPart = reduce("message.part.removed", { partID: "prt_del" }, state);
+  assert(removedPart.processEvent.payload.handled === true, "message.part.removed is explicitly handled");
+  const removedMessage = reduce("message.removed", { messageID: "msg_del" }, state);
+  assert(removedMessage.processEvent.payload.handled === true, "message.removed is explicitly handled");
+
+  for (const t of ["session.deleted", "vcs.branch.updated", "lsp.updated", "server.instance.disposed"]) {
+    const result = reduce(t, {});
+    assert(result.processEvent.payload.handled === true, `${t} explicitly handled`);
+  }
+}
+
+// --- noise events are silent; unknown events are retained as raw process data -
 {
   for (const t of ["server.connected", "plugin.added", "catalog.updated", "message.updated", "session.updated", "step-start", "session.next.prompt.admitted"]) {
     const result = reduce(t, {});
     assert(result.drafts.length === 0 && result.effects.length === 0, `${t} silent`);
   }
-  const u = reduce("some.future.event", {});
-  assert(u.drafts[0].type === "protocol.unknown" && u.effects[0].kind === "unknown",
-    "unknown event surfaced for diagnostics");
+  const u = reduce("some.future.event", { future: { nested: true } });
+  assert(u.drafts.length === 0 && u.effects[0].kind === "unknown",
+    "unknown event does not become a noisy protocol warning");
+  assert(u.processEvent.type === "process.event" && u.processEvent.payload.handled === false,
+    "unknown event is retained in process.event");
+  assert(u.processEvent.payload.rawEvent.properties.future.nested === true,
+    "raw OpenCode event payload is preserved for diagnostics/UI adapters");
 }
 
 // --- process.event summary + capabilities + reset --------------------------

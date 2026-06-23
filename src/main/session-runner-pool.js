@@ -48,8 +48,8 @@ class SessionRunnerPool {
     // plugins, with Lily extension MCPs scoped to this session's active skills.
     // Other per-session bits are delivered per-request:
     //   - permission MODE  -> enforced host-side (opencode-permission-policy)
-    //   - skill guidance   -> injected as a context part on the session's first
-    //     message (see `guidance` below)
+    //   - skill guidance   -> injected as hidden context on every prompt
+    //     (see `guidance` below)
     // This is what lets ONE serve host every session/directory without config
     // bleed (a single global OPENCODE_CONFIG can only hold one session's config).
     const cfg = buildSharedBaseConfig({
@@ -64,8 +64,8 @@ class SessionRunnerPool {
       log.warn("opencode config not applied: %s", cfg.reason);
     }
     // Lily's AGENT.md (identity + rules + ENABLED skills) — the authoritative
-    // guidance, injected per-session on the first message so the engine's
-    // coding-CLI persona doesn't dominate. Per-session by construction.
+    // guidance. It rides every prompt as hidden engine context so resumed or
+    // migrated OpenCode sessions cannot drift away from current platform rules.
     const guidance = this._opencodeGuideContent(extra.configDir, sessionId);
     // Reuse Lily's full engine env so skill SCRIPTS run identically under OpenCode
     // (DASHSCOPE_*/VISION_*/ALIYUN_BAILIAN_* for media skills, the curated PATH

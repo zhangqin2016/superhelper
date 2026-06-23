@@ -33,6 +33,7 @@ const RUNTIME_EVENT_TYPES = new Set([
   "tool.input.delta",
   "tool.input.done",
   "tool.done",
+  "todo.updated",
   "permission.requested",
   "permission.resolved",
   "permission.timeout",

@@ -894,7 +894,7 @@
   "find.close": "关闭",
   "composer.conventionSaved": "已记住，本工作区后续会话自动生效",
   "composer.conventionSaveFailed": "保存约定失败",
-  "engine.learnedSkillDraft": "已生成新技能草稿，请到 设置 → 技能 中审核并启用",
+  "engine.learnedSkillDraft": "已生成工作区技能，请到 设置 → 技能 中启用",
   "file.reveal": "在目录中显示",
   "file.preview": "预览",
   "file.revealFailed": "无法打开所在位置",

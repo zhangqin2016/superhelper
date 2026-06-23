@@ -90,6 +90,12 @@ function escapeMarkdown(value) {
   return String(value || "").replace(/\|/g, "\\|").trim();
 }
 
+function shellQuote(value) {
+  const text = String(value || "");
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(text)) return text;
+  return `'${text.replace(/'/g, "'\\''")}'`;
+}
+
 function sanitizeList(list, field) {
   if (!Array.isArray(list) || list.length === 0) {
     throw new Error(`${field} must be a non-empty array`);
@@ -227,20 +233,33 @@ function buildSkillMd(spec, scan) {
 
   const runtimePlanRules = [
     "Allowed operation types are `apiRequest`, `goto`, `click`, `fill`, `select`, `check`, `uncheck`, `upload`, `press`, `wait`, `waitForUrl`, `waitForText`, `waitForResponse`, `assertText`, `extract`, and `screenshot`.",
-    "Prefer `apiRequest` when the action metadata says `executionStrategy.preferred` is `api-first`; use browser operations only when the API contract is missing, stale, logged out, or needs UI-only validation.",
-    "`apiRequest` may use `contractId` from `web-system-playbook.json.apiContracts`; never add credential headers, cookies, tokens, or passwords to the action plan.",
-    "When `capability-map.json` lists required parameters, the action plan must include a top-level `params` object with those values; missing required parameters are blocked before any browser or API action runs.",
+    "At normal runtime, do not author new operations or scripts. Use only `capability-map.json.execution.learnedFlow` and `web-system-playbook.json.actions[].metadata.learnedFlow` materialized from the learning phase.",
+    "Prefer `apiRequest` when the action metadata says `executionMode` is `api-direct`; use a headless browser only when a captured `headless-browser-flow` exists from learning.",
+    "`apiRequest` may use `contractId` from `web-system-playbook.json.apiContracts`; never add credential headers, cookies, tokens, or passwords to the materialized plan.",
+    "After login/session capture and HAR capture, learn an auth recipe with `scripts/learn_auth_recipe.cjs --storage-state <sessionPath> --har scan.har --base-url <url> --allow-domain <host>`. Pass the resulting local auth recipe as `--auth-recipe <authRecipePath>` so the executor injects Authorization/CSRF headers from storageState at runtime.",
+    "The auth recipe stores sources and formats only; it must never store raw token values.",
+    "When `capability-map.json` lists required parameters, bind user values into the learned flow template; missing required parameters are blocked before any browser or API action runs.",
     "Prefer robust locator fields in this order: `testId`, `role/name`, `label`, `placeholder`, `text`, then `selector`.",
     "For `select`, use `label` to find the control and `optionLabel` or `value` to choose the option.",
     "Every `apiRequest`, `goto`, and response wait is checked against the allowed domains. A read action may only contain read-risk operations.",
-    "If execution returns `API_STATUS_MISMATCH`, `LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, or `WEB_ACTION_FAILED`, treat the skill as stale: explain the failed operation and re-run learning for this workspace before retrying high-risk actions.",
+    "If execution returns `API_STATUS_MISMATCH`, `LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, or `WEB_ACTION_FAILED`, treat the skill as stale: explain the failed learned-flow step and re-run learning for this workspace before retrying high-risk actions.",
   ].join("\n\n");
+  const captureSessionCommand = [
+    "node scripts/capture_session.cjs",
+    `--base-url ${shellQuote(spec.baseUrl)}`,
+    `--system-id ${shellQuote(spec.id)}`,
+    ...spec.allowedDomains.map((domain) => `--allow-domain ${shellQuote(domain)}`),
+  ].join(" \\\n  ");
 
-  return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, or one-time codes.\n- If the session is logged out, ask the user to log in interactively.\n- Do not leave the allowed domains.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Preferred execution | Example triggers |\n|---|---|---|---|---|\n${actionRows}\n\n## Capability Package\n\nBefore executing, load these generated files as one reviewed capability package:\n\n- \`capability-map.json\`: natural-language routing, required parameters, confirmation rules, success signals, stale signals, and recovery policy.\n- \`api-map.json\`: learned API contracts and which capabilities can use them.\n- \`web-system-playbook.json\`: executable connector actions and validator input.\n- \`risk-policy.json\`: production/test learning boundaries and high-risk action gates.\n- \`health.json\`: learning coverage, API/browser fallback coverage, and stale state.\n\n## Execution Rules\n\n- First map the user's request to exactly one capability in \`capability-map.json\`. If confidence is low, ask one focused question.\n- Collect the capability's required parameters before execution. If values are missing, ask only for the missing fields listed in \`askWhenMissing\`.\n- Build an action plan from the capability contract, validate it with \`scripts/execute_web_playbook.cjs --dry-run\`, then execute only after validation succeeds.\n- Prefer API-first execution for actions with learned API contracts; this is the fast path for searches, lists, detail reads, exports, and reviewed submissions.\n- For \`read\` actions, return concise source-backed results from API responses or the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting or calling a mutating API.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If API contracts fail or labels/selectors no longer match, re-run discovery for the action and explain what changed.\n- Never invent hidden pages, endpoints, fields, or permissions. Unknowns must be recorded as missing capability coverage, not guessed.\n\n## Runtime Plan Contract\n\nWhen executing an action, create an \`action-plan.json\` with this shape and run the local executor:\n\n\`\`\`bash\nnode scripts/execute_web_playbook.cjs \\\n  --playbook web-system-playbook.json \\\n  --capability-map capability-map.json \\\n  --action web.<action-id> \\\n  --plan action-plan.json \\\n  --dry-run\n\`\`\`\n\nOnly run without \`--dry-run\` after the plan validates. For non-read actions, add \`--confirmed\` only after the user has reviewed the exact fields or target.\n\n${runtimePlanRules}\n\n## Action Details\n\n${actionDetails}\n`;
+  return `---\nname: ${spec.id}\ndescription: Use when the user asks Lily to operate ${spec.systemName} for the learned actions in this workspace. Requires the existing logged-in browser/session and keeps all write/destructive actions behind confirmation.\n---\n\n# ${spec.name}\n\n${spec.summary}\n\n## Boundaries\n\n- Base URL: ${spec.baseUrl}\n- Allowed domains: ${spec.allowedDomains.map((d) => `\`${d}\``).join(", ")}\n- Never ask for or store passwords, cookies, tokens, OAuth codes, one-time codes, or credential headers.\n- Authentication must come from a local browser session captured with \`scripts/capture_session.cjs\`; do not tell the user to manually find a token or cookie.\n- Do not leave the allowed domains.\n\n## Session Handling\n\nIf no valid session exists, or execution reports logged out / stale auth / dynamic-token failure, refresh the local session with:\n\n\`\`\`bash\n${captureSessionCommand}\n\`\`\`\n\nThis opens a real browser for the user to log in and prints \`sessionPath\`. Use that path as \`--storage-state <sessionPath>\` for every later scan, discovery, dry-run, and execution command. The session file is local-only and must not be copied into the workspace, skill files, chat, logs, or prompts. If an endpoint needs a dynamic CSRF/OAuth token, re-capture or re-learn the authenticated browser flow; never ask the user how to obtain the token.\n\n## Learned Actions\n\n| Action | Risk | Confirmation | Preferred execution | Example triggers |\n|---|---|---|---|---|\n${actionRows}\n\n## Capability Package\n\nBefore executing, load these generated files as one reviewed capability package:\n\n- \`capability-map.json\`: natural-language routing, required parameters, learned-flow graph, confirmation rules, success signals, stale signals, and recovery policy.\n- \`api-map.json\`: learned API contracts and which capabilities can use them.\n- \`web-system-playbook.json\`: executable connector actions and validator input.\n- \`risk-policy.json\`: production/test learning boundaries and high-risk action gates.\n- \`health.json\`: learning coverage, API/browser fallback coverage, and stale state.\n\n## Execution Rules\n\n- First map the user's request to exactly one capability in \`capability-map.json\`. If confidence is low, ask one focused question.\n- Collect the capability's required parameters before execution. If values are missing, ask only for the missing fields listed in \`askWhenMissing\`.\n- Do not create new scripts, selectors, or operation plans during normal user execution. Runtime execution must be materialized from the learned flow graph generated during learning.\n- Prefer native typed tools for this learned system when available; they bind parameters into the learned API contract and call the executor directly.\n- If typed tools are not available, materialize \`action-plan.json\` only from \`execution.learnedFlow.operationTemplate\` and user parameters, then validate it with \`scripts/execute_web_playbook.cjs --dry-run --storage-state <sessionPath>\`.\n- Prefer API-direct execution for actions with learned API contracts; this is the fast path for searches, lists, detail reads, exports, and reviewed submissions.\n- If a capability has \`execution.learnedFlow.status: \"missing\"\`, do not improvise a browser plan. Tell the user this capability needs re-learning/captured flow before normal use.\n- For \`read\` actions, return concise source-backed results from API responses or the page.\n- For \`prepare\` actions, fill only safe draft fields and stop before submit.\n- For \`submit\` actions, show the final values and ask for user confirmation before submitting or calling a mutating API.\n- For \`destructive\` actions, require explicit confirmation naming the exact action and target.\n- If API contracts fail or labels/selectors no longer match, re-run discovery for the action and explain what changed.\n- Never invent hidden pages, endpoints, fields, or permissions. Unknowns must be recorded as missing capability coverage, not guessed.\n\n## Runtime Execution Contract\n\nNormal user execution must follow the learned graph. If typed tools are not available, materialize \`action-plan.json\` from \`execution.learnedFlow.operationTemplate\` and user parameters, then run the local executor:\n\n\`\`\`bash\nnode scripts/execute_web_playbook.cjs \\\n  --playbook web-system-playbook.json \\\n  --capability-map capability-map.json \\\n  --action web.<action-id> \\\n  --plan action-plan.json \\\n  --storage-state <sessionPath> \\\n  --dry-run\n\`\`\`\n\nOnly run without \`--dry-run\` after the materialized plan validates. Keep \`--storage-state <sessionPath>\` on the real execution. For non-read actions, add \`--confirmed\` only after the user has reviewed the exact fields or target.\n\nScripts and browser flows are generated during learning only. Do not generate ad-hoc Playwright/JavaScript/Python scripts while answering a normal user request.\n\n${runtimePlanRules}\n\n## Action Details\n\n${actionDetails}\n`;
 }
 
 function buildInstallPortableSkillMd(markdown) {
   return markdown
+    .replaceAll("node scripts/capture_session.cjs", "\"{{NODE_BIN}}\" \"{{WEB_SYSTEM_SESSION_CAPTURE}}\"")
+    .replaceAll("scripts/capture_session.cjs", "{{WEB_SYSTEM_SESSION_CAPTURE}}")
+    .replaceAll("node scripts/learn_auth_recipe.cjs", "\"{{NODE_BIN}}\" \"{{WEB_SYSTEM_AUTH_RECIPE}}\"")
+    .replaceAll("scripts/learn_auth_recipe.cjs", "{{WEB_SYSTEM_AUTH_RECIPE}}")
     .replaceAll("node scripts/execute_web_playbook.cjs", "\"{{NODE_BIN}}\" \"{{WEB_SYSTEM_EXECUTOR}}\"")
     .replaceAll("scripts/execute_web_playbook.cjs", "{{WEB_SYSTEM_EXECUTOR}}")
     .replaceAll("web-system-playbook.json", "{{WEB_SYSTEM_PLAYBOOK}}")
@@ -266,6 +285,8 @@ function buildManifest(spec) {
     workspaceOnly: true,
     placeholders: {
       "{{WEB_SYSTEM_EXECUTOR}}": "scripts/execute_web_playbook.cjs",
+      "{{WEB_SYSTEM_SESSION_CAPTURE}}": "scripts/capture_session.cjs",
+      "{{WEB_SYSTEM_AUTH_RECIPE}}": "scripts/learn_auth_recipe.cjs",
       "{{WEB_SYSTEM_PLAYBOOK}}": "web-system-playbook.json",
       "{{WEB_SYSTEM_CAPABILITY_MAP}}": "capability-map.json",
       "{{WEB_SYSTEM_API_MAP}}": "api-map.json",
@@ -356,16 +377,61 @@ function contractsForAction(action, apiContracts) {
       if (action.risk === "submit") return contract.risk === "read" || contract.risk === "submit";
       return true;
     })
+    .sort((a, b) => {
+      // A write capability's primary learned flow must bind to the write
+      // contract. Read contracts can support lookups, but must not become the
+      // submit operation just because they were discovered first.
+      if (action.risk === "submit") {
+        const ar = a.risk === "submit" ? 0 : 1;
+        const br = b.risk === "submit" ? 0 : 1;
+        return ar - br;
+      }
+      return 0;
+    })
     .slice(0, action.risk === "read" ? 3 : 5);
 }
 
 function executionStrategyForAction(action, apiContracts) {
   const matches = contractsForAction(action, apiContracts);
   return {
-    preferred: matches.length ? "api-first" : "browser-first",
-    fallback: "browser",
+    preferred: matches.length ? "api-first" : "needs-learned-flow",
+    executionMode: matches.length ? "api-direct" : "needs-learned-flow",
+    runtimePlanPolicy: "materialize-from-learned-graph-only",
+    allowRuntimeGeneratedScripts: false,
+    fallback: matches.length ? "headless-browser-flow" : "relearn-required",
     apiContractRefs: matches.map((contract) => contract.id),
     stalePolicy: "retry-browser-then-relearn",
+  };
+}
+
+function learnedFlowForAction(action, apiContracts) {
+  const matches = contractsForAction(action, apiContracts);
+  if (matches.length) {
+    const contract = matches[0];
+    const method = String(contract.method || "GET").toUpperCase();
+    return {
+      status: "ready",
+      mode: "api-direct",
+      source: "learned-api-contract",
+      materialization: "bind-params-to-contract",
+      contractId: contract.id,
+      operationTemplate: {
+        type: "apiRequest",
+        contractId: contract.id,
+        method,
+        risk: action.risk,
+        bindParamsTo: method === "GET" || method === "HEAD" ? "query" : "body",
+        contentType: contract.contentType === "form" ? "form" : "json",
+      },
+    };
+  }
+  return {
+    status: "missing",
+    mode: "needs-learned-flow",
+    source: "not-captured",
+    materialization: "blocked-at-runtime",
+    reason: "No learned API contract or compiled headless browser flow exists for this capability.",
+    recovery: "Re-run learning for this action and capture an API contract or compiled headless browser flow before exposing it for normal use.",
   };
 }
 
@@ -424,6 +490,10 @@ function buildPlaybook(spec, scan, discovered) {
         entry: action.entry || "",
         legacyActionId: action.id,
         executionStrategy,
+        executionMode: executionStrategy.executionMode,
+        runtimePlanPolicy: executionStrategy.runtimePlanPolicy,
+        allowRuntimeGeneratedScripts: false,
+        learnedFlow: learnedFlowForAction(action, apiContracts),
         apiContractRefs: executionStrategy.apiContractRefs,
       },
     });
@@ -562,9 +632,9 @@ function staleSignalsForAction(action) {
 
 function recoveryForAction(action) {
   return {
-    onAuthExpired: "Ask the user to log in interactively, then retry the same validated plan.",
-    onApiFailure: "Fall back to browser execution when safe; otherwise mark the capability stale.",
-    onSelectorFailure: "Run partial re-learning for this action before retrying.",
+    onAuthExpired: "Refresh the local browser session with capture_session.cjs, then retry the same learned flow with --storage-state.",
+    onApiFailure: "Retry only a captured headless fallback flow. If no learned fallback exists, mark the capability stale and re-run learning.",
+    onSelectorFailure: "Run partial re-learning for this action and capture a new flow before retrying.",
     onAmbiguousTarget: action.risk === "read" ? "Ask one clarifying question." : "Stop and ask the user to identify the exact target before any write.",
   };
 }
@@ -619,13 +689,20 @@ function buildCapabilityMap(spec, scan, playbook) {
       })),
       execution: {
         preferred: executionStrategy.preferred,
+        executionMode: executionStrategy.executionMode,
+        runtimePlanPolicy: executionStrategy.runtimePlanPolicy,
+        allowRuntimeGeneratedScripts: false,
         fallback: executionStrategy.fallback,
         apiContractRefs: executionStrategy.apiContractRefs,
+        learnedFlow: learnedFlowForAction(action, apiContracts),
         playbookAction: `web.${action.id}`,
         executor: "scripts/execute_web_playbook.cjs",
         planContract: {
+          planSource: "learned-graph",
           validateFirst: true,
           dryRunRequired: true,
+          runtimeModelAuthoredPlansAllowed: false,
+          runtimeScriptGenerationAllowed: false,
           confirmedFlagRequired: action.confirmation !== "none",
         },
       },
@@ -652,7 +729,14 @@ function buildCapabilityMap(spec, scan, playbook) {
     generatedAt: new Date().toISOString(),
     baseUrl: spec.baseUrl,
     allowedDomains: spec.allowedDomains,
-    defaultExecutionMode: "capability-contract",
+    defaultExecutionMode: "learned-graph",
+    runtimePolicy: {
+      planSource: "learned-graph",
+      runtimeModelAuthoredPlansAllowed: false,
+      runtimeScriptGenerationAllowed: false,
+      visibleBrowserOnlyFor: ["login", "human-verification", "explicit-user-auth"],
+      normalExecution: ["api-direct", "headless-browser-flow"],
+    },
     routing: {
       strategy: "intent-then-keyword-then-ask",
       lowConfidencePolicy: "ask-one-focused-question",
@@ -663,7 +747,8 @@ function buildCapabilityMap(spec, scan, playbook) {
       stalePolicy: "partial-relearn-action-before-retry",
       loginPolicy: "interactive-browser-session",
       secretsPolicy: "never-store-credentials",
-      reviewGeneratedPlans: true,
+      reviewGeneratedPlans: false,
+      generatedFlowsAtLearningTimeOnly: true,
     },
   };
 }
@@ -1111,6 +1196,8 @@ function main() {
     fs.copyFileSync(path.join(__dirname, "har_to_contracts.cjs"), path.join(draftDir, "scripts/har_to_contracts.cjs"));
     fs.copyFileSync(path.join(__dirname, "compile_playbook.cjs"), path.join(draftDir, "scripts/compile_playbook.cjs"));
     fs.copyFileSync(path.join(__dirname, "capture_session.cjs"), path.join(draftDir, "scripts/capture_session.cjs"));
+    fs.copyFileSync(path.join(__dirname, "learn_auth_recipe.cjs"), path.join(draftDir, "scripts/learn_auth_recipe.cjs"));
+    fs.copyFileSync(path.join(__dirname, "finalize_web_system_learning.cjs"), path.join(draftDir, "scripts/finalize_web_system_learning.cjs"));
   }
 
   console.log(JSON.stringify(result, null, 2));

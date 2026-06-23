@@ -67,10 +67,10 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   // Tiered models — declare every distinct id under the provider.
   const tiers = {
     main: modelId,
-    opus: lilyEnv.LILY_MODEL_OPUS || "",
-    sonnet: lilyEnv.LILY_MODEL_SONNET || "",
-    haiku: lilyEnv.LILY_MODEL_HAIKU || "",
-    subagent: lilyEnv.LILY_SUBAGENT_MODEL || "",
+    opus: lilyEnv.LILY_MODEL_OPUS || modelId,
+    sonnet: lilyEnv.LILY_MODEL_SONNET || modelId,
+    haiku: lilyEnv.LILY_MODEL_HAIKU || modelId,
+    subagent: lilyEnv.LILY_SUBAGENT_MODEL || lilyEnv.LILY_MODEL_HAIKU || modelId,
   };
   const models = {};
   for (const id of [tiers.main, tiers.opus, tiers.sonnet, tiers.haiku, tiers.subagent]) {

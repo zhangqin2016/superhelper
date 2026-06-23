@@ -348,13 +348,7 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
   article.classList.toggle("is-working", !sealed && liveTurn.phase === "starting");
   normalizeTurnArticleLayout(article, sealed);
 
-  const status = article.querySelector('[data-role="status"]');
-  const header = article.querySelector('[data-role="header"]');
-  if (status) {
-    const text = statusText(liveTurn, failed, sealed);
-    applyStatusDisplay(status, text, { sealed: sealed && Boolean(liveTurn.final), live: !sealed });
-  }
-  if (header) header.hidden = !status?.textContent;
+  refreshLiveTurnStatusDisplay(article, liveTurn, { failed, sealed });
 
   renderFooter(article.querySelector('[data-role="footer"]'), liveTurn, sealed);
 
@@ -390,6 +384,19 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     article.querySelector('[data-role="artifacts"]'),
     resultBlocks.filter((block) => !shouldHideImageResultBlock(block, { hasInlineImages })),
   );
+}
+
+export function refreshLiveTurnStatusDisplay(article, liveTurn, ctx = {}) {
+  if (!article || !liveTurn) return;
+  const failed = Boolean(ctx.failed);
+  const sealed = Boolean(liveTurn.final) || Boolean(ctx.sealed);
+  const status = article.querySelector('[data-role="status"]');
+  const header = article.querySelector('[data-role="header"]');
+  if (status) {
+    const text = statusText(liveTurn, failed, sealed);
+    applyStatusDisplay(status, text, { sealed: sealed && Boolean(liveTurn.final), live: !sealed });
+  }
+  if (header) header.hidden = !status?.textContent;
 }
 
 const IMAGE_BLOCK_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);

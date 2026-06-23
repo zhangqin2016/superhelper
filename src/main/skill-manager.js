@@ -508,7 +508,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
   let lastTitle = null;
 
   for (const skill of enabledSkills) {
-    const guide = manifestGuide(skill.manifest);
+    const guide = manifestGuide(skill.manifest, loc);
     const bodyTemplate = guide?.body;
     const title = guide?.title;
     if (!bodyTemplate || !title) continue;
@@ -531,7 +531,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 12;
+const AGENT_GUIDE_STATIC_VERSION = 13;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
@@ -753,9 +753,9 @@ function syncInheritedSessionGuides(sessionManager) {
   }
 }
 
-function manifestGuide(manifest) {
+function manifestGuide(manifest, localeOverride = null) {
   if (!manifest) return null;
-  const locale = getActiveLocale();
+  const locale = localeOverride || getActiveLocale();
   const i18n = manifest.guideMd_i18n;
   if (i18n && i18n[locale]) return i18n[locale];
   const baseLocale = String(locale || "").split(/[-_]/)[0];

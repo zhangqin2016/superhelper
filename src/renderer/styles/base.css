@@ -125,6 +125,14 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --dur: 160ms;
 
+  /* Overlay stack. Keep these centralized so nested flows can open dialogs safely. */
+  --z-settings-panel: 10000;
+  --z-modal: 11000;
+  --z-image-viewer: 11000;
+  --z-drop-overlay: 12000;
+  --z-notification-queue: 13000;
+  --z-toast: 14000;
+
   /* Chat width system: rich blocks fill --chat-col, prose narrows to --chat-prose
      for readability, images cap at --chat-media. One place to tune all of it. */
   --chat-col: 860px;

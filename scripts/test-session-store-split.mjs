@@ -27,10 +27,13 @@ require.cache[electronPath] = {
 
 const SessionManager = require("../src/main/session-manager.js");
 const {
+  blobStoreDir,
   legacySessionsBackupPath,
+  messageDbPath,
   sessionsConfigPath,
   sessionsIndexPath,
 } = require("../src/main/config.js");
+const { MessageStore } = require("../src/main/store/message-store.js");
 
 const projectManager = {
   projects: [{ id: "p1", name: "Workspace", path: tempRoot }],
@@ -171,4 +174,77 @@ try {
   }
 } finally {
   fs.rmSync(mergeRoot, { recursive: true, force: true });
+}
+
+const repairRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lily-session-store-repair-"));
+const repairUserData = path.join(repairRoot, "userData");
+require.cache[electronPath].exports.app.getPath = (name) => {
+  if (name === "userData") return repairUserData;
+  if (name === "home") return repairRoot;
+  if (name === "documents") return repairRoot;
+  return repairRoot;
+};
+
+try {
+  fs.mkdirSync(repairUserData, { recursive: true });
+  fs.writeFileSync(
+    sessionsIndexPath(),
+    JSON.stringify({
+      activeSessionId: "same-session",
+      sessions: {
+        p1: [{
+          id: "same-session",
+          projectId: "p1",
+          title: "索引会话",
+          status: "idle",
+          messageCount: 1,
+        }],
+      },
+    }, null, 2),
+  );
+
+  // Simulate a partial previous migration: one message already made it into
+  // SQLite, but the legacy inline source still has the complete transcript.
+  const store = new MessageStore(messageDbPath(), blobStoreDir());
+  store.bulkInsert("same-session", [{ role: "user", content: "第一条" }]);
+  store.close();
+
+  fs.writeFileSync(
+    sessionsConfigPath(),
+    JSON.stringify({
+      activeSessionId: "same-session",
+      sessions: {
+        p1: [{
+          id: "same-session",
+          projectId: "p1",
+          title: "旧会话完整记录",
+          status: "idle",
+          messages: [
+            { role: "user", content: "第一条" },
+            { role: "assistant", content: "第二条" },
+            { role: "user", content: "第三条" },
+          ],
+        }],
+      },
+    }, null, 2),
+  );
+
+  const manager = new SessionManager(projectManager);
+  manager.load();
+
+  const list = JSON.parse(fs.readFileSync(sessionsIndexPath(), "utf8")).sessions.p1 || [];
+  if (list.filter((session) => session.id === "same-session").length !== 1) {
+    throw new Error("same-id legacy session should repair the existing index entry, not create a duplicate");
+  }
+  const repaired = manager.getConversation("same-session");
+  if (
+    repaired.length !== 3 ||
+    repaired[0].content !== "第一条" ||
+    repaired[1].content !== "第二条" ||
+    repaired[2].content !== "第三条"
+  ) {
+    throw new Error(`partial migrated session should be repaired without loss: ${JSON.stringify(repaired)}`);
+  }
+} finally {
+  fs.rmSync(repairRoot, { recursive: true, force: true });
 }

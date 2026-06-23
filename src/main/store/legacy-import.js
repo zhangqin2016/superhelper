@@ -56,9 +56,10 @@ function archiveFile(filePath) {
  */
 function importSession(store, sessionId, opts = {}) {
   if (!sessionId) return { imported: false, count: 0 };
-  if (store.meta(importedFlagKey(sessionId))) return { imported: false, count: 0 };
-
   const filePath = legacyFilePath(sessionId);
+  const existingFlag = store.meta(importedFlagKey(sessionId));
+  if (existingFlag && !fs.existsSync(filePath)) return { imported: false, count: 0 };
+
   if (!fs.existsSync(filePath)) {
     // Nothing to import — record the flag so we never re-check this session.
     store.setMeta(importedFlagKey(sessionId), "none");
@@ -73,7 +74,11 @@ function importSession(store, sessionId, opts = {}) {
   if (typeof opts.transform === "function") messages = messages.map(opts.transform);
 
   let count = 0;
-  if (messages.length > 0) count = store.bulkInsert(sessionId, messages);
+  if (messages.length > 0) {
+    count = typeof store.bulkInsertMissing === "function"
+      ? store.bulkInsertMissing(sessionId, messages)
+      : store.bulkInsert(sessionId, messages);
+  }
   store.setMeta(importedFlagKey(sessionId), `done:${count}`);
   archiveFile(filePath);
   if (count > 0) console.info(`[legacy-import] imported ${count} message(s) for ${sessionId}`);

@@ -5,6 +5,7 @@
 // Quick replies (< MIN_ALERT_MS) are skipped too; failures always alert when
 // unattended. The chime is synthesized (WebAudio) so there's no bundled asset.
 import { t } from "../i18n/index.js";
+import store from "./state.js";
 
 const MIN_ALERT_MS = 8000; // a sub-8s reply doesn't deserve a ding
 const DEBOUNCE_MS = 1500;
@@ -64,6 +65,18 @@ function chime(ok) {
   }
 }
 
+function sessionAlertLabel(sessionId) {
+  if (!sessionId) return "";
+  for (const project of store.get("projects") || []) {
+    const session = (project.sessions || []).find((item) => item.id === sessionId);
+    if (!session) continue;
+    const sessionTitle = String(session.title || "").trim();
+    const projectName = String(project.name || "").trim();
+    return [projectName, sessionTitle].filter(Boolean).join(" · ");
+  }
+  return "";
+}
+
 /**
  * @param {{ sessionId:string, ok:boolean, durationMs:number, activeSessionId:string, snippet?:string }} info
  */
@@ -86,7 +99,11 @@ export function alertTaskDone(info = {}) {
   if (prefs.sound) chime(ok !== false);
   if (prefs.notify) {
     const title = ok === false ? t("notify.taskFailed") : t("notify.taskDone");
-    const body = String(snippet || "").replace(/\s+/g, " ").trim().slice(0, 160);
+    const sessionLabel = sessionAlertLabel(sessionId);
+    const body = [sessionLabel, String(snippet || "").replace(/\s+/g, " ").trim()]
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, 220);
     try {
       window.assistantClient?.notifyTaskDone?.({ sessionId, ok, title, body });
     } catch {

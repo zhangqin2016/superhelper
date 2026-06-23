@@ -138,6 +138,8 @@ app.whenReady().then(async () => {
     console.info("[engine]", agentBootstrap.mode, agentBootstrap.cliPath);
   }
 
+  require("./main/data-migration").runDataMigrations();
+
   const { getRuntimeSummary } = require("./main/runtime-python");
   const runtimeSummary = getRuntimeSummary();
   if (runtimeSummary.available) {

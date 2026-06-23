@@ -356,6 +356,41 @@ async function newSession() {
   }
 }
 
+// --- official messages are the final output source after idle ---------------
+{
+  const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "sync final answer" });
+    await tick();
+    const now = Date.now();
+    fake.historyMessages = [{
+      info: {
+        id: "msg_official_final",
+        role: "assistant",
+        sessionID: "ses_test",
+        time: { created: now, completed: now + 1 },
+      },
+      parts: [{ type: "text", text: "partial plus official tail" }],
+    }];
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "partial" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    const textDeltas = orch.calls.ingest
+      .filter((item) => item.type === "assistant.delta")
+      .map((item) => item.payload.text)
+      .join("");
+    assert(textDeltas === "partial plus official tail", `missing official tail was emitted to UI: ${textDeltas}`);
+    assert(orch.calls.done.length === 1, "turn completes after official final sync");
+    assert(orch.calls.done[0].output === "partial plus official tail", "official message text is final output");
+    assert(orch.calls.done[0].engineMessageId === "msg_official_final", "official message id becomes turn anchor");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
+}
+
 // --- idle confirmation: status busy delays completion like official client ---
 {
   const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
@@ -516,6 +551,41 @@ async function newSession() {
   await tick();
   assert(fake.prompts.length === 1, "promptAsync is posted immediately; SSE/session.idle owns completion");
   assert(fake.prompts[0].text === "post through promptAsync immediately", "prompt text is preserved");
+  session.terminate();
+}
+
+// --- Lily guidance must be present on every turn, including resumed sessions -
+{
+  const { fake, session, orch } = await newSession();
+  session.ensureProcess(process.cwd(), { agentCommand: "/bin/true", guidance: "LILY_RULES_V1" }, { lazy: true });
+  session.sendUserMessage({ text: "turn one" });
+  await tick();
+  assert(fake.prompts[0].guidance === "LILY_RULES_V1", "turn one carries Lily guidance");
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(orch.calls.done.length === 1, "turn one completes before turn two");
+
+  session.ensureProcess(process.cwd(), { agentCommand: "/bin/true", guidance: "LILY_RULES_V2" }, { lazy: true });
+  session.sendUserMessage({ text: "turn two" });
+  await tick();
+  assert(fake.prompts[1].guidance === "LILY_RULES_V2", "turn two carries the latest Lily guidance");
+  session.terminate();
+}
+{
+  let captured = null;
+  const fake = new FakeServer();
+  fake.wasResumed = true;
+  const session = new OpencodeAgentSession("app_resume_guidance", { createServer: (opts) => { captured = opts; return fake; } });
+  session.bindOrchestrator(makeOrchestrator());
+  session.ensureProcess(process.cwd(), {
+    agentCommand: "/bin/true",
+    resumeSessionId: "ses_prev_guidance",
+    guidance: "CURRENT_LILY_RULES",
+  }, { lazy: true });
+  session.sendUserMessage({ text: "continue with current rules" });
+  await tick();
+  assert(captured.resumeSessionID === "ses_prev_guidance", "resume still flows to OpenCode");
+  assert(fake.prompts[0].guidance === "CURRENT_LILY_RULES", "resumed sessions still receive current Lily guidance");
   session.terminate();
 }
 

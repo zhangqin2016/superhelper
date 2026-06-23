@@ -325,6 +325,25 @@ class TurnOrchestrator {
         emitDiffForTool(sessionId, toolId, this.ctx, state.turnId);
         break;
       }
+      case "todo.updated": {
+        state.phase = "streaming";
+        const toolId = payload.id || `todo_${sessionId}`;
+        const todos = Array.isArray(payload.todos) ? payload.todos : [];
+        const tool = {
+          id: toolId,
+          name: "todowrite",
+          input: { todos },
+          status: "done",
+          result: null,
+          parentToolUseId: null,
+        };
+        upsertTimelineTool(state, tool, Date.now());
+        this._emit(sessionId, "todo.updated", {
+          id: toolId,
+          todos,
+        });
+        break;
+      }
       case "permission.requested":
         state.phase = "awaiting_user";
         state.pendingPermissions.set(payload.requestId, payload);
@@ -613,6 +632,7 @@ class TurnOrchestrator {
     state.usage = null;
     state.taskContract = null;
     state.enginePayload = null;
+    state.legacyContextHydrated = false;
     resetTimelineState(state);
     state.blockIndexToToolId = new Map();
     state.terminalEmitted = false;
@@ -727,6 +747,7 @@ class TurnOrchestrator {
         summary: readSessionSummary(session.id),
       });
       engineText = rehydrate.text;
+      state.legacyContextHydrated = Boolean(rehydrate.legacyContextHydrated);
       if (rehydrate.rehydrated) {
         rehydrated = true;
         this._emit(session.id, "session.hydrated", { source: "local-bootstrap" }, { turnId: null });
@@ -838,6 +859,13 @@ class TurnOrchestrator {
         resultFromCli: Boolean(payload?.resultFromCli),
         ...terminalMeta,
       });
+    }
+    if (state.legacyContextHydrated && payload?.engineMessageId) {
+      const runner = this.ctx.runnerPool?.get?.(sessionId);
+      this.ctx.sessionManager?.markLegacyContextHydrated?.(
+        sessionId,
+        runner?.agentResumeId || null,
+      );
     }
     await this._flushUsage(sessionId);
     void this._dispatchNext(sessionId);
@@ -1072,6 +1100,7 @@ class TurnOrchestrator {
         usage: null,
         taskContract: null,
         enginePayload: null,
+        legacyContextHydrated: false,
         timeline: [],
         activityLabel: null,
         durationMs: null,

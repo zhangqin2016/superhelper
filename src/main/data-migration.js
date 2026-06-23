@@ -79,6 +79,9 @@ function migrateLegacyCliBinaries() {
 
 /** Previous Electron userData folder names (package / product renames). */
 const LEGACY_USER_DATA_DIR_NAMES = [
+  "Lily Workbench",
+  "智能工作台",
+  "ai-super-terminal",
   "terminal-chat-claude",
 ];
 
@@ -102,6 +105,8 @@ const APP_DATA_DIRS = [
   "claude-config",
   "lily-config",
   "file-staging",
+  "opencode-sessions",
+  "opencode-shared",
   "runtime-bin",
   "skills-cache",
   "skills-backup",
@@ -181,7 +186,42 @@ function normalizeSessionsStore(raw) {
   };
 }
 
-/** Copy legacy sessions for newly merged workspaces; keep current sessions when paths overlap. */
+function sessionMessageMergeKey(message) {
+  if (message?.id) return `id:${message.id}`;
+  return `fp:${JSON.stringify({
+    role: message?.role || "assistant",
+    content: message?.content || "",
+    files: message?.files || null,
+    turnId: message?.turnId || message?.record?.turnId || null,
+    timestamp: message?.timestamp || null,
+    failed: Boolean(message?.failed),
+  })}`;
+}
+
+function mergeSessionMessages(existingMessages, incomingMessages) {
+  const existing = Array.isArray(existingMessages) ? existingMessages : [];
+  const incoming = Array.isArray(incomingMessages) ? incomingMessages : [];
+  if (incoming.length === 0) return existing;
+
+  const existingCounts = new Map();
+  for (const message of existing) {
+    const key = sessionMessageMergeKey(message);
+    existingCounts.set(key, (existingCounts.get(key) || 0) + 1);
+  }
+  const incomingCounts = new Map();
+  const merged = existing.slice();
+  for (const message of incoming) {
+    const key = sessionMessageMergeKey(message);
+    const seen = (incomingCounts.get(key) || 0) + 1;
+    incomingCounts.set(key, seen);
+    if ((existingCounts.get(key) || 0) >= seen) continue;
+    merged.push(message);
+    existingCounts.set(key, (existingCounts.get(key) || 0) + 1);
+  }
+  return merged;
+}
+
+/** Copy legacy sessions into matching workspaces by path, de-duping by session id. */
 function mergeSessionsJson(destData, srcData, destProjectsBefore, srcProjects) {
   const dest = normalizeSessionsStore(destData);
   const src = normalizeSessionsStore(srcData);
@@ -191,19 +231,50 @@ function mergeSessionsJson(destData, srcData, destProjectsBefore, srcProjects) {
   }
 
   let added = 0;
-  for (const project of srcProjects || []) {
+  const sourceProjects = Array.isArray(srcProjects) && srcProjects.length
+    ? srcProjects
+    : Object.keys(src.sessions).map((id) => ({ id }));
+
+  for (const project of sourceProjects) {
     const legacyId = project?.id;
     const legacyList = src.sessions[legacyId];
     if (!legacyId || !Array.isArray(legacyList) || legacyList.length === 0) continue;
 
     const targetId = currentPathToId.get(project.path) || legacyId;
-    if (dest.sessions[targetId]?.length) continue;
+    if (!dest.sessions[targetId]) dest.sessions[targetId] = [];
+    const existingById = new Map(
+      dest.sessions[targetId]
+        .filter((session) => session?.id)
+        .map((session) => [session.id, session]),
+    );
 
-    dest.sessions[targetId] = legacyList.map((session) => ({
-      ...session,
-      projectId: targetId,
-    }));
-    added += legacyList.length;
+    for (const session of legacyList) {
+      if (session?.id && existingById.has(session.id)) {
+        const existing = existingById.get(session.id);
+        const mergedMessages = mergeSessionMessages(existing.messages, session.messages);
+        if (mergedMessages.length > (Array.isArray(existing.messages) ? existing.messages.length : 0)) {
+          existing.messages = mergedMessages;
+          existing.messageCount = Math.max(
+            Number.isInteger(existing.messageCount) ? existing.messageCount : 0,
+            mergedMessages.length,
+            Number.isInteger(session.messageCount) ? session.messageCount : 0,
+          );
+          added += 1;
+        }
+        continue;
+      }
+      const normalizedSession = {
+        ...session,
+        projectId: targetId,
+      };
+      dest.sessions[targetId].push(normalizedSession);
+      if (session?.id) existingById.set(session.id, normalizedSession);
+      added += 1;
+    }
+  }
+
+  if (!dest.activeSessionId && src.activeSessionId) {
+    dest.activeSessionId = src.activeSessionId;
   }
 
   return { merged: dest, added };
@@ -252,6 +323,87 @@ function copyFileIfNeeded(src, dest, fileName) {
   return true;
 }
 
+function tableExists(db, tableName) {
+  try {
+    return Boolean(db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", tableName));
+  } catch {
+    return false;
+  }
+}
+
+function mergeMessageDatabase(srcPath, destPath) {
+  if (!fs.existsSync(srcPath)) return false;
+  if (!fs.existsSync(destPath)) return copyFileIfNeeded(srcPath, destPath, "messages.db");
+
+  let srcDb = null;
+  let destDb = null;
+  try {
+    const { openDatabase } = require("./store/sqlite-db");
+    const { MIGRATIONS } = require("./store/schema");
+    srcDb = openDatabase(srcPath);
+    destDb = openDatabase(destPath);
+    destDb.migrate(MIGRATIONS);
+    if (!tableExists(srcDb, "messages") || !tableExists(destDb, "messages")) return false;
+
+    const rows = srcDb.all(
+      `SELECT session_id, id, role, turn_id, created_at, preview, failed,
+              terminal, cost_usd, duration_ms, envelope_blob
+         FROM messages
+        ORDER BY session_id ASC, seq ASC`,
+    );
+    const copiedSessions = new Set();
+    let copied = 0;
+    const insert = destDb.transaction(() => {
+      for (const row of rows) {
+        if (!row?.id || destDb.get("SELECT 1 FROM messages WHERE id = ? LIMIT 1", row.id)) continue;
+        const next = destDb.get(
+          "SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM messages WHERE session_id = ?",
+          row.session_id,
+        )?.seq || 1;
+        destDb.run(
+          `INSERT INTO messages
+             (session_id, seq, id, role, turn_id, created_at, preview, failed,
+              terminal, cost_usd, duration_ms, envelope_blob)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          row.session_id,
+          next,
+          row.id,
+          row.role,
+          row.turn_id,
+          row.created_at,
+          row.preview,
+          row.failed,
+          row.terminal,
+          row.cost_usd,
+          row.duration_ms,
+          row.envelope_blob,
+        );
+        copiedSessions.add(row.session_id);
+        copied += 1;
+      }
+      for (const sessionId of copiedSessions) {
+        destDb.run(
+          `INSERT INTO schema_meta (key, value) VALUES (?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+          `imported:${sessionId}`,
+          "done:db-merge",
+        );
+      }
+    });
+    insert();
+    if (copied > 0) {
+      console.info(`[data-migration] merged ${copied} legacy message row(s) from ${srcPath}`);
+      return true;
+    }
+  } catch (err) {
+    console.warn("[data-migration] failed to merge legacy messages.db:", err?.message || err);
+  } finally {
+    try { srcDb?.close?.(); } catch {}
+    try { destDb?.close?.(); } catch {}
+  }
+  return false;
+}
+
 function mergeDirectory(srcDir, destDir) {
   if (!fs.existsSync(srcDir)) return;
   fs.mkdirSync(destDir, { recursive: true });
@@ -271,7 +423,6 @@ function mergeDirectory(srcDir, destDir) {
 function migrateLegacyProjectsAndSessions(legacyRoot, currentRoot) {
   const srcProjectsPath = path.join(legacyRoot, "projects.json");
   const srcProjects = readJsonSafe(srcProjectsPath);
-  if (!srcProjects) return false;
 
   const destProjectsPath = path.join(currentRoot, "projects.json");
   const destProjects = readJsonSafe(destProjectsPath);
@@ -279,34 +430,61 @@ function migrateLegacyProjectsAndSessions(legacyRoot, currentRoot) {
     ? destProjects.projects
     : [];
 
-  const { merged: mergedProjects, added: projectsAdded } = mergeProjectsJson(
-    destProjects,
-    srcProjects,
-  );
-  writeJsonSafe(destProjectsPath, mergedProjects);
+  let mergedProjects = destProjects;
+  let projectsAdded = 0;
+  if (srcProjects) {
+    const result = mergeProjectsJson(destProjects, srcProjects);
+    mergedProjects = result.merged;
+    projectsAdded = result.added;
+    writeJsonSafe(destProjectsPath, mergedProjects);
+  }
 
-  const srcSessions = readJsonSafe(path.join(legacyRoot, "sessions.json"));
-  const destSessions = readJsonSafe(path.join(currentRoot, "sessions.json"));
-  const { merged: mergedSessions, added: sessionsAdded } = mergeSessionsJson(
-    destSessions,
-    srcSessions,
-    destProjectsBefore,
-    srcProjects.projects || [],
-  );
-  writeJsonSafe(path.join(currentRoot, "sessions.json"), mergedSessions);
+  const destSessionPath = fs.existsSync(path.join(currentRoot, "sessions-index.json"))
+    ? path.join(currentRoot, "sessions-index.json")
+    : path.join(currentRoot, "sessions.json");
+  let destSessions = readJsonSafe(destSessionPath);
+  let sessionsAdded = 0;
+  for (const fileName of ["sessions-index.json", "sessions.json"]) {
+    const srcSessions = readJsonSafe(path.join(legacyRoot, fileName));
+    if (!srcSessions) continue;
+    const { merged: nextSessions, added } = mergeSessionsJson(
+      destSessions,
+      srcSessions,
+      Array.isArray(mergedProjects?.projects) ? mergedProjects.projects : destProjectsBefore,
+      srcProjects?.projects || [],
+    );
+    destSessions = nextSessions;
+    sessionsAdded += added;
+  }
+  if (destSessions) writeJsonSafe(destSessionPath, destSessions);
 
-  return projectsAdded > 0 || sessionsAdded > 0 || !destProjects || !destSessions;
+  return projectsAdded > 0 || sessionsAdded > 0 || (!destProjects && srcProjects);
 }
 
 function migrateLegacyConfigFiles(legacyRoot, currentRoot) {
   let changed = false;
   for (const file of APP_DATA_FILES) {
-    if (file === "projects.json" || file === "sessions.json" || file === "workspaces.json") {
+    if (
+      file === "projects.json" ||
+      file === "sessions.json" ||
+      file === "sessions-index.json" ||
+      file === "workspaces.json"
+    ) {
       continue;
     }
 
     const src = path.join(legacyRoot, file);
     const dest = path.join(currentRoot, file);
+    if (file === "messages.db") {
+      if (mergeMessageDatabase(src, dest)) changed = true;
+      continue;
+    }
+    if (file === "messages.db-wal" || file === "messages.db-shm") {
+      if (!fs.existsSync(path.join(currentRoot, "messages.db")) && copyFileIfNeeded(src, dest, file)) {
+        changed = true;
+      }
+      continue;
+    }
     if (file === "skills-state.json" && fs.existsSync(src)) {
       const { merged, changed: skillsChanged } = mergeSkillsStateJson(
         readJsonSafe(dest),
@@ -326,22 +504,113 @@ function migrateLegacyConfigFiles(legacyRoot, currentRoot) {
   return changed;
 }
 
-function removeLegacyUserDataRoot(legacyRoot) {
+function archiveLegacyUserDataRoot(legacyRoot) {
+  const backupRoot = `${legacyRoot}.migrated-backup`;
   try {
-    fs.rmSync(legacyRoot, { recursive: true, force: true });
-    console.info(`[data-migration] removed legacy userData ${legacyRoot}`);
+    if (fs.existsSync(backupRoot)) {
+      const stamped = `${backupRoot}.${Date.now()}`;
+      fs.renameSync(legacyRoot, stamped);
+      console.info(`[data-migration] archived legacy userData ${legacyRoot} -> ${stamped}`);
+      return true;
+    }
+    fs.renameSync(legacyRoot, backupRoot);
+    console.info(`[data-migration] archived legacy userData ${legacyRoot} -> ${backupRoot}`);
     return true;
   } catch (err) {
     console.warn(
-      `[data-migration] failed to remove legacy userData ${legacyRoot}:`,
+      `[data-migration] failed to archive legacy userData ${legacyRoot}:`,
       err?.message || err,
     );
     return false;
   }
 }
 
+function existingSessionIds(sessionStore) {
+  const ids = new Set();
+  const sessions = sessionStore?.sessions;
+  if (!sessions || typeof sessions !== "object" || Array.isArray(sessions)) return ids;
+  for (const list of Object.values(sessions)) {
+    if (!Array.isArray(list)) continue;
+    for (const session of list) {
+      if (session?.id) ids.add(session.id);
+    }
+  }
+  return ids;
+}
+
+function messageFileSessionIds(dir) {
+  try {
+    return fs.readdirSync(dir)
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => ({
+        id: name.slice(0, -".json".length),
+        filePath: path.join(dir, name),
+      }))
+      .filter((entry) => entry.id);
+  } catch {
+    return [];
+  }
+}
+
+function recoverOrphanLegacyMessageSessions() {
+  const currentRoot = userDataPath();
+  const projects = readJsonSafe(path.join(currentRoot, "projects.json"));
+  const projectList = Array.isArray(projects?.projects) ? projects.projects : [];
+  if (projectList.length === 0) return false;
+
+  const targetProjectId =
+    (projects.activeProjectId && projectList.some((project) => project.id === projects.activeProjectId))
+      ? projects.activeProjectId
+      : projectList[0].id;
+  if (!targetProjectId) return false;
+
+  const sessionPath = fs.existsSync(path.join(currentRoot, "sessions-index.json"))
+    ? path.join(currentRoot, "sessions-index.json")
+    : path.join(currentRoot, "sessions.json");
+  const raw = readJsonSafe(sessionPath) || { activeSessionId: null, sessions: {} };
+  raw.sessions = raw.sessions && typeof raw.sessions === "object" && !Array.isArray(raw.sessions)
+    ? raw.sessions
+    : {};
+  if (!Array.isArray(raw.sessions[targetProjectId])) raw.sessions[targetProjectId] = [];
+
+  const existing = existingSessionIds(raw);
+  const candidates = [
+    ...messageFileSessionIds(path.join(currentRoot, "session-messages")),
+  ];
+
+  let recovered = 0;
+  for (const candidate of candidates) {
+    if (!candidate.id || existing.has(candidate.id)) continue;
+    let ts = Date.now();
+    if (candidate.filePath) {
+      try {
+        ts = fs.statSync(candidate.filePath).mtimeMs || ts;
+      } catch {
+        // ignore
+      }
+    }
+    raw.sessions[targetProjectId].push({
+      id: candidate.id,
+      projectId: targetProjectId,
+      title: "恢复的历史会话",
+      createdAt: new Date(ts).toISOString(),
+      updatedAt: new Date(ts).toISOString(),
+      status: "idle",
+      messageCount: 0,
+      recoveredFromLegacyMessages: true,
+    });
+    existing.add(candidate.id);
+    recovered += 1;
+  }
+
+  if (recovered === 0) return false;
+  writeJsonSafe(sessionPath, raw);
+  console.info(`[data-migration] recovered ${recovered} orphan legacy session(s) from copied messages`);
+  return true;
+}
+
 /**
- * Merge projects/sessions/config from pre-rename userData roots, then delete the legacy folder.
+ * Merge projects/sessions/config from pre-rename userData roots, then keep a backup.
  */
 function migrateLegacyUserDataRoot() {
   const currentRoot = userDataPath();
@@ -359,7 +628,7 @@ function migrateLegacyUserDataRoot() {
       console.info(`[data-migration] migrated user data from ${legacyRoot}`);
     }
 
-    removeLegacyUserDataRoot(legacyRoot);
+    archiveLegacyUserDataRoot(legacyRoot);
   }
 }
 
@@ -582,6 +851,7 @@ function migrateLegacyGuideFile() {
  */
 function runDataMigrations() {
   migrateLegacyUserDataRoot();
+  recoverOrphanLegacyMessageSessions();
   renameDirIfNeeded(LEGACY_BIN_DIR, path.basename(agentBinDir()));
   renameDirIfNeeded(LEGACY_CONFIG_DIR, path.basename(agentConfigDir()));
   migrateLegacyCliBinaries();
@@ -597,6 +867,8 @@ function runDataMigrations() {
 
 module.exports = {
   runDataMigrations,
+  migrateLegacyUserDataRoot,
+  recoverOrphanLegacyMessageSessions,
   migrateLegacyCliBinaries,
   migrateEngineSessionCompatibility,
   clearAllSessionResumeIds,

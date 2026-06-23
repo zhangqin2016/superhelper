@@ -17,6 +17,13 @@ function textFromParts(parts = [], type) {
     .join("");
 }
 
+function assistantTextFromOpenCodeMessageItem(item = {}) {
+  const info = item?.info || {};
+  if (roleOf(info) !== "assistant") return "";
+  const parts = Array.isArray(item?.parts) ? item.parts : [];
+  return textFromParts(parts, "text").trim();
+}
+
 function fileFromPart(part = {}) {
   if (part.type !== "file") return null;
   const path = part.source?.type === "file" ? part.source.path : "";
@@ -38,6 +45,130 @@ function usageFromInfo(info = {}) {
     cache_read_input_tokens: cache.read || 0,
     cache_creation_input_tokens: cache.write || 0,
   };
+}
+
+function mergeTextParts(values = []) {
+  const out = [];
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (!text) continue;
+    if (out[out.length - 1] === text) continue;
+    out.push(text);
+  }
+  return out.join("\n\n");
+}
+
+function sumUsage(usages = []) {
+  const present = usages.filter(Boolean);
+  if (!present.length) return null;
+  return present.reduce((acc, usage) => ({
+    input_tokens: acc.input_tokens + (usage.input_tokens || 0),
+    output_tokens: acc.output_tokens + (usage.output_tokens || 0),
+    cache_read_input_tokens: acc.cache_read_input_tokens + (usage.cache_read_input_tokens || 0),
+    cache_creation_input_tokens: acc.cache_creation_input_tokens + (usage.cache_creation_input_tokens || 0),
+  }), {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
+  });
+}
+
+function timestampMs(value) {
+  const n = Date.parse(value || "");
+  return Number.isFinite(n) ? n : null;
+}
+
+function recordTimeRange(record = {}, message = {}) {
+  const start = timestampMs(record.startedAt) ?? timestampMs(message.timestamp);
+  const end = timestampMs(record.endedAt) ?? (
+    Number.isFinite(record.durationMs) && Number.isFinite(start)
+      ? start + record.durationMs
+      : timestampMs(message.timestamp)
+  );
+  return { start, end };
+}
+
+function mergeAssistantGroup(group = []) {
+  if (group.length <= 1) return group[0] || null;
+  const first = group[0];
+  const last = group[group.length - 1];
+  const firstRecord = first.record || {};
+  const lastRecord = last.record || {};
+  const startedAt = Math.min(
+    ...group.map((m) => recordTimeRange(m.record, m).start).filter((n) => Number.isFinite(n)),
+  );
+  const endedAt = Math.max(
+    ...group.map((m) => recordTimeRange(m.record, m).end).filter((n) => Number.isFinite(n)),
+  );
+  const assistantText = mergeTextParts(group.map((m) => m.content || m.record?.assistantText || ""));
+  const thinkingText = mergeTextParts(group.map((m) => m.record?.thinkingText || ""));
+  const usage = sumUsage(group.map((m) => m.record?.usage));
+  const durationMs = Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt >= startedAt
+    ? endedAt - startedAt
+    : lastRecord.durationMs ?? firstRecord.durationMs ?? null;
+  const totalCostUsd = group.reduce((sum, message) => {
+    const cost = message.record?.totalCostUsd;
+    return Number.isFinite(cost) ? sum + cost : sum;
+  }, 0);
+  const hasCost = group.some((message) => Number.isFinite(message.record?.totalCostUsd));
+  const timeline = group.flatMap((m) => m.record?.timeline || []);
+  const processEvents = group.flatMap((m) => m.record?.processEvents || []);
+  const notices = group.flatMap((m) => m.record?.notices || []);
+  const contentBlocks = group.flatMap((m) => m.record?.contentBlocks || []);
+  const protocolUnknown = group.flatMap((m) => m.record?.protocolUnknown || []);
+  const files = group.flatMap((m) => m.files || []);
+  return {
+    ...last,
+    content: assistantText,
+    files: files.length ? files : undefined,
+    failed: group.some((m) => m.failed),
+    record: {
+      ...firstRecord,
+      ...lastRecord,
+      assistantText,
+      thinkingText,
+      contentBlocks,
+      protocolUnknown,
+      processEvents,
+      timeline,
+      notices,
+      durationMs,
+      startedAt: Number.isFinite(startedAt) ? startedAt : firstRecord.startedAt ?? null,
+      endedAt: Number.isFinite(endedAt) ? endedAt : lastRecord.endedAt ?? null,
+      totalCostUsd: hasCost ? totalCostUsd : lastRecord.totalCostUsd ?? firstRecord.totalCostUsd ?? null,
+      usage,
+      meta: {
+        ...(firstRecord.meta || {}),
+        ...(lastRecord.meta || {}),
+        opencode: {
+          ...(lastRecord.meta?.opencode || {}),
+          mergedAssistantMessageIds: group.map((m) => m.engineMessageId || m.id).filter(Boolean),
+        },
+      },
+    },
+  };
+}
+
+function coalesceAssistantMessageRuns(messages = []) {
+  const out = [];
+  let pending = [];
+  const flush = () => {
+    if (!pending.length) return;
+    const merged = mergeAssistantGroup(pending);
+    if (merged) out.push(merged);
+    pending = [];
+  };
+  for (const message of messages) {
+    if (message?.role === "assistant") {
+      pending.push(message);
+      continue;
+    }
+    flush();
+    out.push(message);
+  }
+  flush();
+  return out;
 }
 
 function adaptOpencodeMessageItem(item = {}, opts = {}) {
@@ -77,6 +208,8 @@ function adaptOpencodeMessageItem(item = {}, opts = {}) {
       durationMs: Number.isFinite(info.time?.completed) && Number.isFinite(info.time?.created)
         ? Math.max(0, info.time.completed - info.time.created)
         : null,
+      startedAt: Number.isFinite(info.time?.created) ? info.time.created : null,
+      endedAt: Number.isFinite(info.time?.completed) ? info.time.completed : null,
       totalCostUsd: Number.isFinite(info.cost) ? info.cost : null,
       engineMessageId: info.id || null,
       processEvents: [],
@@ -122,7 +255,7 @@ function adaptOpencodeMessagesPage(input = {}) {
     source: "opencode",
     sessionId: input.sessionId || null,
     projectId: input.projectId || null,
-    conversation,
+    conversation: coalesceAssistantMessageRuns(conversation),
     total: Number.isInteger(input.total) ? input.total : conversation.length,
     hasMore: cursor ? !complete : false,
     before: input.before || null,
@@ -133,4 +266,6 @@ function adaptOpencodeMessagesPage(input = {}) {
 module.exports = {
   adaptOpencodeMessageItem,
   adaptOpencodeMessagesPage,
+  assistantTextFromOpenCodeMessageItem,
+  coalesceAssistantMessageRuns,
 };

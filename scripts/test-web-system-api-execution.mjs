@@ -17,6 +17,20 @@ const executor = path.join(ROOT, "resources/skills-catalog/lily-web-system-learn
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-api-exec-"));
 
 const server = http.createServer((req, res) => {
+  if (req.url.startsWith("/api/protected")) {
+    if (
+      req.headers.authorization !== "Bearer access-secret" ||
+      req.headers["x-csrf-token"] !== "csrf-secret" ||
+      req.headers["x-id-token"] !== "session-secret"
+    ) {
+      res.writeHead(403, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "forbidden" }));
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
   if (req.url.startsWith("/api/leaves")) {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify([{ id: 1, days: 2 }]));
@@ -30,9 +44,9 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 // Async spawn so the in-process HTTP server keeps serving while the executor runs
 // (spawnSync would block this event loop and the server could never respond).
-function runExecutor(playbookPath, planPath) {
+function runExecutor(playbookPath, planPath, extra = []) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [executor, "--playbook", playbookPath, "--action", "web.query-leaves", "--plan", planPath], { cwd: ROOT });
+    const child = spawn(process.execPath, [executor, "--playbook", playbookPath, "--action", "web.query-leaves", "--plan", planPath, ...extra], { cwd: ROOT });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => { stdout += d; });
@@ -85,7 +99,37 @@ try {
   assert(missing.ok === false && missing.transport === "http", "404 handled over http");
   assert(missing.staleSignal === "api_404" && missing.relearnRecommended === true, "404 flagged stale → relearn, no browser");
 
-  console.log("PASS: test-web-system-api-execution (8 tests)");
+  fs.writeFileSync(playbookPath, JSON.stringify({
+    schemaVersion: 1,
+    id: "demo",
+    baseUrl: base,
+    allowedDomains: ["127.0.0.1"],
+    apiContracts: [{ id: "protected", method: "GET", endpoint: `${base}api/protected`, risk: "read", contentType: "query" }],
+    actions: [{ action: "web.query-leaves", title: "Query leaves", risk: "read", confirmation: "none", metadata: { apiContractRefs: ["protected"] } }],
+  }));
+  fs.writeFileSync(planPath, JSON.stringify({
+    action: "web.query-leaves",
+    operations: [{ type: "apiRequest", contractId: "protected", method: "GET", risk: "read" }],
+  }));
+  const storagePath = path.join(tmp, "storage.json");
+  const authRecipePath = path.join(tmp, "auth-recipe.json");
+  fs.writeFileSync(storagePath, JSON.stringify({
+    cookies: [{ name: "XSRF-TOKEN", value: "csrf-secret", domain: "127.0.0.1", path: "/" }],
+    origins: [{ origin: base.replace(/\/$/, ""), localStorage: [{ name: "access_token", value: "access-secret" }] }],
+    lilySessionStorage: [{ origin: base.replace(/\/$/, ""), sessionStorage: [{ name: "id_token", value: "session-secret" }] }],
+  }));
+  fs.writeFileSync(authRecipePath, JSON.stringify({
+    schemaVersion: 1,
+    headerRules: [
+      { name: "Authorization", source: "localStorage", key: "access_token", format: "Bearer {{value}}" },
+      { name: "X-CSRF-Token", source: "cookie", key: "XSRF-TOKEN", format: "{{value}}" },
+      { name: "X-ID-Token", source: "sessionStorage", key: "id_token", format: "{{value}}" },
+    ],
+  }));
+  const protectedResult = JSON.parse((await runExecutor(playbookPath, planPath, ["--storage-state", storagePath, "--auth-recipe", authRecipePath])).stdout);
+  assert(protectedResult.ok === true && protectedResult.apiResponses[0].status === 200, "auth recipe injects Authorization/CSRF/sessionStorage from storageState");
+
+  console.log("PASS: test-web-system-api-execution (10 tests)");
 } finally {
   server.close();
   fs.rmSync(tmp, { recursive: true, force: true });

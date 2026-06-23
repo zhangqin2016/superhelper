@@ -32,6 +32,44 @@ function defaultSessionTitle() {
   return DEFAULT_SESSION_TITLES[getLocale()] || DEFAULT_SESSION_TITLES.en;
 }
 
+function messageMergeKey(message) {
+  if (message?.id) return `id:${message.id}`;
+  const hash = crypto.createHash("sha256");
+  hash.update(JSON.stringify({
+    role: message?.role || "assistant",
+    content: message?.content || "",
+    files: message?.files || null,
+    turnId: message?.turnId || message?.record?.turnId || null,
+    timestamp: message?.timestamp || null,
+    failed: Boolean(message?.failed),
+  }));
+  return `fp:${hash.digest("hex")}`;
+}
+
+function mergeInlineMessages(currentMessages, legacyMessages) {
+  const current = Array.isArray(currentMessages) ? currentMessages : [];
+  const legacy = Array.isArray(legacyMessages) ? legacyMessages : [];
+  if (legacy.length === 0) return current;
+
+  const counts = new Map();
+  for (const message of current) {
+    const key = messageMergeKey(message);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  const merged = current.slice();
+  const seenLegacy = new Map();
+  for (const message of legacy) {
+    const key = messageMergeKey(message);
+    const seen = (seenLegacy.get(key) || 0) + 1;
+    seenLegacy.set(key, seen);
+    if ((counts.get(key) || 0) >= seen) continue;
+    merged.push(message);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return merged;
+}
+
 class SessionManager {
   /**
    * @param {import('./project-manager')} projectManager
@@ -76,12 +114,15 @@ class SessionManager {
     const store = this._store();
     legacyImport.importSession(store, session.id);
     if (Array.isArray(session.messages)) {
-      if (session.messages.length && store.count(session.id) === 0) {
-        store.bulkInsert(session.id, session.messages);
-        store.setMeta(`imported:${session.id}`, `inline:${session.messages.length}`);
+      if (session.messages.length) {
+        const inserted = typeof store.bulkInsertMissing === "function"
+          ? store.bulkInsertMissing(session.id, session.messages)
+          : store.bulkInsert(session.id, session.messages);
+        store.setMeta(`imported:${session.id}`, `inline:${inserted}/${session.messages.length}`);
       }
       delete session.messages;
     }
+    session.messageCount = store.count(session.id);
   }
 
   load() {
@@ -225,13 +266,32 @@ class SessionManager {
   _mergeLegacySessions(legacyStore) {
     const legacySessions = this._normalizeSessionsStore(legacyStore?.sessions || {});
     let added = 0;
+    let merged = 0;
     for (const [projectId, list] of Object.entries(legacySessions)) {
       if (!this.sessions[projectId]) this.sessions[projectId] = [];
-      const existingIds = new Set(this.sessions[projectId].map((session) => session.id));
+      const existingById = new Map(this.sessions[projectId].map((session) => [session.id, session]));
       for (const session of list) {
-        if (existingIds.has(session.id)) continue;
+        const existing = existingById.get(session.id);
+        if (existing) {
+          const before = Array.isArray(existing.messages) ? existing.messages.length : 0;
+          existing.messages = mergeInlineMessages(existing.messages, session.messages);
+          if ((!existing.title || existing.title === defaultSessionTitle()) && session.title) {
+            existing.title = session.title;
+          }
+          if (!existing.createdAt && session.createdAt) existing.createdAt = session.createdAt;
+          if (session.updatedAt && (!existing.updatedAt || Date.parse(session.updatedAt) > Date.parse(existing.updatedAt))) {
+            existing.updatedAt = session.updatedAt;
+          }
+          existing.messageCount = Math.max(
+            Number.isInteger(existing.messageCount) ? existing.messageCount : 0,
+            existing.messages.length,
+            Number.isInteger(session.messageCount) ? session.messageCount : 0,
+          );
+          if (existing.messages.length !== before) merged += 1;
+          continue;
+        }
         this.sessions[projectId].push(session);
-        existingIds.add(session.id);
+        existingById.set(session.id, session);
         added += 1;
       }
     }
@@ -240,6 +300,9 @@ class SessionManager {
     }
     if (added > 0) {
       console.info(`[sessions] merged ${added} legacy session(s) into split store`);
+    }
+    if (merged > 0) {
+      console.info(`[sessions] repaired ${merged} legacy session(s) with missing inline messages`);
     }
   }
 
@@ -670,6 +733,15 @@ class SessionManager {
     const session = this._find(sessionId);
     if (!session || !session.agentResumeId) return false;
     delete session.agentResumeId;
+    this.save();
+    return true;
+  }
+
+  markLegacyContextHydrated(sessionId, agentResumeId) {
+    const session = this._find(sessionId);
+    if (!session) return false;
+    session.legacyContextHydratedAgentResumeId = String(agentResumeId || "fresh-opencode-session");
+    session.legacyContextHydratedAt = new Date().toISOString();
     this.save();
     return true;
   }

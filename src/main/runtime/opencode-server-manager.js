@@ -133,7 +133,7 @@ class OpencodeServerManager extends EventEmitter {
         const existing = await this._sdkSession.get(this.resumeSessionID);
         if (existing && existing.id) {
           this.sessionID = existing.id;
-          this.wasResumed = true; // history already holds the skill guidance
+          this.wasResumed = true;
           return existing.id;
         }
       } catch {
@@ -148,7 +148,7 @@ class OpencodeServerManager extends EventEmitter {
     const id = res?.id;
     if (!id) throw new Error("session create returned no id");
     this.sessionID = id;
-    this.wasResumed = false; // fresh session — guidance must be injected once
+    this.wasResumed = false;
     return id;
   }
 

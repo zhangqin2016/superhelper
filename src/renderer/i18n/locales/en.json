@@ -894,7 +894,7 @@
   "find.close": "Close",
   "composer.conventionSaved": "Remembered — applies to future sessions in this workspace",
   "composer.conventionSaveFailed": "Could not save the convention",
-  "engine.learnedSkillDraft": "A new skill draft was created — review and enable it in Settings → Skills",
+  "engine.learnedSkillDraft": "A workspace skill was created — enable it in Settings → Skills",
   "file.reveal": "Show in folder",
   "file.preview": "Preview",
   "file.revealFailed": "Could not show the file in folder",

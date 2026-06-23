@@ -132,6 +132,22 @@ store.applyRuntimeBatch({
         actions: [],
       },
     },
+    {
+      id: "e-todo",
+      type: "todo.updated",
+      sessionId: "s1",
+      turnId: "t1",
+      seq: 7,
+      ts: 1006,
+      source: "test",
+      payload: {
+        id: "todo_s1",
+        todos: [
+          { content: "Inspect official reducer", status: "completed" },
+          { content: "Map Lily event", status: "in_progress" },
+        ],
+      },
+    },
   ],
 });
 
@@ -141,8 +157,12 @@ if (runtime.liveTurn?.activityLabel !== "Read src/a.js") {
 }
 {
   const kinds = (runtime.liveTurn?.timeline || []).map((entry) => entry.kind).join(",");
-  if (kinds !== "text,thinking,tool") {
+  if (kinds !== "text,thinking,tool,tool") {
     throw new Error(`expected text + thinking + tool timeline, got ${kinds}`);
+  }
+  const todos = runtime.liveTurn.timeline.find((entry) => entry.name === "todowrite")?.input?.todos || [];
+  if (todos.length !== 2 || todos[1].content !== "Map Lily event") {
+    throw new Error(`todo.updated should update the live todo timeline: ${JSON.stringify(runtime.liveTurn.timeline)}`);
   }
 }
 
@@ -155,8 +175,8 @@ store.applyRuntimeBatch({
       type: "usage.updated",
       sessionId: "s1",
       turnId: "t1",
-      seq: 7,
-      ts: 1006,
+      seq: 8,
+      ts: 1007,
       source: "test",
       payload: { estimatedTokens: 203 },
     },
@@ -175,8 +195,8 @@ store.applyRuntimeBatch({
       type: "turn.completed",
       sessionId: "s1",
       turnId: "t1",
-      seq: 8,
-      ts: 1007,
+      seq: 9,
+      ts: 1008,
       source: "test",
       payload: { assistant: "hello", durationMs: 30584, totalCostUsd: 0.12 },
     },

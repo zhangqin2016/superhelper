@@ -36,7 +36,7 @@
 .modal-panel {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 28px;
@@ -315,7 +315,7 @@
    ========================================================================= */
 
 .drop-overlay {
-  position: fixed; inset: 0; z-index: 9999;
+  position: fixed; inset: 0; z-index: var(--z-drop-overlay);
   display: grid; place-items: center;
   background: var(--bg-drop-overlay);
   backdrop-filter: blur(4px);
@@ -339,7 +339,7 @@
    ========================================================================= */
 
 .toast-container {
-  position: fixed; top: 16px; right: 16px; z-index: 10001;
+  position: fixed; top: 16px; right: 16px; z-index: var(--z-toast);
   display: grid; gap: 8px; max-width: 360px;
 }
 
@@ -362,7 +362,7 @@
 
 /* Non-blocking legacy-message migration progress (bottom-left). */
 .migration-progress {
-  position: fixed; bottom: 16px; left: 16px; z-index: 10000;
+  position: fixed; bottom: 16px; left: 16px; z-index: var(--z-notification-queue);
   min-width: 220px; max-width: 320px;
   padding: 10px 12px;
   border-radius: var(--radius-lg);

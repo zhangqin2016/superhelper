@@ -365,6 +365,19 @@ export function applyRuntimeEvent(event, opts = {}) {
       upsertTimelineTool(live, tool, event.ts || Date.now());
       break;
     }
+    case "todo.updated": {
+      const tool = {
+        id: event.payload.id || `todo_${event.sessionId || "current"}`,
+        name: "todowrite",
+        input: { todos: Array.isArray(event.payload.todos) ? event.payload.todos : [] },
+        status: "done",
+        result: null,
+        parentToolUseId: null,
+      };
+      live.tools.set(tool.id, tool);
+      upsertTimelineTool(live, tool, event.ts || Date.now());
+      break;
+    }
     case "permission.requested":
       runtime.phase = "awaiting_user";
       live.phase = "awaiting_user";

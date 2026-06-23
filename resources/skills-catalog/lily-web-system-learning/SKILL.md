@@ -1,6 +1,6 @@
 ---
 name: lily-web-system-learning
-description: Use when the user wants Lily to learn a web/OA/ERP/CRM/admin system and turn it into a reusable workspace skill for natural-language operations. Covers read-only automatic exploration, page/action mapping, domain allowlists, credential safety, high-risk confirmation, and creating a reviewed skill draft.
+description: Use when the user wants Lily to learn a web/OA/ERP/CRM/admin system and turn it into a reusable workspace skill for natural-language operations. Covers read-only automatic exploration, page/action mapping, domain allowlists, credential safety, high-risk confirmation, and creating a workspace skill the user can enable.
 ---
 
 # Lily Web System Learning
@@ -16,7 +16,7 @@ The goal is not free-form clicking. The goal is a reviewable operating model:
 3. Generate a connector playbook with action contracts.
 4. Prefer API-first execution when safe contracts exist; fall back to browser automation for UI-only or stale API paths.
 5. Generate a workspace skill draft that references the playbook.
-6. Let the user review and enable it before future use.
+6. Let the user enable it before future use.
 
 Never store passwords in a skill, prompt, log, or generated file. The user should log in through an interactive browser/profile, SSO, or existing session. Treat credentials, cookies, tokens, screenshots, exports, and personal data as sensitive.
 
@@ -38,6 +38,13 @@ Never store passwords in a skill, prompt, log, or generated file. The user shoul
    `sessionPath`, stored 0600 under userData, never exported). Pass that
    `sessionPath` as `--storage-state` to every later scan/discover/execute call.
    Re-run capture only when a call reports `stale`/`relearnRecommended` (401/403).
+   Never ask the user to paste cookies, tokens, OAuth codes, CSRF values, or
+   credential headers; if a token is dynamic, learn it from authenticated browser
+   traffic or re-capture/re-learn the flow.
+   The capture script is the only login-capture path: do not write ad-hoc Python
+   or JavaScript login scripts, do not call `input()`/stdin prompts, and do not
+   install Playwright at runtime. If the bundled browser runtime is missing,
+   report that exact blocker instead of improvising.
 4. **Contract discovery first (authoritative > inferred).** Before scanning the
    UI, run `scripts/discover_contracts.cjs --base-url <url> --allow-domain <host>`
    (pass `--storage-state` to reuse the logged-in session) to probe for the
@@ -54,14 +61,27 @@ Never store passwords in a skill, prompt, log, or generated file. The user shoul
    (authoritative published contracts are never overridden). Write-path APIs
    (POST/PUT/DELETE) are only captured when those flows actually run — exercise
    them only in a confirmed test environment.
-6. Run a read-only dry run before deeper exploration.
-5. Run every scanner/executor command in the foreground and wait for it to finish before claiming the scan is running, complete, failed, or waiting for analysis.
-6. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
-7. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
-8. Classify actions by risk: read, export, draft, submit, update, delete, financial, identity/security, and bulk operations.
-9. Build an action map and playbook. Each action needs inputs, preconditions, execution path, confirmation policy, success signal, rollback/recovery, and audit fields.
-10. Generate a workspace skill draft and summary for user review.
-11. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
+6. **Learn auth injection from the logged-in session.** After HAR capture, run
+   `node scripts/learn_auth_recipe.cjs --storage-state <sessionPath> --har scan.har
+   --base-url <url> --allow-domain <host>`. The output stores only sources and
+   formats (for example, `Authorization` from `localStorage.access_token` as
+   `Bearer {{value}}`), never raw token values.
+7. Run a read-only dry run before deeper exploration.
+8. Run every scanner/executor command in the foreground and wait for it to finish before claiming the scan is running, complete, failed, or waiting for analysis.
+9. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
+10. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
+11. Classify actions by risk: read, export, draft, submit, update, delete, financial, identity/security, and bulk operations.
+12. Build an action map and playbook. Each action needs inputs, preconditions, execution path, confirmation policy, success signal, rollback/recovery, and audit fields.
+13. Finish with the deterministic finalizer:
+   `node scripts/finalize_web_system_learning.cjs --scan <scan.json>
+   --contracts <api-contracts.json> --system-id <id> --name <name>`.
+   This derives `web-system-spec.json` from scan/contracts and calls
+   `create_web_system_skill.cjs`. Do not hand-write the final spec in chat, and
+   do not end the learning turn before the finalizer returns `ok: true` or a
+   concrete error.
+14. Tell the user exactly where the generated workspace skill draft was written
+   and that they can enable it.
+15. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
 
 ## Runtime Lifecycle Rules
 
@@ -72,7 +92,11 @@ The chat UI can only show "running" while a real foreground tool is active. Keep
 - If a scan may take minutes, tell the user what will be scanned, then run the foreground command and wait for its JSON/output before summarizing.
 - If the environment cannot keep a foreground tool alive, stop and explain the exact blocker instead of pretending a background scan is active.
 - A follow-up such as "deeper scan" or "continue scanning" must either run another foreground scanner command or ask for the missing scope. It must not be treated as a separate idle chat while the previous scan is supposedly pending.
-- After a scanner command finishes, read the output file before generating `system-profile.json`, `page-map.json`, `api-map.json`, `capability-map.json`, `action-playbook.json`, `health.json`, and `skill-draft/SKILL.md`.
+- After a scanner command finishes, read the output file before generating `system-profile.json`, `page-map.json`, `api-map.json`, `capability-map.json`, `action-playbook.json`, `health.json`, and the workspace skill `SKILL.md`.
+- A partial scan is still a valid reviewable draft. If coverage is low, run the
+  deterministic finalizer anyway and mark gaps in `health.json`; do not stop at
+  "I will continue scanning" unless another foreground scanner command is
+  actually running.
 
 ## Output Artifacts
 
@@ -85,7 +109,7 @@ Place generated artifacts in the workspace learning area, using stable English d
 - capability-map.json: natural-language capability routing, required parameters, confirmation gates, success signals, stale signals, and recovery policy.
 - action-playbook.json: natural-language intents mapped to safe actions.
 - health.json: learning coverage, API/browser fallback coverage, stale state, and recommended next steps.
-- skill-draft/SKILL.md: workspace skill draft for review and enablement.
+- SKILL.md: workspace skill instructions for enablement, written under the generated system id directory such as `<learned-skills-inbox>/<system-id>/`.
 - audit-log.jsonl: learning actions, timestamps, scope, and redacted evidence.
 
 ## Safety Rules
@@ -103,17 +127,33 @@ Place generated artifacts in the workspace learning area, using stable English d
   scan/discover/execute call. Do not reopen a browser to log in for each action;
   only re-capture when the session actually expires (a run reports
   `stale`/`relearnRecommended` from a 401/403).
+- If a page or API requires a token/cookie/header, do not ask the user how to
+  obtain it. Use the captured session, or re-run authenticated learning so the
+  platform observes the required dynamic token flow.
+- Captured sessions can contain cookies, localStorage, and sessionStorage. Treat
+  all three as local secrets; reuse them through `--storage-state` and
+  `--auth-recipe`, never by copying values into plans, prompts, generated code,
+  logs, or skill files.
+- Pass the local auth recipe as `--auth-recipe <authRecipePath>` for API
+  execution when HAR observed Authorization/CSRF headers. The recipe resolves
+  values from storageState at runtime and must not contain raw token values.
 - Prefer learned API actions: an all-API plan runs over plain HTTP with the
   reused session cookies and launches NO browser (fast, no flicker, no repeated
   windows). Asking a question that maps to a learned API = one HTTP call.
-- Use browser automation only when an action is UI-only, must be visually
-  confirmed, or the API path failed/went stale (then it falls back automatically).
-- When an action has both an API path and a browser path, put the API steps in
-  `operations` and the browser equivalent in `plan.fallbackOperations`; the
-  executor runs the fallback automatically if the API path fails or goes stale
+- Normal user execution must use the learned flow graph in `capability-map.json`
+  and `web-system-playbook.json`. Do not generate ad-hoc Playwright,
+  JavaScript, Python, selectors, or operation plans while answering a normal user
+  request.
+- Use browser automation during learning, discovery, login, and captured
+  headless fallback flows only. If no captured API or headless flow exists for a
+  capability, mark it as needing re-learning instead of improvising.
+- When an action has both an API path and a captured browser path, store the
+  browser path during learning as `fallbackOperations`; the executor runs the
+  fallback automatically if the API path fails or goes stale
   (401/403/404/status-mismatch/locator-not-found).
-- For write actions, supply `plan.rollbackOperations` (compensating steps); the
-  executor runs them best-effort if a write fails after mutating state.
+- For write actions, capture `rollbackOperations` during learning when a safe
+  compensating path exists; the executor runs them best-effort if a write fails
+  after mutating state.
 - Always pass `--audit-log <file>` so every step is appended to a durable JSONL
   trail (inputs redacted). A failed run reports `stale`/`staleSignal`/
   `relearnRecommended` — when `relearnRecommended` is true, re-run learning
@@ -124,11 +164,12 @@ Place generated artifacts in the workspace learning area, using stable English d
   label → placeholder → text candidates before failing, so a single brittle
   selector does not break a step. On a hard failure it reports
   `relearnRecommended` rather than guessing.
-- For a frequently-repeated, verified flow, compile it to a deterministic script
-  with `node scripts/compile_playbook.cjs --playbook web-system-playbook.json
-  --action web.x --plan plan.json --out flows/x.cjs`. The compiled script
-  replays without the model (faster, cheaper, reproducible) and keeps the domain
-  allowlist + no-credential rules inlined. Re-compile after a re-learn.
+- For a frequently-repeated, verified flow, compile it during learning to a
+  deterministic script with `node scripts/compile_playbook.cjs --playbook
+  web-system-playbook.json --action web.x --plan plan.json --out flows/x.cjs`.
+  The compiled script replays without the model (faster, cheaper, reproducible)
+  and keeps the domain allowlist + no-credential rules inlined. Re-compile after
+  a re-learn.
 
 ## Browser Engine (@playwright/mcp, optional)
 
@@ -137,17 +178,18 @@ Two complementary browser paths — pick by task:
 - **Deterministic path (default for verified/repeatable flows):** the validated
   executor (`execute_web_playbook.cjs`) and compiled scripts. Use this for
   learned, confirmed actions — it is safe, fast, and reproducible.
-- **Accessibility-tree path (optional, for exploration / ad-hoc operation):** if
+- **Accessibility-tree path (optional, for exploration / learning capture):** if
   this session has Microsoft's `@playwright/mcp` server registered, prefer its
   accessibility-snapshot tools to navigate and act on pages the way a person
-  reads them — better for first-time exploration and one-off requests where no
-  compiled flow exists yet. It is free/open-source (Apache-2.0) and runs locally.
+  reads them — better for first-time exploration and capturing missing flows. It
+  is free/open-source (Apache-2.0) and runs locally.
 
 When `@playwright/mcp` is available, use it for discovery/coverage passes and
-ad-hoc steps, then capture the result as a learned action so future runs use the
-deterministic path. Never put credentials in MCP tool calls; rely on the shared
-browser session. If `@playwright/mcp` is not registered, everything still works
-through the deterministic executor — it is an enhancement, not a requirement.
+exploration steps, then capture the result as a learned action so future runs
+use the deterministic path. Never put credentials in MCP tool calls; rely on the
+shared browser session. If `@playwright/mcp` is not registered, everything still
+works through the deterministic executor — it is an enhancement, not a
+requirement.
 
 ## Natural-Language Routing
 
@@ -161,7 +203,9 @@ and match the user's request to a capability by meaning:
    candidate is a write/destructive action.
 3. Fill `params` from the request; for any missing `required` param, ask using
    its `askWhenMissing` prompt before executing.
-4. Execute through the playbook (api-first, with the declared browser fallback).
+4. Execute through the typed learned-system tool when available; otherwise
+   materialize the plan from `execution.learnedFlow.operationTemplate` and user
+   parameters. Never author a fresh browser/script plan at runtime.
 5. If no capability matches, say so and offer to re-learn that area — never
    invent an endpoint or selector.
 

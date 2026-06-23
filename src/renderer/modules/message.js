@@ -20,6 +20,7 @@ import {
   renderSealedTurnArticle,
   createLiveTurnArticleShell,
   renderLiveTurnArticle,
+  refreshLiveTurnStatusDisplay,
 } from "./turn-view-renderer.js";
 import { updateSessionRunningIndicators } from "./project-tree.js";
 import { updateTopbarTitles } from "./session-chrome.js";
@@ -643,6 +644,34 @@ function renderLiveTurn(sessionId, liveTurn, queue) {
   renderLiveTurnArticle(article, liveTurn, { sessionId, queue });
 }
 
+function findProjectIdForSession(sessionId) {
+  for (const project of store.get("projects") || []) {
+    if ((project.sessions || []).some((session) => session.id === sessionId)) return project.id;
+  }
+  return "";
+}
+
+async function focusSessionFromNotification(sessionId) {
+  if (!sessionId) return;
+  try {
+    const sw = await window.assistantClient.switchSession(sessionId);
+    const { applySessionSwitch } = await import("./session-chrome.js");
+    await applySessionSwitch(sw, sessionId, findProjectIdForSession(sessionId));
+  } catch (err) {
+    const { showToast } = await import("./toast.js");
+    showToast(err?.message || t("toast.switchSessionFailed"), "error");
+  }
+}
+
+function refreshLiveStatusOnly(sessionId) {
+  const runtime = getRuntimeSession(sessionId);
+  const live = runtime.liveTurn;
+  if (!live || live.final) return;
+  const article = view(sessionId).liveArticles.get(live.turnId);
+  if (!article?.isConnected) return;
+  refreshLiveTurnStatusDisplay(article, live);
+}
+
 export function createMessage(sessionId, role, text = "", files = null, options = null) {
   const message = { role, content: text, files, failed: Boolean(options?.failed) };
   if (role === "user") appendUserMessage(sessionId, message);
@@ -710,6 +739,7 @@ function manageHeartbeat() {
       if (runtime.liveTurn && !runtime.liveTurn.final) {
         const sig = runtimeVisualSig(runtime);
         if (lastRuntimeVisualSig.get(s) !== sig) renderRuntimeSession(s);
+        else refreshLiveStatusOnly(s);
       } else {
         manageHeartbeat(); // turn ended → stop ticking
       }
@@ -727,6 +757,9 @@ export function initMessageUi() {
 export function wireMessageIpc() {
   window.assistantClient.onRuntimeEvents?.((batch) => {
     applyRuntimeBatch(batch);
+  });
+  window.assistantClient.onFocusSession?.((data) => {
+    void focusSessionFromNotification(data?.sessionId || "");
   });
   window.assistantClient.onFileDiff?.((entry) => {
     if (entry?.sessionId) addDiffEntry(entry.sessionId, entry);

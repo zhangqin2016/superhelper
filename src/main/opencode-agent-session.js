@@ -190,9 +190,10 @@ class OpencodeAgentSession extends EventEmitter {
       const id = await server.createSession();
       server.subscribe();
       this._server = server;
-      // Inject Lily's skill guidance once, only for a brand-new session — a
-      // resumed session already carries it in its message history.
-      this._guidancePending = !server.wasResumed && Boolean(this.spawnOptions?.guidance);
+      // Guidance is delivered with each prompt, not only with fresh sessions:
+      // OpenCode resume history may predate the current Lily rules/skill set, and
+      // session-level skill toggles can change between turns.
+      this._guidancePending = Boolean(this.spawnOptions?.guidance);
       this.agentResumeId = id;
       this.emit("agent-resume-id", id);
       // Started — clear the "starting" flag so isAlive() keys on the live process,
@@ -278,12 +279,12 @@ class OpencodeAgentSession extends EventEmitter {
     (async () => {
       try {
         const server = await this._ensureStarted();
-        // Skill guidance rides the FIRST message of a fresh session, then never
-        // again (the engine keeps it in context for the rest of the session).
-        const guidance = this._guidancePending ? this.spawnOptions?.guidance || "" : "";
+        // Skill guidance rides every user turn as hidden engine context. This
+        // keeps resumed/migrated sessions and skill changes aligned with Lily's
+        // current rules instead of relying on stale OpenCode history.
+        const guidance = this.spawnOptions?.guidance || "";
         this._pendingPromptPayload = { text, files, guidance };
         await server.sendPrompt(this._pendingPromptPayload);
-        if (guidance) this._guidancePending = false;
       } catch (err) {
         // The turn is driven by SSE (session.idle/events). If events already
         // arrived, a hiccup on the blocking message POST is NOT a turn failure —
@@ -562,7 +563,11 @@ class OpencodeAgentSession extends EventEmitter {
       return;
     }
     this._pendingCompletePayload = null;
-    this._completeTurn({ ...next, output: this.collectedOutput.trim() });
+    const synced = await this._syncFinalOutputFromOfficialHistory({
+      ...next,
+      output: this.collectedOutput.trim(),
+    });
+    this._completeTurn(synced);
   }
 
   _clearIdleSettleTimer() {
@@ -699,25 +704,66 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   async _recoverCompletedAssistantFromHistory() {
+    return this._latestAssistantFromOfficialHistory();
+  }
+
+  async _latestAssistantFromOfficialHistory() {
     if (!this._server?.messages || !this._turnStartedAt) return null;
-    const raw = await this._server.messages({ limit: 12 });
+    const raw = await this._server.messages({ limit: 16 });
     const items = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
     const minCreatedAt = this._turnStartedAt - 10_000;
+    let best = null;
     for (const item of items) {
       const info = item?.info || {};
       if (info.role !== "assistant") continue;
       const created = Number(info.time?.created || info.created || 0);
       if (Number.isFinite(created) && created > 0 && created < minCreatedAt) continue;
-      const parts = Array.isArray(item?.parts) ? item.parts : [];
-      const output = parts
-        .filter((part) => part?.type === "text" && typeof part.text === "string")
-        .map((part) => part.text)
-        .join("")
-        .trim();
+      const { assistantTextFromOpenCodeMessageItem } = require("./runtime/opencode-conversation-adapter");
+      const output = assistantTextFromOpenCodeMessageItem(item);
       if (!output) continue;
-      return { output, engineMessageId: typeof info.id === "string" ? info.id : null };
+      const completed = Number(info.time?.completed || info.completed || 0);
+      const rank = Number.isFinite(completed) && completed > 0
+        ? completed
+        : Number.isFinite(created) && created > 0
+          ? created
+          : 0;
+      if (!best || rank >= best.rank) {
+        best = {
+          output,
+          engineMessageId: typeof info.id === "string" ? info.id : null,
+          rank,
+        };
+      }
     }
-    return null;
+    return best ? { output: best.output, engineMessageId: best.engineMessageId } : null;
+  }
+
+  async _syncFinalOutputFromOfficialHistory(payload) {
+    const current = String(payload?.output || "").trim();
+    let latest = null;
+    try {
+      latest = await this._latestAssistantFromOfficialHistory();
+    } catch (err) {
+      log.warn("opencode final history sync failed: %s", err?.message || String(err));
+      return payload;
+    }
+    const official = String(latest?.output || "").trim();
+    if (!official) return payload;
+    if (official !== current) {
+      let missing = "";
+      if (official.startsWith(current)) missing = official.slice(current.length);
+      else if (!current) missing = official;
+      if (missing) {
+        this.collectedOutput = official;
+        this._ingest([{ type: "assistant.delta", payload: { text: missing } }]);
+      }
+    }
+    return {
+      ...payload,
+      output: official || current,
+      engineMessageId: latest?.engineMessageId || payload?.engineMessageId || null,
+      resultFromOfficialHistory: official !== current,
+    };
   }
 
   _completeTurn(payload) {

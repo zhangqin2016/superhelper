@@ -6,7 +6,9 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   buildMetadataIndex,
+  isInjectedUserPromptText,
   mergeMetadata,
+  mergeUserDisplayText,
   getConversationPageFromSource,
 } = require("../src/main/opencode-conversation-source.js");
 
@@ -51,6 +53,45 @@ assert.equal(merged.content, "fresh", "OpenCode text remains canonical");
 assert.equal(merged.turnId, "turn_1", "Lily turn id merged");
 assert.deepEqual(merged.record.artifacts, [{ path: "/tmp/out.pdf" }], "Lily artifacts merged");
 assert.equal(merged.record.meta.opencode.messageId, "msg_engine", "OpenCode meta preserved");
+
+const injectedPrompt = `# 智能工作台全局说明
+
+你是智能工作台（Lily Workbench）助手。不要自称 Claude、Claude Code 或 Anthropic 产品。
+
+## 身份问答（必读）
+`;
+assert.equal(isInjectedUserPromptText(injectedPrompt), true, "detects Lily injected engine prompt");
+assert.equal(isInjectedUserPromptText("帮我学习这个系统"), false, "does not flag normal user input");
+
+const mergedUserDisplay = mergeUserDisplayText([
+  {
+    id: "official_user_1",
+    role: "user",
+    content: injectedPrompt,
+    timestamp: "2026-06-23T10:00:02.000Z",
+    source: "opencode",
+  },
+], [
+  {
+    id: "local_user_1",
+    role: "user",
+    content: "帮我学习这个系统",
+    timestamp: "2026-06-23T10:00:00.000Z",
+    turnId: "turn_raw_1",
+    files: [{ path: "/tmp/a.png" }],
+  },
+]);
+assert.equal(mergedUserDisplay[0].content, "帮我学习这个系统", "local raw user text replaces injected engine prompt");
+assert.equal(mergedUserDisplay[0].turnId, "turn_raw_1", "local user turn id is preserved");
+assert.deepEqual(mergedUserDisplay[0].files, [{ path: "/tmp/a.png" }], "local user files are preserved");
+assert.equal(mergedUserDisplay[0].meta.opencodeEnginePromptHidden, true, "hidden engine prompt is marked");
+
+const normalOfficialUser = mergeUserDisplayText([
+  { id: "official_user_2", role: "user", content: "普通问题", timestamp: "2026-06-23T12:00:00.000Z" },
+], [
+  { id: "local_user_2", role: "user", content: "很久以前的问题", timestamp: "2026-06-23T10:00:00.000Z" },
+]);
+assert.equal(normalOfficialUser[0].content, "普通问题", "normal official user text is not replaced without a time match");
 
 const fallbackPage = { ok: true, source: "lily", conversation: [{ id: "local" }] };
 const baseSession = { id: "s1", projectId: "p1" };
@@ -128,5 +169,40 @@ const page = await getConversationPageFromSource(ctx, "s1", {});
 assert.equal(page.source, "opencode");
 assert.equal(page.projectId, "p1");
 assert.deepEqual(page.conversation[0].record.artifacts, [{ path: "/tmp/out.pdf" }]);
+
+const userMergeCtx = {
+  sessionManager: {
+    findById: () => baseSession,
+    getActive: () => baseSession,
+    getConversationPage: () => fallbackPage,
+    getConversation: () => [{
+      id: "local_user_3",
+      role: "user",
+      content: "用户真正输入的问题",
+      timestamp: "2026-06-23T13:00:00.000Z",
+      turnId: "turn_user_3",
+    }],
+  },
+  runnerPool: {
+    get: () => ({
+      isAlive: () => true,
+      getConversationPage: async () => ({
+        ok: true,
+        source: "opencode",
+        sessionId: "s1",
+        conversation: [{
+          id: "official_user_3",
+          role: "user",
+          content: injectedPrompt,
+          timestamp: "2026-06-23T13:00:02.000Z",
+          source: "opencode",
+        }],
+      }),
+    }),
+  },
+};
+const userMergePage = await getConversationPageFromSource(userMergeCtx, "s1", {});
+assert.equal(userMergePage.conversation[0].content, "用户真正输入的问题", "OpenCode source uses Lily raw user display text");
+assert.equal(userMergePage.conversation[0].turnId, "turn_user_3");
 
 console.log("opencode-conversation-source: ok");

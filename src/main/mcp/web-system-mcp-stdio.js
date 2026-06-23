@@ -11,7 +11,7 @@
  * schema-validated args into a plan and running it through execute_web_playbook
  * (browser-free HTTP, reusing the captured session). No model-authored plans.
  *
- *   node web-system-mcp-stdio.js --system <draftDir> [--storage-state <file>]
+ *   node web-system-mcp-stdio.js --system <draftDir> [--storage-state <file>] [--auth-recipe <file>]
  */
 
 const fs = require("node:fs");
@@ -23,10 +23,11 @@ const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio
 const { createWebSystemMcpServer, buildApiPlan, resolveCapabilityContract } = require("./web-system-mcp.js");
 
 function parseArgs(argv) {
-  const args = { system: "", storageState: "" };
+  const args = { system: "", storageState: "", authRecipe: "" };
   for (let i = 2; i < argv.length; i += 1) {
     if (argv[i] === "--system") args.system = argv[++i];
     else if (argv[i] === "--storage-state") args.storageState = argv[++i];
+    else if (argv[i] === "--auth-recipe") args.authRecipe = argv[++i];
   }
   if (!args.system) throw new Error("Missing --system <draftDir>");
   return args;
@@ -49,8 +50,13 @@ function defaultSessionPath(systemId) {
   return path.join(base, "web-sessions", `${slugifySystem(systemId)}.json`);
 }
 
+function defaultAuthRecipePath(sessionPath) {
+  const ext = path.extname(sessionPath);
+  return ext ? sessionPath.slice(0, -ext.length) + ".auth-recipe.json" : `${sessionPath}.auth-recipe.json`;
+}
+
 /** Run a materialized plan through execute_web_playbook (browser-free HTTP for APIs). */
-function runViaExecutor(draftDir, action, plan, { storageState, confirmed }) {
+function runViaExecutor(draftDir, action, plan, { storageState, authRecipe, confirmed }) {
   return new Promise((resolve) => {
     const executor = path.join(draftDir, "scripts", "execute_web_playbook.cjs");
     if (!fs.existsSync(executor)) {
@@ -68,6 +74,7 @@ function runViaExecutor(draftDir, action, plan, { storageState, confirmed }) {
     const capMap = path.join(draftDir, "capability-map.json");
     if (fs.existsSync(capMap)) argv.push("--capability-map", capMap);
     if (storageState && fs.existsSync(storageState)) argv.push("--storage-state", storageState);
+    if (authRecipe && fs.existsSync(authRecipe)) argv.push("--auth-recipe", authRecipe);
     if (confirmed) argv.push("--confirmed");
     const auditLog = path.join(draftDir, "audit-log.jsonl");
     argv.push("--audit-log", auditLog);
@@ -102,6 +109,7 @@ async function main() {
   const systemId = capabilityMap.systemId || slugifySystem(draftDir.split(path.sep).pop());
   const systemName = capabilityMap.systemName || systemId;
   const sessionPath = args.storageState || defaultSessionPath(systemId);
+  const authRecipePath = args.authRecipe || defaultAuthRecipePath(sessionPath);
 
   const byId = new Map(capabilityMap.capabilities.map((c) => [c.id || c.action, c]));
 
@@ -110,18 +118,19 @@ async function main() {
     if (!capability) return { ok: false, code: "UNKNOWN_CAPABILITY", capability: capabilityId };
     const contract = resolveCapabilityContract(capability, apiContracts);
     if (!contract) {
-      // No learned API for this capability — browser materialization is not
-      // deterministic from the current data; surface honestly rather than guess.
+      // No learned API or compiled headless flow for this capability. Do not
+      // ask the model to invent browser operations at runtime; surface the
+      // missing learned-flow state so the user can re-run learning.
       return {
         ok: false,
-        code: "NEEDS_BROWSER",
+        code: "NEEDS_LEARNED_FLOW",
         capability: capabilityId,
-        message: "This capability has no learned API contract; run it via the browser playbook (execute_web_playbook) instead.",
+        message: "This capability has no learned API contract or compiled headless flow. Re-run learning for this action before normal use; runtime operation/script generation is disabled.",
       };
     }
     const plan = buildApiPlan(capability, contract, params);
     const confirmed = capability.risk && capability.risk !== "read";
-    return runViaExecutor(draftDir, plan.action, plan, { storageState: sessionPath, confirmed });
+    return runViaExecutor(draftDir, plan.action, plan, { storageState: sessionPath, authRecipe: authRecipePath, confirmed });
   }
 
   const server = createWebSystemMcpServer({ systemId, systemName, capabilities: capabilityMap.capabilities, run });

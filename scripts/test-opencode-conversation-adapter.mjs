@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 const {
   adaptOpencodeMessagesPage,
   adaptOpencodeMessageItem,
+  coalesceAssistantMessageRuns,
 } = require("../src/main/runtime/opencode-conversation-adapter.js");
 
 const page = adaptOpencodeMessagesPage({
@@ -81,5 +82,74 @@ const ignored = adaptOpencodeMessageItem({
   parts: [{ id: "prt_ignored", messageID: "msg_empty", type: "text", text: "nope", ignored: true }],
 });
 assert.equal(ignored.content, "");
+
+const mergedPage = adaptOpencodeMessagesPage({
+  items: [
+    {
+      info: { id: "msg_u2", role: "user", time: { created: 1710000003000 } },
+      parts: [{ type: "text", text: "learn login" }],
+    },
+    {
+      info: {
+        id: "msg_a2_1",
+        role: "assistant",
+        time: { created: 1710000004000, completed: 1710000005000 },
+        tokens: { input: 3, output: 4, reasoning: 1 },
+        cost: 0.01,
+      },
+      parts: [
+        { type: "reasoning", text: "check runtime" },
+        { type: "text", text: "Playwright is available." },
+      ],
+    },
+    {
+      info: {
+        id: "msg_a2_2",
+        role: "assistant",
+        time: { created: 1710000006000, completed: 1710000008000 },
+        tokens: { input: 5, output: 6, reasoning: 2 },
+        cost: 0.02,
+      },
+      parts: [
+        { type: "reasoning", text: "capture auth" },
+        { type: "text", text: "Login captured." },
+      ],
+    },
+    {
+      info: { id: "msg_u3", role: "user", time: { created: 1710000009000 } },
+      parts: [{ type: "text", text: "next" }],
+    },
+  ],
+});
+
+assert.equal(mergedPage.conversation.length, 3, "consecutive assistant history rows render as one turn");
+assert.equal(mergedPage.conversation[1].id, "msg_a2_2", "latest assistant message remains the rewind anchor");
+assert.equal(
+  mergedPage.conversation[1].content,
+  "Playwright is available.\n\nLogin captured.",
+  "assistant text is merged without separate bubbles",
+);
+assert.equal(
+  mergedPage.conversation[1].record.thinkingText,
+  "check runtime\n\ncapture auth",
+  "reasoning text is merged into one process section",
+);
+assert.equal(mergedPage.conversation[1].record.usage.input_tokens, 8, "usage is summed across assistant fragments");
+assert.equal(mergedPage.conversation[1].record.usage.output_tokens, 13, "output usage includes reasoning from all fragments");
+assert.equal(mergedPage.conversation[1].record.durationMs, 4000, "duration spans the assistant run");
+assert.equal(mergedPage.conversation[1].record.totalCostUsd, 0.03, "cost is summed across assistant fragments");
+assert.deepEqual(
+  mergedPage.conversation[1].record.meta.opencode.mergedAssistantMessageIds,
+  ["msg_a2_1", "msg_a2_2"],
+  "merged official message ids are retained for diagnostics",
+);
+assert.equal(mergedPage.conversation[2].role, "user", "a user message starts the next turn");
+
+const manualMerged = coalesceAssistantMessageRuns([
+  { id: "a1", role: "assistant", content: "same", record: { assistantText: "same" } },
+  { id: "a2", role: "assistant", content: "same", record: { assistantText: "same" } },
+]);
+assert.equal(manualMerged.length, 1, "adjacent duplicate assistant text is not repeated");
+assert.equal(manualMerged[0].content, "same");
 
 console.log("opencode-conversation-adapter: ok");

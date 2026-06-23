@@ -41,6 +41,8 @@ assert(openaiUrl("https://x/") === "https://x", "openai url verbatim (trimmed)")
   assert(p.options.headers.Authorization === "Bearer sk-deepseek", "also Bearer header (Claude CLI used AUTH_TOKEN)");
   assert("deepseek-v4-pro" in p.models, "custom model declared");
   assert(cfg.model === "anthropic/deepseek-v4-pro", "default model ref");
+  assert(r.tiers.haiku === "deepseek-v4-pro", "missing haiku tier falls back to main model");
+  assert(r.tiers.subagent === "deepseek-v4-pro", "missing subagent tier falls back to main model");
 }
 
 // --- Lily gateway endpoint: protocol is explicit, not guessed from URL -------

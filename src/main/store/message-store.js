@@ -28,6 +28,21 @@ const PREVIEW_MAX = 500;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
+function fingerprintMessage(message) {
+  const hash = crypto.createHash("sha256");
+  const stable = {
+    role: message?.role || "assistant",
+    content: message?.content || "",
+    files: message?.files || null,
+    turnId: message?.turnId || message?.record?.turnId || null,
+    timestamp: message?.timestamp || null,
+    failed: Boolean(message?.failed),
+    terminal: message?.record?.terminal || message?.meta?.terminal || null,
+  };
+  hash.update(JSON.stringify(stable));
+  return hash.digest("hex");
+}
+
 function pack(envelope) {
   return zlib.gzipSync(Buffer.from(JSON.stringify(envelope), "utf8"));
 }
@@ -153,6 +168,48 @@ class MessageStore {
         n += 1;
       }
       return n;
+    })();
+  }
+
+  /**
+   * Merge messages without duplicating records already present in the session.
+   *
+   * Migration can be retried after crashes or partial imports, so this method is
+   * deliberately multiset-based: it preserves repeated identical messages while
+   * avoiding a second copy of messages that were already migrated earlier.
+   */
+  bulkInsertMissing(sessionId, messages) {
+    return this.db.transaction(() => {
+      const existingRows = this.db.all(
+        `SELECT id, envelope_blob FROM messages WHERE session_id = ? ORDER BY seq ASC`,
+        sessionId,
+      );
+      const existingById = new Set();
+      const existingByFingerprint = new Map();
+      for (const row of existingRows) {
+        if (row.id) existingById.add(row.id);
+        const envelope = unpack(row.envelope_blob);
+        const fp = fingerprintMessage(envelope);
+        existingByFingerprint.set(fp, (existingByFingerprint.get(fp) || 0) + 1);
+      }
+
+      const incomingByFingerprint = new Map();
+      let inserted = 0;
+      for (const message of Array.isArray(messages) ? messages : []) {
+        if (!message || typeof message !== "object") continue;
+        if (message.id && existingById.has(message.id)) continue;
+
+        const fp = fingerprintMessage(message);
+        const seen = (incomingByFingerprint.get(fp) || 0) + 1;
+        incomingByFingerprint.set(fp, seen);
+        if ((existingByFingerprint.get(fp) || 0) >= seen) continue;
+
+        const stored = this._insert(sessionId, message);
+        if (stored?.id) existingById.add(stored.id);
+        existingByFingerprint.set(fp, (existingByFingerprint.get(fp) || 0) + 1);
+        inserted += 1;
+      }
+      return inserted;
     })();
   }
 

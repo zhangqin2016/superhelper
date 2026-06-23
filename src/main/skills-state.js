@@ -10,6 +10,7 @@ const MANDATORY_PLATFORM_SKILL_IDS = [
   "lily-intent-router",
   "lily-context-rules",
   "lily-task-execution-rules",
+  "lily-engineering-rules",
 ];
 
 const BUNDLED_SKILL_IDS = [
@@ -17,6 +18,7 @@ const BUNDLED_SKILL_IDS = [
   "lily-intent-router",
   "lily-context-rules",
   "lily-task-execution-rules",
+  "lily-engineering-rules",
   "lily-vision",
   "lily-image-generation",
   "lily-diagrams",

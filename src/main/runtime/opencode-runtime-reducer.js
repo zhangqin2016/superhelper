@@ -48,6 +48,14 @@ function createOpencodeRuntimeState() {
   };
 }
 
+function requestId(payload = {}) {
+  return payload.id || payload.requestID || payload.permissionID || payload.questionID || "";
+}
+
+function sessionScopedId(prefix, payload = {}) {
+  return `${prefix}_${payload.sessionID || payload.sessionId || "current"}`;
+}
+
 function resetOpencodeRuntimeState(state) {
   state?.tools?.clear?.();
   state?.parts?.clear?.();
@@ -152,6 +160,7 @@ function processSummary(ev, effects, drafts) {
   const firstDraft = drafts[0];
   if (firstDraft?.type === "tool.started") return firstDraft.payload?.name || "";
   if (firstDraft?.type === "tool.done") return firstDraft.payload?.id || "";
+  if (firstDraft?.type === "todo.updated") return "todo";
   return SILENT_EVENTS.has(ev?.type) ? "" : String(ev?.type || "");
 }
 
@@ -169,6 +178,8 @@ function processEventDraft(ev, result) {
       stopReason: effect.stopReason || "",
     })),
     event: compactEvent(ev),
+    rawEvent: ev && typeof ev === "object" ? ev : null,
+    handled: !result.effects.some((effect) => effect?.kind === "unknown"),
   };
   payload.summary = processSummary(ev, result.effects, result.drafts);
   return runtimeDraft("process.event", payload);
@@ -221,6 +232,22 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
       if (info.id && info.role && state.roles) state.roles.set(info.id, info.role);
       return emptyResult(ev);
     }
+
+    case "session.deleted":
+      return emptyResult(ev);
+
+    case "message.removed":
+      if (p.messageID && state.roles) state.roles.delete(p.messageID);
+      if (p.messageID && state.partMessages) {
+        for (const [partID, messageID] of state.partMessages.entries()) {
+          if (messageID !== p.messageID) continue;
+          state.parts?.delete(partID);
+          state.partMessages?.delete(partID);
+          state.textParts?.delete(partID);
+          state.pendingDeltas?.delete(partID);
+        }
+      }
+      return emptyResult(ev);
 
     case "message.part.delta": {
       const delta = p.delta || "";
@@ -309,6 +336,28 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
       return emptyResult(ev);
     }
 
+    case "message.part.removed":
+      if (p.partID) {
+        state.parts?.delete(p.partID);
+        state.partMessages?.delete(p.partID);
+        state.textParts?.delete(p.partID);
+        state.pendingDeltas?.delete(p.partID);
+      }
+      return emptyResult(ev);
+
+    case "todo.updated": {
+      const todos = Array.isArray(p.todos) ? p.todos : [];
+      return withProcessEvent(ev, {
+        drafts: [runtimeDraft("todo.updated", {
+          id: sessionScopedId("todo", p),
+          todos,
+        })],
+        effects: [],
+        progress: true,
+        terminal: false,
+      });
+    }
+
     case "session.idle":
     case "idle":
       return withProcessEvent(ev, {
@@ -322,7 +371,12 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
       // Status is a snapshot, not a turn boundary. On the shared async server it
       // can arrive before the final message deltas have drained; only the real
       // session.idle event is allowed to close the turn.
-      return emptyResult(ev);
+      return withProcessEvent(ev, {
+        drafts: [],
+        effects: [],
+        progress: false,
+        terminal: false,
+      });
 
     case "question.asked": {
       const questions = (Array.isArray(p.questions) ? p.questions : []).map((q) => ({
@@ -345,6 +399,18 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
       });
     }
 
+    case "question.replied":
+    case "question.rejected":
+      return withProcessEvent(ev, {
+        drafts: [runtimeDraft("user_question.resolved", {
+          requestId: requestId(p),
+          rejected: ev.type === "question.rejected",
+        })],
+        effects: [],
+        progress: true,
+        terminal: false,
+      });
+
     case "permission.asked":
     case "permission.updated":
       return withProcessEvent(ev, {
@@ -364,6 +430,24 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
         terminal: false,
       });
 
+    case "permission.replied":
+      return withProcessEvent(ev, {
+        drafts: [runtimeDraft("permission.resolved", {
+          requestId: requestId(p),
+          allow: p.allow,
+          answer: p.answer,
+          cancelled: false,
+        })],
+        effects: [],
+        progress: true,
+        terminal: false,
+      });
+
+    case "vcs.branch.updated":
+    case "lsp.updated":
+    case "server.instance.disposed":
+      return emptyResult(ev);
+
     case "session.error":
     case "message.error": {
       const err = p.error || p;
@@ -377,11 +461,7 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
 
     default:
       return withProcessEvent(ev, {
-        drafts: [runtimeDraft("protocol.unknown", {
-          kind: "unknown_runtime_event",
-          notice: { code: "unknownEvent", level: "warning", panel: true, done: true, type: ev.type },
-          event: ev,
-        })],
+        drafts: [],
         effects: [{ kind: "unknown", type: ev.type }],
         progress: false,
         terminal: false,

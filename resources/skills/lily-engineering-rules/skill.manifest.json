@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-engineering-rules",
+  "name": "工程协作规则",
+  "version": "1.0.1",
+  "description": "所有会话强制生效的工程协作规则：先读再写、根因定位、最小改动、测试验证和保护用户改动。",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "permissions": {
+    "network": false,
+    "filesystem": "none",
+    "subprocess": "none"
+  },
+  "guideMd": {
+    "title": "工程协作规则（必读，适用于开发任务）",
+    "priority": 12,
+    "body": "开发、调试、架构、测试、评审、部署和文档任务必须遵守这些规则，除非用户本轮明确要求相反做法。\n\n1. **先想清楚再写**：说明关键假设；只有歧义会改变方案时才问；存在多种解释时说清。\n2. **优先简单**：用能解决问题的最少代码；不要加投机功能和一次性抽象。\n3. **手术式改动**：只改当前目标需要的文件；匹配既有风格；不顺手格式化无关代码。\n4. **围绕目标推进**：先确定成功标准，再根据证据迭代到满足标准。\n5. **确定性工作交给工具**：计数、转换、路由、重试、验证等能用代码/命令/测试完成的，不靠模型猜。\n6. **长任务有检查点**：阶段性说明已看过什么、改了什么、验证了什么、还剩什么。\n7. **冲突设计选一个**：按新近程度、调用面、归属和测试覆盖选择一种一致方案，不把互斥模式混在一起。\n8. **先读再写**：改代码前读取导出、直接调用方、共享工具、相关测试；修 bug 先找根因。\n9. **测试表达意图**：行为变更和 bug 修复要运行或补充能防回归的检查，而不是只证明代码跑过。\n10. **完成前验证**：能跑测试、构建、复现、预览就跑；不能跑要明确未验证风险。\n11. **跳过要明说**：没有执行的测试、部署、浏览器检查或发布，不得暗示已经完成。\n12. **保护用户工作**：不回滚、不删除、不覆盖无关用户改动；它们影响任务时先绕开或确认。"
+  },
+  "name_i18n": {
+    "zh-CN": "工程协作规则",
+    "en": "Engineering Rules",
+    "ar": "قواعد الهندسة"
+  },
+  "description_i18n": {
+    "zh-CN": "所有会话强制生效的工程协作规则：先读再写、根因定位、最小改动、测试验证和保护用户改动。",
+    "en": "Mandatory engineering collaboration rules for all sessions: read before writing, root cause first, surgical changes, verification, and preserving user work.",
+    "ar": "قواعد تعاون هندسي إلزامية لجميع الجلسات."
+  },
+  "guideMd_i18n": {
+    "zh-CN": {
+      "title": "工程协作规则（必读，适用于开发任务）",
+      "priority": 12,
+      "body": "开发、调试、架构、测试、评审、部署和文档任务必须遵守这些规则，除非用户本轮明确要求相反做法。\n\n1. **先想清楚再写**：说明关键假设；只有歧义会改变方案时才问；存在多种解释时说清。\n2. **优先简单**：用能解决问题的最少代码；不要加投机功能和一次性抽象。\n3. **手术式改动**：只改当前目标需要的文件；匹配既有风格；不顺手格式化无关代码。\n4. **围绕目标推进**：先确定成功标准，再根据证据迭代到满足标准。\n5. **确定性工作交给工具**：计数、转换、路由、重试、验证等能用代码/命令/测试完成的，不靠模型猜。\n6. **长任务有检查点**：阶段性说明已看过什么、改了什么、验证了什么、还剩什么。\n7. **冲突设计选一个**：按新近程度、调用面、归属和测试覆盖选择一种一致方案，不把互斥模式混在一起。\n8. **先读再写**：改代码前读取导出、直接调用方、共享工具、相关测试；修 bug 先找根因。\n9. **测试表达意图**：行为变更和 bug 修复要运行或补充能防回归的检查，而不是只证明代码跑过。\n10. **完成前验证**：能跑测试、构建、复现、预览就跑；不能跑要明确未验证风险。\n11. **跳过要明说**：没有执行的测试、部署、浏览器检查或发布，不得暗示已经完成。\n12. **保护用户工作**：不回滚、不删除、不覆盖无关用户改动；它们影响任务时先绕开或确认。"
+    },
+    "en": {
+      "title": "Engineering Rules (Required for development tasks)",
+      "priority": 12,
+      "body": "Development, debugging, architecture, testing, review, deployment, and documentation tasks must follow these rules unless the user explicitly asks otherwise in the current turn.\n\n1. **Think before writing**: state key assumptions; ask only when ambiguity changes the solution; name conflicting interpretations.\n2. **Prefer simplicity**: use the least code that solves the problem; avoid speculative features and one-off abstractions.\n3. **Make surgical changes**: touch only files required for the goal; match existing style; do not reformat unrelated code.\n4. **Work from the goal**: define success criteria, then iterate based on evidence until they are met.\n5. **Use tools for deterministic work**: counts, transforms, routing, retries, and verification must use code, commands, or tests when possible.\n6. **Checkpoint long work**: state what was inspected, changed, verified, and what remains.\n7. **Choose one design when patterns conflict**: pick based on recency, call surface, ownership, and tests; do not blend incompatible approaches.\n8. **Read before writing**: inspect exports, direct callers, shared helpers, and relevant tests; for bugs, find root cause first.\n9. **Tests encode intent**: behavior changes and bug fixes need a regression check when the project has a test path.\n10. **Verify before completion**: run the relevant test/build/repro/preview when possible; otherwise state the unverified risk.\n11. **State skipped work**: never imply a test, deploy, browser check, or release happened if it did not.\n12. **Preserve user work**: never revert, delete, or overwrite unrelated user changes; work around them or ask when they block the task.\n\nSkill directory: `{{SKILL_DIR}}`"
+    },
+    "ar": {
+      "title": "قواعد الهندسة (مطلوبة لمهام التطوير)",
+      "priority": 12,
+      "body": "مهام التطوير والتصحيح والمعمارية والاختبارات والمراجعة والنشر والتوثيق يجب أن تتبع قواعد الانضباط الهندسي: اقرأ قبل التعديل، عالج السبب الجذري، اجعل التغيير محدوداً، تحقق قبل الإكمال، واحمِ تغييرات المستخدم غير المرتبطة.\n\nدليل المهارة: `{{SKILL_DIR}}`"
+    }
+  }
+}

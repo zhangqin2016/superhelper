@@ -139,6 +139,7 @@ const expectedMandatory = [
   "lily-workbench-rules",
   "lily-intent-router",
   "lily-context-rules",
+  "lily-engineering-rules",
   "lily-task-execution-rules",
 ];
 for (const skillId of expectedMandatory) {
@@ -184,11 +185,16 @@ const taskRulesIndex = firstGuideIndex([
   "## 任务执行",
   "## Task Execution",
 ]);
+const engineeringRulesIndex = firstGuideIndex([
+  "## 工程协作规则",
+  "## Engineering Rules",
+]);
 if (!(
   productRulesIndex > -1 &&
   intentRulesIndex > productRulesIndex &&
   contextRulesIndex > intentRulesIndex &&
-  taskRulesIndex > contextRulesIndex
+  engineeringRulesIndex > contextRulesIndex &&
+  taskRulesIndex > engineeringRulesIndex
 )) {
   throw new Error("mandatory rule guides should be injected in priority order");
 }
