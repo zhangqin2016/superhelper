@@ -245,8 +245,8 @@ function checkSvgStructure(file) {
   } catch {
     return "";
   }
-  if (!/<svg\b[\s\S]*<\/svg>/i.test(text)) {
-    return `SVG check failed: ${file} is not a complete SVG document. Regenerate it with a valid <svg> root and closing </svg>.`;
+  if (!/<svg\b/i.test(text)) {
+    return `SVG check failed: ${file} does not contain an <svg> root. Regenerate it as a valid SVG document.`;
   }
   const overlap = findSvgTextOverlap(text);
   if (overlap) {
@@ -309,8 +309,8 @@ function checkGeneratedMedia(outputText) {
       } else if (type === "image" && !matchesAny(head, MEDIA_TYPE_MAGIC.image)) {
         fail(`generated_media declares ${file} as an image but it is not a valid image file. Regenerate it.`);
       }
-      if (type === "audio" && !matchesAny(head, MEDIA_TYPE_MAGIC.audio)) {
-        fail(`generated_media declares ${file} as audio but it is not a valid audio file. Regenerate it.`);
+      if ((type === "audio" || type === "speech") && !matchesAny(head, MEDIA_TYPE_MAGIC.audio)) {
+        fail(`generated_media declares ${file} as ${type} but it is not a valid audio file. Regenerate it.`);
       }
       if (type === "video" && !isVideoHead(head)) {
         fail(`generated_media declares ${file} as video but it is not a valid video file. Regenerate it.`);

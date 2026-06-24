@@ -91,6 +91,11 @@ try {
   if (runHook({ tool_name: "Write", tool_input: { file_path: goodSvg } }).status !== 0) {
     throw new Error("non-overlapping svg must pass");
   }
+  const selfClosingSvg = path.join(tmp, "self-closing.svg");
+  fs.writeFileSync(selfClosingSvg, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"/>`);
+  if (runHook({ tool_name: "Write", tool_input: { file_path: selfClosingSvg } }).status !== 0) {
+    throw new Error("self-closing svg root must pass");
+  }
   const overlappingSvg = path.join(tmp, "overlap.svg");
   fs.writeFileSync(overlappingSvg, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120">
     <text x="160" y="60" text-anchor="middle" font-size="18">HeaderFilter 解析请求头信息</text>
@@ -141,6 +146,22 @@ try {
   });
   if (mediaWrong.status !== 2 || !mediaWrong.stderr.includes("not a valid image")) {
     throw new Error("wrong-format generated_media must fail");
+  }
+  const realSpeech = path.join(tmp, "real.wav");
+  fs.writeFileSync(realSpeech, Buffer.concat([Buffer.from("RIFF", "binary"), Buffer.alloc(32)]));
+  const speechOk = runHook({
+    tool_name: "Bash",
+    tool_response: { content: `<generated_media type="speech">\n<file path="${realSpeech}" />\n</generated_media>` },
+  });
+  if (speechOk.status !== 0) throw new Error(`valid generated speech must pass audio validation: ${speechOk.stderr}`);
+  const fakeSpeech = path.join(tmp, "fake.wav");
+  fs.writeFileSync(fakeSpeech, "not audio");
+  const speechWrong = runHook({
+    tool_name: "Bash",
+    tool_response: { content: `<generated_media type="speech">\n<file path="${fakeSpeech}" />\n</generated_media>` },
+  });
+  if (speechWrong.status !== 2 || !speechWrong.stderr.includes("not a valid audio")) {
+    throw new Error("wrong-format generated speech must fail audio validation");
   }
   const mediaSvgOverlap = runHook({
     tool_name: "Bash",
