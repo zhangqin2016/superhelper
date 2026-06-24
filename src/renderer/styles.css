@@ -1,8 +1,10 @@
 @import "./styles/base.css";
 @import "./styles/layout.css";
 @import "./styles/topbar.css";
+@import "./styles/task-center.css";
 @import "./styles/messages.css";
 @import "./styles/image-viewer.css";
+@import "./styles/pdf-viewer.css";
 @import "./styles/diff-panel.css";
 @import "./styles/skills-tree.css";
 @import "./styles/composer.css";

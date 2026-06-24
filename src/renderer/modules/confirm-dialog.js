@@ -84,20 +84,22 @@ export function chooseDialog({ title = t("confirm.defaultTitle"), message = "", 
 
   return new Promise((resolve) => {
     const overlay = document.createElement("section");
-    overlay.className = "modal-panel name-prompt-panel";
+    overlay.className = "modal-panel choose-dialog-panel";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
     overlay.innerHTML = `
-      <div class="modal-card name-prompt-card">
-        <header class="modal-header">
+      <div class="modal-card choose-dialog-card">
+        <header class="choose-dialog-header">
           <div>
-            <h2 class="name-prompt-title"></h2>
-            <p class="name-prompt-label"></p>
+            <h2 class="choose-dialog-title"></h2>
+            <p class="choose-dialog-message"></p>
           </div>
         </header>
-        <div class="name-prompt-actions choose-dialog-actions"></div>
+        <div class="choose-dialog-actions"></div>
       </div>
     `;
-    overlay.querySelector(".name-prompt-title").textContent = title;
-    overlay.querySelector(".name-prompt-label").textContent = message;
+    overlay.querySelector(".choose-dialog-title").textContent = title;
+    overlay.querySelector(".choose-dialog-message").textContent = message;
 
     const finish = (value) => {
       overlay.remove();
@@ -114,7 +116,9 @@ export function chooseDialog({ title = t("confirm.defaultTitle"), message = "", 
     for (const option of options) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = option.danger ? "send-btn confirm-dialog-danger" : "topbar-btn";
+      btn.className = option.danger
+        ? "choose-dialog-action choose-dialog-action-danger"
+        : "choose-dialog-action choose-dialog-action-secondary";
       btn.textContent = option.label;
       btn.addEventListener("click", () => finish(option.value));
       actionsEl.appendChild(btn);

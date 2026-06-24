@@ -40,9 +40,31 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
     ".yaml",
     ".yml",
   ],
-  priority: ["release", "runtime", "server", "ui", "bugfix", "config", "code", "document", "media"],
-  activatingCategories: ["bugfix", "ui", "server", "release", "runtime", "config", "code"],
+  priority: ["release", "runtime", "agent_quality", "server", "ui", "bugfix", "config", "code", "document", "media"],
+  activatingCategories: ["bugfix", "ui", "server", "release", "runtime", "agent_quality", "config", "code"],
   categories: {
+    agent_quality: {
+      terms: [
+        "agent",
+        "assistant",
+        "intent",
+        "routing",
+        "router",
+        "prompt",
+        "小模型",
+        "大智慧",
+        "变笨",
+        "聪明",
+        "智能",
+        "意图",
+        "路由",
+        "识别",
+        "准确",
+        "一次通过",
+        "闭环",
+      ],
+      weakTerms: ["识别", "准确", "原因"],
+    },
     bugfix: {
       terms: [
         "bug",
@@ -67,6 +89,7 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
         "401",
         "timeout",
       ],
+      weakTerms: ["原因"],
     },
     ui: {
       terms: [
@@ -88,6 +111,7 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
         "官网",
         "后台",
       ],
+      weakTerms: ["后台"],
     },
     server: {
       terms: [
@@ -107,6 +131,7 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
         "鉴权",
         "统计",
       ],
+      weakTerms: ["后台", "登录"],
     },
     release: {
       terms: [
@@ -150,6 +175,7 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
         "任务",
         "执行中",
       ],
+      weakTerms: ["任务"],
     },
     config: {
       terms: [
@@ -176,6 +202,8 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
         "implement",
         "refactor",
         "commit",
+        "flow",
+        "architecture",
         "代码",
         "脚本",
         "实现",
@@ -184,6 +212,10 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
         "函数",
         "组件",
         "模块",
+        "源码",
+        "流程",
+        "流转",
+        "架构",
       ],
     },
     document: {
@@ -237,6 +269,10 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
       runtime: [
         "For protocol/runtime work, preserve event ordering, turn ownership, queue semantics, and permission prompts.",
         "Add or update a fixture/regression test when a new runtime event shape is handled.",
+      ],
+      agent_quality: [
+        "For agent-quality work, inspect model tier selection, prompt/guidance injection, deterministic intent routing, skill/tool boundaries, and final-output synchronization.",
+        "Prefer platform-side classifiers, guards, schemas, and regression fixtures over asking the model to remember long prose rules.",
       ],
       ui: ["For UI work, verify the visible state, empty/loading/error states, and repeated interaction path."],
       server: ["For server work, verify auth boundaries, persistence, migrations, and public/admin route differences."],
@@ -324,6 +360,7 @@ function mergeTaskIntelligenceRegistry(base = DEFAULT_TASK_INTELLIGENCE_REGISTRY
       ...baseCategory,
       ...remoteCategory,
       terms: uniqueStrings(baseCategory.terms, remoteCategory.terms),
+      weakTerms: uniqueStrings(baseCategory.weakTerms, remoteCategory.weakTerms),
     };
   }
 
@@ -372,12 +409,87 @@ function includesAny(haystack, terms) {
   return (arrayOfStrings(terms) || []).some((term) => haystack.includes(term.toLowerCase()));
 }
 
+function matchedTerms(haystack, terms) {
+  return (arrayOfStrings(terms) || []).filter((term) => haystack.includes(term.toLowerCase()));
+}
+
+function categoryMatches(haystack, config = {}) {
+  const terms = arrayOfStrings(config.terms) || [];
+  const weak = new Set((arrayOfStrings(config.weakTerms) || []).map((term) => term.toLowerCase()));
+  const strongTerms = terms.filter((term) => !weak.has(term.toLowerCase()));
+  if (includesAny(haystack, strongTerms)) return true;
+
+  // Weak terms are deliberately common words, e.g. "任务", "识别", "原因".
+  // A single weak hit must not inject a runtime/agent-quality contract into an
+  // ordinary request. Two weak signals are enough to preserve intentional use.
+  const weakTerms = terms.filter((term) => weak.has(term.toLowerCase()));
+  return matchedTerms(haystack, weakTerms).length >= 2;
+}
+
+function hasScheduledTaskNegationSafe(text) {
+  try {
+    return require("./schedule-parser").hasScheduledTaskNegation(text);
+  } catch {
+    return false;
+  }
+}
+
+function redactNegatedScheduledTaskTerms(text) {
+  if (!hasScheduledTaskNegationSafe(text)) return String(text || "");
+  return String(text || "")
+    .replace(/(?:定时|自动执行|计划任务|任务|提醒|日程|闹钟)/g, " ")
+    .replace(/\b(?:schedule|scheduled task|reminder|automation)\b/gi, " ");
+}
+
+function extractNegativeConstraints(text = "") {
+  const source = String(text || "").trim();
+  if (!source) return [];
+  const constraints = [];
+  if (hasScheduledTaskNegationSafe(source)) {
+    constraints.push({
+      intent: "scheduled_task_creation",
+      rule: "Do not create, modify, or route this request as a scheduled task.",
+      evidence: "explicit scheduled-task negation in user request",
+    });
+  }
+  const explicit = source.match(/(?:不要|别|无需|不需要|不用|禁止|不是|并非|do not|don't|dont|never|no need to|not)\s*[^，。；;.!?\n]{0,80}/gi);
+  for (const item of explicit || []) {
+    const value = item.trim();
+    if (!value) continue;
+    constraints.push({
+      intent: "user_negative_constraint",
+      rule: `Preserve this negative constraint exactly: ${value}`,
+      evidence: value,
+    });
+  }
+  const seen = new Set();
+  return constraints.filter((constraint) => {
+    const key = `${constraint.intent}\0${constraint.rule}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function attachedCodeFiles(files = [], registry = loadTaskIntelligenceRegistry()) {
   const codeExtensions = new Set(arrayOfStrings(registry.fileExtensions) || []);
   return files.some((file) => {
     const name = file?.name || file?.path || file?.fileName || "";
     return codeExtensions.has(path.extname(String(name)).toLowerCase());
   });
+}
+
+function isCodebaseTechnicalTerm(term = "") {
+  const lower = String(term || "").toLowerCase();
+  return (
+    new Set(["im", "imsdk"]).has(lower) ||
+    /(?:sdk|api|cli|service|server|client|gateway|runtime|router|engine)$/i.test(lower)
+  );
+}
+
+function hasCodebaseInquiry(text = "") {
+  const source = String(text || "").toLowerCase();
+  return /分析|流转|流程|链路|源码|模块|入口|调用|实现|架构|是什么|怎么|如何|why|how|where|architecture|source|call\s*flow|data\s*flow/.test(source);
 }
 
 function classifyTask({ text = "", files = [], registry = loadTaskIntelligenceRegistry() } = {}) {
@@ -389,10 +501,18 @@ function classifyTask({ text = "", files = [], registry = loadTaskIntelligenceRe
       categories: [],
     };
   }
-  const haystack = lowerText(text);
+  const haystack = lowerText(redactNegatedScheduledTaskTerms(text));
   const categories = [];
   for (const [category, config] of Object.entries(registry.categories || {})) {
-    if (includesAny(haystack, config?.terms || [])) categories.push(category);
+    if (categoryMatches(haystack, config || {})) categories.push(category);
+  }
+  const explicitTerms = extractExplicitUserTerms(text);
+  if (
+    !categories.includes("code") &&
+    hasCodebaseInquiry(text) &&
+    explicitTerms.some((term) => isCodebaseTechnicalTerm(term))
+  ) {
+    categories.push("code");
   }
   if (attachedCodeFiles(files, registry) && !categories.includes("code")) categories.push("code");
 
@@ -487,6 +607,175 @@ function buildVerificationStrategy(classification, registry = loadTaskIntelligen
   );
 }
 
+function evidenceSourcesForTaskType(taskType) {
+  const common = ["user_request", "tool_output"];
+  switch (taskType) {
+    case "bug_investigation":
+    case "runtime_protocol":
+    case "code_change":
+    case "agent_quality":
+      return uniqueStrings([
+        ...common,
+        "code_file_reference",
+        "test_or_command_output",
+        "runtime_event_or_log",
+        "official_history_or_fixture",
+      ]);
+    case "release_deploy":
+      return uniqueStrings([
+        ...common,
+        "artifact_or_version_manifest",
+        "upload_or_deploy_command_output",
+        "live_service_check",
+      ]);
+    case "server_change":
+      return uniqueStrings([
+        ...common,
+        "route_or_service_code_reference",
+        "database_or_migration_record",
+        "api_response_or_server_log",
+        "server_test_output",
+      ]);
+    case "ui_change":
+      return uniqueStrings([
+        ...common,
+        "renderer_code_reference",
+        "screenshot_or_dom_observation",
+        "renderer_test_or_manual_check",
+      ]);
+    case "configuration_change":
+      return uniqueStrings([
+        ...common,
+        "config_file_or_database_record",
+        "effective_runtime_config",
+        "secret_boundary_check",
+      ]);
+    default:
+      return uniqueStrings(common);
+  }
+}
+
+function buildEvidencePolicy(classification) {
+  const taskType = classification?.taskType || "general";
+  const active = Boolean(classification?.active);
+  return {
+    required: active,
+    allowedSources: evidenceSourcesForTaskType(taskType),
+    unsupportedClaimPolicy: active
+      ? "Unsupported factual claims must be downgraded to uncertainty. Do not state causes, completion, deployment, correctness, data values, or external facts as confirmed without an allowed evidence source."
+      : "Use evidence when making factual claims; if evidence is unavailable, say what is unknown instead of inventing details.",
+    finalAnswerRequirements: active
+      ? [
+          "For each important conclusion, cite the evidence type used.",
+          "If evidence is missing, explicitly say it is unverified or unknown.",
+          "Do not claim fixed/completed/deployed/verified unless tool output or a concrete record supports it.",
+        ]
+      : [],
+  };
+}
+
+const GREENFIELD_TERMS = Object.freeze([
+  "全新",
+  "从零",
+  "新建一个应用",
+  "新建应用",
+  "新的应用",
+  "单独创建一个应用",
+  "独立应用",
+  "新项目",
+  "创建项目",
+  "greenfield",
+  "new app",
+  "new project",
+  "from scratch",
+]);
+
+const USER_TERM_STOPWORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "this",
+  "that",
+  "what",
+  "why",
+  "how",
+  "code",
+  "test",
+  "file",
+  "node",
+]);
+
+function extractExplicitUserTerms(text = "") {
+  const source = String(text || "");
+  const terms = [];
+  const seen = new Set();
+  const matches = source.match(/[A-Za-z][A-Za-z0-9_-]{1,40}/g) || [];
+  for (const raw of matches) {
+    const term = raw.trim();
+    const lower = term.toLowerCase();
+    const exactTechnicalAcronym = new Set(["im", "cst", "imsdk"]).has(lower);
+    const technical =
+      term.length >= 4 ||
+      /[0-9_-]/.test(term) ||
+      /^[A-Z]{2,}$/.test(term) ||
+      /(?:sdk|api|cli|http|tcp|ws)$/i.test(term) ||
+      exactTechnicalAcronym;
+    if (!technical || USER_TERM_STOPWORDS.has(lower) || seen.has(lower)) continue;
+    seen.add(lower);
+    terms.push(term);
+    if (terms.length >= 8) break;
+  }
+  return terms;
+}
+
+function buildSourceCoveragePolicy({ text = "", classification = {} } = {}) {
+  const terms = extractExplicitUserTerms(text);
+  const required = Boolean(classification.active && terms.length);
+  return {
+    required,
+    explicitTerms: terms,
+    policy: required
+      ? "Before making codebase or architecture claims, search for the user's explicit terms in paths, filenames, symbols, docs, and fixtures. Do not substitute a neighboring subsystem or acronym unless evidence proves it is part of the requested scope."
+      : "No explicit source term coverage required.",
+  };
+}
+
+function hasGreenfieldIntent(text = "") {
+  const source = lowerText(text);
+  return GREENFIELD_TERMS.some((term) => source.includes(term.toLowerCase()));
+}
+
+function buildWorkspaceGroundingPolicy({ text = "", classification = {}, profile = { type: "unknown", signals: [] } } = {}) {
+  const active = Boolean(classification.active);
+  const categories = new Set(classification.categories || []);
+  const needsGrounding =
+    active &&
+    ["code", "ui", "server", "runtime", "config", "bugfix", "agent_quality", "release"].some((category) =>
+      categories.has(category),
+    );
+  const greenfieldAllowed = hasGreenfieldIntent(text);
+  return {
+    required: needsGrounding,
+    mode: greenfieldAllowed ? "greenfield_allowed" : "reuse_existing_workspace",
+    allowNewTopLevel: greenfieldAllowed,
+    workspaceProfile: profile.type || "unknown",
+    requiredEvidence: needsGrounding
+      ? uniqueStrings([
+          "workspace_tree_or_manifest",
+          "existing_entrypoint_or_target_directory",
+          "similar_implementation_or_call_site",
+        ])
+      : [],
+    policy: needsGrounding
+      ? greenfieldAllowed
+        ? "A new top-level app/project is allowed because the user explicitly asked for a greenfield build. Still inspect the current workspace first and avoid duplicating an existing suitable surface."
+        : "Default to improving the current workspace. Before creating a new top-level directory, standalone app, or parallel implementation, inspect existing structure and either reuse a suitable target or ask the user for confirmation."
+      : "No strict workspace grounding required for this turn.",
+  };
+}
+
 function buildLocalDraft({ text, classification, profile, verificationStrategy }) {
   return {
     schemaVersion: TASK_TYPE_SCHEMA_VERSION,
@@ -502,12 +791,21 @@ function buildLocalDraft({ text, classification, profile, verificationStrategy }
 function buildTaskContract({ text = "", files = [], session = null, project = null } = {}) {
   const registry = loadTaskIntelligenceRegistry();
   const classification = classifyTask({ text, files, registry });
+  const negativeConstraints = extractNegativeConstraints(text);
   if (!classification.active) {
     return {
       active: false,
       kind: classification.kind,
       taskType: classification.taskType,
       categories: classification.categories,
+      negativeConstraints,
+      evidencePolicy: buildEvidencePolicy(classification),
+      sourceCoveragePolicy: buildSourceCoveragePolicy({ text, classification }),
+      workspaceGroundingPolicy: buildWorkspaceGroundingPolicy({
+        text,
+        classification,
+        profile: { type: "unknown", signals: [] },
+      }),
     };
   }
   const projectPath = project?.path || session?.workspacePath || "";
@@ -525,6 +823,13 @@ function buildTaskContract({ text = "", files = [], session = null, project = nu
     workspaceSignals: profile.signals || [],
     registryVersion: registry.remoteVersion || "local-default",
     platformRules: PLATFORM_BASELINE_RULES,
+    negativeConstraints,
+    blockedIntents: negativeConstraints
+      .filter((item) => item.intent && item.intent !== "user_negative_constraint")
+      .map((item) => item.intent),
+    evidencePolicy: buildEvidencePolicy(classification),
+    sourceCoveragePolicy: buildSourceCoveragePolicy({ text, classification }),
+    workspaceGroundingPolicy: buildWorkspaceGroundingPolicy({ text, classification, profile }),
     checklist,
     verificationStrategy,
     modelDraft: {
@@ -551,6 +856,38 @@ function withTaskContractPrefix(text, contract) {
     "",
     "Platform baseline rules:",
     ...(contract.platformRules || PLATFORM_BASELINE_RULES).map((item) => `- ${item}`),
+    "",
+    "User negative constraints and blocked intents:",
+    ...(
+      contract.negativeConstraints?.length
+        ? contract.negativeConstraints.map((item) => `- ${item.intent}: ${item.rule}`)
+        : ["- none"]
+    ),
+    ...(
+      contract.blockedIntents?.length
+        ? ["", `Blocked intents: ${contract.blockedIntents.join(", ")}`]
+        : []
+    ),
+    "",
+    "Evidence gate:",
+    `required: ${contract.evidencePolicy?.required ? "yes" : "no"}`,
+    `allowed_sources: ${(contract.evidencePolicy?.allowedSources || []).join(", ") || "none"}`,
+    contract.evidencePolicy?.unsupportedClaimPolicy || "",
+    ...(contract.evidencePolicy?.finalAnswerRequirements?.length
+      ? ["Final answer requirements:", ...contract.evidencePolicy.finalAnswerRequirements.map((item) => `- ${item}`)]
+      : []),
+    "",
+    "Source coverage gate:",
+    `required: ${contract.sourceCoveragePolicy?.required ? "yes" : "no"}`,
+    `explicit_user_terms: ${(contract.sourceCoveragePolicy?.explicitTerms || []).join(", ") || "none"}`,
+    contract.sourceCoveragePolicy?.policy || "",
+    "",
+    "Workspace grounding gate:",
+    `required: ${contract.workspaceGroundingPolicy?.required ? "yes" : "no"}`,
+    `mode: ${contract.workspaceGroundingPolicy?.mode || "reuse_existing_workspace"}`,
+    `allow_new_top_level: ${contract.workspaceGroundingPolicy?.allowNewTopLevel ? "yes" : "no"}`,
+    `required_evidence: ${(contract.workspaceGroundingPolicy?.requiredEvidence || []).join(", ") || "none"}`,
+    contract.workspaceGroundingPolicy?.policy || "",
     "",
     "Model task draft:",
     `schema_version: ${TASK_TYPE_SCHEMA_VERSION}`,
@@ -580,8 +917,12 @@ module.exports = {
   DEFAULT_TASK_INTELLIGENCE_REGISTRY,
   buildTaskContract,
   buildVerificationStrategy,
+  buildEvidencePolicy,
+  buildSourceCoveragePolicy,
+  buildWorkspaceGroundingPolicy,
   classifyTask,
   detectWorkspaceProfile,
+  extractNegativeConstraints,
   loadTaskIntelligenceRegistry,
   mergeTaskIntelligenceRegistry,
   withTaskContractPrefix,

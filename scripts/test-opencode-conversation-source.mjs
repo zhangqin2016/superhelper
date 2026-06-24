@@ -8,6 +8,7 @@ const {
   buildMetadataIndex,
   isInjectedUserPromptText,
   mergeMetadata,
+  mergeProjectionConversation,
   mergeUserDisplayText,
   getConversationPageFromSource,
 } = require("../src/main/opencode-conversation-source.js");
@@ -93,6 +94,31 @@ const normalOfficialUser = mergeUserDisplayText([
 ]);
 assert.equal(normalOfficialUser[0].content, "普通问题", "normal official user text is not replaced without a time match");
 
+const projectedMessages = [
+  {
+    id: "projection:turn_p:user",
+    role: "user",
+    content: "原始问题",
+    turnId: "turn_p",
+    timestamp: "2026-06-23T14:00:00.000Z",
+  },
+  {
+    id: "projection:turn_p:assistant",
+    role: "assistant",
+    content: "投影答案",
+    turnId: "turn_p",
+    timestamp: "2026-06-23T14:00:10.000Z",
+    record: { assistantText: "投影答案", meta: { projected: true } },
+  },
+];
+const projectionMerged = mergeProjectionConversation([], projectedMessages);
+assert.equal(projectionMerged.length, 2, "projection can fill an otherwise empty history");
+const projectionDeduped = mergeProjectionConversation([
+  { id: "local_user_p", role: "user", content: "原始问题", turnId: "turn_p", timestamp: "2026-06-23T14:00:00.000Z" },
+], projectedMessages);
+assert.equal(projectionDeduped.filter((m) => m.role === "user").length, 1, "projection does not duplicate existing turn user");
+assert.equal(projectionDeduped.find((m) => m.role === "assistant")?.content, "投影答案", "projection fills missing assistant");
+
 const fallbackPage = { ok: true, source: "lily", conversation: [{ id: "local" }] };
 const baseSession = { id: "s1", projectId: "p1" };
 const fallbackCtx = {
@@ -101,10 +127,25 @@ const fallbackCtx = {
     getActive: () => baseSession,
     getConversationPage: () => fallbackPage,
     getConversation: () => [],
+    getProjectedConversation: () => [],
   },
   runnerPool: { get: () => null },
 };
 assert.equal((await getConversationPageFromSource(fallbackCtx, "s1", {})).source, "lily", "falls back without runner");
+
+const projectionFallbackCtx = {
+  sessionManager: {
+    findById: () => baseSession,
+    getActive: () => baseSession,
+    getConversationPage: () => ({ ok: true, source: "lily", conversation: [] }),
+    getConversation: () => [],
+    getProjectedConversation: () => projectedMessages,
+  },
+  runnerPool: { get: () => null },
+};
+const projectionFallback = await getConversationPageFromSource(projectionFallbackCtx, "s1", {});
+assert.equal(projectionFallback.conversation.length, 2, "fallback history is repaired from projection");
+assert.equal(projectionFallback.projectionSource, "lily-projection", "projection repair is tagged");
 
 let ensuredSessionId = "";
 const resumableSession = { ...baseSession, agentResumeId: "ses_resume" };
@@ -133,6 +174,7 @@ const passiveCtx = {
     getActive: () => resumableSession,
     getConversationPage: () => fallbackPage,
     getConversation: () => [legacy],
+    getProjectedConversation: () => [],
   },
   runnerPool: { get: () => null },
 };
@@ -147,6 +189,7 @@ const ctx = {
     getActive: () => baseSession,
     getConversationPage: () => fallbackPage,
     getConversation: () => [legacy],
+    getProjectedConversation: () => [],
   },
   runnerPool: {
     get: () => ({
@@ -182,6 +225,7 @@ const userMergeCtx = {
       timestamp: "2026-06-23T13:00:00.000Z",
       turnId: "turn_user_3",
     }],
+    getProjectedConversation: () => [],
   },
   runnerPool: {
     get: () => ({

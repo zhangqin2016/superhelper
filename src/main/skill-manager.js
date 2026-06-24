@@ -508,6 +508,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
   let lastTitle = null;
 
   for (const skill of enabledSkills) {
+    if (!MANDATORY_PLATFORM_SKILL_IDS.includes(skill.id)) continue;
     const guide = manifestGuide(skill.manifest, loc);
     const bodyTemplate = guide?.body;
     const title = guide?.title;
@@ -531,7 +532,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 13;
+const AGENT_GUIDE_STATIC_VERSION = 14;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
@@ -953,6 +954,7 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
         ? manifestCategoryLabel
         : (registryCategoryLabel || manifestCategoryLabel),
     capabilityLayer: registryEntry?.capabilityLayer || "core",
+    capability: registryEntry?.capability || manifest?.capability || null,
     riskLevel: registryEntry?.riskLevel || "low",
     defaultEligible: Boolean(registryEntry?.defaultEligible),
     featured: Boolean(registryEntry?.featured),
@@ -995,6 +997,7 @@ function availableSkillToPublic(registryEntry, installedVersion) {
     publisher: registryEntry.publisher || null,
     sourceType: registryEntry.sourceType || "zip",
     capabilityLayer: registryEntry.capabilityLayer || "core",
+    capability: registryEntry.capability || null,
     riskLevel: registryEntry.riskLevel || "low",
     defaultEligible: Boolean(registryEntry.defaultEligible),
     featured: Boolean(registryEntry.featured),

@@ -25,7 +25,9 @@ function registerAll(ctx) {
     mainWindow, projectManager, sessionManager,
     stagingManager, runnerPool,
   } = ctx;
-  ctx.eventBus = new RuntimeEventBus(() => ctx.mainWindow);
+  ctx.eventBus = new RuntimeEventBus(() => ctx.mainWindow, {
+    persistEvents: (sessionId, events) => sessionManager.appendRuntimeEvents?.(sessionId, events),
+  });
   ctx.transcriptStore = new TranscriptStore(sessionManager);
   ctx.turnArchive = new TurnArchive(sessionManager);
   ctx.turnOrchestrator = new TurnOrchestrator(ctx);

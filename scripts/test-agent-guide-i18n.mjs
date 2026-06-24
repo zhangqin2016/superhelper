@@ -214,4 +214,25 @@ assert.match(indexGuideEn, /Word document/i, "skill index must carry the when-to
 const indexGuideZh = skillManager.buildAgentGuideContent([indexSkill], "zh-CN");
 assert.match(indexGuideZh, /技能目录/, "zh-CN skill index title missing");
 
+const nonMandatoryInlineFixture = {
+  ...indexSkill,
+  id: "non-mandatory-guide-fixture",
+  manifest: {
+    id: "non-mandatory-guide-fixture",
+    name: "Non Mandatory Guide Fixture",
+    description: "Use when testing guide injection size.",
+    guideMd: {
+      title: "Huge Non Mandatory Guide",
+      body: "SHOULD_NOT_INLINE_NON_MANDATORY_GUIDE_BODY",
+    },
+  },
+};
+const nonMandatoryGuide = skillManager.buildAgentGuideContent([nonMandatoryInlineFixture], "en");
+assert.doesNotMatch(
+  nonMandatoryGuide,
+  /SHOULD_NOT_INLINE_NON_MANDATORY_GUIDE_BODY/,
+  "non-mandatory skill guide bodies must stay out of the every-turn agent prompt",
+);
+assert.match(nonMandatoryGuide, /Non Mandatory Guide Fixture/, "non-mandatory skill should remain discoverable in the skill index");
+
 console.log("agent guide i18n: ok");

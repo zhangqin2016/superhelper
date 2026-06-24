@@ -126,6 +126,90 @@ try {
   ok(store.getAll("S3").every((m) => m.content.startsWith("t1")), "remaining messages are all t1");
   ok(store.deleteFromTurn("S3", "nope") === 0, "deleteFromTurn on unknown turn is a no-op");
 
+  // --- durable turn admission + runtime projection ---
+  const admitted = store.admitTurnInput("S4", {
+    turnId: "turn_1",
+    delivery: "steer",
+    userText: "生成报告",
+    files: [{ name: "a.docx" }],
+    metadata: { source: "test" },
+    createdAt: 1000,
+  });
+  ok(admitted.admittedSeq === 1, "first turn input admitted with seq 1");
+  ok(admitted.userText === "生成报告", "turn input preserves user-visible text");
+  ok(store.pendingTurnInputs("S4").length === 1, "admitted turn is pending before terminal");
+  const promoted = store.markTurnInputPromoted("turn_1", { metadata: { engineTextChanged: true } });
+  ok(promoted.status === "promoted", "turn input promotion is recorded");
+  ok(promoted.metadata.source === "test" && promoted.metadata.engineTextChanged === true, "promotion merges metadata");
+
+  store.appendRuntimeEvents("S4", [
+    {
+      id: "evt_1",
+      type: "turn.started",
+      sessionId: "S4",
+      turnId: "turn_1",
+      seq: 1,
+      ts: 1100,
+      source: "orchestrator",
+      payload: { text: "生成报告" },
+    },
+    {
+      id: "evt_2",
+      type: "assistant.delta",
+      sessionId: "S4",
+      turnId: "turn_1",
+      seq: 2,
+      ts: 1200,
+      source: "runtime",
+      payload: { text: "已生成" },
+    },
+    {
+      id: "evt_3",
+      type: "assistant.final",
+      sessionId: "S4",
+      turnId: "turn_1",
+      seq: 3,
+      ts: 1300,
+      source: "orchestrator",
+      payload: { assistant: "已生成完整报告" },
+    },
+    {
+      id: "evt_4",
+      type: "turn.completed",
+      sessionId: "S4",
+      turnId: "turn_1",
+      seq: 4,
+      ts: 1400,
+      source: "orchestrator",
+      payload: { assistant: "已生成完整报告" },
+    },
+  ]);
+  ok(store.getRuntimeEvents("S4").length === 4, "runtime events are persisted");
+  const projection = store.getTurnProjection("S4", "turn_1");
+  ok(projection.status === "completed", "projection terminal status is completed");
+  ok(projection.userText === "生成报告", "projection preserves user text");
+  ok(projection.assistantText === "已生成完整报告", "projection keeps final assistant text");
+  store.appendRuntimeEvents("S4", [{
+    id: "evt_4",
+    type: "turn.completed",
+    sessionId: "S4",
+    turnId: "turn_1",
+    seq: 4,
+    ts: 1400,
+    source: "orchestrator",
+    payload: { assistant: "重复事件不应重复投影" },
+  }]);
+  ok(store.getRuntimeEvents("S4").length === 4, "duplicate runtime event id is ignored");
+  ok(store.getTurnProjection("S4", "turn_1").assistantText === "已生成完整报告", "duplicate event must not mutate projection");
+  const projectedConversation = store.getProjectedConversation("S4");
+  ok(projectedConversation.length === 2, "projection builds user + assistant messages");
+  ok(projectedConversation[0].role === "user" && projectedConversation[0].content === "生成报告", "projected user message is readable");
+  ok(projectedConversation[1].role === "assistant" && projectedConversation[1].content === "已生成完整报告", "projected assistant message is readable");
+  ok(projectedConversation[1].record.meta.projected === true, "projected assistant is marked for diagnostics");
+  const terminalInput = store.markTurnInputTerminal("turn_1", "turn.completed");
+  ok(terminalInput.status === "completed", "turn input terminal status follows terminal event");
+  ok(store.pendingTurnInputs("S4").length === 0, "terminal turn no longer pending");
+
   // --- persistence across reopen ---
   store.close();
   const store2 = new MessageStore(dbPath, blobDir);

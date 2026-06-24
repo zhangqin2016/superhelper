@@ -27,6 +27,7 @@ import {
 } from "./modules/license-update-settings.js";
 import { initDiffPanel } from "./modules/diff-panel.js";
 import { initFindBar } from "./modules/find-bar.js";
+import { initTaskCenter } from "./modules/task-center.js";
 import { showToast } from "./modules/toast.js";
 import { $ } from "./modules/dom.js";
 
@@ -176,6 +177,7 @@ async function init() {
 
   initDiffPanel();
   initFindBar();
+  initTaskCenter();
 
   await refreshLocaleSelect();
   await refreshLicenseStatus();

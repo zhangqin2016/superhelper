@@ -15,8 +15,9 @@ const POST_TERMINAL_ALLOWED = new Set([
 ]);
 
 class RuntimeEventBus {
-  constructor(mainWindowProvider) {
+  constructor(mainWindowProvider, options = {}) {
     this._mainWindowProvider = mainWindowProvider;
+    this._persistEvents = typeof options.persistEvents === "function" ? options.persistEvents : null;
     this._sessionSeq = new Map();
     this._batchSeq = new Map();
     this._pending = new Map();
@@ -41,6 +42,7 @@ class RuntimeEventBus {
     existing.push(...events);
     this._pending.set(sid, existing);
     this._remember(sid, events);
+    this._persist(sid, events);
     this._scheduleFlush(events);
     return events;
   }
@@ -74,6 +76,15 @@ class RuntimeEventBus {
   _remember(sessionId, events) {
     const next = [...(this._recent.get(sessionId) || []), ...events].slice(-200);
     this._recent.set(sessionId, next);
+  }
+
+  _persist(sessionId, events) {
+    if (!this._persistEvents || !events?.length) return;
+    try {
+      this._persistEvents(sessionId, events);
+    } catch (err) {
+      console.warn("[runtime-event-bus] persist failed:", err?.message || err);
+    }
   }
 
   _scheduleFlush(events = []) {

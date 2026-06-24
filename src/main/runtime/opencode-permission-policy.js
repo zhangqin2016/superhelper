@@ -16,6 +16,7 @@
  */
 
 const { DESTRUCTIVE_BASH, CATASTROPHIC_BASH } = require("./opencode-config-builder");
+const { assessWorkspaceWrite } = require("../workspace-grounding-gate");
 
 function escapeRe(x) {
   return String(x).replace(/[.+?^${}()|[\]\\]/g, "\\$&");
@@ -35,9 +36,10 @@ function matchesAny(command, patterns) {
  * @param {string} mode  "plan" | "ask" | "full"
  * @param {string} toolName  the gated tool (bash/edit/write/external_directory/...)
  * @param {object} input  the permission event metadata (bash: {command}, edit: {filePath})
+ * @param {{ cwd?: string, taskContract?: object|null }} context
  * @returns {"allow"|"deny"|"ask"}
  */
-function decidePermission(mode, toolName, input = {}) {
+function decidePermission(mode, toolName, input = {}, context = {}) {
   const tool = String(toolName || "").toLowerCase();
   const command = input.command || input.cmd || "";
   const filePath = input.filePath || input.path || input.file || "";
@@ -45,6 +47,15 @@ function decidePermission(mode, toolName, input = {}) {
 
   // Backstop: irreversible disasters always surface, regardless of mode.
   if (tool === "bash" && matchesAny(command, CATASTROPHIC_BASH)) return "ask";
+
+  const workspaceVerdict = assessWorkspaceWrite({
+    projectPath: context.cwd || context.taskContract?.projectPath || "",
+    toolName: tool,
+    input,
+    groundingPolicy: context.taskContract?.workspaceGroundingPolicy || null,
+  });
+  if (workspaceVerdict.verdict === "ask") return "ask";
+  if (workspaceVerdict.verdict === "deny") return "deny";
 
   switch (mode) {
     case "plan":

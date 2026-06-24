@@ -203,12 +203,19 @@ class ProjectManager {
   }
 
   _summary(project) {
-    return {
+    const summary = {
       id: project.id,
       name: project.name,
       path: project.path,
       pinned: Boolean(project.pinned),
     };
+    try {
+      const workspaceApp = require("./workspace-app-runtime").readWorkspaceAppRuntime(project.path);
+      if (workspaceApp) summary.workspaceApp = workspaceApp;
+    } catch {
+      // Project summaries must stay available even if an app manifest is corrupt.
+    }
+    return summary;
   }
 }
 

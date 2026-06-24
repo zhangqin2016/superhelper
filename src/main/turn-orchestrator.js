@@ -24,9 +24,11 @@ const {
   classifyTurnFailure,
   preflightFailureText,
   collectFailureTextFromState,
+  appendIncompleteTurnSummary,
 } = require("./turn-error-classify");
 const { runVisionPreflight, runDocumentPreflight } = require("./send-preflight");
 const { buildTaskContract, withTaskContractPrefix } = require("./task-contract");
+const { TurnRunCoordinator } = require("./turn-run-coordinator");
 
 const log = getLogger("turn-orchestrator");
 
@@ -83,6 +85,8 @@ function compactToolInput(input, name = "Tool") {
 }
 
 class TurnOrchestrator {
+  static QUEUE_RETRY_DELAY_MS = 80;
+
   constructor(ctx) {
     this.ctx = ctx;
     this.eventBus = ctx.eventBus;
@@ -90,6 +94,8 @@ class TurnOrchestrator {
     this.turnArchive = ctx.turnArchive;
     this.states = new Map();
     this.boundRunners = new WeakSet();
+    this.runCoordinator = ctx.turnRunCoordinator || new TurnRunCoordinator();
+    this.dispatchRetryTimers = new Map();
   }
 
   snapshot(sessionId) {
@@ -536,6 +542,9 @@ class TurnOrchestrator {
       state.queue = [];
       this._emitQueue(sessionId);
     }
+    if (state.admittedSeq) {
+      try { this.runCoordinator.interrupt(sessionId, state.admittedSeq); } catch { /* best effort */ }
+    }
     const runner = this.ctx.runnerPool.get(sessionId);
     runner?.interrupt();
     if (state.phase !== "idle" && state.turnId && !state.terminalEmitted) {
@@ -623,6 +632,7 @@ class TurnOrchestrator {
     const state = this._state(session.id);
     state.phase = "starting";
     state.turnId = newTurnId();
+    state.admittedSeq = null;
     state.assistantText = "";
     state.thinkingText = "";
     state.contentBlocks = [];
@@ -647,6 +657,24 @@ class TurnOrchestrator {
       files,
       displayFiles,
     };
+    try {
+      const admitted = this.ctx.sessionManager?.admitTurnInput?.(session.id, {
+        turnId: state.turnId,
+        delivery: opts.fromQueue ? "queue" : "steer",
+        status: "admitted",
+        userText: rawUserText,
+        files: displayFiles,
+        metadata: {
+          fromQueue: Boolean(opts.fromQueue),
+          scheduledTaskId: opts.scheduledTaskId || null,
+          scheduledTaskRunId: opts.scheduledTaskRunId || null,
+        },
+        createdAt: state.startedAt,
+      });
+      state.admittedSeq = admitted?.admittedSeq || null;
+    } catch (err) {
+      log.warn("turn input admission failed: %s", err?.message || err);
+    }
     state.scheduledTask = opts.scheduledTaskRunId
       ? {
           id: opts.scheduledTaskId || null,
@@ -727,13 +755,16 @@ class TurnOrchestrator {
         : text;
     const preRehydrateText = engineText;
     let rehydrated = false;
+    let shortFollowupContext = false;
     {
       const { withSessionRehydratePrefix } = require("./session-bootstrap");
       const { readSessionSummary } = require("./session-memory");
+      const { withShortFollowupContext } = require("./session-followup-context");
       const committedMessages =
         typeof this.ctx.sessionManager.getConversation === "function"
           ? this.ctx.sessionManager.getConversation(session.id)
           : session.messages || [];
+      const summary = readSessionSummary(session.id);
       const historySession = {
         ...session,
         messages: committedMessages.filter((message) => message.turnId !== state.turnId),
@@ -744,7 +775,7 @@ class TurnOrchestrator {
         session: historySession,
         project,
         userText: engineText,
-        summary: readSessionSummary(session.id),
+        summary,
       });
       engineText = rehydrate.text;
       state.legacyContextHydrated = Boolean(rehydrate.legacyContextHydrated);
@@ -752,6 +783,14 @@ class TurnOrchestrator {
         rehydrated = true;
         this._emit(session.id, "session.hydrated", { source: "local-bootstrap" }, { turnId: null });
       }
+      const followup = withShortFollowupContext({
+        userText: rawUserText,
+        engineText,
+        messages: historySession.messages,
+        summary,
+      });
+      engineText = followup.text;
+      shortFollowupContext = Boolean(followup.applied);
     }
     engineText = withTaskContractPrefix(engineText, taskContract);
     state.enginePayload = {
@@ -759,10 +798,12 @@ class TurnOrchestrator {
       text: engineText,
       files,
       displayFiles,
+      taskContract: state.taskContract,
       trace: {
         preflightTextChanged: text !== rawUserText,
         customEngineText: preRehydrateText !== text,
         rehydrated,
+        shortFollowupContext,
         taskContract: Boolean(state.taskContract),
       },
     };
@@ -775,6 +816,7 @@ class TurnOrchestrator {
         preflightTextChanged: text !== rawUserText,
         customEngineText: preRehydrateText !== text,
         rehydrated,
+        shortFollowupContext,
         taskContract: Boolean(state.taskContract),
       },
       taskContract: state.taskContract
@@ -790,12 +832,30 @@ class TurnOrchestrator {
 
     const sent = runner.sendUserMessage(state.enginePayload);
     if (!sent) {
+      try {
+        this.ctx.sessionManager?.markTurnInputTerminal?.(state.turnId, "turn.failed", {
+          errorCode: "RUNNER_REJECTED",
+        });
+      } catch {
+        // best effort
+      }
       this._finalize(session.id, "turn.failed", {
         failed: true,
         assistant: "The assistant engine did not accept the message. Please retry.",
         code: "RUNNER_REJECTED",
       });
       return { ok: false, error: "RUNNER_ERROR", detail: runner.lastSpawnError || "The assistant engine did not accept the message. Please retry." };
+    }
+    try {
+      this.ctx.sessionManager?.markTurnInputPromoted?.(state.turnId, {
+        status: "promoted",
+        metadata: {
+          engineTextChanged: engineText !== rawUserText,
+          taskContract: Boolean(state.taskContract),
+        },
+      });
+    } catch (err) {
+      log.warn("turn input promotion failed: %s", err?.message || err);
     }
     require("./usage-reporter").recordUserSend(session.id, files);
     return {
@@ -838,7 +898,7 @@ class TurnOrchestrator {
     } else if (stalled) {
       this._finalize(sessionId, "turn.stalled", {
         stalled: true,
-        assistant: normalized.text || state.assistantText,
+        assistant: appendIncompleteTurnSummary(normalized.text || state.assistantText, state, payload),
         ...terminalMeta,
       });
     } else if (failed) {
@@ -895,6 +955,13 @@ class TurnOrchestrator {
     if (!state.turnId || state.terminalEmitted) return;
     if (!TERMINAL_TYPES.has(type)) throw new Error(`Invalid terminal event ${type}`);
     const completedTurnId = state.turnId;
+    try {
+      this.ctx.sessionManager?.markTurnInputTerminal?.(completedTurnId, type, {
+        errorCode: payload.errorCode || payload.code || "",
+      });
+    } catch (err) {
+      log.warn("turn input terminal mark failed: %s", err?.message || err);
+    }
     const scheduledTaskRunId = state.scheduledTask?.runId || null;
     state.phase = "finalizing";
     for (const tool of state.tools.values()) {
@@ -939,8 +1006,27 @@ class TurnOrchestrator {
       }
     }
     closeStreamingBlocks(state, Date.now());
-    const assistant = String(payload.assistant || state.assistantText || "").trim();
+    let assistant = String(payload.assistant || state.assistantText || "").trim();
     let record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
+    if (type === "turn.completed" && state.taskContract?.evidencePolicy?.required) {
+      const { assessFinalAnswerEvidence, appendEvidenceGateNotice } = require("./evidence-gate");
+      const assessment = assessFinalAnswerEvidence({
+        assistant,
+        evidencePolicy: state.taskContract.evidencePolicy,
+        toolCount: state.tools?.size || 0,
+        fileChangeCount: record?.fileChanges?.length || 0,
+      });
+      if (!assessment.ok) {
+        assistant = appendEvidenceGateNotice(assistant, assessment);
+        if (record) {
+          record.assistantText = assistant;
+          record.meta = {
+            ...(record.meta || {}),
+            evidenceGate: assessment,
+          };
+        }
+      }
+    }
     // Don't archive a turn that produced literally nothing — e.g. an interrupt
     // before any output. Otherwise an empty assistant bubble lands in history.
     // Any real content (text, a tool call, a file change, a result block) makes
@@ -973,6 +1059,7 @@ class TurnOrchestrator {
     }
     state.phase = "idle";
     state.turnId = null;
+    state.admittedSeq = null;
     state.assistantText = "";
     state.thinkingText = "";
     state.contentBlocks = [];
@@ -994,11 +1081,15 @@ class TurnOrchestrator {
   async _dispatchNext(sessionId) {
     const state = this._state(sessionId);
     if (state.phase !== "idle" || state.queue.length === 0) return;
+    this._clearDispatchRetry(sessionId);
     const next = state.queue[0];
     let result;
     try {
     result = await this._tryStartQueuedItem(sessionId, next);
-    if (result?.retry) return;
+    if (result?.retry) {
+      this._scheduleDispatchRetry(sessionId);
+      return;
+    }
     if (!result?.ok) {
       state.queue.shift();
       this._emitQueue(sessionId);
@@ -1017,6 +1108,23 @@ class TurnOrchestrator {
       state.queue.shift();
       this._emitQueue(sessionId);
     }
+  }
+
+  _scheduleDispatchRetry(sessionId) {
+    if (!sessionId || this.dispatchRetryTimers.has(sessionId)) return;
+    const timer = setTimeout(() => {
+      this.dispatchRetryTimers.delete(sessionId);
+      void this._dispatchNext(sessionId);
+    }, TurnOrchestrator.QUEUE_RETRY_DELAY_MS);
+    timer.unref?.();
+    this.dispatchRetryTimers.set(sessionId, timer);
+  }
+
+  _clearDispatchRetry(sessionId) {
+    const timer = this.dispatchRetryTimers.get(sessionId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.dispatchRetryTimers.delete(sessionId);
   }
 
   _emitQueue(sessionId) {
@@ -1091,6 +1199,7 @@ class TurnOrchestrator {
         sessionId,
         phase: "idle",
         turnId: null,
+        admittedSeq: null,
         assistantText: "",
         thinkingText: "",
         contentBlocks: [],

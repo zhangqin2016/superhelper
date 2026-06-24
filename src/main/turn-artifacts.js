@@ -9,6 +9,8 @@ const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".sv
 const FILE_EXTENSIONS = new Set([
   ...IMAGE_EXTENSIONS,
   ".pdf",
+  ".md",
+  ".markdown",
   ".doc",
   ".docx",
   ".xls",
@@ -28,6 +30,8 @@ const MIME_BY_EXT = {
   ".gif": "image/gif",
   ".svg": "image/svg+xml",
   ".pdf": "application/pdf",
+  ".md": "text/markdown",
+  ".markdown": "text/markdown",
   ".doc": "application/msword",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xls": "application/vnd.ms-excel",
@@ -44,7 +48,7 @@ const MIME_BY_EXT = {
 // The previous `(?:…+[\\/])*…+?` form had catastrophic backtracking that made
 // scanning large records take seconds per record.
 const PATH_LIKE_RE =
-  /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|[\w@.-]+[\\/])[^\s"'`<>|]*?\.(?:png|jpe?g|webp|gif|svg|pdf|docx?|xlsx?|pptx?|csv|html?))/gi;
+  /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|[\w@.-]+[\\/])[^\s"'`<>|]*?\.(?:png|jpe?g|webp|gif|svg|pdf|md|markdown|docx?|xlsx?|pptx?|csv|html?))/gi;
 
 // Bounds so artifact derivation stays cheap even over large/many records:
 // a single huge tool result (e.g. a file dump) is only scanned up to a cap, and
@@ -101,6 +105,17 @@ function statFile(filePath) {
   } catch {
     return null;
   }
+}
+
+function isInternalSupportArtifactPath(filePath) {
+  const normalized = path.resolve(filePath || "").split(path.sep).join("/");
+  return (
+    normalized.includes("/resources/skills/") ||
+    normalized.includes("/resources/skills-catalog/") ||
+    normalized.includes("/resources/skills-registry/") ||
+    normalized.includes("/.codex/skills/") ||
+    normalized.includes("/.agents/skills/")
+  );
 }
 
 function toArtifact(filePath, source, workspacePath) {
@@ -170,10 +185,11 @@ function collectPathStrings(value, out, depth = 0) {
   }
 }
 
-function addCandidate(map, candidate, source, workspacePath, { requireWorkspace = false } = {}) {
+function addCandidate(map, candidate, source, workspacePath, { requireWorkspace = false, allowInternalSupport = false } = {}) {
   const resolved = resolveCandidatePath(candidate, workspacePath);
   if (!resolved) return;
   if (requireWorkspace && workspacePath && !isInsidePath(workspacePath, resolved)) return;
+  if (!allowInternalSupport && isInternalSupportArtifactPath(resolved)) return;
   // Skip the statSync entirely if this path was already resolved this build —
   // just merge the source on the existing artifact.
   const key = path.resolve(resolved);
@@ -198,7 +214,7 @@ function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], 
   const root = workspacePath ? path.resolve(workspacePath) : "";
 
   for (const change of fileChanges || []) {
-    addCandidate(artifacts, change?.filePath, "file_change", root);
+    addCandidate(artifacts, change?.filePath, "file_change", root, { allowInternalSupport: true });
   }
 
   for (const tool of tools || []) {
@@ -207,7 +223,9 @@ function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], 
     // Structured: a file-writing tool declares its target in the input.
     if (FILE_WRITE_TOOLS.has(name) && tool?.input && typeof tool.input === "object") {
       for (const key of FILE_WRITE_INPUT_KEYS) {
-        if (typeof tool.input[key] === "string") addCandidate(artifacts, tool.input[key], "tool", root);
+        if (typeof tool.input[key] === "string") {
+          addCandidate(artifacts, tool.input[key], "tool_write", root, { allowInternalSupport: true });
+        }
       }
     }
 
@@ -216,9 +234,9 @@ function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], 
     if (!READ_ONLY_TOOLS.has(name)) {
       const candidates = new Set();
       collectPathStrings(tool?.result, candidates);
-      if (toolInputMayCreateArtifacts(name)) collectPathStrings(tool?.input, candidates);
+      if (!FILE_WRITE_TOOLS.has(name) && toolInputMayCreateArtifacts(name)) collectPathStrings(tool?.input, candidates);
       for (const candidate of candidates) {
-        addCandidate(artifacts, candidate, "tool", root);
+        addCandidate(artifacts, candidate, "tool_output", root);
       }
     }
   }

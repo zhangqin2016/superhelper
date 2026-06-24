@@ -13,10 +13,28 @@
  * `ownedMessages` set; this function only decides what the event means.
  */
 
+const DIRECTORY_EVENT_TYPES = new Set([
+  "server.connected",
+  "server.heartbeat",
+  "server.instance.disposed",
+  "plugin.added",
+  "catalog.updated",
+  "integration.updated",
+  "reference.updated",
+  "vcs.branch.updated",
+  "lsp.updated",
+]);
+
 function extractEventRouting(event) {
   const type = typeof event?.type === "string" ? event.type : "";
   const p = (event && event.properties) || {};
-  let sid = p.sessionID || (p.part && p.part.sessionID) || (p.info && p.info.sessionID) || null;
+  let sid =
+    p.sessionID ||
+    p.sessionId ||
+    (p.part && (p.part.sessionID || p.part.sessionId)) ||
+    (p.info && (p.info.sessionID || p.info.sessionId)) ||
+    (p.tool && (p.tool.sessionID || p.tool.sessionId)) ||
+    null;
   if (!sid && type.startsWith("session.") && p.info && p.info.id) sid = p.info.id;
   let mid = p.messageID || (p.part && p.part.messageID) || (p.tool && p.tool.messageID) || null;
   if (!mid && type.startsWith("message.") && !type.startsWith("message.part") && p.info && p.info.id) {
@@ -55,7 +73,15 @@ function classifyOpencodeEventOwnership({ directory, cwd, event, sessionID, owne
     return { action: "drop", scope: "directory_diagnostic", reason: "unowned_error_diagnostic", sid: null, mid: null };
   }
 
-  return { action: "deliver", scope: "directory", reason: "directory_event", sid: null, mid: null };
+  if (DIRECTORY_EVENT_TYPES.has(type)) {
+    return { action: "deliver", scope: "directory", reason: "directory_event", sid: null, mid: null };
+  }
+
+  if (type) {
+    return { action: "drop", scope: "session", reason: "missing_session_id", sid: null, mid: null };
+  }
+
+  return { action: "drop", scope: "unknown", reason: "missing_event_type", sid: null, mid: null };
 }
 
 module.exports = {

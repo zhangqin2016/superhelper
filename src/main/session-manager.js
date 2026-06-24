@@ -797,6 +797,65 @@ class SessionManager {
     return updated;
   }
 
+  admitTurnInput(sessionId, input = {}) {
+    const session = this._find(sessionId);
+    if (!session) return null;
+    this._ensureImported(session);
+    return this._store().admitTurnInput(session.id, input);
+  }
+
+  markTurnInputPromoted(turnId, patch = {}) {
+    if (!turnId) return null;
+    return this._store().markTurnInputPromoted(turnId, patch);
+  }
+
+  markTurnInputTerminal(turnId, terminalType, patch = {}) {
+    if (!turnId) return null;
+    return this._store().markTurnInputTerminal(turnId, terminalType, patch);
+  }
+
+  pendingTurnInputs(sessionId) {
+    const session = this._find(sessionId);
+    if (!session) return [];
+    this._ensureImported(session);
+    return this._store().pendingTurnInputs(session.id);
+  }
+
+  appendRuntimeEvents(sessionId, events) {
+    const session = this._find(sessionId);
+    if (!session) return [];
+    this._ensureImported(session);
+    return this._store().appendRuntimeEvents(session.id, events);
+  }
+
+  getRuntimeEvents(sessionId, opts = {}) {
+    const session = this._find(sessionId);
+    if (!session) return [];
+    this._ensureImported(session);
+    return this._store().getRuntimeEvents(session.id, opts);
+  }
+
+  getTurnProjection(sessionId, turnId) {
+    const session = this._find(sessionId);
+    if (!session) return null;
+    this._ensureImported(session);
+    return this._store().getTurnProjection(session.id, turnId);
+  }
+
+  getTurnProjections(sessionId, opts = {}) {
+    const session = this._find(sessionId);
+    if (!session) return [];
+    this._ensureImported(session);
+    return this._store().getTurnProjections(session.id, opts);
+  }
+
+  getProjectedConversation(sessionId, opts = {}) {
+    const session = this._find(sessionId);
+    if (!session) return [];
+    this._ensureImported(session);
+    return this._store().getProjectedConversation(session.id, opts);
+  }
+
   /** Most recent message in this session, or null. */
   getLastMessage(sessionId) {
     const session = this._find(sessionId);

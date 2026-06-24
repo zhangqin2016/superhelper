@@ -72,8 +72,17 @@ sequenceDiagram
 ## SVG (only when Mermaid cannot express it)
 
 Write a valid, self-contained SVG to `generated-assets/<name>.svg` in the
-workspace. Reply with a local preview such as `![Title](/absolute/path.svg)`;
-do not give only a path.
+workspace. When using Bash to create the file, print a generated-media
+declaration after the file is written:
+
+```xml
+<generated_media type="image">
+  <file path="/absolute/path/to/generated-assets/name.svg" />
+</generated_media>
+```
+
+Reply with a local preview such as `![Title](/absolute/path.svg)`; do not give
+only a path.
 
 Rules:
 
@@ -83,6 +92,18 @@ Rules:
 - Use a restrained palette, consistent spacing, and enough whitespace.
 - Define reusable arrows with `<marker>`.
 - Keep text aligned and readable, font size at least 12.
+- Treat text layout as a first-class constraint: every visible label must have
+  its own safe text box, and labels must not overlap nodes, arrows, or each
+  other. Never stack multiple labels at the same `x,y` coordinate.
+- For labels longer than roughly 12 CJK characters or 22 Latin characters, wrap
+  them into multiple `<tspan>` lines with explicit `x` and increasing `dy`
+  values, or widen the node. Do not rely on SVG auto-wrap; it does not exist.
+- Size nodes from the text they contain: leave at least 12 px horizontal padding
+  and 8 px vertical padding around every label. Prefer taller nodes over dense
+  text.
+- After writing the SVG, inspect it visually or run the platform verification
+  hook. If any text overlaps, overflows, or becomes unreadable, revise the
+  layout before replying.
 - Use static SVG only: no scripts and no external resource references.
 
 Minimal skeleton:

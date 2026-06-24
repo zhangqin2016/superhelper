@@ -228,13 +228,19 @@ function normalizeBaseUrl(api) {
 function registryById() {
   const registry = readJson(path.join(ROOT, "resources", "skills-registry", "registry.json"), { skills: [] });
   const byId = new Map();
-  for (const entry of registry.skills || []) byId.set(entry.id, entry);
+  const capabilities = registry.capabilities || {};
+  for (const entry of registry.skills || []) {
+    byId.set(entry.id, { ...entry, capability: entry.capability || capabilities[entry.id] || null });
+  }
   return byId;
 }
 
 function registryEntries() {
   const registry = readJson(path.join(ROOT, "resources", "skills-registry", "registry.json"), { skills: [] });
-  return Array.isArray(registry.skills) ? registry.skills : [];
+  const capabilities = registry.capabilities || {};
+  return Array.isArray(registry.skills)
+    ? registry.skills.map((entry) => ({ ...entry, capability: entry.capability || capabilities[entry.id] || null }))
+    : [];
 }
 
 function localSkillDirs() {
@@ -292,6 +298,7 @@ function skillUploadFields({ pack, skillDir, channel }) {
     categoryLabel: entry.categoryLabel || manifest.categoryLabel || "",
     categoryLabelI18n: stringMapField(manifest.categoryLabel_i18n, entry.categoryLabel_i18n),
     capabilityLayer: entry.capabilityLayer || manifest.capabilityLayer || "core",
+    capabilityContract: entry.capability ? JSON.stringify(entry.capability) : "",
     publisher: entry.publisher || manifest.publisher || "Lily Workbench",
     sourceKind: entry.sourceKind || manifest.sourceKind || "lily",
     sourceRepo: entry.sourceRepo || manifest.sourceRepo || "lily-workbench/skills",
@@ -321,6 +328,7 @@ function registryMetadataUploadFields({ entry, existing, channel }) {
     categoryLabel: entry.categoryLabel || existing.category_label || "",
     categoryLabelI18n: stringMapField(entry.categoryLabel_i18n),
     capabilityLayer: entry.capabilityLayer || existing.capability_layer || "core",
+    capabilityContract: entry.capability ? JSON.stringify(entry.capability) : "",
     publisher: entry.publisher || existing.publisher || "Lily Workbench",
     sourceKind: entry.sourceKind || existing.source_kind || "lily",
     sourceRepo: entry.sourceRepo || existing.source_repo || "",

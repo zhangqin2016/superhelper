@@ -78,6 +78,101 @@ function collectFailureTextFromState(state = {}) {
   return parts.join("\n");
 }
 
+function isFailedToolStatus(status) {
+  return ["failed", "error", "cancelled", "canceled", "timeout"].includes(String(status || "").toLowerCase());
+}
+
+function isDoneToolStatus(status) {
+  return ["done", "completed", "success"].includes(String(status || "").toLowerCase());
+}
+
+function compactToolLabel(tool = {}) {
+  const rawInput = tool.input && typeof tool.input === "object" ? tool.input : {};
+  const candidate = rawInput.description
+    || rawInput.title
+    || rawInput.prompt
+    || rawInput.command
+    || rawInput.url
+    || rawInput.path
+    || tool.name
+    || tool.id
+    || "工具";
+  const text = String(candidate || "").replace(/\s+/g, " ").trim();
+  if (!text) return "工具";
+  return text.length > 72 ? `${text.slice(0, 72)}…` : text;
+}
+
+function collectToolCompletionSnapshot(state = {}) {
+  const tools = Array.from(state.tools?.values?.() || []);
+  const done = [];
+  const failed = [];
+  const running = [];
+  for (const tool of tools) {
+    const item = {
+      id: tool.id || "",
+      name: tool.name || "",
+      label: compactToolLabel(tool),
+      status: tool.status || "running",
+    };
+    if (isDoneToolStatus(tool.status)) done.push(item);
+    else if (isFailedToolStatus(tool.status)) failed.push(item);
+    else running.push(item);
+  }
+  return { done, failed, running, count: tools.length };
+}
+
+function listToolLabels(title, items, limit = 6) {
+  if (!items.length) return "";
+  const lines = [`${title}：`];
+  for (const item of items.slice(0, limit)) {
+    const suffix = item.name && item.name !== item.label ? `（${item.name}）` : "";
+    lines.push(`- ${item.label}${suffix}`);
+  }
+  if (items.length > limit) lines.push(`- 另外 ${items.length - limit} 个`);
+  return lines.join("\n");
+}
+
+function buildIncompleteTurnSummary(state = {}, payload = {}) {
+  const snapshot = collectToolCompletionSnapshot(state);
+  const hasToolSignal = snapshot.count > 0;
+  const failureText = compactFailureDetail(
+    collectFailureTextFromState(state)
+    || payload?.error
+    || payload?.errorText
+    || payload?.message
+    || "",
+  );
+  if (!hasToolSignal && !failureText) {
+    return "本轮没有形成最终回答。系统已停止继续等待，请重试；如果再次发生，请重启应用后再发起同一个任务。";
+  }
+
+  const parts = [
+    "本轮没有形成完整最终回答。系统已停止继续等待，避免会话一直卡在处理中。",
+  ];
+  if (snapshot.failed.length || snapshot.running.length) {
+    parts.push("原因：有子任务或工具未完成/失败，父任务没有进入最终回答阶段。");
+  } else if (snapshot.done.length) {
+    parts.push("原因：子任务已有执行结果，但父任务没有完成最终汇总。");
+  }
+  if (failureText) parts.push(`最后错误/提示：${failureText}`);
+  const failed = listToolLabels("未完成或失败的子任务", [...snapshot.failed, ...snapshot.running]);
+  if (failed) parts.push(failed);
+  const done = listToolLabels("已完成的子任务", snapshot.done);
+  if (done) parts.push(done);
+  parts.push("可以直接继续提问，我会基于已完成结果补齐汇总，并优先重新检查失败的部分。");
+  return parts.join("\n\n");
+}
+
+function appendIncompleteTurnSummary(assistantText, state = {}, payload = {}) {
+  const existing = String(assistantText || "").trim();
+  const summary = buildIncompleteTurnSummary(state, payload);
+  if (!existing) return summary;
+  if (existing.includes("本轮没有形成完整最终回答") || existing.includes("本轮没有形成最终回答")) {
+    return existing;
+  }
+  return `${existing}\n\n---\n\n${summary}`;
+}
+
 /**
  * Classify a turn failure into { code, message, retryable } or null when the
  * turn did not fail.
@@ -121,6 +216,9 @@ function classifyTurnFailure(payload, normalized, state) {
 module.exports = {
   preflightFailureText,
   collectFailureTextFromState,
+  buildIncompleteTurnSummary,
+  appendIncompleteTurnSummary,
+  collectToolCompletionSnapshot,
   classifyTurnFailure,
   // exported for focused testing
   compactFailureDetail,

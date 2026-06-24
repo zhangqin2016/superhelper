@@ -23,6 +23,7 @@ const createSkillPackageSchema = z.object({
   categoryLabel: z.string().max(80).optional().nullable(),
   categoryLabelI18n: z.record(z.string().min(1).max(160)).optional().nullable(),
   capabilityLayer: z.string().min(1).max(80).default("core"),
+  capabilityContract: z.record(z.any()).optional().nullable(),
   publisher: z.string().min(1).max(120).default("Lily Workbench"),
   sourceKind: z.string().min(1).max(60).default("lily"),
   sourceRepo: z.string().max(160).optional().nullable(),
@@ -75,6 +76,20 @@ function formStringMap(value) {
   return Object.keys(out).length > 0 ? out : null;
 }
 
+function formJsonObject(value) {
+  let parsed = value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+}
+
 function normalizeCreateInput(raw) {
   return createSkillPackageSchema.parse({
     skillId: raw.skillId,
@@ -87,6 +102,7 @@ function normalizeCreateInput(raw) {
     categoryLabel: raw.categoryLabel || null,
     categoryLabelI18n: formStringMap(raw.categoryLabelI18n || raw.categoryLabel_i18n || raw.category_label_i18n),
     capabilityLayer: raw.capabilityLayer || "core",
+    capabilityContract: formJsonObject(raw.capabilityContract || raw.capability_contract || raw.capability),
     publisher: raw.publisher || "Lily Workbench",
     sourceKind: raw.sourceKind || "lily",
     sourceRepo: raw.sourceRepo || null,
@@ -119,6 +135,7 @@ async function upsertSkillPackage(input, preferredId = publicId("skillpkg")) {
       category_label: input.categoryLabel || null,
       category_label_i18n: input.categoryLabelI18n ? JSON.stringify(input.categoryLabelI18n) : null,
       capability_layer: input.capabilityLayer,
+      capability_contract: input.capabilityContract ? JSON.stringify(input.capabilityContract) : null,
       publisher: input.publisher,
       source_kind: input.sourceKind,
       source_repo: input.sourceRepo || null,
@@ -144,6 +161,7 @@ async function upsertSkillPackage(input, preferredId = publicId("skillpkg")) {
         category_label: input.categoryLabel || null,
         category_label_i18n: input.categoryLabelI18n ? JSON.stringify(input.categoryLabelI18n) : null,
         capability_layer: input.capabilityLayer,
+        capability_contract: input.capabilityContract ? JSON.stringify(input.capabilityContract) : null,
         publisher: input.publisher,
         source_kind: input.sourceKind,
         source_repo: input.sourceRepo || null,

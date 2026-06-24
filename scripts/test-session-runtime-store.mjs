@@ -588,6 +588,22 @@ if (store.getSessionAttention("att2") !== null) {
   throw new Error("replayed terminals must not raise the attention flag");
 }
 
+// A stale non-idle phase without a live turn can happen after interrupted
+// renderer replay or failed startup hydration. It must not keep showing the
+// "current answer is still running" send-choice dialog.
+{
+  const stale = store.getRuntimeSession("stale-busy");
+  stale.phase = "streaming";
+  stale.turnId = null;
+  stale.liveTurn = null;
+  if (!store.canSend("stale-busy")) {
+    throw new Error("stale non-idle phase without a turn should not block sending");
+  }
+  if (store.getRuntimeSession("stale-busy").phase !== "idle") {
+    throw new Error("canSend should normalize stale non-idle phase back to idle");
+  }
+}
+
 // OpenCode Desktop keeps a bounded client-side session cache. Lily should do
 // the same for runtime/timeline state: many idle sessions must not accumulate
 // forever, but running sessions must survive eviction.

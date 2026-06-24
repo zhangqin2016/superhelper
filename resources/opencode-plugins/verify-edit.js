@@ -163,6 +163,7 @@ function checkDeepStructure(file, ext, size) {
 
 function checkStructure(file) {
   const ext = (file.match(/\.[a-z0-9]+$/i) || [""])[0].toLowerCase();
+  if (ext === ".svg") return checkSvgStructure(file);
   const magics = EXT_MAGIC[ext];
   if (!magics) return "";
   let size = 0;
@@ -176,6 +177,148 @@ function checkStructure(file) {
   return checkDeepStructure(file, ext, size);
 }
 
+function decodeXmlText(value = "") {
+  return String(value || "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function attrsOf(attrText = "") {
+  const attrs = {};
+  for (const match of String(attrText || "").matchAll(/([:\w-]+)\s*=\s*"([^"]*)"/g)) attrs[match[1].toLowerCase()] = match[2];
+  for (const match of String(attrText || "").matchAll(/([:\w-]+)\s*=\s*'([^']*)'/g)) attrs[match[1].toLowerCase()] = match[2];
+  for (const part of String(attrs.style || "").split(";")) {
+    const [key, value] = part.split(":");
+    if (key && value) attrs[key.trim().toLowerCase()] = value.trim();
+  }
+  return attrs;
+}
+
+function numberAttr(attrs, key, fallback = NaN) {
+  const raw = attrs?.[key];
+  if (raw == null) return fallback;
+  const match = String(raw).match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : fallback;
+}
+
+function translateOf(attrs = {}) {
+  const match = String(attrs.transform || "").match(/translate\(\s*(-?\d+(?:\.\d+)?)(?:[\s,]+(-?\d+(?:\.\d+)?))?/i);
+  return match ? { x: Number(match[1] || 0), y: Number(match[2] || 0) } : { x: 0, y: 0 };
+}
+
+function estimatedTextWidth(text, fontSize) {
+  let width = 0;
+  for (const char of Array.from(text)) {
+    if (/\s/.test(char)) width += fontSize * 0.32;
+    else if (/[\u3000-\u9fff\uff00-\uffef]/.test(char)) width += fontSize * 0.95;
+    else width += fontSize * 0.58;
+  }
+  return Math.max(fontSize, width);
+}
+
+function boxForText(attrs, inherited, text) {
+  const merged = { ...inherited, ...attrs };
+  const fontSize = numberAttr(merged, "font-size", 14);
+  const xRaw = numberAttr(merged, "x", NaN);
+  const yRaw = numberAttr(merged, "y", NaN);
+  if (!Number.isFinite(xRaw) || !Number.isFinite(yRaw)) return null;
+  const shift = translateOf(merged);
+  const x = xRaw + shift.x;
+  const y = yRaw + shift.y;
+  const width = estimatedTextWidth(text, fontSize);
+  const height = fontSize * 1.2;
+  const anchor = String(merged["text-anchor"] || "start").toLowerCase();
+  const left = anchor === "middle" ? x - width / 2 : anchor === "end" ? x - width : x;
+  const top = y - fontSize * 0.9;
+  return { left, right: left + width, top, bottom: top + height, text };
+}
+
+function collectSvgTextBoxes(svgText) {
+  const boxes = [];
+  for (const match of String(svgText || "").matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/gi)) {
+    const textAttrs = attrsOf(match[1]);
+    const body = match[2] || "";
+    const tspanMatches = [...body.matchAll(/<tspan\b([^>]*)>([\s\S]*?)<\/tspan>/gi)];
+    if (tspanMatches.length) {
+      for (const tspan of tspanMatches) {
+        const text = decodeXmlText(String(tspan[2] || "").replace(/<[^>]+>/g, "")).trim();
+        if (text.length < 2) continue;
+        const box = boxForText(attrsOf(tspan[1]), textAttrs, text);
+        if (box) boxes.push(box);
+      }
+      continue;
+    }
+    const text = decodeXmlText(body.replace(/<[^>]+>/g, "")).trim();
+    if (text.length < 2) continue;
+    const box = boxForText(textAttrs, {}, text);
+    if (box) boxes.push(box);
+  }
+  return boxes;
+}
+
+function overlapRatio(a, b) {
+  const width = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+  const height = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  if (width <= 0 || height <= 0) return 0;
+  const overlap = width * height;
+  const areaA = Math.max(1, (a.right - a.left) * (a.bottom - a.top));
+  const areaB = Math.max(1, (b.right - b.left) * (b.bottom - b.top));
+  return overlap / Math.min(areaA, areaB);
+}
+
+function findSvgTextOverlap(svgText) {
+  const boxes = collectSvgTextBoxes(svgText);
+  if (boxes.length > 220) return null;
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      if (overlapRatio(boxes[i], boxes[j]) >= 0.35) return [boxes[i].text, boxes[j].text];
+    }
+  }
+  return null;
+}
+
+function checkSvgStructure(file) {
+  let text = "";
+  try { text = fs.readFileSync(file, "utf8"); } catch { return ""; }
+  if (!/<svg\b[\s\S]*<\/svg>/i.test(text)) {
+    return `SVG check failed: ${file} is not a complete SVG document. Regenerate it with a valid <svg> root and closing </svg>.`;
+  }
+  const overlap = findSvgTextOverlap(text);
+  if (overlap) {
+    return `SVG layout check failed: ${file} has overlapping text labels ("${overlap[0]}" and "${overlap[1]}"). Re-layout the SVG with larger boxes, separate y coordinates, wrapped <tspan> lines, or smaller text before declaring it done.`;
+  }
+  return "";
+}
+
+function svgPathsMentionedInOutput(outputText) {
+  const paths = new Set();
+  const pattern = /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|generated-assets[\\/])[^"'`<>\s|]*?\.svg)\b/gi;
+  for (const match of String(outputText || "").matchAll(pattern)) {
+    const raw = String(match[1] || "").replace(/[),，。；;:：]+$/g, "");
+    if (!raw) continue;
+    const file = /^[A-Za-z]:[\\/]/.test(raw) || raw.startsWith("/") ? raw : path.resolve(process.cwd(), raw);
+    paths.add(file);
+  }
+  return [...paths];
+}
+
+function checkGeneratedSvgMentions(outputText) {
+  const issues = [];
+  for (const file of svgPathsMentionedInOutput(outputText)) {
+    if (!fs.existsSync(file)) {
+      issues.push(`Bash output mentions generated SVG ${file} but the file does not exist. Generate it before declaring it.`);
+      continue;
+    }
+    const issue = checkSvgStructure(file);
+    if (issue) issues.push(issue);
+  }
+  return issues.join("\n");
+}
+
 // --- generated_media declarations (in bash/tool output) ---------------------
 function checkGeneratedMedia(outputText) {
   const issues = [];
@@ -186,7 +329,11 @@ function checkGeneratedMedia(outputText) {
       let size = 0; try { size = fs.statSync(file).size; } catch { continue; }
       if (size === 0) { issues.push(`generated_media file is empty: ${file}.`); continue; }
       const head = readHead(file); if (!head) continue;
-      if (type === "image" && !matchesAny(head, MEDIA_MAGIC.image)) issues.push(`${file} declared image but is not a valid image.`);
+      const ext = (file.match(/\.[a-z0-9]+$/i) || [""])[0].toLowerCase();
+      if (type === "image" && ext === ".svg") {
+        const issue = checkSvgStructure(file);
+        if (issue) issues.push(issue);
+      } else if (type === "image" && !matchesAny(head, MEDIA_MAGIC.image)) issues.push(`${file} declared image but is not a valid image.`);
       if (type === "audio" && !matchesAny(head, MEDIA_MAGIC.audio)) issues.push(`${file} declared audio but is not valid audio.`);
       if (type === "video" && !isVideoHead(head)) issues.push(`${file} declared video but is not valid video.`);
     }
@@ -214,7 +361,9 @@ export const VerifyEditPlugin = async () => ({
         }
       }
       if (tool === "bash") {
-        notes.push(checkGeneratedMedia(output?.output));
+        const text = output?.output || "";
+        notes.push(checkGeneratedMedia(text));
+        if (/\.svg\b/i.test(text)) notes.push(checkGeneratedSvgMentions(text));
       }
       const issue = notes.filter(Boolean).join("\n");
       if (issue) {

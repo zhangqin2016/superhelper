@@ -231,9 +231,8 @@ export async function sendPrompt(opts = {}) {
   }
   // A send while the turn is running is a real decision: queue it for later
   // or interrupt the current answer and send now. Dismissing keeps the draft.
-  const BUSY_PHASES = new Set(["starting", "streaming", "tool_running", "awaiting_user"]);
   let sendMode = "send";
-  if (BUSY_PHASES.has(getTurnPhase(sessionId))) {
+  if (!canSend(sessionId)) {
     sendMode = await chooseDialog({
       title: t("composer.busyChoiceTitle"),
       message: t("composer.busyChoiceMessage"),

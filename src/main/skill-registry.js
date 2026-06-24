@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { userDataPath, PROJECT_ROOT } = require("./config");
+const { normalizeSkillCapabilityContract } = require("./skill-capability-contract");
 
 const REGISTRY_FETCH_TIMEOUT_MS = 30_000;
 const BUNDLED_REGISTRY_SOURCE = "bundled://local";
@@ -54,10 +55,11 @@ function normalizeStringMap(raw) {
   return Object.keys(out).length > 0 ? out : null;
 }
 
-function normalizeRegistryEntry(raw) {
+function normalizeRegistryEntry(raw, capabilityOverride = null) {
   if (!raw?.id || !raw.latestVersion) {
     return null;
   }
+  const rawCapability = capabilityOverride || raw.capability || null;
 
   const base = {
     id: String(raw.id),
@@ -81,6 +83,10 @@ function normalizeRegistryEntry(raw) {
     featured: Boolean(raw.featured),
     displayInCatalog: raw.displayInCatalog !== false,
     changelog_i18n: normalizeStringMap(raw.changelog_i18n),
+    capability: normalizeSkillCapabilityContract(rawCapability, {
+      capabilityLayer: raw.capabilityLayer,
+      riskLevel: raw.riskLevel,
+    }),
   };
 
   if (raw.sourceType === "github" || raw.github) {
@@ -125,7 +131,13 @@ function parseRegistryJson(body) {
   if (parsed?.schemaVersion !== 1 || !Array.isArray(parsed.skills)) {
     return { ok: false, error: "INVALID_REGISTRY" };
   }
-  const skills = parsed.skills.map(normalizeRegistryEntry).filter(Boolean);
+  const capabilityMap =
+    parsed.capabilities && typeof parsed.capabilities === "object" && !Array.isArray(parsed.capabilities)
+      ? parsed.capabilities
+      : {};
+  const skills = parsed.skills
+    .map((entry) => normalizeRegistryEntry(entry, capabilityMap[entry?.id]))
+    .filter(Boolean);
   return {
     ok: true,
     registry: {
@@ -134,6 +146,7 @@ function parseRegistryJson(body) {
       publisher: parsed.publisher || "",
       registryUrl: parsed.registryUrl || null,
       categories: mergeCategoryLists(parsed.categories),
+      capabilities: capabilityMap,
       remoteIndexes: Array.isArray(parsed.remoteIndexes) ? parsed.remoteIndexes : [],
       skills,
     },
@@ -215,8 +228,9 @@ function loadCachedRegistry() {
       updatedAt: raw.updatedAt || null,
       publisher: raw.publisher || "",
       categories: Array.isArray(raw.categories) ? raw.categories : [],
+      capabilities: raw.capabilities && typeof raw.capabilities === "object" ? raw.capabilities : {},
       remoteIndexes: Array.isArray(raw.remoteIndexes) ? raw.remoteIndexes : [],
-      skills: raw.skills.map(normalizeRegistryEntry).filter(Boolean),
+      skills: raw.skills.map((entry) => normalizeRegistryEntry(entry, raw.capabilities?.[entry?.id])).filter(Boolean),
     };
   } catch {
     return null;
@@ -286,6 +300,14 @@ function categoriesForRegistry(registry) {
   return mergeCategoryLists(loadBundledRegistry()?.categories);
 }
 
+function capabilitiesForSkills(skills) {
+  const out = {};
+  for (const skill of skills || []) {
+    if (skill?.id && skill.capability) out[skill.id] = skill.capability;
+  }
+  return out;
+}
+
 /** Service entries win on id collision; bundled fills gaps for offline catalog. */
 function mergeRegistries(primary, bundled) {
   if (!bundled?.skills?.length) {
@@ -293,6 +315,7 @@ function mergeRegistries(primary, bundled) {
     return {
       ...primary,
       categories: categoriesForRegistry(primary),
+      capabilities: capabilitiesForSkills(primary.skills),
     };
   }
   if (!primary?.skills?.length) {
@@ -302,6 +325,7 @@ function mergeRegistries(primary, bundled) {
       fetchedAt: primary?.fetchedAt || bundled.fetchedAt || null,
       publisher: primary?.publisher || bundled.publisher || "",
       categories: mergeCategoryLists(primary?.categories, bundled.categories),
+      capabilities: capabilitiesForSkills(bundled.skills),
       bundledFallback: true,
     };
   }
@@ -330,6 +354,7 @@ function mergeRegistries(primary, bundled) {
     ...primary,
     skills: Array.from(byId.values()),
     categories,
+    capabilities: capabilitiesForSkills(Array.from(byId.values())),
     remoteIndexes,
     bundledSupplement: bundledOnlyCount > 0,
     bundledFallback: false,

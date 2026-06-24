@@ -102,6 +102,22 @@ if (sent.payload.events.length !== 2 || sent.payload.batchSeq !== 1) {
   throw new Error("runtime bus batch failed");
 }
 
+const persisted = [];
+const persistentBus = new RuntimeEventBus(() => fakeWindow, {
+  persistEvents: (sessionId, events) => persisted.push({ sessionId, events }),
+});
+persistentBus.emit("s_persist", {
+  type: "turn.started",
+  turnId: "t_persist",
+  payload: { text: "persist me" },
+});
+if (persisted.length !== 1 || persisted[0].sessionId !== "s_persist") {
+  throw new Error("runtime bus must call persistEvents with normalized events");
+}
+if (persisted[0].events[0]?.seq !== 1 || persisted[0].events[0]?.payload?.text !== "persist me") {
+  throw new Error(`persisted event must be normalized: ${JSON.stringify(persisted)}`);
+}
+
 const terminalEvents = bus.emitBatch("s2", [
   { type: "turn.completed", turnId: "t2", payload: { assistant: "done" } },
   { type: "turn.failed", turnId: "t2", payload: { assistant: "failed" } },

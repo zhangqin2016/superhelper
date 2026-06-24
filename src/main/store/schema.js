@@ -82,6 +82,63 @@ const MIGRATIONS = [
       END;
     `);
   },
+  // v2 — durable turn admission + replayable runtime projection.
+  (db) => {
+    db.exec(`
+      CREATE TABLE turn_inputs (
+        session_id    TEXT    NOT NULL,
+        admitted_seq  INTEGER NOT NULL,
+        turn_id       TEXT    NOT NULL,
+        delivery      TEXT    NOT NULL DEFAULT 'queue',
+        status        TEXT    NOT NULL DEFAULT 'admitted',
+        user_text     TEXT    NOT NULL DEFAULT '',
+        files_json    TEXT    NOT NULL DEFAULT '[]',
+        metadata_json TEXT    NOT NULL DEFAULT '{}',
+        created_at    INTEGER NOT NULL,
+        promoted_at   INTEGER,
+        terminal_at   INTEGER,
+        terminal_type TEXT,
+        error_code    TEXT,
+        PRIMARY KEY (session_id, admitted_seq)
+      );
+      CREATE UNIQUE INDEX idx_turn_inputs_turn_id ON turn_inputs(turn_id);
+      CREATE INDEX idx_turn_inputs_pending ON turn_inputs(session_id, status, admitted_seq);
+
+      CREATE TABLE runtime_events (
+        session_id       TEXT    NOT NULL,
+        seq              INTEGER NOT NULL,
+        id               TEXT    NOT NULL,
+        turn_id          TEXT,
+        type             TEXT    NOT NULL,
+        source           TEXT    NOT NULL,
+        ts               INTEGER NOT NULL,
+        payload_json     TEXT    NOT NULL DEFAULT '{}',
+        original_type    TEXT,
+        original_event_id TEXT,
+        PRIMARY KEY (session_id, seq)
+      );
+      CREATE UNIQUE INDEX idx_runtime_events_id ON runtime_events(id);
+      CREATE INDEX idx_runtime_events_turn ON runtime_events(session_id, turn_id, seq);
+
+      CREATE TABLE turn_projection (
+        session_id      TEXT    NOT NULL,
+        turn_id         TEXT    NOT NULL,
+        status          TEXT    NOT NULL DEFAULT 'running',
+        user_text       TEXT    NOT NULL DEFAULT '',
+        assistant_text  TEXT    NOT NULL DEFAULT '',
+        thinking_text   TEXT    NOT NULL DEFAULT '',
+        activity_label  TEXT,
+        tool_count      INTEGER NOT NULL DEFAULT 0,
+        notice_count    INTEGER NOT NULL DEFAULT 0,
+        started_at      INTEGER,
+        updated_at      INTEGER NOT NULL,
+        terminal_at     INTEGER,
+        terminal_type   TEXT,
+        payload_json    TEXT    NOT NULL DEFAULT '{}',
+        PRIMARY KEY (session_id, turn_id)
+      );
+    `);
+  },
 ];
 
 module.exports = { MIGRATIONS };

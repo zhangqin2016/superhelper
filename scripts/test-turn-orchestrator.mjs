@@ -209,6 +209,37 @@ if (archivedThinking.length !== 1 || archivedThinking[0].text !== "Inspect files
   throw new Error(`process.event must not duplicate archived thinking: ${JSON.stringify(assistantMsg.record.timeline)}`);
 }
 
+messages.push(
+  { role: "user", content: "分析 imsdk 流转流程", turnId: "manual_prev_user" },
+  {
+    role: "assistant",
+    content: "基于 cst-* 会议链路做了分析。",
+    failed: true,
+    turnId: "manual_prev_assistant",
+    record: { terminal: "turn.failed" },
+  },
+);
+const followupTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "？", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!followupTurn.ok || !runner.isBusy()) {
+  throw new Error(`short follow-up turn should start: ${JSON.stringify(followupTurn)}`);
+}
+const followupPayload = runner.sentPayloads.at(-1);
+if (followupPayload.rawText !== "？") {
+  throw new Error(`short follow-up must preserve raw user text: ${JSON.stringify(followupPayload)}`);
+}
+if (
+  !followupPayload.text.includes("Short Follow-up Continuity") ||
+  !followupPayload.text.includes("分析 imsdk 流转流程") ||
+  !followupPayload.trace?.shortFollowupContext
+) {
+  throw new Error(`short follow-up must carry prior task context: ${JSON.stringify(followupPayload.trace)}\n${followupPayload.text}`);
+}
+runner.finish("继续 imsdk 分析");
+ctx.eventBus.flush();
+
 sent.length = 0;
 const interruptSource = await ctx.turnOrchestrator.sendUserMessage("s1", "long running", [], {
   spawnEngine: false,
@@ -314,6 +345,98 @@ if (processOnlyTerminal?.type !== "turn.failed" || processOnlyTerminal.payload?.
 }
 
 sent.length = 0;
+const stalledWithToolsTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "分析 imsdk 流转流程", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!stalledWithToolsTurn.ok || !runner.isBusy()) {
+  throw new Error(`stalled-with-tools turn should start: ${JSON.stringify(stalledWithToolsTurn)}`);
+}
+ctx.turnOrchestrator.ingest("s1", [
+  {
+    type: "tool.started",
+    payload: { id: "task_done", name: "task", input: { description: "Explore imsdk-im server" } },
+  },
+  {
+    type: "tool.done",
+    payload: { id: "task_done", status: "done", result: { output: "found message flow" } },
+  },
+  {
+    type: "tool.started",
+    payload: { id: "task_failed", name: "task", input: { description: "Explore MXIM client source" } },
+  },
+  {
+    type: "tool.done",
+    payload: { id: "task_failed", status: "failed", result: { output: "timeout" } },
+  },
+]);
+runner.busy = false;
+runner.emit("done", {
+  code: 0,
+  output: "",
+  stalled: true,
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+const stalledWithToolsTerminal = allEvents.find((event) => (
+  event.turnId === stalledWithToolsTurn.turnId
+  && ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type)
+));
+if (stalledWithToolsTerminal?.type !== "turn.stalled") {
+  throw new Error(`tool-backed stalled turn should remain stalled: ${JSON.stringify(stalledWithToolsTerminal)}`);
+}
+if (
+  !stalledWithToolsTerminal.payload?.assistant?.includes("本轮没有形成完整最终回答") ||
+  !stalledWithToolsTerminal.payload?.assistant?.includes("Explore MXIM client source") ||
+  !stalledWithToolsTerminal.payload?.assistant?.includes("Explore imsdk-im server")
+) {
+  throw new Error(`stalled turn should synthesize a useful tool summary: ${JSON.stringify(stalledWithToolsTerminal.payload)}`);
+}
+const stalledRecord = messages.find((message) => message.role === "assistant" && message.turnId === stalledWithToolsTurn.turnId);
+if (!stalledRecord?.content?.includes("本轮没有形成完整最终回答")) {
+  throw new Error(`stalled summary should be persisted to history: ${JSON.stringify(stalledRecord)}`);
+}
+
+sent.length = 0;
+const stalledPartialTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "为啥是cst", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!stalledPartialTurn.ok || !runner.isBusy()) {
+  throw new Error(`stalled-partial turn should start: ${JSON.stringify(stalledPartialTurn)}`);
+}
+ctx.turnOrchestrator.ingest("s1", [{
+  type: "tool.started",
+  payload: { id: "task_running", name: "task", input: { description: "Explore sdk-msg-delivery" } },
+}]);
+ctx.turnOrchestrator.ingest("s1", [{
+  type: "assistant.delta",
+  payload: { text: "你说得对，之前分析偏向了 cst。" },
+}]);
+runner.busy = false;
+runner.emit("done", {
+  code: 0,
+  output: "你说得对，之前分析偏向了 cst。",
+  stalled: true,
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+const stalledPartialTerminal = allEvents.find((event) => (
+  event.turnId === stalledPartialTurn.turnId
+  && ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type)
+));
+if (
+  stalledPartialTerminal?.type !== "turn.stalled" ||
+  !stalledPartialTerminal.payload?.assistant?.includes("你说得对") ||
+  !stalledPartialTerminal.payload?.assistant?.includes("本轮没有形成完整最终回答") ||
+  !stalledPartialTerminal.payload?.assistant?.includes("Explore sdk-msg-delivery")
+) {
+  throw new Error(`partial stalled turn should keep partial text and append summary: ${JSON.stringify(stalledPartialTerminal)}`);
+}
+
+sent.length = 0;
 const originalTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "old work", [], {
   spawnEngine: false,
   skipPreflight: true,
@@ -388,10 +511,38 @@ try {
   await ctx.turnOrchestrator._dispatchNext("s1");
 } finally {
   ctx.turnOrchestrator._tryStartQueuedItem = originalTryStartQueuedItem;
+  ctx.turnOrchestrator._clearDispatchRetry("s1");
 }
 if (queueState.queue.length !== 1 || queueState.queue[0]?.id !== "queue_retry") {
   throw new Error("transient busy runner must not drop the queued message");
 }
 queueState.queue = [];
+
+queueState.queue = [
+  { id: "queue_retry_then_start", text: "retry then start", files: [], displayFiles: [] },
+];
+const previousRetryDelay = TurnOrchestrator.QUEUE_RETRY_DELAY_MS;
+TurnOrchestrator.QUEUE_RETRY_DELAY_MS = 10;
+let retryThenStartAttempts = 0;
+ctx.turnOrchestrator._tryStartQueuedItem = async () => {
+  retryThenStartAttempts += 1;
+  return retryThenStartAttempts === 1
+    ? { ok: false, retry: true, error: "RUNNER_BUSY" }
+    : { ok: true, turnId: "retry_then_start" };
+};
+try {
+  await ctx.turnOrchestrator._dispatchNext("s1");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+} finally {
+  TurnOrchestrator.QUEUE_RETRY_DELAY_MS = previousRetryDelay;
+  ctx.turnOrchestrator._tryStartQueuedItem = originalTryStartQueuedItem;
+  ctx.turnOrchestrator._clearDispatchRetry("s1");
+}
+if (retryThenStartAttempts !== 2) {
+  throw new Error(`transient busy runner should be retried, attempts=${retryThenStartAttempts}`);
+}
+if (queueState.queue.length !== 0) {
+  throw new Error(`retried queued message should be removed after start: ${JSON.stringify(queueState.queue)}`);
+}
 
 console.log("turn-orchestrator: ok");

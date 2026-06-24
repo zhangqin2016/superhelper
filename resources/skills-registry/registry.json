@@ -61,6 +61,295 @@
       "stars": 23000
     }
   ],
+  "capabilities": {
+    "lily-coding-core": {
+      "kind": "workflow",
+      "intents": ["code.change", "code.create", "debug.fix", "automation.build"],
+      "avoidIntents": ["office.only", "research.only"],
+      "primaryTools": ["workspace.files", "shell", "tests"],
+      "inputModes": ["text", "workspace", "file"],
+      "outputModes": ["workspace_change", "artifact", "text"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["inspect_context", "run_tests", "build_or_smoke_test"] },
+      "failure": { "recovery": ["find_root_cause", "minimal_fix", "rerun_verification"] }
+    },
+    "lily-app-builder": {
+      "kind": "workflow",
+      "intents": ["app.create", "webpage.create", "tool.create", "script.create"],
+      "avoidIntents": ["debug.existing_code_only"],
+      "primaryTools": ["workspace.files", "shell", "browser.preview"],
+      "inputModes": ["text", "workspace", "image"],
+      "outputModes": ["workspace_change", "artifact", "preview_url"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["start_app", "screenshot_check", "artifact_path_check"] },
+      "failure": { "recovery": ["make_minimal_runnable", "verify_browser", "report_exact_path"] }
+    },
+    "lily-code-repair": {
+      "kind": "quality",
+      "intents": ["debug.fix", "test.failure", "build.failure", "runtime.error"],
+      "avoidIntents": ["greenfield.create"],
+      "primaryTools": ["shell", "logs", "workspace.files", "tests"],
+      "inputModes": ["text", "workspace", "file"],
+      "outputModes": ["workspace_change", "diagnosis", "text"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["reproduce", "root_cause", "rerun_failing_command"] },
+      "failure": { "recovery": ["preserve_user_changes", "narrow_scope", "explain_remaining_risk"] }
+    },
+    "lily-office-intent": {
+      "kind": "router",
+      "intents": ["office.route", "document.process", "spreadsheet.process", "presentation.process"],
+      "avoidIntents": ["codebase.architecture"],
+      "primaryTools": ["skill.router", "runtime.python"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["routing_decision", "text"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["classify_file_type", "select_office_path"] },
+      "failure": { "recovery": ["ask_for_missing_file", "fallback_to_runtime_extraction"] }
+    },
+    "lily-pdf-extraction-router": {
+      "kind": "router",
+      "intents": ["pdf.read", "pdf.extract", "pdf.ocr", "pdf.table_extract"],
+      "primaryTools": ["runtime.python", "runtime.pack.pro-pdf"],
+      "runtimeDependencies": ["python", "optional:pro-pdf"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["text", "artifact"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["detect_digital_or_scan", "sample_pages", "cross_check_tables"] },
+      "failure": { "recovery": ["try_ocr_path", "suggest_runtime_pack", "report_unreadable_pages"] }
+    },
+    "lily-excel-data-analysis": {
+      "kind": "workflow",
+      "intents": ["spreadsheet.analyze", "csv.analyze", "data.clean", "chart.create"],
+      "primaryTools": ["runtime.python", "spreadsheet.writer"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["artifact", "text"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["schema_detect", "row_count_check", "output_file_check"] },
+      "failure": { "recovery": ["preserve_original", "write_audit_sheet", "summarize_assumptions"] }
+    },
+    "lily-ppt-design-qa": {
+      "kind": "quality",
+      "intents": ["presentation.review", "ppt.qa", "slide.design_check"],
+      "primaryTools": ["runtime.python", "render.preview"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["text", "artifact"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["render_slides", "check_overflow", "visual_consistency_review"] },
+      "failure": { "recovery": ["report_unrendered_slides", "suggest_manual_review"] }
+    },
+    "lily-ui-quality": {
+      "kind": "quality",
+      "intents": ["ui.review", "frontend.visual_qa", "interaction.review"],
+      "primaryTools": ["browser.preview", "screenshot", "console.logs"],
+      "inputModes": ["text", "workspace", "image"],
+      "outputModes": ["issue_list", "workspace_change", "text"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["desktop_screenshot", "mobile_screenshot", "no_overlap_check"] },
+      "failure": { "recovery": ["prioritize_visible_issues", "recheck_after_fix"] }
+    },
+    "lily-browser-qa": {
+      "kind": "quality",
+      "intents": ["browser.test", "webapp.qa", "frontend.smoke_test"],
+      "primaryTools": ["browser.preview", "playwright", "console.logs"],
+      "runtimeDependencies": ["chromium"],
+      "inputModes": ["text", "workspace", "url"],
+      "outputModes": ["test_report", "screenshot", "text"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["open_page", "interact", "check_console", "screenshot"] },
+      "failure": { "recovery": ["start_dev_server", "retry_with_visible_browser", "report_blocker"] }
+    },
+    "lily-creative-director": {
+      "kind": "workflow",
+      "intents": ["image.create", "video.create", "poster.create", "visual.direction"],
+      "primaryTools": ["vision.model", "image.model", "prompt.builder"],
+      "inputModes": ["text", "image"],
+      "outputModes": ["prompt", "artifact", "text"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["define_use_case", "style_direction", "quality_constraints"] },
+      "failure": { "recovery": ["ask_for_brand_or_style", "produce_safe_alternative"] }
+    },
+    "lily-prompt-enhancer": {
+      "kind": "tool",
+      "intents": ["prompt.enhance", "image.prompt", "video.prompt"],
+      "primaryTools": ["prompt.builder"],
+      "inputModes": ["text", "image"],
+      "outputModes": ["prompt", "text"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["preserve_user_intent", "add_constraints", "avoid_unsupported_claims"] },
+      "failure": { "recovery": ["keep_prompt_simple", "list_assumptions"] }
+    },
+    "lily-image-qa": {
+      "kind": "quality",
+      "intents": ["image.review", "visual_asset.qa", "image.compare"],
+      "primaryTools": ["vision.model", "image.viewer"],
+      "inputModes": ["text", "image"],
+      "outputModes": ["issue_list", "text"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["check_subject", "check_text_faces_hands", "check_use_case_fit"] },
+      "failure": { "recovery": ["recommend_retry_prompt", "separate_facts_from_inference"] }
+    },
+    "lily-research-synthesis": {
+      "kind": "workflow",
+      "intents": ["research.latest", "fact_check", "ranking.compare", "source_synthesis"],
+      "primaryTools": ["web.search", "source.reader"],
+      "inputModes": ["text", "url"],
+      "outputModes": ["cited_answer", "text"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["browse_current_sources", "cross_source_check", "cite_sources"] },
+      "failure": { "recovery": ["state_uncertainty", "separate_old_and_current_facts"] }
+    },
+    "lily-stock-research": {
+      "kind": "workflow",
+      "intents": ["stock.analyze", "market.research", "financial.report"],
+      "primaryTools": ["market.data", "web.search", "runtime.python"],
+      "inputModes": ["text", "ticker"],
+      "outputModes": ["report", "artifact", "text"],
+      "risk": { "level": "medium", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["data_source_trace", "cross_check_prices", "investment_disclaimer"] },
+      "failure": { "recovery": ["fallback_to_public_sources", "mark_missing_metrics", "avoid_buy_sell_advice"] }
+    },
+    "lily-web-system-learning": {
+      "kind": "connector",
+      "intents": ["web_system.learn", "web_system.automate", "logged_in_system.map"],
+      "primaryTools": ["playwright", "har.capture", "mcp.tool_broker"],
+      "runtimeDependencies": ["chromium"],
+      "inputModes": ["text", "url", "browser_session"],
+      "outputModes": ["capability_map", "workspace_skill", "tool_manifest"],
+      "risk": { "level": "high", "confirmation": "always" },
+      "verification": { "required": true, "methods": ["capture_login_session", "discover_api_contract", "generate_capability_map", "dry_run_read_action"] },
+      "failure": { "recovery": ["stop_runtime_script_generation", "ask_user_to_login_once", "report_unlearned_routes"] }
+    },
+    "lily-mail-assistant": {
+      "kind": "connector",
+      "intents": ["mail.search", "mail.summarize", "mail.draft", "mail.send"],
+      "primaryTools": ["mail.connector", "mcp.tool_broker"],
+      "inputModes": ["text", "mailbox"],
+      "outputModes": ["email_draft", "text"],
+      "risk": { "level": "high", "confirmation": "always" },
+      "verification": { "required": true, "methods": ["scope_mailbox", "draft_before_send", "exact_recipient_confirmation"] },
+      "failure": { "recovery": ["never_send_without_confirmation", "summarize_missing_attachment_support"] }
+    },
+    "lily-skill-quality-gate": {
+      "kind": "quality",
+      "intents": ["skill.review", "skill.release_gate", "capability.audit"],
+      "primaryTools": ["workspace.files", "tests"],
+      "inputModes": ["text", "workspace"],
+      "outputModes": ["review", "text"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["check_trigger_io", "check_verification", "check_recovery", "check_safety"] },
+      "failure": { "recovery": ["block_release", "list_missing_contracts"] }
+    },
+    "lily-intent-eval": {
+      "kind": "quality",
+      "intents": ["intent.evaluate", "routing.test", "prompt_regression"],
+      "primaryTools": ["test.fixtures", "router.evaluator"],
+      "inputModes": ["text", "fixture"],
+      "outputModes": ["evaluation_report", "text"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["run_intent_cases", "compare_expected_route", "flag_false_positive"] },
+      "failure": { "recovery": ["add_regression_case", "tighten_trigger_terms"] }
+    },
+    "lily-template-fill": {
+      "kind": "tool",
+      "intents": ["template.fill", "document.generate_from_template"],
+      "primaryTools": ["runtime.python", "document.writer"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["artifact"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["extract_placeholders", "confirm_missing_fields", "output_file_check"] },
+      "failure": { "recovery": ["preserve_template", "mark_unfilled_fields"] }
+    },
+    "lily-document-verify": {
+      "kind": "quality",
+      "intents": ["document.verify", "doc.render_check", "office.qa"],
+      "primaryTools": ["runtime.python", "render.preview"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["verification_report", "text"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["render_pages", "check_overflow", "compare_expected_sections"] },
+      "failure": { "recovery": ["report_unverified_pages", "suggest_runtime_pack"] }
+    },
+    "lily-pdf-form": {
+      "kind": "tool",
+      "intents": ["pdf.form_fill", "form.extract", "form.generate"],
+      "primaryTools": ["runtime.python", "pdf.writer"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["artifact"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["detect_fields", "validate_required_fields", "output_file_check"] },
+      "failure": { "recovery": ["preserve_original", "list_unfilled_fields"] }
+    },
+    "lily-runtime-packs": {
+      "kind": "runtime",
+      "intents": ["runtime.install", "capability_pack.install", "office_runtime.enable"],
+      "primaryTools": ["runtime.pack.manager", "qiniu.download"],
+      "inputModes": ["text"],
+      "outputModes": ["runtime_state", "text"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["resolve_server_pack", "download_verify_hash", "runtime_health_check"] },
+      "failure": { "recovery": ["report_download_error", "keep_existing_runtime", "retry_from_server_url"] }
+    },
+    "lily-engineering-rules": {
+      "kind": "workflow",
+      "intents": ["engineering.rules", "code.review_discipline", "delivery.quality"],
+      "primaryTools": ["workspace.files", "tests"],
+      "inputModes": ["text", "workspace"],
+      "outputModes": ["text", "review"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["read_before_write", "protect_user_changes", "verify_before_complete"] },
+      "failure": { "recovery": ["state_blocker", "avoid_unverified_claims"] }
+    },
+    "anthropics-doc-coauthoring": {
+      "kind": "workflow",
+      "intents": ["document.coauthor", "proposal.write", "structured_doc.write"],
+      "primaryTools": ["runtime.python", "document.writer"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["artifact", "text"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["outline_check", "file_created", "content_review"] },
+      "failure": { "recovery": ["ask_for_audience", "produce_markdown_first"] }
+    },
+    "anthropics-docx": {
+      "kind": "tool",
+      "intents": ["docx.read", "docx.write", "word.process"],
+      "primaryTools": ["runtime.python", "python-docx"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["artifact", "text"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["open_docx", "preserve_original", "output_file_check"] },
+      "failure": { "recovery": ["fallback_markdown", "report_unsupported_feature"] }
+    },
+    "anthropics-pdf": {
+      "kind": "tool",
+      "intents": ["pdf.read", "pdf.write", "pdf.convert"],
+      "primaryTools": ["runtime.python", "pdfplumber", "pypdf"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["artifact", "text"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["sample_extract", "page_count_check", "output_file_check"] },
+      "failure": { "recovery": ["try_ocr_if_scan", "report_pages_with_errors"] }
+    },
+    "anthropics-pptx": {
+      "kind": "tool",
+      "intents": ["pptx.read", "pptx.write", "presentation.create"],
+      "primaryTools": ["runtime.python", "python-pptx"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["artifact", "text"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["slide_count_check", "layout_check", "output_file_check"] },
+      "failure": { "recovery": ["reduce_slide_complexity", "report_render_limit"] }
+    },
+    "anthropics-xlsx": {
+      "kind": "tool",
+      "intents": ["xlsx.read", "xlsx.write", "spreadsheet.process"],
+      "primaryTools": ["runtime.python", "openpyxl", "pandas"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["artifact", "text"],
+      "risk": { "level": "low", "confirmation": "before_mutation" },
+      "verification": { "required": true, "methods": ["sheet_count_check", "formula_preservation_check", "output_file_check"] },
+      "failure": { "recovery": ["preserve_original", "write_change_log_sheet"] }
+    }
+  },
   "skills": [
     {
       "id": "lily-coding-core",

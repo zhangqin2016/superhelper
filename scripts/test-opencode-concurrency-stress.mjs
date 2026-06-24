@@ -52,6 +52,14 @@ for (let i = 0; i < 10; i++) {
 }
 assert(sessions.every(({ seen }) => seen.length === 0), "directory diagnostics are not delivered to any session");
 
+// Turn-affecting events without ownership must fail closed. They can mutate the
+// live UI, so broadcasting them would make same-directory sessions appear mixed.
+emit({
+  type: "todo.updated",
+  properties: { todos: [{ content: "wrong session", status: "in_progress" }] },
+});
+assert(sessions.every(({ seen }) => seen.length === 0), "unowned turn updates are not delivered to any session");
+
 // Establish one message per session.
 for (let i = 0; i < sessions.length; i++) {
   emit({

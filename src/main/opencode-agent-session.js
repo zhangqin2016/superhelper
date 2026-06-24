@@ -79,6 +79,8 @@ function isTurnOwnedEngineEvent(ev) {
 }
 
 class OpencodeAgentSession extends EventEmitter {
+  static INTERRUPT_ABORT_TIMEOUT_MS = 5_000;
+
   /**
    * @param {string} sessionId App session id (not the OpenCode server session id).
    * @param {{ createServer?: (opts: object) => OpencodeServerManager }} [deps] Injectable for tests.
@@ -94,10 +96,12 @@ class OpencodeAgentSession extends EventEmitter {
     this.spawnOptions = null;
     this.agentResumeId = null;
     this.busy = false;
+    this._abortSettling = false;
     this._turnSettled = true;
     this._starting = null;
     this._sawActivity = false;
     this._sawEngineEvent = false;
+    this._sawToolActivity = false;
     this.collectedOutput = "";
     /** Completion gate (Pillar 3-B) fires at most ONCE per turn — guards against loops. */
     this._gatedThisTurn = false;
@@ -117,11 +121,14 @@ class OpencodeAgentSession extends EventEmitter {
     this._dispatchFailureTimer = null;
     this._pendingDispatchFailure = null;
     this._pendingPromptPayload = null;
+    this._activeTaskContract = null;
     this._dispatchRetryCount = 0;
+    this._transientReplayCount = 0;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._transientFailureTimer = null;
     this._pendingTransientFailure = null;
     this._turnStartedAt = 0;
+    this._abortSettling = false;
   }
 
   bindOrchestrator(orchestrator) {
@@ -225,7 +232,7 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   isBusy() {
-    return this.busy;
+    return this.busy || this._abortSettling;
   }
 
   diagnostics() {
@@ -234,6 +241,7 @@ class OpencodeAgentSession extends EventEmitter {
       cwd: this.cwd || "",
       alive: this.isAlive(),
       busy: this.busy,
+      abortSettling: this._abortSettling,
       turnSettled: this._turnSettled,
       sawActivity: this._sawActivity,
       collectedOutputLength: this.collectedOutput.length,
@@ -254,7 +262,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   /** @param {{ text?: string, files?: Array<object> } | string} payload */
   sendUserMessage(payload) {
-    if (this.busy) return false;
+    if (this.isBusy()) return false;
     const text = typeof payload === "string" ? payload : payload?.text;
     const files = typeof payload === "object" && payload?.files ? payload.files : [];
     if (!text && (!files || files.length === 0)) return false;
@@ -263,11 +271,14 @@ class OpencodeAgentSession extends EventEmitter {
     this._turnSettled = false;
     this._sawActivity = false;
     this._sawEngineEvent = false;
+    this._sawToolActivity = false;
     this._gatedThisTurn = false;
     this._dispatchRetryCount = 0;
+    this._transientReplayCount = 0;
     this.collectedOutput = "";
     this._turnStartedAt = Date.now();
     this._pendingTransientFailure = null;
+    this._activeTaskContract = typeof payload === "object" ? payload?.taskContract || null : null;
     this._clearTransientFailureTimer();
     // First engine message id of this turn — the rewind anchor. Reverting to it
     // undoes the whole exchange (the engine anchors back to the preceding user msg).
@@ -357,7 +368,15 @@ class OpencodeAgentSession extends EventEmitter {
 
   interrupt() {
     this._clearPendingPermissions();
-    if (this._server) void this._server.abort().catch(() => {});
+    if (this._server && !this._abortSettling) {
+      const server = this._server;
+      this._abortSettling = true;
+      void this._abortWithTimeout(server)
+        .catch((err) => log.warn("opencode abort failed: %s", err?.message || String(err)))
+        .finally(() => {
+          this._abortSettling = false;
+        });
+    }
     if (this.busy && !this._turnSettled) {
       // interrupt() is only ever called for a user-initiated stop, so mark it as
       // such: the orchestrator distinguishes a user interrupt (turn.interrupted)
@@ -387,13 +406,38 @@ class OpencodeAgentSession extends EventEmitter {
     }
     this._starting = null;
     this.busy = false;
+    this._abortSettling = false;
     this._turnSettled = true;
     this.cwd = null;
     this.spawnOptions = null;
     this._pendingPromptPayload = null;
+    this._activeTaskContract = null;
     this._dispatchRetryCount = 0;
+    this._transientReplayCount = 0;
     this._pendingTransientFailure = null;
     this._turnStartedAt = 0;
+  }
+
+  async _abortWithTimeout(server) {
+    let timer = null;
+    try {
+      await Promise.race([
+        server.abort(),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error("abort timed out")), OpencodeAgentSession.INTERRUPT_ABORT_TIMEOUT_MS);
+          timer.unref?.();
+        }),
+      ]);
+    } catch (err) {
+      try { server.terminate?.(); } catch { /* best effort */ }
+      if (this._server === server) {
+        this._server = null;
+        this._starting = null;
+      }
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   // --- inbound: OpenCode event -> runtime drafts + host effects ------------
@@ -443,6 +487,7 @@ class OpencodeAgentSession extends EventEmitter {
     // to the orchestrator.
     const drafts = [...(reduced.drafts || [])];
     for (const draft of drafts) {
+      if (String(draft.type || "").startsWith("tool.")) this._sawToolActivity = true;
       if (draft.type !== "tool.done") continue;
       const raw = draft.payload?.content;
       if (typeof raw !== "string" || !raw) continue;
@@ -465,7 +510,10 @@ class OpencodeAgentSession extends EventEmitter {
         // enforced HERE (host-side), mirroring the official client. Auto-allow /
         // auto-deny without bothering the user; only "ask" surfaces the dialog.
         const mode = this.spawnOptions?.permissionMode || "ask";
-        const verdict = decidePermission(mode, effect.toolName, effect.input || {});
+        const verdict = decidePermission(mode, effect.toolName, effect.input || {}, {
+          cwd: this.cwd,
+          taskContract: this._activeTaskContract,
+        });
         if (verdict === "allow") {
           this._autoRespondPermission(effect.requestId, "once");
           break;
@@ -635,10 +683,11 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   _scheduleTransientFailureRecovery(message, cause) {
+    const startedAt = this._pendingTransientFailure?.startedAt || Date.now();
     this._pendingTransientFailure = {
       message,
       cause,
-      startedAt: Date.now(),
+      startedAt,
     };
     this._clearTransientFailureTimer(false);
     this._clearDispatchFailureTimer();
@@ -692,6 +741,9 @@ class OpencodeAgentSession extends EventEmitter {
       this._completeTurn({ code: 0, output: this.collectedOutput.trim(), interrupted: false });
       return;
     }
+    if (idle && await this._replayTransientPromptIfSafe(pending)) {
+      return;
+    }
 
     const elapsed = Date.now() - pending.startedAt;
     if (elapsed < OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS) {
@@ -701,6 +753,52 @@ class OpencodeAgentSession extends EventEmitter {
 
     this._pendingTransientFailure = null;
     this._failTurn(pending.message, pending.cause, { force: true });
+  }
+
+  async _replayTransientPromptIfSafe(pending) {
+    if (!this._pendingPromptPayload || !this._server) return false;
+    if (this._transientReplayCount >= 1) return false;
+    if (this._sawToolActivity || this.collectedOutput.trim()) return false;
+    if (this._pendingPermissions.size || this._pendingQuestions.size) return false;
+
+    const raw = [pending?.message, pending?.cause?.message || pending?.cause].filter(Boolean).join("\n");
+    const classified = require("./agent-runner").classifyAssistantError(raw);
+    if (classified?.retryable === false) return false;
+    if (classified && ![
+      "MODEL_CONNECTION_FAILED",
+      "ENGINE_UNAVAILABLE",
+      "MODEL_OVERLOADED",
+      "RESPONSE_ERROR",
+      "RATE_LIMITED",
+    ].includes(classified.code)) {
+      return false;
+    }
+    if (!classified && !TRANSIENT_ERROR_RE.test(raw)) return false;
+
+    this._transientReplayCount += 1;
+    this._pendingTransientFailure = null;
+    this._clearTransientFailureTimer(false);
+    resetOpencodeRuntimeState(this._eventState);
+    this.collectedOutput = "";
+    this._turnStartedAt = Date.now();
+    this._sawActivity = false;
+    this._sawEngineEvent = false;
+    this._sawToolActivity = false;
+    try {
+      await this._server.sendPrompt(this._pendingPromptPayload);
+      this._armResponseTimer();
+      this._armProgressNoticeTimer();
+      this._armHealthProbe();
+      return true;
+    } catch (err) {
+      this._pendingTransientFailure = {
+        message: this._sanitize(err?.message || err),
+        cause: err,
+        startedAt: Date.now(),
+      };
+      this._scheduleTransientFailureRecovery(this._pendingTransientFailure.message, err);
+      return true;
+    }
   }
 
   async _recoverCompletedAssistantFromHistory() {
@@ -722,6 +820,7 @@ class OpencodeAgentSession extends EventEmitter {
       const output = assistantTextFromOpenCodeMessageItem(item);
       if (!output) continue;
       const completed = Number(info.time?.completed || info.completed || 0);
+      const completedAt = Number.isFinite(completed) && completed > 0 ? completed : null;
       const rank = Number.isFinite(completed) && completed > 0
         ? completed
         : Number.isFinite(created) && created > 0
@@ -731,11 +830,60 @@ class OpencodeAgentSession extends EventEmitter {
         best = {
           output,
           engineMessageId: typeof info.id === "string" ? info.id : null,
+          completed: Boolean(completedAt),
+          completedAt,
+          createdAt: Number.isFinite(created) && created > 0 ? created : null,
           rank,
         };
       }
     }
-    return best ? { output: best.output, engineMessageId: best.engineMessageId } : null;
+    return best ? {
+      output: best.output,
+      engineMessageId: best.engineMessageId,
+      completed: best.completed,
+      completedAt: best.completedAt,
+      createdAt: best.createdAt,
+    } : null;
+  }
+
+  _withTimeout(promise, timeoutMs, fallback = null) {
+    let timer = null;
+    return Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+        timer.unref?.();
+      }),
+    ]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  }
+
+  async _recoverStalledFinalFromOfficialState() {
+    const latest = await this._withTimeout(
+      this._latestAssistantFromOfficialHistory(),
+      OpencodeAgentSession.STALLED_HISTORY_SYNC_MS,
+      null,
+    );
+    const output = String(latest?.output || "").trim();
+    if (!output) return null;
+    if (latest.completed) return latest;
+
+    // Some OpenCode versions may not stamp completed time on the message item
+    // immediately. If the authoritative session status is already idle, the
+    // latest assistant text is still a better final source than Lily's live
+    // buffer.
+    let idle = false;
+    try {
+      idle = await this._withTimeout(
+        Promise.resolve(this._server?.isSessionIdle ? this._server.isSessionIdle() : false),
+        OpencodeAgentSession.STALLED_HISTORY_SYNC_MS,
+        false,
+      );
+    } catch {
+      idle = false;
+    }
+    return idle ? latest : null;
   }
 
   async _syncFinalOutputFromOfficialHistory(payload) {
@@ -820,7 +968,10 @@ class OpencodeAgentSession extends EventEmitter {
     this._turnSettled = true;
     this.busy = false;
     this._pendingPromptPayload = null;
+    this._activeTaskContract = null;
     this._sawEngineEvent = false;
+    this._sawToolActivity = false;
+    this._transientReplayCount = 0;
     this._turnStartedAt = 0;
     // Carry the turn's rewind anchor (engine message id) so the orchestrator can
     // record it on the turn — that's what session:rewind reverts to later.
@@ -885,7 +1036,10 @@ class OpencodeAgentSession extends EventEmitter {
     this._turnSettled = true;
     this.busy = false;
     this._pendingPromptPayload = null;
+    this._activeTaskContract = null;
     this._sawEngineEvent = false;
+    this._sawToolActivity = false;
+    this._transientReplayCount = 0;
     this._turnStartedAt = 0;
     this._orchestrator?.notifyRunnerError(this.sessionId, message);
     return false;
@@ -1009,8 +1163,26 @@ class OpencodeAgentSession extends EventEmitter {
   _forceEndTurn(reason) {
     if (!this.busy || this._turnSettled) return;
     log.warn("opencode turn force-ended: %s", reason, { sessionId: this.sessionId });
-    try { void this._server?.abort?.().catch(() => {}); } catch { /* best effort */ }
-    this._completeTurn({ code: 0, output: this.collectedOutput.trim(), stalled: true });
+    void (async () => {
+      const recovered = await this._recoverStalledFinalFromOfficialState().catch((err) => {
+        log.warn("opencode stalled history sync failed: %s", err?.message || String(err));
+        return null;
+      });
+      if (!this.busy || this._turnSettled) return;
+      if (recovered?.output) {
+        this._completeTurn({
+          code: 0,
+          output: recovered.output,
+          interrupted: false,
+          engineMessageId: recovered.engineMessageId || null,
+          resultFromOfficialHistory: true,
+          recoveredFromStall: true,
+        });
+        return;
+      }
+      try { void this._server?.abort?.().catch(() => {}); } catch { /* best effort */ }
+      this._completeTurn({ code: 0, output: this.collectedOutput.trim(), stalled: true });
+    })();
   }
 
   /** Active liveness probe during a turn. The silence watchdog can't tell a wedged
@@ -1071,6 +1243,11 @@ OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
 // users can see the engine is still alive while OpenCode is quiet.
 OpencodeAgentSession.PROGRESS_NOTICE_MS =
   Number(process.env.LILY_OPENCODE_PROGRESS_NOTICE_MS) || 45_000;
+// Bounded official-history sync before declaring a no-progress turn stalled.
+// This mirrors the official app's source-of-truth model without letting the
+// watchdog itself hang on an unhealthy server.
+OpencodeAgentSession.STALLED_HISTORY_SYNC_MS =
+  Number(process.env.LILY_OPENCODE_STALLED_HISTORY_SYNC_MS) || 2_500;
 // Mirrors OpenCode's own "confirm idle after events have drained" behavior:
 // do not finalize on the same tick as session.idle, because late text deltas can
 // still be queued behind it in the shared event stream.

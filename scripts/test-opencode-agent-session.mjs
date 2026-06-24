@@ -12,6 +12,9 @@
  */
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const { OpencodeAgentSession } = require("../src/main/opencode-agent-session.js");
@@ -48,7 +51,11 @@ class FakeServer extends EventEmitter {
   }
   async respondPermission(id, d) { this.permissionReplies.push({ id, ...d }); }
   async respondQuestion(id, answers) { this.questionReplies = this.questionReplies || []; this.questionReplies.push({ id, answers }); }
-  async abort() { this.aborted = true; return true; }
+  async abort() {
+    this.aborted = true;
+    if (this.abortDelayMs) await sleep(this.abortDelayMs);
+    return true;
+  }
   async revert(messageID) { this.reverted = messageID; return {}; }
   async unrevert() { this.unreverted = true; return {}; }
   async messages() {
@@ -274,6 +281,69 @@ async function newSession() {
     assert(orch.calls.done.length === 1, "recovery completes the turn from official history");
     assert(orch.calls.done[0].output === "recovered answer", "recovered answer is preserved");
     assert(orch.calls.done[0].engineMessageId === "msg_recovered_after_hiccup", "recovered engine message id is preserved");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
+// --- transient hiccup with no result: replay once when official session idle -
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 200;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.historyMessages = [];
+    fake.idleState = true;
+    session.sendUserMessage({ text: "plain question" });
+    await tick();
+    fake.emitEvent({ type: "session.status", properties: { sessionID: "s", status: { type: "busy" } } });
+    fake.emit("error", new Error("SSE reconnect gave up after socket connection was closed"));
+    await sleep(60);
+    assert(fake.prompts.length === 2, "idle transient hiccup without output is replayed once");
+    assert(orch.calls.error.length === 0, "safe replay avoids a visible model interruption");
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "replayed answer" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "replayed answer", "replayed turn completes");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
+// --- transient hiccup after tool activity: do not replay side effects -------
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 10;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 30;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.historyMessages = [];
+    fake.idleState = true;
+    session.sendUserMessage({ text: "run a command" });
+    await tick();
+    fake.emitEvent({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "part_tool_1",
+          type: "tool",
+          tool: "bash",
+          callID: "call_tool_1",
+          state: { status: "running", input: { command: "echo ok" } },
+        },
+      },
+    });
+    fake.emit("error", new Error("SSE reconnect gave up after socket connection was closed"));
+    await sleep(140);
+    assert(fake.prompts.length === 1, "transient failure after tool activity must not replay the prompt");
+    assert(orch.calls.error.length === 1, "unsafe replay still surfaces the failure");
     session.terminate();
   } finally {
     OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
@@ -510,6 +580,62 @@ async function newSession() {
   session.terminate();
 }
 
+// --- workspace grounding surfaces unsafe new top-level writes ---------------
+{
+  const { fake, session, orch } = await newSession();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-opencode-grounding-"));
+  fs.mkdirSync(path.join(tmp, "src"), { recursive: true });
+  session.cwd = tmp;
+  session.spawnOptions.permissionMode = "full";
+  session.sendUserMessage({
+    text: "improve existing code",
+    taskContract: {
+      projectPath: tmp,
+      workspaceGroundingPolicy: {
+        required: true,
+        allowNewTopLevel: false,
+      },
+    },
+  });
+  await tick();
+  fake.emitEvent({
+    type: "permission.asked",
+    properties: { id: "per_ground_1", permission: "write", metadata: { path: "new-app/index.js" }, tool: {} },
+  });
+  assert(draft(orch, "permission.requested")?.payload.requestId === "per_ground_1",
+    "new top-level write must surface for confirmation even in full mode");
+  assert(fake.permissionReplies.length === 0, "grounding ask must not auto-allow");
+  session.terminate();
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// --- explicit greenfield can create a new top-level target ------------------
+{
+  const { fake, session } = await newSession();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-opencode-greenfield-"));
+  session.cwd = tmp;
+  session.spawnOptions.permissionMode = "full";
+  session.sendUserMessage({
+    text: "create from scratch",
+    taskContract: {
+      projectPath: tmp,
+      workspaceGroundingPolicy: {
+        required: true,
+        allowNewTopLevel: true,
+      },
+    },
+  });
+  await tick();
+  fake.emitEvent({
+    type: "permission.asked",
+    properties: { id: "per_ground_2", permission: "write", metadata: { path: "new-app/index.js" }, tool: {} },
+  });
+  await tick();
+  assert(fake.permissionReplies[0]?.reply === "once", "greenfield write should auto-allow in full mode");
+  session.terminate();
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
 // --- question round trip ----------------------------------------------------
 {
   const { fake, session, orch } = await newSession();
@@ -631,10 +757,39 @@ async function newSession() {
   assert(orch.calls.done[0].interruptedByUser === true, "user interrupt is flagged interruptedByUser");
 }
 
+// --- interrupt keeps runner busy until official abort settles ---------------
+{
+  const { fake, session } = await newSession();
+  fake.abortDelayMs = 30;
+  session.sendUserMessage({ text: "x" });
+  await tick();
+  session.interrupt();
+  assert(fake.aborted === true, "interrupt starts official abort");
+  assert(session.isBusy() === true, "session remains busy while abort is settling");
+  await sleep(45);
+  assert(session.isBusy() === false, "session becomes idle after official abort settles");
+}
+
+// --- interrupt abort timeout drops the server instead of wedging forever -----
+{
+  const previousAbortTimeout = OpencodeAgentSession.INTERRUPT_ABORT_TIMEOUT_MS;
+  OpencodeAgentSession.INTERRUPT_ABORT_TIMEOUT_MS = 10;
+  try {
+    const { fake, session } = await newSession();
+    fake.abortDelayMs = 80;
+    session.sendUserMessage({ text: "x" });
+    await tick();
+    session.interrupt();
+    assert(session.isBusy() === true, "session remains busy while abort timeout is pending");
+    await sleep(30);
+    assert(session.isBusy() === false, "abort timeout releases busy state");
+    assert(fake.process === null, "abort timeout terminates the stale server view");
+  } finally {
+    OpencodeAgentSession.INTERRUPT_ABORT_TIMEOUT_MS = previousAbortTimeout;
+  }
+}
+
 // --- Pillar 3-B: completion gate ------------------------------------------
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
 const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-session.js");
 
 // detector: high precision, fail open
@@ -828,9 +983,12 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
 // blunt wall-clock cap that would kill a legit long-but-progressing task.
 {
   const saved = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  const savedSync = OpencodeAgentSession.STALLED_HISTORY_SYNC_MS;
   OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 60;
+  OpencodeAgentSession.STALLED_HISTORY_SYNC_MS = 5;
   try {
     const { fake, session, orch } = await newSession();
+    fake.historyMessages = [];
     session.sendUserMessage({ text: "stuck but noisy" });
     await tick();
     for (let i = 0; i < 6; i++) {
@@ -843,6 +1001,73 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
     session.terminate();
   } finally {
     OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = saved;
+    OpencodeAgentSession.STALLED_HISTORY_SYNC_MS = savedSync;
+  }
+}
+
+// --- no-progress: recover final answer from official messages before stalling -
+{
+  const savedTimeout = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  const savedSync = OpencodeAgentSession.STALLED_HISTORY_SYNC_MS;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 40;
+  OpencodeAgentSession.STALLED_HISTORY_SYNC_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "official final already exists" });
+    await tick();
+    const now = Date.now();
+    fake.historyMessages = [{
+      info: {
+        id: "msg_stall_recovered",
+        role: "assistant",
+        sessionID: "ses_test",
+        time: { created: now, completed: now + 1 },
+      },
+      parts: [{ type: "text", text: "official recovered answer" }],
+    }];
+    await sleep(80);
+    assert(orch.calls.done.length === 1, "watchdog checks official messages before declaring stalled");
+    assert(orch.calls.done[0].stalled !== true, "official final recovery is not marked stalled");
+    assert(orch.calls.done[0].recoveredFromStall === true, "done payload records stall recovery");
+    assert(orch.calls.done[0].output === "official recovered answer", "official final text wins");
+    assert(orch.calls.done[0].engineMessageId === "msg_stall_recovered", "official recovered message id is preserved");
+    assert(fake.aborted === false, "recovered official final must not abort the engine");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = savedTimeout;
+    OpencodeAgentSession.STALLED_HISTORY_SYNC_MS = savedSync;
+  }
+}
+
+// --- no-progress: do not treat an in-progress official message as final ------
+{
+  const savedTimeout = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  const savedSync = OpencodeAgentSession.STALLED_HISTORY_SYNC_MS;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 40;
+  OpencodeAgentSession.STALLED_HISTORY_SYNC_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.idleState = false;
+    session.sendUserMessage({ text: "official still busy" });
+    await tick();
+    const now = Date.now();
+    fake.historyMessages = [{
+      info: {
+        id: "msg_still_running",
+        role: "assistant",
+        sessionID: "ses_test",
+        time: { created: now },
+      },
+      parts: [{ type: "text", text: "partial official text" }],
+    }];
+    await sleep(90);
+    assert(orch.calls.done.length === 1, "busy official partial still settles by watchdog");
+    assert(orch.calls.done[0].stalled === true, "busy official partial remains stalled");
+    assert(fake.aborted === true, "unrecovered stalled turn aborts the engine");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = savedTimeout;
+    OpencodeAgentSession.STALLED_HISTORY_SYNC_MS = savedSync;
   }
 }
 

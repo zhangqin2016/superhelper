@@ -142,6 +142,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
   pasteImage: (buffer, fileName) => ipcRenderer.invoke("files:paste", buffer, fileName),
   getFileThumbnail: (fileId) => ipcRenderer.invoke("files:thumbnail", fileId),
   getImageDimensions: (fileId) => ipcRenderer.invoke("files:dimensions", fileId),
+  readTextFile: (filePath, options = {}) =>
+    ipcRenderer.invoke("files:read-text", { ...(options || {}), filePath }),
   clearStagingCache: () => ipcRenderer.invoke("files:clear-staging"),
 
   getLicenseStatus: () => ipcRenderer.invoke("license:status"),

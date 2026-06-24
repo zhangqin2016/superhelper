@@ -52,6 +52,16 @@ const blocks = buildTurnResultBlocks({
       bytes: 4096,
       updatedAt: 3000,
     },
+    {
+      id: "markdown-report",
+      kind: "file",
+      path: "/tmp/lily/report.md",
+      relativePath: "output/report.md",
+      fileName: "report.md",
+      mimeType: "text/markdown",
+      bytes: 1024,
+      updatedAt: 4000,
+    },
   ],
   contentBlocks: [
     {
@@ -72,11 +82,12 @@ const blocks = buildTurnResultBlocks({
   ],
 });
 
-assert.deepEqual(blocks.map((block) => block.type), ["table", "artifact", "artifact", "artifact", "artifact"]);
+assert.deepEqual(blocks.map((block) => block.type), ["table", "artifact", "artifact", "artifact", "artifact", "artifact"]);
 assert.equal(blocks.filter((block) => block.path === "/tmp/lily/chart.svg").length, 1);
 assert.equal(blocks.find((block) => block.relativePath === "output/chart.svg")?.artifactType, "image");
 assert.equal(blocks.find((block) => block.relativePath === "output/report.pdf")?.artifactType, "pdf");
 assert.equal(blocks.find((block) => block.relativePath === "output/report.html")?.artifactType, "html");
+assert.equal(blocks.find((block) => block.relativePath === "output/report.md")?.artifactType, "markdown");
 assert.equal(blocks.find((block) => block.source === "content_block")?.mimeType, "image/png");
 
 console.log("turn-result-blocks: ok");

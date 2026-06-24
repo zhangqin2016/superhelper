@@ -140,6 +140,70 @@ function mergeUserDisplayText(opencodeMessages = [], localMessages = []) {
   });
 }
 
+function messageKey(message = {}) {
+  if (message.turnId && message.role) return `turn:${message.role}:${message.turnId}`;
+  if (message.id) return `id:${message.id}`;
+  return `${message.role || ""}:${message.timestamp || ""}:${message.content || ""}`;
+}
+
+function mergeProjectionConversation(messages = [], projections = []) {
+  const out = Array.isArray(messages) ? messages.slice() : [];
+  const byKey = new Map();
+  for (let i = 0; i < out.length; i += 1) {
+    byKey.set(messageKey(out[i]), i);
+  }
+
+  for (const projected of projections || []) {
+    if (!projected?.role || !projected?.turnId) continue;
+    const key = messageKey(projected);
+    const existingIndex = byKey.get(key);
+    if (existingIndex == null) {
+      byKey.set(key, out.length);
+      out.push(projected);
+      continue;
+    }
+    const existing = out[existingIndex];
+    if (projected.role !== "assistant") continue;
+    if (existing.record && existing.content) continue;
+    out[existingIndex] = mergeMetadata(
+      {
+        ...existing,
+        content: existing.content || projected.content || "",
+        record: existing.record || projected.record || null,
+        failed: Boolean(existing.failed || projected.failed),
+        meta: {
+          ...(projected.meta || {}),
+          ...(existing.meta || {}),
+        },
+      },
+      projected,
+    );
+  }
+
+  return out.sort((a, b) => {
+    const at = timestampMs(a.timestamp) ?? 0;
+    const bt = timestampMs(b.timestamp) ?? 0;
+    if (at !== bt) return at - bt;
+    if (a.turnId && b.turnId && a.turnId === b.turnId) {
+      if (a.role === b.role) return 0;
+      return a.role === "user" ? -1 : 1;
+    }
+    return 0;
+  });
+}
+
+function projectedConversationFor(ctx, sessionId, opts = {}) {
+  if (opts.before != null) return [];
+  try {
+    return ctx.sessionManager.getProjectedConversation?.(sessionId, {
+      limit: Number.isInteger(opts.limit) ? Math.max(opts.limit, 100) : 100,
+      includeOpen: opts.includeOpen !== false,
+    }) || [];
+  } catch {
+    return [];
+  }
+}
+
 async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
   const session = sessionId ? ctx.sessionManager.findById(sessionId) : ctx.sessionManager.getActive();
   if (!session) {
@@ -155,7 +219,20 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
     };
   }
 
-  const fallback = () => ctx.sessionManager.getConversationPage(session.id, opts);
+  const fallback = () => {
+    const page = ctx.sessionManager.getConversationPage(session.id, opts);
+    const projections = projectedConversationFor(ctx, session.id, {
+      ...opts,
+      includeOpen: true,
+    });
+    if (!projections.length) return page;
+    return {
+      ...page,
+      conversation: mergeProjectionConversation(page.conversation || [], projections),
+      source: page.source || "lily",
+      projectionSource: "lily-projection",
+    };
+  };
   let runner = ctx.runnerPool?.get?.(session.id);
   if ((!runner?.getConversationPage || !runner?.isAlive?.()) && session.agentResumeId) {
     try {
@@ -176,14 +253,20 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
     const page = await runner.getConversationPage(opts);
     const localConversation = ctx.sessionManager.getConversation(session.id);
     const metadata = buildMetadataIndex(localConversation);
-    const conversation = mergeUserDisplayText(page.conversation || [], localConversation).map((message) => {
+    const mergedOfficial = mergeUserDisplayText(page.conversation || [], localConversation).map((message) => {
       const key = metadataKey(message);
       return mergeMetadata(message, key ? metadata.get(key) : null);
     });
+    const projections = projectedConversationFor(ctx, session.id, {
+      ...opts,
+      includeOpen: !runner?.isBusy?.(),
+    });
+    const conversation = mergeProjectionConversation(mergedOfficial, projections);
     return {
       ...page,
       projectId: session.projectId,
       conversation,
+      projectionSource: projections.length ? "lily-projection" : undefined,
     };
   } catch (err) {
     return {
@@ -199,6 +282,7 @@ module.exports = {
   buildMetadataIndex,
   isInjectedUserPromptText,
   mergeMetadata,
+  mergeProjectionConversation,
   mergeUserDisplayText,
   getConversationPageFromSource,
 };

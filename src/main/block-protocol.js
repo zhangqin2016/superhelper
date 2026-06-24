@@ -58,6 +58,7 @@ function artifactTypeForArtifact(artifact = {}) {
   );
   if (artifact.kind === "image" || mime.startsWith("image/") || IMAGE_EXTENSIONS.has(ext)) return BLOCK_TYPES.IMAGE;
   if (mime === "application/pdf" || ext === ".pdf") return BLOCK_TYPES.PDF;
+  if (mime === "text/markdown" || ext === ".md" || ext === ".markdown") return BLOCK_TYPES.MARKDOWN;
   if (mime === "text/html" || ext === ".html" || ext === ".htm") return BLOCK_TYPES.HTML;
   return BLOCK_TYPES.FILE;
 }

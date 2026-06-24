@@ -9,6 +9,7 @@ import { renderPdfBlock } from "./pdf-renderer.js";
 import { renderHtmlBlock } from "./html-renderer.js";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
+const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
 
 function tr(key, fallback, params) {
   const value = t(key, params);
@@ -53,11 +54,12 @@ function extensionFromPath(filePath = "") {
 
 function inferArtifactType(block = {}) {
   const declared = String(block.artifactType || block.type || "").toLowerCase();
-  if (["image", "pdf", "html", "chart", "video", "audio"].includes(declared)) return declared;
+  if (["image", "pdf", "html", "markdown", "chart", "video", "audio"].includes(declared)) return declared;
   const mime = String(block.mimeType || "").toLowerCase();
   const ext = normalizeExtension(block.ext || extensionFromPath(block.path || block.relativePath || block.fileName));
   if (block.kind === "image" || mime.startsWith("image/") || IMAGE_EXTENSIONS.has(ext)) return "image";
   if (mime === "application/pdf" || ext === ".pdf") return "pdf";
+  if (mime === "text/markdown" || MARKDOWN_EXTENSIONS.has(ext)) return "markdown";
   if (mime === "text/html" || ext === ".html" || ext === ".htm") return "html";
   return "file";
 }
@@ -184,6 +186,84 @@ function renderArtifact(block) {
   `);
 }
 
+function renderCompactArtifact(block) {
+  const name = displayName(block);
+  const size = bytesText(block.bytes);
+  return el(html`
+    <figure class="assistant-renderer-block assistant-renderer-artifact is-file is-compact">
+      <figcaption>
+        <code class="assistant-generated-file-path">${name}</code>
+        ${size ? html`<span class="assistant-renderer-meta">${size}</span>` : ""}
+        ${revealButton(block)}
+      </figcaption>
+    </figure>
+  `);
+}
+
+function renderMarkdownArtifact(block) {
+  const name = displayName(block);
+  const size = bytesText(block.bytes);
+  const node = el(html`
+    <section class="assistant-renderer-block assistant-renderer-markdown-artifact">
+      <header class="assistant-renderer-artifact-header">
+        <div class="assistant-renderer-artifact-title">
+          <code class="assistant-generated-file-path">${name}</code>
+          ${size ? html`<span class="assistant-renderer-meta">${size}</span>` : ""}
+        </div>
+        <div class="assistant-renderer-chart-actions">
+          ${revealButton(block)}
+        </div>
+      </header>
+      <div class="assistant-renderer-markdown-preview assistant-turn-final markdown-body">
+        ${tr("renderer.markdownPreviewLoading", "Loading Markdown preview...")}
+      </div>
+    </section>
+  `);
+  const preview = node.querySelector(".assistant-renderer-markdown-preview");
+  const key = `${block.path || ""}:${block.updatedAt || ""}:${block.bytes || ""}`;
+  node.dataset.markdownPreviewKey = key;
+
+  void (async () => {
+    try {
+      const result = await window.assistantClient?.readTextFile?.(block.path, { maxBytes: 1024 * 1024 });
+      if (node.dataset.markdownPreviewKey !== key) return;
+      if (!result?.ok) {
+        preview.textContent = tr("renderer.markdownPreviewFailed", "Markdown preview is unavailable. Open the file to view it.");
+        return;
+      }
+      const suffix = result.truncated
+        ? `\n\n${tr("renderer.markdownPreviewTruncated", "Preview truncated. Open the file to view the full content.")}`
+        : "";
+      renderMarkdownContent(preview, `${result.text || ""}${suffix}`);
+    } catch (error) {
+      if (node.dataset.markdownPreviewKey !== key) return;
+      preview.textContent = tr("renderer.markdownPreviewFailed", "Markdown preview is unavailable. Open the file to view it.");
+      console.warn("[turn-block-renderers] markdown preview failed", error);
+    }
+  })();
+
+  return node;
+}
+
+function sourceList(block = {}) {
+  return String(block.source || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function artifactDisplayMode(block = {}) {
+  const explicit = String(block.display || block.preview || "").toLowerCase();
+  if (["hidden", "none"].includes(explicit)) return "hidden";
+  if (["compact", "reference"].includes(explicit)) return "compact";
+  if (["primary", "preview", "expanded"].includes(explicit)) return "primary";
+
+  const sources = sourceList(block);
+  if (!sources.length || sources.includes("content_block")) return "primary";
+  if (sources.includes("file_change") || sources.includes("tool_write")) return "primary";
+  return "compact";
+}
+
 function renderForm(block) {
   const fields = Array.isArray(block.fields) ? block.fields : [];
   return el(html`
@@ -219,8 +299,10 @@ const RENDERERS = new Map([
   ["table", renderTable],
   ["chart", renderChart],
   ["artifact", renderArtifact],
+  ["compact-artifact", renderCompactArtifact],
   ["image", renderArtifact],
   ["file", renderArtifact],
+  ["markdown-artifact", renderMarkdownArtifact],
   ["pdf", renderPdfBlock],
   ["html", renderHtmlBlock],
   ["video", renderArtifact],
@@ -234,8 +316,11 @@ function rendererForBlock(block = {}) {
   const type = String(block.type || "").toLowerCase();
   const artifactType = type === "artifact" ? inferArtifactType(block) : String(block.artifactType || "").toLowerCase();
   if (type === "artifact" && artifactType === "chart") return RENDERERS.get("chart");
+  const displayMode = type === "artifact" ? artifactDisplayMode(block) : "primary";
+  if (displayMode === "compact") return RENDERERS.get("compact-artifact");
   if (type === "artifact" && artifactType === "pdf") return RENDERERS.get("pdf");
   if (type === "artifact" && artifactType === "html") return RENDERERS.get("html");
+  if (type === "artifact" && artifactType === "markdown") return RENDERERS.get("markdown-artifact");
   return RENDERERS.get(type) || RENDERERS.get(artifactType);
 }
 
@@ -278,7 +363,11 @@ function renderBlockNode(block) {
 
 export function renderResultBlocks(root, blocks = []) {
   if (!root) return;
-  const normalized = Array.isArray(blocks) ? blocks.filter((block) => block?.type) : [];
+  const normalized = Array.isArray(blocks)
+    ? blocks.filter((block) => block?.type && (
+      String(block.type || "").toLowerCase() !== "artifact" || artifactDisplayMode(block) !== "hidden"
+    ))
+    : [];
   const keys = normalized.map(blockKey);
   const listKey = keys.join("|");
   if (root.dataset.resultBlockKey === listKey) return;

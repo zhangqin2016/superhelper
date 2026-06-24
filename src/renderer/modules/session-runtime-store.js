@@ -501,7 +501,14 @@ export function applyRuntimeEvent(event, opts = {}) {
 }
 
 export function canSend(sessionId) {
-  return getRuntimeSession(sessionId).phase === "idle";
+  const runtime = getRuntimeSession(sessionId);
+  if (runtime.phase === "idle") return true;
+  if (!runtime.turnId || runtime.liveTurn?.final) {
+    runtime.phase = "idle";
+    runtime.turnId = null;
+    return true;
+  }
+  return false;
 }
 
 export function canInterrupt(sessionId) {

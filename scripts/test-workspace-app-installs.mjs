@@ -24,7 +24,15 @@ try {
       sha256: "a".repeat(64),
       downloadUrl: "https://cdn.example.com/stock.zip",
     },
-    manifest: { name: "Stock Dashboard", version: "1.0.0" },
+    manifest: {
+      name: "Stock Dashboard",
+      version: "1.0.0",
+      appRuntime: {
+        manifestPath: "lily-app.json",
+        defaultEntrypoint: "analyze_stock",
+        resultPath: "source/reports/lily-result.json",
+      },
+    },
     project,
     targetDir: appDir,
     installParentDir: path.dirname(appDir),
@@ -33,6 +41,8 @@ try {
   assert.equal(record.id, "stock-dashboard");
   assert.ok(record.instanceId);
   assert.equal(record.version, "1.0.0");
+  assert.equal(record.appRuntime.defaultEntrypoint, "analyze_stock");
+  assert.equal(record.appRuntime.resultPath, "source/reports/lily-result.json");
   assert.equal(installs.listInstalled().length, 1);
   assert.equal(installs.isInsideInstallRoot(defaultWorkspace, appDir), true);
   assert.equal(installs.isInsideInstallRoot(defaultWorkspace, path.join(tmp, "Other", "x")), false);
@@ -100,6 +110,7 @@ try {
   assert.equal(result.json.apps[0].updateAvailable, true);
   assert.equal(result.json.apps[0].installedAvailable, true);
   assert.equal(result.json.apps[0].installedCount, 1);
+  assert.equal(result.json.apps[0].installedInstances[0].appRuntime.defaultEntrypoint, "analyze_stock");
 
   const secondDir = path.join(tmp, "Custom Apps", "Stock Dashboard 2");
   fs.mkdirSync(secondDir, { recursive: true });

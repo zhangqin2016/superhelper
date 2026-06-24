@@ -138,6 +138,7 @@ function normalizeManifestFromRegistry(entry, manifest, skillMd) {
     categoryLabel: entry.categoryLabel || base.categoryLabel || null,
     publisher: entry.publisher || base.publisher || "Lily Workbench",
     capabilityLayer: entry.capabilityLayer || base.capabilityLayer || "tool",
+    capability: entry.capability || base.capability || null,
     riskLevel: entry.riskLevel || base.riskLevel || "low",
     permissions: {
       network: Boolean(base.permissions?.network),

@@ -18,6 +18,36 @@ function activeScope() {
   };
 }
 
+function selectedTaskScopeMode() {
+  return document.querySelector('input[name="scheduledTaskScope"]:checked')?.dataset.scheduledScope || "workspace";
+}
+
+function listFilterForScope() {
+  const scope = activeScope();
+  if (selectedTaskScopeMode() === "all") return { projectId: null, sessionId: null };
+  return scope.projectId ? { projectId: scope.projectId, sessionId: null } : {};
+}
+
+function taskOwner(task) {
+  for (const project of store.get("projects") || []) {
+    const session = (project.sessions || []).find((item) => item.id === task.sessionId);
+    if (session || project.id === task.projectId) {
+      return {
+        projectId: project.id,
+        projectName: project.name || project.path?.split(/[/\\]/).filter(Boolean).pop() || t("taskCenter.unknownWorkspace"),
+        sessionId: task.sessionId,
+        sessionTitle: session?.title || t("taskCenter.untitledSession"),
+      };
+    }
+  }
+  return {
+    projectId: task.projectId || "",
+    projectName: t("taskCenter.unknownWorkspace"),
+    sessionId: task.sessionId || "",
+    sessionTitle: t("taskCenter.untitledSession"),
+  };
+}
+
 function formatDateTime(value) {
   if (!value) return "-";
   try {
@@ -158,24 +188,34 @@ async function createTask() {
 }
 
 function renderTaskItem(task) {
+  const owner = taskOwner(task);
   const item = document.createElement("article");
   item.className = "scheduled-task-item";
   item.dataset.taskId = task.id;
+  item.dataset.sessionId = owner.sessionId;
+  item.dataset.projectId = owner.projectId;
 
   const main = document.createElement("div");
   main.className = "scheduled-task-item-main";
   const title = document.createElement("strong");
   title.textContent = task.title || t("scheduled.untitled");
+  const scopeLabel = document.createElement("div");
+  scopeLabel.className = "scheduled-task-item-scope";
+  scopeLabel.textContent = `${owner.projectName} / ${owner.sessionTitle}`;
   const meta = document.createElement("span");
   const active = task.status === "queued" || task.status === "running";
   const statusText = active
     ? (task.status === "queued" ? t("scheduled.queued") : t("scheduled.running"))
     : (task.enabled ? t("scheduled.enabled") : t("scheduled.paused"));
   meta.textContent = `${task.scheduleText || "-"} · ${statusText} · ${t("scheduled.nextRun")} ${formatDateTime(task.nextRunAt)}`;
-  main.append(title, meta);
+  main.append(title, scopeLabel, meta);
 
   const actions = document.createElement("div");
   actions.className = "scheduled-task-item-actions";
+  const open = document.createElement("button");
+  open.type = "button";
+  open.dataset.action = "open-session";
+  open.textContent = t("scheduled.openSession");
   const run = document.createElement("button");
   run.type = "button";
   run.dataset.action = "run";
@@ -192,7 +232,7 @@ function renderTaskItem(task) {
   remove.dataset.action = "remove";
   remove.disabled = active;
   remove.textContent = t("scheduled.remove");
-  actions.append(run, toggle, remove);
+  actions.append(open, run, toggle, remove);
 
   item.append(main, actions);
   return item;
@@ -201,9 +241,9 @@ function renderTaskItem(task) {
 export async function refreshScheduledTaskList() {
   const list = $("scheduledTaskList");
   if (!list) return;
-  const scope = activeScope();
+  const scope = listFilterForScope();
   list.replaceChildren();
-  if (!scope.sessionId) {
+  if (selectedTaskScopeMode() === "workspace" && !scope.projectId) {
     list.textContent = t("scheduled.needScope");
     return;
   }
@@ -223,10 +263,28 @@ export async function refreshScheduledTaskList() {
   }
 }
 
+async function openTaskSession(item) {
+  const sessionId = item?.dataset.sessionId || "";
+  const projectId = item?.dataset.projectId || "";
+  if (!sessionId) return;
+  try {
+    const sw = await window.assistantClient?.switchSession?.(sessionId);
+    const { applySessionSwitch } = await import("./session-chrome.js");
+    await applySessionSwitch(sw, sessionId, projectId);
+    closeScheduledTaskModal();
+  } catch (err) {
+    showToast(err?.message || t("toast.switchSessionFailed"), "error");
+  }
+}
+
 async function handleTaskAction(event) {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
   const item = button.closest(".scheduled-task-item");
+  if (button.dataset.action === "open-session") {
+    await openTaskSession(item);
+    return;
+  }
   const taskId = item?.dataset.taskId;
   if (!taskId) return;
   button.disabled = true;
@@ -300,6 +358,9 @@ export function initScheduledTasks() {
   $("scheduledTaskParseBtn")?.addEventListener("click", () => void parseDraft());
   $("scheduledTaskCreateBtn")?.addEventListener("click", () => void createTask());
   $("scheduledTaskList")?.addEventListener("click", (event) => void handleTaskAction(event));
+  for (const input of document.querySelectorAll('input[name="scheduledTaskScope"]')) {
+    input.addEventListener("change", () => void refreshScheduledTaskList());
+  }
   $("scheduledTaskModal")?.addEventListener("click", (event) => {
     if (event.target === $("scheduledTaskModal")) closeScheduledTaskModal();
   });

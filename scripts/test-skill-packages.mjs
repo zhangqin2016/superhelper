@@ -100,6 +100,16 @@ const rows = [
       ar: "إصلاح الكود والاختبارات والبناء والنشر مع التحقق من السبب الجذري.",
     },
     capability_layer: "workflow",
+    capability_contract: {
+      kind: "workflow",
+      intents: ["code.repair", "test.failure"],
+      primaryTools: ["workspace.files", "tests"],
+      inputModes: ["text", "workspace"],
+      outputModes: ["workspace_change", "text"],
+      risk: { level: "medium", confirmation: "before_mutation" },
+      verification: { required: true, methods: ["reproduce", "rerun_tests"] },
+      failure: { recovery: ["narrow_scope", "report_blocker"] },
+    },
     risk_level: "medium",
     default_eligible: true,
     featured: true,
@@ -147,6 +157,9 @@ assert.equal(
   "server-managed skill registry must preserve localized category labels",
 );
 assert.equal(registry.skills[0].capabilityLayer, "workflow");
+assert.equal(registry.skills[0].capability.schemaVersion, 1);
+assert.deepEqual(registry.skills[0].capability.intents, ["code.repair", "test.failure"]);
+assert.deepEqual(registry.skills[0].capability.verification.methods, ["reproduce", "rerun_tests"]);
 assert.equal(registry.skills[0].riskLevel, "medium");
 assert.equal(registry.skills[0].defaultEligible, true);
 assert.equal(registry.skills[0].featured, true);

@@ -94,6 +94,85 @@
   padding: 16px 20px 4px;
 }
 
+.choose-dialog-panel {
+  place-items: end center;
+  padding: 0 20px 120px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.choose-dialog-card {
+  width: min(520px, calc(100vw - 40px));
+  max-height: none;
+  border-color: var(--border);
+  border-radius: 14px;
+  background: var(--bg-floating);
+  box-shadow: var(--shadow-floating);
+  animation: slide-up 0.16s ease;
+}
+
+.choose-dialog-header {
+  display: flex;
+  gap: 12px;
+  padding: 18px 18px 12px;
+}
+
+.choose-dialog-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.choose-dialog-message {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.choose-dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 6px 18px 18px;
+}
+
+.choose-dialog-action {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.choose-dialog-action-secondary {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.choose-dialog-action-secondary:hover,
+.choose-dialog-action-secondary:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--bg-surface-hover);
+  outline: none;
+}
+
+.choose-dialog-action-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text-soft);
+}
+
+.choose-dialog-action-danger:hover,
+.choose-dialog-action-danger:focus-visible {
+  background: var(--danger-bg-hover);
+  color: var(--text-inverse);
+  outline: none;
+}
+
 .skill-preset-guide-card {
   width: min(480px, 94vw);
   max-height: none;
@@ -360,9 +439,13 @@
 .toast-info { background: var(--info-bg); border: 1px solid var(--info-border); color: var(--info-text-soft); }
 .toast-success { background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text-soft); }
 
-/* Non-blocking legacy-message migration progress (bottom-left). */
+/* Non-blocking legacy-message migration progress. Keep it away from the
+   composer/sidebar corner so it never looks like a stray app decoration. */
 .migration-progress {
-  position: fixed; bottom: 16px; left: 16px; z-index: var(--z-notification-queue);
+  position: fixed;
+  top: 72px;
+  right: 16px;
+  z-index: var(--z-notification-queue);
   min-width: 220px; max-width: 320px;
   padding: 10px 12px;
   border-radius: var(--radius-lg);

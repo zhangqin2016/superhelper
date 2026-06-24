@@ -809,6 +809,40 @@ textarea:disabled { opacity: 0.5; }
   font-size: 14px;
 }
 
+.scheduled-task-scope {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-muted);
+}
+
+.scheduled-task-scope label {
+  position: relative;
+  cursor: pointer;
+}
+
+.scheduled-task-scope input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scheduled-task-scope span {
+  display: block;
+  padding: 4px 9px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.scheduled-task-scope input:checked + span {
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
 .scheduled-task-list {
   display: grid;
   gap: 8px;
@@ -845,6 +879,11 @@ textarea:disabled { opacity: 0.5; }
 
 .scheduled-task-item-main span {
   color: var(--text-dim);
+  font-size: 12px;
+}
+
+.scheduled-task-item-scope {
+  color: var(--text-secondary);
   font-size: 12px;
 }
 

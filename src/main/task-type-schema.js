@@ -32,6 +32,13 @@ const TASK_TYPES = Object.freeze({
     active: true,
     verification: ["event_ordering", "turn_ownership", "queue_semantics", "permission_flow", "fixture_or_unit_test"],
   },
+  agent_quality: {
+    id: "agent_quality",
+    label: "Agent quality",
+    categories: ["agent_quality"],
+    active: true,
+    verification: ["routing_contract", "prompt_context", "tool_or_skill_boundary", "regression_test"],
+  },
   release_deploy: {
     id: "release_deploy",
     label: "Release / deploy",
@@ -86,6 +93,7 @@ const TASK_TYPES = Object.freeze({
 const TASK_TYPE_PRIORITY = Object.freeze([
   "release_deploy",
   "runtime_protocol",
+  "agent_quality",
   "server_change",
   "ui_change",
   "bug_investigation",

@@ -143,6 +143,13 @@ function recordInstalled({ app, manifest, project, targetDir, installParentDir, 
     installedAt: previous?.installedAt || now,
     updatedAt: now,
     installedDependencies: installedDependencies || { skills: [], runtimePacks: [] },
+    appRuntime: manifest?.appRuntime && typeof manifest.appRuntime === "object"
+      ? {
+        manifestPath: String(manifest.appRuntime.manifestPath || ""),
+        defaultEntrypoint: String(manifest.appRuntime.defaultEntrypoint || ""),
+        resultPath: String(manifest.appRuntime.resultPath || ""),
+      }
+      : null,
   };
   if (!state.instances || typeof state.instances !== "object") state.instances = {};
   state.instances[instanceId] = record;
@@ -188,6 +195,7 @@ function attachInstalledState(result, projectManager) {
         available: Boolean(project && fs.existsSync(instance.path || "")),
         installedAt: instance.installedAt,
         updatedAt: instance.updatedAt,
+        appRuntime: instance.appRuntime || null,
       };
     });
     const availableInstance = enrichedInstances.find((instance) => instance.available) || null;

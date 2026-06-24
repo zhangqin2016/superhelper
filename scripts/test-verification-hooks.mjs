@@ -81,6 +81,41 @@ try {
   if (runHook({ tool_name: "Write", tool_input: { file_path: emptyPng } }).status !== 2) {
     throw new Error("empty generated file must fail");
   }
+  const goodSvg = path.join(tmp, "good.svg");
+  fs.writeFileSync(goodSvg, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120">
+    <rect x="20" y="30" width="110" height="48" rx="8" fill="#eef2ff"/>
+    <text x="75" y="60" text-anchor="middle" font-size="14">入口节点</text>
+    <rect x="190" y="30" width="110" height="48" rx="8" fill="#ecfdf5"/>
+    <text x="245" y="60" text-anchor="middle" font-size="14">出口节点</text>
+  </svg>`);
+  if (runHook({ tool_name: "Write", tool_input: { file_path: goodSvg } }).status !== 0) {
+    throw new Error("non-overlapping svg must pass");
+  }
+  const overlappingSvg = path.join(tmp, "overlap.svg");
+  fs.writeFileSync(overlappingSvg, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120">
+    <text x="160" y="60" text-anchor="middle" font-size="18">HeaderFilter 解析请求头信息</text>
+    <text x="160" y="60" text-anchor="middle" font-size="18">提取 CLIENTTYPE 与 UID</text>
+  </svg>`);
+  const overlapResult = runHook({ tool_name: "Write", tool_input: { file_path: overlappingSvg } });
+  if (overlapResult.status !== 2 || !overlapResult.stderr.includes("overlapping text labels")) {
+    throw new Error(`overlapping svg text must fail with actionable message: ${overlapResult.status} ${overlapResult.stderr}`);
+  }
+  const generatedAssetsDir = path.join(tmp, "generated-assets");
+  fs.mkdirSync(generatedAssetsDir, { recursive: true });
+  const bashSvg = path.join(generatedAssetsDir, "overlap.svg");
+  fs.copyFileSync(overlappingSvg, bashSvg);
+  const bashSvgMention = spawnSync(process.execPath, [hookScript], {
+    input: JSON.stringify({
+      tool_name: "Bash",
+      tool_response: { content: `SVG generated: ${bashSvg}` },
+    }),
+    encoding: "utf8",
+    timeout: 30_000,
+    cwd: tmp,
+  });
+  if (bashSvgMention.status !== 2 || !bashSvgMention.stderr.includes("overlapping text labels")) {
+    throw new Error(`bash-mentioned generated svg must fail layout check: ${bashSvgMention.status} ${bashSvgMention.stderr}`);
+  }
 
   // generated_media fulfillment: a skill claiming it produced an image must
   // have produced a real one.
@@ -106,6 +141,13 @@ try {
   });
   if (mediaWrong.status !== 2 || !mediaWrong.stderr.includes("not a valid image")) {
     throw new Error("wrong-format generated_media must fail");
+  }
+  const mediaSvgOverlap = runHook({
+    tool_name: "Bash",
+    tool_response: { content: `<generated_media type="image">\n<file path="${overlappingSvg}" />\n</generated_media>` },
+  });
+  if (mediaSvgOverlap.status !== 2 || !mediaSvgOverlap.stderr.includes("overlapping text labels")) {
+    throw new Error("generated_media svg with overlapping text must fail");
   }
   // Bash output without generated_media is none of our business.
   if (runHook({ tool_name: "Bash", tool_response: { content: "npm test passed" } }).status !== 0) {

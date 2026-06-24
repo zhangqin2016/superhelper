@@ -120,6 +120,15 @@
           </div>
         </header>
 
+        <section id="taskCenterDock" class="task-center-dock" hidden aria-live="polite">
+          <button id="taskCenterToggle" class="task-center-toggle" type="button" aria-expanded="false">
+            <span class="task-center-dot"></span>
+            <span id="taskCenterSummary" class="task-center-summary"></span>
+            <span id="taskCenterCount" class="task-center-count"></span>
+          </button>
+          <div id="taskCenterPanel" class="task-center-panel" hidden></div>
+        </section>
+
         <section id="messagesContainer" class="messages-container">
           <div id="sessionMessagesStack" class="session-messages-stack" aria-live="polite"></div>
           <button id="scrollToBottomBtn" class="scroll-to-bottom-btn" type="button" hidden data-i18n-title="topbar.scrollLatest" title="回到最新">
@@ -250,7 +259,17 @@
           <div id="scheduledTaskPreview" class="scheduled-task-preview" hidden></div>
           <p id="scheduledTaskStatus" class="scheduled-task-status" hidden></p>
           <div class="scheduled-task-list-head">
-            <h3 data-i18n="scheduled.currentSessionTasks">当前对话的自动任务</h3>
+            <h3 data-i18n="scheduled.workspaceTasks">当前空间的自动任务</h3>
+            <div class="scheduled-task-scope" role="radiogroup" aria-label="自动任务范围">
+              <label>
+                <input type="radio" name="scheduledTaskScope" data-scheduled-scope="workspace" checked>
+                <span data-i18n="scheduled.scopeWorkspace">当前空间</span>
+              </label>
+              <label>
+                <input type="radio" name="scheduledTaskScope" data-scheduled-scope="all">
+                <span data-i18n="scheduled.scopeAll">全部</span>
+              </label>
+            </div>
           </div>
           <div id="scheduledTaskList" class="scheduled-task-list"></div>
         </div>

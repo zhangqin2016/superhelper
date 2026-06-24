@@ -16,6 +16,8 @@ export const SKILL_CATEGORIES = [
 
 const CATEGORY_IDS = new Set(SKILL_CATEGORIES.map((category) => category.id));
 const SKILL_ID_RE = /^[a-z][a-z0-9-]{1,99}$/;
+const CAPABILITY_KINDS = new Set(["workflow", "quality", "tool", "connector", "runtime", "router"]);
+const CONFIRMATION_POLICIES = new Set(["none", "before_mutation", "always"]);
 
 export function compareVersions(a, b) {
   const pa = String(a || "0").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
@@ -173,6 +175,57 @@ function normalizeStringMap(raw) {
   return Object.keys(out).length > 0 ? out : null;
 }
 
+function uniqueStrings(value) {
+  const values = Array.isArray(value) ? value : [];
+  return [...new Set(values.map((item) => String(item || "").trim()).filter(Boolean))];
+}
+
+function parseJsonObject(raw) {
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null;
+}
+
+function normalizeCapabilityContract(raw, row) {
+  const source = parseJsonObject(raw) || {};
+  const riskLevel = ["low", "medium", "high"].includes(String(source.risk?.level || ""))
+    ? String(source.risk.level)
+    : String(row.risk_level || "low");
+  const defaultConfirmation =
+    riskLevel === "high" ? "always" : riskLevel === "medium" ? "before_mutation" : "none";
+  const confirmation = CONFIRMATION_POLICIES.has(String(source.risk?.confirmation || ""))
+    ? String(source.risk.confirmation)
+    : defaultConfirmation;
+  const kind = CAPABILITY_KINDS.has(String(source.kind || ""))
+    ? String(source.kind)
+    : CAPABILITY_KINDS.has(String(row.capability_layer || ""))
+      ? String(row.capability_layer)
+      : "workflow";
+  return {
+    schemaVersion: 1,
+    kind,
+    intents: uniqueStrings(source.intents),
+    avoidIntents: uniqueStrings(source.avoidIntents),
+    primaryTools: uniqueStrings(source.primaryTools),
+    runtimeDependencies: uniqueStrings(source.runtimeDependencies),
+    inputModes: uniqueStrings(source.inputModes).length ? uniqueStrings(source.inputModes) : ["text"],
+    outputModes: uniqueStrings(source.outputModes).length ? uniqueStrings(source.outputModes) : ["text"],
+    risk: { level: riskLevel, confirmation },
+    verification: {
+      required: Boolean(source.verification?.required),
+      methods: uniqueStrings(source.verification?.methods),
+    },
+    failure: {
+      recovery: uniqueStrings(source.failure?.recovery),
+    },
+  };
+}
+
 export function skillPackageToRegistryEntry(row) {
   return {
     id: row.skill_id,
@@ -198,6 +251,7 @@ export function skillPackageToRegistryEntry(row) {
     defaultEligible: Boolean(row.default_eligible),
     featured: Boolean(row.featured),
     displayInCatalog: row.display_in_catalog !== false,
+    capability: normalizeCapabilityContract(row.capability || row.capability_contract, row),
   };
 }
 

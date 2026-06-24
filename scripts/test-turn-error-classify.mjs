@@ -45,6 +45,38 @@ assert(resultFail?.code === "ENGINE_RESULT_FAILED", "non-zero result code branch
 const normalizedFail = ec.classifyTurnFailure({}, { failed: true, text: "engine said no", retryable: false }, {});
 assert(normalizedFail?.message === "engine said no" && normalizedFail.retryable === false, "normalized failure branch");
 
+const toolState = {
+  tools: new Map([
+    ["task_done", {
+      id: "task_done",
+      name: "task",
+      input: { description: "Explore imsdk-im server" },
+      status: "done",
+    }],
+    ["task_failed", {
+      id: "task_failed",
+      name: "task",
+      input: { description: "Explore MXIM client source" },
+      status: "failed",
+    }],
+    ["task_running", {
+      id: "task_running",
+      name: "task",
+      input: { description: "Explore sdk-msg-delivery" },
+      status: "running",
+    }],
+  ]),
+};
+const snapshot = ec.collectToolCompletionSnapshot(toolState);
+assert(snapshot.done.length === 1 && snapshot.failed.length === 1 && snapshot.running.length === 1, "tool completion snapshot");
+const incomplete = ec.buildIncompleteTurnSummary(toolState, {});
+assert(incomplete.includes("本轮没有形成完整最终回答"), "incomplete summary headline");
+assert(incomplete.includes("Explore MXIM client source"), "incomplete summary includes failed tool");
+assert(incomplete.includes("Explore sdk-msg-delivery"), "incomplete summary includes running tool");
+assert(incomplete.includes("Explore imsdk-im server"), "incomplete summary includes completed tool");
+const appended = ec.appendIncompleteTurnSummary("你说得对，之前偏向了 cst。", toolState, {});
+assert(appended.includes("你说得对") && appended.includes("本轮没有形成完整最终回答"), "partial text receives stalled summary");
+
 const skillParse = ec.classifyTurnFailure(
   { error: "Failed to parse skill /workspace/.claude/skills/bad/SKILL.md" },
   {},

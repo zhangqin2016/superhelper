@@ -59,6 +59,59 @@ ipcMain.handle("filetree:open", (_event, payload) => {
   return { ok: true };
 });
 
+ipcMain.handle("files:read-text", (_event, payload) => {
+  if (String(payload?.filePath || "").endsWith("report.md")) {
+    return {
+      ok: true,
+      text: [
+        "# Markdown Report",
+        "",
+        "正文和 `inline code`。",
+        "",
+        "| 项目 | 内容 |",
+        "| --- | --- |",
+        "| 城市 | Dubai |",
+        "",
+        "---",
+        "",
+        "- 要点",
+      ].join("\n"),
+      bytes: 96,
+      truncated: false,
+    };
+  }
+  return { ok: false, error: "NOT_FOUND" };
+});
+
+ipcMain.handle("scheduled-tasks:list", (_event, filter = {}) => {
+  if (filter?.sessionId) return { ok: true, tasks: [] };
+  const allScope = filter?.projectId === null && filter?.sessionId === null;
+  const workspaceScope = filter?.projectId === "p_sched" && filter?.sessionId === null;
+  const title = allScope ? "Global task" : workspaceScope ? "Workspace task" : "Unexpected scope";
+  return {
+    ok: true,
+    tasks: [
+      {
+        id: "sched_workspace",
+        projectId: "p_sched",
+        sessionId: "s_sched_a",
+        title,
+        scheduleText: "每天 09:00",
+        enabled: true,
+        status: "scheduled",
+        nextRunAt: "2026-06-24T09:00:00.000Z",
+      },
+    ],
+  };
+});
+
+ipcMain.handle("scheduled-tasks:run-now", () => ({ ok: true }));
+ipcMain.handle("scheduled-tasks:set-enabled", () => ({ ok: true }));
+ipcMain.handle("scheduled-tasks:remove", () => ({ ok: true }));
+ipcMain.handle("session:switch", (_event, sessionId) => {
+  return { ok: true, conversation: [], session: { id: sessionId, title: "Alpha chat" } };
+});
+
 ipcMain.handle("app:get-locale", () => ({ ok: true, locale: "zh-CN" }));
 ipcMain.handle("app:get-version", () => ({ ok: true, version: "0.0.0-test" }));
 ipcMain.handle("app:get-icon-url", () => ({ ok: true, url: "" }));
@@ -149,8 +202,11 @@ app.whenReady().then(async () => {
         "./modules/engine-notice-policy.js",
         "./modules/tool-payload-renderer.js",
         "./modules/turn-block-renderers.js",
+        "./modules/pdf-core.js",
+        "./modules/pdf-viewer.js",
         "./modules/turn-view-renderer.js",
         "./modules/session-runtime-store.js",
+        "./modules/task-center.js",
         "./modules/message.js",
         "./modules/workbench-empty.js",
         "./app.js",
@@ -180,6 +236,182 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(skillSettingsPresetResult);
+    const appShellCoverageResult = await win.webContents.executeJavaScript(`(
+      () => {
+        const shell = document.getElementById("appShell");
+        if (!shell) throw new Error("app shell should exist");
+        const rect = shell.getBoundingClientRect();
+        if (Math.abs(rect.bottom - window.innerHeight) > 1) {
+          throw new Error("app shell should cover the full window height, bottom=" + rect.bottom + " viewport=" + window.innerHeight);
+        }
+        const bg = getComputedStyle(document.body).backgroundColor;
+        if (!bg || bg === "rgba(0, 0, 0, 0)") {
+          throw new Error("body background should be opaque so host windows cannot bleed through");
+        }
+        return "app-shell-coverage: ok";
+      }
+    )()`);
+    console.log(appShellCoverageResult);
+    const taskCenterResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { buildTaskCenterItems } = await import("./modules/task-center.js");
+        const items = buildTaskCenterItems({
+          activeSessionId: "s_active",
+          projects: [
+            {
+              id: "p1",
+              name: "Alpha",
+              path: "/tmp/Alpha",
+              sessions: [
+                { id: "s_run", title: "Running task" },
+                { id: "s_done", title: "Done task" },
+                { id: "s_fail", title: "Failed task" },
+              ],
+            },
+          ],
+          runtimes: [
+            {
+              sessionId: "s_done",
+              phase: "idle",
+              attention: "done",
+              queue: [],
+              liveTurn: { artifacts: [{ path: "/tmp/report.md" }], assistantText: "report ready" },
+            },
+            {
+              sessionId: "s_run",
+              phase: "tool_running",
+              queue: [{ id: "q1" }],
+              liveTurn: { startedAt: 10, questions: new Map(), permissions: new Map(), hooks: new Map() },
+            },
+            {
+              sessionId: "s_fail",
+              phase: "idle",
+              attention: "failed",
+              queue: [],
+              liveTurn: { assistantText: "network interrupted" },
+            },
+            {
+              sessionId: "s_idle",
+              phase: "idle",
+              attention: null,
+              queue: [],
+              liveTurn: null,
+            },
+          ],
+        });
+        if (items.length !== 3) throw new Error("expected 3 actionable task-center items, got " + items.length);
+        if (items[0].status !== "failed") throw new Error("failed item should be first, got " + items[0].status);
+        const running = items.find((item) => item.sessionId === "s_run");
+        if (!running || running.status !== "running" || running.queueCount !== 1) {
+          throw new Error("running queued item not summarized correctly");
+        }
+        const done = items.find((item) => item.sessionId === "s_done");
+        if (!done || done.artifactCount !== 1 || done.projectLabel !== "Alpha") {
+          throw new Error("completed artifact item not summarized correctly");
+        }
+        return "task-center-summary: ok";
+      }
+    )()`);
+    console.log(taskCenterResult);
+    const taskCenterDomStabilityResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { getRuntimeSession } = await import("./modules/session-runtime-store.js");
+        const { renderTaskCenter } = await import("./modules/task-center.js");
+        const originalProjects = store.get("projects");
+        const originalActiveSessionId = store.get("activeSessionId");
+        const sessionId = "s_task_center_dom_stability";
+        store.set("projects", [
+          {
+            id: "p_task_center",
+            name: "Task Center",
+            path: "/tmp/TaskCenter",
+            sessions: [{ id: sessionId, title: "Running task" }],
+          },
+        ]);
+        store.set("activeSessionId", "");
+        const runtime = getRuntimeSession(sessionId);
+        runtime.phase = "tool_running";
+        runtime.attention = null;
+        runtime.queue = [];
+        runtime.liveTurn = {
+          turnId: "turn_task_center_dom_stability",
+          startedAt: 10,
+          updatedAt: 10,
+          assistantText: "working",
+          questions: new Map(),
+          permissions: new Map(),
+          hooks: new Map(),
+        };
+        const panel = document.getElementById("taskCenterPanel");
+        if (!panel) throw new Error("task center panel should exist");
+        panel.hidden = false;
+        renderTaskCenter();
+        const firstNode = panel.firstElementChild;
+        if (!firstNode) throw new Error("task center should render the running item");
+        runtime.liveTurn.updatedAt = 11;
+        runtime.liveTurn.assistantText = "working with more streamed text";
+        renderTaskCenter();
+        if (panel.firstElementChild !== firstNode) {
+          throw new Error("running task center item should not be replaced when visible fields are unchanged");
+        }
+        runtime.phase = "idle";
+        runtime.attention = null;
+        runtime.liveTurn = null;
+        store.set("projects", originalProjects);
+        store.set("activeSessionId", originalActiveSessionId);
+        renderTaskCenter();
+        return "task-center-dom-stability: ok";
+      }
+    )()`);
+    console.log(taskCenterDomStabilityResult);
+    const scheduledTaskScopeResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { refreshScheduledTaskList } = await import("./modules/scheduled-tasks.js");
+        store.set("projects", [
+          {
+            id: "p_sched",
+            name: "Schedule Workspace",
+            path: "/tmp/Schedule Workspace",
+            sessions: [
+              { id: "s_sched_a", title: "Alpha chat" },
+              { id: "s_sched_b", title: "Beta chat" },
+            ],
+          },
+          {
+            id: "p_other",
+            name: "Other Workspace",
+            path: "/tmp/Other Workspace",
+            sessions: [{ id: "s_other", title: "Other chat" }],
+          },
+        ]);
+        store.set("activeProjectId", "p_sched");
+        store.set("activeSessionId", "s_sched_b");
+        document.querySelector('[data-scheduled-scope="workspace"]').checked = true;
+        await refreshScheduledTaskList();
+        if (!document.querySelector("#scheduledTaskList")?.textContent.includes("Workspace task")) {
+          throw new Error("scheduled tasks should default to current workspace scope");
+        }
+        const item = document.querySelector("#scheduledTaskList .scheduled-task-item");
+        if (!item || !item.textContent.includes("Alpha chat") || !item.textContent.includes("Schedule Workspace")) {
+          throw new Error("scheduled task should show owning workspace and chat");
+        }
+        const open = item.querySelector('[data-action="open-session"]');
+        if (!open) throw new Error("scheduled task should expose open-session action");
+        open.click();
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        if (store.get("activeSessionId") !== "s_sched_a") throw new Error("open-session should switch to owning chat");
+        document.querySelector('[data-scheduled-scope="all"]').checked = true;
+        document.querySelector('[data-scheduled-scope="all"]').dispatchEvent(new Event("change", { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        if (!document.querySelector("#scheduledTaskList")?.textContent.includes("Global task")) {
+          throw new Error("all scheduled tasks scope should request all tasks");
+        }
+        return "scheduled-task-scope: ok";
+      }
+    )()`);
+    console.log(scheduledTaskScopeResult);
     const liveTurnQueueResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
@@ -625,6 +857,43 @@ app.whenReady().then(async () => {
           { id: "code", type: "code", language: "js", code: "console.log('ok')" },
           { id: "pdf", type: "pdf", title: "Tiny PDF", data: tinyPdfBase64, mimeType: "application/pdf" },
           { id: "html", type: "html", title: "Tiny HTML", html: "<h1>HTML Report</h1><p>ok</p>" },
+          { id: "md-report", type: "artifact", artifactType: "markdown", path: "/tmp/report.md", relativePath: "output/report.md", mimeType: "text/markdown" },
+          {
+            id: "html-reference",
+            type: "artifact",
+            artifactType: "html",
+            path: "/tmp/referenced-only.html",
+            relativePath: "docs/referenced-only.html",
+            mimeType: "text/html",
+            source: "tool_output",
+          },
+          {
+            id: "pdf-reference",
+            type: "artifact",
+            artifactType: "pdf",
+            path: "/tmp/referenced-only.pdf",
+            relativePath: "docs/referenced-only.pdf",
+            mimeType: "application/pdf",
+            source: "assistant_text",
+          },
+          {
+            id: "image-reference",
+            type: "artifact",
+            artifactType: "image",
+            path: "/tmp/referenced-only.svg",
+            relativePath: "docs/referenced-only.svg",
+            mimeType: "image/svg+xml",
+            source: "tool_output",
+          },
+          {
+            id: "md-mention-only",
+            type: "artifact",
+            artifactType: "markdown",
+            path: "/tmp/referenced-only.md",
+            relativePath: "docs/referenced-only.md",
+            mimeType: "text/markdown",
+            source: "assistant_text",
+          },
           {
             id: "echarts",
             type: "chart",
@@ -658,8 +927,80 @@ app.whenReady().then(async () => {
         if (!host.querySelector(".assistant-renderer-pdf canvas")) {
           throw new Error("pdf result block did not render a PDF canvas");
         }
+        if (!host.querySelector(".assistant-renderer-pdf .assistant-pdf-pages")) {
+          throw new Error("pdf result block should render as a continuous page stack");
+        }
+        if (!host.textContent.includes("Fit") && !host.textContent.includes("适宽")) {
+          throw new Error("pdf result block should expose fit-width controls");
+        }
+        const pdfViewerButton = host.querySelector(".assistant-pdf-open-viewer");
+        if (!pdfViewerButton) {
+          throw new Error("pdf result block should expose the in-app reader action");
+        }
+        pdfViewerButton.click();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const pdfViewer = document.querySelector(".pdf-viewer");
+        if (!pdfViewer || !pdfViewer.querySelector(".pdf-viewer-scroll") || !pdfViewer.querySelector(".pdf-viewer-thumbs")) {
+          throw new Error("pdf reader action should open the in-app PDF viewer");
+        }
+        pdfViewer.querySelector(".pdf-viewer-close")?.click();
         if (!host.querySelector(".assistant-renderer-html iframe")) {
           throw new Error("html result block did not render a sandboxed iframe");
+        }
+        const markdownArtifact = host.querySelector(".assistant-renderer-markdown-artifact");
+        if (!markdownArtifact || !markdownArtifact.textContent.includes("output/report.md")) {
+          throw new Error("markdown artifact should render a top-level preview card with its file path");
+        }
+        if (!markdownArtifact.querySelector(".assistant-renderer-action")) {
+          throw new Error("markdown artifact should keep a reveal action");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        if (markdownArtifact.querySelector(".assistant-renderer-markdown-details")) {
+          throw new Error("markdown artifact preview should be top-level, not hidden in collapsible details");
+        }
+        if (!markdownArtifact.querySelector(".assistant-renderer-markdown-preview h1") || !markdownArtifact.textContent.includes("Markdown Report")) {
+          throw new Error("markdown artifact should auto-load a top-level markdown preview");
+        }
+        const markdownPreview = markdownArtifact.querySelector(".assistant-renderer-markdown-preview");
+        if (!markdownPreview.classList.contains("assistant-turn-final")) {
+          throw new Error("markdown artifact preview should use the same rich reading style as final answers");
+        }
+        if (!markdownPreview.querySelector("table") || !markdownPreview.querySelector("code") || !markdownPreview.querySelector("hr")) {
+          throw new Error("markdown artifact preview should render rich markdown structures");
+        }
+        const markdownPreviewStyle = getComputedStyle(markdownArtifact.querySelector(".assistant-renderer-markdown-preview"));
+        if (markdownPreviewStyle.overflowY !== "visible" || markdownPreviewStyle.maxHeight !== "none") {
+          throw new Error("markdown artifact preview should flow with the card instead of using an inner scroller");
+        }
+        if (markdownPreviewStyle.borderTopWidth !== "0px") {
+          throw new Error("markdown artifact preview should not have a nested preview border");
+        }
+        const mentionOnly = Array.from(host.querySelectorAll(".assistant-renderer-artifact.is-file"))
+          .find((node) => node.textContent.includes("docs/referenced-only.md"));
+        if (!mentionOnly) {
+          throw new Error("assistant-text-only markdown references should render as compact file artifacts");
+        }
+        if (Array.from(host.querySelectorAll(".assistant-renderer-markdown-artifact"))
+          .some((node) => node.textContent.includes("docs/referenced-only.md"))) {
+          throw new Error("assistant-text-only markdown references should not auto-expand into previews");
+        }
+        for (const referencedPath of ["docs/referenced-only.html", "docs/referenced-only.pdf", "docs/referenced-only.svg"]) {
+          const compact = Array.from(host.querySelectorAll(".assistant-renderer-artifact.is-compact"))
+            .find((node) => node.textContent.includes(referencedPath));
+          if (!compact) throw new Error("referenced preview artifact should render compact: " + referencedPath);
+        }
+        if (Array.from(host.querySelectorAll(".assistant-renderer-html"))
+          .some((node) => node.textContent.includes("docs/referenced-only.html"))) {
+          throw new Error("referenced html should not render an iframe preview");
+        }
+        if (Array.from(host.querySelectorAll(".assistant-renderer-pdf"))
+          .some((node) => node.textContent.includes("docs/referenced-only.pdf"))) {
+          throw new Error("referenced pdf should not render a PDF preview");
+        }
+        const compactImage = Array.from(host.querySelectorAll(".assistant-renderer-artifact.is-compact"))
+          .find((node) => node.textContent.includes("docs/referenced-only.svg"));
+        if (compactImage?.querySelector("img")) {
+          throw new Error("referenced image should not render an image preview");
         }
         if (!host.querySelector(".assistant-renderer-echarts canvas")) {
           throw new Error("structured chart result block should render through ECharts");

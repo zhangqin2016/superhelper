@@ -52,6 +52,33 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   });
   assert(diag.action === "drop" && diag.scope === "directory_diagnostic",
     "unowned session.error is a directory diagnostic, not a turn failure");
+  const unownedIdle = classifyOpencodeEventOwnership({
+    directory: "/workspace",
+    cwd: "/workspace",
+    event: { type: "session.idle", properties: {} },
+    sessionID: "ses_a",
+    ownedMessages,
+  });
+  assert(unownedIdle.action === "drop" && unownedIdle.reason === "missing_session_id",
+    "unowned session.idle must not complete every busy session in the directory");
+  const unownedTodo = classifyOpencodeEventOwnership({
+    directory: "/workspace",
+    cwd: "/workspace",
+    event: { type: "todo.updated", properties: { todos: [{ content: "wrong session", status: "pending" }] } },
+    sessionID: "ses_a",
+    ownedMessages,
+  });
+  assert(unownedTodo.action === "drop" && unownedTodo.reason === "missing_session_id",
+    "unowned turn-affecting events must not be broadcast as directory events");
+  const directorySafe = classifyOpencodeEventOwnership({
+    directory: "/workspace",
+    cwd: "/workspace",
+    event: { type: "catalog.updated", properties: {} },
+    sessionID: "ses_a",
+    ownedMessages,
+  });
+  assert(directorySafe.action === "deliver" && directorySafe.reason === "directory_event",
+    "known directory-level events remain deliverable");
 }
 
 // --- instance message body (the execute-the-turn endpoint shape) ------------
@@ -141,6 +168,31 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(a.manager.diagnostics().routing.byReason.unowned_error_diagnostic === 1,
     "routing diagnostics count dropped directory-level errors");
 
+  const unownedIdle = { type: "session.idle", properties: {} };
+  a.emit(unownedIdle);
+  b.emit(unownedIdle);
+  assert(a.seen.length === 0 && b.seen.length === 0,
+    "session-less idle events are not broadcast across same-directory sessions");
+  assert(a.manager.diagnostics().routing.byReason.missing_session_id === 2,
+    "routing diagnostics count dropped unowned session boundary events");
+
+  const unownedTodo = {
+    type: "todo.updated",
+    properties: { todos: [{ content: "wrong session", status: "pending" }] },
+  };
+  a.emit(unownedTodo);
+  b.emit(unownedTodo);
+  assert(a.seen.length === 0 && b.seen.length === 0,
+    "session-less turn updates are not broadcast across same-directory sessions");
+  assert(a.manager.diagnostics().routing.byReason.missing_session_id === 3,
+    "routing diagnostics count all dropped unowned turn events");
+
+  const directorySafe = { type: "catalog.updated", properties: {} };
+  a.emit(directorySafe);
+  b.emit(directorySafe);
+  assert(a.seen.at(-1) === directorySafe && b.seen.at(-1) === directorySafe,
+    "known directory-level events still broadcast to same-directory sessions");
+
   const owner = {
     type: "message.part.updated",
     properties: {
@@ -156,8 +208,8 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   };
   a.emit(owner);
   b.emit(owner);
-  assert(a.seen.length === 1 && a.seen[0] === owner, "owner session receives only owned event");
-  assert(b.seen.length === 0, "other session in the same directory never receives another session's event");
+  assert(a.seen.at(-1) === owner, "owner session receives only owned event");
+  assert(!b.seen.includes(owner), "other session in the same directory never receives another session's event");
 
   const ownedQuestion = {
     type: "question.asked",
@@ -166,7 +218,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   a.emit(ownedQuestion);
   b.emit(ownedQuestion);
   assert(a.seen.at(-1) === ownedQuestion, "question with sessionID routes to its owner");
-  assert(b.seen.length === 0, "question with another sessionID is filtered");
+  assert(!b.seen.includes(ownedQuestion), "question with another sessionID is filtered");
 
   const ownedError = {
     type: "session.error",
@@ -178,7 +230,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   a.emit(ownedError);
   b.emit(ownedError);
   assert(a.seen.at(-1) === ownedError, "session.error with sessionID still routes to its owner");
-  assert(b.seen.length === 0, "owned session.error is filtered from other sessions");
+  assert(!b.seen.includes(ownedError), "owned session.error is filtered from other sessions");
   assert(a.manager.diagnostics().routing.recent.some((entry) => entry.action === "deliver" && entry.reason === "owned_session"),
     "routing diagnostics keep recent delivery decisions");
 }
