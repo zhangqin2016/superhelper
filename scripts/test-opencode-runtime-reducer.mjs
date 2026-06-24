@@ -33,6 +33,10 @@ function oneEffect(type, properties, state) {
   return result.effects[0];
 }
 
+assert(OPENCODE_RUNTIME_CAPABILITIES.resume === true, "OpenCode runtime supports session resume");
+assert(OPENCODE_RUNTIME_CAPABILITIES.nativeCompaction === true, "OpenCode runtime supports native compaction");
+assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime exposes manual summarize/compact");
+
 // --- streaming text / reasoning deltas -------------------------------------
 {
   const state = createOpencodeRuntimeState();
@@ -110,6 +114,25 @@ function oneEffect(type, properties, state) {
   assert(reduce("message.part.updated", {
     part: { id: "prt_user", messageID: "msg_user", type: "text", text: "do not echo" },
   }, state3).drafts.length === 0, "user text part.updated is suppressed");
+
+  const state4 = createOpencodeRuntimeState();
+  assert(reduce("message.part.updated", {
+    part: { id: "prt_late_role", messageID: "msg_late_role", type: "text", text: "late role answer" },
+  }, state4).drafts.length === 0, "text snapshot waits when role has not arrived");
+  const lateRole = oneDraft("message.updated", { info: { id: "msg_late_role", role: "assistant" } }, state4);
+  assert(lateRole.type === "assistant.delta" && lateRole.payload.text === "late role answer",
+    "assistant text snapshot is emitted once late role arrives");
+}
+
+// --- native compaction events become visible platform notices ---------------
+{
+  const result = reduce("session.compacted", { sessionID: "ses_1", messageID: "msg_summary", reason: "auto" });
+  assert(result.progress === true, "session.compacted is meaningful progress");
+  assert(result.drafts[0]?.type === "engine.notice", "session.compacted -> engine.notice");
+  assert(result.drafts[0]?.payload?.notice?.code === "compactComplete", "compaction notice uses compactComplete code");
+  assert(result.effects[0]?.kind === "context_compacted", "session.compacted carries context_compacted effect");
+  assert(result.effects[0]?.sessionID === "ses_1", "context_compacted effect carries sessionID");
+  assert(result.effects[0]?.messageID === "msg_summary", "context_compacted effect carries summary messageID");
 }
 
 // --- tool lifecycle: one tool.started + one tool.done -----------------------

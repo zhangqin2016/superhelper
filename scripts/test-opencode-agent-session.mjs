@@ -33,6 +33,7 @@ class FakeServer extends EventEmitter {
     super();
     this.prompts = [];
     this.permissionReplies = [];
+    this.summarizeCalls = [];
     this.aborted = false;
     this.process = { killed: false };
     this.sessionID = null;
@@ -51,6 +52,7 @@ class FakeServer extends EventEmitter {
   }
   async respondPermission(id, d) { this.permissionReplies.push({ id, ...d }); }
   async respondQuestion(id, answers) { this.questionReplies = this.questionReplies || []; this.questionReplies.push({ id, answers }); }
+  async summarize(body) { this.summarizeCalls.push(body); return true; }
   async abort() {
     this.aborted = true;
     if (this.abortDelayMs) await sleep(this.abortDelayMs);
@@ -154,6 +156,43 @@ async function newSession() {
   await waitIdleSettle();
   assert(orch.calls.done.length === 1, "real session.idle completes the turn");
   session.terminate();
+}
+
+// --- missed session.idle: authoritative status/history still settles --------
+{
+  const savedProbe = OpencodeAgentSession.IDLE_STATUS_PROBE_MS;
+  const savedSettle = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_STATUS_PROBE_MS = 20;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 10;
+  try {
+    const { fake, session, orch } = await newSession();
+    const now = Date.now();
+    fake.idleState = false;
+    fake.historyMessages = [{
+      info: {
+        id: "msg_idle_probe_final",
+        role: "assistant",
+        sessionID: "ses_test",
+        time: { created: now, completed: now + 1 },
+      },
+      parts: [{ type: "text", text: "probe final answer" }],
+    }];
+    session.sendUserMessage({ text: "finish without idle event" });
+    await tick();
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "probe" } });
+    await sleep(35);
+    assert(orch.calls.done.length === 0, "busy official status keeps the turn open");
+    fake.idleState = true;
+    await sleep(60);
+    assert(orch.calls.done.length === 1, "official idle probe completes without session.idle");
+    assert(orch.calls.done[0].output === "probe final answer", "probe completion syncs official final output");
+    assert(orch.calls.done[0].engineMessageId === "msg_idle_probe_final", "probe completion preserves official message id");
+    assert(fake.idleChecks.length >= 2, "idle probe checked official status repeatedly");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_STATUS_PROBE_MS = savedProbe;
+    OpencodeAgentSession.IDLE_SETTLE_MS = savedSettle;
+  }
 }
 
 // --- promptAsync transport error: wait for SSE before failing ---------------
@@ -481,6 +520,31 @@ async function newSession() {
     session.terminate();
   } finally {
     OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
+}
+
+// --- missed idle fallback must be delayed, not a 0ms status busy-poll ----------
+{
+  const savedProbe = OpencodeAgentSession.IDLE_STATUS_PROBE_MS;
+  const savedSettle = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_STATUS_PROBE_MS = 80;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 10;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "recover missed idle" });
+    await tick();
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "answer" } });
+    await sleep(30);
+    assert(fake.idleChecks.length === 0, "idle probe waits for its configured delay before polling status");
+    await sleep(80);
+    assert(fake.idleChecks.length >= 1, "idle probe eventually checks official session status");
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1, "idle probe completes a turn when session.idle was missed");
+    assert(orch.calls.done[0].completedByIdleProbe === true, "completion records idle-probe recovery");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_STATUS_PROBE_MS = savedProbe;
+    OpencodeAgentSession.IDLE_SETTLE_MS = savedSettle;
   }
 }
 
@@ -937,6 +1001,26 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   assert(fake.reverted === "msg_anchor", "rewind: revert hits the engine with the anchor id");
   await session.unrevert();
   assert(fake.unreverted === true, "rewind: unrevert hits the engine");
+  session.terminate();
+}
+
+// --- native compaction: expose OpenCode summarize only when idle -------------
+{
+  const { fake, session } = await newSession();
+  assert(await session.compactContext({ providerID: "lily", modelID: "deepseek-chat", auto: true }) === false,
+    "compaction before startup is a no-op");
+  session.sendUserMessage({ text: "seed session" });
+  await tick();
+  assert(await session.compactContext({ providerID: "lily", modelID: "deepseek-chat", auto: true }) === false,
+    "busy turn must not be interrupted by background compaction");
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(await session.compactContext({ providerID: "lily", modelID: "deepseek-chat", auto: true }) === true,
+    "idle runner passes native compaction through");
+  assert(
+    JSON.stringify(fake.summarizeCalls) === JSON.stringify([{ providerID: "lily", modelID: "deepseek-chat", auto: true }]),
+    "native compaction uses the requested model/body",
+  );
   session.terminate();
 }
 

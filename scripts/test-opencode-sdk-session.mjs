@@ -25,6 +25,10 @@ const client = {
       calls.push(["session.promptAsync", params]);
       return { data: null };
     },
+    summarize: async (params) => {
+      calls.push(["session.summarize", params]);
+      return { data: true };
+    },
     status: async (params) => {
       calls.push(["session.status", params]);
       return { data: { ses_1: { type: "idle" } } };
@@ -77,6 +81,14 @@ await sdkSession.promptAsync("ses_1", {
   model: { providerID: "lily", modelID: "deepseek" },
   parts: [{ type: "text", text: "hello" }],
 });
+assert.equal(
+  await sdkSession.summarize("ses_1", { providerID: "lily", modelID: "deepseek", auto: true }),
+  true,
+);
+assert.equal(
+  await sdkSession.summarize("ses_1", { providerID: "lily", modelID: "deepseek", auto: true, reason: "long_session", customPrompt: "nope" }),
+  true,
+);
 assert.deepEqual(await sdkSession.status(), { ses_1: { type: "idle" } });
 const messagesPage = await sdkSession.messages("ses_1", { limit: 20, before: "cursor_1" });
 assert.deepEqual(messagesPage.data, [{ info: { id: "msg_1" }, parts: [] }]);
@@ -97,6 +109,16 @@ assert.deepEqual(calls, [
     agent: "build",
     model: { providerID: "lily", modelID: "deepseek" },
     parts: [{ type: "text", text: "hello" }],
+  }],
+  ["session.summarize", {
+    path: { id: "ses_1" },
+    query: { directory: "/workspace/app" },
+    body: { providerID: "lily", modelID: "deepseek", auto: true },
+  }],
+  ["session.summarize", {
+    path: { id: "ses_1" },
+    query: { directory: "/workspace/app" },
+    body: { providerID: "lily", modelID: "deepseek", auto: true },
   }],
   ["session.status", { directory: "/workspace/app" }],
   ["session.messages", { directory: "/workspace/app", sessionID: "ses_1", limit: 20, before: "cursor_1" }],

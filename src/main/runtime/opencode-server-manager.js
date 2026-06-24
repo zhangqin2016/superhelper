@@ -283,6 +283,12 @@ class OpencodeServerManager extends EventEmitter {
     return this._sdkSession.messages(this.sessionID, opts);
   }
 
+  async summarize(body = {}) {
+    if (!this.sessionID) throw new Error("no session");
+    if (!this._sdkSession?.summarize) throw new Error("opencode SDK session is not ready");
+    return this._sdkSession.summarize(this.sessionID, body);
+  }
+
   diagnostics() {
     return {
       sessionID: this.sessionID || "",

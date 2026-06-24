@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { dictionaries as webDictionaries } from "../web/lib/i18n.mjs";
 
 const require = createRequire(import.meta.url);
+const guideTestUserData = fs.mkdtempSync(path.join(os.tmpdir(), "lily-guide-i18n-"));
+process.env.LILY_USER_DATA_DIR ||= guideTestUserData;
+process.env.LILY_HOME ||= guideTestUserData;
+process.on("exit", () => fs.rmSync(guideTestUserData, { recursive: true, force: true }));
 const skillManager = require("../src/main/skill-manager.js");
 const skillRegistry = require("../src/main/skill-registry.js");
 
@@ -28,6 +33,13 @@ const localizedGuidePatterns = [
   ...forcedChinesePatterns,
   /技能目录/,
 ];
+const appLanguageResponseSourcePatterns = [
+  /current language or (?:the )?app language/i,
+  /or app language/i,
+  /当前语言或应用语言/,
+  /应用语言/,
+  /لغة التطبيق/,
+];
 
 function assertNoForcedChinese(text, label) {
   for (const pattern of forcedChinesePatterns) {
@@ -38,6 +50,12 @@ function assertNoForcedChinese(text, label) {
 function assertNoLocalizedGuideLeak(text, label) {
   for (const pattern of localizedGuidePatterns) {
     assert.doesNotMatch(text, pattern, `${label} contains untranslated guide text: ${pattern}`);
+  }
+}
+
+function assertNoAppLanguageResponseSource(text, label) {
+  for (const pattern of appLanguageResponseSourcePatterns) {
+    assert.doesNotMatch(text, pattern, `${label} allows app language to drive response language: ${pattern}`);
   }
 }
 
@@ -57,6 +75,7 @@ function assertLocalizedStringMap(manifest, manifestPath, field) {
 
 function assertLocalizedGuide(manifest, manifestPath) {
   const baseGuide = `${manifest.guideMd?.title || ""}\n${manifest.guideMd?.body || ""}`;
+  assertNoAppLanguageResponseSource(baseGuide, `${manifestPath} guideMd`);
   if (!cjkPattern.test(baseGuide)) return;
   for (const locale of ["en", "ar"]) {
     const guide = manifest.guideMd_i18n?.[locale];
@@ -64,6 +83,7 @@ function assertLocalizedGuide(manifest, manifestPath) {
     assert.equal(typeof guide?.body, "string", `${manifestPath} missing guideMd_i18n.${locale}.body`);
     assertNoCjk(`${guide.title}\n${guide.body}`, `${manifestPath} guideMd_i18n.${locale}`);
     assertNoLocalizedGuideLeak(`${guide.title}\n${guide.body}`, `${manifestPath} guideMd_i18n.${locale}`);
+    assertNoAppLanguageResponseSource(`${guide.title}\n${guide.body}`, `${manifestPath} guideMd_i18n.${locale}`);
   }
 }
 
@@ -88,11 +108,13 @@ function flattenStrings(value, prefix = "") {
 }
 
 const enGuide = skillManager.buildAgentGuideContent([], "en");
-assert.match(enGuide, /Reply in English by default/);
+assert.match(enGuide, /Reply in the primary language of the user's latest message/);
+assert.doesNotMatch(enGuide, /Reply in English by default/);
 assertNoLocalizedGuideLeak(enGuide, "English agent guide");
 
 const arGuide = skillManager.buildAgentGuideContent([], "ar");
-assert.match(arGuide, /استخدم العربية افتراضياً/);
+assert.match(arGuide, /آخر رسالة من المستخدم/);
+assert.doesNotMatch(arGuide, /استخدم العربية افتراضياً/);
 assertNoLocalizedGuideLeak(arGuide, "Arabic agent guide");
 
 for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
@@ -102,6 +124,7 @@ for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
     const body = fs.readFileSync(skillPath, "utf8");
     assertNoCjk(body, `${entry.name}/SKILL.md`);
     assertNoLocalizedGuideLeak(body, `${entry.name}/SKILL.md`);
+    assertNoAppLanguageResponseSource(body, `${entry.name}/SKILL.md`);
   }
 
   const manifestPath = path.join(skillsDir, entry.name, "skill.manifest.json");
@@ -112,6 +135,7 @@ for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
     const body = manifest.guideMd_i18n?.[locale]?.body;
     if (typeof body === "string") {
       assertNoLocalizedGuideLeak(body, `${entry.name}/skill.manifest.json ${locale}`);
+      assertNoAppLanguageResponseSource(body, `${entry.name}/skill.manifest.json ${locale}`);
     }
   }
 }
@@ -123,6 +147,7 @@ for (const entry of fs.readdirSync(skillsCatalogDir, { withFileTypes: true })) {
     const body = fs.readFileSync(skillPath, "utf8");
     assertNoCjk(body, `${entry.name}/catalog SKILL.md`);
     assertNoForcedChinese(body, `${entry.name}/catalog SKILL.md`);
+    assertNoAppLanguageResponseSource(body, `${entry.name}/catalog SKILL.md`);
   }
 
   const manifestPath = path.join(skillsCatalogDir, entry.name, "skill.manifest.json");
@@ -213,6 +238,19 @@ assert.match(
 assert.match(indexGuideEn, /Word document/i, "skill index must carry the when-to-use description");
 const indexGuideZh = skillManager.buildAgentGuideContent([indexSkill], "zh-CN");
 assert.match(indexGuideZh, /技能目录/, "zh-CN skill index title missing");
+
+const webSearchSkill = skillObj(skillsDir, "websearch");
+const webSearchGuideZh = skillManager.buildAgentGuideContent([webSearchSkill], "zh-CN");
+assert.match(
+  webSearchGuideZh,
+  /\*\*websearch（? ?\(?联网搜索\)?）?\*\*|\*\*websearch \(联网搜索\)\*\*/,
+  "skill index must show stable skill id before localized display name",
+);
+assert.match(
+  webSearchGuideZh,
+  /技能调用名是 `websearch`/,
+  "websearch guide must warn that the callable skill name is websearch",
+);
 
 const nonMandatoryInlineFixture = {
   ...indexSkill,

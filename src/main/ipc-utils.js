@@ -174,6 +174,23 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
   const existingRunner = runnerPool.get(sessionId);
   const wasAlive = Boolean(existingRunner?.isAlive?.());
   if (session.agentResumeId) {
+    const owner = typeof sessionManager.findAgentResumeOwner === "function"
+      ? sessionManager.findAgentResumeOwner(session.agentResumeId, session.id)
+      : null;
+    if (owner) {
+      console.warn(
+        "[runner] agentResumeId %s already belongs to session %s — starting %s fresh",
+        session.agentResumeId,
+        owner.id,
+        sessionId,
+      );
+      sessionManager.clearAgentResumeId(sessionId);
+      resetSessionEngineCache(sessionId);
+      runnerPool.terminateSession(sessionId);
+    }
+  }
+
+  if (session.agentResumeId) {
     migrateGlobalResumeArtifacts(sessionId, session.agentResumeId);
     if (!hasResumeArtifacts(sessionId, session.agentResumeId)) {
       console.warn("[runner] stale agentResumeId for session %s — starting fresh", sessionId);

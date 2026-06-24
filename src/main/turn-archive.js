@@ -4,10 +4,12 @@ const crypto = require("node:crypto");
 const { buildTurnArtifacts } = require("./turn-artifacts");
 const { ARTIFACT_SCHEMA_VERSION } = require("./session-artifact-backfill");
 const { buildTurnResultBlocks, RESULT_BLOCK_SCHEMA_VERSION } = require("./turn-result-blocks");
+const { estimateTokensForText } = require("./context-budget-manager");
 
 class TurnArchive {
-  constructor(sessionManager) {
+  constructor(sessionManager, options = {}) {
     this.sessionManager = sessionManager;
+    this.eventBus = options.eventBus || null;
   }
 
   buildRecord(state, terminalType, payload = {}) {
@@ -69,6 +71,23 @@ class TurnArchive {
       : "";
     const enginePayload = state.enginePayload || null;
     const engineText = String(enginePayload?.text || "");
+    const usageInputTokens = Number(
+      state.usage?.input_tokens ??
+        state.usage?.inputTokens ??
+        state.usage?.prompt_tokens ??
+        0,
+    );
+    const promptTokenEstimate = Number.isFinite(usageInputTokens) && usageInputTokens > 0
+      ? {
+          tokens: usageInputTokens,
+          source: "runtime_usage",
+          provider: enginePayload?.provider || enginePayload?.trace?.provider || "",
+          model: enginePayload?.model || enginePayload?.trace?.model || "",
+        }
+      : estimateTokensForText(engineText, {
+      provider: enginePayload?.provider || enginePayload?.trace?.provider || "",
+      model: enginePayload?.model || enginePayload?.trace?.model || "",
+    });
     const effectiveTextPreview =
       engineText && engineText !== rawUserText
         ? engineText.slice(0, 1200)
@@ -84,7 +103,7 @@ class TurnArchive {
         }
       : null;
 
-    return {
+    const record = {
       turnId: state.turnId,
       sessionId: state.sessionId,
       startedAt: state.startedAt || Date.now(),
@@ -133,15 +152,46 @@ class TurnArchive {
               verificationStrategy: state.taskContract.verificationStrategy || [],
             }
           : null,
+        turnPolicy: state.turnPolicy
+          ? {
+              schemaVersion: state.turnPolicy.schemaVersion || 1,
+              taskType: state.turnPolicy.taskType || "",
+              rigor: state.turnPolicy.rigor || "fast",
+              requiresFreshness: Boolean(state.turnPolicy.requiresFreshness),
+              requiresWorkspaceGrounding: Boolean(state.turnPolicy.requiresWorkspaceGrounding),
+              requiresSourceCoverage: Boolean(state.turnPolicy.requiresSourceCoverage),
+              allowedClaimStrength: state.turnPolicy.allowedClaimStrength || "casual",
+            }
+          : null,
+        evidenceSummary: state.evidenceLedger?.summary?.() || null,
         engine: enginePayload
           ? {
               textChanged: Boolean(engineText && engineText !== rawUserText),
               effectiveTextPreview,
+              promptChars: engineText.length,
+              estimatedPromptTokens: promptTokenEstimate.tokens,
+              estimatedPromptTokenSource: promptTokenEstimate.source,
               trace: enginePayload.trace || null,
             }
           : null,
       },
     };
+    try {
+      record.meta.evidenceGraph = require("./evidence-graph").buildEvidenceGraph(record);
+    } catch {
+      record.meta.evidenceGraph = null;
+    }
+    try {
+      record.meta.evidenceReplayBundle = require("./evidence-replay-bundle").buildEvidenceReplayBundle(record);
+    } catch {
+      record.meta.evidenceReplayBundle = null;
+    }
+    try {
+      record.meta.contextOsScorecard = require("./context-os-scorecard").evaluateContextOsScorecard(record);
+    } catch {
+      record.meta.contextOsScorecard = null;
+    }
+    return record;
   }
 
   commit(sessionId, record) {
@@ -183,6 +233,25 @@ class TurnArchive {
       require("./session-memory").updateSessionSummaryFromRecord(sessionId, record);
     } catch (err) {
       console.warn("[session-memory] update failed:", err?.message || err);
+    }
+    try {
+      const session = this.sessionManager?.findById?.(sessionId);
+      if (session?.projectId) {
+        const promoted = require("./auto-memory-proposals").promoteMemoryProposalsFromRecord(session.projectId, record);
+        if (promoted?.status === "proposed" && promoted.proposal) {
+          this.eventBus?.emit?.(sessionId, {
+            type: "memory.proposal",
+            turnId: record.turnId || null,
+            source: "turn_archive",
+            payload: {
+              projectId: session.projectId,
+              proposal: promoted.proposal,
+            },
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[auto-memory] proposal failed:", err?.message || err);
     }
     return extra;
   }

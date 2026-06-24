@@ -8,6 +8,9 @@ allowed-tools: Bash(node *)
 
 Use this skill when the user needs up-to-date or externally sourced information.
 
+The callable skill name is `websearch`. Do not call a localized display name
+as a skill; localized names are UI labels only.
+
 Run:
 
 ```bash

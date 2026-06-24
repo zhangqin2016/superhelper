@@ -37,7 +37,12 @@ const multiLayer = addLayersToEngineText(
   { executionConstraints: "task contract" },
 );
 assert((multiLayer.match(/title="user_original_request"/g) || []).length === 1, "layer merging keeps one original request layer");
+assert((multiLayer.match(/title="platform_context"/g) || []).length === 1, "platform context layers are merged");
+assert((multiLayer.match(/title="extracted_attachments"/g) || []).length === 1, "extracted attachment layers are merged");
+assert((multiLayer.match(/title="execution_constraints"/g) || []).length === 1, "execution constraint layers are merged");
 assert(multiLayer.indexOf('title="execution_constraints"') < multiLayer.indexOf('title="user_original_request"'), "constraints stay before original request");
 assert(!multiLayer.includes('title="user_original_request">\nHighest priority. Preserve the user\'s intent, especially explicit negations such as do not, don\'t, no need, 不是, 不要, 别, 无需.\n<lily_layer'), "original request layer must not contain nested platform layers");
+assert(multiLayer.includes("resume context"), "merged platform context preserves later content");
+assert(multiLayer.includes("task contract"), "merged execution constraints preserve later content");
 
 console.log("PASS: test-engine-message-layers");

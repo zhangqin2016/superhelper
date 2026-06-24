@@ -31,5 +31,5 @@ For web images:
 ## Rules
 
 - Run `vision.js` once per image, then respond after collecting all text descriptions.
-- The final answer must follow the user's current language or the app language.
+- The final answer must follow the primary language of the user's latest message.
 - After setup, users can send images directly; do not ask them to run commands manually.

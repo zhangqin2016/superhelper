@@ -45,6 +45,18 @@ function withDirectory(directory, extra = {}) {
   };
 }
 
+function summarizeParams(directory, sessionID, body = {}) {
+  const summarizeBody = {};
+  if (body.providerID) summarizeBody.providerID = body.providerID;
+  if (body.modelID) summarizeBody.modelID = body.modelID;
+  if (body.auto !== undefined) summarizeBody.auto = Boolean(body.auto);
+  return {
+    path: { id: sessionID },
+    ...(directory ? { query: { directory } } : {}),
+    body: summarizeBody,
+  };
+}
+
 function createOpencodeSdkSession(client, directory) {
   if (!client?.session) throw new Error("OpenCode SDK client has no session resource");
   return {
@@ -66,6 +78,16 @@ function createOpencodeSdkSession(client, directory) {
       return unwrapSdkResult(
         await client.session.promptAsync(withDirectory(directory, { sessionID, ...body })),
         "session.promptAsync",
+      );
+    },
+
+    async summarize(sessionID, body = {}) {
+      if (typeof client.session.summarize !== "function") {
+        throw new Error("OpenCode SDK client has no session.summarize resource");
+      }
+      return unwrapSdkResult(
+        await client.session.summarize(summarizeParams(directory, sessionID, body)),
+        "session.summarize",
       );
     },
 
@@ -152,4 +174,5 @@ module.exports = {
   createOpencodeSdkSession,
   unwrapSdkResult,
   unwrapSdkPageResult,
+  summarizeParams,
 };

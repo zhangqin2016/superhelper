@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lily-vision",
   "name": "识图",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "为无原生识图能力的模型提供图片识别。",
   "minAppVersion": "0.1.0",
   "runtime": "node",
@@ -18,7 +18,7 @@
   "guideMd": {
     "title": "识图能力（必读）",
     "priority": 10,
-    "body": "底层模型不具备原生识图能力。Read 工具无法读取图片内容。\n遇到图片时，不要用 Read，改用：\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" \"<图片绝对路径>\" \"用当前对话语言详细描述这张图片的内容\"\n```\n\n网络图片：\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" --url \"<图片链接>\" \"用当前对话语言详细描述这张图片的内容\"\n```\n\n对每张图片依次执行，拿到所有文字描述后再回复。回复语言必须跟随用户当前语言或应用语言。"
+    "body": "底层模型不具备原生识图能力。Read 工具无法读取图片内容。\n遇到图片时，不要用 Read，改用：\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" \"<图片绝对路径>\" \"用当前对话语言详细描述这张图片的内容\"\n```\n\n网络图片：\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" --url \"<图片链接>\" \"用当前对话语言详细描述这张图片的内容\"\n```\n\n对每张图片依次执行，拿到所有文字描述后再回复。回复语言必须跟随用户最新一条消息的主要语言。"
   },
   "name_i18n": {
     "zh-CN": "识图",
@@ -34,17 +34,17 @@
     "zh-CN": {
       "title": "识图能力（必读）",
       "priority": 10,
-      "body": "底层模型不具备原生识图能力。Read 工具无法读取图片内容。\n遇到图片时，不要用 Read，改用：\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" \"<图片绝对路径>\" \"用当前对话语言详细描述这张图片的内容\"\n```\n\n网络图片：\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" --url \"<图片链接>\" \"用当前对话语言详细描述这张图片的内容\"\n```\n\n对每张图片依次执行，拿到所有文字描述后再回复。回复语言必须跟随用户当前语言或应用语言。"
+      "body": "底层模型不具备原生识图能力。Read 工具无法读取图片内容。\n遇到图片时，不要用 Read，改用：\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" \"<图片绝对路径>\" \"用当前对话语言详细描述这张图片的内容\"\n```\n\n网络图片：\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" --url \"<图片链接>\" \"用当前对话语言详细描述这张图片的内容\"\n```\n\n对每张图片依次执行，拿到所有文字描述后再回复。回复语言必须跟随用户最新一条消息的主要语言。"
     },
     "en": {
       "title": "Image Recognition (Required)",
       "priority": 10,
-      "body": "The underlying model does not have native image recognition capability. The Read tool cannot read image content.\nWhen encountering images, do not use Read; instead use:\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" \"<image absolute path>\" \"Describe this image in detail in the current conversation language\"\n```\n\nFor web images:\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" --url \"<image URL>\" \"Describe this image in detail in the current conversation language\"\n```\n\nProcess each image one at a time, then respond after collecting all text descriptions. The final response language must follow the user's current language or the app language."
+      "body": "The underlying model does not have native image recognition capability. The Read tool cannot read image content.\nWhen encountering images, do not use Read; instead use:\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" \"<image absolute path>\" \"Describe this image in detail in the current conversation language\"\n```\n\nFor web images:\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" --url \"<image URL>\" \"Describe this image in detail in the current conversation language\"\n```\n\nProcess each image one at a time, then respond after collecting all text descriptions. The final response language must follow the primary language of the user's latest message."
     },
     "ar": {
       "title": "التعرف على الصور (مطلوب)",
       "priority": 10,
-      "body": "النموذج الأساسي لا يمتلك قدرة أصلية على التعرف على الصور. أداة Read لا يمكنها قراءة محتوى الصور.\nعند مواجهة الصور، لا تستخدم Read؛ استخدم بدلاً من ذلك:\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" \"<مسار الصورة المطلق>\" \"صف هذه الصورة بالتفصيل بلغة المحادثة الحالية\"\n```\n\nللصور على الويب:\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" --url \"<رابط الصورة>\" \"صف هذه الصورة بالتفصيل بلغة المحادثة الحالية\"\n```\n\nعالج كل صورة على حدة، ثم قم بالرد بعد جمع جميع الأوصاف النصية. يجب أن تتبع لغة الرد النهائية لغة المستخدم الحالية أو لغة التطبيق."
+      "body": "النموذج الأساسي لا يمتلك قدرة أصلية على التعرف على الصور. أداة Read لا يمكنها قراءة محتوى الصور.\nعند مواجهة الصور، لا تستخدم Read؛ استخدم بدلاً من ذلك:\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" \"<مسار الصورة المطلق>\" \"صف هذه الصورة بالتفصيل بلغة المحادثة الحالية\"\n```\n\nللصور على الويب:\n\n```\n\"{{NODE_BIN}}\" \"{{VISION_SCRIPT}}\" --url \"<رابط الصورة>\" \"صف هذه الصورة بالتفصيل بلغة المحادثة الحالية\"\n```\n\nعالج كل صورة على حدة، ثم قم بالرد بعد جمع جميع الأوصاف النصية. يجب أن تتبع لغة الرد النهائية اللغة الأساسية في آخر رسالة من المستخدم."
     }
   }
 }

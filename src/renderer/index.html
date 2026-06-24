@@ -287,6 +287,7 @@
           <nav class="settings-nav" data-i18n-aria-label="settings.navLabel" aria-label="设置分类">
             <button type="button" class="settings-nav-item is-active" data-settings-page="general" data-i18n="settings.nav.general">通用</button>
             <button type="button" class="settings-nav-item" data-settings-page="usage" data-i18n="settings.nav.usage">用量</button>
+            <button type="button" class="settings-nav-item" data-settings-page="memory" data-i18n="settings.nav.memory">记忆</button>
             <button type="button" class="settings-nav-item" data-settings-page="model" data-i18n="settings.nav.model">模型</button>
             <button type="button" class="settings-nav-item" data-settings-page="permission" data-i18n="settings.nav.permission">权限</button>
             <button type="button" class="settings-nav-item" data-settings-page="search" data-i18n="settings.nav.search">联网搜索</button>
@@ -348,6 +349,28 @@
                   </thead>
                   <tbody id="usageHistoryBody"></tbody>
                 </table>
+              </div>
+            </section>
+            <section id="settingsPageMemory" class="settings-page" data-settings-page="memory" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.memory">记忆</h3>
+              <p class="settings-section-desc" data-i18n="settings.memoryDesc">管理当前工作区中用户确认过的长期偏好，以及待确认的记忆候选。</p>
+              <div class="settings-actions">
+                <button id="memoryExportBtn" class="settings-action-btn" type="button" data-i18n="settings.memoryExport">导出</button>
+              </div>
+              <div class="settings-field">
+                <h4 class="settings-subsection-title" data-i18n="settings.memoryCategories">记忆类别</h4>
+                <div id="memoryCategoryList" class="settings-memory-category-list"></div>
+              </div>
+              <div class="settings-field">
+                <div class="settings-memory-header">
+                  <h4 class="settings-subsection-title" data-i18n="settings.memoryLearned">已记住</h4>
+                  <button id="memoryClearLearnedBtn" class="settings-action-btn settings-action-btn--danger" type="button" data-i18n="settings.memoryClear">清空</button>
+                </div>
+                <div id="memoryLearnedList" class="settings-memory-list"></div>
+              </div>
+              <div class="settings-field settings-field--divider">
+                <h4 class="settings-subsection-title" data-i18n="settings.memoryProposals">待确认</h4>
+                <div id="memoryProposalList" class="settings-memory-list"></div>
               </div>
             </section>
             <section id="settingsPageModel" class="settings-page" data-settings-page="model" hidden>

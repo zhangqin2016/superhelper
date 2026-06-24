@@ -29,4 +29,4 @@ The script calls Alibaba Bailian asynchronous speech synthesis, downloads the
 temporary audio URL to a local file, and reports the local audio path. Reply with
 the local file path and preview when available. Do not return the temporary URL.
 
-Use the user's current language or app language for the surrounding explanation.
+Use the primary language of the user's latest message for the surrounding explanation.

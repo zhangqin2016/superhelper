@@ -33,4 +33,4 @@ Video generation can take a long time. The script polls the Bailian task and
 downloads the temporary video URL to a local file when complete. Reply with the
 local file path and preview when available. Do not return the temporary URL.
 
-Use the user's current language or app language for the surrounding explanation.
+Use the primary language of the user's latest message for the surrounding explanation.

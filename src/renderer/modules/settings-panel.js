@@ -19,8 +19,9 @@ import { confirmDialog } from "./confirm-dialog.js";
 import { refreshUsageSettings, initUsageSettings } from "./usage-settings.js";
 import { initSupportSettings } from "./support-settings.js";
 import { initThemeSettings, refreshThemeSelect } from "./theme-settings.js";
+import { initMemorySettings, refreshMemorySettings } from "./memory-settings.js";
 
-const SETTINGS_PAGES = ["general", "usage", "model", "permission", "search", "connectors", "skills", "apps", "license", "feedback", "contact", "about"];
+const SETTINGS_PAGES = ["general", "usage", "memory", "model", "permission", "search", "connectors", "skills", "apps", "license", "feedback", "contact", "about"];
 
 let panelOpen = false;
 let activeSettingsPage = "general";
@@ -84,6 +85,7 @@ function refreshSettingsPanelData() {
     refreshLicenseStatus(),
     refreshUpdateSettings(),
     refreshUsageSettings(),
+    refreshMemorySettings(),
   ])
     .then((results) => {
       for (const result of results) {
@@ -187,5 +189,6 @@ export async function initSettingsPanel() {
   initUsageSettings();
   initSupportSettings();
   initThemeSettings();
+  initMemorySettings();
   initConnectorSettings();
 }

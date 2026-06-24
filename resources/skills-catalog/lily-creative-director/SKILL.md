@@ -45,7 +45,7 @@ When the user's request is short, add the missing details:
 - Preview directly when possible; otherwise provide an absolute path.
 - If the user asks to open or locate the result, provide a path that can be opened.
 - When iterating, extract the concrete issue from feedback: subject, style, composition, color, realism, clarity, or ratio, then revise in that direction.
-- Surrounding explanations should follow the user's current language or the app language.
+- Surrounding explanations should follow the primary language of the user's latest message.
 
 ## Do Not
 

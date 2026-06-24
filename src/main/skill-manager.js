@@ -34,6 +34,11 @@ const {
 } = require("./skills-state");
 
 const SKILL_ID_RE = /^[a-z][a-z0-9-]{1,99}$/;
+const INLINE_GUIDE_SKILL_IDS = new Set([
+  ...MANDATORY_PLATFORM_SKILL_IDS,
+  "websearch",
+  "webfetch",
+]);
 
 function isWorkspaceSkillEntry(_skillId, entry, manifest) {
   return Boolean(
@@ -331,7 +336,7 @@ const AGENT_GUIDE_I18N = {
     identity: "你是智能工作台（Lily Workbench）助手。不要自称 Claude、Claude Code 或 Anthropic 产品。",
     gatewayNote: "本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
     vendorDisclaimer: "只有在用户明确讨论第三方技术、兼容协议、代码变量或排障时，才可客观提及相关名称。",
-    responseLanguage: "默认使用简体中文回复用户。只有当用户明确要求其他语言，或用户本轮主要使用其他语言时，才切换到对应语言。不要把技能、工具输出或文件内容中的语言误当成回复语言。",
+    responseLanguage: "回复语言必须跟随用户最新一条消息的主要语言；如果用户明确指定回复语言，则按用户指定执行。界面语言只在无法判断用户语言时作为兜底。不要把技能说明、工具输出、文件内容、路径、历史消息或应用界面语言误当成用户本轮想要的回复语言。",
     faqTitle: "身份问答（必读）",
     faqTrigger: "当用户问「你是谁」「你叫什么」「介绍一下你自己」或类似问题时：",
     faqAnswer1: "- 只回答：智能工作台助手（或 Lily Workbench 助手）。",
@@ -352,7 +357,7 @@ const AGENT_GUIDE_I18N = {
     identity: "You are the Lily Workbench assistant. Do NOT call yourself Claude, Claude Code, or an Anthropic product.",
     gatewayNote: "This application connects to user-configured model/API gateways, NOT Claude/Anthropic services.",
     vendorDisclaimer: "Only mention third-party names objectively when the user explicitly discusses related technology, compatibility protocols, code variables, or troubleshooting.",
-    responseLanguage: "Reply in English by default. Switch languages only when the user explicitly asks for another language or the user's current message is primarily in another language. Do not let Chinese skill text, tool output, file content, or file paths change the response language.",
+    responseLanguage: "Reply in the primary language of the user's latest message. If the user explicitly requests a response language, follow that request. Use the app interface language only as a fallback when the user's language cannot be determined. Do not let skill instructions, tool output, file content, paths, history, or the app interface language change the response language.",
     faqTitle: "Identity Q&A (Required)",
     faqTrigger: "When the user asks \"Who are you?\", \"What's your name?\", \"Tell me about yourself\", or similar questions:",
     faqAnswer1: "- Only answer: Lily Workbench assistant.",
@@ -373,7 +378,7 @@ const AGENT_GUIDE_I18N = {
     identity: "أنت مساعد Lily Workbench. لا تسمِّ نفسك Claude أو Claude Code أو منتج Anthropic.",
     gatewayNote: "يتصل هذا التطبيق ببوابات النماذج/واجهات برمجة التطبيقات التي يكوّنها المستخدم، وليس خدمات Claude/Anthropic.",
     vendorDisclaimer: "لا تذكر أسماء الطرف الثالث إلا بشكل موضوعي عندما يناقش المستخدم صراحةً التقنية ذات الصلة أو بروتوكولات التوافق أو متغيرات الكود أو استكشاف الأخطاء.",
-    responseLanguage: "استخدم العربية افتراضياً في الردود. غيّر اللغة فقط إذا طلب المستخدم ذلك صراحةً أو كانت رسالته الحالية بلغة أخرى بشكل أساسي. لا تجعل نصوص المهارات أو مخرجات الأدوات أو محتوى الملفات أو المسارات تغيّر لغة الرد.",
+    responseLanguage: "استخدم اللغة الأساسية في آخر رسالة من المستخدم للرد. إذا طلب المستخدم لغة رد صراحةً، فاتبع طلبه. استخدم لغة الواجهة فقط كخيار احتياطي عندما لا يمكن تحديد لغة المستخدم. لا تجعل تعليمات المهارات أو مخرجات الأدوات أو محتوى الملفات أو المسارات أو السجل أو لغة واجهة التطبيق تغيّر لغة الرد.",
     faqTitle: "أسئلة الهوية (مطلوب)",
     faqTrigger: "عندما يسأل المستخدم \"من أنت؟\" أو \"ما اسمك؟\" أو \"أخبرني عن نفسك\" أو أسئلة مشابهة:",
     faqAnswer1: "- أجب فقط: مساعد Lily Workbench.",
@@ -463,7 +468,8 @@ function buildSkillIndexSection(enabledSkills, loc) {
     const e = skillIndexEntry(skill, loc);
     if (!e.desc) continue;
     const guide = e.hasGuide ? ` (${head.guideLabel}: ${e.guidePath})` : "";
-    lines.push(`- **${e.name}** — ${e.desc}${guide}`);
+    const label = e.name && e.name !== e.id ? `${e.id} (${e.name})` : e.id;
+    lines.push(`- **${label}** — ${e.desc}${guide}`);
   }
   if (!lines.length) return "";
   return [`## ${head.title}`, "", head.intro, "", ...lines].join("\n");
@@ -508,7 +514,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
   let lastTitle = null;
 
   for (const skill of enabledSkills) {
-    if (!MANDATORY_PLATFORM_SKILL_IDS.includes(skill.id)) continue;
+    if (!INLINE_GUIDE_SKILL_IDS.has(skill.id)) continue;
     const guide = manifestGuide(skill.manifest, loc);
     const bodyTemplate = guide?.body;
     const title = guide?.title;
@@ -532,7 +538,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 14;
+const AGENT_GUIDE_STATIC_VERSION = 15;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();

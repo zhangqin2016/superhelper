@@ -2,12 +2,26 @@
 
 import { createRequire } from "node:module";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const require = createRequire(import.meta.url);
+const tempUserData = fs.mkdtempSync(path.join(os.tmpdir(), "lily-turn-orchestrator-"));
+process.env.LILY_USER_DATA_DIR = tempUserData;
+process.on("exit", () => fs.rmSync(tempUserData, { recursive: true, force: true }));
 const { RuntimeEventBus } = require("../src/main/runtime-event-bus.js");
 const { TranscriptStore } = require("../src/main/transcript-store.js");
 const { TurnArchive } = require("../src/main/turn-archive.js");
 const { TurnOrchestrator } = require("../src/main/turn-orchestrator.js");
+const {
+  clearSessionSummary,
+  markSessionCompacted,
+  readSessionSummary,
+  updateSessionSummaryFromRecord,
+} = require("../src/main/session-memory.js");
+const { appendLearnedConvention } = require("../src/main/learned-context.js");
+const { listMemoryProposals } = require("../src/main/auto-memory-proposals.js");
 
 class FakeRunner extends EventEmitter {
   constructor(sessionId) {
@@ -15,6 +29,7 @@ class FakeRunner extends EventEmitter {
     this.sessionId = sessionId;
     this.busy = false;
     this.sentPayloads = [];
+    this.compactions = [];
   }
   isBusy() {
     return this.busy;
@@ -46,6 +61,10 @@ class FakeRunner extends EventEmitter {
   interrupt() {
     this.busy = false;
   }
+  compactContext(body) {
+    this.compactions.push(body);
+    return Promise.resolve({ ok: true });
+  }
 }
 
 const sent = [];
@@ -60,37 +79,67 @@ const fakeWindow = {
 
 const messages = [];
 const session = { id: "s1", projectId: "p1", messages };
+const otherSession = { id: "s2", projectId: "p1", messages: [] };
 const runner = new FakeRunner("s1");
+const otherRunner = new FakeRunner("s2");
+const terminatedSessions = [];
 const ctx = {
   get mainWindow() {
     return fakeWindow;
   },
   eventBus: new RuntimeEventBus(() => fakeWindow),
   sessionManager: {
-    findById: (id) => (id === "s1" ? session : null),
+    findById: (id) => (id === "s1" ? session : id === "s2" ? otherSession : null),
     getActive: () => session,
     pushMessageTo: (_sessionId, role, content, files, extra) => {
       messages.push({ role, content, files, ...extra });
     },
     popLastAssistantMessage: () => false,
     getLastUserMessage: () => messages.find((m) => m.role === "user") || null,
+    findAgentResumeOwner: (agentResumeId) => (agentResumeId === "ses_live_owner" ? otherSession : null),
     setAgentResumeId: () => {},
+    claimAgentResumeId: (_sessionId, agentResumeId) => ({
+      ok: true,
+      evictedSessionIds: agentResumeId === "ses_shared" ? ["s2"] : [],
+    }),
     clearAgentResumeId: () => {},
   },
   projectManager: {
     find: () => ({ id: "p1", path: process.cwd() }),
   },
   runnerPool: {
-    get: () => runner,
+    get: (sessionId) => (sessionId === "s2" ? otherRunner : runner),
     ensure: () => runner,
-    terminateSession: () => {},
+    terminateSession: (sessionId) => {
+      terminatedSessions.push(sessionId);
+    },
     getSessionIds: () => ["s1"],
   },
 };
 ctx.transcriptStore = new TranscriptStore(ctx.sessionManager);
-ctx.turnArchive = new TurnArchive(ctx.sessionManager);
+ctx.turnArchive = new TurnArchive(ctx.sessionManager, { eventBus: ctx.eventBus });
 ctx.turnOrchestrator = new TurnOrchestrator(ctx);
 ctx.turnOrchestrator.bindRunner(runner);
+
+runner.emit("agent-resume-id", "ses_shared");
+if (!terminatedSessions.includes("s2")) {
+  throw new Error(`claiming an engine session must terminate evicted runner owners: ${JSON.stringify(terminatedSessions)}`);
+}
+if (sent.some((entry) => entry.payload?.sessionId === "s2")) {
+  throw new Error(`engine session ownership repair must stay invisible to evicted sessions: ${JSON.stringify(sent)}`);
+}
+terminatedSessions.length = 0;
+sent.length = 0;
+
+runner.emit("agent-resume-id", "ses_live_owner");
+if (!terminatedSessions.includes("s1") || terminatedSessions.includes("s2")) {
+  throw new Error(`a duplicate claimant must not evict the live existing owner: ${JSON.stringify(terminatedSessions)}`);
+}
+if (sent.some((entry) => entry.payload?.events?.some((event) => event.type === "session.hydrated"))) {
+  throw new Error(`rejected duplicate claimant must not publish hydration events: ${JSON.stringify(sent)}`);
+}
+terminatedSessions.length = 0;
+sent.length = 0;
 
 ctx.turnOrchestrator.ingest("s1", [{
   type: "tool.started",
@@ -120,6 +169,7 @@ if (firstEnginePayload?.rawText !== "hello") {
   throw new Error(`engine payload must retain raw user text: ${JSON.stringify(firstEnginePayload)}`);
 }
 ctx.turnOrchestrator.ingest("s1", [
+  { type: "usage.updated", payload: { usage: { input_tokens: 77, output_tokens: 9 } } },
   { type: "assistant.thinking.delta", payload: { text: "Inspect files." } },
   { type: "process.event", payload: {
     rawType: "stream_event",
@@ -201,12 +251,96 @@ if (assistantMsg.record.user?.text !== "hello") {
 if (assistantMsg.record.meta?.engine?.textChanged !== true) {
   throw new Error(`archived record must retain engine augmentation trace: ${JSON.stringify(assistantMsg.record.meta?.engine)}`);
 }
+if (
+  assistantMsg.record.meta?.engine?.promptChars !== firstEnginePayload.text.length ||
+  assistantMsg.record.meta?.engine?.estimatedPromptTokens <= 0
+) {
+  throw new Error(`archived record should persist prompt pressure estimate: ${JSON.stringify(assistantMsg.record.meta?.engine)}`);
+}
+const firstSummary = readSessionSummary("s1");
+if (firstSummary?.lastEnginePromptTokens !== assistantMsg.record.meta.engine.estimatedPromptTokens) {
+  throw new Error(`session summary should persist prompt pressure: ${JSON.stringify(firstSummary)}`);
+}
+if (
+  assistantMsg.record.meta?.engine?.estimatedPromptTokens !== 77 ||
+  assistantMsg.record.meta?.engine?.estimatedPromptTokenSource !== "runtime_usage" ||
+  assistantMsg.record.meta?.contextOsScorecard?.checks?.find((item) => item.id === "beat_exact_tokenizer")?.ok !== true
+) {
+  throw new Error(`runtime usage should be treated as exact token accounting: ${JSON.stringify(assistantMsg.record.meta?.engine)} ${JSON.stringify(assistantMsg.record.meta?.contextOsScorecard)}`);
+}
 if (assistantMsg.record.tools.some((tool) => tool.status === "running")) {
   throw new Error(`assistant record must not archive running tools: ${JSON.stringify(assistantMsg.record.tools)}`);
 }
 const archivedThinking = assistantMsg.record.timeline.filter((entry) => entry.kind === "thinking");
 if (archivedThinking.length !== 1 || archivedThinking[0].text !== "Inspect files.") {
   throw new Error(`process.event must not duplicate archived thinking: ${JSON.stringify(assistantMsg.record.timeline)}`);
+}
+if (assistantMsg.record.meta?.turnPolicy?.rigor !== "fast") {
+  throw new Error(`archived record should persist fast turn policy: ${JSON.stringify(assistantMsg.record.meta?.turnPolicy)}`);
+}
+if (!assistantMsg.record.meta?.evidenceSummary || assistantMsg.record.meta.evidenceSummary.counts.events < 1) {
+  throw new Error(`archived record should persist compact evidence summary: ${JSON.stringify(assistantMsg.record.meta?.evidenceSummary)}`);
+}
+if (!assistantMsg.record.meta?.evidenceGraph?.nodes?.some((item) => item.type === "tool")) {
+  throw new Error(`archived record should persist an evidence graph: ${JSON.stringify(assistantMsg.record.meta?.evidenceGraph)}`);
+}
+if (!assistantMsg.record.meta?.evidenceReplayBundle?.items?.some((item) => item.kind === "tool")) {
+  throw new Error(`archived record should persist an evidence replay bundle: ${JSON.stringify(assistantMsg.record.meta?.evidenceReplayBundle)}`);
+}
+if (assistantMsg.record.meta?.contextOsScorecard?.overall !== "pass") {
+  throw new Error(`archived fast turn should include a passing Context OS scorecard: ${JSON.stringify(assistantMsg.record.meta?.contextOsScorecard)}`);
+}
+if (assistantMsg.record.meta?.contextOsScorecard?.maturity?.beat !== "incomplete") {
+  throw new Error(`current implementation should not claim beat-Claude maturity without stretch evidence: ${JSON.stringify(assistantMsg.record.meta?.contextOsScorecard)}`);
+}
+
+sent.length = 0;
+appendLearnedConvention("p1", "回答这类运行时问题时先检查 OpenCode 原生能力");
+const coverageTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "彻底找出所有 session.idle 问题，不要漏", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!coverageTurn.ok) throw new Error(`coverage turn send failed: ${JSON.stringify(coverageTurn)}`);
+const coveragePayload = runner.sentPayloads.at(-1);
+if (
+  !coveragePayload.text.includes("回答这类运行时问题时先检查 OpenCode 原生能力") ||
+  !coveragePayload.trace?.contextMemory?.items?.some((item) => item.kind === "learned_conventions" && item.trust === "user_learned_memory")
+) {
+  throw new Error(`coverage turn should include budgeted learned conventions: ${JSON.stringify(coveragePayload.trace?.contextMemory)}\n${coveragePayload.text}`);
+}
+if (
+  !coveragePayload.text.includes("Subagent Context Isolation") ||
+  coveragePayload.trace?.subagentIsolation?.enabled !== true
+) {
+  throw new Error(`coverage turn should enable subagent context isolation: ${JSON.stringify(coveragePayload.trace?.subagentIsolation)}\n${coveragePayload.text}`);
+}
+const coverageSummary = readSessionSummary("s1");
+if (!coverageSummary?.lastContextMemoryInjection?.explanation?.selected?.length) {
+  throw new Error(`context memory injection should persist human-readable explanations: ${JSON.stringify(coverageSummary?.lastContextMemoryInjection)}`);
+}
+ctx.turnOrchestrator.ingest("s1", [
+  { type: "tool.started", payload: { id: "task_coverage", name: "Task", input: { prompt: "audit session.idle routing" } } },
+  { type: "tool.started", payload: { id: "read_child", name: "Read", input: { file_path: "src/main/runtime-event-bus.js" }, parentToolUseId: "task_coverage" } },
+  { type: "tool.done", payload: { id: "read_child", status: "done", result: { content: "session.idle routing inspected" } } },
+  { type: "tool.done", payload: { id: "task_coverage", status: "done", result: { content: "subagent handoff complete" } } },
+]);
+runner.finish("已经找出全部 session.idle 问题。");
+ctx.eventBus.flush();
+const coverageAssistant = messages.filter((m) => m.role === "assistant").at(-1);
+if (coverageAssistant?.record?.meta?.turnPolicy?.rigor !== "coverage") {
+  throw new Error(`coverage wording should persist coverage policy: ${JSON.stringify(coverageAssistant?.record?.meta?.turnPolicy)}`);
+}
+if (coverageAssistant?.record?.meta?.contextOsScorecard?.checks?.find((item) => item.id === "coverage_has_isolation_contract")?.ok !== true) {
+  throw new Error(`coverage archive should prove subagent isolation contract: ${JSON.stringify(coverageAssistant?.record?.meta?.contextOsScorecard)}`);
+}
+if (!coverageAssistant?.record?.meta?.evidenceGraph?.nodes?.some((item) => item.type === "subagent_handoff")) {
+  throw new Error(`coverage archive should include real subagent telemetry nodes: ${JSON.stringify(coverageAssistant?.record?.meta?.evidenceGraph)}`);
+}
+if (coverageAssistant?.record?.meta?.contextOsScorecard?.checks?.find((item) => item.id === "beat_subagent_runtime_telemetry")?.ok !== true) {
+  throw new Error(`coverage scorecard should recognize real subagent runtime telemetry: ${JSON.stringify(coverageAssistant?.record?.meta?.contextOsScorecard)}`);
+}
+if (!/证据门槛/.test(coverageAssistant?.record?.assistantText || "")) {
+  throw new Error(`unsupported coverage claim should be downgraded: ${coverageAssistant?.record?.assistantText}`);
 }
 
 messages.push(
@@ -237,8 +371,118 @@ if (
 ) {
   throw new Error(`short follow-up must carry prior task context: ${JSON.stringify(followupPayload.trace)}\n${followupPayload.text}`);
 }
+if (
+  !followupPayload.text.includes("coverage_claim_without_") ||
+  !followupPayload.trace?.contextMemory?.items?.some((item) => item.kind === "evidence_gap")
+) {
+  throw new Error(`short follow-up must carry prior evidence gap memory: ${JSON.stringify(followupPayload.trace)}\n${followupPayload.text}`);
+}
+const gapTraceItem = followupPayload.trace?.contextMemory?.items?.find((item) => item.kind === "evidence_gap");
+if (gapTraceItem?.trust !== "lily_evidence_memory" || gapTraceItem?.proof !== false) {
+  throw new Error(`context memory trace should expose trust/proof metadata: ${JSON.stringify(gapTraceItem)}`);
+}
+if (!followupPayload.trace?.contextMemory?.diagnostics || typeof followupPayload.trace.contextMemory.diagnostics.selectedCount !== "number") {
+  throw new Error(`context memory trace should expose budget diagnostics: ${JSON.stringify(followupPayload.trace?.contextMemory)}`);
+}
+if (typeof followupPayload.trace?.contextMemory?.contextEpoch !== "number") {
+  throw new Error(`context memory trace should expose context epoch: ${JSON.stringify(followupPayload.trace?.contextMemory)}`);
+}
 runner.finish("继续 imsdk 分析");
 ctx.eventBus.flush();
+
+const repeatedFollowupTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "？", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!repeatedFollowupTurn.ok) {
+  throw new Error(`repeated follow-up should start: ${JSON.stringify(repeatedFollowupTurn)}`);
+}
+const repeatedFollowupPayload = runner.sentPayloads.at(-1);
+if (!repeatedFollowupPayload.trace?.contextMemory?.deduped) {
+  throw new Error(`unchanged context memory should be deduped: ${JSON.stringify(repeatedFollowupPayload.trace?.contextMemory)}`);
+}
+if (repeatedFollowupPayload.text.includes("[Lily Memory Context]")) {
+  throw new Error("deduped memory context should not be injected into engine text again");
+}
+runner.finish("继续 imsdk 分析 2");
+ctx.eventBus.flush();
+
+markSessionCompacted("s1", {
+  runtime: "opencode",
+  mode: "native",
+  reason: "test_epoch",
+  at: "2026-06-25T13:00:00.000Z",
+});
+const afterCompactionFollowup = await ctx.turnOrchestrator.sendUserMessage("s1", "？", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!afterCompactionFollowup.ok) {
+  throw new Error(`post-compaction follow-up should start: ${JSON.stringify(afterCompactionFollowup)}`);
+}
+const afterCompactionPayload = runner.sentPayloads.at(-1);
+if (afterCompactionPayload.trace?.contextMemory?.deduped) {
+  throw new Error(`compaction epoch should force memory reinjection: ${JSON.stringify(afterCompactionPayload.trace?.contextMemory)}`);
+}
+if (afterCompactionPayload.trace?.contextMemory?.contextEpoch < 1) {
+  throw new Error(`post-compaction trace should show advanced context epoch: ${JSON.stringify(afterCompactionPayload.trace?.contextMemory)}`);
+}
+if (!afterCompactionPayload.text.includes("[Lily Memory Context]")) {
+  throw new Error("post-compaction memory context should be injected again");
+}
+runner.finish("继续 imsdk 分析 3");
+ctx.eventBus.flush();
+
+await new Promise((resolve) => setTimeout(resolve, 20));
+ctx.eventBus.flush();
+if (!sent.some((entry) => entry.payload?.events?.some((event) => event.type === "context.compactionDecision" && event.payload?.reason))) {
+  throw new Error(`completed turns should publish background compaction decisions: ${JSON.stringify(sent)}`);
+}
+
+sent.length = 0;
+runner.compactions.length = 0;
+clearSessionSummary("s1");
+updateSessionSummaryFromRecord("s1", {
+  terminal: "turn.completed",
+  user: { text: "huge prompt" },
+  assistantText: "ok",
+  meta: { engine: { promptChars: 400_000, estimatedPromptTokens: 100_000 } },
+  fileChanges: [],
+});
+ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
+await new Promise((resolve) => setTimeout(resolve, 20));
+ctx.eventBus.flush();
+if (!runner.compactions.length) {
+  throw new Error("token pressure should trigger native compaction before turn-count threshold");
+}
+if (!sent.some((entry) => entry.payload?.events?.some((event) => (
+  event.type === "context.compactionDecision" &&
+  event.payload?.reason === "token_pressure" &&
+  event.payload?.estimatedPromptTokens === 100_000
+)))) {
+  throw new Error(`token-pressure compaction should publish diagnostics: ${JSON.stringify(sent)}`);
+}
+
+sent.length = 0;
+runner.compactions.length = 0;
+clearSessionSummary("s1");
+for (let i = 0; i < 30; i += 1) {
+  updateSessionSummaryFromRecord("s1", {
+    terminal: "turn.completed",
+    user: { text: `long session turn ${i}` },
+    assistantText: "ok",
+    fileChanges: [],
+  });
+}
+ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
+await new Promise((resolve) => setTimeout(resolve, 20));
+ctx.eventBus.flush();
+if (!runner.compactions.length) {
+  throw new Error("long idle sessions should invoke native compaction");
+}
+if (!sent.some((entry) => entry.payload?.events?.some((event) => event.type === "engine.notice" && event.payload?.notice?.code === "compactBoundary"))) {
+  throw new Error(`native compaction should publish a compactBoundary notice before compacting: ${JSON.stringify(sent)}`);
+}
 
 sent.length = 0;
 const interruptSource = await ctx.turnOrchestrator.sendUserMessage("s1", "long running", [], {
@@ -474,6 +718,25 @@ if (!messages.some((message) => message.role === "user" && message.content === "
 }
 if (!messages.some((message) => message.role === "assistant" && message.content === "urgent answer")) {
   throw new Error("priority replacement turn must commit its assistant response");
+}
+
+sent.length = 0;
+const memoryProposalTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "记住：以后回答运行时问题先检查 OpenCode 原生能力", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!memoryProposalTurn.ok) {
+  throw new Error(`memory proposal turn should start: ${JSON.stringify(memoryProposalTurn)}`);
+}
+runner.finish("已记下候选");
+ctx.eventBus.flush();
+const proposals = listMemoryProposals("p1");
+if (!proposals.some((item) => item.text.includes("以后回答运行时问题先检查 OpenCode 原生能力") && item.status === "proposed")) {
+  throw new Error(`turn archive should create auto memory proposal, got: ${JSON.stringify(proposals)}`);
+}
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+if (!allEvents.some((event) => event.type === "memory.proposal" && event.payload?.proposal?.status === "proposed")) {
+  throw new Error(`turn archive should publish a memory.proposal event: ${JSON.stringify(allEvents)}`);
 }
 
 sent.length = 0;

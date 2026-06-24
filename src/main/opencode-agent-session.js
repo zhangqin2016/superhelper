@@ -116,6 +116,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._progressNoticeTimer = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._idleSettleTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._idleProbeTimer = null;
     this._pendingCompletePayload = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._dispatchFailureTimer = null;
@@ -252,6 +254,7 @@ class OpencodeAgentSession extends EventEmitter {
         response: Boolean(this._responseTimer),
         progressNotice: Boolean(this._progressNoticeTimer),
         idleSettle: Boolean(this._idleSettleTimer),
+        idleProbe: Boolean(this._idleProbeTimer),
         health: Boolean(this._healthTimer),
       },
       server: this._server?.diagnostics?.() || null,
@@ -280,6 +283,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._pendingTransientFailure = null;
     this._activeTaskContract = typeof payload === "object" ? payload?.taskContract || null : null;
     this._clearTransientFailureTimer();
+    this._clearIdleProbeTimer();
     // First engine message id of this turn — the rewind anchor. Reverting to it
     // undoes the whole exchange (the engine anchors back to the preceding user msg).
     this._turnEngineMessageId = null;
@@ -353,6 +357,26 @@ class OpencodeAgentSession extends EventEmitter {
   respondHook() { return false; }
   reloadSkills() { return false; }
 
+  async compactContext(body = {}) {
+    if (this.isBusy() || !this._server?.summarize) return false;
+    try {
+      await this._server.summarize(body);
+      try {
+        require("./session-memory").markSessionCompacted(this.sessionId, {
+          runtime: "opencode",
+          mode: "native",
+          reason: body.reason || "",
+        });
+      } catch (err) {
+        log.warn("session compaction memory update failed: %s", err?.message || String(err));
+      }
+      return true;
+    } catch (err) {
+      log.warn("opencode context compaction failed: %s", err?.message || String(err));
+      return false;
+    }
+  }
+
   updateEnvironmentVariables() {
     // capability hotEnvUpdate=false: env is fixed at serve start.
     return true;
@@ -393,6 +417,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   terminate() {
     this._clearIdleSettleTimer();
+    this._clearIdleProbeTimer();
     this._pendingCompletePayload = null;
     this._clearDispatchFailureTimer();
     this._clearTransientFailureTimer();
@@ -476,6 +501,7 @@ class OpencodeAgentSession extends EventEmitter {
       this._clearTransientFailureTimer();
       this._armResponseTimer();
       this._armProgressNoticeTimer();
+      this._armIdleProbe();
     }
 
     for (const effect of reduced.effects || []) {
@@ -571,6 +597,20 @@ class OpencodeAgentSession extends EventEmitter {
         }
         break;
 
+      case "context_compacted":
+        try {
+          require("./session-memory").markSessionCompacted(this.sessionId, {
+            runtime: "opencode",
+            mode: "native",
+            reason: effect.reason || "runtime_event",
+            engineSessionId: effect.sessionID || "",
+            summaryMessageId: effect.messageID || "",
+          });
+        } catch (err) {
+          log.warn("session compaction memory update failed: %s", err?.message || String(err));
+        }
+        break;
+
       case "error":
         this._failTurn(this._sanitize(effect.message) || "Engine error");
         break;
@@ -588,6 +628,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (this._turnSettled) return;
     this._pendingCompletePayload = payload;
     this._clearIdleSettleTimer();
+    this._clearIdleProbeTimer();
     this._idleSettleTimer = setTimeout(() => {
       this._idleSettleTimer = null;
       void this._confirmIdleAndComplete();
@@ -623,6 +664,55 @@ class OpencodeAgentSession extends EventEmitter {
       clearTimeout(this._idleSettleTimer);
       this._idleSettleTimer = null;
     }
+  }
+
+  _armIdleProbe() {
+    this._clearIdleProbeTimer();
+    if (!this.busy || this._turnSettled || this._pendingCompletePayload) return;
+    if (!this._sawActivity) return;
+    this._idleProbeTimer = setTimeout(() => {
+      this._idleProbeTimer = null;
+      void this._probeOfficialIdleAndComplete();
+    }, OpencodeAgentSession.IDLE_STATUS_PROBE_MS);
+    this._idleProbeTimer.unref?.();
+  }
+
+  _clearIdleProbeTimer() {
+    if (this._idleProbeTimer) {
+      clearTimeout(this._idleProbeTimer);
+      this._idleProbeTimer = null;
+    }
+  }
+
+  async _probeOfficialIdleAndComplete() {
+    if (!this.busy || this._turnSettled || this._pendingCompletePayload) return;
+    if (this._pendingPermissions.size || this._pendingQuestions.size) {
+      this._armIdleProbe();
+      return;
+    }
+    let idle = false;
+    try {
+      idle = this._server?.isSessionIdle ? await this._server.isSessionIdle() : false;
+    } catch (err) {
+      log.warn("opencode idle probe failed: %s", err?.message || String(err));
+      this._armIdleProbe();
+      return;
+    }
+    if (!this.busy || this._turnSettled || this._pendingCompletePayload) return;
+    if (!idle) {
+      this._armIdleProbe();
+      return;
+    }
+    // The SSE stream is a live feed, but official session status/history is the
+    // source of truth. If `session.idle` was dropped during reconnect or could
+    // not be safely routed, a quiet idle status after real progress must still
+    // settle the turn instead of waiting for the long no-progress watchdog.
+    this._scheduleCompleteTurn({
+      code: 0,
+      output: this.collectedOutput.trim(),
+      interrupted: false,
+      completedByIdleProbe: true,
+    });
   }
 
   _scheduleDispatchFailure(cause) {
@@ -957,6 +1047,7 @@ class OpencodeAgentSession extends EventEmitter {
   _settleTurn(payload) {
     if (this._turnSettled) return;
     this._clearIdleSettleTimer();
+    this._clearIdleProbeTimer();
     this._pendingCompletePayload = null;
     this._clearDispatchFailureTimer();
     this._clearTransientFailureTimer();
@@ -1025,6 +1116,7 @@ class OpencodeAgentSession extends EventEmitter {
     }
     if (cause) log.warn("opencode turn failed: %s", cause?.message || String(cause));
     this._clearIdleSettleTimer();
+    this._clearIdleProbeTimer();
     this._pendingCompletePayload = null;
     this._clearDispatchFailureTimer();
     this._clearTransientFailureTimer();
@@ -1253,6 +1345,13 @@ OpencodeAgentSession.STALLED_HISTORY_SYNC_MS =
 // still be queued behind it in the shared event stream.
 OpencodeAgentSession.IDLE_SETTLE_MS =
   Number(process.env.LILY_OPENCODE_IDLE_SETTLE_MS) || 750;
+// Recovery path for a missed/unroutable session.idle event. After meaningful
+// progress, poll the authoritative OpenCode session status; if it is idle, sync
+// the final answer from official history and settle. This is deliberately
+// separate from the reducer: session.status alone remains a snapshot, but the
+// runner can use it as a source-of-truth confirmation after real turn activity.
+OpencodeAgentSession.IDLE_STATUS_PROBE_MS =
+  Number(process.env.LILY_OPENCODE_IDLE_STATUS_PROBE_MS) || 2_500;
 // promptAsync is fire-and-forget: a transport-level failure can be reported
 // after OpenCode already accepted the turn. Wait briefly for SSE activity before
 // telling the user the model connection failed.

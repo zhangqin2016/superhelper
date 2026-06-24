@@ -61,6 +61,32 @@ function uniqueAppend(list, value, limit = MAX_ITEMS) {
   return next.slice(-limit);
 }
 
+function appendEvidenceGap(list, gap, limit = 5) {
+  if (!gap?.reason) return Array.isArray(list) ? list : [];
+  const next = Array.isArray(list) ? list.filter((item) => item?.reason !== gap.reason || item?.userIntent !== gap.userIntent) : [];
+  next.push(gap);
+  return next.slice(-limit);
+}
+
+function appendTurnPointer(list, pointer, limit = 8) {
+  if (!pointer?.turnId) return Array.isArray(list) ? list : [];
+  const next = Array.isArray(list) ? list.filter((item) => item?.turnId !== pointer.turnId) : [];
+  next.push(pointer);
+  return next.slice(-limit);
+}
+
+function evidenceGapFromRecord(record) {
+  const gate = record?.meta?.evidenceGate;
+  if (!gate || gate.ok !== false || !gate.reason) return null;
+  return {
+    reason: trimText(gate.reason, 180),
+    turnId: trimText(record.turnId || "", 120),
+    userIntent: trimText(record.user?.text || "", 360),
+    assistantPreview: trimText(record.assistantText || "", 360),
+    at: new Date().toISOString(),
+  };
+}
+
 function formatSessionSummary(summary) {
   if (!summary || typeof summary !== "object") return "";
   const parts = [];
@@ -73,6 +99,12 @@ function formatSessionSummary(summary) {
   }
   if (Array.isArray(summary.recentFiles) && summary.recentFiles.length) {
     parts.push(`- Recent files: ${summary.recentFiles.slice(-8).join(", ")}`);
+  }
+  if (Array.isArray(summary.recentEvidenceGaps) && summary.recentEvidenceGaps.length) {
+    parts.push("- Recent evidence gaps:");
+    for (const gap of summary.recentEvidenceGaps.slice(-3)) {
+      parts.push(`  - ${trimText(gap.reason, 180)}${gap.userIntent ? ` for: ${trimText(gap.userIntent, 220)}` : ""}`);
+    }
   }
   return parts.join("\n");
 }
@@ -92,6 +124,26 @@ function updateSessionSummaryFromRecord(sessionId, record) {
     .map((entry) => entry.fileName || entry.filePath)
     .filter(Boolean)
     .slice(-8);
+  const evidenceGap = evidenceGapFromRecord(record);
+  const promptChars = Number(record.meta?.engine?.promptChars || 0);
+  const promptTokens = Number(record.meta?.engine?.estimatedPromptTokens || 0);
+  const usageInputTokens = Number(
+    record.usage?.input_tokens ??
+      record.usage?.inputTokens ??
+      record.usage?.prompt_tokens ??
+      0,
+  );
+  const bestPromptTokens = Number.isFinite(usageInputTokens) && usageInputTokens > 0
+    ? usageInputTokens
+    : promptTokens;
+  const turnPointer = record.turnId
+    ? {
+        turnId: trimText(record.turnId || "", 120),
+        engineMessageId: trimText(record.engineMessageId || "", 160),
+        terminal: trimText(record.terminal || "", 60),
+        at: new Date().toISOString(),
+      }
+    : null;
 
   const next = {
     ...previous,
@@ -99,10 +151,36 @@ function updateSessionSummaryFromRecord(sessionId, record) {
     sessionId,
     updatedAt: new Date().toISOString(),
     turnCount: Number(previous.turnCount || 0) + 1,
+    lastTurnId: turnPointer?.turnId || previous.lastTurnId || "",
+    lastEngineMessageId: turnPointer?.engineMessageId || previous.lastEngineMessageId || "",
+    recentTurnPointers: turnPointer
+      ? appendTurnPointer(previous.recentTurnPointers, turnPointer, 8)
+      : (previous.recentTurnPointers || []),
     lastUserIntent: userText || previous.lastUserIntent || "",
     lastAssistantResult: assistantText || previous.lastAssistantResult || "",
     recentUserIntents: uniqueAppend(previous.recentUserIntents, userText, MAX_ITEMS),
     recentFiles: [...new Set([...(previous.recentFiles || []), ...fileNames])].slice(-MAX_ITEMS),
+    recentEvidenceGaps: evidenceGap
+      ? appendEvidenceGap(previous.recentEvidenceGaps, evidenceGap, 5)
+      : (previous.recentEvidenceGaps || []),
+    lastEvidenceGap: evidenceGap || previous.lastEvidenceGap || null,
+    lastEnginePromptChars: Number.isFinite(promptChars) && promptChars > 0
+      ? promptChars
+      : Number(previous.lastEnginePromptChars || 0),
+    lastEnginePromptTokens: Number.isFinite(bestPromptTokens) && bestPromptTokens > 0
+      ? bestPromptTokens
+      : Number(previous.lastEnginePromptTokens || 0),
+    lastEnginePromptTokenSource: Number.isFinite(usageInputTokens) && usageInputTokens > 0
+      ? "runtime_usage"
+      : (
+          Number.isFinite(promptTokens) && promptTokens > 0
+            ? (record.meta?.engine?.estimatedPromptTokenSource || "estimated_provider_fallback")
+            : previous.lastEnginePromptTokenSource || ""
+        ),
+    maxEnginePromptTokens: Math.max(
+      Number(previous.maxEnginePromptTokens || 0),
+      Number.isFinite(bestPromptTokens) ? bestPromptTokens : 0,
+    ),
     pendingTask: ["turn.failed", "turn.stalled", "turn.interrupted"].includes(record.terminal)
       ? userText || previous.pendingTask || ""
       : "",
@@ -111,9 +189,74 @@ function updateSessionSummaryFromRecord(sessionId, record) {
   return next;
 }
 
+function markSessionCompacted(sessionId, details = {}) {
+  if (!sessionId) return null;
+  const previous = readSessionSummary(sessionId) || {
+    schemaVersion: 1,
+    sessionId,
+    turnCount: 0,
+    recentUserIntents: [],
+    recentFiles: [],
+  };
+  const at = details.at || new Date().toISOString();
+  const next = {
+    ...previous,
+    schemaVersion: 1,
+    sessionId,
+    updatedAt: at,
+    lastCompactedAt: at,
+    compactionCount: Number(previous.compactionCount || 0) + 1,
+    contextEpoch: Number(previous.contextEpoch || 0) + 1,
+    lastContextMemoryFingerprint: "",
+    lastContextMemoryInjection: null,
+    lastCompaction: {
+      runtime: details.runtime || "unknown",
+      mode: details.mode || "native",
+      reason: details.reason || "",
+      engineSessionId: trimText(details.engineSessionId || "", 160),
+      summaryMessageId: trimText(details.summaryMessageId || "", 160),
+      at,
+    },
+  };
+  writeSessionSummary(sessionId, next);
+  return next;
+}
+
+function markContextMemoryInjected(sessionId, details = {}) {
+  if (!sessionId || !details.fingerprint) return readSessionSummary(sessionId);
+  const previous = readSessionSummary(sessionId) || {
+    schemaVersion: 1,
+    sessionId,
+    turnCount: 0,
+    recentUserIntents: [],
+    recentFiles: [],
+  };
+  const at = details.at || new Date().toISOString();
+  const next = {
+    ...previous,
+    schemaVersion: 1,
+    sessionId,
+    updatedAt: at,
+    lastContextMemoryFingerprint: trimText(details.fingerprint, 128),
+    lastContextMemoryInjection: {
+      fingerprint: trimText(details.fingerprint, 128),
+      itemCount: Number(details.itemCount || 0),
+      totalChars: Number(details.totalChars || 0),
+      contextEpoch: Number(previous.contextEpoch || 0),
+      explanation: details.explanation || null,
+      at,
+    },
+  };
+  writeSessionSummary(sessionId, next);
+  return next;
+}
+
 module.exports = {
   clearSessionSummary,
+  evidenceGapFromRecord,
   formatSessionSummary,
+  markContextMemoryInjected,
+  markSessionCompacted,
   readSessionSummary,
   updateSessionSummaryFromRecord,
 };

@@ -29,7 +29,7 @@ function registerAll(ctx) {
     persistEvents: (sessionId, events) => sessionManager.appendRuntimeEvents?.(sessionId, events),
   });
   ctx.transcriptStore = new TranscriptStore(sessionManager);
-  ctx.turnArchive = new TurnArchive(sessionManager);
+  ctx.turnArchive = new TurnArchive(sessionManager, { eventBus: ctx.eventBus });
   ctx.turnOrchestrator = new TurnOrchestrator(ctx);
 
   // --- App ---------------------------------------------------------------

@@ -49,6 +49,61 @@ function readLearnedConventions(projectId) {
   }
 }
 
+function normalizeConventionText(value) {
+  return String(value || "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/^[-*\s]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function conventionKey(value) {
+  return normalizeConventionText(value)
+    .toLowerCase()
+    .replace(/[。.!！?？,，;；:：\s]+/g, "");
+}
+
+function listLearnedConventions(projectId) {
+  const text = readLearnedConventions(projectId);
+  return text
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const value = normalizeConventionText(line);
+      if (!value) return null;
+      const dateMatch = String(line || "").match(/<!--\s*([^>]+?)\s*-->/);
+      return {
+        key: conventionKey(value),
+        text: value,
+        createdAt: dateMatch?.[1] || "",
+        line: index + 1,
+      };
+    })
+    .filter(Boolean);
+}
+
+function writeConventionEntries(projectId, entries) {
+  const filePath = learnedConventionsPath(projectId);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const lines = (Array.isArray(entries) ? entries : [])
+    .map((entry) => {
+      const text = normalizeConventionText(entry?.text || entry);
+      if (!text) return "";
+      const date = entry?.createdAt ? String(entry.createdAt).slice(0, 10) : new Date().toISOString().slice(0, 10);
+      return `- ${text}  <!-- ${date} -->`;
+    })
+    .filter(Boolean);
+  if (!lines.length) {
+    try {
+      fs.rmSync(filePath, { force: true });
+    } catch {
+      // ignore
+    }
+    return true;
+  }
+  fs.writeFileSync(filePath, `${lines.join("\n")}\n`, "utf8");
+  return true;
+}
+
 /** Appends one remembered convention with provenance; returns the entry. */
 function appendLearnedConvention(projectId, text) {
   const value = String(text || "").replace(/\s+/g, " ").trim();
@@ -58,6 +113,20 @@ function appendLearnedConvention(projectId, text) {
   const entry = `- ${value}  <!-- ${new Date().toISOString().slice(0, 10)} -->\n`;
   fs.appendFileSync(filePath, entry, "utf8");
   return entry;
+}
+
+function removeLearnedConvention(projectId, key) {
+  const target = String(key || "");
+  if (!target) return null;
+  const entries = listLearnedConventions(projectId);
+  const next = entries.filter((entry) => entry.key !== target);
+  if (next.length === entries.length) return null;
+  writeConventionEntries(projectId, next);
+  return { removed: entries.length - next.length, key: target };
+}
+
+function clearLearnedConventions(projectId) {
+  return writeConventionEntries(projectId, []);
 }
 
 /** Replace a project's learned conventions wholesale (used by pack import). */
@@ -216,10 +285,15 @@ function contextSignature(projectId, workspacePath) {
 module.exports = {
   appendLearnedConvention,
   buildLearnedSection,
+  buildWorkspaceDigest,
   buildWorkspaceDigestSection,
   buildWorkspaceRulesSection,
+  clearLearnedConventions,
+  conventionKey,
   contextSignature,
   learnedConventionsPath,
+  listLearnedConventions,
   readLearnedConventions,
+  removeLearnedConvention,
   writeLearnedConventions,
 };

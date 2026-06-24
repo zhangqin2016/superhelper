@@ -9,6 +9,8 @@ const POST_TERMINAL_ALLOWED = new Set([
   "engine.notice",
   "engine.warning",
   "engine.stderr",
+  "context.compactionDecision",
+  "memory.proposal",
   "resume.updated",
   "resume.invalid",
   "prompt_suggestions.updated",

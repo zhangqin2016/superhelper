@@ -6,3 +6,5 @@
 - [Vision Pipeline](vision-pipeline.md) — main LLM is text-only; Qwen vision-to-text bridges images; the timeout/silent-drop bug + fix
 - [Config Delivery Scopes](config-delivery-scopes.md) — per-target model/config delivery: scopes global/group/license/device, priority merge, tier groups
 - [OpenCode Session Demux Idle Boundary](2026-06-24-opencode-session-demux-idle.md) — unowned shared-serve `session.idle` events must not broadcast across same-directory sessions
+- [Context OS And Memory Compaction](context-os-memory-compaction.md) — do not duplicate runtime raw history; build Lily's cross-runtime memory, compaction, budget, and evidence layer above OpenCode
+- [Context OS Gap Audit](context-os-gap-audit.md) — remaining work to reach/beat Claude Code-style context and memory management

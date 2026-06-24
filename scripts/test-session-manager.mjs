@@ -101,6 +101,13 @@ try {
   const list = manager.listForProject("p1");
   assert(list.length >= 2, `should list 2+ sessions, got ${list.length}`);
 
+  // Test 10b: engine resume ids are exclusive to one Lily session.
+  manager.setAgentResumeId(session.id, "ses_shared");
+  manager.setAgentResumeId(session2.id, "ses_shared");
+  assert(manager.findById(session2.id).agentResumeId === "ses_shared", "new owner should keep resume id");
+  assert(!manager.findById(session.id).agentResumeId, "previous owner must be detached from shared resume id");
+  assert(manager.findAgentResumeOwner("ses_shared")?.id === session2.id, "resume owner lookup should find the unique owner");
+
   // Test 11: switchTo
   manager.switchTo(session2.id);
   assert(manager.getActive().id === session2.id, "should switch active session");
@@ -138,6 +145,19 @@ try {
   const reloaded = manager2.findById(session.id);
   assert(reloaded, "session should survive save/reload");
   assert(reloaded.title === "Renamed Session", "title should persist after reload");
+
+  const duplicateA = manager2.create("p1", "Duplicate A");
+  const duplicateB = manager2.create("p1", "Duplicate B");
+  duplicateA.agentResumeId = "ses_duplicate";
+  duplicateA.updatedAt = "2026-01-01T00:00:00.000Z";
+  duplicateB.agentResumeId = "ses_duplicate";
+  duplicateB.updatedAt = "2026-01-02T00:00:00.000Z";
+  manager2.saveImmediate();
+
+  const manager3 = new SessionManager(projectManager);
+  manager3.load();
+  assert(!manager3.findById(duplicateA.id).agentResumeId, "startup repair should clear older duplicate resume owner");
+  assert(manager3.findById(duplicateB.id).agentResumeId === "ses_duplicate", "startup repair should keep newest duplicate resume owner");
 
   console.log("PASS: test-session-manager");
 } catch (err) {

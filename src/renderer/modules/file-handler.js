@@ -6,8 +6,11 @@ import store from "./state.js";
 import { $, el, formatFileSize } from "./dom.js";
 import { showToast, fileErrorMessage } from "./toast.js";
 import { openImageViewer } from "./image-viewer.js";
+import { t } from "../i18n/index.js";
 
 const filePreviewArea = () => $("filePreviewArea");
+const LARGE_PASTE_MIN_CHARS = 6000;
+const LARGE_PASTE_MIN_BYTES = 12 * 1024;
 
 // ---------------------------------------------------------------------------
 // File staging helpers
@@ -35,12 +38,46 @@ async function addFileFromBuffer(buffer, fileName) {
       if (file.isImage) await loadImageExtras(file);
       store.set("pendingFiles", [...(store.get("pendingFiles") || []), file]);
       renderFilePreview();
+      return true;
     } else {
       showToast(fileErrorMessage(result.error, fileName), "warning");
     }
   } catch (err) {
     showToast(fileErrorMessage(err.message, fileName), "warning");
   }
+  return false;
+}
+
+export function pastedTextByteLength(text) {
+  return new TextEncoder().encode(String(text || "")).length;
+}
+
+export function shouldStagePastedText(text) {
+  const value = String(text || "");
+  if (!value.trim()) return false;
+  return value.length >= LARGE_PASTE_MIN_CHARS || pastedTextByteLength(value) >= LARGE_PASTE_MIN_BYTES;
+}
+
+export function buildPastedTextFileName(now = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const year = now.getFullYear();
+  const month = pad(now.getMonth() + 1);
+  const day = pad(now.getDate());
+  const hour = pad(now.getHours());
+  const minute = pad(now.getMinutes());
+  const second = pad(now.getSeconds());
+  return `pasted-text-${year}${month}${day}-${hour}${minute}${second}.md`;
+}
+
+export function pastedTextToBuffer(text) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n");
+  const content = normalized.endsWith("\n") ? normalized : `${normalized}\n`;
+  return new TextEncoder().encode(content);
+}
+
+function isComposerTextPaste(event) {
+  const target = event?.target;
+  return target && target.id === "promptInput";
 }
 
 async function addBrowserFiles(files) {
@@ -192,5 +229,11 @@ export function initFileHandler() {
         if (blob) await addFileFromBuffer(new Uint8Array(await blob.arrayBuffer()), `pasted-${Date.now()}.png`);
       }
     }
+    if (!isComposerTextPaste(e)) return;
+    const text = e.clipboardData?.getData("text/plain") || "";
+    if (!shouldStagePastedText(text)) return;
+    e.preventDefault();
+    const ok = await addFileFromBuffer(pastedTextToBuffer(text), buildPastedTextFileName());
+    if (ok) showToast(t("toast.largePasteAttached"), "info");
   });
 }

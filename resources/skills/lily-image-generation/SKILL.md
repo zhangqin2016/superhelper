@@ -61,4 +61,4 @@ not expose the temporary URL. Use this shape:
 Saved to: /absolute/path/generated-image.png
 ```
 
-Use the user's current language or app language for the surrounding explanation.
+Use the primary language of the user's latest message for the surrounding explanation.

@@ -6,14 +6,78 @@ const STRONG_CLAIM_RE =
 const EVIDENCE_MARKER_RE =
   /(证据|依据|来源|已验证|验证结果|测试通过|命令输出|日志|文件|行号|screenshot|source|evidence|verified|test output|command output|log|fixture|\/[\w.-]+\/|\b[\w.-]+\.(?:js|mjs|cjs|ts|tsx|json|md|py|java|css|html):\d+\b)/i;
 
-function assessFinalAnswerEvidence({ assistant = "", evidencePolicy = null, toolCount = 0, fileChangeCount = 0 } = {}) {
+const ROOT_CAUSE_RE = /(原因是|根因是|问题在于|root cause|the cause is)/i;
+const FIXED_RE = /(已(?:修复|解决)|修好了|fixed|resolved)/i;
+const VERIFIED_RE = /(已(?:验证|确认)|验证通过|测试通过|verified|confirmed)/i;
+const COVERAGE_RE = /(全部|全量|所有(?:问题|相关|文件|位置|地方|出现|引用|调用)|彻底(?:找出|检查|排查)|不要漏|all occurrences|all related|every occurrence)/i;
+const FRESH_RE = /(最新|当前|现在|实时|today|latest|current|now)/i;
+
+function hasCount(summary, key) {
+  const value = summary?.counts?.[key];
+  return Number.isFinite(value) && value > 0;
+}
+
+function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = null, fileChangeCount = 0 } = {}) {
+  if (!turnPolicy && !evidenceSummary) return null;
+  const summary = evidenceSummary || {};
+  if (ROOT_CAUSE_RE.test(text) && !summary.hasFileReadEvidence && !hasCount(summary, "events")) {
+    return { ok: false, reason: "root_cause_without_source_evidence" };
+  }
+  if (FIXED_RE.test(text) && fileChangeCount <= 0 && !summary.hasFileChangeEvidence && !hasCount(summary, "fileWrites")) {
+    return { ok: false, reason: "fixed_claim_without_change_evidence" };
+  }
+  if (VERIFIED_RE.test(text) && !summary.hasVerificationEvidence && !hasCount(summary, "verifications")) {
+    return { ok: false, reason: "verified_claim_without_verification" };
+  }
+  if ((turnPolicy?.rigor === "coverage" || COVERAGE_RE.test(text)) && COVERAGE_RE.test(text)) {
+    const candidateCount = summary?.coverage?.candidateCount || 0;
+    const inspectedCount = summary?.coverage?.inspectedCount || 0;
+    if (!summary.hasSearchEvidence && candidateCount <= 0) {
+      return { ok: false, reason: "coverage_claim_without_candidate_set" };
+    }
+    if (candidateCount > 0 && inspectedCount < candidateCount) {
+      return { ok: false, reason: "coverage_claim_without_full_inspection" };
+    }
+  }
+  if (turnPolicy?.requiresFreshness && FRESH_RE.test(text) && !summary.hasFreshEvidence) {
+    return { ok: false, reason: "fresh_claim_without_fresh_evidence" };
+  }
+  return null;
+}
+
+function assessFinalAnswerEvidence({
+  assistant = "",
+  evidencePolicy = null,
+  toolCount = 0,
+  fileChangeCount = 0,
+  turnPolicy = null,
+  evidenceSummary = null,
+} = {}) {
   const text = String(assistant || "").trim();
   const required = Boolean(evidencePolicy?.required);
   if (!required || !text) {
     return { ok: true, required, strongClaim: false, hasEvidence: false, reason: "" };
   }
+  const policyBacked = assessPolicyBackedClaims(text, { turnPolicy, evidenceSummary, fileChangeCount });
+  if (policyBacked?.ok === false) {
+    return {
+      ok: false,
+      required,
+      strongClaim: true,
+      hasEvidence: false,
+      reason: policyBacked.reason,
+    };
+  }
   const strongClaim = STRONG_CLAIM_RE.test(text);
-  const hasEvidence = toolCount > 0 || fileChangeCount > 0 || EVIDENCE_MARKER_RE.test(text);
+  const hasLedgerEvidence = Boolean(
+    evidenceSummary?.hasFileReadEvidence ||
+      evidenceSummary?.hasSearchEvidence ||
+      evidenceSummary?.hasVerificationEvidence ||
+      evidenceSummary?.hasFileChangeEvidence ||
+      evidenceSummary?.hasFreshEvidence ||
+      hasCount(evidenceSummary, "events"),
+  );
+  const hasEvidence = toolCount > 0 || fileChangeCount > 0 || hasLedgerEvidence || EVIDENCE_MARKER_RE.test(text);
   if (!strongClaim || hasEvidence) {
     return { ok: true, required, strongClaim, hasEvidence, reason: "" };
   }

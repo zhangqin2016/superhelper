@@ -17,6 +17,12 @@ const { resolveOpencodeModelConfig } = require("./opencode-model-config");
 
 /** Subagent agent names whose model maps to Lily's LILY_SUBAGENT_MODEL tier. */
 const SUBAGENT_AGENTS = ["general", "explore"];
+const DEFAULT_COMPACTION = Object.freeze({
+  auto: true,
+  prune: true,
+  reserved: 10_000,
+  tail_turns: 2,
+});
 
 /**
  * Lily MCP shape ({name:{command, args, env}}, all stdio) -> OpenCode mcp
@@ -149,6 +155,8 @@ function buildOpencodeConfig(opts = {}) {
   const mcp = translateMcpServers(opts.mcpServers);
   if (Object.keys(mcp).length) config.mcp = mcp;
 
+  config.compaction = { ...DEFAULT_COMPACTION, ...(config.compaction || {}) };
+
   const permission = translatePermission(opts.permissionMode, opts.disallowedTools);
   if (Object.keys(permission).length) config.permission = permission;
 
@@ -220,6 +228,8 @@ function buildSharedBaseConfig(opts = {}) {
   const mcp = translateMcpServers(opts.mcpServers);
   if (Object.keys(mcp).length) config.mcp = mcp;
 
+  config.compaction = { ...DEFAULT_COMPACTION, ...(config.compaction || {}) };
+
   config.permission = baseSharedPermission();
   // App-wide disabled tools (e.g. WebSearch/WebFetch) — a constant policy, so it
   // belongs in the shared base. Denied outright (no host-side gate needed).
@@ -239,6 +249,7 @@ module.exports = {
   baseSharedPermission,
   translateMcpServers,
   translatePermission,
+  DEFAULT_COMPACTION,
   DESTRUCTIVE_BASH,
   CATASTROPHIC_BASH,
 };

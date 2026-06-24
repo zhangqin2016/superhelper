@@ -45,6 +45,8 @@ const RUNTIME_EVENT_TYPES = new Set([
   "engine.notice",
   "engine.warning",
   "engine.stderr",
+  "context.compactionDecision",
+  "memory.proposal",
   "usage.updated",
   "resume.updated",
   "resume.invalid",
@@ -65,6 +67,7 @@ const TURN_OPTIONAL_TYPES = new Set([
   "engine.notice",
   "engine.warning",
   "engine.stderr",
+  "context.compactionDecision",
   "prompt_suggestions.updated",
 ]);
 

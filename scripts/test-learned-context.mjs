@@ -30,7 +30,10 @@ const {
   buildLearnedSection,
   buildWorkspaceDigestSection,
   buildWorkspaceRulesSection,
+  clearLearnedConventions,
   contextSignature,
+  listLearnedConventions,
+  removeLearnedConvention,
 } = require("../src/main/learned-context.js");
 const {
   readDraftManifest,
@@ -87,6 +90,24 @@ try {
   if (!learned.includes("报告统一用宋体 输出 docx")) {
     throw new Error(`convention must persist (whitespace collapsed): ${learned}`);
   }
+  appendLearnedConvention("proj_1", "运行时问题先查 OpenCode 原生能力");
+  const conventions = listLearnedConventions("proj_1");
+  if (
+    conventions.length !== 2 ||
+    !conventions[0].key ||
+    conventions[0].text !== "报告统一用宋体 输出 docx"
+  ) {
+    throw new Error(`conventions should be listable: ${JSON.stringify(conventions)}`);
+  }
+  const removed = removeLearnedConvention("proj_1", conventions[0].key);
+  if (removed?.removed !== 1 || listLearnedConventions("proj_1").some((item) => item.key === conventions[0].key)) {
+    throw new Error(`convention remove should rewrite the learned file: ${JSON.stringify(removed)}`);
+  }
+  clearLearnedConventions("proj_1");
+  if (listLearnedConventions("proj_1").length !== 0 || buildLearnedSection("proj_1") !== "") {
+    throw new Error("clearLearnedConventions should remove all learned rules");
+  }
+  appendLearnedConvention("proj_1", "报告统一用宋体  \n 输出 docx");
   if (contextSignature("proj_1", workspace) === sigBefore) {
     throw new Error("remembering a convention must change the guide signature");
   }

@@ -9,14 +9,7 @@
  * this path.
  */
 
-const OPENCODE_RUNTIME_CAPABILITIES = Object.freeze({
-  streamInput: false,
-  emitsThinking: true,
-  hotEnvUpdate: false,
-  permissionControl: true,
-  permissionAlwaysAsk: true,
-  resume: true,
-});
+const { OPENCODE_RUNTIME_CAPABILITIES } = require("./runtime-capabilities");
 
 const SILENT_EVENTS = new Set([
   "server.connected",
@@ -45,6 +38,7 @@ function createOpencodeRuntimeState() {
     roles: new Map(),
     textParts: new Map(),
     pendingDeltas: new Map(),
+    pendingTextSnapshots: new Map(),
   };
 }
 
@@ -63,6 +57,7 @@ function resetOpencodeRuntimeState(state) {
   state?.roles?.clear?.();
   state?.textParts?.clear?.();
   state?.pendingDeltas?.clear?.();
+  state?.pendingTextSnapshots?.clear?.();
 }
 
 function runtimeDraft(type, payload = {}) {
@@ -230,6 +225,36 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
     case "message.updated": {
       const info = p.info || {};
       if (info.id && info.role && state.roles) state.roles.set(info.id, info.role);
+      if (info.id && info.role && state.pendingTextSnapshots?.size) {
+        const drafts = [];
+        const effects = [];
+        for (const [partID, snapshot] of state.pendingTextSnapshots.entries()) {
+          if (snapshot.messageID !== info.id) continue;
+          state.pendingTextSnapshots.delete(partID);
+          if (info.role === "user") {
+            state.textParts?.set(partID, snapshot.text || "");
+            continue;
+          }
+          if (info.role !== "assistant") continue;
+          const text = snapshot.text || "";
+          const previous = state.textParts?.get(partID) || "";
+          let missing = "";
+          if (text && text.startsWith(previous)) missing = text.slice(previous.length);
+          else if (text && !previous) missing = text;
+          if (!missing) continue;
+          state.textParts?.set(partID, text);
+          drafts.push(runtimeDraft("assistant.delta", { text: missing }));
+          effects.push({ kind: "assistant_text", text: missing });
+        }
+        if (drafts.length) {
+          return withProcessEvent(ev, {
+            drafts,
+            effects,
+            progress: true,
+            terminal: false,
+          });
+        }
+      }
       return emptyResult(ev);
     }
 
@@ -245,6 +270,7 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
           state.partMessages?.delete(partID);
           state.textParts?.delete(partID);
           state.pendingDeltas?.delete(partID);
+          state.pendingTextSnapshots?.delete(partID);
         }
       }
       return emptyResult(ev);
@@ -310,6 +336,11 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
         if (part.type === "text" && role === "user") {
           state.textParts?.set(part.id, text);
           state.pendingDeltas?.delete(part.id);
+          state.pendingTextSnapshots?.delete(part.id);
+          return emptyResult(ev);
+        }
+        if (part.type === "text" && !role && text) {
+          state.pendingTextSnapshots?.set(part.id, { messageID, text });
           return emptyResult(ev);
         }
         const previous = state.textParts?.get(part.id) || "";
@@ -323,6 +354,7 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
           missing = pending;
         }
         state.pendingDeltas?.delete(part.id);
+        state.pendingTextSnapshots?.delete(part.id);
         state.textParts?.set(part.id, text || `${previous}${missing}`);
         if (!missing) return emptyResult(ev);
         const isReasoning = part.type === "reasoning";
@@ -342,6 +374,7 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
         state.partMessages?.delete(p.partID);
         state.textParts?.delete(p.partID);
         state.pendingDeltas?.delete(p.partID);
+        state.pendingTextSnapshots?.delete(p.partID);
       }
       return emptyResult(ev);
 
@@ -375,6 +408,27 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
         drafts: [],
         effects: [],
         progress: false,
+        terminal: false,
+      });
+
+    case "session.compacted":
+      return withProcessEvent(ev, {
+        drafts: [runtimeDraft("engine.notice", {
+          notice: {
+            code: "compactComplete",
+            level: "info",
+            panel: true,
+            done: true,
+            detail: "Conversation context was compacted.",
+          },
+        })],
+        effects: [{
+          kind: "context_compacted",
+          reason: p.reason || "",
+          sessionID: p.sessionID || p.sessionId || "",
+          messageID: p.messageID || p.messageId || "",
+        }],
+        progress: true,
         terminal: false,
       });
 

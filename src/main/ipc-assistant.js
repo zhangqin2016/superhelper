@@ -26,6 +26,12 @@ function attachRouting(result, session) {
   };
 }
 
+function refreshSessionGuide(projectManager, session) {
+  const skillManager = require("./skill-manager");
+  const project = projectManager?.find?.(session.projectId);
+  skillManager.writeSessionAgentGuide(session.id, session, project?.path || "");
+}
+
 function registerAssistantHandlers(ctx) {
   const { sessionManager, projectManager, turnOrchestrator, runnerPool } = ctx;
 
@@ -201,10 +207,140 @@ function registerAssistantHandlers(ctx) {
     if (!session) return { ok: false, error: "NOT_FOUND" };
     const { appendLearnedConvention } = require("./learned-context");
     appendLearnedConvention(session.projectId, text);
-    const skillManager = require("./skill-manager");
-    const project = projectManager.find(session.projectId);
-    skillManager.writeSessionAgentGuide(sessionId, session, project?.path || "");
+    refreshSessionGuide(projectManager, session);
     return { ok: true };
+  });
+
+  ipcMain.handle("assistant:memory:list", (_event, payload) => {
+    const session = resolveTargetSession(sessionManager, payload?.sessionId || null);
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    const { listLearnedConventions } = require("./learned-context");
+    const { listMemoryProposals } = require("./auto-memory-proposals");
+    const { MEMORY_CATEGORIES, readMemoryPreferences } = require("./memory-preferences");
+    return {
+      ok: true,
+      sessionId: session.id,
+      projectId: session.projectId || null,
+      learned: listLearnedConventions(session.projectId),
+      proposals: listMemoryProposals(session.projectId, {
+        includeDismissed: Boolean(payload?.includeDismissed),
+      }),
+      preferences: readMemoryPreferences(session.projectId),
+      categories: MEMORY_CATEGORIES,
+    };
+  });
+
+  ipcMain.handle("assistant:memory:set-category-enabled", (_event, payload) => {
+    const session = resolveTargetSession(sessionManager, payload?.sessionId || null);
+    const kind = String(payload?.kind || "");
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    if (!kind) return { ok: false, error: "INVALID_PAYLOAD" };
+    const { setMemoryCategoryEnabled } = require("./memory-preferences");
+    const preferences = setMemoryCategoryEnabled(session.projectId, kind, Boolean(payload?.enabled));
+    if (!preferences) return { ok: false, error: "INVALID_KIND" };
+    refreshSessionGuide(projectManager, session);
+    return {
+      ok: true,
+      sessionId: session.id,
+      projectId: session.projectId || null,
+      preferences,
+    };
+  });
+
+  ipcMain.handle("assistant:memory:export", (_event, payload) => {
+    const session = resolveTargetSession(sessionManager, payload?.sessionId || null);
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    const { listLearnedConventions } = require("./learned-context");
+    const { listMemoryProposals } = require("./auto-memory-proposals");
+    const { readSessionSummary } = require("./session-memory");
+    return {
+      ok: true,
+      exportedAt: new Date().toISOString(),
+      sessionId: session.id,
+      projectId: session.projectId || null,
+      memory: {
+        learned: listLearnedConventions(session.projectId),
+        proposals: listMemoryProposals(session.projectId, { includeDismissed: true }),
+        sessionSummary: readSessionSummary(session.id) || null,
+      },
+    };
+  });
+
+  ipcMain.handle("assistant:memory:remove-learned", (_event, payload) => {
+    const session = resolveTargetSession(sessionManager, payload?.sessionId || null);
+    const key = String(payload?.key || "");
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    if (!key) return { ok: false, error: "INVALID_PAYLOAD" };
+    const { removeLearnedConvention } = require("./learned-context");
+    const removed = removeLearnedConvention(session.projectId, key);
+    if (!removed) return { ok: false, error: "NOT_FOUND" };
+    refreshSessionGuide(projectManager, session);
+    return {
+      ok: true,
+      sessionId: session.id,
+      projectId: session.projectId || null,
+      removed,
+    };
+  });
+
+  ipcMain.handle("assistant:memory:clear-learned", (_event, payload) => {
+    const session = resolveTargetSession(sessionManager, payload?.sessionId || null);
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    const { clearLearnedConventions } = require("./learned-context");
+    clearLearnedConventions(session.projectId);
+    refreshSessionGuide(projectManager, session);
+    return {
+      ok: true,
+      sessionId: session.id,
+      projectId: session.projectId || null,
+    };
+  });
+
+  ipcMain.handle("assistant:memory-proposals:list", (_event, payload) => {
+    const session = resolveTargetSession(sessionManager, payload?.sessionId || null);
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    const { listMemoryProposals } = require("./auto-memory-proposals");
+    return {
+      ok: true,
+      sessionId: session.id,
+      projectId: session.projectId || null,
+      proposals: listMemoryProposals(session.projectId, {
+        includeDismissed: Boolean(payload?.includeDismissed),
+      }),
+    };
+  });
+
+  ipcMain.handle("assistant:memory-proposals:approve", (_event, payload) => {
+    const session = resolveTargetSession(sessionManager, payload?.sessionId || null);
+    const key = String(payload?.key || "");
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    if (!key) return { ok: false, error: "INVALID_PAYLOAD" };
+    const { approveMemoryProposal } = require("./auto-memory-proposals");
+    const proposal = approveMemoryProposal(session.projectId, key, { approvedBy: "user" });
+    if (!proposal) return { ok: false, error: "NOT_FOUND" };
+    refreshSessionGuide(projectManager, session);
+    return {
+      ok: true,
+      sessionId: session.id,
+      projectId: session.projectId || null,
+      proposal,
+    };
+  });
+
+  ipcMain.handle("assistant:memory-proposals:dismiss", (_event, payload) => {
+    const session = resolveTargetSession(sessionManager, payload?.sessionId || null);
+    const key = String(payload?.key || "");
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    if (!key) return { ok: false, error: "INVALID_PAYLOAD" };
+    const { dismissMemoryProposal } = require("./auto-memory-proposals");
+    const proposal = dismissMemoryProposal(session.projectId, key, { dismissedBy: "user" });
+    if (!proposal) return { ok: false, error: "NOT_FOUND" };
+    return {
+      ok: true,
+      sessionId: session.id,
+      projectId: session.projectId || null,
+      proposal,
+    };
   });
 
   ipcMain.handle("assistant:permission-response", (_event, payload) => {

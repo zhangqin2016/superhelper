@@ -28,6 +28,8 @@ const {
 } = require("./turn-error-classify");
 const { runVisionPreflight, runDocumentPreflight } = require("./send-preflight");
 const { buildTaskContract, withTaskContractPrefix } = require("./task-contract");
+const { EvidenceLedger } = require("./evidence-ledger");
+const { buildTurnPolicy } = require("./turn-policy");
 const { TurnRunCoordinator } = require("./turn-run-coordinator");
 
 const log = getLogger("turn-orchestrator");
@@ -48,6 +50,7 @@ const TURN_OPTIONAL_TYPES = new Set([
   "engine.notice",
   "engine.warning",
   "engine.stderr",
+  "context.compactionDecision",
   "prompt_suggestions.updated",
 ]);
 
@@ -130,7 +133,8 @@ class TurnOrchestrator {
     });
 
     runner.on("agent-resume-id", (agentResumeId) => {
-      this.ctx.sessionManager.setAgentResumeId(sessionId, agentResumeId);
+      const claim = this._claimAgentResumeId(sessionId, agentResumeId);
+      if (!claim?.ok) return;
       this._emit(sessionId, "session.hydrated", { agentResumeId });
       this._emit(sessionId, "resume.updated", { agentResumeId });
     });
@@ -159,6 +163,28 @@ class TurnOrchestrator {
     runner.on("error", (message) => {
       void this._handleError(sessionId, message);
     });
+  }
+
+  _claimAgentResumeId(sessionId, agentResumeId) {
+    const existingOwner = typeof this.ctx.sessionManager.findAgentResumeOwner === "function"
+      ? this.ctx.sessionManager.findAgentResumeOwner(agentResumeId, sessionId)
+      : null;
+    const ownerRunner = existingOwner ? this.ctx.runnerPool?.get?.(existingOwner.id) : null;
+    if (existingOwner && ownerRunner?.isAlive?.()) {
+      this.ctx.sessionManager.clearAgentResumeId?.(sessionId);
+      this.ctx.runnerPool?.terminateSession?.(sessionId);
+      return { ok: false, conflictOwnerId: existingOwner.id, evictedSessionIds: [sessionId] };
+    }
+
+    const claim = typeof this.ctx.sessionManager.claimAgentResumeId === "function"
+      ? this.ctx.sessionManager.claimAgentResumeId(sessionId, agentResumeId)
+      : { ok: this.ctx.sessionManager.setAgentResumeId(sessionId, agentResumeId), evictedSessionIds: [] };
+    if (!claim?.ok) return claim;
+    for (const evictedSessionId of claim.evictedSessionIds || []) {
+      if (evictedSessionId === sessionId) continue;
+      this.ctx.runnerPool?.terminateSession?.(evictedSessionId);
+    }
+    return claim;
   }
 
   ingest(sessionId, drafts) {
@@ -321,6 +347,7 @@ class TurnOrchestrator {
         const tool = this._trackTool(sessionId, toolId, {});
         tool.status = payload.status || (payload.isError ? "failed" : "done");
         tool.result = payload.result ?? payload.content ?? null;
+        state.evidenceLedger?.recordTool?.(tool);
         upsertTimelineTool(state, tool, Date.now());
         this._emit(sessionId, "tool.done", {
           id: toolId,
@@ -440,7 +467,8 @@ class TurnOrchestrator {
       }
       case "session.hydrated":
         if (payload.agentResumeId) {
-          this.ctx.sessionManager.setAgentResumeId(sessionId, payload.agentResumeId);
+          const claim = this._claimAgentResumeId(sessionId, payload.agentResumeId);
+          if (!claim?.ok) break;
         }
         this._emit(sessionId, "session.hydrated", payload, { turnId: null });
         break;
@@ -641,6 +669,8 @@ class TurnOrchestrator {
     state.notices = [];
     state.usage = null;
     state.taskContract = null;
+    state.turnPolicy = null;
+    state.evidenceLedger = new EvidenceLedger();
     state.enginePayload = null;
     state.legacyContextHydrated = false;
     resetTimelineState(state);
@@ -748,6 +778,24 @@ class TurnOrchestrator {
         : null);
     const taskContract = buildTaskContract({ text, files, session, project });
     state.taskContract = taskContract.active ? taskContract : null;
+    const turnPolicy = buildTurnPolicy({ text, taskContract });
+    state.turnPolicy = turnPolicy;
+    if (
+      project?.path &&
+      (turnPolicy.rigor === "coverage" || turnPolicy.requiresSourceCoverage) &&
+      Array.isArray(turnPolicy.sourceCoverage?.explicitTerms) &&
+      turnPolicy.sourceCoverage.explicitTerms.length
+    ) {
+      try {
+        const { searchWorkspaceIndex } = require("./workspace-index");
+        const candidates = searchWorkspaceIndex(project.path, turnPolicy.sourceCoverage.explicitTerms, {
+          limit: turnPolicy.evidenceBudget?.maxFilesToRead || 20,
+        });
+        state.evidenceLedger?.addWorkspaceCandidates?.(candidates);
+      } catch (err) {
+        log.warn("workspace index search failed: %s", err?.message || err);
+      }
+    }
 
     let engineText =
       typeof opts.engineText === "string" && opts.engineText.trim()
@@ -756,10 +804,16 @@ class TurnOrchestrator {
     const preRehydrateText = engineText;
     let rehydrated = false;
     let shortFollowupContext = false;
+    let contextMemory = null;
     {
       const { withSessionRehydratePrefix } = require("./session-bootstrap");
       const { readSessionSummary } = require("./session-memory");
       const { withShortFollowupContext } = require("./session-followup-context");
+      const { buildContextMemory } = require("./memory-registry");
+      const { readProjectMemoryIndex } = require("./project-memory");
+      const { buildWorkspaceDigest, readLearnedConventions } = require("./learned-context");
+      const { readMemoryPreferences } = require("./memory-preferences");
+      const { addLayersToEngineText } = require("./engine-message-layers");
       const committedMessages =
         typeof this.ctx.sessionManager.getConversation === "function"
           ? this.ctx.sessionManager.getConversation(session.id)
@@ -791,6 +845,59 @@ class TurnOrchestrator {
       });
       engineText = followup.text;
       shortFollowupContext = Boolean(followup.applied);
+      const shouldLoadProjectMemory =
+        Boolean(project?.path) &&
+        (turnPolicy.rigor === "grounded" ||
+          turnPolicy.rigor === "coverage" ||
+          Boolean(ensured.coldStart) ||
+          rehydrated ||
+          shortFollowupContext);
+      contextMemory = buildContextMemory({
+        userText: rawUserText,
+        sessionSummary: summary,
+        project,
+        disabledKinds: readMemoryPreferences(session.projectId).disabledKinds,
+        projectMemory: shouldLoadProjectMemory ? readProjectMemoryIndex(project.path, { maxChars: 1_500 }) : null,
+        workspaceDigest: shouldLoadProjectMemory ? buildWorkspaceDigest(project.path) : "",
+        learnedConventions: shouldLoadProjectMemory ? readLearnedConventions(session.projectId) : "",
+        turnPolicy,
+        includeSessionSummary: !rehydrated && !shortFollowupContext,
+        coldStart: Boolean(ensured.coldStart),
+        shortFollowup: shortFollowupContext,
+      });
+      contextMemory.contextEpoch = Number(summary?.contextEpoch || 0);
+      contextMemory.deduped = Boolean(
+        contextMemory.fingerprint &&
+        summary?.lastContextMemoryFingerprint === contextMemory.fingerprint &&
+        !ensured.coldStart &&
+        !rehydrated,
+      );
+      if (contextMemory.text && !contextMemory.deduped) {
+        engineText = addLayersToEngineText(engineText, {
+          platformContext: contextMemory.text,
+        });
+      }
+    }
+    let subagentIsolation = null;
+    {
+      const { buildSubagentIsolationHint } = require("./subagent-isolation-policy");
+      const hint = buildSubagentIsolationHint({
+        text: rawUserText,
+        turnPolicy,
+        taskContract,
+      });
+      if (hint) {
+        const { addLayersToEngineText } = require("./engine-message-layers");
+        engineText = addLayersToEngineText(engineText, {
+          executionConstraints: hint,
+        });
+        subagentIsolation = {
+          enabled: true,
+          reason: turnPolicy.rigor === "coverage" || turnPolicy.requiresSourceCoverage
+            ? "coverage_policy"
+            : "broad_research_task",
+        };
+      }
     }
     engineText = withTaskContractPrefix(engineText, taskContract);
     state.enginePayload = {
@@ -799,11 +906,45 @@ class TurnOrchestrator {
       files,
       displayFiles,
       taskContract: state.taskContract,
+      turnPolicy: state.turnPolicy,
       trace: {
         preflightTextChanged: text !== rawUserText,
         customEngineText: preRehydrateText !== text,
         rehydrated,
         shortFollowupContext,
+        subagentIsolation,
+        contextMemory: contextMemory
+          ? {
+              injected: Boolean(contextMemory.text),
+              items: contextMemory.items.map((item) => ({
+                id: item.id,
+                kind: item.kind,
+                reason: item.reason,
+                trust: item.trust || "unknown",
+                proof: Boolean(item.proof),
+                relevance: Number(item.relevance || 0),
+                semanticRelevance: Number(item.semanticRelevance || 0),
+                sourceVersion: item.sourceVersion || "",
+                sourcePointers: Array.isArray(item.sourcePointers) ? item.sourcePointers.slice(0, 5) : [],
+                size: item.size,
+              })),
+              skipped: (contextMemory.skipped || []).map((item) => ({
+                id: item.id,
+                kind: item.kind,
+                reason: item.reason,
+                skipReason: item.skipReason,
+                relevance: Number(item.relevance || 0),
+                sourceVersion: item.sourceVersion || "",
+                sourcePointers: Array.isArray(item.sourcePointers) ? item.sourcePointers.slice(0, 5) : [],
+                size: item.size,
+              })),
+              diagnostics: contextMemory.diagnostics || null,
+              fingerprint: contextMemory.fingerprint || "",
+              contextEpoch: contextMemory.contextEpoch,
+              deduped: Boolean(contextMemory.deduped),
+              totalChars: contextMemory.totalChars,
+            }
+          : null,
         taskContract: Boolean(state.taskContract),
       },
     };
@@ -817,6 +958,18 @@ class TurnOrchestrator {
         customEngineText: preRehydrateText !== text,
         rehydrated,
         shortFollowupContext,
+        contextMemory: contextMemory
+          ? {
+              injected: Boolean(contextMemory.text),
+              itemCount: contextMemory.items.length,
+              skippedCount: contextMemory.skipped?.length || 0,
+              diagnostics: contextMemory.diagnostics || null,
+              fingerprint: contextMemory.fingerprint || "",
+              contextEpoch: contextMemory.contextEpoch,
+              deduped: Boolean(contextMemory.deduped),
+              totalChars: contextMemory.totalChars,
+            }
+          : null,
         taskContract: Boolean(state.taskContract),
       },
       taskContract: state.taskContract
@@ -826,6 +979,14 @@ class TurnOrchestrator {
             categories: state.taskContract.categories,
             workspaceProfile: state.taskContract.workspaceProfile,
             workspaceSignals: state.taskContract.workspaceSignals || [],
+          }
+        : null,
+      turnPolicy: state.turnPolicy
+        ? {
+            taskType: state.turnPolicy.taskType,
+            rigor: state.turnPolicy.rigor,
+            requiresFreshness: state.turnPolicy.requiresFreshness,
+            requiresSourceCoverage: state.turnPolicy.requiresSourceCoverage,
           }
         : null,
     });
@@ -847,6 +1008,42 @@ class TurnOrchestrator {
       return { ok: false, error: "RUNNER_ERROR", detail: runner.lastSpawnError || "The assistant engine did not accept the message. Please retry." };
     }
     try {
+      if (contextMemory?.fingerprint && contextMemory.text && !contextMemory.deduped) {
+        const { markContextMemoryInjected } = require("./session-memory");
+        const { explainContextMemory } = require("./memory-explain");
+        const traceMemory = {
+          injected: Boolean(contextMemory.text),
+          items: contextMemory.items.map((item) => ({
+            id: item.id,
+            kind: item.kind,
+            reason: item.reason,
+            trust: item.trust || "unknown",
+            proof: Boolean(item.proof),
+            relevance: Number(item.relevance || 0),
+            sourceVersion: item.sourceVersion || "",
+            sourcePointers: Array.isArray(item.sourcePointers) ? item.sourcePointers.slice(0, 5) : [],
+            size: item.size,
+          })),
+          skipped: (contextMemory.skipped || []).map((item) => ({
+            id: item.id,
+            kind: item.kind,
+            reason: item.reason,
+            skipReason: item.skipReason,
+            relevance: Number(item.relevance || 0),
+            sourceVersion: item.sourceVersion || "",
+            sourcePointers: Array.isArray(item.sourcePointers) ? item.sourcePointers.slice(0, 5) : [],
+            size: item.size,
+          })),
+          contextEpoch: contextMemory.contextEpoch,
+          deduped: Boolean(contextMemory.deduped),
+        };
+        markContextMemoryInjected(session.id, {
+          fingerprint: contextMemory.fingerprint,
+          itemCount: contextMemory.items.length,
+          totalChars: contextMemory.totalChars,
+          explanation: explainContextMemory(traceMemory),
+        });
+      }
       this.ctx.sessionManager?.markTurnInputPromoted?.(state.turnId, {
         status: "promoted",
         metadata: {
@@ -1007,12 +1204,15 @@ class TurnOrchestrator {
     }
     closeStreamingBlocks(state, Date.now());
     let assistant = String(payload.assistant || state.assistantText || "").trim();
+    const evidenceSummary = state.evidenceLedger?.summary?.() || null;
     let record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
     if (type === "turn.completed" && state.taskContract?.evidencePolicy?.required) {
       const { assessFinalAnswerEvidence, appendEvidenceGateNotice } = require("./evidence-gate");
       const assessment = assessFinalAnswerEvidence({
         assistant,
         evidencePolicy: state.taskContract.evidencePolicy,
+        turnPolicy: state.turnPolicy,
+        evidenceSummary,
         toolCount: state.tools?.size || 0,
         fileChangeCount: record?.fileChanges?.length || 0,
       });
@@ -1068,6 +1268,8 @@ class TurnOrchestrator {
     state.notices = [];
     state.usage = null;
     state.taskContract = null;
+    state.turnPolicy = null;
+    state.evidenceLedger = null;
     state.enginePayload = null;
     resetTimelineState(state);
     state.blockIndexToToolId = new Map();
@@ -1076,6 +1278,65 @@ class TurnOrchestrator {
     state.pendingPermissions.clear();
     state.pendingQuestions.clear();
     state.pendingHooks.clear();
+    if (type === "turn.completed") this._scheduleBackgroundCompaction(sessionId);
+  }
+
+  _scheduleBackgroundCompaction(sessionId) {
+    const timer = setTimeout(async () => {
+      try {
+        const runner = this.ctx.runnerPool?.get?.(sessionId);
+        if (!runner?.compactContext) {
+          this._emit(sessionId, "context.compactionDecision", {
+            action: "skip",
+            reason: "adapter_missing_compaction",
+          }, { turnId: null });
+          return;
+        }
+        const { OPENCODE_RUNTIME_CAPABILITIES } = require("./runtime/runtime-capabilities");
+        const { decideBackgroundCompaction } = require("./context-budget-manager");
+        const { readSessionSummary } = require("./session-memory");
+        const sessionSummary = readSessionSummary(sessionId) || {};
+        const decision = decideBackgroundCompaction({
+          capabilities: OPENCODE_RUNTIME_CAPABILITIES,
+          runner: {
+            alive: Boolean(runner.isAlive?.()),
+            busy: Boolean(runner.isBusy?.()),
+          },
+          sessionSummary,
+        });
+        this._emit(sessionId, "context.compactionDecision", {
+          action: decision.action,
+          reason: decision.reason,
+          mode: decision.mode || null,
+          turnCount: Number(sessionSummary.turnCount || 0),
+          lastCompactedAt: sessionSummary.lastCompactedAt || null,
+          estimatedPromptTokens: decision.estimatedPromptTokens || Number(sessionSummary.lastEnginePromptTokens || 0),
+          contextWindowTokens: decision.contextWindowTokens || null,
+          tokenSource: decision.tokenSource || sessionSummary.lastEnginePromptTokenSource || "",
+        }, { turnId: null });
+        if (decision.action !== "compact") return;
+        this._emit(sessionId, "engine.notice", {
+          notice: {
+            code: "compactBoundary",
+            level: "progress",
+            panel: true,
+            done: false,
+            detail: "Preparing to compact conversation context.",
+          },
+        }, { turnId: null });
+        const model = runner.spawnOptions?.model || null;
+        await runner.compactContext({
+          ...(model?.providerID && model?.modelID
+            ? { providerID: model.providerID, modelID: model.modelID }
+            : {}),
+          auto: true,
+          reason: decision.reason,
+        });
+      } catch (err) {
+        log.warn("background context compaction failed: %s", err?.message || err);
+      }
+    }, 0);
+    timer.unref?.();
   }
 
   async _dispatchNext(sessionId) {
@@ -1208,6 +1469,8 @@ class TurnOrchestrator {
         notices: [],
         usage: null,
         taskContract: null,
+        turnPolicy: null,
+        evidenceLedger: null,
         enginePayload: null,
         legacyContextHydrated: false,
         timeline: [],

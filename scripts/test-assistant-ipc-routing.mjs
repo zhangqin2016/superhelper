@@ -7,6 +7,24 @@ import Module from "node:module";
 const require = createRequire(import.meta.url);
 const handlers = new Map();
 const originalLoad = Module._load;
+const calls = {
+  sessionSwitch: 0,
+  projectSwitch: 0,
+  sent: [],
+  interrupted: [],
+  guideWrites: [],
+  approved: [],
+  dismissed: [],
+  removedLearned: [],
+  clearedLearned: [],
+  categoryPrefs: [],
+};
+const proposals = [
+  { key: "checkopencodefirst", text: "以后先检查 OpenCode 原生能力", status: "proposed" },
+];
+let learned = [
+  { key: "reportformat", text: "报告先给结论", createdAt: "2026-06-25", line: 1 },
+];
 
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === "electron") {
@@ -31,17 +49,70 @@ Module._load = function patchedLoad(request, parent, isMain) {
       looksLikeWebSystemLearningIntent: () => false,
     };
   }
+  if (request.endsWith("./auto-memory-proposals") || request === "./auto-memory-proposals") {
+    return {
+      approveMemoryProposal: (_projectId, key, details) => {
+        calls.approved.push({ key, details });
+        const proposal = proposals.find((item) => item.key === key);
+        if (!proposal) return null;
+        proposal.status = "approved";
+        return proposal;
+      },
+      dismissMemoryProposal: (_projectId, key, details) => {
+        calls.dismissed.push({ key, details });
+        const proposal = proposals.find((item) => item.key === key);
+        if (!proposal) return null;
+        proposal.status = "dismissed";
+        return proposal;
+      },
+      listMemoryProposals: (_projectId, options = {}) =>
+        options.includeDismissed ? proposals : proposals.filter((item) => item.status !== "dismissed"),
+    };
+  }
+  if (request.endsWith("./learned-context") || request === "./learned-context") {
+    return {
+      appendLearnedConvention: () => {},
+      clearLearnedConventions: (projectId) => {
+        calls.clearedLearned.push(projectId);
+        learned = [];
+        return true;
+      },
+      listLearnedConventions: () => learned,
+      removeLearnedConvention: (_projectId, key) => {
+        calls.removedLearned.push(key);
+        const before = learned.length;
+        learned = learned.filter((item) => item.key !== key);
+        return learned.length === before ? null : { removed: before - learned.length, key };
+      },
+    };
+  }
+  if (request.endsWith("./skill-manager") || request === "./skill-manager") {
+    return {
+      writeSessionAgentGuide: (sessionId, session, workspacePath) => {
+        calls.guideWrites.push({ sessionId, projectId: session?.projectId, workspacePath });
+      },
+    };
+  }
+  if (request.endsWith("./session-memory") || request === "./session-memory") {
+    return {
+      readSessionSummary: (sessionId) => ({ sessionId, turnCount: 12 }),
+    };
+  }
+  if (request.endsWith("./memory-preferences") || request === "./memory-preferences") {
+    return {
+      MEMORY_CATEGORIES: ["learned_conventions", "project_memory"],
+      readMemoryPreferences: () => ({ schemaVersion: 1, disabledKinds: ["project_memory"] }),
+      setMemoryCategoryEnabled: (_projectId, kind, enabled) => {
+        calls.categoryPrefs.push({ kind, enabled });
+        return { schemaVersion: 1, disabledKinds: enabled ? [] : [kind] };
+      },
+    };
+  }
   return originalLoad.call(this, request, parent, isMain);
 };
 
 try {
   const { registerAssistantHandlers } = require("../src/main/ipc-assistant.js");
-  const calls = {
-    sessionSwitch: 0,
-    projectSwitch: 0,
-    sent: [],
-    interrupted: [],
-  };
   const sessions = new Map([
     ["active-session", { id: "active-session", projectId: "active-project" }],
     ["target-session", { id: "target-session", projectId: "target-project" }],
@@ -58,6 +129,7 @@ try {
     },
     projectManager: {
       getActive: () => ({ id: "active-project" }),
+      find: (id) => ({ id, path: `/projects/${id}` }),
       switchTo: () => {
         calls.projectSwitch += 1;
       },
@@ -113,6 +185,91 @@ try {
   assert.equal(calls.interrupted[0].sessionId, "target-session");
   assert.equal(calls.sessionSwitch, 0, "targeted send must not switch active session");
   assert.equal(calls.projectSwitch, 0, "targeted send must not switch active project");
+
+  const memoryList = await handlers.get("assistant:memory:list")(null, {
+    sessionId: "target-session",
+  });
+  assert.deepEqual(memoryList, {
+    ok: true,
+    sessionId: "target-session",
+    projectId: "target-project",
+    learned,
+    proposals,
+    preferences: { schemaVersion: 1, disabledKinds: ["project_memory"] },
+    categories: ["learned_conventions", "project_memory"],
+  });
+
+  const setCategory = await handlers.get("assistant:memory:set-category-enabled")(null, {
+    sessionId: "target-session",
+    kind: "project_memory",
+    enabled: true,
+  });
+  assert.equal(setCategory.ok, true);
+  assert.deepEqual(calls.categoryPrefs[0], { kind: "project_memory", enabled: true });
+  assert.equal(calls.guideWrites.at(-1).sessionId, "target-session");
+
+  const memoryExport = await handlers.get("assistant:memory:export")(null, {
+    sessionId: "target-session",
+  });
+  assert.equal(memoryExport.ok, true);
+  assert.equal(memoryExport.sessionId, "target-session");
+  assert.equal(memoryExport.projectId, "target-project");
+  assert.equal(memoryExport.memory.learned.length, 1);
+  assert.equal(memoryExport.memory.proposals.length, 1);
+  assert.equal(memoryExport.memory.sessionSummary.turnCount, 12);
+
+  const removeLearned = await handlers.get("assistant:memory:remove-learned")(null, {
+    sessionId: "target-session",
+    key: "reportformat",
+  });
+  assert.equal(removeLearned.ok, true);
+  assert.equal(calls.removedLearned[0], "reportformat");
+  assert.deepEqual(calls.guideWrites.at(-1), {
+    sessionId: "target-session",
+    projectId: "target-project",
+    workspacePath: "/projects/target-project",
+  });
+
+  learned = [{ key: "runtime", text: "先看 OpenCode", createdAt: "2026-06-25", line: 1 }];
+  const clearLearned = await handlers.get("assistant:memory:clear-learned")(null, {
+    sessionId: "target-session",
+  });
+  assert.equal(clearLearned.ok, true);
+  assert.equal(calls.clearedLearned[0], "target-project");
+  assert.equal(learned.length, 0);
+
+  const listResult = await handlers.get("assistant:memory-proposals:list")(null, {
+    sessionId: "target-session",
+  });
+  assert.deepEqual(listResult, {
+    ok: true,
+    sessionId: "target-session",
+    projectId: "target-project",
+    proposals,
+  });
+
+  const approveResult = await handlers.get("assistant:memory-proposals:approve")(null, {
+    sessionId: "target-session",
+    key: "checkopencodefirst",
+  });
+  assert.equal(approveResult.ok, true);
+  assert.equal(approveResult.proposal.status, "approved");
+  assert.equal(calls.approved.length, 1, "approveMemoryProposal called once");
+  assert.equal(calls.approved[0].details.approvedBy, "user");
+  assert.deepEqual(calls.guideWrites.at(-1), {
+    sessionId: "target-session",
+    projectId: "target-project",
+    workspacePath: "/projects/target-project",
+  });
+
+  const dismissResult = await handlers.get("assistant:memory-proposals:dismiss")(null, {
+    sessionId: "target-session",
+    key: "checkopencodefirst",
+  });
+  assert.equal(dismissResult.ok, true);
+  assert.equal(dismissResult.proposal.status, "dismissed");
+  assert.equal(calls.dismissed.length, 1, "dismissMemoryProposal called once");
+  assert.equal(calls.dismissed[0].details.dismissedBy, "user");
 
   console.log("assistant-ipc-routing: ok");
 } finally {

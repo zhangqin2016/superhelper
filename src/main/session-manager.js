@@ -154,6 +154,7 @@ class SessionManager {
       }
     }
     this._resetStaleRunningStatus();
+    this.repairDuplicateAgentResumeIds();
     this._migrateInlineMessages();
     this.saveImmediate();
     this._startBackgroundImport();
@@ -507,6 +508,106 @@ class SessionManager {
     }
   }
 
+  _normalizeAgentResumeId(agentResumeId) {
+    const normalized = String(agentResumeId || "").trim();
+    return normalized || null;
+  }
+
+  _sessionSortTime(session, key) {
+    const ts = Date.parse(session?.[key] || "");
+    return Number.isFinite(ts) ? ts : 0;
+  }
+
+  _preferAgentResumeOwner(candidate, current) {
+    if (!current) return true;
+    const candidateUpdated = this._sessionSortTime(candidate, "updatedAt");
+    const currentUpdated = this._sessionSortTime(current, "updatedAt");
+    if (candidateUpdated !== currentUpdated) return candidateUpdated > currentUpdated;
+
+    const candidateCreated = this._sessionSortTime(candidate, "createdAt");
+    const currentCreated = this._sessionSortTime(current, "createdAt");
+    if (candidateCreated !== currentCreated) return candidateCreated > currentCreated;
+
+    return String(candidate?.id || "") > String(current?.id || "");
+  }
+
+  _clearResumeLink(session) {
+    if (!session) return false;
+    let changed = false;
+    if (session.agentResumeId) {
+      delete session.agentResumeId;
+      changed = true;
+    }
+    if (session.claudeSessionId) {
+      delete session.claudeSessionId;
+      changed = true;
+    }
+    if (session.legacyContextHydratedAgentResumeId) {
+      delete session.legacyContextHydratedAgentResumeId;
+      changed = true;
+    }
+    if (session.legacyContextHydratedAt) {
+      delete session.legacyContextHydratedAt;
+      changed = true;
+    }
+    return changed;
+  }
+
+  /** Enforce the core invariant: one Lily session owns one engine resume id.
+   *  Shared OpenCode event streams route by engine session id; if two Lily
+   *  sessions persist the same id, both can receive the same tool/output
+   *  events. Repair persisted duplicates deterministically at startup and
+   *  after legacy merges before any runner can subscribe. */
+  repairDuplicateAgentResumeIds() {
+    const owners = new Map();
+    let changed = false;
+
+    for (const session of this.iterateSessions()) {
+      const normalized = this._normalizeAgentResumeId(session.agentResumeId || session.claudeSessionId);
+      if (!normalized) continue;
+      if (session.agentResumeId !== normalized || session.claudeSessionId) {
+        session.agentResumeId = normalized;
+        delete session.claudeSessionId;
+        changed = true;
+      }
+      const current = owners.get(normalized);
+      if (this._preferAgentResumeOwner(session, current)) {
+        owners.set(normalized, session);
+      }
+    }
+
+    for (const session of this.iterateSessions()) {
+      const resumeId = this._normalizeAgentResumeId(session.agentResumeId);
+      if (!resumeId) continue;
+      const owner = owners.get(resumeId);
+      if (owner?.id === session.id) continue;
+      if (this._clearResumeLink(session)) changed = true;
+      try {
+        require("./session-engine-recovery").resetSessionEngineCache(session.id);
+      } catch {
+        // best effort; clearing the persisted resume link is the important bit
+      }
+    }
+
+    if (changed) {
+      this.saveImmediate();
+      console.info("[sessions] repaired duplicate agent resume ownership");
+    }
+    return changed;
+  }
+
+  findAgentResumeOwner(agentResumeId, excludeSessionId = null) {
+    const resumeId = this._normalizeAgentResumeId(agentResumeId);
+    if (!resumeId) return null;
+    let owner = null;
+    for (const session of this.iterateSessions()) {
+      if (excludeSessionId && session.id === excludeSessionId) continue;
+      if (this._normalizeAgentResumeId(session.agentResumeId) !== resumeId) continue;
+      if (this._preferAgentResumeOwner(session, owner)) owner = session;
+    }
+    return owner;
+  }
+
   _scheduleSave() {
     if (this._saveTimer) {
       this._savePending = true;
@@ -720,19 +821,39 @@ class SessionManager {
     this.save();
   }
 
-  setAgentResumeId(sessionId, agentResumeId) {
+  claimAgentResumeId(sessionId, agentResumeId) {
     const session = this._find(sessionId);
-    if (!session || !agentResumeId) return false;
-    if (session.agentResumeId === agentResumeId) return true;
-    session.agentResumeId = agentResumeId;
-    this.save();
-    return true;
+    const normalized = this._normalizeAgentResumeId(agentResumeId);
+    if (!session || !normalized) return { ok: false, evictedSessionIds: [] };
+    let changed = false;
+    const evictedSessionIds = [];
+    for (const other of this.iterateSessions()) {
+      if (other.id === session.id) continue;
+      if (this._normalizeAgentResumeId(other.agentResumeId) !== normalized) continue;
+      if (this._clearResumeLink(other)) changed = true;
+      evictedSessionIds.push(other.id);
+      try {
+        require("./session-engine-recovery").resetSessionEngineCache(other.id);
+      } catch {
+        // ignore
+      }
+    }
+    if (session.agentResumeId !== normalized) {
+      session.agentResumeId = normalized;
+      changed = true;
+    }
+    if (changed) this.save();
+    return { ok: true, evictedSessionIds };
+  }
+
+  setAgentResumeId(sessionId, agentResumeId) {
+    return this.claimAgentResumeId(sessionId, agentResumeId).ok;
   }
 
   clearAgentResumeId(sessionId) {
     const session = this._find(sessionId);
-    if (!session || !session.agentResumeId) return false;
-    delete session.agentResumeId;
+    if (!session) return false;
+    if (!this._clearResumeLink(session)) return false;
     this.save();
     return true;
   }

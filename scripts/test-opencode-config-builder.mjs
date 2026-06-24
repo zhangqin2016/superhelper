@@ -7,7 +7,12 @@
  */
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { buildOpencodeConfig, translateMcpServers, translatePermission } = require("../src/main/runtime/opencode-config-builder.js");
+const {
+  buildOpencodeConfig,
+  buildSharedBaseConfig,
+  translateMcpServers,
+  translatePermission,
+} = require("../src/main/runtime/opencode-config-builder.js");
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
@@ -82,6 +87,20 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(cfg.mcp.mail.type === "local", "mcp merged in");
   assert(cfg.permission.bash["*"] === "allow" && cfg.permission.websearch === "deny", "permission merged in (ask ruleset + disallowed deny)");
   assert(cfg.instructions.length === 1 && cfg.instructions[0].endsWith("AGENT.md"), "fallback: instructions paths used when no agentPrompt");
+  assert(cfg.compaction.auto === true, "native OpenCode auto-compaction explicitly enabled");
+  assert(cfg.compaction.prune === true, "native OpenCode tool-output prune explicitly enabled");
+  assert(cfg.compaction.reserved === 10000, "native OpenCode compaction reserve pinned for stable defaults");
+}
+
+// --- shared config also pins native compaction defaults ---------------------
+{
+  const r = buildSharedBaseConfig({
+    lilyEnv: { LILY_API_BASE_URL: "https://api.deepseek.com", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-chat" },
+  });
+  const cfg = JSON.parse(r.configContent);
+  assert(cfg.compaction.auto === true, "shared serve -> auto compaction enabled");
+  assert(cfg.compaction.prune === true, "shared serve -> prune enabled");
+  assert(cfg.compaction.tail_turns === 2, "shared serve -> tail turn retention matches OpenCode default");
 }
 
 // --- agentPrompt makes Lily's guide the AUTHORITATIVE agent prompt -----------
