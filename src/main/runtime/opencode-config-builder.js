@@ -17,6 +17,17 @@ const { resolveOpencodeModelConfig } = require("./opencode-model-config");
 
 /** Subagent agent names whose model maps to Lily's effective main model tier. */
 const SUBAGENT_AGENTS = ["general", "explore"];
+/**
+ * OpenCode's built-in PRIMARY helper agents that ship with NO model of their own
+ * (agent/agent.ts) — so at runtime they resolve to OpenCode's default model
+ * `opencode/*-free`, which has no credentials in Lily's distribution and 500s
+ * ("Unexpected server error"). Pin them to the distributed model so they use the
+ * working gateway. `compaction` = long-session summary (native memory!), `title`
+ * = session naming. Without this, native compaction silently fails and long
+ * sessions lose context. See [[opencode-engine-integration]].
+ */
+const HELPER_PRIMARY_AGENTS = ["compaction", "title"];
+const MODEL_PINNED_AGENTS = [...SUBAGENT_AGENTS, ...HELPER_PRIMARY_AGENTS];
 const DEFAULT_COMPACTION = Object.freeze({
   auto: true,
   prune: true,
@@ -154,7 +165,7 @@ function buildOpencodeConfig(opts = {}) {
   if (tiers.haiku) config.small_model = `${pid}/${tiers.haiku}`;
   if (tiers.subagent) {
     config.agent = config.agent || {};
-    for (const name of SUBAGENT_AGENTS) {
+    for (const name of MODEL_PINNED_AGENTS) {
       config.agent[name] = { ...(config.agent[name] || {}), model: `${pid}/${tiers.subagent}` };
     }
   }
@@ -213,7 +224,7 @@ function baseSharedPermission() {
  * bits (skill guidance, permission mode) are delivered per-request + host-side,
  * NOT baked here — that's what lets one serve host every session/directory
  * without cross-session config bleed.
- * @param {{ lilyEnv: Record<string,string>, mcpServers?: object, pluginPaths?: string[], skillPaths?: string[], disallowedTools?: string[] }} opts
+ * @param {{ lilyEnv: Record<string,string>, mcpServers?: object, pluginPaths?: string[], skillPaths?: string[], disallowedTools?: string[], basePrompt?: string }} opts
  * @returns {{ ok:boolean, reason?:string, model:object|null, configContent:string|null }}
  */
 function buildSharedBaseConfig(opts = {}) {
@@ -228,13 +239,27 @@ function buildSharedBaseConfig(opts = {}) {
   if (tiers.haiku) config.small_model = `${pid}/${tiers.haiku}`;
   if (tiers.subagent) {
     config.agent = config.agent || {};
-    for (const name of SUBAGENT_AGENTS) {
+    for (const name of MODEL_PINNED_AGENTS) {
       config.agent[name] = { ...(config.agent[name] || {}), model: `${pid}/${tiers.subagent}` };
     }
   }
 
   const mcp = translateMcpServers(opts.mcpServers);
   if (Object.keys(mcp).length) config.mcp = mcp;
+
+  // The static Lily identity header as the primary-agent prompt. This SUPPRESSES
+  // OpenCode's coding-CLI baseline (request.ts: agent.prompt wins over
+  // SystemPrompt.provider) for the user-facing build/plan agents, so a general
+  // workbench request is no longer reframed as a terse coding task. Subagents
+  // (general/explore) intentionally keep the coding baseline for their subtasks.
+  // The full per-turn guide still rides body.system, so this stays static.
+  const basePrompt = typeof opts.basePrompt === "string" ? opts.basePrompt.trim() : "";
+  if (basePrompt) {
+    config.agent = config.agent || {};
+    for (const name of ["build", "plan"]) {
+      config.agent[name] = { ...(config.agent[name] || {}), prompt: basePrompt };
+    }
+  }
 
   config.compaction = { ...DEFAULT_COMPACTION, ...(config.compaction || {}) };
   applySkillPaths(config, opts.skillPaths);

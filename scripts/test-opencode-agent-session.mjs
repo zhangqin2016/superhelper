@@ -705,13 +705,15 @@ async function newSession() {
   session.terminate();
 }
 
-// --- workspace grounding surfaces unsafe new top-level writes ---------------
+// --- workspace grounding surfaces unsafe new top-level writes in ASK mode ----
+// The grounding gate is a confirm-first SAFETY check for the balanced default;
+// it must still surface a new-top-level write so "ask" mode can confirm it.
 {
   const { fake, session, orch } = await newSession();
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-opencode-grounding-"));
   fs.mkdirSync(path.join(tmp, "src"), { recursive: true });
   session.cwd = tmp;
-  session.spawnOptions.permissionMode = "full";
+  session.spawnOptions.permissionMode = "ask";
   session.sendUserMessage({
     text: "improve existing code",
     taskContract: {
@@ -728,8 +730,43 @@ async function newSession() {
     properties: { id: "per_ground_1", permission: "write", metadata: { path: "new-app/index.js" }, tool: {} },
   });
   assert(draft(orch, "permission.requested")?.payload.requestId === "per_ground_1",
-    "new top-level write must surface for confirmation even in full mode");
+    "new top-level write surfaces for confirmation in ask mode");
   assert(fake.permissionReplies.length === 0, "grounding ask must not auto-allow");
+  session.terminate();
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// --- full mode is FULL: the grounding gate is skipped, only disasters confirm -
+// User-confirmed contract: in full mode the same new-top-level write that "ask"
+// confirms above runs WITHOUT a prompt; only catastrophic shell still surfaces.
+{
+  const { fake, session, orch } = await newSession();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-opencode-grounding-full-"));
+  fs.mkdirSync(path.join(tmp, "src"), { recursive: true });
+  session.cwd = tmp;
+  session.spawnOptions.permissionMode = "full";
+  session.sendUserMessage({
+    text: "improve existing code",
+    taskContract: {
+      projectPath: tmp,
+      workspaceGroundingPolicy: { required: true, allowNewTopLevel: false },
+    },
+  });
+  await tick();
+  fake.emitEvent({
+    type: "permission.asked",
+    properties: { id: "per_ground_full", permission: "write", metadata: { path: "new-app/index.js" }, tool: {} },
+  });
+  await tick();
+  assert(fake.permissionReplies[0]?.reply === "once",
+    "full mode auto-allows a grounded new top-level write (gate skipped — full means full)");
+  // ...but a catastrophic command still surfaces even in full mode.
+  fake.emitEvent({
+    type: "permission.asked",
+    properties: { id: "per_catastrophe", permission: "bash", metadata: { command: "rm -rf /" }, tool: {} },
+  });
+  assert(draft(orch, "permission.requested")?.payload.requestId === "per_catastrophe",
+    "catastrophic shell still confirms in full mode (irreversible-disaster backstop)");
   session.terminate();
   fs.rmSync(tmp, { recursive: true, force: true });
 }

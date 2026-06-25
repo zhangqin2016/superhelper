@@ -458,9 +458,25 @@ const SKILL_INDEX_I18N = {
   },
 };
 
+/** Shorten a skill description to its leading trigger phrase. OpenCode's native
+ *  skill registry already injects the FULL verbose description for every skill
+ *  (system.ts `Skill.fmt(list, {verbose:true})` -> the `<available_skills>` block
+ *  in the system prompt, sourced from the same SKILL.md frontmatter). So this
+ *  index only needs a short "use when" pointer + the guide path as a read-tool
+ *  fallback — duplicating the whole description here just dilutes every turn. */
+function shortIndexDesc(desc, cap = 180) {
+  const s = String(desc || "").replace(/\s+/g, " ").trim();
+  if (s.length <= cap) return s;
+  const slice = s.slice(0, cap);
+  // Cut on a word boundary for space-delimited text; CJK (no spaces) hard-caps.
+  const trimmed = slice.replace(/\s+\S*$/, "");
+  return `${(trimmed.length >= cap * 0.6 ? trimmed : slice).trim()}…`;
+}
+
 /** Build the progressive-disclosure skill index: every enabled skill listed with
- *  its when-to-use and the path to its full guide (loaded on demand). This is what
- *  makes skills WITHOUT an inlined guideMd discoverable instead of invisible. */
+ *  a SHORT when-to-use trigger and the path to its full guide (loaded on demand,
+ *  or read via the Read tool). The authoritative verbose descriptions come from
+ *  OpenCode's native skill catalog, so keep these entries terse. */
 function buildSkillIndexSection(enabledSkills, loc) {
   const head = SKILL_INDEX_I18N[loc] || SKILL_INDEX_I18N.en;
   const lines = [];
@@ -469,7 +485,7 @@ function buildSkillIndexSection(enabledSkills, loc) {
     if (!e.desc) continue;
     const guide = e.hasGuide ? ` (${head.guideLabel}: ${e.guidePath})` : "";
     const label = e.name && e.name !== e.id ? `${e.id} (${e.name})` : e.id;
-    lines.push(`- **${label}** — ${e.desc}${guide}`);
+    lines.push(`- **${label}** — ${shortIndexDesc(e.desc)}${guide}`);
   }
   if (!lines.length) return "";
   return [`## ${head.title}`, "", head.intro, "", ...lines].join("\n");
@@ -537,8 +553,33 @@ function buildAgentGuideContent(enabledSkills, locale) {
   return sections.join("\n").trim() + "\n";
 }
 
+/**
+ * The SMALL, static identity header — Lily's OWN top-of-guide strings (no
+ * invented persona). Used as the OpenCode primary-agent prompt so the engine's
+ * `input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(model)`
+ * ternary (request.ts) takes the agent.prompt branch and SUPPRESSES OpenCode's
+ * coding-CLI baseline (prompt/default.txt: "You are opencode… answer in <4
+ * lines, one-word answers best"). Without this, that baseline is prepended to
+ * every turn and reframes a general workbench request as a terse coding task.
+ * The FULL per-turn guide (skills + workspace digest + learned context) still
+ * rides `body.system`, so this stays static — safe to bake into the serve config
+ * without the per-turn config-diff restart that broke continuity.
+ */
+function buildAgentBasePersona(locale) {
+  const loc = locale || getActiveLocale() || "en";
+  const guide = AGENT_GUIDE_I18N[loc] || AGENT_GUIDE_I18N["en"];
+  return [
+    `# ${guide.title}`,
+    "",
+    guide.identity,
+    guide.gatewayNote,
+    guide.vendorDisclaimer,
+    guide.responseLanguage,
+  ].join("\n");
+}
+
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 15;
+const AGENT_GUIDE_STATIC_VERSION = 16;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
@@ -1504,6 +1545,7 @@ module.exports = {
   saveSkillsState,
   applyPlaceholders,
   buildAgentGuideContent,
+  buildAgentBasePersona,
   buildReplacements,
   readInstalledManifest,
   installedSkillDir,

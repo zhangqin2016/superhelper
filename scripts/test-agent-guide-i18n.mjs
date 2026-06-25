@@ -273,4 +273,30 @@ assert.doesNotMatch(
 );
 assert.match(nonMandatoryGuide, /Non Mandatory Guide Fixture/, "non-mandatory skill should remain discoverable in the skill index");
 
+// Skill index entries must stay TERSE: OpenCode's native skill registry already
+// injects the full verbose description for every skill into the system prompt
+// (system.ts Skill.fmt verbose), so duplicating the whole paragraph here just
+// dilutes every turn. A long description must be truncated to its leading
+// trigger, while a short one is left intact (and stays discoverable).
+const longDescFixture = {
+  id: "long-desc-fixture",
+  skillDir: path.join(skillsCatalogDir, "long-desc-fixture"),
+  manifest: {
+    id: "long-desc-fixture",
+    name: "Long Desc Fixture",
+    description:
+      "Use when the user needs the long-desc capability. " +
+      "Extra qualifying clause number one that should be dropped from the index. ".repeat(8),
+  },
+};
+const longDescGuide = skillManager.buildAgentGuideContent([longDescFixture], "en");
+const longDescLine = longDescGuide.split("\n").find((l) => l.includes("long-desc-fixture"));
+assert.ok(longDescLine, "long-desc fixture should appear in the skill index");
+assert.match(longDescLine, /Use when the user needs the long-desc capability/, "index keeps the leading trigger");
+assert.match(longDescLine, /…/, "over-long index description is truncated");
+assert.ok(
+  longDescLine.length < longDescFixture.manifest.description.length,
+  "index line must be shorter than the full verbose description (native catalog carries the full text)",
+);
+
 console.log("agent guide i18n: ok");

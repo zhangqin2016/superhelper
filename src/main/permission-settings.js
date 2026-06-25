@@ -43,6 +43,15 @@ function migrateMode(modeId) {
   return LEGACY_MODE_MAP[modeId] || null;
 }
 
+// Retired mode ids that, AS A PER-SESSION OVERRIDE, no longer carry a distinct
+// meaning in the 3-mode model. Resolving them to a forced "ask" (their global
+// migration target) made an old session silently SHADOW the user's current
+// global choice — e.g. global "full" but the session kept prompting. As a
+// per-session value these now mean INHERIT (follow global). NOTE: this is
+// session-scoped only; global migration (getActivePermissionMode) is unchanged,
+// and the explicit full-access legacy `bypassPermissions` stays a real override.
+const INHERIT_LEGACY_SESSION_MODES = new Set(["auto", "acceptEdits", "dontAsk", "default"]);
+
 /** @type {{ activeModeId: string } | null} */
 let cachedChoice = null;
 
@@ -70,6 +79,7 @@ function isValidMode(modeId) {
 
 function normalizeSessionPermissionMode(modeId) {
   if (modeId == null || modeId === "" || modeId === "inherit") return null;
+  if (INHERIT_LEGACY_SESSION_MODES.has(modeId)) return null;
   return migrateMode(modeId) || undefined;
 }
 

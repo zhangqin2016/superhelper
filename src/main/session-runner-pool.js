@@ -58,6 +58,11 @@ class SessionRunnerPool {
       pluginPaths: this._opencodePlugins(),
       skillPaths: this._opencodeSkillPaths(),
       disallowedTools: extra.disallowedTools || [],
+      // Static Lily identity header as the primary-agent prompt: suppresses
+      // OpenCode's coding-CLI baseline (default.txt) that otherwise mis-frames
+      // every turn as a terse software-engineering task. The full per-turn guide
+      // still rides body.system (see `guidance` below).
+      basePrompt: this._opencodeBasePersona(),
     });
     if (!cfg.ok) {
       // Surface, don't hide: the turn may still run against OpenCode's own
@@ -111,6 +116,19 @@ class SessionRunnerPool {
     }, { lazy: Boolean(callOpts.lazy) });
 
     return runner;
+  }
+
+  /** The small, static Lily identity header used as the OpenCode primary-agent
+   *  prompt. Sourced from Lily's OWN i18n strings (no invented persona). "" on
+   *  any failure — then OpenCode falls back to its coding baseline (degraded but
+   *  functional), so this never blocks a session from starting. */
+  _opencodeBasePersona() {
+    try {
+      return require("./skill-manager").buildAgentBasePersona() || "";
+    } catch (err) {
+      log.warn("opencode base persona unavailable: %s", err?.message || String(err));
+      return "";
+    }
   }
 
   /** Lily's active MCP servers (mail/playwright/web) as a {name:{command,args,env}}

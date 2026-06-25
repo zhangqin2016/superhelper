@@ -19,13 +19,18 @@ function nativeCompactionUnsupportedReason(model = {}) {
   const modelName = modelID.toLowerCase();
   if (!provider || !modelName) return "";
 
-  // OpenCode's native session.summarize is reliable for its own native Claude
-  // path. Anthropic-compatible endpoints that route non-Claude models through
-  // providerID="anthropic" often reject summarize with a server-side 500.
-  // Do not repeatedly call that unsupported runtime path; Lily's rolling memory
-  // remains active for continuity.
-  if (provider === "anthropic" && !/\bclaude\b/.test(modelName)) {
-    return "anthropic_compatible_non_claude_model";
+  // Hard kill switch only. The previous blanket skip for "anthropic + non-Claude"
+  // was a MISDIAGNOSIS: the captured 500 ("UnknownError / Unexpected server
+  // error") came from OpenCode running its `compaction`/`title` agents on their
+  // unpinned default model (`opencode/*-free`, no credentials in our build) —
+  // NOT from the gateway rejecting summarize. With those agents now pinned to the
+  // distributed model (opencode-config-builder MODEL_PINNED_AGENTS), summarize
+  // runs on the working gateway. So native compaction is re-enabled; if a real
+  // failure recurs it self-limits via decideBackgroundCompaction's per-session
+  // failure backoff, and Lily's rolling memory stays as the fallback. Force-off
+  // with LILY_OPENCODE_DISABLE_NATIVE_COMPACTION=1 if a gateway genuinely 500s.
+  if (/^(1|true|yes|on)$/i.test(String(process.env.LILY_OPENCODE_DISABLE_NATIVE_COMPACTION || ""))) {
+    return "disabled_by_env";
   }
   return "";
 }

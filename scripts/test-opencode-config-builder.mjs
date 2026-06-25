@@ -67,6 +67,11 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   const cfg = JSON.parse(r.configContent);
   assert(cfg.small_model === "lily/deepseek-chat", "small_model forced to main model");
   assert(cfg.agent.general.model === "lily/deepseek-chat" && cfg.agent.explore.model === "lily/deepseek-chat", "subagent agents forced to main model");
+  // The built-in compaction/title agents ship with NO model -> they would resolve
+  // to OpenCode's default opencode/*-free (no creds in our build) and 500. Pinning
+  // them keeps native compaction (long-session memory) and titling on the gateway.
+  assert(cfg.agent.compaction.model === "lily/deepseek-chat", "compaction agent pinned to distributed model");
+  assert(cfg.agent.title.model === "lily/deepseek-chat", "title agent pinned to distributed model");
   assert(r.diagnostics.ignoredTierModels.haiku === "deepseek-lite", "ignored fast tier diagnosed");
 }
 
@@ -106,6 +111,33 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(cfg.compaction.prune === true, "shared serve -> prune enabled");
   assert(cfg.compaction.tail_turns === 2, "shared serve -> tail turn retention matches OpenCode default");
   assert(cfg.skills.paths.length === 1 && cfg.skills.paths[0].endsWith("/skills"), "shared serve -> Lily skill registry path configured");
+  // WHY: without basePrompt, build/plan have no agent.prompt, so OpenCode's
+  // request.ts ternary falls back to SystemPrompt.provider() = the coding-CLI
+  // baseline (default.txt). That baseline ("answer in <4 lines, one-word answers
+  // best", "software engineering tool") is what made the workbench "dumb" on
+  // general tasks. This asserts the regression's precondition so the next block
+  // proves the fix actually removes it.
+  assert(!cfg.agent || !cfg.agent.build || !cfg.agent.build.prompt, "no basePrompt -> coding baseline NOT suppressed (regression precondition)");
+}
+
+// --- shared serve SUPPRESSES the coding-CLI baseline for user-facing agents ---
+{
+  // basePrompt is Lily's own static identity header. Setting it as the build/plan
+  // agent prompt makes OpenCode's request.ts use it INSTEAD OF default.txt, so a
+  // general request is no longer reframed as a terse coding task. The full
+  // per-turn guide still rides body.system; subagents keep the coding baseline.
+  const persona = "# 智能工作台全局说明\n你是智能工作台（Lily Workbench）助手。";
+  const r = buildSharedBaseConfig({
+    lilyEnv: { LILY_API_BASE_URL: "https://api.deepseek.com", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-chat" },
+    basePrompt: persona,
+  });
+  const cfg = JSON.parse(r.configContent);
+  assert(cfg.agent.build.prompt === persona, "basePrompt -> build agent prompt set (default.txt suppressed)");
+  assert(cfg.agent.plan.prompt === persona, "basePrompt -> plan agent prompt set (default.txt suppressed)");
+  // Subagents must NOT get the workbench persona — they do code subtasks and
+  // should keep OpenCode's coding baseline (they only get the model pin, if any).
+  assert(!cfg.agent.general || !cfg.agent.general.prompt, "subagent general keeps coding baseline (no workbench persona)");
+  assert(!cfg.agent.explore || !cfg.agent.explore.prompt, "subagent explore keeps coding baseline (no workbench persona)");
 }
 
 // --- agentPrompt makes Lily's guide the AUTHORITATIVE agent prompt -----------

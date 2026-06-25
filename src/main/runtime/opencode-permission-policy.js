@@ -48,6 +48,15 @@ function decidePermission(mode, toolName, input = {}, context = {}) {
   // Backstop: irreversible disasters always surface, regardless of mode.
   if (tool === "bash" && matchesAny(command, CATASTROPHIC_BASH)) return "ask";
 
+  // Full autonomy = full. Beyond the catastrophic backstop above, full mode runs
+  // everything WITHOUT asking — including the workspace-grounding gate below,
+  // which is a confirm-first SAFETY check for the balanced ("ask") and "plan"
+  // modes only. Running it in full contradicted full's own contract ("edits
+  // files and runs commands without asking; still confirms a few irreversible
+  // disasters") and was why full sessions still got prompted before creating new
+  // directories in coding tasks. (User-confirmed: full means full.)
+  if (mode === "full") return "allow";
+
   const workspaceVerdict = assessWorkspaceWrite({
     projectPath: context.cwd || context.taskContract?.projectPath || "",
     toolName: tool,
@@ -61,10 +70,6 @@ function decidePermission(mode, toolName, input = {}, context = {}) {
     case "plan":
       // Read-only: every mutation denied (reads/research already "allow" server-side).
       if (["edit", "write", "patch", "bash", "external_directory"].includes(tool)) return "deny";
-      return "allow";
-
-    case "full":
-      // Autonomous: everything runs (catastrophic already handled above).
       return "allow";
 
     case "ask":

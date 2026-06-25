@@ -14,21 +14,36 @@ const {
 
 assert.equal(runtimeSupportsNativeCompaction({ nativeCompaction: true }), true);
 assert.equal(runtimeSupportsNativeCompaction({ nativeCompaction: false, manualSummarize: true }), true);
+// WHY: native compaction is the long-session memory. It used to be force-disabled
+// for our anthropic-compatible DeepSeek model on the theory that the gateway 500s
+// on summarize. The real cause was OpenCode running compaction on its unpinned
+// default model (opencode/*-free, no creds); with that agent now pinned to the
+// distributed model, summarize works — so this model IS supported again.
 assert.equal(
   runtimeSupportsNativeCompaction(
     { nativeCompaction: true, manualSummarize: true },
     { providerID: "anthropic", modelID: "deepseek-v4-pro[1m]" },
   ),
-  false,
+  true,
 );
 assert.equal(
   nativeCompactionUnsupportedReason({ providerID: "anthropic", modelID: "deepseek-v4-pro[1m]" }),
-  "anthropic_compatible_non_claude_model",
+  "",
+  "anthropic-compatible non-Claude models are supported once the compaction agent is model-pinned",
 );
 assert.equal(
   nativeCompactionUnsupportedReason({ providerID: "anthropic", modelID: "claude-sonnet-4" }),
   "",
 );
+// Operator kill switch: if a gateway genuinely rejects summarize, force-disable
+// without a rebuild and fall back to Lily's rolling memory.
+process.env.LILY_OPENCODE_DISABLE_NATIVE_COMPACTION = "1";
+assert.equal(
+  nativeCompactionUnsupportedReason({ providerID: "anthropic", modelID: "deepseek-v4-pro[1m]" }),
+  "disabled_by_env",
+  "env kill switch force-disables native compaction",
+);
+delete process.env.LILY_OPENCODE_DISABLE_NATIVE_COMPACTION;
 assert.equal(runtimeSupportsNativeCompaction({}), false);
 assert.equal(estimateTokensFromChars(0), 0);
 assert.equal(estimateTokensFromChars(17), 5);
@@ -49,14 +64,8 @@ assert.deepEqual(
     sessionSummary: { turnCount: 40 },
     now: 1_000_000,
   }),
-  {
-    action: "skip",
-    reason: "unsupported_model_compaction",
-    unsupportedReason: "anthropic_compatible_non_claude_model",
-    providerID: "anthropic",
-    modelID: "deepseek-v4-pro[1m]",
-  },
-  "Anthropic-compatible non-Claude models should use Lily rolling memory instead of native summarize",
+  { action: "compact", reason: "long_session", mode: "native" },
+  "long sessions on the distributed DeepSeek model now compact natively (no longer force-skipped)",
 );
 
 assert.deepEqual(

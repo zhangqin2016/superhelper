@@ -83,6 +83,29 @@ try {
     throw new Error(`listForProject permission fields failed: ${JSON.stringify(listItem)}`);
   }
 
+  // Retired per-session legacy ids must INHERIT the global mode, not silently
+  // shadow it with a forced "ask" (the bug: global "full" but an old "auto"
+  // session kept prompting). They follow global both ways.
+  setActivePermissionMode("full");
+  for (const legacy of ["auto", "acceptEdits", "dontAsk", "default"]) {
+    const ls = { permissionModeId: legacy };
+    if (resolveSessionPermissionMode(ls) !== "full") {
+      throw new Error(`legacy session mode "${legacy}" should inherit global full, got ${resolveSessionPermissionMode(ls)}`);
+    }
+    const ps = listSessionPermissionsPublic(ls);
+    if (!ps.inherited || ps.modeId !== null) {
+      throw new Error(`legacy session mode "${legacy}" should report inherited: ${JSON.stringify(ps)}`);
+    }
+  }
+  setActivePermissionMode("ask");
+  if (resolveSessionPermissionMode({ permissionModeId: "auto" }) !== "ask") {
+    throw new Error("legacy 'auto' session should inherit global ask too");
+  }
+  // The explicit full-access legacy stays a REAL per-session override (not inherit).
+  if (resolveSessionPermissionMode({ permissionModeId: "bypassPermissions" }) !== "full") {
+    throw new Error("bypassPermissions should remain an explicit full override even when global is ask");
+  }
+
   console.log("session-permissions: ok");
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
