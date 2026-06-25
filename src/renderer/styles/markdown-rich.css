@@ -17,14 +17,11 @@
 .markdown-body .markdown-diff::-webkit-scrollbar:horizontal,
 .markdown-mermaid::-webkit-scrollbar:horizontal,
 .markdown-math-block::-webkit-scrollbar:horizontal,
-.markdown-math-inline::-webkit-scrollbar:horizontal,
-.msg-bubble pre::-webkit-scrollbar:horizontal,
-.msg-bubble .markdown-diff::-webkit-scrollbar:horizontal {
+.markdown-math-inline::-webkit-scrollbar:horizontal {
   height: 0;
 }
 
-.markdown-body .markdown-image,
-.msg-bubble .markdown-image {
+.markdown-body .markdown-image {
   display: block;
   max-width: 100%;
   max-height: min(520px, 70vh);
@@ -36,14 +33,12 @@
   cursor: zoom-in;
 }
 
-.markdown-body .markdown-diff,
-.msg-bubble .markdown-diff {
+.markdown-body .markdown-diff {
   padding: 0;
   overflow: auto;
 }
 
-.markdown-body .markdown-diff code,
-.msg-bubble .markdown-diff code {
+.markdown-body .markdown-diff code {
   display: block;
   padding: 0;
 }
@@ -164,7 +159,6 @@
   vertical-align: middle;
 }
 
-.markdown-body .katex,
-.msg-bubble .katex {
+.markdown-body .katex {
   color: var(--text-strong);
 }

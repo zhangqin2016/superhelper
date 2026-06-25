@@ -1,0 +1,172 @@
+/* =========================================================================
+   UI Primitives
+   Shared controls and surfaces. Feature CSS can still set size or variants,
+   but interaction states should stay consistent across the app.
+   ========================================================================= */
+
+:root {
+  --control-h-sm: 28px;
+  --control-h-md: 32px;
+  --control-h-lg: 36px;
+  --control-pad-x-sm: 10px;
+  --control-pad-x-md: 12px;
+  --control-pad-x-lg: 14px;
+  --control-radius: var(--radius-sm);
+  --control-bg: color-mix(in srgb, var(--bg-input) 86%, transparent);
+  --control-bg-hover: var(--bg-surface-hover);
+  --control-bg-active: var(--bg-surface-active);
+  --control-border: var(--border);
+  --control-border-hover: var(--border-light);
+  --control-focus-ring: 0 0 0 3px var(--accent-dim);
+  --surface-border: 1px solid var(--border-light);
+}
+
+:where(button, input, textarea, select) {
+  font: inherit;
+}
+
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--control-h-md);
+  padding: 0 var(--control-pad-x-md);
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+.ui-btn:hover:not(:disabled) {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-hover);
+  color: var(--text-primary);
+}
+
+.ui-btn:active:not(:disabled) {
+  background: var(--control-bg-active);
+  transform: translateY(0);
+}
+
+.ui-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ui-btn-primary {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+
+.ui-btn-primary:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--text-primary);
+}
+
+.ui-btn-danger {
+  border-color: var(--danger-border);
+  background: color-mix(in srgb, var(--danger-bg) 74%, transparent);
+  color: var(--danger-text);
+}
+
+.ui-btn-danger:hover:not(:disabled) {
+  background: var(--danger-bg-hover);
+  border-color: var(--danger-text);
+  color: var(--danger-text-soft);
+}
+
+.ui-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.ui-icon-btn:hover:not(:disabled) {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border);
+  color: var(--text-primary);
+}
+
+.ui-surface {
+  border: var(--surface-border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
+}
+
+.ui-field {
+  min-height: var(--control-h-lg);
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.ui-field:focus {
+  border-color: var(--accent);
+  box-shadow: var(--control-focus-ring);
+  outline: none;
+}
+
+:where(
+  .topbar-btn,
+  .settings-action-btn,
+  .diff-btn,
+  .assistant-action-btn,
+  .session-skills-bulk-btn,
+  .session-skills-reset-btn,
+  .modal-close-btn,
+  .left-action-btn,
+  .left-settings-btn,
+  .mode-btn
+):focus-visible {
+  outline: none;
+  box-shadow: var(--control-focus-ring);
+}
+
+:where(
+  .topbar-btn,
+  .settings-action-btn,
+  .diff-btn,
+  .assistant-action-btn,
+  .session-skills-bulk-btn,
+  .session-skills-reset-btn,
+  .modal-close-btn,
+  .left-action-btn,
+  .left-settings-btn
+):disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

@@ -25,14 +25,15 @@
   --bg-right: #0c0d0f;
   --bg-topbar: #0c0d0f;
   --bg-input: #0f1013;
+  --bg-primary: var(--bg-center);
+  --bg-secondary: var(--bg-surface-muted);
+  --bg-elevated: var(--bg-surface-raised);
   --bg-surface: #141517;
   --bg-surface-raised: #1a1b1e;
   --bg-surface-hover: #202125;
   --bg-surface-active: #26272e;
   --bg-surface-muted: rgba(255, 255, 255, 0.035);
   --bg-surface-subtle: rgba(255, 255, 255, 0.02);
-  --bg-bubble-user: var(--bg-surface-raised);
-  --bg-bubble-ai: var(--bg-surface);
   --bg-status: var(--bg-topbar);
   --bg-floating: rgba(16, 17, 19, 0.96);
   --bg-backdrop: rgba(0, 0, 0, 0.5);
@@ -48,9 +49,13 @@
   --bg-user-chip-soft: rgba(255, 255, 255, 0.1);
 
   --text-primary: #f2f3f5;
+  --text: var(--text-primary);
   --text-secondary: #a0a3ab;
+  --text-tertiary: #7f838d;
+  --text-faint: #5e626d;
   --text-dim: #6b6e78;
   --text-muted: #787d90;
+  --muted: var(--text-muted);
   --text-inverse: #ffffff;
   --text-strong: #fbfbfd;
   --text-code: #f0a060;
@@ -63,6 +68,7 @@
   --border-strong: rgba(255, 255, 255, 0.14);
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
   --shadow-floating: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-panel: -8px 0 32px rgba(0, 0, 0, 0.35);
   --shadow-image: 0 8px 40px rgba(0, 0, 0, 0.5);
@@ -120,6 +126,7 @@
 
   --radius: 8px;
   --radius-sm: 6px;
+  --radius-md: var(--radius);
   --radius-lg: 12px;
 
   /* "Lit from above" hairline + soft elevation, used in place of hard borders */
@@ -183,6 +190,9 @@
   --bg-right: #fbfbfc;
   --bg-topbar: #fcfcfd;
   --bg-input: #ffffff;
+  --bg-primary: var(--bg-center);
+  --bg-secondary: var(--bg-surface-muted);
+  --bg-elevated: var(--bg-surface-raised);
   --bg-surface: #ffffff;
   --bg-surface-raised: #f4f4f6;
   --bg-surface-hover: #efeff1;
@@ -203,9 +213,13 @@
   --bg-user-chip-soft: rgba(255, 255, 255, 0.16);
 
   --text-primary: #18181b;
+  --text: var(--text-primary);
   --text-secondary: #52525b;
+  --text-tertiary: #71717a;
+  --text-faint: #a1a1aa;
   --text-dim: #6b6b73;
   --text-muted: #8a8a93;
+  --muted: var(--text-muted);
   --text-inverse: #ffffff;
   --text-strong: #09090b;
   --text-code: #b45309;
@@ -218,6 +232,7 @@
   --border-strong: rgba(0, 0, 0, 0.16);
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
   --shadow-floating: 0 12px 28px rgba(15, 23, 42, 0.12);
   --shadow-panel: -8px 0 32px rgba(15, 23, 42, 0.12);
   --shadow-image: 0 8px 40px rgba(15, 23, 42, 0.22);
@@ -284,8 +299,7 @@
 
 * { box-sizing: border-box; }
 
-/* Premium typographic detail: tighten large/heading text. */
-h1, h2, h3, h4 { letter-spacing: -0.02em; }
+h1, h2, h3, h4 { letter-spacing: 0; }
 
 html, body {
   width: 100%;
@@ -309,8 +323,7 @@ button, textarea, input { font: inherit; }
 :root[data-text-size="large"] .composer,
 :root[data-text-size="large"] .settings-panel,
 :root[data-text-size="large"] .modal,
-:root[data-text-size="large"] .runtime-messages,
-:root[data-text-size="large"] .msg-bubble {
+:root[data-text-size="large"] .runtime-messages {
   font-size: var(--text-base);
 }
 
@@ -318,10 +331,7 @@ button, textarea, input { font: inherit; }
 :root[data-text-size="large"] .assistant-turn-narrative,
 :root[data-text-size="large"] .assistant-turn-narrative-text,
 :root[data-text-size="large"] .assistant-turn-final,
-:root[data-text-size="large"] .runtime-user-body,
-:root[data-text-size="large"] .msg-content,
-:root[data-text-size="large"] .msg-bubble,
-:root[data-text-size="large"] .message-input {
+:root[data-text-size="large"] .runtime-user-body {
   font-size: var(--text-base);
   line-height: 1.7;
 }

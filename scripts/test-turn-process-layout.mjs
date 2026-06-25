@@ -230,8 +230,8 @@ const twoReads = collapseRepeatedReadTools([
   { kind: "tool", id: "r1", name: "Read", status: "done" },
   { kind: "tool", id: "r2", name: "Read", status: "done" },
 ]);
-if (twoReads.some((entry) => entry.kind === "toolGroup")) {
-  throw new Error("two reads should stay visible without grouping");
+if (twoReads.length !== 1 || twoReads[0].kind !== "toolGroup" || twoReads[0].tools.length !== 2) {
+  throw new Error(`two repeated reads should collapse without hiding details: ${JSON.stringify(twoReads)}`);
 }
 const separatedReads = collapseRepeatedReadTools([
   { kind: "tool", id: "r1", name: "Read", status: "done" },

@@ -639,6 +639,89 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(largeConversationPreserveScrollResult);
+    const liveScrollFollowLockResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { isUserScrollDetached, scrollToBottom } = await import("./modules/dom.js");
+        const { syncCommittedMessages, applyRuntimeEvent } = await import("./modules/session-runtime-store.js");
+        const { showSessionMessages, renderConversation } = await import("./modules/message.js");
+        const sessionId = "session_live_scroll_follow_lock_regression";
+        const messages = Array.from({ length: 34 }, (_, index) => ({
+          id: "msg_scroll_lock_" + index,
+          role: index % 2 === 0 ? "user" : "assistant",
+          content: "scroll follow lock message " + index + "\\n" + "content line ".repeat(40),
+          timestamp: new Date(2026, 0, 1, 0, 0, index).toISOString(),
+        }));
+        store.set("activeSessionId", sessionId);
+        showSessionMessages(sessionId);
+        syncCommittedMessages(sessionId, messages);
+        renderConversation(sessionId, { force: true, forceScrollBottom: true });
+        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"]\`);
+        const ready = () => panel && panel.scrollHeight > panel.clientHeight + 500 && (panel.textContent || "").includes("scroll follow lock message 33");
+        for (let i = 0; i < 200 && !ready(); i++) {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        }
+        if (!ready()) {
+          throw new Error("scroll lock fixture did not become scrollable");
+        }
+        scrollToBottom(true, panel);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const bottomTop = panel.scrollTop;
+        const nearBottomTop = Math.max(0, bottomTop - 36);
+        panel.scrollTop = nearBottomTop;
+        panel.dispatchEvent(new Event("scroll"));
+        if (!isUserScrollDetached(panel)) {
+          throw new Error("upward user scroll near bottom must detach live auto-follow: " + JSON.stringify({
+            bottomTop,
+            nearBottomTop,
+            actualTop: panel.scrollTop,
+            lastScrollTop: panel.dataset.lastScrollTop,
+            programmatic: panel.dataset.programmaticScroll || "",
+            scrollHeight: panel.scrollHeight,
+            clientHeight: panel.clientHeight,
+          }));
+        }
+        applyRuntimeEvent({
+          sessionId,
+          type: "turn.started",
+          turnId: "turn_live_scroll_follow_lock_regression",
+          ts: Date.now(),
+          payload: { text: "running" },
+        });
+        applyRuntimeEvent({
+          sessionId,
+          type: "assistant.delta",
+          turnId: "turn_live_scroll_follow_lock_regression",
+          ts: Date.now() + 1,
+          payload: { text: "streamed text while user is reading" },
+        });
+        renderConversation(sessionId);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        if (panel.scrollTop > nearBottomTop + 8) {
+          throw new Error(\`live render pulled user back to latest: before=\${nearBottomTop} after=\${panel.scrollTop}\`);
+        }
+        scrollToBottom(true, panel);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        if (isUserScrollDetached(panel)) {
+          throw new Error("clicking Latest/force bottom should re-enable live auto-follow");
+        }
+        applyRuntimeEvent({
+          sessionId,
+          type: "assistant.delta",
+          turnId: "turn_live_scroll_follow_lock_regression",
+          ts: Date.now() + 2,
+          payload: { text: "\\nmore streamed text" },
+        });
+        renderConversation(sessionId);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const maxTop = panel.scrollHeight - panel.clientHeight;
+        if (panel.scrollTop < maxTop - 80) {
+          throw new Error(\`auto-follow did not resume after Latest: top=\${panel.scrollTop} max=\${maxTop}\`);
+        }
+        return "live-scroll-follow-lock-regression: ok";
+      }
+    )()`);
+    console.log(liveScrollFollowLockResult);
     const multiSelectQuestionResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");

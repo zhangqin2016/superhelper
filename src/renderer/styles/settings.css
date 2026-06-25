@@ -447,7 +447,11 @@
   color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.12s;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .settings-action-btn:hover {

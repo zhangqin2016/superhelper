@@ -229,7 +229,7 @@ function groupedStatus(entries = []) {
   return entries.at(-1)?.status || "done";
 }
 
-export function collapseRepeatedReadTools(timeline = [], minCount = 3) {
+export function collapseRepeatedReadTools(timeline = [], minCount = 2) {
   const out = [];
   for (let index = 0; index < timeline.length;) {
     const entry = timeline[index];

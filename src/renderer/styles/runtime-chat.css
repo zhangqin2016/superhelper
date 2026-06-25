@@ -91,10 +91,6 @@
 /* Spacing rides on the status line itself: a hidden status (sealed turn with
    no footer text) must not leave a phantom header margin behind. */
 .assistant-turn-status {
-  margin-bottom: 10px;
-}
-
-.assistant-turn-status {
   color: var(--text-secondary);
   font-size: 15px;
   font-weight: 500;
@@ -318,7 +314,8 @@
 }
 
 .assistant-turn-process {
-  margin: 14px 0;
+  width: min(100%, var(--chat-prose));
+  margin: 10px 0 12px;
   /* Secondary to the answer: smaller + dimmer so the eye lands on the result. */
   font-size: var(--text-sm);
   color: var(--text-secondary);
@@ -327,7 +324,8 @@
 .assistant-turn-timeline {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  min-width: 0;
 }
 
 .assistant-turn-footer {
@@ -759,6 +757,13 @@
   color: var(--text-secondary);
   user-select: none;
   min-width: 0;
+  border-radius: var(--radius-sm);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.assistant-process-group > summary:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .assistant-process-summary-title {
@@ -788,8 +793,9 @@
   display: grid;
   gap: 1px;
   margin-top: 2px;
-  padding-left: 16px;
+  padding-inline-start: 16px;
   min-width: 0;
+  border-inline-start: 1px solid var(--border-subtle);
 }
 
 .assistant-process-subgroup {
@@ -808,6 +814,12 @@
   color: var(--text-secondary);
   padding: 0;
   min-width: 0;
+  border-radius: var(--radius-sm);
+}
+
+.assistant-process-subgroup > summary:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .assistant-process-subgroup > summary::before {
@@ -825,8 +837,9 @@
 .assistant-process-subgroup-body {
   display: grid;
   gap: 1px;
-  padding-left: 16px;
+  padding-inline-start: 16px;
   min-width: 0;
+  border-inline-start: 1px solid var(--border-subtle);
 }
 
 .assistant-process-changes-list {
@@ -896,6 +909,8 @@
   cursor: pointer;
   list-style: none;
   min-width: 0;
+  border-radius: var(--radius-sm);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
 .assistant-tool-summary::-webkit-details-marker {
@@ -915,6 +930,10 @@
   transform: rotate(90deg);
 }
 
+.assistant-tool-summary:hover {
+  background: var(--bg-secondary);
+}
+
 .assistant-tool-row-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(72px, auto);
@@ -928,7 +947,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.35;
@@ -940,22 +959,29 @@
   white-space: nowrap;
   justify-self: end;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .assistant-subagent-panel {
-  margin: 2px 0 6px;
-  padding: 6px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-secondary);
+  margin: 2px 0 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
 }
 
 .assistant-subagent-panel-summary {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  min-height: 24px;
   cursor: pointer;
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   list-style: none;
+  border-radius: var(--radius-sm);
+  min-width: 0;
 }
 
 .assistant-subagent-panel-summary::-webkit-details-marker {
@@ -965,8 +991,8 @@
 .assistant-subagent-panel-summary::before {
   content: "›";
   display: inline-block;
-  margin-right: 5px;
   color: var(--text-muted);
+  justify-self: center;
 }
 
 .assistant-subagent-panel[open] .assistant-subagent-panel-summary::before {
@@ -975,15 +1001,18 @@
 
 .assistant-subagent-list {
   display: grid;
-  gap: 6px;
-  margin-top: 6px;
+  gap: 3px;
+  margin-top: 2px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--border-subtle);
+  min-width: 0;
 }
 
 .assistant-subagent-row {
   min-width: 0;
-  padding: 6px 8px;
-  border-radius: 5px;
-  background: var(--bg-primary);
+  padding: 5px 0 6px;
+  border-radius: 0;
+  background: transparent;
 }
 
 .assistant-subagent-row-head {
@@ -1007,6 +1036,7 @@
   color: var(--text-muted);
   font-size: 11px;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .assistant-subagent-phase {

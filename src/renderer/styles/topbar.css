@@ -312,7 +312,10 @@
   color: var(--text-dim);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.12s;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 .mode-btn.active { background: var(--accent); color: var(--text-inverse); }
 .mode-btn:hover:not(.active) { color: var(--text-primary); }
@@ -326,7 +329,11 @@
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.12s;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 .topbar-btn:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
 .topbar-btn-stop { color: var(--danger-text); border-color: var(--danger-bg); }

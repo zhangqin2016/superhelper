@@ -3,7 +3,15 @@
  */
 
 import store from "./state.js";
-import { $, scrollToBottom, scrollToBottomAfterLayout, bindPanelScroll, initScrollToBottom, isNearBottom } from "./dom.js";
+import {
+  $,
+  bindPanelScroll,
+  initScrollToBottom,
+  isNearBottom,
+  isUserScrollDetached,
+  scrollToBottom,
+  scrollToBottomAfterLayout,
+} from "./dom.js";
 import { revealScrollIntent, shouldLoadOlderOnScroll } from "./scroll-geometry.js";
 import { t } from "../i18n/index.js";
 import {
@@ -344,7 +352,7 @@ function renderCommittedMessages(sessionId, opts = {}) {
 function appendUserMessage(sessionId, message, beforeNode = null) {
   const v = ensurePanel(sessionId);
   const article = document.createElement("article");
-  article.className = "msg msg-user runtime-user-message";
+  article.className = "runtime-user-message";
 
   const label = document.createElement("p");
   label.className = "runtime-user-label";
@@ -651,7 +659,11 @@ function renderRuntimeSession(sessionId, opts = {}) {
   lastRuntimeVisualSig.set(sessionId, sig);
 
   const panel = view(sessionId).panel;
-  const shouldFollow = !opts.preserveScroll && isActiveSession(sessionId) && isNearBottom(panel);
+  const shouldFollow =
+    !opts.preserveScroll &&
+    isActiveSession(sessionId) &&
+    !isUserScrollDetached(panel) &&
+    isNearBottom(panel);
   renderCommittedMessages(sessionId);
   if (runtime.liveTurn) renderLiveTurn(sessionId, runtime.liveTurn, runtime.queue);
   syncWorkbenchEmptyState(view(sessionId).listEl);

@@ -5,6 +5,8 @@ import store from "./state.js";
 export const $ = (id) => document.getElementById(id);
 
 const SCROLL_THRESHOLD = 72;
+const USER_SCROLL_DETACHED = "userScrollDetached";
+const PROGRAMMATIC_SCROLL = "programmaticScroll";
 
 export function el(tag, className, attrs = {}) {
   const e = document.createElement(tag);
@@ -34,6 +36,25 @@ export function isNearBottom(el) {
   return scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight <= SCROLL_THRESHOLD;
 }
 
+export function isUserScrollDetached(el) {
+  const scrollEl = el || getActiveMessagesEl();
+  return scrollEl?.dataset?.[USER_SCROLL_DETACHED] === "1";
+}
+
+function setUserScrollDetached(panel, detached) {
+  if (!panel?.dataset) return;
+  if (detached) panel.dataset[USER_SCROLL_DETACHED] = "1";
+  else delete panel.dataset[USER_SCROLL_DETACHED];
+}
+
+function markProgrammaticScroll(panel) {
+  if (!panel?.dataset) return;
+  panel.dataset[PROGRAMMATIC_SCROLL] = "1";
+  requestAnimationFrame(() => {
+    if (panel.dataset[PROGRAMMATIC_SCROLL] === "1") delete panel.dataset[PROGRAMMATIC_SCROLL];
+  });
+}
+
 export function updateScrollToBottomButton(scrollEl) {
   const btn = $("scrollToBottomBtn");
   const messages = scrollEl || getActiveMessagesEl();
@@ -55,7 +76,10 @@ export function scrollToBottom(force = true, scrollEl) {
   const messages = scrollEl || getActiveMessagesEl();
   if (!messages) return;
   if (force || isNearBottom(messages)) {
+    setUserScrollDetached(messages, false);
+    markProgrammaticScroll(messages);
     messages.scrollTop = messages.scrollHeight;
+    if (messages.dataset) messages.dataset.lastScrollTop = String(messages.scrollTop || 0);
   }
   updateScrollToBottomButton(messages);
 }
@@ -73,12 +97,22 @@ export function scrollToBottomThrottled(force = false, scrollEl) {
 export function bindPanelScroll(panel) {
   if (!panel || panel.dataset.scrollBound === "1") return;
   panel.dataset.scrollBound = "1";
+  panel.dataset.lastScrollTop = String(panel.scrollTop || 0);
   panel.addEventListener(
     "scroll",
     () => {
-      if (panel.classList.contains("is-active")) {
-        updateScrollToBottomButton(panel);
+      if (!panel.classList.contains("is-active")) return;
+      const previousTop = Number(panel.dataset.lastScrollTop || 0);
+      const currentTop = Number(panel.scrollTop || 0);
+      const userScrolledUp = currentTop < previousTop - 1;
+      const nearBottom = isNearBottom(panel);
+      if (panel.dataset[PROGRAMMATIC_SCROLL] !== "1") {
+        setUserScrollDetached(panel, userScrolledUp || !nearBottom);
+      } else if (nearBottom) {
+        setUserScrollDetached(panel, false);
       }
+      panel.dataset.lastScrollTop = String(currentTop);
+      updateScrollToBottomButton(panel);
     },
     { passive: true },
   );
