@@ -766,6 +766,18 @@ def extract_page(page: Any, current_url: str, allowed_domains: list[str], config
         "interactionCandidates": len(page_record["interactionCandidates"]),
         "apiContracts": len([form for form in page_record["formContracts"] if form.get("apiContract")]),
     }
+    # Native Playwright accessibility-tree snapshot — the page as assistive tech
+    # (and the model) actually reads it: roles + accessible names in document
+    # order. First-party Playwright API, far more robust for page understanding
+    # than hand-rolled DOM scraping. Additive + fail-safe: any failure leaves the
+    # field empty and never affects the rest of the scan.
+    page_record["accessibilityTree"] = ""
+    try:
+        aria = page.locator("body").aria_snapshot()
+        if isinstance(aria, str) and aria.strip():
+            page_record["accessibilityTree"] = aria[:8000]
+    except Exception:
+        pass
     page_record["actionCandidates"] = collect_action_candidates(page_record)
     page_record["businessObjects"] = infer_business_objects_from_page(page_record)
     page_record["fingerprint"] = stable_hash(

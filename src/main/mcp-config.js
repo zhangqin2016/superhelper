@@ -3,10 +3,12 @@
 /**
  * Built-in @playwright/mcp wiring.
  *
- * When the platform runtime bundle ships node + @playwright/mcp + Chromium
- * (see docs/playwright-builtin-plan.md), this module emits the `--mcp-config`
- * file that registers the Playwright MCP server with the Claude CLI, so the
- * model can drive a browser via the accessibility tree.
+ * When the platform runtime bundle ships node + @playwright/mcp (Chromium is
+ * optional — falls back to the user's Chrome; see docs/playwright-builtin-plan.md),
+ * this module emits the MCP config that registers the Playwright MCP server with
+ * the active engine (OpenCode today; the entry is engine-agnostic and consumed
+ * via SessionRunnerPool._opencodeMcpServers), so the model can drive a browser
+ * via the accessibility tree.
  *
  * Everything here is gated on the bundle actually being present: if node or the
  * @playwright/mcp entry is missing, every function returns null and the engine
@@ -58,15 +60,21 @@ function playwrightMcpAvailable(runtimeDir) {
 function buildPlaywrightMcpConfig(runtimeDir) {
   if (!playwrightMcpAvailable(runtimeDir)) return null;
   const browsers = bundledBrowsersDir(runtimeDir);
+  const hasBundledChromium = fs.existsSync(browsers);
   const env = {};
-  if (fs.existsSync(browsers)) env.PLAYWRIGHT_BROWSERS_PATH = browsers;
+  if (hasBundledChromium) env.PLAYWRIGHT_BROWSERS_PATH = browsers;
+  // Prefer the bundled Chromium. If the bundle ships node + @playwright/mcp but
+  // no browser pack, fall back to the user's installed Chrome (the same channel
+  // the web-system scanner uses via channel="chrome"), so the accessibility-tree
+  // exploration path still activates without a ~150MB per-platform Chromium.
+  const browserArg = hasBundledChromium ? "chromium" : "chrome";
   return {
     mcpServers: {
       playwright: {
         command: nodeBinaryPath(runtimeDir),
-        // Bundled Chromium, headless, isolated profile; never reuse credentials
-        // from the host — the model logs in interactively when needed.
-        args: [playwrightMcpEntry(runtimeDir), "--browser", "chromium", "--headless", "--isolated"],
+        // Headless, isolated profile; never reuse credentials from the host —
+        // the model logs in interactively when needed.
+        args: [playwrightMcpEntry(runtimeDir), "--browser", browserArg, "--headless", "--isolated"],
         env,
       },
     },
