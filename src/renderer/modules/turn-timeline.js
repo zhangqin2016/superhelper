@@ -237,6 +237,8 @@ export function upsertTimelineTool(target, tool, ts = Date.now()) {
       partialJson: tool.partialJson || "",
       status: tool.status || "running",
       result: tool.result || null,
+      metadata: tool.metadata || {},
+      title: tool.title || "",
       parentToolUseId: tool.parentToolUseId || null,
     };
     if (entry.input && Object.keys(entry.input).length > 0) {
@@ -254,6 +256,8 @@ export function upsertTimelineTool(target, tool, ts = Date.now()) {
   if (tool.partialJson) entry.partialJson = tool.partialJson;
   if (tool.status) entry.status = tool.status;
   if (tool.result !== undefined) entry.result = tool.result;
+  if (tool.metadata) entry.metadata = tool.metadata;
+  if (tool.title) entry.title = tool.title;
   entry.preview = entry.input && Object.keys(entry.input).length > 0
     ? toolPreview({ ...entry, partialJson: "" })
     : toolPreview(entry);
@@ -377,6 +381,8 @@ export function buildTimelineFromLegacy(state = {}) {
       partialJson: tool.partialJson || "",
       status: tool.status || "done",
       result: tool.result || null,
+      metadata: tool.metadata || {},
+      title: tool.title || "",
     });
   }
   for (const event of state.notices || []) {

@@ -26,6 +26,7 @@ function buildEvidenceGraph(record = {}) {
     nodes.push(node(id, "tool", tool.name || "tool", {
       status: tool.status || "",
       input: tool.input || {},
+      durationMs: Number(tool.durationMs || 0),
     }));
     edges.push(edge(`turn:${turnId}`, id, "used_tool"));
   }
@@ -37,6 +38,7 @@ function buildEvidenceGraph(record = {}) {
       toolId: taskTool.id || "",
       status: taskTool.status || "",
       input: taskTool.input || {},
+      durationMs: Number(taskTool.durationMs || 0),
     }));
     edges.push(edge(`turn:${turnId}`, id, "delegated_subagent"));
   }

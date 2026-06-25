@@ -10,6 +10,7 @@ const ROOT_CAUSE_RE = /(原因是|根因是|问题在于|root cause|the cause is
 const FIXED_RE = /(已(?:修复|解决)|修好了|fixed|resolved)/i;
 const VERIFIED_RE = /(已(?:验证|确认)|验证通过|测试通过|verified|confirmed)/i;
 const COVERAGE_RE = /(全部|全量|所有(?:问题|相关|文件|位置|地方|出现|引用|调用)|彻底(?:找出|检查|排查)|不要漏|all occurrences|all related|every occurrence)/i;
+const NO_FINDING_RE = /(未发现|没有发现|没发现|不存在|没有.*问题|no (?:issue|problem|bug)s? found|nothing (?:else )?(?:found|left))/i;
 const FRESH_RE = /(最新|当前|现在|实时|today|latest|current|now)/i;
 
 function hasCount(summary, key) {
@@ -29,13 +30,17 @@ function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = n
   if (VERIFIED_RE.test(text) && !summary.hasVerificationEvidence && !hasCount(summary, "verifications")) {
     return { ok: false, reason: "verified_claim_without_verification" };
   }
-  if ((turnPolicy?.rigor === "coverage" || COVERAGE_RE.test(text)) && COVERAGE_RE.test(text)) {
+  const coverageAssertion =
+    COVERAGE_RE.test(text) ||
+    NO_FINDING_RE.test(text) ||
+    (turnPolicy?.rigor === "coverage" && STRONG_CLAIM_RE.test(text));
+  if ((turnPolicy?.rigor === "coverage" || COVERAGE_RE.test(text)) && coverageAssertion) {
     const candidateCount = summary?.coverage?.candidateCount || 0;
     const inspectedCount = summary?.coverage?.inspectedCount || 0;
     if (!summary.hasSearchEvidence && candidateCount <= 0) {
       return { ok: false, reason: "coverage_claim_without_candidate_set" };
     }
-    if (candidateCount > 0 && inspectedCount < candidateCount) {
+    if (candidateCount > 0 && (summary?.coverage?.fullInspection === false || inspectedCount < candidateCount)) {
       return { ok: false, reason: "coverage_claim_without_full_inspection" };
     }
   }

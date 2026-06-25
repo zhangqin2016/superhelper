@@ -81,6 +81,46 @@ const unsupportedCoverage = assessFinalAnswerEvidence({
 assert.equal(unsupportedCoverage.ok, false);
 assert.equal(unsupportedCoverage.reason, "coverage_claim_without_candidate_set");
 
+const unsupportedCoverageNoFinding = assessFinalAnswerEvidence({
+  assistant: "没有发现其他 session.idle 问题。",
+  evidencePolicy: policy,
+  turnPolicy: { rigor: "coverage" },
+  evidenceSummary: {
+    counts: { fileSearches: 1, filesRead: 1 },
+    coverage: { candidateCount: 2, inspectedCount: 1, fullInspection: false },
+    hasSearchEvidence: true,
+    hasFileReadEvidence: true,
+  },
+});
+assert.equal(unsupportedCoverageNoFinding.ok, false);
+assert.equal(unsupportedCoverageNoFinding.reason, "coverage_claim_without_full_inspection");
+
+const coverageProgressUpdate = assessFinalAnswerEvidence({
+  assistant: "还需要继续检查剩余文件，暂时不下最终结论。",
+  evidencePolicy: policy,
+  turnPolicy: { rigor: "coverage" },
+  evidenceSummary: {
+    counts: { fileSearches: 1, filesRead: 1 },
+    coverage: { candidateCount: 2, inspectedCount: 1, fullInspection: false },
+    hasSearchEvidence: true,
+    hasFileReadEvidence: true,
+  },
+});
+assert.equal(coverageProgressUpdate.ok, true, "coverage turns can report incomplete progress without making final claims");
+
+const supportedCoverageNoFinding = assessFinalAnswerEvidence({
+  assistant: "没有发现其他 session.idle 问题。",
+  evidencePolicy: policy,
+  turnPolicy: { rigor: "coverage" },
+  evidenceSummary: {
+    counts: { fileSearches: 1, filesRead: 2 },
+    coverage: { candidateCount: 2, inspectedCount: 2, fullInspection: true },
+    hasSearchEvidence: true,
+    hasFileReadEvidence: true,
+  },
+});
+assert.equal(supportedCoverageNoFinding.ok, true);
+
 const unsupportedFresh = assessFinalAnswerEvidence({
   assistant: "最新版本已经发布。",
   evidencePolicy: policy,

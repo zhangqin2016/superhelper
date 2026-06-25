@@ -43,6 +43,8 @@ assert(openaiUrl("https://x/") === "https://x", "openai url verbatim (trimmed)")
   assert(cfg.model === "anthropic/deepseek-v4-pro", "default model ref");
   assert(r.tiers.haiku === "deepseek-v4-pro", "missing haiku tier falls back to main model");
   assert(r.tiers.subagent === "deepseek-v4-pro", "missing subagent tier falls back to main model");
+  assert(r.diagnostics.subagentUsesMainModel === true, "subagent main-model fallback is diagnosed");
+  assert(r.diagnostics.subagentModelSource === "LILY_MODEL", "diagnostic records fallback source");
 }
 
 // --- Lily gateway endpoint: protocol is explicit, not guessed from URL -------
@@ -81,6 +83,9 @@ assert(openaiUrl("https://x/") === "https://x", "openai url verbatim (trimmed)")
     LILY_MODEL_HAIKU: "deepseek-v4-flash", LILY_SUBAGENT_MODEL: "deepseek-v4-flash",
   });
   assert(r.tiers.haiku === "deepseek-v4-flash", "tiers captured");
+  assert(r.diagnostics.subagentModel === "deepseek-v4-flash", "diagnostic records subagent model");
+  assert(r.diagnostics.subagentModelSource === "LILY_SUBAGENT_MODEL", "explicit subagent model source wins");
+  assert(r.diagnostics.subagentUsesMainModel === false, "fast subagent tier avoids main-model warning");
   const models = JSON.parse(r.configContent).provider.anthropic.models;
   assert("deepseek-v4-pro" in models && "deepseek-v4-flash" in models && Object.keys(models).length === 2, "distinct tier ids declared + de-duped");
 }

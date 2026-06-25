@@ -211,6 +211,29 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(a.seen.at(-1) === owner, "owner session receives only owned event");
   assert(!b.seen.includes(owner), "other session in the same directory never receives another session's event");
 
+  const childEvent = {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        sessionID: "child_1",
+        messageID: "msg_child",
+        callID: "call_child",
+        type: "tool",
+        tool: "grep",
+        state: { status: "running", input: { pattern: "qrcode" } },
+      },
+    },
+  };
+  a.emit(childEvent);
+  assert(!a.seen.includes(childEvent), "unknown child session is still filtered");
+  assert(a.manager.allowChildSession("child_1") === true, "parent can register a known child session");
+  a.emit(childEvent);
+  const deliveredChild = a.seen.at(-1);
+  assert(deliveredChild?.__lilySubagentSessionID === "child_1", "known child session event is delivered as subagent-scoped");
+  b.emit(childEvent);
+  assert(!b.seen.some((event) => event?.__lilySubagentSessionID === "child_1"),
+    "child session routing stays scoped to the parent that registered it");
+
   const ownedQuestion = {
     type: "question.asked",
     properties: { id: "q2", sessionID: "ses_a", tool: { callID: "call_2" }, questions: [] },

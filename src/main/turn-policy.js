@@ -18,6 +18,54 @@ const COVERAGE_TERMS = [
   "全项目",
 ];
 
+const COVERAGE_ACTION_TERMS = [
+  "analyze",
+  "audit",
+  "check",
+  "find",
+  "inspect",
+  "review",
+  "scan",
+  "分析",
+  "检查",
+  "排查",
+  "审计",
+  "找出",
+  "梳理",
+  "扫描",
+  "看",
+];
+
+const SOURCE_SCOPE_TERMS = [
+  "code",
+  "codebase",
+  "file",
+  "project",
+  "repo",
+  "repository",
+  "source",
+  "workspace",
+  "bug",
+  "issue",
+  "occurrence",
+  "reference",
+  "usage",
+  "项目",
+  "仓库",
+  "代码",
+  "源码",
+  "文件",
+  "目录",
+  "模块",
+  "链路",
+  "逻辑",
+  "问题",
+  "bug",
+  "引用",
+  "调用",
+  "位置",
+];
+
 const FRESHNESS_TERMS = [
   "latest",
   "recent",
@@ -37,13 +85,27 @@ function hasAnyTerm(text, terms) {
   return terms.some((term) => source.includes(String(term).toLowerCase()));
 }
 
+function hasBroadCoverageIntent(text = "") {
+  const source = lowerText(text);
+  if (!source) return false;
+  const orderedPatterns = [
+    /(?:彻底|全面|完整|全量).{0,16}(?:分析|检查|排查|审计|找出|梳理|扫描|看)/i,
+    /(?:分析|检查|排查|审计|找出|梳理|扫描|看).{0,20}(?:整个项目|全项目|所有|全部|全量|完整|不要漏|别漏)/i,
+    /(?:all|every|entire|whole|complete|full|thorough|exhaustive).{0,32}(?:project|repo|repository|codebase|source|file|occurrence|reference|usage|bug|issue)/i,
+    /(?:analyze|audit|check|find|inspect|review|scan).{0,32}(?:all|every|entire|whole|complete|full|thorough|exhaustive)/i,
+  ];
+  if (orderedPatterns.some((pattern) => pattern.test(source))) return true;
+  return hasAnyTerm(source, COVERAGE_TERMS) && hasAnyTerm(source, COVERAGE_ACTION_TERMS) && hasAnyTerm(source, SOURCE_SCOPE_TERMS);
+}
+
 function buildTurnPolicy({ text = "", taskContract = null } = {}) {
   const active = Boolean(taskContract?.active);
   const requiresFreshness = hasAnyTerm(text, FRESHNESS_TERMS);
   const requiresSourceCoverage = Boolean(taskContract?.sourceCoveragePolicy?.required);
   const requiresWorkspaceGrounding = Boolean(taskContract?.workspaceGroundingPolicy?.required);
-  const coverageIntent = active && hasAnyTerm(text, COVERAGE_TERMS);
-  const groundedIntent = active || requiresFreshness || requiresSourceCoverage || requiresWorkspaceGrounding;
+  const broadCoverageIntent = hasBroadCoverageIntent(text);
+  const coverageIntent = broadCoverageIntent || (active && hasAnyTerm(text, COVERAGE_TERMS));
+  const groundedIntent = active || coverageIntent || requiresFreshness || requiresSourceCoverage || requiresWorkspaceGrounding;
   const rigor = coverageIntent ? "coverage" : groundedIntent ? "grounded" : "fast";
   const coverage = rigor === "coverage";
   const grounded = rigor === "grounded";
@@ -81,4 +143,5 @@ function buildTurnPolicy({ text = "", taskContract = null } = {}) {
 
 module.exports = {
   buildTurnPolicy,
+  hasBroadCoverageIntent,
 };

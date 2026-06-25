@@ -41,6 +41,9 @@
   --bg-tool-detail: rgba(0, 0, 0, 0.18);
   --bg-tool-detail-strong: rgba(0, 0, 0, 0.22);
   --bg-media: rgba(10, 11, 13, 0.72);
+  --bg-choice-backdrop: rgba(0, 0, 0, 0.28);
+  --bg-pdf-active: rgba(124, 108, 246, 0.10);
+  --bg-pdf-viewport-sheen: rgba(255, 255, 255, 0.035);
   --bg-user-chip: rgba(255, 255, 255, 0.15);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.1);
 
@@ -64,6 +67,8 @@
   --shadow-panel: -8px 0 32px rgba(0, 0, 0, 0.35);
   --shadow-image: 0 8px 40px rgba(0, 0, 0, 0.5);
   --shadow-modal: 0 22px 70px rgba(0, 0, 0, 0.42);
+  --shadow-pdf-page: 0 18px 44px rgba(0, 0, 0, 0.18);
+  --shadow-pdf-thumb: 0 1px 4px rgba(0, 0, 0, 0.22);
 
   --success-bg: #1a3a2a;
   --success-bg-hover: #2a4a3a;
@@ -191,6 +196,9 @@
   --bg-tool-detail: rgba(0, 0, 0, 0.04);
   --bg-tool-detail-strong: rgba(0, 0, 0, 0.06);
   --bg-media: rgba(250, 250, 251, 0.96);
+  --bg-choice-backdrop: rgba(0, 0, 0, 0.28);
+  --bg-pdf-active: rgba(106, 87, 240, 0.08);
+  --bg-pdf-viewport-sheen: rgba(15, 23, 42, 0.04);
   --bg-user-chip: rgba(255, 255, 255, 0.22);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.16);
 
@@ -214,6 +222,8 @@
   --shadow-panel: -8px 0 32px rgba(15, 23, 42, 0.12);
   --shadow-image: 0 8px 40px rgba(15, 23, 42, 0.22);
   --shadow-modal: 0 22px 70px rgba(15, 23, 42, 0.18);
+  --shadow-pdf-page: 0 18px 44px rgba(0, 0, 0, 0.18);
+  --shadow-pdf-thumb: 0 1px 4px rgba(15, 23, 42, 0.08);
 
   --success-bg: #e9f8ef;
   --success-bg-hover: #d8f1e2;

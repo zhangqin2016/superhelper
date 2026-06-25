@@ -50,8 +50,11 @@ class FakeServer extends EventEmitter {
       else throw new Error(this.failPrompt);
     }
   }
-  async respondPermission(id, d) { this.permissionReplies.push({ id, ...d }); }
-  async respondQuestion(id, answers) { this.questionReplies = this.questionReplies || []; this.questionReplies.push({ id, answers }); }
+  async respondPermission(id, d, opts = {}) { this.permissionReplies.push({ id, sessionID: opts.sessionID || "", ...d }); }
+  async respondQuestion(id, answers, opts = {}) {
+    this.questionReplies = this.questionReplies || [];
+    this.questionReplies.push({ id, sessionID: opts.sessionID || "", answers });
+  }
   async summarize(body) { this.summarizeCalls.push(body); return true; }
   async abort() {
     this.aborted = true;
@@ -188,6 +191,64 @@ async function newSession() {
     assert(orch.calls.done[0].output === "probe final answer", "probe completion syncs official final output");
     assert(orch.calls.done[0].engineMessageId === "msg_idle_probe_final", "probe completion preserves official message id");
     assert(fake.idleChecks.length >= 2, "idle probe checked official status repeatedly");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_STATUS_PROBE_MS = savedProbe;
+    OpencodeAgentSession.IDLE_SETTLE_MS = savedSettle;
+  }
+}
+
+// --- v2 Task completion without session.idle still settles via official state
+{
+  const savedProbe = OpencodeAgentSession.IDLE_STATUS_PROBE_MS;
+  const savedSettle = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_STATUS_PROBE_MS = 20;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 10;
+  try {
+    const { fake, session, orch } = await newSession();
+    const now = Date.now();
+    fake.idleState = false;
+    fake.historyMessages = [{
+      info: {
+        id: "msg_task_probe_final",
+        role: "assistant",
+        sessionID: "ses_test",
+        time: { created: now, completed: now + 1 },
+      },
+      parts: [{ type: "text", text: "Task result summarized by parent" }],
+    }];
+    session.sendUserMessage({ text: "use task and finish without idle event" });
+    await tick();
+    fake.emitEvent({
+      type: "session.next.tool.called",
+      properties: {
+        sessionID: "ses_test",
+        assistantMessageID: "msg_task_probe_final",
+        callID: "call_task_probe",
+        tool: "task",
+        input: { description: "Find TODO and FIXME in meeting code" },
+        provider: { executed: true },
+      },
+    });
+    fake.emitEvent({
+      type: "session.next.tool.success",
+      properties: {
+        sessionID: "ses_test",
+        assistantMessageID: "msg_task_probe_final",
+        callID: "call_task_probe",
+        structured: {},
+        content: [{ type: "text", text: "no TODO/FIXME found" }],
+        provider: { executed: true },
+      },
+    });
+    await sleep(35);
+    assert(orch.calls.done.length === 0, "busy official status keeps v2 task turn open");
+    fake.idleState = true;
+    await sleep(60);
+    assert(orch.calls.done.length === 1, "v2 task progress triggers idle probe completion without session.idle");
+    assert(orch.calls.done[0].output === "Task result summarized by parent", "v2 task idle probe syncs final parent answer");
+    assert(draftTypes(orch).includes("tool.started"), "v2 task called is visible to orchestrator");
+    assert(draftTypes(orch).includes("tool.done"), "v2 task success is visible to orchestrator");
     session.terminate();
   } finally {
     OpencodeAgentSession.IDLE_STATUS_PROBE_MS = savedProbe;
@@ -721,6 +782,55 @@ async function newSession() {
   session.terminate();
 }
 
+// --- subagent permission/question round trip -------------------------------
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "delegate" });
+  await tick();
+  fake.emitEvent({
+    __lilySubagentSessionID: "child_1",
+    type: "permission.asked",
+    properties: {
+      id: "per_child",
+      permission: "bash",
+      metadata: { command: "rm -rf child" },
+      tool: { callID: "child_call" },
+    },
+  });
+  const req = orch.calls.ingest.find((d) => (
+    d.type === "permission.requested" &&
+    d.payload?.requestId === "subagent:child_1:per_child"
+  ));
+  assert(req, "subagent permission is surfaced as a parent-visible prompt");
+  assert(req.payload.subagent?.sessionId === "child_1", "subagent permission carries child session id");
+  assert(session.respondPermission("subagent:child_1:per_child", { allow: true }) === true,
+    "subagent permission response accepted");
+  await tick();
+  assert(fake.permissionReplies.at(-1)?.id === "per_child", "subagent permission replies with raw request id");
+  assert(fake.permissionReplies.at(-1)?.sessionID === "child_1", "subagent permission reply targets child session");
+
+  fake.emitEvent({
+    __lilySubagentSessionID: "child_1",
+    type: "question.asked",
+    properties: {
+      id: "que_child",
+      questions: [{ question: "Mode?", header: "Mode", options: [{ label: "Fast" }], multiple: false }],
+      tool: { callID: "child_question" },
+    },
+  });
+  const q = orch.calls.ingest.find((d) => (
+    d.type === "user_question.requested" &&
+    d.payload?.requestId === "subagent:child_1:que_child"
+  ));
+  assert(q, "subagent question is surfaced as a parent-visible prompt");
+  assert(session.respondUserQuestion("subagent:child_1:que_child", { answers: { Mode: "Fast" } }) === true,
+    "subagent question response accepted");
+  await tick();
+  assert(fake.questionReplies.at(-1)?.id === "que_child", "subagent question replies with raw request id");
+  assert(fake.questionReplies.at(-1)?.answers?.[0]?.[0] === "Fast", "subagent question answer is coerced");
+  session.terminate();
+}
+
 // --- engine error fails the turn ------------------------------------------
 {
   const { fake, session, orch } = await newSession();
@@ -950,6 +1060,39 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
     assert(notice.payload.notice.level === "progress", "longWait is a progress notice");
     assert(notice.payload.notice.replace === true, "longWait notice is replaceable, not stack-building");
     assert(orch.calls.done.length === 0, "visible progress notice does not settle the turn");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.PROGRESS_NOTICE_MS = savedNotice;
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = savedTimeout;
+  }
+}
+
+// --- subagent progress suppresses duplicate generic long-wait notice --------
+{
+  const savedNotice = OpencodeAgentSession.PROGRESS_NOTICE_MS;
+  const savedTimeout = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  OpencodeAgentSession.PROGRESS_NOTICE_MS = 25;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 500;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "delegate quietly" });
+    await tick();
+    fake.emitEvent({
+      __lilySubagentSessionID: "child_slow",
+      type: "message.part.updated",
+      properties: {
+        part: {
+          type: "tool",
+          tool: "read",
+          callID: "child_read",
+          state: { status: "running", input: { file_path: "src/a.js" } },
+        },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 60));
+    const notice = orch.calls.ingest.find((d) => d.type === "engine.notice" && d.payload?.notice?.code === "longWait");
+    assert(!notice, "active subagent progress suppresses duplicate generic longWait notice");
+    assert(orch.calls.ingest.some((d) => d.type === "subagent.event"), "subagent progress remains visible");
     session.terminate();
   } finally {
     OpencodeAgentSession.PROGRESS_NOTICE_MS = savedNotice;

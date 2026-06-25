@@ -71,7 +71,7 @@
 
 .pdf-viewer-search input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .pdf-viewer-actions {
@@ -158,7 +158,7 @@
   min-height: 76px;
   background: white;
   border: 1px solid var(--border);
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--shadow-pdf-thumb);
 }
 
 .pdf-viewer-thumb span {
@@ -167,7 +167,7 @@
 
 .pdf-viewer-thumb.is-active {
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
+  background: var(--bg-pdf-active);
   color: var(--text-primary);
 }
 
@@ -205,7 +205,7 @@
   max-width: 100%;
   background: white;
   border-radius: 3px;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-pdf-page);
 }
 
 .pdf-viewer-page figcaption {

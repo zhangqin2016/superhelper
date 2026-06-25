@@ -21,6 +21,9 @@ const LIVE_PROGRESS_PANEL_CODES = new Set([
   "longWait",
   "taskProgress",
   "taskCompleted",
+  "subagentSlow",
+  "subagentVerySlow",
+  "subagentCompleted",
   "toolProgress",
   "shellLongRunning",
 ]);

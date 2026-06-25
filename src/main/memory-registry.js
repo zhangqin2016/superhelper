@@ -220,7 +220,7 @@ function buildMemoryItems({
           : null,
       ].filter(Boolean),
       reason: "runtime context was compacted",
-      text: `OpenCode context was last compacted at ${summary.lastCompactedAt}; compaction count: ${summary.compactionCount || 1}. Treat memory as navigation context, not proof.`,
+      text: `Lily context was last compacted at ${summary.lastCompactedAt}; compaction count: ${summary.compactionCount || 1}. Treat memory as navigation context, not proof.`,
     });
   }
 

@@ -207,6 +207,8 @@ export function toolEntryToRenderTool(entry = {}) {
     partialJson: entry.partialJson || "",
     status: entry.status || "done",
     result: entry.result || null,
+    metadata: entry.metadata || {},
+    title: entry.title || "",
   };
 }
 

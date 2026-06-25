@@ -52,12 +52,14 @@ const toolState = {
       name: "task",
       input: { description: "Explore imsdk-im server" },
       status: "done",
+      result: { output: "found message flow\n- server accepts message\n- client receives ack" },
     }],
     ["task_failed", {
       id: "task_failed",
       name: "task",
       input: { description: "Explore MXIM client source" },
       status: "failed",
+      result: { output: "timeout after 90s" },
     }],
     ["task_running", {
       id: "task_running",
@@ -74,6 +76,8 @@ assert(incomplete.includes("本轮没有形成完整最终回答"), "incomplete 
 assert(incomplete.includes("Explore MXIM client source"), "incomplete summary includes failed tool");
 assert(incomplete.includes("Explore sdk-msg-delivery"), "incomplete summary includes running tool");
 assert(incomplete.includes("Explore imsdk-im server"), "incomplete summary includes completed tool");
+assert(incomplete.includes("found message flow"), "incomplete summary preserves completed tool output");
+assert(incomplete.includes("timeout after 90s"), "incomplete summary preserves failed tool output");
 const appended = ec.appendIncompleteTurnSummary("你说得对，之前偏向了 cst。", toolState, {});
 assert(appended.includes("你说得对") && appended.includes("本轮没有形成完整最终回答"), "partial text receives stalled summary");
 

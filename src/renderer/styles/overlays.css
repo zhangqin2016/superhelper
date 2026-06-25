@@ -97,7 +97,7 @@
 .choose-dialog-panel {
   place-items: end center;
   padding: 0 20px 120px;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--bg-choice-backdrop);
 }
 
 .choose-dialog-card {

@@ -24,6 +24,12 @@ const DEFAULT_COMPACTION = Object.freeze({
   tail_turns: 2,
 });
 
+function applySkillPaths(config, skillPaths) {
+  const paths = (skillPaths || []).filter(Boolean);
+  if (!paths.length) return;
+  config.skills = { ...(config.skills || {}), paths };
+}
+
 /**
  * Lily MCP shape ({name:{command, args, env}}, all stdio) -> OpenCode mcp
  * ({name:{type:"local", command:[cmd,...args], environment}}).
@@ -130,13 +136,14 @@ function translatePermission(mode, disallowedTools) {
  *   permissionMode?: string,
  *   disallowedTools?: string[],
  *   instructionsPaths?: string[],
+ *   skillPaths?: string[],
  * }} opts
  * @returns {{ ok: boolean, reason?: string, model: object|null, configContent: string|null }}
  */
 function buildOpencodeConfig(opts = {}) {
   const modelCfg = resolveOpencodeModelConfig(opts.lilyEnv || {});
   if (!modelCfg.ok) {
-    return { ok: false, reason: modelCfg.reason, model: modelCfg.model, configContent: null };
+    return { ok: false, reason: modelCfg.reason, model: modelCfg.model, configContent: null, diagnostics: modelCfg.diagnostics || null };
   }
   const config = JSON.parse(modelCfg.configContent); // { $schema, model, provider }
 
@@ -156,6 +163,7 @@ function buildOpencodeConfig(opts = {}) {
   if (Object.keys(mcp).length) config.mcp = mcp;
 
   config.compaction = { ...DEFAULT_COMPACTION, ...(config.compaction || {}) };
+  applySkillPaths(config, opts.skillPaths);
 
   const permission = translatePermission(opts.permissionMode, opts.disallowedTools);
   if (Object.keys(permission).length) config.permission = permission;
@@ -181,7 +189,7 @@ function buildOpencodeConfig(opts = {}) {
   const plugins = (opts.pluginPaths || []).filter(Boolean);
   if (plugins.length) config.plugin = plugins;
 
-  return { ok: true, model: modelCfg.model, configContent: JSON.stringify(config) };
+  return { ok: true, model: modelCfg.model, configContent: JSON.stringify(config), diagnostics: modelCfg.diagnostics || null };
 }
 
 /**
@@ -205,13 +213,13 @@ function baseSharedPermission() {
  * bits (skill guidance, permission mode) are delivered per-request + host-side,
  * NOT baked here — that's what lets one serve host every session/directory
  * without cross-session config bleed.
- * @param {{ lilyEnv: Record<string,string>, mcpServers?: object, pluginPaths?: string[], disallowedTools?: string[] }} opts
+ * @param {{ lilyEnv: Record<string,string>, mcpServers?: object, pluginPaths?: string[], skillPaths?: string[], disallowedTools?: string[] }} opts
  * @returns {{ ok:boolean, reason?:string, model:object|null, configContent:string|null }}
  */
 function buildSharedBaseConfig(opts = {}) {
   const modelCfg = resolveOpencodeModelConfig(opts.lilyEnv || {});
   if (!modelCfg.ok) {
-    return { ok: false, reason: modelCfg.reason, model: modelCfg.model, configContent: null };
+    return { ok: false, reason: modelCfg.reason, model: modelCfg.model, configContent: null, diagnostics: modelCfg.diagnostics || null };
   }
   const config = JSON.parse(modelCfg.configContent); // { $schema, model, provider }
 
@@ -229,6 +237,7 @@ function buildSharedBaseConfig(opts = {}) {
   if (Object.keys(mcp).length) config.mcp = mcp;
 
   config.compaction = { ...DEFAULT_COMPACTION, ...(config.compaction || {}) };
+  applySkillPaths(config, opts.skillPaths);
 
   config.permission = baseSharedPermission();
   // App-wide disabled tools (e.g. WebSearch/WebFetch) — a constant policy, so it
@@ -240,7 +249,7 @@ function buildSharedBaseConfig(opts = {}) {
   const plugins = (opts.pluginPaths || []).filter(Boolean);
   if (plugins.length) config.plugin = plugins;
 
-  return { ok: true, model: modelCfg.model, configContent: JSON.stringify(config) };
+  return { ok: true, model: modelCfg.model, configContent: JSON.stringify(config), diagnostics: modelCfg.diagnostics || null };
 }
 
 module.exports = {
@@ -249,6 +258,7 @@ module.exports = {
   baseSharedPermission,
   translateMcpServers,
   translatePermission,
+  applySkillPaths,
   DEFAULT_COMPACTION,
   DESTRUCTIVE_BASH,
   CATASTROPHIC_BASH,

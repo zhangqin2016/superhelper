@@ -426,7 +426,7 @@ class MessageStore {
       ).trim();
       if (!assistantText && !projection.terminalType && projection.status === "running") continue;
       const terminal = projection.terminalType || "turn.stalled";
-      const failed = terminal === "turn.failed" || terminal === "turn.stalled";
+      const failed = terminal === "turn.failed";
       const record = terminalPayload?.record && typeof terminalPayload.record === "object"
         ? terminalPayload.record
         : {

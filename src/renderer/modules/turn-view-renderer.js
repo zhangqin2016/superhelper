@@ -521,10 +521,29 @@ function statusFooterText(liveTurn) {
 function processStructureSig(liveTurn, sealed, sessionId) {
   const timeline = timelineForView(liveTurn, sealed);
   const diffCount = resolveTurnDiffEntries(liveTurn, sessionId).length;
+  const subagentSig = collectSubagentEntries(timeline, liveTurn)
+    .map((entry) => {
+      const meta = entry.metadata || {};
+      return [
+        entry.id,
+        entry.status || "",
+        meta.sessionId || meta.sessionID || "",
+        meta.toolcalls || meta.toolCalls || meta.calls || "",
+        entry.subagent?.textFull?.length || 0,
+        entry.subagent?.pendingPermissions?.length || 0,
+        entry.subagent?.pendingQuestions?.length || 0,
+        entry.subagent?.phase || "",
+        entry.subagent?.phaseDetail || "",
+        entry.subagent?.stats?.totalTools || 0,
+        entry.subagent?.stats?.runningTools || 0,
+        entry.title || "",
+      ].join(".");
+    })
+    .join(",");
   const collapsed = shouldCollapseProcessGroups(liveTurn, sealed);
   const { thinking } = partitionTimeline(timeline);
   const groupedThinking = shouldGroupFinishedThinking(thinking, sealed);
-  const parts = [collapsed ? "collapsed" : "flat", groupedThinking ? "thinking-grouped" : "thinking-flat", String(diffCount)];
+  const parts = [collapsed ? "collapsed" : "flat", groupedThinking ? "thinking-grouped" : "thinking-flat", String(diffCount), `subagents:${subagentSig}`];
   if (collapsed) {
     const { notices, tools, texts } = partitionTimeline(timeline);
     parts.push(`thinking:${thinking.map((entry) => `${entry.id || ""}.${entry.status || ""}`).join(",")}`);
@@ -572,13 +591,15 @@ function patchLiveProcessDom(root, liveTurn, ctx) {
   const { thinking, notices, tools } = partitionTimeline(timeline);
   const summary = root.querySelector(".assistant-process-group summary");
   if (summary) {
-    const next = processGroupSummary(tools.filter((entry) => !isTodoTool(entry.name)), notices, t);
+    const next = processGroupSummary(tools.filter((entry) => !isTodoTool(entry.name) && !isSubagentEntry(entry)), notices, t);
     if (summary.textContent !== next) summary.textContent = next;
   }
   for (const entry of timeline) {
     if (entry.kind === "tool" && isTodoTool(entry.name)) {
       // Live todos render in the pinned task strip (above the composer), not
       // inline — patchLiveProcessDom only runs for live turns, so always skip.
+      continue;
+    } else if (entry.kind === "tool" && isSubagentEntry(entry)) {
       continue;
     } else if (entry.kind === "tool") {
       const row = root.querySelector(`.assistant-tool-row[data-tool-id="${CSS.escape(entry.id)}"]`);
@@ -647,7 +668,7 @@ function renderProcess(root, liveTurn, ctx = {}) {
   const childTools = buildChildToolsMap(tools);
   const childToolIds = new Set([...childTools.values()].flat().map((entry) => entry.id));
   const processTools = tools.filter(
-    (entry) => !isTodoTool(entry.name) && !childToolIds.has(entry.id),
+    (entry) => !isTodoTool(entry.name) && !childToolIds.has(entry.id) && !isSubagentEntry(entry),
   );
   const latestTodoId = [...timeline].reverse()
     .find((entry) => entry.kind === "tool" && isTodoTool(entry.name))?.id || null;
@@ -662,6 +683,11 @@ function renderProcess(root, liveTurn, ctx = {}) {
 
   const list = document.createElement("div");
   list.className = "assistant-turn-timeline";
+  const subagents = collectSubagentEntries(timeline, liveTurn);
+  if (subagents.length) {
+    const panel = renderSubagentStatusPanel(subagents, sealed);
+    if (panel) list.appendChild(panel);
+  }
 
   if (shouldCollapseProcessGroups(liveTurn, sealed)) {
     // Thinking and prose keep their chronological spots; tools and notices
@@ -679,7 +705,7 @@ function renderProcess(root, liveTurn, ctx = {}) {
     let groupInserted = false;
     let thinkingInserted = false;
     for (const entry of timeline) {
-      if (entry.kind === "tool" && childToolIds.has(entry.id)) continue;
+      if (entry.kind === "tool" && (childToolIds.has(entry.id) || isSubagentEntry(entry))) continue;
       if (groupThinking && entry.kind === "thinking") {
         if (!thinkingInserted) {
           list.appendChild(renderThinkingStack(thinking));
@@ -701,7 +727,7 @@ function renderProcess(root, liveTurn, ctx = {}) {
   } else {
     let thinkingInserted = false;
     for (const entry of timeline) {
-      if (entry.kind === "tool" && childToolIds.has(entry.id)) continue;
+      if (entry.kind === "tool" && (childToolIds.has(entry.id) || isSubagentEntry(entry))) continue;
       if (groupThinking && entry.kind === "thinking") {
         if (!thinkingInserted) {
           list.appendChild(renderThinkingStack(thinking));
@@ -724,6 +750,219 @@ function renderProcess(root, liveTurn, ctx = {}) {
 
   commitProcessDom(root, list, { sealed, wasSealed });
   if (sessionId) reapplySessionInlineDiffs(sessionId, liveTurn.turnId || null);
+}
+
+function isSubagentEntry(entry = {}) {
+  return String(entry.name || "").toLowerCase() === "task";
+}
+
+function collectSubagentEntries(timeline = [], liveTurn = null) {
+  const bySession = new Map();
+  const entries = [];
+  for (const entry of timeline.filter((item) => item.kind === "tool" && isSubagentEntry(item))) {
+    const sessionId = entry.metadata?.sessionId || entry.metadata?.sessionID || "";
+    const sub = sessionId ? liveTurn?.subagents?.get?.(sessionId) : null;
+    const merged = sub ? { ...entry, subagent: sub } : entry;
+    entries.push(merged);
+    if (sessionId) bySession.set(sessionId, merged);
+  }
+  for (const sub of liveTurn?.subagents?.values?.() || []) {
+    if (bySession.has(sub.sessionId)) continue;
+    entries.push({
+      kind: "tool",
+      id: sub.parentToolId || sub.sessionId,
+      name: "task",
+      input: { description: sub.description, subagent_type: sub.label },
+      status: sub.status === "done" ? "done" : sub.status,
+      metadata: sub.metadata || { sessionId: sub.sessionId },
+      title: sub.description || "",
+      subagent: sub,
+    });
+  }
+  return entries;
+}
+
+function subagentDescription(entry = {}) {
+  const input = entry.input || {};
+  return String(input.description || entry.title || input.prompt || t("tool.subagentTask")).trim();
+}
+
+function subagentLabel(entry = {}) {
+  const type = String(entry.input?.subagent_type || entry.input?.subagentType || "").trim();
+  return type ? `${type[0].toUpperCase()}${type.slice(1)}` : t("tool.subagent");
+}
+
+function subagentMetadataLine(entry = {}) {
+  const meta = entry.metadata || {};
+  const sub = entry.subagent || {};
+  const bits = [];
+  const sessionId = meta.sessionId || meta.sessionID || sub.sessionId;
+  if (sessionId) bits.push(t("subagent.session", { id: sessionId }));
+  const toolCalls = meta.toolcalls ?? meta.toolCalls ?? meta.calls ?? sub.tools?.length;
+  if (Number.isFinite(Number(toolCalls)) && Number(toolCalls) > 0) {
+    bits.push(t("subagent.toolCalls", { count: Number(toolCalls) }));
+  }
+  const pending = (sub.pendingPermissions?.length || 0) + (sub.pendingQuestions?.length || 0);
+  if (pending > 0) bits.push(t("subagent.waitingForUser", { count: pending }));
+  const model = meta.model?.modelID || meta.model?.modelId || meta.model;
+  if (typeof model === "string" && model) bits.push(t("subagent.model", { model }));
+  return bits.join(" · ");
+}
+
+function subagentPhaseLabel(sub = {}, fallbackStatus = "") {
+  const phase = String(sub.phase || "");
+  if (phase) {
+    const key = `subagent.phase.${phase}`;
+    const label = t(key);
+    if (label !== key) return label;
+  }
+  const status = String(fallbackStatus || "");
+  if (status === "running") return t("subagent.status.running");
+  if (status === "failed") return t("subagent.status.failed");
+  if (status === "done" || status === "completed") return t("subagent.status.done");
+  return t("subagent.status.pending");
+}
+
+function subagentCurrentTool(entry = {}) {
+  const sub = entry.subagent || {};
+  const tools = Array.isArray(sub.tools) ? sub.tools : [];
+  return tools.find((tool) => tool.id === sub.currentToolId) || tools.at(-1) || null;
+}
+
+function subagentStatusText(entry = {}) {
+  const sub = entry.subagent || {};
+  if ((sub.pendingPermissions?.length || 0) + (sub.pendingQuestions?.length || 0) > 0) {
+    return t("subagent.status.awaitingUser");
+  }
+  return subagentPhaseLabel(sub, entry.status);
+}
+
+function subagentStatsLine(entry = {}) {
+  const stats = entry.subagent?.stats || {};
+  const bits = [];
+  if (Number(stats.runningTools || 0) > 0) bits.push(t("subagent.stats.runningTools", { count: Number(stats.runningTools || 0) }));
+  if (Number(stats.doneTools || 0) > 0) bits.push(t("subagent.stats.doneTools", { count: Number(stats.doneTools || 0) }));
+  if (Number(stats.nestedTasks || 0) > 0) bits.push(t("subagent.stats.nestedTasks", { count: Number(stats.nestedTasks || 0) }));
+  return bits.join(" · ");
+}
+
+function renderSubagentStatusPanel(entries = [], sealed = false) {
+  if (!entries.length) return null;
+  const details = document.createElement("details");
+  details.className = "assistant-subagent-panel";
+  details.open = !sealed && entries.some((entry) => entry.status === "running" || entry.status === "failed");
+  const summary = document.createElement("summary");
+  summary.className = "assistant-subagent-panel-summary";
+  const running = entries.filter((entry) => entry.status === "running").length;
+  const failed = entries.filter((entry) => entry.status === "failed").length;
+  summary.textContent = failed
+    ? t("subagent.summaryFailed", { failed, total: entries.length })
+    : running
+      ? t("subagent.summaryRunning", { running, total: entries.length })
+      : t("subagent.summaryDone", { total: entries.length });
+  details.appendChild(summary);
+
+  const list = document.createElement("div");
+  list.className = "assistant-subagent-list";
+  for (const entry of entries) {
+    const row = document.createElement("div");
+    row.className = "assistant-subagent-row";
+    row.dataset.status = entry.status || "";
+
+    const head = document.createElement("div");
+    head.className = "assistant-subagent-row-head";
+    const title = document.createElement("div");
+    title.className = "assistant-subagent-title";
+    title.textContent = `${subagentLabel(entry)} · ${subagentDescription(entry)}`;
+    const status = document.createElement("div");
+    status.className = "assistant-subagent-status";
+    status.textContent = subagentStatusText(entry);
+    head.append(title, status);
+    row.appendChild(head);
+
+    const phase = document.createElement("div");
+    phase.className = "assistant-subagent-phase";
+    const phaseLabel = document.createElement("span");
+    phaseLabel.className = "assistant-subagent-phase-label";
+    phaseLabel.textContent = subagentPhaseLabel(entry.subagent || {}, entry.status);
+    phase.appendChild(phaseLabel);
+    const phaseDetail = String(entry.subagent?.phaseDetail || "").trim();
+    if (phaseDetail) {
+      const detail = document.createElement("span");
+      detail.className = "assistant-subagent-phase-detail";
+      detail.textContent = phaseDetail;
+      phase.appendChild(detail);
+    }
+    row.appendChild(phase);
+
+    const meta = subagentMetadataLine(entry);
+    if (meta) {
+      const metaEl = document.createElement("div");
+      metaEl.className = "assistant-subagent-meta";
+      metaEl.textContent = meta;
+      row.appendChild(metaEl);
+    }
+
+    const stats = subagentStatsLine(entry);
+    if (stats) {
+      const statsEl = document.createElement("div");
+      statsEl.className = "assistant-subagent-stats";
+      statsEl.textContent = stats;
+      row.appendChild(statsEl);
+    }
+
+    const current = subagentCurrentTool(entry);
+    if (current?.name) {
+      const currentEl = document.createElement("div");
+      currentEl.className = "assistant-subagent-current";
+      currentEl.textContent = t("subagent.currentTool", {
+        tool: current.name,
+        detail: toolPreview({ name: current.name, input: current.input || {}, partialJson: "" }),
+      });
+      row.appendChild(currentEl);
+    }
+
+    const previewText = entry.subagent?.textPreview || "";
+    if (previewText && entry.status === "running") {
+      const textEl = document.createElement("div");
+      textEl.className = "assistant-subagent-preview";
+      textEl.textContent = previewText;
+      row.appendChild(textEl);
+    }
+
+    const result = normalizeToolResult(entry.result);
+    if (result?.content && entry.status !== "running") {
+      const pre = document.createElement("pre");
+      pre.className = "assistant-subagent-result";
+      pre.textContent = result.content;
+      row.appendChild(pre);
+    }
+
+    const transcript = subagentTranscriptText(entry.subagent || {});
+    if (transcript) {
+      const transcriptDetails = document.createElement("details");
+      transcriptDetails.className = "assistant-subagent-transcript";
+      transcriptDetails.open = false;
+      const transcriptSummary = document.createElement("summary");
+      transcriptSummary.textContent = t("subagent.transcript");
+      transcriptDetails.appendChild(transcriptSummary);
+      const transcriptPre = document.createElement("pre");
+      transcriptPre.textContent = transcript;
+      transcriptDetails.appendChild(transcriptPre);
+      row.appendChild(transcriptDetails);
+    }
+
+    list.appendChild(row);
+  }
+  details.appendChild(list);
+  return details;
+}
+
+function subagentTranscriptText(sub = {}) {
+  const parts = [];
+  const text = String(sub.textFull || "").trim();
+  if (text) parts.push(`${t("subagent.transcriptOutput")}\n${text}`);
+  return parts.join("\n\n").trim();
 }
 
 // Commit the freshly-built timeline into the process root. A live turn changes
@@ -1188,11 +1427,12 @@ const PERMISSION_KIND_KEYS = {
 function permissionLabel(item) {
   const key = String(item.toolName || "").trim();
   const i18nKey = PERMISSION_KIND_KEYS[key];
+  const prefix = item.subagent?.sessionId ? `${t("subagent.promptPrefix")} · ` : "";
   if (i18nKey) {
     const label = t(i18nKey);
-    if (label !== i18nKey) return item.title ? `${label}（${item.title}）` : label;
+    if (label !== i18nKey) return prefix + (item.title ? `${label}（${item.title}）` : label);
   }
-  return item.title || key || t("turn.permission.toolFallback");
+  return prefix + (item.title || key || t("turn.permission.toolFallback"));
 }
 
 function permissionCard(sessionId, item) {
@@ -1257,7 +1497,10 @@ function hookCard(sessionId, item) {
 }
 
 function questionCard(sessionId, item) {
-  const card = promptCard(t("turn.question.cardTitle"), "");
+  const card = promptCard(
+    item.subagent?.sessionId ? t("subagent.questionCardTitle") : t("turn.question.cardTitle"),
+    "",
+  );
   const draft = getQuestionDraft(sessionId, item.requestId);
   const questions = item.questions || [];
   const requiresExplicitSubmit =

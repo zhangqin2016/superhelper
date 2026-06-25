@@ -184,6 +184,92 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
     "completed-without-prior-running emits both start + done");
 }
 
+// --- OpenCode v2 durable tool lifecycle ------------------------------------
+{
+  const state = createOpencodeRuntimeState();
+  const called = oneDraft("session.next.tool.called", {
+    sessionID: "ses_1",
+    assistantMessageID: "msg_1",
+    callID: "call_task",
+    tool: "task",
+    input: { description: "Find meeting dead code", subagent_type: "general" },
+    metadata: { sessionId: "child_1", toolcalls: 3, model: { modelID: "fast" } },
+    title: "Find meeting dead code",
+    provider: { executed: true },
+  }, state);
+  assert(called.type === "tool.started" && called.payload.name === "task", "session.next.tool.called -> tool.started");
+  assert(called.payload.input.description === "Find meeting dead code", "v2 tool input carried");
+  assert(called.payload.metadata.sessionId === "child_1", "v2 task metadata sessionId carried");
+  assert(called.payload.metadata.toolcalls === 3, "v2 task metadata toolcall count carried");
+  assert(called.payload.title === "Find meeting dead code", "v2 task title carried");
+
+  const progress = reduce("session.next.tool.progress", {
+    sessionID: "ses_1",
+    assistantMessageID: "msg_1",
+    callID: "call_task",
+    structured: {},
+    content: [{ type: "text", text: "reading files" }],
+  }, state);
+  assert(progress.progress === true && progress.drafts.length === 0, "v2 tool progress keeps idle probe alive without duplicate start");
+
+  const done = oneDraft("session.next.tool.success", {
+    sessionID: "ses_1",
+    assistantMessageID: "msg_1",
+    callID: "call_task",
+    structured: {},
+    content: [{ type: "text", text: "found Huawei meeting code" }],
+    metadata: { sessionId: "child_1", toolcalls: 5 },
+    result: { output: "ignored because content wins" },
+    provider: { executed: true },
+  }, state);
+  assert(done.type === "tool.done" && done.payload.id === "call_task", "session.next.tool.success -> tool.done");
+  assert(done.payload.content === "found Huawei meeting code", "v2 tool content flattened");
+  assert(done.payload.metadata.toolcalls === 5, "v2 task done metadata carried");
+  assert(reduce("session.next.tool.success", {
+    sessionID: "ses_1",
+    assistantMessageID: "msg_1",
+    callID: "call_task",
+    structured: {},
+    content: [{ type: "text", text: "duplicate" }],
+    provider: { executed: true },
+  }, state).drafts.length === 0, "duplicate v2 tool success suppressed");
+}
+
+// --- OpenCode dual-write old+new tool events must not duplicate done --------
+{
+  const state = createOpencodeRuntimeState();
+  reduce("message.part.updated", {
+    part: { type: "tool", tool: "task", callID: "call_dual", state: { status: "running", input: { description: "dual write" } } },
+  }, state);
+  const oldDone = oneDraft("message.part.updated", {
+    part: { type: "tool", tool: "task", callID: "call_dual", state: { status: "completed", output: "old result", input: { description: "dual write" } } },
+  }, state);
+  assert(oldDone.type === "tool.done", "old tool completion still emits done");
+  const newDone = reduce("session.next.tool.success", {
+    sessionID: "ses_1",
+    assistantMessageID: "msg_1",
+    callID: "call_dual",
+    structured: {},
+    content: [{ type: "text", text: "new duplicate" }],
+    provider: { executed: true },
+  }, state);
+  assert(newDone.drafts.length === 0, "new duplicate tool completion is suppressed after old done");
+}
+
+// --- v2 step settlement carries usage and meaningful progress ---------------
+{
+  const result = reduce("session.next.step.ended", {
+    sessionID: "ses_1",
+    assistantMessageID: "msg_1",
+    finish: "stop",
+    cost: 0.02,
+    tokens: { input: 11, output: 3, reasoning: 2, cache: { read: 4, write: 5 } },
+  });
+  assert(result.progress === true, "v2 step ended is progress so idle probe can settle missed session.idle");
+  assert(result.drafts[0].type === "usage.updated", "v2 step ended -> usage.updated");
+  assert(result.effects[0].usage.output_tokens === 5, "v2 step output+reasoning summed");
+}
+
 // --- step-finish carries token usage ---------------------------------------
 {
   const result = reduce("message.part.updated", {

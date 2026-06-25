@@ -92,6 +92,8 @@ class OpencodeAgentSession extends EventEmitter {
     /** @type {OpencodeServerManager | null} */
     this._server = null;
     this._eventState = createOpencodeRuntimeState();
+    this._subagentEventStates = new Map();
+    this._knownSubagentSessionIDs = new Set();
     this.cwd = null;
     this.spawnOptions = null;
     this.agentResumeId = null;
@@ -105,9 +107,9 @@ class OpencodeAgentSession extends EventEmitter {
     this.collectedOutput = "";
     /** Completion gate (Pillar 3-B) fires at most ONCE per turn — guards against loops. */
     this._gatedThisTurn = false;
-    /** @type {Set<string>} pending permission request ids awaiting a host reply. */
-    this._pendingPermissions = new Set();
-    /** @type {Map<string, Array>} pending question id -> its questions (for answer mapping). */
+    /** @type {Map<string, { rawRequestId: string, sessionID: string }>} pending permission request ids awaiting a host reply. */
+    this._pendingPermissions = new Map();
+    /** @type {Map<string, { questions: Array, rawRequestId: string, sessionID: string }>} pending question id -> its questions (for answer mapping). */
     this._pendingQuestions = new Map();
     this._orchestrator = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
@@ -325,11 +327,12 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   respondPermission(requestId, decision = {}) {
-    if (!this._pendingPermissions.has(requestId)) return false;
+    const pending = this._pendingPermissions.get(requestId);
+    if (!pending) return false;
     this._pendingPermissions.delete(requestId);
     const reply = decision.allow ? (decision.remember ? "always" : "once") : "reject";
     void this._server
-      ?.respondPermission(requestId, { reply, message: decision.message })
+      ?.respondPermission(pending.rawRequestId || requestId, { reply, message: decision.message }, { sessionID: pending.sessionID })
       .catch((err) => log.warn("permission reply failed: %s", err?.message || String(err)));
     this._ingest([{ type: "permission.resolved", payload: { requestId, cancelled: false } }]);
     return true;
@@ -343,12 +346,12 @@ class OpencodeAgentSession extends EventEmitter {
    * selected labels per question, in order).
    */
   respondUserQuestion(requestId, response = {}) {
-    const questions = this._pendingQuestions.get(requestId);
-    if (!questions) return false;
+    const pending = this._pendingQuestions.get(requestId);
+    if (!pending) return false;
     this._pendingQuestions.delete(requestId);
-    const answers = toOpencodeAnswers(response, questions);
+    const answers = toOpencodeAnswers(response, pending.questions || []);
     void this._server
-      ?.respondQuestion(requestId, answers)
+      ?.respondQuestion(pending.rawRequestId || requestId, answers, { sessionID: pending.sessionID })
       .catch((err) => log.warn("question reply failed: %s", err?.message || String(err)));
     this._ingest([{ type: "user_question.resolved", payload: { requestId } }]);
     return true;
@@ -469,6 +472,11 @@ class OpencodeAgentSession extends EventEmitter {
 
   _handleEvent(ev) {
     if (!this.busy || this._turnSettled) return;
+    const childSessionID = ev?.__lilySubagentSessionID || "";
+    if (childSessionID) {
+      this._handleSubagentEvent(childSessionID, ev);
+      return;
+    }
     if (isTurnOwnedEngineEvent(ev)) {
       this._sawEngineEvent = true;
       this._clearDispatchFailureTimer();
@@ -505,13 +513,14 @@ class OpencodeAgentSession extends EventEmitter {
     }
 
     for (const effect of reduced.effects || []) {
-      this._handleEffect(effect);
+      this._handleEffect(effect, { sessionID: this._server?.sessionID || "" });
     }
 
     // Keep the renderer contract stable: relocate tool.done content -> result
     // (truncated), append the process.event timeline draft, then hand the batch
     // to the orchestrator.
     const drafts = [...(reduced.drafts || [])];
+    this._registerSubagentsFromDrafts(drafts);
     for (const draft of drafts) {
       if (String(draft.type || "").startsWith("tool.")) this._sawToolActivity = true;
       if (draft.type !== "tool.done") continue;
@@ -524,7 +533,180 @@ class OpencodeAgentSession extends EventEmitter {
     this._ingest(drafts);
   }
 
-  _handleEffect(effect) {
+  _registerSubagentsFromDrafts(drafts = []) {
+    for (const draft of drafts) {
+      if (!String(draft?.type || "").startsWith("tool.")) continue;
+      const payload = draft.payload || {};
+      if (String(payload.name || "").toLowerCase() !== "task" && draft.type !== "tool.done") continue;
+      const meta = payload.metadata || {};
+      const child = meta.sessionId || meta.sessionID;
+      if (!child) continue;
+      this._knownSubagentSessionIDs.add(String(child));
+      this._server?.allowChildSession?.(child);
+    }
+  }
+
+  _subagentState(sessionID) {
+    const id = String(sessionID || "");
+    if (!this._subagentEventStates.has(id)) this._subagentEventStates.set(id, createOpencodeRuntimeState());
+    return this._subagentEventStates.get(id);
+  }
+
+  _resetSubagentRuntimeStates() {
+    this._subagentEventStates.clear();
+    this._knownSubagentSessionIDs.clear();
+  }
+
+  _handleSubagentEvent(sessionID, ev) {
+    if (sessionID) this._knownSubagentSessionIDs.add(String(sessionID));
+    let reduced;
+    try {
+      reduced = reduceOpencodeRuntimeEvent(ev, this._subagentState(sessionID));
+    } catch (err) {
+      log.warn("opencode subagent reducer failed: %s", err?.message || String(err));
+      return;
+    }
+    if (reduced.progress) {
+      this._sawActivity = true;
+      this._armResponseTimer();
+      this._armProgressNoticeTimer();
+      this._armIdleProbe();
+    }
+    const events = [];
+    for (const effect of reduced.effects || []) {
+      const mapped = this._handleSubagentEffect(sessionID, effect);
+      if (mapped) events.push(mapped);
+    }
+    for (const draft of reduced.drafts || []) {
+      const mapped = this._mapSubagentDraft(sessionID, draft);
+      if (mapped) {
+        events.push(mapped);
+        if (mapped.kind === "permission" && mapped.status === "resolved" && mapped.requestId) {
+          this._ingest([{ type: "permission.resolved", payload: { requestId: mapped.requestId } }]);
+        } else if (mapped.kind === "question" && mapped.status === "resolved" && mapped.requestId) {
+          this._ingest([{ type: "user_question.resolved", payload: { requestId: mapped.requestId } }]);
+        }
+      }
+    }
+    if (!events.length) return;
+    this._ingest([{ type: "subagent.event", payload: { sessionId: sessionID, events } }]);
+  }
+
+  _mapSubagentDraft(sessionID, draft) {
+    const payload = draft?.payload || {};
+    const ts = Date.now();
+    switch (draft?.type) {
+      case "tool.started":
+        return {
+          kind: "tool",
+          id: payload.id || "",
+          name: payload.name || "unknown",
+          status: "running",
+          input: payload.input || {},
+          metadata: payload.metadata || {},
+          title: payload.title || "",
+          ts,
+        };
+      case "tool.done":
+        return {
+          kind: "tool",
+          id: payload.id || "",
+          status: payload.isError ? "failed" : (payload.status || "done"),
+          result: payload.result ?? payload.content ?? null,
+          metadata: payload.metadata || {},
+          title: payload.title || "",
+          ts,
+        };
+      case "assistant.delta":
+        return { kind: "text", text: payload.text || "", ts };
+      case "assistant.thinking.delta":
+        return { kind: "thinking", text: payload.text || "", ts };
+      case "usage.updated":
+        return { kind: "usage", usage: payload.usage || {}, ts };
+      case "permission.resolved":
+        return {
+          kind: "permission",
+          status: "resolved",
+          requestId: payload.requestId ? this._childRequestId(sessionID, payload.requestId) : "",
+          rawRequestId: payload.requestId || "",
+          ts,
+        };
+      case "user_question.resolved":
+        return {
+          kind: "question",
+          status: "resolved",
+          requestId: payload.requestId ? this._childRequestId(sessionID, payload.requestId) : "",
+          rawRequestId: payload.requestId || "",
+          ts,
+        };
+      default:
+        return null;
+    }
+  }
+
+  _childRequestId(sessionID, rawRequestId) {
+    const safeSession = String(sessionID || "").replace(/[^a-zA-Z0-9_.:-]/g, "_");
+    const safeRequest = String(rawRequestId || "").replace(/[^a-zA-Z0-9_.:-]/g, "_");
+    return `subagent:${safeSession}:${safeRequest}`;
+  }
+
+  _handleSubagentEffect(sessionID, effect) {
+    if (!effect || !sessionID) return null;
+    const rawRequestId = effect.requestId || "";
+    const requestId = rawRequestId ? this._childRequestId(sessionID, rawRequestId) : "";
+    if (effect.kind === "permission") {
+      const mode = this.spawnOptions?.permissionMode || "ask";
+      const verdict = decidePermission(mode, effect.toolName, effect.input || {}, {
+        cwd: this.cwd,
+        taskContract: this._activeTaskContract,
+      });
+      if (verdict === "allow") {
+        void this._server
+          ?.respondPermission(rawRequestId, { reply: "once" }, { sessionID })
+          .catch((err) => log.warn("subagent auto permission reply failed: %s", err?.message || String(err)));
+        return { kind: "permission", status: "auto_allowed", requestId, rawRequestId, toolName: effect.toolName || "", ts: Date.now() };
+      }
+      if (verdict === "deny") {
+        void this._server
+          ?.respondPermission(rawRequestId, { reply: "reject" }, { sessionID })
+          .catch((err) => log.warn("subagent auto permission reply failed: %s", err?.message || String(err)));
+        return { kind: "permission", status: "auto_denied", requestId, rawRequestId, toolName: effect.toolName || "", ts: Date.now() };
+      }
+      this._pendingPermissions.set(requestId, { rawRequestId, sessionID });
+      this._ingest([{
+        type: "permission.requested",
+        payload: {
+          requestId,
+          toolName: effect.toolName,
+          input: effect.input || {},
+          title: effect.title || "",
+          description: effect.description || "",
+          decisionReason: effect.decisionReason || "",
+          suggestions: effect.suggestions || [],
+          planPreview: "",
+          planPreviewTruncated: false,
+          subagent: { sessionId: sessionID, rawRequestId },
+        },
+      }]);
+      return { kind: "permission", status: "requested", requestId, rawRequestId, toolName: effect.toolName || "", ts: Date.now() };
+    }
+    if (effect.kind === "question") {
+      const questions = effect.questions || [];
+      this._pendingQuestions.set(requestId, { questions, rawRequestId, sessionID });
+      this._ingest([{
+        type: "user_question.requested",
+        payload: {
+          requestId,
+          questions,
+          subagent: { sessionId: sessionID, rawRequestId },
+        },
+      }]);
+      return { kind: "question", status: "requested", requestId, rawRequestId, ts: Date.now() };
+    }
+    return null;
+  }
+
+  _handleEffect(effect, opts = {}) {
     switch (effect.kind) {
       case "assistant_text":
         this.collectedOutput += effect.text || "";
@@ -548,7 +730,10 @@ class OpencodeAgentSession extends EventEmitter {
           this._autoRespondPermission(effect.requestId, "reject");
           break;
         }
-        this._pendingPermissions.add(effect.requestId);
+        this._pendingPermissions.set(effect.requestId, {
+          rawRequestId: effect.requestId,
+          sessionID: opts.sessionID || this._server?.sessionID || "",
+        });
         this._ingest([{
           type: "permission.requested",
           payload: {
@@ -568,7 +753,11 @@ class OpencodeAgentSession extends EventEmitter {
 
       case "question": {
         const questions = effect.questions || [];
-        this._pendingQuestions.set(effect.requestId, questions);
+        this._pendingQuestions.set(effect.requestId, {
+          questions,
+          rawRequestId: effect.requestId,
+          sessionID: opts.sessionID || this._server?.sessionID || "",
+        });
         this._ingest([{
           type: "user_question.requested",
           payload: { requestId: effect.requestId, questions },
@@ -869,6 +1058,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._pendingTransientFailure = null;
     this._clearTransientFailureTimer(false);
     resetOpencodeRuntimeState(this._eventState);
+    this._resetSubagentRuntimeStates();
     this.collectedOutput = "";
     this._turnStartedAt = Date.now();
     this._sawActivity = false;
@@ -1056,6 +1246,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearHealthProbe();
     this._clearPendingPermissions();
     resetOpencodeRuntimeState(this._eventState);
+    this._resetSubagentRuntimeStates();
     this._turnSettled = true;
     this.busy = false;
     this._pendingPromptPayload = null;
@@ -1125,6 +1316,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearHealthProbe();
     this._clearPendingPermissions();
     resetOpencodeRuntimeState(this._eventState);
+    this._resetSubagentRuntimeStates();
     this._turnSettled = true;
     this.busy = false;
     this._pendingPromptPayload = null;
@@ -1186,7 +1378,7 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   _clearPendingPermissions() {
-    for (const requestId of this._pendingPermissions) {
+    for (const requestId of this._pendingPermissions.keys()) {
       this._ingest([{ type: "permission.resolved", payload: { requestId, cancelled: true } }]);
     }
     this._pendingPermissions.clear();
@@ -1236,6 +1428,7 @@ class OpencodeAgentSession extends EventEmitter {
   _emitLongWaitNotice() {
     this._progressNoticeTimer = null;
     if (!this.busy || this._turnSettled) return;
+    if (this._knownSubagentSessionIDs.size > 0) return;
     this._ingest([{
       type: "engine.notice",
       payload: {

@@ -310,6 +310,8 @@ if (
 }
 if (
   !coveragePayload.text.includes("Subagent Context Isolation") ||
+  !coveragePayload.text.includes("Main-First Dispatch Gate") ||
+  !coveragePayload.text.includes("Do not start Task before this candidate map exists") ||
   coveragePayload.trace?.subagentIsolation?.enabled !== true
 ) {
   throw new Error(`coverage turn should enable subagent context isolation: ${JSON.stringify(coveragePayload.trace?.subagentIsolation)}\n${coveragePayload.text}`);
@@ -319,13 +321,29 @@ if (!coverageSummary?.lastContextMemoryInjection?.explanation?.selected?.length)
   throw new Error(`context memory injection should persist human-readable explanations: ${JSON.stringify(coverageSummary?.lastContextMemoryInjection)}`);
 }
 ctx.turnOrchestrator.ingest("s1", [
-  { type: "tool.started", payload: { id: "task_coverage", name: "Task", input: { prompt: "audit session.idle routing" } } },
+  { type: "tool.started", payload: { id: "task_coverage", name: "Task", input: { prompt: "audit session.idle routing" }, metadata: { sessionId: "child_coverage" } } },
+  { type: "subagent.event", payload: { sessionId: "child_coverage", events: [
+    { kind: "thinking", text: "Plan search", ts: Date.now() },
+    { kind: "tool", id: "child_read", name: "Read", status: "running", input: { file_path: "src/main/runtime-event-bus.js" }, ts: Date.now() },
+  ] } },
   { type: "tool.started", payload: { id: "read_child", name: "Read", input: { file_path: "src/main/runtime-event-bus.js" }, parentToolUseId: "task_coverage" } },
   { type: "tool.done", payload: { id: "read_child", status: "done", result: { content: "session.idle routing inspected" } } },
   { type: "tool.done", payload: { id: "task_coverage", status: "done", result: { content: "subagent handoff complete" } } },
 ]);
 runner.finish("已经找出全部 session.idle 问题。");
 ctx.eventBus.flush();
+const coverageEvents = sent.flatMap((entry) => entry.payload?.events || []);
+const subagentPhaseEvent = coverageEvents.find((event) => (
+  event.type === "subagent.event" &&
+  event.payload?.subagent?.sessionId === "child_coverage" &&
+  event.payload?.subagent?.phase === "searching"
+));
+if (subagentPhaseEvent?.payload?.subagent?.phase !== "searching") {
+  throw new Error(`subagent child Read should surface a searching phase: ${JSON.stringify(subagentPhaseEvent?.payload?.subagent)}`);
+}
+if (subagentPhaseEvent?.payload?.subagent?.stats?.runningTools !== 1) {
+  throw new Error(`subagent phase telemetry should count running tools: ${JSON.stringify(subagentPhaseEvent?.payload?.subagent?.stats)}`);
+}
 const coverageAssistant = messages.filter((m) => m.role === "assistant").at(-1);
 if (coverageAssistant?.record?.meta?.turnPolicy?.rigor !== "coverage") {
   throw new Error(`coverage wording should persist coverage policy: ${JSON.stringify(coverageAssistant?.record?.meta?.turnPolicy)}`);
@@ -633,12 +651,14 @@ if (stalledWithToolsTerminal?.type !== "turn.stalled") {
 if (
   !stalledWithToolsTerminal.payload?.assistant?.includes("本轮没有形成完整最终回答") ||
   !stalledWithToolsTerminal.payload?.assistant?.includes("Explore MXIM client source") ||
-  !stalledWithToolsTerminal.payload?.assistant?.includes("Explore imsdk-im server")
+  !stalledWithToolsTerminal.payload?.assistant?.includes("Explore imsdk-im server") ||
+  !stalledWithToolsTerminal.payload?.assistant?.includes("found message flow") ||
+  !stalledWithToolsTerminal.payload?.assistant?.includes("timeout")
 ) {
   throw new Error(`stalled turn should synthesize a useful tool summary: ${JSON.stringify(stalledWithToolsTerminal.payload)}`);
 }
 const stalledRecord = messages.find((message) => message.role === "assistant" && message.turnId === stalledWithToolsTurn.turnId);
-if (!stalledRecord?.content?.includes("本轮没有形成完整最终回答")) {
+if (!stalledRecord?.content?.includes("本轮没有形成完整最终回答") || !stalledRecord.content.includes("found message flow")) {
   throw new Error(`stalled summary should be persisted to history: ${JSON.stringify(stalledRecord)}`);
 }
 

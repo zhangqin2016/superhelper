@@ -66,6 +66,7 @@ class OpencodeServerManager extends EventEmitter {
     /** @type {Set<string>} messageIDs known to belong to this session — used to
      *  route session-less events (message.part.delta) on a shared serve. */
     this._ownedMessages = new Set();
+    this._childSessionIDs = new Set();
     this._terminated = false;
     this._sdkSession = null;
     this._releaseSharedView = null;
@@ -169,10 +170,22 @@ class OpencodeServerManager extends EventEmitter {
       });
       this._recordRoutingDecision(directory, event, ownership);
       if (ownership.rememberMessage) this._ownedMessages.add(ownership.rememberMessage);
+      if (ownership.action === "drop" && ownership.reason === "different_session" && this._childSessionIDs.has(ownership.sid)) {
+        this._recordRoutingDecision(directory, event, { ...ownership, action: "deliver", scope: "child_session", reason: "known_child_session" });
+        this.emit("event", { ...event, __lilySubagentSessionID: ownership.sid });
+        return;
+      }
       if (ownership.action === "deliver") {
         this.emit("event", event);
       }
     });
+  }
+
+  allowChildSession(sessionID) {
+    const id = String(sessionID || "").trim();
+    if (!id || id === this.sessionID) return false;
+    this._childSessionIDs.add(id);
+    return true;
   }
 
   _recordRoutingDecision(directory, event, ownership) {
@@ -213,10 +226,11 @@ class OpencodeServerManager extends EventEmitter {
    * @param {string} requestID
    * @param {{ reply: "once"|"always"|"reject", message?: string }} decision
    */
-  async respondPermission(requestID, decision) {
-    if (!this.sessionID) throw new Error("no session");
+  async respondPermission(requestID, decision, opts = {}) {
+    const sessionID = opts.sessionID || opts.sessionId || this.sessionID;
+    if (!sessionID) throw new Error("no session");
     if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
-    return this._sdkSession.respondPermission(this.sessionID, requestID, decision);
+    return this._sdkSession.respondPermission(sessionID, requestID, decision);
   }
 
   /**
@@ -300,6 +314,7 @@ class OpencodeServerManager extends EventEmitter {
         byReason: Object.fromEntries(this._routingStats.byReason.entries()),
         recent: [...this._recentRouting],
       },
+      childSessionIDs: [...this._childSessionIDs],
       shared: this._shared?.diagnostics?.() || null,
     };
   }

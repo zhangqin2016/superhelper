@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { buildTaskContract } = require("../src/main/task-contract.js");
-const { buildTurnPolicy } = require("../src/main/turn-policy.js");
+const { buildTurnPolicy, hasBroadCoverageIntent } = require("../src/main/turn-policy.js");
 
 const casual = buildTurnPolicy({
   text: "你好，今天能帮我做什么",
@@ -36,6 +36,15 @@ assert.equal(exhaustive.requiresSourceCoverage, true);
 assert.equal(exhaustive.allowedClaimStrength, "verified");
 assert.equal(exhaustive.finalAnswer.allowAutoContinue, true);
 assert.equal(exhaustive.memoryBudget.maxChars, 5000);
+
+const ordinaryBroadCoverage = buildTurnPolicy({
+  text: "彻底分析整个项目的渲染问题，不要漏",
+});
+assert.equal(ordinaryBroadCoverage.rigor, "coverage");
+assert.equal(ordinaryBroadCoverage.requiresSourceCoverage, true);
+assert.equal(ordinaryBroadCoverage.allowedClaimStrength, "verified");
+assert.equal(hasBroadCoverageIntent("彻底分析整个项目的渲染问题，不要漏"), true);
+assert.equal(hasBroadCoverageIntent("以后所有回答都简短一点"), false);
 
 const fresh = buildTurnPolicy({
   text: "搜索今天最新的 OpenCode 文档然后回答",

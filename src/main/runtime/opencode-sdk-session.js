@@ -58,7 +58,7 @@ function summarizeParams(directory, sessionID, body = {}) {
 }
 
 function createOpencodeSdkSession(client, directory) {
-  if (!client?.session) throw new Error("OpenCode SDK client has no session resource");
+  if (!client?.session) throw new Error("Lily runtime client has no session resource");
   return {
     async get(sessionID) {
       return unwrapSdkResult(
@@ -83,7 +83,7 @@ function createOpencodeSdkSession(client, directory) {
 
     async summarize(sessionID, body = {}) {
       if (typeof client.session.summarize !== "function") {
-        throw new Error("OpenCode SDK client has no session.summarize resource");
+        throw new Error("Lily runtime client has no session.summarize resource");
       }
       return unwrapSdkResult(
         await client.session.summarize(summarizeParams(directory, sessionID, body)),
@@ -132,7 +132,7 @@ function createOpencodeSdkSession(client, directory) {
 
     async respondPermission(sessionID, permissionID, decision = {}) {
       const permission = client.permission;
-      if (!permission) throw new Error("OpenCode SDK client has no permission resource");
+      if (!permission) throw new Error("Lily runtime client has no permission resource");
       if (typeof permission.reply === "function") {
         return unwrapSdkResult(
           await permission.reply(withDirectory(directory, {
@@ -155,7 +155,7 @@ function createOpencodeSdkSession(client, directory) {
 
     async respondQuestion(requestID, answers) {
       const question = client.question;
-      if (!question) throw new Error("OpenCode SDK client has no question resource");
+      if (!question) throw new Error("Lily runtime client has no question resource");
       return unwrapSdkResult(
         await question.reply(withDirectory(directory, { requestID, answers })),
         "question.reply",
@@ -164,7 +164,7 @@ function createOpencodeSdkSession(client, directory) {
 
     async health() {
       const global = client.global;
-      if (!global) throw new Error("OpenCode SDK client has no global resource");
+      if (!global) throw new Error("Lily runtime client has no global resource");
       return unwrapSdkResult(await global.health(), "global.health");
     },
   };

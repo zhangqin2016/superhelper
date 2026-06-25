@@ -54,7 +54,7 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   if (rawBase && rawBase.trim().startsWith("/")) {
     return {
       ok: false,
-      reason: `gateway base URL is a relative managed path (${rawBase}); OpenCode needs an absolute URL`,
+      reason: `gateway base URL is a relative managed path (${rawBase}); Lily runtime needs an absolute URL`,
       model: null, tiers: null, configContent: null, baseUrl: rawBase,
     };
   }
@@ -65,6 +65,11 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   const baseURL = protocol === "anthropic" ? anthropicUrl(rawBase) : openaiUrl(rawBase);
 
   // Tiered models — declare every distinct id under the provider.
+  const subagentSource = lilyEnv.LILY_SUBAGENT_MODEL
+    ? "LILY_SUBAGENT_MODEL"
+    : lilyEnv.LILY_MODEL_HAIKU
+      ? "LILY_MODEL_HAIKU"
+      : "LILY_MODEL";
   const tiers = {
     main: modelId,
     opus: lilyEnv.LILY_MODEL_OPUS || modelId,
@@ -96,6 +101,11 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
     ok: true,
     model: { providerID, modelID: modelId },
     tiers,
+    diagnostics: {
+      subagentModel: tiers.subagent,
+      subagentModelSource: subagentSource,
+      subagentUsesMainModel: tiers.subagent === modelId && subagentSource === "LILY_MODEL",
+    },
     configContent: JSON.stringify(config),
     baseUrl: baseURL,
     protocol,

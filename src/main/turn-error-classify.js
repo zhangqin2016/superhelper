@@ -102,6 +102,28 @@ function compactToolLabel(tool = {}) {
   return text.length > 72 ? `${text.slice(0, 72)}…` : text;
 }
 
+function compactToolResultPreview(result, limit = 900) {
+  if (result == null) return "";
+  const values = [];
+  if (typeof result === "string") {
+    values.push(result);
+  } else if (Array.isArray(result)) {
+    values.push(result.map((item) => (
+      typeof item === "string" ? item : JSON.stringify(item)
+    )).join("\n"));
+  } else if (typeof result === "object") {
+    for (const key of ["output", "content", "text", "summary", "message", "error"]) {
+      if (typeof result[key] === "string" && result[key].trim()) values.push(result[key]);
+    }
+    if (!values.length) {
+      try { values.push(JSON.stringify(result)); } catch {}
+    }
+  }
+  const text = values.join("\n").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (!text) return "";
+  return text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text;
+}
+
 function collectToolCompletionSnapshot(state = {}) {
   const tools = Array.from(state.tools?.values?.() || []);
   const done = [];
@@ -113,6 +135,7 @@ function collectToolCompletionSnapshot(state = {}) {
       name: tool.name || "",
       label: compactToolLabel(tool),
       status: tool.status || "running",
+      resultPreview: compactToolResultPreview(tool.result, isDoneToolStatus(tool.status) ? 1200 : 420),
     };
     if (isDoneToolStatus(tool.status)) done.push(item);
     else if (isFailedToolStatus(tool.status)) failed.push(item);
@@ -121,15 +144,24 @@ function collectToolCompletionSnapshot(state = {}) {
   return { done, failed, running, count: tools.length };
 }
 
-function listToolLabels(title, items, limit = 6) {
+function listToolLabels(title, items, limit = 6, { includeResult = false } = {}) {
   if (!items.length) return "";
   const lines = [`${title}：`];
   for (const item of items.slice(0, limit)) {
     const suffix = item.name && item.name !== item.label ? `（${item.name}）` : "";
     lines.push(`- ${item.label}${suffix}`);
+    if (includeResult && item.resultPreview) {
+      lines.push(indentPreview(item.resultPreview));
+    }
   }
   if (items.length > limit) lines.push(`- 另外 ${items.length - limit} 个`);
   return lines.join("\n");
+}
+
+function indentPreview(text) {
+  const lines = String(text || "").trim().split("\n").slice(0, 24);
+  if (!lines.length) return "";
+  return lines.map((line) => `  ${line}`).join("\n");
 }
 
 function buildIncompleteTurnSummary(state = {}, payload = {}) {
@@ -155,11 +187,15 @@ function buildIncompleteTurnSummary(state = {}, payload = {}) {
     parts.push("原因：子任务已有执行结果，但父任务没有完成最终汇总。");
   }
   if (failureText) parts.push(`最后错误/提示：${failureText}`);
-  const failed = listToolLabels("未完成或失败的子任务", [...snapshot.failed, ...snapshot.running]);
+  const failed = listToolLabels("未完成或失败的子任务", [...snapshot.failed, ...snapshot.running], 6, {
+    includeResult: true,
+  });
   if (failed) parts.push(failed);
-  const done = listToolLabels("已完成的子任务", snapshot.done);
+  const done = listToolLabels("已完成的子任务和已保留结果", snapshot.done, 4, {
+    includeResult: true,
+  });
   if (done) parts.push(done);
-  parts.push("可以直接继续提问，我会基于已完成结果补齐汇总，并优先重新检查失败的部分。");
+  parts.push("可以直接继续提问，我会基于上面的已完成结果补齐汇总，并优先只重跑未完成/失败的部分。");
   return parts.join("\n\n");
 }
 
@@ -222,6 +258,7 @@ module.exports = {
   classifyTurnFailure,
   // exported for focused testing
   compactFailureDetail,
+  compactToolResultPreview,
   failureTextFromProcessEvent,
   failureTextFromNoticeEvent,
 };

@@ -33,6 +33,9 @@ class TurnArchive {
       result: tool.result || null,
       status: tool.status || "done",
       parentToolUseId: tool.parentToolUseId || null,
+      startedAt: Number.isFinite(tool.startedAt) ? tool.startedAt : null,
+      endedAt: Number.isFinite(tool.endedAt) ? tool.endedAt : null,
+      durationMs: Number.isFinite(tool.durationMs) ? tool.durationMs : null,
     }));
     const workspacePath = this._resolveWorkspacePath(state.sessionId);
     const artifacts = buildTurnArtifacts({
@@ -176,6 +179,23 @@ class TurnArchive {
           : null,
       },
     };
+    try {
+      const session = typeof this.sessionManager?.findById === "function"
+        ? this.sessionManager.findById(state.sessionId)
+        : null;
+      record.meta.skillUsageAudit = require("./skill-usage-audit").buildSkillUsageAudit({
+        userText: rawUserText,
+        session,
+        tools,
+      });
+    } catch {
+      record.meta.skillUsageAudit = null;
+    }
+    try {
+      record.meta.subagentTelemetry = require("./subagent-telemetry").buildSubagentTelemetry(record);
+    } catch {
+      record.meta.subagentTelemetry = null;
+    }
     try {
       record.meta.evidenceGraph = require("./evidence-graph").buildEvidenceGraph(record);
     } catch {

@@ -19,6 +19,14 @@ function evidenceGraph(record = {}) {
   return record.meta?.evidenceGraph || {};
 }
 
+function skillUsageAudit(record = {}) {
+  return record.meta?.skillUsageAudit || null;
+}
+
+function subagentTelemetry(record = {}) {
+  return record.meta?.subagentTelemetry || null;
+}
+
 function hasOnlyCriticalFastMemory(memory = {}) {
   const items = Array.isArray(memory.items) ? memory.items : [];
   if (!items.length) return true;
@@ -73,13 +81,33 @@ function evaluateContextOsScorecard(record = {}) {
   checks.push(check(
     "coverage_has_isolation_contract",
     !isCoverage || trace(record).subagentIsolation?.enabled === true,
-    "coverage turns should isolate broad research through OpenCode-native subagents/task agents",
+    "coverage turns should isolate broad research through Lily subagents/task agents",
   ));
 
   checks.push(check(
     "evidence_graph_available",
     Boolean(record.meta?.evidenceGraph?.nodes?.length),
     "archived turns should expose a compact evidence graph for replay/debugging",
+    "recommended",
+  ));
+
+  const skillAudit = skillUsageAudit(record);
+  checks.push(check(
+    "skill_guide_usage_observable",
+    !skillAudit || skillAudit.candidateCount <= 0 || skillAudit.ok === true,
+    skillAudit?.candidateCount > 0
+      ? `candidate skills: ${skillAudit.candidates?.map((item) => item.id).join(", ") || "none"}; missing guides: ${skillAudit.missingGuideReads?.join(", ") || "none"}`
+      : "turn did not strongly match an enabled skill",
+    "recommended",
+  ));
+
+  const subagents = subagentTelemetry(record);
+  checks.push(check(
+    "subagent_latency_observable",
+    !subagents || subagents.count <= 0 || subagents.verySlowCount === 0,
+    subagents?.count > 0
+      ? `subagents: ${subagents.count}; slow: ${subagents.slowCount}; very slow: ${subagents.verySlowCount}; total ${Math.round((subagents.totalDurationMs || 0) / 1000)}s`
+      : "turn did not use subagents",
     "recommended",
   ));
 

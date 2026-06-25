@@ -191,6 +191,7 @@ function ensureLiveTurn(runtime, event) {
       durationMs: null,
       totalCostUsd: null,
       tools: new Map(),
+      subagents: new Map(),
       notices: [],
       permissions: new Map(),
       questions: new Map(),
@@ -232,6 +233,14 @@ function addNotice(live, event) {
   }
   live.notices.push(normalized);
   if (live.notices.length > 20) live.notices.splice(0, live.notices.length - 20);
+}
+
+function hasPendingPrompts(live = {}) {
+  return Boolean(
+    live.permissions?.size ||
+    live.questions?.size ||
+    live.hooks?.size,
+  );
 }
 
 export function applyRuntimeBatch(batch, opts = {}) {
@@ -365,6 +374,18 @@ export function applyRuntimeEvent(event, opts = {}) {
       upsertTimelineTool(live, tool, event.ts || Date.now());
       break;
     }
+    case "subagent.event": {
+      const item = event.payload?.subagent || null;
+      if (item?.sessionId) {
+        const existing = live.subagents.get(item.sessionId) || {};
+        live.subagents.set(item.sessionId, {
+          ...existing,
+          ...item,
+          tools: Array.isArray(item.tools) ? item.tools : (existing.tools || []),
+        });
+      }
+      break;
+    }
     case "todo.updated": {
       const tool = {
         id: event.payload.id || `todo_${event.sessionId || "current"}`,
@@ -385,6 +406,10 @@ export function applyRuntimeEvent(event, opts = {}) {
       break;
     case "permission.resolved":
       live.permissions.delete(event.payload.requestId);
+      if (live.phase === "awaiting_user" && !hasPendingPrompts(live)) {
+        runtime.phase = "streaming";
+        live.phase = "streaming";
+      }
       break;
     case "user_question.requested":
       runtime.phase = "awaiting_user";
@@ -393,6 +418,10 @@ export function applyRuntimeEvent(event, opts = {}) {
       break;
     case "user_question.resolved":
       live.questions.delete(event.payload.requestId);
+      if (live.phase === "awaiting_user" && !hasPendingPrompts(live)) {
+        runtime.phase = "streaming";
+        live.phase = "streaming";
+      }
       break;
     case "hook.requested":
       runtime.phase = "awaiting_user";
@@ -401,6 +430,10 @@ export function applyRuntimeEvent(event, opts = {}) {
       break;
     case "hook.resolved":
       live.hooks.delete(event.payload.requestId);
+      if (live.phase === "awaiting_user" && !hasPendingPrompts(live)) {
+        runtime.phase = "streaming";
+        live.phase = "streaming";
+      }
       break;
     case "engine.notice":
     case "engine.warning":

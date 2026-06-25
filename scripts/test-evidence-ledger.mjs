@@ -47,6 +47,11 @@ assert.equal(summary.counts.filesRead, 1);
 assert.equal(summary.counts.verifications, 1);
 assert(summary.coverage.candidateCount >= 2);
 assert(summary.coverage.inspectedCount >= 1);
+assert.equal(summary.coverage.fullInspection, false);
+assert(summary.coverage.inspectedRatio > 0 && summary.coverage.inspectedRatio < 1);
+assert(summary.coverage.inspectedCandidates.includes("src/main/turn-orchestrator.js"));
+assert(summary.coverage.missingCandidates.includes("src/main/evidence-gate.js"));
+assert(summary.coverage.readFiles.includes("src/main/turn-orchestrator.js"));
 assert(summary.hasVerificationEvidence);
 
 console.log("evidence-ledger: ok");

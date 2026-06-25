@@ -56,12 +56,15 @@ class SessionRunnerPool {
       lilyEnv: resolveLilyEnv(),
       mcpServers: this._opencodeMcpServers(extra.activeSkillIds || []),
       pluginPaths: this._opencodePlugins(),
+      skillPaths: this._opencodeSkillPaths(),
       disallowedTools: extra.disallowedTools || [],
     });
     if (!cfg.ok) {
       // Surface, don't hide: the turn may still run against OpenCode's own
       // config/auth, but the distributed model/MCP won't apply.
       log.warn("opencode config not applied: %s", cfg.reason);
+    } else if (cfg.diagnostics?.subagentUsesMainModel) {
+      log.warn("opencode subagents are using the main model; configure LILY_SUBAGENT_MODEL or LILY_MODEL_HAIKU for faster Task tools");
     }
     // Lily's AGENT.md (identity + rules + ENABLED skills) — the authoritative
     // guidance. It rides every prompt as hidden engine context so resumed or
@@ -144,6 +147,19 @@ class SessionRunnerPool {
         return candidates.find((p) => fs.existsSync(p)) || null;
       };
       return ["verify-edit.js"].map(resolve).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Lily-installed skills directory for the engine's native `skill` registry.
+   *  AGENT.md tells the model which skills are enabled; this path makes those
+   *  same skills discoverable to the runtime tool instead of text-only guidance. */
+  _opencodeSkillPaths() {
+    try {
+      const path = require("node:path");
+      const { agentConfigDir } = require("./config");
+      return [path.join(agentConfigDir(), "skills")];
     } catch {
       return [];
     }

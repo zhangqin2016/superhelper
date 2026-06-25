@@ -41,6 +41,24 @@ function commandLooksLikeVerification(command = "") {
   return /\b(npm\s+(?:run\s+)?test|node\s+scripts\/test-|pytest|vitest|jest|playwright|tsc|eslint|lint|cargo\s+test|go\s+test)\b/i.test(command);
 }
 
+function normalizePathKey(value = "") {
+  return String(value || "")
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "")
+    .replace(/\/+/g, "/");
+}
+
+function pathMatchesCandidate(file = "", candidate = "") {
+  const readPath = normalizePathKey(file);
+  const candidatePath = normalizePathKey(candidate);
+  if (!readPath || !candidatePath) return false;
+  if (readPath === candidatePath) return true;
+  if (readPath.endsWith(`/${candidatePath}`) || candidatePath.endsWith(`/${readPath}`)) return true;
+  const readBase = path.basename(readPath);
+  const candidateBase = path.basename(candidatePath);
+  return Boolean(readBase && candidateBase && readBase === candidateBase);
+}
+
 function normalizeToolEvidence(tool = {}) {
   const name = toolName(tool);
   const input = tool.input || {};
@@ -103,7 +121,7 @@ class EvidenceLedger {
 
   addWorkspaceCandidates(candidates = []) {
     for (const item of candidates || []) {
-      const relativePath = String(item?.relativePath || item?.path || item || "").replace(/\\/g, "/");
+      const relativePath = normalizePathKey(item?.relativePath || item?.path || item || "");
       if (!relativePath) continue;
       this.workspaceCandidates.set(relativePath, {
         relativePath,
@@ -130,17 +148,18 @@ class EvidenceLedger {
     const web = [];
     for (const event of this.events) {
       if (event.kind === "file_search") searches.push(event);
-      if (event.kind === "file_read" && event.path) filesRead.add(event.path.replace(/\\/g, "/"));
+      if (event.kind === "file_read" && event.path) filesRead.add(normalizePathKey(event.path));
       if (event.kind === "verification") verifications.push(event);
       if (event.kind === "file_write" && event.path) writes.push(event);
       if (event.kind === "web_search" || event.kind === "web_fetch") web.push(event);
     }
     const candidates = [...this.workspaceCandidates.keys()];
-    const inspected = [...filesRead].filter((file) => {
-      if (candidates.includes(file)) return true;
-      const base = path.basename(file);
-      return candidates.some((candidate) => path.basename(candidate) === base || candidate.endsWith(file));
-    });
+    const inspectedCandidates = candidates.filter((candidate) => [...filesRead].some((file) => pathMatchesCandidate(file, candidate)));
+    const missingCandidates = candidates.filter((candidate) => !inspectedCandidates.includes(candidate));
+    const inspectedReadFiles = [...filesRead].filter((file) => candidates.some((candidate) => pathMatchesCandidate(file, candidate)));
+    const candidateCount = candidates.length;
+    const inspectedCount = inspectedCandidates.length;
+    const inspectedRatio = candidateCount > 0 ? inspectedCount / candidateCount : 0;
     return {
       schemaVersion: 1,
       counts: {
@@ -152,10 +171,15 @@ class EvidenceLedger {
         webSources: web.length,
       },
       coverage: {
-        candidateCount: candidates.length,
-        inspectedCount: inspected.length,
+        candidateCount,
+        inspectedCount,
+        inspectedRatio,
+        fullInspection: candidateCount > 0 && inspectedCount >= candidateCount,
         candidates: candidates.slice(0, 50),
-        inspected: [...filesRead].slice(0, 50),
+        inspectedCandidates: inspectedCandidates.slice(0, 50),
+        missingCandidates: missingCandidates.slice(0, 50),
+        inspected: inspectedReadFiles.slice(0, 50),
+        readFiles: [...filesRead].slice(0, 50),
       },
       hasSearchEvidence: searches.length > 0 || candidates.length > 0,
       hasFileReadEvidence: filesRead.size > 0,

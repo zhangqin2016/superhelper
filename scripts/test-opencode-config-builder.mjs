@@ -78,10 +78,12 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
     disallowedTools: ["WebSearch"],
     instructionsPaths: ["/data/session-guides/s1/AGENT.md", ""],
     pluginPaths: ["/app/resources/opencode-plugins/verify-edit.js", ""],
+    skillPaths: ["/data/lily-config/skills", ""],
   });
   assert(r.ok, "config builds ok");
   const cfg = JSON.parse(r.configContent);
   assert(cfg.plugin.length === 1 && cfg.plugin[0].endsWith("verify-edit.js"), "plugin (verification hook) merged, blanks dropped");
+  assert(cfg.skills.paths.length === 1 && cfg.skills.paths[0].endsWith("/skills"), "Lily skill paths merged, blanks dropped");
   assert(cfg.provider.lily.options.baseURL === "https://api.deepseek.com", "provider carried");
   assert(cfg.model === "lily/deepseek-chat", "default model carried");
   assert(cfg.mcp.mail.type === "local", "mcp merged in");
@@ -96,11 +98,13 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 {
   const r = buildSharedBaseConfig({
     lilyEnv: { LILY_API_BASE_URL: "https://api.deepseek.com", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-chat" },
+    skillPaths: ["/data/lily-config/skills", ""],
   });
   const cfg = JSON.parse(r.configContent);
   assert(cfg.compaction.auto === true, "shared serve -> auto compaction enabled");
   assert(cfg.compaction.prune === true, "shared serve -> prune enabled");
   assert(cfg.compaction.tail_turns === 2, "shared serve -> tail turn retention matches OpenCode default");
+  assert(cfg.skills.paths.length === 1 && cfg.skills.paths[0].endsWith("/skills"), "shared serve -> Lily skill registry path configured");
 }
 
 // --- agentPrompt makes Lily's guide the AUTHORITATIVE agent prompt -----------

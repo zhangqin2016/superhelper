@@ -47,6 +47,24 @@ function runtimeVisualSig(runtime) {
   const toolSig = [...(live.tools || new Map()).values()]
     .map((tool) => `${tool.id}:${tool.status || ""}`)
     .join(",");
+  const subagentSig = [...(live.subagents || new Map()).values()]
+    .map((item) => {
+      const current = (item.tools || []).find((tool) => tool.id === item.currentToolId) || (item.tools || []).at?.(-1) || {};
+      return [
+        item.sessionId,
+        item.status || "",
+        item.phase || "",
+        item.phaseDetail || "",
+        current.id || "",
+        current.status || "",
+        current.name || "",
+        item.textPreview?.length || 0,
+        item.stats?.runningTools || 0,
+        item.stats?.doneTools || 0,
+        item.stats?.nestedTasks || 0,
+      ].join(":");
+    })
+    .join(",");
   // NOTE: deliberately NOT keyed on elapsed time. The live turn does not show a
   // per-second clock, so including a ticking elapsed value here forced a full
   // re-render (and scroll-to-bottom) every second — visible as the timeline
@@ -61,6 +79,7 @@ function runtimeVisualSig(runtime) {
     live.activityLabel || "",
     live.timeline?.length || 0,
     toolSig,
+    subagentSig,
     live.permissions?.size || 0,
     live.questions?.size || 0,
     live.hooks?.size || 0,
@@ -429,7 +448,8 @@ function buildRewindAction(sessionId, message) {
 function appendArticleActions(article, sessionId, message) {
   const actions = document.createElement("div");
   actions.className = "assistant-article-actions";
-  if (message.failed) actions.appendChild(buildRetryAction(sessionId, message));
+  const retryable = message.failed || message.record?.terminal === "turn.stalled";
+  if (retryable) actions.appendChild(buildRetryAction(sessionId, message));
   const copyText = String(message.content || "").trim();
   if (copyText) {
     const copy = document.createElement("button");

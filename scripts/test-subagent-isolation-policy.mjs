@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
+  MAIN_FIRST_DISPATCH_THRESHOLDS,
   buildSubagentIsolationHint,
   shouldUseSubagentIsolation,
 } = require("../src/main/subagent-isolation-policy.js");
@@ -33,7 +34,17 @@ const hint = buildSubagentIsolationHint({
   },
 });
 assert.match(hint, /Subagent Context Isolation/);
-assert.match(hint, /OpenCode native subagents/);
+assert.match(hint, /Main-First Dispatch Gate/);
+assert.match(hint, /Lily subagents/);
+assert.match(hint, /deterministic local tools/);
+assert.match(hint, /Do not start Task before this candidate map exists/);
+assert.match(hint, /pure keyword search/);
+assert.match(hint, new RegExp(`<${MAIN_FIRST_DISPATCH_THRESHOLDS.candidateFiles} candidate files`));
+assert.match(hint, new RegExp(`${MAIN_FIRST_DISPATCH_THRESHOLDS.subsystems}\\+ independent subsystems`));
+assert.match(hint, /parent should keep doing other deterministic work/);
+assert.match(hint, new RegExp(`under ${MAIN_FIRST_DISPATCH_THRESHOLDS.subagentTargetSeconds} seconds`));
+assert.match(hint, /Each Task prompt must include/);
+assert.match(hint, /Nested Task is allowed only/);
 assert.match(hint, /session\.idle/);
 
 console.log("subagent-isolation-policy: ok");

@@ -45,6 +45,7 @@ function buildEvidenceReplayBundle(record = {}) {
         title: tool.input?.description || tool.input?.prompt || tool.name || "subagent",
         status: tool.status || "",
         sourceId: tool.id || "",
+        durationMs: Number(tool.durationMs || 0),
         replay: {
           type: "subagent_handoff",
           input: summarizeInput(tool.input || {}),
@@ -57,6 +58,7 @@ function buildEvidenceReplayBundle(record = {}) {
       title: tool.name || "tool",
       status: tool.status || "",
       sourceId: tool.id || "",
+      durationMs: Number(tool.durationMs || 0),
       replay: {
         type: "tool_input",
         input: summarizeInput(tool.input || {}),
@@ -73,6 +75,7 @@ function buildEvidenceReplayBundle(record = {}) {
       title: tool.name || tool.id || "tool",
       status: tool.status || "",
       sourceId: tool.id || "",
+      durationMs: Number(tool.durationMs || 0),
       replay: {
         type: "subagent_child_tool",
         parentToolUseId: tool.parentToolUseId,

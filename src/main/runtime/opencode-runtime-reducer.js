@@ -80,6 +80,50 @@ function stringifyToolOutput(state = {}) {
   }
 }
 
+function stringifyToolContent(content) {
+  if (!Array.isArray(content) || !content.length) return "";
+  const out = [];
+  for (const item of content) {
+    if (!item || typeof item !== "object") continue;
+    if (typeof item.text === "string") out.push(item.text);
+    else if (typeof item.content === "string") out.push(item.content);
+    else if (typeof item.value === "string") out.push(item.value);
+  }
+  return out.join("\n").trim();
+}
+
+function stringifySessionNextToolOutput(payload = {}) {
+  const content = stringifyToolContent(payload.content);
+  if (content) return content;
+  const result = payload.result;
+  if (typeof result === "string") return result;
+  if (result && typeof result === "object") {
+    for (const key of ["output", "content", "text", "summary", "message"]) {
+      if (typeof result[key] === "string" && result[key]) return result[key];
+    }
+    try {
+      return JSON.stringify(result);
+    } catch {
+      return "";
+    }
+  }
+  if (payload.error) return errorMessage(payload.error);
+  return "";
+}
+
+function compactToolMetadata(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
+}
+
+function toolMetadataFromProperties(p = {}) {
+  return compactToolMetadata(p.metadata || p.provider?.metadata || {});
+}
+
+function toolMetadataFromPart(part = {}) {
+  const state = part.state || {};
+  return compactToolMetadata(state.metadata || part.metadata || {});
+}
+
 function errorMessage(error) {
   if (!error) return "";
   if (typeof error === "string") return error;
@@ -91,6 +135,50 @@ function errorMessage(error) {
   } catch {
     return "";
   }
+}
+
+function reduceSessionNextToolEvent(ev, state) {
+  const p = ev.properties || {};
+  const callID = p.callID || p.id || "";
+  if (!callID) return { drafts: [], progress: false };
+  const previous = state.tools.get(callID);
+  const drafts = [];
+  const start = () => {
+    state.tools.set(callID, "started");
+    drafts.push(runtimeDraft("tool.started", {
+      id: callID,
+      name: p.tool || p.name || "unknown",
+      input: p.input && typeof p.input === "object" ? p.input : {},
+      metadata: toolMetadataFromProperties(p),
+      title: p.title || p.metadata?.title || "",
+      parentToolUseId: null,
+    }));
+  };
+
+  if (ev.type === "session.next.tool.called") {
+    if (!previous) start();
+    return { drafts, progress: true };
+  }
+
+  if (ev.type === "session.next.tool.progress") {
+    if (!previous) start();
+    return { drafts, progress: true };
+  }
+
+  if ((ev.type === "session.next.tool.success" || ev.type === "session.next.tool.failed") && previous !== "done") {
+    if (!previous) start();
+    state.tools.set(callID, "done");
+    drafts.push(runtimeDraft("tool.done", {
+      id: callID,
+      isError: ev.type === "session.next.tool.failed",
+      content: stringifySessionNextToolOutput(p),
+      metadata: toolMetadataFromProperties(p),
+      title: p.title || p.metadata?.title || "",
+    }));
+    return { drafts, progress: true };
+  }
+
+  return { drafts: [], progress: false };
 }
 
 function reduceToolPart(part, state) {
@@ -109,6 +197,8 @@ function reduceToolPart(part, state) {
       id: callID,
       name: part.tool || "unknown",
       input,
+      metadata: toolMetadataFromPart(part),
+      title: st.title || part.title || "",
       parentToolUseId: null,
     }));
   };
@@ -122,6 +212,8 @@ function reduceToolPart(part, state) {
       id: callID,
       isError: status === "error",
       content: stringifyToolOutput(st),
+      metadata: toolMetadataFromPart(part),
+      title: st.title || part.title || "",
     }));
   }
 
@@ -366,6 +458,45 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
         });
       }
       return emptyResult(ev);
+    }
+
+    case "session.next.tool.called":
+    case "session.next.tool.progress":
+    case "session.next.tool.success":
+    case "session.next.tool.failed": {
+      const tool = reduceSessionNextToolEvent(ev, state);
+      return withProcessEvent(ev, {
+        drafts: tool.drafts,
+        effects: [],
+        progress: tool.progress,
+        terminal: false,
+      });
+    }
+
+    case "session.next.step.ended": {
+      const tk = p.tokens || {};
+      const cache = tk.cache || {};
+      const usage = {
+        input_tokens: tk.input || 0,
+        output_tokens: (tk.output || 0) + (tk.reasoning || 0),
+        cache_read_input_tokens: cache.read || 0,
+        cache_creation_input_tokens: cache.write || 0,
+      };
+      return withProcessEvent(ev, {
+        drafts: [runtimeDraft("usage.updated", { usage, stopReason: p.finish || "" })],
+        effects: [{ kind: "usage", usage, stopReason: p.finish || "", cost: p.cost || 0 }],
+        progress: true,
+        terminal: false,
+      });
+    }
+
+    case "session.next.step.failed": {
+      return withProcessEvent(ev, {
+        drafts: [],
+        effects: [{ kind: "error", message: errorMessage(p.error) || "Engine error" }],
+        progress: true,
+        terminal: true,
+      });
     }
 
     case "message.part.removed":

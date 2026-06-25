@@ -30,6 +30,8 @@ assert.equal(scorecard.maturity.beat, "incomplete", "passing parity must not be 
 assert.equal(scorecard.checks.find((item) => item.id === "fast_path_bounded").ok, true);
 assert.equal(scorecard.checks.find((item) => item.id === "beat_exact_tokenizer").ok, false);
 assert.equal(scorecard.checks.find((item) => item.id === "beat_subagent_runtime_telemetry").ok, false, "non-coverage turns cannot satisfy subagent runtime telemetry by being not applicable");
+assert.equal(scorecard.checks.find((item) => item.id === "skill_guide_usage_observable").ok, true);
+assert.equal(scorecard.checks.find((item) => item.id === "subagent_latency_observable").ok, true);
 
 scorecard = evaluateContextOsScorecard({
   ...baseRecord,
@@ -89,6 +91,37 @@ scorecard = evaluateContextOsScorecard({
 assert.equal(scorecard.overall, "attention", "coverage turns fail without evidence/isolation");
 assert.equal(scorecard.checks.find((item) => item.id === "coverage_has_evidence").ok, false);
 assert.equal(scorecard.checks.find((item) => item.id === "coverage_has_isolation_contract").ok, false);
+
+scorecard = evaluateContextOsScorecard({
+  ...baseRecord,
+  meta: {
+    ...baseRecord.meta,
+    skillUsageAudit: {
+      candidateCount: 1,
+      candidates: [{ id: "lily-runtime-debug" }],
+      missingGuideReads: ["lily-runtime-debug"],
+      ok: false,
+    },
+  },
+});
+assert.equal(scorecard.overall, "pass", "missing skill-guide reads are advisory and must not block user tasks");
+assert.equal(scorecard.checks.find((item) => item.id === "skill_guide_usage_observable").ok, false);
+
+scorecard = evaluateContextOsScorecard({
+  ...baseRecord,
+  meta: {
+    ...baseRecord.meta,
+    subagentTelemetry: {
+      count: 1,
+      slowCount: 1,
+      verySlowCount: 1,
+      totalDurationMs: 131_000,
+      subagents: [{ id: "task_1", durationMs: 131_000 }],
+    },
+  },
+});
+assert.equal(scorecard.overall, "pass", "very slow subagent telemetry is advisory and must not block user tasks");
+assert.equal(scorecard.checks.find((item) => item.id === "subagent_latency_observable").ok, false);
 
 scorecard = evaluateContextOsScorecard({
   ...baseRecord,

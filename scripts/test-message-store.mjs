@@ -208,6 +208,44 @@ try {
   ok(projectedConversation[1].record.meta.projected === true, "projected assistant is marked for diagnostics");
   const terminalInput = store.markTurnInputTerminal("turn_1", "turn.completed");
   ok(terminalInput.status === "completed", "turn input terminal status follows terminal event");
+
+  store.appendRuntimeEvents("S5", [
+    {
+      id: "evt_s5_1",
+      type: "turn.started",
+      sessionId: "S5",
+      turnId: "turn_stalled",
+      seq: 1,
+      ts: 2100,
+      source: "orchestrator",
+      payload: { text: "检查子任务" },
+    },
+    {
+      id: "evt_s5_2",
+      type: "assistant.final",
+      sessionId: "S5",
+      turnId: "turn_stalled",
+      seq: 2,
+      ts: 2200,
+      source: "orchestrator",
+      payload: { assistant: "已完成的子任务和已保留结果：\n- 找到了华为会议代码" },
+    },
+    {
+      id: "evt_s5_3",
+      type: "turn.stalled",
+      sessionId: "S5",
+      turnId: "turn_stalled",
+      seq: 3,
+      ts: 2300,
+      source: "orchestrator",
+      payload: { assistant: "已完成的子任务和已保留结果：\n- 找到了华为会议代码" },
+    },
+  ]);
+  const stalledConversation = store.getProjectedConversation("S5");
+  const stalledAssistant = stalledConversation.find((message) => message.role === "assistant");
+  ok(stalledAssistant?.content.includes("华为会议代码"), "stalled projection keeps partial final content");
+  ok(stalledAssistant?.record?.terminal === "turn.stalled", "stalled projection keeps terminal type");
+  ok(stalledAssistant.failed !== true, "stalled projection is incomplete, not a failed answer");
   ok(store.pendingTurnInputs("S4").length === 0, "terminal turn no longer pending");
 
   // --- persistence across reopen ---
