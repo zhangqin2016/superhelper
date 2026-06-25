@@ -19,8 +19,6 @@ const FALLBACK_TEMPLATE = {
   route: "",
   baseUrl: "",
   model: "",
-  fastModel: "",
-  strongModel: "",
   models: [],
 };
 
@@ -43,8 +41,6 @@ function providersToTemplates(providers) {
         route: `/llm/${p.id}`,
         baseUrl: p.base_url || p.baseUrl || "",
         model: def,
-        fastModel: models[1] || def,
-        strongModel: def,
         models,
       };
     });
@@ -53,12 +49,12 @@ function providersToTemplates(providers) {
 const labels = {
   zh: {
     quickTitle: "配置要下发给谁",
-    quickDesc: "全局默认适合所有设备；档位组/授权/设备配置会按优先级覆盖全局。",
+    quickDesc: "全局默认适合所有设备；设备组/授权/设备配置会按优先级覆盖全局。",
     scopeGlobal: "所有客户端",
-    scopeGroup: "某个档位组",
+    scopeGroup: "某个设备组",
     scopeLicense: "某个授权",
     scopeDevice: "某台设备",
-    targetHelp: "全局配置不需要目标 ID；档位组填组 ID，授权/设备填对应 ID。",
+    targetHelp: "全局配置不需要目标 ID；设备组填组 ID，授权/设备填对应 ID。",
     modelTitle: "选择模型供应商",
     modelDesc: "选择上方已配置好的供应商，再选投递方式与模型。",
     providerEmpty: "请先在上方「模型供应商」里添加一个供应商。",
@@ -67,10 +63,7 @@ const labels = {
     modeGateway: "走网关（更安全）",
     modeDirectHint: "客户端直接连供应商，响应更快、不经我们服务器。真实密钥会下发到设备（由服务端从供应商注册表自动注入，你不用手填）。",
     modeGatewayHint: "客户端只拿短期 token，真实密钥留在服务端；多一跳，弱网下可能偏慢。",
-    activeModel: "默认模型",
-    fastModel: "快速模型",
-    strongModel: "强模型",
-    subagentModel: "子任务模型",
+    activeModel: "模型",
     modelPick: "可直接选该供应商的模型，或手动输入。",
     visionNative: "模型原生支持图片识别",
     visionNativeHelp: "勾选后，带图片的消息直接发给该模型，跳过 Qwen 识图桥接。仅当该模型本身能看图时才勾。",
@@ -96,12 +89,12 @@ const labels = {
   },
   en: {
     quickTitle: "Who receives this config",
-    quickDesc: "Global applies to every client. Tier-group/license/device configs override it by priority.",
+    quickDesc: "Global applies to every client. Device-group/license/device configs override it by priority.",
     scopeGlobal: "All clients",
-    scopeGroup: "A tier group",
+    scopeGroup: "A device group",
     scopeLicense: "A license",
     scopeDevice: "A device",
-    targetHelp: "Global needs no target ID. Tier group takes a group ID; license/device take their IDs.",
+    targetHelp: "Global needs no target ID. Device group takes a group ID; license/device take their IDs.",
     modelTitle: "Choose a model provider",
     modelDesc: "Pick a provider configured above, then the delivery mode and models.",
     providerEmpty: "Add a provider above in “Model providers” first.",
@@ -110,10 +103,7 @@ const labels = {
     modeGateway: "Gateway (safer)",
     modeDirectHint: "Client connects to the provider directly — faster, no server hop. The real key is delivered to the device (the server injects it from the provider registry; you don't type it).",
     modeGatewayHint: "Client gets a short-lived token; the real key stays on the server. One extra hop — can be slower on weak networks.",
-    activeModel: "Default model",
-    fastModel: "Fast model",
-    strongModel: "Strong model",
-    subagentModel: "Subtask model",
+    activeModel: "Model",
     modelPick: "Pick one of the provider's models, or type your own.",
     visionNative: "Model natively recognizes images",
     visionNativeHelp: "When checked, messages with images go straight to this model and skip the Qwen vision bridge. Only check this if the model itself can see images.",
@@ -153,10 +143,7 @@ const labels = {
     modeGateway: "بوابة (أأمن)",
     modeDirectHint: "يتصل العميل بالمزوّد مباشرة — أسرع. يُرسَل المفتاح الحقيقي إلى الجهاز (يحقنه الخادم من سجل المزوّدين).",
     modeGatewayHint: "يحصل العميل على رمز قصير؛ يبقى المفتاح على الخادم. قفزة إضافية قد تكون أبطأ على الشبكات الضعيفة.",
-    activeModel: "النموذج الافتراضي",
-    fastModel: "النموذج السريع",
-    strongModel: "النموذج القوي",
-    subagentModel: "نموذج المهام الفرعية",
+    activeModel: "النموذج",
     modelPick: "اختر أحد نماذج المزوّد أو اكتب نموذجاً.",
     visionNative: "النموذج يتعرف على الصور أصلاً",
     visionNativeHelp: "عند التحديد، تُرسل الرسائل ذات الصور مباشرة إلى هذا النموذج متجاوزة جسر Qwen. حدّد فقط إذا كان النموذج نفسه يرى الصور.",
@@ -207,9 +194,6 @@ function defaultDraft(copy, templates) {
     deliveryMode: "direct",
     baseUrl: template.route,
     model: template.model,
-    fastModel: template.fastModel,
-    strongModel: template.strongModel,
-    subagentModel: template.fastModel,
     pluginRegistryUrl: "/api/skills/registry",
     enabledPluginIds: "",
     permissionMode: "default",
@@ -238,12 +222,15 @@ function buildConfig(draft, template) {
   // key in place of $LILY_PROVIDER_KEY (the form never holds the key). Gateway
   // keeps the key server-side and the client gets a short-lived token.
   const direct = draft.deliveryMode === "direct" && Boolean(template.baseUrl);
+  // OpenCode runs ONE model per session — every tier maps to it. (Matches the
+  // env-managed distribution in services/client-config.js.)
+  const mainModel = String(draft.model || "").trim();
   const models = {
-    LILY_MODEL: String(draft.model || "").trim(),
-    LILY_MODEL_HAIKU: String(draft.fastModel || draft.model || "").trim(),
-    LILY_MODEL_SONNET: String(draft.strongModel || draft.model || "").trim(),
-    LILY_MODEL_OPUS: String(draft.strongModel || draft.model || "").trim(),
-    LILY_SUBAGENT_MODEL: String(draft.subagentModel || draft.fastModel || draft.model || "").trim(),
+    LILY_MODEL: mainModel,
+    LILY_MODEL_HAIKU: mainModel,
+    LILY_MODEL_SONNET: mainModel,
+    LILY_MODEL_OPUS: mainModel,
+    LILY_SUBAGENT_MODEL: mainModel,
   };
   const env = direct
     ? {
@@ -345,9 +332,6 @@ export function ConfigProfileForm({ providers = [] }) {
       selectedTemplateId: template.id,
       baseUrl: template.route,
       model: template.model,
-      fastModel: template.fastModel,
-      strongModel: template.strongModel,
-      subagentModel: template.fastModel,
       priority: "20",
     }));
   }
@@ -487,15 +471,6 @@ export function ConfigProfileForm({ providers = [] }) {
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <ConfigField label={copy.activeModel} help={copy.modelPick}>
                 <input className={fieldClass()} list={modelListId} value={draft.model} onChange={(event) => updateField("model", event.target.value)} />
-              </ConfigField>
-              <ConfigField label={copy.fastModel}>
-                <input className={fieldClass()} list={modelListId} value={draft.fastModel} onChange={(event) => updateField("fastModel", event.target.value)} />
-              </ConfigField>
-              <ConfigField label={copy.strongModel}>
-                <input className={fieldClass()} list={modelListId} value={draft.strongModel} onChange={(event) => updateField("strongModel", event.target.value)} />
-              </ConfigField>
-              <ConfigField label={copy.subagentModel}>
-                <input className={fieldClass()} list={modelListId} value={draft.subagentModel} onChange={(event) => updateField("subagentModel", event.target.value)} />
               </ConfigField>
               <div className="md:col-span-2 xl:col-span-4">
                 <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3">

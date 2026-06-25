@@ -12,8 +12,8 @@ import { getI18n } from "../../../lib/i18n.mjs";
 export const dynamic = "force-dynamic";
 
 const TAB_LABELS = {
-  zh: { overview: "概览", providers: "模型供应商", profiles: "配置下发", groups: "档位组" },
-  en: { overview: "Overview", providers: "Model providers", profiles: "Delivery", groups: "Tier groups" },
+  zh: { overview: "概览", providers: "模型供应商", profiles: "配置下发", groups: "设备组" },
+  en: { overview: "Overview", providers: "Model providers", profiles: "Delivery", groups: "Device groups" },
   ar: { overview: "نظرة عامة", providers: "المزوّدون", profiles: "الإرسال", groups: "المجموعات" },
 };
 

@@ -417,7 +417,7 @@
               </div>
               <div class="settings-field settings-field--divider">
                 <h4 class="settings-subsection-title" data-i18n="settings.modelCustomTitle">自定义模型</h4>
-                <p class="settings-section-desc" data-i18n="settings.modelCustomDesc">添加 Qwen、GLM 等提供商。可配置 API 与 Haiku/Sonnet/Opus 模型分工；留空项沿用主模型或上方全局 API。</p>
+                <p class="settings-section-desc" data-i18n="settings.modelCustomDesc">添加 Qwen、GLM 等提供商：填显示名称、模型 ID，再填 API 地址与密钥（留空则用上方全局 API）。</p>
                 <label class="settings-field-label" for="modelCustomLabel" data-i18n="settings.modelCustomLabel">显示名称</label>
                 <input
                   id="modelCustomLabel"
@@ -428,7 +428,7 @@
                   placeholder="例如 Qwen、GLM"
                   autocomplete="off"
                 />
-                <label class="settings-field-label model-custom-id-label" for="modelCustomId" data-i18n="settings.modelCustomMainId">主模型 ID</label>
+                <label class="settings-field-label model-custom-id-label" for="modelCustomId" data-i18n="settings.modelCustomMainId">模型 ID</label>
                 <input
                   id="modelCustomId"
                   class="skills-registry-input"
@@ -439,48 +439,6 @@
                   spellcheck="false"
                   autocomplete="off"
                 />
-                <p class="settings-section-desc model-tier-desc" data-i18n="settings.modelTierDesc">模型分工（可选）：留空则沿用主模型。子代理默认使用轻量模型。</p>
-                <div class="model-tier-grid">
-                  <div class="model-tier-field">
-                    <label class="settings-field-label" for="modelCustomHaiku" data-i18n="settings.modelTierHaiku">轻量 Haiku</label>
-                    <input
-                      id="modelCustomHaiku"
-                      class="skills-registry-input"
-                      type="text"
-                      maxlength="128"
-                      data-i18n-placeholder="settings.modelTierHaikuPlaceholder"
-                      placeholder="qwen3.7-coder"
-                      spellcheck="false"
-                      autocomplete="off"
-                    />
-                  </div>
-                  <div class="model-tier-field">
-                    <label class="settings-field-label" for="modelCustomSonnet" data-i18n="settings.modelTierSonnet">常规 Sonnet</label>
-                    <input
-                      id="modelCustomSonnet"
-                      class="skills-registry-input"
-                      type="text"
-                      maxlength="128"
-                      data-i18n-placeholder="settings.modelTierSonnetPlaceholder"
-                      placeholder="同主模型"
-                      spellcheck="false"
-                      autocomplete="off"
-                    />
-                  </div>
-                  <div class="model-tier-field">
-                    <label class="settings-field-label" for="modelCustomOpus" data-i18n="settings.modelTierOpus">重任务 Opus</label>
-                    <input
-                      id="modelCustomOpus"
-                      class="skills-registry-input"
-                      type="text"
-                      maxlength="128"
-                      data-i18n-placeholder="settings.modelTierOpusPlaceholder"
-                      placeholder="同主模型"
-                      spellcheck="false"
-                      autocomplete="off"
-                    />
-                  </div>
-                </div>
                 <label class="settings-field-label model-custom-id-label" for="modelCustomBaseUrl" data-i18n="settings.modelCustomBaseUrl">API 地址（可选）</label>
                 <input
                   id="modelCustomBaseUrl"

@@ -61,15 +61,6 @@ function apiErrorMessage(error) {
   return t("toast.modelApiSaveFailed");
 }
 
-function formatPresetTiers(preset) {
-  const main = preset.model || "";
-  const haiku = preset.modelHaiku || main;
-  const sonnet = preset.modelSonnet || main;
-  const opus = preset.modelOpus || main;
-  if (haiku === sonnet && sonnet === opus && opus === main) return "";
-  return t("settings.modelTierSummary", { haiku, sonnet, opus });
-}
-
 function updateApiCustomFields(mode, gateway) {
   const panel = $("modelApiCustomFields");
   const hint = $("modelApiKeyHint");
@@ -137,14 +128,6 @@ function renderCustomList(presets, activePresetId) {
 
     meta.appendChild(name);
     meta.appendChild(model);
-
-    const tierText = formatPresetTiers(preset);
-    if (tierText) {
-      const tiers = document.createElement("span");
-      tiers.className = "model-custom-tiers";
-      tiers.textContent = tierText;
-      meta.appendChild(tiers);
-    }
 
     if (preset.baseUrl || preset.apiKeySet) {
       const api = document.createElement("span");
@@ -297,12 +280,12 @@ export async function initModelSettings() {
       showToast(t("toast.modelBusy"), "error");
       return;
     }
+    // OpenCode runs ONE model per session (all tiers map to it), so the custom
+    // form no longer collects Haiku/Sonnet/Opus — just the model + API, matching
+    // OpenCode Desktop. The backend defaults the (omitted) tiers to the main model.
     const result = await window.assistantClient.saveCustomModel({
       label: $("modelCustomLabel")?.value?.trim() || "",
       model: $("modelCustomId")?.value?.trim() || "",
-      modelHaiku: $("modelCustomHaiku")?.value?.trim() || "",
-      modelSonnet: $("modelCustomSonnet")?.value?.trim() || "",
-      modelOpus: $("modelCustomOpus")?.value?.trim() || "",
       baseUrl: $("modelCustomBaseUrl")?.value?.trim() || "",
       apiKey: $("modelCustomApiKey")?.value?.trim() || "",
     });
@@ -314,9 +297,6 @@ export async function initModelSettings() {
     for (const id of [
       "modelCustomLabel",
       "modelCustomId",
-      "modelCustomHaiku",
-      "modelCustomSonnet",
-      "modelCustomOpus",
       "modelCustomBaseUrl",
       "modelCustomApiKey",
     ]) {

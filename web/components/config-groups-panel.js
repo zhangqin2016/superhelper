@@ -11,9 +11,9 @@ import { useI18n } from "../lib/use-i18n";
 
 const labels = {
   zh: {
-    title: "档位组",
-    desc: "建立档位组后,把设备或授权放进组里;再用上面的「配置」表单为该组(scope=档位组)下发模型。组内成员会继承组的配置。",
-    createTitle: "新建 / 更新档位组",
+    title: "设备组",
+    desc: "建立设备组后,把设备或授权放进组里;再用上面的「配置」表单为该组(scope=设备组)下发模型。组内成员会继承组的配置。",
+    createTitle: "新建 / 更新设备组",
     assignTitle: "把成员放进组",
     id: "组 ID",
     name: "组名称",
@@ -29,11 +29,11 @@ const labels = {
     devices: "设备",
     licenses: "授权",
     remove: "删除",
-    empty: "还没有档位组。",
+    empty: "还没有设备组。",
   },
   en: {
-    title: "Tier groups",
-    desc: "Create a group, put devices or licenses into it, then use the form above with scope=tier group to deliver a model to everyone in it. Members inherit the group's config.",
+    title: "Device groups",
+    desc: "Create a group, put devices or licenses into it, then use the form above with scope=device group to deliver a model to everyone in it. Members inherit the group's config.",
     createTitle: "Create / update a group",
     assignTitle: "Put a member into a group",
     id: "Group ID",
@@ -50,7 +50,7 @@ const labels = {
     devices: "devices",
     licenses: "licenses",
     remove: "Delete",
-    empty: "No tier groups yet.",
+    empty: "No device groups yet.",
   },
   ar: {
     title: "مجموعات الفئات",

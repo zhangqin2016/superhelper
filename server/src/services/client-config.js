@@ -57,8 +57,26 @@ export function deepMerge(base, override) {
   return result;
 }
 
-function firstModel(provider) {
-  return provider?.models?.[0] || provider?.model || "";
+/** A provider's selectable models: the explicit `models` list, else its single
+ *  default model. Empty only when the provider declares no model at all. */
+function providerModelList(provider) {
+  const list = Array.isArray(provider?.models) ? provider.models.map(String).filter(Boolean) : [];
+  if (list.length) return list;
+  return provider?.model ? [String(provider.model)] : [];
+}
+
+/** The model a provider defaults to: its explicit `default_model` when it's part
+ *  of the list, otherwise the first listed model. (Previously the first model
+ *  always won, silently ignoring a configured default — fixed here.) */
+function defaultModelFor(provider) {
+  const models = providerModelList(provider);
+  if (!models.length) return "";
+  const def = String(provider?.model || "");
+  return def && models.includes(def) ? def : models[0];
+}
+
+function modelSlug(model) {
+  return String(model || "").replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 function providerLabel(provider) {
@@ -102,31 +120,38 @@ function normalizeVisionModel(model) {
   return legacyAliases[value.toLowerCase()] || value;
 }
 
-function providerPreset(provider, deliveryMode) {
-  const model = firstModel(provider);
+/** Build ONE preset for a specific model. The provider's default model keeps the
+ *  bare `${id}-${mode}` preset id (so a stored activePresetId stays valid and the
+ *  active-preset resolution below still matches); extra models get a suffixed id.
+ *  All OpenCode model tiers map to the same model (the engine runs one model). */
+function providerPreset(provider, deliveryMode, model, isDefault) {
+  const modelEnv = model
+    ? {
+        LILY_MODEL: model,
+        LILY_MODEL_HAIKU: model,
+        LILY_MODEL_SONNET: model,
+        LILY_MODEL_OPUS: model,
+        LILY_SUBAGENT_MODEL: model,
+      }
+    : {};
+  const suffix = isDefault ? "" : `--${modelSlug(model)}`;
   if (deliveryMode === "direct" && supportsDirectDelivery(provider)) {
     return {
-      id: `${provider.id}-direct`,
+      id: `${provider.id}-direct${suffix}`,
       label: providerLabel(provider).replace(/ Gateway$/, " Direct"),
       description: "客户端直连模型供应商。响应更快，但会向客户端下发长期模型密钥。",
       env: {
         LILY_API_BASE_URL: provider.baseUrl,
         LILY_API_KEY: provider.apiKey,
         LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, deliveryMode),
-        ...(model ? {
-          LILY_MODEL: model,
-          LILY_MODEL_HAIKU: model,
-          LILY_MODEL_SONNET: model,
-          LILY_MODEL_OPUS: model,
-          LILY_SUBAGENT_MODEL: model,
-        } : {}),
+        ...modelEnv,
       },
     };
   }
 
   const effectiveDeliveryMode = "gateway";
   return {
-    id: `${provider.id}-gateway`,
+    id: `${provider.id}-gateway${suffix}`,
     label: providerLabel(provider),
     description: "由 Lily 服务端托管密钥并签发短期访问令牌。",
     env: {
@@ -134,15 +159,20 @@ function providerPreset(provider, deliveryMode) {
       LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
       LILY_GATEWAY_PROVIDER: provider.id,
       LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, effectiveDeliveryMode),
-      ...(model ? {
-        LILY_MODEL: model,
-        LILY_MODEL_HAIKU: model,
-        LILY_MODEL_SONNET: model,
-        LILY_MODEL_OPUS: model,
-        LILY_SUBAGENT_MODEL: model,
-      } : {}),
+      ...modelEnv,
     },
   };
+}
+
+/** Every selectable model for a provider becomes its own preset, so the client's
+ *  model dropdown can offer them all. The default model is marked so it keeps the
+ *  bare preset id and becomes the activePresetId. A provider with no model still
+ *  yields one (model-less) preset, preserving prior behavior. */
+function providerPresets(provider, deliveryMode) {
+  const models = providerModelList(provider);
+  if (!models.length) return [providerPreset(provider, deliveryMode, "", true)];
+  const def = defaultModelFor(provider);
+  return models.map((model) => providerPreset(provider, deliveryMode, model, model === def));
 }
 
 function runtimeEnvFromServerConfig(serverConfig) {
@@ -171,7 +201,7 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
   const deliveryMode = deliveryModeOverride || normalizeDeliveryMode(serverConfig);
   const modelPresets = Object.values(providers || {})
     .filter((provider) => provider?.id && provider?.baseUrl && provider?.apiKey && !RESERVED_MODEL_PROVIDER_IDS.has(provider.id))
-    .map((provider) => providerPreset(provider, deliveryMode));
+    .flatMap((provider) => providerPresets(provider, deliveryMode));
 
   const activeProviderId = serverConfig.modelGatewayDefaultProvider || modelPresets[0]?.id?.replace(/-gateway$/, "");
   const activePresetId = modelPresets.find((preset) => preset.id === `${activeProviderId}-${deliveryMode}`)?.id
