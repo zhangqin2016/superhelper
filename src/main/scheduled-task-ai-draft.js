@@ -37,7 +37,8 @@ function resolveMessagesUrl(baseUrl) {
 }
 
 function modelIdFromEnv(env) {
-  return env.LILY_MODEL_HAIKU || env.LILY_MODEL || env.LILY_MODEL_SONNET || env.LILY_MODEL_OPUS || "";
+  const { forceProModelId } = require("./runtime/opencode-model-config");
+  return forceProModelId(env.LILY_MODEL || env.LILY_MODEL_SONNET || env.LILY_MODEL_OPUS || env.LILY_MODEL_HAIKU || "");
 }
 
 function extractText(responseJson) {

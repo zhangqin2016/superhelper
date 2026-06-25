@@ -129,6 +129,10 @@ function legacySessionsBackupPath() {
   return userDataPath("sessions.legacy-backup.json");
 }
 
+function deletedSessionsPath() {
+  return userDataPath("deleted-sessions.json");
+}
+
 function projectsConfigPath() {
   return userDataPath("projects.json");
 }
@@ -215,6 +219,7 @@ module.exports = {
   sessionSummariesDir,
   scheduledTasksPath,
   legacySessionsBackupPath,
+  deletedSessionsPath,
   projectsConfigPath,
   mcpConfigPath,
   userHome,

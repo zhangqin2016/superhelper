@@ -9,7 +9,7 @@
  */
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { resolveOpencodeModelConfig, detectProtocol, anthropicUrl, openaiUrl } = require("../src/main/runtime/opencode-model-config.js");
+const { resolveOpencodeModelConfig, detectProtocol, anthropicUrl, openaiUrl, forceProModelId } = require("../src/main/runtime/opencode-model-config.js");
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
@@ -23,6 +23,8 @@ assert(detectProtocol("https://lily.example.com/llm/deepseek", { LILY_OPENCODE_P
 assert(anthropicUrl("https://x/anthropic") === "https://x/anthropic/v1", "anthropic url gets /v1");
 assert(anthropicUrl("https://x/anthropic/v1") === "https://x/anthropic/v1", "anthropic url keeps existing /v1");
 assert(openaiUrl("https://x/") === "https://x", "openai url verbatim (trimmed)");
+assert(forceProModelId("deepseek-v4-flash") === "deepseek-v4-pro[1m]", "flash id is forced to pro");
+assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unchanged");
 
 // --- THE PRODUCTION CASE: DeepSeek Anthropic endpoint -----------------------
 {
@@ -44,7 +46,7 @@ assert(openaiUrl("https://x/") === "https://x", "openai url verbatim (trimmed)")
   assert(r.tiers.haiku === "deepseek-v4-pro", "missing haiku tier falls back to main model");
   assert(r.tiers.subagent === "deepseek-v4-pro", "missing subagent tier falls back to main model");
   assert(r.diagnostics.subagentUsesMainModel === true, "subagent main-model fallback is diagnosed");
-  assert(r.diagnostics.subagentModelSource === "LILY_MODEL", "diagnostic records fallback source");
+  assert(r.diagnostics.subagentModelSource === "LILY_MODEL_FORCED_MAIN", "diagnostic records forced main source");
 }
 
 // --- Lily gateway endpoint: protocol is explicit, not guessed from URL -------
@@ -76,18 +78,31 @@ assert(openaiUrl("https://x/") === "https://x", "openai url verbatim (trimmed)")
   assert(cfg.provider.lily.options.baseURL === "https://api.deepseek.com", "openai baseURL verbatim (no /v1 forced)");
 }
 
-// --- model tiers: all distinct ids declared ---------------------------------
+// --- model tiers: OpenCode runtime is forced onto the selected Pro model -----
 {
   const r = resolveOpencodeModelConfig({
     LILY_API_BASE_URL: "https://api.deepseek.com/anthropic", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-v4-pro",
     LILY_MODEL_HAIKU: "deepseek-v4-flash", LILY_SUBAGENT_MODEL: "deepseek-v4-flash",
   });
-  assert(r.tiers.haiku === "deepseek-v4-flash", "tiers captured");
-  assert(r.diagnostics.subagentModel === "deepseek-v4-flash", "diagnostic records subagent model");
-  assert(r.diagnostics.subagentModelSource === "LILY_SUBAGENT_MODEL", "explicit subagent model source wins");
-  assert(r.diagnostics.subagentUsesMainModel === false, "fast subagent tier avoids main-model warning");
+  assert(r.tiers.haiku === "deepseek-v4-pro", "haiku tier forced to main");
+  assert(r.tiers.subagent === "deepseek-v4-pro", "subagent tier forced to main");
+  assert(r.diagnostics.subagentModel === "deepseek-v4-pro", "diagnostic records effective subagent model");
+  assert(r.diagnostics.subagentModelSource === "LILY_MODEL_FORCED_MAIN", "forced main source wins");
+  assert(r.diagnostics.subagentUsesMainModel === true, "subagents use main model intentionally");
+  assert(r.diagnostics.ignoredTierModels.haiku === "deepseek-v4-flash", "ignored fast tier is diagnosed");
   const models = JSON.parse(r.configContent).provider.anthropic.models;
-  assert("deepseek-v4-pro" in models && "deepseek-v4-flash" in models && Object.keys(models).length === 2, "distinct tier ids declared + de-duped");
+  assert("deepseek-v4-pro" in models && !("deepseek-v4-flash" in models) && Object.keys(models).length === 1, "only effective pro model is declared");
+}
+
+// --- flash main model is upgraded to pro ------------------------------------
+{
+  const r = resolveOpencodeModelConfig({
+    LILY_API_BASE_URL: "https://api.deepseek.com/anthropic", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-v4-flash",
+  });
+  assert(r.model.modelID === "deepseek-v4-pro[1m]", "flash main model forced to pro runtime model");
+  assert(r.diagnostics.forcedModel === "deepseek-v4-pro[1m]", "forced model is diagnosed");
+  const cfg = JSON.parse(r.configContent);
+  assert(cfg.model === "anthropic/deepseek-v4-pro[1m]", "default model ref uses forced pro");
 }
 
 // --- failures: missing model, relative path ---------------------------------

@@ -122,6 +122,8 @@ try {
   assert(!afterDelete, "deleted session should not be found");
   assert(manager.getActive().id === session.id, "active should revert to remaining session");
   assert(!fs.existsSync(session2Dir), "deleting a session must remove its opencode engine cache");
+  const deletedSessions = JSON.parse(fs.readFileSync(path.join(userData, "deleted-sessions.json"), "utf8"));
+  assert(deletedSessions.sessions?.[session2.id]?.id === session2.id, "deleting a session must write a durable tombstone");
 
   // Test 13: orphan GC keeps live sessions, removes the rest
   const liveDir = path.join(engRoot, session.id);

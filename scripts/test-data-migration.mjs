@@ -297,7 +297,12 @@ if (!resumeChanged || resumeRaw.sessions.proj1[0].agentResumeId !== "resume-old"
   }
   const migratedIndex = JSON.parse(fs.readFileSync(path.join(currentRoot, "sessions-index.json"), "utf8"));
   const recovered = migratedIndex.sessions["current-project"].find((session) => session.id === "orphan-session");
-  if (!recovered || recovered.title !== "恢复的历史会话" || !recovered.recoveredFromLegacyMessages) {
+  if (
+    !recovered ||
+    recovered.title !== "恢复的历史会话" ||
+    !recovered.recoveredFromLegacyMessages ||
+    recovered.messageCount !== 1
+  ) {
     throw new Error("recovered orphan session should be visible and marked as recovered");
   }
 }
@@ -333,6 +338,138 @@ if (!resumeChanged || resumeRaw.sessions.proj1[0].agentResumeId !== "resume-old"
   const recovered = migratedIndex.sessions["current-project"].find((session) => session.id === "already-imported-session");
   if (recovered) {
     throw new Error("imported archive session should remain hidden from the live session index");
+  }
+}
+
+// User-deleted sessions are durable tombstones. If an old message file is
+// still present after an upgrade or legacy-folder merge, recovery must not
+// resurrect it into the sidebar.
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lily-data-migration-deleted-orphan-"));
+  const currentRoot = path.join(root, "lily-workbench");
+  process.env.LILY_USER_DATA_DIR = currentRoot;
+  fs.mkdirSync(path.join(currentRoot, "session-messages"), { recursive: true });
+  fs.writeFileSync(path.join(currentRoot, "projects.json"), JSON.stringify({
+    activeProjectId: "current-project",
+    projects: [{ id: "current-project", name: "VIP Workspace", path: "/vip/workspace" }],
+  }), "utf8");
+  fs.writeFileSync(path.join(currentRoot, "sessions-index.json"), JSON.stringify({
+    activeSessionId: "visible-session",
+    sessions: {
+      "current-project": [
+        { id: "visible-session", projectId: "current-project", title: "已有会话" },
+      ],
+    },
+  }), "utf8");
+  fs.writeFileSync(path.join(currentRoot, "deleted-sessions.json"), JSON.stringify({
+    schemaVersion: 1,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    sessions: {
+      "deleted-session": {
+        id: "deleted-session",
+        projectId: "current-project",
+        title: "用户删除的会话",
+        deletedAt: "2026-01-01T00:00:00.000Z",
+      },
+    },
+  }), "utf8");
+  fs.writeFileSync(path.join(currentRoot, "session-messages", "deleted-session.json"), JSON.stringify({
+    messages: [{ role: "user", content: "已经删除的历史问题" }],
+  }), "utf8");
+
+  if (recoverOrphanLegacyMessageSessions()) {
+    throw new Error("deleted orphan message file should not be recovered into a visible session");
+  }
+  const migratedIndex = JSON.parse(fs.readFileSync(path.join(currentRoot, "sessions-index.json"), "utf8"));
+  const recovered = migratedIndex.sessions["current-project"].find((session) => session.id === "deleted-session");
+  if (recovered) {
+    throw new Error("deleted session tombstone must prevent legacy recovery resurrection");
+  }
+}
+
+// Bulk orphan recovery is intentionally conservative. A customer machine can
+// accumulate many copied legacy message files after several renames/migrations;
+// auto-creating one sidebar row per file flooded the UI with "recovered history"
+// sessions. Large batches are recorded in a manifest for support/recovery
+// instead of polluting the live session index.
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lily-data-migration-bulk-orphan-"));
+  const currentRoot = path.join(root, "lily-workbench");
+  process.env.LILY_USER_DATA_DIR = currentRoot;
+  fs.mkdirSync(path.join(currentRoot, "session-messages"), { recursive: true });
+  fs.writeFileSync(path.join(currentRoot, "projects.json"), JSON.stringify({
+    activeProjectId: "current-project",
+    projects: [{ id: "current-project", name: "VIP Workspace", path: "/vip/workspace" }],
+  }), "utf8");
+  fs.writeFileSync(path.join(currentRoot, "sessions-index.json"), JSON.stringify({
+    activeSessionId: "visible-session",
+    sessions: {
+      "current-project": [
+        { id: "visible-session", projectId: "current-project", title: "已有会话" },
+      ],
+    },
+  }), "utf8");
+  for (let i = 0; i < 5; i += 1) {
+    fs.writeFileSync(path.join(currentRoot, "session-messages", `orphan-${i}.json`), JSON.stringify({
+      messages: [{ role: "user", content: `被遗漏的历史问题 ${i}` }],
+    }), "utf8");
+  }
+
+  if (recoverOrphanLegacyMessageSessions()) {
+    throw new Error("bulk orphan legacy message files should not create visible recovered sessions");
+  }
+  const migratedIndex = JSON.parse(fs.readFileSync(path.join(currentRoot, "sessions-index.json"), "utf8"));
+  const recovered = (migratedIndex.sessions["current-project"] || []).filter((session) => session.title === "恢复的历史会话");
+  if (recovered.length !== 0) {
+    throw new Error(`bulk orphan recovery should not flood sidebar: ${JSON.stringify(recovered)}`);
+  }
+  const manifest = JSON.parse(fs.readFileSync(path.join(currentRoot, "legacy-message-recovery.json"), "utf8"));
+  if (manifest.skippedBulkOrphanRecovery?.count !== 5) {
+    throw new Error(`bulk orphan recovery should write a support manifest: ${JSON.stringify(manifest)}`);
+  }
+}
+
+// Older versions may already have created many synthetic recovered sessions.
+// Keep the newest few visible and archive the rest so startup repairs the
+// sidebar without deleting the underlying history.
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lily-data-migration-prune-recovered-"));
+  const currentRoot = path.join(root, "lily-workbench");
+  process.env.LILY_USER_DATA_DIR = currentRoot;
+  fs.mkdirSync(currentRoot, { recursive: true });
+  fs.writeFileSync(path.join(currentRoot, "projects.json"), JSON.stringify({
+    activeProjectId: "current-project",
+    projects: [{ id: "current-project", name: "VIP Workspace", path: "/vip/workspace" }],
+  }), "utf8");
+  fs.writeFileSync(path.join(currentRoot, "sessions-index.json"), JSON.stringify({
+    activeSessionId: "recovered-0",
+    sessions: {
+      "current-project": [
+        { id: "visible-session", projectId: "current-project", title: "已有会话" },
+        ...Array.from({ length: 7 }, (_, i) => ({
+          id: `recovered-${i}`,
+          projectId: "current-project",
+          title: "恢复的历史会话",
+          updatedAt: new Date(Date.UTC(2026, 0, i + 1)).toISOString(),
+          messageCount: i + 1,
+          recoveredFromLegacyMessages: true,
+        })),
+      ],
+    },
+  }), "utf8");
+
+  if (!recoverOrphanLegacyMessageSessions()) {
+    throw new Error("existing recovered session flood should be pruned");
+  }
+  const migratedIndex = JSON.parse(fs.readFileSync(path.join(currentRoot, "sessions-index.json"), "utf8"));
+  const recovered = (migratedIndex.sessions["current-project"] || []).filter((session) => session.title === "恢复的历史会话");
+  const visible = recovered.filter((session) => session.status !== "archived");
+  const archived = recovered.filter((session) => session.status === "archived" && session.recoveryArchivedByMigration);
+  if (visible.length !== 3 || archived.length !== 4) {
+    throw new Error(`recovered session flood should keep 3 visible and archive the rest: ${JSON.stringify(recovered)}`);
+  }
+  if (migratedIndex.activeSessionId === "recovered-0") {
+    throw new Error("active session should move away from a recovered session archived by cleanup");
   }
 }
 

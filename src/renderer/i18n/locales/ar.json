@@ -472,6 +472,9 @@
   "engine.waitingForFirstResponse": "جارٍ الاتصال بالمساعد، يرجى الانتظار…",
   "engine.longWait": "الاستجابة بطيئة. ما زلت أنتظر؛ يمكنك الإيقاف أو متابعة إضافة الرسائل إلى الصف.",
   "engine.sessionRehydrated": "تمت استعادة سياق المحادثة — جارٍ المتابعة",
+  "engine.compactBoundary": "جارٍ تنظيم ذاكرة المحادثة…",
+  "engine.compactComplete": "تم تحديث ذاكرة المحادثة",
+  "engine.compactFailed": "تم تخطي صيانة ذاكرة المحادثة؛ يمكن متابعة هذه المحادثة",
   "engine.taskGeneric": "مهمة في الخلفية",
   "engine.taskStarted": "بدأت المعالجة: {detail}",
   "engine.taskProgress": "جارٍ العمل على: {detail}",
@@ -586,8 +589,8 @@
 
   "model.pro.label": "DeepSeek Pro",
   "model.pro.desc": "deepseek-v4-pro للمهام المعقدة",
-  "model.flash.label": "DeepSeek Flash",
-  "model.flash.desc": "deepseek-v4-flash لاستجابة أسرع",
+  "model.flash.label": "DeepSeek Pro",
+  "model.flash.desc": "deepseek-v4-pro[1m] لجميع طبقات التشغيل",
 
   "permission.approvePlanTitle": "الخطة جاهزة — بانتظار موافقتك",
   "permission.approvePlanDesc": "بعد الموافقة سيخرج المساعد من وضع التخطيط ويبدأ التنفيذ.",
@@ -645,6 +648,7 @@
   "timeline.statusDetached": "يعمل في الخلفية",
   "timeline.stepsCompleted": "اكتملت {count} خطوات",
   "timeline.summaryRead": "قراءة {count} ملفات",
+  "timeline.readGroup": "read × {count}",
   "timeline.summarySearch": "بحث {count} مرات",
   "timeline.summaryWrite": "تعديل {count} ملفات",
   "timeline.summaryCommand": "تنفيذ {count} أوامر",

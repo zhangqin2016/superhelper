@@ -23,11 +23,8 @@ const SILENT_EVENTS = new Set([
   "reference.updated",
   "text",
   "tool",
-  "busy",
-  "step-start",
   "session.next.model.switched",
   "session.next.agent.switched",
-  "session.next.prompt.admitted",
 ]);
 
 function createOpencodeRuntimeState() {
@@ -242,6 +239,7 @@ function processSummary(ev, effects, drafts) {
   const firstEffect = effects.find((effect) => effect.kind !== "usage");
   if (firstEffect?.kind === "assistant_text") return firstEffect.text || "";
   if (firstEffect?.kind === "assistant_thinking") return firstEffect.text || "";
+  if (firstEffect?.kind === "status") return firstEffect.text || "";
   if (firstEffect?.kind === "permission") return firstEffect.toolName || "";
   if (firstEffect?.kind === "question") return "question";
   const firstDraft = drafts[0];
@@ -314,6 +312,30 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
   const p = ev.properties || {};
 
   switch (ev.type) {
+    case "busy":
+      return withProcessEvent(ev, {
+        drafts: [],
+        effects: [{ kind: "status", text: "Assistant is working" }],
+        progress: true,
+        terminal: false,
+      });
+
+    case "step-start":
+      return withProcessEvent(ev, {
+        drafts: [],
+        effects: [{ kind: "status", text: p.title || p.name || p.step || "Started a work step" }],
+        progress: true,
+        terminal: false,
+      });
+
+    case "session.next.prompt.admitted":
+      return withProcessEvent(ev, {
+        drafts: [],
+        effects: [{ kind: "status", text: "Prompt admitted" }],
+        progress: true,
+        terminal: false,
+      });
+
     case "message.updated": {
       const info = p.info || {};
       if (info.id && info.role && state.roles) state.roles.set(info.id, info.role);

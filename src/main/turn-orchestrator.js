@@ -65,6 +65,10 @@ function newQueueId() {
 function queueDispatchOptions(opts = {}) {
   return {
     engineText: typeof opts.engineText === "string" ? opts.engineText : null,
+    localAssistant:
+      opts.localAssistant && typeof opts.localAssistant === "object"
+        ? opts.localAssistant
+        : null,
     reloadSkillsBeforeStart: Boolean(opts.reloadSkillsBeforeStart),
     spawnEngine: opts.spawnEngine,
     skipPreflight: Boolean(opts.skipPreflight),
@@ -545,6 +549,35 @@ class TurnOrchestrator {
     return this._startTurn(session, displayText, files, opts);
   }
 
+  async completeLocalAssistantTurn(sessionId, text, files = [], opts = {}) {
+    const session = this.ctx.sessionManager.findById(sessionId);
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    const displayText = String(text || "").trim();
+    if (!displayText && (!files || files.length === 0)) return { ok: false, error: "EMPTY" };
+
+    const state = this._state(sessionId);
+    if (state.phase !== "idle" && !opts.fromQueue) {
+      const item = {
+        id: newQueueId(),
+        text: displayText,
+        files,
+        displayFiles: opts.displayFiles || fileMetadataFromPayload(files),
+        options: queueDispatchOptions({
+          ...opts,
+          localAssistant: {
+            assistant: opts.assistant,
+            scheduledDraft: opts.scheduledDraft || null,
+          },
+        }),
+      };
+      state.queue.push(item);
+      this._emitQueue(sessionId);
+      return { ok: true, queued: true, queueLength: state.queue.length, itemId: item.id };
+    }
+
+    return this._startLocalAssistantTurn(session, displayText, files, opts);
+  }
+
   async retryLastMessage(sessionId) {
     const session = this.ctx.sessionManager.findById(sessionId);
     if (!session) return { ok: false, error: "NO_SESSION" };
@@ -627,13 +660,21 @@ class TurnOrchestrator {
   }
 
   async _tryStartQueuedItem(sessionId, item) {
+    const session = this.ctx.sessionManager.findById(sessionId);
+    if (!session) return { ok: false, error: "NO_SESSION" };
+    if (item.options?.localAssistant) {
+      return await this._startLocalAssistantTurn(session, item.text, item.files, {
+        fromQueue: true,
+        displayFiles: item.displayFiles,
+        assistant: item.options.localAssistant.assistant,
+        scheduledDraft: item.options.localAssistant.scheduledDraft || null,
+      });
+    }
     const runner = this.ctx.runnerPool.get(sessionId);
     if (runner?.isBusy?.()) return { ok: false, retry: true, error: "RUNNER_BUSY" };
     if (item.options?.reloadSkillsBeforeStart && runner?.isAlive?.() && !runner.reloadSkills()) {
       this.ctx.runnerPool.terminateSession(sessionId);
     }
-    const session = this.ctx.sessionManager.findById(sessionId);
-    if (!session) return { ok: false, error: "NO_SESSION" };
     return await this._startTurn(session, item.text, item.files, {
       fromQueue: true,
       displayFiles: item.displayFiles,
@@ -647,6 +688,99 @@ class TurnOrchestrator {
       scheduledTaskTitle: item.options?.scheduledTaskTitle || null,
       engineText: item.options?.engineText || null,
     });
+  }
+
+  async _startLocalAssistantTurn(session, text, files, opts = {}) {
+    const rawUserText = String(text || "").trim();
+    const state = this._state(session.id);
+    state.phase = "starting";
+    state.turnId = newTurnId();
+    state.admittedSeq = null;
+    state.assistantText = "";
+    state.thinkingText = "";
+    state.contentBlocks = [];
+    state.protocolUnknown = [];
+    state.processEvents = [];
+    state.notices = [];
+    state.usage = null;
+    state.taskContract = null;
+    state.turnPolicy = null;
+    state.evidenceLedger = new EvidenceLedger();
+    state.enginePayload = null;
+    state.legacyContextHydrated = false;
+    resetTimelineState(state);
+    state.blockIndexToToolId = new Map();
+    state.terminalEmitted = false;
+    state.pendingPermissions.clear();
+    state.pendingQuestions.clear();
+    state.pendingHooks.clear();
+    state.tools.clear();
+    state.startedAt = Date.now();
+    state.updatedAt = state.startedAt;
+    const displayFiles = opts.displayFiles || fileMetadataFromPayload(files);
+    state.currentPayload = {
+      rawText: rawUserText,
+      text: rawUserText,
+      files,
+      displayFiles,
+    };
+    try {
+      const admitted = this.ctx.sessionManager?.admitTurnInput?.(session.id, {
+        turnId: state.turnId,
+        delivery: opts.fromQueue ? "queue" : "local",
+        status: "admitted",
+        userText: rawUserText,
+        files: displayFiles,
+        metadata: {
+          fromQueue: Boolean(opts.fromQueue),
+          localAssistant: true,
+        },
+        createdAt: state.startedAt,
+      });
+      state.admittedSeq = admitted?.admittedSeq || null;
+    } catch (err) {
+      log.warn("local turn input admission failed: %s", err?.message || err);
+    }
+
+    if (opts.recordUser !== false) {
+      this.transcriptStore.commitUserMessage(session.id, {
+        text: rawUserText,
+        files: displayFiles,
+        turnId: state.turnId,
+      });
+      this._emit(session.id, "user.committed", {
+        text: rawUserText,
+        files: displayFiles.length ? displayFiles : null,
+      }, { turnId: state.turnId });
+    }
+
+    this._emit(session.id, "turn.started", {
+      text: rawUserText,
+      queueLength: state.queue.length,
+      engine: {
+        localAssistant: true,
+      },
+      taskContract: null,
+      turnPolicy: null,
+    });
+
+    const assistant = String(opts.assistant || "").trim();
+    state.assistantText = assistant;
+    const completedTurnId = state.turnId;
+    this._finalize(session.id, "turn.completed", {
+      assistant,
+      scheduledDraft: opts.scheduledDraft || null,
+      resultFromCli: false,
+    });
+    if (!opts.fromQueue) {
+      void this._dispatchNext(session.id);
+    }
+    return {
+      ok: true,
+      turnId: completedTurnId,
+      userCommitted: opts.recordUser === false ? null : { text: rawUserText, files: displayFiles },
+      localAssistant: true,
+    };
   }
 
   cancelQueuedMessage(sessionId, itemId) {
@@ -1150,8 +1284,7 @@ class TurnOrchestrator {
         runner?.agentResumeId || null,
       );
     }
-    await this._flushUsage(sessionId);
-    void this._dispatchNext(sessionId);
+    this._afterTurnFinalized(sessionId);
   }
 
   async _handleError(sessionId, message) {
@@ -1169,8 +1302,7 @@ class TurnOrchestrator {
       retryable: classified?.retryable !== false,
       error: raw,
     });
-    await this._flushUsage(sessionId);
-    void this._dispatchNext(sessionId);
+    this._afterTurnFinalized(sessionId);
   }
 
   _finalize(sessionId, type, payload = {}) {
@@ -1269,6 +1401,7 @@ class TurnOrchestrator {
         this._emit(sessionId, "assistant.final", {
           assistant,
           failed: type === "turn.failed",
+          ...(payload.scheduledDraft ? { scheduledDraft: payload.scheduledDraft } : {}),
         });
       }
       try { this.turnArchive.commit(sessionId, record); } catch (err) { log.warn("turn archive commit failed: %s", err?.message || err); }
@@ -1323,10 +1456,12 @@ class TurnOrchestrator {
         }
         const { OPENCODE_RUNTIME_CAPABILITIES } = require("./runtime/runtime-capabilities");
         const { decideBackgroundCompaction } = require("./context-budget-manager");
-        const { readSessionSummary } = require("./session-memory");
+        const { markSessionCompactionFailed, readSessionSummary } = require("./session-memory");
         const sessionSummary = readSessionSummary(sessionId) || {};
+        const model = runner.spawnOptions?.model || null;
         const decision = decideBackgroundCompaction({
           capabilities: OPENCODE_RUNTIME_CAPABILITIES,
+          model,
           runner: {
             alive: Boolean(runner.isAlive?.()),
             busy: Boolean(runner.isBusy?.()),
@@ -1339,11 +1474,16 @@ class TurnOrchestrator {
           mode: decision.mode || null,
           turnCount: Number(sessionSummary.turnCount || 0),
           lastCompactedAt: sessionSummary.lastCompactedAt || null,
+          lastCompactionFailedAt: sessionSummary.lastCompactionFailedAt || null,
           estimatedPromptTokens: decision.estimatedPromptTokens || Number(sessionSummary.lastEnginePromptTokens || 0),
           contextWindowTokens: decision.contextWindowTokens || null,
           tokenSource: decision.tokenSource || sessionSummary.lastEnginePromptTokenSource || "",
+          providerID: decision.providerID || model?.providerID || "",
+          modelID: decision.modelID || model?.modelID || "",
+          unsupportedReason: decision.unsupportedReason || "",
         }, { turnId: null });
         if (decision.action !== "compact") return;
+        const beforeFailureAt = sessionSummary.lastCompactionFailedAt || "";
         this._emit(sessionId, "engine.notice", {
           notice: {
             code: "compactBoundary",
@@ -1353,16 +1493,62 @@ class TurnOrchestrator {
             detail: "Preparing to compact conversation context.",
           },
         }, { turnId: null });
-        const model = runner.spawnOptions?.model || null;
-        await runner.compactContext({
+        const compacted = await runner.compactContext({
           ...(model?.providerID && model?.modelID
             ? { providerID: model.providerID, modelID: model.modelID }
             : {}),
           auto: true,
           reason: decision.reason,
         });
+        if (!compacted) {
+          const afterSummary = readSessionSummary(sessionId) || {};
+          if ((afterSummary.lastCompactionFailedAt || "") === beforeFailureAt) {
+            markSessionCompactionFailed(sessionId, {
+              runtime: "opencode",
+              mode: "native",
+              reason: decision.reason,
+              providerID: model?.providerID || "",
+              modelID: model?.modelID || "",
+              code: "compact_returned_false",
+              error: "Runtime compaction returned false.",
+            });
+          }
+          this._emit(sessionId, "engine.notice", {
+            notice: {
+              code: "compactFailed",
+              level: "info",
+              panel: true,
+              done: true,
+              replace: true,
+              replacesCode: "compactBoundary",
+              detail: "Conversation memory maintenance was skipped after a runtime error. The current chat can continue.",
+            },
+          }, { turnId: null });
+        }
       } catch (err) {
-        log.warn("background context compaction failed: %s", err?.message || err);
+        log.warn(`background context compaction failed: ${err?.message || String(err)}`);
+        try {
+          require("./session-memory").markSessionCompactionFailed(sessionId, {
+            runtime: "opencode",
+            mode: "native",
+            reason: "background_compaction_exception",
+            code: err?.name || "exception",
+            error: err?.message || String(err),
+          });
+        } catch (memoryErr) {
+          log.warn(`background compaction failure memory update failed: ${memoryErr?.message || String(memoryErr)}`);
+        }
+        this._emit(sessionId, "engine.notice", {
+          notice: {
+            code: "compactFailed",
+            level: "info",
+            panel: true,
+            done: true,
+            replace: true,
+            replacesCode: "compactBoundary",
+            detail: "Conversation memory maintenance was skipped after a runtime error. The current chat can continue.",
+          },
+        }, { turnId: null });
       }
     }, 0);
     timer.unref?.();
@@ -1375,29 +1561,40 @@ class TurnOrchestrator {
     const next = state.queue[0];
     let result;
     try {
-    result = await this._tryStartQueuedItem(sessionId, next);
-    if (result?.retry) {
-      this._scheduleDispatchRetry(sessionId);
-      return;
-    }
-    if (!result?.ok) {
+      result = await this._tryStartQueuedItem(sessionId, next);
+      if (result?.retry) {
+        this._scheduleDispatchRetry(sessionId);
+        return;
+      }
+      if (!result?.ok) {
+        state.queue.shift();
+        this._emitQueue(sessionId);
+        if (state.phase === "idle" && state.queue.length > 0) {
+          void this._dispatchNext(sessionId);
+        }
+        return;
+      }
       state.queue.shift();
       this._emitQueue(sessionId);
       if (state.phase === "idle" && state.queue.length > 0) {
         void this._dispatchNext(sessionId);
       }
-      return;
-    }
-    state.queue.shift();
-    this._emitQueue(sessionId);
-    if (result.failed && state.phase === "idle" && state.queue.length > 0) {
-      void this._dispatchNext(sessionId);
-    }
     } catch (err) {
       log.warn("_dispatchNext error: %s", err?.message || err);
       state.queue.shift();
       this._emitQueue(sessionId);
+      if (state.phase === "idle" && state.queue.length > 0) {
+        void this._dispatchNext(sessionId);
+      }
     }
+  }
+
+  _afterTurnFinalized(sessionId) {
+    // Queue progression is part of the turn boundary. Usage reporting is
+    // telemetry and may hit disk or network, so it must never delay the next
+    // user-visible turn.
+    void this._dispatchNext(sessionId);
+    void this._flushUsage(sessionId);
   }
 
   _scheduleDispatchRetry(sessionId) {

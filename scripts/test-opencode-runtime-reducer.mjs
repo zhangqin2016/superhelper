@@ -361,9 +361,14 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
 
 // --- noise events are silent; unknown events are retained as raw process data -
 {
-  for (const t of ["server.connected", "plugin.added", "catalog.updated", "message.updated", "session.updated", "step-start", "session.next.prompt.admitted"]) {
+  for (const t of ["server.connected", "plugin.added", "catalog.updated", "message.updated", "session.updated"]) {
     const result = reduce(t, {});
     assert(result.drafts.length === 0 && result.effects.length === 0, `${t} silent`);
+  }
+  for (const t of ["busy", "step-start", "session.next.prompt.admitted"]) {
+    const result = reduce(t, {});
+    assert(result.drafts.length === 0 && result.progress === true, `${t} resets progress without answer text`);
+    assert(result.effects[0]?.kind === "status", `${t} emits status effect`);
   }
   const u = reduce("some.future.event", { future: { nested: true } });
   assert(u.drafts.length === 0 && u.effects[0].kind === "unknown",

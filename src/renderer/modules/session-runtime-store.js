@@ -98,6 +98,148 @@ function committedMessageKey(message) {
   return ["fallback", message?.role || "", message?.timestamp || "", message?.content || ""].join(":");
 }
 
+function normalizedMessageText(message = {}) {
+  return String(message.content || message.text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function timestampMs(value) {
+  const parsed = Date.parse(value || "");
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function scheduledDraftFingerprint(message = {}) {
+  const signature = scheduledDraftSignature(message);
+  if (!signature) return "";
+  return [
+    "scheduledDraft",
+    signature.originalText,
+    signature.title,
+    signature.scheduleText,
+    signature.rrule,
+  ].join(":");
+}
+
+function scheduledDraftSignature(message = {}) {
+  const scheduledDraft = message.meta?.scheduledDraft || message.record?.meta?.scheduledDraft || null;
+  if (!scheduledDraft) return null;
+  const draft = scheduledDraft.draft && typeof scheduledDraft.draft === "object"
+    ? scheduledDraft.draft
+    : scheduledDraft;
+  return {
+    originalText: normalizedMessageText({ content: scheduledDraft.originalText || draft.originalText || "" }),
+    title: normalizedMessageText({ content: scheduledDraft.prompt || scheduledDraft.title || draft.prompt || draft.title || "" }),
+    scheduleText: normalizedMessageText({ content: scheduledDraft.scheduleText || scheduledDraft.summary || draft.scheduleText || draft.summary || "" }),
+    rrule: normalizedMessageText({ content: scheduledDraft.rrule || draft.rrule || "" }),
+  };
+}
+
+function scheduledDraftsMatch(a = {}, b = {}) {
+  const left = scheduledDraftSignature(a);
+  const right = scheduledDraftSignature(b);
+  if (!left || !right) return false;
+  if (left.originalText && right.originalText && left.originalText !== right.originalText) return false;
+  if (!left.title || !right.title || left.title !== right.title) return false;
+  if (left.scheduleText && right.scheduleText && left.scheduleText !== right.scheduleText) return false;
+  if (left.rrule && right.rrule && left.rrule !== right.rrule) return false;
+  return Boolean(left.originalText || right.originalText || left.scheduleText || right.scheduleText || left.rrule || right.rrule);
+}
+
+function sameContentWithinWindow(a = {}, b = {}, windowMs = 30 * 60 * 1000) {
+  if (a.role !== b.role) return false;
+  const aText = normalizedMessageText(a);
+  const bText = normalizedMessageText(b);
+  if (!aText || !bText || aText !== bText) return false;
+  const at = timestampMs(a.timestamp);
+  const bt = timestampMs(b.timestamp);
+  if (!Number.isFinite(at) || !Number.isFinite(bt)) return false;
+  return Math.abs(at - bt) <= windowMs;
+}
+
+function isProjectionLikeMessage(message = {}) {
+  const id = String(message.id || "");
+  return Boolean(
+    id.startsWith("projection:") ||
+      message.meta?.projected ||
+      message.record?.meta?.projected ||
+      message.meta?.displaySource === "lily-raw-user"
+  );
+}
+
+function isLikelyProjectionDuplicate(a = {}, b = {}) {
+  if (a.role !== "user" || b.role !== "user") return false;
+  if (!sameContentWithinWindow(a, b)) return false;
+  return Boolean(
+    isProjectionLikeMessage(a) ||
+      isProjectionLikeMessage(b) ||
+      Boolean(a.turnId) !== Boolean(b.turnId)
+  );
+}
+
+function messageQuality(message = {}) {
+  let score = 0;
+  if (message.id) score += 1;
+  if (message.turnId) score += 2;
+  if (message.record) score += 4;
+  if (message.meta) score += 2;
+  if (message.files?.length) score += 1;
+  return score;
+}
+
+function equivalentCommittedMessageIndex(messages, message) {
+  const key = committedMessageKey(message);
+  const draftKey = scheduledDraftFingerprint(message);
+  for (let i = 0; i < messages.length; i += 1) {
+    const existing = messages[i];
+    if (committedMessageKey(existing) === key) return i;
+    if (scheduledDraftsMatch(existing, message)) return i;
+    if (draftKey && scheduledDraftFingerprint(existing) === draftKey) return i;
+    if (isLikelyProjectionDuplicate(existing, message)) return i;
+  }
+  return -1;
+}
+
+function mergeCommittedMessage(existing = {}, incoming = {}) {
+  const preferIncoming = messageQuality(incoming) >= messageQuality(existing);
+  const base = preferIncoming ? { ...existing, ...incoming } : { ...incoming, ...existing };
+  return {
+    ...base,
+    content: incoming.content || existing.content || "",
+    files: incoming.files || existing.files,
+    turnId: incoming.turnId || existing.turnId,
+    record: incoming.record || existing.record || null,
+    failed: Boolean(incoming.failed || existing.failed),
+    meta: {
+      ...(existing.meta || {}),
+      ...(incoming.meta || {}),
+    },
+  };
+}
+
+function dedupeCommittedMessages(messages = []) {
+  const out = [];
+  for (const message of messages || []) {
+    if (!message?.role) continue;
+    const index = equivalentCommittedMessageIndex(out, message);
+    if (index < 0) {
+      out.push(message);
+      continue;
+    }
+    out[index] = mergeCommittedMessage(out[index], message);
+  }
+  return out;
+}
+
+function upsertCommittedMessage(runtime, message) {
+  const index = equivalentCommittedMessageIndex(runtime.committedMessages, message);
+  if (index < 0) {
+    runtime.committedMessages.push(message);
+    return;
+  }
+  runtime.committedMessages[index] = mergeCommittedMessage(runtime.committedMessages[index], message);
+}
+
 function belongsToActiveTurn(runtime, message) {
   const turnId = message?.turnId || "";
   const activeTurnId = runtime.turnId || runtime.liveTurn?.turnId || "";
@@ -114,7 +256,7 @@ export function syncCommittedMessages(sessionId, messages) {
     Boolean(runtime.turnId) ||
     Boolean(runtime.queue?.length);
   if (!shouldPreserveLocal) {
-    runtime.committedMessages = incoming;
+    runtime.committedMessages = dedupeCommittedMessages(incoming);
     return;
   }
 
@@ -132,7 +274,7 @@ export function syncCommittedMessages(sessionId, messages) {
     seen.add(key);
     localOnly.push(message);
   }
-  runtime.committedMessages = [...incoming, ...localOnly];
+  runtime.committedMessages = dedupeCommittedMessages([...incoming, ...localOnly]);
 }
 
 export function hydrateRuntimeFromState(state) {
@@ -264,7 +406,7 @@ export function applyRuntimeEvent(event, opts = {}) {
   if (event.type === "user.committed") {
     const turnKey = event.turnId ? `${event.sessionId}:${event.turnId}` : "";
     if (turnKey && terminalTurns.has(turnKey)) return;
-    runtime.committedMessages.push({
+    upsertCommittedMessage(runtime, {
       role: "user",
       content: event.payload.text || "",
       files: event.payload.files || undefined,
@@ -517,7 +659,7 @@ export function applyRuntimeEvent(event, opts = {}) {
           });
         }
         runtime._turnStartedAt = 0;
-        runtime.committedMessages.push({
+        upsertCommittedMessage(runtime, {
           role: "assistant",
           content: event.payload.assistant || live.assistantText || "",
           record: event.payload.record || null,

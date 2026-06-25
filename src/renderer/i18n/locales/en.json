@@ -587,6 +587,7 @@
   "message.stalledHint": "That took a while — you can send your next message.",
   "engine.compactBoundary": "Organizing conversation memory…",
   "engine.compactComplete": "Conversation memory updated",
+  "engine.compactFailed": "Skipped conversation memory maintenance; this chat can continue",
   "engine.apiRetry": "Service busy, retrying ({attempt}/{maxRetries})…",
   "engine.waitingForFirstResponse": "Connecting to the assistant, please wait…",
   "engine.longWait": "Response is slow. Still waiting; you can stop or keep queuing messages.",
@@ -861,8 +862,8 @@
 
   "model.pro.label": "DeepSeek Pro",
   "model.pro.desc": "deepseek-v4-pro for complex tasks",
-  "model.flash.label": "DeepSeek Flash",
-  "model.flash.desc": "deepseek-v4-flash for faster responses",
+  "model.flash.label": "DeepSeek Pro",
+  "model.flash.desc": "deepseek-v4-pro[1m] for all runtime tiers",
 
   "permission.plan.label": "Plan",
   "permission.plan.desc": "Read-only: analyze the workspace and propose a plan without changing files or running commands.",
@@ -901,6 +902,7 @@
   "timeline.statusDetached": "Running in background",
   "timeline.stepsCompleted": "{count} steps completed",
   "timeline.summaryRead": "read {count} files",
+  "timeline.readGroup": "read × {count}",
   "timeline.summarySearch": "searched {count} times",
   "timeline.summaryWrite": "changed {count} files",
   "timeline.summaryCommand": "ran {count} commands",

@@ -63,8 +63,6 @@ class SessionRunnerPool {
       // Surface, don't hide: the turn may still run against OpenCode's own
       // config/auth, but the distributed model/MCP won't apply.
       log.warn("opencode config not applied: %s", cfg.reason);
-    } else if (cfg.diagnostics?.subagentUsesMainModel) {
-      log.warn("opencode subagents are using the main model; configure LILY_SUBAGENT_MODEL or LILY_MODEL_HAIKU for faster Task tools");
     }
     // Lily's AGENT.md (identity + rules + ENABLED skills) — the authoritative
     // guidance. It rides every prompt as hidden engine context so resumed or

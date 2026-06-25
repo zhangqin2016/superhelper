@@ -31,7 +31,6 @@ import { collectUnrenderedCommittedMessages } from "./message-render-keys.js";
 import { confirmDialog } from "./confirm-dialog.js";
 import { renderLiveTaskStrip } from "./live-task-strip.js";
 import { showToast } from "./toast.js";
-import { openEvidenceGraphViewer } from "./evidence-graph-viewer.js";
 
 const sessionViews = new Map();
 const renderedMessageKeys = new Map();
@@ -400,8 +399,6 @@ const COPIED_ICON_SVG =
   '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
 const REWIND_ICON_SVG =
   '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a5 5 0 1 0 1.5-3.5"/><path d="M3 2.5V5h2.5"/></svg>';
-const EVIDENCE_ICON_SVG =
-  '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.8"/><circle cx="12" cy="5" r="1.8"/><circle cx="8" cy="12" r="1.8"/><path d="M5.6 4.2l4.6.6M5 5.5l2.2 4.8M11 6.5l-2 4"/></svg>';
 
 // "Rewind to here": undo this turn and everything after — in the engine session
 // (files + dropped context) and Lily's transcript together. Only offered when the
@@ -475,18 +472,6 @@ function appendArticleActions(article, sessionId, message) {
   }
   const rewind = buildRewindAction(sessionId, message);
   if (rewind) actions.appendChild(rewind);
-  const graph = message.record?.meta?.evidenceGraph;
-  const replayBundle = message.record?.meta?.evidenceReplayBundle || null;
-  if (graph && Array.isArray(graph.nodes) && graph.nodes.length) {
-    const evidence = document.createElement("button");
-    evidence.type = "button";
-    evidence.className = "assistant-icon-btn assistant-evidence-btn";
-    evidence.title = t("message.evidenceGraph");
-    evidence.setAttribute("aria-label", t("message.evidenceGraph"));
-    evidence.innerHTML = EVIDENCE_ICON_SVG;
-    evidence.addEventListener("click", () => openEvidenceGraphViewer(graph, replayBundle));
-    actions.appendChild(evidence);
-  }
   if (actions.childElementCount) article.appendChild(actions);
 }
 

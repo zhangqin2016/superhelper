@@ -7,6 +7,7 @@ const {
   appVersion,
   agentBinDir,
   agentConfigDir,
+  opencodeDbPath,
   sessionsIndexPath,
 } = require("./config");
 const { LEGACY_TO_LILY } = require("./agent-env");
@@ -15,6 +16,8 @@ const LEGACY_BIN_DIR = "claude-bin";
 const LEGACY_CONFIG_DIR = "claude-config";
 const LEGACY_SKILL_ID = "claude-vision";
 const CURRENT_SKILL_ID = "lily-vision";
+const RECOVERED_LEGACY_TITLE = "恢复的历史会话";
+const ORPHAN_RECOVERY_AUTO_LIMIT = 3;
 
 function migrateLegacyCliBinaries() {
   const {
@@ -97,6 +100,7 @@ const APP_DATA_FILES = [
   "model-settings.json",
   "skills-state.json",
   "permission-settings.json",
+  "deleted-sessions.json",
 ];
 
 const APP_DATA_DIRS = [
@@ -538,6 +542,13 @@ function existingSessionIds(sessionStore) {
   return ids;
 }
 
+function deletedSessionIds(root) {
+  const raw = readJsonSafe(path.join(root, "deleted-sessions.json"));
+  const sessions = raw?.sessions;
+  if (!sessions || typeof sessions !== "object" || Array.isArray(sessions)) return new Set();
+  return new Set(Object.keys(sessions).filter(Boolean));
+}
+
 function messageFileSessionIds(dir) {
   try {
     return fs.readdirSync(dir)
@@ -550,6 +561,83 @@ function messageFileSessionIds(dir) {
   } catch {
     return [];
   }
+}
+
+function legacyMessageCount(filePath) {
+  const raw = readJsonSafe(filePath);
+  const messages = Array.isArray(raw?.messages) ? raw.messages : Array.isArray(raw) ? raw : [];
+  return messages.filter((message) => message && typeof message === "object").length;
+}
+
+function recoveryManifestPath(root) {
+  return path.join(root, "legacy-message-recovery.json");
+}
+
+function writeRecoveryManifest(root, payload) {
+  const existing = readJsonSafe(recoveryManifestPath(root));
+  writeJsonSafe(recoveryManifestPath(root), {
+    schemaVersion: 1,
+    updatedAt: new Date().toISOString(),
+    ...(existing && typeof existing === "object" && !Array.isArray(existing) ? existing : {}),
+    ...payload,
+  });
+}
+
+function isSyntheticRecoveredSession(session) {
+  if (!session || typeof session !== "object") return false;
+  return Boolean(session.recoveredFromLegacyMessages) || session.title === RECOVERED_LEGACY_TITLE;
+}
+
+function sessionTime(session) {
+  const ts = Date.parse(session?.updatedAt || session?.createdAt || "");
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function pruneRecoveredLegacySessionFlood(sessionStore, currentRoot) {
+  let archived = 0;
+  const archivedSessions = [];
+  const archivedIds = new Set();
+  const sessionsByProject = sessionStore?.sessions;
+  if (!sessionsByProject || typeof sessionsByProject !== "object" || Array.isArray(sessionsByProject)) {
+    return { archived, archivedSessions };
+  }
+
+  for (const [projectId, list] of Object.entries(sessionsByProject)) {
+    if (!Array.isArray(list)) continue;
+    const visibleRecovered = list
+      .filter((session) => isSyntheticRecoveredSession(session) && session.status !== "archived")
+      .sort((a, b) => sessionTime(b) - sessionTime(a));
+    if (visibleRecovered.length <= ORPHAN_RECOVERY_AUTO_LIMIT) continue;
+
+    for (const session of visibleRecovered.slice(ORPHAN_RECOVERY_AUTO_LIMIT)) {
+      session.status = "archived";
+      session.archivedAt = session.archivedAt || new Date().toISOString();
+      session.recoveryArchivedByMigration = true;
+      archived += 1;
+      archivedIds.add(session.id);
+      archivedSessions.push({
+        id: session.id,
+        projectId,
+        title: session.title || RECOVERED_LEGACY_TITLE,
+        messageCount: Number.isInteger(session.messageCount) ? session.messageCount : 0,
+        updatedAt: session.updatedAt || session.createdAt || null,
+      });
+    }
+  }
+
+  if (archived > 0) {
+    if (archivedIds.has(sessionStore.activeSessionId)) {
+      const fallback = Object.values(sessionsByProject)
+        .flatMap((list) => Array.isArray(list) ? list : [])
+        .filter((session) => session?.id && session.status !== "archived")
+        .sort((a, b) => sessionTime(b) - sessionTime(a))[0];
+      sessionStore.activeSessionId = fallback?.id || null;
+    }
+    writeRecoveryManifest(currentRoot, {
+      archivedSyntheticSessions: archivedSessions,
+    });
+  }
+  return { archived, archivedSessions };
 }
 
 function recoverOrphanLegacyMessageSessions() {
@@ -573,10 +661,38 @@ function recoverOrphanLegacyMessageSessions() {
     : {};
   if (!Array.isArray(raw.sessions[targetProjectId])) raw.sessions[targetProjectId] = [];
 
+  const { archived } = pruneRecoveredLegacySessionFlood(raw, currentRoot);
   const existing = existingSessionIds(raw);
+  const deleted = deletedSessionIds(currentRoot);
   const candidates = [
     ...messageFileSessionIds(path.join(currentRoot, "session-messages")),
-  ];
+  ]
+    .filter((candidate) => candidate.id && !existing.has(candidate.id) && !deleted.has(candidate.id))
+    .map((candidate) => ({
+      ...candidate,
+      messageCount: legacyMessageCount(candidate.filePath),
+    }))
+    .filter((candidate) => candidate.messageCount > 0);
+
+  if (candidates.length > ORPHAN_RECOVERY_AUTO_LIMIT) {
+    writeRecoveryManifest(currentRoot, {
+      skippedBulkOrphanRecovery: {
+        reason: "too_many_orphan_legacy_message_files",
+        count: candidates.length,
+        limit: ORPHAN_RECOVERY_AUTO_LIMIT,
+        sessions: candidates.map((candidate) => ({
+          id: candidate.id,
+          file: path.basename(candidate.filePath),
+          messageCount: candidate.messageCount,
+        })),
+      },
+    });
+    if (archived > 0) writeJsonSafe(sessionPath, raw);
+    console.warn(
+      `[data-migration] skipped ${candidates.length} orphan legacy message file(s); wrote recovery manifest instead of flooding the sidebar`,
+    );
+    return archived > 0;
+  }
 
   let recovered = 0;
   for (const candidate of candidates) {
@@ -592,20 +708,25 @@ function recoverOrphanLegacyMessageSessions() {
     raw.sessions[targetProjectId].push({
       id: candidate.id,
       projectId: targetProjectId,
-      title: "恢复的历史会话",
+      title: RECOVERED_LEGACY_TITLE,
       createdAt: new Date(ts).toISOString(),
       updatedAt: new Date(ts).toISOString(),
       status: "idle",
-      messageCount: 0,
+      messageCount: candidate.messageCount,
       recoveredFromLegacyMessages: true,
     });
     existing.add(candidate.id);
     recovered += 1;
   }
 
-  if (recovered === 0) return false;
+  if (recovered === 0 && archived === 0) return false;
   writeJsonSafe(sessionPath, raw);
-  console.info(`[data-migration] recovered ${recovered} orphan legacy session(s) from copied messages`);
+  if (recovered > 0) {
+    console.info(`[data-migration] recovered ${recovered} orphan legacy session(s) from copied messages`);
+  }
+  if (archived > 0) {
+    console.info(`[data-migration] archived ${archived} synthetic recovered session(s) from old migrations`);
+  }
   return true;
 }
 
@@ -845,6 +966,53 @@ function migrateLegacyGuideFile() {
   // Both exist: CLAUDE.md is the engine mirror — repaired by repairAllEngineGuideMirrors().
 }
 
+const OPENCODE_INJECTED_GUIDANCE_MARKERS = [
+  "# 智能工作台全局说明",
+];
+
+function scrubInjectedOpencodeGuidanceParts(dbPath = opencodeDbPath()) {
+  if (!dbPath || !fs.existsSync(dbPath)) return 0;
+
+  let db = null;
+  try {
+    const { openDatabase } = require("./store/sqlite-db");
+    db = openDatabase(dbPath);
+    if (!tableExists(db, "part") || !tableExists(db, "message")) return 0;
+
+    let total = 0;
+    const scrub = db.transaction(() => {
+      for (const marker of OPENCODE_INJECTED_GUIDANCE_MARKERS) {
+        const pattern = `%${marker}%`;
+        const row = db.get("SELECT COUNT(*) AS count FROM part WHERE data LIKE ?", pattern);
+        const count = Number(row?.count || 0);
+        if (count <= 0) continue;
+        db.run("DELETE FROM part WHERE data LIKE ?", pattern);
+        total += count;
+      }
+      db.run(
+        `DELETE FROM message
+          WHERE NOT EXISTS (
+            SELECT 1 FROM part WHERE part.message_id = message.id
+          )`,
+      );
+    });
+    scrub();
+    if (total > 0) {
+      console.info(`[data-migration] scrubbed ${total} injected OpenCode guidance part(s)`);
+    }
+    return total;
+  } catch (err) {
+    console.warn("[data-migration] failed to scrub injected OpenCode guidance:", err?.message || err);
+    return 0;
+  } finally {
+    try {
+      db?.close();
+    } catch {
+      // ignore
+    }
+  }
+}
+
 /**
  * One-time migrations for renamed dirs, skills, and persisted fields.
  * Safe to call on every startup.
@@ -861,6 +1029,7 @@ function runDataMigrations() {
   migrateSessionsResumeId();
   migrateSettingsEnvKeys();
   migrateLegacyGuideFile();
+  scrubInjectedOpencodeGuidanceParts();
   const { repairAllEngineGuideMirrors } = require("./agent-guide-mirror");
   repairAllEngineGuideMirrors();
 }
@@ -874,6 +1043,7 @@ module.exports = {
   clearAllSessionResumeIds,
   migrateSettingsEnvKeys,
   migrateLegacyGuideFile,
+  scrubInjectedOpencodeGuidanceParts,
   shouldPreferLegacyJson,
   mergeProjectsJson,
   mergeSessionsJson,

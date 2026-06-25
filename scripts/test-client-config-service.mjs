@@ -216,7 +216,8 @@ assert.equal(deepseekDirect.models.presets[0].env.LILY_API_KEY, "sk-test-deepsee
 assert.equal(deepseekDirect.models.presets[0].env.LILY_GATEWAY_PROVIDER, undefined);
 assert.equal(deepseekDirect.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro[1m]");
-assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL_HAIKU, "deepseek-v4-flash");
+assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL_HAIKU, "deepseek-v4-pro[1m]");
+assert.equal(deepseekDirect.models.presets[0].env.LILY_SUBAGENT_MODEL, "deepseek-v4-pro[1m]");
 
 const openAiDirectFallback = buildEnvManagedClientConfig(
   {

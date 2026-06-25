@@ -30,6 +30,8 @@ class FakeRunner extends EventEmitter {
     this.busy = false;
     this.sentPayloads = [];
     this.compactions = [];
+    this.compactResult = { ok: true };
+    this.spawnOptions = {};
   }
   isBusy() {
     return this.busy;
@@ -63,7 +65,7 @@ class FakeRunner extends EventEmitter {
   }
   compactContext(body) {
     this.compactions.push(body);
-    return Promise.resolve({ ok: true });
+    return Promise.resolve(this.compactResult);
   }
 }
 
@@ -120,6 +122,7 @@ ctx.transcriptStore = new TranscriptStore(ctx.sessionManager);
 ctx.turnArchive = new TurnArchive(ctx.sessionManager, { eventBus: ctx.eventBus });
 ctx.turnOrchestrator = new TurnOrchestrator(ctx);
 ctx.turnOrchestrator.bindRunner(runner);
+ctx.turnOrchestrator.bindRunner(otherRunner);
 
 runner.emit("agent-resume-id", "ses_shared");
 if (!terminatedSessions.includes("s2")) {
@@ -151,6 +154,104 @@ if (allEvents.some((event) => event.type === "engine.warning")) {
   throw new Error("orphan tool event should be dropped silently without user-visible warning");
 }
 sent.length = 0;
+
+const scheduledDraft = {
+  status: "pending",
+  originalText: "please create a schedule every hour. say hello",
+  draft: {
+    title: "Say hello",
+    prompt: "say hello",
+    scheduleText: "Every hour on the hour",
+    rrule: "FREQ=HOURLY;INTERVAL=1",
+  },
+};
+const localTurn = await ctx.turnOrchestrator.completeLocalAssistantTurn(
+  "s2",
+  scheduledDraft.originalText,
+  [],
+  {
+    assistant: "I understand this as an automated task. Please confirm to create it.",
+    scheduledDraft,
+  },
+);
+if (!localTurn.ok || !localTurn.localAssistant) {
+  throw new Error(`local assistant turn failed: ${JSON.stringify(localTurn)}`);
+}
+if (otherRunner.sentPayloads.length !== 0) {
+  throw new Error("local assistant turn must not send anything to the runtime runner");
+}
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+const localTerminal = allEvents.find((event) => event.sessionId === "s2" && event.type === "turn.completed");
+if (localTerminal?.payload?.record?.meta?.scheduledDraft?.draft?.rrule !== scheduledDraft.draft.rrule) {
+  throw new Error(`local scheduled draft must survive through turn archive: ${JSON.stringify(localTerminal)}`);
+}
+const localFinal = allEvents.find((event) => event.sessionId === "s2" && event.type === "assistant.final");
+if (localFinal?.payload?.scheduledDraft?.draft?.rrule !== scheduledDraft.draft.rrule) {
+  throw new Error(`local scheduled draft must be present on assistant.final: ${JSON.stringify(localFinal)}`);
+}
+const localAssistant = messages.find((message) => message.role === "assistant" && message.turnId === localTurn.turnId);
+if (localAssistant?.meta?.scheduledDraft?.draft?.title !== "Say hello") {
+  throw new Error(`local scheduled draft must be committed as assistant metadata: ${JSON.stringify(messages)}`);
+}
+sent.length = 0;
+messages.length = 0;
+otherSession.messages.length = 0;
+otherRunner.sentPayloads.length = 0;
+
+const runningBeforeLocalDraft = await ctx.turnOrchestrator.sendUserMessage("s2", "existing work", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!runningBeforeLocalDraft.ok || !otherRunner.isBusy()) {
+  throw new Error(`s2 should have an active runtime turn before local draft queueing: ${JSON.stringify(runningBeforeLocalDraft)}`);
+}
+const queuedLocalDraft = await ctx.turnOrchestrator.completeLocalAssistantTurn(
+  "s2",
+  scheduledDraft.originalText,
+  [],
+  {
+    assistant: "I understand this as an automated task. Please confirm to create it.",
+    scheduledDraft,
+  },
+);
+if (!queuedLocalDraft.queued || !queuedLocalDraft.itemId) {
+  throw new Error(`local assistant draft must queue behind an active turn: ${JSON.stringify(queuedLocalDraft)}`);
+}
+if (otherRunner.sentPayloads.length !== 1) {
+  throw new Error("queued local assistant draft must not send a second runtime prompt");
+}
+otherRunner.finish("existing work done");
+await new Promise((resolve) => setTimeout(resolve, 0));
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+const queuedLocalStartedIndex = allEvents.findIndex((event) => (
+  event.sessionId === "s2" &&
+  event.type === "turn.started" &&
+  event.payload?.engine?.localAssistant
+));
+const priorRuntimeFinalIndex = allEvents.findIndex((event) => (
+  event.sessionId === "s2" &&
+  event.type === "assistant.final" &&
+  event.payload?.assistant === "existing work done"
+));
+if (priorRuntimeFinalIndex < 0 || queuedLocalStartedIndex < 0 || queuedLocalStartedIndex < priorRuntimeFinalIndex) {
+  throw new Error(`queued local draft must start only after the active runtime turn settles: ${JSON.stringify(allEvents)}`);
+}
+const queuedLocalAssistant = messages.find((message) => (
+  message.role === "assistant" &&
+  message.meta?.scheduledDraft?.draft?.rrule === scheduledDraft.draft.rrule
+));
+if (!queuedLocalAssistant) {
+  throw new Error(`queued local draft must be committed as one assistant message: ${JSON.stringify(messages)}`);
+}
+if (messages.filter((message) => message.meta?.scheduledDraft).length !== 1) {
+  throw new Error(`queued local draft must not duplicate scheduled draft messages: ${JSON.stringify(messages)}`);
+}
+sent.length = 0;
+messages.length = 0;
+otherSession.messages.length = 0;
+otherRunner.sentPayloads.length = 0;
 
 const result = await ctx.turnOrchestrator.sendUserMessage("s1", "hello", [], {
   spawnEngine: false,
@@ -501,6 +602,72 @@ if (!runner.compactions.length) {
 if (!sent.some((entry) => entry.payload?.events?.some((event) => event.type === "engine.notice" && event.payload?.notice?.code === "compactBoundary"))) {
   throw new Error(`native compaction should publish a compactBoundary notice before compacting: ${JSON.stringify(sent)}`);
 }
+
+sent.length = 0;
+runner.compactions.length = 0;
+runner.spawnOptions.model = { providerID: "anthropic", modelID: "deepseek-v4-pro[1m]" };
+clearSessionSummary("s1");
+for (let i = 0; i < 30; i += 1) {
+  updateSessionSummaryFromRecord("s1", {
+    terminal: "turn.completed",
+    user: { text: `anthropic-compatible deepseek turn ${i}` },
+    assistantText: "ok",
+    fileChanges: [],
+  });
+}
+ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
+await new Promise((resolve) => setTimeout(resolve, 20));
+ctx.eventBus.flush();
+if (runner.compactions.length) {
+  throw new Error("Anthropic-compatible non-Claude models must not call native summarize");
+}
+if (!sent.some((entry) => entry.payload?.events?.some((event) => (
+  event.type === "context.compactionDecision" &&
+  event.payload?.reason === "unsupported_model_compaction" &&
+  event.payload?.unsupportedReason === "anthropic_compatible_non_claude_model"
+)))) {
+  throw new Error(`unsupported compaction model should publish a skip decision: ${JSON.stringify(sent)}`);
+}
+runner.spawnOptions = {};
+
+sent.length = 0;
+runner.compactions.length = 0;
+runner.compactResult = false;
+clearSessionSummary("s1");
+for (let i = 0; i < 30; i += 1) {
+  updateSessionSummaryFromRecord("s1", {
+    terminal: "turn.completed",
+    user: { text: `failing compaction turn ${i}` },
+    assistantText: "ok",
+    fileChanges: [],
+  });
+}
+ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
+await new Promise((resolve) => setTimeout(resolve, 20));
+ctx.eventBus.flush();
+if (!runner.compactions.length) {
+  throw new Error("long idle sessions should still try native compaction before a failure is recorded");
+}
+const failedCompactionEvents = sent.flatMap((entry) => entry.payload?.events || []);
+if (!failedCompactionEvents.some((event) => event.type === "engine.notice" && event.payload?.notice?.code === "compactFailed")) {
+  throw new Error(`failed native compaction should publish a terminal replacement notice: ${JSON.stringify(sent)}`);
+}
+
+sent.length = 0;
+runner.compactions.length = 0;
+ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
+await new Promise((resolve) => setTimeout(resolve, 20));
+ctx.eventBus.flush();
+if (runner.compactions.length) {
+  throw new Error("recent failed compaction should be rate-limited");
+}
+if (!sent.some((entry) => entry.payload?.events?.some((event) => (
+  event.type === "context.compactionDecision" &&
+  event.payload?.reason === "recent_compaction_failure"
+)))) {
+  throw new Error(`recent compaction failures should publish a skip decision: ${JSON.stringify(sent)}`);
+}
+runner.compactResult = { ok: true };
 
 sent.length = 0;
 const interruptSource = await ctx.turnOrchestrator.sendUserMessage("s1", "long running", [], {

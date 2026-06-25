@@ -5,6 +5,7 @@ function metadataKey(message = {}) {
 }
 
 const USER_TIME_MATCH_WINDOW_MS = 10 * 60 * 1000;
+const PROJECTION_TIME_MATCH_WINDOW_MS = 30 * 60 * 1000;
 
 const INJECTED_USER_PROMPT_MARKERS = [
   "# 智能工作台全局说明",
@@ -22,6 +23,19 @@ function timestampMs(value) {
 
 function messageText(message = {}) {
   return String(message.content || message.text || "");
+}
+
+function normalizedText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function timeDistanceMs(a, b) {
+  const at = timestampMs(a);
+  const bt = timestampMs(b);
+  if (!Number.isFinite(at) || !Number.isFinite(bt)) return Infinity;
+  return Math.abs(at - bt);
 }
 
 function isInjectedUserPromptText(text) {
@@ -146,6 +160,81 @@ function messageKey(message = {}) {
   return `${message.role || ""}:${message.timestamp || ""}:${message.content || ""}`;
 }
 
+function scheduledDraftFingerprint(message = {}) {
+  const signature = scheduledDraftSignature(message);
+  if (!signature) return "";
+  return [
+    "scheduledDraft",
+    signature.originalText,
+    signature.title,
+    signature.scheduleText,
+    signature.rrule,
+  ].join(":");
+}
+
+function scheduledDraftSignature(message = {}) {
+  const scheduledDraft = message.meta?.scheduledDraft || message.record?.meta?.scheduledDraft || null;
+  if (!scheduledDraft) return null;
+  const draft = scheduledDraft.draft && typeof scheduledDraft.draft === "object"
+    ? scheduledDraft.draft
+    : scheduledDraft;
+  return {
+    originalText: normalizedText(scheduledDraft.originalText || draft.originalText || ""),
+    title: normalizedText(scheduledDraft.prompt || scheduledDraft.title || draft.prompt || draft.title || ""),
+    scheduleText: normalizedText(scheduledDraft.scheduleText || scheduledDraft.summary || draft.scheduleText || draft.summary || ""),
+    rrule: normalizedText(scheduledDraft.rrule || draft.rrule || ""),
+  };
+}
+
+function scheduledDraftsMatch(a = {}, b = {}) {
+  const left = scheduledDraftSignature(a);
+  const right = scheduledDraftSignature(b);
+  if (!left || !right) return false;
+  if (left.originalText && right.originalText && left.originalText !== right.originalText) return false;
+  if (!left.title || !right.title || left.title !== right.title) return false;
+  if (left.scheduleText && right.scheduleText && left.scheduleText !== right.scheduleText) return false;
+  if (left.rrule && right.rrule && left.rrule !== right.rrule) return false;
+  return Boolean(left.originalText || right.originalText || left.scheduleText || right.scheduleText || left.rrule || right.rrule);
+}
+
+function roleTurnKey(message = {}) {
+  return message.turnId && message.role ? `${message.role}:${message.turnId}` : "";
+}
+
+function isSameUserMessage(a = {}, b = {}) {
+  if (a.role !== "user" || b.role !== "user") return false;
+  const aText = normalizedText(messageText(a));
+  const bText = normalizedText(messageText(b));
+  if (!aText || !bText || aText !== bText) return false;
+  return timeDistanceMs(a.timestamp, b.timestamp) <= PROJECTION_TIME_MATCH_WINDOW_MS;
+}
+
+function findEquivalentProjectionIndex(out, projected) {
+  const directKey = messageKey(projected);
+  for (let i = 0; i < out.length; i += 1) {
+    const existing = out[i];
+    if (messageKey(existing) === directKey) return i;
+    const existingTurn = roleTurnKey(existing);
+    const projectedTurn = roleTurnKey(projected);
+    if (existingTurn && projectedTurn && existingTurn === projectedTurn) return i;
+    if (projected.role === "user" && isSameUserMessage(existing, projected)) return i;
+    if (projected.role === "assistant") {
+      if (scheduledDraftsMatch(existing, projected)) return i;
+      const projectedText = normalizedText(messageText(projected));
+      const existingText = normalizedText(messageText(existing));
+      if (
+        projectedText &&
+        existingText === projectedText &&
+        existing.role === "assistant" &&
+        timeDistanceMs(existing.timestamp, projected.timestamp) <= PROJECTION_TIME_MATCH_WINDOW_MS
+      ) {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
 function mergeProjectionConversation(messages = [], projections = []) {
   const out = Array.isArray(messages) ? messages.slice() : [];
   const byKey = new Map();
@@ -156,8 +245,8 @@ function mergeProjectionConversation(messages = [], projections = []) {
   for (const projected of projections || []) {
     if (!projected?.role || !projected?.turnId) continue;
     const key = messageKey(projected);
-    const existingIndex = byKey.get(key);
-    if (existingIndex == null) {
+    const existingIndex = byKey.get(key) ?? findEquivalentProjectionIndex(out, projected);
+    if (existingIndex < 0) {
       byKey.set(key, out.length);
       out.push(projected);
       continue;

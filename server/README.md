@@ -141,10 +141,10 @@ Config profile example for gateway mode:
         "LILY_API_KEY": "$LILY_GATEWAY_TOKEN",
         "LILY_GATEWAY_PROVIDER": "deepseek",
         "LILY_MODEL": "deepseek-v4-pro[1m]",
-        "LILY_MODEL_HAIKU": "deepseek-v4-flash",
+        "LILY_MODEL_HAIKU": "deepseek-v4-pro[1m]",
         "LILY_MODEL_SONNET": "deepseek-v4-pro[1m]",
         "LILY_MODEL_OPUS": "deepseek-v4-pro[1m]",
-        "LILY_SUBAGENT_MODEL": "deepseek-v4-flash"
+        "LILY_SUBAGENT_MODEL": "deepseek-v4-pro[1m]"
       }
     }]
   }

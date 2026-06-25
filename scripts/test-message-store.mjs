@@ -209,6 +209,137 @@ try {
   const terminalInput = store.markTurnInputTerminal("turn_1", "turn.completed");
   ok(terminalInput.status === "completed", "turn input terminal status follows terminal event");
 
+  const hugeToolResult = "R".repeat(120_000);
+  store.appendRuntimeEvents("S4", [
+    {
+      id: "evt_subagent_huge",
+      type: "subagent.event",
+      sessionId: "S4",
+      turnId: "turn_1",
+      seq: 5,
+      ts: 1500,
+      source: "orchestrator",
+      payload: {
+        subagent: {
+          sessionId: "child_1",
+          status: "running",
+          tools: Array.from({ length: 20 }, (_, i) => ({
+            id: `tool_${i}`,
+            name: "read",
+            status: "done",
+            input: { filePath: `/tmp/${i}.txt` },
+            result: hugeToolResult,
+          })),
+          textFull: "T".repeat(20_000),
+          textPreview: "preview",
+        },
+      },
+    },
+    {
+      id: "evt_process_huge",
+      type: "process.event",
+      sessionId: "S4",
+      turnId: "turn_1",
+      seq: 6,
+      ts: 1600,
+      source: "opencode",
+      payload: {
+        rawType: "session.updated",
+        summary: "summary",
+        handled: true,
+        event: { type: "session.updated", id: "raw_1" },
+        rawEvent: { type: "session.updated", properties: { blob: hugeToolResult } },
+        effects: [{ kind: "tool", result: hugeToolResult }],
+      },
+    },
+  ]);
+  const compactedRuntimeEvents = store.getRuntimeEvents("S4", { afterSeq: 4, limit: 10 });
+  const compactedSubagent = compactedRuntimeEvents.find((event) => event.id === "evt_subagent_huge");
+  const compactedProcess = compactedRuntimeEvents.find((event) => event.id === "evt_process_huge");
+  ok(compactedSubagent?.payload?.subagent?.tools?.length === 8, "subagent persistence keeps only recent compact tool states");
+  ok(!("result" in compactedSubagent.payload.subagent.tools[0]), "subagent persistence drops full tool result");
+  ok(compactedSubagent.payload.subagent.tools[0].resultPreview.length < 1_000, "subagent persistence stores bounded result preview");
+  ok(compactedSubagent.payload.subagent.textFull.length < 1_500, "subagent persistence stores bounded transcript preview");
+  ok(!("rawEvent" in compactedProcess.payload), "process persistence drops raw runtime event payload");
+  ok(compactedProcess.payload.effects[0].result.length < 700, "process persistence bounds effect result");
+
+  store.db.run(
+    `UPDATE runtime_events SET payload_json = ? WHERE id = ?`,
+    JSON.stringify({
+      subagent: {
+        sessionId: "legacy_child",
+        tools: [{ id: "legacy_tool", name: "read", result: hugeToolResult }],
+        textFull: "T".repeat(20_000),
+      },
+    }),
+    "evt_subagent_huge",
+  );
+  const compactedLegacy = store.compactRuntimeEventPayloads({ limit: 10, minBytes: 1_000 });
+  ok(compactedLegacy.compacted >= 1, "runtime event maintenance compacts legacy oversized payloads");
+  const legacyAfter = store.getRuntimeEvents("S4", { afterSeq: 4, limit: 10 })
+    .find((event) => event.id === "evt_subagent_huge");
+  ok(legacyAfter.payload.subagent.tools[0].resultPreview.length < 1_000, "maintenance removes legacy full subagent result");
+
+  const scheduledDraft = {
+    status: "pending",
+    source: "model",
+    originalText: "please create a schedule every hour. say hello",
+    draft: {
+      title: "Say hello",
+      scheduleText: "Every hour on the hour",
+      rrule: "FREQ=HOURLY;INTERVAL=1",
+    },
+    createdAt: "2026-06-23T14:00:00.000Z",
+  };
+  store.appendRuntimeEvents("S6", [
+    {
+      id: "evt_s6_1",
+      type: "turn.started",
+      sessionId: "S6",
+      turnId: "turn_schedule",
+      seq: 1,
+      ts: 3100,
+      source: "orchestrator",
+      payload: { text: "please create a schedule every hour. say hello" },
+    },
+    {
+      id: "evt_s6_2",
+      type: "assistant.final",
+      sessionId: "S6",
+      turnId: "turn_schedule",
+      seq: 2,
+      ts: 3200,
+      source: "orchestrator",
+      payload: {
+        assistant: "I understood this as an automated scheduled task. Confirm to create it.",
+        scheduledDraft,
+      },
+    },
+    {
+      id: "evt_s6_3",
+      type: "turn.completed",
+      sessionId: "S6",
+      turnId: "turn_schedule",
+      seq: 3,
+      ts: 3300,
+      source: "orchestrator",
+      payload: {
+        assistant: "I understood this as an automated scheduled task. Confirm to create it.",
+        scheduledDraft,
+      },
+    },
+  ]);
+  const scheduledProjection = store.getProjectedConversation("S6");
+  const scheduledAssistant = scheduledProjection.find((message) => message.role === "assistant");
+  ok(
+    scheduledAssistant?.meta?.scheduledDraft?.draft?.rrule === "FREQ=HOURLY;INTERVAL=1",
+    "projected assistant preserves scheduled draft metadata",
+  );
+  ok(
+    scheduledAssistant?.record?.meta?.scheduledDraft?.draft?.title === "Say hello",
+    "projected assistant record preserves scheduled draft metadata",
+  );
+
   store.appendRuntimeEvents("S5", [
     {
       id: "evt_s5_1",

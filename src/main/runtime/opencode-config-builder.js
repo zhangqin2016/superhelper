@@ -15,7 +15,7 @@
 
 const { resolveOpencodeModelConfig } = require("./opencode-model-config");
 
-/** Subagent agent names whose model maps to Lily's LILY_SUBAGENT_MODEL tier. */
+/** Subagent agent names whose model maps to Lily's effective main model tier. */
 const SUBAGENT_AGENTS = ["general", "explore"];
 const DEFAULT_COMPACTION = Object.freeze({
   auto: true,

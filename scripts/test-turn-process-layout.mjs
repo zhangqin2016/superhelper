@@ -9,6 +9,7 @@ import {
   textMatchesFileToolBody,
   partitionTimeline,
   resolveFinalText,
+  collapseRepeatedReadTools,
 } from "../src/renderer/modules/turn-process-layout.js";
 import { buildTimelineFromLegacy, getRenderableTimeline } from "../src/renderer/modules/turn-timeline.js";
 
@@ -211,6 +212,36 @@ if (fromPartial.length !== 1 || fromPartial[0].content !== "a") {
 }
 if (parseTodoEntries({ name: "TodoWrite", partialJson: '{"todos":[{"con' }).length !== 0) {
   throw new Error("truncated partialJson must yield no items");
+}
+
+const repeatedReads = collapseRepeatedReadTools([
+  { kind: "tool", id: "r1", name: "Read", input: { file_path: "a.js" }, status: "done" },
+  { kind: "tool", id: "r2", name: "read", input: { file_path: "b.js" }, status: "done" },
+  { kind: "tool", id: "r3", name: "Read", input: { file_path: "c.js" }, status: "done" },
+  { kind: "tool", id: "b1", name: "Bash", input: { command: "npm test" }, status: "done" },
+]);
+if (repeatedReads.length !== 2 || repeatedReads[0].kind !== "toolGroup" || repeatedReads[0].tools.length !== 3) {
+  throw new Error(`three consecutive reads should collapse into one group: ${JSON.stringify(repeatedReads)}`);
+}
+if (partitionTimeline(repeatedReads).tools.length !== 2) {
+  throw new Error("partitionTimeline should count toolGroup as a process tool");
+}
+const twoReads = collapseRepeatedReadTools([
+  { kind: "tool", id: "r1", name: "Read", status: "done" },
+  { kind: "tool", id: "r2", name: "Read", status: "done" },
+]);
+if (twoReads.some((entry) => entry.kind === "toolGroup")) {
+  throw new Error("two reads should stay visible without grouping");
+}
+const separatedReads = collapseRepeatedReadTools([
+  { kind: "tool", id: "r1", name: "Read", status: "done" },
+  { kind: "text", id: "text_1", text: "progress" },
+  { kind: "tool", id: "r2", name: "Read", status: "done" },
+  { kind: "tool", id: "r3", name: "Read", status: "done" },
+  { kind: "tool", id: "r4", name: "Read", status: "running" },
+]);
+if (separatedReads.length !== 3 || separatedReads[2].kind !== "toolGroup" || separatedReads[2].status !== "running") {
+  throw new Error(`only consecutive reads should group and preserve running status: ${JSON.stringify(separatedReads)}`);
 }
 
 console.log("turn-process-layout: ok");

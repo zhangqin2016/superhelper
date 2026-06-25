@@ -56,7 +56,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(p.websearch === "deny" && p.webfetch === "deny", "disallowedTools -> deny (mapped names)");
 }
 
-// --- model tiers -> small_model + subagent agent models ---------------------
+// --- every OpenCode tier uses the selected main Pro model -------------------
 {
   const r = buildOpencodeConfig({
     lilyEnv: {
@@ -65,8 +65,9 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
     },
   });
   const cfg = JSON.parse(r.configContent);
-  assert(cfg.small_model === "lily/deepseek-lite", "haiku tier -> small_model");
-  assert(cfg.agent.general.model === "lily/deepseek-lite" && cfg.agent.explore.model === "lily/deepseek-lite", "subagent tier -> subagent agents");
+  assert(cfg.small_model === "lily/deepseek-chat", "small_model forced to main model");
+  assert(cfg.agent.general.model === "lily/deepseek-chat" && cfg.agent.explore.model === "lily/deepseek-chat", "subagent agents forced to main model");
+  assert(r.diagnostics.ignoredTierModels.haiku === "deepseek-lite", "ignored fast tier diagnosed");
 }
 
 // --- full config assembly ---------------------------------------------------

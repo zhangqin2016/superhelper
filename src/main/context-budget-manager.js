@@ -5,8 +5,34 @@ const DEFAULT_MIN_COMPACTION_INTERVAL_MS = 20 * 60 * 1000;
 const DEFAULT_TOKEN_PRESSURE_THRESHOLD = 0.72;
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 120_000;
 
-function runtimeSupportsNativeCompaction(capabilities = {}) {
-  return Boolean(capabilities.nativeCompaction || capabilities.manualSummarize);
+function normalizeModelRef(model = {}) {
+  const source = model && typeof model === "object" ? model : {};
+  return {
+    providerID: String(source.providerID || source.provider || "").trim(),
+    modelID: String(source.modelID || source.model || "").trim(),
+  };
+}
+
+function nativeCompactionUnsupportedReason(model = {}) {
+  const { providerID, modelID } = normalizeModelRef(model);
+  const provider = providerID.toLowerCase();
+  const modelName = modelID.toLowerCase();
+  if (!provider || !modelName) return "";
+
+  // OpenCode's native session.summarize is reliable for its own native Claude
+  // path. Anthropic-compatible endpoints that route non-Claude models through
+  // providerID="anthropic" often reject summarize with a server-side 500.
+  // Do not repeatedly call that unsupported runtime path; Lily's rolling memory
+  // remains active for continuity.
+  if (provider === "anthropic" && !/\bclaude\b/.test(modelName)) {
+    return "anthropic_compatible_non_claude_model";
+  }
+  return "";
+}
+
+function runtimeSupportsNativeCompaction(capabilities = {}, model = {}) {
+  if (!Boolean(capabilities.nativeCompaction || capabilities.manualSummarize)) return false;
+  return !nativeCompactionUnsupportedReason(model);
 }
 
 function parseTime(value) {
@@ -53,6 +79,7 @@ function estimateTokensForText(text, opts = {}) {
 
 function decideBackgroundCompaction({
   capabilities = {},
+  model = {},
   runner = {},
   sessionSummary = {},
   now = Date.now(),
@@ -61,13 +88,34 @@ function decideBackgroundCompaction({
   contextWindowTokens = DEFAULT_CONTEXT_WINDOW_TOKENS,
   tokenPressureThreshold = DEFAULT_TOKEN_PRESSURE_THRESHOLD,
 } = {}) {
-  if (!runtimeSupportsNativeCompaction(capabilities)) return { action: "skip", reason: "unsupported_runtime" };
+  if (!Boolean(capabilities.nativeCompaction || capabilities.manualSummarize)) {
+    return { action: "skip", reason: "unsupported_runtime" };
+  }
+  const unsupportedModelReason = nativeCompactionUnsupportedReason(model);
+  if (unsupportedModelReason) {
+    const { providerID, modelID } = normalizeModelRef(model);
+    return {
+      action: "skip",
+      reason: "unsupported_model_compaction",
+      unsupportedReason: unsupportedModelReason,
+      providerID,
+      modelID,
+    };
+  }
   if (!runner.alive) return { action: "skip", reason: "runner_not_alive" };
   if (runner.busy) return { action: "skip", reason: "runner_busy" };
 
   const lastCompactedAt = parseTime(sessionSummary.lastCompactedAt);
   if (lastCompactedAt > 0 && now - lastCompactedAt < minIntervalMs) {
     return { action: "skip", reason: "recently_compacted" };
+  }
+  const lastCompactionFailedAt = parseTime(sessionSummary.lastCompactionFailedAt);
+  if (lastCompactionFailedAt > 0 && now - lastCompactionFailedAt < minIntervalMs) {
+    return {
+      action: "skip",
+      reason: "recent_compaction_failure",
+      lastCompactionFailedAt: sessionSummary.lastCompactionFailedAt,
+    };
   }
 
   const estimatedPromptTokens = Number(sessionSummary.lastEnginePromptTokens || 0);
@@ -108,5 +156,6 @@ module.exports = {
   decideBackgroundCompaction,
   estimateTokensForText,
   estimateTokensFromChars,
+  nativeCompactionUnsupportedReason,
   runtimeSupportsNativeCompaction,
 };

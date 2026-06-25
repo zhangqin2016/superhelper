@@ -23,7 +23,7 @@ const {
 const prompt = process.argv.slice(2).join(" ").trim();
 const bin = process.env.OPENCODE_BIN || "opencode";
 const streamMs = Number(process.env.SMOKE_MS || 15000);
-// OPENCODE_MODEL="provider/model" e.g. "opencode/deepseek-v4-flash-free"
+// OPENCODE_MODEL="provider/model" e.g. "anthropic/deepseek-v4-pro[1m]"
 let model = null;
 if (process.env.OPENCODE_MODEL) {
   const [providerID, ...rest] = process.env.OPENCODE_MODEL.split("/");

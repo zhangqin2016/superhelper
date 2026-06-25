@@ -23,6 +23,7 @@ const { openDatabase } = require("./sqlite-db");
 const { BlobStore } = require("./blob-store");
 const { MIGRATIONS } = require("./schema");
 const { externalize, collectRefs } = require("./record-blobs");
+const { compactRuntimeEventForPersistence } = require("./runtime-event-persistence");
 
 const PREVIEW_MAX = 500;
 const DEFAULT_LIMIT = 50;
@@ -309,6 +310,11 @@ class MessageStore {
       const stored = [];
       for (const event of list) {
         if (!event?.id || !event?.type) continue;
+        const persistedEvent = compactRuntimeEventForPersistence(event);
+        const persistedPayload =
+          persistedEvent.payload && typeof persistedEvent.payload === "object"
+            ? persistedEvent.payload
+            : {};
         try {
           const inserted = this.db.run(
             `INSERT OR IGNORE INTO runtime_events
@@ -322,13 +328,13 @@ class MessageStore {
             event.type,
             event.source || "runtime",
             Number.isFinite(event.ts) ? event.ts : Date.now(),
-            stringifyJson(event.payload && typeof event.payload === "object" ? event.payload : {}, {}),
-            event.payload?.rawType || event.payload?.event?.type || null,
-            event.payload?.event?.id || null,
+            stringifyJson(persistedPayload, {}),
+            persistedPayload.rawType || persistedPayload.event?.type || null,
+            persistedPayload.event?.id || null,
           );
           if (inserted.changes > 0) {
             this._projectRuntimeEvent(sid, event);
-            stored.push(event);
+            stored.push(persistedEvent);
           }
         } catch {
           // A malformed runtime diagnostic should not break the user turn.
@@ -359,6 +365,75 @@ class MessageStore {
       originalType: row.original_type || null,
       originalEventId: row.original_event_id || null,
     }));
+  }
+
+  compactRuntimeEventPayloads({ limit = 200, minBytes = 20_000 } = {}) {
+    const lim = Math.max(1, Math.min(Number(limit) || 200, 1000));
+    const threshold = Math.max(1_000, Number(minBytes) || 20_000);
+    const rows = this.db.all(
+      `SELECT session_id, seq, id, turn_id, type, source, ts, payload_json
+       FROM runtime_events
+       WHERE length(payload_json) > ?
+         AND payload_json NOT LIKE '%"persistenceCompact":true%'
+         AND type IN (
+           'process.event',
+           'subagent.event',
+           'tool.started',
+           'tool.input.done',
+           'tool.done',
+           'user.committed',
+           'assistant.final',
+           'turn.completed',
+           'turn.failed',
+           'turn.interrupted',
+           'turn.stalled'
+         )
+       ORDER BY length(payload_json) DESC
+       LIMIT ?`,
+      threshold,
+      lim,
+    );
+    if (!rows.length) return { scanned: 0, compacted: 0, beforeBytes: 0, afterBytes: 0 };
+    return this.db.transaction(() => {
+      let compacted = 0;
+      let beforeBytes = 0;
+      let afterBytes = 0;
+      for (const row of rows) {
+        const payload = parseJson(row.payload_json, null);
+        if (!payload || typeof payload !== "object") continue;
+        const before = String(row.payload_json || "");
+        const event = {
+          id: row.id,
+          type: row.type,
+          sessionId: row.session_id,
+          turnId: row.turn_id || null,
+          seq: row.seq,
+          ts: row.ts,
+          source: row.source,
+          payload,
+        };
+        const persistedEvent = compactRuntimeEventForPersistence(event);
+        const nextPayload = persistedEvent.payload && typeof persistedEvent.payload === "object"
+          ? persistedEvent.payload
+          : {};
+        const after = stringifyJson(nextPayload, {});
+        if (after.length >= before.length) continue;
+        this.db.run(
+          `UPDATE runtime_events
+           SET payload_json = ?, original_type = ?, original_event_id = ?
+           WHERE session_id = ? AND seq = ?`,
+          after,
+          nextPayload.rawType || nextPayload.event?.type || null,
+          nextPayload.event?.id || null,
+          row.session_id,
+          row.seq,
+        );
+        compacted += 1;
+        beforeBytes += before.length;
+        afterBytes += after.length;
+      }
+      return { scanned: rows.length, compacted, beforeBytes, afterBytes };
+    })();
   }
 
   getTurnProjection(sessionId, turnId) {
@@ -405,6 +480,11 @@ class MessageStore {
       const terminalPayload = parseJson(row.terminal_payload_json, {});
       const startedAt = projection.startedAt || projection.updatedAt || Date.now();
       const terminalAt = projection.terminalAt || row.terminal_event_ts || projection.updatedAt || startedAt;
+      const scheduledDraft =
+        terminalPayload?.scheduledDraft ||
+        terminalPayload?.record?.meta?.scheduledDraft ||
+        projection.payload?.scheduledDraft ||
+        null;
       if (projection.userText) {
         conversation.push({
           id: `projection:${projection.turnId}:user`,
@@ -463,6 +543,7 @@ class MessageStore {
               toolsSummary: { count: projection.toolCount || 0 },
               canonicalSource: "lily-projection",
               projected: true,
+              ...(scheduledDraft ? { scheduledDraft } : {}),
             },
           };
       conversation.push({
@@ -477,6 +558,7 @@ class MessageStore {
             ...(record.meta || {}),
             canonicalSource: record.meta?.canonicalSource || "lily-projection",
             projected: true,
+            ...(scheduledDraft && !record.meta?.scheduledDraft ? { scheduledDraft } : {}),
           },
         },
         ...(failed ? { failed: true } : {}),
@@ -485,6 +567,7 @@ class MessageStore {
           terminal,
           canonicalSource: "lily-projection",
           projected: true,
+          ...(scheduledDraft && !record.meta?.scheduledDraft ? { scheduledDraft } : {}),
         },
       });
     }
@@ -519,6 +602,11 @@ class MessageStore {
       event.turnId,
     );
     const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
+    const scheduledDraft =
+      payload.scheduledDraft ||
+      payload.record?.meta?.scheduledDraft ||
+      payload.meta?.scheduledDraft ||
+      null;
     const projection = current
       ? this._hydrateTurnProjection(current)
       : {
@@ -566,6 +654,7 @@ class MessageStore {
       ...(projection.payload || {}),
       lastEventType: event.type,
       lastEventId: event.id,
+      ...(scheduledDraft ? { scheduledDraft } : {}),
     };
 
     this.db.run(

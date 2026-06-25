@@ -119,6 +119,85 @@ const projectionDeduped = mergeProjectionConversation([
 assert.equal(projectionDeduped.filter((m) => m.role === "user").length, 1, "projection does not duplicate existing turn user");
 assert.equal(projectionDeduped.find((m) => m.role === "assistant")?.content, "投影答案", "projection fills missing assistant");
 
+const projectionOfficialNoTurn = mergeProjectionConversation([
+  {
+    id: "official_user_no_turn",
+    role: "user",
+    content: "please create a schedule every hour. say hello",
+    timestamp: "2026-06-23T14:00:02.000Z",
+    source: "opencode",
+  },
+], [
+  {
+    id: "projection:turn_schedule:user",
+    role: "user",
+    content: "please create a schedule every hour. say hello",
+    turnId: "turn_schedule",
+    timestamp: "2026-06-23T14:00:00.000Z",
+  },
+  {
+    id: "projection:turn_schedule:assistant",
+    role: "assistant",
+    content: "",
+    turnId: "turn_schedule",
+    timestamp: "2026-06-23T14:00:04.000Z",
+    meta: {
+      scheduledDraft: {
+        originalText: "please create a schedule every hour. say hello",
+        draft: {
+          title: "Say hello",
+          scheduleText: "Every hour on the hour",
+          rrule: "FREQ=HOURLY;INTERVAL=1",
+        },
+      },
+    },
+  },
+]);
+assert.equal(
+  projectionOfficialNoTurn.filter((m) => m.role === "user").length,
+  1,
+  "projection user is deduped against official OpenCode user without turnId",
+);
+
+const scheduledDraftDeduped = mergeProjectionConversation([
+  {
+    id: "official_schedule_card",
+    role: "assistant",
+    content: "",
+    timestamp: "2026-06-23T14:00:04.000Z",
+    meta: {
+      scheduledDraft: {
+        originalText: "please create a schedule every hour. say hello",
+        draft: {
+          title: "Say hello",
+          scheduleText: "Every hour on the hour",
+          rrule: "FREQ=HOURLY;INTERVAL=1",
+        },
+      },
+    },
+  },
+], [
+  {
+    id: "projection:turn_schedule_2:assistant",
+    role: "assistant",
+    content: "",
+    turnId: "turn_schedule_2",
+    timestamp: "2026-06-23T14:00:06.000Z",
+    meta: {
+      scheduledDraft: {
+        originalText: "please create a schedule every hour. say hello",
+        prompt: "Say hello",
+        scheduleText: "Every hour on the hour",
+      },
+    },
+  },
+]);
+assert.equal(
+  scheduledDraftDeduped.filter((m) => m.meta?.scheduledDraft).length,
+  1,
+  "scheduled task draft cards are deduped by draft fingerprint",
+);
+
 const fallbackPage = { ok: true, source: "lily", conversation: [{ id: "local" }] };
 const baseSession = { id: "s1", projectId: "p1" };
 const fallbackCtx = {

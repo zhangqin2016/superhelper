@@ -19,6 +19,7 @@ import {
 } from "./turn-timeline.js";
 import {
   classifyToolCategory,
+  collapseRepeatedReadTools,
   groupToolsByCategory,
   isTodoTool,
   parseTodoEntries,
@@ -519,7 +520,7 @@ function statusFooterText(liveTurn) {
 }
 
 function processStructureSig(liveTurn, sealed, sessionId) {
-  const timeline = timelineForView(liveTurn, sealed);
+  const timeline = timelineForProcessView(liveTurn, sealed);
   const diffCount = resolveTurnDiffEntries(liveTurn, sessionId).length;
   const subagentSig = collectSubagentEntries(timeline, liveTurn)
     .map((entry) => {
@@ -587,7 +588,7 @@ function restoreDetailsOpenState(root, openState, { collapseFinishedThinking = f
 
 function patchLiveProcessDom(root, liveTurn, ctx) {
   const { sealed = Boolean(liveTurn.final) } = ctx;
-  const timeline = timelineForView(liveTurn, sealed);
+  const timeline = timelineForProcessView(liveTurn, sealed);
   const { thinking, notices, tools } = partitionTimeline(timeline);
   const summary = root.querySelector(".assistant-process-group summary");
   if (summary) {
@@ -601,6 +602,8 @@ function patchLiveProcessDom(root, liveTurn, ctx) {
       continue;
     } else if (entry.kind === "tool" && isSubagentEntry(entry)) {
       continue;
+    } else if (entry.kind === "toolGroup") {
+      return false;
     } else if (entry.kind === "tool") {
       const row = root.querySelector(`.assistant-tool-row[data-tool-id="${CSS.escape(entry.id)}"]`);
       if (!row) return false;
@@ -646,7 +649,7 @@ function renderProcess(root, liveTurn, ctx = {}) {
   const wasSealed = root.dataset.sealed === "true";
   const structureSig = processStructureSig(liveTurn, sealed, sessionId);
   if (!sealed && root.dataset.processSig === structureSig && patchLiveProcessDom(root, liveTurn, ctx)) {
-    const timeline = timelineForView(liveTurn, sealed);
+    const timeline = timelineForProcessView(liveTurn, sealed);
     const diffEntries = resolveTurnDiffEntries(liveTurn, sessionId);
     root.hidden = timeline.length === 0 && diffEntries.length === 0;
     const diffKey = String(diffEntries.length);
@@ -659,7 +662,7 @@ function renderProcess(root, liveTurn, ctx = {}) {
 
   root.dataset.sealed = sealed ? "true" : "false";
   root.dataset.processSig = structureSig;
-  const timeline = timelineForView(liveTurn, sealed);
+  const timeline = timelineForProcessView(liveTurn, sealed);
   const { thinking, notices, tools } = partitionTimeline(timeline);
   const groupThinking = shouldGroupFinishedThinking(thinking, sealed);
   // Todo checklists are the plan, not process — they render chronologically
@@ -1109,6 +1112,7 @@ function renderChangedFilesGroup(entries, sealed, ctx = {}) {
 
 function renderTimelineEntry(entry, sealed, ctx = {}) {
   if (entry.kind === "thinking") return renderThinkingEntry(entry, !sealed);
+  if (entry.kind === "toolGroup") return renderToolGroup(entry, sealed, ctx);
   if (entry.kind === "tool") {
     if (isTodoTool(entry.name)) {
       // Live turn: the task list lives in the pinned strip above the composer, so
@@ -1121,6 +1125,10 @@ function renderTimelineEntry(entry, sealed, ctx = {}) {
   if (entry.kind === "notice") return renderNoticeEntry(entry);
   if (entry.kind === "text") return renderInlineTextEntry(entry, !sealed);
   return null;
+}
+
+function timelineForProcessView(liveTurn, sealed) {
+  return collapseRepeatedReadTools(timelineForView(liveTurn, sealed));
 }
 
 // Subagent (Task) tool calls nest their own tool activity inside the parent
@@ -1138,6 +1146,7 @@ function buildChildToolsMap(toolEntries = []) {
 }
 
 function renderToolWithChildren(entry, sealed, childTools, ctx = {}) {
+  if (entry.kind === "toolGroup") return renderToolGroup(entry, sealed, ctx);
   const row = renderToolRowFromEntry(entry, sealed, ctx);
   const children = childTools?.get(entry.id);
   if (row && children?.length) {
@@ -1149,6 +1158,39 @@ function renderToolWithChildren(entry, sealed, childTools, ctx = {}) {
     }
     row.appendChild(nest);
   }
+  return row;
+}
+
+function renderToolGroup(entry, sealed, ctx = {}) {
+  const tools = Array.isArray(entry.tools) ? entry.tools : [];
+  if (!tools.length) return null;
+  const row = document.createElement("details");
+  row.className = "assistant-tool-row assistant-tool-group-row";
+  row.dataset.toolId = entry.id || "";
+  row.dataset.status = entry.status || "";
+  row.open = false;
+
+  const summary = document.createElement("summary");
+  summary.className = "assistant-tool-summary";
+  const head = document.createElement("div");
+  head.className = "assistant-tool-row-head";
+  const cmd = document.createElement("span");
+  cmd.className = "assistant-tool-command";
+  cmd.textContent = t("timeline.readGroup", { count: tools.length });
+  const status = document.createElement("span");
+  status.className = "assistant-tool-status";
+  status.textContent = toolStatusLabel(entry.status || "done") + toolDurationSuffix(entry);
+  head.append(cmd, status);
+  summary.appendChild(head);
+  row.appendChild(summary);
+
+  const body = document.createElement("div");
+  body.className = "assistant-tool-group-body";
+  for (const tool of tools) {
+    const child = renderToolRowFromEntry(tool, sealed, ctx);
+    if (child) body.appendChild(child);
+  }
+  row.appendChild(body);
   return row;
 }
 

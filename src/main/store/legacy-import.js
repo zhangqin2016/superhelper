@@ -15,7 +15,11 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { sessionMessagesDir, sessionMessagesImportedDir } = require("../config");
+const {
+  legacySessionsBackupPath,
+  sessionMessagesDir,
+  sessionMessagesImportedDir,
+} = require("../config");
 
 function safeMessageFileName(sessionId) {
   return `${String(sessionId || "").replace(/[^a-zA-Z0-9._-]/g, "_")}.json`;
@@ -23,6 +27,10 @@ function safeMessageFileName(sessionId) {
 
 function legacyFilePath(sessionId) {
   return path.join(sessionMessagesDir(), safeMessageFileName(sessionId));
+}
+
+function importedFilePath(sessionId) {
+  return path.join(sessionMessagesImportedDir(), safeMessageFileName(sessionId));
 }
 
 function importedFlagKey(sessionId) {
@@ -48,6 +56,60 @@ function archiveFile(filePath) {
   }
 }
 
+function storeCount(store, sessionId) {
+  try {
+    return typeof store.count === "function" ? store.count(sessionId) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function isExplicitlyDiscarded(flag) {
+  const value = String(flag || "");
+  return value === "deleted" || value === "cleared";
+}
+
+function readMessagesFromLegacySessionsBackup(sessionId) {
+  const filePath = legacySessionsBackupPath();
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const groups = parsed?.sessions && typeof parsed.sessions === "object" ? Object.values(parsed.sessions) : [];
+    for (const list of groups) {
+      if (!Array.isArray(list)) continue;
+      const session = list.find((entry) => entry?.id === sessionId);
+      if (Array.isArray(session?.messages)) return session.messages;
+    }
+  } catch (err) {
+    console.warn("[legacy-import] unreadable legacy sessions backup:", err?.message || err);
+  }
+  return null;
+}
+
+function fallbackMessages(sessionId) {
+  const archivedPath = importedFilePath(sessionId);
+  if (fs.existsSync(archivedPath)) {
+    const messages = readMessages(archivedPath);
+    if (messages !== null) return { source: "imported-archive", messages };
+    console.warn("[legacy-import] unreadable imported archive, leaving in place:", archivedPath);
+  }
+
+  const backupMessages = readMessagesFromLegacySessionsBackup(sessionId);
+  if (Array.isArray(backupMessages)) {
+    return { source: "legacy-sessions-backup", messages: backupMessages };
+  }
+  return null;
+}
+
+function insertMessages(store, sessionId, messages, opts = {}) {
+  let nextMessages = Array.isArray(messages) ? messages : [];
+  if (typeof opts.transform === "function") nextMessages = nextMessages.map(opts.transform);
+  if (nextMessages.length === 0) return 0;
+  return typeof store.bulkInsertMissing === "function"
+    ? store.bulkInsertMissing(sessionId, nextMessages)
+    : store.bulkInsert(sessionId, nextMessages);
+}
+
 /**
  * Import a single session's legacy file if it hasn't been imported yet.
  * @param {object} [opts]
@@ -58,9 +120,22 @@ function importSession(store, sessionId, opts = {}) {
   if (!sessionId) return { imported: false, count: 0 };
   const filePath = legacyFilePath(sessionId);
   const existingFlag = store.meta(importedFlagKey(sessionId));
-  if (existingFlag && !fs.existsSync(filePath)) return { imported: false, count: 0 };
+  const liveFileExists = fs.existsSync(filePath);
+  if (isExplicitlyDiscarded(existingFlag)) return { imported: false, count: 0 };
+  if (existingFlag && !liveFileExists && storeCount(store, sessionId) > 0) {
+    return { imported: false, count: 0 };
+  }
 
-  if (!fs.existsSync(filePath)) {
+  if (!liveFileExists) {
+    const fallback = storeCount(store, sessionId) === 0 ? fallbackMessages(sessionId) : null;
+    if (fallback) {
+      const count = insertMessages(store, sessionId, fallback.messages, opts);
+      store.setMeta(importedFlagKey(sessionId), `rescued:${fallback.source}:${count}`);
+      if (count > 0) {
+        console.info(`[legacy-import] rescued ${count} archived message(s) for ${sessionId}`);
+        return { imported: true, count };
+      }
+    }
     // Nothing to import — record the flag so we never re-check this session.
     store.setMeta(importedFlagKey(sessionId), "none");
     return { imported: false, count: 0 };
@@ -71,14 +146,8 @@ function importSession(store, sessionId, opts = {}) {
     console.warn("[legacy-import] unreadable file, leaving in place:", filePath);
     return { imported: false, count: 0 };
   }
-  if (typeof opts.transform === "function") messages = messages.map(opts.transform);
 
-  let count = 0;
-  if (messages.length > 0) {
-    count = typeof store.bulkInsertMissing === "function"
-      ? store.bulkInsertMissing(sessionId, messages)
-      : store.bulkInsert(sessionId, messages);
-  }
+  const count = insertMessages(store, sessionId, messages, opts);
   store.setMeta(importedFlagKey(sessionId), `done:${count}`);
   archiveFile(filePath);
   if (count > 0) console.info(`[legacy-import] imported ${count} message(s) for ${sessionId}`);
@@ -144,4 +213,10 @@ function sweepInBackground(store, { onDone, onProgress, transformForSession } = 
   setTimeout(step, 0);
 }
 
-module.exports = { importSession, sweepInBackground, pendingSessionIds, legacyFilePath };
+module.exports = {
+  importSession,
+  sweepInBackground,
+  pendingSessionIds,
+  legacyFilePath,
+  importedFilePath,
+};

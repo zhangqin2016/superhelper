@@ -217,6 +217,41 @@ function markSessionCompacted(sessionId, details = {}) {
       summaryMessageId: trimText(details.summaryMessageId || "", 160),
       at,
     },
+    lastCompactionFailedAt: "",
+    lastCompactionFailure: null,
+  };
+  writeSessionSummary(sessionId, next);
+  return next;
+}
+
+function markSessionCompactionFailed(sessionId, details = {}) {
+  if (!sessionId) return null;
+  const previous = readSessionSummary(sessionId) || {
+    schemaVersion: 1,
+    sessionId,
+    turnCount: 0,
+    recentUserIntents: [],
+    recentFiles: [],
+  };
+  const at = details.at || new Date().toISOString();
+  const errorMessage = trimText(details.error || details.message || "", 360);
+  const next = {
+    ...previous,
+    schemaVersion: 1,
+    sessionId,
+    updatedAt: at,
+    lastCompactionFailedAt: at,
+    compactionFailureCount: Number(previous.compactionFailureCount || 0) + 1,
+    lastCompactionFailure: {
+      runtime: details.runtime || "unknown",
+      mode: details.mode || "native",
+      reason: details.reason || "",
+      providerID: trimText(details.providerID || "", 120),
+      modelID: trimText(details.modelID || "", 160),
+      code: trimText(details.code || "", 80),
+      error: errorMessage,
+      at,
+    },
   };
   writeSessionSummary(sessionId, next);
   return next;
@@ -256,6 +291,7 @@ module.exports = {
   evidenceGapFromRecord,
   formatSessionSummary,
   markContextMemoryInjected,
+  markSessionCompactionFailed,
   markSessionCompacted,
   readSessionSummary,
   updateSessionSummaryFromRecord,

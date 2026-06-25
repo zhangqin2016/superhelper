@@ -531,6 +531,79 @@ if (s4UserMessages.length !== 1) {
   throw new Error(`running history sync must dedupe persisted/live user by turnId, got ${s4UserMessages.length}`);
 }
 
+store.syncCommittedMessages("s5", [
+  {
+    id: "official-user-no-turn",
+    role: "user",
+    content: "please create a schedule every hour. say hello",
+    timestamp: "2026-06-01T00:00:02.000Z",
+  },
+  {
+    id: "projection-user-with-turn",
+    role: "user",
+    turnId: "scheduled-turn",
+    content: "please create a schedule every hour. say hello",
+    timestamp: "2026-06-01T00:00:00.000Z",
+  },
+  {
+    id: "schedule-draft-1",
+    role: "assistant",
+    timestamp: "2026-06-01T00:00:03.000Z",
+    meta: {
+      scheduledDraft: {
+        originalText: "please create a schedule every hour. say hello",
+        draft: {
+          title: "Say hello",
+          scheduleText: "Every hour on the hour",
+          rrule: "FREQ=HOURLY;INTERVAL=1",
+        },
+      },
+    },
+  },
+  {
+    id: "schedule-draft-2",
+    role: "assistant",
+    turnId: "scheduled-turn",
+    timestamp: "2026-06-01T00:00:04.000Z",
+    meta: {
+      scheduledDraft: {
+        originalText: "please create a schedule every hour. say hello",
+        draft: {
+          title: "Say hello",
+          scheduleText: "Every hour on the hour",
+          rrule: "FREQ=HOURLY;INTERVAL=1",
+        },
+      },
+    },
+  },
+]);
+runtime = store.getRuntimeSession("s5");
+if (runtime.committedMessages.filter((message) => message.role === "user").length !== 1) {
+  throw new Error(`idle sync must dedupe equivalent user messages: ${JSON.stringify(runtime.committedMessages)}`);
+}
+if (runtime.committedMessages.filter((message) => message.meta?.scheduledDraft).length !== 1) {
+  throw new Error(`idle sync must dedupe equivalent scheduled draft cards: ${JSON.stringify(runtime.committedMessages)}`);
+}
+
+store.syncCommittedMessages("s6", [
+  {
+    id: "real-repeat-1",
+    role: "user",
+    content: "继续",
+    timestamp: "2026-06-01T00:00:00.000Z",
+  },
+  {
+    id: "real-repeat-2",
+    role: "user",
+    content: "继续",
+    timestamp: "2026-06-01T00:00:10.000Z",
+  },
+]);
+runtime = store.getRuntimeSession("s6");
+if (runtime.committedMessages.length !== 2) {
+  throw new Error(`real repeated user messages must not be deduped: ${JSON.stringify(runtime.committedMessages)}`);
+}
+
 store.applyRuntimeEvent({
   id: "s3-done",
   type: "turn.completed",

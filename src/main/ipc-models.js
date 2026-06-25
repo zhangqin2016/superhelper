@@ -11,7 +11,7 @@ function registerModelHandlers(ctx) {
     return withRunnerChange(ctx, () => {
       const r = setActivePreset(presetId);
       return r.ok ? { ok: true, ...listPresetsPublic() } : r;
-    });
+    }, { liveEnv: false });
   });
 
   ipcMain.handle("models:save-custom", (_event, payload) => {
@@ -22,11 +22,11 @@ function registerModelHandlers(ctx) {
   });
 
   ipcMain.handle("models:delete-custom", (_event, presetId) => {
-    return withRunnerChange(ctx, () => deleteCustomPreset(presetId));
+    return withRunnerChange(ctx, () => deleteCustomPreset(presetId), { liveEnv: false });
   });
 
   ipcMain.handle("models:set-api-gateway", (_event, payload) => {
-    return withRunnerChange(ctx, () => setApiGateway(payload || {}));
+    return withRunnerChange(ctx, () => setApiGateway(payload || {}), { liveEnv: false });
   });
 
   ipcMain.handle("engine:list", () => ({
@@ -40,7 +40,7 @@ function registerModelHandlers(ctx) {
     return withRunnerChange(ctx, () => {
       const r = require("./engine-settings").setEngine(engineId);
       return r.ok ? { ok: true, ...require("./engine-settings").listEnginesPublic() } : r;
-    });
+    }, { liveEnv: false });
   });
 }
 
@@ -67,7 +67,7 @@ function registerSearchHandlers(ctx) {
       return r.ok
         ? { ok: true, ...require("./search-settings").listSearchSettingsPublic() }
         : r;
-    });
+    }, { liveEnv: false });
   });
 
   ipcMain.handle("search:set-searxng-url", (_event, url) => {
@@ -76,7 +76,7 @@ function registerSearchHandlers(ctx) {
       return r.ok
         ? { ok: true, ...require("./search-settings").listSearchSettingsPublic() }
         : r;
-    });
+    }, { liveEnv: false });
   });
 }
 

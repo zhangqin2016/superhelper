@@ -101,7 +101,7 @@ export function listModelGatewayProviders() {
       type: "anthropic",
       baseUrl: cleanBaseUrl(config.deepseekBaseUrl),
       apiKey: config.deepseekApiKey,
-      models: ["deepseek-v4-pro[1m]", "deepseek-v4-flash"],
+      models: ["deepseek-v4-pro[1m]"],
       headers: {},
     };
   }

@@ -8,11 +8,27 @@ const {
   decideBackgroundCompaction,
   estimateTokensForText,
   estimateTokensFromChars,
+  nativeCompactionUnsupportedReason,
   runtimeSupportsNativeCompaction,
 } = require("../src/main/context-budget-manager.js");
 
 assert.equal(runtimeSupportsNativeCompaction({ nativeCompaction: true }), true);
 assert.equal(runtimeSupportsNativeCompaction({ nativeCompaction: false, manualSummarize: true }), true);
+assert.equal(
+  runtimeSupportsNativeCompaction(
+    { nativeCompaction: true, manualSummarize: true },
+    { providerID: "anthropic", modelID: "deepseek-v4-pro[1m]" },
+  ),
+  false,
+);
+assert.equal(
+  nativeCompactionUnsupportedReason({ providerID: "anthropic", modelID: "deepseek-v4-pro[1m]" }),
+  "anthropic_compatible_non_claude_model",
+);
+assert.equal(
+  nativeCompactionUnsupportedReason({ providerID: "anthropic", modelID: "claude-sonnet-4" }),
+  "",
+);
 assert.equal(runtimeSupportsNativeCompaction({}), false);
 assert.equal(estimateTokensFromChars(0), 0);
 assert.equal(estimateTokensFromChars(17), 5);
@@ -23,6 +39,24 @@ assert.equal(
     estimateTokensFromChars("这是一个中文长问题，需要分析上下文压缩和记忆".length),
   true,
   "provider fallback avoids undercounting CJK-heavy prompts",
+);
+
+assert.deepEqual(
+  decideBackgroundCompaction({
+    capabilities: { nativeCompaction: true, manualSummarize: true },
+    model: { providerID: "anthropic", modelID: "deepseek-v4-pro[1m]" },
+    runner: { alive: true, busy: false },
+    sessionSummary: { turnCount: 40 },
+    now: 1_000_000,
+  }),
+  {
+    action: "skip",
+    reason: "unsupported_model_compaction",
+    unsupportedReason: "anthropic_compatible_non_claude_model",
+    providerID: "anthropic",
+    modelID: "deepseek-v4-pro[1m]",
+  },
+  "Anthropic-compatible non-Claude models should use Lily rolling memory instead of native summarize",
 );
 
 assert.deepEqual(
@@ -56,6 +90,21 @@ assert.deepEqual(
   }),
   { action: "skip", reason: "recently_compacted" },
   "recent compaction is rate-limited",
+);
+
+assert.deepEqual(
+  decideBackgroundCompaction({
+    capabilities: { nativeCompaction: true, manualSummarize: true },
+    runner: { alive: true, busy: false },
+    sessionSummary: { turnCount: 40, lastCompactionFailedAt: new Date(950_000).toISOString() },
+    now: 1_000_000,
+  }),
+  {
+    action: "skip",
+    reason: "recent_compaction_failure",
+    lastCompactionFailedAt: new Date(950_000).toISOString(),
+  },
+  "failed native compaction is rate-limited instead of retried every turn",
 );
 
 assert.deepEqual(

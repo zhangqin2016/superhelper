@@ -375,14 +375,35 @@ class OpencodeAgentSession extends EventEmitter {
       }
       return true;
     } catch (err) {
-      log.warn("opencode context compaction failed: %s", err?.message || String(err));
+      const errorMessage = err?.message || String(err);
+      const providerID = body?.providerID || "";
+      const modelID = body?.modelID || "";
+      const reason = body?.reason || "";
+      log.warn(
+        `opencode context compaction failed: session=${this.sessionId} cwd=${this.cwd || ""} provider=${providerID || "-"} model=${modelID || "-"} reason=${reason || "-"} error=${errorMessage}`,
+      );
+      try {
+        require("./session-memory").markSessionCompactionFailed(this.sessionId, {
+          runtime: "opencode",
+          mode: "native",
+          reason,
+          providerID,
+          modelID,
+          code: err?.name || "",
+          error: errorMessage,
+        });
+      } catch (memoryErr) {
+        log.warn(`session compaction failure memory update failed: ${memoryErr?.message || String(memoryErr)}`);
+      }
       return false;
     }
   }
 
   updateEnvironmentVariables() {
-    // capability hotEnvUpdate=false: env is fixed at serve start.
-    return true;
+    // OpenCode reads provider/model/search config when the shared serve starts.
+    // Report "not applied" so callers rebuild idle runners instead of pretending
+    // a model/API change reached an already-running serve.
+    return false;
   }
 
   setPermissionMode(mode) {

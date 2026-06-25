@@ -23,6 +23,7 @@ const {
   clearSessionSummary,
   formatSessionSummary,
   markContextMemoryInjected,
+  markSessionCompactionFailed,
   markSessionCompacted,
   readSessionSummary,
   updateSessionSummaryFromRecord,
@@ -118,6 +119,25 @@ try {
     throw new Error(`read summary should include compaction metadata: ${JSON.stringify(summary)}`);
   }
 
+  const failed = markSessionCompactionFailed("s1", {
+    runtime: "opencode",
+    mode: "native",
+    reason: "token_pressure",
+    providerID: "deepseek",
+    modelID: "deepseek-chat",
+    code: "UnknownError",
+    error: "Unexpected server error",
+    at: "2026-06-25T10:30:00.000Z",
+  });
+  if (
+    failed.lastCompactionFailedAt !== "2026-06-25T10:30:00.000Z" ||
+    failed.compactionFailureCount !== 1 ||
+    failed.lastCompactionFailure?.providerID !== "deepseek" ||
+    failed.lastCompactionFailure?.code !== "UnknownError"
+  ) {
+    throw new Error(`failed compaction metadata should be persisted: ${JSON.stringify(failed)}`);
+  }
+
   const injected = markContextMemoryInjected("s1", {
     fingerprint: "a".repeat(64),
     itemCount: 3,
@@ -144,7 +164,9 @@ try {
   if (
     compactedAgain.contextEpoch !== 2 ||
     compactedAgain.lastContextMemoryFingerprint ||
-    compactedAgain.lastContextMemoryInjection
+    compactedAgain.lastContextMemoryInjection ||
+    compactedAgain.lastCompactionFailedAt ||
+    compactedAgain.lastCompactionFailure
   ) {
     throw new Error(`compaction should advance epoch and clear stale injection fingerprints: ${JSON.stringify(compactedAgain)}`);
   }

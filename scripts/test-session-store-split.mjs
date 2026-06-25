@@ -30,6 +30,7 @@ const {
   blobStoreDir,
   legacySessionsBackupPath,
   messageDbPath,
+  sessionMessagesImportedDir,
   sessionsConfigPath,
   sessionsIndexPath,
 } = require("../src/main/config.js");
@@ -247,4 +248,110 @@ try {
   }
 } finally {
   fs.rmSync(repairRoot, { recursive: true, force: true });
+}
+
+const rescueRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lily-session-store-rescue-"));
+const rescueUserData = path.join(rescueRoot, "userData");
+require.cache[electronPath].exports.app.getPath = (name) => {
+  if (name === "userData") return rescueUserData;
+  if (name === "home") return rescueRoot;
+  if (name === "documents") return rescueRoot;
+  return rescueRoot;
+};
+
+try {
+  fs.mkdirSync(sessionMessagesImportedDir(), { recursive: true });
+  fs.writeFileSync(
+    sessionsIndexPath(),
+    JSON.stringify({
+      activeSessionId: "archived-session",
+      sessions: {
+        p1: [{
+          id: "archived-session",
+          projectId: "p1",
+          title: "真实历史会话",
+          status: "idle",
+          messageCount: 2,
+        }],
+      },
+    }, null, 2),
+  );
+  fs.writeFileSync(
+    path.join(sessionMessagesImportedDir(), "archived-session.json"),
+    JSON.stringify({
+      messages: [
+        { role: "user", content: "升级前的问题" },
+        { role: "assistant", content: "升级前的回答" },
+      ],
+    }, null, 2),
+  );
+
+  const manager = new SessionManager(projectManager);
+  manager.load();
+  const rescued = manager.getConversation("archived-session");
+  if (rescued.length !== 2 || rescued[0].content !== "升级前的问题" || rescued[1].content !== "升级前的回答") {
+    throw new Error(`existing session should rescue messages from imported archive: ${JSON.stringify(rescued)}`);
+  }
+  const rescuedIndex = JSON.parse(fs.readFileSync(sessionsIndexPath(), "utf8"));
+  const recoveredDuplicates = (rescuedIndex.sessions.p1 || []).filter((session) => session.title === "恢复的历史会话");
+  if (recoveredDuplicates.length !== 0) {
+    throw new Error("imported archive rescue must not create synthetic recovered sessions");
+  }
+} finally {
+  fs.rmSync(rescueRoot, { recursive: true, force: true });
+}
+
+const backupRescueRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lily-session-store-backup-rescue-"));
+const backupRescueUserData = path.join(backupRescueRoot, "userData");
+require.cache[electronPath].exports.app.getPath = (name) => {
+  if (name === "userData") return backupRescueUserData;
+  if (name === "home") return backupRescueRoot;
+  if (name === "documents") return backupRescueRoot;
+  return backupRescueRoot;
+};
+
+try {
+  fs.mkdirSync(backupRescueUserData, { recursive: true });
+  fs.writeFileSync(
+    sessionsIndexPath(),
+    JSON.stringify({
+      activeSessionId: "backup-session",
+      sessions: {
+        p1: [{
+          id: "backup-session",
+          projectId: "p1",
+          title: "备份历史会话",
+          status: "idle",
+          messageCount: 2,
+        }],
+      },
+    }, null, 2),
+  );
+  fs.writeFileSync(
+    legacySessionsBackupPath(),
+    JSON.stringify({
+      activeSessionId: "backup-session",
+      sessions: {
+        p1: [{
+          id: "backup-session",
+          projectId: "p1",
+          title: "备份历史会话",
+          status: "idle",
+          messages: [
+            { role: "user", content: "备份里的问题" },
+            { role: "assistant", content: "备份里的回答" },
+          ],
+        }],
+      },
+    }, null, 2),
+  );
+
+  const manager = new SessionManager(projectManager);
+  manager.load();
+  const rescued = manager.getConversation("backup-session");
+  if (rescued.length !== 2 || rescued[0].content !== "备份里的问题" || rescued[1].content !== "备份里的回答") {
+    throw new Error(`existing session should rescue messages from legacy sessions backup: ${JSON.stringify(rescued)}`);
+  }
+} finally {
+  fs.rmSync(backupRescueRoot, { recursive: true, force: true });
 }

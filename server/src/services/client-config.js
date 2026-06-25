@@ -115,10 +115,10 @@ function providerPreset(provider, deliveryMode) {
         LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, deliveryMode),
         ...(model ? {
           LILY_MODEL: model,
-          LILY_MODEL_HAIKU: provider.models?.[1] || model,
+          LILY_MODEL_HAIKU: model,
           LILY_MODEL_SONNET: model,
           LILY_MODEL_OPUS: model,
-          LILY_SUBAGENT_MODEL: provider.models?.[1] || model,
+          LILY_SUBAGENT_MODEL: model,
         } : {}),
       },
     };
@@ -136,10 +136,10 @@ function providerPreset(provider, deliveryMode) {
       LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, effectiveDeliveryMode),
       ...(model ? {
         LILY_MODEL: model,
-        LILY_MODEL_HAIKU: provider.models?.[1] || model,
+        LILY_MODEL_HAIKU: model,
         LILY_MODEL_SONNET: model,
         LILY_MODEL_OPUS: model,
-        LILY_SUBAGENT_MODEL: provider.models?.[1] || model,
+        LILY_SUBAGENT_MODEL: model,
       } : {}),
     },
   };

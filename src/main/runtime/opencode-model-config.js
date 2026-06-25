@@ -38,6 +38,12 @@ function detectProtocol(baseUrl, env = {}) {
   return /\/anthropic(\/|$)/i.test(baseUrl) ? "anthropic" : "openai";
 }
 
+function forceProModelId(id) {
+  const model = String(id || "").trim();
+  if (/^deepseek-v4-flash$/i.test(model)) return "deepseek-v4-pro[1m]";
+  return model;
+}
+
 /**
  * @param {Record<string, string>} lilyEnv
  * @returns {{ ok:boolean, reason?:string, model:{providerID:string,modelID:string}|null,
@@ -46,7 +52,8 @@ function detectProtocol(baseUrl, env = {}) {
 function resolveOpencodeModelConfig(lilyEnv = {}) {
   const rawBase = lilyEnv.LILY_OPENCODE_BASE_URL || lilyEnv.LILY_API_BASE_URL || "";
   const token = lilyEnv.LILY_OPENCODE_API_KEY || lilyEnv.LILY_API_KEY || "";
-  const modelId = lilyEnv.LILY_OPENCODE_MODEL || lilyEnv.LILY_MODEL || "";
+  const requestedModelId = lilyEnv.LILY_OPENCODE_MODEL || lilyEnv.LILY_MODEL || "";
+  const modelId = forceProModelId(requestedModelId);
 
   if (!modelId) {
     return { ok: false, reason: "no model selected (LILY_MODEL missing)", model: null, tiers: null, configContent: null, baseUrl: "" };
@@ -64,18 +71,15 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   const npm = protocol === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible";
   const baseURL = protocol === "anthropic" ? anthropicUrl(rawBase) : openaiUrl(rawBase);
 
-  // Tiered models — declare every distinct id under the provider.
-  const subagentSource = lilyEnv.LILY_SUBAGENT_MODEL
-    ? "LILY_SUBAGENT_MODEL"
-    : lilyEnv.LILY_MODEL_HAIKU
-      ? "LILY_MODEL_HAIKU"
-      : "LILY_MODEL";
+  // Keep every OpenCode tier on the selected Pro model. Fast/haiku/subagent
+  // tiers make the app feel inconsistent because OpenCode can route Task tools,
+  // titles, and summaries through them even when the user selected Pro.
   const tiers = {
     main: modelId,
-    opus: lilyEnv.LILY_MODEL_OPUS || modelId,
-    sonnet: lilyEnv.LILY_MODEL_SONNET || modelId,
-    haiku: lilyEnv.LILY_MODEL_HAIKU || modelId,
-    subagent: lilyEnv.LILY_SUBAGENT_MODEL || lilyEnv.LILY_MODEL_HAIKU || modelId,
+    opus: modelId,
+    sonnet: modelId,
+    haiku: modelId,
+    subagent: modelId,
   };
   const models = {};
   for (const id of [tiers.main, tiers.opus, tiers.sonnet, tiers.haiku, tiers.subagent]) {
@@ -103,8 +107,17 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
     tiers,
     diagnostics: {
       subagentModel: tiers.subagent,
-      subagentModelSource: subagentSource,
-      subagentUsesMainModel: tiers.subagent === modelId && subagentSource === "LILY_MODEL",
+      subagentModelSource: "LILY_MODEL_FORCED_MAIN",
+      subagentUsesMainModel: true,
+      requestedModel: requestedModelId,
+      forcedModel: requestedModelId !== modelId ? modelId : "",
+      forcedMainModelForAllTiers: true,
+      ignoredTierModels: {
+        opus: lilyEnv.LILY_MODEL_OPUS || "",
+        sonnet: lilyEnv.LILY_MODEL_SONNET || "",
+        haiku: lilyEnv.LILY_MODEL_HAIKU || "",
+        subagent: lilyEnv.LILY_SUBAGENT_MODEL || "",
+      },
     },
     configContent: JSON.stringify(config),
     baseUrl: baseURL,
@@ -112,4 +125,4 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   };
 }
 
-module.exports = { resolveOpencodeModelConfig, detectProtocol, anthropicUrl, openaiUrl };
+module.exports = { resolveOpencodeModelConfig, detectProtocol, anthropicUrl, openaiUrl, forceProModelId };

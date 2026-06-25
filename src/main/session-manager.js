@@ -13,6 +13,7 @@ const {
   legacySessionsBackupPath,
   sessionsConfigPath,
   sessionsIndexPath,
+  deletedSessionsPath,
   messageDbPath,
   blobStoreDir,
 } = require("./config");
@@ -68,6 +69,43 @@ function mergeInlineMessages(currentMessages, legacyMessages) {
     counts.set(key, (counts.get(key) || 0) + 1);
   }
   return merged;
+}
+
+function readJson(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(filePath, value) {
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
+  } catch (err) {
+    console.warn("[sessions] failed to write", filePath, err?.message || err);
+  }
+}
+
+function markDeletedSession(session) {
+  if (!session?.id) return;
+  const filePath = deletedSessionsPath();
+  const existing = readJson(filePath);
+  const sessions = existing?.sessions && typeof existing.sessions === "object" && !Array.isArray(existing.sessions)
+    ? existing.sessions
+    : {};
+  sessions[session.id] = {
+    id: session.id,
+    projectId: session.projectId || null,
+    title: session.title || null,
+    deletedAt: new Date().toISOString(),
+  };
+  writeJson(filePath, {
+    schemaVersion: 1,
+    updatedAt: new Date().toISOString(),
+    sessions,
+  });
 }
 
 class SessionManager {
@@ -158,6 +196,7 @@ class SessionManager {
     this._migrateInlineMessages();
     this.saveImmediate();
     this._startBackgroundImport();
+    this._startRuntimeEventMaintenance();
   }
 
   /** Move any in-memory (legacy sessions.json) messages into the store at startup. */
@@ -217,6 +256,32 @@ class SessionManager {
       setTimeout(step, 0);
     };
     if (pending.length) setTimeout(step, 0);
+  }
+
+  _startRuntimeEventMaintenance() {
+    const BATCH_SIZE = 200;
+    const MIN_BYTES = 20_000;
+    const MAX_ROUNDS = 50;
+    let rounds = 0;
+    const step = () => {
+      rounds += 1;
+      try {
+        const result = this._store().compactRuntimeEventPayloads({
+          limit: BATCH_SIZE,
+          minBytes: MIN_BYTES,
+        });
+        if (result?.compacted > 0) {
+          const saved = Math.max(0, Number(result.beforeBytes || 0) - Number(result.afterBytes || 0));
+          console.info(`[sessions] compacted ${result.compacted} runtime event payload(s), saved ${saved} byte(s)`);
+        }
+        if (result?.compacted > 0 && rounds < MAX_ROUNDS) {
+          setTimeout(step, 1000);
+        }
+      } catch (err) {
+        console.warn("[sessions] runtime event maintenance failed:", err?.message || err);
+      }
+    };
+    setTimeout(step, 12000);
   }
 
   _enrichSession(session) {
@@ -799,6 +864,7 @@ class SessionManager {
     if (this.activeSessionId === sessionId) {
       this.activeSessionId = list[Math.max(0, idx - 1)].id;
     }
+    markDeletedSession(session);
     this._deleteMessageFile(sessionId);
     this._deleteSummaryFile(sessionId);
     this._deleteOpencodeSession(sessionId);

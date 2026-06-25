@@ -1,6 +1,5 @@
 "use strict";
 
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const { ipcMain } = require("electron");
 const { requireValidLicense } = require("./license-manager");
@@ -59,36 +58,21 @@ function registerAssistantHandlers(ctx) {
         projectId: session.projectId,
       });
       if (draftResult?.ok) {
-        const assistantMessageId = `msg_${crypto.randomUUID()}`;
-        sessionManager.pushMessageTo(session.id, "user", text, null, {
-          id: `msg_${crypto.randomUUID()}`,
+        const scheduledDraft = {
+          status: "pending",
+          source: draftResult.source || "model",
+          originalText: text,
+          draft: draftResult.draft,
+          createdAt: new Date().toISOString(),
+        };
+        const result = await turnOrchestrator.completeLocalAssistantTurn(session.id, text, files, {
+          displayFiles,
+          assistant: "I understand this as an automated task. Please confirm to create it.",
+          scheduledDraft,
         });
-        sessionManager.pushMessageTo(
-          session.id,
-          "assistant",
-          "I understand this as an automated task. Please confirm to create it.",
-          null,
-          {
-            id: assistantMessageId,
-            meta: {
-              scheduledDraft: {
-                status: "pending",
-                source: draftResult.source || "model",
-                originalText: text,
-                draft: draftResult.draft,
-                createdAt: new Date().toISOString(),
-              },
-            },
-          },
-        );
-        const page = sessionManager.getConversationPage(session.id, { limit: 80 });
         return {
-          ok: true,
+          ...attachRouting(result, session),
           scheduledDraft: true,
-          sessionId: session.id,
-          projectId: session.projectId || null,
-          assistantMessageId,
-          conversation: page.conversation,
         };
       }
     }

@@ -19,5 +19,6 @@ assert.equal(sanitizeNoticeForIngest({ code: "thinkingProgress", level: "progres
 // may have lost earlier conversation detail.
 assert.equal(noticeVisibleInPanel({ code: "compactBoundary", level: "progress", panel: true }), true);
 assert.equal(noticeVisibleInPanel({ code: "compactComplete", level: "info", panel: true }), true);
+assert.equal(noticeVisibleInPanel({ code: "compactFailed", level: "info", panel: true, done: true }), true);
 
 console.log("test-engine-notice-policy: ALL_OK");

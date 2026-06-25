@@ -78,6 +78,7 @@ assert.deepEqual(await sdkSession.get("ses_1"), { id: "ses_1" });
 assert.deepEqual(await sdkSession.create({ agent: "build" }), { id: "ses_new" });
 await sdkSession.promptAsync("ses_1", {
   agent: "build",
+  system: "guide",
   model: { providerID: "lily", modelID: "deepseek" },
   parts: [{ type: "text", text: "hello" }],
 });
@@ -107,6 +108,7 @@ assert.deepEqual(calls, [
     directory: "/workspace/app",
     sessionID: "ses_1",
     agent: "build",
+    system: "guide",
     model: { providerID: "lily", modelID: "deepseek" },
     parts: [{ type: "text", text: "hello" }],
   }],

@@ -339,11 +339,15 @@
 .assistant-process-thinking-group {
   border: none;
   border-radius: 0;
-  padding: 2px 0 2px 12px;
+  padding: 1px 0;
   background: transparent;
 }
 
 .assistant-process-thinking-group > summary {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  min-height: 24px;
   cursor: pointer;
   color: var(--text-secondary);
   font-size: 13px;
@@ -354,8 +358,10 @@
 .assistant-process-thinking-group > summary::before {
   content: "›";
   display: inline-block;
-  margin-right: 6px;
   color: var(--muted, var(--text-muted));
+  font-size: 14px;
+  line-height: 1;
+  justify-self: center;
 }
 
 .assistant-process-thinking-group[open] > summary::before {
@@ -373,7 +379,7 @@
 }
 
 .assistant-process-thinking-stack {
-  padding-left: 12px;
+  padding-left: 0;
 }
 
 .assistant-process-thinking-stack-body {
@@ -745,12 +751,14 @@
 .assistant-process-group > summary {
   cursor: pointer;
   list-style: none;
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
+  min-height: 24px;
   font-size: 12px;
   color: var(--text-secondary);
   user-select: none;
+  min-width: 0;
 }
 
 .assistant-process-summary-title {
@@ -766,19 +774,22 @@
 
 .assistant-process-group > summary::before {
   content: "›";
+  justify-self: center;
   color: var(--muted, var(--text-muted));
   font-size: 16px;
   line-height: 1;
-  transform: translateY(-1px);
 }
 
 .assistant-process-group[open] > summary::before {
-  transform: rotate(90deg) translateX(-1px);
+  transform: rotate(90deg);
 }
 
 .assistant-process-group-body {
-  margin-top: 4px;
-  padding-left: 4px;
+  display: grid;
+  gap: 1px;
+  margin-top: 2px;
+  padding-left: 16px;
+  min-width: 0;
 }
 
 .assistant-process-subgroup {
@@ -787,18 +798,24 @@
 }
 
 .assistant-process-subgroup > summary {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  min-height: 24px;
   cursor: pointer;
   list-style: none;
   font-size: 13px;
   color: var(--text-secondary);
-  padding: 2px 0;
+  padding: 0;
+  min-width: 0;
 }
 
 .assistant-process-subgroup > summary::before {
   content: "›";
   display: inline-block;
-  margin-right: 6px;
   color: var(--muted, var(--text-muted));
+  justify-self: center;
+  line-height: 1;
 }
 
 .assistant-process-subgroup[open] > summary::before {
@@ -806,7 +823,10 @@
 }
 
 .assistant-process-subgroup-body {
-  padding-left: 12px;
+  display: grid;
+  gap: 1px;
+  padding-left: 16px;
+  min-width: 0;
 }
 
 .assistant-process-changes-list {
@@ -830,8 +850,9 @@
   margin-top: 0;
   border: none;
   border-radius: 0;
-  padding: 1px 0 1px 8px;
+  padding: 1px 0;
   background: transparent;
+  min-width: 0;
 }
 
 .assistant-tool-row[data-status="running"] .assistant-tool-command {
@@ -852,12 +873,29 @@
 
 .assistant-process-group-body .assistant-tool-row,
 .assistant-process-subgroup-body .assistant-tool-row {
-  padding-left: 8px;
+  padding-left: 0;
+}
+
+.assistant-tool-group-body {
+  display: grid;
+  gap: 1px;
+  margin-top: 2px;
+  padding-left: 16px;
+  min-width: 0;
+}
+
+.assistant-tool-group-body .assistant-tool-row {
+  padding-left: 0;
 }
 
 .assistant-tool-summary {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  min-height: 24px;
   cursor: pointer;
   list-style: none;
+  min-width: 0;
 }
 
 .assistant-tool-summary::-webkit-details-marker {
@@ -867,11 +905,10 @@
 .assistant-tool-summary::before {
   content: "›";
   display: inline-block;
-  margin-right: 4px;
   color: var(--text-muted);
   font-size: 14px;
   line-height: 1;
-  vertical-align: middle;
+  justify-self: center;
 }
 
 .assistant-tool-row[open] .assistant-tool-summary::before {
@@ -879,12 +916,11 @@
 }
 
 .assistant-tool-row-head {
-  display: inline-grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, auto);
   align-items: center;
   gap: 8px;
-  width: calc(100% - 20px);
-  vertical-align: middle;
+  min-width: 0;
 }
 
 .assistant-tool-command {
@@ -902,6 +938,8 @@
   color: var(--text-muted);
   font-size: 11px;
   white-space: nowrap;
+  justify-self: end;
+  text-align: right;
 }
 
 .assistant-subagent-panel {

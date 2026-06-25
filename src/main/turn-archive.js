@@ -167,6 +167,7 @@ class TurnArchive {
             }
           : null,
         evidenceSummary: state.evidenceLedger?.summary?.() || null,
+        ...(payload.scheduledDraft ? { scheduledDraft: payload.scheduledDraft } : {}),
         engine: enginePayload
           ? {
               textChanged: Boolean(engineText && engineText !== rawUserText),

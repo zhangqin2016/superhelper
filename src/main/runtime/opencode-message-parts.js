@@ -51,12 +51,11 @@ function fileToPart(file) {
 
 /**
  * Build the official OpenCode prompt body shape:
- * { agent, model?, parts:[...fileParts, textPart] }.
+ * { agent, system?, model?, parts:[...fileParts, textPart] }.
  */
 function buildOpencodePromptBody(opts = {}) {
   const parts = [];
   const guidance = typeof opts.guidance === "string" ? opts.guidance.trim() : "";
-  if (guidance) parts.push({ type: "text", text: guidance });
   if (Array.isArray(opts.files)) {
     for (const file of opts.files) {
       const part = fileToPart(file);
@@ -65,6 +64,7 @@ function buildOpencodePromptBody(opts = {}) {
   }
   parts.push({ type: "text", text: String(opts.text || "") });
   const body = { agent: opts.agent || "build", parts };
+  if (guidance) body.system = guidance;
   if (opts.model?.providerID && opts.model?.modelID) {
     body.model = { providerID: opts.model.providerID, modelID: opts.model.modelID };
   }
