@@ -286,18 +286,17 @@
         <div class="settings-panel-layout">
           <nav class="settings-nav" data-i18n-aria-label="settings.navLabel" aria-label="设置分类">
             <button type="button" class="settings-nav-item is-active" data-settings-page="general" data-i18n="settings.nav.general">通用</button>
-            <button type="button" class="settings-nav-item" data-settings-page="usage" data-i18n="settings.nav.usage">用量</button>
-            <button type="button" class="settings-nav-item" data-settings-page="memory" data-i18n="settings.nav.memory">记忆</button>
+            <div class="settings-nav-group" data-i18n="settings.navGroup.assistant">助手能力</div>
             <button type="button" class="settings-nav-item" data-settings-page="model" data-i18n="settings.nav.model">模型</button>
             <button type="button" class="settings-nav-item" data-settings-page="permission" data-i18n="settings.nav.permission">权限</button>
             <button type="button" class="settings-nav-item" data-settings-page="search" data-i18n="settings.nav.search">联网搜索</button>
             <button type="button" class="settings-nav-item" data-settings-page="connectors" data-i18n="settings.nav.connectors">连接器</button>
             <button type="button" class="settings-nav-item" data-settings-page="skills" data-i18n="settings.nav.skills">技能</button>
             <button type="button" class="settings-nav-item" data-settings-page="apps" data-i18n="settings.nav.apps">应用商店</button>
-            <button type="button" class="settings-nav-item" data-settings-page="license" data-i18n="settings.nav.license">授权</button>
-            <button type="button" class="settings-nav-item" data-settings-page="feedback" data-i18n="settings.nav.feedback">意见反馈</button>
-            <button type="button" class="settings-nav-item" data-settings-page="contact" data-i18n="settings.nav.contact">联系我们</button>
-            <button type="button" class="settings-nav-item" data-settings-page="about" data-i18n="settings.nav.about">关于</button>
+            <button type="button" class="settings-nav-item" data-settings-page="memory" data-i18n="settings.nav.memory">记忆</button>
+            <div class="settings-nav-group" data-i18n="settings.navGroup.support">账户与支持</div>
+            <button type="button" class="settings-nav-item" data-settings-page="account" data-i18n="settings.nav.account">账户</button>
+            <button type="button" class="settings-nav-item" data-settings-page="help" data-i18n="settings.nav.help">帮助与关于</button>
           </nav>
           <div class="settings-panel-body">
             <section id="settingsPageGeneral" class="settings-page is-active" data-settings-page="general">
@@ -325,13 +324,25 @@
                 </select>
               </div>
               <div class="settings-field settings-field--divider">
+                <h4 class="settings-subsection-title" data-i18n="settings.completionAlerts">任务完成提醒</h4>
+                <p class="settings-section-desc" data-i18n="settings.completionAlertsDesc">任务在你离开时完成时提醒——仅当窗口未聚焦,或后台会话(非当前查看的)完成时触发。</p>
+                <label class="settings-check-row">
+                  <input type="checkbox" id="completionSoundToggle" />
+                  <span data-i18n="settings.completionSound">播放提示音</span>
+                </label>
+                <label class="settings-check-row">
+                  <input type="checkbox" id="completionNotifyToggle" />
+                  <span data-i18n="settings.completionNotify">弹系统通知</span>
+                </label>
+              </div>
+              <div class="settings-field settings-field--divider">
                 <h4 class="settings-subsection-title" data-i18n="settings.other">其他</h4>
                 <div class="settings-actions">
                   <button id="settingsClearCache" class="settings-action-btn" type="button" data-i18n="settings.clearCache">清理缓存</button>
                 </div>
               </div>
             </section>
-            <section id="settingsPageUsage" class="settings-page" data-settings-page="usage" hidden>
+            <section id="settingsPageUsage" class="settings-page" data-settings-page="account" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.usage">用量</h3>
               <div id="usageDeviceId" class="usage-device-id" aria-live="polite"></div>
               <p id="usageDataSource" class="usage-data-source" hidden></p>
@@ -588,7 +599,7 @@
               </div>
               <div id="workspaceAppsList" class="workspace-app-list"></div>
             </section>
-            <section id="settingsPageLicense" class="settings-page" data-settings-page="license" hidden>
+            <section id="settingsPageLicense" class="settings-page" data-settings-page="account" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.license">授权</h3>
               <p id="licenseStatusText" class="settings-section-desc" data-i18n="settings.licenseLoading">正在读取授权状态…</p>
               <textarea
@@ -604,7 +615,7 @@
                 <button id="licenseClearBtn" class="settings-action-btn" type="button" data-i18n="settings.licenseClear">移除授权</button>
               </div>
             </section>
-            <section id="settingsPageFeedback" class="settings-page" data-settings-page="feedback" hidden>
+            <section id="settingsPageFeedback" class="settings-page" data-settings-page="help" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.feedback">意见反馈</h3>
               <p class="settings-section-desc" data-i18n="settings.feedbackDesc">遇到问题或有改进建议？填写后我们会同步到后台处理。提交时会附带应用版本与设备 ID，便于排查。</p>
               <form id="feedbackForm" class="settings-form">
@@ -642,7 +653,7 @@
                 </div>
               </form>
             </section>
-            <section id="settingsPageContact" class="settings-page" data-settings-page="contact" hidden>
+            <section id="settingsPageContact" class="settings-page" data-settings-page="help" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.contact">联系我们</h3>
               <p class="settings-section-desc" data-i18n="settings.contactDesc">团队授权、私有部署、技能包下发或版本管理需求，可直接在此留言；也可访问官网联系页或发送邮件。</p>
               <p class="settings-section-desc settings-section-desc--compact">
@@ -685,7 +696,7 @@
                 </div>
               </form>
             </section>
-            <section id="settingsPageAbout" class="settings-page settings-page-about" data-settings-page="about" hidden>
+            <section id="settingsPageAbout" class="settings-page settings-page-about" data-settings-page="help" hidden>
               <div class="settings-about">
                 <img src="" alt="" class="settings-about-logo" width="72" height="72" />
                 <p class="settings-about-name" data-i18n="app.brand">智能工作台</p>

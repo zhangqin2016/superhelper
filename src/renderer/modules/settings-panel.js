@@ -20,8 +20,11 @@ import { refreshUsageSettings, initUsageSettings } from "./usage-settings.js";
 import { initSupportSettings } from "./support-settings.js";
 import { initThemeSettings, refreshThemeSelect } from "./theme-settings.js";
 import { initMemorySettings, refreshMemorySettings } from "./memory-settings.js";
+import { getNotificationPrefs, setNotificationPrefs } from "./task-alert.js";
 
-const SETTINGS_PAGES = ["general", "usage", "memory", "model", "permission", "search", "connectors", "skills", "apps", "license", "feedback", "contact", "about"];
+// "account" merges usage + license; "help" merges feedback + contact + about.
+// Multiple <section>s can share one page id — switchSettingsPage shows them all.
+const SETTINGS_PAGES = ["general", "model", "permission", "search", "connectors", "skills", "apps", "memory", "account", "help"];
 
 let panelOpen = false;
 let activeSettingsPage = "general";
@@ -185,6 +188,18 @@ export async function initSettingsPanel() {
     const result = await window.assistantClient.clearStagingCache();
     showToast(result?.ok ? t("toast.cacheCleared") : t("toast.cacheClearFailed"), result?.ok ? "success" : "error");
   });
+
+  // Task-completion alerts (notification preferences) live on the General page,
+  // not Model. Wire the two toggles here next to the other general controls.
+  {
+    const prefs = getNotificationPrefs();
+    for (const [key, id] of [["sound", "completionSoundToggle"], ["notify", "completionNotifyToggle"]]) {
+      const box = $(id);
+      if (!box) continue;
+      box.checked = prefs[key] !== false;
+      box.addEventListener("change", () => void setNotificationPrefs({ [key]: box.checked }));
+    }
+  }
 
   initUsageSettings();
   initSupportSettings();

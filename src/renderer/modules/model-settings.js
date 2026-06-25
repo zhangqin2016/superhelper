@@ -8,38 +8,9 @@ import store from "./state.js";
 import { t, tModel, tModelDesc } from "../i18n/index.js";
 
 import { anySessionRunning } from "./session-runtime-store.js";
-import { getNotificationPrefs, setNotificationPrefs } from "./task-alert.js";
 
-// Completion-alert toggles (sound + OS notification), injected into the model
-// settings page so it needs no index.html change. Idempotent.
-function renderCompletionAlerts() {
-  const anchor = $("modelPresetSelect");
-  if (!anchor || !anchor.parentElement || $("completionAlertsRow")) return;
-  const prefs = getNotificationPrefs();
-  const wrap = document.createElement("div");
-  wrap.id = "completionAlertsRow";
-  wrap.className = "model-engine-row";
-  const label = document.createElement("label");
-  label.className = "settings-subtitle";
-  label.textContent = t("settings.completionAlerts");
-  const desc = document.createElement("p");
-  desc.className = "settings-hint";
-  desc.textContent = t("settings.completionAlertsDesc");
-  wrap.append(label, desc);
-  for (const [key, textKey] of [["sound", "settings.completionSound"], ["notify", "settings.completionNotify"]]) {
-    const row = document.createElement("label");
-    row.className = "settings-check-row";
-    const box = document.createElement("input");
-    box.type = "checkbox";
-    box.checked = prefs[key] !== false;
-    box.addEventListener("change", () => void setNotificationPrefs({ [key]: box.checked }));
-    const span = document.createElement("span");
-    span.textContent = t(textKey);
-    row.append(box, span);
-    wrap.appendChild(row);
-  }
-  anchor.parentElement.insertBefore(wrap, anchor);
-}
+// Completion alerts moved to the General settings page (they are notification
+// preferences, not model config). See settings-panel.js + index.html General.
 
 function isBusy() {
   return anySessionRunning();
@@ -244,7 +215,6 @@ async function saveApiGateway(mode) {
 
 export async function initModelSettings() {
   await refreshModelSelect();
-  renderCompletionAlerts();
 
   $("modelPresetSelect")?.addEventListener("change", async () => {
     if (isBusy()) {
