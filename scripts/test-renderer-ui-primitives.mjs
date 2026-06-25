@@ -5,6 +5,7 @@ const root = path.resolve(new URL("..", import.meta.url).pathname);
 const stylesEntry = path.join(root, "src/renderer/styles.css");
 const primitivePath = path.join(root, "src/renderer/styles/ui-primitives.css");
 const composerPath = path.join(root, "src/renderer/styles/composer.css");
+const messagesPath = path.join(root, "src/renderer/styles/messages.css");
 
 const stylesEntryText = fs.readFileSync(stylesEntry, "utf8");
 if (!stylesEntryText.includes('@import "./styles/ui-primitives.css";')) {
@@ -13,6 +14,7 @@ if (!stylesEntryText.includes('@import "./styles/ui-primitives.css";')) {
 
 const primitiveText = fs.readFileSync(primitivePath, "utf8");
 const composerText = fs.readFileSync(composerPath, "utf8");
+const messagesText = fs.readFileSync(messagesPath, "utf8");
 for (const required of [
   ".ui-btn",
   ".ui-btn-primary",
@@ -64,6 +66,14 @@ for (const required of ["appearance: none", "-webkit-appearance: none", "text-ov
 const permissionWrapRule = composerText.match(/\.permission-mode-wrap::after\s*\{[^}]*\}/s)?.[0] || "";
 if (!permissionWrapRule.includes('content: ""') || !permissionWrapRule.includes("rotate(45deg)")) {
   throw new Error("permission-mode-wrap must render a custom chevron instead of relying on native select chrome");
+}
+
+const latestHoverRule = messagesText.match(/\.scroll-to-bottom-btn:hover\s*\{[^}]*\}/s)?.[0] || "";
+if (!latestHoverRule.includes("color: var(--text-primary)")) {
+  throw new Error("Latest hover must keep readable text in light and dark themes");
+}
+if (latestHoverRule.includes("color: var(--text-inverse)")) {
+  throw new Error("Latest hover must not use inverse text without a solid dark/accent background");
 }
 
 console.log("renderer UI primitives guard: ok");

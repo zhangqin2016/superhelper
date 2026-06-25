@@ -668,6 +668,7 @@ app.whenReady().then(async () => {
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const bottomTop = panel.scrollTop;
         const nearBottomTop = Math.max(0, bottomTop - 36);
+        panel.dispatchEvent(new WheelEvent("wheel", { deltaY: -36, bubbles: true }));
         panel.scrollTop = nearBottomTop;
         panel.dispatchEvent(new Event("scroll"));
         if (!isUserScrollDetached(panel)) {

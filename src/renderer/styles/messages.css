@@ -38,8 +38,12 @@
 }
 .scroll-to-bottom-btn:hover {
   border-color: var(--accent);
-  color: var(--text-inverse);
+  background: var(--accent-subtle);
+  color: var(--text-primary);
   transform: translateX(-50%) translateY(-1px);
+}
+.scroll-to-bottom-btn:hover svg {
+  color: var(--accent-hover);
 }
 .scroll-to-bottom-btn svg {
   flex-shrink: 0;

@@ -6,6 +6,7 @@ export const $ = (id) => document.getElementById(id);
 
 const SCROLL_THRESHOLD = 72;
 const USER_SCROLL_DETACHED = "userScrollDetached";
+const USER_SCROLL_INTENT_UNTIL = "userScrollIntentUntil";
 const PROGRAMMATIC_SCROLL = "programmaticScroll";
 
 export function el(tag, className, attrs = {}) {
@@ -55,6 +56,12 @@ function markProgrammaticScroll(panel) {
   });
 }
 
+function markUserScrollIntent(panel) {
+  if (!panel?.dataset) return;
+  delete panel.dataset[PROGRAMMATIC_SCROLL];
+  panel.dataset[USER_SCROLL_INTENT_UNTIL] = String(Date.now() + 1000);
+}
+
 export function updateScrollToBottomButton(scrollEl) {
   const btn = $("scrollToBottomBtn");
   const messages = scrollEl || getActiveMessagesEl();
@@ -98,6 +105,10 @@ export function bindPanelScroll(panel) {
   if (!panel || panel.dataset.scrollBound === "1") return;
   panel.dataset.scrollBound = "1";
   panel.dataset.lastScrollTop = String(panel.scrollTop || 0);
+  const markIntent = () => markUserScrollIntent(panel);
+  panel.addEventListener("wheel", markIntent, { passive: true });
+  panel.addEventListener("touchstart", markIntent, { passive: true });
+  panel.addEventListener("pointerdown", markIntent, { passive: true });
   panel.addEventListener(
     "scroll",
     () => {
@@ -106,8 +117,10 @@ export function bindPanelScroll(panel) {
       const currentTop = Number(panel.scrollTop || 0);
       const userScrolledUp = currentTop < previousTop - 1;
       const nearBottom = isNearBottom(panel);
-      if (panel.dataset[PROGRAMMATIC_SCROLL] !== "1") {
+      const hasUserScrollIntent = Number(panel.dataset[USER_SCROLL_INTENT_UNTIL] || 0) > Date.now();
+      if (hasUserScrollIntent || panel.dataset[PROGRAMMATIC_SCROLL] !== "1") {
         setUserScrollDetached(panel, userScrolledUp || !nearBottom);
+        delete panel.dataset[USER_SCROLL_INTENT_UNTIL];
       } else if (nearBottom) {
         setUserScrollDetached(panel, false);
       }
