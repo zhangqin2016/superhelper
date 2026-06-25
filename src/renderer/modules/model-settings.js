@@ -161,6 +161,43 @@ function renderCustomList(presets, activePresetId) {
   }
 }
 
+// Server-published BYOK provider catalog (endpoint + protocol + models, no keys).
+// The "add model" flow lets the user pick a provider + model and enter their own
+// key — no manual URL/model typing (that lives under the collapsed "advanced").
+let catalogProviders = [];
+
+function renderCatalogModels(provider) {
+  const modelSel = $("modelCatalogModel");
+  if (!modelSel) return;
+  modelSel.replaceChildren();
+  for (const model of provider?.models || []) {
+    const option = document.createElement("option");
+    option.value = model;
+    option.textContent = model;
+    modelSel.appendChild(option);
+  }
+}
+
+function renderCatalog(catalog) {
+  catalogProviders = Array.isArray(catalog) ? catalog : [];
+  const providerSel = $("modelCatalogProvider");
+  // Hide the whole "add model" block when the server published no catalog —
+  // the user can still add a model via the collapsed "advanced" manual form.
+  const block = providerSel?.closest(".settings-field");
+  if (block) block.hidden = catalogProviders.length === 0;
+  if (!providerSel) return;
+  const prev = providerSel.value;
+  providerSel.replaceChildren();
+  for (const provider of catalogProviders) {
+    const option = document.createElement("option");
+    option.value = provider.id;
+    option.textContent = provider.label || provider.id;
+    providerSel.appendChild(option);
+  }
+  if (prev && catalogProviders.some((p) => p.id === prev)) providerSel.value = prev;
+  renderCatalogModels(catalogProviders.find((p) => p.id === providerSel.value) || catalogProviders[0]);
+}
+
 // Engine picker removed: OpenCode is the only engine, so there's nothing to pick.
 // The engine still resolves server/env-side (LILY_ENGINE); it's just not a UI choice.
 
@@ -185,6 +222,7 @@ export async function refreshModelSelect() {
 
   renderApiGateway(data.apiGateway);
   renderCustomList(data.presets, data.activePresetId);
+  renderCatalog(data.catalog);
 }
 
 async function saveApiGateway(mode) {
@@ -244,6 +282,52 @@ export async function initModelSettings() {
 
   $("modelApiSaveBtn")?.addEventListener("click", () => saveApiGateway("custom"));
   $("modelApiResetBtn")?.addEventListener("click", () => saveApiGateway("builtin"));
+
+  // Catalog "add model": pick provider -> models repopulate.
+  $("modelCatalogProvider")?.addEventListener("change", () => {
+    renderCatalogModels(catalogProviders.find((p) => p.id === $("modelCatalogProvider").value));
+  });
+
+  // Catalog "add model": provider + model + the user's own key -> custom preset
+  // using the catalog's endpoint/protocol, then switch to it. No URL/model typing.
+  $("modelCatalogAddBtn")?.addEventListener("click", async () => {
+    if (isBusy()) {
+      showToast(t("toast.modelBusy"), "error");
+      return;
+    }
+    const provider = catalogProviders.find((p) => p.id === $("modelCatalogProvider")?.value);
+    const model = $("modelCatalogModel")?.value?.trim() || "";
+    const apiKey = $("modelCatalogKey")?.value?.trim() || "";
+    if (!provider || !model) {
+      showToast(t("toast.modelCustomInvalidModel"), "error");
+      return;
+    }
+    if (!apiKey) {
+      showToast(t("toast.modelApiInvalidKey"), "error");
+      return;
+    }
+    const result = await window.assistantClient.saveCustomModel({
+      label: provider.label,
+      model,
+      baseUrl: provider.baseUrl,
+      apiKey,
+      protocol: provider.protocol,
+    });
+    if (!result.ok) {
+      showToast(apiErrorMessage(result.error), "error");
+      return;
+    }
+    if ($("modelCatalogKey")) $("modelCatalogKey").value = "";
+    showToast(t("toast.modelCustomSaved"), "success");
+    await refreshModelSelect();
+    if (result.preset?.id) {
+      const switchResult = await window.assistantClient.setActiveModel(result.preset.id);
+      if (switchResult.ok) {
+        await refreshModelSelect();
+        showToast(t("toast.modelSwitched", { label: tModel(result.preset) || result.preset.label }), "success");
+      }
+    }
+  });
 
   $("modelCustomAddBtn")?.addEventListener("click", async () => {
     if (isBusy()) {

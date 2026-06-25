@@ -81,6 +81,38 @@
   margin-top: 4px;
 }
 
+.settings-advanced > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.settings-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-advanced > summary::before {
+  content: "›";
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.settings-advanced[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.settings-advanced-body {
+  margin-top: 12px;
+}
+
+.settings-subsection-title--spaced {
+  margin-top: 18px;
+}
+
 .settings-nav-item:hover {
   background: var(--bg-surface-muted);
   color: var(--text-primary);

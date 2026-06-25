@@ -208,6 +208,20 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
     || modelPresets.find((preset) => preset.id.startsWith(`${activeProviderId}-`))?.id
     || modelPresets[0]?.id
     || "";
+
+  // BYOK provider catalog: the known providers' endpoint + protocol + model list,
+  // WITHOUT keys. The client uses it so the user just picks a provider + model and
+  // enters their own key — no manual base URL / model ID typing.
+  const catalog = Object.values(providers || {})
+    .filter((provider) => provider?.id && provider?.baseUrl && !RESERVED_MODEL_PROVIDER_IDS.has(provider.id) && providerModelList(provider).length)
+    .map((provider) => ({
+      id: provider.id,
+      label: providerLabel(provider).replace(/ Gateway$/, ""),
+      baseUrl: provider.baseUrl,
+      protocol: provider.type === "openai" ? "openai" : "anthropic",
+      models: providerModelList(provider),
+    }));
+
   const runtimeEnv = runtimeEnvFromServerConfig(serverConfig);
   const effectiveConfig = {
     schemaVersion: 1,
@@ -217,6 +231,7 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
             source: "service",
             activePresetId,
             presets: modelPresets,
+            ...(catalog.length ? { catalog } : {}),
           },
         }
       : {}),

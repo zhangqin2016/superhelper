@@ -386,97 +386,120 @@
             </section>
             <section id="settingsPageModel" class="settings-page" data-settings-page="model" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.model">模型</h3>
-              <p class="settings-section-desc" data-i18n="settings.modelDesc">选择模型预设，或添加自定义模型。API 连接对应默认配置中的 ANTHROPIC_BASE_URL 与 ANTHROPIC_AUTH_TOKEN。</p>
+              <p class="settings-section-desc" data-i18n="settings.modelDesc">选择当前模型，或从常用供应商添加一个（填入你自己的密钥即可）。更复杂的接口可在「高级」里手动填写。</p>
+              <label class="settings-field-label" for="modelPresetSelect" data-i18n="settings.modelCurrent">当前模型</label>
               <select id="modelPresetSelect" class="settings-select" data-i18n-aria-label="settings.modelSelect" aria-label="选择模型"></select>
+              <div id="modelCustomList" class="model-custom-list"></div>
               <div class="settings-field settings-field--divider">
-                <h4 class="settings-subsection-title" data-i18n="settings.modelApiTitle">API 连接</h4>
-                <p class="settings-section-desc" data-i18n="settings.modelApiDesc">内置模式使用应用预置网关；自定义模式可填写 Anthropic 兼容接口地址与密钥，对所有内置预设生效。</p>
-                <label class="settings-field-label" for="modelApiModeSelect" data-i18n="settings.modelApiMode">连接方式</label>
-                <select id="modelApiModeSelect" class="settings-select" data-i18n-aria-label="settings.modelApiMode" aria-label="API 连接方式">
-                  <option value="builtin" data-i18n="settings.modelApiModeBuiltin">内置网关</option>
-                  <option value="custom" data-i18n="settings.modelApiModeCustom">自定义</option>
-                </select>
-                <div id="modelApiCustomFields" class="model-api-custom-fields" hidden>
-                  <label class="settings-field-label model-custom-id-label" for="modelApiBaseUrl" data-i18n="settings.modelApiBaseUrl">API 地址</label>
+                <h4 class="settings-subsection-title" data-i18n="settings.modelAddTitle">添加模型</h4>
+                <p class="settings-section-desc" data-i18n="settings.modelAddDesc">从常用供应商里选一个，挑好模型，填入你自己的 API 密钥即可。</p>
+                <label class="settings-field-label" for="modelCatalogProvider" data-i18n="settings.modelProvider">供应商</label>
+                <select id="modelCatalogProvider" class="settings-select" data-i18n-aria-label="settings.modelProvider" aria-label="供应商"></select>
+                <label class="settings-field-label" for="modelCatalogModel" data-i18n="settings.modelPickModel">模型</label>
+                <select id="modelCatalogModel" class="settings-select" data-i18n-aria-label="settings.modelPickModel" aria-label="模型"></select>
+                <label class="settings-field-label model-custom-id-label" for="modelCatalogKey" data-i18n="settings.modelCustomApiKey">API 密钥</label>
+                <div class="model-custom-form-row">
                   <input
-                    id="modelApiBaseUrl"
-                    class="skills-registry-input"
-                    type="url"
-                    maxlength="512"
-                    data-i18n-placeholder="settings.modelApiBaseUrlPlaceholder"
-                    placeholder="https://api.deepseek.com/anthropic"
-                    spellcheck="false"
-                    autocomplete="off"
-                  />
-                  <label class="settings-field-label model-custom-id-label" for="modelApiKey" data-i18n="settings.modelApiKey">API 密钥</label>
-                  <input
-                    id="modelApiKey"
+                    id="modelCatalogKey"
                     class="skills-registry-input"
                     type="password"
                     maxlength="512"
-                    data-i18n-placeholder="settings.modelApiKeyPlaceholder"
                     placeholder="sk-..."
                     spellcheck="false"
                     autocomplete="off"
                   />
-                  <p id="modelApiKeyHint" class="skills-registry-hint" hidden></p>
-                  <div class="settings-actions">
-                    <button id="modelApiSaveBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiSave">保存 API</button>
-                    <button id="modelApiResetBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiReset">恢复内置</button>
-                  </div>
+                  <button id="modelCatalogAddBtn" class="settings-action-btn" type="button" data-i18n="settings.modelCustomAdd">添加</button>
                 </div>
               </div>
-              <div class="settings-field settings-field--divider">
-                <h4 class="settings-subsection-title" data-i18n="settings.modelCustomTitle">自定义模型</h4>
-                <p class="settings-section-desc" data-i18n="settings.modelCustomDesc">添加 Qwen、GLM 等提供商：填显示名称、模型 ID，再填 API 地址与密钥（留空则用上方全局 API）。</p>
-                <label class="settings-field-label" for="modelCustomLabel" data-i18n="settings.modelCustomLabel">显示名称</label>
-                <input
-                  id="modelCustomLabel"
-                  class="skills-registry-input"
-                  type="text"
-                  maxlength="40"
-                  data-i18n-placeholder="settings.modelCustomLabelPlaceholder"
-                  placeholder="例如 Qwen、GLM"
-                  autocomplete="off"
-                />
-                <label class="settings-field-label model-custom-id-label" for="modelCustomId" data-i18n="settings.modelCustomMainId">模型 ID</label>
-                <input
-                  id="modelCustomId"
-                  class="skills-registry-input"
-                  type="text"
-                  maxlength="128"
-                  data-i18n-placeholder="settings.modelCustomMainIdPlaceholder"
-                  placeholder="例如 qwen3.7-max、glm-5.1"
-                  spellcheck="false"
-                  autocomplete="off"
-                />
-                <label class="settings-field-label model-custom-id-label" for="modelCustomBaseUrl" data-i18n="settings.modelCustomBaseUrl">API 地址（可选）</label>
-                <input
-                  id="modelCustomBaseUrl"
-                  class="skills-registry-input"
-                  type="url"
-                  maxlength="512"
-                  data-i18n-placeholder="settings.modelCustomBaseUrlPlaceholder"
-                  placeholder="留空则使用上方 API 连接"
-                  spellcheck="false"
-                  autocomplete="off"
-                />
-                <label class="settings-field-label model-custom-id-label" for="modelCustomApiKey" data-i18n="settings.modelCustomApiKey">API 密钥（可选）</label>
-                <div class="model-custom-form-row">
+              <details class="settings-advanced settings-field settings-field--divider">
+                <summary class="settings-subsection-title" data-i18n="settings.modelAdvanced">高级（手动填写接口）</summary>
+                <div class="settings-advanced-body">
+                  <h4 class="settings-subsection-title" data-i18n="settings.modelApiTitle">API 连接</h4>
+                  <p class="settings-section-desc" data-i18n="settings.modelApiDesc">内置模式使用应用预置网关；自定义模式可填写 Anthropic 兼容接口地址与密钥，对所有内置预设生效。</p>
+                  <label class="settings-field-label" for="modelApiModeSelect" data-i18n="settings.modelApiMode">连接方式</label>
+                  <select id="modelApiModeSelect" class="settings-select" data-i18n-aria-label="settings.modelApiMode" aria-label="API 连接方式">
+                    <option value="builtin" data-i18n="settings.modelApiModeBuiltin">内置网关</option>
+                    <option value="custom" data-i18n="settings.modelApiModeCustom">自定义</option>
+                  </select>
+                  <div id="modelApiCustomFields" class="model-api-custom-fields" hidden>
+                    <label class="settings-field-label model-custom-id-label" for="modelApiBaseUrl" data-i18n="settings.modelApiBaseUrl">API 地址</label>
+                    <input
+                      id="modelApiBaseUrl"
+                      class="skills-registry-input"
+                      type="url"
+                      maxlength="512"
+                      data-i18n-placeholder="settings.modelApiBaseUrlPlaceholder"
+                      placeholder="https://api.deepseek.com/anthropic"
+                      spellcheck="false"
+                      autocomplete="off"
+                    />
+                    <label class="settings-field-label model-custom-id-label" for="modelApiKey" data-i18n="settings.modelApiKey">API 密钥</label>
+                    <input
+                      id="modelApiKey"
+                      class="skills-registry-input"
+                      type="password"
+                      maxlength="512"
+                      data-i18n-placeholder="settings.modelApiKeyPlaceholder"
+                      placeholder="sk-..."
+                      spellcheck="false"
+                      autocomplete="off"
+                    />
+                    <p id="modelApiKeyHint" class="skills-registry-hint" hidden></p>
+                    <div class="settings-actions">
+                      <button id="modelApiSaveBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiSave">保存 API</button>
+                      <button id="modelApiResetBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiReset">恢复内置</button>
+                    </div>
+                  </div>
+                  <h4 class="settings-subsection-title settings-subsection-title--spaced" data-i18n="settings.modelCustomTitle">自定义模型</h4>
+                  <p class="settings-section-desc" data-i18n="settings.modelCustomDesc">添加 Qwen、GLM 等提供商：填显示名称、模型 ID，再填 API 地址与密钥（留空则用上方全局 API）。</p>
+                  <label class="settings-field-label" for="modelCustomLabel" data-i18n="settings.modelCustomLabel">显示名称</label>
                   <input
-                    id="modelCustomApiKey"
+                    id="modelCustomLabel"
                     class="skills-registry-input"
-                    type="password"
+                    type="text"
+                    maxlength="40"
+                    data-i18n-placeholder="settings.modelCustomLabelPlaceholder"
+                    placeholder="例如 Qwen、GLM"
+                    autocomplete="off"
+                  />
+                  <label class="settings-field-label model-custom-id-label" for="modelCustomId" data-i18n="settings.modelCustomMainId">模型 ID</label>
+                  <input
+                    id="modelCustomId"
+                    class="skills-registry-input"
+                    type="text"
+                    maxlength="128"
+                    data-i18n-placeholder="settings.modelCustomMainIdPlaceholder"
+                    placeholder="例如 qwen3.7-max、glm-5.1"
+                    spellcheck="false"
+                    autocomplete="off"
+                  />
+                  <label class="settings-field-label model-custom-id-label" for="modelCustomBaseUrl" data-i18n="settings.modelCustomBaseUrl">API 地址（可选）</label>
+                  <input
+                    id="modelCustomBaseUrl"
+                    class="skills-registry-input"
+                    type="url"
                     maxlength="512"
-                    data-i18n-placeholder="settings.modelCustomApiKeyPlaceholder"
+                    data-i18n-placeholder="settings.modelCustomBaseUrlPlaceholder"
                     placeholder="留空则使用上方 API 连接"
                     spellcheck="false"
                     autocomplete="off"
                   />
-                  <button id="modelCustomAddBtn" class="settings-action-btn" type="button" data-i18n="settings.modelCustomAdd">添加</button>
+                  <label class="settings-field-label model-custom-id-label" for="modelCustomApiKey" data-i18n="settings.modelCustomApiKey">API 密钥（可选）</label>
+                  <div class="model-custom-form-row">
+                    <input
+                      id="modelCustomApiKey"
+                      class="skills-registry-input"
+                      type="password"
+                      maxlength="512"
+                      data-i18n-placeholder="settings.modelCustomApiKeyPlaceholder"
+                      placeholder="留空则使用上方 API 连接"
+                      spellcheck="false"
+                      autocomplete="off"
+                    />
+                    <button id="modelCustomAddBtn" class="settings-action-btn" type="button" data-i18n="settings.modelCustomAdd">添加</button>
+                  </div>
                 </div>
-                <div id="modelCustomList" class="model-custom-list"></div>
-              </div>
+              </details>
             </section>
             <section id="settingsPagePermission" class="settings-page" data-settings-page="permission" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.permission">权限</h3>

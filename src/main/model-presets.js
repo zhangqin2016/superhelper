@@ -383,8 +383,10 @@ function getUserApiEnv() {
       const env = {};
       const baseUrl = String(entry.baseUrl || "").trim();
       const apiKey = String(entry.apiKey || "").trim();
+      const protocol = String(entry.protocol || "").trim();
       if (baseUrl) env.LILY_API_BASE_URL = baseUrl;
       if (apiKey) env.LILY_API_KEY = apiKey;
+      if (protocol === "anthropic" || protocol === "openai") env.LILY_OPENCODE_PROTOCOL = protocol;
       if (Object.keys(env).length) return env;
     }
   }
@@ -427,6 +429,9 @@ function listPresetsPublic() {
     activePresetId: getActivePresetId(),
     apiGateway: getApiGatewayPublic(),
     managedByService: isRemoteManagedCatalog(),
+    // Server-published BYOK provider catalog — the renderer's "add model" flow
+    // turns this into a provider picker so the user only chooses + enters a key.
+    catalog: remoteConfig.getRemoteProviderCatalogSync(),
     presets: getAllPresets().map((p) => ({
       id: p.id,
       label: p.label,
@@ -472,6 +477,7 @@ function saveCustomPreset({
   description = "",
   baseUrl = "",
   apiKey = "",
+  protocol = "",
 }) {
   const validated = validateCustomInput(label, model);
   if (!validated.ok) return validated;
@@ -511,6 +517,9 @@ function saveCustomPreset({
     description: String(description || "").trim().slice(0, 120),
     baseUrl: urlValidated.baseUrl,
     apiKey: keyValidated.apiKey,
+    // Carried from the provider catalog so anthropic vs openai-compatible
+    // endpoints resolve correctly instead of relying on URL auto-detection.
+    protocol: protocol === "anthropic" || protocol === "openai" ? protocol : "",
   };
   const customPresets = [...(user.customPresets || []), entry];
   persistUserChoice({ ...user, customPresets });

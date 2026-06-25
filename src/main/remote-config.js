@@ -189,6 +189,24 @@ function getRemoteRuntimeEnvSync() {
   return normalizeRuntimeEnv(state.effectiveConfig);
 }
 
+/** BYOK provider catalog the server published (endpoint + protocol + models, no
+ *  keys). The client's "add model" flow uses it so the user only picks a provider
+ *  + model and enters their own key. Empty when the server didn't publish one. */
+function getRemoteProviderCatalogSync() {
+  const cfg = getRemoteEffectiveConfigSync();
+  const catalog = cfg?.models?.catalog;
+  if (!Array.isArray(catalog)) return [];
+  return catalog
+    .filter((p) => p?.id && p?.baseUrl && Array.isArray(p?.models) && p.models.length)
+    .map((p) => ({
+      id: String(p.id),
+      label: String(p.label || p.id),
+      baseUrl: String(p.baseUrl),
+      protocol: p.protocol === "openai" ? "openai" : "anthropic",
+      models: p.models.map(String).filter(Boolean),
+    }));
+}
+
 // Modules that cache derived views of the remote config (e.g. model-presets)
 // subscribe here instead of being required from this file — keeps the
 // dependency one-directional: consumers depend on remote-config, never back.
@@ -232,4 +250,5 @@ module.exports = {
   hasRemoteModelCatalogSync,
   getRemoteEffectiveConfigSync,
   getRemoteRuntimeEnvSync,
+  getRemoteProviderCatalogSync,
 };
