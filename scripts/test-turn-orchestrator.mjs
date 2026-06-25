@@ -618,15 +618,16 @@ for (let i = 0; i < 30; i += 1) {
 ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
 await new Promise((resolve) => setTimeout(resolve, 20));
 ctx.eventBus.flush();
-if (runner.compactions.length) {
-  throw new Error("Anthropic-compatible non-Claude models must not call native summarize");
+if (!runner.compactions.length) {
+  throw new Error("Anthropic-compatible non-Claude models should use native summarize after compaction agents are pinned");
 }
 if (!sent.some((entry) => entry.payload?.events?.some((event) => (
   event.type === "context.compactionDecision" &&
-  event.payload?.reason === "unsupported_model_compaction" &&
-  event.payload?.unsupportedReason === "anthropic_compatible_non_claude_model"
+  event.payload?.reason === "long_session" &&
+  event.payload?.providerID === "anthropic" &&
+  event.payload?.modelID === "deepseek-v4-pro[1m]"
 )))) {
-  throw new Error(`unsupported compaction model should publish a skip decision: ${JSON.stringify(sent)}`);
+  throw new Error(`anthropic-compatible compaction should publish a native compaction decision: ${JSON.stringify(sent)}`);
 }
 runner.spawnOptions = {};
 

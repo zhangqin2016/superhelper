@@ -52,9 +52,22 @@ for (const locale of ["en", "ar"]) {
   assertNoHan(`web.${locale}`, dictionaries[locale]);
 }
 
+const rendererBaseMessages = JSON.parse(
+  fs.readFileSync(path.join(ROOT, "src/renderer/i18n/locales/zh-CN.json"), "utf8"),
+);
 for (const locale of ["en", "ar"]) {
   const file = path.join(ROOT, "src/renderer/i18n/locales", `${locale}.json`);
   const messages = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.deepEqual(
+    collectMissingKeys(rendererBaseMessages, messages),
+    [],
+    `renderer ${locale} dictionary must cover every zh-CN key`,
+  );
+  assert.deepEqual(
+    collectMissingKeys(messages, rendererBaseMessages),
+    [],
+    `renderer ${locale} dictionary must not define keys missing from zh-CN`,
+  );
   assertNoHan(`renderer.${locale}`, messages, new Set(["settings.language.zh-CN"]));
 }
 
@@ -63,5 +76,44 @@ for (const locale of ["en", "ar"]) {
   const messages = JSON.parse(fs.readFileSync(file, "utf8"));
   assertNoHan(`renderer.skills.${locale}`, messages);
 }
+
+// Hardcoded Chinese in renderer JS bypasses i18n entirely, so it shows in EVERY
+// locale (en/ar included). Strip comments, then any remaining Han is a string
+// literal that must be moved to a t() key. This is what caught the leak in
+// connector-settings.js / migration-progress.js.
+function stripComments(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
+// Only quoted STRING literals carry UI text; regex literals (e.g. matching the
+// user's "记住"/remember keyword) legitimately contain Chinese and must not trip.
+const STRING_LITERAL_RE = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+const rendererJsLeaks = [];
+function walkJsFiles(dir) {
+  const files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...walkJsFiles(full));
+    else if (entry.isFile() && entry.name.endsWith(".js")) files.push(full);
+  }
+  return files;
+}
+for (const file of walkJsFiles(path.join(ROOT, "src/renderer"))) {
+  const rel = path.relative(ROOT, file);
+  const code = stripComments(fs.readFileSync(file, "utf8"));
+  code.split("\n").forEach((line, index) => {
+    const literals = line.match(STRING_LITERAL_RE) || [];
+    if (literals.some((lit) => HAN_RE.test(lit))) {
+      rendererJsLeaks.push(`${rel}:${index + 1}: ${line.trim().slice(0, 90)}`);
+    }
+  });
+}
+assert.deepEqual(
+  rendererJsLeaks,
+  [],
+  `renderer JS must not hardcode Chinese (use t() instead):\n${rendererJsLeaks.join("\n")}`,
+);
 
 console.log("i18n non-zh leak guard: ok");

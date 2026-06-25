@@ -2,14 +2,11 @@
 // backlog of legacy sessions to migrate (the main process gates by count); the
 // app stays fully usable while it ticks. Auto-hides shortly after completion.
 
-import { getLocale } from "../i18n/index.js";
+import { t } from "../i18n/index.js";
 
 function label(done, total) {
-  const zh = getLocale() === "zh-CN";
-  if (done >= total) return zh ? "历史会话优化完成" : "History optimized";
-  return zh
-    ? `正在优化历史会话… ${done}/${total}`
-    : `Optimizing history… ${done}/${total}`;
+  if (done >= total) return t("migration.done");
+  return t("migration.progress", { done, total });
 }
 
 let el = null;

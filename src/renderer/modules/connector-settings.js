@@ -57,7 +57,7 @@ async function autodiscoverEmail() {
 
   const secretLabel = document.querySelector('label[for="connectorAccountSecret"]');
   if (secretLabel) {
-    secretLabel.textContent = config.secretKind === "app-password" ? "授权码 / 应用专用密码" : "邮箱密码";
+    secretLabel.textContent = config.secretKind === "app-password" ? t("connectors.secretAppPassword") : t("connectors.secretMailPassword");
   }
 }
 
@@ -65,7 +65,7 @@ function manualToggleButton() {
   const manual = document.createElement("button");
   manual.type = "button";
   manual.className = "settings-link-button";
-  manual.textContent = "手动填写服务器";
+  manual.textContent = t("connectors.manualServer");
   manual.addEventListener("click", () => {
     const fields = $("connectorImapFields");
     if (fields) fields.hidden = !fields.hidden;
@@ -99,25 +99,25 @@ function renderAutoGuidance(config) {
 
   if (!config) {
     const hint = document.createElement("p");
-    hint.textContent = "输入邮箱地址将自动识别收发服务器,你只需填写密码或授权码。";
+    hint.textContent = t("connectors.autoHint");
     box.append(hint, manualToggleButton());
     box.hidden = false;
     return;
   }
 
   const summary = document.createElement("p");
-  summary.textContent = `已自动识别服务器:收件 ${config.imap.host} · 发件 ${config.smtp.host}`;
+  summary.textContent = t("connectors.autoSummary", { imap: config.imap.host, smtp: config.smtp.host });
   box.appendChild(summary);
 
   if (config.secretKind === "app-password" || config.guidance) {
     const tip = document.createElement("p");
-    tip.textContent = config.guidance?.text || "此邮箱需使用「授权码 / 应用专用密码」,而非登录密码。";
+    tip.textContent = config.guidance?.text || t("connectors.appPasswordTip");
     if (config.guidance?.url) {
       const link = document.createElement("a");
       link.href = config.guidance.url;
       link.target = "_blank";
       link.rel = "noreferrer";
-      link.textContent = " 查看图文步骤";
+      link.textContent = " " + t("connectors.viewGuide");
       tip.appendChild(link);
     }
     box.appendChild(tip);

@@ -316,6 +316,16 @@
   align-items: center;
 }
 
+/* Standalone inputs on the model page render at the browser-default ~360px
+   width (the shared .skills-registry-input is flex:1 with no width, which only
+   stretches inside a flex row). Make them fill the settings column. Inputs inside
+   .model-custom-form-row keep flexing — flex:1 sets flex-basis:0, so width is
+   ignored there. */
+#settingsPageModel .skills-registry-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .model-custom-form-row .skills-registry-input {
   flex: 1;
   min-width: 0;
