@@ -79,6 +79,24 @@ try {
   }
 
   {
+    // A knowledge/reference file READ this turn must NOT become a deliverable even
+    // when the model cites its path in prose; a written output cited alongside it
+    // still shows. (Regression: the whole read knowledge base rendered as cards.)
+    const knowledgeDir = path.join(workspace, "knowledge");
+    fs.mkdirSync(knowledgeDir, { recursive: true });
+    const refPath = path.join(knowledgeDir, "ziwei-master.md");
+    fs.writeFileSync(refPath, "# 紫微规则\n");
+    const agentsPath = path.join(workspace, "AGENTS.md");
+    fs.writeFileSync(agentsPath, "# guide\n");
+    const artifacts = buildTurnArtifacts({
+      workspacePath: workspace,
+      tools: [{ id: "r1", name: "Read", input: { file_path: "knowledge/ziwei-master.md" } }],
+      assistantText: "参考了 knowledge/ziwei-master.md 与 AGENTS.md，已生成 output/张钦_八字命理全面分析_2026.md。",
+    });
+    assert.deepEqual(artifacts.map((a) => a.relativePath), ["output/张钦_八字命理全面分析_2026.md"]);
+  }
+
+  {
     const artifacts = buildTurnArtifacts({
       workspacePath: workspace,
       tools: [{ id: "tool_write", name: "Write", input: { file_path: "output/report.pdf" } }],

@@ -208,17 +208,45 @@ const READ_ONLY_TOOLS = new Set(["read", "grep", "glob", "ls", "webfetch", "webs
 // we trust the structured input rather than guessing from text.
 const FILE_WRITE_TOOLS = new Set(["write", "edit", "multiedit", "notebookedit"]);
 const FILE_WRITE_INPUT_KEYS = ["file_path", "path", "target_file", "notebook_path"];
+// Framework/instruction files a turn READS to do its work — never user
+// deliverables. Excluded from the heuristic text scrape (a turn that genuinely
+// WRITES one still shows it, since producedPaths overrides this).
+const NEVER_ARTIFACT_BASENAMES = new Set(["agents.md", "agent.md", "claude.md"]);
 
 function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], workspacePath = "" } = {}) {
   const artifacts = new Map();
   const root = workspacePath ? path.resolve(workspacePath) : "";
 
+  // A file the turn only READ (knowledge base, references, guides) must never
+  // render as a deliverable, even when the model cites its path in its prose —
+  // that was rendering the whole read knowledge base as file cards. We track read
+  // vs produced paths and drop read-only references at the end (produced wins).
+  const readPaths = new Set();
+  const producedPaths = new Set();
+  const canon = (candidate) => {
+    const resolved = resolveCandidatePath(candidate, root);
+    return resolved ? path.resolve(resolved) : "";
+  };
+
   for (const change of fileChanges || []) {
+    const key = canon(change?.filePath);
+    if (key) producedPaths.add(key);
     addCandidate(artifacts, change?.filePath, "file_change", root, { allowInternalSupport: true });
   }
 
   for (const tool of tools || []) {
     const name = String(tool?.name || "").toLowerCase();
+
+    if (tool?.input && typeof tool.input === "object") {
+      for (const key of FILE_WRITE_INPUT_KEYS) {
+        if (typeof tool.input[key] !== "string") continue;
+        const resolved = canon(tool.input[key]);
+        if (!resolved) continue;
+        // Read-tool inputs are references; write-tool inputs are produced.
+        if (READ_ONLY_TOOLS.has(name)) readPaths.add(resolved);
+        else if (FILE_WRITE_TOOLS.has(name)) producedPaths.add(resolved);
+      }
+    }
 
     // Structured: a file-writing tool declares its target in the input.
     if (FILE_WRITE_TOOLS.has(name) && tool?.input && typeof tool.input === "object") {
@@ -245,6 +273,19 @@ function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], 
   collectPathStrings(assistantText, textCandidates);
   for (const candidate of textCandidates) {
     addCandidate(artifacts, candidate, "assistant_text", root, { requireWorkspace: true });
+  }
+
+  // Drop read-only references and framework guides that slipped in via the
+  // text/output scrape but were never actually produced this turn.
+  for (const [key, art] of artifacts) {
+    if (producedPaths.has(key)) continue;
+    if (readPaths.has(key)) {
+      artifacts.delete(key);
+      continue;
+    }
+    if (NEVER_ARTIFACT_BASENAMES.has(path.basename(art.path || "").toLowerCase())) {
+      artifacts.delete(key);
+    }
   }
 
   return [...artifacts.values()].sort((a, b) => {
