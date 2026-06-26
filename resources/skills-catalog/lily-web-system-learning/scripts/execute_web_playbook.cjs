@@ -326,6 +326,7 @@ function validatePlan(playbook, action, plan, { confirmed }) {
     fallbackOperations,
     rollbackOperations,
     allowedDomains,
+    params: plan.params && typeof plan.params === "object" && !Array.isArray(plan.params) ? plan.params : {},
   };
 }
 
@@ -1021,9 +1022,20 @@ async function execApiRequestHttp(op, sinks, storageState, authRecipe) {
   const cookie = cookieHeaderFor(op.url, storageState);
   if (cookie) headers.cookie = cookie;
   applyAuthRecipeHeaders(headers, op.url, storageState, authRecipe);
-  let body;
   const method = String(op.method || "GET").toUpperCase();
-  if (op.body !== undefined && method !== "GET" && method !== "HEAD") {
+  const mutating = method !== "GET" && method !== "HEAD";
+  // Idempotency (opt-in): a non-idempotent write that fails on a NETWORK error
+  // can't be safely retried without a stable key (it could double-submit). When the
+  // plan marks op.idempotent, inject a stable Idempotency-Key and allow ONE
+  // network-error retry that reuses the SAME key, so the server dedupes. HTTP status
+  // errors (4xx/5xx) are never retried here. Fail-safe: no flag => today's behavior.
+  if (op.idempotent && mutating) {
+    if (!op.__idempotencyKey) op.__idempotencyKey = require("node:crypto").randomUUID();
+    const keyHeader = String(op.idempotencyHeader || "Idempotency-Key");
+    if (!headers[keyHeader]) headers[keyHeader] = op.__idempotencyKey;
+  }
+  let body;
+  if (op.body !== undefined && mutating) {
     if (String(op.contentType || "json").toLowerCase() === "form") {
       body = new URLSearchParams(op.body).toString();
       headers["content-type"] = headers["content-type"] || "application/x-www-form-urlencoded";
@@ -1032,14 +1044,32 @@ async function execApiRequestHttp(op, sinks, storageState, authRecipe) {
       headers["content-type"] = headers["content-type"] || "application/json";
     }
   }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Number(op.timeoutMs || 30000));
+  const attempts = op.idempotent && mutating ? 2 : 1;
   let res;
-  try {
-    res = await fetch(op.url, { method, headers, body, redirect: "follow", signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
+  let netErr = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Number(op.timeoutMs || 30000));
+    try {
+      res = await fetch(op.url, { method, headers, body, redirect: "follow", signal: controller.signal });
+      netErr = null;
+      break;
+    } catch (err) {
+      netErr = err;
+      if (attempt + 1 < attempts) {
+        sinks.events.push({ type: "apiRequest:retry", reason: "network", url: redactUrl(op.url), attempt: attempt + 1 });
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  if (netErr) throw netErr;
+  // Act as a cookie jar across the operation sequence: merge any rotated Set-Cookie
+  // (session OR CSRF double-submit tokens like XSRF-TOKEN) back into storageState so
+  // the NEXT request's cookie + CSRF header use the fresh value. Stateless `fetch`
+  // would otherwise resend the captured-once token and trip 403 on writes. Purely
+  // additive — no Set-Cookie means no change (today's behavior).
+  mergeSetCookies(storageState, res, op.url);
   const contentType = String(res.headers.get("content-type") || "");
   const text = await res.text();
   let parsed = text;
@@ -1075,18 +1105,315 @@ async function execApiRequestHttp(op, sinks, storageState, authRecipe) {
   }
 }
 
+// --- session refresh on expiry (token/cookie) -------------------------------
+// A learned session expires (401/403) far more often than its contracts go
+// stale. If learning captured a refresh endpoint (auth-recipe.refreshCandidates),
+// call it ONCE per run, merge any rotated Set-Cookie back into the in-memory
+// session, and let the caller retry — instead of forcing a full re-learn /
+// re-login. DETERMINISTIC + FAIL-SAFE: any problem returns false and the caller
+// falls through to today's stale handling (browser fallback / relearn), so the
+// worst case is exactly the current behavior, never worse.
+function refreshCandidatesFor(authRecipe, allowedDomains) {
+  const list = Array.isArray(authRecipe && authRecipe.refreshCandidates) ? authRecipe.refreshCandidates : [];
+  return list.filter((c) => c && c.endpoint && isAllowedUrl(String(c.endpoint), allowedDomains));
+}
+
+function parseSetCookies(res) {
+  try {
+    if (typeof res.headers.getSetCookie === "function") return res.headers.getSetCookie();
+  } catch {
+    /* ignore */
+  }
+  const single = res.headers.get && res.headers.get("set-cookie");
+  return single ? [single] : [];
+}
+
+// Merge rotated Set-Cookie values into the in-memory storageState so the retry
+// (and later operations) send the fresh session. Values are never persisted/logged.
+function mergeSetCookies(storageState, res, refreshUrl) {
+  const cookies = parseSetCookies(res);
+  if (!cookies.length) return 0;
+  let host = "";
+  try {
+    host = new URL(refreshUrl).hostname.toLowerCase();
+  } catch {
+    /* ignore */
+  }
+  if (!Array.isArray(storageState.cookies)) storageState.cookies = [];
+  let updated = 0;
+  for (const raw of cookies) {
+    const parts = String(raw).split(";");
+    const [namePart, ...valRest] = String(parts[0] || "").split("=");
+    const name = String(namePart || "").trim();
+    if (!name) continue;
+    const value = valRest.join("=").trim();
+    const attrs = {};
+    for (const seg of parts.slice(1)) {
+      const eq = seg.indexOf("=");
+      if (eq === -1) continue;
+      attrs[seg.slice(0, eq).trim().toLowerCase()] = seg.slice(eq + 1).trim();
+    }
+    const domain = String(attrs.domain || host || "").replace(/^\./, "").toLowerCase();
+    const cookiePath = attrs.path || "/";
+    const existing = storageState.cookies.find(
+      (c) => c && c.name === name && String(c.domain || "").replace(/^\./, "").toLowerCase() === domain,
+    );
+    if (existing) {
+      existing.value = value;
+      existing.path = cookiePath;
+    } else {
+      storageState.cookies.push({ name, value, domain, path: cookiePath });
+    }
+    updated += 1;
+  }
+  return updated;
+}
+
+async function tryRefreshSession(authRecipe, storageState, allowedDomains, sinks, args) {
+  try {
+    const candidate = refreshCandidatesFor(authRecipe, allowedDomains)[0];
+    if (!candidate) return false;
+    const endpoint = String(candidate.endpoint);
+    const method = String(candidate.method || "GET").toUpperCase();
+    const headers = {};
+    const cookie = cookieHeaderFor(endpoint, storageState);
+    if (cookie) headers.cookie = cookie;
+    applyAuthRecipeHeaders(headers, endpoint, storageState, authRecipe);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    let res;
+    try {
+      res = await fetch(endpoint, { method, headers, redirect: "follow", signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+    const ok = res.ok;
+    const merged = ok ? mergeSetCookies(storageState, res, endpoint) : 0;
+    sinks.events.push({ type: "auth:refresh", endpoint: redactUrl(endpoint), status: res.status, ok, cookiesUpdated: merged });
+    appendAudit(args.auditLog, { ts: new Date().toISOString(), phase: "auth-refresh", endpoint: redactUrl(endpoint), status: res.status, ok });
+    return ok;
+  } catch {
+    return false; // fail-safe: caller falls through to today's stale handling
+  }
+}
+
+// Run one apiRequest; on 401/403 refresh the session once and retry. A second
+// failure (or no refresh candidate / refresh failed) propagates unchanged.
+async function execApiRequestWithRefresh(op, sinks, storageState, authRecipe, allowedDomains, refreshState, args) {
+  try {
+    await execApiRequestHttp(op, sinks, storageState, authRecipe);
+  } catch (err) {
+    const code = String((err && err.code) || "");
+    if ((code !== "API_401" && code !== "API_403") || refreshState.attempted) throw err;
+    if (!refreshCandidatesFor(authRecipe, allowedDomains).length) throw err;
+    refreshState.attempted = true;
+    const refreshed = await tryRefreshSession(authRecipe, storageState, allowedDomains, sinks, args);
+    if (!refreshed) throw err;
+    await execApiRequestHttp(op, sinks, storageState, authRecipe); // retry once with the refreshed session
+  }
+}
+
+// --- pagination (opt-in, capped, fail-safe) ---------------------------------
+// A learned list endpoint returns one page; without this the agent silently gets
+// partial results. When the plan declares op.pagination, fetch subsequent pages
+// and aggregate. OPT-IN (no spec → single request = today), CAPPED (maxPages, hard
+// ceiling MAX_PAGINATION_PAGES), and FAIL-SAFE: any malformed spec or page error
+// stops the loop and keeps what we have (worst case = page 1 = today). The cap is
+// logged (never a silent truncation).
+const MAX_PAGINATION_PAGES = 50;
+
+function getByPath(obj, pathStr) {
+  if (!pathStr) return obj;
+  let cur = obj;
+  for (const key of String(pathStr).split(".")) {
+    if (cur == null) return undefined;
+    cur = cur[key];
+  }
+  return cur;
+}
+
+function coerceItems(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+// --- parameter binding ({{name}} templates) ---------------------------------
+// Make playbooks reusable + chainable: operation url/body/headers can reference
+// {{name}}, resolved from plan params AND from values extracted out of earlier
+// API responses (op.bind: { name: "dot.path" }). A lone "{{name}}" keeps the
+// binding's native type; embedded placeholders interpolate as text. Unknown names
+// are left intact (fail-safe). SECURITY: a resolved apiRequest URL is re-checked
+// against allowedDomains by the caller, so a binding can never redirect off-site.
+function applyBindings(value, bindings) {
+  if (typeof value === "string") {
+    const exact = value.match(/^\{\{\s*([\w.]+)\s*\}\}$/);
+    if (exact) {
+      const resolved = getByPath(bindings, exact[1]);
+      return resolved === undefined ? value : resolved;
+    }
+    // Raw placeholders (body/headers): substitute as text.
+    let out = value.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (m, name) => {
+      const resolved = getByPath(bindings, name);
+      return resolved === undefined ? m : String(resolved);
+    });
+    // URL paths/queries get {{ }} percent-encoded to %7B%7B..%7D%7D during URL
+    // validation; resolve those too, URL-encoding the value so the request stays valid.
+    out = out.replace(/%7[bB]%7[bB]([\w.]+)%7[dD]%7[dD]/g, (m, name) => {
+      const resolved = getByPath(bindings, name);
+      return resolved === undefined ? m : encodeURIComponent(String(resolved));
+    });
+    return out;
+  }
+  if (Array.isArray(value)) return value.map((v) => applyBindings(v, bindings));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = applyBindings(value[key], bindings);
+    return out;
+  }
+  return value;
+}
+
+function resolveOpBindings(op, bindings) {
+  const out = { ...op };
+  for (const field of ["url", "path", "body", "headers"]) {
+    if (op[field] !== undefined) out[field] = applyBindings(op[field], bindings);
+  }
+  return out;
+}
+
+function setQueryParam(rawUrl, name, value) {
+  const u = new URL(rawUrl);
+  u.searchParams.set(name, String(value));
+  return u.toString();
+}
+
+async function fetchPageBody(url, storageState, authRecipe) {
+  const headers = {};
+  const cookie = cookieHeaderFor(url, storageState);
+  if (cookie) headers.cookie = cookie;
+  applyAuthRecipeHeaders(headers, url, storageState, authRecipe);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const res = await fetch(url, { method: "GET", headers, redirect: "follow", signal: controller.signal });
+    if (!res.ok) return { ok: false, status: res.status, body: null };
+    const text = await res.text();
+    let body = text;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      /* keep text */
+    }
+    return { ok: true, status: res.status, body };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function paginateApi(op, sinks, storageState, authRecipe) {
+  try {
+    const pg = op.pagination || {};
+    const mode = String(pg.mode || "");
+    const param = String(pg.param || "");
+    const itemsPath = String(pg.itemsPath || "");
+    if (!["page", "offset", "cursor"].includes(mode) || !itemsPath) return; // malformed → single page
+    if (mode !== "cursor" && !param) return;
+    if (op.method && String(op.method).toUpperCase() !== "GET") return; // only paginate reads
+    const first = sinks.apiResponses[sinks.apiResponses.length - 1];
+    if (!first || !first.ok) return;
+
+    const maxPages = Math.max(1, Math.min(Number(pg.maxPages || 20), MAX_PAGINATION_PAGES));
+    const size = Number(pg.size || 0);
+    const items = coerceItems(getByPath(first.body, itemsPath));
+    let prevBody = first.body;
+    let pages = 1;
+    let stopped = "complete";
+
+    while (pages < maxPages) {
+      let nextUrl;
+      if (mode === "cursor") {
+        const cursor = getByPath(prevBody, String(pg.nextPath || ""));
+        if (cursor === undefined || cursor === null || cursor === "") {
+          stopped = "no-cursor";
+          break;
+        }
+        nextUrl = setQueryParam(op.url, param || "cursor", cursor);
+      } else {
+        const start = Number(pg.start ?? (mode === "page" ? 1 : 0));
+        nextUrl = setQueryParam(op.url, param, mode === "page" ? start + pages : start + pages * (size || 0));
+      }
+      const page = await fetchPageBody(nextUrl, storageState, authRecipe);
+      sinks.events.push({ type: "apiRequest:page", page: pages + 1, url: redactUrl(nextUrl), status: page.status, ok: page.ok });
+      if (!page.ok) {
+        stopped = `page-${page.status}`;
+        break;
+      }
+      const pageItems = coerceItems(getByPath(page.body, itemsPath));
+      items.push(...pageItems);
+      prevBody = page.body;
+      pages += 1;
+      if (mode !== "cursor") {
+        if (pageItems.length === 0) {
+          stopped = "empty-page";
+          break;
+        }
+        if (size && pageItems.length < size) {
+          stopped = "last-page";
+          break;
+        }
+      }
+    }
+    if (pages >= maxPages) stopped = "max-pages"; // surfaced, never a silent truncation
+
+    sinks.extracted.push({
+      label: `${op.label || op.contractId || op.url} (all pages)`,
+      text: stringifyApiBody(items, Number(op.maxChars || 12000)),
+      paginated: true,
+      pages,
+      total: items.length,
+      stopped,
+    });
+    sinks.events.push({ type: "pagination:done", pages, total: items.length, stopped });
+  } catch (err) {
+    // fail-safe: keep page 1 (already recorded), surface why we stopped.
+    sinks.events.push({ type: "pagination:stopped", reason: String((err && err.message) || err) });
+  }
+}
+
 /** Execute an all-API plan over HTTP — no browser launch. */
 async function runApiOnly(playbook, validated, args) {
   const storageState = loadStorageState(args.storageState);
   const authRecipe = loadAuthRecipe(args.authRecipe);
+  const allowedDomains = Array.isArray(validated.allowedDomains) ? validated.allowedDomains : [];
+  const refreshState = { attempted: false };
+  // Binding context: seed from plan params, grow with values extracted from API
+  // responses (op.bind) so a later op can reference {{name}} (e.g. create -> id -> delete).
+  const bindings = { ...(validated.params || {}) };
   const sinks = { extracted: [], apiResponses: [], events: [], network: [], mutated: [] };
   for (let index = 0; index < validated.operations.length; index += 1) {
-    const op = validated.operations[index];
+    const rawOp = validated.operations[index];
+    const op = resolveOpBindings(rawOp, bindings); // resolve {{name}} in url/body/headers
     sinks.events.push({ type: "operation:start", phase: "primary", index, operation: op.type, target: targetDescriptor(op) });
     appendAudit(args.auditLog, { ts: new Date().toISOString(), action: validated.action, phase: "primary", transport: "http", index, op: op.type, risk: op.risk });
     try {
       if (op.type === "apiRequest") {
-        await execApiRequestHttp(op, sinks, storageState, authRecipe);
+        // SECURITY: a binding must never redirect a request off the allowlist.
+        if (op.url && !isAllowedUrl(String(op.url), allowedDomains)) {
+          const error = new Error(`apiRequest target is outside allowedDomains after binding: ${redactUrl(op.url)}`);
+          error.code = "API_DOMAIN_BLOCKED";
+          throw error;
+        }
+        await execApiRequestWithRefresh(op, sinks, storageState, authRecipe, allowedDomains, refreshState, args);
+        if (op.pagination) await paginateApi(op, sinks, storageState, authRecipe);
+        // Extract response values into bindings for later {{name}} references.
+        if (op.bind && typeof op.bind === "object" && !Array.isArray(op.bind)) {
+          const last = sinks.apiResponses[sinks.apiResponses.length - 1];
+          if (last && last.ok) {
+            for (const [name, dotPath] of Object.entries(op.bind)) {
+              const value = getByPath(last.body, String(dotPath));
+              if (value !== undefined) bindings[name] = value;
+            }
+          }
+        }
         if (RISK_ORDER[op.risk] >= RISK_ORDER.submit) sinks.mutated.push({ index, op: op.type });
       } else if (op.type === "wait") {
         await new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.min(Number(op.ms || 1000), 10000))));

@@ -147,6 +147,33 @@ function stripQuery(url) {
   }
 }
 
+// Detect a pagination shape from the request's query keys + the response schema.
+// Conservative: only emits when an items array AND a paging mechanism are both
+// recognized. This is a HINT carried on the contract — the planner copies it into
+// op.pagination only when the user actually wants all/every/a full export, so a
+// single-page read never over-fetches. Returns undefined when unsure.
+const ITEMS_PREFERRED = ["data", "rows", "items", "list", "records", "results", "content"];
+function detectPagination(queryKeys, responseSchema) {
+  if (!responseSchema || responseSchema.type !== "object" || !responseSchema.properties) return undefined;
+  const props = responseSchema.properties;
+  const arrayKeys = Object.keys(props).filter((k) => props[k] && props[k].type === "array");
+  if (!arrayKeys.length) return undefined;
+  const itemsPath = arrayKeys.find((k) => ITEMS_PREFERRED.includes(k.toLowerCase())) || (arrayKeys.length === 1 ? arrayKeys[0] : undefined);
+  if (!itemsPath) return undefined; // multiple arrays, none recognized → not confident
+
+  const nextKey = Object.keys(props).find((k) => /^(next|nextcursor|next_cursor|nexttoken|next_token|nextpage|next_page|cursor)$/i.test(k));
+  const qk = [...queryKeys];
+  const cursorParam = qk.find((k) => /^(cursor|next|nexttoken|next_token|pagetoken|page_token)$/i.test(k));
+  const pageParam = qk.find((k) => /^(page|pageno|pagenum|pageindex|p)$/i.test(k));
+  const offsetParam = qk.find((k) => /^(offset|skip|start)$/i.test(k));
+
+  if (cursorParam && nextKey) return { mode: "cursor", param: cursorParam, itemsPath, nextPath: nextKey };
+  if (pageParam) return { mode: "page", param: pageParam, itemsPath, start: 1 };
+  if (offsetParam) return { mode: "offset", param: offsetParam, itemsPath, start: 0 };
+  if (nextKey) return { mode: "cursor", param: "cursor", itemsPath, nextPath: nextKey };
+  return undefined;
+}
+
 function harToContracts(har, baseUrl, allowedDomains) {
   const entries = har?.log?.entries;
   const warnings = [];
@@ -168,8 +195,13 @@ function harToContracts(har, baseUrl, allowedDomains) {
     const method = String(req.method).toUpperCase();
     const endpoint = stripQuery(req.url);
     const key = `${method} ${endpoint}`;
-    if (!groups.has(key)) groups.set(key, { method, endpoint, reqSamples: [], resSamples: [], statuses: new Set() });
+    if (!groups.has(key)) groups.set(key, { method, endpoint, reqSamples: [], resSamples: [], statuses: new Set(), queryKeys: new Set() });
     const g = groups.get(key);
+    try {
+      for (const qk of new URL(req.url).searchParams.keys()) g.queryKeys.add(qk.toLowerCase());
+    } catch {
+      /* unparseable url — skip query-key capture */
+    }
     if (g.reqSamples.length < MAX_SAMPLES_PER_ENDPOINT) {
       const reqBody = parseBody(req.postData?.text, req.postData?.mimeType);
       if (reqBody !== undefined) g.reqSamples.push(reqBody);
@@ -189,6 +221,7 @@ function harToContracts(har, baseUrl, allowedDomains) {
     const requestSchema = g.reqSamples.length ? inferSchema(g.reqSamples) : undefined;
     const responseSchema = g.resSamples.length ? inferSchema(g.resSamples) : undefined;
     const id = `har-${g.method}-${g.endpoint}`.replace(/[^a-z0-9]+/gi, "-").toLowerCase().replace(/^-+|-+$/g, "").slice(0, 80);
+    const pagination = (g.method === "GET" || g.method === "HEAD") ? detectPagination(g.queryKeys, responseSchema) : undefined;
     contracts.push({
       id,
       source: "har",
@@ -203,6 +236,7 @@ function harToContracts(har, baseUrl, allowedDomains) {
       responseShape: responseSchema ? responseShapeFromSchema(responseSchema) : {},
       observedStatuses: [...g.statuses].sort((a, b) => a - b),
       sampleCount: g.reqSamples.length + g.resSamples.length,
+      ...(pagination ? { pagination } : {}),
     });
   }
   return { ok: true, kind: "har", contracts, dataSchemas: {}, warnings };

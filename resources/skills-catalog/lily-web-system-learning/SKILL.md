@@ -158,6 +158,36 @@ Place generated artifacts in the workspace learning area, using stable English d
   trail (inputs redacted). A failed run reports `stale`/`staleSignal`/
   `relearnRecommended` — when `relearnRecommended` is true, re-run learning
   rather than blindly retrying.
+
+Executor reliability capabilities (all OPT-IN per operation except the automatic
+ones; every one fails safe — if a hint is wrong or missing, the executor behaves
+as if it were absent, never worse):
+- Automatic, no config: (1) session refresh — on 401/403 the executor calls a
+  refresh endpoint learned into `auth-recipe.json.refreshCandidates` and retries
+  once before declaring the session stale; (2) cookie/CSRF freshness — it merges
+  every response's `Set-Cookie` back into the session, so rotated session and
+  double-submit CSRF tokens (e.g. XSRF-TOKEN → X-XSRF-Token via the auth recipe)
+  stay valid across a multi-step write.
+- Pagination: for a list/query endpoint that returns one page, set
+  `op.pagination = { mode: "page"|"offset"|"cursor", param, itemsPath, nextPath?,
+  start?, size?, maxPages? }`. The executor fetches and aggregates all pages
+  (capped by `maxPages`, default 20) and returns the combined items. `itemsPath`
+  and `nextPath` are dot-paths into the JSON response. Use this whenever the user
+  asks for "all"/"every"/a full export rather than just the first page. Learning
+  may attach a `pagination` hint to a contract (mode/param/itemsPath/nextPath
+  detected from captured traffic) — copy it into `op.pagination` instead of
+  guessing; for a single-page read, omit pagination so it does not over-fetch.
+- Idempotent writes: for a non-idempotent write (create/submit/pay) set
+  `op.idempotent: true` (optionally `op.idempotencyHeader`). The executor injects a
+  stable `Idempotency-Key` and safely retries ONCE on a network drop with the same
+  key, so the server can dedupe. Do NOT set it blindly on every write — only when
+  the action genuinely must not double-submit.
+- Reusable / chained operations: any `op.url`/`op.body`/`op.headers` may contain
+  `{{name}}`. Names resolve from the plan's `params` object and from values
+  EXTRACTED out of an earlier API response via `op.bind = { name: "dot.path" }`.
+  This is how you chain steps — e.g. POST create with `bind: { id: "data.id" }`,
+  then `DELETE /items/{{id}}`. A resolved URL is re-checked against the domain
+  allowlist, so a binding can never send a request off-site.
 - For ambiguous natural-language requests, ask one focused question instead of guessing a destructive action.
 - Always show what will happen before a mutating action and record the result in audit logs.
 - Locator resilience is built in: the executor tries selector → testId → role →
