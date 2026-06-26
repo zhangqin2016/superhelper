@@ -127,7 +127,11 @@ function translatePermission(mode, disallowedTools) {
       base = {
         read: "allow", grep: "allow", glob: "allow", list: "allow", lsp: "allow",
         webfetch: "allow", websearch: "allow",
-        task: "allow",
+        // NOTE: do NOT add an explicit `task` rule. OpenCode caps subagent nesting
+        // at one level by injecting `task: deny` into every SPAWNED child UNLESS
+        // the agent already declares a `task` permission. An explicit `task:"allow"`
+        // here defeats that guard → subagents spawn subagents (unbounded nesting,
+        // runaway turns). Top-level still gets task via OpenCode's "*":"allow" default.
         edit: { "*": "allow", "../*": "ask" },
         external_directory: "ask",
         bash: bashRules("allow", DESTRUCTIVE_BASH),
@@ -212,7 +216,14 @@ function buildOpencodeConfig(opts = {}) {
 function baseSharedPermission() {
   return {
     read: "allow", grep: "allow", glob: "allow", list: "allow", lsp: "allow",
-    webfetch: "allow", websearch: "allow", task: "allow",
+    webfetch: "allow", websearch: "allow",
+    // NOTE: deliberately NO explicit `task` rule. OpenCode caps subagent nesting
+    // at one level by injecting `task: deny` into every spawned child UNLESS the
+    // child's agent already has a `task` permission rule. Putting `task:"allow"`
+    // in this shared config flows into every agent (via cfg.permission -> user
+    // merge) and DEFEATS that guard — a subagent then keeps `task` and spawns more
+    // subagents (the depth-2+ "俄罗斯套娃" + runaway 10-min turns reported in the
+    // field). Top-level agents still get `task` via OpenCode's own "*":"allow".
     edit: "ask", write: "ask", bash: "ask", external_directory: "ask",
   };
 }

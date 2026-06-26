@@ -12,9 +12,26 @@ const {
   buildSharedBaseConfig,
   translateMcpServers,
   translatePermission,
+  baseSharedPermission,
 } = require("../src/main/runtime/opencode-config-builder.js");
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
+
+// Subagent-nesting cap: OpenCode injects `task: deny` into spawned children ONLY
+// if the child agent has no explicit `task` rule. So the shared/ask permission
+// must NOT pin `task:"allow"` — doing so defeats the cap and lets subagents spawn
+// subagents (unbounded nesting + runaway turns). Top-level keeps task via the
+// engine's "*":"allow" default. plan intentionally denies task (no subagents).
+{
+  assert(!("task" in baseSharedPermission()), "shared serve permission must NOT pin task (defeats subagent nesting cap)");
+  assert(!("task" in translatePermission("ask")), "ask mode must NOT pin task=allow (defeats subagent nesting cap)");
+  assert(!("task" in translatePermission("full")), "full mode must not pin an explicit task rule");
+  assert(translatePermission("plan").task === "deny", "plan stays read-only: task denied");
+  const shared = JSON.parse(buildSharedBaseConfig({
+    lilyEnv: { LILY_API_BASE_URL: "https://api.deepseek.com", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-chat" },
+  }).configContent);
+  assert(!("task" in (shared.permission || {})), "built shared config must not pin task");
+}
 
 // --- MCP translation (Lily {command,args,env} -> OpenCode local server) ------
 {
