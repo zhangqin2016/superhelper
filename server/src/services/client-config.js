@@ -2,6 +2,7 @@ import { sha256 } from "./security.js";
 import { config } from "../config.js";
 import { signModelGatewayToken } from "./model-gateway/auth.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
+import { getModelCatalog } from "./model-catalog.js";
 
 export const DEFAULT_EFFECTIVE_CONFIG = {
   schemaVersion: 1,
@@ -209,18 +210,13 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
     || modelPresets[0]?.id
     || "";
 
-  // BYOK provider catalog: the known providers' endpoint + protocol + model list,
-  // WITHOUT keys. The client uses it so the user just picks a provider + model and
-  // enters their own key — no manual base URL / model ID typing.
-  const catalog = Object.values(providers || {})
-    .filter((provider) => provider?.id && provider?.baseUrl && !RESERVED_MODEL_PROVIDER_IDS.has(provider.id) && providerModelList(provider).length)
-    .map((provider) => ({
-      id: provider.id,
-      label: providerLabel(provider).replace(/ Gateway$/, ""),
-      baseUrl: provider.baseUrl,
-      protocol: provider.type === "openai" ? "openai" : "anthropic",
-      models: providerModelList(provider),
-    }));
+  // BYOK provider catalog: a rich, current list of public providers + their
+  // endpoints/protocols/models (NO keys), sourced from models.dev and cached
+  // server-side (see services/model-catalog). The client uses it so the user
+  // just picks a provider + model and enters their own key — no manual base URL
+  // / model ID typing. Falls back to the vendored snapshot if the live fetch
+  // never succeeded.
+  const catalog = getModelCatalog();
 
   const runtimeEnv = runtimeEnvFromServerConfig(serverConfig);
   const effectiveConfig = {

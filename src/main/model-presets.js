@@ -416,6 +416,49 @@ function getApiGatewayPublic() {
   };
 }
 
+/** The bundled BYOK provider catalog (resources/model-catalog.json, generated
+ *  from models.dev by scripts/fetch-model-catalog.mjs). Public providers +
+ *  current model ids + endpoints, so the "add a model" picker is rich without
+ *  the runtime reaching models.dev (which is often blocked). Models flattened to
+ *  id strings — the shape the renderer's provider/model dropdowns expect. */
+function getBundledProviderCatalog() {
+  try {
+    const fs2 = require("node:fs");
+    const path2 = require("node:path");
+    const { PROJECT_ROOT } = require("./config");
+    const candidates = [];
+    if (typeof process.resourcesPath === "string") {
+      candidates.push(path2.join(process.resourcesPath, "resources", "model-catalog.json"));
+    }
+    candidates.push(path2.join(PROJECT_ROOT, "resources", "model-catalog.json"));
+    const file = candidates.find((p) => fs2.existsSync(p));
+    if (!file) return [];
+    const data = JSON.parse(fs2.readFileSync(file, "utf8"));
+    return (Array.isArray(data?.providers) ? data.providers : [])
+      .filter((p) => p?.id && p?.baseUrl && Array.isArray(p?.models) && p.models.length)
+      .map((p) => ({
+        id: String(p.id),
+        label: String(p.label || p.id),
+        baseUrl: String(p.baseUrl),
+        protocol: p.protocol === "anthropic" ? "anthropic" : "openai",
+        models: p.models.map((m) => (typeof m === "string" ? m : String(m?.id || ""))).filter(Boolean),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/** BYOK catalog. The SERVER is the source of truth: whatever it delivers (cached
+ *  client-side via remote-config) wins per provider id. The bundled snapshot is
+ *  only a fallback — it fills providers the server didn't send and covers the
+ *  offline / first-run case before any server catalog is cached. */
+function mergedProviderCatalog() {
+  const byId = new Map();
+  for (const p of getBundledProviderCatalog()) byId.set(p.id, p);
+  for (const p of remoteConfig.getRemoteProviderCatalogSync()) byId.set(p.id, p);
+  return [...byId.values()];
+}
+
 function listPresetsPublic() {
   const settingsEnv = (() => {
     try {
@@ -431,7 +474,7 @@ function listPresetsPublic() {
     managedByService: isRemoteManagedCatalog(),
     // Server-published BYOK provider catalog — the renderer's "add model" flow
     // turns this into a provider picker so the user only chooses + enters a key.
-    catalog: remoteConfig.getRemoteProviderCatalogSync(),
+    catalog: mergedProviderCatalog(),
     presets: getAllPresets().map((p) => ({
       id: p.id,
       label: p.label,

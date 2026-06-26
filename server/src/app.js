@@ -8,6 +8,7 @@ import { adminRoutes } from "./routes/admin.js";
 import { modelGatewayRoutes } from "./services/model-gateway.js";
 import { mediaGatewayRoutes } from "./services/media-gateway.js";
 import { ensureEnvManagedConfigProfile } from "./services/client-config.js";
+import { refreshModelCatalog } from "./services/model-catalog.js";
 import { ensureEnvQiniuConfigSeeded } from "./services/app-settings.js";
 import { installDocOnlyCompilers, registerOpenapi } from "./openapi.js";
 
@@ -68,8 +69,19 @@ export async function buildApp() {
     return reply.code(500).send({ ok: false, code: "INTERNAL_ERROR" });
   });
 
+  // Pull the latest BYOK provider catalog from models.dev before building the
+  // delivered config (best-effort; falls back to the vendored snapshot). Then
+  // refresh daily and re-publish so clients get new models without an app/server
+  // rebuild — the catalog is cached server-side; clients just receive it.
+  await refreshModelCatalog();
   await ensureEnvManagedConfigProfile();
   await ensureEnvQiniuConfigSeeded();
+  const catalogTimer = setInterval(() => {
+    refreshModelCatalog()
+      .then(() => ensureEnvManagedConfigProfile())
+      .catch((err) => app.log.warn({ err }, "model catalog refresh failed"));
+  }, 24 * 60 * 60 * 1000);
+  catalogTimer.unref?.();
   await registerRoutes(app);
 
   return app;
