@@ -114,6 +114,11 @@ class OpencodeAgentSession extends EventEmitter {
     this._orchestrator = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._responseTimer = null;
+    /** Wall-clock turn cap. Unlike _responseTimer (a no-progress timer that
+     *  re-arms on every event), this is armed ONCE per turn and fires regardless
+     *  of activity — the backstop for an actively-runaway turn (deep/wide subagent
+     *  work) that never goes idle. @type {ReturnType<typeof setTimeout> | null} */
+    this._turnWatchdogTimer = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._progressNoticeTimer = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
@@ -292,6 +297,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._armResponseTimer();
     this._armProgressNoticeTimer();
     this._armHealthProbe();
+    this._armTurnWatchdog();
 
     (async () => {
       try {
@@ -448,6 +454,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearResponseTimer();
     this._clearProgressNoticeTimer();
     this._clearHealthProbe();
+    this._clearTurnWatchdog();
     this._clearPendingPermissions();
     if (this._server) {
       this._server.terminate();
@@ -1265,6 +1272,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearResponseTimer();
     this._clearProgressNoticeTimer();
     this._clearHealthProbe();
+    this._clearTurnWatchdog();
     this._clearPendingPermissions();
     resetOpencodeRuntimeState(this._eventState);
     this._resetSubagentRuntimeStates();
@@ -1335,6 +1343,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearResponseTimer();
     this._clearProgressNoticeTimer();
     this._clearHealthProbe();
+    this._clearTurnWatchdog();
     this._clearPendingPermissions();
     resetOpencodeRuntimeState(this._eventState);
     this._resetSubagentRuntimeStates();
@@ -1424,6 +1433,27 @@ class OpencodeAgentSession extends EventEmitter {
     if (this._responseTimer) {
       clearTimeout(this._responseTimer);
       this._responseTimer = null;
+    }
+  }
+
+  // Armed once at turn start; NOT re-armed on activity. Force-ends a turn that
+  // has run past the hard wall-clock budget even while still producing events
+  // (runaway deep/wide subagent work). _forceEndTurn recovers any official output
+  // and aborts the serve turn — graceful, not a crash.
+  _armTurnWatchdog() {
+    this._clearTurnWatchdog();
+    if (!this.busy || this._turnSettled) return;
+    const cap = OpencodeAgentSession.TURN_WATCHDOG_MS;
+    if (!(cap > 0)) return; // 0 / unset disables the hard cap
+    this._turnWatchdogTimer = setTimeout(() => {
+      this._forceEndTurn("turn exceeded the maximum time budget");
+    }, cap);
+  }
+
+  _clearTurnWatchdog() {
+    if (this._turnWatchdogTimer) {
+      clearTimeout(this._turnWatchdogTimer);
+      this._turnWatchdogTimer = null;
     }
   }
 
@@ -1549,6 +1579,17 @@ OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
 // users can see the engine is still alive while OpenCode is quiet.
 OpencodeAgentSession.PROGRESS_NOTICE_MS =
   Number(process.env.LILY_OPENCODE_PROGRESS_NOTICE_MS) || 45_000;
+// HARD wall-clock turn cap (distinct from the no-progress window above). Unlike
+// that window, this does NOT reset on activity — it bounds total turn time so an
+// actively-runaway turn (deep/wide subagent work that keeps emitting events) can't
+// run unbounded. Deliberately GENEROUS so it does not clip a legitimately long but
+// progressing turn (big build, hour-scale conversion); the step budget + depth cap
+// are the primary runaway bounds, this is the final time backstop. _forceEndTurn
+// recovers any official output. Override / disable (0) with LILY_OPENCODE_TURN_MAX_MS.
+OpencodeAgentSession.TURN_WATCHDOG_MS =
+  process.env.LILY_OPENCODE_TURN_MAX_MS !== undefined
+    ? Number(process.env.LILY_OPENCODE_TURN_MAX_MS) || 0
+    : 60 * 60_000;
 // Bounded official-history sync before declaring a no-progress turn stalled.
 // This mirrors the official app's source-of-truth model without letting the
 // watchdog itself hang on an unhealthy server.

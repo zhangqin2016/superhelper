@@ -128,6 +128,11 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(cfg.compaction.prune === true, "shared serve -> prune enabled");
   assert(cfg.compaction.tail_turns === 2, "shared serve -> tail turn retention matches OpenCode default");
   assert(cfg.skills.paths.length === 1 && cfg.skills.paths[0].endsWith("/skills"), "shared serve -> Lily skill registry path configured");
+  // Runaway backstop: finite per-agent step budget (caps loops AND fan-out width,
+  // since each subagent spawn is a step). Default is Infinity in OpenCode.
+  assert(Number.isInteger(cfg.agent.build.steps) && cfg.agent.build.steps > 0, "build agent has a finite step budget");
+  assert(Number.isInteger(cfg.agent.plan.steps) && cfg.agent.plan.steps > 0, "plan agent has a finite step budget");
+  assert(cfg.agent.general.steps > 0 && cfg.agent.general.steps <= cfg.agent.build.steps, "subagent step budget set and not larger than primary");
   // WHY: without basePrompt, build/plan have no agent.prompt, so OpenCode's
   // request.ts ternary falls back to SystemPrompt.provider() = the coding-CLI
   // baseline (default.txt). That baseline ("answer in <4 lines, one-word answers

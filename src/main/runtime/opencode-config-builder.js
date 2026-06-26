@@ -28,6 +28,34 @@ const SUBAGENT_AGENTS = ["general", "explore"];
  */
 const HELPER_PRIMARY_AGENTS = ["compaction", "title"];
 const MODEL_PINNED_AGENTS = [...SUBAGENT_AGENTS, ...HELPER_PRIMARY_AGENTS];
+
+// Per-agent step budget (OpenCode agent.steps; default is Infinity). A runaway
+// BACKSTOP, not a tight leash — normal turns use far fewer. Caps both runaway
+// loops AND fan-out width (each subagent spawn is a step). Primary agents
+// (build/plan) get a generous cap; focused subagents get a tighter one. Override
+// with LILY_OPENCODE_MAX_STEPS / LILY_OPENCODE_SUBAGENT_MAX_STEPS.
+function stepBudget(lilyEnv = {}) {
+  const num = (v, d) => {
+    const n = Number(v);
+    return Number.isInteger(n) && n > 0 ? n : d;
+  };
+  return {
+    primary: num(lilyEnv.LILY_OPENCODE_MAX_STEPS, 160),
+    subagent: num(lilyEnv.LILY_OPENCODE_SUBAGENT_MAX_STEPS, 60),
+  };
+}
+
+/** Apply the step budget to primary + subagent agents (config.agent.<name>.steps). */
+function applyStepBudget(config, lilyEnv) {
+  const budget = stepBudget(lilyEnv);
+  config.agent = config.agent || {};
+  for (const name of ["build", "plan"]) {
+    config.agent[name] = { ...(config.agent[name] || {}), steps: budget.primary };
+  }
+  for (const name of SUBAGENT_AGENTS) {
+    config.agent[name] = { ...(config.agent[name] || {}), steps: budget.subagent };
+  }
+}
 const DEFAULT_COMPACTION = Object.freeze({
   auto: true,
   prune: true,
@@ -178,6 +206,7 @@ function buildOpencodeConfig(opts = {}) {
   if (Object.keys(mcp).length) config.mcp = mcp;
 
   config.compaction = { ...DEFAULT_COMPACTION, ...(config.compaction || {}) };
+  applyStepBudget(config, opts.lilyEnv || {});
   applySkillPaths(config, opts.skillPaths);
 
   const permission = translatePermission(opts.permissionMode, opts.disallowedTools);
@@ -273,6 +302,7 @@ function buildSharedBaseConfig(opts = {}) {
   }
 
   config.compaction = { ...DEFAULT_COMPACTION, ...(config.compaction || {}) };
+  applyStepBudget(config, opts.lilyEnv || {});
   applySkillPaths(config, opts.skillPaths);
 
   config.permission = baseSharedPermission();
