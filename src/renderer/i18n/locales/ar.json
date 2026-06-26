@@ -332,7 +332,7 @@
   "settings.modelCustomAdd": "إضافة",
   "settings.modelCustomUse": "استخدام",
   "settings.modelCustomDelete": "حذف",
-  "settings.modelCustomEmpty": "لا توجد نماذج مخصصة",
+  "settings.modelCustomEmpty": "لا توجد نماذج شخصية مخصصة بعد. اختر المزوّدات والنماذج الشائعة أعلاه؛ هذه القائمة تعرض فقط النماذج التي تحفظها يدوياً.",
   "settings.permission": "الأذونات",
   "settings.globalPermissionTitle": "الأذونات الافتراضية العامة",
   "settings.permissionDesc": "طريقة تأكيد استخدام الأدوات. يُطبَّق عند الإرسال التالي.",

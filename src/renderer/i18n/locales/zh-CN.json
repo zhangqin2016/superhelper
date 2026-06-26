@@ -339,7 +339,7 @@
   "settings.modelCustomAdd": "添加",
   "settings.modelCustomUse": "使用",
   "settings.modelCustomDelete": "删除",
-  "settings.modelCustomEmpty": "暂无自定义模型",
+  "settings.modelCustomEmpty": "暂无个人自定义模型。常用模型请在上方选择供应商和模型；这里只显示你手动保存的模型。",
   "settings.permission": "权限",
   "settings.globalPermissionTitle": "全局默认权限",
   "settings.permissionDesc": "控制助手执行工具时的确认方式。切换后会在下次发送时生效。",

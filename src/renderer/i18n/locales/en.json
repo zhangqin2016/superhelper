@@ -339,7 +339,7 @@
   "settings.modelCustomAdd": "Add",
   "settings.modelCustomUse": "Use",
   "settings.modelCustomDelete": "Delete",
-  "settings.modelCustomEmpty": "No custom models yet",
+  "settings.modelCustomEmpty": "No personal custom models yet. Pick common providers and models above; this list only shows models you save manually.",
   "settings.permission": "Permissions",
   "settings.globalPermissionTitle": "Global default permissions",
   "settings.permissionDesc": "How the assistant confirms tool use. Takes effect on the next send.",
