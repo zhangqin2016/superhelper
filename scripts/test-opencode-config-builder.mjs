@@ -128,6 +128,14 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(cfg.compaction.prune === true, "shared serve -> prune enabled");
   assert(cfg.compaction.tail_turns === 2, "shared serve -> tail turn retention matches OpenCode default");
   assert(cfg.skills.paths.length === 1 && cfg.skills.paths[0].endsWith("/skills"), "shared serve -> Lily skill registry path configured");
+  // summarize-500 root cause: OpenCode's processCompaction resolves the model via
+  // provider.getModel(agent.model ?? userMessage.model).pipe(Effect.orDie) — an
+  // unresolvable model becomes an unrecoverable 500 BEFORE any LLM stream (so no
+  // agent=compaction line ever appears). Pinning compaction/title to the main
+  // distributed model (which normal turns resolve fine) is the fix. This must hold
+  // even with the MINIMAL env (no subagent/haiku override), or compaction 500s.
+  assert(cfg.agent.compaction.model === "lily/deepseek-chat", "shared serve -> compaction agent pinned to resolvable main model (summarize-500 fix)");
+  assert(cfg.agent.title.model === "lily/deepseek-chat", "shared serve -> title agent pinned to resolvable main model");
   // Runaway backstop: finite per-agent step budget (caps loops AND fan-out width,
   // since each subagent spawn is a step). Default is Infinity in OpenCode.
   assert(Number.isInteger(cfg.agent.build.steps) && cfg.agent.build.steps > 0, "build agent has a finite step budget");

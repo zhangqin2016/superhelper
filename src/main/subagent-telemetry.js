@@ -22,6 +22,11 @@ function buildSubagentTelemetry(record = {}) {
   const tools = Array.isArray(record.tools) ? record.tools : [];
   const subagents = tools.filter(isSubagentTool).map((tool) => {
     const childTools = tools.filter((child) => child.parentToolUseId && child.parentToolUseId === tool.id);
+    // Depth-1 cap audit: a subagent (Task) must never have a Task among its own
+    // children — the engine injects task:deny into every spawned child. If one
+    // shows up, the cap leaked (cf. upstream disallowedTools-override bugs) and we
+    // surface it loudly rather than trusting the deny silently held.
+    const nestedTasks = childTools.filter(isSubagentTool);
     const durationMs = Number(tool.durationMs || 0);
     return {
       id: tool.id || "",
@@ -30,6 +35,8 @@ function buildSubagentTelemetry(record = {}) {
       durationMs,
       slow: durationMs >= SLOW_SUBAGENT_MS,
       verySlow: durationMs >= VERY_SLOW_SUBAGENT_MS,
+      nestedTaskCount: nestedTasks.length,
+      nestedTaskBreach: nestedTasks.length > 0,
       childToolCount: childTools.length,
       childTools: childTools.slice(0, 20).map((child) => ({
         id: child.id || "",
@@ -50,6 +57,9 @@ function buildSubagentTelemetry(record = {}) {
     count: subagents.length,
     slowCount: subagents.filter((item) => item.slow).length,
     verySlowCount: subagents.filter((item) => item.verySlow).length,
+    // 0 in a healthy run: the depth-1 cap holds. Any breach means a grandchild
+    // subagent ran — the runaway "subtask spawns subtasks" failure mode.
+    nestedTaskBreaches: subagents.filter((item) => item.nestedTaskBreach).length,
     totalDurationMs,
     subagents,
   };

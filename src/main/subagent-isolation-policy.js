@@ -33,7 +33,7 @@ function buildSubagentIsolationHint(input = {}) {
     `- Treat each subagent as budgeted: target under ${MAIN_FIRST_DISPATCH_THRESHOLDS.subagentTargetSeconds} seconds, return partial evidence if the scope is bigger, and avoid open-ended exploration.`,
     "- Keep each subagent scoped to one subsystem, directory, or hypothesis. Do not stream full file contents back into the main context.",
     "- Each Task prompt must include the exact directory/subsystem/hypothesis, files already known, evidence to collect, output schema, and time budget.",
-    "- Nested Task is allowed only when the child finds explicit independent shards; the child must state the shard boundary and return compact evidence.",
+    "- Subagents cannot spawn their own Task subagents — the engine caps nesting at one level. If a child uncovers more independent shards than its own scope, it must return them as leads in its handoff so the MAIN agent dispatches them; it must not attempt a nested Task.",
     "- Main context should receive only a compact handoff: files inspected, evidence found, decisions, risks, and remaining open questions.",
     "- Treat subagent output as leads, not proof; verify decisive claims with direct file/tool evidence before the final answer.",
     terms.length ? `- Coverage terms to shard first: ${terms.join(", ")}` : "",

@@ -194,6 +194,13 @@ class TurnArchive {
     }
     try {
       record.meta.subagentTelemetry = require("./subagent-telemetry").buildSubagentTelemetry(record);
+      if (record.meta.subagentTelemetry?.nestedTaskBreaches > 0) {
+        // The depth-1 cap leaked: a subagent spawned a grandchild subagent. Don't
+        // swallow it — this is the runaway nesting we explicitly guard against.
+        console.warn(
+          `[subagent] depth-1 nesting cap BREACHED: ${record.meta.subagentTelemetry.nestedTaskBreaches} subagent(s) spawned nested Task children`,
+        );
+      }
     } catch {
       record.meta.subagentTelemetry = null;
     }

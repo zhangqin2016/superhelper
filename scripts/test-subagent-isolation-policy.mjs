@@ -44,7 +44,12 @@ assert.match(hint, new RegExp(`${MAIN_FIRST_DISPATCH_THRESHOLDS.subsystems}\\+ i
 assert.match(hint, /parent should keep doing other deterministic work/);
 assert.match(hint, new RegExp(`under ${MAIN_FIRST_DISPATCH_THRESHOLDS.subagentTargetSeconds} seconds`));
 assert.match(hint, /Each Task prompt must include/);
-assert.match(hint, /Nested Task is allowed only/);
+// The prompt MUST match the engine's depth-1 cap (config-builder injects task:deny
+// into every spawned child). Telling the model nested Task is allowed makes it waste
+// steps on denied attempts and invites the runaway "subtask spawns subtasks" incident.
+assert.match(hint, /Subagents cannot spawn their own Task subagents/);
+assert.match(hint, /MAIN agent dispatches them/);
+assert.doesNotMatch(hint, /Nested Task is allowed/);
 assert.match(hint, /session\.idle/);
 
 console.log("subagent-isolation-policy: ok");
