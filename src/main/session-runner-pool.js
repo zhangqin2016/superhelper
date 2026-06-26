@@ -101,6 +101,16 @@ class SessionRunnerPool {
       env.npm_config_registry = npmRegistry;
     }
 
+    // Where the compaction-memory plugin (Bun serve) reads Lily's per-session
+    // navigation memory from. Must match where opencode-agent-session writes it.
+    try {
+      const { userDataPath } = require("./config");
+      const { COMPACTION_MEMORY_DIRNAME } = require("./compaction-memory-export");
+      env.LILY_COMPACTION_MEMORY_DIR = userDataPath(COMPACTION_MEMORY_DIRNAME);
+    } catch {
+      /* non-fatal: plugin then finds no dir and leaves compaction untouched */
+    }
+
     runner.ensureProcess(cwd, {
       agentCommand,
       permissionMode,
@@ -162,7 +172,7 @@ class SessionRunnerPool {
         candidates.push(path.join(PROJECT_ROOT, rel));
         return candidates.find((p) => fs.existsSync(p)) || null;
       };
-      return ["verify-edit.js"].map(resolve).filter(Boolean);
+      return ["verify-edit.js", "compaction-memory.js"].map(resolve).filter(Boolean);
     } catch {
       return [];
     }

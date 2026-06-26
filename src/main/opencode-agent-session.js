@@ -302,6 +302,10 @@ class OpencodeAgentSession extends EventEmitter {
     (async () => {
       try {
         const server = await this._ensureStarted();
+        // Refresh the cross-session memory the compaction plugin injects, keyed by
+        // the engine session id (now that the server is started). Snapshotting at
+        // turn start means a mid-turn compaction sees the latest durable facts.
+        this._refreshCompactionMemory(server);
         // Skill guidance rides every user turn as hidden engine context. This
         // keeps resumed/migrated sessions and skill changes aligned with Lily's
         // current rules instead of relying on stale OpenCode history.
@@ -365,6 +369,24 @@ class OpencodeAgentSession extends EventEmitter {
 
   respondHook() { return false; }
   reloadSkills() { return false; }
+
+  // Write Lily's curated navigation memory to the file the compaction plugin reads
+  // (resources/opencode-plugins/compaction-memory.js), keyed by the engine session
+  // id. Fail-safe: any error just means the plugin finds nothing and the engine
+  // compacts as usual — never breaks a turn.
+  _refreshCompactionMemory(server) {
+    try {
+      const engineSessionId = server?.sessionID || this._server?.sessionID || "";
+      if (!engineSessionId) return;
+      const { userDataPath } = require("./config");
+      const { COMPACTION_MEMORY_DIRNAME, writeCompactionMemoryFile } = require("./compaction-memory-export");
+      const summary = require("./session-memory").readSessionSummary(this.sessionId);
+      if (!summary) return;
+      writeCompactionMemoryFile(userDataPath(COMPACTION_MEMORY_DIRNAME), engineSessionId, summary);
+    } catch (err) {
+      log.warn("compaction memory refresh failed: %s", err?.message || String(err));
+    }
+  }
 
   async compactContext(body = {}) {
     if (this.isBusy() || !this._server?.summarize) return false;
