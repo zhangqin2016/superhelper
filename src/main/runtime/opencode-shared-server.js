@@ -131,11 +131,21 @@ class OpencodeSharedServer extends EventEmitter {
           return;
         }
       }
-      const child = spawn(this.serverCommand, ["serve", "--hostname", this.host, "--port", "0"], {
-        cwd: this.cwd,
-        env: serveEnv,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      // --print-logs --log-level ERROR routes OpenCode's own error logs (incl.
+      // the "failed ref=err_… error=… cause=…" line the HTTP error middleware
+      // emits for 500s like the session.summarize failure) to STDERR at
+      // error-level only (low noise). Combined with the un-truncated stderr
+      // capture below, the real upstream cause lands in Lily's log instead of
+      // being swallowed into an opaque "Unexpected server error" ref.
+      const child = spawn(
+        this.serverCommand,
+        ["serve", "--hostname", this.host, "--port", "0", "--print-logs", "--log-level", "ERROR"],
+        {
+          cwd: this.cwd,
+          env: serveEnv,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
       this.process = child;
       let settled = false;
       const settle = (fn) => {
@@ -171,7 +181,13 @@ class OpencodeSharedServer extends EventEmitter {
         });
       };
       child.stdout.on("data", onStdout);
-      child.stderr.on("data", (c) => log.warn("serve stderr: %s", c.toString().trim().slice(0, 200)));
+      child.stderr.on("data", (c) => {
+        // Do NOT truncate: the serve only prints ERROR-level logs here (see the
+        // --log-level ERROR flag), so volume is low and the full text carries the
+        // real cause of failures like session.summarize 500s.
+        const text = c.toString().trim();
+        if (text) log.warn("serve stderr: %s", text.slice(0, 4000));
+      });
       child.on("exit", (code) => {
         const wasReady = Boolean(this._baseClient);
         this._baseClient = null;
