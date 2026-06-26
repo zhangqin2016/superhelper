@@ -134,10 +134,19 @@ function webSystemMcpEntry(draftDir) {
   ) {
     return null;
   }
+  // Pass the connector-bridge env (optional) so the child can ask the MAIN process
+  // to auto re-login a stale session (#1b). Absent => the web system still works,
+  // it just can't self-heal an expired session.
+  let bridgeEnv = {};
+  try {
+    bridgeEnv = require("./connector-bridge").getConnectorBridgeEnvSync() || {};
+  } catch {
+    bridgeEnv = {};
+  }
   return {
     command: process.execPath,
     args: [path.join(__dirname, "mcp", "web-system-mcp-stdio.js"), "--system", draftDir],
-    env: { ELECTRON_RUN_AS_NODE: "1" },
+    env: { ELECTRON_RUN_AS_NODE: "1", ...bridgeEnv },
   };
 }
 

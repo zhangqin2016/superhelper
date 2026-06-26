@@ -595,6 +595,23 @@
                 <h4 class="settings-subsection-title" data-i18n="settings.connectors.accounts">已授权账号</h4>
                 <div id="connectorAccountsList" class="connector-accounts-list"></div>
               </div>
+              <div class="settings-field settings-field--divider">
+                <h4 class="settings-subsection-title" data-i18n="settings.connectors.webCredTitle">网站登录凭据</h4>
+                <p class="settings-section-desc" data-i18n="settings.connectors.webCredDesc">为已学习的网页系统保存登录账密。密码只加密保存在本机主进程，绝不下发给助手或脚本；会话过期且无刷新接口时，平台会用它自动重新登录。</p>
+                <label class="settings-field-label" for="webCredDomain" data-i18n="settings.connectors.webCredDomain">站点域名</label>
+                <input id="webCredDomain" class="settings-text-input" type="text" maxlength="160" spellcheck="false" autocomplete="off" data-i18n-placeholder="settings.connectors.webCredDomainPlaceholder" placeholder="例如 erp.example.com" />
+                <label class="settings-field-label" for="webCredLoginUrl" data-i18n="settings.connectors.webCredLoginUrl">登录地址</label>
+                <input id="webCredLoginUrl" class="settings-text-input" type="text" maxlength="512" spellcheck="false" autocomplete="off" data-i18n-placeholder="settings.connectors.webCredLoginUrlPlaceholder" placeholder="https://erp.example.com/login" />
+                <label class="settings-field-label" for="webCredUsername" data-i18n="settings.connectors.webCredUsername">用户名</label>
+                <input id="webCredUsername" class="settings-text-input" type="text" maxlength="256" autocomplete="off" />
+                <label class="settings-field-label" for="webCredPassword" data-i18n="settings.connectors.webCredPassword">密码</label>
+                <input id="webCredPassword" class="settings-text-input" type="password" maxlength="512" autocomplete="off" data-i18n-placeholder="settings.connectors.webCredPasswordPlaceholder" placeholder="只加密保存在本机，不展示给助手" />
+                <p id="webCredStatus" class="settings-form-status" hidden></p>
+                <div class="settings-actions">
+                  <button id="webCredSaveBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.connectors.webCredSave">保存凭据</button>
+                </div>
+                <div id="webCredentialsList" class="connector-accounts-list"></div>
+              </div>
             </section>
             <section id="settingsPageSkills" class="settings-page" data-settings-page="skills" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.skills">技能</h3>

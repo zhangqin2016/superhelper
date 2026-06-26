@@ -3,6 +3,7 @@
 const { ipcMain } = require("electron");
 const { createConnectorStore } = require("./connector-store");
 const { createMailAccountStore } = require("./mail-accounts");
+const { WebCredentialStore } = require("./web-credential-store");
 const {
   testImapConnection,
   searchImapMessages,
@@ -16,6 +17,28 @@ const { autodiscover } = require("./mail-autoconfig");
 function registerConnectorHandlers() {
   const connectorStore = createConnectorStore();
   const mailStore = createMailAccountStore();
+  const webCredentialStore = new WebCredentialStore();
+
+  // Website login vault (#1b) — the renderer only ever sees the public view
+  // (secretSet boolean, never the password). The plaintext is decrypted only in
+  // the main process (connector bridge) for an auto re-login.
+  ipcMain.handle("web-credentials:list", () => ({
+    ok: true,
+    credentials: webCredentialStore.listCredentialsPublic(),
+  }));
+
+  ipcMain.handle("web-credentials:save", (_event, payload) => {
+    try {
+      return { ok: true, credential: webCredentialStore.saveCredential(payload || {}) };
+    } catch (err) {
+      return { ok: false, error: "INVALID_CREDENTIAL", message: err?.message || String(err) };
+    }
+  });
+
+  ipcMain.handle("web-credentials:remove", (_event, domainOrId) => ({
+    ok: webCredentialStore.deleteCredential(String(domainOrId || "")),
+    credentials: webCredentialStore.listCredentialsPublic(),
+  }));
 
   ipcMain.handle("connectors:list-playbooks", () => ({
     ok: true,

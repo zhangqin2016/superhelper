@@ -84,6 +84,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   searchMailAccount: (payload) => ipcRenderer.invoke("mail-accounts:search", payload),
   readMailAccountMessage: (payload) => ipcRenderer.invoke("mail-accounts:read", payload),
   sendMailAccount: (payload) => ipcRenderer.invoke("mail-accounts:send", payload),
+  listWebCredentials: () => ipcRenderer.invoke("web-credentials:list"),
+  saveWebCredential: (payload) => ipcRenderer.invoke("web-credentials:save", payload),
+  removeWebCredential: (domainOrId) => ipcRenderer.invoke("web-credentials:remove", domainOrId),
 
   listSkills: () => ipcRenderer.invoke("skills:list"),
   getSessionSkills: (sessionId) => ipcRenderer.invoke("session:get-skills", sessionId),

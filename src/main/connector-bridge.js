@@ -2,8 +2,11 @@
 
 const crypto = require("node:crypto");
 const http = require("node:http");
+const fs = require("node:fs");
 const { createMailAccountStore } = require("./mail-accounts");
 const { runMailAction } = require("./mail-actions");
+const { WebCredentialStore } = require("./web-credential-store");
+const { reloginViaApi, mergeCookiesIntoStorageState } = require("./web-system-relogin");
 
 let bridge = null;
 
@@ -11,7 +14,8 @@ async function ensureConnectorBridgeStarted(options = {}) {
   if (bridge?.server?.listening) return bridge.publicState;
   const token = crypto.randomBytes(32).toString("base64url");
   const mailStore = options.mailStore || createMailAccountStore();
-  const server = http.createServer((req, res) => handleRequest(req, res, { token, mailStore }));
+  const webCredentialStore = options.webCredentialStore || new WebCredentialStore();
+  const server = http.createServer((req, res) => handleRequest(req, res, { token, mailStore, webCredentialStore }));
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -68,10 +72,48 @@ async function handleRequest(req, res, deps) {
     if (url.pathname === "/v1/mail/test") {
       return sendJson(res, 200, await runMailAction(deps.mailStore, "test", payload));
     }
+    if (url.pathname === "/v1/web-system/relogin") {
+      return sendJson(res, 200, await handleWebSystemRelogin(payload, deps));
+    }
     return sendJson(res, 404, { ok: false, error: "NOT_FOUND" });
   } catch (err) {
     return sendJson(res, 500, { ok: false, error: "BRIDGE_ERROR", message: err?.message || String(err) });
   }
+}
+
+// Auto re-login for a stale web-system session (#1b). Runs in the MAIN process —
+// the only place the vault password can be decrypted — so the child MCP/executor
+// never sees it. Looks up the credential for the failed request URL, logs in, and
+// merges the fresh session cookies into the storageState FILE the executor reads,
+// so the caller can re-run. Returns only {ok, cookiesUpdated} — never the password.
+// FAIL-SAFE: no credential / failed login => {ok:false} and the caller falls back
+// to relearn (today's behavior). deps.fs / deps.reloginDeps are injectable for tests.
+async function handleWebSystemRelogin(payload, deps) {
+  const store = deps.webCredentialStore;
+  const fsImpl = deps.fs || fs;
+  const requestUrl = String(payload?.url || "");
+  const sessionStatePath = String(payload?.sessionStatePath || "");
+  if (!store) return { ok: false, code: "NO_STORE" };
+  const cred = store.findCredentialForUrl(requestUrl);
+  if (!cred || !cred.secretSet) return { ok: false, code: "NO_CREDENTIAL" };
+  const full = store.getCredentialWithSecret(cred.domain);
+  if (!full || !full.password) return { ok: false, code: "NO_SECRET" };
+  const result = await reloginViaApi(full, { url: full.loginUrl, ...(payload.loginSpec || {}) }, deps.reloginDeps || {});
+  if (!result.ok) return { ok: false, code: "RELOGIN_FAILED", status: result.status };
+  let cookiesUpdated = 0;
+  if (sessionStatePath && fsImpl.existsSync(sessionStatePath)) {
+    let storageState = null;
+    try {
+      storageState = JSON.parse(fsImpl.readFileSync(sessionStatePath, "utf8"));
+    } catch {
+      storageState = null;
+    }
+    if (storageState && typeof storageState === "object") {
+      cookiesUpdated = mergeCookiesIntoStorageState(storageState, result.cookies);
+      fsImpl.writeFileSync(sessionStatePath, JSON.stringify(storageState));
+    }
+  }
+  return { ok: true, cookiesUpdated };
 }
 
 function readJsonBody(req) {
@@ -105,4 +147,5 @@ module.exports = {
   ensureConnectorBridgeStarted,
   getConnectorBridgeEnvSync,
   stopConnectorBridge,
+  handleWebSystemRelogin,
 };

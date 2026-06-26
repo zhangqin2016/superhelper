@@ -286,6 +286,64 @@ function buildPayload() {
   return payload;
 }
 
+function setWebCredStatus(text, kind = "") {
+  const el = $("webCredStatus");
+  if (!el) return;
+  el.textContent = text || "";
+  el.hidden = !text;
+  el.className = `settings-form-status${kind ? ` settings-form-status--${kind}` : ""}`;
+}
+
+function renderWebCredential(cred) {
+  const row = document.createElement("div");
+  row.className = "connector-account-row";
+  const meta = document.createElement("div");
+  meta.className = "connector-account-meta";
+  const name = document.createElement("div");
+  name.className = "connector-account-name";
+  name.textContent = cred.domain;
+  const details = document.createElement("div");
+  details.className = "connector-account-details";
+  const status = cred.secretSet ? t("settings.connectors.webCredSecretSet") : t("settings.connectors.webCredNoSecret");
+  details.textContent = cred.username ? `${cred.username} · ${status}` : status;
+  meta.append(name, details);
+
+  const actions = document.createElement("div");
+  actions.className = "connector-account-actions";
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "settings-action-btn settings-action-btn--danger";
+  remove.textContent = t("settings.connectors.remove");
+  remove.addEventListener("click", async () => {
+    const result = await window.assistantClient.removeWebCredential(cred.domain);
+    if (!result?.ok) {
+      showToast(t("settings.connectors.removeFailed"), "error");
+      return;
+    }
+    showToast(t("settings.connectors.removed"), "success");
+    await refreshWebCredentials();
+  });
+  actions.appendChild(remove);
+  row.append(meta, actions);
+  return row;
+}
+
+export async function refreshWebCredentials() {
+  const list = $("webCredentialsList");
+  if (!list) return;
+  const data = await window.assistantClient.listWebCredentials();
+  list.replaceChildren();
+  const creds = data?.credentials || [];
+  if (!creds.length) {
+    const empty = document.createElement("p");
+    empty.className = "connector-account-empty";
+    empty.textContent = t("settings.connectors.webCredEmpty");
+    list.appendChild(empty);
+    return;
+  }
+  for (const cred of creds) list.appendChild(renderWebCredential(cred));
+}
+
 export async function initConnectorSettings() {
   updateProviderFields();
   await refreshConnectorSettings();
@@ -307,5 +365,28 @@ export async function initConnectorSettings() {
     setStatus(t("settings.connectors.saved"), "success");
     showToast(t("settings.connectors.saved"), "success");
     await refreshConnectorSettings();
+  });
+
+  await refreshWebCredentials();
+  $("webCredSaveBtn")?.addEventListener("click", async () => {
+    setWebCredStatus("");
+    const button = $("webCredSaveBtn");
+    if (button) button.disabled = true;
+    const result = await window.assistantClient.saveWebCredential({
+      domain: value("webCredDomain"),
+      loginUrl: value("webCredLoginUrl"),
+      username: value("webCredUsername"),
+      password: value("webCredPassword"),
+    });
+    if (button) button.disabled = false;
+    if (!result?.ok) {
+      setWebCredStatus(result?.message || t("settings.connectors.webCredSaveFailed"), "error");
+      showToast(t("settings.connectors.webCredSaveFailed"), "error");
+      return;
+    }
+    setWebCredStatus(t("settings.connectors.webCredSaved"), "success");
+    showToast(t("settings.connectors.webCredSaved"), "success");
+    setVal("webCredPassword", ""); // never keep the typed password in the field
+    await refreshWebCredentials();
   });
 }

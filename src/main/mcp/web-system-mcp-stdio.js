@@ -96,6 +96,25 @@ function runViaExecutor(draftDir, action, plan, { storageState, authRecipe, conf
   });
 }
 
+// Ask the MAIN process (connector bridge) to auto re-login a stale session using a
+// stored credential. The password stays in the main process; we only get back a
+// refreshed storageState file. Returns { ok } — fail-safe, never throws.
+async function bridgeRelogin(requestUrl, sessionStatePath) {
+  const base = process.env.LILY_CONNECTOR_BRIDGE_URL || "";
+  const token = process.env.LILY_CONNECTOR_BRIDGE_TOKEN || "";
+  if (!base) return { ok: false };
+  try {
+    const res = await fetch(`${base}/v1/web-system/relogin`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ url: requestUrl, sessionStatePath }),
+    });
+    return await res.json();
+  } catch {
+    return { ok: false };
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const draftDir = path.resolve(args.system);
@@ -130,7 +149,17 @@ async function main() {
     }
     const plan = buildApiPlan(capability, contract, params);
     const confirmed = capability.risk && capability.risk !== "read";
-    return runViaExecutor(draftDir, plan.action, plan, { storageState: sessionPath, authRecipe: authRecipePath, confirmed });
+    const runOpts = { storageState: sessionPath, authRecipe: authRecipePath, confirmed };
+    let result = await runViaExecutor(draftDir, plan.action, plan, runOpts);
+    // Self-heal an expired session ONCE: if the run went stale (the executor's own
+    // refresh-endpoint retry didn't recover it) ask the main process to re-login
+    // with a stored credential, then re-run. The password never reaches this child.
+    if (result && result.ok === false && result.stale) {
+      const failedUrl = result.failedOperation?.target || "";
+      const relogin = await bridgeRelogin(failedUrl, sessionPath);
+      if (relogin?.ok) result = await runViaExecutor(draftDir, plan.action, plan, runOpts);
+    }
+    return result;
   }
 
   const server = createWebSystemMcpServer({ systemId, systemName, capabilities: capabilityMap.capabilities, run });
