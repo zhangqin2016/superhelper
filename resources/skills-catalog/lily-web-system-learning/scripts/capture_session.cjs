@@ -240,10 +240,40 @@ function emit(payload) {
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
 }
 
+// If the user stored a login for this site, the MAIN process (connector bridge)
+// can log in on our behalf and write the session file — so the user does NOT have
+// to log in by hand. The password stays in the main process; this script only
+// sends the URL + session path and gets back whether a session was written.
+// Returns false (→ fall back to the headful manual flow) when there's no bridge,
+// no stored credential, or the login needs MFA/SSO that an API login can't do.
+async function tryBridgeLogin(args) {
+  const base = process.env.LILY_CONNECTOR_BRIDGE_URL || "";
+  const token = process.env.LILY_CONNECTOR_BRIDGE_TOKEN || "";
+  if (!base) return false;
+  try {
+    const res = await fetch(`${base}/v1/web-system/relogin`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ url: args.loginUrl || args.baseUrl, sessionStatePath: args.out }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return Boolean(data && data.ok && data.cookiesUpdated > 0);
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   if (args.dryRun) {
     emit({ ok: true, dryRun: true, systemId: args.systemId, sessionPath: args.out, loginUrl: args.loginUrl, allowedDomains: args.allowDomains });
+    return;
+  }
+
+  // Auto-login with a stored credential first; only open the manual browser if
+  // that isn't possible (no credential / MFA / SSO).
+  if (await tryBridgeLogin(args)) {
+    emit({ ok: true, mode: "credential", systemId: args.systemId, sessionPath: args.out, loginUrl: args.loginUrl, allowedDomains: args.allowDomains });
     return;
   }
 

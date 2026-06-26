@@ -18,7 +18,7 @@ The goal is not free-form clicking. The goal is a reviewable operating model:
 5. Generate a workspace skill draft that references the playbook.
 6. Let the user enable it before future use.
 
-Never store passwords in a skill, prompt, log, or generated file. The user should log in through an interactive browser/profile, SSO, or existing session. Treat credentials, cookies, tokens, screenshots, exports, and personal data as sensitive.
+Never store passwords in a skill, prompt, log, or generated file. The user may save a site login in the platform's encrypted credential vault (Settings → Connectors → Website logins); that password is held only by the Electron main process and is used there to log in on the user's behalf — it is never passed to this skill, the executor, or any log. Otherwise the user logs in through an interactive browser/profile, SSO, or existing session. Treat credentials, cookies, tokens, screenshots, exports, and personal data as sensitive.
 
 ## Learning Modes
 
@@ -33,10 +33,13 @@ Never store passwords in a skill, prompt, log, or generated file. The user shoul
 2. Require a domain allowlist. Never follow links outside it.
 3. Capture the login ONCE. If no saved session exists for this system, run
    `node scripts/capture_session.cjs --base-url <url> --system-id <id>
-   --allow-domain <host>` — it opens one real browser window for the user to log
-   in, then saves the session to a local, per-system file (printed as
-   `sessionPath`, stored 0600 under userData, never exported). Pass that
-   `sessionPath` as `--storage-state` to every later scan/discover/execute call.
+   --allow-domain <host>`. If the user has saved a credential for this site, the
+   script auto-logs-in via the main process and writes the session with NO manual
+   step (the result has `mode:"credential"`); otherwise it opens one real browser
+   window for the user to log in. Either way it saves the session to a local,
+   per-system file (printed as `sessionPath`, stored 0600 under userData, never
+   exported). Pass that `sessionPath` as `--storage-state` to every later
+   scan/discover/execute call.
    Re-run capture only when a call reports `stale`/`relearnRecommended` (401/403).
    Never ask the user to paste cookies, tokens, OAuth codes, CSRF values, or
    credential headers; if a token is dynamic, learn it from authenticated browser
@@ -61,6 +64,15 @@ Never store passwords in a skill, prompt, log, or generated file. The user shoul
    (authoritative published contracts are never overridden). Write-path APIs
    (POST/PUT/DELETE) are only captured when those flows actually run — exercise
    them only in a confirmed test environment.
+   For SPAs (Vue/React/Angular): ALWAYS pass `--storage-state <sessionPath>` so the
+   scan runs authenticated, and use `--interactive-readonly`. The scanner waits for
+   the app to render before snapshotting (so it no longer captures only an empty
+   shell) and follows nav/menus/tabs to depth (default `--max-pages 40`). If the
+   scan `warnings` include `AUTH_NOT_RESTORED`, the session expired or wasn't
+   applied (common for localStorage-token SPAs) — re-capture the login and rerun
+   before trusting the result. A scan that finds only the landing page on an SPA
+   almost always ran unauthenticated or before the app rendered; do not present it
+   as a complete learning.
 6. **Learn auth injection from the logged-in session.** After HAR capture, run
    `node scripts/learn_auth_recipe.cjs --storage-state <sessionPath> --har scan.har
    --base-url <url> --allow-domain <host>`. The output stores only sources and

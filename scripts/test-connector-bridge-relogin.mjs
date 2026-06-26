@@ -43,6 +43,20 @@ const badFetch = async () => ({ ok: false, status: 401, headers: { getSetCookie:
   assert.equal(ss.cookies.find((c) => c.name === "session").value, "fresh", "storageState file now has the fresh session cookie");
 }
 
+// 1b) LEARNING login: no session file exists yet -> the handler CREATES one (this
+//     is what lets capture skip the manual browser when a credential is stored).
+{
+  const freshPath = path.join(dir, "fresh-session.json");
+  const r = await handleWebSystemRelogin(
+    { url: "https://erp.example.com/api/orders", sessionStatePath: freshPath },
+    { webCredentialStore: store, reloginDeps: { fetch: okFetch } },
+  );
+  assert.equal(r.ok, true, "fresh learning login succeeds");
+  assert.ok(fs.existsSync(freshPath), "a new session file is created when none existed");
+  const ss = JSON.parse(fs.readFileSync(freshPath, "utf8"));
+  assert.equal(ss.cookies.find((c) => c.name === "session").value, "fresh", "the created session file carries the login cookie");
+}
+
 // 2) no credential for the domain -> fail safe (caller falls back to relearn).
 {
   const r = await handleWebSystemRelogin(

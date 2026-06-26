@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const http = require("node:http");
 const fs = require("node:fs");
+const path = require("node:path");
 const { createMailAccountStore } = require("./mail-accounts");
 const { runMailAction } = require("./mail-actions");
 const { WebCredentialStore } = require("./web-credential-store");
@@ -101,17 +102,25 @@ async function handleWebSystemRelogin(payload, deps) {
   const result = await reloginViaApi(full, { url: full.loginUrl, ...(payload.loginSpec || {}) }, deps.reloginDeps || {});
   if (!result.ok) return { ok: false, code: "RELOGIN_FAILED", status: result.status };
   let cookiesUpdated = 0;
-  if (sessionStatePath && fsImpl.existsSync(sessionStatePath)) {
-    let storageState = null;
+  if (sessionStatePath) {
+    // Re-login REFRESHES an existing session; learning login CREATES a fresh one
+    // (file may not exist yet) — same endpoint serves both.
+    let storageState = { cookies: [], origins: [] };
     try {
-      storageState = JSON.parse(fsImpl.readFileSync(sessionStatePath, "utf8"));
+      if (fsImpl.existsSync(sessionStatePath)) {
+        const parsed = JSON.parse(fsImpl.readFileSync(sessionStatePath, "utf8"));
+        if (parsed && typeof parsed === "object") storageState = parsed;
+      }
     } catch {
-      storageState = null;
+      storageState = { cookies: [], origins: [] };
     }
-    if (storageState && typeof storageState === "object") {
-      cookiesUpdated = mergeCookiesIntoStorageState(storageState, result.cookies);
-      fsImpl.writeFileSync(sessionStatePath, JSON.stringify(storageState));
+    cookiesUpdated = mergeCookiesIntoStorageState(storageState, result.cookies);
+    try {
+      fsImpl.mkdirSync(path.dirname(sessionStatePath), { recursive: true });
+    } catch {
+      /* dir already exists / non-fatal */
     }
+    fsImpl.writeFileSync(sessionStatePath, JSON.stringify(storageState));
   }
   return { ok: true, cookiesUpdated };
 }

@@ -847,6 +847,33 @@ def build_scan_summary(config: ScanConfig, pages: list[dict[str, Any]], warnings
     }
 
 
+def wait_for_spa_ready(page: Any, timeout_ms: int) -> None:
+    """Wait for a single-page app to actually render before snapshotting.
+
+    SPAs (Vue/React/Angular) mount AFTER `domcontentloaded` — they then fetch data
+    and render the nav/content. A fixed short wait snapshots an empty shell (the
+    "zero elements / only the homepage" shallow scan). We poll in-page until real
+    interactive nav or meaningful text has appeared, bounded by the timeout.
+    Best-effort: on timeout we fall through with whatever has rendered."""
+    budget = min(max(int(timeout_ms or 0), 1000), 12000)
+    try:
+        page.wait_for_function(
+            """() => {
+              const sel = 'nav a, nav button, aside a, aside button, [role=\"navigation\"] a, [role=\"navigation\"] button, [role=\"menuitem\"], [role=\"tab\"], main a, main button, [role=\"main\"] a, [role=\"main\"] button';
+              if (document.querySelectorAll(sel).length >= 3) return true;
+              const text = ((document.body && document.body.innerText) || '').trim();
+              return text.length > 200;
+            }""",
+            timeout=budget,
+        )
+    except Exception:
+        pass  # best-effort: snapshot whatever rendered within the budget
+    try:
+        page.wait_for_timeout(300)  # small settle for the first data paint
+    except Exception:
+        pass
+
+
 def explore_readonly_interactions(
     page: Any,
     source_page: dict[str, Any],
@@ -858,7 +885,7 @@ def explore_readonly_interactions(
     discovered: list[dict[str, Any]] = []
     source_url = source_page.get("url") or ""
     source_fingerprint = source_page.get("fingerprint") or ""
-    candidates = source_page.get("interactionCandidates", [])[:12]
+    candidates = source_page.get("interactionCandidates", [])[:24]
     for candidate in candidates:
         if len(discovered) >= max_new_pages:
             break
@@ -870,6 +897,7 @@ def explore_readonly_interactions(
             if network_recorder:
                 network_recorder.clear()
             page.goto(source_url, wait_until="domcontentloaded", timeout=timeout_ms)
+            wait_for_spa_ready(page, timeout_ms)
             refreshed_page = extract_page(page, normalize_url(page.url), config.allowed_domains, config)
             refreshed_page.pop("_nextUrls", None)
             refreshed_candidate = next(
@@ -886,7 +914,7 @@ def explore_readonly_interactions(
             if network_recorder:
                 network_recorder.clear()
             page.locator(f'[data-lily-scan-id="{scan_id}"]').first.click(timeout=min(timeout_ms, 5000), no_wait_after=True)
-            page.wait_for_timeout(500)
+            wait_for_spa_ready(page, timeout_ms)
             current_url = normalize_url(page.url)
             if not is_allowed_url(current_url, config.allowed_domains):
                 continue
@@ -962,7 +990,7 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
                 try:
                     network_recorder.clear()
                     page.goto(url, wait_until="domcontentloaded", timeout=config.timeout_ms)
-                    page.wait_for_timeout(300)
+                    wait_for_spa_ready(page, config.timeout_ms)
                     page_record = extract_page(page, normalize_url(page.url), config.allowed_domains, config)
                     page_record["networkContracts"] = network_recorder.snapshot()
                     page_record["metrics"]["networkContracts"] = len(page_record["networkContracts"])
@@ -998,6 +1026,20 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
             4,
         )
 
+    # Fail LOUD when the scan hit a login wall despite being given a session: a
+    # password field while authenticated almost always means the session expired or
+    # was not applied, which otherwise just yields a silently shallow scan. The fix
+    # is to (re-)capture the login. (localStorage-token SPAs are the common case.)
+    if config.storage_state and any(
+        str(field.get("type", "")).lower() == "password"
+        for page_record in pages
+        for field in (page_record.get("inputs") or [])
+    ):
+        warnings.append({
+            "code": "AUTH_NOT_RESTORED",
+            "detail": "Saw a login/password field while scanning with a saved session — the session is likely expired or not applied (common for localStorage-token SPAs). Re-capture the login with capture_session.cjs, then retry; do not trust this scan's depth.",
+        })
+
     summary = build_scan_summary(config, pages, warnings)
     return {
         "ok": True,
@@ -1025,7 +1067,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Read-only scan of a web system for Lily learned skill drafting.")
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--allowed-domain", action="append", default=[])
-    parser.add_argument("--max-pages", type=int, default=20)
+    parser.add_argument("--max-pages", type=int, default=40)
     parser.add_argument("--timeout-ms", type=int, default=15000)
     parser.add_argument("--storage-state", help="Optional Playwright storage_state JSON file. Never generated by this script.")
     parser.add_argument("--headful", action="store_true")
