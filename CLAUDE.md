@@ -60,3 +60,16 @@ If you genuinely think a convention is harmful, surface it. Don't fork silently.
 "Completed" is wrong if anything was skipped silently.
 "Tests pass" is wrong if any were skipped.
 Default to surfacing uncertainty, not hiding it.
+
+## Rule 13 — Never let the product get dumber (HARD GATE)
+No change ships if it can make the product worse than today.
+Every feature's failure mode must degrade to today's behavior — fail open / fall
+back to the strong default — never to a worse state. When it breaks, the worst case
+must be "no improvement," never "now dumber."
+Before merging any change that affects how the agent answers, routes, executes,
+learns, or remembers, it MUST pass the gate in `CAPABILITY-GATE.md`: ship a
+failure-mode test proving it degrades to baseline, and a closed-loop guard that
+fails if the capability regresses. No silent model/tool/context downgrade; bound
+non-progress (not effort); never silently kill or improvise on a structured-path
+failure. This gate overrides speed — see `CAPABILITY-GATE.md` for the full
+checklist and the 变笨-vector → guard registry.
