@@ -51,7 +51,13 @@ function registerAssistantHandlers(ctx) {
         ? payload.displayFiles
         : [];
 
+    let userEchoed = false;
     if (ctx.scheduledTaskManager && looksLikeScheduledTaskIntent(text, files)) {
+      // Show the user's message NOW — parseDraftSmart is a model call (seconds) and
+      // must not delay the message appearing. Reuse the echoed turnId so the card
+      // belongs to the same turn; downstream uses recordUser:false to avoid a dup.
+      const echoTurnId = turnOrchestrator.echoUserMessage(session.id, text, files, displayFiles);
+      userEchoed = true;
       const draftResult = await ctx.scheduledTaskManager.parseDraftSmart({
         text,
         sessionId: session.id,
@@ -69,12 +75,17 @@ function registerAssistantHandlers(ctx) {
           displayFiles,
           assistant: "I understand this as an automated task. Please confirm to create it.",
           scheduledDraft,
+          recordUser: false,
+          turnId: echoTurnId || undefined,
         });
         return {
           ...attachRouting(result, session),
           scheduledDraft: true,
         };
       }
+      // Recognized as a scheduled task but the schedule couldn't be parsed — the
+      // user message is already shown; fall through to the normal engine WITHOUT
+      // re-committing it (recordUser:false below).
     }
 
     const webLearningIntent = looksLikeWebSystemLearningIntent(text, files);
@@ -93,7 +104,7 @@ function registerAssistantHandlers(ctx) {
     }
 
     const result = await turnOrchestrator.sendUserMessage(session.id, text, files, {
-      recordUser: true,
+      recordUser: !userEchoed,
       spawnEngine: true,
       displayFiles,
       engineText,

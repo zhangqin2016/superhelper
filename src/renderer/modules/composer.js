@@ -297,8 +297,12 @@ export async function sendPrompt(opts = {}) {
     return;
   }
 
-  if (result.scheduledDraft && Array.isArray(result.conversation)) {
-    syncCommittedMessages(sessionId, result.conversation);
+  if (result.scheduledDraft) {
+    // Force a clean rebuild so the draft card lands in correct order (user message
+    // then card). A near-instant local-assistant turn can commit messages out of
+    // order, and an incremental render won't reposition the already-placed card —
+    // only a full re-render (which orders user→assistant per turn) fixes it.
+    if (Array.isArray(result.conversation)) syncCommittedMessages(sessionId, result.conversation);
     const { renderConversation, syncComposerForActiveSession } = await import("./message.js");
     renderConversation(sessionId, { force: true, forceScrollBottom: true });
     syncComposerForActiveSession();

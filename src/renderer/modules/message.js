@@ -290,20 +290,61 @@ const COMMITTED_RENDER_CHUNK = 5;
 const COMMITTED_INITIAL_WINDOW = 80;
 const COMMITTED_WINDOW_THRESHOLD = 160;
 
+// Within a turn, the user message must come before the assistant message. Event
+// timing can commit them out of order (e.g. a near-instant local-assistant turn
+// where user.committed is dropped as "terminal" and the user message lands after
+// the assistant card), which renders the card ABOVE the user. Stable-reorder by
+// turn (first appearance) then role so display order is always user → assistant
+// without disturbing cross-turn order or messages that have no turnId.
+function orderCommittedMessages(messages) {
+  const turnFirstSeen = new Map();
+  messages.forEach((m, i) => {
+    const key = m.turnId || `__i${i}`;
+    if (!turnFirstSeen.has(key)) turnFirstSeen.set(key, i);
+  });
+  const roleRank = (role) => (role === "user" ? 0 : role === "assistant" ? 1 : 2);
+  return messages
+    .map((m, i) => ({ m, i, key: m.turnId || `__i${i}` }))
+    .sort((a, b) => {
+      const ta = turnFirstSeen.get(a.key);
+      const tb = turnFirstSeen.get(b.key);
+      if (ta !== tb) return ta - tb;
+      const ra = roleRank(a.m.role);
+      const rb = roleRank(b.m.role);
+      if (ra !== rb) return ra - rb;
+      return a.i - b.i;
+    })
+    .map((entry) => entry.m);
+}
+
 function committedMessagesForRender(messages = [], opts = {}) {
   if (!Array.isArray(messages)) return [];
-  if (opts.preserveScroll) return messages;
-  if (messages.length <= COMMITTED_WINDOW_THRESHOLD) return messages;
-  return messages.slice(-COMMITTED_INITIAL_WINDOW);
+  const ordered = orderCommittedMessages(messages);
+  if (opts.preserveScroll) return ordered;
+  if (ordered.length <= COMMITTED_WINDOW_THRESHOLD) return ordered;
+  return ordered.slice(-COMMITTED_INITIAL_WINDOW);
 }
 
 function appendCommittedMessage(sessionId, runtime, message) {
   const anchor = committedInsertAnchor(sessionId, runtime);
   if (message.role === "user") appendUserMessage(sessionId, message, anchor);
   else if (message.role === "assistant") {
-    if (message.turnId && runtime.liveTurn?.turnId === message.turnId) return;
+    // A scheduled-task draft is shown as its committed CARD (appendFinalAssistantArticle),
+    // and its live/streaming article (plain assistant text, no card) is suppressed in
+    // renderRuntimeSession. So render the card here in normal committed order instead
+    // of skipping it as a still-live turn — otherwise the user sees only the raw text.
+    const isScheduledDraft = Boolean(message.meta?.scheduledDraft);
+    if (!isScheduledDraft && message.turnId && runtime.liveTurn?.turnId === message.turnId) return;
     appendFinalAssistantArticle(sessionId, message, anchor);
   }
+}
+
+// A turn whose committed assistant message is a scheduled-task draft: it is shown as
+// the card, so its live text article must not also render.
+function committedScheduledDraftTurn(runtime, turnId) {
+  return Boolean(turnId) && (runtime.committedMessages || []).some(
+    (m) => m.turnId === turnId && m.role === "assistant" && m.meta?.scheduledDraft,
+  );
 }
 
 function committedInsertAnchor(sessionId, runtime) {
@@ -665,7 +706,18 @@ function renderRuntimeSession(sessionId, opts = {}) {
     !isUserScrollDetached(panel) &&
     isNearBottom(panel);
   renderCommittedMessages(sessionId);
-  if (runtime.liveTurn) renderLiveTurn(sessionId, runtime.liveTurn, runtime.queue);
+  if (runtime.liveTurn) {
+    if (committedScheduledDraftTurn(runtime, runtime.liveTurn.turnId)) {
+      // The committed card already represents this turn — drop the duplicate
+      // live text article instead of rendering it after the card.
+      const v = view(sessionId);
+      const stale = v.liveArticles.get(runtime.liveTurn.turnId);
+      if (stale?.isConnected) stale.remove();
+      v.liveArticles.delete(runtime.liveTurn.turnId);
+    } else {
+      renderLiveTurn(sessionId, runtime.liveTurn, runtime.queue);
+    }
+  }
   syncWorkbenchEmptyState(view(sessionId).listEl);
   syncComposerForActiveSession();
   updateSessionRunningIndicators();

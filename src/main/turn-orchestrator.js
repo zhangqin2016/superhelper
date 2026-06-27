@@ -549,6 +549,26 @@ class TurnOrchestrator {
     return this._startTurn(session, displayText, files, opts);
   }
 
+  // Show the user's message in the conversation IMMEDIATELY, before any slow work
+  // (e.g. the scheduled-task model parse, which takes seconds). Returns the turnId
+  // so the follow-up completeLocalAssistantTurn can reuse it with recordUser:false
+  // — same turn, no duplicate, and the user message is no longer blocked behind the
+  // parse. Because user.committed fires well before turn.completed, it is also never
+  // dropped as "terminal", so the user message reliably precedes the assistant card.
+  echoUserMessage(sessionId, text, files = [], displayFiles = null) {
+    const displayText = String(text || "").trim();
+    const fileMeta = displayFiles || fileMetadataFromPayload(files);
+    if (!displayText && !(fileMeta || []).length) return null;
+    const turnId = newTurnId();
+    try {
+      this.transcriptStore.commitUserMessage(sessionId, { text: displayText, files: fileMeta, turnId });
+    } catch (err) {
+      log.warn("echo user message commit failed: %s", err?.message || err);
+    }
+    this._emit(sessionId, "user.committed", { text: displayText, files: fileMeta && fileMeta.length ? fileMeta : null }, { turnId });
+    return turnId;
+  }
+
   async completeLocalAssistantTurn(sessionId, text, files = [], opts = {}) {
     const session = this.ctx.sessionManager.findById(sessionId);
     if (!session) return { ok: false, error: "NO_SESSION" };
@@ -567,6 +587,7 @@ class TurnOrchestrator {
           localAssistant: {
             assistant: opts.assistant,
             scheduledDraft: opts.scheduledDraft || null,
+            turnId: opts.turnId || null,
           },
         }),
       };
@@ -668,6 +689,7 @@ class TurnOrchestrator {
         displayFiles: item.displayFiles,
         assistant: item.options.localAssistant.assistant,
         scheduledDraft: item.options.localAssistant.scheduledDraft || null,
+        turnId: item.options.localAssistant.turnId || null,
       });
     }
     const runner = this.ctx.runnerPool.get(sessionId);
@@ -694,7 +716,9 @@ class TurnOrchestrator {
     const rawUserText = String(text || "").trim();
     const state = this._state(session.id);
     state.phase = "starting";
-    state.turnId = newTurnId();
+    // Reuse a pre-echoed turnId (see echoUserMessage) so the already-shown user
+    // message and this turn's assistant card belong to the SAME turn.
+    state.turnId = opts.turnId || newTurnId();
     state.admittedSeq = null;
     state.assistantText = "";
     state.thinkingText = "";
@@ -1396,6 +1420,11 @@ class TurnOrchestrator {
       record?.resultBlocks?.length,
     );
     if (!meaningful) record = null;
+    // The committed assistant message's backend id (msg_…). The renderer needs it
+    // so the scheduled-task "create" button can call back with a messageId the
+    // backend can find; without it the committed message has no id and the button
+    // silently no-ops.
+    let committedMessageId = "";
     if (record) {
       if (assistant) {
         this._emit(sessionId, "assistant.final", {
@@ -1404,13 +1433,17 @@ class TurnOrchestrator {
           ...(payload.scheduledDraft ? { scheduledDraft: payload.scheduledDraft } : {}),
         });
       }
-      try { this.turnArchive.commit(sessionId, record); } catch (err) { log.warn("turn archive commit failed: %s", err?.message || err); }
+      try {
+        const committed = this.turnArchive.commit(sessionId, record);
+        committedMessageId = committed?.id || "";
+      } catch (err) { log.warn("turn archive commit failed: %s", err?.message || err); }
     }
     state.terminalEmitted = true;
     this._emit(sessionId, type, {
       ...payload,
       assistant,
       record,
+      messageId: committedMessageId,
       toolsSummary: { count: state.tools.size },
     });
     if (scheduledTaskRunId) {

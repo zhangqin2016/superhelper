@@ -205,6 +205,7 @@ function mergeCommittedMessage(existing = {}, incoming = {}) {
   const base = preferIncoming ? { ...existing, ...incoming } : { ...incoming, ...existing };
   return {
     ...base,
+    id: incoming.id || existing.id,
     content: incoming.content || existing.content || "",
     files: incoming.files || existing.files,
     turnId: incoming.turnId || existing.turnId,
@@ -661,6 +662,7 @@ export function applyRuntimeEvent(event, opts = {}) {
         runtime._turnStartedAt = 0;
         upsertCommittedMessage(runtime, {
           role: "assistant",
+          id: event.payload.messageId || undefined,
           content: event.payload.assistant || live.assistantText || "",
           record: event.payload.record || null,
           failed: event.type === "turn.failed",

@@ -261,9 +261,19 @@ function normalizeScheduleSpec(schedule) {
     return { type: "monthly", dayOfMonth, hour, minute };
   }
   if (schedule.type === "interval") {
-    const every = finiteInt(schedule.every, 1, 10000);
-    const unit = ["minute", "hour", "day"].includes(schedule.unit) ? schedule.unit : null;
-    if (every == null || !unit) return null;
+    // Normalize plural units ("minutes" -> "minute") and fold sub-minute intervals
+    // up to a whole-minute floor: the scheduler ticks every TICK_MS (60s), so a
+    // "every 5 seconds" task can't run faster than 1 minute anyway. This keeps an
+    // otherwise-valid request runnable (and not abusive) instead of failing — which
+    // previously dropped the user into ad-hoc script improvisation.
+    let unit = String(schedule.unit || "").toLowerCase().replace(/s$/, "");
+    let every = finiteInt(schedule.every, 1, 10000);
+    if (unit === "second") {
+      const seconds = finiteInt(schedule.every, 1, 86400) ?? 60;
+      every = Math.max(1, Math.round(seconds / 60));
+      unit = "minute";
+    }
+    if (!["minute", "hour", "day"].includes(unit) || every == null) return null;
     return { type: "interval", every, unit };
   }
   if (schedule.type === "hourly") {
