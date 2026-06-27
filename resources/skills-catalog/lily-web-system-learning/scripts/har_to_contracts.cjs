@@ -134,8 +134,15 @@ function parseBody(raw, mimeType) {
   return undefined;
 }
 
-function methodRisk(method) {
-  return method === "GET" || method === "HEAD" ? "read" : "submit";
+// SPAs commonly fetch lists/details via POST with a filter body (e.g.
+// POST /api/tasks/my/query). Classify those query-style POSTs as read, not submit,
+// so they aren't gated behind confirmation and the action/operation risks stay
+// consistent (the executor rejects a read action that contains a submit-risk op).
+const QUERY_PATH_RE = /\/(query|queries|search|list|lists|filter|lookup|find|report|reports|stats|statistics|page|browse|export)(?:[/?]|$)/i;
+function methodRisk(method, endpoint = "") {
+  if (method === "GET" || method === "HEAD") return "read";
+  if ((method === "POST" || method === "PUT") && QUERY_PATH_RE.test(String(endpoint || ""))) return "read";
+  return "submit";
 }
 
 function stripQuery(url) {
@@ -228,7 +235,7 @@ function harToContracts(har, baseUrl, allowedDomains) {
       authoritative: false,
       endpoint: g.endpoint,
       method: g.method,
-      risk: methodRisk(g.method),
+      risk: methodRisk(g.method, g.endpoint),
       contentType: g.method === "GET" || g.method === "HEAD" ? "query" : "json",
       requestFields: requestSchema ? requestFieldsFromSchema(requestSchema) : [],
       requestSchema,

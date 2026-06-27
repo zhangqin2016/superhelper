@@ -110,11 +110,28 @@ function systemNameFrom(scan, args) {
   }
 }
 
+// SPAs routinely fetch lists/details via POST with a FILTER body (e.g.
+// POST /api/tasks/my/query {status:[...]}). Classifying those as "submit" buries a
+// read behind a confirmation gate and the model can't recognize it as a query, so
+// it improvises. Treat a POST/PUT as read when the endpoint looks like a query OR
+// the learner already tagged the contract read OR the response is a list.
+const QUERY_PATH_RE = /\/(query|queries|search|list|lists|filter|lookup|find|report|reports|stats|statistics|page|browse|export)(?:[/?]|$)/i;
+function isReadLikeContract(contract, method) {
+  if (method === "GET" || method === "HEAD") return true;
+  if (String(contract.risk || "").toLowerCase() === "read") return true;
+  if ((method === "POST" || method === "PUT") && QUERY_PATH_RE.test(String(contract.endpoint || ""))) return true;
+  const shape = contract.responseShape || {};
+  if (method === "POST" && (shape.type === "array" || shape?.shape?.type === "array")) return true;
+  return false;
+}
+
 function actionFromContract(contract, seen) {
   const method = String(contract.method || "GET").toUpperCase();
-  const read = method === "GET" || method === "HEAD";
+  const read = isReadLikeContract(contract, method);
   const label = compactText(contract.summary || contract.operationId || routeLabel(contract.endpoint), 80);
-  const id = safeActionId(read ? "query" : "submit", contract.operationId || `${method}-${routeLabel(contract.endpoint)}`, seen);
+  // Read-like actions get a clean `query-<resource>` id (no method/"submit" noise),
+  // so the planner can map "查询/查看…" intents and pass the learned filter params.
+  const id = safeActionId(read ? "query" : "submit", contract.operationId || (read ? routeLabel(contract.endpoint) : `${method}-${routeLabel(contract.endpoint)}`), seen);
   return {
     id,
     name: read ? `Query ${label}` : `Run ${method} ${label}`,
