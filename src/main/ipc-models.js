@@ -88,4 +88,28 @@ function registerSearchHandlers(ctx) {
   });
 }
 
-module.exports = { registerModelHandlers, registerPermissionHandlers, registerSearchHandlers };
+function registerMediaProviderHandlers(ctx) {
+  const settings = () => require("./media-provider-settings");
+  ipcMain.handle("media-providers:list", () => ({ ok: true, ...settings().listMediaProvidersPublic() }));
+
+  ipcMain.handle("media-providers:set-choice", (_event, payload) => {
+    return withRunnerChange(ctx, () => {
+      const r = settings().setModalityChoice(payload?.modality, payload?.source, payload?.provider);
+      return r.ok ? { ok: true, ...settings().listMediaProvidersPublic() } : r;
+    }, { liveEnv: false });
+  });
+
+  ipcMain.handle("media-providers:set-key", (_event, payload) => {
+    return withRunnerChange(ctx, () => {
+      const r = settings().setProviderKey(payload?.provider, payload?.values || {});
+      return r.ok ? { ok: true, ...settings().listMediaProvidersPublic() } : r;
+    }, { liveEnv: false });
+  });
+}
+
+module.exports = {
+  registerModelHandlers,
+  registerPermissionHandlers,
+  registerSearchHandlers,
+  registerMediaProviderHandlers,
+};

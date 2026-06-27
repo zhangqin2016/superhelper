@@ -14,9 +14,14 @@ import {
 const providerSchema = z.object({
   id: z.string().min(2).max(80).regex(/^[a-z0-9._-]+$/i),
   label: z.string().max(160).optional().default(""),
-  type: z.enum(["anthropic", "openai", "vision", "search"]).default("anthropic"),
+  type: z.enum(["anthropic", "openai", "vision", "search", "media"]).default("anthropic"),
   baseUrl: z.string().max(400).optional().default(""),
   apiKey: z.string().max(2000).optional(), // omitted/empty on update = keep existing
+  // Media providers needing a second secret (e.g. Kling SecretKey). Omitted/empty
+  // on update = keep existing. Stored encrypted, never returned to the browser.
+  secretKey: z.string().max(2000).optional(),
+  // Non-secret provider extras (e.g. MiniMax GroupId). Omitted = keep existing.
+  groupId: z.string().max(400).optional(),
   defaultModel: z.string().max(160).optional().default(""),
   models: z.array(z.string().max(160)).max(100).optional().default([]),
   headers: z.record(z.string().max(2000)).optional().default({}),
@@ -51,9 +56,11 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
         "default_model",
         "models",
         "headers",
+        "metadata",
         "enabled",
         "updated_at",
         "api_key_encrypted",
+        "secret_key_encrypted",
       ])
       .orderBy("id", "asc")
       .limit(300)
@@ -71,11 +78,13 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
       hasApiKey: Boolean(provider.apiKey),
       source: dbIds.has(String(provider.id)) ? "db" : "env",
     }));
-    // Never leak the key; expose only whether one is set.
+    // Never leak secrets; expose only whether each is set. metadata (e.g.
+    // groupId) is non-secret and returned as-is.
     return {
-      providers: rows.map(({ api_key_encrypted, ...row }) => ({
+      providers: rows.map(({ api_key_encrypted, secret_key_encrypted, ...row }) => ({
         ...row,
         hasApiKey: Boolean(api_key_encrypted),
+        hasSecretKey: Boolean(secret_key_encrypted),
       })),
       gateway,
     };
@@ -97,22 +106,35 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
     const input = providerSchema.parse(request.body);
     const existing = await db
       .selectFrom("model_gateway_providers")
-      .select("api_key_encrypted")
+      .select(["api_key_encrypted", "secret_key_encrypted", "metadata"])
       .where("id", "=", input.id)
       .executeTakeFirst();
     const apiKeyEncrypted =
       input.apiKey !== undefined && input.apiKey !== ""
         ? encryptSecret(input.apiKey)
         : existing?.api_key_encrypted || "";
+    const secretKeyEncrypted =
+      input.secretKey !== undefined && input.secretKey !== ""
+        ? encryptSecret(input.secretKey)
+        : existing?.secret_key_encrypted || "";
+    // Merge metadata so an update that omits groupId keeps the stored one.
+    const existingMetadata =
+      existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
+        ? existing.metadata
+        : {};
+    const metadata = { ...existingMetadata };
+    if (input.groupId !== undefined) metadata.groupId = input.groupId;
     const values = {
       id: input.id,
       label: input.label || input.id,
       type: input.type,
       base_url: input.baseUrl || "",
       api_key_encrypted: apiKeyEncrypted,
+      secret_key_encrypted: secretKeyEncrypted,
       default_model: input.defaultModel || "",
       models: JSON.stringify(input.models || []),
       headers: JSON.stringify(input.headers || {}),
+      metadata: JSON.stringify(metadata),
       enabled: input.enabled,
       updated_at: new Date(),
     };
@@ -125,9 +147,11 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
           type: values.type,
           base_url: values.base_url,
           api_key_encrypted: values.api_key_encrypted,
+          secret_key_encrypted: values.secret_key_encrypted,
           default_model: values.default_model,
           models: values.models,
           headers: values.headers,
+          metadata: values.metadata,
           enabled: values.enabled,
           updated_at: values.updated_at,
         }),
@@ -139,6 +163,7 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
       type: input.type,
       baseUrl: input.baseUrl || "",
       keyChanged: input.apiKey !== undefined && input.apiKey !== "",
+      secretChanged: input.secretKey !== undefined && input.secretKey !== "",
       enabled: input.enabled,
     });
     return reply.code(201).send({ ok: true, id: input.id });

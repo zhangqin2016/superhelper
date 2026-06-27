@@ -1,0 +1,1 @@
+export const ADMIN_UPLOAD_LIMIT_BYTES = 200 * 1024 * 1024;

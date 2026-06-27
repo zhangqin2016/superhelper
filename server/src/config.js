@@ -32,7 +32,19 @@ export const config = {
   modelGatewayClientToken: process.env.MODEL_GATEWAY_CLIENT_TOKEN || "",
   modelGatewayProviders: process.env.MODEL_GATEWAY_PROVIDERS || "",
   modelGatewayDefaultProvider: process.env.MODEL_GATEWAY_DEFAULT_PROVIDER || "deepseek",
+  // Global default model menu: which providers the BASELINE (everyone) config
+  // exposes. Empty = all configured providers (current behavior). Set e.g.
+  // "deepseek" to make the default minimal; broader access is then granted per
+  // group/device via config profiles (which replace the menu for their scope).
+  defaultModelProviders: String(process.env.DEFAULT_MODEL_PROVIDERS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
   modelConfigDeliveryMode: String(process.env.MODEL_CONFIG_DELIVERY_MODE || "gateway").toLowerCase(),
+  // Opt-in: query each enabled provider's /models endpoint to auto-discover the
+  // models its key supports, augmenting the configured list. Off by default —
+  // when off (or on failure) the configured/built-in list is used unchanged.
+  modelDiscoveryEnabled: process.env.MODEL_DISCOVERY_ENABLED === "true",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "",
   anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com",
   openaiApiKey: process.env.OPENAI_API_KEY || "",
@@ -57,6 +69,33 @@ export const config = {
   dashscopeImageEndpoint: process.env.DASHSCOPE_IMAGE_ENDPOINT || "",
   dashscopeVideoEndpoint: process.env.DASHSCOPE_VIDEO_ENDPOINT || "",
   dashscopeTtsEndpoint: process.env.DASHSCOPE_TTS_ENDPOINT || "",
+  // Volcengine Ark (即梦 Seedream image / Seedance video). Bearer-key surface.
+  volcengineApiKey: process.env.VOLCENGINE_API_KEY || process.env.ARK_API_KEY || "",
+  volcengineBaseUrl: process.env.VOLCENGINE_BASE_URL || "https://ark.cn-beijing.volces.com/api/v3",
+  volcengineImageModel: process.env.VOLCENGINE_IMAGE_MODEL || "doubao-seedream-4-0-250828",
+  volcengineVideoModel: process.env.VOLCENGINE_VIDEO_MODEL || "doubao-seedance-1-0-lite-t2v-250428",
+  // Kling 可灵 (JWT auth from AccessKey + SecretKey). The SecretKey stays
+  // server-side: in gateway mode the server signs the per-request JWT.
+  klingAccessKey: process.env.KLING_ACCESS_KEY || "",
+  klingSecretKey: process.env.KLING_SECRET_KEY || "",
+  klingBaseUrl: process.env.KLING_BASE_URL || "https://api-beijing.klingai.com",
+  klingImageModel: process.env.KLING_IMAGE_MODEL || "kling-v1-5",
+  klingVideoModel: process.env.KLING_VIDEO_MODEL || "kling-v1-6",
+  // MiniMax 海螺 (Bearer; China platform may require a GroupId).
+  minimaxApiKey: process.env.MINIMAX_API_KEY || "",
+  minimaxGroupId: process.env.MINIMAX_GROUP_ID || "",
+  minimaxBaseUrl: process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com",
+  minimaxImageModel: process.env.MINIMAX_IMAGE_MODEL || "image-01",
+  minimaxVideoModel: process.env.MINIMAX_VIDEO_MODEL || "MiniMax-Hailuo-2.3",
+  // 智谱 Zhipu / BigModel (Bearer raw key). CogView image / CogVideoX video.
+  zhipuApiKey: process.env.ZHIPU_API_KEY || process.env.BIGMODEL_API_KEY || "",
+  zhipuBaseUrl: process.env.ZHIPU_BASE_URL || "https://open.bigmodel.cn/api/paas/v4",
+  zhipuImageModel: process.env.ZHIPU_IMAGE_MODEL || "cogview-4-250304",
+  zhipuVideoModel: process.env.ZHIPU_VIDEO_MODEL || "cogvideox-3",
+  // Default media providers for image/video skills (admin-overridable). Clients
+  // can still override per-call via input.provider.
+  mediaImageProvider: process.env.MEDIA_IMAGE_PROVIDER || "dashscope",
+  mediaVideoProvider: process.env.MEDIA_VIDEO_PROVIDER || "dashscope",
   kimiApiKey: process.env.KIMI_API_KEY || process.env.MOONSHOT_API_KEY || "",
   kimiBaseUrl: process.env.KIMI_BASE_URL || process.env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/anthropic",
   glmApiKey: process.env.GLM_API_KEY || process.env.ZAI_API_KEY || process.env.ZHIPU_API_KEY || "",

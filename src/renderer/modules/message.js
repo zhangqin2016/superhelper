@@ -325,6 +325,51 @@ function committedMessagesForRender(messages = [], opts = {}) {
   return ordered.slice(-COMMITTED_INITIAL_WINDOW);
 }
 
+function cssEscapeId(value) {
+  if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(String(value));
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
+// Full prompt list for the conversation minimap — sourced from the DATA model
+// (every committed user message), not the windowed DOM, so the rail reflects the
+// whole history. Each item carries turnId for on-demand jump.
+function buildMinimapItems(runtime) {
+  try {
+    return orderCommittedMessages(runtime?.committedMessages || [])
+      .filter((m) => m && m.role === "user")
+      .map((m) => ({ role: "user", turnId: m.turnId || "", label: m.content || "" }));
+  } catch {
+    return [];
+  }
+}
+
+// Scroll to a prompt by turnId, loading older history on demand when it isn't in
+// the rendered (windowed) DOM yet. Bounded + fail-safe: gives up quietly rather
+// than ever breaking scroll.
+async function jumpToTurnForSession(sessionId, panel, turnId) {
+  if (!panel || !turnId) return;
+  const selector = `.messages [data-turn-id="${cssEscapeId(turnId)}"]`;
+  const find = () => panel.querySelector(selector);
+  const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  try {
+    let el = find();
+    let guard = 0;
+    while (!el && guard < 40) {
+      const loaded = await import("./session-chrome.js")
+        .then((m) => m.loadOlderConversationForSession?.(sessionId, panel))
+        .catch(() => false);
+      await frame(); // older messages render (possibly chunked) over the next frames
+      el = find();
+      if (el || !loaded) break; // found, or nothing more to load
+      guard += 1;
+    }
+    if (!el) { await frame(); el = find(); } // one more tick for the chunked renderer
+    if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
+  } catch {
+    /* leave the scroll position unchanged on any failure */
+  }
+}
+
 function appendCommittedMessage(sessionId, runtime, message) {
   const anchor = committedInsertAnchor(sessionId, runtime);
   if (message.role === "user") appendUserMessage(sessionId, message, anchor);
@@ -394,10 +439,18 @@ function appendUserMessage(sessionId, message, beforeNode = null) {
   const v = ensurePanel(sessionId);
   const article = document.createElement("article");
   article.className = "runtime-user-message";
+  if (message.turnId) article.dataset.turnId = message.turnId; // lets the minimap locate this prompt
 
   const label = document.createElement("p");
   label.className = "runtime-user-label";
   label.textContent = t("message.userTaskLabel");
+  if (message.steer || message.meta?.steer) {
+    article.classList.add("is-steer");
+    const badge = document.createElement("span");
+    badge.className = "runtime-user-steer-badge";
+    badge.textContent = t("message.steerBadge");
+    label.appendChild(badge);
+  }
 
   const body = document.createElement("div");
   body.className = "runtime-user-body";
@@ -722,6 +775,18 @@ function renderRuntimeSession(sessionId, opts = {}) {
   syncComposerForActiveSession();
   updateSessionRunningIndicators();
   updateTopbarTitles();
+  // Minimap is a non-essential overlay: load it lazily and swallow any failure so it
+  // can NEVER break conversation rendering (a missing/failed module must not blank the
+  // chat). CAPABILITY-GATE Rule 13 — degrade to "no minimap", never to "no chat".
+  if (isActiveSession(sessionId) && panel) {
+    const minimapItems = buildMinimapItems(runtime);
+    import("./conversation-minimap.js")
+      .then((m) => m.updateMinimap?.(panel, {
+        items: minimapItems,
+        jumpToTurn: (turnId) => jumpToTurnForSession(sessionId, panel, turnId),
+      }))
+      .catch(() => {});
+  }
   if (shouldFollow) scrollToBottomAfterLayout(panel, true);
 }
 

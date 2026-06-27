@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("assistant:input", { text, files, sessionId, displayFiles }),
   interruptAndSend: (text, files, sessionId, displayFiles) =>
     ipcRenderer.invoke("assistant:interrupt-and-send", { text, files, sessionId, displayFiles }),
+  steerMessage: (text, files, sessionId, displayFiles) =>
+    ipcRenderer.invoke("assistant:steer", { text, files, sessionId, displayFiles }),
+  getFeatureFlags: () => ipcRenderer.invoke("assistant:feature-flags"),
   retryLastMessage: (sessionId) =>
     ipcRenderer.invoke("assistant:retry", { sessionId }),
   respondPermission: (sessionId, requestId, allow, options = {}) =>
@@ -71,6 +74,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   listSearchSettings: () => ipcRenderer.invoke("search:list"),
   setSearchProvider: (providerId) => ipcRenderer.invoke("search:set-provider", providerId),
   setSearxngUrl: (url) => ipcRenderer.invoke("search:set-searxng-url", url),
+  listMediaProviders: () => ipcRenderer.invoke("media-providers:list"),
+  setMediaChoice: (payload) => ipcRenderer.invoke("media-providers:set-choice", payload),
+  setMediaProviderKey: (payload) => ipcRenderer.invoke("media-providers:set-key", payload),
 
   listConnectors: () => ipcRenderer.invoke("connectors:list-playbooks"),
   saveConnectorPlaybook: (payload) => ipcRenderer.invoke("connectors:save-playbook", payload),

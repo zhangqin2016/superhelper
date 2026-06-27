@@ -2,6 +2,7 @@ import { sha256 } from "./security.js";
 import { config } from "../config.js";
 import { signModelGatewayToken } from "./model-gateway/auth.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
+import { discoveredModelsSync } from "./model-gateway/model-discovery.js";
 import { getModelCatalog } from "./model-catalog.js";
 
 export const DEFAULT_EFFECTIVE_CONFIG = {
@@ -58,12 +59,56 @@ export function deepMerge(base, override) {
   return result;
 }
 
+/**
+ * Resolve the per-scope image/video generation selection (multi-select + default)
+ * against the providers the server can actually serve. PURELY ADDITIVE + FAIL-OPEN: a
+ * profile with no `config.media` (every old profile) is left to deliver exactly today's
+ * behavior — all key-backed providers, server default — and old clients simply ignore
+ * the extra `media` field. So new server + old client and old profile + new client both
+ * keep working. `availability` = media-gen provider ids whose key exists server-side.
+ */
+export function resolveMediaSelection(configCopy, availability) {
+  const avail = [...new Set((availability || []).filter(Boolean).map(String))];
+  if (!avail.length) return configCopy; // server can't serve any media — leave as today
+  const requested = configCopy && typeof configCopy.media === "object" ? configCopy.media : null;
+  const env = configCopy?.runtime?.env && typeof configCopy.runtime.env === "object" ? configCopy.runtime.env : null;
+  const resolveKind = (kind) => {
+    const req = requested?.[kind];
+    const list = Array.isArray(req?.providers) ? req.providers.map(String).filter(Boolean) : [];
+    let providers = list.filter((p) => avail.includes(p));
+    if (!providers.length) providers = [...avail]; // empty/absent selection → all available (today)
+    const serverDefault = String((kind === "image" ? env?.LILY_IMAGE_PROVIDER : env?.LILY_VIDEO_PROVIDER) || "");
+    let def = String(req?.default || "");
+    if (!providers.includes(def)) def = providers.includes(serverDefault) ? serverDefault : providers[0];
+    return { providers, default: def };
+  };
+  configCopy.media = { image: resolveKind("image"), video: resolveKind("video") };
+  if (env) {
+    // Make the resolved default actually drive the generation skill dispatch.
+    env.LILY_IMAGE_PROVIDER = configCopy.media.image.default;
+    env.LILY_VIDEO_PROVIDER = configCopy.media.video.default;
+  }
+  return configCopy;
+}
+
 /** A provider's selectable models: the explicit `models` list, else its single
  *  default model. Empty only when the provider declares no model at all. */
 function providerModelList(provider) {
   const list = Array.isArray(provider?.models) ? provider.models.map(String).filter(Boolean) : [];
-  if (list.length) return list;
-  return provider?.model ? [String(provider.model)] : [];
+  const base = list.length ? list : provider?.model ? [String(provider.model)] : [];
+  // Augment with auto-discovered models (opt-in; [] when off/unavailable). The
+  // configured list stays first so order/default are preserved — discovery only
+  // appends models the operator didn't list, never removes any.
+  let discovered = [];
+  try {
+    discovered = discoveredModelsSync(provider);
+  } catch {
+    discovered = [];
+  }
+  if (!discovered.length) return base;
+  const merged = [...base];
+  for (const model of discovered) if (!merged.includes(model)) merged.push(model);
+  return merged;
 }
 
 /** The model a provider defaults to: its explicit `default_model` when it's part
@@ -81,17 +126,29 @@ function modelSlug(model) {
 }
 
 function providerLabel(provider) {
-  const labels = {
-    anthropic: "Anthropic Gateway",
-    openai: "OpenAI Gateway",
-    deepseek: "DeepSeek Gateway",
-    dashscope: "阿里百炼 Gateway",
-    kimi: "Kimi Gateway",
-    glm: "GLM Gateway",
-    litellm: "LiteLLM Gateway",
-    local: "Local Gateway",
+  // Honor the operator-configured label first (DB model_gateway_providers.label /
+  // MODEL_GATEWAY_PROVIDERS). The static id→name map and the bare-id form are only
+  // fallbacks for env-seeded providers that carry no label — otherwise a provider
+  // whose id happens to be "deepseek" but actually serves another backend would be
+  // mislabeled "DeepSeek" no matter what the admin named it.
+  // Plain vendor names — no "Gateway"/"Direct" suffix. Delivery mode is an
+  // internal detail (kept in the preset id/env), not something end users should
+  // see in the model picker.
+  const fallback = {
+    anthropic: "Anthropic",
+    openai: "OpenAI",
+    deepseek: "DeepSeek",
+    dashscope: "阿里百炼",
+    kimi: "Kimi",
+    glm: "GLM",
+    litellm: "LiteLLM",
+    local: "Local",
   };
-  return labels[provider.id] || `${provider.id} Gateway`;
+  // Use the operator's label only when it's a real custom name (DB rows default
+  // label to the id, which should still map to the nice built-in name).
+  const custom = String(provider.label || "").trim();
+  if (custom && custom !== provider.id) return custom;
+  return fallback[provider.id] || provider.id;
 }
 
 function normalizeDeliveryMode(serverConfig) {
@@ -139,7 +196,7 @@ function providerPreset(provider, deliveryMode, model, isDefault) {
   if (deliveryMode === "direct" && supportsDirectDelivery(provider)) {
     return {
       id: `${provider.id}-direct${suffix}`,
-      label: providerLabel(provider).replace(/ Gateway$/, " Direct"),
+      label: providerLabel(provider),
       description: "客户端直连模型供应商。响应更快，但会向客户端下发长期模型密钥。",
       env: {
         LILY_API_BASE_URL: provider.baseUrl,
@@ -191,17 +248,60 @@ function runtimeEnvFromServerConfig(serverConfig) {
     if (serverConfig.dashscopeVideoEndpoint) env.DASHSCOPE_VIDEO_ENDPOINT = serverConfig.dashscopeVideoEndpoint;
     if (serverConfig.dashscopeTtsEndpoint) env.DASHSCOPE_TTS_ENDPOINT = serverConfig.dashscopeTtsEndpoint;
   }
+  // Volcengine Ark (Seedream/Seedance) non-secret config. The key itself is
+  // injected by withGatewayRuntimeConfig (token in gateway mode, real key in
+  // direct mode) — never delivered here.
+  if (serverConfig.volcengineApiKey) {
+    env.VOLCENGINE_IMAGE_MODEL = serverConfig.volcengineImageModel || "doubao-seedream-4-0-250828";
+    env.VOLCENGINE_VIDEO_MODEL = serverConfig.volcengineVideoModel || "doubao-seedance-1-0-lite-t2v-250428";
+  }
+  // Kling / MiniMax / Zhipu non-secret model config (keys injected at request
+  // time by withGatewayRuntimeConfig — never delivered here).
+  if (serverConfig.klingAccessKey) {
+    env.KLING_IMAGE_MODEL = serverConfig.klingImageModel || "kling-v1-5";
+    env.KLING_VIDEO_MODEL = serverConfig.klingVideoModel || "kling-v1-6";
+  }
+  if (serverConfig.minimaxApiKey) {
+    env.MINIMAX_IMAGE_MODEL = serverConfig.minimaxImageModel || "image-01";
+    env.MINIMAX_VIDEO_MODEL = serverConfig.minimaxVideoModel || "MiniMax-Hailuo-2.3";
+  }
+  if (serverConfig.zhipuApiKey) {
+    env.ZHIPU_IMAGE_MODEL = serverConfig.zhipuImageModel || "cogview-4-250304";
+    env.ZHIPU_VIDEO_MODEL = serverConfig.zhipuVideoModel || "cogvideox-3";
+  }
+  // Default media provider for the image/video skills (per-call overridable via
+  // input.provider). Drives the dispatch shell in generate-image/video.cjs.
+  env.LILY_IMAGE_PROVIDER = serverConfig.mediaImageProvider || "dashscope";
+  env.LILY_VIDEO_PROVIDER = serverConfig.mediaVideoProvider || "dashscope";
   return env;
 }
 
-// vision/search are media credentials, not chat models — never build chat
-// presets for them.
-const RESERVED_MODEL_PROVIDER_IDS = new Set(["vision", "search"]);
+// vision/search and *-media are media credentials, not chat models — never
+// build chat presets for them.
+const RESERVED_MODEL_PROVIDER_IDS = new Set([
+  "vision",
+  "search",
+  "volcengine-media",
+  "kling-media",
+  "minimax-media",
+  "zhipu-media",
+]);
 
 export function buildEnvManagedClientConfig(serverConfig = config, providers = listModelGatewayProviders(), deliveryModeOverride = null) {
   const deliveryMode = deliveryModeOverride || normalizeDeliveryMode(serverConfig);
+  // Optional global default whitelist: when set, the baseline everyone gets is
+  // limited to these providers; broader menus are granted per scope via config
+  // profiles. Empty = expose all configured providers (unchanged default).
+  const allow = Array.isArray(serverConfig.defaultModelProviders) ? serverConfig.defaultModelProviders : [];
   const modelPresets = Object.values(providers || {})
-    .filter((provider) => provider?.id && provider?.baseUrl && provider?.apiKey && !RESERVED_MODEL_PROVIDER_IDS.has(provider.id))
+    .filter(
+      (provider) =>
+        provider?.id &&
+        provider?.baseUrl &&
+        provider?.apiKey &&
+        !RESERVED_MODEL_PROVIDER_IDS.has(provider.id) &&
+        (allow.length === 0 || allow.includes(provider.id)),
+    )
     .flatMap((provider) => providerPresets(provider, deliveryMode));
 
   const activeProviderId = serverConfig.modelGatewayDefaultProvider || modelPresets[0]?.id?.replace(/-gateway$/, "");
@@ -349,6 +449,41 @@ function appVersionAtLeast(version, min) {
   return true;
 }
 
+// Per-scope model menu: a config profile may carry `models.providers` (an array
+// of provider ids) + optional `models.activeProvider` instead of a fixed preset
+// list. At delivery we expand that into the real preset menu for those providers
+// (reusing providerPresets), which — thanks to deepMerge replacing arrays — lets
+// each scope (group/device/license) define its own selectable model set on top
+// of the minimal global baseline. Fail-safe: if none of the listed providers are
+// configured/keyed, we drop the directive and keep whatever menu was already
+// resolved (baseline) — never deliver an empty picker.
+export function expandModelProviderMenu(effectiveConfig, options = {}) {
+  const models = effectiveConfig?.models;
+  const directive = Array.isArray(models?.providers) ? models.providers.map(String).filter(Boolean) : null;
+  if (!directive || !directive.length) return effectiveConfig;
+  const deliveryMode = options.deliveryMode || normalizeDeliveryMode(config);
+  const providers = options.providers || listModelGatewayProviders();
+  const allow = new Set(directive);
+  const presets = Object.values(providers || {})
+    .filter(
+      (provider) =>
+        provider?.id &&
+        provider?.baseUrl &&
+        provider?.apiKey &&
+        !RESERVED_MODEL_PROVIDER_IDS.has(provider.id) &&
+        allow.has(provider.id),
+    )
+    .flatMap((provider) => providerPresets(provider, deliveryMode));
+  const { providers: _providers, activeProvider, ...restModels } = models;
+  if (!presets.length) return { ...effectiveConfig, models: restModels };
+  const active = String(activeProvider || directive[0]);
+  const activePresetId =
+    presets.find((preset) => preset.id === `${active}-${deliveryMode}`)?.id ||
+    presets.find((preset) => preset.id.startsWith(`${active}-`))?.id ||
+    presets[0].id;
+  return { ...effectiveConfig, models: { ...restModels, source: "service", activePresetId, presets } };
+}
+
 export function withGatewayRuntimeConfig(effectiveConfig, request, input, options = {}) {
   const configCopy = JSON.parse(JSON.stringify(effectiveConfig || {}));
   const configuredBaseUrl = String(options.publicBaseUrl || "").trim().replace(/\/+$/, "");
@@ -363,8 +498,12 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   const gatewayProviders = listModelGatewayProviders();
   const visionKey = gatewayProviders.vision?.apiKey || config.dashscopeApiKey;
   const searchKey = gatewayProviders.search?.apiKey || config.webSearchIqsApiKey;
+  const volcengineKey = gatewayProviders["volcengine-media"]?.apiKey || config.volcengineApiKey;
+  const klingAccessKey = gatewayProviders["kling-media"]?.apiKey || config.klingAccessKey;
+  const minimaxKey = gatewayProviders["minimax-media"]?.apiKey || config.minimaxApiKey;
+  const zhipuKey = gatewayProviders["zhipu-media"]?.apiKey || config.zhipuApiKey;
   const searchEnabled = Boolean(searchKey);
-  if (base && (visionKey || searchEnabled)) {
+  if (base && (visionKey || searchEnabled || volcengineKey || klingAccessKey || minimaxKey || zhipuKey)) {
     const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
     const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
     if (visionKey) {
@@ -409,9 +548,55 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
         env.WEBSEARCH_IQS_API_KEY = searchKey;
       }
     }
+    // Bearer-key media providers (Ark / MiniMax / Zhipu). Same gateway/direct
+    // split as DashScope media: gateway keeps the key server-side behind
+    // /llm/media/<route> + a short token; direct delivers the real key + endpoint
+    // so the client connects straight to the provider.
+    const gatewayMode = options.mediaDeliveryMode === "gateway";
+    const signMediaToken = (providerId) =>
+      signModelGatewayToken({ deviceId: input.deviceId, licenseId: input.licenseId || "", providerId });
+    const bearerMedia = [
+      { key: volcengineKey, route: "volcengine", providerId: "volcengine-media", keyEnv: "VOLCENGINE_API_KEY", baseEnv: "VOLCENGINE_BASE_URL", directBaseUrl: gatewayProviders["volcengine-media"]?.baseUrl || config.volcengineBaseUrl },
+      { key: minimaxKey, route: "minimax", providerId: "minimax-media", keyEnv: "MINIMAX_API_KEY", baseEnv: "MINIMAX_BASE_URL", directBaseUrl: gatewayProviders["minimax-media"]?.baseUrl || config.minimaxBaseUrl, directExtra: (e) => { if (config.minimaxGroupId) e.MINIMAX_GROUP_ID = config.minimaxGroupId; } },
+      { key: zhipuKey, route: "zhipu", providerId: "zhipu-media", keyEnv: "ZHIPU_API_KEY", baseEnv: "ZHIPU_BASE_URL", directBaseUrl: gatewayProviders["zhipu-media"]?.baseUrl || config.zhipuBaseUrl },
+    ];
+    for (const p of bearerMedia) {
+      if (!p.key) continue;
+      if (gatewayMode) {
+        env[p.baseEnv] = `${base}/llm/media/${p.route}`;
+        env[p.keyEnv] = signMediaToken(p.providerId);
+      } else {
+        env[p.keyEnv] = p.key;
+        env[p.baseEnv] = p.directBaseUrl;
+        if (p.directExtra) p.directExtra(env);
+      }
+    }
+    // Kling uses JWT auth. Gateway: deliver a short token + proxy URL — the
+    // server signs the real JWT (SecretKey never leaves). Direct/BYOK: deliver
+    // AccessKey + SecretKey so the client signs the JWT locally.
+    if (klingAccessKey) {
+      if (gatewayMode) {
+        env.KLING_BASE_URL = `${base}/llm/media/kling`;
+        env.KLING_API_KEY = signMediaToken("kling-media");
+      } else {
+        env.KLING_BASE_URL = gatewayProviders["kling-media"]?.baseUrl || config.klingBaseUrl;
+        env.KLING_ACCESS_KEY = klingAccessKey;
+        env.KLING_SECRET_KEY = config.klingSecretKey;
+      }
+    }
     runtime.env = env;
     configCopy.runtime = runtime;
   }
+
+  // Per-scope media-generation selection (multi-select + default), gated by which media
+  // providers actually have a key server-side. Additive + fail-open (see helper).
+  resolveMediaSelection(configCopy, [
+    visionKey ? "dashscope" : null,
+    volcengineKey ? "volcengine" : null,
+    klingAccessKey ? "kling" : null,
+    minimaxKey ? "minimax" : null,
+    zhipuKey ? "zhipu" : null,
+  ]);
 
   const presets = configCopy?.models?.presets;
   if (!Array.isArray(presets)) return configCopy;

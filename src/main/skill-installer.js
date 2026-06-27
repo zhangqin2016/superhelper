@@ -22,7 +22,7 @@ const {
 } = require("./skills-state");
 
 const DOWNLOAD_TIMEOUT_MS = 120_000;
-const MAX_SKILLPACK_BYTES = 10 * 1024 * 1024;
+const MAX_SKILLPACK_BYTES = 200 * 1024 * 1024;
 
 function skillsCacheDir() {
   return userDataPath("skills-cache");
@@ -309,4 +309,5 @@ module.exports = {
   installFromRegistryEntry,
   uninstallRemoteSkill,
   sha256Buffer,
+  MAX_SKILLPACK_BYTES,
 };

@@ -11,7 +11,7 @@ const DEFAULT_OUT_DIR = path.join(ROOT, "dist", "skill-packs");
 const BLOCKED_DIRS = new Set([".git", "node_modules", "dist", "release", ".cache", ".lily-work"]);
 const IGNORED_DIRS = new Set(["__pycache__"]);
 const BLOCKED_FILES = new Set([".DS_Store", "Thumbs.db"]);
-const MAX_PACK_BYTES = 50 * 1024 * 1024;
+const MAX_PACK_BYTES = 200 * 1024 * 1024;
 
 function fail(message) {
   console.error(`[build-skill-pack] ${message}`);

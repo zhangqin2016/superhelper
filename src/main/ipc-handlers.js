@@ -7,7 +7,7 @@ const { listPresetsPublic } = require("./model-presets");
 const { resolveRuntimeIconDataUrl } = require("./app-icon");
 const { listLocalesPublic, setLocale } = require("./locale-settings");
 const { registerFileHandlers } = require("./ipc-files");
-const { registerModelHandlers, registerPermissionHandlers, registerSearchHandlers } = require("./ipc-models");
+const { registerModelHandlers, registerPermissionHandlers, registerSearchHandlers, registerMediaProviderHandlers } = require("./ipc-models");
 const { registerProjectHandlers } = require("./ipc-projects");
 const { registerSessionHandlers, registerSkillHandlers } = require("./ipc-sessions");
 const { registerAssistantHandlers } = require("./ipc-assistant");
@@ -111,7 +111,13 @@ function registerAll(ctx) {
     require("./service-client").testConnection());
   ipcMain.handle("apps:catalog", () =>
     require("./service-client").workspaceAppCatalog()
-      .then((result) => require("./workspace-app-installs").attachInstalledState(result, projectManager)));
+      .then((result) => {
+        const workspaceAppInstalls = require("./workspace-app-installs");
+        return workspaceAppInstalls.attachInstalledState(
+          workspaceAppInstalls.withCatalogCacheFallback(result),
+          projectManager,
+        );
+      }));
 
   ipcMain.handle("updates:get-settings", () =>
     require("./update-manager").getUpdateSettings());
@@ -138,6 +144,7 @@ function registerAll(ctx) {
   registerModelHandlers(ctx);
   registerPermissionHandlers(ctx);
   registerSearchHandlers(ctx);
+  registerMediaProviderHandlers(ctx);
   registerProjectHandlers(ctx);
   registerSessionHandlers(ctx);
   registerSkillHandlers(ctx);

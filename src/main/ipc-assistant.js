@@ -153,6 +153,39 @@ function registerAssistantHandlers(ctx) {
     return attachRouting(result, session);
   });
 
+  // Steer ("插话"): inject into the running turn without interrupting it. Falls back
+  // to queue inside the orchestrator when steering isn't possible (flag off, not
+  // busy, engine rejects) — so the worst case equals today's queue behavior.
+  ipcMain.handle("assistant:steer", async (_event, payload) => {
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+
+    const text = typeof payload === "string" ? payload : payload.text;
+    const files = typeof payload === "object" && payload.files ? payload.files : [];
+    const requestedId =
+      typeof payload === "object" && payload?.sessionId ? payload.sessionId : null;
+
+    const session = resolveTargetSession(sessionManager, requestedId);
+    if (!session) return { ok: false, error: "NO_SESSION" };
+
+    const displayFiles =
+      typeof payload === "object" && Array.isArray(payload.displayFiles)
+        ? payload.displayFiles
+        : [];
+
+    const result = await turnOrchestrator.sendUserMessage(session.id, text, files, {
+      mode: "steer",
+      displayFiles,
+    });
+    return attachRouting(result, session);
+  });
+
+  // Renderer-visible feature flags. Steer is on by default; LILY_ENABLE_STEER=0 is the
+  // instant kill-switch that also hides the "插话" option from the busy dialog.
+  ipcMain.handle("assistant:feature-flags", () => ({
+    steer: process.env.LILY_ENABLE_STEER !== "0",
+  }));
+
   ipcMain.handle("assistant:retry", async (_event, payload) => {
     const licensed = requireValidLicense();
     if (!licensed.ok) return licensed;

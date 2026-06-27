@@ -34,28 +34,29 @@ export default async function DiagnosticsPage({ searchParams }) {
   });
   const rows = data.diagnostics || [];
   const summary = data.byKind || [];
+  const c = t.admin.diag;
 
   return (
     <AdminShell title={t.admin.pages.diagnostics[0]} subtitle={t.admin.pages.diagnostics[1]}>
       <form className="table-card mb-6 grid gap-4 p-6 lg:grid-cols-5">
         <label className="grid gap-2 text-sm font-medium text-slate-600">
-          Days
+          {c.days}
           <input name="days" defaultValue={filters?.days || "30"} className="rounded-lg border border-slate-200 px-3 py-2" />
         </label>
         <label className="grid gap-2 text-sm font-medium text-slate-600">
-          Device
+          {c.device}
           <input name="deviceId" defaultValue={filters?.deviceId || ""} className="rounded-lg border border-slate-200 px-3 py-2" />
         </label>
         <label className="grid gap-2 text-sm font-medium text-slate-600">
-          Kind
+          {c.kind}
           <input name="kind" defaultValue={filters?.kind || ""} className="rounded-lg border border-slate-200 px-3 py-2" />
         </label>
         <label className="grid gap-2 text-sm font-medium text-slate-600">
-          Severity
+          {c.severity}
           <input name="severity" defaultValue={filters?.severity || ""} className="rounded-lg border border-slate-200 px-3 py-2" />
         </label>
         <div className="flex items-end">
-          <button className="rounded-lg bg-brand px-5 py-2.5 font-semibold text-white">Apply filters</button>
+          <button className="rounded-lg bg-brand px-5 py-2.5 font-semibold text-white">{c.apply}</button>
         </div>
       </form>
 
@@ -72,11 +73,11 @@ export default async function DiagnosticsPage({ searchParams }) {
       </div>
 
       <div className="table-card mt-6 p-6">
-        <h2 className="mb-5 text-xl font-semibold">Runtime traces</h2>
+        <h2 className="mb-5 text-xl font-semibold">{c.traces}</h2>
         {rows.length ? (
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
-              <tr>{["Time", "Severity", "Kind", "Event", "Device", "App", "Claude", "Summary"].map((h) => <th key={h} className="px-5 py-4">{h}</th>)}</tr>
+              <tr>{[c.time, c.severity, c.kind, c.event, c.device, c.app, c.claude, c.summary].map((h) => <th key={h} className="px-5 py-4">{h}</th>)}</tr>
             </thead>
             <tbody>{rows.map((row) => (
               <tr key={row.id} className="border-t border-slate-100 align-top">
@@ -92,7 +93,7 @@ export default async function DiagnosticsPage({ searchParams }) {
                 <td className="max-w-md px-5 py-4">
                   <div>{row.summary || "-"}</div>
                   <details className="mt-2">
-                    <summary className="cursor-pointer text-xs font-semibold text-brand">Trace</summary>
+                    <summary className="cursor-pointer text-xs font-semibold text-brand">{c.trace}</summary>
                     <pre className="mt-2 max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
                       {JSON.stringify(row.trace || {}, null, 2)}
                     </pre>
@@ -101,7 +102,7 @@ export default async function DiagnosticsPage({ searchParams }) {
               </tr>
             ))}</tbody>
           </table>
-        ) : <AdminEmpty title="No diagnostics yet" description="Protocol warnings appear here after clients report sanitized runtime traces." />}
+        ) : <AdminEmpty title={c.emptyTitle} description={c.emptyDesc} />}
       </div>
     </AdminShell>
   );

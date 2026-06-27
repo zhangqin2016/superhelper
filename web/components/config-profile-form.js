@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useState } from "react";
 import { createConfigProfileAction } from "../app/admin/actions";
 import { CheckboxField, SubmitButton } from "./admin-forms";
+import { MultiSelectField } from "./multi-select-field";
 import { useI18n } from "../lib/use-i18n";
 
 const initialState = { ok: null, message: "" };
@@ -58,6 +59,14 @@ const labels = {
     modelTitle: "选择模型供应商",
     modelDesc: "选择上方已配置好的供应商，再选投递方式与模型。",
     providerEmpty: "请先在上方「模型供应商」里添加一个供应商。",
+    menuTitle: "可选模型菜单（多供应商）",
+    menuDesc: "点选这个范围允许使用的供应商（可多选）。选了即按菜单下发，客户端能在这些里切换；上面单选的那个作为默认。留空＝沿用单模型。",
+    menuActive: "已启用菜单模式：本范围将下发选中的多个供应商。",
+    mediaTitle: "图片 / 视频生成",
+    mediaDesc: "为本范围勾选可用的生成供应商（可多选），并设一个默认。留空＝沿用今天的行为（所有已配置的、服务器默认）。服务器只会下发实际配置了密钥的那些。",
+    mediaImage: "图片生成",
+    mediaVideo: "视频生成",
+    mediaDefault: "默认：",
     modeTitle: "投递方式",
     modeDirect: "直连（更快）",
     modeGateway: "走网关（更安全）",
@@ -98,6 +107,14 @@ const labels = {
     modelTitle: "Choose a model provider",
     modelDesc: "Pick a provider configured above, then the delivery mode and models.",
     providerEmpty: "Add a provider above in “Model providers” first.",
+    menuTitle: "Selectable model menu (multiple providers)",
+    menuDesc: "Pick which providers this scope may use (multi-select). When set, the scope gets that menu and clients can switch among them; the single-selected one is the default. Empty = single model.",
+    menuActive: "Menu mode on: this scope will deliver the selected providers.",
+    mediaTitle: "Image / video generation",
+    mediaDesc: "Pick which generation providers this scope may use (multi-select) and one default. Empty = today's behavior (all configured, server default). The server only delivers the ones that actually have a key.",
+    mediaImage: "Image generation",
+    mediaVideo: "Video generation",
+    mediaDefault: "Default:",
     modeTitle: "Delivery",
     modeDirect: "Direct (faster)",
     modeGateway: "Gateway (safer)",
@@ -138,6 +155,14 @@ const labels = {
     modelTitle: "اختر مزوّد النموذج",
     modelDesc: "اختر مزوّداً مضبوطاً أعلاه، ثم وضع الإرسال والنماذج.",
     providerEmpty: "أضف مزوّداً أعلاه في «مزوّدو النماذج» أولاً.",
+    menuTitle: "قائمة النماذج المتاحة (عدة مزوّدين)",
+    menuDesc: "اختر المزوّدين المسموح بهم لهذا النطاق (اختيار متعدد). عند التحديد يحصل النطاق على هذه القائمة ويمكن للعميل التبديل بينها؛ المُحدَّد منفرداً هو الافتراضي. فارغ = نموذج واحد.",
+    menuActive: "وضع القائمة مفعّل: سيُرسل هذا النطاق المزوّدين المحدّدين.",
+    mediaTitle: "توليد الصور / الفيديو",
+    mediaDesc: "اختر مزوّدي التوليد المسموح بهم لهذا النطاق (اختيار متعدد) ومزوّداً افتراضياً. فارغ = سلوك اليوم (كل المُهيأ، الافتراضي من الخادم). يرسل الخادم فقط ما له مفتاح فعلاً.",
+    mediaImage: "توليد الصور",
+    mediaVideo: "توليد الفيديو",
+    mediaDefault: "الافتراضي:",
     modeTitle: "الإرسال",
     modeDirect: "مباشر (أسرع)",
     modeGateway: "بوابة (أأمن)",
@@ -191,6 +216,7 @@ function defaultDraft(copy, templates) {
     priority: "0",
     rolloutPercent: "100",
     selectedTemplateId: template.id,
+    menuProviders: [],
     deliveryMode: "direct",
     baseUrl: template.route,
     model: template.model,
@@ -201,6 +227,10 @@ function defaultDraft(copy, templates) {
     requestTimeoutMs: "300000",
     visionModel: "qwen3.7-plus",
     supportsVision: false,
+    imageProviders: [],
+    imageDefault: "",
+    videoProviders: [],
+    videoDefault: "",
     disabled: false,
   };
 }
@@ -216,7 +246,59 @@ function splitCsv(text) {
     .filter(Boolean);
 }
 
+// Media-generation providers offered for distribution. The server gates each by whether
+// its key exists (resolveMediaSelection), so listing all here is safe — unavailable ones
+// are dropped at delivery.
+const MEDIA_PROVIDERS = [
+  { id: "dashscope", label: "阿里百炼 DashScope" },
+  { id: "volcengine", label: "火山方舟 Volcengine" },
+  { id: "kling", label: "可灵 Kling" },
+  { id: "minimax", label: "MiniMax" },
+  { id: "zhipu", label: "智谱 Zhipu" },
+];
+const MEDIA_PROVIDER_IDS = new Set(MEDIA_PROVIDERS.map((p) => p.id));
+
+// Build the per-scope media-generation selection (multi-select + one default), or null
+// when nothing is selected (→ omitted from config → old behavior, never breaks clients).
+function buildMedia(draft) {
+  const pick = (providers, def) => {
+    const list = (Array.isArray(providers) ? providers : []).filter((p) => MEDIA_PROVIDER_IDS.has(p));
+    if (!list.length) return null;
+    return { providers: list, default: list.includes(def) ? def : list[0] };
+  };
+  const image = pick(draft.imageProviders, draft.imageDefault);
+  const video = pick(draft.videoProviders, draft.videoDefault);
+  if (!image && !video) return null;
+  return { ...(image ? { image } : {}), ...(video ? { video } : {}) };
+}
+
 function buildConfig(draft, template) {
+  const tools = {
+    pluginRegistryUrl: String(draft.pluginRegistryUrl || "/api/skills/registry").trim(),
+    enabledPluginIds: splitCsv(draft.enabledPluginIds),
+  };
+  const policy = {
+    permissionMode: String(draft.permissionMode || "default").trim(),
+    minAppVersion: String(draft.minAppVersion || "").trim(),
+  };
+  const runtime = {
+    env: {
+      API_TIMEOUT_MS: String(draft.requestTimeoutMs || "300000").trim(),
+      VISION_MODEL: String(draft.visionModel || "qwen3.7-plus").trim(),
+    },
+  };
+  const media = buildMedia(draft);
+  const mediaPart = media ? { media } : {};
+
+  // Menu mode: deliver a multi-provider directive for this scope. The server
+  // expands `models.providers` into the preset menu at delivery (and injects
+  // tokens), so the form only records which providers + the default.
+  const menu = Array.isArray(draft.menuProviders) ? draft.menuProviders.filter(Boolean) : [];
+  if (menu.length) {
+    const activeProvider = menu.includes(draft.selectedTemplateId) ? draft.selectedTemplateId : menu[0];
+    return { schemaVersion: 1, models: { source: "service", providers: menu, activeProvider }, tools, policy, runtime, ...mediaPart };
+  }
+
   const providerId = template.provider || template.id || "";
   // Direct delivers the provider's real endpoint; the server injects the real
   // key in place of $LILY_PROVIDER_KEY (the form never holds the key). Gateway
@@ -261,20 +343,10 @@ function buildConfig(draft, template) {
         },
       ],
     },
-    tools: {
-      pluginRegistryUrl: String(draft.pluginRegistryUrl || "/api/skills/registry").trim(),
-      enabledPluginIds: splitCsv(draft.enabledPluginIds),
-    },
-    policy: {
-      permissionMode: String(draft.permissionMode || "default").trim(),
-      minAppVersion: String(draft.minAppVersion || "").trim(),
-    },
-    runtime: {
-      env: {
-        API_TIMEOUT_MS: String(draft.requestTimeoutMs || "300000").trim(),
-        VISION_MODEL: String(draft.visionModel || "qwen3.7-plus").trim(),
-      },
-    },
+    tools,
+    policy,
+    runtime,
+    ...mediaPart,
   };
 }
 
@@ -295,7 +367,7 @@ function ConfigField({ label, children, help }) {
   );
 }
 
-export function ConfigProfileForm({ providers = [] }) {
+export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) {
   const [state, action, pending] = useActionState(createConfigProfileAction, initialState);
   const { locale, t } = useI18n();
   const adminCopy = t.admin.configProfiles;
@@ -345,6 +417,36 @@ export function ConfigProfileForm({ providers = [] }) {
     }));
   }
 
+  // Toggle a provider in/out of this scope's selectable model menu. A non-empty
+  // menu switches buildConfig to the multi-provider directive.
+  function toggleMenuProvider(id) {
+    setDraft((current) => {
+      const set = new Set(current.menuProviders || []);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      return { ...current, menuProviders: [...set] };
+    });
+  }
+
+  // Image/video generation: toggle a provider into the scope's selectable set; the
+  // default auto-follows the selection (kept valid). buildMedia turns this into config.media.
+  function toggleMediaProvider(modality, id) {
+    const key = modality === "image" ? "imageProviders" : "videoProviders";
+    const defKey = modality === "image" ? "imageDefault" : "videoDefault";
+    setDraft((current) => {
+      const set = new Set(current[key] || []);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      const list = [...set];
+      const def = list.includes(current[defKey]) ? current[defKey] : list[0] || "";
+      return { ...current, [key]: list, [defKey]: def };
+    });
+  }
+  function setMediaDefault(modality, id) {
+    const defKey = modality === "image" ? "imageDefault" : "videoDefault";
+    setDraft((current) => ({ ...current, [defKey]: id }));
+  }
+
   return (
     <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
       <div className="flex flex-col gap-2 border-b border-slate-100 pb-5">
@@ -377,7 +479,7 @@ export function ConfigProfileForm({ providers = [] }) {
                 </button>
               ))}
             </div>
-            <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-4 grid gap-4 lg:grid-cols-3">
               <ConfigField label={adminCopy.id}>
                 <input className={fieldClass()} name="id" required value={draft.id} onChange={(event) => updateField("id", event.target.value)} />
               </ConfigField>
@@ -395,14 +497,6 @@ export function ConfigProfileForm({ providers = [] }) {
                   onChange={(event) => updateField("targetId", event.target.value)}
                 />
               </ConfigField>
-              <div className="grid grid-cols-2 gap-3">
-                <ConfigField label={adminCopy.priority}>
-                  <input className={fieldClass()} name="priority" type="number" value={draft.priority} onChange={(event) => updateField("priority", event.target.value)} />
-                </ConfigField>
-                <ConfigField label={adminCopy.rolloutPercent}>
-                  <input className={fieldClass()} max="100" min="0" name="rolloutPercent" type="number" value={draft.rolloutPercent} onChange={(event) => updateField("rolloutPercent", event.target.value)} />
-                </ConfigField>
-              </div>
             </div>
             <input name="scope" type="hidden" value={draft.scope} />
           </div>
@@ -437,6 +531,34 @@ export function ConfigProfileForm({ providers = [] }) {
                 ))}
               </div>
             )}
+
+            {templates.length > 0 ? (
+              <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4">
+                <div className="text-sm font-semibold text-slate-800">{copy.menuTitle}</div>
+                <p className="mt-1 text-xs text-slate-500">{copy.menuDesc}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {templates.map((template) => {
+                    const on = (draft.menuProviders || []).includes(template.id);
+                    return (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => toggleMenuProvider(template.id)}
+                        aria-pressed={on}
+                        className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                          on ? "bg-brand text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {templateLabel(template)}
+                      </button>
+                    );
+                  })}
+                </div>
+                {(draft.menuProviders || []).length > 0 ? (
+                  <p className="mt-3 text-xs text-emerald-700">{copy.menuActive}</p>
+                ) : null}
+              </div>
+            ) : null}
 
             <datalist id={modelListId}>
               {(activeTemplate.models || []).map((model) => (
@@ -491,10 +613,68 @@ export function ConfigProfileForm({ providers = [] }) {
 
           <div className="rounded-2xl border border-slate-200 p-4">
             <div className="mb-4">
-              <h3 className="text-lg font-semibold text-slate-950">{copy.toolsTitle}</h3>
-              <p className="mt-1 text-sm text-slate-500">{copy.toolsDesc}</p>
+              <h3 className="text-lg font-semibold text-slate-950">{copy.mediaTitle}</h3>
+              <p className="mt-1 text-sm text-slate-500">{copy.mediaDesc}</p>
             </div>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {[["image", copy.mediaImage], ["video", copy.mediaVideo]].map(([modality, label]) => {
+              const selKey = modality === "image" ? "imageProviders" : "videoProviders";
+              const defKey = modality === "image" ? "imageDefault" : "videoDefault";
+              const selected = draft[selKey] || [];
+              return (
+                <div key={modality} className="mb-4 rounded-xl border border-slate-200 bg-white p-4 last:mb-0">
+                  <div className="text-sm font-semibold text-slate-800">{label}</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {MEDIA_PROVIDERS.map((p) => {
+                      const on = selected.includes(p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() => toggleMediaProvider(modality, p.id)}
+                          className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                            on ? "bg-brand text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selected.length > 0 ? (
+                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-600">
+                      <span>{copy.mediaDefault}</span>
+                      <select
+                        className={fieldClass()}
+                        value={draft[defKey]}
+                        onChange={(event) => setMediaDefault(modality, event.target.value)}
+                      >
+                        {selected.map((id) => (
+                          <option key={id} value={id}>
+                            {MEDIA_PROVIDERS.find((p) => p.id === id)?.label || id}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+
+          <details className="group rounded-2xl border border-slate-200 p-4">
+            <summary className="cursor-pointer list-none">
+              <span className="text-lg font-semibold text-slate-950">{t.admin.configAdvanced.title}</span>
+              <span className="mt-1 block text-sm text-slate-500">{t.admin.configAdvanced.desc}</span>
+            </summary>
+            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <ConfigField label={adminCopy.priority}>
+                <input className={fieldClass()} name="priority" type="number" value={draft.priority} onChange={(event) => updateField("priority", event.target.value)} />
+              </ConfigField>
+              <ConfigField label={adminCopy.rolloutPercent}>
+                <input className={fieldClass()} max="100" min="0" name="rolloutPercent" type="number" value={draft.rolloutPercent} onChange={(event) => updateField("rolloutPercent", event.target.value)} />
+              </ConfigField>
+              <div className="md:col-span-2 hidden xl:block" />
               <div className="md:col-span-2">
                 <ConfigField label={copy.registry}>
                   <input className={fieldClass()} value={draft.pluginRegistryUrl} onChange={(event) => updateField("pluginRegistryUrl", event.target.value)} />
@@ -502,7 +682,12 @@ export function ConfigProfileForm({ providers = [] }) {
               </div>
               <div className="md:col-span-2">
                 <ConfigField label={copy.pluginIds} help={copy.pluginIdsHelp}>
-                  <input className={fieldClass()} value={draft.enabledPluginIds} onChange={(event) => updateField("enabledPluginIds", event.target.value)} placeholder="weather-mcp,filesystem" />
+                  <MultiSelectField
+                    options={skillPackageOptions}
+                    value={splitCsv(draft.enabledPluginIds)}
+                    onChange={(ids) => updateField("enabledPluginIds", ids.join(","))}
+                    emptyHint={copy.providerEmpty}
+                  />
                 </ConfigField>
               </div>
               <ConfigField label={copy.permissionMode}>
@@ -524,7 +709,7 @@ export function ConfigProfileForm({ providers = [] }) {
                 <input className={fieldClass()} value={draft.visionModel} onChange={(event) => updateField("visionModel", event.target.value)} />
               </ConfigField>
             </div>
-          </div>
+          </details>
         </div>
 
         <aside className="space-y-4">

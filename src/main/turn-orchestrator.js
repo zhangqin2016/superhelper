@@ -47,6 +47,7 @@ const TURN_OPTIONAL_TYPES = new Set([
   "resume.invalid",
   "queue.updated",
   "user.committed",
+  "turn.steered",
   "engine.notice",
   "engine.warning",
   "engine.stderr",
@@ -534,6 +535,14 @@ class TurnOrchestrator {
 
     const state = this._state(sessionId);
     if (state.phase !== "idle" && !opts.fromQueue) {
+      // Steer ("插话"): inject into the RUNNING turn rather than queuing for after.
+      // On by default; LILY_ENABLE_STEER=0 is the instant kill-switch back to queue.
+      // Fail-open — any steer failure degrades to the queue path below, so the worst
+      // case is identical to today's behavior (CAPABILITY-GATE Rule 13).
+      if (opts.mode === "steer" && process.env.LILY_ENABLE_STEER !== "0") {
+        const steered = await this._trySteer(session, displayText, files, opts);
+        if (steered?.ok) return steered;
+      }
       const item = {
         id: newQueueId(),
         text: displayText,
@@ -543,10 +552,52 @@ class TurnOrchestrator {
       };
       state.queue.push(item);
       this._emitQueue(sessionId);
-      return { ok: true, queued: true, queueLength: state.queue.length, itemId: item.id };
+      return {
+        ok: true,
+        queued: true,
+        queueLength: state.queue.length,
+        itemId: item.id,
+        ...(opts.mode === "steer" ? { steerFellBack: true } : {}),
+      };
     }
 
     return this._startTurn(session, displayText, files, opts);
+  }
+
+  // Inject a message into the in-flight turn via the engine's native steering (the
+  // running prompt loop picks up the appended user message at its next step). Commits
+  // the user message into the CURRENT turn only AFTER the engine accepts it, so a
+  // failed steer leaves no orphaned bubble before the caller falls back to the queue.
+  async _trySteer(session, text, files, opts = {}) {
+    const sessionId = session.id;
+    const runner = this.ctx.runnerPool.get(sessionId);
+    if (!runner?.isBusy?.() || typeof runner.steer !== "function") return { ok: false };
+    let accepted = false;
+    try {
+      accepted = await runner.steer({ text, files });
+    } catch (err) {
+      log.warn("steer dispatch failed: %s", err?.message || err);
+      return { ok: false };
+    }
+    if (!accepted) return { ok: false };
+    const state = this._state(sessionId);
+    const turnId = state.turnId;
+    const steerSeq = (state.steerCount || 0) + 1;
+    state.steerCount = steerSeq;
+    const displayFiles = opts.displayFiles || fileMetadataFromPayload(files);
+    try {
+      this.transcriptStore.commitUserMessage(sessionId, { text, files: displayFiles, turnId, steer: true, steerSeq });
+    } catch (err) {
+      log.warn("steer user message commit failed: %s", err?.message || err);
+    }
+    this._emit(
+      sessionId,
+      "user.committed",
+      { text, files: displayFiles && displayFiles.length ? displayFiles : null, steer: true, steerSeq },
+      { turnId },
+    );
+    this._emit(sessionId, "turn.steered", { text, steerSeq }, { turnId });
+    return { ok: true, steered: true, turnId, steerSeq };
   }
 
   // Show the user's message in the conversation IMMEDIATELY, before any slow work

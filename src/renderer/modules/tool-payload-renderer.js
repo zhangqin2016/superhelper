@@ -179,6 +179,23 @@ function revealFileInFolder(root, filePath, options = {}) {
   return revealLocalFileInFolder(filePath, revealSessionId(root, options));
 }
 
+function createRevealButton(onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "assistant-reveal-btn";
+  button.title = t("file.reveal");
+  button.setAttribute("aria-label", t("file.reveal"));
+  button.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3 6.75A2.75 2.75 0 0 1 5.75 4h4.47c.73 0 1.43.29 1.94.8l1.04 1.04c.23.23.54.36.86.36h4.19A2.75 2.75 0 0 1 21 8.95v8.3A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25V6.75Z"></path>
+      <path d="M14.25 12.25h3.5v3.5"></path>
+      <path d="m17.75 12.25-4.5 4.5"></path>
+    </svg>
+  `;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
 function isRevealableLocalPath(filePath = "") {
   const value = String(filePath || "").trim();
   return /^file:/i.test(value) || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
@@ -444,16 +461,11 @@ function renderGeneratedMedia(root, mediaBlocks = [], options = {}) {
       pathCode.textContent = file.path;
       caption.append(label, pathCode);
       if (isRevealableLocalPath(file.path)) {
-        const reveal = document.createElement("button");
-        reveal.type = "button";
-        reveal.className = "assistant-reveal-btn";
-        reveal.textContent = t("file.reveal");
         const doReveal = () => void revealFileInFolder(root, file.path, options);
-        reveal.addEventListener("click", doReveal);
         pathCode.classList.add("is-clickable");
         pathCode.title = t("file.reveal");
         pathCode.addEventListener("click", doReveal);
-        caption.appendChild(reveal);
+        caption.appendChild(createRevealButton(doReveal));
       }
       item.appendChild(caption);
       grid.appendChild(item);
@@ -493,12 +505,7 @@ function renderGeneratedFiles(root, files = [], options = {}) {
         name.title = t("file.reveal");
         const reveal = () => void revealFileInFolder(root, file.path, options);
         name.addEventListener("click", reveal);
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "assistant-reveal-btn";
-        btn.textContent = t("file.reveal");
-        btn.addEventListener("click", reveal);
-        caption.appendChild(btn);
+        caption.appendChild(createRevealButton(reveal));
       }
       figure.appendChild(caption);
       wrap.appendChild(figure);
@@ -516,12 +523,7 @@ function renderGeneratedFiles(root, files = [], options = {}) {
       name.title = t("file.reveal");
       const reveal = () => void revealFileInFolder(root, file.path, options);
       name.addEventListener("click", reveal);
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "assistant-reveal-btn";
-      btn.textContent = t("file.reveal");
-      btn.addEventListener("click", reveal);
-      row.appendChild(btn);
+      row.appendChild(createRevealButton(reveal));
     }
     wrap.appendChild(row);
   }

@@ -15,6 +15,7 @@ import { initSettingsPanel } from "./modules/settings-panel.js";
 import { initModelSettings } from "./modules/model-settings.js";
 import { initPermissionSettings } from "./modules/permission-settings.js";
 import { initSearchSettings } from "./modules/search-settings.js";
+import { initMediaProviderSettings } from "./modules/media-provider-settings.js";
 import { initSkillSettings, refreshSkillsList } from "./modules/skill-settings.js";
 import { initWorkspaceApps, refreshWorkspaceApps } from "./modules/workspace-apps.js";
 import { initLocaleSettings, refreshLocaleSelect } from "./modules/locale-settings.js";
@@ -170,6 +171,7 @@ async function init() {
   initLocaleSettings();
   initPermissionSettings();
   initSearchSettings();
+  initMediaProviderSettings();
   initSkillSettings();
   initWorkspaceApps();
   initLicenseUpdateSettings();

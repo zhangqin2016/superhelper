@@ -166,6 +166,16 @@ class SessionManager {
   load() {
     this._loadPersistedStore();
 
+    // If the index existed but could not be read (corrupt) and no backup recovered it,
+    // do NOT auto-create a session or save — that would overwrite the recoverable file
+    // with an empty one (the exact footgun that wiped a user's history). Bail early and
+    // leave everything on disk untouched for recovery.
+    if (this._loadFailed) {
+      console.error("[sessions] load failed (unreadable index, no backup) — skipping auto-create/save to protect on-disk data");
+      this._startRuntimeEventMaintenance();
+      return;
+    }
+
     // Only ensure the active project has a session — avoids flooding
     // every project with a default when persisted data is missing/corrupt.
     const activeProject = this.pm.getActive();
@@ -309,10 +319,19 @@ class SessionManager {
 
     if (fs.existsSync(indexPath)) {
       parsed = this._readJson(indexPath);
+      if (!parsed) {
+        // Index exists but is unreadable/corrupt. Treating it as "empty" here would let
+        // the next save wipe every session (the footgun that lost a user's history).
+        // Quarantine the bad file and recover from the rolling .bak; if no usable backup
+        // exists, flag the load as failed so load() bails without auto-create/save.
+        this._quarantineCorruptIndex(indexPath);
+        parsed = this._recoverIndexFromBackup(indexPath);
+        if (!parsed) this._loadFailed = true;
+      }
       this._legacyMigrationPending = false;
       this.sessions = this._normalizeSessionsStore(parsed?.sessions || {});
       this.activeSessionId = parsed?.activeSessionId || null;
-      if (fs.existsSync(legacyPath)) {
+      if (!this._loadFailed && fs.existsSync(legacyPath)) {
         const legacy = this._readJson(legacyPath);
         if (legacy) {
           this._mergeLegacySessions(legacy);
@@ -327,6 +346,25 @@ class SessionManager {
 
     this.sessions = this._normalizeSessionsStore(parsed?.sessions || {});
     this.activeSessionId = parsed?.activeSessionId || null;
+  }
+
+  _quarantineCorruptIndex(indexPath) {
+    try {
+      fs.copyFileSync(indexPath, `${indexPath}.corrupt-${Date.now()}.json`);
+      console.error(`[sessions] ${indexPath} is unreadable/corrupt — quarantined a copy; attempting backup recovery`);
+    } catch { /* best effort */ }
+  }
+
+  _recoverIndexFromBackup(indexPath) {
+    const bak = `${indexPath}.bak`;
+    if (fs.existsSync(bak)) {
+      const backup = this._readJson(bak);
+      if (backup && this._countSessions(backup) > 0) {
+        console.error("[sessions] recovered session index from .bak");
+        return backup;
+      }
+    }
+    return null;
   }
 
   _mergeLegacySessions(legacyStore) {
@@ -535,6 +573,9 @@ class SessionManager {
   /** Drop sessions whose project no longer exists (never migrate to another project). */
   _reconcileWithProjects() {
     const validProjectIds = new Set(this.pm.projects.map((p) => p.id));
+    // If projects failed to load (none present), do NOT prune — pruning against an empty
+    // project set would delete every session. Better to keep them than to wipe them.
+    if (validProjectIds.size === 0) return;
     const activeProject = this.pm.getActive();
 
     if (!activeProject) {
@@ -689,17 +730,72 @@ class SessionManager {
   }
 
   _doSave() {
-    const dir = path.dirname(sessionsIndexPath());
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      sessionsIndexPath(),
-      JSON.stringify(
-        { activeSessionId: this.activeSessionId, sessions: this._buildSessionIndex() },
-        null,
-        2,
-      ),
-    );
+    const indexPath = sessionsIndexPath();
+    fs.mkdirSync(path.dirname(indexPath), { recursive: true });
+    const next = { activeSessionId: this.activeSessionId, sessions: this._buildSessionIndex() };
+    // Anti-data-loss guard: never let a catastrophically-collapsed in-memory store
+    // (the classic "failed load -> saveImmediate empties the file" footgun that wiped
+    // a user's session list) overwrite a healthy on-disk index. CAPABILITY-GATE Rule
+    // 13 — worst case = this run's edits don't persist; the data on disk stays intact.
+    if (!this._guardSessionCollapse(next)) return;
+    // Roll a backup of the last KNOWN-GOOD file, then write ATOMICALLY (tmp -> rename)
+    // so an interrupted/crashed write can never leave a half-written corrupt index —
+    // the root cause that made the next load read "empty".
+    try {
+      if (fs.existsSync(indexPath)) {
+        const current = this._readJson(indexPath);
+        if (current && this._countSessions(current) > 0) fs.copyFileSync(indexPath, `${indexPath}.bak`);
+      }
+    } catch { /* best effort */ }
+    const tmp = `${indexPath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
+    fs.renameSync(tmp, indexPath);
     this._backupLegacySessionsFileIfNeeded();
+  }
+
+  _countSessions(store) {
+    let n = 0;
+    for (const list of Object.values(store?.sessions || {})) n += Array.isArray(list) ? list.length : 0;
+    return n;
+  }
+
+  /** @returns {boolean} true to allow the write; false to refuse (collapse detected). */
+  _guardSessionCollapse(next) {
+    if (process.env.LILY_DISABLE_SESSION_SAVE_GUARD === "1") return true;
+    const indexPath = sessionsIndexPath();
+    let existing = null;
+    let existedButUnreadable = false;
+    try {
+      if (fs.existsSync(indexPath)) existing = JSON.parse(fs.readFileSync(indexPath, "utf8"));
+    } catch {
+      existedButUnreadable = true; // present but corrupt
+    }
+    if (existedButUnreadable) {
+      // Don't let an empty/collapsed store overwrite a corrupt-but-present file (it may
+      // still be recoverable). A real write WITH data is allowed to replace it.
+      if (this._countSessions(next) <= 1) {
+        console.error("[sessions] BLOCKED overwrite of an unreadable index with a near-empty store");
+        return false;
+      }
+      return true;
+    }
+    if (!existing) return true; // first-ever save / no prior file
+    const existingCount = this._countSessions(existing);
+    const nextCount = this._countSessions(next);
+    // Collapse signature: a substantial store about to drop to ~nothing. A normal edit
+    // or delete never matches (nextCount stays > 1); only a failed-load wipe does.
+    const GUARD_MIN = 3;
+    if (existingCount >= GUARD_MIN && nextCount <= 1 && nextCount < existingCount) {
+      const backup = `${indexPath}.guard-backup-${Date.now()}.json`;
+      try { fs.copyFileSync(indexPath, backup); } catch { /* best effort */ }
+      console.error(
+        `[sessions] BLOCKED session-index overwrite: on-disk has ${existingCount} sessions, ` +
+        `in-memory has ${nextCount} — likely a failed load. Preserved ${indexPath} ` +
+        `(backup: ${backup}). Override with LILY_DISABLE_SESSION_SAVE_GUARD=1.`,
+      );
+      return false;
+    }
+    return true;
   }
 
   _buildSessionIndex() {

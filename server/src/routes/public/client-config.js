@@ -6,6 +6,7 @@ import {
   DEFAULT_EFFECTIVE_CONFIG,
   clientConfigTtlMs,
   deepMerge,
+  expandModelProviderMenu,
   rolloutAllows,
   withGatewayRuntimeConfig,
 } from "../../services/client-config.js";
@@ -112,8 +113,11 @@ export function registerPublicClientConfigRoutes(app) {
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;
 
     const resolved = await resolveEffectiveConfig(input);
+    // Expand any per-scope `models.providers` directive into its preset menu
+    // before tokens are injected.
+    const scopedConfig = expandModelProviderMenu(resolved.effectiveConfig);
     const { getMediaDeliveryMode } = await import("../../services/app-settings.js");
-    const effectiveConfig = withGatewayRuntimeConfig(resolved.effectiveConfig, request, input, {
+    const effectiveConfig = withGatewayRuntimeConfig(scopedConfig, request, input, {
       publicBaseUrl: config.publicBaseUrl,
       mediaDeliveryMode: await getMediaDeliveryMode(),
     });

@@ -2,6 +2,7 @@
 
 const { getActivePresetEnv, getUserApiEnv } = require("./model-presets");
 const { getSearchSpawnEnv } = require("./search-settings");
+const { getMediaProviderSpawnEnv } = require("./media-provider-settings");
 const { normalizeToLilyEnv, toEngineEnv } = require("./agent-env");
 
 function buildLiveEngineEnvPatch() {
@@ -14,6 +15,7 @@ function buildLiveEngineEnvPatch() {
   return {
     ...toEngineEnv(lilyEnv),
     ...getSearchSpawnEnv(),
+    ...getMediaProviderSpawnEnv(),
   };
 }
 

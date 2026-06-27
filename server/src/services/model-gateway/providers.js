@@ -18,6 +18,10 @@ function mapDbProviderRow(row) {
     type: String(row.type || "anthropic").toLowerCase(),
     baseUrl: cleanBaseUrl(row.base_url),
     apiKey: decryptSecret(row.api_key_encrypted),
+    // Extra media-provider credentials (e.g. Kling SecretKey). Kept OUT of
+    // `headers` because that is spread into upstream HTTP request headers.
+    secretKey: decryptSecret(row.secret_key_encrypted),
+    metadata: row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata : {},
     model: String(row.default_model || ""),
     models: Array.isArray(row.models) ? row.models.map(String).filter(Boolean) : [],
     headers: row.headers && typeof row.headers === "object" && !Array.isArray(row.headers) ? row.headers : {},
@@ -81,7 +85,8 @@ export function listModelGatewayProviders() {
       type: "anthropic",
       baseUrl: cleanBaseUrl(config.anthropicBaseUrl),
       apiKey: config.anthropicApiKey,
-      models: [],
+      // Strongest first → the default. Authoritative current Claude ids.
+      models: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
       headers: {},
     };
   }
@@ -101,7 +106,7 @@ export function listModelGatewayProviders() {
       type: "anthropic",
       baseUrl: cleanBaseUrl(config.deepseekBaseUrl),
       apiKey: config.deepseekApiKey,
-      models: ["deepseek-v4-pro[1m]"],
+      models: ["deepseek-v4-pro[1m]", "deepseek-v4-flash"],
       headers: {},
     };
   }
@@ -111,7 +116,9 @@ export function listModelGatewayProviders() {
       type: "anthropic",
       baseUrl: cleanBaseUrl(config.dashscopeBaseUrl),
       apiKey: config.dashscopeChatApiKey,
-      models: [config.dashscopeModel || "qwen3-coder-plus"],
+      // Flagship general model first (default); keep any env-set DASHSCOPE_MODEL
+      // in the list so it stays selectable.
+      models: [...new Set(["qwen3.7-max", "qwen3.6-flash", config.dashscopeModel || "qwen3-coder-plus"])],
       headers: {},
     };
   }

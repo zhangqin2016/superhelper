@@ -57,9 +57,118 @@ function assertGeneratedPath(stdout, expectedDirName) {
 }
 
 async function startMockServer() {
-  const seen = { image: 0, video: 0, speech: 0 };
+  const seen = {
+    image: 0, video: 0, speech: 0, volcImage: 0, volcVideo: 0,
+    klingImage: 0, klingVideo: 0, mmImage: 0, mmVideo: 0, zhipuImage: 0, zhipuVideo: 0,
+  };
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
+    // Kling (可灵) — async create + poll, JWT bearer. Hosted under /kling.
+    if (req.method === "POST" && url.pathname === "/kling/v1/images/generations") {
+      const body = await readJson(req);
+      seen.klingImage += 1;
+      assert.match(req.headers.authorization || "", /^Bearer .+\..+\..+$/, "kling must send a JWT bearer");
+      assert.equal(body.model_name, "kling-v1-5");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ code: 0, data: { task_id: "kling-img" } }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/kling/v1/images/generations/kling-img") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ code: 0, data: { task_status: "succeed", task_result: { images: [{ url: `${base}/media/generated.png` }] } } }));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/kling/v1/videos/text2video") {
+      const body = await readJson(req);
+      seen.klingVideo += 1;
+      assert.equal(body.model_name, "kling-v1-6");
+      assert.equal(body.duration, "5", "kling duration must be a string");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ code: 0, data: { task_id: "kling-vid" } }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/kling/v1/videos/text2video/kling-vid") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ code: 0, data: { task_status: "succeed", task_result: { videos: [{ url: `${base}/media/generated.mp4` }] } } }));
+      return;
+    }
+    // MiniMax (海螺) — image sync, video async 3-step. Hosted under /minimax.
+    if (req.method === "POST" && url.pathname === "/minimax/v1/image_generation") {
+      const body = await readJson(req);
+      seen.mmImage += 1;
+      assert.equal(body.model, "image-01");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ data: { image_urls: [`${base}/media/generated.png`] }, base_resp: { status_code: 0 } }));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/minimax/v1/video_generation") {
+      seen.mmVideo += 1;
+      assert.equal(url.searchParams.get("GroupId"), "grp-1", "minimax must carry GroupId");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ task_id: "mm-vid", base_resp: { status_code: 0 } }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/minimax/v1/query/video_generation") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ status: "Success", file_id: "mm-file", base_resp: { status_code: 0 } }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/minimax/v1/files/retrieve") {
+      assert.equal(url.searchParams.get("file_id"), "mm-file");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ file: { download_url: `${base}/media/generated.mp4` }, base_resp: { status_code: 0 } }));
+      return;
+    }
+    // Zhipu (智谱) — image sync, video async 2-step. Hosted under /zhipu.
+    if (req.method === "POST" && url.pathname === "/zhipu/images/generations") {
+      const body = await readJson(req);
+      seen.zhipuImage += 1;
+      assert.equal(body.model, "cogview-4-250304");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ data: [{ url: `${base}/media/generated.png` }] }));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/zhipu/videos/generations") {
+      const body = await readJson(req);
+      seen.zhipuVideo += 1;
+      assert.equal(body.model, "cogvideox-3");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ id: "zhipu-vid", task_status: "PROCESSING" }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/zhipu/async-result/zhipu-vid") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ task_status: "SUCCESS", video_result: [{ url: `${base}/media/generated.mp4` }] }));
+      return;
+    }
+    // Volcengine Ark (Seedream image — synchronous). Hosted at root.
+    if (req.method === "POST" && url.pathname === "/images/generations") {
+      const body = await readJson(req);
+      seen.volcImage += 1;
+      assert.equal(req.headers.authorization, "Bearer volc-key");
+      assert.equal(body.model, "doubao-seedream-4-0-250828");
+      assert.equal(body.response_format, "url");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ data: [{ url: `${base}/media/generated.png` }] }));
+      return;
+    }
+    // Volcengine Ark (Seedance video — async create + poll).
+    if (req.method === "POST" && url.pathname.endsWith("/contents/generations/tasks")) {
+      const body = await readJson(req);
+      seen.volcVideo += 1;
+      assert.equal(req.headers.authorization, "Bearer volc-key");
+      assert.ok(Array.isArray(body.content), "seedance body.content must be an array");
+      assert.match(body.content[0].text, /--resolution 720p/);
+      assert.match(body.content[0].text, /--duration 5/);
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ id: "seedance-task" }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname.endsWith("/contents/generations/tasks/seedance-task")) {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ id: "seedance-task", status: "succeeded", content: { video_url: `${base}/media/generated.mp4` } }));
+      return;
+    }
     if (req.method === "POST" && url.pathname.endsWith("/multimodal-generation/generation")) {
       const body = await readJson(req);
       seen.image += 1;
@@ -180,10 +289,74 @@ try {
   assert.equal(aliyunAlias.code, 0, aliyunAlias.stderr);
   assert.match(assertGeneratedPath(aliyunAlias.stdout, "alias-assets"), /alias-assets\/speech-/);
 
+  // Volcengine Ark provider: image selected via input.provider, video via the
+  // LILY_VIDEO_PROVIDER env — both dispatch paths exercised.
+  const volcEnv = {
+    LILY_LOCALE: "zh-CN",
+    VOLCENGINE_API_KEY: "volc-key",
+    VOLCENGINE_IMAGE_BASE_URL: base,
+    VOLCENGINE_VIDEO_BASE_URL: base,
+    LILY_MEDIA_POLL_INTERVAL_MS: "50",
+  };
+  const volcImage = await runNode(scripts.image, { prompt: "霓虹星云里的柯基宇航员", provider: "volcengine" }, volcEnv, tmp);
+  assert.equal(volcImage.code, 0, volcImage.stderr);
+  assert.match(volcImage.stdout, /generated_media type="image"/);
+  assert.match(assertGeneratedPath(volcImage.stdout, "generated-assets"), /generated-assets\/image-/);
+
+  const volcVideo = await runNode(
+    scripts.video,
+    { prompt: "雪山日出航拍", timeout_ms: 5000 },
+    { ...volcEnv, LILY_VIDEO_PROVIDER: "volcengine" },
+    tmp,
+  );
+  assert.equal(volcVideo.code, 0, volcVideo.stderr);
+  assert.match(volcVideo.stdout, /generated_media type="video"/);
+  assert.match(assertGeneratedPath(volcVideo.stdout, "generated-assets"), /generated-assets\/video-/);
+
+  // Unknown provider must fail loud, not silently fall back.
+  const badProvider = await runNode(scripts.image, { prompt: "x", provider: "nope" }, volcEnv, tmp);
+  assert.notEqual(badProvider.code, 0);
+  assert.match(badProvider.stderr, /provider/i);
+
+  // Kling (可灵): direct mode signs a JWT locally from AccessKey + SecretKey.
+  const klingEnv = { LILY_LOCALE: "zh-CN", KLING_BASE_URL: `${base}/kling`, KLING_ACCESS_KEY: "ak", KLING_SECRET_KEY: "sk", LILY_MEDIA_POLL_INTERVAL_MS: "50" };
+  const klingImage = await runNode(scripts.image, { prompt: "雪山日出", provider: "kling" }, klingEnv, tmp);
+  assert.equal(klingImage.code, 0, klingImage.stderr);
+  assert.match(assertGeneratedPath(klingImage.stdout, "generated-assets"), /generated-assets\/image-/);
+  const klingVideo = await runNode(scripts.video, { prompt: "海浪", provider: "kling", timeout_ms: 5000 }, klingEnv, tmp);
+  assert.equal(klingVideo.code, 0, klingVideo.stderr);
+  assert.match(assertGeneratedPath(klingVideo.stdout, "generated-assets"), /generated-assets\/video-/);
+
+  // MiniMax (海螺): GroupId must be carried through create/query/retrieve.
+  const mmEnv = { LILY_LOCALE: "zh-CN", MINIMAX_BASE_URL: `${base}/minimax`, MINIMAX_API_KEY: "mm-key", MINIMAX_GROUP_ID: "grp-1", LILY_MEDIA_POLL_INTERVAL_MS: "50" };
+  const mmImage = await runNode(scripts.image, { prompt: "一只猫", provider: "minimax" }, mmEnv, tmp);
+  assert.equal(mmImage.code, 0, mmImage.stderr);
+  assert.match(assertGeneratedPath(mmImage.stdout, "generated-assets"), /generated-assets\/image-/);
+  const mmVideo = await runNode(scripts.video, { prompt: "无人机舞蹈", provider: "minimax", timeout_ms: 5000 }, mmEnv, tmp);
+  assert.equal(mmVideo.code, 0, mmVideo.stderr);
+  assert.match(assertGeneratedPath(mmVideo.stdout, "generated-assets"), /generated-assets\/video-/);
+
+  // Zhipu (智谱): image sync, video async 2-step.
+  const zhipuEnv = { LILY_LOCALE: "zh-CN", ZHIPU_BASE_URL: `${base}/zhipu`, ZHIPU_API_KEY: "zhipu-key", LILY_MEDIA_POLL_INTERVAL_MS: "50" };
+  const zhipuImage = await runNode(scripts.image, { prompt: "星空狐狸", provider: "zhipu" }, zhipuEnv, tmp);
+  assert.equal(zhipuImage.code, 0, zhipuImage.stderr);
+  assert.match(assertGeneratedPath(zhipuImage.stdout, "generated-assets"), /generated-assets\/image-/);
+  const zhipuVideo = await runNode(scripts.video, { prompt: "夕阳礁石", provider: "zhipu", timeout_ms: 5000 }, zhipuEnv, tmp);
+  assert.equal(zhipuVideo.code, 0, zhipuVideo.stderr);
+  assert.match(assertGeneratedPath(zhipuVideo.stdout, "generated-assets"), /generated-assets\/video-/);
+
   assert.equal(seen.image, 1);
   assert.equal(seen.video, 1);
   assert.equal(seen.speech, 2);
-  assert.equal(fs.readdirSync(path.join(tmp, "generated-assets")).length, 3);
+  assert.equal(seen.volcImage, 1);
+  assert.equal(seen.volcVideo, 1);
+  assert.equal(seen.klingImage, 1);
+  assert.equal(seen.klingVideo, 1);
+  assert.equal(seen.mmImage, 1);
+  assert.equal(seen.mmVideo, 1);
+  assert.equal(seen.zhipuImage, 1);
+  assert.equal(seen.zhipuVideo, 1);
+  assert.equal(fs.readdirSync(path.join(tmp, "generated-assets")).length, 11);
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });

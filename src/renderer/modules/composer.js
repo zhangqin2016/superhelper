@@ -15,6 +15,14 @@ import { chooseDialog } from "./confirm-dialog.js";
 /** Unsent composer text per session, restored on switch (in-memory only). */
 const sessionDrafts = new Map();
 
+/** Steer ("插话") ships behind a main-process flag; only offer it once confirmed on.
+ *  Cached at load — failure leaves it off, so the busy dialog degrades to today's
+ *  two-option (queue / interrupt) form. */
+let steerEnabled = false;
+window.assistantClient?.getFeatureFlags?.()
+  .then((flags) => { steerEnabled = Boolean(flags?.steer); })
+  .catch(() => { steerEnabled = false; });
+
 const COMPOSER_MIN_INPUT_H = 44;
 
 function composerMaxInputHeight() {
@@ -233,13 +241,14 @@ export async function sendPrompt(opts = {}) {
   // or interrupt the current answer and send now. Dismissing keeps the draft.
   let sendMode = "send";
   if (!canSend(sessionId)) {
+    const options = [{ value: "queue", label: t("composer.busyChoiceQueue") }];
+    // Steer = inject into the running turn (no interrupt, no wait for the whole turn).
+    if (steerEnabled) options.push({ value: "steer", label: t("composer.busyChoiceSteer") });
+    options.push({ value: "interrupt", label: t("composer.busyChoiceInterrupt"), danger: true });
     sendMode = await chooseDialog({
       title: t("composer.busyChoiceTitle"),
       message: t("composer.busyChoiceMessage"),
-      options: [
-        { value: "queue", label: t("composer.busyChoiceQueue") },
-        { value: "interrupt", label: t("composer.busyChoiceInterrupt"), danger: true },
-      ],
+      options,
     });
     if (!sendMode) return;
   }
@@ -262,19 +271,12 @@ export async function sendPrompt(opts = {}) {
 
   let result;
   try {
+    const dispatchArgs = [text, files, sessionId, displayFiles.length ? displayFiles : null];
     result = sendMode === "interrupt"
-      ? await window.assistantClient.interruptAndSend(
-          text,
-          files,
-          sessionId,
-          displayFiles.length ? displayFiles : null,
-        )
-      : await window.assistantClient.sendMessage(
-          text,
-          files,
-          sessionId,
-          displayFiles.length ? displayFiles : null,
-        );
+      ? await window.assistantClient.interruptAndSend(...dispatchArgs)
+      : sendMode === "steer"
+        ? await window.assistantClient.steerMessage(...dispatchArgs)
+        : await window.assistantClient.sendMessage(...dispatchArgs);
   } catch (err) {
     if (promptInput && savedText) promptInput.value = savedText;
     if (savedText) sessionDrafts.set(sessionId, savedText);
@@ -310,7 +312,11 @@ export async function sendPrompt(opts = {}) {
     return;
   }
 
-  if (result.priority) {
+  if (result.steered) {
+    showToast(t("toast.messageSteered"), "info");
+  } else if (result.steerFellBack) {
+    showToast(t("toast.steerFellBackToQueue"), "info");
+  } else if (result.priority) {
     showToast(t("toast.messagePriorityQueued"), "info");
   } else if (result.queued) {
     showToast(

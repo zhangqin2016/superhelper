@@ -1,5 +1,6 @@
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminEmpty } from "../../../components/admin-empty";
+import { ConfigBasicsPanel } from "../../../components/config-basics-panel";
 import { ConfigCenterPanels } from "../../../components/config-center-panels";
 import { ConfigGroupsPanel } from "../../../components/config-groups-panel";
 import { ConfigProfileForm } from "../../../components/config-profile-form";
@@ -11,23 +12,18 @@ import { getI18n } from "../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
 
-const TAB_LABELS = {
-  zh: { overview: "概览", providers: "模型供应商", profiles: "配置下发", groups: "设备组" },
-  en: { overview: "Overview", providers: "Model providers", profiles: "Delivery", groups: "Device groups" },
-  ar: { overview: "نظرة عامة", providers: "المزوّدون", profiles: "الإرسال", groups: "المجموعات" },
-};
-
 export default async function ConfigProfilesPage({ searchParams }) {
   const params = await searchParams;
   const deviceId = String(params?.deviceId || "").trim();
   const licenseId = String(params?.licenseId || "").trim();
   const { locale, t } = await getI18n();
   const copy = t.admin.configProfiles;
-  const labels = TAB_LABELS[locale] || TAB_LABELS.zh;
+  const center = t.admin.configCenter;
+  const labels = t.admin.configTabs;
   const previewQuery = new URLSearchParams();
   if (deviceId) previewQuery.set("deviceId", deviceId);
   if (licenseId) previewQuery.set("licenseId", licenseId);
-  const [data, health, preview, groupsData, providersData] = await Promise.all([
+  const [data, health, preview, groupsData, providersData, settingsData, skillsData] = await Promise.all([
     safeApiGet("/api/admin/config-profiles", { profiles: [] }),
     safeApiGet("/api/admin/health", { checks: [], runtime: {}, status: "unknown" }),
     safeApiGet(
@@ -36,10 +32,21 @@ export default async function ConfigProfilesPage({ searchParams }) {
     ),
     safeApiGet("/api/admin/config-groups", { groups: [] }),
     safeApiGet("/api/admin/model-providers", { providers: [] }),
+    safeApiGet("/api/admin/settings", { settings: { licenseTrialDays: 3, qiniu: {} } }),
+    safeApiGet("/api/admin/skill-packages", { skillPackages: [] }),
   ]);
   const rows = data.profiles || [];
+  const settings = settingsData.settings || { licenseTrialDays: 3, qiniu: {} };
+  const skillPackageOptions = [
+    ...new Map((skillsData.skillPackages || []).map((s) => [String(s.skill_id || ""), { id: String(s.skill_id || ""), label: String(s.name || s.skill_id || "") }])).values(),
+  ].filter((o) => o.id);
 
   const tabs = [
+    {
+      id: "basics",
+      label: labels.basics,
+      node: <ConfigBasicsPanel settings={settings} t={t} />,
+    },
     {
       id: "overview",
       label: labels.overview,
@@ -64,7 +71,7 @@ export default async function ConfigProfilesPage({ searchParams }) {
       label: labels.profiles,
       node: (
         <>
-          <ConfigProfileForm providers={providersData.gateway || []} />
+          <ConfigProfileForm providers={providersData.gateway || []} skillPackageOptions={skillPackageOptions} />
           <ConfigProfilesTable rows={rows} empty={<AdminEmpty title={copy.title} description={copy.subtitle} />} />
         </>
       ),
@@ -77,7 +84,7 @@ export default async function ConfigProfilesPage({ searchParams }) {
   ];
 
   return (
-    <AdminShell title={copy.title} subtitle={copy.subtitle}>
+    <AdminShell title={center.title} subtitle={center.subtitle}>
       <ConfigTabs tabs={tabs} />
     </AdminShell>
   );

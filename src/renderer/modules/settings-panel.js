@@ -9,6 +9,7 @@ import { refreshLocaleSelect } from "./locale-settings.js";
 import { refreshModelSelect } from "./model-settings.js";
 import { refreshPermissionSelect, refreshSessionPermissionSelect } from "./permission-settings.js";
 import { refreshSearchSettings } from "./search-settings.js";
+import { refreshMediaProviderSettings } from "./media-provider-settings.js";
 import { refreshSkillsList } from "./skill-settings.js";
 import { refreshConnectorSettings, initConnectorSettings } from "./connector-settings.js";
 import { refreshWorkspaceApps } from "./workspace-apps.js";
@@ -24,7 +25,7 @@ import { getNotificationPrefs, setNotificationPrefs } from "./task-alert.js";
 
 // "account" merges usage + license; "help" merges feedback + contact + about.
 // Multiple <section>s can share one page id — switchSettingsPage shows them all.
-const SETTINGS_PAGES = ["general", "model", "permission", "search", "connectors", "skills", "apps", "memory", "account", "help"];
+const SETTINGS_PAGES = ["general", "model", "permission", "search", "media", "connectors", "skills", "apps", "memory", "account", "help"];
 
 let panelOpen = false;
 let activeSettingsPage = "general";
@@ -82,6 +83,7 @@ function refreshSettingsPanelData() {
     refreshModelSelect(),
     refreshPermissionSelect(),
     refreshSearchSettings(),
+    refreshMediaProviderSettings(),
     refreshConnectorSettings(),
     refreshSkillsList(),
     refreshWorkspaceApps(),

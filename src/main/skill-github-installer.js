@@ -18,7 +18,7 @@ const {
 } = require("./skills-state");
 
 const FETCH_TIMEOUT_MS = 60_000;
-const MAX_SKILL_DIR_BYTES = 3 * 1024 * 1024;
+const MAX_SKILL_DIR_BYTES = 200 * 1024 * 1024;
 function skillsCacheDir() {
   return userDataPath("skills-cache");
 }
@@ -311,4 +311,5 @@ async function installFromGithubEntry(entry) {
 module.exports = {
   installFromGithubEntry,
   downloadGithubPath,
+  MAX_SKILL_DIR_BYTES,
 };

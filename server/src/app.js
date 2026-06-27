@@ -11,10 +11,10 @@ import { ensureEnvManagedConfigProfile } from "./services/client-config.js";
 import { refreshModelCatalog } from "./services/model-catalog.js";
 import { ensureEnvQiniuConfigSeeded } from "./services/app-settings.js";
 import { installDocOnlyCompilers, registerOpenapi } from "./openapi.js";
+import { ADMIN_UPLOAD_LIMIT_BYTES } from "./limits.js";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
-const ADMIN_UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
 const rateBuckets = new Map();
 
 function clientKey(request) {

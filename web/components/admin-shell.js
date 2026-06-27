@@ -1,26 +1,46 @@
-import Link from "next/link";
-import { Activity, BarChart3, Boxes, ClipboardList, DownloadCloud, Gauge, KeyRound, Laptop, LogOut, Mail, PackageCheck, Radar, Settings, SlidersHorizontal, Store } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { logoutAction } from "../app/admin/actions";
 import { LanguageSwitcher } from "./language-switcher";
+import { AdminNav } from "./admin-nav";
 import { getI18n } from "../lib/i18n.mjs";
 
 export async function AdminShell({ children, title, subtitle }) {
   const { locale, t } = await getI18n();
-  const items = [
-    ["/admin", Gauge, t.admin.nav.dashboard],
-    ["/admin/licenses", KeyRound, t.admin.nav.licenses],
-    ["/admin/devices", Laptop, t.admin.nav.devices],
-    ["/admin/usage", BarChart3, t.admin.nav.usage],
-    ["/admin/contacts", Mail, t.admin.nav.contacts],
-    ["/admin/releases", DownloadCloud, t.admin.nav.releases],
-    ["/admin/runtime-packs", Boxes, t.admin.nav.runtimePacks],
-    ["/admin/skill-packages", PackageCheck, t.admin.nav.skillPackages],
-    ["/admin/apps", Store, t.admin.nav.apps],
-    ["/admin/config", SlidersHorizontal, t.admin.nav.config],
-    ["/admin/health", Activity, t.admin.nav.health],
-    ["/admin/diagnostics", Radar, t.admin.nav.diagnostics],
-    ["/admin/settings", Settings, t.admin.nav.settings],
-    ["/admin/audit", ClipboardList, t.admin.nav.audit],
+  const nav = t.admin.nav;
+  // Task-based grouping for non-technical operators. Routes here are the
+  // existing ones; later phases merge overlapping pages and update this map.
+  const groups = [
+    {
+      title: t.admin.navGroups.operations,
+      items: [
+        { href: "/admin", label: nav.dashboard },
+        { href: "/admin/licenses", label: nav.licenses },
+        { href: "/admin/devices", label: nav.devices },
+        { href: "/admin/usage", label: nav.usage },
+        { href: "/admin/contacts", label: nav.contacts },
+      ],
+    },
+    {
+      title: t.admin.navGroups.distribution,
+      items: [
+        { href: "/admin/releases", label: nav.releases },
+        { href: "/admin/library", label: t.admin.library.title },
+      ],
+    },
+    {
+      title: t.admin.navGroups.configuration,
+      items: [
+        { href: "/admin/config", label: nav.config },
+      ],
+    },
+    {
+      title: t.admin.navGroups.monitoring,
+      items: [
+        { href: "/admin/health", label: nav.health },
+        { href: "/admin/diagnostics", label: nav.diagnostics },
+        { href: "/admin/audit", label: nav.audit },
+      ],
+    },
   ];
   return (
     <div className="admin-layout">
@@ -35,14 +55,7 @@ export async function AdminShell({ children, title, subtitle }) {
         <div className="mb-5">
           <LanguageSwitcher initialLocale={locale} />
         </div>
-        <nav className="space-y-1">
-          {items.map(([href, Icon, label]) => (
-            <Link key={href} href={href} className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-white/68 hover:bg-white/8 hover:text-white">
-              <Icon size={18} />
-              {label}
-            </Link>
-          ))}
-        </nav>
+        <AdminNav groups={groups} />
         <form action={logoutAction} className="mt-8">
           <button className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm text-white/45 hover:bg-white/8 hover:text-white">
             <LogOut size={18} />

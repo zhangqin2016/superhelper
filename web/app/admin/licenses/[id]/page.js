@@ -5,6 +5,7 @@ import { LicenseEditForm } from "../../../../components/license-edit-form";
 import { Badge } from "../../../../components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
 import { safeApiGet } from "../../../../lib/api";
+import { getI18n } from "../../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ function featureText(features) {
 
 export default async function LicenseDetailPage({ params }) {
   const { id } = await params;
+  const { t } = await getI18n();
   const data = await safeApiGet(`/api/admin/licenses/${id}`, null);
   if (!data?.license) {
     return (
@@ -60,7 +62,7 @@ export default async function LicenseDetailPage({ params }) {
       <LicenseEditForm license={license} />
       <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_360px]">
         <div className="table-card p-6">
-          <h2 className="mb-5 text-xl font-semibold">Bound devices</h2>
+          <h2 className="mb-5 text-xl font-semibold">{t.admin.licenseDevices.title}</h2>
           {devices.length ? (
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-slate-500">
@@ -68,7 +70,7 @@ export default async function LicenseDetailPage({ params }) {
               </thead>
               <tbody>{devices.map((device) => (
                 <tr key={device.id} className="border-t border-slate-100">
-                  <td className="px-5 py-4 font-mono">{device.device_id}</td>
+                  <td className="px-5 py-4 font-mono"><Link href={`/admin/devices/${device.id}`} className="text-brand hover:underline">{device.device_id}</Link></td>
                   <td className="px-5 py-4">{[device.platform, device.arch].filter(Boolean).join(" / ") || "-"}</td>
                   <td className="px-5 py-4">{device.app_version || "-"}</td>
                   <td className="px-5 py-4">{device.status}</td>

@@ -5,6 +5,7 @@ const { app } = require("electron");
 const { userHome, agentBinDir, agentConfigDir } = require("./config");
 const { getActivePresetEnv, getUserApiEnv } = require("./model-presets");
 const { getSearchSpawnEnv } = require("./search-settings");
+const { getMediaProviderSpawnEnv } = require("./media-provider-settings");
 const { normalizeToLilyEnv, toEngineEnv } = require("./agent-env");
 const { ensureRuntimeNodeShim, runtimeBinDir } = require("./runtime-node");
 const { getRuntimePathEntries, getRuntimeEnvExtras } = require("./runtime-python");
@@ -81,6 +82,9 @@ function buildAgentSpawnEnv(options = {}) {
     ...engineEnv,
     ...getSearchSpawnEnv(),
     ...getRuntimeEnvExtras(),
+    // After getRuntimeEnvExtras (server-delivered LILY_*_PROVIDER default) so an
+    // explicit local user choice wins; emits nothing when set to "auto".
+    ...getMediaProviderSpawnEnv(),
     ...require("./connector-bridge").getConnectorBridgeEnvSync(),
     ...webRuntimeEnv,
     TERM: "dumb",

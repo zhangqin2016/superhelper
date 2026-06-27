@@ -5,9 +5,11 @@ import {
   DEFAULT_EFFECTIVE_CONFIG,
   clientConfigTtlMs,
   deepMerge,
+  expandModelProviderMenu,
   isGatewayBaseUrl,
   parseGatewayProvider,
   rolloutAllows,
+  resolveMediaSelection,
   withGatewayRuntimeConfig,
 } from "../server/src/services/client-config.js";
 import { verifyModelGatewayToken } from "../server/src/services/model-gateway/auth.js";
@@ -219,6 +221,52 @@ assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro[1
 assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL_HAIKU, "deepseek-v4-pro[1m]");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_SUBAGENT_MODEL, "deepseek-v4-pro[1m]");
 
+// Global default whitelist: baseline limited to listed providers even when more
+// are configured. Empty whitelist = all (unchanged).
+const twoProviders = {
+  deepseek: { id: "deepseek", type: "anthropic", baseUrl: "https://api.deepseek.com/anthropic", apiKey: "sk-d", models: ["deepseek-v4-pro[1m]"] },
+  glm: { id: "glm", type: "anthropic", baseUrl: "https://api.z.ai/api/anthropic", apiKey: "sk-g", models: ["glm-4.7"] },
+};
+const whitelisted = buildEnvManagedClientConfig(
+  { modelGatewayDefaultProvider: "deepseek", modelConfigDeliveryMode: "gateway", defaultModelProviders: ["deepseek"] },
+  twoProviders,
+);
+assert.ok(
+  whitelisted.models.presets.every((p) => p.id.startsWith("deepseek-")),
+  "whitelist should limit the baseline to deepseek only",
+);
+const noWhitelist = buildEnvManagedClientConfig(
+  { modelGatewayDefaultProvider: "deepseek", modelConfigDeliveryMode: "gateway", defaultModelProviders: [] },
+  twoProviders,
+);
+assert.ok(
+  noWhitelist.models.presets.some((p) => p.id.startsWith("glm-")),
+  "empty whitelist should expose all configured providers (unchanged default)",
+);
+
+// Per-scope provider menu expansion: a profile's `models.providers` directive
+// becomes that scope's preset menu (replacing the baseline it merged onto).
+const scopeProviders = {
+  deepseek: { id: "deepseek", type: "anthropic", baseUrl: "https://api.deepseek.com/anthropic", apiKey: "sk-d", models: ["deepseek-v4-pro[1m]"] },
+  glm: { id: "glm", type: "anthropic", baseUrl: "https://api.z.ai/api/anthropic", apiKey: "sk-g", models: ["glm-4.7", "glm-4.5-air"] },
+};
+const scopeMerged = {
+  // baseline (deepseek-only) that a group profile merged its directive onto
+  models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["glm"], activeProvider: "glm" },
+};
+const expanded = expandModelProviderMenu(scopeMerged, { providers: scopeProviders, deliveryMode: "gateway" });
+assert.ok(expanded.models.presets.every((p) => p.id.startsWith("glm-")), "scope menu should expand to the directive's providers only");
+assert.equal(expanded.models.providers, undefined, "directive should be consumed");
+assert.ok(expanded.models.activePresetId.startsWith("glm-"), "active should be the directive's activeProvider");
+
+// Fail-safe: unresolvable providers → keep the baseline menu, drop the directive.
+const unresolved = expandModelProviderMenu(
+  { models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["ghost"] } },
+  { providers: scopeProviders, deliveryMode: "gateway" },
+);
+assert.deepEqual(unresolved.models.presets, [{ id: "deepseek-gateway" }], "unresolvable directive keeps baseline presets");
+assert.equal(unresolved.models.providers, undefined);
+
 const openAiDirectFallback = buildEnvManagedClientConfig(
   {
     modelGatewayDefaultProvider: "openai",
@@ -255,5 +303,45 @@ const openAiDirect = buildEnvManagedClientConfig(
 );
 assert.equal(openAiDirect.models.activePresetId, "openai-direct");
 assert.equal(openAiDirect.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
+
+// --- resolveMediaSelection: per-scope media multi-select + default (backward-compatible) ---
+// 1. No config.media (old profile) + providers available -> all available, server default
+//    kept; old clients ignore the added `media` field. (No regression.)
+{
+  const cfg = resolveMediaSelection(
+    { runtime: { env: { LILY_IMAGE_PROVIDER: "dashscope", LILY_VIDEO_PROVIDER: "dashscope" } } },
+    ["dashscope", "volcengine"],
+  );
+  assert.deepEqual(cfg.media.image.providers, ["dashscope", "volcengine"], "no selection -> all available (image)");
+  assert.equal(cfg.media.image.default, "dashscope", "no selection -> server default preserved");
+  assert.equal(cfg.runtime.env.LILY_IMAGE_PROVIDER, "dashscope", "no selection -> env default unchanged (no regression)");
+}
+// 2. Explicit multi-select + default -> gated to available, default drives the skill env.
+{
+  const cfg = resolveMediaSelection(
+    {
+      media: { image: { providers: ["volcengine", "kling", "ghost"], default: "kling" }, video: { providers: ["dashscope"], default: "dashscope" } },
+      runtime: { env: { LILY_IMAGE_PROVIDER: "dashscope", LILY_VIDEO_PROVIDER: "dashscope" } },
+    },
+    ["dashscope", "volcengine", "kling"],
+  );
+  assert.deepEqual(cfg.media.image.providers, ["volcengine", "kling"], "unavailable 'ghost' is dropped");
+  assert.equal(cfg.media.image.default, "kling", "explicit default honored");
+  assert.equal(cfg.runtime.env.LILY_IMAGE_PROVIDER, "kling", "resolved default drives the generation skill env");
+}
+// 3. Default not in the available set -> falls back to server default, else first.
+{
+  const cfg = resolveMediaSelection(
+    { media: { image: { providers: ["volcengine"], default: "kling" } }, runtime: { env: { LILY_IMAGE_PROVIDER: "dashscope" } } },
+    ["dashscope", "volcengine"],
+  );
+  assert.equal(cfg.media.image.default, "volcengine", "invalid default -> only allowed one");
+}
+// 4. No providers available at all -> leave config untouched (today's behavior).
+{
+  const cfg = resolveMediaSelection({ media: { image: { providers: ["dashscope"], default: "dashscope" } } }, []);
+  assert.equal(cfg.media.image.providers[0], "dashscope", "no availability -> config left as-is (no media resolution)");
+  assert.ok(!("video" in cfg.media), "no availability -> untouched");
+}
 
 console.log("client-config-service: ok");

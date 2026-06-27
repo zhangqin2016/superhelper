@@ -31,14 +31,14 @@ function formatDate(value) {
   return new Date(value).toLocaleString();
 }
 
-function trialStatus(value) {
+function trialStatus(value, labels) {
   if (!value) return "-";
   const expires = new Date(value);
   if (Number.isNaN(expires.getTime())) return "-";
   const active = expires.getTime() > Date.now();
   return (
     <div className="space-y-1">
-      <Badge variant={active ? "brand" : "danger"}>{active ? "Trial" : "Expired"}</Badge>
+      <Badge variant={active ? "brand" : "danger"}>{active ? labels.trial : labels.expired}</Badge>
       <div className="text-xs text-slate-500">{expires.toLocaleDateString()}</div>
     </div>
   );
@@ -48,23 +48,23 @@ export function LicensesTable({ rows, empty }) {
   const { t } = useI18n();
   const columns = [
     { accessorKey: "id", header: ({ column }) => <SortHeader column={column}>{t.admin.nav.licenses}</SortHeader>, cell: ({ row }) => <Link href={`/admin/licenses/${row.original.id}`} className="font-mono text-brand">{row.original.id}</Link> },
-    { accessorKey: "customer_name", header: "Customer", cell: ({ row }) => row.original.customer_name || "-" },
-    { accessorKey: "plan", header: ({ column }) => <SortHeader column={column}>Plan</SortHeader> },
-    { accessorKey: "seats", header: ({ column }) => <SortHeader column={column}>Seats</SortHeader> },
-    { accessorKey: "expires_at", header: ({ column }) => <SortHeader column={column}>Expires</SortHeader>, cell: ({ row }) => formatDate(row.original.expires_at).slice(0, 10) },
+    { accessorKey: "customer_name", header: t.admin.cols.customer, cell: ({ row }) => row.original.customer_name || "-" },
+    { accessorKey: "plan", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.plan}</SortHeader> },
+    { accessorKey: "seats", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.seats}</SortHeader> },
+    { accessorKey: "expires_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.expires}</SortHeader>, cell: ({ row }) => formatDate(row.original.expires_at).slice(0, 10) },
     { accessorKey: "status", header: t.admin.common.status, cell: ({ row }) => <Badge variant={row.original.status === "active" ? "success" : "danger"}>{row.original.status}</Badge> },
     {
       id: "action",
       header: t.admin.common.action,
       cell: ({ row }) => (
         <form action={setLicenseStatusAction} onSubmit={(event) => {
-          if (row.original.status === "active" && !window.confirm("Disable this license? Active devices will stop refreshing successfully.")) {
+          if (row.original.status === "active" && !window.confirm(t.admin.confirm.disableLicense)) {
             event.preventDefault();
           }
         }}>
           <input type="hidden" name="id" value={row.original.id} />
           <input type="hidden" name="status" value={row.original.status === "active" ? "disabled" : "active"} />
-          <Button variant="outline" size="sm">{row.original.status === "active" ? t.admin.common.disabled : "Restore"}</Button>
+          <Button variant="outline" size="sm">{row.original.status === "active" ? t.admin.common.disabled : t.admin.cols.restore}</Button>
         </form>
       ),
     },
@@ -76,13 +76,13 @@ export function DevicesTable({ rows, empty }) {
   const { t } = useI18n();
   const columns = [
     { accessorKey: "id", header: ({ column }) => <SortHeader column={column}>{t.admin.nav.devices}</SortHeader>, cell: ({ row }) => <Link href={`/admin/devices/${row.original.id}`} className="font-mono text-brand">{row.original.id}</Link> },
-    { accessorKey: "license_id", header: t.admin.nav.licenses, cell: ({ row }) => <span className="font-mono">{row.original.license_id || "-"}</span> },
-    { accessorKey: "platform", header: "Platform", cell: ({ row }) => row.original.platform || "-" },
-    { accessorKey: "arch", header: "Arch", cell: ({ row }) => row.original.arch || "-" },
-    { accessorKey: "app_version", header: "Version", cell: ({ row }) => row.original.app_version || "-" },
-    { accessorKey: "trial_ends_at", header: "Trial", cell: ({ row }) => trialStatus(row.original.trial_ends_at) },
+    { accessorKey: "license_id", header: t.admin.nav.licenses, cell: ({ row }) => row.original.license_id ? <Link href={`/admin/licenses/${row.original.license_id}`} className="font-mono text-brand hover:underline">{row.original.license_id}</Link> : <span className="font-mono">-</span> },
+    { accessorKey: "platform", header: t.admin.cols.platform, cell: ({ row }) => row.original.platform || "-" },
+    { accessorKey: "arch", header: t.admin.cols.arch, cell: ({ row }) => row.original.arch || "-" },
+    { accessorKey: "app_version", header: t.admin.cols.version, cell: ({ row }) => row.original.app_version || "-" },
+    { accessorKey: "trial_ends_at", header: t.admin.cols.trial, cell: ({ row }) => trialStatus(row.original.trial_ends_at, t.admin.cols) },
     { accessorKey: "license_status", header: t.admin.common.status, cell: ({ row }) => row.original.license_status ? <Badge variant={row.original.license_status === "active" ? "success" : "danger"}>{row.original.license_status}</Badge> : "-" },
-    { accessorKey: "last_seen_at", header: ({ column }) => <SortHeader column={column}>Last seen</SortHeader>, cell: ({ row }) => formatDate(row.original.last_seen_at) },
+    { accessorKey: "last_seen_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.lastSeen}</SortHeader>, cell: ({ row }) => formatDate(row.original.last_seen_at) },
     {
       id: "action",
       header: t.admin.common.action,
@@ -91,13 +91,13 @@ export function DevicesTable({ rows, empty }) {
           <form action={setLicenseDeviceStatusAction}>
             <input type="hidden" name="id" value={row.original.license_device_id} />
             <input type="hidden" name="status" value={row.original.license_status === "active" ? "disabled" : "active"} />
-            <Button variant="outline" size="sm" formAction={setLicenseDeviceStatusAction}>{row.original.license_status === "active" ? t.admin.common.disabled : "Restore"}</Button>
+            <Button variant="outline" size="sm" formAction={setLicenseDeviceStatusAction}>{row.original.license_status === "active" ? t.admin.common.disabled : t.admin.cols.restore}</Button>
           </form>
           <form action={removeLicenseDeviceAction} onSubmit={(event) => {
-            if (!window.confirm("Unbind this device from the license?")) event.preventDefault();
+            if (!window.confirm(t.admin.confirm.unbindDevice)) event.preventDefault();
           }}>
             <input type="hidden" name="id" value={row.original.license_device_id} />
-            <Button variant="danger" size="sm">Unbind</Button>
+            <Button variant="danger" size="sm">{t.admin.cols.unbind}</Button>
           </form>
         </div>
       ) : "-",
@@ -109,12 +109,12 @@ export function DevicesTable({ rows, empty }) {
 export function ReleasesTable({ rows, empty }) {
   const { t } = useI18n();
   const columns = [
-    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>Version</SortHeader> },
-    { accessorKey: "platform", header: "Platform" },
+    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.version}</SortHeader> },
+    { accessorKey: "platform", header: t.admin.cols.platform },
     { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
-    { accessorKey: "force_update", header: "Force", cell: ({ row }) => String(Boolean(row.original.force_update)) },
-    { accessorKey: "size_bytes", header: "Size", cell: ({ row }) => row.original.size_bytes ? `${(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB` : "-" },
-    { accessorKey: "url", header: "URL", cell: ({ row }) => <span className="block max-w-[360px] truncate text-slate-500">{row.original.url}</span> },
+    { accessorKey: "force_update", header: t.admin.cols.force, cell: ({ row }) => String(Boolean(row.original.force_update)) },
+    { accessorKey: "size_bytes", header: t.admin.cols.size, cell: ({ row }) => row.original.size_bytes ? `${(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB` : "-" },
+    { accessorKey: "url", header: t.admin.cols.url, cell: ({ row }) => <span className="block max-w-[360px] truncate text-slate-500">{row.original.url}</span> },
     {
       id: "action",
       header: t.admin.common.action,
@@ -133,13 +133,13 @@ export function ReleasesTable({ rows, empty }) {
 export function RuntimePacksTable({ rows, empty }) {
   const { t } = useI18n();
   const columns = [
-    { accessorKey: "pack_id", header: ({ column }) => <SortHeader column={column}>Pack</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.pack_id}</span> },
-    { accessorKey: "platform", header: "Platform" },
-    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>Version</SortHeader> },
+    { accessorKey: "pack_id", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.pack}</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.pack_id}</span> },
+    { accessorKey: "platform", header: t.admin.cols.platform },
+    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.version}</SortHeader> },
     { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
-    { accessorKey: "size_bytes", header: "Size", cell: ({ row }) => row.original.size_bytes ? `${(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB` : "-" },
-    { accessorKey: "url", header: "URL", cell: ({ row }) => <span className="block max-w-[360px] truncate text-slate-500">{row.original.url}</span> },
-    { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>Created</SortHeader>, cell: ({ row }) => formatDate(row.original.created_at) },
+    { accessorKey: "size_bytes", header: t.admin.cols.size, cell: ({ row }) => row.original.size_bytes ? `${(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB` : "-" },
+    { accessorKey: "url", header: t.admin.cols.url, cell: ({ row }) => <span className="block max-w-[360px] truncate text-slate-500">{row.original.url}</span> },
+    { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.created}</SortHeader>, cell: ({ row }) => formatDate(row.original.created_at) },
     {
       id: "action",
       header: t.admin.common.action,
@@ -159,13 +159,13 @@ export function SkillPackagesTable({ rows, empty }) {
   const { t } = useI18n();
   const columns = [
     { accessorKey: "skill_id", header: ({ column }) => <SortHeader column={column}>Skill ID</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.skill_id}</span> },
-    { accessorKey: "name", header: "Name" },
-    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>Version</SortHeader> },
-    { accessorKey: "capability_layer", header: "Capability", cell: ({ row }) => <Badge variant="brand">{row.original.capability_layer}</Badge> },
-    { accessorKey: "risk_level", header: "Risk", cell: ({ row }) => <Badge variant={row.original.risk_level === "high" ? "danger" : row.original.risk_level === "medium" ? "brand" : "success"}>{row.original.risk_level}</Badge> },
-    { accessorKey: "default_eligible", header: "Default", cell: ({ row }) => row.original.default_eligible ? <Badge variant="success">yes</Badge> : <span className="text-slate-400">no</span> },
+    { accessorKey: "name", header: t.admin.cols.name },
+    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.version}</SortHeader> },
+    { accessorKey: "capability_layer", header: t.admin.cols.capability, cell: ({ row }) => <Badge variant="brand">{row.original.capability_layer}</Badge> },
+    { accessorKey: "risk_level", header: t.admin.cols.risk, cell: ({ row }) => <Badge variant={row.original.risk_level === "high" ? "danger" : row.original.risk_level === "medium" ? "brand" : "success"}>{row.original.risk_level}</Badge> },
+    { accessorKey: "default_eligible", header: t.admin.cols.default, cell: ({ row }) => row.original.default_eligible ? <Badge variant="success">{t.admin.cols.yes}</Badge> : <span className="text-slate-400">{t.admin.cols.no}</span> },
     { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
-    { accessorKey: "artifact_url", header: "Qiniu URL", cell: ({ row }) => <span className="block max-w-[320px] truncate text-slate-500">{row.original.artifact_url}</span> },
+    { accessorKey: "artifact_url", header: t.admin.cols.fileUrl, cell: ({ row }) => <span className="block max-w-[320px] truncate text-slate-500">{row.original.artifact_url}</span> },
     {
       id: "action",
       header: t.admin.common.action,
@@ -185,14 +185,14 @@ export function WorkspaceAppsTable({ rows, empty }) {
   const { t } = useI18n();
   const columns = [
     { accessorKey: "app_id", header: ({ column }) => <SortHeader column={column}>App ID</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.app_id}</span> },
-    { accessorKey: "name", header: "Name" },
-    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>Version</SortHeader> },
-    { accessorKey: "category", header: "Category", cell: ({ row }) => <Badge variant="brand">{row.original.category}</Badge> },
-    { accessorKey: "app_type", header: "Type" },
-    { accessorKey: "risk_level", header: "Risk", cell: ({ row }) => <Badge variant={row.original.risk_level === "high" ? "danger" : row.original.risk_level === "medium" ? "brand" : "success"}>{row.original.risk_level}</Badge> },
-    { accessorKey: "featured", header: "Featured", cell: ({ row }) => row.original.featured ? <Badge variant="success">yes</Badge> : <span className="text-slate-400">no</span> },
+    { accessorKey: "name", header: t.admin.cols.name },
+    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.version}</SortHeader> },
+    { accessorKey: "category", header: t.admin.cols.category, cell: ({ row }) => <Badge variant="brand">{row.original.category}</Badge> },
+    { accessorKey: "app_type", header: t.admin.cols.type },
+    { accessorKey: "risk_level", header: t.admin.cols.risk, cell: ({ row }) => <Badge variant={row.original.risk_level === "high" ? "danger" : row.original.risk_level === "medium" ? "brand" : "success"}>{row.original.risk_level}</Badge> },
+    { accessorKey: "featured", header: t.admin.cols.featured, cell: ({ row }) => row.original.featured ? <Badge variant="success">{t.admin.cols.yes}</Badge> : <span className="text-slate-400">{t.admin.cols.no}</span> },
     { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
-    { accessorKey: "artifact_url", header: "Qiniu URL", cell: ({ row }) => <span className="block max-w-[320px] truncate text-slate-500">{row.original.artifact_url}</span> },
+    { accessorKey: "artifact_url", header: t.admin.cols.fileUrl, cell: ({ row }) => <span className="block max-w-[320px] truncate text-slate-500">{row.original.artifact_url}</span> },
     {
       id: "action",
       header: t.admin.common.action,

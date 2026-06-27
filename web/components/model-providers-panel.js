@@ -17,6 +17,10 @@ const labels = {
     apiKey: "密钥",
     apiKeyHelp: "新建时填;编辑时留空表示不修改。",
     apiKeyKeep: "(留空=不改)",
+    secretKey: "SecretKey",
+    secretKeyHelp: "仅可灵(kling)需要:与 AccessKey(密钥)一起签发 JWT。留空=不改。",
+    groupId: "GroupId",
+    groupIdHelp: "仅 MiniMax 国内平台需要。非密钥,可见。",
     defaultModel: "默认模型",
     models: "可选模型",
     modelsHelp: "逗号分隔。整个列表都会下发，用户可在客户端切换；「默认模型」是初始选中项（须在列表内，留空则取第一个）。",
@@ -39,6 +43,10 @@ const labels = {
     apiKey: "API key",
     apiKeyHelp: "Set on create; leave blank when editing to keep it.",
     apiKeyKeep: "(blank = keep)",
+    secretKey: "SecretKey",
+    secretKeyHelp: "Kling only: signs the JWT together with the AccessKey (API key). Blank = keep.",
+    groupId: "GroupId",
+    groupIdHelp: "MiniMax (China) only. Non-secret, visible.",
     defaultModel: "Default model",
     models: "Available models",
     modelsHelp: "Comma-separated. The whole list is delivered so users can switch in the client; the default model is the initial pick (must be in the list; blank uses the first).",
@@ -61,6 +69,10 @@ const labels = {
     apiKey: "المفتاح",
     apiKeyHelp: "أدخله عند الإنشاء؛ اتركه فارغاً عند التعديل للإبقاء عليه.",
     apiKeyKeep: "(فارغ = إبقاء)",
+    secretKey: "SecretKey",
+    secretKeyHelp: "لـ Kling فقط: يوقّع الـ JWT مع AccessKey. فارغ = إبقاء.",
+    groupId: "GroupId",
+    groupIdHelp: "لـ MiniMax (الصين) فقط. غير سري.",
     defaultModel: "النموذج الافتراضي",
     models: "النماذج المتاحة",
     modelsHelp: "مفصولة بفواصل.",
@@ -94,7 +106,7 @@ export function ModelProvidersPanel({ providers = [] }) {
   const { locale } = useI18n();
   const copy = labels[locale] || labels.zh;
   const [state, action, pending] = useActionState(createModelProviderAction, initialState);
-  const [draft, setDraft] = useState({ id: "", label: "", type: "anthropic", baseUrl: "", defaultModel: "", models: "", disabled: false });
+  const [draft, setDraft] = useState({ id: "", label: "", type: "anthropic", baseUrl: "", defaultModel: "", models: "", groupId: "", disabled: false });
 
   function edit(provider) {
     setDraft({
@@ -104,6 +116,7 @@ export function ModelProvidersPanel({ providers = [] }) {
       baseUrl: provider.base_url || "",
       defaultModel: provider.default_model || "",
       models: (provider.models || []).join(", "),
+      groupId: provider.metadata?.groupId || "",
       disabled: !provider.enabled,
     });
   }
@@ -131,6 +144,7 @@ export function ModelProvidersPanel({ providers = [] }) {
             <option value="openai">openai</option>
             <option value="vision">vision</option>
             <option value="search">search</option>
+            <option value="media">media</option>
           </select>
         </Field>
         <div className="md:col-span-2">
@@ -140,6 +154,12 @@ export function ModelProvidersPanel({ providers = [] }) {
         </div>
         <Field label={`${copy.apiKey} ${copy.apiKeyKeep}`} help={copy.apiKeyHelp}>
           <input className={fieldClass()} name="apiKey" type="password" placeholder="sk-..." />
+        </Field>
+        <Field label={`${copy.secretKey} ${copy.apiKeyKeep}`} help={copy.secretKeyHelp}>
+          <input className={fieldClass()} name="secretKey" type="password" autoComplete="off" placeholder="kling secret" />
+        </Field>
+        <Field label={copy.groupId} help={copy.groupIdHelp}>
+          <input className={fieldClass()} name="groupId" value={draft.groupId} onChange={(e) => set("groupId", e.target.value)} placeholder="minimax group id" />
         </Field>
         <Field label={copy.defaultModel}>
           <input className={fieldClass()} name="defaultModel" value={draft.defaultModel} onChange={(e) => set("defaultModel", e.target.value)} placeholder="deepseek-v4-pro[1m]" />

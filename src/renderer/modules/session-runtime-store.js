@@ -93,7 +93,18 @@ export function getCachedRuntimeSessionIds() {
 }
 
 function committedMessageKey(message) {
-  if (message?.turnId && message?.role) return `turn:${message.role}:${message.turnId}`;
+  if (message?.turnId && message?.role) {
+    // A steered ("插话") message is a SECOND user message inside the same turn — it
+    // must not collide with (and overwrite) the turn's original user bubble, so key
+    // it by its per-turn steer sequence. The marker rides top-level (live) or meta
+    // (reloaded from the store).
+    const isSteer = message.steer || message.meta?.steer;
+    if (isSteer) {
+      const seq = message.steerSeq ?? message.meta?.steerSeq ?? normalizedMessageText(message);
+      return `turn:${message.role}:${message.turnId}:steer:${seq}`;
+    }
+    return `turn:${message.role}:${message.turnId}`;
+  }
   if (message?.id) return `id:${message.id}`;
   return ["fallback", message?.role || "", message?.timestamp || "", message?.content || ""].join(":");
 }
@@ -413,6 +424,8 @@ export function applyRuntimeEvent(event, opts = {}) {
       files: event.payload.files || undefined,
       turnId: event.turnId || undefined,
       timestamp: new Date(event.ts).toISOString(),
+      steer: event.payload.steer ? true : undefined,
+      steerSeq: event.payload.steer ? event.payload.steerSeq : undefined,
     });
     return;
   }

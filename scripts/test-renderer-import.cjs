@@ -450,6 +450,61 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(liveTurnQueueResult);
+    const minimapResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { updateMinimap } = await import("./modules/conversation-minimap.js");
+        // Build a stack > panel(scroller) > list with 2 prompts + 2 answers (h1+h2 each).
+        const stack = document.createElement("div");
+        stack.className = "session-messages-stack";
+        const panel = document.createElement("div");
+        panel.className = "session-messages is-active";
+        panel.style.cssText = "position:relative;height:300px;overflow:auto";
+        const list = document.createElement("div");
+        list.className = "messages";
+        panel.appendChild(list);
+        stack.appendChild(panel);
+        document.body.appendChild(stack);
+        const addUser = (txt) => {
+          const a = document.createElement("article"); a.className = "runtime-user-message";
+          const b = document.createElement("div"); b.className = "runtime-user-body"; b.textContent = txt;
+          a.appendChild(b); a.style.minHeight = "200px"; list.appendChild(a);
+        };
+        const addAssistant = (txt) => {
+          const a = document.createElement("article"); a.className = "assistant-turn-article";
+          const md = document.createElement("div"); md.className = "markdown-body";
+          const h1 = document.createElement("h1"); h1.textContent = txt + " 标题";
+          const h2 = document.createElement("h2"); h2.textContent = txt + " 小节";
+          const p = document.createElement("p"); p.textContent = txt;
+          md.append(h1, h2, p); a.appendChild(md); a.style.minHeight = "400px"; list.appendChild(a);
+        };
+        addUser("第一个问题"); addAssistant("第一个回答");
+        addUser("第二个问题"); addAssistant("第二个回答");
+        addUser("第三个问题"); addAssistant("第三个回答");
+        addUser("第四个问题"); addAssistant("第四个回答");
+        updateMinimap(panel);
+        const rail = stack.querySelector(".conversation-minimap");
+        if (!rail) throw new Error("minimap rail not mounted");
+        const ribs = rail.querySelectorAll(".conversation-minimap-rib");
+        // Questions only — answers get NO ticks (scope "prompts"); + terminus.
+        if (ribs.length !== 5) throw new Error("expected 5 ribs (4 prompt + terminus), got " + ribs.length);
+        if (rail.querySelectorAll(".conversation-minimap-rib.is-prompt").length !== 4) throw new Error("expected 4 prompt ribs");
+        if (rail.querySelectorAll(".conversation-minimap-rib.is-response").length !== 0) throw new Error("answers must NOT get ticks");
+        if (rail.querySelectorAll(".conversation-minimap-rib.is-heading").length !== 0) throw new Error("answers must NOT explode into heading sub-ticks");
+        if (rail.querySelector(".conversation-minimap-controls")) throw new Error("scope/depth controls were removed — should not render");
+        const terminus = rail.querySelector(".conversation-minimap-rib.is-terminus");
+        if (!terminus || terminus !== ribs[ribs.length - 1]) throw new Error("terminus must be the last rib");
+        // Clicking a rib must not throw and should request a scroll.
+        ribs[0].click();
+        terminus.click();
+        // Prompt ticks must carry the question text for the hover preview.
+        if (!Array.from(ribs).some((r) => (r.getAttribute("aria-label") || "").includes("问题"))) {
+          throw new Error("prompt ribs must carry the question text");
+        }
+        stack.remove();
+        return "conversation-minimap-regression: ok";
+      }
+    )()`);
+    console.log(minimapResult);
     const narrativeUpgradeResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
@@ -1318,6 +1373,16 @@ app.whenReady().then(async () => {
         if (!absolutePath || !absolutePath.classList.contains("is-clickable")) {
           throw new Error("absolute generated media path should be clickable");
         }
+        const revealButton = container.querySelector(".assistant-generated-media .assistant-reveal-btn");
+        if (!revealButton || !revealButton.querySelector("svg")) {
+          throw new Error("generated media reveal action should be an icon button: " + container.innerHTML);
+        }
+        if (!revealButton.getAttribute("aria-label") || !revealButton.title) {
+          throw new Error("generated media reveal icon must keep aria-label and tooltip");
+        }
+        if (/Show in folder|在目录中显示|在文件夹中显示/.test(revealButton.textContent || "")) {
+          throw new Error("generated media reveal action should not repeat text in the row");
+        }
         absolutePath.click();
         await new Promise((resolve) => setTimeout(resolve, 20));
         const relativePath = [...container.querySelectorAll(".assistant-generated-media code")]
@@ -1358,6 +1423,16 @@ app.whenReady().then(async () => {
         const path = container.querySelector(".assistant-generated-file-preview code.is-clickable");
         if (!path || path.textContent !== "/tmp/out/icon.svg") {
           throw new Error("generated SVG preview should keep a clickable reveal path");
+        }
+        const revealButton = container.querySelector(".assistant-generated-file-preview .assistant-reveal-btn");
+        if (!revealButton || !revealButton.querySelector("svg")) {
+          throw new Error("generated SVG reveal action should be an icon button: " + container.innerHTML);
+        }
+        if (!revealButton.getAttribute("aria-label") || !revealButton.title) {
+          throw new Error("generated SVG reveal icon must keep aria-label and tooltip");
+        }
+        if (/Show in folder|在目录中显示|在文件夹中显示/.test(revealButton.textContent || "")) {
+          throw new Error("generated SVG reveal action should not repeat text in the row");
         }
         path.click();
         await new Promise((resolve) => setTimeout(resolve, 20));

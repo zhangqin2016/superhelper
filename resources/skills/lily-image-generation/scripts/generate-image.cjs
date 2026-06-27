@@ -4,8 +4,17 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
-const CREATE_PATH = "/services/aigc/multimodal-generation/generation";
+// Provider-dispatch shell. The DashScope flow (default) is unchanged; other
+// providers (volcengine, ...) are pluggable adapters under ./providers. Each
+// adapter owns its API shape and returns { urls?, buffers? }; this shell handles
+// stdin, provider selection, downloading/persisting, and the XML output.
+const ADAPTERS = {
+  dashscope: require("./providers/dashscope.cjs"),
+  volcengine: require("./providers/volcengine.cjs"),
+  kling: require("./providers/kling.cjs"),
+  minimax: require("./providers/minimax.cjs"),
+  zhipu: require("./providers/zhipu.cjs"),
+};
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -37,18 +46,6 @@ function jsonParse(raw) {
   }
 }
 
-function apiKey() {
-  return process.env.DASHSCOPE_API_KEY || process.env.ALIYUN_BAILIAN_API_KEY || "";
-}
-
-function baseUrl() {
-  return (process.env.DASHSCOPE_IMAGE_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
-}
-
-function createUrl() {
-  return process.env.DASHSCOPE_IMAGE_ENDPOINT || `${baseUrl()}${CREATE_PATH}`;
-}
-
 function safeName(prefix, ext) {
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const rand = Math.random().toString(16).slice(2, 8);
@@ -62,84 +59,6 @@ function xmlEscape(value = "") {
     .replace(/'/g, "&apos;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-}
-
-async function requestJson(url, options) {
-  const response = await fetch(url, { ...options, signal: AbortSignal.timeout(60_000) });
-  const text = await response.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { raw: text };
-  }
-  if (!response.ok) {
-    const message = data?.message || data?.code || text || `${response.status} ${response.statusText}`;
-    throw new Error(message);
-  }
-  return data;
-}
-
-function extractTaskId(data) {
-  return data?.output?.task_id || data?.task_id || data?.data?.task_id || "";
-}
-
-function extractStatus(data) {
-  return String(data?.output?.task_status || data?.task_status || data?.status || "").toUpperCase();
-}
-
-function collectImageUrls(data) {
-  const urls = [];
-  const output = data?.output || data || {};
-  const choices = output.choices || data?.choices || [];
-  for (const choice of choices) {
-    const content = choice?.message?.content || choice?.content || [];
-    for (const item of Array.isArray(content) ? content : []) {
-      if (item?.image) urls.push(item.image);
-      if (item?.url) urls.push(item.url);
-    }
-  }
-  const candidates = [
-    output.results,
-    output.task_result?.results,
-    output.images,
-    output.task_result?.images,
-    data?.data,
-  ];
-  for (const list of candidates) {
-    if (!Array.isArray(list)) continue;
-    for (const item of list) {
-      const url = item?.url || item?.image_url || item?.result_url;
-      if (url) urls.push(url);
-    }
-  }
-  if (output.url) urls.push(output.url);
-  if (output.image_url) urls.push(output.image_url);
-  return [...new Set(urls)];
-}
-
-async function pollTask(taskId, key, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  const taskUrl = `${baseUrl()}/tasks/${encodeURIComponent(taskId)}`;
-  const pollIntervalMs = Math.max(50, Number(process.env.LILY_MEDIA_POLL_INTERVAL_MS || 3000));
-  let lastStatus = "";
-  while (Date.now() < deadline) {
-    const data = await requestJson(taskUrl, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    const status = extractStatus(data);
-    if (status && status !== lastStatus) {
-      logProgress(msg(`任务状态：${status}`, `Task status: ${status}`));
-      lastStatus = status;
-    }
-    if (status === "SUCCEEDED" || status === "SUCCESS") return data;
-    if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED") {
-      throw new Error(data?.output?.message || data?.message || msg(`任务失败：${status}`, `Task failed: ${status}`));
-    }
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-  }
-  throw new Error(msg(`图片生成超时，task_id=${taskId}`, `Image generation timed out, task_id=${taskId}`));
 }
 
 async function downloadFile(url, outputPath) {
@@ -157,51 +76,33 @@ function detectExt(url) {
   return "png";
 }
 
+function selectProvider(input) {
+  const id = String(input.provider || process.env.LILY_IMAGE_PROVIDER || "dashscope").toLowerCase();
+  const adapter = ADAPTERS[id];
+  if (!adapter) {
+    fail(msg(`不支持的图片 provider：${id}`, `Unsupported image provider: ${id}`), `available: ${Object.keys(ADAPTERS).join(", ")}`);
+  }
+  return adapter;
+}
+
 async function main() {
   const input = jsonParse(await readStdin());
   const prompt = String(input.prompt || "").trim();
   if (!prompt) fail(msg("缺少 prompt。", "Missing prompt."));
-  const key = apiKey();
-  if (!key) fail(msg("缺少 DASHSCOPE_API_KEY。请在模型配置或环境变量中配置百炼 API Key。", "Missing DASHSCOPE_API_KEY. Configure the DashScope API key in model settings or environment variables."));
+  input.prompt = prompt;
 
-  const model = input.model || process.env.DASHSCOPE_IMAGE_MODEL || "qwen-image-2.0-pro";
+  const adapter = selectProvider(input);
   const outputDir = path.resolve(process.cwd(), input.output_dir || "generated-assets");
   fs.mkdirSync(outputDir, { recursive: true });
 
-  const payload = {
-    model,
-    input: {
-      messages: [
-        {
-          role: "user",
-          content: [{ text: prompt }],
-        },
-      ],
-    },
-    parameters: {
-      negative_prompt: input.negative_prompt || " ",
-      size: input.size || "2048*2048",
-      n: Number(input.n || 1),
-      prompt_extend: input.prompt_extend !== false,
-      watermark: input.watermark === true,
-    },
-  };
+  let result;
+  try {
+    result = await adapter.generate(input, { env: process.env, logProgress, msg });
+  } catch (error) {
+    fail(msg("图片生成失败。", "Image generation failed."), error?.message || String(error));
+  }
 
-  logProgress(msg("正在提交图片生成任务...", "Submitting image generation task..."));
-  const create = await requestJson(createUrl(), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  const taskId = extractTaskId(create);
-  if (taskId) logProgress(msg(`任务已提交：${taskId}`, `Task submitted: ${taskId}`));
-  const result = taskId ? await pollTask(taskId, key, Number(input.timeout_ms || 240_000)) : create;
-  const urls = collectImageUrls(result);
-  if (!urls.length) fail(msg("图片任务完成，但没有找到图片 URL。", "Image task finished but no image URL was returned."), JSON.stringify(result, null, 2));
-
+  const { taskId = "", urls = [], buffers = [] } = result || {};
   const files = [];
   for (let i = 0; i < urls.length; i += 1) {
     const ext = detectExt(urls[i]);
@@ -210,6 +111,12 @@ async function main() {
     const bytes = await downloadFile(urls[i], filePath);
     files.push({ path: filePath, bytes });
   }
+  for (let i = 0; i < buffers.length; i += 1) {
+    const filePath = path.join(outputDir, safeName(`image-${urls.length + i + 1}`, buffers[i].ext || "png"));
+    fs.writeFileSync(filePath, buffers[i].data);
+    files.push({ path: filePath, bytes: buffers[i].data.length });
+  }
+  if (!files.length) fail(msg("图片任务完成，但没有产物。", "Image task finished but produced no files."));
 
   process.stdout.write("<generated_media type=\"image\">\n");
   if (taskId) process.stdout.write(`  <task_id>${xmlEscape(taskId)}</task_id>\n`);

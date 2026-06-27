@@ -27,34 +27,35 @@ export default async function UsagePage({ searchParams }) {
   const filters = await searchParams;
   const data = await safeApiGet(`/api/admin/usage?${queryString(filters)}`, { usage: [] });
   const rows = data.usage || [];
+  const c = t.admin.usageView;
   return (
     <AdminShell title={t.admin.pages.usage[0]} subtitle={t.admin.pages.usage[1]}>
       <form className="table-card mb-6 grid gap-4 p-6 lg:grid-cols-5">
         <label className="grid gap-2 text-sm font-medium text-slate-600">
-          Days
+          {c.days}
           <input name="days" defaultValue={filters?.days || "30"} className="rounded-lg border border-slate-200 px-3 py-2" />
         </label>
         <label className="grid gap-2 text-sm font-medium text-slate-600">
-          License
+          {c.license}
           <input name="licenseId" defaultValue={filters?.licenseId || ""} className="rounded-lg border border-slate-200 px-3 py-2" />
         </label>
         <label className="grid gap-2 text-sm font-medium text-slate-600">
-          Device
+          {c.device}
           <input name="deviceId" defaultValue={filters?.deviceId || ""} className="rounded-lg border border-slate-200 px-3 py-2" />
         </label>
         <label className="grid gap-2 text-sm font-medium text-slate-600">
-          Model
+          {c.model}
           <input name="model" defaultValue={filters?.model || ""} className="rounded-lg border border-slate-200 px-3 py-2" />
         </label>
         <div className="flex items-end">
-          <button className="rounded-lg bg-brand px-5 py-2.5 font-semibold text-white">Apply filters</button>
+          <button className="rounded-lg bg-brand px-5 py-2.5 font-semibold text-white">{c.apply}</button>
         </div>
       </form>
       <div className="grid gap-5 lg:grid-cols-3">
         {[
-          ["Messages", sum(rows, "message_count")],
-          ["Images", sum(rows, "image_count")],
-          ["Tool calls", sum(rows, "tool_call_count")],
+          [c.messages, sum(rows, "message_count")],
+          [c.images, sum(rows, "image_count")],
+          [c.tools, sum(rows, "tool_call_count")],
         ].map(([label, value]) => (
           <div key={label} className="metric-card rounded-xl p-5">
             <div className="font-mono text-3xl font-semibold">{fmt(value)}</div>
@@ -63,11 +64,11 @@ export default async function UsagePage({ searchParams }) {
         ))}
       </div>
       <div className="table-card mt-6 p-6">
-        <h2 className="mb-5 text-xl font-semibold">Daily usage</h2>
+        <h2 className="mb-5 text-xl font-semibold">{c.daily}</h2>
         {rows.length ? (
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
-              <tr>{["Date", "Device", "Model", "Messages", "Images", "Tools", "Tokens"].map((h) => <th key={h} className="px-5 py-4">{h}</th>)}</tr>
+              <tr>{[c.date, c.device, c.model, c.messages, c.images, c.tools, c.tokens].map((h) => <th key={h} className="px-5 py-4">{h}</th>)}</tr>
             </thead>
             <tbody>{rows.map((row) => (
               <tr key={row.id} className="border-t border-slate-100">
@@ -81,7 +82,7 @@ export default async function UsagePage({ searchParams }) {
               </tr>
             ))}</tbody>
           </table>
-        ) : <AdminEmpty title="No usage yet" description="Usage appears after clients report aggregated counts." />}
+        ) : <AdminEmpty title={c.emptyTitle} description={c.emptyDesc} />}
       </div>
     </AdminShell>
   );

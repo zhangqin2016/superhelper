@@ -4,8 +4,17 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
-const CREATE_PATH = "/services/aigc/video-generation/video-synthesis";
+// Provider-dispatch shell. The DashScope flow (default) is unchanged; other
+// providers (volcengine, ...) are pluggable adapters under ./providers. Each
+// adapter owns its API shape and returns { taskId?, urls }; this shell handles
+// stdin, provider selection, downloading, and the XML output.
+const ADAPTERS = {
+  dashscope: require("./providers/dashscope.cjs"),
+  volcengine: require("./providers/volcengine.cjs"),
+  kling: require("./providers/kling.cjs"),
+  minimax: require("./providers/minimax.cjs"),
+  zhipu: require("./providers/zhipu.cjs"),
+};
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -25,6 +34,10 @@ function fail(message, detail) {
   process.exit(1);
 }
 
+function logProgress(message) {
+  process.stderr.write(`[lily-video-generation] ${message}\n`);
+}
+
 function jsonParse(raw) {
   try {
     return raw ? JSON.parse(raw) : {};
@@ -33,77 +46,19 @@ function jsonParse(raw) {
   }
 }
 
-function apiKey() {
-  return process.env.DASHSCOPE_API_KEY || process.env.ALIYUN_BAILIAN_API_KEY || "";
+function safeName(prefix, ext) {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const rand = Math.random().toString(16).slice(2, 8);
+  return `${prefix}-${ts}-${rand}.${ext}`;
 }
 
-function baseUrl() {
-  return (process.env.DASHSCOPE_VIDEO_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
-}
-
-function createUrl() {
-  return process.env.DASHSCOPE_VIDEO_ENDPOINT || `${baseUrl()}${CREATE_PATH}`;
-}
-
-async function requestJson(url, options) {
-  const response = await fetch(url, { ...options, signal: AbortSignal.timeout(60_000) });
-  const text = await response.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { raw: text };
-  }
-  if (!response.ok) {
-    const message = data?.message || data?.code || text || `${response.status} ${response.statusText}`;
-    throw new Error(message);
-  }
-  return data;
-}
-
-function extractTaskId(data) {
-  return data?.output?.task_id || data?.task_id || data?.data?.task_id || "";
-}
-
-function extractStatus(data) {
-  return String(data?.output?.task_status || data?.task_status || data?.status || "").toUpperCase();
-}
-
-function collectVideoUrls(data) {
-  const output = data?.output || data || {};
-  const urls = [];
-  for (const key of ["video_url", "url", "result_url"]) {
-    if (output[key]) urls.push(output[key]);
-    if (output.task_result?.[key]) urls.push(output.task_result[key]);
-  }
-  const lists = [output.results, output.videos, output.task_result?.results, data?.data];
-  for (const list of lists) {
-    if (!Array.isArray(list)) continue;
-    for (const item of list) {
-      const url = item?.video_url || item?.url || item?.result_url;
-      if (url) urls.push(url);
-    }
-  }
-  return [...new Set(urls)];
-}
-
-async function pollTask(taskId, key, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  const taskUrl = `${baseUrl()}/tasks/${encodeURIComponent(taskId)}`;
-  const pollIntervalMs = Math.max(50, Number(process.env.LILY_MEDIA_POLL_INTERVAL_MS || 5000));
-  while (Date.now() < deadline) {
-    const data = await requestJson(taskUrl, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    const status = extractStatus(data);
-    if (status === "SUCCEEDED" || status === "SUCCESS") return data;
-    if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED") {
-      throw new Error(data?.output?.message || data?.message || msg(`任务失败：${status}`, `Task failed: ${status}`));
-    }
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-  }
-  throw new Error(msg(`视频生成超时，task_id=${taskId}`, `Video generation timed out, task_id=${taskId}`));
+function xmlEscape(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 async function downloadFile(url, outputPath) {
@@ -114,56 +69,34 @@ async function downloadFile(url, outputPath) {
   return bytes.length;
 }
 
-function safeName(prefix, ext) {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const rand = Math.random().toString(16).slice(2, 8);
-  return `${prefix}-${ts}-${rand}.${ext}`;
+function selectProvider(input) {
+  const id = String(input.provider || process.env.LILY_VIDEO_PROVIDER || "dashscope").toLowerCase();
+  const adapter = ADAPTERS[id];
+  if (!adapter) {
+    fail(msg(`不支持的视频 provider：${id}`, `Unsupported video provider: ${id}`), `available: ${Object.keys(ADAPTERS).join(", ")}`);
+  }
+  return adapter;
 }
 
 async function main() {
   const input = jsonParse(await readStdin());
   const prompt = String(input.prompt || "").trim();
   if (!prompt) fail(msg("缺少 prompt。", "Missing prompt."));
-  const key = apiKey();
-  if (!key) fail(msg("缺少 DASHSCOPE_API_KEY。请在模型配置或环境变量中配置百炼 API Key。", "Missing DASHSCOPE_API_KEY. Configure the DashScope API key in model settings or environment variables."));
+  input.prompt = prompt;
 
-  const media = Array.isArray(input.media) ? input.media.filter((item) => item && item.type && item.url) : [];
-  const model = input.model || process.env.DASHSCOPE_VIDEO_MODEL || (media.length ? "wan2.7-i2v-2026-04-25" : "wan2.7-t2v");
+  const adapter = selectProvider(input);
   const outputDir = path.resolve(process.cwd(), input.output_dir || "generated-assets");
   fs.mkdirSync(outputDir, { recursive: true });
 
-  const payload = {
-    model,
-    input: {
-      prompt,
-      ...(input.negative_prompt ? { negative_prompt: input.negative_prompt } : {}),
-      ...(media.length ? { media } : {}),
-      ...(input.audio_url ? { audio_url: input.audio_url } : {}),
-    },
-    parameters: {
-      resolution: input.resolution || "720P",
-      ratio: input.ratio || "16:9",
-      duration: Number(input.duration || 5),
-      prompt_extend: input.prompt_extend !== false,
-      watermark: input.watermark === true,
-    },
-  };
+  let result;
+  try {
+    result = await adapter.generate(input, { env: process.env, logProgress, msg });
+  } catch (error) {
+    fail(msg("视频生成失败。", "Video generation failed."), error?.message || String(error));
+  }
 
-  const create = await requestJson(createUrl(), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      "X-DashScope-Async": "enable",
-    },
-    body: JSON.stringify(payload),
-  });
-  const taskId = extractTaskId(create);
-  if (!taskId) fail(msg("百炼未返回 task_id。", "DashScope did not return a task_id."), JSON.stringify(create, null, 2));
-
-  const result = await pollTask(taskId, key, Number(input.timeout_ms || 900_000));
-  const urls = collectVideoUrls(result);
-  if (!urls.length) fail(msg("视频任务完成，但没有找到视频 URL。", "Video task finished but no video URL was returned."), JSON.stringify(result, null, 2));
+  const { taskId = "", urls = [] } = result || {};
+  if (!urls.length) fail(msg("视频任务完成，但没有产物。", "Video task finished but produced no files."));
 
   const files = [];
   for (let i = 0; i < urls.length; i += 1) {
@@ -173,9 +106,9 @@ async function main() {
   }
 
   process.stdout.write("<generated_media type=\"video\">\n");
-  process.stdout.write(`  <task_id>${taskId}</task_id>\n`);
+  if (taskId) process.stdout.write(`  <task_id>${xmlEscape(taskId)}</task_id>\n`);
   for (const file of files) {
-    process.stdout.write(`  <file path="${file.path}" bytes="${file.bytes}" />\n`);
+    process.stdout.write(`  <file path="${xmlEscape(file.path)}" bytes="${file.bytes}" />\n`);
   }
   process.stdout.write("</generated_media>\n");
 }

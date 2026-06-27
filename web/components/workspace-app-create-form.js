@@ -3,11 +3,12 @@
 import { useActionState } from "react";
 import { createWorkspaceAppAction } from "../app/admin/actions";
 import { CheckboxField, Field, SelectField, SubmitButton, TextAreaField } from "./admin-forms";
+import { MultiSelectField } from "./multi-select-field";
 import { useI18n } from "../lib/use-i18n";
 
 const initialState = { ok: null, message: "" };
 
-export function WorkspaceAppCreateForm() {
+export function WorkspaceAppCreateForm({ runtimePackOptions = [], skillPackageOptions = [] }) {
   const [state, action, pending] = useActionState(createWorkspaceAppAction, initialState);
   const { t } = useI18n();
   const copy = t.admin.uploadForms.workspaceApp;
@@ -32,8 +33,12 @@ export function WorkspaceAppCreateForm() {
         <Field label="Publisher" name="publisher" defaultValue="Lily Workbench" />
         <Field label="Source repo" name="sourceRepo" placeholder="lily-workbench/apps" />
         <Field label="Tags" name="tags" placeholder="stocks,research,dashboard" />
-        <Field label="Runtime deps" name="requiredRuntimePacks" placeholder="quant-runtime,browser-runtime" />
-        <Field label="Skill deps" name="requiredSkillPackages" placeholder="lily-research-synthesis,lily-ui-quality" />
+        <div className="lg:col-span-3">
+          <MultiSelectField label={copy.runtimeDeps} name="requiredRuntimePacks" options={runtimePackOptions} emptyHint={copy.depsEmptyRuntime} />
+        </div>
+        <div className="lg:col-span-3">
+          <MultiSelectField label={copy.skillDeps} name="requiredSkillPackages" options={skillPackageOptions} emptyHint={copy.depsEmptySkill} />
+        </div>
         <div className="lg:col-span-3">
           <Field label="Summary" name="summary" placeholder={copy.summaryPlaceholder} required />
         </div>

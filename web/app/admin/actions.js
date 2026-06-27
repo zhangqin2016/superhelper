@@ -181,6 +181,8 @@ export async function createModelProviderAction(_previousState, formData) {
       type: text(formData, "type") || "anthropic",
       baseUrl: text(formData, "baseUrl"),
       apiKey: text(formData, "apiKey"), // empty = keep existing key
+      secretKey: text(formData, "secretKey"), // empty = keep existing (Kling)
+      groupId: text(formData, "groupId"), // MiniMax GroupId
       defaultModel: text(formData, "defaultModel"),
       models: text(formData, "models")
         .split(",")

@@ -3,9 +3,14 @@
 import { useActionState } from "react";
 import { createLicenseAction } from "../app/admin/actions";
 import { Field, SelectField, SubmitButton } from "./admin-forms";
+import { MultiSelectField } from "./multi-select-field";
 import { useI18n } from "../lib/use-i18n";
 
 const initialState = { ok: null, message: "" };
+
+// Canonical license features (server default in routes/admin/licenses.js).
+const LICENSE_FEATURES = ["updates", "skill-packages", "usage"];
+const FEATURE_OPTIONS = LICENSE_FEATURES.map((id) => ({ id, label: id }));
 
 export function LicenseCreateForm() {
   const [state, action, pending] = useActionState(createLicenseAction, initialState);
@@ -21,7 +26,9 @@ export function LicenseCreateForm() {
         <SelectField label="Plan" name="plan" defaultValue="pro" options={["trial", "pro", "team", "enterprise"]} />
         <Field label="Seats" name="seats" type="number" defaultValue="1" required />
         <Field label="Expires at" name="expiresAt" type="datetime-local" required />
-        <Field label="Features" name="features" defaultValue="updates,skill-packages,usage" />
+        <div className="lg:col-span-3">
+          <MultiSelectField label="Features" name="features" options={FEATURE_OPTIONS} defaultValue={LICENSE_FEATURES} />
+        </div>
         <div className="flex items-end">
           <SubmitButton disabled={pending}>{pending ? "..." : t.admin.pages.licenses[0]}</SubmitButton>
         </div>

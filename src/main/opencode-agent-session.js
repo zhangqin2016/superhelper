@@ -327,6 +327,34 @@ class OpencodeAgentSession extends EventEmitter {
     return true;
   }
 
+  /** Steer ("插话"): inject a message into the RUNNING turn instead of aborting or
+   *  queuing for after. The engine appends the user message and the in-flight prompt
+   *  loop picks it up at its next step (verified against OpenCode's SessionPrompt
+   *  loop, which re-reads the latest messages each iteration). Deliberately does NOT
+   *  reset turn state — the active turn keeps owning the SSE/lifecycle. Returns false
+   *  when not steerable so the caller degrades to queue (never worse than today).
+   *  @param {{ text?: string, files?: Array<object> } | string} payload */
+  async steer(payload) {
+    if (!this.busy || this._turnSettled) return false;
+    const text = typeof payload === "string" ? payload : payload?.text;
+    const files = typeof payload === "object" && payload?.files ? payload.files : [];
+    if (!text && (!files || files.length === 0)) return false;
+    try {
+      const server = this._server || (await this._ensureStarted());
+      if (!server) return false;
+      const guidance = this.spawnOptions?.guidance || "";
+      await server.sendPrompt({ text, files, guidance });
+      // A steer IS progress: keep the no-progress watchdog from killing the turn.
+      this._sawActivity = true;
+      this._armResponseTimer();
+      this._armProgressNoticeTimer();
+      return true;
+    } catch (err) {
+      log.warn("opencode steer dispatch failed: %s", err?.message || String(err));
+      return false;
+    }
+  }
+
   /** Host-side auto-decision for a gated tool (no user dialog). reply is the
    *  engine response: "once" (allow this call) or "reject" (deny). The serve
    *  asked; the session's mode answered. */

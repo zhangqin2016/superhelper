@@ -1,6 +1,6 @@
 const SHA256_RE = /^[0-9a-f]{64}$/i;
 const TRUSTED_ARTIFACT_PROTOCOLS = new Set(["https:"]);
-const MAX_SKILL_PACKAGE_BYTES = 50 * 1024 * 1024;
+export const MAX_SKILL_PACKAGE_BYTES = 200 * 1024 * 1024;
 const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
 export const SKILL_CATEGORIES = [

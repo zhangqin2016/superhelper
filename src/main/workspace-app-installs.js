@@ -12,6 +12,10 @@ function statePath() {
   return userDataPath("workspace-apps.json");
 }
 
+function catalogCachePath() {
+  return userDataPath("workspace-apps-catalog-cache.json");
+}
+
 function readState() {
   try {
     const raw = JSON.parse(fs.readFileSync(statePath(), "utf8"));
@@ -37,6 +41,54 @@ function readState() {
     // no state yet
   }
   return { schemaVersion: STATE_SCHEMA_VERSION, apps: {}, instances: {}, history: [] };
+}
+
+function cacheCatalogResult(result) {
+  const apps = result?.json?.apps;
+  if (!result?.ok || !Array.isArray(apps)) return result;
+  try {
+    fs.mkdirSync(path.dirname(catalogCachePath()), { recursive: true });
+    fs.writeFileSync(
+      catalogCachePath(),
+      `${JSON.stringify({
+        schemaVersion: STATE_SCHEMA_VERSION,
+        cachedAt: new Date().toISOString(),
+        json: result.json,
+      }, null, 2)}\n`,
+      "utf8",
+    );
+  } catch {
+    // Cache is a UI fallback only; live catalog success should still render.
+  }
+  return result;
+}
+
+function loadCachedCatalogResult() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(catalogCachePath(), "utf8"));
+    if (!Array.isArray(raw?.json?.apps)) return null;
+    return {
+      ok: true,
+      cached: true,
+      stale: true,
+      cachedAt: raw.cachedAt || null,
+      json: raw.json,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function withCatalogCacheFallback(result) {
+  if (result?.ok) return cacheCatalogResult(result);
+  const cached = loadCachedCatalogResult();
+  if (!cached) return result;
+  return {
+    ...cached,
+    liveError: result?.error || "SERVICE_REQUEST_FAILED",
+    liveDetail: result?.detail || "",
+    liveStatus: result?.status || null,
+  };
 }
 
 function writeState(state) {
@@ -233,8 +285,12 @@ function listInstalled() {
 
 module.exports = {
   statePath,
+  catalogCachePath,
   readState,
   writeState,
+  cacheCatalogResult,
+  loadCachedCatalogResult,
+  withCatalogCacheFallback,
   installRoot,
   isInsideInstallRoot,
   isSamePath,

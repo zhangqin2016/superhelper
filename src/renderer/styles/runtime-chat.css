@@ -2,6 +2,76 @@
    Runtime Chat Turn
    ========================================================================= */
 
+/* Conversation minimap — right-rail navigator. Fixed-width, ribs-only overview (shows
+   every prompt / answer / heading like Codex; no toggles). Fixed width by design: a
+   hover-resize would shift the ribs out from under the cursor and flicker.
+   (.session-messages-stack is already position:relative in messages.css.) */
+/* Compact, vertically-centred navigator — a FIXED-ish height window (Codex-style),
+   never the full rail. It sizes to its ribs but is capped, so a long conversation
+   doesn't stretch it down the whole edge. */
+.conversation-minimap {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  inset-inline-end: 5px;
+  width: 20px;
+  z-index: 5;
+  pointer-events: none;
+}
+/* Linear scroll-window: oldest rib at the TOP, newest at the BOTTOM, in
+   conversation order. Fixed gap; the column sizes to its ribs up to a capped
+   height, then SCROLLS internally (active rib kept in view) instead of stretching
+   to fill the viewport. Scrollbar hidden. */
+.conversation-minimap-ribs {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 11px;
+  padding-block: 2px;
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+.conversation-minimap-ribs::-webkit-scrollbar { width: 0; height: 0; display: none; }
+/* Codex-style: clean monochrome ticks, no colour accents. Variation stays subtle —
+   user prompts a touch darker, headings indented — so the rail reads as a calm
+   overview rather than a busy striped block. */
+.conversation-minimap-rib {
+  flex: 0 0 auto;
+  height: 2px;
+  width: 18px;                  /* uniform resting width */
+  border: 0;
+  padding: 0;
+  border-radius: 1px;
+  background: var(--border-subtle);
+  cursor: pointer;
+  transition: width 0.08s ease, height 0.08s ease, background 0.12s ease;
+}
+.conversation-minimap-rib.is-prompt { background: var(--text-muted); } /* your messages a touch darker */
+.conversation-minimap-rib.is-active { background: var(--text-primary); height: 3px; }
+/* The jut-out is driven by JS (proximity peak); hover just darkens the tip. */
+.conversation-minimap-rib:hover { background: var(--text-secondary); }
+.conversation-minimap-preview {
+  position: absolute;
+  inset-inline-end: 42px;
+  width: 240px;            /* explicit — else the 20px rail squeezes text into a vertical strip */
+  max-height: 160px;
+  overflow: hidden;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-floating);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
+  z-index: 6;
+  pointer-events: none;
+}
+
 .runtime-messages {
   max-width: var(--chat-col);
   margin: 0 auto;
@@ -40,6 +110,16 @@
   font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--text-dim);
+}
+
+/* Badge marking a steered ("插话") message — a follow-up injected into the running turn. */
+.runtime-user-steer-badge {
+  margin-inline-start: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .runtime-user-body {
@@ -626,20 +706,41 @@
 }
 
 .assistant-reveal-btn {
-  margin-left: 6px;
-  padding: 1px 8px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin-left: 4px;
+  padding: 0;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-subtle);
   color: var(--text-secondary);
-  font-size: 11px;
   cursor: pointer;
-  white-space: nowrap;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
 .assistant-reveal-btn:hover {
-  background: var(--bg-secondary);
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
   color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.assistant-reveal-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .assistant-generated-media figcaption code.is-clickable,

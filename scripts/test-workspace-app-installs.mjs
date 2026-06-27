@@ -168,9 +168,36 @@ try {
   assert.equal(multiResult.json.apps[0].installedCount, 2);
   assert.equal(multiResult.json.apps[0].installedInstances.length, 2);
 
+  const cachedCatalog = installs.withCatalogCacheFallback({
+    ok: true,
+    json: {
+      schemaVersion: 1,
+      publisher: "Test Apps",
+      updatedAt: "2026-06-26T00:00:00.000Z",
+      apps: [{
+        id: "stock-dashboard",
+        latestVersion: "1.1.1",
+        name: "Stock Dashboard",
+      }],
+    },
+  });
+  assert.equal(cachedCatalog.ok, true);
+
   const removed = installs.forgetInstalled("stock-dashboard");
   assert.equal(removed.id, "stock-dashboard");
   assert.equal(installs.listInstalled().length, 0);
+
+  const fallbackCatalog = installs.withCatalogCacheFallback({
+    ok: false,
+    error: "SERVICE_REQUEST_FAILED",
+  });
+  assert.equal(fallbackCatalog.ok, true, "app catalog should fall back to the last successful catalog");
+  assert.equal(fallbackCatalog.stale, true, "fallback catalog should be marked stale");
+  const fallbackResult = installs.attachInstalledState(fallbackCatalog, {
+    find: () => null,
+  });
+  assert.equal(fallbackResult.json.apps[0].id, "stock-dashboard");
+  assert.equal(fallbackResult.json.apps[0].installed, false, "cached catalog must use current local uninstall state");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

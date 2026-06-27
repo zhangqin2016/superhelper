@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "lily-image-generation",
   "name": "图片生成",
-  "version": "1.0.1",
-  "description": "使用阿里云百炼 Qwen-Image 生成图片并保存到当前工作区。",
+  "version": "1.1.0",
+  "description": "生成图片并保存到当前工作区，支持阿里百炼 Qwen-Image、火山方舟即梦 Seedream、可灵 Kling、MiniMax 海螺、智谱 CogView 等服务商。",
   "minAppVersion": "0.1.0",
   "runtime": "node",
   "entry": "scripts/generate-image.cjs",
@@ -18,7 +18,7 @@
   "guideMd": {
     "title": "图片生成（百炼）",
     "priority": 12,
-    "body": "用户要求生成图片、海报、插画、封面、头像、产品图或视觉稿时，用：\n\n```bash\necho '{\"prompt\":\"要生成的图片描述\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼 Qwen-Image，并把临时 URL 下载到当前工作区 generated-assets。回复用户时必须使用本地 Markdown 图片预览：`![生成图片](/绝对路径/生成图片.png)`，不要只给路径，也不要直接返回临时 URL。"
+    "body": "用户要求生成图片、海报、插画、封面、头像、产品图或视觉稿时，用：\n\n```bash\necho '{\"prompt\":\"要生成的图片描述\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼 Qwen-Image，并把临时 URL 下载到当前工作区 generated-assets。回复用户时必须使用本地 Markdown 图片预览：`![生成图片](/绝对路径/生成图片.png)`，不要只给路径，也不要直接返回临时 URL。\n\n默认服务商可在「设置 → 图片视频」切换；也可在 JSON 里加 \"provider\" 字段临时指定（dashscope/volcengine/kling/minimax/zhipu）。"
   },
   "name_i18n": {
     "zh-CN": "图片生成",
@@ -27,24 +27,24 @@
   },
   "description_i18n": {
     "zh-CN": "使用阿里云百炼 Qwen-Image 生成图片并保存到当前工作区。",
-    "en": "Generate images using Alibaba Cloud Bailian Qwen-Image and save to the current workspace.",
-    "ar": "توليد الصور باستخدام Alibaba Cloud Bailian Qwen-Image وحفظها في مساحة العمل الحالية."
+    "en": "Generate images and save to the current workspace. Supports providers including Alibaba Bailian Qwen-Image, Volcengine Seedream, Kling, MiniMax, and Zhipu CogView.",
+    "ar": "توليد الصور وحفظها في مساحة العمل الحالية. يدعم مزوّدين مثل Alibaba Bailian Qwen-Image وVolcengine Seedream وKling وMiniMax وZhipu CogView."
   },
   "guideMd_i18n": {
     "zh-CN": {
       "title": "图片生成（百炼）",
       "priority": 12,
-      "body": "用户要求生成图片、海报、插画、封面、头像、产品图或视觉稿时，用：\n\n```bash\necho '{\"prompt\":\"要生成的图片描述\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼 Qwen-Image，并把临时 URL 下载到当前工作区 generated-assets。回复用户时必须使用本地 Markdown 图片预览：`![生成图片](/绝对路径/生成图片.png)`，不要只给路径，也不要直接返回临时 URL。"
+      "body": "用户要求生成图片、海报、插画、封面、头像、产品图或视觉稿时，用：\n\n```bash\necho '{\"prompt\":\"要生成的图片描述\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼 Qwen-Image，并把临时 URL 下载到当前工作区 generated-assets。回复用户时必须使用本地 Markdown 图片预览：`![生成图片](/绝对路径/生成图片.png)`，不要只给路径，也不要直接返回临时 URL。\n\n默认服务商可在「设置 → 图片视频」切换；也可在 JSON 里加 \"provider\" 字段临时指定（dashscope/volcengine/kling/minimax/zhipu）。"
     },
     "en": {
       "title": "Image Generation (Bailian)",
       "priority": 12,
-      "body": "When the user requests image generation, posters, illustrations, covers, avatars, product images or visual drafts, use:\n\n```bash\necho '{\"prompt\":\"image description\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GEN_SCRIPT}}\"\n```\n\nThe script calls Alibaba Cloud Bailian Qwen-Image and downloads the temporary URL to the current workspace's generated-assets directory. When replying to the user, only provide the local file path — do not return the temporary URL directly."
+      "body": "When the user requests image generation, posters, illustrations, covers, avatars, product images or visual drafts, use:\n\n```bash\necho '{\"prompt\":\"image description\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GEN_SCRIPT}}\"\n```\n\nThe script calls Alibaba Cloud Bailian Qwen-Image and downloads the temporary URL to the current workspace's generated-assets directory. When replying to the user, only provide the local file path — do not return the temporary URL directly.\n\nThe default provider is set in Settings → Image & video; you can also override per call with a \"provider\" field (dashscope/volcengine/kling/minimax/zhipu)."
     },
     "ar": {
       "title": "توليد الصور (Bailian)",
       "priority": 12,
-      "body": "عندما يطلب المستخدم توليد الصور أو الملصقات أو الرسوم التوضيحية أو الأغلفة أو الصور الرمزية أو صور المنتجات أو المسودات المرئية، استخدم:\n\n```bash\necho '{\"prompt\":\"وصف الصورة\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GEN_SCRIPT}}\"\n```\n\nيستدعي السكريبت Alibaba Cloud Bailian Qwen-Image وينزل الرابط المؤقت إلى مجلد generated-assets في مساحة العمل الحالية. عند الرد على المستخدم، قدم فقط مسار الملف المحلي — لا ترجع الرابط المؤقت مباشرة."
+      "body": "عندما يطلب المستخدم توليد الصور أو الملصقات أو الرسوم التوضيحية أو الأغلفة أو الصور الرمزية أو صور المنتجات أو المسودات المرئية، استخدم:\n\n```bash\necho '{\"prompt\":\"وصف الصورة\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GEN_SCRIPT}}\"\n```\n\nيستدعي السكريبت Alibaba Cloud Bailian Qwen-Image وينزل الرابط المؤقت إلى مجلد generated-assets في مساحة العمل الحالية. عند الرد على المستخدم، قدم فقط مسار الملف المحلي — لا ترجع الرابط المؤقت مباشرة.\n\nيُضبط المزوّد الافتراضي من الإعدادات ← الصور والفيديو، ويمكن تجاوزه لكل طلب عبر الحقل \"provider\" (dashscope/volcengine/kling/minimax/zhipu)."
     }
   }
 }
