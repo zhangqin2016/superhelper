@@ -5,7 +5,15 @@ const { listPresetsPublic, setActivePreset, saveCustomPreset, deleteCustomPreset
 const { anyRunnerBusy, withRunnerChange, applyPermissionModeLive } = require("./ipc-utils");
 
 function registerModelHandlers(ctx) {
-  ipcMain.handle("models:list", () => ({ ok: true, ...listPresetsPublic() }));
+  ipcMain.handle("models:list", async () => {
+    try {
+      await require("./remote-config").refreshRemoteConfig({ reason: "model_settings" });
+    } catch {
+      // Settings must still open offline or when the service is unavailable.
+      // listPresetsPublic() will use the last valid cache or packaged defaults.
+    }
+    return { ok: true, ...listPresetsPublic() };
+  });
 
   ipcMain.handle("models:set-active", (_event, presetId) => {
     return withRunnerChange(ctx, () => {

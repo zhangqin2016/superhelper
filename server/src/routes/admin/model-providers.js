@@ -2,6 +2,7 @@ import { z } from "zod";
 import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { encryptSecret } from "../../services/security.js";
+import { ensureEnvManagedConfigProfile } from "../../services/client-config.js";
 import {
   listModelGatewayProviders,
   refreshModelGatewayProviders,
@@ -133,6 +134,7 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
       )
       .execute();
     await refreshModelGatewayProviders();
+    await ensureEnvManagedConfigProfile();
     await audit(request, "model_provider.upsert", "model_provider", input.id, {
       type: input.type,
       baseUrl: input.baseUrl || "",
@@ -155,6 +157,7 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
     async (request) => {
     await db.deleteFrom("model_gateway_providers").where("id", "=", request.params.id).execute();
     await refreshModelGatewayProviders();
+    await ensureEnvManagedConfigProfile();
     await audit(request, "model_provider.delete", "model_provider", request.params.id);
     return { ok: true, id: request.params.id };
   });
