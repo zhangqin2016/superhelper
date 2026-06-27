@@ -2152,3 +2152,6 @@
   gap: 8px;
   margin-top: 6px;
 }
+
+/* Generated media hoisted out of the collapsed tool step into the prominent area. */
+.assistant-hoisted-media { margin-top: 8px; }

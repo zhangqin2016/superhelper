@@ -55,9 +55,25 @@ async function handleGatewayRequest(request, reply) {
   }
 
   const body = request.body && typeof request.body === "object" ? request.body : {};
-  const upstream = provider.type === "anthropic"
-    ? await forwardAnthropic(provider, body, request)
-    : await forwardOpenAi(provider, body);
+  let upstream;
+  try {
+    upstream = provider.type === "anthropic"
+      ? await forwardAnthropic(provider, body, request)
+      : await forwardOpenAi(provider, body);
+  } catch (err) {
+    // Fail LOUD: a dead/stalled upstream (e.g. a GLM model id the endpoint doesn't
+    // serve) must surface as a readable error within the connect timeout, not hang
+    // the turn at "正在启动…" forever. AbortError == our connect-timeout fired.
+    const timedOut = err?.name === "AbortError" || err?.name === "TimeoutError";
+    return reply.code(timedOut ? 504 : 502).send({
+      error: {
+        type: timedOut ? "upstream_timeout" : "upstream_error",
+        message: timedOut
+          ? `model provider '${providerId}' did not respond in time (check baseUrl/key/model)`
+          : `model provider '${providerId}' request failed: ${err?.message || err}`,
+      },
+    });
+  }
 
   if (provider.type === "anthropic") {
     reply.code(upstream.status);

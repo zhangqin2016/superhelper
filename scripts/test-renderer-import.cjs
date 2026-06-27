@@ -505,6 +505,76 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(minimapResult);
+    const hoistedMediaResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const xml = '<generated_media type="video">\\n  <file path="/tmp/out/promo.mp4" bytes="1024" />\\n</generated_media>\\n';
+        const tools = new Map();
+        tools.set("t1", { id: "t1", name: "Bash", status: "done", result: { content: xml } });
+        const liveTurn = {
+          turnId: "turn_hoist_media", phase: "done", assistantText: "10秒视频生成成功",
+          thinkingText: "", contentBlocks: [], processEvents: [], tools, timeline: [],
+          notices: [], permissions: new Map(), questions: new Map(), hooks: new Map(),
+          resultBlocks: [], artifacts: [], startedAt: Date.now(),
+          final: { type: "turn.completed", payload: { assistant: "10秒视频生成成功" }, ts: Date.now() },
+        };
+        const article = createLiveTurnArticleShell(liveTurn);
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "s_hoist", sealed: true });
+        const hoisted = article.querySelector('[data-role="artifacts"] .assistant-hoisted-media');
+        if (!hoisted) throw new Error("generated media should be hoisted to the prominent area");
+        const video = hoisted.querySelector("video");
+        if (!video) throw new Error("hoisted media should render a <video> player");
+        if (!String(video.getAttribute("src") || "").startsWith("app-file://media/")) {
+          throw new Error("hoisted media must use app-file:// scheme: " + video.getAttribute("src"));
+        }
+        // Re-render must not duplicate the hoisted block.
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "s_hoist", sealed: true });
+        if (article.querySelectorAll('[data-role="artifacts"] .assistant-hoisted-media').length !== 1) {
+          throw new Error("hoisted media must not duplicate on re-render");
+        }
+        return "hoisted-generated-media-regression: ok";
+      }
+    )()`);
+    console.log(hoistedMediaResult);
+    // Real-world regression: version-skewed generate-video.cjs printed only
+    // "Done! … saved to: <path>" with NO <generated_media> marker. The video file
+    // still lives under generated-assets/, so it must still hoist + preview. WHY:
+    // previews cannot depend on a marker the deployed skill copy may not emit, or
+    // the user loses the preview entirely (degrading below baseline file-chip UX).
+    const markerlessMediaResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const p = "/Users/x/aicode/xiaoshuo/generated-assets/video-2026-06-27T20-13-49-148Z-a92cdf.mp4";
+        const stdout = "\\n[4/4] Done! 7.8 MB saved to:\\n      " + p + "\\n\\n" + p + "\\n";
+        const tools = new Map();
+        tools.set("t1", { id: "t1", name: "Bash", status: "done", result: { content: stdout, truncated: false } });
+        const liveTurn = {
+          turnId: "turn_markerless", phase: "done", assistantText: "第三版生成完毕",
+          thinkingText: "", contentBlocks: [], processEvents: [], tools, timeline: [],
+          notices: [], permissions: new Map(), questions: new Map(), hooks: new Map(),
+          resultBlocks: [], artifacts: [], startedAt: Date.now(),
+          final: { type: "turn.completed", payload: { assistant: "第三版生成完毕" }, ts: Date.now() },
+        };
+        const article = createLiveTurnArticleShell(liveTurn);
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "s_ml", sealed: true });
+        const videos = article.querySelectorAll('[data-role="artifacts"] .assistant-hoisted-media video');
+        if (videos.length !== 1) throw new Error("marker-less generated-assets video must hoist exactly once, got " + videos.length);
+        if (!String(videos[0].getAttribute("src") || "").startsWith("app-file://media/")) {
+          throw new Error("marker-less hoisted video must use app-file:// scheme: " + videos[0].getAttribute("src"));
+        }
+        // A referenced/read image OUTSIDE generated-assets must NOT hoist.
+        const tools2 = new Map();
+        tools2.set("t2", { id: "t2", name: "Read", status: "done", result: { content: "see /Users/x/project/assets/logo.png for the brand mark" } });
+        const lt2 = { ...liveTurn, turnId: "turn_ref", tools: tools2 };
+        const art2 = createLiveTurnArticleShell(lt2);
+        renderLiveTurnArticle(art2, lt2, { sessionId: "s_ref", sealed: true });
+        if (art2.querySelector('[data-role="artifacts"] .assistant-hoisted-media')) {
+          throw new Error("referenced image outside generated-assets must NOT be hoisted");
+        }
+        return "markerless-generated-assets-media-regression: ok";
+      }
+    )()`);
+    console.log(markerlessMediaResult);
     const narrativeUpgradeResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");

@@ -8,8 +8,10 @@ import { revealLocalFileInFolder } from "./file-reveal.js";
 import { enhanceFileMentions } from "./file-mentions.js";
 import {
   appendToolPayloadDetail,
+  generatedMediaFromPayload,
   parseGeneratedMedia,
   parseToolResult,
+  renderGeneratedMedia,
   toolInputHasRenderableDetail,
 } from "./tool-payload-renderer.js";
 import {
@@ -340,9 +342,56 @@ export function createLiveTurnArticleShell(liveTurn) {
   return article;
 }
 
+// Collect <generated_media> from the turn's tool results and render it in the prominent
+// artifacts area (player + reveal). Idempotent + fail-open: re-render replaces the prior
+// block; any error leaves the turn unchanged.
+// Collect generated-media blocks out of the turn's tool results. Read this BEFORE
+// renderProcess runs, since that step drains liveTurn.tools. Fail-open: any parse
+// error just yields fewer blocks, never a throw.
+function collectHoistableMedia(liveTurn) {
+  const seen = new Set();
+  const blocks = [];
+  const tools = liveTurn?.tools instanceof Map
+    ? [...liveTurn.tools.values()]
+    : (Array.isArray(liveTurn?.tools) ? liveTurn.tools : []);
+  for (const tool of tools) {
+    let payload = null;
+    try { payload = parseToolResult(tool?.result); } catch { payload = null; }
+    if (!payload) continue;
+    let media = [];
+    try { media = generatedMediaFromPayload(payload) || []; } catch { media = []; }
+    for (const block of media) {
+      const key = (block.files || []).map((f) => f.path).join("|") || JSON.stringify(block);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      blocks.push(block);
+    }
+  }
+  return blocks;
+}
+
+// Append hoisted media to the artifacts host. Must run AFTER renderResultBlocks,
+// which clears the host. Idempotent: removes any prior hoisted wrapper first.
+function appendHoistedGeneratedMedia(article, blocks, { sessionId } = {}) {
+  const host = article.querySelector('[data-role="artifacts"]');
+  if (!host) return;
+  const prev = host.querySelector(":scope > .assistant-hoisted-media");
+  if (prev) prev.remove();
+  if (!blocks || !blocks.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "assistant-hoisted-media";
+  try { renderGeneratedMedia(wrap, blocks, { sessionId }); } catch { return; }
+  host.appendChild(wrap);
+  host.hidden = false;
+}
+
 export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
   const { sessionId, failed = false } = ctx;
   const sealed = Boolean(liveTurn.final) || ctx.sealed;
+  // Snapshot generated media from the tool results BEFORE renderProcess drains
+  // liveTurn.tools; the DOM is appended at the end (renderResultBlocks clears the
+  // artifacts host, so appending earlier would be wiped).
+  const hoistBlocks = collectHoistableMedia(liveTurn);
   const resultBlocks = mergeResultBlocks(liveTurn.resultBlocks || [], liveTurn.artifacts || []);
   article.classList.toggle("is-sealed", sealed);
   article.classList.toggle("is-live", !sealed);
@@ -385,6 +434,10 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     article.querySelector('[data-role="artifacts"]'),
     resultBlocks.filter((block) => !shouldHideImageResultBlock(block, { hasInlineImages })),
   );
+  // Hoist generated media (images/videos) into the prominent artifacts area so a
+  // generated file is always visible with a player + reveal — regardless of how the
+  // model phrased its prose, and independent of the collapsed tool step.
+  appendHoistedGeneratedMedia(article, hoistBlocks, { sessionId });
 }
 
 export function refreshLiveTurnStatusDisplay(article, liveTurn, ctx = {}) {

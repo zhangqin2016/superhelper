@@ -24,6 +24,37 @@ function assistantTextFromOpenCodeMessageItem(item = {}) {
   return textFromParts(parts, "text").trim();
 }
 
+// Project an OpenCode `tool` part into the tool shape the renderer/record expect.
+// History reload previously dropped these entirely (record.tools = []), so any
+// generated media (and the tool steps themselves) vanished on reload. We carry the
+// captured output as result.content — the same field the live runtime uses — so the
+// renderer's generated-media hoist and tool-step rendering work identically on
+// reloaded turns. Fail-safe: a malformed part yields null and is filtered out.
+function toolFromPart(part = {}) {
+  if (part?.type !== "tool") return null;
+  const st = part.state || {};
+  const id = part.callID || part.id || "";
+  if (!id) return null;
+  const status = st.status === "completed" ? "done"
+    : st.status === "error" ? "error"
+    : (st.status || "");
+  const tool = {
+    id,
+    name: part.tool || "unknown",
+    status,
+    input: st.input && typeof st.input === "object" ? st.input : {},
+    title: st.title || part.title || "",
+  };
+  if (status === "done" || status === "error") {
+    const output = typeof st.output === "string" && st.output
+      ? st.output
+      : (typeof st.metadata?.output === "string" ? st.metadata.output : "");
+    tool.result = { content: output, truncated: Boolean(st.metadata?.truncated) };
+    if (status === "error") tool.isError = true;
+  }
+  return tool;
+}
+
 function fileFromPart(part = {}) {
   if (part.type !== "file") return null;
   const path = part.source?.type === "file" ? part.source.path : "";
@@ -113,6 +144,7 @@ function mergeAssistantGroup(group = []) {
   }, 0);
   const hasCost = group.some((message) => Number.isFinite(message.record?.totalCostUsd));
   const timeline = group.flatMap((m) => m.record?.timeline || []);
+  const tools = group.flatMap((m) => m.record?.tools || []);
   const processEvents = group.flatMap((m) => m.record?.processEvents || []);
   const notices = group.flatMap((m) => m.record?.notices || []);
   const contentBlocks = group.flatMap((m) => m.record?.contentBlocks || []);
@@ -132,6 +164,7 @@ function mergeAssistantGroup(group = []) {
       protocolUnknown,
       processEvents,
       timeline,
+      tools,
       notices,
       durationMs,
       startedAt: Number.isFinite(startedAt) ? startedAt : firstRecord.startedAt ?? null,
@@ -178,6 +211,7 @@ function adaptOpencodeMessageItem(item = {}, opts = {}) {
   const content = textFromParts(parts, "text");
   const thinkingText = textFromParts(parts, "reasoning");
   const files = parts.map(fileFromPart).filter(Boolean);
+  const tools = parts.map(toolFromPart).filter(Boolean);
   const usage = usageFromInfo(info);
   const message = {
     id: info.id || item.id || "",
@@ -199,7 +233,7 @@ function adaptOpencodeMessageItem(item = {}, opts = {}) {
       thinkingText,
       contentBlocks: [],
       protocolUnknown: [],
-      tools: [],
+      tools,
       fileChanges: [],
       artifacts: [],
       resultBlocks: [],
@@ -221,7 +255,7 @@ function adaptOpencodeMessageItem(item = {}, opts = {}) {
         interrupted: false,
         stalled: false,
         resultFromCli: false,
-        toolsSummary: { count: 0 },
+        toolsSummary: { count: tools.length },
         opencode: {
           messageId: info.id || "",
           providerID: info.providerID || "",

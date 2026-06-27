@@ -152,4 +152,56 @@ const manualMerged = coalesceAssistantMessageRuns([
 assert.equal(manualMerged.length, 1, "adjacent duplicate assistant text is not repeated");
 assert.equal(manualMerged[0].content, "same");
 
+// Regression: tool parts MUST survive into record.tools. Previously the adapter
+// hardcoded tools:[], so on history reload every tool — and any generated media
+// carried in its output — vanished (the user saw "no preview" for a video that
+// was really generated). WHY it matters: the renderer's generated-media hoist reads
+// record.tools[].result; with empty tools there is nothing to hoist, degrading
+// below the baseline file-chip affordance.
+const withTool = adaptOpencodeMessageItem({
+  info: {
+    id: "msg_tool",
+    role: "assistant",
+    time: { created: 1710000010000, completed: 1710000012000 },
+  },
+  parts: [
+    { type: "text", text: "第三版生成完毕" },
+    {
+      type: "tool",
+      tool: "bash",
+      callID: "call_vid_1",
+      state: {
+        status: "completed",
+        input: { command: "node generate-video.cjs" },
+        output: "[4/4] Done! saved to:\n  /ws/generated-assets/video-a92cdf.mp4\n",
+        metadata: { truncated: false },
+      },
+    },
+  ],
+}, { turnId: "turn_tool", sessionId: "ses_tool" });
+assert.equal(withTool.record.tools.length, 1, "tool parts must populate record.tools");
+assert.equal(withTool.record.tools[0].id, "call_vid_1");
+assert.equal(withTool.record.tools[0].name, "bash");
+assert.equal(withTool.record.tools[0].status, "done", "completed maps to done");
+assert.equal(withTool.record.meta.toolsSummary.count, 1, "toolsSummary reflects real count");
+assert.ok(
+  withTool.record.tools[0].result.content.includes("generated-assets/video-a92cdf.mp4"),
+  "captured tool output (with the generated media path) is preserved",
+);
+
+// Coalesced assistant runs must keep tools from every fragment, not just the last.
+const toolMerge = adaptOpencodeMessagesPage({
+  items: [
+    {
+      info: { id: "msg_tm1", role: "assistant", time: { created: 1, completed: 2 } },
+      parts: [{ type: "tool", tool: "bash", callID: "c1", state: { status: "completed", output: "a", input: {} } }],
+    },
+    {
+      info: { id: "msg_tm2", role: "assistant", time: { created: 3, completed: 4 } },
+      parts: [{ type: "tool", tool: "bash", callID: "c2", state: { status: "completed", output: "b", input: {} } }],
+    },
+  ],
+});
+assert.equal(toolMerge.conversation[0].record.tools.length, 2, "tools from all coalesced assistant fragments survive");
+
 console.log("opencode-conversation-adapter: ok");
