@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -168,6 +169,16 @@ function shellQuote(value) {
 
 function joinPublicUrl(domain, objectKey) {
   return `${String(domain || "").replace(/\/+$/g, "")}/${String(objectKey || "").replace(/^\/+/g, "")}`;
+}
+
+function withCacheBuster(rawUrl, params = {}) {
+  const parsed = new URL(rawUrl);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      parsed.searchParams.set(key, String(value));
+    }
+  }
+  return parsed.toString();
 }
 
 function normalizeObjectSegment(value, fallback) {
@@ -450,6 +461,66 @@ function wait(ms) {
   });
 }
 
+async function fetchRemoteSha256(remoteUrl, { maxBytes = 100 * 1024 * 1024, timeoutMs = 120_000 } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(remoteUrl, {
+      signal: controller.signal,
+      headers: { "Cache-Control": "no-cache" },
+    });
+    if (!response.ok) {
+      throw new Error(`GET ${remoteUrl} failed: HTTP ${response.status}`);
+    }
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > maxBytes) {
+      throw new Error(`remote artifact too large: ${length} bytes`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > maxBytes) {
+      throw new Error(`remote artifact too large: ${buffer.length} bytes`);
+    }
+    return {
+      sha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+      sizeBytes: buffer.length,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function waitForRemoteArtifactSha({ artifactUrl, expectedSha256, maxAttempts = 10, delayMs = 3_000 }) {
+  const expected = String(expectedSha256 || "").toLowerCase();
+  if (!expected) return artifactUrl;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const verifiedUrl = withCacheBuster(artifactUrl, {
+      lily_sha: expected.slice(0, 16),
+      lily_attempt: attempt,
+      lily_ts: Date.now(),
+    });
+    try {
+      const remote = await fetchRemoteSha256(verifiedUrl);
+      if (remote.sha256 === expected) {
+        if (attempt > 1) {
+          console.log(`[publish-local-catalog] remote artifact verified after ${attempt} attempts: ${artifactUrl}`);
+        }
+        return verifiedUrl;
+      }
+      lastError = new Error(`remote checksum mismatch: expected ${expected}, got ${remote.sha256}`);
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < maxAttempts) {
+      console.log(
+        `[publish-local-catalog] waiting for remote artifact consistency (${attempt}/${maxAttempts}): ${lastError?.message || "unknown"}`,
+      );
+      await wait(delayMs);
+    }
+  }
+  throw new Error(`remote artifact did not match expected checksum: ${artifactUrl}; ${lastError?.message || "unknown"}`);
+}
+
 async function postJson(api, auth, route, body) {
   const maxAttempts = 3;
   let lastError = null;
@@ -616,9 +687,14 @@ async function publishApps(options, auth) {
         filePath: artifactPath,
         upHost: options.qiniuUpHost,
       });
+      const artifactUrl = joinPublicUrl(options.domain, objectKey);
+      const verifiedArtifactUrl = await waitForRemoteArtifactSha({
+        artifactUrl,
+        expectedSha256: artifact.sha256 || "",
+      });
       uploaded = await postJson(api, auth, "/api/admin/workspace-apps", {
         ...fields,
-        artifactUrl: joinPublicUrl(options.domain, objectKey),
+        artifactUrl: verifiedArtifactUrl,
         sha256: artifact.sha256 || "",
         sizeBytes: artifactSize,
         enabled: true,
@@ -639,6 +715,8 @@ export {
   localSkillDirs,
   registryMetadataUploadFields,
   skillUploadFields,
+  waitForRemoteArtifactSha,
+  withCacheBuster,
   workspaceAppBuildArgs,
   workspaceAppArtifactPath,
 };

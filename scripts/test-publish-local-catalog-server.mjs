@@ -9,6 +9,7 @@ import {
   localSkillDirs,
   registryMetadataUploadFields,
   skillUploadFields,
+  withCacheBuster,
   workspaceAppBuildArgs,
   workspaceAppArtifactPath,
 } from "./publish-local-catalog-server.mjs";
@@ -97,6 +98,16 @@ assertEqual(
   "workspace app publisher should accept path returned by mail/web app builders",
 );
 
+const bustedUrl = withCacheBuster("https://cdn.example.com/workspace-app.zip?existing=1", {
+  lily_sha: "abc123",
+  lily_attempt: 2,
+});
+assertEqual(
+  bustedUrl,
+  "https://cdn.example.com/workspace-app.zip?existing=1&lily_sha=abc123&lily_attempt=2",
+  "large workspace app publisher should preserve existing query params while adding cache-busting verification params",
+);
+
 const shortDescription = extendedDescription({}, { description: "short" });
 assert(shortDescription.length >= 80, "short manifest descriptions should be expanded for publish");
 
@@ -136,4 +147,4 @@ assertEqual(JSON.parse(metadataFields.nameI18n).en, "Spreadsheets", "metadata sy
 assertEqual(JSON.parse(metadataFields.categoryLabelI18n).en, "Office Documents", "metadata sync should include localized category label");
 assertEqual(metadataFields.displayInCatalog, "true", "metadata sync should keep registry entries catalog-visible by default");
 
-finish("publish-local-catalog-server", 27);
+finish("publish-local-catalog-server", 28);
