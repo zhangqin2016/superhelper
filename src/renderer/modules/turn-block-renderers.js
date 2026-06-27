@@ -27,9 +27,16 @@ function el(template) {
 
 function fileUrlFromPath(filePath = "") {
   const value = String(filePath || "");
-  if (/^(https?:|file:|blob:|data:)/i.test(value)) return value;
-  if (/^[A-Za-z]:[\\/]/.test(value)) return `file:///${value.replace(/\\/g, "/")}`;
-  if (value.startsWith("/")) return `file://${value}`;
+  if (/^(https?:|app-file:|app-blob:|blob:|data:)/i.test(value)) return value;
+  // Serve local files via the privileged app-file:// scheme (raw file:// is blocked/
+  // flaky from a file:// page, so local image previews wouldn't load).
+  if (/^file:/i.test(value)) {
+    try { return `app-file://media/${encodeURIComponent(decodeURIComponent(new URL(value).pathname))}`; }
+    catch { return value; }
+  }
+  if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) {
+    return `app-file://media/${encodeURIComponent(value)}`;
+  }
   return value;
 }
 

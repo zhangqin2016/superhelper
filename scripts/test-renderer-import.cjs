@@ -1362,8 +1362,9 @@ app.whenReady().then(async () => {
         if (!rendered || !img) {
           throw new Error("generated media result did not render image preview");
         }
-        if (!String(img.getAttribute("src") || "").startsWith("file:///tmp/generated")) {
-          throw new Error("generated media preview should use a file URL: " + img.getAttribute("src"));
+        const mediaSrc = String(img.getAttribute("src") || "");
+        if (!mediaSrc.startsWith("app-file://media/") || !decodeURIComponent(mediaSrc).includes("/tmp/generated")) {
+          throw new Error("generated media preview should use the app-file:// scheme: " + mediaSrc);
         }
         if (container.textContent.includes("<generated_media")) {
           throw new Error("raw generated_media XML should not be shown to the user");
@@ -1413,26 +1414,22 @@ app.whenReady().then(async () => {
           name: "Bash",
           result: { content: JSON.stringify({ ok: true, output: "/tmp/out/icon.svg" }) },
         }, { role: "result", sessionId: "session_generated_file_image" });
-        const img = container.querySelector(".assistant-generated-file-preview img");
-        if (!rendered || !img) {
-          throw new Error("generated SVG output should render an image preview: " + container.innerHTML);
+        // Top-tier: a file path returned in a tool's JSON must NOT inline-render as an
+        // image — only the explicit <generated_media> contract previews. It gets a
+        // reveal file chip instead, so incidental/referenced image paths never render.
+        if (container.querySelector(".assistant-generated-files img")) {
+          throw new Error("svg field output must NOT inline-render as an image (only <generated_media> previews)");
         }
-        if (!String(img.getAttribute("src") || "").startsWith("file:///tmp/out/icon.svg")) {
-          throw new Error("generated SVG preview should use a file URL: " + img.getAttribute("src"));
+        const path = container.querySelector(".assistant-generated-file-path");
+        if (!rendered || !path || path.textContent !== "/tmp/out/icon.svg") {
+          throw new Error("svg field output should render a reveal file chip: " + container.innerHTML);
         }
-        const path = container.querySelector(".assistant-generated-file-preview code.is-clickable");
-        if (!path || path.textContent !== "/tmp/out/icon.svg") {
-          throw new Error("generated SVG preview should keep a clickable reveal path");
+        if (!path.classList.contains("is-clickable")) {
+          throw new Error("svg field output path should be clickable to reveal");
         }
-        const revealButton = container.querySelector(".assistant-generated-file-preview .assistant-reveal-btn");
+        const revealButton = container.querySelector(".assistant-generated-file-row .assistant-reveal-btn");
         if (!revealButton || !revealButton.querySelector("svg")) {
-          throw new Error("generated SVG reveal action should be an icon button: " + container.innerHTML);
-        }
-        if (!revealButton.getAttribute("aria-label") || !revealButton.title) {
-          throw new Error("generated SVG reveal icon must keep aria-label and tooltip");
-        }
-        if (/Show in folder|在目录中显示|在文件夹中显示/.test(revealButton.textContent || "")) {
-          throw new Error("generated SVG reveal action should not repeat text in the row");
+          throw new Error("svg field output reveal action should be an icon button: " + container.innerHTML);
         }
         path.click();
         await new Promise((resolve) => setTimeout(resolve, 20));

@@ -16,10 +16,12 @@ const ipcHandlers = require("./main/ipc-handlers");
 const { wireExternalLinks } = require("./main/window-links");
 const { wireContextMenu } = require("./main/window-context-menu");
 const { registerBlobScheme, installBlobProtocol } = require("./main/blob-protocol");
+const { registerLocalMediaScheme, installLocalMediaProtocol } = require("./main/local-media-protocol");
 
 // Custom scheme privileges must be declared before app `ready`; the request
 // handler itself is installed in whenReady() below.
 registerBlobScheme();
+registerLocalMediaScheme();
 
 let mainWindow = null;
 let runnerPoolRef = null;
@@ -120,6 +122,7 @@ app.whenReady().then(async () => {
   }
 
   installBlobProtocol();
+  installLocalMediaProtocol();
   const appIcon = loadAppIconImage();
   if (appIcon && process.platform === "darwin" && app.dock) {
     const ok = app.dock.setIcon(appIcon);

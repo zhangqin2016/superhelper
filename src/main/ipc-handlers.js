@@ -31,6 +31,9 @@ function registerAll(ctx) {
   ctx.transcriptStore = new TranscriptStore(sessionManager);
   ctx.turnArchive = new TurnArchive(sessionManager, { eventBus: ctx.eventBus });
   ctx.turnOrchestrator = new TurnOrchestrator(ctx);
+  // Surface long async media generations even if their turn was torn down before the
+  // result stdout was captured (the skill drops a result record on disk).
+  try { require("./media-result-tracker").startMediaResultTracker(ctx); } catch { /* optional */ }
 
   // --- App ---------------------------------------------------------------
 

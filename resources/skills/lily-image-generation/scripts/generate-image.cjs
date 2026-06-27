@@ -118,15 +118,24 @@ async function main() {
   }
   if (!files.length) fail(msg("图片任务完成，但没有产物。", "Image task finished but produced no files."));
 
-  process.stdout.write("<generated_media type=\"image\">\n");
-  if (taskId) process.stdout.write(`  <task_id>${xmlEscape(taskId)}</task_id>\n`);
+  let xml = "<generated_media type=\"image\">\n";
+  if (taskId) xml += `  <task_id>${xmlEscape(taskId)}</task_id>\n`;
   for (const file of files) {
-    process.stdout.write(`  <file path="${xmlEscape(file.path)}" bytes="${file.bytes}" />\n`);
+    xml += `  <file path="${xmlEscape(file.path)}" bytes="${file.bytes}" />\n`;
   }
-  process.stdout.write("</generated_media>\n");
+  xml += "</generated_media>\n";
+  process.stdout.write(xml);
   for (const file of files) {
     process.stdout.write(msg(`\n![生成图片](${file.path})\n已保存到：${file.path}\n`, `\n![Generated image](${file.path})\nSaved to: ${file.path}\n`));
   }
+  // Result record for the main-process media tracker — surfaces the media even if the
+  // turn was torn down before this stdout was captured. Best-effort.
+  try {
+    const dir = path.join(outputDir, ".lily-results");
+    fs.mkdirSync(dir, { recursive: true });
+    const name = `${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(16).slice(2, 8)}.json`;
+    fs.writeFileSync(path.join(dir, name), JSON.stringify({ type: "image", provider: input.provider || process.env.LILY_IMAGE_PROVIDER || "dashscope", taskId, content: xml, createdAt: Date.now() }), "utf8");
+  } catch { /* best effort */ }
 }
 
 main().catch((error) => fail(msg("图片生成失败。", "Image generation failed."), error?.message || String(error)));

@@ -105,12 +105,26 @@ async function main() {
     files.push({ path: filePath, bytes });
   }
 
-  process.stdout.write("<generated_media type=\"video\">\n");
-  if (taskId) process.stdout.write(`  <task_id>${xmlEscape(taskId)}</task_id>\n`);
+  let xml = "<generated_media type=\"video\">\n";
+  if (taskId) xml += `  <task_id>${xmlEscape(taskId)}</task_id>\n`;
   for (const file of files) {
-    process.stdout.write(`  <file path="${xmlEscape(file.path)}" bytes="${file.bytes}" />\n`);
+    xml += `  <file path="${xmlEscape(file.path)}" bytes="${file.bytes}" />\n`;
   }
-  process.stdout.write("</generated_media>\n");
+  xml += "</generated_media>\n";
+  process.stdout.write(xml);
+  // Drop a result record so the workbench can surface the media even if the turn was
+  // already torn down (watchdog/interrupt) before this stdout was captured. The
+  // main-process media tracker scans these and injects the result into the session.
+  writeResultRecord(outputDir, { type: "video", provider: input.provider || process.env.LILY_VIDEO_PROVIDER || "dashscope", taskId, content: xml });
+}
+
+function writeResultRecord(outputDir, record) {
+  try {
+    const dir = path.join(outputDir, ".lily-results");
+    fs.mkdirSync(dir, { recursive: true });
+    const name = `${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(16).slice(2, 8)}.json`;
+    fs.writeFileSync(path.join(dir, name), JSON.stringify({ ...record, createdAt: Date.now() }), "utf8");
+  } catch { /* best effort — stdout path still works when the turn is alive */ }
 }
 
 main().catch((error) => fail(msg("视频生成失败。", "Video generation failed."), error?.message || String(error)));

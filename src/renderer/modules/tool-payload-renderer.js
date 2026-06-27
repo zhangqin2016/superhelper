@@ -134,7 +134,6 @@ function generatedMediaFromPayload(payload) {
 // gets a "reveal in folder" affordance — the model never edited it via Write,
 // so it isn't in the changed-files group.
 const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp|gif|svg|html?|json|zip)$/i;
-const GENERATED_IMAGE_EXTS = /\.(png|jpe?g|webp|gif|svg)$/i;
 
 function looksLikeGeneratedFilePath(value) {
   if (typeof value !== "string") return false;
@@ -158,16 +157,19 @@ function generatedFilesFromPayload(payload) {
   return paths.filter((p) => (seen.has(p) ? false : seen.add(p))).map((path) => ({ path }));
 }
 
-function isGeneratedImagePath(filePath = "") {
-  return GENERATED_IMAGE_EXTS.test(String(filePath || "").trim());
-}
-
 function fileUrlFromPath(filePath = "") {
   const value = String(filePath || "").trim();
   if (!value) return "";
-  if (/^(?:https?|file|blob|data):/i.test(value)) return value;
-  if (/^[a-zA-Z]:[\\/]/.test(value)) return encodeURI(`file:///${value.replace(/\\/g, "/")}`);
-  if (value.startsWith("/")) return encodeURI(`file://${value}`);
+  if (/^(?:https?|app-file|app-blob|blob|data):/i.test(value)) return value;
+  // Local files are served via the privileged app-file:// scheme — raw file:// is
+  // blocked/flaky from a file:// page, so generated media never previewed otherwise.
+  if (/^file:/i.test(value)) {
+    try { return `app-file://media/${encodeURIComponent(decodeURIComponent(new URL(value).pathname))}`; }
+    catch { return value; }
+  }
+  if (value.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(value)) {
+    return `app-file://media/${encodeURIComponent(value)}`;
+  }
   return value;
 }
 
@@ -480,37 +482,12 @@ function renderGeneratedFiles(root, files = [], options = {}) {
   if (!files.length) return false;
   const wrap = document.createElement("div");
   wrap.className = "assistant-generated-files";
+  // Top-tier rule: inline image/video PREVIEWS come ONLY from the explicit
+  // <generated_media> contract (and markdown ![]() / declared image blocks). A file
+  // path merely RETURNED in a tool's JSON ({output/images/outputs}) gets a file chip
+  // with "reveal in folder" — never an inline image — so incidental/referenced image
+  // paths are never auto-rendered.
   for (const file of files) {
-    if (isGeneratedImagePath(file.path)) {
-      const figure = document.createElement("figure");
-      figure.className = "assistant-generated-file-row assistant-generated-file-preview";
-      const img = document.createElement("img");
-      const src = fileUrlFromPath(file.path);
-      img.src = src;
-      img.alt = file.path;
-      img.loading = "lazy";
-      img.addEventListener("click", async () => {
-        const mod = await import("./image-viewer.js");
-        mod.openImageViewer?.(src, img.alt);
-      });
-      figure.appendChild(img);
-
-      const caption = document.createElement("figcaption");
-      const name = document.createElement("code");
-      name.className = "assistant-generated-file-path";
-      name.textContent = file.path;
-      caption.appendChild(name);
-      if (isRevealableLocalPath(file.path)) {
-        name.classList.add("is-clickable");
-        name.title = t("file.reveal");
-        const reveal = () => void revealFileInFolder(root, file.path, options);
-        name.addEventListener("click", reveal);
-        caption.appendChild(createRevealButton(reveal));
-      }
-      figure.appendChild(caption);
-      wrap.appendChild(figure);
-      continue;
-    }
 
     const row = document.createElement("div");
     row.className = "assistant-generated-file-row";
