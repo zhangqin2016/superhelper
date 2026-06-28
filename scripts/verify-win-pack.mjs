@@ -32,6 +32,17 @@ if (!fs.existsSync(winBundle)) {
   fail("缺少 resources/bundles/win32-x64");
 }
 
+// The actual engine binary must be in the package, not just the directory —
+// otherwise every send fails with OPENCODE_NOT_READY on users' machines.
+const winEngine = path.join(winBundle, "opencode", "bin", "opencode.exe");
+if (!fs.existsSync(winEngine)) {
+  fail("缺少 OpenCode 引擎二进制 resources/bundles/win32-x64/opencode/bin/opencode.exe");
+}
+const winEngineSize = fs.statSync(winEngine).size;
+if (winEngineSize < 5 * 1024 * 1024) {
+  fail(`OpenCode 引擎二进制过小（${winEngineSize} 字节，疑似下载不完整）`);
+}
+
 const sharpNode = path.join(
   unpacked,
   "resources",

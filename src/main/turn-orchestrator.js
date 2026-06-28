@@ -885,11 +885,14 @@ class TurnOrchestrator {
         });
     const runner = ensured.runner;
     if (!runner) {
-      return {
-        ok: false,
-        error: ensured.error || "RUNNER_ERROR",
-        detail: ensured.detail || "Unable to start the assistant process. Please check the terminal logs or restart the application.",
-      };
+      const error = ensured.error || "RUNNER_ERROR";
+      const result = { ok: false, error };
+      // Known, localizable codes (e.g. OPENCODE_NOT_READY) carry NO raw detail so
+      // the renderer renders the translated message; everything else keeps a hint.
+      const detail = ensured.detail
+        || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
+      if (detail) result.detail = detail;
+      return result;
     }
 
     const state = this._state(session.id);

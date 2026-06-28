@@ -609,6 +609,7 @@
   "send.error.INVALID_WORKDIR": "Working directory missing. Check the folder path on the left.",
   "send.error.BUSY": "Still processing the last message. Try again later.",
   "send.error.RUNNER_ERROR": "Failed to start assistant process. Restart the app.",
+  "send.error.OPENCODE_NOT_READY": "AI engine not found. This build may not include the engine for your system — please reinstall the latest version, or contact your administrator if you're already up to date.",
   "send.error.LICENSE_REQUIRED": "Enter a valid activation code in Settings before using the AI assistant.",
   "send.error.NO_API_KEY": "No API key configured. Add one under Settings → Models/API gateway before sending.",
   "send.error.GENERIC": "Failed to send.",

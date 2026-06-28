@@ -236,6 +236,13 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
   } catch (err) {
     console.error("[runner]", sessionId, err.message);
     if (err.stack) console.error(err.stack);
+    // Engine binary not bundled/resolvable: return a specific code (no raw detail)
+    // so the renderer shows a localized "engine missing — reinstall" message rather
+    // than the opaque "OPENCODE_NOT_READY". This is the symptom of a build that
+    // shipped without the platform engine.
+    if (err.message === "OPENCODE_NOT_READY" || err.code === "OPENCODE_NOT_READY") {
+      return { runner: null, error: "OPENCODE_NOT_READY" };
+    }
     const detail =
       err.message && !/^(RUNNER_|AGENT_|NO_)/.test(err.message)
         ? err.message
