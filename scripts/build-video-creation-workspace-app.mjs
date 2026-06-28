@@ -58,7 +58,7 @@ function readme() {
 
 ## 工作流(导演 → 成片)
 
-1. **首次使用先装 ffmpeg**:运行 \`files/scripts/setup-ffmpeg.cjs\`,它会按你的系统
+1. **首次使用先装 ffmpeg**:运行 \`scripts/setup-ffmpeg.cjs\`,它会按你的系统
    解析/下载 ffmpeg 与中文字幕字体,并打印路径。
 2. **导演**:把文案拆成 storyboard(每镜:画风、角色、关键帧、镜头提示词、旁白)。
 3. **成片**:把 storyboard 交给视频技能的成片脚本(generate-film.cjs),传入
@@ -90,9 +90,11 @@ Use \`${REQUIRED_SKILLS.join("`, `")}\`. The finished-film producer is
 
 ## Pipeline (always)
 
-1. **Ensure ffmpeg (first run)** — run the app's setup once and capture the paths:
+1. **Ensure ffmpeg (first run)** — run the app's setup once and capture the paths.
+   The app's files install at the workspace root, so the script is at \`scripts/\`
+   (NOT \`files/scripts/\`):
    \`\`\`bash
-   node files/scripts/setup-ffmpeg.cjs
+   node scripts/setup-ffmpeg.cjs
    \`\`\`
    It prints JSON \`{ "ffmpeg": "<path|ffmpeg>", "font": "<path|>" }\`. Pass these as
    \`FFMPEG_BIN\` and \`SUBTITLE_FONT\` env when running the film producer.
@@ -100,10 +102,11 @@ Use \`${REQUIRED_SKILLS.join("`, `")}\`. The finished-film producer is
    \`style\` and \`character\` ONCE (vividly); they are reused on every shot. One shot
    = one ~5–10s beat; set \`duration\` to fit its \`narration\`. Add a \`keyframe\` per
    shot to lock the look (image-to-video). Never put on-screen text in prompts.
-3. **Produce the film** — hand the storyboard to this app's producer:
+3. **Produce the film** — hand the storyboard to this app's producer (also at
+   \`scripts/\`, NOT \`files/scripts/\`):
    \`\`\`bash
    FFMPEG_BIN=<from step 1> SUBTITLE_FONT=<from step 1> \\
-     echo '<storyboard json>' | node files/scripts/generate-film.cjs
+     echo '<storyboard json>' | node scripts/generate-film.cjs
    \`\`\`
    The producer (an app file) generates each shot, the voice-over, burns subtitles,
    stitches + mixes music, and returns the final mp4. It auto-finds the installed
@@ -112,6 +115,12 @@ Use \`${REQUIRED_SKILLS.join("`, `")}\`. The finished-film producer is
 
 ## Rules
 
+- **Never claim a video was produced unless \`generate-film.cjs\` actually ran and
+  printed \`<generated_media …><file path="…"/>\`. Report that exact printed path —
+  never a placeholder like \`\${finalPath}\`, never a path you wrote yourself.** If you
+  didn't run the producer to completion, say so and run it.
+- Films are slow (each shot is a separate generation). Actually wait for the
+  producer to finish; do not summarize a result you haven't seen.
 - The video models cap visual quality; your leverage is direction, consistency,
   and post (subtitles/music) — make the prompts concrete and filmable.
 - On any failure the producer reports the error and lists the per-shot clips it

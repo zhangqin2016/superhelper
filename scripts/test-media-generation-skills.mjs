@@ -56,6 +56,10 @@ function assertGeneratedPath(stdout, expectedDirName) {
   return filePath.split(path.sep).join("/");
 }
 
+function countGeneratedMediaFiles(outputs) {
+  return outputs.reduce((total, output) => total + generatedFilePaths(output.stdout).length, 0);
+}
+
 async function startMockServer() {
   const seen = {
     image: 0, video: 0, speech: 0, volcImage: 0, volcVideo: 0,
@@ -356,7 +360,13 @@ try {
   assert.equal(seen.mmVideo, 1);
   assert.equal(seen.zhipuImage, 1);
   assert.equal(seen.zhipuVideo, 1);
-  assert.equal(fs.readdirSync(path.join(tmp, "generated-assets")).length, 11);
+  assert.equal(countGeneratedMediaFiles([
+    image, video, speech,
+    volcImage, volcVideo,
+    klingImage, klingVideo,
+    mmImage, mmVideo,
+    zhipuImage, zhipuVideo,
+  ]), 11);
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });

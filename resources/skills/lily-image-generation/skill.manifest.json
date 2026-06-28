@@ -5,6 +5,15 @@
   "version": "1.1.0",
   "description": "生成图片并保存到当前工作区，支持阿里百炼 Qwen-Image、火山方舟即梦 Seedream、可灵 Kling、MiniMax 海螺、智谱 CogView 等服务商。",
   "minAppVersion": "0.1.0",
+  "category": "media",
+  "categoryLabel": "媒体创意",
+  "categoryLabel_i18n": {
+    "zh-CN": "媒体创意",
+    "en": "Media & Creative",
+    "ar": "الوسائط والإبداع"
+  },
+  "capabilityLayer": "tool",
+  "riskLevel": "medium",
   "runtime": "node",
   "entry": "scripts/generate-image.cjs",
   "placeholders": {

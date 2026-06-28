@@ -11,10 +11,12 @@ camera sees*, not prose — so write a concrete, filmable prompt, not a plot sum
 
 ## Write a strong prompt
 
-Order the description as: `[主体/角色外观] + [动作] + [场景/环境] + [景别+运镜] + [光线/氛围] + [画风关键词]`.
+Order the description as: `[subject / character appearance] + [action] + [scene / environment] + [shot size + camera move] + [lighting / mood] + [style keywords]`.
 
-Good: `少年修士跪在药田边，右手按泥土，手腕暗金纹路如水波扩散发光；中景缓推；黎明侧逆光、薄雾；仙侠水墨、电影感、暖色调。`
-Bad (won't match): `少年获得神秘力量开启逆袭` — that's plot, not a shot.
+Good: `a young cultivator kneels at the edge of a herb field, right hand pressed to the soil, dark-gold veins rippling out from his wrist like water and glowing; medium shot, slow push-in; dawn side-backlight, light mist; xianxia ink-wash, cinematic, warm tones.`
+Bad (won't match): `a youth gains mysterious power and rises to the top` — that's plot, not a shot.
+
+Write the prompt in whatever language fits the user's request; the structure above matters more than the language.
 
 - For consistency with an existing look, pass a reference image as the first frame
   (image-to-video): `"media":[{"type":"first_frame","url":"file:///abs/keyframe.png"}]`.
@@ -47,9 +49,9 @@ Video generation can take a long time. The script polls the task and downloads t
 temporary video URL to a local file when complete. Reply with the local file path
 and preview when available. Do not return the temporary URL.
 
-> Multi-shot **finished films** (文案 → storyboard → one mp4 with voice-over,
-> subtitles and music) are produced by the **「视频创作」app** from the app store,
-> which orchestrates this skill plus image/speech and ffmpeg. This skill stays
-> single-clip; install that app for full film production.
+> Multi-shot **finished films** (script → storyboard → one mp4 with voice-over,
+> subtitles and music) are produced by the **Video Creation app** from the app
+> store, which orchestrates this skill plus image/speech and ffmpeg. This skill
+> stays single-clip; install that app for full film production.
 
 Use the primary language of the user's latest message for the surrounding explanation.
