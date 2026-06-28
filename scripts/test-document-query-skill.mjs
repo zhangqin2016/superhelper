@@ -60,4 +60,33 @@ if (!read.ok || read.matches[0]?.heading !== "Risks") {
   throw new Error(`read should return an exact chunk by id: ${JSON.stringify(read)}`);
 }
 
+persistDocumentQueryIndex({
+  sessionId: "s2",
+  turnId: "t2",
+  createdAt: "2026-06-28T00:01:00.000Z",
+  extractedPaths: ["/tmp/other.md"],
+  index: buildDocumentQueryIndex([
+    {
+      label: "other.md",
+      path: "/tmp/other.md",
+      text: "# Scope\nThis unrelated document covers support staffing.",
+    },
+  ]),
+});
+
+let ambiguous = null;
+try {
+  runJson(["search", "billing onboarding"]);
+} catch (err) {
+  ambiguous = JSON.parse(err.stdout);
+}
+if (ambiguous?.error !== "AMBIGUOUS_SESSION" || ambiguous.sessions.length !== 2) {
+  throw new Error(`multi-session search must fail loud instead of using global latest: ${JSON.stringify(ambiguous)}`);
+}
+
+const scoped = runJson(["search", "billing onboarding", "--session", "s1"]);
+if (!scoped.ok || scoped.matches[0]?.documentLabel !== "brief.md") {
+  throw new Error(`--session should scope search to the requested Lily session: ${JSON.stringify(scoped)}`);
+}
+
 console.log("document-query-skill: ok");

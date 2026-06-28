@@ -53,6 +53,10 @@ const exact = readDocumentQueryIndex({ sessionId: "session/alpha", turnId: "turn
 if (exact?.index?.documents?.[0]?.label !== "contract.md") {
   throw new Error(`per-turn record should be readable by logical ids: ${JSON.stringify(exact)}`);
 }
+const sessionLatest = readDocumentQueryIndex({ sessionId: "session/alpha" });
+if (sessionLatest?.turnId !== "turn:one") {
+  throw new Error(`per-session latest record should be readable without a turn id: ${JSON.stringify(sessionLatest)}`);
+}
 
 const search = queryDocumentQueryIndex(latest, { query: "payment buyer invoice", limit: 3 });
 if (!search.ok || search.matches[0]?.chunkId !== "doc1-chunk1") {

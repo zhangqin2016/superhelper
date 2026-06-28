@@ -24,6 +24,58 @@ function readLatest() {
   }
 }
 
+function safeSegment(value) {
+  return String(value || "unknown")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 160) || "unknown";
+}
+
+function readRecord(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function sessionsRoot() {
+  return path.join(userDataDir(), "document-query-index", "sessions");
+}
+
+function readSessionLatest(sessionId) {
+  return readRecord(path.join(sessionsRoot(), safeSegment(sessionId), "latest.json"));
+}
+
+function readSessionTurn(sessionId, turnId) {
+  return readRecord(path.join(sessionsRoot(), safeSegment(sessionId), `${safeSegment(turnId)}.json`));
+}
+
+function listSessionRecords() {
+  let names = [];
+  try {
+    names = fs.readdirSync(sessionsRoot(), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+  return names
+    .map((name) => readRecord(path.join(sessionsRoot(), name, "latest.json")))
+    .filter(Boolean)
+    .map((record) => {
+      const normalized = normalize(record);
+      return {
+        sessionId: normalized.sessionId,
+        turnId: normalized.turnId,
+        createdAt: normalized.createdAt,
+        documentCount: normalized.documents.length,
+        chunkCount: normalized.chunks.length,
+        documents: normalized.documents.map((doc) => ({ id: doc.id, label: doc.label })),
+      };
+    });
+}
+
 function tokenize(value = "") {
   const words = String(value || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
   const tokens = new Set(words.filter((word) => word.length > 1));
@@ -79,9 +131,50 @@ function parseLimit(args, fallback = 8) {
   return Math.max(1, Math.min(Number(args[idx + 1]) || fallback, 50));
 }
 
+function optionValue(args, name) {
+  const idx = args.indexOf(name);
+  if (idx < 0) return "";
+  return String(args[idx + 1] || "");
+}
+
+function withoutOptions(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === "--limit" || args[i] === "--session" || args[i] === "--turn") {
+      i += 1;
+    } else if (args[i] !== "--latest") {
+      out.push(args[i]);
+    }
+  }
+  return out;
+}
+
+function resolveRecord(args) {
+  const sessionId = optionValue(args, "--session") || process.env.LILY_SESSION_ID || "";
+  const turnId = optionValue(args, "--turn");
+  if (sessionId && turnId) return { record: readSessionTurn(sessionId, turnId) };
+  if (sessionId) return { record: readSessionLatest(sessionId) };
+  if (args.includes("--latest")) return { record: readLatest() };
+  const sessions = listSessionRecords();
+  if (sessions.length > 1) {
+    return { error: "AMBIGUOUS_SESSION", sessions };
+  }
+  if (sessions.length === 1) return { record: readSessionLatest(sessions[0].sessionId) };
+  return { record: readLatest() };
+}
+
 function main() {
   const [command, ...args] = process.argv.slice(2);
-  const record = readLatest();
+  const resolved = resolveRecord(args);
+  if (resolved.error) {
+    return emit({
+      ok: false,
+      error: resolved.error,
+      message: "More than one Lily session has indexed documents. Rerun with --session <sessionId>.",
+      sessions: resolved.sessions || [],
+    }, 1);
+  }
+  const record = resolved.record;
   if (!record) return emit({ ok: false, error: "NO_INDEX", message: "No Lily document query index has been written yet." }, 1);
   const normalized = normalize(record);
   if (command === "list") {
@@ -100,15 +193,7 @@ function main() {
     return emit(buildResult(record, normalized.chunks.filter((chunk) => chunk.chunkId === chunkId)));
   }
   if (command === "search") {
-    const queryParts = [];
-    for (let i = 0; i < args.length; i += 1) {
-      if (args[i] === "--limit") {
-        i += 1;
-      } else {
-        queryParts.push(args[i]);
-      }
-    }
-    const terms = tokenize(queryParts.join(" "));
+    const terms = tokenize(withoutOptions(args).join(" "));
     if (!terms.length) return emit({ ok: false, error: "EMPTY_QUERY" }, 1);
     const scored = [];
     for (const chunk of normalized.chunks) {
@@ -129,6 +214,7 @@ function main() {
       "node query_document_index.cjs list",
       "node query_document_index.cjs search \"query\" --limit 8",
       "node query_document_index.cjs read <chunkId>",
+      "node query_document_index.cjs search \"query\" --session <sessionId>",
     ],
   }, 1);
 }

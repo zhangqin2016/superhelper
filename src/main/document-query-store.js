@@ -22,6 +22,10 @@ function latestPath() {
   return path.join(storeRoot(), "latest.json");
 }
 
+function sessionLatestPath(sessionId) {
+  return path.join(storeRoot(), "sessions", safeSegment(sessionId), "latest.json");
+}
+
 function sessionRecordPath(sessionId, turnId) {
   return path.join(storeRoot(), "sessions", safeSegment(sessionId), `${safeSegment(turnId)}.json`);
 }
@@ -67,6 +71,7 @@ function persistDocumentQueryIndex({
     index: normalized,
   };
   writeJson(sessionRecordPath(record.sessionId, record.turnId), record);
+  writeJson(sessionLatestPath(record.sessionId), record);
   writeJson(latestPath(), record);
   return record;
 }
@@ -90,7 +95,8 @@ function readLatestDocumentQueryIndex() {
 }
 
 function readDocumentQueryIndex({ sessionId, turnId } = {}) {
-  if (!sessionId || !turnId) return null;
+  if (!sessionId) return null;
+  if (!turnId) return normalizeRecord(readJson(sessionLatestPath(sessionId)));
   return normalizeRecord(readJson(sessionRecordPath(sessionId, turnId)));
 }
 

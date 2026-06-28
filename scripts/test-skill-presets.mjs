@@ -144,6 +144,17 @@ const after = skillManager.listSkillPresetsPublic().find((p) => p.id === "office
 if (!after?.complete) {
   throw new Error("office-starter preset should be complete after apply");
 }
+const installedDocumentQueryGuide = fs.readFileSync(
+  path.join(tmp, "lily-config", "skills", "lily-document-query", "SKILL.md"),
+  "utf8",
+);
+if (
+  installedDocumentQueryGuide.includes("{{SKILL_DIR}}") ||
+  installedDocumentQueryGuide.includes("{{NODE_BIN}}") ||
+  !installedDocumentQueryGuide.includes(path.join(tmp, "lily-config", "skills", "lily-document-query", "scripts", "query_document_index.cjs"))
+) {
+  throw new Error(`document-query guide should resolve script placeholders at install time: ${installedDocumentQueryGuide}`);
+}
 
 skillManager.setSkillPresetGuideStatus("applied");
 if (skillManager.getSkillPresetGuideState().shouldShow) {
