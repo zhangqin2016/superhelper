@@ -24,7 +24,7 @@ const platIdx = args.indexOf("--platform");
 const platArg = platIdx >= 0 ? args[platIdx + 1] : null;
 // The positional version arg — but never the value that follows --platform
 // (otherwise `--platform darwin-arm64` is misread as version "darwin-arm64").
-const version = args.find((a, i) => !a.startsWith("--") && i !== platIdx + 1) || "1.17.8";
+const version = args.find((a, i) => !a.startsWith("--") && i !== platIdx + 1) || "1.17.11";
 
 // Map our bundle platform key -> the opencode-ai optional-dep package name.
 const KEY_TO_PKG = {
@@ -42,19 +42,57 @@ const key = platArg || currentKey();
 const pkg = KEY_TO_PKG[key];
 if (!pkg) { console.error(`Unsupported platform key: ${key}`); process.exit(1); }
 
+const installTimeoutMs = (() => {
+  const raw = process.env.OPENCODE_FETCH_INSTALL_TIMEOUT_MS || process.env.LILY_OPENCODE_FETCH_INSTALL_TIMEOUT_MS || "300000";
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 300000;
+})();
+const installer = String(process.env.OPENCODE_FETCH_INSTALLER || "auto").toLowerCase();
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "oc-fetch-"));
 console.log(`[fetching opencode-ai@${version} (${key}) ...]`);
 fs.writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ name: "ocfetch", private: true }));
 
 // Prefer bun (handles cross-platform optional deps cleanly); fall back to npm.
+function targetEnv() {
+  const [targetOs, targetArch] = key === "win32-x64" ? ["win32", "x64"] : key.split("-");
+  return {
+    ...process.env,
+    npm_config_os: targetOs,
+    npm_config_cpu: targetArch,
+  };
+}
+
 function install(cmd, cmdArgs) {
-  execFileSync(cmd, cmdArgs, { cwd: tmp, stdio: "inherit" });
+  console.log(`[install] ${cmd} ${cmdArgs.join(" ")} (timeout ${Math.round(installTimeoutMs / 1000)}s)`);
+  execFileSync(cmd, cmdArgs, {
+    cwd: tmp,
+    stdio: "inherit",
+    timeout: installTimeoutMs,
+    env: cmd === "npm" ? targetEnv() : process.env,
+  });
 }
-try {
-  install("bun", ["add", "--os=*", "--cpu=*", `opencode-ai@${version}`]);
-} catch {
-  install("npm", ["install", `opencode-ai@${version}`]);
+
+function installEngine() {
+  if (installer === "npm") {
+    install("npm", ["install", "--include=optional", `opencode-ai@${version}`]);
+    return;
+  }
+  if (installer === "bun") {
+    install("bun", ["add", "--os=*", "--cpu=*", `opencode-ai@${version}`]);
+    return;
+  }
+  if (installer !== "auto") {
+    console.warn(`[install] unknown OPENCODE_FETCH_INSTALLER=${installer}; using auto`);
+  }
+  try {
+    install("bun", ["add", "--os=*", "--cpu=*", `opencode-ai@${version}`]);
+  } catch (err) {
+    console.warn(`[install] bun failed or timed out; falling back to npm: ${err?.message || err}`);
+    install("npm", ["install", "--include=optional", `opencode-ai@${version}`]);
+  }
 }
+installEngine();
 
 const exe = key.startsWith("win32") ? "opencode.exe" : "opencode";
 const srcCandidates = [

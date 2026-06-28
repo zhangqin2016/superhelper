@@ -197,7 +197,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@opencode-ai/sdk": "^1.17.9",
+    "@opencode-ai/sdk": "^1.17.11",
     "diff": "^7.0.0",
     "dompurify": "^3.4.5",
     "echarts": "^6.1.0",
