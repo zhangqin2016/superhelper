@@ -67,6 +67,24 @@ function detectIncompleteDeliverable(output) {
   return null;
 }
 
+function messageTextFromOpenCodeItem(item = {}) {
+  return (Array.isArray(item?.parts) ? item.parts : [])
+    .filter((part) => part?.type === "text" && !part.ignored && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("")
+    .trim();
+}
+
+function messageCreatedMs(info = {}) {
+  const created = Number(info.time?.created || info.created || 0);
+  return Number.isFinite(created) && created > 0 ? created : null;
+}
+
+function messageCompletedMs(info = {}) {
+  const completed = Number(info.time?.completed || info.completed || 0);
+  return Number.isFinite(completed) && completed > 0 ? completed : null;
+}
+
 function isTurnOwnedEngineEvent(ev) {
   const type = String(ev?.type || "");
   const props = ev?.properties || {};
@@ -128,6 +146,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._pendingCompletePayload = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._dispatchFailureTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._promptAcceptanceTimer = null;
     this._pendingDispatchFailure = null;
     this._pendingPromptPayload = null;
     this._activeTaskContract = null;
@@ -262,6 +282,7 @@ class OpencodeAgentSession extends EventEmitter {
         progressNotice: Boolean(this._progressNoticeTimer),
         idleSettle: Boolean(this._idleSettleTimer),
         idleProbe: Boolean(this._idleProbeTimer),
+        promptAcceptance: Boolean(this._promptAcceptanceTimer),
         health: Boolean(this._healthTimer),
       },
       server: this._server?.diagnostics?.() || null,
@@ -312,6 +333,7 @@ class OpencodeAgentSession extends EventEmitter {
         const guidance = this.spawnOptions?.guidance || "";
         this._pendingPromptPayload = { text, files, guidance };
         await server.sendPrompt(this._pendingPromptPayload);
+        this._armPromptAcceptanceCheck();
       } catch (err) {
         // The turn is driven by SSE (session.idle/events). If events already
         // arrived, a hiccup on the blocking message POST is NOT a turn failure —
@@ -500,6 +522,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearIdleProbeTimer();
     this._pendingCompletePayload = null;
     this._clearDispatchFailureTimer();
+    this._clearPromptAcceptanceCheck();
     this._clearTransientFailureTimer();
     this._clearResponseTimer();
     this._clearProgressNoticeTimer();
@@ -558,6 +581,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (isTurnOwnedEngineEvent(ev)) {
       this._sawEngineEvent = true;
       this._clearDispatchFailureTimer();
+      this._clearPromptAcceptanceCheck();
     }
 
     // Capture the turn's first engine message id (rewind anchor) before normalize.
@@ -584,6 +608,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (reduced.progress) {
       this._sawActivity = true;
       this._clearDispatchFailureTimer();
+      this._clearPromptAcceptanceCheck();
       this._clearTransientFailureTimer();
       this._armResponseTimer();
       this._armProgressNoticeTimer();
@@ -1017,6 +1042,7 @@ class OpencodeAgentSession extends EventEmitter {
       try {
         await this._server.sendPrompt(this._pendingPromptPayload);
         this._pendingDispatchFailure = null;
+        this._armPromptAcceptanceCheck();
         return;
       } catch (err) {
         this._pendingDispatchFailure = err;
@@ -1037,6 +1063,70 @@ class OpencodeAgentSession extends EventEmitter {
       this._dispatchFailureTimer = null;
     }
     if (clearPending) this._pendingDispatchFailure = null;
+  }
+
+  _armPromptAcceptanceCheck() {
+    this._clearPromptAcceptanceCheck();
+    if (!this.busy || this._turnSettled || this._sawActivity || this._sawEngineEvent) return;
+    this._promptAcceptanceTimer = setTimeout(() => {
+      this._promptAcceptanceTimer = null;
+      void this._confirmPromptAccepted();
+    }, OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS);
+    this._promptAcceptanceTimer.unref?.();
+  }
+
+  _clearPromptAcceptanceCheck() {
+    if (this._promptAcceptanceTimer) {
+      clearTimeout(this._promptAcceptanceTimer);
+      this._promptAcceptanceTimer = null;
+    }
+  }
+
+  async _confirmPromptAccepted() {
+    if (!this.busy || this._turnSettled || this._sawActivity || this._sawEngineEvent) return;
+
+    let idle = true;
+    try {
+      idle = this._server?.isSessionIdle ? await this._server.isSessionIdle() : true;
+    } catch (err) {
+      log.warn("opencode prompt acceptance status read failed: %s", err?.message || String(err));
+      idle = true;
+    }
+    if (!this.busy || this._turnSettled || this._sawActivity || this._sawEngineEvent) return;
+    if (!idle) return;
+
+    const recovered = await this._recoverCompletedAssistantFromHistory({ requireCurrentPrompt: true }).catch((err) => {
+      log.warn("opencode prompt acceptance history read failed: %s", err?.message || String(err));
+      return null;
+    });
+    if (!this.busy || this._turnSettled || this._sawActivity || this._sawEngineEvent) return;
+    if (recovered?.output) {
+      this._completeTurn({
+        code: 0,
+        output: recovered.output,
+        interrupted: false,
+        engineMessageId: recovered.engineMessageId,
+        recoveredFromPromptAcceptance: true,
+      });
+      return;
+    }
+
+    if (this._dispatchRetryCount < 1 && this._server && this._pendingPromptPayload) {
+      this._dispatchRetryCount += 1;
+      try {
+        await this._server.sendPrompt(this._pendingPromptPayload);
+        this._armPromptAcceptanceCheck();
+      } catch (err) {
+        this._scheduleDispatchFailure(err);
+      }
+      return;
+    }
+
+    this._failTurn(
+      "The assistant engine accepted the message but did not start the turn. Please retry.",
+      new Error("prompt accepted but no session activity"),
+      { force: true },
+    );
   }
 
   _scheduleTransientFailureRecovery(message, cause) {
@@ -1070,7 +1160,7 @@ class OpencodeAgentSession extends EventEmitter {
       return;
     }
 
-    const recovered = await this._recoverCompletedAssistantFromHistory().catch((err) => {
+    const recovered = await this._recoverCompletedAssistantFromHistory({ requireCurrentPrompt: !this._sawActivity }).catch((err) => {
       log.warn("opencode transient recovery history read failed: %s", err?.message || String(err));
       return null;
     });
@@ -1147,6 +1237,7 @@ class OpencodeAgentSession extends EventEmitter {
       this._armResponseTimer();
       this._armProgressNoticeTimer();
       this._armHealthProbe();
+      this._armPromptAcceptanceCheck();
       return true;
     } catch (err) {
       this._pendingTransientFailure = {
@@ -1159,38 +1250,58 @@ class OpencodeAgentSession extends EventEmitter {
     }
   }
 
-  async _recoverCompletedAssistantFromHistory() {
-    return this._latestAssistantFromOfficialHistory();
+  async _recoverCompletedAssistantFromHistory(opts = {}) {
+    return this._latestAssistantFromOfficialHistory(opts);
   }
 
-  async _latestAssistantFromOfficialHistory() {
+  async _latestAssistantFromOfficialHistory(opts = {}) {
     if (!this._server?.messages || !this._turnStartedAt) return null;
     const raw = await this._server.messages({ limit: 16 });
     const items = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
-    const minCreatedAt = this._turnStartedAt - 10_000;
+    const requireCurrentPrompt = Boolean(opts.requireCurrentPrompt);
+    let currentUser = null;
+    if (requireCurrentPrompt) {
+      const expectedText = String(this._pendingPromptPayload?.text || "").trim();
+      const minPromptCreatedAt = this._turnStartedAt - 2_000;
+      for (const item of items) {
+        const info = item?.info || {};
+        if (info.role !== "user") continue;
+        const createdAt = messageCreatedMs(info);
+        if (!createdAt || createdAt < minPromptCreatedAt) continue;
+        const text = messageTextFromOpenCodeItem(item);
+        if (expectedText && text !== expectedText) continue;
+        const rank = createdAt;
+        if (!currentUser || rank >= currentUser.rank) {
+          currentUser = {
+            id: typeof info.id === "string" ? info.id : null,
+            createdAt,
+            rank,
+          };
+        }
+      }
+      if (!currentUser) return null;
+    }
+
+    const minCreatedAt = requireCurrentPrompt ? currentUser.createdAt : this._turnStartedAt - 10_000;
     let best = null;
     for (const item of items) {
       const info = item?.info || {};
       if (info.role !== "assistant") continue;
-      const created = Number(info.time?.created || info.created || 0);
-      if (Number.isFinite(created) && created > 0 && created < minCreatedAt) continue;
+      const createdAt = messageCreatedMs(info);
+      if (createdAt && createdAt < minCreatedAt) continue;
       const { assistantTextFromOpenCodeMessageItem } = require("./runtime/opencode-conversation-adapter");
       const output = assistantTextFromOpenCodeMessageItem(item);
       if (!output) continue;
-      const completed = Number(info.time?.completed || info.completed || 0);
-      const completedAt = Number.isFinite(completed) && completed > 0 ? completed : null;
-      const rank = Number.isFinite(completed) && completed > 0
-        ? completed
-        : Number.isFinite(created) && created > 0
-          ? created
-          : 0;
+      const completedAt = messageCompletedMs(info);
+      const rank = completedAt || createdAt || 0;
+      if (requireCurrentPrompt && rank < currentUser.rank) continue;
       if (!best || rank >= best.rank) {
         best = {
           output,
           engineMessageId: typeof info.id === "string" ? info.id : null,
           completed: Boolean(completedAt),
           completedAt,
-          createdAt: Number.isFinite(created) && created > 0 ? created : null,
+          createdAt,
           rank,
         };
       }
@@ -1219,7 +1330,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   async _recoverStalledFinalFromOfficialState() {
     const latest = await this._withTimeout(
-      this._latestAssistantFromOfficialHistory(),
+      this._latestAssistantFromOfficialHistory({ requireCurrentPrompt: !this._sawActivity }),
       OpencodeAgentSession.STALLED_HISTORY_SYNC_MS,
       null,
     );
@@ -1318,6 +1429,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearIdleProbeTimer();
     this._pendingCompletePayload = null;
     this._clearDispatchFailureTimer();
+    this._clearPromptAcceptanceCheck();
     this._clearTransientFailureTimer();
     this._clearResponseTimer();
     this._clearProgressNoticeTimer();
@@ -1389,6 +1501,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearIdleProbeTimer();
     this._pendingCompletePayload = null;
     this._clearDispatchFailureTimer();
+    this._clearPromptAcceptanceCheck();
     this._clearTransientFailureTimer();
     this._clearResponseTimer();
     this._clearProgressNoticeTimer();

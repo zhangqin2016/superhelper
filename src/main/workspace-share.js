@@ -49,6 +49,7 @@ const EXCLUDED_FILE_RE =
 const MAX_FILE_BYTES = exportPlanner.MAX_FILE_BYTES;
 const MAX_TOTAL_FILES = exportPlanner.MAX_TOTAL_FILES;
 const SKIPPED_SAMPLE_LIMIT = 50;
+const LEGACY_MIRROR_MAX_TOTAL_BYTES = Math.floor(MAX_FILE_BYTES / 2);
 
 // Content secret scan: flag (don't auto-strip) likely secrets baked into shared
 // files (e.g. a hardcoded key in config.js), so the author can scrub before
@@ -138,6 +139,40 @@ function extractDataLocationPaths(value) {
 
 function workspaceAppDataPaths(manifest) {
   return exportPlanner.workspaceAppExportConfig(manifest).dataPaths;
+}
+
+function hasLegacyMirrorConflict(files, workspaceSkillFiles, hasConventions) {
+  const rootEntries = new Set(files.map((file) => file.relPath));
+  if (rootEntries.has(MANIFEST_NAME)) return true;
+  if (hasConventions && rootEntries.has(CONVENTIONS_ENTRY)) return true;
+  for (const file of files) {
+    if (rootEntries.has(`${FILES_PREFIX}${file.relPath}`)) return true;
+  }
+  for (const file of workspaceSkillFiles) {
+    if (rootEntries.has(`${SKILLS_PREFIX}${file.skillId}/${file.relPath}`)) return true;
+  }
+  return false;
+}
+
+function isLegacyFileMirrorEntry(entryName, zip) {
+  if (!entryName.startsWith(FILES_PREFIX)) return false;
+  const rootName = entryName.slice(FILES_PREFIX.length);
+  return Boolean(rootName && zip.file(rootName));
+}
+
+function isLegacySkillMirrorEntry(entryName, zip) {
+  if (!entryName.startsWith(SKILLS_PREFIX)) return false;
+  const hiddenName = `${PACK_SKILLS_PREFIX}${entryName.slice(SKILLS_PREFIX.length)}`;
+  return Boolean(zip.file(hiddenName));
+}
+
+function legacyCompatibilityManifest(manifest) {
+  if (manifest?.kind !== "lily-workspace-app") return manifest;
+  return {
+    ...manifest,
+    kind: "lily-workspace-pack",
+    originalKind: "lily-workspace-app",
+  };
 }
 
 function workspaceAppExportInfo(rootPath) {
@@ -376,13 +411,10 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
   const exportPlan = collectShareableFiles(rootPath);
   const workspaceApp = exportPlan.workspaceApp;
   const files = exportPlan.files;
-  for (const file of files) {
-    zip.file(file.relPath, fs.readFileSync(file.fullPath));
-  }
   const conv = String(conventions || "").trim();
-  if (conv) zip.file(PACK_CONVENTIONS_ENTRY, conv);
 
   const exportedWorkspaceSkills = [];
+  const exportedWorkspaceSkillFiles = [];
   for (const rawSkill of Array.isArray(workspaceSkills) ? workspaceSkills : []) {
     const skill = normalizeWorkspaceSkillExport(rawSkill);
     if (!skill) continue;
@@ -390,11 +422,7 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
     if (!skillFiles.some((file) => file.relPath === "SKILL.md")) continue;
     if (!skillFiles.some((file) => file.relPath === "skill.manifest.json")) continue;
     for (const file of skillFiles) {
-      if (file.relPath === "skill.manifest.json") {
-        zip.file(`${PACK_SKILLS_PREFIX}${skill.id}/${file.relPath}`, `${JSON.stringify(skill.manifest, null, 2)}\n`);
-      } else {
-        zip.file(`${PACK_SKILLS_PREFIX}${skill.id}/${file.relPath}`, fs.readFileSync(file.fullPath));
-      }
+      exportedWorkspaceSkillFiles.push({ skillId: skill.id, file, manifest: skill.manifest });
     }
     exportedWorkspaceSkills.push({
       id: skill.id,
@@ -419,7 +447,28 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
     requiredSkills: Array.isArray(requiredSkills) ? requiredSkills.filter(Boolean) : [],
     workspaceSkills: exportedWorkspaceSkills,
   };
-  zip.file(PACK_MANIFEST_ENTRY, JSON.stringify(manifest, null, 2));
+
+  const addLegacyMirror =
+    exportPlan.totalBytes <= LEGACY_MIRROR_MAX_TOTAL_BYTES &&
+    !hasLegacyMirrorConflict(files, exportedWorkspaceSkillFiles, Boolean(conv));
+  for (const file of files) {
+    const content = fs.readFileSync(file.fullPath);
+    if (addLegacyMirror) zip.file(file.relPath, content);
+    zip.file(`${FILES_PREFIX}${file.relPath}`, content);
+  }
+  if (conv) {
+    if (addLegacyMirror) zip.file(PACK_CONVENTIONS_ENTRY, conv);
+    zip.file(CONVENTIONS_ENTRY, conv);
+  }
+  for (const item of exportedWorkspaceSkillFiles) {
+    const content = item.file.relPath === "skill.manifest.json"
+      ? `${JSON.stringify(item.manifest, null, 2)}\n`
+      : fs.readFileSync(item.file.fullPath);
+    if (addLegacyMirror) zip.file(`${PACK_SKILLS_PREFIX}${item.skillId}/${item.file.relPath}`, content);
+    zip.file(`${SKILLS_PREFIX}${item.skillId}/${item.file.relPath}`, content);
+  }
+  if (addLegacyMirror) zip.file(PACK_MANIFEST_ENTRY, JSON.stringify(manifest, null, 2));
+  zip.file(MANIFEST_NAME, JSON.stringify(legacyCompatibilityManifest(manifest), null, 2));
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
@@ -532,6 +581,8 @@ async function importWorkspacePack(zipBuffer, targetDir) {
       .filter((entry) => !entry.dir)
       .filter((entry) => !entry.name.startsWith(PACK_META_PREFIX))
       .filter((entry) => entry.name !== MANIFEST_NAME && entry.name !== CONVENTIONS_ENTRY)
+      .filter((entry) => !isLegacyFileMirrorEntry(entry.name, zip))
+      .filter((entry) => !isLegacySkillMirrorEntry(entry.name, zip))
       .map((entry) => ({ entry, rel: entry.name }));
   const declaredWorkspaceSkillIds = manifestWorkspaceSkillIds(manifest);
   if (entries.length === 0 && declaredWorkspaceSkillIds.length === 0) {
@@ -564,6 +615,7 @@ module.exports = {
   EXCLUDED_DIRS,
   MAX_FILE_BYTES,
   MAX_TOTAL_FILES,
+  LEGACY_MIRROR_MAX_TOTAL_BYTES,
   normalizeRelPath,
   isExcluded,
   collectShareableFiles,

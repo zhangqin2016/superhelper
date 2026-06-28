@@ -8,3 +8,5 @@
 - [OpenCode Session Demux Idle Boundary](2026-06-24-opencode-session-demux-idle.md) — unowned shared-serve `session.idle` events must not broadcast across same-directory sessions
 - [Context OS And Memory Compaction](context-os-memory-compaction.md) — do not duplicate runtime raw history; build Lily's cross-runtime memory, compaction, budget, and evidence layer above OpenCode
 - [Context OS Gap Audit](context-os-gap-audit.md) — remaining work to reach/beat Claude Code-style context and memory management
+- [Workspace Pack Compatibility](2026-06-28-workspace-pack-compat.md) — new root-layout `.lilyspace.zip` exports must retain a legacy mirror so older clients can import shared apps
+- [OpenCode Prompt Acceptance Watchdog](2026-06-28-opencode-prompt-acceptance-watchdog.md) — `promptAsync` success is not enough; verify the turn actually starts, and anchor history recovery to the current user prompt

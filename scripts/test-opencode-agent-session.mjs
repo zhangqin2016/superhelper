@@ -303,6 +303,33 @@ async function newSession() {
   }
 }
 
+// --- promptAsync transport retry success still verifies the turn started ----
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.historyMessages = [];
+    let attempts = 0;
+    fake.failPrompt = () => {
+      attempts += 1;
+      if (attempts === 1) {
+        fake.failPrompt = null;
+        throw new Error("socket connection was closed");
+      }
+    };
+    session.sendUserMessage({ text: "retry accepted but never started" });
+    await tick();
+    await sleep(90);
+    assert(fake.prompts.length === 2, "dispatch retry submits once");
+    assert(orch.calls.error.length === 1, "dispatch retry success without activity still fails fast");
+    assert(session.isBusy() === false, "dispatch retry no-activity failure clears busy state");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
 // --- promptAsync transport error: any owned engine event means landed --------
 {
   const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
@@ -364,15 +391,27 @@ async function newSession() {
     session.sendUserMessage({ text: "cold start" });
     await tick();
     fake.emitEvent({ type: "session.status", properties: { sessionID: "s", status: { type: "busy" } } });
-    fake.historyMessages = [{
-      info: {
-        id: "msg_recovered_after_hiccup",
-        role: "assistant",
-        sessionID: "ses_test",
-        time: { created: Date.now(), completed: Date.now() + 1 },
+    const now = Date.now();
+    fake.historyMessages = [
+      {
+        info: {
+          id: "msg_user_after_hiccup",
+          role: "user",
+          sessionID: "ses_test",
+          time: { created: now },
+        },
+        parts: [{ type: "text", text: "cold start" }],
       },
-      parts: [{ type: "text", text: "recovered answer" }],
-    }];
+      {
+        info: {
+          id: "msg_recovered_after_hiccup",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: now + 1, completed: now + 2 },
+        },
+        parts: [{ type: "text", text: "recovered answer" }],
+      },
+    ];
     fake.emit("error", new Error("SSE reconnect gave up after socket connection was closed"));
     assert(orch.calls.error.length === 0, "landed server hiccup is not shown as a visible failure");
     assert(session.isAlive() === true, "landed server hiccup keeps the official serve alive for recovery");
@@ -499,6 +538,112 @@ async function newSession() {
     await waitIdleSettle();
     assert(orch.calls.error.length === 0, "retry success avoids user-visible dispatch error");
     assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "retried ok", "retried turn completes");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- promptAsync success but no engine activity: verify prompt really started -
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.historyMessages = [];
+    session.sendUserMessage({ text: "accepted but never started" });
+    await tick();
+    await sleep(70);
+    assert(fake.prompts.length === 2, "promptAsync success with no activity retries once");
+    assert(fake.idleChecks.length >= 2, "acceptance watchdog checks official session status");
+    assert(orch.calls.error.length === 1, "no activity after retry fails fast instead of hanging at starting");
+    assert(session.isBusy() === false, "no-activity failure clears busy state");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.historyMessages = [];
+    fake.idleState = false;
+    session.sendUserMessage({ text: "quiet but officially busy" });
+    await tick();
+    await sleep(60);
+    assert(fake.prompts.length === 1, "officially busy prompt is not replayed just because it is quiet");
+    assert(orch.calls.error.length === 0, "officially busy prompt is not failed by acceptance watchdog");
+    assert(session.isBusy() === true, "officially busy prompt remains in flight");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    const old = Date.now() - 1_000;
+    fake.historyMessages = [{
+      info: {
+        id: "msg_previous_answer",
+        role: "assistant",
+        sessionID: "ses_test",
+        time: { created: old, completed: old + 1 },
+      },
+      parts: [{ type: "text", text: "previous answer must not leak" }],
+    }];
+    session.sendUserMessage({ text: "accepted but history is stale" });
+    await tick();
+    await sleep(70);
+    assert(fake.prompts.length === 2, "stale official history is not treated as this turn's answer");
+    assert(orch.calls.done.length === 0, "stale official answer must not complete this turn");
+    assert(orch.calls.error.length === 1, "stale official history still fails fast after one retry");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    const now = Date.now();
+    fake.historyMessages = [
+      {
+        info: {
+          id: "msg_acceptance_user",
+          role: "user",
+          sessionID: "ses_test",
+          time: { created: now },
+        },
+        parts: [{ type: "text", text: "accepted and completed without SSE" }],
+      },
+      {
+        info: {
+          id: "msg_acceptance_recovered",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: now + 1, completed: now + 2 },
+        },
+        parts: [{ type: "text", text: "official answer despite missing SSE" }],
+      },
+    ];
+    session.sendUserMessage({ text: "accepted and completed without SSE" });
+    await tick();
+    await sleep(50);
+    assert(fake.prompts.length === 1, "official final recovery does not replay a completed prompt");
+    assert(orch.calls.error.length === 0, "official final recovery avoids a visible failure");
+    assert(orch.calls.done.length === 1, "official final recovery completes the turn");
+    assert(orch.calls.done[0].output === "official answer despite missing SSE", "official recovered answer is used");
+    assert(orch.calls.done[0].recoveredFromPromptAcceptance === true, "recovery source is recorded");
     session.terminate();
   } finally {
     OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
@@ -1280,15 +1425,26 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
     session.sendUserMessage({ text: "official final already exists" });
     await tick();
     const now = Date.now();
-    fake.historyMessages = [{
-      info: {
-        id: "msg_stall_recovered",
-        role: "assistant",
-        sessionID: "ses_test",
-        time: { created: now, completed: now + 1 },
+    fake.historyMessages = [
+      {
+        info: {
+          id: "msg_user_stall_recovered",
+          role: "user",
+          sessionID: "ses_test",
+          time: { created: now },
+        },
+        parts: [{ type: "text", text: "official final already exists" }],
       },
-      parts: [{ type: "text", text: "official recovered answer" }],
-    }];
+      {
+        info: {
+          id: "msg_stall_recovered",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: now + 1, completed: now + 2 },
+        },
+        parts: [{ type: "text", text: "official recovered answer" }],
+      },
+    ];
     await sleep(80);
     assert(orch.calls.done.length === 1, "watchdog checks official messages before declaring stalled");
     assert(orch.calls.done[0].stalled !== true, "official final recovery is not marked stalled");

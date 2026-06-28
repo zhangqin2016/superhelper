@@ -151,11 +151,30 @@ try {
   if (!exportedZip.file(`${share.PACK_META_PREFIX}${share.MANIFEST_NAME}`)) {
     throw new Error("workspace metadata must live under hidden .lilyspace/");
   }
-  if (exportedZip.file("files/README.md") || exportedZip.file(share.MANIFEST_NAME) || exportedZip.file("conventions.md")) {
-    throw new Error("new exports must not expose the legacy technical files/ layout at the zip root");
+  if (!exportedZip.file("files/README.md") || !exportedZip.file(share.MANIFEST_NAME) || !exportedZip.file("conventions.md")) {
+    throw new Error("exports must carry a legacy-compatible mirror so older Lily clients can import shared apps");
   }
   if (!exportedZip.file(`${share.PACK_SKILLS_PREFIX}learned-oa-portal/SKILL.md`)) {
     throw new Error("workspace skill metadata must live under hidden .lilyspace/skills/");
+  }
+  if (!exportedZip.file(`${share.SKILLS_PREFIX}learned-oa-portal/SKILL.md`)) {
+    throw new Error("workspace skill metadata must also be mirrored for older importers");
+  }
+  const legacyManifest = JSON.parse(await exportedZip.file(share.MANIFEST_NAME).async("string"));
+  if (legacyManifest.kind !== "lily-workspace-pack" || legacyManifest.originalKind !== "lily-workspace-app" || legacyManifest.appId !== "clinical-case-assistant") {
+    throw new Error(`legacy manifest must be accepted by older pack importers while preserving app identity: ${JSON.stringify(legacyManifest)}`);
+  }
+  const legacyDest = path.join(tmp, "legacy-imported");
+  fs.mkdirSync(legacyDest, { recursive: true });
+  for (const entry of Object.values(exportedZip.files).filter((e) => !e.dir && e.name.startsWith("files/"))) {
+    const rel = entry.name.slice("files/".length);
+    if (!rel) continue;
+    const destPath = path.join(legacyDest, rel);
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.writeFileSync(destPath, await entry.async("nodebuffer"));
+  }
+  if (!fs.existsSync(path.join(legacyDest, "README.md")) || !fs.existsSync(path.join(legacyDest, "cases/P-1.case.json"))) {
+    throw new Error("legacy-compatible mirror must let older importers restore the workspace files");
   }
 
   const dest = path.join(tmp, "imported");
@@ -181,6 +200,9 @@ try {
   }
   if (!fs.existsSync(path.join(dest, ".lily-work/imported-skills/learned-oa-portal/SKILL.md"))) {
     throw new Error("workspace skill files must be extracted into the imported workspace");
+  }
+  if (fs.existsSync(path.join(dest, "files/README.md")) || fs.existsSync(path.join(dest, "skills/learned-oa-portal/SKILL.md"))) {
+    throw new Error("new importer must ignore compatibility mirror entries instead of creating duplicate folders");
   }
   if (fs.readFileSync(path.join(dest, "knowledge/bazi/rules.md"), "utf8") !== "排盘规则") {
     throw new Error("capability file content corrupted on import");
@@ -213,6 +235,31 @@ try {
   const noSkillImport = await share.importWorkspacePack(noSkillBuf, noSkillDest);
   if (noSkillImport.workspaceSkills.length !== 0 || noSkillImport.manifest.workspaceSkills.length !== 0) {
     throw new Error(`workspace skills must be excluded unless explicitly requested: ${JSON.stringify(noSkillImport.manifest.workspaceSkills)}`);
+  }
+
+  // If a workspace already has paths that would collide with the compatibility
+  // mirror, export must fall back to the unambiguous legacy layout instead of
+  // overwriting user files or producing a package that imports differently.
+  const conflictWs = path.join(tmp, "conflict-workspace");
+  fs.mkdirSync(path.join(conflictWs, "files"), { recursive: true });
+  fs.writeFileSync(path.join(conflictWs, "README.md"), "root readme");
+  fs.writeFileSync(path.join(conflictWs, "files", "README.md"), "nested readme");
+  const conflictBuf = await share.exportWorkspacePack({
+    rootPath: conflictWs,
+    name: "conflict-workspace",
+    exportedAt: "2026-06-12T00:00:00.000Z",
+  });
+  const conflictZip = await JSZip.loadAsync(conflictBuf);
+  if (conflictZip.file(`${share.PACK_META_PREFIX}${share.MANIFEST_NAME}`)) {
+    throw new Error("mirror conflicts must fall back to legacy layout, not write ambiguous root-layout entries");
+  }
+  const conflictDest = path.join(tmp, "conflict-imported");
+  await share.importWorkspacePack(conflictBuf, conflictDest);
+  if (fs.readFileSync(path.join(conflictDest, "README.md"), "utf8") !== "root readme") {
+    throw new Error("legacy fallback must preserve root files");
+  }
+  if (fs.readFileSync(path.join(conflictDest, "files", "README.md"), "utf8") !== "nested readme") {
+    throw new Error("legacy fallback must preserve an actual files/ directory");
   }
 
   // Security layer 1: safeJoin rejects any path resolving outside the target.
