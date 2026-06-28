@@ -53,7 +53,11 @@ try {
   assert(rawManifest.folderName === "video-creation", "raw manifest has stable English folder name");
   assert(rawManifest.name === "视频创作", "app name is 视频创作");
   assert(readme.includes("ffmpeg") && readme.includes("不进主安装包"), "README states ffmpeg is fetched, not bundled in installer");
-  assert(agentsMd.includes("files/scripts/generate-film.cjs"), "AGENTS invokes the app-bundled producer");
+  // Install strips the files/ wrapper → scripts live at the workspace root. AGENTS
+  // MUST invoke the runtime path (scripts/…), not the zip path (files/scripts/…) —
+  // the latter doesn't exist after install and made the model fabricate a result.
+  assert(agentsMd.includes("node scripts/generate-film.cjs"), "AGENTS invokes the producer at its installed path");
+  assert(!/node files\/scripts\//.test(agentsMd), "AGENTS must NOT run node files/scripts/ (path doesn't exist after install)");
   assert(agentsMd.includes("storyboard"), "AGENTS teaches the storyboard/director step");
   assert(/FFMPEG_BIN/.test(agentsMd), "AGENTS wires FFMPEG_BIN into the producer");
   // the producer must self-resolve installed skills (it lives in the app, not the skill dir)
