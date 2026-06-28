@@ -85,6 +85,7 @@ const otherSession = { id: "s2", projectId: "p1", messages: [] };
 const runner = new FakeRunner("s1");
 const otherRunner = new FakeRunner("s2");
 const terminatedSessions = [];
+const completedQueuedRuns = [];
 const ctx = {
   get mainWindow() {
     return fakeWindow;
@@ -116,6 +117,12 @@ const ctx = {
       terminatedSessions.push(sessionId);
     },
     getSessionIds: () => ["s1"],
+  },
+  scheduledTaskManager: {
+    completeQueuedRun: (runId, terminalType, payload) => {
+      completedQueuedRuns.push({ runId, terminalType, payload });
+      return true;
+    },
   },
 };
 ctx.transcriptStore = new TranscriptStore(ctx.sessionManager);
@@ -768,6 +775,13 @@ const staleQueue = await ctx.turnOrchestrator.sendUserMessage("s1", "stale queue
 if (!staleQueue.queued) {
   throw new Error(`busy send should enter the current-session queue: ${JSON.stringify(staleQueue)}`);
 }
+const scheduledQueue = await ctx.turnOrchestrator.sendUserMessage("s1", "scheduled queued", [], {
+  skipPreflight: true,
+  scheduledTaskRunId: "run_queued_stop",
+});
+if (!scheduledQueue.queued) {
+  throw new Error(`busy scheduled run should enter the queue: ${JSON.stringify(scheduledQueue)}`);
+}
 ctx.turnOrchestrator.interrupt("s1");
 ctx.eventBus.flush();
 allEvents = sent.flatMap((entry) => entry.payload?.events || []);
@@ -781,6 +795,9 @@ if (!clearQueueEvent || clearQueueEvent.payload?.items?.length !== 0) {
 }
 if (messages.some((message) => message.content === "stale queued")) {
   throw new Error("stopped queued message must not be committed to transcript");
+}
+if (!completedQueuedRuns.some((item) => item.runId === "run_queued_stop" && item.terminalType === "turn.interrupted")) {
+  throw new Error(`stop must mark queued scheduled runs interrupted: ${JSON.stringify(completedQueuedRuns)}`);
 }
 // An interrupt before any output must not leave an empty assistant bubble in history.
 if (messages.some((message) => message.role === "assistant" && message.turnId === interruptSource.turnId)) {

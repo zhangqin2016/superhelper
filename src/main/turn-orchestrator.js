@@ -698,6 +698,11 @@ class TurnOrchestrator {
   interrupt(sessionId, opts = {}) {
     const state = this._state(sessionId);
     if (opts.clearQueue !== false) {
+      for (const item of state.queue) {
+        this._completeQueuedScheduledRun(item, "turn.interrupted", {
+          errorCode: "USER_STOPPED",
+        });
+      }
       state.queue = [];
       this._emitQueue(sessionId);
     }
@@ -724,6 +729,11 @@ class TurnOrchestrator {
       displayFiles: opts.displayFiles || fileMetadataFromPayload(files),
       options: queueDispatchOptions(opts),
     };
+    for (const queued of state.queue) {
+      this._completeQueuedScheduledRun(queued, "turn.interrupted", {
+        errorCode: "QUEUE_REPLACED",
+      });
+    }
     state.queue = [item];
     this._emitQueue(sessionId);
     this.interrupt(sessionId, { clearQueue: false });
@@ -861,7 +871,13 @@ class TurnOrchestrator {
   cancelQueuedMessage(sessionId, itemId) {
     const state = this._state(sessionId);
     const before = state.queue.length;
+    const removed = state.queue.filter((item) => item.id === itemId);
     state.queue = state.queue.filter((item) => item.id !== itemId);
+    for (const item of removed) {
+      this._completeQueuedScheduledRun(item, "turn.interrupted", {
+        errorCode: "QUEUE_CANCELLED",
+      });
+    }
     this._emitQueue(sessionId);
     return before !== state.queue.length
       ? { ok: true, sessionId, queueLength: state.queue.length }
@@ -1669,6 +1685,10 @@ class TurnOrchestrator {
       }
       if (!result?.ok) {
         state.queue.shift();
+        this._completeQueuedScheduledRun(next, "turn.failed", {
+          errorCode: result?.error || "QUEUE_DISPATCH_FAILED",
+          error: result?.detail || result?.error || "Queued turn failed to start.",
+        });
         this._emitQueue(sessionId);
         if (state.phase === "idle" && state.queue.length > 0) {
           void this._dispatchNext(sessionId);
@@ -1683,6 +1703,10 @@ class TurnOrchestrator {
     } catch (err) {
       log.warn("_dispatchNext error: %s", err?.message || err);
       state.queue.shift();
+      this._completeQueuedScheduledRun(next, "turn.failed", {
+        errorCode: err?.name || "QUEUE_DISPATCH_EXCEPTION",
+        error: err?.message || String(err),
+      });
       this._emitQueue(sessionId);
       if (state.phase === "idle" && state.queue.length > 0) {
         void this._dispatchNext(sessionId);
@@ -1713,6 +1737,16 @@ class TurnOrchestrator {
     if (!timer) return;
     clearTimeout(timer);
     this.dispatchRetryTimers.delete(sessionId);
+  }
+
+  _completeQueuedScheduledRun(item, terminalType, payload = {}) {
+    const runId = item?.options?.scheduledTaskRunId || null;
+    if (!runId) return;
+    try {
+      this.ctx.scheduledTaskManager?.completeQueuedRun?.(runId, terminalType, payload);
+    } catch (err) {
+      log.warn("scheduled queued run completion failed: %s", err?.message || err);
+    }
   }
 
   _emitQueue(sessionId) {

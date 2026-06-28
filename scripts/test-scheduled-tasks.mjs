@@ -306,9 +306,26 @@ try {
   assert(!activeRemove.ok && activeRemove.error === "TASK_ACTIVE", `active task removal should be blocked: ${JSON.stringify(activeRemove)}`);
   const queuedRun = queuedManager.runs.at(-1);
   assert(queuedRun.status === "queued", `run should remain queued: ${JSON.stringify(queuedRun)}`);
+  const cancelledQueued = queuedManager.completeQueuedRun(queuedRun.id, "turn.interrupted", { errorCode: "QUEUE_CANCELLED" });
+  assert(cancelledQueued, "queued run should be cancellable before it starts");
+  assert(queuedRun.status === "interrupted", `cancelled queued run should finish interrupted: ${JSON.stringify(queuedRun)}`);
+  assert(queuedTask.status === "scheduled", `cancelled queued task should return to scheduled: ${JSON.stringify(queuedTask)}`);
+  const rerunAfterCancel = queuedManager.runNow(queuedTask.id);
+  await flushMicrotasks();
+  assert(rerunAfterCancel.ok, `cancelled queued task should be runnable again: ${JSON.stringify(rerunAfterCancel)}`);
+  const failedQueuedRun = queuedManager.runs.at(-1);
+  const failedQueued = queuedManager.completeQueuedRun(failedQueuedRun.id, "turn.failed", { errorCode: "NO_SESSION" });
+  assert(failedQueued, "queued run should be fail-able when queue dispatch drops it");
+  assert(failedQueuedRun.status === "failed" && failedQueuedRun.error === "NO_SESSION", `failed queued run should persist error: ${JSON.stringify(failedQueuedRun)}`);
+  const queuedAgain = queuedManager.runNow(queuedTask.id);
+  await flushMicrotasks();
+  assert(queuedAgain.ok, `failed queued task should be runnable again: ${JSON.stringify(queuedAgain)}`);
+  const queuedRunAgain = queuedManager.runs.at(-1);
   queuedManager.markRunStarted(queuedRun.id, "turn_q");
+  assert(queuedRun.status === "interrupted", "completed queued runs should not be restarted by stale ids");
+  queuedManager.markRunStarted(queuedRunAgain.id, "turn_q");
   queuedManager.completeRun("s1", "turn_q", "turn.interrupted", { errorCode: "USER_STOPPED" });
-  assert(queuedRun.status === "interrupted", `queued run should finish interrupted: ${JSON.stringify(queuedRun)}`);
+  assert(queuedRunAgain.status === "interrupted", `queued run should finish interrupted after it starts: ${JSON.stringify(queuedRunAgain)}`);
 
   const missingScope = queuedManager.create({
     prompt: "每天早上 9 点做不存在的事",

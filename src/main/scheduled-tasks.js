@@ -220,6 +220,18 @@ class ScheduledTaskManager {
       (item) => item.sessionId === sessionId && item.turnId === turnId && (item.status === "running" || item.status === "queued"),
     );
     if (!run) return false;
+    this._finishRun(run, terminalType, payload);
+    return true;
+  }
+
+  completeQueuedRun(runId, terminalType, payload = {}) {
+    const run = this.runs.find((item) => item.id === runId && item.status === "queued");
+    if (!run) return false;
+    this._finishRun(run, terminalType, payload);
+    return true;
+  }
+
+  _finishRun(run, terminalType, payload = {}) {
     run.status = terminalType === "turn.completed" ? "succeeded" : terminalType.replace(/^turn\./, "");
     run.finishedAt = nowIso();
     run.error = terminalType === "turn.completed" ? null : payload?.error || payload?.errorCode || terminalType;
@@ -232,7 +244,6 @@ class ScheduledTaskManager {
       task.updatedAt = nowIso();
     }
     this.save();
-    return true;
   }
 
   _runTask(task, opts = {}) {
@@ -304,7 +315,7 @@ class ScheduledTaskManager {
 
   markRunStarted(runId, turnId) {
     const run = this.runs.find((item) => item.id === runId);
-    if (!run) return false;
+    if (!run || run.status !== "queued") return false;
     run.status = "running";
     run.turnId = turnId || run.turnId || null;
     this._runningRunIds.add(run.id);
