@@ -398,6 +398,42 @@ if (assistantMsg.record.meta?.contextOsScorecard?.maturity?.beat !== "incomplete
 sent.length = 0;
 messages.length = 0;
 runner.sentPayloads.length = 0;
+
+const uploadedDoc = path.join(tempUserData, "contract.md");
+fs.writeFileSync(
+  uploadedDoc,
+  "# Payment Terms\nBuyer pays within 30 days after invoice receipt.\n\n# Termination\nEither party may terminate for uncured material breach.\n",
+  "utf8",
+);
+const documentTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "继续分析这份合同", [
+  { path: uploadedDoc, name: "contract.md" },
+], {
+  spawnEngine: false,
+  skipPreflight: true,
+  skipVision: true,
+});
+if (!documentTurn.ok || !runner.isBusy()) {
+  throw new Error(`document turn should start: ${JSON.stringify(documentTurn)}`);
+}
+const documentPayload = runner.sentPayloads.at(-1);
+if (!documentPayload.text.includes("Document Query Index") || !documentPayload.text.includes("doc1-chunk1")) {
+  throw new Error(`document preflight should include a compact query index in the engine prompt: ${documentPayload.text}`);
+}
+const { readLatestDocumentQueryIndex, queryDocumentQueryIndex } = require("../src/main/document-query-store.js");
+const latestDocumentIndex = readLatestDocumentQueryIndex();
+if (latestDocumentIndex?.sessionId !== "s1" || latestDocumentIndex?.turnId !== documentTurn.turnId) {
+  throw new Error(`document turn should persist the latest query index: ${JSON.stringify(latestDocumentIndex)}`);
+}
+const paymentEvidence = queryDocumentQueryIndex(latestDocumentIndex, { query: "payment buyer invoice", limit: 2 });
+if (paymentEvidence.matches[0]?.chunkId !== "doc1-chunk1") {
+  throw new Error(`persisted query index should be searchable by follow-up terms: ${JSON.stringify(paymentEvidence)}`);
+}
+runner.finish("合同付款条款已读取。");
+ctx.eventBus.flush();
+
+sent.length = 0;
+messages.length = 0;
+runner.sentPayloads.length = 0;
 const architectureAuditTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "分析我们系统有哪些比较笨的地方", [], {
   spawnEngine: false,
   skipPreflight: true,

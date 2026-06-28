@@ -22,6 +22,7 @@ const OFFICE_STARTER_SKILL_IDS = [
   "anthropics-doc-coauthoring",
   "lily-template-fill",
   "lily-document-verify",
+  "lily-document-query",
   "lily-pdf-form",
   "lily-runtime-packs",
 ];

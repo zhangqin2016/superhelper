@@ -145,6 +145,7 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
     text: enrichedText,
     files: outboundFiles,
     documentEvidence: {
+      index: result.documentIndex || null,
       documents: Array.isArray(result.documentIndex?.documents) ? result.documentIndex.documents : [],
       chunks: Array.isArray(result.documentIndex?.chunks) ? result.documentIndex.chunks : [],
       extractedPaths: result.extractedPaths || [],

@@ -224,6 +224,7 @@ for (const skillId of [
   "lily-pdf-extraction-router",
   "lily-excel-data-analysis",
   "lily-ppt-design-qa",
+  "lily-document-query",
   "lily-skill-quality-gate",
   "lily-intent-eval",
 ]) {
@@ -260,8 +261,8 @@ if (!result.ok) {
 if (!result.bundledCatalog) {
   throw new Error("expected bundled catalog");
 }
-if ((result.available || []).length !== 27) {
-  throw new Error(`expected 27 curated available skills, got ${result.available?.length || 0}`);
+if ((result.available || []).length !== 28) {
+  throw new Error(`expected 28 curated available skills, got ${result.available?.length || 0}`);
 }
 if (!result.available.find((skill) => skill.id === "lily-stock-research")) {
   throw new Error("curated catalog should include the stock research skill used by the stock app");
@@ -403,8 +404,8 @@ fs.rmSync(tmp, { recursive: true, force: true });
 console.log("skill-catalog: ok", result.available.length, "available");
 
 const bundled = skillRegistry.loadBundledRegistry();
-if (!bundled || (bundled.skills || []).length !== 28) {
-  throw new Error(`bundled registry should contain 28 curated skills, got ${bundled?.skills?.length || 0}`);
+if (!bundled || (bundled.skills || []).length !== 29) {
+  throw new Error(`bundled registry should contain 29 curated skills, got ${bundled?.skills?.length || 0}`);
 }
 if (!bundled.skills.find((skill) => skill.id === "lily-stock-research")) {
   throw new Error("bundled registry should include lily-stock-research");
@@ -426,8 +427,8 @@ const emptyMerged = skillRegistry.mergeRegistries(emptyService, bundled);
 if (!emptyMerged?.bundledFallback) {
   throw new Error("empty service registry should fall back to bundled catalog");
 }
-if ((emptyMerged.skills || []).length !== 28) {
-  throw new Error(`empty service merge expected 28 curated skills, got ${emptyMerged.skills?.length || 0}`);
+if ((emptyMerged.skills || []).length !== 29) {
+  throw new Error(`empty service merge expected 29 curated skills, got ${emptyMerged.skills?.length || 0}`);
 }
 
 const serviceWithOne = {
@@ -499,7 +500,7 @@ const serviceResult = await skillManagerWithService.checkRegistryUpdates({ fetch
 if (!serviceResult.ok) {
   throw new Error(`service fallback failed: ${JSON.stringify(serviceResult)}`);
 }
-if ((serviceResult.available || []).length !== 27) {
+if ((serviceResult.available || []).length !== 28) {
   throw new Error(
     `empty service should still expose curated bundled catalog, got ${serviceResult.available?.length || 0}`,
   );

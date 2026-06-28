@@ -269,6 +269,16 @@
       "verification": { "required": true, "methods": ["render_pages", "check_overflow", "compare_expected_sections"] },
       "failure": { "recovery": ["report_unverified_pages", "suggest_runtime_pack"] }
     },
+    "lily-document-query": {
+      "kind": "tool",
+      "intents": ["document.query", "document.followup", "doc.evidence_lookup"],
+      "primaryTools": ["document.query_index", "node.script"],
+      "inputModes": ["text", "file"],
+      "outputModes": ["evidence_snippets", "text"],
+      "risk": { "level": "low", "confirmation": "none" },
+      "verification": { "required": true, "methods": ["list_indexed_documents", "search_chunks", "cite_chunk_id"] },
+      "failure": { "recovery": ["report_no_index", "ask_reupload", "route_to_extraction_skill"] }
+    },
     "lily-pdf-form": {
       "kind": "tool",
       "intents": ["pdf.form_fill", "form.extract", "form.generate"],
@@ -1065,6 +1075,42 @@
       "description_i18n": {
         "en": "Renders generated or edited documents to page images and visually checks layout issues that text extraction cannot catch.",
         "ar": "يعرض المستندات المولدة أو المعدلة كصور صفحات ويفحص مشاكل التخطيط التي لا يكشفها استخراج النص."
+      },
+      "categoryLabel_i18n": {
+        "en": "Office Documents",
+        "ar": "مستندات المكتب"
+      }
+    },
+    {
+      "id": "lily-document-query",
+      "name": "文档追问",
+      "description": "对已上传并抽取过的文档建立轻量查询入口，按 chunk 搜索和引用证据，支持用户继续追问条款、数字、风险和章节内容。",
+      "latestVersion": "1.0.0",
+      "channel": "stable",
+      "sourceType": "github",
+      "github": {
+        "repo": "lily-workbench/skills",
+        "path": "document-query",
+        "ref": "main"
+      },
+      "minAppVersion": "0.1.0",
+      "category": "office",
+      "categoryLabel": "办公文档",
+      "publisher": "Lily Workbench",
+      "sourceRepo": "lily-workbench/skills",
+      "changelog": "智能工作台内置：已上传文档证据查询",
+      "capabilityLayer": "tool",
+      "riskLevel": "low",
+      "defaultEligible": true,
+      "featured": true,
+      "sourceKind": "lily",
+      "name_i18n": {
+        "en": "Document Query",
+        "ar": "استعلام المستندات"
+      },
+      "description_i18n": {
+        "en": "Searches Lily's lightweight index for already extracted uploaded documents and returns evidence snippets with document and chunk ids.",
+        "ar": "يبحث في فهرس Lily الخفيف للمستندات المرفوعة التي تم استخراجها مسبقا ويعيد مقتطفات أدلة مع معرفات المستند والمقطع."
       },
       "categoryLabel_i18n": {
         "en": "Office Documents",

@@ -1007,6 +1007,19 @@ class TurnOrchestrator {
       text = document.text;
       files = document.files;
       state.evidenceLedger?.recordDocumentExtraction?.(document.documentEvidence);
+      if (document.documentEvidence?.index) {
+        try {
+          const { persistDocumentQueryIndex } = require("./document-query-store");
+          persistDocumentQueryIndex({
+            sessionId: session.id,
+            turnId: state.turnId,
+            index: document.documentEvidence.index,
+            extractedPaths: document.documentEvidence.extractedPaths || [],
+          });
+        } catch (err) {
+          log.warn("document query index persist failed: %s", err?.message || err);
+        }
+      }
       state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
     }
 
