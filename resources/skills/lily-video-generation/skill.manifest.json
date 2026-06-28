@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lily-video-generation",
   "name": "视频生成",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "生成视频并保存到当前工作区，支持阿里百炼万相、火山方舟即梦 Seedance、可灵 Kling、MiniMax 海螺、智谱 CogVideoX 等服务商。",
   "minAppVersion": "0.1.0",
   "runtime": "node",
