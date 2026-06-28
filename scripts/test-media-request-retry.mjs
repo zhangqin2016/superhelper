@@ -33,6 +33,19 @@ try {
   assert.equal(calls, 3, "retried the two transient failures then succeeded");
   assert.equal(data.output.task_id, "t1");
 
+  // COST GUARD: a POST (billable create) must NOT auto-retry, even on a transient
+  // "fetch failed" — retrying a create that may have already run double-charges.
+  calls = 0;
+  globalThis.fetch = async () => { calls += 1; throw new TypeError("fetch failed"); };
+  await assert.rejects(() => shared.requestJson("https://x/create", { method: "POST", timeoutMs: 1000 }));
+  assert.equal(calls, 1, "POST create is not auto-retried (no double-charge)");
+
+  // a GET poll, by contrast, retries the same transient failure
+  calls = 0;
+  globalThis.fetch = async () => { calls += 1; throw new TypeError("fetch failed"); };
+  await assert.rejects(() => shared.requestJson("https://x/poll", { method: "GET", retries: 2, timeoutMs: 1000 }));
+  assert.equal(calls, 3, "GET poll retries the transient failure");
+
   // 4xx fails fast (no retry) — real client error
   calls = 0;
   globalThis.fetch = async () => { calls += 1; return errResp(400); };

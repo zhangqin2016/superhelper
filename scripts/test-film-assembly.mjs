@@ -42,6 +42,23 @@ assert.ok(film.resolveScript("", "lily-video-generation", "generate-video.cjs").
   "video script resolves from the same dir");
 assert.equal(film.resolveScript("", "no-such-skill", "nope.cjs"), "", "missing script resolves to empty");
 
+// --- cost guard: per-shot cache reuse (never re-pay for the same shot) ------
+{
+  const cdir = fs.mkdtempSync(path.join(os.tmpdir(), "film-cache-"));
+  const sbX = { style: "s", character: "c", aspectRatio: "16:9", voice: "v" };
+  const shotX = { id: 1, prompt: "p", keyframe: "", duration: 5, narration: "n" };
+  const vk = film.videoKey(sbX, shotX);
+  assert.equal(film.cachedAsset(cdir, "v", vk), "", "cold cache is a miss");
+  const clip = path.join(cdir, "clip.mp4"); fs.writeFileSync(clip, "x");
+  film.putCachedAsset(cdir, "v", vk, clip);
+  assert.equal(film.cachedAsset(cdir, "v", vk), clip, "cached shot is reused (no re-charge)");
+  // a changed prompt → different key → not a false reuse
+  assert.equal(film.cachedAsset(cdir, "v", film.videoKey(sbX, { ...shotX, prompt: "different" })), "", "changed shot is regenerated, not falsely reused");
+  // audio cached independently of video
+  assert.notEqual(film.audioKey(sbX, shotX), vk, "audio and video use separate keys");
+  fs.rmSync(cdir, { recursive: true, force: true });
+}
+
 // --- assembly engine e2e (synthetic clips + voice-over) --------------------
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "film-test-"));
 const W = 1280, H = 720;

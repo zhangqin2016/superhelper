@@ -19,7 +19,12 @@ function isRetryableError(err) {
 
 async function requestJson(url, options = {}) {
   const timeoutMs = options.timeoutMs || 60_000;
-  const retries = Number.isInteger(options.retries) ? options.retries : 3;
+  // Method-based default: GET (poll/retrieve/download) is idempotent → safe to
+  // retry. POST here = create a BILLABLE task → do NOT auto-retry, or a dropped
+  // response after the task was created would silently double-charge. Callers can
+  // still override `retries` explicitly.
+  const method = String(options.method || "GET").toUpperCase();
+  const retries = Number.isInteger(options.retries) ? options.retries : (method === "GET" ? 3 : 0);
   const { timeoutMs: _omitT, retries: _omitR, ...init } = options;
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt += 1) {

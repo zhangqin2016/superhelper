@@ -115,6 +115,12 @@ Use \`${REQUIRED_SKILLS.join("`, `")}\`. The finished-film producer is
 
 ## Rules
 
+- **Cost first.** Each shot is a paid generation. For anything longer than ~3
+  shots, FIRST produce a single style-test shot (run the producer on a 1-shot
+  storyboard), show the user the clip, and get approval BEFORE generating the full
+  film. The producer also caches every shot, so re-runs and resumed-after-failure
+  runs do NOT re-pay for shots already made — never re-generate the whole film to
+  fix one shot; just re-run (cached shots are reused free).
 - **Never claim a video was produced unless \`generate-film.cjs\` actually ran and
   printed \`<generated_media …><file path="…"/>\`. Report that exact printed path —
   never a placeholder like \`\${finalPath}\`, never a path you wrote yourself.** If you

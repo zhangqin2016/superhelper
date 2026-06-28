@@ -226,35 +226,85 @@ function spawnSkill(scriptPath, input) {
   return file;
 }
 
+// Content-addressed reuse so a re-run (or resume after a mid-film failure) NEVER
+// re-pays for a clip/voice it already generated. Video is keyed by its visual
+// content, audio by narration+voice — independent, so a failed audio never wastes
+// a paid video, and identical narration is reused across shots.
+const crypto = require("node:crypto");
+function hashKey(obj) {
+  return crypto.createHash("sha256").update(JSON.stringify(obj)).digest("hex").slice(0, 16);
+}
+function cacheFileFor(outputDir, kind, key) {
+  return path.join(outputDir, ".film-cache", `${kind}-${key}.json`);
+}
+function cachedAsset(outputDir, kind, key) {
+  try {
+    const rec = JSON.parse(fs.readFileSync(cacheFileFor(outputDir, kind, key), "utf8"));
+    if (rec.path && fs.existsSync(rec.path)) return rec.path;
+  } catch { /* miss */ }
+  return "";
+}
+function putCachedAsset(outputDir, kind, key, assetPath) {
+  try {
+    const file = cacheFileFor(outputDir, kind, key);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ path: assetPath }));
+  } catch { /* cache is best-effort */ }
+}
+
+function videoKey(sb, shot) {
+  return hashKey({
+    provider: process.env.LILY_VIDEO_PROVIDER || process.env.LILY_IMAGE_PROVIDER || "",
+    style: sb.style, character: sb.character, ratio: sb.aspectRatio,
+    prompt: shot.prompt, keyframe: shot.keyframe, duration: shot.duration,
+  });
+}
+function audioKey(sb, shot) {
+  return hashKey({ provider: "tts", voice: sb.voice, narration: shot.narration });
+}
+
 function produceShot(sb, shot, dims, outputDir, scripts) {
   const stylePrefix = sb.style ? `${sb.style}, ` : "";
   const charPrefix = sb.character ? `${sb.character}; ` : "";
-  let firstFrameUrl = "";
-  if (shot.keyframe && scripts.image) {
-    const kf = spawnSkill(scripts.image, {
-      prompt: `${stylePrefix}${charPrefix}${shot.keyframe}`,
-      size: `${dims.w}*${dims.h}`,
-      output_dir: outputDir,
-    });
-    firstFrameUrl = `file://${kf}`;
-  }
-  const videoInput = {
-    prompt: `${stylePrefix}${charPrefix}${shot.prompt}`,
-    ratio: sb.aspectRatio,
-    duration: shot.duration,
-    output_dir: outputDir,
-  };
-  if (firstFrameUrl) videoInput.media = [{ type: "first_frame", url: firstFrameUrl }];
-  const videoPath = spawnSkill(scripts.video, videoInput);
 
+  // ---- video (paid) — reuse if this exact shot was generated before ----
+  let videoPath = cachedAsset(outputDir, "v", videoKey(sb, shot));
+  if (videoPath) {
+    log(`shot ${shot.id}: reusing cached clip (no charge)`);
+  } else {
+    let firstFrameUrl = "";
+    if (shot.keyframe && scripts.image) {
+      const kf = spawnSkill(scripts.image, {
+        prompt: `${stylePrefix}${charPrefix}${shot.keyframe}`,
+        size: `${dims.w}*${dims.h}`,
+        output_dir: outputDir,
+      });
+      firstFrameUrl = `file://${kf}`;
+    }
+    const videoInput = {
+      prompt: `${stylePrefix}${charPrefix}${shot.prompt}`,
+      ratio: sb.aspectRatio,
+      duration: shot.duration,
+      output_dir: outputDir,
+    };
+    if (firstFrameUrl) videoInput.media = [{ type: "first_frame", url: firstFrameUrl }];
+    videoPath = spawnSkill(scripts.video, videoInput);
+    putCachedAsset(outputDir, "v", videoKey(sb, shot), videoPath); // bank it before audio can fail
+  }
+
+  // ---- audio (paid) — reuse by narration+voice ----
   let audioPath = "";
   if (shot.narration && scripts.speech) {
-    audioPath = spawnSkill(scripts.speech, {
-      text: shot.narration,
-      ...(sb.voice ? { voice: sb.voice } : {}),
-      format: "wav",
-      output_dir: outputDir,
-    });
+    audioPath = cachedAsset(outputDir, "a", audioKey(sb, shot));
+    if (!audioPath) {
+      audioPath = spawnSkill(scripts.speech, {
+        text: shot.narration,
+        ...(sb.voice ? { voice: sb.voice } : {}),
+        format: "wav",
+        output_dir: outputDir,
+      });
+      putCachedAsset(outputDir, "a", audioKey(sb, shot), audioPath);
+    }
   }
   return { videoPath, audioPath, subtitle: sb.subtitles ? shot.narration : "" };
 }
@@ -283,11 +333,14 @@ function main() {
     fail("找不到视频生成脚本 generate-video.cjs（同目录或 LILY_VIDEO_SCRIPT）。");
   }
 
+  // Preflight: show the BILLABLE spend up front (cached shots cost nothing).
+  const toGenerate = sb.shots.filter((s) => !cachedAsset(outputDir, "v", videoKey(sb, s))).length;
+  log(`film: ${sb.shots.length} shots — ${sb.shots.length - toGenerate} reused (free), ${toGenerate} to generate (billable). Re-runs reuse cached shots; a failure resumes without re-paying.`);
+
   const segments = [];
   const madeClips = [];
   try {
     for (const shot of sb.shots) {
-      log(`shot ${shot.id}: generating…`);
       const { videoPath, audioPath, subtitle } = produceShot(sb, shot, dims, outputDir, scripts);
       madeClips.push(videoPath);
       const seg = buildSegment(ffmpegBin, {
@@ -319,5 +372,5 @@ if (require.main === module) main();
 
 module.exports = {
   parseStoryboard, resolveFfmpeg, resolveScript, ffprobeDuration, buildSegment, assembleFilm,
-  parseMediaPath, escDrawtext,
+  parseMediaPath, escDrawtext, videoKey, audioKey, cachedAsset, putCachedAsset,
 };
