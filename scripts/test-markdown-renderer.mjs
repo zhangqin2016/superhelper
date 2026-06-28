@@ -171,6 +171,13 @@ const localImage = fakeElement();
 context.window.__test.renderMarkdownWithCache(localImage, "![生成图](/Users/zhangqin/out/image.png)");
 assert.match(localImage.innerHTML, /class="markdown-image markdown-local-file-image"/);
 assert.match(localImage.innerHTML, /data-local-file-path="\/Users\/zhangqin\/out\/image\.png"/);
+assert.match(localImage.innerHTML, /src="app-file:\/\/media\/%2FUsers%2Fzhangqin%2Fout%2Fimage\.png"/);
+
+const localFileUrlImage = fakeElement();
+context.window.__test.renderMarkdownWithCache(localFileUrlImage, "![生成图](file:///Users/zhangqin/out/image.png)");
+assert.match(localFileUrlImage.innerHTML, /class="markdown-image markdown-local-file-image"/);
+assert.match(localFileUrlImage.innerHTML, /data-local-file-path="file:\/\/\/Users\/zhangqin\/out\/image\.png"/);
+assert.match(localFileUrlImage.innerHTML, /src="app-file:\/\/media\/%2FUsers%2Fzhangqin%2Fout%2Fimage\.png"/);
 
 const unsafeLink = fakeElement();
 context.window.__test.renderMarkdownWithCache(unsafeLink, "[危险](javascript:alert(1))");

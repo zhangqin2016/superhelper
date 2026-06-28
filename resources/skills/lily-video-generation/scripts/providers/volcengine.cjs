@@ -60,6 +60,7 @@ module.exports = {
     ctx.logProgress(ctx.msg("正在提交火山方舟 Seedance 视频任务...", "Submitting Volcengine Seedance video task..."));
     const create = await requestJson(`${baseUrl(env)}/contents/generations/tasks`, {
       method: "POST",
+      timeoutMs: Number(input.submit_timeout_ms || 180_000),
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model, content }),
     });

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "appId": "clinical-case-assistant",
+  "type": "workspace_app",
+  "name": "临床病例参考助手",
+  "version": "0.1.0",
+  "capabilities": [
+    "case.extract.from_scan",
+    "case.render.card",
+    "case.redflags.detect",
+    "case.retrieve.similar",
+    "case.advise.reference"
+  ],
+  "skills": [],
+  "runtimePacks": [],
+  "entrypoints": {
+    "extract_case": {
+      "command": "node",
+      "args": ["source/extract_case.cjs"],
+      "cwd": ".",
+      "input": "stdin-json",
+      "timeoutSeconds": 300,
+      "resultPath": "cases/"
+    }
+  },
+  "export": {
+    "dataPaths": ["cases/"]
+  },
+  "dataPolicy": {
+    "deployment": "local-only",
+    "phi": "de-identify-before-store-and-before-model",
+    "model": "platform-managed-or-local-vision",
+    "dataLocation": "workspace-internal (cases/)",
+    "userSuppliedKeysRequired": false
+  },
+  "safety": {
+    "audience": "licensed-clinician",
+    "notADiagnosis": true,
+    "redFlagsDeterministic": true,
+    "evidenceRequired": true,
+    "abstainWhenInsufficient": true
+  }
+}

@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const JSZip = require("jszip");
+const exportPlanner = require("./workspace-export-planner");
 
 /**
  * Workspace capability packs (.lilyspace.zip): export a workspace as a
@@ -13,12 +14,18 @@ const JSZip = require("jszip");
  *   3. a declaration of required skills (skills live globally, not in the
  *      folder — the importer reconciles against what's installed)
  *
- * Privacy is positional, never claimed-magic: directories that typically hold
- * personal output are excluded by default and the caller previews the file
- * list before exporting. Import is hardened against zip-slip.
+ * Export is complete-by-default for user-created workspace content: reports,
+ * learned data, templates, scripts, and generated assets should travel unless
+ * they are clear dependency/cache noise or secrets. Import is hardened against
+ * zip-slip.
  */
 
 const MANIFEST_NAME = "lily-workspace.json";
+const WORKSPACE_APP_MANIFEST = "lily-app.json";
+const PACK_META_PREFIX = ".lilyspace/";
+const PACK_MANIFEST_ENTRY = `${PACK_META_PREFIX}${MANIFEST_NAME}`;
+const PACK_CONVENTIONS_ENTRY = `${PACK_META_PREFIX}conventions.md`;
+const PACK_SKILLS_PREFIX = `${PACK_META_PREFIX}skills/`;
 const SCHEMA_VERSION = 1;
 const SUPPORTED_KINDS = new Set(["lily-workspace-pack", "lily-workspace-app"]);
 const FILES_PREFIX = "files/";
@@ -26,21 +33,22 @@ const SKILLS_PREFIX = "skills/";
 const CONVENTIONS_ENTRY = "conventions.md";
 const SKILL_ID_RE = /^[a-z][a-z0-9-]{1,99}$/;
 
-// Exclude noise + personal deliverables + secret files — NOT the program.
+// Exclude dependency/cache noise + secret files — NOT the customer's work.
 // dist/build ARE kept (build artifacts are part of running the program, so a
-// shared workspace opens the same as the author's). output/ is still excluded:
-// it holds personal deliverables (reports, generated files) that don't affect
-// how the program runs, and may be private. node_modules is regenerable (npm
-// install). Secrets are excluded by filename here + flagged by a content scan
-// in the export preview so the author can scrub before sharing.
+// shared workspace opens the same as the author's). output/ is kept because
+// Lily itself uses it as the default home for user deliverables; excluding it
+// made shared apps feel incomplete. node_modules is regenerable (npm install).
+// Secrets are excluded by filename here + flagged by a content scan in the
+// export preview so the author can scrub before sharing.
 const EXCLUDED_DIRS = new Set([
-  "output", ".lily-work", ".git", "node_modules", "__pycache__",
+  ".lilyspace", ".lily-work", ".git", "node_modules", "__pycache__",
   ".venv", "venv", ".DS_Store",
 ]);
 const EXCLUDED_FILE_RE =
   /(^\.env|\.(key|pem|p12|pfx|crt|cer|keystore|jks)$|^\.npmrc$|^\.netrc$|^id_rsa|^\.git-credentials$|\.DS_Store$)/i;
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
-const MAX_TOTAL_FILES = 5000;
+const MAX_FILE_BYTES = exportPlanner.MAX_FILE_BYTES;
+const MAX_TOTAL_FILES = exportPlanner.MAX_TOTAL_FILES;
+const SKIPPED_SAMPLE_LIMIT = 50;
 
 // Content secret scan: flag (don't auto-strip) likely secrets baked into shared
 // files (e.g. a hardcoded key in config.js), so the author can scrub before
@@ -68,50 +76,84 @@ const CREDENTIAL_TERM_RE =
 // secrets — keep them so the recipient can actually run the shared source.
 const ENV_TEMPLATE_RE = /^\.env\.(example|sample|template|dist)$/i;
 
-function isExcluded(relPath) {
-  const segments = relPath.split(/[\\/]/);
-  if (segments.some((seg) => EXCLUDED_DIRS.has(seg))) return true;
-  const name = segments[segments.length - 1] || "";
-  if (ENV_TEMPLATE_RE.test(name)) return false;
-  return EXCLUDED_FILE_RE.test(name);
+function normalizeRelPath(value) {
+  return exportPlanner.normalizeRelPath(value);
+}
+
+function isUnderRelPath(relPath, parentPath) {
+  return exportPlanner.isUnderRelPath(relPath, parentPath);
+}
+
+function normalizeIncludePaths(paths) {
+  return exportPlanner.normalizePathList(paths);
+}
+
+function isExplicitlyIncluded(relPath, includePaths) {
+  return includePaths.some((includePath) => isUnderRelPath(relPath, includePath));
+}
+
+function hasExplicitIncludedDescendant(relPath, includePaths) {
+  const rel = normalizeRelPath(relPath);
+  return Boolean(rel && includePaths.some((includePath) => includePath.startsWith(`${rel}/`)));
+}
+
+function isBenignExcludedFile(relPath) {
+  return path.basename(String(relPath || "")).toLowerCase() === ".ds_store";
+}
+
+function isExcluded(relPath, options = {}) {
+  return exportPlanner.isExcluded(relPath, options);
+}
+
+/** Walk the workspace, honoring exclusions, returning included files + omissions. */
+function collectShareableFiles(rootPath, options = {}) {
+  return exportPlanner.planWorkspaceExport(rootPath, options);
 }
 
 /** Walk the workspace, honoring exclusions, returning {relPath, size}. */
-function listShareableFiles(rootPath) {
-  const out = [];
-  const walk = (dir, rel) => {
-    if (out.length > MAX_TOTAL_FILES) return;
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
-      if (isExcluded(childRel)) continue;
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full, childRel);
-      } else if (entry.isFile()) {
-        let size = 0;
-        try {
-          size = fs.statSync(full).size;
-        } catch {
-          continue;
-        }
-        if (size > MAX_FILE_BYTES) continue;
-        out.push({ relPath: childRel, fullPath: full, size });
-      }
-    }
-  };
-  walk(rootPath, "");
-  return out;
+function listShareableFiles(rootPath, options = {}) {
+  return collectShareableFiles(rootPath, options).files;
 }
 
 function listSkillFiles(skillDir) {
   const files = listShareableFiles(skillDir);
   return files.filter((file) => file.relPath !== "skill.export.json");
+}
+
+function readWorkspaceAppManifest(rootPath) {
+  return exportPlanner.readWorkspaceAppManifest(rootPath);
+}
+
+function extractDataLocationPaths(value) {
+  const text = String(value || "");
+  const paths = [];
+  for (const match of text.matchAll(/\(([^)]+)\)/g)) {
+    for (const part of String(match[1] || "").split(/[,，;；\s]+/)) {
+      const rel = normalizeRelPath(part);
+      if (rel) paths.push(rel);
+    }
+  }
+  return paths;
+}
+
+function workspaceAppDataPaths(manifest) {
+  return exportPlanner.workspaceAppExportConfig(manifest).dataPaths;
+}
+
+function workspaceAppExportInfo(rootPath) {
+  return exportPlanner.workspaceAppExportInfo(rootPath);
+}
+
+function summarizeAppDataPaths(files, dataPaths) {
+  return normalizeIncludePaths(dataPaths)
+    .map((dataPath) => {
+      const matched = files.filter((file) => isUnderRelPath(file.relPath, dataPath));
+      return {
+        path: `${dataPath}/`,
+        fileCount: matched.length,
+        totalBytes: matched.reduce((sum, file) => sum + file.size, 0),
+      };
+    });
 }
 
 function normalizeWorkspaceSkillExport(skill) {
@@ -297,19 +339,23 @@ function previewWorkspaceSkills(workspaceSkills) {
  * commit, so privacy is an informed choice, not a silent promise.
  */
 function previewExport(rootPath) {
-  const files = listShareableFiles(rootPath);
-  const byTopDir = new Map();
-  for (const file of files) {
-    const top = file.relPath.split("/")[0];
-    const key = file.relPath.includes("/") ? `${top}/` : top;
-    byTopDir.set(key, (byTopDir.get(key) || 0) + 1);
-  }
+  const collected = collectShareableFiles(rootPath);
+  const files = collected.files;
   return {
-    fileCount: files.length,
-    totalBytes: files.reduce((sum, f) => sum + f.size, 0),
-    groups: [...byTopDir.entries()].map(([name, count]) => ({ name, count })),
+    fileCount: collected.fileCount,
+    totalBytes: collected.totalBytes,
+    groups: collected.groups,
+    categorySummary: collected.categorySummary,
     secretWarnings: scanForSecrets(files),
     excludedDirs: [...EXCLUDED_DIRS],
+    workspaceApp: collected.workspaceApp,
+    appDataPaths: collected.appDataPaths,
+    skippedFiles: collected.skippedFiles,
+    skippedDirs: collected.skippedDirs,
+    skippedFileCount: collected.skippedFileCount,
+    skippedDirCount: collected.skippedDirCount,
+    truncated: collected.truncated,
+    limits: collected.limits,
   };
 }
 
@@ -327,12 +373,14 @@ function previewExport(rootPath) {
 async function exportWorkspacePack({ rootPath, name, description, conventions, requiredSkills, workspaceSkills, exportedAt }) {
   if (!rootPath || !fs.existsSync(rootPath)) throw new Error("WORKSPACE_NOT_FOUND");
   const zip = new JSZip();
-  const files = listShareableFiles(rootPath);
+  const exportPlan = collectShareableFiles(rootPath);
+  const workspaceApp = exportPlan.workspaceApp;
+  const files = exportPlan.files;
   for (const file of files) {
-    zip.file(`${FILES_PREFIX}${file.relPath}`, fs.readFileSync(file.fullPath));
+    zip.file(file.relPath, fs.readFileSync(file.fullPath));
   }
   const conv = String(conventions || "").trim();
-  if (conv) zip.file(CONVENTIONS_ENTRY, conv);
+  if (conv) zip.file(PACK_CONVENTIONS_ENTRY, conv);
 
   const exportedWorkspaceSkills = [];
   for (const rawSkill of Array.isArray(workspaceSkills) ? workspaceSkills : []) {
@@ -343,9 +391,9 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
     if (!skillFiles.some((file) => file.relPath === "skill.manifest.json")) continue;
     for (const file of skillFiles) {
       if (file.relPath === "skill.manifest.json") {
-        zip.file(`${SKILLS_PREFIX}${skill.id}/${file.relPath}`, `${JSON.stringify(skill.manifest, null, 2)}\n`);
+        zip.file(`${PACK_SKILLS_PREFIX}${skill.id}/${file.relPath}`, `${JSON.stringify(skill.manifest, null, 2)}\n`);
       } else {
-        zip.file(`${SKILLS_PREFIX}${skill.id}/${file.relPath}`, fs.readFileSync(file.fullPath));
+        zip.file(`${PACK_SKILLS_PREFIX}${skill.id}/${file.relPath}`, fs.readFileSync(file.fullPath));
       }
     }
     exportedWorkspaceSkills.push({
@@ -359,16 +407,19 @@ async function exportWorkspacePack({ rootPath, name, description, conventions, r
 
   const manifest = {
     schemaVersion: SCHEMA_VERSION,
-    kind: "lily-workspace-pack",
+    kind: workspaceApp ? "lily-workspace-app" : "lily-workspace-pack",
+    ...(workspaceApp?.appId ? { appId: workspaceApp.appId } : {}),
     name: String(name || "workspace"),
     description: String(description || ""),
+    ...(workspaceApp?.version ? { version: workspaceApp.version } : {}),
+    ...(workspaceApp?.dataPaths?.length ? { appDataPaths: workspaceApp.dataPaths.map((p) => `${p}/`) } : {}),
     exportedAt: String(exportedAt || ""),
     fileCount: files.length,
     hasConventions: Boolean(conv),
     requiredSkills: Array.isArray(requiredSkills) ? requiredSkills.filter(Boolean) : [],
     workspaceSkills: exportedWorkspaceSkills,
   };
-  zip.file(MANIFEST_NAME, JSON.stringify(manifest, null, 2));
+  zip.file(PACK_MANIFEST_ENTRY, JSON.stringify(manifest, null, 2));
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
@@ -384,7 +435,8 @@ function safeJoin(targetDir, relPath) {
 
 async function readPackManifest(zipBuffer) {
   const zip = await JSZip.loadAsync(zipBuffer);
-  const entry = zip.file(MANIFEST_NAME);
+  const hiddenEntry = zip.file(PACK_MANIFEST_ENTRY);
+  const entry = hiddenEntry || zip.file(MANIFEST_NAME);
   if (!entry) throw new Error("NOT_A_WORKSPACE_PACK");
   let manifest;
   try {
@@ -396,7 +448,7 @@ async function readPackManifest(zipBuffer) {
     throw new Error("NOT_A_WORKSPACE_PACK");
   }
   if (manifest.schemaVersion > SCHEMA_VERSION) throw new Error("PACK_TOO_NEW");
-  return { zip, manifest };
+  return { zip, manifest, layout: hiddenEntry ? "root" : "legacy" };
 }
 
 function manifestWorkspaceSkillIds(manifest) {
@@ -413,8 +465,14 @@ async function importWorkspaceSkills(zip, manifest, targetDir) {
   const root = path.join(targetDir, ".lily-work", "imported-skills");
   const byId = new Map();
   for (const entry of Object.values(zip.files)) {
-    if (entry.dir || !entry.name.startsWith(SKILLS_PREFIX)) continue;
-    const rest = entry.name.slice(SKILLS_PREFIX.length);
+    if (entry.dir) continue;
+    const prefix = entry.name.startsWith(PACK_SKILLS_PREFIX)
+      ? PACK_SKILLS_PREFIX
+      : entry.name.startsWith(SKILLS_PREFIX)
+        ? SKILLS_PREFIX
+        : "";
+    if (!prefix) continue;
+    const rest = entry.name.slice(prefix.length);
     const slash = rest.indexOf("/");
     if (slash <= 0) continue;
     const skillId = rest.slice(0, slash);
@@ -464,16 +522,22 @@ async function importWorkspaceSkills(zip, manifest, targetDir) {
  * @returns {Promise<{ manifest: object, conventions: string, workspaceSkills: object[] }>}
  */
 async function importWorkspacePack(zipBuffer, targetDir) {
-  const { zip, manifest } = await readPackManifest(zipBuffer);
+  const { zip, manifest, layout } = await readPackManifest(zipBuffer);
   fs.mkdirSync(targetDir, { recursive: true });
 
-  const entries = Object.values(zip.files).filter((e) => !e.dir && e.name.startsWith(FILES_PREFIX));
+  const legacyEntries = Object.values(zip.files).filter((e) => !e.dir && e.name.startsWith(FILES_PREFIX));
+  const entries = layout === "legacy"
+    ? legacyEntries.map((entry) => ({ entry, rel: entry.name.slice(FILES_PREFIX.length) }))
+    : Object.values(zip.files)
+      .filter((entry) => !entry.dir)
+      .filter((entry) => !entry.name.startsWith(PACK_META_PREFIX))
+      .filter((entry) => entry.name !== MANIFEST_NAME && entry.name !== CONVENTIONS_ENTRY)
+      .map((entry) => ({ entry, rel: entry.name }));
   const declaredWorkspaceSkillIds = manifestWorkspaceSkillIds(manifest);
   if (entries.length === 0 && declaredWorkspaceSkillIds.length === 0) {
     throw new Error("WORKSPACE_PACK_EMPTY");
   }
-  for (const entry of entries) {
-    const rel = entry.name.slice(FILES_PREFIX.length);
+  for (const { entry, rel } of entries) {
     if (!rel) continue;
     const dest = safeJoin(targetDir, rel); // throws on zip-slip
     fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -481,7 +545,7 @@ async function importWorkspacePack(zipBuffer, targetDir) {
   }
 
   let conventions = "";
-  const convEntry = zip.file(CONVENTIONS_ENTRY);
+  const convEntry = zip.file(PACK_CONVENTIONS_ENTRY) || zip.file(CONVENTIONS_ENTRY);
   if (convEntry) conventions = await convEntry.async("string");
   const workspaceSkills = await importWorkspaceSkills(zip, manifest, targetDir);
 
@@ -490,13 +554,25 @@ async function importWorkspacePack(zipBuffer, targetDir) {
 
 module.exports = {
   MANIFEST_NAME,
+  PACK_META_PREFIX,
+  PACK_MANIFEST_ENTRY,
+  PACK_CONVENTIONS_ENTRY,
+  PACK_SKILLS_PREFIX,
   SCHEMA_VERSION,
   SUPPORTED_KINDS,
   SKILLS_PREFIX,
   EXCLUDED_DIRS,
+  MAX_FILE_BYTES,
+  MAX_TOTAL_FILES,
+  normalizeRelPath,
   isExcluded,
+  collectShareableFiles,
+  planWorkspaceExport: exportPlanner.planWorkspaceExport,
   listShareableFiles,
   listSkillFiles,
+  readWorkspaceAppManifest,
+  workspaceAppDataPaths,
+  workspaceAppExportInfo,
   scanForSecrets,
   previewWorkspaceSkills,
   previewExport,

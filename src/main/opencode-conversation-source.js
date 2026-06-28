@@ -1,5 +1,10 @@
 "use strict";
 
+const {
+  extractUserOriginalRequest,
+  hasLayeredEngineText,
+} = require("./engine-message-layers");
+
 function metadataKey(message = {}) {
   return message.engineMessageId || message.record?.engineMessageId || message.id || "";
 }
@@ -41,16 +46,34 @@ function timeDistanceMs(a, b) {
 function isInjectedUserPromptText(text) {
   const value = String(text || "");
   if (!value.trim()) return false;
+  if (hasLayeredEngineText(value)) return true;
   return INJECTED_USER_PROMPT_MARKERS.some((marker) => value.includes(marker));
+}
+
+function normalizeVisibleUserMessage(message) {
+  if (!message || message.role !== "user") return null;
+  const text = messageText(message).trim();
+  if (!text) return null;
+  if (!isInjectedUserPromptText(text)) return message;
+
+  const original = extractUserOriginalRequest(text);
+  if (!original) return null;
+  return {
+    ...message,
+    content: original,
+    meta: {
+      ...(message.meta || {}),
+      displaySource: "engine-user-original-layer",
+      opencodeEnginePromptHidden: true,
+    },
+  };
 }
 
 function localUserDisplayMessages(messages = []) {
   return (messages || [])
     .filter((message) => message?.role === "user")
-    .filter((message) => {
-      const text = messageText(message).trim();
-      return text && !isInjectedUserPromptText(text);
-    });
+    .map((message) => normalizeVisibleUserMessage(message))
+    .filter(Boolean);
 }
 
 function buildMetadataIndex(messages = []) {
@@ -132,14 +155,14 @@ function findLocalUserForOfficial(officialMessage, localUsers, usedIndexes, fall
 
 function mergeUserDisplayText(opencodeMessages = [], localMessages = []) {
   const localUsers = localUserDisplayMessages(localMessages);
-  if (!localUsers.length) return opencodeMessages;
-
   const usedIndexes = new Set();
   const fallbackIndexRef = { index: Math.max(0, localUsers.length - opencodeMessages.filter((m) => m?.role === "user").length) };
   return (opencodeMessages || []).map((message) => {
     if (message?.role !== "user") return message;
-    const local = findLocalUserForOfficial(message, localUsers, usedIndexes, fallbackIndexRef);
-    if (!local) return message;
+    const local = localUsers.length ? findLocalUserForOfficial(message, localUsers, usedIndexes, fallbackIndexRef) : null;
+    if (!local) {
+      return normalizeVisibleUserMessage(message);
+    }
     return {
       ...message,
       content: messageText(local),
@@ -151,7 +174,7 @@ function mergeUserDisplayText(opencodeMessages = [], localMessages = []) {
         opencodeEnginePromptHidden: isInjectedUserPromptText(messageText(message)),
       },
     };
-  });
+  }).filter(Boolean);
 }
 
 function messageKey(message = {}) {

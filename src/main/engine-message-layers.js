@@ -52,6 +52,29 @@ function layerRegex(title) {
   return new RegExp(`<lily_layer title="${title}">\\n([\\s\\S]*?)\\n<\\/lily_layer>`);
 }
 
+function hasLayeredEngineText(text) {
+  return /<lily_layer\s+title="[^"]+">/.test(String(text || ""));
+}
+
+function stripLayerIntro(title, body) {
+  let text = cleanText(body);
+  const intro = LAYER_INTROS[title];
+  if (!intro || !text.startsWith(intro)) return text;
+  text = text.slice(intro.length);
+  return cleanText(text);
+}
+
+function extractLayerText(text, title, { stripIntro = true } = {}) {
+  const match = String(text || "").match(layerRegex(title));
+  if (!match) return "";
+  const body = stripIntro ? stripLayerIntro(title, match[1]) : cleanText(match[1]);
+  return cleanText(body);
+}
+
+function extractUserOriginalRequest(text) {
+  return extractLayerText(text, "user_original_request");
+}
+
 function mergeLayer(source, title, body) {
   const addition = layerContent(title, body, { includeIntro: false });
   if (!addition) return source;
@@ -99,5 +122,8 @@ module.exports = {
   addLayersToEngineText,
   appendExtractedContext,
   buildLayeredEngineText,
+  extractLayerText,
+  extractUserOriginalRequest,
+  hasLayeredEngineText,
   layerBlock,
 };

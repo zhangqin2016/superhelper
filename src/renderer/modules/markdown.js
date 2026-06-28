@@ -101,11 +101,12 @@ function createMarkedRenderer({ hl = null, cacheCode = false } = {}) {
     if (!safeSrc) return alt;
     const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
     const localPath = localFilePathFromUrl(safeSrc);
+    const imageSrc = localPath ? localMediaUrlFromPath(localPath) : safeSrc;
     const localAttrs = localPath
       ? ` data-local-file-path="${escapeAttribute(localPath)}"`
       : "";
     const classes = localPath ? "markdown-image markdown-local-file-image" : "markdown-image";
-    return `<img class="${classes}" src="${escapeAttribute(safeSrc)}" alt="${alt}" loading="lazy"${localAttrs}${titleAttr}>`;
+    return `<img class="${classes}" src="${escapeAttribute(imageSrc)}" alt="${alt}" loading="lazy"${localAttrs}${titleAttr}>`;
   };
 
   renderer.code = function ({ text, lang }) {
@@ -185,7 +186,7 @@ export async function renderMarkdown(element, markdownText) {
   const renderer = createMarkedRenderer({ hl });
   const html = parser(prepareMarkdown(markdownText || "", { mathRenderer }), { ...MARKED_OPTIONS, renderer });
 
-  element.innerHTML = window.DOMPurify.sanitize(html);
+  element.innerHTML = sanitizeMarkdownHtml(html);
   enhanceRenderedMarkdown(element, { interactive: true });
   await renderMermaidBlocks(element);
 }
@@ -205,14 +206,15 @@ function sanitizeUrl(value, { allowRelative = false, image = false } = {}) {
     return href;
   }
   if (/^(https?:|mailto:)/i.test(href)) return href;
+  if (image && /^app-file:/i.test(href)) return href;
   if (/^file:/i.test(href)) return href;
   if (image && href.startsWith("data:image/")) return href;
-  if (image && /^(file:|blob:)/i.test(href)) return href;
+  if (image && /^(file:|blob:|app-file:)/i.test(href)) return href;
   try {
     const url = new URL(href, window.location?.href || "file:///");
     if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") return href;
     if (url.protocol === "file:" && localFilePathFromUrl(href)) return href;
-    if (image && (url.protocol === "file:" || url.protocol === "blob:")) return href;
+    if (image && (url.protocol === "file:" || url.protocol === "blob:" || url.protocol === "app-file:")) return href;
   } catch {}
   return "";
 }
@@ -231,6 +233,29 @@ function localFilePathFromUrl(value = "") {
   if (/^\/(?!\/)/.test(href)) return href;
   if (/^[A-Za-z]:[\\/]/.test(href)) return href;
   return "";
+}
+
+function localMediaUrlFromPath(filePath = "") {
+  const value = String(filePath || "").trim();
+  if (!value) return "";
+  if (/^app-file:/i.test(value)) return value;
+  if (/^file:/i.test(value)) {
+    try {
+      return `app-file://media/${encodeURIComponent(decodeURIComponent(new URL(value).pathname))}`;
+    } catch {
+      return value;
+    }
+  }
+  if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) {
+    return `app-file://media/${encodeURIComponent(value)}`;
+  }
+  return value;
+}
+
+function sanitizeMarkdownHtml(html = "") {
+  return window.DOMPurify.sanitize(html, {
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|file|blob|data|app-file):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+  });
 }
 
 function renderRichCodeBlock(text = "", lang = "") {
@@ -562,7 +587,7 @@ export function renderStreamingMarkdown(element, markdownText) {
 
   const renderer = createMarkedRenderer();
   const html = parser(prepareMarkdown(markdownText, { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
-  const sanitized = window.DOMPurify.sanitize(html);
+  const sanitized = sanitizeMarkdownHtml(html);
   // Patch in place via morphdom instead of replacing innerHTML: streaming text
   // grows by extending the trailing nodes, so the block doesn't tear down and
   // rebuild every tick — no flicker, smooth incremental output.
@@ -596,7 +621,7 @@ export function renderMarkdownWithCache(element, markdownText) {
 
   const html = parser(prepareMarkdown(markdownText || "", { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
 
-  element.innerHTML = window.DOMPurify.sanitize(html);
+  element.innerHTML = sanitizeMarkdownHtml(html);
   enhanceRenderedMarkdown(element, { interactive: true });
   scheduleMermaidRender(element);
   if (element.dataset) delete element.dataset.streamMode;
@@ -622,7 +647,7 @@ export function renderMarkdownFinal(element, markdownText) {
   const renderer = createMarkedRenderer({ cacheCode: true });
   const html = parser(prepareMarkdown(markdownText || "", { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
   const next = document.createElement(element.tagName || "DIV");
-  next.innerHTML = window.DOMPurify.sanitize(html);
+  next.innerHTML = sanitizeMarkdownHtml(html);
   morphdom(element, next, MARKDOWN_MORPH_OPTS);
   enhanceRenderedMarkdown(element, { interactive: true });
   scheduleMermaidRender(element);

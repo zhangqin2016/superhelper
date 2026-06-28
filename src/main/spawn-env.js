@@ -27,6 +27,10 @@ function resolveLilyEnv() {
   });
 }
 
+function utf8Locale(value) {
+  return /utf-?8/i.test(String(value || "")) ? String(value) : "C.UTF-8";
+}
+
 function buildAgentSpawnEnv(options = {}) {
   ensureRuntimeNodeShim();
   const home = userHome();
@@ -89,6 +93,15 @@ function buildAgentSpawnEnv(options = {}) {
     ...webRuntimeEnv,
     TERM: "dumb",
     NO_COLOR: "1",
+    // Windows + non-ASCII workspace names: agent tools commonly print generated
+    // artifact paths (images/audio/video) and the renderer later uses those exact
+    // strings for preview/reveal. Keep every Python/Node/tool subprocess on UTF-8
+    // so paths like `交互模块\generated-assets\file.wav` do not round-trip as
+    // mojibake (`���...`) through OpenCode's tool output stream.
+    LANG: utf8Locale(process.env.LANG),
+    LC_ALL: utf8Locale(process.env.LC_ALL || process.env.LANG),
+    PYTHONIOENCODING: "utf-8",
+    PYTHONUTF8: "1",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     PATH: pathSegments.join(path.delimiter),
     // Lets agent-run CLIs (e.g. runtime-pack-cli) resolve the same userData

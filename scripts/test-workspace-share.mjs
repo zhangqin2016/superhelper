@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Workspace capability packs: a pack must carry the workspace's files,
- * exclude personal/noise dirs by location, ship learned conventions and a
+ * exclude dependency/noise dirs by location, ship learned conventions and a
  * required-skills declaration, survive an export→import round trip, and
  * reject zip-slip and future-schema packs on import.
  */
@@ -21,18 +21,36 @@ try {
   const ws = path.join(tmp, "suanming");
   fs.mkdirSync(path.join(ws, "knowledge/bazi"), { recursive: true });
   fs.mkdirSync(path.join(ws, "scripts"), { recursive: true });
+  fs.mkdirSync(path.join(ws, "cases"), { recursive: true });
   fs.mkdirSync(path.join(ws, "output"), { recursive: true });
-  fs.mkdirSync(path.join(ws, ".lily-work"), { recursive: true });
+  fs.mkdirSync(path.join(ws, ".lily-work/app-data"), { recursive: true });
+  fs.mkdirSync(path.join(ws, ".lily-work/cache"), { recursive: true });
   fs.mkdirSync(path.join(ws, "node_modules/pkg"), { recursive: true });
   fs.mkdirSync(path.join(ws, "dist"), { recursive: true });
   fs.mkdirSync(path.join(ws, "build"), { recursive: true });
+  fs.writeFileSync(path.join(ws, "lily-app.json"), JSON.stringify({
+    schemaVersion: 1,
+    appId: "clinical-case-assistant",
+    type: "workspace_app",
+    name: "临床病例参考助手",
+    version: "0.1.0",
+    export: { dataPaths: ["cases/", ".lily-work/app-data/"] },
+    dataPolicy: { dataLocation: "workspace-internal (cases/)" },
+  }, null, 2));
   fs.writeFileSync(path.join(ws, "knowledge/bazi/rules.md"), "排盘规则");
+  fs.writeFileSync(path.join(ws, "README.md"), "# 算命大师\n");
   fs.writeFileSync(path.join(ws, "scripts/generate.py"), "print(1)");
+  fs.writeFileSync(path.join(ws, "cases", "P-1.case.json"), JSON.stringify({ caseId: "P-1", problems: [{ name: "SLE" }] }));
+  fs.writeFileSync(path.join(ws, ".lily-work", "app-data", "facts.json"), JSON.stringify({ learned: true }));
+  fs.writeFileSync(path.join(ws, ".lily-work", "cache", "scratch.json"), JSON.stringify({ cache: true }));
   fs.writeFileSync(path.join(ws, ".cursorrules"), "用专业术语");
   fs.writeFileSync(path.join(ws, "output", "张钦_命理.pdf"), "PRIVATE");
+  fs.closeSync(fs.openSync(path.join(ws, "huge-video.mov"), "w"));
+  fs.truncateSync(path.join(ws, "huge-video.mov"), share.MAX_FILE_BYTES + 1);
   fs.writeFileSync(path.join(ws, ".lily-work", "tmp.txt"), "scratch");
   fs.writeFileSync(path.join(ws, "node_modules/pkg/index.js"), "x");
   fs.writeFileSync(path.join(ws, ".env"), "SECRET=1");
+  fs.writeFileSync(path.join(ws, ".DS_Store"), "finder noise");
   // Env template (config shape, no real secret) — must travel so the source runs.
   fs.writeFileSync(path.join(ws, ".env.example"), "OPENAI_API_KEY=\nPORT=3000\n");
   // The program's build artifacts ARE part of the deliverable — must ship.
@@ -54,15 +72,36 @@ try {
     workspaceOnly: true,
   }, null, 2));
 
-  // Preview: personal/noise/secret-file locations excluded; capability files +
-  // build artifacts kept; content secrets flagged.
+  // Preview: dependency/noise/secret-file locations excluded; customer outputs,
+  // capability files + build artifacts kept; content secrets flagged.
   const preview = share.previewExport(ws);
-  const rels = share.listShareableFiles(ws).map((f) => f.relPath).sort();
-  if (rels.some((r) => r.startsWith("output/") || r.startsWith(".lily-work/") || r.includes("node_modules") || r === ".env")) {
+  const rels = share.listShareableFiles(ws, { includePaths: preview.workspaceApp?.dataPaths || [] }).map((f) => f.relPath).sort();
+  if (rels.some((r) => r === ".lily-work/tmp.txt" || r.startsWith(".lily-work/cache/") || r.includes("node_modules") || r === ".env" || r === "huge-video.mov")) {
     throw new Error(`excluded locations leaked: ${rels.join(", ")}`);
   }
   if (!rels.includes("knowledge/bazi/rules.md") || !rels.includes(".cursorrules") || !rels.includes("scripts/generate.py")) {
     throw new Error(`capability files missing: ${rels.join(", ")}`);
+  }
+  if (!rels.includes("cases/P-1.case.json") || !rels.includes(".lily-work/app-data/facts.json")) {
+    throw new Error(`declared app data must be exported, even under default-excluded parents: ${rels.join(", ")}`);
+  }
+  if (!rels.includes("output/张钦_命理.pdf")) {
+    throw new Error(`customer deliverables under output/ must be exported by default: ${rels.join(", ")}`);
+  }
+  if (!preview.skippedFiles?.some((file) => file.relPath === "huge-video.mov" && file.reason === "too-large")) {
+    throw new Error(`oversized files must be surfaced instead of silently skipped: ${JSON.stringify(preview.skippedFiles)}`);
+  }
+  if (preview.skippedFiles?.some((file) => file.relPath === ".DS_Store")) {
+    throw new Error(`benign system files should not create scary skipped-file warnings: ${JSON.stringify(preview.skippedFiles)}`);
+  }
+  if (preview.workspaceApp?.appId !== "clinical-case-assistant") {
+    throw new Error(`workspace app metadata must be detected: ${JSON.stringify(preview.workspaceApp)}`);
+  }
+  if (!preview.appDataPaths?.some((item) => item.path === "cases/" && item.fileCount === 1)) {
+    throw new Error(`cases/ must be surfaced as app data in preview: ${JSON.stringify(preview.appDataPaths)}`);
+  }
+  if (!preview.appDataPaths?.some((item) => item.path === ".lily-work/app-data/" && item.fileCount === 1)) {
+    throw new Error(`declared .lily-work/app-data must be surfaced in preview: ${JSON.stringify(preview.appDataPaths)}`);
   }
   // Build artifacts (the actual program) must travel — not be excluded like before.
   if (!rels.includes("dist/index.html") || !rels.includes("build/app.js")) {
@@ -105,11 +144,30 @@ try {
     exportedAt: "2026-06-12T00:00:00.000Z",
   });
   if (!Buffer.isBuffer(buf) || buf.length === 0) throw new Error("export produced no bytes");
+  const exportedZip = await JSZip.loadAsync(buf);
+  if (!exportedZip.file("README.md") || !exportedZip.file("scripts/generate.py") || !exportedZip.file("output/张钦_命理.pdf")) {
+    throw new Error("exported zip must open as a normal workspace at the root, not hide user files under files/");
+  }
+  if (!exportedZip.file(`${share.PACK_META_PREFIX}${share.MANIFEST_NAME}`)) {
+    throw new Error("workspace metadata must live under hidden .lilyspace/");
+  }
+  if (exportedZip.file("files/README.md") || exportedZip.file(share.MANIFEST_NAME) || exportedZip.file("conventions.md")) {
+    throw new Error("new exports must not expose the legacy technical files/ layout at the zip root");
+  }
+  if (!exportedZip.file(`${share.PACK_SKILLS_PREFIX}learned-oa-portal/SKILL.md`)) {
+    throw new Error("workspace skill metadata must live under hidden .lilyspace/skills/");
+  }
 
   const dest = path.join(tmp, "imported");
   const { manifest, conventions, workspaceSkills } = await share.importWorkspacePack(buf, dest);
   if (manifest.name !== "算命大师" || manifest.schemaVersion !== share.SCHEMA_VERSION) {
     throw new Error(`manifest round trip failed: ${JSON.stringify(manifest)}`);
+  }
+  if (manifest.kind !== "lily-workspace-app" || manifest.appId !== "clinical-case-assistant") {
+    throw new Error(`workspace app identity must survive export: ${JSON.stringify(manifest)}`);
+  }
+  if (!manifest.appDataPaths?.includes("cases/") || !manifest.appDataPaths?.includes(".lily-work/app-data/")) {
+    throw new Error(`app data paths must be recorded in the pack manifest: ${JSON.stringify(manifest.appDataPaths)}`);
   }
   if (manifest.requiredSkills.join(",") !== "lily-image-generation") {
     throw new Error("requiredSkills must survive the round trip");
@@ -127,7 +185,19 @@ try {
   if (fs.readFileSync(path.join(dest, "knowledge/bazi/rules.md"), "utf8") !== "排盘规则") {
     throw new Error("capability file content corrupted on import");
   }
-  if (fs.existsSync(path.join(dest, "output")) || fs.existsSync(path.join(dest, ".env"))) {
+  if (!fs.existsSync(path.join(dest, "cases/P-1.case.json"))) {
+    throw new Error("declared case-library data must import with the app");
+  }
+  if (!fs.existsSync(path.join(dest, ".lily-work/app-data/facts.json"))) {
+    throw new Error("declared app data under .lily-work must import with the app");
+  }
+  if (fs.existsSync(path.join(dest, ".lily-work/cache/scratch.json")) || fs.existsSync(path.join(dest, ".lily-work/tmp.txt"))) {
+    throw new Error("undeclared .lily-work scratch/cache files must stay excluded");
+  }
+  if (!fs.existsSync(path.join(dest, "output/张钦_命理.pdf"))) {
+    throw new Error("customer deliverables under output/ must import with the workspace");
+  }
+  if (fs.existsSync(path.join(dest, ".env")) || fs.existsSync(path.join(dest, "huge-video.mov"))) {
     throw new Error("excluded files must not appear in the imported workspace");
   }
 
@@ -162,6 +232,13 @@ try {
   const evilBuf = await evil.generateAsync({ type: "nodebuffer" });
   await share.importWorkspacePack(evilBuf, path.join(tmp, "evil-dest")).catch(() => {});
   if (fs.existsSync(path.join(tmp, "escaped.txt"))) throw new Error("zip-slip wrote outside the target!");
+
+  const rootEvil = new JSZip();
+  rootEvil.file(share.PACK_MANIFEST_ENTRY, JSON.stringify({ kind: "lily-workspace-pack", schemaVersion: 1, requiredSkills: [] }));
+  rootEvil.file("../escaped-root.txt", "pwned");
+  const rootEvilBuf = await rootEvil.generateAsync({ type: "nodebuffer" });
+  await share.importWorkspacePack(rootEvilBuf, path.join(tmp, "root-evil-dest")).catch(() => {});
+  if (fs.existsSync(path.join(tmp, "escaped-root.txt"))) throw new Error("root-layout zip-slip wrote outside the target!");
 
   // Reject non-packs and future schema versions.
   const emptyPack = new JSZip();

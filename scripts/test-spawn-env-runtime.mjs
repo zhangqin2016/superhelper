@@ -41,6 +41,13 @@ const delim = path.delimiter;
 const pathParts = env.PATH.split(delim);
 const expected = runtimePython.getRuntimePathEntries();
 
+if (env.PYTHONIOENCODING !== "utf-8" || env.PYTHONUTF8 !== "1") {
+  throw new Error("spawn-env must force Python UTF-8 so generated artifact paths survive Windows Chinese workspaces");
+}
+if (!String(env.LANG || "").includes("UTF-8") || !String(env.LC_ALL || "").includes("UTF-8")) {
+  throw new Error(`spawn-env must force a UTF-8 locale, got LANG=${env.LANG} LC_ALL=${env.LC_ALL}`);
+}
+
 if (!runtimePython.getRuntimeSummary().available) {
   console.log("spawn-env-runtime: ok (no bundle — skipped PATH assertion)");
   process.exit(0);

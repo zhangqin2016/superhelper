@@ -3,10 +3,12 @@ import { planAllows } from "./entitlements.js";
 
 const SHA256_RE = /^[0-9a-f]{64}$/i;
 const TRUSTED_ARTIFACT_PROTOCOLS = new Set(["https:"]);
-export const MAX_WORKSPACE_APP_BYTES = 100 * 1024 * 1024;
+export const MAX_WORKSPACE_APP_BYTES = 200 * 1024 * 1024;
 const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 const APP_ID_RE = /^[a-z][a-z0-9-]{1,99}$/;
 const WORKSPACE_APP_MANIFEST = "lily-workspace.json";
+const WORKSPACE_APP_META_MANIFEST = ".lilyspace/lily-workspace.json";
+const WORKSPACE_APP_META_PREFIX = ".lilyspace/";
 const SUPPORTED_WORKSPACE_APP_SCHEMA = 1;
 const SUPPORTED_WORKSPACE_APP_KINDS = new Set(["lily-workspace-pack", "lily-workspace-app"]);
 
@@ -83,7 +85,8 @@ export async function inspectWorkspaceAppArtifact(buffer) {
     return { ok: false, code: "WORKSPACE_APP_ZIP_CORRUPT" };
   }
 
-  const manifestEntry = zip.file(WORKSPACE_APP_MANIFEST);
+  const hiddenManifestEntry = zip.file(WORKSPACE_APP_META_MANIFEST);
+  const manifestEntry = hiddenManifestEntry || zip.file(WORKSPACE_APP_MANIFEST);
   if (!manifestEntry) {
     return { ok: false, code: "WORKSPACE_APP_MANIFEST_MISSING" };
   }
@@ -104,7 +107,12 @@ export async function inspectWorkspaceAppArtifact(buffer) {
   if (manifest.schemaVersion > SUPPORTED_WORKSPACE_APP_SCHEMA) {
     return { ok: false, code: "WORKSPACE_APP_SCHEMA_TOO_NEW" };
   }
-  const files = Object.values(zip.files).filter((entry) => !entry.dir && entry.name.startsWith("files/"));
+  const files = hiddenManifestEntry
+    ? Object.values(zip.files)
+    .filter((entry) => !entry.dir)
+    .filter((entry) => !entry.name.startsWith(WORKSPACE_APP_META_PREFIX))
+    .filter((entry) => entry.name !== WORKSPACE_APP_MANIFEST && entry.name !== "conventions.md")
+    : Object.values(zip.files).filter((entry) => !entry.dir && entry.name.startsWith("files/"));
   if (files.length === 0) {
     return { ok: false, code: "WORKSPACE_APP_FILES_MISSING" };
   }

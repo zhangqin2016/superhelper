@@ -12,6 +12,10 @@ const {
   mergeUserDisplayText,
   getConversationPageFromSource,
 } = require("../src/main/opencode-conversation-source.js");
+const {
+  buildLayeredEngineText,
+  layerBlock,
+} = require("../src/main/engine-message-layers.js");
 
 const legacy = {
   id: "legacy_msg",
@@ -63,6 +67,36 @@ const injectedPrompt = `# 智能工作台全局说明
 `;
 assert.equal(isInjectedUserPromptText(injectedPrompt), true, "detects Lily injected engine prompt");
 assert.equal(isInjectedUserPromptText("帮我学习这个系统"), false, "does not flag normal user input");
+
+const layeredEnginePrompt = buildLayeredEngineText({
+  platformContext: "Internal resume context that must stay hidden.",
+  userText: "继续",
+});
+assert.equal(isInjectedUserPromptText(layeredEnginePrompt), true, "detects layered Lily engine prompt");
+const layeredFallbackDisplay = mergeUserDisplayText([
+  {
+    id: "official_layered_user",
+    role: "user",
+    content: layeredEnginePrompt,
+    timestamp: "2026-06-23T10:01:00.000Z",
+    source: "opencode",
+  },
+], []);
+assert.equal(layeredFallbackDisplay.length, 1, "layered official user prompt remains visible through recovered original request");
+assert.equal(layeredFallbackDisplay[0].content, "继续", "layered engine prompt displays only the recovered original request");
+assert.equal(layeredFallbackDisplay[0].meta.opencodeEnginePromptHidden, true, "layered engine prompt is marked hidden");
+assert.equal(layeredFallbackDisplay[0].content.includes("platform_context"), false, "platform context never leaks into display");
+
+const pureInternalDisplay = mergeUserDisplayText([
+  {
+    id: "official_internal_only",
+    role: "user",
+    content: layerBlock("platform_context", "internal only"),
+    timestamp: "2026-06-23T10:02:00.000Z",
+    source: "opencode",
+  },
+], []);
+assert.equal(pureInternalDisplay.length, 0, "pure internal prompts without original request are hidden");
 
 const mergedUserDisplay = mergeUserDisplayText([
   {

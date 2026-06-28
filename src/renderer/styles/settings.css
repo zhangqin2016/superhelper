@@ -1342,17 +1342,17 @@ body.settings-open {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
-  background: var(--surface, transparent);
+  background: var(--bg-surface, transparent);
 }
 .media-card-title { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
-.media-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 10px; background: var(--surface-secondary, rgba(0,0,0,0.04)); margin-bottom: 12px; }
+.media-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 10px; background: var(--bg-surface-hover); margin-bottom: 12px; }
 .media-toggle-btn {
   border: 0; cursor: pointer; padding: 6px 14px; border-radius: 8px;
   font-size: 13px; font-weight: 600; color: var(--text-secondary); background: transparent;
 }
-.media-toggle-btn.is-active { background: var(--bg-elevated, #fff); color: var(--brand, #2563eb); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+.media-toggle-btn.is-active { background: var(--bg-elevated); color: var(--accent); box-shadow: var(--shadow-sm); }
 .media-hint { margin: 8px 0 0; font-size: 12px; color: var(--text-tertiary); }
-.media-hint-warn { color: var(--warning, #b45309); }
+.media-hint-warn { color: var(--warning-text); }
 .media-key-row { border-top: 1px solid var(--border); padding: 10px 0; }
 .media-key-row summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .media-key-fields { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
@@ -1361,11 +1361,11 @@ body.settings-open {
 .media-current { margin: 0 0 12px; font-size: 13px; color: var(--text-secondary); }
 .media-key-editor { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .media-key-status { font-size: 13px; font-weight: 600; }
-.media-key-status.is-on { color: var(--success, #15803d); }
+.media-key-status.is-on { color: var(--success-text); }
 .media-key-status.is-off { color: var(--text-tertiary); }
 
 /* BYOK key field stacked (label above input) + primary save button */
 .media-field { display: flex; flex-direction: column; gap: 6px; }
 .media-field .settings-input { width: 100%; }
-.media-save-btn { background: var(--brand, #2563eb); color: #fff; border: 0; font-weight: 600; }
+.media-save-btn { background: var(--accent); color: var(--text-inverse); border: 0; font-weight: 600; }
 .media-save-btn:hover { filter: brightness(0.96); }

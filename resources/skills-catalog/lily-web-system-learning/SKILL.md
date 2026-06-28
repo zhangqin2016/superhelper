@@ -95,6 +95,43 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    and that they can enable it.
 15. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
 
+## Autonomous Self-Run Learning (no human recording)
+
+Instead of asking the user to record a demonstration, the platform can drive the
+site ITSELF to learn a flow, then distill its own successful run into a reusable
+natural-language procedure card. Use this to learn UI-only flows the scanner/HAR
+can't capture, without a human in the loop.
+
+- Runner: `node scripts/autorun_web_task.cjs` reads `{ instruction, baseUrl,
+  mode, allowedDomains?, maxSteps?, completionCriteria?, storageState? }` from
+  stdin. At each step it observes the page, enumerates the interactive elements,
+  asks the in-loop model to pick ONE action from that menu, runs it through the
+  safety controller, executes it, and records the step. On success it emits a
+  `trajectory` and a distilled `card`.
+- Safety modes (default the safest that can still learn the flow):
+  - `read-only` (DEFAULT): only reads/navigations/menu clicks run; any write
+    (fill/submit/save/delete) is refused. Safe on production — learns read flows.
+  - `dry-run`: fills fields but stops before the final submit (learns the form
+    shape without mutating).
+  - `authorized`: writes run; destructive actions (delete/pay/cancel) still need
+    explicit confirmation via `confirmedDestructive`. Use ONLY in a test
+    environment or with the user's explicit go-ahead.
+- Guardrails are enforced by `autorun_controller.cjs` (pure, unit-tested):
+  domain allowlist (no off-site navigation), risk classification, a hard step cap
+  AND a no-progress bound so a run always terminates, and a deterministic
+  completion backstop. A password field stops the run with `needs-auth` —
+  credentials come from a pre-seeded `storageState`/the credential vault, never
+  typed by the model or written into the trajectory.
+- Provenance: a card from a self-run carries `provenance.source` and `runs`;
+  feed it to `procedure_graph.cjs` (`mergeCardIntoGraph`) to dedupe/merge/
+  specialize against previously learned cards. Repeated successful self-runs of
+  the same intent accumulate `runs` and strengthen the card.
+- Degrades to today's behavior: if Playwright or the in-loop model is
+  unavailable, the runner fails loud with a code (`PLAYWRIGHT_NODE_MISSING` /
+  `MODEL_UNAVAILABLE`) and changes nothing — fall back to read-only scanning.
+- Same foreground rule as the scanner: run it as a foreground tool and wait for
+  its JSON; never background it.
+
 ## Runtime Lifecycle Rules
 
 The chat UI can only show "running" while a real foreground tool is active. Keep the assistant state honest:

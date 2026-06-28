@@ -9,10 +9,13 @@ import {
   inspectWorkspaceAppArtifact,
   isValidWorkspaceAppArtifactUrl,
   isValidWorkspaceAppSha256,
+  MAX_WORKSPACE_APP_BYTES,
   newestWorkspaceApps,
   validateWorkspaceAppArtifact,
   workspaceAppObjectKey,
 } from "../server/src/services/workspace-apps.js";
+
+assert.equal(MAX_WORKSPACE_APP_BYTES, 200 * 1024 * 1024, "workspace app packages support complete customer exports up to 200MB");
 
 assert.equal(isValidWorkspaceAppArtifactUrl("https://cdn.example.com/app.zip"), true);
 assert.equal(isValidWorkspaceAppArtifactUrl("http://cdn.example.com/app.zip"), false);
@@ -52,6 +55,19 @@ assert.equal(inspected.ok, true);
 assert.equal(inspected.manifest.name, "Stock Dashboard");
 assert.deepEqual(inspected.manifest.requiredSkills, ["lily-research-synthesis"]);
 assert.deepEqual(inspected.manifest.requiredRuntimePacks, ["pro-pdf"]);
+
+const rootLayoutZip = new JSZip();
+rootLayoutZip.file(".lilyspace/lily-workspace.json", JSON.stringify({
+  kind: "lily-workspace-app",
+  schemaVersion: 1,
+  name: "Root Layout App",
+  requiredSkills: [],
+}));
+rootLayoutZip.file("README.md", "# Root Layout App\n");
+rootLayoutZip.file("source/run.cjs", "console.log('ok')");
+const rootLayoutInspected = await inspectWorkspaceAppArtifact(await rootLayoutZip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+assert.equal(rootLayoutInspected.ok, true, "server inspection must accept human-friendly root-layout workspace apps");
+assert.equal(rootLayoutInspected.manifest.name, "Root Layout App");
 
 const emptyWorkspaceZip = new JSZip();
 emptyWorkspaceZip.file("lily-workspace.json", JSON.stringify({

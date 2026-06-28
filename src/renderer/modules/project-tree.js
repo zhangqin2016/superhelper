@@ -60,6 +60,12 @@ function workspaceSkillRiskLabel(warning) {
   return warning?.label || t("pack.skillRiskUnknown");
 }
 
+function exportCategoryLabel(category) {
+  const key = `pack.exportCategory.${category}`;
+  const label = t(key);
+  return label === key ? category : label;
+}
+
 function confirmWorkspacePackExport(info, sizeMb) {
   return new Promise((resolve) => {
     const workspaceSkills = Array.isArray(info.workspaceSkills) ? info.workspaceSkills : [];
@@ -95,6 +101,77 @@ function confirmWorkspacePackExport(info, sizeMb) {
       required.className = "workspace-export-note";
       required.textContent = t("pack.requiredSkills", { count: info.requiredSkills.length });
       body.appendChild(required);
+    }
+
+    const categorySummary = Array.isArray(info.preview?.categorySummary) ? info.preview.categorySummary : [];
+    if (categorySummary.length) {
+      const planSection = document.createElement("section");
+      planSection.className = "workspace-export-data workspace-export-plan";
+      const planTitle = document.createElement("h3");
+      planTitle.textContent = t("pack.exportPlanTitle");
+      const planIntro = document.createElement("p");
+      planIntro.textContent = t("pack.exportPlanIntro");
+      const planList = document.createElement("div");
+      planList.className = "workspace-export-data-list";
+      for (const item of categorySummary.slice(0, 8)) {
+        const chip = document.createElement("span");
+        chip.textContent = t("pack.exportPlanItem", {
+          category: exportCategoryLabel(item.category),
+          count: item.fileCount || 0,
+          size: formatBytes(item.totalBytes || 0),
+        });
+        planList.appendChild(chip);
+      }
+      planSection.append(planTitle, planIntro, planList);
+      body.appendChild(planSection);
+    }
+
+    const skippedFileCount = Number(info.preview?.skippedFileCount || 0);
+    if (skippedFileCount > 0) {
+      const skipped = document.createElement("div");
+      skipped.className = "workspace-export-warning";
+      const examples = (info.preview?.skippedFiles || [])
+        .slice(0, 5)
+        .map((file) => file.relPath)
+        .join(", ");
+      skipped.textContent = t("pack.skippedFilesWarning", {
+        count: skippedFileCount,
+        size: formatBytes(info.preview?.limits?.maxFileBytes || 0),
+        files: examples || "-",
+      });
+      body.appendChild(skipped);
+    }
+
+    if (info.preview?.truncated) {
+      const truncated = document.createElement("div");
+      truncated.className = "workspace-export-warning";
+      truncated.textContent = t("pack.truncatedWarning", {
+        count: info.preview?.limits?.maxTotalFiles || 0,
+      });
+      body.appendChild(truncated);
+    }
+
+    const appDataPaths = Array.isArray(info.preview?.appDataPaths) ? info.preview.appDataPaths : [];
+    if (appDataPaths.length) {
+      const dataSection = document.createElement("section");
+      dataSection.className = "workspace-export-data";
+      const dataTitle = document.createElement("h3");
+      dataTitle.textContent = t("pack.appDataTitle");
+      const dataIntro = document.createElement("p");
+      dataIntro.textContent = t("pack.appDataIntro");
+      const dataList = document.createElement("div");
+      dataList.className = "workspace-export-data-list";
+      for (const dataPath of appDataPaths) {
+        const item = document.createElement("span");
+        item.textContent = t("pack.appDataItem", {
+          path: dataPath.path,
+          count: dataPath.fileCount || 0,
+          size: formatBytes(dataPath.totalBytes || 0),
+        });
+        dataList.appendChild(item);
+      }
+      dataSection.append(dataTitle, dataIntro, dataList);
+      body.appendChild(dataSection);
     }
 
     const fileWarnings = info.preview.secretWarnings || [];

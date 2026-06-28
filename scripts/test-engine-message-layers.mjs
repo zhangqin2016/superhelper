@@ -7,6 +7,9 @@ const {
   addLayersToEngineText,
   appendExtractedContext,
   buildLayeredEngineText,
+  extractLayerText,
+  extractUserOriginalRequest,
+  hasLayeredEngineText,
 } = require("../src/main/engine-message-layers.js");
 
 const layered = buildLayeredEngineText({
@@ -23,6 +26,9 @@ assert(layered.includes('title="user_original_request"'), "user original request
 assert(layered.includes("Highest priority"), "original request priority is explicit");
 assert(layered.includes("不是, 不要, 别, 无需"), "negative constraints are called out");
 assert(layered.indexOf('title="user_original_request"') > layered.indexOf('title="execution_constraints"'), "original request appears after constraints");
+assert(hasLayeredEngineText(layered), "layered prompt is detectable");
+assert(extractUserOriginalRequest(layered) === "不要创建定时任务，只分析逐小时预报字段", "original user request can be recovered for display");
+assert(extractLayerText(layered, "platform_context") === "resume summary", "platform context extraction strips internal intro");
 
 const extracted = appendExtractedContext("看这张图", "一张图的识别结果", "Image recognition result");
 assert(extracted.includes("Platform-extracted attachment content"), "extraction is marked as platform evidence");

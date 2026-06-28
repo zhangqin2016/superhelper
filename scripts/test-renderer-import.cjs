@@ -1469,8 +1469,42 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(generatedMediaResult);
+    const windowsGeneratedMediaResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { appendToolPayloadDetail } = await import("./modules/tool-payload-renderer.js");
+        const container = document.createElement("details");
+        document.body.appendChild(container);
+        const winPath = "C:\\\\Users\\\\ROG\\\\Desktop\\\\Lily\\\\交互模块\\\\generated-assets\\\\test_linzhi.wav";
+        const output = '<generated_media type="speech">\\n  <file path="' + winPath + '" bytes="4321" />\\n</generated_media>';
+        const rendered = appendToolPayloadDetail(container, {
+          name: "Bash",
+          result: { content: output },
+        }, { role: "result", sessionId: "session_windows_media_reveal" });
+        const audio = container.querySelector(".assistant-generated-media audio");
+        if (!rendered || !audio) {
+          throw new Error("windows speech generated media should render an audio player");
+        }
+        const mediaSrc = String(audio.getAttribute("src") || "");
+        if (!mediaSrc.startsWith("app-file://media/") || !decodeURIComponent(mediaSrc).includes(winPath)) {
+          throw new Error("windows generated media src should preserve the exact Chinese path: " + mediaSrc);
+        }
+        const pathNode = [...container.querySelectorAll(".assistant-generated-media code")]
+          .find((node) => node.textContent === winPath);
+        if (!pathNode || !pathNode.classList.contains("is-clickable")) {
+          throw new Error("windows generated media path should be clickable without rewriting: " + container.innerHTML);
+        }
+        pathNode.click();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        container.remove();
+        return "windows-generated-media-path-regression: ok";
+      }
+    )()`);
+    console.log(windowsGeneratedMediaResult);
     if (!capturedRevealPaths.includes("session_media_reveal:/tmp/generated image.png")) {
       throw new Error("absolute generated media path should reveal, got: " + capturedRevealPaths.join(","));
+    }
+    if (!capturedRevealPaths.includes("session_windows_media_reveal:C:\\Users\\ROG\\Desktop\\Lily\\交互模块\\generated-assets\\test_linzhi.wav")) {
+      throw new Error("windows generated media path should reveal exactly, got: " + capturedRevealPaths.join(","));
     }
     if (capturedRevealPaths.some((path) => path.includes("generated-assets/image-1-2026.png"))) {
       throw new Error("relative generated media path should not reveal, got: " + capturedRevealPaths.join(","));
