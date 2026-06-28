@@ -41,10 +41,16 @@ ledger.addWorkspaceCandidates([
 ledger.recordTool({ name: "grep", input: { pattern: "session.idle" }, result: grep.candidates.join("\n"), status: "done" });
 ledger.recordTool({ name: "read", input: { file_path: "src/main/turn-orchestrator.js" }, result: "content", status: "done" });
 ledger.recordTool({ name: "bash", input: { command: "npm test" }, result: "passed", status: "done" });
+ledger.recordDocumentExtraction({
+  documents: [{ id: "doc1", label: "contract.pdf", charLength: 1200 }],
+  chunks: [{ chunkId: "doc1-chunk1" }, { chunkId: "doc1-chunk2" }],
+});
 const summary = ledger.summary();
 assert.equal(summary.counts.fileSearches, 1);
 assert.equal(summary.counts.filesRead, 1);
 assert.equal(summary.counts.verifications, 1);
+assert.equal(summary.counts.documents, 1);
+assert.equal(summary.counts.documentChunks, 2);
 assert(summary.coverage.candidateCount >= 2);
 assert(summary.coverage.inspectedCount >= 1);
 assert.equal(summary.coverage.fullInspection, false);
@@ -53,5 +59,6 @@ assert(summary.coverage.inspectedCandidates.includes("src/main/turn-orchestrator
 assert(summary.coverage.missingCandidates.includes("src/main/evidence-gate.js"));
 assert(summary.coverage.readFiles.includes("src/main/turn-orchestrator.js"));
 assert(summary.hasVerificationEvidence);
+assert(summary.hasDocumentEvidence);
 
 console.log("evidence-ledger: ok");

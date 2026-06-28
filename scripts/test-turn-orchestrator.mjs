@@ -396,6 +396,54 @@ if (assistantMsg.record.meta?.contextOsScorecard?.maturity?.beat !== "incomplete
 }
 
 sent.length = 0;
+messages.length = 0;
+runner.sentPayloads.length = 0;
+const architectureAuditTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "分析我们系统有哪些比较笨的地方", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!architectureAuditTurn.ok || !runner.isBusy()) {
+  throw new Error(`architecture audit turn should start: ${JSON.stringify(architectureAuditTurn)}`);
+}
+const architectureAuditPayload = runner.sentPayloads.at(-1);
+if (architectureAuditPayload.rawText !== "分析我们系统有哪些比较笨的地方") {
+  throw new Error(`architecture audit payload must preserve raw user text: ${JSON.stringify(architectureAuditPayload)}`);
+}
+if (architectureAuditPayload.taskContract?.taskType !== "architecture_audit") {
+  throw new Error(`architecture audit request must create architecture_audit task contract: ${JSON.stringify(architectureAuditPayload.taskContract)}`);
+}
+if (
+  architectureAuditPayload.turnPolicy?.rigor !== "grounded" ||
+  architectureAuditPayload.turnPolicy?.requiresWorkspaceGrounding !== true ||
+  architectureAuditPayload.turnPolicy?.requiresSourceCoverage !== true
+) {
+  throw new Error(`architecture audit must use grounded source-backed policy: ${JSON.stringify(architectureAuditPayload.turnPolicy)}`);
+}
+if (
+  !architectureAuditPayload.text.includes("<lily_task_contract>") ||
+  !architectureAuditPayload.text.includes("task_type: architecture_audit") ||
+  !architectureAuditPayload.text.includes("required_evidence_kinds: file_search, file_read") ||
+  !architectureAuditPayload.text.includes("Preserve the natural-language workbench stance")
+) {
+  throw new Error(`architecture audit prompt must include the quality contract without replacing the user request:\n${architectureAuditPayload.text}`);
+}
+runner.finish("系统比较笨的地方是任务入口没有稳定契约。");
+ctx.eventBus.flush();
+const architectureAuditAssistant = messages.find((message) => message.role === "assistant" && message.turnId === architectureAuditTurn.turnId);
+if (architectureAuditAssistant?.record?.meta?.taskContract?.taskType !== "architecture_audit") {
+  throw new Error(`architecture audit archive should persist task contract: ${JSON.stringify(architectureAuditAssistant?.record?.meta?.taskContract)}`);
+}
+if (architectureAuditAssistant?.record?.meta?.turnPolicy?.rigor !== "grounded") {
+  throw new Error(`architecture audit archive should persist grounded policy: ${JSON.stringify(architectureAuditAssistant?.record?.meta?.turnPolicy)}`);
+}
+if (architectureAuditAssistant?.record?.meta?.evidenceGate?.reason !== "missing_required_evidence:file_search") {
+  throw new Error(`architecture audit without source evidence should be downgraded: ${JSON.stringify(architectureAuditAssistant?.record?.meta?.evidenceGate)}`);
+}
+if (!/证据门槛/.test(architectureAuditAssistant?.record?.assistantText || "")) {
+  throw new Error(`architecture audit unsupported conclusion should show evidence notice: ${architectureAuditAssistant?.record?.assistantText}`);
+}
+
+sent.length = 0;
 appendLearnedConvention("p1", "回答这类运行时问题时先检查 OpenCode 原生能力");
 const coverageTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "彻底找出所有 session.idle 问题，不要漏", [], {
   spawnEngine: false,

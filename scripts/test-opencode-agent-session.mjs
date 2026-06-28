@@ -500,6 +500,7 @@ async function newSession() {
     fake.failPrompt = () => {
       failures += 1;
       if (failures === 1) throw new Error("socket connection was closed");
+      fake.idleState = false;
     };
     session.sendUserMessage({ text: "ignore catalog noise" });
     await tick();
@@ -509,6 +510,7 @@ async function newSession() {
     assert(orch.calls.error.length === 0, "retry path avoids a visible failure while retry is pending");
     fake.failPrompt = null;
     fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "retried after noise" } });
+    fake.idleState = true;
     fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
     await waitIdleSettle();
     assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "retried after noise", "turn completes after real owned event");
@@ -528,12 +530,14 @@ async function newSession() {
     fake.failPrompt = () => {
       failures += 1;
       if (failures === 1) throw new Error("fetch failed");
+      fake.idleState = false;
     };
     session.sendUserMessage({ text: "retry submit" });
     await tick();
     await sleep(60);
     assert(fake.prompts.length === 2, "failed promptAsync is retried once when no engine activity appears");
     fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "retried ok" } });
+    fake.idleState = true;
     fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
     await waitIdleSettle();
     assert(orch.calls.error.length === 0, "retry success avoids user-visible dispatch error");

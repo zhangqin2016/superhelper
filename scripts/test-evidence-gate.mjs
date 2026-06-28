@@ -130,4 +130,30 @@ const unsupportedFresh = assessFinalAnswerEvidence({
 assert.equal(unsupportedFresh.ok, false);
 assert.equal(unsupportedFresh.reason, "fresh_claim_without_fresh_evidence");
 
+const architectureWithoutSearch = assessFinalAnswerEvidence({
+  assistant: "系统比较笨的地方是任务入口没有稳定契约。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["file_search", "file_read"] },
+  turnPolicy: { rigor: "grounded", taskType: "architecture_audit" },
+  evidenceSummary: { counts: { filesRead: 2 }, hasFileReadEvidence: true, hasSearchEvidence: false },
+});
+assert.equal(architectureWithoutSearch.ok, false);
+assert.equal(architectureWithoutSearch.reason, "missing_required_evidence:file_search");
+
+const architectureWithoutRead = assessFinalAnswerEvidence({
+  assistant: "系统比较笨的地方是任务入口没有稳定契约。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["file_search", "file_read"] },
+  turnPolicy: { rigor: "grounded", taskType: "architecture_audit" },
+  evidenceSummary: { counts: { fileSearches: 1, filesRead: 0 }, hasSearchEvidence: true, hasFileReadEvidence: false },
+});
+assert.equal(architectureWithoutRead.ok, false);
+assert.equal(architectureWithoutRead.reason, "missing_required_evidence:file_read");
+
+const architectureWithRequiredEvidence = assessFinalAnswerEvidence({
+  assistant: "系统比较笨的地方是任务入口没有稳定契约。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["file_search", "file_read"] },
+  turnPolicy: { rigor: "grounded", taskType: "architecture_audit" },
+  evidenceSummary: { counts: { fileSearches: 1, filesRead: 2 }, hasSearchEvidence: true, hasFileReadEvidence: true },
+});
+assert.equal(architectureWithRequiredEvidence.ok, true);
+
 console.log("evidence-gate: ok");

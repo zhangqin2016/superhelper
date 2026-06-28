@@ -83,6 +83,24 @@ const quality = classifyTask({ text: "再次全面检查笨的原因，让小模
 assert.equal(quality.active, true);
 assert.equal(quality.kind, "agent_quality");
 assert.equal(quality.taskType, "agent_quality");
+
+const architectureAudit = classifyTask({ text: "分析我们系统有哪些比较笨的地方" });
+assert.equal(architectureAudit.active, true, "system weakness analysis should activate a grounded architecture audit");
+assert.equal(architectureAudit.kind, "architecture_audit");
+assert.equal(architectureAudit.taskType, "architecture_audit");
+assert(architectureAudit.categories.includes("architecture_audit"));
+
+const architectureAuditContract = buildTaskContract({
+  text: "分析我们系统有哪些比较笨的地方",
+  project: { path: ROOT },
+});
+assert.equal(architectureAuditContract.active, true);
+assert.equal(architectureAuditContract.taskType, "architecture_audit");
+assert.equal(architectureAuditContract.workspaceGroundingPolicy.required, true);
+assert.equal(architectureAuditContract.evidencePolicy.required, true);
+assert(architectureAuditContract.evidencePolicy.requiredEvidenceKinds.includes("file_search"));
+assert(architectureAuditContract.evidencePolicy.requiredEvidenceKinds.includes("file_read"));
+assert(architectureAuditContract.checklist.some((item) => item.includes("natural-language")));
 const qualityContract = buildTaskContract({
   text: "再次全面检查笨的原因，让小模型有大智慧",
   project: { path: ROOT },

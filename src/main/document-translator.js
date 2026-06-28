@@ -152,6 +152,7 @@ async function extractDocuments(files) {
   if (docFiles.length === 0) return null;
 
   const sections = [];
+  const indexedDocuments = [];
   const extractedPaths = [];
   let failed = 0;
   let totalChars = 0;
@@ -164,6 +165,7 @@ async function extractDocuments(files) {
       const text = truncateText(result.text, Math.min(MAX_CHARS_PER_FILE, room));
       totalChars += text.length;
       extractedPaths.push(result.path);
+      indexedDocuments.push(result);
       sections.push(`[Document: "${result.label}"]\n${text}`);
     } catch (err) {
       failed += 1;
@@ -182,9 +184,24 @@ async function extractDocuments(files) {
     };
   }
 
+  let documentIndex = null;
+  let documentIndexText = "";
+  try {
+    const {
+      buildDocumentQueryIndex,
+      formatDocumentQueryIndexForPrompt,
+    } = require("./document-query-index");
+    documentIndex = buildDocumentQueryIndex(indexedDocuments);
+    documentIndexText = formatDocumentQueryIndexForPrompt(documentIndex);
+  } catch (err) {
+    console.warn("[document-translator] document query index failed:", err?.message || err);
+  }
+
   return {
     ok: true,
     text: sections.join("\n\n"),
+    documentIndex,
+    documentIndexText,
     extractedPaths,
     keepOriginal: false,
   };

@@ -40,9 +40,32 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
     ".yaml",
     ".yml",
   ],
-  priority: ["release", "runtime", "agent_quality", "server", "ui", "bugfix", "config", "code", "document", "media"],
-  activatingCategories: ["bugfix", "ui", "server", "release", "runtime", "agent_quality", "config", "code"],
+  priority: ["release", "runtime", "architecture_audit", "agent_quality", "server", "ui", "bugfix", "config", "code", "document", "media"],
+  activatingCategories: ["bugfix", "ui", "server", "release", "runtime", "architecture_audit", "agent_quality", "config", "code"],
   categories: {
+    architecture_audit: {
+      terms: [
+        "architecture audit",
+        "system audit",
+        "system weakness",
+        "weak point",
+        "weakness",
+        "bottleneck",
+        "系统审视",
+        "架构审视",
+        "架构诊断",
+        "系统诊断",
+        "系统分析",
+        "笨的地方",
+        "比较笨",
+        "哪里笨",
+        "不聪明",
+        "不够聪明",
+        "顶级设计",
+        "不忘初心",
+      ],
+      weakTerms: ["系统分析"],
+    },
     agent_quality: {
       terms: [
         "agent",
@@ -273,6 +296,10 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
       agent_quality: [
         "For agent-quality work, inspect model tier selection, prompt/guidance injection, deterministic intent routing, skill/tool boundaries, and final-output synchronization.",
         "Prefer platform-side classifiers, guards, schemas, and regression fixtures over asking the model to remember long prose rules.",
+      ],
+      architecture_audit: [
+        "For architecture audits, identify impact surfaces before conclusions and ground each weakness in source, runtime, document, or product evidence.",
+        "Preserve the natural-language workbench stance: prefer agent-invocable contracts, skills, scripts, and evidence over new primary UI panels.",
       ],
       ui: ["For UI work, verify the visible state, empty/loading/error states, and repeated interaction path."],
       server: ["For server work, verify auth boundaries, persistence, migrations, and public/admin route differences."],
@@ -610,6 +637,15 @@ function buildVerificationStrategy(classification, registry = loadTaskIntelligen
 function evidenceSourcesForTaskType(taskType) {
   const common = ["user_request", "tool_output"];
   switch (taskType) {
+    case "architecture_audit":
+      return uniqueStrings([
+        ...common,
+        "workspace_tree_or_manifest",
+        "code_file_reference",
+        "runtime_event_or_log",
+        "test_or_command_output",
+        "document_evidence",
+      ]);
     case "bug_investigation":
     case "runtime_protocol":
     case "code_change":
@@ -655,12 +691,24 @@ function evidenceSourcesForTaskType(taskType) {
   }
 }
 
+function requiredEvidenceKindsForTaskType(taskType) {
+  switch (taskType) {
+    case "architecture_audit":
+      return ["file_search", "file_read"];
+    case "release_deploy":
+      return ["verification"];
+    default:
+      return [];
+  }
+}
+
 function buildEvidencePolicy(classification) {
   const taskType = classification?.taskType || "general";
   const active = Boolean(classification?.active);
   return {
     required: active,
     allowedSources: evidenceSourcesForTaskType(taskType),
+    requiredEvidenceKinds: active ? requiredEvidenceKindsForTaskType(taskType) : [],
     unsupportedClaimPolicy: active
       ? "Unsupported factual claims must be downgraded to uncertainty. Do not state causes, completion, deployment, correctness, data values, or external facts as confirmed without an allowed evidence source."
       : "Use evidence when making factual claims; if evidence is unavailable, say what is unknown instead of inventing details.",
@@ -732,12 +780,14 @@ function extractExplicitUserTerms(text = "") {
 
 function buildSourceCoveragePolicy({ text = "", classification = {} } = {}) {
   const terms = extractExplicitUserTerms(text);
-  const required = Boolean(classification.active && terms.length);
+  const required = Boolean(classification.active && (terms.length || classification.taskType === "architecture_audit"));
   return {
     required,
     explicitTerms: terms,
     policy: required
-      ? "Before making codebase or architecture claims, search for the user's explicit terms in paths, filenames, symbols, docs, and fixtures. Do not substitute a neighboring subsystem or acronym unless evidence proves it is part of the requested scope."
+      ? classification.taskType === "architecture_audit" && !terms.length
+        ? "Before making architecture or system-quality claims, inspect representative workspace structure and source files. Do not rely only on memory or product intuition."
+        : "Before making codebase or architecture claims, search for the user's explicit terms in paths, filenames, symbols, docs, and fixtures. Do not substitute a neighboring subsystem or acronym unless evidence proves it is part of the requested scope."
       : "No explicit source term coverage required.",
   };
 }
@@ -752,8 +802,11 @@ function buildWorkspaceGroundingPolicy({ text = "", classification = {}, profile
   const categories = new Set(classification.categories || []);
   const needsGrounding =
     active &&
-    ["code", "ui", "server", "runtime", "config", "bugfix", "agent_quality", "release"].some((category) =>
-      categories.has(category),
+    (
+      ["code", "ui", "server", "runtime", "config", "bugfix", "agent_quality", "release"].some((category) =>
+        categories.has(category),
+      ) ||
+      categories.has("architecture_audit")
     );
   const greenfieldAllowed = hasGreenfieldIntent(text);
   return {
@@ -872,6 +925,7 @@ function withTaskContractPrefix(text, contract) {
     "Evidence gate:",
     `required: ${contract.evidencePolicy?.required ? "yes" : "no"}`,
     `allowed_sources: ${(contract.evidencePolicy?.allowedSources || []).join(", ") || "none"}`,
+    `required_evidence_kinds: ${(contract.evidencePolicy?.requiredEvidenceKinds || []).join(", ") || "none"}`,
     contract.evidencePolicy?.unsupportedClaimPolicy || "",
     ...(contract.evidencePolicy?.finalAnswerRequirements?.length
       ? ["Final answer requirements:", ...contract.evidencePolicy.finalAnswerRequirements.map((item) => `- ${item}`)]

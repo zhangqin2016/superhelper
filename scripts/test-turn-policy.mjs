@@ -27,6 +27,17 @@ assert.equal(code.allowedClaimStrength, "bounded");
 assert(code.evidenceBudget.maxFilesToRead > casual.evidenceBudget.maxFilesToRead);
 assert.equal(code.memoryBudget.maxChars, 3000);
 
+const architectureAudit = buildTurnPolicy({
+  text: "分析我们系统有哪些比较笨的地方",
+  taskContract: buildTaskContract({ text: "分析我们系统有哪些比较笨的地方" }),
+});
+assert.equal(architectureAudit.rigor, "grounded");
+assert.equal(architectureAudit.taskType, "architecture_audit");
+assert.equal(architectureAudit.requiresWorkspaceGrounding, true);
+assert.equal(architectureAudit.requiresSourceCoverage, true);
+assert.equal(architectureAudit.finalAnswer.requireEvidenceSummary, true);
+assert(architectureAudit.evidenceBudget.maxFilesToRead >= 20);
+
 const exhaustive = buildTurnPolicy({
   text: "彻底找出整个项目里所有 session.idle 相关问题，不要漏",
   taskContract: buildTaskContract({ text: "彻底找出整个项目里所有 session.idle 相关问题，不要漏" }),

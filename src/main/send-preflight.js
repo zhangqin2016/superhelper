@@ -138,8 +138,18 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
   const outboundFiles = result.keepOriginal
     ? files
     : (files || []).filter((file) => !extracted.has(file.path));
-  const enrichedText = buildEnrichedUserText(text, result.text);
-  return { ok: true, text: enrichedText, files: outboundFiles };
+  const documentContext = [result.text, result.documentIndexText].filter(Boolean).join("\n\n");
+  const enrichedText = buildEnrichedUserText(text, documentContext);
+  return {
+    ok: true,
+    text: enrichedText,
+    files: outboundFiles,
+    documentEvidence: {
+      documents: Array.isArray(result.documentIndex?.documents) ? result.documentIndex.documents : [],
+      chunks: Array.isArray(result.documentIndex?.chunks) ? result.documentIndex.chunks : [],
+      extractedPaths: result.extractedPaths || [],
+    },
+  };
 }
 
 module.exports = { runVisionPreflight, runDocumentPreflight, withoutVisionFiles };

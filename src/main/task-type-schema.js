@@ -39,6 +39,13 @@ const TASK_TYPES = Object.freeze({
     active: true,
     verification: ["routing_contract", "prompt_context", "tool_or_skill_boundary", "regression_test"],
   },
+  architecture_audit: {
+    id: "architecture_audit",
+    label: "Architecture audit",
+    categories: ["architecture_audit"],
+    active: true,
+    verification: ["impact_surface", "weak_point_inventory", "source_evidence", "improvement_plan", "regression_test"],
+  },
   release_deploy: {
     id: "release_deploy",
     label: "Release / deploy",
@@ -93,6 +100,7 @@ const TASK_TYPES = Object.freeze({
 const TASK_TYPE_PRIORITY = Object.freeze([
   "release_deploy",
   "runtime_protocol",
+  "architecture_audit",
   "agent_quality",
   "server_change",
   "ui_change",

@@ -1006,6 +1006,7 @@ class TurnOrchestrator {
       }
       text = document.text;
       files = document.files;
+      state.evidenceLedger?.recordDocumentExtraction?.(document.documentEvidence);
       state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
     }
 

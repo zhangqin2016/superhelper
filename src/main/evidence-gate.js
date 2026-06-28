@@ -18,6 +18,35 @@ function hasCount(summary, key) {
   return Number.isFinite(value) && value > 0;
 }
 
+function hasEvidenceKind(summary = {}, kind = "") {
+  switch (kind) {
+    case "file_search":
+      return Boolean(summary.hasSearchEvidence || hasCount(summary, "fileSearches") || (summary.coverage?.candidateCount || 0) > 0);
+    case "file_read":
+      return Boolean(summary.hasFileReadEvidence || hasCount(summary, "filesRead"));
+    case "verification":
+      return Boolean(summary.hasVerificationEvidence || hasCount(summary, "verifications"));
+    case "file_write":
+      return Boolean(summary.hasFileChangeEvidence || hasCount(summary, "fileWrites"));
+    case "fresh":
+      return Boolean(summary.hasFreshEvidence || hasCount(summary, "webSources"));
+    case "document":
+      return Boolean(summary.hasDocumentEvidence || hasCount(summary, "documents"));
+    default:
+      return true;
+  }
+}
+
+function missingRequiredEvidenceKind(evidencePolicy = {}, summary = {}) {
+  const requiredKinds = Array.isArray(evidencePolicy?.requiredEvidenceKinds)
+    ? evidencePolicy.requiredEvidenceKinds
+    : [];
+  for (const kind of requiredKinds) {
+    if (!hasEvidenceKind(summary, kind)) return kind;
+  }
+  return "";
+}
+
 function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = null, fileChangeCount = 0 } = {}) {
   if (!turnPolicy && !evidenceSummary) return null;
   const summary = evidenceSummary || {};
@@ -62,6 +91,16 @@ function assessFinalAnswerEvidence({
   const required = Boolean(evidencePolicy?.required);
   if (!required || !text) {
     return { ok: true, required, strongClaim: false, hasEvidence: false, reason: "" };
+  }
+  const missingKind = missingRequiredEvidenceKind(evidencePolicy, evidenceSummary || {});
+  if (missingKind && (turnPolicy?.taskType === "architecture_audit" || STRONG_CLAIM_RE.test(text))) {
+    return {
+      ok: false,
+      required,
+      strongClaim: true,
+      hasEvidence: false,
+      reason: `missing_required_evidence:${missingKind}`,
+    };
   }
   const policyBacked = assessPolicyBackedClaims(text, { turnPolicy, evidenceSummary, fileChangeCount });
   if (policyBacked?.ok === false) {
@@ -108,4 +147,5 @@ function appendEvidenceGateNotice(assistant, assessment) {
 module.exports = {
   assessFinalAnswerEvidence,
   appendEvidenceGateNotice,
+  hasEvidenceKind,
 };

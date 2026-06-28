@@ -101,9 +101,17 @@ assert(!r.files.some((f) => f.isImage), "image pruned from outbound files on suc
 assert(notices.includes("visionReady"), "emits ready on success");
 
 // Document success → enriched + extracted file pruned.
-documentMock._next = { ok: true, text: "contract terms", extractedPaths: ["/a/report.docx"], keepOriginal: false };
+documentMock._next = {
+  ok: true,
+  text: "contract terms",
+  documentIndexText: "Document query index\n- doc-1#chunk-1 contract terms",
+  extractedPaths: ["/a/report.docx"],
+  keepOriginal: false,
+};
 r = await runDocumentPreflight("review", [docFile, txtFile], {});
-assert(r.ok && r.text.includes('title="extracted_attachments"') && r.text.includes("[doc:contract terms]"), "document success enriches text in extraction layer");
+assert(r.ok && r.text.includes('title="extracted_attachments"') && r.text.includes("contract terms"), "document success enriches text in extraction layer");
+assert(r.text.includes("Document query index"), "document success includes compact query index when available");
+assert(r.documentEvidence?.documents?.length === 0, "mock without structured index still returns a document evidence shape");
 assert(r.text.includes('title="user_original_request"') && r.text.includes("review"), "document success preserves original request layer");
 assert(!r.files.some((f) => f.path === "/a/report.docx"), "extracted document pruned from outbound");
 assert(r.files.some((f) => f === txtFile), "non-extracted files kept");

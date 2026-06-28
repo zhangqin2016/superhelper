@@ -117,6 +117,7 @@ class EvidenceLedger {
   constructor() {
     this.events = [];
     this.workspaceCandidates = new Map();
+    this.documents = [];
   }
 
   addWorkspaceCandidates(candidates = []) {
@@ -140,6 +141,25 @@ class EvidenceLedger {
     return event;
   }
 
+  recordDocumentExtraction(documentEvidence = {}) {
+    const documents = Array.isArray(documentEvidence.documents) ? documentEvidence.documents : [];
+    const chunks = Array.isArray(documentEvidence.chunks) ? documentEvidence.chunks : [];
+    if (!documents.length && !chunks.length) return null;
+    const event = {
+      kind: "document_extraction",
+      documents: documents.map((doc) => ({
+        id: String(doc.id || ""),
+        label: String(doc.label || ""),
+        charLength: Number(doc.charLength || 0),
+      })),
+      chunkCount: chunks.length,
+      timestamp: Date.now(),
+    };
+    this.documents.push(event);
+    this.events.push({ kind: "document_evidence", success: true, timestamp: event.timestamp });
+    return event;
+  }
+
   summary() {
     const filesRead = new Set();
     const searches = [];
@@ -153,6 +173,8 @@ class EvidenceLedger {
       if (event.kind === "file_write" && event.path) writes.push(event);
       if (event.kind === "web_search" || event.kind === "web_fetch") web.push(event);
     }
+    const documentCount = this.documents.reduce((count, event) => count + event.documents.length, 0);
+    const documentChunkCount = this.documents.reduce((count, event) => count + Number(event.chunkCount || 0), 0);
     const candidates = [...this.workspaceCandidates.keys()];
     const inspectedCandidates = candidates.filter((candidate) => [...filesRead].some((file) => pathMatchesCandidate(file, candidate)));
     const missingCandidates = candidates.filter((candidate) => !inspectedCandidates.includes(candidate));
@@ -169,6 +191,8 @@ class EvidenceLedger {
         verifications: verifications.length,
         fileWrites: writes.length,
         webSources: web.length,
+        documents: documentCount,
+        documentChunks: documentChunkCount,
       },
       coverage: {
         candidateCount,
@@ -186,6 +210,8 @@ class EvidenceLedger {
       hasVerificationEvidence: verifications.some((event) => event.success),
       hasFileChangeEvidence: writes.length > 0,
       hasFreshEvidence: web.some((event) => event.success),
+      hasDocumentEvidence: documentCount > 0 || documentChunkCount > 0,
+      documents: this.documents.slice(-20),
       events: this.events.slice(-50),
     };
   }
