@@ -14,7 +14,7 @@ The goal is not free-form clicking. The goal is a reviewable operating model:
 1. Learn the system within an approved scope.
 2. Build a page, action, and API map.
 3. Generate a connector playbook with action contracts.
-4. Prefer API-first execution when safe contracts exist; fall back to browser automation for UI-only or stale API paths.
+4. Prefer API-first execution when safe contracts exist; do not open a browser during normal use. Browser automation is only for login/learning, UI-only systems, or an explicitly approved one-off recovery.
 5. Generate a workspace skill draft that references the playbook.
 6. Let the user enable it before future use.
 
@@ -259,6 +259,9 @@ Place generated artifacts in the workspace learning area, using stable English d
 - Prefer learned API actions: an all-API plan runs over plain HTTP with the
   reused session cookies and launches NO browser (fast, no flicker, no repeated
   windows). Asking a question that maps to a learned API = one HTTP call.
+- Browser execution is disabled by default in normal use. If an action would
+  need a page, return a clear `BROWSER_EXECUTION_DISABLED` / re-learning state
+  instead of popping a browser window.
 - Normal user execution must use the learned flow graph in `capability-map.json`
   and `web-system-playbook.json`. Do not generate ad-hoc Playwright,
   JavaScript, Python, selectors, or operation plans while answering a normal user
@@ -269,9 +272,9 @@ Place generated artifacts in the workspace learning area, using stable English d
   If no captured API or compiled browser flow exists for a capability, mark it
   as needing re-learning instead of improvising.
 - When an action has both an API path and a captured browser path, store the
-  browser path during learning as `fallbackOperations`; the executor runs the
-  fallback automatically if the API path fails or goes stale
-  (401/403/404/status-mismatch/locator-not-found).
+  browser path during learning as `fallbackOperations`, but never run it
+  automatically. API failure should first refresh session or mark stale/relearn.
+  Browser fallback requires an explicit one-off `--allow-browser-fallback`.
 - For write actions, capture `rollbackOperations` during learning when a safe
   compensating path exists; the executor runs them best-effort if a write fails
   after mutating state.

@@ -427,8 +427,12 @@ if (!playbook.apiContracts?.some((contract) => contract.id === "leave-api" && co
 if (playbook.connector.capabilities.includes("web.api") !== true) {
   throw new Error(`web connector should advertise API execution: ${JSON.stringify(playbook.connector)}`);
 }
-if (playbook.actions[1].metadata?.executionStrategy?.preferred !== "api-first" || !playbook.actions[1].metadata?.apiContractRefs?.includes("leave-api")) {
-  throw new Error(`submit action should prefer learned API contract with browser fallback: ${JSON.stringify(playbook.actions[1])}`);
+if (
+  playbook.actions[1].metadata?.executionStrategy?.preferred !== "api-first" ||
+  playbook.actions[1].metadata?.executionStrategy?.browserFallback !== "explicit-only" ||
+  !playbook.actions[1].metadata?.apiContractRefs?.includes("leave-api")
+) {
+  throw new Error(`submit action should prefer learned API contract with explicit-only browser recovery: ${JSON.stringify(playbook.actions[1])}`);
 }
 if (!playbook.actions[1].paramsSchema?.required?.includes("leave-type") || !playbook.actions[1].paramsSchema?.required?.includes("reason")) {
   throw new Error(`playbook submit action should carry learned request parameters: ${JSON.stringify(playbook.actions[1])}`);
@@ -445,6 +449,8 @@ if (
   !submitCapability ||
   submitCapability.execution?.preferred !== "api-first" ||
   submitCapability.execution?.executionMode !== "api-direct" ||
+  submitCapability.execution?.browserFallback !== "explicit-only" ||
+  submitCapability.execution?.stalePolicy !== "refresh-session-or-relearn" ||
   submitCapability.execution?.runtimePlanPolicy !== "materialize-from-learned-graph-only" ||
   submitCapability.execution?.allowRuntimeGeneratedScripts !== false ||
   submitCapability.execution?.learnedFlow?.operationTemplate?.contractId !== "leave-api" ||

@@ -29,10 +29,10 @@ const LOCATOR_FIELDS = ["selector", "role", "label", "placeholder", "testId", "t
 function usage() {
   return [
     "Usage:",
-    "  node scripts/execute_web_playbook.cjs --playbook web-system-playbook.json --action web.query-status --plan action-plan.json [--capability-map capability-map.json] [--storage-state state.json] [--audit-log audit.jsonl] [--confirmed] [--headful] [--dry-run]",
+    "  node scripts/execute_web_playbook.cjs --playbook web-system-playbook.json --action web.query-status --plan action-plan.json [--capability-map capability-map.json] [--storage-state state.json] [--audit-log audit.jsonl] [--confirmed] [--allow-browser] [--allow-browser-fallback] [--headful] [--dry-run]",
     "",
-    "The action plan is model-generated JSON, but this executor validates capability, required parameters, domain, risk, confirmation, and operation shape before touching the browser.",
-    "plan.fallbackOperations run if the primary (API) path fails/goes stale; plan.rollbackOperations run if a write fails after mutating state; --audit-log appends a durable JSONL trail.",
+    "The action plan is model-generated JSON, but this executor validates capability, required parameters, domain, risk, confirmation, and operation shape before any execution.",
+    "Default runtime is API-first and browser-free. Browser operations require --allow-browser; API-to-browser fallback requires --allow-browser-fallback. plan.rollbackOperations run if a write fails after mutating state; --audit-log appends a durable JSONL trail.",
   ].join("\n");
 }
 
@@ -45,6 +45,8 @@ function parseArgs(argv) {
     storageState: null,
     authRecipe: null,
     confirmed: false,
+    allowBrowser: false,
+    allowBrowserFallback: false,
     headful: false,
     dryRun: false,
     out: null,
@@ -59,6 +61,8 @@ function parseArgs(argv) {
     else if (arg === "--storage-state") args.storageState = argv[++i];
     else if (arg === "--auth-recipe") args.authRecipe = argv[++i];
     else if (arg === "--confirmed") args.confirmed = true;
+    else if (arg === "--allow-browser") args.allowBrowser = true;
+    else if (arg === "--allow-browser-fallback") args.allowBrowserFallback = true;
     else if (arg === "--headful") args.headful = true;
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--out") args.out = argv[++i];
@@ -71,6 +75,7 @@ function parseArgs(argv) {
     }
   }
   if (!args.playbook || !args.action || !args.plan) throw new Error("Missing --playbook, --action, or --plan");
+  if (args.allowBrowserFallback) args.allowBrowser = true;
   return args;
 }
 
@@ -457,8 +462,8 @@ async function runBrowser(playbook, validated, args) {
 
     const stale = classifyStale(primary.err, primary.op, validated.staleSignals);
 
-    // Real API→browser fallback: when the primary (often API) path fails or goes
-    // stale and a browser fallback was declared, run it instead of hard-failing.
+    // Legacy in-browser fallback path. Runtime defaults do not auto-enter this
+    // path; callers must pass --allow-browser-fallback.
     if (validated.fallbackOperations?.length && isFallbackEligible(primary.err, primary.op)) {
       sinks.events.push({ type: "fallback:start", reason: primary.err.code || "error" });
       const fb = await runOperationList(page, context, validated.fallbackOperations, sinks, { ...opts, phase: "fallback" });
@@ -803,7 +808,7 @@ function recoveryHints(err, op) {
       "The learned API contract may be stale, the local browser session may be expired, or this endpoint may require a dynamic CSRF/OAuth token learned from browser traffic.",
       "Do not ask the user to fetch cookies, tokens, or credential headers. Refresh the local session with capture_session.cjs and pass the printed sessionPath as --storage-state.",
       "If it still fails, re-run web-system learning with the authenticated browser flow or test-lab contract probe so dynamic token handling is learned by the platform.",
-      "For write actions, fall back to the browser plan and keep the user confirmation gate.",
+      "Use browser fallback only as an explicit one-off recovery path; normal use should refresh the learned API contract.",
     ];
   }
   if (err.code === "LOCATOR_NOT_FOUND") {
@@ -870,6 +875,34 @@ const API_ONLY_OPS = new Set(["apiRequest", "wait"]);
 
 function planNeedsBrowser(operations) {
   return (Array.isArray(operations) ? operations : []).some((op) => !API_ONLY_OPS.has(op.type));
+}
+
+function browserExecutionBlocked({ validated, reason, apiResult = null }) {
+  return {
+    ok: false,
+    action: validated.action,
+    code: "BROWSER_EXECUTION_DISABLED",
+    message: "This learned web-system action would require opening the browser, but browser execution is disabled by default. Re-run learning to capture an API contract, or explicitly allow browser execution for this one operation.",
+    reason,
+    browserRequired: true,
+    browserFallbackAvailable: Boolean(validated.fallbackOperations?.length),
+    allowBrowserFlag: reason === "api-fallback" ? "--allow-browser-fallback" : "--allow-browser",
+    apiResult: apiResult
+      ? {
+          ok: apiResult.ok,
+          code: apiResult.code || "",
+          stale: Boolean(apiResult.stale),
+          staleSignal: apiResult.staleSignal || "",
+          relearnRecommended: Boolean(apiResult.relearnRecommended),
+          transport: apiResult.transport || "",
+        }
+      : null,
+    relearnRecommended: Boolean(apiResult?.relearnRecommended || reason === "primary-browser-plan"),
+    recovery: [
+      "Preferred fix: re-run web-system learning so this capability has a verified API contract and can run without a browser.",
+      "Only use browser execution for UI-only systems or one-off recovery, and make that choice explicit.",
+    ],
+  };
 }
 
 function loadStorageState(file) {
@@ -1111,8 +1144,8 @@ async function execApiRequestHttp(op, sinks, storageState, authRecipe) {
 // call it ONCE per run, merge any rotated Set-Cookie back into the in-memory
 // session, and let the caller retry — instead of forcing a full re-learn /
 // re-login. DETERMINISTIC + FAIL-SAFE: any problem returns false and the caller
-// falls through to today's stale handling (browser fallback / relearn), so the
-// worst case is exactly the current behavior, never worse.
+// falls through to stale handling (explicit browser fallback or relearn), so the
+// worst case is a surfaced recoverable state, never a surprise page popup.
 function refreshCandidatesFor(authRecipe, allowedDomains) {
   const list = Array.isArray(authRecipe && authRecipe.refreshCandidates) ? authRecipe.refreshCandidates : [];
   return list.filter((c) => c && c.endpoint && isAllowedUrl(String(c.endpoint), allowedDomains));
@@ -1468,18 +1501,35 @@ async function main() {
     return;
   }
   // Fast path: an all-API plan runs over plain HTTP with the reused session —
-  // no browser launch at all. Only fall back to a browser if the API path fails
-  // and a browser fallback was declared.
+  // no browser launch at all. Browser fallback is never automatic by default:
+  // the product goal is to operate learned systems without popping pages.
   if (!planNeedsBrowser(validated.operations)) {
     const apiResult = await runApiOnly(playbook, validated, args);
     if (apiResult.ok || !validated.fallbackOperations?.length) {
       output(apiResult, args);
       return;
     }
+    if (!args.allowBrowserFallback) {
+      output({
+        ...apiResult,
+        browserFallbackAvailable: true,
+        browserFallbackSkipped: true,
+        allowBrowserFlag: "--allow-browser-fallback",
+        recovery: [
+          ...(Array.isArray(apiResult.recovery) ? apiResult.recovery : []),
+          "Browser fallback was not run automatically. Re-run learning to refresh the API contract, or explicitly pass --allow-browser-fallback for this one recovery attempt.",
+        ],
+      }, args);
+      return;
+    }
     appendAudit(args.auditLog, { ts: new Date().toISOString(), action: validated.action, phase: "fallback", reason: apiResult.code || "api-failed" });
     const fallbackValidated = { ...validated, operations: validated.fallbackOperations, fallbackOperations: [] };
     const fb = await runBrowser(playbook, fallbackValidated, args);
     output({ ...fb, fellBack: true, recoveredFrom: { code: apiResult.code || "", transport: "http" } }, args);
+    return;
+  }
+  if (!args.allowBrowser) {
+    output(browserExecutionBlocked({ validated, reason: "primary-browser-plan" }), args);
     return;
   }
   output(await runBrowser(playbook, validated, args), args);

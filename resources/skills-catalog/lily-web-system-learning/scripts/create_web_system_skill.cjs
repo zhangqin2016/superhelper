@@ -261,7 +261,8 @@ function buildSkillMd(spec, scan) {
   const runtimePlanRules = [
     "Allowed operation types are `apiRequest`, `goto`, `click`, `fill`, `select`, `check`, `uncheck`, `upload`, `press`, `wait`, `waitForUrl`, `waitForText`, `waitForResponse`, `assertText`, `extract`, and `screenshot`.",
     "At normal runtime, do not author new operations or scripts. Use only `capability-map.json.execution.learnedFlow` and `web-system-playbook.json.actions[].metadata.learnedFlow` materialized from the learning phase.",
-    "Prefer `apiRequest` when the action metadata says `executionMode` is `api-direct`; use a browser flow only when a verified `compiled-browser-flow` exists from learning. Never generate browser scripts at runtime.",
+    "Prefer `apiRequest` when the action metadata says `executionMode` is `api-direct`; do not open a browser during normal use. A verified browser flow from learning is explicit one-off recovery only. Never generate browser scripts at runtime.",
+    "Do not add `--allow-browser` or `--allow-browser-fallback` to executor commands unless the user explicitly asks to use the page for this one recovery attempt.",
     "`apiRequest` may use `contractId` from `web-system-playbook.json.apiContracts`; never add credential headers, cookies, tokens, or passwords to the materialized plan.",
     "After login/session capture and HAR capture, learn an auth recipe with `scripts/learn_auth_recipe.cjs --storage-state <sessionPath> --har scan.har --base-url <url> --allow-domain <host>`. Pass the resulting local auth recipe as `--auth-recipe <authRecipePath>` so the executor injects Authorization/CSRF headers from storageState at runtime.",
     "The auth recipe stores sources and formats only; it must never store raw token values.",
@@ -269,7 +270,7 @@ function buildSkillMd(spec, scan) {
     "Prefer robust locator fields in this order: `testId`, `role/name`, `label`, `placeholder`, `text`, then `selector`.",
     "For `select`, use `label` to find the control and `optionLabel` or `value` to choose the option.",
     "Every `apiRequest`, `goto`, and response wait is checked against the allowed domains. A read action may only contain read-risk operations.",
-    "If execution returns `API_STATUS_MISMATCH`, `LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, or `WEB_ACTION_FAILED`, treat the skill as stale: explain the failed learned-flow step and re-run learning for this workspace before retrying high-risk actions.",
+    "If execution returns `API_STATUS_MISMATCH`, `LOCATOR_NOT_FOUND`, `ASSERT_TEXT_FAILED`, `BROWSER_EXECUTION_DISABLED`, or `WEB_ACTION_FAILED`, treat the skill as stale or UI-only: explain the failed learned-flow step and re-run learning for this workspace before retrying high-risk actions.",
   ].join("\n\n");
   const captureSessionCommand = [
     "node scripts/capture_session.cjs",
@@ -429,9 +430,10 @@ function executionStrategyForAction(action, apiContracts) {
     executionMode: matches.length ? "api-direct" : "needs-learned-flow",
     runtimePlanPolicy: "materialize-from-learned-graph-only",
     allowRuntimeGeneratedScripts: false,
-    fallback: matches.length ? "compiled-browser-flow" : "relearn-required",
+    fallback: matches.length ? "explicit-browser-recovery" : "relearn-required",
     apiContractRefs: matches.map((contract) => contract.id),
-    stalePolicy: "retry-browser-then-relearn",
+    browserFallback: "explicit-only",
+    stalePolicy: "refresh-session-or-relearn",
   };
 }
 
@@ -523,6 +525,8 @@ function buildPlaybook(spec, scan, discovered) {
         executionStrategy,
         executionMode: executionStrategy.executionMode,
         runtimePlanPolicy: executionStrategy.runtimePlanPolicy,
+        browserFallback: executionStrategy.browserFallback,
+        stalePolicy: executionStrategy.stalePolicy,
         allowRuntimeGeneratedScripts: false,
         learnedFlow: learnedFlowForAction(action, apiContracts),
         apiContractRefs: executionStrategy.apiContractRefs,
@@ -664,7 +668,7 @@ function staleSignalsForAction(action) {
 function recoveryForAction(action) {
   return {
     onAuthExpired: "Refresh the local browser session with capture_session.cjs, then retry the same learned flow with --storage-state.",
-    onApiFailure: "Retry only a captured compiled browser fallback flow. If no learned fallback exists, mark the capability stale and re-run learning.",
+    onApiFailure: "Do not open a browser automatically. Refresh the local session or mark the capability stale and re-run learning; captured browser fallback is explicit one-off recovery only.",
     onSelectorFailure: "Run partial re-learning for this action and capture a new flow before retrying.",
     onAmbiguousTarget: action.risk === "read" ? "Ask one clarifying question." : "Stop and ask the user to identify the exact target before any write.",
   };
@@ -724,6 +728,8 @@ function buildCapabilityMap(spec, scan, playbook) {
         runtimePlanPolicy: executionStrategy.runtimePlanPolicy,
         allowRuntimeGeneratedScripts: false,
         fallback: executionStrategy.fallback,
+        browserFallback: executionStrategy.browserFallback,
+        stalePolicy: executionStrategy.stalePolicy,
         apiContractRefs: executionStrategy.apiContractRefs,
         learnedFlow: learnedFlowForAction(action, apiContracts),
         playbookAction: `web.${action.id}`,

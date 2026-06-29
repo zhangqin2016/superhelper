@@ -94,10 +94,21 @@ try {
   fs.writeFileSync(planPath, JSON.stringify({
     action: "web.query-leaves",
     operations: [{ type: "apiRequest", url: `${base}api/missing`, method: "GET", risk: "read" }],
+    fallbackOperations: [{ type: "goto", url: `${base}fallback`, risk: "read" }],
   }));
   const missing = JSON.parse((await runExecutor(playbookPath, planPath)).stdout);
   assert(missing.ok === false && missing.transport === "http", "404 handled over http");
   assert(missing.staleSignal === "api_404" && missing.relearnRecommended === true, "404 flagged stale → relearn, no browser");
+  assert(missing.browserFallbackAvailable === true && missing.browserFallbackSkipped === true, "browser fallback is explicit-only, not automatic");
+  assert(missing.allowBrowserFlag === "--allow-browser-fallback", "result tells caller how to explicitly opt into one-off page recovery");
+
+  fs.writeFileSync(planPath, JSON.stringify({
+    action: "web.query-leaves",
+    operations: [{ type: "goto", url: `${base}ui/leaves`, risk: "read" }],
+  }));
+  const browserPlan = JSON.parse((await runExecutor(playbookPath, planPath)).stdout);
+  assert(browserPlan.ok === false && browserPlan.code === "BROWSER_EXECUTION_DISABLED", "browser operations are disabled by default");
+  assert(browserPlan.allowBrowserFlag === "--allow-browser", "result exposes explicit browser opt-in only");
 
   fs.writeFileSync(playbookPath, JSON.stringify({
     schemaVersion: 1,
@@ -129,7 +140,7 @@ try {
   const protectedResult = JSON.parse((await runExecutor(playbookPath, planPath, ["--storage-state", storagePath, "--auth-recipe", authRecipePath])).stdout);
   assert(protectedResult.ok === true && protectedResult.apiResponses[0].status === 200, "auth recipe injects Authorization/CSRF/sessionStorage from storageState");
 
-  console.log("PASS: test-web-system-api-execution (10 tests)");
+  console.log("PASS: test-web-system-api-execution (14 tests)");
 } finally {
   server.close();
   fs.rmSync(tmp, { recursive: true, force: true });

@@ -869,7 +869,7 @@
       "id": "lily-web-system-learning",
       "name": "网页系统学习",
       "description": "学习 OA、ERP、CRM、后台等 Web 系统，生成系统画像、页面地图、业务对象模型、动作 Playbook、风险策略和当前工作区可审核技能。",
-      "latestVersion": "1.0.20",
+      "latestVersion": "1.0.21",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -882,7 +882,7 @@
       "categoryLabel": "网页自动化",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
-      "changelog": "Lily 自研：自动学习 Web/OA 系统，输出系统画像、页面地图、业务对象模型、动作 Playbook、风险策略和当前工作区可审核技能；新增 scripts/learn_web_system.cjs 作为默认专业学习入口，一次性编排 published contract discovery、authenticated bootstrap HAR scan、bounded same-domain JS intelligence、source-seeded expanded SPA scan、HAR-to-contract merge、auth recipe 和 deterministic finalizer，避免模型临时拼 Python/Playwright/here-doc 流程；增强 SPA JavaScript 学习：frontend_source_intelligence 默认面向大系统分析最多 200 个同域 JS 资产、2MB/文件、200MB 总量，从 fetch/axios/request/service 调用和对象式调用中提取 endpoint 与 HTTP method；HAR 里只有 JS URL 时可用 --storage-state 拉取同域 JS body；finalize_web_system_learning 在缺少 --frontend-source 但 scan.json 指向 HAR 时会自动生成 frontend-source-map.json；JS 中发现的 API 进入 api-map.apiHints 并标记 executable:false，只有 HAR/OpenAPI 观测到请求/响应形状后才升级为可执行 contract；平台基座只保留通用可观测闭环：任意长时间运行工具都会由 Lily runtime 监控并显示当前工具、耗时和最近活动；脚本可选输出标准 [lily-progress] 结构化进度，scan_web_system.py 已接入该协议；扫描器每完成一页都会原子写入 checkpoint；交互式只读扫描在同一 SPA 浏览器上下文中推进；AUTH_NOT_RESTORED fail-fast 防止把登录页当业务页面；source-seeded 扩展扫描继续递归扫描 DOM 链接、router-link/data-route/data-path 导航和只读交互打开的新页面；继续保留 bounded frontend-source intelligence，仅保存结构化 frontend-source-map.json，不保存原始 bundle 源码；API-first 执行策略只使用已验证 API 合约，运行时优先 apiRequest，失败或过期时回退已学习浏览器操作；apiRequest 受域名白名单、风险等级和确认门槛约束；生成技能明确标记为当前工作区技能，默认需要用户审核启用。",
+      "changelog": "Lily 自研：自动学习 Web/OA 系统，输出系统画像、页面地图、业务对象模型、动作 Playbook、风险策略和当前工作区可审核技能；新增 scripts/learn_web_system.cjs 作为默认专业学习入口，一次性编排 published contract discovery、authenticated bootstrap HAR scan、bounded same-domain JS intelligence、source-seeded expanded SPA scan、HAR-to-contract merge、auth recipe 和 deterministic finalizer，避免模型临时拼 Python/Playwright/here-doc 流程；正常执行升级为 browser-free by default：学完后优先走已验证 API 合约，API 失败不会自动弹页面，browser fallback 必须显式 --allow-browser-fallback，页面主执行必须显式 --allow-browser；增强 SPA JavaScript 学习：frontend_source_intelligence 默认面向大系统分析最多 200 个同域 JS 资产、2MB/文件、200MB 总量，从 fetch/axios/request/service 调用和对象式调用中提取 endpoint 与 HTTP method；HAR 里只有 JS URL 时可用 --storage-state 拉取同域 JS body；finalize_web_system_learning 在缺少 --frontend-source 但 scan.json 指向 HAR 时会自动生成 frontend-source-map.json；JS 中发现的 API 进入 api-map.apiHints 并标记 executable:false，只有 HAR/OpenAPI 观测到请求/响应形状后才升级为可执行 contract；平台基座只保留通用可观测闭环：任意长时间运行工具都会由 Lily runtime 监控并显示当前工具、耗时和最近活动；脚本可选输出标准 [lily-progress] 结构化进度，scan_web_system.py 已接入该协议；扫描器每完成一页都会原子写入 checkpoint；交互式只读扫描在同一 SPA 浏览器上下文中推进；AUTH_NOT_RESTORED fail-fast 防止把登录页当业务页面；source-seeded 扩展扫描继续递归扫描 DOM 链接、router-link/data-route/data-path 导航和只读交互打开的新页面；继续保留 bounded frontend-source intelligence，仅保存结构化 frontend-source-map.json，不保存原始 bundle 源码；API-first 执行策略只使用已验证 API 合约，apiRequest 受域名白名单、风险等级和确认门槛约束；生成技能明确标记为当前工作区技能，默认需要用户审核启用。",
       "capabilityLayer": "workflow",
       "riskLevel": "high",
       "defaultEligible": false,
