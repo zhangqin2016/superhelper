@@ -352,8 +352,12 @@ const examplesJsonl = fs.readFileSync(path.join(draftDir, "examples.jsonl"), "ut
 const changeLog = JSON.parse(fs.readFileSync(path.join(draftDir, "change-log.json"), "utf8"));
 const scanArchive = JSON.parse(fs.readFileSync(path.join(draftDir, "web-system-scan.json"), "utf8"));
 const draftExecutor = path.join(draftDir, "scripts/execute_web_playbook.cjs");
+const draftPlaywrightRuntime = path.join(draftDir, "scripts/playwright_runtime.cjs");
 const draftFinalizer = path.join(draftDir, "scripts/finalize_web_system_learning.cjs");
 const normalizedPlaybook = normalizePlaybookSpec(playbook);
+if (!fs.existsSync(draftPlaywrightRuntime)) {
+  throw new Error("generated web system skill should carry the Playwright runtime loader");
+}
 if (!skillMd.includes("Allowed domains") || !skillMd.includes("explicit confirmation")) {
   throw new Error("generated skill should include domain and confirmation guardrails");
 }

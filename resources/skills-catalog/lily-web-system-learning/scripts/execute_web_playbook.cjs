@@ -3,6 +3,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { launchChromium, requirePlaywright } = require("./playwright_runtime.cjs");
 
 const RISK_ORDER = { read: 0, prepare: 1, submit: 2, destructive: 3 };
 const READ_OPS = new Set(["goto", "apiRequest", "wait", "waitForUrl", "waitForText", "waitForResponse", "assertText", "extract", "screenshot"]);
@@ -421,7 +422,7 @@ function resolveApiRequestUrl(playbook, op, contract) {
 async function runBrowser(playbook, validated, args) {
   let chromium;
   try {
-    ({ chromium } = require("playwright"));
+    ({ chromium } = requirePlaywright());
   } catch (err) {
     return {
       ok: false,
@@ -431,7 +432,7 @@ async function runBrowser(playbook, validated, args) {
     };
   }
 
-  const browser = await chromium.launch({ headless: !args.headful });
+  const browser = await launchChromium(chromium, { headless: !args.headful });
   const contextOptions = {};
   const storageState = loadStorageState(args.storageState);
   if (storageState) contextOptions.storageState = playwrightStorageState(storageState);

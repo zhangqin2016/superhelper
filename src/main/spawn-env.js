@@ -31,6 +31,24 @@ function utf8Locale(value) {
   return /utf-?8/i.test(String(value || "")) ? String(value) : "C.UTF-8";
 }
 
+function findDevelopmentPlaywrightNodeModules() {
+  try {
+    const fs = require("node:fs");
+    const { PROJECT_ROOT } = require("./config");
+    const bunDir = path.join(PROJECT_ROOT, "opencode", "node_modules", ".bun");
+    if (!fs.existsSync(bunDir)) return "";
+    const entries = fs.readdirSync(bunDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.startsWith("playwright@")) continue;
+      const nodeModules = path.join(bunDir, entry.name, "node_modules");
+      if (fs.existsSync(path.join(nodeModules, "playwright", "package.json"))) return nodeModules;
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
 function buildAgentSpawnEnv(options = {}) {
   ensureRuntimeNodeShim();
   const home = userHome();
@@ -73,9 +91,19 @@ function buildAgentSpawnEnv(options = {}) {
       const nodeBin = nodeBinaryPath(runtimeDir);
       if (nodeBin) pathSegments.unshift(path.dirname(nodeBin));
       const nodeModules = bundledNodeModulesDir(runtimeDir);
-      if (fs.existsSync(nodeModules)) webRuntimeEnv.NODE_PATH = nodeModules;
+      if (fs.existsSync(nodeModules)) {
+        webRuntimeEnv.NODE_PATH = nodeModules;
+        webRuntimeEnv.LILY_PLAYWRIGHT_NODE_MODULES = nodeModules;
+      }
       const browsers = bundledBrowsersDir(runtimeDir);
       if (fs.existsSync(browsers)) webRuntimeEnv.PLAYWRIGHT_BROWSERS_PATH = browsers;
+    }
+    if (!webRuntimeEnv.LILY_PLAYWRIGHT_NODE_MODULES && !app.isPackaged) {
+      const devNodeModules = findDevelopmentPlaywrightNodeModules();
+      if (devNodeModules) {
+        webRuntimeEnv.NODE_PATH = devNodeModules;
+        webRuntimeEnv.LILY_PLAYWRIGHT_NODE_MODULES = devNodeModules;
+      }
     }
   } catch {
     /* browser runtime is optional; never block spawn env on it */

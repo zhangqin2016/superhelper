@@ -21,6 +21,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { launchPersistentChromiumContext, requirePlaywright } = require("./playwright_runtime.cjs");
 const { normalizeHost, isUrlAllowed } = require("./discover_contracts.cjs");
 
 const DEFAULT_TIMEOUT_MS = 300000; // 5 min for a human to log in
@@ -289,7 +290,7 @@ async function main() {
 
   let chromium;
   try {
-    ({ chromium } = require("playwright"));
+    ({ chromium } = requirePlaywright());
   } catch (err) {
     emit({ ok: false, code: "PLAYWRIGHT_NODE_MISSING", message: "Browser runtime is not available to capture a login session.", detail: err.message });
     process.exitCode = 3;
@@ -302,7 +303,7 @@ async function main() {
   } catch {
     /* best-effort on platforms without posix perms */
   }
-  const context = await chromium.launchPersistentContext(args.profileDir, { headless: false });
+  const context = await launchPersistentChromiumContext(chromium, args.profileDir, { headless: false });
   const page = context.pages()[0] || await context.newPage();
   try {
     await page.goto(args.loginUrl, { waitUntil: "domcontentloaded", timeout: 60000 });

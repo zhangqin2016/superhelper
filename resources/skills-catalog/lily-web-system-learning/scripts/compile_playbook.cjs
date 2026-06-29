@@ -101,7 +101,24 @@ function compileScript(plan, { baseUrl, allowedDomains, action }) {
 // Replay this learned flow without the model. Safety invariants are inlined.
 // Auth: set STORAGE_STATE=<playwright storageState json> in the environment.
 "use strict";
-const { chromium } = require("playwright");
+const fs = require("node:fs");
+const path = require("node:path");
+
+function loadPlaywrightRuntime() {
+  for (const candidate of [
+    path.join(__dirname, "playwright_runtime.cjs"),
+    path.join(__dirname, "scripts", "playwright_runtime.cjs"),
+  ]) {
+    if (fs.existsSync(candidate)) return require(candidate);
+  }
+  return {
+    requirePlaywright: () => require("playwright"),
+    launchChromium: (chromium, options) => chromium.launch(options),
+  };
+}
+
+const { launchChromium, requirePlaywright } = loadPlaywrightRuntime();
+const { chromium } = requirePlaywright();
 
 const BASE_URL = ${lit(baseUrl)};
 const ALLOWED_DOMAINS = ${lit(allowedDomains)};
@@ -117,7 +134,7 @@ function log(index, type, risk) { process.stdout.write(JSON.stringify({ op: inde
 
 (async () => {
   const results = [];
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchChromium(chromium, { headless: true });
   const context = await browser.newContext(process.env.STORAGE_STATE ? { storageState: process.env.STORAGE_STATE } : {});
   const page = await context.newPage();
   try {

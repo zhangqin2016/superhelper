@@ -3,7 +3,7 @@
   "id": "lily-web-system-learning",
   "name": "Lily Web System Learning",
   "description": "学习 OA、ERP、CRM、后台等 Web 系统，把只读探索得到的页面/动作/API 地图生成当前工作区可审核技能，后续用自然语言快速操作。",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "minAppVersion": "0.1.48",
   "runtime": "node",
   "category": "coding",

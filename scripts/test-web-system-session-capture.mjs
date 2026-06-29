@@ -36,7 +36,11 @@ try {
   assert(p === path.join(tmp, "web-sessions", "demo-erp.json"), `session path under userData/web-sessions, got ${p}`);
   const profilePath = profileStorePath("Demo ERP", tmp);
   assert(profilePath === path.join(tmp, "web-profiles", "demo-erp"), `profile path under userData/web-profiles, got ${profilePath}`);
-  assert(captureScriptSource.includes("launchPersistentContext(args.profileDir"), "manual login capture must use a persistent per-system browser profile");
+  assert(
+    captureScriptSource.includes("launchPersistentChromiumContext(chromium, args.profileDir"),
+    "manual login capture must use a persistent per-system browser profile",
+  );
+  assert(captureScriptSource.includes("requirePlaywright()"), "manual login capture must use the Lily Playwright runtime loader");
 
   // login-complete: precise session-cookie signal
   assert(loginComplete({ url: "x", cookies: [{ name: "SESSION", value: "a" }], opts: { sessionCookie: "SESSION" } }) === true, "session cookie present → logged in");

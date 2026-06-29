@@ -1263,6 +1263,7 @@ function main() {
     fs.copyFileSync(path.join(__dirname, "har_to_contracts.cjs"), path.join(draftDir, "scripts/har_to_contracts.cjs"));
     fs.copyFileSync(path.join(__dirname, "frontend_source_intelligence.cjs"), path.join(draftDir, "scripts/frontend_source_intelligence.cjs"));
     fs.copyFileSync(path.join(__dirname, "compile_playbook.cjs"), path.join(draftDir, "scripts/compile_playbook.cjs"));
+    fs.copyFileSync(path.join(__dirname, "playwright_runtime.cjs"), path.join(draftDir, "scripts/playwright_runtime.cjs"));
     fs.copyFileSync(path.join(__dirname, "capture_session.cjs"), path.join(draftDir, "scripts/capture_session.cjs"));
     fs.copyFileSync(path.join(__dirname, "learn_auth_recipe.cjs"), path.join(draftDir, "scripts/learn_auth_recipe.cjs"));
     fs.copyFileSync(path.join(__dirname, "learn_web_system.cjs"), path.join(draftDir, "scripts/learn_web_system.cjs"));

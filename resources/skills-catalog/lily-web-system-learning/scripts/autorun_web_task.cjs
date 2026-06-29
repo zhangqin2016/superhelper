@@ -28,6 +28,7 @@
 
 const http = require("node:http");
 const https = require("node:https");
+const { launchChromium, requirePlaywright } = require("./playwright_runtime.cjs");
 const path = require("node:path");
 
 const { validateAction, progressSignature, shouldStop, isComplete } = require("./autorun_controller.cjs");
@@ -178,10 +179,10 @@ async function main() {
   }
 
   let chromium;
-  try { ({ chromium } = require("playwright")); }
+  try { ({ chromium } = requirePlaywright()); }
   catch (err) { emit({ ok: false, code: "PLAYWRIGHT_NODE_MISSING", message: "Playwright for Node.js is not installed. Run read-only scan first or install a browser runtime pack.", detail: err.message }, 4); }
 
-  const browser = await chromium.launch({ headless: !headful });
+  const browser = await launchChromium(chromium, { headless: !headful });
   const contextOptions = {};
   if (input.storageState) contextOptions.storageState = input.storageState; // pre-seeded auth; never a password
   const context = await browser.newContext(contextOptions);
