@@ -125,6 +125,18 @@ function buildToolBrokerMcpEntry() {
   };
 }
 
+/** Built-in file intelligence MCP: inspect/sample/extract large local inputs
+ * without forcing them into model context. It is deliberately always available
+ * because it runs through the app's own Node runtime and fails open in tool
+ * responses rather than blocking OpenCode startup. */
+function buildFileIntelligenceMcpEntry() {
+  return {
+    command: process.execPath,
+    args: [path.join(__dirname, "mcp", "file-intelligence-mcp-stdio.js")],
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  };
+}
+
 /** MCP server entry for one learned web system (its capabilities as typed tools). */
 function webSystemMcpEntry(draftDir) {
   if (
@@ -196,6 +208,7 @@ function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null) {
   }
   const playwright = runtimeDir ? buildPlaywrightMcpConfig(runtimeDir) : null;
   if (playwright?.mcpServers) Object.assign(mcpServers, playwright.mcpServers);
+  mcpServers.lily_file_intelligence = buildFileIntelligenceMcpEntry();
   const mail = buildMailMcpEntry();
   if (mail) mcpServers.mail = mail;
   // Each learned web system becomes its own MCP server (typed tools), but only
@@ -210,6 +223,7 @@ module.exports = {
   nodeBinaryPath,
   playwrightMcpEntry,
   buildMailMcpEntry,
+  buildFileIntelligenceMcpEntry,
   buildToolBrokerMcpEntry,
   bundledBrowsersDir,
   bundledNodeModulesDir,

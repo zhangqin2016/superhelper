@@ -12,7 +12,13 @@ import module from "node:module";
 import { assert } from "./lib/test-assert.mjs";
 
 const require = module.createRequire(import.meta.url);
-const { playwrightMcpAvailable, buildPlaywrightMcpConfig, buildToolBrokerMcpEntry, writeActiveMcpConfig } = require("../src/main/mcp-config.js");
+const {
+  playwrightMcpAvailable,
+  buildPlaywrightMcpConfig,
+  buildFileIntelligenceMcpEntry,
+  buildToolBrokerMcpEntry,
+  writeActiveMcpConfig,
+} = require("../src/main/mcp-config.js");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-mcp-cfg-"));
 const isWin = process.platform === "win32";
@@ -33,8 +39,14 @@ try {
   assert(playwrightMcpAvailable("") === false, "empty runtimeDir → unavailable");
   assert(playwrightMcpAvailable(empty) === false, "bundle without playwright → unavailable");
   assert(buildPlaywrightMcpConfig(empty) === null, "no config when bundle absent");
-  const noWrite = writeActiveMcpConfig(empty, path.join(tmp, "should-not-exist.json"));
-  assert(noWrite === null && !fs.existsSync(path.join(tmp, "should-not-exist.json")), "no file written when bundle absent");
+  const fileIntel = buildFileIntelligenceMcpEntry();
+  assert(fileIntel.args[0].endsWith(path.join("mcp", "file-intelligence-mcp-stdio.js")), "file intelligence MCP launches stdio server");
+  assert(fileIntel.env.ELECTRON_RUN_AS_NODE === "1", "file intelligence MCP runs through Electron node mode");
+  const noBundleOut = path.join(tmp, "mcp-with-file-intel.json");
+  const noBundleWrite = writeActiveMcpConfig(empty, noBundleOut);
+  assert(noBundleWrite === noBundleOut && fs.existsSync(noBundleOut), "file intelligence MCP is available without runtime bundle");
+  const noBundleCfg = JSON.parse(fs.readFileSync(noBundleOut, "utf8"));
+  assert(noBundleCfg.mcpServers.lily_file_intelligence, "file intelligence MCP is always exposed");
 
   // present bundle → correct config
   const full = path.join(tmp, "full");
@@ -62,6 +74,7 @@ try {
   assert(written === out && fs.existsSync(out), "config written when bundle present");
   const parsed = JSON.parse(fs.readFileSync(out, "utf8"));
   assert(parsed.mcpServers.playwright.command, "written config is valid JSON with the server");
+  assert(parsed.mcpServers.lily_file_intelligence.command, "written config includes file intelligence server");
 
   const learnedRoot = path.join(process.env.LILY_USER_DATA_DIR, "lily-config", "skills");
   const enabled = path.join(learnedRoot, "learned-enabled");
@@ -96,7 +109,7 @@ try {
     else process.env.LILY_TOOL_BROKER_CONTEXT = prevBrokerContext;
   }
 
-  console.log("PASS: test-mcp-config (21 tests)");
+  console.log("PASS: test-mcp-config");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

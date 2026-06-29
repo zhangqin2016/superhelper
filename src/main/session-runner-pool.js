@@ -198,10 +198,11 @@ class SessionRunnerPool {
     try {
       const fs = require("node:fs");
       const path = require("node:path");
+      const { appendLargeInputProtocolGuidance } = require("./large-input-protocol");
       let dir = configDir;
       if (!dir) dir = require("./config").sessionGuideDir(sessionId);
       const guide = path.join(dir, "AGENT.md");
-      return fs.existsSync(guide) ? fs.readFileSync(guide, "utf8") : "";
+      return appendLargeInputProtocolGuidance(fs.existsSync(guide) ? fs.readFileSync(guide, "utf8") : "");
     } catch {
       return "";
     }
