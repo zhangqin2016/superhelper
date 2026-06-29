@@ -556,6 +556,29 @@ def interaction_reason(candidate: dict[str, Any]) -> str:
     return ""
 
 
+def interaction_key(page_record: dict[str, Any], candidate: dict[str, Any]) -> str:
+    return stable_hash(
+        [
+            page_record.get("urlPattern", ""),
+            page_record.get("fingerprint", ""),
+            candidate.get("text", ""),
+            candidate.get("role", ""),
+            candidate.get("reason", ""),
+            candidate.get("url", ""),
+        ],
+        16,
+    )
+
+
+def is_safe_interaction_candidate(candidate: dict[str, Any], config: ScanConfig) -> bool:
+    if candidate.get("riskHint") != "read" or candidate.get("insideForm"):
+        return False
+    target_url = str(candidate.get("url") or "")
+    if target_url and (is_auth_exit_url(target_url) or not is_allowed_url(target_url, config.allowed_domains)):
+        return False
+    return True
+
+
 def collect_action_candidates(page_record: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for button in page_record.get("buttons", []):
@@ -974,6 +997,10 @@ def extract_page(page: Any, current_url: str, allowed_domains: list[str], config
             "urlPattern": page_record["urlPattern"],
             "title": page_record["title"],
             "headings": page_record["headings"][:8],
+            "navItems": [
+                {"text": item.get("text", ""), "url": item.get("url", "")}
+                for item in page_record["navItems"][:40]
+            ],
             "buttons": [button["text"] for button in page_record["buttons"][:30]],
             "inputs": [item.get("label") or item.get("name") for item in page_record["inputs"][:40]],
             "tables": page_record["tables"][:10],
@@ -1076,36 +1103,41 @@ def explore_readonly_interactions(
     discovered: list[dict[str, Any]] = []
     source_url = source_page.get("url") or ""
     source_fingerprint = source_page.get("fingerprint") or ""
-    candidates = source_page.get("interactionCandidates", [])[:24]
-    if candidates:
+    seen_interactions: set[str] = set()
+    seen_pages: set[str] = {stable_hash([source_page.get("url"), source_fingerprint], 16)}
+    initial_candidates = source_page.get("interactionCandidates", [])[:24]
+    if initial_candidates:
         emit_progress(
             "interactive_candidates",
             url=source_url,
-            candidates=len(candidates),
+            candidates=len(initial_candidates),
             remaining=max_new_pages,
         )
-    for candidate in candidates:
-        if len(discovered) >= max_new_pages:
-            break
-        if candidate.get("riskHint") != "read" or candidate.get("insideForm"):
-            continue
-        if not source_url:
-            continue
+
+    attempts = 0
+    max_attempts = max(1, min(80, max_new_pages * 6))
+    while len(discovered) < max_new_pages and attempts < max_attempts:
         try:
-            if network_recorder:
-                network_recorder.clear()
-            page.goto(source_url, wait_until="domcontentloaded", timeout=timeout_ms)
             wait_for_spa_ready(page, timeout_ms)
-            refreshed_page = extract_page(page, normalize_url(page.url), config.allowed_domains, config)
-            refreshed_candidate = next(
-                (
-                    item
-                    for item in refreshed_page.get("interactionCandidates", [])
-                    if item.get("text") == candidate.get("text") and item.get("reason") == candidate.get("reason")
-                ),
-                None,
-            )
-            scan_id = (refreshed_candidate or candidate).get("scanId")
+            current_page = extract_page(page, normalize_url(page.url), config.allowed_domains, config)
+            candidates = [
+                item
+                for item in current_page.get("interactionCandidates", [])[:32]
+                if is_safe_interaction_candidate(item, config)
+            ]
+            if not candidates:
+                break
+            candidate = None
+            for item in candidates:
+                key = interaction_key(current_page, item)
+                if key not in seen_interactions:
+                    candidate = item
+                    seen_interactions.add(key)
+                    break
+            if not candidate:
+                break
+            attempts += 1
+            scan_id = candidate.get("scanId")
             if not scan_id:
                 continue
             if network_recorder:
@@ -1119,13 +1151,17 @@ def explore_readonly_interactions(
             if network_recorder:
                 discovered_page["networkContracts"] = network_recorder.snapshot()
                 discovered_page["metrics"]["networkContracts"] = len(discovered_page["networkContracts"])
+            page_key = stable_hash([discovered_page.get("url"), discovered_page.get("fingerprint")], 16)
+            if page_key in seen_pages:
+                continue
+            seen_pages.add(page_key)
             if discovered_page.get("fingerprint") == source_fingerprint and discovered_page.get("url") == source_url:
                 continue
-            discovered_page["id"] = stable_hash([source_page.get("id"), scan_id, discovered_page.get("fingerprint")], 12)
+            discovered_page["id"] = stable_hash([current_page.get("id"), scan_id, discovered_page.get("fingerprint")], 12)
             discovered_page["source"] = "interactive-readonly"
             discovered_page["sourceInteraction"] = {
-                "fromPageId": source_page.get("id", ""),
-                "fromUrl": source_url,
+                "fromPageId": current_page.get("id", ""),
+                "fromUrl": current_page.get("url", ""),
                 "scanId": scan_id,
                 "label": candidate.get("text", ""),
                 "reason": candidate.get("reason", ""),

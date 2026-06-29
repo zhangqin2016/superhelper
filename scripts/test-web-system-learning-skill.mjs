@@ -36,6 +36,9 @@ if (!skillMarkdown.includes("--frontend-source") || !skillMarkdown.includes("sou
 if (!skillMarkdown.includes("recursively queues")) {
   throw new Error("web system learning skill must require recursive queueing after read-only interactions");
 }
+if (!skillMarkdown.includes("same SPA browser context") || !skillMarkdown.includes("instead of reloading the source page")) {
+  throw new Error("web system learning skill must forbid source-page reload loops during interaction scanning");
+}
 if (!skillMarkdown.includes("code:\"AUTH_NOT_RESTORED\"") || !skillMarkdown.includes("Do not continue scanning login")) {
   throw new Error("web system learning skill must stop immediately on stale/login-wall sessions");
 }

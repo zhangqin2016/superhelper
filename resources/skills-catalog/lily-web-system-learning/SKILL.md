@@ -77,8 +77,10 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    frontend-source-map.json --har-path scan-expanded.har --out scan.json`.
    The expanded scanner seeds concrete SPA routes from JS, follows normal DOM
    links, follows router-link/data-route/data-path navigation, recursively queues
-   safe pages discovered by read-only interactions, and emits progress heartbeats
-   for queue size, page start/done, interaction discovery, and scan completion.
+   safe pages discovered by read-only interactions, explores menu/tab/detail
+   controls in the same SPA browser context instead of reloading the source page
+   for every candidate, and emits progress heartbeats for queue size, page
+   start/done, interaction discovery, and scan completion.
    Then merge observed APIs from both HAR files:
    `node scripts/har_to_contracts.cjs --har scan-bootstrap.har --base-url <url>
    --allow-domain <host> --merge api-contracts.json --out api-contracts.json`
