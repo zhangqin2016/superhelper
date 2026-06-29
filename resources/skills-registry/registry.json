@@ -869,7 +869,7 @@
       "id": "lily-web-system-learning",
       "name": "网页系统学习",
       "description": "学习 OA、ERP、CRM、后台等 Web 系统，生成系统画像、页面地图、业务对象模型、动作 Playbook、风险策略和当前工作区可审核技能。",
-      "latestVersion": "1.0.16",
+      "latestVersion": "1.0.20",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -882,7 +882,7 @@
       "categoryLabel": "网页自动化",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
-      "changelog": "Lily 自研：自动学习 Web/OA 系统，输出系统画像、页面地图、业务对象模型、动作 Playbook、风险策略和当前工作区可审核技能；交互式只读扫描改为在同一 SPA 浏览器上下文中推进，点击菜单、Tab、详情等候选时不再为每个候选反复刷新 source page，避免 Element UI/管理后台一直回到首页、清空懒加载菜单状态；新增 AUTH_NOT_RESTORED fail-fast：带保存会话扫描时如果落到登录、SSO、auth 或会话过期页面，会立即停止并要求重新捕获会话，不再把登录页当业务页面继续扫描；新增 source-seeded 扩展扫描，可把同域 HAR JavaScript 资产中提取的 SPA 路由回灌到扫描队列，并继续递归扫描 DOM 链接、router-link/data-route/data-path 导航和只读交互打开的新页面；扫描器会输出队列、页面、交互和完成进度心跳，避免长时间学习看起来卡死；继续保留 bounded frontend-source intelligence，仅保存结构化 frontend-source-map.json，不保存原始 bundle 源码；扫描档案会进入生成技能，保留页面指纹、覆盖度、候选动作、业务字段、表单契约和 API 契约；API-first 执行策略会提升可用 API 合约，运行时优先 apiRequest，失败或过期时回退浏览器操作；apiRequest 受域名白名单、风险等级和确认门槛约束，禁止模型计划携带密码、Cookie、Token 或授权头；表单学习记录 endpoint、method、字段 schema、提交按钮和探针策略；支持 read-only / contract-probe / test-lab 学习模式，生产默认禁止提交，测试环境可显式开启提交/删除/审批闭环学习；交互式只读学习可安全展开菜单、Tab、详情和分页等非提交控件；生成技能明确标记为当前工作区技能，默认需要用户审核启用。",
+      "changelog": "Lily 自研：自动学习 Web/OA 系统，输出系统画像、页面地图、业务对象模型、动作 Playbook、风险策略和当前工作区可审核技能；新增 scripts/learn_web_system.cjs 作为默认专业学习入口，一次性编排 published contract discovery、authenticated bootstrap HAR scan、bounded same-domain JS intelligence、source-seeded expanded SPA scan、HAR-to-contract merge、auth recipe 和 deterministic finalizer，避免模型临时拼 Python/Playwright/here-doc 流程；增强 SPA JavaScript 学习：frontend_source_intelligence 默认面向大系统分析最多 200 个同域 JS 资产、2MB/文件、200MB 总量，从 fetch/axios/request/service 调用和对象式调用中提取 endpoint 与 HTTP method；HAR 里只有 JS URL 时可用 --storage-state 拉取同域 JS body；finalize_web_system_learning 在缺少 --frontend-source 但 scan.json 指向 HAR 时会自动生成 frontend-source-map.json；JS 中发现的 API 进入 api-map.apiHints 并标记 executable:false，只有 HAR/OpenAPI 观测到请求/响应形状后才升级为可执行 contract；平台基座只保留通用可观测闭环：任意长时间运行工具都会由 Lily runtime 监控并显示当前工具、耗时和最近活动；脚本可选输出标准 [lily-progress] 结构化进度，scan_web_system.py 已接入该协议；扫描器每完成一页都会原子写入 checkpoint；交互式只读扫描在同一 SPA 浏览器上下文中推进；AUTH_NOT_RESTORED fail-fast 防止把登录页当业务页面；source-seeded 扩展扫描继续递归扫描 DOM 链接、router-link/data-route/data-path 导航和只读交互打开的新页面；继续保留 bounded frontend-source intelligence，仅保存结构化 frontend-source-map.json，不保存原始 bundle 源码；API-first 执行策略只使用已验证 API 合约，运行时优先 apiRequest，失败或过期时回退已学习浏览器操作；apiRequest 受域名白名单、风险等级和确认门槛约束；生成技能明确标记为当前工作区技能，默认需要用户审核启用。",
       "capabilityLayer": "workflow",
       "riskLevel": "high",
       "defaultEligible": false,

@@ -1337,6 +1337,44 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   }
 }
 
+// --- platform tool progress: long-running tools stay visible generically -----
+{
+  const savedNotice = OpencodeAgentSession.PROGRESS_NOTICE_MS;
+  const savedTimeout = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  OpencodeAgentSession.PROGRESS_NOTICE_MS = 25;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 500;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "run a long command" });
+    await tick();
+    fake.emitEvent({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          type: "tool",
+          tool: "bash",
+          callID: "long_bash",
+          state: {
+            status: "running",
+            input: { command: "python3 slow-scan.py --max-pages 80" },
+          },
+        },
+      },
+    });
+    await sleep(70);
+    const toolNotice = orch.calls.ingest.find((d) => d.type === "engine.notice" && d.payload?.notice?.code === "toolProgress");
+    assert(toolNotice, "active tool emits generic visible tool progress");
+    assert(String(toolNotice.payload.notice.detail || "").includes("Bash python3 slow-scan.py"), "generic tool progress includes the running tool preview");
+    const longWait = orch.calls.ingest.find((d) => d.type === "engine.notice" && d.payload?.notice?.code === "longWait");
+    assert(!longWait, "active tool progress replaces generic longWait");
+    assert(orch.calls.done.length === 0, "visible tool progress does not settle the turn");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.PROGRESS_NOTICE_MS = savedNotice;
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = savedTimeout;
+  }
+}
+
 // --- context continuity: a config change must NOT respawn the server ---------
 // The server is reused across turns so every turn POSTs to the same session id
 // (that is what threads the conversation). AGENT.md varies per turn, so restarting

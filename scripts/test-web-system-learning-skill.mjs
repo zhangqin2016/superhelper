@@ -13,6 +13,7 @@ const script = path.join(skillDir, "scripts/create_web_system_skill.cjs");
 const scanner = path.join(skillDir, "scripts/scan_web_system.py");
 const executor = path.join(skillDir, "scripts/execute_web_playbook.cjs");
 const finalizer = path.join(skillDir, "scripts/finalize_web_system_learning.cjs");
+const orchestrator = path.join(skillDir, "scripts/learn_web_system.cjs");
 
 if (!fs.existsSync(path.join(skillDir, "SKILL.md"))) {
   throw new Error("lily-web-system-learning SKILL.md missing");
@@ -30,14 +31,29 @@ if (!skillMarkdown.includes("Never start `scan_web_system.py`")) {
 if (!skillMarkdown.includes("finalize_web_system_learning.cjs")) {
   throw new Error("web system learning skill must require deterministic finalization");
 }
+if (!skillMarkdown.includes("learn_web_system.cjs") || !skillMarkdown.includes("Default professional learning entrypoint")) {
+  throw new Error("web system learning skill must have a single default professional orchestrator");
+}
 if (!skillMarkdown.includes("--frontend-source") || !skillMarkdown.includes("source-seeded expanded scan")) {
   throw new Error("web system learning skill must require JS route hints to feed an expanded scanner pass");
+}
+if (!skillMarkdown.includes("frontend_source_intelligence.cjs --har") || !skillMarkdown.includes("--storage-state <sessionPath>")) {
+  throw new Error("web system learning skill must analyze page-dependent JS with the saved browser session");
+}
+if (!skillMarkdown.includes("auto-generate `frontend-source-map.json`")) {
+  throw new Error("web system learning finalizer must have a frontend-source fail-open guard");
 }
 if (!skillMarkdown.includes("recursively queues")) {
   throw new Error("web system learning skill must require recursive queueing after read-only interactions");
 }
 if (!skillMarkdown.includes("same SPA browser context") || !skillMarkdown.includes("instead of reloading the source page")) {
   throw new Error("web system learning skill must forbid source-page reload loops during interaction scanning");
+}
+if (!skillMarkdown.includes("atomic checkpoint") || !skillMarkdown.includes('checkpoint:true')) {
+  throw new Error("web system learning skill must require recoverable scan checkpoints");
+}
+if (!skillMarkdown.includes("[lily-progress]") || !skillMarkdown.includes("Do not add") || !skillMarkdown.includes("skill-specific progress markers")) {
+  throw new Error("web system learning skill must use the platform progress protocol and forbid private markers");
 }
 if (!skillMarkdown.includes("code:\"AUTH_NOT_RESTORED\"") || !skillMarkdown.includes("Do not continue scanning login")) {
   throw new Error("web system learning skill must stop immediately on stale/login-wall sessions");
@@ -62,6 +78,9 @@ if (!fs.existsSync(executor)) {
 }
 if (!fs.existsSync(finalizer)) {
   throw new Error("lily-web-system-learning finalizer missing");
+}
+if (!fs.existsSync(orchestrator)) {
+  throw new Error("lily-web-system-learning orchestrator missing");
 }
 
 function findPython() {

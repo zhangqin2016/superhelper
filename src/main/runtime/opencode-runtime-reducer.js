@@ -37,6 +37,7 @@ function createOpencodeRuntimeState() {
     pendingDeltas: new Map(),
     pendingTextSnapshots: new Map(),
     toolOutputs: new Map(),
+    toolProgressNotices: new Map(),
   };
 }
 
@@ -57,6 +58,7 @@ function resetOpencodeRuntimeState(state) {
   state?.pendingDeltas?.clear?.();
   state?.pendingTextSnapshots?.clear?.();
   state?.toolOutputs?.clear?.();
+  state?.toolProgressNotices?.clear?.();
 }
 
 function runtimeDraft(type, payload = {}) {
@@ -77,6 +79,86 @@ function stringifyToolOutput(state = {}) {
   } catch {
     return "";
   }
+}
+
+function compactPathLike(value = "", limit = 72) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  let path = text;
+  try {
+    const parsed = new URL(text);
+    path = `${parsed.pathname || "/"}${parsed.search || ""}`;
+  } catch {
+    // plain path/string
+  }
+  if (path.length <= limit) return path;
+  return `...${path.slice(-(limit - 3))}`;
+}
+
+function parseProgressPayloadAfterMarker(line = "", marker = "") {
+  const index = String(line).indexOf(marker);
+  if (index < 0) return null;
+  const raw = String(line).slice(index + marker.length).trim();
+  if (!raw.startsWith("{")) return null;
+  try {
+    const payload = JSON.parse(raw);
+    return payload && typeof payload === "object" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseLilyProgressLine(line = "") {
+  return parseProgressPayloadAfterMarker(line, "[lily-progress]");
+}
+
+function latestLilyProgress(output = "") {
+  const lines = String(output || "").split(/\r?\n/);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const parsed = parseLilyProgressLine(lines[index]);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function formatGenericProgress(progress = {}) {
+  const detail = String(progress.detail || progress.message || "").trim();
+  if (detail) return detail;
+
+  const label = String(progress.label || progress.title || progress.name || "工具进度").trim();
+  const current = progress.current ?? progress.done ?? progress.pageIndex ?? progress.pages;
+  const total = progress.total ?? progress.max ?? progress.maxPages;
+  const queued = progress.queued;
+  const status = String(progress.status || progress.event || "").trim();
+  const url = compactPathLike(progress.path || progress.url || progress.fromUrl || "");
+  const pieces = [];
+  if (current != null || total != null) pieces.push(`${current ?? "?"}/${total ?? "?"}`);
+  if (queued != null) pieces.push(`队列 ${queued}`);
+  if (status) pieces.push(status);
+  if (url) pieces.push(url);
+  return pieces.length ? `${label}：${pieces.join(" · ")}` : label;
+}
+
+function toolProgressNoticeFromOutput(callID, output, state) {
+  const progress = latestLilyProgress(output);
+  if (!progress) return null;
+  const detail = formatGenericProgress(progress);
+  if (!detail) return null;
+  const source = String(progress.source || progress.label || "tool").trim() || "tool";
+  const key = `progress:${callID || "tool"}:${source}`;
+  if (state.toolProgressNotices?.get(key) === detail) return null;
+  state.toolProgressNotices?.set(key, detail);
+  return runtimeDraft("engine.notice", {
+    notice: {
+      code: "toolProgress",
+      level: "progress",
+      panel: true,
+      done: false,
+      replace: true,
+      replacesCode: key,
+      detail,
+    },
+  });
 }
 
 function stringifyToolContent(content) {
@@ -202,6 +284,8 @@ function reduceToolPart(part, state) {
       title: st.title || part.title || "",
       parentToolUseId: null,
     }));
+    const progressNotice = output ? toolProgressNoticeFromOutput(callID, output, state) : null;
+    if (progressNotice) drafts.push(progressNotice);
   };
 
   if (!prev && (status === "running" || status === "pending") && hasInput) started();
@@ -209,6 +293,8 @@ function reduceToolPart(part, state) {
     const output = stringifyToolOutput(st);
     if (output && output !== state.toolOutputs.get(callID)) {
       state.toolOutputs.set(callID, output);
+      const progressNotice = toolProgressNoticeFromOutput(callID, output, state);
+      if (progressNotice) drafts.push(progressNotice);
       return { drafts, progress: true };
     }
   }
@@ -218,6 +304,8 @@ function reduceToolPart(part, state) {
     state.tools.set(callID, "done");
     const output = stringifyToolOutput(st);
     if (output) state.toolOutputs.set(callID, output);
+    const progressNotice = output ? toolProgressNoticeFromOutput(callID, output, state) : null;
+    if (progressNotice) drafts.push(progressNotice);
     drafts.push(runtimeDraft("tool.done", {
       id: callID,
       isError: status === "error",

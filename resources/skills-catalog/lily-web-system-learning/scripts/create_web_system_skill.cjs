@@ -784,7 +784,7 @@ function buildCapabilityMap(spec, scan, playbook) {
   };
 }
 
-function buildApiMap(spec, playbook, discovered) {
+function buildApiMap(spec, playbook, discovered, frontendSource) {
   const actionRefsByContract = new Map();
   for (const action of playbook.actions || []) {
     for (const ref of action.metadata?.apiContractRefs || []) {
@@ -808,6 +808,14 @@ function buildApiMap(spec, playbook, discovered) {
     // Reusable data structures (component/definition/GraphQL type schemas) so
     // the runtime can validate inputs and parse results against real models.
     dataSchemas: discovered?.dataSchemas || {},
+    apiHints: (frontendSource?.apiHints || []).map((hint) => ({
+      path: hint.path,
+      methods: Array.isArray(hint.methods) ? hint.methods : (hint.method ? [hint.method] : []),
+      confidence: hint.confidence || "medium",
+      sources: Array.isArray(hint.sources) ? hint.sources.slice(0, 12) : [],
+      executable: false,
+      reason: "Discovered in frontend JavaScript only; promote to a contract only after HAR/OpenAPI observes request and response shape.",
+    })),
     contracts: (playbook.apiContracts || []).map((contract) => ({
       id: contract.id,
       method: contract.method,
@@ -1195,7 +1203,7 @@ function main() {
   const frontendSource = args.frontendSource ? normalizeFrontendSource(readJson(args.frontendSource), spec) : null;
   const playbook = buildPlaybook(spec, scan, discovered);
   const capabilityMap = buildCapabilityMap(spec, scan, playbook);
-  const apiMap = buildApiMap(spec, playbook, discovered);
+  const apiMap = buildApiMap(spec, playbook, discovered, frontendSource);
   const health = buildHealth(spec, scan, capabilityMap, playbook, frontendSource);
   const root = path.resolve(args.out || defaultInboxDir());
   // Append the id under the inbox root, but stay idempotent: if --out already
@@ -1251,6 +1259,7 @@ function main() {
     fs.copyFileSync(path.join(__dirname, "compile_playbook.cjs"), path.join(draftDir, "scripts/compile_playbook.cjs"));
     fs.copyFileSync(path.join(__dirname, "capture_session.cjs"), path.join(draftDir, "scripts/capture_session.cjs"));
     fs.copyFileSync(path.join(__dirname, "learn_auth_recipe.cjs"), path.join(draftDir, "scripts/learn_auth_recipe.cjs"));
+    fs.copyFileSync(path.join(__dirname, "learn_web_system.cjs"), path.join(draftDir, "scripts/learn_web_system.cjs"));
     fs.copyFileSync(path.join(__dirname, "finalize_web_system_learning.cjs"), path.join(draftDir, "scripts/finalize_web_system_learning.cjs"));
   }
 

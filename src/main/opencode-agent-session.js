@@ -27,11 +27,64 @@ const {
 } = require("./runtime/opencode-runtime-reducer");
 const { decidePermission } = require("./runtime/opencode-permission-policy");
 const { truncateToolResultForUi } = require("./cli-process-payload");
+const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
 const { getLogger } = require("./logger");
 
 const log = getLogger("opencode-agent-session");
 const TRANSIENT_ERROR_RE = /unreachable|interrupted|socket|fetch|connection|network|ECONN|ETIMEDOUT|ENOTFOUND|timeout|temporarily unavailable|unexpected response/i;
 const REPLAY_SAFE_TOOL_NAMES = new Set(["read", "glob", "grep", "list", "ls", "find", "search"]);
+const TOOL_PROGRESS_STALE_MS = 10_000;
+
+function formatDuration(ms) {
+  const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes < 60) return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
+function compactProgressText(value = "", limit = 96) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 1))}…`;
+}
+
+function rawToolFromEvent(ev = {}) {
+  const p = ev.properties || {};
+  if (ev.type === "message.part.updated") {
+    const part = p.part || {};
+    if (part.type !== "tool") return null;
+    const state = part.state || {};
+    const id = String(part.callID || part.id || "");
+    if (!id) return null;
+    return {
+      id,
+      name: part.tool || "unknown",
+      input: state.input && typeof state.input === "object" ? state.input : {},
+      title: state.title || part.title || "",
+      status: state.status || "",
+    };
+  }
+  if (String(ev.type || "").startsWith("session.next.tool.")) {
+    const id = String(p.callID || p.id || "");
+    if (!id) return null;
+    let status = "running";
+    if (ev.type === "session.next.tool.success") status = "completed";
+    else if (ev.type === "session.next.tool.failed") status = "error";
+    return {
+      id,
+      name: p.tool || p.name || "unknown",
+      input: p.input && typeof p.input === "object" ? p.input : {},
+      title: p.title || p.metadata?.title || "",
+      status,
+    };
+  }
+  return null;
+}
 
 // Deliverable extensions worth gating on — things the user asked to be produced.
 const DELIVERABLE_EXT = "docx|xlsx|pptx|pdf|png|jpe?g|gif|webp|svg|mp3|wav|mp4|webm|html|csv|zip";
@@ -132,6 +185,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawToolActivity = false;
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe = new Map();
+    this._activeTools = new Map();
+    this._lastGenericToolProgressNotice = "";
     this.collectedOutput = "";
     /** Completion gate (Pillar 3-B) fires at most ONCE per turn — guards against loops. */
     this._gatedThisTurn = false;
@@ -315,6 +370,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawToolActivity = false;
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
+    this._activeTools.clear();
+    this._lastGenericToolProgressNotice = "";
     this._gatedThisTurn = false;
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
@@ -560,6 +617,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawToolActivity = false;
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
+    this._activeTools.clear();
+    this._lastGenericToolProgressNotice = "";
   }
 
   async _abortWithTimeout(server) {
@@ -604,6 +663,8 @@ class OpencodeAgentSession extends EventEmitter {
       const mid = ev?.properties?.messageID || ev?.properties?.part?.messageID || ev?.properties?.info?.id;
       if (typeof mid === "string" && mid.startsWith("msg_")) this._turnEngineMessageId = mid;
     }
+
+    this._noteRawToolActivity(ev);
 
     let reduced;
     try {
@@ -656,17 +717,55 @@ class OpencodeAgentSession extends EventEmitter {
     const payload = draft.payload || {};
     const id = String(payload.id || "");
     if (draft.type === "tool.started") {
+      this._startOrTouchActiveTool({
+        id,
+        name: payload.name,
+        input: payload.input,
+        title: payload.title,
+      });
       const safe = isReplaySafeToolName(payload.name);
       if (id) this._toolReplaySafe.set(id, safe);
       if (!safe) this._sawUnsafeToolActivity = true;
       return;
     }
     if (draft.type === "tool.done") {
+      if (id) this._activeTools.delete(id);
       const safe = id && this._toolReplaySafe.has(id)
         ? this._toolReplaySafe.get(id)
         : isReplaySafeToolName(payload.name);
       if (!safe) this._sawUnsafeToolActivity = true;
     }
+  }
+
+  _noteRawToolActivity(ev = {}) {
+    const tool = rawToolFromEvent(ev);
+    if (!tool?.id) return;
+    const status = String(tool.status || "");
+    if (status === "completed" || status === "error" || status === "failed" || status === "done") {
+      this._activeTools.delete(tool.id);
+      return;
+    }
+    if (status === "running" || status === "pending" || status === "") {
+      this._startOrTouchActiveTool(tool);
+    }
+  }
+
+  _startOrTouchActiveTool(tool = {}) {
+    const id = String(tool.id || "");
+    if (!id) return;
+    const now = Date.now();
+    const existing = this._activeTools.get(id) || {};
+    this._activeTools.set(id, {
+      ...existing,
+      id,
+      name: tool.name || existing.name || "Tool",
+      input: tool.input && typeof tool.input === "object" && Object.keys(tool.input).length
+        ? tool.input
+        : (existing.input || {}),
+      title: tool.title || existing.title || "",
+      startedAt: existing.startedAt || now,
+      lastActivityAt: now,
+    });
   }
 
   _registerSubagentsFromDrafts(drafts = []) {
@@ -1481,6 +1580,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawToolActivity = false;
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
+    this._activeTools.clear();
+    this._lastGenericToolProgressNotice = "";
     this._transientReplayCount = 0;
     this._turnStartedAt = 0;
     // Carry the turn's rewind anchor (engine message id) so the orchestrator can
@@ -1555,6 +1656,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawToolActivity = false;
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
+    this._activeTools.clear();
+    this._lastGenericToolProgressNotice = "";
     this._transientReplayCount = 0;
     this._turnStartedAt = 0;
     this._orchestrator?.notifyRunnerError(this.sessionId, message);
@@ -1682,6 +1785,10 @@ class OpencodeAgentSession extends EventEmitter {
     this._progressNoticeTimer = null;
     if (!this.busy || this._turnSettled) return;
     if (this._knownSubagentSessionIDs.size > 0) return;
+    if (this._emitGenericToolProgressNotice()) {
+      this._armProgressNoticeTimer();
+      return;
+    }
     this._ingest([{
       type: "engine.notice",
       payload: {
@@ -1694,6 +1801,45 @@ class OpencodeAgentSession extends EventEmitter {
         },
       },
     }]);
+  }
+
+  _genericToolProgressDetail() {
+    const running = [...this._activeTools.values()].filter((tool) => tool?.id);
+    if (!running.length) return "";
+    running.sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
+    const now = Date.now();
+    const tool = running[0];
+    const label = compactProgressText(tool.title || buildToolPreviewLabel(tool) || tool.name || "Tool");
+    const elapsed = formatDuration(now - (tool.startedAt || now));
+    const idle = Math.max(0, now - (tool.lastActivityAt || tool.startedAt || now));
+    const activity = idle >= TOOL_PROGRESS_STALE_MS
+      ? `最近活动 ${formatDuration(idle)} 前`
+      : "仍有活动";
+    if (running.length > 1) {
+      return `${running.length} 个工具运行中 · 当前：${label} · 已运行 ${elapsed} · ${activity}`;
+    }
+    return `${label} 正在运行 · 已运行 ${elapsed} · ${activity}`;
+  }
+
+  _emitGenericToolProgressNotice() {
+    const detail = this._genericToolProgressDetail();
+    if (!detail) return false;
+    if (detail === this._lastGenericToolProgressNotice) return true;
+    this._lastGenericToolProgressNotice = detail;
+    this._ingest([{
+      type: "engine.notice",
+      payload: {
+        notice: {
+          code: "toolProgress",
+          level: "progress",
+          panel: true,
+          replace: true,
+          replacesCode: "genericToolProgress",
+          detail,
+        },
+      },
+    }]);
+    return true;
   }
 
   /** Give up on a stuck turn: abort the engine (so it isn't left working/looping

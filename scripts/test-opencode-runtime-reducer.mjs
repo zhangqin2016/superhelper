@@ -154,6 +154,55 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
   }, state);
   assert(duplicatePartial.drafts.length === 0 && duplicatePartial.progress === false, "identical running output remains de-duped");
 
+  const scanProgress = reduce("message.part.updated", {
+    part: {
+      type: "tool",
+      tool: "bash",
+      callID: "c1",
+      state: {
+        status: "running",
+        metadata: { output: 'partial\n[lily-progress] {"label":"网页扫描","current":55,"total":80,"queued":7,"path":"https://www.matrx.tech/meeting/groups/dashboard"}' },
+        input: { command: "python3 scan_web_system.py" },
+      },
+    },
+  }, state);
+  assert(scanProgress.progress === true, "scanner progress keeps long web scans alive");
+  assert(scanProgress.drafts.length === 1 && scanProgress.drafts[0].type === "engine.notice", "scanner progress emits a visible notice");
+  assert(scanProgress.drafts[0].payload.notice.code === "toolProgress", "scanner progress uses visible toolProgress notice code");
+  assert(scanProgress.drafts[0].payload.notice.detail.includes("55/80"), "scanner progress detail includes page count");
+  assert(scanProgress.drafts[0].payload.notice.detail.includes("/meeting/groups/dashboard"), "scanner progress detail includes compact current path");
+
+  const sameScanProgress = reduce("message.part.updated", {
+    part: {
+      type: "tool",
+      tool: "bash",
+      callID: "c1",
+        state: {
+          status: "running",
+          metadata: { output: 'partial\nnoise\n[lily-progress] {"label":"网页扫描","current":55,"total":80,"queued":7,"path":"https://www.matrx.tech/meeting/groups/dashboard"}' },
+          input: { command: "python3 scan_web_system.py" },
+        },
+      },
+  }, state);
+  assert(sameScanProgress.progress === true && sameScanProgress.drafts.length === 0, "same scanner progress resets watchdog without duplicate visible notices");
+
+  const legacySkillMarker = reduce("message.part.updated", {
+    part: {
+      type: "tool",
+      tool: "bash",
+      callID: "legacy_skill_marker",
+      state: {
+        status: "running",
+        metadata: { output: '[lily-web-scan] {"event":"page_start","pageIndex":55,"maxPages":80}' },
+        input: { command: "python3 old_skill.py" },
+      },
+    },
+  }, state);
+  assert(
+    legacySkillMarker.drafts.length === 1 && legacySkillMarker.drafts[0].type === "tool.started",
+    "core ignores skill-specific legacy progress markers",
+  );
+
   const done = oneDraft("message.part.updated", {
     part: { type: "tool", tool: "bash", callID: "c1", state: { status: "completed", output: "file.txt", input: { command: "ls" } } },
   }, state);

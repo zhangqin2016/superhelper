@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from collections import deque
@@ -57,6 +58,7 @@ class ScanConfig:
     frontend_source: str | None
     route_hint_urls: list[str]
     route_hint_count: int
+    output_path: str | None
 
 
 def emit(payload: dict[str, Any], code: int = 0) -> None:
@@ -65,15 +67,51 @@ def emit(payload: dict[str, Any], code: int = 0) -> None:
     raise SystemExit(code)
 
 
+def progress_detail(event: str, fields: dict[str, Any]) -> str:
+    max_pages = fields.get("maxPages") or "?"
+    pages = fields.get("pages") or fields.get("pageIndex") or "?"
+    queued = fields.get("queued", 0)
+    url = compact_url(fields.get("url") or fields.get("fromUrl") or "")
+    if event == "browser_launch":
+        return f"网页扫描启动：最多 {max_pages} 页 · 种子 {fields.get('seedUrls', 0)} · JS 路由 {fields.get('routeHints', 0)}"
+    if event == "queue_seeded":
+        return f"网页扫描队列：种子 {fields.get('seedUrls', 0)} · JS 路由 {fields.get('routeHints', 0)}"
+    if event == "page_start":
+        return f"网页扫描：第 {pages}/{max_pages} 页 · 队列 {queued} · {url}"
+    if event == "page_done":
+        warning = fields.get("warning") or ""
+        if warning:
+            suffix = f" · {warning}"
+        else:
+            suffix = f" · 按钮 {fields.get('buttons', 0)} · 表单 {fields.get('forms', 0)} · API {fields.get('networkContracts', 0)}"
+        return f"网页扫描完成：{pages}/{max_pages} 页 · 队列 {queued}{suffix}"
+    if event == "interactive_candidates":
+        return f"网页扫描交互：发现 {fields.get('candidates', 0)} 个只读候选 · {url}"
+    if event == "interactive_page":
+        return f"网页扫描交互：打开 {fields.get('label') or '只读页面'} · 已发现 {fields.get('pagesDiscovered', 0)} 页"
+    if event == "auth_wall_detected":
+        return f"网页扫描停止：会话失效或进入登录页 · {url}"
+    if event == "scan_stopped":
+        return f"网页扫描停止：{fields.get('code') or '需要重新学习'} · 已扫 {fields.get('pages', 0)} 页"
+    if event == "scan_done":
+        return f"网页扫描完成：{fields.get('pages', 0)} 页 · 警告 {fields.get('warnings', 0)} · 动作 {fields.get('actions', 0)} · API {fields.get('apiContracts', 0)}"
+    if event == "checkpoint_saved":
+        return f"网页扫描检查点已保存：{fields.get('pages', 0)} 页"
+    return ""
+
+
 def emit_progress(event: str, **fields: Any) -> None:
     """Emit a compact progress heartbeat for long foreground scans.
 
     The final scan JSON stays on stdout. Progress goes to stderr so callers can
     show liveness without corrupting `--out` or stdout JSON parsing.
     """
-    payload = {"event": event, **fields}
+    payload = {"label": "网页扫描", "event": event, **fields}
+    detail = progress_detail(event, fields)
+    if detail:
+        payload["detail"] = detail
     try:
-        print(f"[lily-web-scan] {json.dumps(payload, ensure_ascii=False, sort_keys=True)}", file=sys.stderr, flush=True)
+        print(f"[lily-progress] {json.dumps(payload, ensure_ascii=False, sort_keys=True)}", file=sys.stderr, flush=True)
     except BrokenPipeError:
         raise SystemExit(1)
 
@@ -218,6 +256,7 @@ def validate_config(args: argparse.Namespace) -> ScanConfig:
         frontend_source=args.frontend_source,
         route_hint_urls=route_hint_urls,
         route_hint_count=route_hint_count,
+        output_path=args.out,
     )
 
 
@@ -245,6 +284,21 @@ def enqueue_url(queue: deque[str], queued: set[str], seen: set[str], url: str, c
 def compact_text(value: Any, limit: int = 160) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     return text[:limit]
+
+
+def compact_url(value: Any, limit: int = 96) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = urlparse(text)
+        if parsed.scheme and parsed.netloc:
+            text = f"{parsed.path or '/'}{('?' + parsed.query) if parsed.query else ''}"
+    except Exception:
+        pass
+    if len(text) <= limit:
+        return text
+    return f"...{text[-max(0, limit - 3):]}"
 
 
 def stable_hash(value: Any, length: int = 16) -> str:
@@ -1065,6 +1119,84 @@ def build_scan_summary(config: ScanConfig, pages: list[dict[str, Any]], warnings
     }
 
 
+def scan_payload(
+    config: ScanConfig,
+    pages: list[dict[str, Any]],
+    warnings: list[dict[str, str]],
+    *,
+    status: str,
+    auth_blocker: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    summary = build_scan_summary(config, pages, warnings)
+    payload = {
+        "ok": not bool(auth_blocker),
+        "schemaVersion": 1,
+        "mode": "read-only-scan",
+        "status": status,
+        "checkpoint": status != "complete",
+        "learningMode": config.learning_mode,
+        "testEnvironment": config.test_environment,
+        "allowMutatingLearning": config.allow_mutating_learning,
+        "interactiveReadonly": config.interactive_readonly,
+        "baseUrl": config.base_url,
+        "allowedDomains": config.allowed_domains,
+        "maxPages": config.max_pages,
+        "harPath": config.har_path,
+        "frontendSourcePath": config.frontend_source,
+        "frontendSourceRouteHintCount": config.route_hint_count,
+        "frontendSourceSeedUrlCount": len(config.route_hint_urls),
+        "pages": pages,
+        "coverage": {key: value for key, value in summary.items() if key not in {"siteMap", "actionCandidates", "businessObjects", "apiContracts"}},
+        "siteMap": summary["siteMap"],
+        "actionCandidates": summary["actionCandidates"],
+        "businessObjects": summary["businessObjects"],
+        "apiContracts": summary["apiContracts"],
+        "warnings": warnings,
+    }
+    if auth_blocker:
+        payload.update(
+            {
+                "code": auth_blocker["code"],
+                "message": "Saved browser session was not restored; the scanner stopped before treating the login page as application coverage.",
+                "relearnRecommended": True,
+            }
+        )
+    return payload
+
+
+def write_json_file(path: str | None, payload: dict[str, Any]) -> None:
+    if not path:
+        return
+    target = os.path.abspath(path)
+    parent = os.path.dirname(target)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    tmp = f"{target}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+    os.replace(tmp, target)
+
+
+def write_scan_checkpoint(config: ScanConfig, pages: list[dict[str, Any]], warnings: list[dict[str, str]], auth_blocker: dict[str, str] | None = None) -> None:
+    if not config.output_path:
+        return
+    try:
+        write_json_file(
+            config.output_path,
+            scan_payload(
+                config,
+                pages,
+                warnings,
+                status="auth_blocked" if auth_blocker else "running",
+                auth_blocker=auth_blocker,
+            ),
+        )
+        emit_progress("checkpoint_saved", path=config.output_path, pages=len(pages), warnings=len(warnings))
+    except Exception as exc:
+        emit_progress("checkpoint_failed", path=config.output_path, detail=compact_text(exc, 240))
+
+
 def wait_for_spa_ready(page: Any, timeout_ms: int) -> None:
     """Wait for a single-page app to actually render before snapshotting.
 
@@ -1268,6 +1400,7 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
                         page_record["error"] = auth_blocker["code"]
                         warnings.append(auth_blocker)
                         pages.append(page_record)
+                        write_scan_checkpoint(config, pages, warnings, auth_blocker)
                         emit_progress(
                             "auth_wall_detected",
                             url=auth_blocker.get("url", page_record.get("url", url)),
@@ -1289,6 +1422,7 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
                 if auth_blocker:
                     break
                 pages.append(page_record)
+                write_scan_checkpoint(config, pages, warnings)
                 emit_progress(
                     "page_done",
                     url=page_record.get("url", url),
@@ -1305,6 +1439,7 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
                     for next_url in interactive_page.pop("_nextUrls", []):
                         enqueue_url(queue, queued, seen, next_url, config, queue_limit)
                     pages.append(interactive_page)
+                    write_scan_checkpoint(config, pages, warnings)
                     emit_progress(
                         "page_done",
                         url=interactive_page.get("url", ""),
@@ -1343,7 +1478,6 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
             "detail": "Saw a login/password field while scanning with a saved session — the session is likely expired or not applied (common for localStorage-token SPAs). Re-capture the login with capture_session.cjs, then retry; do not trust this scan's depth.",
         })
 
-    summary = build_scan_summary(config, pages, warnings)
     if auth_blocker:
         emit_progress(
             "scan_stopped",
@@ -1351,31 +1485,8 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
             pages=len(pages),
             warnings=len(warnings),
         )
-        return {
-            "ok": False,
-            "schemaVersion": 1,
-            "code": auth_blocker["code"],
-            "message": "Saved browser session was not restored; the scanner stopped before treating the login page as application coverage.",
-            "learningMode": config.learning_mode,
-            "testEnvironment": config.test_environment,
-            "allowMutatingLearning": config.allow_mutating_learning,
-            "interactiveReadonly": config.interactive_readonly,
-            "baseUrl": config.base_url,
-            "allowedDomains": config.allowed_domains,
-            "maxPages": config.max_pages,
-            "harPath": config.har_path,
-            "frontendSourcePath": config.frontend_source,
-            "frontendSourceRouteHintCount": config.route_hint_count,
-            "frontendSourceSeedUrlCount": len(config.route_hint_urls),
-            "pages": pages,
-            "coverage": {key: value for key, value in summary.items() if key not in {"siteMap", "actionCandidates", "businessObjects", "apiContracts"}},
-            "siteMap": summary["siteMap"],
-            "actionCandidates": summary["actionCandidates"],
-            "businessObjects": summary["businessObjects"],
-            "apiContracts": summary["apiContracts"],
-            "warnings": warnings,
-            "relearnRecommended": True,
-        }
+        return scan_payload(config, pages, warnings, status="auth_blocked", auth_blocker=auth_blocker)
+    summary = build_scan_summary(config, pages, warnings)
     emit_progress(
         "scan_done",
         pages=len(pages),
@@ -1383,29 +1494,7 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
         actions=len(summary["actionCandidates"]),
         apiContracts=len(summary["apiContracts"]),
     )
-    return {
-        "ok": True,
-        "schemaVersion": 1,
-        "mode": "read-only-scan",
-        "learningMode": config.learning_mode,
-        "testEnvironment": config.test_environment,
-        "allowMutatingLearning": config.allow_mutating_learning,
-        "interactiveReadonly": config.interactive_readonly,
-        "baseUrl": config.base_url,
-        "allowedDomains": config.allowed_domains,
-        "maxPages": config.max_pages,
-        "harPath": config.har_path,
-        "frontendSourcePath": config.frontend_source,
-        "frontendSourceRouteHintCount": config.route_hint_count,
-        "frontendSourceSeedUrlCount": len(config.route_hint_urls),
-        "pages": pages,
-        "coverage": {key: value for key, value in summary.items() if key not in {"siteMap", "actionCandidates", "businessObjects", "apiContracts"}},
-        "siteMap": summary["siteMap"],
-        "actionCandidates": summary["actionCandidates"],
-        "businessObjects": summary["businessObjects"],
-        "apiContracts": summary["apiContracts"],
-        "warnings": warnings,
-    }
+    return scan_payload(config, pages, warnings, status="complete")
 
 
 def parse_args() -> argparse.Namespace:
@@ -1451,9 +1540,7 @@ def main() -> None:
         payload = run_scan(config)
 
     if args.out:
-        with open(args.out, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, ensure_ascii=False, indent=2)
-            fh.write("\n")
+        write_json_file(args.out, payload)
     emit(payload)
 
 

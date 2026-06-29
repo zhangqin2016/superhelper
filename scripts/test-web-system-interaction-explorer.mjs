@@ -44,6 +44,7 @@ cfg = mod.ScanConfig(
     frontend_source=None,
     route_hint_urls=[],
     route_hint_count=0,
+    output_path=None,
 )
 
 class Locator:

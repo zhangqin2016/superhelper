@@ -44,6 +44,7 @@ cfg = mod.ScanConfig(
     frontend_source=None,
     route_hint_urls=[],
     route_hint_count=0,
+    output_path=None,
 )
 no_state_cfg = mod.ScanConfig(
     base_url=cfg.base_url,
@@ -60,6 +61,7 @@ no_state_cfg = mod.ScanConfig(
     frontend_source=cfg.frontend_source,
     route_hint_urls=cfg.route_hint_urls,
     route_hint_count=cfg.route_hint_count,
+    output_path=None,
 )
 
 password_login = {

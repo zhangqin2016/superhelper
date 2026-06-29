@@ -49,7 +49,21 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    or JavaScript login scripts, do not call `input()`/stdin prompts, and do not
    install Playwright at runtime. If the bundled browser runtime is missing,
    report that exact blocker instead of improvising.
-4. **Contract discovery first (authoritative > inferred).** Before scanning the
+4. **Default professional learning entrypoint.** After login capture, run the
+   deterministic one-command orchestrator instead of manually inventing a scan
+   sequence in chat:
+   `node scripts/learn_web_system.cjs --base-url <url> --allow-domain <host>
+   --storage-state <sessionPath> --system-id <id> --name <name> --max-pages 120`.
+   This is the default path for normal users. It runs the full professional
+   pipeline in order: published contract discovery, authenticated bootstrap HAR
+   scan, bounded same-domain JavaScript intelligence, source-seeded expanded SPA
+   scan, HAR-to-contract merge, auth recipe learning, and deterministic
+   finalization. Use the individual scripts below only when debugging the
+   orchestrator or a specific phase. Do not use ad-hoc here-docs, inline
+   Playwright/Python/JavaScript, stealth scripts, or one-off browser probes as
+   the normal learning path.
+5. **Contract discovery first (authoritative > inferred).** The orchestrator
+   starts here. Before scanning the
    UI, run `scripts/discover_contracts.cjs --base-url <url> --allow-domain <host>`
    (pass `--storage-state` to reuse the logged-in session) to probe for the
    system's own published OpenAPI/Swagger or GraphQL schema. A published contract
@@ -57,19 +71,21 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    over DOM/HAR inference. Pass its `api-contracts.json` to
    `create_web_system_skill.cjs --contracts`. Fall back to the UI scan only for
    what the published contract does not cover.
-5. **Learn APIs and SPA routes from real traffic (for systems without a
-   published contract, and for write paths).** Run an authenticated bootstrap
+6. **Learn APIs and SPA routes from real traffic (for systems without a
+   published contract, and for write paths).** The orchestrator runs an authenticated bootstrap
    scan with `--har-path scan-bootstrap.har` to record the app shell, loaded JS,
    and first-page traffic:
    `python3 scripts/scan_web_system.py --base-url <url> --allowed-domain <host>
    --storage-state <sessionPath> --interactive-readonly --max-pages 100 --har-path
    scan-bootstrap.har --out scan-bootstrap.json`.
    Also run `node scripts/frontend_source_intelligence.cjs --har scan-bootstrap.har
-   --base-url <url> --allow-domain <host> --out frontend-source-map.json`.
-   This is a bounded, read-only SPA source pass: it analyzes only same-allowlist
-   JavaScript assets captured in the HAR, extracts route/API-client hints, and
-   persists only structured metadata. It must not save raw bundle source,
-   secrets, cookies, tokens, or large source text.
+   --base-url <url> --allow-domain <host> --storage-state <sessionPath> --out
+   frontend-source-map.json`. This is a bounded, read-only SPA source pass: it
+   analyzes same-allowlist JavaScript assets captured in the HAR, fetches missing
+   same-domain JS bodies with the saved browser session when the HAR only has
+   URLs, extracts route/API-client hints, and persists only structured metadata.
+   It must not save raw bundle source, secrets, cookies, tokens, or large source
+   text.
    If `frontend-source-map.json` contains route hints, immediately run the
    source-seeded expanded scan in the same learning turn:
    `python3 scripts/scan_web_system.py --base-url <url> --allowed-domain <host>
@@ -79,8 +95,14 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    links, follows router-link/data-route/data-path navigation, recursively queues
    safe pages discovered by read-only interactions, explores menu/tab/detail
    controls in the same SPA browser context instead of reloading the source page
-   for every candidate, and emits progress heartbeats for queue size, page
-   start/done, interaction discovery, and scan completion.
+   for every candidate, and emits standard `[lily-progress]` heartbeats for queue
+   size, page start/done, interaction discovery, and scan completion. Do not add
+   skill-specific progress markers; observability is a Lily platform contract.
+   When `--out scan.json` is supplied, the scanner writes an atomic checkpoint
+   after each page (`status:"running"`, `checkpoint:true`) and overwrites it with
+   the final result at completion. If an outer tool timeout or parent process
+   closes the pipe, recover coverage from that checkpoint instead of from chat
+   text.
    Then merge observed APIs from both HAR files:
    `node scripts/har_to_contracts.cjs --har scan-bootstrap.har --base-url <url>
    --allow-domain <host> --merge api-contracts.json --out api-contracts.json`
@@ -100,12 +122,12 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    pages, do not finalize a skill from that result, and do not present it as
    complete coverage. A scan that finds only the landing/login page on an SPA
    almost always ran unauthenticated or before the app rendered.
-6. **Learn auth injection from the logged-in session.** After HAR capture, run
+7. **Learn auth injection from the logged-in session.** The orchestrator runs
    `node scripts/learn_auth_recipe.cjs --storage-state <sessionPath> --har scan.har
    --base-url <url> --allow-domain <host>`. The output stores only sources and
    formats (for example, `Authorization` from `localStorage.access_token` as
    `Bearer {{value}}`), never raw token values.
-7. **Special browser-context boundary.** Some enterprise systems bind the
+8. **Special browser-context boundary.** Some enterprise systems bind the
    session to the exact interactive browser, SSO/device posture, TLS/client
    hints, QR-code login, or anti-automation controls. If a captured
    `storageState` or headless scan cannot replay after one successful capture
@@ -119,23 +141,27 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    `health.json`. Do not promise unattended headless automation for these
    systems unless a learned API contract or verified compiled browser flow
    exists.
-8. Run a read-only dry run before deeper exploration.
-9. Run every scanner/executor command in the foreground and wait for it to finish before claiming the scan is running, complete, failed, or waiting for analysis.
-10. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
-11. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
-12. Classify actions by risk: read, export, draft, submit, update, delete, financial, identity/security, and bulk operations.
-13. Build an action map and playbook. Each action needs inputs, preconditions, execution path, confirmation policy, success signal, rollback/recovery, and audit fields.
-14. Finish with the deterministic finalizer:
+9. Run a read-only dry run before deeper exploration.
+10. Run every scanner/executor command in the foreground and wait for it to finish before claiming the scan is running, complete, failed, or waiting for analysis.
+11. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
+12. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
+13. Classify actions by risk: read, export, draft, submit, update, delete, financial, identity/security, and bulk operations.
+14. Build an action map and playbook. Each action needs inputs, preconditions, execution path, confirmation policy, success signal, rollback/recovery, and audit fields.
+15. Finish with the deterministic finalizer. The orchestrator normally does this;
+   if debugging a phase manually, run:
    `node scripts/finalize_web_system_learning.cjs --scan <scan.json>
    --contracts <api-contracts.json> --frontend-source <frontend-source-map.json>
    --system-id <id> --name <name>`.
+   If `--frontend-source` is omitted but `scan.json` points to an existing HAR,
+   the finalizer will auto-generate `frontend-source-map.json` from that HAR as a
+   fail-open guard; still pass the explicit file when available.
    This derives `web-system-spec.json` from scan/contracts/source hints and calls
    `create_web_system_skill.cjs`. Do not hand-write the final spec in chat, and
    do not end the learning turn before the finalizer returns `ok: true` or a
    concrete error.
-15. Tell the user exactly where the generated workspace skill draft was written
+16. Tell the user exactly where the generated workspace skill draft was written
    and that they can enable it.
-16. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
+17. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
 
 ## Autonomous Self-Run Learning (no human recording)
 

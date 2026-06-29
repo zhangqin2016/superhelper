@@ -3,7 +3,7 @@
   "id": "lily-web-system-learning",
   "name": "Lily Web System Learning",
   "description": "学习 OA、ERP、CRM、后台等 Web 系统，把只读探索得到的页面/动作/API 地图生成当前工作区可审核技能，后续用自然语言快速操作。",
-  "version": "1.0.16",
+  "version": "1.0.20",
   "minAppVersion": "0.1.48",
   "runtime": "node",
   "category": "coding",
@@ -19,7 +19,7 @@
   "guideMd": {
     "title": "网页系统学习",
     "priority": 22,
-    "body": "用户要求学习/自动化 OA、ERP、CRM、后台、门户或浏览器系统时使用。默认只读探索：识别菜单、页面、表单、按钮、列表、导出和可用 API 合约，不提交、不删除、不审批。用户必须通过浏览器登录；不要把账号密码写进聊天、技能、日志或文件。扫描后必须运行 scripts/finalize_web_system_learning.cjs，从页面/动作/API JSON 确定性生成当前工作区技能草稿；草稿默认待审核，用户在 设置 → 技能 启用后才生效。未来执行优先走 API 合约，失败或过期再回退浏览器操作。所有提交、删除、审批、付款、上传、发通知动作必须未来执行时二次确认，并限制在允许域名内。"
+    "body": "用户要求学习/自动化 OA、ERP、CRM、后台、门户或浏览器系统时使用。默认通过 scripts/learn_web_system.cjs 运行完整专业学习流水线：合约发现、登录态 bootstrap HAR、同域 JS 智能分析、source-seeded 扩展扫描、HAR 合约合并、auth recipe 和确定性 finalizer。不提交、不删除、不审批；用户必须通过浏览器登录，不要把账号密码写进聊天、技能、日志或文件。草稿默认待审核，用户在 设置 → 技能 启用后才生效。未来执行优先走 API 合约，失败或过期再回退已学习浏览器操作。所有提交、删除、审批、付款、上传、发通知动作必须未来执行时二次确认，并限制在允许域名内。"
   },
   "name_i18n": {
     "en": "Web System Learning",
