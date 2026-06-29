@@ -169,6 +169,10 @@ app.whenReady().then(async () => {
   const scheduledTaskManager = new ScheduledTaskManager();
   scheduledTaskManager.load();
   scheduledTaskManagerRef = scheduledTaskManager;
+  require("./main/app-watchdog").startAppWatchdog({
+    sessionManager,
+    runnerPool,
+  });
   await ensureConnectorBridgeStarted().catch((err) => {
     console.warn("[connector-bridge]", err?.message || err);
   });

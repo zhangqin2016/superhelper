@@ -11,6 +11,7 @@ import { t } from "../i18n/index.js";
 const filePreviewArea = () => $("filePreviewArea");
 const LARGE_PASTE_MIN_CHARS = 6000;
 const LARGE_PASTE_MIN_BYTES = 12 * 1024;
+const MAX_PATHLESS_FILE_BYTES = 20 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // File staging helpers
@@ -90,7 +91,9 @@ async function addBrowserFiles(files) {
       const filePath = await window.assistantClient.getPathForFile?.(browserFile);
       const result = filePath
         ? await window.assistantClient.stageFile(filePath, name)
-        : await window.assistantClient.pasteFile(new Uint8Array(await browserFile.arrayBuffer()), name);
+        : browserFile.size > MAX_PATHLESS_FILE_BYTES
+          ? { ok: false, error: "FILE_TOO_LARGE" }
+          : await window.assistantClient.pasteFile(new Uint8Array(await browserFile.arrayBuffer()), name);
       if (result.ok) {
         const file = result.file;
         if (file.isImage) await loadImageExtras(file);

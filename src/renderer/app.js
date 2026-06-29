@@ -148,8 +148,33 @@ function wireLocaleRefresh() {
   });
 }
 
+function initRendererHeartbeat() {
+  const send = window.assistantClient?.sendRendererHeartbeat;
+  if (typeof send !== "function") return;
+  const intervalMs = 1000;
+  let seq = 0;
+  let expected = performance.now() + intervalMs;
+  const tick = () => {
+    const current = performance.now();
+    const rendererLagMs = Math.max(0, current - expected);
+    expected = current + intervalMs;
+    try {
+      send({
+        seq: ++seq,
+        rendererLagMs: Math.round(rendererLagMs),
+        visibilityState: document.visibilityState || "",
+      });
+    } catch {
+      /* heartbeat must never affect the UI */
+    }
+  };
+  tick();
+  setInterval(tick, intervalMs);
+}
+
 async function init() {
   await initI18n();
+  initRendererHeartbeat();
   await updateAboutVersion();
   wireLocaleRefresh();
 

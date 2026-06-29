@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
   getAppVersion: () => ipcRenderer.invoke("app:get-version"),
   getLocale: () => ipcRenderer.invoke("app:get-locale"),
   setLocale: (locale) => ipcRenderer.invoke("app:set-locale", locale),
+  sendRendererHeartbeat: (payload) => ipcRenderer.send("app:renderer-heartbeat", payload || {}),
+  getWatchdogSnapshot: () => ipcRenderer.invoke("app:watchdog-snapshot"),
   sendMessage: (text, files, sessionId, displayFiles) =>
     ipcRenderer.invoke("assistant:input", { text, files, sessionId, displayFiles }),
   interruptAndSend: (text, files, sessionId, displayFiles) =>
