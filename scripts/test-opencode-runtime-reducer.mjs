@@ -145,9 +145,14 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
     "tool running -> tool.started");
   assert(start.payload.input.command === "ls", "tool input carried");
 
-  assert(reduce("message.part.updated", {
+  const partial = reduce("message.part.updated", {
     part: { type: "tool", tool: "bash", callID: "c1", state: { status: "running", metadata: { output: "partial" }, input: { command: "ls" } } },
-  }, state).drafts.length === 0, "duplicate running update suppressed");
+  }, state);
+  assert(partial.drafts.length === 0 && partial.progress === true, "running output update keeps long tools alive without duplicate cards");
+  const duplicatePartial = reduce("message.part.updated", {
+    part: { type: "tool", tool: "bash", callID: "c1", state: { status: "running", metadata: { output: "partial" }, input: { command: "ls" } } },
+  }, state);
+  assert(duplicatePartial.drafts.length === 0 && duplicatePartial.progress === false, "identical running output remains de-duped");
 
   const done = oneDraft("message.part.updated", {
     part: { type: "tool", tool: "bash", callID: "c1", state: { status: "completed", output: "file.txt", input: { command: "ls" } } },

@@ -30,6 +30,15 @@ if (!skillMarkdown.includes("Never start `scan_web_system.py`")) {
 if (!skillMarkdown.includes("finalize_web_system_learning.cjs")) {
   throw new Error("web system learning skill must require deterministic finalization");
 }
+if (!skillMarkdown.includes("--frontend-source") || !skillMarkdown.includes("source-seeded expanded scan")) {
+  throw new Error("web system learning skill must require JS route hints to feed an expanded scanner pass");
+}
+if (!skillMarkdown.includes("recursively queues")) {
+  throw new Error("web system learning skill must require recursive queueing after read-only interactions");
+}
+if (!skillMarkdown.includes("code:\"AUTH_NOT_RESTORED\"") || !skillMarkdown.includes("Do not continue scanning login")) {
+  throw new Error("web system learning skill must stop immediately on stale/login-wall sessions");
+}
 if (!skillMarkdown.includes("SPECIAL_BROWSER_CONTEXT_REQUIRED")) {
   throw new Error("web system learning skill must expose a recoverable special-browser-context state");
 }

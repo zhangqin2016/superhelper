@@ -30,6 +30,15 @@ SAFE_INTERACTION_TEXT_RE = re.compile(
 ID_SEGMENT_RE = re.compile(r"^(?:\d+|[0-9a-f]{8,}|[0-9a-f-]{20,})$", re.IGNORECASE)
 LEARNING_MODES = {"read-only", "contract-probe", "test-lab"}
 SENSITIVE_KEY_RE = re.compile(r"(authorization|cookie|token|secret|api[-_]?key|password|passwd|credential|session)", re.IGNORECASE)
+ROUTE_PARAM_RE = re.compile(r"(^|/):[A-Za-z_][A-Za-z0-9_]*(?=/|$)")
+AUTH_EXIT_PATH_RE = re.compile(r"(^|/)(logout|signout|log-out|sign-out)(/|$)", re.IGNORECASE)
+AUTH_ENTRY_PATH_RE = re.compile(r"(^|/)(login|log-in|signin|sign-in|auth|sso|oauth)(/|$)", re.IGNORECASE)
+AUTH_WALL_TEXT_RE = re.compile(
+    r"(sign\s*in|log\s*in|login|session\s+expired|authenticate|authentication|required|microsoft|google|sso|"
+    r"登录|登陆|请登录|重新登录|会话过期|认证|身份验证|单点登录|扫码登录|二维码登录|微软登录|账号登录)",
+    re.IGNORECASE,
+)
+AUTH_FIELD_RE = re.compile(r"(password|passwd|pwd|email|username|user|account|phone|mobile|密码|邮箱|账号|帐号|用户名|手机号)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -45,12 +54,28 @@ class ScanConfig:
     test_environment: str
     allow_mutating_learning: bool
     har_path: str | None
+    frontend_source: str | None
+    route_hint_urls: list[str]
+    route_hint_count: int
 
 
 def emit(payload: dict[str, Any], code: int = 0) -> None:
     stream = sys.stdout if code == 0 else sys.stderr
     print(json.dumps(payload, ensure_ascii=False, indent=2), file=stream)
     raise SystemExit(code)
+
+
+def emit_progress(event: str, **fields: Any) -> None:
+    """Emit a compact progress heartbeat for long foreground scans.
+
+    The final scan JSON stays on stdout. Progress goes to stderr so callers can
+    show liveness without corrupting `--out` or stdout JSON parsing.
+    """
+    payload = {"event": event, **fields}
+    try:
+        print(f"[lily-web-scan] {json.dumps(payload, ensure_ascii=False, sort_keys=True)}", file=sys.stderr, flush=True)
+    except BrokenPipeError:
+        raise SystemExit(1)
 
 
 def normalize_domain(value: str) -> str:
@@ -65,6 +90,67 @@ def normalize_domain(value: str) -> str:
 def normalize_url(url: str) -> str:
     clean, _fragment = urldefrag(url.strip())
     return clean
+
+
+def is_parameterized_route_path(path: str) -> bool:
+    text = str(path or "")
+    return bool(ROUTE_PARAM_RE.search(text) or "{" in text or "}" in text or "*" in text)
+
+
+def is_auth_exit_url(url: str) -> bool:
+    try:
+        return bool(AUTH_EXIT_PATH_RE.search(urlparse(url).path or ""))
+    except Exception:
+        return False
+
+
+def is_auth_entry_url(url: str) -> bool:
+    try:
+        return bool(AUTH_ENTRY_PATH_RE.search(urlparse(url).path or ""))
+    except Exception:
+        return False
+
+
+def resolve_frontend_source_routes(frontend_source_path: str | None, base_url: str, allowed_domains: list[str]) -> tuple[list[str], int]:
+    if not frontend_source_path:
+        return [], 0
+    try:
+        with open(frontend_source_path, "r", encoding="utf-8") as fh:
+            source_map = json.load(fh)
+    except Exception as exc:
+        emit(
+            {
+                "ok": False,
+                "code": "INVALID_FRONTEND_SOURCE",
+                "message": "Could not read --frontend-source JSON.",
+                "detail": compact_text(exc, 240),
+            },
+            2,
+        )
+    if source_map.get("ok") is not True or source_map.get("kind") != "frontend-source-map":
+        emit(
+            {
+                "ok": False,
+                "code": "INVALID_FRONTEND_SOURCE",
+                "message": "--frontend-source must be frontend_source_intelligence.cjs output.",
+            },
+            2,
+        )
+    route_hints = source_map.get("routeHints") if isinstance(source_map.get("routeHints"), list) else []
+    urls: list[str] = []
+    seen: set[str] = set()
+    for hint in route_hints:
+        if not isinstance(hint, dict):
+            continue
+        path_value = compact_text(hint.get("path"), 240)
+        if not path_value or is_parameterized_route_path(path_value):
+            continue
+        absolute = normalize_url(urljoin(base_url, path_value))
+        if absolute in seen or is_auth_exit_url(absolute) or not is_allowed_url(absolute, allowed_domains):
+            continue
+        seen.add(absolute)
+        urls.append(absolute)
+    return urls[:500], len(route_hints)
 
 
 def validate_config(args: argparse.Namespace) -> ScanConfig:
@@ -115,6 +201,8 @@ def validate_config(args: argparse.Namespace) -> ScanConfig:
             2,
         )
 
+    route_hint_urls, route_hint_count = resolve_frontend_source_routes(args.frontend_source, base_url, allowed_domains)
+
     return ScanConfig(
         base_url=base_url,
         allowed_domains=allowed_domains,
@@ -127,6 +215,9 @@ def validate_config(args: argparse.Namespace) -> ScanConfig:
         test_environment=test_environment,
         allow_mutating_learning=allow_mutating_learning,
         har_path=args.har_path,
+        frontend_source=args.frontend_source,
+        route_hint_urls=route_hint_urls,
+        route_hint_count=route_hint_count,
     )
 
 
@@ -136,6 +227,19 @@ def is_allowed_url(url: str, allowed_domains: list[str]) -> bool:
         return False
     host = normalize_domain(url)
     return host in allowed_domains or any(host.endswith(f".{domain}") for domain in allowed_domains)
+
+
+def enqueue_url(queue: deque[str], queued: set[str], seen: set[str], url: str, config: ScanConfig, queue_limit: int) -> bool:
+    absolute = normalize_url(str(url or ""))
+    if not absolute or absolute in seen or absolute in queued:
+        return False
+    if is_auth_exit_url(absolute) or not is_allowed_url(absolute, config.allowed_domains):
+        return False
+    if len(queue) + len(seen) >= queue_limit:
+        return False
+    queue.append(absolute)
+    queued.add(absolute)
+    return True
 
 
 def compact_text(value: Any, limit: int = 160) -> str:
@@ -163,6 +267,73 @@ def risk_hint(text: str) -> str:
     if MUTATING_TEXT_RE.search(text):
         return "mutating"
     return "read"
+
+
+def detect_auth_wall(page_record: dict[str, Any], config: ScanConfig) -> dict[str, str] | None:
+    """Detect a stale/restored-login failure before the crawler wastes pages.
+
+    This only fails fast when the caller explicitly provided a saved browser
+    session. Without `--storage-state`, a login page may be the intentional
+    public entrypoint and should not be treated as a stale-session failure here.
+    """
+    if not config.storage_state:
+        return None
+    if page_record.get("error"):
+        return None
+
+    inputs = page_record.get("inputs") or []
+    forms = page_record.get("forms") or []
+    buttons = page_record.get("buttons") or []
+    headings = page_record.get("headings") or []
+    url = str(page_record.get("url") or "")
+    metrics = page_record.get("metrics") or {}
+    combined_text = " ".join(
+        [
+            str(page_record.get("title") or ""),
+            str(page_record.get("textSample") or ""),
+            " ".join(str(item.get("text") or "") for item in headings if isinstance(item, dict)),
+            " ".join(str(item.get("text") or "") for item in buttons if isinstance(item, dict)),
+            " ".join(str(item.get("label") or "") for item in forms if isinstance(item, dict)),
+        ]
+    )
+    field_text = " ".join(
+        " ".join(str(field.get(key) or "") for key in ("label", "name", "type", "placeholder", "autocomplete"))
+        for field in inputs
+        if isinstance(field, dict)
+    )
+    has_password = any(
+        str(field.get("type") or "").lower() == "password"
+        or "password" in str(field.get("autocomplete") or "").lower()
+        or "password" in str(field.get("name") or "").lower()
+        for field in inputs
+        if isinstance(field, dict)
+    )
+    has_auth_field = bool(AUTH_FIELD_RE.search(field_text))
+    has_auth_text = bool(AUTH_WALL_TEXT_RE.search(combined_text))
+    auth_path = is_auth_entry_url(url)
+    has_app_structure = (
+        int(metrics.get("tables") or 0) > 0
+        or int(metrics.get("networkContracts") or 0) > 0
+        or len(page_record.get("navItems") or []) >= 3
+    )
+
+    if has_password:
+        detail = "Saw a password field while scanning with a saved session."
+    elif auth_path and (has_auth_text or has_auth_field):
+        detail = "The saved session resolved to a login/authentication route."
+    elif has_auth_text and has_auth_field and not has_app_structure:
+        detail = "The page content looks like a login or expired-session wall."
+    else:
+        return None
+
+    return {
+        "code": "AUTH_NOT_RESTORED",
+        "url": url,
+        "detail": (
+            f"{detail} Re-capture the login with capture_session.cjs and rerun learning; "
+            "do not trust this scan's page coverage."
+        ),
+    }
 
 
 def build_api_contract(current_url: str, form: dict[str, Any], config: ScanConfig | None = None) -> dict[str, Any]:
@@ -522,6 +693,15 @@ def extract_page(page: Any, current_url: str, allowed_domains: list[str], config
                   type: option.getAttribute('type') || ''
                 })).filter((item) => item.label || item.value)
           });
+          const routeAttr = (el) => (
+            el.getAttribute('href') ||
+            el.getAttribute('to') ||
+            el.getAttribute('data-route') ||
+            el.getAttribute('data-path') ||
+            el.getAttribute('data-url') ||
+            el.getAttribute('router-link') ||
+            ''
+          );
           let interactionIndex = 0;
           const isInsideForm = (el) => Boolean(el.closest('form'));
           const interactionInfo = (el) => {
@@ -535,7 +715,7 @@ def extract_page(page: Any, current_url: str, allowed_domains: list[str], config
               type: el.getAttribute('type') || '',
               ariaExpanded: el.getAttribute('aria-expanded') || '',
               ariaControls: el.getAttribute('aria-controls') || '',
-              href: el.getAttribute('href') || '',
+              href: routeAttr(el),
               insideForm: isInsideForm(el)
             };
           };
@@ -554,7 +734,7 @@ def extract_page(page: Any, current_url: str, allowed_domains: list[str], config
             })).filter((item) => item.text),
             navItems: Array.from(document.querySelectorAll('nav a, nav button, aside a, aside button, [role="navigation"] a, [role="navigation"] button, [role="menu"] [role="menuitem"], [role="tab"]')).slice(0, 120).map((el) => ({
               text: textOf(el),
-              href: el.getAttribute('href') || ''
+              href: routeAttr(el)
             })).filter((item) => item.text),
             links: Array.from(document.querySelectorAll('a[href]')).slice(0, 200).map((el) => ({
               text: textOf(el),
@@ -592,7 +772,7 @@ def extract_page(page: Any, current_url: str, allowed_domains: list[str], config
     for item in snapshot.get("links", []):
         href = str(item.get("href") or "")
         absolute = normalize_url(urljoin(current_url, href))
-        if not is_allowed_url(absolute, allowed_domains):
+        if is_auth_exit_url(absolute) or not is_allowed_url(absolute, allowed_domains):
             continue
         link = {"text": compact_text(item.get("text")), "url": absolute}
         if link["url"] and link["url"] not in {existing["url"] for existing in links}:
@@ -755,6 +935,15 @@ def extract_page(page: Any, current_url: str, allowed_domains: list[str], config
         ][:80],
         "_nextUrls": next_urls,
     }
+    for nav_item in page_record["navItems"]:
+        nav_url = nav_item.get("url", "")
+        if nav_url and not is_auth_exit_url(nav_url) and is_allowed_url(nav_url, allowed_domains) and nav_url not in next_urls:
+            next_urls.append(nav_url)
+    for frame in page_record["iframes"]:
+        frame_url = frame.get("src", "")
+        if frame_url and not is_auth_exit_url(frame_url) and is_allowed_url(frame_url, allowed_domains) and frame_url not in next_urls:
+            next_urls.append(frame_url)
+    page_record["_nextUrls"] = next_urls
     page_record["metrics"] = {
         "links": len(page_record["links"]),
         "buttons": len(page_record["buttons"]),
@@ -818,6 +1007,8 @@ def build_scan_summary(config: ScanConfig, pages: list[dict[str, Any]], warnings
         "businessObjectCount": len(business_objects),
         "apiContractCount": len(api_contracts),
         "interactivePageCount": len(interactive_pages),
+        "frontendSourceRouteHintCount": config.route_hint_count,
+        "frontendSourceSeedUrlCount": len(config.route_hint_urls),
         "learningMode": config.learning_mode,
         "testEnvironment": config.test_environment,
         "allowMutatingLearning": config.allow_mutating_learning,
@@ -886,6 +1077,13 @@ def explore_readonly_interactions(
     source_url = source_page.get("url") or ""
     source_fingerprint = source_page.get("fingerprint") or ""
     candidates = source_page.get("interactionCandidates", [])[:24]
+    if candidates:
+        emit_progress(
+            "interactive_candidates",
+            url=source_url,
+            candidates=len(candidates),
+            remaining=max_new_pages,
+        )
     for candidate in candidates:
         if len(discovered) >= max_new_pages:
             break
@@ -899,7 +1097,6 @@ def explore_readonly_interactions(
             page.goto(source_url, wait_until="domcontentloaded", timeout=timeout_ms)
             wait_for_spa_ready(page, timeout_ms)
             refreshed_page = extract_page(page, normalize_url(page.url), config.allowed_domains, config)
-            refreshed_page.pop("_nextUrls", None)
             refreshed_candidate = next(
                 (
                     item
@@ -922,7 +1119,6 @@ def explore_readonly_interactions(
             if network_recorder:
                 discovered_page["networkContracts"] = network_recorder.snapshot()
                 discovered_page["metrics"]["networkContracts"] = len(discovered_page["networkContracts"])
-            discovered_page.pop("_nextUrls", None)
             if discovered_page.get("fingerprint") == source_fingerprint and discovered_page.get("url") == source_url:
                 continue
             discovered_page["id"] = stable_hash([source_page.get("id"), scan_id, discovered_page.get("fingerprint")], 12)
@@ -935,6 +1131,12 @@ def explore_readonly_interactions(
                 "reason": candidate.get("reason", ""),
             }
             discovered.append(discovered_page)
+            emit_progress(
+                "interactive_page",
+                fromUrl=source_url,
+                label=candidate.get("text", ""),
+                pagesDiscovered=len(discovered),
+            )
         except Exception:
             continue
     return discovered
@@ -958,11 +1160,31 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
 
     pages: list[dict[str, Any]] = []
     warnings: list[dict[str, str]] = []
+    auth_blocker: dict[str, str] | None = None
     seen: set[str] = set()
-    queue: deque[str] = deque([config.base_url])
+    queued: set[str] = set()
+    queue: deque[str] = deque()
+    queue_limit = min(max(config.max_pages * 6, config.max_pages + len(config.route_hint_urls) + 10), 800)
+    enqueue_url(queue, queued, seen, config.base_url, config, queue_limit)
+    for route_hint_url in config.route_hint_urls:
+        enqueue_url(queue, queued, seen, route_hint_url, config, queue_limit)
 
     try:
         with sync_playwright() as p:
+            emit_progress(
+                "browser_launch",
+                headful=config.headful,
+                maxPages=config.max_pages,
+                interactiveReadonly=config.interactive_readonly,
+                routeHints=config.route_hint_count,
+                seedUrls=len(queue),
+            )
+            emit_progress(
+                "queue_seeded",
+                seedUrls=len(queue),
+                routeHints=config.route_hint_count,
+                frontendSource=bool(config.frontend_source),
+            )
             try:
                 browser = p.chromium.launch(headless=not config.headful, channel="chrome")
             except Exception:
@@ -982,9 +1204,18 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
 
             while queue and len(pages) < config.max_pages:
                 url = queue.popleft()
+                queued.discard(url)
                 if url in seen or not is_allowed_url(url, config.allowed_domains):
                     continue
                 seen.add(url)
+                emit_progress(
+                    "page_start",
+                    url=url,
+                    pageIndex=len(pages) + 1,
+                    seen=len(seen),
+                    queued=len(queue),
+                    maxPages=config.max_pages,
+                )
                 page_record: dict[str, Any]
                 interactive_pages: list[dict[str, Any]] = []
                 try:
@@ -992,11 +1223,23 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
                     page.goto(url, wait_until="domcontentloaded", timeout=config.timeout_ms)
                     wait_for_spa_ready(page, config.timeout_ms)
                     page_record = extract_page(page, normalize_url(page.url), config.allowed_domains, config)
+                    if page_record.get("url") and page_record.get("url") != url:
+                        seen.add(page_record["url"])
                     page_record["networkContracts"] = network_recorder.snapshot()
                     page_record["metrics"]["networkContracts"] = len(page_record["networkContracts"])
+                    auth_blocker = detect_auth_wall(page_record, config)
+                    if auth_blocker:
+                        page_record["error"] = auth_blocker["code"]
+                        warnings.append(auth_blocker)
+                        pages.append(page_record)
+                        emit_progress(
+                            "auth_wall_detected",
+                            url=auth_blocker.get("url", page_record.get("url", url)),
+                            code=auth_blocker["code"],
+                        )
+                        break
                     for next_url in page_record.pop("_nextUrls", []):
-                        if next_url not in seen and len(seen) + len(queue) < config.max_pages * 4:
-                            queue.append(next_url)
+                        enqueue_url(queue, queued, seen, next_url, config, queue_limit)
                     if config.interactive_readonly and len(pages) < config.max_pages:
                         remaining = config.max_pages - len(pages) - 1
                         if remaining > 0:
@@ -1007,11 +1250,35 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
                 except PlaywrightError as exc:
                     page_record = {"url": url, "error": "PAGE_ERROR", "detail": compact_text(exc, 240)}
                     warnings.append({"url": url, "code": "PAGE_ERROR", "detail": compact_text(exc, 240)})
+                if auth_blocker:
+                    break
                 pages.append(page_record)
+                emit_progress(
+                    "page_done",
+                    url=page_record.get("url", url),
+                    pages=len(pages),
+                    queued=len(queue),
+                    buttons=page_record.get("metrics", {}).get("buttons", 0) if isinstance(page_record, dict) else 0,
+                    forms=page_record.get("metrics", {}).get("forms", 0) if isinstance(page_record, dict) else 0,
+                    networkContracts=page_record.get("metrics", {}).get("networkContracts", 0) if isinstance(page_record, dict) else 0,
+                    warning=page_record.get("error", "") if isinstance(page_record, dict) else "",
+                )
                 for interactive_page in interactive_pages:
                     if len(pages) >= config.max_pages:
                         break
+                    for next_url in interactive_page.pop("_nextUrls", []):
+                        enqueue_url(queue, queued, seen, next_url, config, queue_limit)
                     pages.append(interactive_page)
+                    emit_progress(
+                        "page_done",
+                        url=interactive_page.get("url", ""),
+                        pages=len(pages),
+                        queued=len(queue),
+                        source=interactive_page.get("source", ""),
+                        buttons=interactive_page.get("metrics", {}).get("buttons", 0),
+                        forms=interactive_page.get("metrics", {}).get("forms", 0),
+                        networkContracts=interactive_page.get("metrics", {}).get("networkContracts", 0),
+                    )
 
             context.close()
             browser.close()
@@ -1030,7 +1297,7 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
     # password field while authenticated almost always means the session expired or
     # was not applied, which otherwise just yields a silently shallow scan. The fix
     # is to (re-)capture the login. (localStorage-token SPAs are the common case.)
-    if config.storage_state and any(
+    if not auth_blocker and config.storage_state and any(
         str(field.get("type", "")).lower() == "password"
         for page_record in pages
         for field in (page_record.get("inputs") or [])
@@ -1041,6 +1308,45 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
         })
 
     summary = build_scan_summary(config, pages, warnings)
+    if auth_blocker:
+        emit_progress(
+            "scan_stopped",
+            code=auth_blocker["code"],
+            pages=len(pages),
+            warnings=len(warnings),
+        )
+        return {
+            "ok": False,
+            "schemaVersion": 1,
+            "code": auth_blocker["code"],
+            "message": "Saved browser session was not restored; the scanner stopped before treating the login page as application coverage.",
+            "learningMode": config.learning_mode,
+            "testEnvironment": config.test_environment,
+            "allowMutatingLearning": config.allow_mutating_learning,
+            "interactiveReadonly": config.interactive_readonly,
+            "baseUrl": config.base_url,
+            "allowedDomains": config.allowed_domains,
+            "maxPages": config.max_pages,
+            "harPath": config.har_path,
+            "frontendSourcePath": config.frontend_source,
+            "frontendSourceRouteHintCount": config.route_hint_count,
+            "frontendSourceSeedUrlCount": len(config.route_hint_urls),
+            "pages": pages,
+            "coverage": {key: value for key, value in summary.items() if key not in {"siteMap", "actionCandidates", "businessObjects", "apiContracts"}},
+            "siteMap": summary["siteMap"],
+            "actionCandidates": summary["actionCandidates"],
+            "businessObjects": summary["businessObjects"],
+            "apiContracts": summary["apiContracts"],
+            "warnings": warnings,
+            "relearnRecommended": True,
+        }
+    emit_progress(
+        "scan_done",
+        pages=len(pages),
+        warnings=len(warnings),
+        actions=len(summary["actionCandidates"]),
+        apiContracts=len(summary["apiContracts"]),
+    )
     return {
         "ok": True,
         "schemaVersion": 1,
@@ -1053,6 +1359,9 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
         "allowedDomains": config.allowed_domains,
         "maxPages": config.max_pages,
         "harPath": config.har_path,
+        "frontendSourcePath": config.frontend_source,
+        "frontendSourceRouteHintCount": config.route_hint_count,
+        "frontendSourceSeedUrlCount": len(config.route_hint_urls),
         "pages": pages,
         "coverage": {key: value for key, value in summary.items() if key not in {"siteMap", "actionCandidates", "businessObjects", "apiContracts"}},
         "siteMap": summary["siteMap"],
@@ -1078,6 +1387,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Validate scan config without launching a browser.")
     parser.add_argument("--out", help="Write scan JSON to this path.")
     parser.add_argument("--har-path", help="Record all network traffic to this HAR file (feed to har_to_contracts.cjs to learn APIs from real traffic, including write paths).")
+    parser.add_argument("--frontend-source", help="Optional frontend-source-map.json from frontend_source_intelligence.cjs. Concrete route hints seed the scan queue.")
     return parser.parse_args()
 
 
@@ -1096,6 +1406,10 @@ def main() -> None:
             "learningMode": config.learning_mode,
             "testEnvironment": config.test_environment,
             "allowMutatingLearning": config.allow_mutating_learning,
+            "frontendSourcePath": config.frontend_source,
+            "frontendSourceRouteHintCount": config.route_hint_count,
+            "frontendSourceSeedUrlCount": len(config.route_hint_urls),
+            "seedUrls": [config.base_url, *config.route_hint_urls][:80],
         }
     else:
         payload = run_scan(config)

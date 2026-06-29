@@ -21,7 +21,16 @@ const {
 const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
 const createScript = path.join(ROOT, "resources/skills-catalog/lily-web-system-learning/scripts/create_web_system_skill.cjs");
 const finalizerScript = path.join(ROOT, "resources/skills-catalog/lily-web-system-learning/scripts/finalize_web_system_learning.cjs");
+const scannerScript = path.join(ROOT, "resources/skills-catalog/lily-web-system-learning/scripts/scan_web_system.py");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-frontend-source-"));
+
+function findPython() {
+  for (const candidate of ["python3", "python"]) {
+    const result = spawnSync(candidate, ["--version"], { encoding: "utf8" });
+    if (result.status === 0) return candidate;
+  }
+  return null;
+}
 
 try {
   const bundle = [
@@ -75,6 +84,31 @@ try {
     ],
   }, null, 2));
   fs.writeFileSync(sourcePath, `${JSON.stringify(sourceMap, null, 2)}\n`);
+
+  const python = findPython();
+  if (python) {
+    const dryRun = spawnSync(python, [
+      scannerScript,
+      "--base-url", "https://erp.example.com/signin",
+      "--allowed-domain", "example.com",
+      "--frontend-source", sourcePath,
+      "--dry-run",
+    ], { cwd: ROOT, encoding: "utf8" });
+    assert(dryRun.status === 0, `scanner accepts frontend-source route seeds: ${dryRun.stderr || dryRun.stdout}`);
+    const scanPlan = JSON.parse(dryRun.stdout);
+    assert(scanPlan.frontendSourceRouteHintCount === 2, "scanner counts all JS route hints");
+    assert(scanPlan.frontendSourceSeedUrlCount === 1, "scanner seeds only concrete SPA routes");
+    assert(
+      scanPlan.seedUrls.includes("https://erp.example.com/dashboard"),
+      "scanner queues concrete JS route hints for expanded scans",
+    );
+    assert(
+      !scanPlan.seedUrls.includes("https://erp.example.com/admin/users/:id"),
+      "scanner does not visit parameterized route templates directly",
+    );
+  } else {
+    console.warn("frontend-source-intelligence: python not found; scanner dry-run route seed check skipped");
+  }
 
   const result = spawnSync(process.execPath, [
     createScript,

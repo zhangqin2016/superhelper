@@ -57,29 +57,47 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    over DOM/HAR inference. Pass its `api-contracts.json` to
    `create_web_system_skill.cjs --contracts`. Fall back to the UI scan only for
    what the published contract does not cover.
-5. **Learn APIs from real traffic (for systems without a published contract, and
-   for write paths).** Run the scan with `--har-path scan.har` to record traffic,
-   then `node scripts/har_to_contracts.cjs --har scan.har --base-url <url>
-   --allow-domain <host> --merge api-contracts.json --out api-contracts.json` to
-   infer request/response schemas from observed requests and merge them in
-   (authoritative published contracts are never overridden). Write-path APIs
-   (POST/PUT/DELETE) are only captured when those flows actually run — exercise
-   them only in a confirmed test environment.
-   Also run `node scripts/frontend_source_intelligence.cjs --har scan.har
+5. **Learn APIs and SPA routes from real traffic (for systems without a
+   published contract, and for write paths).** Run an authenticated bootstrap
+   scan with `--har-path scan-bootstrap.har` to record the app shell, loaded JS,
+   and first-page traffic:
+   `python3 scripts/scan_web_system.py --base-url <url> --allowed-domain <host>
+   --storage-state <sessionPath> --interactive-readonly --max-pages 100 --har-path
+   scan-bootstrap.har --out scan-bootstrap.json`.
+   Also run `node scripts/frontend_source_intelligence.cjs --har scan-bootstrap.har
    --base-url <url> --allow-domain <host> --out frontend-source-map.json`.
    This is a bounded, read-only SPA source pass: it analyzes only same-allowlist
    JavaScript assets captured in the HAR, extracts route/API-client hints, and
    persists only structured metadata. It must not save raw bundle source,
    secrets, cookies, tokens, or large source text.
+   If `frontend-source-map.json` contains route hints, immediately run the
+   source-seeded expanded scan in the same learning turn:
+   `python3 scripts/scan_web_system.py --base-url <url> --allowed-domain <host>
+   --storage-state <sessionPath> --interactive-readonly --max-pages 100 --frontend-source
+   frontend-source-map.json --har-path scan-expanded.har --out scan.json`.
+   The expanded scanner seeds concrete SPA routes from JS, follows normal DOM
+   links, follows router-link/data-route/data-path navigation, recursively queues
+   safe pages discovered by read-only interactions, and emits progress heartbeats
+   for queue size, page start/done, interaction discovery, and scan completion.
+   Then merge observed APIs from both HAR files:
+   `node scripts/har_to_contracts.cjs --har scan-bootstrap.har --base-url <url>
+   --allow-domain <host> --merge api-contracts.json --out api-contracts.json`
+   and `node scripts/har_to_contracts.cjs --har scan-expanded.har --base-url
+   <url> --allow-domain <host> --merge api-contracts.json --out
+   api-contracts.json`. Authoritative published contracts are never overridden.
+   Write-path APIs (POST/PUT/DELETE) are only captured when those flows actually
+   run — exercise them only in a confirmed test environment.
    For SPAs (Vue/React/Angular): ALWAYS pass `--storage-state <sessionPath>` so the
    scan runs authenticated, and use `--interactive-readonly`. The scanner waits for
    the app to render before snapshotting (so it no longer captures only an empty
-   shell) and follows nav/menus/tabs to depth (default `--max-pages 40`). If the
-   scan `warnings` include `AUTH_NOT_RESTORED`, the session expired or wasn't
-   applied (common for localStorage-token SPAs) — re-capture the login and rerun
-   before trusting the result. A scan that finds only the landing page on an SPA
-   almost always ran unauthenticated or before the app rendered; do not present it
-   as a complete learning.
+   shell) and follows nav/menus/tabs to depth. If the scanner returns
+   `ok:false` with `code:"AUTH_NOT_RESTORED"` or `relearnRecommended:true`, stop
+   immediately: the saved session expired, was not applied, or the site returned
+   to a login/SSO/authentication wall. Re-capture the login with
+   `capture_session.cjs` and rerun learning. Do not continue scanning login
+   pages, do not finalize a skill from that result, and do not present it as
+   complete coverage. A scan that finds only the landing/login page on an SPA
+   almost always ran unauthenticated or before the app rendered.
 6. **Learn auth injection from the logged-in session.** After HAR capture, run
    `node scripts/learn_auth_recipe.cjs --storage-state <sessionPath> --har scan.har
    --base-url <url> --allow-domain <host>`. The output stores only sources and

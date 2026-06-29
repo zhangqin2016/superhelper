@@ -36,6 +36,7 @@ function createOpencodeRuntimeState() {
     textParts: new Map(),
     pendingDeltas: new Map(),
     pendingTextSnapshots: new Map(),
+    toolOutputs: new Map(),
   };
 }
 
@@ -55,6 +56,7 @@ function resetOpencodeRuntimeState(state) {
   state?.textParts?.clear?.();
   state?.pendingDeltas?.clear?.();
   state?.pendingTextSnapshots?.clear?.();
+  state?.toolOutputs?.clear?.();
 }
 
 function runtimeDraft(type, payload = {}) {
@@ -190,6 +192,8 @@ function reduceToolPart(part, state) {
 
   const started = () => {
     state.tools.set(callID, "started");
+    const output = stringifyToolOutput(st);
+    if (output) state.toolOutputs.set(callID, output);
     drafts.push(runtimeDraft("tool.started", {
       id: callID,
       name: part.tool || "unknown",
@@ -201,10 +205,19 @@ function reduceToolPart(part, state) {
   };
 
   if (!prev && (status === "running" || status === "pending") && hasInput) started();
+  if (prev && (status === "running" || status === "pending")) {
+    const output = stringifyToolOutput(st);
+    if (output && output !== state.toolOutputs.get(callID)) {
+      state.toolOutputs.set(callID, output);
+      return { drafts, progress: true };
+    }
+  }
 
   if ((status === "completed" || status === "error") && prev !== "done") {
     if (!prev) started();
     state.tools.set(callID, "done");
+    const output = stringifyToolOutput(st);
+    if (output) state.toolOutputs.set(callID, output);
     drafts.push(runtimeDraft("tool.done", {
       id: callID,
       isError: status === "error",
