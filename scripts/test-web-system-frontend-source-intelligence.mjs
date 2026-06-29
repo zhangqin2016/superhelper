@@ -155,6 +155,22 @@ try {
       !scanPlan.seedUrls.includes("https://erp.example.com/admin/users/:id"),
       "scanner does not visit parameterized route templates directly",
     );
+    const autoDir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-source-auto-"));
+    fs.writeFileSync(path.join(autoDir, "frontend-source-map.json"), `${JSON.stringify(sourceMap, null, 2)}\n`);
+    const autoDryRun = spawnSync(python, [
+      scannerScript,
+      "--base-url", "https://erp.example.com/signin",
+      "--allowed-domain", "example.com",
+      "--out", path.join(autoDir, "scan-auth.json"),
+      "--dry-run",
+    ], { cwd: ROOT, encoding: "utf8" });
+    assert(autoDryRun.status === 0, `scanner auto-loads sibling frontend-source map: ${autoDryRun.stderr || autoDryRun.stdout}`);
+    const autoScanPlan = JSON.parse(autoDryRun.stdout);
+    assert(autoScanPlan.frontendSourceRouteHintCount === 2, "scanner auto-counts sibling JS route hints");
+    assert(
+      autoScanPlan.seedUrls.includes("https://erp.example.com/dashboard"),
+      "scanner auto-queues sibling frontend-source route hints",
+    );
   } else {
     console.warn("frontend-source-intelligence: python not found; scanner dry-run route seed check skipped");
   }

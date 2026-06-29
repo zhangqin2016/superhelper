@@ -88,7 +88,7 @@ def progress_detail(event: str, fields: dict[str, Any]) -> str:
     if event == "interactive_candidates":
         return f"网页扫描交互：发现 {fields.get('candidates', 0)} 个只读候选 · {url}"
     if event == "interactive_page":
-        return f"网页扫描交互：打开 {fields.get('label') or '只读页面'} · 已发现 {fields.get('pagesDiscovered', 0)} 页"
+        return f"网页扫描交互：打开 {fields.get('label') or '只读页面'} · 本次新增 {fields.get('pagesDiscovered', 0)} 页"
     if event == "auth_wall_detected":
         return f"网页扫描停止：会话失效或进入登录页 · {url}"
     if event == "scan_stopped":
@@ -191,6 +191,28 @@ def resolve_frontend_source_routes(frontend_source_path: str | None, base_url: s
     return urls[:500], len(route_hints)
 
 
+def auto_frontend_source_path(args: argparse.Namespace) -> str:
+    explicit = str(getattr(args, "frontend_source", "") or "").strip()
+    if explicit:
+        return explicit
+    candidates: list[str] = []
+    out_path = str(getattr(args, "out", "") or "").strip()
+    if out_path:
+        candidates.append(os.path.join(os.path.dirname(os.path.abspath(out_path)), "frontend-source-map.json"))
+    har_path = str(getattr(args, "har_path", "") or "").strip()
+    if har_path:
+        candidates.append(os.path.join(os.path.dirname(os.path.abspath(har_path)), "frontend-source-map.json"))
+    candidates.append(os.path.abspath("frontend-source-map.json"))
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        if os.path.exists(candidate):
+            return candidate
+    return ""
+
+
 def validate_config(args: argparse.Namespace) -> ScanConfig:
     base_url = normalize_url(args.base_url)
     parsed = urlparse(base_url)
@@ -239,7 +261,8 @@ def validate_config(args: argparse.Namespace) -> ScanConfig:
             2,
         )
 
-    route_hint_urls, route_hint_count = resolve_frontend_source_routes(args.frontend_source, base_url, allowed_domains)
+    frontend_source = auto_frontend_source_path(args)
+    route_hint_urls, route_hint_count = resolve_frontend_source_routes(frontend_source, base_url, allowed_domains)
 
     return ScanConfig(
         base_url=base_url,
@@ -253,7 +276,7 @@ def validate_config(args: argparse.Namespace) -> ScanConfig:
         test_environment=test_environment,
         allow_mutating_learning=allow_mutating_learning,
         har_path=args.har_path,
-        frontend_source=args.frontend_source,
+        frontend_source=frontend_source,
         route_hint_urls=route_hint_urls,
         route_hint_count=route_hint_count,
         output_path=args.out,
