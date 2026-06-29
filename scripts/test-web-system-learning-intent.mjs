@@ -36,6 +36,9 @@ assert.match(prompt, /普通用户执行时禁止临场生成脚本、选择器�
 assert.match(prompt, /https:\/\/oa\.example\.com/);
 assert.match(prompt, /扫描必须以前台 Bash\/tool 命令执行并等待完成/);
 assert.match(prompt, /只有真实工具还在运行时才可以说“扫描正在运行\/等待完成”/);
+assert.match(prompt, /SPECIAL_BROWSER_CONTEXT_REQUIRED/);
+assert.match(prompt, /最多一次捕获\+一次扫描/);
+assert.match(prompt, /禁止尝试 stealth、反检测、改 webdriver、改 UA、换原生 Chrome/);
 
 const writes = [];
 const fakeSession = {

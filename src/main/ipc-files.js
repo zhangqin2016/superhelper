@@ -3,9 +3,10 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
-const { ipcMain, dialog } = require("electron");
+const { ipcMain, dialog, clipboard } = require("electron");
 const FileStagingManager = require("./file-staging-manager");
 const { fileStagingDir } = require("./config");
+const { inspectLocalMediaPath } = require("./local-media-protocol");
 
 const TEXT_PREVIEW_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".csv", ".json"]);
 const DEFAULT_TEXT_PREVIEW_BYTES = 1024 * 1024;
@@ -62,6 +63,98 @@ function readTextPreview(payload = {}) {
   }
 }
 
+function clipboardTextCandidates(value) {
+  const text = String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u0000/g, "\n");
+  const candidates = text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (const match of text.matchAll(/<string>([\s\S]*?)<\/string>/g)) {
+    if (match[1]) candidates.push(match[1].trim());
+  }
+  return candidates;
+}
+
+function normalizeClipboardFilePath(value) {
+  let text = String(value || "").trim();
+  if (!text) return "";
+  text = text.replace(/^["']|["']$/g, "");
+  if (/^file:\/\//i.test(text)) {
+    try {
+      text = fileURLToPath(text);
+    } catch {
+      return "";
+    }
+  }
+  if (!path.isAbsolute(text)) return "";
+  return text;
+}
+
+function extractClipboardFilePaths(clip = clipboard) {
+  const paths = new Set();
+  const addCandidate = (value) => {
+    for (const item of clipboardTextCandidates(value)) {
+      const p = normalizeClipboardFilePath(item);
+      if (p) paths.add(p);
+    }
+  };
+
+  try {
+    const bookmark = clip?.readBookmark?.();
+    addCandidate(bookmark?.url || "");
+  } catch {
+    /* platform clipboard format unavailable */
+  }
+  try {
+    addCandidate(clip?.readText?.() || "");
+  } catch {
+    /* platform clipboard format unavailable */
+  }
+
+  let formats = [];
+  try {
+    formats = Array.isArray(clip?.availableFormats?.()) ? clip.availableFormats() : [];
+  } catch {
+    formats = [];
+  }
+  for (const format of formats) {
+    if (!/(file|filename|url|uri|path)/i.test(String(format || ""))) continue;
+    let buffer = null;
+    try {
+      buffer = clip.readBuffer(format);
+    } catch {
+      buffer = null;
+    }
+    if (!buffer || !buffer.length) continue;
+    addCandidate(buffer.toString("utf8"));
+    addCandidate(buffer.toString("utf16le"));
+  }
+
+  return [...paths].filter((p) => {
+    try {
+      return fs.existsSync(p) && fs.statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function stageClipboardFiles(stagingManager, clip = clipboard) {
+  const staged = [];
+  const errors = [];
+  const paths = extractClipboardFilePaths(clip);
+  for (const filePath of paths) {
+    try {
+      staged.push(stagingManager.stageFromPath(filePath));
+    } catch (err) {
+      errors.push({ path: filePath, error: err.message || "FILE_ERROR" });
+    }
+  }
+  return { ok: true, files: staged, errors, empty: paths.length === 0 };
+}
+
 function registerFileHandlers(mainWindow, stagingManager) {
   ipcMain.handle("files:pick", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -103,6 +196,14 @@ function registerFileHandlers(mainWindow, stagingManager) {
     }
   });
 
+  ipcMain.handle("files:paste-clipboard", () => {
+    try {
+      return stageClipboardFiles(stagingManager);
+    } catch (err) {
+      return { ok: false, error: err.message || "CLIPBOARD_READ_FAILED" };
+    }
+  });
+
   ipcMain.handle("files:thumbnail", (_event, fileId) => {
     const dataUrl = stagingManager.getThumbnail(fileId);
     return { ok: true, dataUrl };
@@ -114,6 +215,7 @@ function registerFileHandlers(mainWindow, stagingManager) {
   });
 
   ipcMain.handle("files:read-text", (_event, payload = {}) => readTextPreview(payload));
+  ipcMain.handle("files:local-media-status", (_event, payload = {}) => inspectLocalMediaPath(payload.filePath || payload.path || payload));
 
   ipcMain.handle("files:clear-staging", () => {
     try {
@@ -130,4 +232,9 @@ function registerFileHandlers(mainWindow, stagingManager) {
   });
 }
 
-module.exports = { registerFileHandlers, readTextPreview };
+module.exports = {
+  extractClipboardFilePaths,
+  readTextPreview,
+  registerFileHandlers,
+  stageClipboardFiles,
+};

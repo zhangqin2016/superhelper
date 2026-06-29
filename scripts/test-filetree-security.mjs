@@ -31,6 +31,7 @@ require.cache[electronPath] = {
 };
 
 const { registerFileTreeHandlers } = require("../src/main/ipc-filetree.js");
+const { inspectLocalMediaPath } = require("../src/main/local-media-protocol.js");
 const { captureBeforeSnapshot, emitDiffForTool } = require("../src/main/diff-capture.js");
 
 const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ft-proj-"));
@@ -124,6 +125,24 @@ assert(res.ok === false, "relative reveal refused");
 res = await reveal(null, { sessionId, filePath: "generated-assets/image.png" });
 assert(res.ok === false, "relative generated output reveal refused");
 
+// 8. local media diagnostics distinguish "exists but not authorized" from
+// "not found", so the renderer never has to render a misleading broken image.
+const userData = fs.mkdtempSync(path.join(os.tmpdir(), "ft-user-data-"));
+process.env.LILY_USER_DATA_DIR = userData;
+fs.writeFileSync(path.join(userData, "projects.json"), JSON.stringify({
+  projects: [{ id: "p1", path: projectRoot }],
+}, null, 2));
+const mediaOk = inspectLocalMediaPath(generated);
+assert(mediaOk.ok === true && mediaOk.error === "", "authorized existing media is diagnosable as ok");
+assert(mediaOk.url.startsWith("app-file://media/"), "diagnostic includes canonical app-file URL");
+const unauthorizedImage = path.join(outside, "image.png");
+fs.writeFileSync(unauthorizedImage, "png");
+const mediaUnauthorized = inspectLocalMediaPath(unauthorizedImage);
+assert(mediaUnauthorized.ok === false && mediaUnauthorized.error === "NOT_AUTHORIZED", "existing outside-root media reports NOT_AUTHORIZED");
+const mediaMissing = inspectLocalMediaPath(path.join(projectRoot, "missing.png"));
+assert(mediaMissing.ok === false && mediaMissing.error === "NOT_FOUND", "missing media reports NOT_FOUND");
+
 fs.rmSync(projectRoot, { recursive: true, force: true });
 fs.rmSync(outside, { recursive: true, force: true });
+fs.rmSync(userData, { recursive: true, force: true });
 console.log("PASS: test-filetree-security");

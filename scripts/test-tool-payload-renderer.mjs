@@ -67,10 +67,24 @@ if (!broken?.__partialJson) {
 // folder". This is the pure detection logic; the DOM rendering isn't unit-tested
 // (same as generatedMediaFromPayload), but wrong detection = no reveal affordance.
 const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp|gif|svg|html?|json|zip)$/i;
+function isPlaceholderGeneratedPath(filePath = "") {
+  const raw = String(filePath || "").trim();
+  if (!raw) return true;
+  let normalized = raw.replace(/\\/g, "/");
+  try { normalized = decodeURIComponent(normalized); } catch { /* keep raw */ }
+  const lower = normalized.toLowerCase();
+  return (
+    /^\/(?:absolute\/path\/to|path\/to)\//.test(lower) ||
+    /^[a-z]:\/(?:absolute\/path\/to|path\/to)\//.test(lower) ||
+    lower.includes("/绝对路径/") ||
+    /^\/?绝对路径\//.test(normalized) ||
+    /(^|\/)(?:your|example|sample)-?path\//.test(lower)
+  );
+}
 function looksLikeGeneratedFilePath(value) {
   if (typeof value !== "string") return false;
   const text = value.trim();
-  return text.length > 3 && /[\\/]/.test(text) && GENERATED_FILE_EXTS.test(text);
+  return text.length > 3 && /[\\/]/.test(text) && GENERATED_FILE_EXTS.test(text) && !isPlaceholderGeneratedPath(text);
 }
 function generatedFilesFromPayload(payload) {
   if (!payload || typeof payload !== "object" || payload.ok === false) return [];
@@ -104,6 +118,7 @@ expectPaths({ ok: false, output: "/tmp/out/contract.docx" }, [], "failed result 
 // Non-path strings (e.g. a status message) must not be mistaken for files.
 expectPaths({ ok: true, output: "done" }, [], "non-path output ignored");
 expectPaths({ ok: true, result: "Created the report." }, [], "prose result ignored");
+expectPaths({ ok: true, output: "/absolute/path/to/generated-assets/name.svg" }, [], "placeholder generated path ignored");
 // De-dupe repeated paths.
 expectPaths({ ok: true, output: "/a/x.pdf", outputs: ["/a/x.pdf"] }, ["/a/x.pdf"], "dedupe");
 

@@ -490,6 +490,57 @@ async function newSession() {
   }
 }
 
+// --- transient hiccup after read-only tools: replay once --------------------
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 200;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.historyMessages = [];
+    fake.idleState = true;
+    session.sendUserMessage({ text: "inspect files" });
+    await tick();
+    fake.emitEvent({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "part_read_1",
+          type: "tool",
+          tool: "read",
+          callID: "call_read_1",
+          state: { status: "running", input: { file_path: "/repo/a.md" } },
+        },
+      },
+    });
+    fake.emitEvent({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "part_read_1",
+          type: "tool",
+          tool: "read",
+          callID: "call_read_1",
+          state: { status: "completed", output: "hello", input: { file_path: "/repo/a.md" } },
+        },
+      },
+    });
+    fake.emit("error", new Error("SSE reconnect gave up after socket connection was closed"));
+    await sleep(60);
+    assert(fake.prompts.length === 2, "transient failure after read-only tool activity is replayed once");
+    assert(orch.calls.error.length === 0, "safe read-only replay avoids a visible model interruption");
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "replayed file answer" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "replayed file answer", "read-only replay completes");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
 // --- promptAsync transport error: catalog noise does not prove prompt landed -
 {
   const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;

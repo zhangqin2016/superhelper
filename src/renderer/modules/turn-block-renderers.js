@@ -241,7 +241,7 @@ function renderMarkdownArtifact(block) {
       const suffix = result.truncated
         ? `\n\n${tr("renderer.markdownPreviewTruncated", "Preview truncated. Open the file to view the full content.")}`
         : "";
-      renderMarkdownContent(preview, `${result.text || ""}${suffix}`);
+      renderMarkdownContent(preview, `${result.text || ""}${suffix}`, { basePath: block.path || "" });
     } catch (error) {
       if (node.dataset.markdownPreviewKey !== key) return;
       preview.textContent = tr("renderer.markdownPreviewFailed", "Markdown preview is unavailable. Open the file to view it.");

@@ -516,6 +516,7 @@
   "toast.cacheCleared": "Attachment cache cleared",
   "toast.cacheClearFailed": "Failed to clear cache",
   "toast.largePasteAttached": "Large pasted text was added as an attachment",
+  "toast.clipboardFilesAttached": "Added {count} file(s) from the clipboard",
   "toast.needProject": "Add a workspace folder first.",
   "toast.needSession": "Create a chat first.",
   "toast.createSessionFailed": "Could not create a conversation — assistant engine not ready. Quit and reopen the app.",

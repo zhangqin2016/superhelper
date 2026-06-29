@@ -82,7 +82,7 @@ function prepareMarkdown(text = "", { mathRenderer = null } = {}) {
   return renderMathBlocks(repairMarkdownTables(text), mathRenderer);
 }
 
-function createMarkedRenderer({ hl = null, cacheCode = false } = {}) {
+function createMarkedRenderer({ hl = null, cacheCode = false, basePath = "" } = {}) {
   const renderer = new window.marked.Renderer();
   renderer.link = function ({ href, title, tokens }) {
     const text = this.parser.parseInline(tokens);
@@ -96,11 +96,12 @@ function createMarkedRenderer({ hl = null, cacheCode = false } = {}) {
     return `<a href="${escapeAttribute(safeHref)}"${localAttrs} target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
   };
   renderer.image = function ({ href, title, text }) {
-    const safeSrc = sanitizeUrl(href, { allowRelative: true, image: true });
+    const localPathFromRelative = resolveRelativeLocalPath(href, basePath);
+    const safeSrc = localPathFromRelative ? localPathFromRelative : sanitizeUrl(href, { allowRelative: true, image: true });
     const alt = escapeAttribute(text || "");
     if (!safeSrc) return alt;
     const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
-    const localPath = localFilePathFromUrl(safeSrc);
+    const localPath = localPathFromRelative || localFilePathFromUrl(safeSrc);
     const imageSrc = localPath ? localMediaUrlFromPath(localPath) : safeSrc;
     const localAttrs = localPath
       ? ` data-local-file-path="${escapeAttribute(localPath)}"`
@@ -174,7 +175,7 @@ async function ensureMermaid() {
   }
 }
 
-export async function renderMarkdown(element, markdownText) {
+export async function renderMarkdown(element, markdownText, options = {}) {
   const parser = window.marked && (window.marked.parse || window.marked);
   if (typeof parser !== "function" || !window.DOMPurify) {
     element.classList?.add("markdown-fallback");
@@ -184,7 +185,7 @@ export async function renderMarkdown(element, markdownText) {
   element.classList?.remove("markdown-fallback");
 
   const [hl, mathRenderer] = await Promise.all([ensureHljs(), ensureKatex()]);
-  const renderer = createMarkedRenderer({ hl });
+  const renderer = createMarkedRenderer({ hl, basePath: options.basePath || "" });
   const html = parser(prepareMarkdown(markdownText || "", { mathRenderer }), { ...MARKED_OPTIONS, renderer });
 
   element.innerHTML = sanitizeMarkdownHtml(html);
@@ -211,6 +212,7 @@ function sanitizeUrl(value, { allowRelative = false, image = false } = {}) {
   if (/^file:/i.test(href)) return href;
   if (image && href.startsWith("data:image/")) return href;
   if (image && /^(file:|blob:|app-file:)/i.test(href)) return href;
+  if (image && isRelativeLocalReference(href)) return "";
   try {
     const url = new URL(href, window.location?.href || "file:///");
     if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") return href;
@@ -218,6 +220,18 @@ function sanitizeUrl(value, { allowRelative = false, image = false } = {}) {
     if (image && (url.protocol === "file:" || url.protocol === "blob:" || url.protocol === "app-file:")) return href;
   } catch {}
   return "";
+}
+
+function hasUrlScheme(value = "") {
+  return /^[a-z][a-z0-9+.-]*:/i.test(String(value || ""));
+}
+
+function isRelativeLocalReference(value = "") {
+  const text = String(value || "").trim();
+  if (!text || text.startsWith("#") || text.startsWith("//")) return false;
+  if (hasUrlScheme(text)) return false;
+  if (text.startsWith("/") || /^[A-Za-z]:[\\/]/.test(text)) return false;
+  return true;
 }
 
 function localFilePathFromUrl(value = "") {
@@ -234,6 +248,52 @@ function localFilePathFromUrl(value = "") {
   if (/^\/(?!\/)/.test(href)) return href;
   if (/^[A-Za-z]:[\\/]/.test(href)) return href;
   return "";
+}
+
+function localPathDirectory(filePath = "") {
+  const value = String(filePath || "").trim();
+  if (!value) return "";
+  let local = value;
+  if (/^file:/i.test(local)) {
+    try {
+      local = decodeURIComponent(new URL(local).pathname);
+      if (/^\/[A-Za-z]:\//.test(local)) local = local.slice(1);
+    } catch {
+      return "";
+    }
+  }
+  if (!localFilePathFromUrl(local)) return "";
+  const normalized = local.replace(/\\/g, "/");
+  if (normalized.endsWith("/")) return normalized.replace(/\/+$/, "");
+  const index = normalized.lastIndexOf("/");
+  if (index <= 0) return "";
+  return normalized.slice(0, index);
+}
+
+function normalizeLocalPath(pathText = "") {
+  const text = String(pathText || "").replace(/\\/g, "/");
+  const isWindows = /^[A-Za-z]:\//.test(text);
+  const prefix = isWindows ? text.slice(0, 2) : "";
+  const rest = isWindows ? text.slice(2) : text;
+  const absolute = rest.startsWith("/");
+  const parts = [];
+  for (const part of rest.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (parts.length) parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return `${prefix}${absolute ? "/" : ""}${parts.join("/")}`;
+}
+
+function resolveRelativeLocalPath(value = "", basePath = "") {
+  const href = String(value || "").trim();
+  if (!isRelativeLocalReference(href)) return "";
+  const dir = localPathDirectory(basePath);
+  if (!dir) return "";
+  return normalizeLocalPath(`${dir}/${href}`);
 }
 
 function localMediaUrlFromPath(filePath = "") {
@@ -377,6 +437,9 @@ function wireMarkdownImages(element) {
   for (const image of element.querySelectorAll("img.markdown-image")) {
     if (image.dataset.viewerReady === "true") continue;
     image.dataset.viewerReady = "true";
+    image.addEventListener("error", () => {
+      void replaceFailedLocalImage(image);
+    }, { once: true });
     image.addEventListener("click", async () => {
       const localPath = image.dataset.localFilePath || "";
       if (localPath) {
@@ -389,6 +452,28 @@ function wireMarkdownImages(element) {
       } catch {}
     });
   }
+}
+
+async function replaceFailedLocalImage(image) {
+  if (!image?.parentNode || image.dataset.mediaErrorHandled === "true") return;
+  const localPath = image.dataset.localFilePath || "";
+  if (!localPath) return;
+  image.dataset.mediaErrorHandled = "true";
+  let status = null;
+  try {
+    status = await window.assistantClient?.localMediaStatus?.(localPath);
+  } catch {
+    status = { ok: false, error: "STATUS_UNAVAILABLE", path: localPath };
+  }
+  if (!image.parentNode) return;
+  const doc = image.ownerDocument || document;
+  const box = doc.createElement("span");
+  box.className = "markdown-image-error";
+  box.dataset.localFilePath = localPath;
+  box.dataset.error = status?.error || "LOAD_FAILED";
+  box.textContent = `${image.alt || "Image"} (${box.dataset.error})`;
+  box.title = status?.path || localPath;
+  image.replaceWith(box);
 }
 
 function wireMarkdownLocalFileLinks(element) {
@@ -576,7 +661,7 @@ const MARKDOWN_MORPH_OPTS = {
  * highlighting, keeping the render synchronous and fast. Full highlight
  * is deferred to renderMarkdownWithCache at turn completion.
  */
-export function renderStreamingMarkdown(element, markdownText) {
+export function renderStreamingMarkdown(element, markdownText, options = {}) {
   if (!element || !markdownText) return;
   const parser = window.marked && (window.marked.parse || window.marked);
   if (typeof parser !== "function" || !window.DOMPurify) {
@@ -586,7 +671,7 @@ export function renderStreamingMarkdown(element, markdownText) {
   }
   element.classList?.remove("markdown-fallback");
 
-  const renderer = createMarkedRenderer();
+  const renderer = createMarkedRenderer({ basePath: options.basePath || "" });
   const html = parser(prepareMarkdown(markdownText, { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
   const sanitized = sanitizeMarkdownHtml(html);
   // Patch in place via morphdom instead of replacing innerHTML: streaming text
@@ -602,7 +687,7 @@ export function renderStreamingMarkdown(element, markdownText) {
 /**
  * 流式场景专用：对已渲染过的代码块复用缓存高亮结果。
  */
-export function renderMarkdownWithCache(element, markdownText) {
+export function renderMarkdownWithCache(element, markdownText, options = {}) {
   const parser = window.marked && (window.marked.parse || window.marked);
   if (typeof parser !== "function" || !window.DOMPurify) {
     element.classList?.add("markdown-fallback");
@@ -612,7 +697,7 @@ export function renderMarkdownWithCache(element, markdownText) {
   element.classList?.remove("markdown-fallback");
 
   let cachedCount = 0;
-  const renderer = createMarkedRenderer({ cacheCode: true });
+  const renderer = createMarkedRenderer({ cacheCode: true, basePath: options.basePath || "" });
   const originalCode = renderer.code;
   renderer.code = function (args) {
     const key = hashContent(`${args.lang || ""}:${args.text}`);
@@ -636,7 +721,7 @@ export function renderMarkdownWithCache(element, markdownText) {
  * whole answer down (innerHTML/replaceChildren) — which flashes/ghosts for a
  * frame. morphdom diffs streamed→full, touching only what actually changed.
  */
-export function renderMarkdownFinal(element, markdownText) {
+export function renderMarkdownFinal(element, markdownText, options = {}) {
   if (!element) return;
   const parser = window.marked && (window.marked.parse || window.marked);
   if (typeof parser !== "function" || !window.DOMPurify) {
@@ -645,7 +730,7 @@ export function renderMarkdownFinal(element, markdownText) {
     return;
   }
   element.classList?.remove("markdown-fallback");
-  const renderer = createMarkedRenderer({ cacheCode: true });
+  const renderer = createMarkedRenderer({ cacheCode: true, basePath: options.basePath || "" });
   const html = parser(prepareMarkdown(markdownText || "", { mathRenderer: window.katex || katex }), { ...MARKED_OPTIONS, renderer });
   const next = document.createElement(element.tagName || "DIV");
   next.innerHTML = sanitizeMarkdownHtml(html);

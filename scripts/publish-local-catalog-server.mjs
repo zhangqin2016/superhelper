@@ -36,6 +36,7 @@ const WORKSPACE_APP_BUILDERS = [
   {
     appId: "web-system-learning",
     version: "1.0.9",
+    versionFromRequiredSkills: true,
     script: "scripts/build-web-system-learning-workspace-app.mjs",
     name: "网页系统学习",
     summary: "学习 OA、ERP、CRM 和后台系统，生成页面地图、动作地图、API 地图和工作区技能。",
@@ -147,6 +148,43 @@ function readJson(filePath, fallback = null) {
   } catch {
     return fallback;
   }
+}
+
+function compareSemver(a, b) {
+  const left = String(a || "")
+    .split(".")
+    .map((part) => Number.parseInt(part, 10))
+    .map((part) => (Number.isFinite(part) ? part : 0));
+  const right = String(b || "")
+    .split(".")
+    .map((part) => Number.parseInt(part, 10))
+    .map((part) => (Number.isFinite(part) ? part : 0));
+  const len = Math.max(left.length, right.length, 3);
+  for (let i = 0; i < len; i += 1) {
+    const diff = (left[i] || 0) - (right[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function skillManifestVersion(skillId) {
+  if (!skillId) return "";
+  const manifest = readJson(path.join(ROOT, "resources", "skills-catalog", skillId, "skill.manifest.json"), {});
+  return String(manifest?.version || "").trim();
+}
+
+function resolveWorkspaceAppVersion(app, options = {}) {
+  const fallback = app.version || options.version || "";
+  if (!app?.versionFromRequiredSkills) return fallback;
+  const versions = (app.requiredSkillPackages || [])
+    .map((skillId) => skillManifestVersion(skillId))
+    .filter(Boolean);
+  if (versions.length === 0) return fallback;
+  const latestRequiredSkillVersion = versions.sort(compareSemver).at(-1);
+  if (!fallback || compareSemver(latestRequiredSkillVersion, fallback) >= 0) {
+    return latestRequiredSkillVersion;
+  }
+  return fallback;
 }
 
 function runCapture(command, argsList) {
@@ -394,7 +432,7 @@ function workspaceAppArtifactPath(artifact) {
 
 function workspaceAppBuildArgs(app, options = {}) {
   const args = [app.script, "--out", DEFAULT_APP_OUT];
-  const version = app.version || options.version || "";
+  const version = resolveWorkspaceAppVersion(app, options);
   if (version) args.push("--version", version);
   return args;
 }
@@ -714,7 +752,9 @@ export {
   extendedDescription,
   localSkillDirs,
   registryMetadataUploadFields,
+  resolveWorkspaceAppVersion,
   skillUploadFields,
+  skillManifestVersion,
   waitForRemoteArtifactSha,
   withCacheBuster,
   workspaceAppBuildArgs,

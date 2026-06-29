@@ -516,6 +516,7 @@
   "toast.cacheCleared": "附件缓存已清理",
   "toast.cacheClearFailed": "清理失败",
   "toast.largePasteAttached": "已将大段粘贴文本作为附件添加",
+  "toast.clipboardFilesAttached": "已从剪切板添加 {count} 个文件",
   "toast.needProject": "请先添加工作空间文件夹。",
   "toast.needSession": "请先新建对话。",
   "toast.createSessionFailed": "无法创建对话，助手引擎未就绪。请完全退出后重新打开应用。",

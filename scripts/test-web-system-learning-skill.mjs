@@ -30,6 +30,15 @@ if (!skillMarkdown.includes("Never start `scan_web_system.py`")) {
 if (!skillMarkdown.includes("finalize_web_system_learning.cjs")) {
   throw new Error("web system learning skill must require deterministic finalization");
 }
+if (!skillMarkdown.includes("SPECIAL_BROWSER_CONTEXT_REQUIRED")) {
+  throw new Error("web system learning skill must expose a recoverable special-browser-context state");
+}
+if (!skillMarkdown.includes("do not try stealth") || !skillMarkdown.includes("webdriver patching")) {
+  throw new Error("web system learning skill must forbid anti-headless stealth retries");
+}
+if (!skillMarkdown.includes("Never run ad-hoc `python3 -c`")) {
+  throw new Error("web system learning skill must forbid ad-hoc browser automation scripts");
+}
 if (!fs.existsSync(path.join(skillDir, "skill.manifest.json"))) {
   throw new Error("lily-web-system-learning manifest missing");
 }
@@ -325,6 +334,9 @@ if (!skillMd.includes("{{WEB_SYSTEM_EXECUTOR}}") || !skillMd.includes("{{WEB_SYS
 }
 if (!skillMd.includes("{{WEB_SYSTEM_SESSION_CAPTURE}}") || !skillMd.includes("--storage-state <sessionPath>")) {
   throw new Error("generated workspace skill should include session capture and storage-state reuse instructions");
+}
+if (!skillMd.includes("persistent Lily browser profile") || !skillMd.includes("profilePath")) {
+  throw new Error("generated workspace skill should explain persistent browser profile reuse");
 }
 if (!skillMd.includes("{{WEB_SYSTEM_AUTH_RECIPE}}") || !skillMd.includes("--auth-recipe <authRecipePath>")) {
   throw new Error("generated workspace skill should include auth recipe learning and runtime injection instructions");

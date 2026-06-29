@@ -114,8 +114,8 @@ export function renderContentBlocks(element, blocks = [], options = {}) {
   const live = Boolean(options.live);
   if (live || (normalizedBlocks.length === 1 && normalizedBlocks[0].type === "markdown")) {
     const text = normalizedBlocks[0]?.text || "";
-    if (live) renderStreamingMarkdown(element, text);
-    else renderMarkdownWithCache(element, text);
+    if (live) renderStreamingMarkdown(element, text, options);
+    else renderMarkdownWithCache(element, text, options);
     return;
   }
 
@@ -125,10 +125,10 @@ export function renderContentBlocks(element, blocks = [], options = {}) {
     node.className = `content-block content-block-${block.type || "unknown"}`;
     if (block.type === "artifact" && block.artifactType === "chart" && block.chartType === "mermaid") {
       node.classList.add("content-block-chart", "markdown-body");
-      renderMarkdownWithCache(node, mermaidMarkdown(block.source));
+      renderMarkdownWithCache(node, mermaidMarkdown(block.source), options);
     } else if (block.type === "markdown") {
       node.classList.add("markdown-body");
-      renderMarkdownWithCache(node, block.text || "");
+      renderMarkdownWithCache(node, block.text || "", options);
     } else {
       node.classList.add("content-block-unknown");
       node.textContent = block.text || block.source || "";

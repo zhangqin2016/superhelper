@@ -2,16 +2,17 @@
 "use strict";
 
 /**
- * One-time login capture. Open a real (headful) browser once, let the user log
- * in, then save the logged-in session (Playwright storageState) to a stable,
- * per-system, local file. Every later scan/discover/execute call reuses it via
- * --storage-state, so the browser never has to reopen just to authenticate, and
- * API actions run with no browser at all.
+ * One-time login capture. Open a real (headful) browser using a persistent,
+ * per-system Lily profile, let the user log in, then save the logged-in session
+ * (Playwright storageState) to a stable local file. Every later
+ * scan/discover/execute call reuses it via --storage-state, so API actions run
+ * with no browser at all while manual recapture still gets the same profile.
  *
- * Security: the session file holds cookies/tokens. It is stored under the app's
- * userData (NOT in the skill directory and NOT in the workspace), written 0600,
- * and is never bundled into a shared/exported workspace. We never ask for or
- * store the password itself — the user types it into the real browser.
+ * Security: the session file and browser profile can hold cookies/tokens. They
+ * are stored under the app's userData (NOT in the skill directory and NOT in the
+ * workspace), protected with local filesystem permissions where available, and
+ * are never bundled into a shared/exported workspace. We never ask for or store
+ * the password itself — the user types it into the real browser.
  *
  * The browser capture needs Playwright; the path/allowlist/login-signal logic is
  * pure and unit-tested.
@@ -39,6 +40,12 @@ function slugifySystem(value) {
 function sessionStorePath(systemId, userDataDir) {
   const base = userDataDir || process.env.LILY_USER_DATA_DIR || path.join(os.tmpdir(), "lily-userdata");
   return path.join(base, "web-sessions", `${slugifySystem(systemId)}.json`);
+}
+
+/** Stable per-system browser profile under userData (local-only, never exported). */
+function profileStorePath(systemId, userDataDir) {
+  const base = userDataDir || process.env.LILY_USER_DATA_DIR || path.join(os.tmpdir(), "lily-userdata");
+  return path.join(base, "web-profiles", slugifySystem(systemId));
 }
 
 function sessionInfo(file) {
@@ -202,6 +209,7 @@ function parseArgs(argv) {
     loginUrl: "",
     systemId: "",
     out: "",
+    profileDir: "",
     allowDomains: [],
     timeoutMs: DEFAULT_TIMEOUT_MS,
     successUrlContains: "",
@@ -214,6 +222,7 @@ function parseArgs(argv) {
     else if (arg === "--login-url") args.loginUrl = argv[++i];
     else if (arg === "--system-id") args.systemId = argv[++i];
     else if (arg === "--out") args.out = argv[++i];
+    else if (arg === "--profile-dir") args.profileDir = argv[++i];
     else if (arg === "--allow-domain") args.allowDomains.push(normalizeHost(argv[++i]));
     else if (arg === "--allowlist") args.allowDomains.push(...String(argv[++i] || "").split(",").map(normalizeHost).filter(Boolean));
     else if (arg === "--timeout-ms") args.timeoutMs = Number(argv[++i]) || DEFAULT_TIMEOUT_MS;
@@ -221,7 +230,7 @@ function parseArgs(argv) {
     else if (arg === "--session-cookie") args.sessionCookie = argv[++i];
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--help" || arg === "-h") {
-      console.log("Usage: node capture_session.cjs --base-url <url> --system-id <id> --allow-domain <host> [--login-url <url>] [--out <file>] [--success-url-contains <str>] [--session-cookie <name>] [--timeout-ms <ms>]");
+      console.log("Usage: node capture_session.cjs --base-url <url> --system-id <id> --allow-domain <host> [--login-url <url>] [--out <file>] [--profile-dir <dir>] [--success-url-contains <str>] [--session-cookie <name>] [--timeout-ms <ms>]");
       process.exit(0);
     } else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -230,6 +239,7 @@ function parseArgs(argv) {
   if (!args.allowDomains.length) args.allowDomains = [normalizeHost(args.baseUrl)];
   if (!args.loginUrl) args.loginUrl = args.baseUrl;
   if (!args.out) args.out = sessionStorePath(args.systemId);
+  if (!args.profileDir) args.profileDir = profileStorePath(args.systemId);
   if (!isUrlAllowed(args.loginUrl, args.allowDomains)) {
     throw new Error(`login URL host is not in the allowlist: ${args.loginUrl}`);
   }
@@ -266,14 +276,14 @@ async function tryBridgeLogin(args) {
 async function main() {
   const args = parseArgs(process.argv);
   if (args.dryRun) {
-    emit({ ok: true, dryRun: true, systemId: args.systemId, sessionPath: args.out, loginUrl: args.loginUrl, allowedDomains: args.allowDomains });
+    emit({ ok: true, dryRun: true, systemId: args.systemId, sessionPath: args.out, profilePath: args.profileDir, loginUrl: args.loginUrl, allowedDomains: args.allowDomains });
     return;
   }
 
   // Auto-login with a stored credential first; only open the manual browser if
   // that isn't possible (no credential / MFA / SSO).
   if (await tryBridgeLogin(args)) {
-    emit({ ok: true, mode: "credential", systemId: args.systemId, sessionPath: args.out, loginUrl: args.loginUrl, allowedDomains: args.allowDomains });
+    emit({ ok: true, mode: "credential", systemId: args.systemId, sessionPath: args.out, profilePath: args.profileDir, loginUrl: args.loginUrl, allowedDomains: args.allowDomains });
     return;
   }
 
@@ -286,9 +296,14 @@ async function main() {
     return;
   }
 
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext();
-  const page = await context.newPage();
+  fs.mkdirSync(args.profileDir, { recursive: true });
+  try {
+    fs.chmodSync(args.profileDir, 0o700);
+  } catch {
+    /* best-effort on platforms without posix perms */
+  }
+  const context = await chromium.launchPersistentContext(args.profileDir, { headless: false });
+  const page = context.pages()[0] || await context.newPage();
   try {
     await page.goto(args.loginUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     const deadline = Date.now() + args.timeoutMs;
@@ -324,10 +339,9 @@ async function main() {
       return;
     }
     writeSessionFileSecure(args.out, state);
-    emit({ ok: true, systemId: args.systemId, sessionPath: args.out, ...signals, completedSignal: done, note: "Reuse this file via --storage-state for scan/discover/execute. Re-run only when a call reports stale/relearn (401/403)." });
+    emit({ ok: true, systemId: args.systemId, sessionPath: args.out, profilePath: args.profileDir, ...signals, completedSignal: done, note: "Reuse this file via --storage-state for scan/discover/execute. Re-run only when a call reports stale/relearn (401/403)." });
   } finally {
     await context.close();
-    await browser.close();
   }
 }
 
@@ -341,6 +355,7 @@ if (require.main === module) {
 module.exports = {
   slugifySystem,
   sessionStorePath,
+  profileStorePath,
   sessionInfo,
   loginComplete,
   looksLikeLoginUrl,

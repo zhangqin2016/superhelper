@@ -84,6 +84,25 @@ function parseAttributes(raw = "") {
   return attrs;
 }
 
+function isPlaceholderGeneratedPath(filePath = "") {
+  const raw = String(filePath || "").trim();
+  if (!raw) return true;
+  let normalized = raw.replace(/\\/g, "/");
+  try { normalized = decodeURIComponent(normalized); } catch { /* keep raw */ }
+  const lower = normalized.toLowerCase();
+  return (
+    /^\/(?:absolute\/path\/to|path\/to)\//.test(lower) ||
+    /^[a-z]:\/(?:absolute\/path\/to|path\/to)\//.test(lower) ||
+    lower.includes("/绝对路径/") ||
+    /^\/?绝对路径\//.test(normalized) ||
+    /(^|\/)(?:your|example|sample)-?path\//.test(lower)
+  );
+}
+
+function validGeneratedFiles(files = []) {
+  return files.filter((file) => file?.path && !isPlaceholderGeneratedPath(file.path));
+}
+
 export function parseGeneratedMedia(text = "") {
   const source = String(text || "");
   if (!source.includes("<generated_media")) return [];
@@ -106,11 +125,12 @@ export function parseGeneratedMedia(text = "") {
         mimeType: file.mimeType || file.mime_type || "",
       });
     }
-    if (files.length) {
+    const validFiles = validGeneratedFiles(files);
+    if (validFiles.length) {
       blocks.push({
         type: attrs.type || "file",
         taskId,
-        files,
+        files: validFiles,
       });
     }
   }
@@ -141,6 +161,7 @@ function generatedAssetsMediaFromText(text = "") {
     if (!/[/\\]generated-assets[/\\]/.test(t)) continue;
     const ext = (t.match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase();
     if (!ext || !MEDIA_EXT_TYPE[ext]) continue;
+    if (isPlaceholderGeneratedPath(t)) continue;
     if (seen.has(t)) continue;
     seen.add(t);
     blocks.push({ type: MEDIA_EXT_TYPE[ext], taskId: "", files: [{ path: t, bytes: 0, mimeType: "" }] });
@@ -176,7 +197,7 @@ const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp
 function looksLikeGeneratedFilePath(value) {
   if (typeof value !== "string") return false;
   const text = value.trim();
-  return text.length > 3 && /[\\/]/.test(text) && GENERATED_FILE_EXTS.test(text);
+  return text.length > 3 && /[\\/]/.test(text) && GENERATED_FILE_EXTS.test(text) && !isPlaceholderGeneratedPath(text);
 }
 
 function generatedFilesFromPayload(payload) {
@@ -402,7 +423,7 @@ function renderGenericObject(root, obj, { skip = new Set() } = {}) {
     rendered = true;
     if (value == null) continue;
 
-    if (typeof value === "string" && parseGeneratedMedia(value).length) {
+    if (typeof value === "string" && value.includes("<generated_media")) {
       continue;
     }
 

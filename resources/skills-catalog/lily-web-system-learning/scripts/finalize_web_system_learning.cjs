@@ -11,7 +11,7 @@ const ID_RE = /^[a-z][a-z0-9-]{1,63}$/;
 function usage() {
   return [
     "Usage:",
-    "  node scripts/finalize_web_system_learning.cjs --scan web-system-scan.json [--contracts api-contracts.json] [--system-id <id>] [--name <name>] [--out <dir>] [--dry-run]",
+    "  node scripts/finalize_web_system_learning.cjs --scan web-system-scan.json [--contracts api-contracts.json] [--frontend-source frontend-source-map.json] [--system-id <id>] [--name <name>] [--out <dir>] [--dry-run]",
     "",
     "Builds web-system-spec.json from deterministic scan/contracts data, then calls create_web_system_skill.cjs.",
     "Use this as the mandatory final step of web-system learning. Do not end a learning turn before this returns ok:true or a concrete error.",
@@ -19,11 +19,12 @@ function usage() {
 }
 
 function parseArgs(argv) {
-  const args = { scan: "", contracts: "", systemId: "", name: "", out: "", dryRun: false };
+  const args = { scan: "", contracts: "", frontendSource: "", systemId: "", name: "", out: "", dryRun: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--scan") args.scan = argv[++i];
     else if (arg === "--contracts") args.contracts = argv[++i];
+    else if (arg === "--frontend-source") args.frontendSource = argv[++i];
     else if (arg === "--system-id") args.systemId = argv[++i];
     else if (arg === "--name") args.name = argv[++i];
     else if (arg === "--out") args.out = argv[++i];
@@ -242,10 +243,11 @@ function deriveSpec(scan, discovered, args) {
   };
 }
 
-function runCreateSkill({ specPath, scanPath, contractsPath, out, dryRun }) {
+function runCreateSkill({ specPath, scanPath, contractsPath, frontendSourcePath, out, dryRun }) {
   const createScript = path.join(__dirname, "create_web_system_skill.cjs");
   const argv = [createScript, "--spec", specPath, "--scan", scanPath];
   if (contractsPath) argv.push("--contracts", contractsPath);
+  if (frontendSourcePath) argv.push("--frontend-source", frontendSourcePath);
   if (out) argv.push("--out", out);
   if (dryRun) argv.push("--dry-run");
   const result = spawnSync(process.execPath, argv, { encoding: "utf8" });
@@ -259,6 +261,7 @@ function main() {
   const args = parseArgs(process.argv);
   const scanPath = path.resolve(args.scan);
   const contractsPath = args.contracts ? path.resolve(args.contracts) : "";
+  const frontendSourcePath = args.frontendSource ? path.resolve(args.frontendSource) : "";
   const scan = readJson(scanPath);
   const discovered = contractsPath ? readContracts(contractsPath) : null;
   const spec = deriveSpec(scan, discovered, args);
@@ -269,6 +272,7 @@ function main() {
     specPath,
     scanPath,
     contractsPath,
+    frontendSourcePath,
     out: args.out,
     dryRun: args.dryRun,
   });
@@ -280,6 +284,9 @@ function main() {
     scannedPages: createResult.scannedPages,
     capabilities: createResult.capabilities,
     apiContracts: createResult.apiContracts,
+    frontendSourceAssets: createResult.frontendSourceAssets,
+    frontendSourceRouteHints: createResult.frontendSourceRouteHints,
+    frontendSourceApiHints: createResult.frontendSourceApiHints,
     outDir: createResult.outDir,
     dryRun: args.dryRun,
   }, null, 2));

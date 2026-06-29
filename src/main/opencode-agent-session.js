@@ -31,6 +31,7 @@ const { getLogger } = require("./logger");
 
 const log = getLogger("opencode-agent-session");
 const TRANSIENT_ERROR_RE = /unreachable|interrupted|socket|fetch|connection|network|ECONN|ETIMEDOUT|ENOTFOUND|timeout|temporarily unavailable|unexpected response/i;
+const REPLAY_SAFE_TOOL_NAMES = new Set(["read", "glob", "grep", "list", "ls", "find", "search"]);
 
 // Deliverable extensions worth gating on — things the user asked to be produced.
 const DELIVERABLE_EXT = "docx|xlsx|pptx|pdf|png|jpe?g|gif|webp|svg|mp3|wav|mp4|webm|html|csv|zip";
@@ -85,6 +86,13 @@ function messageCompletedMs(info = {}) {
   return Number.isFinite(completed) && completed > 0 ? completed : null;
 }
 
+function isReplaySafeToolName(name) {
+  const value = String(name || "").trim().toLowerCase();
+  if (!value) return false;
+  if (REPLAY_SAFE_TOOL_NAMES.has(value)) return true;
+  return [...REPLAY_SAFE_TOOL_NAMES].some((safe) => value === `tool.${safe}` || value.endsWith(`.${safe}`));
+}
+
 function isTurnOwnedEngineEvent(ev) {
   const type = String(ev?.type || "");
   const props = ev?.properties || {};
@@ -122,6 +130,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawActivity = false;
     this._sawEngineEvent = false;
     this._sawToolActivity = false;
+    this._sawUnsafeToolActivity = false;
+    this._toolReplaySafe = new Map();
     this.collectedOutput = "";
     /** Completion gate (Pillar 3-B) fires at most ONCE per turn — guards against loops. */
     this._gatedThisTurn = false;
@@ -303,6 +313,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawActivity = false;
     this._sawEngineEvent = false;
     this._sawToolActivity = false;
+    this._sawUnsafeToolActivity = false;
+    this._toolReplaySafe.clear();
     this._gatedThisTurn = false;
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
@@ -545,6 +557,9 @@ class OpencodeAgentSession extends EventEmitter {
     this._transientReplayCount = 0;
     this._pendingTransientFailure = null;
     this._turnStartedAt = 0;
+    this._sawToolActivity = false;
+    this._sawUnsafeToolActivity = false;
+    this._toolReplaySafe.clear();
   }
 
   async _abortWithTimeout(server) {
@@ -625,7 +640,7 @@ class OpencodeAgentSession extends EventEmitter {
     const drafts = [...(reduced.drafts || [])];
     this._registerSubagentsFromDrafts(drafts);
     for (const draft of drafts) {
-      if (String(draft.type || "").startsWith("tool.")) this._sawToolActivity = true;
+      if (String(draft.type || "").startsWith("tool.")) this._noteToolActivity(draft);
       if (draft.type !== "tool.done") continue;
       const raw = draft.payload?.content;
       if (typeof raw !== "string" || !raw) continue;
@@ -634,6 +649,24 @@ class OpencodeAgentSession extends EventEmitter {
     }
     if (reduced.processEvent) drafts.push(reduced.processEvent);
     this._ingest(drafts);
+  }
+
+  _noteToolActivity(draft = {}) {
+    this._sawToolActivity = true;
+    const payload = draft.payload || {};
+    const id = String(payload.id || "");
+    if (draft.type === "tool.started") {
+      const safe = isReplaySafeToolName(payload.name);
+      if (id) this._toolReplaySafe.set(id, safe);
+      if (!safe) this._sawUnsafeToolActivity = true;
+      return;
+    }
+    if (draft.type === "tool.done") {
+      const safe = id && this._toolReplaySafe.has(id)
+        ? this._toolReplaySafe.get(id)
+        : isReplaySafeToolName(payload.name);
+      if (!safe) this._sawUnsafeToolActivity = true;
+    }
   }
 
   _registerSubagentsFromDrafts(drafts = []) {
@@ -1205,7 +1238,7 @@ class OpencodeAgentSession extends EventEmitter {
   async _replayTransientPromptIfSafe(pending) {
     if (!this._pendingPromptPayload || !this._server) return false;
     if (this._transientReplayCount >= 1) return false;
-    if (this._sawToolActivity || this.collectedOutput.trim()) return false;
+    if (this._sawUnsafeToolActivity || this.collectedOutput.trim()) return false;
     if (this._pendingPermissions.size || this._pendingQuestions.size) return false;
 
     const raw = [pending?.message, pending?.cause?.message || pending?.cause].filter(Boolean).join("\n");
@@ -1232,6 +1265,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawActivity = false;
     this._sawEngineEvent = false;
     this._sawToolActivity = false;
+    this._sawUnsafeToolActivity = false;
+    this._toolReplaySafe.clear();
     try {
       await this._server.sendPrompt(this._pendingPromptPayload);
       this._armResponseTimer();
@@ -1444,6 +1479,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._activeTaskContract = null;
     this._sawEngineEvent = false;
     this._sawToolActivity = false;
+    this._sawUnsafeToolActivity = false;
+    this._toolReplaySafe.clear();
     this._transientReplayCount = 0;
     this._turnStartedAt = 0;
     // Carry the turn's rewind anchor (engine message id) so the orchestrator can
@@ -1516,6 +1553,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._activeTaskContract = null;
     this._sawEngineEvent = false;
     this._sawToolActivity = false;
+    this._sawUnsafeToolActivity = false;
+    this._toolReplaySafe.clear();
     this._transientReplayCount = 0;
     this._turnStartedAt = 0;
     this._orchestrator?.notifyRunnerError(this.sessionId, message);

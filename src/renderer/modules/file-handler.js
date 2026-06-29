@@ -49,6 +49,19 @@ async function addFileFromBuffer(buffer, fileName) {
   return false;
 }
 
+async function addStagedFiles(files) {
+  const list = [...(files || [])].filter(Boolean);
+  if (list.length === 0) return 0;
+  const pending = [...(store.get("pendingFiles") || [])];
+  for (const file of list) {
+    if (file.isImage) await loadImageExtras(file);
+    pending.push(file);
+  }
+  store.set("pendingFiles", pending);
+  renderFilePreview();
+  return list.length;
+}
+
 export function pastedTextByteLength(text) {
   return new TextEncoder().encode(String(text || "")).length;
 }
@@ -81,10 +94,24 @@ function isComposerTextPaste(event) {
   return target && target.id === "promptInput";
 }
 
+function insertPlainTextAtCursor(target, text) {
+  if (!target || typeof target.value !== "string") return;
+  const value = String(text || "");
+  if (!value) return;
+  if (typeof target.setRangeText === "function") {
+    const start = Number.isFinite(target.selectionStart) ? target.selectionStart : target.value.length;
+    const end = Number.isFinite(target.selectionEnd) ? target.selectionEnd : start;
+    target.setRangeText(value, start, end, "end");
+  } else {
+    target.value += value;
+  }
+  target.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 async function addBrowserFiles(files) {
   const list = [...(files || [])].filter(Boolean);
   if (list.length === 0) return;
-  const pending = [...(store.get("pendingFiles") || [])];
+  const staged = [];
   for (const browserFile of list) {
     const name = browserFile.name || `pasted-${Date.now()}`;
     try {
@@ -95,9 +122,7 @@ async function addBrowserFiles(files) {
           ? { ok: false, error: "FILE_TOO_LARGE" }
           : await window.assistantClient.pasteFile(new Uint8Array(await browserFile.arrayBuffer()), name);
       if (result.ok) {
-        const file = result.file;
-        if (file.isImage) await loadImageExtras(file);
-        pending.push(file);
+        staged.push(result.file);
       } else {
         showToast(fileErrorMessage(result.error, name), "warning");
       }
@@ -105,8 +130,27 @@ async function addBrowserFiles(files) {
       showToast(fileErrorMessage(err.message, name), "warning");
     }
   }
-  store.set("pendingFiles", pending);
-  renderFilePreview();
+  await addStagedFiles(staged);
+}
+
+async function addSystemClipboardFiles() {
+  if (!window.assistantClient?.pasteClipboardFiles) return 0;
+  try {
+    const result = await window.assistantClient.pasteClipboardFiles();
+    if (!result?.ok) {
+      if (result?.error) showToast(fileErrorMessage(result.error), "warning");
+      return 0;
+    }
+    for (const item of result.errors || []) {
+      showToast(fileErrorMessage(item.error, item.path?.split(/[\\/]/).pop() || item.path), "warning");
+    }
+    const count = await addStagedFiles(result.files || []);
+    if (count > 0) showToast(t("toast.clipboardFilesAttached", { count }), "info");
+    return count;
+  } catch (err) {
+    showToast(fileErrorMessage(err.message || "CLIPBOARD_READ_FAILED"), "warning");
+    return 0;
+  }
 }
 
 function renderFilePreview() {
@@ -234,9 +278,15 @@ export function initFileHandler() {
     }
     if (!isComposerTextPaste(e)) return;
     const text = e.clipboardData?.getData("text/plain") || "";
-    if (!shouldStagePastedText(text)) return;
     e.preventDefault();
+    const systemFileCount = await addSystemClipboardFiles();
+    if (systemFileCount > 0) return;
+    if (!shouldStagePastedText(text)) {
+      insertPlainTextAtCursor(e.target, text);
+      return;
+    }
     const ok = await addFileFromBuffer(pastedTextToBuffer(text), buildPastedTextFileName());
     if (ok) showToast(t("toast.largePasteAttached"), "info");
+    if (!ok) insertPlainTextAtCursor(e.target, text);
   });
 }

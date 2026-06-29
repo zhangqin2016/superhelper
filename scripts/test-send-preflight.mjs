@@ -116,8 +116,11 @@ assert(r.text.includes('title="user_original_request"') && r.text.includes("revi
 assert(!r.files.some((f) => f.path === "/a/report.docx"), "extracted document pruned from outbound");
 assert(r.files.some((f) => f === txtFile), "non-extracted files kept");
 
-// Document-only failure → DOCUMENT_FAILED (text+doc keeps degrading to text).
+// FAIL-LOUD: document failure must stop the turn even when text is present.
+// Otherwise "问这个文档" silently becomes "answer from the user's prompt only".
 documentMock._next = { ok: false, detail: "corrupt" };
+r = await runDocumentPreflight("总结这个文档", [docFile], {});
+assert(!r.ok && r.error === "DOCUMENT_FAILED" && r.detail === "corrupt", "text+doc failure must fail loud, not answer blind");
 r = await runDocumentPreflight("", [docFile], {});
 assert(!r.ok && r.error === "DOCUMENT_FAILED" && r.detail === "corrupt", "doc-only failure → DOCUMENT_FAILED");
 

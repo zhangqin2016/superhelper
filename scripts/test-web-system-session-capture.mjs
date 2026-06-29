@@ -8,12 +8,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import module from "node:module";
+import { fileURLToPath } from "node:url";
 import { assert } from "./lib/test-assert.mjs";
 
 const require = module.createRequire(import.meta.url);
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const captureScriptPath = path.join(ROOT, "resources/skills-catalog/lily-web-system-learning/scripts/capture_session.cjs");
 const {
   slugifySystem,
   sessionStorePath,
+  profileStorePath,
   sessionInfo,
   loginComplete,
   looksLikeLoginUrl,
@@ -22,6 +26,7 @@ const {
   mergeCapturedStorage,
 } = require("../resources/skills-catalog/lily-web-system-learning/scripts/capture_session.cjs");
 
+const captureScriptSource = fs.readFileSync(captureScriptPath, "utf8");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-session-"));
 
 try {
@@ -29,6 +34,9 @@ try {
   assert(slugifySystem("UCMDS MOD!!") === "ucmds-mod", `slug, got ${slugifySystem("UCMDS MOD!!")}`);
   const p = sessionStorePath("Demo ERP", tmp);
   assert(p === path.join(tmp, "web-sessions", "demo-erp.json"), `session path under userData/web-sessions, got ${p}`);
+  const profilePath = profileStorePath("Demo ERP", tmp);
+  assert(profilePath === path.join(tmp, "web-profiles", "demo-erp"), `profile path under userData/web-profiles, got ${profilePath}`);
+  assert(captureScriptSource.includes("launchPersistentContext(args.profileDir"), "manual login capture must use a persistent per-system browser profile");
 
   // login-complete: precise session-cookie signal
   assert(loginComplete({ url: "x", cookies: [{ name: "SESSION", value: "a" }], opts: { sessionCookie: "SESSION" } }) === true, "session cookie present → logged in");
@@ -83,7 +91,7 @@ try {
   assert(info.exists && info.cookieCount === 1 && info.localStorageCount === 1 && info.sessionStorageCount === 1, "sessionInfo reports cookie/local/session storage counts");
   assert(sessionInfo(path.join(tmp, "nope.json")).exists === false, "missing session → not exists");
 
-  console.log("PASS: test-web-system-session-capture (18 tests)");
+  console.log("PASS: test-web-system-session-capture (20 tests)");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

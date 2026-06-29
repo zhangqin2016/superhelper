@@ -36,10 +36,11 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    --allow-domain <host>`. If the user has saved a credential for this site, the
    script auto-logs-in via the main process and writes the session with NO manual
    step (the result has `mode:"credential"`); otherwise it opens one real browser
-   window for the user to log in. Either way it saves the session to a local,
-   per-system file (printed as `sessionPath`, stored 0600 under userData, never
-   exported). Pass that `sessionPath` as `--storage-state` to every later
-   scan/discover/execute call.
+   window with a persistent Lily browser profile for this system, so later manual
+   recaptures reuse the same local browser state. Either way it saves the session
+   to a local, per-system file (printed as `sessionPath`, stored 0600 under
+   userData, never exported) and prints the local `profilePath`. Pass that
+   `sessionPath` as `--storage-state` to every later scan/discover/execute call.
    Re-run capture only when a call reports `stale`/`relearnRecommended` (401/403).
    Never ask the user to paste cookies, tokens, OAuth codes, CSRF values, or
    credential headers; if a token is dynamic, learn it from authenticated browser
@@ -64,6 +65,12 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    (authoritative published contracts are never overridden). Write-path APIs
    (POST/PUT/DELETE) are only captured when those flows actually run — exercise
    them only in a confirmed test environment.
+   Also run `node scripts/frontend_source_intelligence.cjs --har scan.har
+   --base-url <url> --allow-domain <host> --out frontend-source-map.json`.
+   This is a bounded, read-only SPA source pass: it analyzes only same-allowlist
+   JavaScript assets captured in the HAR, extracts route/API-client hints, and
+   persists only structured metadata. It must not save raw bundle source,
+   secrets, cookies, tokens, or large source text.
    For SPAs (Vue/React/Angular): ALWAYS pass `--storage-state <sessionPath>` so the
    scan runs authenticated, and use `--interactive-readonly`. The scanner waits for
    the app to render before snapshotting (so it no longer captures only an empty
@@ -78,22 +85,37 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    --base-url <url> --allow-domain <host>`. The output stores only sources and
    formats (for example, `Authorization` from `localStorage.access_token` as
    `Bearer {{value}}`), never raw token values.
-7. Run a read-only dry run before deeper exploration.
-8. Run every scanner/executor command in the foreground and wait for it to finish before claiming the scan is running, complete, failed, or waiting for analysis.
-9. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
-10. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
-11. Classify actions by risk: read, export, draft, submit, update, delete, financial, identity/security, and bulk operations.
-12. Build an action map and playbook. Each action needs inputs, preconditions, execution path, confirmation policy, success signal, rollback/recovery, and audit fields.
-13. Finish with the deterministic finalizer:
+7. **Special browser-context boundary.** Some enterprise systems bind the
+   session to the exact interactive browser, SSO/device posture, TLS/client
+   hints, QR-code login, or anti-automation controls. If a captured
+   `storageState` or headless scan cannot replay after one successful capture
+   attempt and one bounded scan attempt, do not try stealth, webdriver patching,
+   user-agent spoofing, TLS/client-hint spoofing, native-Chrome retry loops, or
+   ad-hoc Playwright/Python/JavaScript scripts. Stop the automated path with
+   `SPECIAL_BROWSER_CONTEXT_REQUIRED`, include the last concrete evidence, and
+   switch to an approved path: same interactive browser/profile capture,
+   optional accessibility-tree/MCP observation in the user-controlled browser, or
+   a partial draft from contracts/HAR/source hints with gaps recorded in
+   `health.json`. Do not promise unattended headless automation for these
+   systems unless a learned API contract or verified compiled browser flow
+   exists.
+8. Run a read-only dry run before deeper exploration.
+9. Run every scanner/executor command in the foreground and wait for it to finish before claiming the scan is running, complete, failed, or waiting for analysis.
+10. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
+11. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
+12. Classify actions by risk: read, export, draft, submit, update, delete, financial, identity/security, and bulk operations.
+13. Build an action map and playbook. Each action needs inputs, preconditions, execution path, confirmation policy, success signal, rollback/recovery, and audit fields.
+14. Finish with the deterministic finalizer:
    `node scripts/finalize_web_system_learning.cjs --scan <scan.json>
-   --contracts <api-contracts.json> --system-id <id> --name <name>`.
-   This derives `web-system-spec.json` from scan/contracts and calls
+   --contracts <api-contracts.json> --frontend-source <frontend-source-map.json>
+   --system-id <id> --name <name>`.
+   This derives `web-system-spec.json` from scan/contracts/source hints and calls
    `create_web_system_skill.cjs`. Do not hand-write the final spec in chat, and
    do not end the learning turn before the finalizer returns `ok: true` or a
    concrete error.
-14. Tell the user exactly where the generated workspace skill draft was written
+15. Tell the user exactly where the generated workspace skill draft was written
    and that they can enable it.
-15. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
+16. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
 
 ## Autonomous Self-Run Learning (no human recording)
 
@@ -138,6 +160,7 @@ The chat UI can only show "running" while a real foreground tool is active. Keep
 
 - Do not say "scan is running", "waiting for scan completion", or "I will analyze when it finishes" unless the scanner command is still executing as a foreground Bash/tool call in the same turn.
 - Never start `scan_web_system.py`, `execute_web_playbook.cjs`, Playwright, browser learning, or skill generation with `&`, `nohup`, `setsid`, `disown`, a detached terminal, or a separate background shell.
+- Never run ad-hoc `python3 -c`, here-doc, inline Playwright, stealth, webdriver-patching, user-agent spoofing, or native-Chrome retry scripts as a substitute for the approved scanners/executors. If the approved path cannot handle the system, stop with `SPECIAL_BROWSER_CONTEXT_REQUIRED` and produce a reviewable partial result or ask for same-browser capture.
 - If a scan may take minutes, tell the user what will be scanned, then run the foreground command and wait for its JSON/output before summarizing.
 - If the environment cannot keep a foreground tool alive, stop and explain the exact blocker instead of pretending a background scan is active.
 - A follow-up such as "deeper scan" or "continue scanning" must either run another foreground scanner command or ask for the missing scope. It must not be treated as a separate idle chat while the previous scan is supposedly pending.
@@ -154,6 +177,7 @@ Place generated artifacts in the workspace learning area, using stable English d
 - system-profile.json: app name, domains, roles, navigation, risks.
 - page-map.json: pages, routes, labels, selectors, forms, tables, actions.
 - api-contracts.json: authoritative published contracts (OpenAPI/GraphQL) from discover_contracts.cjs, with real request/response JSON Schema (types, enums, required) and reusable data schemas. Persisted verbatim for review and re-learn diffing.
+- frontend-source-map.json: bounded same-domain JavaScript intelligence from frontend_source_intelligence.cjs: route hints, API-client path hints, asset counts, truncation flags, and warnings. Never raw source.
 - api-map.json: merged endpoint catalog (authoritative contracts take precedence over observed/inferred), methods, request/response schemas, data schemas, auth hints, mutation flags.
 - capability-map.json: natural-language capability routing, required parameters, confirmation gates, success signals, stale signals, and recovery policy.
 - action-playbook.json: natural-language intents mapped to safe actions.
@@ -193,9 +217,11 @@ Place generated artifacts in the workspace learning area, using stable English d
   and `web-system-playbook.json`. Do not generate ad-hoc Playwright,
   JavaScript, Python, selectors, or operation plans while answering a normal user
   request.
-- Use browser automation during learning, discovery, login, and captured
-  headless fallback flows only. If no captured API or headless flow exists for a
-  capability, mark it as needing re-learning instead of improvising.
+- Use browser automation during learning, discovery, and login only through the
+  approved foreground capture/scanner/executor scripts or the same interactive
+  browser/profile. Do not switch to ad-hoc headless fallback scripts after login.
+  If no captured API or compiled browser flow exists for a capability, mark it
+  as needing re-learning instead of improvising.
 - When an action has both an API path and a captured browser path, store the
   browser path during learning as `fallbackOperations`; the executor runs the
   fallback automatically if the API path fails or goes stale

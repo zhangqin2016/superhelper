@@ -48,6 +48,15 @@ function setUserScrollDetached(panel, detached) {
   else delete panel.dataset[USER_SCROLL_DETACHED];
 }
 
+export function detachAutoFollowForUserNavigation(panel) {
+  if (!panel?.dataset) return;
+  delete panel.dataset[PROGRAMMATIC_SCROLL];
+  setUserScrollDetached(panel, true);
+  panel.dataset[USER_SCROLL_INTENT_UNTIL] = String(Date.now() + 1000);
+  panel.dataset.lastScrollTop = String(panel.scrollTop || 0);
+  updateScrollToBottomButton(panel);
+}
+
 function markProgrammaticScroll(panel) {
   if (!panel?.dataset) return;
   panel.dataset[PROGRAMMATIC_SCROLL] = "1";

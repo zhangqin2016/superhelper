@@ -508,6 +508,7 @@
   "toast.cacheCleared": "تم مسح ذاكرة المرفقات",
   "toast.cacheClearFailed": "فشل المسح",
   "toast.largePasteAttached": "تمت إضافة النص الطويل الملصق كمرفق",
+  "toast.clipboardFilesAttached": "تمت إضافة {count} ملف من الحافظة",
   "toast.needProject": "أضف مجلد مساحة عمل أولاً.",
   "toast.needSession": "أنشئ محادثة أولاً.",
   "toast.createSessionFailed": "تعذّر إنشاء المحادثة — محرك المساعد غير جاهز. أغلق التطبيق وأعد فتحه.",

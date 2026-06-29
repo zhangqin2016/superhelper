@@ -95,7 +95,6 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
     buildEnrichedUserText,
     extractDocuments,
     hasDocumentInputFiles,
-    isDocumentOnlyUserMessage,
   } = require("./document-translator");
   const notify = typeof emitNotice === "function" ? emitNotice : () => {};
 
@@ -119,10 +118,7 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
       replacesCode: "documentPreparing",
       done: true,
     });
-    if (isDocumentOnlyUserMessage(text, files)) {
-      return { ok: false, error: "DOCUMENT_FAILED", detail: result.detail || undefined };
-    }
-    return { ok: true, text, files };
+    return { ok: false, error: "DOCUMENT_FAILED", detail: result.detail || undefined };
   }
 
   notify({

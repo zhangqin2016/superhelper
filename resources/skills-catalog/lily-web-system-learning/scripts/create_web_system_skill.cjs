@@ -12,9 +12,10 @@ const CONFIRMATION_LEVELS = new Set(["none", "review", "explicit"]);
 function usage() {
   return [
     "Usage:",
-    "  node scripts/create_web_system_skill.cjs --spec web-system-spec.json [--scan web-system-scan.json] [--contracts api-contracts.json] [--out <dir>] [--dry-run]",
+    "  node scripts/create_web_system_skill.cjs --spec web-system-spec.json [--scan web-system-scan.json] [--contracts api-contracts.json] [--frontend-source frontend-source-map.json] [--out <dir>] [--dry-run]",
     "",
     "  --contracts: authoritative published contracts from discover_contracts.cjs (OpenAPI/GraphQL).",
+    "  --frontend-source: bounded frontend-source hints from frontend_source_intelligence.cjs.",
     "The spec must contain id, name/systemName, baseUrl, allowedDomains[], and actions[].",
     "If --out is omitted, the draft is written to Lily's learned-skills inbox (recommended).",
     "--out must be the inbox/parent directory; the skill id is appended automatically. Do not pass a path that already ends in the skill id.",
@@ -22,7 +23,7 @@ function usage() {
 }
 
 function parseArgs(argv) {
-  const args = { spec: null, scan: null, contracts: null, out: null, dryRun: false };
+  const args = { spec: null, scan: null, contracts: null, frontendSource: null, out: null, dryRun: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--spec") {
@@ -31,6 +32,8 @@ function parseArgs(argv) {
       args.scan = argv[++i];
     } else if (arg === "--contracts") {
       args.contracts = argv[++i];
+    } else if (arg === "--frontend-source") {
+      args.frontendSource = argv[++i];
     } else if (arg === "--out") {
       args.out = argv[++i];
     } else if (arg === "--dry-run") {
@@ -44,6 +47,30 @@ function parseArgs(argv) {
   }
   if (!args.spec) throw new Error("Missing --spec");
   return args;
+}
+
+function normalizeFrontendSource(input, spec) {
+  if (!input) return null;
+  if (input.ok !== true || input.schemaVersion !== 1 || input.kind !== "frontend-source-map") {
+    throw new Error("Invalid --frontend-source file (expected frontend_source_intelligence.cjs output)");
+  }
+  const allowedDomains = new Set(spec.allowedDomains);
+  for (const domain of (Array.isArray(input.allowedDomains) ? input.allowedDomains : []).map(normalizeHost).filter(Boolean)) {
+    if (!allowedDomains.has(domain) && ![...allowedDomains].some((allowed) => domain.endsWith(`.${allowed}`) || allowed.endsWith(`.${domain}`))) {
+      throw new Error(`frontend-source allowed domain is outside spec allowedDomains: ${domain}`);
+    }
+  }
+  return {
+    schemaVersion: 1,
+    kind: "frontend-source-map",
+    baseUrl: input.baseUrl || spec.baseUrl,
+    allowedDomains: Array.isArray(input.allowedDomains) ? input.allowedDomains.map(normalizeHost).filter(Boolean) : [],
+    assets: Array.isArray(input.assets) ? input.assets : [],
+    routeHints: Array.isArray(input.routeHints) ? input.routeHints : [],
+    apiHints: Array.isArray(input.apiHints) ? input.apiHints : [],
+    coverage: input.coverage || {},
+    warnings: Array.isArray(input.warnings) ? input.warnings : [],
+  };
 }
 
 /**
@@ -234,7 +261,7 @@ function buildSkillMd(spec, scan) {
   const runtimePlanRules = [
     "Allowed operation types are `apiRequest`, `goto`, `click`, `fill`, `select`, `check`, `uncheck`, `upload`, `press`, `wait`, `waitForUrl`, `waitForText`, `waitForResponse`, `assertText`, `extract`, and `screenshot`.",
     "At normal runtime, do not author new operations or scripts. Use only `capability-map.json.execution.learnedFlow` and `web-system-playbook.json.actions[].metadata.learnedFlow` materialized from the learning phase.",
-    "Prefer `apiRequest` when the action metadata says `executionMode` is `api-direct`; use a headless browser only when a captured `headless-browser-flow` exists from learning.",
+    "Prefer `apiRequest` when the action metadata says `executionMode` is `api-direct`; use a browser flow only when a verified `compiled-browser-flow` exists from learning. Never generate browser scripts at runtime.",
     "`apiRequest` may use `contractId` from `web-system-playbook.json.apiContracts`; never add credential headers, cookies, tokens, or passwords to the materialized plan.",
     "After login/session capture and HAR capture, learn an auth recipe with `scripts/learn_auth_recipe.cjs --storage-state <sessionPath> --har scan.har --base-url <url> --allow-domain <host>`. Pass the resulting local auth recipe as `--auth-recipe <authRecipePath>` so the executor injects Authorization/CSRF headers from storageState at runtime.",
     "The auth recipe stores sources and formats only; it must never store raw token values.",
@@ -256,6 +283,10 @@ function buildSkillMd(spec, scan) {
 
 function buildInstallPortableSkillMd(markdown) {
   return markdown
+    .replaceAll(
+      "This opens a real browser for the user to log in and prints `sessionPath`. Use that path as `--storage-state <sessionPath>` for every later scan, discovery, dry-run, and execution command. The session file is local-only and must not be copied into the workspace, skill files, chat, logs, or prompts. If an endpoint needs a dynamic CSRF/OAuth token, re-capture or re-learn the authenticated browser flow; never ask the user how to obtain the token.",
+      "This opens a real browser with a persistent Lily browser profile for this system, then prints `sessionPath` and `profilePath`. Use `sessionPath` as `--storage-state <sessionPath>` for every later scan, discovery, dry-run, and execution command. The session file and profile are local-only and must not be copied into the workspace, skill files, chat, logs, or prompts. If an endpoint needs a dynamic CSRF/OAuth token, re-capture or re-learn the authenticated browser flow in the same profile; never ask the user how to obtain the token.",
+    )
     .replaceAll("node scripts/capture_session.cjs", "\"{{NODE_BIN}}\" \"{{WEB_SYSTEM_SESSION_CAPTURE}}\"")
     .replaceAll("scripts/capture_session.cjs", "{{WEB_SYSTEM_SESSION_CAPTURE}}")
     .replaceAll("node scripts/learn_auth_recipe.cjs", "\"{{NODE_BIN}}\" \"{{WEB_SYSTEM_AUTH_RECIPE}}\"")
@@ -398,7 +429,7 @@ function executionStrategyForAction(action, apiContracts) {
     executionMode: matches.length ? "api-direct" : "needs-learned-flow",
     runtimePlanPolicy: "materialize-from-learned-graph-only",
     allowRuntimeGeneratedScripts: false,
-    fallback: matches.length ? "headless-browser-flow" : "relearn-required",
+    fallback: matches.length ? "compiled-browser-flow" : "relearn-required",
     apiContractRefs: matches.map((contract) => contract.id),
     stalePolicy: "retry-browser-then-relearn",
   };
@@ -430,8 +461,8 @@ function learnedFlowForAction(action, apiContracts) {
     mode: "needs-learned-flow",
     source: "not-captured",
     materialization: "blocked-at-runtime",
-    reason: "No learned API contract or compiled headless browser flow exists for this capability.",
-    recovery: "Re-run learning for this action and capture an API contract or compiled headless browser flow before exposing it for normal use.",
+    reason: "No learned API contract or compiled browser flow exists for this capability.",
+    recovery: "Re-run learning for this action and capture an API contract or compiled browser flow before exposing it for normal use.",
   };
 }
 
@@ -633,7 +664,7 @@ function staleSignalsForAction(action) {
 function recoveryForAction(action) {
   return {
     onAuthExpired: "Refresh the local browser session with capture_session.cjs, then retry the same learned flow with --storage-state.",
-    onApiFailure: "Retry only a captured headless fallback flow. If no learned fallback exists, mark the capability stale and re-run learning.",
+    onApiFailure: "Retry only a captured compiled browser fallback flow. If no learned fallback exists, mark the capability stale and re-run learning.",
     onSelectorFailure: "Run partial re-learning for this action and capture a new flow before retrying.",
     onAmbiguousTarget: action.risk === "read" ? "Ask one clarifying question." : "Stop and ask the user to identify the exact target before any write.",
   };
@@ -734,8 +765,8 @@ function buildCapabilityMap(spec, scan, playbook) {
       planSource: "learned-graph",
       runtimeModelAuthoredPlansAllowed: false,
       runtimeScriptGenerationAllowed: false,
-      visibleBrowserOnlyFor: ["login", "human-verification", "explicit-user-auth"],
-      normalExecution: ["api-direct", "headless-browser-flow"],
+      visibleBrowserOnlyFor: ["login", "human-verification", "explicit-user-auth", "first-time-learning", "special-browser-context-recovery"],
+      normalExecution: ["api-direct", "compiled-browser-flow"],
     },
     routing: {
       strategy: "intent-then-keyword-then-ask",
@@ -799,9 +830,11 @@ function buildApiMap(spec, playbook, discovered) {
   };
 }
 
-function buildHealth(spec, scan, capabilityMap, playbook) {
+function buildHealth(spec, scan, capabilityMap, playbook, frontendSource) {
   const apiFirstCount = capabilityMap.capabilities.filter((capability) => capability.execution.preferred === "api-first").length;
   const status = scan && scan.warnings.length === 0 ? "ready-for-review" : "partial";
+  const frontendRouteHints = frontendSource?.routeHints?.length || 0;
+  const frontendApiHints = frontendSource?.apiHints?.length || 0;
   return {
     schemaVersion: 1,
     systemId: spec.id,
@@ -816,12 +849,16 @@ function buildHealth(spec, scan, capabilityMap, playbook) {
       browserFallbackCount: capabilityMap.capabilities.length - apiFirstCount,
       highRiskActionCount: spec.actions.filter((action) => action.risk === "submit" || action.risk === "destructive").length,
       requiredParamCount: capabilityMap.capabilities.reduce((sum, capability) => sum + capability.params.required.length, 0),
+      frontendSourceAssetCount: frontendSource?.assets?.length || 0,
+      frontendSourceRouteHintCount: frontendRouteHints,
+      frontendSourceApiHintCount: frontendApiHints,
     },
     checks: {
       domainAllowlist: spec.allowedDomains.length > 0 ? "pass" : "fail",
       credentialPolicy: "pass",
       apiCoverage: apiFirstCount > 0 ? "partial" : "missing",
       pageCoverage: scan?.pages?.length ? "partial" : "spec-only",
+      frontendSourceCoverage: frontendRouteHints || frontendApiHints ? "partial" : "missing",
       riskPolicy: spec.actions.every((action) => action.risk === "read" || action.confirmation !== "none") ? "pass" : "fail",
       reviewRequired: spec.actions.some((action) => action.confirmation !== "none") ? "yes" : "no",
     },
@@ -830,6 +867,7 @@ function buildHealth(spec, scan, capabilityMap, playbook) {
     recommendedNextSteps: [
       apiFirstCount === 0 ? "Run API discovery for frequently used read/search actions." : "",
       scan ? "" : "Run a read-only scan to increase page and selector coverage.",
+      frontendRouteHints || frontendApiHints ? "" : "Run frontend source intelligence on the captured HAR to discover SPA routes and API-client hints.",
       spec.actions.some((action) => action.risk !== "read") ? "Test mutating flows only in a confirmed test environment before production use." : "",
     ].filter(Boolean),
   };
@@ -867,7 +905,7 @@ function inferBusinessObjects(spec) {
   }));
 }
 
-function buildSystemProfile(spec, scan) {
+function buildSystemProfile(spec, scan, frontendSource) {
   return {
     schemaVersion: 1,
     id: spec.id,
@@ -905,6 +943,15 @@ function buildSystemProfile(spec, scan) {
           limitations: scan.coverage.limitations || [],
         }
       : null,
+    frontendSourceCoverage: frontendSource
+      ? {
+          assetCount: frontendSource.coverage.assetCount ?? frontendSource.assets.length,
+          routeHintCount: frontendSource.coverage.routeHintCount ?? frontendSource.routeHints.length,
+          apiHintCount: frontendSource.coverage.apiHintCount ?? frontendSource.apiHints.length,
+          truncatedAssetCount: frontendSource.coverage.truncatedAssetCount ?? frontendSource.assets.filter((asset) => asset.truncated).length,
+          warnings: frontendSource.warnings || [],
+        }
+      : null,
     files: {
       capabilityMap: "capability-map.json",
       apiMap: "api-map.json",
@@ -916,6 +963,7 @@ function buildSystemProfile(spec, scan) {
       examples: "examples.jsonl",
       changeLog: "change-log.json",
       scanArchive: scan ? "web-system-scan.json" : "",
+      frontendSourceMap: frontendSource ? "frontend-source-map.json" : "",
     },
   };
 }
@@ -1144,10 +1192,11 @@ function main() {
   const spec = validateSpec(readJson(args.spec));
   const scan = args.scan ? normalizeScan(readJson(args.scan), spec) : null;
   const discovered = args.contracts ? normalizeDiscovered(readJson(args.contracts), spec) : null;
+  const frontendSource = args.frontendSource ? normalizeFrontendSource(readJson(args.frontendSource), spec) : null;
   const playbook = buildPlaybook(spec, scan, discovered);
   const capabilityMap = buildCapabilityMap(spec, scan, playbook);
   const apiMap = buildApiMap(spec, playbook, discovered);
-  const health = buildHealth(spec, scan, capabilityMap, playbook);
+  const health = buildHealth(spec, scan, capabilityMap, playbook, frontendSource);
   const root = path.resolve(args.out || defaultInboxDir());
   // Append the id under the inbox root, but stay idempotent: if --out already
   // points at <root>/<id>, reuse it instead of nesting a second <id> level
@@ -1163,6 +1212,9 @@ function main() {
     capabilities: capabilityMap.capabilities.length,
     apiContracts: apiMap.contracts.length,
     authoritativeContracts: apiMap.contracts.filter((c) => c.authoritative).length,
+    frontendSourceAssets: frontendSource?.assets?.length || 0,
+    frontendSourceRouteHints: frontendSource?.routeHints?.length || 0,
+    frontendSourceApiHints: frontendSource?.apiHints?.length || 0,
     allowedDomains: spec.allowedDomains,
   };
 
@@ -1175,7 +1227,7 @@ function main() {
       "utf8",
     );
     fs.writeFileSync(path.join(draftDir, "skill.manifest.json"), JSON.stringify(buildManifest(spec), null, 2) + "\n", "utf8");
-    fs.writeFileSync(path.join(draftDir, "system-profile.json"), JSON.stringify(buildSystemProfile(spec, scan), null, 2) + "\n", "utf8");
+    fs.writeFileSync(path.join(draftDir, "system-profile.json"), JSON.stringify(buildSystemProfile(spec, scan, frontendSource), null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "capability-map.json"), JSON.stringify(capabilityMap, null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "api-map.json"), JSON.stringify(apiMap, null, 2) + "\n", "utf8");
     fs.writeFileSync(path.join(draftDir, "health.json"), JSON.stringify(health, null, 2) + "\n", "utf8");
@@ -1190,10 +1242,12 @@ function main() {
     // Persist the authoritative published contracts verbatim so the learned
     // knowledge is durably stored, reviewable, and diffable on re-learn.
     if (discovered) fs.writeFileSync(path.join(draftDir, "api-contracts.json"), JSON.stringify(discovered, null, 2) + "\n", "utf8");
+    if (frontendSource) fs.writeFileSync(path.join(draftDir, "frontend-source-map.json"), JSON.stringify(frontendSource, null, 2) + "\n", "utf8");
     fs.copyFileSync(path.join(__dirname, "execute_web_playbook.cjs"), path.join(draftDir, "scripts/execute_web_playbook.cjs"));
     fs.copyFileSync(path.join(__dirname, "discover_contracts.cjs"), path.join(draftDir, "scripts/discover_contracts.cjs"));
     fs.copyFileSync(path.join(__dirname, "diff_contracts.cjs"), path.join(draftDir, "scripts/diff_contracts.cjs"));
     fs.copyFileSync(path.join(__dirname, "har_to_contracts.cjs"), path.join(draftDir, "scripts/har_to_contracts.cjs"));
+    fs.copyFileSync(path.join(__dirname, "frontend_source_intelligence.cjs"), path.join(draftDir, "scripts/frontend_source_intelligence.cjs"));
     fs.copyFileSync(path.join(__dirname, "compile_playbook.cjs"), path.join(draftDir, "scripts/compile_playbook.cjs"));
     fs.copyFileSync(path.join(__dirname, "capture_session.cjs"), path.join(draftDir, "scripts/capture_session.cjs"));
     fs.copyFileSync(path.join(__dirname, "learn_auth_recipe.cjs"), path.join(draftDir, "scripts/learn_auth_recipe.cjs"));

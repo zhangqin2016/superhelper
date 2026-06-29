@@ -150,6 +150,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   },
   stageFile: (filePath, fileName) => ipcRenderer.invoke("files:stage", filePath, fileName),
   pasteFile: (buffer, fileName) => ipcRenderer.invoke("files:paste", buffer, fileName),
+  pasteClipboardFiles: () => ipcRenderer.invoke("files:paste-clipboard"),
   pasteImage: (buffer, fileName) => ipcRenderer.invoke("files:paste", buffer, fileName),
   getFileThumbnail: (fileId) => ipcRenderer.invoke("files:thumbnail", fileId),
   getImageDimensions: (fileId) => ipcRenderer.invoke("files:dimensions", fileId),
@@ -214,6 +215,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("filetree:reveal", { filePath, sessionId }),
   openLocalFile: (filePath, sessionId = "") =>
     ipcRenderer.invoke("filetree:open", { filePath, sessionId }),
+  localMediaStatus: (filePath) =>
+    ipcRenderer.invoke("files:local-media-status", { filePath }),
 
   onRuntimeEvents: (callback) => {
     ipcRenderer.on("assistant:runtime-events", (_event, batch) => callback(batch));

@@ -72,6 +72,8 @@ ipcMain.handle("files:read-text", (_event, payload) => {
         "| --- | --- |",
         "| 城市 | Dubai |",
         "",
+        "![Local chart](./report-assets.png)",
+        "",
         "---",
         "",
         "- 要点",
@@ -81,6 +83,14 @@ ipcMain.handle("files:read-text", (_event, payload) => {
     };
   }
   return { ok: false, error: "NOT_FOUND" };
+});
+
+ipcMain.handle("files:local-media-status", (_event, payload) => {
+  const filePath = String(payload?.filePath || "");
+  if (filePath.includes("unauthorized-image.png")) {
+    return { ok: false, error: "NOT_AUTHORIZED", path: filePath, exists: true, authorized: false };
+  }
+  return { ok: true, error: "", path: filePath, exists: true, authorized: true, url: `app-file://media/${encodeURIComponent(filePath)}` };
 });
 
 ipcMain.handle("scheduled-tasks:list", (_event, filter = {}) => {
@@ -519,13 +529,131 @@ app.whenReady().then(async () => {
         const terminus = rail.querySelector(".conversation-minimap-rib.is-terminus");
         if (!terminus || terminus !== ribs[ribs.length - 1]) throw new Error("terminus must be the last rib");
         // Clicking a rib must not throw and should request a scroll.
+        const scrollCalls = [];
+        panel.scrollTo = function(opts, maybeTop) {
+          const top = typeof opts === "object" ? Number(opts.top || 0) : Number(maybeTop || 0);
+          scrollCalls.push({ top });
+          panel.scrollTop = top;
+        };
+        panel.scrollTop = panel.scrollHeight;
         ribs[0].click();
+        if (!scrollCalls.length || scrollCalls[0].top > 30) {
+          throw new Error("clicking a DOM-sourced prompt rib must scroll to that prompt");
+        }
+        if (panel.dataset.userScrollDetached !== "1") {
+          throw new Error("clicking an older minimap rib must detach live auto-follow");
+        }
         terminus.click();
+        const latestTop = Math.max(0, panel.scrollHeight - panel.clientHeight);
+        if (panel.scrollTop < latestTop - 1) {
+          throw new Error("clicking terminus must scroll to latest");
+        }
+        if (panel.dataset.userScrollDetached === "1") {
+          throw new Error("clicking terminus must resume live auto-follow");
+        }
         // Prompt ticks must carry the question text for the hover preview.
         if (!Array.from(ribs).some((r) => (r.getAttribute("aria-label") || "").includes("问题"))) {
           throw new Error("prompt ribs must carry the question text");
         }
         stack.remove();
+
+        // Real runtime path: minimap items are data-sourced and carry turnId.
+        // If the target is already rendered, clicking must use the local panel
+        // scroll directly instead of delegating to history loading.
+        const dataStack = document.createElement("div");
+        dataStack.className = "session-messages-stack";
+        const dataPanel = document.createElement("div");
+        dataPanel.className = "session-messages is-active";
+        dataPanel.style.cssText = "position:relative;height:300px;overflow:auto";
+        const dataList = document.createElement("div");
+        dataList.className = "messages";
+        dataPanel.appendChild(dataList);
+        dataStack.appendChild(dataPanel);
+        document.body.appendChild(dataStack);
+        for (let i = 1; i <= 4; i += 1) {
+          const a = document.createElement("article");
+          a.className = "runtime-user-message";
+          a.dataset.turnId = "turn-" + i;
+          const b = document.createElement("div");
+          b.className = "runtime-user-body";
+          b.textContent = "数据问题 " + i;
+          a.appendChild(b);
+          a.style.minHeight = "220px";
+          dataList.appendChild(a);
+        }
+        const dataScrollCalls = [];
+        dataPanel.scrollTo = function(opts, maybeTop) {
+          const top = typeof opts === "object" ? Number(opts.top || 0) : Number(maybeTop || 0);
+          dataScrollCalls.push({ top });
+          dataPanel.scrollTop = top;
+        };
+        let delegatedJump = "";
+        updateMinimap(dataPanel, {
+          items: [1, 2, 3, 4].map((i) => ({ role: "user", turnId: "turn-" + i, label: "数据问题 " + i })),
+          jumpToTurn: (turnId) => { delegatedJump = turnId; },
+        });
+        const dataRibs = dataStack.querySelectorAll(".conversation-minimap-rib");
+        if (dataRibs.length !== 5) throw new Error("expected data-sourced ribs plus terminus");
+        dataPanel.scrollTop = dataPanel.scrollHeight;
+        dataRibs[0].click();
+        if (delegatedJump) throw new Error("rendered turnId rib should not delegate to history loading: " + delegatedJump);
+        if (!dataScrollCalls.length || dataScrollCalls[0].top > 30) {
+          throw new Error("clicking a data-sourced rendered rib must scroll the panel");
+        }
+        if (dataPanel.dataset.userScrollDetached !== "1") {
+          throw new Error("data-sourced rendered rib must detach live auto-follow");
+        }
+        dataStack.remove();
+
+        // Shared-stack isolation: a rail mounted for one panel must disappear
+        // when the next active panel has too few entries for a minimap. Otherwise
+        // the user sees another conversation's ribs on the current session.
+        const sharedStack = document.createElement("div");
+        sharedStack.className = "session-messages-stack";
+        const panelA = document.createElement("div");
+        panelA.className = "session-messages is-active";
+        panelA.style.cssText = "position:relative;height:300px;overflow:auto";
+        const listA = document.createElement("div");
+        listA.className = "messages";
+        panelA.appendChild(listA);
+        for (let i = 1; i <= 4; i += 1) {
+          const a = document.createElement("article");
+          a.className = "runtime-user-message";
+          a.dataset.turnId = "isolation-a-" + i;
+          const b = document.createElement("div");
+          b.className = "runtime-user-body";
+          b.textContent = "隔离A问题 " + i;
+          a.appendChild(b);
+          a.style.minHeight = "180px";
+          listA.appendChild(a);
+        }
+        const panelB = document.createElement("div");
+        panelB.className = "session-messages is-active";
+        panelB.style.cssText = "position:relative;height:300px;overflow:auto";
+        const listB = document.createElement("div");
+        listB.className = "messages";
+        panelB.appendChild(listB);
+        const bOnly = document.createElement("article");
+        bOnly.className = "runtime-user-message";
+        const bBody = document.createElement("div");
+        bBody.className = "runtime-user-body";
+        bBody.textContent = "隔离B当前问题";
+        bOnly.appendChild(bBody);
+        listB.appendChild(bOnly);
+        sharedStack.append(panelA, panelB);
+        document.body.appendChild(sharedStack);
+        updateMinimap(panelA, {
+          items: [1, 2, 3, 4].map((i) => ({ role: "user", turnId: "isolation-a-" + i, label: "隔离A问题 " + i })),
+        });
+        const staleRail = sharedStack.querySelector(":scope > .conversation-minimap");
+        if (!staleRail) throw new Error("setup should create a minimap rail for panel A");
+        updateMinimap(panelB, {
+          items: [{ role: "user", turnId: "isolation-b-1", label: "隔离B当前问题" }],
+        });
+        if (sharedStack.querySelector(":scope > .conversation-minimap")) {
+          throw new Error("switching to a short conversation must remove the previous session's minimap rail");
+        }
+        sharedStack.remove();
         return "conversation-minimap-regression: ok";
       }
     )()`);
@@ -1241,6 +1369,13 @@ app.whenReady().then(async () => {
         if (!markdownPreview.querySelector("table") || !markdownPreview.querySelector("code") || !markdownPreview.querySelector("hr")) {
           throw new Error("markdown artifact preview should render rich markdown structures");
         }
+        const relativeMarkdownImage = markdownPreview.querySelector("img.markdown-local-file-image[data-local-file-path='/tmp/report-assets.png']");
+        if (!relativeMarkdownImage) {
+          throw new Error("markdown artifact relative images should resolve against the markdown file path: " + markdownPreview.innerHTML);
+        }
+        if (!String(relativeMarkdownImage.getAttribute("src") || "").startsWith("app-file://media/")) {
+          throw new Error("markdown artifact relative images should render via app-file:// media: " + relativeMarkdownImage.getAttribute("src"));
+        }
         const markdownPreviewStyle = getComputedStyle(markdownArtifact.querySelector(".assistant-renderer-markdown-preview"));
         if (markdownPreviewStyle.overflowY !== "visible" || markdownPreviewStyle.maxHeight !== "none") {
           throw new Error("markdown artifact preview should flow with the card instead of using an inner scroller");
@@ -1441,6 +1576,20 @@ app.whenReady().then(async () => {
         }
         windowsFileUrlLink.click();
         await new Promise((resolve) => setTimeout(resolve, 20));
+        renderMarkdownWithCache(pathHost, "![bad](/tmp/unauthorized-image.png)");
+        const brokenLocalImage = pathHost.querySelector("img.markdown-local-file-image[data-local-file-path='/tmp/unauthorized-image.png']");
+        if (!brokenLocalImage) {
+          throw new Error("local image should initially render as a diagnosable local image: " + pathHost.innerHTML);
+        }
+        brokenLocalImage.dispatchEvent(new Event("error"));
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        if (pathHost.querySelector("img.markdown-local-file-image[data-local-file-path='/tmp/unauthorized-image.png']")) {
+          throw new Error("failed local image should be replaced instead of staying as a broken image: " + pathHost.innerHTML);
+        }
+        const mediaError = pathHost.querySelector(".markdown-image-error[data-local-file-path='/tmp/unauthorized-image.png']");
+        if (!mediaError || !mediaError.textContent.includes("NOT_AUTHORIZED")) {
+          throw new Error("failed local image should show diagnostic status: " + pathHost.innerHTML);
+        }
         renderMarkdownWithCache(pathHost, "已保存到：generated-assets/image-1-2026.png");
         const relativePathLink = pathHost.querySelector('.markdown-local-file-link[data-local-file-path="generated-assets/image-1-2026.png"]');
         if (relativePathLink) {
@@ -1497,11 +1646,18 @@ app.whenReady().then(async () => {
     }
     const generatedMediaResult = await win.webContents.executeJavaScript(`(
       async () => {
-        const { appendToolPayloadDetail, parseGeneratedMedia } = await import("./modules/tool-payload-renderer.js");
+        const { appendToolPayloadDetail, generatedMediaFromPayload, parseGeneratedMedia } = await import("./modules/tool-payload-renderer.js");
         const output = '<generated_media type="image">\\n  <task_id>task_123</task_id>\\n  <file path="/tmp/generated image.png" bytes="1234" />\\n  <file path="generated-assets/image-1-2026.png" bytes="1234" />\\n</generated_media>';
         const parsed = parseGeneratedMedia(output);
         if (parsed.length !== 1 || parsed[0].type !== "image" || parsed[0].files[0].path !== "/tmp/generated image.png") {
           throw new Error("generated media parser did not extract image file");
+        }
+        const placeholder = '<generated_media type="image">\\n  <file path="/absolute/path/to/generated-assets/name.svg" bytes="1" />\\n</generated_media>';
+        if (parseGeneratedMedia(placeholder).length !== 0) {
+          throw new Error("placeholder generated_media paths must not become media blocks");
+        }
+        if (generatedMediaFromPayload({ content: "saved to /absolute/path/to/generated-assets/name.svg" }).length !== 0) {
+          throw new Error("placeholder generated-assets fallback path must not become a media block");
         }
         const container = document.createElement("details");
         document.body.appendChild(container);
@@ -1546,6 +1702,19 @@ app.whenReady().then(async () => {
           throw new Error("relative generated media path should not be clickable");
         }
         container.remove();
+        const placeholderContainer = document.createElement("details");
+        document.body.appendChild(placeholderContainer);
+        appendToolPayloadDetail(placeholderContainer, {
+          name: "Bash",
+          result: { content: placeholder },
+        }, { role: "result", sessionId: "session_placeholder_media" });
+        if (placeholderContainer.querySelector(".assistant-generated-media")) {
+          throw new Error("placeholder generated media should not render a broken file area");
+        }
+        if (placeholderContainer.textContent.includes("<generated_media")) {
+          throw new Error("invalid generated_media marker should not leak raw XML");
+        }
+        placeholderContainer.remove();
         return "generated-media-preview-regression: ok";
       }
     )()`);

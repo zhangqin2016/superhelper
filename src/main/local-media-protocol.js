@@ -27,6 +27,10 @@ const MIME = {
   ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".ogg": "audio/ogg",
 };
 
+function canonicalMediaUrl(abs) {
+  return `${SCHEME}://media/${encodeURIComponent(abs)}`;
+}
+
 /** Roots the scheme is allowed to read from: every workspace + userData. Read fresh per
  *  request so projects added after launch are covered. */
 function allowedRoots() {
@@ -42,6 +46,56 @@ function allowedRoots() {
 function isUnder(root, abs) {
   const rel = path.relative(root, abs);
   return Boolean(rel) && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+function normalizeLocalMediaPath(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^file:/i.test(text)) {
+    try {
+      return require("node:url").fileURLToPath(text);
+    } catch {
+      return "";
+    }
+  }
+  if (!path.isAbsolute(text)) return "";
+  return path.resolve(text);
+}
+
+function inspectLocalMediaPath(filePath = "") {
+  const abs = normalizeLocalMediaPath(filePath);
+  if (!abs) {
+    return { ok: false, error: "INVALID_PATH", path: "", exists: false, authorized: false };
+  }
+  const exists = fs.existsSync(abs);
+  const roots = allowedRoots();
+  const authorized = roots.some((root) => isUnder(root, abs) || path.resolve(root) === abs);
+  if (!exists) {
+    return { ok: false, error: "NOT_FOUND", path: abs, exists: false, authorized, roots };
+  }
+  let stat = null;
+  try {
+    stat = fs.statSync(abs);
+  } catch {
+    return { ok: false, error: "NOT_FOUND", path: abs, exists: false, authorized, roots };
+  }
+  if (!stat.isFile()) {
+    return { ok: false, error: "NOT_FILE", path: abs, exists: true, authorized, roots };
+  }
+  if (!authorized) {
+    return { ok: false, error: "NOT_AUTHORIZED", path: abs, exists: true, authorized: false, roots };
+  }
+  const mime = MIME[path.extname(abs).toLowerCase()] || "application/octet-stream";
+  return {
+    ok: true,
+    error: "",
+    path: abs,
+    exists: true,
+    authorized: true,
+    byteSize: stat.size,
+    mime,
+    url: canonicalMediaUrl(abs),
+  };
 }
 
 function registerLocalMediaScheme() {
@@ -69,4 +123,12 @@ function installLocalMediaProtocol() {
   });
 }
 
-module.exports = { registerLocalMediaScheme, installLocalMediaProtocol, SCHEME, allowedRoots, isUnder };
+module.exports = {
+  registerLocalMediaScheme,
+  installLocalMediaProtocol,
+  inspectLocalMediaPath,
+  SCHEME,
+  allowedRoots,
+  canonicalMediaUrl,
+  isUnder,
+};

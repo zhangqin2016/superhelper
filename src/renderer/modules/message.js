@@ -6,6 +6,7 @@ import store from "./state.js";
 import {
   $,
   bindPanelScroll,
+  detachAutoFollowForUserNavigation,
   initScrollToBottom,
   isNearBottom,
   isUserScrollDetached,
@@ -120,6 +121,12 @@ function stackEl() {
   return $("sessionMessagesStack");
 }
 
+function clearStackMinimaps() {
+  const root = stackEl();
+  if (!root?.querySelectorAll) return;
+  for (const old of root.querySelectorAll(":scope > .conversation-minimap")) old.remove();
+}
+
 function isActiveSession(sessionId) {
   return store.get("activeSessionId") === sessionId;
 }
@@ -180,6 +187,7 @@ export function showSessionMessages(sessionId) {
     el.classList.toggle("is-active", active);
     el.setAttribute("aria-hidden", active ? "false" : "true");
   }
+  clearStackMinimaps();
   syncWorkbenchEmptyState(view(sessionId).listEl);
   const v = view(sessionId);
   requestAnimationFrame(() => {
@@ -330,6 +338,13 @@ function cssEscapeId(value) {
   return String(value).replace(/["\\]/g, "\\$&");
 }
 
+function scrollPanelToElement(panel, el) {
+  if (!panel || !el) return;
+  const top = Math.max(0, el.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop - 12);
+  detachAutoFollowForUserNavigation(panel);
+  panel.scrollTo({ top: Math.min(top, panel.scrollHeight - panel.clientHeight), behavior: "smooth" });
+}
+
 // Full prompt list for the conversation minimap — sourced from the DATA model
 // (every committed user message), not the windowed DOM, so the rail reflects the
 // whole history. Each item carries turnId for on-demand jump.
@@ -364,7 +379,7 @@ async function jumpToTurnForSession(sessionId, panel, turnId) {
       guard += 1;
     }
     if (!el) { await frame(); el = find(); } // one more tick for the chunked renderer
-    if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (el) scrollPanelToElement(panel, el);
   } catch {
     /* leave the scroll position unchanged on any failure */
   }
@@ -781,10 +796,15 @@ function renderRuntimeSession(sessionId, opts = {}) {
   if (isActiveSession(sessionId) && panel) {
     const minimapItems = buildMinimapItems(runtime);
     import("./conversation-minimap.js")
-      .then((m) => m.updateMinimap?.(panel, {
-        items: minimapItems,
-        jumpToTurn: (turnId) => jumpToTurnForSession(sessionId, panel, turnId),
-      }))
+      .then((m) => {
+        if (!isActiveSession(sessionId)) return;
+        if (!panel.isConnected || !panel.classList.contains("is-active")) return;
+        if (view(sessionId).panel !== panel) return;
+        m.updateMinimap?.(panel, {
+          items: minimapItems,
+          jumpToTurn: (turnId) => jumpToTurnForSession(sessionId, panel, turnId),
+        });
+      })
       .catch(() => {});
   }
   if (shouldFollow) scrollToBottomAfterLayout(panel, true);

@@ -9,6 +9,7 @@
 
 import { t } from "../i18n/index.js";
 import { buildMinimapModel, computeActiveIndex } from "./conversation-minimap-model.js";
+import { detachAutoFollowForUserNavigation, scrollToBottom } from "./dom.js";
 
 const MIN_RIBS = 4; // below this the rail is noise — hide it
 // Dock-style "mountain peak" hover: ticks near the cursor grow — most under it,
@@ -85,10 +86,11 @@ function scrollOffsetOf(el, panel) {
 
 function scrollToTarget(panel, target, terminus) {
   if (terminus || !target) {
-    panel.scrollTo({ top: panel.scrollHeight, behavior: "smooth" });
+    scrollToBottom(true, panel);
     return;
   }
   const top = Math.max(0, scrollOffsetOf(target, panel) - 12);
+  detachAutoFollowForUserNavigation(panel);
   panel.scrollTo({ top: Math.min(top, panel.scrollHeight - panel.clientHeight), behavior: "smooth" });
 }
 
@@ -166,6 +168,12 @@ function ensureRail(panel, s) {
   return rail;
 }
 
+function removeHostRails(panel) {
+  const host = panel?.parentElement || panel;
+  if (!host?.querySelectorAll) return;
+  for (const old of host.querySelectorAll(":scope > .conversation-minimap")) old.remove();
+}
+
 // Keep the active rib visible inside the scrollable ribs column — scrolls ONLY
 // the ribs container (never an ancestor / the transcript).
 function keepActiveInView(s, idx) {
@@ -197,15 +205,18 @@ function applyPeak(s, clientY) {
   for (let i = 0; i < s.ribs.length; i += 1) {
     const d = Math.abs((s.ribCenters[i] || 0) - scrollTop - y);
     const e = Math.max(0, 1 - d / PEAK_RADIUS) ** 2; // squared falloff -> smooth peak
-    s.ribs[i].style.width = `${PEAK_BASE + PEAK_JUT * e}px`;
-    s.ribs[i].style.height = `${PEAK_H_BASE + PEAK_H_JUT * e}px`; // grow height too → big click target
+    s.ribs[i].style.setProperty("--rib-w", `${PEAK_BASE + PEAK_JUT * e}px`);
+    s.ribs[i].style.setProperty("--rib-h", `${PEAK_H_BASE + PEAK_H_JUT * e}px`);
     if (d < nearestDist) { nearestDist = d; nearest = i; }
   }
   if (nearest >= 0) showPreview(s, s.ribs[nearest], s.labels[nearest]);
 }
 
 function resetPeak(s) {
-  if (s.ribs) for (const r of s.ribs) { r.style.width = ""; r.style.height = ""; }
+  if (s.ribs) for (const r of s.ribs) {
+    r.style.removeProperty("--rib-w");
+    r.style.removeProperty("--rib-h");
+  }
   hidePreview(s);
 }
 
@@ -226,7 +237,7 @@ export function updateMinimap(panel, opts = {}) {
   try {
     s = panelState(panel);
     const listEl = panel.querySelector(".messages");
-    if (!listEl) { teardownMinimap(panel); return; }
+    if (!listEl) { teardownMinimap(panel); removeHostRails(panel); return; }
     s.listEl = listEl;
 
     // Data-sourced items (full conversation, incl. not-yet-rendered turns) when
@@ -245,7 +256,7 @@ export function updateMinimap(panel, opts = {}) {
       terminusLabel: t("minimap.jumpLatest"),
     });
 
-    if (entries.length < MIN_RIBS) { teardownMinimap(panel); return; }
+    if (entries.length < MIN_RIBS) { teardownMinimap(panel); removeHostRails(panel); return; }
 
     ensureRail(panel, s);
     bindScroll(panel, s);
@@ -268,8 +279,10 @@ export function updateMinimap(panel, opts = {}) {
       rib.addEventListener("click", () => {
         if (s.suppressClick) { s.suppressClick = false; return; } // ignore the click that ends a drag
         if (isTerminus) { scrollToTarget(panel, null, true); return; }
-        // Data-sourced rib for an older turn that may not be rendered yet → ask the
-        // caller to load history then scroll; fall back to a direct scroll.
+        // Data-sourced ribs may already be rendered in the current window. Use
+        // the explicit local panel scroll first; only ask the caller to load
+        // older history when the target is not mounted yet.
+        if (target) { scrollToTarget(panel, target, false); return; }
         if (entry.turnId && jumpToTurn) jumpToTurn(entry.turnId);
         else scrollToTarget(panel, target, false);
       });

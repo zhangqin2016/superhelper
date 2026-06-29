@@ -8,7 +8,9 @@ import {
   extendedDescription,
   localSkillDirs,
   registryMetadataUploadFields,
+  resolveWorkspaceAppVersion,
   skillUploadFields,
+  skillManifestVersion,
   withCacheBuster,
   workspaceAppBuildArgs,
   workspaceAppArtifactPath,
@@ -83,8 +85,13 @@ assert(
   "web learning app should declare its required skill package",
 );
 assert(
-  workspaceAppBuildArgs(webApp, { version: "0.1.57" }).includes("1.0.9"),
-  "workspace app publisher should keep app package versions independent from desktop release versions",
+  workspaceAppBuildArgs(webApp, { version: "0.1.57" }).includes(skillManifestVersion("lily-web-system-learning")),
+  "workspace app publisher should version web learning from its required skill package",
+);
+assertEqual(
+  resolveWorkspaceAppVersion(webApp, { version: "0.1.57" }),
+  skillManifestVersion("lily-web-system-learning"),
+  "web learning app should not drift behind its local skill manifest version",
 );
 
 assertEqual(
