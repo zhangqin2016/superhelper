@@ -163,6 +163,7 @@ async function ensureMermaid() {
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
+      suppressErrorRendering: true,
       theme: root?.classList?.contains("light") ? "default" : "dark",
     });
     mermaidReady = true;

@@ -1398,9 +1398,26 @@ app.whenReady().then(async () => {
         if (!rich.querySelector(".markdown-mermaid svg")) {
           throw new Error("Mermaid blocks should render to SVG: " + rich.innerHTML);
         }
+        const broken = document.createElement("div");
+        broken.className = "markdown-body";
+        document.body.appendChild(broken);
+        await renderMarkdown(broken, [
+          fence + "mermaid",
+          "graph TD",
+          "A -->",
+          fence,
+        ].join("\\n"));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        if (document.body.textContent.includes("Syntax error in text")) {
+          throw new Error("invalid Mermaid must not leak Mermaid's error SVG into the page body");
+        }
+        if (!broken.querySelector(".markdown-mermaid-error")) {
+          throw new Error("invalid Mermaid should degrade inside the message: " + broken.innerHTML);
+        }
         host.remove();
         pathShell.remove();
         rich.remove();
+        broken.remove();
         return "markdown-rich-regression: ok";
       }
     )()`);
