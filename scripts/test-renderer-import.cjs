@@ -111,6 +111,31 @@ ipcMain.handle("scheduled-tasks:remove", () => ({ ok: true }));
 ipcMain.handle("session:switch", (_event, sessionId) => {
   return { ok: true, conversation: [], session: { id: sessionId, title: "Alpha chat" } };
 });
+ipcMain.handle("session:get-conversation", async (_event, payload) => {
+  const sessionId = typeof payload === "string" ? payload : payload?.sessionId || "";
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  if (sessionId === "session_switch_slow_a") {
+    await delay(120);
+    return {
+      ok: true,
+      conversation: [{ id: "slow_a_msg", role: "user", content: "slow A should not win" }],
+      total: 1,
+      hasMore: false,
+      nextBefore: 0,
+    };
+  }
+  if (sessionId === "session_switch_fast_b") {
+    await delay(5);
+    return {
+      ok: true,
+      conversation: [{ id: "fast_b_msg", role: "user", content: "fast B wins" }],
+      total: 1,
+      hasMore: false,
+      nextBefore: 0,
+    };
+  }
+  return { ok: true, conversation: [], total: 0, hasMore: false, nextBefore: 0 };
+});
 
 ipcMain.handle("app:get-locale", () => ({ ok: true, locale: "zh-CN" }));
 ipcMain.handle("app:get-version", () => ({ ok: true, version: "0.0.0-test" }));
@@ -696,6 +721,45 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(sameTurnCommittedResult);
+    const fastSessionSwitchResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { applySessionSwitch } = await import("./modules/session-chrome.js");
+        const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        store.set("projects", [{
+          id: "p_switch_perf",
+          sessions: [
+            { id: "session_switch_slow_a", title: "Slow A" },
+            { id: "session_switch_fast_b", title: "Fast B" },
+          ],
+        }]);
+        store.set("activeProjectId", "p_switch_perf");
+        const slowPromise = applySessionSwitch({ ok: true }, "session_switch_slow_a", "p_switch_perf");
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const slowPanel = document.querySelector('.session-messages[data-session-id="session_switch_slow_a"]');
+        if (!slowPanel?.classList.contains("is-active")) {
+          throw new Error("session switch should reveal the target panel before conversation load resolves");
+        }
+        await applySessionSwitch({ ok: true }, "session_switch_fast_b", "p_switch_perf");
+        for (let i = 0; i < 80; i++) {
+          const text = (store.get("conversation") || []).map((m) => m.content).join("\\n");
+          if (text.includes("fast B wins")) break;
+          await delay(10);
+        }
+        await slowPromise;
+        await delay(140);
+        const active = document.querySelector(".session-messages.is-active");
+        if (active?.dataset.sessionId !== "session_switch_fast_b") {
+          throw new Error("late slow-session load must not steal active panel");
+        }
+        const conversationText = (store.get("conversation") || []).map((m) => m.content).join("\\n");
+        if (!conversationText.includes("fast B wins") || conversationText.includes("slow A should not win")) {
+          throw new Error("late slow-session load must not overwrite active conversation store: " + conversationText);
+        }
+        return "fast-session-switch-regression: ok";
+      }
+    )()`);
+    console.log(fastSessionSwitchResult);
     const largeConversationWindowResult = await win.webContents.executeJavaScript(`(
       async () => {
         const store = (await import("./modules/state.js")).default;

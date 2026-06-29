@@ -29,6 +29,7 @@ import { mergeOlderConversationPage, shouldContinueLoadingOlder } from "./conver
 
 const CONVERSATION_PAGE_SIZE = 50;
 const conversationPages = new Map();
+let sessionSwitchSeq = 0;
 
 export function activeProject() {
   const id = store.get("activeProjectId");
@@ -146,7 +147,7 @@ function patchSessionMessagesInStore(sessionId, messages, total) {
   if (changed) store.set("projects", projects);
 }
 
-async function loadSessionConversation(sessionId) {
+async function loadSessionConversation(sessionId, opts = {}) {
   if (!sessionId) return [];
   let result;
   try {
@@ -167,10 +168,24 @@ async function loadSessionConversation(sessionId) {
     nextBefore: Number.isInteger(result?.nextBefore) ? result.nextBefore : 0,
     loading: false,
   });
+  if (typeof opts.isCurrent === "function" && !opts.isCurrent()) {
+    return messages;
+  }
   store.set("conversation", messages);
   patchSessionMessagesInStore(sessionId, messages, result.total);
   syncCommittedMessages(sessionId, messages);
   return messages;
+}
+
+function revealSessionView(sessionId, { forceScrollBottom = true } = {}) {
+  showSessionMessages(sessionId);
+  updateTopbarTitles();
+  if (shouldPreserveSessionView(sessionId) || isConversationRenderCurrent(sessionId)) {
+    resumeLiveSessionUi(sessionId, { forceScrollBottom });
+    return;
+  }
+  renderConversation(sessionId, { force: true, forceScrollBottom });
+  resumeLiveSessionUi(sessionId, { forceScrollBottom });
 }
 
 export async function loadOlderConversationForSession(sessionId, panel = null) {
@@ -245,20 +260,12 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
   if (nextProjectId) store.set("activeProjectId", nextProjectId);
   store.set("activeSessionId", nextSessionId);
   clearSessionAttention(nextSessionId); // viewing it clears the list "finished" flag
+  const switchSeq = ++sessionSwitchSeq;
 
-  await loadSessionConversation(nextSessionId);
-
-  showSessionMessages(nextSessionId);
-  updateTopbarTitles();
-  if (shouldPreserveSessionView(nextSessionId) || isConversationRenderCurrent(nextSessionId)) {
-    // Live session, or the panel already shows the current window — just reveal
-    // it. Skips a full teardown + markdown/highlight rebuild of up to 80 messages
-    // on every switch (the main cause of "clicking a session is janky").
-    resumeLiveSessionUi(nextSessionId, { forceScrollBottom: true });
-  } else {
-    renderConversation(nextSessionId, { force: true, forceScrollBottom: true });
-    resumeLiveSessionUi(nextSessionId, { forceScrollBottom: true });
-  }
+  // Reveal immediately from the in-memory/runtime cache. The canonical page can
+  // be slower (SQLite/OpenCode IPC/blob hydration), and should not block the
+  // user's visual navigation between conversations.
+  revealSessionView(nextSessionId, { forceScrollBottom: true });
 
   syncComposerForActiveSession();
   const { clearPromptSuggestions } = await import("./composer.js");
@@ -268,6 +275,13 @@ export async function applySessionSwitch(switchResult, nextSessionId, nextProjec
   updateProjectTreeChrome();
   void refreshSessionSkillsUi();
   void import("./permission-settings.js").then((m) => m.refreshSessionPermissionSelect());
+
+  void loadSessionConversation(nextSessionId, {
+    isCurrent: () => sessionSwitchSeq === switchSeq && store.get("activeSessionId") === nextSessionId,
+  }).then((messages) => {
+    if (sessionSwitchSeq !== switchSeq || store.get("activeSessionId") !== nextSessionId) return;
+    if (messages?.length) revealSessionView(nextSessionId, { forceScrollBottom: true });
+  });
 }
 
 /** Refresh store from main; optionally rebuild active session chat from disk. */
