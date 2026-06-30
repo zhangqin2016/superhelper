@@ -28,21 +28,18 @@ function taskRunStatusLabel(taskRun, translate) {
   return translate("task.strip.running");
 }
 
-function compactDetail(value = "", limit = 96) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (text.length <= limit) return text;
-  return `${text.slice(0, Math.max(0, limit - 1))}…`;
+function isGenericTaskStep(title = "") {
+  const normalized = String(title || "").trim().toLowerCase();
+  return normalized === "execute with available tools";
 }
 
 function taskRunItems(taskRun, translate) {
   const items = [];
   const plan = Array.isArray(taskRun?.plan) ? taskRun.plan : [];
   const active = plan.find((step) => step.status === "in_progress") || plan.find((step) => step.id === taskRun?.activeStep);
-  if (active?.title) {
+  if (active?.title && !isGenericTaskStep(active.title)) {
     items.push({ status: "in_progress", content: translate("task.strip.step", { item: active.title }) });
   }
-  const detail = compactDetail(taskRun?.liveness?.detail || taskRun?.progress?.label || "");
-  if (detail) items.push({ status: "info", content: detail });
   const risk = Array.isArray(taskRun?.risks) ? taskRun.risks.at(-1) : null;
   if (risk?.code) {
     items.push({ status: risk.level === "warning" ? "warning" : "info", content: translate("task.strip.risk", { code: risk.code }) });
@@ -71,11 +68,9 @@ export function buildLiveTaskStripModel(liveTurn, translate = t) {
   }
   if (!taskRun) return { visible: false, summary: "", items: [] };
   const status = taskRunStatusLabel(taskRun, translate);
-  const detail = compactDetail(taskRun.liveness?.detail || taskRun.progress?.label || "");
-  const summary = detail ? translate("task.strip.statusDetail", { status, detail }) : translate("task.strip.status", { status });
   return {
     visible: true,
-    summary,
+    summary: translate("task.strip.status", { status }),
     items: taskRunItems(taskRun, translate),
   };
 }

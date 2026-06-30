@@ -38,11 +38,25 @@ const taskOnly = buildLiveTaskStripModel({
   },
 }, translate);
 assert.equal(taskOnly.visible, true);
-assert.equal(taskOnly.summary, "Task Still working python report.py is still running");
+assert.equal(taskOnly.summary, "Task Still working");
 assert(taskOnly.items.some((item) => item.content === "Step Run the command"));
+assert(!taskOnly.items.some((item) => item.content === "python report.py is still running"));
 assert(taskOnly.items.some((item) => item.content === "Watch NO_VISIBLE_PROGRESS"));
 assert(taskOnly.items.some((item) => item.content === "2 evidence"));
 assert(taskOnly.items.some((item) => item.content === "No auto replay"));
+
+const genericStep = buildLiveTaskStripModel({
+  taskRun: {
+    status: "running",
+    phase: "tool_running",
+    activeStep: "execute",
+    plan: [{ id: "execute", title: "Execute with available tools", status: "in_progress" }],
+    liveness: { status: "tool_running", detail: "网页扫描队列：种子 1 · JS 路由 0" },
+  },
+}, translate);
+assert.equal(genericStep.summary, "Task Tool running");
+assert(!genericStep.items.some((item) => item.content.includes("Execute with available tools")));
+assert(!genericStep.items.some((item) => item.content.includes("网页扫描队列")));
 
 const withTodos = buildLiveTaskStripModel({
   tools: new Map([[
