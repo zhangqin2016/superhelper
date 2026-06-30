@@ -92,9 +92,9 @@ function formatDocumentQueryIndexForPrompt(index = {}) {
   if (!documents.length || !chunks.length) return "";
   const lines = [
     "[Document Query Index]",
-    "Use chunk ids and document labels when citing uploaded document evidence. This is a lightweight index over already extracted text, not a separate retrieval tool; verify claims against shown excerpts or extracted text.",
+    "Use chunk ids, document labels, and source paths when citing uploaded document evidence. This is a lightweight index over already extracted text, not a separate retrieval tool; verify claims against shown excerpts or extracted text.",
     "Documents:",
-    ...documents.map((doc) => `- ${doc.id}: ${doc.label}${doc.charLength ? ` (${doc.charLength} chars)` : ""}`),
+    ...documents.map((doc) => `- ${doc.id}: ${doc.label}${doc.path ? ` — ${doc.path}` : ""}${doc.charLength ? ` (${doc.charLength} chars)` : ""}`),
     "Chunks:",
   ];
   for (const chunk of chunks.slice(0, MAX_PROMPT_CHUNKS)) {

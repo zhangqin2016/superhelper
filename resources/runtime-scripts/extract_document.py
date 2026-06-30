@@ -20,6 +20,8 @@ Emits a single JSON object on stdout: {"ok": true, "text": "..."} or
 import json
 import os
 import sys
+import zipfile
+import xml.etree.ElementTree as ET
 
 
 def _rows_to_markdown(rows):
@@ -33,6 +35,105 @@ def _rows_to_markdown(rows):
     for row in rows[1:]:
         out.append("| " + " | ".join(row) + " |")
     return "\n".join(out)
+
+
+W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def _w_attr(element, name):
+    return element.attrib.get(W_NS + name, "")
+
+
+def _compact(value, limit=500):
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
+
+def _element_text(element):
+    paragraphs = []
+    for para in element.findall(f".//{W_NS}p"):
+        text = "".join(t.text or "" for t in para.iter(f"{W_NS}t")).strip()
+        if text:
+            paragraphs.append(text)
+    if paragraphs:
+        return "\n".join(paragraphs)
+    return "".join(t.text or "" for t in element.iter(f"{W_NS}t")).strip()
+
+
+def _comment_anchor_text(document_root):
+    anchors = {}
+    active = []
+
+    def walk(element):
+        tag = element.tag
+        if tag == f"{W_NS}commentRangeStart":
+            cid = _w_attr(element, "id")
+            if cid:
+                active.append(cid)
+            return
+        if tag == f"{W_NS}commentRangeEnd":
+            cid = _w_attr(element, "id")
+            if cid in active:
+                active.remove(cid)
+            return
+        if tag == f"{W_NS}t" and element.text and active:
+            for cid in active:
+                anchors.setdefault(cid, []).append(element.text)
+        for child in list(element):
+            walk(child)
+
+    walk(document_root)
+    return {cid: _compact("".join(parts), 240) for cid, parts in anchors.items()}
+
+
+def extract_docx_comments(path):
+    try:
+        with zipfile.ZipFile(path) as docx:
+            names = set(docx.namelist())
+            if "word/comments.xml" not in names:
+                return []
+            comments_root = ET.fromstring(docx.read("word/comments.xml"))
+            anchors = {}
+            if "word/document.xml" in names:
+                anchors = _comment_anchor_text(ET.fromstring(docx.read("word/document.xml")))
+    except Exception:
+        return []
+
+    comments = []
+    for item in comments_root.findall(f".//{W_NS}comment"):
+        cid = _w_attr(item, "id")
+        text = _element_text(item)
+        if not text:
+            continue
+        comments.append(
+            {
+                "id": cid,
+                "author": _w_attr(item, "author"),
+                "date": _w_attr(item, "date"),
+                "anchor": anchors.get(cid, ""),
+                "text": _compact(text, 1200),
+            }
+        )
+    return comments
+
+
+def _format_docx_comments(comments):
+    if not comments:
+        return ""
+    lines = ["## Comments"]
+    for index, item in enumerate(comments, start=1):
+        meta = [f"Comment {item.get('id') or index}"]
+        if item.get("author"):
+            meta.append(f"author: {item['author']}")
+        if item.get("date"):
+            meta.append(f"date: {item['date']}")
+        lines.append(f"- {'; '.join(meta)}")
+        if item.get("anchor"):
+            lines.append(f"  - Anchor: {item['anchor']}")
+        lines.append(f"  - Text: {item.get('text', '')}")
+    return "\n".join(lines)
 
 
 def extract_docx(path):
@@ -65,6 +166,9 @@ def extract_docx(path):
             md = _rows_to_markdown(rows)
             if md:
                 parts.append(md)
+    comments = _format_docx_comments(extract_docx_comments(path))
+    if comments:
+        parts.append(comments)
     return "\n\n".join(parts)
 
 

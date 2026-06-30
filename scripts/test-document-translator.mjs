@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import JSZip from "jszip";
 import { assert } from "./lib/test-assert.mjs";
 
 const require = createRequire(import.meta.url);
@@ -28,10 +29,58 @@ const txtPath = path.join(tmpDir, "notes.txt");
 fs.writeFileSync(txtPath, "会议纪要：下周发布", "utf8");
 
 const docxPath = path.join(FIXTURES, "sample.docx");
+const commentedDocxPath = path.join(tmpDir, "commented.docx");
 const files = [
   { path: txtPath, name: "notes.txt", isImage: false },
   ...(haveRuntime ? [{ path: docxPath, name: "sample.docx", isImage: false }] : []),
 ];
+
+async function writeCommentedDocx(filePath) {
+  const zip = new JSZip();
+  zip.file(
+    "[Content_Types].xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>
+</Types>`,
+  );
+  zip.file(
+    "_rels/.rels",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`,
+  );
+  zip.file(
+    "word/_rels/document.xml.rels",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdComments" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/>
+</Relationships>`,
+  );
+  zip.file(
+    "word/document.xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+  <w:p><w:r><w:t>Proposal body</w:t></w:r></w:p>
+  <w:p><w:r><w:commentRangeStart w:id="0"/><w:t>Scope statement</w:t><w:commentRangeEnd w:id="0"/></w:r><w:r><w:commentReference w:id="0"/></w:r></w:p>
+  <w:sectPr/>
+</w:body></w:document>`,
+  );
+  zip.file(
+    "word/comments.xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:comment w:id="0" w:author="Reviewer" w:date="2026-06-30T00:00:00Z">
+    <w:p><w:r><w:t>Please clarify the implementation scope.</w:t></w:r></w:p>
+  </w:comment>
+</w:comments>`,
+  );
+  fs.writeFileSync(filePath, await zip.generateAsync({ type: "nodebuffer" }));
+}
 
 assert(hasDocumentInputFiles(files), "expected document input files");
 assert(isDocumentOnlyUserMessage("", files), "expected document-only message");
@@ -44,8 +93,16 @@ assert(result.text.includes("会议纪要"), "missing txt extraction");
 if (haveRuntime) {
   // Top-tier libraries must preserve real structure: heading + a Markdown table.
   assert(result.text.includes("Quarterly Report"), "missing docx heading");
+  assert(result.text.includes(`Source file path: ${docxPath}`), "document extraction should expose source path for raw attachment follow-up");
   assert(/\|\s*Region\s*\|\s*Sales\s*\|/.test(result.text), "docx table not preserved as Markdown");
   assert(result.extractedPaths.length === 2, "expected two extracted paths");
+
+  await writeCommentedDocx(commentedDocxPath);
+  const commented = await extractDocuments([{ path: commentedDocxPath, name: "commented.docx", isImage: false }]);
+  assert(commented?.ok, `commented docx extraction failed: ${JSON.stringify(commented)}`);
+  assert(commented.text.includes("## Comments"), "docx comments section missing");
+  assert(commented.text.includes("Please clarify the implementation scope."), "docx comment text missing");
+  assert(commented.text.includes("Anchor: Scope statement"), "docx comment anchor missing");
 
   // Spreadsheet structure (the old regex parser flattened this away).
   const xlsx = await extractDocuments([{ path: path.join(FIXTURES, "sample.xlsx"), name: "s.xlsx" }]);

@@ -166,7 +166,14 @@ async function extractDocuments(files) {
       totalChars += text.length;
       extractedPaths.push(result.path);
       indexedDocuments.push(result);
-      sections.push(`[Document: "${result.label}"]\n${text}`);
+      sections.push(
+        [
+          `[Document: "${result.label}"]`,
+          `Source file path: ${result.path}`,
+          "",
+          text,
+        ].join("\n"),
+      );
     } catch (err) {
       failed += 1;
       console.warn(

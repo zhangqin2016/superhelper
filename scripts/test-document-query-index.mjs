@@ -30,7 +30,8 @@ const prompt = formatDocumentQueryIndexForPrompt(index);
 assert(prompt.includes("[Document Query Index]"));
 assert(prompt.includes("doc1-chunk1"));
 assert(prompt.includes("contract.pdf"));
-assert(prompt.includes("Use chunk ids and document labels when citing uploaded document evidence."));
+assert(prompt.includes("/tmp/contract.pdf"));
+assert(prompt.includes("Use chunk ids, document labels, and source paths when citing uploaded document evidence."));
 
 const emptyPrompt = formatDocumentQueryIndexForPrompt(buildDocumentQueryIndex([]));
 assert.equal(emptyPrompt, "");
