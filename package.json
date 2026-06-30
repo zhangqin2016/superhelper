@@ -30,6 +30,7 @@
     "release:catalog": "node scripts/publish-local-catalog-server.mjs",
     "release:one": "node scripts/release-one-click.mjs",
     "release:all": "node scripts/release-one-click.mjs --target all --upload",
+    "release:runtime-pack": "node scripts/publish-common-runtime-pack.mjs",
     "release:libreoffice-runtime": "node scripts/publish-libreoffice-runtime.mjs",
     "deploy:baota:check": "node scripts/check-baota-compose.mjs",
     "build:runtime": "node scripts/build-runtime-bundle.mjs",
@@ -41,10 +42,10 @@
     "verify:runtime": "node scripts/verify-runtime-bundle.mjs",
     "icon:optimize": "node scripts/optimize-icon.mjs",
     "pack": "node scripts/purge-macos-junk.mjs && electron-builder --dir",
-    "dist:win": "node scripts/fetch-opencode-engine.mjs --platform win32-x64 && node scripts/verify-engine-bundle.mjs --platform win32-x64 && node scripts/verify-runtime-bundle.mjs --platform win32-x64 --allow-missing && node scripts/purge-macos-junk.mjs && bash scripts/dist-win.sh && node scripts/verify-win-pack.mjs",
-    "dist:win:signed": "node scripts/verify-runtime-bundle.mjs --platform win32-x64 --allow-missing && node scripts/purge-macos-junk.mjs && LILY_REQUIRE_WIN_SIGNING=1 bash scripts/dist-win.sh && node scripts/verify-win-pack.mjs",
-    "dist:mac:arm64": "node scripts/fetch-opencode-engine.mjs --platform darwin-arm64 && node scripts/verify-engine-bundle.mjs --platform darwin-arm64 && node scripts/verify-runtime-bundle.mjs --platform darwin-arm64 && node scripts/purge-macos-junk.mjs && bash scripts/dist-mac.sh arm64 && node scripts/verify-mac-pack.mjs && node scripts/build-mac-zip.mjs --arch arm64 && node scripts/build-mac-dmg.mjs --arch arm64 && node scripts/verify-mac-dmg.mjs --arch arm64",
-    "dist:mac:x64": "node scripts/fetch-opencode-engine.mjs --platform darwin-x64 && node scripts/verify-engine-bundle.mjs --platform darwin-x64 && node scripts/verify-runtime-bundle.mjs --platform darwin-x64 && node scripts/purge-macos-junk.mjs && bash scripts/dist-mac.sh x64 && node scripts/verify-mac-pack.mjs && node scripts/build-mac-zip.mjs --arch x64 && node scripts/build-mac-dmg.mjs --arch x64 && node scripts/verify-mac-dmg.mjs --arch x64",
+    "dist:win": "node scripts/fetch-opencode-engine.mjs --platform win32-x64 && node scripts/verify-engine-bundle.mjs --platform win32-x64 && node scripts/verify-runtime-bundle.mjs --platform win32-x64 --require-libreoffice --strict-smoke && node scripts/purge-macos-junk.mjs && bash scripts/dist-win.sh && node scripts/verify-win-pack.mjs --expect-runtime",
+    "dist:win:signed": "node scripts/verify-runtime-bundle.mjs --platform win32-x64 --require-libreoffice --strict-smoke && node scripts/purge-macos-junk.mjs && LILY_REQUIRE_WIN_SIGNING=1 bash scripts/dist-win.sh && node scripts/verify-win-pack.mjs --expect-runtime",
+    "dist:mac:arm64": "node scripts/fetch-opencode-engine.mjs --platform darwin-arm64 && node scripts/verify-engine-bundle.mjs --platform darwin-arm64 && node scripts/verify-runtime-bundle.mjs --platform darwin-arm64 --require-libreoffice --strict-smoke && node scripts/purge-macos-junk.mjs && bash scripts/dist-mac.sh arm64 && node scripts/verify-mac-pack.mjs && node scripts/build-mac-zip.mjs --arch arm64 && node scripts/build-mac-dmg.mjs --arch arm64 && node scripts/verify-mac-dmg.mjs --arch arm64",
+    "dist:mac:x64": "node scripts/fetch-opencode-engine.mjs --platform darwin-x64 && node scripts/verify-engine-bundle.mjs --platform darwin-x64 && node scripts/verify-runtime-bundle.mjs --platform darwin-x64 --require-libreoffice --strict-smoke && node scripts/purge-macos-junk.mjs && bash scripts/dist-mac.sh x64 && node scripts/verify-mac-pack.mjs && node scripts/build-mac-zip.mjs --arch x64 && node scripts/build-mac-dmg.mjs --arch x64 && node scripts/verify-mac-dmg.mjs --arch x64",
     "dist:mac": "npm run dist:mac:arm64 && npm run dist:mac:x64",
     "purge:macos-junk": "node scripts/purge-macos-junk.mjs",
     "build:runtime:win": "node scripts/build-runtime-bundle.mjs --platform win32-x64",
@@ -116,7 +117,6 @@
           "to": "bundles/darwin-arm64",
           "filter": [
             "**/*",
-            "!runtime/libreoffice/**",
             "!**/__MACOSX/**",
             "!**/.DS_Store",
             "!**/._*"
@@ -127,7 +127,6 @@
           "to": "bundles/darwin-x64",
           "filter": [
             "**/*",
-            "!runtime/libreoffice/**",
             "!**/__MACOSX/**",
             "!**/.DS_Store",
             "!**/._*"

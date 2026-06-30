@@ -71,6 +71,9 @@ const packId = args.pack;
 if (!packId) die("missing --pack <id> (e.g. pro-pdf)");
 const spec = PACK_SPECS[packId];
 if (!spec) die(`unknown pack '${packId}'. Known: ${Object.keys(PACK_SPECS).join(", ")}`);
+if (!Array.isArray(spec.requirements) || spec.requirements.length === 0 || !spec.probe) {
+  die(`pack '${packId}' is artifact-only (${spec.installKind || "native"}); use its dedicated build/publish pipeline, not the Python target builder`);
+}
 
 const platform = args.platform || detectPlatform();
 // uv's --python-platform target for cross-builds (wheel-only, no execution).

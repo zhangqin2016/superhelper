@@ -39,6 +39,9 @@ if (!python) {
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-managepack-"));
 const userData = path.join(tmp, "userData");
 fs.mkdirSync(userData, { recursive: true });
+const bundledRoot = path.join(tmp, "bundled-runtime-packs");
+const bundledWeb = path.join(bundledRoot, "web-automation");
+fs.mkdirSync(bundledWeb, { recursive: true });
 
 // Stub artifacts containing a `docling` package and a LibreOffice-style zip
 // (sync packing is fine — no server is listening yet).
@@ -101,7 +104,13 @@ const badServer = makeServer("0".repeat(64)); // advertises a wrong sha256
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 await new Promise((r) => badServer.listen(0, "127.0.0.1", r));
 
-const baseEnv = { ...process.env, LILY_USER_DATA_DIR: userData, no_proxy: "127.0.0.1,localhost", NO_PROXY: "127.0.0.1,localhost" };
+const baseEnv = {
+  ...process.env,
+  LILY_USER_DATA_DIR: userData,
+  LILY_BUNDLED_RUNTIME_PACK_ROOTS: bundledRoot,
+  no_proxy: "127.0.0.1,localhost",
+  NO_PROXY: "127.0.0.1,localhost",
+};
 const okEnv = { ...baseEnv, LILY_SERVICE_API_BASE_URL: `http://127.0.0.1:${server.address().port}` };
 const badEnv = { ...baseEnv, LILY_SERVICE_API_BASE_URL: `http://127.0.0.1:${badServer.address().port}` };
 // The script prints one JSON line and exits non-zero on failure; pexec rejects
@@ -122,6 +131,25 @@ try {
   const listed = await run(["list"]);
   assert(listed.ok && listed.packs.some((p) => p.id === "pro-pdf" && !p.installed), `unexpected list: ${JSON.stringify(listed)}`);
   assert(listed.packs.some((p) => p.id === "libreoffice" && !p.installed), `libreoffice missing from list: ${JSON.stringify(listed)}`);
+  assert(
+    listed.packs.some((p) => p.id === "web-automation" && p.installed && p.source === "bundled"),
+    `bundled web runtime should be listed as installed: ${JSON.stringify(listed)}`,
+  );
+  const bundledStatus = await run(["status", "web-automation"]);
+  assert(
+    bundledStatus.installed === true && bundledStatus.source === "bundled" && bundledStatus.path === bundledWeb,
+    `bundled status mismatch: ${JSON.stringify(bundledStatus)}`,
+  );
+  const bundledInstall = await run(["install", "web-automation"]);
+  assert(
+    bundledInstall.ok && bundledInstall.skipped && bundledInstall.source === "bundled",
+    `bundled install should skip: ${JSON.stringify(bundledInstall)}`,
+  );
+  const bundledRemove = await run(["uninstall", "web-automation"]);
+  assert(
+    !bundledRemove.ok && bundledRemove.error === "BUNDLED_RUNTIME_PACK_READ_ONLY",
+    `bundled uninstall should be blocked: ${JSON.stringify(bundledRemove)}`,
+  );
 
   // Install: resolves the (fake) server, downloads, verifies sha256, extracts.
   const installed = await run(["install", "pro-pdf"]);

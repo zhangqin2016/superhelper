@@ -294,6 +294,7 @@
             <button type="button" class="settings-nav-item" data-settings-page="connectors" data-i18n="settings.nav.connectors">连接器</button>
             <button type="button" class="settings-nav-item" data-settings-page="skills" data-i18n="settings.nav.skills">技能</button>
             <button type="button" class="settings-nav-item" data-settings-page="apps" data-i18n="settings.nav.apps">应用商店</button>
+            <button type="button" class="settings-nav-item" data-settings-page="runtime" data-i18n="settings.nav.runtime">运行环境</button>
             <button type="button" class="settings-nav-item" data-settings-page="memory" data-i18n="settings.nav.memory">记忆</button>
             <div class="settings-nav-group" data-i18n="settings.navGroup.support">账户与支持</div>
             <button type="button" class="settings-nav-item" data-settings-page="account" data-i18n="settings.nav.account">账户</button>
@@ -644,6 +645,15 @@
                 <button id="workspaceAppsRefreshBtn" class="settings-action-btn" type="button" data-i18n="settings.appsRefresh">刷新目录</button>
               </div>
               <div id="workspaceAppsList" class="workspace-app-list"></div>
+            </section>
+            <section id="settingsPageRuntime" class="settings-page" data-settings-page="runtime" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.runtime">运行环境</h3>
+              <p class="settings-section-desc" data-i18n="settings.runtimeDesc">安装本地运行环境，用于文档渲染、复杂 PDF、网页自动化、音视频和高级格式转换。未安装时保持当前轻量能力。</p>
+              <p id="runtimePackHint" class="skills-registry-hint"></p>
+              <div class="settings-actions runtime-pack-actions">
+                <button id="runtimePacksRefreshBtn" class="settings-action-btn" type="button" data-i18n="settings.runtime.refresh">刷新状态</button>
+              </div>
+              <div id="runtimePackList" class="runtime-pack-list"></div>
             </section>
             <section id="settingsPageLicense" class="settings-page" data-settings-page="account" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.license">授权</h3>

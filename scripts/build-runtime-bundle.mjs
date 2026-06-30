@@ -6,6 +6,7 @@
  *   node scripts/build-runtime-bundle.mjs
  *   node scripts/build-runtime-bundle.mjs --platform darwin-arm64
  *   node scripts/build-runtime-bundle.mjs --skip-libreoffice
+ *   node scripts/build-runtime-bundle.mjs --allow-missing-libreoffice
  *
  * Requires: curl, tar, unzip; macOS also uses hdiutil for LibreOffice .dmg.
  */
@@ -59,6 +60,7 @@ function parseArgs(argv) {
     platform: detectPlatform(),
     skipLibreOffice: false,
     libreOfficeOnly: false,
+    allowMissingLibreOffice: false,
   };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--platform" && argv[i + 1]) {
@@ -67,6 +69,8 @@ function parseArgs(argv) {
       out.skipLibreOffice = true;
     } else if (argv[i] === "--libreoffice-only") {
       out.libreOfficeOnly = true;
+    } else if (argv[i] === "--allow-missing-libreoffice") {
+      out.allowMissingLibreOffice = true;
     }
   }
   return out;
@@ -127,14 +131,37 @@ function validateArchiveSize(filePath, minBytes, label) {
   }
 }
 
-async function download(url, dest) {
+async function download(url, dest, options = {}) {
   ensureDir(path.dirname(dest));
   if (fs.existsSync(dest)) {
-    log(`cache hit ${path.basename(dest)}`);
-    return dest;
+    const minBytes = Number(options.minBytes || 0);
+    if (minBytes > 0 && fs.statSync(dest).size < minBytes) {
+      log(`discard incomplete cache ${path.basename(dest)}`);
+      rmrf(dest);
+    } else {
+      log(`cache hit ${path.basename(dest)}`);
+      return dest;
+    }
   }
-  log(`download ${url}`);
-  run("curl", ["-fSL", "--retry", "3", "-o", dest, url]);
+  const part = `${dest}.part`;
+  if (fs.existsSync(part)) {
+    log(`resume ${path.basename(dest)}`);
+  } else {
+    log(`download ${url}`);
+  }
+  const args = [
+    "-fL",
+    "--connect-timeout", "30",
+    "--max-time", "0",
+    "--retry", "10",
+    "--retry-delay", "2",
+    "--retry-all-errors",
+    "-C", "-",
+    "-o", part,
+    url,
+  ];
+  run("curl", args);
+  fs.renameSync(part, dest);
   return dest;
 }
 
@@ -440,7 +467,7 @@ async function installLibreOffice(platform, runtimeRoot) {
   let archive = null;
   if (!platform.startsWith("darwin") || !fs.existsSync("/Applications/LibreOffice.app")) {
     archive = path.join(CACHE_DIR, `lo-${platform}-${LO_VERSION}${path.extname(url)}`);
-    await download(url, archive);
+    await download(url, archive, { minBytes: 100_000_000 });
   }
 
   if (platform.startsWith("darwin")) {
@@ -511,7 +538,7 @@ function writeManifest(runtimeRoot, platform, meta) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const { platform, skipLibreOffice, libreOfficeOnly } = args;
+  const { platform, skipLibreOffice, libreOfficeOnly, allowMissingLibreOffice } = args;
 
   if (!UV_RELEASE[platform]) {
     throw new Error(`Unsupported platform: ${platform}`);
@@ -552,9 +579,15 @@ async function main() {
       await installLibreOffice(platform, runtimeRoot);
       hasLo = true;
     } catch (err) {
+      if (!allowMissingLibreOffice) throw err;
       console.warn(`[runtime-build] LibreOffice install failed (continuing): ${err.message}`);
     }
   } else if (cross && isWin) {
+    if (!allowMissingLibreOffice) {
+      throw new Error(
+        "Windows LibreOffice must be built on Windows. Run this command on Windows, or pass --allow-missing-libreoffice only for a non-release dev bundle.",
+      );
+    }
     log("skipping LibreOffice (MSI extraction not available on this platform)");
   }
 

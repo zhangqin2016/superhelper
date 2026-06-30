@@ -13,6 +13,7 @@ import { refreshMediaProviderSettings } from "./media-provider-settings.js";
 import { refreshSkillsList } from "./skill-settings.js";
 import { refreshConnectorSettings, initConnectorSettings } from "./connector-settings.js";
 import { refreshWorkspaceApps } from "./workspace-apps.js";
+import { initRuntimePackSettings, refreshRuntimePackSettings } from "./runtime-pack-settings.js";
 import { refreshLicenseStatus, refreshUpdateSettings } from "./license-update-settings.js";
 import { anySessionRunning } from "./session-runtime-store.js";
 import { activeSession, refreshStateLight } from "./session-chrome.js";
@@ -25,7 +26,7 @@ import { getNotificationPrefs, setNotificationPrefs } from "./task-alert.js";
 
 // "account" merges usage + license; "help" merges feedback + contact + about.
 // Multiple <section>s can share one page id — switchSettingsPage shows them all.
-const SETTINGS_PAGES = ["general", "model", "permission", "search", "media", "connectors", "skills", "apps", "memory", "account", "help"];
+const SETTINGS_PAGES = ["general", "model", "permission", "search", "media", "connectors", "skills", "apps", "runtime", "memory", "account", "help"];
 
 let panelOpen = false;
 let activeSettingsPage = "general";
@@ -87,6 +88,7 @@ function refreshSettingsPanelData() {
     refreshConnectorSettings(),
     refreshSkillsList(),
     refreshWorkspaceApps(),
+    refreshRuntimePackSettings(),
     refreshLicenseStatus(),
     refreshUpdateSettings(),
     refreshUsageSettings(),
@@ -208,4 +210,5 @@ export async function initSettingsPanel() {
   initThemeSettings();
   initMemorySettings();
   initConnectorSettings();
+  initRuntimePackSettings();
 }

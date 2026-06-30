@@ -43,34 +43,54 @@ if (!fs.existsSync(resources)) {
 
 const appArch = appPath.includes("mac-arm64") ? "arm64" : "x64";
 const bundlesRoot = path.join(resources, "bundles");
-if (fs.existsSync(bundlesRoot)) {
-  const forbiddenBundle = appArch === "arm64" ? "darwin-x64" : "darwin-arm64";
-  if (fs.existsSync(path.join(bundlesRoot, forbiddenBundle))) {
-    fail(`${appArch} Mac 包不应包含 bundles/${forbiddenBundle}`);
-  }
-  const activeBundle = appArch === "arm64" ? "darwin-arm64" : "darwin-x64";
-  const libreOfficePath = path.join(bundlesRoot, activeBundle, "runtime", "libreoffice");
-  if (fs.existsSync(libreOfficePath)) {
-    fail("Mac 包不应内置 LibreOffice；Office 能力统一通过运行时包按需安装");
-  }
+if (!fs.existsSync(bundlesRoot)) {
+  fail("完整 Mac 包应包含 resources/bundles");
+}
 
-  // The OpenCode engine is excluded from electron-builder signing (signIgnore),
-  // so dist-mac.sh re-signs it with the hardened-runtime entitlements. If that
-  // step is missing/broken, macOS SIGKILLs the engine at launch ("Code Signature
-  // Invalid" → "engine stopped unexpectedly (code null)"). Fail loud here so an
-  // unrunnable build never ships.
-  const engine = path.join(bundlesRoot, activeBundle, "opencode", "bin", "opencode");
-  if (!fs.existsSync(engine)) {
-    fail(`缺少 OpenCode 引擎二进制: ${path.relative(ROOT, engine)}`);
-  }
-  try {
-    execFileSync("codesign", ["--verify", "--strict", engine], { stdio: "pipe" });
-  } catch (err) {
-    fail(
-      `OpenCode 引擎签名无效，运行时会被 macOS SIGKILL（hardenedRuntime）。` +
-        `dist-mac.sh 的补签步骤未生效：${String(err?.stderr || err?.message || err).trim()}`,
-    );
-  }
+const forbiddenBundle = appArch === "arm64" ? "darwin-x64" : "darwin-arm64";
+if (fs.existsSync(path.join(bundlesRoot, forbiddenBundle))) {
+  fail(`${appArch} Mac 包不应包含 bundles/${forbiddenBundle}`);
+}
+const activeBundle = appArch === "arm64" ? "darwin-arm64" : "darwin-x64";
+const runtimeRoot = path.join(bundlesRoot, activeBundle, "runtime");
+const runtimeManifest = path.join(runtimeRoot, "runtime-manifest.json");
+if (!fs.existsSync(runtimeManifest)) {
+  fail(`完整 Mac 包应包含内置 runtime，但未找到: ${path.relative(ROOT, runtimeManifest)}`);
+}
+let manifest = null;
+try {
+  manifest = JSON.parse(fs.readFileSync(runtimeManifest, "utf8"));
+} catch (err) {
+  fail(`runtime-manifest.json 无法解析: ${String(err?.message || err)}`);
+}
+if (!manifest.libreoffice) {
+  fail("完整 Mac 包必须内置 LibreOffice，不能让用户首次使用 Office 能力时再下载");
+}
+const sofficeCandidates = [
+  path.join(runtimeRoot, "libreoffice", "LibreOffice.app", "Contents", "MacOS", "soffice"),
+  path.join(runtimeRoot, "libreoffice", "program", "soffice"),
+  path.join(runtimeRoot, "libreoffice", "opt", "libreoffice", "program", "soffice"),
+];
+if (!sofficeCandidates.some((candidate) => fs.existsSync(candidate))) {
+  fail("runtime-manifest 声明已内置 LibreOffice，但包内找不到 soffice");
+}
+
+// The OpenCode engine is excluded from electron-builder signing (signIgnore),
+// so dist-mac.sh re-signs it with the hardened-runtime entitlements. If that
+// step is missing/broken, macOS SIGKILLs the engine at launch ("Code Signature
+// Invalid" → "engine stopped unexpectedly (code null)"). Fail loud here so an
+// unrunnable build never ships.
+const engine = path.join(bundlesRoot, activeBundle, "opencode", "bin", "opencode");
+if (!fs.existsSync(engine)) {
+  fail(`缺少 OpenCode 引擎二进制: ${path.relative(ROOT, engine)}`);
+}
+try {
+  execFileSync("codesign", ["--verify", "--strict", engine], { stdio: "pipe" });
+} catch (err) {
+  fail(
+    `OpenCode 引擎签名无效，运行时会被 macOS SIGKILL（hardenedRuntime）。` +
+      `dist-mac.sh 的补签步骤未生效：${String(err?.stderr || err?.message || err).trim()}`,
+  );
 }
 
 const imgRoot = path.join(resources, "app.asar.unpacked", "node_modules", "@img");

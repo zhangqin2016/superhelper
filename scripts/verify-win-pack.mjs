@@ -71,6 +71,19 @@ if (expectRuntime) {
   if (!fs.existsSync(manifest)) {
     fail("完整安装包应包含 win32-x64/runtime，但未找到 runtime-manifest.json");
   }
+  let runtimeManifest = null;
+  try {
+    runtimeManifest = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  } catch (err) {
+    fail(`runtime-manifest.json 无法解析: ${String(err?.message || err)}`);
+  }
+  if (!runtimeManifest.libreoffice) {
+    fail("完整 Windows 包必须内置 LibreOffice，不能让用户首次使用 Office 能力时再下载");
+  }
+  const soffice = path.join(winBundle, "runtime", "libreoffice", "program", "soffice.exe");
+  if (!fs.existsSync(soffice)) {
+    fail("runtime-manifest 声明已内置 LibreOffice，但包内找不到 soffice.exe");
+  }
   console.log("[verify-win-pack] runtime manifest ok");
 }
 

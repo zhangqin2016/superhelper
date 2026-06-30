@@ -12,6 +12,11 @@ const require = createRequire(import.meta.url);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-runtime-pack-installer-"));
 const userData = path.join(tmp, "user-data");
 process.env.LILY_USER_DATA_DIR = userData;
+const bundledRoot = path.join(tmp, "bundled-runtime-packs");
+process.env.LILY_BUNDLED_RUNTIME_PACK_ROOTS = bundledRoot;
+const bundledWeb = path.join(bundledRoot, "web-automation");
+fs.mkdirSync(path.join(bundledWeb, "node_modules"), { recursive: true });
+fs.mkdirSync(path.join(bundledWeb, "browsers"), { recursive: true });
 
 const zip = new JSZip();
 zip.file("module/__init__.py", "OK = True\n");
@@ -50,10 +55,42 @@ try {
   });
 
   const installer = require("../src/main/runtime-pack-installer.js");
+  const catalog = installer.listRuntimePacks();
+  assert.equal(catalog.ok, true);
+  assert.equal(catalog.packs.some((pack) => pack.id === "pro-pdf" && pack.category === "system"), true);
+  assert.equal(catalog.packs.some((pack) => pack.id === "libreoffice" && pack.category === "system"), true);
+  assert.equal(catalog.packs.some((pack) => pack.id === "ffmpeg" && pack.category === "common"), true);
+  const bundledWebPack = catalog.packs.find((pack) => pack.id === "web-automation");
+  assert.equal(bundledWebPack?.installed, true);
+  assert.equal(bundledWebPack?.source, "bundled");
+  assert.equal(bundledWebPack?.readOnly, true);
+  assert.equal(bundledWebPack?.path, bundledWeb);
+  assert(installer.installedRuntimePackIds().has("web-automation"), "bundled pack should count as installed");
+
+  const bundledInstall = await installer.installRuntimePack("web-automation");
+  assert.equal(bundledInstall.ok, true);
+  assert.equal(bundledInstall.skipped, true);
+  assert.equal(bundledInstall.source, "bundled");
+
+  const bundledUninstall = installer.uninstallRuntimePack("web-automation");
+  assert.equal(bundledUninstall.ok, false);
+  assert.equal(bundledUninstall.error, "BUNDLED_RUNTIME_PACK_READ_ONLY");
+
+  const progress = [];
   const installed = await installer.installRuntimePack("pro-pdf");
   assert.equal(installed.ok, true, `install failed: ${JSON.stringify(installed)}`);
   assert.equal(installed.version, "1.2.3");
   assert(fs.existsSync(path.join(userData, "runtime-packs", "pro-pdf", "module", "__init__.py")), "pack contents missing");
+
+  const installedWithProgress = await installer.installRuntimePack("progress-pack", {
+    onProgress: (event) => progress.push(event.phase),
+  });
+  assert.equal(installedWithProgress.ok, true, `progress install failed: ${JSON.stringify(installedWithProgress)}`);
+  assert(progress.includes("resolving"), "install should report resolving progress");
+  assert(progress.includes("downloading"), "install should report downloading progress");
+  assert(progress.includes("verifying"), "install should report verifying progress");
+  assert(progress.includes("extracting"), "install should report extracting progress");
+  assert(progress.includes("installed"), "install should report installed progress");
 
   const state = JSON.parse(fs.readFileSync(path.join(userData, "runtime-packs.json"), "utf8"));
   assert.equal(state.installed["pro-pdf"].source, "artifact");
@@ -80,6 +117,19 @@ try {
   assert.equal(bad.ok, false);
   assert.equal(bad.error, "CHECKSUM_MISMATCH");
   assert(!fs.existsSync(path.join(userData, "runtime-packs", "bad-pack")), "failed install must not leave target dir");
+
+  const removed = installer.uninstallRuntimePack("pro-pdf");
+  assert.equal(removed.ok, true);
+  assert(!fs.existsSync(path.join(userData, "runtime-packs", "pro-pdf")), "uninstall must remove the pack dir");
+  assert(!installer.installedRuntimePackIds().has("pro-pdf"), "uninstalled id should not be visible");
+
+  fs.mkdirSync(path.join(userData, "runtime-packs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(userData, "runtime-packs.json"),
+    JSON.stringify({ schemaVersion: 1, installed: { ghost: { source: "artifact", version: "9.9.9" } } }),
+    "utf8",
+  );
+  assert(!installer.installedRuntimePackIds().has("ghost"), "missing artifact dir must not be treated as installed");
 } finally {
   server.close();
   fs.rmSync(tmp, { recursive: true, force: true });

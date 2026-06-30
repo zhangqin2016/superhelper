@@ -2,10 +2,10 @@
 /**
  * Build and publish LibreOffice runtime packs.
  *
- * The desktop installers intentionally do not bundle LibreOffice. This script
- * packages the already-built runtime/libreoffice directory for one platform,
+ * Full desktop installers bundle LibreOffice. This script publishes a repair or
+ * upgrade runtime pack from an already-built runtime/libreoffice directory,
  * uploads the zip + latest.json to Qiniu, and optionally registers the artifact
- * with the Lily server so clients can install it on demand.
+ * with the Lily server so clients can repair missing packs without app reinstall.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";

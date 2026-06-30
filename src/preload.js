@@ -169,6 +169,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   installWorkspaceApp: (app) => ipcRenderer.invoke("apps:install", app),
   openInstalledWorkspaceApp: (appId) => ipcRenderer.invoke("apps:open-installed", { id: appId }),
   uninstallWorkspaceApp: (appId) => ipcRenderer.invoke("apps:uninstall", { id: appId }),
+  listRuntimePacks: () => ipcRenderer.invoke("runtime-packs:list"),
+  installRuntimePack: (id) => ipcRenderer.invoke("runtime-packs:install", { id }),
+  uninstallRuntimePack: (id) => ipcRenderer.invoke("runtime-packs:uninstall", { id }),
 
   getUpdateSettings: () => ipcRenderer.invoke("updates:get-settings"),
   getUpdateState: () => ipcRenderer.invoke("updates:get-state"),
@@ -223,6 +226,11 @@ contextBridge.exposeInMainWorld("assistantClient", {
   },
   onUpdateState: (callback) => {
     ipcRenderer.on("updates:state", (_event, data) => callback(data));
+  },
+  onRuntimePackProgress: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on("runtime-packs:progress", handler);
+    return () => ipcRenderer.removeListener("runtime-packs:progress", handler);
   },
   onFocusSession: (callback) => {
     ipcRenderer.on("assistant:focus-session", (_event, data) => callback(data));

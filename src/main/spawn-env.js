@@ -137,6 +137,18 @@ function buildAgentSpawnEnv(options = {}) {
     LILY_USER_DATA_DIR: app.getPath("userData"),
   };
 
+  try {
+    const fs = require("node:fs");
+    const bundledRoots = require("./runtime-packs")
+      .bundledPacksRootCandidates()
+      .filter((dir) => fs.existsSync(dir));
+    if (bundledRoots.length) {
+      env.LILY_BUNDLED_RUNTIME_PACK_ROOTS = bundledRoots.join(path.delimiter);
+    }
+  } catch {
+    /* runtime pack root hints are optional */
+  }
+
   if (!devSystem) {
     env.CLAUDE_CONFIG_DIR = options.configDir || agentConfigDir();
   }

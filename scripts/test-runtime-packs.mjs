@@ -18,13 +18,28 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-runtime-packs-"));
 process.env.LILY_USER_DATA_DIR = tmp; // config resolves userData from this (no electron)
+const bundledRoot = path.join(tmp, "bundled-runtime-packs");
+process.env.LILY_BUNDLED_RUNTIME_PACK_ROOTS = bundledRoot;
+
+const bundledWeb = path.join(bundledRoot, "web-automation");
+fs.mkdirSync(path.join(bundledWeb, "node_modules"), { recursive: true });
+fs.mkdirSync(path.join(bundledWeb, "browsers"), { recursive: true });
+fs.mkdirSync(path.join(bundledWeb, "bin"), { recursive: true });
 
 const packs = require(path.join(ROOT, "src/main/runtime-packs.js"));
 const runtimePython = require(path.join(ROOT, "src/main/runtime-python.js"));
 
-// No state file yet → nothing installed.
+// No state file yet, but read-only bundled packs should already be usable.
 assert(Array.isArray(packs.getRuntimePackPythonPaths()), "should return an array");
-assert(packs.getRuntimePackPythonPaths().length === 0, "fresh userData → no pack paths");
+assert(packs.getRuntimePackPythonPaths().length === 0, "fresh userData with web runtime → no Python pack paths");
+assert(
+  packs.getRuntimePackPathEntries().includes(path.join(bundledWeb, "bin")),
+  "bundled runtime pack PATH entries should be visible without user install state",
+);
+assert(
+  packs.getRuntimePackEnvExtras().LILY_PLAYWRIGHT_NODE_MODULES === path.join(bundledWeb, "node_modules"),
+  "bundled runtime pack env entries should be visible without user install state",
+);
 
 // Simulate what the agent's installer writes: a state file + extracted pack dirs.
 const proDir = packs.packDir("pro-pdf");

@@ -1,26 +1,24 @@
 "use strict";
 
 /**
- * Runtime packs — main-process READER only.
+ * Runtime packs — main-process reader utilities.
  *
- * Optional heavy engines (Docling, and later MinerU/Marker) are NOT bundled and
- * are NOT installed by the app. We only PROVIDE them (hosted on our CDN, the URL
- * resolved by our server) and let designated skills install OUR runtime from OUR
- * source through the agent — see
- * resources/skills-catalog/lily-runtime-packs/scripts/manage_runtime_pack.py.
- * The app does NOT intervene in or perform the install (no IPC install handler,
- * no App-side downloader): the agent is autonomous; we just provide + point to
- * our runtime.
+ * Optional heavy engines and toolchains can come from two sources:
  *
- * The agent's installer writes userData/runtime-packs.json and extracts each pack
- * to userData/runtime-packs/<id>/. This module only READS that state to put
- * installed packs on PYTHONPATH, so extract_document.py's lazy `import docling`
- * upgrades automatically. The on-disk layout (state file + pack dirs) is the
- * contract shared with the Python installer.
+ * 1. Bundled read-only packs shipped in resources/bundles/<platform>/runtime-packs/<id>/.
+ * 2. User-installed override packs in userData/runtime-packs/<id>/, recorded in
+ *    userData/runtime-packs.json.
+ *
+ * User-installed packs intentionally win over bundled packs so the app can ship
+ * a direct-use baseline while still allowing later pack updates without copying
+ * gigabytes into userData on first launch.
  */
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { PROJECT_ROOT } = require("./config");
+const { platformBundleKeys } = require("./bundle-locator");
+const { PACK_SPECS } = require("./runtime-pack-specs");
 
 const STATE_SCHEMA_VERSION = 1;
 
@@ -30,6 +28,46 @@ function packsRoot() {
 
 function packDir(id) {
   return path.join(packsRoot(), id);
+}
+
+function bundledPacksRootCandidates() {
+  const roots = [];
+  const envRoots = String(process.env.LILY_BUNDLED_RUNTIME_PACK_ROOTS || "")
+    .split(path.delimiter)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  roots.push(...envRoots);
+
+  const resourcesPath =
+    typeof process.resourcesPath === "string" ? process.resourcesPath : null;
+  for (const key of platformBundleKeys()) {
+    if (resourcesPath) {
+      roots.push(path.join(resourcesPath, "bundles", key, "runtime-packs"));
+    }
+    roots.push(path.join(PROJECT_ROOT, "bundles", key, "runtime-packs"));
+  }
+  return roots;
+}
+
+function bundledPackDir(id) {
+  if (!id) return "";
+  for (const root of bundledPacksRootCandidates()) {
+    const dir = path.join(root, id);
+    if (fs.existsSync(dir)) return dir;
+  }
+  return "";
+}
+
+function listBundledRuntimePackDirs() {
+  const found = new Map();
+  for (const root of bundledPacksRootCandidates()) {
+    if (!fs.existsSync(root)) continue;
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (!found.has(entry.name)) found.set(entry.name, path.join(root, entry.name));
+    }
+  }
+  return found;
 }
 
 function statePath() {
@@ -48,18 +86,60 @@ function readState() {
   return { schemaVersion: STATE_SCHEMA_VERSION, installed: {} };
 }
 
+function installedRecordExists(id, rec) {
+  if (!rec || typeof rec !== "object") return false;
+  if (rec.source === "pip") return true;
+  return fs.existsSync(packDir(id));
+}
+
+function userPackDirIfInstalled(id, rec) {
+  if (!installedRecordExists(id, rec)) return "";
+  if (rec?.source === "pip") return "";
+  const dir = packDir(id);
+  return fs.existsSync(dir) ? dir : "";
+}
+
+function effectivePackEntries() {
+  const state = readState();
+  const entries = [];
+  const seen = new Set();
+
+  for (const [id, rec] of Object.entries(state.installed || {})) {
+    const dir = userPackDirIfInstalled(id, rec);
+    if (!dir && rec?.source !== "pip") continue;
+    entries.push({ id, dir, source: rec?.source || "artifact", record: rec });
+    seen.add(id);
+  }
+
+  for (const [id, dir] of listBundledRuntimePackDirs()) {
+    if (seen.has(id)) continue;
+    entries.push({ id, dir, source: "bundled", record: null });
+    seen.add(id);
+  }
+
+  return entries;
+}
+
+function isPythonPathPack(id) {
+  const spec = PACK_SPECS[id];
+  if (spec) return spec.pythonPath === true;
+  // Backward compatibility for old userData state: before specs gained
+  // pack-kind metadata, every non-LibreOffice artifact was treated as a
+  // PYTHONPATH add-on.
+  return id !== "libreoffice";
+}
+
 /**
  * PYTHONPATH entries for installed packs, so the document extractor can import
- * the pro engine. Only dirs that actually exist on disk are returned. (A "pip"
- * source record, if ever written, installs into the venv and needs no entry.)
+ * Python add-on engines. Only dirs that actually exist on disk are returned.
+ * Native tool packs (ffmpeg/pandoc/browser runtimes) are intentionally excluded.
  * @returns {string[]}
  */
 function getRuntimePackPythonPaths() {
-  const state = readState();
-  return Object.keys(state.installed)
-    .filter((id) => id !== "libreoffice")
-    .filter((id) => state.installed[id]?.source !== "pip")
-    .map((id) => packDir(id))
+  return effectivePackEntries()
+    .filter((entry) => isPythonPathPack(entry.id))
+    .filter((entry) => entry.source !== "pip")
+    .map((entry) => entry.dir)
     .filter((dir) => fs.existsSync(dir));
 }
 
@@ -69,32 +149,80 @@ function executableExists(dir) {
 }
 
 function getRuntimePackLibreOfficeDirs() {
-  const state = readState();
-  const rec = state.installed.libreoffice;
-  if (!rec || rec.source === "pip") return [];
-  const root = packDir("libreoffice");
-  const candidates = [
-    path.join(root, "LibreOffice.app", "Contents", "MacOS"),
-    path.join(root, "program"),
-    path.join(root, "Program"),
-    path.join(root, "libreoffice", "LibreOffice.app", "Contents", "MacOS"),
-    path.join(root, "libreoffice", "program"),
-    path.join(root, "libreoffice", "Program"),
-    path.join(root, "opt", "libreoffice", "program"),
-  ];
   const seen = new Set();
-  return candidates.filter((dir) => {
-    if (!executableExists(dir)) return false;
-    const key = fs.realpathSync.native?.(dir) || fs.realpathSync(dir);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const dirs = [];
+  for (const entry of effectivePackEntries().filter((item) => item.id === "libreoffice")) {
+    if (entry.source === "pip" || !entry.dir) continue;
+    const root = entry.dir;
+    const candidates = [
+      path.join(root, "LibreOffice.app", "Contents", "MacOS"),
+      path.join(root, "program"),
+      path.join(root, "Program"),
+      path.join(root, "libreoffice", "LibreOffice.app", "Contents", "MacOS"),
+      path.join(root, "libreoffice", "program"),
+      path.join(root, "libreoffice", "Program"),
+      path.join(root, "opt", "libreoffice", "program"),
+    ];
+    for (const dir of candidates) {
+      if (!executableExists(dir)) continue;
+      const key = fs.realpathSync.native?.(dir) || fs.realpathSync(dir);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      dirs.push(dir);
+    }
+  }
+  return dirs;
+}
+
+function resolveRelativePackPath(dir, relPath) {
+  if (!relPath || path.isAbsolute(relPath)) return "";
+  const candidate = path.join(dir, relPath);
+  return fs.existsSync(candidate) ? candidate : "";
+}
+
+function getRuntimePackPathEntries() {
+  const entries = [];
+  const seen = new Set();
+  for (const { id, dir } of effectivePackEntries()) {
+    if (!dir) continue;
+    const spec = PACK_SPECS[id];
+    const relEntries = Array.isArray(spec?.pathEntries) ? spec.pathEntries : [];
+    for (const rel of relEntries) {
+      const candidate = resolveRelativePackPath(dir, rel);
+      if (!candidate) continue;
+      const key = fs.realpathSync.native?.(candidate) || fs.realpathSync(candidate);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      entries.push(candidate);
+    }
+  }
+  return entries;
+}
+
+function getRuntimePackEnvExtras() {
+  const extras = {};
+  for (const { id, dir } of effectivePackEntries()) {
+    if (!dir) continue;
+    const entries = PACK_SPECS[id]?.envEntries;
+    if (!entries || typeof entries !== "object") continue;
+    for (const [name, rel] of Object.entries(entries)) {
+      const candidate = resolveRelativePackPath(dir, rel);
+      if (candidate) extras[name] = candidate;
+    }
+  }
+  return extras;
 }
 
 module.exports = {
   getRuntimePackPythonPaths,
   getRuntimePackLibreOfficeDirs,
+  getRuntimePackPathEntries,
+  getRuntimePackEnvExtras,
+  bundledPackDir,
+  bundledPacksRootCandidates,
+  effectivePackEntries,
+  listBundledRuntimePackDirs,
   packDir,
+  readState,
   statePath,
 };

@@ -36,6 +36,7 @@
   border-radius: var(--control-radius);
   background: var(--control-bg);
   color: var(--text-secondary);
+  box-shadow: var(--top-highlight);
   font-size: var(--text-base);
   font-weight: 500;
   line-height: 1;
@@ -54,10 +55,13 @@
   background: var(--control-bg-hover);
   border-color: var(--control-border-hover);
   color: var(--text-primary);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
+  transform: translateY(-1px);
 }
 
 .ui-btn:active:not(:disabled) {
   background: var(--control-bg-active);
+  box-shadow: var(--top-highlight);
   transform: translateY(0);
 }
 
@@ -68,15 +72,14 @@
 
 .ui-btn-primary {
   border-color: var(--accent-border);
-  background: var(--accent-subtle);
-  color: var(--accent-hover);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-input));
+  color: var(--text-primary);
   font-weight: 600;
 }
 
 .ui-btn-primary:hover:not(:disabled) {
   border-color: var(--accent);
-  background: var(--accent-dim);
-  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-input));
 }
 
 .ui-btn-danger {
@@ -113,6 +116,7 @@
   background: var(--control-bg-hover);
   border-color: var(--control-border);
   color: var(--text-primary);
+  box-shadow: var(--top-highlight);
 }
 
 .ui-surface {
@@ -128,6 +132,7 @@
   border-radius: var(--control-radius);
   background: var(--bg-input);
   color: var(--text-primary);
+  box-shadow: var(--top-highlight);
   transition:
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease),

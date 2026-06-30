@@ -44,7 +44,9 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--bg-left);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-left) 88%, var(--bg-surface) 12%), var(--bg-left) 220px),
+    var(--bg-left);
   overflow: hidden;
   border-right: 1px solid var(--border);
 }
@@ -58,6 +60,7 @@
   gap: 10px;
   padding: 14px 12px 10px;
   border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-left) 82%, var(--bg-surface) 18%);
 }
 
 .app-logo {
@@ -66,13 +69,14 @@
   border-radius: 8px;
   object-fit: cover;
   flex-shrink: 0;
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 .app-brand-name {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .left-top-actions {
@@ -101,7 +105,11 @@
     box-shadow var(--dur) var(--ease);
   text-align: center;
 }
-.left-action-btn:hover { background: var(--accent); color: var(--text-inverse); }
+.left-action-btn:hover {
+  background: var(--accent);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-sm);
+}
 
 .left-search {
   width: 100%;
@@ -113,6 +121,7 @@
   color: var(--text-primary);
   font-size: 12px;
   outline: none;
+  box-shadow: var(--top-highlight);
 }
 .left-search::placeholder { color: var(--text-dim); }
 .left-search:focus {
@@ -189,7 +198,7 @@
   font-weight: 700;
   text-transform: uppercase;
   color: var(--text-dim);
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
   flex-shrink: 0;
 }
 
@@ -224,15 +233,19 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 10px;
+  margin: 2px 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.12s;
+  transition:
+    background var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
   user-select: none;
 }
 .project-header:hover { background: var(--bg-surface); }
 .project-group.active > .project-header {
   background: var(--accent-subtle);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight);
 }
 
 .project-collapse-icon {
@@ -321,17 +334,21 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px 5px 30px;
+  margin: 1px 8px;
+  padding: 6px 10px 6px 28px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.12s;
+  transition:
+    background var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    color var(--dur) var(--ease);
   font-size: 12px;
 }
 .project-sessions .session-item:hover { background: var(--bg-surface-hover); }
 .project-sessions .session-item.active {
   background: var(--accent-subtle);
   color: var(--text-primary);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight);
 }
 
 .session-title {
@@ -374,7 +391,7 @@
 .session-list .session-item.active {
   background: var(--accent-subtle);
   color: var(--text-primary);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight);
 }
 
 /* File Tree */

@@ -173,6 +173,10 @@ function getRuntimePathEntries() {
   for (const dir of packLibreOfficeDirs) {
     if (!entries.includes(dir)) entries.push(dir);
   }
+  const packPathEntries = require("./runtime-packs").getRuntimePackPathEntries();
+  for (const dir of packPathEntries) {
+    if (!entries.includes(dir)) entries.push(dir);
+  }
 
   return entries;
 }
@@ -185,6 +189,7 @@ function getRuntimeEnvExtras() {
   const root = resolveBundledRuntimeRoot();
   const extras = {};
   if (root) extras.LILY_RUNTIME_ROOT = root;
+  Object.assign(extras, require("./runtime-packs").getRuntimePackEnvExtras());
   const packLibreOfficeDir = require("./runtime-packs").getRuntimePackLibreOfficeDirs()[0];
   const sofficeDir = (root && resolveSofficeDir(root)) || packLibreOfficeDir || null;
   if (sofficeDir) {

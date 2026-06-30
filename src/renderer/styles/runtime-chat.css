@@ -98,11 +98,13 @@
   display: block;
   width: 100%;
   margin: 0 0 14px;
-  padding: 10px 12px 10px 14px;
+  padding: 12px 14px 12px 16px;
   border: 1px solid var(--border-light);
   border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  background: var(--bg-surface-raised);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-raised) 94%, var(--accent) 6%), var(--bg-surface-raised));
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 /* Layout/paint isolation only. We deliberately do NOT use content-visibility:auto
@@ -122,7 +124,7 @@
   margin: 0 0 6px;
   font-size: var(--text-xs);
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   color: var(--text-dim);
 }
 
@@ -158,6 +160,7 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 3px 8px;
+  background: var(--bg-surface-subtle);
 }
 
 .assistant-turn-article {
@@ -297,10 +300,11 @@
   font-size: 13px;
   margin: 0 0 14px;
   table-layout: auto;
-  background: var(--bg-surface);
+  background: var(--bg-surface-raised);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  box-shadow: var(--shadow), var(--top-highlight);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 .assistant-turn-narrative.markdown-body code,
@@ -339,14 +343,15 @@
 .assistant-turn-narrative.markdown-body pre,
 .assistant-turn-final.markdown-body pre {
   overflow: auto;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--pre-bg);
   color: var(--pre-text);
   padding: 12px 14px;
   margin: 0 0 10px;
   font-size: 13px;
   line-height: 1.5;
-  border: 1px solid var(--border, var(--border));
+  border: 1px solid var(--border-light);
+  box-shadow: var(--top-highlight);
 }
 
 .assistant-turn-narrative.markdown-body pre code,
@@ -1467,8 +1472,9 @@
   margin: 0;
   padding: 8px;
   border: 1px solid var(--accent-border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--bg-media);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 .assistant-generated-media-item img,
@@ -1518,8 +1524,9 @@
   max-height: 360px;
   object-fit: contain;
   border: 1px solid var(--accent-border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--image-backdrop);
+  box-shadow: var(--shadow-sm);
   cursor: zoom-in;
 }
 
@@ -1565,16 +1572,18 @@
 .assistant-renderer-markdown-artifact,
 .assistant-renderer-unknown {
   border: 1px solid var(--border-light);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--bg-surface-raised);
   padding: 12px;
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 .assistant-renderer-pdf {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 .assistant-renderer-code figcaption,
@@ -1757,15 +1766,16 @@
 .assistant-renderer-table-scroll {
   overflow-x: auto;
   border: 1px solid var(--border-light);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .assistant-data-table-grid {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border-light);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 .assistant-data-table-grid > .assistant-renderer-table-scroll {
@@ -1862,8 +1872,9 @@
   max-height: 420px;
   object-fit: contain;
   border: 1px solid var(--accent-border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--image-backdrop);
+  box-shadow: var(--shadow-sm);
   cursor: zoom-in;
 }
 
@@ -2025,9 +2036,10 @@
 .assistant-prompt-card {
   border: 1px solid var(--border-light);
   border-left: 3px solid var(--warning-text-soft);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   padding: 12px 14px;
   background: var(--bg-surface-raised);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 .assistant-prompt-card strong {
@@ -2035,7 +2047,7 @@
   margin-bottom: 6px;
   font-size: var(--text-xs);
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   color: var(--text-dim);
 }
 
@@ -2089,15 +2101,16 @@
   margin-top: 10px;
   padding: 12px 14px;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 .assistant-turn-report-label {
   margin: 0 0 8px;
   font-size: var(--text-xs);
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   color: var(--text-dim);
 }
 

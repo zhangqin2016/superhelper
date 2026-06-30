@@ -14,6 +14,7 @@ const { registerAssistantHandlers } = require("./ipc-assistant");
 const { registerFileTreeHandlers } = require("./ipc-filetree");
 const { registerScheduledTaskHandlers } = require("./ipc-scheduled-tasks");
 const { registerConnectorHandlers } = require("./ipc-connectors");
+const { registerRuntimePackHandlers } = require("./ipc-runtime-packs");
 const { RuntimeEventBus } = require("./runtime-event-bus");
 const { TranscriptStore } = require("./transcript-store");
 const { TurnArchive } = require("./turn-archive");
@@ -136,11 +137,6 @@ function registerAll(ctx) {
   ipcMain.handle("updates:open-download", (_event, payload) =>
     require("./update-manager").openUpdateDownload(payload?.url || payload));
 
-  // Runtime packs are installed by the agent (skill lily-runtime-packs), not by
-  // the app — so there is no install IPC here. The app only reads installed
-  // packs (runtime-packs.js → getRuntimePackPythonPaths) to upgrade the document
-  // extractor's PYTHONPATH; the server admin console manages the catalog.
-
   // --- Sub-module registrations ---
 
   registerFileHandlers(mainWindow, stagingManager);
@@ -155,6 +151,7 @@ function registerAll(ctx) {
   registerFileTreeHandlers(ctx);
   registerScheduledTaskHandlers(ctx);
   registerConnectorHandlers(ctx);
+  registerRuntimePackHandlers(ctx);
 
   ipcMain.handle("usage:get-summary", async () => require("./usage-settings").getUsageSettingsPublic());
 

@@ -9,6 +9,10 @@ to <userData>/runtime-packs/<id>/ and state lives in
 <userData>/runtime-packs.json, so the main process picks installed packs up on
 PYTHONPATH automatically.
 
+Release builds may also ship read-only packs under app resources. The app injects
+LILY_BUNDLED_RUNTIME_PACK_ROOTS so this script can report those packs as already
+available instead of downloading duplicates.
+
 The download is China-friendly: the artifact URL + sha256 come from our server
 (which points at a Qiniu CDN object), never from PyPI.
 
@@ -22,6 +26,7 @@ Emits one JSON object on stdout. Errors: {"ok": false, "error": "..."}.
 
 Env:
   LILY_USER_DATA_DIR          required — the app's userData dir (injected by the app)
+  LILY_BUNDLED_RUNTIME_PACK_ROOTS optional path-list of bundled pack roots
   LILY_SERVICE_API_BASE_URL   server base (default https://lily.lanrensoft.cn)
 """
 
@@ -45,6 +50,9 @@ STATE_SCHEMA_VERSION = 1
 KNOWN_PACKS = {
     "pro-pdf": "Pro PDF engine (Docling): layout/table analysis for complex PDFs (~230MB download)",
     "libreoffice": "LibreOffice runtime: local Office/PDF conversion and spreadsheet recalculation (~500MB download on Windows)",
+    "web-automation": "Web automation runtime (Playwright): browser automation modules and browser binaries",
+    "ffmpeg": "FFmpeg media tools: local audio/video probing, conversion, clipping, and packaging",
+    "pandoc": "Pandoc document converter: Markdown, HTML, LaTeX, EPUB, and related conversions",
 }
 
 
@@ -66,6 +74,19 @@ def packs_root():
 
 def pack_dir(pack_id):
     return os.path.join(packs_root(), pack_id)
+
+
+def bundled_roots():
+    raw = os.environ.get("LILY_BUNDLED_RUNTIME_PACK_ROOTS", "")
+    return [item for item in raw.split(os.pathsep) if item]
+
+
+def bundled_pack_dir(pack_id):
+    for root in bundled_roots():
+        candidate = os.path.join(root, pack_id)
+        if os.path.isdir(candidate):
+            return candidate
+    return None
 
 
 def state_path():
@@ -183,6 +204,9 @@ def extract_artifact(archive_path, target, artifact):
 def do_install(pack_id):
     if pack_id not in KNOWN_PACKS:
         return emit({"ok": False, "error": f"UNKNOWN_PACK:{pack_id}"}, 1)
+    bundled = bundled_pack_dir(pack_id)
+    if bundled:
+        return emit({"ok": True, "installed": pack_id, "skipped": True, "source": "bundled", "path": bundled})
     artifact = resolve_artifact(pack_id)
     if not artifact or not artifact.get("url"):
         return emit({"ok": False, "error": f"NO_ARTIFACT for {pack_id}/{platform_key()}"}, 1)
@@ -218,8 +242,10 @@ def do_install(pack_id):
 
 
 def do_uninstall(pack_id):
-    shutil.rmtree(pack_dir(pack_id), ignore_errors=True)
     state = read_state()
+    if pack_id not in state["installed"] and bundled_pack_dir(pack_id):
+        return emit({"ok": False, "error": "BUNDLED_RUNTIME_PACK_READ_ONLY", "id": pack_id}, 1)
+    shutil.rmtree(pack_dir(pack_id), ignore_errors=True)
     state["installed"].pop(pack_id, None)
     write_state(state)
     return emit({"ok": True, "uninstalled": pack_id})
@@ -228,7 +254,12 @@ def do_uninstall(pack_id):
 def do_status(pack_id):
     state = read_state()
     rec = state["installed"].get(pack_id)
-    return emit({"ok": True, "id": pack_id, "installed": bool(rec), "info": rec or None})
+    bundled = bundled_pack_dir(pack_id)
+    if rec:
+        return emit({"ok": True, "id": pack_id, "installed": True, "source": rec.get("source"), "info": rec})
+    if bundled:
+        return emit({"ok": True, "id": pack_id, "installed": True, "source": "bundled", "path": bundled, "info": None})
+    return emit({"ok": True, "id": pack_id, "installed": False, "info": None})
 
 
 def do_list():
@@ -237,7 +268,8 @@ def do_list():
         {
             "id": pid,
             "label": label,
-            "installed": pid in state["installed"],
+            "installed": pid in state["installed"] or bool(bundled_pack_dir(pid)),
+            "source": state["installed"].get(pid, {}).get("source") or ("bundled" if bundled_pack_dir(pid) else None),
             "version": state["installed"].get(pid, {}).get("version"),
         }
         for pid, label in KNOWN_PACKS.items()

@@ -348,8 +348,8 @@ const AGENT_GUIDE_I18N = {
       "命令 `python3` 直接指向本应用内置的 Python 虚拟环境，已预装常用数据/文档库：pandas、numpy、openpyxl、python-docx、python-pptx、pdfplumber、rapidocr（扫描件 OCR）、Pillow、mammoth、markitdown 等。",
       "处理 Excel/CSV、Word/PPT、PDF 文本或扫描件、图片识别等任务时，优先直接写并运行 `python3` 脚本——这些库已就绪，**不要**重新 `pip install` 它们。",
       "仅当确实需要未预装的库时才 `pip install`（会装进内置 venv）；`uv` 也可用于安装额外依赖。",
-      "注意：**LibreOffice（soffice）默认不随包**。需要它的办公功能——xlsx 公式重算、docx 接受修订、pptx 缩略图、文档转 PDF/图片或渲染校验——必须先用「Runtime 能力包」技能（lily-runtime-packs）安装 libreoffice 运行包；未安装时不要直接调 soffice，应先安装或告知用户。",
-      "浏览器自动化（web 系统学习、网页测试等）需要 Chromium，默认可能未随包：python-playwright 类技能可先运行 `python3 -m playwright install chromium` 现装（需联网，国内可能较慢）；前台浏览器/MCP 工具依赖 web 运行时（本构建可能未含，且没有可单独安装的浏览器运行包）。无法获得浏览器时如实告知用户，不要静默失败。",
+      "正式安装包应内置 LibreOffice（soffice）。需要 xlsx 公式重算、docx 接受修订、pptx 缩略图、文档转 PDF/图片或渲染校验时，先探测 `soffice`；只有缺失时才用「Runtime 能力包」技能（lily-runtime-packs）修复/安装 libreoffice，不能盲目现装。",
+      "浏览器自动化（web 系统学习、网页测试等）优先使用内置 web 运行时（Playwright 模块与浏览器）。只有探测不到内置运行时时，才用 lily-runtime-packs 修复 web-automation 或如实告知用户；不要让普通任务临时 `playwright install`。",
     ],
   },
   en: {
@@ -369,8 +369,8 @@ const AGENT_GUIDE_I18N = {
       "The `python3` command points to this app's bundled Python virtualenv, which ships common data/document libraries pre-installed: pandas, numpy, openpyxl, python-docx, python-pptx, pdfplumber, rapidocr (scanned-PDF OCR), Pillow, mammoth, markitdown, and more.",
       "For Excel/CSV, Word/PPT, PDF text or scans, image recognition, and similar tasks, prefer writing and running a `python3` script directly — these libraries are ready, do NOT `pip install` them again.",
       "Only `pip install` when you genuinely need a library that isn't pre-installed (it installs into the bundled venv); `uv` is also available for extra dependencies.",
-      "Note: **LibreOffice (soffice) is NOT bundled by default.** Office features that need it — xlsx formula recalculation, docx accept-changes, pptx thumbnails, document→PDF/image conversion or render-based verification — require installing the libreoffice runtime pack first via the Runtime Packs skill (lily-runtime-packs). Do NOT call soffice when it isn't installed; install it first or tell the user.",
-      "Browser automation (web-system-learning, webapp-testing) needs Chromium, which may not be bundled: for python-playwright skills you can run `python3 -m playwright install chromium` first (network required); the foreground browser/MCP tools depend on the web runtime (this build may not include it, and there is no separately installable browser runtime pack). If no browser is available, tell the user instead of failing silently.",
+      "Release builds should include LibreOffice (soffice). For xlsx recalculation, docx accept-changes, pptx thumbnails, document→PDF/image conversion, or render verification, probe `soffice` first; only use the Runtime Packs skill (lily-runtime-packs) to repair/install libreoffice when it is missing. Do not blindly install it.",
+      "Browser automation (web-system-learning, webapp-testing) should use the bundled web runtime first (Playwright modules and browsers). Only repair web-automation through lily-runtime-packs when the bundled runtime is missing; do not run `playwright install` during ordinary tasks.",
     ],
   },
   ar: {
@@ -390,8 +390,8 @@ const AGENT_GUIDE_I18N = {
       "الأمر `python3` يشير إلى بيئة Python الافتراضية المضمّنة في التطبيق، والمزوّدة مسبقاً بمكتبات بيانات/مستندات شائعة: pandas وnumpy وopenpyxl وpython-docx وpython-pptx وpdfplumber وrapidocr (OCR للملفات الممسوحة) وPillow وmammoth وmarkitdown وغيرها.",
       "لمهام Excel/CSV وWord/PPT ونصوص PDF أو المسح الضوئي والتعرف على الصور، يُفضَّل كتابة وتشغيل سكربت `python3` مباشرةً — هذه المكتبات جاهزة، لا تُعد تثبيتها عبر `pip install`.",
       "استخدم `pip install` فقط عند الحاجة إلى مكتبة غير مثبّتة مسبقاً (تُثبَّت في البيئة المضمّنة)؛ كما يتوفّر `uv` للاعتمادات الإضافية.",
-      "ملاحظة: **LibreOffice (soffice) غير مضمّن افتراضياً.** ميزات Office التي تحتاجه — إعادة حساب صيغ xlsx، وقبول تغييرات docx، وصور pptx المصغّرة، وتحويل المستندات إلى PDF/صور أو التحقق بالعرض — تتطلب أولاً تثبيت حزمة تشغيل libreoffice عبر مهارة Runtime Packs (lily-runtime-packs). لا تستدعِ soffice عندما لا يكون مثبّتاً؛ ثبّته أولاً أو أبلغ المستخدم.",
-      "أتمتة المتصفح (web-system-learning، webapp-testing) تحتاج Chromium الذي قد لا يكون مضمّناً: لمهارات python-playwright يمكنك تشغيل `python3 -m playwright install chromium` أولاً (يتطلب اتصالاً)؛ أما أدوات المتصفح/MCP الأمامية فتعتمد على بيئة تشغيل الويب (قد لا يتضمّنها هذا البناء، ولا توجد حزمة تشغيل متصفح قابلة للتثبيت بشكل منفصل). إذا لم يتوفّر متصفح، أبلغ المستخدم بدل الفشل الصامت.",
+      "يجب أن تتضمن إصدارات النشر LibreOffice (soffice). عند الحاجة إلى إعادة حساب xlsx أو قبول تغييرات docx أو صور pptx المصغّرة أو تحويل المستندات إلى PDF/صور أو التحقق بالعرض، افحص `soffice` أولاً؛ استخدم مهارة Runtime Packs (lily-runtime-packs) لإصلاح/تثبيت libreoffice فقط عند غيابه.",
+      "يجب أن تستخدم أتمتة المتصفح (web-system-learning، webapp-testing) بيئة تشغيل الويب المدمجة أولاً (وحدات Playwright والمتصفحات). أصلح web-automation عبر lily-runtime-packs فقط عند غياب البيئة المدمجة؛ لا تشغّل `playwright install` في المهام العادية.",
     ],
   },
 };

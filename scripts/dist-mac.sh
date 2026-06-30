@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mac 安装包：暂时只内置 Python runtime，不内置 LibreOffice；签名阶段需跳过 bundles 内二进制签名。
+# Mac 安装包：内置 Python + LibreOffice runtime；签名阶段需跳过 bundles 内二进制签名。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
