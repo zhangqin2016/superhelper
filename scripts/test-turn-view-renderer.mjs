@@ -178,4 +178,17 @@ assert.equal(
   "completed/2/1/verified",
 );
 
+assert.equal(
+  taskRunSummaryForView(
+    {
+      status: "completed",
+      evidence: [{}],
+      risks: [{ code: "NO_VISIBLE_PROGRESS", status: "resolved" }, { code: "ENGINE_WARNING", status: "active" }],
+      verification: { status: "observed" },
+    },
+    translate,
+  ),
+  "completed/1/1/observed",
+);
+
 console.log("turn-view-renderer: ok");

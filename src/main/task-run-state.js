@@ -3,6 +3,20 @@
 const crypto = require("node:crypto");
 
 const READ_ONLY_TOOLS = new Set(["read", "glob", "grep", "list", "ls", "find", "search"]);
+const DANGEROUS_TOOLS = new Set([
+  "edit",
+  "multiedit",
+  "write",
+  "delete",
+  "rm",
+  "mv",
+  "cp",
+  "git",
+  "apply_patch",
+  "notebookedit",
+]);
+const TRANSIENT_RISK_CODES = new Set(["NO_VISIBLE_PROGRESS"]);
+const DANGEROUS_SHELL_RE = /(^|\s)(rm\s+-[^\n;|&]*[rf]|git\s+(?:commit|push|tag|reset|checkout|clean)|npm\s+publish|pnpm\s+publish|yarn\s+publish|curl\b[^\n;|&]*(?:-X\s*(?:POST|PUT|PATCH|DELETE)|--request\s+(?:POST|PUT|PATCH|DELETE))|kubectl\s+(?:delete|apply|replace|patch)|docker\s+(?:push|rm|rmi)|mv\s+|cp\s+)/i;
 
 function nowMs() {
   return Date.now();
@@ -149,6 +163,7 @@ function addTaskRisk(taskRun, risk = {}) {
     code: safeText(risk.code || "runtime_risk", 120),
     level: safeText(risk.level || "info", 40),
     message: safeText(risk.message || "", 500),
+    status: safeText(risk.status || "active", 40),
     ts: nowMs(),
   };
   taskRun.risks.push(item);
@@ -196,14 +211,27 @@ function noteTaskToolUse(taskRun, tool = {}) {
   if (!taskRun) return null;
   const name = String(tool.name || "").toLowerCase();
   const readOnly = READ_ONLY_TOOLS.has(name);
+  const command = String(tool.input?.command || tool.input?.cmd || "");
+  const dangerous = DANGEROUS_TOOLS.has(name) || (name === "bash" && DANGEROUS_SHELL_RE.test(command));
   const hadSideEffects = Boolean(taskRun.resumeState?.hasSideEffects);
+  const previousLevel = taskRun.resumeState?.recoveryLevel || "safe";
+  const recoveryLevel = dangerous || previousLevel === "dangerous"
+    ? "dangerous"
+    : readOnly && !hadSideEffects
+      ? "safe"
+      : "confirm";
   taskRun.resumeState = {
     ...(taskRun.resumeState || {}),
     lastToolId: tool.id || taskRun.resumeState?.lastToolId || "",
     lastToolName: tool.name || taskRun.resumeState?.lastToolName || "",
     hasSideEffects: Boolean(hadSideEffects || !readOnly),
     replaySafe: Boolean(readOnly && !hadSideEffects),
-    recoveryReason: readOnly && !hadSideEffects ? "read_only_tools_only" : "side_effect_tool_seen",
+    recoveryLevel,
+    recoveryReason: recoveryLevel === "safe"
+      ? "read_only_tools_only"
+      : recoveryLevel === "dangerous"
+        ? "write_or_destructive_tool_seen"
+        : "confirmation_required_for_tool_replay",
   };
   touch(taskRun);
   return taskRun.resumeState;
@@ -228,7 +256,7 @@ function assessTaskVerification({ taskType = "", evidence = [], evidenceGateAsse
       ? { status: "verified", reason: "test_or_build_evidence" }
       : { status: "unverified", reason: "missing_test_or_build_evidence" };
   }
-  return evidence?.length ? { status: "verified", reason: "evidence_present" } : { status: "not_required", reason: "" };
+  return evidence?.length ? { status: "observed", reason: "evidence_present" } : { status: "not_required", reason: "" };
 }
 
 function completeTaskRun(taskRun, terminalType, verification = {}) {
@@ -241,10 +269,16 @@ function completeTaskRun(taskRun, terminalType, verification = {}) {
   taskRun.phase = taskRun.status;
   taskRun.activeStep = "verify";
   taskRun.plan = (taskRun.plan || []).map((step) => {
-    if (step.id === "execute") return { ...step, status: failed || stalled || interrupted ? "completed" : "completed" };
-    if (step.id === "verify") return { ...step, status: failed || stalled || interrupted ? "pending" : "completed" };
+    if (!failed && !stalled && !interrupted) return { ...step, status: "completed" };
+    if (step.id === "execute") return { ...step, status: "completed" };
+    if (step.id === "verify") return { ...step, status: "pending" };
     return step;
   });
+  if (!failed && !stalled && !interrupted && Array.isArray(taskRun.risks)) {
+    taskRun.risks = taskRun.risks.map((risk) => (
+      TRANSIENT_RISK_CODES.has(risk?.code) ? { ...risk, status: "resolved", resolvedAt: ts } : risk
+    ));
+  }
   taskRun.progress = {
     label: taskRun.status,
     value: 1,

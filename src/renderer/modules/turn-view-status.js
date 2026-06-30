@@ -150,7 +150,9 @@ export function buildStatusText(liveTurn, { failed = false, sealed = false } = {
 export function taskRunSummaryForView(taskRun, translate) {
   if (!taskRun || typeof taskRun !== "object") return "";
   const evidence = Array.isArray(taskRun.evidence) ? taskRun.evidence.length : 0;
-  const risks = Array.isArray(taskRun.risks) ? taskRun.risks.length : 0;
+  const risks = Array.isArray(taskRun.risks)
+    ? taskRun.risks.filter((risk) => risk?.status !== "resolved").length
+    : 0;
   const verification = taskRun.verification?.status || "";
   return translate("task.summary.compact", {
     status: taskRun.status || "completed",

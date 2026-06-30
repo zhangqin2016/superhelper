@@ -2137,6 +2137,17 @@ class TurnOrchestrator {
         status = "running";
       }
       if (!state.taskRun) return null;
+      const ts = Date.now();
+      const livenessSig = `${status}\0${code}\0${detail}`;
+      const previousLiveness = state.taskRun._lastLivenessEmit || null;
+      if (
+        previousLiveness?.sig === livenessSig &&
+        Number.isFinite(previousLiveness.ts) &&
+        ts - previousLiveness.ts < 750
+      ) {
+        return state.taskRun.liveness || null;
+      }
+      state.taskRun._lastLivenessEmit = { sig: livenessSig, ts };
       const liveness = updateTaskLiveness(state.taskRun, {
         status,
         detail,

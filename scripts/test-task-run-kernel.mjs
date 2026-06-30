@@ -245,6 +245,41 @@ function createContext({ eventBus } = {}) {
 }
 
 {
+  const { ctx, sent, session } = createContext();
+  const started = await ctx.turnOrchestrator.sendUserMessage(session.id, "Long command", [], {
+    skipPreflight: true,
+    skipVision: true,
+    skipDocument: true,
+    spawnEngine: false,
+  });
+  if (!started.ok) throw new Error(`turn should start: ${JSON.stringify(started)}`);
+  const realNow = Date.now;
+  try {
+    Date.now = () => 10_000;
+    ctx.turnOrchestrator.ingest(session.id, [
+      { type: "tool.started", payload: { id: "bash_1", name: "Bash", input: { command: "npm test" } } },
+      { type: "engine.notice", payload: { notice: { code: "toolProgress", level: "progress", detail: "npm test still running" } } },
+    ]);
+    Date.now = () => 10_200;
+    ctx.turnOrchestrator.ingest(session.id, [
+      { type: "engine.notice", payload: { notice: { code: "toolProgress", level: "progress", detail: "npm test still running" } } },
+    ]);
+    Date.now = () => 11_000;
+    ctx.turnOrchestrator.ingest(session.id, [
+      { type: "engine.notice", payload: { notice: { code: "toolProgress", level: "progress", detail: "npm test still running" } } },
+    ]);
+  } finally {
+    Date.now = realNow;
+  }
+  ctx.eventBus.flush();
+  const events = sent.flatMap((entry) => entry.payload?.events || []);
+  const livenessEvents = events.filter((event) => event.type === "task.liveness.updated");
+  if (livenessEvents.length !== 2) {
+    throw new Error(`duplicate liveness notices should be throttled: ${JSON.stringify(livenessEvents)}`);
+  }
+}
+
+{
   const baseBus = new RuntimeEventBus(() => null);
   const throwingTaskBus = {
     emit(sessionId, eventLike) {
