@@ -167,6 +167,52 @@ function compactSubagentPayload(payload = {}) {
   };
 }
 
+function compactTaskRun(taskRun = {}) {
+  if (!taskRun || typeof taskRun !== "object") return null;
+  return {
+    id: taskRun.id || "",
+    sessionId: taskRun.sessionId || "",
+    turnId: taskRun.turnId || "",
+    objective: truncateString(taskRun.objective || "", 1_000),
+    status: taskRun.status || "",
+    phase: taskRun.phase || "",
+    plan: Array.isArray(taskRun.plan)
+      ? taskRun.plan.slice(0, 12).map((step = {}) => ({
+          id: step.id || "",
+          title: truncateString(step.title || "", 160),
+          status: step.status || "",
+        }))
+      : [],
+    activeStep: taskRun.activeStep || "",
+    progress: compactValue(taskRun.progress || null, 500),
+    evidence: compactValue(Array.isArray(taskRun.evidence) ? taskRun.evidence.slice(-20) : [], 500),
+    risks: compactValue(Array.isArray(taskRun.risks) ? taskRun.risks.slice(-20) : [], 500),
+    resumeState: compactValue(taskRun.resumeState || {}, 500),
+    verification: compactValue(taskRun.verification || null, 500),
+    startedAt: taskRun.startedAt || null,
+    updatedAt: taskRun.updatedAt || null,
+    lastActivityAt: taskRun.lastActivityAt || null,
+    endedAt: taskRun.endedAt || null,
+  };
+}
+
+function compactTaskPayload(payload = {}) {
+  return {
+    taskRunId: payload.taskRunId || payload.taskRun?.id || "",
+    status: payload.status || "",
+    phase: payload.phase || "",
+    activeStep: payload.activeStep || "",
+    progress: compactValue(payload.progress || null, 500),
+    plan: compactValue(payload.plan || null, 500),
+    evidence: compactValue(payload.evidence || null, 500),
+    risk: compactValue(payload.risk || null, 500),
+    tool: compactValue(payload.tool || null, 500),
+    verification: compactValue(payload.verification || null, 500),
+    evidenceSummary: compactValue(payload.evidenceSummary || null, 500),
+    taskRun: compactTaskRun(payload.taskRun || null),
+  };
+}
+
 function compactRecord(record = {}, assistant = "") {
   if (!record || typeof record !== "object") return null;
   return {
@@ -216,6 +262,21 @@ function compactRuntimeEventForPersistence(event = {}) {
       break;
     case "subagent.event":
       compactPayload = compactSubagentPayload(payload);
+      break;
+    case "task.created":
+    case "task.plan.updated":
+    case "task.step.started":
+    case "task.step.progress":
+    case "task.step.completed":
+    case "task.step.failed":
+    case "task.evidence.added":
+    case "task.risk.detected":
+    case "task.stalled":
+    case "task.resumed":
+    case "task.completed":
+    case "task.failed":
+    case "task.interrupted":
+      compactPayload = compactTaskPayload(payload);
       break;
     case "tool.started":
     case "tool.input.done":

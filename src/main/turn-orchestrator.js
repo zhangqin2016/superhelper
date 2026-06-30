@@ -31,6 +31,14 @@ const { buildTaskContract, withTaskContractPrefix } = require("./task-contract")
 const { EvidenceLedger } = require("./evidence-ledger");
 const { buildTurnPolicy } = require("./turn-policy");
 const { TurnRunCoordinator } = require("./turn-run-coordinator");
+const {
+  addTaskEvidence,
+  addTaskRisk,
+  compactTaskRun,
+  completeTaskRun,
+  createTaskRun,
+  markTaskPhase,
+} = require("./task-run-state");
 
 const log = getLogger("turn-orchestrator");
 
@@ -122,6 +130,7 @@ class TurnOrchestrator {
         files: item.displayFiles || [],
       })),
       runtime: this.eventBus.snapshot(sessionId),
+      taskRun: compactTaskRun(state.taskRun),
     };
   }
 
@@ -301,6 +310,13 @@ class TurnOrchestrator {
           parentToolUseId: payload.parentToolUseId || null,
           startedAt: Date.now(),
         });
+        this._markTaskProgress(sessionId, "tool_running", `Running ${tool.name || payload.name || "tool"}`, {
+          tool,
+          resumeState: {
+            lastToolId: toolId,
+            lastToolName: tool.name || payload.name || "unknown",
+          },
+        });
         this._scheduleSubagentWatch(sessionId, toolId, tool);
         if (payload.name && payload.input && Object.keys(payload.input).length) {
           require("./usage-reporter").recordToolCall(sessionId, {
@@ -369,6 +385,12 @@ class TurnOrchestrator {
         this._clearSubagentWatch(sessionId, toolId);
         this._emitSubagentDoneNotice(sessionId, tool);
         state.evidenceLedger?.recordTool?.(tool);
+        this._addTaskEvidence(sessionId, {
+          kind: "tool_result",
+          label: `${tool.name || "Tool"} ${tool.status || "done"}`,
+          status: tool.status,
+          refId: toolId,
+        }, { tool });
         upsertTimelineTool(state, tool, Date.now());
         const subagent = this._syncSubagentFromTool(sessionId, tool);
         if (subagent) this._emit(sessionId, "subagent.event", { subagent: this._compactSubagent(subagent) });
@@ -410,11 +432,13 @@ class TurnOrchestrator {
       case "permission.requested":
         state.phase = "awaiting_user";
         state.pendingPermissions.set(payload.requestId, payload);
+        this._markTaskAwaitingUser(sessionId, "permission_requested", "Waiting for permission");
         this._emit(sessionId, "permission.requested", payload);
         break;
       case "user_question.requested":
         state.phase = "awaiting_user";
         state.pendingQuestions.set(payload.requestId, payload);
+        this._markTaskAwaitingUser(sessionId, "user_question_requested", "Waiting for user answer");
         this._emit(sessionId, "user_question.requested", payload);
         break;
       case "permission.resolved":
@@ -431,6 +455,7 @@ class TurnOrchestrator {
       case "hook.requested":
         state.phase = "awaiting_user";
         state.pendingHooks.set(payload.requestId, payload);
+        this._markTaskAwaitingUser(sessionId, "hook_requested", "Waiting for hook decision");
         this._emit(sessionId, "hook.requested", payload);
         break;
       case "hook.resolved":
@@ -446,6 +471,7 @@ class TurnOrchestrator {
         const notice = payload.notice || payload;
         const activity = activityFromEngineNotice(notice);
         if (activity) setActivityLabel(state, activity);
+        if (activity) this._markTaskProgress(sessionId, "runtime_progress", activity);
         if (notice) appendTimelineNotice(state, notice, Date.now());
         const noticeEvent = {
           type,
@@ -489,6 +515,7 @@ class TurnOrchestrator {
       case "process.event": {
         const activity = activityFromProcessPayload(payload);
         if (activity) setActivityLabel(state, activity);
+        if (activity) this._markTaskProgress(sessionId, "runtime_progress", activity);
         state.processEvents.push(payload);
         if (state.processEvents.length > 200) {
           state.processEvents.splice(0, state.processEvents.length - 200);
@@ -791,6 +818,7 @@ class TurnOrchestrator {
     state.taskContract = null;
     state.turnPolicy = null;
     state.evidenceLedger = new EvidenceLedger();
+    state.taskRun = null;
     state.enginePayload = null;
     state.legacyContextHydrated = false;
     resetTimelineState(state);
@@ -803,6 +831,10 @@ class TurnOrchestrator {
     state.startedAt = Date.now();
     state.updatedAt = state.startedAt;
     const displayFiles = opts.displayFiles || fileMetadataFromPayload(files);
+    this._beginTaskRun(session.id, rawUserText, {
+      displayFiles,
+      localAssistant: true,
+    });
     state.currentPayload = {
       rawText: rawUserText,
       text: rawUserText,
@@ -925,6 +957,7 @@ class TurnOrchestrator {
     state.taskContract = null;
     state.turnPolicy = null;
     state.evidenceLedger = new EvidenceLedger();
+    state.taskRun = null;
     state.enginePayload = null;
     state.legacyContextHydrated = false;
     resetTimelineState(state);
@@ -968,6 +1001,10 @@ class TurnOrchestrator {
       : null;
     state.startedAt = Date.now();
     state.updatedAt = Date.now();
+    this._beginTaskRun(session.id, rawUserText, {
+      displayFiles,
+      scheduledTask: state.scheduledTask,
+    });
     if (state.scheduledTask?.runId) {
       this.ctx.scheduledTaskManager?.markRunStarted?.(state.scheduledTask.runId, state.turnId);
     }
@@ -1472,6 +1509,7 @@ class TurnOrchestrator {
     let assistant = String(payload.assistant || state.assistantText || "").trim();
     const evidenceSummary = state.evidenceLedger?.summary?.() || null;
     let record = this.turnArchive?.buildRecord(state, type, { ...payload, assistant });
+    let evidenceGateAssessment = null;
     if (type === "turn.completed" && state.taskContract?.evidencePolicy?.required) {
       const { assessFinalAnswerEvidence, appendEvidenceGateNotice } = require("./evidence-gate");
       const assessment = assessFinalAnswerEvidence({
@@ -1482,6 +1520,7 @@ class TurnOrchestrator {
         toolCount: state.tools?.size || 0,
         fileChangeCount: record?.fileChanges?.length || 0,
       });
+      evidenceGateAssessment = assessment;
       if (!assessment.ok) {
         assistant = appendEvidenceGateNotice(assistant, assessment);
         if (record) {
@@ -1493,6 +1532,10 @@ class TurnOrchestrator {
         }
       }
     }
+    this._completeTaskRun(sessionId, type, {
+      evidenceGateAssessment,
+      evidenceSummary,
+    });
     // Don't archive a turn that produced literally nothing — e.g. an interrupt
     // before any output. Otherwise an empty assistant bubble lands in history.
     // Any real content (text, a tool call, a file change, a result block) makes
@@ -1549,6 +1592,7 @@ class TurnOrchestrator {
     state.taskContract = null;
     state.turnPolicy = null;
     state.evidenceLedger = null;
+    state.taskRun = null;
     state.enginePayload = null;
     resetTimelineState(state);
     state.blockIndexToToolId = new Map();
@@ -1892,6 +1936,171 @@ class TurnOrchestrator {
     };
   }
 
+  _beginTaskRun(sessionId, objective, opts = {}) {
+    try {
+      const state = this._state(sessionId);
+      if (!state.turnId) return null;
+      state.taskRun = createTaskRun({
+        sessionId,
+        turnId: state.turnId,
+        objective,
+        startedAt: state.startedAt || Date.now(),
+      });
+      if (opts.scheduledTask) {
+        state.taskRun.resumeState = {
+          ...(state.taskRun.resumeState || {}),
+          scheduledTaskId: opts.scheduledTask.id || "",
+          scheduledTaskRunId: opts.scheduledTask.runId || "",
+        };
+      }
+      if (opts.localAssistant) {
+        markTaskPhase(state.taskRun, "local_assistant", "Preparing local assistant response");
+      }
+      this._emitTaskEvent(sessionId, "task.created", {
+        taskRun: compactTaskRun(state.taskRun),
+      });
+      this._emitTaskEvent(sessionId, "task.plan.updated", {
+        taskRunId: state.taskRun.id,
+        plan: state.taskRun.plan,
+        activeStep: state.taskRun.activeStep,
+      });
+      return state.taskRun;
+    } catch (err) {
+      log.warn("TaskRun begin failed: %s", err?.message || err);
+      return null;
+    }
+  }
+
+  _markTaskProgress(sessionId, phase, label, opts = {}) {
+    try {
+      const state = this._state(sessionId);
+      if (!state.taskRun) return null;
+      markTaskPhase(state.taskRun, phase, label, {
+        resumeState: opts.resumeState || null,
+      });
+      this._emitTaskEvent(sessionId, "task.step.progress", {
+        taskRunId: state.taskRun.id,
+        phase: state.taskRun.phase,
+        activeStep: state.taskRun.activeStep,
+        progress: state.taskRun.progress,
+        tool: opts.tool
+          ? {
+              id: opts.tool.id || "",
+              name: opts.tool.name || "unknown",
+              status: opts.tool.status || "",
+              title: opts.tool.title || "",
+            }
+          : null,
+        taskRun: compactTaskRun(state.taskRun),
+      });
+      return state.taskRun;
+    } catch (err) {
+      log.warn("TaskRun progress failed: %s", err?.message || err);
+      return null;
+    }
+  }
+
+  _markTaskAwaitingUser(sessionId, code, message) {
+    try {
+      const state = this._state(sessionId);
+      if (!state.taskRun) return null;
+      markTaskPhase(state.taskRun, "awaiting_user", message, { status: "awaiting_user" });
+      const risk = addTaskRisk(state.taskRun, {
+        code,
+        level: "info",
+        message,
+      });
+      this._emitTaskEvent(sessionId, "task.risk.detected", {
+        taskRunId: state.taskRun.id,
+        risk,
+        taskRun: compactTaskRun(state.taskRun),
+      });
+      return risk;
+    } catch (err) {
+      log.warn("TaskRun awaiting-user mark failed: %s", err?.message || err);
+      return null;
+    }
+  }
+
+  _addTaskEvidence(sessionId, evidence, opts = {}) {
+    try {
+      const state = this._state(sessionId);
+      if (!state.taskRun) return null;
+      const item = addTaskEvidence(state.taskRun, evidence);
+      this._emitTaskEvent(sessionId, "task.evidence.added", {
+        taskRunId: state.taskRun.id,
+        evidence: item,
+        tool: opts.tool
+          ? {
+              id: opts.tool.id || "",
+              name: opts.tool.name || "unknown",
+              status: opts.tool.status || "",
+              title: opts.tool.title || "",
+            }
+          : null,
+        taskRun: compactTaskRun(state.taskRun),
+      });
+      return item;
+    } catch (err) {
+      log.warn("TaskRun evidence failed: %s", err?.message || err);
+      return null;
+    }
+  }
+
+  _completeTaskRun(sessionId, terminalType, opts = {}) {
+    try {
+      const state = this._state(sessionId);
+      if (!state.taskRun) return null;
+      const assessment = opts.evidenceGateAssessment || null;
+      const verification = assessment
+        ? {
+            status: assessment.ok ? "verified" : "unverified",
+            reason: assessment.ok ? "" : (assessment.reason || assessment.code || "evidence_gate_failed"),
+          }
+        : {
+            status: terminalType === "turn.completed"
+              ? (state.taskRun.evidence?.length ? "verified" : "not_required")
+              : "not_verified",
+            reason: "",
+          };
+      completeTaskRun(state.taskRun, terminalType, verification);
+      const eventType = terminalType === "turn.failed"
+        ? "task.failed"
+        : terminalType === "turn.interrupted"
+          ? "task.interrupted"
+          : terminalType === "turn.stalled"
+            ? "task.stalled"
+            : "task.completed";
+      this._emitTaskEvent(sessionId, eventType, {
+        taskRunId: state.taskRun.id,
+        status: state.taskRun.status,
+        verification: state.taskRun.verification,
+        evidenceSummary: opts.evidenceSummary || null,
+        taskRun: compactTaskRun(state.taskRun),
+      });
+      return state.taskRun;
+    } catch (err) {
+      log.warn("TaskRun completion failed: %s", err?.message || err);
+      return null;
+    }
+  }
+
+  _emitTaskEvent(sessionId, type, payload = {}) {
+    try {
+      const state = this._state(sessionId);
+      if (!state.turnId) return null;
+      return this.eventBus.emit(sessionId, {
+        type,
+        turnId: state.turnId,
+        source: "task-run",
+        payload,
+      })[0] || null;
+    } catch (err) {
+      log.warn("TaskRun event dropped (%s): %s", type, err?.message || err);
+      return null;
+    }
+  }
+
   _applySubagentEvent(sessionId, payload = {}) {
     const childSessionId = String(payload.sessionId || "").trim();
     if (!childSessionId) return null;
@@ -2102,6 +2311,7 @@ class TurnOrchestrator {
         taskContract: null,
         turnPolicy: null,
         evidenceLedger: null,
+        taskRun: null,
         enginePayload: null,
         legacyContextHydrated: false,
         timeline: [],

@@ -93,8 +93,8 @@ function isPlaceholderGeneratedPath(filePath = "") {
   return (
     /^\/(?:absolute\/path\/to|path\/to)\//.test(lower) ||
     /^[a-z]:\/(?:absolute\/path\/to|path\/to)\//.test(lower) ||
-    lower.includes("/绝对路径/") ||
-    /^\/?绝对路径\//.test(normalized) ||
+    lower.includes("/\u7edd\u5bf9\u8def\u5f84/") ||
+    /^\/?\u7edd\u5bf9\u8def\u5f84\//.test(normalized) ||
     /(^|\/)(?:your|example|sample)-?path\//.test(lower)
   );
 }
