@@ -68,10 +68,12 @@ export function buildLiveTaskStripModel(liveTurn, translate = t) {
   }
   if (!taskRun) return { visible: false, summary: "", items: [] };
   const status = taskRunStatusLabel(taskRun, translate);
+  const items = taskRunItems(taskRun, translate);
+  if (!items.length) return { visible: false, summary: "", items: [] };
   return {
     visible: true,
     summary: translate("task.strip.status", { status }),
-    items: taskRunItems(taskRun, translate),
+    items,
   };
 }
 

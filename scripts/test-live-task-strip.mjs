@@ -24,6 +24,22 @@ const translate = (key, params = {}) => {
 
 assert.equal(buildLiveTaskStripModel(null, translate).visible, false);
 assert.equal(buildLiveTaskStripModel({ final: { type: "turn.completed" } }, translate).visible, false);
+assert.equal(
+  buildLiveTaskStripModel({
+    taskRun: {
+      status: "running",
+      phase: "starting",
+      activeStep: "execute",
+      plan: [
+        { id: "understand", title: "Understand request", status: "completed" },
+        { id: "execute", title: "Execute with available tools", status: "in_progress" },
+        { id: "verify", title: "Verify or report evidence", status: "pending" },
+      ],
+      liveness: { status: "starting" },
+    },
+  }, translate).visible,
+  false,
+);
 
 const taskOnly = buildLiveTaskStripModel({
   taskRun: {
@@ -54,9 +70,7 @@ const genericStep = buildLiveTaskStripModel({
     liveness: { status: "tool_running", detail: "网页扫描队列：种子 1 · JS 路由 0" },
   },
 }, translate);
-assert.equal(genericStep.summary, "Task Tool running");
-assert(!genericStep.items.some((item) => item.content.includes("Execute with available tools")));
-assert(!genericStep.items.some((item) => item.content.includes("网页扫描队列")));
+assert.equal(genericStep.visible, false);
 
 const withTodos = buildLiveTaskStripModel({
   tools: new Map([[
