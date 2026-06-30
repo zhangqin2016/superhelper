@@ -126,7 +126,7 @@ const STATIC_TOOL_DEFINITIONS = [
     name: "runtime_pack_list",
     group: "runtime-packs",
     requiredSkillIds: [SKILLS.runtimePacks],
-    description: "List optional Lily runtime packs and their installed status.",
+    description: "List optional Lily dependency packs and their installed status.",
     inputSchema: {},
     annotations: { readOnlyHint: true },
     handler: async () => {
@@ -150,9 +150,9 @@ const STATIC_TOOL_DEFINITIONS = [
     name: "runtime_pack_install",
     group: "runtime-packs",
     requiredSkillIds: [SKILLS.runtimePacks],
-    description: "Install an optional Lily runtime pack from the server-resolved artifact URL.",
+    description: "Install an optional Lily dependency pack from the server-resolved artifact URL.",
     inputSchema: {
-      packId: z.string().describe("runtime pack id, for example pro-pdf"),
+      packId: z.string().describe("dependency pack id, for example pro-pdf"),
     },
     annotations: { destructiveHint: true, openWorldHint: true },
     handler: async ({ packId }) => require("../runtime-pack-installer").installRuntimePack(packId),

@@ -97,7 +97,7 @@
   },
   "lily-pdf-extraction-router": {
     "name": "PDF 解析路由",
-    "description": "读取或解析 PDF 前选择正确路径，覆盖数字 PDF、扫描件、多栏、密集表格、图片型 PDF、合同/论文，以及何时建议专业 PDF runtime pack。"
+    "description": "读取或解析 PDF 前选择正确路径，覆盖数字 PDF、扫描件、多栏、密集表格、图片型 PDF、合同/论文，以及何时建议专业 PDF 依赖包。"
   },
   "lily-excel-data-analysis": {
     "name": "Excel 数据分析",

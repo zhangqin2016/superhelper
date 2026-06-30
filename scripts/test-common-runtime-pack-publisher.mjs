@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = fs.readFileSync(path.join(ROOT, "scripts/publish-common-runtime-pack.mjs"), "utf8");
+const pythonPackBuilder = fs.readFileSync(path.join(ROOT, "scripts/build-runtime-pack.mjs"), "utf8");
+const specs = fs.readFileSync(path.join(ROOT, "src/main/runtime-pack-specs.js"), "utf8");
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
 
 assert.match(pkg.scripts["release:runtime-pack"], /publish-common-runtime-pack\.mjs/, "package script must expose common runtime pack publishing");
@@ -21,5 +23,13 @@ assert.match(script, /ffprobe-static/, "ffmpeg runtime artifact must include ffp
 assert.match(script, /github\.com\/jgm\/pandoc\/releases/, "pandoc runtime artifact must use official pandoc release binaries");
 assert.match(script, /POST|runtime-packs/, "publisher must register artifacts with the runtime-pack API");
 assert.match(script, /refusing to publish unverified native\/browser binaries/, "publisher must fail loud on unverified cross-platform native/browser packs");
+assert.match(pythonPackBuilder, /--register requires RELEASE_ADMIN_TOKEN/, "Python dependency pack builder must support server registration");
+assert.match(pythonPackBuilder, /release-admin\.mjs/, "Python dependency pack builder must support CDN upload");
+for (const pack of ["pillow", "opencv", "rapidocr", "rembg"]) {
+  assert.match(specs, new RegExp(`${pack}:|\"${pack}\"`), `dependency catalog must include ${pack}`);
+}
+for (const category of ["document", "image", "browser", "media"]) {
+  assert.match(specs, new RegExp(`id: "${category}"`), `dependency catalog must include ${category} group`);
+}
 
 console.log("common-runtime-pack-publisher: ok");

@@ -199,10 +199,12 @@ class SessionRunnerPool {
       const fs = require("node:fs");
       const path = require("node:path");
       const { appendLargeInputProtocolGuidance } = require("./large-input-protocol");
+      const { appendProcessJobProtocolGuidance } = require("./process-job-protocol");
       let dir = configDir;
       if (!dir) dir = require("./config").sessionGuideDir(sessionId);
       const guide = path.join(dir, "AGENT.md");
-      return appendLargeInputProtocolGuidance(fs.existsSync(guide) ? fs.readFileSync(guide, "utf8") : "");
+      const base = fs.existsSync(guide) ? fs.readFileSync(guide, "utf8") : "";
+      return appendProcessJobProtocolGuidance(appendLargeInputProtocolGuidance(base));
     } catch {
       return "";
     }

@@ -74,9 +74,9 @@
   max-height: 160px;
   overflow: hidden;
   padding: 8px 10px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  background: var(--bg-floating);
+  background: color-mix(in srgb, var(--bg-floating) 92%, var(--bg-surface) 8%);
   color: var(--text-secondary);
   font-size: var(--text-xs);
   line-height: 1.5;
@@ -84,27 +84,28 @@
   word-break: break-word;
   z-index: 6;
   pointer-events: none;
+  box-shadow: var(--shadow-floating), var(--top-highlight);
 }
 
 .runtime-messages {
   max-width: var(--chat-col);
   margin: 0 auto;
-  padding: 20px 24px 48px;
-  gap: 16px;
+  padding: 22px 24px 52px;
+  gap: 18px;
   color-scheme: var(--color-scheme);
 }
 
 .runtime-user-message {
   display: block;
   width: 100%;
-  margin: 0 0 14px;
-  padding: 12px 14px 12px 16px;
+  margin: 0 0 16px;
+  padding: 13px 15px 13px 17px;
   border: 1px solid var(--border-light);
   border-left: 3px solid var(--accent);
   border-radius: var(--radius-lg);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-raised) 94%, var(--accent) 6%), var(--bg-surface-raised));
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-raised) 90%, var(--accent) 10%), color-mix(in srgb, var(--bg-surface-raised) 98%, var(--accent) 2%));
+  box-shadow: var(--shadow-sm), var(--top-highlight), 0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 /* Layout/paint isolation only. We deliberately do NOT use content-visibility:auto
@@ -157,10 +158,11 @@
 .runtime-message-file {
   font-size: 12px;
   color: var(--text-muted);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: 999px;
-  padding: 3px 8px;
-  background: var(--bg-surface-subtle);
+  padding: 3px 9px;
+  background: color-mix(in srgb, var(--bg-surface-subtle) 70%, var(--bg-surface) 30%);
+  box-shadow: var(--top-highlight);
 }
 
 .assistant-turn-article {
@@ -194,6 +196,7 @@
   line-height: 1.65;
   margin-bottom: 0;
   min-width: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .assistant-turn-status.is-sealed-duration {
@@ -300,17 +303,17 @@
   font-size: 13px;
   margin: 0 0 14px;
   table-layout: auto;
-  background: var(--bg-surface-raised);
+  background: color-mix(in srgb, var(--bg-surface-raised) 96%, var(--bg-surface) 4%);
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--border-light);
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+  box-shadow: var(--shadow-sm), var(--top-highlight), 0 0 0 1px var(--border-subtle);
 }
 
 .assistant-turn-narrative.markdown-body code,
 .assistant-turn-final.markdown-body code {
   border-radius: 4px;
-  background: var(--bg-surface-hover);
+  background: color-mix(in srgb, var(--bg-surface-hover) 84%, var(--bg-surface) 16%);
   padding: 2px 5px;
   font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: var(--code-text);
@@ -351,7 +354,7 @@
   font-size: 13px;
   line-height: 1.5;
   border: 1px solid var(--border-light);
-  box-shadow: var(--top-highlight);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 .assistant-turn-narrative.markdown-body pre code,
@@ -365,10 +368,11 @@
 
 .assistant-turn-narrative.markdown-body blockquote,
 .assistant-turn-final.markdown-body blockquote {
-  border-left: 3px solid var(--border-strong);
+  border-left: 3px solid var(--accent-border);
   margin: 0 0 10px;
   padding: 4px 0 4px 12px;
   color: var(--text-secondary);
+  background: color-mix(in srgb, var(--accent-subtle) 42%, transparent);
 }
 
 .assistant-turn-narrative.markdown-body hr,
@@ -398,7 +402,7 @@
 
 .assistant-turn-narrative.markdown-body th,
 .assistant-turn-final.markdown-body th {
-  background: var(--bg-surface-raised);
+  background: color-mix(in srgb, var(--bg-surface-raised) 86%, var(--bg-surface-muted) 14%);
   border-bottom-color: var(--border-strong);
   font-size: 11px;
   letter-spacing: 0.04em;
@@ -418,6 +422,7 @@
   /* Secondary to the answer: smaller + dimmer so the eye lands on the result. */
   font-size: var(--text-sm);
   color: var(--text-secondary);
+  border-radius: var(--radius);
 }
 
 .assistant-turn-taskrun {
@@ -520,7 +525,7 @@
   gap: 2px;
   margin-top: 4px;
   padding-left: 14px;
-  border-left: 1px solid var(--border-subtle);
+  border-left: 1px solid color-mix(in srgb, var(--accent-border) 35%, var(--border-subtle));
 }
 
 .assistant-process-thinking-stack-body .assistant-process-thinking-group {
@@ -553,8 +558,9 @@
 }
 
 .assistant-icon-btn:hover {
-  background: var(--bg-secondary);
+  background: var(--bg-surface-hover);
   color: var(--text-primary);
+  box-shadow: var(--top-highlight);
 }
 
 .assistant-icon-btn.is-done {
@@ -1540,8 +1546,8 @@
 .assistant-turn-artifacts {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 12px;
+  margin-top: 14px;
   max-width: 100%;
 }
 
@@ -1573,17 +1579,18 @@
 .assistant-renderer-unknown {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
-  background: var(--bg-surface-raised);
-  padding: 12px;
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-raised) 96%, var(--bg-surface) 4%), var(--bg-surface-raised));
+  padding: 13px;
+  box-shadow: var(--shadow-sm), var(--top-highlight), 0 0 0 1px var(--border-subtle);
 }
 
 .assistant-renderer-pdf {
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+  box-shadow: var(--shadow), var(--top-highlight), 0 0 0 1px var(--border-subtle);
 }
 
 .assistant-renderer-code figcaption,
@@ -1594,6 +1601,7 @@
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.35;
 }
 
 .assistant-renderer-code pre,
@@ -1619,7 +1627,7 @@
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
-  margin: 0 0 10px;
+  margin: 0 0 11px;
 }
 
 .assistant-renderer-pdf .assistant-renderer-artifact-header {
@@ -1627,7 +1635,8 @@
   margin: 0;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface-raised);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-raised) 96%, var(--bg-surface) 4%), var(--bg-surface-raised));
 }
 
 .assistant-renderer-artifact-title {
@@ -1653,6 +1662,7 @@
   min-height: 320px;
   border-radius: 6px;
   color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-surface) 74%, transparent);
 }
 
 .assistant-echarts-error {
@@ -1757,6 +1767,7 @@
   border: 1px solid var(--border-light);
   border-radius: 8px;
   background: var(--document-page-bg);
+  box-shadow: var(--top-highlight);
 }
 
 .assistant-html-note {
@@ -1767,6 +1778,7 @@
   overflow-x: auto;
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
+  box-shadow: var(--top-highlight);
 }
 
 .assistant-data-table-grid {
@@ -1775,7 +1787,7 @@
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   background: var(--bg-surface-raised);
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+  box-shadow: var(--shadow-sm), var(--top-highlight), 0 0 0 1px var(--border-subtle);
 }
 
 .assistant-data-table-grid > .assistant-renderer-table-scroll {
@@ -1794,14 +1806,14 @@
 .assistant-data-table-grid.tabulator .tabulator-header,
 .assistant-data-table-grid .tabulator-header {
   border-bottom: 1px solid var(--border-light);
-  background: var(--bg-surface-muted);
+  background: color-mix(in srgb, var(--bg-surface-muted) 74%, var(--bg-surface) 26%);
   color: var(--text-strong);
 }
 
 .assistant-data-table-grid.tabulator .tabulator-col,
 .assistant-data-table-grid .tabulator-col {
   border-right: 1px solid var(--border-light);
-  background: var(--bg-surface-muted);
+  background: color-mix(in srgb, var(--bg-surface-muted) 74%, var(--bg-surface) 26%);
 }
 
 .assistant-data-table-grid.tabulator .tabulator-col-title,
@@ -1838,7 +1850,7 @@
   width: 100%;
   border-collapse: collapse;
   table-layout: auto;
-  background: var(--bg-surface-raised);
+  background: color-mix(in srgb, var(--bg-surface-raised) 96%, var(--bg-surface) 4%);
 }
 
 .assistant-renderer-table th,
@@ -1852,7 +1864,7 @@
 
 .assistant-renderer-table th {
   color: var(--text-strong);
-  background: var(--bg-surface-muted);
+  background: color-mix(in srgb, var(--bg-surface-muted) 74%, var(--bg-surface) 26%);
   font-weight: 600;
 }
 
@@ -1871,10 +1883,10 @@
   width: min(var(--chat-media), 100%);
   max-height: 420px;
   object-fit: contain;
-  border: 1px solid var(--accent-border);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   background: var(--image-backdrop);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-image), var(--top-highlight);
   cursor: zoom-in;
 }
 
@@ -1891,7 +1903,9 @@
   padding: 12px;
   border: 1px solid var(--border-light);
   border-radius: 8px;
-  background: var(--bg-surface);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 96%, var(--bg-surface-raised) 4%), var(--bg-surface));
+  box-shadow: var(--top-highlight);
 }
 
 .assistant-renderer-markdown-artifact .assistant-renderer-markdown-preview {
@@ -1911,16 +1925,23 @@
 .assistant-renderer-action {
   border: 1px solid var(--border-light);
   border-radius: 8px;
-  background: var(--bg-surface-muted);
+  background: color-mix(in srgb, var(--bg-surface-muted) 72%, var(--bg-surface) 28%);
   color: var(--text-primary);
   padding: 5px 10px;
   font-size: 12px;
   cursor: pointer;
+  box-shadow: var(--top-highlight);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
 .assistant-renderer-action:hover:not(:disabled) {
   border-color: var(--accent-border);
-  background: var(--bg-surface-hover);
+  background: var(--accent-subtle);
+  transform: translateY(-1px);
 }
 
 .assistant-renderer-action:disabled {

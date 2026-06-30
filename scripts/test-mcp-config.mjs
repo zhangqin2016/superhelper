@@ -16,6 +16,7 @@ const {
   playwrightMcpAvailable,
   buildPlaywrightMcpConfig,
   buildFileIntelligenceMcpEntry,
+  buildProcessJobsMcpEntry,
   buildToolBrokerMcpEntry,
   writeActiveMcpConfig,
 } = require("../src/main/mcp-config.js");
@@ -42,11 +43,15 @@ try {
   const fileIntel = buildFileIntelligenceMcpEntry();
   assert(fileIntel.args[0].endsWith(path.join("mcp", "file-intelligence-mcp-stdio.js")), "file intelligence MCP launches stdio server");
   assert(fileIntel.env.ELECTRON_RUN_AS_NODE === "1", "file intelligence MCP runs through Electron node mode");
+  const processJobs = buildProcessJobsMcpEntry();
+  assert(processJobs.args[0].endsWith(path.join("mcp", "process-jobs-mcp-stdio.js")), "process jobs MCP launches stdio server");
+  assert(processJobs.env.ELECTRON_RUN_AS_NODE === "1", "process jobs MCP runs through Electron node mode");
   const noBundleOut = path.join(tmp, "mcp-with-file-intel.json");
   const noBundleWrite = writeActiveMcpConfig(empty, noBundleOut);
-  assert(noBundleWrite === noBundleOut && fs.existsSync(noBundleOut), "file intelligence MCP is available without runtime bundle");
+  assert(noBundleWrite === noBundleOut && fs.existsSync(noBundleOut), "built-in Lily MCPs are available without runtime bundle");
   const noBundleCfg = JSON.parse(fs.readFileSync(noBundleOut, "utf8"));
   assert(noBundleCfg.mcpServers.lily_file_intelligence, "file intelligence MCP is always exposed");
+  assert(noBundleCfg.mcpServers.lily_process_jobs, "process jobs MCP is always exposed");
 
   // present bundle → correct config
   const full = path.join(tmp, "full");
@@ -75,6 +80,7 @@ try {
   const parsed = JSON.parse(fs.readFileSync(out, "utf8"));
   assert(parsed.mcpServers.playwright.command, "written config is valid JSON with the server");
   assert(parsed.mcpServers.lily_file_intelligence.command, "written config includes file intelligence server");
+  assert(parsed.mcpServers.lily_process_jobs.command, "written config includes process jobs server");
 
   const learnedRoot = path.join(process.env.LILY_USER_DATA_DIR, "lily-config", "skills");
   const enabled = path.join(learnedRoot, "learned-enabled");

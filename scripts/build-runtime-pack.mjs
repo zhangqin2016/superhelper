@@ -29,12 +29,24 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const { PACK_SPECS } = require(path.join(ROOT, "src/main/runtime-pack-specs.js"));
+const DEFAULT_DOMAIN = "https://qny.lanrensoft.cn";
+const DEFAULT_BUCKET = "lanrensoft";
+const DEFAULT_PREFIX = "app/runtime-packs";
+const DEFAULT_API = "https://lily.lanrensoft.cn";
 
 function parseArgs(argv) {
   const args = {};
+  const booleans = new Set(["upload", "register", "dry-run"]);
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
-    if (key.startsWith("--")) args[key.slice(2)] = argv[i + 1];
+    if (!key.startsWith("--")) continue;
+    const name = key.slice(2);
+    if (booleans.has(name)) {
+      args[name] = true;
+      continue;
+    }
+    args[name] = argv[i + 1];
+    i += 1;
   }
   return args;
 }
@@ -53,6 +65,79 @@ function die(message) {
 
 function sha256File(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
+function joinUrl(base, key) {
+  return `${String(base).replace(/\/+$/g, "")}/${String(key).replace(/^\/+/g, "")}`;
+}
+
+function run(command, commandArgs, options = {}) {
+  console.log(`[build-runtime-pack] ${[command, ...commandArgs].join(" ")}`);
+  if (options.dryRun) return;
+  execFileSync(command, commandArgs, {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: { ...process.env, ...(options.env || {}) },
+  });
+}
+
+async function adminHeaders(api) {
+  const token = process.env.RELEASE_ADMIN_TOKEN || "";
+  if (token) return { Authorization: `Bearer ${token}` };
+  const email = process.env.RELEASE_ADMIN_EMAIL || "";
+  const password = process.env.RELEASE_ADMIN_PASSWORD || "";
+  if (!email || !password) {
+    die("--register requires RELEASE_ADMIN_TOKEN or RELEASE_ADMIN_EMAIL + RELEASE_ADMIN_PASSWORD");
+  }
+  const loginResponse = await fetch(`${api}/api/admin/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const json = await loginResponse.json().catch(() => ({}));
+  if (!loginResponse.ok) die(`admin login failed: ${loginResponse.status} ${json.code || ""}`);
+  const cookie = loginResponse.headers.get("set-cookie") || "";
+  const session = cookie.match(/(?:^|,\s*)lily_admin_session=([^;]+)/)?.[1];
+  if (!session) die("admin login did not return lily_admin_session cookie");
+  return { Cookie: `lily_admin_session=${session}` };
+}
+
+async function registerPack({ api, artifact, dryRun }) {
+  if (dryRun) {
+    console.log("[build-runtime-pack] dry-run: skip server registration");
+    return;
+  }
+  const headers = await adminHeaders(api);
+  const listResponse = await fetch(`${api}/api/admin/runtime-packs`, { headers });
+  const listJson = await listResponse.json().catch(() => ({}));
+  if (!listResponse.ok) die(`list runtime packs failed: ${listResponse.status}`);
+  const existing = (listJson.runtimePacks || []).find(
+    (pack) =>
+      pack.pack_id === artifact.packId &&
+      pack.platform === artifact.platform &&
+      pack.version === artifact.version &&
+      pack.sha256 === artifact.sha256,
+  );
+  if (existing) {
+    console.log(`[build-runtime-pack] server registration already exists: ${existing.id}`);
+    return;
+  }
+  const response = await fetch(`${api}/api/admin/runtime-packs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify({
+      packId: artifact.packId,
+      platform: artifact.platform,
+      version: artifact.version,
+      url: artifact.url,
+      sha256: artifact.sha256,
+      sizeBytes: artifact.sizeBytes,
+      enabled: true,
+    }),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) die(`register runtime pack failed: ${response.status} ${json.code || ""}`);
+  console.log(`[build-runtime-pack] registered runtime pack: ${json.id}`);
 }
 
 /** Derive the artifact version from the main package's dist-info in the stage. */
@@ -97,6 +182,10 @@ if (!cross && !fs.existsSync(venvPython)) die(`bundled venv python not found at 
 const outDir = path.resolve(ROOT, args.out || path.join("dist", "runtime-packs"));
 fs.mkdirSync(outDir, { recursive: true });
 const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), `rpack-${packId}-`));
+const bucket = args.bucket || DEFAULT_BUCKET;
+const domain = args.domain || DEFAULT_DOMAIN;
+const prefix = String(args.prefix || DEFAULT_PREFIX).replace(/^\/+|\/+$/g, "");
+const api = String(args.api || DEFAULT_API).replace(/\/+$/g, "");
 
 try {
   if (cross) {
@@ -140,21 +229,31 @@ try {
 
   const sizeBytes = fs.statSync(outFile).size;
   const sha256 = sha256File(outFile);
+  const key = `${prefix}/${fileName}`;
+  const url = joinUrl(domain, key);
 
-  const metadata = { packId, platform, version, sha256, sizeBytes, file: outFile };
+  const metadata = { packId, platform, version, url, sha256, sizeBytes, file: outFile };
   console.log("\n[build-runtime-pack] artifact ready:");
   console.log(JSON.stringify(metadata, null, 2));
-  console.log(
-    [
-      "",
-      "Next steps:",
-      `  1. Upload ${fileName} to the CDN (Qiniu) and note its public URL.`,
-      "  2. Register it so the app can resolve it (admin auth required):",
-      "     POST /api/admin/runtime-packs",
-      `     ${JSON.stringify({ packId, platform, version, url: "<qiniu-public-url>", sha256, sizeBytes })}`,
-      "",
-    ].join("\n"),
-  );
+  if (args.upload) {
+    run("node", ["scripts/release-admin.mjs", "upload", "--bucket", bucket, "--key", key, "--file", outFile], {
+      dryRun: args["dry-run"],
+    });
+  }
+  if (args.register) await registerPack({ api, artifact: metadata, dryRun: args["dry-run"] });
+  if (!args.upload && !args.register) {
+    console.log(
+      [
+        "",
+        "Next steps:",
+        `  1. Upload ${fileName} to the CDN (Qiniu), e.g. --upload.`,
+        "  2. Register it so the app can resolve it, e.g. --register with admin auth.",
+        "     POST /api/admin/runtime-packs",
+        `     ${JSON.stringify({ packId, platform, version, url, sha256, sizeBytes })}`,
+        "",
+      ].join("\n"),
+    );
+  }
 } finally {
   fs.rmSync(stageDir, { recursive: true, force: true });
 }

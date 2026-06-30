@@ -6,10 +6,12 @@
   position: relative;
   z-index: 20;
   flex-shrink: 0;
-  padding: 12px 20px 16px;
-  border-top: 1px solid var(--border-subtle);
+  padding: 13px 20px 17px;
+  border-top: 1px solid var(--border-light);
   background:
-    linear-gradient(to bottom, color-mix(in srgb, var(--bg-topbar) 92%, transparent), var(--bg-topbar));
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-topbar) 78%, transparent), var(--bg-topbar) 34%),
+    color-mix(in srgb, var(--bg-topbar) 96%, var(--bg-surface) 4%);
+  box-shadow: 0 -12px 30px color-mix(in srgb, var(--bg-body) 12%, transparent), var(--top-highlight);
 }
 
 .composer.composer-busy {
@@ -19,11 +21,13 @@
 /* Pinned task strip: the live to-do list, just above the input, collapsible. */
 .live-task-strip {
   width: min(100%, var(--chat-col));
-  margin: 0 auto 8px;
-  border: 1px solid var(--border);
+  margin: 0 auto 9px;
+  border: 1px solid var(--border-light);
   border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  background: var(--bg-surface-raised, var(--bg-topbar));
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-raised) 90%, var(--accent) 10%), var(--bg-surface-raised));
+  box-shadow: var(--shadow-sm), var(--top-highlight);
   overflow: hidden;
 }
 .live-task-strip-header {
@@ -39,8 +43,9 @@
   font-weight: 600;
   text-align: left;
   cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
-.live-task-strip-header:hover { background: var(--bg-secondary); }
+.live-task-strip-header:hover { background: color-mix(in srgb, var(--accent-subtle) 70%, var(--bg-secondary) 30%); }
 .live-task-strip-caret { color: var(--text-secondary); font-size: 11px; flex: 0 0 auto; }
 .live-task-strip-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-task-strip-items {
@@ -80,17 +85,25 @@
 }
 .prompt-suggestions[hidden] { display: none; }
 .prompt-suggestion-btn {
-  border: 1px solid var(--border);
-  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  background: color-mix(in srgb, var(--bg-input) 88%, var(--bg-surface) 12%);
   color: var(--text-secondary);
   border-radius: 999px;
   padding: 4px 12px;
   font-size: 12px;
   cursor: pointer;
+  box-shadow: var(--top-highlight);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 .prompt-suggestion-btn:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
   color: var(--text-primary);
+  transform: translateY(-1px);
 }
 
 /* Reserved dock — permissions render in the turn timeline, not here */
@@ -144,11 +157,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  border: 1px dashed var(--border);
+  padding: 7px 9px;
+  border: 1px dashed var(--accent-border);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-input) 88%, var(--accent) 12%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 88%, var(--accent) 12%), color-mix(in srgb, var(--bg-input) 94%, var(--accent) 6%));
   font-size: 12px;
+  box-shadow: var(--top-highlight);
 }
 
 .message-queue-badge {
@@ -195,15 +210,18 @@
   align-items: center;
   gap: 6px;
   padding: 4px 8px 4px 4px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  background: var(--bg-input);
+  background: color-mix(in srgb, var(--bg-input) 90%, var(--bg-surface) 10%);
   font-size: 12px;
   white-space: nowrap;
-  transition: border-color 0.15s;
+  box-shadow: var(--top-highlight);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 .file-chip:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--bg-surface-hover);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
 .file-chip-img {
@@ -561,9 +579,9 @@
   position: relative;
   padding: 0 10px;
   height: 32px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  background: var(--bg-input);
+  background: color-mix(in srgb, var(--bg-input) 90%, var(--bg-surface) 10%);
   color: var(--text-secondary);
   cursor: pointer;
   min-width: 0;
@@ -572,7 +590,7 @@
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
-  box-shadow: var(--top-highlight);
+  box-shadow: var(--top-highlight), 0 1px 2px color-mix(in srgb, var(--bg-body) 10%, transparent);
 }
 
 .permission-mode-wrap:hover {
@@ -637,8 +655,8 @@
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 94%, var(--bg-surface) 6%), var(--bg-input));
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 88%, var(--bg-surface) 12%), var(--bg-input));
+  box-shadow: var(--shadow), var(--top-highlight);
   overflow: hidden;
   min-width: 0;
   transition:
@@ -658,9 +676,10 @@
   justify-content: space-between;
   gap: 10px;
   min-height: 44px;
-  padding: 6px 8px 7px;
+  padding: 7px 9px 8px;
   border-top: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--bg-surface-subtle) 70%, var(--bg-surface) 30%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-subtle) 65%, var(--bg-surface) 35%), color-mix(in srgb, var(--bg-surface-muted) 74%, transparent));
   min-width: 0;
 }
 
@@ -680,7 +699,7 @@
 }
 .composer-icon-btn:hover {
   border-color: var(--border-light);
-  background: var(--bg-secondary);
+  background: var(--bg-surface-hover);
   color: var(--text-primary);
   box-shadow: var(--top-highlight);
 }
@@ -738,7 +757,7 @@ textarea:disabled { opacity: 0.5; }
   font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 24%, transparent), var(--top-highlight);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 24%, transparent), var(--top-highlight);
   transition:
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease),
@@ -987,8 +1006,9 @@ textarea:disabled { opacity: 0.5; }
   padding: 16px;
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--bg-surface-raised) 88%, var(--accent) 12%);
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-raised) 86%, var(--accent) 14%), color-mix(in srgb, var(--bg-surface-raised) 94%, var(--accent) 6%));
+  box-shadow: var(--shadow-sm), var(--top-highlight), 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .scheduled-draft-title {

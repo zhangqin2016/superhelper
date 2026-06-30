@@ -9,7 +9,8 @@
   min-height: 0;
   overflow: hidden;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-center) 92%, var(--bg-surface) 8%) 0, var(--bg-center) 180px),
+    radial-gradient(circle at 50% -26%, color-mix(in srgb, var(--accent) 8%, transparent) 0, transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-center) 88%, var(--bg-surface) 12%) 0, var(--bg-center) 220px),
     var(--bg-center);
 }
 
@@ -19,10 +20,12 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 10px 16px;
-  background: color-mix(in srgb, var(--bg-topbar) 92%, var(--bg-surface) 8%);
-  border-bottom: 1px solid var(--border);
-  min-height: 52px;
+  padding: 11px 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-topbar) 90%, var(--bg-surface-raised) 10%), color-mix(in srgb, var(--bg-topbar) 96%, var(--bg-surface) 4%)),
+    var(--bg-topbar);
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 56px;
   box-shadow: var(--top-highlight);
 }
 
@@ -37,20 +40,26 @@
 .panel-toggle {
   display: grid;
   place-items: center;
-  width: 32px; height: 32px;
+  width: 34px; height: 34px;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  background: var(--control-bg);
+  background: color-mix(in srgb, var(--control-bg) 88%, var(--bg-surface) 12%);
   color: var(--text-secondary);
   cursor: pointer;
   flex-shrink: 0;
-  box-shadow: var(--top-highlight);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 .panel-toggle:hover {
   background: var(--bg-surface-hover);
   color: var(--text-primary);
   border-color: var(--border-light);
+  box-shadow: var(--shadow-sm), var(--top-highlight), 0 0 0 3px var(--accent-subtle);
 }
 
 .topbar-info { min-width: 0; }
@@ -92,7 +101,7 @@
   font-weight: 500;
   line-height: 1.5;
   border: 1px solid transparent;
-  box-shadow: var(--top-highlight);
+  box-shadow: var(--top-highlight), 0 1px 2px color-mix(in srgb, var(--bg-body) 14%, transparent);
 }
 .session-status-pill::before {
   content: "";
@@ -297,8 +306,8 @@
   max-width: 140px;
   padding: 6px 8px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  background: color-mix(in srgb, var(--bg-input) 92%, var(--bg-surface) 8%);
   color: var(--text-primary);
   font-size: 12px;
   cursor: pointer;
@@ -308,14 +317,15 @@
 .model-preset-select:focus {
   outline: none;
   border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
 .mode-switch {
   display: flex;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  background: var(--bg-input);
-  box-shadow: var(--top-highlight);
+  background: color-mix(in srgb, var(--bg-input) 90%, var(--bg-surface) 10%);
+  box-shadow: var(--top-highlight), 0 1px 2px color-mix(in srgb, var(--bg-body) 10%, transparent);
   overflow: hidden;
 }
 
@@ -332,15 +342,19 @@
     color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
 }
-.mode-btn.active { background: var(--accent); color: var(--text-inverse); }
+.mode-btn.active {
+  background: var(--accent);
+  color: var(--text-inverse);
+  box-shadow: var(--top-highlight);
+}
 .mode-btn:hover:not(.active) { color: var(--text-primary); }
 
 .topbar-btn {
   height: 30px;
   padding: 0 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  background: var(--control-bg);
+  background: color-mix(in srgb, var(--control-bg) 88%, var(--bg-surface) 12%);
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -349,11 +363,20 @@
     border-color var(--dur) var(--ease),
     color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
+  box-shadow: var(--top-highlight);
 }
 .topbar-btn:hover {
   background: var(--bg-surface-hover);
   border-color: var(--border-light);
   color: var(--text-primary);
+  box-shadow: var(--top-highlight), 0 6px 16px color-mix(in srgb, var(--bg-body) 10%, transparent);
 }
-.topbar-btn-stop { color: var(--danger-text); border-color: var(--danger-bg); }
-.topbar-btn-stop:hover { background: var(--danger-bg); }
+.topbar-btn-stop {
+  color: var(--danger-text);
+  border-color: color-mix(in srgb, var(--danger-border) 54%, var(--border-light));
+  background: color-mix(in srgb, var(--danger-bg) 36%, var(--control-bg));
+}
+.topbar-btn-stop:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+}

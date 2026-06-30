@@ -131,6 +131,9 @@ try {
   const listed = await run(["list"]);
   assert(listed.ok && listed.packs.some((p) => p.id === "pro-pdf" && !p.installed), `unexpected list: ${JSON.stringify(listed)}`);
   assert(listed.packs.some((p) => p.id === "libreoffice" && !p.installed), `libreoffice missing from list: ${JSON.stringify(listed)}`);
+  for (const id of ["pillow", "opencv", "rapidocr", "rembg"]) {
+    assert(listed.packs.some((p) => p.id === id && !p.installed), `${id} missing from list: ${JSON.stringify(listed)}`);
+  }
   assert(
     listed.packs.some((p) => p.id === "web-automation" && p.installed && p.source === "bundled"),
     `bundled web runtime should be listed as installed: ${JSON.stringify(listed)}`,

@@ -137,6 +137,16 @@ function buildFileIntelligenceMcpEntry() {
   };
 }
 
+/** Built-in process job MCP: gives the agent a structured path for long-running
+ * local servers/watchers without changing OpenCode's foreground Bash behavior. */
+function buildProcessJobsMcpEntry() {
+  return {
+    command: process.execPath,
+    args: [path.join(__dirname, "mcp", "process-jobs-mcp-stdio.js")],
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  };
+}
+
 /** MCP server entry for one learned web system (its capabilities as typed tools). */
 function webSystemMcpEntry(draftDir) {
   if (
@@ -209,6 +219,7 @@ function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null) {
   const playwright = runtimeDir ? buildPlaywrightMcpConfig(runtimeDir) : null;
   if (playwright?.mcpServers) Object.assign(mcpServers, playwright.mcpServers);
   mcpServers.lily_file_intelligence = buildFileIntelligenceMcpEntry();
+  mcpServers.lily_process_jobs = buildProcessJobsMcpEntry();
   const mail = buildMailMcpEntry();
   if (mail) mcpServers.mail = mail;
   // Each learned web system becomes its own MCP server (typed tools), but only
@@ -224,6 +235,7 @@ module.exports = {
   playwrightMcpEntry,
   buildMailMcpEntry,
   buildFileIntelligenceMcpEntry,
+  buildProcessJobsMcpEntry,
   buildToolBrokerMcpEntry,
   bundledBrowsersDir,
   bundledNodeModulesDir,

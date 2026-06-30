@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install / remove optional runtime packs from the agent.
+"""Install / remove optional dependency packs from the agent.
 
 No UI: the user just asks ("装一下专业 PDF 引擎"), the agent maps that to a pack
 id and runs this. Self-contained (stdlib only) so it works whether the app is
@@ -44,15 +44,19 @@ import zipfile
 
 DEFAULT_API_BASE = "https://lily.lanrensoft.cn"
 STATE_SCHEMA_VERSION = 1
-# Known installable packs (id → human label). Keep in sync with
+# Known installable dependency packs (id → human label). Keep in sync with
 # src/main/runtime-pack-specs.js. Available artifacts per platform are decided
 # server-side; this is just so `list` can name what the agent may install.
 KNOWN_PACKS = {
-    "pro-pdf": "Pro PDF engine (Docling): layout/table analysis for complex PDFs (~230MB download)",
-    "libreoffice": "LibreOffice runtime: local Office/PDF conversion and spreadsheet recalculation (~500MB download on Windows)",
-    "web-automation": "Web automation runtime (Playwright): browser automation modules and browser binaries",
+    "libreoffice": "LibreOffice: local Office/PDF conversion and spreadsheet recalculation (~500MB download on Windows)",
+    "pro-pdf": "Docling: layout analysis, reading order, and table recovery for complex PDFs (~230MB download)",
+    "pandoc": "Pandoc: Markdown, HTML, LaTeX, EPUB, and related document conversion",
+    "pillow": "Pillow: core image loading, resizing, conversion, and thumbnails",
+    "opencv": "OpenCV: image preprocessing, transforms, and computer-vision utilities",
+    "rapidocr": "RapidOCR: local OCR for scans and images using ONNX Runtime",
+    "rembg": "rembg: local background removal for images",
+    "web-automation": "Playwright: browser automation modules and browser binaries",
     "ffmpeg": "FFmpeg media tools: local audio/video probing, conversion, clipping, and packaging",
-    "pandoc": "Pandoc document converter: Markdown, HTML, LaTeX, EPUB, and related conversions",
 }
 
 
@@ -231,7 +235,7 @@ def do_install(pack_id):
 
     state = read_state()
     state["installed"][pack_id] = {
-        "installedAt": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "installedAt": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat().replace("+00:00", "Z"),
         "source": "artifact",
         "version": artifact.get("version"),
         "sha256": artifact.get("sha256"),

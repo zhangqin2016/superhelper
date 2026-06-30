@@ -6,7 +6,10 @@
   display: grid;
   grid-template-columns: var(--left-w) 4px minmax(0, 1fr);
   height: 100vh;
-  background: var(--bg-body);
+  background:
+    radial-gradient(circle at 42% -18%, color-mix(in srgb, var(--accent) 10%, transparent) 0, transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-body) 84%, var(--bg-surface) 16%), var(--bg-body) 240px),
+    var(--bg-body);
 }
 
 /* Pin each region to a column — display:none on a panel must not reflow siblings */
@@ -23,13 +26,16 @@
 .resize-handle {
   width: 4px;
   cursor: col-resize;
-  background: transparent;
-  transition: background 0.15s;
+  background: color-mix(in srgb, var(--border-subtle) 52%, transparent);
+  transition: background 0.15s, box-shadow 0.15s;
   position: relative;
   z-index: 10;
 }
 .resize-handle:hover,
-.resize-handle.active { background: var(--accent); }
+.resize-handle.active {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-subtle), 0 0 18px var(--accent-subtle);
+}
 .resize-handle::after {
   content: "";
   position: absolute;
@@ -45,10 +51,11 @@
   flex-direction: column;
   min-width: 0;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-left) 88%, var(--bg-surface) 12%), var(--bg-left) 220px),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-left) 76%, var(--bg-surface) 24%), var(--bg-left) 260px),
     var(--bg-left);
   overflow: hidden;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border-subtle);
+  box-shadow: 10px 0 28px color-mix(in srgb, var(--bg-body) 18%, transparent);
 }
 
 .app-shell.left-collapsed .left-panel,
@@ -58,18 +65,21 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 12px 10px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-left) 82%, var(--bg-surface) 18%);
+  padding: 15px 14px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-left) 72%, var(--bg-surface-raised) 28%), color-mix(in srgb, var(--bg-left) 92%, var(--bg-surface) 8%)),
+    var(--bg-left);
+  box-shadow: var(--top-highlight);
 }
 
 .app-logo {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius);
   object-fit: cover;
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+  box-shadow: var(--shadow-sm), var(--top-highlight), 0 0 0 1px var(--border-subtle);
 }
 
 .app-brand-name {
@@ -83,8 +93,9 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-left) 86%, var(--bg-surface) 14%);
 }
 
 .left-action-btn {
@@ -113,20 +124,25 @@
 
 .left-search {
   width: 100%;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  background: var(--bg-input);
+  background: color-mix(in srgb, var(--bg-input) 90%, var(--bg-surface) 10%);
   color: var(--text-primary);
   font-size: 12px;
   outline: none;
   box-shadow: var(--top-highlight);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 .left-search::placeholder { color: var(--text-dim); }
 .left-search:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-dim);
+  background: var(--bg-input);
+  border-color: var(--accent-border);
+  box-shadow: var(--top-highlight), 0 0 0 3px var(--accent-subtle);
 }
 
 .status-badge {
@@ -146,7 +162,7 @@
 .left-section {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   max-height: 180px;
 }
 .left-section-grow {
@@ -158,8 +174,9 @@
 
 .left-footer {
   margin-top: auto;
-  padding: 10px 12px 12px;
-  border-top: 1px solid var(--border);
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-left) 88%, var(--bg-surface) 12%);
   flex-shrink: 0;
 }
 
@@ -186,7 +203,8 @@
 .left-settings-btn:hover {
   background: var(--bg-surface-hover);
   color: var(--text-primary);
-  border-color: var(--border);
+  border-color: var(--border-light);
+  box-shadow: var(--top-highlight);
 }
 
 .left-section-header {
@@ -225,7 +243,7 @@
 }
 
 .project-group {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
 }
 .project-group:last-child { border-bottom: 0; }
 
@@ -233,19 +251,28 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 2px 8px;
-  padding: 7px 8px;
+  margin: 3px 10px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
     background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
   user-select: none;
 }
-.project-header:hover { background: var(--bg-surface); }
+.project-header:hover {
+  background: color-mix(in srgb, var(--bg-surface) 84%, var(--bg-left) 16%);
+  border-color: var(--border-subtle);
+  box-shadow: var(--top-highlight);
+}
 .project-group.active > .project-header {
-  background: var(--accent-subtle);
-  box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight);
+  background:
+    linear-gradient(90deg, var(--accent-subtle), color-mix(in srgb, var(--accent-subtle) 46%, transparent)),
+    color-mix(in srgb, var(--bg-surface) 78%, var(--bg-left) 22%);
+  border-color: var(--accent-border);
+  box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight), 0 8px 18px color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .project-collapse-icon {
@@ -334,20 +361,26 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 1px 8px;
+  margin: 2px 10px;
   padding: 6px 10px 6px 28px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
     background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease),
     color var(--dur) var(--ease);
   font-size: 12px;
 }
-.project-sessions .session-item:hover { background: var(--bg-surface-hover); }
+.project-sessions .session-item:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-subtle);
+}
 .project-sessions .session-item.active {
-  background: var(--accent-subtle);
+  background: color-mix(in srgb, var(--accent-subtle) 78%, var(--bg-surface) 22%);
   color: var(--text-primary);
+  border-color: var(--accent-border);
   box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight);
 }
 
@@ -364,10 +397,10 @@
   width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
 }
 /* Idle = nothing to see (muted). running/done/error draw the eye via a pulse. */
-.session-status.idle { background: var(--text-dim); opacity: 0.45; }
-.session-status.running { background: var(--info-text); animation: status-pulse 1.4s ease-in-out infinite; }
-.session-status.done { background: var(--success-text); animation: status-pulse 1.4s ease-in-out infinite; }
-.session-status.error { background: var(--danger-text); animation: status-pulse 1.4s ease-in-out infinite; }
+.session-status.idle { background: var(--text-dim); opacity: 0.42; box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-dim) 10%, transparent); }
+.session-status.running { background: var(--info-text); box-shadow: 0 0 0 4px var(--info-bg-soft); animation: status-pulse 1.4s ease-in-out infinite; }
+.session-status.done { background: var(--success-text); box-shadow: 0 0 0 4px var(--success-dot-ring); animation: status-pulse 1.4s ease-in-out infinite; }
+.session-status.error { background: var(--danger-text); box-shadow: 0 0 0 4px var(--danger-dot-ring); animation: status-pulse 1.4s ease-in-out infinite; }
 
 /* Legacy flat session list */
 .session-list {
