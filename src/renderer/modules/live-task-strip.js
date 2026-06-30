@@ -18,56 +18,17 @@ function latestTodos(liveTurn) {
   return latest ? parseTodoEntries(latest) : [];
 }
 
-function taskRunStatusLabel(taskRun, translate) {
-  const liveness = taskRun?.liveness || {};
-  if (liveness.status === "no_visible_progress") return translate("task.strip.noVisibleProgress");
-  if (liveness.status === "tool_running" || taskRun?.phase === "tool_running") return translate("task.strip.toolRunning");
-  if (taskRun?.status === "awaiting_user") return translate("task.strip.awaitingUser");
-  if (taskRun?.status === "stalled") return translate("task.strip.stalled");
-  if (taskRun?.status === "failed") return translate("task.strip.failed");
-  return translate("task.strip.running");
-}
-
-function isGenericTaskStep(title = "") {
-  const normalized = String(title || "").trim().toLowerCase();
-  return normalized === "execute with available tools";
-}
-
-function taskRunItems(taskRun, translate) {
-  const items = [];
-  const plan = Array.isArray(taskRun?.plan) ? taskRun.plan : [];
-  const active = plan.find((step) => step.status === "in_progress") || plan.find((step) => step.id === taskRun?.activeStep);
-  if (active?.title && !isGenericTaskStep(active.title)) {
-    items.push({ status: "in_progress", content: translate("task.strip.step", { item: active.title }) });
-  }
-  const risk = Array.isArray(taskRun?.risks) ? taskRun.risks.at(-1) : null;
-  if (risk?.code) {
-    items.push({ status: risk.level === "warning" ? "warning" : "info", content: translate("task.strip.risk", { code: risk.code }) });
-  }
-  return items.slice(0, 5);
-}
-
 export function buildLiveTaskStripModel(liveTurn, translate = t) {
   if (!liveTurn || liveTurn.final) return { visible: false, summary: "", items: [] };
   const todos = latestTodos(liveTurn);
-  const taskRun = liveTurn.taskRun || null;
   if (todos.length) {
     const done = todos.filter((todo) => todo.status === "completed").length;
     const inProgress = todos.find((todo) => todo.status === "in_progress");
     let summary = translate("todo.summary", { done, total: todos.length });
     if (inProgress) summary += ` · ${translate("task.strip.current", { item: inProgress.content })}`;
-    else if (taskRun) summary += ` · ${taskRunStatusLabel(taskRun, translate)}`;
     return { visible: true, summary, items: todos };
   }
-  if (!taskRun) return { visible: false, summary: "", items: [] };
-  const status = taskRunStatusLabel(taskRun, translate);
-  const items = taskRunItems(taskRun, translate);
-  if (!items.length) return { visible: false, summary: "", items: [] };
-  return {
-    visible: true,
-    summary: translate("task.strip.status", { status }),
-    items,
-  };
+  return { visible: false, summary: "", items: [] };
 }
 
 function applyCollapsed(strip, header) {

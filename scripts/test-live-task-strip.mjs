@@ -53,13 +53,7 @@ const taskOnly = buildLiveTaskStripModel({
     resumeState: { replaySafe: false },
   },
 }, translate);
-assert.equal(taskOnly.visible, true);
-assert.equal(taskOnly.summary, "Task Still working");
-assert(taskOnly.items.some((item) => item.content === "Step Run the command"));
-assert(!taskOnly.items.some((item) => item.content === "python report.py is still running"));
-assert(taskOnly.items.some((item) => item.content === "Watch NO_VISIBLE_PROGRESS"));
-assert(!taskOnly.items.some((item) => item.content === "2 evidence"));
-assert(!taskOnly.items.some((item) => item.content === "No auto replay"));
+assert.equal(taskOnly.visible, false);
 
 const genericStep = buildLiveTaskStripModel({
   taskRun: {
