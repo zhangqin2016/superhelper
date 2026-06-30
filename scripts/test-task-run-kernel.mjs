@@ -15,6 +15,7 @@ const { RuntimeEventBus } = require("../src/main/runtime-event-bus.js");
 const { TranscriptStore } = require("../src/main/transcript-store.js");
 const { TurnArchive } = require("../src/main/turn-archive.js");
 const { TurnOrchestrator } = require("../src/main/turn-orchestrator.js");
+const { applyTaskPlanFromTodos, createTaskRun } = require("../src/main/task-run-state.js");
 
 class FakeRunner extends EventEmitter {
   constructor(sessionId) {
@@ -96,6 +97,26 @@ function createContext({ eventBus } = {}) {
 }
 
 {
+  const taskRun = createTaskRun({ sessionId: "s_plan", turnId: "t_plan", objective: "change code" });
+  applyTaskPlanFromTodos(taskRun, [
+    { content: "Read files", status: "completed" },
+    { content: "Patch code", status: "in_progress" },
+    { content: "Run tests", status: "pending" },
+  ]);
+  if (taskRun.plan.length !== 3 || taskRun.plan[1]?.title !== "Patch code") {
+    throw new Error(`todo plan should replace the default plan: ${JSON.stringify(taskRun.plan)}`);
+  }
+  if (taskRun.activeStep !== taskRun.plan[1]?.id) {
+    throw new Error(`active step should follow in-progress todo: ${JSON.stringify(taskRun)}`);
+  }
+  const before = JSON.stringify(taskRun.plan);
+  applyTaskPlanFromTodos(taskRun, [{ content: "", status: "weird" }]);
+  if (JSON.stringify(taskRun.plan) !== before) {
+    throw new Error("malformed todos must not erase the existing TaskRun plan");
+  }
+}
+
+{
   const { ctx, runner, sent, session } = createContext();
   const started = await ctx.turnOrchestrator.sendUserMessage(session.id, "Summarize this project", [], {
     skipPreflight: true,
@@ -108,6 +129,16 @@ function createContext({ eventBus } = {}) {
   }
   ctx.turnOrchestrator.ingest(session.id, [
     { type: "tool.started", payload: { id: "read_1", name: "Read", input: { file_path: "README.md" } } },
+    {
+      type: "todo.updated",
+      payload: {
+        id: "todo_1",
+        todos: [
+          { content: "Read files", status: "completed" },
+          { content: "Summarize findings", status: "in_progress" },
+        ],
+      },
+    },
     { type: "engine.notice", payload: { notice: { code: "longWait", level: "progress", panel: true, replace: true } } },
     { type: "engine.notice", payload: { notice: { code: "toolProgress", level: "progress", detail: "Read README.md is still running" } } },
     { type: "tool.done", payload: { id: "read_1", status: "done", result: "read ok" } },
@@ -117,6 +148,7 @@ function createContext({ eventBus } = {}) {
   const events = sent.flatMap((entry) => entry.payload?.events || []);
   const taskCreated = events.find((event) => event.type === "task.created");
   const taskProgress = events.find((event) => event.type === "task.step.progress" && event.payload?.phase === "tool_running");
+  const taskPlan = events.find((event) => event.type === "task.plan.updated" && event.payload?.plan?.some((step) => step.title === "Summarize findings"));
   const taskEvidence = events.find((event) => event.type === "task.evidence.added");
   const taskLiveness = events.find((event) => event.type === "task.liveness.updated" && event.payload?.liveness?.status === "tool_running");
   const noVisibleProgressRisk = events.find((event) => event.type === "task.risk.detected" && event.payload?.risk?.code === "NO_VISIBLE_PROGRESS");
@@ -126,6 +158,9 @@ function createContext({ eventBus } = {}) {
   }
   if (!taskProgress || taskProgress.payload?.tool?.name !== "Read") {
     throw new Error(`tool start should surface task progress: ${JSON.stringify(events)}`);
+  }
+  if (!taskPlan || taskPlan.payload?.activeStep !== "todo_2") {
+    throw new Error(`todo.updated should fuse into TaskRun plan: ${JSON.stringify(events)}`);
   }
   if (!taskEvidence || taskEvidence.payload?.evidence?.kind !== "tool_result") {
     throw new Error(`tool completion should add task evidence: ${JSON.stringify(events)}`);
@@ -138,6 +173,32 @@ function createContext({ eventBus } = {}) {
   }
   if (taskCompleted?.payload?.status !== "completed") {
     throw new Error(`turn completion should complete the TaskRun: ${JSON.stringify(taskCompleted)}`);
+  }
+  if (taskCompleted?.payload?.taskRun?.resumeState?.replaySafe !== true) {
+    throw new Error(`read-only tool run should be marked safe to replay: ${JSON.stringify(taskCompleted?.payload?.taskRun?.resumeState)}`);
+  }
+}
+
+{
+  const { ctx, runner, sent, session } = createContext();
+  const started = await ctx.turnOrchestrator.sendUserMessage(session.id, "Run tests", [], {
+    skipPreflight: true,
+    skipVision: true,
+    skipDocument: true,
+    spawnEngine: false,
+  });
+  if (!started.ok) throw new Error(`turn should start: ${JSON.stringify(started)}`);
+  ctx.turnOrchestrator.ingest(session.id, [
+    { type: "tool.started", payload: { id: "bash_1", name: "Bash", input: { command: "npm test" } } },
+    { type: "tool.done", payload: { id: "bash_1", status: "done", result: "ok" } },
+  ]);
+  runner.finish("done");
+  ctx.eventBus.flush();
+  const events = sent.flatMap((entry) => entry.payload?.events || []);
+  const taskCompleted = events.find((event) => event.type === "task.completed");
+  const resumeState = taskCompleted?.payload?.taskRun?.resumeState || {};
+  if (resumeState.replaySafe !== false || resumeState.hasSideEffects !== true) {
+    throw new Error(`side-effect tool run must not be marked replay-safe: ${JSON.stringify(resumeState)}`);
   }
 }
 

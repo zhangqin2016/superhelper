@@ -415,6 +415,41 @@
   color: var(--text-secondary);
 }
 
+.assistant-turn-taskrun {
+  width: min(100%, var(--chat-prose));
+  margin: 0 0 8px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.assistant-taskrun-summary {
+  border: none;
+  background: transparent;
+}
+
+.assistant-taskrun-summary > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  list-style: none;
+  user-select: none;
+}
+
+.assistant-taskrun-summary > summary::before {
+  content: "›";
+  display: inline-block;
+  width: 14px;
+  color: var(--text-muted);
+}
+
+.assistant-taskrun-summary[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.assistant-taskrun-summary-body {
+  padding: 4px 0 0 14px;
+  color: var(--text-secondary);
+}
+
 .assistant-turn-timeline {
   display: flex;
   flex-direction: column;

@@ -146,3 +146,16 @@ export function buildStatusText(liveTurn, { failed = false, sealed = false } = {
   if (liveTurn.phase === "awaiting_user") return translate("turn.status.awaitingUser");
   return buildLiveStatusText(liveTurn, translate, now);
 }
+
+export function taskRunSummaryForView(taskRun, translate) {
+  if (!taskRun || typeof taskRun !== "object") return "";
+  const evidence = Array.isArray(taskRun.evidence) ? taskRun.evidence.length : 0;
+  const risks = Array.isArray(taskRun.risks) ? taskRun.risks.length : 0;
+  const verification = taskRun.verification?.status || "";
+  return translate("task.summary.compact", {
+    status: taskRun.status || "completed",
+    evidence,
+    risks,
+    verification,
+  });
+}

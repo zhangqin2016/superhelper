@@ -8,6 +8,7 @@ import {
   buildLiveStatusText,
   buildStatusText,
   buildStatusFooterText,
+  taskRunSummaryForView,
 } from "../src/renderer/modules/turn-view-status.js";
 
 const translate = (key, params = {}) => {
@@ -30,6 +31,7 @@ const translate = (key, params = {}) => {
     "turn.footer.duration": `耗时 ${params.seconds}s`,
     "turn.footer.tokens": `${params.count} tokens`,
     "turn.footer.tokensDetail": `输入 ${params.input} · 输出 ${params.output} tokens`,
+    "task.summary.compact": `${params.status}/${params.evidence}/${params.risks}/${params.verification}`,
   };
   return table[key] ?? key;
 };
@@ -166,6 +168,14 @@ assert.equal(
 assert.equal(
   buildStatusFooterText(sealedTurn, translate),
   "耗时 8s · 1.2k tokens",
+);
+
+assert.equal(
+  taskRunSummaryForView(
+    { status: "completed", evidence: [{}, {}], risks: [{}], verification: { status: "verified" } },
+    translate,
+  ),
+  "completed/2/1/verified",
 );
 
 console.log("turn-view-renderer: ok");

@@ -17,6 +17,7 @@ const translate = (key, params = {}) => {
     "task.strip.step": `Step ${params.item}`,
     "task.strip.risk": `Watch ${params.code}`,
     "task.strip.evidence": `${params.count} evidence`,
+    "task.strip.noAutoReplay": "No auto replay",
   };
   return table[key] || key;
 };
@@ -33,6 +34,7 @@ const taskOnly = buildLiveTaskStripModel({
     liveness: { status: "no_visible_progress", detail: "python report.py is still running" },
     risks: [{ code: "NO_VISIBLE_PROGRESS", level: "info" }],
     evidence: [{ kind: "tool_result" }, { kind: "tool_result" }],
+    resumeState: { replaySafe: false },
   },
 }, translate);
 assert.equal(taskOnly.visible, true);
@@ -40,6 +42,7 @@ assert.equal(taskOnly.summary, "Task Still working python report.py is still run
 assert(taskOnly.items.some((item) => item.content === "Step Run the command"));
 assert(taskOnly.items.some((item) => item.content === "Watch NO_VISIBLE_PROGRESS"));
 assert(taskOnly.items.some((item) => item.content === "2 evidence"));
+assert(taskOnly.items.some((item) => item.content === "No auto replay"));
 
 const withTodos = buildLiveTaskStripModel({
   tools: new Map([[

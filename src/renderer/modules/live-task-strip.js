@@ -51,6 +51,9 @@ function taskRunItems(taskRun, translate) {
   if (evidenceCount > 0) {
     items.push({ status: "completed", content: translate("task.strip.evidence", { count: evidenceCount }) });
   }
+  if (taskRun?.resumeState?.replaySafe === false) {
+    items.push({ status: "warning", content: translate("task.strip.noAutoReplay") });
+  }
   return items.slice(0, 5);
 }
 

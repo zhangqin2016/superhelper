@@ -34,10 +34,13 @@ const { TurnRunCoordinator } = require("./turn-run-coordinator");
 const {
   addTaskEvidence,
   addTaskRisk,
+  applyTaskPlanFromTodos,
+  assessTaskVerification,
   compactTaskRun,
   completeTaskRun,
   createTaskRun,
   markTaskPhase,
+  noteTaskToolUse,
   updateTaskLiveness,
 } = require("./task-run-state");
 
@@ -424,6 +427,7 @@ class TurnOrchestrator {
           parentToolUseId: null,
         };
         upsertTimelineTool(state, tool, Date.now());
+        this._updateTaskPlanFromTodos(sessionId, todos);
         this._emit(sessionId, "todo.updated", {
           id: toolId,
           todos,
@@ -1983,6 +1987,7 @@ class TurnOrchestrator {
     try {
       const state = this._state(sessionId);
       if (!state.taskRun) return null;
+      if (opts.tool) noteTaskToolUse(state.taskRun, opts.tool);
       markTaskPhase(state.taskRun, phase, label, {
         resumeState: opts.resumeState || null,
       });
@@ -2051,6 +2056,27 @@ class TurnOrchestrator {
       return item;
     } catch (err) {
       log.warn("TaskRun evidence failed: %s", err?.message || err);
+      return null;
+    }
+  }
+
+  _updateTaskPlanFromTodos(sessionId, todos = []) {
+    try {
+      const state = this._state(sessionId);
+      if (!state.taskRun) return null;
+      const before = JSON.stringify(state.taskRun.plan || []);
+      applyTaskPlanFromTodos(state.taskRun, todos);
+      const after = JSON.stringify(state.taskRun.plan || []);
+      if (after === before) return state.taskRun;
+      this._emitTaskEvent(sessionId, "task.plan.updated", {
+        taskRunId: state.taskRun.id,
+        plan: state.taskRun.plan,
+        activeStep: state.taskRun.activeStep,
+        taskRun: compactTaskRun(state.taskRun),
+      });
+      return state.taskRun;
+    } catch (err) {
+      log.warn("TaskRun plan fusion failed: %s", err?.message || err);
       return null;
     }
   }
@@ -2135,18 +2161,13 @@ class TurnOrchestrator {
     try {
       const state = this._state(sessionId);
       if (!state.taskRun) return null;
-      const assessment = opts.evidenceGateAssessment || null;
-      const verification = assessment
-        ? {
-            status: assessment.ok ? "verified" : "unverified",
-            reason: assessment.ok ? "" : (assessment.reason || assessment.code || "evidence_gate_failed"),
-          }
-        : {
-            status: terminalType === "turn.completed"
-              ? (state.taskRun.evidence?.length ? "verified" : "not_required")
-              : "not_verified",
-            reason: "",
-          };
+      const verification = terminalType === "turn.completed"
+        ? assessTaskVerification({
+            taskType: state.turnPolicy?.taskType || state.taskContract?.taskType || "",
+            evidence: state.taskRun.evidence || [],
+            evidenceGateAssessment: opts.evidenceGateAssessment || null,
+          })
+        : { status: "not_verified", reason: "" };
       completeTaskRun(state.taskRun, terminalType, verification);
       const eventType = terminalType === "turn.failed"
         ? "task.failed"

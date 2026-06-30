@@ -44,6 +44,7 @@ import {
   buildStatusFooterText,
   buildStatusText,
   buildThinkingSummaryLabel,
+  taskRunSummaryForView,
   timelineForView,
 } from "./turn-view-status.js";
 import {
@@ -237,6 +238,7 @@ export function legacyLiveTurnFromMessage(message) {
     durationMs: null,
     totalCostUsd: null,
     usage: null,
+    taskRun: message?.record?.meta?.taskRun || message?.meta?.taskRun || null,
     tools: new Map(),
     resultBlocks: [],
     notices: [],
@@ -281,6 +283,7 @@ export function liveTurnFromRecord(record) {
     durationMs: record.durationMs ?? null,
     totalCostUsd: record.totalCostUsd ?? null,
     usage: record.usage ?? null,
+    taskRun: record.meta?.taskRun || null,
     tools,
     fileChanges: record.fileChanges || [],
     notices,
@@ -322,6 +325,11 @@ export function createLiveTurnArticleShell(liveTurn) {
   process.className = "assistant-turn-process";
   process.dataset.role = "process";
 
+  const taskRun = document.createElement("div");
+  taskRun.className = "assistant-turn-taskrun";
+  taskRun.dataset.role = "taskrun";
+  taskRun.hidden = true;
+
   const artifacts = document.createElement("div");
   artifacts.className = "assistant-turn-artifacts";
   artifacts.dataset.role = "artifacts";
@@ -338,7 +346,7 @@ export function createLiveTurnArticleShell(liveTurn) {
 
   // process (work) above, narrative (answer) below — same order normalize keeps,
   // so the live article is born in its final layout and never reorders.
-  article.append(header, process, narrative, artifacts, footer, prompts);
+  article.append(header, process, taskRun, narrative, artifacts, footer, prompts);
   return article;
 }
 
@@ -417,6 +425,7 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
     article.dataset.narrativeKey = narrativeKey;
   }
   renderProcess(article.querySelector('[data-role="process"]'), liveTurn, { sessionId, sealed });
+  renderTaskRunSummary(article.querySelector('[data-role="taskrun"]'), liveTurn, sealed);
   if (sessionId) {
     renderPrompts(article.querySelector('[data-role="prompts"]'), sessionId, liveTurn);
   }
@@ -479,9 +488,16 @@ function normalizeTurnArticleLayout(article, sealed) {
   const header = article.querySelector('[data-role="header"]');
   const narrative = article.querySelector('[data-role="narrative"]');
   const process = article.querySelector('[data-role="process"]');
+  let taskRun = article.querySelector('[data-role="taskrun"]');
   let artifacts = article.querySelector('[data-role="artifacts"]');
   const footer = article.querySelector('[data-role="footer"]');
   const prompts = article.querySelector('[data-role="prompts"]');
+  if (!taskRun) {
+    taskRun = document.createElement("div");
+    taskRun.className = "assistant-turn-taskrun";
+    taskRun.dataset.role = "taskrun";
+    taskRun.hidden = true;
+  }
   if (!artifacts) {
     artifacts = document.createElement("div");
     artifacts.className = "assistant-turn-artifacts";
@@ -494,7 +510,7 @@ function normalizeTurnArticleLayout(article, sealed) {
   // the answer below. The answer therefore streams into its FINAL position and
   // never jumps from top to bottom (with a reflow flicker) when the turn seals.
   // Sealed history already used this order, so only the live view changes.
-  const desired = [header, process, narrative, artifacts, footer, prompts];
+  const desired = [header, process, taskRun, narrative, artifacts, footer, prompts];
   // Idempotent: only touch the DOM when the order is actually wrong. Re-appending
   // identical nodes every render (~every 150ms while streaming) detaches/reattaches
   // rendered markdown + images and makes them flicker.
@@ -558,6 +574,39 @@ function renderFooter(root, liveTurn, sealed) {
   if (!root) return;
   root.textContent = "";
   root.hidden = true;
+}
+
+function renderTaskRunSummary(root, liveTurn, sealed) {
+  if (!root) return;
+  try {
+    const taskRun = liveTurn?.taskRun || liveTurn?.final?.payload?.record?.meta?.taskRun || null;
+    const summary = sealed ? taskRunSummaryForView(taskRun, t) : "";
+    if (!summary) {
+      root.hidden = true;
+      root.replaceChildren();
+      return;
+    }
+    let details = root.querySelector(".assistant-taskrun-summary");
+    if (!details) {
+      details = document.createElement("details");
+      details.className = "assistant-taskrun-summary";
+      const summaryEl = document.createElement("summary");
+      summaryEl.className = "assistant-taskrun-summary-title";
+      details.appendChild(summaryEl);
+      const body = document.createElement("div");
+      body.className = "assistant-taskrun-summary-body";
+      details.appendChild(body);
+      root.replaceChildren(details);
+    }
+    const summaryEl = details.querySelector(".assistant-taskrun-summary-title");
+    const body = details.querySelector(".assistant-taskrun-summary-body");
+    if (summaryEl) summaryEl.textContent = t("task.summary.title");
+    if (body && body.textContent !== summary) body.textContent = summary;
+    root.hidden = false;
+  } catch {
+    root.hidden = true;
+    root.replaceChildren();
+  }
 }
 
 function liveStatusText(liveTurn) {

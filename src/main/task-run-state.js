@@ -2,6 +2,8 @@
 
 const crypto = require("node:crypto");
 
+const READ_ONLY_TOOLS = new Set(["read", "glob", "grep", "list", "ls", "find", "search"]);
+
 function nowMs() {
   return Date.now();
 }
@@ -170,6 +172,65 @@ function updateTaskLiveness(taskRun, liveness = {}) {
   return taskRun.liveness;
 }
 
+function applyTaskPlanFromTodos(taskRun, todos = []) {
+  if (!taskRun || !Array.isArray(todos)) return null;
+  const normalized = todos
+    .map((todo, index) => ({
+      id: `todo_${index + 1}`,
+      title: safeText(todo?.content || todo?.activeForm || "", 180),
+      status: todo?.status === "completed" || todo?.status === "in_progress" ? todo.status : "pending",
+    }))
+    .filter((todo) => todo.title);
+  if (!normalized.length) return taskRun;
+  taskRun.plan = normalized.slice(0, 20);
+  const active =
+    taskRun.plan.find((step) => step.status === "in_progress") ||
+    taskRun.plan.find((step) => step.status !== "completed") ||
+    taskRun.plan.at(-1);
+  taskRun.activeStep = active?.id || taskRun.activeStep || "execute";
+  touch(taskRun);
+  return taskRun;
+}
+
+function noteTaskToolUse(taskRun, tool = {}) {
+  if (!taskRun) return null;
+  const name = String(tool.name || "").toLowerCase();
+  const readOnly = READ_ONLY_TOOLS.has(name);
+  const hadSideEffects = Boolean(taskRun.resumeState?.hasSideEffects);
+  taskRun.resumeState = {
+    ...(taskRun.resumeState || {}),
+    lastToolId: tool.id || taskRun.resumeState?.lastToolId || "",
+    lastToolName: tool.name || taskRun.resumeState?.lastToolName || "",
+    hasSideEffects: Boolean(hadSideEffects || !readOnly),
+    replaySafe: Boolean(readOnly && !hadSideEffects),
+    recoveryReason: readOnly && !hadSideEffects ? "read_only_tools_only" : "side_effect_tool_seen",
+  };
+  touch(taskRun);
+  return taskRun.resumeState;
+}
+
+function assessTaskVerification({ taskType = "", evidence = [], evidenceGateAssessment = null } = {}) {
+  if (evidenceGateAssessment) {
+    return {
+      status: evidenceGateAssessment.ok ? "verified" : "unverified",
+      reason: evidenceGateAssessment.ok
+        ? ""
+        : safeText(evidenceGateAssessment.reason || evidenceGateAssessment.code || "evidence_gate_failed", 500),
+    };
+  }
+  const normalizedTaskType = String(taskType || "").toLowerCase();
+  const labels = (Array.isArray(evidence) ? evidence : [])
+    .map((item) => String(item?.label || "").toLowerCase())
+    .join("\n");
+  if (normalizedTaskType === "code") {
+    const hasTest = /\b(test|lint|typecheck|build)\b/.test(labels);
+    return hasTest
+      ? { status: "verified", reason: "test_or_build_evidence" }
+      : { status: "unverified", reason: "missing_test_or_build_evidence" };
+  }
+  return evidence?.length ? { status: "verified", reason: "evidence_present" } : { status: "not_required", reason: "" };
+}
+
 function completeTaskRun(taskRun, terminalType, verification = {}) {
   if (!taskRun) return null;
   const ts = nowMs();
@@ -195,7 +256,7 @@ function completeTaskRun(taskRun, terminalType, verification = {}) {
     lastHeartbeatAt: ts,
   };
   taskRun.verification = {
-    status: verification.status || (taskRun.evidence.length ? "verified" : "not_required"),
+    status: verification.status || assessTaskVerification({ evidence: taskRun.evidence }).status,
     reason: safeText(verification.reason || "", 500),
   };
   taskRun.endedAt = ts;
@@ -210,5 +271,8 @@ module.exports = {
   addTaskEvidence,
   addTaskRisk,
   updateTaskLiveness,
+  applyTaskPlanFromTodos,
+  noteTaskToolUse,
+  assessTaskVerification,
   completeTaskRun,
 };
