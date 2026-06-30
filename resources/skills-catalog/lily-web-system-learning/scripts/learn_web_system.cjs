@@ -23,6 +23,8 @@ const { spawnSync } = require("node:child_process");
 const SCRIPT_DIR = __dirname;
 const DEFAULT_MAX_PAGES = 120;
 const DEFAULT_TIMEOUT_MS = 60000;
+const DEFAULT_CLOSURE_MAX_PASSES = 3;
+const DEFAULT_CLOSURE_STABLE_PASSES = 2;
 const DEFAULT_WORK_DIR = ".lily-work/web-system-learning";
 
 function usage() {
@@ -41,6 +43,8 @@ function usage() {
     "  --learning-mode <mode>        read-only, contract-probe, or test-lab.",
     "  --test-environment <name>     Required by scan_web_system.py for test-lab.",
     "  --allow-mutating-learning     Only valid with --learning-mode test-lab.",
+    "  --closure-passes <n>          Max total scan passes for coverage closure. Default: 3",
+    "  --closure-stable-passes <n>   Consecutive no-new-evidence passes before stopping. Default: 2",
     "  --plan-only                   Print the deterministic phase plan and exit.",
     "  --dry-run                     Validate scanner/finalizer config where supported.",
   ].join("\n");
@@ -81,6 +85,8 @@ function parseArgs(argv) {
     learningMode: "read-only",
     testEnvironment: "",
     allowMutatingLearning: false,
+    closurePasses: DEFAULT_CLOSURE_MAX_PASSES,
+    closureStablePasses: DEFAULT_CLOSURE_STABLE_PASSES,
     planOnly: false,
     dryRun: false,
   };
@@ -100,6 +106,8 @@ function parseArgs(argv) {
     else if (arg === "--learning-mode") args.learningMode = argv[++i];
     else if (arg === "--test-environment") args.testEnvironment = argv[++i];
     else if (arg === "--allow-mutating-learning") args.allowMutatingLearning = true;
+    else if (arg === "--closure-passes") args.closurePasses = Math.max(1, Number(argv[++i] || 0) || DEFAULT_CLOSURE_MAX_PASSES);
+    else if (arg === "--closure-stable-passes") args.closureStablePasses = Math.max(1, Number(argv[++i] || 0) || DEFAULT_CLOSURE_STABLE_PASSES);
     else if (arg === "--plan-only") args.planOnly = true;
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--help" || arg === "-h") {
@@ -162,6 +170,9 @@ function buildPaths(args) {
     frontendSource: path.join(workDir, "frontend-source-map.json"),
     expandedHar: path.join(workDir, "scan-expanded.har"),
     expandedScan: path.join(workDir, "scan.json"),
+    closureDir: path.join(workDir, "coverage-closure"),
+    closureScan: path.join(workDir, "scan-closed.json"),
+    closureManifest: path.join(workDir, "coverage-closure.json"),
     authRecipe: path.join(workDir, "auth-recipe.json"),
     summary: path.join(workDir, "learning-summary.json"),
   };
@@ -280,6 +291,13 @@ function buildPlan(args) {
       outputs: [paths.contracts],
     },
     {
+      id: "coverageClosure",
+      required: false,
+      kind: "coverage-closure",
+      command: ["coverage-closure", paths.closureManifest],
+      outputs: [paths.closureManifest, paths.closureScan],
+    },
+    {
       id: "authRecipe",
       required: false,
       kind: "node",
@@ -329,9 +347,17 @@ function buildPlan(args) {
       "bounded-same-domain-js-intelligence",
       "source-seeded-expanded-scan",
       "har-to-contracts-from-observed-traffic",
+      "coverage-closure-until-stable",
       "auth-recipe-without-raw-token-values",
       "deterministic-finalizer",
     ],
+    coverageClosure: {
+      enabled: args.closurePasses > 1,
+      maxPasses: args.closurePasses,
+      stablePasses: args.closureStablePasses,
+      manifest: paths.closureManifest,
+      mergedScan: paths.closureScan,
+    },
   };
 }
 
@@ -405,6 +431,144 @@ function writeSummary(file, summary) {
   fs.writeFileSync(file, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
 }
 
+function replaceArg(command, flag, value) {
+  const out = [...command];
+  const index = out.indexOf(flag);
+  if (index >= 0) out[index + 1] = value;
+  else out.push(flag, value);
+  return out;
+}
+
+function evidenceKey(kind, item) {
+  if (!item || typeof item !== "object") return "";
+  if (kind === "page") return [item.url, item.fingerprint || item.title || ""].filter(Boolean).join("\0");
+  if (kind === "action") return [item.kind, item.label || item.text || item.name || "", item.sourceUrl || item.targetUrl || ""].filter(Boolean).join("\0");
+  if (kind === "api") return [item.method || "", item.endpoint || "", item.id || ""].filter(Boolean).join("\0");
+  if (kind === "object") return [item.id || "", item.name || "", item.sourceUrl || ""].filter(Boolean).join("\0");
+  return JSON.stringify(item);
+}
+
+function mergeUnique(base, extra, kind) {
+  const seen = new Set();
+  const out = [];
+  for (const item of [...(base || []), ...(extra || [])]) {
+    const key = evidenceKey(kind, item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+function scanSignature(scan) {
+  const keys = [
+    ...(scan.pages || []).map((item) => `p:${evidenceKey("page", item)}`),
+    ...(scan.actionCandidates || []).map((item) => `a:${evidenceKey("action", item)}`),
+    ...(scan.apiContracts || []).map((item) => `api:${evidenceKey("api", item)}`),
+  ].filter(Boolean).sort();
+  return keys.join("\n");
+}
+
+function mergeScans(scans, closure) {
+  const valid = scans.filter(Boolean);
+  const merged = { ...valid[0] };
+  merged.pages = [];
+  merged.actionCandidates = [];
+  merged.businessObjects = [];
+  merged.apiContracts = [];
+  merged.warnings = [];
+  for (const scan of valid) {
+    merged.pages = mergeUnique(merged.pages, scan.pages, "page");
+    merged.actionCandidates = mergeUnique(merged.actionCandidates, scan.actionCandidates, "action");
+    merged.businessObjects = mergeUnique(merged.businessObjects, scan.businessObjects, "object");
+    merged.apiContracts = mergeUnique(merged.apiContracts, scan.apiContracts, "api");
+    merged.warnings = [...merged.warnings, ...(scan.warnings || [])];
+  }
+  merged.coverage = {
+    ...(merged.coverage || {}),
+    pageCount: merged.pages.length,
+    actionCandidateCount: merged.actionCandidates.length,
+    businessObjectCount: merged.businessObjects.length,
+    apiContractCount: merged.apiContracts.length,
+    warningCount: merged.warnings.length,
+    maxPages: Math.max(...valid.map((scan) => Number(scan.maxPages || scan.coverage?.maxPages || 0)), 0),
+  };
+  if (merged.coverage.maxPages > 0) {
+    merged.coverage.coverageRatio = Number((merged.pages.length / merged.coverage.maxPages).toFixed(4));
+  }
+  merged.coverageClosure = closure;
+  merged.status = merged.status === "auth_blocked" ? "auth_blocked" : "complete";
+  return merged;
+}
+
+function coverageScanCommand(plan, passIndex) {
+  const expanded = plan.phases.find((phase) => phase.id === "expandedScan");
+  if (!expanded) return [];
+  const out = path.join(plan.paths.closureDir, `scan-pass-${passIndex}.json`);
+  const har = path.join(plan.paths.closureDir, `scan-pass-${passIndex}.har`);
+  return replaceArg(replaceArg(expanded.command, "--out", out), "--har-path", har);
+}
+
+function runCoverageClosure(plan, initialScanPath) {
+  const cfg = plan.coverageClosure || {};
+  const scans = [inspectScanOrThrow(initialScanPath, "coverageClosure.initial")];
+  const passes = [{
+    pass: 1,
+    path: initialScanPath,
+    newEvidence: true,
+    pageCount: scans[0].pages?.length || 0,
+    actionCandidateCount: scans[0].actionCandidates?.length || 0,
+    apiContractCount: scans[0].apiContracts?.length || 0,
+  }];
+  let stable = 0;
+  let previous = scanSignature(scans[0]);
+
+  fs.mkdirSync(plan.paths.closureDir, { recursive: true });
+  for (let pass = 2; cfg.enabled && pass <= cfg.maxPasses && stable < cfg.stablePasses; pass += 1) {
+    const command = coverageScanCommand(plan, pass);
+    const outIndex = command.indexOf("--out");
+    const outPath = outIndex >= 0 ? command[outIndex + 1] : "";
+    const result = runCommand({ id: `coverageClosure.${pass}`, command });
+    if (!result.ok) {
+      passes.push({ pass, ok: false, newEvidence: false, error: result.error || `exit ${result.status}` });
+      break;
+    }
+    const scan = inspectScanOrThrow(outPath, `coverageClosure.${pass}`);
+    scans.push(scan);
+    const merged = mergeScans(scans, { status: "running" });
+    const signature = scanSignature(merged);
+    const newEvidence = signature !== previous;
+    stable = newEvidence ? 0 : stable + 1;
+    previous = signature;
+    passes.push({
+      pass,
+      ok: true,
+      path: outPath,
+      newEvidence,
+      stablePassesObserved: stable,
+      pageCount: merged.pages.length,
+      actionCandidateCount: merged.actionCandidates.length,
+      apiContractCount: merged.apiContracts.length,
+    });
+  }
+
+  const converged = stable >= (cfg.stablePasses || 1);
+  const closure = {
+    enabled: Boolean(cfg.enabled),
+    status: converged ? "converged" : "not-converged",
+    passesRun: passes.length,
+    maxPasses: cfg.maxPasses || 1,
+    stablePassesRequired: cfg.stablePasses || 1,
+    stablePassesObserved: stable,
+    reason: converged ? "stable-no-new-evidence" : "max-passes-reached",
+    passes,
+  };
+  const merged = mergeScans(scans, closure);
+  fs.writeFileSync(plan.paths.closureScan, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
+  fs.writeFileSync(plan.paths.closureManifest, `${JSON.stringify(closure, null, 2)}\n`, "utf8");
+  return { ok: true, finalScanPath: plan.paths.closureScan, closure };
+}
+
 function runPlan(plan) {
   fs.mkdirSync(plan.workDir, { recursive: true });
   const results = [];
@@ -431,6 +595,20 @@ function runPlan(plan) {
       warnings.push("frontend-source-map.json was not available; using bootstrap scan as the final scan.");
       finalScanPath = plan.paths.bootstrapScan;
       results.push({ id: phase.id, ok: true, skipped: true, reason: "missing-frontend-source-map" });
+      continue;
+    }
+    if (phase.id === "coverageClosure") {
+      if (!plan.coverageClosure?.enabled) {
+        results.push({ id: phase.id, ok: true, skipped: true, reason: "disabled" });
+        continue;
+      }
+      if (!outputExists(finalScanPath)) {
+        results.push({ id: phase.id, ok: true, skipped: true, reason: "missing-final-scan" });
+        continue;
+      }
+      const closure = runCoverageClosure(plan, finalScanPath);
+      finalScanPath = closure.finalScanPath || finalScanPath;
+      results.push({ id: phase.id, ok: closure.ok, finalScanPath, closure: closure.closure });
       continue;
     }
     const phaseToRun = phase.id === "finalize"

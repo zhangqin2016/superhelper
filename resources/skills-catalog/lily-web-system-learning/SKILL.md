@@ -57,8 +57,8 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    This is the default path for normal users. It runs the full professional
    pipeline in order: published contract discovery, authenticated bootstrap HAR
    scan, bounded same-domain JavaScript intelligence, source-seeded expanded SPA
-   scan, HAR-to-contract merge, auth recipe learning, and deterministic
-   finalization. Use the individual scripts below only when debugging the
+   scan, HAR-to-contract merge, bounded coverage closure, auth recipe learning,
+   and deterministic finalization. Use the individual scripts below only when debugging the
    orchestrator or a specific phase. Do not use ad-hoc here-docs, inline
    Playwright/Python/JavaScript, stealth scripts, or one-off browser probes as
    the normal learning path.
@@ -111,6 +111,14 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    api-contracts.json`. Authoritative published contracts are never overridden.
    Write-path APIs (POST/PUT/DELETE) are only captured when those flows actually
    run — exercise them only in a confirmed test environment.
+   After the expanded scan, the orchestrator runs a bounded coverage-closure loop
+   (`coverage-closure.json`, `scan-closed.json`): repeat foreground scan passes
+   until the page/action/API evidence signature is stable for the configured
+   number of passes, or until the pass cap is reached. This borrows the useful
+   pattern from open browser-agent systems (observe → act → extract → verify),
+   but keeps Lily's deterministic scanner, domain allowlist, and no-ad-hoc-script
+   safety boundary. If the loop does not converge, finalize anyway and record the
+   exact gap in `health.json`; never call that a complete system map.
    For SPAs (Vue/React/Angular): ALWAYS pass `--storage-state <sessionPath>` so the
    scan runs authenticated, and use `--interactive-readonly`. The scanner waits for
    the app to render before snapshotting (so it no longer captures only an empty
@@ -338,6 +346,13 @@ Two complementary browser paths — pick by task:
   reads them — better for first-time exploration and capturing missing flows. It
   is free/open-source (Apache-2.0) and runs locally.
 
+Use the strongest open-source browser-agent lessons without importing their
+runtime into Lily's platform base: browser-use-style bounded observe/action
+loops for exploration, Stagehand-style observe/extract separation for page facts,
+and Playwright MCP accessibility snapshots when available. These are learning
+strategies, not permission to bypass the approved scripts, domain allowlist,
+foreground execution, credential policy, or explicit confirmation rules.
+
 When `@playwright/mcp` is available, use it for discovery/coverage passes and
 exploration steps, then capture the result as a learned action so future runs
 use the deterministic path. Never put credentials in MCP tool calls; rely on the
@@ -378,6 +393,9 @@ whole system, then critique coverage:
   routes only reached via buttons/JS, write flows, error/validation states) and
   run another foreground pass to cover them. Stop only when consecutive passes
   surface nothing new.
+- Treat `coverage-closure.json` as the deterministic stop record. `converged`
+  means the bounded pass loop stopped after stable evidence; `not-converged`
+  means the generated skill is partial even if it is useful.
 - Authoritative contracts (`api-contracts.json`) define the API/data-structure
   ceiling; use the UI scan to map which capability each contract serves and to
   cover UI-only flows the contract omits.

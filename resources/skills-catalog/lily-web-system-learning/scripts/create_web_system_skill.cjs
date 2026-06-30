@@ -214,6 +214,9 @@ function normalizeScan(input, spec) {
     baseUrl: input.baseUrl || spec.baseUrl,
     allowedDomains: scanDomains,
     coverage: input.coverage || {},
+    status: input.status || "",
+    maxPages: Number(input.maxPages || input.coverage?.maxPages || 0) || 0,
+    coverageClosure: input.coverageClosure && typeof input.coverageClosure === "object" ? input.coverageClosure : null,
     siteMap: input.siteMap || { nodes: [], edges: [] },
     pages,
     actionCandidates: Array.isArray(input.actionCandidates) ? input.actionCandidates : [],
@@ -844,9 +847,64 @@ function buildApiMap(spec, playbook, discovered, frontendSource) {
   };
 }
 
+function buildCoverageGaps(spec, scan, apiFirstCount, frontendSource) {
+  const gaps = [];
+  const maxPages = Number(scan?.maxPages || scan?.coverage?.maxPages || 0) || 0;
+  const pageCount = Number(scan?.coverage?.pageCount ?? scan?.pages?.length ?? 0) || 0;
+  if (scan && maxPages > 0 && pageCount >= maxPages) {
+    gaps.push({
+      code: "PAGE_BUDGET_EXHAUSTED",
+      severity: "medium",
+      message: `The scan reached its page budget (${pageCount}/${maxPages}); more routes may remain undiscovered.`,
+      nextStep: "Continue learning with a higher --max-pages value or a narrower module scope.",
+    });
+  }
+  if (scan?.coverageClosure?.enabled && scan.coverageClosure.status !== "converged") {
+    gaps.push({
+      code: "COVERAGE_CLOSURE_NOT_CONVERGED",
+      severity: "medium",
+      message: `Coverage closure stopped before ${scan.coverageClosure.stablePassesRequired || 1} stable pass(es).`,
+      nextStep: "Run another foreground learning pass for the modules that still produce new pages, actions, or API contracts.",
+    });
+  }
+  if (!frontendSource) {
+    gaps.push({
+      code: "FRONTEND_SOURCE_MISSING",
+      severity: "low",
+      message: "No frontend-source-map.json was available, so hidden SPA routes and client API hints may be missing.",
+      nextStep: "Run frontend source intelligence on the captured HAR, then rerun finalization.",
+    });
+  } else if ((frontendSource.coverage?.truncatedAssetCount || 0) > 0) {
+    gaps.push({
+      code: "FRONTEND_SOURCE_TRUNCATED",
+      severity: "low",
+      message: `${frontendSource.coverage.truncatedAssetCount} JavaScript asset(s) were truncated during bounded analysis.`,
+      nextStep: "Increase --max-asset-bytes/--max-total-bytes only for trusted same-domain assets if deeper route discovery is needed.",
+    });
+  }
+  if (apiFirstCount === 0) {
+    gaps.push({
+      code: "API_CONTRACTS_MISSING",
+      severity: "medium",
+      message: "No capability has an executable learned API contract.",
+      nextStep: "Run published contract discovery and HAR contract inference for the most-used read/search actions.",
+    });
+  }
+  if (spec.actions.some((action) => action.risk !== "read") && scan?.learningMode !== "test-lab") {
+    gaps.push({
+      code: "WRITE_FLOWS_NOT_PROBED",
+      severity: "medium",
+      message: "Write/submit flows were only modeled from forms/contracts because learning was not in test-lab mode.",
+      nextStep: "Use a confirmed test environment before probing real submit/update/delete flows.",
+    });
+  }
+  return gaps;
+}
+
 function buildHealth(spec, scan, capabilityMap, playbook, frontendSource) {
   const apiFirstCount = capabilityMap.capabilities.filter((capability) => capability.execution.preferred === "api-first").length;
-  const status = scan && scan.warnings.length === 0 ? "ready-for-review" : "partial";
+  const gaps = buildCoverageGaps(spec, scan, apiFirstCount, frontendSource);
+  const status = scan && scan.warnings.length === 0 && gaps.length === 0 ? "ready-for-review" : "partial";
   const frontendRouteHints = frontendSource?.routeHints?.length || 0;
   const frontendApiHints = frontendSource?.apiHints?.length || 0;
   return {
@@ -873,12 +931,17 @@ function buildHealth(spec, scan, capabilityMap, playbook, frontendSource) {
       apiCoverage: apiFirstCount > 0 ? "partial" : "missing",
       pageCoverage: scan?.pages?.length ? "partial" : "spec-only",
       frontendSourceCoverage: frontendRouteHints || frontendApiHints ? "partial" : "missing",
+      coverageClosure: scan?.coverageClosure?.status || "not-run",
       riskPolicy: spec.actions.every((action) => action.risk === "read" || action.confirmation !== "none") ? "pass" : "fail",
       reviewRequired: spec.actions.some((action) => action.confirmation !== "none") ? "yes" : "no",
     },
+    coverageClosure: scan?.coverageClosure || null,
+    gaps,
     stale: [],
     warnings: scan?.warnings || [],
     recommendedNextSteps: [
+      gaps.some((gap) => gap.code === "PAGE_BUDGET_EXHAUSTED") ? "Continue learning with a higher --max-pages value or split the system by module." : "",
+      gaps.some((gap) => gap.code === "COVERAGE_CLOSURE_NOT_CONVERGED") ? "Run another foreground learning pass until two consecutive passes add no new evidence." : "",
       apiFirstCount === 0 ? "Run API discovery for frequently used read/search actions." : "",
       scan ? "" : "Run a read-only scan to increase page and selector coverage.",
       frontendRouteHints || frontendApiHints ? "" : "Run frontend source intelligence on the captured HAR to discover SPA routes and API-client hints.",

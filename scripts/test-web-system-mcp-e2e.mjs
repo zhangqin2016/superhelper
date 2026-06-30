@@ -45,6 +45,7 @@ try {
   const sysDir = path.join(tmp, "learned-demo-erp");
   fs.mkdirSync(path.join(sysDir, "scripts"), { recursive: true });
   fs.copyFileSync(path.join(SKILL, "execute_web_playbook.cjs"), path.join(sysDir, "scripts/execute_web_playbook.cjs"));
+  fs.copyFileSync(path.join(SKILL, "playwright_runtime.cjs"), path.join(sysDir, "scripts/playwright_runtime.cjs"));
   const contract = { id: "list-leaves", method: "GET", endpoint: `${base}api/leaves`, risk: "read", contentType: "query" };
   fs.writeFileSync(path.join(sysDir, "api-map.json"), JSON.stringify({ schemaVersion: 1, contracts: [contract] }));
   fs.writeFileSync(path.join(sysDir, "web-system-playbook.json"), JSON.stringify({

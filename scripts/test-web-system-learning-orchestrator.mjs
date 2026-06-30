@@ -44,6 +44,17 @@ if (plan.workDir !== workDir) throw new Error("orchestrator did not preserve the
 if (!plan.guarantees.includes("single-default-learning-entrypoint")) {
   throw new Error("orchestrator plan must declare a single default learning entrypoint");
 }
+if (!plan.guarantees.includes("coverage-closure-until-stable")) {
+  throw new Error("orchestrator plan must declare a coverage-closure guard");
+}
+if (
+  plan.coverageClosure?.enabled !== true ||
+  plan.coverageClosure?.maxPasses !== 3 ||
+  plan.coverageClosure?.stablePasses !== 2 ||
+  !String(plan.coverageClosure?.manifest || "").endsWith("coverage-closure.json")
+) {
+  throw new Error(`orchestrator must plan bounded multi-pass coverage closure: ${JSON.stringify(plan.coverageClosure)}`);
+}
 
 const phases = new Map(plan.phases.map((phase) => [phase.id, phase]));
 for (const id of [
@@ -54,6 +65,7 @@ for (const id of [
   "expandedScan",
   "harContractsBootstrap",
   "harContractsExpanded",
+  "coverageClosure",
   "authRecipe",
   "finalize",
 ]) {

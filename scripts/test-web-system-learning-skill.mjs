@@ -142,11 +142,21 @@ fs.writeFileSync(
         pageCount: 3,
         errorCount: 0,
         warningCount: 0,
+        maxPages: 3,
+        coverageRatio: 1,
         actionCandidateCount: 3,
         businessObjectCount: 2,
         apiContractCount: 1,
         fingerprint: "scan-fingerprint",
         limitations: ["Read-only crawl follows same-domain links and does not submit forms."],
+      },
+      coverageClosure: {
+        enabled: true,
+        status: "not-converged",
+        passesRun: 3,
+        stablePassesRequired: 2,
+        stablePassesObserved: 1,
+        reason: "max-passes-reached",
       },
       siteMap: {
         nodes: [
@@ -486,6 +496,19 @@ if (health.coverage?.capabilityCount !== 2 || health.coverage?.apiFirstCount < 2
 }
 if (health.checks?.credentialPolicy !== "pass" || !["ready-for-review", "partial"].includes(health.status)) {
   throw new Error(`health file should include reviewable checks: ${JSON.stringify(health)}`);
+}
+if (health.status !== "partial") {
+  throw new Error(`non-converged coverage closure should keep the skill in partial status: ${JSON.stringify(health)}`);
+}
+if (health.coverageClosure?.status !== "not-converged" || health.coverageClosure?.passesRun !== 3) {
+  throw new Error(`health should preserve coverage-closure state: ${JSON.stringify(health.coverageClosure)}`);
+}
+const gapCodes = new Set((health.gaps || []).map((gap) => gap.code));
+for (const code of ["PAGE_BUDGET_EXHAUSTED", "COVERAGE_CLOSURE_NOT_CONVERGED", "FRONTEND_SOURCE_MISSING"]) {
+  if (!gapCodes.has(code)) throw new Error(`health should record coverage gap ${code}: ${JSON.stringify(health.gaps)}`);
+}
+if (!health.recommendedNextSteps?.some((step) => /continue.*learning|increase.*max-pages/i.test(step))) {
+  throw new Error(`health should recommend a concrete continuation path: ${JSON.stringify(health.recommendedNextSteps)}`);
 }
 if (systemProfile.systemName !== "Demo OA" || systemProfile.files.pageMap !== "page-map.json") {
   throw new Error(`generated system profile should index the learned archive: ${JSON.stringify(systemProfile)}`);
