@@ -137,6 +137,29 @@ function createContext({ eventBus } = {}) {
 
 {
   const { ctx, runner, sent, session } = createContext();
+  const started = await ctx.turnOrchestrator.sendUserMessage(session.id, "hello again", [], {
+    skipPreflight: true,
+    skipVision: true,
+    skipDocument: true,
+    spawnEngine: false,
+  });
+  if (!started.ok || !started.turnId) {
+    throw new Error(`plain liveness-only prompt should start: ${JSON.stringify(started)}`);
+  }
+  ctx.turnOrchestrator.ingest(session.id, [
+    { type: "engine.notice", payload: { notice: { code: "waitingForFirstResponse", level: "progress", panel: true } } },
+    { type: "engine.notice", payload: { notice: { code: "longWait", level: "progress", panel: true } } },
+  ]);
+  runner.finish("plain answer");
+  ctx.eventBus.flush();
+  const events = sent.flatMap((entry) => entry.payload?.events || []);
+  if (events.some((event) => event.type === "task.created")) {
+    throw new Error(`liveness-only notices must not create a TaskRun card: ${JSON.stringify(events)}`);
+  }
+}
+
+{
+  const { ctx, runner, sent, session } = createContext();
   const started = await ctx.turnOrchestrator.sendUserMessage(session.id, "Summarize this project", [], {
     skipPreflight: true,
     skipVision: true,

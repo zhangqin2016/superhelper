@@ -2136,7 +2136,6 @@ class TurnOrchestrator {
       } else if (notice.level === "progress") {
         status = "running";
       }
-      if (!state.taskRun && (phase || status === "warning")) this._ensureTaskRun(sessionId, "liveness_notice");
       if (!state.taskRun) return null;
       const liveness = updateTaskLiveness(state.taskRun, {
         status,
