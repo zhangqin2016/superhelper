@@ -18,6 +18,7 @@ const DOWNLOAD_TIMEOUT_MS = 300_000;
 const MAX_RUNTIME_PACK_BYTES = 2 * 1024 * 1024 * 1024;
 const PACK_ID_RE = /^[a-z0-9][a-z0-9._-]{0,79}$/i;
 const activeInstalls = new Set();
+let baseProvidedCache = null;
 
 function platformKey() {
   const arch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : process.arch;
@@ -59,7 +60,53 @@ function installedRuntimePackIds() {
       .map(([id]) => id),
   );
   for (const id of listBundledRuntimePackDirs().keys()) ids.add(id);
+  for (const id of baseProvidedRuntimePackMap().keys()) ids.add(id);
   return ids;
+}
+
+function detectBasePythonModules(moduleByPackId) {
+  const { execFileSync } = require("node:child_process");
+  const { resolveVenvPython } = require("./runtime-python");
+  const python = resolveVenvPython();
+  if (!python || !moduleByPackId.length) return new Map();
+  const code = [
+    "import importlib.util, json",
+    `items = ${JSON.stringify(moduleByPackId)}`,
+    "print(json.dumps({pid: importlib.util.find_spec(mod) is not None for pid, mod in items}))",
+  ].join("\n");
+  try {
+    const raw = execFileSync(python, ["-c", code], {
+      encoding: "utf8",
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    });
+    return new Map(Object.entries(JSON.parse(raw)).filter(([, ok]) => ok));
+  } catch {
+    return new Map();
+  }
+}
+
+function baseProvidedRuntimePackMap() {
+  if (baseProvidedCache) return baseProvidedCache;
+  const provided = new Map();
+  try {
+    const env = require("./runtime-python").getRuntimeEnvExtras();
+    const dir = env.LILY_LIBREOFFICE_PROGRAM || "";
+    const exe = dir ? path.join(dir, process.platform === "win32" ? "soffice.exe" : "soffice") : "";
+    if (exe && fs.existsSync(exe)) {
+      provided.set("libreoffice", { source: "base", path: dir, version: null });
+    }
+  } catch {
+    // Base runtime probing is best-effort; explicit dependency packs still work.
+  }
+  const modulePairs = Object.values(PACK_SPECS)
+    .filter((spec) => spec.baseModule)
+    .map((spec) => [spec.id, spec.baseModule]);
+  for (const [id] of detectBasePythonModules(modulePairs)) {
+    provided.set(id, { source: "base", path: "", version: null });
+  }
+  baseProvidedCache = provided;
+  return provided;
 }
 
 function sha256File(filePath) {
@@ -172,10 +219,11 @@ function localizeObject(value) {
   return { ...value };
 }
 
-function publicPackFromSpec(spec, rec, bundledDir = "") {
+function publicPackFromSpec(spec, rec, bundledDir = "", baseRec = null) {
   const userInstalled = installedRecordExists(spec.id, rec);
   const bundled = Boolean(bundledDir);
-  const installed = userInstalled || bundled;
+  const base = Boolean(baseRec);
+  const installed = userInstalled || bundled || base;
   return {
     id: spec.id,
     category: spec.category || "common",
@@ -186,21 +234,23 @@ function publicPackFromSpec(spec, rec, bundledDir = "") {
     sizeEstimate: spec.sizeEstimate || "",
     installed,
     bundled,
-    readOnly: bundled && !userInstalled,
+    base,
+    readOnly: (bundled || base) && !userInstalled,
     missingFiles: Boolean(rec && !userInstalled && !bundled),
-    version: rec?.version || null,
+    version: rec?.version || baseRec?.version || null,
     installedAt: rec?.installedAt || null,
-    source: userInstalled ? rec?.source || null : bundled ? "bundled" : null,
-    path: userInstalled ? packDir(spec.id) : bundledDir || "",
+    source: userInstalled ? rec?.source || null : bundled ? "bundled" : base ? "base" : null,
+    path: userInstalled ? packDir(spec.id) : bundledDir || baseRec?.path || "",
   };
 }
 
 function listRuntimePacks() {
   const state = readState();
+  const baseProvided = baseProvidedRuntimePackMap();
   const seen = new Set();
   const packs = Object.values(PACK_SPECS).map((spec) => {
     seen.add(spec.id);
-    return publicPackFromSpec(spec, state.installed[spec.id], bundledPackDir(spec.id));
+    return publicPackFromSpec(spec, state.installed[spec.id], bundledPackDir(spec.id), baseProvided.get(spec.id));
   });
   for (const [id, rec] of Object.entries(state.installed || {})) {
     if (seen.has(id)) continue;
@@ -277,6 +327,11 @@ async function installRuntimePack(packId, options = {}) {
       emitProgress(onProgress, id, "skipped", { source: "bundled", path: bundled });
       return { ok: true, id, skipped: true, source: "bundled", path: bundled };
     }
+    const base = baseProvidedRuntimePackMap().get(id);
+    if (base) {
+      emitProgress(onProgress, id, "skipped", { source: "base", path: base.path || "" });
+      return { ok: true, id, skipped: true, source: "base", path: base.path || "" };
+    }
 
     emitProgress(onProgress, id, "resolving", { platform: platformKey() });
     const resolved = await resolveArtifact(id);
@@ -346,6 +401,7 @@ function uninstallRuntimePack(packId) {
 module.exports = {
   installRuntimePack,
   installedRuntimePackIds,
+  baseProvidedRuntimePackMap,
   listRuntimePacks,
   platformKey,
   uninstallRuntimePack,

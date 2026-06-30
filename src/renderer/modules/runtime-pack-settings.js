@@ -12,6 +12,26 @@ let lastData = null;
 const progressById = new Map();
 let progressUnsubscribe = null;
 
+function healthLabel(health) {
+  if (!health) return "";
+  if (health.status === "ok" || health.ok) return t("settings.runtime.health.ok");
+  if (health.status === "not_installed") return t("settings.runtime.health.notInstalled");
+  return t("settings.runtime.health.failed");
+}
+
+function healthChipClass(health) {
+  if (!health) return "runtime-pack-chip";
+  if (health.status === "ok" || health.ok) return "runtime-pack-chip runtime-pack-chip--success";
+  if (health.status === "not_installed") return "runtime-pack-chip";
+  return "runtime-pack-chip runtime-pack-chip--danger";
+}
+
+function healthDetail(health) {
+  if (!health || health.ok || health.status === "not_installed") return "";
+  const failed = Array.isArray(health.checks) ? health.checks.find((check) => !check.ok) : null;
+  return failed?.error || health.error || "";
+}
+
 function localized(value) {
   if (!value || typeof value !== "object") return "";
   const locale = getLocale();
@@ -115,6 +135,7 @@ function renderPackCard(pack) {
   chips.className = "runtime-pack-chips";
   appendChip(chips, statusText(pack), pack.installed ? "runtime-pack-chip runtime-pack-chip--accent" : "runtime-pack-chip");
   if (pack.recommended) appendChip(chips, t("settings.runtime.recommended"), "runtime-pack-chip runtime-pack-chip--accent");
+  if (pack.health && pack.installed) appendChip(chips, healthLabel(pack.health), healthChipClass(pack.health));
 
   header.append(titleBox, chips);
 
@@ -151,7 +172,7 @@ function renderPackCard(pack) {
   const progress = progressById.get(pack.id);
   const progressEl = document.createElement("p");
   progressEl.className = "runtime-pack-progress";
-  progressEl.textContent = progress ? phaseLabel(progress) : "";
+  progressEl.textContent = progress ? phaseLabel(progress) : healthDetail(pack.health);
   progressEl.hidden = !progressEl.textContent;
 
   card.append(header, desc, actions, progressEl);
@@ -232,6 +253,37 @@ async function uninstallRuntimePack(pack) {
   await refreshRuntimePackSettings();
 }
 
+function mergeHealthResult(data, result) {
+  if (!data || !Array.isArray(data.packs) || !Array.isArray(result?.packs)) return data;
+  const byId = new Map(result.packs.map((pack) => [pack.id, pack]));
+  return {
+    ...data,
+    health: result,
+    packs: data.packs.map((pack) => ({ ...pack, health: byId.get(pack.id) || pack.health || null })),
+  };
+}
+
+async function runRuntimeHealthCheck() {
+  if (!window.assistantClient?.checkRuntimePackHealth) return;
+  setHint(t("settings.runtime.health.checking"));
+  try {
+    const result = await window.assistantClient.checkRuntimePackHealth();
+    if (!result?.ok && !Array.isArray(result?.packs)) {
+      setHint(errorMessage(result?.error), "error");
+      return;
+    }
+    lastData = mergeHealthResult(lastData, result);
+    renderRuntimePacks(lastData);
+    const failed = (result.packs || []).filter((pack) => pack.status !== "not_installed" && !pack.ok).length;
+    setHint(
+      failed ? t("settings.runtime.health.failedCount", { count: failed }) : t("settings.runtime.health.allOk"),
+      failed ? "error" : "success",
+    );
+  } catch {
+    setHint(t("settings.runtime.health.failed"), "error");
+  }
+}
+
 export async function refreshRuntimePackSettings() {
   const list = $("runtimePackList");
   if (!list) return;
@@ -255,6 +307,7 @@ export async function refreshRuntimePackSettings() {
 
 export function initRuntimePackSettings() {
   $("runtimePacksRefreshBtn")?.addEventListener("click", () => void refreshRuntimePackSettings());
+  $("runtimePacksHealthBtn")?.addEventListener("click", () => void runRuntimeHealthCheck());
   if (!progressUnsubscribe && typeof window.assistantClient?.onRuntimePackProgress === "function") {
     progressUnsubscribe = window.assistantClient.onRuntimePackProgress((event) => {
       if (!event?.id) return;

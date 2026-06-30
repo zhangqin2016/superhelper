@@ -343,13 +343,13 @@ const AGENT_GUIDE_I18N = {
     faqAnswer2: "- 说明你是帮助用户在本机项目中完成写作、查资料、读文件、识图等任务的桌面助手。",
     faqAnswer3: "- 禁止说自己是 Claude、Claude Code、Anthropic 的产品或模型。",
     faqAnswer4: "- 若用户追问底层服务，说明本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
-    envTitle: "运行环境（重要）",
+    envTitle: "依赖与能力探测（重要）",
     envNote: [
-      "命令 `python3` 直接指向本应用内置的 Python 虚拟环境，已预装常用数据/文档库：pandas、numpy、openpyxl、python-docx、python-pptx、pdfplumber、rapidocr（扫描件 OCR）、Pillow、mammoth、markitdown 等。",
-      "处理 Excel/CSV、Word/PPT、PDF 文本或扫描件、图片识别等任务时，优先直接写并运行 `python3` 脚本——这些库已就绪，**不要**重新 `pip install` 它们。",
-      "仅当确实需要未预装的库时才 `pip install`（会装进内置 venv）；`uv` 也可用于安装额外依赖。",
-      "正式安装包应内置 LibreOffice（soffice）。需要 xlsx 公式重算、docx 接受修订、pptx 缩略图、文档转 PDF/图片或渲染校验时，先探测 `soffice`；只有缺失时才用「Runtime 能力包」技能（lily-runtime-packs）修复/安装 libreoffice，不能盲目现装。",
-      "浏览器自动化（web 系统学习、网页测试等）优先使用内置 web 运行时（Playwright 模块与浏览器）。只有探测不到内置运行时时，才用 lily-runtime-packs 修复 web-automation 或如实告知用户；不要让普通任务临时 `playwright install`。",
+      "命令 `python3` 和 `node` 指向本应用提供的基础运行时。不要假设某个文档、图片、浏览器或音视频库一定已存在；使用前先用 `python3 -c \"import ...\"`、`node -e \"require.resolve(...)\"` 或 `command -v ...` 做轻量探测。",
+      "处理 Excel/CSV、Word/PPT、PDF、图片、网页自动化或音视频任务时，优先探测当前能力；探测成功就直接使用，探测失败再判断是否有对应依赖包。",
+      "缺失的标准能力应通过「依赖包」技能（lily-runtime-packs）安装或修复：文档处理（libreoffice、pro-pdf、pandoc）、图片处理（pillow、opencv、rapidocr、rembg）、浏览器自动化（web-automation）、音视频处理（ffmpeg）。",
+      "不要在普通用户任务里临时 `pip install` / `npm install` / `playwright install` 来修平台能力；依赖包由 Lily CDN 提供预构建版本并校验安装。没有对应依赖包时，如实说明当前平台缺失能力。",
+      "安装依赖包后不需要新开会话，后续工具进程会通过 PATH、PYTHONPATH、NODE_PATH 或专用环境变量自动识别。",
     ],
   },
   en: {
@@ -364,13 +364,13 @@ const AGENT_GUIDE_I18N = {
     faqAnswer2: "- Explain that you are a desktop assistant helping users with writing, research, file reading, image recognition, and other tasks in their local projects.",
     faqAnswer3: "- Do NOT say you are Claude, Claude Code, or an Anthropic product or model.",
     faqAnswer4: "- If the user asks about the underlying service, explain the application connects to user-configured model/API gateways, not Claude/Anthropic services.",
-    envTitle: "Runtime Environment (Important)",
+    envTitle: "Dependencies and Capability Probing (Important)",
     envNote: [
-      "The `python3` command points to this app's bundled Python virtualenv, which ships common data/document libraries pre-installed: pandas, numpy, openpyxl, python-docx, python-pptx, pdfplumber, rapidocr (scanned-PDF OCR), Pillow, mammoth, markitdown, and more.",
-      "For Excel/CSV, Word/PPT, PDF text or scans, image recognition, and similar tasks, prefer writing and running a `python3` script directly — these libraries are ready, do NOT `pip install` them again.",
-      "Only `pip install` when you genuinely need a library that isn't pre-installed (it installs into the bundled venv); `uv` is also available for extra dependencies.",
-      "Release builds should include LibreOffice (soffice). For xlsx recalculation, docx accept-changes, pptx thumbnails, document→PDF/image conversion, or render verification, probe `soffice` first; only use the Runtime Packs skill (lily-runtime-packs) to repair/install libreoffice when it is missing. Do not blindly install it.",
-      "Browser automation (web-system-learning, webapp-testing) should use the bundled web runtime first (Playwright modules and browsers). Only repair web-automation through lily-runtime-packs when the bundled runtime is missing; do not run `playwright install` during ordinary tasks.",
+      "The `python3` and `node` commands point to the app-provided base runtimes. Do not assume a specific document, image, browser, or media library exists; probe first with `python3 -c \"import ...\"`, `node -e \"require.resolve(...)\"`, or `command -v ...`.",
+      "For Excel/CSV, Word/PPT, PDF, image, browser automation, or media work, first check the current capability. If the probe succeeds, use it directly; if it fails, decide whether a matching dependency pack exists.",
+      "Missing standard capabilities should be installed or repaired through the Dependency Packs skill (lily-runtime-packs): document processing (libreoffice, pro-pdf, pandoc), image processing (pillow, opencv, rapidocr, rembg), browser automation (web-automation), and media processing (ffmpeg).",
+      "Do not run ad-hoc `pip install`, `npm install`, or `playwright install` during ordinary user tasks to repair platform capabilities. Dependency packs are prebuilt Lily CDN artifacts with checksum verification. If no matching pack exists, say the current platform lacks that capability.",
+      "After a dependency pack is installed, the current session can keep going; later tool processes pick it up through PATH, PYTHONPATH, NODE_PATH, or dedicated environment variables.",
     ],
   },
   ar: {
@@ -385,13 +385,13 @@ const AGENT_GUIDE_I18N = {
     faqAnswer2: "- اشرح أنك مساعد مكتبي يساعد المستخدمين في الكتابة والبحث وقراءة الملفات والتعرف على الصور ومهام أخرى في مشاريعهم المحلية.",
     faqAnswer3: "- لا تقل أنك Claude أو Claude Code أو منتج أو نموذج من Anthropic.",
     faqAnswer4: "- إذا سأل المستخدم عن الخدمة الأساسية، اشرح أن التطبيق يتصل ببوابات النماذج/واجهات برمجة التطبيقات التي يكوّنها المستخدم، وليس خدمات Claude/Anthropic.",
-    envTitle: "بيئة التشغيل (مهم)",
+    envTitle: "التبعيات وفحص القدرات (مهم)",
     envNote: [
-      "الأمر `python3` يشير إلى بيئة Python الافتراضية المضمّنة في التطبيق، والمزوّدة مسبقاً بمكتبات بيانات/مستندات شائعة: pandas وnumpy وopenpyxl وpython-docx وpython-pptx وpdfplumber وrapidocr (OCR للملفات الممسوحة) وPillow وmammoth وmarkitdown وغيرها.",
-      "لمهام Excel/CSV وWord/PPT ونصوص PDF أو المسح الضوئي والتعرف على الصور، يُفضَّل كتابة وتشغيل سكربت `python3` مباشرةً — هذه المكتبات جاهزة، لا تُعد تثبيتها عبر `pip install`.",
-      "استخدم `pip install` فقط عند الحاجة إلى مكتبة غير مثبّتة مسبقاً (تُثبَّت في البيئة المضمّنة)؛ كما يتوفّر `uv` للاعتمادات الإضافية.",
-      "يجب أن تتضمن إصدارات النشر LibreOffice (soffice). عند الحاجة إلى إعادة حساب xlsx أو قبول تغييرات docx أو صور pptx المصغّرة أو تحويل المستندات إلى PDF/صور أو التحقق بالعرض، افحص `soffice` أولاً؛ استخدم مهارة Runtime Packs (lily-runtime-packs) لإصلاح/تثبيت libreoffice فقط عند غيابه.",
-      "يجب أن تستخدم أتمتة المتصفح (web-system-learning، webapp-testing) بيئة تشغيل الويب المدمجة أولاً (وحدات Playwright والمتصفحات). أصلح web-automation عبر lily-runtime-packs فقط عند غياب البيئة المدمجة؛ لا تشغّل `playwright install` في المهام العادية.",
+      "يشير الأمران `python3` و`node` إلى بيئات التشغيل الأساسية التي يوفّرها التطبيق. لا تفترض أن مكتبة مستندات أو صور أو متصفح أو وسائط محددة موجودة؛ افحص أولاً باستخدام `python3 -c \"import ...\"` أو `node -e \"require.resolve(...)\"` أو `command -v ...`.",
+      "لمهام Excel/CSV وWord/PPT وPDF والصور وأتمتة المتصفح والوسائط، افحص القدرة الحالية أولاً. إذا نجح الفحص فاستخدمها مباشرة، وإذا فشل فحدّد هل توجد حزمة تبعية مناسبة.",
+      "يجب تثبيت أو إصلاح القدرات القياسية المفقودة عبر مهارة حزم التبعيات (lily-runtime-packs): معالجة المستندات (libreoffice وpro-pdf وpandoc)، معالجة الصور (pillow وopencv وrapidocr وrembg)، أتمتة المتصفح (web-automation)، ومعالجة الوسائط (ffmpeg).",
+      "لا تشغّل `pip install` أو `npm install` أو `playwright install` أثناء مهام المستخدم العادية لإصلاح قدرات المنصة. حزم التبعيات ملفات Lily CDN مسبقة البناء مع تحقق checksum. إذا لم توجد حزمة مناسبة، فاذكر أن المنصة الحالية تفتقد تلك القدرة.",
+      "بعد تثبيت حزمة تبعية يمكن متابعة الجلسة الحالية؛ ستلتقط العمليات اللاحقة الحزمة عبر PATH أو PYTHONPATH أو NODE_PATH أو متغيرات بيئة مخصصة.",
     ],
   },
 };
@@ -512,9 +512,10 @@ function buildAgentGuideContent(enabledSkills, locale) {
     "",
   ];
 
-  // Tell the model the bundled Python venv exists (with its pre-installed libs)
-  // ONLY when a runtime actually ships — otherwise (dev / runtime-less build)
-  // `python3` is the system interpreter and the claim would be false.
+  // Tell the model about the app-provided base runtimes and dependency-pack
+  // probing ONLY when a runtime actually ships — otherwise (dev /
+  // runtime-less build) `python3` may be the system interpreter and the claim
+  // would be false.
   if (guide.envTitle && Array.isArray(guide.envNote)) {
     let hasBundledRuntime = false;
     try {

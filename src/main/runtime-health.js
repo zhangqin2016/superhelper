@@ -1,0 +1,211 @@
+"use strict";
+
+const fs = require("node:fs");
+const path = require("node:path");
+const { execFile } = require("node:child_process");
+const { promisify } = require("node:util");
+const { PACK_SPECS } = require("./runtime-pack-specs");
+
+const pexecFile = promisify(execFile);
+const CHECK_TIMEOUT_MS = 20_000;
+
+const BASE_PYTHON_MODULES = [
+  { id: "pandas", module: "pandas" },
+  { id: "numpy", module: "numpy" },
+  { id: "openpyxl", module: "openpyxl" },
+  { id: "xlsxwriter", module: "xlsxwriter" },
+  { id: "python-docx", module: "docx" },
+  { id: "python-pptx", module: "pptx" },
+  { id: "pdfplumber", module: "pdfplumber" },
+  { id: "pypdfium2", module: "pypdfium2" },
+  { id: "pypdf", module: "pypdf" },
+  { id: "pillow", module: "PIL" },
+  { id: "opencv", module: "cv2" },
+  { id: "rapidocr", module: "rapidocr_onnxruntime" },
+  { id: "onnxruntime", module: "onnxruntime" },
+  { id: "markitdown", module: "markitdown" },
+  { id: "mammoth", module: "mammoth" },
+  { id: "docxtpl", module: "docxtpl" },
+  { id: "playwright-python", module: "playwright" },
+];
+
+function okCheck(id, detail = {}) {
+  return { id, ok: true, status: "ok", ...detail };
+}
+
+function failedCheck(id, error, detail = {}) {
+  return { id, ok: false, status: "failed", error: String(error || "FAILED"), ...detail };
+}
+
+function missingCheck(id, error = "MISSING", detail = {}) {
+  return { id, ok: false, status: "missing", error, ...detail };
+}
+
+async function runExecutable(id, exe, args = [], env = process.env) {
+  if (!exe || !fs.existsSync(exe)) return missingCheck(id, "EXECUTABLE_MISSING", { path: exe || "" });
+  try {
+    const result = await pexecFile(exe, args, {
+      timeout: CHECK_TIMEOUT_MS,
+      env,
+      maxBuffer: 1024 * 1024,
+    });
+    const output = `${result.stdout || ""}${result.stderr || ""}`.trim().split(/\r?\n/)[0] || "";
+    return okCheck(id, { path: exe, output });
+  } catch (error) {
+    return failedCheck(id, error?.message || error, { path: exe });
+  }
+}
+
+function executableNames(name) {
+  if (process.platform !== "win32") return [name];
+  const lower = String(name || "").toLowerCase();
+  if (/\.(exe|cmd|bat)$/.test(lower)) return [name];
+  return [`${name}.exe`, `${name}.cmd`, `${name}.bat`, name];
+}
+
+function resolvePackPath(packDir, relPath) {
+  if (!packDir || !relPath || path.isAbsolute(relPath)) return "";
+  const candidate = path.join(packDir, relPath);
+  return fs.existsSync(candidate) ? candidate : "";
+}
+
+function packSearchDirs(spec, packDir) {
+  const dirs = [packDir];
+  for (const rel of Array.isArray(spec?.pathEntries) ? spec.pathEntries : []) {
+    const dir = resolvePackPath(packDir, rel);
+    if (dir) dirs.push(dir);
+  }
+  return [...new Set(dirs)];
+}
+
+function findPackExecutable(spec, packDir, name) {
+  for (const dir of packSearchDirs(spec, packDir)) {
+    for (const file of executableNames(name)) {
+      const candidate = path.join(dir, file);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return "";
+}
+
+async function checkPythonProbe(id, probe, packDir = "") {
+  const { resolveVenvPython } = require("./runtime-python");
+  const python = resolveVenvPython();
+  if (!python) return missingCheck(id, "PYTHON_RUNTIME_MISSING");
+  if (packDir && !fs.existsSync(packDir)) return missingCheck(id, "PACK_DIR_MISSING", { path: packDir || "" });
+  try {
+    await pexecFile(python, ["-c", String(probe || "")], {
+      timeout: CHECK_TIMEOUT_MS,
+      maxBuffer: 1024 * 1024,
+      env: {
+        ...process.env,
+        PYTHONPATH: [packDir || "", process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
+      },
+    });
+    return okCheck(id, { path: packDir, probe });
+  } catch (error) {
+    return failedCheck(id, error?.message || error, { path: packDir, probe });
+  }
+}
+
+async function checkWebAutomationPack(id, spec, packDir) {
+  if (!packDir || !fs.existsSync(packDir)) return missingCheck(id, "PACK_DIR_MISSING", { path: packDir || "" });
+  const nodeModules = resolvePackPath(packDir, spec.envEntries?.LILY_PLAYWRIGHT_NODE_MODULES || "node_modules");
+  const browsers = resolvePackPath(packDir, spec.envEntries?.PLAYWRIGHT_BROWSERS_PATH || "browsers");
+  const moduleName = spec.health?.nodeModule || "playwright";
+  const pkg = nodeModules ? path.join(nodeModules, moduleName, "package.json") : "";
+  if (!nodeModules || !fs.existsSync(pkg)) return missingCheck(id, "NODE_MODULE_MISSING", { path: pkg || nodeModules || "" });
+  if (!browsers) return missingCheck(id, "BROWSER_BINARIES_MISSING", { path: path.join(packDir, "browsers") });
+  return okCheck(id, { path: packDir, nodeModules, browsers });
+}
+
+function packEntry(packId) {
+  return require("./runtime-packs").effectivePackEntries().find((entry) => entry.id === packId) || null;
+}
+
+async function checkRuntimePackHealth(packId) {
+  const id = String(packId || "").trim();
+  const spec = PACK_SPECS[id];
+  if (!spec) return { ok: false, id, status: "unknown", error: "UNKNOWN_PACK" };
+  const entry = packEntry(id);
+  const base = require("./runtime-pack-installer").baseProvidedRuntimePackMap().get(id);
+  if (!entry && !base) return { ok: false, id, status: "not_installed", error: "NOT_INSTALLED" };
+  const dir = entry?.dir || "";
+  if (spec.pythonPath && spec.probe) return checkPythonProbe(id, spec.probe, dir || base?.path || "");
+  if (spec.installKind === "node-browser-runtime") return checkWebAutomationPack(id, spec, dir || base?.path || "");
+  const executables = Array.isArray(spec.health?.executables) ? spec.health.executables : [];
+  if (executables.length) {
+    const checks = [];
+    for (const item of executables) {
+      checks.push(await runExecutable(`${id}:${item.name}`, findPackExecutable(spec, dir || base?.path || "", item.name), item.args || []));
+    }
+    return {
+      id,
+      ok: checks.every((check) => check.ok),
+      status: checks.every((check) => check.ok) ? "ok" : "failed",
+      path: dir || base?.path || "",
+      checks,
+    };
+  }
+  return okCheck(id, { path: dir, skipped: true });
+}
+
+async function checkPythonModules(python) {
+  if (!python) return BASE_PYTHON_MODULES.map((item) => missingCheck(item.id, "PYTHON_RUNTIME_MISSING", { module: item.module }));
+  const code = [
+    "import importlib.util, json, sys",
+    `mods = ${JSON.stringify(BASE_PYTHON_MODULES)}`,
+    "print(json.dumps([{**m, 'ok': importlib.util.find_spec(m['module']) is not None} for m in mods]))",
+  ].join("\n");
+  try {
+    const result = await pexecFile(python, ["-c", code], { timeout: CHECK_TIMEOUT_MS, maxBuffer: 1024 * 1024 });
+    return JSON.parse(result.stdout).map((item) =>
+      item.ok ? okCheck(item.id, { module: item.module }) : missingCheck(item.id, "MODULE_MISSING", { module: item.module }),
+    );
+  } catch (error) {
+    return BASE_PYTHON_MODULES.map((item) => failedCheck(item.id, error?.message || error, { module: item.module }));
+  }
+}
+
+async function checkBaseRuntimeHealth() {
+  const runtimePython = require("./runtime-python");
+  const root = runtimePython.resolveBundledRuntimeRoot();
+  const python = runtimePython.resolveVenvPython();
+  const uv = runtimePython.resolveBundledUv();
+  const nodeDir = root ? runtimePython.resolveBundledNodeDir(root) : null;
+  const node = nodeDir ? path.join(nodeDir, process.platform === "win32" ? "node.exe" : "node") : "";
+  const env = runtimePython.getRuntimeEnvExtras();
+  const sofficeDir = env.LILY_LIBREOFFICE_PROGRAM || "";
+  const soffice = sofficeDir ? path.join(sofficeDir, process.platform === "win32" ? "soffice.exe" : "soffice") : "";
+  const checks = [
+    await runExecutable("python", python, ["--version"]),
+    await runExecutable("uv", uv, ["--version"]),
+    await runExecutable("node", node, ["--version"]),
+    await runExecutable("libreoffice", soffice, ["--version"]),
+  ];
+  const modules = await checkPythonModules(python);
+  return {
+    ok: Boolean(root) && checks.every((check) => check.ok) && modules.every((check) => check.ok),
+    root: root || "",
+    checks,
+    modules,
+  };
+}
+
+async function checkDependencyHealth(packId = "") {
+  const base = await checkBaseRuntimeHealth();
+  const packIds = packId ? [packId] : Object.keys(PACK_SPECS);
+  const packs = [];
+  for (const id of packIds) packs.push(await checkRuntimePackHealth(id));
+  return {
+    ok: base.ok && packs.every((pack) => pack.ok || pack.status === "not_installed"),
+    base,
+    packs,
+  };
+}
+
+module.exports = {
+  checkBaseRuntimeHealth,
+  checkDependencyHealth,
+  checkRuntimePackHealth,
+};

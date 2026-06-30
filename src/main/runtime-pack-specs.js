@@ -53,6 +53,7 @@ const PACK_SPECS = {
     recommended: true,
     sizeEstimate: "≈450-800MB download / ≈1.2GB installed",
     pathEntries: ["LibreOffice.app/Contents/MacOS", "program", "Program", "libreoffice/program"],
+    health: { executables: [{ name: "soffice", args: ["--version"] }] },
     label: {
       en: "LibreOffice",
       "zh-CN": "LibreOffice",
@@ -90,6 +91,7 @@ const PACK_SPECS = {
     installKind: "native-tool",
     sizeEstimate: "≈35-100MB download / varies by platform",
     pathEntries: ["bin", "."],
+    health: { executables: [{ name: "pandoc", args: ["--version"] }] },
     label: {
       en: "Pandoc",
       "zh-CN": "Pandoc",
@@ -106,6 +108,7 @@ const PACK_SPECS = {
     category: "image",
     installKind: "python-target",
     pythonPath: true,
+    baseModule: "PIL",
     requirements: ["Pillow>=10.4,<12"],
     probe: "from PIL import Image",
     sizeEstimate: "≈5-30MB download / varies by platform",
@@ -125,6 +128,7 @@ const PACK_SPECS = {
     category: "image",
     installKind: "python-target",
     pythonPath: true,
+    baseModule: "cv2",
     requirements: ["opencv-python-headless>=4.10,<5"],
     probe: "import cv2",
     sizeEstimate: "≈40-120MB download / varies by platform",
@@ -144,6 +148,7 @@ const PACK_SPECS = {
     category: "image",
     installKind: "python-target",
     pythonPath: true,
+    baseModule: "rapidocr_onnxruntime",
     requirements: ["rapidocr-onnxruntime>=1.3,<2"],
     probe: "from rapidocr_onnxruntime import RapidOCR",
     sizeEstimate: "≈40-160MB download / varies by platform",
@@ -188,6 +193,7 @@ const PACK_SPECS = {
       PLAYWRIGHT_BROWSERS_PATH: "browsers",
     },
     pathEntries: ["bin"],
+    health: { nodeModule: "playwright", browserDir: "browsers" },
     label: {
       en: "Playwright",
       "zh-CN": "Playwright",
@@ -205,6 +211,12 @@ const PACK_SPECS = {
     installKind: "native-tool",
     sizeEstimate: "≈30-120MB download / varies by platform",
     pathEntries: ["bin", "."],
+    health: {
+      executables: [
+        { name: "ffmpeg", args: ["-version"] },
+        { name: "ffprobe", args: ["-version"] },
+      ],
+    },
     label: {
       en: "FFmpeg",
       "zh-CN": "FFmpeg",

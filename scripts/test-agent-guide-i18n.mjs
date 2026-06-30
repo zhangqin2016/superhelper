@@ -40,6 +40,13 @@ const appLanguageResponseSourcePatterns = [
   /应用语言/,
   /لغة التطبيق/,
 ];
+const staleDependencyGuidePatterns = [
+  /已预装常用数据\/文档库/,
+  /这些库已就绪/,
+  /pre-installed: pandas/i,
+  /these libraries are ready/i,
+  /المزوّدة مسبقاً بمكتبات/,
+];
 
 function assertNoForcedChinese(text, label) {
   for (const pattern of forcedChinesePatterns) {
@@ -56,6 +63,12 @@ function assertNoLocalizedGuideLeak(text, label) {
 function assertNoAppLanguageResponseSource(text, label) {
   for (const pattern of appLanguageResponseSourcePatterns) {
     assert.doesNotMatch(text, pattern, `${label} allows app language to drive response language: ${pattern}`);
+  }
+}
+
+function assertNoStaticDependencyClaims(text, label) {
+  for (const pattern of staleDependencyGuidePatterns) {
+    assert.doesNotMatch(text, pattern, `${label} contains static dependency availability claim: ${pattern}`);
   }
 }
 
@@ -111,11 +124,16 @@ const enGuide = skillManager.buildAgentGuideContent([], "en");
 assert.match(enGuide, /Reply in the primary language of the user's latest message/);
 assert.doesNotMatch(enGuide, /Reply in English by default/);
 assertNoLocalizedGuideLeak(enGuide, "English agent guide");
+assertNoStaticDependencyClaims(enGuide, "English agent guide");
 
 const arGuide = skillManager.buildAgentGuideContent([], "ar");
 assert.match(arGuide, /آخر رسالة من المستخدم/);
 assert.doesNotMatch(arGuide, /استخدم العربية افتراضياً/);
 assertNoLocalizedGuideLeak(arGuide, "Arabic agent guide");
+assertNoStaticDependencyClaims(arGuide, "Arabic agent guide");
+
+const zhGuide = skillManager.buildAgentGuideContent([], "zh-CN");
+assertNoStaticDependencyClaims(zhGuide, "Chinese agent guide");
 
 for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;

@@ -73,6 +73,15 @@ try {
   assert.equal(bundledWebPack?.readOnly, true);
   assert.equal(bundledWebPack?.path, bundledWeb);
   assert(installer.installedRuntimePackIds().has("web-automation"), "bundled pack should count as installed");
+  const baseProvided = installer.baseProvidedRuntimePackMap();
+  for (const id of ["libreoffice", "pillow", "opencv", "rapidocr"]) {
+    if (!baseProvided.has(id)) continue;
+    const pack = catalog.packs.find((item) => item.id === id);
+    assert.equal(pack?.installed, true, `${id} from base runtime should be listed as installed`);
+    assert.equal(pack?.source, "base", `${id} from base runtime should report source=base`);
+    assert.equal(pack?.readOnly, true, `${id} from base runtime should be read-only`);
+    assert(installer.installedRuntimePackIds().has(id), `${id} from base runtime should satisfy dependency requirements`);
+  }
 
   const bundledInstall = await installer.installRuntimePack("web-automation");
   assert.equal(bundledInstall.ok, true);
