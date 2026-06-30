@@ -240,10 +240,25 @@
   padding: 4px 0;
   flex: 1;
   min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--scrollbar-thumb) 55%, transparent) transparent;
+}
+
+.project-tree::-webkit-scrollbar {
+  width: 5px;
+}
+
+.project-tree::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--scrollbar-thumb) 58%, transparent);
+  border-radius: 999px;
+}
+
+.project-tree::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--scrollbar-thumb) 78%, transparent);
 }
 
 .project-group {
-  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 54%, transparent);
 }
 .project-group:last-child { border-bottom: 0; }
 
@@ -251,8 +266,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 3px 10px;
-  padding: 8px 9px;
+  margin: 2px 10px;
+  padding: 7px 9px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -269,10 +284,14 @@
 }
 .project-group.active > .project-header {
   background:
-    linear-gradient(90deg, var(--accent-subtle), color-mix(in srgb, var(--accent-subtle) 46%, transparent)),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-subtle) 46%, transparent), transparent 78%),
     color-mix(in srgb, var(--bg-surface) 78%, var(--bg-left) 22%);
-  border-color: var(--accent-border);
-  box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight), 0 8px 18px color-mix(in srgb, var(--accent) 7%, transparent);
+  border-color: color-mix(in srgb, var(--accent-border) 22%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 72%, transparent), var(--top-highlight);
+}
+
+.project-group.active .project-collapse-icon {
+  color: color-mix(in srgb, var(--accent) 62%, var(--text-dim) 38%);
 }
 
 .project-collapse-icon {
@@ -334,7 +353,7 @@
 .project-action-btn:hover { background: var(--bg-surface-active); color: var(--text-primary); }
 
 .project-sessions {
-  padding: 2px 0 6px;
+  padding: 1px 0 5px;
 }
 
 .project-sessions-empty {
@@ -361,8 +380,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 2px 10px;
-  padding: 6px 10px 6px 28px;
+  margin: 1px 10px;
+  padding: 5px 10px 5px 28px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -372,32 +391,44 @@
     box-shadow var(--dur) var(--ease),
     color var(--dur) var(--ease);
   font-size: 12px;
+  color: var(--text-secondary);
 }
 .project-sessions .session-item:hover {
   background: var(--bg-surface-hover);
   border-color: var(--border-subtle);
+  color: var(--text-primary);
 }
 .project-sessions .session-item.active {
-  background: color-mix(in srgb, var(--accent-subtle) 78%, var(--bg-surface) 22%);
+  background: color-mix(in srgb, var(--accent-subtle) 48%, var(--bg-surface) 52%);
   color: var(--text-primary);
-  border-color: var(--accent-border);
-  box-shadow: inset 3px 0 0 var(--accent), var(--top-highlight);
+  border-color: color-mix(in srgb, var(--accent-border) 45%, var(--border-subtle) 55%);
+  box-shadow: inset 2px 0 0 var(--accent), var(--top-highlight);
 }
 
 .session-title {
   flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: color-mix(in srgb, var(--text-primary) 82%, var(--text-secondary) 18%);
+  font-weight: 500;
+}
+
+.project-sessions .session-item.active .session-title {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .session-meta {
-  font-size: 10px; color: var(--text-dim); flex-shrink: 0;
+  font-size: 10px;
+  color: color-mix(in srgb, var(--text-secondary) 84%, transparent);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .session-status {
   width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
 }
 /* Idle = nothing to see (muted). running/done/error draw the eye via a pulse. */
-.session-status.idle { background: var(--text-dim); opacity: 0.42; box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-dim) 10%, transparent); }
+.session-status.idle { background: color-mix(in srgb, var(--text-dim) 65%, transparent); opacity: 0.34; box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-dim) 7%, transparent); }
 .session-status.running { background: var(--info-text); box-shadow: 0 0 0 4px var(--info-bg-soft); animation: status-pulse 1.4s ease-in-out infinite; }
 .session-status.done { background: var(--success-text); box-shadow: 0 0 0 4px var(--success-dot-ring); animation: status-pulse 1.4s ease-in-out infinite; }
 .session-status.error { background: var(--danger-text); box-shadow: 0 0 0 4px var(--danger-dot-ring); animation: status-pulse 1.4s ease-in-out infinite; }
