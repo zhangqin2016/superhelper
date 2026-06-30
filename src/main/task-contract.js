@@ -42,6 +42,28 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
   ],
   priority: ["release", "runtime", "architecture_audit", "agent_quality", "server", "ui", "bugfix", "config", "code", "document", "media"],
   activatingCategories: ["bugfix", "ui", "server", "release", "runtime", "architecture_audit", "agent_quality", "config", "code"],
+  lowInformationContinuation: {
+    terms: ["继续", "接着", "然后", "展开", "继续说", "继续讲", "continue", "go on", "next"],
+    genericObjects: [
+      "这个",
+      "这",
+      "上面",
+      "刚才",
+      "流程",
+      "实现",
+      "任务",
+      "执行",
+      "方案",
+      "问题",
+      "it",
+      "this",
+      "that",
+      "task",
+      "flow",
+      "process",
+      "implementation",
+    ],
+  },
   categories: {
     architecture_audit: {
       terms: [
@@ -416,6 +438,16 @@ function mergeTaskIntelligenceRegistry(base = DEFAULT_TASK_INTELLIGENCE_REGISTRY
     workspaceSignals: mergeWorkspaceProfiles(base.workspaceSignals, normalizedRemote.workspaceSignals),
     workspaceProfiles: mergeWorkspaceProfiles(base.workspaceProfiles, normalizedRemote.workspaceProfiles),
     verificationStrategies: mergeVerificationStrategies(base.verificationStrategies, normalizedRemote.verificationStrategies),
+    lowInformationContinuation: {
+      terms: uniqueStrings(
+        base.lowInformationContinuation?.terms,
+        normalizedRemote.lowInformationContinuation?.terms,
+      ),
+      genericObjects: uniqueStrings(
+        base.lowInformationContinuation?.genericObjects,
+        normalizedRemote.lowInformationContinuation?.genericObjects,
+      ),
+    },
     checklists: {
       base: uniqueStrings(baseChecklists.base, remoteChecklists.base),
       byCategory,
@@ -430,6 +462,27 @@ function loadTaskIntelligenceRegistry() {
 
 function lowerText(value) {
   return String(value || "").toLowerCase();
+}
+
+function normalizeClassifierTerm(term = "") {
+  return String(term || "").toLowerCase().replace(/\s+/g, "");
+}
+
+function isLowInformationContinuation(text = "", registry = loadTaskIntelligenceRegistry()) {
+  const source = lowerText(text).replace(/[，。！？!?.,;；:\s]/g, "");
+  if (!source) return false;
+  const continuation = registry.lowInformationContinuation || {};
+  const terms = arrayOfStrings(continuation.terms) || [];
+  const genericObjects = arrayOfStrings(continuation.genericObjects) || [];
+  if (!terms.length || !terms.some((term) => source.includes(normalizeClassifierTerm(term)))) {
+    return false;
+  }
+  let remainder = source;
+  for (const term of [...terms, ...genericObjects]) {
+    const normalized = normalizeClassifierTerm(term);
+    if (normalized) remainder = remainder.split(normalized).join("");
+  }
+  return remainder.length === 0;
 }
 
 function includesAny(haystack, terms) {
@@ -521,6 +574,14 @@ function hasCodebaseInquiry(text = "") {
 
 function classifyTask({ text = "", files = [], registry = loadTaskIntelligenceRegistry() } = {}) {
   if (registry.enabled === false) {
+    return {
+      active: false,
+      kind: "general",
+      taskType: "general",
+      categories: [],
+    };
+  }
+  if (isLowInformationContinuation(text, registry) && !files?.length) {
     return {
       active: false,
       kind: "general",

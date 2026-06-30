@@ -6,18 +6,6 @@ const translate = (key, params = {}) => {
   const table = {
     "todo.summary": `Tasks ${params.done}/${params.total}`,
     "task.strip.current": `Now ${params.item}`,
-    "task.strip.running": "Working",
-    "task.strip.toolRunning": "Tool running",
-    "task.strip.noVisibleProgress": "Still working",
-    "task.strip.awaitingUser": "Waiting",
-    "task.strip.stalled": "Needs recovery",
-    "task.strip.failed": "Failed",
-    "task.strip.status": `Task ${params.status}`,
-    "task.strip.statusDetail": `Task ${params.status} ${params.detail}`,
-    "task.strip.step": `Step ${params.item}`,
-    "task.strip.risk": `Watch ${params.code}`,
-    "task.strip.evidence": `${params.count} evidence`,
-    "task.strip.noAutoReplay": "No auto replay",
   };
   return table[key] || key;
 };

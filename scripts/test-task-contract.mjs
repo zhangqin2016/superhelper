@@ -47,6 +47,33 @@ function withRemoteTaskIntelligence(taskIntelligence, fn) {
 }
 
 assert.equal(classifyTask({ text: "你好" }).active, false, "casual chat should not get heavy process");
+for (const text of ["继续", "就行", "好", "然后呢", "继续说", "展开", "继续讲", "可以", "嗯"]) {
+  assert.equal(
+    classifyTask({ text }).active,
+    false,
+    `short follow-up ${text} should stay lightweight`,
+  );
+}
+for (const text of ["继续这个流程", "继续实现", "继续任务", "继续执行"]) {
+  assert.equal(
+    classifyTask({ text }).active,
+    false,
+    `underspecified continuation ${text} should not create a heavy task contract by itself`,
+  );
+}
+const concreteContinuation = classifyTask({ text: "继续 imsdk 流程" });
+assert.equal(concreteContinuation.active, true, "continuations with concrete code terms must stay observable");
+assert(concreteContinuation.categories.includes("code"));
+withRemoteTaskIntelligence(
+  { lowInformationContinuation: { terms: ["稍后"], genericObjects: ["这个流程"] } },
+  () => {
+    assert.equal(
+      classifyTask({ text: "稍后这个流程" }).active,
+      false,
+      "low-information continuation vocabulary should be configurable",
+    );
+  },
+);
 
 const runtime = classifyTask({ text: "切换会话后队列任务展示乱了，帮我修复" });
 assert.equal(runtime.active, true);
