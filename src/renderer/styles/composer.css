@@ -58,6 +58,8 @@
 }
 .live-task-item.is-completed { color: var(--text-faint, var(--text-secondary)); text-decoration: line-through; }
 .live-task-item.is-in_progress { color: var(--text-primary); font-weight: 600; }
+.live-task-item.is-warning { color: var(--warning-text, var(--text-primary)); font-weight: 600; }
+.live-task-item.is-info { color: var(--text-secondary); }
 
 .composer.composer-busy .composer-row {
   border-color: var(--accent-border);
