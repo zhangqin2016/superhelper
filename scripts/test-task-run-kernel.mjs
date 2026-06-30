@@ -118,6 +118,25 @@ function createContext({ eventBus } = {}) {
 
 {
   const { ctx, runner, sent, session } = createContext();
+  const started = await ctx.turnOrchestrator.sendUserMessage(session.id, "hello", [], {
+    skipPreflight: true,
+    skipVision: true,
+    skipDocument: true,
+    spawnEngine: false,
+  });
+  if (!started.ok || !started.turnId) {
+    throw new Error(`plain chat turn should start: ${JSON.stringify(started)}`);
+  }
+  runner.finish("hello back");
+  ctx.eventBus.flush();
+  const events = sent.flatMap((entry) => entry.payload?.events || []);
+  if (events.some((event) => event.type === "task.created")) {
+    throw new Error(`plain chat must not create a TaskRun card: ${JSON.stringify(events)}`);
+  }
+}
+
+{
+  const { ctx, runner, sent, session } = createContext();
   const started = await ctx.turnOrchestrator.sendUserMessage(session.id, "Summarize this project", [], {
     skipPreflight: true,
     skipVision: true,

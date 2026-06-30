@@ -1007,10 +1007,6 @@ class TurnOrchestrator {
       : null;
     state.startedAt = Date.now();
     state.updatedAt = Date.now();
-    this._beginTaskRun(session.id, rawUserText, {
-      displayFiles,
-      scheduledTask: state.scheduledTask,
-    });
     if (state.scheduledTask?.runId) {
       this.ctx.scheduledTaskManager?.markRunStarted?.(state.scheduledTask.runId, state.turnId);
     }
@@ -1091,6 +1087,12 @@ class TurnOrchestrator {
     state.taskContract = taskContract.active ? taskContract : null;
     const turnPolicy = buildTurnPolicy({ text, taskContract });
     state.turnPolicy = turnPolicy;
+    if (this._shouldBeginTaskRunAtTurnStart({ taskContract, turnPolicy, scheduledTask: state.scheduledTask })) {
+      this._beginTaskRun(session.id, rawUserText, {
+        displayFiles,
+        scheduledTask: state.scheduledTask,
+      });
+    }
     if (
       project?.path &&
       (turnPolicy.rigor === "coverage" || turnPolicy.requiresSourceCoverage) &&
@@ -1951,6 +1953,7 @@ class TurnOrchestrator {
   _beginTaskRun(sessionId, objective, opts = {}) {
     try {
       const state = this._state(sessionId);
+      if (state.taskRun) return state.taskRun;
       if (!state.turnId) return null;
       state.taskRun = createTaskRun({
         sessionId,
@@ -1983,9 +1986,39 @@ class TurnOrchestrator {
     }
   }
 
+  _shouldBeginTaskRunAtTurnStart({ taskContract = null, turnPolicy = null, scheduledTask = null } = {}) {
+    if (scheduledTask?.runId) return true;
+    if (taskContract?.active) return true;
+    return Boolean(turnPolicy && turnPolicy.rigor && turnPolicy.rigor !== "fast");
+  }
+
+  _ensureTaskRun(sessionId, reason = "runtime_event") {
+    try {
+      const state = this._state(sessionId);
+      if (state.taskRun) return state.taskRun;
+      if (!state.turnId) return null;
+      const payload = state.currentPayload || {};
+      const taskRun = this._beginTaskRun(sessionId, payload.rawText || payload.text || "", {
+        displayFiles: payload.displayFiles || [],
+        scheduledTask: state.scheduledTask || null,
+      });
+      if (taskRun) {
+        taskRun.resumeState = {
+          ...(taskRun.resumeState || {}),
+          createdBy: reason,
+        };
+      }
+      return taskRun;
+    } catch (err) {
+      log.warn("TaskRun ensure failed: %s", err?.message || err);
+      return null;
+    }
+  }
+
   _markTaskProgress(sessionId, phase, label, opts = {}) {
     try {
       const state = this._state(sessionId);
+      if (!state.taskRun) this._ensureTaskRun(sessionId, "tool_or_progress");
       if (!state.taskRun) return null;
       if (opts.tool) noteTaskToolUse(state.taskRun, opts.tool);
       markTaskPhase(state.taskRun, phase, label, {
@@ -2016,6 +2049,7 @@ class TurnOrchestrator {
   _markTaskAwaitingUser(sessionId, code, message) {
     try {
       const state = this._state(sessionId);
+      if (!state.taskRun) this._ensureTaskRun(sessionId, "awaiting_user");
       if (!state.taskRun) return null;
       markTaskPhase(state.taskRun, "awaiting_user", message, { status: "awaiting_user" });
       const risk = addTaskRisk(state.taskRun, {
@@ -2038,6 +2072,7 @@ class TurnOrchestrator {
   _addTaskEvidence(sessionId, evidence, opts = {}) {
     try {
       const state = this._state(sessionId);
+      if (!state.taskRun && opts.tool) this._ensureTaskRun(sessionId, "tool_evidence");
       if (!state.taskRun) return null;
       const item = addTaskEvidence(state.taskRun, evidence);
       this._emitTaskEvent(sessionId, "task.evidence.added", {
@@ -2063,6 +2098,7 @@ class TurnOrchestrator {
   _updateTaskPlanFromTodos(sessionId, todos = []) {
     try {
       const state = this._state(sessionId);
+      if (!state.taskRun) this._ensureTaskRun(sessionId, "todo_updated");
       if (!state.taskRun) return null;
       const before = JSON.stringify(state.taskRun.plan || []);
       applyTaskPlanFromTodos(state.taskRun, todos);
@@ -2084,7 +2120,7 @@ class TurnOrchestrator {
   _updateTaskLivenessFromNotice(sessionId, notice = {}, eventType = "engine.notice") {
     try {
       const state = this._state(sessionId);
-      if (!state.taskRun || !notice) return null;
+      if (!notice) return null;
       const code = String(notice.code || "").trim();
       const detail = String(notice.detail || notice.message || "").trim();
       let status = "runtime_notice";
@@ -2100,6 +2136,8 @@ class TurnOrchestrator {
       } else if (notice.level === "progress") {
         status = "running";
       }
+      if (!state.taskRun && (phase || status === "warning")) this._ensureTaskRun(sessionId, "liveness_notice");
+      if (!state.taskRun) return null;
       const liveness = updateTaskLiveness(state.taskRun, {
         status,
         detail,
