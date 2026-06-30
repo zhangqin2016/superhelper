@@ -29,6 +29,7 @@ const RUNTIME_EVENT_TYPES = new Set([
   "task.step.failed",
   "task.evidence.added",
   "task.risk.detected",
+  "task.liveness.updated",
   "task.stalled",
   "task.resumed",
   "task.completed",

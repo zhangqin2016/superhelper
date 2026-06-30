@@ -108,6 +108,8 @@ function createContext({ eventBus } = {}) {
   }
   ctx.turnOrchestrator.ingest(session.id, [
     { type: "tool.started", payload: { id: "read_1", name: "Read", input: { file_path: "README.md" } } },
+    { type: "engine.notice", payload: { notice: { code: "longWait", level: "progress", panel: true, replace: true } } },
+    { type: "engine.notice", payload: { notice: { code: "toolProgress", level: "progress", detail: "Read README.md is still running" } } },
     { type: "tool.done", payload: { id: "read_1", status: "done", result: "read ok" } },
   ]);
   runner.finish("done");
@@ -116,6 +118,8 @@ function createContext({ eventBus } = {}) {
   const taskCreated = events.find((event) => event.type === "task.created");
   const taskProgress = events.find((event) => event.type === "task.step.progress" && event.payload?.phase === "tool_running");
   const taskEvidence = events.find((event) => event.type === "task.evidence.added");
+  const taskLiveness = events.find((event) => event.type === "task.liveness.updated" && event.payload?.liveness?.status === "tool_running");
+  const noVisibleProgressRisk = events.find((event) => event.type === "task.risk.detected" && event.payload?.risk?.code === "NO_VISIBLE_PROGRESS");
   const taskCompleted = events.find((event) => event.type === "task.completed");
   if (taskCreated?.payload?.taskRun?.turnId !== started.turnId) {
     throw new Error(`task.created should include the turn-backed TaskRun: ${JSON.stringify(taskCreated)}`);
@@ -125,6 +129,12 @@ function createContext({ eventBus } = {}) {
   }
   if (!taskEvidence || taskEvidence.payload?.evidence?.kind !== "tool_result") {
     throw new Error(`tool completion should add task evidence: ${JSON.stringify(events)}`);
+  }
+  if (!taskLiveness || !String(taskLiveness.payload?.liveness?.detail || "").includes("Read README.md")) {
+    throw new Error(`tool progress notice should update task liveness: ${JSON.stringify(events)}`);
+  }
+  if (!noVisibleProgressRisk) {
+    throw new Error(`longWait notice should record a no-visible-progress risk without settling the turn: ${JSON.stringify(events)}`);
   }
   if (taskCompleted?.payload?.status !== "completed") {
     throw new Error(`turn completion should complete the TaskRun: ${JSON.stringify(taskCompleted)}`);

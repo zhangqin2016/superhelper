@@ -355,6 +355,7 @@ function ensureLiveTurn(runtime, event) {
       final: null,
       fileChanges: [],
       usage: null,
+      taskRun: null,
     };
   }
   runtime.turnId = event.turnId;
@@ -395,6 +396,61 @@ function hasPendingPrompts(live = {}) {
     live.questions?.size ||
     live.hooks?.size,
   );
+}
+
+function compactTaskRunForStore(taskRun = null) {
+  if (!taskRun || typeof taskRun !== "object") return null;
+  return {
+    id: taskRun.id || "",
+    sessionId: taskRun.sessionId || "",
+    turnId: taskRun.turnId || "",
+    objective: taskRun.objective || "",
+    status: taskRun.status || "",
+    phase: taskRun.phase || "",
+    plan: Array.isArray(taskRun.plan) ? taskRun.plan : [],
+    activeStep: taskRun.activeStep || "",
+    progress: taskRun.progress || null,
+    liveness: taskRun.liveness || null,
+    evidence: Array.isArray(taskRun.evidence) ? taskRun.evidence : [],
+    risks: Array.isArray(taskRun.risks) ? taskRun.risks : [],
+    resumeState: taskRun.resumeState || {},
+    verification: taskRun.verification || null,
+    startedAt: taskRun.startedAt || null,
+    updatedAt: taskRun.updatedAt || null,
+    lastActivityAt: taskRun.lastActivityAt || null,
+    endedAt: taskRun.endedAt || null,
+  };
+}
+
+function applyTaskRunEvent(live, event = {}) {
+  const payload = event.payload || {};
+  const full = compactTaskRunForStore(payload.taskRun || null);
+  const current = live.taskRun || {};
+  live.taskRun = full || {
+    ...current,
+    id: payload.taskRunId || current.id || "",
+    turnId: event.turnId || current.turnId || "",
+    status: payload.status || current.status || "",
+    phase: payload.phase || current.phase || "",
+    activeStep: payload.activeStep || current.activeStep || "",
+    progress: payload.progress || current.progress || null,
+    liveness: payload.liveness || current.liveness || null,
+    plan: payload.plan || current.plan || [],
+    verification: payload.verification || current.verification || null,
+    updatedAt: event.ts || Date.now(),
+  };
+  if (payload.evidence) {
+    const evidence = Array.isArray(live.taskRun.evidence) ? live.taskRun.evidence : [];
+    live.taskRun.evidence = [...evidence, payload.evidence].slice(-20);
+  }
+  if (payload.risk) {
+    const risks = Array.isArray(live.taskRun.risks) ? live.taskRun.risks : [];
+    live.taskRun.risks = [...risks, payload.risk].slice(-20);
+  }
+  if (event.type === "task.completed" || event.type === "task.failed" || event.type === "task.interrupted" || event.type === "task.stalled") {
+    live.taskRun.status = payload.status || live.taskRun.status || event.type.slice("task.".length);
+    live.taskRun.endedAt = live.taskRun.endedAt || event.ts || Date.now();
+  }
 }
 
 export function applyRuntimeBatch(batch, opts = {}) {
@@ -530,6 +586,22 @@ export function applyRuntimeEvent(event, opts = {}) {
       upsertTimelineTool(live, tool, event.ts || Date.now());
       break;
     }
+    case "task.created":
+    case "task.plan.updated":
+    case "task.step.started":
+    case "task.step.progress":
+    case "task.step.completed":
+    case "task.step.failed":
+    case "task.evidence.added":
+    case "task.risk.detected":
+    case "task.liveness.updated":
+    case "task.resumed":
+    case "task.completed":
+    case "task.failed":
+    case "task.interrupted":
+    case "task.stalled":
+      applyTaskRunEvent(live, event);
+      break;
     case "subagent.event": {
       const item = event.payload?.subagent || null;
       if (item?.sessionId) {
@@ -647,6 +719,9 @@ export function applyRuntimeEvent(event, opts = {}) {
         }
         if (event.payload?.record?.usage) {
           live.usage = event.payload.record.usage;
+        }
+        if (event.payload?.record?.meta?.taskRun) {
+          live.taskRun = compactTaskRunForStore(event.payload.record.meta.taskRun);
         }
         runtime.phase = "idle";
         runtime.turnId = null;

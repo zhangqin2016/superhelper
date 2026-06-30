@@ -34,6 +34,12 @@ function createTaskRun(input = {}) {
       label: "Starting task",
       value: null,
     },
+    liveness: {
+      status: "starting",
+      detail: "",
+      lastNoticeCode: "",
+      lastHeartbeatAt: ts,
+    },
     evidence: [],
     risks: [],
     resumeState: {
@@ -73,6 +79,14 @@ function compactTaskRun(taskRun = {}) {
       ? {
           label: safeText(taskRun.progress.label, 240),
           value: Number.isFinite(taskRun.progress.value) ? taskRun.progress.value : null,
+        }
+      : null,
+    liveness: taskRun.liveness && typeof taskRun.liveness === "object"
+      ? {
+          status: safeText(taskRun.liveness.status || "", 80),
+          detail: safeText(taskRun.liveness.detail || "", 500),
+          lastNoticeCode: safeText(taskRun.liveness.lastNoticeCode || "", 120),
+          lastHeartbeatAt: taskRun.liveness.lastHeartbeatAt || null,
         }
       : null,
     evidence: Array.isArray(taskRun.evidence) ? taskRun.evidence.slice(-20) : [],
@@ -141,6 +155,21 @@ function addTaskRisk(taskRun, risk = {}) {
   return item;
 }
 
+function updateTaskLiveness(taskRun, liveness = {}) {
+  if (!taskRun) return null;
+  const ts = nowMs();
+  taskRun.liveness = {
+    ...(taskRun.liveness || {}),
+    status: safeText(liveness.status || taskRun.liveness?.status || "running", 80),
+    detail: safeText(liveness.detail || "", 500),
+    lastNoticeCode: safeText(liveness.noticeCode || taskRun.liveness?.lastNoticeCode || "", 120),
+    lastHeartbeatAt: ts,
+  };
+  taskRun.updatedAt = ts;
+  if (liveness.countsAsActivity) taskRun.lastActivityAt = ts;
+  return taskRun.liveness;
+}
+
 function completeTaskRun(taskRun, terminalType, verification = {}) {
   if (!taskRun) return null;
   const ts = nowMs();
@@ -159,6 +188,12 @@ function completeTaskRun(taskRun, terminalType, verification = {}) {
     label: taskRun.status,
     value: 1,
   };
+  taskRun.liveness = {
+    ...(taskRun.liveness || {}),
+    status: taskRun.status,
+    detail: "",
+    lastHeartbeatAt: ts,
+  };
   taskRun.verification = {
     status: verification.status || (taskRun.evidence.length ? "verified" : "not_required"),
     reason: safeText(verification.reason || "", 500),
@@ -174,5 +209,6 @@ module.exports = {
   markTaskPhase,
   addTaskEvidence,
   addTaskRisk,
+  updateTaskLiveness,
   completeTaskRun,
 };

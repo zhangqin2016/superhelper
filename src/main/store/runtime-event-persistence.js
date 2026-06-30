@@ -185,6 +185,7 @@ function compactTaskRun(taskRun = {}) {
       : [],
     activeStep: taskRun.activeStep || "",
     progress: compactValue(taskRun.progress || null, 500),
+    liveness: compactValue(taskRun.liveness || null, 500),
     evidence: compactValue(Array.isArray(taskRun.evidence) ? taskRun.evidence.slice(-20) : [], 500),
     risks: compactValue(Array.isArray(taskRun.risks) ? taskRun.risks.slice(-20) : [], 500),
     resumeState: compactValue(taskRun.resumeState || {}, 500),
@@ -203,6 +204,7 @@ function compactTaskPayload(payload = {}) {
     phase: payload.phase || "",
     activeStep: payload.activeStep || "",
     progress: compactValue(payload.progress || null, 500),
+    liveness: compactValue(payload.liveness || null, 500),
     plan: compactValue(payload.plan || null, 500),
     evidence: compactValue(payload.evidence || null, 500),
     risk: compactValue(payload.risk || null, 500),
@@ -271,6 +273,7 @@ function compactRuntimeEventForPersistence(event = {}) {
     case "task.step.failed":
     case "task.evidence.added":
     case "task.risk.detected":
+    case "task.liveness.updated":
     case "task.stalled":
     case "task.resumed":
     case "task.completed":

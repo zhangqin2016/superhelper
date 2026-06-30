@@ -661,6 +661,118 @@ if (store.getSessionAttention("att2") !== null) {
   throw new Error("replayed terminals must not raise the attention flag");
 }
 
+// --- TaskRun observability -------------------------------------------------
+store.applyRuntimeBatch({
+  sessionId: "task-store",
+  batchSeq: 1,
+  events: [
+    {
+      id: "task-start",
+      type: "turn.started",
+      sessionId: "task-store",
+      turnId: "task-turn",
+      seq: 1,
+      ts: 7000,
+      source: "test",
+      payload: {},
+    },
+    {
+      id: "task-created",
+      type: "task.created",
+      sessionId: "task-store",
+      turnId: "task-turn",
+      seq: 2,
+      ts: 7001,
+      source: "test",
+      payload: {
+        taskRun: {
+          id: "task_run_1",
+          turnId: "task-turn",
+          status: "running",
+          phase: "starting",
+          plan: [{ id: "execute", title: "Execute", status: "in_progress" }],
+          evidence: [],
+          risks: [],
+        },
+      },
+    },
+    {
+      id: "task-live",
+      type: "task.liveness.updated",
+      sessionId: "task-store",
+      turnId: "task-turn",
+      seq: 3,
+      ts: 7002,
+      source: "test",
+      payload: {
+        taskRunId: "task_run_1",
+        liveness: { status: "no_visible_progress", lastNoticeCode: "longWait", lastHeartbeatAt: 7002 },
+      },
+    },
+    {
+      id: "task-risk",
+      type: "task.risk.detected",
+      sessionId: "task-store",
+      turnId: "task-turn",
+      seq: 4,
+      ts: 7003,
+      source: "test",
+      payload: {
+        taskRunId: "task_run_1",
+        risk: { code: "NO_VISIBLE_PROGRESS", level: "info", message: "still busy" },
+      },
+    },
+    {
+      id: "task-evidence",
+      type: "task.evidence.added",
+      sessionId: "task-store",
+      turnId: "task-turn",
+      seq: 5,
+      ts: 7004,
+      source: "test",
+      payload: {
+        taskRunId: "task_run_1",
+        evidence: { kind: "tool_result", label: "Read done", status: "done" },
+      },
+    },
+    {
+      id: "task-terminal",
+      type: "turn.completed",
+      sessionId: "task-store",
+      turnId: "task-turn",
+      seq: 6,
+      ts: 7005,
+      source: "test",
+      payload: {
+        assistant: "done",
+        record: {
+          meta: {
+            taskRun: {
+              id: "task_run_1",
+              turnId: "task-turn",
+              status: "completed",
+              phase: "completed",
+              liveness: { status: "completed" },
+              evidence: [{ kind: "tool_result", label: "Read done", status: "done" }],
+              risks: [{ code: "NO_VISIBLE_PROGRESS", level: "info" }],
+            },
+          },
+        },
+      },
+    },
+  ],
+});
+runtime = store.getRuntimeSession("task-store");
+if (runtime.liveTurn?.taskRun?.status !== "completed") {
+  throw new Error(`terminal record should preserve TaskRun status: ${JSON.stringify(runtime.liveTurn?.taskRun)}`);
+}
+if (runtime.liveTurn?.taskRun?.evidence?.[0]?.kind !== "tool_result") {
+  throw new Error(`TaskRun evidence should be visible in renderer state: ${JSON.stringify(runtime.liveTurn?.taskRun)}`);
+}
+if (runtime.liveTurn?.taskRun?.risks?.[0]?.code !== "NO_VISIBLE_PROGRESS") {
+  throw new Error(`TaskRun risks should be visible in renderer state: ${JSON.stringify(runtime.liveTurn?.taskRun)}`);
+}
+
 // A stale non-idle phase without a live turn can happen after interrupted
 // renderer replay or failed startup hydration. It must not keep showing the
 // "current answer is still running" send-choice dialog.

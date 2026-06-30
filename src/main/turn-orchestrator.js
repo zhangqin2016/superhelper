@@ -38,6 +38,7 @@ const {
   completeTaskRun,
   createTaskRun,
   markTaskPhase,
+  updateTaskLiveness,
 } = require("./task-run-state");
 
 const log = getLogger("turn-orchestrator");
@@ -472,6 +473,7 @@ class TurnOrchestrator {
         const activity = activityFromEngineNotice(notice);
         if (activity) setActivityLabel(state, activity);
         if (activity) this._markTaskProgress(sessionId, "runtime_progress", activity);
+        this._updateTaskLivenessFromNotice(sessionId, notice, type);
         if (notice) appendTimelineNotice(state, notice, Date.now());
         const noticeEvent = {
           type,
@@ -1536,6 +1538,12 @@ class TurnOrchestrator {
       evidenceGateAssessment,
       evidenceSummary,
     });
+    if (record && state.taskRun) {
+      record.meta = {
+        ...(record.meta || {}),
+        taskRun: compactTaskRun(state.taskRun),
+      };
+    }
     // Don't archive a turn that produced literally nothing — e.g. an interrupt
     // before any output. Otherwise an empty assistant bubble lands in history.
     // Any real content (text, a tool call, a file change, a result block) makes
@@ -2043,6 +2051,82 @@ class TurnOrchestrator {
       return item;
     } catch (err) {
       log.warn("TaskRun evidence failed: %s", err?.message || err);
+      return null;
+    }
+  }
+
+  _updateTaskLivenessFromNotice(sessionId, notice = {}, eventType = "engine.notice") {
+    try {
+      const state = this._state(sessionId);
+      if (!state.taskRun || !notice) return null;
+      const code = String(notice.code || "").trim();
+      const detail = String(notice.detail || notice.message || "").trim();
+      let status = "runtime_notice";
+      let phase = "";
+      if (code === "longWait" || code === "waitingForFirstResponse") {
+        status = "no_visible_progress";
+        phase = "waiting";
+      } else if (code === "toolProgress" || code === "shellLongRunning") {
+        status = "tool_running";
+        phase = "tool_running";
+      } else if (eventType === "engine.warning" || notice.level === "warning") {
+        status = "warning";
+      } else if (notice.level === "progress") {
+        status = "running";
+      }
+      const liveness = updateTaskLiveness(state.taskRun, {
+        status,
+        detail,
+        noticeCode: code,
+        countsAsActivity: false,
+      });
+      if (phase && detail) {
+        state.taskRun.phase = phase;
+        state.taskRun.progress = {
+          label: detail,
+          value: null,
+        };
+        state.taskRun.resumeState = {
+          ...(state.taskRun.resumeState || {}),
+          lastLivenessCode: code,
+        };
+      }
+      this._emitTaskEvent(sessionId, "task.liveness.updated", {
+        taskRunId: state.taskRun.id,
+        liveness,
+        notice: {
+          code,
+          level: notice.level || "",
+          detail,
+        },
+        taskRun: compactTaskRun(state.taskRun),
+      });
+      if (status === "no_visible_progress") {
+        const risk = addTaskRisk(state.taskRun, {
+          code: "NO_VISIBLE_PROGRESS",
+          level: "info",
+          message: detail || "NO_VISIBLE_PROGRESS",
+        });
+        this._emitTaskEvent(sessionId, "task.risk.detected", {
+          taskRunId: state.taskRun.id,
+          risk,
+          taskRun: compactTaskRun(state.taskRun),
+        });
+      } else if (status === "warning") {
+        const risk = addTaskRisk(state.taskRun, {
+          code: code || "ENGINE_WARNING",
+          level: "warning",
+          message: detail || code || "ENGINE_WARNING",
+        });
+        this._emitTaskEvent(sessionId, "task.risk.detected", {
+          taskRunId: state.taskRun.id,
+          risk,
+          taskRun: compactTaskRun(state.taskRun),
+        });
+      }
+      return liveness;
+    } catch (err) {
+      log.warn("TaskRun liveness update failed: %s", err?.message || err);
       return null;
     }
   }
