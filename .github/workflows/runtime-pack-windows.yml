@@ -48,8 +48,8 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           git log -1 --oneline
-          if (-not (Select-String -Path scripts/publish-common-runtime-pack.mjs -Pattern "npm\.cmd" -Quiet)) {
-            throw "Selected source_ref does not contain the Windows npm.cmd runtime-pack fix. Use source_ref=feat/opencode-engine after commit b2f74318 or newer."
+          if (-not (Select-String -Path scripts/publish-common-runtime-pack.mjs -Pattern "cmd\.exe|ComSpec" -Quiet)) {
+            throw "Selected source_ref does not contain the Windows npm shell runtime-pack fix. Use source_ref=feat/opencode-engine after the latest runtime-pack CI fix."
           }
 
       - name: Build selected Windows runtime pack(s)

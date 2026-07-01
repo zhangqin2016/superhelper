@@ -84,17 +84,32 @@ function fail(message) {
 
 function platformCommand(command) {
   if (process.platform !== "win32") return command;
-  if (command === "npm") return "npm.cmd";
-  if (command === "npx") return "npx.cmd";
   if (command === "qshell") return "qshell.exe";
   return command;
+}
+
+function quoteWindowsCmdArg(value) {
+  const text = String(value ?? "");
+  if (!text) return "\"\"";
+  if (!/[ \t\r\n"&|<>^]/.test(text)) return text;
+  return `"${text.replace(/(["^])/g, "^$1")}"`;
+}
+
+function spawnTarget(command, args) {
+  if (process.platform === "win32" && (command === "npm" || command === "npx")) {
+    return {
+      command: process.env.ComSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", [command, ...args].map(quoteWindowsCmdArg).join(" ")],
+    };
+  }
+  return { command: platformCommand(command), args };
 }
 
 function run(command, args, options = {}) {
   console.log(`[publish-runtime-pack] ${[command, ...args].join(" ")}`);
   if (options.dryRun) return;
-  const executable = platformCommand(command);
-  const result = spawnSync(executable, args, {
+  const target = spawnTarget(command, args);
+  const result = spawnSync(target.command, target.args, {
     cwd: options.cwd || ROOT,
     env: { ...process.env, ...(options.env || {}) },
     stdio: options.stdio || "inherit",
@@ -104,8 +119,8 @@ function run(command, args, options = {}) {
 }
 
 function runCapture(command, args, options = {}) {
-  const executable = platformCommand(command);
-  const result = spawnSync(executable, args, {
+  const target = spawnTarget(command, args);
+  const result = spawnSync(target.command, target.args, {
     cwd: options.cwd || ROOT,
     env: { ...process.env, ...(options.env || {}) },
     encoding: "utf8",
