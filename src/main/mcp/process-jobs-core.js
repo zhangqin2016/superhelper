@@ -8,6 +8,7 @@ const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { latestWorkProgress } = require("../work-progress-protocol");
 
 const DEFAULT_LOG_TAIL_BYTES = 64 * 1024;
 const DEFAULT_STOP_TIMEOUT_MS = 5_000;
@@ -150,6 +151,12 @@ function readRange(file, { offset = null, tailBytes = DEFAULT_LOG_TAIL_BYTES } =
   } catch (err) {
     return { path: file, text: "", offset: 0, nextOffset: 0, byteSize: 0, truncated: false, error: err?.message || String(err) };
   }
+}
+
+function latestProgressForRecord(record = {}) {
+  const stdout = readRange(record.stdoutPath, { tailBytes: DEFAULT_LOG_TAIL_BYTES }).text;
+  const stderr = readRange(record.stderrPath, { tailBytes: DEFAULT_LOG_TAIL_BYTES }).text;
+  return latestWorkProgress(`${stdout}\n${stderr}`);
 }
 
 function healthProcess(record) {
@@ -357,6 +364,7 @@ async function statusJob(input = {}, options = {}) {
     alive: isPidAlive(found.record.pid),
     stdoutBytes: fileSize(found.record.stdoutPath),
     stderrBytes: fileSize(found.record.stderrPath),
+    progress: latestProgressForRecord(found.record),
   };
 }
 
@@ -369,6 +377,7 @@ function logsJob(input = {}, options = {}) {
     jobId: found.id,
     stdout: readRange(found.record.stdoutPath, { offset: input.stdoutOffset, tailBytes }),
     stderr: readRange(found.record.stderrPath, { offset: input.stderrOffset, tailBytes }),
+    progress: latestProgressForRecord(found.record),
   };
 }
 

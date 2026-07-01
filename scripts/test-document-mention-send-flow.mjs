@@ -5,14 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { EventEmitter } from "node:events";
-import JSZip from "jszip";
 
 const require = createRequire(import.meta.url);
 const docPath = require.resolve("../src/main/document-translator.js");
 const originalDoc = require(docPath);
 
 const docCalls = [];
-const docOptions = [];
 require.cache[docPath] = {
   id: docPath,
   filename: docPath,
@@ -21,17 +19,16 @@ require.cache[docPath] = {
     ...originalDoc,
     async extractDocuments(files, options = {}) {
       docCalls.push(files);
-      docOptions.push(options);
       options.onProgress?.({
         phase: "file-indexed",
-        label: "brief.docx",
+        label: files[0]?.name || "mentioned.pdf",
         processed: 1,
         total: 1,
         indexPolicy: "paragraph-index",
       });
       return {
         ok: true,
-        text: "[文档内容: \"brief.docx\"]\n项目进度正常",
+        text: "[文档内容: \"张钦_命理全维度分析.pdf\"]\n这是一份命理全维度分析。",
         extractedPaths: files.map((file) => file.path),
         keepOriginal: false,
       };
@@ -44,17 +41,12 @@ const { TranscriptStore } = require("../src/main/transcript-store.js");
 const { TurnArchive } = require("../src/main/turn-archive.js");
 const { TurnOrchestrator } = require("../src/main/turn-orchestrator.js");
 
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-doc-send-"));
-const docxPath = path.join(tmpDir, "brief.docx");
-const zip = new JSZip();
-zip.file(
-  "word/document.xml",
-  "<w:document><w:body><w:p><w:r><w:t>placeholder</w:t></w:r></w:p></w:body></w:document>",
-);
-fs.writeFileSync(docxPath, await zip.generateAsync({ type: "nodebuffer" }));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-doc-mention-send-"));
+const docName = "张钦_命理全维度分析.pdf";
+const docPathOnDisk = path.join(tmpDir, docName);
+fs.writeFileSync(docPathOnDisk, "%PDF-1.4\n", "utf8");
 
 const runnerPayloads = [];
-
 class FakeRunner extends EventEmitter {
   constructor(sessionId) {
     super();
@@ -86,15 +78,15 @@ const fakeWindow = {
 };
 
 const messages = [];
-const session = { id: "s1", projectId: "p1", messages };
-const runner = new FakeRunner("s1");
+const session = { id: "s-doc-mention", projectId: "p-doc", messages };
+const runner = new FakeRunner(session.id);
 const ctx = {
   get mainWindow() {
     return fakeWindow;
   },
   eventBus: new RuntimeEventBus(() => fakeWindow),
   sessionManager: {
-    findById: (id) => (id === "s1" ? session : null),
+    findById: (id) => (id === session.id ? session : null),
     pushMessageTo: (_sessionId, role, content, files) => {
       messages.push({ role, content, files });
     },
@@ -103,7 +95,7 @@ const ctx = {
     clearAgentResumeId: () => {},
   },
   projectManager: {
-    find: () => ({ id: "p1", path: process.cwd() }),
+    find: () => ({ id: "p-doc", path: tmpDir }),
   },
   runnerPool: {
     get: () => runner,
@@ -115,42 +107,36 @@ ctx.transcriptStore = new TranscriptStore(ctx.sessionManager);
 ctx.turnArchive = new TurnArchive(ctx.sessionManager);
 ctx.turnOrchestrator = new TurnOrchestrator(ctx);
 
-const docFiles = [{ path: docxPath, name: "brief.docx", isImage: false }];
-const result = await ctx.turnOrchestrator.sendUserMessage("s1", "请总结附件", docFiles, {
+const userText = `${docName}讲的什么`;
+const result = await ctx.turnOrchestrator.sendUserMessage(session.id, userText, [], {
   spawnEngine: false,
   skipPreflight: true,
   skipVision: true,
 });
+
 if (!result.ok) throw new Error(`send failed: ${JSON.stringify(result)}`);
-if (docCalls.length !== 1) throw new Error("expected document preflight call");
-if (typeof docOptions[0]?.onProgress !== "function") {
-  throw new Error("document preflight should pass an observable progress callback");
+if (docCalls.length !== 1) throw new Error("mentioned document should enter document preflight");
+if (docCalls[0][0]?.path !== fs.realpathSync(docPathOnDisk)) {
+  throw new Error(`wrong mentioned document path: ${JSON.stringify(docCalls[0])}`);
 }
-if (messages[0]?.content !== "请总结附件") {
-  throw new Error("user bubble should keep original text");
+if (messages[0]?.content !== userText) {
+  throw new Error("user bubble should keep the original typed filename request");
 }
-if (!runnerPayloads[0]?.text?.includes("项目进度正常")) {
-  throw new Error("runner should receive extracted document text");
+if ((messages[0]?.files || []).length !== 0) {
+  throw new Error("auto-resolved document should not appear as a user-attached chip");
+}
+if (!runnerPayloads[0]?.text?.includes("这是一份命理全维度分析")) {
+  throw new Error("runner should receive extracted text for mentioned document");
 }
 if ((runnerPayloads[0]?.files || []).length !== 0) {
-  throw new Error("extracted documents should be removed from runner payload");
+  throw new Error("extracted mentioned document should be removed from runner payload");
 }
 
 ctx.eventBus.flush();
 const events = sent.flatMap((entry) => entry.payload?.events || []);
-const noticeCodes = events
-  .filter((event) => event.type === "engine.notice" || event.type === "engine.warning")
-  .map((event) => event.payload?.notice?.code)
-  .filter(Boolean);
-if (!noticeCodes.includes("documentPreparing") || !noticeCodes.includes("documentReady")) {
-  throw new Error(`missing document notices: ${noticeCodes.join(",")}`);
-}
-if (!noticeCodes.includes("workProgress")) {
-  throw new Error(`missing document progress notice: ${noticeCodes.join(",")}`);
-}
-const workProgress = events.find((event) => event.payload?.notice?.code === "workProgress")?.payload?.notice;
-if (workProgress?.progress?.domain !== "document") {
-  throw new Error(`document progress should use generic workProgress with domain=document: ${JSON.stringify(workProgress)}`);
+const notices = events.map((event) => event.payload?.notice?.code).filter(Boolean);
+if (!notices.includes("documentPreparing") || !notices.includes("documentReady")) {
+  throw new Error(`mentioned document should emit document notices, got: ${notices.join(",")}`);
 }
 
-console.log("test-document-send-flow: ok");
+console.log("test-document-mention-send-flow: ok");

@@ -59,6 +59,7 @@ try {
   assert.equal(catalog.ok, true);
   assert.deepEqual(catalog.categories.map((category) => category.id), ["document", "image", "browser", "media"]);
   assert.equal(catalog.packs.some((pack) => pack.id === "pro-pdf" && pack.category === "document"), true);
+  assert.equal(catalog.packs.some((pack) => pack.id === "large-document" && pack.category === "document"), true);
   assert.equal(catalog.packs.some((pack) => pack.id === "libreoffice" && pack.category === "document"), true);
   assert.equal(catalog.packs.some((pack) => pack.id === "pandoc" && pack.category === "document"), true);
   assert.equal(catalog.packs.some((pack) => pack.id === "pillow" && pack.category === "image"), true);

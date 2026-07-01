@@ -161,6 +161,51 @@ async function newSession() {
   session.terminate();
 }
 
+// --- unfinished native todos must not falsely complete a turn ---------------
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "fix all issues" });
+  await tick();
+  fake.emitEvent({
+    type: "todo.updated",
+    properties: {
+      sessionID: "s",
+      todos: [
+        { content: "Read code", status: "completed" },
+        { content: "Fix P0 bug", status: "in_progress" },
+        { content: "Verify in browser", status: "pending" },
+      ],
+    },
+  });
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "Starting the fixes." } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  await tick();
+  assert(orch.calls.done.length === 0, "idle with unfinished todos keeps the turn open");
+  assert(fake.prompts.length === 2, "unfinished todo gate sends one internal continuation prompt");
+  assert(/unfinished todo/i.test(fake.prompts[1].text), "continuation prompt names unfinished todos");
+  assert(/Continuation attempt: 1\/3/.test(fake.prompts[1].text), "unfinished todo gate must be bounded");
+
+  fake.emitEvent({
+    type: "todo.updated",
+    properties: {
+      sessionID: "s",
+      todos: [
+        { content: "Read code", status: "completed" },
+        { content: "Fix P0 bug", status: "completed" },
+        { content: "Verify in browser", status: "completed" },
+      ],
+    },
+  });
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: " Done and verified." } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  await tick();
+  assert(orch.calls.done.length === 1, "idle settles once todos are completed");
+  assert(/Done and verified/.test(orch.calls.done[0].output), "final output is preserved after todo continuation");
+  session.terminate();
+}
+
 // --- missed session.idle: authoritative status/history still settles --------
 {
   const savedProbe = OpencodeAgentSession.IDLE_STATUS_PROBE_MS;

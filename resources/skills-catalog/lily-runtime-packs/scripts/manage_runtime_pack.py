@@ -65,6 +65,20 @@ def emit(obj, code=0):
     return code
 
 
+def emit_progress(pack_id, status, current=None, total=None, **fields):
+    payload = {
+        "domain": "runtime-pack",
+        "pack": pack_id,
+        "status": status,
+    }
+    if current is not None:
+        payload["current"] = current
+    if total is not None:
+        payload["total"] = total
+    payload.update(fields)
+    print(f"[lily-progress] {json.dumps(payload, ensure_ascii=False, sort_keys=True)}", file=sys.stderr, flush=True)
+
+
 def user_data_dir():
     d = os.environ.get("LILY_USER_DATA_DIR")
     if not d:
@@ -163,7 +177,7 @@ def _download(url, dest):
     if shutil.which("curl"):
         subprocess.run(
             [
-                "curl", "-fSL",
+                "curl", "-fsSL",
                 "--retry", "3", "--retry-delay", "2",
                 "--connect-timeout", "30",
                 "--speed-limit", "1024", "--speed-time", "60",
@@ -176,9 +190,13 @@ def _download(url, dest):
         shutil.copyfileobj(resp, out, 1024 * 256)
 
 
-def download_verify(url, sha256, dest):
+def download_verify(url, sha256, dest, pack_id=None):
+    if pack_id:
+        emit_progress(pack_id, "downloading", current=2, total=5)
     _download(url, dest)
     if sha256:
+        if pack_id:
+            emit_progress(pack_id, "verifying", current=3, total=5)
         got = _sha256_file(dest)
         if got.lower() != sha256.lower():
             raise RuntimeError(f"SHA256_MISMATCH expected={sha256} got={got}")
@@ -210,9 +228,12 @@ def do_install(pack_id):
         return emit({"ok": False, "error": f"UNKNOWN_PACK:{pack_id}"}, 1)
     bundled = bundled_pack_dir(pack_id)
     if bundled:
+        emit_progress(pack_id, "installed", current=5, total=5, source="bundled", path=bundled)
         return emit({"ok": True, "installed": pack_id, "skipped": True, "source": "bundled", "path": bundled})
+    emit_progress(pack_id, "resolving", current=1, total=5, platform=platform_key())
     artifact = resolve_artifact(pack_id)
     if not artifact or not artifact.get("url"):
+        emit_progress(pack_id, "failed", current=1, total=5, error=f"NO_ARTIFACT for {pack_id}/{platform_key()}")
         return emit({"ok": False, "error": f"NO_ARTIFACT for {pack_id}/{platform_key()}"}, 1)
 
     target = pack_dir(pack_id)
@@ -222,10 +243,12 @@ def do_install(pack_id):
     tmp = tempfile.NamedTemporaryFile(prefix=f".{pack_id}-", suffix=".tar.gz", dir=packs_root(), delete=False)
     tmp.close()
     try:
-        download_verify(artifact["url"], artifact.get("sha256"), tmp.name)
+        download_verify(artifact["url"], artifact.get("sha256"), tmp.name, pack_id=pack_id)
+        emit_progress(pack_id, "extracting", current=4, total=5)
         archive_format = extract_artifact(tmp.name, target, artifact)
     except Exception as exc:  # noqa: BLE001
         shutil.rmtree(target, ignore_errors=True)
+        emit_progress(pack_id, "failed", current=5, total=5, error=f"{type(exc).__name__}: {exc}")
         return emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, 1)
     finally:
         try:
@@ -242,6 +265,7 @@ def do_install(pack_id):
         "format": archive_format,
     }
     write_state(state)
+    emit_progress(pack_id, "installed", current=5, total=5, version=artifact.get("version"), path=target)
     return emit({"ok": True, "installed": pack_id, "version": artifact.get("version"), "path": target})
 
 

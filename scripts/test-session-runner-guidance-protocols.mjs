@@ -22,7 +22,9 @@ try {
   assert(guide.includes("## Process Job Protocol"), "process job protocol is included");
   assert(guide.includes("lily_process_jobs"), "process job MCP guidance is included");
   assert(guide.includes("fall back to normal foreground shell behavior"), "process job guidance is fail-open");
-  finish("test-session-runner-guidance-protocols", 5);
+  assert(guide.includes("The agent runtime remains the engine of record"), "guidance preserves the engine boundary");
+  assert(guide.includes("Do not route short foreground commands"), "guidance does not make quick commands slower");
+  finish("test-session-runner-guidance-protocols", 7);
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

@@ -347,6 +347,7 @@ const AGENT_GUIDE_I18N = {
     envNote: [
       "命令 `python3` 和 `node` 指向本应用提供的基础运行时。不要假设某个文档、图片、浏览器或音视频库一定已存在；使用前先用 `python3 -c \"import ...\"`、`node -e \"require.resolve(...)\"` 或 `command -v ...` 做轻量探测。",
       "处理 Excel/CSV、Word/PPT、PDF、图片、网页自动化或音视频任务时，优先探测当前能力；探测成功就直接使用，探测失败再判断是否有对应依赖包。",
+      "不要把内置 Read 工具当作 PDF/Office 内容解析器。若 Read 对 PDF 返回 Unsupported Document，只说明该工具不支持；应改用 Lily 文档预处理、文档索引，或用当前 Python 能力（pdfplumber/PyMuPDF/RapidOCR/Office 库）做确定性提取。",
       "缺失的标准能力应通过「依赖包」技能（lily-runtime-packs）安装或修复：文档处理（libreoffice、pro-pdf、pandoc）、图片处理（pillow、opencv、rapidocr、rembg）、浏览器自动化（web-automation）、音视频处理（ffmpeg）。",
       "不要在普通用户任务里临时 `pip install` / `npm install` / `playwright install` 来修平台能力；依赖包由 Lily CDN 提供预构建版本并校验安装。没有对应依赖包时，如实说明当前平台缺失能力。",
       "安装依赖包后不需要新开会话，后续工具进程会通过 PATH、PYTHONPATH、NODE_PATH 或专用环境变量自动识别。",
@@ -368,6 +369,7 @@ const AGENT_GUIDE_I18N = {
     envNote: [
       "The `python3` and `node` commands point to the app-provided base runtimes. Do not assume a specific document, image, browser, or media library exists; probe first with `python3 -c \"import ...\"`, `node -e \"require.resolve(...)\"`, or `command -v ...`.",
       "For Excel/CSV, Word/PPT, PDF, image, browser automation, or media work, first check the current capability. If the probe succeeds, use it directly; if it fails, decide whether a matching dependency pack exists.",
+      "Do not treat the built-in Read tool as a PDF/Office content parser. If Read returns Unsupported Document for a PDF, that only means the tool cannot parse it; switch to Lily document pre-send extraction, the document index, or deterministic Python extraction with available pdfplumber/PyMuPDF/RapidOCR/Office libraries.",
       "Missing standard capabilities should be installed or repaired through the Dependency Packs skill (lily-runtime-packs): document processing (libreoffice, pro-pdf, pandoc), image processing (pillow, opencv, rapidocr, rembg), browser automation (web-automation), and media processing (ffmpeg).",
       "Do not run ad-hoc `pip install`, `npm install`, or `playwright install` during ordinary user tasks to repair platform capabilities. Dependency packs are prebuilt Lily CDN artifacts with checksum verification. If no matching pack exists, say the current platform lacks that capability.",
       "After a dependency pack is installed, the current session can keep going; later tool processes pick it up through PATH, PYTHONPATH, NODE_PATH, or dedicated environment variables.",
@@ -389,6 +391,7 @@ const AGENT_GUIDE_I18N = {
     envNote: [
       "يشير الأمران `python3` و`node` إلى بيئات التشغيل الأساسية التي يوفّرها التطبيق. لا تفترض أن مكتبة مستندات أو صور أو متصفح أو وسائط محددة موجودة؛ افحص أولاً باستخدام `python3 -c \"import ...\"` أو `node -e \"require.resolve(...)\"` أو `command -v ...`.",
       "لمهام Excel/CSV وWord/PPT وPDF والصور وأتمتة المتصفح والوسائط، افحص القدرة الحالية أولاً. إذا نجح الفحص فاستخدمها مباشرة، وإذا فشل فحدّد هل توجد حزمة تبعية مناسبة.",
+      "لا تستخدم أداة Read المدمجة كمحلل لمحتوى PDF أو Office. إذا أعادت Read رسالة Unsupported Document لملف PDF فهذا يعني أن الأداة لا تستطيع تحليله فقط؛ انتقل إلى استخراج Lily قبل الإرسال، أو فهرس المستندات، أو استخراج Python الحتمي باستخدام pdfplumber/PyMuPDF/RapidOCR ومكتبات Office المتاحة.",
       "يجب تثبيت أو إصلاح القدرات القياسية المفقودة عبر مهارة حزم التبعيات (lily-runtime-packs): معالجة المستندات (libreoffice وpro-pdf وpandoc)، معالجة الصور (pillow وopencv وrapidocr وrembg)، أتمتة المتصفح (web-automation)، ومعالجة الوسائط (ffmpeg).",
       "لا تشغّل `pip install` أو `npm install` أو `playwright install` أثناء مهام المستخدم العادية لإصلاح قدرات المنصة. حزم التبعيات ملفات Lily CDN مسبقة البناء مع تحقق checksum. إذا لم توجد حزمة مناسبة، فاذكر أن المنصة الحالية تفتقد تلك القدرة.",
       "بعد تثبيت حزمة تبعية يمكن متابعة الجلسة الحالية؛ ستلتقط العمليات اللاحقة الحزمة عبر PATH أو PYTHONPATH أو NODE_PATH أو متغيرات بيئة مخصصة.",

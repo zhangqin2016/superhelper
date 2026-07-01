@@ -1,23 +1,17 @@
-# Build win32 runtime + OpenCode engine on Windows, then produce the full NSIS/ZIP installer.
-# Manual run: Actions → "Windows Full Installer" → Run workflow
-# Artifacts: 智能工作台-*-x64.exe / .zip (includes Python + LibreOffice runtime)
+# Build the default slim Windows installer.
+# Manual run: Actions → "Windows Slim Installer" → Run workflow
+# Artifacts: 智能工作台-*-x64.exe / .zip (runtime dependencies install from Settings)
 
-name: Windows Full Installer
+name: Windows Slim Installer
 
 on:
   workflow_dispatch:
-    inputs:
-      skip_libreoffice:
-        description: Skip LibreOffice in runtime (faster smoke builds)
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 jobs:
-  dist-windows-full:
+  dist-windows-slim:
     runs-on: windows-latest
     timeout-minutes: 120
 
@@ -43,20 +37,6 @@ jobs:
       - name: Fetch OpenCode engine binary (win32-x64)
         run: node scripts/fetch-opencode-engine.mjs --platform win32-x64
 
-      - name: Build win32-x64 runtime bundle
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $args = @("--platform", "win32-x64")
-          if ("${{ inputs.skip_libreoffice }}" -eq "true") {
-            $args += "--skip-libreoffice"
-          }
-          node scripts/build-runtime-bundle.mjs @args
-          bundles/win32-x64/runtime/venv/Scripts/python.exe -c "import pandas, openpyxl, PIL; print('runtime ok')"
-
-      - name: Verify runtime bundle
-        run: node scripts/verify-runtime-bundle.mjs --platform win32-x64
-
       - name: Purge macOS junk before pack
         run: node scripts/purge-macos-junk.mjs
 
@@ -67,7 +47,7 @@ jobs:
           ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
 
       - name: Verify installer contents
-        run: node scripts/verify-win-pack.mjs --expect-runtime
+        run: node scripts/verify-win-pack.mjs
 
       - name: Report artifact sizes
         shell: pwsh
@@ -78,7 +58,7 @@ jobs:
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer-full
+          name: windows-installer-slim
           path: |
             dist/*-x64.exe
             dist/*-x64.zip

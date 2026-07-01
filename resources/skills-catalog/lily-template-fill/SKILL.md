@@ -20,6 +20,10 @@ Fill an existing Word template containing Jinja2 placeholders and produce a new 
 ## Batch Mode
 
 For one document per row, loop in code or shell: create a JSON object per row and call fill with a unique output path.
+For large batch fills, run the batch through the generic `lily_process_jobs`
+supervisor and observe with `job_status` and `job_logs`; batch scripts should
+emit standard `[lily-progress]` events for completed/total documents. Single
+template fills stay on the fast path.
 
 ## Rules
 

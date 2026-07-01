@@ -20,4 +20,8 @@ Text extraction tells you what a document says; it cannot prove the document loo
 
 - This is a final QA step. Pair it with document creation/editing skills.
 - For very large documents, verify the pages that matter instead of rendering hundreds of pages at high scale.
+- Route long render batches, many-file verification, and high-page-count visual
+  checks through the generic `lily_process_jobs` supervisor. Observe with
+  `job_status` and `job_logs`; render scripts should emit standard
+  `[lily-progress]` events for file/page progress.
 - Never claim visual correctness without looking at rendered pages.

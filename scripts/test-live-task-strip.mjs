@@ -54,6 +54,19 @@ const genericStep = buildLiveTaskStripModel({
 }, translate);
 assert.equal(genericStep.visible, false);
 
+const writeOnly = buildLiveTaskStripModel({
+  tools: new Map([[
+    "tool_write",
+    {
+      id: "tool_write",
+      name: "Write",
+      status: "running",
+      input: { file_path: "cult-lamb.html", content: "<html></html>" },
+    },
+  ]]),
+}, translate);
+assert.equal(writeOnly.visible, false);
+
 const withTodos = buildLiveTaskStripModel({
   tools: new Map([[
     "todo_1",
@@ -72,5 +85,31 @@ const withTodos = buildLiveTaskStripModel({
 assert.equal(withTodos.visible, true);
 assert.equal(withTodos.summary, "Tasks 1/2 · Now Patch UI");
 assert.equal(withTodos.items.length, 2);
+
+const activeFromTaskRun = buildLiveTaskStripModel({
+  tools: new Map([[
+    "todo_1",
+    {
+      name: "todowrite",
+      input: {
+        todos: [
+          { content: "Build canvas", status: "pending" },
+          { content: "Add pets", status: "pending" },
+        ],
+      },
+    },
+  ]]),
+  taskRun: {
+    activeStep: "todo_1",
+    plan: [
+      { id: "todo_1", title: "Build canvas", status: "pending" },
+      { id: "todo_2", title: "Add pets", status: "pending" },
+    ],
+  },
+}, translate);
+assert.equal(activeFromTaskRun.visible, true);
+assert.equal(activeFromTaskRun.summary, "Tasks 0/2 · Now Build canvas");
+assert.equal(activeFromTaskRun.items[0].status, "in_progress");
+assert.equal(activeFromTaskRun.items[1].status, "pending");
 
 console.log("live-task-strip: ok");

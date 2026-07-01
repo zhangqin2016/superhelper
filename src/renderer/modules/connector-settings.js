@@ -25,6 +25,34 @@ function setChecked(id, v) {
 }
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+let activeConnectorTab = "mail";
+let connectorTabsInitialized = false;
+
+function setConnectorTab(tab) {
+  activeConnectorTab = tab === "web" ? "web" : "mail";
+  document.querySelectorAll("[data-connector-tab]").forEach((button) => {
+    const isActive = button.dataset.connectorTab === activeConnectorTab;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  document.querySelectorAll("[data-connector-panel]").forEach((panel) => {
+    const isActive = panel.dataset.connectorPanel === activeConnectorTab;
+    panel.classList.toggle("is-active", isActive);
+    panel.hidden = !isActive;
+  });
+}
+
+function initConnectorTabs() {
+  if (connectorTabsInitialized) {
+    setConnectorTab(activeConnectorTab);
+    return;
+  }
+  connectorTabsInitialized = true;
+  document.querySelectorAll("[data-connector-tab]").forEach((button) => {
+    button.addEventListener("click", () => setConnectorTab(button.dataset.connectorTab));
+  });
+  setConnectorTab(activeConnectorTab);
+}
 
 // Foolproof add-flow: the moment a valid email is entered, fill IMAP/SMTP from
 // autodiscovery and surface app-password guidance, so the user only enters the
@@ -345,6 +373,7 @@ export async function refreshWebCredentials() {
 }
 
 export async function initConnectorSettings() {
+  initConnectorTabs();
   updateProviderFields();
   await refreshConnectorSettings();
 

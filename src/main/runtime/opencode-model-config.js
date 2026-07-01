@@ -88,6 +88,12 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
 
   const options = {};
   if (baseURL) options.baseURL = baseURL;
+  // Some OpenAI-compatible/self-hosted servers (notably vLLM deployments) emit
+  // a stream usage-only chunk without `choices`. OpenCode defaults
+  // includeUsage=true for @ai-sdk/openai-compatible, and the AI SDK rejects that
+  // non-standard chunk before the completed assistant text can settle. Disabling
+  // streaming usage keeps the model URL/body otherwise unchanged.
+  if (protocol === "openai") options.includeUsage = false;
   if (token) {
     options.apiKey = token;
     options.headers = { Authorization: `Bearer ${token}` };

@@ -33,6 +33,7 @@ const EXTRACTABLE_EXTENSIONS = new Set([
 ]);
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const LARGE_DOCUMENT_INDEX_BYTES = 20 * 1024 * 1024;
 const MAX_CHARS_PER_FILE = 80_000;
 const MAX_TOTAL_CHARS = 200_000;
 
@@ -101,6 +102,133 @@ function readPlainTextFile(filePath) {
   return buffer.toString("utf8");
 }
 
+function shouldUseLargeDocumentIndex(filePath) {
+  try {
+    return fs.statSync(filePath).size > LARGE_DOCUMENT_INDEX_BYTES;
+  } catch {
+    return false;
+  }
+}
+
+function reportProgress(onProgress, event = {}) {
+  if (typeof onProgress !== "function") return;
+  try {
+    onProgress({
+      ...event,
+      ts: Date.now(),
+    });
+  } catch {
+    // Progress is observability only; never let UI reporting break extraction.
+  }
+}
+
+function yieldToEventLoop() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+function buildLargeDocumentIndexNotice(filePath, label) {
+  const { inspectPath } = require("./mcp/file-intelligence-core");
+  const { indexPath } = require("./mcp/file-intelligence-index");
+  let info;
+  try {
+    info = inspectPath({ path: filePath }, { largeThresholdBytes: LARGE_DOCUMENT_INDEX_BYTES });
+  } catch (err) {
+    info = {
+      ok: false,
+      kind: path.extname(filePath).slice(1) || "unknown",
+      byteSize: 0,
+      error: err?.message || "INSPECT_FAILED",
+      recommendedActions: ["sample-metadata"],
+    };
+  }
+  let indexed;
+  try {
+    indexed = indexPath({ path: filePath });
+  } catch (err) {
+    indexed = { ok: false, error: err?.message || "INDEX_FAILED" };
+  }
+  const requiredPacks = Array.isArray(info.requiredPacks) ? info.requiredPacks : [];
+  const recommendedActions = Array.isArray(info.recommendedActions) ? info.recommendedActions : [];
+  return {
+    label,
+    path: filePath,
+    largeDocument: true,
+    indexPolicy: info.indexPolicy || "",
+    requiredPacks,
+    recommendedActions,
+    metadataIndexId: indexed.ok ? indexed.indexId : "",
+    text: [
+      `Large document indexed handling: "${label}"`,
+      `Source file path: ${filePath}`,
+      `File type: ${info.kind || "unknown"}`,
+      `Size: ${info.byteSize || 0} bytes`,
+      info.indexPolicy ? `Index policy: ${info.indexPolicy}` : "",
+      requiredPacks.length ? `Required dependency packs: ${requiredPacks.join(", ")}` : "",
+      recommendedActions.length ? `Recommended actions: ${recommendedActions.join(", ")}` : "",
+      indexed.ok ? `Workspace metadata index: ${indexed.indexId}` : `Workspace metadata index unavailable: ${indexed.error || "UNKNOWN"}`,
+      "",
+      "This large file was not fully extracted before sending so the conversation stays usable. Query the workspace/file index for evidence, or install the required dependency packs for deeper extraction.",
+    ].filter(Boolean).join("\n"),
+  };
+}
+
+function buildDocumentFailureNotice(filePath, label, error) {
+  const { inspectPath } = require("./mcp/file-intelligence-core");
+  const { indexPath } = require("./mcp/file-intelligence-index");
+  let info;
+  try {
+    info = inspectPath({ path: filePath }, { largeThresholdBytes: LARGE_DOCUMENT_INDEX_BYTES });
+  } catch (err) {
+    info = {
+      ok: false,
+      kind: path.extname(filePath).slice(1) || "unknown",
+      byteSize: 0,
+      error: err?.message || "INSPECT_FAILED",
+      recommendedActions: ["retry-extraction"],
+    };
+  }
+  let indexed;
+  try {
+    indexed = indexPath({ path: filePath });
+  } catch (err) {
+    indexed = { ok: false, error: err?.message || "INDEX_FAILED" };
+  }
+  const requiredPacks = Array.isArray(info.requiredPacks) ? info.requiredPacks : [];
+  const recommendedActions = Array.isArray(info.recommendedActions) ? info.recommendedActions : [];
+  return {
+    label,
+    path: filePath,
+    failedDocument: true,
+    indexPolicy: info.indexPolicy || "",
+    requiredPacks,
+    recommendedActions,
+    metadataIndexId: indexed.ok ? indexed.indexId : "",
+    text: [
+      `Document extraction fallback: "${label}"`,
+      `Source file path: ${filePath}`,
+      `File type: ${info.kind || "unknown"}`,
+      `Size: ${info.byteSize || 0} bytes`,
+      `Extraction error: ${error || "EXTRACT_FAILED"}`,
+      info.indexPolicy ? `Index policy: ${info.indexPolicy}` : "",
+      requiredPacks.length ? `Required dependency packs: ${requiredPacks.join(", ")}` : "",
+      recommendedActions.length ? `Recommended actions: ${recommendedActions.join(", ")}` : "",
+      indexed.ok ? `Workspace metadata index: ${indexed.indexId}` : `Workspace metadata index unavailable: ${indexed.error || "UNKNOWN"}`,
+      "",
+      "This is not document content. Do not summarize, quote, or infer facts from this file based only on this metadata. If the user asked about the document, explain that content extraction failed and use available tools, dependency packs, or the source file path to retry.",
+    ].filter(Boolean).join("\n"),
+  };
+}
+
+function buildDocumentFailureSection(item) {
+  const result = buildDocumentFailureNotice(item.path, item.label, item.error);
+  return [
+    `[Document unavailable: "${result.label}"]`,
+    `Source file path: ${result.path}`,
+    "",
+    result.text,
+  ].join("\n");
+}
+
 async function extractDocumentFile(file) {
   const filePath = file.path;
   const ext = path.extname(filePath).toLowerCase();
@@ -111,6 +239,9 @@ async function extractDocumentFile(file) {
   }
 
   let text = "";
+  if (shouldUseLargeDocumentIndex(filePath)) {
+    return buildLargeDocumentIndexNotice(filePath, label);
+  }
   if (TEXT_EXTENSIONS.has(ext)) {
     text = readPlainTextFile(filePath);
   } else if (OFFICE_EXTENSIONS.has(ext)) {
@@ -145,21 +276,52 @@ function isDocumentOnlyUserMessage(text, files) {
 
 /**
  * @param {Array<{ path?: string, name?: string, isImage?: boolean }>} files
- * @returns {Promise<{ ok: true, text: string, extractedPaths: string[], keepOriginal: boolean } | { ok: false, reason: string, detail?: string } | null>}
+ * @returns {Promise<{ ok: true, text: string, extractedPaths: string[], keepOriginal: boolean, degraded?: boolean } | { ok: false, reason: string, detail?: string } | null>}
  */
-async function extractDocuments(files) {
+async function extractDocuments(files, options = {}) {
   const docFiles = (files || []).filter((file) => isExtractableDocumentFile(file));
   if (docFiles.length === 0) return null;
+  const onProgress = options?.onProgress;
 
   const sections = [];
   const indexedDocuments = [];
   const extractedPaths = [];
+  const failedDocuments = [];
   let failed = 0;
   let totalChars = 0;
+  let processed = 0;
+
+  reportProgress(onProgress, {
+    phase: "started",
+    total: docFiles.length,
+    processed,
+  });
+  await yieldToEventLoop();
 
   for (const file of docFiles) {
+    const label = file.name || path.basename(file.path);
+    reportProgress(onProgress, {
+      phase: "file-started",
+      label,
+      path: file.path,
+      total: docFiles.length,
+      processed,
+    });
+    await yieldToEventLoop();
     try {
       const result = await extractDocumentFile(file);
+      processed += 1;
+      reportProgress(onProgress, {
+        phase: result.largeDocument ? "file-indexed" : "file-extracted",
+        label: result.label,
+        path: result.path,
+        total: docFiles.length,
+        processed,
+        indexPolicy: result.indexPolicy || "",
+        metadataIndexId: result.metadataIndexId || "",
+        requiredPacks: result.requiredPacks || [],
+      });
+      await yieldToEventLoop();
       const room = MAX_TOTAL_CHARS - totalChars;
       if (room <= 0) break;
       const text = truncateText(result.text, Math.min(MAX_CHARS_PER_FILE, room));
@@ -175,7 +337,22 @@ async function extractDocuments(files) {
         ].join("\n"),
       );
     } catch (err) {
+      processed += 1;
       failed += 1;
+      failedDocuments.push({
+        label,
+        path: file.path,
+        error: err?.message || "EXTRACT_FAILED",
+      });
+      reportProgress(onProgress, {
+        phase: "file-failed",
+        label,
+        path: file.path,
+        total: docFiles.length,
+        processed,
+        error: err?.message || "EXTRACT_FAILED",
+      });
+      await yieldToEventLoop();
       console.warn(
         `[document-translator] extract failed for ${file.name || file.path}:`,
         err.message,
@@ -184,11 +361,34 @@ async function extractDocuments(files) {
   }
 
   if (sections.length === 0) {
+    const fallbackSections = failedDocuments.map((item) => buildDocumentFailureSection(item));
+    reportProgress(onProgress, {
+      phase: "done",
+      total: docFiles.length,
+      processed,
+      failed,
+      extracted: 0,
+    });
+    if (fallbackSections.length) {
+      return {
+        ok: true,
+        text: fallbackSections.join("\n\n"),
+        documentIndex: null,
+        documentIndexText: "",
+        extractedPaths: [],
+        keepOriginal: true,
+        degraded: true,
+      };
+    }
     return {
       ok: false,
       reason: failed === docFiles.length ? "ALL_FAILED" : "NO_CONTENT",
       detail: "Unable to read document content at this time. Please try again later.",
     };
+  }
+
+  for (const item of failedDocuments) {
+    sections.push(buildDocumentFailureSection(item));
   }
 
   let documentIndex = null;
@@ -204,6 +404,14 @@ async function extractDocuments(files) {
     console.warn("[document-translator] document query index failed:", err?.message || err);
   }
 
+  reportProgress(onProgress, {
+    phase: "done",
+    total: docFiles.length,
+    processed,
+    failed,
+    extracted: indexedDocuments.length,
+  });
+
   return {
     ok: true,
     text: sections.join("\n\n"),
@@ -211,6 +419,7 @@ async function extractDocuments(files) {
     documentIndexText,
     extractedPaths,
     keepOriginal: false,
+    degraded: failedDocuments.length > 0,
   };
 }
 

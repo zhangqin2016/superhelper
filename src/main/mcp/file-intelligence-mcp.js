@@ -62,9 +62,10 @@ function createFileIntelligenceMcpServer() {
   server.registerTool(
     "index_path",
     {
-      description: "Build a reusable local evidence index for a text-like file or bounded directory. Returns an index id; it does not answer the user's question by itself.",
+      description: "Build a reusable local evidence index for a text-like file, metadata-indexable document/media file, or bounded directory. Returns an index id; it does not answer the user's question by itself.",
       inputSchema: {
         path: z.string().describe("Absolute or workspace-relative local file/directory path"),
+        workspacePath: z.string().optional().describe("Current workspace root for workspace-scoped index partitioning"),
         chunkLineCount: z.number().int().min(1).max(500).optional().describe("Lines per chunk for text-like files"),
         maxFiles: z.number().int().min(1).max(1000).optional().describe("Maximum files to consider in a directory"),
       },

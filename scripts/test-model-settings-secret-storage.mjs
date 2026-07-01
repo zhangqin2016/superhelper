@@ -41,8 +41,28 @@ const saved = modelPresets.saveCustomPreset({
   model: "secret-model",
   baseUrl: "https://llm.example.com",
   apiKey: key,
+  tlsSkipVerify: true,
 });
 if (!saved.ok) throw new Error(`saveCustomPreset failed: ${saved.error}`);
+if (!saved.preset.tlsSkipVerify) {
+  throw new Error("custom preset should expose TLS skip when saved for its own API URL");
+}
+const missingCustomUrl = modelPresets.saveCustomPreset({
+  label: "Missing URL",
+  model: "missing-url-model",
+  apiKey: "sk-missing-url-123456",
+});
+if (missingCustomUrl.ok || missingCustomUrl.error !== "INVALID_BASE_URL") {
+  throw new Error(`custom presets must require their own API URL: ${JSON.stringify(missingCustomUrl)}`);
+}
+const missingCustomKey = modelPresets.saveCustomPreset({
+  label: "Missing Key",
+  model: "missing-key-model",
+  baseUrl: "https://missing-key.example.com/v1",
+});
+if (missingCustomKey.ok || missingCustomKey.error !== "INVALID_API_KEY") {
+  throw new Error(`custom presets must require their own API key: ${JSON.stringify(missingCustomKey)}`);
+}
 
 const gateway = modelPresets.setApiGateway({
   mode: "custom",
@@ -133,6 +153,7 @@ const remoteCustom = modelPresets.saveCustomPreset({
   model: "remote-compatible-model",
   baseUrl: "https://custom-remote.example.com",
   apiKey: "sk-remote-compatible-secret-123456",
+  tlsSkipVerify: true,
 });
 if (!remoteCustom.ok) {
   throw new Error(`custom preset should still be saveable under remote catalog: ${remoteCustom.error}`);
@@ -229,7 +250,8 @@ if (!customSwitch.ok) {
 const remoteCustomEnv = modelPresets.getUserApiEnv();
 if (
   remoteCustomEnv.LILY_API_BASE_URL !== "https://custom-remote.example.com" ||
-  remoteCustomEnv.LILY_API_KEY !== "sk-remote-compatible-secret-123456"
+  remoteCustomEnv.LILY_API_KEY !== "sk-remote-compatible-secret-123456" ||
+  remoteCustomEnv.LILY_TLS_SKIP_VERIFY !== "1"
 ) {
   throw new Error(`selected custom preset should use local custom API settings: ${JSON.stringify(remoteCustomEnv)}`);
 }

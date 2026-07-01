@@ -90,6 +90,49 @@ const result = await extractDocuments(files);
 assert(result?.ok, `extractDocuments failed: ${JSON.stringify(result)}`);
 assert(result.text.includes("会议纪要"), "missing txt extraction");
 
+const largeXlsxPath = path.join(tmpDir, "large.xlsx");
+fs.writeFileSync(largeXlsxPath, Buffer.alloc(21 * 1024 * 1024, 65));
+const largeProgress = [];
+const largeXlsx = await extractDocuments(
+  [{ path: largeXlsxPath, name: "large.xlsx", isImage: false }],
+  { onProgress: (event) => largeProgress.push(event) },
+);
+assert(largeXlsx?.ok, `large xlsx should not block or fail extraction: ${JSON.stringify(largeXlsx)}`);
+assert(largeXlsx.text.includes("Large document indexed handling"), "large xlsx should return an index notice instead of full extraction");
+assert(largeXlsx.text.includes("sheet-index"), "large xlsx notice should preserve sheet-index routing");
+assert(largeXlsx.text.includes("large-document"), "large xlsx notice should mention required large-document dependency");
+assert(largeProgress.some((event) => event.phase === "file-started" && event.label === "large.xlsx"), "large xlsx should report file-started progress");
+assert(largeProgress.some((event) => event.phase === "file-indexed" && event.label === "large.xlsx"), "large xlsx should report index progress");
+assert(largeProgress.some((event) => event.phase === "done" && event.processed === 1), "large xlsx should report done progress");
+
+const badPdfPath = path.join(tmpDir, "bad.pdf");
+fs.writeFileSync(badPdfPath, "not a valid pdf", "utf8");
+const badProgress = [];
+const badPdf = await extractDocuments(
+  [{ path: badPdfPath, name: "bad.pdf", isImage: false }],
+  { onProgress: (event) => badProgress.push(event) },
+);
+assert(badPdf?.ok, `bad pdf should degrade instead of failing the whole turn: ${JSON.stringify(badPdf)}`);
+assert(badPdf.degraded === true, "bad pdf fallback should be marked degraded");
+assert(badPdf.keepOriginal === true, "bad pdf fallback should keep the original file attached");
+assert(badPdf.extractedPaths.length === 0, "bad pdf fallback should not pretend extraction succeeded");
+assert(badPdf.text.includes("Document extraction fallback"), "bad pdf fallback context missing");
+assert(badPdf.text.includes("Do not summarize"), "bad pdf fallback should block blind summaries");
+assert(badPdf.text.includes("bad.pdf"), "bad pdf fallback should include the file label");
+assert(badProgress.some((event) => event.phase === "file-failed" && event.label === "bad.pdf"), "bad pdf should report file-failed progress");
+assert(badProgress.some((event) => event.phase === "done" && event.failed === 1 && event.extracted === 0), "bad pdf should report degraded done progress");
+
+const mixed = await extractDocuments([
+  { path: txtPath, name: "notes.txt", isImage: false },
+  { path: badPdfPath, name: "bad.pdf", isImage: false },
+]);
+assert(mixed?.ok, `mixed success/failure should still produce a usable context: ${JSON.stringify(mixed)}`);
+assert(mixed.degraded === true, "mixed document extraction should mark partial failure as degraded");
+assert(mixed.text.includes("会议纪要"), "mixed extraction should keep successfully extracted content");
+assert(mixed.text.includes("Document extraction fallback"), "mixed extraction should include fallback for failed files");
+assert(mixed.extractedPaths.includes(txtPath), "mixed extraction should record successful extracted path");
+assert(!mixed.extractedPaths.includes(badPdfPath), "mixed extraction should not mark failed file as extracted");
+
 if (haveRuntime) {
   // Top-tier libraries must preserve real structure: heading + a Markdown table.
   assert(result.text.includes("Quarterly Report"), "missing docx heading");

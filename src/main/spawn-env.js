@@ -31,6 +31,10 @@ function utf8Locale(value) {
   return /utf-?8/i.test(String(value || "")) ? String(value) : "C.UTF-8";
 }
 
+function truthy(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || ""));
+}
+
 function findDevelopmentPlaywrightNodeModules() {
   try {
     const fs = require("node:fs");
@@ -52,7 +56,7 @@ function findDevelopmentPlaywrightNodeModules() {
 function buildAgentSpawnEnv(options = {}) {
   ensureRuntimeNodeShim();
   const home = userHome();
-  const lilyEnv = resolveLilyEnv();
+  const lilyEnv = options.lilyEnv || resolveLilyEnv();
   const engineEnv = toEngineEnv(lilyEnv);
 
   const runtimePaths = getRuntimePathEntries();
@@ -136,6 +140,10 @@ function buildAgentSpawnEnv(options = {}) {
     // dir the main process uses — they run as plain node without electron.
     LILY_USER_DATA_DIR: app.getPath("userData"),
   };
+
+  if (truthy(lilyEnv.LILY_TLS_SKIP_VERIFY)) {
+    env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+  }
 
   try {
     const fs = require("node:fs");

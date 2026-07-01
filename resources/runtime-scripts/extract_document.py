@@ -15,6 +15,9 @@ files never pay for it.
 Usage: python extract_document.py <file_path>
 Emits a single JSON object on stdout: {"ok": true, "text": "..."} or
 {"ok": false, "error": "..."}.
+
+Set LILY_PDF_ENGINE=pro-pdf (or docling) only for explicit heavyweight layout
+analysis. The default path stays light and local even when pro-pdf is installed.
 """
 
 import json
@@ -250,11 +253,17 @@ def _ocr_pdf_pages(path, indices):
     return out
 
 
+def _pro_pdf_enabled():
+    return os.environ.get("LILY_PDF_ENGINE", "").lower() in {"pro", "pro-pdf", "docling"}
+
+
 def _try_pro_pdf(path):
-    # Opt-in upgrade: if the "pro-pdf" pack is installed (Docling importable),
-    # use its layout/reading-order/table-structure analysis for complex PDFs.
-    # Absent or failing, return None so the light path below handles it — the
-    # base install is never burdened with the heavy import. See runtime-packs.js.
+    # Explicit upgrade only: Docling/pro-pdf is a heavyweight layout engine and
+    # may load OCR/model weights or touch the network on first use. Plain
+    # pre-send attachment enrichment must stay fast and bounded, so installing
+    # the runtime pack alone must not change the default PDF path.
+    if not _pro_pdf_enabled():
+        return None
     try:
         from docling.document_converter import DocumentConverter
     except Exception:  # noqa: BLE001 — pack not installed; this is the normal base case

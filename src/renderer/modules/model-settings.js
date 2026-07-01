@@ -110,6 +110,12 @@ function renderCustomList(presets, activePresetId) {
       }
       meta.appendChild(api);
     }
+    if (preset.tlsSkipVerify) {
+      const tls = document.createElement("span");
+      tls.className = "model-custom-api";
+      tls.textContent = t("settings.modelTlsSkipVerify");
+      meta.appendChild(tls);
+    }
 
     const actions = document.createElement("div");
     actions.className = "model-custom-actions";
@@ -342,6 +348,7 @@ export async function initModelSettings() {
       model: $("modelCustomId")?.value?.trim() || "",
       baseUrl: $("modelCustomBaseUrl")?.value?.trim() || "",
       apiKey: $("modelCustomApiKey")?.value?.trim() || "",
+      tlsSkipVerify: Boolean($("modelCustomTlsSkipVerify")?.checked),
     });
     if (!result.ok) {
       showToast(apiErrorMessage(result.error), "error");
@@ -353,9 +360,11 @@ export async function initModelSettings() {
       "modelCustomId",
       "modelCustomBaseUrl",
       "modelCustomApiKey",
+      "modelCustomTlsSkipVerify",
     ]) {
       const el = $(id);
-      if (el) el.value = "";
+      if (el?.type === "checkbox") el.checked = false;
+      else if (el) el.value = "";
     }
 
     showToast(t("toast.modelCustomSaved"), "success");

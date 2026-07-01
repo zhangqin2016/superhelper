@@ -27,6 +27,10 @@ const {
   appendIncompleteTurnSummary,
 } = require("./turn-error-classify");
 const { runVisionPreflight, runDocumentPreflight } = require("./send-preflight");
+const {
+  mergeMentionedDocumentFiles,
+  resolveMentionedDocumentFiles,
+} = require("./workspace-document-mentions");
 const { buildTaskContract, withTaskContractPrefix } = require("./task-contract");
 const { EvidenceLedger } = require("./evidence-ledger");
 const { buildTurnPolicy } = require("./turn-policy");
@@ -949,6 +953,23 @@ class TurnOrchestrator {
       return result;
     }
 
+    const project =
+      ensured.project ||
+      (session?.projectId && typeof this.ctx.projectManager?.find === "function"
+        ? this.ctx.projectManager.find(session.projectId)
+        : null);
+    const displaySourceFiles = Array.isArray(files) ? files : [];
+    if (!opts.skipDocument && project?.path) {
+      try {
+        const mentioned = resolveMentionedDocumentFiles(rawUserText, project.path, displaySourceFiles);
+        files = mergeMentionedDocumentFiles(files, mentioned.files);
+      } catch (err) {
+        // Fail open to the original payload. Filename auto-resolution is a convenience,
+        // not a reason to block a normal turn.
+        log.warn("workspace document mention resolution failed: %s", err?.message || err);
+      }
+    }
+
     const state = this._state(session.id);
     state.phase = "starting";
     state.turnId = newTurnId();
@@ -973,7 +994,7 @@ class TurnOrchestrator {
     state.pendingQuestions.clear();
     state.pendingHooks.clear();
     state.tools.clear();
-    const displayFiles = opts.displayFiles || fileMetadataFromPayload(files);
+    const displayFiles = opts.displayFiles || fileMetadataFromPayload(displaySourceFiles);
     state.currentPayload = {
       rawText: rawUserText,
       text: rawUserText,
@@ -1078,11 +1099,6 @@ class TurnOrchestrator {
       state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
     }
 
-    const project =
-      ensured.project ||
-      (session?.projectId && typeof this.ctx.projectManager?.find === "function"
-        ? this.ctx.projectManager.find(session.projectId)
-        : null);
     const taskContract = buildTaskContract({ text, files, session, project });
     state.taskContract = taskContract.active ? taskContract : null;
     const turnPolicy = buildTurnPolicy({ text, taskContract });
@@ -2125,12 +2141,17 @@ class TurnOrchestrator {
       const detail = String(notice.detail || notice.message || "").trim();
       let status = "runtime_notice";
       let phase = "";
+      let countsAsActivity = false;
       if (code === "longWait" || code === "waitingForFirstResponse") {
         status = "no_visible_progress";
         phase = "waiting";
       } else if (code === "toolProgress" || code === "shellLongRunning") {
         status = "tool_running";
         phase = "tool_running";
+      } else if (code === "workProgress") {
+        status = "work_running";
+        phase = "work_running";
+        countsAsActivity = true;
       } else if (eventType === "engine.warning" || notice.level === "warning") {
         status = "warning";
       } else if (notice.level === "progress") {
@@ -2152,7 +2173,7 @@ class TurnOrchestrator {
         status,
         detail,
         noticeCode: code,
-        countsAsActivity: false,
+        countsAsActivity,
       });
       if (phase && detail) {
         state.taskRun.phase = phase;

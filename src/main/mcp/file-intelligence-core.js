@@ -14,6 +14,9 @@ const TEXT_EXTENSIONS = new Set([
   ".py", ".java", ".go", ".rs", ".rb", ".php", ".css", ".scss", ".sql", ".sh",
 ]);
 
+const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"]);
+const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"]);
+
 function okBase(filePath, stat) {
   return {
     ok: true,
@@ -52,6 +55,8 @@ function extensionKind(filePath) {
   if ([".docx", ".doc"].includes(ext)) return "document";
   if ([".pptx", ".ppt"].includes(ext)) return "presentation";
   if ([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"].includes(ext)) return "image";
+  if (VIDEO_EXTENSIONS.has(ext)) return "video";
+  if (AUDIO_EXTENSIONS.has(ext)) return "audio";
   return "binary";
 }
 
@@ -104,7 +109,7 @@ function readHeader(filePath, maxBytes) {
 }
 
 function inspectImageMetadata(filePath) {
-  const header = readHeader(filePath, 32);
+  const header = readHeader(filePath, 4096);
   const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   if (
     header.length >= 24
@@ -117,6 +122,24 @@ function inspectImageMetadata(filePath) {
       height: header.readUInt32BE(20),
     };
   }
+  if (header.length >= 4 && header[0] === 0xff && header[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 9 < header.length) {
+      if (header[offset] !== 0xff) break;
+      const marker = header[offset + 1];
+      const len = header.readUInt16BE(offset + 2);
+      if (len < 2) break;
+      if (marker >= 0xc0 && marker <= 0xc3 && offset + 8 < header.length) {
+        return {
+          format: "jpeg",
+          width: header.readUInt16BE(offset + 7),
+          height: header.readUInt16BE(offset + 5),
+        };
+      }
+      offset += 2 + len;
+    }
+    return { format: "jpeg" };
+  }
   return undefined;
 }
 
@@ -125,7 +148,53 @@ function recommendedActionsFor(kind, large) {
     return large ? ["sample", "extract-range", "index"] : ["extract", "sample", "index"];
   }
   if (kind === "directory") return ["sample", "index"];
+  if (kind === "pdf") return ["sample-metadata", "index-document", "query-document-index"];
+  if (kind === "spreadsheet") return ["sample-metadata", "index-sheets", "query-document-index"];
+  if (kind === "document") return ["sample-metadata", "index-document", "query-document-index"];
+  if (kind === "presentation") return ["sample-metadata", "index-document", "verify-render"];
+  if (kind === "image") return ["sample-metadata", "ocr-if-needed", "image-analyze"];
+  if (kind === "video" || kind === "audio") return ["sample-metadata", "probe-media"];
   return ["sample-metadata"];
+}
+
+function dependencyRouteFor(kind) {
+  if (kind === "pdf") {
+    return {
+      indexPolicy: "page-index",
+      requiredPacks: ["large-document", "pro-pdf", "rapidocr"],
+    };
+  }
+  if (kind === "spreadsheet") {
+    return {
+      indexPolicy: "sheet-index",
+      requiredPacks: ["large-document", "libreoffice"],
+    };
+  }
+  if (kind === "document") {
+    return {
+      indexPolicy: "paragraph-index",
+      requiredPacks: ["large-document", "libreoffice"],
+    };
+  }
+  if (kind === "presentation") {
+    return {
+      indexPolicy: "slide-index",
+      requiredPacks: ["libreoffice"],
+    };
+  }
+  if (kind === "image") {
+    return {
+      indexPolicy: "metadata-only",
+      requiredPacks: ["pillow", "opencv", "rapidocr", "rembg"],
+    };
+  }
+  if (kind === "video" || kind === "audio") {
+    return {
+      indexPolicy: "media-probe",
+      requiredPacks: ["ffmpeg"],
+    };
+  }
+  return {};
 }
 
 function inspectDirectory(filePath, stat, options = {}) {
@@ -187,6 +256,7 @@ function inspectPath(input = {}, options = {}) {
 
   const large = stat.size > largeThreshold;
   const typeSpecificInfo = kind === "image" ? { image: inspectImageMetadata(filePath) } : {};
+  const dependencyRoute = dependencyRouteFor(kind);
   return {
     ...okBase(filePath, stat),
     kind,
@@ -196,6 +266,7 @@ function inspectPath(input = {}, options = {}) {
     coverage: "metadata",
     confidence: "exact",
     ...typeSpecificInfo,
+    ...dependencyRoute,
     ...lineInfo,
     recommendedActions: recommendedActionsFor(kind, large),
   };

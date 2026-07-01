@@ -112,7 +112,7 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    Write-path APIs (POST/PUT/DELETE) are only captured when those flows actually
    run — exercise them only in a confirmed test environment.
    After the expanded scan, the orchestrator runs a bounded coverage-closure loop
-   (`coverage-closure.json`, `scan-closed.json`): repeat foreground scan passes
+   (`coverage-closure.json`, `scan-closed.json`): repeat managed scan passes
    until the page/action/API evidence signature is stable for the configured
    number of passes, or until the pass cap is reached. This borrows the useful
    pattern from open browser-agent systems (observe → act → extract → verify),
@@ -150,7 +150,7 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    systems unless a learned API contract or verified compiled browser flow
    exists.
 9. Run a read-only dry run before deeper exploration.
-10. Run every scanner/executor command in the foreground and wait for it to finish before claiming the scan is running, complete, failed, or waiting for analysis.
+10. Run long scanner/executor/orchestrator work through the generic `lily_process_jobs` supervisor. Use `job_start` with the approved script command, then `job_status` and `job_logs` to observe liveness, `[lily-progress]`, and output files before claiming the scan is running, complete, failed, or waiting for analysis. Short debugging commands may stay foreground.
 11. Explore navigation, menus, tabs, forms, filters, lists, details, exports, pagination, dialogs, and error states.
 12. Capture stable selectors, accessibility labels, field names, validation messages, request methods, endpoint shapes, and response hints.
 13. Classify actions by risk: read, export, draft, submit, update, delete, financial, identity/security, and bulk operations.
@@ -205,24 +205,26 @@ can't capture, without a human in the loop.
 - Degrades to today's behavior: if Playwright or the in-loop model is
   unavailable, the runner fails loud with a code (`PLAYWRIGHT_NODE_MISSING` /
   `MODEL_UNAVAILABLE`) and changes nothing — fall back to read-only scanning.
-- Same foreground rule as the scanner: run it as a foreground tool and wait for
-  its JSON; never background it.
+- Same supervisor rule as the scanner: long self-run learning must use
+  `lily_process_jobs` with `job_status`/`job_logs`; short local debugging may
+  stay foreground. Never use unmanaged background shells.
 
 ## Runtime Lifecycle Rules
 
-The chat UI can only show "running" while a real foreground tool is active. Keep the assistant state honest:
+The chat UI can only show "running" when Lily can observe a real tool or managed
+process. Keep the assistant state honest:
 
-- Do not say "scan is running", "waiting for scan completion", or "I will analyze when it finishes" unless the scanner command is still executing as a foreground Bash/tool call in the same turn.
-- Never start `scan_web_system.py`, `execute_web_playbook.cjs`, Playwright, browser learning, or skill generation with `&`, `nohup`, `setsid`, `disown`, a detached terminal, or a separate background shell.
+- Do not say "scan is running", "waiting for scan completion", or "I will analyze when it finishes" unless the scanner command is still executing as a foreground tool call or as a managed `lily_process_jobs` job observed through `job_status`/`job_logs`.
+- Never start `scan_web_system.py`, `execute_web_playbook.cjs`, Playwright, browser learning, or skill generation with `&`, `nohup`, `setsid`, `disown`, a detached terminal, or a separate background shell without `lily_process_jobs`.
 - Never run ad-hoc `python3 -c`, here-doc, inline Playwright, stealth, webdriver-patching, user-agent spoofing, or native-Chrome retry scripts as a substitute for the approved scanners/executors. If the approved path cannot handle the system, stop with `SPECIAL_BROWSER_CONTEXT_REQUIRED` and produce a reviewable partial result or ask for same-browser capture.
-- If a scan may take minutes, tell the user what will be scanned, then run the foreground command and wait for its JSON/output before summarizing.
-- If the environment cannot keep a foreground tool alive, stop and explain the exact blocker instead of pretending a background scan is active.
-- A follow-up such as "deeper scan" or "continue scanning" must either run another foreground scanner command or ask for the missing scope. It must not be treated as a separate idle chat while the previous scan is supposedly pending.
+- If a scan may take minutes, tell the user what will be scanned, start it with `lily_process_jobs`, and use `job_status`/`job_logs` until it returns a concrete result, checkpoint, or blocker before summarizing.
+- If the environment cannot keep a managed job alive, stop and explain the exact blocker instead of pretending a scan is active.
+- A follow-up such as "deeper scan" or "continue scanning" must either start/observe another managed scanner job or ask for the missing scope. It must not be treated as a separate idle chat while the previous scan is supposedly pending.
 - After a scanner command finishes, read the output file before generating `system-profile.json`, `page-map.json`, `api-map.json`, `capability-map.json`, `action-playbook.json`, `health.json`, and the workspace skill `SKILL.md`.
 - A partial scan is still a valid reviewable draft. If coverage is low, run the
   deterministic finalizer anyway and mark gaps in `health.json`; do not stop at
-  "I will continue scanning" unless another foreground scanner command is
-  actually running.
+  "I will continue scanning" unless another foreground scanner command or
+  managed `lily_process_jobs` scanner job is actually running.
 
 ## Output Artifacts
 
@@ -275,7 +277,7 @@ Place generated artifacts in the workspace learning area, using stable English d
   JavaScript, Python, selectors, or operation plans while answering a normal user
   request.
 - Use browser automation during learning, discovery, and login only through the
-  approved foreground capture/scanner/executor scripts or the same interactive
+  approved capture/scanner/executor scripts or the same interactive
   browser/profile. Do not switch to ad-hoc headless fallback scripts after login.
   If no captured API or compiled browser flow exists for a capability, mark it
   as needing re-learning instead of improvising.

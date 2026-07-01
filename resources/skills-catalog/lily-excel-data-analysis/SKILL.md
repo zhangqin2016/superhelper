@@ -33,6 +33,8 @@ visible calculations, and reproducible outputs over opaque one-shot answers.
 
 1. Inventory the workbook: sheets, dimensions, header rows, merged cells,
    hidden rows/columns, formulas, filters, charts, and obvious data regions.
+   For large workbooks, inspect and build a sheet-level index first; do not
+   default to pandas full-file reads.
 2. Identify fields:
    - infer column meaning, units, dates, currencies, IDs, categories, and free
      text;
@@ -50,7 +52,9 @@ visible calculations, and reproducible outputs over opaque one-shot answers.
      counts before/after;
    - never overwrite the only copy of user data.
 5. Analyze:
-   - use pandas for exploration, grouping, joins, and statistics;
+   - use pandas for small/ordinary workbooks;
+   - use python-calamine/fastexcel, DuckDB, PyArrow, and Polars for large
+     workbooks, large CSV/JSON, and columnar data;
    - use Excel formulas for workbook calculations that users may later change;
    - use pivots/tables/charts when they help the user inspect the result.
 6. Produce conclusions:
@@ -77,6 +81,13 @@ visible calculations, and reproducible outputs over opaque one-shot answers.
 
 ## Quality Red Lines
 
+- Do not default to pandas `read_excel()` for a large workbook. Inspect sheet
+  metadata first, then query only the needed sheets/columns/ranges.
+- Route large workbook indexing, long CSV/JSON scans, multi-sheet profiling,
+  and batch analysis jobs through the generic `lily_process_jobs` supervisor
+  when they may take more than an ordinary foreground command. Observe with
+  `job_status` and `job_logs`; scripts should emit standard `[lily-progress]`
+  events for sheet/file progress. Small workbook analysis stays on the fast path.
 - Do not make business conclusions from columns whose meaning is uncertain.
 - Do not delete rows as "bad" without listing the rule and affected count.
 - Do not hide formula errors, stale formulas, or chart ranges that no longer

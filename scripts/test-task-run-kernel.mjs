@@ -280,6 +280,37 @@ function createContext({ eventBus } = {}) {
 }
 
 {
+  const { ctx, sent, session } = createContext();
+  const started = await ctx.turnOrchestrator.sendUserMessage(session.id, "Index large inputs", [], {
+    skipPreflight: true,
+    skipVision: true,
+    skipDocument: true,
+    spawnEngine: false,
+  });
+  if (!started.ok) throw new Error(`turn should start: ${JSON.stringify(started)}`);
+  ctx.turnOrchestrator.ingest(session.id, [
+    { type: "tool.started", payload: { id: "index_1", name: "Bash", input: { command: "node index-large-inputs.js" } } },
+    {
+      type: "engine.notice",
+      payload: {
+        notice: {
+          code: "workProgress",
+          level: "progress",
+          detail: "index 2/5",
+          progress: { domain: "file-index", current: 2, total: 5 },
+        },
+      },
+    },
+  ]);
+  ctx.eventBus.flush();
+  const events = sent.flatMap((entry) => entry.payload?.events || []);
+  const liveness = events.find((event) => event.type === "task.liveness.updated" && event.payload?.liveness?.status === "work_running");
+  if (!liveness || liveness.payload?.taskRun?.progress?.label !== "index 2/5") {
+    throw new Error(`workProgress should update generic task liveness/progress: ${JSON.stringify(events)}`);
+  }
+}
+
+{
   const baseBus = new RuntimeEventBus(() => null);
   const throwingTaskBus = {
     emit(sessionId, eventLike) {

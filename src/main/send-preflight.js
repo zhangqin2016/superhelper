@@ -26,6 +26,24 @@ function withoutVisionFiles(files = []) {
   });
 }
 
+function buildDocumentFailureContext(files = [], detail = "") {
+  const attached = (files || [])
+    .filter((file) => file?.path || file?.name)
+    .map((file) => {
+      const label = file.name || path.basename(String(file.path || ""));
+      const source = file.path ? ` (${file.path})` : "";
+      return `- ${label}${source}`;
+    });
+  return [
+    "Document extraction fallback",
+    detail ? `Extraction error: ${detail}` : "Extraction error: DOCUMENT_FAILED",
+    attached.length ? "Attached file(s):" : "",
+    ...attached,
+    "",
+    "The document content was not parsed before sending. Do not summarize, quote, or infer facts from the document based only on this metadata. Keep the user's request moving by retrying extraction with available tools/dependency packs, or explain that the file content could not be read yet.",
+  ].filter(Boolean).join("\n");
+}
+
 async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}) {
   const {
     buildEnrichedUserText,
@@ -104,7 +122,36 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
 
   notify({ code: "documentPreparing", level: "progress", panel: true, replace: true });
 
-  const result = await extractDocuments(files);
+  const result = await extractDocuments(files, {
+    onProgress: (event = {}) => {
+      if (!event.phase || event.phase === "started") return;
+      const total = Number(event.total || 0);
+      const processed = Number(event.processed || 0);
+      const label = String(event.label || "").trim();
+      const error = String(event.error || "").trim();
+      const suffix = total > 0 ? `${processed}/${total}` : "";
+      const detail = [label, suffix, event.indexPolicy ? `· ${event.indexPolicy}` : "", error ? `· ${error}` : ""]
+        .filter(Boolean)
+        .join(" ");
+      notify({
+        code: "workProgress",
+        level: "progress",
+        panel: true,
+        replace: true,
+        replacesCode: "documentPreparing",
+        detail,
+        progress: {
+          domain: "document",
+          phase: event.phase,
+          processed,
+          total,
+          label,
+          indexPolicy: event.indexPolicy || "",
+          error,
+        },
+      });
+    },
+  });
   if (result === null) {
     return { ok: true, text, files };
   }
@@ -118,17 +165,40 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
       replacesCode: "documentPreparing",
       done: true,
     });
-    return { ok: false, error: "DOCUMENT_FAILED", detail: result.detail || undefined };
+    const fallbackText = buildDocumentFailureContext(files, result.detail || result.reason || "DOCUMENT_FAILED");
+    return {
+      ok: true,
+      text: buildEnrichedUserText(text, fallbackText),
+      files,
+      documentEvidence: {
+        index: null,
+        documents: [],
+        chunks: [],
+        extractedPaths: [],
+      },
+      documentDegraded: true,
+    };
   }
 
-  notify({
-    code: "documentReady",
-    level: "info",
-    panel: true,
-    replace: true,
-    replacesCode: "documentPreparing",
-    done: true,
-  });
+  if (result.degraded) {
+    notify({
+      code: "documentSkipped",
+      level: "warning",
+      panel: true,
+      replace: true,
+      replacesCode: "documentPreparing",
+      done: true,
+    });
+  } else {
+    notify({
+      code: "documentReady",
+      level: "info",
+      panel: true,
+      replace: true,
+      replacesCode: "documentPreparing",
+      done: true,
+    });
+  }
 
   const extracted = new Set(result.extractedPaths || []);
   const outboundFiles = result.keepOriginal
@@ -146,6 +216,7 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
       chunks: Array.isArray(result.documentIndex?.chunks) ? result.documentIndex.chunks : [],
       extractedPaths: result.extractedPaths || [],
     },
+    documentDegraded: Boolean(result.degraded),
   };
 }
 

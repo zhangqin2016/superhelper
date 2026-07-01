@@ -25,7 +25,7 @@ on:
         required: false
         type: string
       skip_libreoffice:
-        description: "Skip LibreOffice in runtime (faster smoke build)"
+        description: "Skip LibreOffice in macOS runtime (faster smoke build)"
         required: false
         type: boolean
         default: false
@@ -136,15 +136,6 @@ jobs:
       - run: npm run test:unit
       - name: Fetch OpenCode engine binary (win32-x64)
         run: node scripts/fetch-opencode-engine.mjs --platform win32-x64
-      - name: Build runtime bundle (win32-x64)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $a = @("--platform", "win32-x64")
-          if ("${{ inputs.skip_libreoffice }}" -eq "true") { $a += "--skip-libreoffice" }
-          node scripts/build-runtime-bundle.mjs @a
-      - name: Verify runtime bundle
-        run: node scripts/verify-runtime-bundle.mjs --platform win32-x64
       - name: Purge macOS junk before pack
         run: node scripts/purge-macos-junk.mjs
       - name: Build Windows installer (NSIS + ZIP)
@@ -153,7 +144,7 @@ jobs:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
           ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
       - name: Verify installer contents
-        run: node scripts/verify-win-pack.mjs --expect-runtime
+        run: node scripts/verify-win-pack.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: installer-win32-x64

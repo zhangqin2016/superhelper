@@ -2,7 +2,7 @@
 
 const { ipcMain } = require("electron");
 const { listPresetsPublic, setActivePreset, saveCustomPreset, deleteCustomPreset, setApiGateway } = require("./model-presets");
-const { anyRunnerBusy, withRunnerChange, applyPermissionModeLive } = require("./ipc-utils");
+const { withRunnerChange, applyPermissionModeLive } = require("./ipc-utils");
 
 function registerModelHandlers(ctx) {
   ipcMain.handle("models:list", async () => {
@@ -23,10 +23,7 @@ function registerModelHandlers(ctx) {
   });
 
   ipcMain.handle("models:save-custom", (_event, payload) => {
-    if (anyRunnerBusy(ctx.runnerPool)) {
-      return { ok: false, error: "BUSY" };
-    }
-    return saveCustomPreset(payload || {});
+    return withRunnerChange(ctx, () => saveCustomPreset(payload || {}), { liveEnv: false });
   });
 
   ipcMain.handle("models:delete-custom", (_event, presetId) => {

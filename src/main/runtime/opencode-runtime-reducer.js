@@ -10,6 +10,10 @@
  */
 
 const { OPENCODE_RUNTIME_CAPABILITIES } = require("./runtime-capabilities");
+const {
+  formatWorkProgressDetail,
+  latestWorkProgress,
+} = require("../work-progress-protocol");
 
 const SILENT_EVENTS = new Set([
   "server.connected",
@@ -81,68 +85,10 @@ function stringifyToolOutput(state = {}) {
   }
 }
 
-function compactPathLike(value = "", limit = 72) {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  let path = text;
-  try {
-    const parsed = new URL(text);
-    path = `${parsed.pathname || "/"}${parsed.search || ""}`;
-  } catch {
-    // plain path/string
-  }
-  if (path.length <= limit) return path;
-  return `...${path.slice(-(limit - 3))}`;
-}
-
-function parseProgressPayloadAfterMarker(line = "", marker = "") {
-  const index = String(line).indexOf(marker);
-  if (index < 0) return null;
-  const raw = String(line).slice(index + marker.length).trim();
-  if (!raw.startsWith("{")) return null;
-  try {
-    const payload = JSON.parse(raw);
-    return payload && typeof payload === "object" ? payload : null;
-  } catch {
-    return null;
-  }
-}
-
-function parseLilyProgressLine(line = "") {
-  return parseProgressPayloadAfterMarker(line, "[lily-progress]");
-}
-
-function latestLilyProgress(output = "") {
-  const lines = String(output || "").split(/\r?\n/);
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const parsed = parseLilyProgressLine(lines[index]);
-    if (parsed) return parsed;
-  }
-  return null;
-}
-
-function formatGenericProgress(progress = {}) {
-  const detail = String(progress.detail || progress.message || "").trim();
-  if (detail) return detail;
-
-  const label = String(progress.label || progress.title || progress.name || "工具进度").trim();
-  const current = progress.current ?? progress.done ?? progress.pageIndex ?? progress.pages;
-  const total = progress.total ?? progress.max ?? progress.maxPages;
-  const queued = progress.queued;
-  const status = String(progress.status || progress.event || "").trim();
-  const url = compactPathLike(progress.path || progress.url || progress.fromUrl || "");
-  const pieces = [];
-  if (current != null || total != null) pieces.push(`${current ?? "?"}/${total ?? "?"}`);
-  if (queued != null) pieces.push(`队列 ${queued}`);
-  if (status) pieces.push(status);
-  if (url) pieces.push(url);
-  return pieces.length ? `${label}：${pieces.join(" · ")}` : label;
-}
-
 function toolProgressNoticeFromOutput(callID, output, state) {
-  const progress = latestLilyProgress(output);
+  const progress = latestWorkProgress(output);
   if (!progress) return null;
-  const detail = formatGenericProgress(progress);
+  const detail = formatWorkProgressDetail(progress);
   if (!detail) return null;
   const source = String(progress.source || progress.label || "tool").trim() || "tool";
   const key = `progress:${callID || "tool"}:${source}`;
@@ -150,13 +96,17 @@ function toolProgressNoticeFromOutput(callID, output, state) {
   state.toolProgressNotices?.set(key, detail);
   return runtimeDraft("engine.notice", {
     notice: {
-      code: "toolProgress",
+      code: "workProgress",
       level: "progress",
       panel: true,
       done: false,
       replace: true,
       replacesCode: key,
       detail,
+      progress: {
+        domain: String(progress.domain || progress.source || progress.label || "tool").trim() || "tool",
+        ...progress,
+      },
     },
   });
 }

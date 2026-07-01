@@ -20,7 +20,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-process-jobs-core-"));
 try {
   const job = await startJob({
     command: process.execPath,
-    args: ["-e", "console.log('ready'); setInterval(() => console.log('tick'), 1000);"],
+    args: ["-e", "console.log('ready'); console.log('[lily-progress] {\"label\":\"index\",\"current\":2,\"total\":5,\"domain\":\"file-index\"}'); setInterval(() => console.log('tick'), 1000);"],
     cwd: tmp,
     healthcheck: { type: "log", contains: "ready" },
     waitForHealthMs: 5_000,
@@ -33,10 +33,12 @@ try {
 
   const status = await statusJob({ jobId: job.jobId, healthcheck: { type: "process" } }, { registryDir: tmp });
   assert(status.ok === true && status.alive === true, `job_status should report live process: ${JSON.stringify(status)}`);
+  assert(status.progress?.label === "index" && status.progress?.current === 2 && status.progress?.total === 5, `job_status should expose latest structured progress: ${JSON.stringify(status.progress)}`);
 
   const logs = logsJob({ jobId: job.jobId, tailBytes: 10_000 }, { registryDir: tmp });
   assert(logs.ok === true, `job_logs should succeed: ${JSON.stringify(logs)}`);
   assert(logs.stdout.text.includes("ready"), `job_logs should include stdout: ${JSON.stringify(logs.stdout)}`);
+  assert(logs.progress?.domain === "file-index", `job_logs should expose parsed progress: ${JSON.stringify(logs.progress)}`);
 
   const listed = listJobs({}, { registryDir: tmp });
   assert(listed.ok === true && listed.jobs.some((item) => item.jobId === job.jobId), "job_list includes started job");

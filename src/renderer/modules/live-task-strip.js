@@ -15,7 +15,20 @@ function latestTodos(liveTurn) {
   const values = tools instanceof Map ? [...tools.values()] : tools;
   let latest = null;
   for (const tool of values) if (isTodoTool(tool?.name)) latest = tool;
-  return latest ? parseTodoEntries(latest) : [];
+  return latest ? applyActiveTaskStep(parseTodoEntries(latest), liveTurn?.taskRun) : [];
+}
+
+function applyActiveTaskStep(todos = [], taskRun = null) {
+  if (!todos.length || todos.some((todo) => todo.status === "in_progress")) return todos;
+  const plan = Array.isArray(taskRun?.plan) ? taskRun.plan : [];
+  const activeId = String(taskRun?.activeStep || "");
+  const activeIndex = plan.findIndex((step) => String(step?.id || "") === activeId);
+  if (activeIndex < 0 || activeIndex >= todos.length) return todos;
+  return todos.map((todo, index) => (
+    index === activeIndex && todo.status !== "completed"
+      ? { ...todo, status: "in_progress" }
+      : todo
+  ));
 }
 
 export function buildLiveTaskStripModel(liveTurn, translate = t) {

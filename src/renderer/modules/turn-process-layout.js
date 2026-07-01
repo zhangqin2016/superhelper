@@ -32,9 +32,18 @@ export function parseTodoEntries(tool = {}) {
   return todos
     .map((todo) => ({
       content: String(todo?.content || todo?.activeForm || "").trim(),
-      status: todo?.status === "completed" || todo?.status === "in_progress" ? todo.status : "pending",
+      status: normalizeTodoStatus(todo?.status),
     }))
     .filter((todo) => todo.content);
+}
+
+function normalizeTodoStatus(status) {
+  const value = String(status || "").trim().toLowerCase();
+  if (value === "completed" || value === "done") return "completed";
+  if (value === "in_progress" || value === "in-progress" || value === "running" || value === "active") {
+    return "in_progress";
+  }
+  return "pending";
 }
 
 export function classifyToolCategory(name = "") {

@@ -37,6 +37,7 @@ const { buildAgentSpawnEnv } = require(path.join(__dirname, "../src/main/spawn-e
 const runtimePython = require(path.join(__dirname, "../src/main/runtime-python.js"));
 
 const env = buildAgentSpawnEnv();
+const tlsEnv = buildAgentSpawnEnv({ lilyEnv: { LILY_TLS_SKIP_VERIFY: "1" } });
 const delim = path.delimiter;
 const pathParts = env.PATH.split(delim);
 const expected = runtimePython.getRuntimePathEntries();
@@ -46,6 +47,9 @@ if (env.PYTHONIOENCODING !== "utf-8" || env.PYTHONUTF8 !== "1") {
 }
 if (!String(env.LANG || "").includes("UTF-8") || !String(env.LC_ALL || "").includes("UTF-8")) {
   throw new Error(`spawn-env must force a UTF-8 locale, got LANG=${env.LANG} LC_ALL=${env.LC_ALL}`);
+}
+if (tlsEnv.NODE_TLS_REJECT_UNAUTHORIZED !== "0") {
+  throw new Error("TLS skip must be applied only as a child-process TLS env flag");
 }
 
 if (!runtimePython.getRuntimeSummary().available) {

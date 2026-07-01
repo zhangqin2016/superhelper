@@ -34,6 +34,7 @@ const log = getLogger("opencode-agent-session");
 const TRANSIENT_ERROR_RE = /unreachable|interrupted|socket|fetch|connection|network|ECONN|ETIMEDOUT|ENOTFOUND|timeout|temporarily unavailable|unexpected response/i;
 const REPLAY_SAFE_TOOL_NAMES = new Set(["read", "glob", "grep", "list", "ls", "find", "search"]);
 const TOOL_PROGRESS_STALE_MS = 10_000;
+const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 3;
 
 function formatDuration(ms) {
   const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
@@ -121,6 +122,51 @@ function detectIncompleteDeliverable(output) {
   return null;
 }
 
+function normalizeTodoStatus(status) {
+  const value = String(status || "").trim().toLowerCase();
+  if (value === "completed" || value === "done") return "completed";
+  if (value === "in_progress" || value === "in-progress" || value === "running" || value === "active") return "in_progress";
+  return "pending";
+}
+
+function todoTitle(todo = {}, index = 0) {
+  return String(todo.content || todo.activeForm || todo.title || todo.text || `Todo ${index + 1}`)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
+function nativeTodoSnapshot(todos = []) {
+  const normalized = (Array.isArray(todos) ? todos : [])
+    .map((todo, index) => ({
+      title: todoTitle(todo, index),
+      status: normalizeTodoStatus(todo?.status),
+    }))
+    .filter((todo) => todo.title);
+  const unfinished = normalized.filter((todo) => todo.status !== "completed");
+  return {
+    total: normalized.length,
+    completed: normalized.length - unfinished.length,
+    unfinished,
+  };
+}
+
+function buildTodoContinuationPrompt(snapshot = {}, attempt = 1, maxAttempts = TODO_COMPLETION_GATE_MAX_ATTEMPTS) {
+  const unfinished = Array.isArray(snapshot.unfinished) ? snapshot.unfinished : [];
+  const listed = unfinished.slice(0, 12).map((todo, index) => (
+    `${index + 1}. [${todo.status || "pending"}] ${todo.title}`
+  ));
+  if (unfinished.length > listed.length) listed.push(`...and ${unfinished.length - listed.length} more`);
+  return [
+    "Task continuity check: the native todo list still has unfinished todo items.",
+    `Progress: ${snapshot.completed || 0}/${snapshot.total || 0} completed. Continue from the current unfinished item and do not stop after a partial todo update.`,
+    "Use tools as needed. When the requested work is genuinely complete, update every todo item to completed, then provide the final answer.",
+    `Continuation attempt: ${attempt}/${maxAttempts}.`,
+    "Unfinished todo items:",
+    ...listed,
+  ].join("\n");
+}
+
 function messageTextFromOpenCodeItem(item = {}) {
   return (Array.isArray(item?.parts) ? item.parts : [])
     .filter((part) => part?.type === "text" && !part.ignored && typeof part.text === "string")
@@ -190,6 +236,9 @@ class OpencodeAgentSession extends EventEmitter {
     this.collectedOutput = "";
     /** Completion gate (Pillar 3-B) fires at most ONCE per turn — guards against loops. */
     this._gatedThisTurn = false;
+    this._latestTodos = [];
+    this._latestTodosSignature = "";
+    this._todoCompletionGateAttempts = 0;
     /** @type {Map<string, { rawRequestId: string, sessionID: string }>} pending permission request ids awaiting a host reply. */
     this._pendingPermissions = new Map();
     /** @type {Map<string, { questions: Array, rawRequestId: string, sessionID: string }>} pending question id -> its questions (for answer mapping). */
@@ -373,6 +422,9 @@ class OpencodeAgentSession extends EventEmitter {
     this._activeTools.clear();
     this._lastGenericToolProgressNotice = "";
     this._gatedThisTurn = false;
+    this._latestTodos = [];
+    this._latestTodosSignature = "";
+    this._todoCompletionGateAttempts = 0;
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
     this.collectedOutput = "";
@@ -701,6 +753,9 @@ class OpencodeAgentSession extends EventEmitter {
     const drafts = [...(reduced.drafts || [])];
     this._registerSubagentsFromDrafts(drafts);
     for (const draft of drafts) {
+      if (draft.type === "todo.updated") {
+        this._rememberLatestTodos(draft.payload?.todos);
+      }
       if (String(draft.type || "").startsWith("tool.")) this._noteToolActivity(draft);
       if (draft.type !== "tool.done") continue;
       const raw = draft.payload?.content;
@@ -710,6 +765,24 @@ class OpencodeAgentSession extends EventEmitter {
     }
     if (reduced.processEvent) drafts.push(reduced.processEvent);
     this._ingest(drafts);
+  }
+
+  _rememberLatestTodos(todos) {
+    const next = Array.isArray(todos) ? todos : [];
+    let signature = "";
+    try {
+      signature = JSON.stringify(next.map((todo, index) => ({
+        title: todoTitle(todo, index),
+        status: normalizeTodoStatus(todo?.status),
+      })));
+    } catch {
+      signature = "";
+    }
+    if (signature !== this._latestTodosSignature) {
+      this._latestTodosSignature = signature;
+      this._todoCompletionGateAttempts = 0;
+    }
+    this._latestTodos = next;
   }
 
   _noteToolActivity(draft = {}) {
@@ -1519,6 +1592,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   _completeTurn(payload) {
     if (this._turnSettled) return;
+    if (this._continueUnfinishedTodosBeforeCompletion(payload)) return;
     // Pillar 3-B completion gate: on a clean turn end, if the assistant claimed a
     // file deliverable that is actually missing/empty, inject ONE corrective
     // follow-up so the turn doesn't settle on a broken/hallucinated result. Fires
@@ -1557,6 +1631,50 @@ class OpencodeAgentSession extends EventEmitter {
     this._settleTurn(payload);
   }
 
+  _continueUnfinishedTodosBeforeCompletion(payload) {
+    if (
+      payload?.interrupted ||
+      payload?.stalled ||
+      payload?.code !== 0 ||
+      !this._server ||
+      this._pendingPermissions.size ||
+      this._pendingQuestions.size ||
+      process.env.LILY_DISABLE_TODO_COMPLETION_GATE === "1"
+    ) {
+      return false;
+    }
+    const snapshot = nativeTodoSnapshot(this._latestTodos);
+    if (!snapshot.total || !snapshot.unfinished.length) return false;
+    const maxAttempts = TODO_COMPLETION_GATE_MAX_ATTEMPTS;
+    if (this._todoCompletionGateAttempts >= maxAttempts) {
+      log.warn("unfinished todo completion gate reached max attempts", {
+        sessionId: this.sessionId,
+        unfinished: snapshot.unfinished.length,
+        total: snapshot.total,
+        attempts: this._todoCompletionGateAttempts,
+      });
+      this._settleTurn({
+        ...payload,
+        stalled: true,
+        output: String(payload?.output || this.collectedOutput || "").trim(),
+      });
+      return true;
+    }
+    this._todoCompletionGateAttempts += 1;
+    this._armResponseTimer();
+    this._armProgressNoticeTimer();
+    const note = buildTodoContinuationPrompt(snapshot, this._todoCompletionGateAttempts, maxAttempts);
+    (async () => {
+      try {
+        await this._server.sendPrompt({ text: note, files: [] });
+      } catch (err) {
+        log.warn("unfinished todo continuation failed: %s", err?.message || String(err));
+        if (this.busy && !this._turnSettled) this._settleTurn(payload);
+      }
+    })();
+    return true;
+  }
+
   _settleTurn(payload) {
     if (this._turnSettled) return;
     this._clearIdleSettleTimer();
@@ -1584,6 +1702,9 @@ class OpencodeAgentSession extends EventEmitter {
     this._lastGenericToolProgressNotice = "";
     this._transientReplayCount = 0;
     this._turnStartedAt = 0;
+    this._latestTodos = [];
+    this._latestTodosSignature = "";
+    this._todoCompletionGateAttempts = 0;
     // Carry the turn's rewind anchor (engine message id) so the orchestrator can
     // record it on the turn — that's what session:rewind reverts to later.
     if (payload && typeof payload === "object" && this._turnEngineMessageId && !payload.engineMessageId) {
@@ -1660,6 +1781,9 @@ class OpencodeAgentSession extends EventEmitter {
     this._lastGenericToolProgressNotice = "";
     this._transientReplayCount = 0;
     this._turnStartedAt = 0;
+    this._latestTodos = [];
+    this._latestTodosSignature = "";
+    this._todoCompletionGateAttempts = 0;
     this._orchestrator?.notifyRunnerError(this.sessionId, message);
     return false;
   }

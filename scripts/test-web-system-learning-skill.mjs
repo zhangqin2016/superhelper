@@ -19,14 +19,14 @@ if (!fs.existsSync(path.join(skillDir, "SKILL.md"))) {
   throw new Error("lily-web-system-learning SKILL.md missing");
 }
 const skillMarkdown = fs.readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
-if (!skillMarkdown.includes("Run every scanner/executor command in the foreground")) {
-  throw new Error("web system learning skill must require foreground scan execution");
+if (!skillMarkdown.includes("lily_process_jobs") || !skillMarkdown.includes("job_status") || !skillMarkdown.includes("job_logs")) {
+  throw new Error("web system learning skill must route long learning runs through process jobs");
 }
 if (!skillMarkdown.includes("Do not say \"scan is running\"")) {
   throw new Error("web system learning skill must forbid fake async scan status");
 }
-if (!skillMarkdown.includes("Never start `scan_web_system.py`")) {
-  throw new Error("web system learning skill must forbid detached scanner execution");
+if (!skillMarkdown.includes("Never start `scan_web_system.py`") || !skillMarkdown.includes("without `lily_process_jobs`")) {
+  throw new Error("web system learning skill must forbid unmanaged detached scanner execution");
 }
 if (!skillMarkdown.includes("finalize_web_system_learning.cjs")) {
   throw new Error("web system learning skill must require deterministic finalization");

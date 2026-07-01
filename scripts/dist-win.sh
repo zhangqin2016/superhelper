@@ -113,7 +113,7 @@ if [[ ! -e "bundles/win32-x64/opencode/bin/opencode.exe" && ! -e "bundles/win32-
   exit 1
 fi
 
-echo "[dist-win] Windows 安装包仅包含 bundles/win32-x64（不含 Mac runtime）"
+echo "[dist-win] Windows 默认安装包保持 slim：仅打入 win32-x64 引擎，不内置 runtime / runtime-packs 依赖"
 
 node scripts/purge-macos-junk.mjs --check
 
@@ -122,7 +122,7 @@ npm install --os=win32 --cpu=x64 --include=optional
 
 # 必须打 x64：在 Apple Silicon 上省略 --x64 会产出 win-arm64，普通 Intel/AMD PC 无法运行。
 # electron-builder 对 NSIS 的 7z 包即使 compression=normal 仍会用 -mx=9。
-# Windows runtime 较大时最高压缩容易在 macOS/ARM 上被系统终止；显式降到 5 保持体积可控。
+# Windows 安装包默认不内置依赖 runtime；压缩等级保持中等，避免 macOS/ARM 交叉打包被系统终止。
 export ELECTRON_BUILDER_COMPRESSION_LEVEL="${ELECTRON_BUILDER_COMPRESSION_LEVEL:-5}"
 
 if [[ "${#builder_args[@]}" -gt 0 ]]; then

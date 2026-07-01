@@ -116,12 +116,20 @@ assert(r.text.includes('title="user_original_request"') && r.text.includes("revi
 assert(!r.files.some((f) => f.path === "/a/report.docx"), "extracted document pruned from outbound");
 assert(r.files.some((f) => f === txtFile), "non-extracted files kept");
 
-// FAIL-LOUD: document failure must stop the turn even when text is present.
-// Otherwise "问这个文档" silently becomes "answer from the user's prompt only".
+// FAIL-SAFE: document failure must not stop the whole turn. It must also not
+// silently become "answer from the user's prompt only" — the engine receives an
+// explicit fallback context saying the document was not parsed and must not be
+// summarized from metadata alone.
 documentMock._next = { ok: false, detail: "corrupt" };
 r = await runDocumentPreflight("总结这个文档", [docFile], {});
-assert(!r.ok && r.error === "DOCUMENT_FAILED" && r.detail === "corrupt", "text+doc failure must fail loud, not answer blind");
+assert(r.ok, "text+doc document failure should continue with a guarded fallback");
+assert(r.text.includes("Document extraction fallback"), "document fallback context missing");
+assert(r.text.includes("corrupt"), "document fallback should include extraction error");
+assert(r.text.includes("/a/report.docx"), "document fallback should include source path");
+assert(r.text.includes("Do not summarize"), "document fallback must prevent blind answers");
+assert(r.files.includes(docFile), "failed document should remain in outbound files for follow-up tooling");
+assert(r.documentDegraded === true, "document failure should be marked degraded");
 r = await runDocumentPreflight("", [docFile], {});
-assert(!r.ok && r.error === "DOCUMENT_FAILED" && r.detail === "corrupt", "doc-only failure → DOCUMENT_FAILED");
+assert(r.ok && r.text.includes("Document extraction fallback"), "doc-only document failure should still reach the engine with fallback context");
 
 console.log("send-preflight: ok");

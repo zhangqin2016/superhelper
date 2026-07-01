@@ -76,6 +76,7 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   const cfg = JSON.parse(r.configContent);
   assert(cfg.provider.lily.npm === "@ai-sdk/openai-compatible", "openai-compatible npm");
   assert(cfg.provider.lily.options.baseURL === "https://api.deepseek.com", "openai baseURL verbatim (no /v1 forced)");
+  assert(cfg.provider.lily.options.includeUsage === false, "openai-compatible streaming usage chunks are disabled for self-hosted compatibility");
 }
 
 // --- model tiers: OpenCode runtime is forced onto the selected Pro model -----

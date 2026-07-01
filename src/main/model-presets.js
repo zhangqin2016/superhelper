@@ -179,12 +179,13 @@ function loadUserChoice() {
 
 function normalizeApiGateway(raw) {
   if (!raw || typeof raw !== "object") {
-    return { mode: "builtin", baseUrl: "", apiKey: "" };
+    return { mode: "builtin", baseUrl: "", apiKey: "", tlsSkipVerify: false };
   }
   return {
     mode: raw.mode === "custom" ? "custom" : "builtin",
     baseUrl: String(raw.baseUrl || "").trim(),
     apiKey: String(raw.apiKey || "").trim(),
+    tlsSkipVerify: Boolean(raw.tlsSkipVerify),
   };
 }
 
@@ -297,6 +298,7 @@ function customPresetRecord(entry) {
     modelSubagent: tiers.subagent,
     baseUrl,
     apiKeySet: Boolean(apiKey),
+    tlsSkipVerify: Boolean(entry.tlsSkipVerify && baseUrl),
     custom: true,
     env: envFromTierModels(entry),
   };
@@ -404,6 +406,7 @@ function getUserApiEnv() {
       if (baseUrl) env.LILY_API_BASE_URL = baseUrl;
       if (apiKey) env.LILY_API_KEY = apiKey;
       if (protocol === "anthropic" || protocol === "openai") env.LILY_OPENCODE_PROTOCOL = protocol;
+      if (entry.tlsSkipVerify && baseUrl) env.LILY_TLS_SKIP_VERIFY = "1";
       if (Object.keys(env).length) return env;
     }
   }
@@ -416,6 +419,7 @@ function getUserApiEnv() {
   const env = {};
   if (gateway.baseUrl) env.LILY_API_BASE_URL = gateway.baseUrl;
   if (gateway.apiKey) env.LILY_API_KEY = gateway.apiKey;
+  if (gateway.tlsSkipVerify && gateway.baseUrl) env.LILY_TLS_SKIP_VERIFY = "1";
   return env;
 }
 
@@ -428,6 +432,7 @@ function getApiGatewayPublic() {
     baseUrl: gateway.baseUrl,
     apiKeySet: Boolean(gateway.apiKey),
     apiKeyHint: gateway.apiKey ? maskApiKey(gateway.apiKey) : "",
+    tlsSkipVerify: Boolean(gateway.tlsSkipVerify && gateway.baseUrl),
     defaultBaseUrl: bundled.baseUrl,
     defaultApiKeySet: bundled.apiKeySet,
   };
@@ -502,6 +507,7 @@ function listPresetsPublic() {
       modelOpus: p.modelOpus || "",
       baseUrl: p.baseUrl || "",
       apiKeySet: Boolean(p.apiKeySet),
+      tlsSkipVerify: Boolean(p.tlsSkipVerify),
       custom: Boolean(p.custom),
     })),
   };
@@ -542,6 +548,7 @@ function saveCustomPreset({
   baseUrl = "",
   apiKey = "",
   protocol = "",
+  tlsSkipVerify = false,
 }) {
   const validated = validateCustomInput(label, model);
   if (!validated.ok) return validated;
@@ -556,10 +563,10 @@ function saveCustomPreset({
     if (!tierValidated.ok) return tierValidated;
   }
 
-  const urlValidated = validateBaseUrl(baseUrl);
+  const urlValidated = validateBaseUrl(baseUrl, { required: true });
   if (!urlValidated.ok) return urlValidated;
 
-  const keyValidated = validateApiKey(apiKey);
+  const keyValidated = validateApiKey(apiKey, { required: Boolean(urlValidated.baseUrl) });
   if (!keyValidated.ok) return keyValidated;
 
   const haikuValidated = validateOptionalModelId(modelHaiku);
@@ -581,6 +588,7 @@ function saveCustomPreset({
     description: String(description || "").trim().slice(0, 120),
     baseUrl: urlValidated.baseUrl,
     apiKey: keyValidated.apiKey,
+    tlsSkipVerify: Boolean(tlsSkipVerify && urlValidated.baseUrl),
     // Carried from the provider catalog so anthropic vs openai-compatible
     // endpoints resolve correctly instead of relying on URL auto-detection.
     protocol: protocol === "anthropic" || protocol === "openai" ? protocol : "",
@@ -609,14 +617,14 @@ function deleteCustomPreset(presetId) {
   return { ok: true, ...listPresetsPublic() };
 }
 
-function setApiGateway({ mode, baseUrl, apiKey }) {
+function setApiGateway({ mode, baseUrl, apiKey, tlsSkipVerify }) {
   const user = loadUserChoice();
   const nextMode = mode === "custom" ? "custom" : "builtin";
 
   if (nextMode === "builtin") {
     persistUserChoice({
       ...user,
-      apiGateway: { mode: "builtin", baseUrl: "", apiKey: "" },
+      apiGateway: { mode: "builtin", baseUrl: "", apiKey: "", tlsSkipVerify: false },
     });
     return { ok: true, ...listPresetsPublic() };
   }
@@ -636,6 +644,7 @@ function setApiGateway({ mode, baseUrl, apiKey }) {
       mode: "custom",
       baseUrl: urlValidated.baseUrl,
       apiKey: keyValidated.apiKey,
+      tlsSkipVerify: Boolean(tlsSkipVerify),
     },
   });
   return { ok: true, ...listPresetsPublic() };

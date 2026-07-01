@@ -168,7 +168,7 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
   }, state);
   assert(scanProgress.progress === true, "scanner progress keeps long web scans alive");
   assert(scanProgress.drafts.length === 1 && scanProgress.drafts[0].type === "engine.notice", "scanner progress emits a visible notice");
-  assert(scanProgress.drafts[0].payload.notice.code === "toolProgress", "scanner progress uses visible toolProgress notice code");
+  assert(scanProgress.drafts[0].payload.notice.code === "workProgress", "scanner progress uses generic visible workProgress notice code");
   assert(scanProgress.drafts[0].payload.notice.detail.includes("55/80"), "scanner progress detail includes page count");
   assert(scanProgress.drafts[0].payload.notice.detail.includes("/meeting/groups/dashboard"), "scanner progress detail includes compact current path");
 

@@ -85,6 +85,15 @@ if (expectRuntime) {
     fail("runtime-manifest 声明已内置 LibreOffice，但包内找不到 soffice.exe");
   }
   console.log("[verify-win-pack] runtime manifest ok");
+} else {
+  const runtimeDir = path.join(winBundle, "runtime");
+  if (fs.existsSync(runtimeDir)) {
+    fail("默认 Windows 安装包必须保持 slim，不应内置 bundles/win32-x64/runtime；依赖请通过设置页安装");
+  }
+  const runtimePacksDir = path.join(winBundle, "runtime-packs");
+  if (fs.existsSync(runtimePacksDir)) {
+    fail("默认 Windows 安装包必须保持 slim，不应内置 runtime-packs；依赖请通过设置页安装");
+  }
 }
 
 let fileCount = 0;

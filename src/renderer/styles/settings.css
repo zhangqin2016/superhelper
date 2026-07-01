@@ -1169,6 +1169,55 @@
   display: none;
 }
 
+.connector-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0 18px;
+  padding: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-input) 76%, var(--bg-elevated) 24%);
+  box-shadow: var(--top-highlight);
+}
+
+.connector-tab {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.connector-tab:hover {
+  color: var(--text-primary);
+  background: var(--hover-bg);
+}
+
+.connector-tab.is-active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent-subtle) 78%, var(--bg-elevated) 22%);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
+}
+
+.connector-tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.connector-tab-panel[hidden] {
+  display: none;
+}
+
 .connector-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

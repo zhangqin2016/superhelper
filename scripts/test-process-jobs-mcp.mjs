@@ -37,7 +37,7 @@ try {
   const started = parseToolText(await client.callTool({
     name: "job_start",
     arguments: {
-      command: nodeCommand("console.log('mcp-ready'); setInterval(() => console.log('mcp-tick'), 1000);"),
+      command: nodeCommand("console.log('mcp-ready'); console.log('[lily-progress] {\"label\":\"mcp-index\",\"current\":3,\"total\":4,\"domain\":\"mcp\"}'); setInterval(() => console.log('mcp-tick'), 1000);"),
       cwd: tmp,
       healthcheck: { type: "log", contains: "mcp-ready" },
       waitForHealthMs: 5_000,
@@ -51,12 +51,14 @@ try {
     arguments: { jobId: started.jobId, healthcheck: { type: "process" } },
   }));
   assert(status.ok === true && status.alive === true, `job_status observes the managed process: ${JSON.stringify(status)}`);
+  assert(status.progress?.label === "mcp-index" && status.progress?.current === 3, `job_status exposes progress: ${JSON.stringify(status.progress)}`);
 
   const logs = parseToolText(await client.callTool({
     name: "job_logs",
     arguments: { jobId: started.jobId, tailBytes: 10_000 },
   }));
   assert(logs.ok === true && logs.stdout.text.includes("mcp-ready"), `job_logs returns stdout evidence: ${JSON.stringify(logs)}`);
+  assert(logs.progress?.domain === "mcp", `job_logs exposes parsed progress: ${JSON.stringify(logs.progress)}`);
 
   const stopped = parseToolText(await client.callTool({
     name: "job_stop",

@@ -92,6 +92,9 @@ try {
   assert.equal(pngInfo.ok, true, "image inspect succeeds");
   assert.equal(pngInfo.kind, "image", "image kind is preserved");
   assert.deepEqual(pngInfo.image, { format: "png", width: 3, height: 2 }, "PNG dimensions are read from metadata");
+  assert.equal(pngInfo.indexPolicy, "metadata-only", "image inspect does not force content indexing");
+  assert(pngInfo.requiredPacks.includes("opencv"), "image enhancement should route to OpenCV pack");
+  assert(pngInfo.requiredPacks.includes("rapidocr"), "image OCR should route to RapidOCR pack");
   assert(!pngInfo.recommendedActions.includes("extract"), "non-text files do not recommend text extraction");
   assert(pngInfo.recommendedActions.includes("sample-metadata"), "non-text files recommend metadata-only handling");
 
@@ -99,7 +102,26 @@ try {
   fs.writeFileSync(pdf, "%PDF-1.4\n%%EOF\n");
   const pdfInfo = inspectPath({ path: pdf });
   assert.equal(pdfInfo.kind, "pdf", "PDF kind is detected");
+  assert.equal(pdfInfo.indexPolicy, "page-index", "PDF should route to page-level indexing");
+  assert(pdfInfo.requiredPacks.includes("large-document"), "PDF large-document path should be available");
+  assert(pdfInfo.requiredPacks.includes("pro-pdf"), "complex PDF path should route to pro-pdf");
   assert(!pdfInfo.recommendedActions.includes("extract"), "PDF does not get a generic text extraction recommendation from Phase 1/2");
+
+  const xlsx = path.join(tmp, "book.xlsx");
+  fs.writeFileSync(xlsx, "not a real workbook, metadata route only");
+  const xlsxInfo = inspectPath({ path: xlsx });
+  assert.equal(xlsxInfo.kind, "spreadsheet", "spreadsheet kind is detected");
+  assert.equal(xlsxInfo.indexPolicy, "sheet-index", "Excel should route to sheet-level indexing");
+  assert(xlsxInfo.requiredPacks.includes("large-document"), "large spreadsheet handling should route to large-document pack");
+  assert(!xlsxInfo.recommendedActions.includes("extract"), "Excel should not recommend generic full extraction");
+
+  const video = path.join(tmp, "clip.mp4");
+  fs.writeFileSync(video, Buffer.from("fake mp4"));
+  const videoInfo = inspectPath({ path: video });
+  assert.equal(videoInfo.kind, "video", "video kind is detected");
+  assert.equal(videoInfo.indexPolicy, "media-probe", "video should route to media probing");
+  assert(videoInfo.requiredPacks.includes("ffmpeg"), "video probing should route to FFmpeg pack");
+  assert(!videoInfo.recommendedActions.includes("extract"), "video should not recommend text extraction");
 
   const server = createFileIntelligenceMcpServer();
   assert.equal(typeof server.connect, "function", "MCP server constructs with tool schemas");

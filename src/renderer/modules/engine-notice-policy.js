@@ -24,7 +24,9 @@ const LIVE_PROGRESS_PANEL_CODES = new Set([
   "subagentVerySlow",
   "subagentCompleted",
   "toolProgress",
+  "workProgress",
   "shellLongRunning",
+  "documentPreparing",
 ]);
 
 export function noticeVisibleInPanel(notice) {
