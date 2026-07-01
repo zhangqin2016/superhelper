@@ -150,6 +150,78 @@ if (!managedList.presets.some((preset) => preset.custom)) {
 if (modelPresets.getUserApiEnv().LILY_API_KEY) {
   throw new Error("selected service preset must not be overridden by local API gateway keys");
 }
+const officialDirectState = {
+  schemaVersion: 1,
+  configVersion: "test-direct",
+  expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  effectiveConfig: {
+    models: {
+      activePresetId: "official-direct",
+      presets: [
+        {
+          id: "official-direct",
+          label: "Official Direct",
+          env: {
+            LILY_API_BASE_URL: "https://official.example.com/v1",
+            LILY_API_KEY: "sk-official-secret-123456",
+            LILY_MODEL: "official-model",
+          },
+        },
+      ],
+    },
+  },
+};
+fs.writeFileSync(
+  path.join(tmp, "remote-config-cache.json"),
+  JSON.stringify({
+    config: {
+      encrypted: true,
+      data: Buffer.from(`protected:${JSON.stringify(officialDirectState)}`, "utf8").toString("base64"),
+    },
+    updatedAt: new Date().toISOString(),
+  }),
+  "utf8",
+);
+modelPresets.reloadPresets();
+const customGateway = modelPresets.setApiGateway({
+  mode: "custom",
+  baseUrl: "https://wrong-custom.example.com/v1",
+  apiKey: "sk-wrong-custom-secret-123456",
+});
+if (!customGateway.ok) throw new Error(`setApiGateway for official direct guard failed: ${customGateway.error}`);
+modelPresets.reloadPresets();
+const autoCleanedList = modelPresets.listPresetsPublic();
+if (autoCleanedList.apiGateway.mode !== "builtin" || autoCleanedList.apiGateway.baseUrl) {
+  throw new Error(`loading an official preset with its own connection must auto-clear stale custom API: ${JSON.stringify(autoCleanedList.apiGateway)}`);
+}
+const customGatewayForSwitch = modelPresets.setApiGateway({
+  mode: "custom",
+  baseUrl: "https://wrong-custom.example.com/v1",
+  apiKey: "sk-wrong-custom-secret-123456",
+});
+if (!customGatewayForSwitch.ok) throw new Error(`setApiGateway before switch guard failed: ${customGatewayForSwitch.error}`);
+const officialSwitch = modelPresets.setActivePreset("official-direct");
+if (!officialSwitch.ok) throw new Error(`official direct preset should be selectable: ${officialSwitch.error}`);
+const officialList = modelPresets.listPresetsPublic();
+if (officialList.apiGateway.mode !== "builtin" || officialList.apiGateway.baseUrl) {
+  throw new Error(`selecting an official preset with its own connection must clear custom API override: ${JSON.stringify(officialList.apiGateway)}`);
+}
+const officialOverrideEnv = modelPresets.getUserApiEnv();
+if (Object.keys(officialOverrideEnv).length) {
+  throw new Error(`official preset own connection must not be overridden by stale custom API: ${JSON.stringify(officialOverrideEnv)}`);
+}
+fs.writeFileSync(
+  path.join(tmp, "remote-config-cache.json"),
+  JSON.stringify({
+    config: {
+      encrypted: true,
+      data: Buffer.from(`protected:${JSON.stringify(remoteConfigState)}`, "utf8").toString("base64"),
+    },
+    updatedAt: new Date().toISOString(),
+  }),
+  "utf8",
+);
+modelPresets.reloadPresets();
 const customSwitch = modelPresets.setActivePreset(remoteCustom.preset.id);
 if (!customSwitch.ok) {
   throw new Error(`custom preset should be selectable under remote catalog: ${customSwitch.error}`);

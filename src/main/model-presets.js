@@ -164,7 +164,14 @@ function loadUserChoice() {
     customPresets: Array.isArray(raw?.customPresets) ? raw.customPresets : [],
     apiGateway: normalizeApiGateway(raw?.apiGateway),
   };
-  if (hasPlaintextSecrets(stored)) {
+  const activePreset = findPresetById(getActivePresetId());
+  if (!activePreset?.custom && presetHasOwnModelConnection(activePreset) && cachedUserChoice.apiGateway.mode === "custom") {
+    cachedUserChoice = {
+      ...cachedUserChoice,
+      apiGateway: normalizeApiGateway(null),
+    };
+  }
+  if (hasPlaintextSecrets(stored) || cachedUserChoice.apiGateway.mode !== normalizeApiGateway(raw?.apiGateway).mode) {
     writeJson(userSettingsPath(), serializeUserChoice(cachedUserChoice));
   }
   return cachedUserChoice;
@@ -330,6 +337,16 @@ function usesManagedServicePreset(preset) {
   );
 }
 
+function presetHasOwnModelConnection(preset) {
+  if (!preset || preset.custom) return false;
+  const env = normalizeToLilyEnv(preset.env || {});
+  return Boolean(
+    String(env.LILY_API_BASE_URL || "").trim() ||
+      String(env.LILY_API_KEY || "").trim() ||
+      String(env.LILY_GATEWAY_PROVIDER || "").trim(),
+  );
+}
+
 function getAllPresets() {
   return [...getBuiltinPresets(), ...getCustomPresets()];
 }
@@ -391,7 +408,7 @@ function getUserApiEnv() {
     }
   }
 
-  if (usesManagedServicePreset(preset)) return {};
+  if (presetHasOwnModelConnection(preset) || usesManagedServicePreset(preset)) return {};
 
   const gateway = user.apiGateway || normalizeApiGateway(null);
   if (gateway.mode !== "custom") return {};
@@ -494,7 +511,11 @@ function setActivePreset(presetId) {
   const found = findPresetById(presetId);
   if (!found) return { ok: false, error: "NOT_FOUND" };
   const user = loadUserChoice();
-  persistUserChoice({ ...user, activePresetId: presetId });
+  const next = { ...user, activePresetId: presetId };
+  if (!found.custom && presetHasOwnModelConnection(found)) {
+    next.apiGateway = normalizeApiGateway(null);
+  }
+  persistUserChoice(next);
   return { ok: true, activePresetId: presetId, label: found.label };
 }
 
