@@ -10,7 +10,14 @@ const FILE_MIME = {
   ".gif": "image/gif",
   ".webp": "image/webp",
   ".bmp": "image/bmp",
+  ".svg": "image/svg+xml",
   ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".txt": "text/plain",
   ".md": "text/markdown",
   ".json": "application/json",
@@ -19,6 +26,10 @@ const FILE_MIME = {
 
 const DEFAULT_MAX_INLINE_FILE_BYTES =
   Number(process.env.LILY_OPENCODE_MAX_INLINE_FILE_BYTES) || 8 * 1024 * 1024;
+const DEFAULT_MAX_TEXT_ATTACHMENT_CHARS =
+  Number(process.env.LILY_OPENCODE_MAX_TEXT_ATTACHMENT_CHARS) || 80_000;
+
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([".svg"]);
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "unknown size";
@@ -43,6 +54,58 @@ function buildSkippedAttachmentNote(skipped = []) {
   ].join("\n");
 }
 
+function truncateAttachmentText(text, limit = DEFAULT_MAX_TEXT_ATTACHMENT_CHARS) {
+  const value = String(text || "");
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}\n\n[Attachment text truncated, original length: ${value.length} characters]`;
+}
+
+function textFenceForExtension(ext) {
+  if (ext === ".svg") return "svg";
+  return "";
+}
+
+function fileToTextAttachment(file, opts = {}) {
+  if (!file || typeof file !== "object") return null;
+  const filePath = file.path || file.filePath;
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  const ext = path.extname(filePath).toLowerCase();
+  if (!TEXT_ATTACHMENT_EXTENSIONS.has(ext)) return null;
+  const filename = file.name || path.basename(filePath);
+  const maxInlineFileBytes =
+    Number.isFinite(opts.maxInlineFileBytes) && opts.maxInlineFileBytes >= 0
+      ? opts.maxInlineFileBytes
+      : DEFAULT_MAX_INLINE_FILE_BYTES;
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) return null;
+    if (stat.size > maxInlineFileBytes) {
+      if (typeof opts.onSkip === "function") {
+        opts.onSkip({
+          path: filePath,
+          filename,
+          size: stat.size,
+          reason: `larger than text inline limit ${formatBytes(maxInlineFileBytes)}`,
+        });
+      }
+      return null;
+    }
+    const source = fs.readFileSync(filePath, "utf8");
+    const fence = textFenceForExtension(ext);
+    const body = truncateAttachmentText(source, opts.maxTextAttachmentChars);
+    return [
+      `[Attached ${ext.slice(1).toUpperCase()}: ${filename}]`,
+      `Source path: ${filePath}`,
+      "",
+      `\`\`\`${fence}`,
+      body,
+      "```",
+    ].join("\n");
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Turn one Lily file ({path,name,isImage} from the composer, or {uri,mime})
  * into an OpenCode FilePart { type:"file", mime, filename, url }. Local files
@@ -63,6 +126,16 @@ function fileToPart(file, opts = {}) {
   const ext = path.extname(filePath).toLowerCase();
   const mime = file.mime || FILE_MIME[ext] || "application/octet-stream";
   const filename = file.name || path.basename(filePath);
+  if (TEXT_ATTACHMENT_EXTENSIONS.has(ext)) {
+    if (typeof opts.onSkip === "function") {
+      opts.onSkip({
+        path: filePath,
+        filename,
+        reason: `${ext.slice(1)}_text_attachment`,
+      });
+    }
+    return null;
+  }
   const maxInlineFileBytes =
     Number.isFinite(opts.maxInlineFileBytes) && opts.maxInlineFileBytes >= 0
       ? opts.maxInlineFileBytes
@@ -100,9 +173,19 @@ function fileToPart(file, opts = {}) {
 function buildOpencodePromptBody(opts = {}) {
   const parts = [];
   const skipped = [];
+  const textAttachments = [];
   const guidance = typeof opts.guidance === "string" ? opts.guidance.trim() : "";
   if (Array.isArray(opts.files)) {
     for (const file of opts.files) {
+      const textAttachment = fileToTextAttachment(file, {
+        maxInlineFileBytes: opts.maxInlineFileBytes,
+        maxTextAttachmentChars: opts.maxTextAttachmentChars,
+        onSkip: (item) => skipped.push(item),
+      });
+      if (textAttachment) {
+        textAttachments.push(textAttachment);
+        continue;
+      }
       const part = fileToPart(file, {
         maxInlineFileBytes: opts.maxInlineFileBytes,
         onSkip: (item) => skipped.push(item),
@@ -111,7 +194,7 @@ function buildOpencodePromptBody(opts = {}) {
     }
   }
   const note = buildSkippedAttachmentNote(skipped);
-  const text = [String(opts.text || ""), note].filter(Boolean).join("\n\n");
+  const text = [String(opts.text || ""), ...textAttachments, note].filter(Boolean).join("\n\n");
   parts.push({ type: "text", text });
   const body = { agent: opts.agent || "build", parts };
   if (guidance) body.system = guidance;
@@ -123,7 +206,9 @@ function buildOpencodePromptBody(opts = {}) {
 
 module.exports = {
   DEFAULT_MAX_INLINE_FILE_BYTES,
+  DEFAULT_MAX_TEXT_ATTACHMENT_CHARS,
   buildSkippedAttachmentNote,
   buildOpencodePromptBody,
+  fileToTextAttachment,
   fileToPart,
 };
