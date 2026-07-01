@@ -535,6 +535,42 @@ async function newSession() {
   }
 }
 
+// --- transient attachment hiccup: replay as text-only CLI manifest ----------
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 200;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.historyMessages = [];
+    fake.idleState = true;
+    const filePath = path.join(os.tmpdir(), "lily-report.pdf");
+    session.sendUserMessage({
+      text: "分析这个文件",
+      files: [{ path: filePath, name: "report.pdf", type: "pdf", size: 1_048_576 }],
+    });
+    await tick();
+    fake.emitEvent({ type: "session.status", properties: { sessionID: "s", status: { type: "busy" } } });
+    fake.emit("error", new Error("Connection to the model service was interrupted"));
+    await sleep(60);
+    assert(fake.prompts.length === 2, "transient attachment hiccup is replayed once");
+    assert(fake.prompts[0].files.length === 1, "first transient attempt keeps original attachment");
+    assert(fake.prompts[1].files.length === 0, "transient fallback replay removes file parts");
+    assert(fake.prompts[1].text.includes("Attachment fallback manifest"), "transient fallback gives the CLI a manifest");
+    assert(fake.prompts[1].text.includes(filePath), "transient fallback preserves the source path");
+    assert(orch.calls.error.length === 0, "transient attachment fallback avoids visible model interruption");
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "read through local tools" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && /local tools/.test(orch.calls.done[0].output), "transient attachment fallback completes");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
 // --- transient hiccup after read-only tools: replay once --------------------
 {
   const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
@@ -638,6 +674,43 @@ async function newSession() {
     await waitIdleSettle();
     assert(orch.calls.error.length === 0, "retry success avoids user-visible dispatch error");
     assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "retried ok", "retried turn completes");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- attachment dispatch failure: retry as text-only so CLI can handle it ---
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    let failures = 0;
+    fake.failPrompt = () => {
+      failures += 1;
+      if (failures === 1) throw new Error("Connection to the model service was interrupted");
+      fake.idleState = false;
+    };
+    const filePath = path.join(os.tmpdir(), "lily-chart.svg");
+    session.sendUserMessage({
+      text: "分析这个",
+      files: [{ path: filePath, name: "chart.svg", type: "svg", size: 26_676, isImage: true }],
+    });
+    await tick();
+    await sleep(60);
+    assert(fake.prompts.length === 2, "attachment dispatch failure is retried once");
+    assert(fake.prompts[0].files.length === 1, "first attempt keeps original attachment");
+    assert(Array.isArray(fake.prompts[1].files) && fake.prompts[1].files.length === 0, "fallback retry removes file parts");
+    assert(/Attachment fallback manifest/.test(fake.prompts[1].text), "fallback retry gives the CLI an attachment manifest");
+    assert(fake.prompts[1].text.includes(filePath), "fallback retry preserves the source path");
+    assert(/Do not ask the user to re-upload/.test(fake.prompts[1].text), "fallback retry tells the CLI to continue with tools");
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "I can inspect the source path." } });
+    fake.idleState = true;
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.error.length === 0, "fallback avoids direct model interruption");
+    assert(orch.calls.done.length === 1 && /source path/.test(orch.calls.done[0].output), "fallback turn completes through CLI");
     session.terminate();
   } finally {
     OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;

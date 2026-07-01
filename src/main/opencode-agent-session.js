@@ -54,6 +54,70 @@ function compactProgressText(value = "", limit = 96) {
   return `${text.slice(0, Math.max(0, limit - 1))}…`;
 }
 
+function formatBytes(bytes) {
+  const n = Number(bytes || 0);
+  if (!Number.isFinite(n) || n < 0) return "unknown";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileFallbackLine(file = {}, index = 0) {
+  const filePath = file.path || file.filePath || "";
+  const name = file.name || (filePath ? path.basename(filePath) : `attachment-${index + 1}`);
+  let stat = null;
+  if (filePath) {
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      stat = null;
+    }
+  }
+  const size = Number.isFinite(Number(file.size))
+    ? Number(file.size)
+    : stat?.isFile?.()
+      ? stat.size
+      : null;
+  return [
+    `- ${name}`,
+    filePath ? `  source path: ${filePath}` : "  source path: unavailable",
+    file.type ? `  type: ${file.type}` : "",
+    typeof file.isImage === "boolean" ? `  image: ${file.isImage ? "yes" : "no"}` : "",
+    Number.isFinite(size) ? `  size: ${formatBytes(size)}` : "",
+    filePath ? `  readable now: ${stat?.isFile?.() ? "yes" : "no"}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function buildAttachmentFallbackManifest(files = [], reason = "") {
+  const list = (Array.isArray(files) ? files : []).filter(Boolean);
+  if (!list.length) return "";
+  const shown = list.slice(0, 20).map((file, index) => fileFallbackLine(file, index));
+  const omitted = list.length > shown.length ? `\n\n${list.length - shown.length} more attachment(s) omitted from this manifest.` : "";
+  return [
+    "[Attachment fallback manifest]",
+    "The model file-upload request failed before the assistant could start. Continue the task inside Lily/CLI using these local source paths and available tools instead of failing the turn.",
+    "Do not ask the user to re-upload unless a source path is missing or unreadable.",
+    reason ? `Failure reason: ${reason}` : "",
+    "",
+    "Attached files:",
+    shown.join("\n"),
+    omitted,
+  ].filter(Boolean).join("\n");
+}
+
+function buildAttachmentFallbackPromptPayload(payload = {}, reason = "") {
+  const files = Array.isArray(payload.files) ? payload.files : [];
+  if (!files.length || payload.attachmentFallback) return payload;
+  const manifest = buildAttachmentFallbackManifest(files, reason);
+  if (!manifest) return payload;
+  return {
+    ...payload,
+    text: [String(payload.text || ""), manifest].filter(Boolean).join("\n\n"),
+    files: [],
+    attachmentFallback: true,
+  };
+}
+
 function rawToolFromEvent(ev = {}) {
   const p = ev.properties || {};
   if (ev.type === "message.part.updated") {
@@ -1244,8 +1308,13 @@ class OpencodeAgentSession extends EventEmitter {
 
     if (this._dispatchRetryCount < 1 && this._server && this._pendingPromptPayload) {
       this._dispatchRetryCount += 1;
+      const retryPayload = buildAttachmentFallbackPromptPayload(
+        this._pendingPromptPayload,
+        this._sanitize(pending?.message || ""),
+      );
+      this._pendingPromptPayload = retryPayload;
       try {
-        await this._server.sendPrompt(this._pendingPromptPayload);
+        await this._server.sendPrompt(retryPayload);
         this._pendingDispatchFailure = null;
         this._armPromptAcceptanceCheck();
         return;
@@ -1318,8 +1387,13 @@ class OpencodeAgentSession extends EventEmitter {
 
     if (this._dispatchRetryCount < 1 && this._server && this._pendingPromptPayload) {
       this._dispatchRetryCount += 1;
+      const retryPayload = buildAttachmentFallbackPromptPayload(
+        this._pendingPromptPayload,
+        "prompt accepted but no session activity",
+      );
+      this._pendingPromptPayload = retryPayload;
       try {
-        await this._server.sendPrompt(this._pendingPromptPayload);
+        await this._server.sendPrompt(retryPayload);
         this._armPromptAcceptanceCheck();
       } catch (err) {
         this._scheduleDispatchFailure(err);
@@ -1440,7 +1514,12 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
     try {
-      await this._server.sendPrompt(this._pendingPromptPayload);
+      const retryPayload = buildAttachmentFallbackPromptPayload(
+        this._pendingPromptPayload,
+        this._sanitize(raw || "transient model transport failure"),
+      );
+      this._pendingPromptPayload = retryPayload;
+      await this._server.sendPrompt(retryPayload);
       this._armResponseTimer();
       this._armProgressNoticeTimer();
       this._armHealthProbe();
