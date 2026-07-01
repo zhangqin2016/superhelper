@@ -496,6 +496,7 @@
   "settings.runtime.status.installed": "Installed",
   "settings.runtime.status.bundled": "Packaged",
   "settings.runtime.status.notInstalled": "Not installed",
+  "settings.runtime.status.unavailable": "Pending for this platform",
   "settings.runtime.status.missing": "Files missing",
   "settings.runtime.install": "Install",
   "settings.runtime.uninstall": "Uninstall",

@@ -23,6 +23,7 @@ assert.match(settingsPanel, /initRuntimePackSettings/, "settings init must wire 
 
 const preload = read("src/preload.js");
 assert.match(preload, /listRuntimePacks/, "preload must expose runtime pack list");
+assert.match(preload, /checkRuntimePackAvailability/, "preload must expose runtime pack availability preflight");
 assert.match(preload, /checkRuntimePackHealth/, "preload must expose dependency health checks");
 assert.match(preload, /installRuntimePack/, "preload must expose runtime pack install");
 assert.match(preload, /uninstallRuntimePack/, "preload must expose runtime pack uninstall");
@@ -30,12 +31,17 @@ assert.match(preload, /onRuntimePackProgress/, "preload must expose runtime pack
 
 const ipc = read("src/main/ipc-handlers.js");
 assert.match(ipc, /registerRuntimePackHandlers/, "main IPC registration must include runtime packs");
+const runtimePackIpc = read("src/main/ipc-runtime-packs.js");
+assert.match(runtimePackIpc, /runtime-packs:availability/, "main IPC must expose runtime pack availability preflight");
 
 assert(fs.existsSync(path.join(ROOT, "src/renderer/modules/runtime-pack-settings.js")), "renderer runtime-pack settings module must exist");
 assert(fs.existsSync(path.join(ROOT, "src/main/ipc-runtime-packs.js")), "main runtime-pack IPC module must exist");
 
 const runtimePackSettings = read("src/renderer/modules/runtime-pack-settings.js");
 assert.match(runtimePackSettings, /settings\.runtime\.status\.bundled/, "runtime UI must label bundled packs distinctly");
+assert.match(runtimePackSettings, /settings\.runtime\.status\.unavailable/, "runtime UI must label packs unavailable on this platform");
+assert.match(runtimePackSettings, /checkRuntimePackAvailability/, "runtime UI must preflight server artifact availability");
+assert.match(runtimePackSettings, /dataset\.unavailable/, "runtime UI must disable install for unavailable platform artifacts");
 assert.match(runtimePackSettings, /settings\.runtime\.health\.ok/, "runtime UI must render dependency health state");
 assert.match(runtimePackSettings, /!pack\.readOnly/, "runtime UI must not offer uninstall for read-only bundled packs");
 
@@ -47,6 +53,7 @@ for (const key of ["document", "image", "browser", "media"]) {
 for (const key of ["check", "checking", "ok", "failed", "notInstalled", "allOk", "failedCount"]) {
   assert.equal(typeof zh[`settings.runtime.health.${key}`], "string", `missing dependency health label ${key}`);
 }
+assert.equal(typeof zh["settings.runtime.status.unavailable"], "string", "missing unavailable status label");
 assert.equal(zh["settings.runtime.category.system"], undefined, "old system runtime category should not remain");
 assert.equal(zh["settings.runtime.category.common"], undefined, "old common runtime category should not remain");
 

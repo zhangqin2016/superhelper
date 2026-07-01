@@ -1057,6 +1057,14 @@
   opacity: 1;
 }
 
+.runtime-pack-install[data-unavailable="1"]:disabled {
+  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
+  color: var(--text-tertiary);
+  box-shadow: none;
+  opacity: 1;
+}
+
 .runtime-pack-install[data-busy="1"]::before {
   content: "";
   display: inline-block;

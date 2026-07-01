@@ -13,6 +13,9 @@ function registerRuntimePackHandlers() {
   ipcMain.handle("runtime-packs:health", (_event, payload = {}) =>
     require("./runtime-health").checkDependencyHealth(packIdFromPayload(payload)));
 
+  ipcMain.handle("runtime-packs:availability", (_event, payload = {}) =>
+    require("./runtime-pack-installer").checkRuntimePackAvailability(payload?.ids || payload?.packIds || []));
+
   ipcMain.handle("runtime-packs:install", async (event, payload = {}) => {
     const id = packIdFromPayload(payload);
     return require("./runtime-pack-installer").installRuntimePack(id, {

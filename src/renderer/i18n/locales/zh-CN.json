@@ -496,6 +496,7 @@
   "settings.runtime.status.installed": "已安装",
   "settings.runtime.status.bundled": "随包提供",
   "settings.runtime.status.notInstalled": "未安装",
+  "settings.runtime.status.unavailable": "当前平台待上架",
   "settings.runtime.status.missing": "文件缺失",
   "settings.runtime.install": "安装",
   "settings.runtime.uninstall": "卸载",

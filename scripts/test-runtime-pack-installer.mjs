@@ -82,6 +82,17 @@ try {
     assert.equal(pack?.readOnly, true, `${id} from base runtime should be read-only`);
     assert(installer.installedRuntimePackIds().has(id), `${id} from base runtime should satisfy dependency requirements`);
   }
+  const available = await installer.checkRuntimePackAvailability(["rembg", "web-automation", "not-a-pack"]);
+  assert.equal(available.ok, true);
+  assert.equal(available.packs.find((pack) => pack.id === "rembg")?.available, true, "available artifact should be reported before install");
+  assert.equal(available.packs.find((pack) => pack.id === "web-automation")?.installed, true, "bundled pack should not hit server availability");
+  assert.equal(available.packs.find((pack) => pack.id === "not-a-pack")?.error, "INVALID_RUNTIME_PACK");
+  const originalRuntimePackArtifact = serviceClient.runtimePackArtifact;
+  serviceClient.runtimePackArtifact = async () => ({ ok: true, json: { artifact: null } });
+  const unavailable = await installer.checkRuntimePackAvailability(["ffmpeg"]);
+  assert.equal(unavailable.packs[0].available, false);
+  assert.equal(unavailable.packs[0].error, "NO_RUNTIME_PACK_ARTIFACT");
+  serviceClient.runtimePackArtifact = originalRuntimePackArtifact;
 
   const bundledInstall = await installer.installRuntimePack("web-automation");
   assert.equal(bundledInstall.ok, true);

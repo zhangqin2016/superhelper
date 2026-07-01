@@ -170,6 +170,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   openInstalledWorkspaceApp: (appId) => ipcRenderer.invoke("apps:open-installed", { id: appId }),
   uninstallWorkspaceApp: (appId) => ipcRenderer.invoke("apps:uninstall", { id: appId }),
   listRuntimePacks: () => ipcRenderer.invoke("runtime-packs:list"),
+  checkRuntimePackAvailability: (ids = []) => ipcRenderer.invoke("runtime-packs:availability", { ids }),
   checkRuntimePackHealth: (id = "") => ipcRenderer.invoke("runtime-packs:health", id ? { id } : {}),
   installRuntimePack: (id) => ipcRenderer.invoke("runtime-packs:install", { id }),
   uninstallRuntimePack: (id) => ipcRenderer.invoke("runtime-packs:uninstall", { id }),

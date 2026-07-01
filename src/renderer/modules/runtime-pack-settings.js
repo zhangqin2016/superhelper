@@ -82,6 +82,7 @@ function statusText(pack) {
   if (pack.readOnly || pack.source === "bundled") return t("settings.runtime.status.bundled");
   if (pack.installed) return t("settings.runtime.status.installed");
   if (pack.missingFiles) return t("settings.runtime.status.missing");
+  if (isUnavailableOnPlatform(pack)) return t("settings.runtime.status.unavailable");
   return t("settings.runtime.status.notInstalled");
 }
 
@@ -104,6 +105,10 @@ function button(label, className = "settings-action-btn") {
 function isBusy(pack) {
   const phase = progressById.get(pack.id)?.phase;
   return Boolean(phase && !["installed", "failed", "skipped"].includes(phase));
+}
+
+function isUnavailableOnPlatform(pack) {
+  return pack?.availability?.available === false && pack.availability.error === "NO_RUNTIME_PACK_ARTIFACT";
 }
 
 function renderPackCard(pack) {
@@ -160,8 +165,13 @@ function renderPackCard(pack) {
     }
   } else {
     const install = button(t("settings.runtime.install"), "settings-action-btn settings-action-btn--primary runtime-pack-install");
-    install.disabled = isBusy(pack);
-    if (isBusy(pack)) {
+    const unavailable = isUnavailableOnPlatform(pack);
+    install.disabled = isBusy(pack) || unavailable;
+    if (unavailable) {
+      install.dataset.unavailable = "1";
+      install.textContent = statusText(pack);
+      install.title = errorMessage(pack.availability?.error);
+    } else if (isBusy(pack)) {
       install.dataset.busy = "1";
       install.textContent = statusText(pack);
     }
@@ -263,6 +273,34 @@ function mergeHealthResult(data, result) {
   };
 }
 
+function mergeAvailabilityResult(data, result) {
+  if (!data || !Array.isArray(data.packs) || !Array.isArray(result?.packs)) return data;
+  const byId = new Map(result.packs.map((pack) => [pack.id, pack]));
+  return {
+    ...data,
+    availability: result,
+    packs: data.packs.map((pack) => ({ ...pack, availability: byId.get(pack.id) || pack.availability || null })),
+  };
+}
+
+async function refreshRuntimePackAvailability(data) {
+  if (!window.assistantClient?.checkRuntimePackAvailability || !Array.isArray(data?.packs)) return;
+  const ids = data.packs
+    .filter((pack) => !pack.installed && !pack.readOnly)
+    .map((pack) => pack.id)
+    .filter(Boolean);
+  if (!ids.length) return;
+  try {
+    const result = await window.assistantClient.checkRuntimePackAvailability(ids);
+    if (!result?.ok || result.platform !== data.platform) return;
+    lastData = mergeAvailabilityResult(lastData, result);
+    renderRuntimePacks(lastData);
+  } catch {
+    // Availability is a UX preflight only. Install still resolves the artifact
+    // authoritatively, so network errors here should not disable usable packs.
+  }
+}
+
 async function runRuntimeHealthCheck() {
   if (!window.assistantClient?.checkRuntimePackHealth) return;
   setHint(t("settings.runtime.health.checking"));
@@ -300,6 +338,7 @@ export async function refreshRuntimePackSettings() {
     lastData = data;
     setHint(t("settings.runtime.platform", { platform: data.platform || "-" }));
     renderRuntimePacks(data);
+    void refreshRuntimePackAvailability(data);
   } catch {
     setHint(t("settings.runtime.loadFailed"), "error");
   }

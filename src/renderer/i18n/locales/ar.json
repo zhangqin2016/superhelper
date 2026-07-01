@@ -489,6 +489,7 @@
   "settings.runtime.status.installed": "مثبت",
   "settings.runtime.status.bundled": "مرفق مع التطبيق",
   "settings.runtime.status.notInstalled": "غير مثبت",
+  "settings.runtime.status.unavailable": "بانتظار النشر لهذه المنصة",
   "settings.runtime.status.missing": "الملفات مفقودة",
   "settings.runtime.install": "تثبيت",
   "settings.runtime.uninstall": "إلغاء التثبيت",

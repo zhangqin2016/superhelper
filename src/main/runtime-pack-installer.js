@@ -214,6 +214,43 @@ async function resolveArtifact(packId) {
   return { ok: true, artifact };
 }
 
+async function checkRuntimePackAvailability(packIds = []) {
+  const ids = (Array.isArray(packIds) && packIds.length ? packIds : Object.keys(PACK_SPECS))
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  const state = readState();
+  const bundled = listBundledRuntimePackDirs();
+  const baseProvided = baseProvidedRuntimePackMap();
+  const packs = [];
+  for (const id of ids) {
+    if (!isValidPackId(id) || !PACK_SPECS[id]) {
+      packs.push({ id, available: false, error: "INVALID_RUNTIME_PACK" });
+      continue;
+    }
+    if (installedRecordExists(id, state.installed[id]) || bundled.has(id) || baseProvided.has(id)) {
+      packs.push({ id, available: true, installed: true });
+      continue;
+    }
+    try {
+      const resolved = await resolveArtifact(id);
+      packs.push({
+        id,
+        available: Boolean(resolved.ok),
+        error: resolved.ok ? null : resolved.error || "NO_RUNTIME_PACK_ARTIFACT",
+        artifact: resolved.ok
+          ? {
+              version: resolved.artifact?.version || null,
+              sizeBytes: resolved.artifact?.sizeBytes || resolved.artifact?.size || null,
+            }
+          : null,
+      });
+    } catch (error) {
+      packs.push({ id, available: null, error: error?.message || "RUNTIME_PACK_AVAILABILITY_FAILED" });
+    }
+  }
+  return { ok: true, platform: platformKey(), packs };
+}
+
 function localizeObject(value) {
   if (!value || typeof value !== "object") return {};
   return { ...value };
@@ -399,6 +436,7 @@ function uninstallRuntimePack(packId) {
 }
 
 module.exports = {
+  checkRuntimePackAvailability,
   installRuntimePack,
   installedRuntimePackIds,
   baseProvidedRuntimePackMap,
