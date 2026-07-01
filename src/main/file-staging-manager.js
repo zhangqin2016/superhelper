@@ -3,8 +3,9 @@
 /**
  * Manages file references for AI provider attachments.
  *
- * Files are copied into the app staging directory. The runner is launched with
- * that directory in --add-dir, so attached files stay readable from the agent.
+ * Small files are copied into the app staging directory for stability. Large
+ * path-backed files are kept as in-place references so attaching them does not
+ * block the UI or duplicate gigabytes of data.
  */
 
 const fs = require("node:fs");
@@ -39,7 +40,8 @@ const ALL_SUPPORTED = new Set([
   ...CODE_EXTENSIONS,
 ]);
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+const COPY_INTO_STAGING_MAX_BYTES = 20 * 1024 * 1024;
+const MAX_PATHLESS_BUFFER_BYTES = 20 * 1024 * 1024;
 
 const MIME_TYPES = {
   ".png": "image/png",
@@ -63,7 +65,8 @@ class FileStagingManager {
   }
 
   /**
-   * Copy a file to the staging directory, keeping its original name.
+   * Stage a file path, keeping small files in the app staging directory and
+   * referencing large files in place.
    *
    * @param {string} srcPath  Absolute path to the source file.
    * @returns {Object} File metadata: { id, name, path, type, size, isImage }
@@ -78,33 +81,37 @@ class FileStagingManager {
       throw new Error("NOT_A_FILE");
     }
 
-    if (stat.size > MAX_FILE_SIZE) {
-      throw new Error("FILE_TOO_LARGE");
-    }
-
     const ext = path.extname(srcPath).toLowerCase();
     if (!ALL_SUPPORTED.has(ext)) {
       throw new Error("UNSUPPORTED_TYPE");
     }
 
     const name = path.basename(srcPath);
+    let storedPath = srcPath;
+    let staged = false;
 
-    let destPath = path.join(this._stagingDir, name);
-    let counter = 1;
-    const base = path.basename(name, ext);
-    while (fs.existsSync(destPath)) {
-      destPath = path.join(this._stagingDir, `${base}-${counter}${ext}`);
-      counter++;
+    if (stat.size <= COPY_INTO_STAGING_MAX_BYTES) {
+      let destPath = path.join(this._stagingDir, name);
+      let counter = 1;
+      const base = path.basename(name, ext);
+      while (fs.existsSync(destPath)) {
+        destPath = path.join(this._stagingDir, `${base}-${counter}${ext}`);
+        counter++;
+      }
+
+      fs.copyFileSync(srcPath, destPath);
+      storedPath = destPath;
+      staged = true;
     }
-
-    fs.copyFileSync(srcPath, destPath);
 
     return {
       id: crypto.randomUUID(),
       name,
-      path: destPath,
+      path: storedPath,
+      sourcePath: srcPath,
       type: ext.slice(1),
       size: stat.size,
+      staged,
       isImage: IMAGE_EXTENSIONS.has(ext),
     };
   }
@@ -124,7 +131,7 @@ class FileStagingManager {
     }
 
     const bufferData = Buffer.from(buffer);
-    if (bufferData.length > MAX_FILE_SIZE) {
+    if (bufferData.length > MAX_PATHLESS_BUFFER_BYTES) {
       throw new Error("FILE_TOO_LARGE");
     }
 
@@ -162,6 +169,8 @@ class FileStagingManager {
     if (!IMAGE_EXTENSIONS.has(ext)) return null;
 
     try {
+      const stat = fs.statSync(filePath);
+      if (!stat.isFile() || stat.size > COPY_INTO_STAGING_MAX_BYTES) return null;
       const buffer = fs.readFileSync(filePath);
       const mime = MIME_TYPES[ext] || "application/octet-stream";
       return `data:${mime};base64,${buffer.toString("base64")}`;
@@ -183,6 +192,8 @@ class FileStagingManager {
     if (!IMAGE_EXTENSIONS.has(ext)) return null;
 
     try {
+      const stat = fs.statSync(filePath);
+      if (!stat.isFile() || stat.size > COPY_INTO_STAGING_MAX_BYTES) return null;
       const { nativeImage } = require("electron");
       const img = nativeImage.createFromPath(filePath);
       const size = img.getSize();

@@ -13,7 +13,7 @@
   "file.open": "Open",
 
   "drop.title": "Drop files here to upload",
-  "drop.types": "Images, documents, and common files (max 20MB)",
+  "drop.types": "Images, documents, and common files; large files are indexed automatically",
 
   "sidebar.search": "Search chats...",
   "sidebar.myChats": "My chats",
@@ -989,7 +989,7 @@
   "fileErrors.FILE_NOT_FOUND": "File not found or path invalid.",
   "fileErrors.NOT_A_FILE": "Folders cannot be uploaded.",
   "fileErrors.UNSUPPORTED_TYPE": "Unsupported file type. Images, PDF, Word, text, etc. are supported.",
-  "fileErrors.FILE_TOO_LARGE": "File exceeds 20MB limit. Compress and retry.",
+  "fileErrors.FILE_TOO_LARGE": "Pasted file is too large. Save it as a file, then drag it in or choose it from disk.",
   "fileErrors.GENERIC": "File error: {error}",
   "fileErrors.WITH_NAME": "{message} ({name})",
 

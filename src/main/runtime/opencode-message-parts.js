@@ -31,13 +31,15 @@ function buildSkippedAttachmentNote(skipped = []) {
   if (!skipped.length) return "";
   const lines = skipped.map((item) => {
     const size = Number.isFinite(item.size) ? `, ${formatBytes(item.size)}` : "";
-    return `- ${item.filename || item.path || "attachment"}${size}: ${item.reason}`;
+    const name = item.filename || path.basename(item.path || "") || "attachment";
+    const source = item.path ? ` (source path: ${item.path})` : "";
+    return `- ${name}${source}${size}: ${item.reason}`;
   });
   return [
     "[Attachment note]",
     "Some local files were not inlined into the OpenCode request to keep the desktop app responsive.",
     ...lines,
-    "If document extraction succeeded, use the extracted text above. Otherwise ask the user to split or compress the file.",
+    "If document extraction succeeded, use the extracted text above. Otherwise use the source path with available file tools instead of asking the user to re-upload.",
   ].join("\n");
 }
 

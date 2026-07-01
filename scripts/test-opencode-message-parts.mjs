@@ -55,6 +55,7 @@ const { buildOpencodePromptBody, fileToPart } = require("../src/main/runtime/ope
   assert.equal(body.parts.length, 1, "skipped file does not create a file part");
   assert.match(body.parts[0].text, /Attachment note/, "skipped file is explained to the model");
   assert.match(body.parts[0].text, /large\.pdf/, "skipped file name is included in the note");
+  assert.match(body.parts[0].text, new RegExp(large.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "skipped file source path is included in the note");
 
   fs.rmSync(dir, { recursive: true, force: true });
 }

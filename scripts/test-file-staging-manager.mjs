@@ -50,12 +50,47 @@ if (path.basename(duplicate.path) !== "INC-2026-001681-1.pdf") {
   throw new Error(`unexpected deduped filename: ${path.basename(duplicate.path)}`);
 }
 
+const largeSourcePath = path.join(sourceDir, "large-report.pdf");
+fs.writeFileSync(largeSourcePath, Buffer.from("%PDF-1.4\n"));
+fs.truncateSync(largeSourcePath, 25 * 1024 * 1024);
+const largeStaged = manager.stageFromPath(largeSourcePath);
+if (largeStaged.name !== "large-report.pdf") {
+  throw new Error("path-backed large files should be accepted for downstream indexing");
+}
+if (largeStaged.path !== largeSourcePath) {
+  throw new Error("path-backed large files should be referenced in place instead of copied into staging");
+}
+if (largeStaged.size !== 25 * 1024 * 1024) {
+  throw new Error(`large staged file should keep source size, got ${largeStaged.size}`);
+}
+
+const largeImagePath = path.join(sourceDir, "large-image.png");
+fs.writeFileSync(largeImagePath, Buffer.from("\x89PNG\r\n\x1a\n"));
+fs.truncateSync(largeImagePath, 25 * 1024 * 1024);
+const largeImage = manager.stageFromPath(largeImagePath);
+if (largeImage.path !== largeImagePath) {
+  throw new Error("large images should also be referenced in place");
+}
+if (manager.getThumbnail(largeImage.path) !== null) {
+  throw new Error("large image thumbnails should not read the whole file into memory");
+}
+
 const pasted = manager.stageFromBuffer(Buffer.from("hello"), "notes.txt");
 if (path.dirname(pasted.path) !== stagingDir) {
   throw new Error(`stageFromBuffer should write into staging dir, got ${pasted.path}`);
 }
 if (fs.readFileSync(pasted.path, "utf8") !== "hello") {
   throw new Error("pasted buffer content should be preserved");
+}
+
+let largeBufferRejected = false;
+try {
+  manager.stageFromBuffer(Buffer.alloc(20 * 1024 * 1024 + 1), "pathless-large.txt");
+} catch (err) {
+  largeBufferRejected = err.message === "FILE_TOO_LARGE";
+}
+if (!largeBufferRejected) {
+  throw new Error("pathless buffer uploads should keep the 20MB memory-safety limit");
 }
 
 console.log("test-file-staging-manager: ok");
