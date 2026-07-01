@@ -73,6 +73,7 @@ function fail(msg) {
 const allowMissing = process.argv.includes("--allow-missing");
 const requireLibreOffice = process.argv.includes("--require-libreoffice");
 const strictSmoke = process.argv.includes("--strict-smoke");
+const allowCrossHostSmokeSkip = process.argv.includes("--allow-cross-host-smoke-skip");
 const want = detectPlatform();
 const partialRoot = runtimeRootFor(want);
 
@@ -148,11 +149,13 @@ if (canRunSmokeTest) {
     console.warn(`[verify-runtime] warning: venv smoke test failed: ${detail}`);
   }
 } else {
-  if (strictSmoke) {
+  if (strictSmoke && !allowCrossHostSmokeSkip) {
     fail("strict smoke requested, but win32-x64 runtime smoke must run on Windows");
   }
   console.warn(
-    "[verify-runtime] warning: skipping venv smoke test for win32-x64 on non-Windows host",
+    strictSmoke
+      ? `[verify-runtime] warning: strict smoke skipped for win32-x64 on ${process.platform}; runtime structure was verified, Windows smoke must run on Windows CI`
+      : "[verify-runtime] warning: skipping venv smoke test for win32-x64 on non-Windows host",
   );
 }
 

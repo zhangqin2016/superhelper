@@ -27,27 +27,57 @@ assert.match(
   "Mac x64 release must require LibreOffice before packaging",
 );
 
-for (const scriptName of ["dist:win", "dist:win:signed"]) {
-  const script = pkg.scripts[scriptName] || "";
-  assert.match(
-    script,
-    /verify-runtime-bundle\.mjs --platform win32-x64 --require-libreoffice --strict-smoke/,
-    `${scriptName} must require the bundled Windows runtime before packaging`,
-  );
-  assert.doesNotMatch(
-    script,
-    /--allow-missing/,
-    `${scriptName} must not allow missing runtime in release builds`,
-  );
-  assert.match(
-    script,
-    /verify-win-pack\.mjs --expect-runtime/,
-    `${scriptName} must verify the packaged Windows runtime after packaging`,
-  );
-}
+const distWin = pkg.scripts["dist:win"] || "";
+assert.match(
+  distWin,
+  /ensure-win-libreoffice-runtime\.mjs/,
+  "dist:win must restore the published Windows LibreOffice runtime before verification",
+);
+assert.match(
+  distWin,
+  /verify-runtime-bundle\.mjs --platform win32-x64 --require-libreoffice --strict-smoke --allow-cross-host-smoke-skip/,
+  "dist:win must require the bundled Windows runtime while allowing Mac release hosts to skip Windows-only smoke",
+);
+assert.doesNotMatch(
+  distWin,
+  /--allow-missing/,
+  "dist:win must not allow missing runtime in release builds",
+);
+assert.match(
+  distWin,
+  /verify-win-pack\.mjs --expect-runtime/,
+  "dist:win must verify the packaged Windows runtime after packaging",
+);
+
+const distWinSigned = pkg.scripts["dist:win:signed"] || "";
+assert.match(
+  distWinSigned,
+  /verify-runtime-bundle\.mjs --platform win32-x64 --require-libreoffice --strict-smoke/,
+  "dist:win:signed must require the bundled Windows runtime before packaging",
+);
+assert.doesNotMatch(
+  distWinSigned,
+  /--allow-cross-host-smoke-skip/,
+  "dist:win:signed must keep the Windows runtime smoke strict for signed Windows release hosts",
+);
+assert.doesNotMatch(
+  distWinSigned,
+  /--allow-missing/,
+  "dist:win:signed must not allow missing runtime in release builds",
+);
+assert.match(
+  distWinSigned,
+  /verify-win-pack\.mjs --expect-runtime/,
+  "dist:win:signed must verify the packaged Windows runtime after packaging",
+);
 
 const verifyRuntime = fs.readFileSync(path.join(ROOT, "scripts/verify-runtime-bundle.mjs"), "utf8");
 assert.match(verifyRuntime, /--require-libreoffice/, "runtime verifier must support a strict LibreOffice gate");
 assert.match(verifyRuntime, /--strict-smoke/, "runtime verifier must support strict import smoke checks");
+assert.match(
+  verifyRuntime,
+  /--allow-cross-host-smoke-skip/,
+  "runtime verifier must support explicit cross-host Windows smoke skipping",
+);
 
 console.log("runtime-release-policy: ok");

@@ -1,6 +1,6 @@
 {
   "name": "lily-workbench",
-  "version": "0.1.80",
+  "version": "0.1.81",
   "private": true,
   "description": "Lily Workbench desktop client",
   "main": "src/main.js",
@@ -42,7 +42,7 @@
     "verify:runtime": "node scripts/verify-runtime-bundle.mjs",
     "icon:optimize": "node scripts/optimize-icon.mjs",
     "pack": "node scripts/purge-macos-junk.mjs && electron-builder --dir",
-    "dist:win": "node scripts/fetch-opencode-engine.mjs --platform win32-x64 && node scripts/verify-engine-bundle.mjs --platform win32-x64 && node scripts/verify-runtime-bundle.mjs --platform win32-x64 --require-libreoffice --strict-smoke && node scripts/purge-macos-junk.mjs && bash scripts/dist-win.sh && node scripts/verify-win-pack.mjs --expect-runtime",
+    "dist:win": "node scripts/fetch-opencode-engine.mjs --platform win32-x64 && node scripts/verify-engine-bundle.mjs --platform win32-x64 && node scripts/ensure-win-libreoffice-runtime.mjs && node scripts/verify-runtime-bundle.mjs --platform win32-x64 --require-libreoffice --strict-smoke --allow-cross-host-smoke-skip && node scripts/purge-macos-junk.mjs && bash scripts/dist-win.sh && node scripts/verify-win-pack.mjs --expect-runtime",
     "dist:win:signed": "node scripts/verify-runtime-bundle.mjs --platform win32-x64 --require-libreoffice --strict-smoke && node scripts/purge-macos-junk.mjs && LILY_REQUIRE_WIN_SIGNING=1 bash scripts/dist-win.sh && node scripts/verify-win-pack.mjs --expect-runtime",
     "dist:mac:arm64": "node scripts/fetch-opencode-engine.mjs --platform darwin-arm64 && node scripts/verify-engine-bundle.mjs --platform darwin-arm64 && node scripts/verify-runtime-bundle.mjs --platform darwin-arm64 --require-libreoffice --strict-smoke && node scripts/purge-macos-junk.mjs && bash scripts/dist-mac.sh arm64 && node scripts/verify-mac-pack.mjs && node scripts/build-mac-zip.mjs --arch arm64 && node scripts/build-mac-dmg.mjs --arch arm64 && node scripts/verify-mac-dmg.mjs --arch arm64",
     "dist:mac:x64": "node scripts/fetch-opencode-engine.mjs --platform darwin-x64 && node scripts/verify-engine-bundle.mjs --platform darwin-x64 && node scripts/verify-runtime-bundle.mjs --platform darwin-x64 --require-libreoffice --strict-smoke && node scripts/purge-macos-junk.mjs && bash scripts/dist-mac.sh x64 && node scripts/verify-mac-pack.mjs && node scripts/build-mac-zip.mjs --arch x64 && node scripts/build-mac-dmg.mjs --arch x64 && node scripts/verify-mac-dmg.mjs --arch x64",
