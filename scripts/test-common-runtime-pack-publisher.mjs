@@ -20,6 +20,8 @@ assert.match(script, /@playwright\/mcp/, "web runtime artifact must include Play
 assert.match(script, /PLAYWRIGHT_BROWSERS_PATH/, "web runtime artifact must bundle/verify browser cache");
 assert.match(script, /ffmpeg-static/, "ffmpeg runtime artifact must include ffmpeg-static");
 assert.match(script, /ffprobe-static/, "ffmpeg runtime artifact must include ffprobe-static");
+assert.match(script, /npm\.cmd/, "publisher must call npm.cmd when spawned from Node on Windows");
+assert.match(script, /result\.error/, "publisher must surface spawn errors instead of only saying npm failed");
 assert.match(script, /github\.com\/jgm\/pandoc\/releases/, "pandoc runtime artifact must use official pandoc release binaries");
 assert.match(script, /POST|runtime-packs/, "publisher must register artifacts with the runtime-pack API");
 assert.match(script, /refusing to publish unverified native\/browser binaries/, "publisher must fail loud on unverified cross-platform native/browser packs");

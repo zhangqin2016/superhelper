@@ -82,24 +82,36 @@ function fail(message) {
   process.exit(1);
 }
 
+function platformCommand(command) {
+  if (process.platform !== "win32") return command;
+  if (command === "npm") return "npm.cmd";
+  if (command === "npx") return "npx.cmd";
+  if (command === "qshell") return "qshell.exe";
+  return command;
+}
+
 function run(command, args, options = {}) {
   console.log(`[publish-runtime-pack] ${[command, ...args].join(" ")}`);
   if (options.dryRun) return;
-  const result = spawnSync(command, args, {
+  const executable = platformCommand(command);
+  const result = spawnSync(executable, args, {
     cwd: options.cwd || ROOT,
     env: { ...process.env, ...(options.env || {}) },
     stdio: options.stdio || "inherit",
   });
-  if (result.status !== 0) fail(`${command} failed`);
+  if (result.error) fail(`${command} failed: ${result.error.message}`);
+  if (result.status !== 0) fail(`${command} failed with exit code ${result.status ?? "unknown"}`);
 }
 
 function runCapture(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const executable = platformCommand(command);
+  const result = spawnSync(executable, args, {
     cwd: options.cwd || ROOT,
     env: { ...process.env, ...(options.env || {}) },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
+  if (result.error) fail(`${command} failed: ${result.error.message}`);
   if (result.status !== 0) {
     fail(`${command} failed: ${result.stderr || result.stdout || result.status}`);
   }

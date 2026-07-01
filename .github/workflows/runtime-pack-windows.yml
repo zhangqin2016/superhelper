@@ -51,9 +51,11 @@ jobs:
           $pack = "${{ inputs.pack }}"
           if ($pack -eq "all" -or $pack -eq "web-automation") {
             node scripts/publish-common-runtime-pack.mjs --pack web-automation --platform win32-x64
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           if ($pack -eq "all" -or $pack -eq "ffmpeg") {
             node scripts/publish-common-runtime-pack.mjs --pack ffmpeg --platform win32-x64
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
       - name: Create artifact manifest
