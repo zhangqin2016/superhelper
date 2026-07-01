@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Mac 安装包：内置 Python + LibreOffice runtime；签名阶段需跳过 bundles 内二进制签名。
+# Mac 默认安装包保持 slim：仅打入当前架构 OpenCode 引擎，不内置 runtime / runtime-packs 依赖。
+# 重依赖通过运行时包按需安装，和 Windows 保持同一套发布策略。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,11 +14,11 @@ if [[ "$ARCH" != "arm64" && "$ARCH" != "x64" ]]; then
   exit 1
 fi
 
-echo "[dist-mac] 打包 darwin-${ARCH}（签名 bundles 已跳过）"
+echo "[dist-mac] 打包 darwin-${ARCH} slim 安装包（runtime/runtime-packs 按需安装）"
 node scripts/fix-runtime-symlinks.mjs
 node scripts/purge-macos-junk.mjs --check
 
-# mac zip 也走 7za。运行时变大后默认压缩级别容易在 Apple Silicon 上被系统终止。
+# mac zip 也走 7za。压缩级别过高容易在 Apple Silicon 上被系统终止。
 export ELECTRON_BUILDER_COMPRESSION_LEVEL="${ELECTRON_BUILDER_COMPRESSION_LEVEL:-5}"
 
 npx electron-builder --mac "--${ARCH}" "${@:2}"

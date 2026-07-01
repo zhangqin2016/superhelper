@@ -8,23 +8,37 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
 
 const macResources = pkg.build?.mac?.extraResources || [];
-for (const resource of macResources) {
-  const filters = Array.isArray(resource.filter) ? resource.filter : [];
-  assert(
-    !filters.some((filter) => String(filter).includes("runtime/libreoffice")),
-    "Mac release resources must not exclude LibreOffice from the bundled runtime",
-  );
-}
+const macFilters = macResources.flatMap((resource) =>
+  Array.isArray(resource.filter) ? resource.filter.map(String) : [],
+);
+assert(
+  macFilters.includes("!runtime/**"),
+  "Mac installer resources must hard-exclude bundled runtime dependencies",
+);
+assert(
+  macFilters.includes("!runtime-packs/**"),
+  "Mac installer resources must hard-exclude bundled runtime packs",
+);
 
+assert.doesNotMatch(
+  pkg.scripts["dist:mac:arm64"],
+  /verify-runtime-bundle\.mjs|--require-libreoffice/,
+  "Mac arm64 release must stay slim and must not require bundled runtime dependencies before packaging",
+);
+assert.doesNotMatch(
+  pkg.scripts["dist:mac:x64"],
+  /verify-runtime-bundle\.mjs|--require-libreoffice/,
+  "Mac x64 release must stay slim and must not require bundled runtime dependencies before packaging",
+);
 assert.match(
   pkg.scripts["dist:mac:arm64"],
-  /verify-runtime-bundle\.mjs --platform darwin-arm64 --require-libreoffice --strict-smoke/,
-  "Mac arm64 release must require LibreOffice before packaging",
+  /verify-mac-pack\.mjs/,
+  "Mac arm64 release must verify the packaged slim app after packaging",
 );
 assert.match(
   pkg.scripts["dist:mac:x64"],
-  /verify-runtime-bundle\.mjs --platform darwin-x64 --require-libreoffice --strict-smoke/,
-  "Mac x64 release must require LibreOffice before packaging",
+  /verify-mac-pack\.mjs/,
+  "Mac x64 release must verify the packaged slim app after packaging",
 );
 
 const distWin = pkg.scripts["dist:win"] || "";
@@ -79,6 +93,17 @@ assert.match(
   verifyWinPack,
   /默认 Windows 安装包必须保持 slim/,
   "Windows package verifier must fail if the default installer accidentally includes runtime dependencies",
+);
+const verifyMacPack = fs.readFileSync(path.join(ROOT, "scripts/verify-mac-pack.mjs"), "utf8");
+assert.match(
+  verifyMacPack,
+  /默认 Mac 安装包必须保持 slim/,
+  "Mac package verifier must fail if the default installer accidentally includes runtime dependencies",
+);
+assert.doesNotMatch(
+  verifyMacPack,
+  /完整 Mac 包必须内置 LibreOffice|首次使用 Office 能力时再下载/,
+  "Mac package verifier must not require LibreOffice in the default installer",
 );
 
 for (const workflow of [

@@ -48,7 +48,7 @@ STATE_SCHEMA_VERSION = 1
 # src/main/runtime-pack-specs.js. Available artifacts per platform are decided
 # server-side; this is just so `list` can name what the agent may install.
 KNOWN_PACKS = {
-    "libreoffice": "LibreOffice: local Office/PDF conversion and spreadsheet recalculation (~500MB download on Windows)",
+    "libreoffice": "LibreOffice: local Office/PDF conversion and spreadsheet recalculation (~500-800MB download)",
     "pro-pdf": "Docling: layout analysis, reading order, and table recovery for complex PDFs (~230MB download)",
     "pandoc": "Pandoc: Markdown, HTML, LaTeX, EPUB, and related document conversion",
     "pillow": "Pillow: core image loading, resizing, conversion, and thumbnails",

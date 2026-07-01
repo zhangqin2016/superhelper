@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * After `electron-builder --mac --dir`, ensure no macOS junk shipped inside the app bundle.
+ * After `electron-builder --mac --dir`, verify the default Mac app bundle stays slim.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -44,7 +44,7 @@ if (!fs.existsSync(resources)) {
 const appArch = appPath.includes("mac-arm64") ? "arm64" : "x64";
 const bundlesRoot = path.join(resources, "bundles");
 if (!fs.existsSync(bundlesRoot)) {
-  fail("完整 Mac 包应包含 resources/bundles");
+  fail("Mac 包应包含 resources/bundles");
 }
 
 const forbiddenBundle = appArch === "arm64" ? "darwin-x64" : "darwin-arm64";
@@ -52,27 +52,15 @@ if (fs.existsSync(path.join(bundlesRoot, forbiddenBundle))) {
   fail(`${appArch} Mac 包不应包含 bundles/${forbiddenBundle}`);
 }
 const activeBundle = appArch === "arm64" ? "darwin-arm64" : "darwin-x64";
-const runtimeRoot = path.join(bundlesRoot, activeBundle, "runtime");
-const runtimeManifest = path.join(runtimeRoot, "runtime-manifest.json");
-if (!fs.existsSync(runtimeManifest)) {
-  fail(`完整 Mac 包应包含内置 runtime，但未找到: ${path.relative(ROOT, runtimeManifest)}`);
+const activeBundleRoot = path.join(bundlesRoot, activeBundle);
+if (!fs.existsSync(activeBundleRoot)) {
+  fail(`缺少当前架构 bundle: bundles/${activeBundle}`);
 }
-let manifest = null;
-try {
-  manifest = JSON.parse(fs.readFileSync(runtimeManifest, "utf8"));
-} catch (err) {
-  fail(`runtime-manifest.json 无法解析: ${String(err?.message || err)}`);
+if (fs.existsSync(path.join(activeBundleRoot, "runtime"))) {
+  fail(`默认 Mac 安装包必须保持 slim，不应内置 bundles/${activeBundle}/runtime；依赖请通过设置页或运行时包安装`);
 }
-if (!manifest.libreoffice) {
-  fail("完整 Mac 包必须内置 LibreOffice，不能让用户首次使用 Office 能力时再下载");
-}
-const sofficeCandidates = [
-  path.join(runtimeRoot, "libreoffice", "LibreOffice.app", "Contents", "MacOS", "soffice"),
-  path.join(runtimeRoot, "libreoffice", "program", "soffice"),
-  path.join(runtimeRoot, "libreoffice", "opt", "libreoffice", "program", "soffice"),
-];
-if (!sofficeCandidates.some((candidate) => fs.existsSync(candidate))) {
-  fail("runtime-manifest 声明已内置 LibreOffice，但包内找不到 soffice");
+if (fs.existsSync(path.join(activeBundleRoot, "runtime-packs"))) {
+  fail(`默认 Mac 安装包必须保持 slim，不应内置 bundles/${activeBundle}/runtime-packs；依赖请通过设置页或运行时包安装`);
 }
 
 // The OpenCode engine is excluded from electron-builder signing (signIgnore),

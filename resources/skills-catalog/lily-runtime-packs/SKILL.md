@@ -7,10 +7,10 @@ type: reference
 
 # Dependency Packs
 
-The desktop app bundles only the base Python/Node runtime. Optional libraries and
-native tools are dependency packs: prebuilt artifacts resolved from Lily's server,
-downloaded from Lily's CDN, sha256-verified, and extracted locally. This skill is
-for checking status, installing a missing pack, repairing one, or upgrading with a
+The desktop app keeps the installer slim. Optional libraries and native tools are
+dependency packs: prebuilt artifacts resolved from Lily's server, downloaded from
+Lily's CDN, sha256-verified, and extracted locally. This skill is for checking
+status, installing a missing pack, repairing one, or upgrading with a
 user-installed override. It must not run pip/npm directly in normal use.
 
 ## Available Dependency Packs
