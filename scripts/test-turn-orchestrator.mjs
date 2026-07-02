@@ -301,8 +301,24 @@ const queued = await ctx.turnOrchestrator.sendUserMessage("s1", "queued", [], {
   skipPreflight: true,
 });
 if (!queued.queued || !queued.itemId) throw new Error("busy send should queue with id");
+let queuedSnapshot = ctx.turnOrchestrator.snapshot("s1").queue.find((item) => item.id === queued.itemId);
+if (!queuedSnapshot?.composerVisible || queuedSnapshot.origin !== "user") {
+  throw new Error(`normal user queue item should stay visible in composer: ${JSON.stringify(queuedSnapshot)}`);
+}
 const cancel = ctx.turnOrchestrator.cancelQueuedMessage("s1", queued.itemId);
 if (!cancel.ok || cancel.queueLength !== 0) throw new Error("queue cancel by id failed");
+const backgroundQueued = await ctx.turnOrchestrator.sendUserMessage("s1", "background status", [], {
+  skipPreflight: true,
+  queueOrigin: "system_status",
+  queueVisibility: "background",
+});
+if (!backgroundQueued.queued || !backgroundQueued.itemId) throw new Error("busy background item should queue with id");
+queuedSnapshot = ctx.turnOrchestrator.snapshot("s1").queue.find((item) => item.id === backgroundQueued.itemId);
+if (queuedSnapshot?.composerVisible !== false || queuedSnapshot.visibility !== "background" || queuedSnapshot.origin !== "system_status") {
+  throw new Error(`background queue item must be hidden from composer: ${JSON.stringify(queuedSnapshot)}`);
+}
+const cancelBackground = ctx.turnOrchestrator.cancelQueuedMessage("s1", backgroundQueued.itemId);
+if (!cancelBackground.ok || cancelBackground.queueLength !== 0) throw new Error("background queue cancel by id failed");
 runner.finish("answer");
 ctx.eventBus.flush();
 

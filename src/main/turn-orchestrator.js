@@ -84,12 +84,15 @@ function newQueueId() {
 }
 
 function queueDispatchOptions(opts = {}) {
+  const localAssistant =
+    opts.localAssistant && typeof opts.localAssistant === "object"
+      ? opts.localAssistant
+      : null;
+  const queueOrigin = opts.queueOrigin ||
+    (opts.scheduledTaskId ? "scheduled_task" : localAssistant ? "local_assistant" : "user");
   return {
     engineText: typeof opts.engineText === "string" ? opts.engineText : null,
-    localAssistant:
-      opts.localAssistant && typeof opts.localAssistant === "object"
-        ? opts.localAssistant
-        : null,
+    localAssistant,
     reloadSkillsBeforeStart: Boolean(opts.reloadSkillsBeforeStart),
     spawnEngine: opts.spawnEngine,
     skipPreflight: Boolean(opts.skipPreflight),
@@ -99,6 +102,20 @@ function queueDispatchOptions(opts = {}) {
     scheduledTaskRunId: opts.scheduledTaskRunId || null,
     scheduledTaskTitle: opts.scheduledTaskTitle || null,
     permissionMode: opts.permissionMode || undefined,
+    queueOrigin,
+    queueVisibility: opts.queueVisibility === "background" ? "background" : "composer",
+  };
+}
+
+function compactQueueItem(item) {
+  const visibility = item.options?.queueVisibility || "composer";
+  return {
+    id: item.id,
+    text: item.text,
+    files: item.displayFiles || [],
+    origin: item.options?.queueOrigin || "user",
+    visibility,
+    composerVisible: visibility !== "background",
   };
 }
 
@@ -161,11 +178,7 @@ class TurnOrchestrator {
       canSend: state.phase === "idle",
       canInterrupt: state.phase !== "idle" && state.phase !== "finalizing",
       queueLength: state.queue.length,
-      queue: state.queue.map((item) => ({
-        id: item.id,
-        text: item.text,
-        files: item.displayFiles || [],
-      })),
+      queue: state.queue.map((item) => compactQueueItem(item)),
       runtime: this.eventBus.snapshot(sessionId),
       taskRun: compactTaskRun(state.taskRun),
     };
@@ -1891,11 +1904,7 @@ class TurnOrchestrator {
   _emitQueue(sessionId) {
     const state = this._state(sessionId);
     this._emit(sessionId, "queue.updated", {
-      items: state.queue.map((item) => ({
-        id: item.id,
-        text: item.text,
-        files: item.displayFiles || [],
-      })),
+      items: state.queue.map((item) => compactQueueItem(item)),
     }, { turnId: state.turnId || null });
   }
 

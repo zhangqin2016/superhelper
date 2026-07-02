@@ -282,6 +282,8 @@ class ScheduledTaskManager {
       scheduledTaskRunId: run.id,
       scheduledTaskTitle: task.title,
       permissionMode: opts.manual ? undefined : "plan",
+      queueOrigin: "scheduled_task",
+      queueVisibility: "background",
     });
     Promise.resolve(resultPromise)
       .then((result) => {

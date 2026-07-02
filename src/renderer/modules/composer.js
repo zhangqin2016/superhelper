@@ -49,9 +49,10 @@ function messageQueueArea() {
 export function renderMessageQueue(sessionId, items = []) {
   const area = messageQueueArea();
   if (!area) return;
+  const visibleItems = (items || []).filter((item) => item?.composerVisible !== false);
 
   const activeId = store.get("activeSessionId");
-  if (!activeId || sessionId !== activeId || !items.length) {
+  if (!activeId || sessionId !== activeId || !visibleItems.length) {
     if (!sessionId || sessionId === activeId) {
       area.hidden = true;
       area.replaceChildren();
@@ -62,7 +63,7 @@ export function renderMessageQueue(sessionId, items = []) {
   area.hidden = false;
   area.replaceChildren();
 
-  for (const item of items) {
+  for (const item of visibleItems) {
     const row = document.createElement("div");
     row.className = "message-queue-item";
 

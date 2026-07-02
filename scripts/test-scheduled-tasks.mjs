@@ -260,6 +260,8 @@ try {
   // "plan" never prompts (mutations are denied rather than asked).
   assert(sent[0].opts.permissionMode === "plan",
     `scheduled fire must force plan (non-interactive), got: ${sent[0].opts.permissionMode}`);
+  assert(sent[0].opts.queueOrigin === "scheduled_task", `scheduled fire must identify its queue origin: ${sent[0].opts.queueOrigin}`);
+  assert(sent[0].opts.queueVisibility === "background", `scheduled fire must stay out of composer queue UI: ${sent[0].opts.queueVisibility}`);
   const runningRun = manager.runs.find((run) => run.id === sent[0].opts.scheduledTaskRunId);
   assert(runningRun?.status === "running", `run should be running: ${JSON.stringify(runningRun)}`);
   manager.completeRun("s1", runningRun.turnId, "turn.completed", {});
@@ -300,6 +302,8 @@ try {
   // Manual run-now: user is present, keep the session's mode (no override).
   assert(manualSent[0]?.opts.permissionMode === undefined,
     `manual run must not force a permission mode, got: ${manualSent[0]?.opts.permissionMode}`);
+  assert(manualSent[0]?.opts.queueVisibility === "background",
+    `manual scheduled run must still stay out of composer queue UI, got: ${manualSent[0]?.opts.queueVisibility}`);
   const duplicate = queuedManager.runNow(queuedTask.id);
   assert(!duplicate.ok && duplicate.error === "ALREADY_RUNNING", `duplicate run should be blocked: ${JSON.stringify(duplicate)}`);
   const activeRemove = queuedManager.remove(queuedTask.id);
