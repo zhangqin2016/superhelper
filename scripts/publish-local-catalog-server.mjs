@@ -596,22 +596,45 @@ async function postJson(api, auth, route, body) {
 }
 
 async function uploadMultipart(api, auth, route, fields, filePath) {
-  const form = new FormData();
-  for (const [key, value] of Object.entries(fields)) {
-    if (value !== undefined && value !== null && value !== "") form.set(key, String(value));
-  }
   const buffer = fs.readFileSync(filePath);
-  form.set("artifact", new Blob([buffer], { type: "application/zip" }), path.basename(filePath));
-  const response = await fetch(`${api}${route}`, {
-    method: "POST",
-    headers: authHeaders(auth),
-    body: form,
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`POST ${route} failed: HTTP ${response.status}${body ? ` ${body}` : ""}`);
+  const maxAttempts = 5;
+  const timeoutMs = 180_000;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined && value !== null && value !== "") form.set(key, String(value));
+    }
+    form.set("artifact", new Blob([buffer], { type: "application/zip" }), path.basename(filePath));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`${api}${route}`, {
+        method: "POST",
+        headers: authHeaders(auth),
+        body: form,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        const error = new Error(`POST ${route} failed: HTTP ${response.status}${body ? ` ${body}` : ""}`);
+        error.status = response.status;
+        throw error;
+      }
+      return response.json();
+    } catch (error) {
+      lastError = error;
+      if (error?.status && error.status < 500) throw error;
+      if (attempt === maxAttempts) break;
+      console.log(
+        `[publish-local-catalog] upload retry ${attempt}/${maxAttempts}: ${route} ${path.basename(filePath)} (${error?.message || "unknown"})`,
+      );
+      await wait(2_000 * attempt);
+    } finally {
+      clearTimeout(timer);
+    }
   }
-  return response.json();
+  throw lastError;
 }
 
 async function publishSkills(options, auth) {
