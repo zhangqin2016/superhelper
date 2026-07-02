@@ -20,10 +20,19 @@ assert.doesNotMatch(ipcRuntimePacks, /event\.sender\.send\("runtime-packs:progre
 const preflight = read("src/main/runtime-pack-preflight.js");
 assert.match(preflight, /installingRuntimePackIds/);
 assert.match(preflight, /installingPacks/);
+assert.match(preflight, /agentAdvisory/);
 
 const preflightUi = read("src/renderer/modules/runtime-pack-preflight-ui.js");
 assert.match(preflightUi, /dependencyInstallWaiting/);
 assert.match(preflightUi, /installingPacks/);
+
+const composer = read("src/renderer/modules/composer.js");
+assert.doesNotMatch(composer, /ensureRuntimePacksBeforeSend/);
+assert.doesNotMatch(composer, /ensureRuntimePacks\s*\(/);
+
+const turnOrchestrator = read("src/main/turn-orchestrator.js");
+assert.match(turnOrchestrator, /buildRuntimePackAdvisory/);
+assert.match(turnOrchestrator, /dependencyAdvisory/);
 
 const progressUi = read("src/renderer/modules/runtime-pack-progress.js");
 assert.match(progressUi, /onRuntimePackProgress/);

@@ -108,6 +108,27 @@ function appendPreflightFallback(text, context, title) {
   return require("./engine-message-layers").appendExtractedContext(text, context, title);
 }
 
+function buildDependencyAdvisoryForTurn(text, files) {
+  try {
+    const {
+      buildRuntimePackAdvisory,
+      preflightRuntimePacks,
+    } = require("./runtime-pack-preflight");
+    const preflight = preflightRuntimePacks({ text, files });
+    const advisory = buildRuntimePackAdvisory(preflight);
+    if (!advisory) return null;
+    return {
+      text: advisory,
+      requiredPackIds: preflight.requiredPackIds || [],
+      missingPackIds: preflight.missingPackIds || [],
+      installingPackIds: preflight.installingPackIds || [],
+    };
+  } catch (err) {
+    log.warn("runtime pack advisory failed open: %s", err?.message || err);
+    return null;
+  }
+}
+
 function compactToolInput(input, name = "Tool") {
   if (!input || typeof input !== "object") return {};
   return {
@@ -1003,6 +1024,7 @@ class TurnOrchestrator {
     state.pendingHooks.clear();
     state.tools.clear();
     const displayFiles = mergeDisplayFileMetadata(displaySourceFiles, opts.displayFiles);
+    const dependencyAdvisory = buildDependencyAdvisoryForTurn(rawUserText, files);
     state.currentPayload = {
       rawText: rawUserText,
       text: rawUserText,
@@ -1225,9 +1247,12 @@ class TurnOrchestrator {
         !ensured.coldStart &&
         !rehydrated,
       );
-      if (contextMemory.text && !contextMemory.deduped) {
+      const platformContextParts = [];
+      if (contextMemory.text && !contextMemory.deduped) platformContextParts.push(contextMemory.text);
+      if (dependencyAdvisory?.text) platformContextParts.push(dependencyAdvisory.text);
+      if (platformContextParts.length) {
         engineText = addLayersToEngineText(engineText, {
-          platformContext: contextMemory.text,
+          platformContext: platformContextParts.join("\n\n"),
         });
       }
     }
@@ -1266,6 +1291,14 @@ class TurnOrchestrator {
         rehydrated,
         shortFollowupContext,
         subagentIsolation,
+        dependencyAdvisory: dependencyAdvisory
+          ? {
+              injected: Boolean(dependencyAdvisory.text),
+              requiredPackIds: dependencyAdvisory.requiredPackIds,
+              missingPackIds: dependencyAdvisory.missingPackIds,
+              installingPackIds: dependencyAdvisory.installingPackIds,
+            }
+          : null,
         contextMemory: contextMemory
           ? {
               injected: Boolean(contextMemory.text),
@@ -1321,6 +1354,14 @@ class TurnOrchestrator {
               contextEpoch: contextMemory.contextEpoch,
               deduped: Boolean(contextMemory.deduped),
               totalChars: contextMemory.totalChars,
+            }
+          : null,
+        dependencyAdvisory: dependencyAdvisory
+          ? {
+              injected: Boolean(dependencyAdvisory.text),
+              requiredPackIds: dependencyAdvisory.requiredPackIds,
+              missingPackIds: dependencyAdvisory.missingPackIds,
+              installingPackIds: dependencyAdvisory.installingPackIds,
             }
           : null,
         taskContract: Boolean(state.taskContract),

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { assert } from "./lib/test-assert.mjs";
+import { assert, assertEqual } from "./lib/test-assert.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -59,12 +59,16 @@ includes(ids, "opencv", "Office starter should prepare image preprocessing for O
 
 const preflight = preflightRuntimePacks({ text: "学习这个 OA 系统" });
 assert(preflight.ok, "preflight should succeed");
+assertEqual(preflight.blocking, false, "runtime pack preflight must be advisory, not a send blocker");
 includes(preflight.requiredPackIds, "web-automation", "preflight should report required pack ids");
 includes(preflight.missingPackIds, "web-automation", "fresh user data should miss web automation");
 assert(
   preflight.missingPacks.some((pack) => pack.id === "web-automation" && pack.label && pack.sizeEstimate),
   `missing packs should include install metadata, got ${JSON.stringify(preflight.missingPacks)}`,
 );
+assert(/runtime_pack_install|manage_runtime_pack\.py/.test(preflight.agentAdvisory), "agent advisory should include an executable dependency path");
+assert(/Do not block|不要阻塞/.test(preflight.agentAdvisory), "agent advisory should explicitly forbid blocking the user turn");
+assert(/web-automation/.test(preflight.agentAdvisory), "agent advisory should name the missing pack");
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("runtime-pack-preflight: ok");

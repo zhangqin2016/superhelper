@@ -11,7 +11,6 @@ import { applySessionSwitch, refreshState } from "./session-chrome.js";
 import { canSend, getTurnPhase, markSessionStopping, subscribeRuntime, getRuntimeSession, syncCommittedMessages } from "./session-runtime-store.js";
 import { t } from "../i18n/index.js";
 import { chooseDialog } from "./confirm-dialog.js";
-import { ensureRuntimePacks } from "./runtime-pack-preflight-ui.js";
 
 /** Unsent composer text per session, restored on switch (in-memory only). */
 const sessionDrafts = new Map();
@@ -165,10 +164,6 @@ function sendErrorMessage(result) {
   return mapped === key ? t("send.error.GENERIC") : mapped;
 }
 
-async function ensureRuntimePacksBeforeSend({ text, files }) {
-  return ensureRuntimePacks({ text, files });
-}
-
 export async function sendPrompt(opts = {}) {
   const promptInput = $("promptInput");
   let text = promptInput?.value.trim() || "";
@@ -264,9 +259,6 @@ export async function sendPrompt(opts = {}) {
     });
     if (!sendMode) return;
   }
-
-  const dependenciesReady = await ensureRuntimePacksBeforeSend({ text, files });
-  if (!dependenciesReady) return;
 
   const displayFiles = files.map((f) => {
     const pending = (store.get("pendingFiles") || []).find((pf) => pf.id === f.id);
