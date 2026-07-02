@@ -23,7 +23,7 @@ const VIDEO = '<generated_media type="video">\n  <file path="' + root + '/genera
 function writeRecord(name, { createdAt, content = VIDEO, type = "video" }) {
   fs.writeFileSync(path.join(resultsDir, name), JSON.stringify({ type, provider: "volcengine", taskId: "t1", content, createdAt }));
 }
-function makeCtx(conversation = []) {
+function makeCtx(conversation = [], snapshot = { phase: "idle", queueLength: 0 }) {
   const injected = [];
   return {
     injected,
@@ -35,6 +35,7 @@ function makeCtx(conversation = []) {
       getConversation: () => conversation,
     },
     turnOrchestrator: {
+      snapshot: () => snapshot,
       completeLocalAssistantTurn: (sessionId, text, files, opts) => { injected.push({ sessionId, text, assistant: opts?.assistant }); return { ok: true }; },
     },
   };
@@ -68,6 +69,18 @@ sweep(ctx);
 assert(ctx.injected.length === 0, "fresh record must wait out the grace window");
 assert(fs.readdirSync(resultsDir).length === 1, "fresh record kept for a later sweep");
 console.log("media-tracker: grace window ok");
+
+// 4. Busy session — old fallback media waits instead of becoming a queued composer message.
+writeRecord("busy.json", { createdAt: Date.now() - GRACE_MS - 1000 });
+ctx = makeCtx([], { phase: "tool_running", queueLength: 0 });
+sweep(ctx);
+assert(ctx.injected.length === 0, "busy session must not receive fallback media as a queued message");
+assert(fs.readdirSync(resultsDir).length === 2, "busy fallback record kept for idle sweep");
+ctx = makeCtx([], { phase: "idle", queueLength: 0 });
+sweep(ctx);
+assert(ctx.injected.length === 1, "idle session should receive deferred fallback media");
+assert(fs.readdirSync(resultsDir).length === 1, "deferred fallback record deleted after surfacing");
+console.log("media-tracker: busy session defers fallback media ok");
 
 fs.rmSync(root, { recursive: true, force: true });
 console.log("test-media-result-tracker: ALL_OK");

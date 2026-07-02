@@ -60,6 +60,13 @@ function safeRm(p) {
   try { fs.rmSync(p, { force: true }); } catch { /* best effort */ }
 }
 
+function sessionCanReceiveFallback(ctx, sessionId) {
+  let snap = null;
+  try { snap = ctx.turnOrchestrator?.snapshot?.(sessionId) || null; } catch { snap = null; }
+  if (!snap) return true;
+  return snap.phase === "idle" && !(snap.queueLength > 0);
+}
+
 function sweep(ctx, now = Date.now()) {
   const projects = ctx.projectManager?.projects || [];
   for (const project of projects) {
@@ -75,6 +82,7 @@ function sweep(ctx, now = Date.now()) {
       if (!sessionId) continue; // no session to attach to yet — leave for a later sweep
       const paths = extractPaths(record.content);
       if (alreadyShown(ctx, sessionId, paths)) { safeRm(full); continue; } // dedup vs the live turn
+      if (!sessionCanReceiveFallback(ctx, sessionId)) continue; // never surface fallback media as a queued user message
       try {
         const label = record.type === "video" ? "🎬 视频已生成" : "🖼️ 图片已生成";
         ctx.turnOrchestrator.completeLocalAssistantTurn(sessionId, label, [], {
@@ -95,4 +103,4 @@ function startMediaResultTracker(ctx, { intervalMs = 5000 } = {}) {
   return () => clearInterval(timer);
 }
 
-module.exports = { startMediaResultTracker, sweep, extractPaths, alreadyShown, sessionForProject, GRACE_MS };
+module.exports = { startMediaResultTracker, sweep, extractPaths, alreadyShown, sessionForProject, sessionCanReceiveFallback, GRACE_MS };
