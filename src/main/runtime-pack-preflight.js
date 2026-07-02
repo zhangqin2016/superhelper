@@ -190,17 +190,35 @@ function toMissingPack(id, catalogPack) {
   };
 }
 
+function emptyPreflight(requiredPackIds = []) {
+  return {
+    ok: true,
+    requiredPackIds,
+    missingPackIds: [],
+    missingPacks: [],
+    installingPackIds: [],
+    installingPacks: [],
+  };
+}
+
 function preflightRuntimePacks(payload = {}) {
   const requiredPackIds = inferRuntimePackIds(payload);
   if (!requiredPackIds.length) {
-    return { ok: true, requiredPackIds, missingPackIds: [], missingPacks: [] };
+    return emptyPreflight(requiredPackIds);
   }
 
-  const { installedRuntimePackIds, listRuntimePacks } = require("./runtime-pack-installer");
+  const {
+    installedRuntimePackIds,
+    installingRuntimePackIds,
+    listRuntimePacks,
+  } = require("./runtime-pack-installer");
   const installed = installedRuntimePackIds();
-  const missingPackIds = requiredPackIds.filter((id) => !installed.has(id));
-  if (!missingPackIds.length) {
-    return { ok: true, requiredPackIds, missingPackIds: [], missingPacks: [] };
+  const installing = installingRuntimePackIds();
+  const pendingPackIds = requiredPackIds.filter((id) => !installed.has(id));
+  const installingPackIds = pendingPackIds.filter((id) => installing.has(id));
+  const missingPackIds = pendingPackIds.filter((id) => !installing.has(id));
+  if (!missingPackIds.length && !installingPackIds.length) {
+    return emptyPreflight(requiredPackIds);
   }
 
   const catalog = listRuntimePacks();
@@ -210,6 +228,8 @@ function preflightRuntimePacks(payload = {}) {
     requiredPackIds,
     missingPackIds,
     missingPacks: missingPackIds.map((id) => toMissingPack(id, packsById.get(id))),
+    installingPackIds,
+    installingPacks: installingPackIds.map((id) => toMissingPack(id, packsById.get(id))),
   };
 }
 

@@ -29,12 +29,12 @@ export async function loadRuntimePackPreflight(payload = {}) {
   return window.assistantClient.preflightRuntimePacks(payload);
 }
 
-export async function installMissingRuntimePacks(missingPacks = []) {
+export async function installMissingRuntimePacks(missingPacks = [], options = {}) {
   if (!missingPacks.length || !window.assistantClient?.installRuntimePack) return true;
 
   for (const pack of missingPacks) {
     const name = runtimePackLabel(pack);
-    showToast(t("composer.dependencyInstallStarted", { name }), "info");
+    showToast(t(options.waiting ? "composer.dependencyInstallWaiting" : "composer.dependencyInstallStarted", { name }), "info");
     const result = await window.assistantClient.installRuntimePack(pack.id);
     if (!result?.ok) {
       showToast(t("composer.dependencyInstallFailed", {
@@ -62,8 +62,16 @@ export async function ensureRuntimePacks(payload = {}, options = {}) {
     return true;
   }
 
+  if (!preflight?.ok) return true;
+
+  const installingPacks = Array.isArray(preflight?.installingPacks) ? preflight.installingPacks : [];
+  if (installingPacks.length) {
+    const ok = await installMissingRuntimePacks(installingPacks, { waiting: true });
+    if (!ok) return false;
+  }
+
   const missingPacks = Array.isArray(preflight?.missingPacks) ? preflight.missingPacks : [];
-  if (!preflight?.ok || missingPacks.length === 0) return true;
+  if (missingPacks.length === 0) return true;
 
   if (options.confirm !== false) {
     const packsText = missingPacks.map(runtimePackDisplayText).join(" / ");

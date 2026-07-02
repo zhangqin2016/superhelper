@@ -19,19 +19,8 @@ function registerRuntimePackHandlers() {
   ipcMain.handle("runtime-packs:preflight", (_event, payload = {}) =>
     require("./runtime-pack-preflight").preflightRuntimePacks(payload));
 
-  ipcMain.handle("runtime-packs:install", async (event, payload = {}) => {
-    const id = packIdFromPayload(payload);
-    return require("./runtime-pack-installer").installRuntimePack(id, {
-      onProgress: (progress) => {
-        try {
-          event.sender.send("runtime-packs:progress", progress);
-        } catch {
-          // Renderer progress is best-effort; installation result is returned by
-          // the invoke call and must not depend on event delivery.
-        }
-      },
-    });
-  });
+  ipcMain.handle("runtime-packs:install", async (_event, payload = {}) =>
+    require("./runtime-pack-installer").installRuntimePack(packIdFromPayload(payload)));
 
   ipcMain.handle("runtime-packs:uninstall", (_event, payload = {}) =>
     require("./runtime-pack-installer").uninstallRuntimePack(packIdFromPayload(payload)));

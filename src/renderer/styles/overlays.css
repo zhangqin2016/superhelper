@@ -540,6 +540,63 @@
   transition: width 0.25s ease;
 }
 
+.runtime-pack-progress-main {
+  position: fixed;
+  right: 18px;
+  bottom: 112px;
+  z-index: var(--z-notification-queue);
+  width: min(420px, calc(100vw - 36px));
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  background: color-mix(in srgb, var(--bg-floating) 92%, var(--accent) 8%);
+  box-shadow: var(--shadow-floating), var(--top-highlight);
+  backdrop-filter: blur(8px);
+}
+.runtime-pack-progress-main[hidden] { display: none; }
+.runtime-pack-progress-main-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.runtime-pack-progress-main-meta {
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.runtime-pack-progress-main-track {
+  position: relative;
+  height: 5px;
+  margin-top: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-raised);
+  overflow: hidden;
+}
+.runtime-pack-progress-main-fill {
+  height: 100%;
+  width: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+.runtime-pack-progress-main--failed {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+.runtime-pack-progress-main--failed .runtime-pack-progress-main-fill {
+  background: var(--danger-text);
+}
+.runtime-pack-progress-main--indeterminate .runtime-pack-progress-main-fill {
+  width: 42%;
+  animation: runtime-pack-progress-indeterminate 1.25s ease-in-out infinite;
+}
+
 /* =========================================================================
    Animations
    ========================================================================= */
@@ -557,6 +614,11 @@
 @keyframes bubble-enter {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes runtime-pack-progress-indeterminate {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(240%); }
 }
 
 @keyframes fade-in {

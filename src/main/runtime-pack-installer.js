@@ -17,7 +17,7 @@ const { PACK_CATEGORIES, PACK_SPECS } = require("./runtime-pack-specs");
 const DOWNLOAD_TIMEOUT_MS = 300_000;
 const MAX_RUNTIME_PACK_BYTES = 2 * 1024 * 1024 * 1024;
 const PACK_ID_RE = /^[a-z0-9][a-z0-9._-]{0,79}$/i;
-const activeInstalls = new Set();
+const activeInstalls = new Map();
 let baseProvidedCache = null;
 
 function platformKey() {
@@ -62,6 +62,10 @@ function installedRuntimePackIds() {
   for (const id of listBundledRuntimePackDirs().keys()) ids.add(id);
   for (const id of baseProvidedRuntimePackMap().keys()) ids.add(id);
   return ids;
+}
+
+function installingRuntimePackIds() {
+  return new Set(activeInstalls.keys());
 }
 
 function detectBasePythonModules(moduleByPackId) {
@@ -133,13 +137,64 @@ function safeUrl(value) {
   return parsed.toString();
 }
 
-function emitProgress(onProgress, id, phase, detail = {}) {
+function safeProgressCall(onProgress, progress) {
   if (typeof onProgress !== "function") return;
   try {
-    onProgress({ id, phase, at: new Date().toISOString(), ...detail });
+    onProgress(progress);
   } catch {
     // Progress must never break installation.
   }
+}
+
+function packProgressMeta(id) {
+  const spec = PACK_SPECS[id] || {};
+  return {
+    label: spec.label ? localizeObject(spec.label) : { en: id, "zh-CN": id, ar: id },
+    category: spec.category || "other",
+    sizeEstimate: spec.sizeEstimate || "",
+  };
+}
+
+function broadcastRuntimePackProgress(progress) {
+  try {
+    const { BrowserWindow } = require("electron");
+    const windows = typeof BrowserWindow?.getAllWindows === "function" ? BrowserWindow.getAllWindows() : [];
+    for (const win of windows) {
+      if (typeof win?.isDestroyed === "function" && win.isDestroyed()) continue;
+      win?.webContents?.send?.("runtime-packs:progress", progress);
+    }
+  } catch {
+    // Runtime-pack installs also run in tests and headless contexts. Broadcast is optional.
+  }
+}
+
+function createInstallJob(id) {
+  const subscribers = new Set();
+  const job = {
+    id,
+    latest: null,
+    promise: null,
+    subscribe(onProgress) {
+      if (typeof onProgress !== "function") return () => {};
+      subscribers.add(onProgress);
+      if (job.latest) safeProgressCall(onProgress, job.latest);
+      return () => subscribers.delete(onProgress);
+    },
+    publish(progress) {
+      job.latest = progress;
+      for (const onProgress of [...subscribers]) safeProgressCall(onProgress, progress);
+      broadcastRuntimePackProgress(progress);
+    },
+  };
+  return job;
+}
+
+function emitProgress(onProgress, id, phase, detail = {}) {
+  safeProgressCall(onProgress, { id, phase, at: new Date().toISOString(), ...detail });
+}
+
+function publishProgress(job, id, phase, detail = {}) {
+  job.publish({ id, phase, at: new Date().toISOString(), ...packProgressMeta(id), ...detail });
 }
 
 async function downloadToFile(url, destPath, options = {}) {
@@ -337,6 +392,12 @@ function listRuntimePacks() {
       path: dir,
     });
   }
+  for (const pack of packs) {
+    const job = activeInstalls.get(pack.id);
+    if (!job) continue;
+    pack.installing = true;
+    pack.progress = job.latest || null;
+  }
   return {
     ok: true,
     platform: platformKey(),
@@ -349,73 +410,92 @@ async function installRuntimePack(packId, options = {}) {
   const id = String(packId || "").trim();
   if (!id) return { ok: false, error: "INVALID_RUNTIME_PACK" };
   if (!isValidPackId(id)) return { ok: false, error: "INVALID_RUNTIME_PACK" };
-  if (activeInstalls.has(id)) return { ok: false, id, error: "INSTALL_IN_PROGRESS" };
-
-  activeInstalls.add(id);
-  const onProgress = options?.onProgress;
-  try {
-    const existing = readState().installed[id];
-    if (installedRecordExists(id, existing)) {
-      emitProgress(onProgress, id, "skipped", { version: existing.version || null });
-      return { ok: true, id, skipped: true, version: existing.version || null, path: packDir(id) };
-    }
-    const bundled = bundledPackDir(id);
-    if (bundled) {
-      emitProgress(onProgress, id, "skipped", { source: "bundled", path: bundled });
-      return { ok: true, id, skipped: true, source: "bundled", path: bundled };
-    }
-    const base = baseProvidedRuntimePackMap().get(id);
-    if (base) {
-      emitProgress(onProgress, id, "skipped", { source: "base", path: base.path || "" });
-      return { ok: true, id, skipped: true, source: "base", path: base.path || "" };
-    }
-
-    emitProgress(onProgress, id, "resolving", { platform: platformKey() });
-    const resolved = await resolveArtifact(id);
-    if (!resolved.ok) {
-      emitProgress(onProgress, id, "failed", { error: resolved.error || "NO_RUNTIME_PACK_ARTIFACT" });
-      return { ...resolved, id };
-    }
-    const artifact = resolved.artifact;
-    const target = packDir(id);
-    const cacheDir = userDataPath("runtime-packs");
-    const archivePath = path.join(cacheDir, `.${id}-${Date.now()}.pack`);
-
+  const existingJob = activeInstalls.get(id);
+  if (existingJob) {
+    const unsubscribe = existingJob.subscribe(options?.onProgress);
     try {
-      fs.rmSync(target, { recursive: true, force: true });
-      await downloadToFile(artifact.url, archivePath, { id, onProgress });
-      if (artifact.sha256) {
-        emitProgress(onProgress, id, "verifying", { sha256: String(artifact.sha256).toLowerCase() });
-        const actual = sha256File(archivePath);
-        if (actual !== String(artifact.sha256).toLowerCase()) {
-          fs.rmSync(target, { recursive: true, force: true });
-          emitProgress(onProgress, id, "failed", { error: "CHECKSUM_MISMATCH" });
-          return { ok: false, id, error: "CHECKSUM_MISMATCH" };
-        }
-      }
-      emitProgress(onProgress, id, "extracting", { path: target });
-      const format = extractArtifact(archivePath, target, artifact);
-      const state = readState();
-      state.installed[id] = {
-        installedAt: new Date().toISOString(),
-        source: "artifact",
-        version: artifact.version || null,
-        sha256: artifact.sha256 || null,
-        format,
-      };
-      writeState(state);
-      emitProgress(onProgress, id, "installed", { version: artifact.version || null, path: target });
-      return { ok: true, id, version: artifact.version || null, path: target };
-    } catch (error) {
-      fs.rmSync(target, { recursive: true, force: true });
-      const message = error?.message || String(error);
-      emitProgress(onProgress, id, "failed", { error: message });
-      return { ok: false, id, error: message };
+      const result = await existingJob.promise;
+      return { ...result, id, joined: true };
     } finally {
-      fs.rmSync(archivePath, { force: true });
+      unsubscribe();
     }
+  }
+
+  const job = createInstallJob(id);
+  const unsubscribe = job.subscribe(options?.onProgress);
+  activeInstalls.set(id, job);
+  job.promise = runRuntimePackInstall(id, job);
+  try {
+    return await job.promise;
   } finally {
+    unsubscribe();
     activeInstalls.delete(id);
+  }
+}
+
+async function runRuntimePackInstall(id, job) {
+  const existing = readState().installed[id];
+  if (installedRecordExists(id, existing)) {
+    publishProgress(job, id, "skipped", { version: existing.version || null });
+    return { ok: true, id, skipped: true, version: existing.version || null, path: packDir(id) };
+  }
+  const bundled = bundledPackDir(id);
+  if (bundled) {
+    publishProgress(job, id, "skipped", { source: "bundled", path: bundled });
+    return { ok: true, id, skipped: true, source: "bundled", path: bundled };
+  }
+  const base = baseProvidedRuntimePackMap().get(id);
+  if (base) {
+    publishProgress(job, id, "skipped", { source: "base", path: base.path || "" });
+    return { ok: true, id, skipped: true, source: "base", path: base.path || "" };
+  }
+
+  publishProgress(job, id, "resolving", { platform: platformKey() });
+  const resolved = await resolveArtifact(id);
+  if (!resolved.ok) {
+    publishProgress(job, id, "failed", { error: resolved.error || "NO_RUNTIME_PACK_ARTIFACT" });
+    return { ...resolved, id };
+  }
+  const artifact = resolved.artifact;
+  const target = packDir(id);
+  const cacheDir = userDataPath("runtime-packs");
+  const archivePath = path.join(cacheDir, `.${id}-${Date.now()}.pack`);
+
+  try {
+    fs.rmSync(target, { recursive: true, force: true });
+    await downloadToFile(artifact.url, archivePath, {
+      id,
+      onProgress: (progress) => job.publish({ ...packProgressMeta(id), ...progress }),
+    });
+    if (artifact.sha256) {
+      publishProgress(job, id, "verifying", { sha256: String(artifact.sha256).toLowerCase() });
+      const actual = sha256File(archivePath);
+      if (actual !== String(artifact.sha256).toLowerCase()) {
+        fs.rmSync(target, { recursive: true, force: true });
+        publishProgress(job, id, "failed", { error: "CHECKSUM_MISMATCH" });
+        return { ok: false, id, error: "CHECKSUM_MISMATCH" };
+      }
+    }
+    publishProgress(job, id, "extracting", { path: target });
+    const format = extractArtifact(archivePath, target, artifact);
+    const state = readState();
+    state.installed[id] = {
+      installedAt: new Date().toISOString(),
+      source: "artifact",
+      version: artifact.version || null,
+      sha256: artifact.sha256 || null,
+      format,
+    };
+    writeState(state);
+    publishProgress(job, id, "installed", { version: artifact.version || null, path: target });
+    return { ok: true, id, version: artifact.version || null, path: target };
+  } catch (error) {
+    fs.rmSync(target, { recursive: true, force: true });
+    const message = error?.message || String(error);
+    publishProgress(job, id, "failed", { error: message });
+    return { ok: false, id, error: message };
+  } finally {
+    fs.rmSync(archivePath, { force: true });
   }
 }
 
@@ -438,6 +518,7 @@ function uninstallRuntimePack(packId) {
 module.exports = {
   checkRuntimePackAvailability,
   installRuntimePack,
+  installingRuntimePackIds,
   installedRuntimePackIds,
   baseProvidedRuntimePackMap,
   listRuntimePacks,
