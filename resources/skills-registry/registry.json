@@ -1266,7 +1266,7 @@
       "id": "anthropics-docx",
       "name": "Word 文档",
       "description": "创建、读取、编辑或处理 Word 文档（.docx），包括目录、标题、页码、信头、批注、修订和专业排版。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -1302,7 +1302,7 @@
       "id": "anthropics-pdf",
       "name": "PDF 文档",
       "description": "读取、提取、合并、拆分、旋转、加水印、生成、填写、加密解密或 OCR 处理 PDF 文件。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -1338,7 +1338,7 @@
       "id": "anthropics-pptx",
       "name": "PPT 演示",
       "description": "创建、读取、编辑或组合 PowerPoint 演示文稿，处理模板、版式、讲稿备注、图片和幻灯片结构。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -1374,7 +1374,7 @@
       "id": "anthropics-xlsx",
       "name": "Excel 表格",
       "description": "创建、读取、编辑或修复 Excel/CSV/TSV 表格，处理公式、格式、图表、清洗、统计和多工作表数据。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {

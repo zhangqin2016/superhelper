@@ -235,7 +235,14 @@ slide.addImage({
 
 ### Icon Libraries
 
-Install: `npm install -g react-icons react react-dom sharp`
+Use icon rendering helpers only when the required packages are already available:
+
+```bash
+node -e "require.resolve('react-icons/fa'); require.resolve('react'); require.resolve('react-dom'); require.resolve('sharp')"
+```
+
+If that probe fails, do not install packages during the user task. Use simple
+PPT shapes, bundled/local images, or omit optional icons instead.
 
 Popular icon sets in react-icons:
 - `react-icons/fa` - Font Awesome

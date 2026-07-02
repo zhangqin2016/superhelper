@@ -21,9 +21,13 @@ const skillNames = localSkillDirs().map((item) => path.basename(item));
 
 assert(skillNames.includes("lily-mail-assistant"), "local catalog should include mail assistant skill");
 assert(skillNames.includes("lily-web-system-learning"), "local catalog should include web system learning skill");
+assert(skillNames.includes("anthropics-docx"), "local catalog should publish curated Word skill overrides");
+assert(skillNames.includes("anthropics-pdf"), "local catalog should publish curated PDF skill overrides");
+assert(skillNames.includes("anthropics-pptx"), "local catalog should publish curated PPT skill overrides");
+assert(skillNames.includes("anthropics-xlsx"), "local catalog should publish curated spreadsheet skill overrides");
 assert(
-  skillNames.every((item) => item.startsWith("lily-")),
-  "local catalog publisher must only select product-maintained lily-* skills",
+  skillNames.every((item) => item.startsWith("lily-") || ["anthropics-docx", "anthropics-pdf", "anthropics-pptx", "anthropics-xlsx"].includes(item)),
+  "local catalog publisher must only select product-maintained skills and curated Office overrides",
 );
 
 const mailFields = skillUploadFields({

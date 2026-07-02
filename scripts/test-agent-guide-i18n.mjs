@@ -46,6 +46,13 @@ const staleDependencyGuidePatterns = [
   /pre-installed: pandas/i,
   /these libraries are ready/i,
   /المزوّدة مسبقاً بمكتبات/,
+  /npm install -g docx/i,
+  /pip install (?:python-)?docx/i,
+  /#\s*Requires:\s*pip install/i,
+  /Install:\s*`npm install -g/i,
+  /-\s*`pip install [^`\n]+`\s*-/i,
+  /-\s*`npm install -g [^`\n]+`\s*-/i,
+  /assume LibreOffice is installed/i,
 ];
 
 function assertNoForcedChinese(text, label) {
@@ -166,12 +173,26 @@ for (const entry of fs.readdirSync(skillsCatalogDir, { withFileTypes: true })) {
     assertNoCjk(body, `${entry.name}/catalog SKILL.md`);
     assertNoForcedChinese(body, `${entry.name}/catalog SKILL.md`);
     assertNoAppLanguageResponseSource(body, `${entry.name}/catalog SKILL.md`);
+    assertNoStaticDependencyClaims(body, `${entry.name}/catalog SKILL.md`);
   }
 
   const manifestPath = path.join(skillsCatalogDir, entry.name, "skill.manifest.json");
   if (!fs.existsSync(manifestPath)) continue;
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   assertManifestI18nComplete(manifest, manifestPath);
+}
+
+for (const entry of fs.readdirSync(skillsCatalogDir, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const skillDir = path.join(skillsCatalogDir, entry.name);
+  for (const file of fs.readdirSync(skillDir, { withFileTypes: true })) {
+    if (!file.isFile() || !file.name.endsWith(".md") || file.name === "SKILL.md") continue;
+    const docPath = path.join(skillDir, file.name);
+    assertNoStaticDependencyClaims(
+      fs.readFileSync(docPath, "utf8"),
+      `${entry.name}/${file.name}`,
+    );
+  }
 }
 
 for (const locale of ["zh-CN", "en", "ar"]) {

@@ -44,7 +44,16 @@ python scripts/office/unpack.py presentation.pptx unpacked/
 
 **Read [pptxgenjs.md](pptxgenjs.md) for full details.**
 
-Use when no template or reference presentation is available.
+Use when no template or reference presentation is available and the `pptxgenjs`
+package is already available:
+
+```bash
+node -e "require.resolve('pptxgenjs')"
+```
+
+If that probe fails, do not install packages during the user task. Prefer a
+template/editing workflow, raw OOXML packaging, or explain that the current
+platform lacks a from-scratch PPT generator.
 
 ---
 
@@ -225,8 +234,8 @@ pdftoppm -jpeg -r 150 -f N -l N output.pdf slide-fixed
 
 ## Dependencies
 
-- `pip install "markitdown[pptx]"` - text extraction
-- `pip install Pillow` - thumbnail grids
-- `npm install -g pptxgenjs` - creating from scratch
-- LibreOffice (`soffice`) - PDF conversion (auto-configured for sandboxed environments via `scripts/office/soffice.py`)
-- Poppler (`pdftoppm`) - PDF to images
+- `markitdown` - text extraction; use if `python -c "import markitdown"` succeeds
+- `Pillow` - thumbnail grids; use if `python -c "from PIL import Image"` succeeds
+- `pptxgenjs` - optional from-scratch PPT generator; use only if `node -e "require.resolve('pptxgenjs')"` succeeds
+- LibreOffice (`soffice`) - PDF conversion; use bundled/runtime-pack paths exposed by `scripts/office/soffice.py`
+- Poppler (`pdftoppm`) - PDF to images; use only if `command -v pdftoppm` succeeds

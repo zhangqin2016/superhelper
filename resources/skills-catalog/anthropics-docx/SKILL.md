@@ -15,7 +15,7 @@ A .docx file is a ZIP archive containing XML files.
 | Task | Approach |
 |------|----------|
 | Read/analyze content | `pandoc` or unpack for raw XML |
-| Create new document | Use `docx-js` - see Creating New Documents below |
+| Create new document | Prefer existing templates or raw OOXML packaging; use `docx-js` only when already available |
 | Edit existing document | Unpack → edit XML → repack - see Editing Existing Documents below |
 
 ### Converting .doc to .docx
@@ -55,7 +55,13 @@ python scripts/accept_changes.py input.docx output.docx
 
 ## Creating New Documents
 
-Generate .docx files with JavaScript, then validate. Install: `npm install -g docx`
+Generate .docx files with JavaScript only when the `docx` package is already available in the current environment:
+
+```bash
+node -e "require.resolve('docx')"
+```
+
+If that probe fails, do not install packages during the user task. Use a template-based workflow, raw OOXML ZIP packaging, or LibreOffice conversion with the app-provided Python/Office runtime, then validate the output.
 
 ### Setup
 ```javascript
@@ -585,6 +591,6 @@ After running `comment.py` (see Step 2), add markers to document.xml. For replie
 ## Dependencies
 
 - **pandoc**: Text extraction
-- **docx**: `npm install -g docx` (new documents)
+- **docx**: optional Node document generator; use only if `require.resolve('docx')` succeeds
 - **LibreOffice**: PDF conversion (auto-configured for sandboxed environments via `scripts/office/soffice.py`)
 - **Poppler**: `pdftoppm` for images

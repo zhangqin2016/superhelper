@@ -232,21 +232,19 @@ pdftk input.pdf rotate 1east output rotated.pdf
 
 ### Extract Text from Scanned PDFs
 ```python
-# Requires: pip install pytesseract pdf2image
-import pytesseract
-from pdf2image import convert_from_path
+# Prefer Lily's PDF extraction router / document pipeline first. If you need a
+# direct script path, use the app-provided OCR/runtime modules when they probe
+# successfully; do not install packages during the user task.
+import pypdfium2 as pdfium
+from rapidocr_onnxruntime import RapidOCR
 
-# Convert PDF to images
-images = convert_from_path('scanned.pdf')
-
-# OCR each page
-text = ""
-for i, image in enumerate(images):
-    text += f"Page {i+1}:\n"
-    text += pytesseract.image_to_string(image)
-    text += "\n\n"
-
-print(text)
+ocr = RapidOCR()
+pdf = pdfium.PdfDocument("scanned.pdf")
+for index, page in enumerate(pdf, start=1):
+    bitmap = page.render(scale=2).to_pil()
+    result, _ = ocr(bitmap)
+    text = "\n".join(item[1] for item in (result or []))
+    print(f"Page {index}:\n{text}\n")
 ```
 
 ### Add Watermark

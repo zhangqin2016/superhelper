@@ -15,6 +15,12 @@ const DEFAULT_QINIU_BUCKET = "lanrensoft";
 const DEFAULT_QINIU_DOMAIN = "https://qny.lanrensoft.cn";
 const DEFAULT_QINIU_UP_HOST = "https://upload.qiniup.com";
 const DIRECT_APP_UPLOAD_THRESHOLD_BYTES = 40 * 1024 * 1024;
+const LOCAL_SERVER_SKILL_IDS = new Set([
+  "anthropics-docx",
+  "anthropics-pdf",
+  "anthropics-pptx",
+  "anthropics-xlsx",
+]);
 
 const WORKSPACE_APP_BUILDERS = [
   {
@@ -296,7 +302,7 @@ function localSkillDirs() {
   const catalogDir = path.join(ROOT, "resources", "skills-catalog");
   return fs
     .readdirSync(catalogDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith("lily-"))
+    .filter((entry) => entry.isDirectory() && (entry.name.startsWith("lily-") || LOCAL_SERVER_SKILL_IDS.has(entry.name)))
     .map((entry) => path.join(catalogDir, entry.name))
     .filter((skillDir) => fs.existsSync(path.join(skillDir, "SKILL.md")))
     .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
