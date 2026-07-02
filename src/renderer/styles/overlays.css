@@ -206,6 +206,30 @@
   color: var(--text-secondary);
 }
 
+.skill-preset-guide-dependencies {
+  margin: 14px 20px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+}
+
+.skill-preset-guide-dependencies-title {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.skill-preset-guide-dependencies-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
 .skill-preset-guide-footnote {
   margin: 12px 20px 0;
   font-size: 12px;

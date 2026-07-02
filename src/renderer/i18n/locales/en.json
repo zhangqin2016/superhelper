@@ -911,6 +911,8 @@
   "skills.guide.point4": "Work with spreadsheets and Excel (.xlsx)",
   "skills.guide.footnote": "Takes effect on new chats. Office, reliability, and coding packs are under Settings → Skills.",
   "skills.guide.apply": "Enable office starter",
+  "skills.guide.applyWithDependencies": "Enable and download dependencies",
+  "skills.guide.dependenciesTitle": "First use will also prepare these local downloads",
   "skills.guide.browse": "Open skill center",
   "skills.guide.later": "Not now",
   "skills.remoteIndexes": "More skill indexes (open in browser)",

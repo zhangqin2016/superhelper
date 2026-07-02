@@ -50,6 +50,13 @@ ids = inferRuntimePackIds({ text: "帮我生成一张 AI 工作台图片" });
 excludes(ids, "rapidocr", "Remote image generation should not require local OCR");
 excludes(ids, "ffmpeg", "Remote image generation should not require media processing");
 
+ids = inferRuntimePackIds({ presetId: "office-starter" });
+includes(ids, "libreoffice", "Office starter should prepare LibreOffice");
+includes(ids, "large-document", "Office starter should prepare the large document engine");
+includes(ids, "pro-pdf", "Office starter should prepare pro PDF extraction");
+includes(ids, "rapidocr", "Office starter should prepare OCR for scanned documents");
+includes(ids, "opencv", "Office starter should prepare image preprocessing for OCR");
+
 const preflight = preflightRuntimePacks({ text: "学习这个 OA 系统" });
 assert(preflight.ok, "preflight should succeed");
 includes(preflight.requiredPackIds, "web-automation", "preflight should report required pack ids");

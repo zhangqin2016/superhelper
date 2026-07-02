@@ -14,10 +14,11 @@ const require = module.createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // --- Mocks for the lazily-required translators ---
+const RASTER_IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 const visionMock = {
   buildEnrichedUserText: (text, extracted) => require(path.join(ROOT, "src/main/engine-message-layers.js")).appendExtractedContext(text, `[img:${extracted}]`, "Image recognition result"),
-  hasVisionInputFiles: (files) => (files || []).some((f) => f?.isImage),
-  isImageOnlyUserMessage: (text, files) => !text && (files || []).some((f) => f?.isImage),
+  hasVisionInputFiles: (files) => (files || []).some((f) => RASTER_IMAGE_RE.test(f?.path || f?.name || "")),
+  isImageOnlyUserMessage: (text, files) => !text && (files || []).some((f) => RASTER_IMAGE_RE.test(f?.path || f?.name || "")),
   translateImages: async () => {
     visionMock._calls += 1;
     return visionMock._next;
@@ -44,37 +45,64 @@ const { runVisionPreflight, runDocumentPreflight, withoutVisionFiles } = require
 );
 
 const img = { path: "/a/pic.png", isImage: true };
+const svgFile = { path: "/a/chart.svg", name: "chart.svg", isImage: true };
 const txtFile = { path: "/a/notes.txt" };
 const docFile = { path: "/a/report.docx" };
 
 // withoutVisionFiles drops images, keeps the rest.
 const kept = withoutVisionFiles([img, txtFile]);
 assert(kept.length === 1 && kept[0] === txtFile, "withoutVisionFiles drops image files only");
+const keptWithSvg = withoutVisionFiles([img, svgFile, txtFile]);
+assert(
+  keptWithSvg.includes(svgFile) && keptWithSvg.includes(txtFile) && !keptWithSvg.includes(img),
+  "withoutVisionFiles must keep SVG/vector artifacts even when they are previewable images",
+);
 
 // No vision files → fast path, no notice emitted.
 let notices = [];
 let r = await runVisionPreflight("hi", [txtFile], { emitNotice: (n) => notices.push(n.code) });
 assert(r.ok && r.text === "hi" && notices.length === 0, "no-image fast path emits nothing");
+visionMock._calls = 0;
+r = await runVisionPreflight("分析", [svgFile], { emitNotice: (n) => notices.push(n.code) });
+assert(r.ok && r.text === "分析" && r.files.includes(svgFile), "SVG must pass through as a file, not as vision input");
+assert(visionMock._calls === 0, "SVG must not call the raster vision bridge");
 
-// Image-only + NO_KEY failure → VISION_UNAVAILABLE, with preparing→skipped notices.
+// Image-only + NO_KEY failure must still reach the engine with guarded context.
+// WHY: users often send screenshots without any accompanying text; if the
+// bridge is unavailable, the engine may still have native file support or tools
+// that can inspect the source path. A failed preflight is strictly worse.
 visionMock._next = { ok: false, reason: "NO_KEY" };
 notices = [];
 r = await runVisionPreflight("", [img], { emitNotice: (n) => notices.push(n.code) });
-assert(!r.ok && r.error === "VISION_UNAVAILABLE", "image-only NO_KEY → VISION_UNAVAILABLE");
+assert(r.ok && r.visionDegraded === true, "image-only NO_KEY should degrade, not fail");
+assert(r.text.includes("Image recognition fallback"), "image-only NO_KEY should include fallback context");
+assert(r.files.includes(img), "image-only NO_KEY should keep original image for engine/tools");
 assert(notices[0] === "visionPreparing" && notices.includes("visionSkipped"), "emits preparing then skipped on failure");
 
-// FAIL-LOUD FIX: vision failure WITH accompanying text must also fail (it used
-// to silently drop the image and send bare text, making the engine answer blind
-// — the screenshot-analyzed-the-directory bug).
+// FAIL-OPEN FIX: vision failure WITH accompanying text must not drop the image
+// and answer blind. It should send explicit degraded context plus the source
+// file so downstream native vision/tooling can continue.
 visionMock._next = { ok: false, reason: "API_FAILED", detail: "timeout" };
 r = await runVisionPreflight("分析这个布局", [img, txtFile], { emitNotice: () => {} });
-assert(!r.ok && r.error === "VISION_FAILED" && r.detail === "timeout", "text+image vision failure must fail loud, not drop the image");
+assert(r.ok && r.visionDegraded === true, "text+image vision failure should degrade, not fail");
+assert(r.text.includes("Image recognition fallback") && r.text.includes("timeout"), "vision failure should explain the degraded state");
+assert(r.files.includes(img) && r.files.includes(txtFile), "vision failure should preserve original files");
 
-// But NO_KEY (vision not configured) WITH text still degrades to a text-only
-// answer — a deployment without vision should not be blocked.
+// NO_KEY (vision not configured) WITH text follows the same guarded path.
 visionMock._next = { ok: false, reason: "NO_KEY" };
 r = await runVisionPreflight("分析这个布局", [img, txtFile], { emitNotice: () => {} });
-assert(r.ok && r.text === "分析这个布局" && !r.files.some((f) => f.isImage), "NO_KEY + text degrades to text-only (not a hard failure)");
+assert(r.ok && r.visionDegraded === true, "NO_KEY + text should degrade with guarded context");
+assert(r.text.includes("Image recognition fallback"), "NO_KEY + text should include fallback context");
+assert(r.files.includes(img), "NO_KEY + text should keep the image for engine/tools");
+
+// If the attachment metadata says image but the local file is not readable
+// anymore, the bridge returns null. This must still reach the engine with the
+// original metadata instead of stripping the only clue the model has.
+visionMock._next = null;
+r = await runVisionPreflight("变成白底照片", [img], { emitNotice: () => {} });
+assert(r.ok && r.visionDegraded === true, "unreadable local image should degrade, not silently strip the attachment");
+assert(r.text.includes("No readable local image file"), "unreadable image should explain the degraded state");
+assert(r.files.includes(img), "unreadable image should preserve the original file metadata");
 
 // NATIVE VISION: when the active model recognizes images itself, the Qwen
 // bridge is skipped entirely and the image passes through untouched — it must

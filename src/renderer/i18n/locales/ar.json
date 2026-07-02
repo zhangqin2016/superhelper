@@ -894,6 +894,8 @@
   "skills.guide.point4": "العمل مع الجداول وملفات Excel (.xlsx)",
   "skills.guide.footnote": "يسري على المحادثات الجديدة. حزم المكتب والموثوقية والبرمجة ضمن الإعدادات ← المهارات.",
   "skills.guide.apply": "تفعيل حزمة المكتب الأساسية",
+  "skills.guide.applyWithDependencies": "تفعيل وتنزيل التبعيات",
+  "skills.guide.dependenciesTitle": "سيتم أيضاً تجهيز هذه التنزيلات المحلية عند أول استخدام",
   "skills.guide.browse": "فتح مركز المهارات",
   "skills.guide.later": "ليس الآن",
   "skills.remoteIndexes": "فهارس مهارات إضافية (افتح في المتصفح)",

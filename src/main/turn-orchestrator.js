@@ -6,7 +6,7 @@ const {
   sanitizeError,
   classifyAssistantError,
 } = require("./agent-runner");
-const { fileMetadataFromPayload } = require("./ipc-utils");
+const { mergeDisplayFileMetadata } = require("./ipc-utils");
 const { getLogger } = require("./logger");
 const { sanitizeNoticeForIngest } = require("./engine-notice-policy");
 const {
@@ -22,11 +22,15 @@ const {
 } = require("./turn-timeline");
 const {
   classifyTurnFailure,
-  preflightFailureText,
   collectFailureTextFromState,
   appendIncompleteTurnSummary,
 } = require("./turn-error-classify");
-const { runVisionPreflight, runDocumentPreflight } = require("./send-preflight");
+const {
+  buildDocumentFailureContext,
+  buildVisionFailureContext,
+  runVisionPreflight,
+  runDocumentPreflight,
+} = require("./send-preflight");
 const {
   mergeMentionedDocumentFiles,
   resolveMentionedDocumentFiles,
@@ -99,6 +103,10 @@ function queueDispatchOptions(opts = {}) {
 }
 
 const { buildToolPreviewLabel } = require("./tool-preview-label.cjs");
+
+function appendPreflightFallback(text, context, title) {
+  return require("./engine-message-layers").appendExtractedContext(text, context, title);
+}
 
 function compactToolInput(input, name = "Tool") {
   if (!input || typeof input !== "object") return {};
@@ -584,7 +592,7 @@ class TurnOrchestrator {
         id: newQueueId(),
         text: displayText,
         files,
-        displayFiles: opts.displayFiles || fileMetadataFromPayload(files),
+        displayFiles: mergeDisplayFileMetadata(files, opts.displayFiles),
         options: queueDispatchOptions(opts),
       };
       state.queue.push(item);
@@ -621,7 +629,7 @@ class TurnOrchestrator {
     const turnId = state.turnId;
     const steerSeq = (state.steerCount || 0) + 1;
     state.steerCount = steerSeq;
-    const displayFiles = opts.displayFiles || fileMetadataFromPayload(files);
+    const displayFiles = mergeDisplayFileMetadata(files, opts.displayFiles);
     try {
       this.transcriptStore.commitUserMessage(sessionId, { text, files: displayFiles, turnId, steer: true, steerSeq });
     } catch (err) {
@@ -645,7 +653,7 @@ class TurnOrchestrator {
   // dropped as "terminal", so the user message reliably precedes the assistant card.
   echoUserMessage(sessionId, text, files = [], displayFiles = null) {
     const displayText = String(text || "").trim();
-    const fileMeta = displayFiles || fileMetadataFromPayload(files);
+    const fileMeta = mergeDisplayFileMetadata(files, displayFiles);
     if (!displayText && !(fileMeta || []).length) return null;
     const turnId = newTurnId();
     try {
@@ -669,7 +677,7 @@ class TurnOrchestrator {
         id: newQueueId(),
         text: displayText,
         files,
-        displayFiles: opts.displayFiles || fileMetadataFromPayload(files),
+        displayFiles: mergeDisplayFileMetadata(files, opts.displayFiles),
         options: queueDispatchOptions({
           ...opts,
           localAssistant: {
@@ -763,7 +771,7 @@ class TurnOrchestrator {
       id: newQueueId(),
       text: String(text || "").trim(),
       files,
-      displayFiles: opts.displayFiles || fileMetadataFromPayload(files),
+      displayFiles: mergeDisplayFileMetadata(files, opts.displayFiles),
       options: queueDispatchOptions(opts),
     };
     for (const queued of state.queue) {
@@ -840,7 +848,7 @@ class TurnOrchestrator {
     state.tools.clear();
     state.startedAt = Date.now();
     state.updatedAt = state.startedAt;
-    const displayFiles = opts.displayFiles || fileMetadataFromPayload(files);
+    const displayFiles = mergeDisplayFileMetadata(files, opts.displayFiles);
     this._beginTaskRun(session.id, rawUserText, {
       displayFiles,
       localAssistant: true,
@@ -994,7 +1002,7 @@ class TurnOrchestrator {
     state.pendingQuestions.clear();
     state.pendingHooks.clear();
     state.tools.clear();
-    const displayFiles = opts.displayFiles || fileMetadataFromPayload(displaySourceFiles);
+    const displayFiles = mergeDisplayFileMetadata(displaySourceFiles, opts.displayFiles);
     state.currentPayload = {
       rawText: rawUserText,
       text: rawUserText,
@@ -1050,19 +1058,24 @@ class TurnOrchestrator {
         nativeVision: require("./model-presets").activePresetSupportsVision(),
       });
       if (!vision.ok) {
-        const assistant = preflightFailureText(vision.error, vision.detail);
-        const failedTurnId = state.turnId;
-        this._finalize(session.id, "turn.failed", {
-          failed: true,
-          assistant,
-          error: vision.error,
-          detail: vision.detail,
-        });
-        return { ok: true, failed: true, turnId: failedTurnId, error: vision.error, detail: vision.detail };
+        log.warn(
+          "vision preflight returned non-ok; degrading instead of failing turn: session=%s turn=%s error=%s detail=%s",
+          session.id,
+          state.turnId,
+          vision.error || "",
+          vision.detail || "",
+        );
+        text = appendPreflightFallback(
+          text,
+          buildVisionFailureContext(files, vision.detail || vision.error || "VISION_FAILED"),
+          "Image recognition result",
+        );
+        state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
+      } else {
+        text = vision.text;
+        files = vision.files;
+        state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
       }
-      text = vision.text;
-      files = vision.files;
-      state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
     }
 
     if (!opts.skipDocument) {
@@ -1070,33 +1083,44 @@ class TurnOrchestrator {
         emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
       });
       if (!document.ok) {
-        const assistant = preflightFailureText(document.error, document.detail);
-        const failedTurnId = state.turnId;
-        this._finalize(session.id, "turn.failed", {
-          failed: true,
-          assistant,
-          error: document.error,
-          detail: document.detail,
+        log.warn(
+          "document preflight returned non-ok; degrading instead of failing turn: session=%s turn=%s error=%s detail=%s",
+          session.id,
+          state.turnId,
+          document.error || "",
+          document.detail || "",
+        );
+        text = appendPreflightFallback(
+          text,
+          buildDocumentFailureContext(files, document.detail || document.error || "DOCUMENT_FAILED"),
+          "Document extraction result",
+        );
+        state.evidenceLedger?.recordDocumentExtraction?.({
+          index: null,
+          documents: [],
+          chunks: [],
+          extractedPaths: [],
         });
-        return { ok: true, failed: true, turnId: failedTurnId, error: document.error, detail: document.detail };
-      }
-      text = document.text;
-      files = document.files;
-      state.evidenceLedger?.recordDocumentExtraction?.(document.documentEvidence);
-      if (document.documentEvidence?.index) {
-        try {
-          const { persistDocumentQueryIndex } = require("./document-query-store");
-          persistDocumentQueryIndex({
-            sessionId: session.id,
-            turnId: state.turnId,
-            index: document.documentEvidence.index,
-            extractedPaths: document.documentEvidence.extractedPaths || [],
-          });
-        } catch (err) {
-          log.warn("document query index persist failed: %s", err?.message || err);
+        state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
+      } else {
+        text = document.text;
+        files = document.files;
+        state.evidenceLedger?.recordDocumentExtraction?.(document.documentEvidence);
+        if (document.documentEvidence?.index) {
+          try {
+            const { persistDocumentQueryIndex } = require("./document-query-store");
+            persistDocumentQueryIndex({
+              sessionId: session.id,
+              turnId: state.turnId,
+              index: document.documentEvidence.index,
+              extractedPaths: document.documentEvidence.extractedPaths || [],
+            });
+          } catch (err) {
+            log.warn("document query index persist failed: %s", err?.message || err);
+          }
         }
+        state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
       }
-      state.currentPayload = { rawText: rawUserText, text, files, displayFiles };
     }
 
     const taskContract = buildTaskContract({ text, files, session, project });

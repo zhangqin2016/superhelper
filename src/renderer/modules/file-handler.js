@@ -110,7 +110,7 @@ function insertPlainTextAtCursor(target, text) {
 
 async function addBrowserFiles(files) {
   const list = [...(files || [])].filter(Boolean);
-  if (list.length === 0) return;
+  if (list.length === 0) return 0;
   const staged = [];
   for (const browserFile of list) {
     const name = browserFile.name || `pasted-${Date.now()}`;
@@ -130,7 +130,7 @@ async function addBrowserFiles(files) {
       showToast(fileErrorMessage(err.message, name), "warning");
     }
   }
-  await addStagedFiles(staged);
+  return addStagedFiles(staged);
 }
 
 async function addSystemClipboardFiles() {
@@ -267,6 +267,8 @@ export function initFileHandler() {
       .filter(Boolean);
     if (files.length > 0) {
       e.preventDefault();
+      const systemFileCount = await addSystemClipboardFiles();
+      if (systemFileCount > 0) return;
       await addBrowserFiles(files);
       return;
     }

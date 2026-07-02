@@ -9,8 +9,9 @@ import { promptSessionName } from "./name-prompt.js";
 import { showToast } from "./toast.js";
 import { applySessionSwitch, refreshState } from "./session-chrome.js";
 import { canSend, getTurnPhase, markSessionStopping, subscribeRuntime, getRuntimeSession, syncCommittedMessages } from "./session-runtime-store.js";
-import { getLocale, t } from "../i18n/index.js";
-import { chooseDialog, confirmDialog } from "./confirm-dialog.js";
+import { t } from "../i18n/index.js";
+import { chooseDialog } from "./confirm-dialog.js";
+import { ensureRuntimePacks } from "./runtime-pack-preflight-ui.js";
 
 /** Unsent composer text per session, restored on switch (in-memory only). */
 const sessionDrafts = new Map();
@@ -164,71 +165,23 @@ function sendErrorMessage(result) {
   return mapped === key ? t("send.error.GENERIC") : mapped;
 }
 
-function runtimePackLabel(pack) {
-  const label = pack?.label;
-  if (label && typeof label === "object") {
-    const locale = getLocale();
-    return label[locale] || label["zh-CN"] || label.en || Object.values(label).find(Boolean) || pack.id;
-  }
-  return String(label || pack?.id || "");
-}
-
-function runtimePackErrorMessage(error) {
-  const key = `settings.runtime.error.${error}`;
-  const mapped = t(key);
-  return mapped === key ? (error || t("settings.runtime.error.GENERIC")) : mapped;
-}
-
 async function ensureRuntimePacksBeforeSend({ text, files }) {
-  if (!window.assistantClient?.preflightRuntimePacks || !window.assistantClient?.installRuntimePack) {
-    return true;
-  }
-
-  let preflight;
-  try {
-    preflight = await window.assistantClient.preflightRuntimePacks({ text, files });
-  } catch {
-    showToast(t("composer.dependencyPreflightFailed"), "warning");
-    return true;
-  }
-
-  const missingPacks = Array.isArray(preflight?.missingPacks) ? preflight.missingPacks : [];
-  if (!preflight?.ok || missingPacks.length === 0) return true;
-
-  const packsText = missingPacks
-    .map((pack) => `${runtimePackLabel(pack)} (${pack.sizeEstimate || t("settings.runtime.sizeUnknown")})`)
-    .join(" / ");
-  const shouldInstall = await confirmDialog({
-    title: t("composer.dependencyPromptTitle"),
-    message: t("composer.dependencyPromptMessage", { packs: packsText }),
-    confirmText: t("composer.dependencyPromptInstall"),
-    cancelText: t("composer.dependencyPromptCancel"),
-  });
-  if (!shouldInstall) return false;
-
-  for (const pack of missingPacks) {
-    const name = runtimePackLabel(pack);
-    showToast(t("composer.dependencyInstallStarted", { name }), "info");
-    const result = await window.assistantClient.installRuntimePack(pack.id);
-    if (!result?.ok) {
-      showToast(t("composer.dependencyInstallFailed", {
-        name,
-        error: runtimePackErrorMessage(result?.error),
-      }), "error");
-      return false;
-    }
-    showToast(t("composer.dependencyInstallDone", { name }), "success");
-  }
-
-  return true;
+  return ensureRuntimePacks({ text, files });
 }
 
 export async function sendPrompt(opts = {}) {
   const promptInput = $("promptInput");
   let text = promptInput?.value.trim() || "";
   const files = (store.get("pendingFiles") || []).map((f) => ({
-    id: f.id, name: f.name, path: f.path,
-    type: f.type, size: f.size, isImage: f.isImage,
+    id: f.id,
+    name: f.name,
+    path: f.path,
+    sourcePath: f.sourcePath,
+    staged: f.staged,
+    type: f.type,
+    size: f.size,
+    isImage: f.isImage,
+    dimensions: f.dimensions,
   }));
 
   if (!text && files.length === 0) return;
@@ -318,8 +271,15 @@ export async function sendPrompt(opts = {}) {
   const displayFiles = files.map((f) => {
     const pending = (store.get("pendingFiles") || []).find((pf) => pf.id === f.id);
     return {
+      id: f.id,
       name: f.name,
+      path: f.path,
+      sourcePath: pending?.sourcePath || f.sourcePath,
+      staged: pending?.staged || f.staged,
+      type: f.type,
+      size: f.size,
       isImage: f.isImage,
+      dimensions: pending?.dimensions || f.dimensions,
       thumbnail: f.isImage ? (pending?.thumbnail || null) : null,
     };
   });

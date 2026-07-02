@@ -98,6 +98,9 @@ if (!isVisionInputFile({ path: "/tmp/screen.png" })) {
 if (isVisionInputFile({ path: "/tmp/report.pdf" })) {
   throw new Error("pdf files should not be treated as vision input");
 }
+if (isVisionInputFile({ path: "/tmp/chart.svg", isImage: true })) {
+  throw new Error("svg files should stay file/vector artifacts, not raster vision input");
+}
 
 const bugMode = inferVisionMode("这个 bug 截图报错 Session ID already in use", [
   { name: "screen.png" },
@@ -201,7 +204,7 @@ if (largePayloadBytes >= fs.statSync(largeImage).size) {
   }
   if (!vision.hasVisionApiKey()) {
     const noKeyResult = await vision.translateImages([
-      { isImage: true, path: fileURLToPath(import.meta.url), name: "x.png" },
+      { path: largeImage, name: "x.png" },
     ]);
     if (!noKeyResult || noKeyResult.ok !== false || noKeyResult.reason !== "NO_KEY") {
       throw new Error(`expected NO_KEY result, got ${JSON.stringify(noKeyResult)}`);

@@ -8,22 +8,44 @@
  *
  * Notices are emitted via an injected `emitNotice(notice)` callback rather than
  * reaching into the orchestrator, so these are plain functions, not methods.
- * Returns { ok: true, text, files } on success, or { ok: false, error, detail }
- * when a media-only message could not be processed (caller turns that into a
- * failed turn).
+ * Returns { ok: true, text, files } on success. Enrichment failures degrade into
+ * guarded context plus original files so the engine can still inspect/retry;
+ * preflight must not make the product worse by killing the user's turn.
  */
 
 const path = require("node:path");
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
 
+function isVisionRasterFile(file) {
+  if (!file) return false;
+  const ext = path.extname(String(file.path || file.name || "")).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext);
+}
+
 function withoutVisionFiles(files = []) {
   return (files || []).filter((file) => {
     if (!file) return false;
-    if (file.isImage) return false;
-    const ext = path.extname(String(file.path || file.name || "")).toLowerCase();
-    return !IMAGE_EXTENSIONS.has(ext);
+    return !isVisionRasterFile(file);
   });
+}
+
+function buildVisionFailureContext(files = [], detail = "") {
+  const attached = (files || [])
+    .filter((file) => file?.path || file?.name)
+    .map((file) => {
+      const label = file.name || path.basename(String(file.path || ""));
+      const source = file.path ? ` (${file.path})` : "";
+      return `- ${label}${source}`;
+    });
+  return [
+    "Image recognition fallback",
+    detail ? `Recognition error: ${detail}` : "Recognition error: VISION_FAILED",
+    attached.length ? "Attached image/vector file(s):" : "",
+    ...attached,
+    "",
+    "The image recognition bridge did not produce text before sending. Do not claim visual details unless you can inspect the file through an available tool or the model can read the attachment directly. If the file is SVG or another text/vector artifact, read the file content directly. Keep the user's request moving instead of failing the turn.",
+  ].filter(Boolean).join("\n");
 }
 
 function buildDocumentFailureContext(files = [], detail = "") {
@@ -48,7 +70,6 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
   const {
     buildEnrichedUserText,
     hasVisionInputFiles,
-    isImageOnlyUserMessage,
     translateImages,
   } = require("./vision-translator");
   const notify = typeof emitNotice === "function" ? emitNotice : () => {};
@@ -68,7 +89,21 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
 
   const result = await translateImages(files, { userText: text });
   if (result === null) {
-    return { ok: true, text, files: withoutVisionFiles(files) };
+    notify({
+      code: "visionSkipped",
+      level: "warning",
+      panel: true,
+      replace: true,
+      replacesCode: "visionPreparing",
+      done: true,
+    });
+    const fallbackText = buildVisionFailureContext(files, "No readable local image file was available to the vision bridge.");
+    return {
+      ok: true,
+      text: buildEnrichedUserText(text, fallbackText),
+      files,
+      visionDegraded: true,
+    };
   }
 
   if (!result.ok) {
@@ -80,18 +115,14 @@ async function runVisionPreflight(text, files, { emitNotice, nativeVision } = {}
       replacesCode: "visionPreparing",
       done: true,
     });
-    if (result.reason === "NO_KEY") {
-      // Vision isn't configured for this deployment. With no text there's
-      // nothing to go on, so fail; with text, degrade to a text-only answer.
-      if (isImageOnlyUserMessage(text, files)) {
-        return { ok: false, error: "VISION_UNAVAILABLE", detail: result.detail || undefined };
-      }
-      return { ok: true, text, files: withoutVisionFiles(files) };
-    }
-    // Vision IS configured but the call failed (e.g. timeout). The main engine
-    // can't see the image, so DON'T silently drop it and answer blind — fail
-    // loud so the user retries instead of getting a confidently-wrong reply.
-    return { ok: false, error: "VISION_FAILED", detail: result.detail || undefined };
+    const detail = result.detail || result.reason || "VISION_FAILED";
+    const fallbackText = buildVisionFailureContext(files, detail);
+    return {
+      ok: true,
+      text: buildEnrichedUserText(text, fallbackText),
+      files,
+      visionDegraded: true,
+    };
   }
 
   notify({
@@ -220,4 +251,11 @@ async function runDocumentPreflight(text, files, { emitNotice } = {}) {
   };
 }
 
-module.exports = { runVisionPreflight, runDocumentPreflight, withoutVisionFiles };
+module.exports = {
+  buildDocumentFailureContext,
+  buildVisionFailureContext,
+  isVisionRasterFile,
+  runVisionPreflight,
+  runDocumentPreflight,
+  withoutVisionFiles,
+};

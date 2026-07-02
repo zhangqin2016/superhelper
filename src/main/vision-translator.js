@@ -32,7 +32,6 @@ const MIME_MAP = {
 
 function isVisionInputFile(file) {
   if (!file?.path) return false;
-  if (file.isImage) return true;
   const ext = path.extname(file.path).toLowerCase().replace(/^\./, "");
   return Boolean(MIME_MAP[ext]);
 }

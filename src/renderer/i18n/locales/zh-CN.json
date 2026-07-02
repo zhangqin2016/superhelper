@@ -911,6 +911,8 @@
   "skills.guide.point4": "处理表格数据与 Excel（.xlsx）",
   "skills.guide.footnote": "启用后对新的对话生效。设置 → 技能中还可一键启用办公、可靠交付和编程研发能力包。",
   "skills.guide.apply": "一键启用办公 Starter",
+  "skills.guide.applyWithDependencies": "启用并下载依赖",
+  "skills.guide.dependenciesTitle": "首次使用会同时准备这些本地下载项目",
   "skills.guide.browse": "去技能中心",
   "skills.guide.later": "稍后再说",
   "skills.remoteIndexes": "更多技能索引（浏览器打开）",

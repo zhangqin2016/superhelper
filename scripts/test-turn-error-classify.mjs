@@ -14,13 +14,6 @@ const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ec = require(path.join(ROOT, "src/main/turn-error-classify.js"));
 
-// preflightFailureText — distinct copy per cause, with optional detail appended.
-assert(/Image recognition service/.test(ec.preflightFailureText("VISION_UNAVAILABLE")), "vision-unavailable text");
-assert(/Image parsing failed/.test(ec.preflightFailureText("VISION_FAILED")), "vision-failed text");
-assert(/Document parsing failed/.test(ec.preflightFailureText("DOCUMENT_FAILED")), "document-failed text");
-assert(/Pre-send processing failed/.test(ec.preflightFailureText("WHATEVER")), "default preflight text");
-assert(ec.preflightFailureText("VISION_FAILED", "boom").endsWith("boom"), "detail is appended");
-
 // collectFailureTextFromState — pulls the latest failure-bearing text.
 const text = ec.collectFailureTextFromState({
   processEvents: [{ rawSubtype: "error_max_turns", event: { error: "hit the limit" } }],

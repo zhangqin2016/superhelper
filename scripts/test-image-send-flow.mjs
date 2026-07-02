@@ -218,11 +218,14 @@ const textOnlyFallback = await ctx.turnOrchestrator.sendUserMessage("s1", "看�
 if (!textOnlyFallback.ok) {
   throw new Error(`text+image without vision key should continue with text: ${JSON.stringify(textOnlyFallback)}`);
 }
-if (runnerPayloads.length !== 1 || runnerPayloads[0].text !== "看一下这个截图") {
+if (runnerPayloads.length !== 1 || !runnerPayloads[0].text?.includes("看一下这个截图")) {
   throw new Error(`runner should receive original user text when vision is unavailable: ${JSON.stringify(runnerPayloads)}`);
 }
-if (!Array.isArray(runnerPayloads[0].files) || runnerPayloads[0].files.length !== 0) {
-  throw new Error("runner should not receive image files when vision is unavailable");
+if (!runnerPayloads[0].text.includes("Image recognition fallback")) {
+  throw new Error("runner should receive guarded fallback context when vision is unavailable");
+}
+if (!Array.isArray(runnerPayloads[0].files) || runnerPayloads[0].files.length !== 1) {
+  throw new Error("runner should keep image files when vision is unavailable so native tooling can continue");
 }
 runnerPayloads.length = 0;
 sent.length = 0;
@@ -235,28 +238,29 @@ const blocked = await ctx.turnOrchestrator.sendUserMessage("s1", "", imageFiles,
   spawnEngine: false,
   skipPreflight: true,
 });
-if (!blocked.ok || !blocked.failed || blocked.error !== "VISION_UNAVAILABLE") {
-  throw new Error(`image-only without vision key should become a failed turn: ${JSON.stringify(blocked)}`);
+if (!blocked.ok || blocked.failed) {
+  throw new Error(`image-only without vision key should continue with fallback context: ${JSON.stringify(blocked)}`);
 }
-if (runnerPayloads.length !== 0) {
-  throw new Error("runner should not receive payload when vision is unavailable");
+if (runnerPayloads.length !== 1) {
+  throw new Error("runner should receive payload when vision is unavailable");
+}
+if (!runnerPayloads[0].text?.includes("Image recognition fallback")) {
+  throw new Error("image-only without vision key should include guarded fallback context");
+}
+if (!Array.isArray(runnerPayloads[0].files) || runnerPayloads[0].files.length !== 1) {
+  throw new Error("image-only without vision key should keep original image file");
 }
 ctx.eventBus.flush();
 if (!messages.some((message) => message.role === "user")) {
-  throw new Error("failed image preflight should still keep the user bubble");
+  throw new Error("image preflight fallback should still keep the user bubble");
 }
 const failedAssistant = messages.find((message) => message.role === "assistant");
-if (
-  !failedAssistant?.failed ||
-  !/(图片识别服务暂时不可用|image recognition service is temporarily unavailable)/i.test(
-    failedAssistant.content || "",
-  )
-) {
-  throw new Error(`failed image preflight should commit a clear assistant failure: ${JSON.stringify(messages)}`);
+if (failedAssistant?.failed) {
+  throw new Error(`image preflight fallback should not create a failed assistant message: ${JSON.stringify(messages)}`);
 }
 const failedEvents = sent.flatMap((entry) => entry.payload?.events || []);
-if (!failedEvents.some((event) => event.type === "turn.failed")) {
-  throw new Error("failed image preflight should emit turn.failed");
+if (failedEvents.some((event) => event.type === "turn.failed")) {
+  throw new Error("image preflight fallback should not emit turn.failed");
 }
 
 console.log("test-image-send-flow: ok");

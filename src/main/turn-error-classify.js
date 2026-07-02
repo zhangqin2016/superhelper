@@ -4,26 +4,11 @@
  * Pure turn-failure classification + failure-text extraction, factored out of
  * turn-orchestrator so it can be unit-tested in isolation (no electron, no
  * orchestrator state machine). Depends only on agent-runner's pure string
- * helpers. The orchestrator uses: classifyTurnFailure, preflightFailureText,
+ * helpers. The orchestrator uses: classifyTurnFailure and
  * collectFailureTextFromState.
  */
 
 const { sanitizeError, classifyAssistantError, scrubVendorNames } = require("./agent-runner");
-
-/** User-facing message when pre-send (vision/document) processing fails. */
-function preflightFailureText(error, detail) {
-  const suffix = detail ? `\n\n${String(detail).trim()}` : "";
-  switch (error) {
-    case "VISION_UNAVAILABLE":
-      return `Image recognition service is temporarily unavailable. The image could not be processed. Please try again later, or add a text description and resend.${suffix}`;
-    case "VISION_FAILED":
-      return `Image parsing failed and was not forwarded to the assistant. Please try again later, or add a text description and resend.${suffix}`;
-    case "DOCUMENT_FAILED":
-      return `Document parsing failed and was not forwarded to the assistant. Please check if the file can be opened, or add a text description and resend.${suffix}`;
-    default:
-      return `Pre-send processing failed and was not forwarded to the assistant. Please try again later.${suffix}`;
-  }
-}
 
 function compactFailureDetail(raw) {
   const text = scrubVendorNames(raw).replace(/\s+/g, " ").trim();
@@ -250,7 +235,6 @@ function classifyTurnFailure(payload, normalized, state) {
 }
 
 module.exports = {
-  preflightFailureText,
   collectFailureTextFromState,
   buildIncompleteTurnSummary,
   appendIncompleteTurnSummary,

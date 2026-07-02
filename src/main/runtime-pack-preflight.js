@@ -3,6 +3,7 @@
 const path = require("node:path");
 
 const { PACK_SPECS } = require("./runtime-pack-specs");
+const { getPresetById } = require("./skill-presets");
 
 const OFFICE_EXTENSIONS = new Set([
   ".doc",
@@ -46,6 +47,32 @@ const MEDIA_PROCESSING_PATTERNS = [
   /(?:(?:音频|视频).*(?:转码|转换|裁剪|压缩|合并|提取|封装)|剪视频|压缩视频|提取音频|本地.*(?:音频|视频))/i,
 ];
 
+const OFFICE_STARTER_PACK_IDS = [
+  "libreoffice",
+  "large-document",
+  "pro-pdf",
+  "rapidocr",
+  "opencv",
+];
+
+const SKILL_RUNTIME_PACKS = {
+  "lily-office-intent": OFFICE_STARTER_PACK_IDS,
+  "lily-pdf-extraction-router": ["large-document", "pro-pdf", "rapidocr", "opencv"],
+  "lily-excel-data-analysis": ["libreoffice", "large-document"],
+  "lily-ppt-design-qa": ["libreoffice"],
+  "anthropics-docx": ["libreoffice"],
+  "anthropics-pdf": ["large-document", "pro-pdf", "rapidocr", "opencv"],
+  "anthropics-pptx": ["libreoffice"],
+  "anthropics-xlsx": ["libreoffice", "large-document"],
+  "anthropics-doc-coauthoring": ["libreoffice"],
+  "lily-template-fill": ["libreoffice"],
+  "lily-document-verify": ["libreoffice"],
+  "lily-document-query": ["large-document", "pro-pdf", "rapidocr", "opencv"],
+  "lily-pdf-form": ["large-document", "pro-pdf"],
+  "lily-web-system-learning": ["web-automation"],
+  "lily-video-generation": ["ffmpeg"],
+};
+
 function textOf(value) {
   return typeof value === "string" ? value : "";
 }
@@ -83,10 +110,39 @@ function addPack(ids, id) {
   if (PACK_SPECS[id] && !ids.includes(id)) ids.push(id);
 }
 
+function collectSkillIds(payload = {}) {
+  const ids = [];
+  const append = (value) => {
+    if (typeof value === "string" && value.trim()) ids.push(value.trim());
+  };
+  for (const key of ["skillIds", "enabledSkillIds", "sessionSkillIds"]) {
+    for (const id of Array.isArray(payload[key]) ? payload[key] : []) append(id);
+  }
+  for (const id of Array.isArray(payload.preset?.skillIds) ? payload.preset.skillIds : []) append(id);
+  const preset = getPresetById(payload.presetId);
+  if (preset) {
+    for (const id of preset.skillIds) append(id);
+  }
+  return [...new Set(ids)];
+}
+
+function addSkillRuntimePacks(ids, skillIds = []) {
+  for (const skillId of skillIds) {
+    const packIds = SKILL_RUNTIME_PACKS[skillId] || [];
+    for (const packId of packIds) addPack(ids, packId);
+  }
+}
+
 function inferRuntimePackIds(payload = {}) {
   const text = textOf(payload.text || payload.prompt || payload.message);
   const facts = collectFileFacts(payload.files || payload.attachments || []);
   const ids = [];
+
+  for (const id of Array.isArray(payload.requiredPackIds) ? payload.requiredPackIds : []) {
+    addPack(ids, id);
+  }
+
+  addSkillRuntimePacks(ids, collectSkillIds(payload));
 
   if (facts.hasOffice || hasAny(text, OFFICE_PATTERNS)) {
     addPack(ids, "libreoffice");
@@ -160,4 +216,5 @@ function preflightRuntimePacks(payload = {}) {
 module.exports = {
   inferRuntimePackIds,
   preflightRuntimePacks,
+  collectSkillIds,
 };
