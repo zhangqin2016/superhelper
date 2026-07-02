@@ -22,6 +22,15 @@ const packs = require(path.join(ROOT, "src/main/runtime-packs.js"));
 const runtimePython = require(path.join(ROOT, "src/main/runtime-python.js"));
 const health = require(path.join(ROOT, "src/main/runtime-health.js"));
 
+const policy = health.basePythonModulePolicy();
+assert(policy.required.some((item) => item.id === "python-docx"), "document core modules should remain required");
+for (const optionalPackModule of ["opencv", "rembg", "large-document", "pro-pdf"]) {
+  assert(
+    !policy.required.some((item) => item.id === optionalPackModule),
+    `${optionalPackModule} is an optional dependency pack and must not make base runtime health fail`,
+  );
+}
+
 function makeExecutable(file, body) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, body, "utf8");
@@ -33,6 +42,12 @@ function makeExecutable(file, body) {
 }
 
 try {
+  const base = await health.checkBaseRuntimeHealth();
+  assert(
+    !base.checks.some((check) => check.id === "libreoffice"),
+    `LibreOffice is an optional dependency pack and must not be reported as a base runtime failure: ${JSON.stringify(base.checks)}`,
+  );
+
   const web = await health.checkRuntimePackHealth("web-automation");
   assert(web.ok, `web automation health should pass with node_modules+browsers: ${JSON.stringify(web)}`);
 
