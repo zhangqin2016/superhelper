@@ -310,6 +310,36 @@ export async function updateSettingsAction(formData) {
       bucket: text(formData, "qiniuBucket"),
       uploadUrl: text(formData, "qiniuUploadUrl") || "https://upload.qiniup.com",
     },
+    aliyunSms: {
+      accessKeyId: text(formData, "aliyunSmsAccessKeyId"),
+      accessKeySecret: text(formData, "aliyunSmsAccessKeySecret") || null,
+      signName: text(formData, "aliyunSmsSignName"),
+      templateLogin: text(formData, "aliyunSmsTemplateLogin"),
+      region: text(formData, "aliyunSmsRegion") || "cn-hangzhou",
+    },
+    payment: {
+      fakePaymentsEnabled: bool(formData, "paymentFakePaymentsEnabled"),
+      alipay: {
+        enabled: bool(formData, "alipayEnabled"),
+        appId: text(formData, "alipayAppId"),
+        merchantId: text(formData, "alipayMerchantId"),
+        publicKey: text(formData, "alipayPublicKey"),
+        privateKey: text(formData, "alipayPrivateKey") || null,
+        notifyUrl: text(formData, "alipayNotifyUrl"),
+        returnUrl: text(formData, "alipayReturnUrl"),
+        sandbox: bool(formData, "alipaySandbox"),
+      },
+      wechat: {
+        enabled: bool(formData, "wechatEnabled"),
+        appId: text(formData, "wechatAppId"),
+        mchId: text(formData, "wechatMchId"),
+        certSerialNo: text(formData, "wechatCertSerialNo"),
+        apiV3Key: text(formData, "wechatApiV3Key") || null,
+        privateKey: text(formData, "wechatPrivateKey") || null,
+        notifyUrl: text(formData, "wechatNotifyUrl"),
+        sandbox: bool(formData, "wechatSandbox"),
+      },
+    },
   });
   revalidatePath("/admin/settings");
   revalidatePath("/admin/devices");

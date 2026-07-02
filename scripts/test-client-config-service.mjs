@@ -221,8 +221,9 @@ assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro[1
 assert.equal(deepseekDirect.models.presets[0].env.LILY_MODEL_HAIKU, "deepseek-v4-pro[1m]");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_SUBAGENT_MODEL, "deepseek-v4-pro[1m]");
 
-// Global default whitelist: baseline limited to listed providers even when more
-// are configured. Empty whitelist = all (unchanged).
+// Global default allow-list: baseline limited to listed providers even when
+// more are configured. Empty allow-list means no narrowing; "all" is an
+// explicit no-narrowing alias. Invalid explicit lists fail closed.
 const twoProviders = {
   deepseek: { id: "deepseek", type: "anthropic", baseUrl: "https://api.deepseek.com/anthropic", apiKey: "sk-d", models: ["deepseek-v4-pro[1m]"] },
   glm: { id: "glm", type: "anthropic", baseUrl: "https://api.z.ai/api/anthropic", apiKey: "sk-g", models: ["glm-4.7"] },
@@ -235,13 +236,34 @@ assert.ok(
   whitelisted.models.presets.every((p) => p.id.startsWith("deepseek-")),
   "whitelist should limit the baseline to deepseek only",
 );
+assert.ok(
+  !whitelisted.models.catalog?.length || whitelisted.models.catalog.every((p) => p.id === "deepseek"),
+  "whitelist should limit the BYOK model catalog to deepseek only",
+);
 const noWhitelist = buildEnvManagedClientConfig(
   { modelGatewayDefaultProvider: "deepseek", modelConfigDeliveryMode: "gateway", defaultModelProviders: [] },
   twoProviders,
 );
+assert.deepEqual(
+  noWhitelist.models.presets.map((p) => p.id).sort(),
+  ["deepseek-gateway", "glm-gateway"],
+  "empty provider allow-list should expose every configured provider",
+);
+const allProviders = buildEnvManagedClientConfig(
+  { modelGatewayDefaultProvider: "deepseek", modelConfigDeliveryMode: "gateway", defaultModelProviders: ["all"] },
+  twoProviders,
+);
 assert.ok(
-  noWhitelist.models.presets.some((p) => p.id.startsWith("glm-")),
-  "empty whitelist should expose all configured providers (unchanged default)",
+  allProviders.models.presets.some((p) => p.id.startsWith("glm-")),
+  "all should expose every configured provider",
+);
+const invalidWhitelist = buildEnvManagedClientConfig(
+  { modelGatewayDefaultProvider: "deepseek", modelConfigDeliveryMode: "gateway", defaultModelProviders: ["missing-provider"] },
+  twoProviders,
+);
+assert.ok(
+  !invalidWhitelist?.models?.presets?.length,
+  "explicit unmatched provider allow-list must not leak another provider",
 );
 
 // Per-scope provider menu expansion: a profile's `models.providers` directive

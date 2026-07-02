@@ -22,6 +22,7 @@ import { refreshUsageSettings, initUsageSettings } from "./usage-settings.js";
 import { initSupportSettings } from "./support-settings.js";
 import { initThemeSettings, refreshThemeSelect } from "./theme-settings.js";
 import { initMemorySettings, refreshMemorySettings } from "./memory-settings.js";
+import { initAccountSettings, refreshAccountSettings } from "./account-settings.js";
 import { getNotificationPrefs, setNotificationPrefs } from "./task-alert.js";
 
 // "account" merges usage + license; "help" merges feedback + contact + about.
@@ -92,6 +93,7 @@ function refreshSettingsPanelData() {
     refreshLicenseStatus(),
     refreshUpdateSettings(),
     refreshUsageSettings(),
+    refreshAccountSettings(),
     refreshMemorySettings(),
   ])
     .then((results) => {
@@ -206,6 +208,7 @@ export async function initSettingsPanel() {
   }
 
   initUsageSettings();
+  initAccountSettings();
   initSupportSettings();
   initThemeSettings();
   initMemorySettings();

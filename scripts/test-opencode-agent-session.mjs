@@ -571,6 +571,166 @@ async function newSession() {
   }
 }
 
+// --- model-level document attachment error: isolate poisoned engine session -
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 250;
+  try {
+    const made = [];
+    const session = new OpencodeAgentSession("docx_model_error_isolation", {
+      createServer: () => {
+        const server = new FakeServer();
+        server.historyMessages = [];
+        made.push(server);
+        return server;
+      },
+    });
+    const orch = makeOrchestrator();
+    session.bindOrchestrator(orch);
+    session.ensureProcess(process.cwd(), { agentCommand: "/bin/true" }, { lazy: true });
+    const filePath = path.join(os.tmpdir(), "lily-poison-clipboard-staged");
+    session.sendUserMessage({
+      text: "分析这个文件",
+      files: [{ path: filePath, name: "poison.docx", type: "docx", size: 65_536 }],
+    });
+    await tick();
+    assert(made.length === 1, "first document prompt starts the original engine session");
+    made[0].idleState = true;
+    made[0].emitEvent({
+      type: "message.error",
+      properties: {
+        sessionID: "ses_test",
+        messageID: "msg_poison",
+        error: { message: "Connection to the model service was interrupted. Please check your network and API settings, then retry." },
+      },
+    });
+    await sleep(80);
+    assert(made.length === 2, "document model interruption is replayed in a fresh engine session");
+    assert(made[0].aborted === true, "poisoned engine session is aborted before isolation");
+    assert(made[1].prompts.length === 1, "fresh engine session receives the recovery prompt");
+    assert(Array.isArray(made[1].prompts[0].files) && made[1].prompts[0].files.length === 0, "recovery prompt is text-only");
+    assert(made[1].prompts[0].text.includes("Attachment fallback manifest"), "recovery prompt carries the attachment manifest");
+    assert(made[1].prompts[0].text.includes(filePath), "recovery prompt preserves the local source path");
+    assert(orch.calls.error.length === 0, "model interruption is recovered without a sticky visible failure");
+
+    made[1].emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "已通过本地路径读取。" } });
+    made[1].emitEvent({ type: "session.idle", properties: { sessionID: "ses_test" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && /本地路径/.test(orch.calls.done[0].output), "isolated recovery turn completes");
+
+    session.sendUserMessage({ text: "继续" });
+    await tick();
+    assert(made.length === 2, "subsequent messages stay on the recovered engine session");
+    assert(made[1].prompts.length === 2 && made[1].prompts[1].text === "继续", "follow-up is not sent to the poisoned session");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
+// --- legacy resumed engine interruption: isolate poisoned resume state -------
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 250;
+  try {
+    const made = [];
+    const session = new OpencodeAgentSession("legacy_resume_poison", {
+      createServer: (opts = {}) => {
+        const server = new FakeServer();
+        server.wasResumed = Boolean(opts.resumeSessionID);
+        server.historyMessages = [];
+        made.push({ server, opts });
+        return server;
+      },
+    });
+    const orch = makeOrchestrator();
+    session.bindOrchestrator(orch);
+    session.ensureProcess(process.cwd(), { agentCommand: "/bin/true", resumeSessionId: "ses_old_poisoned" }, { lazy: true });
+    session.sendUserMessage({ text: "继续" });
+    await tick();
+    assert(made.length === 1, "legacy follow-up starts by resuming the old engine session");
+    assert(made[0].opts.resumeSessionID === "ses_old_poisoned", "first engine session is a resume attempt");
+
+    made[0].server.idleState = true;
+    made[0].server.emitEvent({
+      type: "message.error",
+      properties: {
+        sessionID: "ses_test",
+        messageID: "msg_resume_poison",
+        error: { message: "Connection to the model service was interrupted. Please check your network and API settings, then retry." },
+      },
+    });
+    await sleep(80);
+    assert(made.length === 2, "resumed model interruption is replayed in a fresh engine session");
+    assert(made[0].server.aborted === true, "old resumed engine session is aborted before isolation");
+    assert(!made[1].opts.resumeSessionID, "fresh recovery engine does not resume the poisoned history row");
+    assert(made[1].server.prompts.length === 1, "fresh engine receives the recovery prompt");
+    assert(made[1].server.prompts[0].text === "继续", "plain follow-up is replayed unchanged");
+    assert(!made[1].server.prompts[0].attachmentFallback, "legacy recovery does not invent an attachment fallback");
+    assert(orch.calls.error.length === 0, "legacy resume interruption is recovered without a sticky failure");
+
+    made[1].server.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "恢复后的回答" } });
+    made[1].server.emitEvent({ type: "session.idle", properties: { sessionID: "ses_test" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && /恢复后的回答/.test(orch.calls.done[0].output), "fresh replay completes normally");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
+// --- already-started legacy resume must keep its isolation marker ------------
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 250;
+  try {
+    const made = [];
+    const session = new OpencodeAgentSession("legacy_resume_prestarted_poison", {
+      createServer: (opts = {}) => {
+        const server = new FakeServer();
+        server.wasResumed = Boolean(opts.resumeSessionID);
+        server.historyMessages = [];
+        made.push({ server, opts });
+        return server;
+      },
+    });
+    const orch = makeOrchestrator();
+    session.bindOrchestrator(orch);
+    session.ensureProcess(process.cwd(), { agentCommand: "/bin/true", resumeSessionId: "ses_prestarted_poisoned" }, { lazy: false });
+    await tick();
+    assert(made.length === 1 && made[0].server.wasResumed === true, "prestarted engine resumes old history");
+
+    session.sendUserMessage({ text: "继续" });
+    await tick();
+    made[0].server.idleState = true;
+    made[0].server.emitEvent({
+      type: "message.error",
+      properties: {
+        sessionID: "ses_test",
+        messageID: "msg_prestarted_poison",
+        error: { message: "Connection to the model service was interrupted. Please check your network and API settings, then retry." },
+      },
+    });
+    await sleep(80);
+    assert(made.length === 2, "prestarted resumed interruption still isolates into a fresh engine");
+    assert(made[0].server.aborted === true, "prestarted poisoned engine is aborted");
+    assert(!made[1].opts.resumeSessionID, "fresh prestarted recovery does not reuse poisoned resume id");
+    assert(made[1].server.prompts.length === 1 && made[1].server.prompts[0].text === "继续", "current prompt is replayed");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
 // --- transient hiccup after read-only tools: replay once --------------------
 {
   const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;

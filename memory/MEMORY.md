@@ -18,3 +18,4 @@
 - [Conversation Minimap Session Isolation](2026-06-29-minimap-session-isolation.md) — shared minimap rails must be cleared and async minimap updates must re-check the active session
 - [Web Learning Special Browser Context](2026-06-29-web-learning-special-browser-context.md) — special enterprise systems must stop with a recoverable state instead of stealth/headless retry loops
 - [Web Learning Persistent Profile](2026-06-29-web-learning-persistent-profile.md) — manual web login capture uses per-system persistent Lily browser profiles while automation still reuses filtered storageState
+- [Document Attachment Model Interruption](2026-07-02-document-attachment-model-interruption.md) — raw Office/PDF binaries must not enter model file parts; document attachment model disconnects isolate to a fresh engine session

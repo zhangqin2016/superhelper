@@ -33,6 +33,19 @@ const { getLogger } = require("./logger");
 const log = getLogger("opencode-agent-session");
 const TRANSIENT_ERROR_RE = /unreachable|interrupted|socket|fetch|connection|network|ECONN|ETIMEDOUT|ENOTFOUND|timeout|temporarily unavailable|unexpected response/i;
 const REPLAY_SAFE_TOOL_NAMES = new Set(["read", "glob", "grep", "list", "ls", "find", "search"]);
+const DOCUMENT_RECOVERY_EXTENSIONS = new Set([
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".rtf",
+]);
 const TOOL_PROGRESS_STALE_MS = 10_000;
 const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 3;
 
@@ -116,6 +129,58 @@ function buildAttachmentFallbackPromptPayload(payload = {}, reason = "") {
     files: [],
     attachmentFallback: true,
   };
+}
+
+function isDocumentRecoveryAttachment(file = {}) {
+  const filePath = file.path || file.filePath || "";
+  const ext = path.extname(filePath).toLowerCase() || path.extname(file.name || file.filename || "").toLowerCase();
+  if (DOCUMENT_RECOVERY_EXTENSIONS.has(ext)) return true;
+  const type = String(file.type || file.mime || file.mimeType || file.mediaType || "").toLowerCase();
+  return /pdf|document|officedocument|msword|word|spreadsheet|excel|powerpoint|presentation/.test(type);
+}
+
+function shouldIsolateAttachmentFallback(payload = {}) {
+  const files = Array.isArray(payload.files) ? payload.files : [];
+  return files.some(isDocumentRecoveryAttachment);
+}
+
+function errorCauseFromEffect(effect = {}, message = "") {
+  const raw = effect.cause || effect.error;
+  if (raw instanceof Error) return raw;
+  const err = new Error(message || "Engine error");
+  if (raw && typeof raw === "object") {
+    err.details = raw;
+    if (raw.code) err.code = raw.code;
+  }
+  return err;
+}
+
+function failureCauseText(cause) {
+  if (!cause) return "";
+  if (typeof cause === "string") return cause;
+  if (cause instanceof Error) return cause.message || "";
+  if (typeof cause.message === "string") return cause.message;
+  if (typeof cause.data?.message === "string") return cause.data.message;
+  if (typeof cause.cause?.message === "string") return cause.cause.message;
+  return "";
+}
+
+function transientClassificationText(message, cause) {
+  return failureCauseText(cause) || String(message || "");
+}
+
+function isRecoverableModelConnectionFailure(classified, raw = "") {
+  if (classified?.retryable === false) return false;
+  if (classified && [
+    "MODEL_CONNECTION_FAILED",
+    "ENGINE_UNAVAILABLE",
+    "MODEL_OVERLOADED",
+    "RESPONSE_ERROR",
+    "RATE_LIMITED",
+  ].includes(classified.code)) {
+    return true;
+  }
+  return !classified && TRANSIENT_ERROR_RE.test(String(raw || ""));
 }
 
 function rawToolFromEvent(ev = {}) {
@@ -331,6 +396,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._activeTaskContract = null;
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
+    this._engineSessionWasResumed = false;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._transientFailureTimer = null;
     this._pendingTransientFailure = null;
@@ -404,6 +470,7 @@ class OpencodeAgentSession extends EventEmitter {
       const id = await server.createSession();
       server.subscribe();
       this._server = server;
+      this._engineSessionWasResumed = Boolean(server.wasResumed);
       // Guidance is delivered with each prompt, not only with fresh sessions:
       // OpenCode resume history may predate the current Lily rules/skill set, and
       // session-level skill toggles can change between turns.
@@ -491,6 +558,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._todoCompletionGateAttempts = 0;
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
+    this._engineSessionWasResumed = Boolean(this._server?.wasResumed || this._engineSessionWasResumed);
     this.collectedOutput = "";
     this._turnStartedAt = Date.now();
     this._pendingTransientFailure = null;
@@ -1172,9 +1240,15 @@ class OpencodeAgentSession extends EventEmitter {
         }
         break;
 
-      case "error":
-        this._failTurn(this._sanitize(effect.message) || "Engine error");
+      case "error": {
+        const rawMessage = typeof effect.message === "string" && effect.message ? effect.message : "Engine error";
+        const displayMessage = this._sanitize(rawMessage) || "Engine error";
+        this._failTurn(
+          displayMessage,
+          errorCauseFromEffect(effect, rawMessage),
+        );
         break;
+      }
 
       default:
         // Thinking/tool/unknown effects need no host-side state here; their
@@ -1487,19 +1561,9 @@ class OpencodeAgentSession extends EventEmitter {
     if (this._sawUnsafeToolActivity || this.collectedOutput.trim()) return false;
     if (this._pendingPermissions.size || this._pendingQuestions.size) return false;
 
-    const raw = [pending?.message, pending?.cause?.message || pending?.cause].filter(Boolean).join("\n");
+    const raw = transientClassificationText(pending?.message, pending?.cause);
     const classified = require("./agent-runner").classifyAssistantError(raw);
-    if (classified?.retryable === false) return false;
-    if (classified && ![
-      "MODEL_CONNECTION_FAILED",
-      "ENGINE_UNAVAILABLE",
-      "MODEL_OVERLOADED",
-      "RESPONSE_ERROR",
-      "RATE_LIMITED",
-    ].includes(classified.code)) {
-      return false;
-    }
-    if (!classified && !TRANSIENT_ERROR_RE.test(raw)) return false;
+    if (!isRecoverableModelConnectionFailure(classified, raw)) return false;
 
     this._transientReplayCount += 1;
     this._pendingTransientFailure = null;
@@ -1514,12 +1578,21 @@ class OpencodeAgentSession extends EventEmitter {
     this._sawUnsafeToolActivity = false;
     this._toolReplaySafe.clear();
     try {
+      const originalPayload = this._pendingPromptPayload;
       const retryPayload = buildAttachmentFallbackPromptPayload(
-        this._pendingPromptPayload,
+        originalPayload,
         this._sanitize(raw || "transient model transport failure"),
       );
       this._pendingPromptPayload = retryPayload;
-      await this._server.sendPrompt(retryPayload);
+      const isolateDocumentAttachment =
+        retryPayload.attachmentFallback && shouldIsolateAttachmentFallback(originalPayload);
+      const isolateLegacyResume =
+        !retryPayload.attachmentFallback && this._engineSessionWasResumed && isRecoverableModelConnectionFailure(classified, raw);
+      if (isolateDocumentAttachment || isolateLegacyResume) {
+        await this._restartEngineSessionForSafeReplay(raw || "transient model transport failure");
+      }
+      const server = await this._ensureStarted();
+      await server.sendPrompt(retryPayload);
       this._armResponseTimer();
       this._armProgressNoticeTimer();
       this._armHealthProbe();
@@ -1534,6 +1607,27 @@ class OpencodeAgentSession extends EventEmitter {
       this._scheduleTransientFailureRecovery(this._pendingTransientFailure.message, err);
       return true;
     }
+  }
+
+  async _restartEngineSessionForSafeReplay(reason = "") {
+    const server = this._server;
+    if (server) {
+      log.warn("isolating safe replay in a fresh OpenCode session: %s", this._sanitize(reason || "transient replay failure"));
+      try {
+        await this._abortWithTimeout(server);
+      } catch (err) {
+        log.warn("opencode safe replay abort failed: %s", err?.message || String(err));
+      }
+      try {
+        server.terminate?.();
+      } catch {
+        // best effort
+      }
+      if (this._server === server) this._server = null;
+    }
+    this._starting = null;
+    this.agentResumeId = null;
+    return this._ensureStarted();
   }
 
   async _recoverCompletedAssistantFromHistory(opts = {}) {
@@ -1871,19 +1965,9 @@ class OpencodeAgentSession extends EventEmitter {
     if (!this.busy || this._turnSettled || !this._server) return false;
     if (!this._sawEngineEvent || this.collectedOutput.trim()) return false;
     if (!cause) return false;
-    const raw = [message, cause?.message || cause].filter(Boolean).join("\n");
+    const raw = transientClassificationText(message, cause);
     const classified = require("./agent-runner").classifyAssistantError(raw);
-    if (classified && classified.retryable === false) return false;
-    if (classified && [
-      "MODEL_CONNECTION_FAILED",
-      "ENGINE_UNAVAILABLE",
-      "MODEL_OVERLOADED",
-      "RESPONSE_ERROR",
-      "RATE_LIMITED",
-    ].includes(classified.code)) {
-      return true;
-    }
-    return TRANSIENT_ERROR_RE.test(raw);
+    return isRecoverableModelConnectionFailure(classified, raw);
   }
 
   _onServerExit(code) {

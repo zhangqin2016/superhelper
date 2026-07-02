@@ -14,6 +14,8 @@ import {
   sendJsonFromOpenAi,
 } from "./model-gateway/openai-adapter.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
+import { chatTokenUsage, gatewayAccountRequired } from "./model-gateway/usage.js";
+import { consumeEntitlement, fetchFeaturePricing } from "./wallet.js";
 
 export { signModelGatewayToken, verifyModelGatewayToken } from "./model-gateway/auth.js";
 export { listModelGatewayProviders } from "./model-gateway/providers.js";
@@ -39,6 +41,49 @@ function authToken(request) {
   const auth = String(request.headers.authorization || "").trim();
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
   return String(request.headers["x-api-key"] || "").trim();
+}
+
+async function consumeChatUsage({ request, reply, token, providerId, provider, body }) {
+  const account = gatewayAccountRequired({ token, enforcementEnabled: config.accountUsageEnforcementEnabled });
+  if (!account.ok) {
+    reply.code(402).send({ error: { type: "payment_required", message: account.code } });
+    return false;
+  }
+  if (account.anonymous) return true;
+  const usage = chatTokenUsage({ ...body, model: body.model || provider.model || "" });
+  const pricing = await fetchFeaturePricing({
+    feature: usage.feature,
+    provider: providerId,
+    model: usage.model,
+    specKey: usage.specKey,
+  });
+  const consumed = await consumeEntitlement({
+    userId: token.userId,
+    deviceId: token.deviceId || "",
+    licenseId: token.licenseId || "",
+    provider: providerId,
+    model: usage.model,
+    feature: usage.feature,
+    specKey: usage.specKey,
+    resourceType: usage.resourceType,
+    units: usage.units,
+    unitCost: pricing.unitCost,
+    idempotencyKey: String(request.headers["x-lily-idempotency-key"] || "").trim().slice(0, 200),
+    metadata: { phase: "input_estimate" },
+  });
+  if (!consumed.ok) {
+    reply.code(402).send({
+      error: {
+        type: "payment_required",
+        message: consumed.code || "ENTITLEMENT_INSUFFICIENT",
+        resourceType: usage.resourceType,
+        requiredUnits: consumed.requiredUnits || usage.units,
+        availableUnits: consumed.availableUnits || 0,
+      },
+    });
+    return false;
+  }
+  return true;
 }
 
 async function handleGatewayRequest(request, reply) {
@@ -74,6 +119,8 @@ async function handleGatewayRequest(request, reply) {
       },
     });
   }
+
+  if (upstream.ok && !(await consumeChatUsage({ request, reply, token, providerId, provider, body }))) return reply;
 
   if (provider.type === "anthropic") {
     reply.code(upstream.status);

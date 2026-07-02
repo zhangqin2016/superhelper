@@ -47,6 +47,13 @@ function formatBytes(bytes) {
 }
 
 function progressPercent(progress) {
+  if (progress?.phase === "extracting" && progress?.totalEntries) {
+    const totalEntries = Number(progress.totalEntries || 0);
+    const processedEntries = Number(progress.processedEntries || 0);
+    if (Number.isFinite(totalEntries) && totalEntries > 0) {
+      return Math.max(0, Math.min(100, Math.round((processedEntries / totalEntries) * 100)));
+    }
+  }
   const total = Number(progress?.totalBytes || 0);
   const written = Number(progress?.writtenBytes || 0);
   if (!Number.isFinite(total) || total <= 0) return null;
@@ -60,6 +67,15 @@ function phaseLabel(progress) {
   if (phase === "downloading" && percent !== null) {
     return t("settings.runtime.phase.downloadingPercent", { percent });
   }
+  if (phase === "extracting" && progress?.totalEntries) {
+    return t("settings.runtime.phase.extractingEntries", {
+      done: Number(progress.processedEntries || 0),
+      total: Number(progress.totalEntries || 0),
+    });
+  }
+  if (phase === "extracting" && progress?.backend) {
+    return t("settings.runtime.phase.extractingWithBackend", { backend: progress.backend });
+  }
   const key = `settings.runtime.phase.${phase}`;
   const label = t(key);
   return label === key ? phase : label;
@@ -71,6 +87,11 @@ function progressMeta(progress) {
     parts.push(t("runtimeProgress.bytes", {
       done: formatBytes(progress.writtenBytes || 0),
       total: formatBytes(progress.totalBytes),
+    }));
+  }
+  if (progress?.phase === "extracting" && progress?.elapsedMs && !progress?.totalEntries) {
+    parts.push(t("runtimeProgress.elapsed", {
+      seconds: Math.max(1, Math.round(Number(progress.elapsedMs || 0) / 1000)),
     }));
   }
   if (progress?.error) parts.push(progress.error);

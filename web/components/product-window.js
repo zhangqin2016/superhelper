@@ -31,7 +31,7 @@ export function ProductWindow({ labels }) {
         <main className="p-6">
           <div className="mb-8 flex items-center justify-between">
             <div>
-              <h3 className="text-2xl font-semibold text-white">AI Assistant</h3>
+              <h3 className="text-2xl font-semibold text-white">{labels.assistantTitle}</h3>
               <p className="text-sm text-white/48">{labels.connected}</p>
             </div>
             <div className="flex gap-2">
@@ -45,7 +45,7 @@ export function ProductWindow({ labels }) {
           <div className="space-y-5">
             <div className="flex gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-sm font-semibold text-white">
-                AI
+                Lily
               </div>
               <div className="max-w-[560px] rounded-2xl border border-white/10 bg-white px-5 py-4 text-slate-900 shadow-xl shadow-black/10">
                 {labels.ai}

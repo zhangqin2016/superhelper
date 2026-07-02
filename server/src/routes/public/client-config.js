@@ -7,6 +7,7 @@ import {
   clientConfigTtlMs,
   deepMerge,
   expandModelProviderMenu,
+  resolveAccountContextForClientConfig,
   rolloutAllows,
   withGatewayRuntimeConfig,
 } from "../../services/client-config.js";
@@ -21,6 +22,7 @@ import { zodBody, okResponse } from "../../openapi.js";
 
 const clientConfigSchema = registerDeviceSchema.extend({
   licenseId: z.string().max(80).optional().nullable(),
+  accountAccessToken: z.string().max(4096).optional().nullable(),
   publicKey: registerDeviceSchema.shape.publicKey,
   keyAlg: registerDeviceSchema.shape.keyAlg,
 });
@@ -117,9 +119,11 @@ export function registerPublicClientConfigRoutes(app) {
     // before tokens are injected.
     const scopedConfig = expandModelProviderMenu(resolved.effectiveConfig);
     const { getMediaDeliveryMode } = await import("../../services/app-settings.js");
+    const account = await resolveAccountContextForClientConfig(input, db);
     const effectiveConfig = withGatewayRuntimeConfig(scopedConfig, request, input, {
       publicBaseUrl: config.publicBaseUrl,
       mediaDeliveryMode: await getMediaDeliveryMode(),
+      account,
     });
     const payload = {
       schemaVersion: 1,

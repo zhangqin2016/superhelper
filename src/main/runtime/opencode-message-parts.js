@@ -30,6 +30,19 @@ const DEFAULT_MAX_TEXT_ATTACHMENT_CHARS =
   Number(process.env.LILY_OPENCODE_MAX_TEXT_ATTACHMENT_CHARS) || 80_000;
 
 const TEXT_ATTACHMENT_EXTENSIONS = new Set([".svg"]);
+const PATH_ONLY_DOCUMENT_EXTENSIONS = new Set([
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".rtf",
+]);
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "unknown size";
@@ -48,7 +61,7 @@ function buildSkippedAttachmentNote(skipped = []) {
   });
   return [
     "[Attachment note]",
-    "Some local files were not inlined into the OpenCode request to keep the desktop app responsive.",
+    "Some local files were not inlined into the OpenCode request to keep the desktop app responsive and avoid sending raw document binaries to the model service.",
     ...lines,
     "If document extraction succeeded, use the extracted text above. Otherwise use the source path with available file tools instead of asking the user to re-upload.",
   ].join("\n");
@@ -65,11 +78,60 @@ function textFenceForExtension(ext) {
   return "";
 }
 
+function fileExtension(file = {}, filePath = "") {
+  const pathExt = path.extname(filePath || "").toLowerCase();
+  if (pathExt) return pathExt;
+  return path.extname(file.name || file.filename || "").toLowerCase();
+}
+
+function documentMimeLike(value = "") {
+  const mime = String(value || "").toLowerCase();
+  return Boolean(mime) && (
+    mime === "application/pdf" ||
+    mime.includes("officedocument") ||
+    mime.includes("msword") ||
+    mime.includes("vnd.ms-") ||
+    mime.includes("wordprocessingml") ||
+    mime.includes("spreadsheetml") ||
+    mime.includes("presentationml") ||
+    mime.includes("opendocument") ||
+    mime === "application/rtf" ||
+    mime === "text/rtf"
+  );
+}
+
+function isPathOnlyDocumentAttachment(file = {}, filePath = "") {
+  const ext = fileExtension(file, filePath);
+  if (PATH_ONLY_DOCUMENT_EXTENSIONS.has(ext)) return true;
+  return documentMimeLike(file.mime || file.type || file.mimeType || file.mediaType || "");
+}
+
+function isSafeInlineFilePartMime(mime = "") {
+  const value = String(mime || "").toLowerCase();
+  if (value.startsWith("image/")) return true;
+  if (value.startsWith("text/")) return true;
+  return [
+    "application/json",
+    "application/geo+json",
+    "application/x-ndjson",
+    "application/xml",
+    "application/xhtml+xml",
+    "application/javascript",
+    "application/x-javascript",
+  ].includes(value);
+}
+
+function skipPathOnlyAttachment(filePath, filename, opts = {}, reason = "not an explicitly safe inline type; use the source path with local tools") {
+  if (typeof opts.onSkip === "function") {
+    opts.onSkip({ path: filePath, filename, reason });
+  }
+}
+
 function fileToTextAttachment(file, opts = {}) {
   if (!file || typeof file !== "object") return null;
   const filePath = file.path || file.filePath;
   if (!filePath || !fs.existsSync(filePath)) return null;
-  const ext = path.extname(filePath).toLowerCase();
+  const ext = fileExtension(file, filePath);
   if (!TEXT_ATTACHMENT_EXTENSIONS.has(ext)) return null;
   const filename = file.name || path.basename(filePath);
   const maxInlineFileBytes =
@@ -114,6 +176,19 @@ function fileToTextAttachment(file, opts = {}) {
 function fileToPart(file, opts = {}) {
   if (!file || typeof file !== "object") return null;
   if (file.uri && file.mime) {
+    if (isPathOnlyDocumentAttachment(file)) {
+      skipPathOnlyAttachment(
+        file.path || file.filePath || "",
+        file.name || file.filename || "",
+        opts,
+        "document handled through Lily document extraction/source path, not uploaded as a raw model file part",
+      );
+      return null;
+    }
+    if (!isSafeInlineFilePartMime(file.mime)) {
+      skipPathOnlyAttachment(file.path || file.filePath || "", file.name || file.filename || "", opts);
+      return null;
+    }
     return {
       type: "file",
       url: file.uri,
@@ -123,7 +198,7 @@ function fileToPart(file, opts = {}) {
   }
   const filePath = file.path || file.filePath;
   if (!filePath || !fs.existsSync(filePath)) return null;
-  const ext = path.extname(filePath).toLowerCase();
+  const ext = fileExtension(file, filePath);
   const mime = file.mime || FILE_MIME[ext] || "application/octet-stream";
   const filename = file.name || path.basename(filePath);
   if (TEXT_ATTACHMENT_EXTENSIONS.has(ext)) {
@@ -134,6 +209,19 @@ function fileToPart(file, opts = {}) {
         reason: `${ext.slice(1)}_text_attachment`,
       });
     }
+    return null;
+  }
+  if (isPathOnlyDocumentAttachment(file, filePath)) {
+    skipPathOnlyAttachment(
+      filePath,
+      filename,
+      opts,
+      "document handled through Lily document extraction/source path, not uploaded as a raw model file part",
+    );
+    return null;
+  }
+  if (!isSafeInlineFilePartMime(mime)) {
+    skipPathOnlyAttachment(filePath, filename, opts);
     return null;
   }
   const maxInlineFileBytes =

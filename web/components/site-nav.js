@@ -13,6 +13,7 @@ export function SiteNav({ initialLocale }) {
     ["/#scenarios", t.nav.scenarios],
     ["/#experts", t.nav.experts],
     ["/#product", t.nav.product],
+    ["/account/billing", t.nav.billing],
     ["/contact", t.nav.contact],
   ];
   return (
@@ -24,17 +25,20 @@ export function SiteNav({ initialLocale }) {
           </span>
           <span className="site-brand-text">Lily Workbench</span>
         </Link>
-        <nav className="hidden items-center gap-8 text-sm text-white/76 md:flex">
+        <nav className="hidden items-center gap-7 text-sm text-white/76 lg:flex">
           {links.map(([href, label]) => <Link key={href} href={href} className="site-nav-link">{label}</Link>)}
         </nav>
         <div className="flex items-center gap-2">
           <LanguageSwitcher compact initialLocale={initialLocale} />
+          <Link href="/account/billing" className="nav-billing hidden rounded-lg border border-white/16 px-4 py-2 text-sm font-semibold text-white/86 sm:inline-flex">
+            {t.nav.billing}
+          </Link>
           <Link href="/download" className="nav-download rounded-lg bg-white px-4 py-2 text-sm font-semibold text-ink">
             {t.nav.download}
           </Link>
           <button
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/15 text-white md:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/15 text-white lg:hidden"
             aria-label={t.nav.open}
             onClick={() => setOpen((value) => !value)}
           >
@@ -43,7 +47,7 @@ export function SiteNav({ initialLocale }) {
         </div>
       </div>
       {open ? (
-        <div className="site-nav-menu border-t border-white/10 px-6 py-4 text-white md:hidden">
+        <div className="site-nav-menu border-t border-white/10 px-6 py-4 text-white lg:hidden">
           <nav className="grid gap-3 text-sm text-white/80">
             {links.map(([href, label]) => (
               <Link key={href} href={href} onClick={() => setOpen(false)} className="rounded-lg px-3 py-2 hover:bg-white/8">

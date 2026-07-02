@@ -44,6 +44,15 @@ function phaseLabel(progress) {
     const pct = Math.max(0, Math.min(100, Math.round((Number(progress.writtenBytes || 0) / Number(progress.totalBytes)) * 100)));
     return t("settings.runtime.phase.downloadingPercent", { percent: pct });
   }
+  if (progress.phase === "extracting" && progress.totalEntries) {
+    return t("settings.runtime.phase.extractingEntries", {
+      done: Number(progress.processedEntries || 0),
+      total: Number(progress.totalEntries || 0),
+    });
+  }
+  if (progress.phase === "extracting" && progress.backend) {
+    return t("settings.runtime.phase.extractingWithBackend", { backend: progress.backend });
+  }
   const key = `settings.runtime.phase.${progress.phase}`;
   const label = t(key);
   return label === key ? progress.phase : label;

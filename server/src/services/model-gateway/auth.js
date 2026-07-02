@@ -9,12 +9,21 @@ function hmac(payload) {
   return base64urlEncode(crypto.createHmac("sha256", config.modelGatewayTokenSecret).update(payload).digest());
 }
 
-export function signModelGatewayToken({ deviceId, licenseId = "", providerId = "", expiresAt = "" }) {
+export function signModelGatewayToken({
+  deviceId,
+  licenseId = "",
+  providerId = "",
+  userId = "",
+  sessionId = "",
+  expiresAt = "",
+}) {
   const ttlMs = Math.max(60, config.modelGatewayTokenTtlSeconds || 3600) * 1000;
   const payload = {
     deviceId: String(deviceId || ""),
     licenseId: String(licenseId || ""),
     providerId: String(providerId || ""),
+    userId: String(userId || ""),
+    sessionId: String(sessionId || ""),
     expiresAt: expiresAt || new Date(Date.now() + ttlMs).toISOString(),
   };
   const encoded = base64urlEncode(stableStringify(payload));

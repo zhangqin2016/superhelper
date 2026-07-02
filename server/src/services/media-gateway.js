@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { config } from "../config.js";
 import { verifyModelGatewayToken } from "./model-gateway/auth.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
+import { consumeEntitlement, fetchFeaturePricing } from "./wallet.js";
 
 // Mint a short-lived HS256 JWT for Kling-style auth (iss=accessKey, exp=+1800,
 // nbf=-5s skew). Done server-side so the SecretKey never reaches the client.
@@ -56,6 +57,68 @@ function bearerToken(request) {
   const auth = String(request.headers.authorization || "").trim();
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
   return String(request.headers["x-api-key"] || "").trim();
+}
+
+function usageIdempotencyKey(request) {
+  return String(request.headers["x-lily-idempotency-key"] || "").trim().slice(0, 200);
+}
+
+function inferMediaUsage(providerId, rest, body) {
+  const text = `${providerId}/${rest} ${JSON.stringify(body || {})}`.toLowerCase();
+  if (text.includes("video") || text.includes("t2v") || text.includes("i2v") || text.includes("wan")) {
+    return { feature: "ai_video", resourceType: "video_generation", specKey: providerId || "default" };
+  }
+  if (text.includes("image") || text.includes("text2image") || text.includes("tti") || text.includes("seedream") || text.includes("cogview")) {
+    return { feature: "ai_image", resourceType: "image_generation", specKey: providerId || "default" };
+  }
+  return null;
+}
+
+async function requireMediaEntitlement(request, reply, token, providerId, rest) {
+  if (request.method !== "POST") return true;
+  const usage = inferMediaUsage(providerId, rest, request.body);
+  if (!usage) return true;
+  if (!token.userId) {
+    if (!config.accountUsageEnforcementEnabled) return true;
+    reply.code(402).send({
+      error: {
+        type: "payment_required",
+        message: "ACCOUNT_LOGIN_REQUIRED",
+      },
+    });
+    return false;
+  }
+  const pricing = await fetchFeaturePricing({
+    feature: usage.feature,
+    provider: providerId,
+    specKey: usage.specKey,
+  });
+  const consumed = await consumeEntitlement({
+    userId: token.userId,
+    deviceId: token.deviceId || "",
+    licenseId: token.licenseId || "",
+    provider: providerId,
+    feature: usage.feature,
+    specKey: usage.specKey,
+    resourceType: usage.resourceType,
+    units: 1,
+    unitCost: pricing.unitCost,
+    idempotencyKey: usageIdempotencyKey(request),
+    metadata: { path: rest },
+  });
+  if (!consumed.ok) {
+    reply.code(402).send({
+      error: {
+        type: "payment_required",
+        message: consumed.code || "ENTITLEMENT_INSUFFICIENT",
+        resourceType: usage.resourceType,
+        requiredUnits: consumed.requiredUnits || 1,
+        availableUnits: consumed.availableUnits || 0,
+      },
+    });
+    return false;
+  }
+  return true;
 }
 
 async function forwardJson(reply, upstream) {
@@ -172,6 +235,8 @@ function mediaHandler(fixedProvider) {
     if (!token.ok) {
       return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
     }
+    const rest = String(request.params["*"] || "").replace(/^\/+/, "");
+    if (!(await requireMediaEntitlement(request, reply, token, providerId, rest))) return reply;
     const resolved = resolveCredential(spec.credId, spec.fallbackKey(), spec.baseUrl());
     const { apiKey, baseUrl } = resolved;
     if (!apiKey) {
@@ -188,7 +253,6 @@ function mediaHandler(fixedProvider) {
       }
       bearer = signKlingJwt(apiKey, secretKey);
     }
-    const rest = String(request.params["*"] || "").replace(/^\/+/, "");
     const queryIndex = request.url.indexOf("?");
     let query = queryIndex >= 0 ? request.url.slice(queryIndex) : "";
     // MiniMax (China) needs GroupId on the query; inject it server-side if the

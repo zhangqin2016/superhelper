@@ -147,6 +147,7 @@ Anthropic-compatible endpoint 的平台，直接在 `.env` 配置对应 key：
 ```env
 MODEL_GATEWAY_ENABLED=true
 MODEL_GATEWAY_DEFAULT_PROVIDER=deepseek
+DEFAULT_MODEL_PROVIDERS=deepseek # 普通用户默认只看到 DeepSeek；需要全量可选时显式设为 all
 MODEL_CONFIG_DELIVERY_MODE=gateway # gateway: 服务端托管 key；direct: 客户端直连，延迟低但会下发模型 key
 DEEPSEEK_API_KEY=sk-...
 DASHSCOPE_API_KEY=sk-... # media skills only: image/video/speech

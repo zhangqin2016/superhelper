@@ -15,6 +15,11 @@ function readSkill(id) {
 const runtime = readSkill("lily-runtime-packs");
 assert.match(runtime, /large-document/, "runtime skill must expose the large-document dependency pack");
 assert.match(runtime, /FFmpeg|ffmpeg/, "runtime skill must keep media dependency routing visible");
+const runtimePackManager = fs.readFileSync(
+  path.join(ROOT, "resources", "skills-catalog", "lily-runtime-packs", "scripts", "manage_runtime_pack.py"),
+  "utf8",
+);
+assert.match(runtimePackManager, /"large-document"/, "agent-facing runtime pack manager must be able to install large-document");
 
 const office = readSkill("lily-office-intent");
 assert.match(office, /inspect/i, "office router must inspect before document work");

@@ -228,7 +228,18 @@ function notifyRefreshed() {
 
 async function refreshRemoteConfig(payload = {}) {
   const service = require("./service-client");
-  const result = await service.fetchClientConfig(payload);
+  let accountAccessToken = "";
+  try {
+    const account = require("./account-manager");
+    const token = await account.accessTokenForService();
+    if (token?.ok && token.accessToken) accountAccessToken = token.accessToken;
+  } catch {
+    accountAccessToken = "";
+  }
+  const result = await service.fetchClientConfig({
+    ...payload,
+    ...(accountAccessToken ? { accountAccessToken } : {}),
+  });
   if (!result.ok) return result;
   const verified = verifyConfigResponse(result.json);
   if (!verified.ok) return { ok: false, error: "CONFIG_SIGNATURE_INVALID" };

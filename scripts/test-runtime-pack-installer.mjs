@@ -58,7 +58,7 @@ try {
   assert.equal(
     installer.archiveExtensionForArtifact({ format: "zip", url: "https://cdn.example.com/libreoffice.zip" }),
     ".zip",
-    "Windows Expand-Archive requires zip runtime-pack temp files to keep a .zip extension",
+    "zip runtime-pack temp files should keep a .zip extension for extractor compatibility",
   );
   assert.equal(
     installer.archiveExtensionForArtifact({ format: "tar.gz", url: "https://cdn.example.com/pack.tar.gz" }),
@@ -114,21 +114,26 @@ try {
   assert.equal(bundledUninstall.ok, false);
   assert.equal(bundledUninstall.error, "BUNDLED_RUNTIME_PACK_READ_ONLY");
 
-  const progress = [];
+  const progressEvents = [];
   const installed = await installer.installRuntimePack("pro-pdf");
   assert.equal(installed.ok, true, `install failed: ${JSON.stringify(installed)}`);
   assert.equal(installed.version, "1.2.3");
   assert(fs.existsSync(path.join(userData, "runtime-packs", "pro-pdf", "module", "__init__.py")), "pack contents missing");
 
   const installedWithProgress = await installer.installRuntimePack("progress-pack", {
-    onProgress: (event) => progress.push(event.phase),
+    onProgress: (event) => progressEvents.push(event),
   });
   assert.equal(installedWithProgress.ok, true, `progress install failed: ${JSON.stringify(installedWithProgress)}`);
+  const progress = progressEvents.map((event) => event.phase);
   assert(progress.includes("resolving"), "install should report resolving progress");
   assert(progress.includes("downloading"), "install should report downloading progress");
   assert(progress.includes("verifying"), "install should report verifying progress");
   assert(progress.includes("extracting"), "install should report extracting progress");
   assert(progress.includes("installed"), "install should report installed progress");
+  assert(
+    progressEvents.some((event) => event.phase === "extracting" && event.backend),
+    "extracting progress should include the active extractor backend",
+  );
 
   const state = JSON.parse(fs.readFileSync(path.join(userData, "runtime-packs.json"), "utf8"));
   assert.equal(state.installed["pro-pdf"].source, "artifact");
@@ -139,7 +144,10 @@ try {
   assert.equal(skipped.ok, true);
   assert.equal(skipped.skipped, true);
 
-  fs.rmSync(path.join(userData, "runtime-packs", "bad-pack"), { recursive: true, force: true });
+  const badPackDir = path.join(userData, "runtime-packs", "bad-pack");
+  fs.rmSync(badPackDir, { recursive: true, force: true });
+  fs.mkdirSync(badPackDir, { recursive: true });
+  fs.writeFileSync(path.join(badPackDir, "keep.txt"), "existing", "utf8");
   serviceClient.runtimePackArtifact = async () => ({
     ok: true,
     json: {
@@ -154,7 +162,11 @@ try {
   const bad = await installer.installRuntimePack("bad-pack");
   assert.equal(bad.ok, false);
   assert.equal(bad.error, "CHECKSUM_MISMATCH");
-  assert(!fs.existsSync(path.join(userData, "runtime-packs", "bad-pack")), "failed install must not leave target dir");
+  assert.equal(
+    fs.readFileSync(path.join(badPackDir, "keep.txt"), "utf8"),
+    "existing",
+    "failed install must preserve an existing target dir",
+  );
 
   const removed = installer.uninstallRuntimePack("pro-pdf");
   assert.equal(removed.ok, true);
@@ -168,6 +180,19 @@ try {
     "utf8",
   );
   assert(!installer.installedRuntimePackIds().has("ghost"), "missing artifact dir must not be treated as installed");
+
+  const installerSource = fs.readFileSync(path.join(process.cwd(), "src/main/runtime-pack-installer.js"), "utf8");
+  assert(
+    !installerSource.includes('execFileSync("powershell"'),
+    "Windows extraction must not block the main process with sync Expand-Archive",
+  );
+  assert(installerSource.includes("spawn(candidate.command"), "runtime-pack extraction should use async spawn");
+  assert(installerSource.includes('require("7zip-bin")'), "runtime-pack extraction should prefer bundled 7zip-bin");
+  assert(installerSource.includes(".asar.unpacked"), "bundled extractor paths should resolve out of Electron asar");
+  assert(
+    installerSource.includes("replacePackDirectory(stagingPath, target)"),
+    "runtime-pack install should atomically replace the target after staging extraction",
+  );
 } finally {
   server.close();
   fs.rmSync(tmp, { recursive: true, force: true });

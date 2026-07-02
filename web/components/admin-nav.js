@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Activity, BarChart3, Boxes, ClipboardList, DownloadCloud, Gauge,
+  Activity, BarChart3, Boxes, ClipboardList, CreditCard, DownloadCloud, Gauge,
   KeyRound, Laptop, Mail, PackageCheck, Radar, Settings, SlidersHorizontal, Store,
 } from "lucide-react";
 
@@ -15,6 +15,7 @@ const ICONS = {
   "/admin/devices": Laptop,
   "/admin/usage": BarChart3,
   "/admin/contacts": Mail,
+  "/admin/billing": CreditCard,
   "/admin/releases": DownloadCloud,
   "/admin/library": Store,
   "/admin/apps": Store,

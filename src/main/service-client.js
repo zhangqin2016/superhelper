@@ -246,6 +246,67 @@ async function activateLicenseKey(licenseKey) {
   });
 }
 
+async function sendSmsCode(phone) {
+  return serviceFetch("/api/auth/sms/send", {
+    method: "POST",
+    body: JSON.stringify({
+      phone: String(phone || "").trim(),
+      purpose: "login",
+      deviceId: getDeviceId(),
+    }),
+  });
+}
+
+async function loginWithSms({ phone, code } = {}) {
+  return serviceFetch("/api/auth/sms/login", {
+    method: "POST",
+    body: JSON.stringify({
+      ...devicePayload(),
+      phone: String(phone || "").trim(),
+      code: String(code || "").trim(),
+    }),
+  });
+}
+
+async function refreshAccountAccessToken(refreshToken) {
+  return serviceFetch("/api/auth/session/refresh", {
+    method: "POST",
+    body: JSON.stringify({
+      ...devicePayload(),
+      refreshToken: String(refreshToken || "").trim(),
+    }),
+  });
+}
+
+async function logoutAccount(refreshToken) {
+  return serviceFetch("/api/auth/session/logout", {
+    method: "POST",
+    body: JSON.stringify({
+      refreshToken: String(refreshToken || "").trim(),
+    }),
+  });
+}
+
+async function fetchAccountEntitlements(accessToken) {
+  return serviceFetch("/api/account/entitlements", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${String(accessToken || "").trim()}`,
+    },
+    body: JSON.stringify(devicePayload()),
+  });
+}
+
+async function createBillingLink(accessToken) {
+  return serviceFetch("/api/account/billing-link", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${String(accessToken || "").trim()}`,
+    },
+    body: JSON.stringify(devicePayload()),
+  });
+}
+
 async function verifyLicense(licenseId) {
   return serviceFetch("/api/licenses/verify", {
     method: "POST",
@@ -470,6 +531,12 @@ module.exports = {
   getServiceSettings,
   getDeviceId,
   devicePayload,
+  sendSmsCode,
+  loginWithSms,
+  refreshAccountAccessToken,
+  logoutAccount,
+  fetchAccountEntitlements,
+  createBillingLink,
   registerDevice,
   activateLicenseKey,
   verifyLicense,

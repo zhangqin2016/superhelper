@@ -26,16 +26,29 @@ export const config = {
   qiniuBucket: process.env.QINIU_BUCKET || "lanrensoft",
   qiniuUploadUrl: process.env.QINIU_UPLOAD_URL || "https://upload.qiniup.com",
   publicBaseUrl: process.env.PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || "",
+  webBaseUrl: process.env.WEB_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || process.env.PUBLIC_BASE_URL || "https://lily.lanrensoft.cn",
+  userTokenPepper: process.env.USER_TOKEN_PEPPER || process.env.SESSION_SECRET || "development-session-secret-change-me",
+  smsCodePepper: process.env.SMS_CODE_PEPPER || process.env.SESSION_SECRET || "development-session-secret-change-me",
+  smsAliyunAccessKeyId: process.env.ALIYUN_SMS_ACCESS_KEY_ID || "",
+  smsAliyunAccessKeySecret: process.env.ALIYUN_SMS_ACCESS_KEY_SECRET || "",
+  smsAliyunSignName: process.env.ALIYUN_SMS_SIGN_NAME || "",
+  smsAliyunTemplateLogin: process.env.ALIYUN_SMS_TEMPLATE_LOGIN || "",
+  smsAliyunRegion: process.env.ALIYUN_SMS_REGION || "cn-hangzhou",
+  accountFreeTokens: Number(process.env.ACCOUNT_FREE_TOKENS || 100000),
+  accountFreeImages: Number(process.env.ACCOUNT_FREE_IMAGES || 3),
+  accountFreeVideos: Number(process.env.ACCOUNT_FREE_VIDEOS || 1),
+  accountFreeDays: Number(process.env.ACCOUNT_FREE_DAYS || 7),
+  accountUsageEnforcementEnabled: process.env.ACCOUNT_USAGE_ENFORCEMENT === "true",
   modelGatewayEnabled: process.env.MODEL_GATEWAY_ENABLED !== "false",
   modelGatewayTokenSecret: process.env.MODEL_GATEWAY_TOKEN_SECRET || process.env.SESSION_SECRET || "development-session-secret-change-me",
   modelGatewayTokenTtlSeconds: Number(process.env.MODEL_GATEWAY_TOKEN_TTL_SECONDS || 6 * 60 * 60),
   modelGatewayClientToken: process.env.MODEL_GATEWAY_CLIENT_TOKEN || "",
   modelGatewayProviders: process.env.MODEL_GATEWAY_PROVIDERS || "",
   modelGatewayDefaultProvider: process.env.MODEL_GATEWAY_DEFAULT_PROVIDER || "deepseek",
-  // Global default model menu: which providers the BASELINE (everyone) config
-  // exposes. Empty = all configured providers (current behavior). Set e.g.
-  // "deepseek" to make the default minimal; broader access is then granted per
-  // group/device via config profiles (which replace the menu for their scope).
+  // Global default model menu provider allow-list. Empty means no narrowing:
+  // expose exactly the configured chat providers. Set DEFAULT_MODEL_PROVIDERS
+  // to "deepseek" when production should publish only DeepSeek; use "all" or
+  // "*" as explicit no-narrowing aliases.
   defaultModelProviders: String(process.env.DEFAULT_MODEL_PROVIDERS || "")
     .split(",")
     .map((value) => value.trim())

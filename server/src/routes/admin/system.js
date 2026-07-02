@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { config } from "../../config.js";
 import { db, pool } from "../../db.js";
-import { getMediaDeliveryMode, getModelDeliveryMode, getQiniuAdminSettings, getQiniuConfig, setAppSetting, setQiniuConfig } from "../../services/app-settings.js";
+import { getAliyunSmsAdminSettings, getMediaDeliveryMode, getModelDeliveryMode, getPaymentAdminSettings, getQiniuAdminSettings, getQiniuConfig, setAliyunSmsConfig, setAppSetting, setPaymentConfig, setQiniuConfig } from "../../services/app-settings.js";
 import { ensureEnvManagedConfigProfile } from "../../services/client-config.js";
 import { listModelGatewayProviders } from "../../services/model-gateway/providers.js";
 import { signLicensePayload } from "../../services/security.js";
@@ -17,6 +17,36 @@ const updateSettingsSchema = z.object({
     secretKey: z.string().max(200).optional().nullable(),
     bucket: z.string().min(1).max(120),
     uploadUrl: z.string().url().max(400),
+  }).optional(),
+  aliyunSms: z.object({
+    accessKeyId: z.string().max(200),
+    accessKeySecret: z.string().max(2000).optional().nullable(),
+    signName: z.string().max(120),
+    templateLogin: z.string().max(120),
+    region: z.string().min(1).max(80).default("cn-hangzhou"),
+  }).optional(),
+  payment: z.object({
+    fakePaymentsEnabled: z.boolean().default(false),
+    alipay: z.object({
+      enabled: z.boolean().default(false),
+      appId: z.string().max(200).optional().default(""),
+      merchantId: z.string().max(200).optional().default(""),
+      publicKey: z.string().max(6000).optional().default(""),
+      privateKey: z.string().max(6000).optional().nullable(),
+      notifyUrl: z.string().max(500).optional().default(""),
+      returnUrl: z.string().max(500).optional().default(""),
+      sandbox: z.boolean().default(false),
+    }).optional().default({}),
+    wechat: z.object({
+      enabled: z.boolean().default(false),
+      appId: z.string().max(200).optional().default(""),
+      mchId: z.string().max(200).optional().default(""),
+      certSerialNo: z.string().max(200).optional().default(""),
+      apiV3Key: z.string().max(2000).optional().nullable(),
+      privateKey: z.string().max(6000).optional().nullable(),
+      notifyUrl: z.string().max(500).optional().default(""),
+      sandbox: z.boolean().default(false),
+    }).optional().default({}),
   }).optional(),
 });
 
@@ -51,6 +81,8 @@ async function checkUpdateManifest(qiniu) {
 async function buildAdminHealth() {
   const checks = [];
   const qiniu = await getQiniuConfig();
+  const aliyunSms = await getAliyunSmsAdminSettings();
+  const payment = await getPaymentAdminSettings();
 
   try {
     await pool.query("select 1");
@@ -83,6 +115,28 @@ async function buildAdminHealth() {
   }
 
   checks.push(await checkUpdateManifest(qiniu));
+  checks.push(healthCheck(
+    "aliyun_sms",
+    Boolean(aliyunSms.accessKeyId && aliyunSms.hasAccessKeySecret && aliyunSms.signName && aliyunSms.templateLogin),
+    aliyunSms.accessKeyId && aliyunSms.hasAccessKeySecret && aliyunSms.signName && aliyunSms.templateLogin
+      ? "configured"
+      : "missing Aliyun SMS configuration",
+    { region: aliyunSms.region || "cn-hangzhou" },
+  ));
+  checks.push(healthCheck(
+    "payment",
+    Boolean(payment.fakePaymentsEnabled || payment.alipay.enabled || payment.wechat.enabled),
+    payment.fakePaymentsEnabled
+      ? "fake payments enabled"
+      : payment.alipay.enabled || payment.wechat.enabled
+        ? "payment provider configured"
+        : "no payment method enabled",
+    {
+      fakePaymentsEnabled: payment.fakePaymentsEnabled,
+      alipayEnabled: payment.alipay.enabled,
+      wechatEnabled: payment.wechat.enabled,
+    },
+  ));
 
   const gatewayProviders = Object.values(listModelGatewayProviders()).map((provider) => ({
     id: provider.id,
@@ -182,6 +236,8 @@ export function registerAdminSystemRoutes(app, { audit }) {
         modelDeliveryMode: await getModelDeliveryMode(),
         mediaDeliveryMode: await getMediaDeliveryMode(),
         qiniu: await getQiniuAdminSettings(),
+        aliyunSms: await getAliyunSmsAdminSettings(),
+        payment: await getPaymentAdminSettings(),
       },
     };
   });
@@ -213,15 +269,27 @@ export function registerAdminSystemRoutes(app, { audit }) {
     if (input.qiniu) {
       qiniu = await setQiniuConfig(input.qiniu);
     }
+    let aliyunSms = null;
+    if (input.aliyunSms) {
+      aliyunSms = await setAliyunSmsConfig(input.aliyunSms);
+    }
+    let payment = null;
+    if (input.payment) {
+      payment = await setPaymentConfig(input.payment);
+    }
     await audit(request, "settings.update", "settings", "license_trial_days", {
       licenseTrialDays: input.licenseTrialDays,
       qiniuUpdated: Boolean(input.qiniu),
+      aliyunSmsUpdated: Boolean(input.aliyunSms),
+      paymentUpdated: Boolean(input.payment),
     });
     return {
       ok: true,
       settings: {
         licenseTrialDays: input.licenseTrialDays,
         qiniu: qiniu ? await getQiniuAdminSettings() : undefined,
+        aliyunSms: aliyunSms ? await getAliyunSmsAdminSettings() : undefined,
+        payment: payment ? await getPaymentAdminSettings() : undefined,
       },
     };
   });

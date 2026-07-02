@@ -7,6 +7,9 @@ import { config } from "./config.js";
 // Swagger UI stays organised by surface + resource. See docs/api-documentation-standard.md.
 export const OPENAPI_TAGS = [
   { name: "public:health", description: "Liveness probe" },
+  { name: "public:auth", description: "User account authentication" },
+  { name: "public:account", description: "User account entitlements" },
+  { name: "public:billing", description: "User billing and products" },
   { name: "public:catalog", description: "Public skill/app catalog" },
   { name: "public:contacts", description: "Public contact / support requests" },
   { name: "public:releases", description: "Public app release feed" },
@@ -18,6 +21,7 @@ export const OPENAPI_TAGS = [
   { name: "public:skills", description: "Public skill packages" },
   { name: "public:telemetry", description: "Usage / skill / diagnostics reporting" },
   { name: "admin:auth", description: "Admin authentication" },
+  { name: "admin:billing", description: "Admin billing products and pricing" },
   { name: "admin:summary", description: "Admin dashboard summary" },
   { name: "admin:audit", description: "Admin audit log" },
   { name: "admin:config-groups", description: "Admin device/config groups" },

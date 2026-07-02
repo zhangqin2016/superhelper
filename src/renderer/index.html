@@ -344,7 +344,59 @@
                 </div>
               </div>
             </section>
-            <section id="settingsPageUsage" class="settings-page" data-settings-page="account" hidden>
+            <section id="settingsPageUsage" class="settings-page account-settings-page" data-settings-page="account" hidden>
+              <div class="account-settings-hero">
+                <div>
+                  <h3 class="settings-page-title" data-i18n="settings.accountTitle">用户账户</h3>
+                  <p class="settings-section-desc" data-i18n="settings.accountDesc">登录后同步官网购买的会员、Token 和生成额度。</p>
+                </div>
+                <p id="accountStatusText" class="account-status-pill" data-i18n="settings.accountLoading">正在读取账户状态…</p>
+              </div>
+
+              <div class="account-settings-layout">
+                <section class="account-settings-card account-settings-card--entitlements">
+                  <div class="account-card-head">
+                    <div>
+                      <h4 data-i18n="settings.accountEntitlementsTitle">权益概览</h4>
+                      <p data-i18n="settings.accountEntitlementsHint">官网购买和免费额度会汇总到这里。</p>
+                    </div>
+                    <button id="accountRefreshBtn" class="settings-action-btn account-card-action" type="button" data-i18n="settings.accountRefresh">刷新额度</button>
+                  </div>
+                  <div id="accountEntitlements" class="account-entitlements" aria-live="polite"></div>
+                </section>
+
+                <form id="accountLoginForm" class="settings-form account-login-form account-settings-card">
+                  <div class="account-card-head">
+                    <div>
+                      <h4 data-i18n="settings.accountLoginTitle">手机号登录</h4>
+                      <p data-i18n="settings.accountLoginHint">官网和客户端使用同一个手机号，购买后自动同步。</p>
+                    </div>
+                  </div>
+
+                  <div class="account-login-grid">
+                    <label class="settings-field account-phone-field">
+                      <span class="settings-field-label" data-i18n="settings.accountPhone">手机号</span>
+                      <input id="accountPhoneInput" class="settings-input" type="tel" autocomplete="tel" inputmode="tel" maxlength="20" />
+                    </label>
+                    <button id="accountSendSmsBtn" class="settings-action-btn account-inline-btn" type="button" data-i18n="settings.accountSendSms">发送验证码</button>
+
+                    <label class="settings-field account-code-field">
+                      <span class="settings-field-label" data-i18n="settings.accountCode">验证码</span>
+                      <input id="accountCodeInput" class="settings-input" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="8" />
+                    </label>
+                    <button id="accountLoginBtn" class="settings-action-btn settings-action-btn--primary account-inline-btn" type="submit" data-i18n="settings.accountLogin">登录</button>
+                  </div>
+
+                  <p id="accountFormStatus" class="settings-form-status account-form-status" hidden></p>
+
+                  <div class="account-management-actions">
+                    <button id="accountBillingBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.accountBilling">购买 / 充值</button>
+                    <button id="accountLogoutBtn" class="settings-action-btn settings-action-btn--danger" type="button" data-i18n="settings.accountLogout">退出登录</button>
+                  </div>
+                </form>
+              </div>
+
+              <div class="settings-field settings-field--divider account-usage-divider"></div>
               <h3 class="settings-page-title" data-i18n="settings.nav.usage">用量</h3>
               <div id="usageDeviceId" class="usage-device-id" aria-live="polite"></div>
               <p id="usageDataSource" class="usage-data-source" hidden></p>
@@ -392,7 +444,7 @@
               <label class="settings-field-label" for="modelPresetSelect" data-i18n="settings.modelCurrent">当前模型</label>
               <select id="modelPresetSelect" class="settings-select" data-i18n-aria-label="settings.modelSelect" aria-label="选择模型"></select>
               <div id="modelCustomList" class="model-custom-list"></div>
-              <div class="settings-field settings-field--divider">
+              <div id="modelCatalogBlock" class="settings-field settings-field--divider">
                 <h4 class="settings-subsection-title" data-i18n="settings.modelAddTitle">添加模型</h4>
                 <p class="settings-section-desc" data-i18n="settings.modelAddDesc">从常用供应商里选一个，挑好模型，填入你自己的 API 密钥即可。</p>
                 <label class="settings-field-label" for="modelCatalogProvider" data-i18n="settings.modelProvider">供应商</label>
@@ -413,7 +465,7 @@
                   <button id="modelCatalogAddBtn" class="settings-action-btn" type="button" data-i18n="settings.modelCustomAdd">添加</button>
                 </div>
               </div>
-              <details class="settings-advanced settings-field settings-field--divider">
+              <details id="modelAdvancedBlock" class="settings-advanced settings-field settings-field--divider">
                 <summary class="settings-subsection-title" data-i18n="settings.modelAdvanced">高级（手动填写接口）</summary>
                 <div class="settings-advanced-body">
                   <h4 class="settings-subsection-title" data-i18n="settings.modelApiTitle">API 连接</h4>

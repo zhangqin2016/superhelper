@@ -564,9 +564,10 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
     }
 
     case "session.next.step.failed": {
+      const err = p.error || p;
       return withProcessEvent(ev, {
         drafts: [],
-        effects: [{ kind: "error", message: errorMessage(p.error) || "Engine error" }],
+        effects: [{ kind: "error", message: errorMessage(err) || "Engine error", cause: err }],
         progress: true,
         terminal: true,
       });
@@ -711,7 +712,13 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
       const err = p.error || p;
       return withProcessEvent(ev, {
         drafts: [],
-        effects: [{ kind: "error", message: errorMessage(err) || "Engine error" }],
+        effects: [{
+          kind: "error",
+          message: errorMessage(err) || "Engine error",
+          cause: err,
+          sessionID: p.sessionID || p.sessionId || "",
+          messageID: p.messageID || p.messageId || p.info?.id || "",
+        }],
         progress: true,
         terminal: true,
       });

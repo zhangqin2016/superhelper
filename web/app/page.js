@@ -34,10 +34,18 @@ export default async function HomePage() {
                     <Download size={18} />
                     {t.home.start}
                   </Link>
-                  <Link href="#experts" className="inline-flex items-center gap-2 rounded-lg border border-white/16 px-6 py-4 font-semibold text-white/82">
-                    {t.home.growth}
+                  <Link href="/account/billing" className="inline-flex items-center gap-2 rounded-lg border border-white/16 px-6 py-4 font-semibold text-white/82">
+                    {t.home.buy}
                     <ArrowRight size={18} />
                   </Link>
+                </div>
+                <div className="mt-7 grid max-w-2xl gap-2 text-sm text-white/62 sm:grid-cols-3">
+                  {t.home.promiseBullets.map((item) => (
+                    <div key={item} className="flex items-center gap-2">
+                      <CheckCircle2 size={15} className="shrink-0 text-mint" />
+                      <span>{item}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
               <div className="hero-machine">
@@ -369,10 +377,16 @@ export default async function HomePage() {
                     {t.home.finalDesc}
                   </p>
                 </div>
-                <Link href="/download" className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-4 font-semibold text-ink">
-                  {t.home.start}
-                  <CheckCircle2 size={18} />
-                </Link>
+                <div className="flex flex-wrap gap-3">
+                  <Link href="/download" className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-4 font-semibold text-ink">
+                    {t.home.start}
+                    <CheckCircle2 size={18} />
+                  </Link>
+                  <Link href="/account/billing" className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/18 px-6 py-4 font-semibold text-white">
+                    {t.home.buy}
+                    <ArrowRight size={18} />
+                  </Link>
+                </div>
               </div>
             </div>
           </div>

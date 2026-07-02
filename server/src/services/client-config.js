@@ -1,5 +1,6 @@
 import { sha256 } from "./security.js";
 import { config } from "../config.js";
+import { verifyAccessToken } from "./account-auth.js";
 import { signModelGatewayToken } from "./model-gateway/auth.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
 import { discoveredModelsSync } from "./model-gateway/model-discovery.js";
@@ -289,19 +290,27 @@ const RESERVED_MODEL_PROVIDER_IDS = new Set([
 
 export function buildEnvManagedClientConfig(serverConfig = config, providers = listModelGatewayProviders(), deliveryModeOverride = null) {
   const deliveryMode = deliveryModeOverride || normalizeDeliveryMode(serverConfig);
-  // Optional global default whitelist: when set, the baseline everyone gets is
-  // limited to these providers; broader menus are granted per scope via config
-  // profiles. Empty = expose all configured providers (unchanged default).
-  const allow = Array.isArray(serverConfig.defaultModelProviders) ? serverConfig.defaultModelProviders : [];
-  const modelPresets = Object.values(providers || {})
-    .filter(
-      (provider) =>
-        provider?.id &&
-        provider?.baseUrl &&
-        provider?.apiKey &&
-        !RESERVED_MODEL_PROVIDER_IDS.has(provider.id) &&
-        (allow.length === 0 || allow.includes(provider.id)),
-    )
+  // The server config is the visible model boundary. Empty allow-list means no
+  // narrowing; an explicit allow-list narrows exactly. If an explicit list
+  // matches nothing, fail closed instead of leaking another provider.
+  const configuredAllow = Array.isArray(serverConfig.defaultModelProviders)
+    ? serverConfig.defaultModelProviders.map(String).map((value) => value.trim()).filter(Boolean)
+    : [];
+  const exposeAllProviders = configuredAllow.some((value) => value === "*" || value.toLowerCase() === "all");
+  const explicitAllow = configuredAllow.length > 0 && !exposeAllProviders;
+  const allowedProviderIds = explicitAllow ? configuredAllow.map((value) => value.toLowerCase()) : [];
+  const configuredChatProviders = Object.values(providers || {}).filter(
+    (provider) =>
+      provider?.id &&
+      provider?.baseUrl &&
+      provider?.apiKey &&
+      !RESERVED_MODEL_PROVIDER_IDS.has(provider.id),
+  );
+  const visibleChatProviders = explicitAllow
+    ? configuredChatProviders.filter((provider) => allowedProviderIds.includes(String(provider.id).toLowerCase()))
+    : configuredChatProviders;
+  const modelProviders = visibleChatProviders;
+  const modelPresets = modelProviders
     .flatMap((provider) => providerPresets(provider, deliveryMode));
 
   const activeProviderId = serverConfig.modelGatewayDefaultProvider || modelPresets[0]?.id?.replace(/-gateway$/, "");
@@ -317,6 +326,9 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
   // / model ID typing. Falls back to the vendored snapshot if the live fetch
   // never succeeded.
   const catalog = getModelCatalog();
+  const visibleCatalog = explicitAllow
+    ? catalog.filter((provider) => allowedProviderIds.includes(String(provider?.id || "").toLowerCase()))
+    : catalog;
 
   const runtimeEnv = runtimeEnvFromServerConfig(serverConfig);
   const effectiveConfig = {
@@ -327,7 +339,7 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
             source: "service",
             activePresetId,
             presets: modelPresets,
-            ...(catalog.length ? { catalog } : {}),
+            ...(visibleCatalog.length ? { catalog: visibleCatalog } : {}),
           },
         }
       : {}),
@@ -488,6 +500,7 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   const configCopy = JSON.parse(JSON.stringify(effectiveConfig || {}));
   const configuredBaseUrl = String(options.publicBaseUrl || "").trim().replace(/\/+$/, "");
   const base = configuredBaseUrl || requestBaseUrl(request);
+  const account = options.account && typeof options.account === "object" ? options.account : {};
 
   // Route media/search either direct or through the server-side proxies,
   // matching the admin-controlled media delivery mode. Direct is the product
@@ -518,6 +531,8 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
           deviceId: input.deviceId,
           licenseId: input.licenseId || "",
           providerId: "vision",
+          userId: account.userId || "",
+          sessionId: account.sessionId || "",
         });
         env.DASHSCOPE_BASE_URL = `${base}/llm/vision`;
         env.VISION_API_KEY = visionToken;
@@ -542,6 +557,8 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
           deviceId: input.deviceId,
           licenseId: input.licenseId || "",
           providerId: "search",
+          userId: account.userId || "",
+          sessionId: account.sessionId || "",
         });
       } else {
         env.WEBSEARCH_IQS_API_URL = config.webSearchIqsApiUrl;
@@ -554,7 +571,13 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
     // so the client connects straight to the provider.
     const gatewayMode = options.mediaDeliveryMode === "gateway";
     const signMediaToken = (providerId) =>
-      signModelGatewayToken({ deviceId: input.deviceId, licenseId: input.licenseId || "", providerId });
+      signModelGatewayToken({
+        deviceId: input.deviceId,
+        licenseId: input.licenseId || "",
+        providerId,
+        userId: account.userId || "",
+        sessionId: account.sessionId || "",
+      });
     const bearerMedia = [
       { key: volcengineKey, route: "volcengine", providerId: "volcengine-media", keyEnv: "VOLCENGINE_API_KEY", baseEnv: "VOLCENGINE_BASE_URL", directBaseUrl: gatewayProviders["volcengine-media"]?.baseUrl || config.volcengineBaseUrl },
       { key: minimaxKey, route: "minimax", providerId: "minimax-media", keyEnv: "MINIMAX_API_KEY", baseEnv: "MINIMAX_BASE_URL", directBaseUrl: gatewayProviders["minimax-media"]?.baseUrl || config.minimaxBaseUrl, directExtra: (e) => { if (config.minimaxGroupId) e.MINIMAX_GROUP_ID = config.minimaxGroupId; } },
@@ -623,10 +646,31 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
         deviceId: input.deviceId,
         licenseId: input.licenseId || "",
         providerId,
+        userId: account.userId || "",
+        sessionId: account.sessionId || "",
       });
     }
   }
   return configCopy;
+}
+
+export async function resolveAccountContextForClientConfig(input, trx) {
+  const token = String(input?.accountAccessToken || "").trim();
+  if (!token) return null;
+  const verified = verifyAccessToken(token);
+  if (!verified.ok || verified.deviceId !== input.deviceId) return null;
+  const session = await trx
+    .selectFrom("user_sessions")
+    .select(["id", "user_id", "device_id", "expires_at", "revoked_at"])
+    .where("id", "=", verified.sessionId)
+    .executeTakeFirst();
+  if (!session || session.revoked_at || new Date(session.expires_at).getTime() <= Date.now()) return null;
+  if (session.user_id !== verified.userId || session.device_id !== verified.deviceId) return null;
+  return {
+    userId: verified.userId,
+    sessionId: verified.sessionId,
+    deviceId: verified.deviceId,
+  };
 }
 
 export function clientConfigTtlMs(serverConfig = config) {

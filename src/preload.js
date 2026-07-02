@@ -163,6 +163,13 @@ contextBridge.exposeInMainWorld("assistantClient", {
   refreshLicense: () => ipcRenderer.invoke("license:refresh"),
   clearLicense: () => ipcRenderer.invoke("license:clear"),
 
+  getAccountStatus: () => ipcRenderer.invoke("account:status"),
+  sendAccountSmsCode: (phone) => ipcRenderer.invoke("account:sms-send", { phone }),
+  loginAccountWithSms: (phone, code) => ipcRenderer.invoke("account:sms-login", { phone, code }),
+  refreshAccountEntitlements: () => ipcRenderer.invoke("account:entitlements"),
+  createAccountBillingLink: () => ipcRenderer.invoke("account:billing-link"),
+  logoutAccount: () => ipcRenderer.invoke("account:logout"),
+
   getServiceSettings: () => ipcRenderer.invoke("service:get-settings"),
   testServiceConnection: () => ipcRenderer.invoke("service:test-connection"),
   listWorkspaceApps: () => ipcRenderer.invoke("apps:catalog"),

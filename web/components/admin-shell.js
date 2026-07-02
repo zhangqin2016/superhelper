@@ -17,6 +17,7 @@ export async function AdminShell({ children, title, subtitle }) {
         { href: "/admin/licenses", label: nav.licenses },
         { href: "/admin/devices", label: nav.devices },
         { href: "/admin/usage", label: nav.usage },
+        { href: "/admin/billing", label: nav.billing || "Billing" },
         { href: "/admin/contacts", label: nav.contacts },
       ],
     },

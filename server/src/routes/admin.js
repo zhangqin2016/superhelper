@@ -4,6 +4,7 @@ import { db } from "../db.js";
 import { config } from "../config.js";
 import { timingSafeEqualText, createAdminSessionToken, verifyAdminSessionToken } from "../services/security.js";
 import { registerAdminAuditRoutes } from "./admin/audit.js";
+import { registerAdminBillingRoutes } from "./admin/billing.js";
 import { registerAdminConfigGroupRoutes } from "./admin/config-groups.js";
 import { registerAdminConfigProfileRoutes } from "./admin/config-profiles.js";
 import { registerAdminContactRoutes } from "./admin/contacts.js";
@@ -108,4 +109,5 @@ export async function adminRoutes(app) {
   registerAdminConfigGroupRoutes(app, { audit });
   registerAdminConfigProfileRoutes(app, { audit });
   registerAdminAuditRoutes(app);
+  registerAdminBillingRoutes(app, { audit });
 }

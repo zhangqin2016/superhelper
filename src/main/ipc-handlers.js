@@ -109,6 +109,19 @@ function registerAll(ctx) {
   ipcMain.handle("license:refresh", () =>
     require("./license-manager").refreshServerLicense());
 
+  ipcMain.handle("account:status", () =>
+    require("./account-manager").accountStatus());
+  ipcMain.handle("account:sms-send", async (_event, payload) =>
+    require("./account-manager").sendSmsCode(payload?.phone || payload));
+  ipcMain.handle("account:sms-login", async (_event, payload) =>
+    require("./account-manager").loginWithSms(payload || {}));
+  ipcMain.handle("account:entitlements", () =>
+    require("./account-manager").refreshEntitlements());
+  ipcMain.handle("account:billing-link", () =>
+    require("./account-manager").createBillingLink());
+  ipcMain.handle("account:logout", () =>
+    require("./account-manager").logout());
+
   ipcMain.handle("service:get-settings", () =>
     require("./service-client").getServiceSettings());
   ipcMain.handle("service:test-connection", () =>

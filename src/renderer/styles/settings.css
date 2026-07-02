@@ -718,6 +718,191 @@
   display: none;
 }
 
+.account-settings-page {
+  max-width: 920px;
+}
+
+.account-settings-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.account-settings-hero .settings-section-desc {
+  max-width: 520px;
+  margin: 0;
+}
+
+.account-status-pill {
+  flex-shrink: 0;
+  max-width: 280px;
+  margin: 0;
+  padding: 8px 11px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elevated) 86%, var(--accent-subtle) 14%);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  box-shadow: var(--top-highlight);
+}
+
+.account-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(300px, 1.1fr);
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 22px;
+}
+
+.account-settings-card {
+  min-width: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg, 14px);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 92%, white 8%), var(--bg-elevated)),
+    var(--bg-elevated);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
+}
+
+.account-login-form {
+  max-width: none;
+  padding: 16px;
+}
+
+.account-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.account-card-head h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.account-card-head p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.account-card-action {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.account-settings-card--entitlements {
+  padding: 16px;
+}
+
+.account-entitlements {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.account-entitlement-card {
+  min-width: 0;
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-surface) 86%, var(--bg-elevated) 14%);
+  box-shadow: var(--top-highlight);
+}
+
+.account-entitlement-card span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.account-entitlement-card strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.account-login-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px;
+  gap: 10px;
+  align-items: end;
+}
+
+.account-login-grid .settings-field {
+  margin-bottom: 0;
+}
+
+.account-inline-btn {
+  width: 100%;
+  min-height: 44px;
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
+.account-form-status {
+  margin: 12px 0 0;
+}
+
+.account-management-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.account-management-actions .settings-action-btn {
+  min-height: 40px;
+}
+
+.account-usage-divider {
+  margin-top: 4px;
+}
+
+@media (max-width: 760px) {
+  .account-settings-hero,
+  .account-card-head {
+    flex-direction: column;
+  }
+
+  .account-status-pill {
+    width: 100%;
+    max-width: none;
+    border-radius: var(--radius);
+  }
+
+  .account-settings-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .account-entitlements,
+  .account-login-grid,
+  .account-management-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
 .skills-list {
   display: block;
   margin-bottom: 12px;

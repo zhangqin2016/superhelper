@@ -34,8 +34,9 @@ const { applyLiveEnvToPool, terminateIdleRunners } = require("../src/main/runner
     get: (id) => runners.get(id),
     terminateSession: (id) => terminated.push(id),
   };
-  terminateIdleRunners(pool);
+  const result = terminateIdleRunners(pool);
   assert.deepEqual(terminated, ["idle"], "config rebuild only terminates idle live runners");
+  assert.deepEqual(result, { terminated: ["idle"] }, "terminated runner ids are returned for callers that need observability");
 }
 
 console.log("runner-live-config: ok");

@@ -44,12 +44,16 @@ function applyLiveEnvToPool(runnerPool, envPatch) {
  * @param {import("./session-runner-pool").SessionRunnerPool} runnerPool
  */
 function terminateIdleRunners(runnerPool) {
+  /** @type {string[]} */
+  const terminated = [];
   for (const sessionId of [...runnerPool.getSessionIds()]) {
     const runner = runnerPool.get(sessionId);
     if (runner?.isAlive() && !runner.isBusy()) {
       runnerPool.terminateSession(sessionId);
+      terminated.push(sessionId);
     }
   }
+  return { terminated };
 }
 
 /**

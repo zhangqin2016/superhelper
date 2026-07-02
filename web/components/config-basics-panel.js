@@ -1,4 +1,4 @@
-import { Field, SubmitButton } from "./admin-forms";
+import { Field, SubmitButton, TextAreaField } from "./admin-forms";
 import { updateSettingsAction } from "../app/admin/actions";
 
 // "Basics" tab of the Config center — global defaults that used to live on the
@@ -6,6 +6,10 @@ import { updateSettingsAction } from "../app/admin/actions";
 // Server-rendered: no client state, just a form posting the server action.
 export function ConfigBasicsPanel({ settings, t }) {
   const qiniu = settings.qiniu || {};
+  const aliyunSms = settings.aliyunSms || {};
+  const payment = settings.payment || {};
+  const alipay = payment.alipay || {};
+  const wechat = payment.wechat || {};
   const delivery = t.admin.settingsDelivery;
   const s = t.admin.settings;
   return (
@@ -59,6 +63,82 @@ export function ConfigBasicsPanel({ settings, t }) {
           placeholder={qiniu.hasSecretKey ? s.qiniuSecretKeyPlaceholder : ""}
           required={!qiniu.hasSecretKey}
         />
+        <div className="lg:col-span-2 border-t border-slate-100 pt-5">
+          <h3 className="text-base font-semibold text-slate-950">{s.aliyunSmsTitle || "阿里云短信"}</h3>
+          <p className="mt-1 text-sm text-slate-500">{s.aliyunSmsDesc || "用于手机号验证码登录。密钥加密存储在服务端数据库，不会下发给客户端。"}</p>
+        </div>
+        <Field label={s.aliyunSmsAccessKeyId || "AccessKeyId"} name="aliyunSmsAccessKeyId" defaultValue={aliyunSms.accessKeyId || ""} required />
+        <Field label={s.aliyunSmsRegion || "Region"} name="aliyunSmsRegion" defaultValue={aliyunSms.region || "cn-hangzhou"} required />
+        <Field label={s.aliyunSmsSignName || "短信签名"} name="aliyunSmsSignName" defaultValue={aliyunSms.signName || ""} required />
+        <Field label={s.aliyunSmsTemplateLogin || "登录模板 Code"} name="aliyunSmsTemplateLogin" defaultValue={aliyunSms.templateLogin || ""} required />
+        <Field
+          label={aliyunSms.hasAccessKeySecret ? (s.aliyunSmsAccessKeySecretKeep || "AccessKeySecret（已配置）") : (s.aliyunSmsAccessKeySecret || "AccessKeySecret")}
+          name="aliyunSmsAccessKeySecret"
+          type="password"
+          placeholder={aliyunSms.hasAccessKeySecret ? (s.aliyunSmsSecretPlaceholder || "留空表示不修改") : ""}
+          required={!aliyunSms.hasAccessKeySecret}
+        />
+        <div className="lg:col-span-2 border-t border-slate-100 pt-5">
+          <h3 className="text-base font-semibold text-slate-950">{s.paymentTitle || "支付配置"}</h3>
+          <p className="mt-1 text-sm text-slate-500">{s.paymentDesc || "配置官网购买使用的支付方式。密钥加密存储在服务端数据库，不会下发给客户端。"}</p>
+        </div>
+        <label className="lg:col-span-2 flex items-center gap-2 text-sm text-slate-700">
+          <input className="h-4 w-4 rounded border-slate-300 text-brand" name="paymentFakePaymentsEnabled" type="checkbox" defaultChecked={Boolean(payment.fakePaymentsEnabled)} />
+          {s.paymentFakePaymentsEnabled || "启用模拟支付"}
+        </label>
+
+        <div className="lg:col-span-2 rounded-xl border border-slate-200 p-4">
+          <label className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <input className="h-4 w-4 rounded border-slate-300 text-brand" name="alipayEnabled" type="checkbox" defaultChecked={Boolean(alipay.enabled)} />
+            {s.alipayTitle || "支付宝"}
+          </label>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Field label={s.alipayAppId || "AppId"} name="alipayAppId" defaultValue={alipay.appId || ""} />
+            <Field label={s.alipayMerchantId || "商户号 / SellerId"} name="alipayMerchantId" defaultValue={alipay.merchantId || ""} />
+            <Field label={s.alipayNotifyUrl || "异步通知 URL"} name="alipayNotifyUrl" defaultValue={alipay.notifyUrl || ""} />
+            <Field label={s.alipayReturnUrl || "同步返回 URL"} name="alipayReturnUrl" defaultValue={alipay.returnUrl || ""} />
+            <TextAreaField label={s.alipayPublicKey || "支付宝公钥"} name="alipayPublicKey" defaultValue={alipay.publicKey || ""} rows={4} />
+            <TextAreaField
+              label={alipay.hasPrivateKey ? (s.alipayPrivateKeyKeep || "应用私钥（已配置）") : (s.alipayPrivateKey || "应用私钥")}
+              name="alipayPrivateKey"
+              placeholder={alipay.hasPrivateKey ? (s.paymentSecretPlaceholder || "留空表示不修改") : ""}
+              rows={4}
+            />
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input className="h-4 w-4 rounded border-slate-300 text-brand" name="alipaySandbox" type="checkbox" defaultChecked={Boolean(alipay.sandbox)} />
+              {s.paymentSandbox || "沙箱模式"}
+            </label>
+          </div>
+        </div>
+
+        <div className="lg:col-span-2 rounded-xl border border-slate-200 p-4">
+          <label className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <input className="h-4 w-4 rounded border-slate-300 text-brand" name="wechatEnabled" type="checkbox" defaultChecked={Boolean(wechat.enabled)} />
+            {s.wechatTitle || "微信支付"}
+          </label>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Field label={s.wechatAppId || "AppId"} name="wechatAppId" defaultValue={wechat.appId || ""} />
+            <Field label={s.wechatMchId || "商户号 MchId"} name="wechatMchId" defaultValue={wechat.mchId || ""} />
+            <Field label={s.wechatCertSerialNo || "商户证书序列号"} name="wechatCertSerialNo" defaultValue={wechat.certSerialNo || ""} />
+            <Field label={s.wechatNotifyUrl || "支付通知 URL"} name="wechatNotifyUrl" defaultValue={wechat.notifyUrl || ""} />
+            <Field
+              label={wechat.hasApiV3Key ? (s.wechatApiV3KeyKeep || "API v3 Key（已配置）") : (s.wechatApiV3Key || "API v3 Key")}
+              name="wechatApiV3Key"
+              type="password"
+              placeholder={wechat.hasApiV3Key ? (s.paymentSecretPlaceholder || "留空表示不修改") : ""}
+            />
+            <TextAreaField
+              label={wechat.hasPrivateKey ? (s.wechatPrivateKeyKeep || "商户私钥（已配置）") : (s.wechatPrivateKey || "商户私钥")}
+              name="wechatPrivateKey"
+              placeholder={wechat.hasPrivateKey ? (s.paymentSecretPlaceholder || "留空表示不修改") : ""}
+              rows={4}
+            />
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input className="h-4 w-4 rounded border-slate-300 text-brand" name="wechatSandbox" type="checkbox" defaultChecked={Boolean(wechat.sandbox)} />
+              {s.paymentSandbox || "沙箱模式"}
+            </label>
+          </div>
+        </div>
         <div className="flex items-end">
           <SubmitButton>{s.save}</SubmitButton>
         </div>

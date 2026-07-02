@@ -50,6 +50,7 @@ STATE_SCHEMA_VERSION = 1
 KNOWN_PACKS = {
     "libreoffice": "LibreOffice: local Office/PDF conversion and spreadsheet recalculation (~500-800MB download)",
     "pro-pdf": "Docling: layout analysis, reading order, and table recovery for complex PDFs (~230MB download)",
+    "large-document": "Large document engine: PyMuPDF, pikepdf, calamine, DuckDB/Arrow/Polars, and streaming parsers for big PDF/Word/Excel/CSV/JSON files",
     "pandoc": "Pandoc: Markdown, HTML, LaTeX, EPUB, and related document conversion",
     "pillow": "Pillow: core image loading, resizing, conversion, and thumbnails",
     "opencv": "OpenCV: image preprocessing, transforms, and computer-vision utilities",
