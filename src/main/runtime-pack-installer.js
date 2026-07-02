@@ -262,6 +262,14 @@ function extractArtifact(archivePath, targetDir, artifact) {
   return "tar.gz";
 }
 
+function archiveExtensionForArtifact(artifact = {}) {
+  const format = String(artifact?.format || "").toLowerCase();
+  const url = String(artifact?.url || "").toLowerCase().split("?")[0];
+  if (format === "zip" || url.endsWith(".zip")) return ".zip";
+  if (format === "tgz" || url.endsWith(".tgz")) return ".tgz";
+  return ".tar.gz";
+}
+
 async function resolveArtifact(packId) {
   const result = await require("./service-client").runtimePackArtifact(packId, platformKey());
   const artifact = result?.json?.artifact || result?.artifact || null;
@@ -459,7 +467,7 @@ async function runRuntimePackInstall(id, job) {
   const artifact = resolved.artifact;
   const target = packDir(id);
   const cacheDir = userDataPath("runtime-packs");
-  const archivePath = path.join(cacheDir, `.${id}-${Date.now()}.pack`);
+  const archivePath = path.join(cacheDir, `.${id}-${Date.now()}.pack${archiveExtensionForArtifact(artifact)}`);
 
   try {
     fs.rmSync(target, { recursive: true, force: true });
@@ -516,6 +524,7 @@ function uninstallRuntimePack(packId) {
 }
 
 module.exports = {
+  archiveExtensionForArtifact,
   checkRuntimePackAvailability,
   installRuntimePack,
   installingRuntimePackIds,

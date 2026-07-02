@@ -55,6 +55,16 @@ try {
   });
 
   const installer = require("../src/main/runtime-pack-installer.js");
+  assert.equal(
+    installer.archiveExtensionForArtifact({ format: "zip", url: "https://cdn.example.com/libreoffice.zip" }),
+    ".zip",
+    "Windows Expand-Archive requires zip runtime-pack temp files to keep a .zip extension",
+  );
+  assert.equal(
+    installer.archiveExtensionForArtifact({ format: "tar.gz", url: "https://cdn.example.com/pack.tar.gz" }),
+    ".tar.gz",
+    "tar.gz runtime-pack temp files should keep a tar.gz extension for diagnostics and extraction",
+  );
   const catalog = installer.listRuntimePacks();
   assert.equal(catalog.ok, true);
   assert.deepEqual(catalog.categories.map((category) => category.id), ["document", "image", "browser", "media"]);
