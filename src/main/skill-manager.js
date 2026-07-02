@@ -1228,7 +1228,12 @@ async function syncServiceSkillPackages({ fetch = true } = {}) {
     const updateAvailable =
       isInstalled && compareSemver(entry.latestVersion, manifest.version || "0.0.0") > 0;
     const shouldInstall = !isInstalled && Boolean(entry.defaultEligible);
-    const shouldUpdate = isInstalled && stateEntry?.source === "remote" && updateAvailable;
+    const serviceManagedAutoUpdate =
+      Boolean(entry.defaultEligible) && (entry.sourceKind === "lily" || !entry.sourceKind);
+    const shouldUpdate =
+      isInstalled &&
+      updateAvailable &&
+      (stateEntry?.source === "remote" || serviceManagedAutoUpdate);
 
     if (!shouldInstall && !shouldUpdate) {
       skipped.push(entry.id);

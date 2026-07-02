@@ -640,6 +640,37 @@ if (!installedCurated?.enabled || !installedCurated.defaultEligible || installed
 if (installedCurated.name !== curatedSkill.name) {
   throw new Error(`remote installed skill should prefer registry display name, got ${installedCurated.name}`);
 }
+
+curatedSkill.latestVersion = "1.0.1";
+const curatedDir = skillManagerCurated.installedSkillDir(curatedSkill.id);
+const curatedManifestPath = path.join(curatedDir, "skill.manifest.json");
+fs.writeFileSync(
+  curatedManifestPath,
+  JSON.stringify({
+    schemaVersion: 1,
+    id: curatedSkill.id,
+    name: "Bundled Stale Skill",
+    description: "Stale bundled manifest description",
+    version: "1.0.0",
+  }, null, 2),
+  "utf8",
+);
+const staleState = skillManagerCurated.loadSkillsState();
+staleState.skills[curatedSkill.id] = {
+  id: curatedSkill.id,
+  enabled: true,
+  source: "bundled",
+  installedVersion: "1.0.0",
+};
+skillManagerCurated.saveSkillsState();
+const bundledSourceSync = await skillManagerCurated.syncServiceSkillPackages({ fetch: true });
+if (!bundledSourceSync.ok || !bundledSourceSync.updated.includes(curatedSkill.id)) {
+  throw new Error(`defaultEligible service skill should update stale bundled installs: ${JSON.stringify(bundledSourceSync)}`);
+}
+const updatedBundledSource = skillManagerCurated.listSkillsPublic().find((skill) => skill.id === curatedSkill.id);
+if (updatedBundledSource?.version !== "1.0.1" || updatedBundledSource.source !== "remote") {
+  throw new Error(`stale bundled service skill should become remote 1.0.1: ${JSON.stringify(updatedBundledSource)}`);
+}
 fs.rmSync(tmpServiceCurated, { recursive: true, force: true });
 global.fetch = originalFetch;
 delete require.cache[serviceClientPath];
