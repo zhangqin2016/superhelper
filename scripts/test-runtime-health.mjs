@@ -43,6 +43,7 @@ function makeExecutable(file, body) {
 
 try {
   const base = await health.checkBaseRuntimeHealth();
+  assert(base.ok, `base runtime health should pass when required checks pass: ${JSON.stringify(base)}`);
   assert(
     !base.checks.some((check) => check.id === "libreoffice"),
     `LibreOffice is an optional dependency pack and must not be reported as a base runtime failure: ${JSON.stringify(base.checks)}`,

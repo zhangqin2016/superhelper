@@ -9,7 +9,7 @@ const { PACK_SPECS } = require("./runtime-pack-specs");
 const pexecFile = promisify(execFile);
 const CHECK_TIMEOUT_MS = 20_000;
 
-const BASE_PYTHON_MODULES = [
+const REQUIRED_BASE_PYTHON_MODULES = [
   { id: "pandas", module: "pandas" },
   { id: "numpy", module: "numpy" },
   { id: "openpyxl", module: "openpyxl" },
@@ -19,15 +19,25 @@ const BASE_PYTHON_MODULES = [
   { id: "pdfplumber", module: "pdfplumber" },
   { id: "pypdfium2", module: "pypdfium2" },
   { id: "pypdf", module: "pypdf" },
-  { id: "pillow", module: "PIL" },
-  { id: "opencv", module: "cv2" },
-  { id: "rapidocr", module: "rapidocr_onnxruntime" },
-  { id: "onnxruntime", module: "onnxruntime" },
   { id: "markitdown", module: "markitdown" },
-  { id: "mammoth", module: "mammoth" },
   { id: "docxtpl", module: "docxtpl" },
   { id: "playwright-python", module: "playwright" },
 ];
+
+const OPTIONAL_BASE_PYTHON_MODULES = [
+  { id: "pillow", module: "PIL", required: false },
+  { id: "opencv", module: "cv2", required: false },
+  { id: "rapidocr", module: "rapidocr_onnxruntime", required: false },
+  { id: "onnxruntime", module: "onnxruntime", required: false },
+  { id: "mammoth", module: "mammoth", required: false },
+];
+
+function basePythonModulePolicy() {
+  return {
+    required: REQUIRED_BASE_PYTHON_MODULES.map((item) => ({ ...item, required: true })),
+    optional: OPTIONAL_BASE_PYTHON_MODULES.map((item) => ({ ...item })),
+  };
+}
 
 function okCheck(id, detail = {}) {
   return { id, ok: true, status: "ok", ...detail };
@@ -151,19 +161,23 @@ async function checkRuntimePackHealth(packId) {
 }
 
 async function checkPythonModules(python) {
-  if (!python) return BASE_PYTHON_MODULES.map((item) => missingCheck(item.id, "PYTHON_RUNTIME_MISSING", { module: item.module }));
+  const policy = basePythonModulePolicy();
+  const modulesToCheck = [...policy.required, ...policy.optional];
+  if (!python) return modulesToCheck.map((item) => missingCheck(item.id, "PYTHON_RUNTIME_MISSING", { module: item.module, required: item.required !== false }));
   const code = [
     "import importlib.util, json, sys",
-    `mods = ${JSON.stringify(BASE_PYTHON_MODULES)}`,
+    `mods = json.loads(${JSON.stringify(JSON.stringify(modulesToCheck))})`,
     "print(json.dumps([{**m, 'ok': importlib.util.find_spec(m['module']) is not None} for m in mods]))",
   ].join("\n");
   try {
     const result = await pexecFile(python, ["-c", code], { timeout: CHECK_TIMEOUT_MS, maxBuffer: 1024 * 1024 });
     return JSON.parse(result.stdout).map((item) =>
-      item.ok ? okCheck(item.id, { module: item.module }) : missingCheck(item.id, "MODULE_MISSING", { module: item.module }),
+      item.ok
+        ? okCheck(item.id, { module: item.module, required: item.required !== false })
+        : missingCheck(item.id, "MODULE_MISSING", { module: item.module, required: item.required !== false }),
     );
   } catch (error) {
-    return BASE_PYTHON_MODULES.map((item) => failedCheck(item.id, error?.message || error, { module: item.module }));
+    return modulesToCheck.map((item) => failedCheck(item.id, error?.message || error, { module: item.module, required: item.required !== false }));
   }
 }
 
@@ -173,19 +187,22 @@ async function checkBaseRuntimeHealth() {
   const python = runtimePython.resolveVenvPython();
   const uv = runtimePython.resolveBundledUv();
   const nodeDir = root ? runtimePython.resolveBundledNodeDir(root) : null;
-  const node = nodeDir ? path.join(nodeDir, process.platform === "win32" ? "node.exe" : "node") : "";
-  const env = runtimePython.getRuntimeEnvExtras();
-  const sofficeDir = env.LILY_LIBREOFFICE_PROGRAM || "";
-  const soffice = sofficeDir ? path.join(sofficeDir, process.platform === "win32" ? "soffice.exe" : "soffice") : "";
+  let node = nodeDir ? path.join(nodeDir, process.platform === "win32" ? "node.exe" : "node") : "";
+  if (!node) {
+    try {
+      node = require("./runtime-node").ensureRuntimeNodeShim();
+    } catch {
+      node = "";
+    }
+  }
   const checks = [
     await runExecutable("python", python, ["--version"]),
     await runExecutable("uv", uv, ["--version"]),
     await runExecutable("node", node, ["--version"]),
-    await runExecutable("libreoffice", soffice, ["--version"]),
   ];
   const modules = await checkPythonModules(python);
   return {
-    ok: Boolean(root) && checks.every((check) => check.ok) && modules.every((check) => check.ok),
+    ok: Boolean(root) && checks.every((check) => check.ok) && modules.every((check) => check.ok || check.required === false),
     root: root || "",
     checks,
     modules,
@@ -205,6 +222,7 @@ async function checkDependencyHealth(packId = "") {
 }
 
 module.exports = {
+  basePythonModulePolicy,
   checkBaseRuntimeHealth,
   checkDependencyHealth,
   checkRuntimePackHealth,
