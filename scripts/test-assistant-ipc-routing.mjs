@@ -17,6 +17,7 @@ const calls = {
   dismissed: [],
   removedLearned: [],
   clearedLearned: [],
+  appendedLearned: [],
   categoryPrefs: [],
 };
 const proposals = [
@@ -71,7 +72,10 @@ Module._load = function patchedLoad(request, parent, isMain) {
   }
   if (request.endsWith("./learned-context") || request === "./learned-context") {
     return {
-      appendLearnedConvention: () => {},
+      appendLearnedConvention: (projectId, text) => {
+        calls.appendedLearned.push({ projectId, text });
+        return "- remembered\n";
+      },
       clearLearnedConventions: (projectId) => {
         calls.clearedLearned.push(projectId);
         learned = [];
@@ -116,6 +120,7 @@ try {
   const sessions = new Map([
     ["active-session", { id: "active-session", projectId: "active-project" }],
     ["target-session", { id: "target-session", projectId: "target-project" }],
+    ["no-project-session", { id: "no-project-session" }],
   ]);
   const ctx = {
     sessionManager: {
@@ -198,6 +203,27 @@ try {
     preferences: { schemaVersion: 1, disabledKinds: ["project_memory"] },
     categories: ["learned_conventions", "project_memory"],
   });
+
+  const rememberResult = await handlers.get("assistant:remember-convention")(null, {
+    sessionId: "target-session",
+    text: "记住这个项目的输出格式",
+  });
+  assert.equal(rememberResult.ok, true);
+  assert.deepEqual(calls.appendedLearned.at(-1), {
+    projectId: "target-project",
+    text: "记住这个项目的输出格式",
+  });
+
+  const rememberNoProject = await handlers.get("assistant:remember-convention")(null, {
+    sessionId: "no-project-session",
+    text: "不能写到全局",
+  });
+  assert.deepEqual(rememberNoProject, { ok: false, error: "NO_PROJECT" });
+  assert.equal(
+    calls.appendedLearned.some((item) => item.text === "不能写到全局"),
+    false,
+    "remember-convention must fail before writing when session has no project",
+  );
 
   const setCategory = await handlers.get("assistant:memory:set-category-enabled")(null, {
     sessionId: "target-session",

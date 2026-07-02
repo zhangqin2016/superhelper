@@ -39,6 +39,10 @@ try {
   assert(runner, "runner is created");
   assert.deepEqual(seenSkillIds, ["lily-write", "learned-crm"],
     "SessionRunnerPool passes the session skill scope into MCP assembly");
+  const cfg = JSON.parse(runner.spawnOptions.opencodeConfig || "{}");
+  const skillPaths = cfg.skills?.paths || [];
+  assert(!skillPaths.some((p) => String(p).endsWith(path.join("lily-config", "skills"))),
+    "shared OpenCode config must not expose the global skill registry across workspaces");
   console.log("session-runner-pool-skill-scope: ok");
 } finally {
   if (oldBin === undefined) delete process.env.OPENCODE_BIN;

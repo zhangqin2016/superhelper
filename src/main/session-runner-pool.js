@@ -56,7 +56,7 @@ class SessionRunnerPool {
       lilyEnv: resolveLilyEnv(),
       mcpServers: this._opencodeMcpServers(extra.activeSkillIds || []),
       pluginPaths: this._opencodePlugins(),
-      skillPaths: this._opencodeSkillPaths(),
+      skillPaths: this._opencodeSkillPaths(extra.activeSkillIds || [], sessionId),
       disallowedTools: extra.disallowedTools || [],
       // Static Lily identity header as the primary-agent prompt: suppresses
       // OpenCode's coding-CLI baseline (default.txt) that otherwise mis-frames
@@ -178,17 +178,13 @@ class SessionRunnerPool {
     }
   }
 
-  /** Lily-installed skills directory for the engine's native `skill` registry.
-   *  AGENT.md tells the model which skills are enabled; this path makes those
-   *  same skills discoverable to the runtime tool instead of text-only guidance. */
-  _opencodeSkillPaths() {
-    try {
-      const path = require("node:path");
-      const { agentConfigDir } = require("./config");
-      return [path.join(agentConfigDir(), "skills")];
-    } catch {
-      return [];
-    }
+  /** Lily-owned skill isolation is enforced by the per-session AGENT.md and MCP
+   *  broker scope. Do not mount the global installed-skill directory into
+   *  OpenCode's native registry: the shared serve config is app-wide, so a global
+   *  skill path lets inactive or other-workspace learned skills appear in an
+   *  unrelated conversation. */
+  _opencodeSkillPaths(_activeSkillIds = [], _sessionId = "") {
+    return [];
   }
 
   /** The session's AGENT.md CONTENT (Lily global instructions + ALL enabled skill

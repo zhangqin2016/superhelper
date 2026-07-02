@@ -114,6 +114,15 @@ try {
   if (buildLearnedSection("proj_other") !== "") {
     throw new Error("conventions are scoped per project");
   }
+  if (appendLearnedConvention("", "不能写到全局默认记忆") !== null) {
+    throw new Error("missing projectId must not create a global learned convention");
+  }
+  if (fs.existsSync(path.join(tempRoot, "learned-conventions", "default.md"))) {
+    throw new Error("missing projectId must not write learned-conventions/default.md");
+  }
+  if (buildLearnedSection("") !== "") {
+    throw new Error("missing projectId must not read a global learned section");
+  }
 
   // L3: draft validation + registration flow.
   const inbox = path.join(tempRoot, "inbox");

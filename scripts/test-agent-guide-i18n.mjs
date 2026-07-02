@@ -129,6 +129,7 @@ function flattenStrings(value, prefix = "") {
 
 const enGuide = skillManager.buildAgentGuideContent([], "en");
 assert.match(enGuide, /Reply in the primary language of the user's latest message/);
+assert.match(enGuide, /do not invent global skills or describe project memory as a skill/i);
 assert.doesNotMatch(enGuide, /Reply in English by default/);
 assertNoLocalizedGuideLeak(enGuide, "English agent guide");
 assertNoStaticDependencyClaims(enGuide, "English agent guide");
@@ -140,6 +141,7 @@ assertNoLocalizedGuideLeak(arGuide, "Arabic agent guide");
 assertNoStaticDependencyClaims(arGuide, "Arabic agent guide");
 
 const zhGuide = skillManager.buildAgentGuideContent([], "zh-CN");
+assert.match(zhGuide, /禁止编造“全局技能”或把项目记忆误说成技能/);
 assertNoStaticDependencyClaims(zhGuide, "Chinese agent guide");
 
 for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {

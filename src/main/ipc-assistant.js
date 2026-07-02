@@ -233,8 +233,10 @@ function registerAssistantHandlers(ctx) {
     if (!sessionId || !text) return { ok: false, error: "INVALID_PAYLOAD" };
     const session = sessionManager.findById(sessionId);
     if (!session) return { ok: false, error: "NOT_FOUND" };
+    if (!session.projectId) return { ok: false, error: "NO_PROJECT" };
     const { appendLearnedConvention } = require("./learned-context");
-    appendLearnedConvention(session.projectId, text);
+    const entry = appendLearnedConvention(session.projectId, text);
+    if (!entry) return { ok: false, error: "INVALID_PAYLOAD" };
     refreshSessionGuide(projectManager, session);
     return { ok: true };
   });

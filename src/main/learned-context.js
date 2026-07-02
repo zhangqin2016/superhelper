@@ -33,17 +33,31 @@ function clip(text, limit = MAX_SECTION_CHARS) {
   return `${value.slice(0, limit)}\n${isZh() ? "…（已截断）" : "… (truncated)"}`;
 }
 
+function normalizeProjectId(projectId) {
+  return String(projectId || "").trim();
+}
+
 function safeProjectFile(projectId) {
-  return `${String(projectId || "default").replace(/[^a-zA-Z0-9._-]/g, "_")}.md`;
+  const id = normalizeProjectId(projectId);
+  if (!id) return "";
+  return `${id.replace(/[^a-zA-Z0-9._-]/g, "_")}.md`;
 }
 
 function learnedConventionsPath(projectId) {
-  return userDataPath("learned-conventions", safeProjectFile(projectId));
+  const file = safeProjectFile(projectId);
+  if (!file) return "";
+  try {
+    return userDataPath("learned-conventions", file);
+  } catch {
+    return "";
+  }
 }
 
 function readLearnedConventions(projectId) {
+  const filePath = learnedConventionsPath(projectId);
+  if (!filePath) return "";
   try {
-    return fs.readFileSync(learnedConventionsPath(projectId), "utf8");
+    return fs.readFileSync(filePath, "utf8");
   } catch {
     return "";
   }
@@ -83,6 +97,7 @@ function listLearnedConventions(projectId) {
 
 function writeConventionEntries(projectId, entries) {
   const filePath = learnedConventionsPath(projectId);
+  if (!filePath) return false;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const lines = (Array.isArray(entries) ? entries : [])
     .map((entry) => {
@@ -109,6 +124,7 @@ function appendLearnedConvention(projectId, text) {
   const value = String(text || "").replace(/\s+/g, " ").trim();
   if (!value) return null;
   const filePath = learnedConventionsPath(projectId);
+  if (!filePath) return null;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const entry = `- ${value}  <!-- ${new Date().toISOString().slice(0, 10)} -->\n`;
   fs.appendFileSync(filePath, entry, "utf8");
@@ -134,6 +150,7 @@ function writeLearnedConventions(projectId, text) {
   const value = String(text || "").trim();
   if (!value) return false;
   const filePath = learnedConventionsPath(projectId);
+  if (!filePath) return false;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${value}\n`, "utf8");
   return true;
