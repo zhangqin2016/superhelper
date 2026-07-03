@@ -1,7 +1,7 @@
 "use strict";
 
 const STRONG_CLAIM_RE =
-  /(已(?:修复|完成|部署|发布|验证|解决|确认)|修好了|完成了|部署完成|发布完成|生效了|原因是|根因是|问题在于|fixed|completed|deployed|verified|root cause|the cause is)/i;
+  /(已(?:修复|完成|部署|发布|验证|解决|确认)|修好了|完成了|部署完成|发布完成|生效了|原因是|根因是|问题在于|会导致|导致|失败|缺陷|fixed|completed|deployed|verified|root cause|the cause is|bug|regression|failed|unsupported)/i;
 
 const EVIDENCE_MARKER_RE =
   /(证据|依据|来源|已验证|验证结果|测试通过|命令输出|日志|文件|行号|screenshot|source|evidence|verified|test output|command output|log|fixture|\/[\w.-]+\/|\b[\w.-]+\.(?:js|mjs|cjs|ts|tsx|json|md|py|java|css|html):\d+\b)/i;
@@ -9,9 +9,13 @@ const EVIDENCE_MARKER_RE =
 const ROOT_CAUSE_RE = /(原因是|根因是|问题在于|root cause|the cause is)/i;
 const FIXED_RE = /(已(?:修复|解决)|修好了|fixed|resolved)/i;
 const VERIFIED_RE = /(已(?:验证|确认)|验证通过|测试通过|verified|confirmed)/i;
+const MEDIA_OUTPUT_RE = /(已(?:生成|保存|导出|创建)|生成了|保存到|导出到|created|generated|saved|exported)/i;
+const SOURCE_CLAIM_RE = /(bug|regression|缺陷|会导致|导致|错误|不正确|错了|broken|incorrect)/i;
 const COVERAGE_RE = /(全部|全量|所有(?:问题|相关|文件|位置|地方|出现|引用|调用)|彻底(?:找出|检查|排查)|不要漏|all occurrences|all related|every occurrence)/i;
 const NO_FINDING_RE = /(未发现|没有发现|没发现|不存在|没有.*问题|no (?:issue|problem|bug)s? found|nothing (?:else )?(?:found|left))/i;
 const FRESH_RE = /(最新|当前|现在|实时|today|latest|current|now)/i;
+const EVIDENCE_GAP_DISCLOSURE_RE =
+  /(无法(?:读取|解析|确认|验证)|不能(?:读取|解析|确认|验证)|未能(?:读取|解析|确认|验证)|没有(?:读取到|解析出|验证)|证据不足|无法确认|未验证|unverified|unable to (?:read|parse|verify|confirm)|could not (?:read|parse|verify|confirm)|cannot (?:read|parse|verify|confirm))/i;
 
 function hasCount(summary, key) {
   const value = summary?.counts?.[key];
@@ -59,6 +63,23 @@ function assessPolicyBackedClaims(text, { turnPolicy = null, evidenceSummary = n
   if (VERIFIED_RE.test(text) && !summary.hasVerificationEvidence && !hasCount(summary, "verifications")) {
     return { ok: false, reason: "verified_claim_without_verification" };
   }
+  if (
+    turnPolicy?.taskType === "media_generation" &&
+    MEDIA_OUTPUT_RE.test(text) &&
+    fileChangeCount <= 0 &&
+    !summary.hasFileChangeEvidence &&
+    !hasCount(summary, "fileWrites")
+  ) {
+    return { ok: false, reason: "media_output_without_file_evidence" };
+  }
+  if (turnPolicy?.requiresSourceCoverage && SOURCE_CLAIM_RE.test(text)) {
+    if (!summary.hasSearchEvidence && !hasCount(summary, "fileSearches") && (summary.coverage?.candidateCount || 0) <= 0) {
+      return { ok: false, reason: "source_claim_without_search_evidence" };
+    }
+    if (!summary.hasFileReadEvidence && !hasCount(summary, "filesRead")) {
+      return { ok: false, reason: "source_claim_without_file_read_evidence" };
+    }
+  }
   const coverageAssertion =
     COVERAGE_RE.test(text) ||
     NO_FINDING_RE.test(text) ||
@@ -93,7 +114,9 @@ function assessFinalAnswerEvidence({
     return { ok: true, required, strongClaim: false, hasEvidence: false, reason: "" };
   }
   const missingKind = missingRequiredEvidenceKind(evidencePolicy, evidenceSummary || {});
-  if (missingKind && (turnPolicy?.taskType === "architecture_audit" || STRONG_CLAIM_RE.test(text))) {
+  const taskType = turnPolicy?.taskType || "";
+  const strictTaskEvidence = new Set(["architecture_audit", "document_work"]).has(taskType);
+  if (missingKind && (strictTaskEvidence || STRONG_CLAIM_RE.test(text)) && !EVIDENCE_GAP_DISCLOSURE_RE.test(text)) {
     return {
       ok: false,
       required,

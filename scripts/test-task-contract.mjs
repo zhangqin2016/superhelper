@@ -98,6 +98,29 @@ assert.equal(
   false,
   "generic image recognition must not be routed as platform agent-quality work",
 );
+assert.equal(imageRecognition.active, true, "image work should get a lightweight media evidence contract");
+assert.equal(imageRecognition.kind, "media");
+assert.equal(imageRecognition.taskType, "media_generation");
+
+const documentQuestion = buildTaskContract({
+  text: "分析这个 PDF 文档",
+  project: { path: ROOT },
+});
+assert.equal(documentQuestion.active, true, "document work should get an evidence contract");
+assert.equal(documentQuestion.kind, "document");
+assert.equal(documentQuestion.taskType, "document_work");
+assert(documentQuestion.evidencePolicy.requiredEvidenceKinds.includes("document"));
+assert(documentQuestion.evidencePolicy.allowedSources.includes("document_evidence"));
+
+const mediaRepair = buildTaskContract({
+  text: "修复这张图片",
+  project: { path: ROOT },
+});
+assert.equal(mediaRepair.active, true, "media repair should not collapse into generic bugfix");
+assert.equal(mediaRepair.kind, "media");
+assert.equal(mediaRepair.taskType, "media_generation");
+assert(!mediaRepair.evidencePolicy.requiredEvidenceKinds.includes("file_write"));
+assert(mediaRepair.evidencePolicy.allowedSources.includes("generated_or_modified_file"));
 
 const genericTaskWord = classifyTask({ text: "这个任务是记录今天做了导入 Excel 的优化" });
 assert.equal(
@@ -148,6 +171,10 @@ assert.equal(imsdkAnalysis.taskType, "code_change");
 assert.equal(imsdkAnalysis.sourceCoveragePolicy.required, true);
 assert(imsdkAnalysis.sourceCoveragePolicy.explicitTerms.some((term) => term.toLowerCase() === "imsdk"));
 assert(!imsdkAnalysis.sourceCoveragePolicy.explicitTerms.some((term) => term.toLowerCase() === "cst"));
+assert(
+  !imsdkAnalysis.evidencePolicy.requiredEvidenceKinds.includes("file_search"),
+  "source search is claim-triggered by turn policy, not forced on every code task",
+);
 
 const imsdkWhat = buildTaskContract({
   text: "imsdk 是什么",

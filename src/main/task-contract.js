@@ -40,7 +40,7 @@ const DEFAULT_TASK_INTELLIGENCE_REGISTRY = Object.freeze({
     ".yaml",
     ".yml",
   ],
-  priority: ["release", "runtime", "architecture_audit", "agent_quality", "server", "ui", "bugfix", "config", "code", "document", "media"],
+  priority: ["release", "runtime", "architecture_audit", "agent_quality", "server", "ui", "config", "code", "document", "media", "bugfix"],
   activatingCategories: ["bugfix", "ui", "server", "release", "runtime", "architecture_audit", "agent_quality", "config", "code"],
   lowInformationContinuation: {
     terms: ["继续", "接着", "然后", "展开", "继续说", "继续讲", "continue", "go on", "next"],
@@ -747,6 +747,22 @@ function evidenceSourcesForTaskType(taskType) {
         "effective_runtime_config",
         "secret_boundary_check",
       ]);
+    case "document_work":
+      return uniqueStrings([
+        ...common,
+        "document_evidence",
+        "page_or_sheet_coverage",
+        "extracted_text_or_table",
+        "output_file_or_open_check",
+      ]);
+    case "media_generation":
+      return uniqueStrings([
+        ...common,
+        "source_media_or_prompt",
+        "generated_or_modified_file",
+        "preview_or_openable_path",
+        "provider_or_tool_output",
+      ]);
     default:
       return uniqueStrings(common);
   }
@@ -756,6 +772,8 @@ function requiredEvidenceKindsForTaskType(taskType) {
   switch (taskType) {
     case "architecture_audit":
       return ["file_search", "file_read"];
+    case "document_work":
+      return ["document"];
     case "release_deploy":
       return ["verification"];
     default:

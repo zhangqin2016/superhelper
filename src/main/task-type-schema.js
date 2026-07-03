@@ -85,14 +85,14 @@ const TASK_TYPES = Object.freeze({
     id: "document_work",
     label: "Document work",
     categories: ["document"],
-    active: false,
+    active: true,
     verification: ["page_coverage", "tables_images", "output_opens"],
   },
   media_generation: {
     id: "media_generation",
     label: "Media generation",
     categories: ["media"],
-    active: false,
+    active: true,
     verification: ["progress_visible", "preview_or_openable_path", "provider_error_surface"],
   },
 });
@@ -104,11 +104,11 @@ const TASK_TYPE_PRIORITY = Object.freeze([
   "agent_quality",
   "server_change",
   "ui_change",
-  "bug_investigation",
   "configuration_change",
   "code_change",
   "document_work",
   "media_generation",
+  "bug_investigation",
   "general",
 ]);
 

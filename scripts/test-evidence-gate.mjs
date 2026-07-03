@@ -156,4 +156,79 @@ const architectureWithRequiredEvidence = assessFinalAnswerEvidence({
 });
 assert.equal(architectureWithRequiredEvidence.ok, true);
 
+const simpleCodeChangeWithoutSearch = assessFinalAnswerEvidence({
+  assistant: "已完成这个按钮样式修改。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+  turnPolicy: { rigor: "grounded", taskType: "code_change", requiresSourceCoverage: false },
+  evidenceSummary: { counts: { filesRead: 1, fileWrites: 1 }, hasFileReadEvidence: true, hasFileChangeEvidence: true },
+});
+assert.equal(simpleCodeChangeWithoutSearch.ok, true, "narrow known-file edits should not require broad search");
+
+const codeFindingWithoutCallSearch = assessFinalAnswerEvidence({
+  assistant: "这个 SQL 是 bug，会导致统计错误。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+  turnPolicy: { rigor: "grounded", taskType: "code_change", requiresSourceCoverage: true },
+  evidenceSummary: { counts: { fileSearches: 0, filesRead: 1 }, hasSearchEvidence: false, hasFileReadEvidence: true },
+});
+assert.equal(codeFindingWithoutCallSearch.ok, false);
+assert.equal(codeFindingWithoutCallSearch.reason, "source_claim_without_search_evidence");
+
+const codeFindingWithCallSearch = assessFinalAnswerEvidence({
+  assistant: "这个 SQL 是 bug，会导致统计错误。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+  turnPolicy: { rigor: "grounded", taskType: "code_change", requiresSourceCoverage: true },
+  evidenceSummary: { counts: { fileSearches: 1, filesRead: 1 }, hasSearchEvidence: true, hasFileReadEvidence: true },
+});
+assert.equal(codeFindingWithCallSearch.ok, true);
+
+const documentWithoutExtraction = assessFinalAnswerEvidence({
+  assistant: "文档解析失败，无法确认文件内容。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["document"] },
+  turnPolicy: { rigor: "grounded", taskType: "document_work" },
+  evidenceSummary: { counts: {}, hasDocumentEvidence: false },
+});
+assert.equal(documentWithoutExtraction.ok, true, "honest document-read failure disclosures should not be double-punished");
+
+const documentContentClaimWithoutExtraction = assessFinalAnswerEvidence({
+  assistant: "这份文档讲的是项目实施计划。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["document"] },
+  turnPolicy: { rigor: "grounded", taskType: "document_work" },
+  evidenceSummary: { counts: {}, hasDocumentEvidence: false },
+});
+assert.equal(documentContentClaimWithoutExtraction.ok, false);
+assert.equal(documentContentClaimWithoutExtraction.reason, "missing_required_evidence:document");
+
+const documentWithExtraction = assessFinalAnswerEvidence({
+  assistant: "文档讲的是项目实施计划。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: ["document"] },
+  turnPolicy: { rigor: "grounded", taskType: "document_work" },
+  evidenceSummary: { counts: { documents: 1, documentChunks: 3 }, hasDocumentEvidence: true },
+});
+assert.equal(documentWithExtraction.ok, true);
+
+const mediaRecognitionWithoutOutput = assessFinalAnswerEvidence({
+  assistant: "图片里是一张产品海报。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+  turnPolicy: { rigor: "grounded", taskType: "media_generation" },
+  evidenceSummary: { counts: {}, hasFileChangeEvidence: false },
+});
+assert.equal(mediaRecognitionWithoutOutput.ok, true, "image recognition should not require an output file");
+
+const mediaOutputWithoutEvidence = assessFinalAnswerEvidence({
+  assistant: "图片已生成。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+  turnPolicy: { rigor: "grounded", taskType: "media_generation" },
+  evidenceSummary: { counts: { fileWrites: 0 }, hasFileChangeEvidence: false },
+});
+assert.equal(mediaOutputWithoutEvidence.ok, false);
+assert.equal(mediaOutputWithoutEvidence.reason, "media_output_without_file_evidence");
+
+const mediaWithOutput = assessFinalAnswerEvidence({
+  assistant: "图片已生成。",
+  evidencePolicy: { required: true, requiredEvidenceKinds: [] },
+  turnPolicy: { rigor: "grounded", taskType: "media_generation" },
+  evidenceSummary: { counts: { fileWrites: 1 }, hasFileChangeEvidence: true },
+});
+assert.equal(mediaWithOutput.ok, true);
+
 console.log("evidence-gate: ok");
