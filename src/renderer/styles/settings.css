@@ -1398,14 +1398,16 @@
 .connector-tabs,
 .settings-segment-tabs {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 16px 0 18px;
-  padding: 4px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-input) 76%, var(--bg-elevated) 24%);
-  box-shadow: var(--top-highlight);
+  gap: 4px 24px;
+  margin: 14px 0 22px;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid var(--border-light);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .settings-segment-tabs--mirror {
@@ -1414,39 +1416,66 @@
 
 .connector-tab,
 .settings-segment-tab {
-  min-height: 32px;
-  padding: 6px 12px;
+  position: relative;
+  min-height: 38px;
+  padding: 8px 0 10px;
   border: 0;
-  border-radius: calc(var(--radius) - 2px);
+  border-radius: 0;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 650;
   line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
   transition:
-    background var(--dur) var(--ease),
     color var(--dur) var(--ease),
-    box-shadow var(--dur) var(--ease);
+    text-shadow var(--dur) var(--ease);
+}
+
+.connector-tab::after,
+.settings-segment-tab::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transform: scaleX(0.35);
+  opacity: 0;
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
 
 .connector-tab:hover,
 .settings-segment-tab:hover {
   color: var(--text-primary);
-  background: var(--hover-bg);
+  background: transparent;
 }
 
 .connector-tab.is-active,
 .settings-segment-tab.is-active {
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent-subtle) 78%, var(--bg-elevated) 22%);
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+  background: transparent;
+  box-shadow: none;
+  text-shadow: 0 0 0 currentColor;
+}
+
+.connector-tab.is-active::after,
+.settings-segment-tab.is-active::after {
+  background: var(--accent);
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 .connector-tab:focus-visible,
 .settings-segment-tab:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 72%, transparent);
-  outline-offset: 2px;
+  outline-offset: 4px;
 }
 
 .connector-tab-panel[hidden],
