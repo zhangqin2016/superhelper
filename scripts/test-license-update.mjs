@@ -115,6 +115,45 @@ const blocked = requireValidLicense();
 if (blocked.ok || blocked.error !== "LICENSE_REQUIRED") {
   throw new Error(`missing license should block gated features: ${JSON.stringify(blocked)}`);
 }
+fs.writeFileSync(path.join(tmp, "account-state.json"), JSON.stringify({
+  user: { id: "user_account_gate_1", phoneE164: "+8613800000000" },
+  refreshToken: {
+    encrypted: false,
+    data: Buffer.from("refresh-token-test", "utf8").toString("base64"),
+  },
+  entitlements: {
+    usable: true,
+    tokenBalance: 5000,
+    imageGenerationsRemaining: 0,
+    videoGenerationsRemaining: 0,
+    membershipExpiresAt: "",
+  },
+  entitlementsRefreshedAt: new Date().toISOString(),
+}, null, 2));
+const accountAllowed = requireValidLicense();
+if (!accountAllowed.ok || accountAllowed.source !== "account") {
+  throw new Error(`usable account entitlements should pass gate: ${JSON.stringify(accountAllowed)}`);
+}
+fs.writeFileSync(path.join(tmp, "account-state.json"), JSON.stringify({
+  user: { id: "user_account_gate_1", phoneE164: "+8613800000000" },
+  refreshToken: {
+    encrypted: false,
+    data: Buffer.from("refresh-token-test", "utf8").toString("base64"),
+  },
+  entitlements: {
+    usable: true,
+    tokenBalance: 5000,
+    imageGenerationsRemaining: 0,
+    videoGenerationsRemaining: 0,
+    membershipExpiresAt: "",
+  },
+  entitlementsRefreshedAt: "2020-01-01T00:00:00.000Z",
+}, null, 2));
+const staleAccountBlocked = requireValidLicense();
+if (staleAccountBlocked.ok || staleAccountBlocked.accountError !== "ACCOUNT_ENTITLEMENTS_STALE") {
+  throw new Error(`stale account entitlements should not pass gate: ${JSON.stringify(staleAccountBlocked)}`);
+}
+fs.writeFileSync(path.join(tmp, "account-state.json"), JSON.stringify({}, null, 2));
 const activated = activateLicense(token);
 if (!activated.ok) {
   throw new Error(`valid license should activate: ${JSON.stringify(activated)}`);

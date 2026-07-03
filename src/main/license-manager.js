@@ -259,12 +259,23 @@ function getLicenseStatus() {
 function requireValidLicense() {
   const status = getLicenseStatus();
   if (status.activated && status.valid) {
-    return { ok: true, license: status.license || null };
+    return { ok: true, license: status.license || null, source: status.source || "license" };
+  }
+  const account = require("./account-manager").accountAccessStatus();
+  if (account.usable) {
+    return {
+      ok: true,
+      license: null,
+      account: account.accountStatus || null,
+      source: "account",
+    };
   }
   return {
     ok: false,
     error: "LICENSE_REQUIRED",
     licenseStatus: status,
+    accountStatus: account.accountStatus || null,
+    accountError: account.error || "",
   };
 }
 

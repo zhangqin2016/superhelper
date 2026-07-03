@@ -6,6 +6,7 @@ const { userDataPath } = require("./config");
 const serviceClient = require("./service-client");
 
 const ACCOUNT_FILE = "account-state.json";
+const ACCOUNT_ACCESS_MAX_STALE_MS = 24 * 60 * 60 * 1000;
 
 let accessToken = "";
 let accessExpiresAt = 0;
@@ -87,7 +88,39 @@ function accountStatus() {
     loggedIn: Boolean(refreshToken && state.user?.id),
     user: state.user || null,
     entitlements: state.entitlements || null,
+    entitlementsRefreshedAt: state.entitlementsRefreshedAt || state.loggedInAt || "",
   };
+}
+
+function parseTime(value) {
+  const ms = Date.parse(String(value || ""));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function entitlementsUsable(entitlements = {}) {
+  if (!entitlements || typeof entitlements !== "object") return false;
+  if (entitlements.usable === false) return false;
+  if (Number(entitlements.tokenBalance || 0) > 0) return true;
+  if (Number(entitlements.imageGenerationsRemaining || 0) > 0) return true;
+  if (Number(entitlements.videoGenerationsRemaining || 0) > 0) return true;
+  const membershipExpiresAt = parseTime(entitlements.membershipExpiresAt);
+  if (membershipExpiresAt && membershipExpiresAt > Date.now()) return true;
+  return Boolean(entitlements.usable);
+}
+
+function accountAccessStatus() {
+  const status = accountStatus();
+  if (!status.loggedIn) {
+    return { ok: true, usable: false, error: "ACCOUNT_LOGIN_REQUIRED", accountStatus: status };
+  }
+  const refreshedAtMs = parseTime(status.entitlementsRefreshedAt);
+  if (!refreshedAtMs || Date.now() - refreshedAtMs > ACCOUNT_ACCESS_MAX_STALE_MS) {
+    return { ok: true, usable: false, error: "ACCOUNT_ENTITLEMENTS_STALE", accountStatus: status };
+  }
+  if (!entitlementsUsable(status.entitlements)) {
+    return { ok: true, usable: false, error: "ACCOUNT_ENTITLEMENTS_INSUFFICIENT", accountStatus: status };
+  }
+  return { ok: true, usable: true, accountStatus: status };
 }
 
 async function sendSmsCode(phone) {
@@ -105,6 +138,7 @@ async function loginWithSms({ phone, code } = {}) {
     entitlements: result.json?.entitlements || null,
     refreshToken: protectText(refreshToken),
     loggedInAt: new Date().toISOString(),
+    entitlementsRefreshedAt: new Date().toISOString(),
   });
   return {
     ok: true,
@@ -159,6 +193,7 @@ function clearAccount() {
 
 module.exports = {
   accountStatus,
+  accountAccessStatus,
   sendSmsCode,
   loginWithSms,
   refreshEntitlements,
