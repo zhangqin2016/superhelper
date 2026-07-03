@@ -859,9 +859,9 @@
   gap: 14px;
   margin-top: 18px;
   padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--brand) 22%, transparent);
+  border: 1px solid var(--accent-border);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--brand) 8%, white);
+  background: color-mix(in srgb, var(--accent-subtle) 78%, var(--bg-elevated) 22%);
 }
 
 .account-signed-in-mark {
@@ -870,8 +870,8 @@
   width: 40px;
   height: 40px;
   border-radius: 999px;
-  background: var(--brand);
-  color: #fff;
+  background: var(--accent);
+  color: var(--text-inverse);
   font-weight: 800;
 }
 
