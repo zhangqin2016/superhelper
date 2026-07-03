@@ -1395,7 +1395,8 @@
   display: none;
 }
 
-.connector-tabs {
+.connector-tabs,
+.settings-segment-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -1407,7 +1408,12 @@
   box-shadow: var(--top-highlight);
 }
 
-.connector-tab {
+.settings-segment-tabs--mirror {
+  margin-top: 0;
+}
+
+.connector-tab,
+.settings-segment-tab {
   min-height: 32px;
   padding: 6px 12px;
   border: 0;
@@ -1424,23 +1430,27 @@
     box-shadow var(--dur) var(--ease);
 }
 
-.connector-tab:hover {
+.connector-tab:hover,
+.settings-segment-tab:hover {
   color: var(--text-primary);
   background: var(--hover-bg);
 }
 
-.connector-tab.is-active {
+.connector-tab.is-active,
+.settings-segment-tab.is-active {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent-subtle) 78%, var(--bg-elevated) 22%);
   box-shadow: var(--shadow-sm), var(--top-highlight);
 }
 
-.connector-tab:focus-visible {
+.connector-tab:focus-visible,
+.settings-segment-tab:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 72%, transparent);
   outline-offset: 2px;
 }
 
-.connector-tab-panel[hidden] {
+.connector-tab-panel[hidden],
+.settings-segment-panel[hidden] {
   display: none;
 }
 

@@ -1879,6 +1879,47 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(accountLoggedInUiResult);
+    const settingsSegmentTabsResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { openSettingsPage } = await import("./modules/settings-panel.js");
+        const visible = (id) => {
+          const el = document.getElementById(id);
+          if (!el) throw new Error("missing settings segment element: " + id);
+          return !el.hidden;
+        };
+        openSettingsPage("account");
+        if (!visible("accountPanelOverview")) throw new Error("account should open on overview tab");
+        if (visible("accountPanelUsage")) throw new Error("usage should not be stacked under account overview");
+        if (visible("settingsPageLicense")) throw new Error("license should not be stacked under account overview");
+        document.querySelector('[data-settings-segment-tab="account:usage"]').click();
+        if (!visible("accountPanelUsage")) throw new Error("usage tab should show usage panel");
+        if (visible("accountPanelOverview") || visible("settingsPageLicense")) {
+          throw new Error("usage tab should hide account overview and license panels");
+        }
+        document.querySelector('[data-settings-segment-tab="account:license"]').click();
+        if (!visible("settingsPageLicense")) throw new Error("license tab should show license panel");
+        if (visible("accountPanelOverview") || visible("accountPanelUsage")) {
+          throw new Error("license tab should hide account overview and usage panels");
+        }
+        openSettingsPage("help");
+        if (!visible("settingsPageFeedback")) throw new Error("help should open on feedback tab");
+        if (visible("settingsPageContact") || visible("settingsPageAbout")) {
+          throw new Error("help sections should not be stacked");
+        }
+        document.querySelector('[data-settings-segment-tab="help:contact"]').click();
+        if (!visible("settingsPageContact")) throw new Error("contact tab should show contact panel");
+        if (visible("settingsPageFeedback") || visible("settingsPageAbout")) {
+          throw new Error("contact tab should hide feedback and about panels");
+        }
+        document.querySelector('[data-settings-segment-tab="help:about"]').click();
+        if (!visible("settingsPageAbout")) throw new Error("about tab should show about panel");
+        if (visible("settingsPageFeedback") || visible("settingsPageContact")) {
+          throw new Error("about tab should hide feedback and contact panels");
+        }
+        return "settings-segment-tabs: ok";
+      }
+    )()`);
+    console.log(settingsSegmentTabsResult);
     console.log("test-renderer-import: ok");
   }
   app.quit();

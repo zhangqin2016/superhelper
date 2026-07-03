@@ -28,10 +28,47 @@ import { getNotificationPrefs, setNotificationPrefs } from "./task-alert.js";
 // "account" merges usage + license; "help" merges feedback + contact + about.
 // Multiple <section>s can share one page id — switchSettingsPage shows them all.
 const SETTINGS_PAGES = ["general", "model", "permission", "search", "media", "connectors", "skills", "apps", "runtime", "memory", "account", "help"];
+const SETTINGS_SEGMENT_DEFAULTS = {
+  account: "overview",
+  help: "feedback",
+};
 
 let panelOpen = false;
 let activeSettingsPage = "general";
+const activeSettingsSegments = { ...SETTINGS_SEGMENT_DEFAULTS };
 let refreshInFlight = null;
+
+function parseSettingsSegment(value = "") {
+  const [group, segment] = String(value).split(":");
+  return { group, segment };
+}
+
+function setSettingsSegment(group, segment) {
+  if (!group || !segment) return;
+  activeSettingsSegments[group] = segment;
+
+  document.querySelectorAll("[data-settings-segment-tab]").forEach((button) => {
+    const parsed = parseSettingsSegment(button.dataset.settingsSegmentTab);
+    if (parsed.group !== group) return;
+    const isActive = parsed.segment === segment;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+
+  document.querySelectorAll("[data-settings-segment-panel]").forEach((panel) => {
+    const parsed = parseSettingsSegment(panel.dataset.settingsSegmentPanel);
+    if (parsed.group !== group) return;
+    const isActive = parsed.segment === segment;
+    panel.classList.toggle("is-active", isActive);
+    panel.hidden = !isActive;
+  });
+}
+
+function syncSettingsSegments() {
+  for (const [group, fallback] of Object.entries(SETTINGS_SEGMENT_DEFAULTS)) {
+    setSettingsSegment(group, activeSettingsSegments[group] || fallback);
+  }
+}
 
 async function confirmBypassPermission() {
   return confirmDialog({
@@ -58,6 +95,7 @@ function switchSettingsPage(pageId) {
     page.classList.toggle("is-active", isActive);
     page.hidden = !isActive;
   });
+  syncSettingsSegments();
 }
 
 function setPanelOpen(open) {
@@ -120,6 +158,12 @@ export async function initSettingsPanel() {
   document.querySelectorAll(".settings-nav-item").forEach((btn) => {
     btn.addEventListener("click", () => {
       switchSettingsPage(btn.dataset.settingsPage || "general");
+    });
+  });
+  document.querySelectorAll("[data-settings-segment-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const { group, segment } = parseSettingsSegment(btn.dataset.settingsSegmentTab);
+      setSettingsSegment(group, segment);
     });
   });
 
