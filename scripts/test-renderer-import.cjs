@@ -1891,6 +1891,9 @@ app.whenReady().then(async () => {
         if (!visible("accountPanelOverview")) throw new Error("account should open on overview tab");
         if (visible("accountPanelUsage")) throw new Error("usage should not be stacked under account overview");
         if (visible("settingsPageLicense")) throw new Error("license should not be stacked under account overview");
+        if (visible("settingsPageFeedback") || visible("settingsPageContact") || visible("settingsPageAbout")) {
+          throw new Error("help panels should stay hidden on the account page");
+        }
         document.querySelector('[data-settings-segment-tab="account:usage"]').click();
         if (!visible("accountPanelUsage")) throw new Error("usage tab should show usage panel");
         if (visible("accountPanelOverview") || visible("settingsPageLicense")) {
@@ -1906,6 +1909,9 @@ app.whenReady().then(async () => {
         if (visible("settingsPageContact") || visible("settingsPageAbout")) {
           throw new Error("help sections should not be stacked");
         }
+        if (visible("accountPanelOverview") || visible("accountPanelUsage") || visible("settingsPageLicense")) {
+          throw new Error("account panels should stay hidden on the help page");
+        }
         document.querySelector('[data-settings-segment-tab="help:contact"]').click();
         if (!visible("settingsPageContact")) throw new Error("contact tab should show contact panel");
         if (visible("settingsPageFeedback") || visible("settingsPageAbout")) {
@@ -1915,6 +1921,10 @@ app.whenReady().then(async () => {
         if (!visible("settingsPageAbout")) throw new Error("about tab should show about panel");
         if (visible("settingsPageFeedback") || visible("settingsPageContact")) {
           throw new Error("about tab should hide feedback and contact panels");
+        }
+        openSettingsPage("account");
+        if (visible("settingsPageFeedback") || visible("settingsPageContact") || visible("settingsPageAbout")) {
+          throw new Error("help panels should remain hidden after returning to account");
         }
         return "settings-segment-tabs: ok";
       }

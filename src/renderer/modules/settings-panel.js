@@ -59,8 +59,9 @@ function setSettingsSegment(group, segment) {
     const parsed = parseSettingsSegment(panel.dataset.settingsSegmentPanel);
     if (parsed.group !== group) return;
     const isActive = parsed.segment === segment;
+    const isCurrentPageGroup = activeSettingsPage === group;
     panel.classList.toggle("is-active", isActive);
-    panel.hidden = !isActive;
+    panel.hidden = !(isCurrentPageGroup && isActive);
   });
 }
 
