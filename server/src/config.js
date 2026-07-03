@@ -38,7 +38,7 @@ export const config = {
   accountFreeImages: Number(process.env.ACCOUNT_FREE_IMAGES || 3),
   accountFreeVideos: Number(process.env.ACCOUNT_FREE_VIDEOS || 1),
   accountFreeDays: Number(process.env.ACCOUNT_FREE_DAYS || 7),
-  accountUsageEnforcementEnabled: process.env.ACCOUNT_USAGE_ENFORCEMENT === "true",
+  accountUsageEnforcementEnabled: process.env.ACCOUNT_USAGE_ENFORCEMENT !== "false",
   modelGatewayEnabled: process.env.MODEL_GATEWAY_ENABLED !== "false",
   modelGatewayTokenSecret: process.env.MODEL_GATEWAY_TOKEN_SECRET || process.env.SESSION_SECRET || "development-session-secret-change-me",
   modelGatewayTokenTtlSeconds: Number(process.env.MODEL_GATEWAY_TOKEN_TTL_SECONDS || 6 * 60 * 60),

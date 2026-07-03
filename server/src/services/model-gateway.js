@@ -49,6 +49,7 @@ async function consumeChatUsage({ request, reply, token, providerId, provider, b
     reply.code(402).send({ error: { type: "payment_required", message: account.code } });
     return false;
   }
+  if (account.licenseAuthorized) return true;
   if (account.anonymous) return true;
   const usage = chatTokenUsage({ ...body, model: body.model || provider.model || "" });
   const pricing = await fetchFeaturePricing({

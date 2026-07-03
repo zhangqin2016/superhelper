@@ -131,6 +131,32 @@ assert.equal(managedEnv.LILY_OPENCODE_PROTOCOL, undefined, "legacy managed confi
 assert.equal(verifyModelGatewayToken(managedEnv.LILY_API_KEY, "deepseek").ok, true);
 assert.equal(directEnv.LILY_API_KEY, "sk-direct", "direct provider keys should not be replaced");
 
+const accountRuntimeConfig = withGatewayRuntimeConfig(
+  {
+    models: {
+      presets: [
+        {
+          id: "managed",
+          env: {
+            LILY_API_BASE_URL: "/llm/deepseek/v1/messages",
+            LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
+          },
+        },
+      ],
+    },
+  },
+  request,
+  { deviceId: "dev_client_config_test", licenseId: "" },
+  {
+    publicBaseUrl: "https://lily.example.com/",
+    account: { userId: "usr_client_config_test", sessionId: "sess_client_config_test" },
+  },
+);
+const accountToken = verifyModelGatewayToken(accountRuntimeConfig.models.presets[0].env.LILY_API_KEY, "deepseek");
+assert.equal(accountToken.ok, true);
+assert.equal(accountToken.userId, "usr_client_config_test", "account gateway token must carry user id for wallet debit");
+assert.equal(accountToken.sessionId, "sess_client_config_test", "account gateway token must carry session id for audit");
+
 const mediaOnly = buildEnvManagedClientConfig(
   {
     modelGatewayDefaultProvider: "deepseek",

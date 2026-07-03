@@ -196,7 +196,15 @@ const anonymousToken = gatewayAuth.signModelGatewayToken({
   providerId: "deepseek",
   expiresAt: "2099-07-02T01:00:00.000Z",
 });
+const licenseToken = gatewayAuth.signModelGatewayToken({
+  deviceId: "dev_test",
+  licenseId: "lic_test",
+  providerId: "deepseek",
+  expiresAt: "2099-07-02T01:00:00.000Z",
+});
 assert.equal(gatewayUsage.gatewayAccountRequired({ token: gatewayAuth.verifyModelGatewayToken(anonymousToken, "deepseek"), enforcementEnabled: true }).ok, false);
 assert.equal(gatewayUsage.gatewayAccountRequired({ token: verifiedGatewayToken, enforcementEnabled: true }).ok, true);
+assert.equal(gatewayUsage.gatewayAccountRequired({ token: gatewayAuth.verifyModelGatewayToken(licenseToken, "deepseek"), enforcementEnabled: true }).ok, true);
+assert.equal(gatewayUsage.gatewayAccountRequired({ token: gatewayAuth.verifyModelGatewayToken(licenseToken, "deepseek"), enforcementEnabled: true }).licenseAuthorized, true);
 
 console.log("account auth and wallet helpers ok");

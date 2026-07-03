@@ -149,6 +149,7 @@ MODEL_GATEWAY_ENABLED=true
 MODEL_GATEWAY_DEFAULT_PROVIDER=deepseek
 DEFAULT_MODEL_PROVIDERS=deepseek # 普通用户默认只看到 DeepSeek；需要全量可选时显式设为 all
 MODEL_CONFIG_DELIVERY_MODE=gateway # gateway: 服务端托管 key；direct: 客户端直连，延迟低但会下发模型 key
+ACCOUNT_USAGE_ENFORCEMENT=true # 默认强制账户扣费；仅内测/自用环境可显式设为 false
 DEEPSEEK_API_KEY=sk-...
 DASHSCOPE_API_KEY=sk-... # media skills only: image/video/speech
 DASHSCOPE_CHAT_API_KEY=sk-... # optional: enable DashScope/Qwen as a chat gateway

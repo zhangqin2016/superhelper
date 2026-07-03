@@ -93,7 +93,7 @@ globalThis.fetch = async (url, init) => {
 };
 
 try {
-  const goodToken = signModelGatewayToken({ deviceId: input.deviceId, providerId: "volcengine-media" });
+  const goodToken = signModelGatewayToken({ deviceId: input.deviceId, licenseId: input.licenseId, providerId: "volcengine-media" });
   const reply = fakeReply();
   await routes["POST /llm/media/:provider/*"](
     {
@@ -108,6 +108,22 @@ try {
   assert.equal(reply._code, 200, "valid request should proxy through");
   assert.equal(captured.url, "https://ark.test.local/api/v3/contents/generations/tasks");
   assert.equal(captured.init.headers.Authorization, "Bearer volc-secret", "server must inject the real Ark key");
+
+  // Account usage enforcement is on by default. A media token with neither
+  // account userId nor licenseId must be rejected before proxying to upstream.
+  const anonymousToken = signModelGatewayToken({ deviceId: input.deviceId, providerId: "volcengine-media" });
+  const reply402 = fakeReply();
+  await routes["POST /llm/media/:provider/*"](
+    {
+      method: "POST",
+      url: "/llm/media/volcengine/contents/generations/tasks",
+      params: { provider: "volcengine", "*": "contents/generations/tasks" },
+      headers: { authorization: `Bearer ${anonymousToken}` },
+      body: { model: "doubao-seedance-1-0-lite-t2v-250428" },
+    },
+    reply402,
+  );
+  assert.equal(reply402._code, 402, "anonymous media token must be rejected when usage enforcement is enabled");
 
   // Wrong-provider token must be rejected (token bound to vision, not volcengine).
   const wrongToken = signModelGatewayToken({ deviceId: input.deviceId, providerId: "vision" });
@@ -140,7 +156,7 @@ try {
 
   // Kling proxy: server must mint a JWT (iss=AccessKey, signed with SecretKey),
   // never forward the raw token.
-  const klingToken = signModelGatewayToken({ deviceId: input.deviceId, providerId: "kling-media" });
+  const klingToken = signModelGatewayToken({ deviceId: input.deviceId, licenseId: input.licenseId, providerId: "kling-media" });
   const klingReply = fakeReply();
   await routes["POST /llm/media/:provider/*"](
     {
@@ -167,7 +183,7 @@ try {
   assert.equal(JSON.parse(Buffer.from(jp.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString()).iss, "kling-ak");
 
   // MiniMax proxy: server appends GroupId to the upstream query.
-  const mmToken = signModelGatewayToken({ deviceId: input.deviceId, providerId: "minimax-media" });
+  const mmToken = signModelGatewayToken({ deviceId: input.deviceId, licenseId: input.licenseId, providerId: "minimax-media" });
   const mmReply = fakeReply();
   await routes["POST /llm/media/:provider/*"](
     {

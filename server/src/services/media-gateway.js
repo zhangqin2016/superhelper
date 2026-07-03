@@ -79,6 +79,7 @@ async function requireMediaEntitlement(request, reply, token, providerId, rest) 
   const usage = inferMediaUsage(providerId, rest, request.body);
   if (!usage) return true;
   if (!token.userId) {
+    if (token.licenseId) return true;
     if (!config.accountUsageEnforcementEnabled) return true;
     reply.code(402).send({
       error: {
