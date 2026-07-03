@@ -7,6 +7,20 @@ description: Use when the user wants Lily to learn a web/OA/ERP/CRM/admin system
 
 Use this skill when the user wants Lily to learn or automate a browser-based system such as OA, ERP, CRM, finance, HR, support portals, admin dashboards, vendor portals, or internal tools.
 
+## Chat-Native Capability Contract
+
+Start from the user's natural language learning goal. The assistant should plan,
+start, observe, and summarize learning work in chat; UI surfaces are only for
+manual login, explicit approval, credential/account setup, or reviewing
+artifacts. Do not turn normal learning into a sequence of user-clicked panels.
+
+This skill is fail-open: if one discovery source fails, continue with the next
+approved source where safe: published contracts, authenticated HAR, bounded
+frontend source hints, read-only SPA scan, checkpoints, partial drafts, and
+health gaps. If authentication, anti-automation, or same-browser binding blocks
+the approved route, stop with a concrete recoverable code and partial evidence;
+do not improvise stealth scripts or claim complete coverage.
+
 ## Product Contract
 
 The goal is not free-form clicking. The goal is a reviewable operating model:

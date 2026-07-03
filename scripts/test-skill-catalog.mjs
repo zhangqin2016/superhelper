@@ -170,9 +170,15 @@ if (!globalGuide.includes("Universal Operating Discipline") && !globalGuide.incl
 if (!globalGuide.includes("Prove root cause before repairing") && !globalGuide.includes("先证明根因再修复")) {
   throw new Error("AGENT guide must require root-cause proof before repair");
 }
+if (!globalGuide.includes("chat-native capability contracts") && !globalGuide.includes("聊天原生能力合同")) {
+  throw new Error("AGENT guide must prefer chat-native capability contracts over UI-first workflows");
+}
 const subagentGuide = skillManager.buildAgentSubagentPersona("en");
 if (!subagentGuide.includes("Lily Subagent Rules") || !subagentGuide.includes("Do not start another Task subagent")) {
   throw new Error(`subagent persona must carry Lily subtask rules: ${subagentGuide}`);
+}
+if (!subagentGuide.includes("capability used") || !subagentGuide.includes("evidence")) {
+  throw new Error(`subagent persona must return capability/evidence handoff: ${subagentGuide}`);
 }
 const guidePath = path.join(tmp, "lily-config", "AGENT.md");
 fs.writeFileSync(guidePath, "# User AGENT additions\n\nKeep this custom rule.\n", "utf8");

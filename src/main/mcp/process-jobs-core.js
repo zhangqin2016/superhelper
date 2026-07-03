@@ -72,6 +72,43 @@ function fileSize(file) {
   }
 }
 
+function safeOutputFiles(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 50);
+}
+
+function isoTimeMs(value) {
+  const ms = Date.parse(String(value || ""));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function fileMtimeMs(file) {
+  try {
+    return fs.statSync(file).mtimeMs || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function heartbeatAtForRecord(record = {}) {
+  const latest = Math.max(
+    isoTimeMs(record.startedAt),
+    isoTimeMs(record.updatedAt),
+    fileMtimeMs(record.stdoutPath),
+    fileMtimeMs(record.stderrPath),
+  );
+  return latest > 0 ? new Date(latest).toISOString() : "";
+}
+
+function phaseFromProgress(progress = null) {
+  if (!progress || typeof progress !== "object") return "";
+  return String(progress.phase || progress.status || progress.event || progress.label || progress.domain || "").trim();
+}
+
+function isRecoverableState(status = "") {
+  return status === "running" || status === "failed";
+}
+
 function isPidAlive(pid) {
   const n = Number(pid);
   if (!Number.isInteger(n) || n <= 0) return false;
@@ -84,10 +121,12 @@ function isPidAlive(pid) {
 }
 
 function compactJob(record = {}) {
+  const status = record.status || "unknown";
   return {
     jobId: record.jobId || "",
     pid: record.pid || null,
-    status: record.status || "unknown",
+    status,
+    state: status,
     command: record.command || "",
     args: Array.isArray(record.args) ? record.args : [],
     cwd: record.cwd || "",
@@ -95,9 +134,23 @@ function compactJob(record = {}) {
     stderrPath: record.stderrPath || "",
     startedAt: record.startedAt || "",
     updatedAt: record.updatedAt || "",
+    heartbeatAt: heartbeatAtForRecord(record),
+    phase: record.phase || "",
+    outputFiles: safeOutputFiles(record.outputFiles),
+    error: record.error || null,
+    recoverable: isRecoverableState(status),
     exitCode: record.exitCode ?? null,
     signal: record.signal || null,
     health: record.health || null,
+  };
+}
+
+function withProgressObservability(payload = {}, progress = null) {
+  const phase = phaseFromProgress(progress) || payload.phase || "";
+  return {
+    ...payload,
+    phase,
+    progress: progress || payload.progress || null,
   };
 }
 
@@ -302,6 +355,7 @@ async function startJob(input = {}, options = {}) {
     cwd,
     stdoutPath,
     stderrPath,
+    outputFiles: safeOutputFiles(input.outputFiles),
     startedAt: nowIso(),
     updatedAt: nowIso(),
     exitCode: null,
@@ -349,7 +403,8 @@ async function startJob(input = {}, options = {}) {
     afterHealth.jobs[jobId].updatedAt = nowIso();
     writeRegistry(afterHealth, options);
   }
-  return { ok: true, ...compactJob({ ...record, health }), health };
+  const progress = latestProgressForRecord({ ...record, health });
+  return { ok: true, ...withProgressObservability(compactJob({ ...record, health }), progress), health };
 }
 
 async function statusJob(input = {}, options = {}) {
@@ -358,13 +413,14 @@ async function statusJob(input = {}, options = {}) {
   const health = await evaluateHealth(found.record, input.healthcheck || found.record.healthcheck);
   found.registry.jobs[found.id] = { ...found.record, health, updatedAt: nowIso() };
   writeRegistry(found.registry, options);
+  const progress = latestProgressForRecord(found.registry.jobs[found.id]);
   return {
     ok: true,
-    ...compactJob(found.registry.jobs[found.id]),
+    ...withProgressObservability(compactJob(found.registry.jobs[found.id]), progress),
     alive: isPidAlive(found.record.pid),
     stdoutBytes: fileSize(found.record.stdoutPath),
     stderrBytes: fileSize(found.record.stderrPath),
-    progress: latestProgressForRecord(found.record),
+    progress,
   };
 }
 
@@ -375,6 +431,7 @@ function logsJob(input = {}, options = {}) {
   return {
     ok: true,
     jobId: found.id,
+    ...withProgressObservability(compactJob(found.record), latestProgressForRecord(found.record)),
     stdout: readRange(found.record.stdoutPath, { offset: input.stdoutOffset, tailBytes }),
     stderr: readRange(found.record.stderrPath, { offset: input.stderrOffset, tailBytes }),
     progress: latestProgressForRecord(found.record),

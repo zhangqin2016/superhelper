@@ -122,4 +122,47 @@ expectPaths({ ok: true, output: "/absolute/path/to/generated-assets/name.svg" },
 // De-dupe repeated paths.
 expectPaths({ ok: true, output: "/a/x.pdf", outputs: ["/a/x.pdf"] }, ["/a/x.pdf"], "dedupe");
 
+// --- Process job display helpers (mirror of renderer internals) ---
+// The platform's long-task contract exposes status/state/phase/heartbeat/progress
+// and output file hints. The chat renderer must make those fields readable
+// instead of burying them in an opaque JSON blob.
+function formatProcessProgress(progress = null) {
+  if (!progress || typeof progress !== "object") return "";
+  const label = progress.label || progress.phase || progress.domain || "";
+  const current = Number.isFinite(Number(progress.current)) ? Number(progress.current) : null;
+  const total = Number.isFinite(Number(progress.total)) ? Number(progress.total) : null;
+  const parts = [];
+  if (label) parts.push(String(label));
+  if (current != null && total != null && total > 0) parts.push(`${current}/${total}`);
+  else if (current != null) parts.push(String(current));
+  return parts.length ? parts.join(" · ") : JSON.stringify(progress);
+}
+function normalizeOutputFiles(files = []) {
+  if (!Array.isArray(files)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of files) {
+    const filePath = typeof entry === "string" ? entry : entry?.path;
+    if (!filePath || seen.has(filePath)) continue;
+    seen.add(filePath);
+    out.push({ path: filePath });
+  }
+  return out;
+}
+if (formatProcessProgress({ label: "page", current: 1, total: 3 }) !== "page · 1/3") {
+  console.error("tool-payload-renderer: process progress summary lost");
+  process.exit(1);
+}
+const jobFiles = normalizeOutputFiles(["/tmp/a.json", { path: "/tmp/a.json" }, { path: "/tmp/b.json" }]);
+if (JSON.stringify(jobFiles) !== JSON.stringify([{ path: "/tmp/a.json" }, { path: "/tmp/b.json" }])) {
+  console.error(`tool-payload-renderer: process outputFiles not normalized: ${JSON.stringify(jobFiles)}`);
+  process.exit(1);
+}
+const rendererSource = await import("node:fs").then((fs) =>
+  fs.readFileSync(new URL("../src/renderer/modules/tool-payload-renderer.js", import.meta.url), "utf8"));
+if (!rendererSource.includes("renderProcessJobPayload") || !rendererSource.includes("outputFiles")) {
+  console.error("tool-payload-renderer: process job renderer missing");
+  process.exit(1);
+}
+
 console.log("tool-payload-renderer: ok");

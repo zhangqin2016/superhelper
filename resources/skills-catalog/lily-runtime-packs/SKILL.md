@@ -13,6 +13,18 @@ Lily's CDN, sha256-verified, and extracted locally. This skill is for checking
 status, installing a missing pack, repairing one, or upgrading with a
 user-installed override. It must not run pip/npm directly in normal use.
 
+## Chat-Native Capability Contract
+
+Start from the user's natural language task. Do not send the user to Settings as
+the first step. Probe the current capability, decide whether an existing
+dependency pack is actually required, and keep the conversation moving with the
+best available built-in route while the pack decision is made.
+
+This skill is fail-open: if a pack cannot be resolved, downloaded, verified, or
+installed, do not make the assistant weaker. Report the exact blocker, continue
+with bundled capabilities when possible, and return partial evidence or the next
+best deterministic path instead of stopping the whole task.
+
 ## Available Dependency Packs
 
 - Document: libreoffice, pro-pdf (Docling), large-document, pandoc.

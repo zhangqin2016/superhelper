@@ -38,6 +38,10 @@ const {
 const { buildTaskContract, withTaskContractPrefix } = require("./task-contract");
 const { EvidenceLedger } = require("./evidence-ledger");
 const { buildTurnPolicy } = require("./turn-policy");
+const {
+  compactCapabilityContext,
+  shouldInjectCapabilityContext,
+} = require("./capability-broker");
 const { TurnRunCoordinator } = require("./turn-run-coordinator");
 const {
   addTaskEvidence,
@@ -1263,6 +1267,14 @@ class TurnOrchestrator {
       const platformContextParts = [];
       if (contextMemory.text && !contextMemory.deduped) platformContextParts.push(contextMemory.text);
       if (dependencyAdvisory?.text) platformContextParts.push(dependencyAdvisory.text);
+      try {
+        if (shouldInjectCapabilityContext({ text: rawUserText, files, dependencyAdvisory, turnPolicy })) {
+          const capabilityContext = compactCapabilityContext({ maxChars: 1800 });
+          if (capabilityContext) platformContextParts.push(capabilityContext);
+        }
+      } catch (err) {
+        log.warn("capability context failed open: %s", err?.message || err);
+      }
       if (platformContextParts.length) {
         engineText = addLayersToEngineText(engineText, {
           platformContext: platformContextParts.join("\n\n"),

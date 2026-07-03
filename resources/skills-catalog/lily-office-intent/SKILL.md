@@ -7,6 +7,19 @@ description: Use when the user asks to create, edit, read, verify, convert, fill
 
 Use this skill before office-document work. The job is to select the right path before acting.
 
+## Chat-Native Capability Contract
+
+Start from the user's natural language request and the attached/referenced files.
+Do not require a separate UI workflow before the assistant can help. Choose the
+document capability chain in chat, expose evidence and output paths, and keep the
+user able to continue typing while long extraction, indexing, OCR, conversion, or
+verification work runs.
+
+This skill is fail-open: if one extractor, renderer, indexer, OCR route, or
+dependency pack fails, fall back to the next deterministic route or a
+path-first/source-file approach. Return partial evidence and the remaining gap
+instead of treating the whole document task as impossible.
+
 ## Task Types
 
 - Word: author, edit, format, comment, compare, template output.

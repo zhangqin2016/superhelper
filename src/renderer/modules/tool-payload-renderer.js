@@ -484,6 +484,98 @@ function renderGenericObject(root, obj, { skip = new Set() } = {}) {
   return rendered;
 }
 
+function isProcessJobPayload(payload = {}) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  if (!payload.jobId && !payload.pid) return false;
+  return Boolean(
+    payload.status ||
+    payload.state ||
+    payload.phase ||
+    payload.heartbeatAt ||
+    payload.progress ||
+    payload.stdoutPath ||
+    payload.stderrPath,
+  );
+}
+
+function formatProcessProgress(progress = null) {
+  if (!progress || typeof progress !== "object") return "";
+  const label = progress.label || progress.phase || progress.domain || "";
+  const current = Number.isFinite(Number(progress.current)) ? Number(progress.current) : null;
+  const total = Number.isFinite(Number(progress.total)) ? Number(progress.total) : null;
+  const parts = [];
+  if (label) parts.push(String(label));
+  if (current != null && total != null && total > 0) parts.push(`${current}/${total}`);
+  else if (current != null) parts.push(String(current));
+  return parts.length ? parts.join(" · ") : JSON.stringify(progress);
+}
+
+function normalizeOutputFiles(files = []) {
+  if (!Array.isArray(files)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of files) {
+    const filePath = typeof entry === "string" ? entry : entry?.path;
+    if (!filePath || seen.has(filePath)) continue;
+    seen.add(filePath);
+    out.push({ path: filePath });
+  }
+  return out;
+}
+
+function appendProcessOutputFiles(root, files = [], options = {}) {
+  const normalized = normalizeOutputFiles(files);
+  if (!normalized.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "assistant-tool-field assistant-tool-field-list assistant-process-output-files";
+  const label = document.createElement("div");
+  label.className = "assistant-tool-field-label";
+  label.textContent = fieldLabel("outputFiles");
+  wrap.appendChild(label);
+  for (const file of normalized) {
+    const row = document.createElement("div");
+    row.className = "assistant-generated-file-row";
+    const code = document.createElement("code");
+    code.className = "assistant-generated-file-path";
+    code.textContent = file.path;
+    row.appendChild(code);
+    if (isRevealableLocalPath(file.path)) {
+      const reveal = () => void revealFileInFolder(root, file.path, options);
+      code.classList.add("is-clickable");
+      code.title = t("file.reveal");
+      code.addEventListener("click", reveal);
+      row.appendChild(createRevealButton(reveal));
+    }
+    wrap.appendChild(row);
+  }
+  root.appendChild(wrap);
+}
+
+function renderProcessJobPayload(root, payload, options = {}) {
+  if (!isProcessJobPayload(payload)) return false;
+  const shown = new Set(["preview"]);
+  const scalarKeys = ["jobId", "status", "state", "phase", "heartbeatAt", "recoverable", "pid"];
+  for (const key of scalarKeys) {
+    if (payload[key] == null || payload[key] === "") continue;
+    shown.add(key);
+    appendScalarRow(root, key, payload[key]);
+  }
+  if (payload.progress) {
+    shown.add("progress");
+    appendScalarRow(root, "progress", formatProcessProgress(payload.progress));
+  }
+  if (Array.isArray(payload.outputFiles)) {
+    shown.add("outputFiles");
+    appendProcessOutputFiles(root, payload.outputFiles, options);
+  }
+  if (payload.error) {
+    shown.add("error");
+    appendTextBlock(root, "error", payload.error);
+  }
+  renderGenericObject(root, payload, { skip: shown });
+  return true;
+}
+
 export function renderGeneratedMedia(root, mediaBlocks = [], options = {}) {
   if (!mediaBlocks.length) return false;
   for (const media of mediaBlocks) {
@@ -646,6 +738,7 @@ function renderStructuredPayload(root, tool, payload, options = {}) {
   if (options.role === "result") {
     renderGeneratedMedia(root, generatedMediaFromPayload(payload), options);
     renderGeneratedFiles(root, generatedFilesFromPayload(payload), options);
+    if (renderProcessJobPayload(root, payload, options)) return true;
   }
   const kind = toolKind(tool.name);
   if (kind === "write") renderWritePayload(root, payload, options);
