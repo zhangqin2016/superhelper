@@ -1,6 +1,6 @@
-# 智能工作台（桌面 Claude）
+# 智能工作台（Lily Workbench）
 
-> **AI 代理 / 新人请先读 [AGENTS.md](AGENTS.md)** —— 全项目导航地图(目录职责、各子系统位置、构建/测试/运行、常见任务从哪下手)。工作纪律见 [CLAUDE.md](CLAUDE.md)。本 README 聚焦聊天/会话子系统。
+> **AI 代理 / 新人请先读 [AGENTS.md](AGENTS.md)** —— 全项目导航地图、工作纪律、目录职责、各子系统位置、构建/测试/运行、常见任务从哪下手。本 README 聚焦聊天/会话子系统。
 
 与 OpenCode Desktop 类似的体验：聊天气泡、流式回复、工具步骤卡片；应用内运行一个共享的 `opencode serve`，每个对话绑定到 OpenCode session，并通过官方 SDK 与事件流驱动。不是每条消息重新启动进程，也不是把终端 TUI 嵌进窗口。
 
@@ -8,7 +8,7 @@
 
 ```bash
 npm install
-npm run start:dev    # 使用本机 claude + ~/.claude
+npm run start:dev    # 开发模式启动
 npm start            # 使用内置 CLI + 应用配置目录
 ```
 

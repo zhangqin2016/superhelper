@@ -1,22 +1,28 @@
 import { Field, SubmitButton, TextAreaField } from "./admin-forms";
 import { updateSettingsAction } from "../app/admin/actions";
 
-// "Basics" tab of the Config center — global defaults that used to live on the
-// standalone Settings page (trial days, model/media delivery, file storage).
-// Server-rendered: no client state, just a form posting the server action.
-export function ConfigBasicsPanel({ settings, t }) {
-  const qiniu = settings.qiniu || {};
-  const aliyunSms = settings.aliyunSms || {};
-  const payment = settings.payment || {};
-  const alipay = payment.alipay || {};
-  const wechat = payment.wechat || {};
-  const delivery = t.admin.settingsDelivery;
-  const s = t.admin.settings;
+function HiddenTrialDays({ value }) {
+  return <input type="hidden" name="licenseTrialDays" value={Number(value ?? 3)} />;
+}
+
+function SectionShell({ title, description, children }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-semibold text-slate-950">{s.trialTitle}</h2>
-      <p className="mt-2 max-w-2xl text-sm text-slate-500">{s.trialDesc}</p>
+      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
+      {description ? <p className="mt-2 max-w-2xl text-sm text-slate-500">{description}</p> : null}
+      {children}
+    </section>
+  );
+}
+
+export function ConfigDeliveryPanel({ settings, t }) {
+  const delivery = t.admin.settingsDelivery;
+  const s = t.admin.settings;
+
+  return (
+    <SectionShell title={s.trialTitle} description={s.trialDesc}>
       <form action={updateSettingsAction} className="mt-6 grid gap-5 lg:grid-cols-2">
+        <input type="hidden" name="settingsSection" value="delivery" />
         <div className="lg:col-span-2 max-w-sm">
           <Field label={s.trialDays} name="licenseTrialDays" type="number" defaultValue={settings.licenseTrialDays ?? 3} required />
         </div>
@@ -48,10 +54,23 @@ export function ConfigBasicsPanel({ settings, t }) {
             <span className="mt-1 block text-xs text-slate-500">{delivery.mediaHelp}</span>
           </label>
         </div>
-        <div className="lg:col-span-2 border-t border-slate-100 pt-5">
-          <h3 className="text-base font-semibold text-slate-950">{s.qiniuTitle}</h3>
-          <p className="mt-1 text-sm text-slate-500">{s.qiniuDesc}</p>
+        <div className="flex items-end">
+          <SubmitButton>{s.save}</SubmitButton>
         </div>
+      </form>
+    </SectionShell>
+  );
+}
+
+export function QiniuSettingsPanel({ settings, t }) {
+  const qiniu = settings.qiniu || {};
+  const s = t.admin.settings;
+
+  return (
+    <SectionShell title={s.qiniuTitle} description={s.qiniuDesc}>
+      <form action={updateSettingsAction} className="mt-6 grid gap-5 lg:grid-cols-2">
+        <input type="hidden" name="settingsSection" value="qiniu" />
+        <HiddenTrialDays value={settings.licenseTrialDays} />
         <Field label={s.qiniuPublicBaseUrl} name="qiniuPublicBaseUrl" defaultValue={qiniu.publicBaseUrl || ""} required />
         <Field label={s.qiniuUploadUrl} name="qiniuUploadUrl" defaultValue={qiniu.uploadUrl || "https://upload.qiniup.com"} required />
         <Field label={s.qiniuAccessKey} name="qiniuAccessKey" defaultValue={qiniu.accessKey || ""} required />
@@ -63,10 +82,23 @@ export function ConfigBasicsPanel({ settings, t }) {
           placeholder={qiniu.hasSecretKey ? s.qiniuSecretKeyPlaceholder : ""}
           required={!qiniu.hasSecretKey}
         />
-        <div className="lg:col-span-2 border-t border-slate-100 pt-5">
-          <h3 className="text-base font-semibold text-slate-950">{s.aliyunSmsTitle || "阿里云短信"}</h3>
-          <p className="mt-1 text-sm text-slate-500">{s.aliyunSmsDesc || "用于手机号验证码登录。密钥加密存储在服务端数据库，不会下发给客户端。"}</p>
+        <div className="flex items-end">
+          <SubmitButton>{s.save}</SubmitButton>
         </div>
+      </form>
+    </SectionShell>
+  );
+}
+
+export function SmsSettingsPanel({ settings, t }) {
+  const aliyunSms = settings.aliyunSms || {};
+  const s = t.admin.settings;
+
+  return (
+    <SectionShell title={s.aliyunSmsTitle || "阿里云短信"} description={s.aliyunSmsDesc || "用于手机号验证码登录。密钥加密存储在服务端数据库，不会下发给客户端。"}>
+      <form action={updateSettingsAction} className="mt-6 grid gap-5 lg:grid-cols-2">
+        <input type="hidden" name="settingsSection" value="sms" />
+        <HiddenTrialDays value={settings.licenseTrialDays} />
         <Field label={s.aliyunSmsAccessKeyId || "AccessKeyId"} name="aliyunSmsAccessKeyId" defaultValue={aliyunSms.accessKeyId || ""} required />
         <Field label={s.aliyunSmsRegion || "Region"} name="aliyunSmsRegion" defaultValue={aliyunSms.region || "cn-hangzhou"} required />
         <Field label={s.aliyunSmsSignName || "短信签名"} name="aliyunSmsSignName" defaultValue={aliyunSms.signName || ""} required />
@@ -78,10 +110,25 @@ export function ConfigBasicsPanel({ settings, t }) {
           placeholder={aliyunSms.hasAccessKeySecret ? (s.aliyunSmsSecretPlaceholder || "留空表示不修改") : ""}
           required={!aliyunSms.hasAccessKeySecret}
         />
-        <div className="lg:col-span-2 border-t border-slate-100 pt-5">
-          <h3 className="text-base font-semibold text-slate-950">{s.paymentTitle || "支付配置"}</h3>
-          <p className="mt-1 text-sm text-slate-500">{s.paymentDesc || "配置官网购买使用的支付方式。密钥加密存储在服务端数据库，不会下发给客户端。"}</p>
+        <div className="flex items-end">
+          <SubmitButton>{s.save}</SubmitButton>
         </div>
+      </form>
+    </SectionShell>
+  );
+}
+
+export function PaymentSettingsPanel({ settings, t }) {
+  const payment = settings.payment || {};
+  const alipay = payment.alipay || {};
+  const wechat = payment.wechat || {};
+  const s = t.admin.settings;
+
+  return (
+    <SectionShell title={s.paymentTitle || "支付配置"} description={s.paymentDesc || "配置官网购买使用的支付方式。密钥加密存储在服务端数据库，不会下发给客户端。"}>
+      <form action={updateSettingsAction} className="mt-6 grid gap-5 lg:grid-cols-2">
+        <input type="hidden" name="settingsSection" value="payment" />
+        <HiddenTrialDays value={settings.licenseTrialDays} />
         <label className="lg:col-span-2 flex items-center gap-2 text-sm text-slate-700">
           <input className="h-4 w-4 rounded border-slate-300 text-brand" name="paymentFakePaymentsEnabled" type="checkbox" defaultChecked={Boolean(payment.fakePaymentsEnabled)} />
           {s.paymentFakePaymentsEnabled || "启用模拟支付"}
@@ -143,6 +190,10 @@ export function ConfigBasicsPanel({ settings, t }) {
           <SubmitButton>{s.save}</SubmitButton>
         </div>
       </form>
-    </section>
+    </SectionShell>
   );
+}
+
+export function ConfigBasicsPanel(props) {
+  return <ConfigDeliveryPanel {...props} />;
 }

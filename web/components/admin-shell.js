@@ -26,7 +26,9 @@ export async function AdminShell({ children, title, subtitle }) {
       title: t.admin.navGroups.distribution,
       items: [
         { href: "/admin/releases", label: nav.releases },
-        { href: "/admin/library", label: t.admin.library.title },
+        { href: "/admin/apps", label: nav.apps },
+        { href: "/admin/skill-packages", label: nav.skillPackages },
+        { href: "/admin/runtime-packs", label: nav.runtimePacks },
       ],
     },
     {

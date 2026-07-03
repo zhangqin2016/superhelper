@@ -344,7 +344,7 @@
                 </div>
               </div>
             </section>
-            <section id="settingsPageUsage" class="settings-page account-settings-page" data-settings-page="account" hidden>
+            <section id="settingsPageAccount" class="settings-page account-settings-page" data-settings-page="account" hidden>
               <div class="account-settings-hero">
                 <div>
                   <h3 class="settings-page-title" data-i18n="settings.accountTitle">用户账户</h3>
@@ -353,84 +353,98 @@
                 <p id="accountStatusText" class="account-status-pill" data-i18n="settings.accountLoading">正在读取账户状态…</p>
               </div>
 
-              <div class="settings-segment-tabs" role="tablist" data-i18n-aria-label="settings.account.tabLabel" aria-label="账户内容">
-                <button id="accountTabOverview" class="settings-segment-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="accountPanelOverview" data-settings-segment-tab="account:overview" data-i18n="settings.account.tabOverview">账户权益</button>
-                <button id="accountTabUsage" class="settings-segment-tab" type="button" role="tab" aria-selected="false" aria-controls="accountPanelUsage" data-settings-segment-tab="account:usage" data-i18n="settings.nav.usage">用量</button>
-                <button id="accountTabLicense" class="settings-segment-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPageLicense" data-settings-segment-tab="account:license" data-i18n="settings.nav.license">授权</button>
+              <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.account.tabLabel" aria-label="账户内容">
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="account">
+                  <span data-i18n="settings.nav.account">账户</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="usage">
+                  <span data-i18n="settings.nav.usage">用量</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="license">
+                  <span data-i18n="settings.nav.license">授权</span>
+                </button>
               </div>
 
-              <div id="accountPanelOverview" class="settings-segment-panel is-active" role="tabpanel" aria-labelledby="accountTabOverview" data-settings-segment-panel="account:overview">
-                <div class="account-settings-layout">
-                  <section class="account-settings-card account-settings-card--entitlements">
-                    <div class="account-card-head">
-                      <div>
-                        <h4 data-i18n="settings.accountEntitlementsTitle">权益概览</h4>
-                        <p data-i18n="settings.accountEntitlementsHint">官网购买和免费额度会汇总到这里。</p>
-                      </div>
-                      <button id="accountRefreshBtn" class="settings-action-btn account-card-action" type="button" data-i18n="settings.accountRefresh">刷新额度</button>
+              <div id="accountPanelOverview">
+                <form id="accountLoginForm" class="settings-form account-login-form account-settings-card account-identity-card">
+                  <div class="account-card-head">
+                    <div>
+                      <h4 id="accountAccessTitle" data-i18n="settings.accountLoginTitle">手机号登录</h4>
+                      <p id="accountAccessHint" data-i18n="settings.accountLoginHint">官网和客户端使用同一个手机号，购买后自动同步。</p>
                     </div>
-                    <div id="accountEntitlements" class="account-entitlements" aria-live="polite"></div>
-                  </section>
+                  </div>
 
-                  <form id="accountLoginForm" class="settings-form account-login-form account-settings-card">
-                    <div class="account-card-head">
-                      <div>
-                        <h4 id="accountAccessTitle" data-i18n="settings.accountLoginTitle">手机号登录</h4>
-                        <p id="accountAccessHint" data-i18n="settings.accountLoginHint">官网和客户端使用同一个手机号，购买后自动同步。</p>
-                      </div>
+                  <div id="accountSignedInPanel" class="account-signed-in-panel" hidden>
+                    <div class="account-signed-in-mark">✓</div>
+                    <div>
+                      <strong data-i18n="settings.accountSignedInTitle">账户已登录</strong>
+                      <p id="accountSignedInPhone"></p>
                     </div>
+                  </div>
 
-                    <div id="accountSignedInPanel" class="account-signed-in-panel" hidden>
-                      <div class="account-signed-in-mark">✓</div>
-                      <div>
-                        <strong data-i18n="settings.accountSignedInTitle">账户已登录</strong>
-                        <p id="accountSignedInPhone"></p>
-                      </div>
-                    </div>
+                  <div id="accountLoginContent" class="account-login-grid">
+                    <label class="settings-field account-phone-field">
+                      <span class="settings-field-label" data-i18n="settings.accountPhone">手机号</span>
+                      <input id="accountPhoneInput" class="settings-input" type="tel" autocomplete="tel" inputmode="tel" maxlength="20" />
+                    </label>
+                    <button id="accountSendSmsBtn" class="settings-action-btn account-inline-btn" type="button" data-i18n="settings.accountSendSms">发送验证码</button>
 
-                    <div id="accountLoginContent" class="account-login-grid">
-                      <label class="settings-field account-phone-field">
-                        <span class="settings-field-label" data-i18n="settings.accountPhone">手机号</span>
-                        <input id="accountPhoneInput" class="settings-input" type="tel" autocomplete="tel" inputmode="tel" maxlength="20" />
-                      </label>
-                      <button id="accountSendSmsBtn" class="settings-action-btn account-inline-btn" type="button" data-i18n="settings.accountSendSms">发送验证码</button>
+                    <label class="settings-field account-code-field">
+                      <span class="settings-field-label" data-i18n="settings.accountCode">验证码</span>
+                      <input id="accountCodeInput" class="settings-input" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="8" />
+                    </label>
+                    <button id="accountLoginBtn" class="settings-action-btn settings-action-btn--primary account-inline-btn" type="submit" data-i18n="settings.accountLogin">登录</button>
+                  </div>
 
-                      <label class="settings-field account-code-field">
-                        <span class="settings-field-label" data-i18n="settings.accountCode">验证码</span>
-                        <input id="accountCodeInput" class="settings-input" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="8" />
-                      </label>
-                      <button id="accountLoginBtn" class="settings-action-btn settings-action-btn--primary account-inline-btn" type="submit" data-i18n="settings.accountLogin">登录</button>
-                    </div>
+                  <p id="accountFormStatus" class="settings-form-status account-form-status" hidden></p>
 
-                    <p id="accountFormStatus" class="settings-form-status account-form-status" hidden></p>
-
-                    <div class="account-management-actions">
-                      <button id="accountBillingBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.accountBilling">购买 / 充值</button>
-                      <button id="accountLogoutBtn" class="settings-action-btn settings-action-btn--danger" type="button" data-i18n="settings.accountLogout">退出登录</button>
-                    </div>
-                  </form>
-                </div>
+                  <div class="account-management-actions">
+                    <button id="accountBillingBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.accountBilling">购买 / 充值</button>
+                    <button id="accountLogoutBtn" class="settings-action-btn settings-action-btn--danger" type="button" data-i18n="settings.accountLogout">退出登录</button>
+                  </div>
+                </form>
               </div>
 
-              <div id="accountPanelUsage" class="settings-segment-panel" role="tabpanel" aria-labelledby="accountTabUsage" data-settings-segment-panel="account:usage" hidden>
-                <h3 class="settings-page-title" data-i18n="settings.nav.usage">用量</h3>
-                <div id="usageDeviceId" class="usage-device-id" aria-live="polite"></div>
-                <p id="usageDataSource" class="usage-data-source" hidden></p>
-                <div id="usageTodayStats" class="usage-today-stats" aria-live="polite"></div>
-                <p id="usageRangeTotals" class="usage-range-summary"></p>
-                <div class="usage-history-wrap">
-                  <table class="usage-history-table" aria-describedby="usageRangeTotals">
-                    <thead>
-                      <tr>
-                        <th scope="col" data-i18n="settings.usage.colDate">日期</th>
-                        <th scope="col" data-i18n="settings.usage.colTokens">Token</th>
-                        <th scope="col" data-i18n="settings.usage.colInOut">输入 / 输出</th>
-                        <th scope="col" data-i18n="settings.usage.colCost">估算费用</th>
-                      </tr>
-                    </thead>
-                    <tbody id="usageHistoryBody"></tbody>
-                  </table>
+            </section>
+            <section id="settingsPageUsage" class="settings-page" data-settings-page="usage" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.usage">用量</h3>
+              <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.account.tabLabel" aria-label="账户内容">
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="account">
+                  <span data-i18n="settings.nav.account">账户</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="usage">
+                  <span data-i18n="settings.nav.usage">用量</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="license">
+                  <span data-i18n="settings.nav.license">授权</span>
+                </button>
+              </div>
+              <section class="account-settings-card account-settings-card--entitlements account-usage-balance">
+                <div class="account-card-head">
+                  <div>
+                    <h4 data-i18n="settings.accountEntitlementsTitle">权益概览</h4>
+                    <p data-i18n="settings.accountEntitlementsHint">官网购买和免费额度会汇总到这里。</p>
+                  </div>
+                  <button id="accountRefreshBtn" class="settings-action-btn account-card-action" type="button" data-i18n="settings.accountRefresh">刷新额度</button>
                 </div>
+                <div id="accountEntitlements" class="account-entitlements" aria-live="polite"></div>
+              </section>
+              <div id="usageDeviceId" class="usage-device-id" aria-live="polite"></div>
+              <p id="usageDataSource" class="usage-data-source" hidden></p>
+              <div id="usageTodayStats" class="usage-today-stats" aria-live="polite"></div>
+              <p id="usageRangeTotals" class="usage-range-summary"></p>
+              <div class="usage-history-wrap">
+                <table class="usage-history-table" aria-describedby="usageRangeTotals">
+                  <thead>
+                    <tr>
+                      <th scope="col" data-i18n="settings.usage.colDate">日期</th>
+                      <th scope="col" data-i18n="settings.usage.colTokens">Token</th>
+                      <th scope="col" data-i18n="settings.usage.colInOut">输入 / 输出</th>
+                      <th scope="col" data-i18n="settings.usage.colCost">估算费用</th>
+                    </tr>
+                  </thead>
+                  <tbody id="usageHistoryBody"></tbody>
+                </table>
               </div>
             </section>
             <section id="settingsPageMemory" class="settings-page" data-settings-page="memory" hidden>
@@ -740,8 +754,33 @@
               </div>
               <div id="runtimePackList" class="runtime-pack-list"></div>
             </section>
-            <section id="settingsPageLicense" class="settings-page settings-segment-panel" role="tabpanel" aria-labelledby="accountTabLicense" data-settings-page="account" data-settings-segment-panel="account:license" hidden>
+            <section id="settingsPageHelp" class="settings-page" data-settings-page="help" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.help">帮助与关于</h3>
+              <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="feedback">
+                  <span data-i18n="settings.nav.feedback">意见反馈</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="contact">
+                  <span data-i18n="settings.nav.contact">联系我们</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="about">
+                  <span data-i18n="settings.nav.about">关于</span>
+                </button>
+              </div>
+            </section>
+            <section id="settingsPageLicense" class="settings-page" data-settings-page="license" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.license">授权</h3>
+              <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.account.tabLabel" aria-label="账户内容">
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="account">
+                  <span data-i18n="settings.nav.account">账户</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="usage">
+                  <span data-i18n="settings.nav.usage">用量</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="license">
+                  <span data-i18n="settings.nav.license">授权</span>
+                </button>
+              </div>
               <p id="licenseStatusText" class="settings-section-desc" data-i18n="settings.licenseLoading">正在读取授权状态…</p>
               <textarea
                 id="licenseTokenInput"
@@ -756,11 +795,18 @@
                 <button id="licenseClearBtn" class="settings-action-btn" type="button" data-i18n="settings.licenseClear">移除授权</button>
               </div>
             </section>
-            <section id="settingsPageFeedback" class="settings-page settings-segment-panel" role="tabpanel" aria-labelledby="helpTabFeedback" data-settings-page="help" data-settings-segment-panel="help:feedback" hidden>
-              <div class="settings-segment-tabs" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
-                <button id="helpTabFeedback" class="settings-segment-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="settingsPageFeedback" data-settings-segment-tab="help:feedback" data-i18n="settings.nav.feedback">意见反馈</button>
-                <button id="helpTabContact" class="settings-segment-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPageContact" data-settings-segment-tab="help:contact" data-i18n="settings.nav.contact">联系我们</button>
-                <button id="helpTabAbout" class="settings-segment-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPageAbout" data-settings-segment-tab="help:about" data-i18n="settings.nav.about">关于</button>
+            <section id="settingsPageFeedback" class="settings-page" data-settings-page="feedback" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.feedback">意见反馈</h3>
+              <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="feedback">
+                  <span data-i18n="settings.nav.feedback">意见反馈</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="contact">
+                  <span data-i18n="settings.nav.contact">联系我们</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="about">
+                  <span data-i18n="settings.nav.about">关于</span>
+                </button>
               </div>
               <p class="settings-section-desc" data-i18n="settings.feedbackDesc">遇到问题或有改进建议？填写后我们会同步到后台处理。提交时会附带应用版本与设备 ID，便于排查。</p>
               <form id="feedbackForm" class="settings-form">
@@ -798,11 +844,18 @@
                 </div>
               </form>
             </section>
-            <section id="settingsPageContact" class="settings-page settings-segment-panel" role="tabpanel" aria-labelledby="helpTabContact" data-settings-page="help" data-settings-segment-panel="help:contact" hidden>
-              <div class="settings-segment-tabs settings-segment-tabs--mirror" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
-                <button class="settings-segment-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPageFeedback" data-settings-segment-tab="help:feedback" data-i18n="settings.nav.feedback">意见反馈</button>
-                <button class="settings-segment-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="settingsPageContact" data-settings-segment-tab="help:contact" data-i18n="settings.nav.contact">联系我们</button>
-                <button class="settings-segment-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPageAbout" data-settings-segment-tab="help:about" data-i18n="settings.nav.about">关于</button>
+            <section id="settingsPageContact" class="settings-page" data-settings-page="contact" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.contact">联系我们</h3>
+              <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="feedback">
+                  <span data-i18n="settings.nav.feedback">意见反馈</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="contact">
+                  <span data-i18n="settings.nav.contact">联系我们</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="about">
+                  <span data-i18n="settings.nav.about">关于</span>
+                </button>
               </div>
               <p class="settings-section-desc" data-i18n="settings.contactDesc">团队授权、私有部署、技能包下发或版本管理需求，可直接在此留言；也可访问官网联系页或发送邮件。</p>
               <p class="settings-section-desc settings-section-desc--compact">
@@ -845,11 +898,18 @@
                 </div>
               </form>
             </section>
-            <section id="settingsPageAbout" class="settings-page settings-page-about settings-segment-panel" role="tabpanel" aria-labelledby="helpTabAbout" data-settings-page="help" data-settings-segment-panel="help:about" hidden>
-              <div class="settings-segment-tabs settings-segment-tabs--mirror" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
-                <button class="settings-segment-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPageFeedback" data-settings-segment-tab="help:feedback" data-i18n="settings.nav.feedback">意见反馈</button>
-                <button class="settings-segment-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPageContact" data-settings-segment-tab="help:contact" data-i18n="settings.nav.contact">联系我们</button>
-                <button class="settings-segment-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="settingsPageAbout" data-settings-segment-tab="help:about" data-i18n="settings.nav.about">关于</button>
+            <section id="settingsPageAbout" class="settings-page settings-page-about" data-settings-page="about" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.about">关于</h3>
+              <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="feedback">
+                  <span data-i18n="settings.nav.feedback">意见反馈</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="contact">
+                  <span data-i18n="settings.nav.contact">联系我们</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="about">
+                  <span data-i18n="settings.nav.about">关于</span>
+                </button>
               </div>
               <div class="settings-about">
                 <img src="" alt="" class="settings-about-logo" width="72" height="72" />

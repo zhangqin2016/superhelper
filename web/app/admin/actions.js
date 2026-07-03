@@ -162,6 +162,7 @@ export async function createConfigProfileAction(_previousState, formData) {
       config: parsedConfig,
     });
     revalidatePath("/admin/config");
+    revalidatePath("/admin/config/profiles");
     return { ok: true, message: `Config profile ${result.id} saved.` };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "Failed to save config profile." };
@@ -191,6 +192,7 @@ export async function createModelProviderAction(_previousState, formData) {
       enabled: !bool(formData, "disabled"),
     });
     revalidatePath("/admin/config");
+    revalidatePath("/admin/config/providers");
     return { ok: true, message: `Provider ${result.id} saved.` };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "Failed to save provider." };
@@ -200,6 +202,7 @@ export async function createModelProviderAction(_previousState, formData) {
 export async function deleteModelProviderAction(formData) {
   await apiDelete(`/api/admin/model-providers/${text(formData, "id")}`);
   revalidatePath("/admin/config");
+  revalidatePath("/admin/config/providers");
 }
 
 export async function createConfigGroupAction(_previousState, formData) {
@@ -210,6 +213,7 @@ export async function createConfigGroupAction(_previousState, formData) {
       name: text(formData, "name"),
     });
     revalidatePath("/admin/config");
+    revalidatePath("/admin/config/groups");
     return { ok: true, message: `Group ${result.id} saved.` };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "Failed to save group." };
@@ -225,6 +229,7 @@ export async function assignConfigGroupAction(_previousState, formData) {
       groupId: text(formData, "groupId") || null,
     });
     revalidatePath("/admin/config");
+    revalidatePath("/admin/config/groups");
     return { ok: true, message: "Membership updated." };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "Failed to update membership." };
@@ -234,6 +239,7 @@ export async function assignConfigGroupAction(_previousState, formData) {
 export async function deleteConfigGroupAction(formData) {
   await apiDelete(`/api/admin/config-groups/${text(formData, "id")}`);
   revalidatePath("/admin/config");
+  revalidatePath("/admin/config/groups");
 }
 
 export async function setLicenseStatusAction(formData) {
@@ -256,6 +262,7 @@ export async function updateLicenseAction(formData) {
   });
   revalidatePath("/admin/licenses");
   revalidatePath(`/admin/licenses/${text(formData, "id")}`);
+  revalidatePath(`/admin/licenses/${text(formData, "id")}/edit`);
 }
 
 export async function setLicenseDeviceStatusAction(formData) {
@@ -291,33 +298,44 @@ export async function setWorkspaceAppEnabledAction(formData) {
 export async function setConfigProfileEnabledAction(formData) {
   await apiPatch(`/api/admin/config-profiles/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
   revalidatePath("/admin/config");
+  revalidatePath("/admin/config/profiles");
 }
 
 export async function rollbackConfigProfileAction(formData) {
   await apiPost(`/api/admin/config-profiles/${text(formData, "id")}/rollback`, {});
   revalidatePath("/admin/config");
+  revalidatePath("/admin/config/profiles");
 }
 
 export async function updateSettingsAction(formData) {
-  await apiPatch("/api/admin/settings", {
+  const section = text(formData, "settingsSection") || "all";
+  const payload = {
     licenseTrialDays: Number(text(formData, "licenseTrialDays") || 0),
-    modelDeliveryMode: text(formData, "modelDeliveryMode") || undefined,
-    mediaDeliveryMode: text(formData, "mediaDeliveryMode") || undefined,
-    qiniu: {
+  };
+  if (section === "all" || section === "delivery") {
+    payload.modelDeliveryMode = text(formData, "modelDeliveryMode") || undefined;
+    payload.mediaDeliveryMode = text(formData, "mediaDeliveryMode") || undefined;
+  }
+  if (section === "all" || section === "qiniu") {
+    payload.qiniu = {
       publicBaseUrl: text(formData, "qiniuPublicBaseUrl"),
       accessKey: text(formData, "qiniuAccessKey"),
       secretKey: text(formData, "qiniuSecretKey") || null,
       bucket: text(formData, "qiniuBucket"),
       uploadUrl: text(formData, "qiniuUploadUrl") || "https://upload.qiniup.com",
-    },
-    aliyunSms: {
+    };
+  }
+  if (section === "all" || section === "sms") {
+    payload.aliyunSms = {
       accessKeyId: text(formData, "aliyunSmsAccessKeyId"),
       accessKeySecret: text(formData, "aliyunSmsAccessKeySecret") || null,
       signName: text(formData, "aliyunSmsSignName"),
       templateLogin: text(formData, "aliyunSmsTemplateLogin"),
       region: text(formData, "aliyunSmsRegion") || "cn-hangzhou",
-    },
-    payment: {
+    };
+  }
+  if (section === "all" || section === "payment") {
+    payload.payment = {
       fakePaymentsEnabled: bool(formData, "paymentFakePaymentsEnabled"),
       alipay: {
         enabled: bool(formData, "alipayEnabled"),
@@ -339,9 +357,15 @@ export async function updateSettingsAction(formData) {
         notifyUrl: text(formData, "wechatNotifyUrl"),
         sandbox: bool(formData, "wechatSandbox"),
       },
-    },
-  });
+    };
+  }
+  await apiPatch("/api/admin/settings", payload);
   revalidatePath("/admin/settings");
+  revalidatePath("/admin/config");
+  revalidatePath("/admin/config/settings");
+  revalidatePath("/admin/config/storage");
+  revalidatePath("/admin/config/sms");
+  revalidatePath("/admin/config/payment");
   revalidatePath("/admin/devices");
 }
 

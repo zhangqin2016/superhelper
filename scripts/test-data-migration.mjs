@@ -27,6 +27,7 @@ const {
   recoverOrphanLegacyMessageSessions,
   shouldPreferLegacyJson,
   forEachPersistedSession,
+  migrateLegacyGuideFile,
 } = require(path.join(__dirname, "../src/main/data-migration.js"));
 
 const legacyProjects = {
@@ -470,6 +471,30 @@ if (!resumeChanged || resumeRaw.sessions.proj1[0].agentResumeId !== "resume-old"
   }
   if (migratedIndex.activeSessionId === "recovered-0") {
     throw new Error("active session should move away from a recovered session archived by cleanup");
+  }
+}
+
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lily-data-migration-guide-"));
+  const currentRoot = path.join(root, "lily-workbench");
+  process.env.LILY_USER_DATA_DIR = currentRoot;
+  fs.mkdirSync(path.join(currentRoot, "lily-config"), { recursive: true });
+  fs.writeFileSync(path.join(currentRoot, "lily-config", "CLAUDE.md"), "legacy guide\n", "utf8");
+  migrateLegacyGuideFile();
+  if (!fs.existsSync(path.join(currentRoot, "lily-config", "AGENT.md"))) {
+    throw new Error("legacy CLAUDE.md should migrate to canonical AGENT.md");
+  }
+  if (fs.existsSync(path.join(currentRoot, "lily-config", "CLAUDE.md"))) {
+    throw new Error("legacy CLAUDE.md should not remain after migration");
+  }
+  fs.writeFileSync(path.join(currentRoot, "lily-config", "CLAUDE.md"), "legacy-only user rule\n", "utf8");
+  migrateLegacyGuideFile();
+  if (fs.existsSync(path.join(currentRoot, "lily-config", "CLAUDE.md"))) {
+    throw new Error("stale CLAUDE.md mirror should be removed when AGENT.md exists");
+  }
+  const mergedGuide = fs.readFileSync(path.join(currentRoot, "lily-config", "AGENT.md"), "utf8");
+  if (!mergedGuide.includes("legacy guide") || !mergedGuide.includes("legacy-only user rule")) {
+    throw new Error("legacy guide migration must preserve all distinct guide content");
   }
 }
 

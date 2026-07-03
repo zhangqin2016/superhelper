@@ -90,7 +90,7 @@ function Field({ label, children }) {
   );
 }
 
-export function ConfigGroupsPanel({ groups = [] }) {
+export function ConfigGroupsPanel({ groups = [], showCreate = true, showAssign = true, showList = true }) {
   const { locale } = useI18n();
   const copy = labels[locale] || labels.zh;
   const [createState, createAction, creating] = useActionState(createConfigGroupAction, initialState);
@@ -103,8 +103,8 @@ export function ConfigGroupsPanel({ groups = [] }) {
         <p className="mt-1 max-w-4xl text-sm text-slate-500">{copy.desc}</p>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <form action={createAction} className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+      {(showCreate || showAssign) ? <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        {showCreate ? <form action={createAction} className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
           <h3 className="text-base font-semibold text-slate-900">{copy.createTitle}</h3>
           <Field label={copy.id}>
             <input className={fieldClass()} name="id" required placeholder="vip" />
@@ -116,9 +116,9 @@ export function ConfigGroupsPanel({ groups = [] }) {
           {createState?.message ? (
             <p className={`text-sm ${createState.ok ? "text-emerald-700" : "text-red-700"}`}>{createState.message}</p>
           ) : null}
-        </form>
+        </form> : null}
 
-        <form action={assignAction} className="space-y-3 rounded-2xl border border-slate-200 p-4">
+        {showAssign ? <form action={assignAction} className="space-y-3 rounded-2xl border border-slate-200 p-4">
           <h3 className="text-base font-semibold text-slate-900">{copy.assignTitle}</h3>
           <Field label={copy.kind}>
             <select className={fieldClass()} name="kind" defaultValue="device">
@@ -143,10 +143,10 @@ export function ConfigGroupsPanel({ groups = [] }) {
           {assignState?.message ? (
             <p className={`text-sm ${assignState.ok ? "text-emerald-700" : "text-red-700"}`}>{assignState.message}</p>
           ) : null}
-        </form>
-      </div>
+        </form> : null}
+      </div> : null}
 
-      <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+      {showList ? <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
         {groups.length ? (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-start text-xs uppercase text-slate-500">
@@ -180,7 +180,7 @@ export function ConfigGroupsPanel({ groups = [] }) {
         ) : (
           <p className="px-4 py-6 text-center text-sm text-slate-400">{copy.empty}</p>
         )}
-      </div>
+      </div> : null}
     </section>
   );
 }

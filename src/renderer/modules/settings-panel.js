@@ -25,51 +25,44 @@ import { initMemorySettings, refreshMemorySettings } from "./memory-settings.js"
 import { initAccountSettings, refreshAccountSettings } from "./account-settings.js";
 import { getNotificationPrefs, setNotificationPrefs } from "./task-alert.js";
 
-// "account" merges usage + license; "help" merges feedback + contact + about.
-// Multiple <section>s can share one page id — switchSettingsPage shows them all.
-const SETTINGS_PAGES = ["general", "model", "permission", "search", "media", "connectors", "skills", "apps", "runtime", "memory", "account", "help"];
-const SETTINGS_SEGMENT_DEFAULTS = {
-  account: "overview",
-  help: "feedback",
+const SETTINGS_PAGES = [
+  "general",
+  "model",
+  "permission",
+  "search",
+  "media",
+  "connectors",
+  "skills",
+  "apps",
+  "runtime",
+  "memory",
+  "account",
+  "help",
+  "usage",
+  "license",
+  "feedback",
+  "contact",
+  "about",
+];
+const SETTINGS_SUBNAV_GROUPS = {
+  account: ["account", "usage", "license"],
+  usage: ["account", "usage", "license"],
+  license: ["account", "usage", "license"],
+  feedback: ["feedback", "contact", "about"],
+  contact: ["feedback", "contact", "about"],
+  about: ["feedback", "contact", "about"],
+};
+const SETTINGS_NAV_PARENT = {
+  usage: "account",
+  license: "account",
+  feedback: "help",
+  contact: "help",
+  about: "help",
 };
 
 let panelOpen = false;
 let activeSettingsPage = "general";
-const activeSettingsSegments = { ...SETTINGS_SEGMENT_DEFAULTS };
 let refreshInFlight = null;
-
-function parseSettingsSegment(value = "") {
-  const [group, segment] = String(value).split(":");
-  return { group, segment };
-}
-
-function setSettingsSegment(group, segment) {
-  if (!group || !segment) return;
-  activeSettingsSegments[group] = segment;
-
-  document.querySelectorAll("[data-settings-segment-tab]").forEach((button) => {
-    const parsed = parseSettingsSegment(button.dataset.settingsSegmentTab);
-    if (parsed.group !== group) return;
-    const isActive = parsed.segment === segment;
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-selected", isActive ? "true" : "false");
-  });
-
-  document.querySelectorAll("[data-settings-segment-panel]").forEach((panel) => {
-    const parsed = parseSettingsSegment(panel.dataset.settingsSegmentPanel);
-    if (parsed.group !== group) return;
-    const isActive = parsed.segment === segment;
-    const isCurrentPageGroup = activeSettingsPage === group;
-    panel.classList.toggle("is-active", isActive);
-    panel.hidden = !(isCurrentPageGroup && isActive);
-  });
-}
-
-function syncSettingsSegments() {
-  for (const [group, fallback] of Object.entries(SETTINGS_SEGMENT_DEFAULTS)) {
-    setSettingsSegment(group, activeSettingsSegments[group] || fallback);
-  }
-}
 
 async function confirmBypassPermission() {
   return confirmDialog({
@@ -86,7 +79,7 @@ function switchSettingsPage(pageId) {
   activeSettingsPage = pageId;
 
   document.querySelectorAll(".settings-nav-item").forEach((btn) => {
-    const isActive = btn.dataset.settingsPage === pageId;
+    const isActive = btn.dataset.settingsPage === (SETTINGS_NAV_PARENT[pageId] || pageId);
     btn.classList.toggle("is-active", isActive);
     btn.setAttribute("aria-current", isActive ? "page" : "false");
   });
@@ -96,7 +89,15 @@ function switchSettingsPage(pageId) {
     page.classList.toggle("is-active", isActive);
     page.hidden = !isActive;
   });
-  syncSettingsSegments();
+
+  document.querySelectorAll("[data-settings-link]").forEach((btn) => {
+    const target = btn.dataset.settingsLink || "";
+    const active = target === pageId;
+    const related = SETTINGS_SUBNAV_GROUPS[pageId]?.includes(target);
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+    btn.tabIndex = related ? 0 : -1;
+  });
 }
 
 function setPanelOpen(open) {
@@ -161,10 +162,9 @@ export async function initSettingsPanel() {
       switchSettingsPage(btn.dataset.settingsPage || "general");
     });
   });
-  document.querySelectorAll("[data-settings-segment-tab]").forEach((btn) => {
+  document.querySelectorAll("[data-settings-link]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const { group, segment } = parseSettingsSegment(btn.dataset.settingsSegmentTab);
-      setSettingsSegment(group, segment);
+      switchSettingsPage(btn.dataset.settingsLink || "general");
     });
   });
 

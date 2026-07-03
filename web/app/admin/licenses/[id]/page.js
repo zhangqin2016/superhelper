@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminShell } from "../../../../components/admin-shell";
 import { AdminEmpty } from "../../../../components/admin-empty";
-import { LicenseEditForm } from "../../../../components/license-edit-form";
+import { AdminPageActions } from "../../../../components/admin-page-actions";
 import { Badge } from "../../../../components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
 import { safeApiGet } from "../../../../lib/api";
@@ -46,6 +46,7 @@ export default async function LicenseDetailPage({ params }) {
       <div className="mb-5">
         <Link href="/admin/licenses" className="text-sm font-semibold text-brand">Back to licenses</Link>
       </div>
+      <AdminPageActions actions={[{ href: `/admin/licenses/${license.id}/edit`, label: "编辑授权", variant: "primary" }]} />
       <div className="mb-6 grid gap-5 lg:grid-cols-4">
         {[
           ["Status", <Badge key="status" variant={license.status === "active" ? "success" : "danger"}>{license.status}</Badge>],
@@ -59,7 +60,6 @@ export default async function LicenseDetailPage({ params }) {
           </Card>
         ))}
       </div>
-      <LicenseEditForm license={license} />
       <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_360px]">
         <div className="table-card p-6">
           <h2 className="mb-5 text-xl font-semibold">{t.admin.licenseDevices.title}</h2>

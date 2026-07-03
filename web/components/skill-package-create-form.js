@@ -7,14 +7,14 @@ import { useI18n } from "../lib/use-i18n";
 
 const initialState = { ok: null, message: "" };
 
-export function SkillPackageCreateForm() {
+export function SkillPackageCreateForm({ title }) {
   const [state, action, pending] = useActionState(createSkillPackageAction, initialState);
   const { t } = useI18n();
   const copy = t.admin.uploadForms.skillPackage;
 
   return (
     <div className="table-card mb-6 p-6">
-      <h2 className="mb-5 text-xl font-semibold">{t.admin.pages.skillPackages[0]}</h2>
+      <h2 className="mb-5 text-xl font-semibold">{title || t.admin.pages.skillPackages[0]}</h2>
       <p className="mb-4 text-sm text-slate-500">{copy.description}</p>
       <form action={action} className="grid gap-4 lg:grid-cols-6">
         <Field label="Skill ID" name="skillId" placeholder="lily-coding-core" required />

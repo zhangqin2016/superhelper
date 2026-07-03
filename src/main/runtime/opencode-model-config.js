@@ -4,9 +4,10 @@
  * Translate Lily's distributed model config (resolved LILY_* env — endpoint,
  * token, model id) into the OpenCode provider config + model Ref.
  *
- * Lily fed the Claude CLI via an Anthropic-compatible endpoint (e.g. DeepSeek's
- * https://api.deepseek.com/anthropic). OpenCode can speak EITHER protocol, so we
- * AUTO-DETECT from the endpoint and pick the matching AI-SDK provider:
+ * Lily may receive an Anthropic-compatible endpoint (e.g. DeepSeek's
+ * https://api.deepseek.com/anthropic) or an OpenAI-compatible endpoint. OpenCode
+ * can speak either protocol, so we AUTO-DETECT from the endpoint and pick the
+ * matching AI-SDK provider:
  *   - "/anthropic" endpoint  -> @ai-sdk/anthropic       (provider id "anthropic")
  *   - anything else          -> @ai-sdk/openai-compatible (provider id "lily")
  * Override with LILY_OPENCODE_PROTOCOL=anthropic|openai if ever needed.
@@ -14,7 +15,7 @@
  * Emitted as OPENCODE_CONFIG_CONTENT (V1 config schema). options is StructWithRest
  * so we pass apiKey (-> x-api-key for anthropic / Bearer for openai-compatible)
  * AND an explicit Authorization: Bearer header — covering whichever the gateway
- * wants (the Claude CLI used Bearer via ANTHROPIC_AUTH_TOKEN).
+ * wants.
  */
 
 /** Trim trailing slash. */

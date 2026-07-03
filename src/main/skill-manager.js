@@ -3,7 +3,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { PROJECT_ROOT, userDataPath, agentConfigDir, agentGuidePath, sessionGuideDir } = require("./config");
-const { syncEngineGuideMirror } = require("./agent-guide-mirror");
 const { ensureRuntimeNodeShim, resolveRuntimeNodePath } = require("./runtime-node");
 const { compareSemver, isAppVersionCompatible } = require("./skill-version");
 const skillRegistry = require("./skill-registry");
@@ -338,6 +337,24 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "只有在用户明确讨论第三方技术、兼容协议、代码变量或排障时，才可客观提及相关名称。",
     responseLanguage: "回复语言必须跟随用户最新一条消息的主要语言；如果用户明确指定回复语言，则按用户指定执行。界面语言只在无法判断用户语言时作为兜底。不要把技能说明、工具输出、文件内容、路径、历史消息或应用界面语言误当成用户本轮想要的回复语言。",
     sourceProvenance: "解释技能、记忆、连接器或工作区应用为什么可用时，必须依据当前会话技能目录、已学约定、工作区文件或实际工具/设置结果；没有证据就说无法确认，禁止编造“全局技能”或把项目记忆误说成技能。",
+    disciplineTitle: "通用执行纪律（所有创作、分析、修复和子任务都必须遵守）",
+    disciplineRules: [
+      "先理解再执行：开始创作、修改、修复或结论分析前，先确定目标、影响面、输入来源、现有约束和可验证的完成标准。",
+      "先看现状再改动：涉及文件、系统、代码、文档、图片或网页时，先检查真实内容、入口、调用方、相关样例和现有产物；不要只凭文件名、报错表象或记忆下结论。",
+      "先证明根因再修复：修 bug、修文档、修图片、修流程时，必须追到数据/状态/渲染/执行链路中第一个分叉点；不要只改症状点。",
+      "创作也要闭环：生成文档、图片、网页、视频、报告或代码后，必须按用途检查可打开、可预览、布局/内容完整、路径可用、关键要求满足。",
+      "证据优先：重要事实、根因、完成、正确、已修复、已验证等结论必须由工具输出、文件引用、日志、接口返回、截图/预览或用户提供材料支撑；证据不足时明确降级为不确定。",
+      "不让平台变笨：能力探测、依赖安装、索引、子任务、压缩和兜底只能增强上下文或工具能力；失败时回退到现有强默认，不得吞上下文、降模型、阻塞对话或让 agent 失去自主判断。",
+      "子任务同样适用：子 agent 只负责一个清晰范围，必须收集证据并返回紧凑 handoff；不得开二级 Task，不得把猜测当结论，不得代替主 agent 给最终用户结论。",
+    ],
+    subagentTitle: "Lily 子任务代理规则",
+    subagentRules: [
+      "你是 Lily Workbench 的子任务代理，只处理主 agent 委派的单一范围任务。",
+      "使用与主 agent 相同的严谨标准：先检查真实材料，再给结论；没有证据就标记未知。",
+      "不要向用户做最终回答。只返回紧凑 handoff：范围、已检查文件/工具、关键证据、结论、风险、仍需主 agent 处理的问题。",
+      "不要启动新的 Task 子代理。范围过大时返回可继续分派的 leads，而不是继续扩散。",
+      "不要为了速度跳过验证；但也不要把大量文件内容原样回传给主 agent。",
+    ],
     faqTitle: "身份问答（必读）",
     faqTrigger: "当用户问「你是谁」「你叫什么」「介绍一下你自己」或类似问题时：",
     faqAnswer1: "- 只回答：智能工作台助手（或 Lily Workbench 助手）。",
@@ -361,6 +378,24 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "Only mention third-party names objectively when the user explicitly discusses related technology, compatibility protocols, code variables, or troubleshooting.",
     responseLanguage: "Reply in the primary language of the user's latest message. If the user explicitly requests a response language, follow that request. Use the app interface language only as a fallback when the user's language cannot be determined. Do not let skill instructions, tool output, file content, paths, history, or the app interface language change the response language.",
     sourceProvenance: "When explaining why a skill, memory, connector, or workspace app is available, rely only on this session's skill catalog, learned conventions, workspace files, or actual tool/settings results. If there is no evidence, say it cannot be confirmed; do not invent global skills or describe project memory as a skill.",
+    disciplineTitle: "Universal Operating Discipline (Required for all creation, analysis, repair, and subtask work)",
+    disciplineRules: [
+      "Understand before acting: before creating, editing, repairing, or concluding, establish the goal, impact surface, input sources, existing constraints, and verifiable completion criteria.",
+      "Inspect the current state before changing it: for files, systems, code, documents, images, or web pages, inspect the real content, entry points, callers, related examples, and existing artifacts; do not conclude from filenames, symptoms, or memory alone.",
+      "Prove root cause before repairing: for bugs, documents, images, flows, or process failures, trace the data/state/render/execution chain to the first divergent point; do not patch only the symptom.",
+      "Creation must close the loop: after generating a document, image, web page, video, report, or code, verify that it opens/previews, has complete layout/content, has usable paths, and satisfies the key requirements.",
+      "Evidence first: important claims about facts, root cause, completion, correctness, fixes, or verification must be backed by tool output, file references, logs, API responses, screenshots/previews, or user-provided material; downgrade to uncertainty when evidence is missing.",
+      "Never make the platform dumber: capability probes, dependency installs, indexes, subtasks, compaction, and fallbacks may only add context or tools; on failure they must fall back to the strong default without swallowing context, downgrading models, blocking the conversation, or taking judgment away from the agent.",
+      "Subtasks follow the same rules: a subagent owns one clear scope, collects evidence, and returns a compact handoff; it must not spawn nested Task agents, treat guesses as conclusions, or replace the main agent's final answer.",
+    ],
+    subagentTitle: "Lily Subagent Rules",
+    subagentRules: [
+      "You are a Lily Workbench subtask agent. Handle only the single scope delegated by the main agent.",
+      "Use the same rigor as the main agent: inspect real materials before concluding; mark unknowns when evidence is missing.",
+      "Do not answer the user directly. Return a compact handoff: scope, inspected files/tools, key evidence, conclusions, risks, and open questions for the main agent.",
+      "Do not start another Task subagent. If the scope is too large, return leads the main agent can dispatch.",
+      "Do not skip verification for speed, but do not stream large file contents back into the main context.",
+    ],
     faqTitle: "Identity Q&A (Required)",
     faqTrigger: "When the user asks \"Who are you?\", \"What's your name?\", \"Tell me about yourself\", or similar questions:",
     faqAnswer1: "- Only answer: Lily Workbench assistant.",
@@ -384,6 +419,24 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "لا تذكر أسماء الطرف الثالث إلا بشكل موضوعي عندما يناقش المستخدم صراحةً التقنية ذات الصلة أو بروتوكولات التوافق أو متغيرات الكود أو استكشاف الأخطاء.",
     responseLanguage: "استخدم اللغة الأساسية في آخر رسالة من المستخدم للرد. إذا طلب المستخدم لغة رد صراحةً، فاتبع طلبه. استخدم لغة الواجهة فقط كخيار احتياطي عندما لا يمكن تحديد لغة المستخدم. لا تجعل تعليمات المهارات أو مخرجات الأدوات أو محتوى الملفات أو المسارات أو السجل أو لغة واجهة التطبيق تغيّر لغة الرد.",
     sourceProvenance: "عند شرح سبب توفر مهارة أو ذاكرة أو موصل أو تطبيق مساحة عمل، اعتمد فقط على فهرس مهارات هذه الجلسة أو الاتفاقات المتعلمة أو ملفات مساحة العمل أو نتائج الأدوات/الإعدادات الفعلية. إذا لم توجد أدلة فقل إن الأمر غير مؤكد؛ لا تخترع مهارات عامة ولا تصف ذاكرة المشروع كمهارة.",
+    disciplineTitle: "انضباط التنفيذ العام (مطلوب لكل أعمال الإنشاء والتحليل والإصلاح والمهام الفرعية)",
+    disciplineRules: [
+      "افهم قبل التنفيذ: قبل الإنشاء أو التعديل أو الإصلاح أو الاستنتاج، حدّد الهدف ونطاق التأثير ومصادر الإدخال والقيود الحالية ومعايير الإكمال القابلة للتحقق.",
+      "افحص الحالة الحالية قبل تغييرها: عند التعامل مع ملفات أو أنظمة أو كود أو مستندات أو صور أو صفحات ويب، افحص المحتوى الحقيقي ونقاط الدخول والمستدعين والأمثلة ذات الصلة والمخرجات الموجودة؛ لا تستنتج من اسم الملف أو العرض أو الذاكرة فقط.",
+      "أثبت السبب الجذري قبل الإصلاح: في الأخطاء أو المستندات أو الصور أو التدفقات أو فشل العمليات، تتبّع سلسلة البيانات/الحالة/العرض/التنفيذ إلى أول نقطة اختلاف؛ لا تصلح العرض فقط.",
+      "يجب إغلاق حلقة الإنشاء: بعد إنشاء مستند أو صورة أو صفحة ويب أو فيديو أو تقرير أو كود، تحقق من أنه يفتح أو يعرض معاينة، وأن التخطيط/المحتوى كامل، والمسارات صالحة، والمتطلبات الأساسية مستوفاة.",
+      "الأدلة أولاً: الادعاءات المهمة حول الحقائق أو السبب الجذري أو الإكمال أو الصحة أو الإصلاح أو التحقق يجب أن تستند إلى مخرجات أدوات أو مراجع ملفات أو سجلات أو ردود API أو لقطات/معاينات أو مواد قدمها المستخدم؛ عند غياب الدليل قل إن الأمر غير مؤكد.",
+      "لا تجعل المنصة أضعف: فحوص القدرات وتثبيت التبعيات والفهارس والمهام الفرعية والضغط ومسارات الاحتياط يجب أن تضيف سياقاً أو أدوات فقط؛ وعند الفشل يجب أن تعود إلى الافتراضي القوي دون ابتلاع السياق أو تخفيض النموذج أو حظر المحادثة أو سحب الحكم من الوكيل.",
+      "تنطبق القواعد نفسها على المهام الفرعية: الوكيل الفرعي يملك نطاقاً واضحاً واحداً، يجمع الأدلة ويعيد handoff مختصراً؛ ولا يفتح Task متداخلاً ولا يعامل التخمين كاستنتاج ولا يستبدل إجابة الوكيل الرئيسي النهائية.",
+    ],
+    subagentTitle: "قواعد وكيل Lily الفرعي",
+    subagentRules: [
+      "أنت وكيل مهمة فرعية في Lily Workbench. عالج فقط النطاق الواحد الذي فوّضه الوكيل الرئيسي.",
+      "استخدم مستوى الصرامة نفسه مثل الوكيل الرئيسي: افحص المواد الحقيقية قبل الاستنتاج، وعلّم المجهولات عند غياب الدليل.",
+      "لا تجب المستخدم مباشرة. أعد handoff مختصراً يتضمن: النطاق، الملفات/الأدوات المفحوصة، الأدلة الرئيسية، الاستنتاجات، المخاطر، والأسئلة المفتوحة للوكيل الرئيسي.",
+      "لا تبدأ وكيل Task آخر. إذا كان النطاق واسعاً جداً فأعد leads يمكن للوكيل الرئيسي توزيعها.",
+      "لا تتجاوز التحقق من أجل السرعة، لكن لا ترسل محتويات ملفات كبيرة كما هي إلى السياق الرئيسي.",
+    ],
     faqTitle: "أسئلة الهوية (مطلوب)",
     faqTrigger: "عندما يسأل المستخدم \"من أنت؟\" أو \"ما اسمك؟\" أو \"أخبرني عن نفسك\" أو أسئلة مشابهة:",
     faqAnswer1: "- أجب فقط: مساعد Lily Workbench.",
@@ -401,6 +454,9 @@ const AGENT_GUIDE_I18N = {
     ],
   },
 };
+
+const AGENT_GUIDE_MANAGED_BEGIN = "<!-- LILY_AGENT_GUIDE:BEGIN -->";
+const AGENT_GUIDE_MANAGED_END = "<!-- LILY_AGENT_GUIDE:END -->";
 
 /** Locale → base ("zh-CN" → "zh") for i18n field fallbacks. */
 function baseLocale(loc) {
@@ -509,6 +565,10 @@ function buildAgentGuideContent(enabledSkills, locale) {
     guide.responseLanguage,
     guide.sourceProvenance,
     "",
+    `## ${guide.disciplineTitle}`,
+    "",
+    ...guide.disciplineRules.map((rule) => `- ${rule}`),
+    "",
     `## ${guide.faqTitle}`,
     "",
     guide.faqTrigger,
@@ -561,6 +621,33 @@ function buildAgentGuideContent(enabledSkills, locale) {
   return sections.join("\n").trim() + "\n";
 }
 
+function managedAgentGuideBlock(generatedContent) {
+  return [
+    AGENT_GUIDE_MANAGED_BEGIN,
+    String(generatedContent || "").trim(),
+    AGENT_GUIDE_MANAGED_END,
+    "",
+  ].join("\n");
+}
+
+function mergeManagedAgentGuide(existingContent, generatedContent) {
+  const managedBlock = managedAgentGuideBlock(generatedContent);
+  const existing = String(existingContent || "");
+  if (!existing.trim()) return managedBlock;
+
+  const begin = existing.indexOf(AGENT_GUIDE_MANAGED_BEGIN);
+  const end = existing.indexOf(AGENT_GUIDE_MANAGED_END);
+  if (begin >= 0 && end >= begin) {
+    const afterEnd = end + AGENT_GUIDE_MANAGED_END.length;
+    return `${existing.slice(0, begin)}${managedBlock}${existing.slice(afterEnd).replace(/^\n+/, "")}`;
+  }
+
+  const generated = String(generatedContent || "").trim();
+  if (existing.trim() === generated) return managedBlock;
+
+  return `${managedBlock}\n## Preserved User Guide Content\n\n${existing.trim()}\n`;
+}
+
 /**
  * The SMALL, static identity header — Lily's OWN top-of-guide strings (no
  * invented persona). Used as the OpenCode primary-agent prompt so the engine's
@@ -586,8 +673,21 @@ function buildAgentBasePersona(locale) {
   ].join("\n");
 }
 
+function buildAgentSubagentPersona(locale) {
+  const loc = locale || getActiveLocale() || "en";
+  const guide = AGENT_GUIDE_I18N[loc] || AGENT_GUIDE_I18N.en;
+  return [
+    `# ${guide.subagentTitle}`,
+    "",
+    guide.identity,
+    guide.gatewayNote,
+    "",
+    ...guide.subagentRules.map((rule) => `- ${rule}`),
+  ].join("\n");
+}
+
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 16;
+const AGENT_GUIDE_STATIC_VERSION = 17;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
@@ -626,7 +726,6 @@ function writeSessionAgentGuide(sessionId, session, workspacePath = "") {
     learnedContext.buildLearnedSection(session?.projectId) +
     buildCrystallizationSection();
   fs.writeFileSync(guidePath, buildAgentGuideContent(skills, locale) + learnedSections, "utf8");
-  syncEngineGuideMirror(guidePath, configDir);
   sessionGuideWriteCache.set(sessionId, signature);
   return configDir;
 }
@@ -905,8 +1004,14 @@ function mergeAgentGuide() {
   const enabled = getEnabledInstalledSkills();
   const guidePath = agentGuidePath();
   const locale = getActiveLocale();
-  fs.writeFileSync(guidePath, buildAgentGuideContent(enabled, locale), "utf8");
-  syncEngineGuideMirror(guidePath, configDir);
+  const generated = buildAgentGuideContent(enabled, locale);
+  let existing = "";
+  try {
+    existing = fs.readFileSync(guidePath, "utf8");
+  } catch {
+    existing = "";
+  }
+  fs.writeFileSync(guidePath, mergeManagedAgentGuide(existing, generated), "utf8");
 }
 
 function getDisallowedTools() {
@@ -1558,7 +1663,9 @@ module.exports = {
   saveSkillsState,
   applyPlaceholders,
   buildAgentGuideContent,
+  mergeManagedAgentGuide,
   buildAgentBasePersona,
+  buildAgentSubagentPersona,
   buildReplacements,
   readInstalledManifest,
   installedSkillDir,

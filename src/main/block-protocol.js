@@ -85,8 +85,10 @@ function normalizeBlock(raw) {
 function normalizeArtifactBlock(artifact = {}) {
   if (!artifact?.path) return null;
   return normalizeBlock({
+    id: artifact.id || artifact.artifactId || undefined,
     type: BLOCK_TYPES.ARTIFACT,
     artifactType: artifactTypeForArtifact(artifact),
+    artifactId: artifact.artifactId || artifact.id || "",
     path: artifact.path,
     relativePath: artifact.relativePath || artifact.fileName || artifact.path,
     fileName: artifact.fileName || "",

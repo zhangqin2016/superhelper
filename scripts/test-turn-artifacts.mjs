@@ -33,6 +33,7 @@ try {
     assert.equal(artifacts[0].kind, "image");
     assert.equal(artifacts[0].path, svgPath);
     assert.equal(artifacts[0].relativePath, "output/bug-distribution.svg");
+    assert.match(artifacts[0].artifactId, /^art_/, "turn artifacts carry stable artifact ids");
   }
 
   {

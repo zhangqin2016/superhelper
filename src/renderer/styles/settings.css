@@ -161,6 +161,43 @@
   color: var(--text-primary);
 }
 
+.settings-subnav-tabs {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 3px;
+  margin: 18px 0 22px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  background: color-mix(in srgb, var(--bg-left) 72%, var(--bg-elevated) 28%);
+  box-shadow: var(--top-highlight);
+}
+
+.settings-subnav-tab {
+  min-height: 34px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.settings-subnav-tab:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-surface-hover) 82%, var(--accent-subtle) 18%);
+}
+
+.settings-subnav-tab.is-active {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm), var(--top-highlight);
+}
+
 .settings-field {
   margin-bottom: 20px;
 }
@@ -773,6 +810,10 @@
   padding: 16px;
 }
 
+.account-identity-card {
+  max-width: 640px;
+}
+
 .account-card-head {
   display: flex;
   align-items: flex-start;
@@ -804,6 +845,10 @@
 
 .account-settings-card--entitlements {
   padding: 16px;
+}
+
+.account-usage-balance {
+  margin-bottom: 18px;
 }
 
 .account-entitlements {

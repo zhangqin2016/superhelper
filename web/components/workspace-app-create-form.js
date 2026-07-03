@@ -8,14 +8,14 @@ import { useI18n } from "../lib/use-i18n";
 
 const initialState = { ok: null, message: "" };
 
-export function WorkspaceAppCreateForm({ runtimePackOptions = [], skillPackageOptions = [] }) {
+export function WorkspaceAppCreateForm({ title, runtimePackOptions = [], skillPackageOptions = [] }) {
   const [state, action, pending] = useActionState(createWorkspaceAppAction, initialState);
   const { t } = useI18n();
   const copy = t.admin.uploadForms.workspaceApp;
 
   return (
     <div className="table-card mb-6 p-6">
-      <h2 className="mb-5 text-xl font-semibold">{t.admin.pages.apps[0]}</h2>
+      <h2 className="mb-5 text-xl font-semibold">{title || t.admin.pages.apps[0]}</h2>
       <p className="mb-4 text-sm text-slate-500">{copy.description}</p>
       <form action={action} className="grid gap-4 lg:grid-cols-6">
         <Field label="App ID" name="appId" placeholder="stock-research-dashboard" required />

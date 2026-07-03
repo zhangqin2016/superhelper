@@ -41,7 +41,7 @@ const {
 } = require("../src/main/learned-skills.js");
 
 try {
-  // L2: workspace rules absorbed; CLAUDE.md intentionally NOT read (engine native).
+  // L2: workspace rules absorbed; legacy CLAUDE.md intentionally NOT read.
   const workspace = path.join(tempRoot, "ws");
   fs.mkdirSync(workspace, { recursive: true });
   fs.writeFileSync(path.join(workspace, ".cursorrules"), "永远用中文回复");
@@ -52,7 +52,7 @@ try {
     throw new Error(`workspace rules must be absorbed: ${section}`);
   }
   if (section.includes("engine-native-should-not-appear")) {
-    throw new Error("CLAUDE.md must be skipped — the engine already reads it natively");
+    throw new Error("legacy CLAUDE.md must be skipped; AGENTS.md is the canonical workspace guide");
   }
   if (buildWorkspaceRulesSection(path.join(tempRoot, "missing")) !== "") {
     throw new Error("missing workspace must yield an empty section");

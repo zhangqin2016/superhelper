@@ -102,7 +102,7 @@ function Field({ label, children, help }) {
   );
 }
 
-export function ModelProvidersPanel({ providers = [] }) {
+export function ModelProvidersPanel({ providers = [], showForm = true, showList = true }) {
   const { locale } = useI18n();
   const copy = labels[locale] || labels.zh;
   const [state, action, pending] = useActionState(createModelProviderAction, initialState);
@@ -131,7 +131,7 @@ export function ModelProvidersPanel({ providers = [] }) {
         <p className="mt-1 max-w-4xl text-sm text-slate-500">{copy.desc}</p>
       </div>
 
-      <form action={action} className="mt-5 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 md:grid-cols-2 xl:grid-cols-3">
+      {showForm ? <form action={action} className="mt-5 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 md:grid-cols-2 xl:grid-cols-3">
         <Field label={copy.id} help={copy.idHelp}>
           <input className={fieldClass()} name="id" required value={draft.id} onChange={(e) => set("id", e.target.value)} placeholder="deepseek" />
         </Field>
@@ -179,9 +179,9 @@ export function ModelProvidersPanel({ providers = [] }) {
         {state?.message ? (
           <p className={`md:col-span-2 xl:col-span-3 text-sm ${state.ok ? "text-emerald-700" : "text-red-700"}`}>{state.message}</p>
         ) : null}
-      </form>
+      </form> : null}
 
-      <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+      {showList ? <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
         {providers.length ? (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
@@ -223,7 +223,7 @@ export function ModelProvidersPanel({ providers = [] }) {
         ) : (
           <p className="px-4 py-6 text-center text-sm text-slate-400">{copy.empty}</p>
         )}
-      </div>
+      </div> : null}
     </section>
   );
 }

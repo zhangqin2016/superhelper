@@ -2,7 +2,7 @@
 /**
  * "用我们下发的模型": Lily's distributed LILY_* config must translate into an
  * OpenCode provider that speaks the SAME protocol as the distributed endpoint.
- * Lily fed the Claude CLI via an Anthropic-compatible endpoint
+ * Lily may receive an Anthropic-compatible endpoint
  * (api.deepseek.com/anthropic), so we MUST auto-detect that and use the anthropic
  * provider — using openai-compatible there hits /chat/completions and 404s
  * (the bug that made the app unusable when OpenCode became default).
@@ -40,7 +40,7 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   assert(p.npm === "@ai-sdk/anthropic", "uses @ai-sdk/anthropic");
   assert(p.options.baseURL === "https://api.deepseek.com/anthropic/v1", "anthropic baseURL with /v1");
   assert(p.options.apiKey === "sk-deepseek", "apiKey -> x-api-key");
-  assert(p.options.headers.Authorization === "Bearer sk-deepseek", "also Bearer header (Claude CLI used AUTH_TOKEN)");
+  assert(p.options.headers.Authorization === "Bearer sk-deepseek", "also Bearer header for gateways that require it");
   assert("deepseek-v4-pro" in p.models, "custom model declared");
   assert(cfg.model === "anthropic/deepseek-v4-pro", "default model ref");
   assert(r.tiers.haiku === "deepseek-v4-pro", "missing haiku tier falls back to main model");

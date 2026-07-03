@@ -155,19 +155,20 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   // basePrompt is Lily's own static identity header. Setting it as the build/plan
   // agent prompt makes OpenCode's request.ts use it INSTEAD OF default.txt, so a
   // general request is no longer reframed as a terse coding task. The full
-  // per-turn guide still rides body.system; subagents keep the coding baseline.
+  // per-turn guide still rides body.system; subagents get a smaller Lily-owned
+  // subtask prompt instead of OpenCode's generic coding baseline.
   const persona = "# 智能工作台全局说明\n你是智能工作台（Lily Workbench）助手。";
+  const subagentPersona = "# Lily 子任务代理规则\n- 先检查证据\n- 不要启动新的 Task 子代理。";
   const r = buildSharedBaseConfig({
     lilyEnv: { LILY_API_BASE_URL: "https://api.deepseek.com", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-chat" },
     basePrompt: persona,
+    subagentPrompt: subagentPersona,
   });
   const cfg = JSON.parse(r.configContent);
   assert(cfg.agent.build.prompt === persona, "basePrompt -> build agent prompt set (default.txt suppressed)");
   assert(cfg.agent.plan.prompt === persona, "basePrompt -> plan agent prompt set (default.txt suppressed)");
-  // Subagents must NOT get the workbench persona — they do code subtasks and
-  // should keep OpenCode's coding baseline (they only get the model pin, if any).
-  assert(!cfg.agent.general || !cfg.agent.general.prompt, "subagent general keeps coding baseline (no workbench persona)");
-  assert(!cfg.agent.explore || !cfg.agent.explore.prompt, "subagent explore keeps coding baseline (no workbench persona)");
+  assert(cfg.agent.general.prompt === subagentPersona, "subagent general uses Lily subtask prompt");
+  assert(cfg.agent.explore.prompt === subagentPersona, "subagent explore uses Lily subtask prompt");
 }
 
 // --- agentPrompt makes Lily's guide the AUTHORITATIVE agent prompt -----------
@@ -175,10 +176,13 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   const r = buildOpencodeConfig({
     lilyEnv: { LILY_API_BASE_URL: "https://api.deepseek.com", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-chat" },
     agentPrompt: "You are 莉莉, a general assistant. (Lily's real AGENT.md content goes here.)",
+    subagentPrompt: "You are a Lily subtask agent. Return evidence handoff only.",
     instructionsPaths: ["/should/be/ignored/AGENT.md"],
   });
   const cfg = JSON.parse(r.configContent);
   assert(cfg.agent.build.prompt.includes("莉莉") && cfg.agent.plan.prompt.includes("莉莉"), "agentPrompt -> build + plan agent prompts (prepended, authoritative)");
+  assert(cfg.agent.general.prompt.includes("subtask agent"), "subagentPrompt -> general subagent prompt");
+  assert(cfg.agent.explore.prompt.includes("subtask agent"), "subagentPrompt -> explore subagent prompt");
   assert(!cfg.instructions, "instructions NOT also set when agentPrompt given (no dup of the 100KB guide)");
 }
 

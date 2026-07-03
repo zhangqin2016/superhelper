@@ -133,7 +133,7 @@ function classifyIncludedFile(relPath, explicitDataPaths = []) {
   if (top === "output") return "user-output";
   if (["cases", "data", "knowledge", "templates", "assets", "fixtures"].includes(top)) return "user-data";
   if (["source", "src", "scripts", "bin", "dist", "build"].includes(top)) return "app-core";
-  if (["README.md", "AGENTS.md", "CLAUDE.md", "lily-app.json", "package.json", "package-lock.json"].includes(rel)) return "app-core";
+  if (["README.md", "AGENTS.md", "lily-app.json", "package.json", "package-lock.json"].includes(rel)) return "app-core";
   if (rel.startsWith(".")) return "workspace-config";
   return "workspace-file";
 }

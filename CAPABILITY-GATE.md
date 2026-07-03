@@ -49,9 +49,11 @@ the guard test must still pass; when you add a new capability, add a row.
 | Vector (how it got dumber) | Guard (test / mechanism) |
 |---|---|
 | Coding-CLI persona overrides the workbench persona (default.txt) | `test-opencode-config-builder.mjs` — basePrompt suppresses the coding baseline for build/plan |
+| Legacy engine guide mirror reappears and splits the source of truth, or guide migration drops user-authored content | `test-skill-catalog.mjs` + `test-data-migration.mjs` — AGENT.md is canonical; guide generation must not create `CLAUDE.md`; startup migrates/removes stale legacy files while preserving distinct content; later guide refreshes only replace the Lily-managed block |
 | Per-turn system prompt bloat | `test-context-budget-manager.mjs` — token-budget estimation + compaction trigger. **GAP:** no dedicated static prompt-size assertion yet — add one |
 | Native compaction 500 → long-session memory lost | `test-opencode-config-builder.mjs` — compaction/title pinned to the resolvable main model; `test-context-budget-manager.mjs` |
 | Subagent infinite nesting (套娃) | `test-subagent-telemetry.mjs` — `nestedTaskBreaches` detector; isolation prompt aligned to depth-1 cap |
+| Subagents fall back to a generic coding baseline and skip Lily's evidence discipline | `test-opencode-config-builder.mjs` + `test-skill-catalog.mjs` — shared subagent config injects Lily Subagent Rules; subagents must return evidence-backed summaries and must not spawn nested Task subagents |
 | Runaway / doom loops | `test-loop-detector.mjs` — RESULT-AWARE (only byte-identical no-progress), graceful nudge, fail-open |
 | Cross-session memory dropped on compaction | `test-compaction-memory-export.mjs` / `test-compaction-memory-plugin.mjs` — inject memory, fail open |
 | Improvisation fallthrough (parse/learned-flow fails → model writes a script) | scheduled-task: recognized intent shows the card / interval floored, never improvises; web-system: no learned flow → "needs re-learn", not ad-hoc |
@@ -70,7 +72,7 @@ the guard test must still pass; when you add a new capability, add a row.
 
 ## Enforcement
 
-- **CLAUDE.md Rule 13** makes this gate binding for every task.
+- **AGENTS.md Rule 13** makes this gate binding for every task.
 - Each vector above has an automated guard; the full suite (`npm run test:unit`
   + `test:renderer`/`test:runtime`/`test:service`/`test:skills`) must be green.
 - Any new capability-affecting feature adds its own (1) failure-mode test proving

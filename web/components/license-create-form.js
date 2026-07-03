@@ -12,13 +12,13 @@ const initialState = { ok: null, message: "" };
 const LICENSE_FEATURES = ["updates", "skill-packages", "usage"];
 const FEATURE_OPTIONS = LICENSE_FEATURES.map((id) => ({ id, label: id }));
 
-export function LicenseCreateForm() {
+export function LicenseCreateForm({ title }) {
   const [state, action, pending] = useActionState(createLicenseAction, initialState);
   const { t } = useI18n();
 
   return (
     <div className="table-card mb-6 p-6">
-      <h2 className="mb-5 text-xl font-semibold">{t.admin.pages.licenses[0]}</h2>
+      <h2 className="mb-5 text-xl font-semibold">{title || t.admin.pages.licenses[0]}</h2>
       <form action={action} className="grid gap-4 lg:grid-cols-6">
         <div className="lg:col-span-2">
           <Field label="Customer" name="customerName" placeholder="Lanren Soft" />

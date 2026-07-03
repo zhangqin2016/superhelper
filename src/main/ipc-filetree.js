@@ -18,6 +18,7 @@ const ICON_MAP = {
 const { isTextFile } = require("./file-kinds");
 const { findDiffEntry, removeAcceptedDiff, revertTurnChanges, undoRevertTurn } = require("./diff-capture");
 const { resolveContainedPath } = require("./path-guard");
+const { inspectLocalMediaPath } = require("./local-media-protocol");
 
 function classifyEntry(entryPath, stats) {
   const isDir = stats.isDirectory();
@@ -92,7 +93,9 @@ function registerFileTreeHandlers(ctx = {}) {
       }
     }
     if (path.isAbsolute(candidate)) {
-      return fs.existsSync(candidate) ? candidate : null;
+      if (fs.existsSync(candidate)) return candidate;
+      const media = inspectLocalMediaPath(candidate);
+      return media.ok ? media.path : null;
     }
     // Reveal only accepts absolute local paths. Generated media scripts must
     // emit absolute paths; renderer/main must not guess a base directory for a
@@ -201,7 +204,7 @@ function registerFileTreeHandlers(ctx = {}) {
       } else {
         shell.showItemInFolder(target);
       }
-      return { ok: true };
+      return { ok: true, path: target };
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -219,7 +222,7 @@ function registerFileTreeHandlers(ctx = {}) {
       const { shell } = require("electron");
       const error = await shell.openPath(target);
       if (error) return { ok: false, error };
-      return { ok: true };
+      return { ok: true, path: target };
     } catch (err) {
       return { ok: false, error: err.message };
     }

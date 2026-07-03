@@ -466,6 +466,12 @@ async function replaceFailedLocalImage(image) {
     status = { ok: false, error: "STATUS_UNAVAILABLE", path: localPath };
   }
   if (!image.parentNode) return;
+  if (status?.ok && status?.url) {
+    image.dataset.localFilePath = status.path || localPath;
+    image.src = status.url;
+    image.title = status.path || localPath;
+    return;
+  }
   const doc = image.ownerDocument || document;
   const box = doc.createElement("span");
   box.className = "markdown-image-error";

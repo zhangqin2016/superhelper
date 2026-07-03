@@ -161,6 +161,33 @@ for (const skillId of expectedMandatory) {
   }
 }
 const globalGuide = fs.readFileSync(path.join(tmp, "lily-config", "AGENT.md"), "utf8");
+if (fs.existsSync(path.join(tmp, "lily-config", "CLAUDE.md"))) {
+  throw new Error("AGENT guide generation must not create legacy CLAUDE.md mirrors");
+}
+if (!globalGuide.includes("Universal Operating Discipline") && !globalGuide.includes("通用执行纪律")) {
+  throw new Error("AGENT guide must include universal operating discipline");
+}
+if (!globalGuide.includes("Prove root cause before repairing") && !globalGuide.includes("先证明根因再修复")) {
+  throw new Error("AGENT guide must require root-cause proof before repair");
+}
+const subagentGuide = skillManager.buildAgentSubagentPersona("en");
+if (!subagentGuide.includes("Lily Subagent Rules") || !subagentGuide.includes("Do not start another Task subagent")) {
+  throw new Error(`subagent persona must carry Lily subtask rules: ${subagentGuide}`);
+}
+const guidePath = path.join(tmp, "lily-config", "AGENT.md");
+fs.writeFileSync(guidePath, "# User AGENT additions\n\nKeep this custom rule.\n", "utf8");
+skillManager.mergeAgentGuide();
+skillManager.mergeAgentGuide();
+const mergedCustomGuide = fs.readFileSync(guidePath, "utf8");
+if (!mergedCustomGuide.includes("Keep this custom rule.")) {
+  throw new Error("AGENT guide merge must preserve user-authored content");
+}
+if (!mergedCustomGuide.includes("Universal Operating Discipline") && !mergedCustomGuide.includes("通用执行纪律")) {
+  throw new Error("AGENT guide merge must still include the full Lily managed guide");
+}
+if ((mergedCustomGuide.match(/Keep this custom rule\./g) || []).length !== 1) {
+  throw new Error("AGENT guide merge should not duplicate preserved user content");
+}
 function firstGuideIndex(headings) {
   const indexes = headings
     .map((heading) => globalGuide.indexOf(heading))

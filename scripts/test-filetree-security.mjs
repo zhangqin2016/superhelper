@@ -135,12 +135,45 @@ fs.writeFileSync(path.join(userData, "projects.json"), JSON.stringify({
 const mediaOk = inspectLocalMediaPath(generated);
 assert(mediaOk.ok === true && mediaOk.error === "", "authorized existing media is diagnosable as ok");
 assert(mediaOk.url.startsWith("app-file://media/"), "diagnostic includes canonical app-file URL");
+assert(mediaOk.artifactId, "generated media status registers a stable artifact id");
 const unauthorizedImage = path.join(outside, "image.png");
 fs.writeFileSync(unauthorizedImage, "png");
 const mediaUnauthorized = inspectLocalMediaPath(unauthorizedImage);
 assert(mediaUnauthorized.ok === false && mediaUnauthorized.error === "NOT_AUTHORIZED", "existing outside-root media reports NOT_AUTHORIZED");
 const mediaMissing = inspectLocalMediaPath(path.join(projectRoot, "missing.png"));
 assert(mediaMissing.ok === false && mediaMissing.error === "NOT_FOUND", "missing media reports NOT_FOUND");
+
+// 9. Generated media may be renamed by the agent after the generation tool emits
+// the first image-*.png path. Preview/reveal should recover within the same
+// generated-assets directory instead of leaving a broken card, but ordinary
+// missing files must still fail closed (covered by the assertion above).
+const staleGenerated = path.join(projectRoot, "generated-assets", "image-1-2026-07-03T11-34-23-346Z-1fd770.png");
+const renamedGenerated = path.join(projectRoot, "generated-assets", "scene1-mountains.png");
+fs.writeFileSync(renamedGenerated, "renamed-png");
+const renamedMtime = new Date("2026-07-03T11:34:23.500Z");
+fs.utimesSync(renamedGenerated, renamedMtime, renamedMtime);
+
+const mediaRecovered = inspectLocalMediaPath(staleGenerated);
+assert(mediaRecovered.ok === true, "missing generated image should recover to a renamed sibling");
+assert(mediaRecovered.path === renamedGenerated, "recovered media status returns the existing renamed path");
+assert(mediaRecovered.originalPath === staleGenerated, "recovered media status preserves original stale path");
+assert(mediaRecovered.recovered === true, "recovered media status is explicit");
+
+const registeredOriginal = path.join(projectRoot, "generated-assets", "image-1-2026-07-03T11-34-24-000Z-registered.png");
+const registeredRenamed = path.join(projectRoot, "generated-assets", "registered-scene.png");
+fs.writeFileSync(registeredOriginal, "registered-image-bytes");
+const registeredBeforeRename = inspectLocalMediaPath(registeredOriginal);
+assert(registeredBeforeRename.ok === true && registeredBeforeRename.artifactId, "existing generated media is registered before rename");
+fs.renameSync(registeredOriginal, registeredRenamed);
+const registeredAfterRename = inspectLocalMediaPath(registeredOriginal);
+assert(registeredAfterRename.ok === true, "manifest-registered media resolves after rename");
+assert(registeredAfterRename.path === registeredRenamed, "manifest resolver returns the renamed media path");
+assert(registeredAfterRename.artifactId === registeredBeforeRename.artifactId, "manifest resolver preserves artifact id across rename");
+
+revealed.length = 0;
+res = await reveal(null, { sessionId, filePath: staleGenerated });
+assert(res.ok === true && res.path === renamedGenerated, "reveal recovers renamed generated media");
+assert(revealed.includes(renamedGenerated), "reveal opens the recovered generated media file");
 
 fs.rmSync(projectRoot, { recursive: true, force: true });
 fs.rmSync(outside, { recursive: true, force: true });

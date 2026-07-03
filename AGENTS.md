@@ -1,16 +1,16 @@
 # AGENTS.md — project map for AI agents
 
 This is the orientation map for any AI agent working in this repo. Read this
-first, then the file(s) for the subsystem you're touching. **Working rules
-(the 12-rule discipline) live in [CLAUDE.md](CLAUDE.md) — they govern every
-task here.** This file is the "where things are + how to run them" map.
+first, then the file(s) for the subsystem you're touching. **Working rules live
+in this file and `CAPABILITY-GATE.md` — they govern every task here.** This file
+is the "where things are + how to run them" map.
 
 ## What this is
 
 **Lily Workbench** (`智能工作台`, package name `lily-workbench`) — a desktop
-**Electron** app that gives non-developers a Claude Code–style smart workbench:
+**Electron** app that gives non-developers an agentic smart workbench:
 chat with streaming replies and tool cards, where each conversation drives a
-long-lived `claude` CLI subprocess (`stream-json` protocol). It bundles a Python
+long-lived local agent engine subprocess. It bundles a Python
 runtime + LibreOffice so it can read/write/convert Office & PDF documents
 locally, ships a curated skills catalog, and has its own server (licensing,
 releases, skill registry, runtime-pack distribution) plus a Next.js web site.
@@ -23,10 +23,29 @@ are opt-in downloads, not bundled (see `memory/office-runtime-delegation.md`).
 ## Orientation (read in this order)
 
 1. This file — the map.
-2. `CLAUDE.md` — the 12 working rules (mandatory).
+2. `CAPABILITY-GATE.md` — the hard gate that prevents capability regressions.
 3. `memory/MEMORY.md` — index of hard-won project knowledge; the linked notes
    explain *why* things are the way they are (document stack, deploy flow, etc.).
 4. The subsystem file(s) below for your task.
+
+## Working rules
+
+These rules apply to every task in this project unless explicitly overridden.
+Bias toward caution over speed on non-trivial work.
+
+1. Think before coding: state assumptions, ask when uncertain, name ambiguity, and stop when confused.
+2. Simplicity first: make the minimum change that solves the problem; no speculative abstractions.
+3. Surgical changes: touch only what is necessary and match existing style.
+4. Goal-driven execution: define success criteria and iterate until verified.
+5. Use models for judgment, not deterministic routing/retries/transforms that code can do.
+6. Respect token budgets; summarize and restart instead of silently overrunning.
+7. Surface conflicts; choose the newer or more tested pattern instead of blending incompatible ones.
+8. Read before writing: inspect exports, callers, and shared utilities before edits.
+9. Tests verify intent, not just surface behavior.
+10. Checkpoint after significant steps: what changed, what was verified, what remains.
+11. Conform to local conventions; surface harmful conventions instead of silently forking them.
+12. Fail loud: do not claim completion, passing tests, or certainty if anything was skipped.
+13. Never let the product get dumber: capability changes must fail open to today's strong default and pass `CAPABILITY-GATE.md`.
 
 ## Top-level map
 
@@ -50,7 +69,7 @@ are opt-in downloads, not bundled (see `memory/office-runtime-delegation.md`).
 
 - **Agent chat / sessions** (`src/main/`): `agent-session.js`, `control-protocol.js`,
   `user-message.js`, `session-runner-pool.js`, `turn-orchestrator.js`,
-  `runtime-event-bus.js`. One long-lived `claude` subprocess per conversation;
+  `runtime-event-bus.js`. One long-lived local agent engine per conversation;
   model/search/permission changes hot-update env over stdin. (README.md covers this in depth.)
 - **IPC** (`src/main/ipc-*.js`, `ipc-handlers.js`): all renderer↔main channels.
 - **Document read/extract** (`src/main/document-translator.js` → `resources/runtime-scripts/extract_document.py`):
@@ -76,7 +95,7 @@ are opt-in downloads, not bundled (see `memory/office-runtime-delegation.md`).
 
 ```bash
 npm install
-npm run start:dev        # run the app against your local claude + ~/.claude
+npm run start:dev        # run the app in development mode
 npm start                # run with the bundled CLI + app config dir
 npm run test:unit        # the test suite (also: node scripts/run-all-tests.mjs)
 npm run server:dev       # run the backend locally
@@ -92,8 +111,8 @@ gracefully (and say so) when it's absent.
 
 ## Conventions
 
-- The 12 rules in `CLAUDE.md` are not optional. Especially: surgical changes,
-  read before write, fail loud, tests encode intent.
+- The working rules above are not optional. Especially: surgical changes,
+  read before write, fail loud, tests encode intent, and never make the product dumber.
 - Document work is **delegated to bundled Python**, never hand-rolled in JS.
 - Don't add a second toolchain or UI panel when the agent + a script will do.
 - After main-process protocol changes, fully restart the app (`npm start`).

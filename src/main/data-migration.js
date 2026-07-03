@@ -955,15 +955,58 @@ function clearAllSessionResumeIds() {
   return cleared;
 }
 
+function clearLegacyGuideFileAttributes(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return;
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch {
+    // Best effort: the cleanup below may still succeed.
+  }
+  try {
+    if (process.platform === "win32") {
+      const { execFileSync } = require("node:child_process");
+      execFileSync("attrib", ["-H", "-R", "-S", filePath], { stdio: "ignore" });
+    } else if (process.platform === "darwin") {
+      const { execFileSync } = require("node:child_process");
+      execFileSync("chflags", ["nohidden", filePath], { stdio: "ignore" });
+    }
+  } catch {
+    // Attribute cleanup is intentionally non-fatal.
+  }
+}
+
+function appendDistinctGuideContent(targetGuide, extraGuide) {
+  let target = "";
+  let extra = "";
+  try {
+    target = fs.readFileSync(targetGuide, "utf8");
+    extra = fs.readFileSync(extraGuide, "utf8").trim();
+  } catch {
+    return false;
+  }
+  if (!extra || target.includes(extra)) return false;
+  const merged = `${target.trimEnd()}\n\n## Preserved Legacy Guide Content\n\n${extra}\n`;
+  fs.writeFileSync(targetGuide, merged, "utf8");
+  return true;
+}
+
 function migrateLegacyGuideFile() {
   const configDir = agentConfigDir();
   const legacyGuide = path.join(configDir, "CLAUDE.md");
   const agentGuide = path.join(configDir, "AGENT.md");
   if (!fs.existsSync(legacyGuide)) return;
   if (!fs.existsSync(agentGuide)) {
+    clearLegacyGuideFileAttributes(legacyGuide);
     fs.renameSync(legacyGuide, agentGuide);
+    return;
   }
-  // Both exist: CLAUDE.md is the engine mirror — repaired by repairAllEngineGuideMirrors().
+  try {
+    appendDistinctGuideContent(agentGuide, legacyGuide);
+    clearLegacyGuideFileAttributes(legacyGuide);
+    fs.unlinkSync(legacyGuide);
+  } catch {
+    // Best-effort cleanup only; AGENT.md is now the canonical guide.
+  }
 }
 
 const OPENCODE_INJECTED_GUIDANCE_MARKERS = [
@@ -1030,8 +1073,6 @@ function runDataMigrations() {
   migrateSettingsEnvKeys();
   migrateLegacyGuideFile();
   scrubInjectedOpencodeGuidanceParts();
-  const { repairAllEngineGuideMirrors } = require("./agent-guide-mirror");
-  repairAllEngineGuideMirrors();
 }
 
 module.exports = {

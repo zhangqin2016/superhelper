@@ -124,7 +124,7 @@ function isResumeFailureMessage(text) {
   );
 }
 
-/** Drop broken legacy engine cache (keep AGENT.md / CLAUDE.md).
+/** Drop broken legacy engine cache (keep AGENT.md).
  *
  * Do NOT remove the app-level OpenCode DB here: it is shared by every Lily
  * session. The caller clears this session's `agentResumeId`; OpenCode will create

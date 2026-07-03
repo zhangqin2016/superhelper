@@ -54,7 +54,7 @@ function playwrightMcpAvailable(runtimeDir) {
 }
 
 /**
- * The Claude CLI `--mcp-config` document, or null when the bundle is absent.
+ * The engine MCP config document, or null when the bundle is absent.
  * @param {string} runtimeDir
  */
 function buildPlaywrightMcpConfig(runtimeDir) {

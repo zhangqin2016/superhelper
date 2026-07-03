@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Autonomous-run safety controller: the guardrails that let the agent drive a
 // site ITSELF (no human recording) without running off the rails. Pure logic —
-// no browser/LLM. These tests encode WHY each guard exists (CLAUDE.md Rule 9/13):
+// no browser/LLM. These tests encode WHY each guard exists (AGENTS.md Rule 9/13):
 // a write must not slip through in read-only mode, navigation must stay on the
 // allowlist, destructive actions must be confirmed, and a run must always be
 // able to terminate (step cap + no-progress bound).

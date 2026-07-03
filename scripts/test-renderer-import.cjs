@@ -91,6 +91,10 @@ ipcMain.handle("files:local-media-status", (_event, payload) => {
   if (filePath.includes("unauthorized-image.png")) {
     return { ok: false, error: "NOT_AUTHORIZED", path: filePath, exists: true, authorized: false };
   }
+  if (filePath.includes("generated-assets/image-stale.png")) {
+    const recovered = "/tmp/generated-assets/scene1.png";
+    return { ok: true, error: "", path: recovered, originalPath: filePath, recovered: true, exists: true, authorized: true, url: `app-file://media/${encodeURIComponent(recovered)}` };
+  }
   return { ok: true, error: "", path: filePath, exists: true, authorized: true, url: `app-file://media/${encodeURIComponent(filePath)}` };
 });
 
@@ -1606,6 +1610,20 @@ app.whenReady().then(async () => {
         if (!mediaError || !mediaError.textContent.includes("NOT_AUTHORIZED")) {
           throw new Error("failed local image should show diagnostic status: " + pathHost.innerHTML);
         }
+        renderMarkdownWithCache(pathHost, "![recovered](/tmp/generated-assets/image-stale.png)");
+        const staleLocalImage = pathHost.querySelector("img.markdown-local-file-image[data-local-file-path='/tmp/generated-assets/image-stale.png']");
+        if (!staleLocalImage) {
+          throw new Error("stale local image should initially render as a diagnosable local image: " + pathHost.innerHTML);
+        }
+        staleLocalImage.dispatchEvent(new Event("error"));
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        const recoveredLocalImage = pathHost.querySelector("img.markdown-local-file-image[data-local-file-path='/tmp/generated-assets/scene1.png']");
+        if (!recoveredLocalImage || !String(recoveredLocalImage.getAttribute("src") || "").includes(encodeURIComponent("/tmp/generated-assets/scene1.png"))) {
+          throw new Error("recoverable local image should update its preview src instead of becoming an error box: " + pathHost.innerHTML);
+        }
+        if (pathHost.querySelector(".markdown-image-error")) {
+          throw new Error("recoverable local image must not leave an error box: " + pathHost.innerHTML);
+        }
         renderMarkdownWithCache(pathHost, "已保存到：generated-assets/image-1-2026.png");
         const relativePathLink = pathHost.querySelector('.markdown-local-file-link[data-local-file-path="generated-assets/image-1-2026.png"]');
         if (relativePathLink) {
@@ -1717,6 +1735,26 @@ app.whenReady().then(async () => {
         if (relativePath.classList.contains("is-clickable")) {
           throw new Error("relative generated media path should not be clickable");
         }
+        const staleOutput = '<generated_media type="image">\\n  <file path="/tmp/generated-assets/image-stale.png" bytes="1234" />\\n</generated_media>';
+        const staleContainer = document.createElement("details");
+        document.body.appendChild(staleContainer);
+        appendToolPayloadDetail(staleContainer, {
+          name: "Bash",
+          result: { content: staleOutput },
+        }, { role: "result", sessionId: "session_stale_media" });
+        const staleImg = staleContainer.querySelector(".assistant-generated-media img[data-local-file-path='/tmp/generated-assets/image-stale.png']");
+        if (!staleImg) {
+          throw new Error("stale generated media image should render before recovery: " + staleContainer.innerHTML);
+        }
+        staleImg.dispatchEvent(new Event("error"));
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        if (staleImg.dataset.localFilePath !== "/tmp/generated-assets/scene1.png") {
+          throw new Error("stale generated media image should recover to the resolved path: " + staleContainer.innerHTML);
+        }
+        if (!String(staleImg.getAttribute("src") || "").includes(encodeURIComponent("/tmp/generated-assets/scene1.png"))) {
+          throw new Error("stale generated media image should update src to recovered app-file URL: " + staleContainer.innerHTML);
+        }
+        staleContainer.remove();
         container.remove();
         const placeholderContainer = document.createElement("details");
         document.body.appendChild(placeholderContainer);
@@ -1879,57 +1917,63 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(accountLoggedInUiResult);
-    const settingsSegmentTabsResult = await win.webContents.executeJavaScript(`(
+    const settingsSingleResponsibilityResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { openSettingsPage } = await import("./modules/settings-panel.js");
         const visible = (id) => {
           const el = document.getElementById(id);
-          if (!el) throw new Error("missing settings segment element: " + id);
-          return !el.hidden;
+          if (!el) throw new Error("missing settings page element: " + id);
+          const page = el.classList.contains("settings-page") ? el : el.closest(".settings-page");
+          return Boolean(page && !page.hidden);
         };
         openSettingsPage("account");
         if (!visible("accountPanelOverview")) throw new Error("account should open on overview tab");
-        if (visible("accountPanelUsage")) throw new Error("usage should not be stacked under account overview");
+        if (visible("settingsPageUsage")) throw new Error("usage should not be stacked under account");
         if (visible("settingsPageLicense")) throw new Error("license should not be stacked under account overview");
         if (visible("settingsPageFeedback") || visible("settingsPageContact") || visible("settingsPageAbout")) {
           throw new Error("help panels should stay hidden on the account page");
         }
-        document.querySelector('[data-settings-segment-tab="account:usage"]').click();
-        if (!visible("accountPanelUsage")) throw new Error("usage tab should show usage panel");
+        document.querySelector('[data-settings-link="usage"]').click();
+        if (!visible("settingsPageUsage")) throw new Error("usage page should show usage panel");
         if (visible("accountPanelOverview") || visible("settingsPageLicense")) {
-          throw new Error("usage tab should hide account overview and license panels");
+          throw new Error("usage page should hide account overview and license panels");
         }
-        document.querySelector('[data-settings-segment-tab="account:license"]').click();
-        if (!visible("settingsPageLicense")) throw new Error("license tab should show license panel");
-        if (visible("accountPanelOverview") || visible("accountPanelUsage")) {
-          throw new Error("license tab should hide account overview and usage panels");
+        openSettingsPage("license");
+        if (!visible("settingsPageLicense")) throw new Error("license page should show license panel");
+        if (visible("accountPanelOverview") || visible("settingsPageUsage")) {
+          throw new Error("license page should hide account overview and usage panels");
         }
         openSettingsPage("help");
-        if (!visible("settingsPageFeedback")) throw new Error("help should open on feedback tab");
+        if (!visible("settingsPageHelp")) throw new Error("help should open a support hub, not stack support forms");
+        if (visible("settingsPageFeedback") || visible("settingsPageContact") || visible("settingsPageAbout")) {
+          throw new Error("help hub should not stack feedback/contact/about forms");
+        }
+        document.querySelector('[data-settings-link="feedback"]').click();
+        if (!visible("settingsPageFeedback")) throw new Error("feedback page should show feedback panel");
         if (visible("settingsPageContact") || visible("settingsPageAbout")) {
-          throw new Error("help sections should not be stacked");
+          throw new Error("support sections should not be stacked");
         }
-        if (visible("accountPanelOverview") || visible("accountPanelUsage") || visible("settingsPageLicense")) {
-          throw new Error("account panels should stay hidden on the help page");
+        if (visible("accountPanelOverview") || visible("settingsPageUsage") || visible("settingsPageLicense")) {
+          throw new Error("account panels should stay hidden on the feedback page");
         }
-        document.querySelector('[data-settings-segment-tab="help:contact"]').click();
-        if (!visible("settingsPageContact")) throw new Error("contact tab should show contact panel");
+        openSettingsPage("contact");
+        if (!visible("settingsPageContact")) throw new Error("contact page should show contact panel");
         if (visible("settingsPageFeedback") || visible("settingsPageAbout")) {
-          throw new Error("contact tab should hide feedback and about panels");
+          throw new Error("contact page should hide feedback and about panels");
         }
-        document.querySelector('[data-settings-segment-tab="help:about"]').click();
-        if (!visible("settingsPageAbout")) throw new Error("about tab should show about panel");
+        openSettingsPage("about");
+        if (!visible("settingsPageAbout")) throw new Error("about page should show about panel");
         if (visible("settingsPageFeedback") || visible("settingsPageContact")) {
-          throw new Error("about tab should hide feedback and contact panels");
+          throw new Error("about page should hide feedback and contact panels");
         }
         openSettingsPage("account");
         if (visible("settingsPageFeedback") || visible("settingsPageContact") || visible("settingsPageAbout")) {
           throw new Error("help panels should remain hidden after returning to account");
         }
-        return "settings-segment-tabs: ok";
+        return "settings-single-responsibility-pages: ok";
       }
     )()`);
-    console.log(settingsSegmentTabsResult);
+    console.log(settingsSingleResponsibilityResult);
     console.log("test-renderer-import: ok");
   }
   app.quit();

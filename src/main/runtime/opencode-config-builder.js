@@ -180,6 +180,7 @@ function translatePermission(mode, disallowedTools) {
  *   disallowedTools?: string[],
  *   instructionsPaths?: string[],
  *   skillPaths?: string[],
+ *   subagentPrompt?: string,
  * }} opts
  * @returns {{ ok: boolean, reason?: string, model: object|null, configContent: string|null }}
  */
@@ -227,6 +228,13 @@ function buildOpencodeConfig(opts = {}) {
     const instructions = (opts.instructionsPaths || []).filter(Boolean);
     if (instructions.length) config.instructions = instructions;
   }
+  const subagentPrompt = typeof opts.subagentPrompt === "string" ? opts.subagentPrompt.trim() : "";
+  if (subagentPrompt) {
+    config.agent = config.agent || {};
+    for (const name of SUBAGENT_AGENTS) {
+      config.agent[name] = { ...(config.agent[name] || {}), prompt: subagentPrompt };
+    }
+  }
 
   // Local plugin files (e.g. the post-edit verification hook). Absolute paths
   // are loaded as "file" plugins by OpenCode (no npm install).
@@ -264,7 +272,7 @@ function baseSharedPermission() {
  * bits (skill guidance, permission mode) are delivered per-request + host-side,
  * NOT baked here — that's what lets one serve host every session/directory
  * without cross-session config bleed.
- * @param {{ lilyEnv: Record<string,string>, mcpServers?: object, pluginPaths?: string[], skillPaths?: string[], disallowedTools?: string[], basePrompt?: string }} opts
+ * @param {{ lilyEnv: Record<string,string>, mcpServers?: object, pluginPaths?: string[], skillPaths?: string[], disallowedTools?: string[], basePrompt?: string, subagentPrompt?: string }} opts
  * @returns {{ ok:boolean, reason?:string, model:object|null, configContent:string|null }}
  */
 function buildSharedBaseConfig(opts = {}) {
@@ -290,14 +298,20 @@ function buildSharedBaseConfig(opts = {}) {
   // The static Lily identity header as the primary-agent prompt. This SUPPRESSES
   // OpenCode's coding-CLI baseline (request.ts: agent.prompt wins over
   // SystemPrompt.provider) for the user-facing build/plan agents, so a general
-  // workbench request is no longer reframed as a terse coding task. Subagents
-  // (general/explore) intentionally keep the coding baseline for their subtasks.
-  // The full per-turn guide still rides body.system, so this stays static.
+  // workbench request is no longer reframed as a terse coding task. The full
+  // per-turn guide still rides body.system, so this stays static.
   const basePrompt = typeof opts.basePrompt === "string" ? opts.basePrompt.trim() : "";
   if (basePrompt) {
     config.agent = config.agent || {};
     for (const name of ["build", "plan"]) {
       config.agent[name] = { ...(config.agent[name] || {}), prompt: basePrompt };
+    }
+  }
+  const subagentPrompt = typeof opts.subagentPrompt === "string" ? opts.subagentPrompt.trim() : "";
+  if (subagentPrompt) {
+    config.agent = config.agent || {};
+    for (const name of SUBAGENT_AGENTS) {
+      config.agent[name] = { ...(config.agent[name] || {}), prompt: subagentPrompt };
     }
   }
 

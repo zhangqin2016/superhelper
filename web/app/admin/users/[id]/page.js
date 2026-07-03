@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminShell } from "../../../../components/admin-shell";
 import { AdminEmpty } from "../../../../components/admin-empty";
+import { ConfigTabs } from "../../../../components/config-tabs";
 import { safeApiGet } from "../../../../lib/api";
 import { getI18n } from "../../../../lib/i18n.mjs";
 
@@ -85,8 +86,13 @@ export default async function AdminUserDetailPage({ params }) {
         ))}
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <Section title={c.sections.orders}>
+      <div className="mt-6">
+        <ConfigTabs tabs={[
+          {
+            id: "orders",
+            label: c.sections.orders,
+            node: (
+              <Section title={c.sections.orders}>
           <SimpleTable
             headers={c.headers.orders}
             emptyTitle={c.empty.orders[0]}
@@ -104,9 +110,14 @@ export default async function AdminUserDetailPage({ params }) {
               </tr>
             ))}
           />
-        </Section>
-
-        <Section title={c.sections.devices}>
+              </Section>
+            ),
+          },
+          {
+            id: "devices",
+            label: c.sections.devices,
+            node: (
+              <Section title={c.sections.devices}>
           <SimpleTable
             headers={c.headers.devices}
             emptyTitle={c.empty.devices[0]}
@@ -122,9 +133,14 @@ export default async function AdminUserDetailPage({ params }) {
               </tr>
             ))}
           />
-        </Section>
-
-        <Section title={c.sections.grants}>
+              </Section>
+            ),
+          },
+          {
+            id: "grants",
+            label: c.sections.grants,
+            node: (
+              <Section title={c.sections.grants}>
           <SimpleTable
             headers={c.headers.grants}
             emptyTitle={c.empty.grants[0]}
@@ -139,9 +155,14 @@ export default async function AdminUserDetailPage({ params }) {
               </tr>
             ))}
           />
-        </Section>
-
-        <Section title={c.sections.ledger}>
+              </Section>
+            ),
+          },
+          {
+            id: "ledger",
+            label: c.sections.ledger,
+            node: (
+              <Section title={c.sections.ledger}>
           <SimpleTable
             headers={c.headers.ledger}
             emptyTitle={c.empty.ledger[0]}
@@ -156,9 +177,14 @@ export default async function AdminUserDetailPage({ params }) {
               </tr>
             ))}
           />
-        </Section>
-
-        <Section title={c.sections.sms}>
+              </Section>
+            ),
+          },
+          {
+            id: "sms",
+            label: c.sections.sms,
+            node: (
+              <Section title={c.sections.sms}>
           <SimpleTable
             headers={c.headers.sms}
             emptyTitle={c.empty.sms[0]}
@@ -174,9 +200,14 @@ export default async function AdminUserDetailPage({ params }) {
               </tr>
             ))}
           />
-        </Section>
-
-        <Section title={c.sections.usage}>
+              </Section>
+            ),
+          },
+          {
+            id: "usage",
+            label: c.sections.usage,
+            node: (
+              <Section title={c.sections.usage}>
           <SimpleTable
             headers={c.headers.usage}
             emptyTitle={c.empty.usage[0]}
@@ -191,7 +222,10 @@ export default async function AdminUserDetailPage({ params }) {
               </tr>
             ))}
           />
-        </Section>
+              </Section>
+            ),
+          },
+        ]} />
       </div>
     </AdminShell>
   );

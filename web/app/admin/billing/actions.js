@@ -39,6 +39,7 @@ export async function upsertBillingProductAction(formData) {
     metadata: {},
   });
   revalidatePath("/admin/billing");
+  revalidatePath("/admin/billing/products");
 }
 
 export async function upsertPricingRuleAction(formData) {
@@ -57,4 +58,5 @@ export async function upsertPricingRuleAction(formData) {
     metadata: {},
   });
   revalidatePath("/admin/billing");
+  revalidatePath("/admin/billing/pricing");
 }

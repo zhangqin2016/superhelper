@@ -25,7 +25,7 @@ async function sha256Hex(file) {
   return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export function ReleaseCreateForm({ cdnBaseUrl = "", cdnPrefix = "app/updates" }) {
+export function ReleaseCreateForm({ title, cdnBaseUrl = "", cdnPrefix = "app/updates" }) {
   const [state, action, pending] = useActionState(createReleaseStateAction, initialState);
   const { t } = useI18n();
   const [version, setVersion] = useState("");
@@ -79,7 +79,7 @@ export function ReleaseCreateForm({ cdnBaseUrl = "", cdnPrefix = "app/updates" }
 
   return (
     <div className="table-card mb-6 p-6">
-      <h2 className="mb-5 text-xl font-semibold">{t.admin.pages.releases[0]}</h2>
+      <h2 className="mb-5 text-xl font-semibold">{title || t.admin.pages.releases[0]}</h2>
       <form action={action} className="grid gap-4 lg:grid-cols-6">
         <label className="block">
           <span className="mb-2 block text-sm font-medium text-slate-700">Version</span>

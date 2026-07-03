@@ -232,6 +232,23 @@ function fileUrlFromPath(filePath = "") {
   return value;
 }
 
+async function recoverLocalMediaElement(element, filePath = "") {
+  if (!element || element.dataset.mediaRecoveryTried === "true") return false;
+  if (!isRevealableLocalPath(filePath)) return false;
+  element.dataset.mediaRecoveryTried = "true";
+  let status = null;
+  try {
+    status = await window.assistantClient?.localMediaStatus?.(filePath);
+  } catch {
+    status = null;
+  }
+  if (!status?.ok || !status.url) return false;
+  element.dataset.localFilePath = status.path || filePath;
+  element.src = status.url;
+  element.title = status.path || filePath;
+  return true;
+}
+
 function revealSessionId(root, options = {}) {
   return options.sessionId || root?.closest?.("[data-session-id]")?.dataset?.sessionId || "";
 }
@@ -497,9 +514,13 @@ export function renderGeneratedMedia(root, mediaBlocks = [], options = {}) {
         img.src = src;
         img.alt = mediaAlt(type, index + 1);
         img.loading = "lazy";
+        img.dataset.localFilePath = file.path;
+        img.addEventListener("error", () => {
+          void recoverLocalMediaElement(img, file.path);
+        }, { once: true });
         img.addEventListener("click", async () => {
           const mod = await import("./image-viewer.js");
-          mod.openImageViewer?.(src, img.alt);
+          mod.openImageViewer?.(img.currentSrc || img.src || src, img.alt);
         });
         item.appendChild(img);
       } else if (type === "video") {
@@ -507,11 +528,19 @@ export function renderGeneratedMedia(root, mediaBlocks = [], options = {}) {
         video.src = src;
         video.controls = true;
         video.preload = "metadata";
+        video.dataset.localFilePath = file.path;
+        video.addEventListener("error", () => {
+          void recoverLocalMediaElement(video, file.path);
+        }, { once: true });
         item.appendChild(video);
       } else if (type === "audio" || type === "speech") {
         const audio = document.createElement("audio");
         audio.src = src;
         audio.controls = true;
+        audio.dataset.localFilePath = file.path;
+        audio.addEventListener("error", () => {
+          void recoverLocalMediaElement(audio, file.path);
+        }, { once: true });
         item.appendChild(audio);
       }
 

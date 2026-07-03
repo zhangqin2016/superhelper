@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Architecture ratchet: raw Claude CLI wire shapes may only live inside
+// Architecture ratchet: raw legacy stream-json wire shapes may only live inside
 // src/main/runtime/adapters/. Everything else consumes app-level Runtime
 // Events (docs/turn-block-experience-plan.md "守门纪律").
 //
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-// Raw Claude wire markers. "unknown_control_request" is an app-level label,
+// Raw stream-json wire markers. "unknown_control_request" is an app-level label,
 // hence the lookbehind on control_request.
 const WIRE_MARKERS = [
   /content_block_(start|delta|stop)/,
@@ -22,7 +22,7 @@ const WIRE_MARKERS = [
   /(?<!unknown_)control_request\b/,
 ];
 
-// Documented legacy debt (shrink-only). Emptied once the Claude CLI engine was
+// Documented legacy debt (shrink-only). Emptied once the previous engine was
 // removed and OpenCode became the only runtime — keep the ratchet so any new
 // raw-wire file is flagged rather than silently exempted.
 const LEGACY_WIRE_FILES = new Set([]);
@@ -52,7 +52,7 @@ for (const file of sources) {
   if (!LEGACY_WIRE_FILES.has(rel)) {
     for (const marker of WIRE_MARKERS) {
       const match = content.match(marker);
-      if (match) violations.push(`${rel}: raw Claude wire shape "${match[0]}" outside runtime/adapters/`);
+      if (match) violations.push(`${rel}: raw stream-json wire shape "${match[0]}" outside runtime/adapters/`);
     }
   }
 

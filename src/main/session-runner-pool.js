@@ -63,6 +63,7 @@ class SessionRunnerPool {
       // every turn as a terse software-engineering task. The full per-turn guide
       // still rides body.system (see `guidance` below).
       basePrompt: this._opencodeBasePersona(),
+      subagentPrompt: this._opencodeSubagentPersona(),
     });
     if (!cfg.ok) {
       // Surface, don't hide: the turn may still run against OpenCode's own
@@ -137,6 +138,15 @@ class SessionRunnerPool {
       return require("./skill-manager").buildAgentBasePersona() || "";
     } catch (err) {
       log.warn("opencode base persona unavailable: %s", err?.message || String(err));
+      return "";
+    }
+  }
+
+  _opencodeSubagentPersona() {
+    try {
+      return require("./skill-manager").buildAgentSubagentPersona() || "";
+    } catch (err) {
+      log.warn("opencode subagent persona unavailable: %s", err?.message || String(err));
       return "";
     }
   }

@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
+const { registerArtifactPath } = require("./artifact-registry");
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
 const FILE_EXTENSIONS = new Set([
@@ -128,8 +129,20 @@ function toArtifact(filePath, source, workspacePath) {
   const relativePath = workspacePath && isInsidePath(workspacePath, absolutePath)
     ? path.relative(workspacePath, absolutePath).split(path.sep).join("/")
     : "";
+  const registered = workspacePath
+    ? registerArtifactPath(absolutePath, {
+        workspacePath,
+        kind,
+        mimeType: MIME_BY_EXT[ext] || "application/octet-stream",
+        bytes: stat.size,
+        updatedAt: stat.mtimeMs,
+        source,
+      })
+    : { ok: false };
+  const artifactId = registered.ok ? registered.artifactId : stableArtifactId(absolutePath);
   return {
-    id: stableArtifactId(absolutePath),
+    id: artifactId,
+    artifactId,
     kind,
     path: absolutePath,
     relativePath: relativePath || absolutePath,
