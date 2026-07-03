@@ -555,6 +555,8 @@
   "settings.accountEntitlementsHint": "تظهر هنا مشتريات الموقع والأرصدة المجانية.",
   "settings.accountLoginTitle": "تسجيل بالهاتف",
   "settings.accountLoginHint": "استخدم نفس الهاتف في الموقع والتطبيق. تتم مزامنة المشتريات تلقائياً.",
+  "settings.accountSignedInTitle": "تم تسجيل الدخول",
+  "settings.accountSignedInHint": "هذا الحساب مرتبط بالتطبيق. يمكنك الشراء أو تحديث الرصيد أو تسجيل الخروج.",
   "settings.accountLoading": "جارٍ قراءة حالة الحساب…",
   "settings.accountLoggedOut": "لم تسجل الدخول. سجّل الدخول لمزامنة المشتريات والأرصدة.",
   "settings.accountLoggedIn": "تم تسجيل الدخول: {phone}",

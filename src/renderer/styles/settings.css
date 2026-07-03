@@ -846,6 +846,47 @@
   align-items: end;
 }
 
+.account-login-grid[hidden],
+.account-signed-in-panel[hidden],
+.account-management-actions[hidden] {
+  display: none;
+}
+
+.account-signed-in-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--brand) 22%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--brand) 8%, white);
+}
+
+.account-signed-in-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 800;
+}
+
+.account-signed-in-panel strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.account-signed-in-panel p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
 .account-login-grid .settings-field {
   margin-bottom: 0;
 }

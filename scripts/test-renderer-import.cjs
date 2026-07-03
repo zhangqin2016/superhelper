@@ -151,6 +151,17 @@ ipcMain.handle("session:get-conversation", async (_event, payload) => {
 ipcMain.handle("app:get-locale", () => ({ ok: true, locale: "zh-CN" }));
 ipcMain.handle("app:get-version", () => ({ ok: true, version: "0.0.0-test" }));
 ipcMain.handle("app:get-icon-url", () => ({ ok: true, url: "" }));
+ipcMain.handle("account:status", () => ({
+  ok: true,
+  loggedIn: true,
+  user: { phoneE164: "+8618210178959" },
+  entitlements: {
+    tokenBalance: 100000,
+    imageGenerationsRemaining: 3,
+    videoGenerationsRemaining: 1,
+    membershipExpiresAt: null,
+  },
+}));
 ipcMain.handle("account:sms-login", (_event, payload) => {
   capturedAccountLoginPayloads.push(payload);
   return { ok: false, error: "TEST_STOP" };
@@ -1850,6 +1861,24 @@ app.whenReady().then(async () => {
     if (accountLoginPayload.phone !== "13800000000" || accountLoginPayload.code !== "123456") {
       throw new Error("account login bridge should preserve object payload: " + JSON.stringify(accountLoginPayload));
     }
+    const accountLoggedInUiResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { refreshAccountSettings } = await import("./modules/account-settings.js");
+        await refreshAccountSettings();
+        const loginContent = document.getElementById("accountLoginContent");
+        const signedInPanel = document.getElementById("accountSignedInPanel");
+        const signedInPhone = document.getElementById("accountSignedInPhone");
+        const actions = document.querySelector(".account-management-actions");
+        if (!loginContent?.hidden) throw new Error("logged-in account should hide SMS login fields");
+        if (signedInPanel?.hidden) throw new Error("logged-in account should show signed-in panel");
+        if (actions?.hidden) throw new Error("logged-in account should show billing/logout actions");
+        if (!String(signedInPhone?.textContent || "").includes("+8618210178959")) {
+          throw new Error("signed-in panel should show the current phone");
+        }
+        return "account-logged-in-ui: ok";
+      }
+    )()`);
+    console.log(accountLoggedInUiResult);
     console.log("test-renderer-import: ok");
   }
   app.quit();

@@ -368,12 +368,20 @@
                 <form id="accountLoginForm" class="settings-form account-login-form account-settings-card">
                   <div class="account-card-head">
                     <div>
-                      <h4 data-i18n="settings.accountLoginTitle">手机号登录</h4>
-                      <p data-i18n="settings.accountLoginHint">官网和客户端使用同一个手机号，购买后自动同步。</p>
+                      <h4 id="accountAccessTitle" data-i18n="settings.accountLoginTitle">手机号登录</h4>
+                      <p id="accountAccessHint" data-i18n="settings.accountLoginHint">官网和客户端使用同一个手机号，购买后自动同步。</p>
                     </div>
                   </div>
 
-                  <div class="account-login-grid">
+                  <div id="accountSignedInPanel" class="account-signed-in-panel" hidden>
+                    <div class="account-signed-in-mark">✓</div>
+                    <div>
+                      <strong data-i18n="settings.accountSignedInTitle">账户已登录</strong>
+                      <p id="accountSignedInPhone"></p>
+                    </div>
+                  </div>
+
+                  <div id="accountLoginContent" class="account-login-grid">
                     <label class="settings-field account-phone-field">
                       <span class="settings-field-label" data-i18n="settings.accountPhone">手机号</span>
                       <input id="accountPhoneInput" class="settings-input" type="tel" autocomplete="tel" inputmode="tel" maxlength="20" />

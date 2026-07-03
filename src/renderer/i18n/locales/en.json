@@ -562,6 +562,8 @@
   "settings.accountEntitlementsHint": "Website purchases and free credits are summarized here.",
   "settings.accountLoginTitle": "Phone sign-in",
   "settings.accountLoginHint": "Use the same phone on the website and desktop. Purchases sync automatically.",
+  "settings.accountSignedInTitle": "Account signed in",
+  "settings.accountSignedInHint": "This account is linked to the desktop. You can buy, refresh credits, or sign out.",
   "settings.accountLoading": "Reading account status…",
   "settings.accountLoggedOut": "Not signed in. Sign in to sync website purchases and credits.",
   "settings.accountLoggedIn": "Signed in: {phone}",

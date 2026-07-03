@@ -562,6 +562,8 @@
   "settings.accountEntitlementsHint": "官网购买和免费额度会汇总到这里。",
   "settings.accountLoginTitle": "手机号登录",
   "settings.accountLoginHint": "官网和客户端使用同一个手机号，购买后自动同步。",
+  "settings.accountSignedInTitle": "账户已登录",
+  "settings.accountSignedInHint": "当前账号已和客户端绑定，可直接购买、刷新额度或退出登录。",
   "settings.accountLoading": "正在读取账户状态…",
   "settings.accountLoggedOut": "未登录。登录后可同步官网购买的订阅和额度。",
   "settings.accountLoggedIn": "已登录：{phone}",

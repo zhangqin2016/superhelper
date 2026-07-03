@@ -10,6 +10,7 @@ let accountLoggingIn = false;
 let entitlementsRefreshing = false;
 let billingOpening = false;
 let accountLoggingOut = false;
+let currentAccountPhone = "";
 
 function setStatus(text, kind = "") {
   const el = $("accountFormStatus");
@@ -101,6 +102,18 @@ function renderEntitlements(entitlements) {
 
 function setLoggedInUi(loggedIn) {
   accountLoggedIn = Boolean(loggedIn);
+  const loginContent = $("accountLoginContent");
+  const signedInPanel = $("accountSignedInPanel");
+  const actions = document.querySelector(".account-management-actions");
+  const title = $("accountAccessTitle");
+  const hint = $("accountAccessHint");
+  const signedInPhone = $("accountSignedInPhone");
+  if (loginContent) loginContent.hidden = accountLoggedIn;
+  if (signedInPanel) signedInPanel.hidden = !accountLoggedIn;
+  if (actions) actions.hidden = !accountLoggedIn;
+  if (title) title.textContent = accountLoggedIn ? t("settings.accountSignedInTitle") : t("settings.accountLoginTitle");
+  if (hint) hint.textContent = accountLoggedIn ? t("settings.accountSignedInHint") : t("settings.accountLoginHint");
+  if (signedInPhone) signedInPhone.textContent = currentAccountPhone ? t("settings.accountLoggedIn", { phone: currentAccountPhone }) : "";
   updateAccountButtons();
   $("accountRefreshBtn") && ($("accountRefreshBtn").disabled = !loggedIn || entitlementsRefreshing);
   $("accountBillingBtn") && ($("accountBillingBtn").disabled = !loggedIn || billingOpening);
@@ -120,13 +133,15 @@ export async function refreshAccountSettings() {
     return;
   }
   if (!status?.loggedIn) {
+    currentAccountPhone = "";
     statusEl.textContent = t("settings.accountLoggedOut");
     renderEntitlements(null);
     setLoggedInUi(false);
     return;
   }
+  currentAccountPhone = status.user?.phoneE164 || status.user?.phone_e164 || "";
   statusEl.textContent = t("settings.accountLoggedIn", {
-    phone: status.user?.phoneE164 || status.user?.phone_e164 || "",
+    phone: currentAccountPhone,
   });
   renderEntitlements(status.entitlements);
   setLoggedInUi(true);
