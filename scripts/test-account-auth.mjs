@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 process.env.SESSION_SECRET = "test-session-secret";
 process.env.USER_TOKEN_PEPPER = "test-user-pepper";
 process.env.SMS_CODE_PEPPER = "test-sms-pepper";
+process.env.DATABASE_URL ||= "postgres://user:pass@localhost:5432/lily_test";
 
 const accountAuth = await import("../server/src/services/account-auth.js");
 const wallet = await import("../server/src/services/wallet.js");

@@ -18,6 +18,7 @@ import { registerAdminSummaryRoutes } from "./admin/summary.js";
 import { registerAdminSystemRoutes } from "./admin/system.js";
 import { registerAdminSkillPackageRoutes } from "./admin/skill-packages.js";
 import { registerAdminUsageRoutes } from "./admin/usage.js";
+import { registerAdminUserRoutes } from "./admin/users.js";
 import { registerAdminWorkspaceAppRoutes } from "./admin/workspace-apps.js";
 
 const loginSchema = z.object({
@@ -97,6 +98,7 @@ export async function adminRoutes(app) {
   registerAdminSystemRoutes(app, { audit });
 
   registerAdminLicenseRoutes(app, { audit });
+  registerAdminUserRoutes(app);
   registerAdminDeviceRoutes(app, { audit });
   registerAdminUsageRoutes(app);
   registerAdminDiagnosticsRoutes(app);

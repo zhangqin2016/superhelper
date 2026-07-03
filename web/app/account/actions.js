@@ -54,7 +54,11 @@ export async function sendAccountSmsAction(_previousState, formData) {
     });
     return {
       ok: true,
-      message: result.devCode ? `验证码已发送。开发验证码：${result.devCode}` : "验证码已发送。",
+      message: result.reusedActiveCode
+        ? "验证码仍在有效期内，请使用上一条短信里的验证码。"
+        : result.devCode
+        ? `验证码已发送。开发验证码：${result.devCode}`
+        : "验证码已发送。",
       phone,
     };
   } catch (error) {

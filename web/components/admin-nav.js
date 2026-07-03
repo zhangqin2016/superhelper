@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity, BarChart3, Boxes, ClipboardList, CreditCard, DownloadCloud, Gauge,
-  KeyRound, Laptop, Mail, PackageCheck, Radar, Settings, SlidersHorizontal, Store,
+  KeyRound, Laptop, Mail, PackageCheck, Radar, Settings, SlidersHorizontal, Store, UsersRound,
 } from "lucide-react";
 
 // href → icon, kept here so the server shell passes only plain (serializable)
 // data. Active state needs the client-side pathname.
 const ICONS = {
   "/admin": Gauge,
+  "/admin/users": UsersRound,
   "/admin/licenses": KeyRound,
   "/admin/devices": Laptop,
   "/admin/usage": BarChart3,

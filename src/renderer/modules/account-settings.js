@@ -20,6 +20,16 @@ function setStatus(text, kind = "") {
   el.classList.toggle("settings-form-status--success", kind === "success");
 }
 
+function accountErrorMessage(result, fallbackKey) {
+  const code = String(result?.error || result?.json?.code || "").trim();
+  if (code) {
+    const key = `settings.accountError.${code}`;
+    const mapped = t(key);
+    if (mapped !== key) return mapped;
+  }
+  return t(fallbackKey);
+}
+
 function updateSmsButton() {
   const btn = $("accountSendSmsBtn");
   if (!btn) return;
@@ -136,12 +146,17 @@ async function sendSmsCode() {
   try {
     const result = await window.assistantClient.sendAccountSmsCode(phone);
     if (!result?.ok) {
-      setStatus(t("settings.accountSendFailed"), "error");
+      setStatus(accountErrorMessage(result, "settings.accountSendFailed"), "error");
+      return;
+    }
+    if (result.json?.reusedActiveCode) {
+      setStatus(t("settings.accountSmsAlreadySent"), "success");
+      startSmsCooldown(result.json?.cooldownSeconds || 60);
       return;
     }
     const devCode = result.json?.devCode ? ` ${result.json.devCode}` : "";
     setStatus(`${t("settings.accountSmsSent")}${devCode}`, "success");
-    startSmsCooldown(60);
+    startSmsCooldown(result.json?.cooldownSeconds || 60);
   } finally {
     smsSending = false;
     updateSmsButton();
@@ -164,7 +179,7 @@ async function loginWithSms(event) {
   try {
     const result = await window.assistantClient.loginAccountWithSms({ phone, code });
     if (!result?.ok) {
-      setStatus(t("settings.accountLoginFailed"), "error");
+      setStatus(accountErrorMessage(result, "settings.accountLoginFailed"), "error");
       return;
     }
     setStatus(t("settings.accountLoginDone"), "success");
@@ -184,7 +199,7 @@ async function refreshEntitlements() {
   try {
     const result = await window.assistantClient.refreshAccountEntitlements();
     if (!result?.ok) {
-      setStatus(t("settings.accountRefreshFailed"), "error");
+      setStatus(accountErrorMessage(result, "settings.accountRefreshFailed"), "error");
       return;
     }
     setStatus(t("settings.accountRefreshed"), "success");
@@ -203,7 +218,7 @@ async function openBilling() {
   try {
     const result = await window.assistantClient.createAccountBillingLink();
     if (!result?.ok || !result.url) {
-      setStatus(t("settings.accountBillingFailed"), "error");
+      setStatus(accountErrorMessage(result, "settings.accountBillingFailed"), "error");
       return;
     }
     window.open(result.url, "_blank", "noopener,noreferrer");

@@ -116,7 +116,7 @@ export function registerPublicAuthRoutes(app) {
         tags: ["public:auth"],
         summary: "Send a login SMS code",
         body: zodBody(sendSmsSchema),
-        response: { 200: okResponse({ cooldownSeconds: { type: "number" } }) },
+        response: { 200: okResponse({ cooldownSeconds: { type: "number" }, reusedActiveCode: { type: "boolean" } }) },
       },
     },
     async (request, reply) => {
@@ -139,7 +139,7 @@ export function registerPublicAuthRoutes(app) {
         hasActiveCode: Boolean(active),
       });
 
-      if (risk.action === "cooldown") return reply.send({ ok: true, cooldownSeconds: 60 });
+      if (risk.action === "cooldown") return reply.send({ ok: true, cooldownSeconds: 60, reusedActiveCode: true });
       if (risk.action === "captcha_required") return reply.code(403).send({ ok: false, code: "CAPTCHA_REQUIRED" });
       if (risk.action === "blocked") return reply.code(429).send({ ok: false, code: "SMS_RISK_BLOCKED" });
 

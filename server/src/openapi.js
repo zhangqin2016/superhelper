@@ -23,6 +23,7 @@ export const OPENAPI_TAGS = [
   { name: "admin:auth", description: "Admin authentication" },
   { name: "admin:billing", description: "Admin billing products and pricing" },
   { name: "admin:summary", description: "Admin dashboard summary" },
+  { name: "admin:users", description: "Admin account user operations" },
   { name: "admin:audit", description: "Admin audit log" },
   { name: "admin:config-groups", description: "Admin device/config groups" },
   { name: "admin:config-profiles", description: "Admin config profiles" },

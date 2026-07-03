@@ -14,6 +14,7 @@ const root = path.join(__dirname, "..");
 const capturedQuestionResponses = [];
 const capturedRevealPaths = [];
 const capturedOpenPaths = [];
+const capturedAccountLoginPayloads = [];
 
 function makeTinyPdf() {
   const objects = [
@@ -150,6 +151,10 @@ ipcMain.handle("session:get-conversation", async (_event, payload) => {
 ipcMain.handle("app:get-locale", () => ({ ok: true, locale: "zh-CN" }));
 ipcMain.handle("app:get-version", () => ({ ok: true, version: "0.0.0-test" }));
 ipcMain.handle("app:get-icon-url", () => ({ ok: true, url: "" }));
+ipcMain.handle("account:sms-login", (_event, payload) => {
+  capturedAccountLoginPayloads.push(payload);
+  return { ok: false, error: "TEST_STOP" };
+});
 ipcMain.handle("mail-accounts:list", () => ({ ok: true, accounts: [] }));
 ipcMain.handle("models:list", () => ({ ok: true, presets: [], activePresetId: "" }));
 ipcMain.handle("permissions:list", () => ({ ok: true, modes: [], currentMode: "" }));
@@ -1833,6 +1838,17 @@ app.whenReady().then(async () => {
     }
     if (questionPayload.response !== "Fast\nCareful") {
       throw new Error(`multi-select response summary should include selected values: ${questionPayload.response}`);
+    }
+    const accountLoginBridgeResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        await window.assistantClient.loginAccountWithSms({ phone: "13800000000", code: "123456" });
+        return "account-login-bridge-contract: ok";
+      }
+    )()`);
+    console.log(accountLoginBridgeResult);
+    const accountLoginPayload = capturedAccountLoginPayloads[0] || {};
+    if (accountLoginPayload.phone !== "13800000000" || accountLoginPayload.code !== "123456") {
+      throw new Error("account login bridge should preserve object payload: " + JSON.stringify(accountLoginPayload));
     }
     console.log("test-renderer-import: ok");
   }

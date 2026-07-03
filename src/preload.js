@@ -165,7 +165,12 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   getAccountStatus: () => ipcRenderer.invoke("account:status"),
   sendAccountSmsCode: (phone) => ipcRenderer.invoke("account:sms-send", { phone }),
-  loginAccountWithSms: (phone, code) => ipcRenderer.invoke("account:sms-login", { phone, code }),
+  loginAccountWithSms: (phoneOrPayload, code) => {
+    const payload = phoneOrPayload && typeof phoneOrPayload === "object"
+      ? phoneOrPayload
+      : { phone: phoneOrPayload, code };
+    return ipcRenderer.invoke("account:sms-login", payload);
+  },
   refreshAccountEntitlements: () => ipcRenderer.invoke("account:entitlements"),
   createAccountBillingLink: () => ipcRenderer.invoke("account:billing-link"),
   logoutAccount: () => ipcRenderer.invoke("account:logout"),

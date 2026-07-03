@@ -14,6 +14,7 @@ export async function AdminShell({ children, title, subtitle }) {
       title: t.admin.navGroups.operations,
       items: [
         { href: "/admin", label: nav.dashboard },
+        { href: "/admin/users", label: nav.users || "Users" },
         { href: "/admin/licenses", label: nav.licenses },
         { href: "/admin/devices", label: nav.devices },
         { href: "/admin/usage", label: nav.usage },
