@@ -31,6 +31,7 @@ import { initDiffPanel } from "./modules/diff-panel.js";
 import { initFindBar } from "./modules/find-bar.js";
 import { initTaskCenter } from "./modules/task-center.js";
 import { showToast } from "./modules/toast.js";
+import { initCustomSelects, syncCustomSelects } from "./modules/custom-select.js";
 import { $ } from "./modules/dom.js";
 
 function initPanelToggles() {
@@ -146,6 +147,7 @@ function wireLocaleRefresh() {
     await refreshWorkspaceApps();
     await refreshSessionSkillsUi();
     syncComposerForActiveSession();
+    syncCustomSelects();
   });
 }
 
@@ -184,6 +186,7 @@ async function init() {
   wireMessageIpc();
   initMigrationProgress();
   initRuntimePackProgress();
+  initCustomSelects();
 
   initComposer();
   initScheduledTasks();

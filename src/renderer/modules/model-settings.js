@@ -4,6 +4,7 @@
 
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
+import { syncCustomSelect } from "./custom-select.js";
 import store from "./state.js";
 import { t, tModel, tModelDesc } from "../i18n/index.js";
 
@@ -55,6 +56,7 @@ function renderApiGateway(gateway) {
 
   const mode = gateway.mode === "custom" ? "custom" : "builtin";
   modeSelect.value = mode;
+  syncCustomSelect(modeSelect);
 
   if (baseUrlInput) {
     baseUrlInput.value = gateway.baseUrl || "";

@@ -1253,7 +1253,7 @@ app.whenReady().then(async () => {
         document.body.appendChild(article);
         const artifactSlot = article.querySelector("[data-role='artifacts']");
         const slotImgs = artifactSlot ? artifactSlot.querySelectorAll(".assistant-renderer-artifact img") : [];
-        const reveal = artifactSlot ? artifactSlot.querySelector(".assistant-renderer-action") : null;
+        const reveal = artifactSlot ? artifactSlot.querySelector(".assistant-reveal-btn") : null;
         const html = article.innerHTML;
         article.remove();
         if (slotImgs.length !== 1) {
@@ -1434,14 +1434,14 @@ app.whenReady().then(async () => {
         if (!audioArtifact || !String(audioArtifact.getAttribute("src") || "").startsWith("app-file://media/")) {
           throw new Error("audio artifact should render a playable app-file audio: " + host.innerHTML);
         }
-        if (host.querySelectorAll(".assistant-renderer-artifact.is-video .assistant-renderer-action").length !== 1) {
+        if (host.querySelectorAll(".assistant-renderer-artifact.is-video .assistant-reveal-btn").length !== 1) {
           throw new Error("video artifact should keep a reveal action: " + host.innerHTML);
         }
         const markdownArtifact = host.querySelector(".assistant-renderer-markdown-artifact");
         if (!markdownArtifact || !markdownArtifact.textContent.includes("output/report.md")) {
           throw new Error("markdown artifact should render a top-level preview card with its file path");
         }
-        if (!markdownArtifact.querySelector(".assistant-renderer-action")) {
+        if (!markdownArtifact.querySelector(".assistant-reveal-btn")) {
           throw new Error("markdown artifact should keep a reveal action");
         }
         await new Promise((resolve) => setTimeout(resolve, 80));
@@ -1866,6 +1866,22 @@ app.whenReady().then(async () => {
         if (!pathNode || !pathNode.classList.contains("is-clickable")) {
           throw new Error("windows generated media path should be clickable without rewriting: " + container.innerHTML);
         }
+        const fileUrlContainer = document.createElement("details");
+        document.body.appendChild(fileUrlContainer);
+        const winFileUrl = "file:///C:/Users/ROG/Desktop/Lily/%E4%BA%A4%E4%BA%92%E6%A8%A1%E5%9D%97/generated-assets/test_linzhi.png";
+        appendToolPayloadDetail(fileUrlContainer, {
+          name: "Bash",
+          result: { content: '<generated_media type="image">\\n  <file path="' + winFileUrl + '" bytes="4321" />\\n</generated_media>' },
+        }, { role: "result", sessionId: "session_windows_file_url_media" });
+        const fileUrlImg = fileUrlContainer.querySelector(".assistant-generated-media img");
+        if (!fileUrlImg) {
+          throw new Error("windows file URL generated media should render an image preview");
+        }
+        const fileUrlSrc = decodeURIComponent(String(fileUrlImg.getAttribute("src") || ""));
+        if (!fileUrlSrc.startsWith("app-file://media/C:/Users/ROG/Desktop/Lily/交互模块/")) {
+          throw new Error("windows Chinese file URL should normalize without a leading slash: " + fileUrlSrc);
+        }
+        fileUrlContainer.remove();
         pathNode.click();
         await new Promise((resolve) => setTimeout(resolve, 20));
         container.remove();

@@ -159,6 +159,18 @@ assert(mediaRecovered.path === renamedGenerated, "recovered media status returns
 assert(mediaRecovered.originalPath === staleGenerated, "recovered media status preserves original stale path");
 assert(mediaRecovered.recovered === true, "recovered media status is explicit");
 
+// 10. Windows shells can mangle non-ASCII workspace segments in tool stdout into
+// question marks. If the generated media filename survives, recover from the
+// authorized workspace's generated-assets directory instead of leaving preview broken.
+const chineseNameGenerated = path.join(projectRoot, "generated-assets", "image-1-2026-07-03T11-34-25-000Z-cn.png");
+fs.writeFileSync(chineseNameGenerated, "cn-png");
+const mangledOutputPath = path.join(path.dirname(projectRoot), "????", "generated-assets", path.basename(chineseNameGenerated));
+const mediaRecoveredFromMangledOutput = inspectLocalMediaPath(mangledOutputPath);
+assert(mediaRecoveredFromMangledOutput.ok === true, "mangled generated media output path should recover by filename");
+assert(mediaRecoveredFromMangledOutput.path === chineseNameGenerated, "mangled output recovery returns the real workspace file");
+assert(mediaRecoveredFromMangledOutput.originalPath === mangledOutputPath, "mangled output recovery preserves original bad path");
+assert(mediaRecoveredFromMangledOutput.recovered === true, "mangled output recovery is explicit");
+
 const registeredOriginal = path.join(projectRoot, "generated-assets", "image-1-2026-07-03T11-34-24-000Z-registered.png");
 const registeredRenamed = path.join(projectRoot, "generated-assets", "registered-scene.png");
 fs.writeFileSync(registeredOriginal, "registered-image-bytes");

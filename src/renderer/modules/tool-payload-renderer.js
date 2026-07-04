@@ -223,7 +223,10 @@ function fileUrlFromPath(filePath = "") {
   // Local files are served via the privileged app-file:// scheme — raw file:// is
   // blocked/flaky from a file:// page, so generated media never previewed otherwise.
   if (/^file:/i.test(value)) {
-    try { return `app-file://media/${encodeURIComponent(decodeURIComponent(new URL(value).pathname))}`; }
+    try {
+      const decoded = decodeURIComponent(new URL(value).pathname).replace(/^\/([A-Za-z]:[\\/])/, "$1");
+      return `app-file://media/${encodeURIComponent(decoded)}`;
+    }
     catch { return value; }
   }
   if (value.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(value)) {

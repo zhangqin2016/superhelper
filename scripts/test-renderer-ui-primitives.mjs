@@ -6,6 +6,9 @@ const stylesEntry = path.join(root, "src/renderer/styles.css");
 const primitivePath = path.join(root, "src/renderer/styles/ui-primitives.css");
 const composerPath = path.join(root, "src/renderer/styles/composer.css");
 const messagesPath = path.join(root, "src/renderer/styles/messages.css");
+const settingsPath = path.join(root, "src/renderer/styles/settings.css");
+const runtimeChatPath = path.join(root, "src/renderer/styles/runtime-chat.css");
+const customSelectPath = path.join(root, "src/renderer/modules/custom-select.js");
 
 const stylesEntryText = fs.readFileSync(stylesEntry, "utf8");
 if (!stylesEntryText.includes('@import "./styles/ui-primitives.css";')) {
@@ -15,8 +18,15 @@ if (!stylesEntryText.includes('@import "./styles/ui-primitives.css";')) {
 const primitiveText = fs.readFileSync(primitivePath, "utf8");
 const composerText = fs.readFileSync(composerPath, "utf8");
 const messagesText = fs.readFileSync(messagesPath, "utf8");
+const settingsText = fs.readFileSync(settingsPath, "utf8");
+const runtimeChatText = fs.readFileSync(runtimeChatPath, "utf8");
+const customSelectText = fs.readFileSync(customSelectPath, "utf8");
+const appText = fs.readFileSync(path.join(root, "src/renderer/app.js"), "utf8");
 const indexText = fs.readFileSync(path.join(root, "src/renderer/index.html"), "utf8");
 const permissionSettingsText = fs.readFileSync(path.join(root, "src/renderer/modules/permission-settings.js"), "utf8");
+const turnBlockRendererText = fs.readFileSync(path.join(root, "src/renderer/modules/turn-block-renderers.js"), "utf8");
+const pdfRendererText = fs.readFileSync(path.join(root, "src/renderer/modules/pdf-renderer.js"), "utf8");
+const htmlRendererText = fs.readFileSync(path.join(root, "src/renderer/modules/html-renderer.js"), "utf8");
 for (const required of [
   ".ui-btn",
   ".ui-btn-primary",
@@ -100,6 +110,82 @@ if (!latestHoverRule.includes("color: var(--text-primary)")) {
 }
 if (latestHoverRule.includes("color: var(--text-inverse)")) {
   throw new Error("Latest hover must not use inverse text without a solid dark/accent background");
+}
+
+for (const required of [
+  ".assistant-reveal-btn",
+  ".assistant-generated-file-row",
+  ".assistant-renderer-artifact figcaption",
+  ".assistant-generated-media-item",
+]) {
+  if (!runtimeChatText.includes(required)) {
+    throw new Error(`runtime chat artifact UI must stay unified: missing ${required}`);
+  }
+}
+for (const [label, text] of [
+  ["turn-block-renderers", turnBlockRendererText],
+  ["pdf-renderer", pdfRendererText],
+  ["html-renderer", htmlRendererText],
+]) {
+  if (!text.includes("assistant-reveal-btn") || !text.includes("aria-label")) {
+    throw new Error(`${label} must render reveal-in-folder as an icon button with an accessible label`);
+  }
+}
+if (turnBlockRendererText.includes('button.textContent = t("file.reveal")')) {
+  throw new Error("artifact reveal actions must not regress to large text buttons");
+}
+if (pdfRendererText.includes('makeAction(t("file.reveal")') || htmlRendererText.includes('makeAction(t("file.reveal")')) {
+  throw new Error("PDF/HTML reveal actions must use the shared icon affordance, not a text action button");
+}
+
+for (const required of ["initCustomSelects", "syncCustomSelects"]) {
+  if (!appText.includes(required)) {
+    throw new Error(`renderer app must wire custom select enhancement: missing ${required}`);
+  }
+}
+for (const required of [
+  "select.settings-select",
+  "lily-select-source",
+  "lily-select-button",
+  "lily-select-menu",
+  "dispatchEvent(new Event(\"change\"",
+]) {
+  if (!customSelectText.includes(required)) {
+    throw new Error(`custom-select.js must keep native select as state source and render custom chrome: missing ${required}`);
+  }
+}
+for (const required of [
+  ".settings-select.lily-select-source",
+  ".lily-select-button",
+  ".lily-select-menu",
+  "overflow-x: hidden",
+  ".lily-select-option[aria-selected=\"true\"]",
+]) {
+  if (!settingsText.includes(required)) {
+    throw new Error(`settings custom select CSS is incomplete: missing ${required}`);
+  }
+}
+const visibleSettingsSelects = [...indexText.matchAll(/<select\b[^>]*class="([^"]*\bsettings-select\b[^"]*)"[^>]*>/g)];
+if (visibleSettingsSelects.length === 0) {
+  throw new Error("settings page should still expose select sources for existing settings flows");
+}
+const rendererJsFiles = [
+  ...fs.readdirSync(path.join(root, "src/renderer/modules")).filter((file) => file.endsWith(".js")).map((file) => path.join(root, "src/renderer/modules", file)),
+  path.join(root, "src/renderer/app.js"),
+];
+const nativeDialogs = [];
+for (const file of rendererJsFiles) {
+  const text = fs.readFileSync(file, "utf8");
+  for (const re of [/window\.confirm\s*\(/g, /window\.alert\s*\(/g, /window\.prompt\s*\(/g]) {
+    let match;
+    while ((match = re.exec(text))) {
+      const line = text.slice(0, match.index).split("\n").length;
+      nativeDialogs.push(`${path.relative(root, file)}:${line}`);
+    }
+  }
+}
+if (nativeDialogs.length) {
+  throw new Error(`renderer must use in-app dialogs instead of browser-native dialogs:\n${nativeDialogs.join("\n")}`);
 }
 
 console.log("renderer UI primitives guard: ok");

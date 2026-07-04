@@ -33,7 +33,10 @@ function fileUrlFromPath(filePath = "") {
   // Serve local files via the privileged app-file:// scheme (raw file:// is blocked/
   // flaky from a file:// page, so local image previews wouldn't load).
   if (/^file:/i.test(value)) {
-    try { return `app-file://media/${encodeURIComponent(decodeURIComponent(new URL(value).pathname))}`; }
+    try {
+      const decoded = decodeURIComponent(new URL(value).pathname).replace(/^\/([A-Za-z]:[\\/])/, "$1");
+      return `app-file://media/${encodeURIComponent(decoded)}`;
+    }
     catch { return value; }
   }
   if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) {
@@ -91,9 +94,17 @@ function displayName(block = {}) {
 function revealButton(block = {}) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "assistant-renderer-action";
-  button.textContent = t("file.reveal");
+  button.className = "assistant-reveal-btn";
+  button.title = t("file.reveal");
+  button.setAttribute("aria-label", t("file.reveal"));
   button.disabled = !block.path;
+  button.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3 6.75A2.75 2.75 0 0 1 5.75 4h4.47c.73 0 1.43.29 1.94.8l1.04 1.04c.23.23.54.36.86.36h4.19A2.75 2.75 0 0 1 21 8.95v8.3A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25V6.75Z"></path>
+      <path d="M14.25 12.25h3.5v3.5"></path>
+      <path d="m17.75 12.25-4.5 4.5"></path>
+    </svg>
+  `;
   button.addEventListener("click", () => {
     if (block.path) void revealLocalFileInFolder(block.path);
   });

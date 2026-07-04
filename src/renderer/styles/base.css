@@ -142,6 +142,7 @@
 
   /* Overlay stack. Keep these centralized so nested flows can open dialogs safely. */
   --z-settings-panel: 10000;
+  --z-menu: 10500;
   --z-modal: 11000;
   --z-image-viewer: 11000;
   --z-drop-overlay: 12000;
@@ -187,9 +188,9 @@
   --accent-strong-bg: rgba(106, 87, 240, 0.14);
   --accent-ring: rgba(106, 87, 240, 0.2);
 
-  --bg-body: #eef2f7;
-  --bg-left: #f8fafc;
-  --bg-center: #fbfcfe;
+  --bg-body: #edf1f7;
+  --bg-left: #f6f8fb;
+  --bg-center: #f8fafc;
   --bg-right: #f8fafc;
   --bg-topbar: #ffffff;
   --bg-input: #ffffff;

@@ -34,6 +34,24 @@ function makeAction(label, disabled, handler) {
   return button;
 }
 
+function makeRevealAction(disabled, handler) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "assistant-reveal-btn";
+  button.title = t("file.reveal");
+  button.setAttribute("aria-label", t("file.reveal"));
+  button.disabled = Boolean(disabled);
+  button.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3 6.75A2.75 2.75 0 0 1 5.75 4h4.47c.73 0 1.43.29 1.94.8l1.04 1.04c.23.23.54.36.86.36h4.19A2.75 2.75 0 0 1 21 8.95v8.3A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25V6.75Z"></path>
+      <path d="M14.25 12.25h3.5v3.5"></path>
+      <path d="m17.75 12.25-4.5 4.5"></path>
+    </svg>
+  `;
+  if (!disabled) button.addEventListener("click", handler);
+  return button;
+}
+
 export function renderPdfBlock(block = {}) {
   const section = document.createElement("section");
   section.className = "assistant-renderer-block assistant-renderer-pdf";
@@ -63,7 +81,7 @@ export function renderPdfBlock(block = {}) {
   readAction.classList.add("assistant-pdf-open-viewer");
   actions.appendChild(readAction);
   actions.appendChild(makeAction(tr("file.open", "Open"), !block.path, () => void openLocalFile(block.path)));
-  actions.appendChild(makeAction(t("file.reveal"), !block.path, () => void revealLocalFileInFolder(block.path)));
+  actions.appendChild(makeRevealAction(!block.path, () => void revealLocalFileInFolder(block.path)));
   actions.appendChild(makeAction(t("common.copy"), false, async () => {
     try {
       await navigator.clipboard.writeText(String(block.path || block.relativePath || block.fileName || ""));

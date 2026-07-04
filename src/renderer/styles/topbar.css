@@ -9,8 +9,7 @@
   min-height: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% -26%, color-mix(in srgb, var(--accent) 8%, transparent) 0, transparent 34%),
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-center) 88%, var(--bg-surface) 12%) 0, var(--bg-center) 220px),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-center) 94%, var(--bg-surface) 6%) 0, var(--bg-center) 220px),
     var(--bg-center);
 }
 
@@ -22,11 +21,11 @@
   gap: 16px;
   padding: 11px 18px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-topbar) 90%, var(--bg-surface-raised) 10%), color-mix(in srgb, var(--bg-topbar) 96%, var(--bg-surface) 4%)),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-topbar) 94%, var(--bg-surface-raised) 6%), color-mix(in srgb, var(--bg-topbar) 98%, var(--bg-surface) 2%)),
     var(--bg-topbar);
   border-bottom: 1px solid var(--border-subtle);
   min-height: 56px;
-  box-shadow: var(--top-highlight);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--bg-body) 7%, transparent), var(--top-highlight);
 }
 
 .topbar-left {
@@ -48,7 +47,7 @@
   color: var(--text-secondary);
   cursor: pointer;
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--bg-body) 8%, transparent), var(--top-highlight);
   transition:
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease),

@@ -82,6 +82,10 @@ function normalizeLocalMediaPath(value = "") {
   return path.resolve(text);
 }
 
+function normalizeAppFileUrlPath(value = "") {
+  return String(value || "").trim().replace(/^\/([A-Za-z]:[\\/])/, "$1");
+}
+
 function mediaKindForExt(ext = "") {
   const normalized = String(ext || "").toLowerCase();
   if (IMAGE_EXTENSIONS.has(normalized)) return "image";
@@ -145,18 +149,44 @@ function resolveRecoveredGeneratedMediaPath(abs = "", roots = allowedRoots()) {
   return candidates[0].path;
 }
 
+function resolveGeneratedMediaByBasename(abs = "", roots = allowedRoots()) {
+  const original = path.resolve(abs);
+  if (!isRecoverableGeneratedMediaPath(original)) return "";
+  const name = path.basename(original);
+  for (const root of roots) {
+    const candidate = path.join(path.resolve(root), GENERATED_ASSETS_DIR, name);
+    try {
+      const stat = fs.statSync(candidate);
+      if (stat.isFile()) return candidate;
+    } catch {
+      /* try next root */
+    }
+  }
+  return "";
+}
+
 function inspectLocalMediaPath(filePath = "") {
   const abs = normalizeLocalMediaPath(filePath);
   if (!abs) {
     return { ok: false, error: "INVALID_PATH", path: "", exists: false, authorized: false };
   }
   const roots = allowedRoots();
-  const authorized = roots.some((root) => isUnder(root, abs) || path.resolve(root) === abs);
-  const workspacePath = authorized ? workspaceRootForPath(abs, roots) : "";
+  let authorized = roots.some((root) => isUnder(root, abs) || path.resolve(root) === abs);
+  let workspacePath = authorized ? workspaceRootForPath(abs, roots) : "";
   let resolved = abs;
   let recovered = false;
   let artifactId = "";
   let exists = fs.existsSync(resolved);
+  if (!exists && !authorized) {
+    const replacement = resolveGeneratedMediaByBasename(abs, roots);
+    if (replacement) {
+      resolved = replacement;
+      recovered = true;
+      exists = fs.existsSync(resolved);
+      authorized = true;
+      workspacePath = workspaceRootForPath(resolved, roots);
+    }
+  }
   if (!exists && authorized) {
     const artifactResolution = workspacePath
       ? resolveArtifactReference({ workspacePath, path: abs })
@@ -224,7 +254,7 @@ function installLocalMediaProtocol() {
   protocol.handle(SCHEME, async (request) => {
     try {
       const url = new URL(request.url);
-      const raw = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+      const raw = normalizeAppFileUrlPath(decodeURIComponent(url.pathname.replace(/^\/+/, "")));
       if (!raw) return new Response(null, { status: 400 });
       const status = inspectLocalMediaPath(path.resolve(raw));
       if (!status.authorized) return new Response(null, { status: 403 });
@@ -243,6 +273,7 @@ module.exports = {
   installLocalMediaProtocol,
   inspectLocalMediaPath,
   resolveRecoveredGeneratedMediaPath,
+  resolveGeneratedMediaByBasename,
   SCHEME,
   allowedRoots,
   canonicalMediaUrl,

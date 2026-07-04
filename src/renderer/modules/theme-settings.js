@@ -7,6 +7,7 @@
 
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
+import { syncCustomSelect } from "./custom-select.js";
 import { t } from "../i18n/index.js";
 
 const THEME_STORAGE_KEY = "lily.themeMode";
@@ -85,12 +86,18 @@ export function refreshThemeSelect() {
   const select = $("themeModeSelect");
   const mode = getThemeMode();
   applyThemeMode(mode);
-  if (select) select.value = mode;
+  if (select) {
+    select.value = mode;
+    syncCustomSelect(select);
+  }
 
   const textSizeSelect = $("textSizeModeSelect");
   const textSize = getTextSizeMode();
   applyTextSizeMode(textSize);
-  if (textSizeSelect) textSizeSelect.value = textSize;
+  if (textSizeSelect) {
+    textSizeSelect.value = textSize;
+    syncCustomSelect(textSizeSelect);
+  }
 }
 
 export function initThemeSettings() {

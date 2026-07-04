@@ -6,12 +6,12 @@
   position: relative;
   z-index: 20;
   flex-shrink: 0;
-  padding: 13px 20px 17px;
+  padding: 14px 20px 18px;
   border-top: 1px solid var(--border-light);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-topbar) 78%, transparent), var(--bg-topbar) 34%),
-    color-mix(in srgb, var(--bg-topbar) 96%, var(--bg-surface) 4%);
-  box-shadow: 0 -12px 30px color-mix(in srgb, var(--bg-body) 12%, transparent), var(--top-highlight);
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-topbar) 82%, transparent), var(--bg-topbar) 38%),
+    color-mix(in srgb, var(--bg-topbar) 94%, var(--bg-surface) 6%);
+  box-shadow: 0 -14px 34px color-mix(in srgb, var(--bg-body) 10%, transparent), var(--top-highlight);
 }
 
 .composer.composer-busy {
@@ -732,11 +732,11 @@
   gap: 0;
   width: min(100%, var(--chat-col));
   margin: 0 auto;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--border-light) 78%, transparent);
+  border-radius: 14px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 88%, var(--bg-surface) 12%), var(--bg-input));
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 92%, var(--bg-surface) 8%), var(--bg-input));
+  box-shadow: 0 16px 42px color-mix(in srgb, var(--bg-body) 12%, transparent), var(--top-highlight);
   overflow: visible;
   min-width: 0;
   transition:
@@ -747,7 +747,7 @@
 
 .composer-row:focus-within {
   border-color: var(--accent-border);
-  box-shadow: var(--shadow-sm), var(--top-highlight), 0 0 0 3px var(--accent-ring);
+  box-shadow: 0 18px 46px color-mix(in srgb, var(--accent) 9%, transparent), var(--top-highlight), 0 0 0 3px var(--accent-ring);
 }
 
 .composer-actionbar {
@@ -759,8 +759,9 @@
   padding: 7px 9px 8px;
   border-top: 1px solid var(--border-subtle);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-subtle) 65%, var(--bg-surface) 35%), color-mix(in srgb, var(--bg-surface-muted) 74%, transparent));
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-subtle) 54%, var(--bg-surface) 46%), color-mix(in srgb, var(--bg-surface-muted) 62%, transparent));
   min-width: 0;
+  border-radius: 0 0 13px 13px;
 }
 
 .composer-icon-btn {

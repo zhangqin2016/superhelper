@@ -125,9 +125,6 @@ async function main() {
   }
   xml += "</generated_media>\n";
   process.stdout.write(xml);
-  for (const file of files) {
-    process.stdout.write(msg(`\n![生成图片](${file.path})\n已保存到：${file.path}\n`, `\n![Generated image](${file.path})\nSaved to: ${file.path}\n`));
-  }
   // Result record for the main-process media tracker — surfaces the media even if the
   // turn was torn down before this stdout was captured. Best-effort.
   try {

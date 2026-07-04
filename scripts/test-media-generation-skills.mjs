@@ -273,7 +273,7 @@ try {
   assert.equal(image.code, 0, image.stderr);
   assert.match(image.stdout, /generated_media type="image"/);
   assert.match(assertGeneratedPath(image.stdout, "generated-assets"), /generated-assets\/image-/);
-  assert.match(image.stdout, /!\[生成图片\]\(/);
+  assert.doesNotMatch(image.stdout, /!\[生成图片\]\(/, "stdout should keep only the structured generated_media contract");
   assert.match(image.stderr, /正在提交图片生成任务/);
 
   const video = await runNode(scripts.video, { prompt: "一段莲花盛开视频", timeout_ms: 5000 }, env, tmp);

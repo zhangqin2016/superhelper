@@ -294,7 +294,13 @@ async function openInstalledWorkspaceApp(app, button) {
 }
 
 async function uninstallWorkspaceApp(app, button) {
-  if (!window.confirm(t("apps.uninstallConfirm", { name: app.name || app.id }))) return;
+  const confirmed = await confirmDialog({
+    title: t("apps.uninstall"),
+    message: t("apps.uninstallConfirm", { name: app.name || app.id }),
+    confirmText: t("apps.uninstall"),
+    danger: true,
+  });
+  if (!confirmed) return;
   if (button) button.disabled = true;
   try {
     const result = await window.assistantClient.uninstallWorkspaceApp(app.id);

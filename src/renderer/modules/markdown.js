@@ -302,7 +302,8 @@ function localMediaUrlFromPath(filePath = "") {
   if (/^app-file:/i.test(value)) return value;
   if (/^file:/i.test(value)) {
     try {
-      return `app-file://media/${encodeURIComponent(decodeURIComponent(new URL(value).pathname))}`;
+      const decoded = decodeURIComponent(new URL(value).pathname).replace(/^\/([A-Za-z]:[\\/])/, "$1");
+      return `app-file://media/${encodeURIComponent(decoded)}`;
     } catch {
       return value;
     }
