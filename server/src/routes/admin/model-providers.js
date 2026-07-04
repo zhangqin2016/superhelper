@@ -22,6 +22,7 @@ const providerSchema = z.object({
   secretKey: z.string().max(2000).optional(),
   // Non-secret provider extras (e.g. MiniMax GroupId). Omitted = keep existing.
   groupId: z.string().max(400).optional(),
+  nativeVision: z.boolean().optional(),
   defaultModel: z.string().max(160).optional().default(""),
   models: z.array(z.string().max(160)).max(100).optional().default([]),
   headers: z.record(z.string().max(2000)).optional().default({}),
@@ -75,6 +76,7 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
       baseUrl: provider.baseUrl,
       default_model: provider.model || "",
       models: provider.models || [],
+      metadata: provider.metadata || {},
       hasApiKey: Boolean(provider.apiKey),
       source: dbIds.has(String(provider.id)) ? "db" : "env",
     }));
@@ -124,6 +126,7 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
         : {};
     const metadata = { ...existingMetadata };
     if (input.groupId !== undefined) metadata.groupId = input.groupId;
+    if (input.nativeVision !== undefined) metadata.nativeVision = input.nativeVision;
     const values = {
       id: input.id,
       label: input.label || input.id,
@@ -164,6 +167,7 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
       baseUrl: input.baseUrl || "",
       keyChanged: input.apiKey !== undefined && input.apiKey !== "",
       secretChanged: input.secretKey !== undefined && input.secretKey !== "",
+      nativeVision: Boolean(input.nativeVision),
       enabled: input.enabled,
     });
     return reply.code(201).send({ ok: true, id: input.id });

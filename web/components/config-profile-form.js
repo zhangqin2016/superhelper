@@ -43,6 +43,7 @@ function providersToTemplates(providers) {
         baseUrl: p.base_url || p.baseUrl || "",
         model: def,
         models,
+        metadata: p.metadata && typeof p.metadata === "object" ? p.metadata : {},
       };
     });
 }
@@ -72,8 +73,6 @@ const labels = {
     mediaDefault: "默认：",
     providerModels: "已选供应商的模型",
     providerModelsHelp: "只读预览。每个已选供应商都会下发自己的模型列表；要改模型列表或默认模型，请去「模型供应商」页面配置。",
-    visionNative: "模型原生支持图片识别",
-    visionNativeHelp: "勾选后，带图片的消息直接发给该模型，跳过 Qwen 识图桥接。仅当该模型本身能看图时才勾。",
     toolsTitle: "技能包和客户端策略",
     toolsDesc: "这里控制技能包 registry、默认权限和最低客户端版本。",
     registry: "技能包 registry",
@@ -119,8 +118,6 @@ const labels = {
     mediaDefault: "Default:",
     providerModels: "Models from selected providers",
     providerModelsHelp: "Read-only preview. Every selected provider delivers its own model list. Edit model names and provider defaults under “Model providers”.",
-    visionNative: "Model natively recognizes images",
-    visionNativeHelp: "When checked, messages with images go straight to this model and skip the Qwen vision bridge. Only check this if the model itself can see images.",
     toolsTitle: "Skill packages and client policy",
     toolsDesc: "Control skill registry, default permissions, and minimum client version.",
     registry: "Skill registry",
@@ -166,8 +163,6 @@ const labels = {
     mediaDefault: "الافتراضي:",
     providerModels: "نماذج المزوّدين المحددين",
     providerModelsHelp: "معاينة فقط. كل مزوّد محدد يرسل قائمة نماذجه. عدّل أسماء النماذج والافتراضي من صفحة «مزوّدو النماذج».",
-    visionNative: "النموذج يتعرف على الصور أصلاً",
-    visionNativeHelp: "عند التحديد، تُرسل الرسائل ذات الصور مباشرة إلى هذا النموذج متجاوزة جسر Qwen. حدّد فقط إذا كان النموذج نفسه يرى الصور.",
     toolsTitle: "حزم المهارات وسياسة العميل",
     toolsDesc: "تحكم بسجل حزم المهارات والصلاحيات الافتراضية والحد الأدنى للإصدار.",
     registry: "سجل حزم المهارات",
@@ -225,7 +220,6 @@ function defaultDraft(copy, templates) {
     minAppVersion: "",
     requestTimeoutMs: "300000",
     visionModel: "qwen3.7-plus",
-    supportsVision: false,
     imageProviders: [],
     imageDefault: "",
     videoProviders: [],
@@ -298,16 +292,18 @@ function buildConfig(draft, template) {
   // Delivery rules record only a provider directive. The server expands it into
   // a signed gateway model menu at client-config time, so profiles never carry
   // upstream URLs or provider keys.
-  const providerId = template.provider || template.id || "";
   const providers = deliveryProviderIds(draft, template);
   const activeProvider = providers.includes(draft.selectedTemplateId) ? draft.selectedTemplateId : providers[0] || "";
+  const capabilities = Object.fromEntries(
+    providers.map((providerId) => [providerId, { vision: Boolean(draft.providerCapabilities?.[providerId]?.vision) }]),
+  );
   return {
     schemaVersion: 1,
     models: {
       source: "service",
       providers,
       activeProvider,
-      capabilities: providerId ? { [providerId]: { vision: Boolean(draft.supportsVision) } } : {},
+      capabilities,
     },
     tools,
     policy,
@@ -343,7 +339,12 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
   const [jsonOverride, setJsonOverride] = useState("");
 
   const activeTemplate = selectedTemplate(draft, templates);
-  const config = useMemo(() => buildConfig(draft, activeTemplate), [draft, activeTemplate]);
+  const providerCapabilities = useMemo(
+    () => Object.fromEntries(templates.map((template) => [template.id, { vision: Boolean(template.metadata?.nativeVision) }])),
+    [templates],
+  );
+  const draftWithCapabilities = useMemo(() => ({ ...draft, providerCapabilities }), [draft, providerCapabilities]);
+  const config = useMemo(() => buildConfig(draftWithCapabilities, activeTemplate), [draftWithCapabilities, activeTemplate]);
   const deliveredProviderIds = useMemo(() => deliveryProviderIds(draft, activeTemplate), [draft, activeTemplate]);
   const generatedJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
   const submittedJson = jsonOverride.trim() ? jsonOverride : generatedJson;
@@ -585,20 +586,6 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
               </div>
             ) : null}
 
-            <div className="mt-5">
-              <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4"
-                  checked={draft.supportsVision}
-                  onChange={(event) => updateField("supportsVision", event.target.checked)}
-                />
-                <span>
-                  <span className="block text-sm font-semibold text-slate-800">{copy.visionNative}</span>
-                  <span className="mt-1 block text-xs text-slate-500">{copy.visionNativeHelp}</span>
-                </span>
-              </label>
-            </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 p-4">

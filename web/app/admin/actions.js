@@ -184,6 +184,7 @@ export async function createModelProviderAction(_previousState, formData) {
       apiKey: text(formData, "apiKey"), // empty = keep existing key
       secretKey: text(formData, "secretKey"), // empty = keep existing (Kling)
       groupId: text(formData, "groupId"), // MiniMax GroupId
+      nativeVision: bool(formData, "nativeVision"),
       defaultModel: text(formData, "defaultModel"),
       models: text(formData, "models")
         .split(",")

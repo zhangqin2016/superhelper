@@ -329,12 +329,20 @@ const scopeProviders = {
 };
 const scopeMerged = {
   // baseline (deepseek-only) that a group profile merged its directive onto
-  models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["glm"], activeProvider: "glm" },
+  models: {
+    source: "service",
+    activePresetId: "deepseek-gateway",
+    presets: [{ id: "deepseek-gateway" }],
+    providers: ["glm"],
+    activeProvider: "glm",
+    capabilities: { glm: { vision: true } },
+  },
 };
 const expanded = expandModelProviderMenu(scopeMerged, { providers: scopeProviders, deliveryMode: "gateway" });
 assert.ok(expanded.models.presets.every((p) => p.id.startsWith("glm-")), "scope menu should expand to the directive's providers only");
 assert.equal(expanded.models.providers, undefined, "directive should be consumed");
 assert.ok(expanded.models.activePresetId.startsWith("glm-"), "active should be the directive's activeProvider");
+assert.deepEqual(expanded.models.capabilities, { glm: { vision: true } }, "provider capabilities must survive directive expansion");
 
 const defaultGatewayExpanded = expandModelProviderMenu(
   { models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["deepseek"] } },

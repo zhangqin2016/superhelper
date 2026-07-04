@@ -26,9 +26,15 @@ const labels = {
     groupId: "GroupId",
     groupIdHelp: "仅 MiniMax 国内平台需要。非密钥,可见。",
     defaultModel: "供应商默认模型",
-    defaultModelHelp: "客户端选择这个供应商时默认打开的模型。不是全局唯一模型。",
+    defaultModelHelp: "从下面的可用模型里选择。客户端选择这个供应商时默认打开它。",
     models: "供应商可用模型列表",
-    modelsHelp: "逗号分隔。同一个供应商下的模型都会下发，用户可在客户端切换；默认模型建议写在列表里，留空则取第一个。",
+    modelsHelp: "添加这个供应商下可切换的模型。用户会在客户端看到这些模型。",
+    addModel: "添加模型",
+    modelPlaceholder: "输入模型名，如 qwen3.7-max",
+    noModelsConfigured: "还没有添加模型。",
+    defaultTag: "默认",
+    nativeVision: "支持图片识别",
+    nativeVisionHelp: "这个供应商下的模型原生能看图时才勾。勾选后客户端可直接把图片发给该模型。",
     modelCount: "模型数",
     save: "保存供应商",
     keySet: "已设密钥",
@@ -57,9 +63,15 @@ const labels = {
     groupId: "GroupId",
     groupIdHelp: "MiniMax (China) only. Non-secret, visible.",
     defaultModel: "Provider default model",
-    defaultModelHelp: "The initial model when the client chooses this provider. This is not the only global model.",
+    defaultModelHelp: "Choose from the available models below. This is the initial model when the client chooses this provider.",
     models: "Provider model list",
-    modelsHelp: "Comma-separated. Every model under this provider is delivered so users can switch in the client; blank default uses the first.",
+    modelsHelp: "Add switchable models under this provider. Users will see these models in the client.",
+    addModel: "Add model",
+    modelPlaceholder: "Enter a model name, e.g. qwen3.7-max",
+    noModelsConfigured: "No models added yet.",
+    defaultTag: "Default",
+    nativeVision: "Supports image recognition",
+    nativeVisionHelp: "Only enable this when models under this provider can natively see images.",
     modelCount: "Models",
     save: "Save provider",
     keySet: "key set",
@@ -88,9 +100,15 @@ const labels = {
     groupId: "GroupId",
     groupIdHelp: "لـ MiniMax (الصين) فقط. غير سري.",
     defaultModel: "النموذج الافتراضي للمزوّد",
-    defaultModelHelp: "النموذج الأولي عند اختيار هذا المزوّد. ليس نموذجاً عاماً وحيداً.",
+    defaultModelHelp: "اختره من النماذج المتاحة أدناه. هذا هو النموذج الأولي عند اختيار المزوّد.",
     models: "قائمة نماذج المزوّد",
-    modelsHelp: "مفصولة بفواصل. تُرسل كل نماذج هذا المزوّد للعميل.",
+    modelsHelp: "أضف النماذج القابلة للتبديل ضمن هذا المزوّد.",
+    addModel: "إضافة نموذج",
+    modelPlaceholder: "أدخل اسم النموذج",
+    noModelsConfigured: "لم تتم إضافة نماذج بعد.",
+    defaultTag: "افتراضي",
+    nativeVision: "يدعم التعرف على الصور",
+    nativeVisionHelp: "فعّله فقط إذا كانت نماذج هذا المزوّد ترى الصور أصلاً.",
     modelCount: "عدد النماذج",
     save: "حفظ المزوّد",
     keySet: "مفتاح مضبوط",
@@ -126,6 +144,13 @@ function modelList(provider) {
   return Array.isArray(provider?.models) ? provider.models.filter(Boolean) : [];
 }
 
+function parseModels(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function draftFromProvider(provider) {
   return {
     id: provider?.id || "",
@@ -134,6 +159,8 @@ function draftFromProvider(provider) {
     baseUrl: provider?.base_url || provider?.baseUrl || "",
     defaultModel: provider?.default_model || provider?.defaultModel || "",
     models: modelList(provider).join(", "),
+    modelInput: "",
+    nativeVision: Boolean(provider?.metadata?.nativeVision),
     groupId: provider?.metadata?.groupId || "",
     disabled: provider ? !provider.enabled : false,
   };
@@ -147,6 +174,36 @@ export function ModelProvidersPanel({ providers = [], initialProvider = null, sh
 
   function set(name, value) {
     setDraft((current) => ({ ...current, [name]: value }));
+  }
+
+  const selectedModels = parseModels(draft.models);
+  const defaultModelValue = draft.defaultModel || selectedModels[0] || "";
+
+  function setModels(models) {
+    const uniqueModels = Array.from(new Set(models.map((model) => String(model || "").trim()).filter(Boolean)));
+    setDraft((current) => ({
+      ...current,
+      models: uniqueModels.join(", "),
+      defaultModel: uniqueModels.includes(current.defaultModel) ? current.defaultModel : uniqueModels[0] || "",
+    }));
+  }
+
+  function addModel() {
+    const values = parseModels(draft.modelInput);
+    if (!values.length) return;
+    setDraft((current) => {
+      const uniqueModels = Array.from(new Set([...parseModels(current.models), ...values]));
+      return {
+        ...current,
+        models: uniqueModels.join(", "),
+        defaultModel: current.defaultModel && uniqueModels.includes(current.defaultModel) ? current.defaultModel : uniqueModels[0] || "",
+        modelInput: "",
+      };
+    });
+  }
+
+  function removeModel(model) {
+    setModels(selectedModels.filter((item) => item !== model));
   }
 
   return (
@@ -185,13 +242,83 @@ export function ModelProvidersPanel({ providers = [], initialProvider = null, sh
           <SectionTitle title={copy.modelSection} />
         </div>
         <Field label={copy.defaultModel} help={copy.defaultModelHelp}>
-          <input className={fieldClass()} name="defaultModel" value={draft.defaultModel} onChange={(e) => set("defaultModel", e.target.value)} placeholder="deepseek-v4-pro[1m]" />
+          <select
+            className={fieldClass()}
+            value={defaultModelValue}
+            onChange={(e) => set("defaultModel", e.target.value)}
+            disabled={!selectedModels.length}
+          >
+            {selectedModels.length ? selectedModels.map((model) => (
+              <option key={model} value={model}>{model}</option>
+            )) : (
+              <option value="">{copy.noModelsConfigured}</option>
+            )}
+          </select>
         </Field>
+        <input name="defaultModel" type="hidden" value={defaultModelValue} />
+        <input name="models" type="hidden" value={selectedModels.join(", ")} />
         <div className="md:col-span-2">
-          <Field label={copy.models} help={copy.modelsHelp}>
-            <input className={fieldClass()} name="models" value={draft.models} onChange={(e) => set("models", e.target.value)} placeholder="deepseek-v4-pro[1m], deepseek-v4-flash, deepseek-reasoner" />
-          </Field>
+          <div className="block">
+            <span className="mb-1.5 block text-sm font-semibold text-slate-800">{copy.models}</span>
+            <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="flex flex-col gap-2 md:flex-row">
+                <input
+                  className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10"
+                  value={draft.modelInput}
+                  onChange={(e) => set("modelInput", e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addModel();
+                    }
+                  }}
+                  placeholder={copy.modelPlaceholder}
+                />
+                <button
+                  type="button"
+                  className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  onClick={addModel}
+                >
+                  {copy.addModel}
+                </button>
+              </div>
+              <div className="flex min-h-9 flex-wrap gap-2">
+                {selectedModels.length ? selectedModels.map((model) => (
+                  <button
+                    key={model}
+                    type="button"
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 transition ${
+                      model === defaultModelValue
+                        ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                        : "bg-slate-50 text-slate-600 ring-slate-200 hover:bg-red-50 hover:text-red-700 hover:ring-red-200"
+                    }`}
+                    onClick={() => removeModel(model)}
+                    title={model}
+                  >
+                    {model}
+                    {model === defaultModelValue ? ` · ${copy.defaultTag}` : " ×"}
+                  </button>
+                )) : (
+                  <span className="text-sm text-slate-400">{copy.noModelsConfigured}</span>
+                )}
+              </div>
+            </div>
+            <span className="mt-1 block text-xs text-slate-500">{copy.modelsHelp}</span>
+          </div>
         </div>
+        <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 md:col-span-2 xl:col-span-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4"
+            name="nativeVision"
+            checked={draft.nativeVision}
+            onChange={(e) => set("nativeVision", e.target.checked)}
+          />
+          <span>
+            <span className="block text-sm font-semibold text-slate-800">{copy.nativeVision}</span>
+            <span className="mt-1 block text-xs text-slate-500">{copy.nativeVisionHelp}</span>
+          </span>
+        </label>
 
         <div className="border-t border-slate-200 pt-1 md:col-span-2 xl:col-span-3">
           <SectionTitle title={copy.accessSection} />

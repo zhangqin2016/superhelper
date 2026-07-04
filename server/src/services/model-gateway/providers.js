@@ -68,6 +68,7 @@ function normalizeProvider(id, provider) {
     model: String(provider.model || ""),
     models: Array.isArray(provider.models) ? provider.models.map(String).filter(Boolean) : [],
     headers: provider.headers && typeof provider.headers === "object" ? provider.headers : {},
+    metadata: provider.metadata && typeof provider.metadata === "object" ? provider.metadata : {},
   };
 }
 
@@ -176,6 +177,7 @@ export function listModelGatewayProviders() {
           baseUrl: dbProvider.baseUrl || envProvider.baseUrl,
           model: dbProvider.model || envProvider.model,
           models: dbProvider.models?.length ? dbProvider.models : envProvider.models,
+          metadata: { ...(envProvider.metadata || {}), ...(dbProvider.metadata || {}) },
         }
       : dbProvider;
   }
