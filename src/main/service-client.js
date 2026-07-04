@@ -426,6 +426,7 @@ async function serviceFetch(pathname, options = {}) {
 
   const method = String(options.method || "GET").toUpperCase();
   const body = options.body || "";
+  const regionHint = localClientRegionHint();
   let lastError = null;
   for (const baseUrl of serviceBaseCandidatesForRequest(apiBaseUrl, pathname, method)) {
     const controller = new AbortController();
@@ -437,6 +438,7 @@ async function serviceFetch(pathname, options = {}) {
         headers: {
           "Content-Type": "application/json",
           ...requestSignatureHeaders(method, pathname, body),
+          ...(regionHint ? { "X-Lily-Region": regionHint } : {}),
           ...(options.headers || {}),
         },
       });

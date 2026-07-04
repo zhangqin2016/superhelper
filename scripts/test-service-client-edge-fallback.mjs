@@ -78,6 +78,7 @@ assert.equal(getServiceSettings().apiBaseUrl, "https://lilyxinjiapo.lilywb.cn");
 await registerDevice();
 assert.equal(requests[0]?.url, "https://lilyxinjiapo.lilywb.cn/api/devices/register");
 assert.equal(requests[1]?.url, "https://lilych.lilywb.cn/api/devices/register");
+assert.equal(requests[1]?.options?.headers?.["X-Lily-Region"], "uae");
 
 const sms = await sendSmsCode("+971500000000");
 assert.equal(sms.ok, false);
@@ -88,6 +89,7 @@ const usageSummary = await fetchUsageSummary();
 assert.equal(usageSummary.ok, true);
 assert.equal(requests[3]?.url, "https://lilyxinjiapo.lilywb.cn/api/usage/summary");
 assert.equal(requests[4]?.url, "https://lilych.lilywb.cn/api/usage/summary");
+assert.equal(requests[4]?.options?.headers?.["X-Lily-Region"], "uae");
 
 const bootstrap = await refreshClientBootstrap({ force: true });
 assert.equal(bootstrap.ok, true);
