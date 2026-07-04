@@ -56,19 +56,22 @@ const labels = {
     scopeLicense: "某个授权",
     scopeDevice: "某台设备",
     targetHelp: "全局配置不需要目标 ID；设备组填组 ID，授权/设备填对应 ID。",
-    modelTitle: "模型菜单",
-    modelDesc: "从「模型供应商」里选择本范围可用的模型。客户端只拿短期网关 token，真实密钥留在服务端。",
+    modelTitle: "模型下发",
+    modelDesc: "这里不配置密钥和真实接口，只决定这条规则下客户端能看到哪些模型供应商，以及默认打开哪一个。",
     providerEmpty: "请先在上方「模型供应商」里添加一个供应商。",
-    menuTitle: "允许使用的供应商",
-    menuDesc: "点选这个范围允许使用的供应商（可多选）。客户端能在这些供应商之间切换；上方选中的供应商作为默认。",
-    menuActive: "已选择：保存后客户端会收到这组模型菜单。",
+    defaultProviderTitle: "默认打开的供应商（单选）",
+    defaultProviderDesc: "客户端首次打开会使用这个供应商。具体模型名在「模型供应商」里维护。",
+    defaultBadge: "默认",
+    allowedProvidersTitle: "客户端可选供应商（多选）",
+    allowedProvidersDesc: "这些供应商会出现在客户端模型下拉菜单里。默认供应商会自动包含，不能取消。",
+    menuActive: "保存后客户端会收到这组可选供应商。",
     mediaTitle: "图片 / 视频生成",
     mediaDesc: "为本范围勾选可用的生成供应商（可多选），并设一个默认。留空＝沿用今天的行为（所有已配置的、服务器默认）。服务器只会下发实际配置了密钥的那些。",
     mediaImage: "图片生成",
     mediaVideo: "视频生成",
     mediaDefault: "默认：",
-    activeModel: "模型",
-    modelPick: "可直接选该供应商的模型，或手动输入。",
+    providerModels: "供应商模型",
+    providerModelsHelp: "只读预览。要改模型列表或默认模型，请去「模型供应商」页面配置。",
     visionNative: "模型原生支持图片识别",
     visionNativeHelp: "勾选后，带图片的消息直接发给该模型，跳过 Qwen 识图桥接。仅当该模型本身能看图时才勾。",
     toolsTitle: "技能包和客户端策略",
@@ -82,7 +85,8 @@ const labels = {
     visionModel: "图片识别模型",
     previewTitle: "即将下发",
     previewDesc: "保存后，客户端启动或刷新授权时会拉取这份签名配置。",
-    preset: "供应商",
+    defaultProvider: "默认供应商",
+    deliveredMenu: "客户端可选菜单",
     route: "网关路线",
     securityOk: "短期 token",
     advanced: "高级：查看/编辑 JSON",
@@ -99,19 +103,22 @@ const labels = {
     scopeLicense: "A license",
     scopeDevice: "A device",
     targetHelp: "Global needs no target ID. Device group takes a group ID; license/device take their IDs.",
-    modelTitle: "Model menu",
-    modelDesc: "Pick allowed providers from “Model providers”. Clients receive short-lived gateway tokens only; real keys stay server-side.",
+    modelTitle: "Model delivery",
+    modelDesc: "This rule does not store keys or upstream URLs. It only controls which model providers the client can see and which one opens by default.",
     providerEmpty: "Add a provider above in “Model providers” first.",
-    menuTitle: "Allowed providers",
-    menuDesc: "Pick which providers this scope may use. Clients can switch among them; the selected provider above is the default.",
-    menuActive: "Selected: clients will receive this model menu after save.",
+    defaultProviderTitle: "Default provider (single choice)",
+    defaultProviderDesc: "The client opens with this provider. Model names are maintained under “Model providers”.",
+    defaultBadge: "Default",
+    allowedProvidersTitle: "Client model menu (multi-select)",
+    allowedProvidersDesc: "These providers appear in the client model picker. The default provider is always included and cannot be removed here.",
+    menuActive: "After save, clients will receive this selectable provider menu.",
     mediaTitle: "Image / video generation",
     mediaDesc: "Pick which generation providers this scope may use (multi-select) and one default. Empty = today's behavior (all configured, server default). The server only delivers the ones that actually have a key.",
     mediaImage: "Image generation",
     mediaVideo: "Video generation",
     mediaDefault: "Default:",
-    activeModel: "Model",
-    modelPick: "Pick one of the provider's models, or type your own.",
+    providerModels: "Provider models",
+    providerModelsHelp: "Read-only preview. Edit model names and the provider default under “Model providers”.",
     visionNative: "Model natively recognizes images",
     visionNativeHelp: "When checked, messages with images go straight to this model and skip the Qwen vision bridge. Only check this if the model itself can see images.",
     toolsTitle: "Skill packages and client policy",
@@ -125,7 +132,8 @@ const labels = {
     visionModel: "Vision model",
     previewTitle: "Delivery preview",
     previewDesc: "After saving, clients fetch this signed config on startup or license refresh.",
-    preset: "Provider",
+    defaultProvider: "Default provider",
+    deliveredMenu: "Client model menu",
     route: "Gateway route",
     securityOk: "Short-lived token",
     advanced: "Advanced: view/edit JSON",
@@ -142,19 +150,22 @@ const labels = {
     scopeLicense: "ترخيص محدد",
     scopeDevice: "جهاز محدد",
     targetHelp: "الإعداد العام لا يحتاج هدفاً. المجموعة تأخذ معرّف المجموعة؛ الترخيص/الجهاز يأخذ معرّفه.",
-    modelTitle: "قائمة النماذج",
-    modelDesc: "اختر المزوّدين المسموح بهم من «مزوّدو النماذج». يحصل العميل على رموز بوابة قصيرة فقط وتبقى المفاتيح الحقيقية على الخادم.",
+    modelTitle: "إرسال النماذج",
+    modelDesc: "هذه القاعدة لا تخزن المفاتيح أو عناوين المزوّدين. هي تحدد فقط المزوّدين الذين يراهم العميل والمزوّد الافتراضي.",
     providerEmpty: "أضف مزوّداً أعلاه في «مزوّدو النماذج» أولاً.",
-    menuTitle: "المزوّدون المسموح بهم",
-    menuDesc: "اختر المزوّدين المسموح بهم لهذا النطاق. يمكن للعميل التبديل بينها؛ المزوّد المحدد أعلاه هو الافتراضي.",
-    menuActive: "تم الاختيار: سيستلم العميل قائمة النماذج هذه بعد الحفظ.",
+    defaultProviderTitle: "المزوّد الافتراضي (اختيار واحد)",
+    defaultProviderDesc: "يفتح العميل بهذا المزوّد. أسماء النماذج تُدار في صفحة «مزوّدو النماذج».",
+    defaultBadge: "افتراضي",
+    allowedProvidersTitle: "قائمة نماذج العميل (اختيار متعدد)",
+    allowedProvidersDesc: "تظهر هذه المزوّدات في قائمة النماذج داخل العميل. المزوّد الافتراضي مضاف دائماً ولا يمكن حذفه هنا.",
+    menuActive: "بعد الحفظ سيستلم العملاء قائمة المزوّدين القابلة للاختيار.",
     mediaTitle: "توليد الصور / الفيديو",
     mediaDesc: "اختر مزوّدي التوليد المسموح بهم لهذا النطاق (اختيار متعدد) ومزوّداً افتراضياً. فارغ = سلوك اليوم (كل المُهيأ، الافتراضي من الخادم). يرسل الخادم فقط ما له مفتاح فعلاً.",
     mediaImage: "توليد الصور",
     mediaVideo: "توليد الفيديو",
     mediaDefault: "الافتراضي:",
-    activeModel: "النموذج",
-    modelPick: "اختر أحد نماذج المزوّد أو اكتب نموذجاً.",
+    providerModels: "نماذج المزوّد",
+    providerModelsHelp: "معاينة فقط. عدّل أسماء النماذج والافتراضي من صفحة «مزوّدو النماذج».",
     visionNative: "النموذج يتعرف على الصور أصلاً",
     visionNativeHelp: "عند التحديد، تُرسل الرسائل ذات الصور مباشرة إلى هذا النموذج متجاوزة جسر Qwen. حدّد فقط إذا كان النموذج نفسه يرى الصور.",
     toolsTitle: "حزم المهارات وسياسة العميل",
@@ -168,7 +179,8 @@ const labels = {
     visionModel: "نموذج الصور",
     previewTitle: "معاينة الإرسال",
     previewDesc: "بعد الحفظ يجلب العميل هذا الإعداد الموقع عند التشغيل أو تحديث الترخيص.",
-    preset: "المزوّد",
+    defaultProvider: "المزوّد الافتراضي",
+    deliveredMenu: "قائمة نماذج العميل",
     route: "مسار البوابة",
     securityOk: "رمز قصير",
     advanced: "متقدم: عرض/تحرير JSON",
@@ -203,7 +215,6 @@ function defaultDraft(copy, templates) {
     selectedTemplateId: template.id,
     menuProviders: template.id ? [template.id] : [],
     baseUrl: template.route,
-    model: template.model,
     pluginRegistryUrl: "/api/skills/registry",
     enabledPluginIds: "",
     permissionMode: "default",
@@ -256,6 +267,12 @@ function buildMedia(draft) {
   return { ...(image ? { image } : {}), ...(video ? { video } : {}) };
 }
 
+function deliveryProviderIds(draft, template) {
+  const menu = Array.isArray(draft.menuProviders) ? draft.menuProviders.filter(Boolean) : [];
+  const defaultProvider = draft.selectedTemplateId || template.provider || template.id || "";
+  return Array.from(new Set([defaultProvider, ...menu].filter(Boolean)));
+}
+
 function buildConfig(draft, template) {
   const tools = {
     pluginRegistryUrl: String(draft.pluginRegistryUrl || "/api/skills/registry").trim(),
@@ -277,9 +294,8 @@ function buildConfig(draft, template) {
   // Delivery rules record only a provider directive. The server expands it into
   // a signed gateway model menu at client-config time, so profiles never carry
   // upstream URLs or provider keys.
-  const menu = Array.isArray(draft.menuProviders) ? draft.menuProviders.filter(Boolean) : [];
   const providerId = template.provider || template.id || "";
-  const providers = menu.length ? menu : providerId ? [providerId] : [];
+  const providers = deliveryProviderIds(draft, template);
   const activeProvider = providers.includes(draft.selectedTemplateId) ? draft.selectedTemplateId : providers[0] || "";
   return {
     schemaVersion: 1,
@@ -324,9 +340,9 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
 
   const activeTemplate = selectedTemplate(draft, templates);
   const config = useMemo(() => buildConfig(draft, activeTemplate), [draft, activeTemplate]);
+  const deliveredProviderIds = useMemo(() => deliveryProviderIds(draft, activeTemplate), [draft, activeTemplate]);
   const generatedJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
   const submittedJson = jsonOverride.trim() ? jsonOverride : generatedJson;
-  const modelListId = "provider-model-options";
   const jsonInvalid = useMemo(() => {
     if (!jsonOverride.trim()) return false;
     try {
@@ -350,7 +366,6 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
       selectedTemplateId: template.id,
       menuProviders: Array.from(new Set([...(current.menuProviders || []), template.id].filter(Boolean))),
       baseUrl: template.route,
-      model: template.model,
       priority: "20",
     }));
   }
@@ -368,6 +383,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
   // menu switches buildConfig to the multi-provider directive.
   function toggleMenuProvider(id) {
     setDraft((current) => {
+      if (id === current.selectedTemplateId) return current;
       const set = new Set(current.menuProviders || []);
       if (set.has(id)) set.delete(id);
       else set.add(id);
@@ -456,81 +472,104 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
             {templates.length === 0 ? (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{copy.providerEmpty}</p>
             ) : (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {templates.map((template) => (
-                  <button
-                    key={template.id}
-                    type="button"
-                    className={`rounded-2xl border p-4 text-start transition ${
-                      draft.selectedTemplateId === template.id
-                        ? "border-brand bg-brand/5 ring-4 ring-brand/10"
-                        : "border-slate-200 bg-white hover:border-brand/50"
-                    }`}
-                    onClick={() => chooseTemplate(template)}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-semibold text-slate-950">{templateLabel(template)}</span>
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">{copy.securityOk}</span>
-                    </div>
-                    <p className="mt-2 min-h-10 text-sm text-slate-500">{template.model || "—"}</p>
-                    <div className="mt-3 truncate font-mono text-xs text-slate-400">{template.route}</div>
-                  </button>
-                ))}
-              </div>
+              <>
+                <div className="mb-3 rounded-xl border border-brand/15 bg-brand/5 px-4 py-3">
+                  <div className="text-sm font-semibold text-slate-900">{copy.defaultProviderTitle}</div>
+                  <p className="mt-1 text-xs text-slate-600">{copy.defaultProviderDesc}</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {templates.map((template) => {
+                    const isDefault = draft.selectedTemplateId === template.id;
+                    return (
+                      <button
+                        key={template.id}
+                        type="button"
+                        className={`rounded-2xl border p-4 text-start transition ${
+                          isDefault
+                            ? "border-brand bg-brand/5 ring-4 ring-brand/10"
+                            : "border-slate-200 bg-white hover:border-brand/50"
+                        }`}
+                        onClick={() => chooseTemplate(template)}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-semibold text-slate-950">{templateLabel(template)}</span>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            isDefault ? "bg-brand text-white" : "bg-emerald-100 text-emerald-700"
+                          }`}>
+                            {isDefault ? copy.defaultBadge : copy.securityOk}
+                          </span>
+                        </div>
+                        <p className="mt-2 min-h-10 text-sm text-slate-500">{template.model || "—"}</p>
+                        <div className="mt-3 truncate font-mono text-xs text-slate-400">{template.route}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
 
             {templates.length > 0 ? (
               <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4">
-                <div className="text-sm font-semibold text-slate-800">{copy.menuTitle}</div>
-                <p className="mt-1 text-xs text-slate-500">{copy.menuDesc}</p>
+                <div className="text-sm font-semibold text-slate-800">{copy.allowedProvidersTitle}</div>
+                <p className="mt-1 text-xs text-slate-500">{copy.allowedProvidersDesc}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {templates.map((template) => {
-                    const on = (draft.menuProviders || []).includes(template.id);
+                    const isDefault = draft.selectedTemplateId === template.id;
+                    const on = deliveredProviderIds.includes(template.id);
                     return (
                       <button
                         key={template.id}
                         type="button"
                         onClick={() => toggleMenuProvider(template.id)}
                         aria-pressed={on}
+                        aria-disabled={isDefault}
                         className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                          on ? "bg-brand text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          isDefault
+                            ? "bg-brand text-white ring-2 ring-brand/20"
+                            : on
+                              ? "bg-slate-900 text-white"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                         }`}
                       >
                         {templateLabel(template)}
+                        {isDefault ? ` · ${copy.defaultBadge}` : ""}
                       </button>
                     );
                   })}
                 </div>
-                {(draft.menuProviders || []).length > 0 ? (
+                {deliveredProviderIds.length > 0 ? (
                   <p className="mt-3 text-xs text-emerald-700">{copy.menuActive}</p>
                 ) : null}
               </div>
             ) : null}
 
-            <datalist id={modelListId}>
-              {(activeTemplate.models || []).map((model) => (
-                <option key={model} value={model} />
-              ))}
-            </datalist>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <ConfigField label={copy.activeModel} help={copy.modelPick}>
-                <input className={fieldClass()} list={modelListId} value={draft.model} onChange={(event) => updateField("model", event.target.value)} />
-              </ConfigField>
-              <div className="md:col-span-2 xl:col-span-4">
-                <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4"
-                    checked={draft.supportsVision}
-                    onChange={(event) => updateField("supportsVision", event.target.checked)}
-                  />
-                  <span>
-                    <span className="block text-sm font-semibold text-slate-800">{copy.visionNative}</span>
-                    <span className="mt-1 block text-xs text-slate-500">{copy.visionNativeHelp}</span>
-                  </span>
-                </label>
+            {activeTemplate.models?.length ? (
+              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-sm font-semibold text-slate-800">{copy.providerModels}</div>
+                <p className="mt-1 text-xs text-slate-500">{copy.providerModelsHelp}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {activeTemplate.models.map((model) => (
+                    <span key={model} className="rounded-full bg-white px-3 py-1 font-mono text-xs text-slate-600 ring-1 ring-slate-200">
+                      {model}
+                    </span>
+                  ))}
+                </div>
               </div>
+            ) : null}
+
+            <div className="mt-5">
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4"
+                  checked={draft.supportsVision}
+                  onChange={(event) => updateField("supportsVision", event.target.checked)}
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-slate-800">{copy.visionNative}</span>
+                  <span className="mt-1 block text-xs text-slate-500">{copy.visionNativeHelp}</span>
+                </span>
+              </label>
             </div>
           </div>
 
@@ -650,13 +689,16 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
                 <dd className="mt-1 font-semibold">{scopeLabel(draft.scope, copy)}</dd>
               </div>
               <div className="rounded-xl bg-white/5 p-3">
-                <dt className="text-slate-400">{copy.preset}</dt>
+                <dt className="text-slate-400">{copy.defaultProvider}</dt>
                 <dd className="mt-1 font-semibold">{templateLabel(activeTemplate) || "—"}</dd>
-                <dd className="mt-1 font-mono text-xs text-slate-400">{draft.model}</dd>
+                <dd className="mt-1 font-mono text-xs text-slate-400">{activeTemplate.model || "—"}</dd>
               </div>
               <div className="rounded-xl bg-white/5 p-3">
-                <dt className="text-slate-400">{copy.route}</dt>
-                <dd className="mt-1 break-all font-mono text-xs">{(draft.menuProviders || []).map((id) => `/llm/${id}`).join(" · ") || "—"}</dd>
+                <dt className="text-slate-400">{copy.deliveredMenu}</dt>
+                <dd className="mt-1 text-xs font-semibold">
+                  {deliveredProviderIds.map((id) => templateLabel(templates.find((template) => template.id === id)) || id).join(" · ") || "—"}
+                </dd>
+                <dd className="mt-2 break-all font-mono text-xs text-slate-400">{deliveredProviderIds.map((id) => `/llm/${id}`).join(" · ") || "—"}</dd>
               </div>
               <div className="rounded-xl bg-white/5 p-3">
                 <dt className="text-slate-400">{copy.registry}</dt>

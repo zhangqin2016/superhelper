@@ -213,12 +213,14 @@ function configSummary(config) {
   const value = typeof config === "string" ? tryParseJson(config) : config;
   if (!value || typeof value !== "object") return "-";
   const parts = [];
-  const models = Array.isArray(value.models?.presets)
-    ? value.models.presets.length
-    : Array.isArray(value.models?.catalog)
-      ? value.models.catalog.length
-      : 0;
-  if (models) parts.push(`${models} models`);
+  const providers = Array.isArray(value.models?.providers)
+    ? value.models.providers.length
+    : Array.isArray(value.models?.presets)
+      ? value.models.presets.length
+      : Array.isArray(value.models?.catalog)
+        ? value.models.catalog.length
+        : 0;
+  if (providers) parts.push(`${providers} providers`);
   if (value.tools?.pluginRegistryUrl) parts.push("skill registry");
   if (value.policy?.permissionMode) parts.push(`policy: ${value.policy.permissionMode}`);
   return parts.length ? parts.join(" · ") : JSON.stringify(value).slice(0, 80);

@@ -10,7 +10,7 @@ const labelsByLocale = {
     licenseProfiles: "授权",
     deviceProfiles: "设备",
     gateway: "模型网关",
-    providersReady: "可用 Provider",
+    providersReady: "可用供应商",
     pluginRegistry: "技能包入口",
     delivery: "下发链路",
     ready: "已就绪",
@@ -21,9 +21,9 @@ const labelsByLocale = {
     priority: "优先级",
     rollout: "灰度",
     latestProfiles: "最近配置",
-    modelProviders: "模型 Provider",
+    modelProviders: "模型供应商",
     noProfiles: "还没有配置。先用下面模板创建全局默认配置。",
-    noProviders: "没有检测到模型 provider。请在服务端环境变量里配置 provider key。",
+    noProviders: "没有检测到可用模型供应商。请先到「模型供应商」配置密钥和模型。",
     managePlugins: "管理技能包",
     health: "查看健康检查",
     effectiveTitle: "当前生效配置",
@@ -36,7 +36,9 @@ const labelsByLocale = {
     security: "安全状态",
     pluginIds: "启用技能包",
     noAppliedProfiles: "当前没有命中任何后台配置，客户端会使用安装包内默认配置。",
-    noModels: "没有下发模型 preset。",
+    noModels: "没有下发模型供应商。",
+    defaultProvider: "默认供应商",
+    providerMenu: "可选供应商",
     noRuntimeSecrets: "没有 runtime 级长期密钥",
     hasRuntimeSecrets: "存在 runtime 级密钥",
     safeGateway: "服务端网关 / 短期 token",
@@ -64,7 +66,7 @@ const labelsByLocale = {
     latestProfiles: "Recent profiles",
     modelProviders: "Model providers",
     noProfiles: "No config yet. Create the global default with a template below.",
-    noProviders: "No model provider detected. Configure provider keys in server env.",
+    noProviders: "No ready model provider detected. Configure keys and models under Model providers first.",
     managePlugins: "Manage skill packages",
     health: "Open health",
     effectiveTitle: "Effective client config",
@@ -77,7 +79,9 @@ const labelsByLocale = {
     security: "Security",
     pluginIds: "Enabled skill packages",
     noAppliedProfiles: "No admin config applies. The client will use packaged defaults.",
-    noModels: "No model preset delivered.",
+    noModels: "No model provider delivered.",
+    defaultProvider: "Default provider",
+    providerMenu: "Provider menu",
     noRuntimeSecrets: "No runtime long-lived secret",
     hasRuntimeSecrets: "Runtime secrets present",
     safeGateway: "Server gateway / short-lived token",
@@ -105,7 +109,7 @@ const labelsByLocale = {
     latestProfiles: "أحدث الإعدادات",
     modelProviders: "مزودو النماذج",
     noProfiles: "لا توجد إعدادات بعد. أنشئ الإعداد العام الافتراضي من القالب أدناه.",
-    noProviders: "لم يتم العثور على مزود نماذج. أضف مفاتيح المزود في بيئة الخادم.",
+    noProviders: "لم يتم العثور على مزوّد نماذج جاهز. اضبط المفاتيح والنماذج في صفحة مزوّدي النماذج أولاً.",
     managePlugins: "إدارة حزم المهارات",
     health: "فحص الصحة",
     effectiveTitle: "الإعداد الفعّال للعميل",
@@ -119,6 +123,8 @@ const labelsByLocale = {
     pluginIds: "حزم المهارات المفعلة",
     noAppliedProfiles: "لا يوجد إعداد إداري مطابق. سيستخدم العميل الإعدادات المضمنة.",
     noModels: "لا توجد إعدادات نموذج مرسلة.",
+    defaultProvider: "المزوّد الافتراضي",
+    providerMenu: "المزوّدون المتاحون",
     noRuntimeSecrets: "لا توجد أسرار طويلة الأمد",
     hasRuntimeSecrets: "توجد أسرار تشغيل",
     safeGateway: "بوابة الخادم / رمز قصير العمر",
@@ -239,7 +245,7 @@ function effectivePreviewPanel(preview, copy, deviceId, licenseId) {
           </div>
           <dl className="mt-3 space-y-3 text-sm">
             <div className="rounded-lg bg-white p-3">
-              <dt className="text-xs text-slate-500">Preset</dt>
+              <dt className="text-xs text-slate-500">{copy.defaultProvider}</dt>
               <dd className="mt-1 font-mono text-slate-800">{summary.activePresetId || "-"}</dd>
             </div>
             <div className="rounded-lg bg-white p-3">
@@ -317,8 +323,12 @@ export function ConfigCenterPanels({ rows = [], health = {}, preview = null, loc
           <div className="mt-5 space-y-3">
             {recentRows.length ? recentRows.map((row) => {
               const config = parseConfig(row.config);
-              const activePresetId = config.models?.activePresetId || "-";
-              const modelCount = Array.isArray(config.models?.presets) ? config.models.presets.length : 0;
+              const activeProvider = config.models?.activeProvider || config.models?.activePresetId || "-";
+              const modelCount = Array.isArray(config.models?.providers)
+                ? config.models.providers.length
+                : Array.isArray(config.models?.presets)
+                  ? config.models.presets.length
+                  : 0;
               return (
                 <div key={row.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex flex-wrap items-center gap-2">
@@ -330,7 +340,7 @@ export function ConfigCenterPanels({ rows = [], health = {}, preview = null, loc
                     <span>{copy.target}: <b className="font-mono">{row.target_id || "global"}</b></span>
                     <span>{copy.priority}: <b>{row.priority}</b></span>
                     <span>{copy.rollout}: <b>{Number(row.rollout_percent ?? 100)}%</b></span>
-                    <span>preset: <b>{activePresetId}</b> · {modelCount}</span>
+                    <span>{copy.defaultProvider}: <b>{activeProvider}</b> · {copy.providerMenu} {modelCount}</span>
                   </div>
                 </div>
               );
