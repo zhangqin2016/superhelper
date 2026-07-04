@@ -214,6 +214,13 @@ async function startMockServer() {
       res.end(JSON.stringify({ output: { audio: { url: `${base}/media/generated.wav` } } }));
       return;
     }
+    if (req.method === "POST" && url.pathname === "/empty-json-404") {
+      res.statusCode = 404;
+      res.statusMessage = "Not Found";
+      res.setHeader("Content-Type", "application/json");
+      res.end("");
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/media/generated.png") {
       res.setHeader("Content-Type", "image/png");
       res.end(Buffer.from("mock-png"));
@@ -278,6 +285,16 @@ try {
   assert.equal(speech.code, 0, speech.stderr);
   assert.match(speech.stdout, /generated_media type="speech"/);
   assert.match(assertGeneratedPath(speech.stdout, "generated-assets"), /generated-assets\/speech-/);
+
+  const speech404 = await runNode(
+    scripts.speech,
+    { text: "你好" },
+    { ...env, DASHSCOPE_TTS_ENDPOINT: `${base}/empty-json-404` },
+    tmp,
+  );
+  assert.notEqual(speech404.code, 0);
+  assert.match(speech404.stderr, /404 Not Found/);
+  assert.doesNotMatch(speech404.stderr, /Unexpected end of JSON input/);
 
   const aliyunAlias = await runNode(
     scripts.speech,

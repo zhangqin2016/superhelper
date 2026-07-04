@@ -55,9 +55,17 @@ async function requestJsonOrBinary(url, options) {
   const response = await fetch(url, { ...options, signal: AbortSignal.timeout(120_000) });
   const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
-    const data = await response.json();
+    const raw = await response.text();
+    let data = {};
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch (error) {
+        throw new Error(`${response.status} ${response.statusText} from ${url}: invalid JSON response (${error.message})`);
+      }
+    }
     if (!response.ok) {
-      throw new Error(data?.message || data?.code || `${response.status} ${response.statusText}`);
+      throw new Error(data?.message || data?.code || `${response.status} ${response.statusText} from ${url}`);
     }
     return { json: data };
   }

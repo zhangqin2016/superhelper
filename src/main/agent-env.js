@@ -28,11 +28,26 @@ const LEGACY_TO_LILY = {
   CLAUDE_CODE_EFFORT_LEVEL: "LILY_EFFORT_LEVEL",
 };
 
-/** Keys passed through unchanged (vision, dashscope, timeouts, etc.). */
-const PASSTHROUGH_PREFIXES = ["VISION_", "DASHSCOPE_", "ALIYUN_BAILIAN_", "API_TIMEOUT"];
+/** Keys passed through unchanged (media, vision, dashscope, timeouts, etc.). */
+const PASSTHROUGH_KEYS = new Set([
+  "LILY_IMAGE_PROVIDER",
+  "LILY_VIDEO_PROVIDER",
+]);
+const PASSTHROUGH_PREFIXES = [
+  "VISION_",
+  "DASHSCOPE_",
+  "ALIYUN_BAILIAN_",
+  "VOLCENGINE_",
+  "ARK_",
+  "KLING_",
+  "MINIMAX_",
+  "ZHIPU_",
+  "BIGMODEL_",
+  "API_TIMEOUT",
+];
 
 function isPassthroughKey(key) {
-  return PASSTHROUGH_PREFIXES.some((p) => key.startsWith(p));
+  return PASSTHROUGH_KEYS.has(key) || PASSTHROUGH_PREFIXES.some((p) => key.startsWith(p));
 }
 
 /**
@@ -71,8 +86,8 @@ function toEngineEnv(lilyEnv) {
     }
   }
   for (const [key, value] of Object.entries(lilyEnv)) {
-    if (key.startsWith("LILY_") || key in LEGACY_TO_LILY) continue;
     if (isPassthroughKey(key)) engine[key] = value;
+    if (key.startsWith("LILY_") || key in LEGACY_TO_LILY) continue;
   }
   return engine;
 }
@@ -84,6 +99,8 @@ function pickModelId(lilyEnv) {
 module.exports = {
   LILY_TO_ENGINE,
   LEGACY_TO_LILY,
+  PASSTHROUGH_KEYS,
+  PASSTHROUGH_PREFIXES,
   normalizeToLilyEnv,
   toEngineEnv,
   pickModelId,

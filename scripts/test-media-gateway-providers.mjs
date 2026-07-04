@@ -10,6 +10,8 @@ import crypto from "node:crypto";
 
 process.env.MODEL_GATEWAY_ENABLED = "true";
 process.env.MODEL_GATEWAY_TOKEN_SECRET = "test-media-gateway-secret";
+process.env.DASHSCOPE_API_KEY = "dashscope-secret";
+process.env.DASHSCOPE_MEDIA_BASE_URL = "https://dashscope-media.test.local/api/v1";
 process.env.VOLCENGINE_API_KEY = "volc-secret";
 process.env.VOLCENGINE_BASE_URL = "https://ark.test.local/api/v3";
 process.env.KLING_ACCESS_KEY = "kling-ak";
@@ -18,6 +20,13 @@ process.env.KLING_BASE_URL = "https://kling.test.local";
 process.env.MINIMAX_API_KEY = "mm-secret";
 process.env.MINIMAX_GROUP_ID = "grp-9";
 process.env.MINIMAX_BASE_URL = "https://minimax.test.local";
+process.env.MODEL_GATEWAY_PROVIDERS = JSON.stringify({
+  vision: {
+    type: "openai",
+    baseUrl: "https://vision-compatible.test.local/compatible-mode/v1",
+    apiKey: "vision-secret",
+  },
+});
 
 const { withGatewayRuntimeConfig, buildEnvManagedClientConfig } = await import("../server/src/services/client-config.js");
 const { signModelGatewayToken, verifyModelGatewayToken } = await import("../server/src/services/model-gateway/auth.js");
@@ -153,6 +162,24 @@ try {
     reply404,
   );
   assert.equal(reply404._code, 404, "unknown media provider must 404");
+
+  // DashScope media must not reuse the vision compatible-mode base URL. Vision
+  // is only the credential/token id; media endpoints need their own api/v1 host.
+  const dashscopeToken = signModelGatewayToken({ deviceId: input.deviceId, licenseId: input.licenseId, providerId: "vision" });
+  const dashscopeReply = fakeReply();
+  await routes["POST /llm/dashscope-media/*"](
+    {
+      method: "POST",
+      url: "/llm/dashscope-media/services/audio/tts/SpeechSynthesizer",
+      params: { "*": "services/audio/tts/SpeechSynthesizer" },
+      headers: { authorization: `Bearer ${dashscopeToken}` },
+      body: { model: "cosyvoice-v3-flash" },
+    },
+    dashscopeReply,
+  );
+  assert.equal(dashscopeReply._code, 200);
+  assert.equal(captured.url, "https://dashscope-media.test.local/api/v1/services/audio/tts/SpeechSynthesizer");
+  assert.equal(captured.init.headers.Authorization, "Bearer vision-secret");
 
   // Kling proxy: server must mint a JWT (iss=AccessKey, signed with SecretKey),
   // never forward the raw token.

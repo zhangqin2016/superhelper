@@ -45,6 +45,18 @@ function resolveCredential(id, fallbackKey, fallbackBaseUrl) {
   return { apiKey: apiKey || fallbackKey || "", baseUrl: baseUrl || fallbackBaseUrl || "", secretKey, metadata };
 }
 
+function resolveMediaCredential(spec) {
+  const resolved = resolveCredential(spec.credId, spec.fallbackKey(), spec.baseUrl());
+  if (!spec.baseCredId) return resolved;
+  const baseResolved = resolveCredential(spec.baseCredId, "", spec.baseUrl());
+  return {
+    ...resolved,
+    apiKey: resolved.apiKey || baseResolved.apiKey,
+    baseUrl: baseResolved.baseUrl || spec.baseUrl() || resolved.baseUrl,
+    metadata: { ...baseResolved.metadata, ...resolved.metadata },
+  };
+}
+
 // Server-side proxies for vision (image recognition) and web search, so their
 // API keys stay on the server. Clients call these with a short-lived gateway
 // token (providerId "vision" / "search"); the server injects the real key and
@@ -201,7 +213,12 @@ async function handleSearch(request, reply) {
 // from the AccessKey (resolved key) + SecretKey. `groupId` (MiniMax) appends a
 // GroupId query param when configured.
 const MEDIA_PROVIDERS = {
-  dashscope: { credId: "vision", fallbackKey: () => config.dashscopeApiKey, baseUrl: () => config.dashscopeMediaBaseUrl },
+  dashscope: {
+    credId: "vision",
+    baseCredId: "dashscope-media",
+    fallbackKey: () => config.dashscopeApiKey,
+    baseUrl: () => config.dashscopeMediaBaseUrl,
+  },
   volcengine: { credId: "volcengine-media", fallbackKey: () => config.volcengineApiKey, baseUrl: () => config.volcengineBaseUrl },
   kling: {
     credId: "kling-media",
@@ -238,7 +255,7 @@ function mediaHandler(fixedProvider) {
     }
     const rest = String(request.params["*"] || "").replace(/^\/+/, "");
     if (!(await requireMediaEntitlement(request, reply, token, providerId, rest))) return reply;
-    const resolved = resolveCredential(spec.credId, spec.fallbackKey(), spec.baseUrl());
+    const resolved = resolveMediaCredential(spec);
     const { apiKey, baseUrl } = resolved;
     if (!apiKey) {
       return reply.code(503).send({ error: { type: "configuration_error", message: `${providerId} key not configured` } });
