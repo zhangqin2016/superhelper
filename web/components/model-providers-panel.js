@@ -8,7 +8,10 @@ import { useI18n } from "../lib/use-i18n";
 const labels = {
   zh: {
     title: "模型供应商",
-    desc: "在这里配置每个模型供应商的地址和密钥。密钥只存服务端(加密),客户端永远只拿短期 token——网关用这里的密钥去连模型。下面配置模型时直接选这里的供应商即可,不用再手输密钥。",
+    desc: "这里管“厂商接入”。一个供应商可以有多个模型；下发规则只选择哪些供应商给客户端看，具体模型列表在这里维护。",
+    providerSection: "供应商基础信息",
+    accessSection: "服务端接入密钥",
+    modelSection: "该供应商下的模型",
     id: "供应商 ID",
     idHelp: "小写字母/数字,如 deepseek、my-glm。也是网关路径 /llm/<ID>。",
     label: "名称",
@@ -21,9 +24,11 @@ const labels = {
     secretKeyHelp: "仅可灵(kling)需要:与 AccessKey(密钥)一起签发 JWT。留空=不改。",
     groupId: "GroupId",
     groupIdHelp: "仅 MiniMax 国内平台需要。非密钥,可见。",
-    defaultModel: "默认模型",
-    models: "可选模型",
-    modelsHelp: "逗号分隔。整个列表都会下发，用户可在客户端切换；「默认模型」是初始选中项（须在列表内，留空则取第一个）。",
+    defaultModel: "供应商默认模型",
+    defaultModelHelp: "客户端选择这个供应商时默认打开的模型。不是全局唯一模型。",
+    models: "供应商可用模型列表",
+    modelsHelp: "逗号分隔。同一个供应商下的模型都会下发，用户可在客户端切换；默认模型建议写在列表里，留空则取第一个。",
+    modelCount: "模型数",
     save: "保存供应商",
     keySet: "已设密钥",
     noKey: "未设密钥",
@@ -34,7 +39,10 @@ const labels = {
   },
   en: {
     title: "Model providers",
-    desc: "Configure each provider's endpoint and key here. Keys are stored server-side (encrypted); clients only ever get a short-lived token — the gateway uses these keys to reach the model. When configuring a model below, just pick a provider from here; no key typing.",
+    desc: "This page manages provider integrations. One provider can expose multiple models; delivery rules only choose which providers the client can see.",
+    providerSection: "Provider basics",
+    accessSection: "Server-side credentials",
+    modelSection: "Models under this provider",
     id: "Provider ID",
     idHelp: "lowercase letters/digits, e.g. deepseek, my-glm. Also the gateway path /llm/<ID>.",
     label: "Name",
@@ -47,9 +55,11 @@ const labels = {
     secretKeyHelp: "Kling only: signs the JWT together with the AccessKey (API key). Blank = keep.",
     groupId: "GroupId",
     groupIdHelp: "MiniMax (China) only. Non-secret, visible.",
-    defaultModel: "Default model",
-    models: "Available models",
-    modelsHelp: "Comma-separated. The whole list is delivered so users can switch in the client; the default model is the initial pick (must be in the list; blank uses the first).",
+    defaultModel: "Provider default model",
+    defaultModelHelp: "The initial model when the client chooses this provider. This is not the only global model.",
+    models: "Provider model list",
+    modelsHelp: "Comma-separated. Every model under this provider is delivered so users can switch in the client; blank default uses the first.",
+    modelCount: "Models",
     save: "Save provider",
     keySet: "key set",
     noKey: "no key",
@@ -60,7 +70,10 @@ const labels = {
   },
   ar: {
     title: "مزوّدو النماذج",
-    desc: "اضبط عنوان ومفتاح كل مزوّد هنا. تُخزَّن المفاتيح على الخادم (مشفّرة)؛ يحصل العميل على رمز قصير فقط — تستخدم البوابة هذه المفاتيح للوصول للنموذج.",
+    desc: "هذه الصفحة تدير اتصال المزوّدين. يمكن لكل مزوّد أن يحتوي عدة نماذج؛ قواعد الإرسال تختار المزوّدين الذين يراهم العميل فقط.",
+    providerSection: "معلومات المزوّد",
+    accessSection: "مفاتيح الخادم",
+    modelSection: "نماذج هذا المزوّد",
     id: "معرّف المزوّد",
     idHelp: "أحرف/أرقام صغيرة، مثل deepseek. أيضاً مسار البوابة /llm/<ID>.",
     label: "الاسم",
@@ -73,9 +86,11 @@ const labels = {
     secretKeyHelp: "لـ Kling فقط: يوقّع الـ JWT مع AccessKey. فارغ = إبقاء.",
     groupId: "GroupId",
     groupIdHelp: "لـ MiniMax (الصين) فقط. غير سري.",
-    defaultModel: "النموذج الافتراضي",
-    models: "النماذج المتاحة",
-    modelsHelp: "مفصولة بفواصل.",
+    defaultModel: "النموذج الافتراضي للمزوّد",
+    defaultModelHelp: "النموذج الأولي عند اختيار هذا المزوّد. ليس نموذجاً عاماً وحيداً.",
+    models: "قائمة نماذج المزوّد",
+    modelsHelp: "مفصولة بفواصل. تُرسل كل نماذج هذا المزوّد للعميل.",
+    modelCount: "عدد النماذج",
     save: "حفظ المزوّد",
     keySet: "مفتاح مضبوط",
     noKey: "بدون مفتاح",
@@ -100,6 +115,14 @@ function Field({ label, children, help }) {
       {help ? <span className="mt-1 block text-xs text-slate-500">{help}</span> : null}
     </label>
   );
+}
+
+function SectionTitle({ title }) {
+  return <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</div>;
+}
+
+function modelList(provider) {
+  return Array.isArray(provider?.models) ? provider.models.filter(Boolean) : [];
 }
 
 export function ModelProvidersPanel({ providers = [], showForm = true, showList = true }) {
@@ -131,7 +154,10 @@ export function ModelProvidersPanel({ providers = [], showForm = true, showList 
         <p className="mt-1 max-w-4xl text-sm text-slate-500">{copy.desc}</p>
       </div>
 
-      {showForm ? <form action={action} className="mt-5 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 md:grid-cols-2 xl:grid-cols-3">
+      {showForm ? <form action={action} className="mt-5 grid gap-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="md:col-span-2 xl:col-span-3">
+          <SectionTitle title={copy.providerSection} />
+        </div>
         <Field label={copy.id} help={copy.idHelp}>
           <input className={fieldClass()} name="id" required value={draft.id} onChange={(e) => set("id", e.target.value)} placeholder="deepseek" />
         </Field>
@@ -147,10 +173,26 @@ export function ModelProvidersPanel({ providers = [], showForm = true, showList 
             <option value="media">media</option>
           </select>
         </Field>
-        <div className="md:col-span-2">
+        <div className="md:col-span-2 xl:col-span-3">
           <Field label={copy.baseUrl}>
             <input className={fieldClass()} name="baseUrl" value={draft.baseUrl} onChange={(e) => set("baseUrl", e.target.value)} placeholder="https://api.deepseek.com/anthropic" />
           </Field>
+        </div>
+
+        <div className="border-t border-slate-200 pt-1 md:col-span-2 xl:col-span-3">
+          <SectionTitle title={copy.modelSection} />
+        </div>
+        <Field label={copy.defaultModel} help={copy.defaultModelHelp}>
+          <input className={fieldClass()} name="defaultModel" value={draft.defaultModel} onChange={(e) => set("defaultModel", e.target.value)} placeholder="deepseek-v4-pro[1m]" />
+        </Field>
+        <div className="md:col-span-2">
+          <Field label={copy.models} help={copy.modelsHelp}>
+            <input className={fieldClass()} name="models" value={draft.models} onChange={(e) => set("models", e.target.value)} placeholder="deepseek-v4-pro[1m], deepseek-v4-flash, deepseek-reasoner" />
+          </Field>
+        </div>
+
+        <div className="border-t border-slate-200 pt-1 md:col-span-2 xl:col-span-3">
+          <SectionTitle title={copy.accessSection} />
         </div>
         <Field label={`${copy.apiKey} ${copy.apiKeyKeep}`} help={copy.apiKeyHelp}>
           <input className={fieldClass()} name="apiKey" type="password" placeholder="sk-..." />
@@ -161,14 +203,6 @@ export function ModelProvidersPanel({ providers = [], showForm = true, showList 
         <Field label={copy.groupId} help={copy.groupIdHelp}>
           <input className={fieldClass()} name="groupId" value={draft.groupId} onChange={(e) => set("groupId", e.target.value)} placeholder="minimax group id" />
         </Field>
-        <Field label={copy.defaultModel}>
-          <input className={fieldClass()} name="defaultModel" value={draft.defaultModel} onChange={(e) => set("defaultModel", e.target.value)} placeholder="deepseek-v4-pro[1m]" />
-        </Field>
-        <div className="md:col-span-2 xl:col-span-3">
-          <Field label={copy.models} help={copy.modelsHelp}>
-            <input className={fieldClass()} name="models" value={draft.models} onChange={(e) => set("models", e.target.value)} placeholder="deepseek-v4-pro[1m], deepseek-v4-flash" />
-          </Field>
-        </div>
         <div className="flex items-center justify-between gap-4 md:col-span-2 xl:col-span-3">
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" name="disabled" checked={draft.disabled} onChange={(e) => set("disabled", e.target.checked)} />
@@ -188,6 +222,8 @@ export function ModelProvidersPanel({ providers = [], showForm = true, showList 
               <tr>
                 <th className="px-4 py-2 text-start">{copy.id}</th>
                 <th className="px-4 py-2 text-start">{copy.type}</th>
+                <th className="px-4 py-2 text-start">{copy.defaultModel}</th>
+                <th className="px-4 py-2 text-start">{copy.modelCount}</th>
                 <th className="px-4 py-2 text-start">{copy.baseUrl}</th>
                 <th className="px-4 py-2 text-start">{copy.apiKey}</th>
                 <th className="px-4 py-2 text-end" />
@@ -201,6 +237,8 @@ export function ModelProvidersPanel({ providers = [], showForm = true, showList 
                     {provider.label ? <span className="ms-2 text-slate-500">{provider.label}</span> : null}
                   </td>
                   <td className="px-4 py-2 text-slate-600">{provider.type}</td>
+                  <td className="px-4 py-2 max-w-[220px] truncate font-mono text-xs text-slate-600">{provider.default_model || modelList(provider)[0] || "-"}</td>
+                  <td className="px-4 py-2 text-slate-600">{modelList(provider).length}</td>
                   <td className="px-4 py-2 max-w-[280px] truncate font-mono text-xs text-slate-500">{provider.base_url || "-"}</td>
                   <td className="px-4 py-2">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${provider.hasApiKey ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
