@@ -141,6 +141,8 @@
   --dur: 160ms;
 
   /* Overlay stack. Keep these centralized so nested flows can open dialogs safely. */
+  --z-topbar: 80;
+  --z-topbar-popover: 90;
   --z-settings-panel: 10000;
   --z-menu: 10500;
   --z-modal: 11000;
@@ -341,6 +343,7 @@ button, textarea, input { font: inherit; }
 }
 
 :root[data-text-size="large"] .assistant-turn-narrative.markdown-body table,
+:root[data-text-size="large"] .assistant-turn-narrative-text.markdown-body table,
 :root[data-text-size="large"] .assistant-turn-final.markdown-body table,
 :root[data-text-size="large"] .markdown-body {
   font-size: var(--text-base);

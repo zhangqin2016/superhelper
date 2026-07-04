@@ -202,7 +202,17 @@ function formatWorkProgressDetail(progress = {}) {
   const status = String(progress.status || progress.event || "").trim();
   const location = compactPathLike(progress.path || progress.url || progress.fromUrl || "");
   const pieces = [];
-  if (percent != null) pieces.push(`${Math.round(percent)}%`);
+  const hasOtherProgressSignal = Boolean(
+    (writtenBytes && totalBytes) ||
+    current != null ||
+    total != null ||
+    speedBytesPerSecond ||
+    progress.eta ||
+    queued != null ||
+    status ||
+    location,
+  );
+  if (percent != null && (percent > 0 || hasOtherProgressSignal)) pieces.push(`${Math.round(percent)}%`);
   if (writtenBytes && totalBytes) pieces.push(`${formatBytes(writtenBytes)} / ${formatBytes(totalBytes)}`);
   if (current != null || total != null) pieces.push(`${current ?? "?"}/${total ?? "?"}`);
   if (speedBytesPerSecond) pieces.push(`${formatBytes(speedBytesPerSecond)}/s`);

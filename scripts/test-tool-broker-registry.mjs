@@ -12,9 +12,19 @@ function names(context, deps) {
   return buildBrokerTools(context, deps).map((tool) => tool.name).sort();
 }
 
+const PLATFORM_TOOLS = [
+  "lily_capability_list",
+  "lily_capability_status",
+  "runtime_pack_install",
+  "runtime_pack_list",
+];
+
 try {
   const base = { sessionId: "s1", activeSkillIds: [] };
-  assert(names(base).length === 0, "no enabled skills => no broker tools");
+  assert(
+    JSON.stringify(names(base)) === JSON.stringify(PLATFORM_TOOLS),
+    "platform capabilities are visible even when no optional skills are enabled",
+  );
   assert(names({ activeSkillIds: ["lily-mail-assistant"], connectorStatus: { mailConnected: true } }).length === 0, "missing session id fails closed");
 
   const mail = {
@@ -22,18 +32,22 @@ try {
     activeSkillIds: ["lily-mail-assistant"],
     connectorStatus: { mailConnected: true },
   };
-  assert(JSON.stringify(names(mail)) === JSON.stringify(["mail_list_accounts", "mail_read", "mail_search", "mail_send"]), "mail tools visible only when mail skill + bridge are active");
-  assert(names({ ...mail, connectorStatus: { mailConnected: false } }).length === 0, "mail bridge unavailable hides mail tools");
+  assert(
+    JSON.stringify(names(mail)) === JSON.stringify([...PLATFORM_TOOLS, "mail_list_accounts", "mail_read", "mail_search", "mail_send"].sort()),
+    "mail tools are added when mail skill + bridge are active",
+  );
+  assert(JSON.stringify(names({ ...mail, connectorStatus: { mailConnected: false } })) === JSON.stringify(PLATFORM_TOOLS), "mail bridge unavailable hides only mail tools");
   assert(findBrokerTool(mail, "mail_send").annotations.destructiveHint === true, "mail_send remains destructive");
   assert(findBrokerTool(mail, "mail_search").inputSchema.limit.safeParse(100).success === false, "mail_search schema clamps limit");
 
-  const runtime = { sessionId: "s1", activeSkillIds: ["lily-runtime-packs"] };
-  assert(JSON.stringify(names(runtime)) === JSON.stringify(["runtime_pack_install", "runtime_pack_list"]), "runtime-pack skill exposes runtime pack tools");
+  const runtime = { sessionId: "s1", activeSkillIds: [] };
+  assert(names(runtime).includes("runtime_pack_install"), "runtime-pack install is a platform tool, not gated by a skill");
   assert(findBrokerTool(runtime, "runtime_pack_install").annotations.destructiveHint === true, "runtime pack install is destructive");
+  assert(findBrokerTool(runtime, "lily_capability_status").annotations.readOnlyHint === true, "capability status is read-only");
 
   const browser = { sessionId: "s1", activeSkillIds: ["lily-browser-qa"], runtime: { browserAvailable: true } };
-  assert(JSON.stringify(names(browser)) === JSON.stringify(["browser_open"]), "browser tool visible when runtime exists");
-  assert(names({ ...browser, runtime: { browserAvailable: false } }).length === 0, "browser tool hidden when runtime missing");
+  assert(JSON.stringify(names(browser)) === JSON.stringify([...PLATFORM_TOOLS, "browser_open"].sort()), "browser tool visible when runtime exists");
+  assert(JSON.stringify(names({ ...browser, runtime: { browserAvailable: false } })) === JSON.stringify(PLATFORM_TOOLS), "browser tool hidden when runtime missing");
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-broker-registry-"));
   const on = path.join(tmp, "learned-on");
@@ -59,7 +73,7 @@ try {
     };
     const deps = { learnedWebSystemDirs: () => [on, off] };
     const learnedNames = names(learned, deps);
-    assert(JSON.stringify(learnedNames) === JSON.stringify(["learned_on__query"]), `only active learned system visible, got ${learnedNames.join(",")}`);
+    assert(JSON.stringify(learnedNames) === JSON.stringify([...PLATFORM_TOOLS, "learned_on__query"].sort()), `only active learned system visible, got ${learnedNames.join(",")}`);
     assert(findBrokerTool(learned, "learned_on__query", deps).annotations.readOnlyHint === true, "learned read tool carries annotation");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

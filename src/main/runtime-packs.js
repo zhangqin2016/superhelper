@@ -129,6 +129,11 @@ function isPythonPathPack(id) {
   return id !== "libreoffice";
 }
 
+function pythonPathPriority(id) {
+  const priority = Number(PACK_SPECS[id]?.pythonPathPriority || 0);
+  return Number.isFinite(priority) ? priority : 0;
+}
+
 /**
  * PYTHONPATH entries for installed packs, so the document extractor can import
  * Python add-on engines. Only dirs that actually exist on disk are returned.
@@ -139,6 +144,7 @@ function getRuntimePackPythonPaths() {
   return effectivePackEntries()
     .filter((entry) => isPythonPathPack(entry.id))
     .filter((entry) => entry.source !== "pip")
+    .sort((a, b) => pythonPathPriority(b.id) - pythonPathPriority(a.id))
     .map((entry) => entry.dir)
     .filter((dir) => fs.existsSync(dir));
 }

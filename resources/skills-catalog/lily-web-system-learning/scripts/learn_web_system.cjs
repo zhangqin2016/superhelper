@@ -36,7 +36,7 @@ function usage() {
     "  --system-id <id>              Stable id for the generated learned skill.",
     "  --name <name>                 Display name for the generated learned skill.",
     "  --work-dir <dir>              Learning artifact directory. Default: .lily-work/web-system-learning",
-    "  --out <dir>                   Generated skill draft output directory.",
+    "  --out <dir>                   Generated workspace skill output directory.",
     "  --max-pages <n>               Max pages for each scanner pass. Default: 120",
     "  --timeout-ms <n>              Per-page scan timeout. Default: 60000",
     "  --headful                     Show the browser during scan.",

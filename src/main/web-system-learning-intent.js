@@ -5,7 +5,9 @@ const WEB_SYSTEM_LEARNING_SKILL_ID = "lily-web-system-learning";
 const WEB_SYSTEM_WORDS =
   /(OA|ERP|CRM|后台|管理系统|网页系统|web\s*系统|业务系统|内部系统|门户|网站|Web\s*app|admin\s*(?:portal|system|panel)|dashboard|portal|web\s*system)/i;
 const LEARNING_ACTION_WORDS =
-  /(学习|熟悉|接入|自动化|自动操作|帮我操作|操作一下|以后.*操作|生成.*技能|创建.*技能|learn|study|automate|operate|control|connect|teach)/i;
+  /(学习|熟悉|接入|自动化|自动操作|帮我操作|操作一下|以后.*操作|learn|study|automate|operate|control|connect|teach)/i;
+const SKILL_CREATION_WORDS =
+  /(生成.*技能|创建.*技能|保存.*技能|做.*技能|turn.*into.*skill|create.*skill|generate.*skill|save.*skill)/i;
 const GENERIC_LEARNING_ONLY =
   /^(?:学习|学一下|帮我学习|learn|study)\s*(?:英语|英文|中文|数学|物理|历史|语法|单词|课程|考试|编程|代码)?$/i;
 
@@ -23,8 +25,12 @@ function looksLikeWebSystemLearningIntent(text, files = []) {
   const source = normalizeText(text);
   if (!source || source.length > 1500) return false;
   if (GENERIC_LEARNING_ONLY.test(source)) return false;
-  if (extractUrl(source) && LEARNING_ACTION_WORDS.test(source)) return true;
-  return WEB_SYSTEM_WORDS.test(source) && LEARNING_ACTION_WORDS.test(source);
+  const hasUrl = Boolean(extractUrl(source));
+  const hasWebSystem = WEB_SYSTEM_WORDS.test(source);
+  const hasLearningAction = LEARNING_ACTION_WORDS.test(source);
+  const hasSkillCreation = SKILL_CREATION_WORDS.test(source);
+  if (hasUrl && (hasLearningAction || hasSkillCreation)) return true;
+  return hasWebSystem && (hasLearningAction || hasSkillCreation);
 }
 
 function buildWebSystemLearningPrompt(userText) {
@@ -32,7 +38,7 @@ function buildWebSystemLearningPrompt(userText) {
   const url = extractUrl(source);
   const urlLine = url ? `\n用户提到的入口地址：${url}\n` : "";
   return [
-    "用户希望你学习一个 Web / OA / ERP / CRM / 后台系统，并为当前工作区生成可审核、可复用的操作技能。",
+    "用户希望你学习一个 Web / OA / ERP / CRM / 后台系统，并为当前工作区生成可复用的操作技能。",
     "",
     "原始需求：",
     source,
@@ -45,14 +51,14 @@ function buildWebSystemLearningPrompt(userText) {
     "4. 默认只做只读学习：页面结构、菜单、表单字段、列表、详情页、查询条件和业务对象。",
     "5. 先运行扫描脚本的 dry-run，再在域名白名单内扫描；禁止提交表单、删除、审批、支付、上传或修改数据。",
     "6. 学习阶段要产出可复用的能力图谱/执行图谱：API 合约优先；需要浏览器的流程也必须在学习阶段捕获或编译，普通用户执行时禁止临场生成脚本、选择器或操作计划。",
-    "7. 遇到 storageState/headless 不可复用、webdriver/UA/TLS/Client-Hints/SSO/二维码/设备绑定等特殊系统时，禁止尝试 stealth、反检测、改 webdriver、改 UA、换原生 Chrome 或临场写 Playwright/Python/JS 脚本绕过。最多一次捕获+一次扫描；仍失败就返回 `SPECIAL_BROWSER_CONTEXT_REQUIRED`，改用同一真人浏览器/profile 采集，或先生成部分草稿并记录缺口。",
+    "7. 遇到 storageState/headless 不可复用、webdriver/UA/TLS/Client-Hints/SSO/二维码/设备绑定等特殊系统时，禁止尝试 stealth、反检测、改 webdriver、改 UA、换原生 Chrome 或临场写 Playwright/Python/JS 脚本绕过。最多一次捕获+一次扫描；仍失败就返回 `SPECIAL_BROWSER_CONTEXT_REQUIRED`，改用同一真人浏览器/profile 采集，或先保存带覆盖缺口的工作区技能。",
     "8. 扫描完成后必须运行 `scripts/finalize_web_system_learning.cjs --scan <scan.json> --contracts <api-contracts.json> --system-id <id> --name <name>`；它会确定性生成 `web-system-spec.json` 并调用 `create_web_system_skill.cjs` 生成当前工作区的 learned skill。",
     "9. 扫描必须以前台 Bash/tool 命令执行并等待完成；禁止使用 `&`、`nohup`、`setsid`、`disown` 或另开后台进程。",
     "10. 只有真实工具还在运行时才可以说“扫描正在运行/等待完成”；如果没有前台工具在跑，必须先执行扫描或说明缺失条件。",
-    "11. 不允许以“我将继续扫描/下一步采集/等待分析”作为最终答复。最终答复必须来自 finalizer 的结果：要么 `ok:true` 并说明技能草稿目录、页面/API/能力数量和覆盖缺口；要么给出明确错误和可恢复动作。",
+    "11. 不允许以“我将继续扫描/下一步采集/等待分析”作为最终答复。最终答复必须来自 finalizer 的结果：要么 `ok:true` 并说明工作区技能已保存、页面/API/能力数量和覆盖缺口；要么给出明确错误和可恢复动作。",
     "12. 输出清晰的学习结果：已识别页面、可支持的自然语言操作、必须二次确认的高风险动作、还需要用户补充的信息。",
     "",
-    "如果当前环境缺少 Playwright 或浏览器运行时，不要失败卡住；说明缺少的依赖，并先基于用户提供的页面信息生成可审核草稿。",
+    "如果当前环境缺少 Playwright 或浏览器运行时，不要失败卡住；说明缺少的依赖，并先基于用户提供的页面信息保存当前工作区技能，明确记录覆盖缺口。",
   ].filter(Boolean).join("\n");
 }
 

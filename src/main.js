@@ -236,6 +236,23 @@ app.whenReady().then(async () => {
     sessionManager,
   });
 
+  setTimeout(() => {
+    require("./main/runtime-pack-installer")
+      .repairInstalledRuntimePacks()
+      .then((result) => {
+        const repaired = (result?.results || []).filter((item) => item.ok && item.repaired);
+        if (repaired.length) {
+          console.info("[runtime-packs] repaired", repaired.map((item) => item.id).join(", "));
+          try {
+            require("./main/runner-live-config").terminateIdleRunners(runnerPool);
+          } catch {
+            // Runner refresh is best-effort; new turns always receive fresh env.
+          }
+        }
+      })
+      .catch((err) => console.warn("[runtime-packs] auto-repair failed", err?.message || err));
+  }, 15_000);
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

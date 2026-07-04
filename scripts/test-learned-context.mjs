@@ -5,8 +5,8 @@
  *       session guide section, capped, and tracked by the cache signature.
  *  L1 — "记住：…" conventions persist per project with provenance and feed
  *       their own guide section.
- *  L3 — skill drafts in the inbox register only when structurally valid,
- *       always disabled, with the learned- prefix enforced.
+ *  L3 — generated skills in the inbox register only when structurally valid,
+ *       with the learned- prefix enforced.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -36,6 +36,7 @@ const {
   removeLearnedConvention,
 } = require("../src/main/learned-context.js");
 const {
+  buildCrystallizationSection,
   readDraftManifest,
   collectLearnedSkillDrafts,
 } = require("../src/main/learned-skills.js");
@@ -124,7 +125,15 @@ try {
     throw new Error("missing projectId must not read a global learned section");
   }
 
-  // L3: draft validation + registration flow.
+  // L3: generated skill guidance + registration flow.
+  const crystallization = buildCrystallizationSection();
+  if (!/自动注册|registered automatically/.test(crystallization)) {
+    throw new Error(`skill crystallization should describe automatic registration: ${crystallization}`);
+  }
+  if (/Settings → Skills|设置 → 技能|审核并启用|reviewed and enabled/.test(crystallization)) {
+    throw new Error(`skill crystallization must not point to a non-existent review flow: ${crystallization}`);
+  }
+
   const inbox = path.join(tempRoot, "inbox");
   const goodDraft = path.join(inbox, "report-helper");
   fs.mkdirSync(goodDraft, { recursive: true });

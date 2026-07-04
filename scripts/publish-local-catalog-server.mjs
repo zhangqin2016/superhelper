@@ -47,7 +47,7 @@ const WORKSPACE_APP_BUILDERS = [
     name: "网页系统学习",
     summary: "学习 OA、ERP、CRM 和后台系统，生成页面地图、动作地图、API 地图和工作区技能。",
     description:
-      "网页系统学习用于把内部 OA、ERP、CRM、后台和门户系统变成可审核的自然语言能力。它先在用户授权域名内做只读学习，生成系统画像、页面地图、动作地图、API 地图、Playbook 和工作区技能草稿，用户审核启用后再执行查询、导出或提交类动作。",
+      "网页系统学习用于把内部 OA、ERP、CRM、后台和门户系统变成当前工作区自然语言能力。它先在用户授权域名内做只读学习，生成系统画像、页面地图、动作地图、API 地图、Playbook 并保存为工作区技能；后续新对话自动加载，查询/导出可走已验证能力，提交类动作仍必须二次确认。",
     category: "business",
     appType: "connector",
     riskLevel: "high",

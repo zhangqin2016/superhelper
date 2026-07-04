@@ -1,6 +1,6 @@
 ---
 name: lily-web-system-learning
-description: Use when the user wants Lily to learn a web/OA/ERP/CRM/admin system and turn it into a reusable workspace skill for natural-language operations. Covers read-only automatic exploration, page/action mapping, domain allowlists, credential safety, high-risk confirmation, and creating a workspace skill the user can enable.
+description: Use when the user wants Lily to learn a web/OA/ERP/CRM/admin system and turn it into a reusable workspace skill for natural-language operations. Covers read-only automatic exploration, page/action mapping, domain allowlists, credential safety, high-risk confirmation, and saving a workspace skill that future chats load automatically.
 ---
 
 # Lily Web System Learning
@@ -16,21 +16,21 @@ artifacts. Do not turn normal learning into a sequence of user-clicked panels.
 
 This skill is fail-open: if one discovery source fails, continue with the next
 approved source where safe: published contracts, authenticated HAR, bounded
-frontend source hints, read-only SPA scan, checkpoints, partial drafts, and
+frontend source hints, read-only SPA scan, checkpoints, partial results, and
 health gaps. If authentication, anti-automation, or same-browser binding blocks
 the approved route, stop with a concrete recoverable code and partial evidence;
 do not improvise stealth scripts or claim complete coverage.
 
 ## Product Contract
 
-The goal is not free-form clicking. The goal is a reviewable operating model:
+The goal is not free-form clicking. The goal is a reusable operating model:
 
 1. Learn the system within an approved scope.
 2. Build a page, action, and API map.
 3. Generate a connector playbook with action contracts.
 4. Prefer API-first execution when safe contracts exist; do not open a browser during normal use. Browser automation is only for login/learning, UI-only systems, or an explicitly approved one-off recovery.
-5. Generate a workspace skill draft that references the playbook.
-6. Let the user enable it before future use.
+5. Save a workspace skill that references the playbook.
+6. Let future chats in this workspace load it automatically.
 
 Never store passwords in a skill, prompt, log, or generated file. The user may save a site login in the platform's encrypted credential vault (Settings → Connectors → Website logins); that password is held only by the Electron main process and is used there to log in on the user's behalf — it is never passed to this skill, the executor, or any log. Otherwise the user logs in through an interactive browser/profile, SSO, or existing session. Treat credentials, cookies, tokens, screenshots, exports, and personal data as sensitive.
 
@@ -159,7 +159,7 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    `SPECIAL_BROWSER_CONTEXT_REQUIRED`, include the last concrete evidence, and
    switch to an approved path: same interactive browser/profile capture,
    optional accessibility-tree/MCP observation in the user-controlled browser, or
-   a partial draft from contracts/HAR/source hints with gaps recorded in
+   a partial workspace skill from contracts/HAR/source hints with gaps recorded in
    `health.json`. Do not promise unattended headless automation for these
    systems unless a learned API contract or verified compiled browser flow
    exists.
@@ -181,8 +181,8 @@ Never store passwords in a skill, prompt, log, or generated file. The user may s
    `create_web_system_skill.cjs`. Do not hand-write the final spec in chat, and
    do not end the learning turn before the finalizer returns `ok: true` or a
    concrete error.
-16. Tell the user exactly where the generated workspace skill draft was written
-   and that they can enable it.
+16. Tell the user that the generated workspace skill was saved for the current
+   workspace and that future chats in this workspace will load it automatically.
 17. On later use, execute through the learned playbook; if selectors/API change, mark stale and request re-learning.
 
 ## Autonomous Self-Run Learning (no human recording)
@@ -230,12 +230,12 @@ process. Keep the assistant state honest:
 
 - Do not say "scan is running", "waiting for scan completion", or "I will analyze when it finishes" unless the scanner command is still executing as a foreground tool call or as a managed `lily_process_jobs` job observed through `job_status`/`job_logs`.
 - Never start `scan_web_system.py`, `execute_web_playbook.cjs`, Playwright, browser learning, or skill generation with `&`, `nohup`, `setsid`, `disown`, a detached terminal, or a separate background shell without `lily_process_jobs`.
-- Never run ad-hoc `python3 -c`, here-doc, inline Playwright, stealth, webdriver-patching, user-agent spoofing, or native-Chrome retry scripts as a substitute for the approved scanners/executors. If the approved path cannot handle the system, stop with `SPECIAL_BROWSER_CONTEXT_REQUIRED` and produce a reviewable partial result or ask for same-browser capture.
+- Never run ad-hoc `python3 -c`, here-doc, inline Playwright, stealth, webdriver-patching, user-agent spoofing, or native-Chrome retry scripts as a substitute for the approved scanners/executors. If the approved path cannot handle the system, stop with `SPECIAL_BROWSER_CONTEXT_REQUIRED` and produce a partial result with explicit coverage gaps or ask for same-browser capture.
 - If a scan may take minutes, tell the user what will be scanned, start it with `lily_process_jobs`, and use `job_status`/`job_logs` until it returns a concrete result, checkpoint, or blocker before summarizing.
 - If the environment cannot keep a managed job alive, stop and explain the exact blocker instead of pretending a scan is active.
 - A follow-up such as "deeper scan" or "continue scanning" must either start/observe another managed scanner job or ask for the missing scope. It must not be treated as a separate idle chat while the previous scan is supposedly pending.
 - After a scanner command finishes, read the output file before generating `system-profile.json`, `page-map.json`, `api-map.json`, `capability-map.json`, `action-playbook.json`, `health.json`, and the workspace skill `SKILL.md`.
-- A partial scan is still a valid reviewable draft. If coverage is low, run the
+- A partial scan can still produce a useful workspace skill with gaps recorded. If coverage is low, run the
   deterministic finalizer anyway and mark gaps in `health.json`; do not stop at
   "I will continue scanning" unless another foreground scanner command or
   managed `lily_process_jobs` scanner job is actually running.
@@ -252,7 +252,7 @@ Place generated artifacts in the workspace learning area, using stable English d
 - capability-map.json: natural-language capability routing, required parameters, confirmation gates, success signals, stale signals, and recovery policy.
 - action-playbook.json: natural-language intents mapped to safe actions.
 - health.json: learning coverage, API/browser fallback coverage, stale state, and recommended next steps.
-- SKILL.md: workspace skill instructions for enablement, written under the generated system id directory such as `<learned-skills-inbox>/<system-id>/`.
+- SKILL.md: workspace skill instructions, written under the generated system id directory such as `<learned-skills-inbox>/<system-id>/`.
 - audit-log.jsonl: learning actions, timestamps, scope, and redacted evidence.
 
 ## Safety Rules
@@ -416,7 +416,7 @@ whole system, then critique coverage:
   ceiling; use the UI scan to map which capability each contract serves and to
   cover UI-only flows the contract omits.
 - Record coverage and known gaps in `health.json` honestly. A skill with gaps is
-  a reviewable draft, not a finished operator — say what is not yet covered.
+  a partial workspace skill, not a finished operator — say what is not yet covered.
 
 ## Re-learning & Drift
 

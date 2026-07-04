@@ -60,14 +60,24 @@ try {
   const proPdfDir = packs.packDir("pro-pdf");
   fs.mkdirSync(path.join(proPdfDir, "docling"), { recursive: true });
   fs.writeFileSync(path.join(proPdfDir, "docling", "__init__.py"), "OK = True\n");
+  const opencvDir = packs.packDir("opencv");
+  fs.mkdirSync(path.join(opencvDir, "numpy"), { recursive: true });
+  fs.writeFileSync(path.join(opencvDir, "numpy", "__init__.py"), "raise ImportError('bad opencv numpy')\n");
+  const rembgDir = packs.packDir("rembg");
+  fs.mkdirSync(path.join(rembgDir, "numpy"), { recursive: true });
+  fs.writeFileSync(path.join(rembgDir, "numpy", "__init__.py"), "__version__ = '2.4.6'\n");
+  fs.mkdirSync(path.join(rembgDir, "rembg"), { recursive: true });
+  fs.writeFileSync(path.join(rembgDir, "rembg", "__init__.py"), "import numpy\nOK = True\n");
 
   fs.writeFileSync(
     packs.statePath(),
     JSON.stringify({
       schemaVersion: 1,
       installed: {
+        opencv: { source: "artifact", version: "4.13.0.92" },
         pandoc: { source: "artifact", version: "3.10" },
         "pro-pdf": { source: "artifact", version: "2.102.1" },
+        rembg: { source: "artifact", version: "2.0.76" },
       },
     }),
     "utf8",
@@ -79,6 +89,11 @@ try {
   if (runtimePython.resolveVenvPython()) {
     const proPdf = await health.checkRuntimePackHealth("pro-pdf");
     assert(proPdf.ok, `pro-pdf health should import from pack PYTHONPATH: ${JSON.stringify(proPdf)}`);
+    const rembg = await health.checkRuntimePackHealth("rembg");
+    assert(
+      rembg.ok,
+      `rembg health should use real runtime PYTHONPATH priority, not a stale lower-priority NumPy: ${JSON.stringify(rembg)}`,
+    );
   }
 
   const all = await health.checkDependencyHealth("pandoc");

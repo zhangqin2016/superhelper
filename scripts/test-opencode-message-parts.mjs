@@ -42,6 +42,16 @@ const { buildOpencodePromptBody, fileToPart } = require("../src/main/runtime/ope
   assert.equal(pngPart?.type, "file", "raster images remain safe model file parts");
   assert.match(pngPart.url, /^data:image\/png;base64,/, "raster images keep their image MIME");
 
+  const pngBody = buildOpencodePromptBody({
+    text: "change the background to white",
+    files: [{ path: png, name: "image.png", sourcePath: "/wechat/cache/image.png", isImage: true }],
+    maxInlineFileBytes: 1024,
+  });
+  assert.equal(pngBody.parts.filter((part) => part.type === "file").length, 1, "raster image is still uploaded as a model file part");
+  assert.match(pngBody.parts.at(-1).text, /Attachment index/, "image prompt includes a local attachment index");
+  assert.match(pngBody.parts.at(-1).text, new RegExp(png.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "image prompt preserves staged source path");
+  assert.match(pngBody.parts.at(-1).text, /original path: \/wechat\/cache\/image\.png/, "image prompt preserves original clipboard path when available");
+
   const binary = path.join(dir, "payload.bin");
   fs.writeFileSync(binary, Buffer.from([0, 1, 2, 3]));
   const binarySkipped = [];

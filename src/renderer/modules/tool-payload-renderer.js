@@ -235,19 +235,55 @@ function fileUrlFromPath(filePath = "") {
   return value;
 }
 
+const LOCAL_MEDIA_RECOVERY_RETRY_DELAYS_MS = [120, 350, 900, 1800, 3500, 6000];
+
+function canRetryLocalMediaStatus(status) {
+  if (!status) return true;
+  return status.error === "NOT_FOUND" || status.error === "STATUS_UNAVAILABLE";
+}
+
+function cacheBustedMediaUrl(url = "") {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("v", String(Date.now()));
+    return parsed.toString();
+  } catch {
+    return `${url}${url.includes("?") ? "&" : "?"}v=${Date.now()}`;
+  }
+}
+
+function scheduleLocalMediaRecoveryRetry(element, filePath, status) {
+  if (!element?.isConnected || !canRetryLocalMediaStatus(status)) return;
+  const attempt = Number(element.dataset.mediaRecoveryAttempts || "0");
+  const delay = LOCAL_MEDIA_RECOVERY_RETRY_DELAYS_MS[attempt - 1];
+  if (!Number.isFinite(delay)) return;
+  window.setTimeout(() => {
+    if (!element.isConnected || element.dataset.mediaRecoveryDone === "true") return;
+    void recoverLocalMediaElement(element, filePath);
+  }, delay);
+}
+
 async function recoverLocalMediaElement(element, filePath = "") {
-  if (!element || element.dataset.mediaRecoveryTried === "true") return false;
+  if (!element || element.dataset.mediaRecoveryDone === "true" || element.dataset.mediaRecoveryActive === "true") return false;
   if (!isRevealableLocalPath(filePath)) return false;
-  element.dataset.mediaRecoveryTried = "true";
+  element.dataset.mediaRecoveryActive = "true";
+  const attempt = Number(element.dataset.mediaRecoveryAttempts || "0") + 1;
+  element.dataset.mediaRecoveryAttempts = String(attempt);
   let status = null;
   try {
     status = await window.assistantClient?.localMediaStatus?.(filePath);
   } catch {
     status = null;
   }
-  if (!status?.ok || !status.url) return false;
+  element.dataset.mediaRecoveryActive = "false";
+  if (!status?.ok || !status.url) {
+    scheduleLocalMediaRecoveryRetry(element, filePath, status);
+    return false;
+  }
+  element.dataset.mediaRecoveryDone = "true";
   element.dataset.localFilePath = status.path || filePath;
-  element.src = status.url;
+  element.src = cacheBustedMediaUrl(status.url);
   element.title = status.path || filePath;
   return true;
 }

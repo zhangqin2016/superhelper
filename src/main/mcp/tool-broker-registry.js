@@ -51,7 +51,80 @@ function browserAvailable(context) {
   return context?.runtime?.browserAvailable === true;
 }
 
+function isPlatformTool(tool) {
+  return (
+    Array.isArray(tool?.requiredSkillIds) &&
+    tool.requiredSkillIds.length === 0 &&
+    (tool.group === "capabilities" || tool.group === "runtime-packs")
+  );
+}
+
 const STATIC_TOOL_DEFINITIONS = [
+  {
+    id: "lily_capability_list",
+    name: "lily_capability_list",
+    group: "capabilities",
+    requiredSkillIds: [],
+    description: "List Lily platform capabilities available to this session, including skills, tools, runtime packs, and fail-open routes.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+    handler: async (_args, context) => {
+      const { listCapabilities } = require("../capability-broker");
+      const tools = STATIC_TOOL_DEFINITIONS
+        .filter((tool) => tool.name !== "lily_capability_list" && tool.name !== "lily_capability_status")
+        .filter((tool) => toolAllowed(context, tool))
+        .map((tool) => ({
+          name: tool.name,
+          group: tool.group,
+          requiredSkillIds: tool.requiredSkillIds || [],
+          readOnly: Boolean(tool.annotations?.readOnlyHint),
+          destructive: Boolean(tool.annotations?.destructiveHint),
+        }));
+      return {
+        ok: true,
+        sessionId: context?.sessionId || "",
+        activeSkillIds: Array.isArray(context?.activeSkillIds) ? context.activeSkillIds : [],
+        capabilities: listCapabilities(),
+        tools,
+      };
+    },
+  },
+  {
+    id: "lily_capability_status",
+    name: "lily_capability_status",
+    group: "capabilities",
+    requiredSkillIds: [],
+    description: "Report session-scoped Lily capability status and explain which platform tools are available right now.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+    handler: async (_args, context) => {
+      const { installedRuntimePackIds } = require("../runtime-pack-installer");
+      const installedPacks = [...installedRuntimePackIds()].sort();
+      const tools = STATIC_TOOL_DEFINITIONS
+        .filter((tool) => tool.name !== "lily_capability_status")
+        .filter((tool) => toolAllowed(context, tool))
+        .map((tool) => tool.name)
+        .sort();
+      return {
+        ok: true,
+        sessionId: context?.sessionId || "",
+        permissionMode: context?.permissionMode || "",
+        activeSkillIds: Array.isArray(context?.activeSkillIds) ? context.activeSkillIds : [],
+        connectorStatus: context?.connectorStatus || {},
+        runtime: context?.runtime || {},
+        runtimePacks: {
+          installed: installedPacks,
+          installToolAvailable: tools.includes("runtime_pack_install"),
+        },
+        tools,
+        policy: {
+          dependencyInstall: "session_auto_with_confirmation",
+          failOpen: true,
+          nativeOpenCodeSkills: "not_user_facing",
+        },
+      };
+    },
+  },
   {
     id: "mail_list_accounts",
     name: "mail_list_accounts",
@@ -125,7 +198,7 @@ const STATIC_TOOL_DEFINITIONS = [
     id: "runtime_pack_list",
     name: "runtime_pack_list",
     group: "runtime-packs",
-    requiredSkillIds: [SKILLS.runtimePacks],
+    requiredSkillIds: [],
     description: "List optional Lily dependency packs and their installed status.",
     inputSchema: {},
     annotations: { readOnlyHint: true },
@@ -149,7 +222,7 @@ const STATIC_TOOL_DEFINITIONS = [
     id: "runtime_pack_install",
     name: "runtime_pack_install",
     group: "runtime-packs",
-    requiredSkillIds: [SKILLS.runtimePacks],
+    requiredSkillIds: [],
     description: "Install an optional Lily dependency pack from the server-resolved artifact URL.",
     inputSchema: {
       packId: z.string().describe("dependency pack id, for example pro-pdf"),
@@ -210,14 +283,14 @@ function learnedWebSystemTools(context, deps = {}) {
 }
 
 function toolAllowed(context, tool) {
-  if (!context?.sessionId) return false;
+  if (!context?.sessionId && !(context?.platformOnly && isPlatformTool(tool))) return false;
   if (!hasAllSkills(context, tool.requiredSkillIds)) return false;
   if (typeof tool.isAvailable === "function" && !tool.isAvailable(context)) return false;
   return true;
 }
 
 function buildBrokerTools(context, deps = {}) {
-  if (!context || context.ok === false || !context.sessionId) return [];
+  if (!context || context.ok === false) return [];
   return [...STATIC_TOOL_DEFINITIONS, ...learnedWebSystemTools(context, deps)]
     .filter((tool) => toolAllowed(context, tool));
 }

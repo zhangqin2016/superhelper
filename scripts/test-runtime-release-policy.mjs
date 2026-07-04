@@ -126,6 +126,38 @@ assert(
 const verifyRuntime = fs.readFileSync(path.join(ROOT, "scripts/verify-runtime-bundle.mjs"), "utf8");
 assert.match(verifyRuntime, /--require-libreoffice/, "runtime verifier must support a strict LibreOffice gate");
 assert.match(verifyRuntime, /--strict-smoke/, "runtime verifier must support strict import smoke checks");
+assert.equal(
+  pkg.scripts["release:preflight"],
+  "node scripts/release-preflight.mjs",
+  "package scripts must expose the dependency/runtime-pack release preflight gate",
+);
+assert.equal(
+  pkg.scripts["deploy:preflight"],
+  "node scripts/release-preflight.mjs && node scripts/check-baota-compose.mjs",
+  "server deploys must expose a shared preflight gate",
+);
+const releaseOne = fs.readFileSync(path.join(ROOT, "scripts/release-one-click.mjs"), "utf8");
+assert.match(
+  releaseOne,
+  /scripts\/release-preflight\.mjs/,
+  "one-click release must run dependency/runtime-pack preflight before build/publish",
+);
+const releasePreflight = fs.readFileSync(path.join(ROOT, "scripts/release-preflight.mjs"), "utf8");
+for (const test of [
+  "test-runtime-packs.mjs",
+  "test-spawn-env-runtime.mjs",
+  "test-runtime-health.mjs",
+  "test-runtime-pack-installer.mjs",
+  "test-runtime-pack-preflight.mjs",
+  "test-common-runtime-pack-publisher.mjs",
+]) {
+  assert.match(releasePreflight, new RegExp(test.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `release preflight must run ${test}`);
+}
+for (const deployScript of ["deploy/baota/push-via-qiniu.sh", "deploy/baota/push-images-via-qiniu.sh"]) {
+  const text = fs.readFileSync(path.join(ROOT, deployScript), "utf8");
+  assert.match(text, /npm run deploy:preflight/, `${deployScript} must run deploy preflight before pushing`);
+  assert.match(text, /SKIP_DEPLOY_PREFLIGHT/, `${deployScript} must keep an explicit emergency preflight bypass`);
+}
 assert.match(
   verifyRuntime,
   /--allow-cross-host-smoke-skip/,

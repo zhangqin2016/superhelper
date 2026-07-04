@@ -563,8 +563,8 @@ const examples = examplesJsonl.trim().split("\n").map((line) => JSON.parse(line)
 if (!examples.some((example) => example.utterance === "查审批状态" && example.action === "web.query-approval")) {
   throw new Error(`examples should map natural language to actions: ${examplesJsonl}`);
 }
-if (changeLog.entries[0]?.type !== "initial-draft") {
-  throw new Error(`change log should record initial learning draft: ${JSON.stringify(changeLog)}`);
+if (changeLog.entries[0]?.type !== "initial-skill") {
+  throw new Error(`change log should record initial learned skill: ${JSON.stringify(changeLog)}`);
 }
 if (scanArchive.coverage.pageCount !== 3 || scanArchive.actionCandidates.length !== 2) {
   throw new Error(`scan archive should be copied into the generated skill: ${JSON.stringify(scanArchive)}`);
@@ -599,7 +599,7 @@ if (!finalized.ok || finalized.systemId !== "demo-finalized" || finalized.capabi
   throw new Error(`unexpected finalizer output: ${result.stdout}`);
 }
 if (!fs.existsSync(path.join(finalizedOut, "demo-finalized", "web-system-spec.json"))) {
-  throw new Error("finalizer should write web-system-spec.json through the generated skill draft");
+  throw new Error("finalizer should write web-system-spec.json through the generated workspace skill");
 }
 const finalizedSpec = JSON.parse(fs.readFileSync(path.join(finalizedOut, "demo-finalized", "web-system-spec.json"), "utf8"));
 if (!finalizedSpec.actions.some((action) => action.id.startsWith("query-approval-search-api") || action.id.startsWith("open-search"))) {

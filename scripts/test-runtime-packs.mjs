@@ -45,6 +45,10 @@ assert(
 const proDir = packs.packDir("pro-pdf");
 fs.mkdirSync(proDir, { recursive: true });
 fs.writeFileSync(path.join(proDir, "marker.txt"), "x"); // dir exists on disk
+const opencvDir = packs.packDir("opencv");
+fs.mkdirSync(opencvDir, { recursive: true });
+const rembgDir = packs.packDir("rembg");
+fs.mkdirSync(rembgDir, { recursive: true });
 const libreOfficeProgramDir =
   process.platform === "darwin"
     ? path.join(packs.packDir("libreoffice"), "LibreOffice.app", "Contents", "MacOS")
@@ -61,7 +65,9 @@ fs.writeFileSync(
   JSON.stringify({
     schemaVersion: 1,
     installed: {
+      opencv: { source: "artifact", version: "4.13.0.92" },
       "pro-pdf": { source: "artifact", version: "2.102.1" },
+      rembg: { source: "artifact", version: "2.0.76" },
       libreoffice: { source: "artifact", version: "25.8.7" },
       "legacy-pip": { source: "pip", version: "1.0.0" },
       "ghost": { source: "artifact", version: "9.9.9" }, // no dir on disk
@@ -71,8 +77,12 @@ fs.writeFileSync(
 );
 
 const paths = packs.getRuntimePackPythonPaths();
-assert(paths.length === 1, `expected exactly one usable pack path, got ${JSON.stringify(paths)}`);
-assert(paths[0] === proDir, "should return the artifact pack dir that exists on disk");
+assert(paths.length === 3, `expected three usable pack paths, got ${JSON.stringify(paths)}`);
+assert(paths.includes(proDir), "should return the artifact pack dir that exists on disk");
+assert(
+  paths.indexOf(rembgDir) < paths.indexOf(opencvDir),
+  `rembg must precede opencv so its NumPy pin can win: ${JSON.stringify(paths)}`,
+);
 assert(!paths.some((p) => p.includes("legacy-pip")), "pip-source packs must be excluded (they install into the venv)");
 assert(!paths.some((p) => p.includes("ghost")), "records without an on-disk dir must be excluded");
 

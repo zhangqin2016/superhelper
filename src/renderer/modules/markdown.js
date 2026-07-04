@@ -455,24 +455,60 @@ function wireMarkdownImages(element) {
   }
 }
 
+const MARKDOWN_LOCAL_IMAGE_RETRY_DELAYS_MS = [120, 350, 900, 1800, 3500, 6000];
+
+function canRetryLocalImageStatus(status) {
+  if (!status) return true;
+  return status.error === "NOT_FOUND" || status.error === "STATUS_UNAVAILABLE";
+}
+
+function cacheBustedImageUrl(url = "") {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("v", String(Date.now()));
+    return parsed.toString();
+  } catch {
+    return `${url}${url.includes("?") ? "&" : "?"}v=${Date.now()}`;
+  }
+}
+
+function scheduleMarkdownImageRetry(image, status) {
+  if (!image?.isConnected || !canRetryLocalImageStatus(status)) return false;
+  const attempt = Number(image.dataset.mediaRecoveryAttempts || "0");
+  const delay = MARKDOWN_LOCAL_IMAGE_RETRY_DELAYS_MS[attempt - 1];
+  if (!Number.isFinite(delay)) return false;
+  window.setTimeout(() => {
+    if (!image.isConnected || image.dataset.mediaErrorHandled === "true") return;
+    void replaceFailedLocalImage(image);
+  }, delay);
+  return true;
+}
+
 async function replaceFailedLocalImage(image) {
-  if (!image?.parentNode || image.dataset.mediaErrorHandled === "true") return;
+  if (!image?.parentNode || image.dataset.mediaErrorHandled === "true" || image.dataset.mediaRecoveryActive === "true") return;
   const localPath = image.dataset.localFilePath || "";
   if (!localPath) return;
-  image.dataset.mediaErrorHandled = "true";
+  image.dataset.mediaRecoveryActive = "true";
+  const attempt = Number(image.dataset.mediaRecoveryAttempts || "0") + 1;
+  image.dataset.mediaRecoveryAttempts = String(attempt);
   let status = null;
   try {
     status = await window.assistantClient?.localMediaStatus?.(localPath);
   } catch {
     status = { ok: false, error: "STATUS_UNAVAILABLE", path: localPath };
   }
+  image.dataset.mediaRecoveryActive = "false";
   if (!image.parentNode) return;
   if (status?.ok && status?.url) {
+    image.dataset.mediaErrorHandled = "true";
     image.dataset.localFilePath = status.path || localPath;
-    image.src = status.url;
+    image.src = cacheBustedImageUrl(status.url);
     image.title = status.path || localPath;
     return;
   }
+  if (scheduleMarkdownImageRetry(image, status)) return;
+  image.dataset.mediaErrorHandled = "true";
   const doc = image.ownerDocument || document;
   const box = doc.createElement("span");
   box.className = "markdown-image-error";

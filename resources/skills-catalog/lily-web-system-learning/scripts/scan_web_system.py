@@ -1521,7 +1521,7 @@ def run_scan(config: ScanConfig) -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Read-only scan of a web system for Lily learned skill drafting.")
+    parser = argparse.ArgumentParser(description="Read-only scan of a web system for Lily learned skill generation.")
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--allowed-domain", action="append", default=[])
     parser.add_argument("--max-pages", type=int, default=40)

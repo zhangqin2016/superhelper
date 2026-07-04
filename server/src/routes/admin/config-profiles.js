@@ -36,6 +36,86 @@ const effectivePreviewSchema = z.object({
   groupId: z.string().max(160).optional().default(""),
 });
 
+function invalidConfigProfile(code, message, detail = {}) {
+  return { ok: false, code, message, detail };
+}
+
+function modelPresetEnv(preset) {
+  return preset?.env && typeof preset.env === "object" && !Array.isArray(preset.env) ? preset.env : {};
+}
+
+function isExplicitGatewayRoute(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (text === "/llm" || text.startsWith("/llm/")) return true;
+  try {
+    const url = new URL(text);
+    return url.pathname === "/llm" || url.pathname.startsWith("/llm/");
+  } catch {
+    return false;
+  }
+}
+
+export function validateConfigProfileConfig(config) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    return invalidConfigProfile("CONFIG_PROFILE_INVALID_CONFIG", "Config must be a JSON object.");
+  }
+
+  const models = config.models;
+  if (!models || typeof models !== "object" || Array.isArray(models)) return null;
+
+  const providers = Array.isArray(models.providers) ? models.providers.filter(Boolean) : [];
+  const presets = Array.isArray(models.presets) ? models.presets.filter(Boolean) : [];
+  const hasProviderDirective = providers.length > 0 || Boolean(models.activeProvider);
+  const hasPresetDirective = presets.length > 0 || Boolean(models.activePresetId);
+
+  if (hasProviderDirective && hasPresetDirective) {
+    return invalidConfigProfile(
+      "CONFIG_PROFILE_MIXED_MODEL_MODES",
+      "A delivery rule cannot mix models.providers with models.presets. Use the provider menu form, or keep a fully manual preset profile in a separate rule.",
+      {
+        providers,
+        activeProvider: models.activeProvider || "",
+        activePresetId: models.activePresetId || "",
+        presetCount: presets.length,
+      },
+    );
+  }
+
+  if (String(models.source || "") === "client-direct") {
+    return invalidConfigProfile(
+      "CONFIG_PROFILE_CLIENT_DIRECT_NOT_ALLOWED",
+      "Admin delivery rules cannot ship client-direct model presets. Configure model providers once, then deliver them by provider menu so keys stay server-side.",
+    );
+  }
+
+  for (const preset of presets) {
+    const env = modelPresetEnv(preset);
+    const presetId = String(preset?.id || "");
+    const apiKey = String(env.LILY_API_KEY || "").trim();
+    const baseUrl = String(env.LILY_API_BASE_URL || "").trim();
+    const gatewayProvider = String(env.LILY_GATEWAY_PROVIDER || "").trim();
+
+    if (apiKey === "$LILY_PROVIDER_KEY") {
+      return invalidConfigProfile(
+        "CONFIG_PROFILE_PROVIDER_KEY_PLACEHOLDER_NOT_ALLOWED",
+        "Admin delivery rules cannot contain $LILY_PROVIDER_KEY. Use models.providers so the server injects a short-lived gateway token at delivery time.",
+        { presetId },
+      );
+    }
+
+    if (gatewayProvider && baseUrl && !isExplicitGatewayRoute(baseUrl)) {
+      return invalidConfigProfile(
+        "CONFIG_PROFILE_MIXED_GATEWAY_AND_UPSTREAM_URL",
+        "A preset cannot set LILY_GATEWAY_PROVIDER while pointing LILY_API_BASE_URL at an upstream provider URL. Use /llm/<provider> or models.providers.",
+        { presetId, gatewayProvider, baseUrl },
+      );
+    }
+  }
+
+  return null;
+}
+
 function secretValueKind(value) {
   const text = String(value || "").trim();
   if (!text) return "missing";
@@ -202,6 +282,8 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
     },
     async (request, reply) => {
     const input = configProfileSchema.parse(request.body);
+    const configError = validateConfigProfileConfig(input.config || {});
+    if (configError) return reply.code(400).send(configError);
     await db
       .insertInto("config_profiles")
       .values({
@@ -258,6 +340,10 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
       .where("id", "=", request.params.id)
       .executeTakeFirst();
     if (!existing) return reply.code(404).send({ ok: false, code: "CONFIG_PROFILE_NOT_FOUND" });
+    if (input.config !== undefined) {
+      const configError = validateConfigProfileConfig(input.config || {});
+      if (configError) return reply.code(400).send(configError);
+    }
     const scope = input.scope || existing.scope;
     const updates = {
       ...(input.name !== undefined ? { name: input.name } : {}),
@@ -272,6 +358,33 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
     await db.updateTable("config_profiles").set(updates).where("id", "=", request.params.id).execute();
     await audit(request, "config_profile.update", "config_profile", request.params.id, updates);
     await saveConfigProfileRevision(request.params.id);
+    return { ok: true, id: request.params.id };
+  });
+
+  app.delete(
+    "/api/admin/config-profiles/:id",
+    {
+      schema: {
+        tags: ["admin:config-profiles"],
+        summary: "Delete a config profile",
+        description: "Deletes a config profile. Stored revisions are removed by the database cascade.",
+        response: { 200: okResponse({ id: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
+    const existing = await db
+      .selectFrom("config_profiles")
+      .select(["id", "scope", "target_id", "priority", "enabled"])
+      .where("id", "=", request.params.id)
+      .executeTakeFirst();
+    if (!existing) return reply.code(404).send({ ok: false, code: "CONFIG_PROFILE_NOT_FOUND" });
+    await db.deleteFrom("config_profiles").where("id", "=", request.params.id).execute();
+    await audit(request, "config_profile.delete", "config_profile", request.params.id, {
+      scope: existing.scope,
+      targetId: existing.target_id || null,
+      priority: existing.priority,
+      enabled: existing.enabled,
+    });
     return { ok: true, id: request.params.id };
   });
 

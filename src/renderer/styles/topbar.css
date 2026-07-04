@@ -16,6 +16,8 @@
 /* Topbar */
 
 .topbar {
+  position: relative;
+  z-index: var(--z-topbar);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -226,7 +228,7 @@
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  z-index: 40;
+  z-index: var(--z-topbar-popover);
   width: min(340px, calc(100vw - 32px));
   padding: 14px;
   border: 1px solid var(--border-light);

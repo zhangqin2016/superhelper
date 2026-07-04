@@ -8,6 +8,7 @@ const composerPath = path.join(root, "src/renderer/styles/composer.css");
 const messagesPath = path.join(root, "src/renderer/styles/messages.css");
 const settingsPath = path.join(root, "src/renderer/styles/settings.css");
 const runtimeChatPath = path.join(root, "src/renderer/styles/runtime-chat.css");
+const topbarPath = path.join(root, "src/renderer/styles/topbar.css");
 const customSelectPath = path.join(root, "src/renderer/modules/custom-select.js");
 
 const stylesEntryText = fs.readFileSync(stylesEntry, "utf8");
@@ -20,6 +21,7 @@ const composerText = fs.readFileSync(composerPath, "utf8");
 const messagesText = fs.readFileSync(messagesPath, "utf8");
 const settingsText = fs.readFileSync(settingsPath, "utf8");
 const runtimeChatText = fs.readFileSync(runtimeChatPath, "utf8");
+const topbarText = fs.readFileSync(topbarPath, "utf8");
 const customSelectText = fs.readFileSync(customSelectPath, "utf8");
 const appText = fs.readFileSync(path.join(root, "src/renderer/app.js"), "utf8");
 const indexText = fs.readFileSync(path.join(root, "src/renderer/index.html"), "utf8");
@@ -110,6 +112,27 @@ if (!latestHoverRule.includes("color: var(--text-primary)")) {
 }
 if (latestHoverRule.includes("color: var(--text-inverse)")) {
   throw new Error("Latest hover must not use inverse text without a solid dark/accent background");
+}
+
+for (const [selector, token] of [
+  [".topbar", "z-index: var(--z-topbar)"],
+  [".update-popover", "z-index: var(--z-topbar-popover)"],
+]) {
+  const escaped = selector.replace(".", "\\.");
+  const rule = topbarText.match(new RegExp(`${escaped}\\s*\\{[^}]*\\}`, "s"))?.[0] || "";
+  if (!rule.includes(token)) {
+    throw new Error(`${selector} must use centralized overlay stack token ${token}`);
+  }
+}
+
+for (const required of [
+  ".assistant-turn-narrative-text.markdown-body table",
+  ".assistant-turn-narrative-text.markdown-body th",
+  ".assistant-turn-narrative-text.markdown-body td",
+]) {
+  if (!runtimeChatText.includes(required)) {
+    throw new Error(`live streaming markdown tables must use the same table chrome as final answers: missing ${required}`);
+  }
 }
 
 for (const required of [

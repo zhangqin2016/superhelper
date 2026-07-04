@@ -26,6 +26,26 @@ assert.equal(
   looksLikeWebSystemLearningIntent("帮我分析这个网页截图", [{ path: "/tmp/a.png" }]),
   false,
 );
+assert.equal(
+  looksLikeWebSystemLearningIntent("把我们刚才整理的合同审查流程生成一个工作区技能"),
+  false,
+  "generic workspace skill creation must use the general learned-skill contract, not web-system learning",
+);
+assert.equal(
+  looksLikeWebSystemLearningIntent("创建一个写周报的技能"),
+  false,
+  "creating an arbitrary skill is not a web-system learning intent",
+);
+assert.equal(
+  looksLikeWebSystemLearningIntent("帮我学习这个网站并生成工作区技能"),
+  true,
+  "web/system wording plus learning should still route to web-system learning",
+);
+assert.equal(
+  looksLikeWebSystemLearningIntent("把 https://oa.example.com 生成一个工作区技能"),
+  true,
+  "URL plus skill creation should route to web-system learning",
+);
 
 const prompt = buildWebSystemLearningPrompt("学习 https://oa.example.com 这个 OA 系统");
 assert.match(prompt, /lily-web-system-learning/);

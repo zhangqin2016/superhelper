@@ -217,7 +217,26 @@ function validateBaseUrl(baseUrl, { required = false } = {}) {
   if (trimmed.length > 512 || !URL_RE.test(trimmed)) {
     return { ok: false, error: "INVALID_BASE_URL" };
   }
-  return { ok: true, baseUrl: trimmed };
+  try {
+    const url = new URL(trimmed);
+    url.pathname = url.pathname.replace(/\/chat\/completions\/?$/i, "");
+    return { ok: true, baseUrl: url.toString().replace(/\/+$/, "") };
+  } catch {
+    return { ok: false, error: "INVALID_BASE_URL" };
+  }
+}
+
+function isLoopbackBaseUrl(baseUrl) {
+  try {
+    const host = new URL(String(baseUrl || "")).hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
+function protocolForBaseUrl(baseUrl) {
+  return /\/anthropic(\/|$)/i.test(String(baseUrl || "")) ? "anthropic" : "openai";
 }
 
 function validateApiKey(apiKey, { required = false, existing = "" } = {}) {
@@ -566,7 +585,9 @@ function saveCustomPreset({
   const urlValidated = validateBaseUrl(baseUrl, { required: true });
   if (!urlValidated.ok) return urlValidated;
 
-  const keyValidated = validateApiKey(apiKey, { required: Boolean(urlValidated.baseUrl) });
+  const keyValidated = validateApiKey(apiKey, {
+    required: Boolean(urlValidated.baseUrl) && !isLoopbackBaseUrl(urlValidated.baseUrl),
+  });
   if (!keyValidated.ok) return keyValidated;
 
   const haikuValidated = validateOptionalModelId(modelHaiku);
@@ -591,7 +612,7 @@ function saveCustomPreset({
     tlsSkipVerify: Boolean(tlsSkipVerify && urlValidated.baseUrl),
     // Carried from the provider catalog so anthropic vs openai-compatible
     // endpoints resolve correctly instead of relying on URL auto-detection.
-    protocol: protocol === "anthropic" || protocol === "openai" ? protocol : "",
+    protocol: protocol === "anthropic" || protocol === "openai" ? protocol : protocolForBaseUrl(urlValidated.baseUrl),
   };
   const customPresets = [...(user.customPresets || []), entry];
   persistUserChoice({ ...user, customPresets });
@@ -633,7 +654,7 @@ function setApiGateway({ mode, baseUrl, apiKey, tlsSkipVerify }) {
   if (!urlValidated.ok) return urlValidated;
 
   const keyValidated = validateApiKey(apiKey, {
-    required: true,
+    required: !isLoopbackBaseUrl(urlValidated.baseUrl),
     existing: user.apiGateway?.apiKey || "",
   });
   if (!keyValidated.ok) return keyValidated;

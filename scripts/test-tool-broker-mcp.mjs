@@ -27,14 +27,17 @@ async function clientForServer(server) {
   const client = await clientForServer(server);
 
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), ["runtime_pack_install", "runtime_pack_list"], "tools/list only exposes allowed tools");
+  assert.deepEqual(
+    tools.map((tool) => tool.name).sort(),
+    ["lily_capability_list", "lily_capability_status", "runtime_pack_install", "runtime_pack_list"],
+    "tools/list always exposes platform capabilities",
+  );
   assert.ok(!tools.some((tool) => tool.name.startsWith("mail_")), "mail tools hidden when bridge is unavailable");
 
   context = { ...context, activeSkillIds: [] };
   const result = await client.callTool({ name: "runtime_pack_list", arguments: {} });
   const body = JSON.parse(result.content[0].text);
-  assert.equal(body.ok, false, "call re-checks latest session visibility");
-  assert.equal(body.error, "TOOL_NOT_AVAILABLE_FOR_SESSION");
+  assert.equal(body.ok, true, "platform tools remain callable after optional skills change");
   await client.close();
 }
 
@@ -52,13 +55,34 @@ async function clientForServer(server) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [path.join(process.cwd(), "src/main/mcp/tool-broker-stdio.js")],
+    env: { ...process.env, LILY_TOOL_BROKER_CONTEXT: "" },
+  });
+  const client = new Client({ name: "stdio-platform-test", version: "1.0.0" });
+  await client.connect(transport);
+  const { tools } = await client.listTools();
+  assert.deepEqual(
+    tools.map((tool) => tool.name).sort(),
+    ["lily_capability_list", "lily_capability_status", "runtime_pack_install", "runtime_pack_list"],
+    "stdio broker without session context exposes only platform capabilities",
+  );
+  await client.close();
+}
+
+{
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(process.cwd(), "src/main/mcp/tool-broker-stdio.js")],
     env: { ...process.env, LILY_TOOL_BROKER_CONTEXT: JSON.stringify({ sessionId: "s1", activeSkillIds: ["lily-runtime-packs"] }) },
   });
   const client = new Client({ name: "stdio-test", version: "1.0.0" });
   await client.connect(transport);
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), ["runtime_pack_install", "runtime_pack_list"], "stdio broker reads explicit context");
+  assert.deepEqual(
+    tools.map((tool) => tool.name).sort(),
+    ["lily_capability_list", "lily_capability_status", "runtime_pack_install", "runtime_pack_list"],
+    "stdio broker reads explicit context and exposes platform capabilities",
+  );
   await client.close();
 }
 
-console.log("PASS: test-tool-broker-mcp (5 tests)");
+console.log("PASS: test-tool-broker-mcp (6 tests)");

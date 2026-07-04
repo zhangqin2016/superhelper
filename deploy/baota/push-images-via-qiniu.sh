@@ -38,6 +38,10 @@ trap cleanup EXIT
 
 cd "$ROOT"
 
+if [ "${SKIP_DEPLOY_PREFLIGHT:-0}" != "1" ]; then
+  npm run deploy:preflight
+fi
+
 echo "Building ${API_IMAGE} for ${PLATFORM}"
 docker buildx build \
   --platform "$PLATFORM" \

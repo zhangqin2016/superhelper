@@ -5,10 +5,10 @@ const path = require("node:path");
 const { userDataPath } = require("./config");
 
 /**
- * L3 skill crystallization: the engine writes skill DRAFTS into an inbox
- * directory (exposed via --add-dir); after a turn completes, valid drafts are
+ * L3 skill crystallization: the engine writes generated skills into an inbox
+ * directory (exposed via --add-dir); after a turn completes, valid skills are
  * registered as installed skills with source "learned". Workspace-origin
- * drafts are bound to the current workspace so new chats in that workspace can
+ * skills are bound to the current workspace so new chats in that workspace can
  * use them immediately, without leaking the capability into unrelated spaces.
  */
 
@@ -37,8 +37,8 @@ function buildCrystallizationSection() {
       "当用户要求把当前流程/方法保存为可复用技能时：",
       `1. 在 \`${inbox}\` 下创建目录 \`<技能英文id>\`（小写字母/数字/连字符）。`,
       "2. 目录内写入 `SKILL.md`（frontmatter 含 name、description 与使用说明）和 `skill.manifest.json`（至少含 id、name、version、description 字段）。",
-      "3. 告诉用户：技能草稿已生成，需要在 设置 → 技能 中审核并启用后才会生效。",
-      "不要直接改动应用的技能安装目录。",
+      "3. 告诉用户：技能已保存到当前工作区，系统会自动注册；后续新对话会加载这项能力。不要让用户去任何“技能审核/启用”入口。",
+      "不要直接改动应用的技能安装目录，也不要声称需要人工审核后才生效。",
       "",
     ].join("\n");
   }
@@ -49,13 +49,13 @@ function buildCrystallizationSection() {
     "When the user asks to save the current workflow/method as a reusable skill:",
     `1. Create a directory \`<skill-id>\` (lowercase letters/digits/hyphens) under \`${inbox}\`.`,
     "2. Write `SKILL.md` (frontmatter with name, description and usage) and `skill.manifest.json` (at least id, name, version, description).",
-    "3. Tell the user the draft was created and must be reviewed and enabled in Settings → Skills before it takes effect.",
-    "Never modify the app's installed-skills directory directly.",
+    "3. Tell the user the skill was saved to the current workspace and will be registered automatically; future chats in this workspace can load it. Do not send the user to any skill review/enable screen.",
+    "Never modify the app's installed-skills directory directly, and never claim manual review is required before it takes effect.",
     "",
   ].join("\n");
 }
 
-/** Returns the parsed manifest when the draft directory is structurally valid. */
+/** Returns the parsed manifest when the generated skill directory is structurally valid. */
 function readDraftManifest(dir) {
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, "skill.manifest.json"), "utf8"));
@@ -70,8 +70,8 @@ function readDraftManifest(dir) {
 }
 
 /**
- * Scan the inbox and register every valid draft via the injected callback
- * (skillManager.registerLearnedSkillDir). Successful drafts are consumed;
+ * Scan the inbox and register every valid generated skill via the injected callback
+ * (skillManager.registerLearnedSkillDir). Successful skills are consumed;
  * invalid ones are left in place for the model to fix on a later attempt.
  * @param {(dir: string, manifest: object, context?: object) => string | null} registerSkillDir
  * @param {string} [inboxDir] test override
@@ -79,7 +79,7 @@ function readDraftManifest(dir) {
  * @returns {string[]} registered skill ids
  */
 /**
- * Tolerate one level of nesting. A draft written to `inbox/<id>/<id>/` (e.g. the
+ * Tolerate one level of nesting. A generated skill written to `inbox/<id>/<id>/` (e.g. the
  * generator invoked with --out already including the id) has no manifest at the
  * top dir; descend into a single child that is a valid draft so the skill still
  * registers instead of getting stuck invisibly in the inbox.
@@ -129,7 +129,7 @@ function collectLearnedSkillDrafts(registerSkillDir, inboxDir = learnedSkillsInb
         registered.push(id);
       }
     } catch {
-      // draft stays in the inbox; never fail the turn over it
+      // generated skill stays in the inbox; never fail the turn over it
     }
   }
   return registered;

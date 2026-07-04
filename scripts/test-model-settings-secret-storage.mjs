@@ -63,6 +63,38 @@ const missingCustomKey = modelPresets.saveCustomPreset({
 if (missingCustomKey.ok || missingCustomKey.error !== "INVALID_API_KEY") {
   throw new Error(`custom presets must require their own API key: ${JSON.stringify(missingCustomKey)}`);
 }
+const localNoKey = modelPresets.saveCustomPreset({
+  label: "Local Qwen",
+  model: "/private/Qwen3-Next-80B-A3B-Instruct",
+  baseUrl: "http://127.0.0.1:8000/v1/chat/completions",
+});
+if (!localNoKey.ok) {
+  throw new Error(`loopback OpenAI-compatible custom presets should allow no API key: ${localNoKey.error}`);
+}
+modelPresets.setActivePreset(localNoKey.preset.id);
+const localEnv = modelPresets.getUserApiEnv();
+if (
+  localEnv.LILY_API_BASE_URL !== "http://127.0.0.1:8000/v1" ||
+  localEnv.LILY_API_KEY ||
+  localEnv.LILY_OPENCODE_PROTOCOL !== "openai"
+) {
+  throw new Error(`loopback custom preset env should normalize URL and force openai protocol: ${JSON.stringify(localEnv)}`);
+}
+const { resolveOpencodeModelConfig } = require(path.join(__dirname, "../src/main/runtime/opencode-model-config.js"));
+const localOpenCode = resolveOpencodeModelConfig({
+  ...localNoKey.preset.env,
+  ...localEnv,
+});
+if (
+  !localOpenCode.ok ||
+  localOpenCode.protocol !== "openai" ||
+  localOpenCode.baseUrl !== "http://127.0.0.1:8000/v1" ||
+  localOpenCode.model?.modelID !== "/private/Qwen3-Next-80B-A3B-Instruct"
+) {
+  throw new Error(`loopback custom preset should build OpenAI-compatible OpenCode config: ${JSON.stringify(localOpenCode)}`);
+}
+modelPresets.setActivePreset(saved.preset.id);
+modelPresets.setActivePreset("pro");
 
 const gateway = modelPresets.setApiGateway({
   mode: "custom",

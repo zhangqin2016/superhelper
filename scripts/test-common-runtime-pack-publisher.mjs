@@ -31,6 +31,11 @@ assert.match(pythonPackBuilder, /release-admin\.mjs/, "Python dependency pack bu
 for (const pack of ["pillow", "opencv", "rapidocr", "rembg"]) {
   assert.match(specs, new RegExp(`${pack}:|\"${pack}\"`), `dependency catalog must include ${pack}`);
 }
+assert.match(
+  specs,
+  /rembg:[\s\S]*numpy>=1\.26,<2\.5/,
+  "rembg runtime pack must carry a NumPy pin compatible with numba/pymatting",
+);
 for (const category of ["document", "image", "browser", "media"]) {
   assert.match(specs, new RegExp(`id: "${category}"`), `dependency catalog must include ${category} group`);
 }

@@ -189,8 +189,11 @@ function getRuntimeEnvExtras() {
   const root = resolveBundledRuntimeRoot();
   const extras = {};
   if (root) extras.LILY_RUNTIME_ROOT = root;
-  Object.assign(extras, require("./runtime-packs").getRuntimePackEnvExtras());
-  const packLibreOfficeDir = require("./runtime-packs").getRuntimePackLibreOfficeDirs()[0];
+  const runtimePacks = require("./runtime-packs");
+  const packPythonPaths = runtimePacks.getRuntimePackPythonPaths();
+  if (packPythonPaths.length) extras.PYTHONPATH = packPythonPaths.join(path.delimiter);
+  Object.assign(extras, runtimePacks.getRuntimePackEnvExtras());
+  const packLibreOfficeDir = runtimePacks.getRuntimePackLibreOfficeDirs()[0];
   const sofficeDir = (root && resolveSofficeDir(root)) || packLibreOfficeDir || null;
   if (sofficeDir) {
     extras.LILY_LIBREOFFICE_PROGRAM = sofficeDir;

@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 import { AdminDataTable, SortHeader } from "./admin-data-table";
 import { useI18n } from "../lib/use-i18n";
 import {
+  deleteConfigProfileAction,
   removeLicenseDeviceAction,
   rollbackConfigProfileAction,
   setLicenseDeviceStatusAction,
@@ -258,6 +259,12 @@ export function ConfigProfilesTable({ rows, empty }) {
           }}>
             <input type="hidden" name="id" value={row.original.id} />
             <Button variant="outline" size="sm">{copy.rollback}</Button>
+          </form>
+          <form action={deleteConfigProfileAction} onSubmit={(event) => {
+            if (!window.confirm(copy.deleteConfirm)) event.preventDefault();
+          }}>
+            <input type="hidden" name="id" value={row.original.id} />
+            <Button variant="danger" size="sm">{copy.delete}</Button>
           </form>
         </div>
       ),

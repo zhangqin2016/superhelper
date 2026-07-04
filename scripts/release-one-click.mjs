@@ -41,6 +41,7 @@ release flow:
 
 useful options:
   --skip-build             reuse existing dist artifacts
+  --skip-preflight         do not run dependency/runtime-pack release preflight
   --skip-server-publish    upload Qiniu only, do not write server release rows
   --skip-catalog-publish   do not publish local skill/app catalog packages to the server
   --skip-skill-publish     publish workspace apps but skip local skill packages
@@ -68,6 +69,7 @@ function args() {
         "dry-run",
         "force",
         "skip-build",
+        "skip-preflight",
         "skip-server-publish",
         "skip-catalog-publish",
         "skip-skill-publish",
@@ -489,6 +491,10 @@ console.log("[release-one] universal client package; runtime region policy is de
 const versionSnapshot = snapshotVersionFiles();
 
 try {
+  if (!options["skip-preflight"]) {
+    run(scriptNode, ["scripts/release-preflight.mjs"]);
+  }
+
   setPackageVersion(nextVersion);
 
   if (!options["skip-build"]) {

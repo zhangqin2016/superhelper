@@ -4,7 +4,6 @@
 
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
-import { syncCustomSelect } from "./custom-select.js";
 import store from "./state.js";
 import { t, tModel, tModelDesc } from "../i18n/index.js";
 
@@ -33,12 +32,10 @@ function apiErrorMessage(error) {
   return t("toast.modelApiSaveFailed");
 }
 
-function updateApiCustomFields(mode, gateway) {
-  const panel = $("modelApiCustomFields");
+function updateApiCustomFields(gateway) {
   const hint = $("modelApiKeyHint");
-  if (panel) panel.hidden = mode !== "custom";
   if (hint) {
-    if (mode === "custom" && gateway?.apiKeySet && gateway?.apiKeyHint) {
+    if (gateway?.apiKeySet && gateway?.apiKeyHint) {
       hint.hidden = false;
       hint.textContent = t("settings.modelApiKeyHint", { hint: gateway.apiKeyHint });
     } else {
@@ -49,14 +46,9 @@ function updateApiCustomFields(mode, gateway) {
 }
 
 function renderApiGateway(gateway) {
-  const modeSelect = $("modelApiModeSelect");
   const baseUrlInput = $("modelApiBaseUrl");
   const keyInput = $("modelApiKey");
-  if (!modeSelect || !gateway) return;
-
-  const mode = gateway.mode === "custom" ? "custom" : "builtin";
-  modeSelect.value = mode;
-  syncCustomSelect(modeSelect);
+  if (!gateway) return;
 
   if (baseUrlInput) {
     baseUrlInput.value = gateway.baseUrl || "";
@@ -66,7 +58,7 @@ function renderApiGateway(gateway) {
   }
   if (keyInput) keyInput.value = "";
 
-  updateApiCustomFields(mode, gateway);
+  updateApiCustomFields(gateway);
 }
 
 function renderCustomList(presets, activePresetId) {
@@ -278,14 +270,6 @@ export async function initModelSettings() {
     const active = (result.presets || []).find((p) => p.id === result.activePresetId);
     showToast(t("toast.modelSwitched", { label: tModel(active) || t("settings.model") }), "success");
     await refreshModelSelect();
-  });
-
-  $("modelApiModeSelect")?.addEventListener("change", () => {
-    const mode = $("modelApiModeSelect")?.value || "builtin";
-    updateApiCustomFields(mode, {
-      apiKeySet: Boolean($("modelApiKeyHint")?.textContent),
-      apiKeyHint: "",
-    });
   });
 
   $("modelApiSaveBtn")?.addEventListener("click", () => saveApiGateway("custom"));

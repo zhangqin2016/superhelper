@@ -99,17 +99,19 @@ function findPackExecutable(spec, packDir, name) {
 }
 
 async function checkPythonProbe(id, probe, packDir = "") {
-  const { resolveVenvPython } = require("./runtime-python");
-  const python = resolveVenvPython();
+  const runtimePython = require("./runtime-python");
+  const python = runtimePython.resolveVenvPython();
   if (!python) return missingCheck(id, "PYTHON_RUNTIME_MISSING");
   if (packDir && !fs.existsSync(packDir)) return missingCheck(id, "PACK_DIR_MISSING", { path: packDir || "" });
+  const runtimePythonPath = runtimePython.getRuntimeEnvExtras().PYTHONPATH || "";
+  const pythonPath = runtimePythonPath || [packDir || "", process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
   try {
     await pexecFile(python, ["-c", String(probe || "")], {
       timeout: CHECK_TIMEOUT_MS,
       maxBuffer: 1024 * 1024,
       env: {
         ...process.env,
-        PYTHONPATH: [packDir || "", process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
+        PYTHONPATH: pythonPath,
       },
     });
     return okCheck(id, { path: packDir, probe });

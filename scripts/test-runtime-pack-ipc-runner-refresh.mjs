@@ -32,10 +32,15 @@ try {
     },
   };
 
-  const install = await installRuntimePackForIpc(ctx, { id: "large-document" }, {
-    installer: { installRuntimePack: async (id) => ({ ok: true, installed: id }) },
+  let installOptions = null;
+  const install = await installRuntimePackForIpc(ctx, { id: "large-document", repair: true }, {
+    installer: { installRuntimePack: async (id, options) => {
+      installOptions = options;
+      return { ok: true, installed: id };
+    } },
   });
   assert.equal(install.installed, "large-document");
+  assert.equal(installOptions.repair, true, "IPC install should pass repair/force options through");
   assert.deepEqual(install.runnerRefresh, { terminated: ["idle"] }, "successful install refreshes idle runner env");
   assert.deepEqual(terminated, ["idle"], "busy runners are left alone during dependency refresh");
 

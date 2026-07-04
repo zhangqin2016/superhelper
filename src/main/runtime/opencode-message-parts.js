@@ -67,6 +67,38 @@ function buildSkippedAttachmentNote(skipped = []) {
   ].join("\n");
 }
 
+function buildAttachmentIndex(files = []) {
+  const list = (Array.isArray(files) ? files : []).filter(Boolean);
+  if (!list.length) return "";
+  const lines = list.slice(0, 20).map((file, index) => {
+    const filePath = file.path || file.filePath || "";
+    const name = file.name || file.filename || path.basename(filePath) || `attachment-${index + 1}`;
+    let stat = null;
+    if (filePath) {
+      try {
+        stat = fs.statSync(filePath);
+      } catch {
+        stat = null;
+      }
+    }
+    return [
+      `- ${name}`,
+      filePath ? `  source path: ${filePath}` : "  source path: unavailable",
+      file.sourcePath && file.sourcePath !== filePath ? `  original path: ${file.sourcePath}` : "",
+      typeof file.isImage === "boolean" ? `  image: ${file.isImage ? "yes" : "no"}` : "",
+      stat?.isFile?.() ? `  size: ${formatBytes(stat.size)}` : "",
+      filePath ? `  readable now: ${stat?.isFile?.() ? "yes" : "no"}` : "",
+    ].filter(Boolean).join("\n");
+  });
+  const omitted = list.length > 20 ? `\n\n${list.length - 20} more attachment(s) omitted from this index.` : "";
+  return [
+    "[Attachment index]",
+    "Use these exact local source paths when a task requires inspecting or editing an attached file. Do not search the workspace by filename unless the listed source path is missing or unreadable.",
+    ...lines,
+    omitted,
+  ].filter(Boolean).join("\n");
+}
+
 function truncateAttachmentText(text, limit = DEFAULT_MAX_TEXT_ATTACHMENT_CHARS) {
   const value = String(text || "");
   if (value.length <= limit) return value;
@@ -281,8 +313,9 @@ function buildOpencodePromptBody(opts = {}) {
       if (part) parts.push(part);
     }
   }
+  const indexNote = buildAttachmentIndex(opts.files);
   const note = buildSkippedAttachmentNote(skipped);
-  const text = [String(opts.text || ""), ...textAttachments, note].filter(Boolean).join("\n\n");
+  const text = [String(opts.text || ""), indexNote, ...textAttachments, note].filter(Boolean).join("\n\n");
   parts.push({ type: "text", text });
   const body = { agent: opts.agent || "build", parts };
   if (guidance) body.system = guidance;
@@ -296,6 +329,7 @@ module.exports = {
   DEFAULT_MAX_INLINE_FILE_BYTES,
   DEFAULT_MAX_TEXT_ATTACHMENT_CHARS,
   buildSkippedAttachmentNote,
+  buildAttachmentIndex,
   buildOpencodePromptBody,
   fileToTextAttachment,
   fileToPart,

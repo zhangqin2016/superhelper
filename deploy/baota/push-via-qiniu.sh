@@ -17,6 +17,10 @@ DOWNLOAD_URL="${QINIU_DOMAIN%/}/${OBJECT_KEY}"
 
 cd "$ROOT"
 
+if [ "${SKIP_DEPLOY_PREFLIGHT:-0}" != "1" ]; then
+  npm run deploy:preflight
+fi
+
 tar \
   --exclude ".DS_Store" \
   --exclude "server/.env" \

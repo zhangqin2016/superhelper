@@ -501,14 +501,9 @@
               <details id="modelAdvancedBlock" class="settings-advanced settings-field settings-field--divider">
                 <summary class="settings-subsection-title" data-i18n="settings.modelAdvanced">高级（手动填写接口）</summary>
                 <div class="settings-advanced-body">
-                  <h4 class="settings-subsection-title" data-i18n="settings.modelApiTitle">API 连接</h4>
-                  <p class="settings-section-desc" data-i18n="settings.modelApiDesc">内置模式使用应用预置网关；自定义 API 仅作为未自带连接的内置预设的全局连接。下方自定义模型使用各自的 API 地址与密钥。</p>
-                  <label class="settings-field-label" for="modelApiModeSelect" data-i18n="settings.modelApiMode">连接方式</label>
-                  <select id="modelApiModeSelect" class="settings-select" data-i18n-aria-label="settings.modelApiMode" aria-label="API 连接方式">
-                    <option value="builtin" data-i18n="settings.modelApiModeBuiltin">内置网关</option>
-                    <option value="custom" data-i18n="settings.modelApiModeCustom">自定义</option>
-                  </select>
-                  <div id="modelApiCustomFields" class="model-api-custom-fields" hidden>
+                  <h4 class="settings-subsection-title" data-i18n="settings.modelApiTitle">自定义 API 连接</h4>
+                  <p class="settings-section-desc" data-i18n="settings.modelApiDesc">默认使用当前模型自带的连接。只有在需要把当前模型改接到自己的兼容接口时，才填写这里。</p>
+                  <div id="modelApiCustomFields" class="model-api-custom-fields">
                     <label class="settings-field-label model-custom-id-label" for="modelApiBaseUrl" data-i18n="settings.modelApiBaseUrl">API 地址</label>
                     <input
                       id="modelApiBaseUrl"
@@ -533,8 +528,8 @@
                     />
                     <p id="modelApiKeyHint" class="skills-registry-hint" hidden></p>
                     <div class="settings-actions">
-                      <button id="modelApiSaveBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiSave">保存 API</button>
-                      <button id="modelApiResetBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiReset">恢复内置</button>
+                      <button id="modelApiSaveBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiSave">保存连接</button>
+                      <button id="modelApiResetBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiReset">清除自定义连接</button>
                     </div>
                   </div>
                   <h4 class="settings-subsection-title settings-subsection-title--spaced" data-i18n="settings.modelCustomTitle">自定义模型</h4>

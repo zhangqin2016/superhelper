@@ -307,6 +307,12 @@ export async function rollbackConfigProfileAction(formData) {
   revalidatePath("/admin/config/profiles");
 }
 
+export async function deleteConfigProfileAction(formData) {
+  await apiDelete(`/api/admin/config-profiles/${text(formData, "id")}`);
+  revalidatePath("/admin/config");
+  revalidatePath("/admin/config/profiles");
+}
+
 export async function updateSettingsAction(formData) {
   const section = text(formData, "settingsSection") || "all";
   const payload = {

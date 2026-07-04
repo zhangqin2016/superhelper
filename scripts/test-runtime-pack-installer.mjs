@@ -144,6 +144,47 @@ try {
   assert.equal(skipped.ok, true);
   assert.equal(skipped.skipped, true);
 
+  serviceClient.runtimePackArtifact = async (packId, platform) => ({
+    ok: true,
+    json: {
+      artifact: {
+        url: `http://127.0.0.1:${server.address().port}/pack.zip`,
+        sha256,
+        version: "2.0.0",
+        format: "zip",
+        platform,
+        packId,
+      },
+    },
+  });
+  const forced = await installer.installRuntimePack("pro-pdf", { force: true });
+  assert.equal(forced.ok, true, `forced reinstall failed: ${JSON.stringify(forced)}`);
+  assert.equal(forced.skipped, undefined, "force install must not skip an existing pack");
+  assert.equal(forced.repaired, true, "force install should report repaired=true");
+  assert.equal(forced.version, "2.0.0");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(userData, "runtime-packs.json"), "utf8")).installed["pro-pdf"].version, "2.0.0");
+
+  serviceClient.runtimePackArtifact = async (packId, platform) => ({
+    ok: true,
+    json: {
+      artifact: {
+        url: `http://127.0.0.1:${server.address().port}/pack.zip`,
+        sha256,
+        version: "3.0.0",
+        format: "zip",
+        platform,
+        packId,
+      },
+    },
+  });
+  const repaired = await installer.repairInstalledRuntimePacks({
+    ids: ["pro-pdf"],
+    checkHealth: async () => ({ ok: false, status: "failed", error: "BROKEN_OLD_PACK" }),
+  });
+  assert.equal(repaired.ok, true, `repair failed: ${JSON.stringify(repaired)}`);
+  assert.equal(repaired.results[0].repaired, true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(userData, "runtime-packs.json"), "utf8")).installed["pro-pdf"].version, "3.0.0");
+
   const badPackDir = path.join(userData, "runtime-packs", "bad-pack");
   fs.rmSync(badPackDir, { recursive: true, force: true });
   fs.mkdirSync(badPackDir, { recursive: true });

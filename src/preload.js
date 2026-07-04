@@ -187,7 +187,10 @@ contextBridge.exposeInMainWorld("assistantClient", {
   checkRuntimePackAvailability: (ids = []) => ipcRenderer.invoke("runtime-packs:availability", { ids }),
   checkRuntimePackHealth: (id = "") => ipcRenderer.invoke("runtime-packs:health", id ? { id } : {}),
   preflightRuntimePacks: (payload = {}) => ipcRenderer.invoke("runtime-packs:preflight", payload),
-  installRuntimePack: (id) => ipcRenderer.invoke("runtime-packs:install", { id }),
+  installRuntimePack: (payload) => ipcRenderer.invoke(
+    "runtime-packs:install",
+    typeof payload === "object" && payload ? payload : { id: payload },
+  ),
   uninstallRuntimePack: (id) => ipcRenderer.invoke("runtime-packs:uninstall", { id }),
 
   getUpdateSettings: () => ipcRenderer.invoke("updates:get-settings"),

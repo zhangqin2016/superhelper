@@ -56,22 +56,17 @@ const labels = {
     scopeLicense: "某个授权",
     scopeDevice: "某台设备",
     targetHelp: "全局配置不需要目标 ID；设备组填组 ID，授权/设备填对应 ID。",
-    modelTitle: "选择模型供应商",
-    modelDesc: "选择上方已配置好的供应商，再选投递方式与模型。",
+    modelTitle: "模型菜单",
+    modelDesc: "从「模型供应商」里选择本范围可用的模型。客户端只拿短期网关 token，真实密钥留在服务端。",
     providerEmpty: "请先在上方「模型供应商」里添加一个供应商。",
-    menuTitle: "可选模型菜单（多供应商）",
-    menuDesc: "点选这个范围允许使用的供应商（可多选）。选了即按菜单下发，客户端能在这些里切换；上面单选的那个作为默认。留空＝沿用单模型。",
-    menuActive: "已启用菜单模式：本范围将下发选中的多个供应商。",
+    menuTitle: "允许使用的供应商",
+    menuDesc: "点选这个范围允许使用的供应商（可多选）。客户端能在这些供应商之间切换；上方选中的供应商作为默认。",
+    menuActive: "已选择：保存后客户端会收到这组模型菜单。",
     mediaTitle: "图片 / 视频生成",
     mediaDesc: "为本范围勾选可用的生成供应商（可多选），并设一个默认。留空＝沿用今天的行为（所有已配置的、服务器默认）。服务器只会下发实际配置了密钥的那些。",
     mediaImage: "图片生成",
     mediaVideo: "视频生成",
     mediaDefault: "默认：",
-    modeTitle: "投递方式",
-    modeDirect: "直连（更快）",
-    modeGateway: "走网关（更安全）",
-    modeDirectHint: "客户端直接连供应商，响应更快、不经我们服务器。真实密钥会下发到设备（由服务端从供应商注册表自动注入，你不用手填）。",
-    modeGatewayHint: "客户端只拿短期 token，真实密钥留在服务端；多一跳，弱网下可能偏慢。",
     activeModel: "模型",
     modelPick: "可直接选该供应商的模型，或手动输入。",
     visionNative: "模型原生支持图片识别",
@@ -91,7 +86,7 @@ const labels = {
     route: "网关路线",
     securityOk: "短期 token",
     advanced: "高级：查看/编辑 JSON",
-    advancedDesc: "正常不用改。只有需要下发自定义字段时才编辑。",
+    advancedDesc: "正常不用改。手写 JSON 会覆盖上面的安全表单；不要在这里写 API Key、供应商真实地址或直连 preset。",
     jsonInvalid: "JSON 格式不正确，保存前需要修复。",
     defaultName: "团队默认配置",
     gatewayName: "网关配置",
@@ -104,22 +99,17 @@ const labels = {
     scopeLicense: "A license",
     scopeDevice: "A device",
     targetHelp: "Global needs no target ID. Device group takes a group ID; license/device take their IDs.",
-    modelTitle: "Choose a model provider",
-    modelDesc: "Pick a provider configured above, then the delivery mode and models.",
+    modelTitle: "Model menu",
+    modelDesc: "Pick allowed providers from “Model providers”. Clients receive short-lived gateway tokens only; real keys stay server-side.",
     providerEmpty: "Add a provider above in “Model providers” first.",
-    menuTitle: "Selectable model menu (multiple providers)",
-    menuDesc: "Pick which providers this scope may use (multi-select). When set, the scope gets that menu and clients can switch among them; the single-selected one is the default. Empty = single model.",
-    menuActive: "Menu mode on: this scope will deliver the selected providers.",
+    menuTitle: "Allowed providers",
+    menuDesc: "Pick which providers this scope may use. Clients can switch among them; the selected provider above is the default.",
+    menuActive: "Selected: clients will receive this model menu after save.",
     mediaTitle: "Image / video generation",
     mediaDesc: "Pick which generation providers this scope may use (multi-select) and one default. Empty = today's behavior (all configured, server default). The server only delivers the ones that actually have a key.",
     mediaImage: "Image generation",
     mediaVideo: "Video generation",
     mediaDefault: "Default:",
-    modeTitle: "Delivery",
-    modeDirect: "Direct (faster)",
-    modeGateway: "Gateway (safer)",
-    modeDirectHint: "Client connects to the provider directly — faster, no server hop. The real key is delivered to the device (the server injects it from the provider registry; you don't type it).",
-    modeGatewayHint: "Client gets a short-lived token; the real key stays on the server. One extra hop — can be slower on weak networks.",
     activeModel: "Model",
     modelPick: "Pick one of the provider's models, or type your own.",
     visionNative: "Model natively recognizes images",
@@ -139,7 +129,7 @@ const labels = {
     route: "Gateway route",
     securityOk: "Short-lived token",
     advanced: "Advanced: view/edit JSON",
-    advancedDesc: "Normally leave this alone. Edit only when custom fields must be delivered.",
+    advancedDesc: "Normally leave this alone. Manual JSON overrides the safe form above; do not type API keys, upstream URLs, or direct presets here.",
     jsonInvalid: "Invalid JSON. Fix it before saving.",
     defaultName: "Team default config",
     gatewayName: "gateway config",
@@ -152,22 +142,17 @@ const labels = {
     scopeLicense: "ترخيص محدد",
     scopeDevice: "جهاز محدد",
     targetHelp: "الإعداد العام لا يحتاج هدفاً. المجموعة تأخذ معرّف المجموعة؛ الترخيص/الجهاز يأخذ معرّفه.",
-    modelTitle: "اختر مزوّد النموذج",
-    modelDesc: "اختر مزوّداً مضبوطاً أعلاه، ثم وضع الإرسال والنماذج.",
+    modelTitle: "قائمة النماذج",
+    modelDesc: "اختر المزوّدين المسموح بهم من «مزوّدو النماذج». يحصل العميل على رموز بوابة قصيرة فقط وتبقى المفاتيح الحقيقية على الخادم.",
     providerEmpty: "أضف مزوّداً أعلاه في «مزوّدو النماذج» أولاً.",
-    menuTitle: "قائمة النماذج المتاحة (عدة مزوّدين)",
-    menuDesc: "اختر المزوّدين المسموح بهم لهذا النطاق (اختيار متعدد). عند التحديد يحصل النطاق على هذه القائمة ويمكن للعميل التبديل بينها؛ المُحدَّد منفرداً هو الافتراضي. فارغ = نموذج واحد.",
-    menuActive: "وضع القائمة مفعّل: سيُرسل هذا النطاق المزوّدين المحدّدين.",
+    menuTitle: "المزوّدون المسموح بهم",
+    menuDesc: "اختر المزوّدين المسموح بهم لهذا النطاق. يمكن للعميل التبديل بينها؛ المزوّد المحدد أعلاه هو الافتراضي.",
+    menuActive: "تم الاختيار: سيستلم العميل قائمة النماذج هذه بعد الحفظ.",
     mediaTitle: "توليد الصور / الفيديو",
     mediaDesc: "اختر مزوّدي التوليد المسموح بهم لهذا النطاق (اختيار متعدد) ومزوّداً افتراضياً. فارغ = سلوك اليوم (كل المُهيأ، الافتراضي من الخادم). يرسل الخادم فقط ما له مفتاح فعلاً.",
     mediaImage: "توليد الصور",
     mediaVideo: "توليد الفيديو",
     mediaDefault: "الافتراضي:",
-    modeTitle: "الإرسال",
-    modeDirect: "مباشر (أسرع)",
-    modeGateway: "بوابة (أأمن)",
-    modeDirectHint: "يتصل العميل بالمزوّد مباشرة — أسرع. يُرسَل المفتاح الحقيقي إلى الجهاز (يحقنه الخادم من سجل المزوّدين).",
-    modeGatewayHint: "يحصل العميل على رمز قصير؛ يبقى المفتاح على الخادم. قفزة إضافية قد تكون أبطأ على الشبكات الضعيفة.",
     activeModel: "النموذج",
     modelPick: "اختر أحد نماذج المزوّد أو اكتب نموذجاً.",
     visionNative: "النموذج يتعرف على الصور أصلاً",
@@ -187,7 +172,7 @@ const labels = {
     route: "مسار البوابة",
     securityOk: "رمز قصير",
     advanced: "متقدم: عرض/تحرير JSON",
-    advancedDesc: "اتركه كما هو غالباً. حرره فقط لإرسال حقول مخصصة.",
+    advancedDesc: "اتركه كما هو غالباً. JSON اليدوي يتجاوز النموذج الآمن؛ لا تكتب مفاتيح API أو عناوين أصلية أو presets مباشرة هنا.",
     jsonInvalid: "JSON غير صالح. أصلحه قبل الحفظ.",
     defaultName: "إعداد الفريق الافتراضي",
     gatewayName: "إعداد البوابة",
@@ -216,8 +201,7 @@ function defaultDraft(copy, templates) {
     priority: "0",
     rolloutPercent: "100",
     selectedTemplateId: template.id,
-    menuProviders: [],
-    deliveryMode: "direct",
+    menuProviders: template.id ? [template.id] : [],
     baseUrl: template.route,
     model: template.model,
     pluginRegistryUrl: "/api/skills/registry",
@@ -290,58 +274,20 @@ function buildConfig(draft, template) {
   const media = buildMedia(draft);
   const mediaPart = media ? { media } : {};
 
-  // Menu mode: deliver a multi-provider directive for this scope. The server
-  // expands `models.providers` into the preset menu at delivery (and injects
-  // tokens), so the form only records which providers + the default.
+  // Delivery rules record only a provider directive. The server expands it into
+  // a signed gateway model menu at client-config time, so profiles never carry
+  // upstream URLs or provider keys.
   const menu = Array.isArray(draft.menuProviders) ? draft.menuProviders.filter(Boolean) : [];
-  if (menu.length) {
-    const activeProvider = menu.includes(draft.selectedTemplateId) ? draft.selectedTemplateId : menu[0];
-    return { schemaVersion: 1, models: { source: "service", providers: menu, activeProvider }, tools, policy, runtime, ...mediaPart };
-  }
-
   const providerId = template.provider || template.id || "";
-  // Direct delivers the provider's real endpoint; the server injects the real
-  // key in place of $LILY_PROVIDER_KEY (the form never holds the key). Gateway
-  // keeps the key server-side and the client gets a short-lived token.
-  const direct = draft.deliveryMode === "direct" && Boolean(template.baseUrl);
-  // OpenCode runs ONE model per session — every tier maps to it. (Matches the
-  // env-managed distribution in services/client-config.js.)
-  const mainModel = String(draft.model || "").trim();
-  const models = {
-    LILY_MODEL: mainModel,
-    LILY_MODEL_HAIKU: mainModel,
-    LILY_MODEL_SONNET: mainModel,
-    LILY_MODEL_OPUS: mainModel,
-    LILY_SUBAGENT_MODEL: mainModel,
-  };
-  const env = direct
-    ? {
-        LILY_API_BASE_URL: template.baseUrl,
-        LILY_API_KEY: "$LILY_PROVIDER_KEY",
-        LILY_GATEWAY_PROVIDER: providerId,
-        ...models,
-      }
-    : {
-        LILY_API_BASE_URL: providerId ? `/llm/${providerId}` : "",
-        LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
-        LILY_GATEWAY_PROVIDER: providerId,
-        ...models,
-      };
-
+  const providers = menu.length ? menu : providerId ? [providerId] : [];
+  const activeProvider = providers.includes(draft.selectedTemplateId) ? draft.selectedTemplateId : providers[0] || "";
   return {
     schemaVersion: 1,
     models: {
-      source: direct ? "client-direct" : "service-managed",
-      activePresetId: template.id || providerId,
-      presets: [
-        {
-          id: template.id || providerId,
-          label: templateLabel(template),
-          description: "",
-          capabilities: { vision: Boolean(draft.supportsVision) },
-          env,
-        },
-      ],
+      source: "service",
+      providers,
+      activeProvider,
+      capabilities: providerId ? { [providerId]: { vision: Boolean(draft.supportsVision) } } : {},
     },
     tools,
     policy,
@@ -402,6 +348,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
       id: current.scope === "global" ? `${template.id}-global` : current.id,
       name: `${templateLabel(template)} ${copy.gatewayName}`,
       selectedTemplateId: template.id,
+      menuProviders: Array.from(new Set([...(current.menuProviders || []), template.id].filter(Boolean))),
       baseUrl: template.route,
       model: template.model,
       priority: "20",
@@ -566,30 +513,6 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
               ))}
             </datalist>
 
-            <div className="mt-5">
-              <div className="mb-2 text-sm font-semibold text-slate-800">{copy.modeTitle}</div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  ["direct", copy.modeDirect, copy.modeDirectHint],
-                  ["gateway", copy.modeGateway, copy.modeGatewayHint],
-                ].map(([mode, label, hint]) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => updateField("deliveryMode", mode)}
-                    className={`rounded-xl border p-3 text-start transition ${
-                      draft.deliveryMode === mode
-                        ? "border-brand bg-brand/5 ring-2 ring-brand/10"
-                        : "border-slate-200 bg-white hover:border-brand/50"
-                    }`}
-                  >
-                    <span className="block text-sm font-semibold text-slate-900">{label}</span>
-                    <span className="mt-1 block text-xs text-slate-500">{hint}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <ConfigField label={copy.activeModel} help={copy.modelPick}>
                 <input className={fieldClass()} list={modelListId} value={draft.model} onChange={(event) => updateField("model", event.target.value)} />
@@ -733,7 +656,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
               </div>
               <div className="rounded-xl bg-white/5 p-3">
                 <dt className="text-slate-400">{copy.route}</dt>
-                <dd className="mt-1 break-all font-mono text-xs">{draft.baseUrl || "—"}</dd>
+                <dd className="mt-1 break-all font-mono text-xs">{(draft.menuProviders || []).map((id) => `/llm/${id}`).join(" · ") || "—"}</dd>
               </div>
               <div className="rounded-xl bg-white/5 p-3">
                 <dt className="text-slate-400">{copy.registry}</dt>

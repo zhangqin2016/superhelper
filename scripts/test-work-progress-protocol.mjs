@@ -27,6 +27,11 @@ assertEqual(latest.domain, "web", "latest parser preserves domain");
 assert(parseWorkProgressLine("[lily-progress] nope") === null, "invalid marker is ignored");
 assert(formatWorkProgressDetail(latest).includes("4/9"), "formatter includes count progress");
 assert(formatWorkProgressDetail({ label: "plain" }) === "plain", "formatter handles label-only progress");
+assertEqual(
+  formatWorkProgressDetail({ label: "Progress", percent: 0 }),
+  "Progress",
+  "formatter suppresses zero-only percent because it reads as stuck progress",
+);
 
 const curl = inferWorkProgressLine(" 12  234M   12 30.1M    0     0  1234k      0  0:03:14  0:00:25  0:02:49 1245k");
 assertEqual(curl.percent, 12, "curl progress parser reads percent");
@@ -48,4 +53,4 @@ const latestInferred = latestWorkProgress("noise\r 55  100M   55 55M    0     0 
 assertEqual(latestInferred.percent, 55, "latest parser handles carriage-return progress");
 assert(inferWorkProgressLine("1 2 3 4") === null, "plain numeric output is not guessed as progress");
 
-finish("test-work-progress-protocol", 17);
+finish("test-work-progress-protocol", 18);

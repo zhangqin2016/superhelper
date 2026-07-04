@@ -3,6 +3,7 @@
  * spawn-env + runtime PATH integration (mock Electron, no GUI).
  */
 import module from "node:module";
+import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -16,6 +17,18 @@ if (!process.resourcesPath) {
 }
 
 const mockUserData = path.join(os.tmpdir(), "lily-workbench-test-userdata");
+fs.rmSync(mockUserData, { recursive: true, force: true });
+const rembgPackDir = path.join(mockUserData, "runtime-packs", "rembg");
+fs.mkdirSync(rembgPackDir, { recursive: true });
+fs.writeFileSync(
+  path.join(mockUserData, "runtime-packs.json"),
+  JSON.stringify({
+    schemaVersion: 1,
+    installed: {
+      rembg: { source: "artifact", version: "2.0.76" },
+    },
+  }),
+);
 const electronPath = require.resolve("electron");
 require.cache[electronPath] = {
   id: electronPath,
@@ -50,6 +63,9 @@ if (!String(env.LANG || "").includes("UTF-8") || !String(env.LC_ALL || "").inclu
 }
 if (tlsEnv.NODE_TLS_REJECT_UNAUTHORIZED !== "0") {
   throw new Error("TLS skip must be applied only as a child-process TLS env flag");
+}
+if (!String(env.PYTHONPATH || "").split(path.delimiter).includes(rembgPackDir)) {
+  throw new Error(`spawn-env PYTHONPATH missing runtime-pack entry: ${rembgPackDir}`);
 }
 
 if (!runtimePython.getRuntimeSummary().available) {

@@ -4,9 +4,9 @@
 /**
  * Stdio entry for Lily's session-scoped tool broker.
  *
- * Current production use is behind LILY_TOOL_BROKER=1 while we finish the
- * request-context bridge from the shared OpenCode server. Without an explicit
- * context this server fails closed and exposes no Lily extension tools.
+ * Without an explicit session context this server exposes only platform-level
+ * tools (capability diagnostics and runtime-pack install/list). Session-scoped
+ * tools such as mail or learned web systems still require explicit context.
  */
 
 const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");
@@ -14,7 +14,7 @@ const { createToolBrokerMcpServer } = require("./tool-broker-mcp");
 
 function parseContextEnv() {
   const raw = process.env.LILY_TOOL_BROKER_CONTEXT || "";
-  if (!raw) return { ok: false, error: "SESSION_CONTEXT_MISSING" };
+  if (!raw) return { platformOnly: true, activeSkillIds: [] };
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return { ok: false, error: "SESSION_CONTEXT_INVALID" };

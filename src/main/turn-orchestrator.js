@@ -1648,7 +1648,7 @@ class TurnOrchestrator {
           }, Date.now());
         }
       } catch (err) {
-        log.warn("learned skill draft collection failed: %s", err?.message || err);
+        log.warn("learned skill collection failed: %s", err?.message || err);
       }
     }
     closeStreamingBlocks(state, Date.now());

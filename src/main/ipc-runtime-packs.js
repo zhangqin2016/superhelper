@@ -17,7 +17,11 @@ function refreshRuntimePackRunnerEnv(ctx = {}) {
 
 async function installRuntimePackForIpc(ctx, payload = {}, deps = {}) {
   const installer = deps.installer || require("./runtime-pack-installer");
-  const result = await installer.installRuntimePack(packIdFromPayload(payload));
+  const options = typeof payload === "object" && payload ? {
+    force: Boolean(payload.force),
+    repair: Boolean(payload.repair),
+  } : {};
+  const result = await installer.installRuntimePack(packIdFromPayload(payload), options);
   if (result?.ok) {
     result.runnerRefresh = refreshRuntimePackRunnerEnv(ctx);
   }

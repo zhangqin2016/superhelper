@@ -172,13 +172,6 @@ function localClientRegionHint() {
   const explicit = String(process.env.LILY_CLIENT_REGION || process.env.CLIENT_REGION || "").trim().toLowerCase();
   if (["uae", "ae", "are", "overseas"].includes(explicit)) return "uae";
   if (["china", "cn", "domestic"].includes(explicit)) return "china";
-
-  const timeZone = String(
-    Intl.DateTimeFormat?.().resolvedOptions?.().timeZone ||
-      process.env.TZ ||
-      "",
-  ).trim().toLowerCase();
-  if (["asia/dubai", "asia/muscat"].includes(timeZone)) return "uae";
   return "";
 }
 

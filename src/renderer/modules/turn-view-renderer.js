@@ -1378,12 +1378,12 @@ function renderNoticeEntry(entry) {
   row.className = `assistant-process-notice is-${entry.level || "info"}`;
   const percent = progressPercent(entry.progress);
   if (entry.progress && typeof entry.progress === "object") {
-    row.classList.add("is-progress");
     const text = document.createElement("div");
     text.className = "assistant-process-notice-text";
     text.textContent = detail;
     row.appendChild(text);
     if (percent != null) {
+      row.classList.add("is-progress");
       const track = document.createElement("div");
       track.className = "assistant-process-progress-track";
       track.setAttribute("role", "progressbar");
@@ -1405,10 +1405,14 @@ function renderNoticeEntry(entry) {
 function progressPercent(progress = null) {
   if (!progress || typeof progress !== "object") return null;
   const explicit = Number(progress.percent ?? progress.value);
-  if (Number.isFinite(explicit)) return Math.max(0, Math.min(100, explicit));
   const current = Number(progress.current ?? progress.done ?? progress.writtenBytes ?? progress.currentBytes);
   const total = Number(progress.total ?? progress.max ?? progress.totalBytes);
-  if (Number.isFinite(current) && Number.isFinite(total) && total > 0) {
+  const hasRange = Number.isFinite(current) && Number.isFinite(total) && total > 0;
+  if (Number.isFinite(explicit)) {
+    if (explicit <= 0 && !hasRange) return null;
+    return Math.max(0, Math.min(100, explicit));
+  }
+  if (hasRange) {
     return Math.max(0, Math.min(100, (current / total) * 100));
   }
   return null;

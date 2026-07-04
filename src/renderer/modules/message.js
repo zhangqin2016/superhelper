@@ -298,25 +298,38 @@ const COMMITTED_RENDER_CHUNK = 5;
 const COMMITTED_INITIAL_WINDOW = 80;
 const COMMITTED_WINDOW_THRESHOLD = 160;
 
-// Within a turn, the user message must come before the assistant message. Event
-// timing can commit them out of order (e.g. a near-instant local-assistant turn
-// where user.committed is dropped as "terminal" and the user message lands after
-// the assistant card), which renders the card ABOVE the user. Stable-reorder by
-// turn (first appearance) then role so display order is always user → assistant
-// without disturbing cross-turn order or messages that have no turnId.
+function messageTimestampMs(message = {}) {
+  const parsed = Date.parse(message.timestamp || message.createdAt || message.record?.startedAt || "");
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Messages can arrive from several sources (engine history, Lily projections,
+// live user commits). The display layer must be robust if one source returns a
+// page in reverse order: sort by timestamp when present, but keep stable source
+// order for timestamp-less legacy rows. Within a turn, always render user →
+// assistant even if commit timing put them in the opposite order.
 function orderCommittedMessages(messages) {
-  const turnFirstSeen = new Map();
+  const turnInfo = new Map();
   messages.forEach((m, i) => {
     const key = m.turnId || `__i${i}`;
-    if (!turnFirstSeen.has(key)) turnFirstSeen.set(key, i);
+    const ts = messageTimestampMs(m);
+    const existing = turnInfo.get(key);
+    if (!existing) {
+      turnInfo.set(key, { firstSeen: i, ts });
+      return;
+    }
+    if (ts != null && (existing.ts == null || ts < existing.ts)) existing.ts = ts;
   });
   const roleRank = (role) => (role === "user" ? 0 : role === "assistant" ? 1 : 2);
   return messages
     .map((m, i) => ({ m, i, key: m.turnId || `__i${i}` }))
     .sort((a, b) => {
-      const ta = turnFirstSeen.get(a.key);
-      const tb = turnFirstSeen.get(b.key);
-      if (ta !== tb) return ta - tb;
+      const ta = turnInfo.get(a.key) || { firstSeen: a.i, ts: null };
+      const tb = turnInfo.get(b.key) || { firstSeen: b.i, ts: null };
+      if (ta.ts != null && tb.ts != null && ta.ts !== tb.ts) return ta.ts - tb.ts;
+      if (ta.ts != null && tb.ts == null) return -1;
+      if (ta.ts == null && tb.ts != null) return 1;
+      if (ta.firstSeen !== tb.firstSeen) return ta.firstSeen - tb.firstSeen;
       const ra = roleRank(a.m.role);
       const rb = roleRank(b.m.role);
       if (ra !== rb) return ra - rb;
@@ -408,8 +421,14 @@ function committedScheduledDraftTurn(runtime, turnId) {
 }
 
 function committedInsertAnchor(sessionId, runtime) {
-  if (!runtime.liveTurn?.turnId) return null;
-  const article = view(sessionId).liveArticles.get(runtime.liveTurn.turnId);
+  const live = runtime.liveTurn;
+  // Only an active live turn may anchor committed history. After a turn has
+  // completed, the next user.committed event can arrive before turn.started;
+  // using the previous final article as the anchor would insert the new user
+  // message before the old assistant answer.
+  if (!live?.turnId || live.final) return null;
+  if (!runtime.turnId || runtime.turnId !== live.turnId) return null;
+  const article = view(sessionId).liveArticles.get(live.turnId);
   return article?.isConnected ? article : null;
 }
 

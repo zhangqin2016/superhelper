@@ -26,4 +26,14 @@ assert.equal(secondPass.length, 0);
 const fallback = { role: "assistant", timestamp: "2026-06-18T01:02:03.000Z", content: "same" };
 assert.equal(messageKey(fallback, 3), "assistant:2026-06-18T01:02:03.000Z:3");
 
+const sameTurnWithSteer = [
+  { role: "user", turnId: "turn_live", content: "original prompt" },
+  { role: "user", turnId: "turn_live", content: "follow-up prompt", meta: { steer: true, steerSeq: 1 } },
+  { role: "assistant", turnId: "turn_live", content: "answer" },
+];
+const steerKeys = new Set();
+const steerPass = collectUnrenderedCommittedMessages(sameTurnWithSteer, steerKeys);
+assert.equal(steerPass.length, sameTurnWithSteer.length);
+assert.equal(messageKey(sameTurnWithSteer[1], 1), "user:turn_live:steer:1");
+
 console.log("message-render-keys: ok");

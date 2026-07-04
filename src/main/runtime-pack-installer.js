@@ -170,10 +170,11 @@ function broadcastRuntimePackProgress(progress) {
   }
 }
 
-function createInstallJob(id) {
+function createInstallJob(id, options = {}) {
   const subscribers = new Set();
   const job = {
     id,
+    options,
     latest: null,
     promise: null,
     subscribe(onProgress) {
@@ -691,7 +692,7 @@ async function installRuntimePack(packId, options = {}) {
     }
   }
 
-  const job = createInstallJob(id);
+  const job = createInstallJob(id, options);
   const unsubscribe = job.subscribe(options?.onProgress);
   activeInstalls.set(id, job);
   job.promise = runRuntimePackInstall(id, job);
@@ -705,7 +706,8 @@ async function installRuntimePack(packId, options = {}) {
 
 async function runRuntimePackInstall(id, job) {
   const existing = readState().installed[id];
-  if (installedRecordExists(id, existing)) {
+  const force = Boolean(job?.options?.force || job?.options?.repair);
+  if (!force && installedRecordExists(id, existing)) {
     publishProgress(job, id, "skipped", { version: existing.version || null });
     return { ok: true, id, skipped: true, version: existing.version || null, path: packDir(id) };
   }
@@ -762,8 +764,8 @@ async function runRuntimePackInstall(id, job) {
       format,
     };
     writeState(state);
-    publishProgress(job, id, "installed", { version: artifact.version || null, path: target });
-    return { ok: true, id, version: artifact.version || null, path: target };
+    publishProgress(job, id, "installed", { version: artifact.version || null, path: target, repaired: force || undefined });
+    return { ok: true, id, version: artifact.version || null, path: target, repaired: force || undefined };
   } catch (error) {
     fs.rmSync(stagingPath, { recursive: true, force: true });
     const message = error?.message || String(error);
@@ -773,6 +775,27 @@ async function runRuntimePackInstall(id, job) {
     fs.rmSync(archivePath, { force: true });
     fs.rmSync(stagingPath, { recursive: true, force: true });
   }
+}
+
+async function repairInstalledRuntimePacks(options = {}) {
+  const state = readState();
+  const ids = (Array.isArray(options.ids) && options.ids.length
+    ? options.ids
+    : Object.keys(state.installed || {}))
+    .map((id) => String(id || "").trim())
+    .filter((id) => isValidPackId(id) && installedRecordExists(id, state.installed?.[id]));
+  const checkHealth = options.checkHealth || ((id) => require("./runtime-health").checkRuntimePackHealth(id));
+  const results = [];
+  for (const id of ids) {
+    const health = await checkHealth(id);
+    if (health?.ok) {
+      results.push({ ok: true, id, skipped: true, reason: "healthy" });
+      continue;
+    }
+    const repaired = await installRuntimePack(id, { ...options, force: true, repair: true });
+    results.push({ ...repaired, healthBefore: health });
+  }
+  return { ok: results.every((item) => item.ok), results };
 }
 
 function uninstallRuntimePack(packId) {
@@ -795,6 +818,7 @@ module.exports = {
   archiveExtensionForArtifact,
   checkRuntimePackAvailability,
   installRuntimePack,
+  repairInstalledRuntimePacks,
   installingRuntimePackIds,
   installedRuntimePackIds,
   baseProvidedRuntimePackMap,

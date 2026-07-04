@@ -44,10 +44,10 @@ function sha256(buffer) {
 function readme() {
   return `# Lily App: 网页系统学习
 
-网页系统学习把 OA、ERP、CRM、后台、门户和其他 Web 系统变成当前工作区可审核的自然语言能力。
+网页系统学习把 OA、ERP、CRM、后台、门户和其他 Web 系统变成当前工作区自然语言能力。
 
 它不是让 AI 随便点网页，而是先在用户授权范围内学习系统结构，生成页面地图、动作地图和
-连接器 Playbook，再生成当前工作区专属技能草稿。用户审核启用后，后续才能用自然语言操作。
+连接器 Playbook，再保存为当前工作区专属技能。后续新对话会自动加载这项能力。
 
 ## 使用方式
 
@@ -63,9 +63,8 @@ function readme() {
 2. 用户在浏览器里自己完成登录；不要把账号、密码、Cookie、Token 或验证码粘贴到聊天里。
 3. Lily 默认只读扫描页面：菜单、列表、详情、表单字段、按钮、导出入口。
 4. Lily 生成能力地图、API 地图、页面/动作地图和 \`web-system-playbook.json\`。
-5. Lily 生成健康报告和当前工作区专属技能草稿。
-6. 用户审核并启用技能。
-7. 后续自然语言执行时，先匹配能力、补齐必填参数、dry-run 校验，再按 API 优先 / 浏览器兜底执行；提交、审批、删除、上传、付款、通知等动作必须二次确认。
+5. Lily 生成健康报告并保存当前工作区专属技能。
+6. 后续新对话自动加载这项能力；自然语言执行时，先匹配能力、补齐必填参数、dry-run 校验，再按 API 优先 / 浏览器兜底执行；提交、审批、删除、上传、付款、通知等动作必须二次确认。
 
 ## 安全边界
 
@@ -73,7 +72,7 @@ function readme() {
 - 每个系统必须有域名白名单，不能跳出用户授权范围。
 - 凭据和登录态由浏览器或应用安全存储，不能写进工作区文件。
 - 页面变化后，应重新做只读发现，而不是继续猜测旧选择器。
-- 生成的工作区技能默认待审核，用户启用后才生效。
+- 生成的工作区技能自动绑定当前工作区；后续新对话会加载，不能扩散到其他工作区。
 
 ## 产物说明
 
@@ -113,9 +112,9 @@ Use \`${REQUIRED_SKILLS.join("`, `")}\` for all OA / ERP / CRM / admin system le
 - Keep learning read-only by default.
 - Never ask users to paste passwords, cookies, tokens, OAuth codes, or one-time codes into chat.
 - Ask the user to log in through an interactive browser/profile when needed.
-- Produce a page map, action map, connector playbook, and workspace skill draft.
-- Produce a capability map, API map, health report, page map, action map, connector playbook, and workspace skill draft.
-- Generated skills are drafts until the user reviews and enables them.
+- Produce a page map, action map, connector playbook, and workspace skill.
+- Produce a capability map, API map, health report, page map, action map, connector playbook, and workspace skill.
+- Generated skills are automatically bound to the current workspace and loaded by future chats.
 
 ## Risk Rules
 
@@ -163,8 +162,8 @@ function checklist() {
 - [ ] 生成 \`api-map.json\`，把可复用接口映射到能力。
 - [ ] 生成 \`health.json\`，标明覆盖率、缺口和建议补学项。
 - [ ] 生成 \`web-system-playbook.json\`。
-- [ ] 生成当前工作区专属技能草稿。
-- [ ] 用户审核后再启用技能。
+- [ ] 保存当前工作区专属技能。
+- [ ] 确认后续新对话会自动加载该工作区技能。
 `;
 }
 
@@ -235,7 +234,7 @@ async function build(args) {
     name: APP_NAME,
     folderName: APP_ID,
     description:
-      "学习 OA、ERP、CRM、后台等 Web 系统，生成页面地图、动作地图、连接器 Playbook 和当前工作区可审核技能。",
+      "学习 OA、ERP、CRM、后台等 Web 系统，生成页面地图、动作地图、连接器 Playbook 并保存为当前工作区技能。",
     exportedAt: exportedAt.toISOString(),
     fileCount: files.size,
     hasConventions: true,
@@ -253,7 +252,7 @@ async function build(args) {
       "- 用户必须通过浏览器自己登录，不在聊天或工作区文件中保存凭据。",
       "- 学习阶段默认只读，不提交、不删除、不审批、不付款、不上传、不通知。",
       "- 每个动作必须有风险等级和确认策略。",
-      "- 生成技能草稿后，用户审核启用才生效。",
+      "- 生成技能后自动绑定当前工作区，后续新对话会加载；不要引导用户去不存在的审核入口。",
       "",
     ].join("\n"),
   );

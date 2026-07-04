@@ -737,10 +737,10 @@ function writeSessionAgentGuide(sessionId, session, workspacePath = "") {
 }
 
 /**
- * Register a learned-skill draft (L3 crystallization). Workspace-origin drafts
+ * Register a generated learned skill (L3 crystallization). Workspace-origin skills
  * are installed as learned skills and bound to the current project so new chats
- * in that workspace can use the generated capability immediately. They are not
- * globally enabled unless the user explicitly enables them in Settings.
+ * in that workspace can use the generated capability immediately. Users can
+ * later remove or uncheck them from the normal skill controls.
  */
 function registerLearnedSkillDir(srcDir, manifest, context = {}) {
   const baseId = String(manifest?.id || "");

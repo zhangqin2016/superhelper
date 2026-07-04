@@ -15,6 +15,7 @@ const capturedQuestionResponses = [];
 const capturedRevealPaths = [];
 const capturedOpenPaths = [];
 const capturedAccountLoginPayloads = [];
+const delayedMediaStatusCalls = new Map();
 
 function makeTinyPdf() {
   const objects = [
@@ -90,6 +91,14 @@ ipcMain.handle("files:local-media-status", (_event, payload) => {
   const filePath = String(payload?.filePath || "");
   if (filePath.includes("unauthorized-image.png")) {
     return { ok: false, error: "NOT_AUTHORIZED", path: filePath, exists: true, authorized: false };
+  }
+  if (/generated-assets[/\\]delayed-[^/\\]+\.png$/i.test(filePath)) {
+    const count = (delayedMediaStatusCalls.get(filePath) || 0) + 1;
+    delayedMediaStatusCalls.set(filePath, count);
+    if (count === 1) {
+      return { ok: false, error: "NOT_FOUND", path: filePath, exists: false, authorized: true };
+    }
+    return { ok: true, error: "", path: filePath, exists: true, authorized: true, url: `app-file://media/${encodeURIComponent(filePath)}` };
   }
   if (filePath.includes("generated-assets/image-stale.png")) {
     const recovered = "/tmp/generated-assets/scene1.png";
@@ -543,6 +552,42 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(workProgressNoticeResult);
+    const zeroOnlyProgressNoticeResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const liveTurn = {
+          turnId: "turn_zero_only_progress",
+          phase: "tool_running",
+          assistantText: "",
+          thinkingText: "",
+          contentBlocks: [],
+          processEvents: [],
+          tools: new Map(),
+          timeline: [{
+            kind: "notice",
+            code: "workProgress",
+            level: "progress",
+            detail: "Progress",
+            progress: { label: "Progress", percent: 0 },
+          }],
+          notices: [],
+          permissions: new Map(),
+          questions: new Map(),
+          hooks: new Map(),
+          startedAt: Date.now(),
+        };
+        const article = createLiveTurnArticleShell(liveTurn);
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "session_zero_only_progress" });
+        if (article.querySelector(".assistant-process-progress-track")) {
+          throw new Error("zero-only progress should not render a stuck 0% progressbar");
+        }
+        if (!article.textContent.includes("Progress")) {
+          throw new Error("zero-only progress should still show the activity label");
+        }
+        return "zero-only-progress-notice-regression: ok";
+      }
+    )()`);
+    console.log(zeroOnlyProgressNoticeResult);
     const minimapResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { updateMinimap } = await import("./modules/conversation-minimap.js");
@@ -907,6 +952,116 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(sameTurnCommittedResult);
+    const chronologicalCommittedRenderResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { syncCommittedMessages } = await import("./modules/session-runtime-store.js");
+        const { showSessionMessages, renderConversation } = await import("./modules/message.js");
+        const sessionId = "session_chronological_committed_render_regression";
+        store.set("activeSessionId", sessionId);
+        showSessionMessages(sessionId);
+        syncCommittedMessages(sessionId, [
+          { role: "user", turnId: "turn_newest", content: "最新消息不应在最上面", timestamp: "2026-01-01T00:00:03.000Z" },
+          { role: "assistant", turnId: "turn_middle", content: "中间回答", timestamp: "2026-01-01T00:00:02.000Z" },
+          { role: "user", turnId: "turn_middle", content: "中间问题", timestamp: "2026-01-01T00:00:01.000Z" },
+          { role: "user", turnId: "turn_oldest", content: "第一条消息必须在最上面", timestamp: "2026-01-01T00:00:00.000Z" },
+        ]);
+        renderConversation(sessionId, { force: true, forceScrollBottom: true });
+        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`);
+        const text = panel?.textContent || "";
+        const oldest = text.indexOf("第一条消息必须在最上面");
+        const middleQuestion = text.indexOf("中间问题");
+        const middleAnswer = text.indexOf("中间回答");
+        const newest = text.indexOf("最新消息不应在最上面");
+        if (!(oldest >= 0 && middleQuestion > oldest && middleAnswer > middleQuestion && newest > middleAnswer)) {
+          throw new Error("committed history must render chronological even if source array is reversed: " + JSON.stringify({
+            oldest,
+            middleQuestion,
+            middleAnswer,
+            newest,
+            text,
+          }));
+        }
+        return "chronological-committed-render-regression: ok";
+      }
+    )()`);
+    console.log(chronologicalCommittedRenderResult);
+    const nextUserAfterCompletedLiveResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const store = (await import("./modules/state.js")).default;
+        const { applyRuntimeEvent } = await import("./modules/session-runtime-store.js");
+        const { showSessionMessages, renderConversation } = await import("./modules/message.js");
+        const sessionId = "session_next_user_after_completed_live_regression";
+        const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        store.set("activeSessionId", sessionId);
+        showSessionMessages(sessionId);
+        applyRuntimeEvent({
+          sessionId,
+          type: "user.committed",
+          turnId: "turn_old_completed_live",
+          seq: 1,
+          ts: 1000,
+          payload: { text: "旧问题" },
+        });
+        applyRuntimeEvent({
+          sessionId,
+          type: "turn.started",
+          turnId: "turn_old_completed_live",
+          seq: 2,
+          ts: 1001,
+          payload: { text: "旧问题" },
+        });
+        applyRuntimeEvent({
+          sessionId,
+          type: "assistant.delta",
+          turnId: "turn_old_completed_live",
+          seq: 3,
+          ts: 1002,
+          payload: { text: "旧回答" },
+        });
+        applyRuntimeEvent({
+          sessionId,
+          type: "turn.completed",
+          turnId: "turn_old_completed_live",
+          seq: 4,
+          ts: 1003,
+          payload: { assistant: "旧回答" },
+        });
+        renderConversation(sessionId, { force: true, forceScrollBottom: true });
+        await frame();
+        await frame();
+
+        // This is the preflight gap that previously caused disorder: the next
+        // user message is committed before the new live turn has started.
+        applyRuntimeEvent({
+          sessionId,
+          type: "user.committed",
+          turnId: "turn_new_preflight_gap",
+          seq: 5,
+          ts: 1004,
+          payload: { text: "新问题不能插到旧回答前" },
+        });
+        renderConversation(sessionId);
+        await frame();
+        await frame();
+
+        const panel = document.querySelector(\`.session-messages[data-session-id="\${sessionId}"] .runtime-messages\`);
+        const text = panel?.textContent || "";
+        const oldQuestion = text.indexOf("旧问题");
+        const oldAnswer = text.indexOf("旧回答");
+        const newQuestion = text.indexOf("新问题不能插到旧回答前");
+        if (!(oldQuestion >= 0 && oldAnswer > oldQuestion && newQuestion > oldAnswer)) {
+          throw new Error("new committed user message must render after the completed assistant answer: " + JSON.stringify({
+            oldQuestion,
+            oldAnswer,
+            newQuestion,
+            text,
+          }));
+        }
+        return "next-user-after-completed-live-regression: ok";
+      }
+    )()`);
+    console.log(nextUserAfterCompletedLiveResult);
     const fastSessionSwitchResult = await win.webContents.executeJavaScript(`(
       async () => {
         const store = (await import("./modules/state.js")).default;
@@ -1693,6 +1848,20 @@ app.whenReady().then(async () => {
         if (pathHost.querySelector(".markdown-image-error")) {
           throw new Error("recoverable local image must not leave an error box: " + pathHost.innerHTML);
         }
+        renderMarkdownWithCache(pathHost, "![delayed](/tmp/generated-assets/delayed-markdown-image.png)");
+        const delayedMarkdownImage = pathHost.querySelector("img.markdown-local-file-image[data-local-file-path='/tmp/generated-assets/delayed-markdown-image.png']");
+        if (!delayedMarkdownImage) {
+          throw new Error("delayed markdown local image should initially render as an image: " + pathHost.innerHTML);
+        }
+        delayedMarkdownImage.dispatchEvent(new Event("error"));
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        if (Number(delayedMarkdownImage.dataset.mediaRecoveryAttempts || "0") < 2) {
+          throw new Error("delayed markdown local image should retry after initial NOT_FOUND: " + pathHost.innerHTML);
+        }
+        const recoveredDelayedMarkdownImage = pathHost.querySelector("img.markdown-local-file-image[data-local-file-path='/tmp/generated-assets/delayed-markdown-image.png']");
+        if (!recoveredDelayedMarkdownImage || !String(recoveredDelayedMarkdownImage.getAttribute("src") || "").includes("?v=")) {
+          throw new Error("delayed markdown local image should recover without waiting for a new message: " + pathHost.innerHTML);
+        }
         renderMarkdownWithCache(pathHost, "已保存到：generated-assets/image-1-2026.png");
         const relativePathLink = pathHost.querySelector('.markdown-local-file-link[data-local-file-path="generated-assets/image-1-2026.png"]');
         if (relativePathLink) {
@@ -1824,6 +1993,29 @@ app.whenReady().then(async () => {
           throw new Error("stale generated media image should update src to recovered app-file URL: " + staleContainer.innerHTML);
         }
         staleContainer.remove();
+        const delayedOutput = '<generated_media type="image">\\n  <file path="/tmp/generated-assets/delayed-image.png" bytes="1234" />\\n</generated_media>';
+        const delayedContainer = document.createElement("details");
+        document.body.appendChild(delayedContainer);
+        appendToolPayloadDetail(delayedContainer, {
+          name: "Bash",
+          result: { content: delayedOutput },
+        }, { role: "result", sessionId: "session_delayed_media" });
+        const delayedImg = delayedContainer.querySelector(".assistant-generated-media img[data-local-file-path='/tmp/generated-assets/delayed-image.png']");
+        if (!delayedImg) {
+          throw new Error("delayed generated media image should render before retry: " + delayedContainer.innerHTML);
+        }
+        delayedImg.dispatchEvent(new Event("error"));
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        if (Number(delayedImg.dataset.mediaRecoveryAttempts || "0") < 2) {
+          throw new Error("delayed generated media should retry after initial NOT_FOUND: " + delayedContainer.innerHTML);
+        }
+        if (!String(delayedImg.getAttribute("src") || "").includes(encodeURIComponent("/tmp/generated-assets/delayed-image.png"))) {
+          throw new Error("delayed generated media image should recover in-place without a new message: " + delayedContainer.innerHTML);
+        }
+        if (!String(delayedImg.getAttribute("src") || "").includes("?v=")) {
+          throw new Error("delayed generated media recovery should cache-bust the original failed URL: " + delayedImg.getAttribute("src"));
+        }
+        delayedContainer.remove();
         container.remove();
         const placeholderContainer = document.createElement("details");
         document.body.appendChild(placeholderContainer);

@@ -50,6 +50,7 @@ try {
   const noBundleWrite = writeActiveMcpConfig(empty, noBundleOut);
   assert(noBundleWrite === noBundleOut && fs.existsSync(noBundleOut), "built-in Lily MCPs are available without runtime bundle");
   const noBundleCfg = JSON.parse(fs.readFileSync(noBundleOut, "utf8"));
+  assert(noBundleCfg.mcpServers.lily_tool_broker, "tool broker MCP is always exposed for platform capabilities");
   assert(noBundleCfg.mcpServers.lily_file_intelligence, "file intelligence MCP is always exposed");
   assert(noBundleCfg.mcpServers.lily_process_jobs, "process jobs MCP is always exposed");
 
@@ -79,6 +80,7 @@ try {
   assert(written === out && fs.existsSync(out), "config written when bundle present");
   const parsed = JSON.parse(fs.readFileSync(out, "utf8"));
   assert(parsed.mcpServers.playwright.command, "written config is valid JSON with the server");
+  assert(parsed.mcpServers.lily_tool_broker.command, "written config includes Lily tool broker");
   assert(parsed.mcpServers.lily_file_intelligence.command, "written config includes file intelligence server");
   assert(parsed.mcpServers.lily_process_jobs.command, "written config includes process jobs server");
 
@@ -96,10 +98,8 @@ try {
   assert(scoped.mcpServers.web_learned_enabled, "active learned skill exposes its web-system MCP");
   assert(!scoped.mcpServers.web_learned_disabled, "disabled learned skill does not expose its web-system MCP");
 
-  const prevBroker = process.env.LILY_TOOL_BROKER;
   const prevBrokerContext = process.env.LILY_TOOL_BROKER_CONTEXT;
   try {
-    process.env.LILY_TOOL_BROKER = "1";
     process.env.LILY_TOOL_BROKER_CONTEXT = JSON.stringify({ sessionId: "s1", activeSkillIds: ["lily-runtime-packs"] });
     const brokerEntry = buildToolBrokerMcpEntry();
     assert(brokerEntry.args[0].endsWith(path.join("mcp", "tool-broker-stdio.js")), "broker entry launches the broker stdio server");
@@ -107,10 +107,9 @@ try {
     const brokerOut = path.join(tmp, "mcp-broker.json");
     writeActiveMcpConfig(full, brokerOut, ["learned-enabled"]);
     const brokerCfg = JSON.parse(fs.readFileSync(brokerOut, "utf8"));
-    assert(JSON.stringify(Object.keys(brokerCfg.mcpServers)) === JSON.stringify(["lily_tool_broker"]), "broker mode emits only the Lily broker");
+    assert(brokerCfg.mcpServers.lily_tool_broker, "default MCP config includes Lily broker alongside other servers");
+    assert(brokerCfg.mcpServers.lily_file_intelligence, "broker no longer disables file intelligence");
   } finally {
-    if (prevBroker === undefined) delete process.env.LILY_TOOL_BROKER;
-    else process.env.LILY_TOOL_BROKER = prevBroker;
     if (prevBrokerContext === undefined) delete process.env.LILY_TOOL_BROKER_CONTEXT;
     else process.env.LILY_TOOL_BROKER_CONTEXT = prevBrokerContext;
   }

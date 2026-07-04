@@ -32,7 +32,7 @@ export async function apiPost(path, body) {
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(json.code || `API ${path} failed: ${response.status}`);
+    throw new Error(json.message || json.code || `API ${path} failed: ${response.status}`);
   }
   return json;
 }
@@ -46,7 +46,7 @@ export async function apiPostForm(path, formData) {
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(json.code || `API ${path} failed: ${response.status}`);
+    throw new Error(json.message || json.code || `API ${path} failed: ${response.status}`);
   }
   return json;
 }
@@ -60,7 +60,7 @@ export async function apiPatch(path, body) {
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(json.code || `API ${path} failed: ${response.status}`);
+    throw new Error(json.message || json.code || `API ${path} failed: ${response.status}`);
   }
   return json;
 }
@@ -73,7 +73,7 @@ export async function apiDelete(path) {
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(json.code || `API ${path} failed: ${response.status}`);
+    throw new Error(json.message || json.code || `API ${path} failed: ${response.status}`);
   }
   return json;
 }
