@@ -262,11 +262,21 @@ async function refreshClientBootstrap({ force = false } = {}) {
   const expiresAtMs = Date.parse(current.expiresAt || "");
   const regionHint = localClientRegionHint();
   const cacheMatchesRegionHint = !regionHint || String(current.region || "").toLowerCase() === regionHint;
-  if (!force && cacheMatchesRegionHint && current.source !== "default" && Number.isFinite(expiresAtMs) && expiresAtMs > Date.now()) {
+  const shouldRetryRecoveredEdge = Boolean(current.edgeFallbackFrom && cacheMatchesRegionHint);
+  if (
+    !force &&
+    !shouldRetryRecoveredEdge &&
+    cacheMatchesRegionHint &&
+    current.source !== "default" &&
+    Number.isFinite(expiresAtMs) &&
+    expiresAtMs > Date.now()
+  ) {
     return current;
   }
   const bootstrapBaseUrl = normalizeBaseUrl(
-    configuredServiceApiBaseUrl() || builtinServiceApiBaseUrl(),
+    shouldRetryRecoveredEdge
+      ? current.edgeFallbackFrom
+      : configuredServiceApiBaseUrl() || builtinServiceApiBaseUrl(),
   );
   if (!bootstrapBaseUrl) return current;
   let lastError = null;

@@ -101,5 +101,34 @@ assert.equal(requests[5]?.url, "https://lilyuae.lilywb.cn/api/client/bootstrap")
 assert.equal(requests[6]?.url, "https://lilych.lilywb.cn/api/client/bootstrap");
 assert.equal(requests[6]?.options?.headers?.["X-Lily-Region"], "uae");
 
+global.fetch = async (url, options = {}) => {
+  requests.push({ url, options });
+  if (String(url) === "https://lilyuae.lilywb.cn/api/client/bootstrap") {
+    return {
+      ok: true,
+      json: async () => ({
+        ok: true,
+        region: "uae",
+        apiBaseUrl: "https://lilyuae.lilywb.cn",
+        gatewayBaseUrl: "https://lilyuae.lilywb.cn",
+        modelGatewayBaseUrl: "https://lilyuae.lilywb.cn/llm",
+        features: { accountLogin: false, purchase: false, licenseActivation: true, modelDirect: false },
+        routing: { modelMode: "gateway", releaseChannel: "domestic" },
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    };
+  }
+  throw new Error(`unexpected URL after edge recovery ${url}`);
+};
+
+const recovered = await refreshClientBootstrap();
+assert.equal(recovered.ok, true);
+assert.equal(recovered.apiBaseUrl, "https://lilyuae.lilywb.cn");
+assert.equal(recovered.gatewayBaseUrl, "https://lilyuae.lilywb.cn");
+assert.equal(recovered.modelGatewayBaseUrl, "https://lilyuae.lilywb.cn/llm");
+assert.equal(recovered.edgeFallbackFrom, undefined);
+assert.equal(getServiceSettings().apiBaseUrl, "https://lilyuae.lilywb.cn");
+assert.equal(requests[7]?.url, "https://lilyuae.lilywb.cn/api/client/bootstrap");
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("service-client-edge-fallback: ok");
