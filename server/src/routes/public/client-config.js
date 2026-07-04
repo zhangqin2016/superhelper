@@ -147,8 +147,10 @@ export function registerPublicClientConfigRoutes(app) {
       deliveryMode: modelDeliveryMode,
     });
     const account = await resolveAccountContextForClientConfig(input, db);
+    const bootstrapPolicy = buildClientBootstrapPolicy(request);
     const effectiveConfig = withGatewayRuntimeConfig(scopedConfig, request, input, {
       publicBaseUrl: config.publicBaseUrl,
+      policyBaseUrl: bootstrapPolicy.apiBaseUrl,
       mediaDeliveryMode: await getMediaDeliveryMode(),
       modelDeliveryMode,
       account,

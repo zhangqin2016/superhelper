@@ -157,6 +157,35 @@ assert.equal(accountToken.ok, true);
 assert.equal(accountToken.userId, "usr_client_config_test", "account gateway token must carry user id for wallet debit");
 assert.equal(accountToken.sessionId, "sess_client_config_test", "account gateway token must carry session id for audit");
 
+const regionalRuntimeConfig = withGatewayRuntimeConfig(
+  {
+    models: {
+      presets: [
+        {
+          id: "managed",
+          env: {
+            LILY_API_BASE_URL: "/llm/deepseek",
+            LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
+          },
+        },
+      ],
+    },
+    runtime: { env: {} },
+  },
+  { headers: { host: "lilyxinjiapo.lilywb.cn", "x-forwarded-proto": "https" }, protocol: "http" },
+  { deviceId: "dev_regional_config_test", licenseId: "lic_regional_config_test" },
+  {
+    publicBaseUrl: "https://www.lilywb.cn",
+    policyBaseUrl: "https://lilyxinjiapo.lilywb.cn",
+    mediaDeliveryMode: "gateway",
+  },
+);
+assert.equal(
+  regionalRuntimeConfig.models.presets[0].env.LILY_API_BASE_URL,
+  "https://lilyxinjiapo.lilywb.cn/llm/deepseek",
+  "regional policy base must override the generic public website base for model gateway URLs",
+);
+
 const mediaOnly = buildEnvManagedClientConfig(
   {
     modelGatewayDefaultProvider: "deepseek",

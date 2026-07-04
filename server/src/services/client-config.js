@@ -498,7 +498,7 @@ export function expandModelProviderMenu(effectiveConfig, options = {}) {
 
 export function withGatewayRuntimeConfig(effectiveConfig, request, input, options = {}) {
   const configCopy = JSON.parse(JSON.stringify(effectiveConfig || {}));
-  const configuredBaseUrl = String(options.publicBaseUrl || "").trim().replace(/\/+$/, "");
+  const configuredBaseUrl = String(options.policyBaseUrl || options.publicBaseUrl || "").trim().replace(/\/+$/, "");
   const base = configuredBaseUrl || requestBaseUrl(request);
   const account = options.account && typeof options.account === "object" ? options.account : {};
 
