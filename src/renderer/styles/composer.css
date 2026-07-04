@@ -578,29 +578,33 @@
   align-items: center;
   gap: 6px;
   position: relative;
-  padding: 0 10px;
-  height: 32px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-input) 90%, var(--bg-surface) 10%);
+  padding: 0 9px;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 96%, var(--accent) 4%), var(--bg-input));
   color: var(--text-secondary);
   cursor: pointer;
   min-width: 0;
   max-width: min(220px, 52vw);
+  overflow: visible;
   transition:
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
-  box-shadow: var(--top-highlight), 0 1px 2px color-mix(in srgb, var(--bg-body) 10%, transparent);
+  box-shadow: var(--top-highlight), 0 1px 2px color-mix(in srgb, var(--bg-body) 8%, transparent);
 }
 
 .permission-mode-wrap:hover {
-  border-color: var(--warning-border-soft);
+  border-color: color-mix(in srgb, var(--accent-border) 70%, var(--border-light) 30%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 92%, var(--accent) 8%), var(--bg-input));
 }
 
 .permission-mode-wrap:focus-within {
   border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
+  box-shadow: var(--top-highlight), 0 0 0 3px var(--accent-subtle);
 }
 
 .permission-mode-wrap::after {
@@ -617,34 +621,109 @@
 
 .permission-mode-icon {
   flex-shrink: 0;
-  color: var(--warning-text);
+  color: color-mix(in srgb, var(--accent) 72%, var(--text-secondary) 28%);
 }
 
 .permission-mode-select {
   appearance: none;
   -webkit-appearance: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.permission-mode-button {
   display: block;
   min-width: 92px;
-  max-width: 150px;
+  max-width: 160px;
   height: 30px;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--text-primary);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 30px;
   cursor: pointer;
   outline: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color-scheme: var(--color-scheme);
+  text-align: left;
 }
 
-.permission-mode-select:disabled {
+.permission-mode-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.permission-mode-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: min(230px, calc(100vw - 28px));
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 78%, transparent);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-raised) 96%, var(--accent) 4%), var(--bg-surface-raised));
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--bg-body) 18%, transparent), var(--top-highlight);
+}
+
+.permission-mode-menu[hidden] {
+  display: none;
+}
+
+.permission-mode-option {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.permission-mode-option::before {
+  content: "";
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.permission-mode-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent-subtle) 82%, transparent);
+  color: var(--text-primary);
+}
+
+.permission-mode-option[aria-selected="true"]::before {
+  content: "✓";
+}
+
+.permission-mode-option:hover,
+.permission-mode-option:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--accent-subtle) 70%, var(--bg-surface-hover) 30%);
 }
 
 .composer-row {
@@ -658,7 +737,7 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 88%, var(--bg-surface) 12%), var(--bg-input));
   box-shadow: var(--shadow-sm), var(--top-highlight);
-  overflow: hidden;
+  overflow: visible;
   min-width: 0;
   transition:
     border-color var(--dur) var(--ease),
@@ -1091,7 +1170,7 @@ textarea:disabled { opacity: 0.5; }
     min-height: 44px;
   }
 
-  .permission-mode-select {
+  .permission-mode-button {
     min-width: 76px;
     max-width: 96px;
   }

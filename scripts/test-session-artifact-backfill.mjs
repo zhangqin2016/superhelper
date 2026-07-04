@@ -44,11 +44,13 @@ try {
 
   const mdPath = path.join(workspace, "output", "张钦_八字命理全面分析_2026.md");
   fs.writeFileSync(mdPath, "# 命理全面分析\n");
+  const videoPath = path.join(workspace, "output", "生成视频.mp4");
+  fs.writeFileSync(videoPath, "fake mp4");
   const legacyMessage = {
     role: "assistant",
-    content: "报告已生成完毕，保存在 output/张钦_八字命理全面分析_2026.md。",
+    content: "报告和视频已生成：output/张钦_八字命理全面分析_2026.md、output/生成视频.mp4。",
     record: {
-      assistantText: "报告已生成完毕，保存在 output/张钦_八字命理全面分析_2026.md。",
+      assistantText: "报告和视频已生成：output/张钦_八字命理全面分析_2026.md、output/生成视频.mp4。",
       terminal: "turn.completed",
       artifactSchemaVersion: 1,
       artifacts: [],
@@ -57,10 +59,21 @@ try {
     },
   };
   assert.equal(backfillMessageArtifacts(legacyMessage, workspace), true);
-  assert.equal(legacyMessage.record.artifacts.length, 1);
-  assert.equal(legacyMessage.record.artifacts[0].mimeType, "text/markdown");
-  assert.equal(legacyMessage.record.resultBlocks.length, 1);
-  assert.equal(legacyMessage.record.resultBlocks[0].artifactType, "markdown");
+  assert.equal(legacyMessage.record.artifacts.length, 2);
+  const legacyMarkdown = legacyMessage.record.artifacts.find((item) => item.relativePath.endsWith(".md"));
+  const legacyVideo = legacyMessage.record.artifacts.find((item) => item.relativePath.endsWith(".mp4"));
+  assert.equal(legacyMarkdown?.mimeType, "text/markdown");
+  assert.equal(legacyVideo?.kind, "video");
+  assert.equal(legacyVideo?.mimeType, "video/mp4");
+  assert.equal(legacyMessage.record.resultBlocks.length, 2);
+  assert.equal(
+    legacyMessage.record.resultBlocks.find((item) => item.relativePath.endsWith(".md"))?.artifactType,
+    "markdown",
+  );
+  assert.equal(
+    legacyMessage.record.resultBlocks.find((item) => item.relativePath.endsWith(".mp4"))?.artifactType,
+    "video",
+  );
 
   const noRecord = { role: "assistant", content: "output/location-pie-chart.svg" };
   assert.equal(backfillMessageArtifacts(noRecord, workspace), false);

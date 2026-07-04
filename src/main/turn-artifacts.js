@@ -7,8 +7,12 @@ const { fileURLToPath } = require("node:url");
 const { registerArtifactPath } = require("./artifact-registry");
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
+const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".mkv"]);
+const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
 const FILE_EXTENSIONS = new Set([
   ...IMAGE_EXTENSIONS,
+  ...VIDEO_EXTENSIONS,
+  ...AUDIO_EXTENSIONS,
   ".pdf",
   ".md",
   ".markdown",
@@ -30,6 +34,17 @@ const MIME_BY_EXT = {
   ".webp": "image/webp",
   ".gif": "image/gif",
   ".svg": "image/svg+xml",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".m4v": "video/mp4",
+  ".mkv": "video/x-matroska",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".ogg": "audio/ogg",
+  ".flac": "audio/flac",
   ".pdf": "application/pdf",
   ".md": "text/markdown",
   ".markdown": "text/markdown",
@@ -49,7 +64,7 @@ const MIME_BY_EXT = {
 // The previous `(?:…+[\\/])*…+?` form had catastrophic backtracking that made
 // scanning large records take seconds per record.
 const PATH_LIKE_RE =
-  /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|[\w@.-]+[\\/])[^\s"'`<>|]*?\.(?:png|jpe?g|webp|gif|svg|pdf|md|markdown|docx?|xlsx?|pptx?|csv|html?))/gi;
+  /((?:[A-Za-z]:[\\/]|\/|\.{1,2}[\\/]|[\w@.-]+[\\/])[^\s"'`<>|]*?\.(?:png|jpe?g|webp|gif|svg|mp4|webm|mov|m4v|mkv|mp3|wav|m4a|aac|ogg|flac|pdf|md|markdown|docx?|xlsx?|pptx?|csv|html?))/gi;
 
 // Bounds so artifact derivation stays cheap even over large/many records:
 // a single huge tool result (e.g. a file dump) is only scanned up to a cap, and
@@ -95,6 +110,8 @@ function resolveCandidatePath(candidate, workspacePath) {
 function artifactKindForPath(filePath) {
   const ext = path.extname(filePath || "").toLowerCase();
   if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (VIDEO_EXTENSIONS.has(ext)) return "video";
+  if (AUDIO_EXTENSIONS.has(ext)) return "audio";
   if (FILE_EXTENSIONS.has(ext)) return "file";
   return "";
 }
@@ -302,9 +319,10 @@ function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], 
   }
 
   return [...artifacts.values()].sort((a, b) => {
-    const aImage = a.kind === "image" ? 0 : 1;
-    const bImage = b.kind === "image" ? 0 : 1;
-    if (aImage !== bImage) return aImage - bImage;
+    const rank = (item) => (item.kind === "image" ? 0 : item.kind === "video" || item.kind === "audio" ? 1 : 2);
+    const aRank = rank(a);
+    const bRank = rank(b);
+    if (aRank !== bRank) return aRank - bRank;
     return String(a.relativePath || a.path).localeCompare(String(b.relativePath || b.path));
   });
 }

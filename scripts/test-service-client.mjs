@@ -37,6 +37,7 @@ fs.writeFileSync(
 
 delete process.env.LILY_SERVICE_API_BASE_URL;
 delete process.env.SERVICE_API_BASE_URL;
+process.env.CLIENT_REGION = "china";
 const {
   getServiceSettings,
   registerDevice,
@@ -48,7 +49,7 @@ const {
 } = require(path.join(__dirname, "../src/main/service-client.js"));
 
 const builtInSettings = getServiceSettings();
-if (builtInSettings.apiBaseUrl !== "https://lily.lanrensoft.cn") {
+if (builtInSettings.apiBaseUrl !== "https://lilych.lilywb.cn") {
   throw new Error(`built-in service API should point to production domain: ${JSON.stringify(builtInSettings)}`);
 }
 

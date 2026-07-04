@@ -192,7 +192,7 @@ export function generatedMediaFromPayload(payload) {
 // {ok:true, images:["…/page-1.png", …]}. Detect those output paths so the file
 // gets a "reveal in folder" affordance — the model never edited it via Write,
 // so it isn't in the changed-files group.
-const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp|gif|svg|html?|json|zip)$/i;
+const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp|gif|svg|mp4|webm|mov|m4v|mkv|mp3|wav|m4a|aac|ogg|flac|html?|json|zip)$/i;
 
 function looksLikeGeneratedFilePath(value) {
   if (typeof value !== "string") return false;

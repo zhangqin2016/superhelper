@@ -44,6 +44,7 @@ class SessionRunnerPool {
     const { resolveLilyEnv, buildAgentSpawnEnv } = require("./spawn-env");
     const { buildSharedBaseConfig } = require("./runtime/opencode-config-builder");
     const permissionMode = extra.permissionMode || getActivePermissionMode();
+    const lilyEnv = resolveLilyEnv();
     // The SHARED serve's base config — app-wide only for model/provider +
     // plugins, with Lily extension MCPs scoped to this session's active skills.
     // Other per-session bits are delivered per-request:
@@ -53,7 +54,7 @@ class SessionRunnerPool {
     // This is what lets ONE serve host every session/directory without config
     // bleed (a single global OPENCODE_CONFIG can only hold one session's config).
     const cfg = buildSharedBaseConfig({
-      lilyEnv: resolveLilyEnv(),
+      lilyEnv,
       mcpServers: this._opencodeMcpServers(extra.activeSkillIds || []),
       pluginPaths: this._opencodePlugins(),
       skillPaths: this._opencodeSkillPaths(extra.activeSkillIds || [], sessionId),
@@ -70,6 +71,12 @@ class SessionRunnerPool {
       // config/auth, but the distributed model/MCP won't apply.
       log.warn("opencode config not applied: %s", cfg.reason);
     }
+    const modelRouteAudit = cfg.diagnostics?.modelRoute || null;
+    if (modelRouteAudit) {
+      log.info(
+        `model route audit: route=${modelRouteAudit.route || "-"} provider=${modelRouteAudit.provider || "-"} base=${modelRouteAudit.baseUrl || "-"} key=${modelRouteAudit.keyKind || "-"}`,
+      );
+    }
     // Lily's AGENT.md (identity + rules + ENABLED skills) — the authoritative
     // guidance. It rides every prompt as hidden engine context so resumed or
     // migrated OpenCode sessions cannot drift away from current platform rules.
@@ -80,7 +87,7 @@ class SessionRunnerPool {
     // Claude-specific ANTHROPIC_*/CLAUDE_* vars; our model is the "lily" provider.
     let env;
     try {
-      env = buildAgentSpawnEnv({ configDir: extra.configDir });
+      env = buildAgentSpawnEnv({ configDir: extra.configDir, lilyEnv });
     } catch {
       env = {};
     }
@@ -116,6 +123,7 @@ class SessionRunnerPool {
       agentCommand,
       permissionMode,
       model: cfg.model,
+      modelRouteAudit,
       env,
       opencodeConfig: cfg.ok ? cfg.configContent : "",
       guidance,

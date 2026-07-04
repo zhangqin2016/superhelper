@@ -232,6 +232,41 @@ function renderRuntimePacks(data) {
   }
 }
 
+function runtimePackById(packId) {
+  return Array.isArray(lastData?.packs)
+    ? lastData.packs.find((pack) => pack.id === packId) || null
+    : null;
+}
+
+function runtimePackCardById(packId) {
+  const list = $("runtimePackList");
+  if (!list) return null;
+  return Array.from(list.querySelectorAll(".runtime-pack-card"))
+    .find((card) => card.dataset.packId === packId) || null;
+}
+
+function renderRuntimePackCardInPlace(packId) {
+  const pack = runtimePackById(packId);
+  const card = runtimePackCardById(packId);
+  if (!pack || !card) return false;
+  card.replaceWith(renderPackCard(pack));
+  return true;
+}
+
+function updateRuntimePackCard(packId) {
+  if (!renderRuntimePackCardInPlace(packId) && lastData) {
+    renderRuntimePacks(lastData);
+  }
+}
+
+function updateRuntimePackCards(packIds) {
+  const ids = [...new Set((Array.isArray(packIds) ? packIds : []).filter(Boolean))];
+  if (!ids.length) return true;
+  const allUpdated = ids.every((id) => renderRuntimePackCardInPlace(id));
+  if (!allUpdated && lastData) renderRuntimePacks(lastData);
+  return allUpdated;
+}
+
 async function installRuntimePack(pack) {
   const name = localized(pack.label) || pack.id;
   const ok = await confirmDialog({
@@ -241,7 +276,7 @@ async function installRuntimePack(pack) {
   });
   if (!ok) return;
   progressById.set(pack.id, { id: pack.id, phase: "resolving" });
-  renderRuntimePacks(lastData);
+  updateRuntimePackCard(pack.id);
   const result = await window.assistantClient.installRuntimePack(pack.id);
   if (!result?.ok) {
     progressById.set(pack.id, { id: pack.id, phase: "failed", error: result?.error });
@@ -250,7 +285,8 @@ async function installRuntimePack(pack) {
     progressById.set(pack.id, { id: pack.id, phase: result.skipped ? "skipped" : "installed" });
     showToast(t("settings.runtime.installDone", { name }), "success");
   }
-  await refreshRuntimePackSettings();
+  updateRuntimePackCard(pack.id);
+  await refreshRuntimePackSettings({ patchOnlyIds: [pack.id] });
 }
 
 async function uninstallRuntimePack(pack) {
@@ -303,7 +339,7 @@ async function refreshRuntimePackAvailability(data) {
     const result = await window.assistantClient.checkRuntimePackAvailability(ids);
     if (!result?.ok || result.platform !== data.platform) return;
     lastData = mergeAvailabilityResult(lastData, result);
-    renderRuntimePacks(lastData);
+    updateRuntimePackCards((result.packs || []).map((pack) => pack.id));
   } catch {
     // Availability is a UX preflight only. Install still resolves the artifact
     // authoritatively, so network errors here should not disable usable packs.
@@ -320,7 +356,7 @@ async function runRuntimeHealthCheck() {
       return;
     }
     lastData = mergeHealthResult(lastData, result);
-    renderRuntimePacks(lastData);
+    updateRuntimePackCards((result.packs || []).map((pack) => pack.id));
     const failed = (result.packs || []).filter((pack) => pack.status !== "not_installed" && !pack.ok).length;
     setHint(
       failed ? t("settings.runtime.health.failedCount", { count: failed }) : t("settings.runtime.health.allOk"),
@@ -331,7 +367,7 @@ async function runRuntimeHealthCheck() {
   }
 }
 
-export async function refreshRuntimePackSettings() {
+export async function refreshRuntimePackSettings(options = {}) {
   const list = $("runtimePackList");
   if (!list) return;
   if (typeof window.assistantClient?.listRuntimePacks !== "function") {
@@ -346,7 +382,11 @@ export async function refreshRuntimePackSettings() {
     }
     lastData = data;
     setHint(t("settings.runtime.platform", { platform: data.platform || "-" }));
-    renderRuntimePacks(data);
+    if (Array.isArray(options.patchOnlyIds) && options.patchOnlyIds.length) {
+      updateRuntimePackCards(options.patchOnlyIds);
+    } else {
+      renderRuntimePacks(data);
+    }
     void refreshRuntimePackAvailability(data);
   } catch {
     setHint(t("settings.runtime.loadFailed"), "error");
@@ -360,7 +400,7 @@ export function initRuntimePackSettings() {
     progressUnsubscribe = window.assistantClient.onRuntimePackProgress((event) => {
       if (!event?.id) return;
       progressById.set(event.id, event);
-      if (lastData) renderRuntimePacks(lastData);
+      if (lastData) updateRuntimePackCard(event.id);
     });
   }
 }

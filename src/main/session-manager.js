@@ -19,7 +19,11 @@ const {
 } = require("./config");
 const { normalizeSessionPermissionMode } = require("./permission-settings");
 const { getLocale } = require("./locale-settings");
-const { backfillMessageArtifacts } = require("./session-artifact-backfill");
+const {
+  ARTIFACT_SCHEMA_VERSION,
+  RESULT_BLOCK_SCHEMA_VERSION,
+  backfillMessageArtifacts,
+} = require("./session-artifact-backfill");
 const { MessageStore } = require("./store/message-store");
 const legacyImport = require("./store/legacy-import");
 
@@ -251,7 +255,7 @@ class SessionManager {
   _startBackgroundEnrichment() {
     let pending;
     try {
-      pending = this.iterateSessions().filter((s) => !this._store().meta(`enriched:${s.id}`));
+      pending = this.iterateSessions().filter((s) => !this._store().meta(this._enrichmentFlag(s.id)));
     } catch {
       return;
     }
@@ -294,9 +298,13 @@ class SessionManager {
     setTimeout(step, 12000);
   }
 
+  _enrichmentFlag(sessionId) {
+    return `enriched:${sessionId}:a${ARTIFACT_SCHEMA_VERSION}:b${RESULT_BLOCK_SCHEMA_VERSION}`;
+  }
+
   _enrichSession(session) {
     const store = this._store();
-    const flag = `enriched:${session.id}`;
+    const flag = this._enrichmentFlag(session.id);
     if (store.meta(flag)) return;
     const workspacePath = this.pm?.find?.(session.projectId)?.path || "";
     if (!workspacePath) return; // retry next launch once a workspace is known

@@ -26,7 +26,7 @@ export const config = {
   qiniuBucket: process.env.QINIU_BUCKET || "lanrensoft",
   qiniuUploadUrl: process.env.QINIU_UPLOAD_URL || "https://upload.qiniup.com",
   publicBaseUrl: process.env.PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || "",
-  webBaseUrl: process.env.WEB_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || process.env.PUBLIC_BASE_URL || "https://lily.lanrensoft.cn",
+  webBaseUrl: process.env.WEB_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || process.env.PUBLIC_BASE_URL || "https://www.lilywb.cn",
   userTokenPepper: process.env.USER_TOKEN_PEPPER || process.env.SESSION_SECRET || "development-session-secret-change-me",
   smsCodePepper: process.env.SMS_CODE_PEPPER || process.env.SESSION_SECRET || "development-session-secret-change-me",
   smsAliyunAccessKeyId: process.env.ALIYUN_SMS_ACCESS_KEY_ID || "",

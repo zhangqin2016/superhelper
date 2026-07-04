@@ -16,6 +16,8 @@ import {
   verifyWebSessionToken,
 } from "../../services/account-auth.js";
 import { sendLoginSms } from "../../services/sms-provider-aliyun.js";
+import { clientFeatureEnabled } from "../../services/client-bootstrap.js";
+import { smsRequestAllowedFromRegion } from "../../services/sms-region-policy.js";
 import { ensureSignupGrants, fetchEntitlementSummary } from "../../services/wallet.js";
 import { requireSignedDeviceRequest, upsertDevice, upsertDevicePublicKey } from "../../services/device-identity.js";
 import { registerDeviceSchema } from "./devices.js";
@@ -120,6 +122,13 @@ export function registerPublicAuthRoutes(app) {
       },
     },
     async (request, reply) => {
+      const regionAllowed = smsRequestAllowedFromRegion(request);
+      if (!regionAllowed.ok) {
+        return reply.code(403).send({ ok: false, code: regionAllowed.code || "SMS_REGION_BLOCKED" });
+      }
+      if (!clientFeatureEnabled(request, "accountLogin")) {
+        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
+      }
       const input = sendSmsSchema.parse(request.body);
       const phoneE164 = normalizePhoneE164(input.phone);
       if (!phoneE164) return reply.code(400).send({ ok: false, code: "INVALID_PHONE" });
@@ -183,6 +192,9 @@ export function registerPublicAuthRoutes(app) {
       },
     },
     async (request, reply) => {
+      if (!clientFeatureEnabled(request, "accountLogin")) {
+        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
+      }
       const input = loginSchema.parse(request.body);
       const phoneE164 = normalizePhoneE164(input.phone);
       if (!phoneE164) return reply.code(400).send({ ok: false, code: "INVALID_PHONE" });

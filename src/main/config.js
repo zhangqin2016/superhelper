@@ -1,6 +1,7 @@
 "use strict";
 
 const path = require("node:path");
+const fs = require("node:fs");
 
 // Base directories (userData/home/documents) are the ONLY thing config needs
 // from the runtime host. Rather than hard-require electron (which coupled all 41
@@ -58,6 +59,70 @@ function legacyInstalledCliBasenames() {
 }
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
+const DEFAULT_EDITION = "domestic";
+const EDITION_CONFIGS = {
+  domestic: {
+    id: "domestic",
+    label: "Domestic",
+    serviceApiBaseUrl: "https://lilych.lilywb.cn",
+    officialWebsiteUrl: "https://www.lilywb.cn",
+    features: {
+      account: true,
+      billing: true,
+    },
+  },
+  overseas: {
+    id: "overseas",
+    label: "Overseas",
+    serviceApiBaseUrl: "https://lilych.lilywb.cn",
+    officialWebsiteUrl: "https://www.lilywb.cn",
+    features: {
+      account: false,
+      billing: false,
+    },
+  },
+};
+
+function normalizeEditionId(value) {
+  const id = String(value || "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(EDITION_CONFIGS, id) ? id : DEFAULT_EDITION;
+}
+
+function editionFileCandidates() {
+  const candidates = [];
+  if (process.env.LILY_APP_EDITION_FILE) candidates.push(process.env.LILY_APP_EDITION_FILE);
+  candidates.push(path.join(PROJECT_ROOT, "resources", "app-edition.json"));
+  if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, "resources", "app-edition.json"));
+  return candidates;
+}
+
+function readEditionFile() {
+  for (const file of editionFileCandidates()) {
+    try {
+      if (!file || !fs.existsSync(file)) continue;
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function appEdition() {
+  const fileConfig = readEditionFile();
+  const id = normalizeEditionId(process.env.LILY_APP_EDITION || fileConfig.id || fileConfig.edition);
+  const base = EDITION_CONFIGS[id] || EDITION_CONFIGS[DEFAULT_EDITION];
+  return {
+    ...base,
+    ...fileConfig,
+    id,
+    features: {
+      ...base.features,
+      ...(fileConfig.features || {}),
+    },
+  };
+}
 
 /** User-writable default workspace — never use PROJECT_ROOT in packaged builds (resolves to app.asar). */
 function defaultWorkspacePath() {
@@ -199,6 +264,7 @@ function sessionGuideDir(sessionId) {
 module.exports = {
   bindRuntimePaths,
   appVersion,
+  appEdition,
   isPackaged,
   INSTALLED_CLI_STEM,
   installedCliBasename,

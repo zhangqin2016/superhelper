@@ -5,6 +5,8 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 contextBridge.exposeInMainWorld("assistantClient", {
   getAppIconUrl: () => ipcRenderer.invoke("app:get-icon-url"),
   getAppVersion: () => ipcRenderer.invoke("app:get-version"),
+  getAppEdition: () => ipcRenderer.invoke("app:get-edition"),
+  getAppPolicy: () => ipcRenderer.invoke("app:get-policy"),
   getLocale: () => ipcRenderer.invoke("app:get-locale"),
   setLocale: (locale) => ipcRenderer.invoke("app:set-locale", locale),
   sendRendererHeartbeat: (payload) => ipcRenderer.send("app:renderer-heartbeat", payload || {}),

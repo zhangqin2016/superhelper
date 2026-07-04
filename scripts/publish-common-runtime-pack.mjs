@@ -22,7 +22,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_DOMAIN = "https://qny.lanrensoft.cn";
 const DEFAULT_BUCKET = "lanrensoft";
 const DEFAULT_PREFIX = "app/runtime-packs";
-const DEFAULT_API = "https://lily.lanrensoft.cn";
+const DEFAULT_API = "https://lilych.lilywb.cn";
 const CACHE_DIR = path.join(ROOT, ".cache", "runtime-pack-build");
 
 const DEFAULT_VERSIONS = {

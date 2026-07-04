@@ -986,6 +986,60 @@ if (
 }
 
 sent.length = 0;
+const runningProcessJobTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "渲染一个视频", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!runningProcessJobTurn.ok || !runner.isBusy()) {
+  throw new Error(`running process job turn should start: ${JSON.stringify(runningProcessJobTurn)}`);
+}
+ctx.turnOrchestrator.ingest("s1", [
+  {
+    type: "tool.started",
+    payload: { id: "job_status_blender", name: "job_status", input: { jobId: "job_blender" } },
+  },
+  {
+    type: "tool.done",
+    payload: {
+      id: "job_status_blender",
+      status: "done",
+      result: {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            jobId: "job_blender",
+            state: "running",
+            status: "running",
+            progress: { label: "frame", current: 700, total: 2440 },
+            outputFiles: ["output/yugong_blender/frame_0007.png"],
+          }),
+        }],
+      },
+    },
+  },
+]);
+runner.busy = false;
+runner.emit("done", {
+  code: 0,
+  output: "Blender 还在渲染，等完成。",
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+const runningProcessJobTerminal = allEvents.find((event) => (
+  event.turnId === runningProcessJobTurn.turnId
+  && ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type)
+));
+if (
+  runningProcessJobTerminal?.type !== "turn.stalled" ||
+  !runningProcessJobTerminal.payload?.assistant?.includes("后台任务 job_blender") ||
+  runningProcessJobTerminal.payload?.assistant?.includes("已完成 49 个步骤")
+) {
+  throw new Error(`running process job must not complete the turn: ${JSON.stringify(runningProcessJobTerminal)}`);
+}
+
+sent.length = 0;
 const originalTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "old work", [], {
   spawnEngine: false,
   skipPreflight: true,

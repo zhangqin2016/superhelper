@@ -20,10 +20,6 @@ export default async function ContactPage() {
               {t.pages.contactDesc}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="mailto:hello@lanrensoft.cn?subject=Lily%20Workbench%20Team%20License" className="inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-3 font-semibold text-white">
-                <Mail size={18} />
-                {t.nav.contact}
-              </Link>
               <Link href="/admin/login" className="rounded-lg border border-slate-200 px-5 py-3 font-semibold text-slate-800">
                 {t.admin.brand}
               </Link>

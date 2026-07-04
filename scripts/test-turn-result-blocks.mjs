@@ -8,7 +8,7 @@ const {
   buildTurnResultBlocks,
 } = require("../src/main/turn-result-blocks");
 
-assert.equal(RESULT_BLOCK_SCHEMA_VERSION, 1);
+assert.equal(RESULT_BLOCK_SCHEMA_VERSION, 2);
 
 const blocks = buildTurnResultBlocks({
   artifacts: [
@@ -62,6 +62,26 @@ const blocks = buildTurnResultBlocks({
       bytes: 1024,
       updatedAt: 4000,
     },
+    {
+      id: "video",
+      kind: "video",
+      path: "/tmp/lily/promo.mp4",
+      relativePath: "output/promo.mp4",
+      fileName: "promo.mp4",
+      mimeType: "video/mp4",
+      bytes: 8192,
+      updatedAt: 5000,
+    },
+    {
+      id: "audio",
+      kind: "audio",
+      path: "/tmp/lily/voice.wav",
+      relativePath: "output/voice.wav",
+      fileName: "voice.wav",
+      mimeType: "audio/wav",
+      bytes: 4096,
+      updatedAt: 6000,
+    },
   ],
   contentBlocks: [
     {
@@ -82,9 +102,11 @@ const blocks = buildTurnResultBlocks({
   ],
 });
 
-assert.deepEqual(blocks.map((block) => block.type), ["table", "artifact", "artifact", "artifact", "artifact", "artifact"]);
+assert.deepEqual(blocks.map((block) => block.type), ["table", "artifact", "artifact", "artifact", "artifact", "artifact", "artifact", "artifact"]);
 assert.equal(blocks.filter((block) => block.path === "/tmp/lily/chart.svg").length, 1);
 assert.equal(blocks.find((block) => block.relativePath === "output/chart.svg")?.artifactType, "image");
+assert.equal(blocks.find((block) => block.relativePath === "output/promo.mp4")?.artifactType, "video");
+assert.equal(blocks.find((block) => block.relativePath === "output/voice.wav")?.artifactType, "audio");
 assert.equal(blocks.find((block) => block.relativePath === "output/report.pdf")?.artifactType, "pdf");
 assert.equal(blocks.find((block) => block.relativePath === "output/report.html")?.artifactType, "html");
 assert.equal(blocks.find((block) => block.relativePath === "output/report.md")?.artifactType, "markdown");

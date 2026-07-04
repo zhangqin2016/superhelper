@@ -473,7 +473,7 @@ export function expandModelProviderMenu(effectiveConfig, options = {}) {
   const models = effectiveConfig?.models;
   const directive = Array.isArray(models?.providers) ? models.providers.map(String).filter(Boolean) : null;
   if (!directive || !directive.length) return effectiveConfig;
-  const deliveryMode = options.deliveryMode || normalizeDeliveryMode(config);
+  const deliveryMode = options.deliveryMode || "gateway";
   const providers = options.providers || listModelGatewayProviders();
   const allow = new Set(directive);
   const presets = Object.values(providers || {})

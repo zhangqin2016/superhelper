@@ -4,7 +4,7 @@ Date: 2026-06-05
 
 ## Symptom
 
-Opening `https://lily.lanrensoft.cn/admin` without an admin login still rendered the admin UI.
+Opening the old transition-domain admin URL without an admin login still rendered the admin UI.
 
 ## Root Cause
 
@@ -32,4 +32,3 @@ This conflated two different trust boundaries:
   - `/admin/releases` returns `307` to `/admin/login`.
   - `/admin/login` returns `200`.
   - `/api/admin/health` returns `401` without credentials.
-

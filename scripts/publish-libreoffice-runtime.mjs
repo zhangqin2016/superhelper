@@ -17,7 +17,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_DOMAIN = "https://qny.lanrensoft.cn";
 const DEFAULT_BUCKET = "lanrensoft";
 const DEFAULT_PREFIX = "app/runtime";
-const DEFAULT_API = "https://lily.lanrensoft.cn";
+const DEFAULT_API = "https://lilych.lilywb.cn";
 
 function usage() {
   console.error(`usage:
@@ -26,7 +26,7 @@ function usage() {
     --version 25.8.7 \\
     [--source bundles/darwin-arm64/runtime/libreoffice] \\
     [--bucket lanrensoft] [--domain https://qny.lanrensoft.cn] [--prefix app/runtime] \\
-    [--upload] [--register] [--api https://lily.lanrensoft.cn] [--dry-run]
+    [--upload] [--register] [--api https://lilych.lilywb.cn] [--dry-run]
 
 env for --register:
   RELEASE_ADMIN_TOKEN

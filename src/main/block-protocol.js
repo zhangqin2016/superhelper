@@ -16,7 +16,7 @@
  * used by producers, not as a gate.
  */
 
-const BLOCK_SCHEMA_VERSION = 1;
+const BLOCK_SCHEMA_VERSION = 2;
 
 const BLOCK_TYPES = Object.freeze({
   MARKDOWN: "markdown",
@@ -39,6 +39,8 @@ const BLOCK_TYPES = Object.freeze({
 const KNOWN_TYPES = new Set(Object.values(BLOCK_TYPES));
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
+const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".mkv"]);
+const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
 
 function normalizeExtension(value = "") {
   const text = String(value || "").trim().toLowerCase();
@@ -57,6 +59,8 @@ function artifactTypeForArtifact(artifact = {}) {
     artifact.ext || extensionFromPath(artifact.path || artifact.relativePath || artifact.fileName),
   );
   if (artifact.kind === "image" || mime.startsWith("image/") || IMAGE_EXTENSIONS.has(ext)) return BLOCK_TYPES.IMAGE;
+  if (artifact.kind === "video" || mime.startsWith("video/") || VIDEO_EXTENSIONS.has(ext)) return BLOCK_TYPES.VIDEO;
+  if (artifact.kind === "audio" || mime.startsWith("audio/") || AUDIO_EXTENSIONS.has(ext)) return BLOCK_TYPES.AUDIO;
   if (mime === "application/pdf" || ext === ".pdf") return BLOCK_TYPES.PDF;
   if (mime === "text/markdown" || ext === ".md" || ext === ".markdown") return BLOCK_TYPES.MARKDOWN;
   if (mime === "text/html" || ext === ".html" || ext === ".htm") return BLOCK_TYPES.HTML;

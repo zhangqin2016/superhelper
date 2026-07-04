@@ -4,7 +4,7 @@ Date: 2026-06-04
 
 ## Symptom
 
-After a hot deployment, `https://lily.lanrensoft.cn/contact` could show a browser-level "This page couldn't load" state or the contact form could fail.
+After a hot deployment, the old transition-domain contact page could show a browser-level "This page couldn't load" state or the contact form could fail.
 
 ## Root Cause
 

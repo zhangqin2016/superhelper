@@ -11,10 +11,12 @@ let lastSkillSyncAt = 0;
 let skillSyncInFlight = null;
 
 function warmServiceContext() {
-  Promise.allSettled([
-    require("./service-client").registerDevice(),
-    require("./license-manager").refreshServerLicense(),
-  ])
+  require("./service-client")
+    .refreshClientBootstrap()
+    .then(() => Promise.allSettled([
+      require("./service-client").registerDevice(),
+      require("./license-manager").refreshServerLicense(),
+    ]))
     .then(() => require("./remote-config").refreshRemoteConfig())
     .catch((err) => {
       console.warn("[updates:scheduler] warmup", err?.message || err);

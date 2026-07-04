@@ -63,6 +63,121 @@ const SETTINGS_NAV_PARENT = {
 let panelOpen = false;
 let activeSettingsPage = "general";
 let refreshInFlight = null;
+let appPolicy = { region: "china", features: { account: true, billing: true, accountLogin: true, purchase: true, usage: true } };
+let appPolicyRefreshSeq = 0;
+
+function accountFeatureEnabled() {
+  const features = appPolicy?.features || {};
+  return features.account !== false && features.accountLogin !== false;
+}
+
+function usageFeatureEnabled() {
+  const features = appPolicy?.features || {};
+  return features.usage !== false;
+}
+
+function normalizeSettingsPage(pageId) {
+  if (pageId === "help") return "about";
+  if (!accountFeatureEnabled() && pageId === "account") return usageFeatureEnabled() ? "usage" : "license";
+  if (!usageFeatureEnabled() && pageId === "usage") return accountFeatureEnabled() ? "account" : "license";
+  return pageId;
+}
+
+export function applyAppPolicyToSettings(policy = {}) {
+  appPolicy = {
+    region: policy.region || policy.id || "china",
+    features: {
+      account: true,
+      billing: true,
+      accountLogin: true,
+      purchase: true,
+      usage: true,
+      ...(policy.features || {}),
+    },
+  };
+  const accountEnabled = accountFeatureEnabled();
+  const usageEnabled = usageFeatureEnabled();
+  const accountNav = document.querySelector('.settings-nav-item[data-settings-page="account"], .settings-nav-item[data-edition-account-nav="true"]');
+  if (accountNav) {
+    if (!accountNav.dataset.originalSettingsPage) {
+      accountNav.dataset.originalSettingsPage = accountNav.dataset.settingsPage || "account";
+      accountNav.dataset.originalI18n = accountNav.dataset.i18n || "";
+    }
+    accountNav.dataset.editionAccountNav = "true";
+    if (accountEnabled) {
+      accountNav.dataset.settingsPage = accountNav.dataset.originalSettingsPage || "account";
+      if (accountNav.dataset.originalI18n) accountNav.dataset.i18n = accountNav.dataset.originalI18n;
+      accountNav.hidden = false;
+      accountNav.textContent = t("settings.nav.account");
+    } else if (usageEnabled) {
+      accountNav.dataset.settingsPage = "usage";
+      delete accountNav.dataset.i18n;
+      accountNav.hidden = false;
+      accountNav.textContent = t("settings.nav.usage");
+    } else {
+      accountNav.dataset.settingsPage = "license";
+      delete accountNav.dataset.i18n;
+      accountNav.hidden = false;
+      accountNav.textContent = t("settings.nav.license");
+    }
+  }
+  document.querySelectorAll('[data-settings-link="account"]').forEach((btn) => {
+    btn.hidden = !accountEnabled;
+  });
+  document.querySelectorAll('[data-settings-link="usage"]').forEach((btn) => {
+    btn.hidden = !usageEnabled;
+  });
+  const accountPage = $("settingsPageAccount");
+  if (accountPage && !accountEnabled) {
+    accountPage.hidden = true;
+    accountPage.classList.remove("is-active");
+  }
+  const usagePage = $("settingsPageUsage");
+  if (usagePage && !usageEnabled) {
+    usagePage.hidden = true;
+    usagePage.classList.remove("is-active");
+  }
+  document.querySelectorAll(".account-usage-balance").forEach((section) => {
+    section.hidden = !accountEnabled;
+  });
+  if (!accountEnabled && activeSettingsPage === "account") {
+    activeSettingsPage = usageEnabled ? "usage" : "license";
+  }
+  if (!usageEnabled && activeSettingsPage === "usage") {
+    activeSettingsPage = accountEnabled ? "account" : "license";
+  }
+}
+
+export const applyEditionToSettings = applyAppPolicyToSettings;
+
+async function refreshAppPolicy() {
+  const seq = ++appPolicyRefreshSeq;
+  const applyLatestPolicy = (policy) => {
+    if (seq !== appPolicyRefreshSeq) return false;
+    applyAppPolicyToSettings(policy || {});
+    return true;
+  };
+  try {
+    const getPolicy = window.assistantClient?.getAppPolicy;
+    const policy = typeof getPolicy === "function" ? await getPolicy().catch(() => null) : null;
+    if (policy?.ok !== false) {
+      applyLatestPolicy(policy || {});
+      return;
+    }
+  } catch {
+    /* fall back to packaged edition */
+  }
+  try {
+    const edition = await window.assistantClient?.getAppEdition?.();
+    if (edition?.ok !== false) {
+      applyLatestPolicy(edition || {});
+      return;
+    }
+  } catch {
+    /* fall back below */
+  }
+  applyLatestPolicy({});
+}
 
 async function confirmBypassPermission() {
   return confirmDialog({
@@ -75,11 +190,15 @@ async function confirmBypassPermission() {
 }
 
 function switchSettingsPage(pageId) {
+  pageId = normalizeSettingsPage(pageId);
   if (!SETTINGS_PAGES.includes(pageId)) return;
   activeSettingsPage = pageId;
 
   document.querySelectorAll(".settings-nav-item").forEach((btn) => {
-    const isActive = btn.dataset.settingsPage === (SETTINGS_NAV_PARENT[pageId] || pageId);
+    const parent = accountFeatureEnabled()
+      ? SETTINGS_NAV_PARENT[pageId]
+      : { ...SETTINGS_NAV_PARENT, usage: "usage", license: usageFeatureEnabled() ? "usage" : "license" }[pageId];
+    const isActive = btn.dataset.settingsPage === (parent || pageId);
     btn.classList.toggle("is-active", isActive);
     btn.setAttribute("aria-current", isActive ? "page" : "false");
   });
@@ -110,16 +229,22 @@ function setPanelOpen(open) {
 
 /** @param {string} [pageId] */
 export function openSettingsPage(pageId = "general") {
+  pageId = normalizeSettingsPage(pageId);
   if (pageId && SETTINGS_PAGES.includes(pageId)) {
     activeSettingsPage = pageId;
   }
   setPanelOpen(true);
+  refreshAppPolicy()
+    .then(() => {
+      if (panelOpen) switchSettingsPage(activeSettingsPage);
+    })
+    .catch(() => {});
   refreshSettingsPanelData();
 }
 
 function refreshSettingsPanelData() {
   if (refreshInFlight) return refreshInFlight;
-  refreshInFlight = Promise.allSettled([
+  const refreshers = [
     refreshLocaleSelect(),
     refreshThemeSelect(),
     refreshModelSelect(),
@@ -132,10 +257,11 @@ function refreshSettingsPanelData() {
     refreshRuntimePackSettings(),
     refreshLicenseStatus(),
     refreshUpdateSettings(),
-    refreshUsageSettings(),
-    refreshAccountSettings(),
     refreshMemorySettings(),
-  ])
+  ];
+  if (usageFeatureEnabled()) refreshers.push(refreshUsageSettings());
+  if (accountFeatureEnabled()) refreshers.push(refreshAccountSettings());
+  refreshInFlight = Promise.allSettled(refreshers)
     .then((results) => {
       for (const result of results) {
         if (result.status === "rejected") {
@@ -150,6 +276,7 @@ function refreshSettingsPanelData() {
 }
 
 export async function initSettingsPanel() {
+  await refreshAppPolicy();
   const openBtn = $("settingsBtn");
   const panel = $("settingsPanel");
   const closeBtn = $("settingsCloseBtn");
@@ -253,7 +380,7 @@ export async function initSettingsPanel() {
   }
 
   initUsageSettings();
-  initAccountSettings();
+  if (accountFeatureEnabled()) initAccountSettings();
   initSupportSettings();
   initThemeSettings();
   initMemorySettings();

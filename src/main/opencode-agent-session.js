@@ -412,7 +412,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   /**
    * @param {string} cwd
-   * @param {{ agentCommand: string, permissionMode?: string, model?: {providerID:string, modelID:string}|null, agent?: string|null, configDir?: string, dataDir?: string }} options
+   * @param {{ agentCommand: string, permissionMode?: string, model?: {providerID:string, modelID:string}|null, modelRouteAudit?: object|null, agent?: string|null, configDir?: string, dataDir?: string }} options
    */
   ensureProcess(cwd, options, callOpts = {}) {
     if (!cwd || !options?.agentCommand) throw new Error("RUNNER_MISSING_ARGS");
@@ -519,6 +519,7 @@ class OpencodeAgentSession extends EventEmitter {
       turnSettled: this._turnSettled,
       sawActivity: this._sawActivity,
       collectedOutputLength: this.collectedOutput.length,
+      modelRoute: this.spawnOptions?.modelRouteAudit || null,
       pendingPermissions: this._pendingPermissions.size,
       pendingQuestions: this._pendingQuestions.size,
       pendingComplete: Boolean(this._pendingCompletePayload),

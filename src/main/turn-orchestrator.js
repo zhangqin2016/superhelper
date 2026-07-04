@@ -55,6 +55,10 @@ const {
   noteTaskToolUse,
   updateTaskLiveness,
 } = require("./task-run-state");
+const {
+  findBlockingRunningProcessJobs,
+  runningProcessJobNotice,
+} = require("./process-job-turn-guard");
 
 const log = getLogger("turn-orchestrator");
 
@@ -85,6 +89,19 @@ function newTurnId() {
 
 function newQueueId() {
   return `queue_${crypto.randomUUID()}`;
+}
+
+function progressValueFromNotice(notice = {}) {
+  const progress = notice?.progress;
+  if (!progress || typeof progress !== "object") return null;
+  const explicit = Number(progress.percent ?? progress.value);
+  if (Number.isFinite(explicit)) return Math.max(0, Math.min(100, explicit));
+  const current = Number(progress.current ?? progress.done ?? progress.writtenBytes ?? progress.currentBytes);
+  const total = Number(progress.total ?? progress.max ?? progress.totalBytes);
+  if (Number.isFinite(current) && Number.isFinite(total) && total > 0) {
+    return Math.max(0, Math.min(100, (current / total) * 100));
+  }
+  return null;
 }
 
 function queueDispatchOptions(opts = {}) {
@@ -1495,6 +1512,9 @@ class TurnOrchestrator {
       ? null
       : classifyTurnFailure(payload, normalized, state);
     const failed = Boolean(failure);
+    const blockingProcessJobs = interrupted || stalled || failed
+      ? []
+      : findBlockingRunningProcessJobs([...state.tools.values()]);
     if (Number.isFinite(payload?.durationMs)) state.durationMs = payload.durationMs;
     if (Number.isFinite(payload?.totalCostUsd)) state.totalCostUsd = payload.totalCostUsd;
 
@@ -1527,6 +1547,18 @@ class TurnOrchestrator {
         retryable: failure.retryable !== false,
         source: payload?.source || "",
         exitCode: payload?.exitCode ?? null,
+        ...terminalMeta,
+      });
+    } else if (blockingProcessJobs.length) {
+      const notice = runningProcessJobNotice(blockingProcessJobs);
+      this._finalize(sessionId, "turn.stalled", {
+        stalled: true,
+        assistant: appendIncompleteTurnSummary(
+          [normalized.text || state.assistantText, notice].filter(Boolean).join("\n\n"),
+          state,
+          { ...payload, blockingProcessJobs },
+        ),
+        blockingProcessJobs,
         ...terminalMeta,
       });
     } else {
@@ -2262,10 +2294,11 @@ class TurnOrchestrator {
         countsAsActivity,
       });
       if (phase && detail) {
+        const progressValue = progressValueFromNotice(notice);
         state.taskRun.phase = phase;
         state.taskRun.progress = {
           label: detail,
-          value: null,
+          value: progressValue,
         };
         state.taskRun.resumeState = {
           ...(state.taskRun.resumeState || {}),
@@ -2279,6 +2312,7 @@ class TurnOrchestrator {
           code,
           level: notice.level || "",
           detail,
+          progress: notice.progress && typeof notice.progress === "object" ? notice.progress : null,
         },
         taskRun: compactTaskRun(state.taskRun),
       });

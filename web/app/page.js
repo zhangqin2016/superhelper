@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, BriefcaseBusiness, CheckCircle2, ClipboardList, Download, FileText, FolderOpen, GraduationCap, Image, MessageCircle, MousePointerClick, Scale, Search, ShieldCheck, Sparkles, TrendingUp, Users, Wand2, Wrench, Zap } from "lucide-react";
+import { BriefcaseBusiness, CheckCircle2, ClipboardList, Download, FileText, FolderOpen, GraduationCap, Image, MessageCircle, MousePointerClick, Scale, Search, ShieldCheck, Sparkles, TrendingUp, Users, Wand2, Wrench, Zap } from "lucide-react";
 import { SiteNav } from "../components/site-nav";
 import { ProductWindow } from "../components/product-window";
 import { ContactForm } from "../components/contact-form";
@@ -33,10 +33,6 @@ export default async function HomePage() {
                   <Link href="/download" className="inline-flex items-center gap-2 rounded-lg bg-mint px-6 py-4 font-semibold text-ink shadow-[0_18px_48px_rgba(95,241,196,0.28)]">
                     <Download size={18} />
                     {t.home.start}
-                  </Link>
-                  <Link href="/account/billing" className="inline-flex items-center gap-2 rounded-lg border border-white/16 px-6 py-4 font-semibold text-white/82">
-                    {t.home.buy}
-                    <ArrowRight size={18} />
                   </Link>
                 </div>
                 <div className="mt-7 grid max-w-2xl gap-2 text-sm text-white/62 sm:grid-cols-3">
@@ -381,10 +377,6 @@ export default async function HomePage() {
                   <Link href="/download" className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-4 font-semibold text-ink">
                     {t.home.start}
                     <CheckCircle2 size={18} />
-                  </Link>
-                  <Link href="/account/billing" className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/18 px-6 py-4 font-semibold text-white">
-                    {t.home.buy}
-                    <ArrowRight size={18} />
                   </Link>
                 </div>
               </div>

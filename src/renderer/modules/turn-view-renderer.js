@@ -1376,8 +1376,42 @@ function renderNoticeEntry(entry) {
   if (!detail) return null;
   const row = document.createElement("div");
   row.className = `assistant-process-notice is-${entry.level || "info"}`;
+  const percent = progressPercent(entry.progress);
+  if (entry.progress && typeof entry.progress === "object") {
+    row.classList.add("is-progress");
+    const text = document.createElement("div");
+    text.className = "assistant-process-notice-text";
+    text.textContent = detail;
+    row.appendChild(text);
+    if (percent != null) {
+      const track = document.createElement("div");
+      track.className = "assistant-process-progress-track";
+      track.setAttribute("role", "progressbar");
+      track.setAttribute("aria-valuemin", "0");
+      track.setAttribute("aria-valuemax", "100");
+      track.setAttribute("aria-valuenow", String(Math.round(percent)));
+      const fill = document.createElement("div");
+      fill.className = "assistant-process-progress-fill";
+      fill.style.width = `${percent}%`;
+      track.appendChild(fill);
+      row.appendChild(track);
+    }
+    return row;
+  }
   row.textContent = detail;
   return row;
+}
+
+function progressPercent(progress = null) {
+  if (!progress || typeof progress !== "object") return null;
+  const explicit = Number(progress.percent ?? progress.value);
+  if (Number.isFinite(explicit)) return Math.max(0, Math.min(100, explicit));
+  const current = Number(progress.current ?? progress.done ?? progress.writtenBytes ?? progress.currentBytes);
+  const total = Number(progress.total ?? progress.max ?? progress.totalBytes);
+  if (Number.isFinite(current) && Number.isFinite(total) && total > 0) {
+    return Math.max(0, Math.min(100, (current / total) * 100));
+  }
+  return null;
 }
 
 // A finished tool shows how long it ran (sub-100ms reads as instant — omit).

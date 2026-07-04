@@ -10,8 +10,8 @@ const {
   buildResultBlocks,
 } = require("../src/main/block-protocol.js");
 
-// version is stable (no mass re-derivation)
-assert.equal(BLOCK_SCHEMA_VERSION, 1);
+// version bumps when the artifact/result-block contract learns a new persisted type.
+assert.equal(BLOCK_SCHEMA_VERSION, 2);
 
 // normalizeBlock: missing type -> null
 assert.equal(normalizeBlock(null), null);
@@ -36,12 +36,14 @@ const blocks = buildResultBlocks({
   artifacts: [
     { path: "/ws/out.png", mimeType: "image/png", bytes: 10 },
     { path: "/ws/out.png", mimeType: "image/png" }, // dup path -> deduped
+    { path: "/ws/promo.mp4", mimeType: "video/mp4", kind: "video" },
+    { path: "/ws/voice.wav", mimeType: "audio/wav", kind: "audio" },
   ],
   contentBlocks: [{ blockType: "image", data: "AAAA", mediaType: "image/webp" }],
 });
 
 const types = blocks.map((b) => `${b.type}:${b.artifactType || b.chartType || ""}`);
-assert.deepEqual(types, ["chart:pie", "artifact:image", "artifact:image"]);
+assert.deepEqual(types, ["chart:pie", "artifact:image", "artifact:video", "artifact:audio", "artifact:image"]);
 // the two artifact:image differ (file vs content image) so both kept; the dup
 // file path collapsed to one:
 assert.equal(blocks.filter((b) => b.path === "/ws/out.png").length, 1, "dup file path deduped");

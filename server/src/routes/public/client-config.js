@@ -3,6 +3,9 @@ import { config } from "../../config.js";
 import { db } from "../../db.js";
 import { signConfigPayload } from "../../services/security.js";
 import {
+  buildClientBootstrapPolicy,
+} from "../../services/client-bootstrap.js";
+import {
   DEFAULT_EFFECTIVE_CONFIG,
   clientConfigTtlMs,
   deepMerge,
@@ -89,6 +92,27 @@ async function resolveEffectiveConfig(input) {
 }
 
 export function registerPublicClientConfigRoutes(app) {
+  app.get("/api/client/bootstrap", {
+    schema: {
+      tags: ["public:client-config"],
+      summary: "Resolve the runtime region and gateway policy for a client",
+      response: {
+        200: okResponse({
+          schemaVersion: { type: "number" },
+          configVersion: { type: "string" },
+          region: { type: "string" },
+          gatewayBaseUrl: { type: "string" },
+          apiBaseUrl: { type: "string" },
+          modelGatewayBaseUrl: { type: "string" },
+          features: { type: "object", additionalProperties: true },
+          routing: { type: "object", additionalProperties: true },
+          ttlSeconds: { type: "number" },
+          expiresAt: { type: "string" },
+        }),
+      },
+    },
+  }, async (request, reply) => reply.send(buildClientBootstrapPolicy(request)));
+
   app.post("/api/client/config", {
     schema: {
       tags: ["public:client-config"],
@@ -115,14 +139,18 @@ export function registerPublicClientConfigRoutes(app) {
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;
 
     const resolved = await resolveEffectiveConfig(input);
+    const { getMediaDeliveryMode, getModelDeliveryMode } = await import("../../services/app-settings.js");
+    const modelDeliveryMode = await getModelDeliveryMode();
     // Expand any per-scope `models.providers` directive into its preset menu
     // before tokens are injected.
-    const scopedConfig = expandModelProviderMenu(resolved.effectiveConfig);
-    const { getMediaDeliveryMode } = await import("../../services/app-settings.js");
+    const scopedConfig = expandModelProviderMenu(resolved.effectiveConfig, {
+      deliveryMode: modelDeliveryMode,
+    });
     const account = await resolveAccountContextForClientConfig(input, db);
     const effectiveConfig = withGatewayRuntimeConfig(scopedConfig, request, input, {
       publicBaseUrl: config.publicBaseUrl,
       mediaDeliveryMode: await getMediaDeliveryMode(),
+      modelDeliveryMode,
       account,
     });
     const payload = {

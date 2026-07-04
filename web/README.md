@@ -13,7 +13,7 @@ npm run dev
 Environment:
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=https://lily.lanrensoft.cn
+NEXT_PUBLIC_API_BASE_URL=https://lilych.lilywb.cn
 RELEASE_CDN_BASE_URL=https://qny.lanrensoft.cn
 RELEASE_CDN_PREFIX=app/updates
 ```

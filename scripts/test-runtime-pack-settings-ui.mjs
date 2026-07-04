@@ -44,6 +44,26 @@ assert.match(runtimePackSettings, /checkRuntimePackAvailability/, "runtime UI mu
 assert.match(runtimePackSettings, /dataset\.unavailable/, "runtime UI must disable install for unavailable platform artifacts");
 assert.match(runtimePackSettings, /settings\.runtime\.health\.ok/, "runtime UI must render dependency health state");
 assert.match(runtimePackSettings, /!pack\.readOnly/, "runtime UI must not offer uninstall for read-only bundled packs");
+assert.match(
+  runtimePackSettings,
+  /function renderRuntimePackCardInPlace\(/,
+  "runtime progress updates must patch one dependency card instead of rebuilding the whole list",
+);
+assert.match(
+  runtimePackSettings,
+  /updateRuntimePackCard\(event\.id\)/,
+  "runtime progress events must refresh only the changed dependency card",
+);
+assert.doesNotMatch(
+  runtimePackSettings,
+  /onRuntimePackProgress\(\(event\) => \{[\s\S]{0,260}renderRuntimePacks\(lastData\)/,
+  "runtime progress events must not rebuild the entire dependency list",
+);
+assert.match(
+  runtimePackSettings,
+  /progressById\.set\(pack\.id[\s\S]{0,180}updateRuntimePackCard\(pack\.id\)/,
+  "optimistic install state must refresh only the selected dependency card",
+);
 
 const zh = JSON.parse(read("src/renderer/i18n/locales/zh-CN.json"));
 assert.equal(zh["settings.nav.runtime"], "依赖", "runtime settings page should be user-facing Dependencies");

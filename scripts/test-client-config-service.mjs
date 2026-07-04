@@ -307,6 +307,24 @@ assert.ok(expanded.models.presets.every((p) => p.id.startsWith("glm-")), "scope 
 assert.equal(expanded.models.providers, undefined, "directive should be consumed");
 assert.ok(expanded.models.activePresetId.startsWith("glm-"), "active should be the directive's activeProvider");
 
+const defaultGatewayExpanded = expandModelProviderMenu(
+  { models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["deepseek"] } },
+  { providers: scopeProviders },
+);
+assert.equal(
+  defaultGatewayExpanded.models.activePresetId,
+  "deepseek-gateway",
+  "provider directives must fail safe to gateway when caller does not pass deliveryMode",
+);
+assert.equal(defaultGatewayExpanded.models.presets[0].env.LILY_API_KEY, "$LILY_GATEWAY_TOKEN");
+
+const explicitDirectExpanded = expandModelProviderMenu(
+  { models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["deepseek"] } },
+  { providers: scopeProviders, deliveryMode: "direct" },
+);
+assert.equal(explicitDirectExpanded.models.activePresetId, "deepseek-direct");
+assert.equal(explicitDirectExpanded.models.presets[0].env.LILY_API_KEY, "sk-d");
+
 // Fail-safe: unresolvable providers → keep the baseline menu, drop the directive.
 const unresolved = expandModelProviderMenu(
   { models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["ghost"] } },

@@ -74,6 +74,12 @@ function registerAll(ctx) {
 
   ipcMain.handle("app:get-icon-url", () => resolveRuntimeIconDataUrl());
   ipcMain.handle("app:get-version", () => ({ ok: true, version: require("electron").app.getVersion() }));
+  ipcMain.handle("app:get-edition", () => ({ ok: true, ...require("./config").appEdition() }));
+  ipcMain.handle("app:get-policy", async () => {
+    const serviceClient = require("./service-client");
+    const policy = await serviceClient.refreshClientBootstrap().catch(() => serviceClient.getClientPolicy());
+    return { ok: policy?.ok !== false, ...serviceClient.getClientPolicy(), ...(policy || {}) };
+  });
   ipcMain.handle("app:get-locale", () => ({ ok: true, ...listLocalesPublic() }));
   ipcMain.handle("app:set-locale", (_event, locale) => {
     const result = setLocale(locale);
@@ -109,18 +115,23 @@ function registerAll(ctx) {
   ipcMain.handle("license:refresh", () =>
     require("./license-manager").refreshServerLicense());
 
+  const accountDisabled = () => {
+    const features = require("./service-client").getClientPolicy().features || {};
+    return features.account === false || features.accountLogin === false;
+  };
+  const disabledAccountResult = () => ({ ok: false, error: "ACCOUNT_FEATURE_DISABLED" });
   ipcMain.handle("account:status", () =>
-    require("./account-manager").accountStatus());
+    accountDisabled() ? { ok: true, loggedIn: false, disabled: true } : require("./account-manager").accountStatus());
   ipcMain.handle("account:sms-send", async (_event, payload) =>
-    require("./account-manager").sendSmsCode(payload?.phone || payload));
+    accountDisabled() ? disabledAccountResult() : require("./account-manager").sendSmsCode(payload?.phone || payload));
   ipcMain.handle("account:sms-login", async (_event, payload) =>
-    require("./account-manager").loginWithSms(payload || {}));
+    accountDisabled() ? disabledAccountResult() : require("./account-manager").loginWithSms(payload || {}));
   ipcMain.handle("account:entitlements", () =>
-    require("./account-manager").refreshEntitlements());
+    accountDisabled() ? disabledAccountResult() : require("./account-manager").refreshEntitlements());
   ipcMain.handle("account:billing-link", () =>
-    require("./account-manager").createBillingLink());
+    accountDisabled() ? disabledAccountResult() : require("./account-manager").createBillingLink());
   ipcMain.handle("account:logout", () =>
-    require("./account-manager").logout());
+    accountDisabled() ? { ok: true } : require("./account-manager").logout());
 
   ipcMain.handle("service:get-settings", () =>
     require("./service-client").getServiceSettings());

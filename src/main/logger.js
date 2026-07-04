@@ -1,5 +1,7 @@
 "use strict";
 
+const util = require("node:util");
+
 class Logger {
   constructor(namespace) {
     this.namespace = namespace;
@@ -8,12 +10,13 @@ class Logger {
   _log(level, message, ...args) {
     const timestamp = new Date().toISOString().split("T")[1].slice(0, 12);
     const prefix = `[${timestamp} ${level.toUpperCase()} ${this.namespace}]`;
+    const text = args.length ? util.format(message, ...args) : message;
     if (level === "error") {
-      console.error(prefix, message, ...args);
+      console.error(prefix, text);
     } else if (level === "warn") {
-      console.warn(prefix, message, ...args);
+      console.warn(prefix, text);
     } else {
-      console.log(prefix, message, ...args);
+      console.log(prefix, text);
     }
   }
 

@@ -22,7 +22,7 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=change-me
 ADMIN_TOKEN=change-me
 SESSION_SECRET=change-me-at-least-32-chars
-PUBLIC_BASE_URL=https://lily.lanrensoft.cn
+PUBLIC_BASE_URL=https://www.lilywb.cn
 ```
 
 For production license signing, set:
@@ -87,13 +87,11 @@ LOCAL_ANTHROPIC_API_KEY=sk-local...
 
 When provider environment variables are present, the API server creates or
 updates a global `lily-default-runtime` config profile during startup.
-`MODEL_CONFIG_DELIVERY_MODE=direct` is the default: it delivers
-Anthropic-compatible provider URLs and keys directly to the client for lower
-latency and fewer moving parts. `MODEL_CONFIG_DELIVERY_MODE=gateway` keeps model
-provider secrets on the server by delivering Lily gateway URLs plus short-lived
-gateway tokens; OpenAI-compatible providers still fall back to the gateway
-because the desktop runtime speaks the Claude messages protocol. DashScope media
-skill defaults are also included so the
+`MODEL_CONFIG_DELIVERY_MODE=gateway` is the default and recommended mode: model
+provider secrets stay on the server and clients receive Lily gateway URLs plus
+short-lived gateway tokens. `MODEL_CONFIG_DELIVERY_MODE=direct` is an explicit
+operator opt-in for private deployments that accept delivering long-lived model
+provider keys to clients. DashScope media skill defaults are also included so the
 desktop app can enable built-in image, video, and speech generation without
 manual client setup:
 

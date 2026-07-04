@@ -3,7 +3,7 @@
 const { buildTurnArtifacts } = require("./turn-artifacts");
 const { buildTurnResultBlocks, RESULT_BLOCK_SCHEMA_VERSION } = require("./turn-result-blocks");
 
-const ARTIFACT_SCHEMA_VERSION = 2;
+const ARTIFACT_SCHEMA_VERSION = 3;
 
 function backfillMessageArtifacts(message, workspacePath = "") {
   const record = message?.record;

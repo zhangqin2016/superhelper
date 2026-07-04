@@ -297,7 +297,7 @@ function createContext({ eventBus } = {}) {
           code: "workProgress",
           level: "progress",
           detail: "index 2/5",
-          progress: { domain: "file-index", current: 2, total: 5 },
+          progress: { domain: "file-index", current: 2, total: 5, percent: 40 },
         },
       },
     },
@@ -305,7 +305,11 @@ function createContext({ eventBus } = {}) {
   ctx.eventBus.flush();
   const events = sent.flatMap((entry) => entry.payload?.events || []);
   const liveness = events.find((event) => event.type === "task.liveness.updated" && event.payload?.liveness?.status === "work_running");
-  if (!liveness || liveness.payload?.taskRun?.progress?.label !== "index 2/5") {
+  if (
+    !liveness ||
+    liveness.payload?.taskRun?.progress?.label !== "index 2/5" ||
+    liveness.payload?.taskRun?.progress?.value !== 40
+  ) {
     throw new Error(`workProgress should update generic task liveness/progress: ${JSON.stringify(events)}`);
   }
 }

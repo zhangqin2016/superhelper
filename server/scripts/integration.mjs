@@ -99,6 +99,7 @@ try {
   }
 
   const { buildApp } = await import("../src/app.js");
+  const { createAccessToken, hashRefreshToken, verifyWebSessionToken } = await import("../src/services/account-auth.js");
   const { signModelGatewayToken } = await import("../src/services/model-gateway.js");
   const app = await buildApp();
   const adminHeaders = { Authorization: `Bearer ${process.env.ADMIN_TOKEN}` };
@@ -192,6 +193,68 @@ try {
   });
   assert.equal(verified.statusCode, 200);
 
+  const accountUserId = `usr_integration_${runId}`;
+  const accountSessionId = `sess_integration_${runId}`;
+  await pool.query(
+    "insert into users (id, phone_e164, status, last_login_at) values ($1, $2, 'active', now())",
+    [accountUserId, `+86138${String(runId).slice(-7)}`],
+  );
+  await pool.query(
+    "insert into user_sessions (id, user_id, device_id, refresh_token_hash, expires_at, last_seen_at) values ($1, $2, $3, $4, now() + interval '7 days', now())",
+    [accountSessionId, accountUserId, activationPayload.deviceId, hashRefreshToken(`integration_refresh_${runId}`)],
+  );
+  const accountAccessToken = createAccessToken({
+    userId: accountUserId,
+    sessionId: accountSessionId,
+    deviceId: activationPayload.deviceId,
+    scopes: ["account", "billing"],
+  });
+  const billingLinkPayload = {
+    deviceId: activationPayload.deviceId,
+    fingerprintHash: activationPayload.fingerprintHash,
+    platform: activationPayload.platform,
+    arch: activationPayload.arch,
+    appVersion: activationPayload.appVersion,
+    publicKey,
+    keyAlg: "ed25519",
+  };
+  const billingLink = await app.inject({
+    method: "POST",
+    url: "/api/account/billing-link",
+    headers: {
+      Authorization: `Bearer ${accountAccessToken}`,
+      ...signedHeaders({
+        method: "POST",
+        pathname: "/api/account/billing-link",
+        payload: billingLinkPayload,
+        deviceId: activationPayload.deviceId,
+        privateKey,
+      }),
+    },
+    payload: billingLinkPayload,
+  });
+  assert.equal(billingLink.statusCode, 200);
+  const billingToken = new URL(billingLink.json().url).searchParams.get("token");
+  assert.match(billingToken, /^one_time_/);
+
+  const consumedBillingLink = await app.inject({
+    method: "POST",
+    url: "/api/account/billing-link/consume",
+    payload: { token: billingToken },
+  });
+  assert.equal(consumedBillingLink.statusCode, 200);
+  const consumedSession = verifyWebSessionToken(consumedBillingLink.json().webSessionToken);
+  assert.equal(consumedSession.ok, true);
+  assert.equal(consumedSession.userId, accountUserId);
+  assert.equal(consumedSession.sessionId, accountSessionId);
+
+  const reusedBillingLink = await app.inject({
+    method: "POST",
+    url: "/api/account/billing-link/consume",
+    payload: { token: billingToken },
+  });
+  assert.equal(reusedBillingLink.statusCode, 410);
+
   const globalProfile = await app.inject({
     method: "POST",
     url: "/api/admin/config-profiles",
@@ -210,7 +273,7 @@ try {
               id: "managed-standard",
               label: "Managed Standard",
               env: {
-                LILY_API_BASE_URL: "https://lily.lanrensoft.cn/llm",
+                LILY_API_BASE_URL: "https://lilych.lilywb.cn/llm",
                 LILY_MODEL: "integration-main",
                 LILY_MODEL_HAIKU: "integration-fast",
                 LILY_MODEL_SONNET: "integration-main",
@@ -244,7 +307,7 @@ try {
               id: "managed-device",
               label: "Managed Device",
               env: {
-                LILY_API_BASE_URL: "https://lily.lanrensoft.cn/device-llm",
+                LILY_API_BASE_URL: "https://lilych.lilywb.cn/device-llm",
                 LILY_MODEL: "integration-device-main",
               },
             },

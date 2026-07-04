@@ -12,6 +12,7 @@
 const { OPENCODE_RUNTIME_CAPABILITIES } = require("./runtime-capabilities");
 const {
   formatWorkProgressDetail,
+  inferWorkProgressFromCommand,
   latestWorkProgress,
 } = require("../work-progress-protocol");
 
@@ -85,12 +86,11 @@ function stringifyToolOutput(state = {}) {
   }
 }
 
-function toolProgressNoticeFromOutput(callID, output, state) {
-  const progress = latestWorkProgress(output);
+function toolProgressNoticeFromProgress(callID, progress, state) {
   if (!progress) return null;
   const detail = formatWorkProgressDetail(progress);
   if (!detail) return null;
-  const source = String(progress.source || progress.label || "tool").trim() || "tool";
+  const source = String(progress.source || progress.phase || progress.label || "tool").trim() || "tool";
   const key = `progress:${callID || "tool"}:${source}`;
   if (state.toolProgressNotices?.get(key) === detail) return null;
   state.toolProgressNotices?.set(key, detail);
@@ -109,6 +109,16 @@ function toolProgressNoticeFromOutput(callID, output, state) {
       },
     },
   });
+}
+
+function toolProgressNoticeFromOutput(callID, output, state) {
+  return toolProgressNoticeFromProgress(callID, latestWorkProgress(output), state);
+}
+
+function toolProgressNoticeFromInput(callID, input, state) {
+  const command = String(input?.command || input?.cmd || "");
+  if (!command) return null;
+  return toolProgressNoticeFromProgress(callID, inferWorkProgressFromCommand(command), state);
 }
 
 function stringifyToolContent(content) {
@@ -236,6 +246,10 @@ function reduceToolPart(part, state) {
     }));
     const progressNotice = output ? toolProgressNoticeFromOutput(callID, output, state) : null;
     if (progressNotice) drafts.push(progressNotice);
+    else {
+      const inputProgressNotice = toolProgressNoticeFromInput(callID, input, state);
+      if (inputProgressNotice) drafts.push(inputProgressNotice);
+    }
   };
 
   if (!prev && (status === "running" || status === "pending") && hasInput) started();

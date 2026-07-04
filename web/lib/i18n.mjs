@@ -38,7 +38,7 @@ export const dictionaries = {
       pricing: "价格",
       docs: "帮助",
       contact: "联系",
-      billing: "购买/充值",
+      billing: "授权",
       download: "下载",
       open: "打开导航",
     },
@@ -48,9 +48,9 @@ export const dictionaries = {
       titleB: "也能把事做下去。",
       desc: ["把截图、合同、表格或一整个文件夹放进来。", "它先帮你看懂材料，再给出清单、步骤、改法和可交付文件。", "不用懂模型，不用来回复制粘贴。"],
       start: "下载客户端",
-      buy: "登录购买权益",
+      buy: "查看授权方式",
       growth: "看看工作空间怎么成长",
-      promiseBullets: ["手机号登录，同步到客户端", "有免费额度，可再充值", "购买后自动到账"],
+      promiseBullets: ["授权码激活", "团队统一配置", "网关稳定访问"],
       os: "你的工作现场",
       scenes: ["法律资料库", "财务经营库", "产品上线资料"],
       filesTitle: "工作空间资料进入现场",
@@ -168,7 +168,7 @@ export const dictionaries = {
       submit: "提交联系信息",
       sending: "提交中...",
       required: "请填写姓名、邮箱和至少 8 个字的咨询内容。",
-      failed: "提交失败，请直接发邮件给 hello@lanrensoft.cn。",
+      failed: "提交失败，请稍后再试。",
       success: "已收到，我们会在后台查看并跟进。",
     },
     admin: {
@@ -270,7 +270,7 @@ export const dictionaries = {
       pricingPlans: [
         ["Personal", "个人试用", "1 seat", ["Desktop client", "Manual updates", "Basic skill packages"]],
         ["Team", "推荐", "5+ seats", ["License console", "Device analytics", "Skill package catalog", "Release control"]],
-        ["Enterprise", "联系购买", "Custom", ["Private deployment", "Custom skill packages", "Priority support"]],
+        ["Enterprise", "联系咨询", "Custom", ["Private deployment", "Custom skill packages", "Priority support"]],
       ],
       contactTitle: "把 Lily Workbench 带进团队，统一管理授权、技能包和更新。",
       contactDesc: "适合需要私有部署、设备授权、技能包市场和版本发布控制的团队。第一版不采集聊天内容，只做授权、设备和聚合用量管理。",
@@ -287,7 +287,7 @@ export const dictionaries = {
     },
   },
   en: {
-    nav: { scenarios: "Scenarios", experts: "Experts", product: "How it works", pricing: "Pricing", docs: "Docs", contact: "Contact", billing: "Buy / Top up", download: "Download", open: "Open navigation" },
+    nav: { scenarios: "Scenarios", experts: "Experts", product: "How it works", pricing: "Pricing", docs: "Docs", contact: "Contact", billing: "License", download: "Download", open: "Open navigation" },
     home: {
       badge: "Turn messy information into executable outcomes",
       titleA: "Stop chatting with AI.",
@@ -296,7 +296,7 @@ export const dictionaries = {
       start: "Start free",
       buy: "Sign in and buy",
       growth: "See how workspaces grow",
-      promiseBullets: ["Phone login syncs to desktop", "Free quota included", "Purchases arrive automatically"],
+      promiseBullets: ["Activation-code access", "Team-managed settings", "Stable gateway routing"],
       os: "Workspace operating system",
       scenes: ["Legal library", "Finance workspace", "Launch workspace"],
       filesTitle: "Workspace material enters the scene",
@@ -367,7 +367,7 @@ export const dictionaries = {
       sidebar: "Workspace folders", add: "Add folder", assistantTitle: "Work assistant", workspaces: [["Launch material", "Screenshots, docs and checklists"], ["Customer feedback", "Feedback, audio and sheets"], ["Study notes", "Material and summaries"]],
       connected: "Connected to Launch material · analyzing related files", ai: "I found the key details in the screenshot and combined them with this workspace's files.", user: "How do we fix this screenshot issue?", you: "You", result: "Result", steps: ["Understand what happened", "Use workspace material", "Give steps you can follow"], cards: [["Understand", "Screenshots and text together"], ["Find clues", "No step-by-step digging"], ["Move forward", "Steps and checklist"]],
     },
-    contactForm: { name: "Name", email: "Email", company: "Company / team", phone: "Phone / chat", subject: "Subject", message: "What should we help with?", submit: "Submit contact request", sending: "Submitting...", required: "Please leave your name, email, and a message of at least 8 characters.", failed: "Could not submit. Please email hello@lanrensoft.cn directly.", success: "Received. We will review it in the admin console." },
+    contactForm: { name: "Name", email: "Email", company: "Company / team", phone: "Phone / chat", subject: "Subject", message: "What should we help with?", submit: "Submit contact request", sending: "Submitting...", required: "Please leave your name, email, and a message of at least 8 characters.", failed: "Could not submit. Please try again later.", success: "Received. We will review it in the admin console." },
     admin: {
       brand: "Lily Admin", subtitle: "Control console", signOut: "Sign out", nav: { dashboard: "Dashboard", users: "Users", licenses: "Licenses", devices: "Devices", usage: "Usage", contacts: "Contacts", releases: "Releases", runtimePacks: "Runtime packs", skillPackages: "Skill packages", apps: "App store", plugins: "Plugins", config: "Config center", health: "Health", diagnostics: "Diagnostics", settings: "Settings", audit: "Audit" },
       navGroups: { operations: "Operations", distribution: "Distribution", configuration: "Configuration", monitoring: "Monitoring" },
@@ -419,13 +419,13 @@ export const dictionaries = {
     pages: { docsTitle: "Documentation", docsDesc: "First-run setup for teams deploying Lily Workbench.", pricingTitle: "Pricing", pricingDesc: "Start lightweight, then add team license control and deployment management.", pricingPlans: [["Personal", "Personal trial", "1 seat", ["Desktop client", "Manual updates", "Basic skill packages"]], ["Team", "Recommended", "5+ seats", ["License console", "Device analytics", "Skill package catalog", "Release control"]], ["Enterprise", "Contact sales", "Custom", ["Private deployment", "Custom skill packages", "Priority support"]]], contactTitle: "Bring Lily Workbench into your team with controlled licenses, skill packages, and updates.", contactDesc: "For teams that need private deployment, device licensing, skill package delivery and release control. We only collect device and aggregate usage stats.", contactPrepareTitle: "We will confirm first", contactPrepareItems: [["Deployment scope", "Mac only first, or Mac and Windows."], ["License policy", "Seats, expiry, offline activation, and update policy."], ["Skill package catalog", "MCP, skill, and internal tool entries to publish."]], downloadTitle: "Download Lily Workbench", downloadDesc: "Install the desktop client and connect it to your licensed team deployment.", changelogTitle: "Changelog", downloadPlatforms: { macArm: "Apple Silicon Mac · DMG", macIntel: "Intel Mac · DMG" } },
   },
   ar: {
-    nav: { scenarios: "السيناريوهات", experts: "مساحات الخبراء", product: "طريقة العمل", pricing: "الأسعار", docs: "المساعدة", contact: "تواصل", billing: "شراء / شحن", download: "تنزيل", open: "فتح القائمة" },
+    nav: { scenarios: "السيناريوهات", experts: "مساحات الخبراء", product: "طريقة العمل", pricing: "الأسعار", docs: "المساعدة", contact: "تواصل", billing: "الترخيص", download: "تنزيل", open: "فتح القائمة" },
     home: {
       badge: "حوّل الفوضى إلى نتائج قابلة للتنفيذ",
       titleA: "لا تكتف بالدردشة مع الذكاء الاصطناعي.",
       titleB: "دعه ينجز العمل.",
       desc: ["Lily Workbench ليس مجرد مربع أسئلة.", "اختر مجلد مساحة عمل أولاً.", "سيعمل حول ملفاتك ولقطات الشاشة والمستندات", "وسياق المهمة الذي يتراكم مع الوقت."],
-      start: "ابدأ مجاناً", buy: "تسجيل وشراء", growth: "شاهد كيف تنمو مساحة العمل", promiseBullets: ["تسجيل بالهاتف ومزامنة مع التطبيق", "رصيد مجاني متاح", "الشراء يصل تلقائياً"], os: "نظام تشغيل مساحة العمل", scenes: ["مكتبة قانونية", "مساحة مالية", "مساحة إطلاق"], filesTitle: "مواد مساحة العمل تدخل إلى المشهد", files: ["نموذج عقد.docx", "قضايا قانونية.pdf", "سياسة الشركة.md", "لقطة عميل.png"], brain: "بناء مشهد العمل", brainDesc: "يفهم الملفات · يتذكر السياق · يبني الخبرة", question: "راجع هذا العقد وأخبرني بالمخاطر والتعديلات", evidence: ["استخدم 4 ملفات", "طابق سياستين", "وجد 3 مخاطر"], resultTitle: "نتيجة جاهزة", outputs: ["قائمة مخاطر", "اقتراحات تعديل", "بنود قابلة للنسخ"],
+      start: "ابدأ مجاناً", buy: "عرض الترخيص", growth: "شاهد كيف تنمو مساحة العمل", promiseBullets: ["تفعيل برمز الترخيص", "إعدادات يديرها الفريق", "توجيه مستقر عبر البوابة"], os: "نظام تشغيل مساحة العمل", scenes: ["مكتبة قانونية", "مساحة مالية", "مساحة إطلاق"], filesTitle: "مواد مساحة العمل تدخل إلى المشهد", files: ["نموذج عقد.docx", "قضايا قانونية.pdf", "سياسة الشركة.md", "لقطة عميل.png"], brain: "بناء مشهد العمل", brainDesc: "يفهم الملفات · يتذكر السياق · يبني الخبرة", question: "راجع هذا العقد وأخبرني بالمخاطر والتعديلات", evidence: ["استخدم 4 ملفات", "طابق سياستين", "وجد 3 مخاطر"], resultTitle: "نتيجة جاهزة", outputs: ["قائمة مخاطر", "اقتراحات تعديل", "بنود قابلة للنسخ"],
       scenariosLabel: "أين يساعدك", scenariosTitle: "يلتقط العمل حيث تتعطل يومياً.", scenariosDesc: "غالباً لا تحتاج إجابة أخرى، بل تحتاج تحويل السياق الفوضوي إلى خطوة تالية.",
       pains: [["يفهم لقطات الشاشة فوراً", "أرسل اللقطة أو الخطأ وسيبدأ بفهم ما يحدث."], ["يلخص الملفات الكثيرة", "العقود والخطط ومحاضر الاجتماعات تتحول إلى ملخصات وقوائم ومقارنات."], ["يجد الأدلة دون أوامر تفصيلية", "يفحص المجلد والتاريخ والمواد المرتبطة."], ["يكمل الأعمال المتكررة", "الجداول والمسودات والفحوصات يمكن ربطها لتحقيق تقدم فعلي."]],
       workspaceLabel: "مجلد مساحة العمل", workspaceTitleA: "لا ترفع الملفات واحداً تلو الآخر.", workspaceTitleB: "أعط الذكاء الاصطناعي مشهد عمل.", workspaceDesc: "المجلد المحلي يصبح مساحة العمل. الملفات واللقطات والجداول والمستندات والتاريخ تنتمي إلى نفس السياق.", workspaceDemo: { title: "مساحة العمل: مواد الإطلاق", path: "/Documents/launch-material", items: ["bug-screenshot.png", "customer-feedback.docx", "meeting-notes.md", "launch-checklist.xlsx", "competitor.url", "سجل المحادثات"], footer: "يواصل الذكاء الاصطناعي الفهم حول هذا المجلد، وليس فقط آخر ملفات رفعتها." },
@@ -434,8 +434,8 @@ export const dictionaries = {
       differentLabel: "لماذا مختلف", differentTitle: "الذكاء العادي مربع دردشة. Lily مشهد عمل.", comparisons: [["AI دردشة", "تسأل فيجيب. ترفع الملفات مراراً وتنفذ الباقي بنفسك."], ["Lily Workbench", "تختار مجلد مساحة عمل فيقرأ المواد ويتذكر السياق ويدفع العمل نحو نتيجة قابلة للتنفيذ."]], magicLabel: "لحظة السحر", magicTitle: "ضع مواد فوضوية، واحصل على نتيجة يمكنك استخدامها فعلاً.", transformations: [["ربط المجلد", "ضع الملفات واللقطات والمستندات والجداول في مساحة واحدة"], ["فهم", "استخراج النقاط وتحديد المشاكل والعثور على الأدلة"], ["نتيجة قابلة للاستخدام", "استنتاجات وخطوات وقوائم وتقارير وردود"]], howLabel: "طريقة العمل", howTitle: "من “لدي مشكلة” إلى “هذه هي الخطوة التالية”.", howDesc: "لا ينتظر وصفاً مثالياً. يكمل السياق ويحول العمل المعقد إلى تقدم.", workflows: [["1", "أرسل المشهد", "لقطات ونصوص وملفات ومحتوى ويب."], ["2", "يفهم أولاً", "لا تحتاج شرحاً مثالياً."], ["3", "احصل على الخطوة التالية", "خطوات واضحة لا نصائح عامة."], ["4", "دعه يكمل", "تنظيم وتوليد وبحث وفحص."]], realOutcomesLabel: "نتائج حقيقية", realOutcomesTitle: "ليس مربع دردشة آخر، بل مساعد يعمل معك.", realOutcomesDesc: "يدخل في سيناريوهات متعددة: التعلم والعمل المكتبي وتنظيم المواد وتشخيص المشاكل والتعاون بين الفريق. لا يرى المستخدم أسماء الميزات، بل يرى مشكلته الحالية تتحرك إلى الأمام.", outcomes: [["معالجة المواد", "يرى اللقطات والملفات والصفحات والمستندات معاً."], ["خطوات قابلة للتنفيذ", "يعرف ما الذي تبدأ به وما التالي وما الذي تنتبه له."], ["يتذكر المهمة", "كل مهمة تحتفظ بسياقها."], ["يدفع العمل للأمام", "بحث وكتابة وتنظيم وتوليد وفحص."], ["جاهز للفرق", "إدارة مركزية للإصدارات والقدرات."], ["حدود الخصوصية", "ترى الاستخدام لا المحادثات الخاصة."]], teamLabel: "للفرق", outcomesTitle: "سهل للأفراد ومنضبط للفرق.", outcomesDesc: "يمكن للفرق إدارة التراخيص والإضافات والإصدارات دون جمع محتوى المحادثات.", teamBoundaryTitle: "حدود يمكن للفريق الوثوق بها", teamBoundaries: [["الاستخدام فقط", "تتبع الاستخدام دون قراءة المحادثات"], ["لا نجمع المحتوى", "لا نخزن الأسئلة أو الردود أو اللقطات أو الملفات"], ["عزل المهام", "كل عمل يبقى منفصلاً"], ["قدرات مضبوطة", "الفريق يحدد الأدوات المتاحة"]], contactLabel: "تواصل معنا", contactTitle: "اترك بياناتك وسنتابعها من لوحة الإدارة.", contactDesc: "أخبرنا باحتياجات ترخيص الفريق أو النشر الخاص أو سوق الإضافات أو إدارة الإصدارات. تُجمع طلبات الموقع لمراجعتها في الإدارة.", contactPoints: [["ترخيص الفريق", "إدارة المقاعد والانتهاء والتجارب وتفعيل الأجهزة مركزياً."], ["نشر خاص", "نضبط الخدمة والنطاق وتخزين المثبتات حسب بيئتك."], ["كتالوج إضافات", "نشر MCP والمهارات والأدوات الداخلية تدريجياً."]], finalTitle: "ابدأ من اللقطة أو المستند أو المشكلة التالية.", finalDesc: "دعه يفحص المشهد ويجد السبب ويرتب الخطوات ويدفع العمل للأمام.",
     },
     productWindow: { sidebar: "مجلدات العمل", add: "إضافة", assistantTitle: "مساعد العمل", workspaces: [["مواد الإطلاق", "لقطات ومستندات وقوائم"], ["ملاحظات العملاء", "ملاحظات وصوت وجداول"], ["ملاحظات التعلم", "مواد وملخصات"]], connected: "متصل بمواد الإطلاق · يحلل الملفات", ai: "وجدت التفاصيل المهمة في اللقطة ودمجتها مع ملفات مساحة العمل.", user: "كيف نصلح هذه المشكلة؟", you: "أنت", result: "النتيجة", steps: ["فهم ما حدث", "استخدام مواد المساحة", "إعطاء خطوات واضحة"], cards: [["فهم", "لقطات ونصوص معاً"], ["أدلة", "بدون بحث يدوي"], ["تنفيذ", "خطوات وقائمة"]] },
-    contactForm: { name: "الاسم", email: "البريد", company: "الشركة / الفريق", phone: "الهاتف / المحادثة", subject: "الموضوع", message: "بماذا نساعدك؟", submit: "إرسال الطلب", sending: "جار الإرسال...", required: "يرجى إدخال الاسم والبريد ورسالة لا تقل عن 8 أحرف.", failed: "تعذر الإرسال. راسل hello@lanrensoft.cn مباشرة.", success: "تم الاستلام. سنراجعه في لوحة الإدارة." },
-    pages: { docsTitle: "المساعدة", docsDesc: "إعداد أولي للفرق التي تنشر Lily Workbench.", pricingTitle: "الأسعار", pricingDesc: "ابدأ بخفة ثم أضف إدارة التراخيص والنشر.", pricingPlans: [["Personal", "تجربة شخصية", "مقعد واحد", ["تطبيق سطح المكتب", "تحديثات يدوية", "إضافات أساسية"]], ["Team", "موصى به", "5+ مقاعد", ["لوحة التراخيص", "تحليلات الأجهزة", "كتالوج الإضافات", "تحكم بالإصدارات"]], ["Enterprise", "تواصل للشراء", "مخصص", ["نشر خاص", "إضافات مخصصة", "دعم أولوية"]]], contactTitle: "أدخل Lily Workbench إلى فريقك مع تحكم بالتراخيص والإضافات والتحديثات.", contactDesc: "مناسب للفرق التي تحتاج نشر خاص وترخيص أجهزة وسوق إضافات وتحكم بالإصدارات. لا نجمع محتوى المحادثات.", contactPrepareTitle: "سنؤكد أولاً", contactPrepareItems: [["نطاق النشر", "Mac أولاً فقط أم Mac و Windows."], ["سياسة الترخيص", "المقاعد والانتهاء والتفعيل دون اتصال وسياسة التحديث."], ["كتالوج الإضافات", "MCP والمهارات والأدوات الداخلية المطلوبة."]], downloadTitle: "تنزيل Lily Workbench", downloadDesc: "ثبّت تطبيق سطح المكتب وصله بخدمة الترخيص.", changelogTitle: "سجل التحديثات", downloadPlatforms: { macArm: "Mac بشريحة Apple Silicon · DMG", macIntel: "Mac بشريحة Intel · DMG" } },
+    contactForm: { name: "الاسم", email: "البريد", company: "الشركة / الفريق", phone: "الهاتف / المحادثة", subject: "الموضوع", message: "بماذا نساعدك؟", submit: "إرسال الطلب", sending: "جار الإرسال...", required: "يرجى إدخال الاسم والبريد ورسالة لا تقل عن 8 أحرف.", failed: "تعذر الإرسال. يرجى المحاولة لاحقاً.", success: "تم الاستلام. سنراجعه في لوحة الإدارة." },
+    pages: { docsTitle: "المساعدة", docsDesc: "إعداد أولي للفرق التي تنشر Lily Workbench.", pricingTitle: "الأسعار", pricingDesc: "ابدأ بخفة ثم أضف إدارة التراخيص والنشر.", pricingPlans: [["Personal", "تجربة شخصية", "مقعد واحد", ["تطبيق سطح المكتب", "تحديثات يدوية", "إضافات أساسية"]], ["Team", "موصى به", "5+ مقاعد", ["لوحة التراخيص", "تحليلات الأجهزة", "كتالوج الإضافات", "تحكم بالإصدارات"]], ["Enterprise", "تواصل للاستشارة", "مخصص", ["نشر خاص", "إضافات مخصصة", "دعم أولوية"]]], contactTitle: "أدخل Lily Workbench إلى فريقك مع تحكم بالتراخيص والإضافات والتحديثات.", contactDesc: "مناسب للفرق التي تحتاج نشر خاص وترخيص أجهزة وسوق إضافات وتحكم بالإصدارات. لا نجمع محتوى المحادثات.", contactPrepareTitle: "سنؤكد أولاً", contactPrepareItems: [["نطاق النشر", "Mac أولاً فقط أم Mac و Windows."], ["سياسة الترخيص", "المقاعد والانتهاء والتفعيل دون اتصال وسياسة التحديث."], ["كتالوج الإضافات", "MCP والمهارات والأدوات الداخلية المطلوبة."]], downloadTitle: "تنزيل Lily Workbench", downloadDesc: "ثبّت تطبيق سطح المكتب وصله بخدمة الترخيص.", changelogTitle: "سجل التحديثات", downloadPlatforms: { macArm: "Mac بشريحة Apple Silicon · DMG", macIntel: "Mac بشريحة Intel · DMG" } },
   },
 };
 

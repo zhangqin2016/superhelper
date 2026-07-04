@@ -13,7 +13,6 @@ export function SiteNav({ initialLocale }) {
     ["/#scenarios", t.nav.scenarios],
     ["/#experts", t.nav.experts],
     ["/#product", t.nav.product],
-    ["/account/billing", t.nav.billing],
     ["/contact", t.nav.contact],
   ];
   return (
@@ -30,9 +29,6 @@ export function SiteNav({ initialLocale }) {
         </nav>
         <div className="flex items-center gap-2">
           <LanguageSwitcher compact initialLocale={initialLocale} />
-          <Link href="/account/billing" className="nav-billing hidden rounded-lg border border-white/16 px-4 py-2 text-sm font-semibold text-white/86 sm:inline-flex">
-            {t.nav.billing}
-          </Link>
           <Link href="/download" className="nav-download rounded-lg bg-white px-4 py-2 text-sm font-semibold text-ink">
             {t.nav.download}
           </Link>

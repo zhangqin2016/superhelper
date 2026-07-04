@@ -46,15 +46,11 @@ function withDirectory(directory, extra = {}) {
 }
 
 function summarizeParams(directory, sessionID, body = {}) {
-  const summarizeBody = {};
-  if (body.providerID) summarizeBody.providerID = body.providerID;
-  if (body.modelID) summarizeBody.modelID = body.modelID;
-  if (body.auto !== undefined) summarizeBody.auto = Boolean(body.auto);
-  return {
-    path: { id: sessionID },
-    ...(directory ? { query: { directory } } : {}),
-    body: summarizeBody,
-  };
+  const params = { sessionID };
+  if (body.providerID) params.providerID = body.providerID;
+  if (body.modelID) params.modelID = body.modelID;
+  if (body.auto !== undefined) params.auto = Boolean(body.auto);
+  return withDirectory(directory, params);
 }
 
 function createOpencodeSdkSession(client, directory) {

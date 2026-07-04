@@ -276,6 +276,7 @@ export function appendTimelineNotice(target, notice, ts = Date.now()) {
     code: notice.code || "",
     level: notice.level || "info",
     detail: notice.detail || notice.message || "",
+    progress: notice.progress && typeof notice.progress === "object" ? notice.progress : null,
     done: Boolean(notice.done),
     replace: Boolean(notice.replace),
     replacesCode: notice.replacesCode || "",

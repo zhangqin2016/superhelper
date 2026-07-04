@@ -43,6 +43,12 @@ function devicePayload(deviceId) {
   };
 }
 
+function accountActionErrorMessage(error, fallback) {
+  const message = error instanceof Error ? error.message : "";
+  if (/SMS_REGION_BLOCKED/.test(message)) return "暂时无法提供验证码服务，请稍后再试。";
+  return message || fallback;
+}
+
 export async function sendAccountSmsAction(_previousState, formData) {
   try {
     const phone = text(formData, "phone");
@@ -62,7 +68,7 @@ export async function sendAccountSmsAction(_previousState, formData) {
       phone,
     };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "验证码发送失败。", phone: text(formData, "phone") };
+    return { ok: false, message: accountActionErrorMessage(error, "验证码发送失败。"), phone: text(formData, "phone") };
   }
 }
 

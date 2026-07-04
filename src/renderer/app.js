@@ -193,7 +193,7 @@ async function init() {
   initGlobalSearch();
   initAddProject();
   initTopbarSessionRename();
-  initSettingsPanel();
+  await initSettingsPanel();
   initModelSettings();
   initLocaleSettings();
   initPermissionSettings();

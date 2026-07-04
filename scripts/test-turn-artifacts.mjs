@@ -16,6 +16,10 @@ const pdfPath = path.join(outputDir, "report.pdf");
 fs.writeFileSync(pdfPath, "%PDF-1.4\n");
 const mdPath = path.join(outputDir, "张钦_八字命理全面分析_2026.md");
 fs.writeFileSync(mdPath, "# 命理全面分析\n\n报告正文");
+const videoPath = path.join(outputDir, "promo.mp4");
+fs.writeFileSync(videoPath, "fake mp4");
+const audioPath = path.join(outputDir, "voice.wav");
+fs.writeFileSync(audioPath, "fake wav");
 const skillDir = path.join(workspace, "resources", "skills-catalog", "lily-example", "references");
 fs.mkdirSync(skillDir, { recursive: true });
 const skillDependencyPath = path.join(skillDir, "guide.md");
@@ -54,6 +58,18 @@ try {
     assert.equal(artifacts[0].path, mdPath);
     assert.equal(artifacts[0].relativePath, "output/张钦_八字命理全面分析_2026.md");
     assert.equal(artifacts[0].mimeType, "text/markdown");
+  }
+
+  {
+    const artifacts = buildTurnArtifacts({
+      workspacePath: workspace,
+      assistantText: "视频和配音已生成：output/promo.mp4、output/voice.wav",
+    });
+    assert.deepEqual(artifacts.map((item) => item.relativePath), ["output/promo.mp4", "output/voice.wav"]);
+    assert.equal(artifacts[0].kind, "video");
+    assert.equal(artifacts[0].mimeType, "video/mp4");
+    assert.equal(artifacts[1].kind, "audio");
+    assert.equal(artifacts[1].mimeType, "audio/wav");
   }
 
   {

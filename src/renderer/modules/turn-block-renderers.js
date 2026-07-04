@@ -9,6 +9,8 @@ import { renderPdfBlock } from "./pdf-renderer.js";
 import { renderHtmlBlock } from "./html-renderer.js";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
+const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".mkv"]);
+const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
 
 function tr(key, fallback, params) {
@@ -65,6 +67,8 @@ function inferArtifactType(block = {}) {
   const mime = String(block.mimeType || "").toLowerCase();
   const ext = normalizeExtension(block.ext || extensionFromPath(block.path || block.relativePath || block.fileName));
   if (block.kind === "image" || mime.startsWith("image/") || IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (block.kind === "video" || mime.startsWith("video/") || VIDEO_EXTENSIONS.has(ext)) return "video";
+  if (block.kind === "audio" || mime.startsWith("audio/") || AUDIO_EXTENSIONS.has(ext)) return "audio";
   if (mime === "application/pdf" || ext === ".pdf") return "pdf";
   if (mime === "text/markdown" || MARKDOWN_EXTENSIONS.has(ext)) return "markdown";
   if (mime === "text/html" || ext === ".html" || ext === ".htm") return "html";
@@ -173,17 +177,24 @@ function disposeRendererTree(root) {
 }
 
 function renderArtifact(block) {
-  const isImage = inferArtifactType(block) === "image";
+  const artifactType = inferArtifactType(block);
+  const isImage = artifactType === "image";
+  const isVideo = artifactType === "video";
+  const isAudio = artifactType === "audio";
+  const isMedia = isImage || isVideo || isAudio;
   const name = displayName(block);
   const size = bytesText(block.bytes);
-  const src = isImage ? dataUrl(block) || fileUrlFromPath(block.path || "") : "";
+  const src = isMedia ? dataUrl(block) || fileUrlFromPath(block.path || "") : "";
   const openViewer = async () => {
     const mod = await import("./image-viewer.js");
     mod.openImageViewer?.(src, name);
   };
+  const mediaClass = isImage ? "is-image" : isVideo ? "is-video" : isAudio ? "is-audio" : "is-file";
   return el(html`
-    <figure class="assistant-renderer-block assistant-renderer-artifact${isImage ? " is-image" : " is-file"}">
+    <figure class="assistant-renderer-block assistant-renderer-artifact ${mediaClass}">
       ${isImage ? html`<img alt=${name} loading="lazy" src=${src} @click=${openViewer} />` : ""}
+      ${isVideo ? html`<video aria-label=${name} controls preload="metadata" src=${src}></video>` : ""}
+      ${isAudio ? html`<audio aria-label=${name} controls preload="metadata" src=${src}></audio>` : ""}
       <figcaption>
         <code class="assistant-generated-file-path">${name}</code>
         ${size ? html`<span class="assistant-renderer-meta">${size}</span>` : ""}

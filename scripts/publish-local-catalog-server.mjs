@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DEFAULT_API = "https://lily.lanrensoft.cn";
+const DEFAULT_API = "https://lilych.lilywb.cn";
 const DEFAULT_CHANNEL = "stable";
 const DEFAULT_SKILL_OUT = path.join(ROOT, "dist", "skill-packs");
 const DEFAULT_APP_OUT = path.join(ROOT, "dist", "workspace-apps");

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { adminCredentialHeaders } from "./admin-auth-shared.mjs";
 
-const API_BASE = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "https://lily.lanrensoft.cn";
+const API_BASE = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "https://lilych.lilywb.cn";
 
 async function adminHeaders(extra = {}) {
   const store = await cookies().catch(() => null);

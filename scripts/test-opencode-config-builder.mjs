@@ -115,6 +115,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(cfg.compaction.auto === true, "native OpenCode auto-compaction explicitly enabled");
   assert(cfg.compaction.prune === true, "native OpenCode tool-output prune explicitly enabled");
   assert(cfg.compaction.reserved === 10000, "native OpenCode compaction reserve pinned for stable defaults");
+  assert(r.diagnostics.modelRoute.route === "direct", "shared diagnostics carry model route audit");
 }
 
 // --- shared config also pins native compaction defaults ---------------------

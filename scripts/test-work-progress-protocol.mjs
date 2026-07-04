@@ -6,6 +6,8 @@ import { assert, assertEqual, finish } from "./lib/test-assert.mjs";
 const require = createRequire(import.meta.url);
 const {
   formatWorkProgressDetail,
+  inferWorkProgressFromCommand,
+  inferWorkProgressLine,
   latestWorkProgress,
   parseWorkProgressLine,
 } = require("../src/main/work-progress-protocol.js");
@@ -26,4 +28,24 @@ assert(parseWorkProgressLine("[lily-progress] nope") === null, "invalid marker i
 assert(formatWorkProgressDetail(latest).includes("4/9"), "formatter includes count progress");
 assert(formatWorkProgressDetail({ label: "plain" }) === "plain", "formatter handles label-only progress");
 
-finish("test-work-progress-protocol", 6);
+const curl = inferWorkProgressLine(" 12  234M   12 30.1M    0     0  1234k      0  0:03:14  0:00:25  0:02:49 1245k");
+assertEqual(curl.percent, 12, "curl progress parser reads percent");
+assert(formatWorkProgressDetail(curl).includes("12%"), "formatter includes inferred percent");
+assert(formatWorkProgressDetail(curl).includes("30 MB / 234 MB"), "formatter includes byte progress");
+
+const aria = inferWorkProgressLine("[#abc 120MiB/420MiB(28%) CN:4 DL:2.4MiB ETA:2m]");
+assertEqual(aria.percent, 28, "aria2 progress parser reads percent");
+assert(formatWorkProgressDetail(aria).includes("2.4 MB/s"), "formatter includes speed");
+
+const wget = inferWorkProgressLine("  8192K .......... ..........  42% 1.23M 1m");
+assertEqual(wget.percent, 42, "wget progress parser reads percent");
+
+const command = inferWorkProgressFromCommand('curl -L -o /tmp/blender.dmg "https://example.com/blender.dmg"');
+assertEqual(command.phase, "downloading", "curl command infers initial download phase");
+assertEqual(command.path, "/tmp/blender.dmg", "curl command infers output path");
+
+const latestInferred = latestWorkProgress("noise\r 55  100M   55 55M    0     0  1M      0  0:01:00  0:00:33  0:00:27 1M");
+assertEqual(latestInferred.percent, 55, "latest parser handles carriage-return progress");
+assert(inferWorkProgressLine("1 2 3 4") === null, "plain numeric output is not guessed as progress");
+
+finish("test-work-progress-protocol", 17);

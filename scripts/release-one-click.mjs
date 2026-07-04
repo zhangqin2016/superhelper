@@ -20,7 +20,7 @@ const DEFAULT_DOMAIN = "https://qny.lanrensoft.cn";
 const DEFAULT_PREFIX = "app/updates";
 const DEFAULT_AUTO_PREFIX = "app/auto-updates";
 const DEFAULT_KEY = "release-keys/license-private-key.pem";
-const DEFAULT_SERVER_API = "https://lily.lanrensoft.cn";
+const DEFAULT_SERVER_API = "https://lilych.lilywb.cn";
 
 function usage() {
   console.error(`usage:
@@ -101,7 +101,7 @@ function writeJson(filePath, data) {
 }
 
 function snapshotVersionFiles() {
-  const files = ["package.json", "package-lock.json"];
+  const files = ["package.json", "package-lock.json", "resources/app-edition.json"];
   const snapshot = new Map();
   for (const file of files) {
     const full = path.join(ROOT, file);
@@ -115,6 +115,16 @@ function snapshotVersionFiles() {
 function restoreVersionFiles(snapshot) {
   for (const [file, content] of snapshot.entries()) {
     fs.writeFileSync(path.join(ROOT, file), content, "utf8");
+  }
+}
+
+function restoreAppEditionFile(snapshot) {
+  const file = "resources/app-edition.json";
+  const full = path.join(ROOT, file);
+  if (snapshot.has(file)) {
+    fs.writeFileSync(full, snapshot.get(file), "utf8");
+  } else {
+    fs.rmSync(full, { force: true });
   }
 }
 
@@ -444,6 +454,9 @@ function setPackageVersion(version) {
 }
 
 const options = args();
+if (options.edition) {
+  fail("--edition has been removed. Publish one universal client; region/features are delivered by /api/client/bootstrap.");
+}
 const target = options.target || "all";
 const pkg = readJson("package.json");
 const currentVersion = pkg.version;
@@ -472,6 +485,7 @@ if ((publishServerRelease || (publishLocalCatalog && !options["dry-run"])) && !h
 const scriptNode = findModernNode();
 
 console.log(`[release-one] version ${currentVersion} -> ${nextVersion}`);
+console.log("[release-one] universal client package; runtime region policy is delivered by /api/client/bootstrap");
 const versionSnapshot = snapshotVersionFiles();
 
 try {

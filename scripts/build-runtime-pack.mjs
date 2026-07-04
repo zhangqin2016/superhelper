@@ -32,7 +32,7 @@ const { PACK_SPECS } = require(path.join(ROOT, "src/main/runtime-pack-specs.js")
 const DEFAULT_DOMAIN = "https://qny.lanrensoft.cn";
 const DEFAULT_BUCKET = "lanrensoft";
 const DEFAULT_PREFIX = "app/runtime-packs";
-const DEFAULT_API = "https://lily.lanrensoft.cn";
+const DEFAULT_API = "https://lilych.lilywb.cn";
 
 function parseArgs(argv) {
   const args = {};

@@ -59,6 +59,9 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   });
   assert(r.ok && r.protocol === "anthropic", "gateway /llm endpoint -> anthropic by explicit protocol");
   assert(r.model.providerID === "anthropic", "gateway model ref uses anthropic provider");
+  assert(r.diagnostics.modelRoute.route === "gateway", "diagnostics prove gateway route");
+  assert(r.diagnostics.modelRoute.provider === "deepseek", "diagnostics include gateway provider");
+  assert(r.diagnostics.modelRoute.keyKind === "configured-secret", "non-lilygw gateway token stays redacted");
   const cfg = JSON.parse(r.configContent);
   assert(cfg.provider.anthropic.options.baseURL === "https://lily.example.com/llm/deepseek/v1",
     "gateway base URL is normalized for Anthropic messages");
@@ -72,6 +75,8 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
     LILY_API_KEY: "sk", LILY_MODEL: "deepseek-chat",
   });
   assert(r.ok && r.protocol === "openai", "plain endpoint -> openai protocol");
+  assert(r.diagnostics.modelRoute.route === "direct", "diagnostics prove direct/custom route");
+  assert(r.diagnostics.modelRoute.isGateway === false, "direct route is not gateway");
   assert(r.model.providerID === "lily", "openai provider id = lily");
   const cfg = JSON.parse(r.configContent);
   assert(cfg.provider.lily.npm === "@ai-sdk/openai-compatible", "openai-compatible npm");

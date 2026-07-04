@@ -66,7 +66,7 @@ if (!broken?.__partialJson) {
 // Skill scripts print JSON with output paths; we surface those for "reveal in
 // folder". This is the pure detection logic; the DOM rendering isn't unit-tested
 // (same as generatedMediaFromPayload), but wrong detection = no reveal affordance.
-const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp|gif|svg|html?|json|zip)$/i;
+const GENERATED_FILE_EXTS = /\.(docx|xlsx|pptx|pdf|csv|md|txt|rtf|png|jpe?g|webp|gif|svg|mp4|webm|mov|m4v|mkv|mp3|wav|m4a|aac|ogg|flac|html?|json|zip)$/i;
 function isPlaceholderGeneratedPath(filePath = "") {
   const raw = String(filePath || "").trim();
   if (!raw) return true;
@@ -113,6 +113,8 @@ function expectPaths(payload, expected, label) {
 // template-fill / pdf-form emit {ok, output}; render emits {ok, images:[...]}.
 expectPaths({ ok: true, output: "/tmp/out/contract.docx", missing: [] }, ["/tmp/out/contract.docx"], "docx output");
 expectPaths({ ok: true, images: ["/tmp/v/page-1.png", "/tmp/v/page-2.png"] }, ["/tmp/v/page-1.png", "/tmp/v/page-2.png"], "render images");
+expectPaths({ ok: true, output: "/tmp/out/promo.mp4" }, ["/tmp/out/promo.mp4"], "video output");
+expectPaths({ ok: true, outputs: [{ path: "/tmp/out/voice.wav" }] }, ["/tmp/out/voice.wav"], "audio output");
 // A failed result must NOT offer a reveal to a file it didn't write.
 expectPaths({ ok: false, output: "/tmp/out/contract.docx" }, [], "failed result → no reveal");
 // Non-path strings (e.g. a status message) must not be mistaken for files.

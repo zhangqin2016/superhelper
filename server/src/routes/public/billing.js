@@ -4,6 +4,7 @@ import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { verifyWebSessionToken } from "../../services/account-auth.js";
 import { getPaymentAdminSettings } from "../../services/app-settings.js";
+import { clientFeatureEnabled } from "../../services/client-bootstrap.js";
 import {
   createGrantFromPaidOrder,
   normalizeProductForPublic,
@@ -110,7 +111,10 @@ export function registerPublicBillingRoutes(app) {
         response: { 200: okResponse({ products: { type: "array" } }) },
       },
     },
-    async () => {
+    async (request, reply) => {
+      if (!clientFeatureEnabled(request, "purchase")) {
+        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
+      }
       const payment = await getPaymentAdminSettings();
       const products = await db
         .selectFrom("products")
@@ -142,6 +146,9 @@ export function registerPublicBillingRoutes(app) {
       },
     },
     async (request, reply) => {
+      if (!clientFeatureEnabled(request, "purchase")) {
+        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
+      }
       const input = createOrderSchema.parse(request.body);
       const account = await requireWebUser(request, reply);
       if (!account) return;
@@ -186,6 +193,9 @@ export function registerPublicBillingRoutes(app) {
       },
     },
     async (request, reply) => {
+      if (!clientFeatureEnabled(request, "purchase")) {
+        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
+      }
       const account = await requireWebUser(request, reply);
       if (!account) return;
       const orders = await db
@@ -241,6 +251,9 @@ export function registerPublicBillingRoutes(app) {
       },
     },
     async (request, reply) => {
+      if (!clientFeatureEnabled(request, "purchase")) {
+        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
+      }
       const payment = await getPaymentAdminSettings();
       if (!payment.fakePaymentsEnabled) return reply.code(404).send({ ok: false, code: "NOT_FOUND" });
       const account = await requireWebUser(request, reply);

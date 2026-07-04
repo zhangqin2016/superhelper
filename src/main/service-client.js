@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { userDataPath, appVersion } = require("./config");
+const { userDataPath, appVersion, appEdition } = require("./config");
 
 // safeStorage is electron-only; lazy-require it inside the crypto functions so
 // this module loads in plain node (tests/CLIs). Absent → graceful plaintext
@@ -19,12 +19,23 @@ function electronSafeStorage() {
 const { base64urlEncode, stableStringify } = require("./crypto-signing");
 
 const DEVICE_FILE = "device-state.json";
+const CLIENT_POLICY_FILE = "client-bootstrap-policy.json";
 const FETCH_TIMEOUT_MS = 15_000;
 const ATTACHMENT_UPLOAD_TIMEOUT_MS = 60_000;
-const BUILTIN_SERVICE_API_BASE_URL = "https://lily.lanrensoft.cn";
+const BUILTIN_SERVICE_API_BASE_URL = "https://lilych.lilywb.cn";
+const BUILTIN_UAE_SERVICE_API_BASE_URL = "https://lilyuae.lilywb.cn";
+const EDGE_FALLBACK_SAFE_POST_PATHS = new Set([
+  "/api/devices/register",
+  "/api/client/config",
+  "/api/usage/summary",
+]);
 
 function devicePath() {
   return userDataPath(DEVICE_FILE);
+}
+
+function clientPolicyPath() {
+  return userDataPath(CLIENT_POLICY_FILE);
 }
 
 function readJson(filePath, fallback = {}) {
@@ -72,10 +83,167 @@ function normalizeBaseUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
+function defaultFeatures() {
+  const editionFeatures = appEdition().features || {};
+  return {
+    accountLogin: editionFeatures.account !== false,
+    purchase: editionFeatures.billing !== false,
+    licenseActivation: true,
+    usage: true,
+    modelDirect: false,
+    account: editionFeatures.account !== false,
+    billing: editionFeatures.billing !== false,
+  };
+}
+
+function builtinServiceApiBaseUrl() {
+  return localClientRegionHint() === "uae" ? BUILTIN_UAE_SERVICE_API_BASE_URL : BUILTIN_SERVICE_API_BASE_URL;
+}
+
+function hasExplicitServiceApiBaseUrl() {
+  return Boolean(process.env.LILY_SERVICE_API_BASE_URL || process.env.SERVICE_API_BASE_URL);
+}
+
+function configuredServiceApiBaseUrl() {
+  if (hasExplicitServiceApiBaseUrl()) {
+    return normalizeBaseUrl(process.env.LILY_SERVICE_API_BASE_URL || process.env.SERVICE_API_BASE_URL);
+  }
+  if (localClientRegionHint() === "uae") return BUILTIN_UAE_SERVICE_API_BASE_URL;
+  return appEdition().serviceApiBaseUrl || BUILTIN_SERVICE_API_BASE_URL;
+}
+
+function serviceBaseCandidates(primaryBaseUrl) {
+  const primary = normalizeBaseUrl(primaryBaseUrl);
+  const candidates = primary ? [primary] : [];
+  if (
+    !hasExplicitServiceApiBaseUrl() &&
+    primary === BUILTIN_UAE_SERVICE_API_BASE_URL &&
+    !candidates.includes(BUILTIN_SERVICE_API_BASE_URL)
+  ) {
+    candidates.push(BUILTIN_SERVICE_API_BASE_URL);
+  }
+  return candidates;
+}
+
+function serviceBaseCandidatesForRequest(primaryBaseUrl, pathname, method) {
+  const normalizedMethod = String(method || "GET").toUpperCase();
+  const normalizedPath = String(pathname || "").split("?")[0];
+  if (normalizedMethod !== "GET" && !EDGE_FALLBACK_SAFE_POST_PATHS.has(normalizedPath)) {
+    const primary = normalizeBaseUrl(primaryBaseUrl);
+    return primary ? [primary] : [];
+  }
+  return serviceBaseCandidates(primaryBaseUrl);
+}
+
+function pinPolicyToServiceBase(policy, baseUrl) {
+  const base = normalizeBaseUrl(baseUrl);
+  if (!base || base === normalizeBaseUrl(policy?.apiBaseUrl || policy?.gatewayBaseUrl)) return policy;
+  return {
+    ...policy,
+    gatewayBaseUrl: base,
+    apiBaseUrl: base,
+    modelGatewayBaseUrl: `${base}/llm`,
+    edgeFallbackFrom: normalizeBaseUrl(policy?.apiBaseUrl || policy?.gatewayBaseUrl),
+  };
+}
+
+function defaultClientPolicy() {
+  const baseUrl = normalizeBaseUrl(configuredServiceApiBaseUrl() || builtinServiceApiBaseUrl());
+  const region = localClientRegionHint() || "china";
+  return {
+    ok: true,
+    schemaVersion: 1,
+    source: "default",
+    region,
+    gatewayBaseUrl: baseUrl,
+    apiBaseUrl: baseUrl,
+    modelGatewayBaseUrl: `${baseUrl}/llm`,
+    features: defaultFeatures(),
+    routing: {
+      modelMode: "gateway",
+      releaseChannel: "domestic",
+      skillRegistry: "default",
+    },
+    expiresAt: "",
+  };
+}
+
+function localClientRegionHint() {
+  const explicit = String(process.env.LILY_CLIENT_REGION || process.env.CLIENT_REGION || "").trim().toLowerCase();
+  if (["uae", "ae", "are", "overseas"].includes(explicit)) return "uae";
+  if (["china", "cn", "domestic"].includes(explicit)) return "china";
+
+  const timeZone = String(
+    Intl.DateTimeFormat?.().resolvedOptions?.().timeZone ||
+      process.env.TZ ||
+      "",
+  ).trim().toLowerCase();
+  if (["asia/dubai", "asia/muscat"].includes(timeZone)) return "uae";
+  return "";
+}
+
+function normalizeClientPolicy(raw = {}, source = "remote") {
+  const fallback = defaultClientPolicy();
+  const apiBaseUrl = normalizeBaseUrl(raw.apiBaseUrl || raw.gatewayBaseUrl || fallback.apiBaseUrl);
+  const gatewayBaseUrl = normalizeBaseUrl(raw.gatewayBaseUrl || apiBaseUrl);
+  const modelGatewayBaseUrl = normalizeBaseUrl(raw.modelGatewayBaseUrl || `${gatewayBaseUrl}/llm`);
+  const features = {
+    ...fallback.features,
+    ...(raw.features || {}),
+  };
+  if (features.accountLogin === false) features.account = false;
+  if (features.purchase === false) features.billing = false;
+  return {
+    ...fallback,
+    ...raw,
+    ok: raw.ok !== false,
+    source,
+    region: String(raw.region || fallback.region || "china"),
+    apiBaseUrl,
+    gatewayBaseUrl,
+    modelGatewayBaseUrl,
+    features,
+    routing: {
+      ...fallback.routing,
+      ...(raw.routing || {}),
+    },
+  };
+}
+
+let clientPolicyCache = null;
+
+function loadStoredClientPolicy() {
+  if (clientPolicyCache) return clientPolicyCache;
+  const stored = readJson(clientPolicyPath(), null);
+  if (stored?.apiBaseUrl) {
+    const expiresAtMs = Date.parse(stored.expiresAt || "");
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs > Date.now()) {
+      clientPolicyCache = normalizeClientPolicy(stored, "cache");
+      return clientPolicyCache;
+    }
+  }
+  clientPolicyCache = defaultClientPolicy();
+  return clientPolicyCache;
+}
+
+function storeClientPolicy(policy) {
+  clientPolicyCache = normalizeClientPolicy(policy, "remote");
+  writeJson(clientPolicyPath(), clientPolicyCache);
+  return clientPolicyCache;
+}
+
+function getClientPolicy() {
+  return loadStoredClientPolicy();
+}
+
 function defaultApiBaseUrl() {
+  if (process.env.LILY_SERVICE_API_BASE_URL || process.env.SERVICE_API_BASE_URL) {
+    return normalizeBaseUrl(process.env.LILY_SERVICE_API_BASE_URL || process.env.SERVICE_API_BASE_URL);
+  }
+  const policy = getClientPolicy();
+  if (policy?.apiBaseUrl) return normalizeBaseUrl(policy.apiBaseUrl);
   return normalizeBaseUrl(
-    process.env.LILY_SERVICE_API_BASE_URL ||
-      process.env.SERVICE_API_BASE_URL ||
+    appEdition().serviceApiBaseUrl ||
       BUILTIN_SERVICE_API_BASE_URL,
   );
 }
@@ -85,7 +253,51 @@ function getServiceSettings() {
     ok: true,
     apiBaseUrl: defaultApiBaseUrl(),
     configurable: false,
+    policy: getClientPolicy(),
   };
+}
+
+async function refreshClientBootstrap({ force = false } = {}) {
+  const current = getClientPolicy();
+  const expiresAtMs = Date.parse(current.expiresAt || "");
+  const regionHint = localClientRegionHint();
+  const cacheMatchesRegionHint = !regionHint || String(current.region || "").toLowerCase() === regionHint;
+  if (!force && cacheMatchesRegionHint && current.source !== "default" && Number.isFinite(expiresAtMs) && expiresAtMs > Date.now()) {
+    return current;
+  }
+  const bootstrapBaseUrl = normalizeBaseUrl(
+    configuredServiceApiBaseUrl() || builtinServiceApiBaseUrl(),
+  );
+  if (!bootstrapBaseUrl) return current;
+  let lastError = null;
+  for (const baseUrl of serviceBaseCandidates(bootstrapBaseUrl)) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${baseUrl}/api/client/bootstrap`, {
+        method: "GET",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Lily-Device-Id": getDeviceId(),
+          "X-Lily-App-Version": appVersion(),
+          "X-Lily-Platform": process.platform,
+          ...(regionHint ? { "X-Lily-Region": regionHint } : {}),
+        },
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || json?.ok === false) {
+        return { ...current, ok: false, error: json?.code || "BOOTSTRAP_FAILED", status: response.status };
+      }
+      const policy = baseUrl === bootstrapBaseUrl ? json : pinPolicyToServiceBase(json, baseUrl);
+      return storeClientPolicy(policy);
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return { ...current, ok: false, error: "BOOTSTRAP_FAILED", detail: lastError?.message || String(lastError) };
 }
 
 function getDeviceId() {
@@ -202,30 +414,34 @@ async function serviceFetch(pathname, options = {}) {
   const { apiBaseUrl } = getServiceSettings();
   if (!apiBaseUrl) return { ok: false, error: "NO_SERVICE_URL" };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   const method = String(options.method || "GET").toUpperCase();
   const body = options.body || "";
-  try {
-    const response = await fetch(`${apiBaseUrl}${pathname}`, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...requestSignatureHeaders(method, pathname, body),
-        ...(options.headers || {}),
-      },
-    });
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok || json?.ok === false) {
-      return { ok: false, error: json?.code || "SERVICE_REQUEST_FAILED", status: response.status };
+  let lastError = null;
+  for (const baseUrl of serviceBaseCandidatesForRequest(apiBaseUrl, pathname, method)) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${baseUrl}${pathname}`, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...requestSignatureHeaders(method, pathname, body),
+          ...(options.headers || {}),
+        },
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || json?.ok === false) {
+        return { ok: false, error: json?.code || "SERVICE_REQUEST_FAILED", status: response.status };
+      }
+      return { ok: true, json };
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(timer);
     }
-    return { ok: true, json };
-  } catch (error) {
-    return { ok: false, error: "SERVICE_REQUEST_FAILED", detail: error?.message || String(error) };
-  } finally {
-    clearTimeout(timer);
   }
+  return { ok: false, error: "SERVICE_REQUEST_FAILED", detail: lastError?.message || String(lastError) };
 }
 
 async function registerDevice() {
@@ -528,6 +744,8 @@ async function uploadFeedbackAttachment(upload, attachment) {
 
 module.exports = {
   setLicenseIdProvider,
+  getClientPolicy,
+  refreshClientBootstrap,
   getServiceSettings,
   getDeviceId,
   devicePayload,

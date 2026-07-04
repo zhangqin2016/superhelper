@@ -1,5 +1,7 @@
 "use strict";
 
+const { classifyModelRoute } = require("../model-route-audit");
+
 /**
  * Translate Lily's distributed model config (resolved LILY_* env — endpoint,
  * token, model id) into the OpenCode provider config + model Ref.
@@ -55,15 +57,28 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   const token = lilyEnv.LILY_OPENCODE_API_KEY || lilyEnv.LILY_API_KEY || "";
   const requestedModelId = lilyEnv.LILY_OPENCODE_MODEL || lilyEnv.LILY_MODEL || "";
   const modelId = forceProModelId(requestedModelId);
+  const modelRoute = classifyModelRoute(lilyEnv);
 
   if (!modelId) {
-    return { ok: false, reason: "no model selected (LILY_MODEL missing)", model: null, tiers: null, configContent: null, baseUrl: "" };
+    return {
+      ok: false,
+      reason: "no model selected (LILY_MODEL missing)",
+      model: null,
+      tiers: null,
+      configContent: null,
+      baseUrl: "",
+      diagnostics: { modelRoute },
+    };
   }
   if (rawBase && rawBase.trim().startsWith("/")) {
     return {
       ok: false,
       reason: `gateway base URL is a relative managed path (${rawBase}); Lily runtime needs an absolute URL`,
-      model: null, tiers: null, configContent: null, baseUrl: rawBase,
+      model: null,
+      tiers: null,
+      configContent: null,
+      baseUrl: rawBase,
+      diagnostics: { modelRoute },
     };
   }
 
@@ -113,6 +128,7 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
     model: { providerID, modelID: modelId },
     tiers,
     diagnostics: {
+      modelRoute,
       subagentModel: tiers.subagent,
       subagentModelSource: "LILY_MODEL_FORCED_MAIN",
       subagentUsesMainModel: true,

@@ -154,6 +154,7 @@ ipcMain.handle("session:get-conversation", async (_event, payload) => {
 
 ipcMain.handle("app:get-locale", () => ({ ok: true, locale: "zh-CN" }));
 ipcMain.handle("app:get-version", () => ({ ok: true, version: "0.0.0-test" }));
+ipcMain.handle("app:get-edition", () => ({ ok: true, id: "domestic", features: { account: true } }));
 ipcMain.handle("app:get-icon-url", () => ({ ok: true, url: "" }));
 ipcMain.handle("account:status", () => ({
   ok: true,
@@ -505,6 +506,43 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(liveTurnQueueResult);
+    const workProgressNoticeResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const liveTurn = {
+          turnId: "turn_work_progress",
+          phase: "tool_running",
+          assistantText: "",
+          thinkingText: "",
+          contentBlocks: [],
+          processEvents: [],
+          tools: new Map(),
+          timeline: [{
+            kind: "notice",
+            code: "workProgress",
+            level: "progress",
+            detail: "Download: 42% · 84 MB / 200 MB",
+            progress: { phase: "downloading", percent: 42, writtenBytes: 84 * 1024 * 1024, totalBytes: 200 * 1024 * 1024 },
+          }],
+          notices: [],
+          permissions: new Map(),
+          questions: new Map(),
+          hooks: new Map(),
+          startedAt: Date.now(),
+        };
+        const article = createLiveTurnArticleShell(liveTurn);
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "session_work_progress" });
+        const progress = article.querySelector(".assistant-process-notice.is-progress .assistant-process-progress-track");
+        if (!progress) throw new Error("workProgress notice should render a progressbar in the chat process area");
+        if (progress.getAttribute("aria-valuenow") !== "42") {
+          throw new Error("progressbar should carry structured percent");
+        }
+        const fill = progress.querySelector(".assistant-process-progress-fill");
+        if (!fill || fill.style.width !== "42%") throw new Error("progress fill width should reflect percent");
+        return "work-progress-notice-regression: ok";
+      }
+    )()`);
+    console.log(workProgressNoticeResult);
     const minimapResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { updateMinimap } = await import("./modules/conversation-minimap.js");
@@ -1307,6 +1345,26 @@ app.whenReady().then(async () => {
             source: "tool_output",
           },
           {
+            id: "video-artifact",
+            type: "artifact",
+            artifactType: "video",
+            path: "/tmp/generated-assets/promo.mp4",
+            relativePath: "generated-assets/promo.mp4",
+            mimeType: "video/mp4",
+            bytes: 2048,
+            source: "file_change",
+          },
+          {
+            id: "audio-artifact",
+            type: "artifact",
+            artifactType: "audio",
+            path: "/tmp/generated-assets/voice.wav",
+            relativePath: "generated-assets/voice.wav",
+            mimeType: "audio/wav",
+            bytes: 1024,
+            source: "file_change",
+          },
+          {
             id: "md-mention-only",
             type: "artifact",
             artifactType: "markdown",
@@ -1367,6 +1425,17 @@ app.whenReady().then(async () => {
         pdfViewer.querySelector(".pdf-viewer-close")?.click();
         if (!host.querySelector(".assistant-renderer-html iframe")) {
           throw new Error("html result block did not render a sandboxed iframe");
+        }
+        const videoArtifact = host.querySelector(".assistant-renderer-artifact.is-video video");
+        if (!videoArtifact || !String(videoArtifact.getAttribute("src") || "").startsWith("app-file://media/")) {
+          throw new Error("video artifact should render a playable app-file video: " + host.innerHTML);
+        }
+        const audioArtifact = host.querySelector(".assistant-renderer-artifact.is-audio audio");
+        if (!audioArtifact || !String(audioArtifact.getAttribute("src") || "").startsWith("app-file://media/")) {
+          throw new Error("audio artifact should render a playable app-file audio: " + host.innerHTML);
+        }
+        if (host.querySelectorAll(".assistant-renderer-artifact.is-video .assistant-renderer-action").length !== 1) {
+          throw new Error("video artifact should keep a reveal action: " + host.innerHTML);
         }
         const markdownArtifact = host.querySelector(".assistant-renderer-markdown-artifact");
         if (!markdownArtifact || !markdownArtifact.textContent.includes("output/report.md")) {
@@ -1944,9 +2013,9 @@ app.whenReady().then(async () => {
           throw new Error("license page should hide account overview and usage panels");
         }
         openSettingsPage("help");
-        if (!visible("settingsPageHelp")) throw new Error("help should open a support hub, not stack support forms");
-        if (visible("settingsPageFeedback") || visible("settingsPageContact") || visible("settingsPageAbout")) {
-          throw new Error("help hub should not stack feedback/contact/about forms");
+        if (!visible("settingsPageAbout")) throw new Error("help nav should default to about page");
+        if (visible("settingsPageHelp") || visible("settingsPageFeedback") || visible("settingsPageContact")) {
+          throw new Error("help nav should not stack help/feedback/contact panels when defaulting to about");
         }
         document.querySelector('[data-settings-link="feedback"]').click();
         if (!visible("settingsPageFeedback")) throw new Error("feedback page should show feedback panel");
@@ -1974,6 +2043,40 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(settingsSingleResponsibilityResult);
+    const runtimePolicySettingsResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        window.__lilyAppPolicy = { ok: true, region: "uae", features: { accountLogin: false, purchase: false, licenseActivation: true } };
+        const { applyAppPolicyToSettings, openSettingsPage } = await import("./modules/settings-panel.js");
+        applyAppPolicyToSettings(window.__lilyAppPolicy);
+        const usageNav = document.querySelector('.settings-nav-item[data-edition-account-nav="true"]');
+        if (!usageNav || usageNav.hidden || usageNav.dataset.settingsPage !== "usage") {
+          throw new Error("UAE policy should keep the account group as usage navigation");
+        }
+        if (!document.querySelector('[data-settings-link="account"]')?.hidden) {
+          throw new Error("UAE policy should hide account login tab");
+        }
+        if (document.querySelector('[data-settings-link="usage"]')?.hidden) {
+          throw new Error("UAE policy should keep usage tab visible");
+        }
+        openSettingsPage("account");
+        const accountPage = document.getElementById("settingsPageAccount");
+        if (accountPage && !accountPage.hidden) throw new Error("UAE policy should not open account page");
+        if (document.getElementById("settingsPageUsage")?.hidden) {
+          throw new Error("UAE policy should redirect account page requests to usage");
+        }
+        if (!document.querySelector(".account-usage-balance")?.hidden) {
+          throw new Error("UAE policy should hide account entitlement balance on usage page");
+        }
+        openSettingsPage("license");
+        if (document.getElementById("settingsPageLicense")?.hidden) {
+          throw new Error("UAE policy should keep license activation page available");
+        }
+        window.__lilyAppPolicy = { ok: true, region: "china", features: { accountLogin: true, purchase: true } };
+        applyAppPolicyToSettings(window.__lilyAppPolicy);
+        return "runtime-policy-settings: ok";
+      }
+    )()`);
+    console.log(runtimePolicySettingsResult);
     console.log("test-renderer-import: ok");
   }
   app.quit();

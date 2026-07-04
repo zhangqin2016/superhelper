@@ -145,6 +145,24 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
     "tool running -> tool.started");
   assert(start.payload.input.command === "ls", "tool input carried");
 
+  const downloadStartState = createOpencodeRuntimeState();
+  const downloadStart = reduce("message.part.updated", {
+    part: {
+      type: "tool",
+      tool: "bash",
+      callID: "curl_download",
+      state: {
+        status: "running",
+        input: { command: 'curl -L -o /tmp/blender.dmg "https://example.com/blender.dmg"' },
+      },
+    },
+  }, downloadStartState);
+  assert(downloadStart.drafts.length === 2, `curl download start should emit tool + progress: ${JSON.stringify(downloadStart.drafts)}`);
+  assert(downloadStart.drafts[0].type === "tool.started", "curl download still starts as a normal tool");
+  assert(downloadStart.drafts[1].type === "engine.notice", "curl download start emits visible progress notice");
+  assert(downloadStart.drafts[1].payload.notice.code === "workProgress", "curl download progress uses generic workProgress");
+  assert(downloadStart.drafts[1].payload.notice.progress.phase === "downloading", "curl download progress carries phase");
+
   const partial = reduce("message.part.updated", {
     part: { type: "tool", tool: "bash", callID: "c1", state: { status: "running", metadata: { output: "partial" }, input: { command: "ls" } } },
   }, state);
@@ -171,6 +189,22 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
   assert(scanProgress.drafts[0].payload.notice.code === "workProgress", "scanner progress uses generic visible workProgress notice code");
   assert(scanProgress.drafts[0].payload.notice.detail.includes("55/80"), "scanner progress detail includes page count");
   assert(scanProgress.drafts[0].payload.notice.detail.includes("/meeting/groups/dashboard"), "scanner progress detail includes compact current path");
+
+  const curlProgress = reduce("message.part.updated", {
+    part: {
+      type: "tool",
+      tool: "bash",
+      callID: "curl_download",
+      state: {
+        status: "running",
+        metadata: { output: " 42  200M   42 84M    0     0  2M      0  0:01:40  0:00:42  0:00:58 2M" },
+        input: { command: 'curl -L -o /tmp/blender.dmg "https://example.com/blender.dmg"' },
+      },
+    },
+  }, downloadStartState);
+  assert(curlProgress.drafts.length === 1 && curlProgress.drafts[0].type === "engine.notice", "curl output progress updates the same visible notice");
+  assert(curlProgress.drafts[0].payload.notice.detail.includes("42%"), "curl output progress detail includes percent");
+  assert(curlProgress.drafts[0].payload.notice.progress.percent === 42, "curl output progress preserves structured percent");
 
   const sameScanProgress = reduce("message.part.updated", {
     part: {

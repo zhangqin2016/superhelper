@@ -5,11 +5,16 @@ import { config } from "../../config.js";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { hashRefreshToken, verifyAccessToken, verifyWebSessionToken } from "../../services/account-auth.js";
+import { consumeBillingLinkToken } from "../../services/billing-link-token.js";
 import { fetchEntitlementSummary } from "../../services/wallet.js";
+import { clientFeatureEnabled } from "../../services/client-bootstrap.js";
 import { requireSignedDeviceRequest, upsertDevice, upsertDevicePublicKey } from "../../services/device-identity.js";
 import { registerDeviceSchema } from "./devices.js";
 
 const accountRequestSchema = registerDeviceSchema;
+const consumeBillingLinkSchema = z.object({
+  token: z.string().min(1),
+});
 
 function bearerToken(request) {
   const header = String(request.headers.authorization || "");
@@ -100,6 +105,9 @@ export function registerPublicAccountRoutes(app) {
       },
     },
     async (request, reply) => {
+      if (!clientFeatureEnabled(request, "purchase")) {
+        return reply.code(403).send({ ok: false, code: "REGION_FEATURE_DISABLED" });
+      }
       const input = accountRequestSchema.parse(request.body);
       await upsertDevice(input);
       await upsertDevicePublicKey(input);
@@ -142,11 +150,63 @@ export function registerPublicAccountRoutes(app) {
           expires_at: expiresAt,
         })
         .execute();
-      const base = String(config.webBaseUrl || "https://lily.lanrensoft.cn").replace(/\/+$/, "");
+      const base = String(config.webBaseUrl || "https://www.lilywb.cn").replace(/\/+$/, "");
       return reply.send({
         ok: true,
         url: `${base}/account/billing?token=${encodeURIComponent(token)}`,
         expiresIn: 300,
+      });
+    },
+  );
+
+  app.post(
+    "/api/account/billing-link/consume",
+    {
+      schema: {
+        tags: ["public:account"],
+        summary: "Consume a one-time website billing link",
+        body: zodBody(consumeBillingLinkSchema),
+        response: { 200: okResponse({ webSessionToken: { type: "string" }, expiresIn: { type: "number" } }) },
+      },
+    },
+    async (request, reply) => {
+      const input = consumeBillingLinkSchema.parse(request.body);
+      const result = await consumeBillingLinkToken({
+        token: input.token,
+        lookupToken: async (tokenHash) => db
+          .selectFrom("billing_link_tokens")
+          .innerJoin("user_sessions", "user_sessions.id", "billing_link_tokens.session_id")
+          .select([
+            "billing_link_tokens.id",
+            "billing_link_tokens.user_id",
+            "billing_link_tokens.session_id",
+            "billing_link_tokens.device_id",
+            "billing_link_tokens.token_hash",
+            "billing_link_tokens.expires_at",
+            "billing_link_tokens.consumed_at",
+            "user_sessions.revoked_at as session_revoked_at",
+            "user_sessions.expires_at as session_expires_at",
+          ])
+          .where("billing_link_tokens.token_hash", "=", tokenHash)
+          .executeTakeFirst(),
+        markConsumed: async (id, consumedAt) => {
+          const rows = await db
+            .updateTable("billing_link_tokens")
+            .set({ consumed_at: consumedAt })
+            .where("id", "=", id)
+            .where("consumed_at", "is", null)
+            .execute();
+          return Number(rows?.[0]?.numUpdatedRows || 0) === 1;
+        },
+      });
+      if (!result.ok) {
+        const gone = result.code === "BILLING_LINK_EXPIRED" || result.code === "BILLING_LINK_CONSUMED";
+        return reply.code(gone ? 410 : 401).send({ ok: false, code: result.code });
+      }
+      return reply.send({
+        ok: true,
+        webSessionToken: result.webSessionToken,
+        expiresIn: 7 * 24 * 60 * 60,
       });
     },
   );

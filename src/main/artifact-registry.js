@@ -11,8 +11,8 @@ const HASH_FULL_FILE_LIMIT = 32 * 1024 * 1024;
 const HASH_EDGE_BYTES = 1024 * 1024;
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".bmp", ".avif"]);
-const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov"]);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".ogg"]);
+const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".mkv"]);
+const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
 const MEDIA_EXTENSIONS = new Set([...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS]);
 
 function isInsidePath(parent, child) {

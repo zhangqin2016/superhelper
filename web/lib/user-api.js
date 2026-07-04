@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 
-export const API_BASE = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "https://lily.lanrensoft.cn";
+export const API_BASE = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "https://lilych.lilywb.cn";
 
 async function userHeaders(extra = {}) {
   const store = await cookies().catch(() => null);

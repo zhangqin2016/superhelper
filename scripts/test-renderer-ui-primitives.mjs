@@ -15,6 +15,8 @@ if (!stylesEntryText.includes('@import "./styles/ui-primitives.css";')) {
 const primitiveText = fs.readFileSync(primitivePath, "utf8");
 const composerText = fs.readFileSync(composerPath, "utf8");
 const messagesText = fs.readFileSync(messagesPath, "utf8");
+const indexText = fs.readFileSync(path.join(root, "src/renderer/index.html"), "utf8");
+const permissionSettingsText = fs.readFileSync(path.join(root, "src/renderer/modules/permission-settings.js"), "utf8");
 for (const required of [
   ".ui-btn",
   ".ui-btn-primary",
@@ -57,15 +59,39 @@ if (transitionAll.length) {
 }
 
 const permissionSelectRule = composerText.match(/\.permission-mode-select\s*\{[^}]*\}/s)?.[0] || "";
-for (const required of ["appearance: none", "-webkit-appearance: none", "text-overflow: ellipsis"]) {
+for (const required of ["appearance: none", "-webkit-appearance: none", "pointer-events: none"]) {
   if (!permissionSelectRule.includes(required)) {
-    throw new Error(`permission-mode-select must avoid native popup styling and preserve text: missing ${required}`);
+    throw new Error(`permission-mode-select must not handle the composer popup directly: missing ${required}`);
+  }
+}
+for (const required of ["id=\"sessionPermissionModeButton\"", "id=\"sessionPermissionModeMenu\"", "role=\"listbox\""]) {
+  if (!indexText.includes(required)) {
+    throw new Error(`composer session permission picker must use a lightweight DOM menu: missing ${required}`);
+  }
+}
+for (const required of ["function syncSessionPermissionMenu", "toggleSessionPermissionMenu", "dispatchEvent(new Event(\"change\""]) {
+  if (!permissionSettingsText.includes(required)) {
+    throw new Error(`session permission DOM menu must stay wired to the existing select/change flow: missing ${required}`);
   }
 }
 
 const permissionWrapRule = composerText.match(/\.permission-mode-wrap::after\s*\{[^}]*\}/s)?.[0] || "";
 if (!permissionWrapRule.includes('content: ""') || !permissionWrapRule.includes("rotate(45deg)")) {
   throw new Error("permission-mode-wrap must render a custom chevron instead of relying on native select chrome");
+}
+const composerRowRule = composerText.match(/(?:^|\n)\.composer-row\s*\{[^}]*\}/s)?.[0] || "";
+if (!composerRowRule.includes("overflow: visible")) {
+  throw new Error("composer-row must not clip the session permission menu");
+}
+const permissionMenuRule = composerText.match(/\.permission-mode-menu\s*\{[^}]*\}/s)?.[0] || "";
+for (const required of ["width: min(230px", "border-radius: 10px", "box-shadow: 0 14px 34px"]) {
+  if (!permissionMenuRule.includes(required)) {
+    throw new Error(`permission-mode-menu must stay compact and polished: missing ${required}`);
+  }
+}
+const permissionSelectedRule = composerText.match(/\.permission-mode-option\[aria-selected="true"\]\s*\{[^}]*\}/s)?.[0] || "";
+if (!permissionSelectedRule.includes("background: color-mix") || !permissionSelectedRule.includes("var(--accent-subtle)")) {
+  throw new Error("permission-mode selected option must use a subtle accent surface");
 }
 
 const latestHoverRule = messagesText.match(/\.scroll-to-bottom-btn:hover\s*\{[^}]*\}/s)?.[0] || "";
