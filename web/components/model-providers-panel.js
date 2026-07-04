@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createModelProviderAction, deleteModelProviderAction } from "../app/admin/actions";
 import { SubmitButton } from "./admin-forms";
@@ -125,24 +126,25 @@ function modelList(provider) {
   return Array.isArray(provider?.models) ? provider.models.filter(Boolean) : [];
 }
 
-export function ModelProvidersPanel({ providers = [], showForm = true, showList = true }) {
+function draftFromProvider(provider) {
+  return {
+    id: provider?.id || "",
+    label: provider?.label || "",
+    type: provider?.type || "anthropic",
+    baseUrl: provider?.base_url || provider?.baseUrl || "",
+    defaultModel: provider?.default_model || provider?.defaultModel || "",
+    models: modelList(provider).join(", "),
+    groupId: provider?.metadata?.groupId || "",
+    disabled: provider ? !provider.enabled : false,
+  };
+}
+
+export function ModelProvidersPanel({ providers = [], initialProvider = null, showForm = true, showList = true }) {
   const { locale } = useI18n();
   const copy = labels[locale] || labels.zh;
   const [state, action, pending] = useActionState(createModelProviderAction, initialState);
-  const [draft, setDraft] = useState({ id: "", label: "", type: "anthropic", baseUrl: "", defaultModel: "", models: "", groupId: "", disabled: false });
+  const [draft, setDraft] = useState(() => draftFromProvider(initialProvider));
 
-  function edit(provider) {
-    setDraft({
-      id: provider.id,
-      label: provider.label || "",
-      type: provider.type || "anthropic",
-      baseUrl: provider.base_url || "",
-      defaultModel: provider.default_model || "",
-      models: (provider.models || []).join(", "),
-      groupId: provider.metadata?.groupId || "",
-      disabled: !provider.enabled,
-    });
-  }
   function set(name, value) {
     setDraft((current) => ({ ...current, [name]: value }));
   }
@@ -246,9 +248,9 @@ export function ModelProvidersPanel({ providers = [], showForm = true, showList 
                     </span>
                   </td>
                   <td className="px-4 py-2 text-end">
-                    <button type="button" onClick={() => edit(provider)} className="me-3 text-xs font-semibold text-brand hover:underline">
+                    <Link href={`/admin/config/providers/new?id=${encodeURIComponent(provider.id)}`} className="me-3 text-xs font-semibold text-brand hover:underline">
                       {copy.edit}
-                    </button>
+                    </Link>
                     <form action={deleteModelProviderAction} className="inline">
                       <input type="hidden" name="id" value={provider.id} />
                       <button type="submit" className="text-xs font-semibold text-red-600 hover:underline">{copy.remove}</button>
