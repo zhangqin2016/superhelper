@@ -1653,6 +1653,43 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   }
 }
 
+// --- no-progress: active foreground tools get a lease, not a weak fallback ----
+{
+  const savedNotice = OpencodeAgentSession.PROGRESS_NOTICE_MS;
+  const savedTimeout = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  OpencodeAgentSession.PROGRESS_NOTICE_MS = 25;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 60;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "run a quiet long command" });
+    await tick();
+    fake.emitEvent({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          type: "tool",
+          tool: "bash",
+          callID: "quiet_bash",
+          state: {
+            status: "running",
+            input: { command: "python3 generate-report.py --full" },
+          },
+        },
+      },
+    });
+    await sleep(150);
+    assert(orch.calls.done.length === 0, "active tool must not be force-ended only because it is quiet");
+    assert(fake.aborted === false, "active tool lease must not abort the engine");
+    const toolNotice = orch.calls.ingest.find((d) => d.type === "engine.notice" && d.payload?.notice?.code === "toolProgress");
+    assert(toolNotice, "active quiet tool emits observable progress instead of downgrading");
+    assert(String(toolNotice.payload.notice.detail || "").includes("generate-report.py"), "tool lease notice names the running command");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.PROGRESS_NOTICE_MS = savedNotice;
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = savedTimeout;
+  }
+}
+
 // --- context continuity: a config change must NOT respawn the server ---------
 // The server is reused across turns so every turn POSTs to the same session id
 // (that is what threads the conversation). AGENT.md varies per turn, so restarting

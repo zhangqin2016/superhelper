@@ -26,7 +26,11 @@ const looped = (s) => /\[loop\]/.test(s);
 // 1) no-progress: same (tool,args,result) 3x -> nudge on the 3rd, not before.
 assert.equal(looped(await run("s1", "read", { f: "a" }, "X")), false, "1st identical: no nudge");
 assert.equal(looped(await run("s1", "read", { f: "a" }, "X")), false, "2nd identical: no nudge");
-assert.equal(looped(await run("s1", "read", { f: "a" }, "X")), true, "3rd identical: nudged (no progress)");
+const firstLoopNote = await run("s1", "read", { f: "a" }, "X");
+assert.equal(looped(firstLoopNote), true, "3rd identical: nudged (no progress)");
+assert.match(firstLoopNote, /先确认是否仍有真实进展/);
+assert.match(firstLoopNote, /不要因为耗时而降级到更弱方案/);
+assert.doesNotMatch(firstLoopNote, /换一种方法|次级方案/);
 
 // 2) RESULT-AWARE: same tool+args but CHANGING output is genuine progress -> never nudged.
 for (const out of ["A", "B", "C", "D", "E"]) {

@@ -6,7 +6,7 @@ const BASE_CAPABILITIES = [
     family: "dependency",
     title: "Install or repair optional dependency packs",
     triggers: ["dependency missing", "install runtime", "large pdf", "ocr", "ffmpeg", "playwright"],
-    route: "Use lily-runtime-packs skill or runtime pack tools. Long installs must run through lily_process_jobs.",
+    route: "Use Lily runtime-pack tools (runtime_pack_list/runtime_pack_install), or read the lily-runtime-packs guide and run its script. Do not invoke OpenCode native `skill lily-*`. Long installs must run through lily_process_jobs.",
     failOpen: "If unavailable, fail open: continue with bundled capabilities and state the missing pack.",
   },
   {

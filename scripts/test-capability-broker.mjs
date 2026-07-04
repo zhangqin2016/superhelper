@@ -23,6 +23,9 @@ const context = compactCapabilityContext({ maxChars: 2500 });
 assert.ok(context.includes("dependency.install"));
 assert.ok(context.includes("process.job"));
 assert.ok(context.includes("fail open"));
+assert.ok(context.includes("runtime_pack_list/runtime_pack_install"));
+assert.ok(context.includes("Do not invoke OpenCode native `skill lily-*`"));
+assert.equal(context.includes("Use lily-runtime-packs skill"), false);
 assert.ok(context.length <= 2500);
 
 const tinyContext = compactCapabilityContext({ maxChars: 500 });

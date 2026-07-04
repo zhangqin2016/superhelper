@@ -14,6 +14,7 @@ import {
   sendJsonFromOpenAi,
 } from "./model-gateway/openai-adapter.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
+import { discoveredModelMetadataSync } from "./model-gateway/model-discovery.js";
 import { chatTokenUsage, gatewayAccountRequired } from "./model-gateway/usage.js";
 import { consumeEntitlement, fetchFeaturePricing } from "./wallet.js";
 
@@ -24,17 +25,75 @@ function syntheticModels(provider) {
   const models = provider.models?.length
     ? provider.models
     : [provider.model].filter(Boolean);
+  const providerMetadata = provider.metadata && typeof provider.metadata === "object" && !Array.isArray(provider.metadata)
+    ? provider.metadata
+    : {};
+  const metadataByModel = providerMetadata.models && typeof providerMetadata.models === "object" && !Array.isArray(providerMetadata.models)
+    ? providerMetadata.models
+    : {};
   return {
-    data: models.map((id) => ({
-      id,
-      type: "model",
-      display_name: id,
-      created_at: null,
-    })),
+    data: models.map((id) => {
+      const configured = metadataByModel[id] && typeof metadataByModel[id] === "object" && !Array.isArray(metadataByModel[id])
+        ? metadataByModel[id]
+        : {};
+      const discovered = discoveredModelMetadataSync(provider, id);
+      const maxModelLen = Number(
+        configured.maxModelLen ??
+          configured.max_model_len ??
+          configured.contextWindowTokens ??
+          configured.context_window_tokens ??
+          discovered.maxModelLen ??
+          discovered.max_model_len ??
+          discovered.contextWindowTokens ??
+          discovered.context_window_tokens,
+      );
+      return {
+        id,
+        type: "model",
+        display_name: id,
+        created_at: null,
+        ...(Number.isFinite(maxModelLen) && maxModelLen > 0 ? { max_model_len: Math.floor(maxModelLen) } : {}),
+      };
+    }),
     has_more: false,
     first_id: models[0] || null,
     last_id: models[models.length - 1] || null,
   };
+}
+
+async function upstreamOpenAiModelsOrSynthetic(provider) {
+  const configured = provider.models?.length ? new Set(provider.models) : null;
+  try {
+    const upstream = await forwardOpenAiModels(provider);
+    if (!upstream.ok) return syntheticModels(provider);
+    const payload = await upstream.json();
+    const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
+    const seen = new Set();
+    const data = [];
+    for (const item of list) {
+      const id = String(item?.id || item?.name || "").trim();
+      if (!id || seen.has(id)) continue;
+      if (configured && !configured.has(id)) continue;
+      seen.add(id);
+      data.push({ ...item, id });
+    }
+    if (configured) {
+      const synthetic = syntheticModels(provider).data;
+      for (const item of synthetic) {
+        if (!seen.has(item.id)) data.push(item);
+      }
+    }
+    if (!data.length) return syntheticModels(provider);
+    return {
+      object: payload?.object || "list",
+      data,
+      ...(payload?.has_more !== undefined ? { has_more: payload.has_more } : {}),
+      ...(payload?.first_id !== undefined ? { first_id: payload.first_id } : {}),
+      ...(payload?.last_id !== undefined ? { last_id: payload.last_id } : {}),
+    };
+  } catch {
+    return syntheticModels(provider);
+  }
 }
 
 function authToken(request) {
@@ -180,6 +239,10 @@ async function handleCountTokensRequest(request, reply) {
 async function handleModelsRequest(request, reply) {
   const provider = providerForRequest(request, reply);
   if (!provider) return reply;
+
+  if (provider.type === "openai") {
+    return reply.send(await upstreamOpenAiModelsOrSynthetic(provider));
+  }
 
   if (provider.models?.length || provider.model) {
     return reply.send(syntheticModels(provider));

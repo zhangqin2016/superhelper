@@ -2,7 +2,10 @@
 // Model auto-discovery: parsing + the Rule-13 degrade guarantee (any failure /
 // unknown provider / missing key → [] so the caller keeps the configured list).
 import assert from "node:assert/strict";
-import { fetchProviderModels } from "../server/src/services/model-gateway/model-discovery.js";
+import {
+  fetchProviderModelCatalog,
+  fetchProviderModels,
+} from "../server/src/services/model-gateway/model-discovery.js";
 
 function okJson(payload) {
   return async () => ({ ok: true, json: async () => payload });
@@ -15,6 +18,14 @@ const parsed = await fetchProviderModels(
   okJson({ data: [{ id: "deepseek-v4-pro" }, { id: "deepseek-v4-flash" }, { id: "text-embedding-3" }, { id: "whisper-1" }] }),
 );
 assert.deepEqual(parsed, ["deepseek-v4-pro", "deepseek-v4-flash"], "should parse chat models and drop embed/whisper");
+
+const catalog = await fetchProviderModelCatalog(
+  { id: "myopenai", type: "openai", baseUrl: "https://api.example.com/v1", apiKey: "k" },
+  okJson({ data: [{ id: "qwen-long", max_model_len: 196608 }, { id: "image-model", max_model_len: 4096 }] }),
+);
+assert.deepEqual(catalog.models, ["qwen-long"], "catalog should keep chat models only");
+assert.equal(catalog.metadataByModel["qwen-long"].maxModelLen, 196608, "catalog should parse max_model_len");
+assert.equal(catalog.metadataByModel["qwen-long"].contextWindowTokens, 196608, "catalog should expose context window");
 
 // Supports { models: [...] } shape and name fallback.
 const altShape = await fetchProviderModels(deepseek, okJson({ models: [{ name: "deepseek-reasoner" }] }));

@@ -53,17 +53,20 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   // is allowed, not just the common tools — otherwise OpenCode's "ask" default
   // still prompts a fully-authorized session.
   assert(translatePermission("full")["*"] === "allow", "full -> wildcard allow");
+  assert(translatePermission("full").skill === "deny", "full -> native skill tool denied; Lily skills route through AGENT/MCP");
   // Even full confirms irreversible catastrophes (bash is now a pattern ruleset).
   assert(translatePermission("full").bash["*"] === "allow", "full -> bash allowed by default");
   assert(translatePermission("full").bash["rm -rf /*"] === "ask", "full -> root wipe still asks");
   assert(translatePermission("plan").edit === "deny", "plan -> edit deny");
   assert(translatePermission("plan").read === "allow", "plan -> reads explicitly allowed (no ask-default nag)");
   assert(translatePermission("plan").websearch === "allow", "plan -> research still allowed");
+  assert(translatePermission("plan").skill === "deny", "plan -> native skill tool denied; Lily skills route through AGENT/MCP");
   // ask: automatic inside the workspace, confirm risky shell + out-of-workspace edits.
   assert(translatePermission("ask").bash["*"] === "allow", "ask -> safe shell runs automatically");
   assert(translatePermission("ask").bash["rm -rf*"] === "ask", "ask -> destructive shell confirmed");
   assert(translatePermission("ask").edit["*"] === "allow", "ask -> in-workspace edits automatic");
   assert(translatePermission("ask").edit["../*"] === "ask", "ask -> edits outside the workspace confirmed");
+  assert(translatePermission("ask").skill === "deny", "ask -> native skill tool denied; Lily skills route through AGENT/MCP");
   assert(translatePermission("does-not-exist").bash["*"] === "allow", "unknown mode -> ask default ruleset");
   // disallowedTools force deny even under full's "*" allow — evaluate() takes the
   // LAST matching rule, and the deny keys are appended after "*".
@@ -92,6 +95,21 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(r.diagnostics.ignoredTierModels.haiku === "deepseek-lite", "ignored fast tier diagnosed");
 }
 
+// --- server-delivered model limits are preserved for Lily runtime decisions ---
+{
+  const r = buildSharedBaseConfig({
+    lilyEnv: {
+      LILY_API_BASE_URL: "https://api.deepseek.com",
+      LILY_API_KEY: "sk",
+      LILY_MODEL: "deepseek-chat",
+      LILY_CONTEXT_WINDOW_TOKENS: "196608",
+      LILY_MAX_OUTPUT_TOKENS: "1024",
+    },
+  });
+  assert(r.model.contextWindowTokens === 196608, "context window env carried on model metadata");
+  assert(r.model.maxOutputTokens === 1024, "max output env carried on model metadata");
+}
+
 // --- full config assembly ---------------------------------------------------
 {
   const r = buildOpencodeConfig({
@@ -111,6 +129,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(cfg.model === "lily/deepseek-chat", "default model carried");
   assert(cfg.mcp.mail.type === "local", "mcp merged in");
   assert(cfg.permission.bash["*"] === "allow" && cfg.permission.websearch === "deny", "permission merged in (ask ruleset + disallowed deny)");
+  assert(cfg.permission.skill === "deny", "OpenCode native skill tool denied in built config");
   assert(cfg.instructions.length === 1 && cfg.instructions[0].endsWith("AGENT.md"), "fallback: instructions paths used when no agentPrompt");
   assert(cfg.compaction.auto === true, "native OpenCode auto-compaction explicitly enabled");
   assert(cfg.compaction.prune === true, "native OpenCode tool-output prune explicitly enabled");

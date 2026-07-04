@@ -49,6 +49,8 @@ assert.equal(
 
 const prompt = buildWebSystemLearningPrompt("学习 https://oa.example.com 这个 OA 系统");
 assert.match(prompt, /lily-web-system-learning/);
+assert.match(prompt, /不要执行 OpenCode 原生 `skill lily-web-system-learning`/);
+assert.doesNotMatch(prompt, /使用 `lily-web-system-learning` 技能流程/);
 assert.match(prompt, /不要让用户把密码、Cookie、Token、OAuth Code、CSRF 值或任何凭据头粘贴到聊天里/);
 assert.match(prompt, /不要问用户“如何获取 token”/);
 assert.match(prompt, /sessionPath/);

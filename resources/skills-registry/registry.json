@@ -849,8 +849,8 @@
       "changelog": "强化 Lily 平台搜索优先规则；禁止把 Bocha/Tavily/SerpAPI 等第三方搜索 Key 当成普通用户待改进项，数据缺口统一写入本次数据限制。",
       "capabilityLayer": "workflow",
       "riskLevel": "medium",
-      "defaultEligible": false,
-      "featured": false,
+      "defaultEligible": true,
+      "featured": true,
       "sourceKind": "lily",
       "name_i18n": {
         "en": "Stock Research",
@@ -957,8 +957,8 @@
       "changelog": "Lily 自研：技能发布前质量门禁，评分触发边界、验证路径、失败自救、安全和可观测性。",
       "capabilityLayer": "quality",
       "riskLevel": "low",
-      "defaultEligible": false,
-      "featured": false,
+      "defaultEligible": true,
+      "featured": true,
       "sourceKind": "lily",
       "name_i18n": {
         "en": "Skill Quality Gate",
@@ -993,8 +993,8 @@
       "changelog": "Lily 自研：意图路由黄金样例和回归测试规范。",
       "capabilityLayer": "quality",
       "riskLevel": "low",
-      "defaultEligible": false,
-      "featured": false,
+      "defaultEligible": true,
+      "featured": true,
       "sourceKind": "lily",
       "name_i18n": {
         "en": "Intent Routing Eval",

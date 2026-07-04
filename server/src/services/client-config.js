@@ -3,7 +3,7 @@ import { config } from "../config.js";
 import { verifyAccessToken } from "./account-auth.js";
 import { signModelGatewayToken } from "./model-gateway/auth.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
-import { discoveredModelsSync } from "./model-gateway/model-discovery.js";
+import { discoveredModelMetadataSync, discoveredModelsSync } from "./model-gateway/model-discovery.js";
 import { getModelCatalog } from "./model-catalog.js";
 
 export const DEFAULT_EFFECTIVE_CONFIG = {
@@ -134,6 +134,61 @@ function modelSlug(model) {
   return String(model || "").replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+function positiveInt(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.floor(number);
+}
+
+function modelMetadata(provider, model) {
+  const metadata = provider?.metadata && typeof provider.metadata === "object" ? provider.metadata : {};
+  const modelId = String(model || provider?.model || "").trim();
+  const discovered = discoveredModelMetadataSync(provider, modelId);
+  const models = metadata.models && typeof metadata.models === "object" && !Array.isArray(metadata.models)
+    ? metadata.models
+    : {};
+  const modelSpecific = modelId && models[modelId] && typeof models[modelId] === "object" && !Array.isArray(models[modelId])
+    ? models[modelId]
+    : {};
+  return { metadata, discovered, modelSpecific };
+}
+
+function providerModelEnv(provider, model) {
+  const { metadata, discovered, modelSpecific } = modelMetadata(provider, model);
+  const contextWindowTokens = positiveInt(
+    modelSpecific.contextWindowTokens ??
+      modelSpecific.context_window_tokens ??
+      modelSpecific.maxContextTokens ??
+      modelSpecific.max_context_tokens ??
+      modelSpecific.maxModelLen ??
+      modelSpecific.max_model_len ??
+      discovered.contextWindowTokens ??
+      discovered.context_window_tokens ??
+      discovered.maxModelLen ??
+      discovered.max_model_len ??
+      metadata.contextWindowTokens ??
+      metadata.context_window_tokens ??
+      metadata.maxContextTokens ??
+      metadata.max_context_tokens ??
+      metadata.maxModelLen ??
+      metadata.max_model_len,
+  );
+  const maxOutputTokens = positiveInt(
+    modelSpecific.maxOutputTokens ??
+      modelSpecific.max_output_tokens ??
+      modelSpecific.maxTokens ??
+      modelSpecific.max_tokens ??
+      metadata.maxOutputTokens ??
+      metadata.max_output_tokens ??
+      metadata.maxTokens ??
+      metadata.max_tokens,
+  );
+  return {
+    ...(contextWindowTokens ? { LILY_CONTEXT_WINDOW_TOKENS: String(contextWindowTokens) } : {}),
+    ...(maxOutputTokens ? { LILY_MAX_OUTPUT_TOKENS: String(maxOutputTokens) } : {}),
+  };
+}
+
 function providerLabel(provider) {
   // Honor the operator-configured label first (DB model_gateway_providers.label /
   // MODEL_GATEWAY_PROVIDERS). The static id→name map and the bare-id form are only
@@ -202,6 +257,7 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
         LILY_SUBAGENT_MODEL: model,
       }
     : {};
+  const metadataEnv = providerModelEnv(provider, model);
   const suffix = isDefault ? "" : `--${modelSlug(model)}`;
   if (deliveryMode === "direct" && supportsDirectDelivery(provider)) {
     return {
@@ -214,6 +270,7 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
         LILY_API_KEY: provider.apiKey,
         LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, deliveryMode),
         ...modelEnv,
+        ...metadataEnv,
       },
     };
   }
@@ -230,6 +287,7 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
       LILY_GATEWAY_PROVIDER: provider.id,
       LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, effectiveDeliveryMode),
       ...modelEnv,
+      ...metadataEnv,
     },
   };
 }

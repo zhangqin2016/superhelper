@@ -804,7 +804,7 @@
   "engine.compactFailed": "Skipped conversation memory maintenance; this chat can continue",
   "engine.apiRetry": "Service busy, retrying ({attempt}/{maxRetries})…",
   "engine.waitingForFirstResponse": "Connecting to the assistant, please wait…",
-  "engine.longWait": "Response is slow. Still waiting; you can stop or keep queuing messages.",
+  "engine.longWait": "Still waiting for the assistant; you can stop or keep queuing messages.",
   "engine.rateLimit": "High traffic — continuing shortly…",
   "engine.sessionReady": "Assistant ready{model}",
   "engine.sessionRefresh": "Connection refreshed — you can continue",

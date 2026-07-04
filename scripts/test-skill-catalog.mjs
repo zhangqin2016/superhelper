@@ -173,9 +173,21 @@ if (!globalGuide.includes("Prove root cause before repairing") && !globalGuide.i
 if (!globalGuide.includes("chat-native capability contracts") && !globalGuide.includes("聊天原生能力合同")) {
   throw new Error("AGENT guide must prefer chat-native capability contracts over UI-first workflows");
 }
+if (!globalGuide.includes("Slow is not failure") && !globalGuide.includes("慢不是失败")) {
+  throw new Error("AGENT guide must forbid downgrading a long-running task just because it is slow");
+}
+if (!globalGuide.includes("Do not run `skill lily-*`") && !globalGuide.includes("禁止执行 `skill lily-*`")) {
+  throw new Error("AGENT guide must prevent Lily platform skills from being invoked through OpenCode's native skill tool");
+}
+if (!globalGuide.includes("not OpenCode native skills") && !globalGuide.includes("不是 OpenCode 原生 skill")) {
+  throw new Error("AGENT guide must distinguish Lily capability guides from OpenCode native skills");
+}
 const subagentGuide = skillManager.buildAgentSubagentPersona("en");
 if (!subagentGuide.includes("Lily Subagent Rules") || !subagentGuide.includes("Do not start another Task subagent")) {
   throw new Error(`subagent persona must carry Lily subtask rules: ${subagentGuide}`);
+}
+if (!subagentGuide.includes("not OpenCode native skills") || !subagentGuide.includes("Do not run `skill lily-*`")) {
+  throw new Error("subagent persona must prevent Lily platform skills from being invoked through OpenCode's native skill tool");
 }
 if (!subagentGuide.includes("capability used") || !subagentGuide.includes("evidence")) {
   throw new Error(`subagent persona must return capability/evidence handoff: ${subagentGuide}`);
@@ -263,6 +275,24 @@ for (const skillId of [
 ]) {
   if (!bundledRegistry.skills.some((s) => s.id === skillId)) {
     throw new Error(`registry should include ${skillId}`);
+  }
+}
+const registryById = new Map((bundledRegistry.skills || []).map((skill) => [skill.id, skill]));
+for (const skillId of ["lily-stock-research", "lily-skill-quality-gate", "lily-intent-eval"]) {
+  const skill = registryById.get(skillId);
+  if (!skill?.defaultEligible) {
+    throw new Error(`${skillId} must be default eligible so core non-high-risk capabilities are not silently unavailable`);
+  }
+}
+for (const skillId of ["lily-web-system-learning", "lily-mail-assistant"]) {
+  const skill = registryById.get(skillId);
+  if (skill?.defaultEligible) {
+    throw new Error(`${skillId} is high-risk/on-demand and must not be auto-enabled by default`);
+  }
+}
+for (const skill of bundledRegistry.skills || []) {
+  if (skill.defaultEligible === false && skill.riskLevel !== "high") {
+    throw new Error(`${skill.id} is ${skill.riskLevel || "unknown"} risk but defaultEligible=false; add an on-demand enabler or make it default`);
   }
 }
 if (!skillPresets.SKILL_PRESETS.find((p) => p.id === "dev-starter")?.skillIds.includes("lily-coding-core")) {

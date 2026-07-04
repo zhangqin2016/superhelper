@@ -197,13 +197,22 @@
 /* Spacing rides on the status line itself: a hidden status (sealed turn with
    no footer text) must not leave a phantom header margin behind. */
 .assistant-turn-status {
+  display: flex;
+  align-items: center;
   color: var(--text-secondary);
   font-size: 15px;
   font-weight: 500;
   line-height: 1.65;
   margin-bottom: 0;
+  min-height: 1.65em;
   min-width: 0;
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  overflow-wrap: anywhere;
+}
+
+.assistant-turn-status[hidden] {
+  display: none !important;
 }
 
 .assistant-turn-status.is-sealed-duration {

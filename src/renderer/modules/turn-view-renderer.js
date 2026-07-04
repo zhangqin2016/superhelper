@@ -54,7 +54,6 @@ import {
 
 const narrativeRenderState = new Map();
 const questionDrafts = new Map();
-const LIVE_STATUS_STYLE = "15px";
 
 function questionDraftKey(sessionId, requestId) {
   return `${sessionId || ""}:${requestId || ""}`;
@@ -127,21 +126,15 @@ function applyStatusDisplay(statusEl, text, { sealed = false, live = false } = {
   statusEl.hidden = !text;
   if (!text) return;
   statusEl.classList.toggle("is-sealed-duration", sealed && live === false);
-  // The live/sealed inline style only differs across that one transition — write
-  // it once when the mode flips, not on every streaming tick (the status sits at
-  // the answer head; a per-tick style write forces a recalc there each frame).
+  statusEl.classList.toggle("is-live-status", live);
+  // Keep stale inline styles from older sessions/builds from reintroducing
+  // per-tick layout work. The stable live/sealed look now lives in CSS.
   const liveFlag = live ? "1" : "0";
   if (statusEl.dataset.liveStyle !== liveFlag) {
     statusEl.dataset.liveStyle = liveFlag;
-    if (live) {
-      statusEl.style.fontSize = LIVE_STATUS_STYLE;
-      statusEl.style.fontWeight = "500";
-      statusEl.style.lineHeight = "1.65";
-    } else {
-      statusEl.style.fontSize = "";
-      statusEl.style.fontWeight = "";
-      statusEl.style.lineHeight = "";
-    }
+    statusEl.style.fontSize = "";
+    statusEl.style.fontWeight = "";
+    statusEl.style.lineHeight = "";
   }
   if (statusEl.dataset.lastText === text) return;
   statusEl.textContent = text;
@@ -311,7 +304,7 @@ export function createLiveTurnArticleShell(liveTurn) {
   header.dataset.role = "header";
 
   const status = document.createElement("div");
-  status.className = "assistant-turn-status";
+  status.className = "assistant-turn-status is-live-status";
   status.dataset.role = "status";
   status.textContent = liveStatusText(liveTurn);
 

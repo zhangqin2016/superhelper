@@ -44,7 +44,7 @@ function buildWebSystemLearningPrompt(userText) {
     source,
     urlLine.trimEnd(),
     "",
-    "请严格使用 `lily-web-system-learning` 技能流程处理：",
+    "请严格按 `lily-web-system-learning` Lily 平台能力指南处理；不要执行 OpenCode 原生 `skill lily-web-system-learning`：",
     "1. 先确认系统入口 URL、允许访问的域名范围、业务目标和只读/写入边界；信息不足时只问缺失项。",
     "2. 不要让用户把密码、Cookie、Token、OAuth Code、CSRF 值或任何凭据头粘贴到聊天里；如需登录，运行 session 捕获流程，让用户在受控浏览器里自己完成登录，并复用打印出的 sessionPath。",
     "3. 遇到需要登录网站 token 的场景，不要问用户“如何获取 token”；改为重新捕获本地浏览器 session，或通过已登录浏览器流重新学习动态 token / API 合约。",

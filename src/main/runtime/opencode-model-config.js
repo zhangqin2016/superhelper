@@ -47,6 +47,12 @@ function forceProModelId(id) {
   return model;
 }
 
+function positiveInt(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.floor(number);
+}
+
 /**
  * @param {Record<string, string>} lilyEnv
  * @returns {{ ok:boolean, reason?:string, model:{providerID:string,modelID:string}|null,
@@ -125,7 +131,12 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
 
   return {
     ok: true,
-    model: { providerID, modelID: modelId },
+    model: {
+      providerID,
+      modelID: modelId,
+      contextWindowTokens: positiveInt(lilyEnv.LILY_CONTEXT_WINDOW_TOKENS),
+      maxOutputTokens: positiveInt(lilyEnv.LILY_MAX_OUTPUT_TOKENS),
+    },
     tiers,
     diagnostics: {
       modelRoute,

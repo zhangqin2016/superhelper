@@ -135,6 +135,28 @@ for (const required of [
   }
 }
 
+const turnStatusRule = runtimeChatText.match(/(?:^|\n)\.assistant-turn-status\s*\{[^}]*\}/s)?.[0] || "";
+for (const required of [
+  "display: flex",
+  "align-items: center",
+  "min-height: 1.65em",
+  "font-variant-numeric: tabular-nums",
+  "font-feature-settings: \"tnum\"",
+]) {
+  if (!turnStatusRule.includes(required)) {
+    throw new Error(`live turn status text must keep a stable baseline: missing ${required}`);
+  }
+}
+for (const forbidden of ["animation:", "transform:"]) {
+  if (turnStatusRule.includes(forbidden)) {
+    throw new Error(`live turn status text must not animate or move vertically: found ${forbidden}`);
+  }
+}
+const hiddenTurnStatusRule = runtimeChatText.match(/\.assistant-turn-status\[hidden\]\s*\{[^}]*\}/s)?.[0] || "";
+if (!hiddenTurnStatusRule.includes("display: none !important")) {
+  throw new Error("hidden live turn status must not leave a layout ghost");
+}
+
 for (const required of [
   ".assistant-reveal-btn",
   ".assistant-generated-file-row",

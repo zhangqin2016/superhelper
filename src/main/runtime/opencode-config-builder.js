@@ -136,7 +136,7 @@ function translatePermission(mode, disallowedTools) {
     case "full":
       // Autonomous: allow everything, but still confirm irreversible disasters
       // (disk wipe, root/home deletion). Normal work stays prompt-free.
-      base = { "*": "allow", bash: bashRules("allow", CATASTROPHIC_BASH) };
+      base = { "*": "allow", skill: "deny", bash: bashRules("allow", CATASTROPHIC_BASH) };
       break;
     case "plan":
       // Read-only: navigation + research allowed (explicitly, so reads don't hit
@@ -144,6 +144,11 @@ function translatePermission(mode, disallowedTools) {
       base = {
         read: "allow", grep: "allow", glob: "allow", list: "allow", lsp: "allow",
         webfetch: "allow", websearch: "allow",
+        // Lily skills are injected through AGENT.md and MCP capabilities, not
+        // OpenCode's native `skill` tool. Deny the native tool so first-party
+        // `lily-*` capabilities do not fail as "Skill not found" and degrade the
+        // platform into a weaker generic tool loop.
+        skill: "deny",
         edit: "deny", bash: "deny", task: "deny",
       };
       break;
@@ -160,6 +165,7 @@ function translatePermission(mode, disallowedTools) {
         // the agent already declares a `task` permission. An explicit `task:"allow"`
         // here defeats that guard → subagents spawn subagents (unbounded nesting,
         // runaway turns). Top-level still gets task via OpenCode's "*":"allow" default.
+        skill: "deny",
         edit: { "*": "allow", "../*": "ask" },
         external_directory: "ask",
         bash: bashRules("allow", DESTRUCTIVE_BASH),

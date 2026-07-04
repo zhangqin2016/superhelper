@@ -1780,6 +1780,7 @@ class TurnOrchestrator {
             busy: Boolean(runner.isBusy?.()),
           },
           sessionSummary,
+          contextWindowTokens: model?.contextWindowTokens || undefined,
         });
         this._emit(sessionId, "context.compactionDecision", {
           action: decision.action,

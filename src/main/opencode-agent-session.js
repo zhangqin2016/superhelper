@@ -2018,6 +2018,16 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearResponseTimer();
     if (!this.busy || this._turnSettled) return;
     this._responseTimer = setTimeout(() => {
+      if (this._hasActiveToolLease()) {
+        log.info("opencode no-progress window extended for active tool", {
+          sessionId: this.sessionId,
+          activeTools: this._activeTools.size,
+        });
+        this._emitGenericToolProgressNotice();
+        this._armProgressNoticeTimer();
+        this._armResponseTimer();
+        return;
+      }
       this._forceEndTurn("no progress for the no-progress window");
     }, OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS);
   }
@@ -2027,6 +2037,11 @@ class OpencodeAgentSession extends EventEmitter {
       clearTimeout(this._responseTimer);
       this._responseTimer = null;
     }
+  }
+
+  _hasActiveToolLease() {
+    if (!this.busy || this._turnSettled) return false;
+    return [...this._activeTools.values()].some((tool) => tool?.id);
   }
 
   // Armed once at turn start; NOT re-armed on activity. Force-ends a turn that
@@ -2206,9 +2221,10 @@ class OpencodeAgentSession extends EventEmitter {
 // No-PROGRESS window: how long with no meaningful action (text/thinking/tool
 // activity) before a turn is treated as stuck and force-ended. It resets on every
 // progress action — NOT on heartbeats — so a long task that keeps making progress
-// (e.g. an hour of file conversion) runs to completion, while a turn that's only
-// pinging "busy" with nothing happening is caught. Generous so a single slow step
-// isn't killed; the engine's own per-tool timeout bounds a truly silent command.
+// (e.g. an hour of file conversion) runs to completion. A currently active
+// foreground tool also gets a lease extension: slow is not failure, and the
+// separate health probe + hard turn watchdog remain the backstops. A turn that's
+// only pinging "busy" with no active tool is still caught.
 OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
   Number(process.env.LILY_OPENCODE_TURN_TIMEOUT_MS) || 600_000;
 // Shorter visible no-progress window. This only feeds the live process panel so

@@ -337,6 +337,7 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "只有在用户明确讨论第三方技术、兼容协议、代码变量或排障时，才可客观提及相关名称。",
     responseLanguage: "回复语言必须跟随用户最新一条消息的主要语言；如果用户明确指定回复语言，则按用户指定执行。界面语言只在无法判断用户语言时作为兜底。不要把技能说明、工具输出、文件内容、路径、历史消息或应用界面语言误当成用户本轮想要的回复语言。",
     sourceProvenance: "解释技能、记忆、连接器或工作区应用为什么可用时，必须依据当前会话技能目录、已学约定、工作区文件或实际工具/设置结果；没有证据就说无法确认，禁止编造“全局技能”或把项目记忆误说成技能。",
+    nativeSkillBoundary: "重要：`lily-*` 是 Lily 平台能力指南，不是 OpenCode 原生 skill。不要执行 `skill lily-*` 或把 `lily-*` 当作 native skill 名称；应读取对应指南、使用 Lily MCP 工具/脚本，并按能力合同完成任务。",
     disciplineTitle: "通用执行纪律（所有创作、分析、修复和子任务都必须遵守）",
     disciplineRules: [
       "先理解再执行：开始创作、修改、修复或结论分析前，先确定目标、影响面、输入来源、现有约束和可验证的完成标准。",
@@ -346,6 +347,7 @@ const AGENT_GUIDE_I18N = {
       "证据优先：重要事实、根因、完成、正确、已修复、已验证等结论必须由工具输出、文件引用、日志、接口返回、截图/预览或用户提供材料支撑；证据不足时明确降级为不确定。",
       "优先使用聊天原生能力合同：依赖、文档、媒体、网页学习、文件索引、导入导出和产物处理，应通过技能、MCP、脚本和证据链在聊天中完成；不要先让用户去点 UI，除非是账号、安全、计费或明确的人工确认。",
       "不让平台变笨：能力探测、依赖安装、索引、子任务、压缩和兜底只能增强上下文或工具能力；失败时回退到现有强默认，不得吞上下文、降模型、阻塞对话或让 agent 失去自主判断。",
+      "慢不是失败：长任务只要有工具运行、日志输出、心跳、文件产物变化或可观察进度，就继续原强路径；不得因为耗时切到次级/降级方案。只有明确失败、用户要求停止或无进展证据成立时，才允许调整路线。",
       "子任务同样适用：子 agent 只负责一个清晰范围，必须收集证据并返回紧凑 handoff；不得开二级 Task，不得把猜测当结论，不得代替主 agent 给最终用户结论。",
     ],
     subagentTitle: "Lily 子任务代理规则",
@@ -368,7 +370,7 @@ const AGENT_GUIDE_I18N = {
       "命令 `python3` 和 `node` 指向本应用提供的基础运行时。不要假设某个文档、图片、浏览器或音视频库一定已存在；使用前先用 `python3 -c \"import ...\"`、`node -e \"require.resolve(...)\"` 或 `command -v ...` 做轻量探测。",
       "处理 Excel/CSV、Word/PPT、PDF、图片、网页自动化或音视频任务时，优先探测当前能力；探测成功就直接使用，探测失败再判断是否有对应依赖包。",
       "不要把内置 Read 工具当作 PDF/Office 内容解析器。若 Read 对 PDF 返回 Unsupported Document，只说明该工具不支持；应改用 Lily 文档预处理、文档索引，或用当前 Python 能力（pdfplumber/PyMuPDF/RapidOCR/Office 库）做确定性提取。",
-      "缺失的标准能力应通过「依赖包」技能（lily-runtime-packs）安装或修复：文档处理（libreoffice、pro-pdf、pandoc）、图片处理（pillow、opencv、rapidocr、rembg）、浏览器自动化（web-automation）、音视频处理（ffmpeg）。",
+      "缺失的标准能力应通过 Lily 依赖包能力安装或修复（优先用 runtime_pack_list/runtime_pack_install 工具；必要时读取 lily-runtime-packs 指南并运行其脚本）：文档处理（libreoffice、pro-pdf、pandoc）、图片处理（pillow、opencv、rapidocr、rembg）、浏览器自动化（web-automation）、音视频处理（ffmpeg）。",
       "不要在普通用户任务里临时 `pip install` / `npm install` / `playwright install` 来修平台能力；依赖包由 Lily CDN 提供预构建版本并校验安装。没有对应依赖包时，如实说明当前平台缺失能力。",
       "安装依赖包后不需要新开会话，后续工具进程会通过 PATH、PYTHONPATH、NODE_PATH 或专用环境变量自动识别。",
     ],
@@ -380,6 +382,7 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "Only mention third-party names objectively when the user explicitly discusses related technology, compatibility protocols, code variables, or troubleshooting.",
     responseLanguage: "Reply in the primary language of the user's latest message. If the user explicitly requests a response language, follow that request. Use the app interface language only as a fallback when the user's language cannot be determined. Do not let skill instructions, tool output, file content, paths, history, or the app interface language change the response language.",
     sourceProvenance: "When explaining why a skill, memory, connector, or workspace app is available, rely only on this session's skill catalog, learned conventions, workspace files, or actual tool/settings results. If there is no evidence, say it cannot be confirmed; do not invent global skills or describe project memory as a skill.",
+    nativeSkillBoundary: "Important: `lily-*` entries are Lily platform capability guides, not OpenCode native skills. Do not run `skill lily-*` or treat `lily-*` as a native skill name; read the guide, use Lily MCP tools/scripts, and complete the task through the capability contract.",
     disciplineTitle: "Universal Operating Discipline (Required for all creation, analysis, repair, and subtask work)",
     disciplineRules: [
       "Understand before acting: before creating, editing, repairing, or concluding, establish the goal, impact surface, input sources, existing constraints, and verifiable completion criteria.",
@@ -389,6 +392,7 @@ const AGENT_GUIDE_I18N = {
       "Evidence first: important claims about facts, root cause, completion, correctness, fixes, or verification must be backed by tool output, file references, logs, API responses, screenshots/previews, or user-provided material; downgrade to uncertainty when evidence is missing.",
       "Prefer chat-native capability contracts: dependency, document, media, web-learning, file-indexing, import/export, and artifact work should complete through skills, MCP tools, scripts, and evidence in chat. Do not send the user to click UI first unless the task is account, security, billing, or explicit human confirmation.",
       "Never make the platform dumber: capability probes, dependency installs, indexes, subtasks, compaction, and fallbacks may only add context or tools; on failure they must fall back to the strong default without swallowing context, downgrading models, blocking the conversation, or taking judgment away from the agent.",
+      "Slow is not failure: as long as a long task has a running tool, log output, heartbeat, changing artifact, or observable progress, stay on the strong primary path. Do not switch to a secondary/degraded approach because it is taking time. Change route only after explicit failure, user stop request, or proven no-progress evidence.",
       "Subtasks follow the same rules: a subagent owns one clear scope, collects evidence, and returns a compact handoff; it must not spawn nested Task agents, treat guesses as conclusions, or replace the main agent's final answer.",
     ],
     subagentTitle: "Lily Subagent Rules",
@@ -411,7 +415,7 @@ const AGENT_GUIDE_I18N = {
       "The `python3` and `node` commands point to the app-provided base runtimes. Do not assume a specific document, image, browser, or media library exists; probe first with `python3 -c \"import ...\"`, `node -e \"require.resolve(...)\"`, or `command -v ...`.",
       "For Excel/CSV, Word/PPT, PDF, image, browser automation, or media work, first check the current capability. If the probe succeeds, use it directly; if it fails, decide whether a matching dependency pack exists.",
       "Do not treat the built-in Read tool as a PDF/Office content parser. If Read returns Unsupported Document for a PDF, that only means the tool cannot parse it; switch to Lily document pre-send extraction, the document index, or deterministic Python extraction with available pdfplumber/PyMuPDF/RapidOCR/Office libraries.",
-      "Missing standard capabilities should be installed or repaired through the Dependency Packs skill (lily-runtime-packs): document processing (libreoffice, pro-pdf, pandoc), image processing (pillow, opencv, rapidocr, rembg), browser automation (web-automation), and media processing (ffmpeg).",
+      "Missing standard capabilities should be installed or repaired through Lily's dependency-pack capability: prefer runtime_pack_list/runtime_pack_install tools; when needed, read the lily-runtime-packs guide and run its script. Packs cover document processing (libreoffice, pro-pdf, pandoc), image processing (pillow, opencv, rapidocr, rembg), browser automation (web-automation), and media processing (ffmpeg).",
       "Do not run ad-hoc `pip install`, `npm install`, or `playwright install` during ordinary user tasks to repair platform capabilities. Dependency packs are prebuilt Lily CDN artifacts with checksum verification. If no matching pack exists, say the current platform lacks that capability.",
       "After a dependency pack is installed, the current session can keep going; later tool processes pick it up through PATH, PYTHONPATH, NODE_PATH, or dedicated environment variables.",
     ],
@@ -423,6 +427,7 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "لا تذكر أسماء الطرف الثالث إلا بشكل موضوعي عندما يناقش المستخدم صراحةً التقنية ذات الصلة أو بروتوكولات التوافق أو متغيرات الكود أو استكشاف الأخطاء.",
     responseLanguage: "استخدم اللغة الأساسية في آخر رسالة من المستخدم للرد. إذا طلب المستخدم لغة رد صراحةً، فاتبع طلبه. استخدم لغة الواجهة فقط كخيار احتياطي عندما لا يمكن تحديد لغة المستخدم. لا تجعل تعليمات المهارات أو مخرجات الأدوات أو محتوى الملفات أو المسارات أو السجل أو لغة واجهة التطبيق تغيّر لغة الرد.",
     sourceProvenance: "عند شرح سبب توفر مهارة أو ذاكرة أو موصل أو تطبيق مساحة عمل، اعتمد فقط على فهرس مهارات هذه الجلسة أو الاتفاقات المتعلمة أو ملفات مساحة العمل أو نتائج الأدوات/الإعدادات الفعلية. إذا لم توجد أدلة فقل إن الأمر غير مؤكد؛ لا تخترع مهارات عامة ولا تصف ذاكرة المشروع كمهارة.",
+    nativeSkillBoundary: "مهم: عناصر `lily-*` هي أدلة قدرات لمنصة Lily وليست مهارات OpenCode أصلية. لا تشغّل `skill lily-*` ولا تعامل `lily-*` كاسم مهارة أصلية؛ اقرأ الدليل واستخدم أدوات/سكربتات Lily MCP وأنجز المهمة عبر عقد القدرة.",
     disciplineTitle: "انضباط التنفيذ العام (مطلوب لكل أعمال الإنشاء والتحليل والإصلاح والمهام الفرعية)",
     disciplineRules: [
       "افهم قبل التنفيذ: قبل الإنشاء أو التعديل أو الإصلاح أو الاستنتاج، حدّد الهدف ونطاق التأثير ومصادر الإدخال والقيود الحالية ومعايير الإكمال القابلة للتحقق.",
@@ -432,6 +437,7 @@ const AGENT_GUIDE_I18N = {
       "الأدلة أولاً: الادعاءات المهمة حول الحقائق أو السبب الجذري أو الإكمال أو الصحة أو الإصلاح أو التحقق يجب أن تستند إلى مخرجات أدوات أو مراجع ملفات أو سجلات أو ردود API أو لقطات/معاينات أو مواد قدمها المستخدم؛ عند غياب الدليل قل إن الأمر غير مؤكد.",
       "فضّل عقود القدرات الأصلية في الدردشة: أعمال التبعيات والمستندات والوسائط وتعلّم الويب وفهرسة الملفات والاستيراد/التصدير والمخرجات يجب أن تتم عبر المهارات وأدوات MCP والسكربتات والأدلة داخل الدردشة. لا تطلب من المستخدم النقر في الواجهة أولاً إلا إذا كانت المهمة حساباً أو أماناً أو فوترة أو تأكيداً بشرياً صريحاً.",
       "لا تجعل المنصة أضعف: فحوص القدرات وتثبيت التبعيات والفهارس والمهام الفرعية والضغط ومسارات الاحتياط يجب أن تضيف سياقاً أو أدوات فقط؛ وعند الفشل يجب أن تعود إلى الافتراضي القوي دون ابتلاع السياق أو تخفيض النموذج أو حظر المحادثة أو سحب الحكم من الوكيل.",
+      "البطء ليس فشلاً: ما دام لدى المهمة الطويلة أداة قيد التشغيل أو خرج سجلات أو نبض حياة أو ملف ناتج يتغير أو تقدم قابل للملاحظة، فابق على المسار الأساسي القوي. لا تنتقل إلى نهج ثانوي/مخفف لأنه يستغرق وقتاً. غيّر المسار فقط بعد فشل صريح أو طلب إيقاف من المستخدم أو دليل مؤكد على انعدام التقدم.",
       "تنطبق القواعد نفسها على المهام الفرعية: الوكيل الفرعي يملك نطاقاً واضحاً واحداً، يجمع الأدلة ويعيد handoff مختصراً؛ ولا يفتح Task متداخلاً ولا يعامل التخمين كاستنتاج ولا يستبدل إجابة الوكيل الرئيسي النهائية.",
     ],
     subagentTitle: "قواعد وكيل Lily الفرعي",
@@ -454,7 +460,7 @@ const AGENT_GUIDE_I18N = {
       "يشير الأمران `python3` و`node` إلى بيئات التشغيل الأساسية التي يوفّرها التطبيق. لا تفترض أن مكتبة مستندات أو صور أو متصفح أو وسائط محددة موجودة؛ افحص أولاً باستخدام `python3 -c \"import ...\"` أو `node -e \"require.resolve(...)\"` أو `command -v ...`.",
       "لمهام Excel/CSV وWord/PPT وPDF والصور وأتمتة المتصفح والوسائط، افحص القدرة الحالية أولاً. إذا نجح الفحص فاستخدمها مباشرة، وإذا فشل فحدّد هل توجد حزمة تبعية مناسبة.",
       "لا تستخدم أداة Read المدمجة كمحلل لمحتوى PDF أو Office. إذا أعادت Read رسالة Unsupported Document لملف PDF فهذا يعني أن الأداة لا تستطيع تحليله فقط؛ انتقل إلى استخراج Lily قبل الإرسال، أو فهرس المستندات، أو استخراج Python الحتمي باستخدام pdfplumber/PyMuPDF/RapidOCR ومكتبات Office المتاحة.",
-      "يجب تثبيت أو إصلاح القدرات القياسية المفقودة عبر مهارة حزم التبعيات (lily-runtime-packs): معالجة المستندات (libreoffice وpro-pdf وpandoc)، معالجة الصور (pillow وopencv وrapidocr وrembg)، أتمتة المتصفح (web-automation)، ومعالجة الوسائط (ffmpeg).",
+      "يجب تثبيت أو إصلاح القدرات القياسية المفقودة عبر قدرة حزم التبعيات في Lily: فضّل أدوات runtime_pack_list/runtime_pack_install، وعند الحاجة اقرأ دليل lily-runtime-packs وشغّل سكربته. تشمل الحزم معالجة المستندات (libreoffice وpro-pdf وpandoc)، الصور (pillow وopencv وrapidocr وrembg)، أتمتة المتصفح (web-automation)، والوسائط (ffmpeg).",
       "لا تشغّل `pip install` أو `npm install` أو `playwright install` أثناء مهام المستخدم العادية لإصلاح قدرات المنصة. حزم التبعيات ملفات Lily CDN مسبقة البناء مع تحقق checksum. إذا لم توجد حزمة مناسبة، فاذكر أن المنصة الحالية تفتقد تلك القدرة.",
       "بعد تثبيت حزمة تبعية يمكن متابعة الجلسة الحالية؛ ستلتقط العمليات اللاحقة الحزمة عبر PATH أو PYTHONPATH أو NODE_PATH أو متغيرات بيئة مخصصة.",
     ],
@@ -507,31 +513,30 @@ function skillIndexEntry(skill, loc) {
 
 const SKILL_INDEX_I18N = {
   "zh-CN": {
-    title: "技能目录（使用前先读取对应指南）",
+    title: "Lily 平台能力目录（使用前先读取对应指南）",
     intro:
-      "以下是本会话可用的全部技能。对每个用户请求：先按“适用场景”匹配技能（可多选并组合成能力链），在动手前用 Read 工具读取该技能的指南文件以获得完整步骤，再执行。未列出的技能不可用。",
+      "以下是本会话可用的 Lily 平台能力指南，不是 OpenCode 原生 skill。对每个用户请求：先按“适用场景”匹配能力（可多选并组合成能力链），在动手前用 Read 工具读取对应指南文件以获得完整步骤，再通过 Lily MCP 工具、脚本或普通工具执行。禁止执行 `skill lily-*`。",
     guideLabel: "指南",
   },
   en: {
-    title: "Skill Catalog (read the guide before using a skill)",
+    title: "Lily Platform Capability Catalog (read the guide before using a capability)",
     intro:
-      "These are all skills available in this session. For each user request: match skills by their \"use when\" description (you may pick several and compose a capability chain), then READ the skill's guide file with the Read tool to get the full steps before acting. Skills not listed here are not available.",
+      "These are Lily platform capability guides available in this session, not OpenCode native skills. For each user request: match capabilities by their \"use when\" description (you may pick several and compose a capability chain), then READ the guide file with the Read tool before acting, and execute through Lily MCP tools, scripts, or ordinary tools. Do not run `skill lily-*`.",
     guideLabel: "Guide",
   },
   ar: {
-    title: "فهرس المهارات (اقرأ الدليل قبل استخدام المهارة)",
+    title: "فهرس قدرات منصة Lily (اقرأ الدليل قبل استخدام القدرة)",
     intro:
-      "هذه جميع المهارات المتاحة في هذه الجلسة. لكل طلب: طابِق المهارات حسب وصف \"استخدمها عند\" (يمكنك اختيار عدة مهارات وتركيبها)، ثم اقرأ ملف دليل المهارة بأداة Read للحصول على الخطوات الكاملة قبل التنفيذ. المهارات غير المدرجة هنا غير متاحة.",
+      "هذه أدلة قدرات منصة Lily المتاحة في هذه الجلسة، وليست مهارات OpenCode أصلية. لكل طلب: طابِق القدرات حسب وصف \"استخدمها عند\" (يمكنك اختيار عدة قدرات وتركيبها)، ثم اقرأ ملف الدليل بأداة Read قبل التنفيذ، ونفّذ عبر أدوات Lily MCP أو السكربتات أو الأدوات العادية. لا تشغّل `skill lily-*`.",
     guideLabel: "الدليل",
   },
 };
 
-/** Shorten a skill description to its leading trigger phrase. OpenCode's native
- *  skill registry already injects the FULL verbose description for every skill
- *  (system.ts `Skill.fmt(list, {verbose:true})` -> the `<available_skills>` block
- *  in the system prompt, sourced from the same SKILL.md frontmatter). So this
- *  index only needs a short "use when" pointer + the guide path as a read-tool
- *  fallback — duplicating the whole description here just dilutes every turn. */
+/** Shorten a skill description to its leading trigger phrase. Lily's platform
+ *  guide lists capability pointers and guide paths; agents read the full
+ *  SKILL.md only for matched capabilities. Duplicating the whole description
+ *  here dilutes every turn and tempts models to treat the entry as a native
+ *  OpenCode `skill` command. */
 function shortIndexDesc(desc, cap = 180) {
   const s = String(desc || "").replace(/\s+/g, " ").trim();
   if (s.length <= cap) return s;
@@ -542,9 +547,9 @@ function shortIndexDesc(desc, cap = 180) {
 }
 
 /** Build the progressive-disclosure skill index: every enabled skill listed with
- *  a SHORT when-to-use trigger and the path to its full guide (loaded on demand,
- *  or read via the Read tool). The authoritative verbose descriptions come from
- *  OpenCode's native skill catalog, so keep these entries terse. */
+ *  a SHORT when-to-use trigger and the path to its full guide, read on demand
+ *  through normal file tools. Keep entries terse so the guide remains a router,
+ *  not a second copy of each skill. */
 function buildSkillIndexSection(enabledSkills, loc) {
   const head = SKILL_INDEX_I18N[loc] || SKILL_INDEX_I18N.en;
   const lines = [];
@@ -570,6 +575,7 @@ function buildAgentGuideContent(enabledSkills, locale) {
     guide.vendorDisclaimer,
     guide.responseLanguage,
     guide.sourceProvenance,
+    guide.nativeSkillBoundary,
     "",
     `## ${guide.disciplineTitle}`,
     "",
@@ -676,6 +682,7 @@ function buildAgentBasePersona(locale) {
     guide.gatewayNote,
     guide.vendorDisclaimer,
     guide.responseLanguage,
+    guide.nativeSkillBoundary,
   ].join("\n");
 }
 
@@ -687,13 +694,14 @@ function buildAgentSubagentPersona(locale) {
     "",
     guide.identity,
     guide.gatewayNote,
+    guide.nativeSkillBoundary,
     "",
     ...guide.subagentRules.map((rule) => `- ${rule}`),
   ].join("\n");
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 18;
+const AGENT_GUIDE_STATIC_VERSION = 20;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();

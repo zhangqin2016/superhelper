@@ -67,6 +67,8 @@ assert(
   `missing packs should include install metadata, got ${JSON.stringify(preflight.missingPacks)}`,
 );
 assert(/runtime_pack_install|manage_runtime_pack\.py/.test(preflight.agentAdvisory), "agent advisory should include an executable dependency path");
+assert(/do not invoke OpenCode native `skill lily-runtime-packs`/.test(preflight.agentAdvisory), "agent advisory should forbid OpenCode native skill invocation");
+assert(!/Use lily-runtime-packs skill/i.test(preflight.agentAdvisory), "agent advisory should not describe Lily runtime packs as native skills");
 assert(/Do not block|不要阻塞/.test(preflight.agentAdvisory), "agent advisory should explicitly forbid blocking the user turn");
 assert(/web-automation/.test(preflight.agentAdvisory), "agent advisory should name the missing pack");
 

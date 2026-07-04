@@ -300,6 +300,11 @@ const deepseekManaged = buildEnvManagedClientConfig(
       baseUrl: "https://api.deepseek.com/anthropic",
       apiKey: "sk-test-deepseek",
       models: ["deepseek-v4-pro[1m]", "deepseek-v4-flash"],
+      metadata: {
+        models: {
+          "deepseek-v4-pro[1m]": { contextWindowTokens: 196608, maxOutputTokens: 1024 },
+        },
+      },
     },
   },
 );
@@ -307,6 +312,13 @@ assert.equal(deepseekManaged.models.activePresetId, "deepseek-gateway");
 assert.equal(deepseekManaged.models.presets[0].env.LILY_GATEWAY_PROVIDER, "deepseek");
 assert.equal(deepseekManaged.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
 assert.equal(deepseekManaged.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro[1m]");
+assert.equal(deepseekManaged.models.presets[0].env.LILY_CONTEXT_WINDOW_TOKENS, "196608");
+assert.equal(deepseekManaged.models.presets[0].env.LILY_MAX_OUTPUT_TOKENS, "1024");
+assert.equal(
+  deepseekManaged.models.presets.find((preset) => preset.env.LILY_MODEL === "deepseek-v4-flash").env.LILY_CONTEXT_WINDOW_TOKENS,
+  undefined,
+  "per-model limits must not leak to another model under the same provider",
+);
 assert.equal(deepseekManaged.runtime.env.DASHSCOPE_API_KEY, undefined, "raw DashScope key must NOT be delivered");
 
 const deepseekDirect = buildEnvManagedClientConfig(

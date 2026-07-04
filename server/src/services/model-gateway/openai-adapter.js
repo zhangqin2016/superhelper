@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { stableStringify } from "../security.js";
+import { discoveredModelMetadataSync } from "./model-discovery.js";
 import { parseJsonEnv, textFromContent } from "./utils.js";
 
 function openAiContentFromAnthropic(content) {
@@ -78,12 +79,81 @@ function toOpenAiTools(tools) {
     }));
 }
 
+function positiveInt(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.floor(number);
+}
+
+function modelMetadata(provider, model) {
+  const metadata = provider?.metadata || {};
+  const modelId = String(model || provider?.model || "").trim();
+  const discovered = discoveredModelMetadataSync(provider, modelId);
+  const models = metadata.models && typeof metadata.models === "object" && !Array.isArray(metadata.models)
+    ? metadata.models
+    : {};
+  const modelSpecific = modelId && models[modelId] && typeof models[modelId] === "object" && !Array.isArray(models[modelId])
+    ? models[modelId]
+    : {};
+  return { metadata, discovered, modelSpecific };
+}
+
+function providerMaxOutputTokens(provider, model) {
+  const { metadata, modelSpecific } = modelMetadata(provider, model);
+  return positiveInt(
+    modelSpecific.maxOutputTokens ??
+      modelSpecific.max_output_tokens ??
+      modelSpecific.maxTokens ??
+      modelSpecific.max_tokens ??
+      metadata.maxOutputTokens ??
+      metadata.max_output_tokens ??
+      metadata.maxTokens ??
+      metadata.max_tokens,
+  );
+}
+
+function providerContextWindowTokens(provider, model) {
+  const { metadata, discovered, modelSpecific } = modelMetadata(provider, model);
+  return positiveInt(
+    modelSpecific.contextWindowTokens ??
+      modelSpecific.context_window_tokens ??
+      modelSpecific.maxContextTokens ??
+      modelSpecific.max_context_tokens ??
+      modelSpecific.maxModelLen ??
+      modelSpecific.max_model_len ??
+      discovered.contextWindowTokens ??
+      discovered.context_window_tokens ??
+      discovered.maxModelLen ??
+      discovered.max_model_len ??
+      metadata.contextWindowTokens ??
+      metadata.context_window_tokens ??
+      metadata.maxContextTokens ??
+      metadata.max_context_tokens ??
+      metadata.maxModelLen ??
+      metadata.max_model_len,
+  );
+}
+
+function resolveMaxTokens(body, provider) {
+  const requested = positiveInt(body.max_tokens);
+  const model = body.model || provider.model;
+  const outputCap = providerMaxOutputTokens(provider, model);
+  const contextWindow = providerContextWindowTokens(provider, model);
+  if (!requested) return body.max_tokens;
+  let cap = outputCap || requested;
+  if (contextWindow) {
+    const remaining = Math.max(1, contextWindow - approximateAnthropicInputTokens(body));
+    cap = Math.min(cap, remaining);
+  }
+  return Math.min(requested, cap);
+}
+
 function toOpenAiBody(body, provider) {
   const tools = toOpenAiTools(body.tools);
   return {
     model: provider.model || body.model,
     messages: toOpenAiMessages(body),
-    max_tokens: body.max_tokens,
+    max_tokens: resolveMaxTokens(body, provider),
     temperature: body.temperature,
     top_p: body.top_p,
     stop: body.stop_sequences,
