@@ -326,6 +326,14 @@ assert.ok(
 const scopeProviders = {
   deepseek: { id: "deepseek", type: "anthropic", baseUrl: "https://api.deepseek.com/anthropic", apiKey: "sk-d", models: ["deepseek-v4-pro[1m]"] },
   glm: { id: "glm", type: "anthropic", baseUrl: "https://api.z.ai/api/anthropic", apiKey: "sk-g", models: ["glm-4.7", "glm-4.5-air"] },
+  qwen: {
+    id: "qwen",
+    type: "anthropic",
+    baseUrl: "https://dashscope.aliyuncs.com/apps/anthropic",
+    apiKey: "sk-q",
+    models: ["qwen-vl-max", "qwen-plus"],
+    metadata: { nativeVision: true },
+  },
 };
 const scopeMerged = {
   // baseline (deepseek-only) that a group profile merged its directive onto
@@ -343,6 +351,16 @@ assert.ok(expanded.models.presets.every((p) => p.id.startsWith("glm-")), "scope 
 assert.equal(expanded.models.providers, undefined, "directive should be consumed");
 assert.ok(expanded.models.activePresetId.startsWith("glm-"), "active should be the directive's activeProvider");
 assert.deepEqual(expanded.models.capabilities, { glm: { vision: true } }, "provider capabilities must survive directive expansion");
+assert.ok(expanded.models.presets.every((p) => p.capabilities?.vision === true), "expanded presets must carry native vision to the client router");
+
+const metadataVisionExpanded = expandModelProviderMenu(
+  { models: { source: "service", providers: ["qwen"], activeProvider: "qwen" } },
+  { providers: scopeProviders, deliveryMode: "gateway" },
+);
+assert.ok(
+  metadataVisionExpanded.models.presets.every((p) => p.capabilities?.vision === true),
+  "provider metadata nativeVision must become preset capabilities.vision",
+);
 
 const defaultGatewayExpanded = expandModelProviderMenu(
   { models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["deepseek"] } },

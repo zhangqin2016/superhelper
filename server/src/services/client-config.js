@@ -122,6 +122,12 @@ function defaultModelFor(provider) {
   return def && models.includes(def) ? def : models[0];
 }
 
+function providerVisionCapability(provider, providerCapabilities = {}) {
+  const explicit = providerCapabilities?.[provider?.id]?.vision;
+  if (explicit !== undefined) return Boolean(explicit);
+  return Boolean(provider?.metadata?.nativeVision || provider?.capabilities?.vision);
+}
+
 function modelSlug(model) {
   return String(model || "").replace(/[^a-zA-Z0-9._-]/g, "_");
 }
@@ -183,7 +189,8 @@ function normalizeVisionModel(model) {
  *  bare `${id}-${mode}` preset id (so a stored activePresetId stays valid and the
  *  active-preset resolution below still matches); extra models get a suffixed id.
  *  All OpenCode model tiers map to the same model (the engine runs one model). */
-function providerPreset(provider, deliveryMode, model, isDefault) {
+function providerPreset(provider, deliveryMode, model, isDefault, providerCapabilities = {}) {
+  const capabilities = { vision: providerVisionCapability(provider, providerCapabilities) };
   const modelEnv = model
     ? {
         LILY_MODEL: model,
@@ -199,6 +206,7 @@ function providerPreset(provider, deliveryMode, model, isDefault) {
       id: `${provider.id}-direct${suffix}`,
       label: providerLabel(provider),
       description: "客户端直连模型供应商。响应更快，但会向客户端下发长期模型密钥。",
+      capabilities,
       env: {
         LILY_API_BASE_URL: provider.baseUrl,
         LILY_API_KEY: provider.apiKey,
@@ -213,6 +221,7 @@ function providerPreset(provider, deliveryMode, model, isDefault) {
     id: `${provider.id}-gateway${suffix}`,
     label: providerLabel(provider),
     description: "由 Lily 服务端托管密钥并签发短期访问令牌。",
+    capabilities,
     env: {
       LILY_API_BASE_URL: `/llm/${provider.id}`,
       LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
@@ -227,11 +236,11 @@ function providerPreset(provider, deliveryMode, model, isDefault) {
  *  model dropdown can offer them all. The default model is marked so it keeps the
  *  bare preset id and becomes the activePresetId. A provider with no model still
  *  yields one (model-less) preset, preserving prior behavior. */
-function providerPresets(provider, deliveryMode) {
+function providerPresets(provider, deliveryMode, providerCapabilities = {}) {
   const models = providerModelList(provider);
-  if (!models.length) return [providerPreset(provider, deliveryMode, "", true)];
+  if (!models.length) return [providerPreset(provider, deliveryMode, "", true, providerCapabilities)];
   const def = defaultModelFor(provider);
-  return models.map((model) => providerPreset(provider, deliveryMode, model, model === def));
+  return models.map((model) => providerPreset(provider, deliveryMode, model, model === def, providerCapabilities));
 }
 
 function runtimeEnvFromServerConfig(serverConfig) {
@@ -485,7 +494,7 @@ export function expandModelProviderMenu(effectiveConfig, options = {}) {
         !RESERVED_MODEL_PROVIDER_IDS.has(provider.id) &&
         allow.has(provider.id),
     )
-    .flatMap((provider) => providerPresets(provider, deliveryMode));
+    .flatMap((provider) => providerPresets(provider, deliveryMode, models.capabilities || {}));
   const { providers: _providers, activeProvider, ...restModels } = models;
   if (!presets.length) return { ...effectiveConfig, models: restModels };
   const active = String(activeProvider || directive[0]);
