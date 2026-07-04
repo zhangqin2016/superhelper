@@ -44,6 +44,7 @@ export const DEFAULT_EFFECTIVE_CONFIG = {
 
 const ENV_MANAGED_PROFILE_ID = "lily-default-runtime";
 const ENV_MANAGED_PROFILE_DELETED_KEY = "env_managed_config_profile_deleted";
+const DELETED_CONFIG_PROFILE_IDS_KEY = "deleted_config_profile_ids";
 
 function plainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -433,6 +434,28 @@ export async function recordEnvManagedConfigProfileDeleted(profileId) {
   if (profileId !== ENV_MANAGED_PROFILE_ID) return false;
   const { setAppSetting } = await import("./app-settings.js");
   await setAppSetting(ENV_MANAGED_PROFILE_DELETED_KEY, true);
+  return true;
+}
+
+export function decideConfigProfileUpsert(input = {}) {
+  if (!input.profileExists && input.deleted) return { ok: false, code: "CONFIG_PROFILE_DELETED" };
+  return { ok: true };
+}
+
+export async function configProfileWasDeleted(profileId) {
+  const { getAppSetting } = await import("./app-settings.js");
+  const ids = await getAppSetting(DELETED_CONFIG_PROFILE_IDS_KEY, []);
+  return Array.isArray(ids) && ids.map(String).includes(String(profileId || ""));
+}
+
+export async function recordConfigProfileDeleted(profileId) {
+  const id = String(profileId || "").trim();
+  if (!id) return false;
+  const { getAppSetting, setAppSetting } = await import("./app-settings.js");
+  const current = await getAppSetting(DELETED_CONFIG_PROFILE_IDS_KEY, []);
+  const ids = new Set(Array.isArray(current) ? current.map(String).filter(Boolean) : []);
+  ids.add(id);
+  await setAppSetting(DELETED_CONFIG_PROFILE_IDS_KEY, [...ids].sort());
   return true;
 }
 

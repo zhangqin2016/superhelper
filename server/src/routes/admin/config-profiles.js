@@ -3,9 +3,12 @@ import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import {
   DEFAULT_EFFECTIVE_CONFIG,
+  configProfileWasDeleted,
   deepMerge,
+  decideConfigProfileUpsert,
   isGatewayBaseUrl,
   parseGatewayProvider,
+  recordConfigProfileDeleted,
   recordEnvManagedConfigProfileDeleted,
   rolloutAllows,
 } from "../../services/client-config.js";
@@ -285,6 +288,22 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
     const input = configProfileSchema.parse(request.body);
     const configError = validateConfigProfileConfig(input.config || {});
     if (configError) return reply.code(400).send(configError);
+    const existing = await db
+      .selectFrom("config_profiles")
+      .select("id")
+      .where("id", "=", input.id)
+      .executeTakeFirst();
+    const upsertDecision = decideConfigProfileUpsert({
+      profileExists: Boolean(existing),
+      deleted: await configProfileWasDeleted(input.id),
+    });
+    if (!upsertDecision.ok) {
+      return reply.code(409).send({
+        ok: false,
+        code: upsertDecision.code,
+        message: "This config profile was deleted. Create a new rule with a new ID instead.",
+      });
+    }
     await db
       .insertInto("config_profiles")
       .values({
@@ -380,6 +399,7 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
       .executeTakeFirst();
     if (!existing) return reply.code(404).send({ ok: false, code: "CONFIG_PROFILE_NOT_FOUND" });
     await db.deleteFrom("config_profiles").where("id", "=", request.params.id).execute();
+    await recordConfigProfileDeleted(request.params.id);
     const recordedDefaultDeletion = await recordEnvManagedConfigProfileDeleted(request.params.id);
     await audit(request, "config_profile.delete", "config_profile", request.params.id, {
       scope: existing.scope,

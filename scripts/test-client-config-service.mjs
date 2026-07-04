@@ -5,6 +5,7 @@ import {
   DEFAULT_EFFECTIVE_CONFIG,
   clientConfigTtlMs,
   deepMerge,
+  decideConfigProfileUpsert,
   decideEnvManagedConfigProfileWrite,
   expandModelProviderMenu,
   isGatewayBaseUrl,
@@ -131,6 +132,21 @@ assert.deepEqual(
   }),
   { action: "create" },
   "fresh empty DB should still get the first default profile",
+);
+assert.deepEqual(
+  decideConfigProfileUpsert({ profileExists: false, deleted: true }),
+  { ok: false, code: "CONFIG_PROFILE_DELETED" },
+  "deleted config profile ids must not be recreated by stale upsert requests",
+);
+assert.deepEqual(
+  decideConfigProfileUpsert({ profileExists: true, deleted: true }),
+  { ok: true },
+  "existing config profiles remain editable even if their id was previously tombstoned",
+);
+assert.deepEqual(
+  decideConfigProfileUpsert({ profileExists: false, deleted: false }),
+  { ok: true },
+  "new config profile ids can still be created",
 );
 
 const request = {
