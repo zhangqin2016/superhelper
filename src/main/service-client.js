@@ -23,7 +23,7 @@ const CLIENT_POLICY_FILE = "client-bootstrap-policy.json";
 const FETCH_TIMEOUT_MS = 15_000;
 const ATTACHMENT_UPLOAD_TIMEOUT_MS = 60_000;
 const BUILTIN_SERVICE_API_BASE_URL = "https://lilych.lilywb.cn";
-const BUILTIN_UAE_SERVICE_API_BASE_URL = "https://lilyuae.lilywb.cn";
+const BUILTIN_UAE_SERVICE_API_BASE_URL = "https://lilyxinjiapo.lilywb.cn";
 const EDGE_FALLBACK_SAFE_POST_PATHS = new Set([
   "/api/devices/register",
   "/api/client/config",

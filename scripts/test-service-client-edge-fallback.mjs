@@ -36,8 +36,8 @@ process.env.LILY_CLIENT_REGION = "uae";
 const requests = [];
 global.fetch = async (url, options = {}) => {
   requests.push({ url, options });
-  if (String(url).startsWith("https://lilyuae.lilywb.cn/")) {
-    throw new Error("getaddrinfo ENOTFOUND lilyuae.lilywb.cn");
+  if (String(url).startsWith("https://lilyxinjiapo.lilywb.cn/")) {
+    throw new Error("getaddrinfo ENOTFOUND lilyxinjiapo.lilywb.cn");
   }
   if (String(url) === "https://lilych.lilywb.cn/api/client/bootstrap") {
     return {
@@ -45,9 +45,9 @@ global.fetch = async (url, options = {}) => {
       json: async () => ({
         ok: true,
         region: "uae",
-        apiBaseUrl: "https://lilyuae.lilywb.cn",
-        gatewayBaseUrl: "https://lilyuae.lilywb.cn",
-        modelGatewayBaseUrl: "https://lilyuae.lilywb.cn/llm",
+        apiBaseUrl: "https://lilyxinjiapo.lilywb.cn",
+        gatewayBaseUrl: "https://lilyxinjiapo.lilywb.cn",
+        modelGatewayBaseUrl: "https://lilyxinjiapo.lilywb.cn/llm",
         features: {
           accountLogin: false,
           purchase: false,
@@ -73,20 +73,20 @@ const {
   sendSmsCode,
 } = require(path.join(__dirname, "../src/main/service-client.js"));
 
-assert.equal(getServiceSettings().apiBaseUrl, "https://lilyuae.lilywb.cn");
+assert.equal(getServiceSettings().apiBaseUrl, "https://lilyxinjiapo.lilywb.cn");
 
 await registerDevice();
-assert.equal(requests[0]?.url, "https://lilyuae.lilywb.cn/api/devices/register");
+assert.equal(requests[0]?.url, "https://lilyxinjiapo.lilywb.cn/api/devices/register");
 assert.equal(requests[1]?.url, "https://lilych.lilywb.cn/api/devices/register");
 
 const sms = await sendSmsCode("+971500000000");
 assert.equal(sms.ok, false);
 assert.equal(sms.error, "SERVICE_REQUEST_FAILED");
-assert.equal(requests[2]?.url, "https://lilyuae.lilywb.cn/api/auth/sms/send");
+assert.equal(requests[2]?.url, "https://lilyxinjiapo.lilywb.cn/api/auth/sms/send");
 
 const usageSummary = await fetchUsageSummary();
 assert.equal(usageSummary.ok, true);
-assert.equal(requests[3]?.url, "https://lilyuae.lilywb.cn/api/usage/summary");
+assert.equal(requests[3]?.url, "https://lilyxinjiapo.lilywb.cn/api/usage/summary");
 assert.equal(requests[4]?.url, "https://lilych.lilywb.cn/api/usage/summary");
 
 const bootstrap = await refreshClientBootstrap({ force: true });
@@ -95,23 +95,23 @@ assert.equal(bootstrap.region, "uae");
 assert.equal(bootstrap.apiBaseUrl, "https://lilych.lilywb.cn");
 assert.equal(bootstrap.gatewayBaseUrl, "https://lilych.lilywb.cn");
 assert.equal(bootstrap.modelGatewayBaseUrl, "https://lilych.lilywb.cn/llm");
-assert.equal(bootstrap.edgeFallbackFrom, "https://lilyuae.lilywb.cn");
+assert.equal(bootstrap.edgeFallbackFrom, "https://lilyxinjiapo.lilywb.cn");
 assert.equal(getServiceSettings().apiBaseUrl, "https://lilych.lilywb.cn");
-assert.equal(requests[5]?.url, "https://lilyuae.lilywb.cn/api/client/bootstrap");
+assert.equal(requests[5]?.url, "https://lilyxinjiapo.lilywb.cn/api/client/bootstrap");
 assert.equal(requests[6]?.url, "https://lilych.lilywb.cn/api/client/bootstrap");
 assert.equal(requests[6]?.options?.headers?.["X-Lily-Region"], "uae");
 
 global.fetch = async (url, options = {}) => {
   requests.push({ url, options });
-  if (String(url) === "https://lilyuae.lilywb.cn/api/client/bootstrap") {
+  if (String(url) === "https://lilyxinjiapo.lilywb.cn/api/client/bootstrap") {
     return {
       ok: true,
       json: async () => ({
         ok: true,
         region: "uae",
-        apiBaseUrl: "https://lilyuae.lilywb.cn",
-        gatewayBaseUrl: "https://lilyuae.lilywb.cn",
-        modelGatewayBaseUrl: "https://lilyuae.lilywb.cn/llm",
+        apiBaseUrl: "https://lilyxinjiapo.lilywb.cn",
+        gatewayBaseUrl: "https://lilyxinjiapo.lilywb.cn",
+        modelGatewayBaseUrl: "https://lilyxinjiapo.lilywb.cn/llm",
         features: { accountLogin: false, purchase: false, licenseActivation: true, modelDirect: false },
         routing: { modelMode: "gateway", releaseChannel: "domestic" },
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
@@ -123,12 +123,12 @@ global.fetch = async (url, options = {}) => {
 
 const recovered = await refreshClientBootstrap();
 assert.equal(recovered.ok, true);
-assert.equal(recovered.apiBaseUrl, "https://lilyuae.lilywb.cn");
-assert.equal(recovered.gatewayBaseUrl, "https://lilyuae.lilywb.cn");
-assert.equal(recovered.modelGatewayBaseUrl, "https://lilyuae.lilywb.cn/llm");
+assert.equal(recovered.apiBaseUrl, "https://lilyxinjiapo.lilywb.cn");
+assert.equal(recovered.gatewayBaseUrl, "https://lilyxinjiapo.lilywb.cn");
+assert.equal(recovered.modelGatewayBaseUrl, "https://lilyxinjiapo.lilywb.cn/llm");
 assert.equal(recovered.edgeFallbackFrom, undefined);
-assert.equal(getServiceSettings().apiBaseUrl, "https://lilyuae.lilywb.cn");
-assert.equal(requests[7]?.url, "https://lilyuae.lilywb.cn/api/client/bootstrap");
+assert.equal(getServiceSettings().apiBaseUrl, "https://lilyxinjiapo.lilywb.cn");
+assert.equal(requests[7]?.url, "https://lilyxinjiapo.lilywb.cn/api/client/bootstrap");
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("service-client-edge-fallback: ok");

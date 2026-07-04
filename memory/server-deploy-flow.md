@@ -11,11 +11,11 @@ Lily uses **one universal client package**. Region differences are runtime polic
 
 - Control-plane/default API domain: `lilych.lilywb.cn`.
 - Domestic policy: `region=china`, `apiBaseUrl=https://lilych.lilywb.cn`, login/purchase enabled, model mode gateway.
-- UAE policy: `region=uae`, `apiBaseUrl=https://lilyuae.lilywb.cn`, login/purchase disabled, authorization-code activation enabled, model mode gateway.
+- UAE policy: `region=uae`, `apiBaseUrl=https://lilyxinjiapo.lilywb.cn`, login/purchase disabled, authorization-code activation enabled, model mode gateway.
 - Official website entry: `www.lilywb.cn`; root `lilywb.cn` proxies to the same 101 service. The old transition domain should not be shown or used by clients.
 - Domestic service host: `101.200.232.184`, Alibaba ECS (host iZ2ze4mpyqm4o3vcckrr75Z), baota + docker-compose, deploy dir `/www/wwwroot/lily-workbench`, PostgreSQL local to this host.
 - Deprecated old domestic host: `182.92.107.175`; do not use for new service traffic.
-- UAE edge proxy host: `47.91.106.148`. It does not run app state; it terminates HTTPS for `lilyuae.lilywb.cn` and proxies `/api/`, `/llm/`, `/health`, and web traffic to `https://lilych.lilywb.cn`. It must send `X-Lily-Region: uae` and `X-Forwarded-Host: lilyuae.lilywb.cn` so the domestic server returns/enforces UAE policy.
+- Overseas edge proxy host: `47.237.10.119` (Singapore, hostname `iZt4nj7tjqmlqll7mag7qwZ`). It does not run app state; it terminates HTTPS for `lilyxinjiapo.lilywb.cn` and proxies `/api/`, `/llm/`, `/health`, and web traffic directly to the domestic service ports on `101.200.232.184` (`13000` API, `13001` web). It must send `X-Lily-Region: uae` and `X-Forwarded-Host: lilyxinjiapo.lilywb.cn` so the domestic server returns/enforces overseas policy. The old UAE edge `47.91.106.148` is no longer the overseas entrypoint.
 
 **Secret handling:** root passwords and Qiniu credentials were provided operationally, but must not be committed to the repo or memory files. Store them only in the operator's secret store, shell environment, CI secrets, or server `.env` as appropriate.
 

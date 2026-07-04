@@ -41,9 +41,9 @@ global.fetch = async (url, options = {}) => {
       json: async () => ({
         ok: true,
         region: "uae",
-        apiBaseUrl: "https://lilyuae.lilywb.cn",
-        gatewayBaseUrl: "https://lilyuae.lilywb.cn",
-        modelGatewayBaseUrl: "https://lilyuae.lilywb.cn/llm",
+        apiBaseUrl: "https://lilyxinjiapo.lilywb.cn",
+        gatewayBaseUrl: "https://lilyxinjiapo.lilywb.cn",
+        modelGatewayBaseUrl: "https://lilyxinjiapo.lilywb.cn/llm",
         features: {
           accountLogin: false,
           purchase: false,
@@ -65,8 +65,8 @@ const {
   workspaceAppCatalog,
 } = require(path.join(__dirname, "../src/main/service-client.js"));
 
-if (getServiceSettings().apiBaseUrl !== "https://lilyuae.lilywb.cn") {
-  throw new Error(`UAE local default service base should be lilyuae before bootstrap: ${JSON.stringify(getServiceSettings())}`);
+if (getServiceSettings().apiBaseUrl !== "https://lilyxinjiapo.lilywb.cn") {
+  throw new Error(`UAE local default service base should be Singapore edge before bootstrap: ${JSON.stringify(getServiceSettings())}`);
 }
 
 const bootstrap = await refreshClientBootstrap({ force: true });
@@ -76,18 +76,18 @@ if (!bootstrap.ok || bootstrap.region !== "uae") {
 if (getClientPolicy().features.accountLogin !== false || getClientPolicy().features.purchase !== false) {
   throw new Error(`UAE policy should disable account login and purchase: ${JSON.stringify(getClientPolicy())}`);
 }
-if (getServiceSettings().apiBaseUrl !== "https://lilyuae.lilywb.cn") {
+if (getServiceSettings().apiBaseUrl !== "https://lilyxinjiapo.lilywb.cn") {
   throw new Error(`service base should switch to UAE gateway: ${JSON.stringify(getServiceSettings())}`);
 }
 
 await workspaceAppCatalog();
-if (requests[0]?.url !== "https://lilyuae.lilywb.cn/api/client/bootstrap") {
+if (requests[0]?.url !== "https://lilyxinjiapo.lilywb.cn/api/client/bootstrap") {
   throw new Error(`UAE bootstrap should use edge host immediately: ${requests[0]?.url}`);
 }
 if (requests[0]?.options?.headers?.["X-Lily-Region"] !== "uae") {
   throw new Error(`bootstrap should send local UAE region hint: ${JSON.stringify(requests[0]?.options?.headers)}`);
 }
-if (requests[1]?.url !== "https://lilyuae.lilywb.cn/api/apps/catalog") {
+if (requests[1]?.url !== "https://lilyxinjiapo.lilywb.cn/api/apps/catalog") {
   throw new Error(`post-bootstrap API should use UAE gateway: ${requests[1]?.url}`);
 }
 

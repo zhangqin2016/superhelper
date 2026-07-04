@@ -1,5 +1,5 @@
 const DEFAULT_CHINA_BASE_URL = "https://lilych.lilywb.cn";
-const DEFAULT_UAE_BASE_URL = "https://lilyuae.lilywb.cn";
+const DEFAULT_UAE_BASE_URL = "https://lilyxinjiapo.lilywb.cn";
 const DEFAULT_TTL_SECONDS = 6 * 60 * 60;
 
 function firstHeader(headers = {}, names = []) {
@@ -34,7 +34,7 @@ export function resolveClientRegion(requestLike = {}) {
   const host = normalizeHost(
     firstHeader(headers, ["x-forwarded-host", "host", ":authority"]) || requestLike.hostname,
   );
-  if (host === "lilyuae.lilywb.cn") return "uae";
+  if (host === "lilyxinjiapo.lilywb.cn" || host === "lilyuae.lilywb.cn") return "uae";
 
   const country = normalizeCountry(firstHeader(headers, [
     "cf-ipcountry",
