@@ -43,6 +43,7 @@ export const DEFAULT_EFFECTIVE_CONFIG = {
 };
 
 const ENV_MANAGED_PROFILE_ID = "lily-default-runtime";
+const ENV_MANAGED_PROFILE_DELETED_KEY = "env_managed_config_profile_deleted";
 
 function plainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -376,37 +377,63 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
 }
 
 export async function ensureEnvManagedConfigProfile() {
-  const { getModelDeliveryMode } = await import("./app-settings.js");
+  const { getAppSetting, getModelDeliveryMode } = await import("./app-settings.js");
   const effectiveConfig = buildEnvManagedClientConfig(config, listModelGatewayProviders(), await getModelDeliveryMode());
   if (!effectiveConfig) return { ok: true, skipped: true };
   const { db } = await import("../db.js");
+  const existing = await db
+    .selectFrom("config_profiles")
+    .select("id")
+    .where("id", "=", ENV_MANAGED_PROFILE_ID)
+    .executeTakeFirst();
+  const anyProfile = existing
+    ? existing
+    : await db.selectFrom("config_profiles").select("id").limit(1).executeTakeFirst();
+  const deleted = Boolean(await getAppSetting(ENV_MANAGED_PROFILE_DELETED_KEY, false));
+  const decision = decideEnvManagedConfigProfileWrite({
+    hasEffectiveConfig: true,
+    profileExists: Boolean(existing),
+    anyProfileExists: Boolean(anyProfile),
+    deleted,
+  });
+  if (decision.action === "skip") return { ok: true, skipped: true, reason: decision.reason };
+  const values = {
+    name: "Lily 默认运行配置",
+    scope: "global",
+    target_id: null,
+    priority: -100,
+    rollout_percent: 100,
+    enabled: true,
+    config: JSON.stringify(effectiveConfig),
+    updated_at: new Date(),
+  };
+  if (decision.action === "update") {
+    await db.updateTable("config_profiles").set(values).where("id", "=", ENV_MANAGED_PROFILE_ID).execute();
+    return { ok: true, id: ENV_MANAGED_PROFILE_ID, action: "updated" };
+  }
   await db
     .insertInto("config_profiles")
     .values({
       id: ENV_MANAGED_PROFILE_ID,
-      name: "Lily 默认运行配置",
-      scope: "global",
-      target_id: null,
-      priority: -100,
-      rollout_percent: 100,
-      enabled: true,
-      config: JSON.stringify(effectiveConfig),
-      updated_at: new Date(),
+      ...values,
     })
-    .onConflict((oc) =>
-      oc.column("id").doUpdateSet({
-        name: "Lily 默认运行配置",
-        scope: "global",
-        target_id: null,
-        priority: -100,
-        rollout_percent: 100,
-        enabled: true,
-        config: JSON.stringify(effectiveConfig),
-        updated_at: new Date(),
-      }),
-    )
     .execute();
-  return { ok: true, id: ENV_MANAGED_PROFILE_ID };
+  return { ok: true, id: ENV_MANAGED_PROFILE_ID, action: "created" };
+}
+
+export function decideEnvManagedConfigProfileWrite(input = {}) {
+  if (!input.hasEffectiveConfig) return { action: "skip", reason: "no_effective_config" };
+  if (input.profileExists) return { action: "update" };
+  if (input.deleted) return { action: "skip", reason: "deleted_by_admin" };
+  if (input.anyProfileExists) return { action: "skip", reason: "existing_profiles_without_seed" };
+  return { action: "create" };
+}
+
+export async function recordEnvManagedConfigProfileDeleted(profileId) {
+  if (profileId !== ENV_MANAGED_PROFILE_ID) return false;
+  const { setAppSetting } = await import("./app-settings.js");
+  await setAppSetting(ENV_MANAGED_PROFILE_DELETED_KEY, true);
+  return true;
 }
 
 export function rolloutAllows(profile, deviceId) {

@@ -6,6 +6,7 @@ import {
   deepMerge,
   isGatewayBaseUrl,
   parseGatewayProvider,
+  recordEnvManagedConfigProfileDeleted,
   rolloutAllows,
 } from "../../services/client-config.js";
 
@@ -379,11 +380,13 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
       .executeTakeFirst();
     if (!existing) return reply.code(404).send({ ok: false, code: "CONFIG_PROFILE_NOT_FOUND" });
     await db.deleteFrom("config_profiles").where("id", "=", request.params.id).execute();
+    const recordedDefaultDeletion = await recordEnvManagedConfigProfileDeleted(request.params.id);
     await audit(request, "config_profile.delete", "config_profile", request.params.id, {
       scope: existing.scope,
       targetId: existing.target_id || null,
       priority: existing.priority,
       enabled: existing.enabled,
+      defaultSeedSuppressed: recordedDefaultDeletion,
     });
     return { ok: true, id: request.params.id };
   });

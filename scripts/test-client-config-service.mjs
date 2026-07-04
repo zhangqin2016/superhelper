@@ -5,6 +5,7 @@ import {
   DEFAULT_EFFECTIVE_CONFIG,
   clientConfigTtlMs,
   deepMerge,
+  decideEnvManagedConfigProfileWrite,
   expandModelProviderMenu,
   isGatewayBaseUrl,
   parseGatewayProvider,
@@ -89,6 +90,47 @@ assert.equal(
   clientConfigTtlMs({ modelGatewayTokenTtlSeconds: 48 * 60 * 60 }),
   24 * 60 * 60 * 1000,
   "client config ttl should still cap at one day",
+);
+
+assert.deepEqual(
+  decideEnvManagedConfigProfileWrite({
+    hasEffectiveConfig: true,
+    profileExists: true,
+    anyProfileExists: true,
+    deleted: true,
+  }),
+  { action: "update" },
+  "existing env-managed profile should still refresh when it exists",
+);
+assert.deepEqual(
+  decideEnvManagedConfigProfileWrite({
+    hasEffectiveConfig: true,
+    profileExists: false,
+    anyProfileExists: true,
+    deleted: false,
+  }),
+  { action: "skip", reason: "existing_profiles_without_seed" },
+  "missing env-managed profile in a configured DB should not be recreated",
+);
+assert.deepEqual(
+  decideEnvManagedConfigProfileWrite({
+    hasEffectiveConfig: true,
+    profileExists: false,
+    anyProfileExists: false,
+    deleted: true,
+  }),
+  { action: "skip", reason: "deleted_by_admin" },
+  "admin-deleted env-managed profile should stay deleted even when all profiles are gone",
+);
+assert.deepEqual(
+  decideEnvManagedConfigProfileWrite({
+    hasEffectiveConfig: true,
+    profileExists: false,
+    anyProfileExists: false,
+    deleted: false,
+  }),
+  { action: "create" },
+  "fresh empty DB should still get the first default profile",
 );
 
 const request = {
