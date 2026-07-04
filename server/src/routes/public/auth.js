@@ -9,6 +9,7 @@ import {
   createRefreshToken,
   createWebSessionToken,
   evaluateSmsRisk,
+  extendSessionExpiresAt,
   hashRefreshToken,
   hashSmsCode,
   normalizePhoneE164,
@@ -94,7 +95,7 @@ async function createSession({ userId, deviceId, trx = db }) {
       user_id: userId,
       device_id: deviceId,
       refresh_token_hash: hashRefreshToken(refreshToken),
-      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      expires_at: extendSessionExpiresAt(),
     })
     .execute();
   return {
@@ -271,7 +272,14 @@ export function registerPublicAuthRoutes(app) {
         return reply.code(401).send({ ok: false, code: "SESSION_EXPIRED" });
       }
       if (session.device_id !== input.deviceId) return reply.code(403).send({ ok: false, code: "DEVICE_MISMATCH" });
-      await db.updateTable("user_sessions").set({ last_seen_at: new Date() }).where("id", "=", session.id).execute();
+      await db
+        .updateTable("user_sessions")
+        .set({
+          last_seen_at: new Date(),
+          expires_at: extendSessionExpiresAt(session.expires_at),
+        })
+        .where("id", "=", session.id)
+        .execute();
       return reply.send({
         ok: true,
         accessToken: createAccessToken({

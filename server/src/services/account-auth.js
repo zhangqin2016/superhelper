@@ -6,6 +6,7 @@ const REFRESH_PREFIX = "lily_refresh_";
 const WEB_SESSION_PREFIX = "lily_user_";
 const ACCESS_VERSION = "v1";
 const WEB_SESSION_VERSION = "v1";
+const SESSION_RENEWAL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function base64urlEncode(input) {
   return Buffer.from(input)
@@ -55,6 +56,15 @@ export function verifySmsCodeHash(phoneE164, code, expectedHash) {
 
 export function createRefreshToken() {
   return `${REFRESH_PREFIX}${crypto.randomBytes(32).toString("base64url")}`;
+}
+
+export function extendSessionExpiresAt(currentExpiresAt, { nowMs = Date.now(), ttlMs = SESSION_RENEWAL_TTL_MS } = {}) {
+  const renewalExpiresAtMs = Number(nowMs || 0) + Number(ttlMs || 0);
+  const currentExpiresAtMs = Date.parse(String(currentExpiresAt || ""));
+  const expiresAtMs = Number.isFinite(currentExpiresAtMs)
+    ? Math.max(currentExpiresAtMs, renewalExpiresAtMs)
+    : renewalExpiresAtMs;
+  return new Date(expiresAtMs);
 }
 
 export function hashRefreshToken(token) {
