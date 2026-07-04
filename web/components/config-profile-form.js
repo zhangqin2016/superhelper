@@ -70,8 +70,8 @@ const labels = {
     mediaImage: "图片生成",
     mediaVideo: "视频生成",
     mediaDefault: "默认：",
-    providerModels: "供应商模型",
-    providerModelsHelp: "只读预览。要改模型列表或默认模型，请去「模型供应商」页面配置。",
+    providerModels: "已选供应商的模型",
+    providerModelsHelp: "只读预览。每个已选供应商都会下发自己的模型列表；要改模型列表或默认模型，请去「模型供应商」页面配置。",
     visionNative: "模型原生支持图片识别",
     visionNativeHelp: "勾选后，带图片的消息直接发给该模型，跳过 Qwen 识图桥接。仅当该模型本身能看图时才勾。",
     toolsTitle: "技能包和客户端策略",
@@ -117,8 +117,8 @@ const labels = {
     mediaImage: "Image generation",
     mediaVideo: "Video generation",
     mediaDefault: "Default:",
-    providerModels: "Provider models",
-    providerModelsHelp: "Read-only preview. Edit model names and the provider default under “Model providers”.",
+    providerModels: "Models from selected providers",
+    providerModelsHelp: "Read-only preview. Every selected provider delivers its own model list. Edit model names and provider defaults under “Model providers”.",
     visionNative: "Model natively recognizes images",
     visionNativeHelp: "When checked, messages with images go straight to this model and skip the Qwen vision bridge. Only check this if the model itself can see images.",
     toolsTitle: "Skill packages and client policy",
@@ -164,8 +164,8 @@ const labels = {
     mediaImage: "توليد الصور",
     mediaVideo: "توليد الفيديو",
     mediaDefault: "الافتراضي:",
-    providerModels: "نماذج المزوّد",
-    providerModelsHelp: "معاينة فقط. عدّل أسماء النماذج والافتراضي من صفحة «مزوّدو النماذج».",
+    providerModels: "نماذج المزوّدين المحددين",
+    providerModelsHelp: "معاينة فقط. كل مزوّد محدد يرسل قائمة نماذجه. عدّل أسماء النماذج والافتراضي من صفحة «مزوّدو النماذج».",
     visionNative: "النموذج يتعرف على الصور أصلاً",
     visionNativeHelp: "عند التحديد، تُرسل الرسائل ذات الصور مباشرة إلى هذا النموذج متجاوزة جسر Qwen. حدّد فقط إذا كان النموذج نفسه يرى الصور.",
     toolsTitle: "حزم المهارات وسياسة العميل",
@@ -201,6 +201,10 @@ function fieldClass() {
 
 function templateLabel(template) {
   return String(template?.label || template?.id || "");
+}
+
+function templateById(templates, id) {
+  return templates.find((template) => template.id === id) || null;
 }
 
 function defaultDraft(copy, templates) {
@@ -543,16 +547,40 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
               </div>
             ) : null}
 
-            {activeTemplate.models?.length ? (
+            {deliveredProviderIds.length ? (
               <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div className="text-sm font-semibold text-slate-800">{copy.providerModels}</div>
                 <p className="mt-1 text-xs text-slate-500">{copy.providerModelsHelp}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {activeTemplate.models.map((model) => (
-                    <span key={model} className="rounded-full bg-white px-3 py-1 font-mono text-xs text-slate-600 ring-1 ring-slate-200">
-                      {model}
-                    </span>
-                  ))}
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {deliveredProviderIds.map((providerId) => {
+                    const providerTemplate = templateById(templates, providerId);
+                    const models = Array.isArray(providerTemplate?.models) ? providerTemplate.models.filter(Boolean) : [];
+                    const defaultModel = providerTemplate?.model || models[0] || "";
+                    return (
+                      <div key={providerId} className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900">{templateLabel(providerTemplate) || providerId}</span>
+                          {providerId === draft.selectedTemplateId ? (
+                            <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-semibold text-brand">{copy.defaultBadge}</span>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {(models.length ? models : [defaultModel || "—"]).map((model) => (
+                            <span
+                              key={`${providerId}-${model}`}
+                              className={`rounded-full px-3 py-1 font-mono text-xs ring-1 ${
+                                model === defaultModel
+                                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                                  : "bg-slate-50 text-slate-600 ring-slate-200"
+                              }`}
+                            >
+                              {model}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
