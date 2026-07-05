@@ -186,15 +186,30 @@ function resolveRelativePackPath(dir, relPath) {
   return fs.existsSync(candidate) ? candidate : "";
 }
 
+function pythonPackPathEntries(dir) {
+  if (!dir || !fs.existsSync(dir)) return [];
+  const entries = [path.join(dir, "bin"), path.join(dir, "Scripts")];
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory() && /\.libs$/i.test(entry.name)) entries.push(path.join(dir, entry.name));
+    }
+  } catch {
+    // Pack dirs can be removed while the settings page refreshes; ignore races.
+  }
+  return entries.filter((entry) => fs.existsSync(entry));
+}
+
 function getRuntimePackPathEntries() {
   const entries = [];
   const seen = new Set();
   for (const { id, dir } of effectivePackEntries()) {
     if (!dir) continue;
     const spec = PACK_SPECS[id];
-    const relEntries = Array.isArray(spec?.pathEntries) ? spec.pathEntries : [];
-    for (const rel of relEntries) {
-      const candidate = resolveRelativePackPath(dir, rel);
+    const candidates = [
+      ...(Array.isArray(spec?.pathEntries) ? spec.pathEntries.map((rel) => resolveRelativePackPath(dir, rel)) : []),
+      ...(isPythonPathPack(id) ? pythonPackPathEntries(dir) : []),
+    ];
+    for (const candidate of candidates) {
       if (!candidate) continue;
       const key = fs.realpathSync.native?.(candidate) || fs.realpathSync(candidate);
       if (seen.has(key)) continue;

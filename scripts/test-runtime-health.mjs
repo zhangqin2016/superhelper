@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-runtime-health-"));
 process.env.LILY_USER_DATA_DIR = tmp;
+process.env.LILY_TEST_PRO_PDF_DIR = path.join(tmp, "runtime-packs", "pro-pdf");
 
 const bundledRoot = path.join(tmp, "bundled-runtime-packs");
 process.env.LILY_BUNDLED_RUNTIME_PACK_ROOTS = bundledRoot;
@@ -56,14 +57,41 @@ try {
   const pandocExe =
     process.platform === "win32" ? path.join(pandocDir, "bin", "pandoc.cmd") : path.join(pandocDir, "bin", "pandoc");
   makeExecutable(pandocExe, process.platform === "win32" ? "@echo pandoc 3.10\r\n" : "#!/bin/sh\necho pandoc 3.10\n");
+  const libreOfficeDir = packs.packDir("libreoffice");
+  const sofficeExe =
+    process.platform === "win32" ? path.join(libreOfficeDir, "program", "soffice.cmd") : path.join(libreOfficeDir, "program", "soffice");
+  const sofficeArgsPath = path.join(tmp, "soffice-args.txt");
+  process.env.LILY_TEST_SOFFICE_ARGS = sofficeArgsPath;
+  makeExecutable(
+    sofficeExe,
+    process.platform === "win32"
+      ? "@echo %* > \"%LILY_TEST_SOFFICE_ARGS%\"\r\n"
+      : "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$LILY_TEST_SOFFICE_ARGS\"\necho LibreOffice health ok\n",
+  );
 
   const proPdfDir = packs.packDir("pro-pdf");
   fs.mkdirSync(path.join(proPdfDir, "docling"), { recursive: true });
-  fs.writeFileSync(path.join(proPdfDir, "docling", "__init__.py"), "OK = True\n");
+  fs.mkdirSync(path.join(proPdfDir, "bin"), { recursive: true });
+  fs.mkdirSync(path.join(proPdfDir, "native.libs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(proPdfDir, "docling", "__init__.py"),
+    [
+      "import os, sys",
+      "root = os.environ['LILY_TEST_PRO_PDF_DIR']",
+      "assert sys.path[1] == root, sys.path[:5]",
+      "paths = os.environ.get('PATH', '').split(os.pathsep)",
+      "assert os.path.join(root, 'bin') in paths, paths[:6]",
+      "assert os.path.join(root, 'native.libs') in paths, paths[:6]",
+      "OK = True",
+      "",
+    ].join("\n"),
+  );
   const opencvDir = packs.packDir("opencv");
   fs.mkdirSync(path.join(opencvDir, "numpy"), { recursive: true });
   fs.writeFileSync(path.join(opencvDir, "numpy", "__init__.py"), "raise ImportError('bad opencv numpy')\n");
   const rembgDir = packs.packDir("rembg");
+  fs.mkdirSync(path.join(rembgDir, "docling"), { recursive: true });
+  fs.writeFileSync(path.join(rembgDir, "docling", "__init__.py"), "raise ImportError('stale docling from rembg path')\n");
   fs.mkdirSync(path.join(rembgDir, "numpy"), { recursive: true });
   fs.writeFileSync(path.join(rembgDir, "numpy", "__init__.py"), "__version__ = '2.4.6'\n");
   fs.mkdirSync(path.join(rembgDir, "rembg"), { recursive: true });
@@ -74,6 +102,7 @@ try {
     JSON.stringify({
       schemaVersion: 1,
       installed: {
+        libreoffice: { source: "artifact", version: "25.8.7" },
         opencv: { source: "artifact", version: "4.13.0.92" },
         pandoc: { source: "artifact", version: "3.10" },
         "pro-pdf": { source: "artifact", version: "2.102.1" },
@@ -85,6 +114,13 @@ try {
 
   const pandoc = await health.checkRuntimePackHealth("pandoc");
   assert(pandoc.ok, `pandoc health should execute the installed binary: ${JSON.stringify(pandoc)}`);
+  const libreoffice = await health.checkRuntimePackHealth("libreoffice");
+  assert(libreoffice.ok, `libreoffice health should run headless without opening the first-start UI: ${JSON.stringify(libreoffice)}`);
+  const sofficeArgs = fs.readFileSync(sofficeArgsPath, "utf8");
+  for (const arg of ["--headless", "--invisible", "--nofirststartwizard", "--terminate_after_init", "-env:UserInstallation="]) {
+    assert(sofficeArgs.includes(arg), `libreoffice health must include ${arg}: ${sofficeArgs}`);
+  }
+  assert(!sofficeArgs.includes("--version"), `libreoffice health must not use GUI-prone --version probing: ${sofficeArgs}`);
 
   if (runtimePython.resolveVenvPython()) {
     const proPdf = await health.checkRuntimePackHealth("pro-pdf");

@@ -69,9 +69,14 @@ function extractOfficeText(filePath) {
   const env = { ...process.env };
   // Put any installed runtime packs (e.g. the pro-pdf Docling engine) on
   // PYTHONPATH so extract_document.py's lazy import upgrades automatically.
-  const packPaths = require("./runtime-packs").getRuntimePackPythonPaths();
+  const runtimePacks = require("./runtime-packs");
+  const packPaths = runtimePacks.getRuntimePackPythonPaths();
   if (packPaths.length) {
     env.PYTHONPATH = [...packPaths, env.PYTHONPATH].filter(Boolean).join(path.delimiter);
+  }
+  const packPathEntries = runtimePacks.getRuntimePackPathEntries();
+  if (packPathEntries.length) {
+    env.PATH = [...packPathEntries, env.PATH].filter(Boolean).join(path.delimiter);
   }
 
   return new Promise((resolve, reject) => {

@@ -46,9 +46,10 @@ const proDir = packs.packDir("pro-pdf");
 fs.mkdirSync(proDir, { recursive: true });
 fs.writeFileSync(path.join(proDir, "marker.txt"), "x"); // dir exists on disk
 const opencvDir = packs.packDir("opencv");
-fs.mkdirSync(opencvDir, { recursive: true });
+fs.mkdirSync(path.join(opencvDir, "opencv_python.libs"), { recursive: true });
 const rembgDir = packs.packDir("rembg");
-fs.mkdirSync(rembgDir, { recursive: true });
+fs.mkdirSync(path.join(rembgDir, "bin"), { recursive: true });
+fs.mkdirSync(path.join(rembgDir, "llvmlite.libs"), { recursive: true });
 const libreOfficeProgramDir =
   process.platform === "darwin"
     ? path.join(packs.packDir("libreoffice"), "LibreOffice.app", "Contents", "MacOS")
@@ -93,6 +94,10 @@ assert(
   runtimePython.getRuntimePathEntries().includes(libreOfficeProgramDir),
   "runtime PATH entries should include installed LibreOffice runtime pack",
 );
+const pathEntries = runtimePython.getRuntimePathEntries();
+assert(pathEntries.includes(path.join(opencvDir, "opencv_python.libs")), "runtime PATH should include Python wheel .libs dirs for native Windows DLLs");
+assert(pathEntries.includes(path.join(rembgDir, "bin")), "runtime PATH should include Python pack bin dirs");
+assert(pathEntries.includes(path.join(rembgDir, "llvmlite.libs")), "runtime PATH should include every Python pack .libs dir");
 const runtimeEnv = runtimePython.getRuntimeEnvExtras();
 assert(
   runtimeEnv.LILY_LIBREOFFICE_PROGRAM,

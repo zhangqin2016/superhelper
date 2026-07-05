@@ -1,9 +1,11 @@
 "use strict";
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
+const { pathToFileURL } = require("node:url");
 const { PACK_SPECS } = require("./runtime-pack-specs");
 
 const pexecFile = promisify(execFile);
@@ -58,6 +60,7 @@ async function runExecutable(id, exe, args = [], env = process.env) {
       timeout: CHECK_TIMEOUT_MS,
       env,
       maxBuffer: 1024 * 1024,
+      windowsHide: true,
     });
     const output = `${result.stdout || ""}${result.stderr || ""}`.trim().split(/\r?\n/)[0] || "";
     return okCheck(id, { path: exe, output });
@@ -69,8 +72,8 @@ async function runExecutable(id, exe, args = [], env = process.env) {
 function executableNames(name) {
   if (process.platform !== "win32") return [name];
   const lower = String(name || "").toLowerCase();
-  if (/\.(exe|cmd|bat)$/.test(lower)) return [name];
-  return [`${name}.exe`, `${name}.cmd`, `${name}.bat`, name];
+  if (/\.(exe|cmd|bat|com)$/.test(lower)) return [name];
+  return [`${name}.exe`, `${name}.cmd`, `${name}.bat`, `${name}.com`, name];
 }
 
 function resolvePackPath(packDir, relPath) {
@@ -98,21 +101,107 @@ function findPackExecutable(spec, packDir, name) {
   return "";
 }
 
+function uniqueExistingPaths(paths) {
+  const seen = new Set();
+  const result = [];
+  for (const item of paths) {
+    if (!item || !fs.existsSync(item)) continue;
+    const key = fs.realpathSync.native?.(item) || fs.realpathSync(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+function pythonPackLibraryDirs(packDir) {
+  if (!packDir || !fs.existsSync(packDir)) return [];
+  const direct = [path.join(packDir, "bin"), path.join(packDir, "Scripts")];
+  let siblingLibs = [];
+  try {
+    siblingLibs = fs
+      .readdirSync(packDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /\.libs$/i.test(entry.name))
+      .map((entry) => path.join(packDir, entry.name));
+  } catch {
+    siblingLibs = [];
+  }
+  return uniqueExistingPaths([...direct, ...siblingLibs]);
+}
+
+function buildPythonProbeEnv(packDir = "") {
+  const runtimePackPaths = require("./runtime-packs").getRuntimePackPythonPaths();
+  const pythonPath = uniqueExistingPaths([packDir, ...runtimePackPaths])
+    .concat(process.env.PYTHONPATH ? [process.env.PYTHONPATH] : [])
+    .join(path.delimiter);
+  const pathEntries = uniqueExistingPaths([...(packDir ? pythonPackLibraryDirs(packDir) : [])]);
+  return {
+    ...process.env,
+    ...(pythonPath ? { PYTHONPATH: pythonPath } : {}),
+    PATH: [...pathEntries, process.env.PATH || ""].filter(Boolean).join(path.delimiter),
+  };
+}
+
+function findLibreOfficeExecutable(spec, packDir) {
+  const names = process.platform === "win32" ? ["soffice.com", "soffice"] : ["soffice"];
+  for (const name of names) {
+    const found = findPackExecutable(spec, packDir, name);
+    if (found) return found;
+  }
+  return "";
+}
+
+async function checkLibreOfficePack(id, spec, packDir) {
+  const exe = findLibreOfficeExecutable(spec, packDir);
+  if (!exe || !fs.existsSync(exe)) {
+    return {
+      id,
+      ok: false,
+      status: "failed",
+      path: packDir || "",
+      checks: [missingCheck(`${id}:soffice`, "EXECUTABLE_MISSING", { path: exe || "" })],
+    };
+  }
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "lily-lo-health-"));
+  const args = [
+    "--headless",
+    "--invisible",
+    "--nologo",
+    "--nodefault",
+    "--nofirststartwizard",
+    "--nolockcheck",
+    "--norestore",
+    "--terminate_after_init",
+    `-env:UserInstallation=${pathToFileURL(profile).href}`,
+  ];
+  try {
+    const check = await runExecutable(`${id}:soffice`, exe, args, {
+      ...process.env,
+      SAL_USE_VCLPLUGIN: process.env.SAL_USE_VCLPLUGIN || "svp",
+    });
+    return {
+      id,
+      ok: check.ok,
+      status: check.ok ? "ok" : "failed",
+      path: packDir || "",
+      checks: [check],
+    };
+  } finally {
+    fs.rmSync(profile, { recursive: true, force: true });
+  }
+}
+
 async function checkPythonProbe(id, probe, packDir = "") {
   const runtimePython = require("./runtime-python");
   const python = runtimePython.resolveVenvPython();
   if (!python) return missingCheck(id, "PYTHON_RUNTIME_MISSING");
   if (packDir && !fs.existsSync(packDir)) return missingCheck(id, "PACK_DIR_MISSING", { path: packDir || "" });
-  const runtimePythonPath = runtimePython.getRuntimeEnvExtras().PYTHONPATH || "";
-  const pythonPath = runtimePythonPath || [packDir || "", process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
   try {
     await pexecFile(python, ["-c", String(probe || "")], {
       timeout: CHECK_TIMEOUT_MS,
       maxBuffer: 1024 * 1024,
-      env: {
-        ...process.env,
-        PYTHONPATH: pythonPath,
-      },
+      env: buildPythonProbeEnv(packDir),
+      windowsHide: true,
     });
     return okCheck(id, { path: packDir, probe });
   } catch (error) {
@@ -145,6 +234,7 @@ async function checkRuntimePackHealth(packId) {
   const dir = entry?.dir || "";
   if (spec.pythonPath && spec.probe) return checkPythonProbe(id, spec.probe, dir || base?.path || "");
   if (spec.installKind === "node-browser-runtime") return checkWebAutomationPack(id, spec, dir || base?.path || "");
+  if (spec.health?.kind === "libreoffice") return checkLibreOfficePack(id, spec, dir || base?.path || "");
   const executables = Array.isArray(spec.health?.executables) ? spec.health.executables : [];
   if (executables.length) {
     const checks = [];

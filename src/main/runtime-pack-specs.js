@@ -53,7 +53,7 @@ const PACK_SPECS = {
     recommended: true,
     sizeEstimate: "≈450-800MB download / ≈1.2GB installed",
     pathEntries: ["LibreOffice.app/Contents/MacOS", "program", "Program", "libreoffice/program"],
-    health: { executables: [{ name: "soffice", args: ["--version"] }] },
+    health: { kind: "libreoffice" },
     label: {
       en: "LibreOffice",
       "zh-CN": "LibreOffice",
