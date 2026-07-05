@@ -17,6 +17,7 @@ function isBusy() {
 }
 
 function apiErrorMessage(error) {
+  if (error === "MODEL_DIRECT_DISABLED") return t("toast.modelServiceManaged");
   if (error === "INVALID_BASE_URL") return t("toast.modelApiInvalidBaseUrl");
   if (error === "INVALID_API_KEY") return t("toast.modelApiInvalidKey");
   if (error === "INVALID_LABEL") return t("toast.modelCustomInvalidLabel");
@@ -61,12 +62,20 @@ function renderApiGateway(gateway) {
   updateApiCustomFields(gateway);
 }
 
-function renderCustomList(presets, activePresetId) {
+function renderCustomList(presets, activePresetId, modelDirectAllowed = true) {
   const list = $("modelCustomList");
   if (!list) return;
 
   const customPresets = (presets || []).filter((p) => p.custom);
   list.replaceChildren();
+
+  if (!modelDirectAllowed) {
+    const managed = document.createElement("p");
+    managed.className = "model-custom-empty";
+    managed.textContent = t("toast.modelServiceManaged");
+    list.appendChild(managed);
+    return;
+  }
 
   if (!customPresets.length) {
     const empty = document.createElement("p");
@@ -178,13 +187,15 @@ function renderCatalogModels(provider) {
   }
 }
 
-function renderCatalog(catalog) {
+function renderCatalog(catalog, modelDirectAllowed = true) {
   catalogProviders = Array.isArray(catalog) ? catalog : [];
   const providerSel = $("modelCatalogProvider");
+  const advancedBlock = $("modelAdvancedBlock");
+  if (advancedBlock) advancedBlock.hidden = !modelDirectAllowed;
   // Hide the whole "add model" block when the server published no catalog —
   // the user can still add a model via the collapsed "advanced" manual form.
-  const block = providerSel?.closest(".settings-field");
-  if (block) block.hidden = catalogProviders.length === 0;
+  const block = $("modelCatalogBlock") || providerSel?.closest(".settings-field");
+  if (block) block.hidden = !modelDirectAllowed || catalogProviders.length === 0;
   if (!providerSel) return;
   const prev = providerSel.value;
   providerSel.replaceChildren();
@@ -221,8 +232,8 @@ export async function refreshModelSelect() {
   }
 
   renderApiGateway(data.apiGateway);
-  renderCustomList(data.presets, data.activePresetId);
-  renderCatalog(data.catalog);
+  renderCustomList(data.presets, data.activePresetId, data.modelDirectAllowed !== false);
+  renderCatalog(data.catalog, data.modelDirectAllowed !== false);
 }
 
 async function saveApiGateway(mode) {
