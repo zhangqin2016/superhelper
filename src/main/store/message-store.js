@@ -70,6 +70,56 @@ function parseJson(text, fallback) {
   }
 }
 
+function normalizeProjectionUserMessage(message = {}) {
+  const text = String(message.text ?? message.content ?? "");
+  if (!text.trim()) return null;
+  const steer = Boolean(message.steer || message.meta?.steer);
+  const steerSeq = message.steerSeq ?? message.meta?.steerSeq ?? null;
+  return {
+    text,
+    files: Array.isArray(message.files) ? message.files : null,
+    ts: Number.isFinite(message.ts) ? message.ts : null,
+    ...(steer ? { steer: true, steerSeq } : {}),
+  };
+}
+
+function projectionUserMessages(projection = {}) {
+  const payload = projection.payload && typeof projection.payload === "object"
+    ? projection.payload
+    : {};
+  const messages = Array.isArray(payload.userMessages)
+    ? payload.userMessages.map(normalizeProjectionUserMessage).filter(Boolean)
+    : [];
+  if (!messages.some((message) => !message.steer) && String(projection.userText || "").trim()) {
+    messages.unshift({ text: String(projection.userText || ""), files: null, ts: projection.startedAt || null });
+  }
+  return messages;
+}
+
+function upsertProjectionUserMessage(projection, nextMessage) {
+  const normalized = normalizeProjectionUserMessage(nextMessage);
+  if (!normalized) return;
+  const messages = projectionUserMessages(projection);
+  let index = -1;
+  if (normalized.steer) {
+    const seqKey = normalized.steerSeq == null ? "" : String(normalized.steerSeq);
+    index = messages.findIndex((message) => {
+      if (!message.steer) return false;
+      const messageSeqKey = message.steerSeq == null ? "" : String(message.steerSeq);
+      if (seqKey && messageSeqKey) return messageSeqKey === seqKey;
+      return message.text === normalized.text;
+    });
+  } else {
+    index = messages.findIndex((message) => !message.steer);
+  }
+  if (index >= 0) messages[index] = { ...messages[index], ...normalized };
+  else messages.push(normalized);
+  projection.payload = {
+    ...(projection.payload || {}),
+    userMessages: messages,
+  };
+}
+
 function previewOf(message) {
   const text = message.content || message.record?.assistantText || "";
   return String(text).slice(0, PREVIEW_MAX);
@@ -485,16 +535,24 @@ class MessageStore {
         terminalPayload?.record?.meta?.scheduledDraft ||
         projection.payload?.scheduledDraft ||
         null;
-      if (projection.userText) {
+      const userMessages = projectionUserMessages(projection);
+      for (const [userIndex, userMessage] of userMessages.entries()) {
+        const userTs = Number.isFinite(userMessage.ts)
+          ? userMessage.ts
+          : (userIndex === 0 ? startedAt : startedAt + userIndex);
         conversation.push({
-          id: `projection:${projection.turnId}:user`,
+          id: userMessage.steer
+            ? `projection:${projection.turnId}:user:steer:${userMessage.steerSeq ?? userIndex}`
+            : `projection:${projection.turnId}:user`,
           role: "user",
-          content: projection.userText,
+          content: userMessage.text,
+          files: userMessage.files || undefined,
           turnId: projection.turnId,
-          timestamp: new Date(startedAt).toISOString(),
+          timestamp: new Date(userTs).toISOString(),
           meta: {
             canonicalSource: "lily-projection",
             projected: true,
+            ...(userMessage.steer ? { steer: true, steerSeq: userMessage.steerSeq } : {}),
           },
         });
       }
@@ -631,8 +689,29 @@ class MessageStore {
       projection.status = "running";
       projection.userText = String(payload.text || projection.userText || "");
       projection.startedAt = projection.startedAt || now;
+      upsertProjectionUserMessage(projection, {
+        text: projection.userText,
+        files: payload.files || null,
+        ts: projection.startedAt || now,
+      });
     } else if (event.type === "user.committed") {
-      projection.userText = String(payload.text || projection.userText || "");
+      const userText = String(payload.text || "");
+      if (payload.steer) {
+        upsertProjectionUserMessage(projection, {
+          text: userText,
+          files: payload.files || null,
+          ts: now,
+          steer: true,
+          steerSeq: payload.steerSeq ?? null,
+        });
+      } else {
+        projection.userText = String(userText || projection.userText || "");
+        upsertProjectionUserMessage(projection, {
+          text: projection.userText,
+          files: payload.files || null,
+          ts: projection.startedAt || now,
+        });
+      }
     } else if (event.type === "assistant.delta") {
       projection.assistantText += String(payload.text || "");
     } else if (event.type === "assistant.final") {

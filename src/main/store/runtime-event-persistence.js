@@ -307,6 +307,7 @@ function compactRuntimeEventForPersistence(event = {}) {
       compactPayload = {
         text: truncateString(payload.text || "", ASSISTANT_LIMIT),
         files: Array.isArray(payload.files) ? payload.files.map(compactFile) : null,
+        ...(payload.steer ? { steer: true, steerSeq: payload.steerSeq ?? null } : {}),
       };
       break;
     case "assistant.final":

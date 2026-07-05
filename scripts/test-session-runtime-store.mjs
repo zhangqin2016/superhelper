@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const store = await import("../src/renderer/modules/session-runtime-store.js");
+const timeline = await import("../src/renderer/modules/turn-timeline.js");
 
 store.applyRuntimeBatch({
   sessionId: "s1",
@@ -602,6 +603,68 @@ store.syncCommittedMessages("s6", [
 runtime = store.getRuntimeSession("s6");
 if (runtime.committedMessages.length !== 2) {
   throw new Error(`real repeated user messages must not be deduped: ${JSON.stringify(runtime.committedMessages)}`);
+}
+
+store.syncCommittedMessages("s6-steer-repeat", [
+  {
+    id: "original-repeat",
+    role: "user",
+    content: "same text",
+    turnId: "turn_repeat",
+    timestamp: "2026-06-01T00:00:00.000Z",
+  },
+  {
+    id: "projection-repeat-steer",
+    role: "user",
+    content: "same text",
+    turnId: "turn_repeat",
+    timestamp: "2026-06-01T00:00:03.000Z",
+    meta: { steer: true, steerSeq: 1, projected: true },
+  },
+]);
+runtime = store.getRuntimeSession("s6-steer-repeat");
+if (runtime.committedMessages.filter((message) => message.role === "user").length !== 2) {
+  throw new Error(`steer with repeated text must not be projection-deduped: ${JSON.stringify(runtime.committedMessages)}`);
+}
+
+store.applyRuntimeBatch({
+  sessionId: "steer-live",
+  batchSeq: 1,
+  events: [
+    { id: "st1", type: "turn.started", sessionId: "steer-live", turnId: "turn_steer", seq: 1, ts: 6000, source: "test", payload: {} },
+    { id: "st2", type: "user.committed", sessionId: "steer-live", turnId: "turn_steer", seq: 2, ts: 6001, source: "test", payload: { text: "original request" } },
+    { id: "st3", type: "assistant.delta", sessionId: "steer-live", turnId: "turn_steer", seq: 3, ts: 6002, source: "test", payload: { text: "working" } },
+    { id: "st4", type: "user.committed", sessionId: "steer-live", turnId: "turn_steer", seq: 4, ts: 6003, source: "test", payload: { text: "add this constraint", steer: true, steerSeq: 1 } },
+    { id: "st5", type: "turn.steered", sessionId: "steer-live", turnId: "turn_steer", seq: 5, ts: 6004, source: "test", payload: { text: "add this constraint", steerSeq: 1 } },
+  ],
+});
+runtime = store.getRuntimeSession("steer-live");
+const steerUsers = runtime.committedMessages.filter((message) => message.role === "user" && message.turnId === "turn_steer");
+if (steerUsers.length !== 2) {
+  throw new Error(`steer must render as a second user message in the same turn: ${JSON.stringify(runtime.committedMessages)}`);
+}
+if (!steerUsers.some((message) => message.content === "add this constraint" && message.meta?.steer && message.meta?.steerSeq === 1)) {
+  throw new Error(`steer user message must carry stable meta for render/reload: ${JSON.stringify(steerUsers)}`);
+}
+if (!runtime.liveTurn?.timeline?.some((entry) => entry.kind === "notice" && entry.code === "turnSteered")) {
+  throw new Error(`turn.steered must be visible in the live timeline: ${JSON.stringify(runtime.liveTurn?.timeline)}`);
+}
+const steerTimelineEntry = runtime.liveTurn.timeline.find((entry) => entry.kind === "notice" && entry.code === "turnSteered");
+if (!timeline.resolveNoticeDetail(steerTimelineEntry).includes("add this constraint")) {
+  throw new Error(`turn.steered notice must render the steered text through the notice resolver: ${JSON.stringify(steerTimelineEntry)}`);
+}
+store.syncCommittedMessages("steer-live", [
+  {
+    id: "persisted-original",
+    role: "user",
+    content: "original request",
+    turnId: "turn_steer",
+    timestamp: "2026-06-01T00:00:06.001Z",
+  },
+]);
+runtime = store.getRuntimeSession("steer-live");
+if (!runtime.committedMessages.some((message) => message.content === "add this constraint" && message.meta?.steer)) {
+  throw new Error(`busy history sync must preserve local live steer until persistence catches up: ${JSON.stringify(runtime.committedMessages)}`);
 }
 
 store.applyRuntimeEvent({

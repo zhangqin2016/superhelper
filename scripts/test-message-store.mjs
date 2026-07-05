@@ -209,6 +209,66 @@ try {
   const terminalInput = store.markTurnInputTerminal("turn_1", "turn.completed");
   ok(terminalInput.status === "completed", "turn input terminal status follows terminal event");
 
+  store.appendRuntimeEvents("S4_STEER", [
+    {
+      id: "steer_evt_1",
+      type: "turn.started",
+      sessionId: "S4_STEER",
+      turnId: "turn_steer",
+      seq: 1,
+      ts: 2100,
+      source: "orchestrator",
+      payload: { text: "make a chart" },
+    },
+    {
+      id: "steer_evt_2",
+      type: "user.committed",
+      sessionId: "S4_STEER",
+      turnId: "turn_steer",
+      seq: 2,
+      ts: 2110,
+      source: "orchestrator",
+      payload: { text: "make a chart" },
+    },
+    {
+      id: "steer_evt_3",
+      type: "user.committed",
+      sessionId: "S4_STEER",
+      turnId: "turn_steer",
+      seq: 3,
+      ts: 2120,
+      source: "orchestrator",
+      payload: { text: "use weekly data too", steer: true, steerSeq: 1 },
+    },
+    {
+      id: "steer_evt_4",
+      type: "assistant.final",
+      sessionId: "S4_STEER",
+      turnId: "turn_steer",
+      seq: 4,
+      ts: 2130,
+      source: "orchestrator",
+      payload: { assistant: "chart ready" },
+    },
+    {
+      id: "steer_evt_5",
+      type: "turn.completed",
+      sessionId: "S4_STEER",
+      turnId: "turn_steer",
+      seq: 5,
+      ts: 2140,
+      source: "orchestrator",
+      payload: { assistant: "chart ready" },
+    },
+  ]);
+  const steerProjection = store.getProjectedConversation("S4_STEER");
+  ok(steerProjection.length === 3, "steer projection builds original user + steer user + assistant");
+  ok(steerProjection.filter((m) => m.role === "user").length === 2, "projection keeps both user messages for a steered turn");
+  ok(steerProjection.some((m) => m.content === "use weekly data too" && m.meta?.steer && m.meta?.steerSeq === 1), "projected steer keeps visible metadata");
+  const persistedSteerEvent = store.getRuntimeEvents("S4_STEER")
+    .find((event) => event.id === "steer_evt_3");
+  ok(persistedSteerEvent?.payload?.steer === true && persistedSteerEvent.payload.steerSeq === 1, "compacted persisted user.committed keeps steer metadata");
+
   const hugeToolResult = "R".repeat(120_000);
   store.appendRuntimeEvents("S4", [
     {

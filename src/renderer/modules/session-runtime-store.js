@@ -180,6 +180,7 @@ function isProjectionLikeMessage(message = {}) {
 
 function isLikelyProjectionDuplicate(a = {}, b = {}) {
   if (a.role !== "user" || b.role !== "user") return false;
+  if (a.steer || a.meta?.steer || b.steer || b.meta?.steer) return false;
   if (!sameContentWithinWindow(a, b)) return false;
   return Boolean(
     isProjectionLikeMessage(a) ||
@@ -474,14 +475,15 @@ export function applyRuntimeEvent(event, opts = {}) {
   if (event.type === "user.committed") {
     const turnKey = event.turnId ? `${event.sessionId}:${event.turnId}` : "";
     if (turnKey && terminalTurns.has(turnKey)) return;
+    const isSteer = Boolean(event.payload.steer);
     upsertCommittedMessage(runtime, {
       role: "user",
       content: event.payload.text || "",
       files: event.payload.files || undefined,
       turnId: event.turnId || undefined,
       timestamp: new Date(event.ts).toISOString(),
-      steer: event.payload.steer ? true : undefined,
-      steerSeq: event.payload.steer ? event.payload.steerSeq : undefined,
+      ...(isSteer ? { steer: true, steerSeq: event.payload.steerSeq } : {}),
+      meta: isSteer ? { steer: true, steerSeq: event.payload.steerSeq } : undefined,
     });
     return;
   }
@@ -683,6 +685,14 @@ export function applyRuntimeEvent(event, opts = {}) {
     case "assistant.message_stop":
       closeStreamingBlocks(live, event.ts || Date.now());
       break;
+    case "turn.steered": {
+      appendTimelineNotice(live, {
+        code: "turnSteered",
+        level: "info",
+        detail: event.payload?.text ? String(event.payload.text).trim() : "",
+      }, event.ts || Date.now());
+      break;
+    }
     default:
       if (TERMINAL_TYPES.has(event.type)) {
         live.phase = "done";

@@ -709,6 +709,11 @@ class TurnOrchestrator {
     } catch (err) {
       log.warn("steer user message commit failed: %s", err?.message || err);
     }
+    appendTimelineNotice(state, {
+      code: "turnSteered",
+      level: "info",
+      detail: String(text || "").trim(),
+    }, Date.now());
     this._emit(
       sessionId,
       "user.committed",
@@ -919,6 +924,7 @@ class TurnOrchestrator {
     // Reuse a pre-echoed turnId (see echoUserMessage) so the already-shown user
     // message and this turn's assistant card belong to the SAME turn.
     state.turnId = opts.turnId || newTurnId();
+    state.steerCount = 0;
     state.admittedSeq = null;
     state.assistantText = "";
     state.thinkingText = "";
@@ -1112,6 +1118,7 @@ class TurnOrchestrator {
     const state = this._state(session.id);
     state.phase = "starting";
     state.turnId = newTurnId();
+    state.steerCount = 0;
     state.admittedSeq = null;
     state.assistantText = "";
     state.thinkingText = "";
@@ -1926,6 +1933,7 @@ class TurnOrchestrator {
     }
     state.phase = "idle";
     state.turnId = null;
+    state.steerCount = 0;
     state.admittedSeq = null;
     state.assistantText = "";
     state.thinkingText = "";

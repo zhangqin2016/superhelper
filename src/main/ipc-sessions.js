@@ -11,6 +11,60 @@ const {
 } = require("./permission-settings");
 const { getConversationPageFromSource } = require("./opencode-conversation-source");
 
+const SESSION_SWITCH_WARMUP_DELAY_MS = 150;
+const sessionRunnerWarmups = new WeakMap();
+
+function warmupSetFor(ctx) {
+  let set = sessionRunnerWarmups.get(ctx);
+  if (!set) {
+    set = new Set();
+    sessionRunnerWarmups.set(ctx, set);
+  }
+  return set;
+}
+
+function scheduleSessionRunnerWarmup(ctx, sessionId) {
+  if (!ctx || !sessionId) return false;
+  const pending = warmupSetFor(ctx);
+  if (pending.has(sessionId)) return false;
+  pending.add(sessionId);
+  setTimeout(() => {
+    Promise.resolve()
+      .then(() => {
+        if (ctx.sessionManager?.activeSessionId !== sessionId) return null;
+        const ensure = ctx.ensureSessionRunner || ensureSessionRunner;
+        return ensure(ctx, sessionId, { spawn: false });
+      })
+      .catch((err) => {
+        console.warn("[session] background runner warmup failed:", err?.message || err);
+      })
+      .finally(() => {
+        pending.delete(sessionId);
+      });
+  }, SESSION_SWITCH_WARMUP_DELAY_MS);
+  return true;
+}
+
+function switchSessionFast(ctx, sessionId) {
+  const { sessionManager, projectManager, runnerPool } = ctx;
+  const session = sessionManager.findById(sessionId);
+  if (!session) return { ok: false, error: "NOT_FOUND" };
+
+  if (session.projectId !== projectManager.getActive()?.id) {
+    projectManager.switchTo(session.projectId);
+  }
+  sessionManager.switchTo(sessionId);
+  const runnerWarmupPending = scheduleSessionRunnerWarmup(ctx, sessionId);
+
+  return {
+    ok: true,
+    sessionId,
+    projectId: session.projectId,
+    runnerActive: runnerPool.has(sessionId),
+    runnerWarmupPending,
+  };
+}
+
 function registerSessionHandlers(ctx) {
   const { sessionManager, projectManager, runnerPool } = ctx;
 
@@ -44,21 +98,7 @@ function registerSessionHandlers(ctx) {
   });
 
   ipcMain.handle("session:switch", (_event, sessionId) => {
-    const session = sessionManager.findById(sessionId);
-    if (!session) return { ok: false, error: "NOT_FOUND" };
-
-    if (session.projectId !== projectManager.getActive()?.id) {
-      projectManager.switchTo(session.projectId);
-    }
-    sessionManager.switchTo(sessionId);
-    ensureSessionRunner(ctx, sessionId);
-
-    return {
-      ok: true,
-      sessionId,
-      projectId: session.projectId,
-      runnerActive: runnerPool.has(sessionId),
-    };
+    return switchSessionFast(ctx, sessionId);
   });
 
   ipcMain.handle("session:rename", (_event, sessionId, title) => {
@@ -342,4 +382,9 @@ function registerSkillHandlers(ctx) {
   });
 }
 
-module.exports = { registerSessionHandlers, registerSkillHandlers };
+module.exports = {
+  registerSessionHandlers,
+  registerSkillHandlers,
+  scheduleSessionRunnerWarmup,
+  switchSessionFast,
+};

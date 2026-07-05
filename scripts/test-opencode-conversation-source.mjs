@@ -153,6 +153,41 @@ const projectionDeduped = mergeProjectionConversation([
 assert.equal(projectionDeduped.filter((m) => m.role === "user").length, 1, "projection does not duplicate existing turn user");
 assert.equal(projectionDeduped.find((m) => m.role === "assistant")?.content, "投影答案", "projection fills missing assistant");
 
+const projectionWithSteer = mergeProjectionConversation([
+  { id: "official_user_p", role: "user", content: "original request", turnId: "turn_p_steer", timestamp: "2026-06-23T14:10:00.000Z" },
+], [
+  {
+    id: "projection:turn_p_steer:user",
+    role: "user",
+    content: "original request",
+    turnId: "turn_p_steer",
+    timestamp: "2026-06-23T14:10:00.000Z",
+  },
+  {
+    id: "projection:turn_p_steer:user:steer:1",
+    role: "user",
+    content: "add the new constraint",
+    turnId: "turn_p_steer",
+    timestamp: "2026-06-23T14:10:03.000Z",
+    meta: { steer: true, steerSeq: 1 },
+  },
+]);
+assert.equal(projectionWithSteer.filter((m) => m.role === "user").length, 2, "steer projection survives official same-turn user merge");
+assert.equal(projectionWithSteer.some((m) => m.meta?.steer && m.content === "add the new constraint"), true, "steer projection keeps visible metadata");
+const projectionWithRepeatedSteerText = mergeProjectionConversation([
+  { id: "official_user_repeat", role: "user", content: "same text", turnId: "turn_p_repeat_steer", timestamp: "2026-06-23T14:11:00.000Z" },
+], [
+  {
+    id: "projection:turn_p_repeat_steer:user:steer:1",
+    role: "user",
+    content: "same text",
+    turnId: "turn_p_repeat_steer",
+    timestamp: "2026-06-23T14:11:03.000Z",
+    meta: { steer: true, steerSeq: 1 },
+  },
+]);
+assert.equal(projectionWithRepeatedSteerText.filter((m) => m.role === "user").length, 2, "steer is never fuzzy-deduped even when its text repeats");
+
 const projectionOfficialNoTurn = mergeProjectionConversation([
   {
     id: "official_user_no_turn",

@@ -101,6 +101,14 @@ if (!eventsFor("turn.steered").some((e) => e.turnId === "turn_live")) {
 if (!messages.some((m) => m.role === "user" && m.content === "也顺便查一下昨天的数据" && m.turnId === "turn_live")) {
   throw new Error("steer must persist the user message on the live turn");
 }
+const storedSteer = messages.find((m) => m.role === "user" && m.turnId === "turn_live");
+if (!storedSteer?.meta?.steer || storedSteer.meta.steerSeq !== 1) {
+  throw new Error(`steer persistence must include stable visible metadata: ${JSON.stringify(messages)}`);
+}
+const archived = ctx.turnArchive.buildRecord(orch._state("s1"), "turn.completed", { assistant: "done" });
+if (!archived.timeline.some((entry) => entry.kind === "notice" && entry.code === "turnSteered")) {
+  throw new Error(`steer must be preserved in the final turn timeline: ${JSON.stringify(archived.timeline)}`);
+}
 console.log("steer: success path ok");
 
 // --- 2. FAILURE MODE: engine rejects -> degrade to queue (baseline) -----------

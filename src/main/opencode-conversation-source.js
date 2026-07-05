@@ -177,8 +177,18 @@ function mergeUserDisplayText(opencodeMessages = [], localMessages = []) {
   }).filter(Boolean);
 }
 
+function isSteerMessage(message = {}) {
+  return Boolean(message.steer || message.meta?.steer);
+}
+
 function messageKey(message = {}) {
-  if (message.turnId && message.role) return `turn:${message.role}:${message.turnId}`;
+  if (message.turnId && message.role) {
+    if (isSteerMessage(message)) {
+      const seq = message.steerSeq ?? message.meta?.steerSeq ?? normalizedText(messageText(message));
+      return `turn:${message.role}:${message.turnId}:steer:${seq}`;
+    }
+    return `turn:${message.role}:${message.turnId}`;
+  }
   if (message.id) return `id:${message.id}`;
   return `${message.role || ""}:${message.timestamp || ""}:${message.content || ""}`;
 }
@@ -221,6 +231,7 @@ function scheduledDraftsMatch(a = {}, b = {}) {
 }
 
 function roleTurnKey(message = {}) {
+  if (isSteerMessage(message)) return "";
   return message.turnId && message.role ? `${message.role}:${message.turnId}` : "";
 }
 
@@ -240,7 +251,12 @@ function findEquivalentProjectionIndex(out, projected) {
     const existingTurn = roleTurnKey(existing);
     const projectedTurn = roleTurnKey(projected);
     if (existingTurn && projectedTurn && existingTurn === projectedTurn) return i;
-    if (projected.role === "user" && isSameUserMessage(existing, projected)) return i;
+    if (
+      projected.role === "user" &&
+      !isSteerMessage(existing) &&
+      !isSteerMessage(projected) &&
+      isSameUserMessage(existing, projected)
+    ) return i;
     if (projected.role === "assistant") {
       if (scheduledDraftsMatch(existing, projected)) return i;
       const projectedText = normalizedText(messageText(projected));

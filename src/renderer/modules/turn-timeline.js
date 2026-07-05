@@ -65,6 +65,10 @@ const TASK_NOTICE_CODES = new Set(["taskProgress", "taskStarted", "taskCompleted
 
 export function resolveNoticeDetail(entry = {}) {
   const detail = String(entry.detail || "").trim();
+  if (entry.code === "turnSteered") {
+    const label = t("message.steerBadge");
+    return detail ? `${label}: ${detail}` : label;
+  }
   if (detail) return detail;
   const code = String(entry.code || "").trim();
   if (!code) return "";
