@@ -283,6 +283,7 @@ try {
   const lilyBody = JSON.parse(lilyReply._sent);
   assert.equal(lilyBody.output.public_url, "https://cdn.example.com/public/generated.png", "public CDN result URLs should stay direct");
   assert.match(lilyBody.output.image_url, /^https:\/\/lily\.example\.com\/llm\/media\/lily\/image\/asset\?url=/);
+  assert.match(lilyBody.output.image_url, /[?&]access_token=lilygw\./, "rewritten asset URLs must carry a short token for old clients that cannot add download headers");
   assert.doesNotMatch(lilyReply._sent, /127\.0\.0\.1:8012/, "private GPU result URLs must not leak to clients");
 
   const assetReply = fakeReply();
@@ -303,6 +304,23 @@ try {
   assert.equal(captures.at(-1).url, "http://127.0.0.1:18012/outputs/generated.png", "asset proxy should fetch through the configured private tunnel");
   assert.equal(captures.at(-1).init.headers.Authorization, "Bearer lily-upstream-secret");
   assert.equal(assetReply._headers["content-type"], "image/png");
+
+  const legacyAssetUrl = new URL(lilyBody.output.image_url);
+  const legacyAssetReply = fakeReply();
+  await routes["GET /llm/media/:provider/*"](
+    {
+      method: "GET",
+      url: `${legacyAssetUrl.pathname}${legacyAssetUrl.search}`,
+      params: { provider: "lily", "*": "image/asset" },
+      headers: {
+        host: "lily.example.com",
+        "x-forwarded-proto": "https",
+      },
+    },
+    legacyAssetReply,
+  );
+  assert.equal(legacyAssetReply._code, 200, "old clients should be able to download rewritten asset URLs without adding Authorization headers");
+  assert.equal(captures.at(-1).url, "http://127.0.0.1:18012/outputs/generated.png");
 } finally {
   globalThis.fetch = realFetch;
 }

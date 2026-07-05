@@ -354,7 +354,9 @@ function shouldProxyLilyAssetUrl(kind, rawUrl) {
 function lilyAssetProxyUrl(request, kind, rawUrl) {
   const base = publicRequestBaseUrl(request);
   if (!base) return rawUrl;
-  return `${base}/llm/media/lily/${kind}/asset?url=${encodeURIComponent(String(rawUrl || ""))}`;
+  const token = bearerToken(request);
+  const authQuery = token ? `&access_token=${encodeURIComponent(token)}` : "";
+  return `${base}/llm/media/lily/${kind}/asset?url=${encodeURIComponent(String(rawUrl || ""))}${authQuery}`;
 }
 
 function rewriteLilyMediaUrls(value, kind, request) {
@@ -406,7 +408,9 @@ async function handleLilyAsset(request, reply, kind) {
 }
 
 async function handleLilyMedia(request, reply) {
-  const token = verifyModelGatewayToken(bearerToken(request), "lily-media");
+  const requestUrl = new URL(request.url, "https://lily.local");
+  const rawToken = bearerToken(request) || String(requestUrl.searchParams.get("access_token") || requestUrl.searchParams.get("token") || "").trim();
+  const token = verifyModelGatewayToken(rawToken, "lily-media");
   if (!token.ok) {
     return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
   }
