@@ -49,3 +49,17 @@ codesign --force --options runtime \
   --sign "${SIGN_ID}" "$ENGINE"
 codesign --verify --strict --verbose=2 "$ENGINE"
 echo "[dist-mac] 引擎签名校验通过"
+
+# electron-builder 在没有可用 Developer ID 时，某些架构会直接跳过 App
+# bundle 签名。未签名的 .app 仍能被打包，但发布后会在更严格的 macOS
+# 环境里出现启动/更新问题。真实证书签名通过时不覆盖；只有验证失败才用
+# ad-hoc 兜底，并保留 hardened runtime entitlements。
+if ! codesign --verify --deep --strict "$APP_PATH" >/dev/null 2>&1; then
+  APP_SIGN_ID="${MAC_APP_SIGN_ID:-$SIGN_ID}"
+  echo "[dist-mac] App bundle 未签名或签名无效，补签 (identity: ${APP_SIGN_ID})"
+  codesign --force --deep --options runtime \
+    --entitlements "${ROOT}/build/entitlements.mac.plist" \
+    --sign "${APP_SIGN_ID}" "$APP_PATH"
+fi
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+echo "[dist-mac] App bundle 签名校验通过"
