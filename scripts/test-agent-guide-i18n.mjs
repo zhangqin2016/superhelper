@@ -144,6 +144,68 @@ const zhGuide = skillManager.buildAgentGuideContent([], "zh-CN");
 assert.match(zhGuide, /禁止编造“全局技能”或把项目记忆误说成技能/);
 assertNoStaticDependencyClaims(zhGuide, "Chinese agent guide");
 
+const mediaSettings = require("../src/main/media-provider-settings.js");
+const searchSettings = require("../src/main/search-settings.js");
+function writeRemoteConfig(effectiveConfig) {
+  const state = {
+    schemaVersion: 1,
+    configVersion: "test",
+    expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+    effectiveConfig,
+  };
+  fs.writeFileSync(
+    path.join(guideTestUserData, "remote-config-cache.json"),
+    JSON.stringify({
+      config: {
+        encrypted: false,
+        data: Buffer.from(JSON.stringify(state), "utf8").toString("base64"),
+      },
+      updatedAt: new Date().toISOString(),
+    }),
+    "utf8",
+  );
+  require("../src/main/remote-config.js").reloadRemoteConfigCache();
+}
+mediaSettings.setModalityChoice("image", "service", "lily");
+mediaSettings.setModalityChoice("video", "service", "lily");
+mediaSettings.setModalityChoice("speech", "service", "lily");
+searchSettings.setSearchProvider("searxng");
+const unavailableProviderGuideZh = skillManager.buildAgentGuideContent([], "zh-CN");
+assert.match(unavailableProviderGuideZh, /联网搜索: `searxng`/, "agent guide must expose selected search provider");
+assert.match(unavailableProviderGuideZh, /图片生成: 未配置/, "agent guide must not claim unavailable Lily image generation");
+assert.match(unavailableProviderGuideZh, /视频生成: 未配置/, "agent guide must not claim unavailable Lily video generation");
+assert.match(unavailableProviderGuideZh, /语音生成: 未配置/, "agent guide must not claim unavailable Lily speech generation");
+assert.doesNotMatch(
+  unavailableProviderGuideZh,
+  /图片生成: `lily`|视频生成: `lily`|语音生成: `lily`/,
+  "agent guide must not invent Lily when the selected provider has no usable endpoint",
+);
+writeRemoteConfig({
+  media: {
+    image: { providers: ["lily"], default: "lily" },
+    video: { providers: ["lily"], default: "lily" },
+    speech: { providers: ["lily"], default: "lily" },
+  },
+  runtime: {
+    env: {
+      LILY_MEDIA_IMAGE_ENDPOINT: "https://lily.example.com/llm/media/lily/image/generate",
+      LILY_MEDIA_VIDEO_ENDPOINT: "https://lily.example.com/llm/media/lily/video/generate",
+      LILY_MEDIA_SPEECH_ENDPOINT: "https://lily.example.com/llm/media/lily/speech/generate",
+    },
+  },
+});
+const providerGuideZh = skillManager.buildAgentGuideContent([], "zh-CN");
+assert.match(providerGuideZh, /当前用户选择的服务商/, "agent guide must expose current provider choices");
+assert.match(providerGuideZh, /图片生成: `lily`/, "agent guide must expose usable selected image provider");
+assert.match(providerGuideZh, /视频生成: `lily`/, "agent guide must expose usable selected video provider");
+assert.match(providerGuideZh, /语音生成: `lily`/, "agent guide must expose usable selected speech provider");
+assert.match(providerGuideZh, /联网搜索: `searxng`/, "agent guide must expose selected search provider");
+assert.doesNotMatch(
+  providerGuideZh,
+  /图片生成: `dashscope`|视频生成: `dashscope`|语音生成: `dashscope`/,
+  "agent guide must not invent DashScope when Lily is selected",
+);
+
 for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
   const skillPath = path.join(skillsDir, entry.name, "SKILL.md");

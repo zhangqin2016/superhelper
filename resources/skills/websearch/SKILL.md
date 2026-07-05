@@ -1,6 +1,6 @@
 ---
 name: websearch
-description: Search the web when the user needs current facts, news, references, or external sources. Default provider is Alibaba IQS; SearXNG and DuckDuckGo can also be configured. Use this skill when the built-in WebSearch tool is unavailable.
+description: Search the web when the user needs current facts, news, references, or external sources. Uses the configured web search provider; IQS, SearXNG, and DuckDuckGo are supported. Use this skill when the built-in WebSearch tool is unavailable.
 allowed-tools: Bash(node *)
 ---
 
@@ -17,7 +17,8 @@ Run:
 echo '{"query":"search keywords"}' | "{{NODE_BIN}}" "{{WEBSEARCH_SCRIPT}}"
 ```
 
-The default provider is Alibaba IQS, which is configured by the app. The user can switch the provider in Settings -> Web Search.
+The script uses the configured web search provider from Settings -> Web Search.
+Do not assume IQS when the current provider context says SearXNG or DuckDuckGo.
 
 Optional JSON parameters:
 

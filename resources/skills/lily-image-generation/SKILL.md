@@ -1,6 +1,6 @@
 ---
 name: lily-image-generation
-description: Generate bitmap images with Alibaba Bailian Qwen-Image. Use for scene/texture/creative work where realism, style, or mood is what matters — portraits, people, scenes, landscapes, background art, textures, posters, illustrations, product shots, avatars, covers, concept art. NOT for structural content (flowcharts, architecture diagrams, charts, icons, wireframes → lily-diagrams) and NOT for a real/usable UI or web page (landing page, dashboard, component → frontend-design). See the intent router's visual-output rubric.
+description: Generate bitmap images with the configured image provider. Supports Lily GPU, Alibaba Bailian Qwen-Image, Volcengine Seedream, Kling, MiniMax, and Zhipu. Use for scene/texture/creative work where realism, style, or mood is what matters — portraits, people, scenes, landscapes, background art, textures, posters, illustrations, product shots, avatars, covers, concept art. NOT for structural content (flowcharts, architecture diagrams, charts, icons, wireframes → lily-diagrams) and NOT for a real/usable UI or web page (landing page, dashboard, component → frontend-design). See the intent router's visual-output rubric.
 allowed-tools: Bash(node *)
 ---
 
@@ -46,15 +46,26 @@ Optional parameters:
 - `model`: defaults to `DASHSCOPE_IMAGE_MODEL`, otherwise `qwen-image-2.0-pro`
 - `provider`: `lily`/`dashscope`/`volcengine`/`kling`/`minimax`/`zhipu` (else the configured default)
 
+Provider rules:
+
+- Do not assume DashScope. The configured provider from Settings is injected as
+  `LILY_IMAGE_PROVIDER`; when the user has selected Lily, omit `provider` or set
+  `"provider":"lily"`.
+- Only set `"provider":"dashscope"` when the user explicitly asks for
+  DashScope/Bailian/Qwen-Image, or when intentionally overriding the configured
+  provider.
+- If the user explicitly names a supported provider, include that provider in
+  the JSON payload so the request cannot be routed to a different default.
+
 `DASHSCOPE_IMAGE_ENDPOINT` can override the full endpoint. Otherwise the script
 uses `DASHSCOPE_IMAGE_BASE_URL` with the official default path. `DASHSCOPE_BASE_URL`
 is reserved for chat model APIs and is not used for image generation.
 For Lily self-hosted GPU, set `LILY_MEDIA_IMAGE_ENDPOINT` (or
 `LILY_MEDIA_IMAGE_BASE_URL`) and choose provider `lily`.
 
-The script calls the Alibaba Bailian Qwen-Image API, downloads the temporary
-24-hour URL to a local file, and prints `<generated_media>` plus a local
-Markdown image preview to stdout.
+The script calls the selected provider, downloads any temporary result URL to a
+local file, and prints `<generated_media>` plus a local Markdown image preview
+to stdout.
 
 When replying, show the local image preview. Do not return only a path, and do
 not expose the temporary URL. Use this shape:

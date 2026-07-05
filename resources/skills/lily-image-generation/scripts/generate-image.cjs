@@ -3,6 +3,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { fileURLToPath } = require("node:url");
 
 // Provider-dispatch shell. The DashScope flow (default) is unchanged; other
 // providers (volcengine, ...) are pluggable adapters under ./providers. Each
@@ -62,8 +63,43 @@ function xmlEscape(value = "") {
     .replace(/>/g, "&gt;");
 }
 
+function envValue(...names) {
+  for (const name of names) {
+    const value = String(process.env[name] || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function localFilePath(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^file:/i.test(raw)) return fileURLToPath(raw);
+  if (path.isAbsolute(raw) && fs.existsSync(raw)) return raw;
+  return "";
+}
+
+function downloadHeaders(url) {
+  let parsed;
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    return {};
+  }
+  const key = envValue("LILY_MEDIA_API_KEY", "LILY_GPU_API_KEY");
+  if (key && /^https?:$/.test(parsed.protocol) && /\/llm\/media\/lily\//.test(parsed.pathname)) {
+    return { Authorization: `Bearer ${key}` };
+  }
+  return {};
+}
+
 async function downloadFile(url, outputPath) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+  const localPath = localFilePath(url);
+  if (localPath) {
+    fs.copyFileSync(localPath, outputPath);
+    return fs.statSync(outputPath).size;
+  }
+  const response = await fetch(url, { headers: downloadHeaders(url), signal: AbortSignal.timeout(120_000) });
   if (!response.ok) throw new Error(msg(`下载失败：${response.status} ${response.statusText}`, `Download failed: ${response.status} ${response.statusText}`));
   const bytes = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(outputPath, bytes);
@@ -77,8 +113,26 @@ function detectExt(url) {
   return "png";
 }
 
+function inferProviderFromEnv(env) {
+  if (env.LILY_MEDIA_IMAGE_ENDPOINT || env.LILY_MEDIA_IMAGE_BASE_URL || env.LILY_MEDIA_BASE_URL || env.LILY_GPU_IMAGE_ENDPOINT || env.LILY_GPU_IMAGE_BASE_URL || env.LILY_GPU_BASE_URL) return "lily";
+  if (env.DASHSCOPE_API_KEY || env.ALIYUN_BAILIAN_API_KEY || env.DASHSCOPE_IMAGE_ENDPOINT || env.DASHSCOPE_IMAGE_BASE_URL) return "dashscope";
+  if (env.VOLCENGINE_API_KEY || env.ARK_API_KEY) return "volcengine";
+  if (env.KLING_API_KEY || (env.KLING_ACCESS_KEY && env.KLING_SECRET_KEY)) return "kling";
+  if (env.MINIMAX_API_KEY) return "minimax";
+  if (env.ZHIPU_API_KEY || env.BIGMODEL_API_KEY) return "zhipu";
+  return "";
+}
+
 function selectProvider(input) {
-  const id = String(input.provider || process.env.LILY_IMAGE_PROVIDER || "dashscope").toLowerCase();
+  const id = String(input.provider || process.env.LILY_IMAGE_PROVIDER || inferProviderFromEnv(process.env)).toLowerCase();
+  if (!id) {
+    fail(
+      msg(
+        "没有配置图片生成 provider。请先在设置中选择可用服务商，或在 JSON 中显式传入 provider 并配置对应 Key。",
+        "No image generation provider is configured. Choose an available provider in Settings, or pass provider explicitly in JSON with the matching key configured.",
+      ),
+    );
+  }
   const adapter = ADAPTERS[id];
   if (!adapter) {
     fail(msg(`不支持的图片 provider：${id}`, `Unsupported image provider: ${id}`), `available: ${Object.keys(ADAPTERS).join(", ")}`);
@@ -93,6 +147,7 @@ async function main() {
   input.prompt = prompt;
 
   const adapter = selectProvider(input);
+  const providerId = adapter.id || String(input.provider || process.env.LILY_IMAGE_PROVIDER || inferProviderFromEnv(process.env)).toLowerCase();
   const outputDir = path.resolve(process.cwd(), input.output_dir || "generated-assets");
   fs.mkdirSync(outputDir, { recursive: true });
 
@@ -132,7 +187,7 @@ async function main() {
     const dir = path.join(outputDir, ".lily-results");
     fs.mkdirSync(dir, { recursive: true });
     const name = `${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(16).slice(2, 8)}.json`;
-    fs.writeFileSync(path.join(dir, name), JSON.stringify({ type: "image", provider: input.provider || process.env.LILY_IMAGE_PROVIDER || "dashscope", taskId, content: xml, createdAt: Date.now() }), "utf8");
+    fs.writeFileSync(path.join(dir, name), JSON.stringify({ type: "image", provider: providerId, taskId, content: xml, createdAt: Date.now() }), "utf8");
   } catch { /* best effort */ }
 }
 

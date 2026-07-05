@@ -152,6 +152,20 @@ async function forwardResponse(reply, upstream) {
   return reply.send(Buffer.from(await upstream.arrayBuffer()));
 }
 
+function forwardedHeader(request, name) {
+  const value = request.headers?.[name];
+  if (Array.isArray(value)) return String(value[0] || "").trim();
+  return String(value || "").split(",")[0].trim();
+}
+
+function publicRequestBaseUrl(request) {
+  const configured = String(config.publicBaseUrl || "").trim().replace(/\/+$/, "");
+  if (configured) return configured;
+  const proto = forwardedHeader(request, "x-forwarded-proto") || request.protocol || "https";
+  const host = forwardedHeader(request, "x-forwarded-host") || forwardedHeader(request, "host");
+  return host ? `${proto}://${host}` : "";
+}
+
 async function handleVision(request, reply) {
   if (!config.modelGatewayEnabled) {
     return reply.code(404).send({ error: { type: "not_found", message: "gateway disabled" } });
@@ -291,6 +305,106 @@ function lilyMediaUrl(kind, rest, query = "") {
   return "";
 }
 
+function lilyMediaReferenceUrl(kind) {
+  const cfg = lilyMediaConfig(kind);
+  if (!cfg) return "";
+  if (cfg.endpoint) return cfg.endpoint;
+  if (cfg.baseUrl) return `${cfg.baseUrl.replace(/\/+$/, "")}/`;
+  if (config.lilyMediaBaseUrl) return `${config.lilyMediaBaseUrl.replace(/\/+$/, "")}/${cfg.sharedPath}/`;
+  return "";
+}
+
+function isPrivateHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  if (!host) return false;
+  if (host === "localhost" || host === "::1" || host === "[::1]") return true;
+  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)) return true;
+  const match = /^172\.(\d+)\./.exec(host);
+  return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
+}
+
+function normalizeLilyAssetTarget(kind, rawUrl) {
+  const raw = String(rawUrl || "").trim();
+  if (!raw) return "";
+  const reference = lilyMediaReferenceUrl(kind);
+  if (!reference) return "";
+  let referenceUrl;
+  try {
+    referenceUrl = new URL(reference);
+  } catch {
+    return "";
+  }
+  if (/^file:/i.test(raw)) return "";
+  let target;
+  try {
+    target = /^https?:\/\//i.test(raw) ? new URL(raw) : new URL(raw, referenceUrl);
+  } catch {
+    return "";
+  }
+  if (!/^https?:$/.test(target.protocol)) return "";
+  const sameOrigin = target.origin === referenceUrl.origin;
+  if (!sameOrigin && !isPrivateHost(target.hostname)) return "";
+  return `${referenceUrl.origin}${target.pathname}${target.search}`;
+}
+
+function shouldProxyLilyAssetUrl(kind, rawUrl) {
+  return Boolean(normalizeLilyAssetTarget(kind, rawUrl));
+}
+
+function lilyAssetProxyUrl(request, kind, rawUrl) {
+  const base = publicRequestBaseUrl(request);
+  if (!base) return rawUrl;
+  return `${base}/llm/media/lily/${kind}/asset?url=${encodeURIComponent(String(rawUrl || ""))}`;
+}
+
+function rewriteLilyMediaUrls(value, kind, request) {
+  if (typeof value === "string") {
+    return shouldProxyLilyAssetUrl(kind, value) ? lilyAssetProxyUrl(request, kind, value) : value;
+  }
+  if (Array.isArray(value)) return value.map((item) => rewriteLilyMediaUrls(item, kind, request));
+  if (!value || typeof value !== "object") return value;
+  const next = {};
+  for (const [key, item] of Object.entries(value)) {
+    next[key] = rewriteLilyMediaUrls(item, kind, request);
+  }
+  return next;
+}
+
+async function forwardLilyMediaResponse(request, reply, upstream, kind) {
+  const contentType = upstream.headers.get("content-type") || "";
+  if (!/^application\/json\b/i.test(contentType)) return forwardResponse(reply, upstream);
+  const text = await upstream.text();
+  reply.code(upstream.status);
+  reply.header("content-type", contentType || "application/json");
+  if (!text) return reply.send(text);
+  try {
+    const data = JSON.parse(text);
+    return reply.send(JSON.stringify(rewriteLilyMediaUrls(data, kind, request)));
+  } catch {
+    return reply.send(text);
+  }
+}
+
+async function handleLilyAsset(request, reply, kind) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return reply.code(405).send({ error: { type: "invalid_request_error", message: "asset proxy only supports GET/HEAD" } });
+  }
+  const parsed = new URL(request.url, "https://lily.local");
+  const target = normalizeLilyAssetTarget(kind, parsed.searchParams.get("url"));
+  if (!target) {
+    return reply.code(400).send({ error: { type: "invalid_request_error", message: "invalid Lily media asset URL" } });
+  }
+  const headers = {};
+  if (config.lilyMediaApiKey) headers.Authorization = `Bearer ${config.lilyMediaApiKey}`;
+  let upstream;
+  try {
+    upstream = await fetch(target, { method: request.method, headers, signal: AbortSignal.timeout(300_000) });
+  } catch (error) {
+    return reply.code(502).send({ error: { type: "upstream_error", message: String(error?.message || error) } });
+  }
+  return forwardResponse(reply, upstream);
+}
+
 async function handleLilyMedia(request, reply) {
   const token = verifyModelGatewayToken(bearerToken(request), "lily-media");
   if (!token.ok) {
@@ -300,6 +414,9 @@ async function handleLilyMedia(request, reply) {
   const [kind, ...parts] = rest.split("/");
   if (!LILY_MEDIA_KINDS.has(kind)) {
     return reply.code(404).send({ error: { type: "not_found", message: "unknown Lily media kind" } });
+  }
+  if (parts.join("/") === "asset") {
+    return handleLilyAsset(request, reply, kind);
   }
   if (!(await requireMediaEntitlement(request, reply, token, "lily", rest))) return reply;
 
@@ -321,7 +438,7 @@ async function handleLilyMedia(request, reply) {
   } catch (error) {
     return reply.code(502).send({ error: { type: "upstream_error", message: String(error?.message || error) } });
   }
-  return forwardResponse(reply, upstream);
+  return forwardLilyMediaResponse(request, reply, upstream, kind);
 }
 
 // Transparent proxy for async media (image / video / TTS). `fixedProvider` is

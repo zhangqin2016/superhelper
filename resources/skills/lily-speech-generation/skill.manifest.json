@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "lily-speech-generation",
   "name": "语音生成",
-  "version": "1.0.1",
-  "description": "使用阿里云百炼语音合成生成配音、旁白和音频。",
+  "version": "1.0.2",
+  "description": "使用设置里的默认语音服务商生成配音、旁白和音频，支持 Lily GPU 和阿里云百炼语音合成。",
   "minAppVersion": "0.1.0",
   "category": "media",
   "categoryLabel": "媒体创意",
@@ -25,9 +25,9 @@
     "subprocess": "entry-only"
   },
   "guideMd": {
-    "title": "语音生成（百炼 TTS）",
+    "title": "语音生成",
     "priority": 14,
-    "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼语音合成，并把临时音频 URL 下载到当前工作区 generated-assets。"
+    "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会使用设置里的默认语音服务商（例如 Lily GPU）。不要默认指定 dashscope；只有用户明确要求百炼/CosyVoice/DashScope 时才在 JSON 里加 \"provider\":\"dashscope\"。用户明确指定 Lily 时可加 \"provider\":\"lily\"，否则默认使用当前选择。脚本会把临时音频 URL 下载到当前工作区 generated-assets。"
   },
   "name_i18n": {
     "zh-CN": "语音生成",
@@ -35,25 +35,25 @@
     "ar": "توليد الصوت"
   },
   "description_i18n": {
-    "zh-CN": "使用阿里云百炼语音合成生成配音、旁白和音频。",
-    "en": "Generate voice, narration and audio using Alibaba Cloud Bailian TTS.",
-    "ar": "توليد الصوت والسرد والتعليق الصوتي باستخدام Alibaba Cloud Bailian TTS."
+    "zh-CN": "使用设置里的默认语音服务商生成配音、旁白和音频，支持 Lily GPU 和阿里云百炼语音合成。",
+    "en": "Generate voice, narration, and audio using the configured speech provider. Supports Lily GPU and Alibaba Cloud Bailian TTS.",
+    "ar": "توليد الصوت والسرد والتعليق الصوتي باستخدام مزوّد الصوت الافتراضي المضبوط. يدعم Lily GPU وAlibaba Cloud Bailian TTS."
   },
   "guideMd_i18n": {
     "zh-CN": {
-      "title": "语音生成（百炼 TTS）",
+      "title": "语音生成",
       "priority": 14,
-      "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会调用阿里云百炼语音合成，并把临时音频 URL 下载到当前工作区 generated-assets。"
+      "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会使用设置里的默认语音服务商（例如 Lily GPU）。不要默认指定 dashscope；只有用户明确要求百炼/CosyVoice/DashScope 时才在 JSON 里加 \"provider\":\"dashscope\"。用户明确指定 Lily 时可加 \"provider\":\"lily\"，否则默认使用当前选择。脚本会把临时音频 URL 下载到当前工作区 generated-assets。"
     },
     "en": {
-      "title": "Speech Generation (Bailian TTS)",
+      "title": "Speech Generation",
       "priority": 14,
-      "body": "When the user requests speech generation, reading aloud, narration, dubbing or TTS, use:\n\n```bash\necho '{\"text\":\"text to read\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GEN_SCRIPT}}\"\n```\n\nThe script calls Alibaba Cloud Bailian speech synthesis and downloads the temporary audio URL to the current workspace's generated-assets directory."
+      "body": "When the user requests speech generation, reading aloud, narration, dubbing or TTS, use:\n\n```bash\necho '{\"text\":\"text to read\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GEN_SCRIPT}}\"\n```\n\nThe script uses the configured default speech provider, such as Lily GPU. Do not default to DashScope; add \"provider\":\"dashscope\" only when the user explicitly asks for Bailian/CosyVoice/DashScope. If the user explicitly names Lily, include \"provider\":\"lily\"; otherwise use the current selection. The script downloads temporary audio URLs to the current workspace's generated-assets directory."
     },
     "ar": {
-      "title": "توليد الصوت (Bailian TTS)",
+      "title": "توليد الصوت",
       "priority": 14,
-      "body": "عندما يطلب المستخدم توليد الصوت أو القراءة بصوت عالٍ أو السرد أو الدبلجة أو TTS، استخدم:\n\n```bash\necho '{\"text\":\"النص المراد قراءته\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GEN_SCRIPT}}\"\n```\n\nيستدعي السكريبت تركيب الصوت من Alibaba Cloud Bailian وينزل رابط الصوت المؤقت إلى مجلد generated-assets في مساحة العمل الحالية."
+      "body": "عندما يطلب المستخدم توليد الصوت أو القراءة بصوت عالٍ أو السرد أو الدبلجة أو TTS، استخدم:\n\n```bash\necho '{\"text\":\"النص المراد قراءته\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GEN_SCRIPT}}\"\n```\n\nيستخدم السكريبت مزوّد الصوت الافتراضي المضبوط، مثل Lily GPU. لا تفترض DashScope افتراضياً؛ أضف \"provider\":\"dashscope\" فقط عندما يطلب المستخدم Bailian/CosyVoice/DashScope صراحة. إذا ذكر المستخدم Lily صراحة، فأضف \"provider\":\"lily\"؛ وإلا استخدم الاختيار الحالي. ينزل السكريبت روابط الصوت المؤقتة إلى مجلد generated-assets في مساحة العمل الحالية."
     }
   }
 }

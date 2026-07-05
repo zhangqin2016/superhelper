@@ -69,6 +69,24 @@ assert.deepEqual(
 
 writeRemoteConfig({
   media: {
+    image: { providers: ["lily"], default: "lily" },
+    video: { providers: ["lily"], default: "lily" },
+    speech: { providers: ["lily"], default: "lily" },
+  },
+  runtime: {
+    env: {},
+  },
+});
+
+{
+  const result = settings.setModalityChoice("image", "service", "lily");
+  assert.equal(result.ok, true, "choosing Lily should be persisted even if the service is temporarily unavailable");
+  const env = settings.getMediaProviderSpawnEnv();
+  assert.equal(env.LILY_IMAGE_PROVIDER, undefined, "unavailable selected Lily image service must not drive execution");
+}
+
+writeRemoteConfig({
+  media: {
     image: { providers: ["lily", "dashscope"], default: "lily" },
     video: { providers: ["lily", "dashscope"], default: "lily" },
     speech: { providers: ["lily", "dashscope"], default: "lily" },

@@ -564,6 +564,120 @@ function buildSkillIndexSection(enabledSkills, loc) {
   return [`## ${head.title}`, "", head.intro, "", ...lines].join("\n");
 }
 
+function configuredProviderContextSignature() {
+  const media = currentMediaProviderContext();
+  const availableMedia = currentAvailableMediaProviderContext();
+  const search = currentSearchProviderContext();
+  return JSON.stringify({ media, availableMedia, search });
+}
+
+function currentMediaProviderContext() {
+  try {
+    const mediaSettings = require("./media-provider-settings");
+    const settings = mediaSettings.listMediaProvidersPublic();
+    const effective = mediaSettings.getEffectiveMediaProviderChoices();
+    const labels = new Map((settings.providers || []).map((p) => [p.id, p.label || p.id]));
+    const out = {};
+    for (const modality of ["image", "video", "speech"]) {
+      const choice = effective[modality] || {};
+      const provider = choice.provider || "";
+      out[modality] = {
+        provider,
+        label: provider ? labels.get(provider) || provider : "",
+        source: choice.source || "",
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function currentSearchProviderContext() {
+  try {
+    const settings = require("./search-settings").listSearchSettingsPublic();
+    const provider = settings.providerId || "";
+    const item = (settings.providers || []).find((p) => p.id === provider);
+    return {
+      provider,
+      label: item?.label || provider,
+      searxngConfigured: Boolean(settings.searxngUrl),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function buildConfiguredProviderSection(loc) {
+  const media = currentMediaProviderContext();
+  const search = currentSearchProviderContext();
+  const availableMedia = currentAvailableMediaProviderContext();
+  const hasMedia = ["image", "video", "speech"].some((key) => media[key]?.provider || availableMedia[key]?.length);
+  const hasSearch = Boolean(search.provider);
+  if (!hasMedia && !hasSearch) return "";
+
+  const zh = String(loc || "").startsWith("zh");
+  const ar = String(loc || "").startsWith("ar");
+  const title = zh ? "当前用户选择的服务商" : ar ? "مزوّدو الخدمة المختارون حالياً" : "Current User-Selected Providers";
+  const mediaNames = zh
+    ? { image: "图片生成", video: "视频生成", speech: "语音生成" }
+    : ar
+      ? { image: "توليد الصور", video: "توليد الفيديو", speech: "توليد الصوت" }
+      : { image: "Image generation", video: "Video generation", speech: "Speech generation" };
+  const configuredDefault = zh ? "配置默认" : ar ? "الإعداد الافتراضي المضبوط" : "configured default";
+  const notConfigured = zh ? "未配置" : ar ? "غير مضبوط" : "not configured";
+  const rules = zh
+    ? [
+        "生成图片、视频、语音时优先使用下面标为已配置的当前选择；不要把某个厂商当作固定默认。",
+        "如果某项未配置但列出了可用服务商，先根据用户目标给出最合适的服务商建议，并按用户明确选择在技能 JSON 中写 provider。",
+        "如果某项既未配置也没有可用服务商，说明当前无法直接生成，并建议用户开启工作台服务、配置 BYOK，或改用能满足目标的非生成方案。",
+        "只有用户明确要求某个支持的服务商时，才在技能 JSON 中写入 provider 覆盖当前选择。",
+      ]
+    : ar
+      ? [
+          "عند توليد الصور أو الفيديو أو الصوت، استخدم الاختيارات الحالية المضبوطة أدناه أولاً؛ لا تعتبر أي مزوّد افتراضياً ثابتاً.",
+          "إذا كان أحدها غير مضبوط لكن توجد مزوّدات متاحة، فاقترح الأنسب لهدف المستخدم واكتب provider في JSON فقط بعد اختيار المستخدم الصريح.",
+          "إذا كان غير مضبوط ولا توجد مزوّدات متاحة، فاشرح أن التوليد المباشر غير متاح حالياً واقترح تفعيل خدمة Workbench أو إعداد BYOK أو طريقة غير توليدية تحقق الهدف.",
+          "أضف حقل provider في JSON فقط عندما يطلب المستخدم مزوّداً مدعوماً صراحة لتجاوز الاختيار الحالي.",
+        ]
+      : [
+          "For image, video, and speech generation, prefer the configured current selections below; do not treat any vendor as a fixed default.",
+          "If one is not configured but available providers are listed, recommend the best provider for the user's goal and include provider in the skill JSON only after the user explicitly chooses it.",
+          "If one is not configured and no providers are available, explain that direct generation is unavailable and suggest enabling Workbench service, configuring BYOK, or using a non-generation alternative that still satisfies the goal.",
+          "Only include a provider field in the skill JSON when the user explicitly asks for a supported provider override.",
+        ];
+  const lines = [`## ${title}`, "", ...rules.map((rule) => `- ${rule}`)];
+  for (const modality of ["image", "video", "speech"]) {
+    const item = media[modality];
+    if (!item?.provider) {
+      const available = availableMedia[modality] || [];
+      const suffix = available.length ? `; available: ${available.map((p) => `\`${p}\``).join(", ")}` : "";
+      lines.push(`- ${mediaNames[modality]}: ${notConfigured}${suffix}`);
+      continue;
+    }
+    const source = item.source === "own" ? "BYOK" : configuredDefault;
+    lines.push(`- ${mediaNames[modality]}: \`${item.provider}\`${item.label ? ` (${item.label})` : ""} — ${source}`);
+  }
+  if (search.provider) {
+    const searchName = zh ? "联网搜索" : ar ? "بحث الويب" : "Web search";
+    lines.push(`- ${searchName}: \`${search.provider}\`${search.label ? ` (${search.label})` : ""}`);
+  }
+  return lines.join("\n");
+}
+
+function currentAvailableMediaProviderContext() {
+  try {
+    const settings = require("./media-provider-settings").listMediaProvidersPublic();
+    return {
+      image: settings.serviceProvidersByModality?.image || [],
+      video: settings.serviceProvidersByModality?.video || [],
+      speech: settings.serviceProvidersByModality?.speech || [],
+    };
+  } catch {
+    return {};
+  }
+}
+
 function buildAgentGuideContent(enabledSkills, locale) {
   const loc = locale || getActiveLocale() || "en";
   const guide = AGENT_GUIDE_I18N[loc] || AGENT_GUIDE_I18N["en"];
@@ -606,6 +720,9 @@ function buildAgentGuideContent(enabledSkills, locale) {
       sections.push(`## ${guide.envTitle}`, "", ...guide.envNote, "");
     }
   }
+
+  const providerSection = buildConfiguredProviderSection(loc);
+  if (providerSection) sections.push(providerSection, "");
 
   let lastTitle = null;
 
@@ -701,7 +818,7 @@ function buildAgentSubagentPersona(locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 20;
+const AGENT_GUIDE_STATIC_VERSION = 21;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
@@ -718,7 +835,8 @@ function sessionGuideWriteSignature(session, workspacePath = "") {
   const skillSig = resolveSessionSkillIds(session).slice().sort().join("\0");
   const locale = getActiveLocale();
   const learnedSig = learnedContext.contextSignature(session?.projectId, workspacePath);
-  return `${AGENT_GUIDE_STATIC_VERSION}\0${locale}\0${skillSig}\0${workspacePath}\0${learnedSig}`;
+  const providerSig = configuredProviderContextSignature();
+  return `${AGENT_GUIDE_STATIC_VERSION}\0${locale}\0${skillSig}\0${workspacePath}\0${learnedSig}\0${providerSig}`;
 }
 
 function writeSessionAgentGuide(sessionId, session, workspacePath = "") {

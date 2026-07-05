@@ -177,6 +177,35 @@ function listMediaProvidersPublic() {
   };
 }
 
+function getEffectiveMediaProviderChoices() {
+  const settings = loadSettings();
+  const serviceProvidersByModality = serviceEnabledProvidersByModality();
+  const serviceSelection = remoteMediaSelection();
+  const present = keysPresent(settings.keys);
+  const out = {};
+  for (const modality of MODALITIES) {
+    const choice = settings[modality];
+    const serviceProviders = new Set(serviceProvidersByModality[modality] || []);
+    let provider = "";
+    let source = "";
+    if (choice.source === "own" && choice.provider && present[choice.provider]) {
+      provider = choice.provider;
+      source = "own";
+    } else {
+      const selectedServiceProvider = choice.source === "service" ? choice.provider : "";
+      if (selectedServiceProvider && serviceProviders.has(selectedServiceProvider)) {
+        provider = selectedServiceProvider;
+      } else {
+        const defaultProvider = serviceSelection?.[modality]?.default || "";
+        if (defaultProvider && serviceProviders.has(defaultProvider)) provider = defaultProvider;
+      }
+      if (provider) source = "service";
+    }
+    out[modality] = { provider, source };
+  }
+  return out;
+}
+
 function setModalityChoice(modality, source, provider) {
   if (!MODALITIES.includes(modality)) return { ok: false, error: "BAD_MODALITY" };
   const value = normalizeModality({ source, provider }, modality);
@@ -233,14 +262,14 @@ function byokModelEnv(provider, keys, modality) {
 
 function getMediaProviderSpawnEnv() {
   const settings = loadSettings();
-  const serviceSelection = remoteMediaSelection();
+  const effective = getEffectiveMediaProviderChoices();
   const env = {};
   for (const modality of MODALITIES) {
     const choice = settings[modality];
     const providerEnvVar = MODALITY_ENV[modality];
-    const provider = choice.provider || serviceSelection?.[modality]?.default || "";
+    const provider = effective[modality]?.provider || "";
     if (provider && providerEnvVar) env[providerEnvVar] = provider;
-    if (choice.source === "own" && choice.provider) {
+    if (effective[modality]?.source === "own" && choice.provider) {
       Object.assign(env, byokEnv(choice.provider, settings.keys), byokModelEnv(choice.provider, settings.keys, modality));
     }
   }
@@ -252,4 +281,5 @@ module.exports = {
   setModalityChoice,
   setProviderKey,
   getMediaProviderSpawnEnv,
+  getEffectiveMediaProviderChoices,
 };

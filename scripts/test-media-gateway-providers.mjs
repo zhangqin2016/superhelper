@@ -97,16 +97,40 @@ assert.ok(routes["POST /llm/dashscope-media/*"], "back-compat dashscope alias mu
 function fakeReply() {
   return {
     _code: 200,
+    _headers: {},
     code(c) { this._code = c; return this; },
-    header() { return this; },
+    header(name, value) { this._headers[name.toLowerCase()] = value; return this; },
     send(payload) { this._sent = payload; return this; },
   };
 }
 
 const realFetch = globalThis.fetch;
 let captured = null;
+const captures = [];
 globalThis.fetch = async (url, init) => {
   captured = { url, init };
+  captures.push(captured);
+  if (url === "http://127.0.0.1:18012/generate") {
+    return {
+      status: 200,
+      headers: { get: () => "application/json" },
+      text: async () =>
+        JSON.stringify({
+          output: {
+            task_id: "lily-img",
+            image_url: "http://127.0.0.1:8012/outputs/generated.png",
+            public_url: "https://cdn.example.com/public/generated.png",
+          },
+        }),
+    };
+  }
+  if (url === "http://127.0.0.1:18012/outputs/generated.png") {
+    return {
+      status: 200,
+      headers: { get: (name) => (String(name).toLowerCase() === "content-type" ? "image/png" : "") },
+      arrayBuffer: async () => Buffer.from("lily-png").buffer,
+    };
+  }
   return { status: 200, headers: { get: () => "application/json" }, text: async () => '{"id":"cgt-1"}' };
 };
 
@@ -244,7 +268,11 @@ try {
       method: "POST",
       url: "/llm/media/lily/image/generate",
       params: { provider: "lily", "*": "image/generate" },
-      headers: { authorization: `Bearer ${lilyToken}` },
+      headers: {
+        host: "lily.example.com",
+        "x-forwarded-proto": "https",
+        authorization: `Bearer ${lilyToken}`,
+      },
       body: { prompt: "neon workbench" },
     },
     lilyReply,
@@ -252,6 +280,29 @@ try {
   assert.equal(lilyReply._code, 200);
   assert.equal(captured.url, "http://127.0.0.1:18012/generate");
   assert.equal(captured.init.headers.Authorization, "Bearer lily-upstream-secret");
+  const lilyBody = JSON.parse(lilyReply._sent);
+  assert.equal(lilyBody.output.public_url, "https://cdn.example.com/public/generated.png", "public CDN result URLs should stay direct");
+  assert.match(lilyBody.output.image_url, /^https:\/\/lily\.example\.com\/llm\/media\/lily\/image\/asset\?url=/);
+  assert.doesNotMatch(lilyReply._sent, /127\.0\.0\.1:8012/, "private GPU result URLs must not leak to clients");
+
+  const assetReply = fakeReply();
+  await routes["GET /llm/media/:provider/*"](
+    {
+      method: "GET",
+      url: `/llm/media/lily/image/asset?url=${encodeURIComponent("http://127.0.0.1:8012/outputs/generated.png")}`,
+      params: { provider: "lily", "*": "image/asset" },
+      headers: {
+        host: "lily.example.com",
+        "x-forwarded-proto": "https",
+        authorization: `Bearer ${lilyToken}`,
+      },
+    },
+    assetReply,
+  );
+  assert.equal(assetReply._code, 200);
+  assert.equal(captures.at(-1).url, "http://127.0.0.1:18012/outputs/generated.png", "asset proxy should fetch through the configured private tunnel");
+  assert.equal(captures.at(-1).init.headers.Authorization, "Bearer lily-upstream-secret");
+  assert.equal(assetReply._headers["content-type"], "image/png");
 } finally {
   globalThis.fetch = realFetch;
 }

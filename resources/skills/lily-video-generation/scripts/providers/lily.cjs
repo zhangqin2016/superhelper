@@ -1,5 +1,6 @@
 "use strict";
 
+const path = require("node:path");
 const { requestJson } = require("./_shared.cjs");
 
 function envValue(env, ...names) {
@@ -28,7 +29,7 @@ function authHeaders(env) {
 function collectUrls(value, urls = []) {
   if (!value) return urls;
   if (typeof value === "string") {
-    if (/^https?:\/\//i.test(value) || /^file:/i.test(value)) urls.push(value);
+    if (/^https?:\/\//i.test(value) || /^file:/i.test(value) || path.isAbsolute(value)) urls.push(value);
     return urls;
   }
   if (Array.isArray(value)) {

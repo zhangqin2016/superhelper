@@ -3,6 +3,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { fileURLToPath } = require("node:url");
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
 const CREATE_PATH = "/services/audio/tts/SpeechSynthesizer";
@@ -68,6 +69,12 @@ function lilyAuthHeaders() {
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
+function inferProviderFromEnv() {
+  if (lilySpeechUrl()) return "lily";
+  if (apiKey() || process.env.DASHSCOPE_TTS_ENDPOINT || process.env.DASHSCOPE_TTS_BASE_URL) return "dashscope";
+  return "";
+}
+
 function safeName(prefix, ext) {
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const rand = Math.random().toString(16).slice(2, 8);
@@ -98,20 +105,27 @@ async function requestJsonOrBinary(url, options) {
 }
 
 function collectAudioUrls(data) {
-  const output = data?.output || data || {};
   const urls = [];
-  for (const key of ["audio_url", "url", "result_url"]) {
-    if (output[key]) urls.push(output[key]);
-    if (output.audio?.[key]) urls.push(output.audio[key]);
-  }
-  const lists = [output.results, output.audios, data?.data];
-  for (const list of lists) {
-    if (!Array.isArray(list)) continue;
-    for (const item of list) {
-      const url = item?.audio_url || item?.url || item?.result_url;
-      if (url) urls.push(url);
+  function visit(value) {
+    if (!value) return;
+    if (typeof value === "string") {
+      if (/^https?:\/\//i.test(value) || /^file:/i.test(value) || path.isAbsolute(value)) urls.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (typeof value !== "object") return;
+    for (const key of ["audio_url", "url", "result_url", "public_url", "download_url", "file_url"]) {
+      if (value[key]) visit(value[key]);
+      if (value.audio?.[key]) visit(value.audio[key]);
+    }
+    for (const key of ["output", "data", "result", "results", "audios", "audio", "files"]) {
+      if (value[key]) visit(value[key]);
     }
   }
+  visit(data);
   return [...new Set(urls)];
 }
 
@@ -160,11 +174,38 @@ function collectAudioBuffers(data) {
 }
 
 async function downloadFile(url, outputPath) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(180_000) });
+  const localPath = localFilePath(url);
+  if (localPath) {
+    fs.copyFileSync(localPath, outputPath);
+    return fs.statSync(outputPath).size;
+  }
+  const response = await fetch(url, { headers: downloadHeaders(url), signal: AbortSignal.timeout(180_000) });
   if (!response.ok) throw new Error(msg(`下载失败：${response.status} ${response.statusText}`, `Download failed: ${response.status} ${response.statusText}`));
   const bytes = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(outputPath, bytes);
   return bytes.length;
+}
+
+function localFilePath(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^file:/i.test(raw)) return fileURLToPath(raw);
+  if (path.isAbsolute(raw) && fs.existsSync(raw)) return raw;
+  return "";
+}
+
+function downloadHeaders(url) {
+  let parsed;
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    return {};
+  }
+  const key = envValue("LILY_MEDIA_API_KEY", "LILY_GPU_API_KEY");
+  if (key && /^https?:$/.test(parsed.protocol) && /\/llm\/media\/lily\//.test(parsed.pathname)) {
+    return { Authorization: `Bearer ${key}` };
+  }
+  return {};
 }
 
 function writeGeneratedSpeech(files) {
@@ -220,7 +261,15 @@ async function main() {
   const input = jsonParse(await readStdin());
   const text = String(input.text || input.input || "").trim();
   if (!text) fail(msg("缺少 text。", "Missing text."));
-  const provider = String(input.provider || process.env.LILY_SPEECH_PROVIDER || "dashscope").toLowerCase();
+  const provider = String(input.provider || process.env.LILY_SPEECH_PROVIDER || inferProviderFromEnv()).toLowerCase();
+  if (!provider) {
+    fail(
+      msg(
+        "没有配置语音生成 provider。请先在设置中选择可用服务商，或在 JSON 中显式传入 provider 并配置对应 Key。",
+        "No speech generation provider is configured. Choose an available provider in Settings, or pass provider explicitly in JSON with the matching key configured.",
+      ),
+    );
+  }
   if (provider !== "dashscope" && provider !== "lily") {
     fail(msg(`不支持的语音 provider：${provider}`, `Unsupported speech provider: ${provider}`), "available: dashscope, lily");
   }
