@@ -117,28 +117,32 @@ fs.writeFileSync(
 const modelPresets = require(path.join(__dirname, "../src/main/model-presets.js"));
 
 const list = modelPresets.listPresetsPublic();
-assert.equal(list.modelDirectAllowed, false);
 assert.equal(list.managedByService, true);
-assert.equal(list.activePresetId, "managed", "old custom active preset must fall back to service-managed model");
-assert.equal(list.presets.some((preset) => preset.custom), false, "direct custom presets are hidden by cloud policy");
-assert.deepEqual(modelPresets.getUserApiEnv(), {}, "direct env overrides must be ignored by cloud policy");
+assert.equal(list.activePresetId, "custom-old-direct", "user BYOK custom preset remains selectable under modelDirect:false");
+assert.equal(list.presets.some((preset) => preset.custom), true, "modelDirect:false must not hide user BYOK custom presets");
+assert.deepEqual(
+  modelPresets.getUserApiEnv(),
+  {
+    LILY_API_BASE_URL: "https://custom.example.com/v1",
+    LILY_API_KEY: "sk-custom-secret-123456",
+  },
+  "user BYOK direct env remains available under modelDirect:false",
+);
 
 const saveCustom = modelPresets.saveCustomPreset({
-  label: "Blocked Custom",
-  model: "blocked-model",
-  baseUrl: "https://blocked.example.com/v1",
-  apiKey: "sk-blocked-secret-123456",
+  label: "Allowed Custom",
+  model: "allowed-model",
+  baseUrl: "https://allowed.example.com/v1",
+  apiKey: "sk-allowed-secret-123456",
 });
-assert.equal(saveCustom.ok, false);
-assert.equal(saveCustom.error, "MODEL_DIRECT_DISABLED");
+assert.equal(saveCustom.ok, true, "users can add their own API-key model under modelDirect:false");
 
 const customGateway = modelPresets.setApiGateway({
   mode: "custom",
-  baseUrl: "https://blocked-gateway.example.com/v1",
-  apiKey: "sk-blocked-gateway-123456",
+  baseUrl: "https://allowed-gateway.example.com/v1",
+  apiKey: "sk-allowed-gateway-123456",
 });
-assert.equal(customGateway.ok, false);
-assert.equal(customGateway.error, "MODEL_DIRECT_DISABLED");
+assert.equal(customGateway.ok, true, "users can save their own API gateway under modelDirect:false");
 
 const resetGateway = modelPresets.setApiGateway({ mode: "builtin" });
 assert.equal(resetGateway.ok, true, "users can still clear stale direct settings");

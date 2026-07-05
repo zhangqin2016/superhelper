@@ -250,18 +250,6 @@ function validateApiKey(apiKey, { required = false, existing = "" } = {}) {
   return { ok: true, apiKey: trimmed };
 }
 
-function modelDirectAllowed() {
-  try {
-    const policy = require("./service-client").getClientPolicy();
-    // No remote bootstrap yet: keep legacy/dev custom models usable. Once the
-    // cloud policy arrives, `modelDirect:false` is authoritative.
-    if (!policy || policy.source === "default") return true;
-    return policy.features?.modelDirect !== false;
-  } catch {
-    return true;
-  }
-}
-
 function persistUserChoice(user) {
   cachedUserChoice = user;
   writeJson(userSettingsPath(), serializeUserChoice(user));
@@ -336,7 +324,6 @@ function customPresetRecord(entry) {
 }
 
 function getCustomPresets() {
-  if (!modelDirectAllowed()) return [];
   return (loadUserChoice().customPresets || [])
     .filter((p) => p?.id && p?.model)
     .map(customPresetRecord);
@@ -425,7 +412,6 @@ function getActivePresetEnv() {
 }
 
 function getUserApiEnv() {
-  if (!modelDirectAllowed()) return {};
   const preset = getActivePreset();
   const user = loadUserChoice();
 
@@ -527,7 +513,6 @@ function listPresetsPublic() {
     activePresetId: getActivePresetId(),
     apiGateway: getApiGatewayPublic(),
     managedByService: isRemoteManagedCatalog(),
-    modelDirectAllowed: modelDirectAllowed(),
     // Server-published BYOK provider catalog — the renderer's "add model" flow
     // turns this into a provider picker so the user only chooses + enters a key.
     catalog: mergedProviderCatalog(),
@@ -584,7 +569,6 @@ function saveCustomPreset({
   protocol = "",
   tlsSkipVerify = false,
 }) {
-  if (!modelDirectAllowed()) return { ok: false, error: "MODEL_DIRECT_DISABLED" };
   const validated = validateCustomInput(label, model);
   if (!validated.ok) return validated;
 
@@ -665,7 +649,6 @@ function setApiGateway({ mode, baseUrl, apiKey, tlsSkipVerify }) {
     });
     return { ok: true, ...listPresetsPublic() };
   }
-  if (!modelDirectAllowed()) return { ok: false, error: "MODEL_DIRECT_DISABLED" };
 
   const urlValidated = validateBaseUrl(baseUrl, { required: true });
   if (!urlValidated.ok) return urlValidated;
