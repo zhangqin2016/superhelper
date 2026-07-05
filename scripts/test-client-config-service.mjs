@@ -346,6 +346,37 @@ assert.equal(vllmManaged.models.presets[0].env.LILY_OPENCODE_PROVIDER_ID, "lily"
 assert.equal(vllmManaged.models.presets[0].env.LILY_OPENCODE_PROVIDER_NPM, "@ai-sdk/openai-compatible");
 assert.equal(vllmManaged.models.presets[0].env.LILY_MODEL, "/private/Qwen3-Next-80B-A3B-Instruct");
 
+const qwen36GpuManaged = buildEnvManagedClientConfig(
+  {
+    modelGatewayDefaultProvider: "iluvatar-vllm",
+    modelConfigDeliveryMode: "gateway",
+  },
+  {
+    "iluvatar-vllm": {
+      id: "iluvatar-vllm",
+      type: "openai",
+      baseUrl: "http://127.0.0.1:18000/v1",
+      apiKey: "sk-test-vllm",
+      model: "/private/Qwen3.6-27B",
+      models: ["/private/Qwen3.6-27B"],
+      metadata: {
+        contextWindowTokens: 262144,
+        maxOutputTokens: 32768,
+        models: {
+          "/private/Qwen3.6-27B": {
+            contextWindowTokens: 262144,
+            maxModelLen: 262144,
+            maxOutputTokens: 32768,
+            deploymentProfile: "qwen3.6-27b-256k",
+          },
+        },
+      },
+    },
+  },
+);
+assert.equal(qwen36GpuManaged.models.presets[0].env.LILY_CONTEXT_WINDOW_TOKENS, "65536");
+assert.equal(qwen36GpuManaged.models.presets[0].env.LILY_MAX_OUTPUT_TOKENS, "8192");
+
 const deepseekOpenAiManaged = buildEnvManagedClientConfig(
   {
     modelGatewayDefaultProvider: "deepseek",

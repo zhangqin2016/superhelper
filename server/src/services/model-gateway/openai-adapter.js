@@ -3,6 +3,7 @@ import { stableStringify } from "../security.js";
 import { discoveredModelMetadataSync } from "./model-discovery.js";
 import { normalizeModelForProtocol } from "./model-aliases.js";
 import { parseJsonEnv, textFromContent } from "./utils.js";
+import { resolveModelRuntimeBudget } from "../model-runtime-budget.js";
 
 function openAiContentFromAnthropic(content) {
   if (typeof content === "string") return content;
@@ -100,17 +101,8 @@ function modelMetadata(provider, model) {
 }
 
 function providerMaxOutputTokens(provider, model) {
-  const { metadata, modelSpecific } = modelMetadata(provider, model);
-  return positiveInt(
-    modelSpecific.maxOutputTokens ??
-      modelSpecific.max_output_tokens ??
-      modelSpecific.maxTokens ??
-      modelSpecific.max_tokens ??
-      metadata.maxOutputTokens ??
-      metadata.max_output_tokens ??
-      metadata.maxTokens ??
-      metadata.max_tokens,
-  );
+  const { discovered } = modelMetadata(provider, model);
+  return positiveInt(resolveModelRuntimeBudget(provider, model, discovered).maxOutputTokens);
 }
 
 function providerContextWindowTokens(provider, model) {

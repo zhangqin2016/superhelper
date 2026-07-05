@@ -6,6 +6,7 @@ import { listModelGatewayProviders } from "./model-gateway/providers.js";
 import { discoveredModelMetadataSync, discoveredModelsSync } from "./model-gateway/model-discovery.js";
 import { normalizeProviderForProtocol } from "./model-gateway/model-aliases.js";
 import { getModelCatalog } from "./model-catalog.js";
+import { resolveModelRuntimeBudget } from "./model-runtime-budget.js";
 
 export const DEFAULT_EFFECTIVE_CONFIG = {
   schemaVersion: 1,
@@ -184,12 +185,6 @@ function modelSlug(model) {
   return String(model || "").replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-function positiveInt(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) return null;
-  return Math.floor(number);
-}
-
 function modelMetadata(provider, model) {
   const metadata = provider?.metadata && typeof provider.metadata === "object" ? provider.metadata : {};
   const modelId = String(model || provider?.model || "").trim();
@@ -204,35 +199,8 @@ function modelMetadata(provider, model) {
 }
 
 function providerModelEnv(provider, model) {
-  const { metadata, discovered, modelSpecific } = modelMetadata(provider, model);
-  const contextWindowTokens = positiveInt(
-    modelSpecific.contextWindowTokens ??
-      modelSpecific.context_window_tokens ??
-      modelSpecific.maxContextTokens ??
-      modelSpecific.max_context_tokens ??
-      modelSpecific.maxModelLen ??
-      modelSpecific.max_model_len ??
-      discovered.contextWindowTokens ??
-      discovered.context_window_tokens ??
-      discovered.maxModelLen ??
-      discovered.max_model_len ??
-      metadata.contextWindowTokens ??
-      metadata.context_window_tokens ??
-      metadata.maxContextTokens ??
-      metadata.max_context_tokens ??
-      metadata.maxModelLen ??
-      metadata.max_model_len,
-  );
-  const maxOutputTokens = positiveInt(
-    modelSpecific.maxOutputTokens ??
-      modelSpecific.max_output_tokens ??
-      modelSpecific.maxTokens ??
-      modelSpecific.max_tokens ??
-      metadata.maxOutputTokens ??
-      metadata.max_output_tokens ??
-      metadata.maxTokens ??
-      metadata.max_tokens,
-  );
+  const { discovered } = modelMetadata(provider, model);
+  const { contextWindowTokens, maxOutputTokens } = resolveModelRuntimeBudget(provider, model, discovered);
   return {
     ...(contextWindowTokens ? { LILY_CONTEXT_WINDOW_TOKENS: String(contextWindowTokens) } : {}),
     ...(maxOutputTokens ? { LILY_MAX_OUTPUT_TOKENS: String(maxOutputTokens) } : {}),

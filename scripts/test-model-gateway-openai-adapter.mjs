@@ -152,6 +152,37 @@ try {
       type: "openai",
       baseUrl: "http://127.0.0.1:18000/v1",
       apiKey: "test-key",
+      model: "/private/Qwen3.6-27B",
+      metadata: {
+        contextWindowTokens: 262_144,
+        maxOutputTokens: 32_768,
+        models: {
+          "/private/Qwen3.6-27B": {
+            contextWindowTokens: 262_144,
+            maxModelLen: 262_144,
+            maxOutputTokens: 32_768,
+            deploymentProfile: "qwen3.6-27b-256k",
+          },
+        },
+      },
+      headers: {},
+    },
+    {
+      model: "/private/Qwen3.6-27B",
+      max_tokens: 32_000,
+      messages: [{ role: "user", content: "ping" }],
+      stream: true,
+    },
+  );
+
+  assert.equal(captured.body.max_tokens, 8_192, "Iluvatar Qwen3.6-27B default route should cap OpenCode's large output request");
+
+  await forwardOpenAiChatCompletions(
+    {
+      id: "iluvatar-vllm",
+      type: "openai",
+      baseUrl: "http://127.0.0.1:18000/v1",
+      apiKey: "test-key",
       model: "/private/Qwen3-Coder-Next",
       metadata: {
         models: {
