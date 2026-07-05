@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { stableStringify } from "../security.js";
 import { discoveredModelMetadataSync } from "./model-discovery.js";
+import { normalizeModelForProtocol } from "./model-aliases.js";
 import { parseJsonEnv, textFromContent } from "./utils.js";
 
 function openAiContentFromAnthropic(content) {
@@ -136,7 +137,7 @@ function providerContextWindowTokens(provider, model) {
 
 function resolveMaxTokens(body, provider) {
   const requested = positiveInt(body.max_tokens);
-  const model = body.model || provider.model;
+  const model = normalizeModelForProtocol(provider, body.model || provider.model);
   const outputCap = providerMaxOutputTokens(provider, model);
   const contextWindow = providerContextWindowTokens(provider, model);
   if (!requested) return body.max_tokens;
@@ -150,8 +151,9 @@ function resolveMaxTokens(body, provider) {
 
 function toOpenAiBody(body, provider) {
   const tools = toOpenAiTools(body.tools);
+  const model = normalizeModelForProtocol(provider, body.model || provider.model);
   return {
-    model: provider.model || body.model,
+    ...(model ? { model } : {}),
     messages: toOpenAiMessages(body),
     max_tokens: resolveMaxTokens(body, provider),
     temperature: body.temperature,
@@ -191,7 +193,14 @@ function anthropicMessageFromOpenAi(data, body) {
 }
 
 export async function forwardOpenAi(provider, body) {
+  return forwardOpenAiChatCompletions(provider, toOpenAiBody(body, provider));
+}
+
+export async function forwardOpenAiChatCompletions(provider, body) {
   const target = `${provider.baseUrl}/chat/completions`;
+  const payload = body && typeof body === "object" && !Array.isArray(body) ? { ...body } : {};
+  const model = normalizeModelForProtocol(provider, payload.model || provider.model);
+  if (model) payload.model = model;
   return fetch(target, {
     method: "POST",
     headers: {
@@ -199,7 +208,7 @@ export async function forwardOpenAi(provider, body) {
       Authorization: `Bearer ${provider.apiKey}`,
       ...provider.headers,
     },
-    body: JSON.stringify(toOpenAiBody(body, provider)),
+    body: JSON.stringify(payload),
   });
 }
 

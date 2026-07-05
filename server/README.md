@@ -135,36 +135,32 @@ Config profile example for gateway mode:
       "id": "deepseek-gateway",
       "label": "DeepSeek Gateway",
       "env": {
-        "LILY_API_BASE_URL": "/llm/deepseek",
+        "LILY_API_BASE_URL": "/llm/deepseek/v1",
         "LILY_API_KEY": "$LILY_GATEWAY_TOKEN",
         "LILY_GATEWAY_PROVIDER": "deepseek",
-        "LILY_MODEL": "deepseek-v4-pro[1m]",
-        "LILY_MODEL_HAIKU": "deepseek-v4-pro[1m]",
-        "LILY_MODEL_SONNET": "deepseek-v4-pro[1m]",
-        "LILY_MODEL_OPUS": "deepseek-v4-pro[1m]",
-        "LILY_SUBAGENT_MODEL": "deepseek-v4-pro[1m]"
+        "LILY_OPENCODE_PROTOCOL": "openai",
+        "LILY_MODEL": "deepseek-v4-pro",
+        "LILY_MODEL_HAIKU": "deepseek-v4-pro",
+        "LILY_MODEL_SONNET": "deepseek-v4-pro",
+        "LILY_MODEL_OPUS": "deepseek-v4-pro",
+        "LILY_SUBAGENT_MODEL": "deepseek-v4-pro"
       }
     }]
   }
 }
 ```
 
-The `/llm` gateway exposes an Anthropic-compatible messages endpoint to the
-desktop client. DeepSeek, Alibaba Cloud Model Studio, Kimi/Moonshot, and
-Z.AI/GLM can be configured as Anthropic-compatible providers, so configure them
-as `type: "anthropic"` and let the gateway pass requests through without
-protocol conversion. Self-hosted models should use the same path when the
-serving gateway can expose a Claude/Anthropic-compatible messages endpoint.
+The current `/llm` gateway path is OpenAI-first. Configure model providers that
+expose OpenAI-compatible APIs as `type: "openai"` and use `/llm/:provider/v1`
+from the client; the runtime will call `/chat/completions`. Anthropic-compatible
+`/messages` remains only as a compatibility path for older clients/providers.
 
-Use `type: "openai"` only for providers that do not offer an
-Anthropic-compatible endpoint; those requests are adapted through
-`/chat/completions` and may not preserve every Claude Code tool behavior.
-
-Claude Code compatible gateway endpoints:
+Gateway endpoints:
 
 ```text
 POST /llm/:provider/v1/messages
 POST /llm/:provider/v1/messages/count_tokens
+POST /llm/:provider/v1/chat/completions
 GET  /llm/:provider/v1/models
 ```
 
@@ -172,14 +168,9 @@ For self-hosted models, prefer this production chain:
 
 ```text
 vLLM / SGLang / Ollama / llama.cpp
-  -> LiteLLM or another Anthropic-compatible protocol gateway
-  -> Lily /llm/litellm provider
+  -> Lily /llm/<provider>/v1 OpenAI-compatible provider
   -> desktop runtime
 ```
-
-If the self-hosted serving stack already exposes Anthropic-compatible messages,
-configure it directly through `LOCAL_ANTHROPIC_BASE_URL` or
-`MODEL_GATEWAY_PROVIDERS` and use `/llm/local`.
 
 ## API
 

@@ -41,9 +41,11 @@ function detectProtocol(baseUrl, env = {}) {
   return /\/anthropic(\/|$)/i.test(baseUrl) ? "anthropic" : "openai";
 }
 
-function forceProModelId(id) {
+function forceProModelId(id, protocol = "anthropic") {
   const model = String(id || "").trim();
-  if (/^deepseek-v4-flash$/i.test(model)) return "deepseek-v4-pro[1m]";
+  const isOpenAi = String(protocol || "").toLowerCase() === "openai";
+  if (isOpenAi && /^deepseek-v4-pro\[[^\]]+\]$/i.test(model)) return "deepseek-v4-pro";
+  if (/^deepseek-v4-flash$/i.test(model)) return isOpenAi ? "deepseek-v4-pro" : "deepseek-v4-pro[1m]";
   return model;
 }
 
@@ -62,7 +64,8 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   const rawBase = lilyEnv.LILY_OPENCODE_BASE_URL || lilyEnv.LILY_API_BASE_URL || "";
   const token = lilyEnv.LILY_OPENCODE_API_KEY || lilyEnv.LILY_API_KEY || "";
   const requestedModelId = lilyEnv.LILY_OPENCODE_MODEL || lilyEnv.LILY_MODEL || "";
-  const modelId = forceProModelId(requestedModelId);
+  const protocol = detectProtocol(rawBase, lilyEnv);
+  const modelId = forceProModelId(requestedModelId, protocol);
   const modelRoute = classifyModelRoute(lilyEnv);
 
   if (!modelId) {
@@ -88,7 +91,6 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
     };
   }
 
-  const protocol = detectProtocol(rawBase, lilyEnv);
   const providerID = protocol === "anthropic" ? "anthropic" : "lily";
   const npm = protocol === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible";
   const baseURL = protocol === "anthropic" ? anthropicUrl(rawBase) : openaiUrl(rawBase);

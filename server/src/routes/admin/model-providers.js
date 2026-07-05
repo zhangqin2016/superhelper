@@ -7,6 +7,7 @@ import {
   listModelGatewayProviders,
   refreshModelGatewayProviders,
 } from "../../services/model-gateway/providers.js";
+import { normalizeProviderForProtocol } from "../../services/model-gateway/model-aliases.js";
 
 // Operator-managed model gateway providers. The API key is stored encrypted and
 // never returned to the browser; the /llm gateway uses it server-side and the
@@ -14,7 +15,7 @@ import {
 const providerSchema = z.object({
   id: z.string().min(2).max(80).regex(/^[a-z0-9._-]+$/i),
   label: z.string().max(160).optional().default(""),
-  type: z.enum(["anthropic", "openai", "vision", "search", "media"]).default("anthropic"),
+  type: z.enum(["anthropic", "openai", "vision", "search", "media"]).default("openai"),
   baseUrl: z.string().max(400).optional().default(""),
   apiKey: z.string().max(2000).optional(), // omitted/empty on update = keep existing
   // Media providers needing a second secret (e.g. Kling SecretKey). Omitted/empty
@@ -127,6 +128,14 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
     const metadata = { ...existingMetadata };
     if (input.groupId !== undefined) metadata.groupId = input.groupId;
     if (input.nativeVision !== undefined) metadata.nativeVision = input.nativeVision;
+    const normalizedProvider = normalizeProviderForProtocol({
+      id: input.id,
+      type: input.type,
+      baseUrl: input.baseUrl || "",
+      model: input.defaultModel || "",
+      models: input.models || [],
+      metadata,
+    });
     const values = {
       id: input.id,
       label: input.label || input.id,
@@ -134,10 +143,10 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
       base_url: input.baseUrl || "",
       api_key_encrypted: apiKeyEncrypted,
       secret_key_encrypted: secretKeyEncrypted,
-      default_model: input.defaultModel || "",
-      models: JSON.stringify(input.models || []),
+      default_model: normalizedProvider.model || "",
+      models: JSON.stringify(normalizedProvider.models || []),
       headers: JSON.stringify(input.headers || {}),
-      metadata: JSON.stringify(metadata),
+      metadata: JSON.stringify(normalizedProvider.metadata || metadata),
       enabled: input.enabled,
       updated_at: new Date(),
     };

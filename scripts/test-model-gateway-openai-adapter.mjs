@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { forwardOpenAi } from "../server/src/services/model-gateway/openai-adapter.js";
+import {
+  forwardOpenAi,
+  forwardOpenAiChatCompletions,
+} from "../server/src/services/model-gateway/openai-adapter.js";
 
 const originalFetch = globalThis.fetch;
 let captured = null;
@@ -59,6 +62,7 @@ try {
   );
 
   assert.equal(captured.body.max_tokens, 32000, "per-model output cap must not leak to another model");
+  assert.equal(captured.body.model, "another-model", "request model should not be overwritten by provider default");
 
   await forwardOpenAi(
     {
@@ -101,6 +105,46 @@ try {
   );
 
   assert.equal(captured.body.max_tokens, 32000);
+
+  await forwardOpenAi(
+    {
+      id: "deepseek",
+      type: "openai",
+      baseUrl: "https://api.deepseek.com/v1",
+      apiKey: "test-key",
+      model: "deepseek-v4-pro[1m]",
+      models: ["deepseek-v4-pro[1m]"],
+      metadata: {},
+      headers: {},
+    },
+    {
+      model: "deepseek-v4-pro[1m]",
+      max_tokens: 1000,
+      messages: [{ role: "user", content: "ping" }],
+      stream: false,
+    },
+  );
+
+  assert.equal(captured.url, "https://api.deepseek.com/v1/chat/completions");
+  assert.equal(captured.body.model, "deepseek-v4-pro", "OpenAI DeepSeek route must normalize Anthropic-only model aliases");
+
+  await forwardOpenAiChatCompletions(
+    {
+      id: "deepseek",
+      type: "openai",
+      baseUrl: "https://api.deepseek.com/v1",
+      apiKey: "test-key",
+      model: "deepseek-v4-pro[1m]",
+      metadata: {},
+      headers: {},
+    },
+    {
+      model: "deepseek-v4-flash",
+      messages: [{ role: "user", content: "ping" }],
+    },
+  );
+
+  assert.equal(captured.body.model, "deepseek-v4-pro", "native OpenAI route should normalize DeepSeek flash alias");
 } finally {
   globalThis.fetch = originalFetch;
 }

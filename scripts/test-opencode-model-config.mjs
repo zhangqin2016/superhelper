@@ -24,6 +24,8 @@ assert(anthropicUrl("https://x/anthropic") === "https://x/anthropic/v1", "anthro
 assert(anthropicUrl("https://x/anthropic/v1") === "https://x/anthropic/v1", "anthropic url keeps existing /v1");
 assert(openaiUrl("https://x/") === "https://x", "openai url verbatim (trimmed)");
 assert(forceProModelId("deepseek-v4-flash") === "deepseek-v4-pro[1m]", "flash id is forced to pro");
+assert(forceProModelId("deepseek-v4-flash", "openai") === "deepseek-v4-pro", "openai flash id is forced to valid pro id");
+assert(forceProModelId("deepseek-v4-pro[1m]", "openai") === "deepseek-v4-pro", "openai strips Anthropic-only DeepSeek suffix");
 assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unchanged");
 
 // --- THE PRODUCTION CASE: DeepSeek Anthropic endpoint -----------------------
@@ -68,6 +70,25 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   assert(cfg.model === "anthropic/deepseek-v4-pro[1m]", "gateway model ref carried");
 }
 
+{
+  const r = resolveOpencodeModelConfig({
+    LILY_API_BASE_URL: "https://lily.example.com/llm/iluvatar-vllm/v1",
+    LILY_API_KEY: "gateway-token",
+    LILY_GATEWAY_PROVIDER: "iluvatar-vllm",
+    LILY_OPENCODE_PROTOCOL: "openai",
+    LILY_MODEL: "/private/Qwen3-Next-80B-A3B-Instruct",
+  });
+  assert(r.ok && r.protocol === "openai", "OpenAI gateway provider keeps OpenAI protocol");
+  assert(r.model.providerID === "lily", "OpenAI gateway model ref uses OpenAI-compatible provider");
+  assert(r.diagnostics.modelRoute.route === "gateway", "diagnostics still prove gateway route");
+  assert(r.diagnostics.modelRoute.provider === "iluvatar-vllm", "diagnostics include OpenAI gateway provider");
+  const cfg = JSON.parse(r.configContent);
+  assert(cfg.provider.lily.npm === "@ai-sdk/openai-compatible", "gateway OpenAI uses openai-compatible SDK");
+  assert(cfg.provider.lily.options.baseURL === "https://lily.example.com/llm/iluvatar-vllm/v1",
+    "OpenAI gateway baseURL is the /v1 base used before /chat/completions");
+  assert(cfg.model === "lily//private/Qwen3-Next-80B-A3B-Instruct", "slash-prefixed model id is preserved");
+}
+
 // --- OpenAI-compatible endpoint (e.g. a raw DeepSeek key on api.deepseek.com) -
 {
   const r = resolveOpencodeModelConfig({
@@ -82,6 +103,20 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   assert(cfg.provider.lily.npm === "@ai-sdk/openai-compatible", "openai-compatible npm");
   assert(cfg.provider.lily.options.baseURL === "https://api.deepseek.com", "openai baseURL verbatim (no /v1 forced)");
   assert(cfg.provider.lily.options.includeUsage === false, "openai-compatible streaming usage chunks are disabled for self-hosted compatibility");
+}
+
+{
+  const r = resolveOpencodeModelConfig({
+    LILY_API_BASE_URL: "https://api.deepseek.com/v1",
+    LILY_API_KEY: "sk",
+    LILY_OPENCODE_PROTOCOL: "openai",
+    LILY_MODEL: "deepseek-v4-pro[1m]",
+  });
+  assert(r.ok && r.protocol === "openai", "DeepSeek /v1 can use OpenAI protocol");
+  assert(r.model.modelID === "deepseek-v4-pro", "OpenAI protocol uses the valid DeepSeek model id");
+  const cfg = JSON.parse(r.configContent);
+  assert(cfg.model === "lily/deepseek-v4-pro", "OpenAI config model ref uses normalized id");
+  assert("deepseek-v4-pro" in cfg.provider.lily.models, "OpenAI provider declares normalized model");
 }
 
 // --- model tiers: OpenCode runtime is forced onto the selected Pro model -----

@@ -321,6 +321,56 @@ assert.equal(
 );
 assert.equal(deepseekManaged.runtime.env.DASHSCOPE_API_KEY, undefined, "raw DashScope key must NOT be delivered");
 
+const vllmManaged = buildEnvManagedClientConfig(
+  {
+    modelGatewayDefaultProvider: "iluvatar-vllm",
+    modelConfigDeliveryMode: "gateway",
+  },
+  {
+    "iluvatar-vllm": {
+      id: "iluvatar-vllm",
+      type: "openai",
+      baseUrl: "http://127.0.0.1:18000/v1",
+      apiKey: "sk-test-vllm",
+      model: "/private/Qwen3-Next-80B-A3B-Instruct",
+      models: ["/private/Qwen3-Next-80B-A3B-Instruct"],
+    },
+  },
+);
+assert.equal(vllmManaged.models.activePresetId, "iluvatar-vllm-gateway");
+assert.equal(vllmManaged.models.presets[0].env.LILY_API_BASE_URL, "/llm/iluvatar-vllm/v1");
+assert.equal(vllmManaged.models.presets[0].env.LILY_GATEWAY_PROVIDER, "iluvatar-vllm");
+assert.equal(vllmManaged.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "openai");
+assert.equal(vllmManaged.models.presets[0].env.LILY_MODEL, "/private/Qwen3-Next-80B-A3B-Instruct");
+
+const deepseekOpenAiManaged = buildEnvManagedClientConfig(
+  {
+    modelGatewayDefaultProvider: "deepseek",
+    modelConfigDeliveryMode: "gateway",
+  },
+  {
+    deepseek: {
+      id: "deepseek",
+      type: "openai",
+      baseUrl: "https://api.deepseek.com/v1",
+      apiKey: "sk-test-deepseek",
+      model: "deepseek-v4-pro[1m]",
+      models: ["deepseek-v4-pro[1m]", "deepseek-v4-flash"],
+      metadata: {
+        models: {
+          "deepseek-v4-pro[1m]": { contextWindowTokens: 1000000 },
+        },
+      },
+    },
+  },
+);
+assert.equal(deepseekOpenAiManaged.models.activePresetId, "deepseek-gateway");
+assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_API_BASE_URL, "/llm/deepseek/v1");
+assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "openai");
+assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro");
+assert.equal(deepseekOpenAiManaged.models.presets.length, 1, "DeepSeek OpenAI aliases should dedupe to the valid Pro model id");
+assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_CONTEXT_WINDOW_TOKENS, "1000000");
+
 const deepseekDirect = buildEnvManagedClientConfig(
   {
     modelGatewayDefaultProvider: "deepseek",
@@ -458,7 +508,7 @@ const unresolved = expandModelProviderMenu(
 assert.deepEqual(unresolved.models.presets, [{ id: "deepseek-gateway" }], "unresolvable directive keeps baseline presets");
 assert.equal(unresolved.models.providers, undefined);
 
-const openAiDirectFallback = buildEnvManagedClientConfig(
+const openAiDirect = buildEnvManagedClientConfig(
   {
     modelGatewayDefaultProvider: "openai",
     modelConfigDeliveryMode: "direct",
@@ -473,11 +523,13 @@ const openAiDirectFallback = buildEnvManagedClientConfig(
     },
   },
 );
-assert.equal(openAiDirectFallback.models.activePresetId, "openai-gateway");
-assert.equal(openAiDirectFallback.models.presets[0].env.LILY_GATEWAY_PROVIDER, "openai");
-assert.equal(openAiDirectFallback.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
+assert.equal(openAiDirect.models.activePresetId, "openai-direct");
+assert.equal(openAiDirect.models.presets[0].env.LILY_API_BASE_URL, "https://api.openai.example/v1");
+assert.equal(openAiDirect.models.presets[0].env.LILY_API_KEY, "sk-test-openai");
+assert.equal(openAiDirect.models.presets[0].env.LILY_GATEWAY_PROVIDER, undefined);
+assert.equal(openAiDirect.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "openai");
 
-const openAiDirect = buildEnvManagedClientConfig(
+const anthropicDirect = buildEnvManagedClientConfig(
   {
     modelGatewayDefaultProvider: "openai",
     modelConfigDeliveryMode: "direct",
@@ -492,8 +544,8 @@ const openAiDirect = buildEnvManagedClientConfig(
     },
   },
 );
-assert.equal(openAiDirect.models.activePresetId, "openai-direct");
-assert.equal(openAiDirect.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
+assert.equal(anthropicDirect.models.activePresetId, "openai-direct");
+assert.equal(anthropicDirect.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
 
 // --- resolveMediaSelection: per-scope media multi-select + default (backward-compatible) ---
 // 1. No config.media (old profile) + providers available -> all available, server default

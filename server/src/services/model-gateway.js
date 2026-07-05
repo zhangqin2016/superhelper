@@ -9,6 +9,7 @@ import { signModelGatewayToken, verifyModelGatewayToken } from "./model-gateway/
 import {
   approximateAnthropicInputTokens,
   forwardOpenAi,
+  forwardOpenAiChatCompletions,
   forwardOpenAiModels,
   pipeOpenAiStreamAsAnthropic,
   sendJsonFromOpenAi,
@@ -100,6 +101,30 @@ function authToken(request) {
   const auth = String(request.headers.authorization || "").trim();
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
   return String(request.headers["x-api-key"] || "").trim();
+}
+
+function providerContextForRequest(request, reply, defaultProvider = "deepseek") {
+  if (!config.modelGatewayEnabled) {
+    reply.code(404).send({ error: { type: "not_found", message: "model gateway disabled" } });
+    return null;
+  }
+  const providerId = String(request.params.provider || config.modelGatewayDefaultProvider || defaultProvider).trim();
+  const providers = listModelGatewayProviders();
+  const provider = providers[providerId];
+  if (!provider) {
+    reply.code(404).send({ error: { type: "not_found", message: "model provider not configured" } });
+    return null;
+  }
+  const token = verifyModelGatewayToken(authToken(request), providerId);
+  if (!token.ok) {
+    reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
+    return null;
+  }
+  if (!provider.apiKey || !provider.baseUrl) {
+    reply.code(503).send({ error: { type: "configuration_error", message: "model provider is missing apiKey or baseUrl" } });
+    return null;
+  }
+  return { providerId, provider, token };
 }
 
 async function consumeChatUsage({ request, reply, token, providerId, provider, body }) {
@@ -196,27 +221,45 @@ async function handleGatewayRequest(request, reply) {
 }
 
 function providerForRequest(request, reply) {
-  if (!config.modelGatewayEnabled) {
-    reply.code(404).send({ error: { type: "not_found", message: "model gateway disabled" } });
-    return null;
+  return providerContextForRequest(request, reply)?.provider || null;
+}
+
+async function handleOpenAiChatCompletionsRequest(request, reply) {
+  const context = providerContextForRequest(request, reply);
+  if (!context) return reply;
+  const { providerId, provider, token } = context;
+  if (provider.type !== "openai") {
+    return reply.code(400).send({
+      error: {
+        type: "invalid_request_error",
+        message: "OpenAI chat/completions gateway requires an OpenAI-compatible provider",
+      },
+    });
   }
-  const providerId = String(request.params.provider || config.modelGatewayDefaultProvider || "deepseek").trim();
-  const providers = listModelGatewayProviders();
-  const provider = providers[providerId];
-  if (!provider) {
-    reply.code(404).send({ error: { type: "not_found", message: "model provider not configured" } });
-    return null;
+
+  const body = request.body && typeof request.body === "object" ? request.body : {};
+  let upstream;
+  try {
+    upstream = await forwardOpenAiChatCompletions(provider, body);
+  } catch (err) {
+    const timedOut = err?.name === "AbortError" || err?.name === "TimeoutError";
+    return reply.code(timedOut ? 504 : 502).send({
+      error: {
+        type: timedOut ? "upstream_timeout" : "upstream_error",
+        message: timedOut
+          ? `model provider '${providerId}' did not respond in time (check baseUrl/key/model)`
+          : `model provider '${providerId}' request failed: ${err?.message || err}`,
+      },
+    });
   }
-  const token = verifyModelGatewayToken(authToken(request), providerId);
-  if (!token.ok) {
-    reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
-    return null;
+
+  if (upstream.ok && !(await consumeChatUsage({ request, reply, token, providerId, provider, body }))) return reply;
+
+  reply.code(upstream.status);
+  for (const [key, value] of upstream.headers.entries()) {
+    if (["content-type", "cache-control"].includes(key.toLowerCase())) reply.header(key, value);
   }
-  if (!provider.apiKey || !provider.baseUrl) {
-    reply.code(503).send({ error: { type: "configuration_error", message: "model provider is missing apiKey or baseUrl" } });
-    return null;
-  }
-  return provider;
+  return reply.send(upstream.body ? Readable.fromWeb(upstream.body) : null);
 }
 
 async function handleCountTokensRequest(request, reply) {
@@ -286,10 +329,20 @@ export async function modelGatewayRoutes(app) {
       description: "Returns the provider's model list, synthesised from config when not fetched upstream.",
     },
   };
+  const openAiChatSchema = {
+    schema: {
+      tags: ["gateway:model"],
+      summary: "Proxy an OpenAI-compatible chat/completions request",
+      description:
+        "Authenticates the gateway token and forwards the OpenAI-compatible chat/completions body to an OpenAI-compatible upstream provider without Anthropic conversion.",
+    },
+  };
   app.post("/llm/:provider/v1/messages", messagesSchema, handleGatewayRequest);
   app.post("/llm/:provider/messages", messagesSchema, handleGatewayRequest);
   app.post("/llm/v1/messages", messagesSchema, handleGatewayRequest);
   app.post("/llm/messages", messagesSchema, handleGatewayRequest);
+  app.post("/llm/:provider/v1/chat/completions", openAiChatSchema, handleOpenAiChatCompletionsRequest);
+  app.post("/llm/v1/chat/completions", openAiChatSchema, handleOpenAiChatCompletionsRequest);
   app.post("/llm/:provider/v1/messages/count_tokens", countTokensSchema, handleCountTokensRequest);
   app.post("/llm/v1/messages/count_tokens", countTokensSchema, handleCountTokensRequest);
   app.get("/llm/:provider/v1/models", modelsSchema, handleModelsRequest);

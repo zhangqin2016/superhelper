@@ -4,6 +4,7 @@ import { verifyAccessToken } from "./account-auth.js";
 import { signModelGatewayToken } from "./model-gateway/auth.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
 import { discoveredModelMetadataSync, discoveredModelsSync } from "./model-gateway/model-discovery.js";
+import { normalizeProviderForProtocol } from "./model-gateway/model-aliases.js";
 import { getModelCatalog } from "./model-catalog.js";
 
 export const DEFAULT_EFFECTIVE_CONFIG = {
@@ -220,15 +221,21 @@ function normalizeDeliveryMode(serverConfig) {
 }
 
 function supportsDirectDelivery(provider) {
-  return provider?.type === "anthropic" && /^https?:\/\//i.test(String(provider.baseUrl || ""));
+  return ["anthropic", "openai"].includes(provider?.type) && /^https?:\/\//i.test(String(provider.baseUrl || ""));
 }
 
 function opencodeProtocolFor(provider, deliveryMode) {
-  // The Lily gateway exposes Anthropic-compatible /messages to the client even
-  // when the upstream provider is OpenAI-compatible. Direct mode speaks the
-  // provider's own protocol.
+  // The Lily gateway exposes both Anthropic-compatible /messages and native
+  // OpenAI-compatible /chat/completions. Keep each provider on its own protocol
+  // so OpenAI tool_calls can pass through without lossy conversion.
+  if (provider?.type === "openai") return "openai";
   if (deliveryMode !== "direct") return "anthropic";
   return provider?.type === "openai" ? "openai" : "anthropic";
+}
+
+function gatewayBaseUrlFor(provider) {
+  const base = `/llm/${provider.id}`;
+  return provider?.type === "openai" ? `${base}/v1` : base;
 }
 
 function normalizeVisionModel(model) {
@@ -282,7 +289,7 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
     description: "由 Lily 服务端托管密钥并签发短期访问令牌。",
     capabilities,
     env: {
-      LILY_API_BASE_URL: `/llm/${provider.id}`,
+      LILY_API_BASE_URL: gatewayBaseUrlFor(provider),
       LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
       LILY_GATEWAY_PROVIDER: provider.id,
       LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, effectiveDeliveryMode),
@@ -378,7 +385,7 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
   const visibleChatProviders = explicitAllow
     ? configuredChatProviders.filter((provider) => allowedProviderIds.includes(String(provider.id).toLowerCase()))
     : configuredChatProviders;
-  const modelProviders = visibleChatProviders;
+  const modelProviders = visibleChatProviders.map((provider) => normalizeProviderForProtocol(provider));
   const modelPresets = modelProviders
     .flatMap((provider) => providerPresets(provider, deliveryMode));
 

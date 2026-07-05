@@ -155,7 +155,7 @@ function draftFromProvider(provider) {
   return {
     id: provider?.id || "",
     label: provider?.label || "",
-    type: provider?.type || "anthropic",
+    type: provider?.type || "openai",
     baseUrl: provider?.base_url || provider?.baseUrl || "",
     defaultModel: provider?.default_model || provider?.defaultModel || "",
     models: modelList(provider).join(", "),
