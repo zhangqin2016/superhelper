@@ -142,6 +142,16 @@ async function forwardJson(reply, upstream) {
   return reply.send(text);
 }
 
+async function forwardResponse(reply, upstream) {
+  const contentType = upstream.headers.get("content-type") || "";
+  reply.code(upstream.status);
+  if (contentType) reply.header("content-type", contentType);
+  if (/^application\/json\b/i.test(contentType) || /^text\//i.test(contentType)) {
+    return reply.send(await upstream.text());
+  }
+  return reply.send(Buffer.from(await upstream.arrayBuffer()));
+}
+
 async function handleVision(request, reply) {
   if (!config.modelGatewayEnabled) {
     return reply.code(404).send({ error: { type: "not_found", message: "gateway disabled" } });
@@ -236,6 +246,84 @@ const MEDIA_PROVIDERS = {
   zhipu: { credId: "zhipu-media", fallbackKey: () => config.zhipuApiKey, baseUrl: () => config.zhipuBaseUrl },
 };
 
+const LILY_MEDIA_KINDS = new Set(["image", "video", "speech"]);
+
+function lilyMediaConfig(kind) {
+  if (kind === "image") {
+    return {
+      endpoint: config.lilyMediaImageEndpoint,
+      baseUrl: config.lilyMediaImageBaseUrl,
+      sharedPath: "image",
+    };
+  }
+  if (kind === "video") {
+    return {
+      endpoint: config.lilyMediaVideoEndpoint,
+      baseUrl: config.lilyMediaVideoBaseUrl,
+      sharedPath: "video",
+    };
+  }
+  if (kind === "speech") {
+    return {
+      endpoint: config.lilyMediaSpeechEndpoint,
+      baseUrl: config.lilyMediaSpeechBaseUrl,
+      sharedPath: "speech",
+    };
+  }
+  return null;
+}
+
+function lilyMediaUrl(kind, rest, query = "") {
+  const cfg = lilyMediaConfig(kind);
+  if (!cfg) return "";
+  const cleanRest = String(rest || "").replace(/^\/+/, "");
+  if (cfg.endpoint) {
+    // Explicit endpoints identify the concrete GPU service route, e.g. the
+    // private tunnel's /generate. Keep the public gateway path stable while
+    // avoiding accidental forwarding to arbitrary paths on that service.
+    if (!cleanRest || cleanRest === "generate") return `${cfg.endpoint}${query}`;
+    return "";
+  }
+  if (cfg.baseUrl) return `${cfg.baseUrl.replace(/\/+$/, "")}/${cleanRest}${query}`;
+  if (config.lilyMediaBaseUrl) {
+    return `${config.lilyMediaBaseUrl.replace(/\/+$/, "")}/${cfg.sharedPath}/${cleanRest}${query}`;
+  }
+  return "";
+}
+
+async function handleLilyMedia(request, reply) {
+  const token = verifyModelGatewayToken(bearerToken(request), "lily-media");
+  if (!token.ok) {
+    return reply.code(401).send({ error: { type: "authentication_error", message: token.code } });
+  }
+  const rest = String(request.params["*"] || "").replace(/^\/+/, "");
+  const [kind, ...parts] = rest.split("/");
+  if (!LILY_MEDIA_KINDS.has(kind)) {
+    return reply.code(404).send({ error: { type: "not_found", message: "unknown Lily media kind" } });
+  }
+  if (!(await requireMediaEntitlement(request, reply, token, "lily", rest))) return reply;
+
+  const queryIndex = request.url.indexOf("?");
+  const query = queryIndex >= 0 ? request.url.slice(queryIndex) : "";
+  const url = lilyMediaUrl(kind, parts.join("/"), query);
+  if (!url) {
+    return reply.code(503).send({ error: { type: "configuration_error", message: `${kind} Lily media endpoint not configured` } });
+  }
+  const headers = { "Content-Type": "application/json" };
+  if (config.lilyMediaApiKey) headers.Authorization = `Bearer ${config.lilyMediaApiKey}`;
+  const init = { method: request.method, headers };
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    init.body = JSON.stringify(request.body && typeof request.body === "object" ? request.body : {});
+  }
+  let upstream;
+  try {
+    upstream = await fetch(url, init);
+  } catch (error) {
+    return reply.code(502).send({ error: { type: "upstream_error", message: String(error?.message || error) } });
+  }
+  return forwardResponse(reply, upstream);
+}
+
 // Transparent proxy for async media (image / video / TTS). `fixedProvider` is
 // set for the back-compat /llm/dashscope-media/* alias; otherwise the provider
 // comes from the :provider route param.
@@ -245,6 +333,7 @@ function mediaHandler(fixedProvider) {
       return reply.code(404).send({ error: { type: "not_found", message: "gateway disabled" } });
     }
     const providerId = String(fixedProvider || request.params.provider || "").toLowerCase();
+    if (providerId === "lily") return handleLilyMedia(request, reply);
     const spec = MEDIA_PROVIDERS[providerId];
     if (!spec) {
       return reply.code(404).send({ error: { type: "not_found", message: "unknown media provider" } });

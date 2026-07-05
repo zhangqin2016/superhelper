@@ -270,7 +270,7 @@ assert.ok(
   "fixture precondition: anthropics-docx should have no inlined guideMd",
 );
 const indexGuideEn = skillManager.buildAgentGuideContent([indexSkill], "en");
-assert.match(indexGuideEn, /## Skill Catalog/, "missing skill index section");
+assert.match(indexGuideEn, /## Lily Platform Capability Catalog/, "missing skill index section");
 assert.match(
   indexGuideEn,
   /anthropics-docx[/\\]SKILL\.md/,

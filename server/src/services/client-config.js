@@ -121,6 +121,26 @@ function hasLilyMedia(configCopy, kind) {
   return false;
 }
 
+function configuredLilyMediaKinds(serverConfig = config) {
+  const shared = Boolean(serverConfig.lilyMediaBaseUrl);
+  return {
+    image: shared || Boolean(serverConfig.lilyMediaImageEndpoint || serverConfig.lilyMediaImageBaseUrl),
+    video: shared || Boolean(serverConfig.lilyMediaVideoEndpoint || serverConfig.lilyMediaVideoBaseUrl),
+    speech: shared || Boolean(serverConfig.lilyMediaSpeechEndpoint || serverConfig.lilyMediaSpeechBaseUrl),
+  };
+}
+
+function applyDirectLilyMediaEnv(env, serverConfig = config) {
+  if (serverConfig.lilyMediaApiKey) env.LILY_MEDIA_API_KEY = serverConfig.lilyMediaApiKey;
+  if (serverConfig.lilyMediaBaseUrl) env.LILY_MEDIA_BASE_URL = serverConfig.lilyMediaBaseUrl;
+  if (serverConfig.lilyMediaImageBaseUrl) env.LILY_MEDIA_IMAGE_BASE_URL = serverConfig.lilyMediaImageBaseUrl;
+  if (serverConfig.lilyMediaVideoBaseUrl) env.LILY_MEDIA_VIDEO_BASE_URL = serverConfig.lilyMediaVideoBaseUrl;
+  if (serverConfig.lilyMediaSpeechBaseUrl) env.LILY_MEDIA_SPEECH_BASE_URL = serverConfig.lilyMediaSpeechBaseUrl;
+  if (serverConfig.lilyMediaImageEndpoint) env.LILY_MEDIA_IMAGE_ENDPOINT = serverConfig.lilyMediaImageEndpoint;
+  if (serverConfig.lilyMediaVideoEndpoint) env.LILY_MEDIA_VIDEO_ENDPOINT = serverConfig.lilyMediaVideoEndpoint;
+  if (serverConfig.lilyMediaSpeechEndpoint) env.LILY_MEDIA_SPEECH_ENDPOINT = serverConfig.lilyMediaSpeechEndpoint;
+}
+
 /** A provider's selectable models: the explicit `models` list, else its single
  *  default model. Empty only when the provider declares no model at all. */
 function providerModelList(provider) {
@@ -693,6 +713,14 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   const configuredBaseUrl = String(options.policyBaseUrl || options.publicBaseUrl || "").trim().replace(/\/+$/, "");
   const base = configuredBaseUrl || requestBaseUrl(request);
   const account = options.account && typeof options.account === "object" ? options.account : {};
+  const signMediaToken = (providerId) =>
+    signModelGatewayToken({
+      deviceId: input.deviceId,
+      licenseId: input.licenseId || "",
+      providerId,
+      userId: account.userId || "",
+      sessionId: account.sessionId || "",
+    });
 
   // Route media/search either direct or through the server-side proxies,
   // matching the admin-controlled media delivery mode. Direct is the product
@@ -762,14 +790,6 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
     // /llm/media/<route> + a short token; direct delivers the real key + endpoint
     // so the client connects straight to the provider.
     const gatewayMode = options.mediaDeliveryMode === "gateway";
-    const signMediaToken = (providerId) =>
-      signModelGatewayToken({
-        deviceId: input.deviceId,
-        licenseId: input.licenseId || "",
-        providerId,
-        userId: account.userId || "",
-        sessionId: account.sessionId || "",
-      });
     const bearerMedia = [
       { key: volcengineKey, route: "volcengine", providerId: "volcengine-media", keyEnv: "VOLCENGINE_API_KEY", baseEnv: "VOLCENGINE_BASE_URL", directBaseUrl: gatewayProviders["volcengine-media"]?.baseUrl || config.volcengineBaseUrl },
       { key: minimaxKey, route: "minimax", providerId: "minimax-media", keyEnv: "MINIMAX_API_KEY", baseEnv: "MINIMAX_BASE_URL", directBaseUrl: gatewayProviders["minimax-media"]?.baseUrl || config.minimaxBaseUrl, directExtra: (e) => { if (config.minimaxGroupId) e.MINIMAX_GROUP_ID = config.minimaxGroupId; } },
@@ -798,6 +818,29 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
         env.KLING_ACCESS_KEY = klingAccessKey;
         env.KLING_SECRET_KEY = config.klingSecretKey;
       }
+    }
+    runtime.env = env;
+    configCopy.runtime = runtime;
+  }
+
+  const lilyKinds = configuredLilyMediaKinds(config);
+  if (lilyKinds.image || lilyKinds.video || lilyKinds.speech) {
+    const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
+    const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
+    env.LILY_IMAGE_PROVIDER = env.LILY_IMAGE_PROVIDER || config.mediaImageProvider || "dashscope";
+    env.LILY_VIDEO_PROVIDER = env.LILY_VIDEO_PROVIDER || config.mediaVideoProvider || "dashscope";
+    env.LILY_SPEECH_PROVIDER = env.LILY_SPEECH_PROVIDER || config.mediaSpeechProvider || "dashscope";
+    if (options.mediaDeliveryMode === "gateway" && base) {
+      env.LILY_MEDIA_API_KEY = signMediaToken("lily-media");
+      if (lilyKinds.image) env.LILY_MEDIA_IMAGE_ENDPOINT = `${base}/llm/media/lily/image/generate`;
+      if (lilyKinds.video) env.LILY_MEDIA_VIDEO_ENDPOINT = `${base}/llm/media/lily/video/generate`;
+      if (lilyKinds.speech) env.LILY_MEDIA_SPEECH_ENDPOINT = `${base}/llm/media/lily/speech/generate`;
+      delete env.LILY_MEDIA_BASE_URL;
+      delete env.LILY_MEDIA_IMAGE_BASE_URL;
+      delete env.LILY_MEDIA_VIDEO_BASE_URL;
+      delete env.LILY_MEDIA_SPEECH_BASE_URL;
+    } else {
+      applyDirectLilyMediaEnv(env, config);
     }
     runtime.env = env;
     configCopy.runtime = runtime;

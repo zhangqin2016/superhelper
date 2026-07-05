@@ -20,6 +20,10 @@ process.env.KLING_BASE_URL = "https://kling.test.local";
 process.env.MINIMAX_API_KEY = "mm-secret";
 process.env.MINIMAX_GROUP_ID = "grp-9";
 process.env.MINIMAX_BASE_URL = "https://minimax.test.local";
+process.env.LILY_MEDIA_API_KEY = "lily-upstream-secret";
+process.env.LILY_MEDIA_IMAGE_ENDPOINT = "http://127.0.0.1:18012/generate";
+process.env.LILY_MEDIA_VIDEO_ENDPOINT = "http://127.0.0.1:18010/generate";
+process.env.LILY_MEDIA_SPEECH_ENDPOINT = "http://127.0.0.1:18013/generate";
 process.env.MODEL_GATEWAY_PROVIDERS = JSON.stringify({
   vision: {
     type: "openai",
@@ -53,6 +57,11 @@ assert.equal(directEnv.VOLCENGINE_BASE_URL, "https://ark.test.local/api/v3");
 assert.equal(gwEnv.KLING_BASE_URL, "https://lily.example.com/llm/media/kling");
 assert.equal(verifyModelGatewayToken(gwEnv.KLING_API_KEY, "kling-media").ok, true);
 assert.equal(gwEnv.KLING_SECRET_KEY, undefined, "Kling SecretKey must NOT leak in gateway mode");
+assert.equal(gwEnv.LILY_MEDIA_IMAGE_ENDPOINT, "https://lily.example.com/llm/media/lily/image/generate");
+assert.equal(gwEnv.LILY_MEDIA_VIDEO_ENDPOINT, "https://lily.example.com/llm/media/lily/video/generate");
+assert.equal(gwEnv.LILY_MEDIA_SPEECH_ENDPOINT, "https://lily.example.com/llm/media/lily/speech/generate");
+assert.notEqual(gwEnv.LILY_MEDIA_API_KEY, "lily-upstream-secret", "raw Lily GPU media key must NOT be delivered in gateway mode");
+assert.equal(verifyModelGatewayToken(gwEnv.LILY_MEDIA_API_KEY, "lily-media").ok, true);
 assert.equal(directEnv.KLING_ACCESS_KEY, "kling-ak");
 assert.equal(directEnv.KLING_SECRET_KEY, "kling-sk");
 // MiniMax GroupId is delivered only in direct mode (appended server-side in gateway).
@@ -225,6 +234,24 @@ try {
   assert.equal(mmReply._code, 200);
   assert.equal(captured.url, "https://minimax.test.local/v1/video_generation?GroupId=grp-9");
   assert.equal(captured.init.headers.Authorization, "Bearer mm-secret");
+
+  // Lily GPU media proxy: client calls the public Lily gateway, server forwards
+  // to the private GPU tunnel and injects the optional upstream media key.
+  const lilyToken = signModelGatewayToken({ deviceId: input.deviceId, licenseId: input.licenseId, providerId: "lily-media" });
+  const lilyReply = fakeReply();
+  await routes["POST /llm/media/:provider/*"](
+    {
+      method: "POST",
+      url: "/llm/media/lily/image/generate",
+      params: { provider: "lily", "*": "image/generate" },
+      headers: { authorization: `Bearer ${lilyToken}` },
+      body: { prompt: "neon workbench" },
+    },
+    lilyReply,
+  );
+  assert.equal(lilyReply._code, 200);
+  assert.equal(captured.url, "http://127.0.0.1:18012/generate");
+  assert.equal(captured.init.headers.Authorization, "Bearer lily-upstream-secret");
 } finally {
   globalThis.fetch = realFetch;
 }
