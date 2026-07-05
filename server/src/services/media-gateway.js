@@ -335,6 +335,9 @@ function normalizeLilyAssetTarget(kind, rawUrl) {
     return "";
   }
   if (/^file:/i.test(raw)) return "";
+  if (raw.startsWith("/mnt/media-services/outputs/")) {
+    return `${referenceUrl.origin}/file?path=${encodeURIComponent(raw)}`;
+  }
   let target;
   try {
     target = /^https?:\/\//i.test(raw) ? new URL(raw) : new URL(raw, referenceUrl);

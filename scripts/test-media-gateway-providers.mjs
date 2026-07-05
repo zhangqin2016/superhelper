@@ -131,6 +131,13 @@ globalThis.fetch = async (url, init) => {
       arrayBuffer: async () => Buffer.from("lily-png").buffer,
     };
   }
+  if (url === "http://127.0.0.1:18012/file?path=%2Fmnt%2Fmedia-services%2Foutputs%2Fflux%2Fgenerated.png") {
+    return {
+      status: 200,
+      headers: { get: (name) => (String(name).toLowerCase() === "content-type" ? "image/png" : "") },
+      arrayBuffer: async () => Buffer.from("lily-file-png").buffer,
+    };
+  }
   return { status: 200, headers: { get: () => "application/json" }, text: async () => '{"id":"cgt-1"}' };
 };
 
@@ -321,6 +328,22 @@ try {
   );
   assert.equal(legacyAssetReply._code, 200, "old clients should be able to download rewritten asset URLs without adding Authorization headers");
   assert.equal(captures.at(-1).url, "http://127.0.0.1:18012/outputs/generated.png");
+
+  const fsPathAssetReply = fakeReply();
+  await routes["GET /llm/media/:provider/*"](
+    {
+      method: "GET",
+      url: `/llm/media/lily/image/asset?url=${encodeURIComponent("/mnt/media-services/outputs/flux/generated.png")}&access_token=${encodeURIComponent(lilyToken)}`,
+      params: { provider: "lily", "*": "image/asset" },
+      headers: {
+        host: "lily.example.com",
+        "x-forwarded-proto": "https",
+      },
+    },
+    fsPathAssetReply,
+  );
+  assert.equal(fsPathAssetReply._code, 200, "GPU filesystem output paths should download through the service /file endpoint");
+  assert.equal(captures.at(-1).url, "http://127.0.0.1:18012/file?path=%2Fmnt%2Fmedia-services%2Foutputs%2Fflux%2Fgenerated.png");
 } finally {
   globalThis.fetch = realFetch;
 }
