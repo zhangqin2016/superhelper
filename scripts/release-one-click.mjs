@@ -146,10 +146,14 @@ function bumpVersion(version, bump) {
 
 function run(command, argsList, options = {}) {
   console.log(`[release-one] ${command} ${argsList.map(shellQuote).join(" ")}`);
-  const result = spawnSync(command, argsList, {
+  const isCmdShim = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command);
+  const actualCommand = isCmdShim ? (process.env.ComSpec || "cmd.exe") : command;
+  const actualArgs = isCmdShim ? ["/d", "/s", "/c", command, ...argsList] : argsList;
+  const result = spawnSync(actualCommand, actualArgs, {
     cwd: ROOT,
     stdio: "inherit",
     ...options,
+    ...(isCmdShim ? { shell: false } : {}),
   });
   if (result.status !== 0) {
     throw new Error(`${command} ${argsList.join(" ")} failed`);
@@ -485,6 +489,7 @@ if ((publishServerRelease || (publishLocalCatalog && !options["dry-run"])) && !h
   fail("server release publish requires RELEASE_ADMIN_TOKEN or RELEASE_ADMIN_EMAIL + RELEASE_ADMIN_PASSWORD. Use --skip-server-publish only for static-only uploads.");
 }
 const scriptNode = findModernNode();
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 console.log(`[release-one] version ${currentVersion} -> ${nextVersion}`);
 console.log("[release-one] universal client package; runtime region policy is delivered by /api/client/bootstrap");
@@ -500,7 +505,7 @@ try {
   if (!options["skip-build"]) {
     const buildScript = target === "mac" ? "dist:mac" : target === "win" ? "dist:win" : target === "all" ? "dist:all" : "";
     if (!buildScript) fail(`invalid --target value: ${target}. expected mac, win, or all`);
-    run("npm", ["run", buildScript]);
+    run(npmCommand, ["run", buildScript]);
   }
 
   const artifacts = artifactCandidates(target, pkg.build?.productName || pkg.name, nextVersion)
