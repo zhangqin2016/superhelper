@@ -73,6 +73,7 @@ function verifyResumeBinding(session, expected = {}) {
     "opencodeVersion",
   ];
   for (const key of checks) {
+    if (key === "firstUserMessageHash" && !actual[key]) continue;
     if (String(actual[key] || "") !== String(expected[key] || "")) {
       return {
         ok: false,

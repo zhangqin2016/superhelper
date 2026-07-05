@@ -172,7 +172,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
 
   const configDir = skillManager.writeSessionAgentGuide(sessionId, session, project.path);
   const existingRunner = runnerPool.get(sessionId);
-  const wasAlive = Boolean(existingRunner?.isAlive?.());
+  let wasAlive = Boolean(existingRunner?.isAlive?.());
   const activeSkillIds = skillManager.resolveSessionSkillIds(session);
   const { buildResumeBinding, verifyResumeBinding } = require("./resume-binding");
   if (session.agentResumeId) {
@@ -189,6 +189,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
       sessionManager.clearAgentResumeId(sessionId);
       resetSessionEngineCache(sessionId);
       runnerPool.terminateSession(sessionId);
+      wasAlive = false;
     }
   }
 
@@ -210,6 +211,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
       sessionManager.clearAgentResumeId(sessionId);
       resetSessionEngineCache(sessionId);
       runnerPool.terminateSession(sessionId);
+      wasAlive = false;
     }
   }
 
@@ -220,6 +222,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
       sessionManager.clearAgentResumeId(sessionId);
       resetSessionEngineCache(sessionId);
       runnerPool.terminateSession(sessionId);
+      wasAlive = false;
     }
   }
 

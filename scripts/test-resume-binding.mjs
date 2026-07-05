@@ -74,4 +74,12 @@ const binding = buildResumeBinding({
   assert.equal(result.reason, "legacy_unbound_resume");
 }
 
+{
+  const result = verifyResumeBinding({
+    ...session,
+    agentResumeBinding: { ...binding, firstUserMessageHash: "" },
+  }, binding);
+  assert.equal(result.ok, true, "resume id emitted before the first user message should not break the second turn");
+}
+
 console.log("resume binding tests passed");
