@@ -20,6 +20,8 @@ assert(detectProtocol("https://api.deepseek.com") === "openai", "plain endpoint 
 assert(detectProtocol("https://api.deepseek.com", { LILY_OPENCODE_PROTOCOL: "anthropic" }) === "anthropic", "override forces anthropic");
 assert(detectProtocol("https://lily.example.com/llm/deepseek", { LILY_OPENCODE_PROTOCOL: "anthropic" }) === "anthropic",
   "gateway endpoint uses explicit anthropic protocol");
+assert(detectProtocol("https://proxy.example.com/anthropic", { LILY_OPENCODE_PROTOCOL: "openai" }) === "openai",
+  "explicit protocol wins over legacy URL heuristics");
 assert(anthropicUrl("https://x/anthropic") === "https://x/anthropic/v1", "anthropic url gets /v1");
 assert(anthropicUrl("https://x/anthropic/v1") === "https://x/anthropic/v1", "anthropic url keeps existing /v1");
 assert(openaiUrl("https://x/") === "https://x", "openai url verbatim (trimmed)");
@@ -87,6 +89,24 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   assert(cfg.provider.lily.options.baseURL === "https://lily.example.com/llm/iluvatar-vllm/v1",
     "OpenAI gateway baseURL is the /v1 base used before /chat/completions");
   assert(cfg.model === "lily//private/Qwen3-Next-80B-A3B-Instruct", "slash-prefixed model id is preserved");
+}
+
+{
+  const r = resolveOpencodeModelConfig({
+    LILY_API_BASE_URL: "https://proxy.example.com/anthropic-looking/v1",
+    LILY_API_KEY: "gateway-token",
+    LILY_OPENCODE_PROTOCOL: "openai",
+    LILY_OPENCODE_PROVIDER_ID: "iluvatar",
+    LILY_OPENCODE_PROVIDER_NPM: "@ai-sdk/openai-compatible",
+    LILY_MODEL: "qwen3-next",
+  });
+  assert(r.ok && r.protocol === "openai", "explicit OpenCode protocol is authoritative");
+  assert(r.model.providerID === "iluvatar", "explicit OpenCode provider id is carried");
+  const cfg = JSON.parse(r.configContent);
+  assert(cfg.provider.iluvatar.npm === "@ai-sdk/openai-compatible", "explicit OpenCode provider npm is carried");
+  assert(cfg.provider.iluvatar.options.baseURL === "https://proxy.example.com/anthropic-looking/v1",
+    "explicit OpenAI-compatible base is not rewritten by Anthropic-looking path text");
+  assert(cfg.model === "iluvatar/qwen3-next", "model ref uses explicit provider id");
 }
 
 // --- OpenAI-compatible endpoint (e.g. a raw DeepSeek key on api.deepseek.com) -

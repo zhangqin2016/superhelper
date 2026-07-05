@@ -7,12 +7,10 @@ const { classifyModelRoute } = require("../model-route-audit");
  * token, model id) into the OpenCode provider config + model Ref.
  *
  * Lily may receive an Anthropic-compatible endpoint (e.g. DeepSeek's
- * https://api.deepseek.com/anthropic) or an OpenAI-compatible endpoint. OpenCode
- * can speak either protocol, so we AUTO-DETECT from the endpoint and pick the
- * matching AI-SDK provider:
- *   - "/anthropic" endpoint  -> @ai-sdk/anthropic       (provider id "anthropic")
- *   - anything else          -> @ai-sdk/openai-compatible (provider id "lily")
- * Override with LILY_OPENCODE_PROTOCOL=anthropic|openai if ever needed.
+ * https://api.deepseek.com/anthropic) or an OpenAI-compatible endpoint. The
+ * service/client config should now pass explicit LILY_OPENCODE_PROTOCOL plus an
+ * allowlisted OpenCode provider id/npm. URL-based protocol detection remains only
+ * as a legacy fallback for old saved custom configs.
  *
  * Emitted as OPENCODE_CONFIG_CONTENT (V1 config schema). options is StructWithRest
  * so we pass apiKey (-> x-api-key for anthropic / Bearer for openai-compatible)
@@ -35,10 +33,47 @@ function openaiUrl(base) {
   return trimUrl(base);
 }
 
-function detectProtocol(baseUrl, env = {}) {
-  const override = String(env.LILY_OPENCODE_PROTOCOL || "").toLowerCase();
-  if (override === "anthropic" || override === "openai") return override;
+const OPENCODE_PROVIDER_DEFAULTS = Object.freeze({
+  anthropic: { providerID: "anthropic", npm: "@ai-sdk/anthropic" },
+  openai: { providerID: "lily", npm: "@ai-sdk/openai-compatible" },
+});
+
+function normalizeProtocol(value) {
+  const protocol = String(value || "").toLowerCase();
+  return protocol === "anthropic" || protocol === "openai" ? protocol : "";
+}
+
+function legacyProtocolForBaseUrl(baseUrl) {
   return /\/anthropic(\/|$)/i.test(baseUrl) ? "anthropic" : "openai";
+}
+
+function detectProtocol(baseUrl, env = {}) {
+  const override = normalizeProtocol(env.LILY_OPENCODE_PROTOCOL);
+  if (override) return override;
+  return legacyProtocolForBaseUrl(baseUrl);
+}
+
+function providerNpmProtocol(npm) {
+  if (npm === "@ai-sdk/anthropic") return "anthropic";
+  if (npm === "@ai-sdk/openai-compatible") return "openai";
+  return "";
+}
+
+function normalizeProviderId(value, protocol) {
+  const fallback = OPENCODE_PROVIDER_DEFAULTS[protocol]?.providerID || OPENCODE_PROVIDER_DEFAULTS.openai.providerID;
+  const providerID = String(value || "").trim();
+  return /^[A-Za-z0-9_-]{1,64}$/.test(providerID) ? providerID : fallback;
+}
+
+function resolveOpencodeProviderSpec(env = {}, protocol = "openai") {
+  const defaults = OPENCODE_PROVIDER_DEFAULTS[protocol] || OPENCODE_PROVIDER_DEFAULTS.openai;
+  const requestedNpm = String(env.LILY_OPENCODE_PROVIDER_NPM || "").trim();
+  const requestedNpmProtocol = providerNpmProtocol(requestedNpm);
+  const npm = requestedNpmProtocol === protocol ? requestedNpm : defaults.npm;
+  return {
+    providerID: normalizeProviderId(env.LILY_OPENCODE_PROVIDER_ID, protocol),
+    npm,
+  };
 }
 
 function forceProModelId(id, protocol = "anthropic") {
@@ -91,8 +126,9 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
     };
   }
 
-  const providerID = protocol === "anthropic" ? "anthropic" : "lily";
-  const npm = protocol === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible";
+  const providerSpec = resolveOpencodeProviderSpec(lilyEnv, protocol);
+  const providerID = providerSpec.providerID;
+  const npm = providerSpec.npm;
   const baseURL = protocol === "anthropic" ? anthropicUrl(rawBase) : openaiUrl(rawBase);
 
   // Keep every OpenCode tier on the selected Pro model. Fast/haiku/subagent
@@ -147,6 +183,8 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
       subagentUsesMainModel: true,
       requestedModel: requestedModelId,
       forcedModel: requestedModelId !== modelId ? modelId : "",
+      opencodeProviderID: providerID,
+      opencodeProviderNpm: npm,
       forcedMainModelForAllTiers: true,
       ignoredTierModels: {
         opus: lilyEnv.LILY_MODEL_OPUS || "",
@@ -161,4 +199,11 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   };
 }
 
-module.exports = { resolveOpencodeModelConfig, detectProtocol, anthropicUrl, openaiUrl, forceProModelId };
+module.exports = {
+  resolveOpencodeModelConfig,
+  detectProtocol,
+  anthropicUrl,
+  openaiUrl,
+  forceProModelId,
+  resolveOpencodeProviderSpec,
+};

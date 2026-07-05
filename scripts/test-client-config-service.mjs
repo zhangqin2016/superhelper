@@ -339,8 +339,11 @@ const vllmManaged = buildEnvManagedClientConfig(
 );
 assert.equal(vllmManaged.models.activePresetId, "iluvatar-vllm-gateway");
 assert.equal(vllmManaged.models.presets[0].env.LILY_API_BASE_URL, "/llm/iluvatar-vllm/v1");
+assert.equal(vllmManaged.models.presets[0].env.LILY_OPENCODE_BASE_URL, "/llm/iluvatar-vllm/v1");
 assert.equal(vllmManaged.models.presets[0].env.LILY_GATEWAY_PROVIDER, "iluvatar-vllm");
 assert.equal(vllmManaged.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "openai");
+assert.equal(vllmManaged.models.presets[0].env.LILY_OPENCODE_PROVIDER_ID, "lily");
+assert.equal(vllmManaged.models.presets[0].env.LILY_OPENCODE_PROVIDER_NPM, "@ai-sdk/openai-compatible");
 assert.equal(vllmManaged.models.presets[0].env.LILY_MODEL, "/private/Qwen3-Next-80B-A3B-Instruct");
 
 const deepseekOpenAiManaged = buildEnvManagedClientConfig(

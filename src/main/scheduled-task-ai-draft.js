@@ -24,21 +24,39 @@ function buildLilyEnv() {
 }
 
 function resolveMessagesUrl(baseUrl) {
+  return resolveModelRequest({ baseUrl, protocol: "anthropic" }).url;
+}
+
+function resolveAbsoluteModelBase(baseUrl) {
   const raw = String(baseUrl || "").trim();
   if (!raw) return "";
   const serviceBase = getServiceSettings().apiBaseUrl;
   const absolute = /^https?:\/\//i.test(raw)
     ? raw
     : new URL(raw.replace(/^\/+/, ""), `${serviceBase.replace(/\/+$/, "")}/`).toString();
-  const clean = absolute.replace(/\/+$/, "");
-  if (/\/v1\/messages$/i.test(clean)) return clean;
-  if (/\/v1$/i.test(clean)) return `${clean}/messages`;
-  return `${clean}/v1/messages`;
+  return absolute.replace(/\/+$/, "");
 }
 
-function modelIdFromEnv(env) {
+function normalizeProtocol(value) {
+  return String(value || "").toLowerCase() === "openai" ? "openai" : "anthropic";
+}
+
+function resolveModelRequest({ baseUrl, protocol } = {}) {
+  const clean = resolveAbsoluteModelBase(baseUrl);
+  if (!clean) return { protocol: normalizeProtocol(protocol), url: "" };
+  const resolvedProtocol = normalizeProtocol(protocol);
+  if (resolvedProtocol === "openai") {
+    if (/\/chat\/completions$/i.test(clean)) return { protocol: resolvedProtocol, url: clean };
+    return { protocol: resolvedProtocol, url: `${clean}/chat/completions` };
+  }
+  if (/\/v1\/messages$/i.test(clean)) return { protocol: resolvedProtocol, url: clean };
+  if (/\/v1$/i.test(clean)) return { protocol: resolvedProtocol, url: `${clean}/messages` };
+  return { protocol: resolvedProtocol, url: `${clean}/v1/messages` };
+}
+
+function modelIdFromEnv(env, protocol = "anthropic") {
   const { forceProModelId } = require("./runtime/opencode-model-config");
-  return forceProModelId(env.LILY_MODEL || env.LILY_MODEL_SONNET || env.LILY_MODEL_OPUS || env.LILY_MODEL_HAIKU || "");
+  return forceProModelId(env.LILY_MODEL || env.LILY_MODEL_SONNET || env.LILY_MODEL_OPUS || env.LILY_MODEL_HAIKU || "", protocol);
 }
 
 function extractText(responseJson) {
@@ -124,9 +142,30 @@ function systemPrompt() {
   ].join("\n");
 }
 
-async function callMessagesApi({ url, apiKey, model, text, now }) {
+async function callModelApi({ url, protocol, apiKey, model, text, now }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const resolvedProtocol = normalizeProtocol(protocol);
+  const body = resolvedProtocol === "openai"
+    ? {
+        model,
+        max_tokens: 700,
+        temperature: 0,
+        messages: [
+          { role: "system", content: systemPrompt() },
+          { role: "user", content: `Now: ${now}\nUser request: ${text}` },
+        ],
+      }
+    : {
+        model,
+        max_tokens: 700,
+        temperature: 0,
+        system: systemPrompt(),
+        messages: [{
+          role: "user",
+          content: `Now: ${now}\nUser request: ${text}`,
+        }],
+      };
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -137,16 +176,7 @@ async function callMessagesApi({ url, apiKey, model, text, now }) {
         authorization: `Bearer ${apiKey}`,
         "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify({
-        model,
-        max_tokens: 700,
-        temperature: 0,
-        system: systemPrompt(),
-        messages: [{
-          role: "user",
-          content: `Now: ${now}\nUser request: ${text}`,
-        }],
-      }),
+      body: JSON.stringify(body),
     });
     const json = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -164,14 +194,18 @@ async function parseScheduledTaskDraftWithModel(payload = {}) {
   const text = String(payload.text || "").trim();
   if (!text) return { ok: false, error: "EMPTY" };
   const env = buildLilyEnv();
-  const url = resolveMessagesUrl(env.LILY_API_BASE_URL);
+  const baseUrl = env.LILY_OPENCODE_BASE_URL || env.LILY_API_BASE_URL;
+  const { detectProtocol } = require("./runtime/opencode-model-config");
+  const protocol = detectProtocol(baseUrl, env);
+  const request = resolveModelRequest({ baseUrl, protocol });
   const apiKey = String(env.LILY_API_KEY || "").trim();
-  const model = modelIdFromEnv(env);
-  if (!url || !apiKey || !model || apiKey.startsWith("$")) {
+  const model = modelIdFromEnv(env, protocol);
+  if (!request.url || !apiKey || !model || apiKey.startsWith("$")) {
     return { ok: false, error: "AI_DRAFT_NOT_CONFIGURED" };
   }
-  const result = await callMessagesApi({
-    url,
+  const result = await callModelApi({
+    url: request.url,
+    protocol: request.protocol,
     apiKey,
     model,
     text,
@@ -185,4 +219,5 @@ module.exports = {
   parseScheduledTaskDraftWithModel,
   normalizeModelDraft,
   resolveMessagesUrl,
+  resolveModelRequest,
 };

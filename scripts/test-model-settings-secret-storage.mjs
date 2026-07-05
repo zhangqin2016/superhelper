@@ -41,6 +41,7 @@ const saved = modelPresets.saveCustomPreset({
   model: "secret-model",
   baseUrl: "https://llm.example.com",
   apiKey: key,
+  protocol: "openai",
   tlsSkipVerify: true,
 });
 if (!saved.ok) throw new Error(`saveCustomPreset failed: ${saved.error}`);
@@ -66,7 +67,8 @@ if (missingCustomKey.ok || missingCustomKey.error !== "INVALID_API_KEY") {
 const localNoKey = modelPresets.saveCustomPreset({
   label: "Local Qwen",
   model: "/private/Qwen3-Next-80B-A3B-Instruct",
-  baseUrl: "http://127.0.0.1:8000/v1/chat/completions",
+  baseUrl: "http://127.0.0.1:8000/v1",
+  protocol: "openai",
 });
 if (!localNoKey.ok) {
   throw new Error(`loopback OpenAI-compatible custom presets should allow no API key: ${localNoKey.error}`);
@@ -79,6 +81,28 @@ if (
   localEnv.LILY_OPENCODE_PROTOCOL !== "openai"
 ) {
   throw new Error(`loopback custom preset env should normalize URL and force openai protocol: ${JSON.stringify(localEnv)}`);
+}
+const fullEndpoint = modelPresets.saveCustomPreset({
+  label: "Full Endpoint",
+  model: "endpoint-model",
+  baseUrl: "http://127.0.0.1:8000/v1/chat/completions",
+  protocol: "openai",
+});
+if (fullEndpoint.ok || fullEndpoint.error !== "INVALID_BASE_URL") {
+  throw new Error(`custom model base URL must reject full chat/completions endpoints instead of silently rewriting: ${JSON.stringify(fullEndpoint)}`);
+}
+const explicitAnthropic = modelPresets.saveCustomPreset({
+  label: "Explicit Anthropic",
+  model: "claude-custom",
+  baseUrl: "https://proxy.example.com/custom",
+  apiKey: "sk-explicit-anthropic-123456",
+  protocol: "anthropic",
+});
+if (!explicitAnthropic.ok) throw new Error(`explicit anthropic custom preset should save: ${explicitAnthropic.error}`);
+modelPresets.setActivePreset(explicitAnthropic.preset.id);
+const explicitAnthropicEnv = modelPresets.getUserApiEnv();
+if (explicitAnthropicEnv.LILY_OPENCODE_PROTOCOL !== "anthropic") {
+  throw new Error(`custom preset protocol must come from explicit user choice, not URL guessing: ${JSON.stringify(explicitAnthropicEnv)}`);
 }
 const { resolveOpencodeModelConfig } = require(path.join(__dirname, "../src/main/runtime/opencode-model-config.js"));
 const localOpenCode = resolveOpencodeModelConfig({
@@ -100,6 +124,7 @@ const gateway = modelPresets.setApiGateway({
   mode: "custom",
   baseUrl: "https://gateway.example.com",
   apiKey: gatewayKey,
+  protocol: "anthropic",
 });
 if (!gateway.ok) throw new Error(`setApiGateway failed: ${gateway.error}`);
 
@@ -114,7 +139,7 @@ if (!raw.includes("apiKeyProtected")) {
 
 modelPresets.reloadPresets();
 const env = modelPresets.getUserApiEnv();
-if (env.LILY_API_KEY !== gatewayKey) {
+if (env.LILY_API_KEY !== gatewayKey || env.LILY_OPENCODE_PROTOCOL !== "anthropic") {
   throw new Error(`gateway key did not decrypt correctly: ${JSON.stringify(env)}`);
 }
 
@@ -185,6 +210,7 @@ const remoteCustom = modelPresets.saveCustomPreset({
   model: "remote-compatible-model",
   baseUrl: "https://custom-remote.example.com",
   apiKey: "sk-remote-compatible-secret-123456",
+  protocol: "openai",
   tlsSkipVerify: true,
 });
 if (!remoteCustom.ok) {
@@ -240,6 +266,7 @@ const customGateway = modelPresets.setApiGateway({
   mode: "custom",
   baseUrl: "https://wrong-custom.example.com/v1",
   apiKey: "sk-wrong-custom-secret-123456",
+  protocol: "openai",
 });
 if (!customGateway.ok) throw new Error(`setApiGateway for official direct guard failed: ${customGateway.error}`);
 modelPresets.reloadPresets();
@@ -251,6 +278,7 @@ const customGatewayForSwitch = modelPresets.setApiGateway({
   mode: "custom",
   baseUrl: "https://wrong-custom.example.com/v1",
   apiKey: "sk-wrong-custom-secret-123456",
+  protocol: "openai",
 });
 if (!customGatewayForSwitch.ok) throw new Error(`setApiGateway before switch guard failed: ${customGatewayForSwitch.error}`);
 const officialSwitch = modelPresets.setActivePreset("official-direct");
@@ -283,6 +311,7 @@ const remoteCustomEnv = modelPresets.getUserApiEnv();
 if (
   remoteCustomEnv.LILY_API_BASE_URL !== "https://custom-remote.example.com" ||
   remoteCustomEnv.LILY_API_KEY !== "sk-remote-compatible-secret-123456" ||
+  remoteCustomEnv.LILY_OPENCODE_PROTOCOL !== "openai" ||
   remoteCustomEnv.LILY_TLS_SKIP_VERIFY !== "1"
 ) {
   throw new Error(`selected custom preset should use local custom API settings: ${JSON.stringify(remoteCustomEnv)}`);

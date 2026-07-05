@@ -125,6 +125,7 @@ assert.deepEqual(
   {
     LILY_API_BASE_URL: "https://custom.example.com/v1",
     LILY_API_KEY: "sk-custom-secret-123456",
+    LILY_OPENCODE_PROTOCOL: "openai",
   },
   "user BYOK direct env remains available under modelDirect:false",
 );
@@ -134,6 +135,7 @@ const saveCustom = modelPresets.saveCustomPreset({
   model: "allowed-model",
   baseUrl: "https://allowed.example.com/v1",
   apiKey: "sk-allowed-secret-123456",
+  protocol: "openai",
 });
 assert.equal(saveCustom.ok, true, "users can add their own API-key model under modelDirect:false");
 
@@ -141,6 +143,7 @@ const customGateway = modelPresets.setApiGateway({
   mode: "custom",
   baseUrl: "https://allowed-gateway.example.com/v1",
   apiKey: "sk-allowed-gateway-123456",
+  protocol: "openai",
 });
 assert.equal(customGateway.ok, true, "users can save their own API gateway under modelDirect:false");
 

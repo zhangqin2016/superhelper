@@ -233,6 +233,13 @@ function opencodeProtocolFor(provider, deliveryMode) {
   return provider?.type === "openai" ? "openai" : "anthropic";
 }
 
+function opencodeProviderSpecFor(provider, deliveryMode) {
+  const protocol = opencodeProtocolFor(provider, deliveryMode);
+  return protocol === "openai"
+    ? { protocol, providerId: "lily", npm: "@ai-sdk/openai-compatible" }
+    : { protocol, providerId: "anthropic", npm: "@ai-sdk/anthropic" };
+}
+
 function gatewayBaseUrlFor(provider) {
   const base = `/llm/${provider.id}`;
   return provider?.type === "openai" ? `${base}/v1` : base;
@@ -267,6 +274,7 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
   const metadataEnv = providerModelEnv(provider, model);
   const suffix = isDefault ? "" : `--${modelSlug(model)}`;
   if (deliveryMode === "direct" && supportsDirectDelivery(provider)) {
+    const opencode = opencodeProviderSpecFor(provider, deliveryMode);
     return {
       id: `${provider.id}-direct${suffix}`,
       label: providerLabel(provider),
@@ -274,8 +282,11 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
       capabilities,
       env: {
         LILY_API_BASE_URL: provider.baseUrl,
+        LILY_OPENCODE_BASE_URL: provider.baseUrl,
         LILY_API_KEY: provider.apiKey,
-        LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, deliveryMode),
+        LILY_OPENCODE_PROTOCOL: opencode.protocol,
+        LILY_OPENCODE_PROVIDER_ID: opencode.providerId,
+        LILY_OPENCODE_PROVIDER_NPM: opencode.npm,
         ...modelEnv,
         ...metadataEnv,
       },
@@ -283,16 +294,21 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
   }
 
   const effectiveDeliveryMode = "gateway";
+  const gatewayBaseUrl = gatewayBaseUrlFor(provider);
+  const opencode = opencodeProviderSpecFor(provider, effectiveDeliveryMode);
   return {
     id: `${provider.id}-gateway${suffix}`,
     label: providerLabel(provider),
     description: "由 Lily 服务端托管密钥并签发短期访问令牌。",
     capabilities,
     env: {
-      LILY_API_BASE_URL: gatewayBaseUrlFor(provider),
+      LILY_API_BASE_URL: gatewayBaseUrl,
+      LILY_OPENCODE_BASE_URL: gatewayBaseUrl,
       LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
       LILY_GATEWAY_PROVIDER: provider.id,
-      LILY_OPENCODE_PROTOCOL: opencodeProtocolFor(provider, effectiveDeliveryMode),
+      LILY_OPENCODE_PROTOCOL: opencode.protocol,
+      LILY_OPENCODE_PROVIDER_ID: opencode.providerId,
+      LILY_OPENCODE_PROVIDER_NPM: opencode.npm,
       ...modelEnv,
       ...metadataEnv,
     },
@@ -779,6 +795,8 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
     if (!isGatewayBaseUrl(baseUrl, env)) continue;
     const providerId = parseGatewayProvider(baseUrl, env);
     if (baseUrl.startsWith("/") && base) env.LILY_API_BASE_URL = `${base}${baseUrl}`;
+    const opencodeBaseUrl = String(env.LILY_OPENCODE_BASE_URL || "").trim();
+    if (opencodeBaseUrl.startsWith("/") && base) env.LILY_OPENCODE_BASE_URL = `${base}${opencodeBaseUrl}`;
     if (!String(env.LILY_API_KEY || "").trim() || env.LILY_API_KEY === "$LILY_GATEWAY_TOKEN") {
       env.LILY_API_KEY = signModelGatewayToken({
         deviceId: input.deviceId,

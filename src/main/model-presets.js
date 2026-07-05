@@ -15,6 +15,16 @@ const CUSTOM_ID_PREFIX = "custom-";
 const MODEL_ID_RE = /^[A-Za-z0-9._:/-]{1,128}$/;
 const URL_RE = /^https?:\/\/.+/i;
 const API_KEY_RE = /^[\x20-\x7E]{8,512}$/;
+const DEFAULT_PROTOCOL = "openai";
+
+function normalizeProtocol(value) {
+  const protocol = String(value || "").toLowerCase();
+  return protocol === "anthropic" || protocol === "openai" ? protocol : "";
+}
+
+function legacyProtocolForBaseUrl(baseUrl) {
+  return /\/anthropic(\/|$)/i.test(String(baseUrl || "")) ? "anthropic" : DEFAULT_PROTOCOL;
+}
 
 function getSafeStorage() {
   try {
@@ -161,7 +171,7 @@ function loadUserChoice() {
   const raw = hydrateUserChoice(stored);
   cachedUserChoice = {
     activePresetId: raw?.activePresetId || null,
-    customPresets: Array.isArray(raw?.customPresets) ? raw.customPresets : [],
+    customPresets: Array.isArray(raw?.customPresets) ? raw.customPresets.map(normalizeCustomPresetEntry) : [],
     apiGateway: normalizeApiGateway(raw?.apiGateway),
   };
   const activePreset = findPresetById(getActivePresetId());
@@ -171,22 +181,44 @@ function loadUserChoice() {
       apiGateway: normalizeApiGateway(null),
     };
   }
-  if (hasPlaintextSecrets(stored) || cachedUserChoice.apiGateway.mode !== normalizeApiGateway(raw?.apiGateway).mode) {
+  if (
+    hasPlaintextSecrets(stored) ||
+    cachedUserChoice.apiGateway.mode !== normalizeApiGateway(raw?.apiGateway).mode ||
+    hasMissingProtocolMetadata(stored)
+  ) {
     writeJson(userSettingsPath(), serializeUserChoice(cachedUserChoice));
   }
   return cachedUserChoice;
 }
 
 function normalizeApiGateway(raw) {
+  const baseUrl = String(raw?.baseUrl || "").trim();
   if (!raw || typeof raw !== "object") {
-    return { mode: "builtin", baseUrl: "", apiKey: "", tlsSkipVerify: false };
+    return { mode: "builtin", baseUrl: "", apiKey: "", protocol: DEFAULT_PROTOCOL, tlsSkipVerify: false };
   }
   return {
     mode: raw.mode === "custom" ? "custom" : "builtin",
-    baseUrl: String(raw.baseUrl || "").trim(),
+    baseUrl,
     apiKey: String(raw.apiKey || "").trim(),
+    protocol: normalizeProtocol(raw.protocol) || legacyProtocolForBaseUrl(baseUrl),
     tlsSkipVerify: Boolean(raw.tlsSkipVerify),
   };
+}
+
+function normalizeCustomPresetEntry(entry) {
+  const baseUrl = String(entry?.baseUrl || "").trim();
+  return {
+    ...(entry && typeof entry === "object" ? entry : {}),
+    protocol: normalizeProtocol(entry?.protocol) || legacyProtocolForBaseUrl(baseUrl),
+  };
+}
+
+function hasMissingProtocolMetadata(stored) {
+  if (!stored || typeof stored !== "object") return false;
+  const gateway = stored.apiGateway;
+  if (gateway?.mode === "custom" && gateway.baseUrl && !normalizeProtocol(gateway.protocol)) return true;
+  return (Array.isArray(stored.customPresets) ? stored.customPresets : []).some((preset) =>
+    preset?.baseUrl && !normalizeProtocol(preset.protocol));
 }
 
 function maskApiKey(key) {
@@ -219,7 +251,10 @@ function validateBaseUrl(baseUrl, { required = false } = {}) {
   }
   try {
     const url = new URL(trimmed);
-    url.pathname = url.pathname.replace(/\/chat\/completions\/?$/i, "");
+    const pathOnly = url.pathname.replace(/\/+$/, "");
+    if (/\/(chat\/completions|messages)$/i.test(pathOnly)) {
+      return { ok: false, error: "INVALID_BASE_URL" };
+    }
     return { ok: true, baseUrl: url.toString().replace(/\/+$/, "") };
   } catch {
     return { ok: false, error: "INVALID_BASE_URL" };
@@ -233,10 +268,6 @@ function isLoopbackBaseUrl(baseUrl) {
   } catch {
     return false;
   }
-}
-
-function protocolForBaseUrl(baseUrl) {
-  return /\/anthropic(\/|$)/i.test(String(baseUrl || "")) ? "anthropic" : "openai";
 }
 
 function validateApiKey(apiKey, { required = false, existing = "" } = {}) {
@@ -316,6 +347,7 @@ function customPresetRecord(entry) {
     modelOpus: tiers.opus,
     modelSubagent: tiers.subagent,
     baseUrl,
+    protocol: normalizeProtocol(entry.protocol) || legacyProtocolForBaseUrl(baseUrl),
     apiKeySet: Boolean(apiKey),
     tlsSkipVerify: Boolean(entry.tlsSkipVerify && baseUrl),
     custom: true,
@@ -421,10 +453,10 @@ function getUserApiEnv() {
       const env = {};
       const baseUrl = String(entry.baseUrl || "").trim();
       const apiKey = String(entry.apiKey || "").trim();
-      const protocol = String(entry.protocol || "").trim();
+      const protocol = normalizeProtocol(entry.protocol) || legacyProtocolForBaseUrl(baseUrl);
       if (baseUrl) env.LILY_API_BASE_URL = baseUrl;
       if (apiKey) env.LILY_API_KEY = apiKey;
-      if (protocol === "anthropic" || protocol === "openai") env.LILY_OPENCODE_PROTOCOL = protocol;
+      if (protocol) env.LILY_OPENCODE_PROTOCOL = protocol;
       if (entry.tlsSkipVerify && baseUrl) env.LILY_TLS_SKIP_VERIFY = "1";
       if (Object.keys(env).length) return env;
     }
@@ -436,8 +468,10 @@ function getUserApiEnv() {
   if (gateway.mode !== "custom") return {};
 
   const env = {};
+  const protocol = normalizeProtocol(gateway.protocol) || legacyProtocolForBaseUrl(gateway.baseUrl);
   if (gateway.baseUrl) env.LILY_API_BASE_URL = gateway.baseUrl;
   if (gateway.apiKey) env.LILY_API_KEY = gateway.apiKey;
+  if (protocol) env.LILY_OPENCODE_PROTOCOL = protocol;
   if (gateway.tlsSkipVerify && gateway.baseUrl) env.LILY_TLS_SKIP_VERIFY = "1";
   return env;
 }
@@ -449,6 +483,7 @@ function getApiGatewayPublic() {
   return {
     mode: gateway.mode,
     baseUrl: gateway.baseUrl,
+    protocol: gateway.protocol || DEFAULT_PROTOCOL,
     apiKeySet: Boolean(gateway.apiKey),
     apiKeyHint: gateway.apiKey ? maskApiKey(gateway.apiKey) : "",
     tlsSkipVerify: Boolean(gateway.tlsSkipVerify && gateway.baseUrl),
@@ -525,6 +560,7 @@ function listPresetsPublic() {
       modelSonnet: p.modelSonnet || "",
       modelOpus: p.modelOpus || "",
       baseUrl: p.baseUrl || "",
+      protocol: p.protocol || "",
       apiKeySet: Boolean(p.apiKeySet),
       tlsSkipVerify: Boolean(p.tlsSkipVerify),
       custom: Boolean(p.custom),
@@ -612,7 +648,7 @@ function saveCustomPreset({
     tlsSkipVerify: Boolean(tlsSkipVerify && urlValidated.baseUrl),
     // Carried from the provider catalog so anthropic vs openai-compatible
     // endpoints resolve correctly instead of relying on URL auto-detection.
-    protocol: protocol === "anthropic" || protocol === "openai" ? protocol : protocolForBaseUrl(urlValidated.baseUrl),
+    protocol: normalizeProtocol(protocol) || legacyProtocolForBaseUrl(urlValidated.baseUrl),
   };
   const customPresets = [...(user.customPresets || []), entry];
   persistUserChoice({ ...user, customPresets });
@@ -638,14 +674,14 @@ function deleteCustomPreset(presetId) {
   return { ok: true, ...listPresetsPublic() };
 }
 
-function setApiGateway({ mode, baseUrl, apiKey, tlsSkipVerify }) {
+function setApiGateway({ mode, baseUrl, apiKey, protocol, tlsSkipVerify }) {
   const user = loadUserChoice();
   const nextMode = mode === "custom" ? "custom" : "builtin";
 
   if (nextMode === "builtin") {
     persistUserChoice({
       ...user,
-      apiGateway: { mode: "builtin", baseUrl: "", apiKey: "", tlsSkipVerify: false },
+      apiGateway: normalizeApiGateway(null),
     });
     return { ok: true, ...listPresetsPublic() };
   }
@@ -665,6 +701,7 @@ function setApiGateway({ mode, baseUrl, apiKey, tlsSkipVerify }) {
       mode: "custom",
       baseUrl: urlValidated.baseUrl,
       apiKey: keyValidated.apiKey,
+      protocol: normalizeProtocol(protocol) || legacyProtocolForBaseUrl(urlValidated.baseUrl),
       tlsSkipVerify: Boolean(tlsSkipVerify),
     },
   });

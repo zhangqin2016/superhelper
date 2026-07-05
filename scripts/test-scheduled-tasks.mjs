@@ -37,6 +37,7 @@ const {
 const {
   normalizeModelDraft,
   resolveMessagesUrl,
+  resolveModelRequest,
 } = require("../src/main/scheduled-task-ai-draft.js");
 const {
   looksLikeScheduledTaskIntent,
@@ -135,7 +136,15 @@ try {
   }, { text: "每周一到周五 10 点 11 点整理我的待办", sessionId: "s1", projectId: "p1" });
   assert(modelDraft.ok, `model draft JSON should normalize: ${JSON.stringify(modelDraft)}`);
   assert(modelDraft.draft.scheduleText === "Mon / Tue / Wed / Thu / Fri at 10:00 / 11:00", `model draft schedule text should be readable: ${modelDraft.draft.scheduleText}`);
-  assert(resolveMessagesUrl("/llm/deepseek") === "https://lilych.lilywb.cn/llm/deepseek/v1/messages", "relative model base url should resolve against service api base");
+  assert(resolveMessagesUrl("/llm/deepseek") === "https://lilych.lilywb.cn/llm/deepseek/v1/messages", "legacy messages helper should still resolve against service api base");
+  assert(
+    resolveModelRequest({ baseUrl: "/llm/deepseek", protocol: "anthropic" }).url === "https://lilych.lilywb.cn/llm/deepseek/v1/messages",
+    "anthropic model draft endpoint should use /v1/messages",
+  );
+  assert(
+    resolveModelRequest({ baseUrl: "/llm/iluvatar-vllm/v1", protocol: "openai" }).url === "https://lilych.lilywb.cn/llm/iluvatar-vllm/v1/chat/completions",
+    "openai model draft endpoint should use /chat/completions",
+  );
   const invalidWindow = normalizeScheduleSpec({
     type: "daily_window_interval",
     startHour: 18,

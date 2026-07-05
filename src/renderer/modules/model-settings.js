@@ -45,8 +45,13 @@ function updateApiCustomFields(gateway) {
   }
 }
 
+function normalizeProtocolValue(value) {
+  return value === "anthropic" ? "anthropic" : "openai";
+}
+
 function renderApiGateway(gateway) {
   const baseUrlInput = $("modelApiBaseUrl");
+  const protocolSelect = $("modelApiProtocol");
   const keyInput = $("modelApiKey");
   if (!gateway) return;
 
@@ -56,6 +61,7 @@ function renderApiGateway(gateway) {
       baseUrlInput.placeholder = gateway.defaultBaseUrl;
     }
   }
+  if (protocolSelect) protocolSelect.value = normalizeProtocolValue(gateway.protocol);
   if (keyInput) keyInput.value = "";
 
   updateApiCustomFields(gateway);
@@ -98,7 +104,7 @@ function renderCustomList(presets, activePresetId) {
       const api = document.createElement("span");
       api.className = "model-custom-api";
       if (preset.baseUrl) {
-        api.textContent = preset.baseUrl;
+        api.textContent = preset.protocol ? `${preset.baseUrl} · ${preset.protocol}` : preset.baseUrl;
       } else if (preset.apiKeySet) {
         api.textContent = t("settings.modelCustomOwnKey");
       }
@@ -234,6 +240,7 @@ async function saveApiGateway(mode) {
   const payload = {
     mode,
     baseUrl: $("modelApiBaseUrl")?.value?.trim() || "",
+    protocol: normalizeProtocolValue($("modelApiProtocol")?.value),
     apiKey: $("modelApiKey")?.value?.trim() || "",
   };
   const result = await window.assistantClient.setModelApiGateway(payload);
@@ -333,6 +340,7 @@ export async function initModelSettings() {
       label: $("modelCustomLabel")?.value?.trim() || "",
       model: $("modelCustomId")?.value?.trim() || "",
       baseUrl: $("modelCustomBaseUrl")?.value?.trim() || "",
+      protocol: normalizeProtocolValue($("modelCustomProtocol")?.value),
       apiKey: $("modelCustomApiKey")?.value?.trim() || "",
       tlsSkipVerify: Boolean($("modelCustomTlsSkipVerify")?.checked),
     });
@@ -345,11 +353,13 @@ export async function initModelSettings() {
       "modelCustomLabel",
       "modelCustomId",
       "modelCustomBaseUrl",
+      "modelCustomProtocol",
       "modelCustomApiKey",
       "modelCustomTlsSkipVerify",
     ]) {
       const el = $(id);
       if (el?.type === "checkbox") el.checked = false;
+      else if (id === "modelCustomProtocol" && el) el.value = "openai";
       else if (el) el.value = "";
     }
 
