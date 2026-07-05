@@ -39,6 +39,7 @@ const labels = {
     save: "保存供应商",
     keySet: "已设密钥",
     noKey: "未设密钥",
+    builtIn: "内置服务",
     disabled: "停用",
     remove: "删除",
     empty: "还没有供应商。也可继续用服务端 env 配置的供应商。",
@@ -76,6 +77,7 @@ const labels = {
     save: "Save provider",
     keySet: "key set",
     noKey: "no key",
+    builtIn: "built-in",
     disabled: "Disable",
     remove: "Delete",
     empty: "No providers yet. Env-configured providers still work.",
@@ -113,6 +115,7 @@ const labels = {
     save: "حفظ المزوّد",
     keySet: "مفتاح مضبوط",
     noKey: "بدون مفتاح",
+    builtIn: "خدمة مدمجة",
     disabled: "تعطيل",
     remove: "حذف",
     empty: "لا مزوّدين بعد.",
@@ -142,6 +145,10 @@ function SectionTitle({ title }) {
 
 function modelList(provider) {
   return Array.isArray(provider?.models) ? provider.models.filter(Boolean) : [];
+}
+
+function isReadOnlyProvider(provider) {
+  return Boolean(provider?.readOnly || provider?.readonly || provider?.source === "builtin" || provider?.metadata?.source === "builtin");
 }
 
 function parseModels(value) {
@@ -359,32 +366,47 @@ export function ModelProvidersPanel({ providers = [], initialProvider = null, sh
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {providers.map((provider) => (
-                <tr key={provider.id} className={provider.enabled ? "" : "opacity-50"}>
-                  <td className="px-4 py-2">
-                    <span className="font-mono text-xs text-slate-700">{provider.id}</span>
-                    {provider.label ? <span className="ms-2 text-slate-500">{provider.label}</span> : null}
-                  </td>
-                  <td className="px-4 py-2 text-slate-600">{provider.type}</td>
-                  <td className="px-4 py-2 max-w-[220px] truncate font-mono text-xs text-slate-600">{provider.default_model || modelList(provider)[0] || "-"}</td>
-                  <td className="px-4 py-2 text-slate-600">{modelList(provider).length}</td>
-                  <td className="px-4 py-2 max-w-[280px] truncate font-mono text-xs text-slate-500">{provider.base_url || "-"}</td>
-                  <td className="px-4 py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${provider.hasApiKey ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                      {provider.hasApiKey ? copy.keySet : copy.noKey}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 text-end">
-                    <Link href={`/admin/config/providers/new?id=${encodeURIComponent(provider.id)}`} className="me-3 text-xs font-semibold text-brand hover:underline">
-                      {copy.edit}
-                    </Link>
-                    <form action={deleteModelProviderAction} className="inline">
-                      <input type="hidden" name="id" value={provider.id} />
-                      <button type="submit" className="text-xs font-semibold text-red-600 hover:underline">{copy.remove}</button>
-                    </form>
-                  </td>
-                </tr>
-              ))}
+              {providers.map((provider) => {
+                const readOnly = isReadOnlyProvider(provider);
+                return (
+                  <tr key={provider.id} className={provider.enabled ? "" : "opacity-50"}>
+                    <td className="px-4 py-2">
+                      <span className="font-mono text-xs text-slate-700">{provider.id}</span>
+                      {provider.label ? <span className="ms-2 text-slate-500">{provider.label}</span> : null}
+                    </td>
+                    <td className="px-4 py-2 text-slate-600">{provider.type}</td>
+                    <td className="px-4 py-2 max-w-[220px] truncate font-mono text-xs text-slate-600">{provider.default_model || modelList(provider)[0] || "-"}</td>
+                    <td className="px-4 py-2 text-slate-600">{modelList(provider).length}</td>
+                    <td className="px-4 py-2 max-w-[280px] truncate font-mono text-xs text-slate-500">{provider.base_url || provider.baseUrl || "-"}</td>
+                    <td className="px-4 py-2">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        readOnly
+                          ? "bg-slate-100 text-slate-600"
+                          : provider.hasApiKey
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                      }`}>
+                        {readOnly ? copy.builtIn : provider.hasApiKey ? copy.keySet : copy.noKey}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-end">
+                      {readOnly ? (
+                        <span className="text-xs font-semibold text-slate-400">{copy.builtIn}</span>
+                      ) : (
+                        <>
+                          <Link href={`/admin/config/providers/new?id=${encodeURIComponent(provider.id)}`} className="me-3 text-xs font-semibold text-brand hover:underline">
+                            {copy.edit}
+                          </Link>
+                          <form action={deleteModelProviderAction} className="inline">
+                            <input type="hidden" name="id" value={provider.id} />
+                            <button type="submit" className="text-xs font-semibold text-red-600 hover:underline">{copy.remove}</button>
+                          </form>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : (

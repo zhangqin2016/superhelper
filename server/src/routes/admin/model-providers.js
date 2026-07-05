@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { db } from "../../db.js";
+import { config } from "../../config.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { encryptSecret } from "../../services/security.js";
 import { ensureEnvManagedConfigProfile } from "../../services/client-config.js";
@@ -7,6 +8,7 @@ import {
   listModelGatewayProviders,
   refreshModelGatewayProviders,
 } from "../../services/model-gateway/providers.js";
+import { listBuiltinMediaProviderRows } from "../../services/model-gateway/builtin-media-providers.js";
 import { normalizeProviderForProtocol } from "../../services/model-gateway/model-aliases.js";
 
 // Operator-managed model gateway providers. The API key is stored encrypted and
@@ -81,14 +83,17 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
       hasApiKey: Boolean(provider.apiKey),
       source: dbIds.has(String(provider.id)) ? "db" : "env",
     }));
+    const dbProviders = rows.map(({ api_key_encrypted, secret_key_encrypted, ...row }) => ({
+      ...row,
+      hasApiKey: Boolean(api_key_encrypted),
+      hasSecretKey: Boolean(secret_key_encrypted),
+    }));
+    const builtinMediaProviders = listBuiltinMediaProviderRows(config).filter((row) => !dbIds.has(String(row.id)));
     // Never leak secrets; expose only whether each is set. metadata (e.g.
-    // groupId) is non-secret and returned as-is.
+    // groupId) is non-secret and returned as-is. Built-in media services are
+    // read-only rows backed by the server media gateway, not DB records.
     return {
-      providers: rows.map(({ api_key_encrypted, secret_key_encrypted, ...row }) => ({
-        ...row,
-        hasApiKey: Boolean(api_key_encrypted),
-        hasSecretKey: Boolean(secret_key_encrypted),
-      })),
+      providers: [...dbProviders, ...builtinMediaProviders],
       gateway,
     };
   });

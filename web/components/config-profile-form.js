@@ -31,7 +31,7 @@ function providersToTemplates(providers) {
   // Accepts either the merged gateway summary (env + DB, has hasApiKey) or raw
   // DB rows (has enabled). Only providers that can actually serve are offered.
   return (providers || [])
-    .filter((p) => p && p.enabled !== false && p.hasApiKey !== false && !RESERVED_PROVIDER_IDS.has(p.id))
+    .filter((p) => p && p.enabled !== false && p.hasApiKey !== false && p.type !== "media" && !RESERVED_PROVIDER_IDS.has(p.id))
     .map((p) => {
       const models = Array.isArray(p.models) ? p.models.filter(Boolean) : [];
       const def = p.default_model || p.model || models[0] || "";
@@ -66,10 +66,11 @@ const labels = {
     allowedProvidersTitle: "客户端可选供应商（多选）",
     allowedProvidersDesc: "这些供应商会出现在客户端模型下拉菜单里。默认供应商会自动包含，不能取消。",
     menuActive: "保存后客户端会收到这组可选供应商。",
-    mediaTitle: "图片 / 视频生成",
-    mediaDesc: "为本范围勾选可用的生成供应商（可多选），并设一个默认。留空＝沿用今天的行为（所有已配置的、服务器默认）。服务器只会下发实际配置了密钥的那些。",
+    mediaTitle: "图片 / 视频 / 语音生成",
+    mediaDesc: "为本范围勾选可用的生成供应商（可多选），并设一个默认。留空＝沿用今天的行为（所有已配置的、服务器默认）。服务器只会下发实际配置了服务或密钥的那些。",
     mediaImage: "图片生成",
     mediaVideo: "视频生成",
+    mediaSpeech: "语音生成",
     mediaDefault: "默认：",
     providerModels: "已选供应商的模型",
     providerModelsHelp: "只读预览。每个已选供应商都会下发自己的模型列表；要改模型列表或默认模型，请去「模型供应商」页面配置。",
@@ -111,10 +112,11 @@ const labels = {
     allowedProvidersTitle: "Client model menu (multi-select)",
     allowedProvidersDesc: "These providers appear in the client model picker. The default provider is always included and cannot be removed here.",
     menuActive: "After save, clients will receive this selectable provider menu.",
-    mediaTitle: "Image / video generation",
-    mediaDesc: "Pick which generation providers this scope may use (multi-select) and one default. Empty = today's behavior (all configured, server default). The server only delivers the ones that actually have a key.",
+    mediaTitle: "Image / video / speech generation",
+    mediaDesc: "Pick which generation providers this scope may use (multi-select) and one default. Empty = today's behavior (all configured, server default). The server only delivers the ones that actually have a service or key.",
     mediaImage: "Image generation",
     mediaVideo: "Video generation",
+    mediaSpeech: "Speech generation",
     mediaDefault: "Default:",
     providerModels: "Models from selected providers",
     providerModelsHelp: "Read-only preview. Every selected provider delivers its own model list. Edit model names and provider defaults under “Model providers”.",
@@ -156,10 +158,11 @@ const labels = {
     allowedProvidersTitle: "قائمة نماذج العميل (اختيار متعدد)",
     allowedProvidersDesc: "تظهر هذه المزوّدات في قائمة النماذج داخل العميل. المزوّد الافتراضي مضاف دائماً ولا يمكن حذفه هنا.",
     menuActive: "بعد الحفظ سيستلم العملاء قائمة المزوّدين القابلة للاختيار.",
-    mediaTitle: "توليد الصور / الفيديو",
-    mediaDesc: "اختر مزوّدي التوليد المسموح بهم لهذا النطاق (اختيار متعدد) ومزوّداً افتراضياً. فارغ = سلوك اليوم (كل المُهيأ، الافتراضي من الخادم). يرسل الخادم فقط ما له مفتاح فعلاً.",
+    mediaTitle: "توليد الصور / الفيديو / الصوت",
+    mediaDesc: "اختر مزوّدي التوليد المسموح بهم لهذا النطاق (اختيار متعدد) ومزوّداً افتراضياً. فارغ = سلوك اليوم (كل المُهيأ، الافتراضي من الخادم). يرسل الخادم فقط ما له خدمة أو مفتاح فعلاً.",
     mediaImage: "توليد الصور",
     mediaVideo: "توليد الفيديو",
+    mediaSpeech: "توليد الصوت",
     mediaDefault: "الافتراضي:",
     providerModels: "نماذج المزوّدين المحددين",
     providerModelsHelp: "معاينة فقط. كل مزوّد محدد يرسل قائمة نماذجه. عدّل أسماء النماذج والافتراضي من صفحة «مزوّدو النماذج».",
@@ -224,6 +227,8 @@ function defaultDraft(copy, templates) {
     imageDefault: "",
     videoProviders: [],
     videoDefault: "",
+    speechProviders: [],
+    speechDefault: "",
     disabled: false,
   };
 }
@@ -243,6 +248,7 @@ function splitCsv(text) {
 // its key exists (resolveMediaSelection), so listing all here is safe — unavailable ones
 // are dropped at delivery.
 const MEDIA_PROVIDERS = [
+  { id: "lily", label: "Lily 自有 GPU" },
   { id: "dashscope", label: "阿里百炼 DashScope" },
   { id: "volcengine", label: "火山方舟 Volcengine" },
   { id: "kling", label: "可灵 Kling" },
@@ -261,8 +267,9 @@ function buildMedia(draft) {
   };
   const image = pick(draft.imageProviders, draft.imageDefault);
   const video = pick(draft.videoProviders, draft.videoDefault);
-  if (!image && !video) return null;
-  return { ...(image ? { image } : {}), ...(video ? { video } : {}) };
+  const speech = pick(draft.speechProviders, draft.speechDefault);
+  if (!image && !video && !speech) return null;
+  return { ...(image ? { image } : {}), ...(video ? { video } : {}), ...(speech ? { speech } : {}) };
 }
 
 function deliveryProviderIds(draft, template) {
@@ -398,23 +405,28 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
     });
   }
 
-  // Image/video generation: toggle a provider into the scope's selectable set; the
+  function mediaDraftKeys(modality) {
+    if (modality === "image") return { providersKey: "imageProviders", defaultKey: "imageDefault" };
+    if (modality === "video") return { providersKey: "videoProviders", defaultKey: "videoDefault" };
+    return { providersKey: "speechProviders", defaultKey: "speechDefault" };
+  }
+
+  // Media generation: toggle a provider into the scope's selectable set; the
   // default auto-follows the selection (kept valid). buildMedia turns this into config.media.
   function toggleMediaProvider(modality, id) {
-    const key = modality === "image" ? "imageProviders" : "videoProviders";
-    const defKey = modality === "image" ? "imageDefault" : "videoDefault";
+    const { providersKey, defaultKey } = mediaDraftKeys(modality);
     setDraft((current) => {
-      const set = new Set(current[key] || []);
+      const set = new Set(current[providersKey] || []);
       if (set.has(id)) set.delete(id);
       else set.add(id);
       const list = [...set];
-      const def = list.includes(current[defKey]) ? current[defKey] : list[0] || "";
-      return { ...current, [key]: list, [defKey]: def };
+      const def = list.includes(current[defaultKey]) ? current[defaultKey] : list[0] || "";
+      return { ...current, [providersKey]: list, [defaultKey]: def };
     });
   }
   function setMediaDefault(modality, id) {
-    const defKey = modality === "image" ? "imageDefault" : "videoDefault";
-    setDraft((current) => ({ ...current, [defKey]: id }));
+    const { defaultKey } = mediaDraftKeys(modality);
+    setDraft((current) => ({ ...current, [defaultKey]: id }));
   }
 
   return (
@@ -595,10 +607,9 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
               <h3 className="text-lg font-semibold text-slate-950">{copy.mediaTitle}</h3>
               <p className="mt-1 text-sm text-slate-500">{copy.mediaDesc}</p>
             </div>
-            {[["image", copy.mediaImage], ["video", copy.mediaVideo]].map(([modality, label]) => {
-              const selKey = modality === "image" ? "imageProviders" : "videoProviders";
-              const defKey = modality === "image" ? "imageDefault" : "videoDefault";
-              const selected = draft[selKey] || [];
+            {[["image", copy.mediaImage], ["video", copy.mediaVideo], ["speech", copy.mediaSpeech]].map(([modality, label]) => {
+              const { providersKey, defaultKey } = mediaDraftKeys(modality);
+              const selected = draft[providersKey] || [];
               return (
                 <div key={modality} className="mb-4 rounded-xl border border-slate-200 bg-white p-4 last:mb-0">
                   <div className="text-sm font-semibold text-slate-800">{label}</div>
@@ -625,7 +636,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [] }) 
                       <span>{copy.mediaDefault}</span>
                       <select
                         className={fieldClass()}
-                        value={draft[defKey]}
+                        value={draft[defaultKey]}
                         onChange={(event) => setMediaDefault(modality, event.target.value)}
                       >
                         {selected.map((id) => (
