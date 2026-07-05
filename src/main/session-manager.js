@@ -675,6 +675,10 @@ class SessionManager {
       delete session.agentResumeId;
       changed = true;
     }
+    if (session.agentResumeBinding) {
+      delete session.agentResumeBinding;
+      changed = true;
+    }
     if (session.claudeSessionId) {
       delete session.claudeSessionId;
       changed = true;
@@ -1014,7 +1018,7 @@ class SessionManager {
     this.save();
   }
 
-  claimAgentResumeId(sessionId, agentResumeId) {
+  claimAgentResumeId(sessionId, agentResumeId, binding = null) {
     const session = this._find(sessionId);
     const normalized = this._normalizeAgentResumeId(agentResumeId);
     if (!session || !normalized) return { ok: false, evictedSessionIds: [] };
@@ -1035,12 +1039,23 @@ class SessionManager {
       session.agentResumeId = normalized;
       changed = true;
     }
+    const nextBinding = binding && typeof binding === "object"
+      ? { ...binding, resumeId: normalized }
+      : null;
+    if (nextBinding) {
+      const current = JSON.stringify(session.agentResumeBinding || null);
+      const next = JSON.stringify(nextBinding);
+      if (current !== next) {
+        session.agentResumeBinding = nextBinding;
+        changed = true;
+      }
+    }
     if (changed) this.save();
     return { ok: true, evictedSessionIds };
   }
 
-  setAgentResumeId(sessionId, agentResumeId) {
-    return this.claimAgentResumeId(sessionId, agentResumeId).ok;
+  setAgentResumeId(sessionId, agentResumeId, binding = null) {
+    return this.claimAgentResumeId(sessionId, agentResumeId, binding).ok;
   }
 
   clearAgentResumeId(sessionId) {
@@ -1276,6 +1291,7 @@ class SessionManager {
     }
     session.messageCount = 0;
     delete session.agentResumeId;
+    delete session.agentResumeBinding;
     this._deleteSummaryFile(session.id);
     this.save();
   }

@@ -261,9 +261,27 @@ class TurnOrchestrator {
       return { ok: false, conflictOwnerId: existingOwner.id, evictedSessionIds: [sessionId] };
     }
 
+    let binding = null;
+    try {
+      const session = this.ctx.sessionManager?.findById?.(sessionId);
+      const project = session?.projectId && typeof this.ctx.projectManager?.find === "function"
+        ? this.ctx.projectManager.find(session.projectId)
+        : null;
+      const activeSkillIds = this.ctx.skillManager?.resolveSessionSkillIds?.(session) || [];
+      binding = require("./resume-binding").buildResumeBinding({
+        session,
+        project,
+        activeSkillIds,
+        sessionManager: this.ctx.sessionManager,
+        resumeId: agentResumeId,
+      });
+    } catch (err) {
+      log.warn("agent resume binding build failed open: %s", err?.message || String(err));
+    }
+
     const claim = typeof this.ctx.sessionManager.claimAgentResumeId === "function"
-      ? this.ctx.sessionManager.claimAgentResumeId(sessionId, agentResumeId)
-      : { ok: this.ctx.sessionManager.setAgentResumeId(sessionId, agentResumeId), evictedSessionIds: [] };
+      ? this.ctx.sessionManager.claimAgentResumeId(sessionId, agentResumeId, binding)
+      : { ok: this.ctx.sessionManager.setAgentResumeId(sessionId, agentResumeId, binding), evictedSessionIds: [] };
     if (!claim?.ok) return claim;
     for (const evictedSessionId of claim.evictedSessionIds || []) {
       if (evictedSessionId === sessionId) continue;
@@ -1019,13 +1037,13 @@ class TurnOrchestrator {
       if (blocked) return { ok: false, error: blocked.error, detail: blocked.detail };
     }
 
-    const ensured = opts.skipPreflight
+    let ensured = opts.skipPreflight
       ? { runner: this.ctx.runnerPool.get(session.id) }
       : ensureSessionRunner(this.ctx, session.id, {
           spawn: opts.spawnEngine !== false,
           permissionMode: opts.permissionMode,
         });
-    const runner = ensured.runner;
+    let runner = ensured.runner;
     if (!runner) {
       const error = ensured.error || "RUNNER_ERROR";
       const result = { ok: false, error };
@@ -1035,6 +1053,43 @@ class TurnOrchestrator {
         || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
       if (detail) result.detail = detail;
       return result;
+    }
+    if (!opts.skipPreflight && ensured.usedResume && session.agentResumeId) {
+      try {
+        const { verifyRunnerResumeContinuity } = require("./resume-continuity-guard");
+        const continuity = await verifyRunnerResumeContinuity({
+          runner,
+          sessionManager: this.ctx.sessionManager,
+          sessionId: session.id,
+        });
+        if (!continuity.ok) {
+          log.warn(
+            "opencode resume continuity mismatch; resetting engine session: session=%s resume=%s reason=%s local=%s official=%s",
+            session.id,
+            session.agentResumeId || "",
+            continuity.reason || "",
+            continuity.localUserSample || "",
+            continuity.officialUserSample || "",
+          );
+          this.ctx.sessionManager?.clearAgentResumeId?.(session.id);
+          this.ctx.runnerPool?.terminateSession?.(session.id);
+          ensured = ensureSessionRunner(this.ctx, session.id, {
+            spawn: opts.spawnEngine !== false,
+            permissionMode: opts.permissionMode,
+          });
+          runner = ensured.runner;
+          if (!runner) {
+            const error = ensured.error || "RUNNER_ERROR";
+            const result = { ok: false, error };
+            const detail = ensured.detail
+              || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
+            if (detail) result.detail = detail;
+            return result;
+          }
+        }
+      } catch (err) {
+        log.warn("opencode resume continuity check failed open: %s", err?.message || String(err));
+      }
     }
 
     const project =

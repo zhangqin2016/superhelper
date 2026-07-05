@@ -173,6 +173,8 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
   const configDir = skillManager.writeSessionAgentGuide(sessionId, session, project.path);
   const existingRunner = runnerPool.get(sessionId);
   const wasAlive = Boolean(existingRunner?.isAlive?.());
+  const activeSkillIds = skillManager.resolveSessionSkillIds(session);
+  const { buildResumeBinding, verifyResumeBinding } = require("./resume-binding");
   if (session.agentResumeId) {
     const owner = typeof sessionManager.findAgentResumeOwner === "function"
       ? sessionManager.findAgentResumeOwner(session.agentResumeId, session.id)
@@ -183,6 +185,27 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
         session.agentResumeId,
         owner.id,
         sessionId,
+      );
+      sessionManager.clearAgentResumeId(sessionId);
+      resetSessionEngineCache(sessionId);
+      runnerPool.terminateSession(sessionId);
+    }
+  }
+
+  if (session.agentResumeId) {
+    const expectedBinding = buildResumeBinding({
+      session,
+      project,
+      activeSkillIds,
+      sessionManager,
+      resumeId: session.agentResumeId,
+    });
+    const binding = verifyResumeBinding(session, expectedBinding);
+    if (!binding.ok) {
+      console.warn(
+        "[runner] agentResumeId binding mismatch for session %s (%s) - starting fresh",
+        sessionId,
+        binding.reason,
       );
       sessionManager.clearAgentResumeId(sessionId);
       resetSessionEngineCache(sessionId);
@@ -207,7 +230,7 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     // servers get loaded, so a disabled/unselected workspace skill no longer
     // exposes its tools (and the assistant no longer "sees" a system the user
     // turned off).
-    activeSkillIds: skillManager.resolveSessionSkillIds(session),
+    activeSkillIds,
     stagingDir,
     resumeSessionId,
     configDir,
