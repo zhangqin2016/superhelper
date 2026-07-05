@@ -27,6 +27,11 @@ function writeRemoteConfig(effectiveConfig) {
     }),
     "utf8",
   );
+  try {
+    require("../src/main/remote-config.js").reloadRemoteConfigCache();
+  } catch {
+    // remote-config may not be loaded yet.
+  }
 }
 
 writeRemoteConfig({
@@ -61,5 +66,43 @@ assert.deepEqual(
   ["dashscope"],
   "stale remote media selection is preserved as the server default contract, not mutated by the client",
 );
+
+writeRemoteConfig({
+  media: {
+    image: { providers: ["lily", "dashscope"], default: "lily" },
+    video: { providers: ["lily", "dashscope"], default: "lily" },
+    speech: { providers: ["lily", "dashscope"], default: "lily" },
+  },
+  runtime: {
+    env: {
+      LILY_MEDIA_IMAGE_ENDPOINT: "https://lily.example.com/llm/media/lily/image/generate",
+      LILY_MEDIA_VIDEO_ENDPOINT: "https://lily.example.com/llm/media/lily/video/generate",
+      LILY_MEDIA_SPEECH_ENDPOINT: "https://lily.example.com/llm/media/lily/speech/generate",
+    },
+  },
+});
+
+{
+  const env = settings.getMediaProviderSpawnEnv();
+  assert.equal(env.LILY_IMAGE_PROVIDER, "lily", "server default must drive image execution when local JSON has no explicit choice");
+  assert.equal(env.LILY_VIDEO_PROVIDER, "lily", "server default must drive video execution when local JSON has no explicit choice");
+  assert.equal(env.LILY_SPEECH_PROVIDER, "lily", "server default must drive speech execution when local JSON has no explicit choice");
+}
+
+{
+  const result = settings.setModalityChoice("image", "service", "lily");
+  assert.equal(result.ok, true, "explicitly choosing Lily should be accepted");
+  const stored = JSON.parse(fs.readFileSync(path.join(root, "media-provider-settings.json"), "utf8"));
+  assert.deepEqual(
+    stored.image,
+    { source: "service", provider: "lily" },
+    "explicit client media choice must be persisted so new runs execute with the selected provider",
+  );
+  assert.equal(
+    settings.getMediaProviderSpawnEnv().LILY_IMAGE_PROVIDER,
+    "lily",
+    "persisted service choice must become execution env",
+  );
+}
 
 console.log("media-provider-settings: ok");

@@ -9,6 +9,7 @@ function buildLiveEngineEnvPatch() {
   const { loadSettingsEnv } = require("./agent-settings");
   const lilyEnv = normalizeToLilyEnv({
     ...loadSettingsEnv(),
+    ...require("./remote-config").getRemoteRuntimeEnvSync(),
     ...getUserApiEnv(),
     ...getActivePresetEnv(),
   });

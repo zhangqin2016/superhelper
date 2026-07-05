@@ -233,11 +233,13 @@ function byokModelEnv(provider, keys, modality) {
 
 function getMediaProviderSpawnEnv() {
   const settings = loadSettings();
+  const serviceSelection = remoteMediaSelection();
   const env = {};
   for (const modality of MODALITIES) {
     const choice = settings[modality];
     const providerEnvVar = MODALITY_ENV[modality];
-    if (choice.provider && providerEnvVar) env[providerEnvVar] = choice.provider;
+    const provider = choice.provider || serviceSelection?.[modality]?.default || "";
+    if (provider && providerEnvVar) env[providerEnvVar] = provider;
     if (choice.source === "own" && choice.provider) {
       Object.assign(env, byokEnv(choice.provider, settings.keys), byokModelEnv(choice.provider, settings.keys, modality));
     }

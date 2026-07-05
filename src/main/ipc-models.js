@@ -72,7 +72,7 @@ function registerSearchHandlers(ctx) {
       return r.ok
         ? { ok: true, ...require("./search-settings").listSearchSettingsPublic() }
         : r;
-    }, { liveEnv: false });
+    });
   });
 
   ipcMain.handle("search:set-searxng-url", (_event, url) => {
@@ -81,7 +81,7 @@ function registerSearchHandlers(ctx) {
       return r.ok
         ? { ok: true, ...require("./search-settings").listSearchSettingsPublic() }
         : r;
-    }, { liveEnv: false });
+    });
   });
 }
 
@@ -93,14 +93,14 @@ function registerMediaProviderHandlers(ctx) {
     return withRunnerChange(ctx, () => {
       const r = settings().setModalityChoice(payload?.modality, payload?.source, payload?.provider);
       return r.ok ? { ok: true, ...settings().listMediaProvidersPublic() } : r;
-    }, { liveEnv: false });
+    });
   });
 
   ipcMain.handle("media-providers:set-key", (_event, payload) => {
     return withRunnerChange(ctx, () => {
       const r = settings().setProviderKey(payload?.provider, payload?.values || {});
       return r.ok ? { ok: true, ...settings().listMediaProvidersPublic() } : r;
-    }, { liveEnv: false });
+    });
   });
 }
 
