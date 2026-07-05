@@ -17,6 +17,10 @@ const updateEnabledSchema = z.object({
   enabled: z.boolean(),
 });
 
+export function decideRuntimePackUpsert(existingPack) {
+  return existingPack?.id ? { action: "update", id: existingPack.id } : { action: "create", id: null };
+}
+
 export function registerAdminRuntimePackRoutes(app, { audit }) {
   app.get(
     "/api/admin/runtime-packs",
@@ -43,19 +47,15 @@ export function registerAdminRuntimePackRoutes(app, { audit }) {
     {
       schema: {
         tags: ["admin:runtime-packs"],
-        summary: "Create a runtime pack",
-        description: "Inserts a new runtime-pack artifact record for a pack/platform/version.",
+        summary: "Create or update a runtime pack",
+        description: "Upserts a runtime-pack artifact record for a pack/platform/version.",
         body: zodBody(createPackSchema),
         response: { 201: okResponse({ id: { type: "string" } }) },
       },
     },
     async (request, reply) => {
-    const input = createPackSchema.parse(request.body);
-    const id = publicId("rpack");
-    await db
-      .insertInto("runtime_packs")
-      .values({
-        id,
+      const input = createPackSchema.parse(request.body);
+      const values = {
         pack_id: input.packId,
         platform: input.platform,
         url: input.url,
@@ -63,14 +63,27 @@ export function registerAdminRuntimePackRoutes(app, { audit }) {
         version: input.version,
         size_bytes: input.sizeBytes || null,
         enabled: input.enabled,
-      })
-      .execute();
-    await audit(request, "runtime_pack.create", "runtime_pack", id, {
-      packId: input.packId,
-      platform: input.platform,
-      version: input.version,
-    });
-    return reply.code(201).send({ ok: true, id });
+      };
+      const existing = await db
+        .selectFrom("runtime_packs")
+        .select(["id"])
+        .where("pack_id", "=", input.packId)
+        .where("platform", "=", input.platform)
+        .where("version", "=", input.version)
+        .executeTakeFirst();
+      const decision = decideRuntimePackUpsert(existing);
+      const id = decision.id || publicId("rpack");
+      if (decision.action === "update") {
+        await db.updateTable("runtime_packs").set(values).where("id", "=", id).execute();
+      } else {
+        await db.insertInto("runtime_packs").values({ id, ...values }).execute();
+      }
+      await audit(request, decision.action === "update" ? "runtime_pack.update" : "runtime_pack.create", "runtime_pack", id, {
+        packId: input.packId,
+        platform: input.platform,
+        version: input.version,
+      });
+      return reply.code(decision.action === "update" ? 200 : 201).send({ ok: true, id });
     },
   );
 
