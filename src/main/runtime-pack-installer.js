@@ -535,6 +535,14 @@ function archiveExtensionForArtifact(artifact = {}) {
 
 async function resolveArtifact(packId) {
   const result = await require("./service-client").runtimePackArtifact(packId, platformKey());
+  if (!result?.ok) {
+    return {
+      ok: false,
+      error: result?.error || "SERVICE_REQUEST_FAILED",
+      status: result?.status || null,
+      detail: result?.detail || null,
+    };
+  }
   const artifact = result?.json?.artifact || result?.artifact || null;
   if (!artifact?.url) return { ok: false, error: "NO_RUNTIME_PACK_ARTIFACT" };
   return { ok: true, artifact };
@@ -559,10 +567,11 @@ async function checkRuntimePackAvailability(packIds = []) {
     }
     try {
       const resolved = await resolveArtifact(id);
+      const error = resolved.ok ? null : resolved.error || "NO_RUNTIME_PACK_ARTIFACT";
       packs.push({
         id,
-        available: Boolean(resolved.ok),
-        error: resolved.ok ? null : resolved.error || "NO_RUNTIME_PACK_ARTIFACT",
+        available: resolved.ok ? true : error === "NO_RUNTIME_PACK_ARTIFACT" ? false : null,
+        error,
         artifact: resolved.ok
           ? {
               version: resolved.artifact?.version || null,

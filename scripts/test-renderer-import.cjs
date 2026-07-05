@@ -16,6 +16,29 @@ const capturedRevealPaths = [];
 const capturedOpenPaths = [];
 const capturedAccountLoginPayloads = [];
 const delayedMediaStatusCalls = new Map();
+let win;
+
+const hardTimeout = setTimeout(() => {
+  console.error("test-renderer-import: timed out");
+  try {
+    win?.destroy?.();
+  } catch {
+    // Best effort test cleanup.
+  }
+  app.exit(1);
+  process.exit(1);
+}, Number(process.env.TEST_RENDERER_IMPORT_TIMEOUT_MS || 180000));
+
+function finish(code = app.exitCode || 0) {
+  clearTimeout(hardTimeout);
+  try {
+    win?.destroy?.();
+  } catch {
+    // Best effort test cleanup.
+  }
+  app.exit(code);
+  setTimeout(() => process.exit(code), 250).unref?.();
+}
 
 function makeTinyPdf() {
   const objects = [
@@ -244,7 +267,7 @@ ipcMain.handle("apps:catalog", () => ({
 
 app.whenReady().then(async () => {
   const tinyPdfBase64 = makeTinyPdf();
-  const win = new BrowserWindow({
+  win = new BrowserWindow({
     show: false,
     webPreferences: {
       preload: path.join(root, "src/preload.js"),
@@ -792,6 +815,107 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(hoistedMediaResult);
+    const hoistedMediaNarrativeCleanResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const xml = '<generated_media type="image">\\n  <file path="/tmp/out/photo.png" bytes="1024" />\\n</generated_media>';
+        const tools = new Map();
+        tools.set("t1", { id: "t1", name: "Bash", status: "done", result: { content: xml } });
+        const liveTurn = {
+          turnId: "turn_hoist_media_clean", phase: "done",
+          assistantText: "Done.\\n\\n" + xml + "\\n\\nSaved.",
+          thinkingText: "", contentBlocks: [], processEvents: [], tools, timeline: [],
+          notices: [], permissions: new Map(), questions: new Map(), hooks: new Map(),
+          resultBlocks: [], artifacts: [], startedAt: Date.now(),
+          final: { type: "turn.completed", payload: { assistant: "Done.\\n\\n" + xml + "\\n\\nSaved." }, ts: Date.now() },
+        };
+        const article = createLiveTurnArticleShell(liveTurn);
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "s_hoist_clean", sealed: true });
+        if (!article.querySelector('[data-role="artifacts"] .assistant-hoisted-media img')) {
+          throw new Error("generated media should still hoist after narrative cleanup");
+        }
+        const narrativeText = article.querySelector('[data-role="narrative"]')?.textContent || "";
+        if (narrativeText.includes("<generated_media") || narrativeText.includes("</generated_media>")) {
+          throw new Error("generated_media protocol marker leaked into narrative: " + narrativeText);
+        }
+        if (!narrativeText.includes("Done.") || !narrativeText.includes("Saved.")) {
+          throw new Error("narrative cleanup should preserve surrounding prose: " + narrativeText);
+        }
+        return "hoisted-generated-media-narrative-clean-regression: ok";
+      }
+    )()`);
+    console.log(hoistedMediaNarrativeCleanResult);
+    const hoistedMediaGalleryResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const tools = new Map();
+        for (let index = 1; index <= 5; index += 1) {
+          const xml = '<generated_media type="image">\\n  <file path="/tmp/out/gallery-' + index + '.png" bytes="1024" />\\n</generated_media>';
+          tools.set("t" + index, { id: "t" + index, name: "Bash", status: "done", result: { content: xml } });
+        }
+        tools.set("tv", {
+          id: "tv",
+          name: "Bash",
+          status: "done",
+          result: { content: '<generated_media type="video">\\n  <file path="/tmp/out/gallery-video.mp4" bytes="2048" />\\n</generated_media>' },
+        });
+        const liveTurn = {
+          turnId: "turn_hoist_gallery", phase: "done", assistantText: "Gallery ready.",
+          thinkingText: "", contentBlocks: [], processEvents: [], tools, timeline: [],
+          notices: [], permissions: new Map(), questions: new Map(), hooks: new Map(),
+          resultBlocks: [], artifacts: [], startedAt: Date.now(),
+          final: { type: "turn.completed", payload: { assistant: "Gallery ready." }, ts: Date.now() },
+        };
+        const article = createLiveTurnArticleShell(liveTurn);
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "s_hoist_gallery", sealed: true });
+        const fileBlocks = article.querySelectorAll('[data-role="artifacts"] .assistant-hoisted-media .assistant-generated-media.is-file');
+        if (fileBlocks.length !== 1) {
+          throw new Error("generated results should aggregate into one file gallery block, got " + fileBlocks.length);
+        }
+        const images = fileBlocks[0].querySelectorAll("img");
+        if (images.length !== 5) {
+          throw new Error("generated image gallery should keep every image, got " + images.length);
+        }
+        if (fileBlocks[0].querySelectorAll("video").length !== 1) {
+          throw new Error("generated file gallery should keep videos in the same grid");
+        }
+        const paths = [...fileBlocks[0].querySelectorAll("figcaption code")].map((node) => node.textContent);
+        if (new Set(paths).size !== 6 || !paths.includes("/tmp/out/gallery-5.png") || !paths.includes("/tmp/out/gallery-video.mp4")) {
+          throw new Error("generated file gallery should preserve paths: " + paths.join(","));
+        }
+        return "hoisted-generated-media-gallery-regression: ok";
+      }
+    )()`);
+    console.log(hoistedMediaGalleryResult);
+    const generatedMediaNarrativePreserveResult = await win.webContents.executeJavaScript(`(
+      async () => {
+        const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
+        const xml = '<generated_media type="image">\\n  <file path="/tmp/out/example.png" bytes="1024" />\\n</generated_media>';
+        const text = "Example marker:\\n\\n~~~xml\\n" + xml + "\\n~~~";
+        const liveTurn = {
+          turnId: "turn_media_marker_example", phase: "done",
+          assistantText: text,
+          thinkingText: "", contentBlocks: [], processEvents: [], tools: new Map(), timeline: [],
+          notices: [], permissions: new Map(), questions: new Map(), hooks: new Map(),
+          resultBlocks: [], artifacts: [], startedAt: Date.now(),
+          final: { type: "turn.completed", payload: { assistant: text }, ts: Date.now() },
+        };
+        const article = createLiveTurnArticleShell(liveTurn);
+        renderLiveTurnArticle(article, liveTurn, { sessionId: "s_marker_example", sealed: true });
+        const narrativeText = article.querySelector('[data-role="narrative"]')?.textContent || "";
+        if (
+          !(narrativeText.includes("<generated_media") || narrativeText.includes("&lt;generated_media")) ||
+          !(narrativeText.includes("</generated_media>") || narrativeText.includes("&lt;/generated_media"))
+        ) {
+          throw new Error("generated_media text without hoisted tool media should be preserved: " + narrativeText);
+        }
+        if (article.querySelector('[data-role="artifacts"] .assistant-hoisted-media')) {
+          throw new Error("narrative-only generated_media text should not create hoisted media");
+        }
+        return "generated-media-narrative-preserve-regression: ok";
+      }
+    )()`);
+    console.log(generatedMediaNarrativePreserveResult);
     // Real-world regression: version-skewed generate-video.cjs printed only
     // "Done! … saved to: <path>" with NO <generated_media> marker. The video file
     // still lives under generated-assets/, so it must still hoist + preview. WHY:
@@ -1131,7 +1255,11 @@ app.whenReady().then(async () => {
           throw new Error("large history switch should mount a bounded recent window, got " + count);
         }
         if (!text.includes("large history message 239")) {
-          throw new Error("large history window should keep the latest message");
+          throw new Error("large history window should keep the latest message: " + JSON.stringify({
+            count,
+            start: text.slice(0, 160),
+            end: text.slice(-160),
+          }));
         }
         if (text.includes("large history message 0")) {
           throw new Error("large history window should not mount the oldest message on first paint");
@@ -2298,5 +2426,8 @@ app.whenReady().then(async () => {
     console.log(runtimePolicySettingsResult);
     console.log("test-renderer-import: ok");
   }
-  app.quit();
+  finish(app.exitCode || 0);
+}).catch((err) => {
+  console.error(err?.stack || err?.message || err);
+  finish(1);
 });

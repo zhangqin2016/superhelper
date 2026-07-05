@@ -298,6 +298,14 @@ const COMMITTED_RENDER_CHUNK = 5;
 const COMMITTED_INITIAL_WINDOW = 80;
 const COMMITTED_WINDOW_THRESHOLD = 160;
 
+function scheduleCommittedRenderPump(fn) {
+  if (typeof requestAnimationFrame === "function" && !document.hidden) {
+    requestAnimationFrame(fn);
+  } else {
+    setTimeout(fn, 0);
+  }
+}
+
 function messageTimestampMs(message = {}) {
   const parsed = Date.parse(message.timestamp || message.createdAt || message.record?.startedAt || "");
   return Number.isFinite(parsed) ? parsed : null;
@@ -441,7 +449,7 @@ function renderCommittedMessages(sessionId, opts = {}) {
   const pending = collectUnrenderedCommittedMessages(renderMessages, keys);
   if (pending.length === 0) return 0;
 
-  if (pending.length <= COMMITTED_RENDER_CHUNK) {
+  if (pending.length <= COMMITTED_RENDER_CHUNK || renderMessages.length <= COMMITTED_INITIAL_WINDOW || opts.preserveScroll) {
     for (const { message } of pending) {
       appendCommittedMessage(sessionId, runtime, message);
     }
@@ -459,7 +467,7 @@ function renderCommittedMessages(sessionId, opts = {}) {
       appendCommittedMessage(sessionId, runtime, message);
     }
     if (cursor < pending.length) {
-      requestAnimationFrame(pump);
+      scheduleCommittedRenderPump(pump);
     } else {
       syncWorkbenchEmptyState(ensurePanel(sessionId).listEl);
       opts.onComplete?.();

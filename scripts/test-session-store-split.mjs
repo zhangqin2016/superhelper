@@ -43,6 +43,8 @@ const projectManager = {
   },
 };
 
+let manager;
+
 try {
   fs.mkdirSync(userData, { recursive: true });
   fs.writeFileSync(
@@ -66,7 +68,7 @@ try {
     }, null, 2),
   );
 
-  const manager = new SessionManager(projectManager);
+  manager = new SessionManager(projectManager);
   manager.load();
 
   if (fs.existsSync(sessionsConfigPath())) {
@@ -115,6 +117,7 @@ try {
 
   console.log("session-store-split: ok");
 } finally {
+  manager?.close?.();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
 
@@ -126,6 +129,8 @@ require.cache[electronPath].exports.app.getPath = (name) => {
   if (name === "documents") return mergeRoot;
   return mergeRoot;
 };
+
+manager = null;
 
 try {
   fs.mkdirSync(mergeUserData, { recursive: true });
@@ -160,7 +165,7 @@ try {
     }, null, 2),
   );
 
-  const manager = new SessionManager(projectManager);
+  manager = new SessionManager(projectManager);
   manager.load();
   const mergedConversation = manager.getConversation("s-legacy");
   if (mergedConversation[0]?.content !== "补迁移消息") {
@@ -174,6 +179,7 @@ try {
     throw new Error("merged legacy sessions.json should be removed");
   }
 } finally {
+  manager?.close?.();
   fs.rmSync(mergeRoot, { recursive: true, force: true });
 }
 
@@ -185,6 +191,8 @@ require.cache[electronPath].exports.app.getPath = (name) => {
   if (name === "documents") return repairRoot;
   return repairRoot;
 };
+
+manager = null;
 
 try {
   fs.mkdirSync(repairUserData, { recursive: true });
@@ -230,7 +238,7 @@ try {
     }, null, 2),
   );
 
-  const manager = new SessionManager(projectManager);
+  manager = new SessionManager(projectManager);
   manager.load();
 
   const list = JSON.parse(fs.readFileSync(sessionsIndexPath(), "utf8")).sessions.p1 || [];
@@ -247,6 +255,7 @@ try {
     throw new Error(`partial migrated session should be repaired without loss: ${JSON.stringify(repaired)}`);
   }
 } finally {
+  manager?.close?.();
   fs.rmSync(repairRoot, { recursive: true, force: true });
 }
 
@@ -258,6 +267,8 @@ require.cache[electronPath].exports.app.getPath = (name) => {
   if (name === "documents") return rescueRoot;
   return rescueRoot;
 };
+
+manager = null;
 
 try {
   fs.mkdirSync(sessionMessagesImportedDir(), { recursive: true });
@@ -286,7 +297,7 @@ try {
     }, null, 2),
   );
 
-  const manager = new SessionManager(projectManager);
+  manager = new SessionManager(projectManager);
   manager.load();
   const rescued = manager.getConversation("archived-session");
   if (rescued.length !== 2 || rescued[0].content !== "升级前的问题" || rescued[1].content !== "升级前的回答") {
@@ -298,6 +309,7 @@ try {
     throw new Error("imported archive rescue must not create synthetic recovered sessions");
   }
 } finally {
+  manager?.close?.();
   fs.rmSync(rescueRoot, { recursive: true, force: true });
 }
 
@@ -309,6 +321,8 @@ require.cache[electronPath].exports.app.getPath = (name) => {
   if (name === "documents") return backupRescueRoot;
   return backupRescueRoot;
 };
+
+manager = null;
 
 try {
   fs.mkdirSync(backupRescueUserData, { recursive: true });
@@ -346,12 +360,13 @@ try {
     }, null, 2),
   );
 
-  const manager = new SessionManager(projectManager);
+  manager = new SessionManager(projectManager);
   manager.load();
   const rescued = manager.getConversation("backup-session");
   if (rescued.length !== 2 || rescued[0].content !== "备份里的问题" || rescued[1].content !== "备份里的回答") {
     throw new Error(`existing session should rescue messages from legacy sessions backup: ${JSON.stringify(rescued)}`);
   }
 } finally {
+  manager?.close?.();
   fs.rmSync(backupRescueRoot, { recursive: true, force: true });
 }

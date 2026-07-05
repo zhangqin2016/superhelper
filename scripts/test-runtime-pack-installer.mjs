@@ -103,6 +103,10 @@ try {
   const unavailable = await installer.checkRuntimePackAvailability(["ffmpeg"]);
   assert.equal(unavailable.packs[0].available, false);
   assert.equal(unavailable.packs[0].error, "NO_RUNTIME_PACK_ARTIFACT");
+  serviceClient.runtimePackArtifact = async () => ({ ok: false, error: "SERVICE_REQUEST_FAILED", detail: "fetch failed" });
+  const serviceFailed = await installer.checkRuntimePackAvailability(["ffmpeg"]);
+  assert.equal(serviceFailed.packs[0].available, null, "service failures should not be reported as missing artifacts");
+  assert.equal(serviceFailed.packs[0].error, "SERVICE_REQUEST_FAILED");
   serviceClient.runtimePackArtifact = originalRuntimePackArtifact;
 
   const bundledInstall = await installer.installRuntimePack("web-automation");

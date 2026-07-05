@@ -260,6 +260,30 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
   }, state);
   assert(fail.type === "tool.done" && fail.payload.isError === true && fail.payload.content === "boom",
     "tool error -> tool.done isError");
+
+  const nativeSkillState = createOpencodeRuntimeState();
+  const nativeSkillFail = reduce("message.part.updated", {
+    part: {
+      type: "tool",
+      tool: "skill",
+      callID: "skill_lily_browser_qa_old",
+      state: {
+        status: "error",
+        error: 'Skill "lily-browser-qa" not found. Available skills: customize-opencode',
+        input: { name: "lily-browser-qa" },
+      },
+    },
+  }, nativeSkillState);
+  assert(nativeSkillFail.drafts.some((draft) => draft.type === "tool.done"), "native Lily skill failure still records the failed tool");
+  assert(nativeSkillFail.drafts.some((draft) => draft.type === "engine.notice" && draft.payload.notice.code === "lilyNativeSkillFallback"),
+    "native Lily skill failure emits a visible fallback notice");
+  assert(nativeSkillFail.drafts.some((draft) => draft.type === "runtime.control" && draft.payload.reason === "lilyNativeSkillFallback"),
+    "native Lily skill failure emits an auto-steer recovery control");
+  const nativeSkillDone = nativeSkillFail.drafts.find((draft) => draft.type === "tool.done");
+  assert(nativeSkillDone.payload.content.includes("resources/skills-catalog/lily-browser-qa/SKILL.md"),
+    "native Lily skill failure tells the agent to read the Lily capability guide");
+  assert(nativeSkillDone.payload.content.includes("This native skill failure should not stop the task"),
+    "native Lily skill failure must fail open instead of stopping the task");
 }
 
 // --- tool that goes straight to completed still works -----------------------
@@ -321,6 +345,38 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
     content: [{ type: "text", text: "duplicate" }],
     provider: { executed: true },
   }, state).drafts.length === 0, "duplicate v2 tool success suppressed");
+
+  const nativeSkillState = createOpencodeRuntimeState();
+  const nativeSkillCalled = oneDraft("session.next.tool.called", {
+    sessionID: "ses_1",
+    assistantMessageID: "msg_1",
+    callID: "skill_lily_browser_qa",
+    tool: "skill",
+    input: { name: "lily-browser-qa" },
+    title: "lily-browser-qa",
+  }, nativeSkillState);
+  assert(nativeSkillCalled.type === "tool.started" && nativeSkillCalled.payload.name === "skill",
+    "native skill tool still starts normally");
+  const nativeSkillFailed = reduce("session.next.tool.failed", {
+    sessionID: "ses_1",
+    assistantMessageID: "msg_1",
+    callID: "skill_lily_browser_qa",
+    tool: "skill",
+    input: { name: "lily-browser-qa" },
+    content: [{ type: "text", text: 'Skill "lily-browser-qa" not found. Available skills: customize-opencode' }],
+    title: "lily-browser-qa",
+  }, nativeSkillState);
+  assert(nativeSkillFailed.drafts.length === 3, `native Lily skill failure should emit tool.done + fallback notice + recovery control: ${JSON.stringify(nativeSkillFailed.drafts)}`);
+  assert(nativeSkillFailed.drafts[0].type === "tool.done" && nativeSkillFailed.drafts[0].payload.isError === true,
+    "native Lily skill failure remains visible as a failed tool");
+  assert(nativeSkillFailed.drafts[0].payload.content.includes("Do not run `skill lily-browser-qa`"),
+    "native Lily skill failure explains the native/Lily boundary");
+  assert(nativeSkillFailed.drafts[0].payload.content.includes("resources/skills-catalog/lily-browser-qa/SKILL.md"),
+    "native Lily skill failure points to the Lily guide path");
+  assert(nativeSkillFailed.drafts[1].type === "engine.notice" && nativeSkillFailed.drafts[1].payload.notice.code === "lilyNativeSkillFallback",
+    "native Lily skill failure emits a fallback notice in v2 events");
+  assert(nativeSkillFailed.drafts[2].type === "runtime.control" && nativeSkillFailed.drafts[2].payload.text.includes("Read tool"),
+    "native Lily skill failure emits a recovery steer instruction in v2 events");
 }
 
 // --- OpenCode dual-write old+new tool events must not duplicate done --------

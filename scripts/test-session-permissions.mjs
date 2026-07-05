@@ -7,6 +7,26 @@ import module from "node:module";
 const require = module.createRequire(import.meta.url);
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lily-session-permissions-"));
 
+function makeWritable(root) {
+  if (!fs.existsSync(root)) return;
+  for (const ent of fs.readdirSync(root, { withFileTypes: true })) {
+    const full = path.join(root, ent.name);
+    if (ent.isDirectory()) {
+      makeWritable(full);
+    }
+    try {
+      fs.chmodSync(full, 0o700);
+    } catch {
+      // Best effort for Windows cleanup after permission-mode tests.
+    }
+  }
+  try {
+    fs.chmodSync(root, 0o700);
+  } catch {
+    // Best effort for Windows cleanup after permission-mode tests.
+  }
+}
+
 const electronPath = require.resolve("electron");
 require.cache[electronPath] = {
   id: electronPath,
@@ -38,9 +58,11 @@ const projectManager = {
   },
 };
 
+let manager;
+
 try {
   setActivePermissionMode("ask");
-  const manager = new SessionManager(projectManager);
+  manager = new SessionManager(projectManager);
   manager.load();
   const session = manager.getActive();
   if (!session) throw new Error("expected default session");
@@ -108,5 +130,7 @@ try {
 
   console.log("session-permissions: ok");
 } finally {
-  fs.rmSync(tempRoot, { recursive: true, force: true });
+  manager?.close?.();
+  makeWritable(tempRoot);
+  fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

@@ -47,7 +47,11 @@ const installTimeoutMs = (() => {
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : 300000;
 })();
+const copyRetryDelayMs = 500;
+const copyRetryAttempts = 12;
 const installer = String(process.env.OPENCODE_FETCH_INSTALLER || "auto").toLowerCase();
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const bunCommand = process.platform === "win32" ? "bun.cmd" : "bun";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "oc-fetch-"));
 console.log(`[fetching opencode-ai@${version} (${key}) ...]`);
@@ -65,34 +69,59 @@ function targetEnv() {
 
 function install(cmd, cmdArgs) {
   console.log(`[install] ${cmd} ${cmdArgs.join(" ")} (timeout ${Math.round(installTimeoutMs / 1000)}s)`);
-  execFileSync(cmd, cmdArgs, {
+  const isCmdShim = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(cmd);
+  const actualCmd = isCmdShim ? (process.env.ComSpec || "cmd.exe") : cmd;
+  const actualArgs = isCmdShim ? ["/d", "/s", "/c", cmd, ...cmdArgs] : cmdArgs;
+  execFileSync(actualCmd, actualArgs, {
     cwd: tmp,
     stdio: "inherit",
     timeout: installTimeoutMs,
-    env: cmd === "npm" ? targetEnv() : process.env,
+    env: path.basename(cmd).toLowerCase().startsWith("npm") ? targetEnv() : process.env,
   });
 }
 
 function installEngine() {
   if (installer === "npm") {
-    install("npm", ["install", "--include=optional", `opencode-ai@${version}`]);
+    install(npmCommand, ["install", "--include=optional", `opencode-ai@${version}`]);
     return;
   }
   if (installer === "bun") {
-    install("bun", ["add", "--os=*", "--cpu=*", `opencode-ai@${version}`]);
+    install(bunCommand, ["add", "--os=*", "--cpu=*", `opencode-ai@${version}`]);
     return;
   }
   if (installer !== "auto") {
     console.warn(`[install] unknown OPENCODE_FETCH_INSTALLER=${installer}; using auto`);
   }
   try {
-    install("bun", ["add", "--os=*", "--cpu=*", `opencode-ai@${version}`]);
+    install(bunCommand, ["add", "--os=*", "--cpu=*", `opencode-ai@${version}`]);
   } catch (err) {
     console.warn(`[install] bun failed or timed out; falling back to npm: ${err?.message || err}`);
-    install("npm", ["install", "--include=optional", `opencode-ai@${version}`]);
+    install(npmCommand, ["install", "--include=optional", `opencode-ai@${version}`]);
   }
 }
 installEngine();
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function copyBinaryWithRetry(src, dest) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= copyRetryAttempts; attempt += 1) {
+    try {
+      fs.copyFileSync(src, dest);
+      return;
+    } catch (err) {
+      lastError = err;
+      if (!["EBUSY", "EPERM", "EACCES"].includes(err?.code) || attempt === copyRetryAttempts) break;
+      console.warn(
+        `[copy] ${err.code} while writing ${path.relative(repoRoot, dest)}; retry ${attempt}/${copyRetryAttempts - 1}`,
+      );
+      sleepSync(copyRetryDelayMs);
+    }
+  }
+  throw lastError;
+}
 
 const exe = key.startsWith("win32") ? "opencode.exe" : "opencode";
 const srcCandidates = [
@@ -105,7 +134,7 @@ if (!src) { console.error(`binary not found for ${pkg}; looked in:\n  ${srcCandi
 const destDir = path.join(repoRoot, "bundles", key, "opencode", "bin");
 fs.mkdirSync(destDir, { recursive: true });
 const dest = path.join(destDir, exe);
-fs.copyFileSync(src, dest);
+copyBinaryWithRetry(src, dest);
 fs.chmodSync(dest, 0o755);
 fs.rmSync(tmp, { recursive: true, force: true });
 

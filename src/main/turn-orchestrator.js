@@ -610,6 +610,7 @@ class TurnOrchestrator {
         this._emit(sessionId, "prompt_suggestions.updated", payload, { turnId: null });
         break;
       case "runtime.control":
+        this._handleRuntimeControl(sessionId, payload);
         break;
       default:
         if (TERMINAL_TYPES.has(type)) break;
@@ -698,6 +699,26 @@ class TurnOrchestrator {
     );
     this._emit(sessionId, "turn.steered", { text, steerSeq }, { turnId });
     return { ok: true, steered: true, turnId, steerSeq };
+  }
+
+  _handleRuntimeControl(sessionId, payload = {}) {
+    if (payload?.action !== "steer" || payload?.reason !== "lilyNativeSkillFallback") return;
+    if (process.env.LILY_ENABLE_STEER === "0") return;
+    const skillId = String(payload.skillId || "").trim();
+    const text = String(payload.text || "").trim();
+    if (!/^lily-[a-z0-9-]+$/i.test(skillId) || !text) return;
+    const state = this._state(sessionId);
+    if (!state.turnId || state.terminalEmitted) return;
+    if (!state.lilyNativeSkillFallbackSteers) state.lilyNativeSkillFallbackSteers = new Set();
+    if (state.lilyNativeSkillFallbackSteers.has(skillId)) return;
+    state.lilyNativeSkillFallbackSteers.add(skillId);
+    const runner = this.ctx.runnerPool?.get?.(sessionId);
+    if (!runner?.isBusy?.() || typeof runner.steer !== "function") return;
+    void runner.steer({ text, files: [] }).then((ok) => {
+      if (!ok) log.warn("native Lily skill fallback steer was rejected for %s", skillId);
+    }).catch((err) => {
+      log.warn("native Lily skill fallback steer failed for %s: %s", skillId, err?.message || err);
+    });
   }
 
   // Show the user's message in the conversation IMMEDIATELY, before any slow work

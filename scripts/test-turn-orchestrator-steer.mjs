@@ -125,4 +125,42 @@ if (runner.steerCalls.length !== 0) throw new Error("kill-switch must NOT call t
 delete process.env.LILY_ENABLE_STEER;
 console.log("steer: kill-switch fallback ok");
 
+// --- 4. runtime control: native Lily skill failure auto-steers once ----------
+delete process.env.LILY_ENABLE_STEER;
+putBusy();
+runner.steerResult = true;
+runner.steerCalls.length = 0;
+orch.ingest("s1", [{
+  type: "runtime.control",
+  payload: {
+    action: "steer",
+    reason: "lilyNativeSkillFallback",
+    skillId: "lily-browser-qa",
+    text: "Read resources/skills-catalog/lily-browser-qa/SKILL.md and continue.",
+  },
+}]);
+await new Promise((resolve) => setTimeout(resolve, 20));
+if (runner.steerCalls.length !== 1) {
+  throw new Error(`runtime control should auto-steer once, got ${runner.steerCalls.length}`);
+}
+if (!String(runner.steerCalls[0]?.text || "").includes("lily-browser-qa")) {
+  throw new Error(`runtime control steer should carry the Lily guide instruction: ${JSON.stringify(runner.steerCalls)}`);
+}
+if (orch._state("s1").queue.length !== 0) throw new Error("runtime control steer must not queue");
+if (messages.some((m) => m.meta?.steer || m.steer)) {
+  throw new Error("runtime control auto-steer must not create a visible user steer message");
+}
+orch.ingest("s1", [{
+  type: "runtime.control",
+  payload: {
+    action: "steer",
+    reason: "lilyNativeSkillFallback",
+    skillId: "lily-browser-qa",
+    text: "Duplicate should be ignored.",
+  },
+}]);
+await new Promise((resolve) => setTimeout(resolve, 20));
+if (runner.steerCalls.length !== 1) throw new Error("runtime control auto-steer should be de-duped per skill");
+console.log("steer: native Lily skill fallback control ok");
+
 console.log("test-turn-orchestrator-steer: ALL_OK");

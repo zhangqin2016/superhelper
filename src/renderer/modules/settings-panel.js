@@ -237,9 +237,11 @@ export function openSettingsPage(pageId = "general") {
   refreshAppPolicy()
     .then(() => {
       if (panelOpen) switchSettingsPage(activeSettingsPage);
+      return refreshSettingsPanelData();
     })
-    .catch(() => {});
-  refreshSettingsPanelData();
+    .catch(() => {
+      refreshSettingsPanelData();
+    });
 }
 
 function refreshSettingsPanelData() {
@@ -299,7 +301,14 @@ export async function initSettingsPanel() {
 
   openBtn.addEventListener("click", () => {
     setPanelOpen(true);
-    refreshSettingsPanelData();
+    refreshAppPolicy()
+      .then(() => {
+        if (panelOpen) switchSettingsPage(activeSettingsPage);
+        return refreshSettingsPanelData();
+      })
+      .catch(() => {
+        refreshSettingsPanelData();
+      });
   });
 
   closeBtn?.addEventListener("click", () => setPanelOpen(false));

@@ -74,7 +74,7 @@ const EDITION_CONFIGS = {
   overseas: {
     id: "overseas",
     label: "Overseas",
-    serviceApiBaseUrl: "https://lilych.lilywb.cn",
+    serviceApiBaseUrl: "https://lilyxinjiapo.lilywb.cn",
     officialWebsiteUrl: "https://www.lilywb.cn",
     features: {
       account: false,

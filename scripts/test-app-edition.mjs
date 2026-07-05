@@ -35,7 +35,7 @@ withConfigEnv({ LILY_APP_EDITION: undefined }, (config) => {
 withConfigEnv({ LILY_APP_EDITION: "overseas" }, (config) => {
   assert.equal(config.appEdition().id, "overseas");
   assert.equal(config.appEdition().features.account, false);
-  assert.equal(config.appEdition().serviceApiBaseUrl, "https://lilych.lilywb.cn");
+  assert.equal(config.appEdition().serviceApiBaseUrl, "https://lilyxinjiapo.lilywb.cn");
 });
 
 {

@@ -35,8 +35,11 @@ const projectManager = {
   },
 };
 
+let manager;
+let reopened;
+
 try {
-  const manager = new SessionManager(projectManager);
+  manager = new SessionManager(projectManager);
   manager.load();
   const session = manager.getActive();
   if (!session) throw new Error("expected default session");
@@ -63,7 +66,7 @@ try {
   }
 
   // Durability across a fresh process: a new manager sees the same history.
-  const reopened = new SessionManager(projectManager);
+  reopened = new SessionManager(projectManager);
   reopened.load();
   const afterReopen = reopened.getConversation(session.id).map((m) => m.content);
   if (!afterReopen.includes("last question") || !afterReopen.includes("last answer")) {
@@ -72,5 +75,7 @@ try {
 
   console.log("session-save-flush: ok");
 } finally {
+  manager?.close?.();
+  reopened?.close?.();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }

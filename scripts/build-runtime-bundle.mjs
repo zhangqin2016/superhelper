@@ -108,6 +108,21 @@ function run(cmd, args, opts = {}) {
   }
 }
 
+function unzipArchive(archive, extractDir) {
+  if (process.platform === "win32") {
+    const quotePs = (value) => `'${String(value).replace(/'/g, "''")}'`;
+    run("powershell", [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      `Expand-Archive -LiteralPath ${quotePs(archive)} -DestinationPath ${quotePs(extractDir)} -Force`,
+    ]);
+    return;
+  }
+  run("unzip", ["-q", archive, "-d", extractDir]);
+}
+
 function runCapture(cmd, args, opts = {}) {
   return execFileSync(cmd, args, {
     encoding: "utf8",
@@ -196,7 +211,7 @@ async function installUv(platform, runtimeRoot) {
   ensureDir(extractDir);
 
   if (archive.endsWith(".zip")) {
-    run("unzip", ["-q", archive, "-d", extractDir]);
+    unzipArchive(archive, extractDir);
     purgeJunkUnder(extractDir);
   } else {
     run("tar", ["-xzf", archive, "-C", extractDir]);
@@ -225,7 +240,7 @@ async function installUv(platform, runtimeRoot) {
       rmrf(hostExtractDir);
       ensureDir(hostExtractDir);
       if (hostArchive.endsWith(".zip")) {
-        run("unzip", ["-q", hostArchive, "-d", hostExtractDir]);
+        unzipArchive(hostArchive, hostExtractDir);
         purgeJunkUnder(hostExtractDir);
       } else {
         run("tar", ["-xzf", hostArchive, "-C", hostExtractDir]);
@@ -507,11 +522,24 @@ async function installLibreOffice(platform, runtimeRoot) {
     const extractDir = path.join(loDest, "msi-extract");
     ensureDir(extractDir);
     run("msiexec", ["/a", archive, "/qb", `TARGETDIR=${extractDir}`]);
-    const programSrc = path.join(extractDir, "PFiles", "LibreOffice", "program");
-    if (!fs.existsSync(programSrc)) {
-      throw new Error(`LibreOffice program dir not found after MSI extract: ${programSrc}`);
+    const packagedRoot = path.join(extractDir, "PFiles", "LibreOffice");
+    const directRoot = fs.existsSync(path.join(extractDir, "program", "soffice.exe"))
+      ? extractDir
+      : null;
+    const installRoot = fs.existsSync(path.join(packagedRoot, "program", "soffice.exe"))
+      ? packagedRoot
+      : directRoot;
+    if (!installRoot) {
+      throw new Error(`LibreOffice program dir not found after MSI extract: ${path.join(extractDir, "program")}`);
     }
-    run("xcopy", [programSrc, path.join(loDest, "program"), "/E", "/I", "/Y"], { shell: true });
+    for (const ent of fs.readdirSync(installRoot, { withFileTypes: true })) {
+      if (ent.name === "msi-extract" || ent.name.toLowerCase().endsWith(".msi")) continue;
+      fs.cpSync(path.join(installRoot, ent.name), path.join(loDest, ent.name), {
+        recursive: true,
+        force: true,
+      });
+    }
+    rmrf(extractDir);
   }
 
   writeSofficeShim(runtimeRoot, platform);

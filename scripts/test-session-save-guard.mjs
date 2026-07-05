@@ -68,5 +68,6 @@ assert(diskCount() === 0, `override must allow the write, got ${diskCount()}`);
 delete process.env.LILY_DISABLE_SESSION_SAVE_GUARD;
 console.log("save-guard: override escape-hatch ok");
 
+m.close();
 fs.rmSync(tempRoot, { recursive: true, force: true });
 console.log("test-session-save-guard: ALL_OK");

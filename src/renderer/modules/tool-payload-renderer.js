@@ -639,7 +639,7 @@ export function renderGeneratedMedia(root, mediaBlocks = [], options = {}) {
       const item = document.createElement("figure");
       item.className = "assistant-generated-media-item";
       const src = fileUrlFromPath(file.path);
-      const type = media.type || "file";
+      const type = file.type || media.type || "file";
       if (type === "image") {
         const img = document.createElement("img");
         img.src = src;

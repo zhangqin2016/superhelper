@@ -125,6 +125,29 @@ class SessionManager {
     this._legacyMigrationPending = false;
     this._messageStore = null;
     this._progressNotifier = null;
+    this._timers = new Set();
+    this._closed = false;
+  }
+
+  _setTimer(fn, delay) {
+    const timer = setTimeout(() => {
+      this._timers.delete(timer);
+      if (!this._closed) fn();
+    }, delay);
+    this._timers.add(timer);
+    return timer;
+  }
+
+  close() {
+    this._closed = true;
+    for (const timer of this._timers) clearTimeout(timer);
+    this._timers.clear();
+    if (this._saveTimer) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
+    }
+    this._messageStore?.close?.();
+    this._messageStore = null;
   }
 
   /** Host hook (set by main) to surface migration progress to the UI. */
@@ -227,7 +250,7 @@ class SessionManager {
     // Only surface a progress UI when there's a real backlog; small migrations
     // stay silent (they finish in well under a second, lazily on open).
     const PROGRESS_MIN = 8;
-    setTimeout(() => {
+    this._setTimer(() => {
       try {
         legacyImport.sweepInBackground(this._store(), {
           onProgress: ({ done, total }) => {
@@ -267,9 +290,9 @@ class SessionManager {
       } catch (err) {
         console.warn("[sessions] enrichment failed for", session.id, err?.message || err);
       }
-      setTimeout(step, 0);
+      this._setTimer(step, 0);
     };
-    if (pending.length) setTimeout(step, 0);
+    if (pending.length) this._setTimer(step, 0);
   }
 
   _startRuntimeEventMaintenance() {
@@ -289,13 +312,13 @@ class SessionManager {
           console.info(`[sessions] compacted ${result.compacted} runtime event payload(s), saved ${saved} byte(s)`);
         }
         if (result?.compacted > 0 && rounds < MAX_ROUNDS) {
-          setTimeout(step, 1000);
+          this._setTimer(step, 1000);
         }
       } catch (err) {
         console.warn("[sessions] runtime event maintenance failed:", err?.message || err);
       }
     };
-    setTimeout(step, 12000);
+    this._setTimer(step, 12000);
   }
 
   _enrichmentFlag(sessionId) {
@@ -728,7 +751,7 @@ class SessionManager {
       return;
     }
     this._doSave();
-    this._saveTimer = setTimeout(() => {
+    this._saveTimer = this._setTimer(() => {
       this._saveTimer = null;
       if (this._savePending) {
         this._savePending = false;

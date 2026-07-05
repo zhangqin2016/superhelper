@@ -74,6 +74,7 @@ for (const key of ["check", "checking", "ok", "failed", "notInstalled", "allOk",
   assert.equal(typeof zh[`settings.runtime.health.${key}`], "string", `missing dependency health label ${key}`);
 }
 assert.equal(typeof zh["settings.runtime.status.unavailable"], "string", "missing unavailable status label");
+assert.equal(typeof zh["settings.runtime.error.SERVICE_REQUEST_FAILED"], "string", "missing dependency service failure label");
 assert.equal(zh["settings.runtime.category.system"], undefined, "old system runtime category should not remain");
 assert.equal(zh["settings.runtime.category.common"], undefined, "old common runtime category should not remain");
 

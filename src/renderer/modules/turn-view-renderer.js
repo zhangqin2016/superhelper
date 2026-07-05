@@ -209,6 +209,19 @@ function narrativeImageKey(contentBlocks = []) {
     .join("|");
 }
 
+function stripGeneratedMediaMarkers(text = "") {
+  return String(text || "")
+    .replace(/<generated_media\b[^>]*>[\s\S]*?<\/generated_media>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function escapeGeneratedMediaMarkers(text = "") {
+  return String(text || "").replace(/<(\/?generated_media\b[^>]*|file\b[^>]*\/?)>/g, (_match, tag) => (
+    `&lt;${tag}&gt;`
+  ));
+}
+
 
 /** Minimal liveTurn for assistant messages saved before TurnRecord existed. */
 export function legacyLiveTurnFromMessage(message) {
@@ -371,6 +384,20 @@ function collectHoistableMedia(liveTurn) {
   return blocks;
 }
 
+function groupHoistableMediaBlocks(blocks = []) {
+  const files = [];
+  const seen = new Set();
+  for (const block of blocks || []) {
+    const type = block?.type || "file";
+    for (const file of block.files || []) {
+      if (!file?.path || seen.has(file.path)) continue;
+      seen.add(file.path);
+      files.push({ ...file, type });
+    }
+  }
+  return files.length ? [{ type: "file", taskId: "", files }] : [];
+}
+
 // Append hoisted media to the artifacts host. Must run AFTER renderResultBlocks,
 // which clears the host. Idempotent: removes any prior hoisted wrapper first.
 function appendHoistedGeneratedMedia(article, blocks, { sessionId } = {}) {
@@ -381,7 +408,7 @@ function appendHoistedGeneratedMedia(article, blocks, { sessionId } = {}) {
   if (!blocks || !blocks.length) return;
   const wrap = document.createElement("div");
   wrap.className = "assistant-hoisted-media";
-  try { renderGeneratedMedia(wrap, blocks, { sessionId }); } catch { return; }
+  try { renderGeneratedMedia(wrap, groupHoistableMediaBlocks(blocks), { sessionId }); } catch { return; }
   host.appendChild(wrap);
   host.hidden = false;
 }
@@ -393,6 +420,7 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
   // liveTurn.tools; the DOM is appended at the end (renderResultBlocks clears the
   // artifacts host, so appending earlier would be wiped).
   const hoistBlocks = collectHoistableMedia(liveTurn);
+  const stripHoistedMediaMarkers = hoistBlocks.length > 0;
   const resultBlocks = mergeResultBlocks(liveTurn.resultBlocks || [], liveTurn.artifacts || []);
   article.classList.toggle("is-sealed", sealed);
   article.classList.toggle("is-live", !sealed);
@@ -404,14 +432,16 @@ export function renderLiveTurnArticle(article, liveTurn, ctx = {}) {
   renderFooter(article.querySelector('[data-role="footer"]'), liveTurn, sealed);
 
   const narrativeKey = [
-    resolveAssistantStreamText(liveTurn),
+    stripHoistedMediaMarkers
+      ? stripGeneratedMediaMarkers(resolveAssistantStreamText(liveTurn))
+      : resolveAssistantStreamText(liveTurn),
     liveTurn.final?.type || "",
     (liveTurn.contentBlocks || []).length,
     narrativeImageKey(liveTurn.contentBlocks || []),
   ].join("|");
   if (article.dataset.narrativeKey !== narrativeKey) {
     const narrativeEl = article.querySelector('[data-role="narrative"]');
-    renderNarrative(narrativeEl, liveTurn, { sealed });
+    renderNarrative(narrativeEl, liveTurn, { sealed, stripGeneratedMedia: stripHoistedMediaMarkers });
     // Once the answer is final, give inline file mentions a preview/reveal icon.
     // (Only when sealed — mid-stream filenames are still incomplete.)
     if (sealed) enhanceFileMentions(narrativeEl, sessionId, resultBlocks);
@@ -535,11 +565,12 @@ function syncNarrativeImages(root, contentBlocks = []) {
   }
 }
 
-function renderNarrative(root, liveTurn, { sealed = false } = {}) {
+function renderNarrative(root, liveTurn, { sealed = false, stripGeneratedMedia = false } = {}) {
   if (!root) return;
-  const text = resolveAssistantStreamText(liveTurn);
+  const rawText = resolveAssistantStreamText(liveTurn);
+  const text = stripGeneratedMedia ? stripGeneratedMediaMarkers(rawText) : escapeGeneratedMediaMarkers(rawText);
   const hasImages = (liveTurn.contentBlocks || []).some((b) => b.blockType === "image" && b.data);
-  const show = shouldShowNarrative(liveTurn);
+  const show = Boolean(text) && shouldShowNarrative(liveTurn);
   root.hidden = !show && !hasImages;
   if (root.hidden) {
     root.replaceChildren();

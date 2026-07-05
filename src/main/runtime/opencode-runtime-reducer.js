@@ -178,6 +178,65 @@ function errorMessage(error) {
   }
 }
 
+function lilyNativeSkillTarget({ toolName = "", input = {}, output = "" } = {}) {
+  if (String(toolName || "").toLowerCase() !== "skill") return "";
+  const rawInput = input && typeof input === "object" ? input : {};
+  const candidates = [
+    rawInput.name,
+    rawInput.skill,
+    rawInput.skillName,
+    rawInput.id,
+    rawInput.NAME,
+    rawInput.Skill,
+    rawInput.SKILL,
+  ];
+  const text = String(output || "");
+  const quoted = text.match(/Skill\s+["'](lily-[^"'\s]+)["']\s+not\s+found/i);
+  if (quoted) candidates.push(quoted[1]);
+  const bare = text.match(/\b(lily-[a-z0-9-]+)\b/i);
+  if (bare) candidates.push(bare[1]);
+  for (const candidate of candidates) {
+    const value = String(candidate || "").trim();
+    if (/^lily-[a-z0-9-]+$/i.test(value)) return value;
+  }
+  return "";
+}
+
+function lilyNativeSkillFallbackText(skillId) {
+  const guidePath = `resources/skills-catalog/${skillId}/SKILL.md`;
+  return [
+    `Lily capability fallback: \`${skillId}\` is a Lily platform capability guide, not an OpenCode native skill.`,
+    `Do not run \`skill ${skillId}\`. Read \`${guidePath}\`, then continue using Lily MCP tools/scripts or ordinary tools.`,
+    "This native skill failure should not stop the task.",
+  ].join("\n");
+}
+
+function lilyNativeSkillFallbackNotice(skillId) {
+  return runtimeDraft("engine.notice", {
+    notice: {
+      code: "lilyNativeSkillFallback",
+      level: "warning",
+      panel: true,
+      done: true,
+      detail: lilyNativeSkillFallbackText(skillId),
+      skillId,
+    },
+  });
+}
+
+function lilyNativeSkillFallbackControl(skillId) {
+  return runtimeDraft("runtime.control", {
+    action: "steer",
+    reason: "lilyNativeSkillFallback",
+    skillId,
+    text: [
+      `You just tried OpenCode native \`skill ${skillId}\`, but \`${skillId}\` is a Lily platform capability guide, not a native skill.`,
+      `Recover now: read \`resources/skills-catalog/${skillId}/SKILL.md\` with the Read tool and continue the user's task through Lily MCP tools/scripts or ordinary tools.`,
+      "Do not stop just because the native skill command failed.",
+    ].join("\n"),
+  });
+}
+
 function reduceSessionNextToolEvent(ev, state) {
   const p = ev.properties || {};
   const callID = p.callID || p.id || "";
@@ -209,13 +268,22 @@ function reduceSessionNextToolEvent(ev, state) {
   if ((ev.type === "session.next.tool.success" || ev.type === "session.next.tool.failed") && previous !== "done") {
     if (!previous) start();
     state.tools.set(callID, "done");
+    let content = stringifySessionNextToolOutput(p);
+    const skillId = ev.type === "session.next.tool.failed"
+      ? lilyNativeSkillTarget({ toolName: p.tool || p.name || "unknown", input: p.input, output: content })
+      : "";
+    if (skillId) content = [content, lilyNativeSkillFallbackText(skillId)].filter(Boolean).join("\n\n");
     drafts.push(runtimeDraft("tool.done", {
       id: callID,
       isError: ev.type === "session.next.tool.failed",
-      content: stringifySessionNextToolOutput(p),
+      content,
       metadata: toolMetadataFromProperties(p),
       title: p.title || p.metadata?.title || "",
     }));
+    if (skillId) {
+      drafts.push(lilyNativeSkillFallbackNotice(skillId));
+      drafts.push(lilyNativeSkillFallbackControl(skillId));
+    }
     return { drafts, progress: true };
   }
 
@@ -266,17 +334,25 @@ function reduceToolPart(part, state) {
   if ((status === "completed" || status === "error") && prev !== "done") {
     if (!prev) started();
     state.tools.set(callID, "done");
-    const output = stringifyToolOutput(st);
+    let output = stringifyToolOutput(st);
+    const skillId = status === "error"
+      ? lilyNativeSkillTarget({ toolName: part.tool || "unknown", input, output })
+      : "";
+    if (skillId) output = [output, lilyNativeSkillFallbackText(skillId)].filter(Boolean).join("\n\n");
     if (output) state.toolOutputs.set(callID, output);
     const progressNotice = output ? toolProgressNoticeFromOutput(callID, output, state) : null;
     if (progressNotice) drafts.push(progressNotice);
     drafts.push(runtimeDraft("tool.done", {
       id: callID,
       isError: status === "error",
-      content: stringifyToolOutput(st),
+      content: output,
       metadata: toolMetadataFromPart(part),
       title: st.title || part.title || "",
     }));
+    if (skillId) {
+      drafts.push(lilyNativeSkillFallbackNotice(skillId));
+      drafts.push(lilyNativeSkillFallbackControl(skillId));
+    }
   }
 
   return { drafts, progress: drafts.length > 0 };

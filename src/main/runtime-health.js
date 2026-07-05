@@ -55,12 +55,14 @@ function missingCheck(id, error = "MISSING", detail = {}) {
 
 async function runExecutable(id, exe, args = [], env = process.env) {
   if (!exe || !fs.existsSync(exe)) return missingCheck(id, "EXECUTABLE_MISSING", { path: exe || "" });
+  const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(String(exe || ""));
   try {
     const result = await pexecFile(exe, args, {
       timeout: CHECK_TIMEOUT_MS,
       env,
       maxBuffer: 1024 * 1024,
       windowsHide: true,
+      shell: useShell,
     });
     const output = `${result.stdout || ""}${result.stderr || ""}`.trim().split(/\r?\n/)[0] || "";
     return okCheck(id, { path: exe, output });
