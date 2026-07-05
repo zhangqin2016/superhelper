@@ -262,6 +262,23 @@ assert.equal(projectionFallback.projectionSource, "lily-projection", "projection
 
 let ensuredSessionId = "";
 const resumableSession = { ...baseSession, agentResumeId: "ses_resume" };
+const localFirstCtx = {
+  ensureConversationRunner: async () => {
+    throw new Error("local-first reads must not start OpenCode");
+  },
+  sessionManager: {
+    findById: () => resumableSession,
+    getActive: () => resumableSession,
+    getConversationPage: () => fallbackPage,
+    getConversation: () => [],
+    getProjectedConversation: () => [],
+  },
+  runnerPool: { get: () => null },
+};
+const localFirstPage = await getConversationPageFromSource(localFirstCtx, "s1", { preferLocal: true });
+assert.equal(localFirstPage.source, "lily-local-first", "initial UI load returns local latest page immediately");
+assert.equal(localFirstPage.officialRefreshRecommended, true, "resumable local-first pages request a background official refresh");
+
 const passiveCtx = {
   ensureConversationRunner: async (_ctx, sessionId) => {
     ensuredSessionId = sessionId;

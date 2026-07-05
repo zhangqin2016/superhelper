@@ -25,7 +25,11 @@ import {
 } from "./session-runtime-store.js";
 import { refreshSessionSkillsUi } from "./session-skills.js";
 import { hydrateBlobRefs } from "./blob-refs.js";
-import { mergeOlderConversationPage, shouldContinueLoadingOlder } from "./conversation-pagination.js";
+import {
+  mergeLatestConversationPage,
+  mergeOlderConversationPage,
+  shouldContinueLoadingOlder,
+} from "./conversation-pagination.js";
 
 const CONVERSATION_PAGE_SIZE = 50;
 const conversationPages = new Map();
@@ -153,6 +157,7 @@ async function loadSessionConversation(sessionId, opts = {}) {
   try {
     result = await window.assistantClient.getSessionConversation(sessionId, {
       limit: CONVERSATION_PAGE_SIZE,
+      preferLocal: true,
     });
   } catch (err) {
     console.warn("[session] failed to load conversation:", err);
@@ -162,10 +167,13 @@ async function loadSessionConversation(sessionId, opts = {}) {
     console.warn("[session] failed to load conversation:", result?.error || result);
     return getRuntimeSession(sessionId).committedMessages;
   }
-  const messages = (result.conversation || []).map(hydrateBlobRefs);
+  const officialMessages = (result.conversation || []).map(hydrateBlobRefs);
+  const localMessages = getRuntimeSession(sessionId).committedMessages || [];
+  const messages = mergeLatestConversationPage(localMessages, officialMessages);
   conversationPages.set(sessionId, {
     hasMore: Boolean(result?.hasMore),
     nextBefore: Number.isInteger(result?.nextBefore) ? result.nextBefore : 0,
+    total: Number.isInteger(result?.total) ? result.total : messages.length,
     loading: false,
   });
   if (typeof opts.isCurrent === "function" && !opts.isCurrent()) {
@@ -174,7 +182,48 @@ async function loadSessionConversation(sessionId, opts = {}) {
   store.set("conversation", messages);
   patchSessionMessagesInStore(sessionId, messages, result.total);
   syncCommittedMessages(sessionId, messages);
+  if (result?.officialRefreshRecommended) {
+    refreshOfficialConversation(sessionId, opts).catch((err) => {
+      console.warn("[session] failed to refresh official conversation:", err);
+    });
+  }
   return messages;
+}
+
+async function refreshOfficialConversation(sessionId, opts = {}) {
+  if (!sessionId) return false;
+  const result = await window.assistantClient.getSessionConversation(sessionId, {
+    limit: CONVERSATION_PAGE_SIZE,
+  });
+  if (!result?.ok || result.source === "lily-local-first") return false;
+  if (typeof opts.isCurrent === "function" && !opts.isCurrent()) return false;
+  const officialMessages = (result.conversation || []).map(hydrateBlobRefs);
+  const localMessages = getRuntimeSession(sessionId).committedMessages || [];
+  const messages = mergeLatestConversationPage(localMessages, officialMessages);
+  const previousPage = conversationPages.get(sessionId);
+  const nextBefore = Number.isInteger(result?.nextBefore)
+    ? result.nextBefore
+    : Number.isInteger(previousPage?.nextBefore)
+      ? previousPage.nextBefore
+      : 0;
+  const total = Math.max(
+    Number.isInteger(result?.total) ? result.total : 0,
+    Number.isInteger(previousPage?.total) ? previousPage.total : 0,
+    messages.length,
+  );
+  conversationPages.set(sessionId, {
+    hasMore: Boolean(result?.hasMore || previousPage?.hasMore),
+    nextBefore,
+    total,
+    loading: false,
+  });
+  store.set("conversation", messages);
+  patchSessionMessagesInStore(sessionId, messages, total);
+  syncCommittedMessages(sessionId, messages);
+  const { renderConversation } = await import("./message.js");
+  renderConversation(sessionId, { force: true, preserveScroll: true });
+  resumeLiveSessionUi(sessionId, { forceScrollBottom: false });
+  return true;
 }
 
 function revealSessionView(sessionId, { forceScrollBottom = true } = {}) {
@@ -232,7 +281,12 @@ export async function loadOlderConversationForSession(sessionId, panel = null) {
       conversationPages.set(sessionId, { hasMore: false, nextBefore: 0, loading: false });
       return false;
     }
-    conversationPages.set(sessionId, { hasMore, nextBefore: cursor, loading: false });
+    conversationPages.set(sessionId, {
+      hasMore,
+      nextBefore: cursor,
+      total: Number.isInteger(total) ? total : merged.length,
+      loading: false,
+    });
     store.set("conversation", merged);
     patchSessionMessagesInStore(sessionId, merged, total);
     syncCommittedMessages(sessionId, merged);

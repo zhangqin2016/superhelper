@@ -346,6 +346,13 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
     };
   };
   let runner = ctx.runnerPool?.get?.(session.id);
+  if (opts.preferLocal && opts.before == null && !runner?.isAlive?.()) {
+    return {
+      ...fallback(),
+      source: "lily-local-first",
+      officialRefreshRecommended: Boolean(session.agentResumeId),
+    };
+  }
   if ((!runner?.getConversationPage || !runner?.isAlive?.()) && session.agentResumeId) {
     try {
       const ensureConversationRunner =

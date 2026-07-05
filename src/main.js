@@ -34,6 +34,9 @@ let agentBootstrap = null;
 // Keep persisted app data stable across display-name changes.
 app.setPath("userData", path.join(app.getPath("appData"), "lily-workbench"));
 app.setName("Lily Workbench");
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.company.ai-super-terminal");
+}
 
 // Hand the host's resolved base dirs to config once, so config (and everything
 // that imports it) needs no electron at call time — keeps it testable/reusable.

@@ -32,6 +32,7 @@ function registerSessionHandlers(ctx) {
     return getConversationPageFromSource(ctx, sessionId, {
       before: Number.isInteger(payload?.before) ? payload.before : undefined,
       limit: Number.isInteger(payload?.limit) ? payload.limit : undefined,
+      preferLocal: Boolean(payload?.preferLocal),
     });
   });
 

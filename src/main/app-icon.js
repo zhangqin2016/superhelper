@@ -27,6 +27,9 @@ function firstExisting(fileNames) {
 
 /** PNG path for Dock / window / in-app UI (Electron loads this reliably). */
 function resolveRuntimeIconPath() {
+  if (process.platform === "win32") {
+    return firstExisting(["icon.ico", "icon.png"]);
+  }
   return firstExisting(["icon.png"]);
 }
 

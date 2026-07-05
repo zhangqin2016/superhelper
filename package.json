@@ -162,7 +162,7 @@
       "sign": false
     },
     "win": {
-      "icon": "icon.png",
+      "icon": "icon.ico",
       "executableName": "LilyWorkbench",
       "extraResources": [
         {
