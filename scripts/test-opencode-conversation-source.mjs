@@ -379,4 +379,64 @@ const userMergePage = await getConversationPageFromSource(userMergeCtx, "s1", {}
 assert.equal(userMergePage.conversation[0].content, "用户真正输入的问题", "OpenCode source uses Lily raw user display text");
 assert.equal(userMergePage.conversation[0].turnId, "turn_user_3");
 
+const partialProjection = [
+  {
+    id: "projection:turn_partial:user",
+    role: "user",
+    content: "write a long answer",
+    turnId: "turn_partial",
+    timestamp: "2026-06-23T15:00:00.000Z",
+  },
+  {
+    id: "projection:turn_partial:assistant",
+    role: "assistant",
+    content: "partial answer before crash",
+    turnId: "turn_partial",
+    timestamp: "2026-06-23T15:00:05.000Z",
+    record: {
+      turnId: "turn_partial",
+      terminal: "turn.stalled",
+      assistantText: "partial answer before crash",
+      meta: { projected: true },
+    },
+    meta: { terminal: "turn.stalled", projected: true },
+  },
+];
+const busyRunnerPage = await getConversationPageFromSource({
+  sessionManager: {
+    findById: () => baseSession,
+    getActive: () => baseSession,
+    getConversationPage: () => ({ ok: true, source: "lily", conversation: [] }),
+    getConversation: () => [],
+    getProjectedConversation: () => partialProjection,
+  },
+  runnerPool: {
+    get: () => ({
+      isAlive: () => true,
+      isBusy: () => true,
+      getConversationPage: async () => ({
+        ok: true,
+        source: "opencode",
+        sessionId: "s1",
+        conversation: [{
+          id: "official_partial_user",
+          role: "user",
+          content: "write a long answer",
+          timestamp: "2026-06-23T15:00:01.000Z",
+        }],
+      }),
+    }),
+  },
+}, "s1", {});
+assert.equal(
+  busyRunnerPage.conversation.find((message) => message.role === "assistant")?.content,
+  "partial answer before crash",
+  "busy official history still merges persisted partial assistant projection",
+);
+assert.equal(
+  busyRunnerPage.conversation.filter((message) => message.role === "user").length,
+  1,
+  "partial projection user is deduped against official user while preserving assistant",
+);
+
 console.log("opencode-conversation-source: ok");

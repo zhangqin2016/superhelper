@@ -12,6 +12,10 @@ const { normalizeToLilyEnv, toEngineEnv } = require(path.join(__dirname, "../src
 const remoteMediaEnv = normalizeToLilyEnv({
   LILY_IMAGE_PROVIDER: "volcengine",
   LILY_VIDEO_PROVIDER: "dashscope",
+  LILY_SPEECH_PROVIDER: "dashscope",
+  LILY_MEDIA_IMAGE_ENDPOINT: "https://lily.example.com/media/image",
+  LILY_MEDIA_VIDEO_ENDPOINT: "https://lily.example.com/media/video",
+  LILY_MEDIA_SPEECH_ENDPOINT: "https://lily.example.com/media/speech",
   DASHSCOPE_API_KEY: "dashscope-gateway-token",
   DASHSCOPE_IMAGE_BASE_URL: "https://lily.example.com/llm/dashscope-media",
   DASHSCOPE_TTS_BASE_URL: "https://lily.example.com/llm/dashscope-media",
@@ -29,6 +33,10 @@ const engineEnv = toEngineEnv(remoteMediaEnv);
 
 assert.equal(engineEnv.LILY_IMAGE_PROVIDER, "volcengine");
 assert.equal(engineEnv.LILY_VIDEO_PROVIDER, "dashscope");
+assert.equal(engineEnv.LILY_SPEECH_PROVIDER, "dashscope");
+assert.equal(engineEnv.LILY_MEDIA_IMAGE_ENDPOINT, "https://lily.example.com/media/image");
+assert.equal(engineEnv.LILY_MEDIA_VIDEO_ENDPOINT, "https://lily.example.com/media/video");
+assert.equal(engineEnv.LILY_MEDIA_SPEECH_ENDPOINT, "https://lily.example.com/media/speech");
 assert.equal(engineEnv.DASHSCOPE_IMAGE_BASE_URL, "https://lily.example.com/llm/dashscope-media");
 assert.equal(engineEnv.DASHSCOPE_TTS_BASE_URL, "https://lily.example.com/llm/dashscope-media");
 assert.equal(engineEnv.VOLCENGINE_BASE_URL, "https://lily.example.com/llm/media/volcengine");

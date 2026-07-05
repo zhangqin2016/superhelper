@@ -10,6 +10,7 @@ const path = require("node:path");
 // stdin, provider selection, downloading/persisting, and the XML output.
 const ADAPTERS = {
   dashscope: require("./providers/dashscope.cjs"),
+  lily: require("./providers/lily.cjs"),
   volcengine: require("./providers/volcengine.cjs"),
   kling: require("./providers/kling.cjs"),
   minimax: require("./providers/minimax.cjs"),

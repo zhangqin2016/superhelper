@@ -379,10 +379,40 @@ try {
   ok(stalledAssistant.failed !== true, "stalled projection is incomplete, not a failed answer");
   ok(store.pendingTurnInputs("S4").length === 0, "terminal turn no longer pending");
 
+  store.appendRuntimeEvents("S7", [
+    {
+      id: "evt_s7_1",
+      type: "turn.started",
+      sessionId: "S7",
+      turnId: "turn_partial_crash",
+      seq: 1,
+      ts: 4100,
+      source: "orchestrator",
+      payload: { text: "write a long answer" },
+    },
+    {
+      id: "evt_s7_2",
+      type: "assistant.delta",
+      sessionId: "S7",
+      turnId: "turn_partial_crash",
+      seq: 2,
+      ts: 4200,
+      source: "runtime",
+      payload: { text: "partial answer before crash" },
+    },
+  ]);
+  const openPartialConversation = store.getProjectedConversation("S7");
+  const openPartialAssistant = openPartialConversation.find((message) => message.role === "assistant");
+  ok(openPartialAssistant?.content === "partial answer before crash", "open projected turn preserves streamed partial answer");
+  ok(openPartialAssistant?.record?.terminal === "turn.stalled", "open projected turn is recovered as stalled after restart");
+  ok(openPartialAssistant?.record?.meta?.projected === true, "open projected turn is marked as recovered projection");
+
   // --- persistence across reopen ---
   store.close();
   const store2 = new MessageStore(dbPath, blobDir);
   ok(store2.count("S2") === 4, "data persists across reopen");
+  const reopenedPartial = store2.getProjectedConversation("S7").find((message) => message.role === "assistant");
+  ok(reopenedPartial?.content === "partial answer before crash", "streamed partial answer persists across reopen");
   store2.close();
 
   console.log(`\nmessage-store: ${passed} checks passed`);

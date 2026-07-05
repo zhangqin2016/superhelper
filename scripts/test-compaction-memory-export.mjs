@@ -35,6 +35,13 @@ assert.match(blocks[0], /未完成\/待办/, "pending task ordered first (highes
 assert.ok(blocks.some((b) => /甲子年/.test(b)), "durable fact (birth data) is preserved verbatim");
 assert.ok(blocks.some((b) => /待补证据/.test(b)), "evidence gap carried as a lead");
 
+const badAssistantBlocks = buildCompactionMemoryBlocks({
+  lastUserIntent: "make four images",
+  lastAssistantResult: "> <parameter=timeout> 10000 </parameter> </function> </tool_call>",
+});
+assert.ok(badAssistantBlocks.length >= 1, "other memory survives when assistant result is bad");
+assert.ok(!badAssistantBlocks.join("\n").includes("parameter=timeout"), "tool-call fragments are not injected into compaction memory");
+
 // Empty / junk summary -> no blocks (plugin then leaves compaction untouched).
 assert.deepEqual(buildCompactionMemoryBlocks(null), [], "null summary -> []");
 assert.deepEqual(buildCompactionMemoryBlocks({}), [], "empty summary -> []");

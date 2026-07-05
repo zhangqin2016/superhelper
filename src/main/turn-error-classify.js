@@ -16,6 +16,28 @@ function compactFailureDetail(raw) {
   return text.length > 260 ? `${text.slice(0, 260)}…` : text;
 }
 
+function looksLikeLeakedToolCallText(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  const compact = text.replace(/\s+/g, " ");
+  const markers = [
+    /<\/?tool_call\b/i,
+    /<\/?function(?:=|\b)/i,
+    /<\/?parameter(?:=|\b)/i,
+  ];
+  const hits = markers.filter((pattern) => pattern.test(compact)).length;
+  if (!hits) return false;
+  const stripped = compact
+    .replace(/>\s*/g, " ")
+    .replace(/<\/?tool_call[^>]*>/gi, " ")
+    .replace(/<\/?function[^>]*>/gi, " ")
+    .replace(/<\/?parameter[^>]*>/gi, " ")
+    .replace(/[<>{}/=_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return hits >= 2 || stripped.length <= 80;
+}
+
 function failureTextFromProcessEvent(event = {}) {
   const rawSubtype = String(event.rawSubtype || event.event?.subtype || "");
   const rawType = String(event.rawType || event.event?.type || "");
@@ -129,6 +151,15 @@ function collectToolCompletionSnapshot(state = {}) {
   return { done, failed, running, count: tools.length };
 }
 
+function isEmptyAssistantCompletion(payload = {}, normalized = {}, state = {}) {
+  if (normalized?.failed) return false;
+  const text = String(normalized?.text || state?.assistantText || "").trim();
+  if (text) return false;
+  if (payload?.interruptedByUser || payload?.userInterrupted || payload?.stalled || payload?.engineInterrupted) return false;
+  if (payload?.code && payload.code !== 0) return false;
+  return true;
+}
+
 function listToolLabels(title, items, limit = 6, { includeResult = false } = {}) {
   if (!items.length) return "";
   const lines = [`${title}：`];
@@ -208,6 +239,22 @@ function classifyTurnFailure(payload, normalized, state) {
   ].filter((value) => typeof value === "string" && value.trim()).join("\n");
   const errorClassified = classifyAssistantError(rawError);
   if (errorClassified) return errorClassified;
+  if (looksLikeLeakedToolCallText(normalized?.text || state?.assistantText || "")) {
+    return {
+      code: "MALFORMED_TOOL_CALL_TEXT",
+      message: "The model returned an incomplete tool-call fragment instead of a final answer. Please retry; if it repeats, refresh the model configuration or start a fresh conversation.",
+      retryable: true,
+      category: "protocol",
+    };
+  }
+  if (isEmptyAssistantCompletion(payload, normalized, state)) {
+    return {
+      code: "EMPTY_ASSISTANT_COMPLETION",
+      message: "The assistant engine ended without producing a final answer. Please retry; if it repeats, refresh the model configuration or start a fresh conversation.",
+      retryable: true,
+      category: "protocol",
+    };
+  }
   if (normalized?.failed) {
     return {
       code: normalized.errorCode || "ASSISTANT_ERROR",
@@ -245,4 +292,6 @@ module.exports = {
   compactToolResultPreview,
   failureTextFromProcessEvent,
   failureTextFromNoticeEvent,
+  isEmptyAssistantCompletion,
+  looksLikeLeakedToolCallText,
 };

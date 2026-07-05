@@ -24,7 +24,7 @@ assert(text.includes("timed out"), "extracts notice detail");
 
 // classifyTurnFailure — branch behavior (use payloads that don't trip the
 // upstream classifier, so we exercise the fallback branches deterministically).
-assert(ec.classifyTurnFailure({}, {}, {}) === null, "no failure → null");
+assert(ec.classifyTurnFailure({}, { text: "done" }, {}) === null, "answered completion → null");
 
 const interrupted = ec.classifyTurnFailure({ engineInterrupted: true }, {}, {});
 assert(interrupted?.code === "ENGINE_INTERRUPTED" && interrupted.retryable === true, "engineInterrupted branch");
@@ -37,6 +37,22 @@ assert(resultFail?.code === "ENGINE_RESULT_FAILED", "non-zero result code branch
 
 const normalizedFail = ec.classifyTurnFailure({}, { failed: true, text: "engine said no", retryable: false }, {});
 assert(normalizedFail?.message === "engine said no" && normalizedFail.retryable === false, "normalized failure branch");
+
+const emptyCompletion = ec.classifyTurnFailure({ code: 0 }, { text: "" }, { assistantText: "" });
+assert(emptyCompletion?.code === "EMPTY_ASSISTANT_COMPLETION", "empty assistant completions are not successful answers");
+assert(emptyCompletion?.retryable === true, "empty assistant completions are retryable protocol failures");
+assert(ec.isEmptyAssistantCompletion({ code: 0 }, { text: "" }, { assistantText: "" }), "detects empty completed output");
+assert(!ec.isEmptyAssistantCompletion({ code: 0 }, { text: "done" }, { assistantText: "" }), "does not flag real text");
+
+const leakedToolCall = ec.classifyTurnFailure(
+  {},
+  { text: "> <parameter=timeout> 10000 </parameter> </function> </tool_call>" },
+  {},
+);
+assert(leakedToolCall?.code === "MALFORMED_TOOL_CALL_TEXT", "leaked tool-call fragments are not successful answers");
+assert(leakedToolCall?.retryable === true, "leaked tool-call fragments are retryable protocol failures");
+assert(ec.looksLikeLeakedToolCallText("<tool_call><function=bash><parameter=timeout>10000</parameter>"), "detects tool-call XML");
+assert(!ec.looksLikeLeakedToolCallText("Please set the timeout parameter to 10000."), "does not flag normal prose");
 
 const toolState = {
   tools: new Map([

@@ -44,10 +44,13 @@ Optional parameters:
 - `watermark`: whether to add a watermark, default `false`
 - `output_dir`: save directory, default current workspace `generated-assets`
 - `model`: defaults to `DASHSCOPE_IMAGE_MODEL`, otherwise `qwen-image-2.0-pro`
+- `provider`: `lily`/`dashscope`/`volcengine`/`kling`/`minimax`/`zhipu` (else the configured default)
 
 `DASHSCOPE_IMAGE_ENDPOINT` can override the full endpoint. Otherwise the script
 uses `DASHSCOPE_IMAGE_BASE_URL` with the official default path. `DASHSCOPE_BASE_URL`
 is reserved for chat model APIs and is not used for image generation.
+For Lily self-hosted GPU, set `LILY_MEDIA_IMAGE_ENDPOINT` (or
+`LILY_MEDIA_IMAGE_BASE_URL`) and choose provider `lily`.
 
 The script calls the Alibaba Bailian Qwen-Image API, downloads the temporary
 24-hour URL to a local file, and prints `<generated_media>` plus a local

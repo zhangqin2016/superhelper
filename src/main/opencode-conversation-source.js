@@ -378,7 +378,7 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
     });
     const projections = projectedConversationFor(ctx, session.id, {
       ...opts,
-      includeOpen: !runner?.isBusy?.(),
+      includeOpen: true,
     });
     const conversation = mergeProjectionConversation(mergedOfficial, projections);
     return {

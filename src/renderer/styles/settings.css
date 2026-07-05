@@ -2086,7 +2086,7 @@ body.settings-open {
   padding: 24px 12px !important;
 }
 
-/* Image/video provider settings — two-region (service vs BYOK) layout. */
+/* Media provider settings: service vs BYOK layout. */
 .media-provider-settings {
   display: flex;
   flex-direction: column;

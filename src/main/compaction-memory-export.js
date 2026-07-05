@@ -26,6 +26,16 @@ function trim(value, limit) {
   return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
 }
 
+function validAssistantMemory(value) {
+  const text = trim(value, 400);
+  if (!text) return "";
+  try {
+    return require("./turn-error-classify").looksLikeLeakedToolCallText(text) ? "" : text;
+  } catch {
+    return text;
+  }
+}
+
 /**
  * Curated, priority-ordered, char-bounded navigation blocks from a Lily session
  * summary. Most-durable first so the budget keeps what matters when space is tight.
@@ -34,6 +44,9 @@ function trim(value, limit) {
  */
 function buildCompactionMemoryBlocks(summary, { maxChars = DEFAULT_MAX_CHARS } = {}) {
   if (!summary || typeof summary !== "object") return [];
+  if (summary.lastAssistantResult && !validAssistantMemory(summary.lastAssistantResult)) {
+    summary = { ...summary, lastAssistantResult: "" };
+  }
   const candidates = [];
   if (summary.pendingTask) candidates.push(`未完成/待办：${trim(summary.pendingTask, 400)}`);
   if (summary.lastUserIntent) candidates.push(`最近用户意图：${trim(summary.lastUserIntent, 400)}`);

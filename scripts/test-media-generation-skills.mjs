@@ -64,6 +64,7 @@ async function startMockServer() {
   const seen = {
     image: 0, video: 0, speech: 0, volcImage: 0, volcVideo: 0,
     klingImage: 0, klingVideo: 0, mmImage: 0, mmVideo: 0, zhipuImage: 0, zhipuVideo: 0,
+    lilyImage: 0, lilyVideo: 0, lilySpeech: 0,
   };
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
@@ -171,6 +172,33 @@ async function startMockServer() {
     if (req.method === "GET" && url.pathname.endsWith("/contents/generations/tasks/seedance-task")) {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ id: "seedance-task", status: "succeeded", content: { video_url: `${base}/media/generated.mp4` } }));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/lily/image/generate") {
+      const body = await readJson(req);
+      seen.lilyImage += 1;
+      assert.equal(req.headers.authorization, "Bearer lily-token");
+      assert.equal(body.model, "flux-kontext");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ output: { image_url: `${base}/media/generated.png` } }));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/lily/video/generate") {
+      const body = await readJson(req);
+      seen.lilyVideo += 1;
+      assert.equal(req.headers.authorization, "Bearer lily-token");
+      assert.equal(body.model, "wan2.2");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ output: { video_url: `${base}/media/generated.mp4` } }));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/lily/speech/generate") {
+      const body = await readJson(req);
+      seen.lilySpeech += 1;
+      assert.equal(req.headers.authorization, "Bearer lily-token");
+      assert.equal(body.model, "qwen3-tts");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ output: { audio: { url: `${base}/media/generated.wav` } } }));
       return;
     }
     if (req.method === "POST" && url.pathname.endsWith("/multimodal-generation/generation")) {
@@ -286,6 +314,26 @@ try {
   assert.match(speech.stdout, /generated_media type="speech"/);
   assert.match(assertGeneratedPath(speech.stdout, "generated-assets"), /generated-assets\/speech-/);
 
+  const lilyEnv = {
+    LILY_LOCALE: "zh-CN",
+    LILY_MEDIA_API_KEY: "lily-token",
+    LILY_MEDIA_IMAGE_ENDPOINT: `${base}/lily/image/generate`,
+    LILY_MEDIA_VIDEO_ENDPOINT: `${base}/lily/video/generate`,
+    LILY_MEDIA_SPEECH_ENDPOINT: `${base}/lily/speech/generate`,
+  };
+  const lilyImage = await runNode(scripts.image, { prompt: "Lily GPU 图片", provider: "lily" }, lilyEnv, tmp);
+  assert.equal(lilyImage.code, 0, lilyImage.stderr);
+  assert.match(lilyImage.stdout, /generated_media type="image"/);
+  assert.match(assertGeneratedPath(lilyImage.stdout, "generated-assets"), /generated-assets\/image-/);
+  const lilyVideo = await runNode(scripts.video, { prompt: "Lily GPU 视频", provider: "lily", timeout_ms: 5000 }, lilyEnv, tmp);
+  assert.equal(lilyVideo.code, 0, lilyVideo.stderr);
+  assert.match(lilyVideo.stdout, /generated_media type="video"/);
+  assert.match(assertGeneratedPath(lilyVideo.stdout, "generated-assets"), /generated-assets\/video-/);
+  const lilySpeech = await runNode(scripts.speech, { text: "Lily GPU 语音", provider: "lily" }, lilyEnv, tmp);
+  assert.equal(lilySpeech.code, 0, lilySpeech.stderr);
+  assert.match(lilySpeech.stdout, /generated_media type="speech"/);
+  assert.match(assertGeneratedPath(lilySpeech.stdout, "generated-assets"), /generated-assets\/speech-/);
+
   const speech404 = await runNode(
     scripts.speech,
     { text: "你好" },
@@ -377,13 +425,16 @@ try {
   assert.equal(seen.mmVideo, 1);
   assert.equal(seen.zhipuImage, 1);
   assert.equal(seen.zhipuVideo, 1);
+  assert.equal(seen.lilyImage, 1);
+  assert.equal(seen.lilyVideo, 1);
+  assert.equal(seen.lilySpeech, 1);
   assert.equal(countGeneratedMediaFiles([
-    image, video, speech,
+    image, video, speech, lilyImage, lilyVideo, lilySpeech,
     volcImage, volcVideo,
     klingImage, klingVideo,
     mmImage, mmVideo,
     zhipuImage, zhipuVideo,
-  ]), 11);
+  ]), 14);
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });

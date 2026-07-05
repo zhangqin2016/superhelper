@@ -10,6 +10,7 @@ const path = require("node:path");
 // stdin, provider selection, downloading, and the XML output.
 const ADAPTERS = {
   dashscope: require("./providers/dashscope.cjs"),
+  lily: require("./providers/lily.cjs"),
   volcengine: require("./providers/volcengine.cjs"),
   kling: require("./providers/kling.cjs"),
   minimax: require("./providers/minimax.cjs"),
@@ -95,14 +96,19 @@ async function main() {
     fail(msg("视频生成失败。", "Video generation failed."), error?.message || String(error));
   }
 
-  const { taskId = "", urls = [] } = result || {};
-  if (!urls.length) fail(msg("视频任务完成，但没有产物。", "Video task finished but produced no files."));
+  const { taskId = "", urls = [], buffers = [] } = result || {};
+  if (!urls.length && !buffers.length) fail(msg("视频任务完成，但没有产物。", "Video task finished but produced no files."));
 
   const files = [];
   for (let i = 0; i < urls.length; i += 1) {
     const filePath = path.join(outputDir, safeName(`video-${i + 1}`, "mp4"));
     const bytes = await downloadFile(urls[i], filePath);
     files.push({ path: filePath, bytes });
+  }
+  for (let i = 0; i < buffers.length; i += 1) {
+    const filePath = path.join(outputDir, safeName(`video-${urls.length + i + 1}`, buffers[i].ext || "mp4"));
+    fs.writeFileSync(filePath, buffers[i].data);
+    files.push({ path: filePath, bytes: buffers[i].data.length });
   }
 
   let xml = "<generated_media type=\"video\">\n";

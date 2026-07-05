@@ -38,12 +38,14 @@ Optional parameters:
 - `duration`: seconds, default `5`
 - `prompt_extend`: default `true`
 - `watermark`: default `false`
-- `provider`: `dashscope`/`volcengine`/`kling`/`minimax`/`zhipu` (else the configured default)
+- `provider`: `lily`/`dashscope`/`volcengine`/`kling`/`minimax`/`zhipu` (else the configured default)
 - `output_dir`: save directory, default current workspace `generated-assets`
 
 `DASHSCOPE_VIDEO_ENDPOINT` can override the full endpoint. Otherwise the script
 uses `DASHSCOPE_VIDEO_BASE_URL` with the official default path. `DASHSCOPE_BASE_URL`
 is reserved for chat model APIs and is not used for video generation.
+For Lily self-hosted GPU, set `LILY_MEDIA_VIDEO_ENDPOINT` (or
+`LILY_MEDIA_VIDEO_BASE_URL`) and choose provider `lily`.
 
 Video generation can take a long time. The script polls the task and downloads the
 temporary video URL to a local file when complete. Reply with the local file path

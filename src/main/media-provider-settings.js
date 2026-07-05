@@ -4,27 +4,37 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 
-// Image/video generation provider selection for the desktop client. Per modality
-// (image, video) the user chooses a SOURCE:
-//   - "service": use what we deliver (server-side key/gateway) — no key needed.
-//                Only providers the server actually enabled are offered.
-//   - "own"    : bring-your-own-key (BYOK) — the user's key is stored locally and
-//                injected as env so the skill connects directly to the provider.
-// The assistant can still override per-call via input.provider.
+// Image/video/speech generation provider selection for the desktop client.
+// Per modality the user chooses a SOURCE:
+//   - "service": use what we deliver (server-side key/gateway). Only providers
+//                the Workbench actually enabled are offered.
+//   - "own"    : bring-your-own-key (BYOK). The user's key is stored locally
+//                and injected as env so the skill connects directly.
+// The assistant can still override image/video per-call via input.provider.
 
 const PROVIDERS = [
-  { id: "dashscope", label: "阿里百炼 Qwen-Image / 通义万相", fields: ["apiKey"] },
-  { id: "volcengine", label: "火山方舟 · 即梦 Seedream / Seedance", fields: ["apiKey"] },
-  { id: "kling", label: "可灵 Kling", fields: ["accessKey", "secretKey"] },
-  { id: "minimax", label: "MiniMax 海螺", fields: ["apiKey", "groupId"] },
-  { id: "zhipu", label: "智谱 CogView / CogVideoX", fields: ["apiKey"] },
+  { id: "lily", label: "Lily 自有 GPU（FLUX / Wan / Qwen3-TTS）", fields: [], modalities: ["image", "video", "speech"], byok: false },
+  { id: "dashscope", label: "阿里百炼 Qwen-Image / 通义万相 / CosyVoice", fields: ["apiKey"], modalities: ["image", "video", "speech"] },
+  { id: "volcengine", label: "火山方舟 · 即梦 Seedream / Seedance", fields: ["apiKey"], modalities: ["image", "video"] },
+  { id: "kling", label: "可灵 Kling", fields: ["accessKey", "secretKey"], modalities: ["image", "video"] },
+  { id: "minimax", label: "MiniMax 海螺", fields: ["apiKey", "groupId"], modalities: ["image", "video"] },
+  { id: "zhipu", label: "智谱 CogView / CogVideoX", fields: ["apiKey"], modalities: ["image", "video"] },
 ];
+
 const PROVIDER_IDS = new Set(PROVIDERS.map((p) => p.id));
-// Env-var prefix per provider — used to inject an optional BYOK model-id override
-// (<PREFIX>_IMAGE_MODEL / <PREFIX>_VIDEO_MODEL), which every skill adapter reads.
+const MODALITIES = ["image", "video", "speech"];
+const MODALITY_ENV = {
+  image: "LILY_IMAGE_PROVIDER",
+  video: "LILY_VIDEO_PROVIDER",
+  speech: "LILY_SPEECH_PROVIDER",
+};
+const MODALITY_MODEL = {
+  image: { field: "imageModel", suffix: "IMAGE" },
+  video: { field: "videoModel", suffix: "VIDEO" },
+  speech: { field: "speechModel", suffix: "TTS" },
+};
 const ENV_PREFIX = { dashscope: "DASHSCOPE", volcengine: "VOLCENGINE", kling: "KLING", minimax: "MINIMAX", zhipu: "ZHIPU" };
-// Optional, non-secret per-modality model overrides stored alongside the key.
-const MODEL_FIELDS = ["imageModel", "videoModel"];
+const MODEL_FIELDS = Object.values(MODALITY_MODEL).map((item) => item.field);
 
 let cached = null;
 
@@ -46,9 +56,14 @@ function writeJson(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 
-function normalizeModality(value) {
+function providerSupports(provider, modality) {
+  const spec = PROVIDERS.find((p) => p.id === provider);
+  return Boolean(spec?.modalities?.includes(modality));
+}
+
+function normalizeModality(value, modality) {
   const source = value?.source === "own" ? "own" : "service";
-  const provider = PROVIDER_IDS.has(value?.provider) ? value.provider : "";
+  const provider = PROVIDER_IDS.has(value?.provider) && providerSupports(value.provider, modality) ? value.provider : "";
   return { source, provider };
 }
 
@@ -57,8 +72,9 @@ function loadSettings() {
   const stored = readJson(userSettingsPath(), null) || {};
   const keys = stored.keys && typeof stored.keys === "object" ? stored.keys : {};
   cached = {
-    image: normalizeModality(stored.image),
-    video: normalizeModality(stored.video),
+    image: normalizeModality(stored.image, "image"),
+    video: normalizeModality(stored.video, "video"),
+    speech: normalizeModality(stored.speech, "speech"),
     keys,
   };
   return cached;
@@ -69,29 +85,29 @@ function saveSettings(next) {
   writeJson(userSettingsPath(), next);
 }
 
-// The per-scope media-gen selection the server distributed (multi-select + default),
-// or null on old servers that don't send it. Backward-compatible: null => today's
-// behavior (all key-backed providers).
+// Server-distributed media-gen selection, or null on old servers. Null keeps
+// today's behavior: all key-backed providers are available and server defaults
+// from runtime env continue to drive dispatch.
 function remoteMediaSelection() {
   try {
     const cfg = require("./remote-config").getRemoteEffectiveConfigSync();
     const media = cfg && typeof cfg.media === "object" ? cfg.media : null;
     if (!media) return null;
-    const kind = (m) => ({
-      providers: Array.isArray(m?.providers) ? m.providers.filter((p) => PROVIDER_IDS.has(p)) : [],
-      default: PROVIDER_IDS.has(m?.default) ? m.default : "",
+    const kind = (m, modality) => ({
+      providers: Array.isArray(m?.providers) ? m.providers.filter((p) => PROVIDER_IDS.has(p) && providerSupports(p, modality)) : [],
+      default: PROVIDER_IDS.has(m?.default) && providerSupports(m.default, modality) ? m.default : "",
     });
-    return { image: kind(media.image), video: kind(media.video) };
+    return {
+      image: kind(media.image, "image"),
+      video: kind(media.video, "video"),
+      speech: kind(media.speech, "speech"),
+    };
   } catch {
     return null;
   }
 }
 
-// Which providers the server actually delivered credentials for — detected from
-// the delivered runtime env. Drives the "use ours" list so users can't pick a
-// provider the service hasn't enabled. When the operator distributed an explicit
-// per-scope selection (effectiveConfig.media), further narrow to that set.
-function serviceEnabledProviders() {
+function serviceEnabledProvidersByModality() {
   let env = {};
   try {
     env = require("./remote-config").getRemoteRuntimeEnvSync() || {};
@@ -104,15 +120,27 @@ function serviceEnabledProviders() {
   if (env.KLING_API_KEY || env.KLING_ACCESS_KEY) on.push("kling");
   if (env.MINIMAX_API_KEY) on.push("minimax");
   if (env.ZHIPU_API_KEY || env.BIGMODEL_API_KEY) on.push("zhipu");
+
   const sel = remoteMediaSelection();
-  if (sel) {
-    const allowed = new Set([...(sel.image.providers || []), ...(sel.video.providers || [])]);
-    if (allowed.size) return on.filter((p) => allowed.has(p));
+  const byModality = {};
+  for (const modality of MODALITIES) {
+    let list = on.filter((p) => providerSupports(p, modality));
+    if (lilyMediaConfigured(env, modality)) list.unshift("lily");
+    const allowed = new Set(sel?.[modality]?.providers || []);
+    if (allowed.size) list = list.filter((p) => allowed.has(p));
+    byModality[modality] = [...new Set(list)];
   }
-  return on;
+  return byModality;
 }
 
-// BYOK key completeness per provider (each provider needs all its fields).
+function lilyMediaConfigured(env, modality) {
+  if (env.LILY_MEDIA_BASE_URL || env.LILY_GPU_BASE_URL) return true;
+  if (modality === "image") return Boolean(env.LILY_MEDIA_IMAGE_ENDPOINT || env.LILY_MEDIA_IMAGE_BASE_URL || env.LILY_GPU_IMAGE_ENDPOINT || env.LILY_GPU_IMAGE_BASE_URL);
+  if (modality === "video") return Boolean(env.LILY_MEDIA_VIDEO_ENDPOINT || env.LILY_MEDIA_VIDEO_BASE_URL || env.LILY_GPU_VIDEO_ENDPOINT || env.LILY_GPU_VIDEO_BASE_URL);
+  if (modality === "speech") return Boolean(env.LILY_MEDIA_SPEECH_ENDPOINT || env.LILY_MEDIA_SPEECH_BASE_URL || env.LILY_MEDIA_TTS_ENDPOINT || env.LILY_MEDIA_TTS_BASE_URL || env.LILY_GPU_SPEECH_ENDPOINT || env.LILY_GPU_SPEECH_BASE_URL || env.LILY_GPU_TTS_ENDPOINT || env.LILY_GPU_TTS_BASE_URL);
+  return false;
+}
+
 function keysPresent(keys) {
   const present = {};
   for (const provider of PROVIDERS) {
@@ -122,27 +150,26 @@ function keysPresent(keys) {
   return present;
 }
 
-// Non-secret per-provider model overrides, safe to return to the renderer so the
-// model-id fields can prefill (credentials are never returned).
 function modelIds(keys) {
   const out = {};
   for (const provider of PROVIDERS) {
     const stored = keys[provider.id] || {};
-    out[provider.id] = { imageModel: stored.imageModel || "", videoModel: stored.videoModel || "" };
+    out[provider.id] = {};
+    for (const field of MODEL_FIELDS) out[provider.id][field] = stored[field] || "";
   }
   return out;
 }
 
 function listMediaProvidersPublic() {
   const settings = loadSettings();
+  const serviceProvidersByModality = serviceEnabledProvidersByModality();
   return {
     image: settings.image,
     video: settings.video,
-    providers: PROVIDERS.map(({ id, label, fields }) => ({ id, label, fields })),
-    serviceProviders: serviceEnabledProviders(),
-    // Per-modality allowed set + default the operator distributed (null on old
-    // servers). Lets the picker constrain to the allowed providers and preselect the
-    // distributed default; falls back to today's behavior when null.
+    speech: settings.speech,
+    providers: PROVIDERS.map(({ id, label, fields, modalities, byok }) => ({ id, label, fields, modalities, byok })),
+    serviceProviders: [...new Set([...serviceProvidersByModality.image, ...serviceProvidersByModality.video])],
+    serviceProvidersByModality,
     serviceSelection: remoteMediaSelection(),
     keysPresent: keysPresent(settings.keys),
     modelIds: modelIds(settings.keys),
@@ -150,8 +177,8 @@ function listMediaProvidersPublic() {
 }
 
 function setModalityChoice(modality, source, provider) {
-  if (modality !== "image" && modality !== "video") return { ok: false, error: "BAD_MODALITY" };
-  const value = normalizeModality({ source, provider });
+  if (!MODALITIES.includes(modality)) return { ok: false, error: "BAD_MODALITY" };
+  const value = normalizeModality({ source, provider }, modality);
   saveSettings({ ...loadSettings(), [modality]: value });
   return { ok: true };
 }
@@ -161,13 +188,10 @@ function setProviderKey(provider, values) {
   const spec = PROVIDERS.find((p) => p.id === provider);
   const current = loadSettings();
   const next = { ...(current.keys[provider] || {}) };
-  // Secrets: keep existing when the field is omitted/blank (so re-saving just a
-  // model id never wipes the key).
   for (const field of spec.fields) {
     const value = String(values?.[field] ?? "").trim();
     if (value) next[field] = value;
   }
-  // Model overrides: set as given (blank clears, reverting to the default model).
   for (const field of MODEL_FIELDS) {
     if (values?.[field] !== undefined) next[field] = String(values[field] || "").trim();
   }
@@ -175,14 +199,13 @@ function setProviderKey(provider, values) {
   return { ok: true };
 }
 
-// Env that makes a BYOK provider connect directly with the user's own key.
-// Empty base URLs reset any server-delivered gateway URL so the skill adapter
-// falls back to the provider's real endpoint.
 function byokEnv(provider, keys) {
   const k = keys[provider] || {};
   switch (provider) {
     case "dashscope":
-      return k.apiKey ? { DASHSCOPE_API_KEY: k.apiKey, DASHSCOPE_IMAGE_BASE_URL: "", DASHSCOPE_VIDEO_BASE_URL: "" } : {};
+      return k.apiKey
+        ? { DASHSCOPE_API_KEY: k.apiKey, DASHSCOPE_IMAGE_BASE_URL: "", DASHSCOPE_VIDEO_BASE_URL: "", DASHSCOPE_TTS_BASE_URL: "" }
+        : {};
     case "volcengine":
       return k.apiKey ? { VOLCENGINE_API_KEY: k.apiKey, VOLCENGINE_BASE_URL: "" } : {};
     case "kling":
@@ -198,32 +221,26 @@ function byokEnv(provider, keys) {
   }
 }
 
-// Optional BYOK model-id override for one modality (lets a single-key user point
-// at a model their account actually has enabled, instead of the built-in default).
 function byokModelEnv(provider, keys, modality) {
   const stored = keys[provider] || {};
-  const field = modality === "image" ? "imageModel" : "videoModel";
-  const value = String(stored[field] || "").trim();
+  const meta = MODALITY_MODEL[modality];
+  const value = String(stored?.[meta?.field] || "").trim();
   if (!value) return {};
   const prefix = ENV_PREFIX[provider];
-  return prefix ? { [`${prefix}_${modality === "image" ? "IMAGE" : "VIDEO"}_MODEL`]: value } : {};
+  return prefix && meta ? { [`${prefix}_${meta.suffix}_MODEL`]: value } : {};
 }
 
-// Env injected when spawning the agent. Selects the provider per modality and,
-// for "own" sources, layers in the user's key + optional model override
-// (overriding server-delivered env).
 function getMediaProviderSpawnEnv() {
   const settings = loadSettings();
   const env = {};
-  const apply = (modality, providerEnvVar) => {
+  for (const modality of MODALITIES) {
     const choice = settings[modality];
-    if (choice.provider) env[providerEnvVar] = choice.provider;
+    const providerEnvVar = MODALITY_ENV[modality];
+    if (choice.provider && providerEnvVar) env[providerEnvVar] = choice.provider;
     if (choice.source === "own" && choice.provider) {
       Object.assign(env, byokEnv(choice.provider, settings.keys), byokModelEnv(choice.provider, settings.keys, modality));
     }
-  };
-  apply("image", "LILY_IMAGE_PROVIDER");
-  apply("video", "LILY_VIDEO_PROVIDER");
+  }
   return env;
 }
 

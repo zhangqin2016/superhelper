@@ -164,10 +164,44 @@ function normalizeRuntimeEnv(effectiveConfig) {
   return normalized;
 }
 
+function decodeGatewayTokenPayload(token) {
+  const match = String(token || "").match(/^lilygw\.([A-Za-z0-9_-]+)\./);
+  if (!match) return null;
+  try {
+    const base64 = match[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function gatewayTokenExpiresSoon(token, skewMs = 5 * 60_000) {
+  const payload = decodeGatewayTokenPayload(token);
+  if (!payload?.expiresAt) return false;
+  const expiresAt = Date.parse(String(payload.expiresAt));
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now() + skewMs;
+}
+
+function effectiveConfigHasExpiredGatewayToken(effectiveConfig, skewMs = 5 * 60_000) {
+  const values = [];
+  const presets = effectiveConfig?.models?.presets;
+  if (Array.isArray(presets)) {
+    for (const preset of presets) {
+      const env = preset?.env || {};
+      values.push(env.LILY_API_KEY, env.OPENAI_API_KEY, env.ANTHROPIC_API_KEY);
+    }
+  }
+  const runtimeEnv = effectiveConfig?.runtime?.env || {};
+  values.push(runtimeEnv.LILY_API_KEY, runtimeEnv.OPENAI_API_KEY, runtimeEnv.ANTHROPIC_API_KEY);
+  return values.some((value) => gatewayTokenExpiresSoon(value, skewMs));
+}
+
 function getRemoteModelCatalogSync() {
   const state = readCache();
   const expiresAt = Date.parse(String(state.expiresAt || ""));
   if (expiresAt && Date.now() > expiresAt) return null;
+  if (effectiveConfigHasExpiredGatewayToken(state.effectiveConfig)) return null;
   return normalizeRemoteCatalog(state.effectiveConfig);
 }
 
@@ -179,6 +213,7 @@ function getRemoteEffectiveConfigSync() {
   const state = readCache();
   const expiresAt = Date.parse(String(state.expiresAt || ""));
   if (expiresAt && Date.now() > expiresAt) return null;
+  if (effectiveConfigHasExpiredGatewayToken(state.effectiveConfig)) return null;
   return state.effectiveConfig || null;
 }
 
@@ -186,6 +221,7 @@ function getRemoteRuntimeEnvSync() {
   const state = readCache();
   const expiresAt = Date.parse(String(state.expiresAt || ""));
   if (expiresAt && Date.now() > expiresAt) return {};
+  if (effectiveConfigHasExpiredGatewayToken(state.effectiveConfig)) return {};
   return normalizeRuntimeEnv(state.effectiveConfig);
 }
 
@@ -262,4 +298,6 @@ module.exports = {
   getRemoteEffectiveConfigSync,
   getRemoteRuntimeEnvSync,
   getRemoteProviderCatalogSync,
+  decodeGatewayTokenPayload,
+  effectiveConfigHasExpiredGatewayToken,
 };

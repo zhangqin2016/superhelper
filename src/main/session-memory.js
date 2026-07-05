@@ -25,6 +25,14 @@ function trimText(value, limit = MAX_TEXT) {
   return `${text.slice(0, limit - 1)}…`;
 }
 
+function isInvalidAssistantMemoryText(value) {
+  try {
+    return require("./turn-error-classify").looksLikeLeakedToolCallText(value);
+  } catch {
+    return false;
+  }
+}
+
 function readSessionSummary(sessionId) {
   const filePath = summaryPath(sessionId);
   if (!filePath) return null;
@@ -119,7 +127,8 @@ function updateSessionSummaryFromRecord(sessionId, record) {
     recentFiles: [],
   };
   const userText = trimText(record.user?.text || "");
-  const assistantText = trimText(record.assistantText || "");
+  const rawAssistantText = trimText(record.assistantText || "");
+  const assistantText = isInvalidAssistantMemoryText(rawAssistantText) ? "" : rawAssistantText;
   const fileNames = (record.fileChanges || [])
     .map((entry) => entry.fileName || entry.filePath)
     .filter(Boolean)

@@ -64,7 +64,7 @@ export function deepMerge(base, override) {
 }
 
 /**
- * Resolve the per-scope image/video generation selection (multi-select + default)
+ * Resolve the per-scope image/video/speech generation selection (multi-select + default)
  * against the providers the server can actually serve. PURELY ADDITIVE + FAIL-OPEN: a
  * profile with no `config.media` (every old profile) is left to deliver exactly today's
  * behavior — all key-backed providers, server default — and old clients simply ignore
@@ -72,27 +72,53 @@ export function deepMerge(base, override) {
  * keep working. `availability` = media-gen provider ids whose key exists server-side.
  */
 export function resolveMediaSelection(configCopy, availability) {
-  const avail = [...new Set((availability || []).filter(Boolean).map(String))];
+  const unique = (list) => [...new Set((list || []).filter(Boolean).map(String))];
+  const all = Array.isArray(availability) ? unique(availability) : unique(availability?.all);
+  const available = {
+    image: unique(Array.isArray(availability) ? availability : availability?.image || all),
+    video: unique(Array.isArray(availability) ? availability : availability?.video || all),
+    speech: unique(Array.isArray(availability) ? all.filter((p) => p === "dashscope") : availability?.speech || availability?.tts || all.filter((p) => p === "dashscope")),
+  };
+  const avail = [...new Set([...available.image, ...available.video, ...available.speech])];
   if (!avail.length) return configCopy; // server can't serve any media — leave as today
   const requested = configCopy && typeof configCopy.media === "object" ? configCopy.media : null;
   const env = configCopy?.runtime?.env && typeof configCopy.runtime.env === "object" ? configCopy.runtime.env : null;
   const resolveKind = (kind) => {
+    const kindAvail = available[kind] || [];
+    if (!kindAvail.length) return null;
     const req = requested?.[kind];
     const list = Array.isArray(req?.providers) ? req.providers.map(String).filter(Boolean) : [];
-    let providers = list.filter((p) => avail.includes(p));
-    if (!providers.length) providers = [...avail]; // empty/absent selection → all available (today)
-    const serverDefault = String((kind === "image" ? env?.LILY_IMAGE_PROVIDER : env?.LILY_VIDEO_PROVIDER) || "");
+    let providers = list.filter((p) => kindAvail.includes(p));
+    if (!providers.length) providers = [...kindAvail];
+    const serverDefault = String(
+      (kind === "image" ? env?.LILY_IMAGE_PROVIDER : kind === "video" ? env?.LILY_VIDEO_PROVIDER : env?.LILY_SPEECH_PROVIDER || env?.LILY_TTS_PROVIDER) || "",
+    );
     let def = String(req?.default || "");
     if (!providers.includes(def)) def = providers.includes(serverDefault) ? serverDefault : providers[0];
     return { providers, default: def };
   };
-  configCopy.media = { image: resolveKind("image"), video: resolveKind("video") };
+  const resolved = {};
+  for (const kind of ["image", "video", "speech"]) {
+    const next = resolveKind(kind);
+    if (next) resolved[kind] = next;
+  }
+  configCopy.media = { ...(requested || {}), ...resolved };
   if (env) {
     // Make the resolved default actually drive the generation skill dispatch.
-    env.LILY_IMAGE_PROVIDER = configCopy.media.image.default;
-    env.LILY_VIDEO_PROVIDER = configCopy.media.video.default;
+    if (resolved.image?.default) env.LILY_IMAGE_PROVIDER = resolved.image.default;
+    if (resolved.video?.default) env.LILY_VIDEO_PROVIDER = resolved.video.default;
+    if (resolved.speech?.default) env.LILY_SPEECH_PROVIDER = resolved.speech.default;
   }
   return configCopy;
+}
+
+function hasLilyMedia(configCopy, kind) {
+  const env = configCopy?.runtime?.env && typeof configCopy.runtime.env === "object" ? configCopy.runtime.env : {};
+  if (env.LILY_MEDIA_BASE_URL || env.LILY_GPU_BASE_URL) return true;
+  if (kind === "image") return Boolean(env.LILY_MEDIA_IMAGE_ENDPOINT || env.LILY_MEDIA_IMAGE_BASE_URL || env.LILY_GPU_IMAGE_ENDPOINT || env.LILY_GPU_IMAGE_BASE_URL);
+  if (kind === "video") return Boolean(env.LILY_MEDIA_VIDEO_ENDPOINT || env.LILY_MEDIA_VIDEO_BASE_URL || env.LILY_GPU_VIDEO_ENDPOINT || env.LILY_GPU_VIDEO_BASE_URL);
+  if (kind === "speech") return Boolean(env.LILY_MEDIA_SPEECH_ENDPOINT || env.LILY_MEDIA_SPEECH_BASE_URL || env.LILY_MEDIA_TTS_ENDPOINT || env.LILY_MEDIA_TTS_BASE_URL || env.LILY_GPU_SPEECH_ENDPOINT || env.LILY_GPU_SPEECH_BASE_URL || env.LILY_GPU_TTS_ENDPOINT || env.LILY_GPU_TTS_BASE_URL);
+  return false;
 }
 
 /** A provider's selectable models: the explicit `models` list, else its single
@@ -365,10 +391,19 @@ function runtimeEnvFromServerConfig(serverConfig) {
     env.ZHIPU_IMAGE_MODEL = serverConfig.zhipuImageModel || "cogview-4-250304";
     env.ZHIPU_VIDEO_MODEL = serverConfig.zhipuVideoModel || "cogvideox-3";
   }
+  if (serverConfig.lilyMediaApiKey) env.LILY_MEDIA_API_KEY = serverConfig.lilyMediaApiKey;
+  if (serverConfig.lilyMediaBaseUrl) env.LILY_MEDIA_BASE_URL = serverConfig.lilyMediaBaseUrl;
+  if (serverConfig.lilyMediaImageBaseUrl) env.LILY_MEDIA_IMAGE_BASE_URL = serverConfig.lilyMediaImageBaseUrl;
+  if (serverConfig.lilyMediaVideoBaseUrl) env.LILY_MEDIA_VIDEO_BASE_URL = serverConfig.lilyMediaVideoBaseUrl;
+  if (serverConfig.lilyMediaSpeechBaseUrl) env.LILY_MEDIA_SPEECH_BASE_URL = serverConfig.lilyMediaSpeechBaseUrl;
+  if (serverConfig.lilyMediaImageEndpoint) env.LILY_MEDIA_IMAGE_ENDPOINT = serverConfig.lilyMediaImageEndpoint;
+  if (serverConfig.lilyMediaVideoEndpoint) env.LILY_MEDIA_VIDEO_ENDPOINT = serverConfig.lilyMediaVideoEndpoint;
+  if (serverConfig.lilyMediaSpeechEndpoint) env.LILY_MEDIA_SPEECH_ENDPOINT = serverConfig.lilyMediaSpeechEndpoint;
   // Default media provider for the image/video skills (per-call overridable via
   // input.provider). Drives the dispatch shell in generate-image/video.cjs.
   env.LILY_IMAGE_PROVIDER = serverConfig.mediaImageProvider || "dashscope";
   env.LILY_VIDEO_PROVIDER = serverConfig.mediaVideoProvider || "dashscope";
+  env.LILY_SPEECH_PROVIDER = serverConfig.mediaSpeechProvider || "dashscope";
   return env;
 }
 
@@ -770,13 +805,24 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
 
   // Per-scope media-generation selection (multi-select + default), gated by which media
   // providers actually have a key server-side. Additive + fail-open (see helper).
-  resolveMediaSelection(configCopy, [
+  const availableImageVideoProviders = [
     visionKey ? "dashscope" : null,
     volcengineKey ? "volcengine" : null,
     klingAccessKey ? "kling" : null,
     minimaxKey ? "minimax" : null,
     zhipuKey ? "zhipu" : null,
-  ]);
+  ];
+  const availableImageProviders = [...availableImageVideoProviders];
+  const availableVideoProviders = [...availableImageVideoProviders];
+  if (hasLilyMedia(configCopy, "image")) availableImageProviders.push("lily");
+  if (hasLilyMedia(configCopy, "video")) availableVideoProviders.push("lily");
+  const availableSpeechProviders = visionKey ? ["dashscope"] : [];
+  if (hasLilyMedia(configCopy, "speech")) availableSpeechProviders.push("lily");
+  resolveMediaSelection(configCopy, {
+    image: availableImageProviders,
+    video: availableVideoProviders,
+    speech: availableSpeechProviders,
+  });
 
   const presets = configCopy?.models?.presets;
   if (!Array.isArray(presets)) return configCopy;

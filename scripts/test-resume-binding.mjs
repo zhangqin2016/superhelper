@@ -31,6 +31,15 @@ const binding = buildResumeBinding({
   sessionManager,
   resumeId: session.agentResumeId,
 });
+const emptySkillsBinding = buildResumeBinding({
+  session,
+  project,
+  activeSkillIds: [],
+  sessionManager,
+  resumeId: session.agentResumeId,
+});
+
+assert.notEqual(binding.enabledSkillIdsHash, emptySkillsBinding.enabledSkillIdsHash, "active skill ids must affect resume binding");
 
 {
   const result = verifyResumeBinding({ ...session, agentResumeBinding: binding }, binding);

@@ -564,25 +564,33 @@ assert.equal(anthropicDirect.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anth
 //    kept; old clients ignore the added `media` field. (No regression.)
 {
   const cfg = resolveMediaSelection(
-    { runtime: { env: { LILY_IMAGE_PROVIDER: "dashscope", LILY_VIDEO_PROVIDER: "dashscope" } } },
+    { runtime: { env: { LILY_IMAGE_PROVIDER: "dashscope", LILY_VIDEO_PROVIDER: "dashscope", LILY_SPEECH_PROVIDER: "dashscope" } } },
     ["dashscope", "volcengine"],
   );
   assert.deepEqual(cfg.media.image.providers, ["dashscope", "volcengine"], "no selection -> all available (image)");
+  assert.deepEqual(cfg.media.speech.providers, ["dashscope"], "no selection -> speech keeps the supported DashScope provider");
   assert.equal(cfg.media.image.default, "dashscope", "no selection -> server default preserved");
   assert.equal(cfg.runtime.env.LILY_IMAGE_PROVIDER, "dashscope", "no selection -> env default unchanged (no regression)");
+  assert.equal(cfg.runtime.env.LILY_SPEECH_PROVIDER, "dashscope", "no selection -> speech env default unchanged (no regression)");
 }
 // 2. Explicit multi-select + default -> gated to available, default drives the skill env.
 {
   const cfg = resolveMediaSelection(
     {
-      media: { image: { providers: ["volcengine", "kling", "ghost"], default: "kling" }, video: { providers: ["dashscope"], default: "dashscope" } },
-      runtime: { env: { LILY_IMAGE_PROVIDER: "dashscope", LILY_VIDEO_PROVIDER: "dashscope" } },
+      media: {
+        image: { providers: ["volcengine", "kling", "ghost"], default: "kling" },
+        video: { providers: ["dashscope"], default: "dashscope" },
+        speech: { providers: ["volcengine", "dashscope"], default: "volcengine" },
+      },
+      runtime: { env: { LILY_IMAGE_PROVIDER: "dashscope", LILY_VIDEO_PROVIDER: "dashscope", LILY_SPEECH_PROVIDER: "dashscope" } },
     },
-    ["dashscope", "volcengine", "kling"],
+    { image: ["dashscope", "volcengine", "kling"], video: ["dashscope", "volcengine", "kling"], speech: ["dashscope"] },
   );
   assert.deepEqual(cfg.media.image.providers, ["volcengine", "kling"], "unavailable 'ghost' is dropped");
   assert.equal(cfg.media.image.default, "kling", "explicit default honored");
   assert.equal(cfg.runtime.env.LILY_IMAGE_PROVIDER, "kling", "resolved default drives the generation skill env");
+  assert.deepEqual(cfg.media.speech.providers, ["dashscope"], "speech selection is gated to TTS-capable providers");
+  assert.equal(cfg.runtime.env.LILY_SPEECH_PROVIDER, "dashscope", "invalid speech default falls back to supported service default");
 }
 // 3. Default not in the available set -> falls back to server default, else first.
 {
@@ -597,6 +605,20 @@ assert.equal(anthropicDirect.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anth
   const cfg = resolveMediaSelection({ media: { image: { providers: ["dashscope"], default: "dashscope" } } }, []);
   assert.equal(cfg.media.image.providers[0], "dashscope", "no availability -> config left as-is (no media resolution)");
   assert.ok(!("video" in cfg.media), "no availability -> untouched");
+}
+// 5. Lily GPU is additive: it appears only when the server marks it available.
+{
+  const cfg = resolveMediaSelection(
+    {
+      media: { image: { providers: ["lily", "dashscope"], default: "lily" }, video: { providers: ["lily"], default: "lily" } },
+      runtime: { env: { LILY_IMAGE_PROVIDER: "dashscope", LILY_VIDEO_PROVIDER: "dashscope" } },
+    },
+    { image: ["dashscope", "lily"], video: ["dashscope"], speech: [] },
+  );
+  assert.deepEqual(cfg.media.image.providers, ["lily", "dashscope"], "lily image remains selectable when available");
+  assert.equal(cfg.runtime.env.LILY_IMAGE_PROVIDER, "lily", "lily image can drive the image provider env");
+  assert.deepEqual(cfg.media.video.providers, ["dashscope"], "lily video is dropped when no video endpoint is available");
+  assert.equal(cfg.runtime.env.LILY_VIDEO_PROVIDER, "dashscope", "video falls back to the available server default");
 }
 
 console.log("client-config-service: ok");

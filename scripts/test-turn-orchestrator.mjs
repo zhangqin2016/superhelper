@@ -986,6 +986,28 @@ if (
 }
 
 sent.length = 0;
+const emptyCompletionTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "make four images", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!emptyCompletionTurn.ok || !runner.isBusy()) {
+  throw new Error(`empty completion guard turn should start: ${JSON.stringify(emptyCompletionTurn)}`);
+}
+runner.finish("");
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+const emptyCompletionTerminal = allEvents.find((event) => (
+  event.turnId === emptyCompletionTurn.turnId
+  && ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type)
+));
+if (
+  emptyCompletionTerminal?.type !== "turn.failed" ||
+  emptyCompletionTerminal.payload?.errorCode !== "EMPTY_ASSISTANT_COMPLETION"
+) {
+  throw new Error(`empty assistant completion must fail visibly, got: ${JSON.stringify(emptyCompletionTerminal)}`);
+}
+
+sent.length = 0;
 const runningProcessJobTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "渲染一个视频", [], {
   spawnEngine: false,
   skipPreflight: true,

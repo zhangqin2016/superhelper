@@ -96,6 +96,18 @@ try {
     throw new Error("formatted summary should include recent evidence gaps");
   }
 
+  updateSessionSummaryFromRecord("s1", {
+    turnId: "turn_bad_tool_xml",
+    terminal: "turn.completed",
+    user: { text: "make four images" },
+    assistantText: "> <parameter=timeout> 10000 </parameter> </function> </tool_call>",
+    fileChanges: [],
+  });
+  summary = readSessionSummary("s1");
+  if (summary.lastAssistantResult.includes("parameter=timeout") || formatSessionSummary(summary).includes("parameter=timeout")) {
+    throw new Error(`tool-call fragments must not be stored as assistant memory: ${JSON.stringify(summary)}`);
+  }
+
   const compacted = markSessionCompacted("s1", {
     runtime: "opencode",
     mode: "native",

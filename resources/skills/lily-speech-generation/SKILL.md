@@ -19,11 +19,14 @@ Optional parameters:
 - `voice`: defaults to `DASHSCOPE_TTS_VOICE`, otherwise `longanyang`
 - `format`: `wav`, `mp3`, or `pcm`; default `wav`
 - `sample_rate`: default `24000`
+- `provider`: `lily`/`dashscope` (else the configured default)
 - `output_dir`: save directory, default current workspace `generated-assets`
 
 `DASHSCOPE_TTS_ENDPOINT` can override the full endpoint. Otherwise the script
 uses `DASHSCOPE_TTS_BASE_URL` with the official default path. `DASHSCOPE_BASE_URL`
 is reserved for chat model APIs and is not used for speech generation.
+For Lily self-hosted GPU, set `LILY_MEDIA_SPEECH_ENDPOINT` (or
+`LILY_MEDIA_SPEECH_BASE_URL`) and choose provider `lily`.
 
 The script calls Alibaba Bailian asynchronous speech synthesis, downloads the
 temporary audio URL to a local file, and reports the local audio path. Reply with

@@ -267,7 +267,7 @@ class TurnOrchestrator {
       const project = session?.projectId && typeof this.ctx.projectManager?.find === "function"
         ? this.ctx.projectManager.find(session.projectId)
         : null;
-      const activeSkillIds = this.ctx.skillManager?.resolveSessionSkillIds?.(session) || [];
+      const activeSkillIds = require("./skill-manager").resolveSessionSkillIds(session);
       binding = require("./resume-binding").buildResumeBinding({
         session,
         project,
