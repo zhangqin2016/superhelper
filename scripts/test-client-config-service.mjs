@@ -375,7 +375,7 @@ const qwen36GpuManaged = buildEnvManagedClientConfig(
   },
 );
 assert.equal(qwen36GpuManaged.models.presets[0].env.LILY_CONTEXT_WINDOW_TOKENS, "65536");
-assert.equal(qwen36GpuManaged.models.presets[0].env.LILY_MAX_OUTPUT_TOKENS, "8192");
+assert.equal(qwen36GpuManaged.models.presets[0].env.LILY_MAX_OUTPUT_TOKENS, "4096");
 
 const deepseekOpenAiManaged = buildEnvManagedClientConfig(
   {

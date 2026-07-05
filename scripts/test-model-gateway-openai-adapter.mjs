@@ -175,7 +175,7 @@ try {
     },
   );
 
-  assert.equal(captured.body.max_tokens, 8_192, "Iluvatar Qwen3.6-27B default route should cap OpenCode's large output request");
+  assert.equal(captured.body.max_tokens, 4_096, "Iluvatar Qwen3.6-27B default route should cap OpenCode's large output request");
 
   await forwardOpenAiChatCompletions(
     {

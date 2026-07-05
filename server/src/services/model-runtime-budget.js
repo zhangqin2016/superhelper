@@ -1,5 +1,5 @@
 const ILUVATAR_QWEN36_CONTEXT_BUDGET = 65_536;
-const ILUVATAR_QWEN36_OUTPUT_BUDGET = 8_192;
+const ILUVATAR_QWEN36_OUTPUT_BUDGET = 4_096;
 
 function plainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -90,4 +90,3 @@ export function resolveModelRuntimeBudget(provider, model, discovered = {}) {
     tunedForDefaultLatency: Boolean(iluvatarQwen36 && !explicitContext && !explicitOutput),
   };
 }
-
