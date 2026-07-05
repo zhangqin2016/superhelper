@@ -1,3 +1,5 @@
+import { countryFromRequestIp } from "./request-geo.js";
+
 function firstHeader(headers = {}, names = []) {
   for (const name of names) {
     const value = headers[name] ?? headers[name.toLowerCase()];
@@ -24,12 +26,13 @@ export function smsRequestAllowedFromRegion(requestLike = {}) {
   if (explicitRegion === "overseas") return { ok: false, code: "SMS_REGION_BLOCKED" };
   if (explicitRegion === "china") return { ok: true };
 
-  const country = normalizeCountry(firstHeader(headers, [
+  const headerCountry = normalizeCountry(firstHeader(headers, [
     "cf-ipcountry",
     "x-vercel-ip-country",
     "x-country-code",
     "x-client-country",
   ]));
+  const country = headerCountry || countryFromRequestIp(requestLike).country;
   if (country && country !== "CN" && country !== "CHN") {
     return { ok: false, code: "SMS_REGION_BLOCKED", country };
   }

@@ -17,6 +17,26 @@ assert.equal(
   "UAE source country should receive UAE policy even from bootstrap host",
 );
 assert.equal(
+  resolveClientRegion({ headers: { host: "lilych.lilywb.cn", "x-country-code": "US" } }),
+  "uae",
+  "known non-China source country should receive overseas policy",
+);
+assert.equal(
+  resolveClientRegion({ headers: { host: "lilych.lilywb.cn", "x-forwarded-for": "5.30.0.1, 101.200.232.184" } }),
+  "uae",
+  "UAE client IP should receive overseas policy without geo headers",
+);
+assert.equal(
+  resolveClientRegion({ headers: { host: "lilych.lilywb.cn", "x-lily-timezone": "Asia/Dubai", "cf-ipcountry": "CN" } }),
+  "uae",
+  "overseas client timezone should receive overseas policy even when GeoIP is stale",
+);
+assert.equal(
+  resolveClientRegion({ headers: { host: "lilych.lilywb.cn", "x-lily-timezone": "Asia/Shanghai", "cf-ipcountry": "US" } }),
+  "china",
+  "China client timezone should keep domestic policy",
+);
+assert.equal(
   resolveClientRegion({ headers: { host: "lilych.lilywb.cn", "cf-ipcountry": "CN" } }),
   "china",
   "China source country should receive China policy",

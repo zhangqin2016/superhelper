@@ -3,6 +3,7 @@ import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import {
   DEFAULT_EFFECTIVE_CONFIG,
+  clearConfigProfileDeleted,
   configProfileWasDeleted,
   deepMerge,
   decideConfigProfileUpsert,
@@ -330,6 +331,7 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
         }),
       )
       .execute();
+    await clearConfigProfileDeleted(input.id);
     await audit(request, "config_profile.upsert", "config_profile", input.id, {
       scope: input.scope,
       targetId: input.targetId || null,

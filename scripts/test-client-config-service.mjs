@@ -135,8 +135,8 @@ assert.deepEqual(
 );
 assert.deepEqual(
   decideConfigProfileUpsert({ profileExists: false, deleted: true }),
-  { ok: false, code: "CONFIG_PROFILE_DELETED" },
-  "deleted config profile ids must not be recreated by stale upsert requests",
+  { ok: true },
+  "admin saves must be allowed to intentionally recreate a deleted config profile id",
 );
 assert.deepEqual(
   decideConfigProfileUpsert({ profileExists: true, deleted: true }),

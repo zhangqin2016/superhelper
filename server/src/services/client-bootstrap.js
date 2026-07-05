@@ -1,3 +1,5 @@
+import { countryFromRequestIp } from "./request-geo.js";
+
 const DEFAULT_CHINA_BASE_URL = "https://lilych.lilywb.cn";
 const DEFAULT_UAE_BASE_URL = "https://lilyxinjiapo.lilywb.cn";
 const DEFAULT_TTL_SECONDS = 6 * 60 * 60;
@@ -26,6 +28,23 @@ function normalizeRegion(value = "") {
   return "";
 }
 
+function regionFromTimezone(value = "") {
+  const timezone = String(value || "").trim();
+  if (!timezone) return "";
+  if ([
+    "Asia/Shanghai",
+    "Asia/Chongqing",
+    "Asia/Harbin",
+    "Asia/Urumqi",
+    "Asia/Hong_Kong",
+    "Asia/Macau",
+    "Asia/Taipei",
+  ].includes(timezone)) {
+    return "china";
+  }
+  return timezone.includes("/") ? "uae" : "";
+}
+
 export function resolveClientRegion(requestLike = {}) {
   const headers = requestLike.headers || {};
   const explicitRegion = normalizeRegion(firstHeader(headers, ["x-lily-region", "x-client-region"]));
@@ -36,13 +55,17 @@ export function resolveClientRegion(requestLike = {}) {
   );
   if (host === "lilyxinjiapo.lilywb.cn" || host === "lilyuae.lilywb.cn") return "uae";
 
-  const country = normalizeCountry(firstHeader(headers, [
+  const timezoneRegion = regionFromTimezone(firstHeader(headers, ["x-lily-timezone", "x-client-timezone"]));
+  if (timezoneRegion) return timezoneRegion;
+
+  const headerCountry = normalizeCountry(firstHeader(headers, [
     "cf-ipcountry",
     "x-vercel-ip-country",
     "x-country-code",
     "x-client-country",
   ]));
-  if (["AE", "ARE", "UAE"].includes(country)) return "uae";
+  const country = headerCountry || countryFromRequestIp(requestLike).country;
+  if (country && country !== "CN" && country !== "CHN") return "uae";
   return "china";
 }
 

@@ -11,6 +11,11 @@ assert.equal(
   "known non-China source country must be blocked before sending SMS",
 );
 assert.equal(
+  smsRequestAllowedFromRegion({ headers: { "x-forwarded-for": "5.30.0.1, 101.200.232.184" } }).ok,
+  false,
+  "UAE client IP must be blocked before sending SMS even without geo headers",
+);
+assert.equal(
   smsRequestAllowedFromRegion({ headers: { "cf-ipcountry": "CN" } }).ok,
   true,
   "China source country can request SMS",

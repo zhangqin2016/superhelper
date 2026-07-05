@@ -110,6 +110,19 @@ location / {
 }
 ```
 
+海外 edge（`lilyxinjiapo.lilywb.cn`）不要直接套国内站点模板；使用
+`deploy/baota/nginx-overseas-edge.conf`。这个模板必须把请求转发到国内源站
+`101.200.232.184:13000/13001`，同时固定传：
+
+```nginx
+proxy_set_header X-Forwarded-Host lilyxinjiapo.lilywb.cn;
+proxy_set_header X-Lily-Region uae;
+proxy_set_header X-Client-Country AE;
+```
+
+缺少这些 header 时，国内源站只能看到 `lilych` 默认控制面，`/api/client/bootstrap`
+会回 `region=china`，客户端就会展示账户登录/购买入口。
+
 ## 宝塔网站反向代理
 
 在宝塔里创建站点，例如：

@@ -2253,7 +2253,18 @@ app.whenReady().then(async () => {
     console.log(settingsSingleResponsibilityResult);
     const runtimePolicySettingsResult = await win.webContents.executeJavaScript(`(
       async () => {
-        window.__lilyAppPolicy = { ok: true, region: "uae", features: { accountLogin: false, purchase: false, licenseActivation: true } };
+        window.__lilyAppPolicy = {
+          ok: true,
+          region: "uae",
+          features: {
+            account: false,
+            accountLogin: false,
+            billing: false,
+            purchase: false,
+            usage: true,
+            licenseActivation: true,
+          },
+        };
         const { applyAppPolicyToSettings, openSettingsPage } = await import("./modules/settings-panel.js");
         applyAppPolicyToSettings(window.__lilyAppPolicy);
         const usageNav = document.querySelector('.settings-nav-item[data-edition-account-nav="true"]');

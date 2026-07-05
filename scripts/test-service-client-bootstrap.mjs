@@ -87,6 +87,9 @@ if (requests[0]?.url !== "https://lilyxinjiapo.lilywb.cn/api/client/bootstrap") 
 if (requests[0]?.options?.headers?.["X-Lily-Region"] !== "uae") {
   throw new Error(`bootstrap should send local UAE region hint: ${JSON.stringify(requests[0]?.options?.headers)}`);
 }
+if (!requests[0]?.options?.headers?.["X-Lily-Timezone"]) {
+  throw new Error(`bootstrap should send local timezone for server-side region fallback: ${JSON.stringify(requests[0]?.options?.headers)}`);
+}
 if (requests[1]?.url !== "https://lilyxinjiapo.lilywb.cn/api/apps/catalog") {
   throw new Error(`post-bootstrap API should use UAE gateway: ${requests[1]?.url}`);
 }

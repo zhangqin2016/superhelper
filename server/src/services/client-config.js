@@ -496,7 +496,10 @@ export async function recordEnvManagedConfigProfileDeleted(profileId) {
 }
 
 export function decideConfigProfileUpsert(input = {}) {
-  if (!input.profileExists && input.deleted) return { ok: false, code: "CONFIG_PROFILE_DELETED" };
+  // Deletion tombstones suppress automatic/default profile resurrection only.
+  // Admins must still be able to intentionally recreate a rule with the same id;
+  // otherwise a deleted id becomes permanently unusable and the UI cannot save
+  // a perfectly valid replacement.
   return { ok: true };
 }
 
@@ -513,6 +516,17 @@ export async function recordConfigProfileDeleted(profileId) {
   const current = await getAppSetting(DELETED_CONFIG_PROFILE_IDS_KEY, []);
   const ids = new Set(Array.isArray(current) ? current.map(String).filter(Boolean) : []);
   ids.add(id);
+  await setAppSetting(DELETED_CONFIG_PROFILE_IDS_KEY, [...ids].sort());
+  return true;
+}
+
+export async function clearConfigProfileDeleted(profileId) {
+  const id = String(profileId || "").trim();
+  if (!id) return false;
+  const { getAppSetting, setAppSetting } = await import("./app-settings.js");
+  const current = await getAppSetting(DELETED_CONFIG_PROFILE_IDS_KEY, []);
+  const ids = new Set(Array.isArray(current) ? current.map(String).filter(Boolean) : []);
+  if (!ids.delete(id)) return false;
   await setAppSetting(DELETED_CONFIG_PROFILE_IDS_KEY, [...ids].sort());
   return true;
 }

@@ -22,6 +22,7 @@ const DEVICE_FILE = "device-state.json";
 const CLIENT_POLICY_FILE = "client-bootstrap-policy.json";
 const FETCH_TIMEOUT_MS = 15_000;
 const ATTACHMENT_UPLOAD_TIMEOUT_MS = 60_000;
+const AUTO_REGION_RECHECK_MS = 5 * 60 * 1000;
 const BUILTIN_SERVICE_API_BASE_URL = "https://lilych.lilywb.cn";
 const BUILTIN_UAE_SERVICE_API_BASE_URL = "https://lilyxinjiapo.lilywb.cn";
 const EDGE_FALLBACK_SAFE_POST_PATHS = new Set([
@@ -175,6 +176,10 @@ function localClientRegionHint() {
   return "";
 }
 
+function localClientTimezone() {
+  return String(Intl.DateTimeFormat().resolvedOptions().timeZone || "").trim();
+}
+
 function normalizeClientPolicy(raw = {}, source = "remote") {
   const fallback = defaultClientPolicy();
   const apiBaseUrl = normalizeBaseUrl(raw.apiBaseUrl || raw.gatewayBaseUrl || fallback.apiBaseUrl);
@@ -220,7 +225,10 @@ function loadStoredClientPolicy() {
 }
 
 function storeClientPolicy(policy) {
-  clientPolicyCache = normalizeClientPolicy(policy, "remote");
+  clientPolicyCache = {
+    ...normalizeClientPolicy(policy, "remote"),
+    receivedAt: new Date().toISOString(),
+  };
   writeJson(clientPolicyPath(), clientPolicyCache);
   return clientPolicyCache;
 }
@@ -250,15 +258,31 @@ function getServiceSettings() {
   };
 }
 
+function policyReceivedAtMs(policy) {
+  const parsed = Date.parse(String(policy?.receivedAt || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function shouldRecheckAutomaticRegionPolicy(policy, regionHint) {
+  if (regionHint) return false;
+  if (hasExplicitServiceApiBaseUrl()) return false;
+  if (!policy || policy.source === "default") return false;
+  if (String(policy?.region || "").toLowerCase() !== "china") return false;
+  if (normalizeBaseUrl(policy?.apiBaseUrl) !== BUILTIN_SERVICE_API_BASE_URL) return false;
+  return Date.now() - policyReceivedAtMs(policy) > AUTO_REGION_RECHECK_MS;
+}
+
 async function refreshClientBootstrap({ force = false } = {}) {
   const current = getClientPolicy();
   const expiresAtMs = Date.parse(current.expiresAt || "");
   const regionHint = localClientRegionHint();
   const cacheMatchesRegionHint = !regionHint || String(current.region || "").toLowerCase() === regionHint;
   const shouldRetryRecoveredEdge = Boolean(current.edgeFallbackFrom && cacheMatchesRegionHint);
+  const shouldRecheckRegion = shouldRecheckAutomaticRegionPolicy(current, regionHint);
   if (
     !force &&
     !shouldRetryRecoveredEdge &&
+    !shouldRecheckRegion &&
     cacheMatchesRegionHint &&
     current.source !== "default" &&
     Number.isFinite(expiresAtMs) &&
@@ -285,6 +309,7 @@ async function refreshClientBootstrap({ force = false } = {}) {
           "X-Lily-Device-Id": getDeviceId(),
           "X-Lily-App-Version": appVersion(),
           "X-Lily-Platform": process.platform,
+          ...(localClientTimezone() ? { "X-Lily-Timezone": localClientTimezone() } : {}),
           ...(regionHint ? { "X-Lily-Region": regionHint } : {}),
         },
       });
