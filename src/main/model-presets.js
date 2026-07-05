@@ -563,6 +563,7 @@ function listPresetsPublic() {
       protocol: p.protocol || "",
       apiKeySet: Boolean(p.apiKeySet),
       tlsSkipVerify: Boolean(p.tlsSkipVerify),
+      capabilities: { vision: Boolean(p.capabilities?.vision) },
       custom: Boolean(p.custom),
     })),
   };

@@ -558,6 +558,34 @@ export async function initSkillSettings() {
     await refreshSkillsList();
   });
 
+  $("skillsImportWorkspaceBtn")?.addEventListener("click", async () => {
+    if (isBusy()) {
+      showToast(t("toast.skillsImportBusy"), "error");
+      return;
+    }
+    if (typeof window.assistantClient.importWorkspaceSkill !== "function") {
+      showToast(t("toast.skillsImportFailed"), "error");
+      return;
+    }
+    const btn = $("skillsImportWorkspaceBtn");
+    if (btn) btn.disabled = true;
+    try {
+      const result = await window.assistantClient.importWorkspaceSkill();
+      if (!result?.ok) {
+        if (!result?.canceled) {
+          showToast(skillErrorMessage(result?.error, result?.detail) || t("toast.skillsImportFailed"), "error");
+        }
+        return;
+      }
+      showToast(t("toast.skillsImportedWorkspace", { name: result.id || "" }), "success");
+      await refreshSkillsList();
+    } catch (err) {
+      showToast(err?.message || t("toast.skillsImportFailed"), "error");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
   $("skillsSearchInput")?.addEventListener("input", (event) => {
     searchQuery = String(event.target.value || "").trim().toLowerCase();
     renderInstalledList();

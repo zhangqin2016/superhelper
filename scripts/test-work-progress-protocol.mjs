@@ -49,8 +49,21 @@ const command = inferWorkProgressFromCommand('curl -L -o /tmp/blender.dmg "https
 assertEqual(command.phase, "downloading", "curl command infers initial download phase");
 assertEqual(command.path, "/tmp/blender.dmg", "curl command infers output path");
 
+const remoteName = inferWorkProgressFromCommand('curl.exe -L -O "https://example.com/blender.dmg" 2>&1');
+assertEqual(remoteName.phase, "downloading", "curl remote-name command still infers download");
+assertEqual(remoteName.path, "", "fd redirect is not treated as the remote-name output path");
+
+const stdoutRedirect = inferWorkProgressFromCommand('curl -L "https://example.com/blender.dmg" > "D:/tmp/blender.dmg"');
+assertEqual(stdoutRedirect.path, "D:/tmp/blender.dmg", "stdout redirect can infer an output path");
+
+const healthProbe = inferWorkProgressFromCommand("curl.exe -sS --connect-timeout 3 http://127.0.0.1:8188/system_stats 2>&1 | select -First 20");
+assert(healthProbe === null, "curl health probes with fd redirection are not guessed as downloads");
+
+const stderrOnly = inferWorkProgressFromCommand("curl -sS https://example.com/api/config 2>err.log");
+assert(stderrOnly === null, "stderr redirects are not treated as download output paths");
+
 const latestInferred = latestWorkProgress("noise\r 55  100M   55 55M    0     0  1M      0  0:01:00  0:00:33  0:00:27 1M");
 assertEqual(latestInferred.percent, 55, "latest parser handles carriage-return progress");
 assert(inferWorkProgressLine("1 2 3 4") === null, "plain numeric output is not guessed as progress");
 
-finish("test-work-progress-protocol", 18);
+finish("test-work-progress-protocol", 23);

@@ -1912,7 +1912,9 @@ app.whenReady().then(async () => {
     const markdownRichResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { renderMarkdown, renderMarkdownWithCache } = await import("./modules/markdown.js");
+        const { enhanceFileMentions } = await import("./modules/file-mentions.js");
         const fence = String.fromCharCode(96).repeat(3);
+        const tick = String.fromCharCode(96);
         const host = document.createElement("div");
         host.className = "markdown-body";
         document.body.appendChild(host);
@@ -1947,6 +1949,14 @@ app.whenReady().then(async () => {
           throw new Error("Windows file URLs should be passed to main as file URLs, got: " + pathHost.innerHTML);
         }
         windowsFileUrlLink.click();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        renderMarkdownWithCache(pathHost, "位置：" + tick + "D:\\\\aicode\\\\图片\\\\output\\\\comfyui-image-generator-skill.zip" + tick);
+        enhanceFileMentions(pathHost, "session_markdown_reveal");
+        const windowsInlineZipAction = pathHost.querySelector(".file-mention-action");
+        if (!windowsInlineZipAction) {
+          throw new Error("Windows inline-code zip paths should get a reveal action: " + pathHost.innerHTML);
+        }
+        windowsInlineZipAction.click();
         await new Promise((resolve) => setTimeout(resolve, 20));
         renderMarkdownWithCache(pathHost, "![bad](/tmp/unauthorized-image.png)");
         const brokenLocalImage = pathHost.querySelector("img.markdown-local-file-image[data-local-file-path='/tmp/unauthorized-image.png']");

@@ -127,8 +127,11 @@ function defaultModelFor(provider) {
 
 function providerVisionCapability(provider, providerCapabilities = {}) {
   const explicit = providerCapabilities?.[provider?.id]?.vision;
-  if (explicit !== undefined) return Boolean(explicit);
-  return Boolean(provider?.metadata?.nativeVision || provider?.capabilities?.vision);
+  // Provider metadata is the current source of truth from the model-provider
+  // registry. Older config profiles may carry a generated `vision:false` from
+  // before the provider was marked native-vision; that stale false must not
+  // suppress the newer provider capability.
+  return Boolean(explicit || provider?.metadata?.nativeVision || provider?.capabilities?.vision);
 }
 
 function modelSlug(model) {

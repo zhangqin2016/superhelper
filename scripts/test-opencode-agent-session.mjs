@@ -399,6 +399,40 @@ async function newSession() {
   }
 }
 
+// --- cold promptAsync can stay pending while official status proves it landed
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    let releasePrompt = null;
+    fake.sendPrompt = async (p) => {
+      fake.prompts.push(p);
+      await new Promise((resolve) => {
+        releasePrompt = resolve;
+      });
+    };
+    fake.idleState = false;
+    session.sendUserMessage({ text: "cold pending prompt" });
+    await tick();
+    await sleep(60);
+    assert(fake.prompts.length === 1, "pending prompt must not be replayed while the original request may still land");
+    assert(fake.idleChecks.length >= 1, "pending prompt checks official session status");
+    assert(draftTypes(orch).filter((t) => t === "turn.accepted").length === 1, "official busy status moves UI out of starting");
+    assert(orch.calls.error.length === 0, "officially busy pending prompt is not failed");
+    releasePrompt?.();
+    await tick();
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "pending landed" } });
+    fake.idleState = true;
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "pending landed", "pending prompt completes through normal SSE");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
 // --- promptAsync transport error after owned event must not schedule failure -
 {
   const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
@@ -1740,8 +1774,12 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
 // --- native compaction: expose OpenCode summarize only when idle -------------
 {
   const { fake, session } = await newSession();
-  assert(await session.compactContext({ providerID: "lily", modelID: "deepseek-chat", auto: true }) === false,
-    "compaction before startup is a no-op");
+  assert(await session.compactContext({ providerID: "lily", modelID: "deepseek-chat", auto: true }) === true,
+    "compaction before first user send starts the runtime and summarizes");
+  assert(
+    JSON.stringify(fake.summarizeCalls) === JSON.stringify([{ providerID: "lily", modelID: "deepseek-chat", auto: true }]),
+    "pre-start native compaction uses the requested model/body",
+  );
   session.sendUserMessage({ text: "seed session" });
   await tick();
   assert(await session.compactContext({ providerID: "lily", modelID: "deepseek-chat", auto: true }) === false,
@@ -1751,7 +1789,10 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   assert(await session.compactContext({ providerID: "lily", modelID: "deepseek-chat", auto: true }) === true,
     "idle runner passes native compaction through");
   assert(
-    JSON.stringify(fake.summarizeCalls) === JSON.stringify([{ providerID: "lily", modelID: "deepseek-chat", auto: true }]),
+    JSON.stringify(fake.summarizeCalls) === JSON.stringify([
+      { providerID: "lily", modelID: "deepseek-chat", auto: true },
+      { providerID: "lily", modelID: "deepseek-chat", auto: true },
+    ]),
     "native compaction uses the requested model/body",
   );
   session.terminate();

@@ -82,6 +82,7 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   });
   assert(r.ok && r.protocol === "openai", "OpenAI gateway provider keeps OpenAI protocol");
   assert(r.model.providerID === "lily", "OpenAI gateway model ref uses OpenAI-compatible provider");
+  assert(r.model.contextWindowTokens === null, "missing context window stays unspecified instead of guessing by model name");
   assert(r.diagnostics.modelRoute.route === "gateway", "diagnostics still prove gateway route");
   assert(r.diagnostics.modelRoute.provider === "iluvatar-vllm", "diagnostics include OpenAI gateway provider");
   const cfg = JSON.parse(r.configContent);
@@ -89,6 +90,22 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   assert(cfg.provider.lily.options.baseURL === "https://lily.example.com/llm/iluvatar-vllm/v1",
     "OpenAI gateway baseURL is the /v1 base used before /chat/completions");
   assert(cfg.model === "lily//private/Qwen3-Next-80B-A3B-Instruct", "slash-prefixed model id is preserved");
+}
+
+{
+  const r = resolveOpencodeModelConfig({
+    LILY_API_BASE_URL: "https://lily.example.com/llm/iluvatar-vllm/v1",
+    LILY_API_KEY: "gateway-token",
+    LILY_GATEWAY_PROVIDER: "iluvatar-vllm",
+    LILY_OPENCODE_PROTOCOL: "openai",
+    LILY_MODEL: "/private/Qwen3-Coder-Next",
+    LILY_CONTEXT_WINDOW_TOKENS: "65536",
+    LILY_MAX_OUTPUT_TOKENS: "8192",
+  });
+  assert(r.ok && r.protocol === "openai", "Qwen Coder vLLM still uses generic OpenAI protocol");
+  assert(r.model.contextWindowTokens === 65_536, "context window is carried from service metadata");
+  assert(r.model.maxOutputTokens === 8_192, "output cap is carried from service metadata");
+  assert(r.model.modelID === "/private/Qwen3-Coder-Next", "model id is data, not a hard-coded branch");
 }
 
 {

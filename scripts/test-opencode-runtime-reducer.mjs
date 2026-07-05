@@ -163,6 +163,23 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
   assert(downloadStart.drafts[1].payload.notice.code === "workProgress", "curl download progress uses generic workProgress");
   assert(downloadStart.drafts[1].payload.notice.progress.phase === "downloading", "curl download progress carries phase");
 
+  const curlProbeState = createOpencodeRuntimeState();
+  const curlProbe = reduce("message.part.updated", {
+    part: {
+      type: "tool",
+      tool: "bash",
+      callID: "curl_probe",
+      state: {
+        status: "running",
+        input: { command: "curl.exe -sS --connect-timeout 3 http://127.0.0.1:8188/system_stats 2>&1 | select -First 20" },
+      },
+    },
+  }, curlProbeState);
+  assert(curlProbe.drafts.length === 1, `curl health probe should only emit the normal tool row: ${JSON.stringify(curlProbe.drafts)}`);
+  assert(curlProbe.drafts[0].type === "tool.started", "curl health probe still starts as a normal tool");
+  assert(!curlProbe.drafts.some((draft) => draft.type === "engine.notice" && draft.payload?.notice?.code === "workProgress"),
+    "curl health probe must not emit a fake download notice");
+
   const partial = reduce("message.part.updated", {
     part: { type: "tool", tool: "bash", callID: "c1", state: { status: "running", metadata: { output: "partial" }, input: { command: "ls" } } },
   }, state);

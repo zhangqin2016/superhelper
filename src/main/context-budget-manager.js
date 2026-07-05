@@ -3,7 +3,10 @@
 const DEFAULT_MIN_TURNS_BEFORE_COMPACT = 24;
 const DEFAULT_MIN_COMPACTION_INTERVAL_MS = 20 * 60 * 1000;
 const DEFAULT_TOKEN_PRESSURE_THRESHOLD = 0.72;
+const DEFAULT_EXACT_TOKEN_PRESSURE_THRESHOLD = 0.88;
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 120_000;
+const DEFAULT_OUTPUT_RESERVE_TOKENS = 4_096;
+const MAX_DYNAMIC_OUTPUT_RESERVE_TOKENS = 32_768;
 
 function normalizeModelRef(model = {}) {
   const source = model && typeof model === "object" ? model : {};
@@ -82,17 +85,81 @@ function estimateTokensForText(text, opts = {}) {
   };
 }
 
-function decideBackgroundCompaction({
-  capabilities = {},
+function positiveInt(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.floor(number);
+}
+
+function clamp(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.min(max, Math.max(min, number));
+}
+
+function resolveContextBudget({
   model = {},
-  runner = {},
-  sessionSummary = {},
-  now = Date.now(),
-  minTurnsBeforeCompact = DEFAULT_MIN_TURNS_BEFORE_COMPACT,
-  minIntervalMs = DEFAULT_MIN_COMPACTION_INTERVAL_MS,
-  contextWindowTokens = DEFAULT_CONTEXT_WINDOW_TOKENS,
-  tokenPressureThreshold = DEFAULT_TOKEN_PRESSURE_THRESHOLD,
+  contextWindowTokens,
+  maxOutputTokens,
+  tokenPressureThreshold,
+  tokenSource = "",
 } = {}) {
+  const sourceModel = model && typeof model === "object" ? model : {};
+  const windowTokens = positiveInt(
+    contextWindowTokens ??
+      sourceModel.contextWindowTokens ??
+      sourceModel.context_window_tokens ??
+      sourceModel.maxContextTokens ??
+      sourceModel.max_context_tokens ??
+      sourceModel.maxModelLen ??
+      sourceModel.max_model_len,
+  ) || DEFAULT_CONTEXT_WINDOW_TOKENS;
+  const configuredOutputReserve = positiveInt(
+    maxOutputTokens ??
+      sourceModel.maxOutputTokens ??
+      sourceModel.max_output_tokens ??
+      sourceModel.outputTokens ??
+      sourceModel.output_tokens,
+  );
+  const dynamicReserve = Math.min(
+    MAX_DYNAMIC_OUTPUT_RESERVE_TOKENS,
+    Math.max(DEFAULT_OUTPUT_RESERVE_TOKENS, Math.floor(windowTokens * 0.08)),
+    Math.max(1, Math.floor(windowTokens * 0.25)),
+  );
+  const requestedReserve = configuredOutputReserve
+    ? Math.min(configuredOutputReserve, dynamicReserve)
+    : dynamicReserve;
+  const outputReserveTokens = Math.min(
+    Math.max(1, Math.floor(windowTokens * 0.5)),
+    requestedReserve,
+  );
+  const usableInputTokens = Math.max(1, windowTokens - outputReserveTokens);
+  const defaultThreshold = tokenSource === "runtime_usage"
+    ? DEFAULT_EXACT_TOKEN_PRESSURE_THRESHOLD
+    : DEFAULT_TOKEN_PRESSURE_THRESHOLD;
+  const pressureThreshold = clamp(tokenPressureThreshold || defaultThreshold, 0.5, 0.95);
+  return {
+    contextWindowTokens: windowTokens,
+    outputReserveTokens,
+    usableInputTokens,
+    tokenPressureThreshold: pressureThreshold,
+    compactionTriggerTokens: Math.max(1, Math.floor(usableInputTokens * pressureThreshold)),
+    tokenSource,
+    budgetSource: (
+      contextWindowTokens ||
+      sourceModel.contextWindowTokens ||
+      sourceModel.context_window_tokens ||
+      sourceModel.maxContextTokens ||
+      sourceModel.max_context_tokens ||
+      sourceModel.maxModelLen ||
+      sourceModel.max_model_len
+    )
+      ? "model_capability"
+      : "default_capability",
+  };
+}
+
+function compactionBlockedDecision({ capabilities = {}, model = {}, runner = {} } = {}) {
   if (!Boolean(capabilities.nativeCompaction || capabilities.manualSummarize)) {
     return { action: "skip", reason: "unsupported_runtime" };
   }
@@ -107,9 +174,12 @@ function decideBackgroundCompaction({
       modelID,
     };
   }
-  if (!runner.alive) return { action: "skip", reason: "runner_not_alive" };
+  if (!runner.alive && !runner.canStart) return { action: "skip", reason: "runner_not_alive" };
   if (runner.busy) return { action: "skip", reason: "runner_busy" };
+  return null;
+}
 
+function recentCompactionDecision({ sessionSummary = {}, now = Date.now(), minIntervalMs = DEFAULT_MIN_COMPACTION_INTERVAL_MS } = {}) {
   const lastCompactedAt = parseTime(sessionSummary.lastCompactedAt);
   if (lastCompactedAt > 0 && now - lastCompactedAt < minIntervalMs) {
     return { action: "skip", reason: "recently_compacted" };
@@ -122,26 +192,112 @@ function decideBackgroundCompaction({
       lastCompactionFailedAt: sessionSummary.lastCompactionFailedAt,
     };
   }
+  return null;
+}
+
+function decidePreTurnCompaction({
+  capabilities = {},
+  model = {},
+  runner = {},
+  sessionSummary = {},
+  currentPromptTokens = 0,
+  currentPromptTokenSource = "",
+  now = Date.now(),
+  minIntervalMs = DEFAULT_MIN_COMPACTION_INTERVAL_MS,
+  contextWindowTokens,
+  tokenPressureThreshold,
+} = {}) {
+  const blocked = compactionBlockedDecision({ capabilities, model, runner });
+  if (blocked) return blocked;
+  const recent = recentCompactionDecision({ sessionSummary, now, minIntervalMs });
+  if (recent) return recent;
+
+  const previousTokens = Number(sessionSummary.lastEnginePromptTokens || 0);
+  const currentTokens = Number(currentPromptTokens || 0);
+  const tokenSource = currentPromptTokenSource || sessionSummary.lastEnginePromptTokenSource || "";
+  const budget = resolveContextBudget({
+    model,
+    contextWindowTokens,
+    tokenPressureThreshold,
+    tokenSource,
+  });
+  const estimatedPromptTokens = Math.max(
+    Number.isFinite(previousTokens) ? previousTokens : 0,
+    Number.isFinite(currentTokens) ? currentTokens : 0,
+  );
+  if (estimatedPromptTokens > 0 && estimatedPromptTokens >= budget.compactionTriggerTokens) {
+    return {
+      action: "compact",
+      reason: "pre_turn_token_pressure",
+      mode: "native",
+      estimatedPromptTokens,
+      currentPromptTokens: Number.isFinite(currentTokens) ? currentTokens : 0,
+      previousPromptTokens: Number.isFinite(previousTokens) ? previousTokens : 0,
+      contextWindowTokens: budget.contextWindowTokens,
+      outputReserveTokens: budget.outputReserveTokens,
+      usableInputTokens: budget.usableInputTokens,
+      compactionTriggerTokens: budget.compactionTriggerTokens,
+      tokenPressureThreshold: budget.tokenPressureThreshold,
+      tokenSource,
+      budgetSource: budget.budgetSource,
+    };
+  }
+  return {
+    action: "skip",
+    reason: "below_token_pressure",
+    estimatedPromptTokens,
+    currentPromptTokens: Number.isFinite(currentTokens) ? currentTokens : 0,
+    previousPromptTokens: Number.isFinite(previousTokens) ? previousTokens : 0,
+    contextWindowTokens: budget.contextWindowTokens,
+    outputReserveTokens: budget.outputReserveTokens,
+    usableInputTokens: budget.usableInputTokens,
+    compactionTriggerTokens: budget.compactionTriggerTokens,
+    tokenPressureThreshold: budget.tokenPressureThreshold,
+    tokenSource,
+    budgetSource: budget.budgetSource,
+  };
+}
+
+function decideBackgroundCompaction({
+  capabilities = {},
+  model = {},
+  runner = {},
+  sessionSummary = {},
+  now = Date.now(),
+  minTurnsBeforeCompact = DEFAULT_MIN_TURNS_BEFORE_COMPACT,
+  minIntervalMs = DEFAULT_MIN_COMPACTION_INTERVAL_MS,
+  contextWindowTokens = DEFAULT_CONTEXT_WINDOW_TOKENS,
+  tokenPressureThreshold = DEFAULT_TOKEN_PRESSURE_THRESHOLD,
+} = {}) {
+  const blocked = compactionBlockedDecision({ capabilities, model, runner });
+  if (blocked) return blocked;
+  const recent = recentCompactionDecision({ sessionSummary, now, minIntervalMs });
+  if (recent) return recent;
 
   const estimatedPromptTokens = Number(sessionSummary.lastEnginePromptTokens || 0);
-  const maxTokens = Number(contextWindowTokens || 0);
-  const pressureThreshold = Number(tokenPressureThreshold || 0);
+  const budget = resolveContextBudget({
+    model,
+    contextWindowTokens,
+    tokenPressureThreshold,
+    tokenSource: sessionSummary.lastEnginePromptTokenSource || "",
+  });
   if (
     Number.isFinite(estimatedPromptTokens) &&
-    Number.isFinite(maxTokens) &&
-    Number.isFinite(pressureThreshold) &&
     estimatedPromptTokens > 0 &&
-    maxTokens > 0 &&
-    pressureThreshold > 0 &&
-    estimatedPromptTokens >= maxTokens * pressureThreshold
+    estimatedPromptTokens >= budget.compactionTriggerTokens
   ) {
     return {
       action: "compact",
       reason: "token_pressure",
       mode: "native",
       estimatedPromptTokens,
-      contextWindowTokens: maxTokens,
+      contextWindowTokens: budget.contextWindowTokens,
+      outputReserveTokens: budget.outputReserveTokens,
+      usableInputTokens: budget.usableInputTokens,
+      compactionTriggerTokens: budget.compactionTriggerTokens,
+      tokenPressureThreshold: budget.tokenPressureThreshold,
       tokenSource: sessionSummary.lastEnginePromptTokenSource || "",
+      budgetSource: budget.budgetSource,
     };
   }
 
@@ -155,12 +311,16 @@ function decideBackgroundCompaction({
 
 module.exports = {
   DEFAULT_CONTEXT_WINDOW_TOKENS,
+  DEFAULT_EXACT_TOKEN_PRESSURE_THRESHOLD,
   DEFAULT_MIN_TURNS_BEFORE_COMPACT,
   DEFAULT_MIN_COMPACTION_INTERVAL_MS,
+  DEFAULT_OUTPUT_RESERVE_TOKENS,
   DEFAULT_TOKEN_PRESSURE_THRESHOLD,
+  decidePreTurnCompaction,
   decideBackgroundCompaction,
   estimateTokensForText,
   estimateTokensFromChars,
   nativeCompactionUnsupportedReason,
+  resolveContextBudget,
   runtimeSupportsNativeCompaction,
 };

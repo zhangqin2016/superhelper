@@ -201,6 +201,7 @@ export async function forwardOpenAiChatCompletions(provider, body) {
   const payload = body && typeof body === "object" && !Array.isArray(body) ? { ...body } : {};
   const model = normalizeModelForProtocol(provider, payload.model || provider.model);
   if (model) payload.model = model;
+  payload.max_tokens = resolveMaxTokens(payload, provider);
   return fetch(target, {
     method: "POST",
     headers: {

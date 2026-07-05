@@ -6,9 +6,11 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   decideBackgroundCompaction,
+  decidePreTurnCompaction,
   estimateTokensForText,
   estimateTokensFromChars,
   nativeCompactionUnsupportedReason,
+  resolveContextBudget,
   runtimeSupportsNativeCompaction,
 } = require("../src/main/context-budget-manager.js");
 
@@ -55,6 +57,31 @@ assert.equal(
   true,
   "provider fallback avoids undercounting CJK-heavy prompts",
 );
+
+{
+  const small = resolveContextBudget({
+    model: { providerID: "lily", modelID: "self-hosted", contextWindowTokens: 65_536 },
+    tokenSource: "estimated_provider_fallback",
+  });
+  const large = resolveContextBudget({
+    model: { providerID: "anthropic", modelID: "large-context", contextWindowTokens: 1_000_000 },
+    tokenSource: "runtime_usage",
+  });
+  const largeWithHugeOutput = resolveContextBudget({
+    model: {
+      providerID: "openai",
+      modelID: "large-output-context",
+      contextWindowTokens: 1_000_000,
+      maxOutputTokens: 384_000,
+    },
+    tokenSource: "runtime_usage",
+  });
+  assert.equal(small.contextWindowTokens, 65_536, "budget uses model capability, not a hard-coded provider name");
+  assert(small.compactionTriggerTokens < 55_000, "small windows keep a conservative trigger");
+  assert(large.compactionTriggerTokens > 800_000, "large-context models keep their useful context instead of inheriting a 65k-style cap");
+  assert.equal(large.budgetSource, "model_capability", "large budget is capability-derived");
+  assert(largeWithHugeOutput.compactionTriggerTokens > 800_000, "huge max-output capability does not silently consume most input context");
+}
 
 assert.deepEqual(
   decideBackgroundCompaction({
@@ -116,25 +143,65 @@ assert.deepEqual(
   "failed native compaction is rate-limited instead of retried every turn",
 );
 
-assert.deepEqual(
-  decideBackgroundCompaction({
+{
+  const decision = decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
     runner: { alive: true, busy: false },
     sessionSummary: { turnCount: 2, lastEnginePromptTokens: 90, lastEnginePromptTokenSource: "runtime_usage" },
     now: 1_000_000,
     contextWindowTokens: 100,
     tokenPressureThreshold: 0.72,
-  }),
-  {
-    action: "compact",
-    reason: "token_pressure",
-    mode: "native",
-    estimatedPromptTokens: 90,
-    contextWindowTokens: 100,
-    tokenSource: "runtime_usage",
-  },
-  "large assembled prompts can compact before turn-count threshold",
-);
+  });
+  assert.equal(decision.action, "compact", "large assembled prompts can compact before turn-count threshold");
+  assert.equal(decision.reason, "token_pressure");
+  assert.equal(decision.estimatedPromptTokens, 90);
+  assert.equal(decision.contextWindowTokens, 100);
+  assert.equal(decision.tokenSource, "runtime_usage");
+  assert(decision.compactionTriggerTokens > 0, "decision exposes capability-derived trigger diagnostics");
+}
+
+{
+  const qwenPressure = decidePreTurnCompaction({
+    capabilities: { nativeCompaction: true, manualSummarize: true },
+    model: { providerID: "lily", modelID: "/private/Qwen3-Coder-Next", contextWindowTokens: 65_536 },
+    runner: { alive: true, busy: false },
+    sessionSummary: { turnCount: 3, lastEnginePromptTokens: 49_000 },
+    currentPromptTokens: 2_000,
+    now: 1_000_000,
+  });
+  assert.equal(qwenPressure.action, "compact", "pre-turn token pressure compacts self-hosted small windows before sending");
+  assert.equal(qwenPressure.reason, "pre_turn_token_pressure");
+
+  const coldStartPressure = decidePreTurnCompaction({
+    capabilities: { nativeCompaction: true, manualSummarize: true },
+    model: { providerID: "lily", modelID: "/private/Qwen3-Coder-Next", contextWindowTokens: 65_536 },
+    runner: { alive: false, canStart: true, busy: false },
+    sessionSummary: { turnCount: 3, lastEnginePromptTokens: 49_000 },
+    currentPromptTokens: 2_000,
+    now: 1_000_000,
+  });
+  assert.equal(coldStartPressure.action, "compact", "pre-turn compaction may start an idle runtime before sending");
+
+  const topModelRoom = decidePreTurnCompaction({
+    capabilities: { nativeCompaction: true, manualSummarize: true },
+    model: { providerID: "anthropic", modelID: "claude-large", contextWindowTokens: 1_000_000 },
+    runner: { alive: true, busy: false },
+    sessionSummary: { turnCount: 3, lastEnginePromptTokens: 120_000 },
+    currentPromptTokens: 10_000,
+    now: 1_000_000,
+  });
+  assert.equal(topModelRoom.action, "skip", "large-context models are not made dumber by small-window pressure");
+  assert.equal(topModelRoom.reason, "below_token_pressure");
+
+  const fallback = decidePreTurnCompaction({
+    capabilities: { nativeCompaction: false, manualSummarize: false },
+    model: { contextWindowTokens: 65_536 },
+    runner: { alive: true, busy: false },
+    sessionSummary: { lastEnginePromptTokens: 60_000 },
+    currentPromptTokens: 60_000,
+  });
+  assert.deepEqual(fallback, { action: "skip", reason: "unsupported_runtime" }, "missing compaction capability fails open to current behavior");
+}
 
 assert.deepEqual(
   decideBackgroundCompaction({

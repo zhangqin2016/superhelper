@@ -2,6 +2,7 @@ import { t } from "../i18n/index.js";
 import { runtimePackLabel } from "./runtime-pack-preflight-ui.js";
 
 const TERMINAL_PHASES = new Set(["installed", "skipped", "failed"]);
+const MAIN_VISIBLE_PHASES = new Set(["failed"]);
 
 const activeProgress = new Map();
 const cleanupTimers = new Map();
@@ -98,8 +99,9 @@ function progressMeta(progress) {
   return parts.filter(Boolean).join(" · ");
 }
 
-function latestProgress() {
+function latestVisibleProgress() {
   return [...activeProgress.values()]
+    .filter((progress) => MAIN_VISIBLE_PHASES.has(progress?.phase))
     .sort((a, b) => String(b?.at || "").localeCompare(String(a?.at || "")))[0] || null;
 }
 
@@ -110,7 +112,7 @@ function render() {
     return;
   }
 
-  const progress = latestProgress();
+  const progress = latestVisibleProgress();
   if (!progress) {
     root.hidden = true;
     return;
@@ -125,13 +127,7 @@ function render() {
   root.classList.toggle("runtime-pack-progress-main--failed", failed);
   root.classList.toggle("runtime-pack-progress-main--indeterminate", percent === null && !terminal);
 
-  titleEl.textContent = failed
-    ? t("runtimeProgress.failed", { name })
-    : terminal
-      ? t("runtimeProgress.done", { name })
-      : activeProgress.size > 1
-        ? t("runtimeProgress.multiple", { count: activeProgress.size })
-        : t("runtimeProgress.title", { name });
+  titleEl.textContent = t("runtimeProgress.failed", { name });
   metaEl.textContent = progressMeta(progress);
   fillEl.style.width = percent === null ? "" : `${percent}%`;
 }

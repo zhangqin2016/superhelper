@@ -836,18 +836,24 @@ function restoreWorkspaceSkillDir(srcDir, manifest, { enabled = false, projectId
   if (!SKILL_ID_RE.test(id) || PROTECTED_BUNDLED_IDS.has(id)) return null;
   if (!srcDir || !fs.existsSync(path.join(srcDir, "SKILL.md"))) return null;
   const target = installedSkillDir(id);
-  fs.rmSync(target, { recursive: true, force: true });
-  copyDirRecursiveShipSafe(srcDir, target);
-  const installedManifestPath = path.join(target, "skill.manifest.json");
+  const parent = path.dirname(target);
+  const stamp = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const staging = path.join(parent, `.${id}.import-${stamp}`);
+  const backup = path.join(parent, `.${id}.backup-${stamp}`);
+  fs.rmSync(staging, { recursive: true, force: true });
+  fs.rmSync(backup, { recursive: true, force: true });
+
+  copyDirRecursiveShipSafe(srcDir, staging);
+  const installedManifestPath = path.join(staging, "skill.manifest.json");
   let installedManifest;
   try {
     installedManifest = JSON.parse(fs.readFileSync(installedManifestPath, "utf8"));
   } catch {
-    fs.rmSync(target, { recursive: true, force: true });
+    fs.rmSync(staging, { recursive: true, force: true });
     return null;
   }
   if (String(installedManifest?.id || "") !== id) {
-    fs.rmSync(target, { recursive: true, force: true });
+    fs.rmSync(staging, { recursive: true, force: true });
     return null;
   }
   installedManifest = {
@@ -858,6 +864,22 @@ function restoreWorkspaceSkillDir(srcDir, manifest, { enabled = false, projectId
     publisher: installedManifest.publisher || "Workspace",
   };
   fs.writeFileSync(installedManifestPath, `${JSON.stringify(installedManifest, null, 2)}\n`, "utf8");
+  try {
+    if (fs.existsSync(target)) fs.renameSync(target, backup);
+    fs.renameSync(staging, target);
+    fs.rmSync(backup, { recursive: true, force: true });
+  } catch {
+    fs.rmSync(staging, { recursive: true, force: true });
+    if (!fs.existsSync(target) && fs.existsSync(backup)) {
+      try {
+        fs.renameSync(backup, target);
+      } catch {
+        // Best-effort rollback; if the filesystem refuses the restore, keep the
+        // backup directory in place instead of deleting the user's old skill.
+      }
+    }
+    return null;
+  }
 
   const state = loadSkillsState();
   const existing = state.skills[id] || {};

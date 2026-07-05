@@ -157,17 +157,62 @@ function inferWorkProgressLine(line = "") {
   );
 }
 
+function extractStdoutRedirectTarget(command = "") {
+  const text = String(command || "");
+  let quote = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === "\\" && quote === '"' && i + 1 < text.length) i += 1;
+      else if (ch === quote) quote = "";
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch !== ">") continue;
+
+    let fdStart = i - 1;
+    while (fdStart >= 0 && /\d/.test(text[fdStart])) fdStart -= 1;
+    const fd = text.slice(fdStart + 1, i);
+    if (fd && fd !== "1") continue;
+
+    let targetStart = i + 1;
+    if (text[targetStart] === ">") targetStart += 1;
+    while (/\s/.test(text[targetStart] || "")) targetStart += 1;
+    if (!text[targetStart] || text[targetStart] === "&") continue;
+
+    const targetQuote = text[targetStart] === '"' || text[targetStart] === "'" ? text[targetStart] : "";
+    if (targetQuote) {
+      const end = text.indexOf(targetQuote, targetStart + 1);
+      return end > targetStart ? text.slice(targetStart + 1, end).trim() : "";
+    }
+
+    let targetEnd = targetStart;
+    while (targetEnd < text.length && !/[\s|;&]/.test(text[targetEnd])) targetEnd += 1;
+    return text.slice(targetStart, targetEnd).trim();
+  }
+  return "";
+}
+
 function inferWorkProgressFromCommand(command = "") {
   const text = String(command || "").trim();
   if (!text) return null;
   const lower = text.toLowerCase();
-  if (!/\b(curl|wget|aria2c|rsync|rclone|scp)\b/.test(lower)) return null;
+  const usesCurl = /\bcurl(?:\.exe)?\b/.test(lower);
+  const usesTransferTool = /\b(wget|aria2c|rsync|rclone|scp)\b/.test(lower);
+  if (!usesCurl && !usesTransferTool) return null;
   const url = text.match(/https?:\/\/[^\s"'`]+/i)?.[0] || "";
-  const output =
-    text.match(/(?:^|\s)(?:-o|--output|-O)\s+(?:"([^"]+)"|'([^']+)'|(\S+))/i)?.slice(1).find(Boolean) ||
-    text.match(/>\s*(?:"([^"]+)"|'([^']+)'|(\S+))/)?.slice(1).find(Boolean) ||
+  const flagOutput =
+    text.match(/(?:^|\s)(?:-o|--output)\s+(?:"([^"]+)"|'([^']+)'|([^\s|;&<>]+))/)?.slice(1).find(Boolean) ||
     "";
+  const remoteName = /(?:^|\s)(?:-O|--remote-name)(?=\s|$)/.test(text);
+  const output =
+    flagOutput ||
+    extractStdoutRedirectTarget(text);
   const upload = /\b(upload|put|scp|rsync|rclone\s+copyto?)\b/i.test(text);
+  if (usesCurl && !upload && !output && !remoteName) return null;
   return {
     source: "command",
     domain: upload ? "upload" : "download",

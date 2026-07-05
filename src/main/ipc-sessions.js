@@ -1,6 +1,6 @@
 "use strict";
 
-const { ipcMain } = require("electron");
+const { ipcMain, dialog } = require("electron");
 const { ensureSessionRunner, isSessionBusy, withRunnerChange, anyRunnerBusy } = require("./ipc-utils");
 const skillManager = require("./skill-manager");
 const slashCommands = require("./commands");
@@ -272,6 +272,40 @@ function registerSkillHandlers(ctx) {
     const id = payload?.id;
     if (!id) return { ok: false, error: "NOT_FOUND" };
     return withRunnerChange(ctx, () => skillManager.uninstallRemoteSkill(id), { liveEnv: false, reloadSkills: true });
+  });
+
+  ipcMain.handle("skills:import-workspace", async () => {
+    if (anyRunnerBusy(runnerPool)) {
+      return { ok: false, error: "BUSY" };
+    }
+    const licensed = requireValidLicense();
+    if (!licensed.ok) return licensed;
+    const project = ctx.projectManager?.getActive?.();
+    if (!project?.id) return { ok: false, error: "NO_PROJECT" };
+
+    const picked = await dialog.showOpenDialog(ctx.mainWindow, {
+      title: "导入工作空间技能",
+      properties: ["openFile", "openDirectory"],
+      filters: [
+        { name: "Lily Skill Package", extensions: ["zip"] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    if (picked.canceled || !picked.filePaths.length) return { ok: false, canceled: true };
+
+    const { importWorkspaceSkillSource } = require("./workspace-skill-import");
+    return withRunnerChange(ctx, async () => {
+      const result = await importWorkspaceSkillSource(picked.filePaths[0], {
+        restore(skill) {
+          return skillManager.restoreWorkspaceSkillDir(skill.dir, skill.manifest, {
+            enabled: true,
+            projectId: project.id,
+          });
+        },
+      });
+      if (result?.ok) skillManager.syncInheritedSessionGuides(ctx.sessionManager);
+      return result;
+    }, { refreshState: true, liveEnv: false, reloadSkills: true });
   });
 
   ipcMain.handle("skills:get-preset-guide", () => ({

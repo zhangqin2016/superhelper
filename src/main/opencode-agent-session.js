@@ -391,8 +391,12 @@ class OpencodeAgentSession extends EventEmitter {
     this._dispatchFailureTimer = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._promptAcceptanceTimer = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    this._promptDispatchPendingTimer = null;
     this._pendingDispatchFailure = null;
     this._pendingPromptPayload = null;
+    this._promptDispatchPending = false;
+    this._turnAcceptedEmitted = false;
     this._activeTaskContract = null;
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
@@ -529,8 +533,10 @@ class OpencodeAgentSession extends EventEmitter {
         idleSettle: Boolean(this._idleSettleTimer),
         idleProbe: Boolean(this._idleProbeTimer),
         promptAcceptance: Boolean(this._promptAcceptanceTimer),
+        promptDispatchPending: Boolean(this._promptDispatchPendingTimer),
         health: Boolean(this._healthTimer),
       },
+      promptDispatchPending: Boolean(this._promptDispatchPending),
       server: this._server?.diagnostics?.() || null,
     };
   }
@@ -563,6 +569,8 @@ class OpencodeAgentSession extends EventEmitter {
     this.collectedOutput = "";
     this._turnStartedAt = Date.now();
     this._pendingTransientFailure = null;
+    this._promptDispatchPending = false;
+    this._turnAcceptedEmitted = false;
     this._activeTaskContract = typeof payload === "object" ? payload?.taskContract || null : null;
     this._clearTransientFailureTimer();
     this._clearIdleProbeTimer();
@@ -586,9 +594,16 @@ class OpencodeAgentSession extends EventEmitter {
         // current rules instead of relying on stale OpenCode history.
         const guidance = this.spawnOptions?.guidance || "";
         this._pendingPromptPayload = { text, files, guidance };
+        this._promptDispatchPending = true;
+        this._armPromptDispatchPendingCheck();
         await server.sendPrompt(this._pendingPromptPayload);
+        this._promptDispatchPending = false;
+        this._clearPromptDispatchPendingCheck();
+        this._markTurnAccepted("prompt_async_returned");
         this._armPromptAcceptanceCheck();
       } catch (err) {
+        this._promptDispatchPending = false;
+        this._clearPromptDispatchPendingCheck();
         // The turn is driven by SSE (session.idle/events). If events already
         // arrived, a hiccup on the blocking message POST is NOT a turn failure —
         // let SSE finish. promptAsync can surface a transport error after OpenCode
@@ -693,9 +708,11 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   async compactContext(body = {}) {
-    if (this.isBusy() || !this._server?.summarize) return false;
+    if (this.isBusy()) return false;
     try {
-      await this._server.summarize(body);
+      const server = this._server || (await this._ensureStarted());
+      if (!server?.summarize) return false;
+      await server.summarize(body);
       try {
         require("./session-memory").markSessionCompacted(this.sessionId, {
           runtime: "opencode",
@@ -776,6 +793,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearIdleProbeTimer();
     this._pendingCompletePayload = null;
     this._clearDispatchFailureTimer();
+    this._clearPromptDispatchPendingCheck();
     this._clearPromptAcceptanceCheck();
     this._clearTransientFailureTimer();
     this._clearResponseTimer();
@@ -794,6 +812,8 @@ class OpencodeAgentSession extends EventEmitter {
     this.cwd = null;
     this.spawnOptions = null;
     this._pendingPromptPayload = null;
+    this._promptDispatchPending = false;
+    this._turnAcceptedEmitted = false;
     this._activeTaskContract = null;
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
@@ -840,7 +860,9 @@ class OpencodeAgentSession extends EventEmitter {
     if (isTurnOwnedEngineEvent(ev)) {
       this._sawEngineEvent = true;
       this._clearDispatchFailureTimer();
+      this._clearPromptDispatchPendingCheck();
       this._clearPromptAcceptanceCheck();
+      this._markTurnAccepted("engine_event");
     }
 
     // Capture the turn's first engine message id (rewind anchor) before normalize.
@@ -869,6 +891,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (reduced.progress) {
       this._sawActivity = true;
       this._clearDispatchFailureTimer();
+      this._clearPromptDispatchPendingCheck();
       this._clearPromptAcceptanceCheck();
       this._clearTransientFailureTimer();
       this._armResponseTimer();
@@ -1375,6 +1398,7 @@ class OpencodeAgentSession extends EventEmitter {
     try {
       if (this._server?.isSessionIdle && !(await this._server.isSessionIdle())) {
         this._pendingDispatchFailure = null;
+        this._markTurnAccepted("official_busy");
         return;
       }
     } catch {
@@ -1391,6 +1415,7 @@ class OpencodeAgentSession extends EventEmitter {
       try {
         await this._server.sendPrompt(retryPayload);
         this._pendingDispatchFailure = null;
+        this._markTurnAccepted("dispatch_retry_returned");
         this._armPromptAcceptanceCheck();
         return;
       } catch (err) {
@@ -1412,6 +1437,49 @@ class OpencodeAgentSession extends EventEmitter {
       this._dispatchFailureTimer = null;
     }
     if (clearPending) this._pendingDispatchFailure = null;
+  }
+
+  _armPromptDispatchPendingCheck() {
+    this._clearPromptDispatchPendingCheck();
+    if (!this.busy || this._turnSettled || !this._promptDispatchPending) return;
+    this._promptDispatchPendingTimer = setTimeout(() => {
+      this._promptDispatchPendingTimer = null;
+      void this._confirmPromptDispatchPending();
+    }, OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS);
+    this._promptDispatchPendingTimer.unref?.();
+  }
+
+  _clearPromptDispatchPendingCheck() {
+    if (this._promptDispatchPendingTimer) {
+      clearTimeout(this._promptDispatchPendingTimer);
+      this._promptDispatchPendingTimer = null;
+    }
+  }
+
+  async _confirmPromptDispatchPending() {
+    if (!this.busy || this._turnSettled || !this._promptDispatchPending) return;
+    if (this._sawActivity || this._sawEngineEvent) {
+      this._markTurnAccepted("engine_activity");
+      return;
+    }
+
+    let idle = true;
+    try {
+      idle = this._server?.isSessionIdle ? await this._server.isSessionIdle() : true;
+    } catch (err) {
+      log.warn("opencode pending prompt status read failed: %s", err?.message || String(err));
+      idle = true;
+    }
+    if (!this.busy || this._turnSettled || !this._promptDispatchPending) return;
+    if (!idle) {
+      this._markTurnAccepted("official_busy");
+      return;
+    }
+
+    // Do not replay while the original prompt request is still pending: that can
+    // duplicate user actions if the request eventually lands. Keep monitoring;
+    // the normal no-progress watchdog remains the bounded fallback.
+    this._armPromptDispatchPendingCheck();
   }
 
   _armPromptAcceptanceCheck() {
@@ -1442,7 +1510,10 @@ class OpencodeAgentSession extends EventEmitter {
       idle = true;
     }
     if (!this.busy || this._turnSettled || this._sawActivity || this._sawEngineEvent) return;
-    if (!idle) return;
+    if (!idle) {
+      this._markTurnAccepted("official_busy");
+      return;
+    }
 
     const recovered = await this._recoverCompletedAssistantFromHistory({ requireCurrentPrompt: true }).catch((err) => {
       log.warn("opencode prompt acceptance history read failed: %s", err?.message || String(err));
@@ -1469,6 +1540,7 @@ class OpencodeAgentSession extends EventEmitter {
       this._pendingPromptPayload = retryPayload;
       try {
         await this._server.sendPrompt(retryPayload);
+        this._markTurnAccepted("acceptance_retry_returned");
         this._armPromptAcceptanceCheck();
       } catch (err) {
         this._scheduleDispatchFailure(err);
@@ -1481,6 +1553,13 @@ class OpencodeAgentSession extends EventEmitter {
       new Error("prompt accepted but no session activity"),
       { force: true },
     );
+  }
+
+  _markTurnAccepted(source = "") {
+    if (!this.busy || this._turnSettled || this._turnAcceptedEmitted) return false;
+    this._turnAcceptedEmitted = true;
+    this._ingest([{ type: "turn.accepted", payload: { status: "thinking", source } }]);
+    return true;
   }
 
   _scheduleTransientFailureRecovery(message, cause) {
@@ -1855,6 +1934,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearIdleProbeTimer();
     this._pendingCompletePayload = null;
     this._clearDispatchFailureTimer();
+    this._clearPromptDispatchPendingCheck();
     this._clearPromptAcceptanceCheck();
     this._clearTransientFailureTimer();
     this._clearResponseTimer();
@@ -1867,6 +1947,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._turnSettled = true;
     this.busy = false;
     this._pendingPromptPayload = null;
+    this._promptDispatchPending = false;
+    this._turnAcceptedEmitted = false;
     this._activeTaskContract = null;
     this._sawEngineEvent = false;
     this._sawToolActivity = false;
@@ -1934,6 +2016,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._clearIdleProbeTimer();
     this._pendingCompletePayload = null;
     this._clearDispatchFailureTimer();
+    this._clearPromptDispatchPendingCheck();
     this._clearPromptAcceptanceCheck();
     this._clearTransientFailureTimer();
     this._clearResponseTimer();
@@ -1946,6 +2029,8 @@ class OpencodeAgentSession extends EventEmitter {
     this._turnSettled = true;
     this.busy = false;
     this._pendingPromptPayload = null;
+    this._promptDispatchPending = false;
+    this._turnAcceptedEmitted = false;
     this._activeTaskContract = null;
     this._sawEngineEvent = false;
     this._sawToolActivity = false;

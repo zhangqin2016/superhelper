@@ -485,6 +485,15 @@ assert.ok(
   "provider metadata nativeVision must become preset capabilities.vision",
 );
 
+const staleFalseVisionExpanded = expandModelProviderMenu(
+  { models: { source: "service", providers: ["qwen"], activeProvider: "qwen", capabilities: { qwen: { vision: false } } } },
+  { providers: scopeProviders, deliveryMode: "gateway" },
+);
+assert.ok(
+  staleFalseVisionExpanded.models.presets.every((p) => p.capabilities?.vision === true),
+  "stale config-profile vision:false must not override provider metadata nativeVision",
+);
+
 const defaultGatewayExpanded = expandModelProviderMenu(
   { models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["deepseek"] } },
   { providers: scopeProviders },

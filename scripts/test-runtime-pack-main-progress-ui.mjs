@@ -37,7 +37,11 @@ assert.match(turnOrchestrator, /dependencyAdvisory/);
 const progressUi = read("src/renderer/modules/runtime-pack-progress.js");
 assert.match(progressUi, /onRuntimePackProgress/);
 assert.match(progressUi, /runtime-pack-progress-main/);
-assert.match(progressUi, /runtimeProgress\.title/);
+assert.match(progressUi, /MAIN_VISIBLE_PHASES = new Set\(\["failed"\]\)/);
+assert.match(progressUi, /latestVisibleProgress/);
+assert.doesNotMatch(progressUi, /runtimeProgress\.title/);
+assert.doesNotMatch(progressUi, /runtimeProgress\.done/);
+assert.doesNotMatch(progressUi, /runtimeProgress\.multiple/);
 
 const app = read("src/renderer/app.js");
 assert.match(app, /initRuntimePackProgress/);
@@ -50,9 +54,6 @@ for (const locale of ["zh-CN", "en", "ar"]) {
   const messages = JSON.parse(read(`src/renderer/i18n/locales/${locale}.json`));
   for (const key of [
     "composer.dependencyInstallWaiting",
-    "runtimeProgress.title",
-    "runtimeProgress.multiple",
-    "runtimeProgress.done",
     "runtimeProgress.failed",
     "runtimeProgress.bytes",
   ]) {

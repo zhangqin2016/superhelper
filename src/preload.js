@@ -114,6 +114,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   installSkill: (id, version) => ipcRenderer.invoke("skills:install", { id, version }),
   updateSkill: (id) => ipcRenderer.invoke("skills:update", { id }),
   uninstallSkill: (id) => ipcRenderer.invoke("skills:uninstall", { id }),
+  importWorkspaceSkill: () => ipcRenderer.invoke("skills:import-workspace"),
   applySkillPreset: (id) => ipcRenderer.invoke("skills:apply-preset", { id }),
   getSkillPresetGuide: () => ipcRenderer.invoke("skills:get-preset-guide"),
   setSkillPresetGuideStatus: (status) =>

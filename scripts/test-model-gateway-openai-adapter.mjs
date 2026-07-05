@@ -145,6 +145,30 @@ try {
   );
 
   assert.equal(captured.body.model, "deepseek-v4-pro", "native OpenAI route should normalize DeepSeek flash alias");
+
+  await forwardOpenAiChatCompletions(
+    {
+      id: "iluvatar-vllm",
+      type: "openai",
+      baseUrl: "http://127.0.0.1:18000/v1",
+      apiKey: "test-key",
+      model: "/private/Qwen3-Coder-Next",
+      metadata: {
+        models: {
+          "/private/Qwen3-Coder-Next": { contextWindowTokens: 65_536, maxOutputTokens: 8_192 },
+        },
+      },
+      headers: {},
+    },
+    {
+      model: "/private/Qwen3-Coder-Next",
+      max_tokens: 32_000,
+      messages: [{ role: "user", content: "x".repeat(20_000) }],
+      stream: true,
+    },
+  );
+
+  assert.equal(captured.body.max_tokens, 8_192, "native OpenAI gateway route must cap OpenCode's large default output request");
 } finally {
   globalThis.fetch = originalFetch;
 }

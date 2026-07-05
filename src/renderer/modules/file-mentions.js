@@ -18,22 +18,45 @@ const PREVIEWABLE_EXT = new Set([
 const REVEAL_EXT = new Set(["zip", "gz", "tar", "tgz", "7z", "rar", "db", "sqlite", "exe", "dmg", "bin", "iso"]);
 
 const FILE_TOKEN_RE = /^[^\s<>|:"*?]+\.([a-z0-9]{1,8})$/i;
+const UNSAFE_ABSOLUTE_PATH_CHARS_RE = /[<>"|*?]/;
 
-/** Classify a code-span's text as a file mention, or null if it isn't one. */
-export function fileMentionInfo(text) {
-  const raw = String(text || "").trim();
-  if (!raw || /\s/.test(raw)) return null;
-  const m = FILE_TOKEN_RE.exec(raw);
-  if (!m) return null;
-  const ext = m[1].toLowerCase();
+function isOpenableLocalPath(filePath = "") {
+  const value = String(filePath || "").trim();
+  return /^file:/i.test(value) || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+}
+
+function mentionExtension(raw = "") {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (/^file:/i.test(value)) {
+    try {
+      return (new URL(value).pathname.match(/\.([a-z0-9]{1,8})$/i)?.[1] || "").toLowerCase();
+    } catch {
+      return "";
+    }
+  }
+  return (value.match(/\.([a-z0-9]{1,8})$/i)?.[1] || "").toLowerCase();
+}
+
+function classifyMentionPath(raw, ext) {
   if (PREVIEWABLE_EXT.has(ext)) return { path: raw, ext, previewable: true };
   if (REVEAL_EXT.has(ext)) return { path: raw, ext, previewable: false };
   return null;
 }
 
-function isOpenableLocalPath(filePath = "") {
-  const value = String(filePath || "").trim();
-  return /^file:/i.test(value) || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+/** Classify a code-span's text as a file mention, or null if it isn't one. */
+export function fileMentionInfo(text) {
+  const raw = String(text || "").trim();
+  if (!raw || /[\r\n]/.test(raw)) return null;
+  if (isOpenableLocalPath(raw)) {
+    if (UNSAFE_ABSOLUTE_PATH_CHARS_RE.test(raw)) return null;
+    return classifyMentionPath(raw, mentionExtension(raw));
+  }
+  if (/\s/.test(raw)) return null;
+  const m = FILE_TOKEN_RE.exec(raw);
+  if (!m) return null;
+  const ext = m[1].toLowerCase();
+  return classifyMentionPath(raw, ext);
 }
 
 function addPathAlias(map, alias, target) {

@@ -295,7 +295,9 @@ function buildConfig(draft, template) {
   const providers = deliveryProviderIds(draft, template);
   const activeProvider = providers.includes(draft.selectedTemplateId) ? draft.selectedTemplateId : providers[0] || "";
   const capabilities = Object.fromEntries(
-    providers.map((providerId) => [providerId, { vision: Boolean(draft.providerCapabilities?.[providerId]?.vision) }]),
+    providers
+      .filter((providerId) => Boolean(draft.providerCapabilities?.[providerId]?.vision))
+      .map((providerId) => [providerId, { vision: true }]),
   );
   return {
     schemaVersion: 1,

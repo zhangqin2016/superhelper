@@ -1397,6 +1397,8 @@ class TurnOrchestrator {
         taskContract: Boolean(state.taskContract),
       },
     };
+    const preTurnCompaction = await this._maybeCompactBeforeTurn(session.id, runner, state.enginePayload);
+    if (preTurnCompaction) state.enginePayload.trace.preTurnCompaction = preTurnCompaction;
 
     this._emit(session.id, "turn.started", {
       text: rawUserText,
@@ -1428,6 +1430,7 @@ class TurnOrchestrator {
             }
           : null,
         taskContract: Boolean(state.taskContract),
+        preTurnCompaction,
       },
       taskContract: state.taskContract
         ? {
@@ -1517,6 +1520,120 @@ class TurnOrchestrator {
       turnId: state.turnId,
       userCommitted: opts.recordUser === false ? null : { text: rawUserText, files: displayFiles },
     };
+  }
+
+  async _maybeCompactBeforeTurn(sessionId, runner, enginePayload = {}) {
+    try {
+      if (!runner?.compactContext) {
+        return { action: "skip", reason: "adapter_missing_compaction" };
+      }
+      const { OPENCODE_RUNTIME_CAPABILITIES } = require("./runtime/runtime-capabilities");
+      const { decidePreTurnCompaction, estimateTokensForText } = require("./context-budget-manager");
+      const { markSessionCompactionFailed, readSessionSummary } = require("./session-memory");
+      const sessionSummary = readSessionSummary(sessionId) || {};
+      const model = runner.spawnOptions?.model || null;
+      const promptEstimate = estimateTokensForText(String(enginePayload?.text || ""), {
+        provider: model?.providerID || enginePayload?.provider || enginePayload?.trace?.provider || "",
+        model: model?.modelID || enginePayload?.model || enginePayload?.trace?.model || "",
+      });
+      const decision = decidePreTurnCompaction({
+        capabilities: OPENCODE_RUNTIME_CAPABILITIES,
+        model,
+        runner: {
+          alive: Boolean(runner.isAlive?.()),
+          canStart: true,
+          busy: Boolean(runner.isBusy?.()),
+        },
+        sessionSummary,
+        currentPromptTokens: promptEstimate.tokens,
+        currentPromptTokenSource: promptEstimate.source,
+        contextWindowTokens: model?.contextWindowTokens || undefined,
+      });
+      const event = {
+        action: decision.action,
+        reason: decision.reason,
+        mode: decision.mode || null,
+        phase: "pre_turn",
+        turnCount: Number(sessionSummary.turnCount || 0),
+        estimatedPromptTokens: decision.estimatedPromptTokens || 0,
+        currentPromptTokens: decision.currentPromptTokens || promptEstimate.tokens || 0,
+        previousPromptTokens: decision.previousPromptTokens || Number(sessionSummary.lastEnginePromptTokens || 0),
+        contextWindowTokens: decision.contextWindowTokens || null,
+        outputReserveTokens: decision.outputReserveTokens || null,
+        usableInputTokens: decision.usableInputTokens || null,
+        compactionTriggerTokens: decision.compactionTriggerTokens || null,
+        tokenPressureThreshold: decision.tokenPressureThreshold || null,
+        tokenSource: decision.tokenSource || promptEstimate.source || "",
+        budgetSource: decision.budgetSource || "",
+        providerID: decision.providerID || model?.providerID || "",
+        modelID: decision.modelID || model?.modelID || "",
+        unsupportedReason: decision.unsupportedReason || "",
+      };
+      this._emit(sessionId, "context.compactionDecision", event, { turnId: null });
+      if (decision.action !== "compact") return event;
+
+      const beforeFailureAt = sessionSummary.lastCompactionFailedAt || "";
+      this._emit(sessionId, "engine.notice", {
+        notice: {
+          code: "compactBoundary",
+          level: "progress",
+          panel: true,
+          done: false,
+          detail: "Preparing to compact conversation context before this turn.",
+        },
+      }, { turnId: null });
+      const compacted = await runner.compactContext({
+        ...(model?.providerID && model?.modelID
+          ? { providerID: model.providerID, modelID: model.modelID }
+          : {}),
+        auto: true,
+        reason: decision.reason,
+      });
+      if (!compacted) {
+        const afterSummary = readSessionSummary(sessionId) || {};
+        if ((afterSummary.lastCompactionFailedAt || "") === beforeFailureAt) {
+          markSessionCompactionFailed(sessionId, {
+            runtime: "opencode",
+            mode: "native",
+            reason: decision.reason,
+            providerID: model?.providerID || "",
+            modelID: model?.modelID || "",
+            code: "compact_returned_false",
+            error: "Runtime compaction returned false.",
+          });
+        }
+        this._emit(sessionId, "engine.notice", {
+          notice: {
+            code: "compactFailed",
+            level: "info",
+            panel: true,
+            done: true,
+            replace: true,
+            replacesCode: "compactBoundary",
+            detail: "Conversation memory maintenance was skipped after a runtime error. The current chat can continue.",
+          },
+        }, { turnId: null });
+        return { ...event, compacted: false };
+      }
+      this._emit(sessionId, "engine.notice", {
+        notice: {
+          code: "compactBoundary",
+          level: "info",
+          panel: true,
+          done: true,
+          replace: true,
+          detail: "Conversation context was compacted before this turn.",
+        },
+      }, { turnId: null });
+      return { ...event, compacted: true };
+    } catch (err) {
+      log.warn(`pre-turn context compaction failed open: ${err?.message || String(err)}`);
+      return {
+        action: "skip",
+        reason: "pre_turn_compaction_exception",
+        error: err?.message || String(err),
+      };
+    }
   }
 
   async _handleDone(sessionId, payload) {
@@ -1812,7 +1929,12 @@ class TurnOrchestrator {
           lastCompactionFailedAt: sessionSummary.lastCompactionFailedAt || null,
           estimatedPromptTokens: decision.estimatedPromptTokens || Number(sessionSummary.lastEnginePromptTokens || 0),
           contextWindowTokens: decision.contextWindowTokens || null,
+          outputReserveTokens: decision.outputReserveTokens || null,
+          usableInputTokens: decision.usableInputTokens || null,
+          compactionTriggerTokens: decision.compactionTriggerTokens || null,
+          tokenPressureThreshold: decision.tokenPressureThreshold || null,
           tokenSource: decision.tokenSource || sessionSummary.lastEnginePromptTokenSource || "",
+          budgetSource: decision.budgetSource || "",
           providerID: decision.providerID || model?.providerID || "",
           modelID: decision.modelID || model?.modelID || "",
           unsupportedReason: decision.unsupportedReason || "",
