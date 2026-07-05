@@ -125,9 +125,10 @@ function serviceEnabledProvidersByModality() {
   const byModality = {};
   for (const modality of MODALITIES) {
     let list = on.filter((p) => providerSupports(p, modality));
-    if (lilyMediaConfigured(env, modality)) list.unshift("lily");
+    const lilyOn = lilyMediaConfigured(env, modality);
+    if (lilyOn) list.unshift("lily");
     const allowed = new Set(sel?.[modality]?.providers || []);
-    if (allowed.size) list = list.filter((p) => allowed.has(p));
+    if (allowed.size) list = list.filter((p) => allowed.has(p) || (p === "lily" && lilyOn));
     byModality[modality] = [...new Set(list)];
   }
   return byModality;
