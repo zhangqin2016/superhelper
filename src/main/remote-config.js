@@ -272,10 +272,18 @@ async function refreshRemoteConfig(payload = {}) {
   } catch {
     accountAccessToken = "";
   }
-  const result = await service.fetchClientConfig({
+  let result = await service.fetchClientConfig({
     ...payload,
     ...(accountAccessToken ? { accountAccessToken } : {}),
   });
+  if (!result.ok && shouldRetryAfterDeviceRegister(result.error)) {
+    const registered = await service.registerDevice();
+    if (!registered.ok) return result;
+    result = await service.fetchClientConfig({
+      ...payload,
+      ...(accountAccessToken ? { accountAccessToken } : {}),
+    });
+  }
   if (!result.ok) return result;
   const verified = verifyConfigResponse(result.json);
   if (!verified.ok) return { ok: false, error: "CONFIG_SIGNATURE_INVALID" };
@@ -289,6 +297,10 @@ async function refreshRemoteConfig(payload = {}) {
   return { ok: true, configVersion: verified.payload.configVersion };
 }
 
+function shouldRetryAfterDeviceRegister(error) {
+  return error === "DEVICE_KEY_NOT_REGISTERED" || error === "DEVICE_SIGNATURE_INVALID";
+}
+
 module.exports = {
   refreshRemoteConfig,
   onRemoteConfigRefreshed,
@@ -300,4 +312,5 @@ module.exports = {
   getRemoteProviderCatalogSync,
   decodeGatewayTokenPayload,
   effectiveConfigHasExpiredGatewayToken,
+  shouldRetryAfterDeviceRegister,
 };
