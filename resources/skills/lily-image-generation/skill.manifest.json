@@ -27,7 +27,7 @@
   "guideMd": {
     "title": "图片生成",
     "priority": 12,
-    "body": "用户要求生成图片、海报、插画、封面、头像、产品图或视觉稿时，用：\n\n```bash\necho '{\"prompt\":\"要生成的图片描述\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GENERATION_SCRIPT}}\"\n```\n\n脚本会使用设置里的默认图片服务商（例如 Lily GPU），并把临时 URL 下载到当前工作区 generated-assets。不要默认指定 dashscope；只有用户明确要求百炼/Qwen-Image/DashScope 时才在 JSON 里加 \"provider\":\"dashscope\"。用户明确指定其他服务商时，也必须在 JSON 里带上对应 \"provider\"，可选值：lily/dashscope/volcengine/kling/minimax/zhipu。回复用户时必须使用本地 Markdown 图片预览：`![生成图片](/绝对路径/生成图片.png)`，不要只给路径，也不要直接返回临时 URL。"
+    "body": "用户要求生成图片、海报、插画、封面、头像、产品图或视觉稿时，用：\n\n```bash\necho '{\"prompt\":\"要生成的图片描述\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GENERATION_SCRIPT}}\"\n```\n\n脚本会使用设置里的默认图片服务商（例如 Lily GPU），并把临时 URL 下载到当前工作区 generated-assets。不要默认指定 dashscope；只有用户明确要求百炼/Qwen-Image/DashScope 时才在 JSON 里加 \"provider\":\"dashscope\"。用户明确指定其他服务商时，也必须在 JSON 里带上对应 \"provider\"，可选值：lily/dashscope/volcengine/kling/minimax/zhipu。如果当前 provider 返回错误，不要自动换用其他 provider；报告错误和实际使用的 provider，让用户选择重试、切换服务商或提供 Key。回复用户时必须使用本地 Markdown 图片预览：`![生成图片](/绝对路径/生成图片.png)`，不要只给路径，也不要直接返回临时 URL。"
   },
   "name_i18n": {
     "zh-CN": "图片生成",
@@ -43,17 +43,17 @@
     "zh-CN": {
       "title": "图片生成",
       "priority": 12,
-      "body": "用户要求生成图片、海报、插画、封面、头像、产品图或视觉稿时，用：\n\n```bash\necho '{\"prompt\":\"要生成的图片描述\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GENERATION_SCRIPT}}\"\n```\n\n脚本会使用设置里的默认图片服务商（例如 Lily GPU），并把临时 URL 下载到当前工作区 generated-assets。不要默认指定 dashscope；只有用户明确要求百炼/Qwen-Image/DashScope 时才在 JSON 里加 \"provider\":\"dashscope\"。用户明确指定其他服务商时，也必须在 JSON 里带上对应 \"provider\"，可选值：lily/dashscope/volcengine/kling/minimax/zhipu。回复用户时必须使用本地 Markdown 图片预览：`![生成图片](/绝对路径/生成图片.png)`，不要只给路径，也不要直接返回临时 URL。"
+      "body": "用户要求生成图片、海报、插画、封面、头像、产品图或视觉稿时，用：\n\n```bash\necho '{\"prompt\":\"要生成的图片描述\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GENERATION_SCRIPT}}\"\n```\n\n脚本会使用设置里的默认图片服务商（例如 Lily GPU），并把临时 URL 下载到当前工作区 generated-assets。不要默认指定 dashscope；只有用户明确要求百炼/Qwen-Image/DashScope 时才在 JSON 里加 \"provider\":\"dashscope\"。用户明确指定其他服务商时，也必须在 JSON 里带上对应 \"provider\"，可选值：lily/dashscope/volcengine/kling/minimax/zhipu。如果当前 provider 返回错误，不要自动换用其他 provider；报告错误和实际使用的 provider，让用户选择重试、切换服务商或提供 Key。回复用户时必须使用本地 Markdown 图片预览：`![生成图片](/绝对路径/生成图片.png)`，不要只给路径，也不要直接返回临时 URL。"
     },
     "en": {
       "title": "Image Generation",
       "priority": 12,
-      "body": "When the user requests image generation, posters, illustrations, covers, avatars, product images or visual drafts, use:\n\n```bash\necho '{\"prompt\":\"image description\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GEN_SCRIPT}}\"\n```\n\nThe script uses the configured default image provider, such as Lily GPU, and downloads temporary result URLs to the current workspace's generated-assets directory. Do not default to DashScope; add \"provider\":\"dashscope\" only when the user explicitly asks for Bailian/Qwen-Image/DashScope. If the user explicitly names another supported provider, include that \"provider\" field too. Supported values: lily/dashscope/volcengine/kling/minimax/zhipu. When replying to the user, show the local Markdown image preview and do not return temporary URLs directly."
+      "body": "When the user requests image generation, posters, illustrations, covers, avatars, product images or visual drafts, use:\n\n```bash\necho '{\"prompt\":\"image description\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GEN_SCRIPT}}\"\n```\n\nThe script uses the configured default image provider, such as Lily GPU, and downloads temporary result URLs to the current workspace's generated-assets directory. Do not default to DashScope; add \"provider\":\"dashscope\" only when the user explicitly asks for Bailian/Qwen-Image/DashScope. If the user explicitly names another supported provider, include that \"provider\" field too. Supported values: lily/dashscope/volcengine/kling/minimax/zhipu. If the current provider returns an error, do not auto-switch to another provider; report the error and actual provider, then ask the user to retry, switch providers, or provide a key. When replying to the user, show the local Markdown image preview and do not return temporary URLs directly."
     },
     "ar": {
       "title": "توليد الصور",
       "priority": 12,
-      "body": "عندما يطلب المستخدم توليد الصور أو الملصقات أو الرسوم التوضيحية أو الأغلفة أو الصور الرمزية أو صور المنتجات أو المسودات المرئية، استخدم:\n\n```bash\necho '{\"prompt\":\"وصف الصورة\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GEN_SCRIPT}}\"\n```\n\nيستخدم السكريبت مزوّد الصور الافتراضي المضبوط، مثل Lily GPU، وينزل روابط النتائج المؤقتة إلى مجلد generated-assets في مساحة العمل الحالية. لا تفترض DashScope افتراضياً؛ أضف \"provider\":\"dashscope\" فقط عندما يطلب المستخدم Bailian/Qwen-Image/DashScope صراحة. إذا ذكر المستخدم مزوداً آخر مدعوماً، فأضف حقل \"provider\" أيضاً. القيم المدعومة: lily/dashscope/volcengine/kling/minimax/zhipu. عند الرد، اعرض معاينة Markdown المحلية ولا ترجع الروابط المؤقتة مباشرة."
+      "body": "عندما يطلب المستخدم توليد الصور أو الملصقات أو الرسوم التوضيحية أو الأغلفة أو الصور الرمزية أو صور المنتجات أو المسودات المرئية، استخدم:\n\n```bash\necho '{\"prompt\":\"وصف الصورة\",\"size\":\"2048*2048\"}' | \"{{NODE_BIN}}\" \"{{IMAGE_GEN_SCRIPT}}\"\n```\n\nيستخدم السكريبت مزوّد الصور الافتراضي المضبوط، مثل Lily GPU، وينزل روابط النتائج المؤقتة إلى مجلد generated-assets في مساحة العمل الحالية. لا تفترض DashScope افتراضياً؛ أضف \"provider\":\"dashscope\" فقط عندما يطلب المستخدم Bailian/Qwen-Image/DashScope صراحة. إذا ذكر المستخدم مزوداً آخر مدعوماً، فأضف حقل \"provider\" أيضاً. القيم المدعومة: lily/dashscope/volcengine/kling/minimax/zhipu. إذا أرجع provider الحالي خطأً، فلا تبدّل تلقائياً إلى provider آخر؛ اعرض الخطأ والمزوّد الفعلي، ثم اطلب من المستخدم اختيار إعادة المحاولة أو تبديل المزوّد أو تقديم مفتاح. عند الرد، اعرض معاينة Markdown المحلية ولا ترجع الروابط المؤقتة مباشرة."
     }
   }
 }

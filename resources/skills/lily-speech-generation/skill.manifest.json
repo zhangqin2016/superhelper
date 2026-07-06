@@ -27,7 +27,7 @@
   "guideMd": {
     "title": "语音生成",
     "priority": 14,
-    "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会使用设置里的默认语音服务商（例如 Lily GPU）。不要默认指定 dashscope；只有用户明确要求百炼/CosyVoice/DashScope 时才在 JSON 里加 \"provider\":\"dashscope\"。用户明确指定 Lily 时可加 \"provider\":\"lily\"，否则默认使用当前选择。脚本会把临时音频 URL 下载到当前工作区 generated-assets。"
+    "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会使用设置里的默认语音服务商（例如 Lily GPU）。不要默认指定 dashscope；只有用户明确要求百炼/CosyVoice/DashScope 时才在 JSON 里加 \"provider\":\"dashscope\"。用户明确指定 Lily 时可加 \"provider\":\"lily\"，否则默认使用当前选择。如果当前 provider 返回错误，不要自动换用其他 provider；报告错误和实际使用的 provider，让用户选择重试、切换服务商或提供 Key。脚本会把临时音频 URL 下载到当前工作区 generated-assets。"
   },
   "name_i18n": {
     "zh-CN": "语音生成",
@@ -43,17 +43,17 @@
     "zh-CN": {
       "title": "语音生成",
       "priority": 14,
-      "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会使用设置里的默认语音服务商（例如 Lily GPU）。不要默认指定 dashscope；只有用户明确要求百炼/CosyVoice/DashScope 时才在 JSON 里加 \"provider\":\"dashscope\"。用户明确指定 Lily 时可加 \"provider\":\"lily\"，否则默认使用当前选择。脚本会把临时音频 URL 下载到当前工作区 generated-assets。"
+      "body": "用户要求生成语音、朗读、旁白、配音或 TTS 时，用：\n\n```bash\necho '{\"text\":\"要朗读的文本\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GENERATION_SCRIPT}}\"\n```\n\n脚本会使用设置里的默认语音服务商（例如 Lily GPU）。不要默认指定 dashscope；只有用户明确要求百炼/CosyVoice/DashScope 时才在 JSON 里加 \"provider\":\"dashscope\"。用户明确指定 Lily 时可加 \"provider\":\"lily\"，否则默认使用当前选择。如果当前 provider 返回错误，不要自动换用其他 provider；报告错误和实际使用的 provider，让用户选择重试、切换服务商或提供 Key。脚本会把临时音频 URL 下载到当前工作区 generated-assets。"
     },
     "en": {
       "title": "Speech Generation",
       "priority": 14,
-      "body": "When the user requests speech generation, reading aloud, narration, dubbing or TTS, use:\n\n```bash\necho '{\"text\":\"text to read\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GEN_SCRIPT}}\"\n```\n\nThe script uses the configured default speech provider, such as Lily GPU. Do not default to DashScope; add \"provider\":\"dashscope\" only when the user explicitly asks for Bailian/CosyVoice/DashScope. If the user explicitly names Lily, include \"provider\":\"lily\"; otherwise use the current selection. The script downloads temporary audio URLs to the current workspace's generated-assets directory."
+      "body": "When the user requests speech generation, reading aloud, narration, dubbing or TTS, use:\n\n```bash\necho '{\"text\":\"text to read\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GEN_SCRIPT}}\"\n```\n\nThe script uses the configured default speech provider, such as Lily GPU. Do not default to DashScope; add \"provider\":\"dashscope\" only when the user explicitly asks for Bailian/CosyVoice/DashScope. If the user explicitly names Lily, include \"provider\":\"lily\"; otherwise use the current selection. If the current provider returns an error, do not auto-switch to another provider; report the error and actual provider, then ask the user to retry, switch providers, or provide a key. The script downloads temporary audio URLs to the current workspace's generated-assets directory."
     },
     "ar": {
       "title": "توليد الصوت",
       "priority": 14,
-      "body": "عندما يطلب المستخدم توليد الصوت أو القراءة بصوت عالٍ أو السرد أو الدبلجة أو TTS، استخدم:\n\n```bash\necho '{\"text\":\"النص المراد قراءته\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GEN_SCRIPT}}\"\n```\n\nيستخدم السكريبت مزوّد الصوت الافتراضي المضبوط، مثل Lily GPU. لا تفترض DashScope افتراضياً؛ أضف \"provider\":\"dashscope\" فقط عندما يطلب المستخدم Bailian/CosyVoice/DashScope صراحة. إذا ذكر المستخدم Lily صراحة، فأضف \"provider\":\"lily\"؛ وإلا استخدم الاختيار الحالي. ينزل السكريبت روابط الصوت المؤقتة إلى مجلد generated-assets في مساحة العمل الحالية."
+      "body": "عندما يطلب المستخدم توليد الصوت أو القراءة بصوت عالٍ أو السرد أو الدبلجة أو TTS، استخدم:\n\n```bash\necho '{\"text\":\"النص المراد قراءته\",\"voice\":\"longanyang\",\"format\":\"wav\"}' | \"{{NODE_BIN}}\" \"{{SPEECH_GEN_SCRIPT}}\"\n```\n\nيستخدم السكريبت مزوّد الصوت الافتراضي المضبوط، مثل Lily GPU. لا تفترض DashScope افتراضياً؛ أضف \"provider\":\"dashscope\" فقط عندما يطلب المستخدم Bailian/CosyVoice/DashScope صراحة. إذا ذكر المستخدم Lily صراحة، فأضف \"provider\":\"lily\"؛ وإلا استخدم الاختيار الحالي. إذا أرجع provider الحالي خطأً، فلا تبدّل تلقائياً إلى provider آخر؛ اعرض الخطأ والمزوّد الفعلي، ثم اطلب من المستخدم اختيار إعادة المحاولة أو تبديل المزوّد أو تقديم مفتاح. ينزل السكريبت روابط الصوت المؤقتة إلى مجلد generated-assets في مساحة العمل الحالية."
     }
   }
 }

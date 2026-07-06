@@ -51,6 +51,9 @@ Provider rules:
   provider.
 - If the user explicitly names a supported provider, include that provider in
   the JSON payload so the request cannot be routed to a different default.
+- If the configured provider returns an error, do not silently retry with a
+  different provider. Report the error, state which provider was used, and ask
+  whether to retry, switch to another available provider, or use/provide a key.
 
 `DASHSCOPE_VIDEO_ENDPOINT` can override the full endpoint. Otherwise the script
 uses `DASHSCOPE_VIDEO_BASE_URL` with the official default path. `DASHSCOPE_BASE_URL`

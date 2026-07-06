@@ -560,9 +560,52 @@ function skillIndexEntry(skill, loc) {
   const pick = (i18n, fallback) =>
     (i18n && (i18n[loc] || i18n[baseLocale(loc)])) || fallback || "";
   const name = pick(m.name_i18n, m.name) || fm.name || skill.id;
-  const desc = pick(m.description_i18n, fm.description || m.description);
+  const desc = mediaSkillIndexDescription(skill.id, loc) || pick(m.description_i18n, fm.description || m.description);
   const guidePath = path.join(skill.skillDir, "SKILL.md");
   return { id: skill.id, name, desc: String(desc).trim(), guidePath, hasGuide: fs.existsSync(guidePath) };
+}
+
+function mediaSkillIndexDescription(skillId, loc) {
+  const modalityBySkill = {
+    "lily-image-generation": "image",
+    "lily-video-generation": "video",
+    "lily-speech-generation": "speech",
+  };
+  const modality = modalityBySkill[skillId];
+  if (!modality) return "";
+
+  const media = currentMediaProviderContext();
+  const availableMedia = currentAvailableMediaProviderContext();
+  const item = media[modality] || {};
+  const provider = item.provider || "";
+  const label = item.label || provider;
+  const available = availableMedia[modality] || [];
+  const zh = String(loc || "").startsWith("zh");
+  const ar = String(loc || "").startsWith("ar");
+  const names = zh
+    ? { image: "图片", video: "视频", speech: "语音" }
+    : ar
+      ? { image: "الصور", video: "الفيديو", speech: "الصوت" }
+      : { image: "image", video: "video", speech: "speech" };
+  if (provider) {
+    return zh
+      ? `使用当前选择的 ${provider}${label && label !== provider ? `（${label}）` : ""} 生成${names[modality]}并保存到当前工作区；调用失败时不要自动切换 provider，先报告错误并让用户选择重试、切换服务商或提供 Key。`
+      : ar
+        ? `استخدم مزوّد ${names[modality]} المختار حالياً ${provider}${label && label !== provider ? ` (${label})` : ""} واحفظ الناتج في مساحة العمل الحالية؛ عند فشل الاستدعاء لا تبدّل provider تلقائياً، بل اعرض الخطأ واطلب من المستخدم اختيار إعادة المحاولة أو تغيير المزوّد أو تقديم مفتاح.`
+        : `Generate ${names[modality]} with the current selected provider ${provider}${label && label !== provider ? ` (${label})` : ""} and save it to the current workspace; if the call fails, do not auto-switch provider. Report the error and ask the user to retry, switch providers, or provide a key.`;
+  }
+  if (available.length) {
+    return zh
+      ? `按用户明确选择的可用 provider 生成${names[modality]}并保存到当前工作区；当前未配置默认值，不要假定 DashScope，先建议可用服务商并让用户选择。`
+      : ar
+        ? `ولّد ${names[modality]} باستخدام provider متاح يختاره المستخدم صراحة واحفظ الناتج في مساحة العمل الحالية؛ لا يوجد افتراضي مضبوط، فلا تفترض DashScope واطلب الاختيار أولاً.`
+        : `Generate ${names[modality]} with an available provider explicitly chosen by the user and save it to the current workspace; no default is configured, so do not assume DashScope. Recommend available providers and ask the user to choose.`;
+  }
+  return zh
+    ? `当前没有可用的${names[modality]}服务商；不要假定 DashScope 或其他厂商，先说明无法直接生成并建议用户开启工作台服务、配置 Key 或改用其他可行方案。`
+    : ar
+      ? `لا يوجد مزوّد ${names[modality]} متاح حالياً؛ لا تفترض DashScope أو أي مزوّد آخر، بل اشرح أن التوليد المباشر غير متاح واقترح تفعيل الخدمة أو إعداد مفتاح أو اختيار بديل.`
+      : `No ${names[modality]} provider is currently available; do not assume DashScope or any other vendor. Explain direct generation is unavailable and suggest enabling the service, configuring a key, or choosing another workable option.`;
 }
 
 const SKILL_INDEX_I18N = {
@@ -685,6 +728,7 @@ function buildConfiguredProviderSection(loc) {
         "生成图片、视频、语音时优先使用下面标为已配置的当前选择；不要把某个厂商当作固定默认。",
         "如果某项未配置但列出了可用服务商，先根据用户目标给出最合适的服务商建议，并按用户明确选择在技能 JSON 中写 provider。",
         "如果某项既未配置也没有可用服务商，说明当前无法直接生成，并建议用户开启工作台服务、配置 BYOK，或改用能满足目标的非生成方案。",
+        "如果当前已配置的 provider 调用失败，不要自动改用其他 provider；报告具体错误和已验证的 provider，并给用户选项：重试当前 provider、切换到某个可用 provider、或提供 Key。只有用户确认后才切换。",
         "只有用户明确要求某个支持的服务商时，才在技能 JSON 中写入 provider 覆盖当前选择。",
       ]
     : ar
@@ -692,12 +736,14 @@ function buildConfiguredProviderSection(loc) {
           "عند توليد الصور أو الفيديو أو الصوت، استخدم الاختيارات الحالية المضبوطة أدناه أولاً؛ لا تعتبر أي مزوّد افتراضياً ثابتاً.",
           "إذا كان أحدها غير مضبوط لكن توجد مزوّدات متاحة، فاقترح الأنسب لهدف المستخدم واكتب provider في JSON فقط بعد اختيار المستخدم الصريح.",
           "إذا كان غير مضبوط ولا توجد مزوّدات متاحة، فاشرح أن التوليد المباشر غير متاح حالياً واقترح تفعيل خدمة Workbench أو إعداد BYOK أو طريقة غير توليدية تحقق الهدف.",
+          "إذا فشل استدعاء provider المضبوط حالياً، فلا تبدّل تلقائياً إلى provider آخر؛ اعرض الخطأ والمزوّد الذي تم اختباره، وقدّم للمستخدم خيارات إعادة المحاولة أو التبديل إلى مزوّد متاح أو تقديم مفتاح. لا تبدّل إلا بعد تأكيد المستخدم.",
           "أضف حقل provider في JSON فقط عندما يطلب المستخدم مزوّداً مدعوماً صراحة لتجاوز الاختيار الحالي.",
         ]
       : [
           "For image, video, and speech generation, prefer the configured current selections below; do not treat any vendor as a fixed default.",
           "If one is not configured but available providers are listed, recommend the best provider for the user's goal and include provider in the skill JSON only after the user explicitly chooses it.",
           "If one is not configured and no providers are available, explain that direct generation is unavailable and suggest enabling Workbench service, configuring BYOK, or using a non-generation alternative that still satisfies the goal.",
+          "If the currently configured provider call fails, do not auto-switch to another provider. Report the specific error and verified provider, then offer choices: retry the current provider, switch to an available provider, or provide a key. Switch only after the user confirms.",
           "Only include a provider field in the skill JSON when the user explicitly asks for a supported provider override.",
         ];
   const lines = [`## ${title}`, "", ...rules.map((rule) => `- ${rule}`)];
@@ -872,7 +918,7 @@ function buildAgentSubagentPersona(locale) {
 }
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
-const AGENT_GUIDE_STATIC_VERSION = 21;
+const AGENT_GUIDE_STATIC_VERSION = 22;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();

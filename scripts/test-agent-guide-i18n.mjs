@@ -200,10 +200,51 @@ assert.match(providerGuideZh, /图片生成: `lily`/, "agent guide must expose u
 assert.match(providerGuideZh, /视频生成: `lily`/, "agent guide must expose usable selected video provider");
 assert.match(providerGuideZh, /语音生成: `lily`/, "agent guide must expose usable selected speech provider");
 assert.match(providerGuideZh, /联网搜索: `searxng`/, "agent guide must expose selected search provider");
+assert.match(
+  providerGuideZh,
+  /当前已配置的 provider 调用失败，不要自动改用其他 provider/,
+  "agent guide must forbid automatic media provider fallback after a configured provider error",
+);
 assert.doesNotMatch(
   providerGuideZh,
   /图片生成: `dashscope`|视频生成: `dashscope`|语音生成: `dashscope`/,
   "agent guide must not invent DashScope when Lily is selected",
+);
+function loadBundledSkillForGuide(skillId) {
+  const skillDir = path.join(skillsDir, skillId);
+  return {
+    id: skillId,
+    skillDir,
+    manifest: JSON.parse(fs.readFileSync(path.join(skillDir, "skill.manifest.json"), "utf8")),
+  };
+}
+const providerGuideWithMediaSkillsZh = skillManager.buildAgentGuideContent(
+  [
+    loadBundledSkillForGuide("lily-image-generation"),
+    loadBundledSkillForGuide("lily-video-generation"),
+    loadBundledSkillForGuide("lily-speech-generation"),
+  ],
+  "zh-CN",
+);
+assert.match(
+  providerGuideWithMediaSkillsZh,
+  /lily-image-generation[\s\S]*使用当前选择的 lily[\s\S]*不要自动切换 provider/,
+  "image skill index must follow the selected Lily provider and forbid automatic fallback",
+);
+assert.match(
+  providerGuideWithMediaSkillsZh,
+  /lily-video-generation[\s\S]*使用当前选择的 lily[\s\S]*不要自动切换 provider/,
+  "video skill index must follow the selected Lily provider and forbid automatic fallback",
+);
+assert.match(
+  providerGuideWithMediaSkillsZh,
+  /lily-speech-generation[\s\S]*使用当前选择的 lily[\s\S]*不要自动切换 provider/,
+  "speech skill index must follow the selected Lily provider and forbid automatic fallback",
+);
+assert.doesNotMatch(
+  providerGuideWithMediaSkillsZh,
+  /lily-(?:image|video|speech)-generation[\s\S]{0,220}阿里(?:云)?百炼|lily-(?:image|video|speech)-generation[\s\S]{0,220}DashScope|lily-(?:image|video|speech)-generation[\s\S]{0,220}dashscope/,
+  "media skill index must not describe DashScope/Bailian as the active provider when Lily is selected",
 );
 
 for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
