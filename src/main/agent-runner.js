@@ -25,14 +25,14 @@ const ERROR_PATTERNS = [
   {
     code: "SESSION_INVALID",
     category: "session",
-    test: /resume|session.*not found|unknown session/i,
+    test: /resume|session.*not found|unknown session|session context has expired/i,
     message: "Session context has expired (possibly due to restart). Recovery attempted — please send your message again.",
     retryable: true,
   },
   {
     code: "ENGINE_UNAVAILABLE",
     category: "runtime",
-    test: /command not found|ENOENT/i,
+    test: /command not found|ENOENT|assistant engine .*unreachable|engine .*unreachable|engine health check failed|engine wedged|wedged.*unreachable/i,
     message: "The assistant engine is temporarily unavailable. Please try again later.",
     retryable: true,
   },
@@ -102,7 +102,7 @@ const ERROR_PATTERNS = [
   {
     code: "RESPONSE_ERROR",
     category: "model",
-    test: /invalid.*response|empty.*response|unexpected.*response|JSON.*parse|parse.*error|malformed|bad.*response|no.*response/i,
+    test: /invalid.*response|empty.*response|unexpected.*response|JSON.*parse|parse.*error|malformed|bad.*response|no.*response|prompt accepted but no session activity|accepted .*message.*did not start|did not start the turn/i,
     message: "Received an unexpected response from the model service. Please retry.",
     retryable: true,
   },

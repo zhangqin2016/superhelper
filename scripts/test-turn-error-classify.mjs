@@ -35,6 +35,21 @@ const normalizedModelConnection = classifyAssistantError(
 );
 assert(normalizedModelConnection?.code === "MODEL_CONNECTION_FAILED", "normalized model interruption stays classifiable");
 
+const acceptedButNoActivity = classifyAssistantError(
+  "The assistant engine accepted the message but did not start the turn. Please retry.",
+);
+assert(acceptedButNoActivity?.code === "RESPONSE_ERROR", "accepted-but-idle engine failures are recoverable protocol failures");
+
+const normalizedSessionInvalid = classifyAssistantError(
+  "Session context has expired (possibly due to restart). Recovery attempted — please send your message again.",
+);
+assert(normalizedSessionInvalid?.code === "SESSION_INVALID", "normalized session-invalid message stays classifiable");
+
+const normalizedEngineUnreachable = classifyAssistantError(
+  "The assistant engine became unreachable. Please retry.",
+);
+assert(normalizedEngineUnreachable?.code === "ENGINE_UNAVAILABLE", "normalized engine-unreachable message stays classifiable");
+
 const exited = ec.classifyTurnFailure({ code: 1, source: "process.close" }, {}, {});
 assert(exited?.code === "ENGINE_PROCESS_EXITED" && exited.retryable === true, "process.close exit branch");
 

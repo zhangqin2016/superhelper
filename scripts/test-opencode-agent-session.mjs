@@ -1456,6 +1456,26 @@ async function newSession() {
 
 // --- promptAsync dispatch does not pre-poll status -------------------------
 {
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.idleState = true;
+    session.sendUserMessage({ text: "accepted but never starts" });
+    await tick();
+    await sleep(80);
+    assert(fake.prompts.length === 2, "accepted-but-idle prompt is retried once before failing");
+    assert(orch.calls.error.length === 1, "accepted-but-idle failure is visible after bounded retry");
+    assert(/unexpected response|did not start/i.test(orch.calls.error[0]), `accepted-but-idle failure should be classified/retryable: ${orch.calls.error[0]}`);
+    assert(session.diagnostics().server == null, "accepted-but-idle failure detaches the stale engine view");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- promptAsync dispatch does not pre-poll status -------------------------
+{
   const { fake, session } = await newSession();
   fake.idleState = false;
   session.sendUserMessage({ text: "post through promptAsync immediately" });
