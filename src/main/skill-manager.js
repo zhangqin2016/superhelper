@@ -99,6 +99,59 @@ function installSkillFromSource(skillId, { force = false } = {}) {
   return { id: skillId, installed: true, skillDir: target, version: manifest.version };
 }
 
+function listRelativeFiles(rootDir) {
+  const files = [];
+  function walk(current) {
+    if (!fs.existsSync(current)) return;
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      files.push(path.relative(rootDir, full));
+    }
+  }
+  walk(rootDir);
+  return files.sort();
+}
+
+function bundledFileContentForCompare(sourceRoot, targetRoot, relPath, manifest) {
+  const content = fs.readFileSync(path.join(sourceRoot, relPath), "utf8");
+  if (relPath === "SKILL.md") {
+    return applyPlaceholders(content, buildReplacements(targetRoot, manifest));
+  }
+  return content;
+}
+
+function shouldRefreshBundledSkill(skillId) {
+  if (!PROTECTED_BUNDLED_IDS.has(skillId)) return false;
+  const source = bundledSkillSource(skillId);
+  const target = installedSkillDir(skillId);
+  if (!source || !fs.existsSync(target)) return false;
+  const manifest = loadManifestFromDir(source);
+  if (!manifest) return false;
+
+  const sourceFiles = listRelativeFiles(source).filter((file) => file !== "skill.manifest.json");
+  const targetFiles = listRelativeFiles(target).filter((file) => file !== "skill.manifest.json");
+  if (JSON.stringify(sourceFiles) !== JSON.stringify(targetFiles)) return true;
+
+  for (const relPath of sourceFiles) {
+    const sourcePath = path.join(source, relPath);
+    const targetPath = path.join(target, relPath);
+    if (!fs.existsSync(targetPath)) return true;
+    const sourceBuffer = fs.readFileSync(sourcePath);
+    const targetBuffer = fs.readFileSync(targetPath);
+    if (relPath === "SKILL.md") {
+      const expected = bundledFileContentForCompare(source, target, relPath, manifest);
+      if (targetBuffer.toString("utf8") !== expected) return true;
+      continue;
+    }
+    if (!sourceBuffer.equals(targetBuffer)) return true;
+  }
+  return false;
+}
+
 /**
  * Sync i18n fields from the bundled manifest into the installed manifest.
  * This ensures manifest additions (like name_i18n, description_i18n, guideMd_i18n)
@@ -155,7 +208,8 @@ function ensureBundledPresent() {
       Boolean(bundledManifest) &&
       Boolean(installedManifest) &&
       compareSemver(bundledManifest.version, installedManifest.version) > 0;
-    installed.push(installSkillFromSource(skillId, { force: needsUpgrade }));
+    const needsRefresh = Boolean(bundledManifest) && Boolean(installedManifest) && shouldRefreshBundledSkill(skillId);
+    installed.push(installSkillFromSource(skillId, { force: needsUpgrade || needsRefresh }));
   }
   return installed;
 }

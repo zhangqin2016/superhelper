@@ -18,6 +18,7 @@ const skillManager = require("../src/main/skill-manager.js");
 
 const SKILL = "lily-workbench-rules";
 const installedPath = path.join(ud, "lily-config", "skills", SKILL, "skill.manifest.json");
+const speechScriptPath = path.join(ud, "lily-config", "skills", "lily-speech-generation", "scripts", "generate-speech.cjs");
 
 // First launch: install bundled skills into the temp userData.
 skillManager.ensureBundledPresent();
@@ -38,6 +39,17 @@ skillManager.ensureBundledPresent();
 const after = JSON.parse(fs.readFileSync(installedPath, "utf8")).guideMd_i18n["zh-CN"].body;
 assert.equal(after, bundledBody, "guide edit propagated to the installed copy without a version bump");
 assert.notEqual(after, "STALE OLD GUIDE TEXT", "stale guide replaced");
+
+// Bundled platform skill scripts are also app-owned. A same-version script fix
+// must reach the installed userData copy; otherwise the running app keeps using
+// stale media/client logic even though the repo and release contain the fix.
+assert.ok(fs.existsSync(speechScriptPath), "speech generation script installed on first launch");
+fs.writeFileSync(speechScriptPath, "#!/usr/bin/env node\nconsole.error('STALE OLD SCRIPT');\n", "utf8");
+skillManager.ensureBundledPresent();
+const restoredScript = fs.readFileSync(speechScriptPath, "utf8");
+const bundledScript = fs.readFileSync(path.resolve("resources/skills/lily-speech-generation/scripts/generate-speech.cjs"), "utf8");
+assert.equal(restoredScript, bundledScript, "bundled skill script edit propagated to installed copy without a version bump");
+assert.ok(!restoredScript.includes("STALE OLD SCRIPT"), "stale installed script replaced");
 
 fs.rmSync(ud, { recursive: true, force: true });
 console.log("skill-guide-sync: ok");

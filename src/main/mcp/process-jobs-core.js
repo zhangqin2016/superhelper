@@ -77,6 +77,45 @@ function safeOutputFiles(value) {
   return value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 50);
 }
 
+function xmlUnescape(value = "") {
+  return String(value)
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+function extractGeneratedMediaOutputFiles(text = "") {
+  const files = [];
+  const raw = String(text || "");
+  for (const blockMatch of raw.matchAll(/<generated_media\b[\s\S]*?<\/generated_media>/g)) {
+    const block = blockMatch[0];
+    for (const fileMatch of block.matchAll(/<file\b[^>]*\bpath=(["'])(.*?)\1/gs)) {
+      const file = xmlUnescape(fileMatch[2]).trim();
+      if (file) files.push(file);
+    }
+  }
+  return [...new Set(files)].slice(0, 50);
+}
+
+function observedOutputFiles(record = {}) {
+  const existing = safeOutputFiles(record.outputFiles);
+  const stdout = readRange(record.stdoutPath, { tailBytes: DEFAULT_LOG_TAIL_BYTES }).text;
+  const stderr = readRange(record.stderrPath, { tailBytes: DEFAULT_LOG_TAIL_BYTES }).text;
+  return [...new Set([
+    ...existing,
+    ...extractGeneratedMediaOutputFiles(stdout),
+    ...extractGeneratedMediaOutputFiles(stderr),
+  ])].slice(0, 50);
+}
+
+function withObservedOutputFiles(record = {}) {
+  const outputFiles = observedOutputFiles(record);
+  if (JSON.stringify(outputFiles) === JSON.stringify(safeOutputFiles(record.outputFiles))) return record;
+  return { ...record, outputFiles };
+}
+
 function isoTimeMs(value) {
   const ms = Date.parse(String(value || ""));
   return Number.isFinite(ms) ? ms : 0;
@@ -411,7 +450,7 @@ async function statusJob(input = {}, options = {}) {
   const found = findJob(input.jobId, options);
   if (!found.record) return fail("JOB_NOT_FOUND", { jobId: safeId(input.jobId) });
   const health = await evaluateHealth(found.record, input.healthcheck || found.record.healthcheck);
-  found.registry.jobs[found.id] = { ...found.record, health, updatedAt: nowIso() };
+  found.registry.jobs[found.id] = withObservedOutputFiles({ ...found.record, health, updatedAt: nowIso() });
   writeRegistry(found.registry, options);
   const progress = latestProgressForRecord(found.registry.jobs[found.id]);
   return {
@@ -428,13 +467,18 @@ function logsJob(input = {}, options = {}) {
   const found = findJob(input.jobId, options);
   if (!found.record) return fail("JOB_NOT_FOUND", { jobId: safeId(input.jobId) });
   const tailBytes = Number(input.tailBytes || DEFAULT_LOG_TAIL_BYTES);
+  const observed = withObservedOutputFiles(found.record);
+  if (observed !== found.record) {
+    found.registry.jobs[found.id] = observed;
+    writeRegistry(found.registry, options);
+  }
   return {
     ok: true,
     jobId: found.id,
-    ...withProgressObservability(compactJob(found.record), latestProgressForRecord(found.record)),
-    stdout: readRange(found.record.stdoutPath, { offset: input.stdoutOffset, tailBytes }),
-    stderr: readRange(found.record.stderrPath, { offset: input.stderrOffset, tailBytes }),
-    progress: latestProgressForRecord(found.record),
+    ...withProgressObservability(compactJob(observed), latestProgressForRecord(observed)),
+    stdout: readRange(observed.stdoutPath, { offset: input.stdoutOffset, tailBytes }),
+    stderr: readRange(observed.stderrPath, { offset: input.stderrOffset, tailBytes }),
+    progress: latestProgressForRecord(observed),
   };
 }
 
@@ -475,6 +519,7 @@ function listJobs(input = {}, options = {}) {
   const registry = readRegistry(options);
   const jobs = Object.values(registry.jobs)
     .map(updateObservedStatus)
+    .map(withObservedOutputFiles)
     .sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")))
     .slice(0, Number(input.limit || 50))
     .map(compactJob);

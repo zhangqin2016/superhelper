@@ -49,7 +49,23 @@ try {
   const afterStop = await statusJob({ jobId: job.jobId }, { registryDir: tmp });
   assert(afterStop.ok === true && afterStop.alive === false, `stopped job should not be alive: ${JSON.stringify(afterStop)}`);
 
-  finish("test-process-jobs-core", 6);
+  const mediaFile = path.join(tmp, "speech.wav");
+  fs.writeFileSync(mediaFile, "RIFFfakeWAVE");
+  const mediaJob = await startJob({
+    command: process.execPath,
+    args: ["-e", `console.log('<generated_media type=\"speech\">\\n  <file path=\"${mediaFile}\" bytes=\"12\" />\\n</generated_media>');`],
+    cwd: tmp,
+    healthcheck: { type: "process" },
+  }, { registryDir: tmp });
+  assert(mediaJob.ok === true, `media job should start: ${JSON.stringify(mediaJob)}`);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const mediaLogs = logsJob({ jobId: mediaJob.jobId, tailBytes: 10_000 }, { registryDir: tmp });
+  assert(mediaLogs.ok === true, `media job logs should succeed: ${JSON.stringify(mediaLogs)}`);
+  assert(mediaLogs.outputFiles.includes(mediaFile), `job_logs should infer generated_media outputFiles: ${JSON.stringify(mediaLogs)}`);
+  const mediaStatus = await statusJob({ jobId: mediaJob.jobId }, { registryDir: tmp });
+  assert(mediaStatus.outputFiles.includes(mediaFile), `job_status should persist inferred outputFiles: ${JSON.stringify(mediaStatus)}`);
+
+  finish("test-process-jobs-core", 9);
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
