@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Mail, ShieldCheck, Sparkles } from "lucide-react";
 import { SiteNav } from "../../components/site-nav";
+import { SiteFooter } from "../../components/site-footer";
 import { ContactForm } from "../../components/contact-form";
 import { getI18n } from "../../lib/i18n.mjs";
 
@@ -48,6 +49,7 @@ export default async function ContactPage() {
           </aside>
         </section>
       </main>
+      <SiteFooter />
     </>
   );
 }

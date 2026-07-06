@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BriefcaseBusiness, CheckCircle2, ClipboardList, Download, FileText, FolderOpen, GraduationCap, Image, MessageCircle, MousePointerClick, Scale, Search, ShieldCheck, Sparkles, TrendingUp, Users, Wand2, Wrench, Zap } from "lucide-react";
 import { SiteNav } from "../components/site-nav";
+import { SiteFooter } from "../components/site-footer";
 import { ProductWindow } from "../components/product-window";
 import { ContactForm } from "../components/contact-form";
 import { getI18n } from "../lib/i18n.mjs";
@@ -384,6 +385,7 @@ export default async function HomePage() {
           </div>
         </section>
       </main>
+      <SiteFooter />
     </>
   );
 }

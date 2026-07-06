@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Download, ShieldCheck } from "lucide-react";
 import { SiteNav } from "../../components/site-nav";
+import { SiteFooter } from "../../components/site-footer";
 import { safeApiGet } from "../../lib/api";
 import { getI18n } from "../../lib/i18n.mjs";
 
@@ -62,6 +63,7 @@ export default async function DownloadPage() {
           </div>
         </div>
       </main>
+      <SiteFooter />
     </>
   );
 }

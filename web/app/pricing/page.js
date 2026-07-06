@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SiteNav } from "../../components/site-nav";
+import { SiteFooter } from "../../components/site-footer";
 import { getI18n } from "../../lib/i18n.mjs";
 
 export default async function PricingPage() {
@@ -28,6 +29,7 @@ export default async function PricingPage() {
           </div>
         </div>
       </main>
+      <SiteFooter />
     </>
   );
 }

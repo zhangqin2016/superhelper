@@ -1,4 +1,5 @@
 import { SiteNav } from "../../components/site-nav";
+import { SiteFooter } from "../../components/site-footer";
 import { getI18n } from "../../lib/i18n.mjs";
 
 export default async function DocsPage() {
@@ -66,6 +67,7 @@ export default async function DocsPage() {
           </article>
         </div>
       </main>
+      <SiteFooter />
     </>
   );
 }
