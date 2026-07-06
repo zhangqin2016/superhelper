@@ -14,6 +14,8 @@ class TurnArchive {
 
   buildRecord(state, terminalType, payload = {}) {
     const { getDiffsForTurn } = require("./diff-capture");
+    const startedAt = state.startedAt || Date.now();
+    const endedAt = Date.now();
     const assistantText = String(payload.assistant ?? state.assistantText ?? "").trim();
     const fileChanges = getDiffsForTurn(state.sessionId, state.turnId).map((entry) => ({
       turnId: entry.turnId,
@@ -43,6 +45,7 @@ class TurnArchive {
       fileChanges,
       tools,
       workspacePath,
+      startedAt,
     });
     const contentBlocks = (state.contentBlocks || []).slice(-20);
     // Typed blocks a tool/skill declared in its result — rendered directly, no
@@ -109,8 +112,8 @@ class TurnArchive {
     const record = {
       turnId: state.turnId,
       sessionId: state.sessionId,
-      startedAt: state.startedAt || Date.now(),
-      endedAt: Date.now(),
+      startedAt,
+      endedAt,
       terminal: terminalType,
       user: userPayload
         ? {

@@ -1,18 +1,23 @@
 import { z } from "zod";
+import { config } from "../../config.js";
 import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
+import { buildClientBootstrapPolicy } from "../../services/client-bootstrap.js";
 import {
   DEFAULT_EFFECTIVE_CONFIG,
   clearConfigProfileDeleted,
   configProfileWasDeleted,
   deepMerge,
   decideConfigProfileUpsert,
+  expandModelProviderMenu,
   isGatewayBaseUrl,
   parseGatewayProvider,
   recordConfigProfileDeleted,
   recordEnvManagedConfigProfileDeleted,
   rolloutAllows,
+  withGatewayRuntimeConfig,
 } from "../../services/client-config.js";
+import { getMediaDeliveryMode, getModelDeliveryMode } from "../../services/app-settings.js";
 
 const configProfileSchema = z.object({
   id: z.string().min(2).max(80),
@@ -174,7 +179,34 @@ function summarizeEffectiveConfig(effectiveConfig) {
   };
 }
 
-async function resolveEffectivePreview(input) {
+export async function finalizeAdminPreviewEffectiveConfig({
+  effectiveConfig,
+  input = {},
+  request = {},
+  options = {},
+} = {}) {
+  const modelDeliveryMode = options.modelDeliveryMode || await getModelDeliveryMode();
+  const mediaDeliveryMode = options.mediaDeliveryMode || await getMediaDeliveryMode();
+  const scopedConfig = expandModelProviderMenu(effectiveConfig, {
+    deliveryMode: modelDeliveryMode,
+    providers: options.providers,
+  });
+  const bootstrapPolicy = options.bootstrapPolicy || buildClientBootstrapPolicy(request);
+  return withGatewayRuntimeConfig(scopedConfig, request, {
+    deviceId: input.deviceId || "admin-preview",
+    licenseId: input.licenseId || "",
+    appVersion: input.appVersion || "admin-preview",
+  }, {
+    publicBaseUrl: options.publicBaseUrl ?? config.publicBaseUrl,
+    policyBaseUrl: options.policyBaseUrl ?? bootstrapPolicy.apiBaseUrl,
+    mediaDeliveryMode,
+    modelDeliveryMode,
+    account: options.account || null,
+    mediaContracts: options.mediaContracts,
+  });
+}
+
+async function resolveEffectivePreview(input, request) {
   const profiles = await db
     .selectFrom("config_profiles")
     .selectAll()
@@ -191,10 +223,15 @@ async function resolveEffectivePreview(input) {
     if (profile.scope === "device") return input.deviceId && profile.target_id === input.deviceId;
     return false;
   });
-  const effectiveConfig = matching.reduce(
+  const mergedConfig = matching.reduce(
     (acc, profile) => deepMerge(acc, profile.config),
     DEFAULT_EFFECTIVE_CONFIG,
   );
+  const effectiveConfig = await finalizeAdminPreviewEffectiveConfig({
+    effectiveConfig: mergedConfig,
+    input,
+    request,
+  });
   return {
     target: {
       deviceId: input.deviceId || "",
@@ -270,9 +307,9 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
       },
     },
     async (request) => {
-    const input = effectivePreviewSchema.parse(request.query || {});
-    return resolveEffectivePreview(input);
-  });
+      const input = effectivePreviewSchema.parse(request.query || {});
+      return resolveEffectivePreview(input, request);
+    });
 
   app.post(
     "/api/admin/config-profiles",

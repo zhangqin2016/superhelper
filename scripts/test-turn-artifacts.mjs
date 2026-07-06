@@ -27,6 +27,11 @@ fs.writeFileSync(skillDependencyPath, "# Skill dependency\n");
 const outsidePath = path.join(os.tmpdir(), "outside-lily-artifact.svg");
 fs.writeFileSync(outsidePath, "<svg></svg>");
 
+function setFileMtime(filePath, ms) {
+  const date = new Date(ms);
+  fs.utimesSync(filePath, date, date);
+}
+
 try {
   {
     const artifacts = buildTurnArtifacts({
@@ -70,6 +75,59 @@ try {
     assert.equal(artifacts[0].mimeType, "video/mp4");
     assert.equal(artifacts[1].kind, "audio");
     assert.equal(artifacts[1].mimeType, "audio/wav");
+  }
+
+  {
+    const turnStart = Date.now();
+    setFileMtime(pdfPath, turnStart - 60_000);
+    const artifacts = buildTurnArtifacts({
+      workspacePath: workspace,
+      startedAt: turnStart,
+      assistantText: "上次生成的是 output/report.pdf，这次没有修改这个文件。",
+    });
+    assert.equal(artifacts.length, 0, "stale assistant-text path must not become a current turn artifact");
+  }
+
+  {
+    const turnStart = Date.now();
+    const freshPath = path.join(outputDir, "fresh-current-turn.pdf");
+    fs.writeFileSync(freshPath, "%PDF-1.4\nfresh");
+    setFileMtime(freshPath, turnStart + 1_000);
+    const artifacts = buildTurnArtifacts({
+      workspacePath: workspace,
+      startedAt: turnStart,
+      assistantText: "已生成 output/fresh-current-turn.pdf。",
+    });
+    assert.equal(artifacts.length, 1);
+    assert.equal(artifacts[0].relativePath, "output/fresh-current-turn.pdf");
+  }
+
+  {
+    const turnStart = Date.now();
+    setFileMtime(pdfPath, turnStart - 60_000);
+    const artifacts = buildTurnArtifacts({
+      workspacePath: workspace,
+      startedAt: turnStart,
+      tools: [{
+        id: "tool_bash_old_output",
+        name: "Bash",
+        startedAt: turnStart,
+        result: { ok: true, output: "output/report.pdf" },
+      }],
+    });
+    assert.equal(artifacts.length, 0, "stale tool output path must not become a current turn artifact");
+  }
+
+  {
+    const turnStart = Date.now();
+    setFileMtime(pdfPath, turnStart - 60_000);
+    const artifacts = buildTurnArtifacts({
+      workspacePath: workspace,
+      startedAt: turnStart,
+      fileChanges: [{ filePath: pdfPath }],
+    });
+    assert.equal(artifacts.length, 1, "explicit file changes still count even when the file mtime is old");
+    assert.equal(artifacts[0].relativePath, "output/report.pdf");
   }
 
   {

@@ -72,6 +72,7 @@ const PATH_LIKE_RE =
 // on pathological input) and the follow-up statSync count predictable.
 const MAX_STRING_SCAN = 64 * 1024;
 const MAX_CANDIDATES = 64;
+const ARTIFACT_MTIME_TOLERANCE_MS = 2000;
 
 function stableArtifactId(filePath) {
   return `artifact_${crypto.createHash("sha1").update(filePath).digest("hex").slice(0, 16)}`;
@@ -136,11 +137,12 @@ function isInternalSupportArtifactPath(filePath) {
   );
 }
 
-function toArtifact(filePath, source, workspacePath) {
+function toArtifact(filePath, source, workspacePath, { minimumModifiedAt = 0 } = {}) {
   const kind = artifactKindForPath(filePath);
   if (!kind) return null;
   const stat = statFile(filePath);
   if (!stat) return null;
+  if (minimumModifiedAt > 0 && stat.mtimeMs < minimumModifiedAt) return null;
   const absolutePath = path.resolve(filePath);
   const ext = path.extname(absolutePath).toLowerCase();
   const relativePath = workspacePath && isInsidePath(workspacePath, absolutePath)
@@ -215,7 +217,13 @@ function collectPathStrings(value, out, depth = 0) {
   }
 }
 
-function addCandidate(map, candidate, source, workspacePath, { requireWorkspace = false, allowInternalSupport = false } = {}) {
+function addCandidate(
+  map,
+  candidate,
+  source,
+  workspacePath,
+  { requireWorkspace = false, allowInternalSupport = false, minimumModifiedAt = 0 } = {},
+) {
   const resolved = resolveCandidatePath(candidate, workspacePath);
   if (!resolved) return;
   if (requireWorkspace && workspacePath && !isInsidePath(workspacePath, resolved)) return;
@@ -227,7 +235,7 @@ function addCandidate(map, candidate, source, workspacePath, { requireWorkspace 
     addArtifact(map, { path: key, source });
     return;
   }
-  addArtifact(map, toArtifact(resolved, source, workspacePath));
+  addArtifact(map, toArtifact(resolved, source, workspacePath, { minimumModifiedAt }));
 }
 
 // Tools that only READ — their result is file content / search hits, which is
@@ -243,9 +251,26 @@ const FILE_WRITE_INPUT_KEYS = ["file_path", "path", "target_file", "notebook_pat
 // WRITES one still shows it, since producedPaths overrides this).
 const NEVER_ARTIFACT_BASENAMES = new Set(["agents.md", "agent.md", "claude.md"]);
 
-function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], workspacePath = "" } = {}) {
+function normalizeTimeMs(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function heuristicMinimumModifiedAt(startedAt) {
+  const start = normalizeTimeMs(startedAt);
+  return start > 0 ? Math.max(0, start - ARTIFACT_MTIME_TOLERANCE_MS) : 0;
+}
+
+function buildTurnArtifacts({
+  assistantText = "",
+  fileChanges = [],
+  tools = [],
+  workspacePath = "",
+  startedAt = 0,
+} = {}) {
   const artifacts = new Map();
   const root = workspacePath ? path.resolve(workspacePath) : "";
+  const turnMinimumModifiedAt = heuristicMinimumModifiedAt(startedAt);
 
   // A file the turn only READ (knowledge base, references, guides) must never
   // render as a deliverable, even when the model cites its path in its prose —
@@ -293,8 +318,9 @@ function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], 
       const candidates = new Set();
       collectPathStrings(tool?.result, candidates);
       if (!FILE_WRITE_TOOLS.has(name) && toolInputMayCreateArtifacts(name)) collectPathStrings(tool?.input, candidates);
+      const toolMinimumModifiedAt = heuristicMinimumModifiedAt(tool?.startedAt) || turnMinimumModifiedAt;
       for (const candidate of candidates) {
-        addCandidate(artifacts, candidate, "tool_output", root);
+        addCandidate(artifacts, candidate, "tool_output", root, { minimumModifiedAt: toolMinimumModifiedAt });
       }
     }
   }
@@ -302,7 +328,10 @@ function buildTurnArtifacts({ assistantText = "", fileChanges = [], tools = [], 
   const textCandidates = new Set();
   collectPathStrings(assistantText, textCandidates);
   for (const candidate of textCandidates) {
-    addCandidate(artifacts, candidate, "assistant_text", root, { requireWorkspace: true });
+    addCandidate(artifacts, candidate, "assistant_text", root, {
+      requireWorkspace: true,
+      minimumModifiedAt: turnMinimumModifiedAt,
+    });
   }
 
   // Drop read-only references and framework guides that slipped in via the

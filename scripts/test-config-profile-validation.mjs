@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 process.env.DATABASE_URL ||= "postgres://user:pass@localhost:5432/lily_validation_test";
 
-const { validateConfigProfileConfig } = await import("../server/src/routes/admin/config-profiles.js");
+const {
+  finalizeAdminPreviewEffectiveConfig,
+  validateConfigProfileConfig,
+} = await import("../server/src/routes/admin/config-profiles.js");
 const { closeDb } = await import("../server/src/db.js");
 
 try {
@@ -19,6 +22,60 @@ try {
     null,
     "provider-menu delivery should be accepted",
   );
+
+  const previewConfig = await finalizeAdminPreviewEffectiveConfig({
+    effectiveConfig: {
+      schemaVersion: 1,
+      models: {
+        source: "service",
+        providers: ["deepseek", "glm"],
+        activeProvider: "glm",
+      },
+      tools: {
+        pluginRegistryUrl: "/api/skills/registry",
+      },
+    },
+    input: {
+      deviceId: "dev_preview",
+      licenseId: "lic_preview",
+    },
+    request: {
+      headers: { host: "lilych.lilywb.cn" },
+    },
+    options: {
+      modelDeliveryMode: "gateway",
+      mediaDeliveryMode: "gateway",
+      policyBaseUrl: "https://lilych.lilywb.cn",
+      providers: {
+        deepseek: {
+          id: "deepseek",
+          type: "anthropic",
+          baseUrl: "https://api.deepseek.com/anthropic",
+          apiKey: "sk-deepseek",
+          model: "deepseek-v4-pro[1m]",
+          models: ["deepseek-v4-pro[1m]"],
+        },
+        glm: {
+          id: "glm",
+          type: "anthropic",
+          baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+          apiKey: "sk-glm",
+          model: "glm-4.7",
+          models: ["glm-4.7"],
+        },
+      },
+    },
+  });
+  assert.equal(previewConfig.models.providers, undefined, "admin preview should consume provider directives");
+  assert.equal(previewConfig.models.activePresetId, "glm-gateway", "admin preview should honor activeProvider");
+  assert.deepEqual(
+    previewConfig.models.presets.map((preset) => preset.id),
+    ["deepseek-gateway", "glm-gateway"],
+    "admin preview should show the same expanded model menu the client receives",
+  );
+  const glmPreset = previewConfig.models.presets.find((preset) => preset.id === "glm-gateway");
+  assert.equal(glmPreset.env.LILY_API_BASE_URL, "https://lilych.lilywb.cn/llm/glm");
+  assert.match(glmPreset.env.LILY_API_KEY, /^lilygw\./, "admin preview should inject a short-lived gateway token");
 
   assert.equal(
     validateConfigProfileConfig({
