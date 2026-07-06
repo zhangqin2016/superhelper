@@ -11,6 +11,7 @@ const wallet = await import("../server/src/services/wallet.js");
 const gatewayAuth = await import("../server/src/services/model-gateway/auth.js");
 const gatewayUsage = await import("../server/src/services/model-gateway/usage.js");
 const aliyunSms = await import("../server/src/services/sms-provider-aliyun.js");
+const { config } = await import("../server/src/config.js");
 
 assert.equal(accountAuth.normalizePhoneE164("13800000000"), "+8613800000000");
 assert.equal(accountAuth.normalizePhoneE164("+86 138 0000 0000"), "+8613800000000");
@@ -160,6 +161,36 @@ assert.equal(verifiedGatewayToken.ok, true);
 assert.equal(verifiedGatewayToken.deviceId, "dev_test");
 assert.equal(verifiedGatewayToken.userId, "usr_test");
 assert.equal(verifiedGatewayToken.sessionId, "sess_test");
+
+const recentlyExpiredGatewayToken = gatewayAuth.signModelGatewayToken({
+  deviceId: "dev_test",
+  licenseId: "lic_test",
+  providerId: "vision",
+  expiresAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+});
+assert.equal(
+  gatewayAuth.verifyModelGatewayToken(recentlyExpiredGatewayToken, "vision").code,
+  "MODEL_GATEWAY_TOKEN_EXPIRED",
+);
+config.modelGatewayExpiredTokenGraceSeconds = 60 * 60;
+const graceVerifiedGatewayToken = gatewayAuth.verifyModelGatewayToken(recentlyExpiredGatewayToken, "vision");
+assert.equal(graceVerifiedGatewayToken.ok, true);
+assert.equal(graceVerifiedGatewayToken.expiredGrace, true);
+assert.equal(
+  gatewayAuth.verifyModelGatewayToken(recentlyExpiredGatewayToken, "deepseek").code,
+  "MODEL_GATEWAY_PROVIDER_MISMATCH",
+);
+const tooOldGatewayToken = gatewayAuth.signModelGatewayToken({
+  deviceId: "dev_test",
+  licenseId: "lic_test",
+  providerId: "vision",
+  expiresAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+});
+assert.equal(
+  gatewayAuth.verifyModelGatewayToken(tooOldGatewayToken, "vision").code,
+  "MODEL_GATEWAY_TOKEN_EXPIRED",
+);
+config.modelGatewayExpiredTokenGraceSeconds = 0;
 
 const selected = wallet.selectGrantsForConsumption(grants, {
   resourceType: "image_generation",

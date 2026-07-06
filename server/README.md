@@ -72,6 +72,10 @@ MODEL_GATEWAY_ENABLED=true
 MODEL_CONFIG_DELIVERY_MODE=direct # direct | gateway
 MODEL_GATEWAY_TOKEN_SECRET=change-me-at-least-32-chars
 MODEL_GATEWAY_TOKEN_TTL_SECONDS=21600
+# Temporary migration/incident escape hatch: accept signed gateway tokens that
+# have expired within this many seconds. Keep 0 normally; use a bounded window
+# only when old clients are stuck with stale long-running engine processes.
+MODEL_GATEWAY_EXPIRED_TOKEN_GRACE_SECONDS=0
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 DEEPSEEK_API_KEY=sk-...

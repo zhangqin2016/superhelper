@@ -42,6 +42,7 @@ export const config = {
   modelGatewayEnabled: process.env.MODEL_GATEWAY_ENABLED !== "false",
   modelGatewayTokenSecret: process.env.MODEL_GATEWAY_TOKEN_SECRET || process.env.SESSION_SECRET || "development-session-secret-change-me",
   modelGatewayTokenTtlSeconds: Number(process.env.MODEL_GATEWAY_TOKEN_TTL_SECONDS || 6 * 60 * 60),
+  modelGatewayExpiredTokenGraceSeconds: Number(process.env.MODEL_GATEWAY_EXPIRED_TOKEN_GRACE_SECONDS || 0),
   modelGatewayClientToken: process.env.MODEL_GATEWAY_CLIENT_TOKEN || "",
   modelGatewayProviders: process.env.MODEL_GATEWAY_PROVIDERS || "",
   modelGatewayDefaultProvider: process.env.MODEL_GATEWAY_DEFAULT_PROVIDER || "deepseek",

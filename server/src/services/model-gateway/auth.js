@@ -47,7 +47,14 @@ export function verifyModelGatewayToken(token, providerId = "") {
   }
   const expiresAt = Date.parse(payload.expiresAt);
   if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-    return { ok: false, code: "MODEL_GATEWAY_TOKEN_EXPIRED" };
+    const graceMs = Math.max(0, Number(config.modelGatewayExpiredTokenGraceSeconds) || 0) * 1000;
+    if (!Number.isFinite(expiresAt) || !graceMs || expiresAt + graceMs <= Date.now()) {
+      return { ok: false, code: "MODEL_GATEWAY_TOKEN_EXPIRED" };
+    }
+    if (payload.providerId && providerId && payload.providerId !== providerId) {
+      return { ok: false, code: "MODEL_GATEWAY_PROVIDER_MISMATCH" };
+    }
+    return { ok: true, ...payload, expiredGrace: true };
   }
   if (payload.providerId && providerId && payload.providerId !== providerId) {
     return { ok: false, code: "MODEL_GATEWAY_PROVIDER_MISMATCH" };
