@@ -57,14 +57,8 @@ function diagnoseSendBlocker(ctx, sessionId) {
     };
   }
 
-  const { loadSettingsEnv } = require("./agent-settings");
-  const { getUserApiEnv, getActivePresetEnv } = require("./model-presets");
-  const { normalizeToLilyEnv } = require("./agent-env");
-  const lilyEnv = normalizeToLilyEnv({
-    ...loadSettingsEnv(),
-    ...getUserApiEnv(),
-    ...getActivePresetEnv(),
-  });
+  const { resolveLilyEnv } = require("./spawn-env");
+  const lilyEnv = resolveLilyEnv();
   if (!String(lilyEnv.LILY_API_KEY || "").trim()) {
     return {
       error: "NO_API_KEY",
