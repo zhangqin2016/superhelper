@@ -2,6 +2,7 @@
 
 const path = require("node:path");
 const { requestJson } = require("./_shared.cjs");
+const { buildMediaContractRequest } = require("../media-contract-executor.cjs");
 
 function envValue(env, ...names) {
   for (const name of names) {
@@ -78,24 +79,31 @@ module.exports = {
     if (!url) {
       throw new Error("Missing LILY_MEDIA_VIDEO_ENDPOINT or LILY_MEDIA_VIDEO_BASE_URL for Lily GPU video generation.");
     }
-    const payload = {
-      prompt: input.prompt,
-      negative_prompt: input.negative_prompt || "",
-      ratio: input.ratio || "16:9",
-      resolution: input.resolution || "720P",
-      duration: Number(input.duration || 5),
-      media: Array.isArray(input.media) ? input.media : [],
-      model: input.model || env.LILY_MEDIA_VIDEO_MODEL || env.LILY_GPU_VIDEO_MODEL || "wan2.2",
-      prompt_extend: input.prompt_extend !== false,
-      watermark: input.watermark === true,
-    };
     ctx.logProgress(ctx.msg("正在提交 Lily GPU 视频生成任务...", "Submitting Lily GPU video generation task..."));
-    const data = await requestJson(url, {
-      method: "POST",
-      headers: { ...authHeaders(env), "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      timeoutMs: Number(input.timeout_ms || 900_000),
+    const contractRequest = buildMediaContractRequest({
+      env,
+      modality: "video",
+      provider: "lily",
+      input: { ...input, prompt: input.prompt },
     });
+    const data = contractRequest
+      ? await requestJson(contractRequest.url, { ...contractRequest.options, timeoutMs: Number(input.timeout_ms || 900_000) })
+      : await requestJson(url, {
+        method: "POST",
+        headers: { ...authHeaders(env), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: input.prompt,
+          negative_prompt: input.negative_prompt || "",
+          ratio: input.ratio || "16:9",
+          resolution: input.resolution || "720P",
+          duration: Number(input.duration || 5),
+          media: Array.isArray(input.media) ? input.media : [],
+          model: input.model || env.LILY_MEDIA_VIDEO_MODEL || env.LILY_GPU_VIDEO_MODEL || "wan2.2",
+          prompt_extend: input.prompt_extend !== false,
+          watermark: input.watermark === true,
+        }),
+        timeoutMs: Number(input.timeout_ms || 900_000),
+      });
     const urls = [...new Set(collectUrls(data))];
     const buffers = collectBuffers(data);
     const taskId = data?.task_id || data?.id || data?.output?.task_id || "";

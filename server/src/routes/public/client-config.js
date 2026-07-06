@@ -14,6 +14,7 @@ import {
   rolloutAllows,
   withGatewayRuntimeConfig,
 } from "../../services/client-config.js";
+import { discoverLilyMediaProviderContracts } from "../../services/media-provider-contracts.js";
 import {
   requireSignedDeviceRequest,
   trialPayload,
@@ -148,12 +149,36 @@ export function registerPublicClientConfigRoutes(app) {
     });
     const account = await resolveAccountContextForClientConfig(input, db);
     const bootstrapPolicy = buildClientBootstrapPolicy(request);
+    const mediaDeliveryMode = await getMediaDeliveryMode();
+    const scopedPreview = withGatewayRuntimeConfig(scopedConfig, request, input, {
+      publicBaseUrl: config.publicBaseUrl,
+      policyBaseUrl: bootstrapPolicy.apiBaseUrl,
+      mediaDeliveryMode,
+      modelDeliveryMode,
+      account,
+    });
+    const selectedMedia = {
+      image: scopedPreview.media?.image?.default || "",
+      video: scopedPreview.media?.video?.default || "",
+      speech: scopedPreview.media?.speech?.default || "",
+    };
+    const availableMedia = {
+      image: scopedPreview.media?.image?.providers || [],
+      video: scopedPreview.media?.video?.providers || [],
+      speech: scopedPreview.media?.speech?.providers || [],
+    };
+    const mediaContracts = await discoverLilyMediaProviderContracts({
+      serverConfig: config,
+      selected: selectedMedia,
+      available: availableMedia,
+    });
     const effectiveConfig = withGatewayRuntimeConfig(scopedConfig, request, input, {
       publicBaseUrl: config.publicBaseUrl,
       policyBaseUrl: bootstrapPolicy.apiBaseUrl,
-      mediaDeliveryMode: await getMediaDeliveryMode(),
+      mediaDeliveryMode,
       modelDeliveryMode,
       account,
+      mediaContracts,
     });
     const payload = {
       schemaVersion: 1,

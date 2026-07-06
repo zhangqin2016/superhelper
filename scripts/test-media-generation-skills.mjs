@@ -66,6 +66,7 @@ async function startMockServer() {
     klingImage: 0, klingVideo: 0, mmImage: 0, mmVideo: 0, zhipuImage: 0, zhipuVideo: 0,
     lilyImage: 0, lilyVideo: 0, lilySpeech: 0, lilyImageAsset: 0, lilyVideoAsset: 0, lilySpeechAsset: 0,
     lilySpeechVoices: [],
+    lilyVideoBodies: [],
   };
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
@@ -191,8 +192,9 @@ async function startMockServer() {
     if (req.method === "POST" && url.pathname === "/lily/video/generate") {
       const body = await readJson(req);
       seen.lilyVideo += 1;
+      seen.lilyVideoBodies.push(body);
       assert.equal(req.headers.authorization, "Bearer lily-token");
-      assert.equal(body.model, "wan2.2");
+      if (body.model !== undefined) assert.equal(body.model, "wan2.2");
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ ok: true, kind: "wan", file: `${base}/llm/media/lily/video/asset?url=${encodeURIComponent("http://127.0.0.1:8010/media/generated.mp4")}` }));
       return;
@@ -352,6 +354,42 @@ function lilySpeechContract(defaultVoice = "aiden") {
   });
 }
 
+function lilyVideoContract() {
+  return JSON.stringify({
+    schemaVersion: 1,
+    selected: { video: "lily" },
+    contracts: {
+      video: {
+        lily: {
+          endpointEnv: "LILY_MEDIA_VIDEO_ENDPOINT",
+          authEnv: "LILY_MEDIA_API_KEY",
+          request: {
+            method: "POST",
+            contentType: "application/json",
+            template: {
+              prompt: "{{prompt}}",
+              width: "{{width}}",
+              height: "{{height}}",
+              frames: "{{frames}}",
+              steps: "{{steps}}",
+              seed: "{{seed}}",
+            },
+          },
+          params: {
+            prompt: { type: "string", required: true },
+            width: { type: "number", default: 512 },
+            height: { type: "number", default: 320 },
+            frames: { type: "number", default: 17 },
+            steps: { type: "number", default: 4 },
+            seed: { type: "number", default: 123 },
+          },
+          response: { mediaType: "video", extract: ["$.file"], assetProxy: "lily" },
+        },
+      },
+    },
+  });
+}
+
 const noProvider = await runNode(
   scripts.image,
   { prompt: "test" },
@@ -434,6 +472,20 @@ try {
   assert.equal(lilyVideo.code, 0, lilyVideo.stderr);
   assert.match(lilyVideo.stdout, /generated_media type="video"/);
   assert.match(assertGeneratedPath(lilyVideo.stdout, "generated-assets"), /generated-assets\/video-/);
+  const lilyVideoFromContract = await runNode(
+    scripts.video,
+    { prompt: "Lily GPU 合同视频", provider: "lily", timeout_ms: 5000 },
+    { ...lilyEnv, LILY_MEDIA_CONTRACTS_JSON: lilyVideoContract() },
+    tmp,
+  );
+  assert.equal(lilyVideoFromContract.code, 0, lilyVideoFromContract.stderr);
+  assert.match(lilyVideoFromContract.stdout, /generated_media type="video"/);
+  assert.match(assertGeneratedPath(lilyVideoFromContract.stdout, "generated-assets"), /generated-assets\/video-/);
+  assert.deepEqual(
+    seen.lilyVideoBodies.at(-1),
+    { prompt: "Lily GPU 合同视频", width: 512, height: 320, frames: 17, steps: 4, seed: 123 },
+    "Lily video should use server-delivered request contract params",
+  );
   const lilyVideoFromDefault = await runNode(
     scripts.video,
     { prompt: "Lily GPU 默认视频", timeout_ms: 5000 },
@@ -577,20 +629,20 @@ try {
   assert.equal(seen.zhipuImage, 1);
   assert.equal(seen.zhipuVideo, 1);
   assert.equal(seen.lilyImage, 2);
-  assert.equal(seen.lilyVideo, 2);
+  assert.equal(seen.lilyVideo, 3);
   assert.equal(seen.lilySpeech, 4);
   assert.equal(seen.lilyImageAsset, 2);
-  assert.equal(seen.lilyVideoAsset, 2);
+  assert.equal(seen.lilyVideoAsset, 3);
   assert.equal(seen.lilySpeechAsset, 4);
   assert.equal(countGeneratedMediaFiles([
     image, video, speech,
-    lilyImage, lilyImageFromDefault, lilyVideo, lilyVideoFromDefault,
+    lilyImage, lilyImageFromDefault, lilyVideo, lilyVideoFromContract, lilyVideoFromDefault,
     lilySpeech, lilySpeechFromContract, lilySpeechDashScopeExampleVoice, lilySpeechFromDefault,
     volcImage, volcVideo,
     klingImage, klingVideo,
     mmImage, mmVideo,
     zhipuImage, zhipuVideo,
-  ]), 19);
+  ]), 20);
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });

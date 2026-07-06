@@ -722,13 +722,14 @@ function summarizeContractParams(contract) {
   for (const [name, spec] of Object.entries(params)) {
     if (!spec || typeof spec !== "object") continue;
     const parts = [];
+    if (spec.type) parts.push(String(spec.type));
+    parts.push(spec.required ? "required" : "optional");
     if (spec.default !== undefined && spec.default !== null && String(spec.default) !== "") {
       parts.push(`default \`${spec.default}\``);
     }
     if (Array.isArray(spec.enum) && spec.enum.length) {
       parts.push(`values: ${spec.enum.map((value) => String(value)).join(", ")}`);
     }
-    if (!parts.length) continue;
     lines.push(`${name}: ${parts.join("; ")}`);
   }
   return lines;

@@ -837,7 +837,7 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   };
   resolveMediaSelection(configCopy, availableMediaProviders);
   if (configCopy.media && typeof configCopy.media === "object") {
-    configCopy.media.contracts = buildMediaProviderContracts({
+    configCopy.media.contracts = options.mediaContracts || buildMediaProviderContracts({
       selected: {
         image: configCopy.media.image?.default || "",
         video: configCopy.media.video?.default || "",

@@ -4,7 +4,7 @@
 
 **Goal:** Deliver server-owned media provider contracts so Lily agents and scripts stop guessing provider request formats.
 
-**Architecture:** Add an additive `effectiveConfig.media.contracts` block from the server, expose it through desktop media settings and AGENT.md, then migrate speech generation to a contract executor while preserving existing provider-specific fallbacks. Gateway validation will share the same built-in contract data in a later broader pass; this first implementation keeps the existing compatibility normalizer active.
+**Architecture:** Add an additive `effectiveConfig.media.contracts` block from the server, expose it through desktop media settings and AGENT.md, then migrate generation scripts to contract execution while preserving existing provider-specific fallbacks. Lily GPU contracts can be generated from the upstream service OpenAPI schema, so switching GPU models/services can change the parameters without hardcoding new client logic.
 
 **Tech Stack:** Node.js ESM server, Electron main CommonJS modules, Lily skill Node scripts, existing `scripts/test-*.mjs` test runner.
 
@@ -19,6 +19,7 @@
 
 - [x] Write failing tests proving built-in Lily speech contract is delivered, filtered by configured endpoint, and contains voice defaults/enums/aliases.
 - [x] Implement built-in contract helpers with a small schema: selected provider, endpoint env, auth env, request template, params, response extraction, and error policy.
+- [x] Add OpenAPI `GenerateRequest` schema conversion so live Lily GPU service params can replace stale built-in defaults.
 - [x] Include contracts in `effectiveConfig.media.contracts` without removing existing env delivery.
 - [x] Run `node scripts/test-media-provider-contracts.mjs`.
 
@@ -44,6 +45,7 @@
 - [x] Write failing tests proving speech generation can execute a provider contract from `LILY_MEDIA_CONTRACTS_JSON`.
 - [x] Implement contract validation, alias/default application, template materialization, and JSON request construction; reuse the existing speech script result extraction and download path.
 - [x] Make speech script prefer contract execution when a matching provider contract exists, then fall back to existing logic.
+- [x] Make video script prefer contract execution when a matching provider contract exists, then fall back to existing logic.
 - [x] Run `node scripts/test-media-generation-skills.mjs`.
 
 ### Task 4: Capability Gate and Regression
