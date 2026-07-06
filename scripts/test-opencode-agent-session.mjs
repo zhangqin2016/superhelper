@@ -765,6 +765,68 @@ async function newSession() {
   }
 }
 
+// --- unsafe resumed transport failure: clear poisoned engine state ----------
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 90;
+  try {
+    const made = [];
+    const invalidated = [];
+    const session = new OpencodeAgentSession("legacy_resume_unsafe_failure", {
+      createServer: (opts = {}) => {
+        const server = new FakeServer();
+        server.wasResumed = Boolean(opts.resumeSessionID);
+        server.historyMessages = [];
+        made.push({ server, opts });
+        return server;
+      },
+    });
+    const orch = makeOrchestrator();
+    session.bindOrchestrator(orch);
+    session.on("engine-session-invalidated", (payload) => invalidated.push(payload));
+    session.ensureProcess(process.cwd(), { agentCommand: "/bin/true", resumeSessionId: "ses_unsafe_poisoned" }, { lazy: true });
+    session.sendUserMessage({ text: "继续处理文件" });
+    await tick();
+    assert(made.length === 1 && made[0].server.wasResumed === true, "unsafe failure starts from a resumed engine session");
+    made[0].server.idleState = true;
+    made[0].server.emitEvent({
+      type: "message.part.updated",
+      properties: {
+        sessionID: "ses_test",
+        part: {
+          id: "part_bash_1",
+          type: "tool",
+          tool: "bash",
+          callID: "call_bash_1",
+          state: { status: "running", input: { command: "python3 parse_doc.py" } },
+        },
+      },
+    });
+    made[0].server.emitEvent({
+      type: "message.error",
+      properties: {
+        sessionID: "ses_test",
+        messageID: "msg_unsafe_poison",
+        error: { message: "Connection to the model service was interrupted. Please check your network and API settings, then retry." },
+      },
+    });
+    await sleep(160);
+    assert(made.length === 1, "unsafe resumed failures must not blindly replay the prompt");
+    assert(invalidated.length === 1, "visible resumed transport failure must invalidate the engine session");
+    assert(invalidated[0].resetResume === true, "invalidated resumed failure clears persisted resume");
+    assert(invalidated[0].previousResumeId === "ses_unsafe_poisoned" || invalidated[0].previousResumeId === "ses_test",
+      `invalidated payload should identify the previous resume/session: ${JSON.stringify(invalidated[0])}`);
+    assert(session.diagnostics().server == null, "poisoned engine view is detached after visible failure");
+    assert(orch.calls.error.length === 1, "unsafe visible failure still settles the turn");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
 // --- transient hiccup after read-only tools: replay once --------------------
 {
   const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;

@@ -13,6 +13,7 @@ import { assert } from "./lib/test-assert.mjs";
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ec = require(path.join(ROOT, "src/main/turn-error-classify.js"));
+const { classifyAssistantError } = require(path.join(ROOT, "src/main/agent-runner.js"));
 
 // collectFailureTextFromState — pulls the latest failure-bearing text.
 const text = ec.collectFailureTextFromState({
@@ -28,6 +29,11 @@ assert(ec.classifyTurnFailure({}, { text: "done" }, {}) === null, "answered comp
 
 const interrupted = ec.classifyTurnFailure({ engineInterrupted: true }, {}, {});
 assert(interrupted?.code === "ENGINE_INTERRUPTED" && interrupted.retryable === true, "engineInterrupted branch");
+
+const normalizedModelConnection = classifyAssistantError(
+  "Connection to the model service was interrupted. Please check your network and API settings, then retry.",
+);
+assert(normalizedModelConnection?.code === "MODEL_CONNECTION_FAILED", "normalized model interruption stays classifiable");
 
 const exited = ec.classifyTurnFailure({ code: 1, source: "process.close" }, {}, {});
 assert(exited?.code === "ENGINE_PROCESS_EXITED" && exited.retryable === true, "process.close exit branch");

@@ -85,6 +85,7 @@ const otherSession = { id: "s2", projectId: "p1", messages: [] };
 const runner = new FakeRunner("s1");
 const otherRunner = new FakeRunner("s2");
 const terminatedSessions = [];
+const clearedResumeSessions = [];
 const completedQueuedRuns = [];
 const ctx = {
   get mainWindow() {
@@ -105,7 +106,10 @@ const ctx = {
       ok: true,
       evictedSessionIds: agentResumeId === "ses_shared" ? ["s2"] : [],
     }),
-    clearAgentResumeId: () => {},
+    clearAgentResumeId: (sessionId) => {
+      clearedResumeSessions.push(sessionId);
+      return true;
+    },
   },
   projectManager: {
     find: () => ({ id: "p1", path: process.cwd() }),
@@ -161,6 +165,38 @@ if (allEvents.some((event) => event.type === "engine.warning")) {
   throw new Error("orphan tool event should be dropped silently without user-visible warning");
 }
 sent.length = 0;
+
+const invalidatedTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "continue poisoned old chat", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+if (!invalidatedTurn.ok || !runner.isBusy()) {
+  throw new Error(`invalidated turn should start before runner failure: ${JSON.stringify(invalidatedTurn)}`);
+}
+runner.emit("engine-session-invalidated", {
+  resetResume: true,
+  errorCode: "MODEL_CONNECTION_FAILED",
+  reason: "Connection to the model service was interrupted.",
+});
+runner.busy = false;
+runner.emit("error", "Connection to the model service was interrupted. Please check your network and API settings, then retry.");
+await new Promise((resolve) => setTimeout(resolve, 0));
+ctx.eventBus.flush();
+allEvents = sent.flatMap((entry) => entry.payload?.events || []);
+const invalidatedTerminal = allEvents.find((event) => (
+  event.turnId === invalidatedTurn.turnId
+  && ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type)
+));
+if (invalidatedTerminal?.type !== "turn.failed" || invalidatedTerminal.payload?.errorCode !== "MODEL_CONNECTION_FAILED") {
+  throw new Error(`invalidated recoverable model failure should still finish the visible turn: ${JSON.stringify(invalidatedTerminal)}`);
+}
+if (!clearedResumeSessions.includes("s1") || !terminatedSessions.includes("s1")) {
+  throw new Error(`engine invalidation must clear resume and terminate this runner: cleared=${JSON.stringify(clearedResumeSessions)} terminated=${JSON.stringify(terminatedSessions)}`);
+}
+clearedResumeSessions.length = 0;
+terminatedSessions.length = 0;
+sent.length = 0;
+messages.length = 0;
 
 const scheduledDraft = {
   status: "pending",

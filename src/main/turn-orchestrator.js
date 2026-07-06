@@ -241,6 +241,20 @@ class TurnOrchestrator {
       }
     });
 
+    runner.on("engine-session-invalidated", (payload = {}) => {
+      if (payload.resetResume) {
+        this.ctx.sessionManager?.clearAgentResumeId?.(sessionId);
+      }
+      this.ctx.runnerPool?.terminateSession?.(sessionId);
+      log.warn(
+        "engine session invalidated after recoverable failure: session=%s resetResume=%s error=%s reason=%s",
+        sessionId,
+        payload.resetResume ? "true" : "false",
+        payload.errorCode || "",
+        payload.reason || "",
+      );
+    });
+
     runner.on("done", (payload) => {
       void this._handleDone(sessionId, payload);
     });

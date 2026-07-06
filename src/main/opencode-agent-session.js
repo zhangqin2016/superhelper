@@ -183,6 +183,14 @@ function isRecoverableModelConnectionFailure(classified, raw = "") {
   return !classified && TRANSIENT_ERROR_RE.test(String(raw || ""));
 }
 
+function shouldDropResumeAfterVisibleFailure({ classified, raw = "", payload = {}, wasResumed = false } = {}) {
+  if (classified?.code === "SESSION_INVALID") return true;
+  if (!isRecoverableModelConnectionFailure(classified, raw)) return false;
+  if (wasResumed) return true;
+  if (payload?.attachmentFallback) return true;
+  return shouldIsolateAttachmentFallback(payload);
+}
+
 function rawToolFromEvent(ev = {}) {
   const p = ev.properties || {};
   if (ev.type === "message.part.updated") {
@@ -2011,6 +2019,7 @@ class OpencodeAgentSession extends EventEmitter {
       this._scheduleTransientFailureRecovery(message, cause);
       return true;
     }
+    this._invalidateEngineSessionAfterVisibleFailure(message, cause);
     if (cause) log.warn("opencode turn failed: %s", cause?.message || String(cause));
     this._clearIdleSettleTimer();
     this._clearIdleProbeTimer();
@@ -2045,6 +2054,42 @@ class OpencodeAgentSession extends EventEmitter {
     this._todoCompletionGateAttempts = 0;
     this._orchestrator?.notifyRunnerError(this.sessionId, message);
     return false;
+  }
+
+  _invalidateEngineSessionAfterVisibleFailure(message, cause) {
+    const raw = transientClassificationText(message, cause);
+    const classified = require("./agent-runner").classifyAssistantError(raw);
+    const recoverable = isRecoverableModelConnectionFailure(classified, raw);
+    const dropResume = shouldDropResumeAfterVisibleFailure({
+      classified,
+      raw,
+      payload: this._pendingPromptPayload || {},
+      wasResumed: Boolean(this._engineSessionWasResumed || this._server?.wasResumed),
+    });
+    if (!recoverable && !dropResume) return false;
+
+    const server = this._server;
+    if (server) {
+      try {
+        server.terminate?.();
+      } catch {
+        // best effort; the next turn can still construct a fresh view.
+      }
+      if (this._server === server) this._server = null;
+    }
+    this._starting = null;
+
+    if (!dropResume) return true;
+    const previousResumeId = this.agentResumeId || server?.sessionID || "";
+    this.agentResumeId = null;
+    this._engineSessionWasResumed = false;
+    this.emit("engine-session-invalidated", {
+      reason: this._sanitize(raw || "recoverable engine failure"),
+      errorCode: classified?.code || "",
+      previousResumeId,
+      resetResume: true,
+    });
+    return true;
   }
 
   _shouldDeferTransientFailure(message, cause) {
