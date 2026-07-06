@@ -179,6 +179,10 @@ async function startMockServer() {
       seen.lilyImage += 1;
       assert.equal(req.headers.authorization, "Bearer lily-token");
       assert.equal(body.model, "flux-kontext");
+      if (body.prompt === "Lily GPU 图片") {
+        assert.equal(body.steps, 4);
+        assert.equal(body.seed, 123);
+      }
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ output: { image_url: `${base}/llm/media/lily/image/asset?url=${encodeURIComponent("http://127.0.0.1:8012/media/generated.png")}` } }));
       return;
@@ -371,7 +375,7 @@ try {
     LILY_MEDIA_VIDEO_ENDPOINT: `${base}/lily/video/generate`,
     LILY_MEDIA_SPEECH_ENDPOINT: `${base}/lily/speech/generate`,
   };
-  const lilyImage = await runNode(scripts.image, { prompt: "Lily GPU 图片", provider: "lily" }, lilyEnv, tmp);
+  const lilyImage = await runNode(scripts.image, { prompt: "Lily GPU 图片", provider: "lily", steps: 4, seed: 123 }, lilyEnv, tmp);
   assert.equal(lilyImage.code, 0, lilyImage.stderr);
   assert.match(lilyImage.stdout, /generated_media type="image"/);
   assert.match(assertGeneratedPath(lilyImage.stdout, "generated-assets"), /generated-assets\/image-/);

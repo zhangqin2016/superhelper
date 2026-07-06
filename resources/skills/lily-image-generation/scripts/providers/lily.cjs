@@ -87,6 +87,8 @@ module.exports = {
       prompt_extend: input.prompt_extend !== false,
       watermark: input.watermark === true,
     };
+    if (input.steps != null) payload.steps = Number(input.steps);
+    if (input.seed != null) payload.seed = Number(input.seed);
     ctx.logProgress(ctx.msg("正在提交 Lily GPU 图片生成任务...", "Submitting Lily GPU image generation task..."));
     const data = await requestJson(url, {
       method: "POST",
