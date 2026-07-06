@@ -185,6 +185,24 @@ writeRemoteConfig({
     image: { providers: ["lily"], default: "lily" },
     video: { providers: ["lily"], default: "lily" },
     speech: { providers: ["lily"], default: "lily" },
+    contracts: {
+      schemaVersion: 1,
+      selected: { image: "lily", video: "lily", speech: "lily" },
+      contracts: {
+        speech: {
+          lily: {
+            displayName: "Lily GPU Speech (Qwen3-TTS)",
+            params: {
+              voice: {
+                type: "string",
+                default: "aiden",
+                enum: ["aiden", "dylan", "eric", "ono_anna", "ryan", "serena", "sohee", "uncle_fu", "vivian"],
+              },
+            },
+          },
+        },
+      },
+    },
   },
   runtime: {
     env: {
@@ -199,6 +217,8 @@ assert.match(providerGuideZh, /当前用户选择的服务商/, "agent guide mus
 assert.match(providerGuideZh, /图片生成: `lily`/, "agent guide must expose usable selected image provider");
 assert.match(providerGuideZh, /视频生成: `lily`/, "agent guide must expose usable selected video provider");
 assert.match(providerGuideZh, /语音生成: `lily`/, "agent guide must expose usable selected speech provider");
+assert.match(providerGuideZh, /voice: default `aiden`/, "agent guide must expose speech contract defaults");
+assert.match(providerGuideZh, /aiden, dylan, eric, ono_anna, ryan, serena, sohee, uncle_fu, vivian/, "agent guide must expose speech contract enum values");
 assert.match(providerGuideZh, /联网搜索: `searxng`/, "agent guide must expose selected search provider");
 assert.match(
   providerGuideZh,

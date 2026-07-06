@@ -312,6 +312,46 @@ const scripts = {
   speech: path.join(ROOT, "resources/skills/lily-speech-generation/scripts/generate-speech.cjs"),
 };
 
+function lilySpeechContract(defaultVoice = "aiden") {
+  return JSON.stringify({
+    schemaVersion: 1,
+    selected: { speech: "lily" },
+    contracts: {
+      speech: {
+        lily: {
+          endpointEnv: "LILY_MEDIA_SPEECH_ENDPOINT",
+          authEnv: "LILY_MEDIA_API_KEY",
+          request: {
+            method: "POST",
+            contentType: "application/json",
+            template: {
+              text: "{{text}}",
+              input: "{{text}}",
+              voice: "{{voice}}",
+              format: "{{format}}",
+              sample_rate: "{{sample_rate}}",
+              model: "{{model}}",
+            },
+          },
+          params: {
+            text: { type: "string", required: true },
+            voice: {
+              type: "string",
+              default: defaultVoice,
+              enum: ["aiden", "dylan", "eric", "ono_anna", "ryan", "serena", "sohee", "uncle_fu", "vivian"],
+              aliases: { default: defaultVoice, longanyang: defaultVoice },
+            },
+            format: { type: "string", default: "wav" },
+            sample_rate: { type: "number", default: 24000 },
+            model: { type: "string", default: "qwen3-tts" },
+          },
+          response: { mediaType: "speech", extract: ["$.output.audio.url"], assetProxy: "lily" },
+        },
+      },
+    },
+  });
+}
+
 const noProvider = await runNode(
   scripts.image,
   { prompt: "test" },
@@ -408,6 +448,16 @@ try {
   assert.match(lilySpeech.stdout, /generated_media type="speech"/);
   assert.match(assertGeneratedPath(lilySpeech.stdout, "generated-assets"), /generated-assets\/speech-/);
   assert.equal(seen.lilySpeechVoices.at(-1), "aiden", "Lily speech must default to a supported GPU voice");
+  const lilySpeechFromContract = await runNode(
+    scripts.speech,
+    { text: "Lily GPU 合同语音", provider: "lily" },
+    { ...lilyEnv, LILY_MEDIA_CONTRACTS_JSON: lilySpeechContract("serena") },
+    tmp,
+  );
+  assert.equal(lilySpeechFromContract.code, 0, lilySpeechFromContract.stderr);
+  assert.match(lilySpeechFromContract.stdout, /generated_media type="speech"/);
+  assert.match(assertGeneratedPath(lilySpeechFromContract.stdout, "generated-assets"), /generated-assets\/speech-/);
+  assert.equal(seen.lilySpeechVoices.at(-1), "serena", "Lily speech should use the server-delivered contract default voice");
   const lilySpeechDashScopeExampleVoice = await runNode(
     scripts.speech,
     { text: "Lily GPU 旧示例语音", provider: "lily", voice: "longanyang" },
@@ -528,19 +578,19 @@ try {
   assert.equal(seen.zhipuVideo, 1);
   assert.equal(seen.lilyImage, 2);
   assert.equal(seen.lilyVideo, 2);
-  assert.equal(seen.lilySpeech, 3);
+  assert.equal(seen.lilySpeech, 4);
   assert.equal(seen.lilyImageAsset, 2);
   assert.equal(seen.lilyVideoAsset, 2);
-  assert.equal(seen.lilySpeechAsset, 3);
+  assert.equal(seen.lilySpeechAsset, 4);
   assert.equal(countGeneratedMediaFiles([
     image, video, speech,
     lilyImage, lilyImageFromDefault, lilyVideo, lilyVideoFromDefault,
-    lilySpeech, lilySpeechDashScopeExampleVoice, lilySpeechFromDefault,
+    lilySpeech, lilySpeechFromContract, lilySpeechDashScopeExampleVoice, lilySpeechFromDefault,
     volcImage, volcVideo,
     klingImage, klingVideo,
     mmImage, mmVideo,
     zhipuImage, zhipuVideo,
-  ]), 18);
+  ]), 19);
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });

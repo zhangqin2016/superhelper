@@ -4,6 +4,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
+const { buildMediaContractRequest } = require("./media-contract-executor.cjs");
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
 const CREATE_PATH = "/services/audio/tts/SpeechSynthesizer";
@@ -234,23 +235,41 @@ function writeGeneratedSpeech(files) {
 }
 
 async function runLilySpeech(input, text, format, outputDir) {
-  const url = lilySpeechUrl();
-  if (!url) {
-    fail("缺少 LILY_MEDIA_SPEECH_ENDPOINT 或 LILY_MEDIA_SPEECH_BASE_URL。", "Missing LILY_MEDIA_SPEECH_ENDPOINT or LILY_MEDIA_SPEECH_BASE_URL.");
-  }
-  const payload = {
-    text,
-    input: text,
-    voice: lilyVoice(input),
-    format,
-    sample_rate: Number(input.sample_rate || 24000),
-    model: input.model || process.env.LILY_MEDIA_TTS_MODEL || process.env.LILY_GPU_TTS_MODEL || "qwen3-tts",
-  };
-  const result = await requestJsonOrBinary(url, {
-    method: "POST",
-    headers: { ...lilyAuthHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+  const contractRequest = buildMediaContractRequest({
+    env: process.env,
+    modality: "speech",
+    provider: "lily",
+    input: {
+      ...input,
+      text,
+      input: text,
+      format,
+      sample_rate: input.sample_rate,
+      model: input.model || process.env.LILY_MEDIA_TTS_MODEL || process.env.LILY_GPU_TTS_MODEL,
+    },
   });
+  let result;
+  if (contractRequest) {
+    result = await requestJsonOrBinary(contractRequest.url, contractRequest.options);
+  } else {
+    const url = lilySpeechUrl();
+    if (!url) {
+      fail("缺少 LILY_MEDIA_SPEECH_ENDPOINT 或 LILY_MEDIA_SPEECH_BASE_URL。", "Missing LILY_MEDIA_SPEECH_ENDPOINT or LILY_MEDIA_SPEECH_BASE_URL.");
+    }
+    const payload = {
+      text,
+      input: text,
+      voice: lilyVoice(input),
+      format,
+      sample_rate: Number(input.sample_rate || 24000),
+      model: input.model || process.env.LILY_MEDIA_TTS_MODEL || process.env.LILY_GPU_TTS_MODEL || "qwen3-tts",
+    };
+    result = await requestJsonOrBinary(url, {
+      method: "POST",
+      headers: { ...lilyAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
   const files = [];
   if (result.bytes) {
     const filePath = path.join(outputDir, safeName("speech", format));

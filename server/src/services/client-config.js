@@ -7,6 +7,7 @@ import { discoveredModelMetadataSync, discoveredModelsSync } from "./model-gatew
 import { normalizeProviderForProtocol } from "./model-gateway/model-aliases.js";
 import { getModelCatalog } from "./model-catalog.js";
 import { resolveModelRuntimeBudget } from "./model-runtime-budget.js";
+import { buildMediaProviderContracts } from "./media-provider-contracts.js";
 
 export const DEFAULT_EFFECTIVE_CONFIG = {
   schemaVersion: 1,
@@ -829,11 +830,22 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   if (hasLilyMedia(configCopy, "video")) availableVideoProviders.push("lily");
   const availableSpeechProviders = visionKey ? ["dashscope"] : [];
   if (hasLilyMedia(configCopy, "speech")) availableSpeechProviders.push("lily");
-  resolveMediaSelection(configCopy, {
+  const availableMediaProviders = {
     image: availableImageProviders,
     video: availableVideoProviders,
     speech: availableSpeechProviders,
-  });
+  };
+  resolveMediaSelection(configCopy, availableMediaProviders);
+  if (configCopy.media && typeof configCopy.media === "object") {
+    configCopy.media.contracts = buildMediaProviderContracts({
+      selected: {
+        image: configCopy.media.image?.default || "",
+        video: configCopy.media.video?.default || "",
+        speech: configCopy.media.speech?.default || "",
+      },
+      available: availableMediaProviders,
+    });
+  }
 
   const presets = configCopy?.models?.presets;
   if (!Array.isArray(presets)) return configCopy;
