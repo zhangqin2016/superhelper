@@ -13,7 +13,7 @@ const { userDataPath } = require("./config");
 // The assistant can still override image/video per-call via input.provider.
 
 const PROVIDERS = [
-  { id: "lily", label: "Lily 自有 GPU（FLUX / Wan / Qwen3-TTS）", fields: [], modalities: ["image", "video", "speech"], byok: false },
+  { id: "lily", label: "Lily 自有 GPU（Qwen-Image / Wan / Qwen3-TTS）", fields: [], modalities: ["image", "video", "speech"], byok: false },
   { id: "dashscope", label: "阿里百炼 Qwen-Image / 通义万相 / CosyVoice", fields: ["apiKey"], modalities: ["image", "video", "speech"] },
   { id: "volcengine", label: "火山方舟 · 即梦 Seedream / Seedance", fields: ["apiKey"], modalities: ["image", "video"] },
   { id: "kling", label: "可灵 Kling", fields: ["accessKey", "secretKey"], modalities: ["image", "video"] },

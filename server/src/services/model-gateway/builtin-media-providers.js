@@ -1,10 +1,10 @@
 const LILY_MEDIA_ROWS = [
   {
     id: "lily-media-image",
-    label: "Lily GPU Image (FLUX)",
+    label: "Lily GPU Image (Qwen-Image)",
     modality: "image",
     route: "/llm/media/lily/image/generate",
-    model: "flux",
+    model: "qwen-image",
   },
   {
     id: "lily-media-video",
