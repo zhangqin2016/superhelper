@@ -119,6 +119,7 @@ export const config = {
   lilyMediaImageEndpoint: process.env.LILY_MEDIA_IMAGE_ENDPOINT || process.env.LILY_GPU_IMAGE_ENDPOINT || "",
   lilyMediaVideoEndpoint: process.env.LILY_MEDIA_VIDEO_ENDPOINT || process.env.LILY_GPU_VIDEO_ENDPOINT || "",
   lilyMediaSpeechEndpoint: process.env.LILY_MEDIA_SPEECH_ENDPOINT || process.env.LILY_MEDIA_TTS_ENDPOINT || process.env.LILY_GPU_SPEECH_ENDPOINT || process.env.LILY_GPU_TTS_ENDPOINT || "",
+  lilyMediaSpeechVoice: process.env.LILY_MEDIA_TTS_VOICE || process.env.LILY_GPU_TTS_VOICE || "",
   kimiApiKey: process.env.KIMI_API_KEY || process.env.MOONSHOT_API_KEY || "",
   kimiBaseUrl: process.env.KIMI_BASE_URL || process.env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/anthropic",
   glmApiKey: process.env.GLM_API_KEY || process.env.ZAI_API_KEY || process.env.ZHIPU_API_KEY || "",

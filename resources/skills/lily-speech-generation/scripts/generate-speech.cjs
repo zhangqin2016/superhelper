@@ -69,6 +69,23 @@ function lilyAuthHeaders() {
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
+const LILY_SUPPORTED_VOICES = new Set(["aiden", "dylan", "eric", "ono_anna", "ryan", "serena", "sohee", "uncle_fu", "vivian"]);
+const LILY_DASHSCOPE_EXAMPLE_VOICES = new Set(["default", "longanyang"]);
+
+function lilyVoice(input) {
+  const configured = envValue("LILY_MEDIA_TTS_VOICE", "LILY_GPU_TTS_VOICE");
+  const fallback = configured || "aiden";
+  const requested = String(input.voice || "").trim();
+  const voice = !requested || LILY_DASHSCOPE_EXAMPLE_VOICES.has(requested) ? fallback : requested;
+  if (!LILY_SUPPORTED_VOICES.has(voice)) {
+    fail(
+      msg(`Lily GPU 不支持 voice：${voice}`, `Lily GPU does not support voice: ${voice}`),
+      `supported: ${[...LILY_SUPPORTED_VOICES].join(", ")}`,
+    );
+  }
+  return voice;
+}
+
 function inferProviderFromEnv() {
   if (lilySpeechUrl()) return "lily";
   if (apiKey() || process.env.DASHSCOPE_TTS_ENDPOINT || process.env.DASHSCOPE_TTS_BASE_URL) return "dashscope";
@@ -224,7 +241,7 @@ async function runLilySpeech(input, text, format, outputDir) {
   const payload = {
     text,
     input: text,
-    voice: input.voice || process.env.LILY_MEDIA_TTS_VOICE || process.env.LILY_GPU_TTS_VOICE || "default",
+    voice: lilyVoice(input),
     format,
     sample_rate: Number(input.sample_rate || 24000),
     model: input.model || process.env.LILY_MEDIA_TTS_MODEL || process.env.LILY_GPU_TTS_MODEL || "qwen3-tts",

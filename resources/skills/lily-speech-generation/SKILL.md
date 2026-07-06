@@ -10,17 +10,20 @@ When the user asks to generate speech, read text aloud, create narration,
 dubbing, or TTS audio, run:
 
 ```bash
-echo '{"text":"text to read aloud","voice":"longanyang","format":"wav"}' | "{{NODE_BIN}}" "{{SPEECH_GENERATION_SCRIPT}}"
+echo '{"text":"text to read aloud","format":"wav"}' | "{{NODE_BIN}}" "{{SPEECH_GENERATION_SCRIPT}}"
 ```
 
 Optional parameters:
 
 - `model`: defaults to `DASHSCOPE_TTS_MODEL`, otherwise `cosyvoice-v3-flash`
-- `voice`: defaults to `DASHSCOPE_TTS_VOICE`, otherwise `longanyang`
+- `voice`: provider-specific voice; DashScope defaults to `DASHSCOPE_TTS_VOICE`
+  or `longanyang`, Lily GPU defaults to `LILY_MEDIA_TTS_VOICE` or `aiden`
 - `format`: `wav`, `mp3`, or `pcm`; default `wav`
 - `sample_rate`: default `24000`
 - `provider`: `lily`/`dashscope` (else the configured default)
 - `output_dir`: save directory, default current workspace `generated-assets`
+- Lily GPU voices: `aiden`, `dylan`, `eric`, `ono_anna`, `ryan`, `serena`,
+  `sohee`, `uncle_fu`, `vivian`; default `aiden`
 
 Provider rules:
 

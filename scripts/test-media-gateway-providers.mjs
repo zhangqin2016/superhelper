@@ -136,6 +136,19 @@ globalThis.fetch = async (url, init) => {
         }),
     };
   }
+  if (url === "http://127.0.0.1:18013/generate") {
+    return {
+      status: 200,
+      headers: { get: () => "application/json" },
+      text: async () =>
+        JSON.stringify({
+          ok: true,
+          kind: "tts",
+          file: "/mnt/media-services/outputs/tts/generated.wav",
+          speaker: JSON.parse(init.body).voice,
+        }),
+    };
+  }
   if (url === "http://127.0.0.1:18012/outputs/generated.png") {
     return {
       status: 200,
@@ -332,6 +345,48 @@ try {
   assert.equal(lilyVideoBody.kind, "wan", "non-URL metadata must not be rewritten as an asset URL");
   assert.match(lilyVideoBody.file, /^https:\/\/lily\.example\.com\/llm\/media\/lily\/video\/asset\?url=/);
   assert.match(lilyVideoBody.file, /[?&]access_token=lilygw\./);
+
+  const lilySpeechReply = fakeReply();
+  await routes["POST /llm/media/:provider/*"](
+    {
+      method: "POST",
+      url: "/llm/media/lily/speech/generate",
+      params: { provider: "lily", "*": "speech/generate" },
+      headers: {
+        host: "lily.example.com",
+        "x-forwarded-proto": "https",
+        authorization: `Bearer ${lilyToken}`,
+      },
+      body: { text: "hello", input: "hello", voice: "longanyang", format: "wav" },
+    },
+    lilySpeechReply,
+  );
+  assert.equal(lilySpeechReply._code, 200);
+  assert.equal(captured.url, "http://127.0.0.1:18013/generate");
+  assert.equal(JSON.parse(captured.init.body).voice, "aiden", "gateway must map legacy DashScope/default voice to a Lily-supported voice");
+  const lilySpeechBody = JSON.parse(lilySpeechReply._sent);
+  assert.match(lilySpeechBody.file, /^https:\/\/lily\.example\.com\/llm\/media\/lily\/speech\/asset\?url=/);
+  assert.equal(lilySpeechBody.speaker, "aiden");
+
+  const invalidLilySpeechReply = fakeReply();
+  const beforeInvalidSpeechFetches = captures.length;
+  await routes["POST /llm/media/:provider/*"](
+    {
+      method: "POST",
+      url: "/llm/media/lily/speech/generate",
+      params: { provider: "lily", "*": "speech/generate" },
+      headers: {
+        host: "lily.example.com",
+        "x-forwarded-proto": "https",
+        authorization: `Bearer ${lilyToken}`,
+      },
+      body: { text: "hello", voice: "not-a-speaker" },
+    },
+    invalidLilySpeechReply,
+  );
+  assert.equal(invalidLilySpeechReply._code, 400);
+  assert.match(invalidLilySpeechReply._sent.error.message, /not-a-speaker/);
+  assert.equal(captures.length, beforeInvalidSpeechFetches, "invalid Lily speech voices should fail before hitting the GPU service");
 
   const assetReply = fakeReply();
   await routes["GET /llm/media/:provider/*"](

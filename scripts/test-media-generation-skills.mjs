@@ -65,6 +65,7 @@ async function startMockServer() {
     image: 0, video: 0, speech: 0, volcImage: 0, volcVideo: 0,
     klingImage: 0, klingVideo: 0, mmImage: 0, mmVideo: 0, zhipuImage: 0, zhipuVideo: 0,
     lilyImage: 0, lilyVideo: 0, lilySpeech: 0, lilyImageAsset: 0, lilyVideoAsset: 0, lilySpeechAsset: 0,
+    lilySpeechVoices: [],
   };
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
@@ -199,6 +200,7 @@ async function startMockServer() {
     if (req.method === "POST" && url.pathname === "/lily/speech/generate") {
       const body = await readJson(req);
       seen.lilySpeech += 1;
+      seen.lilySpeechVoices.push(body.voice);
       assert.equal(req.headers.authorization, "Bearer lily-token");
       assert.equal(body.model, "qwen3-tts");
       res.setHeader("Content-Type", "application/json");
@@ -405,6 +407,24 @@ try {
   assert.equal(lilySpeech.code, 0, lilySpeech.stderr);
   assert.match(lilySpeech.stdout, /generated_media type="speech"/);
   assert.match(assertGeneratedPath(lilySpeech.stdout, "generated-assets"), /generated-assets\/speech-/);
+  assert.equal(seen.lilySpeechVoices.at(-1), "aiden", "Lily speech must default to a supported GPU voice");
+  const lilySpeechDashScopeExampleVoice = await runNode(
+    scripts.speech,
+    { text: "Lily GPU 旧示例语音", provider: "lily", voice: "longanyang" },
+    lilyEnv,
+    tmp,
+  );
+  assert.equal(lilySpeechDashScopeExampleVoice.code, 0, lilySpeechDashScopeExampleVoice.stderr);
+  assert.equal(seen.lilySpeechVoices.at(-1), "aiden", "DashScope example voice must not be sent to Lily GPU");
+  const lilySpeechUnsupportedVoice = await runNode(
+    scripts.speech,
+    { text: "Lily GPU 不支持语音", provider: "lily", voice: "not-a-speaker" },
+    lilyEnv,
+    tmp,
+  );
+  assert.notEqual(lilySpeechUnsupportedVoice.code, 0);
+  assert.match(lilySpeechUnsupportedVoice.stderr, /not-a-speaker/);
+  assert.match(lilySpeechUnsupportedVoice.stderr, /aiden/);
   const lilySpeechFromDefault = await runNode(
     scripts.speech,
     { text: "Lily GPU 默认语音" },
@@ -508,18 +528,19 @@ try {
   assert.equal(seen.zhipuVideo, 1);
   assert.equal(seen.lilyImage, 2);
   assert.equal(seen.lilyVideo, 2);
-  assert.equal(seen.lilySpeech, 2);
+  assert.equal(seen.lilySpeech, 3);
   assert.equal(seen.lilyImageAsset, 2);
   assert.equal(seen.lilyVideoAsset, 2);
-  assert.equal(seen.lilySpeechAsset, 2);
+  assert.equal(seen.lilySpeechAsset, 3);
   assert.equal(countGeneratedMediaFiles([
     image, video, speech,
-    lilyImage, lilyImageFromDefault, lilyVideo, lilyVideoFromDefault, lilySpeech, lilySpeechFromDefault,
+    lilyImage, lilyImageFromDefault, lilyVideo, lilyVideoFromDefault,
+    lilySpeech, lilySpeechDashScopeExampleVoice, lilySpeechFromDefault,
     volcImage, volcVideo,
     klingImage, klingVideo,
     mmImage, mmVideo,
     zhipuImage, zhipuVideo,
-  ]), 17);
+  ]), 18);
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });

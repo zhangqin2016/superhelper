@@ -261,6 +261,8 @@ const MEDIA_PROVIDERS = {
 };
 
 const LILY_MEDIA_KINDS = new Set(["image", "video", "speech"]);
+const LILY_SPEECH_SUPPORTED_VOICES = new Set(["aiden", "dylan", "eric", "ono_anna", "ryan", "serena", "sohee", "uncle_fu", "vivian"]);
+const LILY_SPEECH_LEGACY_DEFAULT_VOICES = new Set(["", "default", "longanyang"]);
 
 function lilyMediaConfig(kind) {
   if (kind === "image") {
@@ -312,6 +314,26 @@ function lilyMediaReferenceUrl(kind) {
   if (cfg.baseUrl) return `${cfg.baseUrl.replace(/\/+$/, "")}/`;
   if (config.lilyMediaBaseUrl) return `${config.lilyMediaBaseUrl.replace(/\/+$/, "")}/${cfg.sharedPath}/`;
   return "";
+}
+
+function normalizeLilyMediaRequestBody(kind, body) {
+  const normalized = body && typeof body === "object" && !Array.isArray(body) ? { ...body } : {};
+  if (kind !== "speech") return { ok: true, body: normalized };
+  const requested = String(normalized.voice || "").trim();
+  const configured = String(config.lilyMediaSpeechVoice || process.env.LILY_MEDIA_TTS_VOICE || process.env.LILY_GPU_TTS_VOICE || "").trim();
+  const voice = LILY_SPEECH_LEGACY_DEFAULT_VOICES.has(requested) ? (configured || "aiden") : requested;
+  if (!LILY_SPEECH_SUPPORTED_VOICES.has(voice)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: {
+        type: "invalid_request_error",
+        message: `Unsupported Lily speech voice: ${voice}. Supported: ${[...LILY_SPEECH_SUPPORTED_VOICES].join(", ")}`,
+      },
+    };
+  }
+  normalized.voice = voice;
+  return { ok: true, body: normalized };
 }
 
 function isPrivateHost(hostname) {
@@ -452,7 +474,9 @@ async function handleLilyMedia(request, reply) {
   if (config.lilyMediaApiKey) headers.Authorization = `Bearer ${config.lilyMediaApiKey}`;
   const init = { method: request.method, headers };
   if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = JSON.stringify(request.body && typeof request.body === "object" ? request.body : {});
+    const normalized = normalizeLilyMediaRequestBody(kind, request.body);
+    if (!normalized.ok) return reply.code(normalized.statusCode).send({ error: normalized.error });
+    init.body = JSON.stringify(normalized.body);
   }
   let upstream;
   try {
