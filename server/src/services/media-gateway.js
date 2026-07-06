@@ -362,15 +362,30 @@ function lilyAssetProxyUrl(request, kind, rawUrl) {
   return `${base}/llm/media/lily/${kind}/asset?url=${encodeURIComponent(String(rawUrl || ""))}${authQuery}`;
 }
 
-function rewriteLilyMediaUrls(value, kind, request) {
+const LILY_MEDIA_URL_KEYS = new Set([
+  "audio",
+  "audio_url",
+  "download_url",
+  "file",
+  "file_url",
+  "image",
+  "image_url",
+  "public_url",
+  "result_url",
+  "url",
+  "video",
+  "video_url",
+]);
+
+function rewriteLilyMediaUrls(value, kind, request, key = "") {
   if (typeof value === "string") {
-    return shouldProxyLilyAssetUrl(kind, value) ? lilyAssetProxyUrl(request, kind, value) : value;
+    return LILY_MEDIA_URL_KEYS.has(key) && shouldProxyLilyAssetUrl(kind, value) ? lilyAssetProxyUrl(request, kind, value) : value;
   }
-  if (Array.isArray(value)) return value.map((item) => rewriteLilyMediaUrls(item, kind, request));
+  if (Array.isArray(value)) return value.map((item) => rewriteLilyMediaUrls(item, kind, request, key));
   if (!value || typeof value !== "object") return value;
   const next = {};
   for (const [key, item] of Object.entries(value)) {
-    next[key] = rewriteLilyMediaUrls(item, kind, request);
+    next[key] = rewriteLilyMediaUrls(item, kind, request, key);
   }
   return next;
 }

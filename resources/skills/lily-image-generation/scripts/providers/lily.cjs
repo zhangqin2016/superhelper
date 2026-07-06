@@ -37,7 +37,7 @@ function collectUrls(value, urls = []) {
     return urls;
   }
   if (typeof value === "object") {
-    for (const key of ["image_url", "image", "url", "result_url", "public_url", "download_url", "file_url"]) {
+    for (const key of ["image_url", "image", "url", "result_url", "public_url", "download_url", "file_url", "file"]) {
       if (value[key]) collectUrls(value[key], urls);
     }
     for (const key of ["output", "data", "result", "results", "images", "files"]) {

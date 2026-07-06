@@ -124,6 +124,18 @@ globalThis.fetch = async (url, init) => {
         }),
     };
   }
+  if (url === "http://127.0.0.1:18010/generate") {
+    return {
+      status: 200,
+      headers: { get: () => "application/json" },
+      text: async () =>
+        JSON.stringify({
+          ok: true,
+          kind: "wan",
+          file: "/mnt/media-services/outputs/wan/generated.mp4",
+        }),
+    };
+  }
   if (url === "http://127.0.0.1:18012/outputs/generated.png") {
     return {
       status: 200,
@@ -136,6 +148,13 @@ globalThis.fetch = async (url, init) => {
       status: 200,
       headers: { get: (name) => (String(name).toLowerCase() === "content-type" ? "image/png" : "") },
       arrayBuffer: async () => Buffer.from("lily-file-png").buffer,
+    };
+  }
+  if (url === "http://127.0.0.1:18010/file?path=%2Fmnt%2Fmedia-services%2Foutputs%2Fwan%2Fgenerated.mp4") {
+    return {
+      status: 200,
+      headers: { get: (name) => (String(name).toLowerCase() === "content-type" ? "video/mp4" : "") },
+      arrayBuffer: async () => Buffer.from("lily-file-mp4").buffer,
     };
   }
   return { status: 200, headers: { get: () => "application/json" }, text: async () => '{"id":"cgt-1"}' };
@@ -293,6 +312,27 @@ try {
   assert.match(lilyBody.output.image_url, /[?&]access_token=lilygw\./, "rewritten asset URLs must carry a short token for old clients that cannot add download headers");
   assert.doesNotMatch(lilyReply._sent, /127\.0\.0\.1:8012/, "private GPU result URLs must not leak to clients");
 
+  const lilyVideoReply = fakeReply();
+  await routes["POST /llm/media/:provider/*"](
+    {
+      method: "POST",
+      url: "/llm/media/lily/video/generate",
+      params: { provider: "lily", "*": "video/generate" },
+      headers: {
+        host: "lily.example.com",
+        "x-forwarded-proto": "https",
+        authorization: `Bearer ${lilyToken}`,
+      },
+      body: { prompt: "spinning apple" },
+    },
+    lilyVideoReply,
+  );
+  assert.equal(lilyVideoReply._code, 200);
+  const lilyVideoBody = JSON.parse(lilyVideoReply._sent);
+  assert.equal(lilyVideoBody.kind, "wan", "non-URL metadata must not be rewritten as an asset URL");
+  assert.match(lilyVideoBody.file, /^https:\/\/lily\.example\.com\/llm\/media\/lily\/video\/asset\?url=/);
+  assert.match(lilyVideoBody.file, /[?&]access_token=lilygw\./);
+
   const assetReply = fakeReply();
   await routes["GET /llm/media/:provider/*"](
     {
@@ -344,6 +384,22 @@ try {
   );
   assert.equal(fsPathAssetReply._code, 200, "GPU filesystem output paths should download through the service /file endpoint");
   assert.equal(captures.at(-1).url, "http://127.0.0.1:18012/file?path=%2Fmnt%2Fmedia-services%2Foutputs%2Fflux%2Fgenerated.png");
+
+  const videoFsPathAssetReply = fakeReply();
+  await routes["GET /llm/media/:provider/*"](
+    {
+      method: "GET",
+      url: `/llm/media/lily/video/asset?url=${encodeURIComponent("/mnt/media-services/outputs/wan/generated.mp4")}&access_token=${encodeURIComponent(lilyToken)}`,
+      params: { provider: "lily", "*": "video/asset" },
+      headers: {
+        host: "lily.example.com",
+        "x-forwarded-proto": "https",
+      },
+    },
+    videoFsPathAssetReply,
+  );
+  assert.equal(videoFsPathAssetReply._code, 200, "GPU video filesystem output paths should download through the service /file endpoint");
+  assert.equal(captures.at(-1).url, "http://127.0.0.1:18010/file?path=%2Fmnt%2Fmedia-services%2Foutputs%2Fwan%2Fgenerated.mp4");
 } finally {
   globalThis.fetch = realFetch;
 }

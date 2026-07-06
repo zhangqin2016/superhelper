@@ -189,7 +189,7 @@ async function startMockServer() {
       assert.equal(req.headers.authorization, "Bearer lily-token");
       assert.equal(body.model, "wan2.2");
       res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ output: { video_url: `${base}/llm/media/lily/video/asset?url=${encodeURIComponent("http://127.0.0.1:8010/media/generated.mp4")}` } }));
+      res.end(JSON.stringify({ ok: true, kind: "wan", file: `${base}/llm/media/lily/video/asset?url=${encodeURIComponent("http://127.0.0.1:8010/media/generated.mp4")}` }));
       return;
     }
     if (req.method === "POST" && url.pathname === "/lily/speech/generate") {

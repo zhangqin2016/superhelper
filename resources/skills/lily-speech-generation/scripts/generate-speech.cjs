@@ -117,7 +117,7 @@ function collectAudioUrls(data) {
       return;
     }
     if (typeof value !== "object") return;
-    for (const key of ["audio_url", "url", "result_url", "public_url", "download_url", "file_url"]) {
+    for (const key of ["audio_url", "url", "result_url", "public_url", "download_url", "file_url", "file"]) {
       if (value[key]) visit(value[key]);
       if (value.audio?.[key]) visit(value.audio[key]);
     }
