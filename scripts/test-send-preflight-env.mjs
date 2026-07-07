@@ -61,8 +61,9 @@ assert.equal(
   "missing managed config must not be misreported as a user API key problem",
 );
 
-const localGateway = modelPresets.setApiGateway({
-  mode: "custom",
+const localGateway = modelPresets.saveCustomPreset({
+  label: "Local Test Model",
+  model: "local-test-model",
   baseUrl: "http://127.0.0.1:8000/v1",
   protocol: "openai",
 });

@@ -18,7 +18,8 @@ function registerModelHandlers(ctx) {
       }
     } catch {
       // Settings must still open offline or when the service is unavailable.
-      // listPresetsPublic() will use the last valid cache or packaged defaults.
+      // listPresetsPublic() may use the last valid signed cache and local
+      // custom presets, but never packaged defaults for service-managed models.
     }
     return { ok: true, ...listPresetsPublic() };
   });

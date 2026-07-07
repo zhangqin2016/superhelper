@@ -44,9 +44,9 @@ const key = "sk-test-secret-123456";
 const gatewayKey = "sk-gateway-secret-123456";
 
 const fallbackList = modelPresets.listPresetsPublic();
-const fallbackDeepSeek = fallbackList.presets.filter((preset) => String(preset.model || "").startsWith("deepseek-v4-pro"));
-if (fallbackDeepSeek.length !== 1 || fallbackDeepSeek[0].model !== "deepseek-v4-pro") {
-  throw new Error(`packaged fallback should expose one DeepSeek model, not a stale duplicate list: ${JSON.stringify(fallbackList.presets)}`);
+const fallbackServicePresets = fallbackList.presets.filter((preset) => !preset.custom);
+if (fallbackServicePresets.length !== 0) {
+  throw new Error(`service-managed models must not fall back to packaged defaults without signed remote config: ${JSON.stringify(fallbackList.presets)}`);
 }
 
 const saved = modelPresets.saveCustomPreset({
@@ -134,7 +134,6 @@ if (
   throw new Error(`loopback custom preset should build OpenAI-compatible OpenCode config: ${JSON.stringify(localOpenCode)}`);
 }
 modelPresets.setActivePreset(saved.preset.id);
-modelPresets.setActivePreset("pro");
 
 const gateway = modelPresets.setApiGateway({
   mode: "custom",
@@ -153,6 +152,16 @@ if (!raw.includes("apiKeyProtected")) {
   throw new Error("model settings file should store protected API key records");
 }
 
+const encryptedGatewayRecord = JSON.parse(raw).apiGateway;
+fs.writeFileSync(
+  settingsPath,
+  JSON.stringify({
+    activePresetId: null,
+    customPresets: [],
+    apiGateway: encryptedGatewayRecord,
+  }),
+  "utf8",
+);
 modelPresets.reloadPresets();
 const env = modelPresets.getUserApiEnv();
 if (env.LILY_API_KEY !== gatewayKey || env.LILY_OPENCODE_PROTOCOL !== "anthropic") {

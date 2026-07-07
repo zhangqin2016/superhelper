@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { PROJECT_ROOT, userDataPath } = require("./config");
+const { userDataPath } = require("./config");
 const { normalizeToLilyEnv, pickModelId } = require("./agent-env");
 const remoteConfig = require("./remote-config");
 
@@ -32,14 +32,6 @@ function getSafeStorage() {
   } catch {
     return null;
   }
-}
-
-function defaultCatalogPath() {
-  const resourcesRoot = process.resourcesPath || PROJECT_ROOT;
-  return [
-    path.join(resourcesRoot, "resources", "models.default.json"),
-    path.join(PROJECT_ROOT, "resources", "models.default.json"),
-  ].find((p) => fs.existsSync(p)) || path.join(PROJECT_ROOT, "resources", "models.default.json");
 }
 
 function userSettingsPath() {
@@ -155,12 +147,11 @@ function loadCatalog() {
       return cachedCatalog;
     }
   } catch {
-    // fall back to packaged catalog
+    // Service-managed model lists must come from signed remote config.
   }
-  const raw = readJson(defaultCatalogPath(), { activePresetId: "standard", presets: [] });
   cachedCatalog = {
-    activePresetId: raw.activePresetId || "standard",
-    presets: Array.isArray(raw.presets) ? raw.presets : [],
+    activePresetId: "",
+    presets: [],
   };
   return cachedCatalog;
 }
@@ -416,7 +407,7 @@ function getActivePresetId() {
   const catalog = loadCatalog();
   const fallback = catalog.activePresetId || catalog.presets[0]?.id || "standard";
   if (findPresetById(fallback)) return fallback;
-  return getAllPresets()[0]?.id || "standard";
+  return getAllPresets()[0]?.id || "";
 }
 
 function getActivePreset() {
@@ -710,7 +701,7 @@ function deleteCustomPreset(presetId) {
 
   let activePresetId = user.activePresetId;
   if (activePresetId === presetId) {
-    activePresetId = loadCatalog().activePresetId || loadCatalog().presets[0]?.id || "standard";
+    activePresetId = loadCatalog().activePresetId || loadCatalog().presets[0]?.id || null;
   }
 
   persistUserChoice({ ...user, customPresets, activePresetId });
