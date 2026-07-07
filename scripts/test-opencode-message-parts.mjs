@@ -38,19 +38,38 @@ const { buildOpencodePromptBody, fileToPart } = require("../src/main/runtime/ope
 
   const png = path.join(dir, "image.png");
   fs.writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-  const pngPart = fileToPart({ path: png, name: "image.png", type: "image/png" }, { maxInlineFileBytes: 1024 });
-  assert.equal(pngPart?.type, "file", "raster images remain safe model file parts");
-  assert.match(pngPart.url, /^data:image\/png;base64,/, "raster images keep their image MIME");
+  const pngSkipped = [];
+  const pngPart = fileToPart(
+    { path: png, name: "image.png", type: "image/png" },
+    { maxInlineFileBytes: 1024, onSkip: (item) => pngSkipped.push(item) },
+  );
+  assert.equal(pngPart, null, "raster images are not uploaded as raw model file parts by default");
+  assert.match(pngSkipped[0]?.reason || "", /image handled through Lily vision extraction/, "image skip reason points to the vision extraction path");
+  const nativePngPart = fileToPart(
+    { path: png, name: "image.png", type: "image/png" },
+    { maxInlineFileBytes: 1024, allowImageFileParts: true },
+  );
+  assert.equal(nativePngPart?.type, "file", "native-vision sends may explicitly allow image file parts");
+  assert.match(nativePngPart.url, /^data:image\/png;base64,/, "allowed raster images keep their image MIME");
 
   const pngBody = buildOpencodePromptBody({
     text: "change the background to white",
     files: [{ path: png, name: "image.png", sourcePath: "/wechat/cache/image.png", isImage: true }],
     maxInlineFileBytes: 1024,
   });
-  assert.equal(pngBody.parts.filter((part) => part.type === "file").length, 1, "raster image is still uploaded as a model file part");
+  assert.equal(pngBody.parts.filter((part) => part.type === "file").length, 0, "non-native image prompts stay text-only after vision preflight");
+  assert.match(pngBody.parts.at(-1).text, /Attachment note/, "image prompt explains why raw bytes were not uploaded");
+  assert.match(pngBody.parts.at(-1).text, /image handled through Lily vision extraction/, "image prompt points to the extracted vision path");
   assert.match(pngBody.parts.at(-1).text, /Attachment index/, "image prompt includes a local attachment index");
   assert.match(pngBody.parts.at(-1).text, new RegExp(png.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "image prompt preserves staged source path");
   assert.match(pngBody.parts.at(-1).text, /original path: \/wechat\/cache\/image\.png/, "image prompt preserves original clipboard path when available");
+  const nativePngBody = buildOpencodePromptBody({
+    text: "inspect pixels",
+    files: [{ path: png, name: "image.png", isImage: true }],
+    maxInlineFileBytes: 1024,
+    allowImageFileParts: true,
+  });
+  assert.equal(nativePngBody.parts.filter((part) => part.type === "file").length, 1, "native-vision image prompts may upload an image file part");
 
   const binary = path.join(dir, "payload.bin");
   fs.writeFileSync(binary, Buffer.from([0, 1, 2, 3]));

@@ -98,18 +98,36 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   // agent defaults to "build" when unset.
   assert(buildOpencodePromptBody({ text: "x" }).agent === "build", "agent defaults to build");
 
-  // pre-resolved {uri,mime} files become file parts before the text part.
+  // pre-resolved {uri,mime} image files are not uploaded unless the caller has
+  // explicitly selected a native-vision model path.
   const wf = buildOpencodePromptBody({ text: "see this", files: [{ uri: "file:///a.png", mime: "image/png", name: "a" }] });
-  const filePart = wf.parts.find((p) => p.type === "file");
-  assert(filePart && filePart.url === "file:///a.png" && filePart.mime === "image/png", "{uri,mime} -> file part");
+  assert(!wf.parts.some((p) => p.type === "file"), "{uri,mime} image skipped by default");
+  assert(/image handled through Lily vision extraction/.test(wf.parts.at(-1).text), "skipped image explains the vision extraction path");
+  const nativeWf = buildOpencodePromptBody({
+    text: "see this",
+    files: [{ uri: "file:///a.png", mime: "image/png", name: "a" }],
+    allowImageFileParts: true,
+  });
+  const filePart = nativeWf.parts.find((p) => p.type === "file");
+  assert(filePart && filePart.url === "file:///a.png" && filePart.mime === "image/png", "native-vision {uri,mime} -> file part");
+  const textFile = buildOpencodePromptBody({ text: "see text", files: [{ uri: "file:///a.txt", mime: "text/plain", name: "a.txt" }] });
+  assert(textFile.parts.some((p) => p.type === "file"), "safe non-image URI files still become file parts");
 
-  // Lily composer files ({path,name,isImage}) get read into a base64 data: URL.
+  // Lily composer images ({path,name,isImage}) are path-first by default; native
+  // vision must opt in before they are read into a base64 data: URL.
   const os = require("node:os"); const fsx = require("node:fs"); const pathx = require("node:path");
   const tmp = pathx.join(os.tmpdir(), `oc-filepart-${Date.now()}.png`);
   fsx.writeFileSync(tmp, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   const wp = buildOpencodePromptBody({ text: "look", files: [{ path: tmp, name: "shot.png", isImage: true }] });
-  const fp = wp.parts.find((p) => p.type === "file");
-  assert(fp && fp.mime === "image/png" && fp.filename === "shot.png", "{path} -> file part with mime/filename");
+  assert(!wp.parts.some((p) => p.type === "file"), "{path} image skipped by default");
+  assert(/image handled through Lily vision extraction/.test(wp.parts.at(-1).text), "local image skip explains the vision extraction path");
+  const nativeWp = buildOpencodePromptBody({
+    text: "look",
+    files: [{ path: tmp, name: "shot.png", isImage: true }],
+    allowImageFileParts: true,
+  });
+  const fp = nativeWp.parts.find((p) => p.type === "file");
+  assert(fp && fp.mime === "image/png" && fp.filename === "shot.png", "native-vision {path} -> file part with mime/filename");
   assert(fp.url.startsWith("data:image/png;base64,"), "local file read into a base64 data URL");
   fsx.unlinkSync(tmp);
   // a missing file is dropped, not crashed.

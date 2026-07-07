@@ -30,6 +30,7 @@ const DEFAULT_MAX_TEXT_ATTACHMENT_CHARS =
   Number(process.env.LILY_OPENCODE_MAX_TEXT_ATTACHMENT_CHARS) || 80_000;
 
 const TEXT_ATTACHMENT_EXTENSIONS = new Set([".svg"]);
+const RASTER_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
 const PATH_ONLY_DOCUMENT_EXTENSIONS = new Set([
   ".pdf",
   ".doc",
@@ -61,7 +62,7 @@ function buildSkippedAttachmentNote(skipped = []) {
   });
   return [
     "[Attachment note]",
-    "Some local files were not inlined into the OpenCode request to keep the desktop app responsive and avoid sending raw document binaries to the model service.",
+    "Some local files were not inlined into the OpenCode request to keep the desktop app responsive and avoid sending raw attachment bytes to the model service.",
     ...lines,
     "If document extraction succeeded, use the extracted text above. Otherwise use the source path with available file tools instead of asking the user to re-upload.",
   ].join("\n");
@@ -138,6 +139,17 @@ function isPathOnlyDocumentAttachment(file = {}, filePath = "") {
   return documentMimeLike(file.mime || file.type || file.mimeType || file.mediaType || "");
 }
 
+function imageMimeLike(value = "") {
+  const mime = String(value || "").toLowerCase();
+  return mime.startsWith("image/") && mime !== "image/svg+xml";
+}
+
+function isRasterImageAttachment(file = {}, filePath = "", mime = "") {
+  const ext = fileExtension(file, filePath);
+  if (RASTER_IMAGE_EXTENSIONS.has(ext)) return true;
+  return imageMimeLike(mime || file.mime || file.type || file.mimeType || file.mediaType || "");
+}
+
 function isSafeInlineFilePartMime(mime = "") {
   const value = String(mime || "").toLowerCase();
   if (value.startsWith("image/")) return true;
@@ -157,6 +169,15 @@ function skipPathOnlyAttachment(filePath, filename, opts = {}, reason = "not an 
   if (typeof opts.onSkip === "function") {
     opts.onSkip({ path: filePath, filename, reason });
   }
+}
+
+function skipImageAttachment(filePath, filename, opts = {}) {
+  skipPathOnlyAttachment(
+    filePath,
+    filename,
+    opts,
+    "image handled through Lily vision extraction/source path, not uploaded as a raw model file part",
+  );
 }
 
 function fileToTextAttachment(file, opts = {}) {
@@ -203,11 +224,17 @@ function fileToTextAttachment(file, opts = {}) {
 /**
  * Turn one Lily file ({path,name,isImage} from the composer, or {uri,mime})
  * into an OpenCode FilePart { type:"file", mime, filename, url }. Local files
- * become base64 `data:` URLs so OpenCode receives the actual bytes.
+ * become base64 `data:` URLs only for explicitly allowed inline-safe types.
+ * Raster images require native-vision opt-in; otherwise Lily sends the vision
+ * extraction/path context instead of raw image bytes.
  */
 function fileToPart(file, opts = {}) {
   if (!file || typeof file !== "object") return null;
   if (file.uri && file.mime) {
+    if (isRasterImageAttachment(file, file.path || file.filePath || "", file.mime) && opts.allowImageFileParts !== true) {
+      skipImageAttachment(file.path || file.filePath || "", file.name || file.filename || "", opts);
+      return null;
+    }
     if (isPathOnlyDocumentAttachment(file)) {
       skipPathOnlyAttachment(
         file.path || file.filePath || "",
@@ -250,6 +277,10 @@ function fileToPart(file, opts = {}) {
       opts,
       "document handled through Lily document extraction/source path, not uploaded as a raw model file part",
     );
+    return null;
+  }
+  if (isRasterImageAttachment(file, filePath, mime) && opts.allowImageFileParts !== true) {
+    skipImageAttachment(filePath, filename, opts);
     return null;
   }
   if (!isSafeInlineFilePartMime(mime)) {
@@ -308,6 +339,7 @@ function buildOpencodePromptBody(opts = {}) {
       }
       const part = fileToPart(file, {
         maxInlineFileBytes: opts.maxInlineFileBytes,
+        allowImageFileParts: opts.allowImageFileParts === true,
         onSkip: (item) => skipped.push(item),
       });
       if (part) parts.push(part);

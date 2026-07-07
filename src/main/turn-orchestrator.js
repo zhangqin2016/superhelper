@@ -708,7 +708,11 @@ class TurnOrchestrator {
     if (!runner?.isBusy?.() || typeof runner.steer !== "function") return { ok: false };
     let accepted = false;
     try {
-      accepted = await runner.steer({ text, files });
+      accepted = await runner.steer({
+        text,
+        files,
+        allowImageFileParts: Boolean(require("./model-presets").activePresetSupportsVision()),
+      });
     } catch (err) {
       log.warn("steer dispatch failed: %s", err?.message || err);
       return { ok: false };
@@ -752,7 +756,11 @@ class TurnOrchestrator {
     state.lilyNativeSkillFallbackSteers.add(skillId);
     const runner = this.ctx.runnerPool?.get?.(sessionId);
     if (!runner?.isBusy?.() || typeof runner.steer !== "function") return;
-    void runner.steer({ text, files: [] }).then((ok) => {
+    void runner.steer({
+      text,
+      files: [],
+      allowImageFileParts: Boolean(require("./model-presets").activePresetSupportsVision()),
+    }).then((ok) => {
       if (!ok) log.warn("native Lily skill fallback steer was rejected for %s", skillId);
     }).catch((err) => {
       log.warn("native Lily skill fallback steer failed for %s: %s", skillId, err?.message || err);
@@ -1141,6 +1149,7 @@ class TurnOrchestrator {
     }
 
     const state = this._state(session.id);
+    const allowImageFileParts = Boolean(require("./model-presets").activePresetSupportsVision());
     state.phase = "starting";
     state.turnId = newTurnId();
     state.steerCount = 0;
@@ -1219,7 +1228,7 @@ class TurnOrchestrator {
     if (!opts.skipVision) {
       const vision = await runVisionPreflight(text, files, {
         emitNotice: (notice) => this._emitEngineNotice(session.id, notice),
-        nativeVision: require("./model-presets").activePresetSupportsVision(),
+        nativeVision: allowImageFileParts,
       });
       if (!vision.ok) {
         log.warn(
@@ -1433,6 +1442,7 @@ class TurnOrchestrator {
       text: engineText,
       files,
       displayFiles,
+      allowImageFileParts,
       taskContract: state.taskContract,
       turnPolicy: state.turnPolicy,
       trace: {

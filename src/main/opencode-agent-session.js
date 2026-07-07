@@ -183,8 +183,17 @@ function isRecoverableModelConnectionFailure(classified, raw = "") {
   return !classified && TRANSIENT_ERROR_RE.test(String(raw || ""));
 }
 
+function isOversizedContextFailure(classified, raw = "") {
+  return classified?.code === "CONTEXT_LIMIT" || /request entity too large|request too large|payload too large|body too large|413\b/i.test(String(raw || ""));
+}
+
+function isSafeReplayableModelFailure(classified, raw = "") {
+  return isRecoverableModelConnectionFailure(classified, raw) || isOversizedContextFailure(classified, raw);
+}
+
 function shouldDropResumeAfterVisibleFailure({ classified, raw = "", payload = {}, wasResumed = false } = {}) {
   if (classified?.code === "SESSION_INVALID") return true;
+  if (isOversizedContextFailure(classified, raw)) return true;
   if (!isRecoverableModelConnectionFailure(classified, raw)) return false;
   if (wasResumed) return true;
   if (payload?.attachmentFallback) return true;
@@ -601,7 +610,12 @@ class OpencodeAgentSession extends EventEmitter {
         // keeps resumed/migrated sessions and skill changes aligned with Lily's
         // current rules instead of relying on stale OpenCode history.
         const guidance = this.spawnOptions?.guidance || "";
-        this._pendingPromptPayload = { text, files, guidance };
+        this._pendingPromptPayload = {
+          text,
+          files,
+          guidance,
+          allowImageFileParts: typeof payload === "object" && payload?.allowImageFileParts === true,
+        };
         this._promptDispatchPending = true;
         this._armPromptDispatchPendingCheck();
         await server.sendPrompt(this._pendingPromptPayload);
@@ -642,7 +656,12 @@ class OpencodeAgentSession extends EventEmitter {
       const server = this._server || (await this._ensureStarted());
       if (!server) return false;
       const guidance = this.spawnOptions?.guidance || "";
-      await server.sendPrompt({ text, files, guidance });
+      await server.sendPrompt({
+        text,
+        files,
+        guidance,
+        allowImageFileParts: typeof payload === "object" && payload?.allowImageFileParts === true,
+      });
       // A steer IS progress: keep the no-progress watchdog from killing the turn.
       this._sawActivity = true;
       this._armResponseTimer();
@@ -1415,13 +1434,18 @@ class OpencodeAgentSession extends EventEmitter {
 
     if (this._dispatchRetryCount < 1 && this._server && this._pendingPromptPayload) {
       this._dispatchRetryCount += 1;
+      const raw = transientClassificationText(pending?.message, pending);
+      const classified = require("./agent-runner").classifyAssistantError(raw);
       const retryPayload = buildAttachmentFallbackPromptPayload(
         this._pendingPromptPayload,
         this._sanitize(pending?.message || ""),
       );
       this._pendingPromptPayload = retryPayload;
       try {
-        await this._server.sendPrompt(retryPayload);
+        const server = isOversizedContextFailure(classified, raw)
+          ? await this._restartEngineSessionForSafeReplay(raw || "oversized prompt request")
+          : this._server;
+        await server.sendPrompt(retryPayload);
         this._pendingDispatchFailure = null;
         this._markTurnAccepted("dispatch_retry_returned");
         this._armPromptAcceptanceCheck();
@@ -1651,7 +1675,7 @@ class OpencodeAgentSession extends EventEmitter {
 
     const raw = transientClassificationText(pending?.message, pending?.cause);
     const classified = require("./agent-runner").classifyAssistantError(raw);
-    if (!isRecoverableModelConnectionFailure(classified, raw)) return false;
+    if (!isSafeReplayableModelFailure(classified, raw)) return false;
 
     this._transientReplayCount += 1;
     this._pendingTransientFailure = null;
@@ -1672,11 +1696,12 @@ class OpencodeAgentSession extends EventEmitter {
         this._sanitize(raw || "transient model transport failure"),
       );
       this._pendingPromptPayload = retryPayload;
+      const isolateOversizedContext = isOversizedContextFailure(classified, raw);
       const isolateDocumentAttachment =
         retryPayload.attachmentFallback && shouldIsolateAttachmentFallback(originalPayload);
       const isolateLegacyResume =
         !retryPayload.attachmentFallback && this._engineSessionWasResumed && isRecoverableModelConnectionFailure(classified, raw);
-      if (isolateDocumentAttachment || isolateLegacyResume) {
+      if (isolateOversizedContext || isolateDocumentAttachment || isolateLegacyResume) {
         await this._restartEngineSessionForSafeReplay(raw || "transient model transport failure");
       }
       const server = await this._ensureStarted();
@@ -2098,7 +2123,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (!cause) return false;
     const raw = transientClassificationText(message, cause);
     const classified = require("./agent-runner").classifyAssistantError(raw);
-    return isRecoverableModelConnectionFailure(classified, raw);
+    return isSafeReplayableModelFailure(classified, raw);
   }
 
   _onServerExit(code) {

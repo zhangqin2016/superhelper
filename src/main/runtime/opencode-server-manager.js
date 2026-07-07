@@ -207,7 +207,7 @@ class OpencodeServerManager extends EventEmitter {
     if (this._recentRouting.length > 120) this._recentRouting.splice(0, this._recentRouting.length - 120);
   }
 
-  async sendPrompt({ text, files, guidance }) {
+  async sendPrompt({ text, files, guidance, allowImageFileParts }) {
     if (!this.sessionID) throw new Error("no session");
     if (!this._sdkSession) throw new Error("opencode SDK session is not ready");
     // prompt_async forks the turn in the BACKGROUND and returns 204 immediately;
@@ -218,7 +218,14 @@ class OpencodeServerManager extends EventEmitter {
     // prompt). Async returns at once, so sessions run truly concurrently.
     return this._sdkSession.promptAsync(
       this.sessionID,
-      buildOpencodePromptBody({ text, files, guidance, agent: this.agent, model: this.model }),
+      buildOpencodePromptBody({
+        text,
+        files,
+        guidance,
+        agent: this.agent,
+        model: this.model,
+        allowImageFileParts: allowImageFileParts === true,
+      }),
     );
   }
 

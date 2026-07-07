@@ -459,6 +459,42 @@ async function newSession() {
   }
 }
 
+// --- prompt dispatch oversized context: retry in a fresh engine session -----
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const made = [];
+    const session = new OpencodeAgentSession("dispatch_context_limit", {
+      createServer: () => {
+        const server = new FakeServer();
+        server.historyMessages = [];
+        if (made.length === 0) server.failPrompt = "Request failed: Request Entity Too Large";
+        made.push(server);
+        return server;
+      },
+    });
+    const orch = makeOrchestrator();
+    session.bindOrchestrator(orch);
+    session.ensureProcess(process.cwd(), { agentCommand: "/bin/true" }, { lazy: true });
+    session.sendUserMessage({ text: "发起一个很大的请求" });
+    await tick();
+    assert(made.length === 1, "oversized dispatch starts on the original engine session");
+    for (let i = 0; i < 10 && made.length < 2; i += 1) await sleep(10);
+    assert(made.length === 2, "oversized dispatch is retried in a fresh engine session");
+    assert(made[0].aborted === true, "oversized dispatch aborts the bloated engine session");
+    assert(made[1].prompts.length === 1 && made[1].prompts[0].text === "发起一个很大的请求", "fresh dispatch retry preserves the user request");
+    made[1].emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "新会话继续。" } });
+    made[1].emitEvent({ type: "session.idle", properties: { sessionID: "ses_test" } });
+    await waitIdleSettle();
+    assert(orch.calls.error.length === 0, "oversized dispatch retry is hidden from the user");
+    assert(orch.calls.done.length === 1 && /新会话/.test(orch.calls.done[0].output), "fresh dispatch retry completes normally");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
 // --- cold-start server hiccup after owned event: recover from official history
 {
   const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
@@ -658,6 +694,56 @@ async function newSession() {
     await tick();
     assert(made.length === 2, "subsequent messages stay on the recovered engine session");
     assert(made[1].prompts.length === 2 && made[1].prompts[1].text === "继续", "follow-up is not sent to the poisoned session");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
+// --- model-side oversized context: compact by isolating engine session -------
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 250;
+  try {
+    const made = [];
+    const session = new OpencodeAgentSession("context_limit_auto_replay", {
+      createServer: () => {
+        const server = new FakeServer();
+        server.historyMessages = [];
+        made.push(server);
+        return server;
+      },
+    });
+    const orch = makeOrchestrator();
+    session.bindOrchestrator(orch);
+    session.ensureProcess(process.cwd(), { agentCommand: "/bin/true" }, { lazy: true });
+    session.sendUserMessage({ text: "继续分析这个截图问题" });
+    await tick();
+    assert(made.length === 1, "oversized-context prompt starts the original engine session");
+    made[0].idleState = true;
+    made[0].emitEvent({
+      type: "message.error",
+      properties: {
+        sessionID: "ses_test",
+        messageID: "msg_context_limit",
+        error: { message: "Request failed: Request Entity Too Large" },
+      },
+    });
+    await sleep(80);
+    assert(made.length === 2, "oversized-context failure is replayed in a fresh engine session");
+    assert(made[0].aborted === true, "oversized engine session is aborted before replay");
+    assert(made[1].prompts.length === 1, "fresh engine receives the replayed prompt");
+    assert(made[1].prompts[0].text === "继续分析这个截图问题", "fresh replay preserves the current user request");
+    assert(!made[1].prompts[0].attachmentFallback, "context compaction replay does not invent an attachment fallback");
+    assert(orch.calls.error.length === 0, "oversized-context recovery is hidden from the user");
+
+    made[1].emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "压缩后继续回答。" } });
+    made[1].emitEvent({ type: "session.idle", properties: { sessionID: "ses_test" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1 && /压缩后/.test(orch.calls.done[0].output), "fresh context replay completes normally");
     session.terminate();
   } finally {
     OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;

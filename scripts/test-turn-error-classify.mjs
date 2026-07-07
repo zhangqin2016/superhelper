@@ -50,6 +50,10 @@ const normalizedEngineUnreachable = classifyAssistantError(
 );
 assert(normalizedEngineUnreachable?.code === "ENGINE_UNAVAILABLE", "normalized engine-unreachable message stays classifiable");
 
+const requestEntityTooLarge = classifyAssistantError("Request failed: Request Entity Too Large");
+assert(requestEntityTooLarge?.code === "CONTEXT_LIMIT", "request entity too large is not misclassified as model connection");
+assert(requestEntityTooLarge?.retryable === false, "oversized requests are not blind-retry failures");
+
 const exited = ec.classifyTurnFailure({ code: 1, source: "process.close" }, {}, {});
 assert(exited?.code === "ENGINE_PROCESS_EXITED" && exited.retryable === true, "process.close exit branch");
 

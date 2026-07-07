@@ -37,6 +37,13 @@ const ERROR_PATTERNS = [
     retryable: true,
   },
   {
+    code: "CONTEXT_LIMIT",
+    category: "model",
+    test: /context length|context window|maximum context|token limit|too many tokens|input too long|input length exceeds|maximum.*length|max.*tokens|request too large|payload too large|request entity too large|entity too large|body too large|content length.*exceed|413\b/i,
+    message: "The request is too large for the assistant to process. Reduce large attachments, narrow the task, or start a new session, then retry.",
+    retryable: false,
+  },
+  {
     code: "MODEL_CONNECTION_FAILED",
     category: "model",
     test: /API Error:|Connection to the model service was interrupted|model service .*interrupted|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|timed? out|timeout|502|503|504|500\b|Internal Server Error|upstream.*error|backend.*error|aborted|request.*failed|connection.*refused|connection.*reset|SSL|TLS|certificate|DNS|ENOTFOUND|ECONNABORTED/i,
@@ -55,13 +62,6 @@ const ERROR_PATTERNS = [
     category: "model",
     test: /quota|insufficient.*credit|credit.*insufficient|balance|billing|account.*disabled|account.*suspended|payment.*required/i,
     message: "Insufficient model quota or billing issue. Please check your service quota, then retry.",
-    retryable: false,
-  },
-  {
-    code: "CONTEXT_LIMIT",
-    category: "model",
-    test: /context length|context window|maximum context|token limit|too many tokens|input too long|input length exceeds|maximum.*length|max.*tokens|request too large|payload too large/i,
-    message: "The context is too large for the assistant to process. Please reduce the task scope or start a new session, then retry.",
     retryable: false,
   },
   {

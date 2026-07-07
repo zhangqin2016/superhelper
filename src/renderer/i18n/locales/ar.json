@@ -698,6 +698,7 @@
   "toast.themeSwitched": "تم تحديث المظهر",
   "toast.textSizeSwitched": "تم تحديث حجم الخط",
   "toast.licenseActivated": "تم تفعيل الترخيص",
+  "toast.licenseActivatedModelConfigPending": "تم تفعيل الترخيص. يجري Lily إعداد تكوين النموذج المدار وسيعيد المحاولة تلقائياً عند أول إرسال.",
   "toast.licenseCleared": "تمت إزالة الترخيص",
   "toast.updateAlreadyLatest": "أنت على أحدث إصدار",
   "toast.updateAvailable": "يتوفر إصدار جديد",
