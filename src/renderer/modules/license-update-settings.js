@@ -21,6 +21,12 @@ function licenseErrorMessage(error) {
   return text === key ? t("license.error.GENERIC") : text;
 }
 
+function modelConfigErrorMessage(error) {
+  const key = `modelConfig.error.${error || "GENERIC"}`;
+  const text = t(key);
+  return text === key ? t("modelConfig.error.GENERIC") : text;
+}
+
 function updateErrorMessage(error) {
   const code = typeof error === "string" ? error : error?.code;
   const key = `update.error.${code || "GENERIC"}`;
@@ -338,7 +344,9 @@ export function initLicenseUpdateSettings() {
     await refreshLicenseStatus();
     showToast(
       result.modelConfigReady === false
-        ? t("toast.licenseActivatedModelConfigPending")
+        ? t("toast.licenseActivatedModelConfigPending", {
+            error: modelConfigErrorMessage(result.modelConfigError),
+          })
         : t("toast.licenseActivated"),
       result.modelConfigReady === false ? "warning" : "success",
     );

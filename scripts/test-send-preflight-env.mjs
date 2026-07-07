@@ -154,6 +154,21 @@ try {
     repairCalls.indexOf("remote-config") > repairCalls.indexOf("license"),
     "remote config refresh must run after local service state repair",
   );
+
+  repairCalls.length = 0;
+  const activationRepair = await refreshRemoteConfigForSend({
+    force: true,
+    timeoutMs: 1000,
+    repairManagedService: true,
+    refreshLicense: false,
+    reason: "license_activate",
+  });
+  assert.equal(activationRepair.ok, true, "activation repair should still refresh remote config");
+  assert.deepEqual(
+    repairCalls,
+    ["bootstrap", "device", "remote-config"],
+    "license activation config repair must not persist a failed server license refresh as an invalid activation",
+  );
 } finally {
   serviceClient.refreshClientBootstrap = originalRefreshClientBootstrap;
   serviceClient.registerDevice = originalRegisterDevice;
@@ -164,8 +179,8 @@ try {
 const ipcHandlersSource = fs.readFileSync(path.join(process.cwd(), "src/main/ipc-handlers.js"), "utf8");
 assert.match(
   ipcHandlersSource,
-  /license:activate[\s\S]*refreshRemoteConfigForSend\(\{[\s\S]*timeoutMs:\s*90_000[\s\S]*repairManagedService:\s*true[\s\S]*reason:\s*"license_activate"/,
-  "license activation must prepare managed model config through the same repair path",
+  /license:activate[\s\S]*refreshRemoteConfigForSend\(\{[\s\S]*timeoutMs:\s*90_000[\s\S]*repairManagedService:\s*true[\s\S]*refreshLicense:\s*false[\s\S]*reason:\s*"license_activate"/,
+  "license activation must prepare managed model config without letting config repair mark the just-activated license invalid",
 );
 assert.match(
   ipcHandlersSource,
@@ -193,8 +208,8 @@ assert.match(
 const licenseSettingsSource = fs.readFileSync(path.join(process.cwd(), "src/renderer/modules/license-update-settings.js"), "utf8");
 assert.match(
   licenseSettingsSource,
-  /modelConfigReady\s*===\s*false[\s\S]*toast\.licenseActivatedModelConfigPending/,
-  "activation UI must not silently claim complete readiness when managed model config is still pending",
+  /modelConfigReady\s*===\s*false[\s\S]*toast\.licenseActivatedModelConfigPending[\s\S]*modelConfigError/,
+  "activation UI must show the config refresh failure reason instead of silently claiming complete readiness",
 );
 
 fs.rmSync(tempRoot, { recursive: true, force: true });

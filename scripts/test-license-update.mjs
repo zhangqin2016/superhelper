@@ -211,6 +211,34 @@ const serverStatus = getLicenseStatus();
 if (!serverStatus.activated || !serverStatus.valid || serverStatus.error) {
   throw new Error(`transient server refresh should keep stored license valid: ${JSON.stringify(serverStatus)}`);
 }
+fs.writeFileSync(path.join(tmp, "license-state.json"), JSON.stringify({
+  serverLicense: {
+    licenseId: "lic_server_1",
+    deviceId: "dev_server_1",
+    customer: "Server Customer",
+    plan: "pro",
+    features: ["usage"],
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  },
+  serverLicenseInvalid: {
+    error: "DEVICE_SIGNATURE_INVALID",
+    checkedAt: new Date().toISOString(),
+  },
+}, null, 2));
+const repairableSignatureStatus = getLicenseStatus();
+if (!repairableSignatureStatus.activated || !repairableSignatureStatus.valid || repairableSignatureStatus.error) {
+  throw new Error(`repairable device signature errors should not invalidate stored server license: ${JSON.stringify(repairableSignatureStatus)}`);
+}
+require.cache[serviceClientPath].exports.verifyLicense = async () => ({ ok: false, error: "DEVICE_KEY_NOT_REGISTERED" });
+const signatureRefresh = await refreshServerLicense();
+if (signatureRefresh.ok || signatureRefresh.error !== "DEVICE_KEY_NOT_REGISTERED" || !signatureRefresh.transient) {
+  throw new Error(`device key registration errors should be treated as repairable: ${JSON.stringify(signatureRefresh)}`);
+}
+const afterSignatureRefreshStatus = getLicenseStatus();
+if (!afterSignatureRefreshStatus.activated || !afterSignatureRefreshStatus.valid || afterSignatureRefreshStatus.error) {
+  throw new Error(`repairable device key refresh should keep stored license valid: ${JSON.stringify(afterSignatureRefreshStatus)}`);
+}
+require.cache[serviceClientPath].exports.verifyLicense = async () => ({ ok: false, error: "NO_SERVICE_URL" });
 
 const manifest = createUpdateManifest({
   version: "0.2.0",

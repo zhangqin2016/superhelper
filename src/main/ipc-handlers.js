@@ -116,6 +116,7 @@ function registerAll(ctx) {
           force: true,
           timeoutMs: 90_000,
           repairManagedService: true,
+          refreshLicense: false,
           reason: "license_activate",
         });
         if (configRefresh?.ok) {

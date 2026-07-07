@@ -36,7 +36,16 @@ function parseIsoTime(value) {
 }
 
 function isTransientServerLicenseError(error) {
-  return error === "NO_SERVICE_URL" || error === "SERVICE_REQUEST_FAILED";
+  return new Set([
+    "NO_SERVICE_URL",
+    "SERVICE_REQUEST_FAILED",
+    "DEVICE_KEY_NOT_REGISTERED",
+    "DEVICE_SIGNATURE_REQUIRED",
+    "DEVICE_SIGNATURE_INVALID",
+    "DEVICE_SIGNATURE_EXPIRED",
+    "DEVICE_SIGNATURE_BODY_MISMATCH",
+    "DEVICE_SIGNATURE_REPLAYED",
+  ]).has(error);
 }
 
 function normalizeServerTrial(payload = {}) {

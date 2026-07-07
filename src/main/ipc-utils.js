@@ -99,7 +99,9 @@ async function refreshRemoteConfigForSend(options = {}) {
           const service = require("./service-client");
           await Promise.resolve(service.refreshClientBootstrap({ force: true })).catch(() => null);
           await Promise.resolve(service.registerDevice()).catch(() => null);
-          await Promise.resolve(require("./license-manager").refreshServerLicense()).catch(() => null);
+          if (options.refreshLicense !== false) {
+            await Promise.resolve(require("./license-manager").refreshServerLicense()).catch(() => null);
+          }
         }
         return remoteConfig.refreshRemoteConfig({ reason: options.reason || "send_preflight" });
       })
