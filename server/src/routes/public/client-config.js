@@ -6,6 +6,7 @@ import {
   buildClientBootstrapPolicy,
 } from "../../services/client-bootstrap.js";
 import {
+  buildEnvManagedClientConfig,
   DEFAULT_EFFECTIVE_CONFIG,
   clientConfigTtlMs,
   deepMerge,
@@ -56,7 +57,7 @@ async function resolveDeviceGroupId(deviceId, licenseId) {
   return null;
 }
 
-async function resolveEffectiveConfig(input) {
+async function resolveEffectiveConfig(input, options = {}) {
   const licenseId = await validLicenseScope(input);
   const groupId = await resolveDeviceGroupId(input.deviceId, licenseId);
   const profiles = await db
@@ -76,9 +77,10 @@ async function resolveEffectiveConfig(input) {
     return false;
   });
 
+  const baseline = options.baselineEffectiveConfig || DEFAULT_EFFECTIVE_CONFIG;
   const effectiveConfig = matching.reduce(
     (acc, profile) => deepMerge(acc, profile.config),
-    DEFAULT_EFFECTIVE_CONFIG,
+    baseline,
   );
   const latest = matching
     .map((profile) => new Date(profile.updated_at).getTime())
@@ -139,9 +141,11 @@ export function registerPublicClientConfigRoutes(app) {
     const device = await upsertDevice(input);
     if (!(await requireSignedDeviceRequest(request, reply, input))) return;
 
-    const resolved = await resolveEffectiveConfig(input);
     const { getMediaDeliveryMode, getModelDeliveryMode } = await import("../../services/app-settings.js");
     const modelDeliveryMode = await getModelDeliveryMode();
+    const baselineEffectiveConfig =
+      buildEnvManagedClientConfig(config, undefined, modelDeliveryMode) || DEFAULT_EFFECTIVE_CONFIG;
+    const resolved = await resolveEffectiveConfig(input, { baselineEffectiveConfig });
     // Expand any per-scope `models.providers` directive into its preset menu
     // before tokens are injected.
     const scopedConfig = expandModelProviderMenu(resolved.effectiveConfig, {

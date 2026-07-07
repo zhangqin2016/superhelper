@@ -13,6 +13,7 @@
  * The SDK is ESM-only, so it's loaded via dynamic import() and cached.
  */
 const { EventEmitter } = require("node:events");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
@@ -482,12 +483,20 @@ let _singleton = null;
 /** Signature of the serve-defining opts. If these change (the user switched
  *  model / gateway / skills, so providers + MCP differ), the running serve is
  *  stale and must be rebuilt — otherwise it keeps talking to the OLD gateway and
- *  every turn fails to reach the model. (The old one-serve-per-session model got
- *  this for free; a frozen singleton does not.) */
+ *  every turn fails to reach the model. Env matters too: short-lived gateway
+ *  tokens are injected via LILY_* env, not the config JSON. */
+function envSignature(env = {}) {
+  const keys = Object.keys(env || {}).sort();
+  const stable = {};
+  for (const key of keys) stable[key] = String(env[key] ?? "");
+  return crypto.createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+}
+
 function serveSignature(opts) {
   return JSON.stringify({
     cmd: opts.serverCommand || "",
     cfg: opts.configContent || "",
+    env: envSignature(opts.env || {}),
   });
 }
 

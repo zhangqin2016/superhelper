@@ -40,6 +40,23 @@ try {
   release();
   assert.equal(terminated, true, "retired old serve terminates when its last view detaches");
 
+  resetSharedServer();
+  const staleEnv = getSharedServer({
+    serverCommand: "/bin/true",
+    cwd: process.cwd(),
+    dataDir: ":memory:",
+    configContent: "CONFIG_TOKEN",
+    env: { LILY_API_KEY: "stale-token" },
+  });
+  const freshEnv = getSharedServer({
+    serverCommand: "/bin/true",
+    cwd: process.cwd(),
+    dataDir: ":memory:",
+    configContent: "CONFIG_TOKEN",
+    env: { LILY_API_KEY: "fresh-token" },
+  });
+  assert.notEqual(freshEnv, staleEnv, "env drift rebuilds shared serve so refreshed gateway tokens take effect");
+
   const shared = new OpencodeSharedServer({
     serverCommand: "/bin/true",
     cwd: process.cwd(),

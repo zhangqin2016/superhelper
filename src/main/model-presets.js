@@ -694,7 +694,7 @@ function saveCustomPreset({
     protocol: normalizeProtocol(protocol) || legacyProtocolForBaseUrl(urlValidated.baseUrl),
   };
   const customPresets = [...(user.customPresets || []), entry];
-  persistUserChoice({ ...user, customPresets });
+  persistUserChoice({ ...user, customPresets, activePresetId: id });
   return { ok: true, preset: customPresetRecord(entry), ...listPresetsPublic() };
 }
 

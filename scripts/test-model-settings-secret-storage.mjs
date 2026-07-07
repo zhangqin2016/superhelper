@@ -43,6 +43,12 @@ const modelPresets = require(path.join(__dirname, "../src/main/model-presets.js"
 const key = "sk-test-secret-123456";
 const gatewayKey = "sk-gateway-secret-123456";
 
+const fallbackList = modelPresets.listPresetsPublic();
+const fallbackDeepSeek = fallbackList.presets.filter((preset) => String(preset.model || "").startsWith("deepseek-v4-pro"));
+if (fallbackDeepSeek.length !== 1 || fallbackDeepSeek[0].model !== "deepseek-v4-pro") {
+  throw new Error(`packaged fallback should expose one DeepSeek model, not a stale duplicate list: ${JSON.stringify(fallbackList.presets)}`);
+}
+
 const saved = modelPresets.saveCustomPreset({
   label: "Secret Model",
   model: "secret-model",
@@ -54,6 +60,9 @@ const saved = modelPresets.saveCustomPreset({
 if (!saved.ok) throw new Error(`saveCustomPreset failed: ${saved.error}`);
 if (!saved.preset.tlsSkipVerify) {
   throw new Error("custom preset should expose TLS skip when saved for its own API URL");
+}
+if (modelPresets.getActivePresetId() !== saved.preset.id) {
+  throw new Error("saving a custom preset should make it active immediately so sends use the custom model");
 }
 const missingCustomUrl = modelPresets.saveCustomPreset({
   label: "Missing URL",
@@ -232,6 +241,22 @@ if (!managedList.presets.some((preset) => preset.id === "managed")) {
 }
 if (!managedList.presets.some((preset) => preset.custom)) {
   throw new Error("remote-managed model catalog must keep local custom presets available");
+}
+if (managedList.activePresetId !== remoteCustom.preset.id) {
+  throw new Error(`saved custom preset should become active under remote catalog: ${JSON.stringify(managedList)}`);
+}
+const immediatelyActiveCustomEnv = modelPresets.getUserApiEnv();
+if (
+  immediatelyActiveCustomEnv.LILY_API_BASE_URL !== "https://custom-remote.example.com" ||
+  immediatelyActiveCustomEnv.LILY_API_KEY !== "sk-remote-compatible-secret-123456" ||
+  immediatelyActiveCustomEnv.LILY_OPENCODE_PROTOCOL !== "openai" ||
+  immediatelyActiveCustomEnv.LILY_TLS_SKIP_VERIFY !== "1"
+) {
+  throw new Error(`newly saved custom preset should immediately drive sends: ${JSON.stringify(immediatelyActiveCustomEnv)}`);
+}
+const managedSwitch = modelPresets.setActivePreset("managed");
+if (!managedSwitch.ok) {
+  throw new Error(`managed preset should remain selectable after saving custom preset: ${managedSwitch.error}`);
 }
 if (modelPresets.getUserApiEnv().LILY_API_KEY) {
   throw new Error("selected service preset must not be overridden by local API gateway keys");

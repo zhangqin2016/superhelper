@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   buildEnvManagedClientConfig,
   DEFAULT_EFFECTIVE_CONFIG,
@@ -473,6 +474,45 @@ const invalidWhitelist = buildEnvManagedClientConfig(
 assert.ok(
   !invalidWhitelist?.models?.presets?.length,
   "explicit unmatched provider allow-list must not leak another provider",
+);
+
+const singleDeepseekBaseline = buildEnvManagedClientConfig(
+  { modelGatewayDefaultProvider: "deepseek", modelConfigDeliveryMode: "gateway", defaultModelProviders: ["deepseek"] },
+  {
+    deepseek: {
+      id: "deepseek",
+      type: "openai",
+      baseUrl: "https://api.deepseek.com/v1",
+      apiKey: "sk-d",
+      models: ["deepseek-v4-pro"],
+    },
+  },
+);
+assert.equal(singleDeepseekBaseline.models.activePresetId, "deepseek-gateway");
+assert.deepEqual(
+  singleDeepseekBaseline.models.presets.map((preset) => preset.env.LILY_MODEL),
+  ["deepseek-v4-pro"],
+  "single configured server DeepSeek model should produce one client preset",
+);
+assert.equal(
+  deepMerge(singleDeepseekBaseline, { policy: { permissionMode: "default" } }).models.presets.length,
+  1,
+  "profile overlays that do not mention models must keep the env-managed server model baseline",
+);
+
+const publicClientConfigRouteSource = fs.readFileSync(
+  new URL("../server/src/routes/public/client-config.js", import.meta.url),
+  "utf8",
+);
+assert.match(
+  publicClientConfigRouteSource,
+  /baselineEffectiveConfig\s*=\s*[\s\S]*buildEnvManagedClientConfig\(/,
+  "public client config must start from the server provider baseline, not empty packaged defaults",
+);
+assert.match(
+  publicClientConfigRouteSource,
+  /resolveEffectiveConfig\(input,\s*\{\s*baselineEffectiveConfig\s*\}\)/,
+  "public client config must pass the server provider baseline into profile resolution",
 );
 
 // Per-scope provider menu expansion: a profile's `models.providers` directive
