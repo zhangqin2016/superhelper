@@ -38,7 +38,7 @@ function applyWindowsIcon(context) {
   if (context.electronPlatformName !== "win32") return;
   const exeName = `${context.packager.appInfo.productFilename}.exe`;
   const exePath = path.join(context.appOutDir, exeName);
-  const iconPath = path.join(context.packager.projectDir, "dist", ".icon-ico", "icon.ico");
+  const iconPath = path.join(context.packager.projectDir, "resources", "icon.ico");
   const rcedit = findWindowsRcedit();
   if (!fs.existsSync(exePath) || !fs.existsSync(iconPath) || !rcedit) return;
   execFileSync(rcedit, [exePath, "--set-icon", iconPath], { stdio: "inherit" });
