@@ -89,5 +89,18 @@ assert.equal(
   "user custom remote model without a key should still ask for the user's key",
 );
 
+const turnOrchestratorSource = fs.readFileSync(path.join(process.cwd(), "src/main/turn-orchestrator.js"), "utf8");
+const timeoutMatch = turnOrchestratorSource.match(/MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS\s*=\s*([0-9_]+)/);
+assert(timeoutMatch, "managed model preflight must use a named timeout constant");
+assert(
+  Number(timeoutMatch[1].replace(/_/g, "")) >= 30_000,
+  "first-run managed model config refresh must wait long enough for device registration and slow networks",
+);
+assert.match(
+  turnOrchestratorSource,
+  /refreshRemoteConfigForSend\(\{\s*force:\s*true,\s*timeoutMs:\s*MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS\s*\}\)/,
+  "send preflight must use the managed config timeout constant",
+);
+
 fs.rmSync(tempRoot, { recursive: true, force: true });
 console.log("send preflight env: ok");
