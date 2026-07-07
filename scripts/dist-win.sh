@@ -131,7 +131,6 @@ fi
 
 if [[ "${LILY_REQUIRE_WIN_SIGNING:-0}" != "1" ]]; then
   export CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-false}"
-  builder_args+=("-c.win.signAndEditExecutable=false")
 fi
 
 if [[ "${#builder_args[@]}" -gt 0 ]]; then
