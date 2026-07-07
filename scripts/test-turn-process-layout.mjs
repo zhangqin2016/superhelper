@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
 import {
   classifyToolCategory,
   resolveAssistantStreamText,
@@ -9,9 +10,19 @@ import {
   textMatchesFileToolBody,
   partitionTimeline,
   resolveFinalText,
+  timelineForProcessView,
+  buildChildToolsMap,
+  collectSubagentEntries,
+  prepareProcessRenderView,
+  processStructureSignature,
+  shouldRenderEntryInCollapsedProcess,
+  shouldRenderThinkingStackForEntry,
+  shouldAppendCollapsedProcessGroupFallback,
+  shouldSkipProcessTimelineEntry,
   collapseRepeatedReadTools,
 } from "../src/renderer/modules/turn-process-layout.js";
-import { buildTimelineFromLegacy, getRenderableTimeline } from "../src/renderer/modules/turn-timeline.js";
+import { buildTimelineFromLegacy } from "../src/renderer/modules/turn-legacy-timeline.js";
+import { getRenderableTimeline } from "../src/renderer/modules/turn-renderable-timeline.js";
 
 if (classifyToolCategory("Write") !== "write") {
   throw new Error("classifyToolCategory Write failed");
@@ -75,6 +86,168 @@ if (shouldCollapseProcessGroups(multiToolTurn, false)) {
 const { tools, notices } = partitionTimeline(multiToolTurn.timeline);
 if (tools.length !== 2 || notices.length !== 0) {
   throw new Error("partitionTimeline failed");
+}
+
+const childTools = buildChildToolsMap([
+  { kind: "tool", id: "parent", name: "Task" },
+  { kind: "tool", id: "child", name: "Read", parentToolUseId: "parent" },
+  { kind: "tool", id: "missingChild", name: "Read", parentToolUseId: "missing" },
+  { kind: "tool", id: "self", name: "Read", parentToolUseId: "self" },
+]);
+if (JSON.stringify(childTools.get("parent")?.map((entry) => entry.id)) !== JSON.stringify(["child"])) {
+  throw new Error("buildChildToolsMap should attach only valid child tool entries");
+}
+if (childTools.has("missing") || childTools.has("self")) {
+  throw new Error("buildChildToolsMap should ignore missing parents and self references");
+}
+
+const processTimeline = timelineForProcessView({
+  timeline: [
+    { kind: "tool", id: "read_1", name: "Read", input: { file_path: "a.js" }, status: "done" },
+    { kind: "tool", id: "read_2", name: "Read", input: { file_path: "b.js" }, status: "done" },
+  ],
+}, true);
+if (processTimeline.length !== 1 || processTimeline[0].kind !== "toolGroup") {
+  throw new Error("timelineForProcessView should apply repeated-read collapsing");
+}
+
+const subagentStore = new Map([
+  ["sub_1", { sessionId: "sub_1", description: "Existing task", label: "reviewer", status: "running" }],
+  ["orphan", { sessionId: "orphan", description: "Store only", label: "worker", status: "done", parentToolId: "parent_tool" }],
+]);
+const subagentEntries = collectSubagentEntries([
+  { kind: "tool", id: "task_1", name: "Task", status: "running", metadata: { sessionId: "sub_1" }, input: { description: "from tool" } },
+], { subagents: subagentStore });
+if (subagentEntries.length !== 2) {
+  throw new Error(`collectSubagentEntries should include tool-backed and store-only subagents, got ${subagentEntries.length}`);
+}
+if (subagentEntries[0].subagent?.sessionId !== "sub_1") {
+  throw new Error("collectSubagentEntries should merge matching live subagent state into task tool entries");
+}
+if (subagentEntries[1].id !== "parent_tool" || subagentEntries[1].input.subagent_type !== "worker") {
+  throw new Error("collectSubagentEntries should synthesize store-only subagent entries");
+}
+const processView = prepareProcessRenderView({
+  timeline: [
+    { kind: "thinking", id: "think_1", text: "done", status: "done" },
+    { kind: "thinking", id: "think_2", text: "second", status: "done" },
+    { kind: "tool", id: "todo_1", name: "TodoWrite" },
+    { kind: "tool", id: "task_1", name: "Task", status: "running", metadata: { sessionId: "sub_1" } },
+    { kind: "tool", id: "parent_1", name: "Bash" },
+    { kind: "tool", id: "child_1", name: "Read", parentToolUseId: "parent_1" },
+    { kind: "notice", id: "notice_1" },
+    { kind: "text", id: "text_1" },
+  ],
+  subagents: new Map([["sub_1", { sessionId: "sub_1", status: "running" }]]),
+}, true, {
+  diffEntries: [{ filePath: "/tmp/a.js" }],
+  sessionId: "session_1",
+});
+if (!processView.hasContent) throw new Error("prepareProcessRenderView should count timeline and diff content");
+if (processView.latestTodoId !== "todo_1") throw new Error("prepareProcessRenderView should expose latest TodoWrite id");
+if (!processView.childToolIds.has("child_1")) throw new Error("prepareProcessRenderView should derive child tool ids");
+if (JSON.stringify(processView.processTools.map((entry) => entry.id)) !== JSON.stringify(["parent_1"])) {
+  throw new Error("prepareProcessRenderView should exclude todos, child tools, and subagents from processTools");
+}
+if (!processView.collapsed) throw new Error("prepareProcessRenderView should expose collapsed process-group state");
+if (!processView.groupThinking) throw new Error("prepareProcessRenderView should group sealed finished thinking");
+if (processView.subagents.length !== 1) throw new Error("prepareProcessRenderView should derive subagent panel entries");
+if (processView.entryCtx.latestTodoId !== "todo_1" || processView.entryCtx.sessionId !== "session_1") {
+  throw new Error("prepareProcessRenderView should expose timeline entry context");
+}
+if (processView.diffKey !== "1") throw new Error("prepareProcessRenderView should expose a stable diff key");
+if (!processView.hasDiffs) throw new Error("prepareProcessRenderView should expose whether changed files exist");
+if (!shouldSkipProcessTimelineEntry({ kind: "tool", id: "child_1", name: "Read" }, { childToolIds: processView.childToolIds })) {
+  throw new Error("shouldSkipProcessTimelineEntry should skip child tool rows");
+}
+if (!shouldSkipProcessTimelineEntry({ kind: "tool", id: "task_2", name: "Task" }, { childToolIds: processView.childToolIds })) {
+  throw new Error("shouldSkipProcessTimelineEntry should skip subagent tool rows");
+}
+if (shouldSkipProcessTimelineEntry({ kind: "tool", id: "parent_1", name: "Bash" }, { childToolIds: processView.childToolIds })) {
+  throw new Error("shouldSkipProcessTimelineEntry should keep regular tool rows");
+}
+if (!shouldRenderEntryInCollapsedProcess({ kind: "thinking", id: "think_1" })) {
+  throw new Error("shouldRenderEntryInCollapsedProcess should keep thinking entries in place");
+}
+if (!shouldRenderEntryInCollapsedProcess({ kind: "text", id: "text_1" })) {
+  throw new Error("shouldRenderEntryInCollapsedProcess should keep text entries in place");
+}
+if (!shouldRenderEntryInCollapsedProcess({ kind: "tool", id: "todo_1", name: "TodoWrite" })) {
+  throw new Error("shouldRenderEntryInCollapsedProcess should keep TodoWrite entries in place");
+}
+if (shouldRenderEntryInCollapsedProcess({ kind: "tool", id: "tool_1", name: "Bash" })) {
+  throw new Error("shouldRenderEntryInCollapsedProcess should move regular tools into the collapsed group");
+}
+if (!shouldRenderThinkingStackForEntry({ kind: "thinking", id: "think_1" }, { groupThinking: true })) {
+  throw new Error("shouldRenderThinkingStackForEntry should group thinking entries when enabled");
+}
+if (shouldRenderThinkingStackForEntry({ kind: "thinking", id: "think_1" }, { groupThinking: false })) {
+  throw new Error("shouldRenderThinkingStackForEntry should keep single thinking entries ungrouped");
+}
+if (shouldRenderThinkingStackForEntry({ kind: "text", id: "text_1" }, { groupThinking: true })) {
+  throw new Error("shouldRenderThinkingStackForEntry should ignore non-thinking entries");
+}
+if (!shouldAppendCollapsedProcessGroupFallback({
+  groupInserted: false,
+  processTools: [{ id: "tool_1" }],
+  notices: [],
+})) {
+  throw new Error("shouldAppendCollapsedProcessGroupFallback should append when tools exist and no group was inserted");
+}
+if (!shouldAppendCollapsedProcessGroupFallback({
+  groupInserted: false,
+  processTools: [],
+  notices: [{ id: "notice_1" }],
+})) {
+  throw new Error("shouldAppendCollapsedProcessGroupFallback should append when notices exist and no group was inserted");
+}
+if (shouldAppendCollapsedProcessGroupFallback({
+  groupInserted: true,
+  processTools: [{ id: "tool_1" }],
+  notices: [{ id: "notice_1" }],
+})) {
+  throw new Error("shouldAppendCollapsedProcessGroupFallback should not append a duplicate group");
+}
+if (shouldAppendCollapsedProcessGroupFallback({ groupInserted: false, processTools: [], notices: [] })) {
+  throw new Error("shouldAppendCollapsedProcessGroupFallback should not append empty groups");
+}
+const turnRendererSource = readFileSync(new URL("../src/renderer/modules/turn-view-renderer.js", import.meta.url), "utf8");
+if (/\b(?:timelineForProcessView|partitionTimeline|buildChildToolsMap|collectSubagentEntries|isSubagentEntry|isTodoTool|shouldGroupFinishedThinking|shouldCollapseProcessGroups)\s*\(/.test(turnRendererSource)) {
+  throw new Error("turn-view-renderer should consume prepareProcessRenderView instead of rebuilding process view state");
+}
+const sigBaseTurn = {
+  timeline: [
+    { kind: "thinking", id: "think_1", text: "plan", status: "done" },
+    { kind: "tool", id: "task_1", name: "Task", status: "running", metadata: { sessionId: "sub_1" } },
+  ],
+  subagents: new Map([
+    ["sub_1", {
+      sessionId: "sub_1",
+      textFull: "abc",
+      pendingPermissions: [],
+      pendingQuestions: [],
+      phase: "running",
+      phaseDetail: "reading",
+      stats: { totalTools: 1, runningTools: 1 },
+    }],
+  ]),
+};
+const sigA = processStructureSignature(sigBaseTurn, true, { diffCount: 0 });
+const sigB = processStructureSignature({
+  ...sigBaseTurn,
+  subagents: new Map([
+    ["sub_1", {
+      ...sigBaseTurn.subagents.get("sub_1"),
+      textFull: "abcd",
+      pendingQuestions: [{}],
+    }],
+  ]),
+}, true, { diffCount: 0 });
+if (sigA === sigB || !sigA.includes("subagents:")) {
+  throw new Error("processStructureSignature should include subagent structure changes");
+}
+if (processStructureSignature(sigBaseTurn, true, { diffCount: 1 }) === sigA) {
+  throw new Error("processStructureSignature should include changed-file count");
 }
 
 const ackTurn = {

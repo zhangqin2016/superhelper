@@ -75,6 +75,16 @@ export function getSessionDiffEntries(sessionId, turnId = null) {
   return all;
 }
 
+export function resolveTurnDiffEntries(liveTurn, sessionId) {
+  if (Array.isArray(liveTurn.fileChanges) && liveTurn.fileChanges.length) {
+    return liveTurn.fileChanges;
+  }
+  if (sessionId && liveTurn.turnId) {
+    return getSessionDiffEntries(sessionId, liveTurn.turnId);
+  }
+  return [];
+}
+
 export function getActiveTurnDiffEntries(sessionId) {
   const liveTurnId = getTurnId(sessionId);
   if (liveTurnId) return getSessionDiffEntries(sessionId, liveTurnId);

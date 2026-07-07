@@ -21,6 +21,10 @@ const INJECTED_USER_PROMPT_MARKERS = [
   "LILY_TASK_CONTRACT",
 ];
 
+const INTERNAL_ONLY_USER_PROMPTS = new Set([
+  "continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
+]);
+
 function timestampMs(value) {
   const parsed = Date.parse(value || "");
   return Number.isFinite(parsed) ? parsed : null;
@@ -36,6 +40,10 @@ function normalizedText(value) {
     .trim();
 }
 
+function isInternalOnlyUserPromptText(text) {
+  return INTERNAL_ONLY_USER_PROMPTS.has(normalizedText(text).toLowerCase());
+}
+
 function timeDistanceMs(a, b) {
   const at = timestampMs(a);
   const bt = timestampMs(b);
@@ -46,6 +54,7 @@ function timeDistanceMs(a, b) {
 function isInjectedUserPromptText(text) {
   const value = String(text || "");
   if (!value.trim()) return false;
+  if (isInternalOnlyUserPromptText(value)) return true;
   if (hasLayeredEngineText(value)) return true;
   return INJECTED_USER_PROMPT_MARKERS.some((marker) => value.includes(marker));
 }
@@ -54,6 +63,7 @@ function normalizeVisibleUserMessage(message) {
   if (!message || message.role !== "user") return null;
   const text = messageText(message).trim();
   if (!text) return null;
+  if (isInternalOnlyUserPromptText(text)) return null;
   if (!isInjectedUserPromptText(text)) return message;
 
   const original = extractUserOriginalRequest(text);
@@ -120,6 +130,9 @@ function mergeMetadata(opencodeMessage, metadataMessage) {
 }
 
 function findLocalUserForOfficial(officialMessage, localUsers, usedIndexes, fallbackIndexRef) {
+  const officialText = messageText(officialMessage);
+  if (isInternalOnlyUserPromptText(officialText)) return null;
+
   const officialTs = timestampMs(officialMessage?.timestamp);
   if (Number.isFinite(officialTs)) {
     let bestIndex = -1;
@@ -140,7 +153,6 @@ function findLocalUserForOfficial(officialMessage, localUsers, usedIndexes, fall
     }
   }
 
-  const officialText = messageText(officialMessage);
   if (!isInjectedUserPromptText(officialText)) return null;
 
   while (fallbackIndexRef.index < localUsers.length && usedIndexes.has(fallbackIndexRef.index)) {
@@ -175,6 +187,12 @@ function mergeUserDisplayText(opencodeMessages = [], localMessages = []) {
       },
     };
   }).filter(Boolean);
+}
+
+function normalizeVisibleConversationMessages(messages = []) {
+  return (Array.isArray(messages) ? messages : [])
+    .map((message) => (message?.role === "user" ? normalizeVisibleUserMessage(message) : message))
+    .filter(Boolean);
 }
 
 function isSteerMessage(message = {}) {
@@ -275,13 +293,13 @@ function findEquivalentProjectionIndex(out, projected) {
 }
 
 function mergeProjectionConversation(messages = [], projections = []) {
-  const out = Array.isArray(messages) ? messages.slice() : [];
+  const out = normalizeVisibleConversationMessages(messages);
   const byKey = new Map();
   for (let i = 0; i < out.length; i += 1) {
     byKey.set(messageKey(out[i]), i);
   }
 
-  for (const projected of projections || []) {
+  for (const projected of normalizeVisibleConversationMessages(projections)) {
     if (!projected?.role || !projected?.turnId) continue;
     const key = messageKey(projected);
     const existingIndex = byKey.get(key) ?? findEquivalentProjectionIndex(out, projected);
@@ -353,7 +371,12 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
       ...opts,
       includeOpen: true,
     });
-    if (!projections.length) return page;
+    if (!projections.length) {
+      return {
+        ...page,
+        conversation: normalizeVisibleConversationMessages(page.conversation || []),
+      };
+    }
     return {
       ...page,
       conversation: mergeProjectionConversation(page.conversation || [], projections),
@@ -416,6 +439,7 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
 module.exports = {
   buildMetadataIndex,
   isInjectedUserPromptText,
+  isInternalOnlyUserPromptText,
   mergeMetadata,
   mergeProjectionConversation,
   mergeUserDisplayText,

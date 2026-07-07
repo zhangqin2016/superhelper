@@ -4,6 +4,8 @@
  * not collapse into an opaque JSON string for display.
  */
 
+import { normalizeToolResult, toolFilePath } from "../src/renderer/modules/tool-payload-renderer.js";
+
 function parseToolInput(tool = {}) {
   if (tool.input && Object.keys(tool.input).length) {
     const copy = { ...tool.input };
@@ -160,10 +162,46 @@ if (JSON.stringify(jobFiles) !== JSON.stringify([{ path: "/tmp/a.json" }, { path
   console.error(`tool-payload-renderer: process outputFiles not normalized: ${JSON.stringify(jobFiles)}`);
   process.exit(1);
 }
+const normalizedJsonString = normalizeToolResult(JSON.stringify({ content: "short", truncated: true, fullText: "long" }));
+if (JSON.stringify(normalizedJsonString) !== JSON.stringify({ content: "short", truncated: true, fullText: "long" })) {
+  console.error(`tool-payload-renderer: normalizeToolResult lost JSON string metadata: ${JSON.stringify(normalizedJsonString)}`);
+  process.exit(1);
+}
+const normalizedPlainString = normalizeToolResult("plain output");
+if (JSON.stringify(normalizedPlainString) !== JSON.stringify({ content: "plain output", truncated: false, fullText: "" })) {
+  console.error(`tool-payload-renderer: normalizeToolResult plain string fallback changed: ${JSON.stringify(normalizedPlainString)}`);
+  process.exit(1);
+}
+if (toolFilePath({ name: "write", input: { file_path: "/tmp/a.md" } }) !== "/tmp/a.md") {
+  console.error("tool-payload-renderer: write file_path extraction changed");
+  process.exit(1);
+}
+if (toolFilePath({ name: "edit", input: { path: "/tmp/b.md" } }) !== "/tmp/b.md") {
+  console.error("tool-payload-renderer: edit path extraction changed");
+  process.exit(1);
+}
+if (toolFilePath({ name: "multiedit", input: { target_file: "/tmp/c.md" } }) !== "/tmp/c.md") {
+  console.error("tool-payload-renderer: multiedit target_file extraction changed");
+  process.exit(1);
+}
+if (toolFilePath({ name: "read", input: { path: "/tmp/read.md" } }) !== "") {
+  console.error("tool-payload-renderer: non-edit tools should not expose a row file path");
+  process.exit(1);
+}
 const rendererSource = await import("node:fs").then((fs) =>
   fs.readFileSync(new URL("../src/renderer/modules/tool-payload-renderer.js", import.meta.url), "utf8"));
 if (!rendererSource.includes("renderProcessJobPayload") || !rendererSource.includes("outputFiles")) {
   console.error("tool-payload-renderer: process job renderer missing");
+  process.exit(1);
+}
+const turnRendererSource = await import("node:fs").then((fs) =>
+  fs.readFileSync(new URL("../src/renderer/modules/turn-view-renderer.js", import.meta.url), "utf8"));
+if (/function normalizeToolResult\s*\(/.test(turnRendererSource)) {
+  console.error("tool-payload-renderer: turn renderer should consume normalizeToolResult from tool-payload-renderer");
+  process.exit(1);
+}
+if (/function toolFilePath\s*\(/.test(turnRendererSource)) {
+  console.error("tool-payload-renderer: turn renderer should consume toolFilePath from tool-payload-renderer");
   process.exit(1);
 }
 

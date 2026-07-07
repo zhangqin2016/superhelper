@@ -46,3 +46,14 @@ export function revealScrollIntent(input = {}) {
   }
   return { mode: "bottom" };
 }
+
+export function elementScrollTargetTop(input = {}) {
+  const panelTop = Number(input?.panelTop || 0);
+  const elementTop = Number(input?.elementTop || 0);
+  const scrollTop = Number(input?.scrollTop || 0);
+  const scrollHeight = Number(input?.scrollHeight || 0);
+  const clientHeight = Number(input?.clientHeight || 0);
+  const maxTop = Math.max(0, scrollHeight - clientHeight);
+  const targetTop = Math.max(0, elementTop - panelTop + scrollTop - 12);
+  return Math.min(targetTop, maxTop);
+}

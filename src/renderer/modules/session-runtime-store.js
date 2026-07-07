@@ -3,16 +3,20 @@ import { sanitizeNoticeForIngest } from "./engine-notice-policy.js";
 import { alertTaskDone } from "./task-alert.js";
 import {
   activityFromEngineNotice,
-  applyProcessEventToTimeline,
-  appendTimelineNotice,
+  setActivityLabel,
+} from "./turn-activity-policy.js";
+import { appendTimelineNotice } from "./turn-notice-timeline.js";
+import { applyProcessEventToTimeline } from "./turn-process-activity-timeline.js";
+import { resetTimelineFields } from "./turn-reset-timeline.js";
+import {
   appendTimelineText,
   closeStreamingBlocks,
-  hasRunningTool,
-  resetTimelineFields,
-  setActivityLabel,
   upsertTimelineThinking,
+} from "./turn-streaming-blocks.js";
+import {
+  hasRunningTool,
   upsertTimelineTool,
-} from "./turn-timeline.js";
+} from "./turn-tool-timeline.js";
 
 const sessions = new Map();
 const sessionAccessOrder = new Set();

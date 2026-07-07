@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const store = await import("../src/renderer/modules/session-runtime-store.js");
-const timeline = await import("../src/renderer/modules/turn-timeline.js");
+const renderableTimeline = await import("../src/renderer/modules/turn-renderable-timeline.js");
 
 store.applyRuntimeBatch({
   sessionId: "s1",
@@ -650,7 +650,7 @@ if (!runtime.liveTurn?.timeline?.some((entry) => entry.kind === "notice" && entr
   throw new Error(`turn.steered must be visible in the live timeline: ${JSON.stringify(runtime.liveTurn?.timeline)}`);
 }
 const steerTimelineEntry = runtime.liveTurn.timeline.find((entry) => entry.kind === "notice" && entry.code === "turnSteered");
-if (!timeline.resolveNoticeDetail(steerTimelineEntry).includes("add this constraint")) {
+if (!renderableTimeline.resolveNoticeDetail(steerTimelineEntry).includes("add this constraint")) {
   throw new Error(`turn.steered notice must render the steered text through the notice resolver: ${JSON.stringify(steerTimelineEntry)}`);
 }
 store.syncCommittedMessages("steer-live", [

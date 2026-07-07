@@ -4,7 +4,9 @@
 // has scrollTop ~0, so the streaming auto-scroll-to-bottom spuriously triggered a
 // history load that yanked the view to the very top.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
+  elementScrollTargetTop,
   normalizeWheelDelta,
   revealScrollIntent,
   shouldLoadOlderOnScroll,
@@ -37,5 +39,44 @@ assert.equal(shouldMarkBoundaryGesture({ delta: 100, scrollTop: 1460, scrollHeig
 assert.deepEqual(revealScrollIntent({ savedScrollTop: 320, hasRenderedContent: true }), { mode: "restore", scrollTop: 320 }, "existing session restores saved scroll");
 assert.deepEqual(revealScrollIntent({ savedScrollTop: 320, hasRenderedContent: false }), { mode: "bottom" }, "empty session still opens at bottom");
 assert.deepEqual(revealScrollIntent({ savedScrollTop: null, hasRenderedContent: true }), { mode: "bottom" }, "first reveal opens at bottom");
+
+assert.equal(
+  elementScrollTargetTop({
+    panelTop: 100,
+    elementTop: 240,
+    scrollTop: 300,
+    scrollHeight: 1200,
+    clientHeight: 400,
+  }),
+  428,
+  "jump target keeps the selected element slightly below the panel top",
+);
+assert.equal(
+  elementScrollTargetTop({
+    panelTop: 100,
+    elementTop: 50,
+    scrollTop: 20,
+    scrollHeight: 1200,
+    clientHeight: 400,
+  }),
+  0,
+  "jump target clamps above-start positions to the top",
+);
+assert.equal(
+  elementScrollTargetTop({
+    panelTop: 0,
+    elementTop: 999,
+    scrollTop: 700,
+    scrollHeight: 1000,
+    clientHeight: 300,
+  }),
+  700,
+  "jump target clamps past-end positions to the maximum scroll top",
+);
+assert.equal(elementScrollTargetTop(null), 0, "missing geometry fails open to no movement");
+
+const messageSource = readFileSync(new URL("../src/renderer/modules/message.js", import.meta.url), "utf8");
+assert.match(messageSource, /elementScrollTargetTop\(/);
+assert.doesNotMatch(messageSource, /getBoundingClientRect\(\)\.top - panel\.getBoundingClientRect\(\)\.top \+ panel\.scrollTop - 12/);
 
 console.log("scroll-geometry: ok");

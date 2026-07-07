@@ -1,4 +1,4 @@
-import { getRenderableTimeline } from "./turn-timeline.js";
+import { getRenderableTimeline } from "./turn-renderable-timeline.js";
 import { formatTokenCount, summarizeTurnUsage } from "./turn-usage-summary.js";
 
 // The live status line shows a STABLE activity by tool TYPE — not the streaming
@@ -50,6 +50,177 @@ function thinkingDurationSeconds(block) {
   const end = Number(block.ts);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
   return Math.round((end - start) / 1000);
+}
+
+function thinkingDurationMs(block) {
+  const start = Number(block.startTs);
+  const end = Number(block.ts);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return end - start;
+}
+
+export function renderableThinkingEntries(entries = []) {
+  return entries.filter((entry) => entry?.kind === "thinking" && String(entry.text || "").trim());
+}
+
+export function shouldGroupFinishedThinking(entries = [], sealed = false) {
+  return sealed && renderableThinkingEntries(entries).length >= 2;
+}
+
+export function buildThinkingGroupSummary(entries = [], translate) {
+  const renderable = renderableThinkingEntries(entries);
+  const seconds = Math.round(renderable.reduce((sum, entry) => sum + thinkingDurationMs(entry), 0) / 1000);
+  if (seconds >= 1) {
+    return translate("timeline.thinkingGroupTimed", { count: renderable.length, seconds });
+  }
+  return translate("timeline.thinkingGroup", { count: renderable.length });
+}
+
+export function progressPercent(progress = null) {
+  if (!progress || typeof progress !== "object") return null;
+  const explicit = Number(progress.percent ?? progress.value);
+  const current = Number(progress.current ?? progress.done ?? progress.writtenBytes ?? progress.currentBytes);
+  const total = Number(progress.total ?? progress.max ?? progress.totalBytes);
+  const hasRange = Number.isFinite(current) && Number.isFinite(total) && total > 0;
+  if (Number.isFinite(explicit)) {
+    if (explicit <= 0 && !hasRange) return null;
+    return Math.max(0, Math.min(100, explicit));
+  }
+  if (hasRange) {
+    return Math.max(0, Math.min(100, (current / total) * 100));
+  }
+  return null;
+}
+
+export function buildToolDurationSuffix(entry = {}) {
+  if (entry.status !== "done" && entry.status !== "failed") return "";
+  const start = Number(entry.startTs);
+  const end = Number(entry.ts);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 100) return "";
+  return ` · ${((end - start) / 1000).toFixed(1)}s`;
+}
+
+export function buildToolStatusLabel(toolOrStatus, translate) {
+  const status = typeof toolOrStatus === "string"
+    ? toolOrStatus
+    : (toolOrStatus?.status || "done");
+  const name = typeof toolOrStatus === "string"
+    ? ""
+    : String(toolOrStatus?.name || "").toLowerCase();
+  if (status === "failed") return translate("tool.status.failed");
+  if (status === "running") return translate("tool.status.running");
+  if (name === "bash") return translate("tool.status.commandDone");
+  return translate("tool.status.done");
+}
+
+const PERMISSION_KIND_KEYS = {
+  bash: "permission.kind.bash",
+  edit: "permission.kind.edit",
+  write: "permission.kind.write",
+  read: "permission.kind.read",
+  webfetch: "permission.kind.webfetch",
+  websearch: "permission.kind.websearch",
+  external_directory: "permission.kind.externalDirectory",
+};
+
+export function permissionLabelForView(item = {}, translate) {
+  const key = String(item.toolName || "").trim();
+  const i18nKey = PERMISSION_KIND_KEYS[key];
+  const prefix = item.subagent?.sessionId ? `${translate("subagent.promptPrefix")} · ` : "";
+  if (i18nKey) {
+    const label = translate(i18nKey);
+    if (label !== i18nKey) return prefix + (item.title ? `${label}（${item.title}）` : label);
+  }
+  return prefix + (item.title || key || translate("turn.permission.toolFallback"));
+}
+
+export function subagentDescriptionForView(entry = {}, translate) {
+  const input = entry.input || {};
+  return String(input.description || entry.title || input.prompt || translate("tool.subagentTask")).trim();
+}
+
+export function subagentLabelForView(entry = {}, translate) {
+  const type = String(entry.input?.subagent_type || entry.input?.subagentType || "").trim();
+  return type ? `${type[0].toUpperCase()}${type.slice(1)}` : translate("tool.subagent");
+}
+
+export function subagentMetadataLineForView(entry = {}, translate) {
+  const meta = entry.metadata || {};
+  const sub = entry.subagent || {};
+  const bits = [];
+  const sessionId = meta.sessionId || meta.sessionID || sub.sessionId;
+  if (sessionId) bits.push(translate("subagent.session", { id: sessionId }));
+  const toolCalls = meta.toolcalls ?? meta.toolCalls ?? meta.calls ?? sub.tools?.length;
+  if (Number.isFinite(Number(toolCalls)) && Number(toolCalls) > 0) {
+    bits.push(translate("subagent.toolCalls", { count: Number(toolCalls) }));
+  }
+  const pending = (sub.pendingPermissions?.length || 0) + (sub.pendingQuestions?.length || 0);
+  if (pending > 0) bits.push(translate("subagent.waitingForUser", { count: pending }));
+  const model = meta.model?.modelID || meta.model?.modelId || meta.model;
+  if (typeof model === "string" && model) bits.push(translate("subagent.model", { model }));
+  return bits.join(" · ");
+}
+
+export function subagentPhaseLabelForView(sub = {}, fallbackStatus = "", translate) {
+  const phase = String(sub.phase || "");
+  if (phase) {
+    const key = `subagent.phase.${phase}`;
+    const label = translate(key);
+    if (label !== key) return label;
+  }
+  const status = String(fallbackStatus || "");
+  if (status === "running") return translate("subagent.status.running");
+  if (status === "failed") return translate("subagent.status.failed");
+  if (status === "done" || status === "completed") return translate("subagent.status.done");
+  return translate("subagent.status.pending");
+}
+
+export function subagentStatusTextForView(entry = {}, translate) {
+  const sub = entry.subagent || {};
+  if ((sub.pendingPermissions?.length || 0) + (sub.pendingQuestions?.length || 0) > 0) {
+    return translate("subagent.status.awaitingUser");
+  }
+  return subagentPhaseLabelForView(sub, entry.status, translate);
+}
+
+export function subagentCurrentToolForView(entry = {}) {
+  const sub = entry.subagent || {};
+  const tools = Array.isArray(sub.tools) ? sub.tools : [];
+  return tools.find((tool) => tool.id === sub.currentToolId) || tools.at(-1) || null;
+}
+
+export function subagentPanelOpenForView(entries = [], sealed = false) {
+  return !sealed && entries.some((entry) => entry.status === "running" || entry.status === "failed");
+}
+
+export function subagentPanelSummaryForView(entries = [], translate) {
+  const running = entries.filter((entry) => entry.status === "running").length;
+  const failed = entries.filter((entry) => entry.status === "failed").length;
+  if (failed) return translate("subagent.summaryFailed", { failed, total: entries.length });
+  if (running) return translate("subagent.summaryRunning", { running, total: entries.length });
+  return translate("subagent.summaryDone", { total: entries.length });
+}
+
+export function subagentTranscriptTextForView(sub = {}, translate) {
+  const parts = [];
+  const text = String(sub.textFull || "").trim();
+  if (text) parts.push(`${translate("subagent.transcriptOutput")}\n${text}`);
+  return parts.join("\n\n").trim();
+}
+
+export function subagentStatsLineForView(entry = {}, translate) {
+  const stats = entry.subagent?.stats || {};
+  const bits = [];
+  if (Number(stats.runningTools || 0) > 0) {
+    bits.push(translate("subagent.stats.runningTools", { count: Number(stats.runningTools || 0) }));
+  }
+  if (Number(stats.doneTools || 0) > 0) {
+    bits.push(translate("subagent.stats.doneTools", { count: Number(stats.doneTools || 0) }));
+  }
+  if (Number(stats.nestedTasks || 0) > 0) {
+    bits.push(translate("subagent.stats.nestedTasks", { count: Number(stats.nestedTasks || 0) }));
+  }
+  return bits.join(" · ");
 }
 
 // Accepts a thinking timeline entry; a plain string still works for callers

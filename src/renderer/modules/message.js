@@ -13,8 +13,23 @@ import {
   scrollToBottom,
   scrollToBottomAfterLayout,
 } from "./dom.js";
-import { revealScrollIntent, shouldLoadOlderOnScroll } from "./scroll-geometry.js";
+import { elementScrollTargetTop, revealScrollIntent, shouldLoadOlderOnScroll } from "./scroll-geometry.js";
 import { t } from "../i18n/index.js";
+import {
+  buildMinimapItems,
+  COMMITTED_INITIAL_WINDOW,
+  COMMITTED_RENDER_CHUNK,
+  committedMessagesForRender,
+  copyActionText,
+  formatScheduledDraftDateTime,
+  isCommittedRenderCurrent,
+  isCurrentRetryTarget,
+  liveInsertAnchorTurnId,
+  rewindActionTarget,
+  scheduledDraftPreviewModel,
+  shouldShowRetryAction,
+  shouldSkipCommittedAssistantForLiveTurn,
+} from "./message-committed-render-model.js";
 import {
   applyRuntimeBatch,
   getRuntimeSession,
@@ -24,19 +39,28 @@ import {
   canInterrupt,
 } from "./session-runtime-store.js";
 import {
-  liveTurnFromRecord,
-  legacyLiveTurnFromMessage,
   renderSealedTurnArticle,
-  createLiveTurnArticleShell,
   renderLiveTurnArticle,
-  refreshLiveTurnStatusDisplay,
 } from "./turn-view-renderer.js";
+import {
+  legacyLiveTurnFromMessage,
+  liveTurnFromRecord,
+} from "./turn-view-model.js";
+import { createLiveTurnArticleShell } from "./turn-article-shell.js";
+import { refreshLiveTurnStatusDisplay } from "./turn-article-frame.js";
 import { updateSessionRunningIndicators } from "./project-tree.js";
 import { updateTopbarTitles } from "./session-chrome.js";
 import { renderMessageQueue } from "./composer.js";
 import { addDiffEntry } from "./diff-panel.js";
 import { syncWorkbenchEmptyState } from "./workbench-empty.js";
 import { collectUnrenderedCommittedMessages } from "./message-render-keys.js";
+import {
+  liveTurnRenderMode,
+  runtimeVisualSig,
+  shouldFollowLiveRender,
+  shouldThrottleLiveRender,
+  shouldUpdateConversationMinimap,
+} from "./message-live-render-model.js";
 import { confirmDialog } from "./confirm-dialog.js";
 import { renderLiveTaskStrip } from "./live-task-strip.js";
 import { showToast } from "./toast.js";
@@ -49,52 +73,6 @@ let runtimeHeartbeat = null;
 const lastRuntimeVisualSig = new Map();
 const promptedMemoryProposals = new Set();
 
-function runtimeVisualSig(runtime) {
-  const live = runtime.liveTurn;
-  if (!live) return `idle:${runtime.phase}:${runtime.committedMessages.length}`;
-  const toolSig = [...(live.tools || new Map()).values()]
-    .map((tool) => `${tool.id}:${tool.status || ""}`)
-    .join(",");
-  const subagentSig = [...(live.subagents || new Map()).values()]
-    .map((item) => {
-      const current = (item.tools || []).find((tool) => tool.id === item.currentToolId) || (item.tools || []).at?.(-1) || {};
-      return [
-        item.sessionId,
-        item.status || "",
-        item.phase || "",
-        item.phaseDetail || "",
-        current.id || "",
-        current.status || "",
-        current.name || "",
-        item.textPreview?.length || 0,
-        item.stats?.runningTools || 0,
-        item.stats?.doneTools || 0,
-        item.stats?.nestedTasks || 0,
-      ].join(":");
-    })
-    .join(",");
-  // NOTE: deliberately NOT keyed on elapsed time. The live turn does not show a
-  // per-second clock, so including a ticking elapsed value here forced a full
-  // re-render (and scroll-to-bottom) every second — visible as the timeline
-  // jittering up and down during execution even when nothing was streaming.
-  // The signature must change only when something on screen actually changes.
-  return [
-    live.turnId,
-    live.phase,
-    live.final?.type || "",
-    live.assistantText?.length || 0,
-    live.thinkingText?.length || 0,
-    live.activityLabel || "",
-    live.timeline?.length || 0,
-    toolSig,
-    subagentSig,
-    live.permissions?.size || 0,
-    live.questions?.size || 0,
-    live.hooks?.size || 0,
-    runtime.queue?.length || 0,
-  ].join("|");
-}
-
 function scheduleLiveRender(sessionId) {
   if (!sessionId || liveRenderTimers.has(sessionId)) return;
   liveRenderTimers.set(sessionId, setTimeout(() => {
@@ -103,17 +81,8 @@ function scheduleLiveRender(sessionId) {
   }, LIVE_RENDER_THROTTLE_MS));
 }
 
-function shouldThrottleLiveRender(sessionId) {
-  const runtime = getRuntimeSession(sessionId);
-  return Boolean(
-    runtime.liveTurn &&
-    !runtime.liveTurn.final &&
-    ["starting", "streaming", "tool_running"].includes(runtime.phase),
-  );
-}
-
 function renderRuntimeForSession(sessionId) {
-  if (shouldThrottleLiveRender(sessionId)) scheduleLiveRender(sessionId);
+  if (shouldThrottleLiveRender(getRuntimeSession(sessionId))) scheduleLiveRender(sessionId);
   else renderRuntimeSession(sessionId);
 }
 
@@ -283,20 +252,22 @@ export function renderConversation(sessionId, opts = {}) {
  * returns false so the caller still does a clean rebuild.
  */
 export function isConversationRenderCurrent(sessionId) {
-  if (!sessionViews.has(sessionId)) return false;
+  const hasSessionView = sessionViews.has(sessionId);
   const v = sessionViews.get(sessionId);
-  if (!v.listEl || !v.listEl.firstChild) return false;
   const keys = renderedMessageKeys.get(sessionId);
-  if (!keys || keys.size === 0) return false;
   const runtime = getRuntimeSession(sessionId);
   const renderMessages = committedMessagesForRender(runtime.committedMessages);
-  if (keys.size !== renderMessages.length) return false;
-  return collectUnrenderedCommittedMessages(renderMessages, keys).length === 0;
+  const unrendered = keys
+    ? collectUnrenderedCommittedMessages(renderMessages, new Set(keys)).length
+    : renderMessages.length;
+  return isCommittedRenderCurrent({
+    hasSessionView,
+    hasRenderedContent: Boolean(v?.listEl?.firstChild),
+    renderedKeyCount: keys?.size || 0,
+    renderMessageCount: renderMessages.length,
+    unrenderedCount: unrendered,
+  });
 }
-
-const COMMITTED_RENDER_CHUNK = 5;
-const COMMITTED_INITIAL_WINDOW = 80;
-const COMMITTED_WINDOW_THRESHOLD = 160;
 
 function scheduleCommittedRenderPump(fn) {
   if (typeof requestAnimationFrame === "function" && !document.hidden) {
@@ -306,54 +277,6 @@ function scheduleCommittedRenderPump(fn) {
   }
 }
 
-function messageTimestampMs(message = {}) {
-  const parsed = Date.parse(message.timestamp || message.createdAt || message.record?.startedAt || "");
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-// Messages can arrive from several sources (engine history, Lily projections,
-// live user commits). The display layer must be robust if one source returns a
-// page in reverse order: sort by timestamp when present, but keep stable source
-// order for timestamp-less legacy rows. Within a turn, always render user →
-// assistant even if commit timing put them in the opposite order.
-function orderCommittedMessages(messages) {
-  const turnInfo = new Map();
-  messages.forEach((m, i) => {
-    const key = m.turnId || `__i${i}`;
-    const ts = messageTimestampMs(m);
-    const existing = turnInfo.get(key);
-    if (!existing) {
-      turnInfo.set(key, { firstSeen: i, ts });
-      return;
-    }
-    if (ts != null && (existing.ts == null || ts < existing.ts)) existing.ts = ts;
-  });
-  const roleRank = (role) => (role === "user" ? 0 : role === "assistant" ? 1 : 2);
-  return messages
-    .map((m, i) => ({ m, i, key: m.turnId || `__i${i}` }))
-    .sort((a, b) => {
-      const ta = turnInfo.get(a.key) || { firstSeen: a.i, ts: null };
-      const tb = turnInfo.get(b.key) || { firstSeen: b.i, ts: null };
-      if (ta.ts != null && tb.ts != null && ta.ts !== tb.ts) return ta.ts - tb.ts;
-      if (ta.ts != null && tb.ts == null) return -1;
-      if (ta.ts == null && tb.ts != null) return 1;
-      if (ta.firstSeen !== tb.firstSeen) return ta.firstSeen - tb.firstSeen;
-      const ra = roleRank(a.m.role);
-      const rb = roleRank(b.m.role);
-      if (ra !== rb) return ra - rb;
-      return a.i - b.i;
-    })
-    .map((entry) => entry.m);
-}
-
-function committedMessagesForRender(messages = [], opts = {}) {
-  if (!Array.isArray(messages)) return [];
-  const ordered = orderCommittedMessages(messages);
-  if (opts.preserveScroll) return ordered;
-  if (ordered.length <= COMMITTED_WINDOW_THRESHOLD) return ordered;
-  return ordered.slice(-COMMITTED_INITIAL_WINDOW);
-}
-
 function cssEscapeId(value) {
   if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(String(value));
   return String(value).replace(/["\\]/g, "\\$&");
@@ -361,22 +284,17 @@ function cssEscapeId(value) {
 
 function scrollPanelToElement(panel, el) {
   if (!panel || !el) return;
-  const top = Math.max(0, el.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop - 12);
+  const panelRect = panel.getBoundingClientRect();
+  const elementRect = el.getBoundingClientRect();
+  const top = elementScrollTargetTop({
+    panelTop: panelRect.top,
+    elementTop: elementRect.top,
+    scrollTop: panel.scrollTop,
+    scrollHeight: panel.scrollHeight,
+    clientHeight: panel.clientHeight,
+  });
   detachAutoFollowForUserNavigation(panel);
-  panel.scrollTo({ top: Math.min(top, panel.scrollHeight - panel.clientHeight), behavior: "smooth" });
-}
-
-// Full prompt list for the conversation minimap — sourced from the DATA model
-// (every committed user message), not the windowed DOM, so the rail reflects the
-// whole history. Each item carries turnId for on-demand jump.
-function buildMinimapItems(runtime) {
-  try {
-    return orderCommittedMessages(runtime?.committedMessages || [])
-      .filter((m) => m && m.role === "user")
-      .map((m) => ({ role: "user", turnId: m.turnId || "", label: m.content || "" }));
-  } catch {
-    return [];
-  }
+  panel.scrollTo({ top, behavior: "smooth" });
 }
 
 // Scroll to a prompt by turnId, loading older history on demand when it isn't in
@@ -410,33 +328,19 @@ function appendCommittedMessage(sessionId, runtime, message) {
   const anchor = committedInsertAnchor(sessionId, runtime);
   if (message.role === "user") appendUserMessage(sessionId, message, anchor);
   else if (message.role === "assistant") {
-    // A scheduled-task draft is shown as its committed CARD (appendFinalAssistantArticle),
-    // and its live/streaming article (plain assistant text, no card) is suppressed in
-    // renderRuntimeSession. So render the card here in normal committed order instead
-    // of skipping it as a still-live turn — otherwise the user sees only the raw text.
-    const isScheduledDraft = Boolean(message.meta?.scheduledDraft);
-    if (!isScheduledDraft && message.turnId && runtime.liveTurn?.turnId === message.turnId) return;
+    if (shouldSkipCommittedAssistantForLiveTurn(runtime, message)) return;
     appendFinalAssistantArticle(sessionId, message, anchor);
   }
 }
 
-// A turn whose committed assistant message is a scheduled-task draft: it is shown as
-// the card, so its live text article must not also render.
-function committedScheduledDraftTurn(runtime, turnId) {
-  return Boolean(turnId) && (runtime.committedMessages || []).some(
-    (m) => m.turnId === turnId && m.role === "assistant" && m.meta?.scheduledDraft,
-  );
-}
-
 function committedInsertAnchor(sessionId, runtime) {
-  const live = runtime.liveTurn;
   // Only an active live turn may anchor committed history. After a turn has
   // completed, the next user.committed event can arrive before turn.started;
   // using the previous final article as the anchor would insert the new user
   // message before the old assistant answer.
-  if (!live?.turnId || live.final) return null;
-  if (!runtime.turnId || runtime.turnId !== live.turnId) return null;
-  const article = view(sessionId).liveArticles.get(live.turnId);
+  const turnId = liveInsertAnchorTurnId(runtime);
+  if (!turnId) return null;
+  const article = view(sessionId).liveArticles.get(turnId);
   return article?.isConnected ? article : null;
 }
 
@@ -548,9 +452,8 @@ const REWIND_ICON_SVG =
 // (files + dropped context) and Lily's transcript together. Only offered when the
 // turn carries an engine anchor (engineMessageId), and never mid-turn.
 function buildRewindAction(sessionId, message) {
-  const turnId = message.turnId || message.record?.turnId || "";
-  const engineMessageId = message.record?.engineMessageId || "";
-  if (!turnId || !engineMessageId) return null;
+  const target = rewindActionTarget(message);
+  if (!target) return null;
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "assistant-icon-btn assistant-rewind-btn";
@@ -567,7 +470,7 @@ function buildRewindAction(sessionId, message) {
     if (!ok) return;
     btn.disabled = true;
     try {
-      const res = await window.assistantClient.rewindSession(sessionId, turnId, engineMessageId);
+      const res = await window.assistantClient.rewindSession(sessionId, target.turnId, target.engineMessageId);
       if (res?.ok) {
         syncCommittedMessages(sessionId, res.conversation || []);
         renderConversation(sessionId, { force: true, forceScrollBottom: true });
@@ -589,9 +492,8 @@ function buildRewindAction(sessionId, message) {
 function appendArticleActions(article, sessionId, message) {
   const actions = document.createElement("div");
   actions.className = "assistant-article-actions";
-  const retryable = message.failed || message.record?.terminal === "turn.stalled";
-  if (retryable) actions.appendChild(buildRetryAction(sessionId, message));
-  const copyText = String(message.content || "").trim();
+  if (shouldShowRetryAction(message)) actions.appendChild(buildRetryAction(sessionId, message));
+  const copyText = copyActionText(message);
   if (copyText) {
     const copy = document.createElement("button");
     copy.type = "button";
@@ -629,8 +531,7 @@ function buildRetryAction(sessionId, message) {
   retry.textContent = t("turn.retry");
   retry.addEventListener("click", async () => {
     const committed = getRuntimeSession(sessionId).committedMessages;
-    const last = committed[committed.length - 1];
-    if (last !== message && (last?.turnId == null || last.turnId !== message.turnId)) {
+    if (!isCurrentRetryTarget(committed, message)) {
       showScheduledToast(t("turn.retryStale"), "warning");
       retry.remove();
       return;
@@ -652,48 +553,34 @@ function buildRetryAction(sessionId, message) {
   return retry;
 }
 
-function formatScheduleDateTime(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString(undefined, {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function appendScheduledDraftArticle(sessionId, message, beforeNode = null) {
   const v = ensurePanel(sessionId);
-  const scheduled = message.meta.scheduledDraft || {};
-  const draft = scheduled.draft || {};
-  const created = scheduled.status === "created";
+  const preview = scheduledDraftPreviewModel(message);
 
   const article = document.createElement("article");
   article.className = "assistant-turn-article scheduled-draft-article";
-  article.dataset.messageId = message.id || "";
+  article.dataset.messageId = preview.messageId;
 
   const shell = document.createElement("div");
   shell.className = "scheduled-draft-chat-card";
 
   const title = document.createElement("div");
   title.className = "scheduled-draft-title";
-  title.textContent = created ? t("scheduled.cardCreatedTitle") : t("scheduled.cardTitle");
+  title.textContent = preview.created ? t("scheduled.cardCreatedTitle") : t("scheduled.cardTitle");
   shell.appendChild(title);
 
   const rows = document.createElement("div");
   rows.className = "scheduled-draft-rows";
-  appendScheduledDraftRow(rows, t("scheduled.previewTitle"), draft.title || t("scheduled.untitled"));
-  appendScheduledDraftRow(rows, t("scheduled.previewSchedule"), draft.scheduleText || "");
-  appendScheduledDraftRow(rows, t("scheduled.previewNextRun"), formatScheduleDateTime(draft.nextRunAt || scheduled.task?.nextRunAt));
+  appendScheduledDraftRow(rows, t("scheduled.previewTitle"), preview.title || t("scheduled.untitled"));
+  appendScheduledDraftRow(rows, t("scheduled.previewSchedule"), preview.scheduleText);
+  appendScheduledDraftRow(rows, t("scheduled.previewNextRun"), formatScheduledDraftDateTime(preview.nextRunAt));
   appendScheduledDraftRow(rows, t("scheduled.previewScope"), t("scheduled.previewScopeValue"));
   shell.appendChild(rows);
 
   const actions = document.createElement("div");
   actions.className = "scheduled-draft-actions";
 
-  if (created) {
+  if (preview.created) {
     const pill = document.createElement("span");
     pill.className = "scheduled-draft-pill";
     pill.textContent = t("scheduled.created");
@@ -795,21 +682,23 @@ function renderRuntimeSession(sessionId, opts = {}) {
   lastRuntimeVisualSig.set(sessionId, sig);
 
   const panel = view(sessionId).panel;
-  const shouldFollow =
-    !opts.preserveScroll &&
-    isActiveSession(sessionId) &&
-    !isUserScrollDetached(panel) &&
-    isNearBottom(panel);
+  const shouldFollow = shouldFollowLiveRender({
+    preserveScroll: Boolean(opts.preserveScroll),
+    activeSession: isActiveSession(sessionId),
+    userScrollDetached: isUserScrollDetached(panel),
+    nearBottom: isNearBottom(panel),
+  });
   renderCommittedMessages(sessionId);
+  const liveMode = liveTurnRenderMode(runtime);
   if (runtime.liveTurn) {
-    if (committedScheduledDraftTurn(runtime, runtime.liveTurn.turnId)) {
+    if (liveMode === "remove-duplicate") {
       // The committed card already represents this turn — drop the duplicate
       // live text article instead of rendering it after the card.
       const v = view(sessionId);
       const stale = v.liveArticles.get(runtime.liveTurn.turnId);
       if (stale?.isConnected) stale.remove();
       v.liveArticles.delete(runtime.liveTurn.turnId);
-    } else {
+    } else if (liveMode === "render") {
       renderLiveTurn(sessionId, runtime.liveTurn, runtime.queue);
     }
   }
@@ -824,9 +713,12 @@ function renderRuntimeSession(sessionId, opts = {}) {
     const minimapItems = buildMinimapItems(runtime);
     import("./conversation-minimap.js")
       .then((m) => {
-        if (!isActiveSession(sessionId)) return;
-        if (!panel.isConnected || !panel.classList.contains("is-active")) return;
-        if (view(sessionId).panel !== panel) return;
+        if (!shouldUpdateConversationMinimap({
+          activeSession: isActiveSession(sessionId),
+          panelConnected: panel.isConnected,
+          panelActive: panel.classList.contains("is-active"),
+          samePanel: view(sessionId).panel === panel,
+        })) return;
         m.updateMinimap?.(panel, {
           items: minimapItems,
           jumpToTurn: (turnId) => jumpToTurnForSession(sessionId, panel, turnId),

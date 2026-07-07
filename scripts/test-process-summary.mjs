@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-const { buildTimelineFromLegacy, toolPreview } = await import("../src/renderer/modules/turn-timeline.js");
-const { processGroupSummary } = await import("../src/renderer/modules/turn-process-layout.js");
+const { buildTimelineFromLegacy } = await import("../src/renderer/modules/turn-legacy-timeline.js");
+const { toolPreview } = await import("../src/renderer/modules/turn-tool-preview.js");
+const { processGroupSummary } = await import("../src/renderer/modules/turn-process-summary-model.js");
 
 const liveTurn = {
   startedAt: 1000,

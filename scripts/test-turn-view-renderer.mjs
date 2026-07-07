@@ -4,6 +4,23 @@ import {
   THINKING_SUMMARY_MAX,
   thinkingSummaryPreview,
   buildThinkingSummaryLabel,
+  buildThinkingGroupSummary,
+  buildToolDurationSuffix,
+  buildToolStatusLabel,
+  permissionLabelForView,
+  progressPercent,
+  renderableThinkingEntries,
+  shouldGroupFinishedThinking,
+  subagentDescriptionForView,
+  subagentCurrentToolForView,
+  subagentLabelForView,
+  subagentMetadataLineForView,
+  subagentPanelSummaryForView,
+  subagentPanelOpenForView,
+  subagentPhaseLabelForView,
+  subagentStatsLineForView,
+  subagentStatusTextForView,
+  subagentTranscriptTextForView,
   timelineForView,
   buildLiveStatusText,
   buildStatusText,
@@ -28,9 +45,36 @@ const translate = (key, params = {}) => {
     "turn.status.awaitingUser": "等待你确认",
     "turn.status.stopping": "正在停止…",
     "turn.status.failed": "处理失败",
+    "tool.status.failed": "失败",
+    "tool.status.running": "运行中",
+    "tool.status.commandDone": "命令完成",
+    "tool.status.done": "完成",
     "turn.footer.duration": `耗时 ${params.seconds}s`,
     "turn.footer.tokens": `${params.count} tokens`,
     "turn.footer.tokensDetail": `输入 ${params.input} · 输出 ${params.output} tokens`,
+    "permission.kind.bash": "运行命令",
+    "permission.kind.externalDirectory": "访问工作区以外的目录",
+    "subagent.promptPrefix": "子代理",
+    "subagent.session": `会话 ${params.id}`,
+    "subagent.toolCalls": `${params.count} 次工具`,
+    "subagent.waitingForUser": `等待 ${params.count} 个确认`,
+    "subagent.model": `模型 ${params.model}`,
+    "subagent.phase.running": "执行中",
+    "subagent.status.awaitingUser": "等待你确认",
+    "subagent.status.running": "运行中",
+    "subagent.status.failed": "失败",
+    "subagent.status.done": "完成",
+    "subagent.status.pending": "等待中",
+    "subagent.stats.runningTools": `${params.count} 个运行中`,
+    "subagent.stats.doneTools": `${params.count} 个已完成`,
+    "subagent.stats.nestedTasks": `${params.count} 个子任务`,
+    "subagent.summaryFailed": `${params.failed}/${params.total} 失败`,
+    "subagent.summaryRunning": `${params.running}/${params.total} 运行`,
+    "subagent.summaryDone": `${params.total} 完成`,
+    "subagent.transcriptOutput": "输出",
+    "tool.subagent": "子代理",
+    "tool.subagentTask": "子任务",
+    "turn.permission.toolFallback": "工具调用",
     "task.summary.compact": `${params.status}/${params.evidence}/${params.risks}/${params.verification}`,
   };
   return table[key] ?? key;
@@ -83,6 +127,98 @@ assert.equal(
   ),
   "思考中 · 正在推导方案",
 );
+const thinkingEntries = [
+  { kind: "thinking", text: " first ", startTs: 1000, ts: 2200 },
+  { kind: "tool", text: "ignored", startTs: 1000, ts: 9000 },
+  { kind: "thinking", text: "second", startTs: 3000, ts: 4300 },
+  { kind: "thinking", text: "   ", startTs: 5000, ts: 7000 },
+];
+assert.equal(renderableThinkingEntries(thinkingEntries).length, 2);
+assert.equal(shouldGroupFinishedThinking(thinkingEntries, false), false);
+assert.equal(shouldGroupFinishedThinking(thinkingEntries, true), true);
+assert.equal(
+  buildThinkingGroupSummary(thinkingEntries, translate),
+  "timeline.thinkingGroupTimed",
+  "thinking group summaries should be computed outside the DOM renderer",
+);
+assert.equal(progressPercent({ percent: 42 }), 42);
+assert.equal(progressPercent({ current: 2, total: 4 }), 50);
+assert.equal(progressPercent({ currentBytes: 1, totalBytes: 3 }), 33.33333333333333);
+assert.equal(progressPercent({ current: 12, total: 10 }), 100);
+assert.equal(progressPercent({ current: -1, total: 10 }), 0);
+assert.equal(progressPercent({ percent: 0 }), null);
+assert.equal(progressPercent(null), null);
+assert.equal(
+  buildToolDurationSuffix({ status: "done", startTs: 1000, ts: 2600 }),
+  " · 1.6s",
+);
+assert.equal(buildToolDurationSuffix({ status: "failed", startTs: 1000, ts: 1200 }), " · 0.2s");
+assert.equal(buildToolDurationSuffix({ status: "running", startTs: 1000, ts: 2600 }), "");
+assert.equal(buildToolDurationSuffix({ status: "done", startTs: 1000, ts: 1050 }), "");
+assert.equal(buildToolStatusLabel({ status: "failed", name: "bash" }, translate), "失败");
+assert.equal(buildToolStatusLabel({ status: "running", name: "read" }, translate), "运行中");
+assert.equal(buildToolStatusLabel({ status: "done", name: "bash" }, translate), "命令完成");
+assert.equal(buildToolStatusLabel({ status: "done", name: "read" }, translate), "完成");
+assert.equal(buildToolStatusLabel("running", translate), "运行中");
+assert.equal(
+  permissionLabelForView({ toolName: "bash", title: "npm test" }, translate),
+  "运行命令（npm test）",
+);
+assert.equal(
+  permissionLabelForView({ toolName: "external_directory", subagent: { sessionId: "sub_1" } }, translate),
+  "子代理 · 访问工作区以外的目录",
+);
+assert.equal(
+  permissionLabelForView({ title: "Custom permission" }, translate),
+  "Custom permission",
+);
+const subagentEntry = {
+  status: "running",
+  title: "Inspect renderer",
+  input: { subagent_type: "reviewer" },
+  metadata: { sessionId: "sub_1", toolCalls: 3, model: { modelID: "gpt-5" } },
+  subagent: {
+    sessionId: "sub_1",
+    phase: "running",
+    pendingPermissions: [{}],
+    pendingQuestions: [{}],
+    stats: { runningTools: 1, doneTools: 2, nestedTasks: 1 },
+  },
+};
+assert.equal(subagentDescriptionForView(subagentEntry, translate), "Inspect renderer");
+assert.equal(subagentLabelForView(subagentEntry, translate), "Reviewer");
+assert.equal(
+  subagentMetadataLineForView(subagentEntry, translate),
+  "会话 sub_1 · 3 次工具 · 等待 2 个确认 · 模型 gpt-5",
+);
+assert.equal(subagentPhaseLabelForView(subagentEntry.subagent, "running", translate), "执行中");
+assert.equal(subagentStatusTextForView(subagentEntry, translate), "等待你确认");
+assert.equal(subagentStatsLineForView(subagentEntry, translate), "1 个运行中 · 2 个已完成 · 1 个子任务");
+assert.equal(
+  subagentCurrentToolForView({ subagent: { currentToolId: "tool_1", tools: [{ id: "tool_1", name: "Read" }, { id: "tool_2", name: "Bash" }] } }).name,
+  "Read",
+);
+assert.equal(
+  subagentCurrentToolForView({ subagent: { tools: [{ id: "tool_1", name: "Read" }, { id: "tool_2", name: "Bash" }] } }).name,
+  "Bash",
+);
+assert.equal(subagentCurrentToolForView({ subagent: { tools: [] } }), null);
+assert.equal(
+  subagentPanelSummaryForView([{ status: "running" }, { status: "done" }], translate),
+  "1/2 运行",
+);
+assert.equal(
+  subagentPanelSummaryForView([{ status: "failed" }, { status: "running" }], translate),
+  "1/2 失败",
+);
+assert.equal(subagentPanelSummaryForView([{ status: "done" }], translate), "1 完成");
+assert.equal(subagentPanelOpenForView([{ status: "running" }], false), true);
+assert.equal(subagentPanelOpenForView([{ status: "failed" }], false), true);
+assert.equal(subagentPanelOpenForView([{ status: "running" }], true), false);
+assert.equal(subagentTranscriptTextForView({ textFull: "hello\nworld" }, translate), "输出\nhello\nworld");
+assert.equal(subagentTranscriptTextForView({ textFull: "   " }, translate), "");
+assert.equal(subagentLabelForView({ input: {} }, translate), "子代理");
+assert.equal(subagentDescriptionForView({ input: {} }, translate), "子任务");
 
 const notice = {
   kind: "notice",

@@ -7,11 +7,22 @@ import { isEChartsBlock, renderEChartsBlock } from "./chart-renderer.js";
 import { renderDataTableBlock } from "./data-table-renderer.js";
 import { renderPdfBlock } from "./pdf-renderer.js";
 import { renderHtmlBlock } from "./html-renderer.js";
+import {
+  artifactBlocksFromArtifacts,
+  inferArtifactType,
+  mergeTurnResultBlocks as mergeResultBlocks,
+  turnResultBlockKey,
+} from "./turn-artifact-model.js";
+import {
+  artifactDisplayName,
+  artifactSourceUrl,
+  bytesText,
+} from "./turn-renderer-block-model.js";
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
-const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".mkv"]);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
-const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
+export {
+  artifactBlocksFromArtifacts,
+  mergeResultBlocks,
+};
 
 function tr(key, fallback, params) {
   const value = t(key, params);
@@ -25,70 +36,6 @@ function el(template) {
   const host = document.createElement("div");
   render(template, host);
   return host.firstElementChild || host;
-}
-
-function fileUrlFromPath(filePath = "") {
-  const value = String(filePath || "");
-  if (/^(https?:|app-file:|app-blob:|blob:|data:)/i.test(value)) return value;
-  // Serve local files via the privileged app-file:// scheme (raw file:// is blocked/
-  // flaky from a file:// page, so local image previews wouldn't load).
-  if (/^file:/i.test(value)) {
-    try {
-      const decoded = decodeURIComponent(new URL(value).pathname).replace(/^\/([A-Za-z]:[\\/])/, "$1");
-      return `app-file://media/${encodeURIComponent(decoded)}`;
-    }
-    catch { return value; }
-  }
-  if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) {
-    return `app-file://media/${encodeURIComponent(value)}`;
-  }
-  return value;
-}
-
-function dataUrl(block = {}) {
-  if (!block.data) return "";
-  const data = String(block.data);
-  // Already a usable URL (e.g. app-blob:// rehydrated from the store) — use as-is.
-  if (/^(app-blob:|data:|https?:|file:|blob:)/i.test(data)) return data;
-  return `data:${block.mimeType || "image/png"};base64,${data}`;
-}
-
-function normalizeExtension(value = "") {
-  const text = String(value || "").trim().toLowerCase();
-  if (!text) return "";
-  return text.startsWith(".") ? text : `.${text}`;
-}
-
-function extensionFromPath(filePath = "") {
-  const match = String(filePath || "").match(/\.[^./\\]+$/);
-  return normalizeExtension(match?.[0] || "");
-}
-
-function inferArtifactType(block = {}) {
-  const declared = String(block.artifactType || block.type || "").toLowerCase();
-  if (["image", "pdf", "html", "markdown", "chart", "video", "audio"].includes(declared)) return declared;
-  const mime = String(block.mimeType || "").toLowerCase();
-  const ext = normalizeExtension(block.ext || extensionFromPath(block.path || block.relativePath || block.fileName));
-  if (block.kind === "image" || mime.startsWith("image/") || IMAGE_EXTENSIONS.has(ext)) return "image";
-  if (block.kind === "video" || mime.startsWith("video/") || VIDEO_EXTENSIONS.has(ext)) return "video";
-  if (block.kind === "audio" || mime.startsWith("audio/") || AUDIO_EXTENSIONS.has(ext)) return "audio";
-  if (mime === "application/pdf" || ext === ".pdf") return "pdf";
-  if (mime === "text/markdown" || MARKDOWN_EXTENSIONS.has(ext)) return "markdown";
-  if (mime === "text/html" || ext === ".html" || ext === ".htm") return "html";
-  return "file";
-}
-
-function bytesText(bytes) {
-  const n = Number(bytes || 0);
-  if (!Number.isFinite(n) || n <= 0) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function displayName(block = {}) {
-  return block.title || block.relativePath || block.fileName || block.path || block.alt ||
-    tr("artifact.untitled", "Artifact");
 }
 
 function revealButton(block = {}) {
@@ -193,9 +140,9 @@ function renderArtifact(block) {
   const isVideo = artifactType === "video";
   const isAudio = artifactType === "audio";
   const isMedia = isImage || isVideo || isAudio;
-  const name = displayName(block);
+  const name = artifactDisplayName(block, tr("artifact.untitled", "Artifact"));
   const size = bytesText(block.bytes);
-  const src = isMedia ? dataUrl(block) || fileUrlFromPath(block.path || "") : "";
+  const src = isMedia ? artifactSourceUrl(block) : "";
   const openViewer = async () => {
     const mod = await import("./image-viewer.js");
     mod.openImageViewer?.(src, name);
@@ -216,7 +163,7 @@ function renderArtifact(block) {
 }
 
 function renderCompactArtifact(block) {
-  const name = displayName(block);
+  const name = artifactDisplayName(block, tr("artifact.untitled", "Artifact"));
   const size = bytesText(block.bytes);
   return el(html`
     <figure class="assistant-renderer-block assistant-renderer-artifact is-file is-compact">
@@ -230,7 +177,7 @@ function renderCompactArtifact(block) {
 }
 
 function renderMarkdownArtifact(block) {
-  const name = displayName(block);
+  const name = artifactDisplayName(block, tr("artifact.untitled", "Artifact"));
   const size = bytesText(block.bytes);
   const node = el(html`
     <section class="assistant-renderer-block assistant-renderer-markdown-artifact">
@@ -353,31 +300,6 @@ function rendererForBlock(block = {}) {
   return RENDERERS.get(type) || RENDERERS.get(artifactType);
 }
 
-// djb2 — cheap, stable hash so the key doesn't embed (and re-allocate) the full
-// text/code of large blocks on every diff check.
-function hashStr(s = "") {
-  let h = 5381;
-  for (let i = 0; i < s.length; i += 1) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-  return h.toString(36);
-}
-
-function blockTextOf(block = {}) {
-  return block.text || block.source || block.code || block.diff || "";
-}
-
-function blockKey(block = {}) {
-  const text = blockTextOf(block);
-  return [
-    block.id || "",
-    block.type || "",
-    block.artifactType || "",
-    block.path || "",
-    block.updatedAt || "",
-    block.bytes || "",
-    `${text.length}:${hashStr(text)}`,
-  ].join(":");
-}
-
 function fallbackBlock(block) {
   const text = typeof block === "string" ? block : JSON.stringify(block, null, 2);
   return el(html`<pre class="assistant-renderer-block assistant-renderer-unknown">${text}</pre>`);
@@ -386,7 +308,7 @@ function fallbackBlock(block) {
 function renderBlockNode(block) {
   const renderer = rendererForBlock(block);
   const node = renderer ? renderer(block) : fallbackBlock(block);
-  node.dataset.blockKey = blockKey(block);
+  node.dataset.blockKey = turnResultBlockKey(block);
   return node;
 }
 
@@ -397,7 +319,7 @@ export function renderResultBlocks(root, blocks = []) {
       String(block.type || "").toLowerCase() !== "artifact" || artifactDisplayMode(block) !== "hidden"
     ))
     : [];
-  const keys = normalized.map(blockKey);
+  const keys = normalized.map(turnResultBlockKey);
   const listKey = keys.join("|");
   if (root.dataset.resultBlockKey === listKey) return;
   root.dataset.resultBlockKey = listKey;
@@ -428,58 +350,4 @@ export function renderResultBlocks(root, blocks = []) {
   for (const stale of prev.values()) disposeRendererTree(stale);
 
   root.replaceChildren(...next);
-}
-
-export function artifactBlocksFromArtifacts(artifacts = []) {
-  return (Array.isArray(artifacts) ? artifacts : [])
-    .filter((artifact) => artifact?.path)
-    .map((artifact) => ({
-      id: `artifact:${artifact.id || artifact.path}`,
-      type: "artifact",
-      artifactType: inferArtifactType(artifact),
-      path: artifact.path,
-      relativePath: artifact.relativePath || artifact.fileName || artifact.path,
-      fileName: artifact.fileName || "",
-      ext: artifact.ext || extensionFromPath(artifact.path || artifact.relativePath || artifact.fileName),
-      mimeType: artifact.mimeType || "",
-      bytes: artifact.bytes || 0,
-      updatedAt: artifact.updatedAt || 0,
-      source: artifact.source || "",
-    }));
-}
-
-export function mergeResultBlocks(resultBlocks = [], artifacts = []) {
-  const byKey = new Map();
-  const order = [];
-  for (const block of [...(resultBlocks || []), ...artifactBlocksFromArtifacts(artifacts)]) {
-    if (!block?.type) continue;
-    // A deliverable is identified by its file PATH, not by type/artifactType:
-    // the same file can be frozen early as "file" and enriched later to "html",
-    // and those representations must collapse into one card. Path-less blocks
-    // (e.g. inline data-URL images) fall back to type/id keying.
-    const key = block.path
-      ? `path:${block.path}`
-      : `${block.type}:${block.artifactType || ""}:${block.id || block.data || blockKey(block)}`;
-    const prev = byKey.get(key);
-    if (prev) {
-      byKey.set(key, fillMissingBlockFields(prev, block));
-    } else {
-      byKey.set(key, block);
-      order.push(key);
-    }
-  }
-  return order.map((k) => byKey.get(k));
-}
-
-// Fill fields absent on `base` from `extra`, so the surviving merged block keeps
-// the richest metadata (ext/mimeType/fileName/bytes) regardless of source order.
-function fillMissingBlockFields(base, extra) {
-  const out = { ...base };
-  for (const [k, v] of Object.entries(extra)) {
-    const cur = out[k];
-    const curEmpty = cur === undefined || cur === null || cur === "" || cur === 0;
-    const valOk = v !== undefined && v !== null && v !== "" && v !== 0;
-    if (curEmpty && valOk) out[k] = v;
-  }
-  return out;
 }

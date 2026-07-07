@@ -65,6 +65,32 @@ export function parseToolResult(result) {
   return result;
 }
 
+export function normalizeToolResult(result) {
+  if (!result) return null;
+  const parsed = parseToolResult(result);
+  if (parsed && typeof parsed.content === "string") {
+    return {
+      content: parsed.content,
+      truncated: Boolean(parsed.truncated ?? result.truncated),
+      fullText: typeof parsed.fullText === "string" ? parsed.fullText : (result.fullText || ""),
+    };
+  }
+  if (typeof result === "string") return { content: result, truncated: false, fullText: "" };
+  const content = typeof result.content === "string" ? result.content : JSON.stringify(result, null, 2);
+  return {
+    content,
+    truncated: Boolean(result.truncated),
+    fullText: typeof result.fullText === "string" ? result.fullText : "",
+  };
+}
+
+export function toolFilePath(tool = {}) {
+  const input = tool.input || {};
+  const name = String(tool.name || "").toLowerCase();
+  if (!["write", "edit", "multiedit"].includes(name)) return "";
+  return input.file_path || input.path || input.target_file || "";
+}
+
 function decodeXmlAttribute(value = "") {
   return String(value)
     .replace(/&quot;/g, "\"")

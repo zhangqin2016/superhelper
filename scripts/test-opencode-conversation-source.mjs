@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 const {
   buildMetadataIndex,
   isInjectedUserPromptText,
+  isInternalOnlyUserPromptText,
   mergeMetadata,
   mergeProjectionConversation,
   mergeUserDisplayText,
@@ -98,6 +99,28 @@ const pureInternalDisplay = mergeUserDisplayText([
 ], []);
 assert.equal(pureInternalDisplay.length, 0, "pure internal prompts without original request are hidden");
 
+const internalContinuationPrompt = "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.";
+assert.equal(isInternalOnlyUserPromptText(internalContinuationPrompt), true, "detects engine-only continuation prompt");
+assert.equal(isInjectedUserPromptText(internalContinuationPrompt), true, "engine-only continuation prompt is treated as injected");
+const hiddenContinuationDisplay = mergeUserDisplayText([
+  {
+    id: "official_internal_continuation",
+    role: "user",
+    content: internalContinuationPrompt,
+    timestamp: "2026-06-23T10:03:00.000Z",
+    source: "opencode",
+  },
+], [
+  {
+    id: "local_previous_user",
+    role: "user",
+    content: "之前真正的问题",
+    timestamp: "2026-06-23T10:00:00.000Z",
+    turnId: "turn_previous",
+  },
+]);
+assert.equal(hiddenContinuationDisplay.length, 0, "engine-only continuation prompt is hidden instead of being paired with an old local user");
+
 const mergedUserDisplay = mergeUserDisplayText([
   {
     id: "official_user_1",
@@ -147,6 +170,24 @@ const projectedMessages = [
 ];
 const projectionMerged = mergeProjectionConversation([], projectedMessages);
 assert.equal(projectionMerged.length, 2, "projection can fill an otherwise empty history");
+const projectionInternalHidden = mergeProjectionConversation([], [
+  {
+    id: "projection:turn_internal:user",
+    role: "user",
+    content: internalContinuationPrompt,
+    turnId: "turn_internal",
+    timestamp: "2026-06-23T14:05:00.000Z",
+  },
+  {
+    id: "projection:turn_internal:assistant",
+    role: "assistant",
+    content: "continued answer",
+    turnId: "turn_internal",
+    timestamp: "2026-06-23T14:05:05.000Z",
+  },
+]);
+assert.equal(projectionInternalHidden.some((m) => m.role === "user"), false, "projection repair also hides engine-only continuation prompts");
+assert.equal(projectionInternalHidden.some((m) => m.role === "assistant"), true, "projection repair keeps the assistant result");
 const projectionDeduped = mergeProjectionConversation([
   { id: "local_user_p", role: "user", content: "原始问题", turnId: "turn_p", timestamp: "2026-06-23T14:00:00.000Z" },
 ], projectedMessages);
