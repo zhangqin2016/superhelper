@@ -706,6 +706,7 @@
   "toast.themeSwitched": "外观已切换",
   "toast.textSizeSwitched": "字体大小已切换",
   "toast.licenseActivated": "授权已激活",
+  "toast.licenseActivatedModelConfigPending": "授权已激活，Lily 正在准备托管模型配置，首次发送会自动重试。",
   "toast.licenseCleared": "授权已移除",
   "toast.updateAlreadyLatest": "当前已是最新版本",
   "toast.updateAvailable": "发现新版本",

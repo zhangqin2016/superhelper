@@ -55,7 +55,7 @@
     "test:bench": "npx electron scripts/bench-replay-renderer.cjs"
   },
   "build": {
-    "appId": "com.company.ai-super-terminal",
+    "appId": "cn.lilywb.workbench",
     "productName": "Lily Workbench",
     "directories": {
       "buildResources": "resources"

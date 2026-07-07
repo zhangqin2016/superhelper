@@ -7,7 +7,15 @@ const { withRunnerChange, applyPermissionModeLive } = require("./ipc-utils");
 function registerModelHandlers(ctx) {
   ipcMain.handle("models:list", async () => {
     try {
-      await require("./remote-config").refreshRemoteConfig({ reason: "model_settings" });
+      const configRefresh = await require("./ipc-utils").refreshRemoteConfigForSend({
+        force: true,
+        timeoutMs: 45_000,
+        repairManagedService: true,
+        reason: "model_settings",
+      });
+      if (configRefresh?.ok) {
+        require("./runner-live-config").terminateIdleRunners(ctx.runnerPool);
+      }
     } catch {
       // Settings must still open offline or when the service is unavailable.
       // listPresetsPublic() will use the last valid cache or packaged defaults.

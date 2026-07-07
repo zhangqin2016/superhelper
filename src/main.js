@@ -35,7 +35,7 @@ let agentBootstrap = null;
 app.setPath("userData", path.join(app.getPath("appData"), "lily-workbench"));
 app.setName("Lily Workbench");
 if (process.platform === "win32") {
-  app.setAppUserModelId("com.company.ai-super-terminal");
+  app.setAppUserModelId("cn.lilywb.workbench");
 }
 
 // Hand the host's resolved base dirs to config once, so config (and everything

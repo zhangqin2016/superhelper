@@ -93,18 +93,36 @@ async function refreshRemoteConfigForSend(options = {}) {
 
   if (!sendPreflightConfigRefresh) {
     lastSendPreflightConfigRefreshAt = now;
-    sendPreflightConfigRefresh = remoteConfig
-      .refreshRemoteConfig({ reason: "send_preflight" })
+    sendPreflightConfigRefresh = Promise.resolve()
+      .then(async () => {
+        if (options.repairManagedService) {
+          const service = require("./service-client");
+          await Promise.resolve(service.refreshClientBootstrap({ force: true })).catch(() => null);
+          await Promise.resolve(service.registerDevice()).catch(() => null);
+          await Promise.resolve(require("./license-manager").refreshServerLicense()).catch(() => null);
+        }
+        return remoteConfig.refreshRemoteConfig({ reason: options.reason || "send_preflight" });
+      })
       .catch((err) => ({ ok: false, error: err?.message || String(err) }))
       .finally(() => {
         sendPreflightConfigRefresh = null;
       });
   }
 
-  return Promise.race([
-    sendPreflightConfigRefresh,
-    new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: "TIMEOUT" }), Math.max(500, timeoutMs))),
-  ]);
+  let timeoutId = null;
+  try {
+    return await Promise.race([
+      sendPreflightConfigRefresh,
+      new Promise((resolve) => {
+        timeoutId = setTimeout(
+          () => resolve({ ok: false, error: "TIMEOUT" }),
+          Math.max(500, timeoutMs),
+        );
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 function wireRunner(ctx, runner) {

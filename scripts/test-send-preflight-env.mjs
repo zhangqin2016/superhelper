@@ -34,7 +34,8 @@ fs.writeFileSync(path.join(tempRoot, "remote-config-cache.json"), JSON.stringify
   },
 }), "utf8");
 
-const { diagnoseSendBlocker } = require("../src/main/ipc-utils.js");
+const ipcUtils = require("../src/main/ipc-utils.js");
+const { diagnoseSendBlocker, refreshRemoteConfigForSend } = ipcUtils;
 const modelPresets = require("../src/main/model-presets.js");
 const remoteConfig = require("../src/main/remote-config.js");
 
@@ -93,13 +94,107 @@ const turnOrchestratorSource = fs.readFileSync(path.join(process.cwd(), "src/mai
 const timeoutMatch = turnOrchestratorSource.match(/MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS\s*=\s*([0-9_]+)/);
 assert(timeoutMatch, "managed model preflight must use a named timeout constant");
 assert(
-  Number(timeoutMatch[1].replace(/_/g, "")) >= 30_000,
-  "first-run managed model config refresh must wait long enough for device registration and slow networks",
+  Number(timeoutMatch[1].replace(/_/g, "")) >= 90_000,
+  "first-run managed model config refresh must wait long enough for bootstrap, device registration, license refresh, and slow networks",
 );
 assert.match(
   turnOrchestratorSource,
-  /refreshRemoteConfigForSend\(\{\s*force:\s*true,\s*timeoutMs:\s*MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS\s*\}\)/,
-  "send preflight must use the managed config timeout constant",
+  /refreshRemoteConfigForSend\(\{\s*force:\s*true,\s*timeoutMs:\s*MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS,\s*repairManagedService:\s*true,\s*\}\)/,
+  "send preflight must repair managed service state before reporting managed config unavailable",
+);
+assert.match(
+  turnOrchestratorSource,
+  /configRefresh\?\.ok[\s\S]*runnerPool\?\.terminateSession\?\.\(session\.id\)/,
+  "send preflight must rebuild the current OpenCode runner after managed config repair",
+);
+
+const serviceClient = require("../src/main/service-client.js");
+const licenseManager = require("../src/main/license-manager.js");
+const originalRefreshClientBootstrap = serviceClient.refreshClientBootstrap;
+const originalRegisterDevice = serviceClient.registerDevice;
+const originalRefreshServerLicense = licenseManager.refreshServerLicense;
+const originalRefreshRemoteConfig = remoteConfig.refreshRemoteConfig;
+const repairCalls = [];
+try {
+  serviceClient.refreshClientBootstrap = async () => {
+    repairCalls.push("bootstrap");
+    return { ok: true };
+  };
+  serviceClient.registerDevice = async () => {
+    repairCalls.push("device");
+    return { ok: true };
+  };
+  licenseManager.refreshServerLicense = async () => {
+    repairCalls.push("license");
+    return { ok: true };
+  };
+  remoteConfig.refreshRemoteConfig = async () => {
+    repairCalls.push("remote-config");
+    return { ok: true };
+  };
+  const repaired = await refreshRemoteConfigForSend({
+    force: true,
+    timeoutMs: 1000,
+    repairManagedService: true,
+  });
+  assert.equal(repaired.ok, true, "managed service repair should still return remote config refresh result");
+  assert(repairCalls.includes("bootstrap"), "managed service repair must refresh client bootstrap");
+  assert(repairCalls.includes("device"), "managed service repair must register the device");
+  assert(repairCalls.includes("license"), "managed service repair must refresh server license state");
+  assert(repairCalls.includes("remote-config"), "managed service repair must still refresh remote config");
+  assert(
+    repairCalls.indexOf("device") > repairCalls.indexOf("bootstrap"),
+    "device registration must run after bootstrap repair so it uses the recovered service base",
+  );
+  assert(
+    repairCalls.indexOf("license") > repairCalls.indexOf("device"),
+    "server license refresh must run after device registration",
+  );
+  assert(
+    repairCalls.indexOf("remote-config") > repairCalls.indexOf("license"),
+    "remote config refresh must run after local service state repair",
+  );
+} finally {
+  serviceClient.refreshClientBootstrap = originalRefreshClientBootstrap;
+  serviceClient.registerDevice = originalRegisterDevice;
+  licenseManager.refreshServerLicense = originalRefreshServerLicense;
+  remoteConfig.refreshRemoteConfig = originalRefreshRemoteConfig;
+}
+
+const ipcHandlersSource = fs.readFileSync(path.join(process.cwd(), "src/main/ipc-handlers.js"), "utf8");
+assert.match(
+  ipcHandlersSource,
+  /license:activate[\s\S]*refreshRemoteConfigForSend\(\{[\s\S]*timeoutMs:\s*90_000[\s\S]*repairManagedService:\s*true[\s\S]*reason:\s*"license_activate"/,
+  "license activation must prepare managed model config through the same repair path",
+);
+assert.match(
+  ipcHandlersSource,
+  /modelConfigReady/,
+  "license activation should report whether managed model config became ready",
+);
+assert.match(
+  ipcHandlersSource,
+  /configRefresh\?\.ok[\s\S]*terminateIdleRunners\(ctx\.runnerPool\)/,
+  "license activation must rebuild idle OpenCode runners after managed config becomes ready",
+);
+
+const ipcModelsSource = fs.readFileSync(path.join(process.cwd(), "src/main/ipc-models.js"), "utf8");
+assert.match(
+  ipcModelsSource,
+  /models:list[\s\S]*refreshRemoteConfigForSend\(\{[\s\S]*timeoutMs:\s*45_000[\s\S]*repairManagedService:\s*true[\s\S]*reason:\s*"model_settings"/,
+  "model settings must use the managed service repair path before listing presets",
+);
+assert.match(
+  ipcModelsSource,
+  /configRefresh\?\.ok[\s\S]*terminateIdleRunners\(ctx\.runnerPool\)/,
+  "model settings refresh must rebuild idle OpenCode runners after managed config becomes ready",
+);
+
+const licenseSettingsSource = fs.readFileSync(path.join(process.cwd(), "src/renderer/modules/license-update-settings.js"), "utf8");
+assert.match(
+  licenseSettingsSource,
+  /modelConfigReady\s*===\s*false[\s\S]*toast\.licenseActivatedModelConfigPending/,
+  "activation UI must not silently claim complete readiness when managed model config is still pending",
 );
 
 fs.rmSync(tempRoot, { recursive: true, force: true });

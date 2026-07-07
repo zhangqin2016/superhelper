@@ -7,6 +7,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const packageJson = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8"));
 const installerIncludePath = packageJson?.build?.nsis?.include;
 
+assert.equal(packageJson?.build?.appId, "cn.lilywb.workbench", "Packaged app identity must use the Lily Workbench appId.");
+assert.notEqual(packageJson?.build?.appId, "com.company.ai-super-terminal", "Packaged app identity must not use the old placeholder appId.");
 assert.equal(installerIncludePath, "build/installer.nsh", "Windows NSIS installer must include the process guard.");
 
 const installerInclude = await readFile(path.join(repoRoot, installerIncludePath), "utf8");
@@ -20,5 +22,8 @@ assert.match(installerInclude, /MB_OKCANCEL/, "Installer guard must ask before c
 assert.match(installerInclude, /MB_RETRYCANCEL/, "Installer guard must let users retry after manual close.");
 assert.match(afterPackHook, /"resources",\s*"icon\.ico"/, "Windows exe icon must come from the source icon asset.");
 assert.doesNotMatch(afterPackHook, /"dist",\s*"\.icon-ico"/, "Windows exe icon must not come from stale build cache.");
+
+const mainProcess = await readFile(path.join(repoRoot, "src", "main.js"), "utf8");
+assert.match(mainProcess, /setAppUserModelId\("cn\.lilywb\.workbench"\)/, "Windows runtime AppUserModelId must match the packaged app identity.");
 
 console.log("windows installer guard config ok");

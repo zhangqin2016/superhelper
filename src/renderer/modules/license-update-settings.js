@@ -336,7 +336,12 @@ export function initLicenseUpdateSettings() {
     }
     $("licenseTokenInput").value = "";
     await refreshLicenseStatus();
-    showToast(t("toast.licenseActivated"), "success");
+    showToast(
+      result.modelConfigReady === false
+        ? t("toast.licenseActivatedModelConfigPending")
+        : t("toast.licenseActivated"),
+      result.modelConfigReady === false ? "warning" : "success",
+    );
     kickAutoUpdateCheck();
   });
 

@@ -61,7 +61,7 @@ const {
 } = require("./process-job-turn-guard");
 
 const log = getLogger("turn-orchestrator");
-const MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS = 45_000;
+const MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS = 90_000;
 
 const TERMINAL_TYPES = new Set([
   "turn.completed",
@@ -1055,7 +1055,14 @@ class TurnOrchestrator {
     if (!opts.skipPreflight) {
       let blocked = diagnoseSendBlocker(this.ctx, session.id);
       if (blocked?.error === "SERVICE_MODEL_CONFIG_UNAVAILABLE") {
-        await refreshRemoteConfigForSend({ force: true, timeoutMs: MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS });
+        const configRefresh = await refreshRemoteConfigForSend({
+          force: true,
+          timeoutMs: MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS,
+          repairManagedService: true,
+        });
+        if (configRefresh?.ok) {
+          this.ctx.runnerPool?.terminateSession?.(session.id);
+        }
         blocked = diagnoseSendBlocker(this.ctx, session.id);
       }
       if (blocked) return { ok: false, error: blocked.error, detail: blocked.detail };

@@ -112,9 +112,27 @@ function registerAll(ctx) {
     const result = await require("./license-manager").activateLicense(payload?.token || payload);
     if (result?.ok) {
       try {
-        await require("./remote-config").refreshRemoteConfig({ reason: "license_activate" });
-      } catch {
+        const configRefresh = await require("./ipc-utils").refreshRemoteConfigForSend({
+          force: true,
+          timeoutMs: 90_000,
+          repairManagedService: true,
+          reason: "license_activate",
+        });
+        if (configRefresh?.ok) {
+          require("./runner-live-config").terminateIdleRunners(ctx.runnerPool);
+        }
+        return {
+          ...result,
+          modelConfigReady: Boolean(configRefresh?.ok),
+          modelConfigError: configRefresh?.ok ? "" : String(configRefresh?.error || "CONFIG_REFRESH_FAILED"),
+        };
+      } catch (err) {
         // Activation stays valid offline; the next send/settings open will refresh again.
+        return {
+          ...result,
+          modelConfigReady: false,
+          modelConfigError: err?.message || "CONFIG_REFRESH_FAILED",
+        };
       }
     }
     return result;

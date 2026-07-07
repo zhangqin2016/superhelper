@@ -706,6 +706,7 @@
   "toast.themeSwitched": "Appearance updated",
   "toast.textSizeSwitched": "Text size updated",
   "toast.licenseActivated": "License activated",
+  "toast.licenseActivatedModelConfigPending": "License activated. Lily is preparing the managed model config and will retry automatically on first send.",
   "toast.licenseCleared": "License removed",
   "toast.updateAlreadyLatest": "Already on the latest version",
   "toast.updateAvailable": "New version available",
