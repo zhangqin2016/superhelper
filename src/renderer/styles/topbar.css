@@ -225,11 +225,12 @@
 }
 
 .update-popover {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
+  position: fixed;
+  top: 66px;
+  right: 18px;
   z-index: var(--z-topbar-popover);
-  width: min(340px, calc(100vw - 32px));
+  width: min(340px, calc(100vw - 36px));
+  max-width: calc(100vw - 36px);
   padding: 14px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
@@ -277,6 +278,7 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .update-primary-btn {
