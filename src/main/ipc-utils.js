@@ -59,12 +59,8 @@ function diagnoseSendBlocker(ctx, sessionId) {
 
   const { resolveLilyEnv } = require("./spawn-env");
   const lilyEnv = resolveLilyEnv();
-  if (!String(lilyEnv.LILY_API_KEY || "").trim()) {
-    return {
-      error: "NO_API_KEY",
-      detail: "No API key configured. Please enter your key in Settings → Model/API Gateway before sending messages.",
-    };
-  }
+  const modelConnection = require("./model-presets").getActiveModelConnectionStatus(lilyEnv);
+  if (!modelConnection.ok) return { error: modelConnection.error, detail: modelConnection.detail };
 
   const session =
     ctx.sessionManager.findById(sessionId) || ctx.sessionManager.getActive();
@@ -84,12 +80,14 @@ function diagnoseSendBlocker(ctx, sessionId) {
   return null;
 }
 
-async function refreshRemoteConfigForSend() {
+async function refreshRemoteConfigForSend(options = {}) {
   const remoteConfig = require("./remote-config");
-  if (remoteConfig.hasRemoteModelCatalogSync()) return { ok: true, skipped: true };
+  const force = Boolean(options.force);
+  const timeoutMs = Number(options.timeoutMs || 1500);
+  if (!force && remoteConfig.hasRemoteModelCatalogSync()) return { ok: true, skipped: true };
 
   const now = Date.now();
-  if (now - lastSendPreflightConfigRefreshAt < 10_000 && !sendPreflightConfigRefresh) {
+  if (!force && now - lastSendPreflightConfigRefreshAt < 10_000 && !sendPreflightConfigRefresh) {
     return { ok: true, skipped: true };
   }
 
@@ -105,7 +103,7 @@ async function refreshRemoteConfigForSend() {
 
   return Promise.race([
     sendPreflightConfigRefresh,
-    new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: "TIMEOUT" }), 1500)),
+    new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: "TIMEOUT" }), Math.max(500, timeoutMs))),
   ]);
 }
 

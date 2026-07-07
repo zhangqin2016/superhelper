@@ -35,6 +35,8 @@ fs.writeFileSync(path.join(tempRoot, "remote-config-cache.json"), JSON.stringify
 }), "utf8");
 
 const { diagnoseSendBlocker } = require("../src/main/ipc-utils.js");
+const modelPresets = require("../src/main/model-presets.js");
+const remoteConfig = require("../src/main/remote-config.js");
 
 const ctx = {
   sessionManager: {
@@ -47,6 +49,45 @@ const ctx = {
 };
 
 assert.equal(diagnoseSendBlocker(ctx, "s1"), null, "remote runtime env API key must satisfy send preflight");
+
+fs.rmSync(path.join(tempRoot, "remote-config-cache.json"), { force: true });
+fs.rmSync(path.join(tempRoot, "model-settings.json"), { force: true });
+modelPresets.reloadPresets();
+remoteConfig.reloadRemoteConfigCache();
+assert.equal(
+  diagnoseSendBlocker(ctx, "s1")?.error,
+  "SERVICE_MODEL_CONFIG_UNAVAILABLE",
+  "missing managed config must not be misreported as a user API key problem",
+);
+
+const localGateway = modelPresets.setApiGateway({
+  mode: "custom",
+  baseUrl: "http://127.0.0.1:8000/v1",
+  protocol: "openai",
+});
+assert.equal(localGateway.ok, true);
+modelPresets.reloadPresets();
+assert.equal(
+  diagnoseSendBlocker(ctx, "s1"),
+  null,
+  "loopback custom model endpoints may run without an API key",
+);
+
+fs.writeFileSync(path.join(tempRoot, "model-settings.json"), JSON.stringify({
+  activePresetId: null,
+  customPresets: [],
+  apiGateway: {
+    mode: "custom",
+    baseUrl: "https://custom-llm.example.com/v1",
+    protocol: "openai",
+  },
+}, null, 2));
+modelPresets.reloadPresets();
+assert.equal(
+  diagnoseSendBlocker(ctx, "s1")?.error,
+  "NO_API_KEY",
+  "user custom remote model without a key should still ask for the user's key",
+);
 
 fs.rmSync(tempRoot, { recursive: true, force: true });
 console.log("send preflight env: ok");

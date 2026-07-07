@@ -108,8 +108,17 @@ function registerAll(ctx) {
 
   ipcMain.handle("license:status", () =>
     require("./license-manager").getLicenseStatus());
-  ipcMain.handle("license:activate", async (_event, payload) =>
-    require("./license-manager").activateLicense(payload?.token || payload));
+  ipcMain.handle("license:activate", async (_event, payload) => {
+    const result = await require("./license-manager").activateLicense(payload?.token || payload);
+    if (result?.ok) {
+      try {
+        await require("./remote-config").refreshRemoteConfig({ reason: "license_activate" });
+      } catch {
+        // Activation stays valid offline; the next send/settings open will refresh again.
+      }
+    }
+    return result;
+  });
   ipcMain.handle("license:clear", () =>
     require("./license-manager").clearLicense());
   ipcMain.handle("license:refresh", () =>

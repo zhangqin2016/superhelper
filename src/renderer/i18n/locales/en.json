@@ -770,6 +770,7 @@
   "send.error.OPENCODE_NOT_READY": "AI engine not found. This build may not include the engine for your system — please reinstall the latest version, or contact your administrator if you're already up to date.",
   "send.error.LICENSE_REQUIRED": "Sign in to buy credits or enter a valid activation code in Settings before using the AI assistant.",
   "send.error.NO_API_KEY": "No API key configured. Add one under Settings → Models/API gateway before sending.",
+  "send.error.SERVICE_MODEL_CONFIG_UNAVAILABLE": "Lily is fetching the managed model configuration. Check your network and try again in a moment.",
   "send.error.GENERIC": "Failed to send.",
   "send.error.NO_USER_MESSAGE": "No previous message to retry.",
   "send.error.NOTHING_TO_RETRY": "Nothing failed to retry.",

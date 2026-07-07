@@ -476,6 +476,48 @@ function getUserApiEnv() {
   return env;
 }
 
+function getActiveModelConnectionStatus(lilyEnv = null) {
+  const preset = getActivePreset();
+  const user = loadUserChoice();
+  const resolvedEnv = normalizeToLilyEnv(lilyEnv || {
+    ...(preset?.env || {}),
+    ...getUserApiEnv(),
+  });
+  const apiKey = String(resolvedEnv.LILY_API_KEY || "").trim();
+  const baseUrl = String(resolvedEnv.LILY_API_BASE_URL || resolvedEnv.LILY_OPENCODE_BASE_URL || "").trim();
+  const model = String(resolvedEnv.LILY_MODEL || "").trim();
+
+  if (apiKey) return { ok: true, source: "api-key", managed: false };
+  if (baseUrl && isLoopbackBaseUrl(baseUrl) && model) {
+    return { ok: true, source: "loopback", managed: false };
+  }
+
+  if (preset?.custom || user.apiGateway?.mode === "custom") {
+    return {
+      ok: false,
+      error: "NO_API_KEY",
+      source: preset?.custom ? "custom-preset" : "custom-gateway",
+      managed: false,
+    };
+  }
+
+  if (usesManagedServicePreset(preset) || isRemoteManagedCatalog() || !presetHasOwnModelConnection(preset)) {
+    return {
+      ok: false,
+      error: "SERVICE_MODEL_CONFIG_UNAVAILABLE",
+      source: "service-managed",
+      managed: true,
+    };
+  }
+
+  return {
+    ok: false,
+    error: "NO_API_KEY",
+    source: "preset",
+    managed: false,
+  };
+}
+
 function getApiGatewayPublic() {
   const user = loadUserChoice();
   const gateway = user.apiGateway || normalizeApiGateway(null);
@@ -722,6 +764,7 @@ module.exports = {
   activePresetSupportsVision,
   getActivePresetEnv,
   getUserApiEnv,
+  getActiveModelConnectionStatus,
   getActivePresetId,
   listPresetsPublic,
   getApiGatewayPublic,

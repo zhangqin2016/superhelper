@@ -1052,8 +1052,11 @@ class TurnOrchestrator {
     const rawUserText = String(text || "").trim();
     const { diagnoseSendBlocker, ensureSessionRunner, refreshRemoteConfigForSend } = require("./ipc-utils");
     if (!opts.skipPreflight) {
-      await refreshRemoteConfigForSend();
-      const blocked = diagnoseSendBlocker(this.ctx, session.id);
+      let blocked = diagnoseSendBlocker(this.ctx, session.id);
+      if (blocked?.error === "SERVICE_MODEL_CONFIG_UNAVAILABLE") {
+        await refreshRemoteConfigForSend({ force: true, timeoutMs: 8_000 });
+        blocked = diagnoseSendBlocker(this.ctx, session.id);
+      }
       if (blocked) return { ok: false, error: blocked.error, detail: blocked.detail };
     }
 

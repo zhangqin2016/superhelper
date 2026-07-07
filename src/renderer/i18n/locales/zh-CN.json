@@ -770,6 +770,7 @@
   "send.error.OPENCODE_NOT_READY": "未找到 AI 引擎。当前安装包可能不包含适用于你系统的引擎，请重新下载并安装最新版本；若已是最新版本，请联系管理员。",
   "send.error.LICENSE_REQUIRED": "请先登录购买或在设置中输入有效激活码，再使用 AI 助手。",
   "send.error.NO_API_KEY": "未配置 API Key。请在设置 → 模型/API 网关中填写密钥后再发送。",
+  "send.error.SERVICE_MODEL_CONFIG_UNAVAILABLE": "正在获取 Lily 托管模型配置，请检查网络后稍等片刻再试。",
   "send.error.GENERIC": "发送失败。",
   "send.error.NO_USER_MESSAGE": "没有可重试的上一条消息。",
   "send.error.NOTHING_TO_RETRY": "当前没有失败回复可重试。",
