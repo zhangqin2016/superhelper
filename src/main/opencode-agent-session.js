@@ -177,24 +177,37 @@ function isRecoverableModelConnectionFailure(classified, raw = "") {
     "MODEL_OVERLOADED",
     "RESPONSE_ERROR",
     "RATE_LIMITED",
+    "MANAGED_MODEL_AUTH_INVALID",
   ].includes(classified.code)) {
     return true;
   }
   return !classified && TRANSIENT_ERROR_RE.test(String(raw || ""));
 }
 
+function isManagedGatewayAuthFailure(classified, raw = "", spawnOptions = null) {
+  const text = String(raw || "");
+  if (classified?.code === "MANAGED_MODEL_AUTH_INVALID") return true;
+  if (/MODEL_GATEWAY_TOKEN_(INVALID|EXPIRED)/i.test(text)) return true;
+  const audit = spawnOptions?.modelRouteAudit || {};
+  return audit.keyKind === "gateway-token"
+    && audit.route === "gateway"
+    && /unauthorized|401|403|auth|token|api.?key/i.test(text);
+}
+
 function isOversizedContextFailure(classified, raw = "") {
   return classified?.code === "CONTEXT_LIMIT" || /request entity too large|request too large|payload too large|body too large|413\b/i.test(String(raw || ""));
 }
 
-function isSafeReplayableModelFailure(classified, raw = "") {
-  return isRecoverableModelConnectionFailure(classified, raw) || isOversizedContextFailure(classified, raw);
+function isSafeReplayableModelFailure(classified, raw = "", spawnOptions = null) {
+  return isManagedGatewayAuthFailure(classified, raw, spawnOptions)
+    || isRecoverableModelConnectionFailure(classified, raw)
+    || isOversizedContextFailure(classified, raw);
 }
 
 function shouldDropResumeAfterVisibleFailure({ classified, raw = "", payload = {}, wasResumed = false } = {}) {
   if (classified?.code === "SESSION_INVALID") return true;
   if (isOversizedContextFailure(classified, raw)) return true;
-  if (!isRecoverableModelConnectionFailure(classified, raw)) return false;
+  if (!isRecoverableModelConnectionFailure(classified, raw) && !isManagedGatewayAuthFailure(classified, raw)) return false;
   if (wasResumed) return true;
   if (payload?.attachmentFallback) return true;
   return shouldIsolateAttachmentFallback(payload);
@@ -360,6 +373,9 @@ class OpencodeAgentSession extends EventEmitter {
     super();
     this.sessionId = sessionId;
     this._createServer = deps.createServer || ((opts) => new OpencodeServerManager(opts));
+    this._refreshManagedModelConfig = typeof deps.refreshManagedModelConfig === "function"
+      ? deps.refreshManagedModelConfig
+      : null;
     /** @type {OpencodeServerManager | null} */
     this._server = null;
     this._eventState = createOpencodeRuntimeState();
@@ -1436,13 +1452,17 @@ class OpencodeAgentSession extends EventEmitter {
       this._dispatchRetryCount += 1;
       const raw = transientClassificationText(pending?.message, pending);
       const classified = require("./agent-runner").classifyAssistantError(raw);
+      const refreshManagedAuth = isManagedGatewayAuthFailure(classified, raw, this.spawnOptions);
       const retryPayload = buildAttachmentFallbackPromptPayload(
         this._pendingPromptPayload,
         this._sanitize(pending?.message || ""),
       );
       this._pendingPromptPayload = retryPayload;
       try {
-        const server = isOversizedContextFailure(classified, raw)
+        if (refreshManagedAuth && !(await this._refreshManagedModelConfigForRetry(raw))) {
+          throw new Error(raw || "managed model gateway token invalid");
+        }
+        const server = (refreshManagedAuth || isOversizedContextFailure(classified, raw))
           ? await this._restartEngineSessionForSafeReplay(raw || "oversized prompt request")
           : this._server;
         await server.sendPrompt(retryPayload);
@@ -1675,7 +1695,7 @@ class OpencodeAgentSession extends EventEmitter {
 
     const raw = transientClassificationText(pending?.message, pending?.cause);
     const classified = require("./agent-runner").classifyAssistantError(raw);
-    if (!isSafeReplayableModelFailure(classified, raw)) return false;
+    if (!isSafeReplayableModelFailure(classified, raw, this.spawnOptions)) return false;
 
     this._transientReplayCount += 1;
     this._pendingTransientFailure = null;
@@ -1696,12 +1716,16 @@ class OpencodeAgentSession extends EventEmitter {
         this._sanitize(raw || "transient model transport failure"),
       );
       this._pendingPromptPayload = retryPayload;
+      const refreshManagedAuth = isManagedGatewayAuthFailure(classified, raw, this.spawnOptions);
+      if (refreshManagedAuth && !(await this._refreshManagedModelConfigForRetry(raw))) {
+        throw new Error(raw || "managed model gateway token invalid");
+      }
       const isolateOversizedContext = isOversizedContextFailure(classified, raw);
       const isolateDocumentAttachment =
         retryPayload.attachmentFallback && shouldIsolateAttachmentFallback(originalPayload);
       const isolateLegacyResume =
         !retryPayload.attachmentFallback && this._engineSessionWasResumed && isRecoverableModelConnectionFailure(classified, raw);
-      if (isolateOversizedContext || isolateDocumentAttachment || isolateLegacyResume) {
+      if (refreshManagedAuth || isolateOversizedContext || isolateDocumentAttachment || isolateLegacyResume) {
         await this._restartEngineSessionForSafeReplay(raw || "transient model transport failure");
       }
       const server = await this._ensureStarted();
@@ -1741,6 +1765,22 @@ class OpencodeAgentSession extends EventEmitter {
     this._starting = null;
     this.agentResumeId = null;
     return this._ensureStarted();
+  }
+
+  async _refreshManagedModelConfigForRetry(reason = "") {
+    const refresher = this.spawnOptions?.refreshManagedModelConfig || this._refreshManagedModelConfig;
+    if (typeof refresher !== "function") return false;
+    try {
+      const result = await refresher({
+        sessionId: this.sessionId,
+        reason: "gateway_token_invalid",
+        error: String(reason || ""),
+      });
+      return result === true || result?.ok === true;
+    } catch (err) {
+      log.warn("managed model config refresh before retry failed: %s", err?.message || String(err));
+      return false;
+    }
   }
 
   async _recoverCompletedAssistantFromHistory(opts = {}) {
@@ -2084,7 +2124,8 @@ class OpencodeAgentSession extends EventEmitter {
   _invalidateEngineSessionAfterVisibleFailure(message, cause) {
     const raw = transientClassificationText(message, cause);
     const classified = require("./agent-runner").classifyAssistantError(raw);
-    const recoverable = isRecoverableModelConnectionFailure(classified, raw);
+    const recoverable = isRecoverableModelConnectionFailure(classified, raw)
+      || isManagedGatewayAuthFailure(classified, raw, this.spawnOptions);
     const dropResume = shouldDropResumeAfterVisibleFailure({
       classified,
       raw,

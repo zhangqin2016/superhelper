@@ -128,6 +128,17 @@ class SessionRunnerPool {
       opencodeConfig: cfg.ok ? cfg.configContent : "",
       guidance,
       configDir: extra.configDir,
+      refreshManagedModelConfig: async () => {
+        const refreshed = await require("./ipc-utils").refreshRemoteConfigForSend({
+          force: true,
+          timeoutMs: 45_000,
+          repairManagedService: true,
+          reason: "gateway_token_invalid",
+        });
+        if (!refreshed?.ok) return refreshed;
+        this.ensure(sessionId, cwd, extra, { lazy: true });
+        return { ok: true };
+      },
       // Seed the OpenCode session id from the persisted conversation so a fresh
       // runner (app restart / cold session) RESUMES the same server-side session
       // instead of starting blank — otherwise reopened conversations lose context.

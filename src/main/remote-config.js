@@ -177,10 +177,20 @@ function decodeGatewayTokenPayload(token) {
 }
 
 function gatewayTokenExpiresSoon(token, skewMs = 5 * 60_000) {
-  const payload = decodeGatewayTokenPayload(token);
+  const value = String(token || "").trim();
+  if (!value || value === "$LILY_GATEWAY_TOKEN") return false;
+  const payload = decodeGatewayTokenPayload(value);
   if (!payload?.expiresAt) return false;
   const expiresAt = Date.parse(String(payload.expiresAt));
   return Number.isFinite(expiresAt) && expiresAt <= Date.now() + skewMs;
+}
+
+function gatewayTokenMalformed(token) {
+  const value = String(token || "").trim();
+  if (!value) return false;
+  if (value === "$LILY_GATEWAY_TOKEN") return true;
+  if (!value.startsWith("lilygw.")) return false;
+  return !decodeGatewayTokenPayload(value)?.expiresAt;
 }
 
 function effectiveConfigHasExpiredGatewayToken(effectiveConfig, skewMs = 5 * 60_000) {
@@ -194,7 +204,7 @@ function effectiveConfigHasExpiredGatewayToken(effectiveConfig, skewMs = 5 * 60_
   }
   const runtimeEnv = effectiveConfig?.runtime?.env || {};
   values.push(runtimeEnv.LILY_API_KEY, runtimeEnv.OPENAI_API_KEY, runtimeEnv.ANTHROPIC_API_KEY);
-  return values.some((value) => gatewayTokenExpiresSoon(value, skewMs));
+  return values.some((value) => gatewayTokenMalformed(value) || gatewayTokenExpiresSoon(value, skewMs));
 }
 
 function getRemoteModelCatalogSync() {

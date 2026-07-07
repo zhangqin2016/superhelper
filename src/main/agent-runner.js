@@ -44,6 +44,20 @@ const ERROR_PATTERNS = [
     retryable: false,
   },
   {
+    code: "MANAGED_MODEL_AUTH_INVALID",
+    category: "model",
+    test: /MODEL_GATEWAY_TOKEN_(INVALID|EXPIRED)/i,
+    message: "Managed model access expired. Lily refreshed the service configuration and retried.",
+    retryable: true,
+  },
+  {
+    code: "AUTH_FAILED",
+    category: "model",
+    test: /unauthorized|401|403|auth.*failed|auth.*invalid|auth.*expired|key.*invalid|key.*expired|token.*invalid|token.*expired|api.?key|invalid.*api|not authenticated|access denied|forbidden/i,
+    message: "Authentication failed. Please check your API key in Settings, then retry.",
+    retryable: false,
+  },
+  {
     code: "MODEL_CONNECTION_FAILED",
     category: "model",
     test: /API Error:|Connection to the model service was interrupted|model service .*interrupted|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|timed? out|timeout|502|503|504|500\b|Internal Server Error|upstream.*error|backend.*error|aborted|request.*failed|connection.*refused|connection.*reset|SSL|TLS|certificate|DNS|ENOTFOUND|ECONNABORTED/i,
@@ -77,13 +91,6 @@ const ERROR_PATTERNS = [
     test: /selected model|pick a different model|model .*does not exist|model .*not found|model .*not supported|invalid model|may not have access to it/i,
     message: "The selected model is currently unavailable. Configuration has been refreshed. Please try again later or switch to a different model.",
     retryable: true,
-  },
-  {
-    code: "AUTH_FAILED",
-    category: "model",
-    test: /unauthorized|401|403|auth.*failed|auth.*invalid|auth.*expired|key.*invalid|key.*expired|token.*invalid|token.*expired|api.?key|invalid.*api|not authenticated|access denied|forbidden/i,
-    message: "Authentication failed. Please check your API key in Settings, then retry.",
-    retryable: false,
   },
   {
     code: "PERMISSION_DENIED",

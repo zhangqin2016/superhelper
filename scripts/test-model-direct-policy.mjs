@@ -10,6 +10,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = module.createRequire(import.meta.url);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-model-direct-policy-"));
 
+function fakeGatewayToken() {
+  const payload = Buffer.from(JSON.stringify({
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  }), "utf8").toString("base64url");
+  return `lilygw.${payload}.sig`;
+}
+
 const electronPath = require.resolve("electron");
 require.cache[electronPath] = {
   id: electronPath,
@@ -70,7 +77,7 @@ const remoteConfigState = {
           label: "Managed Model",
           env: {
             LILY_API_BASE_URL: "https://lilyxinjiapo.lilywb.cn/llm/deepseek/v1",
-            LILY_API_KEY: "lilygw.test-token",
+            LILY_API_KEY: fakeGatewayToken(),
             LILY_GATEWAY_PROVIDER: "deepseek",
             LILY_OPENCODE_PROTOCOL: "openai",
             LILY_MODEL: "deepseek-v4-pro",

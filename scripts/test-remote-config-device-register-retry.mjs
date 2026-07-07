@@ -18,6 +18,15 @@ function devSignature(payload) {
   return `dev.${crypto.createHash("sha256").update(stableStringify(payload)).digest("hex")}`;
 }
 
+function fakeGatewayToken() {
+  const tokenPayload = Buffer.from(JSON.stringify({
+    expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+  }), "utf8").toString("base64url");
+  return `lilygw.${tokenPayload}.sig`;
+}
+
+const retryGatewayToken = fakeGatewayToken();
+
 const payload = {
   schemaVersion: 1,
   configVersion: "device-register-retry",
@@ -26,7 +35,7 @@ const payload = {
     runtime: {
       env: {
         LILY_API_BASE_URL: "https://lilych.lilywb.cn/llm/deepseek",
-        LILY_API_KEY: "lilygw.retry-token",
+        LILY_API_KEY: retryGatewayToken,
         LILY_MODEL: "deepseek-v4-pro",
       },
     },
@@ -65,7 +74,7 @@ const result = await remoteConfig.refreshRemoteConfig({ reason: "send_preflight"
 assert.equal(result.ok, true);
 assert.equal(fetchCalls, 2, "config fetch should retry once after device registration");
 assert.equal(registerCalls, 1, "device should be registered before retrying config fetch");
-assert.equal(remoteConfig.getRemoteRuntimeEnvSync().LILY_API_KEY, "lilygw.retry-token");
+assert.equal(remoteConfig.getRemoteRuntimeEnvSync().LILY_API_KEY, retryGatewayToken);
 
 serviceClient.fetchClientConfig = originalFetchClientConfig;
 serviceClient.registerDevice = originalRegisterDevice;

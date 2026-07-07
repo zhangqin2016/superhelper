@@ -20,3 +20,4 @@
 - [Web Learning Persistent Profile](2026-06-29-web-learning-persistent-profile.md) — manual web login capture uses per-system persistent Lily browser profiles while automation still reuses filtered storageState
 - [Document Attachment Model Interruption](2026-07-02-document-attachment-model-interruption.md) — raw Office/PDF binaries must not enter model file parts; document attachment model disconnects isolate to a fresh engine session
 - [Activation Config Repair License State](2026-07-07-activation-config-repair-license-state.md) — activation-time managed config repair must not persist repairable device signature/key errors as invalid license state
+- [Managed Gateway Token Invalid](2026-07-07-managed-gateway-token-invalid.md) — stale/placeholder Lily gateway tokens must refresh remote config and replay instead of surfacing 401 to users

@@ -495,6 +495,60 @@ async function newSession() {
   }
 }
 
+// --- managed gateway token invalid: refresh config and retry hidden ---------
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const made = [];
+    let session;
+    let refreshCalls = 0;
+    const baseOptions = {
+      agentCommand: "/bin/true",
+      modelRouteAudit: { route: "gateway", keyKind: "gateway-token" },
+    };
+    const ensureWithToken = (token) => {
+      session.ensureProcess(process.cwd(), {
+        ...baseOptions,
+        env: { LILY_API_KEY: token },
+        refreshManagedModelConfig: async () => {
+          refreshCalls += 1;
+          ensureWithToken("fresh-token");
+          return { ok: true };
+        },
+      }, { lazy: true });
+    };
+    session = new OpencodeAgentSession("managed_gateway_token_refresh", {
+      createServer: (opts) => {
+        const server = new FakeServer();
+        server.spawnEnv = opts.env || {};
+        if (made.length === 0) server.failPrompt = "Request failed: 401 Unauthorized";
+        made.push(server);
+        return server;
+      },
+    });
+    const orch = makeOrchestrator();
+    session.bindOrchestrator(orch);
+    ensureWithToken("stale-token");
+    session.sendUserMessage({ text: "use managed gateway" });
+    await tick();
+    for (let i = 0; i < 20 && made.length < 2; i += 1) await sleep(5);
+    assert(refreshCalls === 1, "managed gateway auth failure refreshes remote config once");
+    assert(made.length === 2, "managed gateway auth failure restarts with refreshed config");
+    assert(made[0].aborted === true, "stale-token engine session is aborted before retry");
+    assert(made[1].spawnEnv.LILY_API_KEY === "fresh-token", "retry starts with refreshed gateway token");
+    assert(made[1].prompts.length === 1 && made[1].prompts[0].text === "use managed gateway", "retry preserves the user request");
+    made[1].emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "managed retry ok" } });
+    made[1].emitEvent({ type: "session.idle", properties: { sessionID: "ses_test" } });
+    await waitIdleSettle();
+    assert(orch.calls.error.length === 0, "managed gateway token refresh retry avoids user-visible auth failure");
+    assert(orch.calls.done.length === 1 && /managed retry ok/.test(orch.calls.done[0].output), "managed gateway retry completes normally");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
 // --- cold-start server hiccup after owned event: recover from official history
 {
   const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;

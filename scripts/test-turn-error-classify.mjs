@@ -54,6 +54,14 @@ const requestEntityTooLarge = classifyAssistantError("Request failed: Request En
 assert(requestEntityTooLarge?.code === "CONTEXT_LIMIT", "request entity too large is not misclassified as model connection");
 assert(requestEntityTooLarge?.retryable === false, "oversized requests are not blind-retry failures");
 
+const managedGatewayTokenInvalid = classifyAssistantError("Request failed: 401 MODEL_GATEWAY_TOKEN_INVALID");
+assert(managedGatewayTokenInvalid?.code === "MANAGED_MODEL_AUTH_INVALID", "Lily gateway token invalid is a managed-config refresh failure");
+assert(managedGatewayTokenInvalid?.retryable === true, "Lily gateway token invalid can be refreshed and retried");
+
+const genericUnauthorized = classifyAssistantError("Request failed: 401 Unauthorized");
+assert(genericUnauthorized?.code === "AUTH_FAILED", "generic 401 remains a user/API-key auth failure");
+assert(genericUnauthorized?.retryable === false, "generic API auth failures are not blindly retried");
+
 const exited = ec.classifyTurnFailure({ code: 1, source: "process.close" }, {}, {});
 assert(exited?.code === "ENGINE_PROCESS_EXITED" && exited.retryable === true, "process.close exit branch");
 

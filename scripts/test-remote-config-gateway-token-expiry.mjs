@@ -81,6 +81,12 @@ assert.deepEqual(remoteConfig.getRemoteRuntimeEnvSync(), {}, "expired gateway to
 assert.equal(remoteConfig.effectiveConfigHasExpiredGatewayToken({
   models: { presets: [{ env: { LILY_API_KEY: gatewayToken(new Date(Date.now() - 1).toISOString()) } }] },
 }), true);
+assert.equal(remoteConfig.effectiveConfigHasExpiredGatewayToken({
+  models: { presets: [{ env: { LILY_API_KEY: "$LILY_GATEWAY_TOKEN" } }] },
+}), true, "gateway token placeholder must force config refresh before send");
+assert.equal(remoteConfig.effectiveConfigHasExpiredGatewayToken({
+  models: { presets: [{ env: { LILY_API_KEY: "lilygw.not-json.sig" } }] },
+}), true, "malformed gateway tokens must force config refresh before send");
 
 fs.rmSync(tempRoot, { recursive: true, force: true });
 console.log("remote-config gateway token expiry: ok");

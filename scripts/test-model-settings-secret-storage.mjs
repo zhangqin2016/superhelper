@@ -9,6 +9,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = module.createRequire(import.meta.url);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-model-secrets-"));
 
+function fakeGatewayToken() {
+  const payload = Buffer.from(JSON.stringify({
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  }), "utf8").toString("base64url");
+  return `lilygw.${payload}.sig`;
+}
+
 const electronPath = require.resolve("electron");
 require.cache[electronPath] = {
   id: electronPath,
@@ -179,7 +186,7 @@ const remoteConfigState = {
           label: "Managed Model",
           env: {
             LILY_API_BASE_URL: "/llm/deepseek",
-            LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
+            LILY_API_KEY: fakeGatewayToken(),
             LILY_MODEL: "managed-model",
           },
         },
