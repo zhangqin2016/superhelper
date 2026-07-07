@@ -3,6 +3,9 @@ import { adminCredentialHeaders, readAdminSummaryResponse } from "./lib/admin-au
 
 const API_BASE = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "https://lilych.lilywb.cn";
 
+// Protect against a hanging fetch when the API server is unresponsive.
+const ADMIN_SESSION_CHECK_TIMEOUT_MS = 10_000;
+
 function headerValue(headers, name) {
   return String(headers.get(name) || "").trim().toLowerCase();
 }
@@ -20,11 +23,52 @@ function isUaeRequest(request) {
   return country === "ae" || country === "uae";
 }
 
-function redirectToLogin(request) {
+function redirectToLogin(request, clearSession = true) {
   const response = NextResponse.redirect(new URL("/admin/login", request.url));
-  response.cookies.delete("lily_admin_token");
-  response.cookies.delete("lily_admin_session");
+  if (clearSession) {
+    response.cookies.delete("lily_admin_token");
+    response.cookies.delete("lily_admin_session");
+  }
   return response;
+}
+
+/**
+ * Validate the admin session by calling GET /api/admin/summary.
+ *
+ * Returns { valid: true } on success.  Returns { valid: false, authFailed: true }
+ * ONLY when the API responds 401 — the session is truly invalid and the cookie
+ * should be cleared.  All other failures (network error, timeout, 5xx,
+ * non-JSON body) return { valid: false } — the server has a transient problem,
+ * so we preserve the session cookie and pass through.
+ */
+async function validateAdminSession(headers) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ADMIN_SESSION_CHECK_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/api/admin/summary`, {
+      cache: "no-store",
+      headers,
+      signal: controller.signal,
+    });
+  } catch {
+    // Network error / timeout — server problem, NOT an auth failure.
+    return { valid: false };
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // 401 → the session token is genuinely invalid (e.g. expired, secret rotated).
+  if (response.status === 401) return { valid: false, authFailed: true };
+
+  // 5xx or other errors → server-side transient problem.
+  if (!response.ok) return { valid: false };
+
+  const summary = await readAdminSummaryResponse(response);
+  if (!summary) return { valid: false };
+
+  return { valid: true };
 }
 
 async function consumeBillingLink(request) {
@@ -72,17 +116,23 @@ export async function proxy(request) {
 
   if (request.nextUrl.pathname === "/admin/login") return NextResponse.next();
 
+  // Fast-path: no credential cookie at all → definitely not logged in.
   const token = request.cookies.get("lily_admin_token")?.value || "";
   const session = request.cookies.get("lily_admin_session")?.value || "";
+  if (!token && !session) return redirectToLogin(request, false);
+
   const headers = adminCredentialHeaders({ token, session });
-  if (!headers) return redirectToLogin(request);
+  if (!headers) return redirectToLogin(request, false);
 
-  const response = await fetch(`${API_BASE}/api/admin/summary`, {
-    cache: "no-store",
-    headers,
-  }).catch(() => null);
+  const result = await validateAdminSession(headers);
 
-  if (!(await readAdminSummaryResponse(response))) return redirectToLogin(request);
+  // Only clear the session cookie when the API confirms it's truly invalid
+  // (401).  Network errors, 5xx, and timeouts mean the server has a transient
+  // problem — we let the request through so the admin isn't logged out.
+  if (result.authFailed) return redirectToLogin(request, true);
+
+  // valid: session ok → pass through.
+  // !valid without authFailed: server hiccup → pass through, preserve session.
   return NextResponse.next();
 }
 
