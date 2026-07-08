@@ -356,6 +356,7 @@
   "settings.modelSelect": "Select model",
   "settings.modelDiagnoseRestore": "Diagnose and restore Lily default model",
   "settings.modelDiagnoseRestoreRunning": "Diagnosing and restoring the Lily default model…",
+  "settings.modelDiagnoseRestoreFixedPollution": "Local model configuration pollution was repaired. Lily default model has been restored.",
   "settings.modelDiagnoseRestoreFixedCustom": "A custom model was active. Lily default model has been restored and config refreshed.",
   "settings.modelDiagnoseRestoreFixedGateway": "Custom API override cleared. Lily default model restored.",
   "settings.modelDiagnoseRestoreReady": "Lily default model is ready.",

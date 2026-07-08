@@ -411,6 +411,101 @@ if (!restoredList.presets.some((preset) => preset.id === remoteCustom.preset.id)
 if (Object.keys(modelPresets.getUserApiEnv()).length) {
   throw new Error(`managed default should not use custom API env after restore: ${JSON.stringify(modelPresets.getUserApiEnv())}`);
 }
+const namespacedManagedState = {
+  schemaVersion: 1,
+  configVersion: "test-namespaced-managed",
+  expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  effectiveConfig: {
+    models: {
+      activePresetId: "lily-managed:deepseek:gateway",
+      presets: [
+        {
+          id: "lily-managed:deepseek:gateway",
+          label: "DeepSeek Gateway",
+          env: {
+            LILY_API_BASE_URL: "/llm/deepseek",
+            LILY_API_KEY: fakeGatewayToken(),
+            LILY_MODEL: "deepseek-v4-pro[1m]",
+          },
+        },
+      ],
+    },
+  },
+};
+fs.writeFileSync(
+  path.join(tmp, "remote-config-cache.json"),
+  JSON.stringify({
+    config: {
+      encrypted: true,
+      data: Buffer.from(`protected:${JSON.stringify(namespacedManagedState)}`, "utf8").toString("base64"),
+    },
+    updatedAt: new Date().toISOString(),
+  }),
+  "utf8",
+);
+fs.writeFileSync(
+  settingsPath,
+  JSON.stringify({
+    activePresetId: "deepseek-gateway",
+    customPresets: [
+      {
+        id: "deepseek-gateway",
+        label: "DeepSeek (网关)",
+        model: "deepseek-chat",
+        baseUrl: "https://bad-local.example.com/llm",
+        apiKey: "sk-bad-custom-gateway-123456",
+        protocol: "openai",
+      },
+    ],
+    apiGateway: {
+      mode: "custom",
+      baseUrl: "https://bad-gateway.example.com/v1",
+      apiKey: "sk-bad-custom-api-gateway-123456",
+      protocol: "openai",
+    },
+  }),
+  "utf8",
+);
+modelPresets.reloadPresets();
+const pollutedRestore = modelPresets.diagnoseAndRestoreDefaultModel();
+if (!pollutedRestore.ok) {
+  throw new Error(`polluted legacy restore should succeed: ${JSON.stringify(pollutedRestore)}`);
+}
+if (pollutedRestore.activePresetId !== "lily-managed:deepseek:gateway") {
+  throw new Error(`polluted legacy restore must choose the namespaced Lily default: ${JSON.stringify(pollutedRestore)}`);
+}
+if (!pollutedRestore.diagnostics?.repairedCustomPresetCount) {
+  throw new Error(`polluted legacy restore should report repaired custom preset ids: ${JSON.stringify(pollutedRestore.diagnostics)}`);
+}
+const pollutedRaw = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+if (pollutedRaw.activePresetId !== "lily-managed:deepseek:gateway") {
+  throw new Error(`stored active preset must be the Lily default after restore: ${JSON.stringify(pollutedRaw)}`);
+}
+if ((pollutedRaw.customPresets || []).some((preset) => preset.id === "deepseek-gateway")) {
+  throw new Error(`restore must persist custom presets under safe custom ids: ${JSON.stringify(pollutedRaw.customPresets)}`);
+}
+if (pollutedRaw.apiGateway?.mode !== "builtin" || pollutedRaw.apiGateway?.baseUrl) {
+  throw new Error(`restore must clear the custom API gateway from disk: ${JSON.stringify(pollutedRaw.apiGateway)}`);
+}
+const pollutedRestoredList = modelPresets.listPresetsPublic();
+if (pollutedRestoredList.activePresetId !== "lily-managed:deepseek:gateway") {
+  throw new Error(`public list must remain on the Lily default after polluted restore: ${JSON.stringify(pollutedRestoredList)}`);
+}
+if (Object.keys(modelPresets.getUserApiEnv()).length) {
+  throw new Error(`polluted restore must not leave any custom model env active: ${JSON.stringify(modelPresets.getUserApiEnv())}`);
+}
+fs.writeFileSync(
+  path.join(tmp, "remote-config-cache.json"),
+  JSON.stringify({
+    config: {
+      encrypted: true,
+      data: Buffer.from(`protected:${JSON.stringify(remoteConfigState)}`, "utf8").toString("base64"),
+    },
+    updatedAt: new Date().toISOString(),
+  }),
+  "utf8",
+);
+modelPresets.reloadPresets();
 const agentSettings = require(path.join(__dirname, "../src/main/agent-settings.js"));
 if (agentSettings.resolveSettingsEnvValue("VISION_API_KEY") !== "remote-vision-key-123456") {
   throw new Error("runtime secrets should be resolved from signed remote config first");

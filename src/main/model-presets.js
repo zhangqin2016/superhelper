@@ -252,6 +252,15 @@ function hasMissingProtocolMetadata(stored) {
     preset?.baseUrl && !normalizeProtocol(preset.protocol));
 }
 
+function countRepairableCustomPresetIds(raw, servicePresetIds = new Set()) {
+  let count = 0;
+  for (const preset of Array.isArray(raw?.customPresets) ? raw.customPresets : []) {
+    const id = String(preset?.id || "").trim();
+    if (!id || !id.startsWith(CUSTOM_ID_PREFIX) || servicePresetIds.has(id)) count += 1;
+  }
+  return count;
+}
+
 function maskApiKey(key) {
   const value = String(key || "").trim();
   if (!value) return "";
@@ -783,6 +792,9 @@ function setApiGateway({ mode, baseUrl, apiKey, protocol, tlsSkipVerify }) {
 }
 
 function diagnoseAndRestoreDefaultModel() {
+  const storedBefore = readJson(userSettingsPath(), null);
+  const servicePresetIds = new Set(loadCatalog().presets.map((preset) => preset.id).filter(Boolean));
+  const repairableCustomPresetCount = countRepairableCustomPresetIds(storedBefore, servicePresetIds);
   const user = loadUserChoice();
   const activePreset = findPresetById(getActivePresetId());
   const catalog = loadCatalog();
@@ -806,6 +818,7 @@ function diagnoseAndRestoreDefaultModel() {
       managedPresetAvailable: Boolean(defaultPresetId),
       previousPresetId: activePreset?.id || user.activePresetId || "",
       customPresetCount: (user.customPresets || []).length,
+      repairedCustomPresetCount: repairableCustomPresetCount,
     },
     ...listPresetsPublic(),
   };

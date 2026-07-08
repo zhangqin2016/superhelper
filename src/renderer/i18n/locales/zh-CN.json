@@ -356,6 +356,7 @@
   "settings.modelSelect": "选择模型",
   "settings.modelDiagnoseRestore": "诊断并恢复 Lily 默认模型",
   "settings.modelDiagnoseRestoreRunning": "正在诊断并恢复 Lily 默认模型…",
+  "settings.modelDiagnoseRestoreFixedPollution": "已修复本地模型配置污染，Lily 默认模型已恢复。",
   "settings.modelDiagnoseRestoreFixedCustom": "已发现当前使用自定义模型，已切回 Lily 默认模型并刷新配置。",
   "settings.modelDiagnoseRestoreFixedGateway": "已清除自定义 API 覆盖，已恢复 Lily 默认模型。",
   "settings.modelDiagnoseRestoreReady": "Lily 默认模型已就绪。",

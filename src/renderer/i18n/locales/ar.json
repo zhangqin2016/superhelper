@@ -349,6 +349,7 @@
   "settings.modelSelect": "اختر النموذج",
   "settings.modelDiagnoseRestore": "تشخيص واستعادة نموذج Lily الافتراضي",
   "settings.modelDiagnoseRestoreRunning": "جارٍ تشخيص واستعادة نموذج Lily الافتراضي…",
+  "settings.modelDiagnoseRestoreFixedPollution": "تم إصلاح تلوث إعدادات النموذج المحلية واستعادة نموذج Lily الافتراضي.",
   "settings.modelDiagnoseRestoreFixedCustom": "كان هناك نموذج مخصص نشط. تمت استعادة نموذج Lily الافتراضي وتحديث الإعدادات.",
   "settings.modelDiagnoseRestoreFixedGateway": "تم مسح تجاوز API المخصص واستعادة نموذج Lily الافتراضي.",
   "settings.modelDiagnoseRestoreReady": "نموذج Lily الافتراضي جاهز.",

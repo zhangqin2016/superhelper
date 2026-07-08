@@ -275,6 +275,7 @@ function setDiagnoseRestoreStatus(messageKey, kind = "info", params = {}) {
 
 function diagnoseRestoreSuccessKey(result) {
   if (result?.modelConfigReady === false) return "settings.modelDiagnoseRestorePending";
+  if (result?.diagnostics?.repairedCustomPresetCount) return "settings.modelDiagnoseRestoreFixedPollution";
   if (result?.diagnostics?.wasCustomPreset) return "settings.modelDiagnoseRestoreFixedCustom";
   if (result?.diagnostics?.hadCustomApiGateway) return "settings.modelDiagnoseRestoreFixedGateway";
   return "settings.modelDiagnoseRestoreReady";
