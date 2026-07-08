@@ -20,6 +20,7 @@ import { activeSession, refreshStateLight } from "./session-chrome.js";
 import { confirmDialog } from "./confirm-dialog.js";
 import { refreshUsageSettings, initUsageSettings } from "./usage-settings.js";
 import { initSupportSettings } from "./support-settings.js";
+import { initSupportDiagnosticsSettings } from "./support-diagnostics-settings.js";
 import { initThemeSettings, refreshThemeSelect } from "./theme-settings.js";
 import { initMemorySettings, refreshMemorySettings } from "./memory-settings.js";
 import { initAccountSettings, refreshAccountSettings } from "./account-settings.js";
@@ -41,6 +42,7 @@ const SETTINGS_PAGES = [
   "usage",
   "license",
   "feedback",
+  "diagnostics",
   "contact",
   "about",
 ];
@@ -48,14 +50,16 @@ const SETTINGS_SUBNAV_GROUPS = {
   account: ["account", "usage", "license"],
   usage: ["account", "usage", "license"],
   license: ["account", "usage", "license"],
-  feedback: ["feedback", "contact", "about"],
-  contact: ["feedback", "contact", "about"],
-  about: ["feedback", "contact", "about"],
+  feedback: ["feedback", "diagnostics", "contact", "about"],
+  diagnostics: ["feedback", "diagnostics", "contact", "about"],
+  contact: ["feedback", "diagnostics", "contact", "about"],
+  about: ["feedback", "diagnostics", "contact", "about"],
 };
 const SETTINGS_NAV_PARENT = {
   usage: "account",
   license: "account",
   feedback: "help",
+  diagnostics: "help",
   contact: "help",
   about: "help",
 };
@@ -386,6 +390,7 @@ export async function initSettingsPanel() {
   initUsageSettings();
   if (accountFeatureEnabled()) initAccountSettings();
   initSupportSettings();
+  initSupportDiagnosticsSettings();
   initThemeSettings();
   initMemorySettings();
   initConnectorSettings();

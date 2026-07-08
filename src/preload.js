@@ -209,6 +209,8 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   submitFeedback: (payload) => ipcRenderer.invoke("support:submit-feedback", payload),
   submitContact: (payload) => ipcRenderer.invoke("support:submit-contact", payload),
+  runSupportDiagnostics: () => ipcRenderer.invoke("support:run-diagnostics"),
+  submitDiagnosticsFeedback: (payload) => ipcRenderer.invoke("support:submit-diagnostics-feedback", payload),
 
   listDirectory: (dirPath) => ipcRenderer.invoke("filetree:list-dir", { dirPath }),
   acceptChange: (sessionId, filePath) =>

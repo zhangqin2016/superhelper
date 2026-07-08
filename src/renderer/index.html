@@ -791,6 +791,9 @@
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="feedback">
                   <span data-i18n="settings.nav.feedback">意见反馈</span>
                 </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="diagnostics">
+                  <span data-i18n="settings.nav.diagnostics">诊断修复</span>
+                </button>
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="contact">
                   <span data-i18n="settings.nav.contact">联系我们</span>
                 </button>
@@ -831,6 +834,9 @@
               <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="feedback">
                   <span data-i18n="settings.nav.feedback">意见反馈</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="diagnostics">
+                  <span data-i18n="settings.nav.diagnostics">诊断修复</span>
                 </button>
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="contact">
                   <span data-i18n="settings.nav.contact">联系我们</span>
@@ -875,11 +881,46 @@
                 </div>
               </form>
             </section>
+            <section id="settingsPageDiagnostics" class="settings-page" data-settings-page="diagnostics" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.diagnostics">诊断修复</h3>
+              <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="feedback">
+                  <span data-i18n="settings.nav.feedback">意见反馈</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="diagnostics">
+                  <span data-i18n="settings.nav.diagnostics">诊断修复</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="contact">
+                  <span data-i18n="settings.nav.contact">联系我们</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="about">
+                  <span data-i18n="settings.nav.about">关于</span>
+                </button>
+              </div>
+              <p class="settings-section-desc" data-i18n="settings.diagnosticsDesc">检查模型、服务配置、授权和 AI 引擎状态。发现可修复问题时可直接处理，并把诊断结果发给我们。</p>
+              <div class="settings-actions settings-page-actions">
+                <button id="supportDiagnosticsRunBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.diagnosticsRun">开始诊断</button>
+                <button id="supportDiagnosticsRestoreBtn" class="settings-action-btn" type="button" data-i18n="settings.diagnosticsRestoreDefaultModel">恢复默认模型</button>
+              </div>
+              <p id="supportDiagnosticsStatus" class="settings-form-status" hidden></p>
+              <div id="supportDiagnosticsSummary" class="settings-diagnostics-summary" hidden></div>
+              <div id="supportDiagnosticsList" class="settings-diagnostics-list"></div>
+              <div class="settings-field settings-field--divider">
+                <label class="settings-field-label" for="supportDiagnosticsMessage" data-i18n="settings.diagnosticsMessage">补充说明（可选）</label>
+                <textarea id="supportDiagnosticsMessage" class="settings-text-input settings-textarea" rows="3" maxlength="1000" data-i18n-placeholder="settings.diagnosticsMessagePlaceholder" placeholder="例如：点击发送后提示模型连接中断"></textarea>
+              </div>
+              <div class="settings-actions settings-form-actions">
+                <button id="supportDiagnosticsSendBtn" class="settings-action-btn" type="button" data-i18n="settings.diagnosticsSend">发送诊断</button>
+              </div>
+            </section>
             <section id="settingsPageContact" class="settings-page" data-settings-page="contact" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.contact">联系我们</h3>
               <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="feedback">
                   <span data-i18n="settings.nav.feedback">意见反馈</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="diagnostics">
+                  <span data-i18n="settings.nav.diagnostics">诊断修复</span>
                 </button>
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="contact">
                   <span data-i18n="settings.nav.contact">联系我们</span>
@@ -929,6 +970,9 @@
               <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.help.tabLabel" aria-label="帮助内容">
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="feedback">
                   <span data-i18n="settings.nav.feedback">意见反馈</span>
+                </button>
+                <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="diagnostics">
+                  <span data-i18n="settings.nav.diagnostics">诊断修复</span>
                 </button>
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="contact">
                   <span data-i18n="settings.nav.contact">联系我们</span>

@@ -253,6 +253,10 @@ function registerAll(ctx) {
       source: payload?.source || "desktop-contact",
     }),
   );
+  ipcMain.handle("support:run-diagnostics", async () =>
+    require("./support-diagnostics").runSupportDiagnosticsPublic());
+  ipcMain.handle("support:submit-diagnostics-feedback", async (_event, payload) =>
+    require("./support-diagnostics").submitDiagnosticsFeedbackPublic(payload || {}));
 }
 
 module.exports = { registerAll };
