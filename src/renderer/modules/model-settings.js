@@ -122,7 +122,7 @@ function renderCustomList(presets, activePresetId) {
 
     const useBtn = document.createElement("button");
     useBtn.type = "button";
-    useBtn.className = "settings-action-btn";
+    useBtn.className = "settings-action-btn settings-action-btn--compact";
     useBtn.textContent = t("settings.modelCustomUse");
     useBtn.disabled = preset.id === activePresetId;
     useBtn.addEventListener("click", async () => {
@@ -143,7 +143,7 @@ function renderCustomList(presets, activePresetId) {
 
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
-    deleteBtn.className = "settings-action-btn settings-action-btn--danger";
+    deleteBtn.className = "settings-action-btn settings-action-btn--danger settings-action-btn--compact";
     deleteBtn.textContent = t("settings.modelCustomDelete");
     deleteBtn.addEventListener("click", async () => {
       if (isBusy()) {
@@ -171,6 +171,7 @@ function renderCustomList(presets, activePresetId) {
 // The "add model" flow lets the user pick a provider + model and enter their own
 // key — no manual URL/model typing (that lives under the collapsed "advanced").
 let catalogProviders = [];
+let diagnoseRestoreRunning = false;
 
 function renderCatalogModels(provider) {
   const modelSel = $("modelCatalogModel");
@@ -258,6 +259,79 @@ async function saveApiGateway(mode) {
   await refreshModelSelect();
 }
 
+function setDiagnoseRestoreStatus(messageKey, kind = "info", params = {}) {
+  const status = $("modelDiagnoseRestoreStatus");
+  if (!status) return;
+  if (!messageKey) {
+    status.hidden = true;
+    status.textContent = "";
+    status.className = "settings-form-status model-diagnose-restore-status";
+    return;
+  }
+  status.hidden = false;
+  status.textContent = t(messageKey, params);
+  status.className = `settings-form-status model-diagnose-restore-status settings-form-status--${kind}`;
+}
+
+function diagnoseRestoreSuccessKey(result) {
+  if (result?.modelConfigReady === false) return "settings.modelDiagnoseRestorePending";
+  if (result?.diagnostics?.wasCustomPreset) return "settings.modelDiagnoseRestoreFixedCustom";
+  if (result?.diagnostics?.hadCustomApiGateway) return "settings.modelDiagnoseRestoreFixedGateway";
+  return "settings.modelDiagnoseRestoreReady";
+}
+
+function setDiagnoseRestoreButtonLabel(btn, key) {
+  if (!btn) return;
+  const label = t(key);
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+}
+
+async function diagnoseAndRestoreDefaultModel() {
+  if (isBusy()) {
+    showToast(t("toast.modelBusy"), "error");
+    return;
+  }
+  if (diagnoseRestoreRunning) return;
+
+  const btn = $("modelDiagnoseRestoreBtn");
+  diagnoseRestoreRunning = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add("is-running");
+    setDiagnoseRestoreButtonLabel(btn, "settings.modelDiagnoseRestoreRunning");
+  }
+  setDiagnoseRestoreStatus("settings.modelDiagnoseRestoreRunning", "info");
+
+  try {
+    const result = await window.assistantClient.diagnoseAndRestoreDefaultModel();
+    if (!result?.ok) {
+      const message = apiErrorMessage(result?.error);
+      setDiagnoseRestoreStatus("settings.modelDiagnoseRestoreFailed", "error");
+      showToast(message, "error");
+      await refreshModelSelect();
+      return;
+    }
+    await refreshModelSelect();
+    const messageKey = diagnoseRestoreSuccessKey(result);
+    if (result.modelConfigReady === false) {
+      const error = result.modelConfigError || t("modelConfig.error.GENERIC");
+      setDiagnoseRestoreStatus(messageKey, "warning", { error });
+      showToast(t("toast.modelDiagnoseRestorePending", { error }), "warning");
+      return;
+    }
+    setDiagnoseRestoreStatus(messageKey, "success");
+    showToast(t("toast.modelDiagnoseRestoreDone"), "success");
+  } finally {
+    diagnoseRestoreRunning = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("is-running");
+      setDiagnoseRestoreButtonLabel(btn, "settings.modelDiagnoseRestore");
+    }
+  }
+}
+
 export async function initModelSettings() {
   await refreshModelSelect();
 
@@ -281,6 +355,7 @@ export async function initModelSettings() {
 
   $("modelApiSaveBtn")?.addEventListener("click", () => saveApiGateway("custom"));
   $("modelApiResetBtn")?.addEventListener("click", () => saveApiGateway("builtin"));
+  $("modelDiagnoseRestoreBtn")?.addEventListener("click", () => void diagnoseAndRestoreDefaultModel());
 
   // Catalog "add model": pick provider -> models repopulate.
   $("modelCatalogProvider")?.addEventListener("change", () => {

@@ -1,7 +1,14 @@
 "use strict";
 
 const { ipcMain } = require("electron");
-const { listPresetsPublic, setActivePreset, saveCustomPreset, deleteCustomPreset, setApiGateway } = require("./model-presets");
+const {
+  listPresetsPublic,
+  setActivePreset,
+  saveCustomPreset,
+  deleteCustomPreset,
+  setApiGateway,
+  diagnoseAndRestoreDefaultModel,
+} = require("./model-presets");
 const { withRunnerChange, applyPermissionModeLive } = require("./ipc-utils");
 
 function registerModelHandlers(ctx) {
@@ -41,6 +48,29 @@ function registerModelHandlers(ctx) {
 
   ipcMain.handle("models:set-api-gateway", (_event, payload) => {
     return withRunnerChange(ctx, () => setApiGateway(payload || {}), { liveEnv: false });
+  });
+
+  ipcMain.handle("models:diagnose-restore-default", async () => {
+    return withRunnerChange(ctx, async () => {
+      let configRefresh = null;
+      try {
+        configRefresh = await require("./ipc-utils").refreshRemoteConfigForSend({
+          force: true,
+          timeoutMs: 45_000,
+          repairManagedService: true,
+          refreshLicense: false,
+          reason: "model_diagnose_restore",
+        });
+      } catch (err) {
+        configRefresh = { ok: false, error: err?.message || String(err) };
+      }
+      const restored = diagnoseAndRestoreDefaultModel();
+      return {
+        ...restored,
+        modelConfigReady: Boolean(configRefresh?.ok),
+        modelConfigError: configRefresh?.ok ? "" : String(configRefresh?.error || "CONFIG_REFRESH_FAILED"),
+      };
+    }, { liveEnv: false });
   });
 
   ipcMain.handle("engine:list", () => ({

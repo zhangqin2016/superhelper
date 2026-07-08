@@ -58,6 +58,10 @@ const managedGatewayTokenInvalid = classifyAssistantError("Request failed: 401 M
 assert(managedGatewayTokenInvalid?.code === "MANAGED_MODEL_AUTH_INVALID", "Lily gateway token invalid is a managed-config refresh failure");
 assert(managedGatewayTokenInvalid?.retryable === true, "Lily gateway token invalid can be refreshed and retried");
 
+const managedGatewayAccountMissing = classifyAssistantError("Request failed: 402 payment_required ACCOUNT_LOGIN_REQUIRED");
+assert(managedGatewayAccountMissing?.code === "MANAGED_MODEL_AUTH_MISSING", "Lily gateway account/license missing is a managed-config auth failure");
+assert(managedGatewayAccountMissing?.retryable === true, "Lily gateway account/license missing can refresh config after activation/login");
+
 const genericUnauthorized = classifyAssistantError("Request failed: 401 Unauthorized");
 assert(genericUnauthorized?.code === "AUTH_FAILED", "generic 401 remains a user/API-key auth failure");
 assert(genericUnauthorized?.retryable === false, "generic API auth failures are not blindly retried");

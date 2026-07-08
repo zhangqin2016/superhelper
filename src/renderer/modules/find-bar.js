@@ -76,6 +76,7 @@ function iconButton(icon, title, onClick) {
   btn.type = "button";
   btn.className = "find-btn";
   btn.title = title;
+  btn.setAttribute("aria-label", title);
   btn.innerHTML = ICONS[icon];
   btn.addEventListener("click", onClick);
   return btn;

@@ -12,6 +12,8 @@ const require = createRequire(import.meta.url);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-runtime-pack-installer-"));
 const userData = path.join(tmp, "user-data");
 process.env.LILY_USER_DATA_DIR = userData;
+const runtimePackRoot = path.join(tmp, "external-runtime-root");
+process.env.LILY_RUNTIME_PACK_ROOT = runtimePackRoot;
 const bundledRoot = path.join(tmp, "bundled-runtime-packs");
 process.env.LILY_BUNDLED_RUNTIME_PACK_ROOTS = bundledRoot;
 const bundledWeb = path.join(bundledRoot, "web-automation");
@@ -81,9 +83,27 @@ try {
   const bundledWebPack = catalog.packs.find((pack) => pack.id === "web-automation");
   assert.equal(bundledWebPack?.installed, true);
   assert.equal(bundledWebPack?.source, "bundled");
+  assert.equal(bundledWebPack?.locationKind, "bundled", "bundled pack should report a stable location kind");
   assert.equal(bundledWebPack?.readOnly, true);
   assert.equal(bundledWebPack?.path, bundledWeb);
   assert(installer.installedRuntimePackIds().has("web-automation"), "bundled pack should count as installed");
+  const legacyExtraDir = path.join(userData, "runtime-packs", "legacy-extra-pack");
+  fs.mkdirSync(legacyExtraDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(userData, "runtime-packs.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      installed: {
+        "legacy-extra-pack": { source: "artifact", version: "0.1.0", installedAt: "2026-01-01T00:00:00.000Z" },
+      },
+    }),
+    "utf8",
+  );
+  assert(installer.installedRuntimePackIds().has("legacy-extra-pack"), "legacy userData pack should count as installed");
+  const legacyListed = installer.listRuntimePacks().packs.find((pack) => pack.id === "legacy-extra-pack");
+  assert.equal(legacyListed?.installed, true, "legacy userData pack should be visible in settings list");
+  assert.equal(legacyListed?.path, legacyExtraDir, "legacy userData pack should report its actual path");
+  assert.equal(legacyListed?.locationKind, "legacy", "legacy userData pack should report its source location");
   const baseProvided = installer.baseProvidedRuntimePackMap();
   for (const id of ["libreoffice", "pillow", "opencv", "rapidocr"]) {
     if (!baseProvided.has(id)) continue;
@@ -122,7 +142,11 @@ try {
   const installed = await installer.installRuntimePack("pro-pdf");
   assert.equal(installed.ok, true, `install failed: ${JSON.stringify(installed)}`);
   assert.equal(installed.version, "1.2.3");
-  assert(fs.existsSync(path.join(userData, "runtime-packs", "pro-pdf", "module", "__init__.py")), "pack contents missing");
+  assert(
+    fs.existsSync(path.join(runtimePackRoot, "runtime-packs", "pro-pdf", "module", "__init__.py")),
+    "pack contents should be installed under the selected runtime-pack root",
+  );
+  assert(!fs.existsSync(path.join(userData, "runtime-packs", "pro-pdf")), "new installs must not copy pack contents into userData");
 
   const installedWithProgress = await installer.installRuntimePack("progress-pack", {
     onProgress: (event) => progressEvents.push(event),
@@ -139,10 +163,15 @@ try {
     "extracting progress should include the active extractor backend",
   );
 
-  const state = JSON.parse(fs.readFileSync(path.join(userData, "runtime-packs.json"), "utf8"));
+  const state = JSON.parse(fs.readFileSync(path.join(runtimePackRoot, "runtime-packs.json"), "utf8"));
   assert.equal(state.installed["pro-pdf"].source, "artifact");
   assert.equal(state.installed["pro-pdf"].format, "zip");
   assert(installer.installedRuntimePackIds().has("pro-pdf"), "installed id should be visible");
+  assert.equal(
+    installer.listRuntimePacks().packs.find((pack) => pack.id === "pro-pdf")?.locationKind,
+    "selected",
+    "new installs should report the current dependency location",
+  );
 
   const skipped = await installer.installRuntimePack("pro-pdf");
   assert.equal(skipped.ok, true);
@@ -166,7 +195,7 @@ try {
   assert.equal(forced.skipped, undefined, "force install must not skip an existing pack");
   assert.equal(forced.repaired, true, "force install should report repaired=true");
   assert.equal(forced.version, "2.0.0");
-  assert.equal(JSON.parse(fs.readFileSync(path.join(userData, "runtime-packs.json"), "utf8")).installed["pro-pdf"].version, "2.0.0");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(runtimePackRoot, "runtime-packs.json"), "utf8")).installed["pro-pdf"].version, "2.0.0");
 
   serviceClient.runtimePackArtifact = async (packId, platform) => ({
     ok: true,
@@ -187,9 +216,9 @@ try {
   });
   assert.equal(repaired.ok, true, `repair failed: ${JSON.stringify(repaired)}`);
   assert.equal(repaired.results[0].repaired, true);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(userData, "runtime-packs.json"), "utf8")).installed["pro-pdf"].version, "3.0.0");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(runtimePackRoot, "runtime-packs.json"), "utf8")).installed["pro-pdf"].version, "3.0.0");
 
-  const badPackDir = path.join(userData, "runtime-packs", "bad-pack");
+  const badPackDir = path.join(runtimePackRoot, "runtime-packs", "bad-pack");
   fs.rmSync(badPackDir, { recursive: true, force: true });
   fs.mkdirSync(badPackDir, { recursive: true });
   fs.writeFileSync(path.join(badPackDir, "keep.txt"), "existing", "utf8");
@@ -215,12 +244,12 @@ try {
 
   const removed = installer.uninstallRuntimePack("pro-pdf");
   assert.equal(removed.ok, true);
-  assert(!fs.existsSync(path.join(userData, "runtime-packs", "pro-pdf")), "uninstall must remove the pack dir");
+  assert(!fs.existsSync(path.join(runtimePackRoot, "runtime-packs", "pro-pdf")), "uninstall must remove the pack dir");
   assert(!installer.installedRuntimePackIds().has("pro-pdf"), "uninstalled id should not be visible");
 
-  fs.mkdirSync(path.join(userData, "runtime-packs"), { recursive: true });
+  fs.mkdirSync(path.join(runtimePackRoot, "runtime-packs"), { recursive: true });
   fs.writeFileSync(
-    path.join(userData, "runtime-packs.json"),
+    path.join(runtimePackRoot, "runtime-packs.json"),
     JSON.stringify({ schemaVersion: 1, installed: { ghost: { source: "artifact", version: "9.9.9" } } }),
     "utf8",
   );
@@ -234,6 +263,14 @@ try {
   assert(installerSource.includes("spawn(candidate.command"), "runtime-pack extraction should use async spawn");
   assert(installerSource.includes('require("7zip-bin")'), "runtime-pack extraction should prefer bundled 7zip-bin");
   assert(installerSource.includes(".asar.unpacked"), "bundled extractor paths should resolve out of Electron asar");
+  assert(
+    installerSource.includes("const cacheDir = packsRoot()"),
+    "runtime-pack downloads and extraction staging should use the selected dependency root, not userData",
+  );
+  assert(
+    !installerSource.includes('const cacheDir = userDataPath("runtime-packs")'),
+    "runtime-pack downloads must not keep large temporary archives under userData after a custom root is selected",
+  );
   assert(
     installerSource.includes("replacePackDirectory(stagingPath, target)"),
     "runtime-pack install should atomically replace the target after staging extraction",

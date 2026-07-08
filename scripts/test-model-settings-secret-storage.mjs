@@ -357,6 +357,29 @@ if (
 ) {
   throw new Error(`selected custom preset should use local custom API settings: ${JSON.stringify(remoteCustomEnv)}`);
 }
+const restore = modelPresets.diagnoseAndRestoreDefaultModel();
+if (!restore.ok) {
+  throw new Error(`diagnose restore default model should succeed: ${JSON.stringify(restore)}`);
+}
+if (restore.activePresetId !== "managed") {
+  throw new Error(`diagnose restore should switch back to managed default: ${JSON.stringify(restore)}`);
+}
+if (!restore.diagnostics?.wasCustomPreset) {
+  throw new Error(`diagnose restore should report custom preset recovery: ${JSON.stringify(restore)}`);
+}
+const restoredList = modelPresets.listPresetsPublic();
+if (restoredList.activePresetId !== "managed") {
+  throw new Error(`restored public list should use managed preset: ${JSON.stringify(restoredList)}`);
+}
+if (restoredList.apiGateway.mode !== "builtin" || restoredList.apiGateway.baseUrl) {
+  throw new Error(`diagnose restore should clear custom API override: ${JSON.stringify(restoredList.apiGateway)}`);
+}
+if (!restoredList.presets.some((preset) => preset.id === remoteCustom.preset.id)) {
+  throw new Error("diagnose restore should preserve saved custom model records");
+}
+if (Object.keys(modelPresets.getUserApiEnv()).length) {
+  throw new Error(`managed default should not use custom API env after restore: ${JSON.stringify(modelPresets.getUserApiEnv())}`);
+}
 const agentSettings = require(path.join(__dirname, "../src/main/agent-settings.js"));
 if (agentSettings.resolveSettingsEnvValue("VISION_API_KEY") !== "remote-vision-key-123456") {
   throw new Error("runtime secrets should be resolved from signed remote config first");

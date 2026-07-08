@@ -199,7 +199,7 @@ function renderAccount(account) {
   if (account.authType === "oauth2") {
     const authorize = document.createElement("button");
     authorize.type = "button";
-    authorize.className = "settings-action-btn settings-action-btn--primary";
+    authorize.className = "settings-action-btn settings-action-btn--primary settings-action-btn--compact";
     authorize.textContent = account.status === "connected"
       ? t("settings.connectors.reauthorize")
       : t("settings.connectors.authorize");
@@ -222,7 +222,7 @@ function renderAccount(account) {
 
   const test = document.createElement("button");
   test.type = "button";
-  test.className = "settings-action-btn";
+  test.className = "settings-action-btn settings-action-btn--compact";
   test.textContent = t("settings.connectors.test");
   test.addEventListener("click", async () => {
     test.disabled = true;
@@ -240,7 +240,7 @@ function renderAccount(account) {
 
   const remove = document.createElement("button");
   remove.type = "button";
-  remove.className = "settings-action-btn settings-action-btn--danger";
+  remove.className = "settings-action-btn settings-action-btn--danger settings-action-btn--compact";
   remove.textContent = t("settings.connectors.remove");
   remove.addEventListener("click", async () => {
     const result = await window.assistantClient.removeMailAccount(account.id);
@@ -340,7 +340,7 @@ function renderWebCredential(cred) {
   actions.className = "connector-account-actions";
   const remove = document.createElement("button");
   remove.type = "button";
-  remove.className = "settings-action-btn settings-action-btn--danger";
+  remove.className = "settings-action-btn settings-action-btn--danger settings-action-btn--compact";
   remove.textContent = t("settings.connectors.remove");
   remove.addEventListener("click", async () => {
     const result = await window.assistantClient.removeWebCredential(cred.domain);

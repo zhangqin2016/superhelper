@@ -5,10 +5,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync, spawn } = require("node:child_process");
 const { finished } = require("node:stream/promises");
-const { PROJECT_ROOT, userDataPath } = require("./config");
+const { PROJECT_ROOT } = require("./config");
 const {
   bundledPackDir,
+  effectivePackEntries,
   listBundledRuntimePackDirs,
+  packsRoot,
+  readInstallStates,
   statePath,
   packDir,
 } = require("./runtime-packs");
@@ -48,19 +51,23 @@ function isValidPackId(id) {
   return PACK_ID_RE.test(String(id || ""));
 }
 
-function installedRecordExists(id, rec) {
+function installedRecordExists(id, rec, root = packsRoot()) {
   if (!rec || typeof rec !== "object") return false;
   if (rec.source === "pip") return true;
-  return fs.existsSync(packDir(id));
+  return fs.existsSync(packDir(id, root));
+}
+
+function userInstallEntriesById() {
+  const entries = new Map();
+  for (const entry of effectivePackEntries()) {
+    if (entry.source === "bundled") continue;
+    if (!entries.has(entry.id)) entries.set(entry.id, entry);
+  }
+  return entries;
 }
 
 function installedRuntimePackIds() {
-  const state = readState();
-  const ids = new Set(
-    Object.entries(state.installed || {})
-      .filter(([id, rec]) => installedRecordExists(id, rec))
-      .map(([id]) => id),
-  );
+  const ids = new Set(userInstallEntriesById().keys());
   for (const id of listBundledRuntimePackDirs().keys()) ids.add(id);
   for (const id of baseProvidedRuntimePackMap().keys()) ids.add(id);
   return ids;
@@ -552,7 +559,7 @@ async function checkRuntimePackAvailability(packIds = []) {
   const ids = (Array.isArray(packIds) && packIds.length ? packIds : Object.keys(PACK_SPECS))
     .map((id) => String(id || "").trim())
     .filter(Boolean);
-  const state = readState();
+  const installedIds = installedRuntimePackIds();
   const bundled = listBundledRuntimePackDirs();
   const baseProvided = baseProvidedRuntimePackMap();
   const packs = [];
@@ -561,7 +568,7 @@ async function checkRuntimePackAvailability(packIds = []) {
       packs.push({ id, available: false, error: "INVALID_RUNTIME_PACK" });
       continue;
     }
-    if (installedRecordExists(id, state.installed[id]) || bundled.has(id) || baseProvided.has(id)) {
+    if (installedIds.has(id) || bundled.has(id) || baseProvided.has(id)) {
       packs.push({ id, available: true, installed: true });
       continue;
     }
@@ -591,8 +598,9 @@ function localizeObject(value) {
   return { ...value };
 }
 
-function publicPackFromSpec(spec, rec, bundledDir = "", baseRec = null) {
-  const userInstalled = installedRecordExists(spec.id, rec);
+function publicPackFromSpec(spec, userEntry = null, missingRec = null, bundledDir = "", baseRec = null) {
+  const rec = userEntry?.record || missingRec || null;
+  const userInstalled = Boolean(userEntry);
   const bundled = Boolean(bundledDir);
   const base = Boolean(baseRec);
   const installed = userInstalled || bundled || base;
@@ -612,41 +620,47 @@ function publicPackFromSpec(spec, rec, bundledDir = "", baseRec = null) {
     version: rec?.version || baseRec?.version || null,
     installedAt: rec?.installedAt || null,
     source: userInstalled ? rec?.source || null : bundled ? "bundled" : base ? "base" : null,
-    path: userInstalled ? packDir(spec.id) : bundledDir || baseRec?.path || "",
+    locationKind: userInstalled ? userEntry.stateKind || "selected" : bundled ? "bundled" : base ? "base" : null,
+    path: userInstalled ? userEntry.dir || "" : bundledDir || baseRec?.path || "",
   };
 }
 
 function listRuntimePacks() {
   const state = readState();
+  const userEntries = userInstallEntriesById();
   const baseProvided = baseProvidedRuntimePackMap();
   const seen = new Set();
   const packs = Object.values(PACK_SPECS).map((spec) => {
     seen.add(spec.id);
-    return publicPackFromSpec(spec, state.installed[spec.id], bundledPackDir(spec.id), baseProvided.get(spec.id));
+    return publicPackFromSpec(spec, userEntries.get(spec.id), state.installed[spec.id], bundledPackDir(spec.id), baseProvided.get(spec.id));
   });
-  for (const [id, rec] of Object.entries(state.installed || {})) {
-    if (seen.has(id)) continue;
-    const installed = installedRecordExists(id, rec);
-    packs.push({
-      id,
-      category: "other",
-      installKind: "artifact",
-      recommended: false,
-      label: { en: id, "zh-CN": id, ar: id },
-      description: {
-        en: "Installed dependency package that is not in this app version's catalog.",
-        "zh-CN": "当前应用版本目录中没有的已安装依赖包。",
-        ar: "حزمة تبعية مثبتة غير موجودة في كتالوج هذا الإصدار.",
-      },
-      sizeEstimate: "",
-      installed,
-      missingFiles: Boolean(rec && !installed),
-      version: rec?.version || null,
-      installedAt: rec?.installedAt || null,
-      source: rec?.source || null,
-      path: installed ? packDir(id) : "",
-    });
-    seen.add(id);
+  for (const installState of readInstallStates()) {
+    for (const [id, rec] of Object.entries(installState.state.installed || {})) {
+      if (seen.has(id)) continue;
+      const entry = userEntries.get(id);
+      const installed = Boolean(entry);
+      packs.push({
+        id,
+        category: "other",
+        installKind: "artifact",
+        recommended: false,
+        label: { en: id, "zh-CN": id, ar: id },
+        description: {
+          en: "Installed dependency package that is not in this app version's catalog.",
+          "zh-CN": "当前应用版本目录中没有的已安装依赖包。",
+          ar: "حزمة تبعية مثبتة غير موجودة في كتالوج هذا الإصدار.",
+        },
+        sizeEstimate: "",
+        installed,
+        missingFiles: Boolean(rec && !installed),
+        version: (entry?.record || rec)?.version || null,
+        installedAt: (entry?.record || rec)?.installedAt || null,
+        source: (entry?.record || rec)?.source || null,
+        locationKind: installed ? entry.stateKind || installState.kind || "selected" : installState.kind || null,
+        path: installed ? entry.dir || "" : "",
+      });
+      seen.add(id);
+    }
   }
   for (const [id, dir] of listBundledRuntimePackDirs()) {
     if (seen.has(id)) continue;
@@ -669,6 +683,7 @@ function listRuntimePacks() {
       version: null,
       installedAt: null,
       source: "bundled",
+      locationKind: "bundled",
       path: dir,
     });
   }
@@ -739,7 +754,7 @@ async function runRuntimePackInstall(id, job) {
   }
   const artifact = resolved.artifact;
   const target = packDir(id);
-  const cacheDir = userDataPath("runtime-packs");
+  const cacheDir = packsRoot();
   const installNonce = Date.now();
   const archivePath = path.join(cacheDir, `.${id}-${installNonce}.pack${archiveExtensionForArtifact(artifact)}`);
   const stagingPath = path.join(cacheDir, `.${id}-${installNonce}.extracting`);

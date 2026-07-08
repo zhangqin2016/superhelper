@@ -742,6 +742,35 @@ function setApiGateway({ mode, baseUrl, apiKey, protocol, tlsSkipVerify }) {
   return { ok: true, ...listPresetsPublic() };
 }
 
+function diagnoseAndRestoreDefaultModel() {
+  const user = loadUserChoice();
+  const activePreset = findPresetById(getActivePresetId());
+  const catalog = loadCatalog();
+  const builtinPresets = getBuiltinPresets();
+  const defaultPresetId =
+    (catalog.activePresetId && builtinPresets.some((preset) => preset.id === catalog.activePresetId) ? catalog.activePresetId : "") ||
+    builtinPresets[0]?.id ||
+    null;
+  const next = {
+    ...user,
+    activePresetId: defaultPresetId,
+    apiGateway: normalizeApiGateway(null),
+  };
+  persistUserChoice(next);
+  return {
+    ok: true,
+    activePresetId: defaultPresetId,
+    diagnostics: {
+      wasCustomPreset: Boolean(activePreset?.custom),
+      hadCustomApiGateway: user.apiGateway?.mode === "custom",
+      managedPresetAvailable: Boolean(defaultPresetId),
+      previousPresetId: activePreset?.id || user.activePresetId || "",
+      customPresetCount: (user.customPresets || []).length,
+    },
+    ...listPresetsPublic(),
+  };
+}
+
 function reloadPresets() {
   cachedCatalog = null;
   cachedUserChoice = null;
@@ -763,5 +792,6 @@ module.exports = {
   saveCustomPreset,
   deleteCustomPreset,
   setApiGateway,
+  diagnoseAndRestoreDefaultModel,
   reloadPresets,
 };

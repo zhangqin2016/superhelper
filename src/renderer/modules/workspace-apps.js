@@ -139,7 +139,7 @@ function renderAppCard(app) {
   if (app.installed && !app.updateAvailable) {
     const open = document.createElement("button");
     open.type = "button";
-    open.className = "settings-action-btn settings-action-btn--primary";
+    open.className = "settings-action-btn settings-action-btn--primary settings-action-btn--compact";
     open.textContent = t("apps.openInstalled");
     open.disabled = !app.installedAvailable;
     open.addEventListener("click", () => void openInstalledWorkspaceApp(app, open));
@@ -147,7 +147,7 @@ function renderAppCard(app) {
 
     const createAnother = document.createElement("button");
     createAnother.type = "button";
-    createAnother.className = "settings-action-btn settings-action-btn--primary";
+    createAnother.className = "settings-action-btn settings-action-btn--primary settings-action-btn--compact";
     createAnother.textContent = t("apps.createAnother");
     createAnother.addEventListener("click", () => {
       void installWorkspaceApp({ ...app, forceNewInstance: true }, createAnother);
@@ -157,7 +157,7 @@ function renderAppCard(app) {
     if (app.installedPath) {
       const reveal = document.createElement("button");
       reveal.type = "button";
-      reveal.className = "settings-action-btn";
+      reveal.className = "settings-action-btn settings-action-btn--compact";
       reveal.textContent = t("apps.showInFolder");
       reveal.disabled = !app.installedAvailable;
       reveal.addEventListener("click", () => void revealLocalFileInFolder(app.installedPath));
@@ -166,7 +166,7 @@ function renderAppCard(app) {
 
     const uninstall = document.createElement("button");
     uninstall.type = "button";
-    uninstall.className = "settings-action-btn";
+    uninstall.className = "settings-action-btn settings-action-btn--compact";
     uninstall.textContent = t("apps.uninstall");
     uninstall.addEventListener("click", () => void uninstallWorkspaceApp(app, uninstall));
     actions.append(uninstall);
@@ -174,7 +174,7 @@ function renderAppCard(app) {
     if (app.installed && app.updateAvailable) {
       const createAnother = document.createElement("button");
       createAnother.type = "button";
-      createAnother.className = "settings-action-btn";
+      createAnother.className = "settings-action-btn settings-action-btn--compact";
       createAnother.textContent = t("apps.createAnother");
       createAnother.addEventListener("click", () => {
         void installWorkspaceApp({ ...app, forceNewInstance: true }, createAnother);
@@ -184,7 +184,7 @@ function renderAppCard(app) {
 
     const download = document.createElement("button");
     download.type = "button";
-    download.className = "settings-action-btn settings-action-btn--primary workspace-app-download";
+    download.className = "settings-action-btn settings-action-btn--primary settings-action-btn--compact workspace-app-download";
     download.textContent = app.installed && app.updateAvailable ? t("apps.upgrade") : t("apps.install");
     // Gated apps carry no inline downloadUrl (resolved via the signed endpoint at
     // install time), so they must stay clickable — only disable when there is no

@@ -18,6 +18,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-runtime-packs-"));
 process.env.LILY_USER_DATA_DIR = tmp; // config resolves userData from this (no electron)
+const externalRuntimeRoot = path.join(tmp, "external-runtime-root");
+process.env.LILY_RUNTIME_PACK_ROOT = externalRuntimeRoot;
 const bundledRoot = path.join(tmp, "bundled-runtime-packs");
 process.env.LILY_BUNDLED_RUNTIME_PACK_ROOTS = bundledRoot;
 
@@ -43,6 +45,10 @@ assert(
 
 // Simulate what the agent's installer writes: a state file + extracted pack dirs.
 const proDir = packs.packDir("pro-pdf");
+assert(
+  proDir === path.join(externalRuntimeRoot, "runtime-packs", "pro-pdf"),
+  "new installs should target the selected runtime-pack root, not userData",
+);
 fs.mkdirSync(proDir, { recursive: true });
 fs.writeFileSync(path.join(proDir, "marker.txt"), "x"); // dir exists on disk
 const opencvDir = packs.packDir("opencv");
@@ -59,6 +65,26 @@ fs.writeFileSync(path.join(libreOfficeProgramDir, process.platform === "win32" ?
 const libreOfficeResourcesDir =
   process.platform === "darwin" ? path.join(packs.packDir("libreoffice"), "LibreOffice.app", "Contents", "Resources") : null;
 if (libreOfficeResourcesDir) fs.mkdirSync(libreOfficeResourcesDir, { recursive: true });
+
+// Old installs must remain readable after a user chooses a new dependency-pack
+// location. The selected root wins for duplicate ids, but legacy-only packs are
+// still usable so older installs do not silently lose capability.
+const legacyRapidOcrDir = path.join(tmp, "runtime-packs", "rapidocr");
+fs.mkdirSync(legacyRapidOcrDir, { recursive: true });
+const legacyProPdfDir = path.join(tmp, "runtime-packs", "pro-pdf");
+fs.mkdirSync(legacyProPdfDir, { recursive: true });
+fs.writeFileSync(
+  path.join(tmp, "runtime-packs.json"),
+  JSON.stringify({
+    schemaVersion: 1,
+    installed: {
+      rapidocr: { source: "artifact", version: "3.3.0" },
+      "pro-pdf": { source: "artifact", version: "1.0.0" },
+    },
+  }),
+  "utf8",
+);
+
 // A pip-source record (installs into the venv, no PYTHONPATH entry) and a record
 // whose dir was deleted (must not be returned) — both must be excluded.
 fs.writeFileSync(
@@ -78,8 +104,10 @@ fs.writeFileSync(
 );
 
 const paths = packs.getRuntimePackPythonPaths();
-assert(paths.length === 3, `expected three usable pack paths, got ${JSON.stringify(paths)}`);
+assert(paths.length === 4, `expected selected plus legacy usable pack paths, got ${JSON.stringify(paths)}`);
 assert(paths.includes(proDir), "should return the artifact pack dir that exists on disk");
+assert(paths.includes(legacyRapidOcrDir), "legacy userData installs should remain usable after changing runtime-pack root");
+assert(!paths.includes(legacyProPdfDir), "selected runtime-pack root should win over legacy state for duplicate ids");
 assert(
   paths.indexOf(rembgDir) < paths.indexOf(opencvDir),
   `rembg must precede opencv so its NumPy pin can win: ${JSON.stringify(paths)}`,

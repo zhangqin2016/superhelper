@@ -13,6 +13,20 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const script = path.join(ROOT, "resources", "skills-catalog", "lily-runtime-packs", "scripts", "manage_runtime_pack.py");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-runtime-pack-skill-"));
 const userData = path.join(tmp, "userData");
+const runtimePackRoot = path.join(tmp, "external-runtime-root");
+const fallbackRuntimeRoot = path.join(tmp, "fallback-runtime-root");
+fs.mkdirSync(userData, { recursive: true });
+fs.mkdirSync(path.join(fallbackRuntimeRoot, "runtime-packs", "rapidocr"), { recursive: true });
+fs.writeFileSync(
+  path.join(fallbackRuntimeRoot, "runtime-packs.json"),
+  JSON.stringify({ schemaVersion: 1, installed: { rapidocr: { source: "artifact", version: "3.3.0" } } }),
+  "utf8",
+);
+fs.writeFileSync(
+  path.join(userData, "runtime-pack-root.json"),
+  JSON.stringify({ root: runtimePackRoot, fallbackRoots: [fallbackRuntimeRoot], updatedAt: "2026-01-01T00:00:00.000Z" }),
+  "utf8",
+);
 const archive = path.join(tmp, "pack.zip");
 const payloadDir = path.join(tmp, "payload");
 fs.mkdirSync(payloadDir, { recursive: true });
@@ -55,6 +69,7 @@ try {
       env: {
         ...process.env,
         LILY_USER_DATA_DIR: userData,
+        LILY_RUNTIME_PACK_ROOT: "",
         LILY_SERVICE_API_BASE_URL: `http://127.0.0.1:${server.address().port}`,
         PATH: process.env.PATH || "",
       },
@@ -66,6 +81,22 @@ try {
     child.on("close", (status) => resolve({ status, stdout, stderr }));
   });
   assert(result.status === 0, `runtime pack install should succeed: stdout=${result.stdout} stderr=${result.stderr}`);
+  const listResult = spawnSync("python3", [script, "list"], {
+    env: {
+      ...process.env,
+      LILY_USER_DATA_DIR: userData,
+      LILY_RUNTIME_PACK_ROOT: "",
+      LILY_SERVICE_API_BASE_URL: `http://127.0.0.1:${server.address().port}`,
+      PATH: process.env.PATH || "",
+    },
+    encoding: "utf8",
+  });
+  assert(listResult.status === 0, `runtime pack list should succeed: stdout=${listResult.stdout} stderr=${listResult.stderr}`);
+  const listed = JSON.parse(listResult.stdout.trim());
+  assert(
+    listed.packs.some((pack) => pack.id === "rapidocr" && pack.installed && pack.path === path.join(fallbackRuntimeRoot, "runtime-packs", "rapidocr")),
+    `fallback runtime pack should remain visible to the agent script: ${listResult.stdout}`,
+  );
   const parsed = JSON.parse(result.stdout.trim());
   assert(parsed.ok === true && parsed.installed === "pandoc", `final JSON should report install: ${result.stdout}`);
   assert(result.stderr.includes("[lily-progress]"), `installer must emit lily progress markers: ${result.stderr}`);
@@ -73,8 +104,10 @@ try {
   for (const status of ["resolving", "downloading", "verifying", "extracting", "installed"]) {
     assert(result.stderr.includes(`"status": "${status}"`), `progress missing ${status}: ${result.stderr}`);
   }
-  assert(fs.existsSync(path.join(userData, "runtime-packs", "pandoc", "hello.txt")), "artifact should be extracted");
-  finish("test-runtime-pack-skill-progress", 8);
+  assert(fs.existsSync(path.join(runtimePackRoot, "runtime-packs", "pandoc", "hello.txt")), "artifact should be extracted under selected runtime-pack root");
+  assert(fs.existsSync(path.join(runtimePackRoot, "runtime-packs.json")), "state should be written beside the selected runtime-pack root");
+  assert(!fs.existsSync(path.join(userData, "runtime-packs", "pandoc")), "selected runtime-pack root must not copy pack contents into userData");
+  finish("test-runtime-pack-skill-progress", 10);
 } finally {
   server.close();
   fs.rmSync(tmp, { recursive: true, force: true });

@@ -135,6 +135,67 @@ function userDataPath(...segments) {
   return path.join(resolveBasePath("userData"), ...segments);
 }
 
+function legacyRuntimePackBaseDir() {
+  return userDataPath();
+}
+
+function runtimePackRootConfigPath() {
+  return userDataPath("runtime-pack-root.json");
+}
+
+function runtimePackRootConfig() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(runtimePackRootConfigPath(), "utf8"));
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function configuredRuntimePackBaseDir() {
+  if (process.env.LILY_RUNTIME_PACK_ROOT) return process.env.LILY_RUNTIME_PACK_ROOT;
+  const root = typeof runtimePackRootConfig().root === "string" ? runtimePackRootConfig().root.trim() : "";
+  return root || "";
+}
+
+function runtimePackFallbackBaseDirs() {
+  const roots = Array.isArray(runtimePackRootConfig().fallbackRoots)
+    ? runtimePackRootConfig().fallbackRoots
+    : [];
+  const seen = new Set();
+  return roots
+    .map((root) => (typeof root === "string" ? root.trim() : ""))
+    .filter(Boolean)
+    .map((root) => path.resolve(root))
+    .filter((root) => fs.existsSync(root))
+    .filter((root) => {
+      if (seen.has(root)) return false;
+      seen.add(root);
+      return true;
+    });
+}
+
+function runtimePackBaseDir() {
+  const configured = configuredRuntimePackBaseDir();
+  return path.resolve(configured || legacyRuntimePackBaseDir());
+}
+
+function legacyRuntimePackPacksRoot() {
+  return path.join(legacyRuntimePackBaseDir(), "runtime-packs");
+}
+
+function legacyRuntimePackStatePath() {
+  return path.join(legacyRuntimePackBaseDir(), "runtime-packs.json");
+}
+
+function runtimePackPacksRoot() {
+  return path.join(runtimePackBaseDir(), "runtime-packs");
+}
+
+function runtimePackStatePath() {
+  return path.join(runtimePackBaseDir(), "runtime-packs.json");
+}
+
 function sessionsConfigPath() {
   return userDataPath("sessions.json");
 }
@@ -272,6 +333,15 @@ module.exports = {
   PROJECT_ROOT,
   defaultWorkspacePath,
   userDataPath,
+  legacyRuntimePackBaseDir,
+  legacyRuntimePackPacksRoot,
+  legacyRuntimePackStatePath,
+  runtimePackBaseDir,
+  runtimePackFallbackBaseDirs,
+  runtimePackRootConfig,
+  runtimePackPacksRoot,
+  runtimePackRootConfigPath,
+  runtimePackStatePath,
   sessionsConfigPath,
   sessionsIndexPath,
   sessionMessagesDir,

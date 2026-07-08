@@ -55,7 +55,7 @@
         <div class="left-section left-section-grow">
           <div class="left-section-header">
             <span data-i18n="sidebar.myChats">我的对话</span>
-            <button id="addProjectBtn" class="left-section-btn" data-i18n-title="sidebar.addWorkspace" title="新建工作空间">
+            <button id="addProjectBtn" class="left-section-btn" data-i18n-title="sidebar.addWorkspace" data-i18n-aria-label="sidebar.addWorkspace" title="新建工作空间" aria-label="新建工作空间">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
               </svg>
@@ -81,7 +81,7 @@
       <section class="center-panel" id="centerPanel">
         <header class="topbar">
           <div class="topbar-left">
-            <button id="leftToggleBtn" class="panel-toggle" data-i18n-title="topbar.toggleSidebar" title="显示/隐藏侧边栏">
+            <button id="leftToggleBtn" class="panel-toggle" data-i18n-title="topbar.toggleSidebar" data-i18n-aria-label="topbar.toggleSidebar" title="显示/隐藏侧边栏" aria-label="显示/隐藏侧边栏">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/>
               </svg>
@@ -103,7 +103,7 @@
               <div id="updatePopover" class="update-popover" hidden>
                 <div class="update-popover-head">
                   <strong id="updatePopoverTitle" data-i18n="update.popoverTitle">发现新版本</strong>
-                  <button id="updatePopoverCloseBtn" class="icon-btn subtle" type="button" aria-label="Close">×</button>
+                  <button id="updatePopoverCloseBtn" class="icon-btn subtle" type="button" data-i18n-aria-label="composer.close" aria-label="关闭">×</button>
                 </div>
                 <p id="updatePopoverDesc" class="update-popover-desc"></p>
                 <div id="updateProgressTrack" class="update-progress-track" hidden>
@@ -196,7 +196,7 @@
                   </svg>
                   <span class="composer-icon-btn-label" data-i18n="scheduled.entryLabel">自动执行</span>
                 </button>
-                <button id="attachBtn" type="button" class="composer-icon-btn" data-i18n-title="composer.attach" title="添加图片或文件">
+                <button id="attachBtn" type="button" class="composer-icon-btn" data-i18n-title="composer.attach" data-i18n-aria-label="composer.attach" title="添加图片或文件" aria-label="添加图片或文件">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
                   </svg>
@@ -341,7 +341,7 @@
               </div>
               <div class="settings-field settings-field--divider">
                 <h4 class="settings-subsection-title" data-i18n="settings.other">其他</h4>
-                <div class="settings-actions">
+                <div class="settings-actions settings-page-actions">
                   <button id="settingsClearCache" class="settings-action-btn" type="button" data-i18n="settings.clearCache">清理缓存</button>
                 </div>
               </div>
@@ -452,7 +452,7 @@
             <section id="settingsPageMemory" class="settings-page" data-settings-page="memory" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.memory">记忆</h3>
               <p class="settings-section-desc" data-i18n="settings.memoryDesc">管理当前工作区中用户确认过的长期偏好，以及待确认的记忆候选。</p>
-              <div class="settings-actions">
+              <div class="settings-actions settings-page-actions">
                 <button id="memoryExportBtn" class="settings-action-btn" type="button" data-i18n="settings.memoryExport">导出</button>
               </div>
               <div class="settings-field">
@@ -462,7 +462,7 @@
               <div class="settings-field">
                 <div class="settings-memory-header">
                   <h4 class="settings-subsection-title" data-i18n="settings.memoryLearned">已记住</h4>
-                  <button id="memoryClearLearnedBtn" class="settings-action-btn settings-action-btn--danger" type="button" data-i18n="settings.memoryClear">清空</button>
+                  <button id="memoryClearLearnedBtn" class="settings-action-btn settings-action-btn--danger settings-action-btn--compact" type="button" data-i18n="settings.memoryClear">清空</button>
                 </div>
                 <div id="memoryLearnedList" class="settings-memory-list"></div>
               </div>
@@ -475,7 +475,23 @@
               <h3 class="settings-page-title" data-i18n="settings.nav.model">模型</h3>
               <p class="settings-section-desc" data-i18n="settings.modelDesc">选择当前模型，或从常用供应商添加一个（填入你自己的密钥即可）。更复杂的接口可在「高级」里手动填写。</p>
               <label class="settings-field-label" for="modelPresetSelect" data-i18n="settings.modelCurrent">当前模型</label>
-              <select id="modelPresetSelect" class="settings-select" data-i18n-aria-label="settings.modelSelect" aria-label="选择模型"></select>
+              <div class="model-current-row">
+                <select id="modelPresetSelect" class="settings-select" data-i18n-aria-label="settings.modelSelect" aria-label="选择模型"></select>
+                <button
+                  id="modelDiagnoseRestoreBtn"
+                  class="ui-icon-btn model-restore-icon-btn"
+                  type="button"
+                  title="诊断并恢复 Lily 默认模型"
+                  aria-label="诊断并恢复 Lily 默认模型"
+                  data-i18n-title="settings.modelDiagnoseRestore"
+                  data-i18n-aria-label="settings.modelDiagnoseRestore"
+                >
+                  <svg class="model-restore-icon" data-icon="model-repair" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.6-3.6a6 6 0 0 1-7.8 7.8l-6.8 6.8a2.1 2.1 0 0 1-3-3l6.8-6.8a6 6 0 0 1 7.8-7.8z" />
+                  </svg>
+                </button>
+              </div>
+              <p id="modelDiagnoseRestoreStatus" class="settings-form-status model-diagnose-restore-status" hidden></p>
               <div id="modelCustomList" class="model-custom-list"></div>
               <div id="modelCatalogBlock" class="settings-field settings-field--divider">
                 <h4 class="settings-subsection-title" data-i18n="settings.modelAddTitle">添加模型</h4>
@@ -593,7 +609,7 @@
                         autocomplete="off"
                       />
                       <p id="modelApiKeyHint" class="skills-registry-hint" hidden></p>
-                      <div class="settings-actions">
+                      <div class="settings-actions settings-form-actions">
                         <button id="modelApiSaveBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiSave">保存连接</button>
                         <button id="modelApiResetBtn" class="settings-action-btn" type="button" data-i18n="settings.modelApiReset">清除自定义连接</button>
                       </div>
@@ -698,7 +714,7 @@
                     <input id="connectorOauthTenantId" class="settings-text-input" type="text" maxlength="160" spellcheck="false" autocomplete="off" />
                   </div>
                   <p id="connectorSettingsStatus" class="settings-form-status" hidden></p>
-                  <div class="settings-actions">
+                  <div class="settings-actions connector-form-actions settings-form-actions">
                     <button id="connectorSaveAccountBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.connectors.save">保存账号</button>
                   </div>
                 </div>
@@ -720,7 +736,7 @@
                   <label class="settings-field-label" for="webCredPassword" data-i18n="settings.connectors.webCredPassword">密码</label>
                   <input id="webCredPassword" class="settings-text-input" type="password" maxlength="512" autocomplete="off" data-i18n-placeholder="settings.connectors.webCredPasswordPlaceholder" placeholder="只加密保存在本机，不展示给助手" />
                   <p id="webCredStatus" class="settings-form-status" hidden></p>
-                  <div class="settings-actions">
+                  <div class="settings-actions connector-form-actions settings-form-actions">
                     <button id="webCredSaveBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.connectors.webCredSave">保存凭据</button>
                   </div>
                   <div id="webCredentialsList" class="connector-accounts-list"></div>
@@ -731,7 +747,7 @@
               <h3 class="settings-page-title" data-i18n="settings.nav.skills">技能</h3>
               <p class="settings-section-desc" data-i18n="settings.skillsDesc">管理助手可用的扩展能力。技能市场由服务端统一提供；网络不可用时会显示内置技能目录。更改后对新的对话生效。</p>
               <p id="skillsRegistryHint" class="skills-registry-hint"></p>
-              <div class="settings-actions skills-actions">
+              <div class="settings-actions settings-page-actions skills-actions">
                 <button id="skillsCheckUpdatesBtn" class="settings-action-btn" type="button" data-i18n="settings.skillsCheckUpdates">检查更新</button>
                 <button id="skillsRefreshBtn" class="settings-action-btn" type="button" data-i18n="settings.skillsRefresh">刷新配置</button>
                 <button id="skillsImportWorkspaceBtn" class="settings-action-btn" type="button" data-i18n="settings.skillsImportWorkspace">导入工作区技能</button>
@@ -749,7 +765,7 @@
               <h3 class="settings-page-title" data-i18n="settings.nav.apps">应用商店</h3>
               <p class="settings-section-desc" data-i18n="settings.appsDesc">查看服务端发布的工作空间应用、模板和看板。应用由工作空间导出，依赖的 runtime 与 skill 会在卡片里显示。</p>
               <p id="workspaceAppsHint" class="skills-registry-hint"></p>
-              <div class="settings-actions workspace-app-actions">
+              <div class="settings-actions settings-page-actions workspace-app-actions">
                 <button id="workspaceAppsRefreshBtn" class="settings-action-btn" type="button" data-i18n="settings.appsRefresh">刷新目录</button>
               </div>
               <div id="workspaceAppsList" class="workspace-app-list"></div>
@@ -758,7 +774,18 @@
               <h3 class="settings-page-title" data-i18n="settings.nav.runtime">依赖</h3>
               <p class="settings-section-desc" data-i18n="settings.runtimeDesc">安装本地依赖包，用于文档处理、图片处理、浏览器自动化、音视频和高级格式转换。依赖包从 Lily CDN 下载预构建版本并校验后安装。</p>
               <p id="runtimePackHint" class="skills-registry-hint"></p>
-              <div class="settings-actions runtime-pack-actions">
+              <div class="runtime-pack-location">
+                <div class="runtime-pack-location-main">
+                  <span class="runtime-pack-location-label" data-i18n="settings.runtime.location">依赖存放位置</span>
+                  <code id="runtimePackLocationValue" class="runtime-pack-location-value">-</code>
+                  <span id="runtimePackLocationFallbacks" class="runtime-pack-location-fallbacks" hidden></span>
+                </div>
+                <div class="runtime-pack-location-actions">
+                  <button id="runtimePacksChooseLocationBtn" class="settings-action-btn settings-action-btn--compact" type="button" data-i18n="settings.runtime.chooseLocation">选择目录</button>
+                  <button id="runtimePacksResetLocationBtn" class="settings-action-btn settings-action-btn--compact" type="button" data-i18n="settings.runtime.resetLocation">恢复默认</button>
+                </div>
+              </div>
+              <div class="settings-actions settings-page-actions runtime-pack-actions">
                 <button id="runtimePacksRefreshBtn" class="settings-action-btn" type="button" data-i18n="settings.runtime.refresh">刷新状态</button>
                 <button id="runtimePacksHealthBtn" class="settings-action-btn" type="button" data-i18n="settings.runtime.health.check">检查健康</button>
               </div>
@@ -800,7 +827,7 @@
                 placeholder="粘贴激活码"
                 spellcheck="false"
               ></textarea>
-              <div class="settings-actions">
+              <div class="settings-actions settings-form-actions">
                 <button id="licenseActivateBtn" class="settings-action-btn" type="button" data-i18n="settings.licenseActivate">激活</button>
                 <button id="licenseClearBtn" class="settings-action-btn" type="button" data-i18n="settings.licenseClear">移除授权</button>
               </div>
@@ -849,7 +876,7 @@
                   <div id="feedbackAttachmentList" class="feedback-attachment-list" hidden></div>
                 </div>
                 <p id="feedbackFormStatus" class="settings-form-status" hidden></p>
-                <div class="settings-actions">
+                <div class="settings-actions settings-form-actions">
                   <button id="feedbackSubmitBtn" class="settings-action-btn settings-action-btn--primary" type="submit" data-i18n="settings.feedbackSubmit">提交反馈</button>
                 </div>
               </form>
@@ -898,7 +925,7 @@
                   <textarea id="contactMessage" class="settings-text-input settings-textarea" rows="5" required minlength="8" maxlength="4000"></textarea>
                 </div>
                 <p id="contactFormStatus" class="settings-form-status" hidden></p>
-                <div class="settings-actions">
+                <div class="settings-actions settings-form-actions">
                   <button id="contactSubmitBtn" class="settings-action-btn settings-action-btn--primary" type="submit" data-i18n="settings.contactSubmit">提交联系信息</button>
                 </div>
               </form>
@@ -928,7 +955,7 @@
               <div class="settings-field settings-field--divider">
                 <h4 class="settings-subsection-title" data-i18n="settings.updateTitle">版本更新</h4>
                 <p id="updateStatusText" class="settings-section-desc" data-i18n="settings.updateHint">应用会自动检查新版本，也可在这里手动检查。</p>
-                <div class="settings-actions">
+                <div class="settings-actions settings-page-actions">
                   <button id="updateCheckBtn" class="settings-action-btn" type="button" data-i18n="settings.updateCheck">检查更新</button>
                   <button id="updateDownloadBtn" class="settings-action-btn" type="button" hidden data-i18n="settings.updateDownload">打开下载</button>
                 </div>

@@ -39,6 +39,7 @@ if (!python) {
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-managepack-"));
 const userData = path.join(tmp, "userData");
 fs.mkdirSync(userData, { recursive: true });
+const runtimePackRoot = path.join(tmp, "external-runtime-root");
 const bundledRoot = path.join(tmp, "bundled-runtime-packs");
 const bundledWeb = path.join(bundledRoot, "web-automation");
 fs.mkdirSync(bundledWeb, { recursive: true });
@@ -107,6 +108,7 @@ await new Promise((r) => badServer.listen(0, "127.0.0.1", r));
 const baseEnv = {
   ...process.env,
   LILY_USER_DATA_DIR: userData,
+  LILY_RUNTIME_PACK_ROOT: runtimePackRoot,
   LILY_BUNDLED_RUNTIME_PACK_ROOTS: bundledRoot,
   no_proxy: "127.0.0.1,localhost",
   NO_PROXY: "127.0.0.1,localhost",
@@ -124,7 +126,7 @@ const run = async (args, env = okEnv) => {
   }
 };
 
-const packDir = path.join(userData, "runtime-packs", "pro-pdf");
+const packDir = path.join(runtimePackRoot, "runtime-packs", "pro-pdf");
 
 try {
   // Fresh: pro-pdf listed, not installed.
@@ -169,22 +171,22 @@ try {
   assert(probe === "True", `pack not importable via PYTHONPATH: ${probe}`);
 
   // State file matches runtime-packs.js shape (installed[id].source/version).
-  const state = JSON.parse(fs.readFileSync(path.join(userData, "runtime-packs.json"), "utf8"));
+  const state = JSON.parse(fs.readFileSync(path.join(runtimePackRoot, "runtime-packs.json"), "utf8"));
   assert(state.installed["pro-pdf"]?.source === "artifact" && state.installed["pro-pdf"]?.version === "9.9.9", `bad state: ${JSON.stringify(state)}`);
   assert((await run(["status", "pro-pdf"])).installed === true, "status should report installed");
 
   const loInstalled = await run(["install", "libreoffice"]);
   assert(loInstalled.ok && loInstalled.installed === "libreoffice", `libreoffice install failed: ${JSON.stringify(loInstalled)}`);
   assert(
-    fs.existsSync(path.join(userData, "runtime-packs", "libreoffice", "program", "soffice.exe")),
+    fs.existsSync(path.join(runtimePackRoot, "runtime-packs", "libreoffice", "program", "soffice.exe")),
     "LibreOffice zip should extract program/soffice.exe",
   );
-  const loState = JSON.parse(fs.readFileSync(path.join(userData, "runtime-packs.json"), "utf8"));
+  const loState = JSON.parse(fs.readFileSync(path.join(runtimePackRoot, "runtime-packs.json"), "utf8"));
   assert(loState.installed.libreoffice?.format === "zip", `LibreOffice state should record zip format: ${JSON.stringify(loState)}`);
 
   // sha256 mismatch must be rejected and leave nothing behind.
   fs.rmSync(packDir, { recursive: true, force: true });
-  fs.rmSync(path.join(userData, "runtime-packs.json"), { force: true });
+  fs.rmSync(path.join(runtimePackRoot, "runtime-packs.json"), { force: true });
   const bad = await run(["install", "pro-pdf"], badEnv);
   assert(!bad.ok && /SHA256_MISMATCH/.test(bad.error), `expected sha256 rejection: ${JSON.stringify(bad)}`);
   assert(!fs.existsSync(packDir), "failed install must not leave a pack dir");

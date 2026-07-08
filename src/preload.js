@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   saveCustomModel: (payload) => ipcRenderer.invoke("models:save-custom", payload),
   deleteCustomModel: (presetId) => ipcRenderer.invoke("models:delete-custom", presetId),
   setModelApiGateway: (payload) => ipcRenderer.invoke("models:set-api-gateway", payload),
+  diagnoseAndRestoreDefaultModel: () => ipcRenderer.invoke("models:diagnose-restore-default"),
 
   listEngines: () => ipcRenderer.invoke("engine:list"),
   setActiveEngine: (engineId) => ipcRenderer.invoke("engine:set-active", engineId),
@@ -185,6 +186,9 @@ contextBridge.exposeInMainWorld("assistantClient", {
   openInstalledWorkspaceApp: (appId) => ipcRenderer.invoke("apps:open-installed", { id: appId }),
   uninstallWorkspaceApp: (appId) => ipcRenderer.invoke("apps:uninstall", { id: appId }),
   listRuntimePacks: () => ipcRenderer.invoke("runtime-packs:list"),
+  getRuntimePackLocation: () => ipcRenderer.invoke("runtime-packs:location"),
+  chooseRuntimePackLocation: () => ipcRenderer.invoke("runtime-packs:choose-location"),
+  resetRuntimePackLocation: () => ipcRenderer.invoke("runtime-packs:reset-location"),
   checkRuntimePackAvailability: (ids = []) => ipcRenderer.invoke("runtime-packs:availability", { ids }),
   checkRuntimePackHealth: (id = "") => ipcRenderer.invoke("runtime-packs:health", id ? { id } : {}),
   preflightRuntimePacks: (payload = {}) => ipcRenderer.invoke("runtime-packs:preflight", payload),

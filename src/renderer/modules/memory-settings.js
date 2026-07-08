@@ -18,7 +18,7 @@ function emptyRow(message) {
 function actionButton(label, className = "") {
   const btn = document.createElement("button");
   btn.type = "button";
-  btn.className = `settings-action-btn ${className}`.trim();
+  btn.className = `settings-action-btn settings-action-btn--compact ${className}`.trim();
   btn.textContent = label;
   return btn;
 }

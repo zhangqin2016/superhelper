@@ -663,6 +663,18 @@
   gap: 8px;
 }
 
+.settings-page-actions {
+  align-items: center;
+  margin: 12px 0 16px;
+}
+
+.settings-form-actions {
+  justify-content: flex-end;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-light);
+}
+
 .settings-action-btn {
   min-height: 36px;
   padding: 8px 14px;
@@ -700,6 +712,53 @@
 .settings-action-btn--primary:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--text-inverse);
+}
+
+.settings-action-btn--compact {
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.model-custom-actions .settings-action-btn,
+.settings-memory-actions .settings-action-btn,
+.workspace-app-card-actions .settings-action-btn,
+.runtime-pack-card-actions .settings-action-btn {
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  box-shadow: none;
+}
+
+.model-current-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-restore-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--bg-input) 82%, var(--bg-elevated) 18%);
+}
+
+.model-restore-icon-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.model-restore-icon-btn.is-running .model-restore-icon {
+  animation: model-restore-spin 0.9s linear infinite;
+}
+
+@keyframes model-restore-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .settings-memory-header {
@@ -918,6 +977,16 @@
 .settings-form-status--success {
   background: var(--success-bg);
   color: var(--success-text-soft);
+}
+
+.settings-form-status--info {
+  background: color-mix(in srgb, var(--accent-subtle) 62%, var(--bg-elevated) 38%);
+  color: var(--text-secondary);
+}
+
+.settings-form-status--warning {
+  background: var(--warning-bg-soft);
+  color: var(--warning-text-soft);
 }
 
 .settings-form-status--error {
@@ -1380,6 +1449,49 @@
   margin-bottom: 16px;
 }
 
+.runtime-pack-location {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 78%, transparent);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.runtime-pack-location-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.runtime-pack-location-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.runtime-pack-location-value {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-pack-location-fallbacks {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.runtime-pack-location-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .runtime-pack-list,
 .runtime-pack-grid {
   display: grid;
@@ -1718,6 +1830,10 @@
   font-size: 12px;
 }
 
+.connector-form-actions {
+  margin-bottom: 0;
+}
+
 .connector-accounts-list {
   display: grid;
   gap: 10px;
@@ -1727,12 +1843,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px;
+  gap: 16px;
+  padding: 12px 14px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm), var(--top-highlight);
+  box-shadow: var(--top-highlight);
 }
 
 .connector-account-meta {
@@ -1759,7 +1875,12 @@
 .connector-account-actions {
   display: flex;
   flex-shrink: 0;
-  gap: 8px;
+  gap: 6px;
+}
+
+.connector-account-actions .settings-action-btn {
+  min-width: 64px;
+  box-shadow: none;
 }
 
 @media (max-width: 640px) {

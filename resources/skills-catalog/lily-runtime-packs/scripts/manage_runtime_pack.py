@@ -5,9 +5,10 @@ No UI: the user just asks ("装一下专业 PDF 引擎"), the agent maps that to
 id and runs this. Self-contained (stdlib only) so it works whether the app is
 unpackaged or packaged — it never imports app internals. It shares the on-disk
 contract with the main process (src/main/runtime-packs.js): pack files extract
-to <userData>/runtime-packs/<id>/ and state lives in
-<userData>/runtime-packs.json, so the main process picks installed packs up on
-PYTHONPATH automatically.
+to <runtimePackRoot>/runtime-packs/<id>/ and state lives in
+<runtimePackRoot>/runtime-packs.json, so the main process picks installed packs
+up on PYTHONPATH automatically. If no runtime-pack root is configured, the root
+is the app's userData dir; legacy userData installs remain readable as fallback.
 
 Release builds may also ship read-only packs under app resources. The app injects
 LILY_BUNDLED_RUNTIME_PACK_ROOTS so this script can report those packs as already
@@ -26,6 +27,7 @@ Emits one JSON object on stdout. Errors: {"ok": false, "error": "..."}.
 
 Env:
   LILY_USER_DATA_DIR          required — the app's userData dir (injected by the app)
+  LILY_RUNTIME_PACK_ROOT      optional — selected root for large dependency packs
   LILY_BUNDLED_RUNTIME_PACK_ROOTS optional path-list of bundled pack roots
   LILY_SERVICE_API_BASE_URL   server base (default https://lily.lanrensoft.cn)
 """
@@ -87,12 +89,56 @@ def user_data_dir():
     return d
 
 
+def runtime_pack_base_dir():
+    env_root = os.environ.get("LILY_RUNTIME_PACK_ROOT")
+    if env_root:
+        return os.path.abspath(env_root)
+    root = runtime_pack_root_config().get("root")
+    if isinstance(root, str) and root.strip():
+        return os.path.abspath(root.strip())
+    return os.path.abspath(user_data_dir())
+
+
+def runtime_pack_root_config():
+    try:
+        with open(os.path.join(user_data_dir(), "runtime-pack-root.json"), "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+        return raw if isinstance(raw, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def runtime_pack_fallback_base_dirs():
+    roots = runtime_pack_root_config().get("fallbackRoots")
+    if not isinstance(roots, list):
+        return []
+    seen = set()
+    result = []
+    for item in roots:
+        if not isinstance(item, str) or not item.strip():
+            continue
+        root = os.path.abspath(item.strip())
+        if root in seen:
+            continue
+        seen.add(root)
+        result.append(root)
+    return result
+
+
+def legacy_runtime_pack_base_dir():
+    return os.path.abspath(user_data_dir())
+
+
 def packs_root():
-    return os.path.join(user_data_dir(), "runtime-packs")
+    return os.path.join(runtime_pack_base_dir(), "runtime-packs")
 
 
-def pack_dir(pack_id):
-    return os.path.join(packs_root(), pack_id)
+def legacy_packs_root():
+    return os.path.join(legacy_runtime_pack_base_dir(), "runtime-packs")
+
+
+def pack_dir(pack_id, root=None):
+    return os.path.join(root or packs_root(), pack_id)
 
 
 def bundled_roots():
@@ -109,12 +155,24 @@ def bundled_pack_dir(pack_id):
 
 
 def state_path():
-    return os.path.join(user_data_dir(), "runtime-packs.json")
+    return os.path.join(runtime_pack_base_dir(), "runtime-packs.json")
 
 
-def read_state():
+def legacy_state_path():
+    return os.path.join(legacy_runtime_pack_base_dir(), "runtime-packs.json")
+
+
+def pack_base_packs_root(base_dir):
+    return os.path.join(base_dir, "runtime-packs")
+
+
+def pack_base_state_path(base_dir):
+    return os.path.join(base_dir, "runtime-packs.json")
+
+
+def read_state_file(path):
     try:
-        with open(state_path(), "r", encoding="utf-8") as handle:
+        with open(path, "r", encoding="utf-8") as handle:
             raw = json.load(handle)
         if isinstance(raw, dict) and isinstance(raw.get("installed"), dict):
             return {"schemaVersion": STATE_SCHEMA_VERSION, "installed": raw["installed"]}
@@ -123,11 +181,63 @@ def read_state():
     return {"schemaVersion": STATE_SCHEMA_VERSION, "installed": {}}
 
 
-def write_state(state):
-    os.makedirs(os.path.dirname(state_path()), exist_ok=True)
-    with open(state_path(), "w", encoding="utf-8") as handle:
+def read_state():
+    return read_state_file(state_path())
+
+
+def write_state_file(path, state):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
         json.dump(state, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
+
+
+def write_state(state):
+    write_state_file(state_path(), state)
+
+
+def install_states():
+    primary = {"kind": "selected", "statePath": state_path(), "packsRoot": packs_root(), "state": read_state_file(state_path())}
+    fallback = [
+        {"kind": f"fallback-{idx}", "statePath": pack_base_state_path(base_dir), "packsRoot": pack_base_packs_root(base_dir), "state": read_state_file(pack_base_state_path(base_dir))}
+        for idx, base_dir in enumerate(runtime_pack_fallback_base_dirs())
+    ]
+    legacy = {"kind": "legacy", "statePath": legacy_state_path(), "packsRoot": legacy_packs_root(), "state": read_state_file(legacy_state_path())}
+    states = [primary, *fallback, legacy]
+    seen = set()
+    result = []
+    for item in states:
+        key = os.path.abspath(item["statePath"])
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def installed_record_exists(pack_id, rec, root):
+    if not isinstance(rec, dict):
+        return False
+    if rec.get("source") == "pip":
+        return True
+    return os.path.isdir(pack_dir(pack_id, root))
+
+
+def effective_installed():
+    installed = {}
+    for item in install_states():
+        for pack_id, rec in item["state"].get("installed", {}).items():
+            if pack_id in installed:
+                continue
+            if not installed_record_exists(pack_id, rec, item["packsRoot"]):
+                continue
+            installed[pack_id] = {
+                "record": rec,
+                "path": "" if rec.get("source") == "pip" else pack_dir(pack_id, item["packsRoot"]),
+                "statePath": item["statePath"],
+                "packsRoot": item["packsRoot"],
+            }
+    return installed
 
 
 def platform_key():
@@ -271,35 +381,39 @@ def do_install(pack_id):
 
 
 def do_uninstall(pack_id):
-    state = read_state()
-    if pack_id not in state["installed"] and bundled_pack_dir(pack_id):
+    installed = effective_installed().get(pack_id)
+    if not installed and bundled_pack_dir(pack_id):
         return emit({"ok": False, "error": "BUNDLED_RUNTIME_PACK_READ_ONLY", "id": pack_id}, 1)
-    shutil.rmtree(pack_dir(pack_id), ignore_errors=True)
+    target = installed.get("path") if installed else pack_dir(pack_id)
+    if target:
+        shutil.rmtree(target, ignore_errors=True)
+    state = read_state_file(installed["statePath"]) if installed else read_state()
     state["installed"].pop(pack_id, None)
-    write_state(state)
+    write_state_file(installed["statePath"], state) if installed else write_state(state)
     return emit({"ok": True, "uninstalled": pack_id})
 
 
 def do_status(pack_id):
-    state = read_state()
-    rec = state["installed"].get(pack_id)
+    installed = effective_installed().get(pack_id)
     bundled = bundled_pack_dir(pack_id)
-    if rec:
-        return emit({"ok": True, "id": pack_id, "installed": True, "source": rec.get("source"), "info": rec})
+    if installed:
+        rec = installed["record"]
+        return emit({"ok": True, "id": pack_id, "installed": True, "source": rec.get("source"), "path": installed.get("path"), "info": rec})
     if bundled:
         return emit({"ok": True, "id": pack_id, "installed": True, "source": "bundled", "path": bundled, "info": None})
     return emit({"ok": True, "id": pack_id, "installed": False, "info": None})
 
 
 def do_list():
-    state = read_state()
+    installed = effective_installed()
     packs = [
         {
             "id": pid,
             "label": label,
-            "installed": pid in state["installed"] or bool(bundled_pack_dir(pid)),
-            "source": state["installed"].get(pid, {}).get("source") or ("bundled" if bundled_pack_dir(pid) else None),
-            "version": state["installed"].get(pid, {}).get("version"),
+            "installed": pid in installed or bool(bundled_pack_dir(pid)),
+            "source": installed.get(pid, {}).get("record", {}).get("source") or ("bundled" if bundled_pack_dir(pid) else None),
+            "version": installed.get(pid, {}).get("record", {}).get("version"),
+            "path": installed.get(pid, {}).get("path") or bundled_pack_dir(pid),
         }
         for pid, label in KNOWN_PACKS.items()
     ]

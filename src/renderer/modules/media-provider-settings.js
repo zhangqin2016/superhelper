@@ -122,7 +122,8 @@ function keyEditor(provider, modality) {
   wrap.appendChild(el("p", "media-hint", t("settings.mediaModelHint")));
   wrap.appendChild(el("p", "media-hint", t("settings.mediaKeyDesc")));
 
-  const save = el("button", "settings-action-btn media-save-btn", t("settings.mediaSave"));
+  const actions = el("div", "settings-actions settings-form-actions media-key-actions");
+  const save = el("button", "settings-action-btn settings-action-btn--primary media-save-btn", t("settings.mediaSave"));
   save.type = "button";
   save.addEventListener("click", async () => {
     if (isBusy()) {
@@ -135,7 +136,8 @@ function keyEditor(provider, modality) {
       showToast(t("toast.mediaSwitched", { label: spec.label }), "success");
     }
   });
-  wrap.appendChild(save);
+  actions.appendChild(save);
+  wrap.appendChild(actions);
   return wrap;
 }
 

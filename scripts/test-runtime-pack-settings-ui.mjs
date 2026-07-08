@@ -27,12 +27,19 @@ assert.match(preload, /checkRuntimePackAvailability/, "preload must expose runti
 assert.match(preload, /checkRuntimePackHealth/, "preload must expose dependency health checks");
 assert.match(preload, /installRuntimePack/, "preload must expose runtime pack install");
 assert.match(preload, /uninstallRuntimePack/, "preload must expose runtime pack uninstall");
+assert.match(preload, /getRuntimePackLocation/, "preload must expose dependency storage location");
+assert.match(preload, /chooseRuntimePackLocation/, "preload must expose dependency storage picker");
+assert.match(preload, /resetRuntimePackLocation/, "preload must expose dependency storage reset");
 assert.match(preload, /onRuntimePackProgress/, "preload must expose runtime pack progress events");
 
 const ipc = read("src/main/ipc-handlers.js");
 assert.match(ipc, /registerRuntimePackHandlers/, "main IPC registration must include runtime packs");
 const runtimePackIpc = read("src/main/ipc-runtime-packs.js");
 assert.match(runtimePackIpc, /runtime-packs:availability/, "main IPC must expose runtime pack availability preflight");
+assert.match(runtimePackIpc, /runtime-packs:location/, "main IPC must expose dependency storage location");
+assert.match(runtimePackIpc, /runtime-packs:choose-location/, "main IPC must expose dependency storage picker");
+assert.match(runtimePackIpc, /runtime-packs:reset-location/, "main IPC must expose dependency storage reset");
+assert.match(runtimePackIpc, /refreshRuntimePackRunnerEnv/, "dependency storage changes must refresh idle runner env");
 
 assert(fs.existsSync(path.join(ROOT, "src/renderer/modules/runtime-pack-settings.js")), "renderer runtime-pack settings module must exist");
 assert(fs.existsSync(path.join(ROOT, "src/main/ipc-runtime-packs.js")), "main runtime-pack IPC module must exist");
@@ -40,10 +47,18 @@ assert(fs.existsSync(path.join(ROOT, "src/main/ipc-runtime-packs.js")), "main ru
 const runtimePackSettings = read("src/renderer/modules/runtime-pack-settings.js");
 assert.match(runtimePackSettings, /settings\.runtime\.status\.bundled/, "runtime UI must label bundled packs distinctly");
 assert.match(runtimePackSettings, /settings\.runtime\.status\.unavailable/, "runtime UI must label packs unavailable on this platform");
+assert.match(runtimePackSettings, /locationKind/, "runtime UI must read dependency package location source");
+assert.match(runtimePackSettings, /settings\.runtime\.locationKind\./, "runtime UI must localize dependency package location source");
 assert.match(runtimePackSettings, /checkRuntimePackAvailability/, "runtime UI must preflight server artifact availability");
 assert.match(runtimePackSettings, /dataset\.unavailable/, "runtime UI must disable install for unavailable platform artifacts");
 assert.match(runtimePackSettings, /settings\.runtime\.health\.ok/, "runtime UI must render dependency health state");
 assert.match(runtimePackSettings, /!pack\.readOnly/, "runtime UI must not offer uninstall for read-only bundled packs");
+assert.match(runtimePackSettings, /getRuntimePackLocation/, "runtime UI must load dependency storage location");
+assert.match(runtimePackSettings, /chooseRuntimePackLocation/, "runtime UI must let users choose dependency storage");
+assert.match(runtimePackSettings, /resetRuntimePackLocation/, "runtime UI must let users reset dependency storage");
+assert.match(runtimePackSettings, /runtimePackLocationValue/, "runtime UI must render the active dependency storage path");
+assert.match(runtimePackSettings, /runtimePackLocationFallbacks/, "runtime UI must explain retained dependency fallback roots");
+assert.match(runtimePackSettings, /settings\.runtime\.retainedLocations/, "runtime UI must localize retained dependency fallback roots");
 assert.match(
   runtimePackSettings,
   /function renderRuntimePackCardInPlace\(/,
@@ -67,6 +82,12 @@ assert.match(
 
 const zh = JSON.parse(read("src/renderer/i18n/locales/zh-CN.json"));
 assert.equal(zh["settings.nav.runtime"], "依赖", "runtime settings page should be user-facing Dependencies");
+for (const key of ["location", "chooseLocation", "resetLocation", "locationChanged", "locationReset", "locationEnvLocked", "retainedLocations"]) {
+  assert.equal(typeof zh[`settings.runtime.${key}`], "string", `missing dependency location label ${key}`);
+}
+for (const key of ["selected", "legacy", "fallback", "bundled", "base"]) {
+  assert.equal(typeof zh[`settings.runtime.locationKind.${key}`], "string", `missing dependency source label ${key}`);
+}
 for (const key of ["document", "image", "browser", "media"]) {
   assert.equal(typeof zh[`settings.runtime.category.${key}`], "string", `missing dependency category ${key}`);
 }

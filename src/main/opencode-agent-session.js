@@ -178,6 +178,7 @@ function isRecoverableModelConnectionFailure(classified, raw = "") {
     "RESPONSE_ERROR",
     "RATE_LIMITED",
     "MANAGED_MODEL_AUTH_INVALID",
+    "MANAGED_MODEL_AUTH_MISSING",
   ].includes(classified.code)) {
     return true;
   }
@@ -186,7 +187,7 @@ function isRecoverableModelConnectionFailure(classified, raw = "") {
 
 function isManagedGatewayAuthFailure(classified, raw = "", spawnOptions = null) {
   const text = String(raw || "");
-  if (classified?.code === "MANAGED_MODEL_AUTH_INVALID") return true;
+  if (classified?.code === "MANAGED_MODEL_AUTH_INVALID" || classified?.code === "MANAGED_MODEL_AUTH_MISSING") return true;
   if (/MODEL_GATEWAY_TOKEN_(INVALID|EXPIRED)/i.test(text)) return true;
   const audit = spawnOptions?.modelRouteAudit || {};
   return audit.keyKind === "gateway-token"

@@ -193,8 +193,28 @@ assert.match(
   /configRefresh\?\.ok[\s\S]*terminateIdleRunners\(ctx\.runnerPool\)/,
   "license activation must rebuild idle OpenCode runners after managed config becomes ready",
 );
+assert.match(
+  ipcHandlersSource,
+  /account:sms-login[\s\S]*refreshRemoteConfigForSend\(\{[\s\S]*force:\s*true[\s\S]*reason:\s*"account_login"/,
+  "account login must refresh managed model config so Lily default tokens carry the logged-in account",
+);
+assert.match(
+  ipcHandlersSource,
+  /account:sms-login[\s\S]*configRefresh\?\.ok[\s\S]*terminateIdleRunners\(ctx\.runnerPool\)/,
+  "account login must rebuild idle OpenCode runners so they stop using anonymous gateway tokens",
+);
 
 const ipcModelsSource = fs.readFileSync(path.join(process.cwd(), "src/main/ipc-models.js"), "utf8");
+assert.match(
+  ipcModelsSource,
+  /models:diagnose-restore-default[\s\S]*refreshRemoteConfigForSend\(\{[\s\S]*force:\s*true[\s\S]*reason:\s*"model_diagnose_restore"/,
+  "model diagnose restore must refresh managed config before restoring Lily defaults",
+);
+assert.match(
+  ipcModelsSource,
+  /models:diagnose-restore-default[\s\S]*diagnoseAndRestoreDefaultModel\(\)/,
+  "model diagnose restore must reset the local model selection through model-presets",
+);
 assert.match(
   ipcModelsSource,
   /models:list[\s\S]*refreshRemoteConfigForSend\(\{[\s\S]*timeoutMs:\s*45_000[\s\S]*repairManagedService:\s*true[\s\S]*reason:\s*"model_settings"/,

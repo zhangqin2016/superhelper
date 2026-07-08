@@ -73,6 +73,34 @@ function setHint(message, kind = "") {
   hint.classList.toggle("settings-form-status--success", kind === "success");
 }
 
+function renderRuntimePackLocation(location) {
+  const value = $("runtimePackLocationValue");
+  if (!value) return;
+  value.textContent = location?.packsRoot || location?.root || "-";
+  value.title = location?.packsRoot || location?.root || "";
+  const fallbacks = $("runtimePackLocationFallbacks");
+  if (fallbacks) {
+    const count = Array.isArray(location?.fallbackRoots) ? location.fallbackRoots.length : 0;
+    fallbacks.textContent = count ? t("settings.runtime.retainedLocations", { count }) : "";
+    fallbacks.hidden = count <= 0;
+  }
+  const reset = $("runtimePacksResetLocationBtn");
+  if (reset) reset.disabled = Boolean(location?.isDefault || location?.envLocked);
+  const choose = $("runtimePacksChooseLocationBtn");
+  if (choose) choose.disabled = Boolean(location?.envLocked);
+}
+
+async function refreshRuntimePackLocation() {
+  if (typeof window.assistantClient?.getRuntimePackLocation !== "function") return;
+  try {
+    const location = await window.assistantClient.getRuntimePackLocation();
+    if (location?.ok) renderRuntimePackLocation(location);
+  } catch {
+    // Location display is advisory; dependency listing below remains the source
+    // of truth for installed capability.
+  }
+}
+
 function renderEmpty(message) {
   const list = $("runtimePackList");
   if (!list) return;
@@ -93,6 +121,16 @@ function statusText(pack) {
   if (pack.missingFiles) return t("settings.runtime.status.missing");
   if (isUnavailableOnPlatform(pack)) return t("settings.runtime.status.unavailable");
   return t("settings.runtime.status.notInstalled");
+}
+
+function locationKindLabel(pack) {
+  if (!pack?.installed) return "";
+  const rawKind = String(pack.locationKind || "").trim();
+  const kind = rawKind.startsWith("fallback-") ? "fallback" : rawKind;
+  if (!kind) return "";
+  const key = `settings.runtime.locationKind.${kind}`;
+  const label = t(key);
+  return label === key ? "" : label;
 }
 
 function appendChip(parent, text, className = "runtime-pack-chip") {
@@ -148,6 +186,7 @@ function renderPackCard(pack) {
   const chips = document.createElement("div");
   chips.className = "runtime-pack-chips";
   appendChip(chips, statusText(pack), pack.installed ? "runtime-pack-chip runtime-pack-chip--accent" : "runtime-pack-chip");
+  appendChip(chips, locationKindLabel(pack));
   if (pack.recommended) appendChip(chips, t("settings.runtime.recommended"), "runtime-pack-chip runtime-pack-chip--accent");
   if (pack.health && pack.installed) appendChip(chips, healthLabel(pack.health), healthChipClass(pack.health));
 
@@ -162,18 +201,18 @@ function renderPackCard(pack) {
 
   if (pack.installed) {
     if (pack.path) {
-      const reveal = button(t("settings.runtime.openFolder"));
+      const reveal = button(t("settings.runtime.openFolder"), "settings-action-btn settings-action-btn--compact");
       reveal.addEventListener("click", () => void revealLocalFileInFolder(pack.path));
       actions.append(reveal);
     }
     if (!pack.readOnly) {
-      const uninstall = button(t("settings.runtime.uninstall"));
+      const uninstall = button(t("settings.runtime.uninstall"), "settings-action-btn settings-action-btn--compact");
       uninstall.disabled = isBusy(pack);
       uninstall.addEventListener("click", () => void uninstallRuntimePack(pack));
       actions.append(uninstall);
     }
   } else {
-    const install = button(t("settings.runtime.install"), "settings-action-btn settings-action-btn--primary runtime-pack-install");
+    const install = button(t("settings.runtime.install"), "settings-action-btn settings-action-btn--primary settings-action-btn--compact runtime-pack-install");
     const unavailable = isUnavailableOnPlatform(pack);
     install.disabled = isBusy(pack) || unavailable;
     if (unavailable) {
@@ -367,6 +406,31 @@ async function runRuntimeHealthCheck() {
   }
 }
 
+async function chooseRuntimePackLocation() {
+  if (typeof window.assistantClient?.chooseRuntimePackLocation !== "function") return;
+  const result = await window.assistantClient.chooseRuntimePackLocation();
+  if (result?.canceled) return;
+  if (!result?.ok) {
+    showToast(result?.error === "RUNTIME_PACK_ROOT_ENV_LOCKED" ? t("settings.runtime.locationEnvLocked") : errorMessage(result?.error), "error");
+    return;
+  }
+  renderRuntimePackLocation(result);
+  showToast(t("settings.runtime.locationChanged"), "success");
+  await refreshRuntimePackSettings();
+}
+
+async function resetRuntimePackLocation() {
+  if (typeof window.assistantClient?.resetRuntimePackLocation !== "function") return;
+  const result = await window.assistantClient.resetRuntimePackLocation();
+  if (!result?.ok) {
+    showToast(result?.error === "RUNTIME_PACK_ROOT_ENV_LOCKED" ? t("settings.runtime.locationEnvLocked") : errorMessage(result?.error), "error");
+    return;
+  }
+  renderRuntimePackLocation(result);
+  showToast(t("settings.runtime.locationReset"), "success");
+  await refreshRuntimePackSettings();
+}
+
 export async function refreshRuntimePackSettings(options = {}) {
   const list = $("runtimePackList");
   if (!list) return;
@@ -375,6 +439,7 @@ export async function refreshRuntimePackSettings(options = {}) {
     return;
   }
   try {
+    await refreshRuntimePackLocation();
     const data = await window.assistantClient.listRuntimePacks();
     if (!data?.ok) {
       setHint(errorMessage(data?.error), "error");
@@ -396,6 +461,8 @@ export async function refreshRuntimePackSettings(options = {}) {
 export function initRuntimePackSettings() {
   $("runtimePacksRefreshBtn")?.addEventListener("click", () => void refreshRuntimePackSettings());
   $("runtimePacksHealthBtn")?.addEventListener("click", () => void runRuntimeHealthCheck());
+  $("runtimePacksChooseLocationBtn")?.addEventListener("click", () => void chooseRuntimePackLocation());
+  $("runtimePacksResetLocationBtn")?.addEventListener("click", () => void resetRuntimePackLocation());
   if (!progressUnsubscribe && typeof window.assistantClient?.onRuntimePackProgress === "function") {
     progressUnsubscribe = window.assistantClient.onRuntimePackProgress((event) => {
       if (!event?.id) return;

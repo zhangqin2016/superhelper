@@ -152,8 +152,34 @@ function registerAll(ctx) {
     accountDisabled() ? { ok: true, loggedIn: false, disabled: true } : require("./account-manager").accountStatus());
   ipcMain.handle("account:sms-send", async (_event, payload) =>
     accountDisabled() ? disabledAccountResult() : require("./account-manager").sendSmsCode(payload?.phone || payload));
-  ipcMain.handle("account:sms-login", async (_event, payload) =>
-    accountDisabled() ? disabledAccountResult() : require("./account-manager").loginWithSms(payload || {}));
+  ipcMain.handle("account:sms-login", async (_event, payload) => {
+    if (accountDisabled()) return disabledAccountResult();
+    const result = await require("./account-manager").loginWithSms(payload || {});
+    if (!result?.ok) return result;
+    try {
+      const configRefresh = await require("./ipc-utils").refreshRemoteConfigForSend({
+        force: true,
+        timeoutMs: 45_000,
+        repairManagedService: true,
+        refreshLicense: false,
+        reason: "account_login",
+      });
+      if (configRefresh?.ok) {
+        require("./runner-live-config").terminateIdleRunners(ctx.runnerPool);
+      }
+      return {
+        ...result,
+        modelConfigReady: Boolean(configRefresh?.ok),
+        modelConfigError: configRefresh?.ok ? "" : String(configRefresh?.error || "CONFIG_REFRESH_FAILED"),
+      };
+    } catch (err) {
+      return {
+        ...result,
+        modelConfigReady: false,
+        modelConfigError: err?.message || "CONFIG_REFRESH_FAILED",
+      };
+    }
+  });
   ipcMain.handle("account:entitlements", () =>
     accountDisabled() ? disabledAccountResult() : require("./account-manager").refreshEntitlements());
   ipcMain.handle("account:billing-link", () =>

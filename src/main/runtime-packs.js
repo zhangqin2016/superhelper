@@ -6,8 +6,10 @@
  * Optional heavy engines and toolchains can come from two sources:
  *
  * 1. Bundled read-only packs shipped in resources/bundles/<platform>/runtime-packs/<id>/.
- * 2. User-installed override packs in userData/runtime-packs/<id>/, recorded in
- *    userData/runtime-packs.json.
+ * 2. User-installed override packs in the selected runtime-pack root, recorded
+ *    next to that root's runtime-packs/ directory.
+ * 3. Legacy userData/runtime-packs/<id>/ installs, kept as a fallback so users
+ *    who choose a new dependency location do not lose older capabilities.
  *
  * User-installed packs intentionally win over bundled packs so the app can ship
  * a direct-use baseline while still allowing later pack updates without copying
@@ -22,12 +24,16 @@ const { PACK_SPECS } = require("./runtime-pack-specs");
 
 const STATE_SCHEMA_VERSION = 1;
 
-function packsRoot() {
-  return require("./config").userDataPath("runtime-packs");
+function config() {
+  return require("./config");
 }
 
-function packDir(id) {
-  return path.join(packsRoot(), id);
+function packsRoot() {
+  return config().runtimePackPacksRoot();
+}
+
+function packDir(id, root = packsRoot()) {
+  return path.join(root, id);
 }
 
 function bundledPacksRootCandidates() {
@@ -71,12 +77,28 @@ function listBundledRuntimePackDirs() {
 }
 
 function statePath() {
-  return require("./config").userDataPath("runtime-packs.json");
+  return config().runtimePackStatePath();
 }
 
-function readState() {
+function legacyPacksRoot() {
+  return config().legacyRuntimePackPacksRoot();
+}
+
+function legacyStatePath() {
+  return config().legacyRuntimePackStatePath();
+}
+
+function packBaseStatePath(baseDir) {
+  return path.join(baseDir, "runtime-packs.json");
+}
+
+function packBasePacksRoot(baseDir) {
+  return path.join(baseDir, "runtime-packs");
+}
+
+function readStateFile(file) {
   try {
-    const raw = JSON.parse(fs.readFileSync(statePath(), "utf8"));
+    const raw = JSON.parse(fs.readFileSync(file, "utf8"));
     if (raw && typeof raw === "object" && raw.installed) {
       return { schemaVersion: STATE_SCHEMA_VERSION, installed: raw.installed };
     }
@@ -86,29 +108,69 @@ function readState() {
   return { schemaVersion: STATE_SCHEMA_VERSION, installed: {} };
 }
 
-function installedRecordExists(id, rec) {
-  if (!rec || typeof rec !== "object") return false;
-  if (rec.source === "pip") return true;
-  return fs.existsSync(packDir(id));
+function readState() {
+  return readStateFile(statePath());
 }
 
-function userPackDirIfInstalled(id, rec) {
-  if (!installedRecordExists(id, rec)) return "";
+function installState(kind, statePathFn, packsRootFn) {
+  try {
+    const file = statePathFn();
+    return {
+      kind,
+      statePath: file,
+      packsRoot: packsRootFn(),
+      state: readStateFile(file),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readInstallStates() {
+  const primary = installState("selected", statePath, packsRoot);
+  const fallbackStates = config().runtimePackFallbackBaseDirs()
+    .map((baseDir, index) => installState(
+      `fallback-${index}`,
+      () => packBaseStatePath(baseDir),
+      () => packBasePacksRoot(baseDir),
+    ))
+    .filter(Boolean);
+  const legacy = installState("legacy", legacyStatePath, legacyPacksRoot);
+  const states = [primary, ...fallbackStates, legacy].filter(Boolean);
+  const seen = new Set();
+  return states.filter((item) => {
+    const key = path.resolve(item.statePath);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function installedRecordExists(id, rec, root = packsRoot()) {
+  if (!rec || typeof rec !== "object") return false;
+  if (rec.source === "pip") return true;
+  return fs.existsSync(packDir(id, root));
+}
+
+function userPackDirIfInstalled(id, rec, root = packsRoot()) {
+  if (!installedRecordExists(id, rec, root)) return "";
   if (rec?.source === "pip") return "";
-  const dir = packDir(id);
+  const dir = packDir(id, root);
   return fs.existsSync(dir) ? dir : "";
 }
 
 function effectivePackEntries() {
-  const state = readState();
   const entries = [];
   const seen = new Set();
 
-  for (const [id, rec] of Object.entries(state.installed || {})) {
-    const dir = userPackDirIfInstalled(id, rec);
-    if (!dir && rec?.source !== "pip") continue;
-    entries.push({ id, dir, source: rec?.source || "artifact", record: rec });
-    seen.add(id);
+  for (const installState of readInstallStates()) {
+    for (const [id, rec] of Object.entries(installState.state.installed || {})) {
+      if (seen.has(id)) continue;
+      const dir = userPackDirIfInstalled(id, rec, installState.packsRoot);
+      if (!dir && rec?.source !== "pip") continue;
+      entries.push({ id, dir, source: rec?.source || "artifact", record: rec, stateKind: installState.kind });
+      seen.add(id);
+    }
   }
 
   for (const [id, dir] of listBundledRuntimePackDirs()) {
@@ -244,6 +306,10 @@ module.exports = {
   effectivePackEntries,
   listBundledRuntimePackDirs,
   packDir,
+  packsRoot,
+  readInstallStates,
   readState,
+  legacyPacksRoot,
+  legacyStatePath,
   statePath,
 };

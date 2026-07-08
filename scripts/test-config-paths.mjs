@@ -46,4 +46,30 @@ assert(config.userDataPath() === path.join("/tmp/env-ud"), "LILY_USER_DATA_DIR m
 delete process.env.LILY_USER_DATA_DIR;
 assert(config.userDataPath() === path.join("/tmp/ud"), "without env, injected userData applies again");
 
+// 4. Runtime packs may live outside userData, but user messages/session paths
+//    must stay pinned to userData so moving large dependency packs cannot move
+//    or hide conversation history.
+process.env.LILY_RUNTIME_PACK_ROOT = "/tmp/runtime-root";
+assert(config.userDataPath("sessions.json") === path.join("/tmp/ud", "sessions.json"), "runtime-pack root must not change userData");
+assert(config.sessionsConfigPath() === path.join("/tmp/ud", "sessions.json"), "session config must remain in userData");
+assert(config.messageDbPath() === path.join("/tmp/ud", "messages.db"), "message DB must remain in userData");
+assert(config.runtimePackBaseDir() === path.join("/tmp/runtime-root"), "runtime pack base should honor LILY_RUNTIME_PACK_ROOT");
+assert(
+  config.runtimePackPacksRoot() === path.join("/tmp/runtime-root", "runtime-packs"),
+  "runtime pack contents should live under the selected root",
+);
+assert(
+  config.runtimePackStatePath() === path.join("/tmp/runtime-root", "runtime-packs.json"),
+  "runtime pack state should follow the selected root",
+);
+assert(
+  config.legacyRuntimePackPacksRoot() === path.join("/tmp/ud", "runtime-packs"),
+  "legacy runtime pack contents should still be discoverable under userData",
+);
+assert(
+  config.legacyRuntimePackStatePath() === path.join("/tmp/ud", "runtime-packs.json"),
+  "legacy runtime pack state should still be discoverable under userData",
+);
+delete process.env.LILY_RUNTIME_PACK_ROOT;
+
 console.log("config-paths: ok (resolves without electron — injection + env + fail-loud)");

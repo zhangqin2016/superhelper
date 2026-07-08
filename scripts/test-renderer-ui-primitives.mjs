@@ -29,6 +29,8 @@ const permissionSettingsText = fs.readFileSync(path.join(root, "src/renderer/mod
 const turnBlockRendererText = fs.readFileSync(path.join(root, "src/renderer/modules/turn-block-renderers.js"), "utf8");
 const pdfRendererText = fs.readFileSync(path.join(root, "src/renderer/modules/pdf-renderer.js"), "utf8");
 const htmlRendererText = fs.readFileSync(path.join(root, "src/renderer/modules/html-renderer.js"), "utf8");
+const findBarText = fs.readFileSync(path.join(root, "src/renderer/modules/find-bar.js"), "utf8");
+const pdfViewerText = fs.readFileSync(path.join(root, "src/renderer/modules/pdf-viewer.js"), "utf8");
 for (const required of [
   ".ui-btn",
   ".ui-btn-primary",
@@ -181,6 +183,68 @@ if (turnBlockRendererText.includes('button.textContent = t("file.reveal")')) {
 }
 if (pdfRendererText.includes('makeAction(t("file.reveal")') || htmlRendererText.includes('makeAction(t("file.reveal")')) {
   throw new Error("PDF/HTML reveal actions must use the shared icon affordance, not a text action button");
+}
+
+if (!indexText.includes('class="settings-actions connector-form-actions settings-form-actions"')) {
+  throw new Error("connector forms must put submit buttons in a dedicated footer action row");
+}
+for (const required of [".settings-page-actions", ".settings-form-actions", ".settings-action-btn--compact"]) {
+  if (!settingsText.includes(required)) {
+    throw new Error(`settings pages need shared action layout primitive ${required}`);
+  }
+}
+if (!settingsText.includes(".settings-form-actions") || !settingsText.includes("justify-content: flex-end")) {
+  throw new Error("settings form action rows must be visually separated and right-aligned");
+}
+for (const required of [
+  'class="settings-actions settings-page-actions"',
+  'class="settings-actions settings-form-actions"',
+  'class="settings-actions connector-form-actions settings-form-actions"',
+]) {
+  if (!indexText.includes(required)) {
+    throw new Error(`settings pages must use action layout classes consistently: missing ${required}`);
+  }
+}
+for (const required of [
+  ".connector-account-actions .settings-action-btn",
+  ".model-custom-actions .settings-action-btn",
+  ".settings-memory-actions .settings-action-btn",
+  ".workspace-app-card-actions .settings-action-btn",
+  ".runtime-pack-card-actions .settings-action-btn",
+]) {
+  if (!settingsText.includes(required)) {
+    throw new Error(`settings row/card actions must use compact row-level button sizing: missing ${required}`);
+  }
+}
+
+for (const [id, labelKey] of [
+  ["addProjectBtn", "sidebar.addWorkspace"],
+  ["leftToggleBtn", "topbar.toggleSidebar"],
+  ["attachBtn", "composer.attach"],
+  ["modelDiagnoseRestoreBtn", "settings.modelDiagnoseRestore"],
+]) {
+  const button = indexText.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`, "s"))?.[0] || "";
+  if (!button) throw new Error(`missing icon button #${id}`);
+  if (!button.includes(`data-i18n-title="${labelKey}"`) || !button.includes(`data-i18n-aria-label="${labelKey}"`)) {
+    throw new Error(`#${id} must keep both tooltip and accessible label for its icon`);
+  }
+}
+const updateCloseButton = indexText.match(/<button[^>]*id="updatePopoverCloseBtn"[^>]*>/s)?.[0] || "";
+if (!updateCloseButton.includes('data-i18n-aria-label="composer.close"')) {
+  throw new Error("update popover close icon must use localized aria label");
+}
+if (!findBarText.includes('setAttribute("aria-label", title)')) {
+  throw new Error("find bar icon buttons must expose their title as aria-label");
+}
+for (const required of [
+  "renderer.pdfPreviousMatch",
+  "renderer.pdfNextMatch",
+  "renderer.pdfZoomOut",
+  "renderer.pdfZoomIn",
+]) {
+  if (!pdfViewerText.includes(required)) {
+    throw new Error(`PDF viewer symbol buttons need scenario-specific labels: missing ${required}`);
+  }
 }
 
 for (const required of ["initCustomSelects", "syncCustomSelects"]) {

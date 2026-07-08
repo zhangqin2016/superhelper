@@ -17,12 +17,16 @@ function displayName(block = {}) {
   return block.title || block.relativePath || block.fileName || block.path || tr("artifact.untitled", "Artifact");
 }
 
-function makeButton(label, className, disabled = false) {
+function makeButton(label, className, disabled = false, title = "") {
   const button = document.createElement("button");
   button.type = "button";
   button.className = className;
   button.textContent = label;
   button.disabled = Boolean(disabled);
+  if (title) {
+    button.title = title;
+    button.setAttribute("aria-label", title);
+  }
   return button;
 }
 
@@ -63,15 +67,15 @@ export function openPdfViewer(block = {}) {
   search.autocomplete = "off";
   const matchLabel = document.createElement("span");
   matchLabel.textContent = "";
-  const prevMatch = makeButton("↑", "pdf-viewer-icon-button", true);
-  const nextMatch = makeButton("↓", "pdf-viewer-icon-button", true);
+  const prevMatch = makeButton("↑", "pdf-viewer-icon-button", true, tr("renderer.pdfPreviousMatch", "Previous match"));
+  const nextMatch = makeButton("↓", "pdf-viewer-icon-button", true, tr("renderer.pdfNextMatch", "Next match"));
   searchWrap.append(search, matchLabel, prevMatch, nextMatch);
 
   const zoomWrap = document.createElement("div");
   zoomWrap.className = "pdf-viewer-actions";
-  const zoomOut = makeButton("−", "pdf-viewer-icon-button", true);
-  const fit = makeButton(tr("renderer.pdfFitWidth", "Fit"), "pdf-viewer-button", true);
-  const zoomIn = makeButton("+", "pdf-viewer-icon-button", true);
+  const zoomOut = makeButton("−", "pdf-viewer-icon-button", true, tr("renderer.pdfZoomOut", "Zoom out"));
+  const fit = makeButton(tr("renderer.pdfFitWidth", "Fit"), "pdf-viewer-button", true, tr("renderer.pdfFitWidth", "Fit"));
+  const zoomIn = makeButton("+", "pdf-viewer-icon-button", true, tr("renderer.pdfZoomIn", "Zoom in"));
   const open = makeButton(tr("file.open", "Open"), "pdf-viewer-button", !block.path);
   const reveal = makeButton(t("file.reveal"), "pdf-viewer-button", !block.path);
   const close = makeButton("×", "pdf-viewer-close");

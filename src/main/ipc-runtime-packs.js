@@ -1,6 +1,6 @@
 "use strict";
 
-const { ipcMain } = require("electron");
+const { dialog, ipcMain } = require("electron");
 
 function packIdFromPayload(payload) {
   return typeof payload === "string" ? payload : payload?.id || payload?.packId || "";
@@ -37,9 +37,42 @@ function uninstallRuntimePackForIpc(ctx, payload = {}, deps = {}) {
   return result;
 }
 
+function getRuntimePackLocationForIpc() {
+  return require("./runtime-pack-location").getRuntimePackLocation();
+}
+
+async function chooseRuntimePackLocationForIpc(ctx = {}, payload = {}, deps = {}) {
+  const picker = deps.dialog || dialog;
+  const result = await picker.showOpenDialog(ctx.mainWindow, {
+    title: payload?.title || "Choose dependency storage folder",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (result?.canceled || !result?.filePaths?.[0]) {
+    return { ...getRuntimePackLocationForIpc(), ok: false, canceled: true };
+  }
+  const changed = require("./runtime-pack-location").setRuntimePackLocation(result.filePaths[0]);
+  if (changed?.ok) changed.runnerRefresh = refreshRuntimePackRunnerEnv(ctx);
+  return changed;
+}
+
+function resetRuntimePackLocationForIpc(ctx = {}) {
+  const result = require("./runtime-pack-location").resetRuntimePackLocation();
+  if (result?.ok) result.runnerRefresh = refreshRuntimePackRunnerEnv(ctx);
+  return result;
+}
+
 function registerRuntimePackHandlers(ctx = {}) {
   ipcMain.handle("runtime-packs:list", () =>
     require("./runtime-pack-installer").listRuntimePacks());
+
+  ipcMain.handle("runtime-packs:location", () =>
+    getRuntimePackLocationForIpc());
+
+  ipcMain.handle("runtime-packs:choose-location", (_event, payload = {}) =>
+    chooseRuntimePackLocationForIpc(ctx, payload));
+
+  ipcMain.handle("runtime-packs:reset-location", () =>
+    resetRuntimePackLocationForIpc(ctx));
 
   ipcMain.handle("runtime-packs:health", (_event, payload = {}) =>
     require("./runtime-health").checkDependencyHealth(packIdFromPayload(payload)));
@@ -60,6 +93,9 @@ function registerRuntimePackHandlers(ctx = {}) {
 module.exports = {
   registerRuntimePackHandlers,
   refreshRuntimePackRunnerEnv,
+  getRuntimePackLocationForIpc,
+  chooseRuntimePackLocationForIpc,
+  resetRuntimePackLocationForIpc,
   installRuntimePackForIpc,
   uninstallRuntimePackForIpc,
 };

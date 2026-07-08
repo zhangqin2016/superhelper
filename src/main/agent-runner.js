@@ -51,6 +51,13 @@ const ERROR_PATTERNS = [
     retryable: true,
   },
   {
+    code: "MANAGED_MODEL_AUTH_MISSING",
+    category: "model",
+    test: /ACCOUNT_LOGIN_REQUIRED/i,
+    message: "Managed model access is missing account or activation authorization. Lily refreshed the service configuration and retried.",
+    retryable: true,
+  },
+  {
     code: "AUTH_FAILED",
     category: "model",
     test: /unauthorized|401|403|auth.*failed|auth.*invalid|auth.*expired|key.*invalid|key.*expired|token.*invalid|token.*expired|api.?key|invalid.*api|not authenticated|access denied|forbidden/i,
