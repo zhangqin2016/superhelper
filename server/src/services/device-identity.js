@@ -101,24 +101,49 @@ export async function requireSignedDeviceRequest(request, reply, input) {
   return false;
 }
 
+function licenseTime(value) {
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+export function chooseValidLicenseScope(bindings = [], requestedLicenseId = "", nowMs = Date.now()) {
+  const requested = String(requestedLicenseId || "").trim();
+  const valid = bindings
+    .filter((binding) => {
+      if (!binding?.license_id) return false;
+      if (requested && binding.license_id !== requested) return false;
+      if (binding.binding_status !== "active" || binding.license_status !== "active") return false;
+      return licenseTime(binding.expires_at) > nowMs;
+    })
+    .sort((a, b) => {
+      const lastSeenDelta = licenseTime(b.last_seen_at) - licenseTime(a.last_seen_at);
+      if (lastSeenDelta) return lastSeenDelta;
+      return licenseTime(b.activated_at) - licenseTime(a.activated_at);
+    });
+  return String(valid[0]?.license_id || "");
+}
+
 export async function validLicenseScope(input) {
   const licenseId = String(input.licenseId || "").trim();
-  if (!licenseId) return "";
-  const binding = await db
+  let query = db
     .selectFrom("license_devices")
     .leftJoin("licenses", "licenses.id", "license_devices.license_id")
     .select([
+      "license_devices.license_id",
       "license_devices.status as binding_status",
+      "license_devices.activated_at",
+      "license_devices.last_seen_at",
       "licenses.status as license_status",
       "licenses.expires_at",
     ])
-    .where("license_devices.license_id", "=", licenseId)
-    .where("license_devices.device_id", "=", input.deviceId)
-    .executeTakeFirst();
-  if (!binding) return "";
-  if (binding.binding_status !== "active" || binding.license_status !== "active") return "";
-  if (new Date(binding.expires_at).getTime() <= Date.now()) return "";
-  return licenseId;
+    .where("license_devices.device_id", "=", input.deviceId);
+  if (licenseId) query = query.where("license_devices.license_id", "=", licenseId);
+  const bindings = await query
+    .orderBy("license_devices.last_seen_at", "desc")
+    .orderBy("license_devices.activated_at", "desc")
+    .limit(licenseId ? 1 : 10)
+    .execute();
+  return chooseValidLicenseScope(bindings, licenseId);
 }
 
 async function getTrialDays() {
