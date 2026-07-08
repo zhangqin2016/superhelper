@@ -160,9 +160,11 @@ function loadUserChoice() {
   if (cachedUserChoice) return cachedUserChoice;
   const stored = readJson(userSettingsPath(), null);
   const raw = hydrateUserChoice(stored);
+  const servicePresetIds = new Set(loadCatalog().presets.map((preset) => preset.id).filter(Boolean));
+  const normalizedCustom = normalizeCustomPresetEntries(raw?.customPresets, raw?.activePresetId, servicePresetIds);
   cachedUserChoice = {
-    activePresetId: raw?.activePresetId || null,
-    customPresets: Array.isArray(raw?.customPresets) ? raw.customPresets.map(normalizeCustomPresetEntry) : [],
+    activePresetId: normalizedCustom.activePresetId,
+    customPresets: normalizedCustom.customPresets,
     apiGateway: normalizeApiGateway(raw?.apiGateway),
   };
   const activePreset = findPresetById(getActivePresetId());
@@ -173,6 +175,7 @@ function loadUserChoice() {
     };
   }
   if (
+    normalizedCustom.changed ||
     hasPlaintextSecrets(stored) ||
     cachedUserChoice.apiGateway.mode !== normalizeApiGateway(raw?.apiGateway).mode ||
     hasMissingProtocolMetadata(stored)
@@ -202,6 +205,43 @@ function normalizeCustomPresetEntry(entry) {
     ...(entry && typeof entry === "object" ? entry : {}),
     protocol: normalizeProtocol(entry?.protocol) || legacyProtocolForBaseUrl(baseUrl),
   };
+}
+
+function normalizeCustomPresetEntries(entries, activePresetId, servicePresetIds = new Set()) {
+  const customPresets = [];
+  const existingIds = new Set(servicePresetIds);
+  let nextActivePresetId = activePresetId || null;
+  let changed = false;
+
+  for (const rawEntry of Array.isArray(entries) ? entries : []) {
+    if (!rawEntry || typeof rawEntry !== "object") {
+      changed = true;
+      continue;
+    }
+    const entry = normalizeCustomPresetEntry(rawEntry);
+    const oldId = String(entry.id || "").trim();
+    const collidesWithService = servicePresetIds.has(oldId);
+    const needsCustomNamespace = !oldId.startsWith(CUSTOM_ID_PREFIX);
+    const duplicate = Boolean(oldId && existingIds.has(oldId) && !collidesWithService);
+    if (!oldId || collidesWithService || needsCustomNamespace || duplicate) {
+      entry.id = makeCustomId(entry.label, entry.model || oldId || entry.label, existingIds);
+      changed = true;
+      if (nextActivePresetId === oldId) {
+        // If a local record impersonated a service preset, fail open to the
+        // service default instead of keeping the bad local connection active.
+        nextActivePresetId = collidesWithService ? null : entry.id;
+      }
+    } else {
+      entry.id = oldId;
+    }
+    existingIds.add(entry.id);
+    customPresets.push(entry);
+  }
+
+  if (nextActivePresetId && !existingIds.has(nextActivePresetId) && activePresetId !== nextActivePresetId) {
+    changed = true;
+  }
+  return { customPresets, activePresetId: nextActivePresetId, changed };
 }
 
 function hasMissingProtocolMetadata(stored) {

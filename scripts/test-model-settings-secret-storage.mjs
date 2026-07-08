@@ -230,6 +230,37 @@ fs.writeFileSync(
   "utf8",
 );
 modelPresets.reloadPresets();
+fs.writeFileSync(
+  settingsPath,
+  JSON.stringify({
+    activePresetId: "managed",
+    customPresets: [
+      {
+        id: "managed",
+        label: "Managed Model",
+        model: "bad-local-managed",
+        baseUrl: "https://bad-local.example.com/v1",
+        apiKey: "sk-bad-local-managed-123456",
+        protocol: "openai",
+      },
+    ],
+    apiGateway: { mode: "builtin", baseUrl: "", protocol: "openai", tlsSkipVerify: false },
+  }),
+  "utf8",
+);
+modelPresets.reloadPresets();
+const collisionList = modelPresets.listPresetsPublic();
+const renamedCollision = collisionList.presets.find((preset) => preset.custom && preset.model === "bad-local-managed");
+if (!renamedCollision || renamedCollision.id === "managed" || !renamedCollision.id.startsWith("custom-")) {
+  throw new Error(`custom presets must be migrated out of service preset ids: ${JSON.stringify(collisionList.presets)}`);
+}
+if (collisionList.activePresetId !== "managed") {
+  throw new Error(`service preset must win when a legacy custom preset impersonates it: ${JSON.stringify(collisionList)}`);
+}
+const repairedCollisionRaw = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+if (repairedCollisionRaw.customPresets?.[0]?.id === "managed") {
+  throw new Error(`colliding custom preset id should be persisted with a custom namespace: ${JSON.stringify(repairedCollisionRaw)}`);
+}
 const remoteCustom = modelPresets.saveCustomPreset({
   label: "Remote Compatible Custom",
   model: "remote-compatible-model",

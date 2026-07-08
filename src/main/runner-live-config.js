@@ -10,8 +10,8 @@ function buildLiveEngineEnvPatch() {
   const lilyEnv = normalizeToLilyEnv({
     ...loadSettingsEnv(),
     ...require("./remote-config").getRemoteRuntimeEnvSync(),
-    ...getUserApiEnv(),
     ...getActivePresetEnv(),
+    ...getUserApiEnv(),
   });
   return {
     ...toEngineEnv(lilyEnv),
