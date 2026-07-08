@@ -89,6 +89,143 @@ function serviceConfigCheck({ remoteReady, refreshResult }) {
   return check("ok", "service.config", "服务配置", "服务端配置可用。");
 }
 
+function requestUrl(baseUrl, protocol) {
+  const base = String(baseUrl || "").replace(/\/+$/, "");
+  if (!base) return "";
+  if (protocol === "anthropic") return `${base}/messages`;
+  if (/\/chat\/completions$/i.test(base)) return base;
+  return `${base}/chat/completions`;
+}
+
+function responseSnippet(text) {
+  return redact(String(text || "").replace(/\s+/g, " ").trim()).slice(0, 180);
+}
+
+function modelProbeFailureDetail(status, body) {
+  const snippet = responseSnippet(body);
+  if (status === 401 || status === 403) return `模型服务鉴权失败（HTTP ${status}）。请刷新服务配置、重新激活，或检查自定义 API Key。${snippet ? ` ${snippet}` : ""}`;
+  if (status === 404) return `模型服务返回 404。可能是模型名、协议或服务端路由不匹配。${snippet ? ` ${snippet}` : ""}`;
+  if (status === 429) return `模型服务限流（HTTP 429）。请稍后重试。${snippet ? ` ${snippet}` : ""}`;
+  if (status >= 500) return `模型服务上游异常（HTTP ${status}）。这通常不是本地配置缓存问题。${snippet ? ` ${snippet}` : ""}`;
+  return `模型服务探测失败（HTTP ${status}）。${snippet ? ` ${snippet}` : ""}`;
+}
+
+async function readProbeStream(response) {
+  if (!response.body || typeof response.body.getReader !== "function") {
+    const text = await response.text().catch(() => "");
+    if (!text.trim()) return { ok: false, reason: "模型服务返回 200，但响应体为空。" };
+    return { ok: true };
+  }
+  const reader = response.body.getReader();
+  let bytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value?.byteLength || value?.length || 0;
+      if (bytes > 0) return { ok: true };
+      if (bytes > 64 * 1024) return { ok: true };
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return { ok: false, reason: "模型服务返回 200，但流式响应没有产生内容。" };
+}
+
+async function modelConnectivityCheck(options = {}) {
+  const timeoutMs = Number(options.modelProbeTimeoutMs || 12_000);
+  const lilyEnv = safeCall(() => require("./spawn-env").resolveLilyEnv(), {});
+  const resolved = safeCall(() => require("./runtime/opencode-model-config").resolveOpencodeModelConfig(lilyEnv), null);
+  const route = resolved?.diagnostics?.modelRoute || safeCall(() => require("./model-route-audit").classifyModelRoute(lilyEnv), null);
+
+  if (!resolved?.ok) {
+    return check(
+      "error",
+      "model.connectivity",
+      "模型连通性",
+      `当前模型配置无法生成运行时配置：${resolved?.reason || "MODEL_CONFIG_INVALID"}`,
+      "refresh_service_config",
+    );
+  }
+
+  const token = lilyEnv.LILY_OPENCODE_API_KEY || lilyEnv.LILY_API_KEY || "";
+  if (!token) {
+    return check("error", "model.connectivity", "模型连通性", "当前生效模型缺少访问 token。", "refresh_service_config");
+  }
+
+  const url = requestUrl(resolved.baseUrl, resolved.protocol);
+  if (!url) {
+    return check("error", "model.connectivity", "模型连通性", "当前生效模型缺少服务地址。", "refresh_service_config");
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
+  const headers = {
+    "content-type": "application/json",
+    authorization: `Bearer ${token}`,
+  };
+  let body;
+  if (resolved.protocol === "anthropic") {
+    headers["anthropic-version"] = "2023-06-01";
+    headers["x-api-key"] = token;
+    body = {
+      model: resolved.model.modelID,
+      max_tokens: 1,
+      stream: true,
+      messages: [{ role: "user", content: "ping" }],
+    };
+  } else {
+    body = {
+      model: resolved.model.modelID,
+      messages: [{ role: "user", content: "ping" }],
+      max_tokens: 1,
+      stream: true,
+    };
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      return check(
+        response.status === 429 || response.status >= 500 ? "warning" : "error",
+        "model.connectivity",
+        "模型连通性",
+        modelProbeFailureDetail(response.status, text),
+        response.status === 401 || response.status === 403 ? "refresh_service_config" : "",
+      );
+    }
+    const streamResult = await readProbeStream(response);
+    if (!streamResult.ok) {
+      return check("warning", "model.connectivity", "模型连通性", streamResult.reason || "模型服务流式响应异常。");
+    }
+    return check(
+      "ok",
+      "model.connectivity",
+      "模型连通性",
+      `当前模型流式调用可访问（${resolved.protocol || "openai"}，${route?.route || "unknown"}）。`,
+    );
+  } catch (err) {
+    const aborted = err?.name === "AbortError";
+    return check(
+      "error",
+      "model.connectivity",
+      "模型连通性",
+      aborted
+        ? `模型服务探测超时（${timeoutMs}ms）。客户网络、代理、杀毒软件或服务端链路可能阻断了真实请求。`
+        : `模型服务探测失败：${responseSnippet(err?.message || String(err))}`,
+      "",
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function engineCheck({ includeEngine }) {
   if (!includeEngine) return check("ok", "engine.available", "AI 引擎", "本次未检查引擎文件。");
   const cliPath = safeCall(() => require("./agent-command").resolveOpencodeCommand(), "");
@@ -128,6 +265,9 @@ async function runSupportDiagnosticsPublic(options = {}) {
     serviceConfigCheck({ remoteReady, refreshResult }),
     engineCheck({ includeEngine: options.includeEngine !== false }),
   ];
+  if (options.probeModel !== false) {
+    checks.push(await modelConnectivityCheck(options));
+  }
   if (license) {
     checks.push(check(
       license.valid || license.activated ? "ok" : "warning",
@@ -188,7 +328,8 @@ async function runSupportDiagnosticsPublic(options = {}) {
 
 async function submitDiagnosticsFeedbackPublic(input = {}) {
   const diagnostic = redact(input.diagnostic || await runSupportDiagnosticsPublic({ refreshService: false }));
-  const firstIssue = (diagnostic.checks || []).find((item) => item.status !== "ok");
+  const firstIssue = (diagnostic.checks || []).find((item) => item.status === "error")
+    || (diagnostic.checks || []).find((item) => item.status === "warning");
   const eventSubtype = firstIssue ? `${firstIssue.id.replace(/[^a-z0-9]+/gi, "_")}_${firstIssue.status}` : "all_ok";
   const result = await require("./service-client").reportRuntimeDiagnostic({
     eventType: "support",

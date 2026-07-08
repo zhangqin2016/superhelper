@@ -99,17 +99,43 @@ fs.writeFileSync(
 );
 
 const supportDiagnostics = require(path.join(__dirname, "../src/main/support-diagnostics.js"));
+const probeRequests = [];
+globalThis.fetch = async (url, options = {}) => {
+  probeRequests.push({
+    url: String(url),
+    headers: options.headers || {},
+    body: JSON.parse(String(options.body || "{}")),
+  });
+  return {
+    ok: false,
+    status: 404,
+    text: async () => JSON.stringify({ error: { message: "model not found for sk-bad-custom-secret-123456" } }),
+  };
+};
+
 const diagnostic = await supportDiagnostics.runSupportDiagnosticsPublic({
   refreshService: false,
   includeEngine: false,
 });
 
 assert.equal(diagnostic.ok, true);
-assert.equal(diagnostic.summary.status, "warning");
+assert.equal(diagnostic.summary.status, "error");
 assert.equal(diagnostic.context.model.activePresetId, "custom-bad-gateway");
 assert(
   diagnostic.checks.some((check) => check.id === "model.default" && check.status === "warning"),
   "diagnostics should flag custom model selection",
+);
+assert.equal(probeRequests.length, 1, "diagnostics should probe the live model path");
+assert.equal(probeRequests[0].url, "https://bad-local.example.com/llm/chat/completions");
+assert.equal(probeRequests[0].body.model, "bad-model");
+assert.equal(probeRequests[0].body.stream, true, "diagnostics should probe the streaming path used by real sends");
+assert(
+  diagnostic.checks.some((check) =>
+    check.id === "model.connectivity" &&
+    check.status === "error" &&
+    /404/.test(check.detail) &&
+    /模型名、协议或服务端路由/.test(check.detail)),
+  "diagnostics should surface live model probe failures",
 );
 assert(
   diagnostic.recommendedActions.some((action) => action.id === "restore_default_model"),
@@ -134,11 +160,33 @@ const submitted = await supportDiagnostics.submitDiagnosticsFeedbackPublic({
 assert.equal(submitted.ok, true);
 assert.equal(reportCalls.length, 1);
 assert.equal(reportCalls[0].normalizedKind, "support_diagnostics");
-assert.equal(reportCalls[0].eventSubtype, "model_default_warning");
-assert.equal(reportCalls[0].trace.summary.status, "warning");
+assert.equal(reportCalls[0].eventSubtype, "model_connectivity_error");
+assert.equal(reportCalls[0].trace.summary.status, "error");
 assert(
   JSON.stringify(reportCalls[0]).includes("sk-bad-custom-secret") === false,
   "submitted diagnostics must stay redacted",
+);
+
+globalThis.fetch = async () => ({
+  ok: true,
+  status: 200,
+  body: new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("data: ok\n\n"));
+      controller.close();
+    },
+  }),
+  text: async () => {
+    throw new Error("success stream should not be consumed through text()");
+  },
+});
+const healthyProbe = await supportDiagnostics.runSupportDiagnosticsPublic({
+  refreshService: false,
+  includeEngine: false,
+});
+assert(
+  healthyProbe.checks.some((check) => check.id === "model.connectivity" && check.status === "ok"),
+  "diagnostics should read a successful streaming model probe",
 );
 
 fs.rmSync(tmp, { recursive: true, force: true });
