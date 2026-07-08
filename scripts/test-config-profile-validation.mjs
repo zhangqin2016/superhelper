@@ -67,13 +67,13 @@ try {
     },
   });
   assert.equal(previewConfig.models.providers, undefined, "admin preview should consume provider directives");
-  assert.equal(previewConfig.models.activePresetId, "glm-gateway", "admin preview should honor activeProvider");
+  assert.equal(previewConfig.models.activePresetId, "lily-managed:glm:gateway", "admin preview should honor activeProvider");
   assert.deepEqual(
     previewConfig.models.presets.map((preset) => preset.id),
-    ["deepseek-gateway", "glm-gateway"],
+    ["lily-managed:deepseek:gateway", "lily-managed:glm:gateway"],
     "admin preview should show the same expanded model menu the client receives",
   );
-  const glmPreset = previewConfig.models.presets.find((preset) => preset.id === "glm-gateway");
+  const glmPreset = previewConfig.models.presets.find((preset) => preset.id === "lily-managed:glm:gateway");
   assert.equal(glmPreset.env.LILY_API_BASE_URL, "https://lilych.lilywb.cn/llm/glm");
   assert.match(glmPreset.env.LILY_API_KEY, /^lilygw\./, "admin preview should inject a short-lived gateway token");
 
@@ -82,10 +82,10 @@ try {
       schemaVersion: 1,
       models: {
         source: "service-managed",
-        activePresetId: "deepseek-gateway",
+        activePresetId: "lily-managed:deepseek:gateway",
         presets: [
           {
-            id: "deepseek-gateway",
+            id: "lily-managed:deepseek:gateway",
             env: {
               LILY_API_BASE_URL: "/llm/deepseek",
               LILY_API_KEY: "$LILY_GATEWAY_TOKEN",

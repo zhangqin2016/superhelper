@@ -186,6 +186,10 @@ function modelSlug(model) {
   return String(model || "").replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+function managedPresetId(providerId, deliveryMode, suffix = "") {
+  return `lily-managed:${providerId}:${deliveryMode}${suffix}`;
+}
+
 function modelMetadata(provider, model) {
   const metadata = provider?.metadata && typeof provider.metadata === "object" ? provider.metadata : {};
   const modelId = String(model || provider?.model || "").trim();
@@ -275,8 +279,7 @@ function normalizeVisionModel(model) {
 }
 
 /** Build ONE preset for a specific model. The provider's default model keeps the
- *  bare `${id}-${mode}` preset id (so a stored activePresetId stays valid and the
- *  active-preset resolution below still matches); extra models get a suffixed id.
+ *  bare managed provider/mode preset id; extra models get a suffixed id.
  *  All OpenCode model tiers map to the same model (the engine runs one model). */
 function providerPreset(provider, deliveryMode, model, isDefault, providerCapabilities = {}) {
   const capabilities = { vision: providerVisionCapability(provider, providerCapabilities) };
@@ -294,7 +297,7 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
   if (deliveryMode === "direct" && supportsDirectDelivery(provider)) {
     const opencode = opencodeProviderSpecFor(provider, deliveryMode);
     return {
-      id: `${provider.id}-direct${suffix}`,
+      id: managedPresetId(provider.id, "direct", suffix),
       label: providerLabel(provider),
       description: "客户端直连模型供应商。响应更快，但会向客户端下发长期模型密钥。",
       capabilities,
@@ -315,7 +318,7 @@ function providerPreset(provider, deliveryMode, model, isDefault, providerCapabi
   const gatewayBaseUrl = gatewayBaseUrlFor(provider);
   const opencode = opencodeProviderSpecFor(provider, effectiveDeliveryMode);
   return {
-    id: `${provider.id}-gateway${suffix}`,
+    id: managedPresetId(provider.id, effectiveDeliveryMode, suffix),
     label: providerLabel(provider),
     description: "由 Lily 服务端托管密钥并签发短期访问令牌。",
     capabilities,
@@ -432,9 +435,9 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
   const modelPresets = modelProviders
     .flatMap((provider) => providerPresets(provider, deliveryMode));
 
-  const activeProviderId = serverConfig.modelGatewayDefaultProvider || modelPresets[0]?.id?.replace(/-gateway$/, "");
-  const activePresetId = modelPresets.find((preset) => preset.id === `${activeProviderId}-${deliveryMode}`)?.id
-    || modelPresets.find((preset) => preset.id.startsWith(`${activeProviderId}-`))?.id
+  const activeProviderId = serverConfig.modelGatewayDefaultProvider || "";
+  const activePresetId = modelPresets.find((preset) => preset.id === managedPresetId(activeProviderId, deliveryMode))?.id
+    || modelPresets.find((preset) => preset.id.startsWith(`lily-managed:${activeProviderId}:`))?.id
     || modelPresets[0]?.id
     || "";
 
@@ -671,8 +674,8 @@ export function expandModelProviderMenu(effectiveConfig, options = {}) {
   if (!presets.length) return { ...effectiveConfig, models: restModels };
   const active = String(activeProvider || directive[0]);
   const activePresetId =
-    presets.find((preset) => preset.id === `${active}-${deliveryMode}`)?.id ||
-    presets.find((preset) => preset.id.startsWith(`${active}-`))?.id ||
+    presets.find((preset) => preset.id === managedPresetId(active, deliveryMode))?.id ||
+    presets.find((preset) => preset.id.startsWith(`lily-managed:${active}:`))?.id ||
     presets[0].id;
   return { ...effectiveConfig, models: { ...restModels, source: "service", activePresetId, presets } };
 }

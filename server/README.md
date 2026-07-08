@@ -134,9 +134,9 @@ Config profile example for gateway mode:
 ```json
 {
   "models": {
-    "activePresetId": "deepseek-gateway",
+    "activePresetId": "lily-managed:deepseek:gateway",
     "presets": [{
-      "id": "deepseek-gateway",
+      "id": "lily-managed:deepseek:gateway",
       "label": "DeepSeek Gateway",
       "env": {
         "LILY_API_BASE_URL": "/llm/deepseek/v1",

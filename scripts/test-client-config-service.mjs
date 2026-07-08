@@ -309,7 +309,7 @@ const deepseekManaged = buildEnvManagedClientConfig(
     },
   },
 );
-assert.equal(deepseekManaged.models.activePresetId, "deepseek-gateway");
+assert.equal(deepseekManaged.models.activePresetId, "lily-managed:deepseek:gateway");
 assert.equal(deepseekManaged.models.presets[0].env.LILY_GATEWAY_PROVIDER, "deepseek");
 assert.equal(deepseekManaged.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
 assert.equal(deepseekManaged.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro[1m]");
@@ -338,7 +338,7 @@ const vllmManaged = buildEnvManagedClientConfig(
     },
   },
 );
-assert.equal(vllmManaged.models.activePresetId, "iluvatar-vllm-gateway");
+assert.equal(vllmManaged.models.activePresetId, "lily-managed:iluvatar-vllm:gateway");
 assert.equal(vllmManaged.models.presets[0].env.LILY_API_BASE_URL, "/llm/iluvatar-vllm/v1");
 assert.equal(vllmManaged.models.presets[0].env.LILY_OPENCODE_BASE_URL, "/llm/iluvatar-vllm/v1");
 assert.equal(vllmManaged.models.presets[0].env.LILY_GATEWAY_PROVIDER, "iluvatar-vllm");
@@ -399,7 +399,7 @@ const deepseekOpenAiManaged = buildEnvManagedClientConfig(
     },
   },
 );
-assert.equal(deepseekOpenAiManaged.models.activePresetId, "deepseek-gateway");
+assert.equal(deepseekOpenAiManaged.models.activePresetId, "lily-managed:deepseek:gateway");
 assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_API_BASE_URL, "/llm/deepseek/v1");
 assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "openai");
 assert.equal(deepseekOpenAiManaged.models.presets[0].env.LILY_MODEL, "deepseek-v4-pro");
@@ -422,7 +422,7 @@ const deepseekDirect = buildEnvManagedClientConfig(
     },
   },
 );
-assert.equal(deepseekDirect.models.activePresetId, "deepseek-direct");
+assert.equal(deepseekDirect.models.activePresetId, "lily-managed:deepseek:direct");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_API_BASE_URL, "https://api.deepseek.com/anthropic");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_API_KEY, "sk-test-deepseek");
 assert.equal(deepseekDirect.models.presets[0].env.LILY_GATEWAY_PROVIDER, undefined);
@@ -443,7 +443,7 @@ const whitelisted = buildEnvManagedClientConfig(
   twoProviders,
 );
 assert.ok(
-  whitelisted.models.presets.every((p) => p.id.startsWith("deepseek-")),
+  whitelisted.models.presets.every((p) => p.id.startsWith("lily-managed:deepseek:")),
   "whitelist should limit the baseline to deepseek only",
 );
 assert.ok(
@@ -456,7 +456,7 @@ const noWhitelist = buildEnvManagedClientConfig(
 );
 assert.deepEqual(
   noWhitelist.models.presets.map((p) => p.id).sort(),
-  ["deepseek-gateway", "glm-gateway"],
+  ["lily-managed:deepseek:gateway", "lily-managed:glm:gateway"],
   "empty provider allow-list should expose every configured provider",
 );
 const allProviders = buildEnvManagedClientConfig(
@@ -464,7 +464,7 @@ const allProviders = buildEnvManagedClientConfig(
   twoProviders,
 );
 assert.ok(
-  allProviders.models.presets.some((p) => p.id.startsWith("glm-")),
+  allProviders.models.presets.some((p) => p.id.startsWith("lily-managed:glm:")),
   "all should expose every configured provider",
 );
 const invalidWhitelist = buildEnvManagedClientConfig(
@@ -488,7 +488,7 @@ const singleDeepseekBaseline = buildEnvManagedClientConfig(
     },
   },
 );
-assert.equal(singleDeepseekBaseline.models.activePresetId, "deepseek-gateway");
+assert.equal(singleDeepseekBaseline.models.activePresetId, "lily-managed:deepseek:gateway");
 assert.deepEqual(
   singleDeepseekBaseline.models.presets.map((preset) => preset.env.LILY_MODEL),
   ["deepseek-v4-pro"],
@@ -533,17 +533,17 @@ const scopeMerged = {
   // baseline (deepseek-only) that a group profile merged its directive onto
   models: {
     source: "service",
-    activePresetId: "deepseek-gateway",
-    presets: [{ id: "deepseek-gateway" }],
+    activePresetId: "lily-managed:deepseek:gateway",
+    presets: [{ id: "lily-managed:deepseek:gateway" }],
     providers: ["glm"],
     activeProvider: "glm",
     capabilities: { glm: { vision: true } },
   },
 };
 const expanded = expandModelProviderMenu(scopeMerged, { providers: scopeProviders, deliveryMode: "gateway" });
-assert.ok(expanded.models.presets.every((p) => p.id.startsWith("glm-")), "scope menu should expand to the directive's providers only");
+assert.ok(expanded.models.presets.every((p) => p.id.startsWith("lily-managed:glm:")), "scope menu should expand to the directive's providers only");
 assert.equal(expanded.models.providers, undefined, "directive should be consumed");
-assert.ok(expanded.models.activePresetId.startsWith("glm-"), "active should be the directive's activeProvider");
+assert.ok(expanded.models.activePresetId.startsWith("lily-managed:glm:"), "active should be the directive's activeProvider");
 assert.deepEqual(expanded.models.capabilities, { glm: { vision: true } }, "provider capabilities must survive directive expansion");
 assert.ok(expanded.models.presets.every((p) => p.capabilities?.vision === true), "expanded presets must carry native vision to the client router");
 
@@ -566,29 +566,29 @@ assert.ok(
 );
 
 const defaultGatewayExpanded = expandModelProviderMenu(
-  { models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["deepseek"] } },
+  { models: { source: "service", activePresetId: "lily-managed:deepseek:gateway", presets: [{ id: "lily-managed:deepseek:gateway" }], providers: ["deepseek"] } },
   { providers: scopeProviders },
 );
 assert.equal(
   defaultGatewayExpanded.models.activePresetId,
-  "deepseek-gateway",
+  "lily-managed:deepseek:gateway",
   "provider directives must fail safe to gateway when caller does not pass deliveryMode",
 );
 assert.equal(defaultGatewayExpanded.models.presets[0].env.LILY_API_KEY, "$LILY_GATEWAY_TOKEN");
 
 const explicitDirectExpanded = expandModelProviderMenu(
-  { models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["deepseek"] } },
+  { models: { source: "service", activePresetId: "lily-managed:deepseek:gateway", presets: [{ id: "lily-managed:deepseek:gateway" }], providers: ["deepseek"] } },
   { providers: scopeProviders, deliveryMode: "direct" },
 );
-assert.equal(explicitDirectExpanded.models.activePresetId, "deepseek-direct");
+assert.equal(explicitDirectExpanded.models.activePresetId, "lily-managed:deepseek:direct");
 assert.equal(explicitDirectExpanded.models.presets[0].env.LILY_API_KEY, "sk-d");
 
 // Fail-safe: unresolvable providers → keep the baseline menu, drop the directive.
 const unresolved = expandModelProviderMenu(
-  { models: { source: "service", activePresetId: "deepseek-gateway", presets: [{ id: "deepseek-gateway" }], providers: ["ghost"] } },
+  { models: { source: "service", activePresetId: "lily-managed:deepseek:gateway", presets: [{ id: "lily-managed:deepseek:gateway" }], providers: ["ghost"] } },
   { providers: scopeProviders, deliveryMode: "gateway" },
 );
-assert.deepEqual(unresolved.models.presets, [{ id: "deepseek-gateway" }], "unresolvable directive keeps baseline presets");
+assert.deepEqual(unresolved.models.presets, [{ id: "lily-managed:deepseek:gateway" }], "unresolvable directive keeps baseline presets");
 assert.equal(unresolved.models.providers, undefined);
 
 const openAiDirect = buildEnvManagedClientConfig(
@@ -606,7 +606,7 @@ const openAiDirect = buildEnvManagedClientConfig(
     },
   },
 );
-assert.equal(openAiDirect.models.activePresetId, "openai-direct");
+assert.equal(openAiDirect.models.activePresetId, "lily-managed:openai:direct");
 assert.equal(openAiDirect.models.presets[0].env.LILY_API_BASE_URL, "https://api.openai.example/v1");
 assert.equal(openAiDirect.models.presets[0].env.LILY_API_KEY, "sk-test-openai");
 assert.equal(openAiDirect.models.presets[0].env.LILY_GATEWAY_PROVIDER, undefined);
@@ -627,7 +627,7 @@ const anthropicDirect = buildEnvManagedClientConfig(
     },
   },
 );
-assert.equal(anthropicDirect.models.activePresetId, "openai-direct");
+assert.equal(anthropicDirect.models.activePresetId, "lily-managed:openai:direct");
 assert.equal(anthropicDirect.models.presets[0].env.LILY_OPENCODE_PROTOCOL, "anthropic");
 
 // --- resolveMediaSelection: per-scope media multi-select + default (backward-compatible) ---
