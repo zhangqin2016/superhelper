@@ -371,11 +371,6 @@ export async function initSettingsPanel() {
     await refreshSessionPermissionSelect();
   });
 
-  $("settingsClearCache")?.addEventListener("click", async () => {
-    const result = await window.assistantClient.clearStagingCache();
-    showToast(result?.ok ? t("toast.cacheCleared") : t("toast.cacheClearFailed"), result?.ok ? "success" : "error");
-  });
-
   // Task-completion alerts (notification preferences) live on the General page,
   // not Model. Wire the two toggles here next to the other general controls.
   {
