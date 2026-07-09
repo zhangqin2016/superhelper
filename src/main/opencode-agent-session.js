@@ -2473,14 +2473,14 @@ class OpencodeAgentSession extends EventEmitter {
 OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
   Number(process.env.LILY_OPENCODE_TURN_TIMEOUT_MS) || 600_000;
 // A tool that emitted "running" but never emits output/completion must not keep
-// the whole turn alive forever. Real long-running work should continue to emit
-// tool progress or move to Lily process jobs; this lease catches orphaned
-// OpenCode tool states where the shell child is already gone but the session
-// remains busy. Override / disable (0) with LILY_OPENCODE_ACTIVE_TOOL_LEASE_MS.
+// the whole turn alive forever. Keep this lease longer than the no-progress
+// window: silent foreground tools are allowed one full watchdog extension before
+// Lily treats the OpenCode tool state as orphaned. Override / disable (0) with
+// LILY_OPENCODE_ACTIVE_TOOL_LEASE_MS.
 OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS =
   process.env.LILY_OPENCODE_ACTIVE_TOOL_LEASE_MS !== undefined
     ? Number(process.env.LILY_OPENCODE_ACTIVE_TOOL_LEASE_MS) || 0
-    : 120_000;
+    : Math.max(2 * OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS, 20 * 60_000);
 // Shorter visible no-progress window. This only feeds the live process panel so
 // users can see the engine is still alive while OpenCode is quiet.
 OpencodeAgentSession.PROGRESS_NOTICE_MS =

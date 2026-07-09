@@ -22,6 +22,10 @@ const { OpencodeAgentSession } = require("../src/main/opencode-agent-session.js"
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
+assert(
+  OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS >= OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS,
+  "default active tool lease must not be shorter than the no-progress watchdog",
+);
 const tick = () => new Promise((r) => setImmediate(r));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function waitIdleSettle() {
