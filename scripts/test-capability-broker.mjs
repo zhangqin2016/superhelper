@@ -225,6 +225,15 @@ assert.ok(
   "attached product photo background removal should not fall through to Office/PDF routing"
 );
 
+const uploadedProductBgRemovalRecommendations = recommendSkillCapabilityGraph({
+  text: "remove bg from uploaded product image",
+});
+assert.equal(
+  uploadedProductBgRemovalRecommendations[0]?.id,
+  "lily-runtime-packs",
+  "common image shorthand like bg should still match catalog-declared background-removal capability hints"
+);
+
 const productPhotoCutoutRecommendations = recommendSkillCapabilityGraph({
   text: "给这张产品图抠图去背景",
 });

@@ -78,6 +78,8 @@ function compactArray(values = [], max = 4) {
 function normalizedQueryText(value) {
   return String(value || "")
     .toLowerCase()
+    .replace(/\bbg\b/g, " background ")
+    .replace(/\bremove\b/g, " removal ")
     .replace(/[_./:-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
