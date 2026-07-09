@@ -244,6 +244,13 @@ const BODY_OVERLAY_CANDIDATES = Object.freeze([
   },
 ]);
 
+// Bump when the probe learns to detect a new class of gateway defect. Stored
+// profiles from older versions are treated as stale and re-probed by the
+// settings-open / model-switch repair path, so existing presets pick up new
+// compat findings without the user re-entering anything.
+// v2: tool-shape decoys (long names + nested params) and toolShapeCompat.
+const PROBE_PROFILE_VERSION = 2;
+
 async function probeCustomModelProfile({
   protocol,
   baseUrl,
@@ -263,6 +270,7 @@ async function probeCustomModelProfile({
     return {
       ok: true,
       profile: {
+        probeVersion: PROBE_PROFILE_VERSION,
         ...(bodyOverlay ? { requestBodyOverlay: bodyOverlay } : {}),
         ...(toolShapeCompat ? { toolShapeCompat: true } : {}),
         conformance: {
@@ -339,4 +347,5 @@ async function probeCustomModelProfile({
 
 module.exports = {
   probeCustomModelProfile,
+  PROBE_PROFILE_VERSION,
 };

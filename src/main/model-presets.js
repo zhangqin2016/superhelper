@@ -241,6 +241,10 @@ function normalizeCompatibilityProfile(value) {
       }
     : null;
   const out = {};
+  const probeVersion = Number.isFinite(Number(value.probeVersion)) && Number(value.probeVersion) > 0
+    ? Math.floor(Number(value.probeVersion))
+    : null;
+  if (probeVersion) out.probeVersion = probeVersion;
   if (requestBodyOverlay) out.requestBodyOverlay = requestBodyOverlay;
   if (value.toolShapeCompat === true) out.toolShapeCompat = true;
   if (conformance) out.conformance = conformance;
@@ -966,9 +970,13 @@ async function updateCustomPresetWithProbe(presetId, input = {}) {
     protocol,
   };
   const hasExplicitOverlay = Boolean(normalizeRequestBodyOverlay(input.requestBodyOverlay));
+  const previousProfile = normalizeCompatibilityProfile(previous.compatibilityProfile);
+  // A profile from an older probe version must not suppress re-probing: the
+  // newer probe detects gateway defects the stored profile predates.
+  const { PROBE_PROFILE_VERSION } = require("./model-compatibility-probe");
   const hasExistingProfile = Boolean(
-    normalizeCompatibilityProfile(previous.compatibilityProfile) ||
-      normalizeRequestBodyOverlay(previous.requestBodyOverlay),
+    (previousProfile || normalizeRequestBodyOverlay(previous.requestBodyOverlay)) &&
+      Number(previousProfile?.probeVersion) >= PROBE_PROFILE_VERSION,
   );
   if (
     hasExplicitOverlay ||
@@ -1016,7 +1024,11 @@ function customPresetNeedsCompatibilityProbe(entry) {
   if (protocol !== "openai") return false;
   const compatibilityProfile = normalizeCompatibilityProfile(normalized.compatibilityProfile);
   const hasPromptProfile = Boolean(compatibilityProfile?.prompt?.systemMaxChars);
-  if ((compatibilityProfile || normalizeRequestBodyOverlay(normalized.requestBodyOverlay)) && hasPromptProfile) return false;
+  // Profiles from older probe versions are stale: newer probes detect gateway
+  // defects (e.g. tool-shape limits) the old profile knows nothing about.
+  const { PROBE_PROFILE_VERSION } = require("./model-compatibility-probe");
+  const isCurrentProbe = Number(compatibilityProfile?.probeVersion) >= PROBE_PROFILE_VERSION;
+  if ((compatibilityProfile || normalizeRequestBodyOverlay(normalized.requestBodyOverlay)) && hasPromptProfile && isCurrentProbe) return false;
   return Boolean(normalized.model);
 }
 
