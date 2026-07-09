@@ -257,6 +257,10 @@ export function resolveLiveStatusActivity(liveTurn, translate) {
 
   if ((liveTurn.thinkingText || "").trim()) return translate("turn.status.thinking");
 
+  const livenessDetail = String(liveTurn.livenessNotice?.detail || liveTurn.livenessNotice?.message || "").trim();
+  if (livenessDetail) return livenessDetail;
+  if (liveTurn.livenessNotice?.code === "longWait") return translate("engine.longWait");
+
   if (liveTurn.phase === "starting") return translate("turn.status.starting");
   if (liveTurn.phase === "streaming") return translate("turn.status.waiting");
   return translate("turn.status.working");

@@ -347,6 +347,7 @@ function ensureLiveTurn(runtime, event) {
       processEvents: [],
       timeline: [],
       activityLabel: null,
+      livenessNotice: null,
       durationMs: null,
       totalCostUsd: null,
       tools: new Map(),
@@ -375,6 +376,10 @@ function noticeKey(event) {
 
 function addNotice(live, event) {
   const notice = sanitizeNoticeForIngest(event?.payload?.notice || event?.payload || {});
+  const code = String(notice?.code || "");
+  if (code === "longWait" || code === "toolProgress") {
+    live.livenessNotice = notice;
+  }
   if (!notice || notice.panel === false) return;
   const normalized = {
     ...event,
