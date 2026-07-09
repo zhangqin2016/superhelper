@@ -14,6 +14,7 @@ process.env.LILY_DOCUMENTS_DIR = tmp;
 const require = createRequire(import.meta.url);
 const { probeCustomModelProfile } = require("../src/main/model-compatibility-probe.js");
 const modelPresets = require("../src/main/model-presets.js");
+const promptProbeText = `${"# Lily guide\n\n".repeat(2000)}Use tools carefully and answer the user.`;
 
 const requests = [];
 const server = http.createServer((req, res) => {
@@ -30,6 +31,15 @@ const server = http.createServer((req, res) => {
       return;
     }
     const thinkingDisabled = parsed.chat_template_kwargs?.enable_thinking === false;
+    const systemChars = (parsed.messages || [])
+      .filter((message) => message?.role === "system")
+      .map((message) => String(message.content || "").length)
+      .reduce((sum, value) => sum + value, 0);
+    if (systemChars > 10_000) {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end("<!DOCTYPE html><title>Server Unreachable</title>");
+      return;
+    }
     const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
     if (parsed.stream) {
       res.writeHead(200, {
@@ -122,6 +132,7 @@ try {
     baseUrl: `http://127.0.0.1:${port}/v1`,
     apiKey: "sk-test-probe",
     model: "provider/model-with-reasoning-default",
+    systemPromptProbeText: promptProbeText,
     timeoutMs: 5_000,
   });
 
@@ -135,7 +146,8 @@ try {
   assert.equal(result.profile.conformance.streaming, true, "probe profile records streaming conformance");
   assert.equal(result.profile.conformance.toolCalls, true, "probe profile records tool-call conformance");
   assert.equal(result.profile.conformance.contentSource, "body-overlay", "probe profile records how compatibility was achieved");
-  assert.equal(requests.length, 6, "probe should verify chat, stream, and tools before accepting a candidate repair");
+  assert.equal(result.profile.prompt.systemMaxChars, 10000, "probe should discover the endpoint's safe system prompt size");
+  assert(requests.length > 6, "probe should verify chat, stream, tools, and system prompt capacity");
   assert.equal(requests[0].chat_template_kwargs, undefined, "first probe must measure the endpoint as configured");
   assert.equal(requests[1].chat_template_kwargs, undefined, "plain stream probe must also measure the endpoint as configured");
   assert.equal(requests[2].chat_template_kwargs.enable_thinking, false, "candidate repair applies to non-stream probe");
@@ -150,6 +162,7 @@ try {
     baseUrl: `http://127.0.0.1:${port}/v1`,
     apiKey: "sk-test-probe",
     model: "provider/model-with-reasoning-default",
+    systemPromptProbeText: promptProbeText,
     probeTimeoutMs: 5_000,
   });
   assert.equal(saved.ok, true, `save with probe should succeed: ${JSON.stringify(saved)}`);
@@ -160,10 +173,12 @@ try {
     false,
     "save with probe should persist the discovered body overlay into runtime env",
   );
+  assert.equal(env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS, "10000", "save with probe should persist the discovered system prompt budget");
   const stored = JSON.parse(fs.readFileSync(path.join(tmp, "model-settings.json"), "utf8"));
   const storedPreset = stored.customPresets.find((preset) => preset.id === saved.preset.id);
   assert.equal(storedPreset.compatibilityProfile.conformance.streaming, true, "saved custom model keeps the compatibility contract for diagnostics");
   assert.equal(storedPreset.compatibilityProfile.conformance.toolCalls, true, "saved custom model records tool-call conformance for agent safety");
+  assert.equal(storedPreset.compatibilityProfile.prompt.systemMaxChars, 10000, "saved custom model records prompt capacity for runtime prompt budgeting");
 
   const legacy = modelPresets.saveCustomPreset({
     label: "Legacy Reasoning Default",
@@ -180,7 +195,11 @@ try {
     undefined,
     "legacy custom presets start without a compatibility overlay",
   );
-  const repaired = await modelPresets.repairCustomPresetCompatibilityProfiles({ activeOnly: true, timeoutMs: 5_000 });
+  const repaired = await modelPresets.repairCustomPresetCompatibilityProfiles({
+    activeOnly: true,
+    systemPromptProbeText: promptProbeText,
+    timeoutMs: 5_000,
+  });
   assert.equal(repaired.ok, true, `legacy repair should not fail: ${JSON.stringify(repaired)}`);
   assert.equal(repaired.repairedCount, 1, "legacy repair should profile the active custom model once");
   const legacyEnvAfterRepair = modelPresets.getUserApiEnv();

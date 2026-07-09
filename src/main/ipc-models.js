@@ -13,6 +13,23 @@ const {
 } = require("./model-presets");
 const { withRunnerChange, applyPermissionModeLive } = require("./ipc-utils");
 
+function currentSystemPromptProbeText(ctx) {
+  try {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const session = ctx.sessionManager?.getActive?.();
+    if (!session?.id) return "";
+    const guide = path.join(require("./config").sessionGuideDir(session.id), "AGENT.md");
+    const base = fs.existsSync(guide) ? fs.readFileSync(guide, "utf8") : "";
+    if (!base.trim()) return "";
+    const { appendLargeInputProtocolGuidance } = require("./large-input-protocol");
+    const { appendProcessJobProtocolGuidance } = require("./process-job-protocol");
+    return appendProcessJobProtocolGuidance(appendLargeInputProtocolGuidance(base));
+  } catch {
+    return "";
+  }
+}
+
 function registerModelHandlers(ctx) {
   ipcMain.handle("models:list", async () => {
     try {
@@ -31,7 +48,11 @@ function registerModelHandlers(ctx) {
       // custom presets, but never packaged defaults for service-managed models.
     }
     try {
-      const repaired = await repairCustomPresetCompatibilityProfiles({ activeOnly: true, timeoutMs: 15_000 });
+      const repaired = await repairCustomPresetCompatibilityProfiles({
+        activeOnly: true,
+        systemPromptProbeText: currentSystemPromptProbeText(ctx),
+        timeoutMs: 15_000,
+      });
       if (repaired?.repairedCount) {
         require("./runner-live-config").terminateIdleRunners(ctx.runnerPool);
       }
@@ -46,17 +67,27 @@ function registerModelHandlers(ctx) {
     return withRunnerChange(ctx, async () => {
       const r = setActivePreset(presetId);
       if (!r.ok) return r;
-      await repairCustomPresetCompatibilityProfiles({ activeOnly: true, timeoutMs: 15_000 });
+      await repairCustomPresetCompatibilityProfiles({
+        activeOnly: true,
+        systemPromptProbeText: currentSystemPromptProbeText(ctx),
+        timeoutMs: 15_000,
+      });
       return { ok: true, ...listPresetsPublic() };
     }, { liveEnv: false });
   });
 
   ipcMain.handle("models:save-custom", (_event, payload) => {
-    return withRunnerChange(ctx, () => saveCustomPresetWithProbe(payload || {}), { liveEnv: false });
+    return withRunnerChange(ctx, () => saveCustomPresetWithProbe({
+      ...(payload || {}),
+      systemPromptProbeText: currentSystemPromptProbeText(ctx),
+    }), { liveEnv: false });
   });
 
   ipcMain.handle("models:update-custom", (_event, payload) => {
-    return withRunnerChange(ctx, () => updateCustomPresetWithProbe(payload?.presetId, payload?.values || {}), { liveEnv: false });
+    return withRunnerChange(ctx, () => updateCustomPresetWithProbe(payload?.presetId, {
+      ...(payload?.values || {}),
+      systemPromptProbeText: currentSystemPromptProbeText(ctx),
+    }), { liveEnv: false });
   });
 
   ipcMain.handle("models:delete-custom", (_event, presetId) => {

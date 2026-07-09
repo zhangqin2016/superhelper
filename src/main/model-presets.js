@@ -231,9 +231,18 @@ function normalizeCompatibilityProfile(value) {
         contentSource: String(rawConformance.contentSource || ""),
       }
     : null;
+  const rawPrompt = value.prompt;
+  const prompt = rawPrompt && typeof rawPrompt === "object" && !Array.isArray(rawPrompt)
+    ? {
+        systemMaxChars: Number.isFinite(Number(rawPrompt.systemMaxChars)) && Number(rawPrompt.systemMaxChars) > 0
+          ? Math.floor(Number(rawPrompt.systemMaxChars))
+          : null,
+      }
+    : null;
   const out = {};
   if (requestBodyOverlay) out.requestBodyOverlay = requestBodyOverlay;
   if (conformance) out.conformance = conformance;
+  if (prompt?.systemMaxChars) out.prompt = prompt;
   return Object.keys(out).length ? out : null;
 }
 
@@ -412,6 +421,11 @@ function customPresetRecord(entry) {
   if (requestBodyOverlay) {
     env.LILY_OPENCODE_BODY_OVERLAY_JSON = JSON.stringify(requestBodyOverlay);
   }
+  const protocol = normalizeProtocol(entry.protocol) || legacyProtocolForBaseUrl(baseUrl);
+  const compatibilityProfile = normalizeCompatibilityProfile(entry.compatibilityProfile);
+  if (compatibilityProfile?.prompt?.systemMaxChars) {
+    env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS = String(compatibilityProfile.prompt.systemMaxChars);
+  }
   return {
     id: entry.id,
     label: String(entry.label || tiers.main).trim(),
@@ -422,7 +436,7 @@ function customPresetRecord(entry) {
     modelOpus: tiers.opus,
     modelSubagent: tiers.subagent,
     baseUrl,
-    protocol: normalizeProtocol(entry.protocol) || legacyProtocolForBaseUrl(baseUrl),
+    protocol,
     apiKeySet: Boolean(apiKey),
     tlsSkipVerify: Boolean(entry.tlsSkipVerify && baseUrl),
     custom: true,
@@ -535,6 +549,10 @@ function getUserApiEnv() {
       if (protocol) env.LILY_OPENCODE_PROTOCOL = protocol;
       if (entry.tlsSkipVerify && baseUrl) env.LILY_TLS_SKIP_VERIFY = "1";
       if (requestBodyOverlay) env.LILY_OPENCODE_BODY_OVERLAY_JSON = JSON.stringify(requestBodyOverlay);
+      const compatibilityProfile = normalizeCompatibilityProfile(entry.compatibilityProfile);
+      if (compatibilityProfile?.prompt?.systemMaxChars) {
+        env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS = String(compatibilityProfile.prompt.systemMaxChars);
+      }
       if (Object.keys(env).length) return env;
     }
   }
@@ -898,6 +916,7 @@ async function saveCustomPresetWithProbe(input = {}) {
     baseUrl: urlValidated.baseUrl,
     apiKey: keyValidated.apiKey,
     model: modelValidated.model,
+    systemPromptProbeText: input.systemPromptProbeText || "",
     timeoutMs: Number(input.probeTimeoutMs || 10_000),
   });
   if (!probe.ok) {
@@ -961,6 +980,7 @@ async function updateCustomPresetWithProbe(presetId, input = {}) {
     baseUrl: urlValidated.baseUrl,
     apiKey: keyValidated.apiKey,
     model: modelValidated.model,
+    systemPromptProbeText: input.systemPromptProbeText || "",
     timeoutMs: Number(input.probeTimeoutMs || 10_000),
   });
   if (!probe.ok) {
@@ -986,13 +1006,13 @@ function customPresetNeedsCompatibilityProbe(entry) {
   if (!baseUrl) return false;
   const protocol = normalizeProtocol(normalized.protocol) || legacyProtocolForBaseUrl(baseUrl);
   if (protocol !== "openai") return false;
-  if (normalizeCompatibilityProfile(normalized.compatibilityProfile) || normalizeRequestBodyOverlay(normalized.requestBodyOverlay)) {
-    return false;
-  }
+  const compatibilityProfile = normalizeCompatibilityProfile(normalized.compatibilityProfile);
+  const hasPromptProfile = Boolean(compatibilityProfile?.prompt?.systemMaxChars);
+  if ((compatibilityProfile || normalizeRequestBodyOverlay(normalized.requestBodyOverlay)) && hasPromptProfile) return false;
   return Boolean(normalized.model);
 }
 
-async function repairCustomPresetCompatibilityProfiles({ activeOnly = false, timeoutMs = 10_000 } = {}) {
+async function repairCustomPresetCompatibilityProfiles({ activeOnly = false, systemPromptProbeText = "", timeoutMs = 10_000 } = {}) {
   const user = loadUserChoice();
   const customPresets = [...(user.customPresets || [])];
   let repairedCount = 0;
@@ -1017,6 +1037,7 @@ async function repairCustomPresetCompatibilityProfiles({ activeOnly = false, tim
       baseUrl: urlValidated.baseUrl,
       apiKey: keyValidated.apiKey,
       model: entry.model,
+      systemPromptProbeText,
       timeoutMs: Number(timeoutMs || 10_000),
     });
     if (!probe.ok) {

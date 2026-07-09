@@ -28,6 +28,18 @@ const { buildOpencodePromptBody, fileToPart } = require("../src/main/runtime/ope
 }
 
 {
+  const guidance = `${"A".repeat(2000)}\n\n${"B".repeat(2000)}`;
+  const body = buildOpencodePromptBody({
+    guidance,
+    text: "hello",
+    maxSystemPromptChars: 1200,
+  });
+  assert(body.system.length <= 1200, "model-specific system prompt cap is enforced");
+  assert.match(body.system, /System guide truncated by Lily/, "truncated system prompt explains why content was reduced");
+  assert(body.system.startsWith("AAAA"), "truncation preserves the beginning of Lily's core guidance");
+}
+
+{
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-opencode-parts-"));
   const small = path.join(dir, "small.txt");
   fs.writeFileSync(small, "hello");

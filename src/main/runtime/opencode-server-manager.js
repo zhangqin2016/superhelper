@@ -224,6 +224,7 @@ class OpencodeServerManager extends EventEmitter {
         guidance,
         agent: this.agent,
         model: this.model,
+        maxSystemPromptChars: this.env?.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS,
         allowImageFileParts: allowImageFileParts === true,
       }),
     );

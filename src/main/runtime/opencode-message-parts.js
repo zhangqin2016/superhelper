@@ -350,11 +350,20 @@ function buildOpencodePromptBody(opts = {}) {
   const text = [String(opts.text || ""), indexNote, ...textAttachments, note].filter(Boolean).join("\n\n");
   parts.push({ type: "text", text });
   const body = { agent: opts.agent || "build", parts };
-  if (guidance) body.system = guidance;
+  if (guidance) body.system = truncateSystemGuidance(guidance, opts.maxSystemPromptChars);
   if (opts.model?.providerID && opts.model?.modelID) {
     body.model = { providerID: opts.model.providerID, modelID: opts.model.modelID };
   }
   return body;
+}
+
+function truncateSystemGuidance(guidance, maxChars) {
+  const text = String(guidance || "").trim();
+  const limit = Number(maxChars);
+  if (!text || !Number.isFinite(limit) || limit <= 0 || text.length <= limit) return text;
+  const notice = "\n\n[System guide truncated by Lily for this model's input limit. Use available tools and ask for narrower scope if a capability guide is missing.]";
+  const headLimit = Math.max(1000, Math.floor(limit) - notice.length);
+  return `${text.slice(0, headLimit).trimEnd()}${notice}`;
 }
 
 module.exports = {
@@ -363,6 +372,7 @@ module.exports = {
   buildSkippedAttachmentNote,
   buildAttachmentIndex,
   buildOpencodePromptBody,
+  truncateSystemGuidance,
   fileToTextAttachment,
   fileToPart,
 };

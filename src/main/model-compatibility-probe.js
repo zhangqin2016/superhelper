@@ -82,12 +82,15 @@ function toolProbeFields() {
   };
 }
 
-async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, tools = false, timeoutMs = 10_000 }) {
+async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, tools = false, systemText = "", timeoutMs = 10_000 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("MODEL_PROBE_TIMEOUT")), Math.max(500, timeoutMs));
+  const messages = [];
+  if (systemText) messages.push({ role: "system", content: String(systemText) });
+  messages.push({ role: "user", content: tools ? "Call lily_probe_tool with ok=true." : "Say pong only." });
   const body = mergeBody({
     model,
-    messages: [{ role: "user", content: tools ? "Call lily_probe_tool with ok=true." : "Say pong only." }],
+    messages,
     max_tokens: 16,
     stream: Boolean(stream),
     ...(tools ? toolProbeFields() : {}),
@@ -156,6 +159,30 @@ async function validateAgentConformance({ baseUrl, apiKey, model, bodyOverlay = 
   };
 }
 
+const SYSTEM_PROMPT_PROBE_CANDIDATES = Object.freeze([32768, 24576, 16000, 12000, 10000, 8000, 6000, 4000]);
+
+function promptProbeSlice(text, maxChars) {
+  const source = String(text || "").trim();
+  if (!source) return "";
+  const notice = "\n\n[System guide truncated by Lily for this model's input limit.]";
+  const limit = Math.max(1000, Math.floor(Number(maxChars) || 0));
+  if (source.length <= limit) return source;
+  return `${source.slice(0, Math.max(1000, limit - notice.length)).trimEnd()}${notice}`;
+}
+
+async function probeSystemPromptProfile({ baseUrl, apiKey, model, bodyOverlay = null, systemPromptProbeText = "", timeoutMs }) {
+  const source = String(systemPromptProbeText || "").trim();
+  if (!source) return null;
+  for (const systemChars of SYSTEM_PROMPT_PROBE_CANDIDATES) {
+    const systemText = promptProbeSlice(source, systemChars);
+    const result = await postChat({ baseUrl, apiKey, model, bodyOverlay, systemText, timeoutMs });
+    if (result.ok && result.shape?.hasContent) {
+      return { systemMaxChars: Math.min(systemChars, source.length) };
+    }
+  }
+  return null;
+}
+
 const BODY_OVERLAY_CANDIDATES = Object.freeze([
   {
     id: "disable-thinking",
@@ -168,6 +195,7 @@ async function probeCustomModelProfile({
   baseUrl,
   apiKey,
   model,
+  systemPromptProbeText = "",
   timeoutMs = 10_000,
 } = {}) {
   if (protocol && protocol !== "openai") {
@@ -176,6 +204,7 @@ async function probeCustomModelProfile({
   const plain = await validateAgentConformance({ baseUrl, apiKey, model, timeoutMs });
   if (!plain.ok) return { ok: false, error: plain.error };
   if (plain.hasAgentConformance) {
+    const prompt = await probeSystemPromptProfile({ baseUrl, apiKey, model, systemPromptProbeText, timeoutMs });
     return {
       ok: true,
       profile: {
@@ -185,6 +214,7 @@ async function probeCustomModelProfile({
           toolCalls: true,
           contentSource: "plain",
         },
+        ...(prompt ? { prompt } : {}),
       },
       diagnostics: { content: "plain", stream: "plain" },
     };
@@ -200,6 +230,14 @@ async function probeCustomModelProfile({
     });
     if (!repaired.ok) continue;
     if (repaired.hasAgentConformance) {
+      const prompt = await probeSystemPromptProfile({
+        baseUrl,
+        apiKey,
+        model,
+        bodyOverlay: candidate.requestBodyOverlay,
+        systemPromptProbeText,
+        timeoutMs,
+      });
       return {
         ok: true,
         profile: {
@@ -210,6 +248,7 @@ async function probeCustomModelProfile({
             toolCalls: true,
             contentSource: "body-overlay",
           },
+          ...(prompt ? { prompt } : {}),
         },
         diagnostics: {
           content: "repaired",
