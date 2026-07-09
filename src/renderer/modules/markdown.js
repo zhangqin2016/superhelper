@@ -4,6 +4,7 @@
  */
 import { revealLocalFileInFolder } from "./file-reveal.js";
 import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitizeMermaidSource } from "./mermaid-detect.js";
+import { t } from "../i18n/index.js";
 import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";
 
 let hljsReady = false;
@@ -113,18 +114,26 @@ function createMarkedRenderer({ hl = null, cacheCode = false, basePath = "" } = 
   renderer.code = function ({ text, lang }) {
     const normalizedLang = normalizeCodeLanguage(lang);
     const rich = renderRichCodeBlock(text, normalizedLang);
-    if (rich) return rich;
+    // Mermaid renders as a diagram — never collapse it. Diff blocks are still
+    // walls of code, so they collapse like everything else.
+    if (rich) {
+      return rich.includes("markdown-mermaid-source")
+        ? rich
+        : wrapCollapsibleCodeBlock(rich, text, normalizedLang);
+    }
 
     if (cacheCode) {
       const key = hashContent(`${normalizedLang || ""}:${text}`);
       const cached = codeCache.get(key);
-      if (cached) return cached;
+      // Cache stores the UNWRAPPED highlight; the collapse wrapper is applied
+      // per render so its output stays deterministic for every cache path.
+      if (cached) return wrapCollapsibleCodeBlock(cached, text, normalizedLang);
       const result = renderHighlightedCode(text, normalizedLang, window.hljs || hl);
       codeCache.set(key, result);
-      return result;
+      return wrapCollapsibleCodeBlock(result, text, normalizedLang);
     }
 
-    return renderHighlightedCode(text, normalizedLang, hl);
+    return wrapCollapsibleCodeBlock(renderHighlightedCode(text, normalizedLang, hl), text, normalizedLang);
   };
   return renderer;
 }
@@ -318,6 +327,68 @@ function sanitizeMarkdownHtml(html = "") {
   return window.DOMPurify.sanitize(html, {
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|file|blob|data|app-file):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
+}
+
+// Chat is control flow, artifacts are content: a wall of code buries the
+// decisions a reader actually needs (the writing-plans skill legitimately
+// embeds complete code in plans — the CODE isn't the problem, the WALL is).
+// Long code blocks render collapsed: a compact header (language · line count ·
+// first-line snippet) that expands on demand. Model behavior is untouched —
+// this is a pure display rule, so it can never make any model dumber.
+const CODE_COLLAPSE_MIN_LINES = 16;
+const CODE_COLLAPSE_EXPANDED_LIMIT = 200;
+/** Content hashes the user expanded — survives innerHTML re-renders and caches. */
+const expandedCodeBlocks = new Set();
+
+function rememberExpandedCodeBlock(key, open) {
+  if (!key) return;
+  if (!open) {
+    expandedCodeBlocks.delete(key);
+    return;
+  }
+  expandedCodeBlocks.add(key);
+  if (expandedCodeBlocks.size > CODE_COLLAPSE_EXPANDED_LIMIT) {
+    expandedCodeBlocks.delete(expandedCodeBlocks.values().next().value);
+  }
+}
+
+function countCodeLines(text = "") {
+  const lines = String(text).split("\n");
+  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+  return lines.length;
+}
+
+function wrapCollapsibleCodeBlock(html, text, lang = "") {
+  const lineCount = countCodeLines(text);
+  if (lineCount < CODE_COLLAPSE_MIN_LINES) return html;
+  const key = hashContent(`collapse:${lang || ""}:${text}`);
+  const firstLine = (String(text).split("\n").find((line) => line.trim()) || "").trim().slice(0, 80);
+  return [
+    `<details class="markdown-code-collapse" data-code-key="${escapeAttribute(key)}">`,
+    '<summary class="markdown-code-collapse-summary">',
+    `<span class="markdown-code-collapse-lang">${escapeHtml(lang || "code")}</span>`,
+    `<span class="markdown-code-collapse-lines">${escapeHtml(t("markdown.codeCollapseLines", { count: String(lineCount) }))}</span>`,
+    `<span class="markdown-code-collapse-snippet">${escapeHtml(firstLine)}</span>`,
+    `<span class="markdown-code-collapse-toggle" data-expand="${escapeAttribute(t("markdown.codeExpand"))}" data-collapse="${escapeAttribute(t("markdown.codeCollapseAction"))}"></span>`,
+    "</summary>",
+    html,
+    "</details>",
+  ].join("");
+}
+
+/** Re-apply the user's expand choices after any re-render (streaming updates
+ *  and cached renders both rebuild innerHTML), and track new toggles. */
+function wireCodeCollapse(element) {
+  if (!element?.querySelectorAll) return;
+  for (const details of element.querySelectorAll("details.markdown-code-collapse")) {
+    const key = details.dataset?.codeKey || "";
+    if (key && expandedCodeBlocks.has(key)) details.open = true;
+    if (details.dataset?.collapseWired === "1") continue;
+    if (details.dataset) details.dataset.collapseWired = "1";
+    details.addEventListener?.("toggle", () => {
+      rememberExpandedCodeBlock(details.dataset?.codeKey || "", details.open);
+    });
+  }
 }
 
 function renderRichCodeBlock(text = "", lang = "") {
@@ -583,6 +654,7 @@ function enhanceRenderedMarkdown(element, { interactive = false } = {}) {
   autolinkLocalFilePaths(element);
   wireMarkdownLocalFileLinks(element);
   normalizeTaskLists(element);
+  wireCodeCollapse(element);
   if (interactive) wireCodeCopyButtons(element);
 }
 

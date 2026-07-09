@@ -8,6 +8,7 @@ const source = fs
   .replace('import morphdom from "../../../node_modules/morphdom/dist/morphdom-esm.js";', "")
   .replace('import { revealLocalFileInFolder } from "./file-reveal.js";', "")
   .replace('import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitizeMermaidSource } from "./mermaid-detect.js";', "")
+  .replace('import { t } from "../i18n/index.js";', "")
   .replaceAll("export async function", "async function")
   .replaceAll("export function", "function");
 
@@ -55,6 +56,12 @@ const context = {
   },
   revealLocalFileInFolder() {
     return Promise.resolve({ ok: true });
+  },
+  t(key, params = {}) {
+    if (key === "markdown.codeCollapseLines") return `${params.count} 行`;
+    if (key === "markdown.codeExpand") return "展开";
+    if (key === "markdown.codeCollapseAction") return "收起";
+    return key;
   },
   window: {
     marked,
@@ -211,5 +218,37 @@ context.window.__test.renderMarkdownWithCache(
 assert.match(indentedMermaidPie.innerHTML, /markdown-mermaid-source/);
 assert.match(indentedMermaidPie.innerHTML, /language-mermaid/);
 assert.doesNotMatch(indentedMermaidPie.innerHTML, /<code>pie showData/);
+
+// Long-code collapse card: walls of code render as a compact expandable header
+// so plans/answers read as decisions, not code dumps.
+const longCode = Array.from({ length: 24 }, (_, i) => `const line${i} = ${i};`).join("\n");
+const collapsed = fakeElement();
+context.window.__test.renderMarkdownWithCache(collapsed, `说明文字\n\n\`\`\`js\n${longCode}\n\`\`\``);
+assert.match(collapsed.innerHTML, /<details class="markdown-code-collapse"/, "long code blocks collapse");
+assert.match(collapsed.innerHTML, /markdown-code-collapse-lang">js</, "the header names the language");
+assert.match(collapsed.innerHTML, /24 行/, "the header shows the line count");
+assert.match(collapsed.innerHTML, /const line0 = 0;/, "the first-line snippet previews the code");
+assert.match(collapsed.innerHTML, /data-expand="展开"/, "toggle labels are localized via data attributes");
+assert.doesNotMatch(collapsed.innerHTML, /<details[^>]*open/, "collapse HTML is deterministic (open state lives in the DOM, not the cache)");
+
+const shortCode = fakeElement();
+context.window.__test.renderMarkdownWithCache(shortCode, "```js\nconst a = 1;\nconst b = 2;\n```");
+assert.doesNotMatch(shortCode.innerHTML, /markdown-code-collapse/, "short snippets stay inline");
+
+const longMermaid = fakeElement();
+const mermaidBody = `graph TD\n${Array.from({ length: 20 }, (_, i) => `  A${i} --> A${i + 1}`).join("\n")}`;
+context.window.__test.renderMarkdownWithCache(longMermaid, `\`\`\`mermaid\n${mermaidBody}\n\`\`\``);
+assert.doesNotMatch(longMermaid.innerHTML, /markdown-code-collapse/, "mermaid renders as a diagram — never collapsed");
+
+const longDiff = fakeElement();
+const diffBody = Array.from({ length: 20 }, (_, i) => `+added line ${i}`).join("\n");
+context.window.__test.renderMarkdownWithCache(longDiff, `\`\`\`diff\n${diffBody}\n\`\`\``);
+assert.match(longDiff.innerHTML, /markdown-code-collapse/, "long diffs are code walls too — collapsed");
+assert.match(longDiff.innerHTML, /markdown-diff/, "the collapsed body keeps the diff rendering");
+
+// Cached second render must still be wrapped (cache stores the UNWRAPPED highlight).
+const collapsedAgain = fakeElement();
+context.window.__test.renderMarkdownWithCache(collapsedAgain, `说明文字\n\n\`\`\`js\n${longCode}\n\`\`\``);
+assert.match(collapsedAgain.innerHTML, /<details class="markdown-code-collapse"/, "cache-hit renders stay collapsed");
 
 console.log("markdown-renderer: ok");

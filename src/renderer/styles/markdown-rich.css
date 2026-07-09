@@ -175,3 +175,104 @@
 .markdown-body .katex {
   color: var(--text-strong);
 }
+
+/* Long-code collapse card: chat shows a compact header (language · lines ·
+   first-line snippet); the code wall expands on demand. */
+.markdown-code-collapse {
+  margin: 0 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.markdown-code-collapse-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--copy-bg);
+  font-size: 12px;
+  list-style: none;
+}
+
+.markdown-code-collapse-summary::-webkit-details-marker {
+  display: none;
+}
+
+.markdown-code-collapse-summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  flex: none;
+  border-left: 5px solid var(--pre-text);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s;
+}
+
+.markdown-code-collapse[open] > .markdown-code-collapse-summary::before {
+  transform: rotate(90deg);
+}
+
+.markdown-code-collapse-summary:hover {
+  background: var(--copy-bg-hover);
+}
+
+.markdown-code-collapse-lang {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+  color: var(--pre-text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.markdown-code-collapse-lines {
+  flex: none;
+  color: var(--text-muted, var(--pre-text));
+}
+
+.markdown-code-collapse-snippet {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted, var(--pre-text));
+  font-family: var(--font-mono, ui-monospace, monospace);
+  opacity: 0.75;
+}
+
+.markdown-code-collapse[open] > .markdown-code-collapse-summary .markdown-code-collapse-snippet {
+  visibility: hidden;
+}
+
+.markdown-code-collapse-toggle {
+  flex: none;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.markdown-code-collapse-toggle::after {
+  content: attr(data-expand);
+}
+
+.markdown-code-collapse[open] > .markdown-code-collapse-summary .markdown-code-collapse-toggle::after {
+  content: attr(data-collapse);
+}
+
+.markdown-code-collapse > pre,
+.markdown-code-collapse > .markdown-code-frame {
+  margin: 0;
+}
+
+.markdown-code-collapse > pre,
+.markdown-code-collapse > .markdown-code-frame > pre {
+  border-radius: 0;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+}
