@@ -139,18 +139,6 @@ class SessionRunnerPool {
         this.ensure(sessionId, cwd, extra, { lazy: true });
         return { ok: true };
       },
-      fallbackToDefaultManagedModel: async ({ reason, error } = {}) => {
-        const restored = require("./model-presets").diagnoseAndRestoreDefaultModel();
-        if (!restored?.ok || !restored?.activePresetId) return restored || { ok: false, error: "NO_DEFAULT_MODEL" };
-        log.warn(
-          "model fallback to managed default: session=%s preset=%s reason=%s",
-          sessionId,
-          restored.activePresetId,
-          String(reason || error || "unknown"),
-        );
-        this.ensure(sessionId, cwd, extra, { lazy: true });
-        return { ok: true, activePresetId: restored.activePresetId };
-      },
       // Seed the OpenCode session id from the persisted conversation so a fresh
       // runner (app restart / cold session) RESUMES the same server-side session
       // instead of starting blank — otherwise reopened conversations lose context.

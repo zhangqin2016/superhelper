@@ -399,9 +399,6 @@ class OpencodeAgentSession extends EventEmitter {
     this._refreshManagedModelConfig = typeof deps.refreshManagedModelConfig === "function"
       ? deps.refreshManagedModelConfig
       : null;
-    this._fallbackToDefaultManagedModel = typeof deps.fallbackToDefaultManagedModel === "function"
-      ? deps.fallbackToDefaultManagedModel
-      : null;
     /** @type {OpencodeServerManager | null} */
     this._server = null;
     this._eventState = createOpencodeRuntimeState();
@@ -459,7 +456,6 @@ class OpencodeAgentSession extends EventEmitter {
     this._activeTaskContract = null;
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
-    this._emptyCompletionFallbackCount = 0;
     this._engineSessionWasResumed = false;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._transientFailureTimer = null;
@@ -625,7 +621,6 @@ class OpencodeAgentSession extends EventEmitter {
     this._todoCompletionGateAttempts = 0;
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
-    this._emptyCompletionFallbackCount = 0;
     this._engineSessionWasResumed = Boolean(this._server?.wasResumed || this._engineSessionWasResumed);
     this.collectedOutput = "";
     this._turnStartedAt = Date.now();
@@ -1777,12 +1772,10 @@ class OpencodeAgentSession extends EventEmitter {
 
   async _replayEmptyCompletionIfSafe(payload = {}) {
     if (!this._pendingPromptPayload || !this._server) return false;
+    if (this._transientReplayCount >= 1) return false;
     if (this._sawUnsafeToolActivity || this.collectedOutput.trim() || String(payload?.output || "").trim()) return false;
     if (this._pendingPermissions.size || this._pendingQuestions.size) return false;
     if (payload?.interrupted || payload?.stalled || (payload?.code && payload.code !== 0)) return false;
-    if (this._transientReplayCount >= 1) {
-      return await this._fallbackEmptyCompletionToDefaultModelIfSafe(payload);
-    }
 
     this._transientReplayCount += 1;
     resetOpencodeRuntimeState(this._eventState);
@@ -1801,49 +1794,6 @@ class OpencodeAgentSession extends EventEmitter {
       );
       this._pendingPromptPayload = retryPayload;
       await this._server.sendPrompt(retryPayload);
-      this._armResponseTimer();
-      this._armProgressNoticeTimer();
-      this._armHealthProbe();
-      this._armPromptAcceptanceCheck();
-      return true;
-    } catch (err) {
-      this._failTurn(this._sanitize(err?.message || err), err, { force: true });
-      return true;
-    }
-  }
-
-  async _fallbackEmptyCompletionToDefaultModelIfSafe(payload = {}) {
-    const fallback = this.spawnOptions?.fallbackToDefaultManagedModel || this._fallbackToDefaultManagedModel;
-    if (typeof fallback !== "function") return false;
-    if (this._emptyCompletionFallbackCount >= 1) return false;
-    if (!this._pendingPromptPayload || !this._server) return false;
-    if (this._sawUnsafeToolActivity || this.collectedOutput.trim() || String(payload?.output || "").trim()) return false;
-    if (this._pendingPermissions.size || this._pendingQuestions.size) return false;
-
-    this._emptyCompletionFallbackCount += 1;
-    try {
-      const result = await fallback({
-        sessionId: this.sessionId,
-        reason: "empty_completion",
-        error: "model returned two empty completions",
-      });
-      if (result !== true && result?.ok !== true) return false;
-      resetOpencodeRuntimeState(this._eventState);
-      this._resetSubagentRuntimeStates();
-      this.collectedOutput = "";
-      this._turnStartedAt = Date.now();
-      this._sawActivity = false;
-      this._sawEngineEvent = false;
-      this._sawToolActivity = false;
-      this._sawUnsafeToolActivity = false;
-      this._toolReplaySafe.clear();
-      const retryPayload = buildAttachmentFallbackPromptPayload(
-        this._pendingPromptPayload,
-        "previous model returned empty completions; retrying with the managed default model",
-      );
-      this._pendingPromptPayload = retryPayload;
-      const server = await this._restartEngineSessionForSafeReplay("empty model completion fallback");
-      await server.sendPrompt(retryPayload);
       this._armResponseTimer();
       this._armProgressNoticeTimer();
       this._armHealthProbe();
@@ -2139,7 +2089,6 @@ class OpencodeAgentSession extends EventEmitter {
     this._activeTools.clear();
     this._lastGenericToolProgressNotice = "";
     this._transientReplayCount = 0;
-    this._emptyCompletionFallbackCount = 0;
     this._turnStartedAt = 0;
     this._latestTodos = [];
     this._latestTodosSignature = "";
