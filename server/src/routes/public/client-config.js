@@ -17,6 +17,7 @@ import {
 } from "../../services/client-config.js";
 import { discoverLilyMediaProviderContracts } from "../../services/media-provider-contracts.js";
 import {
+  recoverLicenseScopeByFingerprint,
   requireSignedDeviceRequest,
   trialPayload,
   upsertDevice,
@@ -58,7 +59,11 @@ async function resolveDeviceGroupId(deviceId, licenseId) {
 }
 
 async function resolveEffectiveConfig(input, options = {}) {
-  const licenseId = await validLicenseScope(input);
+  // Prefer the device's own valid binding; if it has none (typically a reinstall
+  // / data reset regenerated the client-stored deviceId), try to recover and
+  // adopt the license from another device with the same hardware fingerprint,
+  // so a paid, non-expired license is not locked out by a changed deviceId.
+  const licenseId = (await validLicenseScope(input)) || (await recoverLicenseScopeByFingerprint(input));
   const groupId = await resolveDeviceGroupId(input.deviceId, licenseId);
   const profiles = await db
     .selectFrom("config_profiles")

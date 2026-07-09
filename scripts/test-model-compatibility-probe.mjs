@@ -311,4 +311,167 @@ try {
   await new Promise((resolve) => noToolsServer.close(resolve));
 }
 
+// Mirrors the OICM+ gateway family: a single short flat tool works, but any
+// request whose tools carry a long function name (>35 chars) or a nested
+// object parameter dies with an HTTP 200 + HTML error page.
+const toolShapeLimitedServer = http.createServer((req, res) => {
+  let body = "";
+  req.on("data", (chunk) => {
+    body += chunk;
+  });
+  req.on("end", () => {
+    const parsed = JSON.parse(body || "{}");
+    const tools = Array.isArray(parsed.tools) ? parsed.tools : [];
+    const hasNestedObject = (schema) => Object.values(schema?.properties || {})
+      .some((prop) => prop?.type === "object" && prop?.properties);
+    const rejected = tools.some((tool) =>
+      String(tool?.function?.name || "").length > 35 || hasNestedObject(tool?.function?.parameters));
+    if (rejected) {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end("<!DOCTYPE html><title>Server Unreachable</title>");
+      return;
+    }
+    if (parsed.stream) {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+      send({
+        id: "chatcmpl-shape-limited",
+        object: "chat.completion.chunk",
+        model: parsed.model,
+        choices: [{
+          index: 0,
+          delta: tools.length
+            ? { tool_calls: [{ index: 0, id: "call_probe", type: "function", function: { name: "lily_probe_tool", arguments: "{\"ok\":true}" } }] }
+            : { content: "pong" },
+          finish_reason: null,
+        }],
+      });
+      send({
+        id: "chatcmpl-shape-limited",
+        object: "chat.completion.chunk",
+        model: parsed.model,
+        choices: [{ index: 0, delta: {}, finish_reason: tools.length ? "tool_calls" : "stop" }],
+      });
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      id: "chatcmpl-shape-limited",
+      object: "chat.completion",
+      model: parsed.model,
+      choices: [{
+        index: 0,
+        message: tools.length
+          ? { role: "assistant", content: null, tool_calls: [{ id: "call_probe", type: "function", function: { name: "lily_probe_tool", arguments: "{\"ok\":true}" } }] }
+          : { role: "assistant", content: "pong" },
+        finish_reason: tools.length ? "tool_calls" : "stop",
+      }],
+    }));
+  });
+});
+
+await new Promise((resolve) => toolShapeLimitedServer.listen(0, "127.0.0.1", resolve));
+try {
+  const { port } = toolShapeLimitedServer.address();
+  const result = await probeCustomModelProfile({
+    protocol: "openai",
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    apiKey: "sk-test-probe",
+    model: "provider/tool-shape-limited",
+    timeoutMs: 5_000,
+  });
+  assert.equal(result.ok, false, "probe must reject gateways that die on Lily-shaped tool definitions");
+  assert.equal(
+    result.error,
+    "MODEL_AGENT_TOOL_SHAPE_UNSUPPORTED",
+    "shape rejection must be distinguished from generic tool-call unavailability",
+  );
+} finally {
+  await new Promise((resolve) => toolShapeLimitedServer.close(resolve));
+}
+
+// Mirrors the real OICM+ endpoint exactly: thinking-default model (plain
+// content probe sees reasoning only) AND the gateway kills Lily-shaped tools.
+// The final diagnosis must surface the tool-shape blocker, not reasoning-only.
+const thinkingAndShapeLimitedServer = http.createServer((req, res) => {
+  let body = "";
+  req.on("data", (chunk) => {
+    body += chunk;
+  });
+  req.on("end", () => {
+    const parsed = JSON.parse(body || "{}");
+    const tools = Array.isArray(parsed.tools) ? parsed.tools : [];
+    const thinkingDisabled = parsed.chat_template_kwargs?.enable_thinking === false;
+    const hasNestedObject = (schema) => Object.values(schema?.properties || {})
+      .some((prop) => prop?.type === "object" && prop?.properties);
+    const rejected = tools.some((tool) =>
+      String(tool?.function?.name || "").length > 35 || hasNestedObject(tool?.function?.parameters));
+    if (rejected) {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end("<!DOCTYPE html><title>Server Unreachable</title>");
+      return;
+    }
+    if (parsed.stream) {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+      send({
+        id: "chatcmpl-thinking-shape",
+        object: "chat.completion.chunk",
+        model: parsed.model,
+        choices: [{
+          index: 0,
+          delta: tools.length && thinkingDisabled
+            ? { tool_calls: [{ index: 0, id: "call_probe", type: "function", function: { name: "lily_probe_tool", arguments: "{\"ok\":true}" } }] }
+            : thinkingDisabled ? { content: "pong" } : { reasoning: "Thinking only" },
+          finish_reason: null,
+        }],
+      });
+      send({
+        id: "chatcmpl-thinking-shape",
+        object: "chat.completion.chunk",
+        model: parsed.model,
+        choices: [{ index: 0, delta: {}, finish_reason: thinkingDisabled ? (tools.length ? "tool_calls" : "stop") : "length" }],
+      });
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      id: "chatcmpl-thinking-shape",
+      object: "chat.completion",
+      model: parsed.model,
+      choices: [{
+        index: 0,
+        message: tools.length && thinkingDisabled
+          ? { role: "assistant", content: null, tool_calls: [{ id: "call_probe", type: "function", function: { name: "lily_probe_tool", arguments: "{\"ok\":true}" } }] }
+          : { role: "assistant", content: thinkingDisabled ? "pong" : null, reasoning: thinkingDisabled ? null : "Thinking only" },
+        finish_reason: thinkingDisabled ? (tools.length ? "tool_calls" : "stop") : "length",
+      }],
+    }));
+  });
+});
+
+await new Promise((resolve) => thinkingAndShapeLimitedServer.listen(0, "127.0.0.1", resolve));
+try {
+  const { port } = thinkingAndShapeLimitedServer.address();
+  const result = await probeCustomModelProfile({
+    protocol: "openai",
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    apiKey: "sk-test-probe",
+    model: "provider/thinking-and-shape-limited",
+    timeoutMs: 5_000,
+  });
+  assert.equal(result.ok, false, "probe must reject thinking models behind shape-limited gateways");
+  assert.equal(
+    result.error,
+    "MODEL_AGENT_TOOL_SHAPE_UNSUPPORTED",
+    "shape evidence discovered during overlay repair must win over the reasoning-only diagnosis",
+  );
+} finally {
+  await new Promise((resolve) => thinkingAndShapeLimitedServer.close(resolve));
+}
+
 console.log("model-compatibility-probe: ok");

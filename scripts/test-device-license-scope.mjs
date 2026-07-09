@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 process.env.DATABASE_URL ||= "postgres://user:pass@localhost:5432/lily_test";
 
-const { chooseValidLicenseScope } = await import("../server/src/services/device-identity.js");
+const { chooseValidLicenseScope, chooseFingerprintRecoveryLicense } = await import("../server/src/services/device-identity.js");
 
 const now = Date.parse("2026-07-08T12:00:00.000Z");
 const bindings = [
@@ -72,6 +72,41 @@ assert.equal(
   ),
   "",
   "a device with NO valid binding must still be denied (guarantee applies only to genuinely activated devices)",
+);
+
+// Fingerprint-based license recovery: a reinstalled device (new random deviceId,
+// same hardware fingerprint) must be able to adopt its own paid license from the
+// sibling device that still holds the binding — but only within seat limits and
+// only when the fingerprint bucket is unambiguous.
+const recoveryNow = Date.parse("2026-07-09T00:00:00.000Z");
+const recoveryCandidates = [
+  { license_id: "lic_paid", binding_status: "active", license_status: "active", expires_at: "2027-01-01T00:00:00.000Z", last_seen_at: "2026-07-08T00:00:00.000Z", seats: 3, active_bindings: 2 },
+];
+assert.deepEqual(
+  chooseFingerprintRecoveryLicense(recoveryCandidates, { bucketDeviceCount: 1, nowMs: recoveryNow }),
+  { licenseId: "lic_paid" },
+  "a reinstalled device recovers its license from a same-fingerprint sibling when a seat is free",
+);
+assert.equal(
+  chooseFingerprintRecoveryLicense(
+    [{ ...recoveryCandidates[0], active_bindings: 3 }],
+    { bucketDeviceCount: 1, nowMs: recoveryNow },
+  ),
+  null,
+  "recovery must respect the seat limit — no free seat means no auto-adopt",
+);
+assert.equal(
+  chooseFingerprintRecoveryLicense(recoveryCandidates, { bucketDeviceCount: 50, nowMs: recoveryNow }),
+  null,
+  "an ambiguous fingerprint shared by many devices must not auto-adopt a license",
+);
+assert.equal(
+  chooseFingerprintRecoveryLicense(
+    [{ ...recoveryCandidates[0], expires_at: "2020-01-01T00:00:00.000Z" }],
+    { bucketDeviceCount: 1, nowMs: recoveryNow },
+  ),
+  null,
+  "an expired sibling license is never recovered",
 );
 
 // Boot-time fail-closed: production must not run on the packaged dev secret,

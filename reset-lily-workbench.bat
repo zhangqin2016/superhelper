@@ -57,13 +57,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "    Copy-Item -LiteralPath $p -Destination (Join-Path $backup $name) -Recurse -Force;" ^
   "    Remove-Item -LiteralPath $p -Recurse -Force;" ^
   "    Write-Host ('已清理: ' + $p);" ^
+  "    $stateBackup = Join-Path (Join-Path $backup $name) 'device-state.json';" ^
+  "    if (Test-Path -LiteralPath $stateBackup) {" ^
+  "      New-Item -ItemType Directory -Force -Path $p | Out-Null;" ^
+  "      Copy-Item -LiteralPath $stateBackup -Destination (Join-Path $p 'device-state.json') -Force;" ^
+  "      Write-Host ('已保留设备身份(授权绑定不丢): ' + (Join-Path $p 'device-state.json'));" ^
+  "    }" ^
   "  }" ^
   "}" ^
   "if (-not $found) { Write-Host '没有找到 Lily Workbench 用户数据目录。'; }" ^
   "Write-Host ('备份位置: ' + $backup);"
 
 echo.
-echo 清理完成。
-echo 请重新打开 Lily Workbench，然后重新激活/登录，再新建对话测试。
+echo 清理完成。设备身份(device-state.json)已保留，授权绑定不会因清理而丢失。
+echo 请重新打开 Lily Workbench，直接新建对话测试即可(一般无需重新激活)。
 echo 如果清理后需要恢复旧数据，请把桌面备份目录发给技术人员处理。
 pause

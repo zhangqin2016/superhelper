@@ -328,10 +328,30 @@ async function refreshClientBootstrap({ force = false } = {}) {
   return { ...current, ok: false, error: "BOOTSTRAP_FAILED", detail: lastError?.message || String(lastError) };
 }
 
+// Mint a deviceId for a FRESH install (no persisted id). Derive it
+// deterministically from the stable machine-id so a reinstall / data reset that
+// wipes device-state.json regenerates the SAME id — keeping the license binding
+// instead of orphaning it. Only when no machine-id is available do we fall back
+// to a random id (today's behavior). Existing installs keep their persisted id
+// (see getDeviceId), so this never re-ids a machine that already has one.
+// Pure: deterministic deviceId from a stable machine-id (same machine → same id,
+// so reinstall keeps the license binding); empty machine-id → random fallback.
+function deriveDeviceId(machineId) {
+  const id = String(machineId || "").trim();
+  if (id) {
+    return `dev_${crypto.createHash("sha256").update(`lily-device|${id}`).digest("hex").slice(0, 32)}`;
+  }
+  return `dev_${crypto.randomUUID()}`;
+}
+
+function newDeviceId() {
+  return deriveDeviceId(stableMachineId());
+}
+
 function getDeviceId() {
   const state = readJson(devicePath(), {});
   if (state.deviceId) return String(state.deviceId);
-  const deviceId = `dev_${crypto.randomUUID()}`;
+  const deviceId = newDeviceId();
   writeJson(devicePath(), { ...state, deviceId, createdAt: new Date().toISOString() });
   return deviceId;
 }
@@ -365,7 +385,7 @@ function storeDeviceKeypair(keypair, existingState = readJson(devicePath(), {}))
   const state = existingState || {};
   writeJson(devicePath(), {
     ...state,
-    deviceId: state.deviceId || `dev_${crypto.randomUUID()}`,
+    deviceId: state.deviceId || newDeviceId(),
     publicKey: keypair.publicKey,
     privateKey: protectText(keypair.privateKey),
     keyAlg: keypair.keyAlg || "ed25519",
@@ -374,8 +394,40 @@ function storeDeviceKeypair(keypair, existingState = readJson(devicePath(), {}))
   });
 }
 
+// A STABLE per-machine id from the OS, unchanged by app reinstall / data reset
+// (unlike a random deviceId in device-state.json). Sources: Windows MachineGuid,
+// macOS IOPlatformUUID, Linux /etc/machine-id. Best-effort + fail-safe: any
+// failure returns "" and callers fall back to the soft signature, so the worst
+// case is today's behavior — never a crash.
+let cachedMachineId;
+function stableMachineId() {
+  if (cachedMachineId !== undefined) return cachedMachineId;
+  cachedMachineId = "";
+  try {
+    const { execSync } = require("node:child_process");
+    const run = (cmd) => String(execSync(cmd, { timeout: 2000, stdio: ["ignore", "pipe", "ignore"] }) || "").trim();
+    if (process.platform === "win32") {
+      const out = run('reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid');
+      cachedMachineId = (out.match(/MachineGuid\s+REG_SZ\s+([0-9a-fA-F-]+)/) || [])[1] || "";
+    } else if (process.platform === "darwin") {
+      const out = run('ioreg -rd1 -c IOPlatformExpertDevice');
+      cachedMachineId = (out.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/) || [])[1] || "";
+    } else {
+      for (const p of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
+        try { cachedMachineId = fs.readFileSync(p, "utf8").trim(); if (cachedMachineId) break; } catch { /* try next */ }
+      }
+    }
+  } catch {
+    cachedMachineId = "";
+  }
+  return cachedMachineId;
+}
+
 function fingerprintHash() {
+  // Hardware machine-id first (stable + low-collision), soft signature as
+  // secondary entropy / fallback when the machine-id is unavailable.
   const source = [
+    stableMachineId(),
     os.hostname(),
     os.platform(),
     os.arch(),
@@ -773,6 +825,7 @@ async function uploadFeedbackAttachment(upload, attachment) {
 }
 
 module.exports = {
+  deriveDeviceId,
   setLicenseIdProvider,
   getClientPolicy,
   refreshClientBootstrap,

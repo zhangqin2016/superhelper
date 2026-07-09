@@ -1,5 +1,14 @@
 import { db } from "../db.js";
+import { publicId } from "./ids.js";
 import { sha256, stableStringify, verifyDetachedPayload } from "./security.js";
+
+// A device fingerprint shared by more than this many distinct devices is treated
+// as too ambiguous to auto-adopt a license from (e.g. a coarse/collision-prone
+// fingerprint across an imaged corporate fleet). Recovery is skipped for such
+// buckets and the user re-activates manually. With a strong hardware-derived
+// fingerprint real buckets are ~1, so this only guards against soft-fingerprint
+// collisions during the transition.
+const MAX_FINGERPRINT_RECOVERY_BUCKET = Number(process.env.FINGERPRINT_RECOVERY_MAX_BUCKET || 8);
 
 export async function upsertDevicePublicKey(input) {
   const publicKey = String(input.publicKey || "").trim();
@@ -152,6 +161,100 @@ export async function validLicenseScope(input) {
     .limit(10)
     .execute();
   return chooseValidLicenseScope(bindings, licenseId);
+}
+
+// Pure decision: given the valid license bindings held by OTHER devices that
+// share this device's fingerprint, plus each license's seat usage, pick the
+// license this device should adopt. Prefers most-recently-seen; only adopts when
+// the license still has a free seat (active bindings < seats). Returns the
+// chosen { licenseId } or null. Kept pure so the seat/bucket rules are testable.
+export function chooseFingerprintRecoveryLicense(candidates = [], options = {}) {
+  const bucketDeviceCount = Number(options.bucketDeviceCount || 0);
+  const maxBucket = Number(options.maxBucket || MAX_FINGERPRINT_RECOVERY_BUCKET);
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+  // Too many distinct devices behind one fingerprint → ambiguous, do not adopt.
+  if (bucketDeviceCount > maxBucket) return null;
+  const byLicense = new Map();
+  for (const row of candidates) {
+    if (!row?.license_id) continue;
+    if (row.binding_status !== "active" || row.license_status !== "active") continue;
+    if (licenseTime(row.expires_at) <= nowMs) continue;
+    const prev = byLicense.get(row.license_id);
+    const seats = Math.max(0, Math.trunc(Number(row.seats || 0)));
+    const activeBindings = Math.max(0, Math.trunc(Number(row.active_bindings || 0)));
+    const lastSeen = licenseTime(row.last_seen_at);
+    if (!prev || lastSeen > prev.lastSeen) {
+      byLicense.set(row.license_id, { licenseId: row.license_id, seats, activeBindings, lastSeen });
+    }
+  }
+  const ordered = [...byLicense.values()].sort((a, b) => b.lastSeen - a.lastSeen);
+  // Adopt the freshest license that still has a free seat.
+  const pick = ordered.find((entry) => entry.seats > 0 && entry.activeBindings < entry.seats);
+  return pick ? { licenseId: pick.licenseId } : null;
+}
+
+// When a device's own deviceId has no valid binding (typically because a
+// reinstall / data reset regenerated the client-stored random deviceId), try to
+// recover the license from another device sharing the same hardware fingerprint,
+// and adopt it by binding the current deviceId — respecting the license seat
+// limit. Returns the recovered licenseId or "". Never throws.
+export async function recoverLicenseScopeByFingerprint(input, nowMs = Date.now()) {
+  const deviceId = String(input?.deviceId || "").trim();
+  const fingerprintHash = String(input?.fingerprintHash || "").trim();
+  if (!deviceId || !fingerprintHash) return "";
+  try {
+    const bucket = await db
+      .selectFrom("devices")
+      .select((eb) => eb.fn.count("id").as("count"))
+      .where("fingerprint_hash", "=", fingerprintHash)
+      .where("id", "<>", deviceId)
+      .executeTakeFirst();
+    const bucketDeviceCount = Number(bucket?.count || 0);
+    if (bucketDeviceCount === 0 || bucketDeviceCount > MAX_FINGERPRINT_RECOVERY_BUCKET) return "";
+
+    const candidates = await db
+      .selectFrom("license_devices as ld")
+      .innerJoin("devices as d", "d.id", "ld.device_id")
+      .innerJoin("licenses as l", "l.id", "ld.license_id")
+      .select((eb) => [
+        "ld.license_id",
+        "ld.status as binding_status",
+        "ld.last_seen_at",
+        "l.status as license_status",
+        "l.expires_at",
+        "l.seats",
+        eb
+          .selectFrom("license_devices as lc")
+          .select((eb2) => eb2.fn.count("lc.id").as("c"))
+          .whereRef("lc.license_id", "=", "ld.license_id")
+          .where("lc.status", "=", "active")
+          .as("active_bindings"),
+      ])
+      .where("d.fingerprint_hash", "=", fingerprintHash)
+      .where("d.id", "<>", deviceId)
+      .execute();
+
+    const choice = chooseFingerprintRecoveryLicense(candidates, { bucketDeviceCount, nowMs });
+    if (!choice) return "";
+
+    // Idempotent adopt: reuse an existing binding for this device if present,
+    // otherwise create one. A pre-existing disabled binding is left untouched.
+    const existing = await db
+      .selectFrom("license_devices")
+      .select(["id", "status"])
+      .where("license_id", "=", choice.licenseId)
+      .where("device_id", "=", deviceId)
+      .executeTakeFirst();
+    if (existing) return existing.status === "active" ? choice.licenseId : "";
+    await db
+      .insertInto("license_devices")
+      .values({ id: publicId("ldev"), license_id: choice.licenseId, device_id: deviceId })
+      .execute();
+    return choice.licenseId;
+  } catch {
+    // Recovery is best-effort — never block config delivery on it.
+    return "";
+  }
 }
 
 async function getTrialDays() {

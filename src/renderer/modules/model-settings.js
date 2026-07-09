@@ -29,6 +29,11 @@ function apiErrorMessage(error) {
   ) {
     return t("toast.modelCustomInvalidModel");
   }
+  if (error === "MODEL_AGENT_TOOL_SHAPE_UNSUPPORTED") return t("toast.modelProbeToolShapeUnsupported");
+  if (error === "MODEL_TOOL_CALLS_UNAVAILABLE") return t("toast.modelProbeToolCallsUnavailable");
+  if (error === "MODEL_REASONING_ONLY") return t("toast.modelProbeReasoningOnly");
+  if (error === "MODEL_STREAMING_NO_CONTENT") return t("toast.modelProbeStreamingNoContent");
+  if (error === "MODEL_NO_CONTENT") return t("toast.modelProbeNoContent");
   return t("toast.modelApiSaveFailed");
 }
 

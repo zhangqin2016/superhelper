@@ -161,5 +161,18 @@ if (!beforeRotation || beforeRotation === afterRotation) {
   throw new Error("device key rotation should persist a new public key after service confirmation");
 }
 
+// deviceId must be deterministic from the stable machine-id, so a reinstall /
+// data reset that regenerates the client-stored id yields the SAME deviceId and
+// keeps the license binding — with a random fallback only when no machine-id.
+{
+  const assert2 = require("node:assert/strict");
+  const svc = require(path.join(__dirname, "../src/main/service-client.js"));
+  const a = svc.deriveDeviceId("MACHINE-GUID-XYZ");
+  assert2.equal(a, svc.deriveDeviceId("MACHINE-GUID-XYZ"), "same machine-id must yield the same deviceId across reinstalls");
+  assert2.notEqual(a, svc.deriveDeviceId("DIFFERENT-MACHINE"), "different machines must get different deviceIds");
+  assert2.ok(a.startsWith("dev_"), "derived deviceId keeps the dev_ prefix");
+  assert2.notEqual(svc.deriveDeviceId(""), svc.deriveDeviceId(""), "no machine-id falls back to a fresh random id (today's behavior)");
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("service-client: ok");

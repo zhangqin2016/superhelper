@@ -154,8 +154,9 @@ const profiledConfig = resolveOpencodeModelConfig({
   ...profiledEnv,
 });
 const profiledOpenCode = JSON.parse(profiledConfig.configContent);
-if (profiledOpenCode.provider.lily.options.body.chat_template_kwargs.enable_thinking !== false) {
-  throw new Error(`profiled custom preset must carry body overlay into OpenCode config: ${JSON.stringify(profiledOpenCode.provider.lily.options)}`);
+const profiledModelOptions = profiledOpenCode.provider.lily.models?.["profiled-model"]?.options;
+if (profiledModelOptions?.chat_template_kwargs?.enable_thinking !== false) {
+  throw new Error(`profiled custom preset must carry body overlay as model options in OpenCode config: ${JSON.stringify(profiledOpenCode.provider.lily)}`);
 }
 const updatedProfiledCustom = modelPresets.updateCustomPreset(profiledCustom.preset.id, {
   label: "Profiled Custom Renamed",

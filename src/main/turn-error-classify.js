@@ -191,7 +191,7 @@ function buildIncompleteTurnSummary(state = {}, payload = {}) {
     || "",
   );
   if (!hasToolSignal && !failureText) {
-    return "当前模型没有返回任何可用内容，所以本轮没有形成回答。请检查模型是否可用、模型名称/API 地址/密钥/兼容参数是否正确；如果刚修改过模型配置，请重新发起一次。";
+    return "当前模型没有返回任何可用内容，所以本轮没有形成回答。常见原因：模型网关对本次请求返回了错误页（内容不是模型输出，多见于自建/代理网关处理不了携带工具的请求）、模型名称/API 地址/密钥/兼容参数不正确。可在模型设置里重新保存该模型触发兼容性检测；如果刚修改过模型配置，请重新发起一次。";
   }
 
   const parts = [
@@ -254,7 +254,7 @@ function classifyTurnFailure(payload, normalized, state) {
   if (isEmptyAssistantCompletion(payload, normalized, state)) {
     return {
       code: "EMPTY_ASSISTANT_COMPLETION",
-      message: "当前模型不可用或没有返回可用内容。本轮没有形成回答，请检查模型服务状态、模型名称、API 地址、密钥和兼容参数。",
+      message: "当前模型不可用或没有返回可用内容。本轮没有形成回答。常见原因：模型网关对本次请求返回了错误页（内容不是模型输出，多见于自建/代理网关处理不了携带工具的请求）、模型服务状态/模型名称/API 地址/密钥/兼容参数有问题。可在模型设置里重新保存该模型触发兼容性检测。",
       retryable: true,
       category: "protocol",
       suppressIncompleteSummary: true,

@@ -58,7 +58,52 @@ function streamShape(text) {
   return { hasContent, hasReasoning, hasToolCalls };
 }
 
-function toolProbeFields() {
+// Decoys mirroring Lily's real agent toolset: MCP tool names run long
+// (lily_file_intelligence_extract_file_range = 41 chars) and several schemas
+// nest an object property. Some gateways (e.g. OICM+) accept one short flat
+// tool but return an HTML error page for any request containing these shapes,
+// which breaks every real turn even though a simple tool probe passes. The
+// decoys ride along the forced lily_probe_tool call and are never invoked.
+const AGENT_SHAPE_DECOY_TOOLS = Object.freeze([
+  {
+    type: "function",
+    function: {
+      // 44 chars — covers Lily's longest real tool name with headroom
+      name: "lily_probe_agent_tool_shape_name_len_check_a",
+      description: "Probe decoy mirroring Lily's longest real tool names.",
+      parameters: {
+        type: "object",
+        properties: { ok: { type: "boolean" } },
+        required: ["ok"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "lily_probe_nested_params",
+      description: "Probe decoy mirroring Lily tools with nested object parameters.",
+      parameters: {
+        type: "object",
+        properties: {
+          range: {
+            type: "object",
+            properties: {
+              start: { type: "integer" },
+              end: { type: "integer" },
+            },
+            required: ["start"],
+          },
+        },
+        required: ["range"],
+        additionalProperties: false,
+      },
+    },
+  },
+]);
+
+function toolProbeFields(extraTools = []) {
   return {
     tools: [{
       type: "function",
@@ -74,7 +119,7 @@ function toolProbeFields() {
           additionalProperties: false,
         },
       },
-    }],
+    }, ...extraTools],
     tool_choice: {
       type: "function",
       function: { name: "lily_probe_tool" },
@@ -82,7 +127,7 @@ function toolProbeFields() {
   };
 }
 
-async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, tools = false, systemText = "", timeoutMs = 10_000 }) {
+async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, tools = false, extraTools = [], systemText = "", timeoutMs = 10_000 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("MODEL_PROBE_TIMEOUT")), Math.max(500, timeoutMs));
   const messages = [];
@@ -93,7 +138,7 @@ async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = f
     messages,
     max_tokens: 16,
     stream: Boolean(stream),
-    ...(tools ? toolProbeFields() : {}),
+    ...(tools ? toolProbeFields(extraTools) : {}),
   }, bodyOverlay);
   try {
     const response = await fetch(`${trimUrl(baseUrl)}/chat/completions`, {
@@ -121,10 +166,10 @@ async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = f
   }
 }
 
-async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
-  const nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, timeoutMs });
+async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs, extraTools = [] }) {
+  const nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, timeoutMs });
   if (!nonStream.ok) return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
-  const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, stream: true, timeoutMs });
+  const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, extraTools, stream: true, timeoutMs });
   if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}` };
   return {
     ok: true,
@@ -150,12 +195,21 @@ async function probeCandidate({ baseUrl, apiKey, model, bodyOverlay = null, time
 async function validateAgentConformance({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
   const content = await probeCandidate({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
   if (!content.ok || !content.hasContent) return { ...content, hasAgentConformance: false };
-  const tools = await probeTools({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
-  if (!tools.ok) return { ...content, tools, hasAgentConformance: false };
+  // Probe with decoys shaped like Lily's real toolset. A gateway can pass a
+  // single short flat tool yet kill every real turn, so this is the probe
+  // that actually predicts agent conformance.
+  const tools = await probeTools({ baseUrl, apiKey, model, bodyOverlay, timeoutMs, extraTools: AGENT_SHAPE_DECOY_TOOLS });
+  if (tools.ok && tools.hasToolCalls) {
+    return { ...content, tools, hasAgentConformance: true };
+  }
+  // Distinguish "tool calls broken entirely" from "gateway rejects Lily-shaped
+  // tools" so the save dialog can say which side to fix.
+  const simpleTools = await probeTools({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
   return {
     ...content,
-    tools,
-    hasAgentConformance: Boolean(tools.hasToolCalls),
+    tools: simpleTools.ok ? simpleTools : tools,
+    hasAgentConformance: false,
+    agentToolShapeRejected: Boolean(simpleTools.ok && simpleTools.hasToolCalls),
   };
 }
 
@@ -220,6 +274,12 @@ async function probeCustomModelProfile({
     };
   }
 
+  // A thinking-default model can fail the plain content probe before the
+  // tools stage ever runs, so shape/tool evidence discovered while testing
+  // overlay candidates must feed the final diagnosis too (the real blocker
+  // is often "gateway rejects Lily-shaped tools", not "reasoning only").
+  let shapeRejected = Boolean(plain.agentToolShapeRejected);
+  let toolCallsBlocked = Boolean(plain.hasContent && plain.tools && !plain.tools.hasToolCalls);
   for (const candidate of BODY_OVERLAY_CANDIDATES) {
     const repaired = await validateAgentConformance({
       baseUrl,
@@ -229,6 +289,8 @@ async function probeCustomModelProfile({
       timeoutMs,
     });
     if (!repaired.ok) continue;
+    if (repaired.agentToolShapeRejected) shapeRejected = true;
+    else if (repaired.hasContent && repaired.tools && !repaired.tools.hasToolCalls) toolCallsBlocked = true;
     if (repaired.hasAgentConformance) {
       const prompt = await probeSystemPromptProfile({
         baseUrl,
@@ -262,7 +324,9 @@ async function probeCustomModelProfile({
 
   return {
     ok: false,
-    error: plain.hasContent && plain.tools && !plain.tools.hasToolCalls
+    error: shapeRejected
+      ? "MODEL_AGENT_TOOL_SHAPE_UNSUPPORTED"
+      : toolCallsBlocked
       ? "MODEL_TOOL_CALLS_UNAVAILABLE"
       : plain.nonStreamShape?.hasContent && !plain.streamShape?.hasContent
       ? "MODEL_STREAMING_NO_CONTENT"
