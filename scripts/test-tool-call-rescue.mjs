@@ -17,9 +17,10 @@ const tempUserData = fs.mkdtempSync(path.join(os.tmpdir(), "lily-tool-call-rescu
 process.env.LILY_USER_DATA_DIR = tempUserData;
 process.on("exit", () => fs.rmSync(tempUserData, { recursive: true, force: true }));
 
-// Stub self-heal (capture background learning; never heals → never retries)
-// and service-client BEFORE the orchestrator loads.
+// Stub self-heal (capture background learning; heals only when the test flips
+// the flag) and service-client BEFORE the orchestrator loads.
 const selfHealCalls = [];
+let selfHealShouldHeal = false;
 const selfHealPath = require.resolve("../src/main/model-self-heal.js");
 require.cache[selfHealPath] = {
   id: selfHealPath,
@@ -28,10 +29,10 @@ require.cache[selfHealPath] = {
   exports: {
     attemptModelSelfHeal: async (args) => {
       selfHealCalls.push(args);
-      return { attempted: true, healed: false };
+      return { attempted: true, healed: selfHealShouldHeal };
     },
     isHealableFailureCode: (code) =>
-      ["EMPTY_ASSISTANT_COMPLETION", "MALFORMED_TOOL_CALL_TEXT", "RESPONSE_ERROR"].includes(String(code || "")),
+      ["EMPTY_ASSISTANT_COMPLETION", "MALFORMED_TOOL_CALL_TEXT", "RESPONSE_ERROR", "TRUNCATED_TURN_END"].includes(String(code || "")),
     resetSelfHealStateForTests: () => {},
   },
 };
@@ -341,6 +342,34 @@ resetRescueStateForTests();
   assert.equal(events.filter((event) => event.type === "turn.self_heal_retry").length, 0,
     "a turn that wrote files is never auto-replayed even when truncated");
   assert.equal(runner.sentPayloads.length, payloadsBefore + 1, "no rescue retry after mutating tools");
+}
+
+// Negative: even a SUCCESSFUL heal (profile changed) must not replay a turn
+// that ran mutating tools — the field bug: self-heal retried a write turn.
+resetRescueStateForTests();
+{
+  selfHealShouldHeal = true;
+  const payloadsBefore = runner.sentPayloads.length;
+  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "写完文件后被截断的任务", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  assert.equal(send.ok, true);
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "tool.started", payload: { id: "w2", name: "write", input: { filePath: "/x/out.html" } } },
+    { type: "tool.done", payload: { id: "w2", status: "done" } },
+    { type: "usage.updated", payload: { usage: {}, stopReason: "tool-calls" } },
+    { type: "usage.updated", payload: { usage: {}, stopReason: "unknown" } },
+  ]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "让我继续。" });
+  await settle();
+  const events = flushEvents();
+  assert.equal(events.find((event) => event.type === "turn.failed")?.payload?.errorCode, "TRUNCATED_TURN_END");
+  assert.equal(events.filter((event) => event.type === "turn.self_heal_retry").length, 0,
+    "a healed profile must NOT auto-replay a turn that wrote files");
+  assert.equal(runner.sentPayloads.length, payloadsBefore + 1, "no heal retry after mutating tools");
+  selfHealShouldHeal = false;
 }
 
 // Negative: a clean "stop" final reason completes normally — no false positive.

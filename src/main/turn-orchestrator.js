@@ -946,6 +946,15 @@ class TurnOrchestrator {
       const state = this._state(sessionId);
       if (state.turnId || state.queue.length) return;
       if (this.ctx.runnerPool.get(sessionId)?.isBusy?.()) return;
+      // Same side-effect guard as turn rescue: a heal retry re-runs the WHOLE
+      // turn, so it is only safe when every executed tool was read-only —
+      // replaying a turn that already wrote files or sent mail is worse than
+      // failing honestly (the healed profile still helps the user's own retry).
+      const { isSideEffectFreeToolRun } = require("./tool-call-rescue");
+      if (!isSideEffectFreeToolRun([...(state.tools?.values?.() || [])])) {
+        log.info(`model self-heal retry skipped (non-read-only tools ran): session=${sessionId}`);
+        return;
+      }
       // Idle runners still hold the pre-heal model config; recycle them so the
       // retry binds with the repaired profile.
       require("./runner-live-config").terminateIdleRunners(this.ctx.runnerPool);
