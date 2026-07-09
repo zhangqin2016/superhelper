@@ -177,8 +177,10 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   });
   assert(r.ok && r.protocol === "openai", "Manassa Qwen endpoint uses OpenAI-compatible protocol with an explicit profile");
   const cfg = JSON.parse(r.configContent);
-  assert(cfg.provider.lily.options.body.chat_template_kwargs.enable_thinking === false,
-    "profile body overlay is carried into the OpenCode provider config");
+  assert(cfg.provider.lily.options.body === undefined,
+    "request body overlay must not be placed in provider options because AI SDK ignores that field");
+  assert(cfg.provider.lily.models["Qwen/Qwen3.5-27B"].options.chat_template_kwargs.enable_thinking === false,
+    "profile body overlay is carried through model options so OpenCode forwards it as providerOptions");
 }
 
 {

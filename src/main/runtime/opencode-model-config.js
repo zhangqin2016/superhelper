@@ -167,9 +167,10 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
     haiku: modelId,
     subagent: modelId,
   };
+  const modelOptions = bodyOverlay.body && protocol === "openai" ? { ...bodyOverlay.body } : null;
   const models = {};
   for (const id of [tiers.main, tiers.opus, tiers.sonnet, tiers.haiku, tiers.subagent]) {
-    if (id) models[id] = models[id] || {};
+    if (id) models[id] = models[id] || (modelOptions ? { options: modelOptions } : {});
   }
 
   const options = {};
@@ -180,7 +181,6 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   // non-standard chunk before the completed assistant text can settle. Disabling
   // streaming usage keeps the model URL/body otherwise unchanged.
   if (protocol === "openai") options.includeUsage = false;
-  if (bodyOverlay.body) options.body = bodyOverlay.body;
   if (token) {
     options.apiKey = token;
     options.headers = { Authorization: `Bearer ${token}` };
