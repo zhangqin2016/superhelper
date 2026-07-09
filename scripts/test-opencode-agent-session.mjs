@@ -2085,6 +2085,42 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   }
 }
 
+// --- no-progress: orphaned running tools have a bounded lease ----------------
+{
+  const savedTimeout = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  const savedLease = OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS;
+  const savedSync = OpencodeAgentSession.STALLED_HISTORY_SYNC_MS;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 35;
+  OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS = 45;
+  OpencodeAgentSession.STALLED_HISTORY_SYNC_MS = 5;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.historyMessages = [];
+    session.sendUserMessage({ text: "run a tool that never closes" });
+    await tick();
+    fake.emitEvent({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          type: "tool",
+          tool: "bash",
+          callID: "call_orphan",
+          state: { status: "running", input: { command: "python3 -c 'print(1)'" } },
+        },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 120));
+    assert(orch.calls.done.length === 1, "orphaned running tool does not keep the turn alive forever");
+    assert(orch.calls.done[0].stalled === true, "orphaned tool force-end is marked stalled");
+    assert(fake.aborted === true, "orphaned tool force-end aborts the engine");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = savedTimeout;
+    OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS = savedLease;
+    OpencodeAgentSession.STALLED_HISTORY_SYNC_MS = savedSync;
+  }
+}
+
 // --- no-progress: recover final answer from official messages before stalling -
 {
   const savedTimeout = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;

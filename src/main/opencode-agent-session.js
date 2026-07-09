@@ -2260,7 +2260,28 @@ class OpencodeAgentSession extends EventEmitter {
 
   _hasActiveToolLease() {
     if (!this.busy || this._turnSettled) return false;
-    return [...this._activeTools.values()].some((tool) => tool?.id);
+    const now = Date.now();
+    const leaseMs = OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS;
+    let hasLease = false;
+    for (const [id, tool] of this._activeTools.entries()) {
+      if (!tool?.id) {
+        this._activeTools.delete(id);
+        continue;
+      }
+      const lastActivityAt = Number(tool.lastActivityAt || tool.startedAt || 0);
+      if (leaseMs > 0 && lastActivityAt > 0 && now - lastActivityAt > leaseMs) {
+        log.warn("opencode active tool lease expired", {
+          sessionId: this.sessionId,
+          tool: tool.name || "",
+          id,
+          idleMs: now - lastActivityAt,
+        });
+        this._activeTools.delete(id);
+        continue;
+      }
+      hasLease = true;
+    }
+    return hasLease;
   }
 
   // Armed once at turn start; NOT re-armed on activity. Force-ends a turn that
@@ -2326,7 +2347,12 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   _genericToolProgressDetail() {
-    const running = [...this._activeTools.values()].filter((tool) => tool?.id);
+    const running = [...this._activeTools.values()].filter((tool) => {
+      if (!tool?.id) return false;
+      const leaseMs = OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS;
+      const lastActivityAt = Number(tool.lastActivityAt || tool.startedAt || 0);
+      return !(leaseMs > 0 && lastActivityAt > 0 && Date.now() - lastActivityAt > leaseMs);
+    });
     if (!running.length) return "";
     running.sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
     const now = Date.now();
@@ -2446,6 +2472,15 @@ class OpencodeAgentSession extends EventEmitter {
 // only pinging "busy" with no active tool is still caught.
 OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS =
   Number(process.env.LILY_OPENCODE_TURN_TIMEOUT_MS) || 600_000;
+// A tool that emitted "running" but never emits output/completion must not keep
+// the whole turn alive forever. Real long-running work should continue to emit
+// tool progress or move to Lily process jobs; this lease catches orphaned
+// OpenCode tool states where the shell child is already gone but the session
+// remains busy. Override / disable (0) with LILY_OPENCODE_ACTIVE_TOOL_LEASE_MS.
+OpencodeAgentSession.ACTIVE_TOOL_LEASE_MS =
+  process.env.LILY_OPENCODE_ACTIVE_TOOL_LEASE_MS !== undefined
+    ? Number(process.env.LILY_OPENCODE_ACTIVE_TOOL_LEASE_MS) || 0
+    : 120_000;
 // Shorter visible no-progress window. This only feeds the live process panel so
 // users can see the engine is still alive while OpenCode is quiet.
 OpencodeAgentSession.PROGRESS_NOTICE_MS =
