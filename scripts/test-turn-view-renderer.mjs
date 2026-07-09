@@ -153,7 +153,7 @@ assert.equal(
   " · 1.6s",
 );
 assert.equal(buildToolDurationSuffix({ status: "failed", startTs: 1000, ts: 1200 }), " · 0.2s");
-assert.equal(buildToolDurationSuffix({ status: "running", startTs: 1000, ts: 2600 }), "");
+assert.equal(buildToolDurationSuffix({ status: "running", startTs: 1000 }, 2600), " · 1.6s");
 assert.equal(buildToolDurationSuffix({ status: "done", startTs: 1000, ts: 1050 }), "");
 assert.equal(buildToolStatusLabel({ status: "failed", name: "bash" }, translate), "失败");
 assert.equal(buildToolStatusLabel({ status: "running", name: "read" }, translate), "运行中");

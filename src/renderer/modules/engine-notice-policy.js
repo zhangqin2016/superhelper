@@ -12,18 +12,18 @@ const PANEL_HIDDEN_CODES = new Set([
   "controlRequest",
   "unknownEvent",
   "toolSummary",
+  "longWait",
+  "toolProgress",
 ]);
 
 const LIVE_PROGRESS_PANEL_CODES = new Set([
   "compactBoundary",
   "waitingForFirstResponse",
-  "longWait",
   "taskProgress",
   "taskCompleted",
   "subagentSlow",
   "subagentVerySlow",
   "subagentCompleted",
-  "toolProgress",
   "workProgress",
   "shellLongRunning",
   "documentPreparing",

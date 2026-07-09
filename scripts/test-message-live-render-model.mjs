@@ -50,6 +50,15 @@ assert.equal(
   first,
   "visual signature must not include elapsed time that would force per-second rerenders",
 );
+const heartbeatSource = readFileSync(
+  new URL("../src/renderer/modules/message.js", import.meta.url),
+  "utf8",
+);
+assert.match(
+  heartbeatSource,
+  /function refreshLiveStatusOnly[\s\S]*renderLiveTurnArticle\(article,\s*live,\s*\{\s*sessionId\s*\}\)/,
+  "heartbeat refresh must patch the live process row as well as the top status line when elapsed time changes",
+);
 runtime.liveTurn.assistantText = "hello world";
 assert.notEqual(runtimeVisualSig(runtime), first, "visible assistant text changes should invalidate the signature");
 

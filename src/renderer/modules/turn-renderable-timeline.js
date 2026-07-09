@@ -2,6 +2,8 @@ import { t } from "../i18n/index.js";
 import { isTokenCountDetail } from "./turn-activity-policy.js";
 import { buildTimelineFromLegacy } from "./turn-legacy-timeline.js";
 
+const LIVENESS_NOTICE_CODES = new Set(["longWait", "toolProgress"]);
+
 export function resolveNoticeDetail(entry = {}) {
   const detail = String(entry.detail || "").trim();
   if (entry.code === "turnSteered") {
@@ -31,6 +33,7 @@ function filterRenderableTimeline(timeline = []) {
       return index !== lastTextIndex && Boolean(String(entry.text || "").trim());
     }
     if (entry.kind !== "notice") return true;
+    if (LIVENESS_NOTICE_CODES.has(entry.code)) return false;
     if (entry.code === "thinkingProgress") return false;
     if (isTokenCountDetail(entry.detail)) return false;
     return Boolean(resolveNoticeDetail(entry));

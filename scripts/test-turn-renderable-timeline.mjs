@@ -15,6 +15,8 @@ const renderable = getRenderableTimeline({
   timeline: [
     { kind: "text", id: "text_1", text: "before tool" },
     { kind: "notice", id: "hidden-progress", code: "thinkingProgress", detail: "Working" },
+    { kind: "notice", id: "hidden-tool-progress", code: "toolProgress", detail: "write 正在运行 33s" },
+    { kind: "notice", id: "hidden-long-wait", code: "longWait", detail: "Still waiting" },
     { kind: "notice", id: "hidden-tokens", detail: "1.2k tokens" },
     { kind: "notice", id: "visible-notice", code: "custom", detail: "Visible" },
     { kind: "tool", id: "tool_1", name: "Read", status: "done" },
@@ -25,7 +27,7 @@ const renderable = getRenderableTimeline({
 assert.deepEqual(
   renderable.map((entry) => entry.id),
   ["text_1", "visible-notice", "tool_1"],
-  "renderable timeline should keep interleaved prose and hide final-answer/noise entries",
+  "renderable timeline should keep interleaved prose and hide final-answer/noise/liveness entries",
 );
 
 const legacy = getRenderableTimeline({

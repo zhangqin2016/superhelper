@@ -47,7 +47,6 @@ import {
   liveTurnFromRecord,
 } from "./turn-view-model.js";
 import { createLiveTurnArticleShell } from "./turn-article-shell.js";
-import { refreshLiveTurnStatusDisplay } from "./turn-article-frame.js";
 import { updateSessionRunningIndicators } from "./project-tree.js";
 import { updateTopbarTitles } from "./session-chrome.js";
 import { renderMessageQueue } from "./composer.js";
@@ -759,7 +758,7 @@ function refreshLiveStatusOnly(sessionId) {
   if (!live || live.final) return;
   const article = view(sessionId).liveArticles.get(live.turnId);
   if (!article?.isConnected) return;
-  refreshLiveTurnStatusDisplay(article, live);
+  renderLiveTurnArticle(article, live, { sessionId });
 }
 
 export function createMessage(sessionId, role, text = "", files = null, options = null) {

@@ -92,10 +92,10 @@ export function progressPercent(progress = null) {
   return null;
 }
 
-export function buildToolDurationSuffix(entry = {}) {
-  if (entry.status !== "done" && entry.status !== "failed") return "";
+export function buildToolDurationSuffix(entry = {}, now = Date.now()) {
+  if (!["done", "failed", "running"].includes(entry.status)) return "";
   const start = Number(entry.startTs);
-  const end = Number(entry.ts);
+  const end = entry.status === "running" ? Number(now) : Number(entry.ts);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 100) return "";
   return ` · ${((end - start) / 1000).toFixed(1)}s`;
 }
