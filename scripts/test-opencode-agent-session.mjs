@@ -628,6 +628,26 @@ async function newSession() {
   }
 }
 
+// --- empty model completion: replay once before surfacing failure ------------
+{
+  const { fake, session, orch } = await newSession();
+  fake.historyMessages = [];
+  fake.idleState = true;
+  session.sendUserMessage({ text: "hello" });
+  await tick();
+  fake.emitEvent({ type: "message.part.updated", properties: { part: { type: "step-start" } } });
+  fake.emitEvent({ type: "message.part.updated", properties: { part: { type: "step-finish", reason: "unknown", tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } } } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(fake.prompts.length === 2, "empty completion without side effects is replayed once");
+  assert(orch.calls.error.length === 0, "empty completion replay avoids user-visible failure");
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "replayed hello" } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "replayed hello", "empty completion replay completes with second output");
+  session.terminate();
+}
+
 // --- transient hiccup after tool activity: do not replay side effects -------
 {
   const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
@@ -1636,6 +1656,7 @@ async function newSession() {
   session.sendUserMessage({ text: "turn one" });
   await tick();
   assert(fake.prompts[0].guidance === "LILY_RULES_V1", "turn one carries Lily guidance");
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "turn one done" } });
   fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
   await waitIdleSettle();
   assert(orch.calls.done.length === 1, "turn one completes before turn two");
@@ -1967,6 +1988,7 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   session.sendUserMessage({ text: "turn one" });
   await tick();
   assert(serverCount === 1, "first send starts exactly one server");
+  made[0].emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "turn one done" } });
   made[0].emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
   await waitIdleSettle();
   assert(orch.calls.done.length === 1, "turn one completes");
@@ -2010,6 +2032,7 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   await tick();
   assert(await session.compactContext({ providerID: "lily", modelID: "deepseek-chat", auto: true }) === false,
     "busy turn must not be interrupted by background compaction");
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "seeded" } });
   fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
   await waitIdleSettle();
   assert(await session.compactContext({ providerID: "lily", modelID: "deepseek-chat", auto: true }) === true,

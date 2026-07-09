@@ -1381,6 +1381,7 @@ class OpencodeAgentSession extends EventEmitter {
       ...next,
       output: this.collectedOutput.trim(),
     });
+    if (await this._replayEmptyCompletionIfSafe(synced)) return;
     this._completeTurn(synced);
   }
 
@@ -1765,6 +1766,41 @@ class OpencodeAgentSession extends EventEmitter {
         startedAt: Date.now(),
       };
       this._scheduleTransientFailureRecovery(this._pendingTransientFailure.message, err);
+      return true;
+    }
+  }
+
+  async _replayEmptyCompletionIfSafe(payload = {}) {
+    if (!this._pendingPromptPayload || !this._server) return false;
+    if (this._transientReplayCount >= 1) return false;
+    if (this._sawUnsafeToolActivity || this.collectedOutput.trim() || String(payload?.output || "").trim()) return false;
+    if (this._pendingPermissions.size || this._pendingQuestions.size) return false;
+    if (payload?.interrupted || payload?.stalled || (payload?.code && payload.code !== 0)) return false;
+
+    this._transientReplayCount += 1;
+    resetOpencodeRuntimeState(this._eventState);
+    this._resetSubagentRuntimeStates();
+    this.collectedOutput = "";
+    this._turnStartedAt = Date.now();
+    this._sawActivity = false;
+    this._sawEngineEvent = false;
+    this._sawToolActivity = false;
+    this._sawUnsafeToolActivity = false;
+    this._toolReplaySafe.clear();
+    try {
+      const retryPayload = buildAttachmentFallbackPromptPayload(
+        this._pendingPromptPayload,
+        "previous model attempt ended with an empty completion",
+      );
+      this._pendingPromptPayload = retryPayload;
+      await this._server.sendPrompt(retryPayload);
+      this._armResponseTimer();
+      this._armProgressNoticeTimer();
+      this._armHealthProbe();
+      this._armPromptAcceptanceCheck();
+      return true;
+    } catch (err) {
+      this._failTurn(this._sanitize(err?.message || err), err, { force: true });
       return true;
     }
   }
