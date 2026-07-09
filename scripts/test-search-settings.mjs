@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -74,6 +75,35 @@ const search = require("../src/main/search-settings.js");
     search.getSearchSpawnEnv().WEBSEARCH_SEARXNG_URL,
     "https://search.example.com",
     "persisted SearXNG URL must become execution env",
+  );
+}
+
+{
+  const childRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lily-search-settings-no-resources-"));
+  const child = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+        delete process.resourcesPath;
+        const search = await import(${JSON.stringify(path.resolve("src/main/search-settings.js"))});
+        const env = search.getSearchSpawnEnv();
+        if (env.WEBSEARCH_PROVIDER !== "iqs") {
+          throw new Error("expected IQS default provider without process.resourcesPath");
+        }
+      `,
+    ],
+    {
+      cwd: path.resolve("."),
+      env: { ...process.env, LILY_USER_DATA_DIR: childRoot },
+      encoding: "utf8",
+    },
+  );
+  assert.equal(
+    child.status,
+    0,
+    `search settings must work in plain Node helpers without process.resourcesPath\nstdout:\n${child.stdout}\nstderr:\n${child.stderr}`,
   );
 }
 

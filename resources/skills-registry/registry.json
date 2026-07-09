@@ -195,6 +195,7 @@
     "lily-research-synthesis": {
       "kind": "workflow",
       "intents": ["research.latest", "fact_check", "ranking.compare", "source_synthesis"],
+      "matchHints": ["latest news", "current facts", "rankings", "API prices", "with citations", "with sources", "source-backed", "最新信息", "今天新闻", "排行榜", "价格", "引用来源", "带来源", "给出处"],
       "primaryTools": ["web.search", "source.reader"],
       "inputModes": ["text", "url"],
       "outputModes": ["cited_answer", "text"],
@@ -298,6 +299,7 @@
     "lily-runtime-packs": {
       "kind": "runtime",
       "intents": ["runtime.install", "capability_pack.install", "office_runtime.enable"],
+      "matchHints": ["image resize", "background removal", "video transcode", "OCR pack", "Docling", "LibreOffice", "ffmpeg", "runtime pack"],
       "primaryTools": ["runtime.pack.manager", "qiniu.download"],
       "inputModes": ["text"],
       "outputModes": ["runtime_state", "text"],

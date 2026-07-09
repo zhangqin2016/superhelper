@@ -8,7 +8,8 @@
   "runtime": "node",
   "entry": "scripts/websearch.cjs",
   "placeholders": {
-    "{{WEBSEARCH_SCRIPT}}": "scripts/websearch.cjs"
+    "{{WEBSEARCH_SCRIPT}}": "scripts/websearch.cjs",
+    "{{WEBFETCH_SCRIPT}}": "../webfetch/scripts/webfetch.cjs"
   },
   "replaceNativeTools": [
     "WebSearch"

@@ -48,7 +48,7 @@ const BASE_CAPABILITIES = [
 ];
 
 const OPERATION_INTENT_PATTERN =
-  /(依赖|安装|修复|检查|分析|读取|解析|转换|索引|查询|搜索|总结|生成|导出|导入|学习|扫描|自动化|研究|调研|比较|估值|股票|邮件|邮箱|回复客户|意图|路由|触发哪个|应用|管理后台|小工具|脚本|组件|表单|工程规范|能力退化|网页|网站|系统|PDF|pdf|Word|word|Excel|excel|PPT|ppt|PowerPoint|图片|图像|视频|音频|OCR|ocr|runtime|dependency|install|repair|analy[sz]e|read|parse|convert|index|search|summari[sz]e|generate|export|import|learn|scan|automate|research|compare|stock|valuation|mail|email|intent|routing|app|dashboard|script|component|browser|website|document|image|video|audio|ffmpeg|playwright)/i;
+  /(依赖|安装|修复|检查|分析|读取|解析|转换|索引|查询|搜索|总结|生成|导出|导入|学习|扫描|自动化|研究|调研|比较|估值|股票|邮件|邮箱|回复客户|意图|路由|触发哪个|应用|管理后台|小工具|脚本|组件|表单|工程规范|能力退化|网页|网站|系统|最新|今天|今日|新闻|来源|出处|价格|排行榜|PDF|pdf|Word|word|Excel|excel|PPT|ppt|PowerPoint|图片|图像|视频|音频|OCR|ocr|runtime|dependency|install|repair|analy[sz]e|read|parse|convert|index|search|summari[sz]e|generate|export|import|learn|scan|automate|research|compare|stock|valuation|mail|email|intent|routing|app|dashboard|script|component|browser|website|document|image|video|audio|latest|current|today|news|sources?|citations?|prices?|rankings?|ffmpeg|playwright)/i;
 
 function normalizeCapability(item) {
   return {
@@ -139,7 +139,7 @@ function listSkillCapabilityGraph(opts = {}) {
           kind: capability.kind || skill.capabilityLayer || "workflow",
           intents: compactArray(capability.intents, 5),
           avoidIntents: compactArray(capability.avoidIntents, 3),
-          matchHints: compactArray(capability.matchHints, 8),
+          matchHints: compactArray(capability.matchHints, 16),
           avoidHints: compactArray(capability.avoidHints, 8),
           primaryTools: compactArray(capability.primaryTools, 5),
           runtimeDependencies: compactArray(capability.runtimeDependencies, 5),
@@ -178,7 +178,9 @@ function queryFacts(opts = {}) {
   const sourceOfficeFile = files.xlsx || files.pptx || files.docx;
   const referencedMedia = /(?:uploaded|attached|current|this|the)\s+(?:video|audio|movie|clip|recording|mp4|mov|mp3|wav)|(?:video|audio|movie|clip|recording|mp4|mov|mp3|wav)\s+(?:uploaded|attached)|上传(?:的)?(?:视频|音频|录音|素材)|附件(?:里|中|的)?(?:视频|音频|录音|素材)|这段(?:视频|音频|录音)|这个(?:视频|音频|录音)/i.test(`${text} ${zh}`);
   const media = files.media || referencedMedia;
-  const sourceNonPdfFile = sourceOfficeFile || files.image || media;
+  const referencedImage = /(?:uploaded|attached|current|this|the)\s+(?:[\w-]+\s+){0,3}(?:image|picture|photo|screenshot|png|jpe?g|webp)|(?:image|picture|photo|screenshot|png|jpe?g|webp)\s+(?:uploaded|attached)|上传(?:的)?(?:图片|图像|照片|截图|产品图|商品图|素材)|附件(?:里|中|的)?(?:图片|图像|照片|截图|产品图|商品图|素材)|这张(?:图片|图像|照片|截图|产品图|商品图|素材)|这个(?:图片|图像|照片|截图|产品图|商品图|素材)/i.test(`${text} ${zh}`);
+  const image = files.image || referencedImage || /图片|图像|截图|产品图|商品图|ocr|image|photo|screenshot/i.test(`${text} ${zh}`);
+  const sourceNonPdfFile = sourceOfficeFile || files.image || referencedImage || media;
   const pdf = files.pdf || (!sourceNonPdfFile && /pdf|扫描|版面|表格提取|阅读顺序/i.test(`${text} ${zh}`));
   const explicitSpreadsheet = /xlsx|xls|csv|excel|spreadsheet|worksheet|电子表格|公式|图表/i.test(`${text} ${zh}`);
   const referencedSpreadsheet = /(?:uploaded|attached|current|this|the)\s+(?:workbook|spreadsheet|worksheet|excel|csv|sheet)|(?:workbook|spreadsheet|worksheet|excel|csv|sheet)\s+(?:uploaded|attached)|上传(?:的)?(?:工作簿|表格|电子表格|Excel|CSV)|附件(?:里|中|的)?(?:工作簿|表格|电子表格|Excel|CSV)|这份(?:工作簿|表格|电子表格|Excel|CSV)|该(?:工作簿|表格|电子表格|Excel|CSV)/i.test(`${text} ${zh}`);
@@ -200,17 +202,21 @@ function queryFacts(opts = {}) {
     /analy[sz]e|clean|chart|pivot|summary|formula|outlier|dashboard|分析|清洗|图表|透视|汇总|公式|异常值|看板/i.test(`${text} ${zh}`);
   const webLearning = /学习|learn|自动化.*可复用|生成可复用|workspace skill|capability map|后台系统|logged.?in system/i.test(`${text} ${zh}`);
   const browserQa = !sourceOfficeFile &&
-    /localhost|127\.0\.0\.1|console|控制台|前端|frontend|冒烟|smoke|按钮|点击|交互|响应式|布局|登录页|网页.*测试|web app|qa|浏览器|browser/i.test(`${text} ${zh}`);
+    /localhost|127\.0\.0\.1|console|控制台|前端|frontend|冒烟|smoke|按钮|点击|交互|响应式|布局|登录页|网页.*测试|web app|browser\s+(?:qa|test|check)|qa/i.test(`${text} ${zh}`);
   const web = webLearning || browserQa || /网页|网站|系统|\boa\b|erp|crm|browser|website|web app|playwright|自动化/i.test(`${text} ${zh}`);
   const promptEnhance = /prompt|提示词|咒语|关键词|改写.*提示|写得更专业|扩写/i.test(`${text} ${zh}`);
   const visualCreative = /海报|封面|小红书|产品图|头像|插画|图片|图像|视频|分镜|poster|cover|image|video|storyboard|visual asset|visual concept|visual design/i.test(`${text} ${zh}`);
   const mediaTranscode = media && /剪辑|裁剪|转码|压缩|导出|mp4|mov|ffmpeg|transcode|encode|trim|cut|compress/i.test(`${text} ${zh}`);
-  const creativeCreate = !mediaTranscode && visualCreative && /生成|创建|设计|制作|编辑|优化|海报|封面|产品图|头像|插画|分镜|poster|cover|storyboard|visual asset|visual concept|visual design/i.test(`${text} ${zh}`);
+  const imageTransform = image &&
+    /resize|convert|export|thumbnail|compress|crop|scale|smaller|larger|save\s+as|remove.{0,20}background|background removal|change.{0,30}\bto\b.{0,20}(?:png|jpe?g|webp|gif|tiff?|bmp|avif)|格式转换|调整尺寸|缩放|裁剪|压缩|导出|另存为|抠图|去背景|背景移除|改成.{0,12}(?:png|jpe?g|webp|gif|tiff?|bmp|avif)|转成.{0,12}(?:png|jpe?g|webp|gif|tiff?|bmp|avif)/i.test(`${text} ${zh}`);
+  const creativeCreate = !mediaTranscode && !imageTransform && visualCreative && /生成|创建|设计|制作|编辑|优化|海报|封面|产品图|头像|插画|分镜|poster|cover|storyboard|visual asset|visual concept|visual design/i.test(`${text} ${zh}`);
   const imageReview = files.image &&
     /检查|review|qa|验收|错误|错位|清晰|可用|瑕疵|重做|文字错误|artifact/i.test(`${text} ${zh}`);
   const stockResearch = /股票|股价|估值|财报|财务|market cap|valuation|ticker|stock|equity|earnings|英伟达|nvidia|nvda|特斯拉|tesla|tsla/i.test(`${text} ${zh}`);
+  const currentFactResearch = /最新|今天|今日|新闻|实时|当前|价格|排行榜|带来源|给出处|引用来源|证据来源|latest|current|today|news|prices?|rankings?|citations?|with sources?/i.test(`${text} ${zh}`);
   const sourceResearch = stockResearch ||
-    /研究|竞品|比较|排名|事实核查|来源|引用来源|证据来源|调研|research|competitor|compare|ranking|fact.?check|source/i.test(`${text} ${zh}`);
+    currentFactResearch ||
+    /研究|竞品|比较|排名|排行榜|事实核查|来源|出处|引用来源|证据来源|调研|research|competitor|compare|ranking|fact.?check|source/i.test(`${text} ${zh}`);
   const skillQuality = /技能|skill|能力契约|质量门槛|release gate|quality gate|capability contract/i.test(`${text} ${zh}`) &&
     /检查|review|audit|质量|门槛|符合|验收|评审/i.test(`${text} ${zh}`);
   const intentEval = /意图|intent|路由|routing|触发哪个|prompt regression|评估这句话/i.test(`${text} ${zh}`) &&
@@ -224,7 +230,7 @@ function queryFacts(opts = {}) {
     (codeSignal || /报错|异常|失败|修复/i.test(`${text} ${zh}`));
   const appCreate = !codeRepair &&
     /做一个.*(应用|app|网页|网站|页面|后台|看板|工具)|搭建.*(应用|app|网页|网站|页面|后台|看板|工具)|创建.*(应用|app|网页|网站|页面|后台|看板|工具)|构建.*(应用|app|网页|网站|页面|后台|看板|工具)|生成.*网页|开发.*应用|开发.*页面|写.*脚本|生成.*脚本|批量.*文件|web app|管理后台|小工具|script/i.test(`${text} ${zh}`);
-  const codingCore = !appCreate && !codeRepair && !files.image && !files.pdf && !files.docx && !files.pptx && !files.xlsx &&
+  const codingCore = !sourceResearch && !appCreate && !codeRepair && !files.image && !files.pdf && !files.docx && !files.pptx && !files.xlsx &&
     /实现|接入|组件|表单|逻辑|重构|改代码|代码|automation|script|function|api|hook|component/i.test(`${text} ${zh}`);
   return {
     rawText: `${text} ${zh}`,
@@ -244,13 +250,14 @@ function queryFacts(opts = {}) {
     evidenceLookup,
     readSummary,
     templateFill,
-    runtime: mediaTranscode || /依赖|安装|启用|runtime|dependency|pack|ocr|docling|libreoffice|ffmpeg|playwright/i.test(`${text} ${zh}`),
+    runtime: mediaTranscode || imageTransform || /依赖|安装|启用|runtime|dependency|pack|ocr|docling|libreoffice|ffmpeg|playwright/i.test(`${text} ${zh}`),
     web: web || uiQuality || appCreate,
     webLearning,
     browserQa: browserQa || uiQuality || appCreate,
     media: media || /视频|音频|ffmpeg|video|audio|剪辑|转码/i.test(`${text} ${zh}`),
     mediaTranscode,
-    image: files.image || /图片|图像|截图|ocr|image|screenshot/i.test(`${text} ${zh}`),
+    image,
+    imageTransform,
     creativeCreate,
     promptEnhance,
     imageReview,
@@ -296,7 +303,7 @@ function skillRelevance(skill, facts) {
   }
   if (skill.id === "anthropics-docx" && facts.docx) score += facts.readSummary && !facts.evidenceLookup ? 160 : 90;
   if (skill.id === "lily-web-system-learning" && facts.webLearning) score += 140;
-  if (skill.id === "lily-browser-qa" && facts.web) score += facts.browserQa ? 150 : 60;
+  if (skill.id === "lily-browser-qa" && facts.web && (!facts.sourceResearch || facts.browserQa)) score += facts.browserQa ? 150 : 60;
   if (skill.id === "lily-creative-director" && facts.creativeCreate && !facts.imageReview) score += facts.promptEnhance ? 100 : 150;
   if (skill.id === "lily-prompt-enhancer" && !facts.intentEval && (facts.promptEnhance || facts.creativeCreate)) score += facts.promptEnhance ? 150 : 80;
   if (skill.id === "lily-image-qa" && facts.image) score += facts.imageReview ? 150 : 60;

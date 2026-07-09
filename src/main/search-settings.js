@@ -32,10 +32,12 @@ function userSettingsPath() {
 }
 
 function bundledSettingsCandidates() {
-  return [
-    path.join(process.resourcesPath, "resources", "agent-defaults", "settings.json"),
-    path.join(PROJECT_ROOT, "resources", "agent-defaults", "settings.json"),
-  ];
+  const candidates = [];
+  if (process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, "resources", "agent-defaults", "settings.json"));
+  }
+  candidates.push(path.join(PROJECT_ROOT, "resources", "agent-defaults", "settings.json"));
+  return candidates;
 }
 
 function readBundledSettingsEnv() {

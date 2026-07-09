@@ -475,6 +475,17 @@ assert.match(
   /技能调用名是 `websearch`/,
   "websearch guide must warn that the callable skill name is websearch",
 );
+for (const locale of ["zh-CN", "en", "ar"]) {
+  const webAccessGuide = skillManager.buildAgentGuideContent(
+    [skillObj(skillsDir, "websearch"), skillObj(skillsDir, "webfetch")],
+    locale,
+  );
+  assert.doesNotMatch(
+    webAccessGuide,
+    /\{\{[A-Z_]+\}\}/,
+    `${locale} web access guide must not leave unresolved command placeholders`,
+  );
+}
 
 const nonMandatoryInlineFixture = {
   ...indexSkill,

@@ -52,6 +52,34 @@ assert.ok(
   "capability graph should preserve registry-declared match hints instead of relying only on broker hardcoding"
 );
 assert.ok(
+  byId.get("lily-research-synthesis")?.matchHints?.includes("latest news"),
+  "research routing variants should live in registry match hints instead of only broker regexes"
+);
+assert.ok(
+  byId.get("lily-research-synthesis")?.matchHints?.includes("API prices"),
+  "research price/citation variants should be catalog-declared capability hints"
+);
+assert.ok(
+  byId.get("lily-research-synthesis")?.matchHints?.includes("带来源"),
+  "capability graph should not truncate multilingual research match hints"
+);
+assert.ok(
+  byId.get("lily-research-synthesis")?.matchHints?.includes("给出处"),
+  "capability graph should preserve late registry hints used by Chinese source-backed requests"
+);
+assert.ok(
+  byId.get("lily-runtime-packs")?.matchHints?.includes("image resize"),
+  "runtime image transform variants should live in registry match hints instead of only broker regexes"
+);
+assert.ok(
+  byId.get("lily-runtime-packs")?.matchHints?.includes("background removal"),
+  "runtime background-removal variants should be catalog-declared capability hints"
+);
+assert.ok(
+  byId.get("lily-runtime-packs")?.matchHints?.includes("video transcode"),
+  "runtime media processing variants should be catalog-declared capability hints"
+);
+assert.ok(
   byId.get("lily-prompt-enhancer")?.avoidHints?.includes("skill route"),
   "capability graph should preserve registry-declared avoid hints for negative routing contexts"
 );
@@ -153,6 +181,63 @@ assert.ok(
   "image artifact review should not be mistaken for app/artifact creation"
 );
 
+const uploadedImageResizeRecommendations = recommendSkillCapabilityGraph({
+  text: "Resize the uploaded image and export as webp",
+});
+assert.equal(
+  uploadedImageResizeRecommendations[0]?.id,
+  "lily-runtime-packs",
+  "uploaded image resize/export should put runtime packs first even when the file object is not present"
+);
+assert.ok(
+  !uploadedImageResizeRecommendations.some((skill) => skill.id === "lily-creative-director"),
+  "uploaded image resize/export should not be mistaken for creative image generation"
+);
+
+const attachedPhotoShrinkRecommendations = recommendSkillCapabilityGraph({
+  text: "Make the attached photo smaller and save as jpeg",
+});
+assert.equal(
+  attachedPhotoShrinkRecommendations[0]?.id,
+  "lily-runtime-packs",
+  "attached image resize/conversion should not depend on exact resize/export wording"
+);
+
+const screenshotFormatChangeRecommendations = recommendSkillCapabilityGraph({
+  text: "Change this screenshot to png",
+});
+assert.equal(
+  screenshotFormatChangeRecommendations[0]?.id,
+  "lily-runtime-packs",
+  "screenshot format conversion should route to runtime packs without a file object"
+);
+
+const attachedPhotoBackgroundRemovalRecommendations = recommendSkillCapabilityGraph({
+  text: "Remove the background from the attached product photo",
+});
+assert.equal(
+  attachedPhotoBackgroundRemovalRecommendations[0]?.id,
+  "lily-runtime-packs",
+  "attached product photo background removal should put local image runtime packs first"
+);
+assert.ok(
+  !attachedPhotoBackgroundRemovalRecommendations.some((skill) => skill.id === "lily-office-intent" || skill.id === "lily-pdf-extraction-router"),
+  "attached product photo background removal should not fall through to Office/PDF routing"
+);
+
+const productPhotoCutoutRecommendations = recommendSkillCapabilityGraph({
+  text: "给这张产品图抠图去背景",
+});
+assert.equal(
+  productPhotoCutoutRecommendations[0]?.id,
+  "lily-runtime-packs",
+  "product photo cutout/background removal should route to runtime packs instead of creative generation"
+);
+assert.ok(
+  !productPhotoCutoutRecommendations.some((skill) => skill.id === "lily-creative-director"),
+  "deterministic product photo cutout should not be mistaken for creative direction"
+);
+
 const browserQaRecommendations = recommendSkillCapabilityGraph({
   text: "测试这个网页是否有 console error 和按钮失效问题",
 });
@@ -223,6 +308,38 @@ assert.equal(researchRecommendations[0]?.id, "lily-research-synthesis", "source-
 assert.ok(
   !researchRecommendations.some((skill) => skill.id === "lily-document-query"),
   "source-backed research without files should not be mistaken for document evidence lookup"
+);
+
+const currentTechNewsRecommendations = recommendSkillCapabilityGraph({
+  text: "今天有哪些重要科技新闻，给出处",
+});
+assert.equal(
+  currentTechNewsRecommendations[0]?.id,
+  "lily-research-synthesis",
+  "current news with sources should put research synthesis first"
+);
+assert.equal(
+  shouldInjectCapabilityContext({ text: "今天有哪些重要科技新闻，给出处" }),
+  true,
+  "current news with sources should inject focused research capability context"
+);
+
+const browserRankingRecommendations = recommendSkillCapabilityGraph({
+  text: "最新的 AI 浏览器排行榜是什么，带来源",
+});
+assert.equal(
+  browserRankingRecommendations[0]?.id,
+  "lily-research-synthesis",
+  "browser ranking research should not be stolen by browser QA just because the topic says browser"
+);
+
+const apiPriceResearchRecommendations = recommendSkillCapabilityGraph({
+  text: "Compare current model API prices with citations",
+});
+assert.equal(
+  apiPriceResearchRecommendations[0]?.id,
+  "lily-research-synthesis",
+  "source-backed API price comparison should not be mistaken for coding work"
 );
 
 const skillQualityRecommendations = recommendSkillCapabilityGraph({
