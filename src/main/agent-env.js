@@ -35,6 +35,7 @@ const PASSTHROUGH_KEYS = new Set([
   "LILY_SPEECH_PROVIDER",
 ]);
 const PASSTHROUGH_PREFIXES = [
+  "LILY_OPENCODE_",
   "LILY_MEDIA_",
   "LILY_GPU_",
   "VISION_",

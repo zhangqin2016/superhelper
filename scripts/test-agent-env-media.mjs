@@ -27,6 +27,8 @@ const remoteMediaEnv = normalizeToLilyEnv({
   MINIMAX_BASE_URL: "https://lily.example.com/llm/media/minimax",
   ZHIPU_API_KEY: "zhipu-gateway-token",
   ZHIPU_BASE_URL: "https://lily.example.com/llm/media/zhipu",
+  LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS: "10000",
+  LILY_OPENCODE_BODY_OVERLAY_JSON: "{\"chat_template_kwargs\":{\"enable_thinking\":false}}",
 });
 
 const engineEnv = toEngineEnv(remoteMediaEnv);
@@ -43,5 +45,11 @@ assert.equal(engineEnv.VOLCENGINE_BASE_URL, "https://lily.example.com/llm/media/
 assert.equal(engineEnv.KLING_BASE_URL, "https://lily.example.com/llm/media/kling");
 assert.equal(engineEnv.MINIMAX_BASE_URL, "https://lily.example.com/llm/media/minimax");
 assert.equal(engineEnv.ZHIPU_BASE_URL, "https://lily.example.com/llm/media/zhipu");
+assert.equal(engineEnv.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS, "10000");
+assert.equal(
+  engineEnv.LILY_OPENCODE_BODY_OVERLAY_JSON,
+  "{\"chat_template_kwargs\":{\"enable_thinking\":false}}",
+  "OpenCode runtime compatibility profile settings pass through to the engine env",
+);
 
 console.log("agent-env-media: ok");
