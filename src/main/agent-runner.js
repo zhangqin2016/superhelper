@@ -65,6 +65,32 @@ const ERROR_PATTERNS = [
     retryable: false,
   },
   {
+    code: "QUOTA_EXCEEDED",
+    category: "model",
+    // Gateway balance / entitlement rejections (HTTP 402). MUST be classified
+    // BEFORE MODEL_CONNECTION_FAILED — otherwise the broad "API Error:" catch
+    // there relabels a 402 as a network drop ("connection interrupted"), hiding
+    // the real cause (out of balance) from the user. ACCOUNT_LOGIN_REQUIRED is
+    // handled earlier (MANAGED_MODEL_AUTH_MISSING) so genuine login/activation
+    // prompts still win over this.
+    test: /ENTITLEMENT_INSUFFICIENT|payment.?required|\b402\b|quota|insufficient.*(credit|balance|quota|fund)|(credit|balance|quota|fund).*insufficient|balance|billing|account.*disabled|account.*suspended/i,
+    message: "Insufficient account balance. Please top up your account, then retry.",
+    retryable: false,
+  },
+  {
+    code: "MODEL_UNAVAILABLE",
+    category: "model",
+    // The selected managed model is gone from the gateway — e.g. its provider
+    // was removed server-side, so the gateway answers 404 "model provider not
+    // configured". MUST precede MODEL_CONNECTION_FAILED so the broad "API Error:"
+    // / 404 catch there does not relabel a removed model as a network drop.
+    // Retryable: the session layer refreshes config on this, which drops the
+    // dead preset and falls the active selection back to a delivered model.
+    test: /model provider not configured|provider not configured|model provider not found|model gateway disabled|no model provider|selected model|pick a different model|model .*does not exist|model .*not found|model .*not supported|invalid model|may not have access to it|\b404\b/i,
+    message: "The selected model is no longer available. Configuration has been refreshed and the default model restored — please retry.",
+    retryable: true,
+  },
+  {
     code: "MODEL_CONNECTION_FAILED",
     category: "model",
     test: /API Error:|Connection to the model service was interrupted|model service .*interrupted|socket connection was closed|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network error|timed? out|timeout|502|503|504|500\b|Internal Server Error|upstream.*error|backend.*error|aborted|request.*failed|connection.*refused|connection.*reset|SSL|TLS|certificate|DNS|ENOTFOUND|ECONNABORTED/i,
@@ -79,24 +105,10 @@ const ERROR_PATTERNS = [
     retryable: false,
   },
   {
-    code: "QUOTA_EXCEEDED",
-    category: "model",
-    test: /quota|insufficient.*credit|credit.*insufficient|balance|billing|account.*disabled|account.*suspended|payment.*required/i,
-    message: "Insufficient model quota or billing issue. Please check your service quota, then retry.",
-    retryable: false,
-  },
-  {
     code: "RATE_LIMITED",
     category: "model",
     test: /rate.?limit|429|too many requests|too many.*request|throttled|slow down/i,
     message: "Too many requests. Please try again in a moment.",
-    retryable: true,
-  },
-  {
-    code: "MODEL_UNAVAILABLE",
-    category: "model",
-    test: /selected model|pick a different model|model .*does not exist|model .*not found|model .*not supported|invalid model|may not have access to it/i,
-    message: "The selected model is currently unavailable. Configuration has been refreshed. Please try again later or switch to a different model.",
     retryable: true,
   },
   {

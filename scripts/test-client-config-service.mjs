@@ -189,6 +189,101 @@ assert.notEqual(managedEnv.LILY_API_KEY, "$LILY_GATEWAY_TOKEN");
 assert.equal(managedEnv.LILY_OPENCODE_PROTOCOL, undefined, "legacy managed config should remain untouched");
 assert.equal(verifyModelGatewayToken(managedEnv.LILY_API_KEY, "deepseek").ok, true);
 assert.equal(directEnv.LILY_API_KEY, "sk-direct", "direct provider keys should not be replaced");
+assert.equal(
+  verifyModelGatewayToken(managedEnv.LILY_API_KEY, "deepseek").licenseId,
+  "lic_client_config_test",
+  "without an explicit scope override the client-reported licenseId is signed as-is",
+);
+
+// The gateway verify path is intentionally lean (signature + expiry only), so a
+// token's licenseId is trusted downstream for entitlement scoping. It MUST come
+// from the server-validated scope, never the raw client-reported licenseId.
+const scopedRuntimeConfig = withGatewayRuntimeConfig(
+  {
+    models: {
+      presets: [
+        {
+          id: "managed",
+          env: {
+            LILY_API_BASE_URL: "/llm/deepseek/v1/messages",
+            LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
+          },
+        },
+      ],
+    },
+  },
+  request,
+  { deviceId: "dev_client_config_test", licenseId: "lic_stale_from_client" },
+  { publicBaseUrl: "https://lily.example.com/", licenseScope: "lic_server_validated" },
+);
+const scopedToken = verifyModelGatewayToken(
+  scopedRuntimeConfig.models.presets[0].env.LILY_API_KEY,
+  "deepseek",
+);
+assert.equal(scopedToken.ok, true);
+assert.equal(
+  scopedToken.licenseId,
+  "lic_server_validated",
+  "server-validated licenseScope must override the stale client-reported licenseId",
+);
+
+// An empty validated scope (device has no valid binding) must be honored — the
+// gateway then treats the token as unlicensed rather than trusting a stale id.
+const unscopedRuntimeConfig = withGatewayRuntimeConfig(
+  {
+    models: {
+      presets: [
+        {
+          id: "managed",
+          env: {
+            LILY_API_BASE_URL: "/llm/deepseek/v1/messages",
+            LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
+          },
+        },
+      ],
+    },
+  },
+  request,
+  { deviceId: "dev_client_config_test", licenseId: "lic_stale_from_client" },
+  { publicBaseUrl: "https://lily.example.com/", licenseScope: "" },
+);
+assert.equal(
+  verifyModelGatewayToken(
+    unscopedRuntimeConfig.models.presets[0].env.LILY_API_KEY,
+    "deepseek",
+  ).licenseId,
+  "",
+  "an empty validated scope must not fall back to the client-reported licenseId",
+);
+
+// A downloaded-but-not-logged-in device gets its server-issued trial window
+// signed into the gateway token, so the gateway can honor the configured trial.
+const trialRuntimeConfig = withGatewayRuntimeConfig(
+  {
+    models: {
+      presets: [
+        {
+          id: "managed",
+          env: {
+            LILY_API_BASE_URL: "/llm/deepseek/v1/messages",
+            LILY_API_KEY: "$LILY_GATEWAY_TOKEN",
+          },
+        },
+      ],
+    },
+  },
+  request,
+  { deviceId: "dev_trial_config_test", licenseId: "" },
+  { publicBaseUrl: "https://lily.example.com/", licenseScope: "", trialEndsAt: "2026-07-11T00:00:00.000Z" },
+);
+assert.equal(
+  verifyModelGatewayToken(
+    trialRuntimeConfig.models.presets[0].env.LILY_API_KEY,
+    "deepseek",
+  ).trialEndsAt,
+  "2026-07-11T00:00:00.000Z",
+  "the device trial window must be signed into the delivered gateway token",
+);
 
 const accountRuntimeConfig = withGatewayRuntimeConfig(
   {
@@ -321,6 +416,43 @@ assert.equal(
   "per-model limits must not leak to another model under the same provider",
 );
 assert.equal(deepseekManaged.runtime.env.DASHSCOPE_API_KEY, undefined, "raw DashScope key must NOT be delivered");
+
+// Default-provider drift: the configured default ("deepseek") has no key, so it
+// is filtered out of the menu. The delivered default must fall back to the only
+// available chat provider (dashscope) — deterministically, and with a single
+// ops-visible warning — rather than silently shipping an empty/garbage default.
+const warnings = [];
+const originalWarn = console.warn;
+console.warn = (...args) => warnings.push(args.join(" "));
+let driftDefault;
+try {
+  driftDefault = buildEnvManagedClientConfig(
+    {
+      modelGatewayDefaultProvider: "deepseek",
+      modelConfigDeliveryMode: "gateway",
+    },
+    {
+      dashscope: {
+        id: "dashscope",
+        type: "anthropic",
+        baseUrl: "https://dashscope.aliyuncs.com/apps/anthropic",
+        apiKey: "sk-test-dashscope-chat",
+        models: ["qwen3-coder-plus"],
+      },
+    },
+  );
+} finally {
+  console.warn = originalWarn;
+}
+assert.equal(
+  driftDefault.models.activePresetId,
+  "lily-managed:dashscope:gateway",
+  "when the configured default provider is unavailable the default falls back to an available provider",
+);
+assert.ok(
+  warnings.some((line) => line.includes("deepseek") && line.includes("dashscope")),
+  "an unavailable configured default provider must emit an ops-visible warning",
+);
 
 const vllmManaged = buildEnvManagedClientConfig(
   {

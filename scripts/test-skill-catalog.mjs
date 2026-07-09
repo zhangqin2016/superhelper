@@ -176,8 +176,12 @@ if (!globalGuide.includes("chat-native capability contracts") && !globalGuide.in
 if (!globalGuide.includes("Slow is not failure") && !globalGuide.includes("慢不是失败")) {
   throw new Error("AGENT guide must forbid downgrading a long-running task just because it is slow");
 }
-if (!globalGuide.includes("Do not run `skill lily-*`") && !globalGuide.includes("禁止执行 `skill lily-*`")) {
-  throw new Error("AGENT guide must prevent Lily platform skills from being invoked through OpenCode's native skill tool");
+if (
+  (!globalGuide.includes("Do not run native `skill <id>`") &&
+    !globalGuide.includes("禁止对这些平台能力执行原生 `skill <id>`")) ||
+  !globalGuide.includes("anthropics-*")
+) {
+  throw new Error("AGENT guide must prevent all Lily platform catalog skills from being invoked through OpenCode's native skill tool");
 }
 if (!globalGuide.includes("not OpenCode native skills") && !globalGuide.includes("不是 OpenCode 原生 skill")) {
   throw new Error("AGENT guide must distinguish Lily capability guides from OpenCode native skills");
@@ -186,8 +190,12 @@ const subagentGuide = skillManager.buildAgentSubagentPersona("en");
 if (!subagentGuide.includes("Lily Subagent Rules") || !subagentGuide.includes("Do not start another Task subagent")) {
   throw new Error(`subagent persona must carry Lily subtask rules: ${subagentGuide}`);
 }
-if (!subagentGuide.includes("not OpenCode native skills") || !subagentGuide.includes("Do not run `skill lily-*`")) {
-  throw new Error("subagent persona must prevent Lily platform skills from being invoked through OpenCode's native skill tool");
+if (
+  !subagentGuide.includes("not OpenCode native skills") ||
+  !subagentGuide.includes("Do not run native `skill <id>`") ||
+  !subagentGuide.includes("anthropics-*")
+) {
+  throw new Error("subagent persona must prevent all Lily platform catalog skills from being invoked through OpenCode's native skill tool");
 }
 if (!subagentGuide.includes("capability used") || !subagentGuide.includes("evidence")) {
   throw new Error(`subagent persona must return capability/evidence handoff: ${subagentGuide}`);

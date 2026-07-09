@@ -507,4 +507,52 @@ if (!resumeChanged || resumeRaw.sessions.proj1[0].agentResumeId !== "resume-old"
   }
 }
 
+// Legacy userData discovery must be name-agnostic (signature scan across
+// Roaming + LocalAppData), so a stale install under ANY past/unknown product
+// name is found — while unrelated app folders are left alone.
+{
+  const assert = require("node:assert/strict");
+  const { legacyUserDataRoots, looksLikeLilyUserDataRoot } = require(
+    path.join(__dirname, "../src/main/data-migration.js"),
+  );
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-legacy-scan-"));
+  const roaming = path.join(tmp, "Roaming");
+  const local = path.join(tmp, "Local");
+  const current = path.join(roaming, "Lily Workbench Current");
+  const mkSignature = (root) => {
+    fs.mkdirSync(path.join(root, "opencode-sessions"), { recursive: true });
+    fs.writeFileSync(path.join(root, "model-settings.json"), "{}");
+  };
+  mkSignature(current);
+  const oldUnknownName = path.join(roaming, "super-old-brand-name"); // NOT in the hardcoded list
+  mkSignature(oldUnknownName);
+  const localOld = path.join(local, "ai-super-terminal");
+  mkSignature(localOld);
+  const unrelated = path.join(roaming, "SomeOtherApp"); // marker file but no marker dir
+  fs.mkdirSync(unrelated, { recursive: true });
+  fs.writeFileSync(path.join(unrelated, "messages.db"), "");
+
+  assert.equal(looksLikeLilyUserDataRoot(oldUnknownName), true, "signature dir must be recognized regardless of name");
+  assert.equal(looksLikeLilyUserDataRoot(unrelated), false, "a lone marker file without a marker dir must not be treated as ours");
+
+  const prevUserData = process.env.LILY_USER_DATA_DIR;
+  const prevAppData = process.env.APPDATA;
+  const prevLocal = process.env.LOCALAPPDATA;
+  process.env.LILY_USER_DATA_DIR = current;
+  process.env.APPDATA = roaming;
+  process.env.LOCALAPPDATA = local;
+  try {
+    const roots = legacyUserDataRoots().map((r) => path.resolve(r));
+    assert.ok(roots.includes(path.resolve(oldUnknownName)), "must find a stale install under an unknown product name");
+    assert.ok(roots.includes(path.resolve(localOld)), "must scan LocalAppData, not just Roaming");
+    assert.ok(!roots.includes(path.resolve(current)), "must never migrate the current userData root into itself");
+    assert.ok(!roots.includes(path.resolve(unrelated)), "must not touch an unrelated app's folder");
+  } finally {
+    if (prevUserData === undefined) delete process.env.LILY_USER_DATA_DIR; else process.env.LILY_USER_DATA_DIR = prevUserData;
+    if (prevAppData === undefined) delete process.env.APPDATA; else process.env.APPDATA = prevAppData;
+    if (prevLocal === undefined) delete process.env.LOCALAPPDATA; else process.env.LOCALAPPDATA = prevLocal;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 console.log("data-migration: ok");

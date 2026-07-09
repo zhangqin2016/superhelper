@@ -152,6 +152,10 @@ function toOpenAiBody(body, provider) {
     top_p: body.top_p,
     stop: body.stop_sequences,
     stream: Boolean(body.stream),
+    // Ask OpenAI-compatible providers to append a final usage chunk to the
+    // stream so metered billing can reconcile against real prompt/completion
+    // tokens instead of a char-count estimate.
+    ...(body.stream ? { stream_options: { include_usage: true } } : {}),
     ...(tools?.length ? { tools } : {}),
   };
 }
@@ -194,6 +198,9 @@ export async function forwardOpenAiChatCompletions(provider, body) {
   const model = normalizeModelForProtocol(provider, payload.model || provider.model);
   if (model) payload.model = model;
   payload.max_tokens = resolveMaxTokens(payload, provider);
+  // Streamed passthrough: request the final usage chunk so metered billing can
+  // reconcile against real prompt/completion tokens.
+  if (payload.stream) payload.stream_options = { include_usage: true, ...(payload.stream_options || {}) };
   return fetch(target, {
     method: "POST",
     headers: {
@@ -233,7 +240,7 @@ function writeSse(reply, event, data) {
   reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-export async function pipeOpenAiStreamAsAnthropic(upstream, reply, body) {
+export async function pipeOpenAiStreamAsAnthropic(upstream, reply, body, { onUsage } = {}) {
   reply.raw.writeHead(upstream.status, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache",
@@ -263,6 +270,9 @@ export async function pipeOpenAiStreamAsAnthropic(upstream, reply, body) {
   const decoder = new TextDecoder();
   let buffer = "";
   let stopReason = "end_turn";
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let sawUsage = false;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -278,6 +288,12 @@ export async function pipeOpenAiStreamAsAnthropic(upstream, reply, body) {
         chunk = JSON.parse(payload);
       } catch {
         continue;
+      }
+      // Final include_usage chunk (choices may be empty) carries real usage.
+      if (chunk.usage) {
+        inputTokens = Number(chunk.usage.prompt_tokens || 0);
+        outputTokens = Number(chunk.usage.completion_tokens || 0);
+        sawUsage = true;
       }
       const choice = chunk.choices?.[0] || {};
       const text = choice.delta?.content || "";
@@ -295,13 +311,14 @@ export async function pipeOpenAiStreamAsAnthropic(upstream, reply, body) {
   writeSse(reply, "message_delta", {
     type: "message_delta",
     delta: { stop_reason: stopReason, stop_sequence: null },
-    usage: { output_tokens: 0 },
+    usage: { output_tokens: outputTokens },
   });
   writeSse(reply, "message_stop", { type: "message_stop" });
   reply.raw.end();
+  if (typeof onUsage === "function") onUsage({ inputTokens, outputTokens, seen: sawUsage });
 }
 
-export async function sendJsonFromOpenAi(upstream, reply, body) {
+export async function sendJsonFromOpenAi(upstream, reply, body, { onUsage } = {}) {
   const text = await upstream.text();
   let data;
   try {
@@ -310,5 +327,12 @@ export async function sendJsonFromOpenAi(upstream, reply, body) {
     return reply.code(upstream.status).send({ error: { type: "upstream_error", message: text } });
   }
   if (!upstream.ok) return reply.code(upstream.status).send(data);
+  if (typeof onUsage === "function" && data?.usage) {
+    onUsage({
+      inputTokens: Number(data.usage.prompt_tokens || 0),
+      outputTokens: Number(data.usage.completion_tokens || 0),
+      seen: true,
+    });
+  }
   return reply.code(upstream.status).send(anthropicMessageFromOpenAi(data, body));
 }

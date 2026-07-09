@@ -67,9 +67,30 @@ class FakeRunner extends EventEmitter {
     this.compactions.push(body);
     return Promise.resolve(this.compactResult);
   }
+  diagnostics() {
+    return {
+      sessionId: this.sessionId,
+      busy: this.busy,
+      modelRoute: this.spawnOptions.modelRouteAudit || null,
+    };
+  }
 }
 
 const sent = [];
+const runtimeDiagnosticReports = [];
+const serviceClientPath = require.resolve("../src/main/service-client.js");
+require.cache[serviceClientPath] = {
+  id: serviceClientPath,
+  filename: serviceClientPath,
+  loaded: true,
+  exports: {
+    reportUsage: async () => ({ ok: true }),
+    reportRuntimeDiagnostic: async (payload) => {
+      runtimeDiagnosticReports.push(payload);
+      return { ok: true, json: { id: "diag_test" } };
+    },
+  },
+};
 const fakeWindow = {
   isDestroyed: () => false,
   webContents: {
@@ -84,6 +105,7 @@ const session = { id: "s1", projectId: "p1", messages };
 const otherSession = { id: "s2", projectId: "p1", messages: [] };
 const runner = new FakeRunner("s1");
 const otherRunner = new FakeRunner("s2");
+runner.spawnOptions.modelRouteAudit = { route: "gateway", provider: "deepseek", model: "deepseek-v4-pro[1m]" };
 const terminatedSessions = [];
 const clearedResumeSessions = [];
 const completedQueuedRuns = [];
@@ -179,7 +201,7 @@ runner.emit("engine-session-invalidated", {
   reason: "Connection to the model service was interrupted.",
 });
 runner.busy = false;
-runner.emit("error", "Connection to the model service was interrupted. Please check your network and API settings, then retry.");
+runner.emit("error", "API Error: upstream socket closed while streaming token sk-testsecret123456789");
 await new Promise((resolve) => setTimeout(resolve, 0));
 ctx.eventBus.flush();
 allEvents = sent.flatMap((entry) => entry.payload?.events || []);
@@ -193,6 +215,17 @@ if (invalidatedTerminal?.type !== "turn.failed" || invalidatedTerminal.payload?.
 if (!clearedResumeSessions.includes("s1") || !terminatedSessions.includes("s1")) {
   throw new Error(`engine invalidation must clear resume and terminate this runner: cleared=${JSON.stringify(clearedResumeSessions)} terminated=${JSON.stringify(terminatedSessions)}`);
 }
+const modelFailureReport = runtimeDiagnosticReports.find((report) => report.normalizedKind === "MODEL_CONNECTION_FAILED");
+if (!modelFailureReport || modelFailureReport.eventSubtype !== "model_connection_failed") {
+  throw new Error(`model connection failure should upload runtime diagnostics: ${JSON.stringify(runtimeDiagnosticReports)}`);
+}
+if (JSON.stringify(modelFailureReport).includes("sk-testsecret123456789")) {
+  throw new Error(`runtime diagnostics must redact model secrets: ${JSON.stringify(modelFailureReport)}`);
+}
+if (modelFailureReport.trace?.modelRoute?.route !== "gateway") {
+  throw new Error(`runtime diagnostics should include the effective model route: ${JSON.stringify(modelFailureReport)}`);
+}
+runtimeDiagnosticReports.length = 0;
 clearedResumeSessions.length = 0;
 terminatedSessions.length = 0;
 sent.length = 0;
@@ -454,6 +487,79 @@ if (assistantMsg.record.meta?.contextOsScorecard?.maturity?.beat !== "incomplete
   throw new Error(`current implementation should not claim beat-Claude maturity without stretch evidence: ${JSON.stringify(assistantMsg.record.meta?.contextOsScorecard)}`);
 }
 
+sent.length = 0;
+messages.length = 0;
+runner.sentPayloads.length = 0;
+
+const pdfCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "提取 PDF 表格并检查版面", [
+  { path: path.join(tempUserData, "contract.pdf"), name: "contract.pdf" },
+], {
+  spawnEngine: false,
+  skipPreflight: true,
+  skipVision: true,
+  skipDocument: true,
+});
+if (!pdfCapabilityTurn.ok || !runner.isBusy()) {
+  throw new Error(`PDF capability turn should start: ${JSON.stringify(pdfCapabilityTurn)}`);
+}
+const pdfCapabilityPayload = runner.sentPayloads.at(-1);
+const recommendedSkills = pdfCapabilityPayload.trace?.capabilityContext?.recommendedSkillIds || [];
+if (!recommendedSkills.includes("anthropics-pdf") || !recommendedSkills.includes("lily-pdf-extraction-router")) {
+  throw new Error(`PDF capability trace should recommend PDF skills: ${JSON.stringify(pdfCapabilityPayload.trace?.capabilityContext)}\n${pdfCapabilityPayload.text}`);
+}
+if (recommendedSkills.includes("anthropics-xlsx")) {
+  throw new Error(`PDF capability trace must not recommend spreadsheet skills: ${JSON.stringify(pdfCapabilityPayload.trace?.capabilityContext)}\n${pdfCapabilityPayload.text}`);
+}
+runner.finish("PDF capability route selected.");
+ctx.eventBus.flush();
+sent.length = 0;
+messages.length = 0;
+runner.sentPayloads.length = 0;
+
+const mailCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "给我写一封邮件回复客户，语气专业", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+  skipVision: true,
+  skipDocument: true,
+});
+if (!mailCapabilityTurn.ok || !runner.isBusy()) {
+  throw new Error(`mail capability turn should start: ${JSON.stringify(mailCapabilityTurn)}`);
+}
+const mailCapabilityPayload = runner.sentPayloads.at(-1);
+const mailRecommendedSkills = mailCapabilityPayload.trace?.capabilityContext?.recommendedSkillIds || [];
+if (!mailRecommendedSkills.includes("lily-mail-assistant")) {
+  throw new Error(`mail capability trace should recommend mail assistant: ${JSON.stringify(mailCapabilityPayload.trace?.capabilityContext)}\n${mailCapabilityPayload.text}`);
+}
+if (mailRecommendedSkills.includes("lily-office-intent")) {
+  throw new Error(`mail capability trace must not fall back to Office routing: ${JSON.stringify(mailCapabilityPayload.trace?.capabilityContext)}\n${mailCapabilityPayload.text}`);
+}
+runner.finish("Mail capability route selected.");
+ctx.eventBus.flush();
+sent.length = 0;
+messages.length = 0;
+runner.sentPayloads.length = 0;
+
+const appCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "帮我做一个 CRM 管理后台应用，包含客户列表和统计看板", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+  skipVision: true,
+  skipDocument: true,
+});
+if (!appCapabilityTurn.ok || !runner.isBusy()) {
+  throw new Error(`app capability turn should start: ${JSON.stringify(appCapabilityTurn)}`);
+}
+const appCapabilityPayload = runner.sentPayloads.at(-1);
+const appRecommendedSkills = appCapabilityPayload.trace?.capabilityContext?.recommendedSkillIds || [];
+if (appRecommendedSkills[0] !== "lily-app-builder") {
+  throw new Error(`app capability trace should put app builder first: ${JSON.stringify(appCapabilityPayload.trace?.capabilityContext)}\n${appCapabilityPayload.text}`);
+}
+const appBuilderIndex = appCapabilityPayload.text.indexOf("- lily-app-builder ");
+const browserQaIndex = appCapabilityPayload.text.indexOf("- lily-browser-qa ");
+if (appBuilderIndex < 0 || browserQaIndex < 0 || appBuilderIndex > browserQaIndex) {
+  throw new Error(`app capability context should preserve recommendation order:\n${appCapabilityPayload.text}`);
+}
+runner.finish("App capability route selected.");
+ctx.eventBus.flush();
 sent.length = 0;
 messages.length = 0;
 runner.sentPayloads.length = 0;

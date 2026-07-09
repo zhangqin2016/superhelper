@@ -1,6 +1,8 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   normalizeAssistantOutput,
   sanitizeError,
@@ -40,8 +42,10 @@ const { EvidenceLedger } = require("./evidence-ledger");
 const { buildTurnPolicy } = require("./turn-policy");
 const {
   compactCapabilityContext,
+  recommendSkillCapabilityGraph,
   shouldInjectCapabilityContext,
 } = require("./capability-broker");
+const { PROJECT_ROOT } = require("./config");
 const { TurnRunCoordinator } = require("./turn-run-coordinator");
 const {
   addTaskEvidence,
@@ -62,6 +66,7 @@ const {
 
 const log = getLogger("turn-orchestrator");
 const MANAGED_MODEL_CONFIG_SEND_TIMEOUT_MS = 90_000;
+const RUNTIME_DIAGNOSTIC_TEXT_LIMIT = 4000;
 
 const TERMINAL_TYPES = new Set([
   "turn.completed",
@@ -127,6 +132,88 @@ function queueDispatchOptions(opts = {}) {
     queueOrigin,
     queueVisibility: opts.queueVisibility === "background" ? "background" : "composer",
   };
+}
+
+function redactDiagnosticString(value) {
+  return String(value || "")
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(/\bsk-[A-Za-z0-9][A-Za-z0-9._-]{8,}\b/g, "sk-[redacted]")
+    .replace(/\b(api[_-]?key|token|secret|password)\b\s*[:=]\s*["']?[^"',\s}]+/gi, "$1=[redacted]");
+}
+
+function compactDiagnosticValue(value, depth = 0) {
+  if (value == null) return value;
+  if (typeof value === "string") return redactDiagnosticString(value).slice(0, RUNTIME_DIAGNOSTIC_TEXT_LIMIT);
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (depth > 5) return "[truncated]";
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => compactDiagnosticValue(item, depth + 1));
+  if (typeof value !== "object") return String(value);
+  const out = {};
+  for (const [key, item] of Object.entries(value).slice(0, 80)) {
+    if (/api[_-]?key|token|secret|password|authorization/i.test(key)) {
+      out[key] = item ? "[redacted]" : item;
+    } else {
+      out[key] = compactDiagnosticValue(item, depth + 1);
+    }
+  }
+  return out;
+}
+
+function runnerDiagnostics(ctx, sessionId) {
+  try {
+    const runner = ctx.runnerPool?.get?.(sessionId);
+    return runner?.diagnostics?.() || null;
+  } catch (err) {
+    return { error: redactDiagnosticString(err?.message || String(err)) };
+  }
+}
+
+function currentModelRouteFallback() {
+  try {
+    const lilyEnv = require("./spawn-env").resolveLilyEnv();
+    return require("./model-route-audit").classifyModelRoute(lilyEnv);
+  } catch {
+    return null;
+  }
+}
+
+async function reportModelFailureDiagnostic(ctx, sessionId, opts = {}) {
+  const classified = opts.classified || classifyAssistantError(opts.raw || "");
+  if (classified?.category !== "model" && classified?.code !== "ENGINE_UNAVAILABLE") return;
+  const raw = redactDiagnosticString(opts.raw || opts.message || "");
+  const runner = runnerDiagnostics(ctx, sessionId);
+  const session = ctx.sessionManager?.findById?.(sessionId) || null;
+  try {
+    await require("./service-client").reportRuntimeDiagnostic({
+      eventType: "runtime",
+      eventSubtype: String(classified?.code || "ENGINE_ERROR").toLowerCase(),
+      normalizedKind: classified?.code || "ENGINE_ERROR",
+      severity: classified?.retryable === false ? "error" : "warning",
+      turnPhase: "failed",
+      sessionState: runner?.busy ? "busy" : "failed",
+      summary: String(classified?.message || sanitizeError(raw)).slice(0, 1000),
+      trace: compactDiagnosticValue({
+        schemaVersion: 1,
+        source: opts.source || "turn_orchestrator",
+        turnId: opts.turnId || null,
+        errorCode: classified?.code || "ENGINE_ERROR",
+        errorCategory: classified?.category || "",
+        retryable: classified?.retryable !== false,
+        rawError: raw,
+        payload: opts.payload || null,
+        runner,
+        modelRoute: runner?.modelRoute || currentModelRouteFallback(),
+        session: session ? {
+          id: session.id,
+          projectId: session.projectId || "",
+          messageCount: Array.isArray(session.messages) ? session.messages.length : null,
+          agentResumeId: session.agentResumeId || null,
+        } : null,
+      }),
+    });
+  } catch (err) {
+    log.warn("runtime model failure diagnostic upload failed: %s", err?.message || err);
+  }
 }
 
 function compactQueueItem(item) {
@@ -744,16 +831,23 @@ class TurnOrchestrator {
   }
 
   _handleRuntimeControl(sessionId, payload = {}) {
-    if (payload?.action !== "steer" || payload?.reason !== "lilyNativeSkillFallback") return;
+    if (
+      payload?.action !== "steer" ||
+      !["lilyNativeSkillFallback", "platformCapabilitySkillFallback"].includes(payload?.reason)
+    ) return;
     if (process.env.LILY_ENABLE_STEER === "0") return;
     const skillId = String(payload.skillId || "").trim();
     const text = String(payload.text || "").trim();
-    if (!/^lily-[a-z0-9-]+$/i.test(skillId) || !text) return;
+    if (!/^[a-z0-9][a-z0-9-]*$/i.test(skillId) || !text) return;
+    if (!fs.existsSync(path.join(PROJECT_ROOT, "resources", "skills-catalog", skillId, "SKILL.md"))) return;
     const state = this._state(sessionId);
     if (!state.turnId || state.terminalEmitted) return;
-    if (!state.lilyNativeSkillFallbackSteers) state.lilyNativeSkillFallbackSteers = new Set();
-    if (state.lilyNativeSkillFallbackSteers.has(skillId)) return;
-    state.lilyNativeSkillFallbackSteers.add(skillId);
+    if (!state.platformCapabilitySkillFallbackSteers) {
+      state.platformCapabilitySkillFallbackSteers = state.lilyNativeSkillFallbackSteers || new Set();
+      state.lilyNativeSkillFallbackSteers = state.platformCapabilitySkillFallbackSteers;
+    }
+    if (state.platformCapabilitySkillFallbackSteers.has(skillId)) return;
+    state.platformCapabilitySkillFallbackSteers.add(skillId);
     const runner = this.ctx.runnerPool?.get?.(sessionId);
     if (!runner?.isBusy?.() || typeof runner.steer !== "function") return;
     void runner.steer({
@@ -1331,6 +1425,7 @@ class TurnOrchestrator {
     let rehydrated = false;
     let shortFollowupContext = false;
     let contextMemory = null;
+    let capabilityContextTrace = null;
     {
       const { withSessionRehydratePrefix } = require("./session-bootstrap");
       const { readSessionSummary } = require("./session-memory");
@@ -1403,11 +1498,35 @@ class TurnOrchestrator {
       if (dependencyAdvisory?.text) platformContextParts.push(dependencyAdvisory.text);
       try {
         if (shouldInjectCapabilityContext({ text: rawUserText, files, dependencyAdvisory, turnPolicy })) {
-          const capabilityContext = compactCapabilityContext({ maxChars: 1800 });
+          const recommendedCapabilities = recommendSkillCapabilityGraph({
+            text: rawUserText,
+            files,
+            dependencyAdvisory,
+            turnPolicy,
+            maxSkills: 8,
+          });
+          const capabilityContext = compactCapabilityContext({
+            text: rawUserText,
+            files,
+            dependencyAdvisory,
+            turnPolicy,
+            maxChars: 1800,
+          });
+          capabilityContextTrace = {
+            injected: Boolean(capabilityContext),
+            recommendedSkillIds: recommendedCapabilities.map((skill) => skill.id),
+            requiredRuntimePackIds: [...new Set(recommendedCapabilities.flatMap((skill) => skill.requiredRuntimePacks || []))],
+          };
           if (capabilityContext) platformContextParts.push(capabilityContext);
         }
       } catch (err) {
         log.warn("capability context failed open: %s", err?.message || err);
+        capabilityContextTrace = {
+          injected: false,
+          error: err?.message || String(err),
+          recommendedSkillIds: [],
+          requiredRuntimePackIds: [],
+        };
       }
       if (platformContextParts.length) {
         engineText = addLayersToEngineText(engineText, {
@@ -1459,6 +1578,7 @@ class TurnOrchestrator {
               installingPackIds: dependencyAdvisory.installingPackIds,
             }
           : null,
+        capabilityContext: capabilityContextTrace,
         contextMemory: contextMemory
           ? {
               injected: Boolean(contextMemory.text),
@@ -1524,6 +1644,14 @@ class TurnOrchestrator {
               requiredPackIds: dependencyAdvisory.requiredPackIds,
               missingPackIds: dependencyAdvisory.missingPackIds,
               installingPackIds: dependencyAdvisory.installingPackIds,
+            }
+          : null,
+        capabilityContext: capabilityContextTrace
+          ? {
+              injected: capabilityContextTrace.injected,
+              recommendedSkillIds: capabilityContextTrace.recommendedSkillIds,
+              requiredRuntimePackIds: capabilityContextTrace.requiredRuntimePackIds,
+              error: capabilityContextTrace.error || "",
             }
           : null,
         taskContract: Boolean(state.taskContract),
@@ -1774,6 +1902,8 @@ class TurnOrchestrator {
       });
     } else if (failed) {
       const friendly = failure.message || normalized.text || sanitizeError(collectFailureTextFromState(state)) || "The assistant engine encountered an error. Please retry.";
+      const rawFailureText = collectFailureTextFromState(state) || normalized.text || payload?.error || payload?.message || friendly;
+      const failedTurnId = state.turnId;
       this._finalize(sessionId, "turn.failed", {
         failed: true,
         assistant: appendIncompleteTurnSummary(friendly, state, payload),
@@ -1783,6 +1913,17 @@ class TurnOrchestrator {
         source: payload?.source || "",
         exitCode: payload?.exitCode ?? null,
         ...terminalMeta,
+      });
+      void reportModelFailureDiagnostic(this.ctx, sessionId, {
+        source: "terminal_failed",
+        turnId: failedTurnId,
+        raw: rawFailureText,
+        classified: failure,
+        payload: {
+          source: payload?.source || "",
+          exitCode: payload?.exitCode ?? null,
+          engineMessageId: payload?.engineMessageId || null,
+        },
       });
     } else if (blockingProcessJobs.length) {
       const notice = runningProcessJobNotice(blockingProcessJobs);
@@ -1820,6 +1961,12 @@ class TurnOrchestrator {
     const raw = String(message || "");
     const classified = classifyAssistantError(raw);
     const text = classified?.message || sanitizeError(raw);
+    void reportModelFailureDiagnostic(this.ctx, sessionId, {
+      source: "runner_error",
+      turnId: state.turnId,
+      raw,
+      classified,
+    });
     this._finalize(sessionId, "turn.failed", {
       failed: true,
       assistant: text,

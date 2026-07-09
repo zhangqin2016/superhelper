@@ -22,7 +22,7 @@ async function callToolWithVisibilityCheck(contextProvider, toolName, args, deps
   const handler = typeof tool.handler === "function"
     ? tool.handler
     : async () => ({ ok: false, error: "TOOL_HANDLER_MISSING" });
-  return asTextJson(await handler(args || {}, context));
+  return asTextJson(await handler(args || {}, context, deps));
 }
 
 /**

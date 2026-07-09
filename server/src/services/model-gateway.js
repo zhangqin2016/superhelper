@@ -1,4 +1,4 @@
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { config } from "../config.js";
 import {
   forwardAnthropic,
@@ -16,7 +16,7 @@ import {
 } from "./model-gateway/openai-adapter.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
 import { discoveredModelMetadataSync } from "./model-gateway/model-discovery.js";
-import { chatTokenUsage, gatewayAccountRequired } from "./model-gateway/usage.js";
+import { chatTokenUsage, gatewayAccountRequired, scanRealTokenUsage, billableRealTokens } from "./model-gateway/usage.js";
 import { consumeEntitlement, fetchFeaturePricing } from "./wallet.js";
 
 export { signModelGatewayToken, verifyModelGatewayToken } from "./model-gateway/auth.js";
@@ -127,14 +127,18 @@ function providerContextForRequest(request, reply, defaultProvider = "deepseek")
   return { providerId, provider, token };
 }
 
+// Reserve (input-estimate) phase. Gates the request: rejects an empty wallet up
+// front and returns a billing context so the caller can RECONCILE against the
+// provider's real token usage once the response completes. Returns
+// { ok:false } (reply already sent) on rejection, or { ok:true, billing } where
+// billing is null for non-metered access (license / trial / anonymous).
 async function consumeChatUsage({ request, reply, token, providerId, provider, body }) {
   const account = gatewayAccountRequired({ token, enforcementEnabled: config.accountUsageEnforcementEnabled });
   if (!account.ok) {
     reply.code(402).send({ error: { type: "payment_required", message: account.code } });
-    return false;
+    return { ok: false };
   }
-  if (account.licenseAuthorized) return true;
-  if (account.anonymous) return true;
+  if (account.licenseAuthorized || account.trial || account.anonymous) return { ok: true, billing: null };
   const usage = chatTokenUsage({ ...body, model: body.model || provider.model || "" });
   const pricing = await fetchFeaturePricing({
     feature: usage.feature,
@@ -142,6 +146,7 @@ async function consumeChatUsage({ request, reply, token, providerId, provider, b
     model: usage.model,
     specKey: usage.specKey,
   });
+  const idempotencyKey = String(request.headers["x-lily-idempotency-key"] || "").trim().slice(0, 200);
   const consumed = await consumeEntitlement({
     userId: token.userId,
     deviceId: token.deviceId || "",
@@ -153,7 +158,7 @@ async function consumeChatUsage({ request, reply, token, providerId, provider, b
     resourceType: usage.resourceType,
     units: usage.units,
     unitCost: pricing.unitCost,
-    idempotencyKey: String(request.headers["x-lily-idempotency-key"] || "").trim().slice(0, 200),
+    idempotencyKey,
     metadata: { phase: "input_estimate" },
   });
   if (!consumed.ok) {
@@ -166,9 +171,76 @@ async function consumeChatUsage({ request, reply, token, providerId, provider, b
         availableUnits: consumed.availableUnits || 0,
       },
     });
-    return false;
+    return { ok: false };
   }
-  return true;
+  return {
+    ok: true,
+    billing: {
+      userId: token.userId,
+      deviceId: token.deviceId || "",
+      licenseId: token.licenseId || "",
+      providerId,
+      model: usage.model,
+      feature: usage.feature,
+      specKey: usage.specKey,
+      resourceType: usage.resourceType,
+      unitCost: pricing.unitCost,
+      estimateUnits: usage.units,
+      idempotencyKey,
+    },
+  };
+}
+
+// Reconcile phase: charge the DELTA between the provider's real usage
+// (input + output tokens) and the already-charged input estimate. Best-effort —
+// the estimate is a floor, so we never refund and never fail the turn here.
+async function reconcileChatUsage(billing, usage) {
+  if (!billing || !usage?.seen) return;
+  const realUnits = billableRealTokens(usage);
+  const extra = realUnits - Math.max(0, Math.trunc(Number(billing.estimateUnits || 0)));
+  if (extra <= 0) return;
+  try {
+    await consumeEntitlement({
+      userId: billing.userId,
+      deviceId: billing.deviceId,
+      licenseId: billing.licenseId,
+      provider: billing.providerId,
+      model: billing.model,
+      feature: billing.feature,
+      specKey: billing.specKey,
+      resourceType: billing.resourceType,
+      units: extra,
+      unitCost: billing.unitCost,
+      idempotencyKey: billing.idempotencyKey ? `${billing.idempotencyKey}:final` : "",
+      metadata: { phase: "usage_reconcile", inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
+    });
+  } catch {
+    // The input estimate was already charged; a failed reconcile must not break
+    // the response the user already received.
+  }
+}
+
+// Tee an upstream (SSE or JSON) body through to the client UNCHANGED while
+// scanning it for the provider's real token usage, then reconcile on completion.
+// Streaming is unaffected: every chunk is forwarded immediately.
+function meteredPassthrough(billing) {
+  const decoder = new TextDecoder();
+  let usage = null;
+  const meter = new Transform({
+    transform(chunk, _enc, cb) {
+      try { usage = scanRealTokenUsage(decoder.decode(chunk, { stream: true }), usage); } catch { /* forward regardless */ }
+      cb(null, chunk);
+    },
+  });
+  let settled = false;
+  const settle = () => {
+    if (settled) return;
+    settled = true;
+    reconcileChatUsage(billing, usage || { seen: false });
+  };
+  meter.on("end", settle);
+  meter.on("close", settle);
+  return meter;
 }
 
 async function handleGatewayRequest(request, reply) {
@@ -205,19 +277,29 @@ async function handleGatewayRequest(request, reply) {
     });
   }
 
-  if (upstream.ok && !(await consumeChatUsage({ request, reply, token, providerId, provider, body }))) return reply;
+  let billing = null;
+  if (upstream.ok) {
+    const gate = await consumeChatUsage({ request, reply, token, providerId, provider, body });
+    if (!gate.ok) return reply;
+    billing = gate.billing;
+  }
 
   if (provider.type === "anthropic") {
     reply.code(upstream.status);
     for (const [key, value] of upstream.headers.entries()) {
       if (["content-type", "cache-control"].includes(key.toLowerCase())) reply.header(key, value);
     }
-    return reply.send(upstream.body ? Readable.fromWeb(upstream.body) : null);
+    if (!upstream.body) return reply.send(null);
+    const source = Readable.fromWeb(upstream.body);
+    if (!billing) return reply.send(source);
+    // Meter real usage from the passthrough, then reconcile the wallet debit.
+    return reply.send(source.pipe(meteredPassthrough(billing)));
   }
 
+  const onUsage = billing ? (usage) => reconcileChatUsage(billing, usage) : null;
   if (!upstream.ok) return sendJsonFromOpenAi(upstream, reply, body);
-  if (body.stream) return pipeOpenAiStreamAsAnthropic(upstream, reply, body);
-  return sendJsonFromOpenAi(upstream, reply, body);
+  if (body.stream) return pipeOpenAiStreamAsAnthropic(upstream, reply, body, { onUsage });
+  return sendJsonFromOpenAi(upstream, reply, body, { onUsage });
 }
 
 function providerForRequest(request, reply) {
@@ -253,13 +335,21 @@ async function handleOpenAiChatCompletionsRequest(request, reply) {
     });
   }
 
-  if (upstream.ok && !(await consumeChatUsage({ request, reply, token, providerId, provider, body }))) return reply;
+  let billing = null;
+  if (upstream.ok) {
+    const gate = await consumeChatUsage({ request, reply, token, providerId, provider, body });
+    if (!gate.ok) return reply;
+    billing = gate.billing;
+  }
 
   reply.code(upstream.status);
   for (const [key, value] of upstream.headers.entries()) {
     if (["content-type", "cache-control"].includes(key.toLowerCase())) reply.header(key, value);
   }
-  return reply.send(upstream.body ? Readable.fromWeb(upstream.body) : null);
+  if (!upstream.body) return reply.send(null);
+  const source = Readable.fromWeb(upstream.body);
+  if (!billing) return reply.send(source);
+  return reply.send(source.pipe(meteredPassthrough(billing)));
 }
 
 async function handleCountTokensRequest(request, reply) {

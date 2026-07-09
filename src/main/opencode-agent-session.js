@@ -199,8 +199,30 @@ function isOversizedContextFailure(classified, raw = "") {
   return classified?.code === "CONTEXT_LIMIT" || /request entity too large|request too large|payload too large|body too large|413\b/i.test(String(raw || ""));
 }
 
+// The managed model this client is pinned to no longer exists on the gateway —
+// e.g. its provider was removed server-side (gateway answers 404 "model provider
+// not configured"), or the client is running on a stale config cache from an
+// older app-name install that still lists a since-removed model. This is
+// recoverable by the same refresh+restart path as a stale token: refreshing the
+// remote config drops the dead preset, and the active-preset resolver falls the
+// selection back to a delivered model (e.g. deepseek) — instead of dead-looping
+// to "connection interrupted".
+function isManagedGatewayModelUnavailable(classified, raw = "", spawnOptions = null) {
+  const text = String(raw || "");
+  if (/model provider not configured|provider not configured|model provider not found|model gateway disabled/i.test(text)) return true;
+  const audit = spawnOptions?.modelRouteAudit || {};
+  const gatewayRoute = audit.route === "gateway" || audit.keyKind === "gateway-token";
+  return classified?.code === "MODEL_UNAVAILABLE" && gatewayRoute;
+}
+
+function isManagedModelConfigStale(classified, raw = "", spawnOptions = null) {
+  return isManagedGatewayAuthFailure(classified, raw, spawnOptions)
+    || isManagedGatewayModelUnavailable(classified, raw, spawnOptions);
+}
+
 function isSafeReplayableModelFailure(classified, raw = "", spawnOptions = null) {
   return isManagedGatewayAuthFailure(classified, raw, spawnOptions)
+    || isManagedGatewayModelUnavailable(classified, raw, spawnOptions)
     || isRecoverableModelConnectionFailure(classified, raw)
     || isOversizedContextFailure(classified, raw);
 }
@@ -1453,17 +1475,17 @@ class OpencodeAgentSession extends EventEmitter {
       this._dispatchRetryCount += 1;
       const raw = transientClassificationText(pending?.message, pending);
       const classified = require("./agent-runner").classifyAssistantError(raw);
-      const refreshManagedAuth = isManagedGatewayAuthFailure(classified, raw, this.spawnOptions);
+      const refreshManagedConfig = isManagedModelConfigStale(classified, raw, this.spawnOptions);
       const retryPayload = buildAttachmentFallbackPromptPayload(
         this._pendingPromptPayload,
         this._sanitize(pending?.message || ""),
       );
       this._pendingPromptPayload = retryPayload;
       try {
-        if (refreshManagedAuth && !(await this._refreshManagedModelConfigForRetry(raw))) {
-          throw new Error(raw || "managed model gateway token invalid");
+        if (refreshManagedConfig && !(await this._refreshManagedModelConfigForRetry(raw))) {
+          throw new Error(raw || "managed model config refresh failed");
         }
-        const server = (refreshManagedAuth || isOversizedContextFailure(classified, raw))
+        const server = (refreshManagedConfig || isOversizedContextFailure(classified, raw))
           ? await this._restartEngineSessionForSafeReplay(raw || "oversized prompt request")
           : this._server;
         await server.sendPrompt(retryPayload);
@@ -1717,16 +1739,16 @@ class OpencodeAgentSession extends EventEmitter {
         this._sanitize(raw || "transient model transport failure"),
       );
       this._pendingPromptPayload = retryPayload;
-      const refreshManagedAuth = isManagedGatewayAuthFailure(classified, raw, this.spawnOptions);
-      if (refreshManagedAuth && !(await this._refreshManagedModelConfigForRetry(raw))) {
-        throw new Error(raw || "managed model gateway token invalid");
+      const refreshManagedConfig = isManagedModelConfigStale(classified, raw, this.spawnOptions);
+      if (refreshManagedConfig && !(await this._refreshManagedModelConfigForRetry(raw))) {
+        throw new Error(raw || "managed model config refresh failed");
       }
       const isolateOversizedContext = isOversizedContextFailure(classified, raw);
       const isolateDocumentAttachment =
         retryPayload.attachmentFallback && shouldIsolateAttachmentFallback(originalPayload);
       const isolateLegacyResume =
         !retryPayload.attachmentFallback && this._engineSessionWasResumed && isRecoverableModelConnectionFailure(classified, raw);
-      if (refreshManagedAuth || isolateOversizedContext || isolateDocumentAttachment || isolateLegacyResume) {
+      if (refreshManagedConfig || isolateOversizedContext || isolateDocumentAttachment || isolateLegacyResume) {
         await this._restartEngineSessionForSafeReplay(raw || "transient model transport failure");
       }
       const server = await this._ensureStarted();
@@ -2126,7 +2148,7 @@ class OpencodeAgentSession extends EventEmitter {
     const raw = transientClassificationText(message, cause);
     const classified = require("./agent-runner").classifyAssistantError(raw);
     const recoverable = isRecoverableModelConnectionFailure(classified, raw)
-      || isManagedGatewayAuthFailure(classified, raw, this.spawnOptions);
+      || isManagedModelConfigStale(classified, raw, this.spawnOptions);
     const dropResume = shouldDropResumeAfterVisibleFailure({
       classified,
       raw,

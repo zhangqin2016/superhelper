@@ -121,12 +121,63 @@ const APP_DATA_DIRS = [
   "session-summaries",
 ];
 
+// A distinctive Lily userData signature: one of our store/config files AND one
+// of our private subdirs. The combination is extremely unlikely in a non-Lily
+// folder, so a signature scan can find installs under ANY past/unknown product
+// name (and in LocalAppData) without a hardcoded name list — and without the
+// false-positive risk of matching an unrelated app's folder.
+const LEGACY_MARKER_FILES = ["sessions-index.json", "messages.db", "model-settings.json", "projects.json"];
+const LEGACY_MARKER_DIRS = ["opencode-sessions", "opencode-shared", "lily-config", "claude-config", "skills-cache"];
+
+function looksLikeLilyUserDataRoot(root) {
+  try {
+    const hasFile = LEGACY_MARKER_FILES.some((f) => fs.existsSync(path.join(root, f)));
+    const hasDir = LEGACY_MARKER_DIRS.some((d) => fs.existsSync(path.join(root, d)));
+    return hasFile && hasDir;
+  } catch {
+    return false;
+  }
+}
+
+// Parent dirs that can hold an Electron userData root: the current root's parent
+// (Roaming %APPDATA% on Windows / Application Support on macOS) plus %APPDATA%
+// and %LOCALAPPDATA% when present. Older builds and Squirrel copies land in
+// different ones, so we scan them all — but only these known roots, never a
+// full-disk crawl (slow + false positives).
+function legacyParentDirs() {
+  const parents = new Set([path.dirname(path.resolve(userDataPath()))]);
+  for (const env of [process.env.APPDATA, process.env.LOCALAPPDATA]) {
+    if (env) parents.add(path.resolve(env));
+  }
+  return [...parents].filter((p) => {
+    try { return fs.existsSync(p) && fs.statSync(p).isDirectory(); } catch { return false; }
+  });
+}
+
 function legacyUserDataRoots() {
-  const currentRoot = userDataPath();
+  const currentRoot = path.resolve(userDataPath());
+  const found = new Map();
+  const record = (root) => {
+    const key = path.resolve(root);
+    if (key === currentRoot || found.has(key)) return;
+    if (!fs.existsSync(root)) return;
+    found.set(key, root);
+  };
+  // 1) Known rename names in the current parent — guaranteed ours, fast path.
   const parent = path.dirname(currentRoot);
-  return LEGACY_USER_DATA_DIR_NAMES.map((name) => path.join(parent, name)).filter(
-    (root) => root !== currentRoot && fs.existsSync(root),
-  );
+  for (const name of LEGACY_USER_DATA_DIR_NAMES) record(path.join(parent, name));
+  // 2) Name-agnostic signature scan across Roaming + Local parents.
+  for (const dir of legacyParentDirs()) {
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const root = path.join(dir, entry.name);
+      if (path.resolve(root) === currentRoot || found.has(path.resolve(root))) continue;
+      if (looksLikeLilyUserDataRoot(root)) record(root);
+    }
+  }
+  return [...found.values()];
 }
 
 function readJsonSafe(filePath) {
@@ -1089,4 +1140,6 @@ module.exports = {
   mergeProjectsJson,
   mergeSessionsJson,
   forEachPersistedSession,
+  legacyUserDataRoots,
+  looksLikeLilyUserDataRoot,
 };

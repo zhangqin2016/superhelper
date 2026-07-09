@@ -190,6 +190,40 @@ function managedPresetId(providerId, deliveryMode, suffix = "") {
   return `lily-managed:${providerId}:${deliveryMode}${suffix}`;
 }
 
+// Warn at most once per (requested→chosen) pair so a standing misconfiguration
+// leaves ONE ops-visible line, not a per-request flood.
+const warnedDefaultProviderDrift = new Set();
+
+// Resolve which preset should be the delivered default. The configured default
+// provider wins when it is actually in the menu. When it is NOT (its API key was
+// never set, so it got filtered out), we must not SILENTLY ship an arbitrary
+// substitute as the default — ops chose that default deliberately. Fall back to
+// the highest-preference available preset (presets are already in preference
+// order) and emit one loud warning so the misconfiguration is observable instead
+// of surfacing to users as a broken default model.
+function resolveManagedActivePresetId(presets, preferredProviderId, deliveryMode) {
+  const list = Array.isArray(presets) ? presets : [];
+  const preferred = String(preferredProviderId || "").trim();
+  const exact = preferred
+    ? list.find((preset) => preset.id === managedPresetId(preferred, deliveryMode))
+      || list.find((preset) => preset.id.startsWith(`lily-managed:${preferred}:`))
+    : null;
+  if (exact) return exact.id;
+  const fallback = list[0]?.id || "";
+  if (preferred && fallback) {
+    const seenKey = `${preferred}->${fallback}`;
+    if (!warnedDefaultProviderDrift.has(seenKey)) {
+      warnedDefaultProviderDrift.add(seenKey);
+      console.warn(
+        `[model-config] configured default chat provider "${preferred}" is not available ` +
+          `(missing API key or not in the delivered menu); defaulting to "${fallback}" instead. ` +
+          `Configure that provider's key or set MODEL_GATEWAY_DEFAULT_PROVIDER to an available one.`,
+      );
+    }
+  }
+  return fallback;
+}
+
 function modelMetadata(provider, model) {
   const metadata = provider?.metadata && typeof provider.metadata === "object" ? provider.metadata : {};
   const modelId = String(model || provider?.model || "").trim();
@@ -436,10 +470,7 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
     .flatMap((provider) => providerPresets(provider, deliveryMode));
 
   const activeProviderId = serverConfig.modelGatewayDefaultProvider || "";
-  const activePresetId = modelPresets.find((preset) => preset.id === managedPresetId(activeProviderId, deliveryMode))?.id
-    || modelPresets.find((preset) => preset.id.startsWith(`lily-managed:${activeProviderId}:`))?.id
-    || modelPresets[0]?.id
-    || "";
+  const activePresetId = resolveManagedActivePresetId(modelPresets, activeProviderId, deliveryMode);
 
   // BYOK provider catalog: a rich, current list of public providers + their
   // endpoints/protocols/models (NO keys), sourced from models.dev and cached
@@ -673,10 +704,7 @@ export function expandModelProviderMenu(effectiveConfig, options = {}) {
   const { providers: _providers, activeProvider, ...restModels } = models;
   if (!presets.length) return { ...effectiveConfig, models: restModels };
   const active = String(activeProvider || directive[0]);
-  const activePresetId =
-    presets.find((preset) => preset.id === managedPresetId(active, deliveryMode))?.id ||
-    presets.find((preset) => preset.id.startsWith(`lily-managed:${active}:`))?.id ||
-    presets[0].id;
+  const activePresetId = resolveManagedActivePresetId(presets, active, deliveryMode);
   return { ...effectiveConfig, models: { ...restModels, source: "service", activePresetId, presets } };
 }
 
@@ -685,13 +713,27 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   const configuredBaseUrl = String(options.policyBaseUrl || options.publicBaseUrl || "").trim().replace(/\/+$/, "");
   const base = configuredBaseUrl || requestBaseUrl(request);
   const account = options.account && typeof options.account === "object" ? options.account : {};
+  // The gateway trusts whatever licenseId a token carries (verify stays lean —
+  // signature + expiry only). So the licenseId MUST be validated here, at sign
+  // time: prefer the server-resolved scope the route computed via
+  // validLicenseScope(); fall back to the client-reported value only when a
+  // caller does not supply one (admin preview, tests). Never sign a raw
+  // client-reported licenseId into a delivered token.
+  const licenseScope = typeof options.licenseScope === "string"
+    ? options.licenseScope
+    : String(input.licenseId || "");
+  // Server-issued free-trial expiry for this device (from devices.trial_ends_at).
+  // Signed into every gateway token so the gateway can grant the configured trial
+  // to downloaded-but-not-logged-in users instead of blocking them.
+  const trialEndsAt = options.trialEndsAt ? new Date(options.trialEndsAt).toISOString() : "";
   const signMediaToken = (providerId) =>
     signModelGatewayToken({
       deviceId: input.deviceId,
-      licenseId: input.licenseId || "",
+      licenseId: licenseScope,
       providerId,
       userId: account.userId || "",
       sessionId: account.sessionId || "",
+      trialEndsAt,
     });
 
   // Route media/search either direct or through the server-side proxies,
@@ -721,10 +763,11 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
       if (options.mediaDeliveryMode === "gateway") {
         const visionToken = signModelGatewayToken({
           deviceId: input.deviceId,
-          licenseId: input.licenseId || "",
+          licenseId: licenseScope,
           providerId: "vision",
           userId: account.userId || "",
           sessionId: account.sessionId || "",
+          trialEndsAt,
         });
         env.DASHSCOPE_BASE_URL = `${base}/llm/vision`;
         env.VISION_API_KEY = visionToken;
@@ -747,10 +790,11 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
         env.WEBSEARCH_IQS_API_URL = `${base}/llm/search`;
         env.WEBSEARCH_IQS_API_KEY = signModelGatewayToken({
           deviceId: input.deviceId,
-          licenseId: input.licenseId || "",
+          licenseId: licenseScope,
           providerId: "search",
           userId: account.userId || "",
           sessionId: account.sessionId || "",
+          trialEndsAt,
         });
       } else {
         env.WEBSEARCH_IQS_API_URL = config.webSearchIqsApiUrl;
@@ -875,10 +919,11 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
     if (!String(env.LILY_API_KEY || "").trim() || env.LILY_API_KEY === "$LILY_GATEWAY_TOKEN") {
       env.LILY_API_KEY = signModelGatewayToken({
         deviceId: input.deviceId,
-        licenseId: input.licenseId || "",
+        licenseId: licenseScope,
         providerId,
         userId: account.userId || "",
         sessionId: account.sessionId || "",
+        trialEndsAt,
       });
     }
   }

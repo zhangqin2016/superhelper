@@ -142,7 +142,7 @@ orch.ingest("s1", [{
   type: "runtime.control",
   payload: {
     action: "steer",
-    reason: "lilyNativeSkillFallback",
+    reason: "platformCapabilitySkillFallback",
     skillId: "lily-browser-qa",
     text: "Read resources/skills-catalog/lily-browser-qa/SKILL.md and continue.",
   },
@@ -162,13 +162,31 @@ orch.ingest("s1", [{
   type: "runtime.control",
   payload: {
     action: "steer",
-    reason: "lilyNativeSkillFallback",
+    reason: "platformCapabilitySkillFallback",
     skillId: "lily-browser-qa",
     text: "Duplicate should be ignored.",
   },
 }]);
 await new Promise((resolve) => setTimeout(resolve, 20));
 if (runner.steerCalls.length !== 1) throw new Error("runtime control auto-steer should be de-duped per skill");
-console.log("steer: native Lily skill fallback control ok");
+
+orch.ingest("s1", [{
+  type: "runtime.control",
+  payload: {
+    action: "steer",
+    reason: "platformCapabilitySkillFallback",
+    skillId: "anthropics-xlsx",
+    text: "Read resources/skills-catalog/anthropics-xlsx/SKILL.md and continue.",
+  },
+}]);
+await new Promise((resolve) => setTimeout(resolve, 20));
+if (runner.steerCalls.length !== 2) {
+  throw new Error(`runtime control should auto-steer for catalog-backed anthropics skills, got ${runner.steerCalls.length}`);
+}
+if (!String(runner.steerCalls[1]?.text || "").includes("anthropics-xlsx")) {
+  throw new Error(`runtime control steer should carry the catalog guide instruction: ${JSON.stringify(runner.steerCalls)}`);
+}
+
+console.log("steer: platform capability fallback control ok");
 
 console.log("test-turn-orchestrator-steer: ALL_OK");

@@ -19,6 +19,19 @@ const SKILLS = {
   runtimePacks: "lily-runtime-packs",
 };
 
+const EXECUTION_SURFACES = {
+  toolBroker: "tool_broker",
+  mailMcp: "mail_mcp",
+  learnedWebSystemMcp: "learned_web_system_mcp",
+  browserRuntime: "browser_runtime",
+  external: "external",
+};
+
+const MCP_SERVER_NAMES = {
+  toolBroker: "lily_tool_broker",
+  mail: "mail",
+};
+
 function asTextJson(value) {
   return {
     content: [{
@@ -39,8 +52,15 @@ function hasAllSkills(context, skillIds) {
   return (skillIds || []).every((id) => active.has(id));
 }
 
+function missingSkillIds(context, skillIds) {
+  const active = activeSkillSet(context);
+  return (skillIds || []).filter((id) => !active.has(id));
+}
+
 function unavailableHandler(code) {
-  return async () => ({ ok: false, error: code });
+  const handler = async () => ({ ok: false, error: code });
+  handler.unavailableCode = code;
+  return handler;
 }
 
 function mailAvailable(context) {
@@ -59,18 +79,148 @@ function isPlatformTool(tool) {
   );
 }
 
+function availabilityReason(context, tool) {
+  if (!context?.sessionId && !(context?.platformOnly && isPlatformTool(tool))) return "SESSION_REQUIRED";
+  if (!hasAllSkills(context, tool.requiredSkillIds)) return "SKILL_NOT_ACTIVE";
+  if (typeof tool.isAvailable === "function" && !tool.isAvailable(context)) {
+    if (tool.group === "mail") return "MAIL_BRIDGE_UNAVAILABLE";
+    if (tool.group === "browser") return "BROWSER_RUNTIME_UNAVAILABLE";
+    return "RUNTIME_UNAVAILABLE";
+  }
+  return "";
+}
+
+function executionSurfaceForTool(tool) {
+  if (tool?.executionSurface) return tool.executionSurface;
+  if (!tool?.handler?.unavailableCode) return EXECUTION_SURFACES.toolBroker;
+  return EXECUTION_SURFACES.external;
+}
+
+function mcpServerNameForTool(tool) {
+  if (tool?.mcpServerName) return tool.mcpServerName;
+  const surface = executionSurfaceForTool(tool);
+  if (surface === EXECUTION_SURFACES.toolBroker) return MCP_SERVER_NAMES.toolBroker;
+  return "";
+}
+
+function serverNameForLearnedSystemDir(draftDir) {
+  const base = path.basename(String(draftDir || "")).replace(/[^a-z0-9]+/gi, "_").toLowerCase();
+  return `web_${base || "system"}`.slice(0, 64);
+}
+
+function describeToolAvailability(context, tool) {
+  const reason = availabilityReason(context, tool);
+  const requiresSession = !isPlatformTool(tool);
+  const detail = {
+    name: tool.name,
+    group: tool.group,
+    description: tool.description || "",
+    requiredSkillIds: tool.requiredSkillIds || [],
+    missingSkillIds: missingSkillIds(context, tool.requiredSkillIds),
+    requiresSession,
+    sessionAvailable: Boolean(context?.sessionId),
+    readOnly: Boolean(tool.annotations?.readOnlyHint),
+    destructive: Boolean(tool.annotations?.destructiveHint),
+    brokerHandlerAvailable: !tool.handler?.unavailableCode,
+    brokerHandlerError: tool.handler?.unavailableCode || "",
+    executionSurface: executionSurfaceForTool(tool),
+    mcpServerName: mcpServerNameForTool(tool),
+    available: reason === "",
+    reason,
+  };
+  if (tool.group === "mail") {
+    detail.connectorStatusKey = "mailConnected";
+    detail.connectorStatusValue = context?.connectorStatus?.mailConnected === true;
+  }
+  if (tool.group === "browser") {
+    detail.runtimeStatusKey = "browserAvailable";
+    detail.runtimeStatusValue = context?.runtime?.browserAvailable === true;
+  }
+  return detail;
+}
+
+function runtimePackStatusForSkills(skillGraph, installedPacks) {
+  const { PACK_SPECS } = require("../runtime-pack-specs");
+  const installed = new Set(installedPacks || []);
+  const requiredByActiveSkills = [];
+  const missing = [];
+  for (const skill of Array.isArray(skillGraph) ? skillGraph : []) {
+    const required = Array.isArray(skill?.requiredRuntimePacks)
+      ? skill.requiredRuntimePacks.map(String).filter(Boolean)
+      : [];
+    if (!required.length) continue;
+    const itemMissing = required.filter((id) => !installed.has(id));
+    for (const id of itemMissing) {
+      if (!missing.includes(id)) missing.push(id);
+    }
+    requiredByActiveSkills.push({
+      skillId: skill.id,
+      required,
+      missing: itemMissing,
+    });
+  }
+  return {
+    requiredByActiveSkills,
+    missing,
+    missingDetails: missing.map((id) => {
+      const spec = PACK_SPECS[id] || {};
+      return {
+        id,
+        category: spec.category || "",
+        label: spec.label || { en: id, "zh-CN": id, ar: id },
+        description: spec.description || {},
+        sizeEstimate: spec.sizeEstimate || "",
+        installAction: {
+          tool: "runtime_pack_install",
+          args: { packId: id },
+          destructive: true,
+          requiresConfirmation: true,
+        },
+      };
+    }),
+  };
+}
+
+function resolveInstalledRuntimePackIds(deps = {}) {
+  if (typeof deps.installedRuntimePackIds === "function") return deps.installedRuntimePackIds;
+  return require("../runtime-pack-installer").installedRuntimePackIds;
+}
+
 const STATIC_TOOL_DEFINITIONS = [
   {
     id: "lily_capability_list",
     name: "lily_capability_list",
     group: "capabilities",
     requiredSkillIds: [],
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
     description: "List Lily platform capabilities available to this session, including skills, tools, runtime packs, and fail-open routes.",
-    inputSchema: {},
+    inputSchema: {
+      query: z.string().optional().describe("optional user task/query to rank relevant capability skills"),
+      files: z
+        .array(z.object({
+          name: z.string().optional(),
+          path: z.string().optional(),
+        }))
+        .optional()
+        .describe("optional referenced files for file-type-aware routing"),
+    },
     annotations: { readOnlyHint: true },
-    handler: async (_args, context) => {
-      const { listCapabilities } = require("../capability-broker");
-      const tools = STATIC_TOOL_DEFINITIONS
+    handler: async (args, context, deps = {}) => {
+      const { listCapabilities, listSkillCapabilityGraph, recommendSkillCapabilityGraph } = require("../capability-broker");
+      const focused = Boolean(args?.query || Array.isArray(args?.files));
+      const skillGraph = focused
+        ? recommendSkillCapabilityGraph({
+          text: args?.query || "",
+          files: args?.files || [],
+          activeSkillIds: context?.activeSkillIds || [],
+        })
+        : listSkillCapabilityGraph();
+      const installedPacks = focused ? [...resolveInstalledRuntimePackIds(deps)()].sort() : [];
+      const recommendationRuntimePacks = focused
+        ? runtimePackStatusForSkills(skillGraph, installedPacks)
+        : { requiredByActiveSkills: [], missing: [], missingDetails: [] };
+      const tools = allToolDefinitions(context, deps)
         .filter((tool) => tool.name !== "lily_capability_list" && tool.name !== "lily_capability_status")
         .filter((tool) => toolAllowed(context, tool))
         .map((tool) => ({
@@ -85,6 +235,15 @@ const STATIC_TOOL_DEFINITIONS = [
         sessionId: context?.sessionId || "",
         activeSkillIds: Array.isArray(context?.activeSkillIds) ? context.activeSkillIds : [],
         capabilities: listCapabilities(),
+        skillGraph,
+        runtimePacks: {
+          evaluated: focused,
+          installed: installedPacks,
+          missing: recommendationRuntimePacks.missing,
+          missingDetails: recommendationRuntimePacks.missingDetails,
+          requiredByRecommendedSkills: recommendationRuntimePacks.requiredByActiveSkills,
+          installToolAvailable: tools.some((tool) => tool.name === "runtime_pack_install"),
+        },
         tools,
       };
     },
@@ -94,15 +253,22 @@ const STATIC_TOOL_DEFINITIONS = [
     name: "lily_capability_status",
     group: "capabilities",
     requiredSkillIds: [],
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
     description: "Report session-scoped Lily capability status and explain which platform tools are available right now.",
     inputSchema: {},
     annotations: { readOnlyHint: true },
-    handler: async (_args, context) => {
-      const { installedRuntimePackIds } = require("../runtime-pack-installer");
-      const installedPacks = [...installedRuntimePackIds()].sort();
-      const tools = STATIC_TOOL_DEFINITIONS
+    handler: async (_args, context, deps = {}) => {
+      const { listSkillCapabilityGraph } = require("../capability-broker");
+      const installedPacks = [...resolveInstalledRuntimePackIds(deps)()].sort();
+      const active = activeSkillSet(context);
+      const activeSkillGraph = listSkillCapabilityGraph().filter((skill) => active.has(skill.id));
+      const runtimePackStatus = runtimePackStatusForSkills(activeSkillGraph, installedPacks);
+      const toolDetails = allToolDefinitions(context, deps)
         .filter((tool) => tool.name !== "lily_capability_status")
-        .filter((tool) => toolAllowed(context, tool))
+        .map((tool) => describeToolAvailability(context, tool));
+      const tools = toolDetails
+        .filter((tool) => tool.available)
         .map((tool) => tool.name)
         .sort();
       return {
@@ -110,13 +276,20 @@ const STATIC_TOOL_DEFINITIONS = [
         sessionId: context?.sessionId || "",
         permissionMode: context?.permissionMode || "",
         activeSkillIds: Array.isArray(context?.activeSkillIds) ? context.activeSkillIds : [],
+        activeSkillGraph,
         connectorStatus: context?.connectorStatus || {},
         runtime: context?.runtime || {},
         runtimePacks: {
+          evaluated: true,
           installed: installedPacks,
+          missing: runtimePackStatus.missing,
+          missingDetails: runtimePackStatus.missingDetails,
+          requiredByActiveSkills: runtimePackStatus.requiredByActiveSkills,
           installToolAvailable: tools.includes("runtime_pack_install"),
         },
         tools,
+        toolDetails,
+        unavailableTools: toolDetails.filter((tool) => !tool.available),
         policy: {
           dependencyInstall: "session_auto_with_confirmation",
           failOpen: true,
@@ -130,6 +303,8 @@ const STATIC_TOOL_DEFINITIONS = [
     name: "mail_list_accounts",
     group: "mail",
     requiredSkillIds: [SKILLS.mail],
+    executionSurface: EXECUTION_SURFACES.mailMcp,
+    mcpServerName: MCP_SERVER_NAMES.mail,
     description: "List connected mail accounts available in this session.",
     inputSchema: {},
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -141,6 +316,8 @@ const STATIC_TOOL_DEFINITIONS = [
     name: "mail_search",
     group: "mail",
     requiredSkillIds: [SKILLS.mail],
+    executionSurface: EXECUTION_SURFACES.mailMcp,
+    mcpServerName: MCP_SERVER_NAMES.mail,
     description: "Search a connected mailbox and return recent message envelopes.",
     inputSchema: {
       accountId: z.string().describe("account id from mail_list_accounts"),
@@ -159,6 +336,8 @@ const STATIC_TOOL_DEFINITIONS = [
     name: "mail_read",
     group: "mail",
     requiredSkillIds: [SKILLS.mail],
+    executionSurface: EXECUTION_SURFACES.mailMcp,
+    mcpServerName: MCP_SERVER_NAMES.mail,
     description: "Read a single message by uid from a connected mailbox.",
     inputSchema: {
       accountId: z.string().describe("account id from mail_list_accounts"),
@@ -174,6 +353,8 @@ const STATIC_TOOL_DEFINITIONS = [
     name: "mail_send",
     group: "mail",
     requiredSkillIds: [SKILLS.mail],
+    executionSurface: EXECUTION_SURFACES.mailMcp,
+    mcpServerName: MCP_SERVER_NAMES.mail,
     description: "Send an email from a connected account after host confirmation.",
     inputSchema: {
       accountId: z.string().describe("account id from mail_list_accounts"),
@@ -199,6 +380,8 @@ const STATIC_TOOL_DEFINITIONS = [
     name: "runtime_pack_list",
     group: "runtime-packs",
     requiredSkillIds: [],
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
     description: "List optional Lily dependency packs and their installed status.",
     inputSchema: {},
     annotations: { readOnlyHint: true },
@@ -223,6 +406,8 @@ const STATIC_TOOL_DEFINITIONS = [
     name: "runtime_pack_install",
     group: "runtime-packs",
     requiredSkillIds: [],
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
     description: "Install an optional Lily dependency pack from the server-resolved artifact URL.",
     inputSchema: {
       packId: z.string().describe("dependency pack id, for example pro-pdf"),
@@ -235,6 +420,7 @@ const STATIC_TOOL_DEFINITIONS = [
     name: "browser_open",
     group: "browser",
     requiredSkillIds: [SKILLS.browser],
+    executionSurface: EXECUTION_SURFACES.browserRuntime,
     description: "Open a URL in the broker-managed browser runtime.",
     inputSchema: {
       url: z.string().describe("URL to open"),
@@ -270,6 +456,8 @@ function learnedWebSystemTools(context, deps = {}) {
         name: tool.name,
         group: "learned-web-system",
         learnedSystemDir: draftDir,
+        executionSurface: EXECUTION_SURFACES.learnedWebSystemMcp,
+        mcpServerName: serverNameForLearnedSystemDir(draftDir),
         capabilityId: tool.capabilityId,
         requiredSkillIds: [path.basename(draftDir)],
         description: tool.description,
@@ -282,16 +470,17 @@ function learnedWebSystemTools(context, deps = {}) {
   return tools;
 }
 
+function allToolDefinitions(context, deps = {}) {
+  return [...STATIC_TOOL_DEFINITIONS, ...learnedWebSystemTools(context || {}, deps)];
+}
+
 function toolAllowed(context, tool) {
-  if (!context?.sessionId && !(context?.platformOnly && isPlatformTool(tool))) return false;
-  if (!hasAllSkills(context, tool.requiredSkillIds)) return false;
-  if (typeof tool.isAvailable === "function" && !tool.isAvailable(context)) return false;
-  return true;
+  return availabilityReason(context, tool) === "";
 }
 
 function buildBrokerTools(context, deps = {}) {
   if (!context || context.ok === false) return [];
-  return [...STATIC_TOOL_DEFINITIONS, ...learnedWebSystemTools(context, deps)]
+  return allToolDefinitions(context, deps)
     .filter((tool) => toolAllowed(context, tool));
 }
 

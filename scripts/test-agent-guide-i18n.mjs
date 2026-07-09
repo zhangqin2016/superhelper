@@ -127,22 +127,63 @@ function flattenStrings(value, prefix = "") {
   return [];
 }
 
+function readSkillEntriesForGuide(rootDir) {
+  if (!fs.existsSync(rootDir)) return [];
+  return fs
+    .readdirSync(rootDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const skillDir = path.join(rootDir, entry.name);
+      const manifestPath = path.join(skillDir, "skill.manifest.json");
+      const manifest = fs.existsSync(manifestPath)
+        ? JSON.parse(fs.readFileSync(manifestPath, "utf8"))
+        : { id: entry.name, name: entry.name, description: "" };
+      return { id: manifest.id || entry.name, skillDir, manifest };
+    });
+}
+
+function assertAgentGuideWithinStaticBudget(text, label) {
+  const maxBytes = skillManager.AGENT_GUIDE_MAX_BYTES;
+  assert.equal(typeof maxBytes, "number", "skill-manager must export AGENT_GUIDE_MAX_BYTES");
+  assert.ok(maxBytes > 0, "AGENT_GUIDE_MAX_BYTES must be positive");
+  const bytes = Buffer.byteLength(text, "utf8");
+  assert.ok(
+    bytes <= maxBytes,
+    `${label} is ${bytes} bytes, above AGENT_GUIDE_MAX_BYTES=${maxBytes}`,
+  );
+}
+
+const allLocalGuideSkills = [
+  ...readSkillEntriesForGuide(skillsDir),
+  ...readSkillEntriesForGuide(skillsCatalogDir),
+];
+
 const enGuide = skillManager.buildAgentGuideContent([], "en");
 assert.match(enGuide, /Reply in the primary language of the user's latest message/);
 assert.match(enGuide, /do not invent global skills or describe project memory as a skill/i);
 assert.doesNotMatch(enGuide, /Reply in English by default/);
 assertNoLocalizedGuideLeak(enGuide, "English agent guide");
 assertNoStaticDependencyClaims(enGuide, "English agent guide");
+assertAgentGuideWithinStaticBudget(enGuide, "English base agent guide");
 
 const arGuide = skillManager.buildAgentGuideContent([], "ar");
 assert.match(arGuide, /آخر رسالة من المستخدم/);
 assert.doesNotMatch(arGuide, /استخدم العربية افتراضياً/);
 assertNoLocalizedGuideLeak(arGuide, "Arabic agent guide");
 assertNoStaticDependencyClaims(arGuide, "Arabic agent guide");
+assertAgentGuideWithinStaticBudget(arGuide, "Arabic base agent guide");
 
 const zhGuide = skillManager.buildAgentGuideContent([], "zh-CN");
 assert.match(zhGuide, /禁止编造“全局技能”或把项目记忆误说成技能/);
 assertNoStaticDependencyClaims(zhGuide, "Chinese agent guide");
+assertAgentGuideWithinStaticBudget(zhGuide, "Chinese base agent guide");
+
+for (const locale of ["en", "zh-CN", "ar"]) {
+  assertAgentGuideWithinStaticBudget(
+    skillManager.buildAgentGuideContent(allLocalGuideSkills, locale),
+    `${locale} agent guide with all local skills`,
+  );
+}
 
 const mediaSettings = require("../src/main/media-provider-settings.js");
 const searchSettings = require("../src/main/search-settings.js");
@@ -229,6 +270,11 @@ assert.match(providerGuideZh, /当前用户选择的服务商/, "agent guide mus
 assert.match(providerGuideZh, /图片生成: `lily`/, "agent guide must expose usable selected image provider");
 assert.match(providerGuideZh, /视频生成: `lily`/, "agent guide must expose usable selected video provider");
 assert.match(providerGuideZh, /语音生成: `lily`/, "agent guide must expose usable selected speech provider");
+assertAgentGuideWithinStaticBudget(providerGuideZh, "Chinese provider agent guide");
+assertAgentGuideWithinStaticBudget(
+  skillManager.buildAgentGuideContent(allLocalGuideSkills, "zh-CN"),
+  "Chinese provider agent guide with all local skills",
+);
 assert.match(providerGuideZh, /width: number; optional; default `512`/, "agent guide must expose video contract width");
 assert.match(providerGuideZh, /frames: number; optional; default `17`/, "agent guide must expose video contract frames");
 assert.match(providerGuideZh, /voice: string; optional; default `aiden`/, "agent guide must expose speech contract defaults");

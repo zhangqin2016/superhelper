@@ -222,7 +222,7 @@ function buildRuntimePackAdvisory(preflight = {}) {
     "Do not block the user turn for dependency installation. Continue the task and choose the best route yourself.",
     missing ? `Missing dependency pack(s): ${missing}.` : "",
     installing ? `Dependency pack(s) already installing: ${installing}. If needed, observe progress before retrying that capability.` : "",
-    "When a pack is truly needed, prefer Lily's runtime_pack_list/runtime_pack_install tools if available. Otherwise read the lily-runtime-packs guide and run its scripts/manage_runtime_pack.py script; do not invoke OpenCode native `skill lily-runtime-packs`. Run long installs through lily_process_jobs so progress stays observable.",
+    "When a pack is truly needed, prefer Lily's runtime_pack_list/runtime_pack_install tools if available. Otherwise read the lily-runtime-packs guide and run its scripts/manage_runtime_pack.py script; do not invoke OpenCode native `skill <id>` for platform catalog skills. Run long installs through lily_process_jobs so progress stays observable.",
     "If installation fails, no artifact exists, or the pack is unnecessary for the specific answer, use built-in file intelligence, bundled Python/Node tools, system tools, direct source inspection, or another safe fallback. Do not ask the user to manually install dependencies unless every Lily-managed route failed.",
   ].filter(Boolean).join("\n");
 }

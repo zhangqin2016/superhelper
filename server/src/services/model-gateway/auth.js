@@ -15,6 +15,7 @@ export function signModelGatewayToken({
   providerId = "",
   userId = "",
   sessionId = "",
+  trialEndsAt = "",
   expiresAt = "",
 }) {
   const ttlMs = Math.max(60, config.modelGatewayTokenTtlSeconds || 3600) * 1000;
@@ -24,6 +25,10 @@ export function signModelGatewayToken({
     providerId: String(providerId || ""),
     userId: String(userId || ""),
     sessionId: String(sessionId || ""),
+    // Server-issued free-trial expiry for un-logged-in / unlicensed devices. The
+    // gateway honors it (tokenTrialActive) so the configured trial actually
+    // grants model access instead of being display-only.
+    trialEndsAt: String(trialEndsAt || ""),
     expiresAt: expiresAt || new Date(Date.now() + ttlMs).toISOString(),
   };
   const encoded = base64urlEncode(stableStringify(payload));

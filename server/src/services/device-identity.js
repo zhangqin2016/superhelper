@@ -108,10 +108,13 @@ function licenseTime(value) {
 
 export function chooseValidLicenseScope(bindings = [], requestedLicenseId = "", nowMs = Date.now()) {
   const requested = String(requestedLicenseId || "").trim();
+  // Any binding on THIS device that is currently active (binding + license) and
+  // not expired. Note we do NOT drop non-requested bindings here — an activated
+  // device must be able to fall back to its own other valid license when the
+  // client's cached licenseId is stale (renewed/rebound card).
   const valid = bindings
     .filter((binding) => {
       if (!binding?.license_id) return false;
-      if (requested && binding.license_id !== requested) return false;
       if (binding.binding_status !== "active" || binding.license_status !== "active") return false;
       return licenseTime(binding.expires_at) > nowMs;
     })
@@ -120,12 +123,19 @@ export function chooseValidLicenseScope(bindings = [], requestedLicenseId = "", 
       if (lastSeenDelta) return lastSeenDelta;
       return licenseTime(b.activated_at) - licenseTime(a.activated_at);
     });
-  return String(valid[0]?.license_id || "");
+  // Honor the client's requested license when it is still valid; otherwise fall
+  // back to the device's best remaining valid binding. Guarantee: an activated
+  // device is never denied just because its cached licenseId went stale.
+  const preferred = requested ? valid.find((binding) => binding.license_id === requested) : null;
+  return String((preferred || valid[0])?.license_id || "");
 }
 
 export async function validLicenseScope(input) {
   const licenseId = String(input.licenseId || "").trim();
-  let query = db
+  // Always load ALL of the device's bindings (never pre-filter to the requested
+  // licenseId at the DB level) so chooseValidLicenseScope can fall back to the
+  // device's other valid license when the client's cached id is stale.
+  const bindings = await db
     .selectFrom("license_devices")
     .leftJoin("licenses", "licenses.id", "license_devices.license_id")
     .select([
@@ -136,12 +146,10 @@ export async function validLicenseScope(input) {
       "licenses.status as license_status",
       "licenses.expires_at",
     ])
-    .where("license_devices.device_id", "=", input.deviceId);
-  if (licenseId) query = query.where("license_devices.license_id", "=", licenseId);
-  const bindings = await query
+    .where("license_devices.device_id", "=", input.deviceId)
     .orderBy("license_devices.last_seen_at", "desc")
     .orderBy("license_devices.activated_at", "desc")
-    .limit(licenseId ? 1 : 10)
+    .limit(10)
     .execute();
   return chooseValidLicenseScope(bindings, licenseId);
 }

@@ -28,6 +28,11 @@ const root = path.resolve(new URL("..", import.meta.url).pathname);
 const orchestratorSource = fs.readFileSync(path.join(root, "src/main/turn-orchestrator.js"), "utf8");
 assert.ok(orchestratorSource.includes("compactCapabilityContext"));
 assert.match(orchestratorSource, /platformContextParts\.push\(capabilityContext\)/);
+assert.match(
+  orchestratorSource,
+  /compactCapabilityContext\(\{\s*text:\s*rawUserText,\s*files,/s,
+  "turn orchestrator must pass the current task text/files so capability context is focused, not generic",
+);
 
 const composerSource = fs.readFileSync(path.join(root, "src/renderer/modules/composer.js"), "utf8");
 assert.doesNotMatch(composerSource, /runtime-pack-preflight-ui/);

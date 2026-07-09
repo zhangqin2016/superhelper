@@ -91,6 +91,10 @@ async function resolveEffectiveConfig(input, options = {}) {
     effectiveConfig,
     configVersion: latest ? new Date(latest).toISOString() : "packaged",
     appliedProfileIds: matching.map((profile) => profile.id),
+    // Server-validated license scope (may be "" when the device has no valid
+    // binding). Gateway tokens must be signed with THIS, not the raw
+    // client-reported input.licenseId — see withGatewayRuntimeConfig.
+    licenseScope: licenseId,
   };
 }
 
@@ -160,6 +164,8 @@ export function registerPublicClientConfigRoutes(app) {
       mediaDeliveryMode,
       modelDeliveryMode,
       account,
+      licenseScope: resolved.licenseScope,
+      trialEndsAt: device?.trial_ends_at || "",
     });
     const selectedMedia = {
       image: scopedPreview.media?.image?.default || "",
@@ -183,6 +189,8 @@ export function registerPublicClientConfigRoutes(app) {
       modelDeliveryMode,
       account,
       mediaContracts,
+      licenseScope: resolved.licenseScope,
+      trialEndsAt: device?.trial_ends_at || "",
     });
     const payload = {
       schemaVersion: 1,

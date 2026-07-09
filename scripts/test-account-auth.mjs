@@ -238,4 +238,35 @@ assert.equal(gatewayUsage.gatewayAccountRequired({ token: verifiedGatewayToken, 
 assert.equal(gatewayUsage.gatewayAccountRequired({ token: gatewayAuth.verifyModelGatewayToken(licenseToken, "deepseek"), enforcementEnabled: true }).ok, true);
 assert.equal(gatewayUsage.gatewayAccountRequired({ token: gatewayAuth.verifyModelGatewayToken(licenseToken, "deepseek"), enforcementEnabled: true }).licenseAuthorized, true);
 
+// Free trial: a downloaded-but-not-logged-in device with a signed, still-valid
+// trial window must be granted access even when usage enforcement is on —
+// otherwise the operator-configured trial (license_trial_days) is dead on arrival.
+const nowMs = Date.parse("2026-07-09T00:00:00.000Z");
+const activeTrialToken = gatewayAuth.verifyModelGatewayToken(
+  gatewayAuth.signModelGatewayToken({
+    deviceId: "dev_trial",
+    providerId: "deepseek",
+    trialEndsAt: "2026-07-11T00:00:00.000Z",
+    expiresAt: "2099-07-02T01:00:00.000Z",
+  }),
+  "deepseek",
+);
+assert.equal(activeTrialToken.trialEndsAt, "2026-07-11T00:00:00.000Z", "trial expiry is signed into and recovered from the gateway token");
+const activeTrial = gatewayUsage.gatewayAccountRequired({ token: activeTrialToken, enforcementEnabled: true, nowMs });
+assert.equal(activeTrial.ok, true, "an active trial device is allowed under enforcement");
+assert.equal(activeTrial.trial, true, "trial access is flagged (so usage stays free during the window, not wallet-debited)");
+
+const expiredTrialToken = gatewayAuth.verifyModelGatewayToken(
+  gatewayAuth.signModelGatewayToken({
+    deviceId: "dev_trial",
+    providerId: "deepseek",
+    trialEndsAt: "2026-07-01T00:00:00.000Z",
+    expiresAt: "2099-07-02T01:00:00.000Z",
+  }),
+  "deepseek",
+);
+const expiredTrial = gatewayUsage.gatewayAccountRequired({ token: expiredTrialToken, enforcementEnabled: true, nowMs });
+assert.equal(expiredTrial.ok, false, "an expired trial falls through to requiring login/activation");
+assert.equal(expiredTrial.code, "ACCOUNT_LOGIN_REQUIRED", "after the trial window the user must log in or activate");
+
 console.log("account auth and wallet helpers ok");

@@ -292,15 +292,38 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
     },
   }, nativeSkillState);
   assert(nativeSkillFail.drafts.some((draft) => draft.type === "tool.done"), "native Lily skill failure still records the failed tool");
-  assert(nativeSkillFail.drafts.some((draft) => draft.type === "engine.notice" && draft.payload.notice.code === "lilyNativeSkillFallback"),
+  assert(nativeSkillFail.drafts.some((draft) => draft.type === "engine.notice" && draft.payload.notice.code === "platformCapabilitySkillFallback"),
     "native Lily skill failure emits a visible fallback notice");
-  assert(nativeSkillFail.drafts.some((draft) => draft.type === "runtime.control" && draft.payload.reason === "lilyNativeSkillFallback"),
+  assert(nativeSkillFail.drafts.some((draft) => draft.type === "runtime.control" && draft.payload.reason === "platformCapabilitySkillFallback"),
     "native Lily skill failure emits an auto-steer recovery control");
   const nativeSkillDone = nativeSkillFail.drafts.find((draft) => draft.type === "tool.done");
   assert(nativeSkillDone.payload.content.includes("resources/skills-catalog/lily-browser-qa/SKILL.md"),
     "native Lily skill failure tells the agent to read the Lily capability guide");
   assert(nativeSkillDone.payload.content.includes("This native skill failure should not stop the task"),
     "native Lily skill failure must fail open instead of stopping the task");
+
+  const catalogSkillState = createOpencodeRuntimeState();
+  const catalogSkillFail = reduce("message.part.updated", {
+    part: {
+      type: "tool",
+      tool: "skill",
+      callID: "skill_anthropics_xlsx_old",
+      state: {
+        status: "error",
+        error: 'Skill "anthropics-xlsx" not found. Available skills: customize-opencode',
+        input: { name: "anthropics-xlsx" },
+      },
+    },
+  }, catalogSkillState);
+  assert(catalogSkillFail.drafts.some((draft) => draft.type === "engine.notice" && draft.payload.notice.code === "platformCapabilitySkillFallback"),
+    "native catalog skill failure emits a visible fallback notice");
+  assert(catalogSkillFail.drafts.some((draft) => draft.type === "runtime.control" && draft.payload.reason === "platformCapabilitySkillFallback"),
+    "native catalog skill failure emits an auto-steer recovery control");
+  const catalogSkillDone = catalogSkillFail.drafts.find((draft) => draft.type === "tool.done");
+  assert(catalogSkillDone.payload.content.includes("resources/skills-catalog/anthropics-xlsx/SKILL.md"),
+    "native catalog skill failure tells the agent to read the catalog capability guide");
+  assert(catalogSkillDone.payload.content.includes("This native skill failure should not stop the task"),
+    "native catalog skill failure must fail open instead of stopping the task");
 }
 
 // --- tool that goes straight to completed still works -----------------------
@@ -390,10 +413,33 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
     "native Lily skill failure explains the native/Lily boundary");
   assert(nativeSkillFailed.drafts[0].payload.content.includes("resources/skills-catalog/lily-browser-qa/SKILL.md"),
     "native Lily skill failure points to the Lily guide path");
-  assert(nativeSkillFailed.drafts[1].type === "engine.notice" && nativeSkillFailed.drafts[1].payload.notice.code === "lilyNativeSkillFallback",
+  assert(nativeSkillFailed.drafts[1].type === "engine.notice" && nativeSkillFailed.drafts[1].payload.notice.code === "platformCapabilitySkillFallback",
     "native Lily skill failure emits a fallback notice in v2 events");
   assert(nativeSkillFailed.drafts[2].type === "runtime.control" && nativeSkillFailed.drafts[2].payload.text.includes("Read tool"),
     "native Lily skill failure emits a recovery steer instruction in v2 events");
+
+  const catalogSkillState = createOpencodeRuntimeState();
+  reduce("session.next.tool.called", {
+    sessionID: "ses_1",
+    assistantMessageID: "msg_1",
+    callID: "skill_anthropics_pdf",
+    tool: "skill",
+    input: { name: "anthropics-pdf" },
+    title: "anthropics-pdf",
+  }, catalogSkillState);
+  const catalogSkillFailed = reduce("session.next.tool.failed", {
+    sessionID: "ses_1",
+    assistantMessageID: "msg_1",
+    callID: "skill_anthropics_pdf",
+    tool: "skill",
+    input: { name: "anthropics-pdf" },
+    content: [{ type: "text", text: 'Skill "anthropics-pdf" not found. Available skills: customize-opencode' }],
+    title: "anthropics-pdf",
+  }, catalogSkillState);
+  assert(catalogSkillFailed.drafts.some((draft) => draft.type === "engine.notice" && draft.payload.notice.code === "platformCapabilitySkillFallback"),
+    "native catalog skill failure emits a fallback notice in v2 events");
+  assert(catalogSkillFailed.drafts[0].payload.content.includes("resources/skills-catalog/anthropics-pdf/SKILL.md"),
+    "native catalog skill failure points to the catalog guide path in v2 events");
 }
 
 // --- OpenCode dual-write old+new tool events must not duplicate done --------

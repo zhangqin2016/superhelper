@@ -58,6 +58,8 @@ function normalizeSkillCapabilityContract(raw, fallback = {}) {
     kind: enumValue(source.kind, KINDS, enumValue(fallback.kind || fallback.capabilityLayer, KINDS, "workflow")),
     intents: uniqueStrings(source.intents),
     avoidIntents: uniqueStrings(source.avoidIntents),
+    matchHints: uniqueStrings(source.matchHints),
+    avoidHints: uniqueStrings(source.avoidHints),
     primaryTools: uniqueStrings(source.primaryTools),
     runtimeDependencies: uniqueStrings(source.runtimeDependencies),
     inputModes: uniqueStrings(source.inputModes).length ? uniqueStrings(source.inputModes) : DEFAULT_INPUT_MODES,

@@ -62,6 +62,23 @@ const managedGatewayAccountMissing = classifyAssistantError("Request failed: 402
 assert(managedGatewayAccountMissing?.code === "MANAGED_MODEL_AUTH_MISSING", "Lily gateway account/license missing is a managed-config auth failure");
 assert(managedGatewayAccountMissing?.retryable === true, "Lily gateway account/license missing can refresh config after activation/login");
 
+const entitlementInsufficient = classifyAssistantError("Request failed: 402 payment_required ENTITLEMENT_INSUFFICIENT");
+assert(entitlementInsufficient?.code === "QUOTA_EXCEEDED", "gateway balance/entitlement 402 is a quota failure, not a connection drop");
+assert(entitlementInsufficient?.retryable === false, "an empty balance is not fixed by blind retry");
+
+const balanceShellOnly = classifyAssistantError("API Error: 402");
+assert(balanceShellOnly?.code === "QUOTA_EXCEEDED", "a bare 'API Error: 402' shell must NOT be relabeled as a connection interruption");
+
+const accountLoginStillWins = classifyAssistantError("Request failed: 402 payment_required ACCOUNT_LOGIN_REQUIRED");
+assert(accountLoginStillWins?.code === "MANAGED_MODEL_AUTH_MISSING", "login/activation-required 402 still wins over the balance classifier");
+
+const providerNotConfigured = classifyAssistantError("API Error: 404 model provider not configured");
+assert(providerNotConfigured?.code === "MODEL_UNAVAILABLE", "a removed managed model (gateway 404 provider not configured) must NOT be relabeled as a connection interruption");
+assert(providerNotConfigured?.retryable === true, "a removed model is recoverable — the session layer refreshes config and falls back to the default");
+
+const bareGateway404 = classifyAssistantError("API Error: 404");
+assert(bareGateway404?.code === "MODEL_UNAVAILABLE", "a bare gateway 404 shell routes to model-unavailable (refresh+fallback), not connection-interrupted");
+
 const genericUnauthorized = classifyAssistantError("Request failed: 401 Unauthorized");
 assert(genericUnauthorized?.code === "AUTH_FAILED", "generic 401 remains a user/API-key auth failure");
 assert(genericUnauthorized?.retryable === false, "generic API auth failures are not blindly retried");

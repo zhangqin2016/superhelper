@@ -8,13 +8,18 @@ function pemEnv(name) {
   return String(process.env[name] || "").replace(/\\n/g, "\n");
 }
 
+// The packaged fallback for shared HMAC secrets. Fine for local/dev; a hard
+// failure in production, because anyone with the source can mint valid gateway
+// tokens (and forge signed cookies) against a server still using it.
+export const DEV_SHARED_SECRET = "development-session-secret-change-me";
+
 export const config = {
   port: Number(process.env.PORT || 3000),
   databaseUrl: process.env.DATABASE_URL || "",
   adminEmail: process.env.ADMIN_EMAIL || "admin@example.com",
   adminPassword: process.env.ADMIN_PASSWORD || "",
   adminToken: process.env.ADMIN_TOKEN || "",
-  sessionSecret: process.env.SESSION_SECRET || "development-session-secret-change-me",
+  sessionSecret: process.env.SESSION_SECRET || DEV_SHARED_SECRET,
   licensePrivateKey: pemEnv("LICENSE_PRIVATE_KEY"),
   licensePublicKey: pemEnv("LICENSE_PUBLIC_KEY"),
   configSigningPrivateKey: pemEnv("CONFIG_SIGNING_PRIVATE_KEY") || pemEnv("LICENSE_PRIVATE_KEY"),
@@ -27,8 +32,8 @@ export const config = {
   qiniuUploadUrl: process.env.QINIU_UPLOAD_URL || "https://upload.qiniup.com",
   publicBaseUrl: process.env.PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || "",
   webBaseUrl: process.env.WEB_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || process.env.PUBLIC_BASE_URL || "https://www.lilywb.cn",
-  userTokenPepper: process.env.USER_TOKEN_PEPPER || process.env.SESSION_SECRET || "development-session-secret-change-me",
-  smsCodePepper: process.env.SMS_CODE_PEPPER || process.env.SESSION_SECRET || "development-session-secret-change-me",
+  userTokenPepper: process.env.USER_TOKEN_PEPPER || process.env.SESSION_SECRET || DEV_SHARED_SECRET,
+  smsCodePepper: process.env.SMS_CODE_PEPPER || process.env.SESSION_SECRET || DEV_SHARED_SECRET,
   smsAliyunAccessKeyId: process.env.ALIYUN_SMS_ACCESS_KEY_ID || "",
   smsAliyunAccessKeySecret: process.env.ALIYUN_SMS_ACCESS_KEY_SECRET || "",
   smsAliyunSignName: process.env.ALIYUN_SMS_SIGN_NAME || "",
@@ -40,7 +45,7 @@ export const config = {
   accountFreeDays: Number(process.env.ACCOUNT_FREE_DAYS || 7),
   accountUsageEnforcementEnabled: process.env.ACCOUNT_USAGE_ENFORCEMENT !== "false",
   modelGatewayEnabled: process.env.MODEL_GATEWAY_ENABLED !== "false",
-  modelGatewayTokenSecret: process.env.MODEL_GATEWAY_TOKEN_SECRET || process.env.SESSION_SECRET || "development-session-secret-change-me",
+  modelGatewayTokenSecret: process.env.MODEL_GATEWAY_TOKEN_SECRET || process.env.SESSION_SECRET || DEV_SHARED_SECRET,
   modelGatewayTokenTtlSeconds: Number(process.env.MODEL_GATEWAY_TOKEN_TTL_SECONDS || 6 * 60 * 60),
   modelGatewayExpiredTokenGraceSeconds: Number(process.env.MODEL_GATEWAY_EXPIRED_TOKEN_GRACE_SECONDS || 0),
   modelGatewayClientToken: process.env.MODEL_GATEWAY_CLIENT_TOKEN || "",
@@ -134,5 +139,22 @@ export const config = {
 export function requireDatabaseUrl() {
   if (!config.databaseUrl) {
     throw new Error("DATABASE_URL is required");
+  }
+}
+
+// Fail-closed on boot: a production server must not run on the packaged dev
+// secret. The model-gateway token secret falls back to SESSION_SECRET, so
+// either one being unset (→ dev default) leaves gateway tokens forgeable.
+export function assertProductionSecrets(env = process.env) {
+  if (String(env.NODE_ENV || "").toLowerCase() !== "production") return;
+  const offenders = [];
+  if (config.sessionSecret === DEV_SHARED_SECRET) offenders.push("SESSION_SECRET");
+  if (config.modelGatewayTokenSecret === DEV_SHARED_SECRET) {
+    offenders.push("MODEL_GATEWAY_TOKEN_SECRET (or SESSION_SECRET)");
+  }
+  if (offenders.length) {
+    throw new Error(
+      `Refusing to start in production with the packaged dev secret. Set: ${offenders.join(", ")}.`,
+    );
   }
 }

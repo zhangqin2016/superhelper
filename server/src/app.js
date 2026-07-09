@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
-import { config } from "./config.js";
+import { config, assertProductionSecrets } from "./config.js";
 import { publicRoutes } from "./routes/public.js";
 import { adminRoutes } from "./routes/admin.js";
 import { modelGatewayRoutes } from "./services/model-gateway.js";
@@ -34,6 +34,7 @@ function checkRateLimit(request) {
 }
 
 export async function buildApp() {
+  assertProductionSecrets();
   const app = Fastify({
     logger: true,
     // Vision requests carry base64 images, and admin catalog uploads can carry workspace apps.

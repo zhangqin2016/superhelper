@@ -66,6 +66,7 @@
       "kind": "workflow",
       "intents": ["code.change", "code.create", "debug.fix", "automation.build"],
       "avoidIntents": ["office.only", "research.only"],
+      "matchHints": ["code change", "code create", "build dashboard", "web tool", "local app", "component implementation", "API integration", "实现组件", "接入接口", "改代码"],
       "primaryTools": ["workspace.files", "shell", "tests"],
       "inputModes": ["text", "workspace", "file"],
       "outputModes": ["workspace_change", "artifact", "text"],
@@ -77,6 +78,7 @@
       "kind": "workflow",
       "intents": ["app.create", "webpage.create", "tool.create", "script.create"],
       "avoidIntents": ["debug.existing_code_only"],
+      "matchHints": ["SaaS dashboard", "admin dashboard", "dashboard app", "web tool", "local app", "build dashboard", "create dashboard", "管理后台应用", "统计看板"],
       "primaryTools": ["workspace.files", "shell", "browser.preview"],
       "inputModes": ["text", "workspace", "image"],
       "outputModes": ["workspace_change", "artifact", "preview_url"],
@@ -140,6 +142,7 @@
     "lily-ui-quality": {
       "kind": "quality",
       "intents": ["ui.review", "frontend.visual_qa", "interaction.review"],
+      "matchHints": ["spacing hierarchy", "UI visual consistency", "interaction audit", "layout audit", "UI audit", "frontend visual QA", "间距层级", "UI 视觉一致性"],
       "primaryTools": ["browser.preview", "screenshot", "console.logs"],
       "inputModes": ["text", "workspace", "image"],
       "outputModes": ["issue_list", "workspace_change", "text"],
@@ -171,6 +174,7 @@
     "lily-prompt-enhancer": {
       "kind": "tool",
       "intents": ["prompt.enhance", "image.prompt", "video.prompt"],
+      "avoidHints": ["skill route", "which route", "should trigger", "routing eval", "intent eval", "触发哪个", "意图评估", "路由评估"],
       "primaryTools": ["prompt.builder"],
       "inputModes": ["text", "image"],
       "outputModes": ["prompt", "text"],
@@ -201,6 +205,7 @@
     "lily-stock-research": {
       "kind": "workflow",
       "intents": ["stock.analyze", "market.research", "financial.report"],
+      "matchHints": ["stock", "equity", "ticker", "ETF", "market cap", "stock market", "watchlist", "portfolio", "position", "exposure", "股票", "股价", "指数", "自选股", "持仓", "组合", "敞口", "市场复盘"],
       "primaryTools": ["market.data", "web.search", "runtime.python"],
       "inputModes": ["text", "ticker"],
       "outputModes": ["report", "artifact", "text"],
@@ -242,6 +247,7 @@
     "lily-intent-eval": {
       "kind": "quality",
       "intents": ["intent.evaluate", "routing.test", "prompt_regression"],
+      "matchHints": ["skill route", "which route", "should trigger", "routing eval", "intent eval", "prompt regression", "触发哪个", "意图评估", "路由评估"],
       "primaryTools": ["test.fixtures", "router.evaluator"],
       "inputModes": ["text", "fixture"],
       "outputModes": ["evaluation_report", "text"],
@@ -302,6 +308,7 @@
     "lily-engineering-rules": {
       "kind": "workflow",
       "intents": ["engineering.rules", "code.review_discipline", "delivery.quality"],
+      "matchHints": ["engineering discipline", "code review", "diff review", "missing tests", "bug risk", "overengineering", "over-design", "capability regression", "delivery quality", "minimal change", "verification before completion", "工程规范", "代码评审", "缺少测试", "过度设计", "能力退化"],
       "primaryTools": ["workspace.files", "tests"],
       "inputModes": ["text", "workspace"],
       "outputModes": ["text", "review"],

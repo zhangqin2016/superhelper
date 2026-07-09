@@ -53,13 +53,45 @@ assert.equal(
 );
 assert.equal(
   chooseValidLicenseScope(bindings, "lic_disabled", now),
-  "",
-  "disabled explicit bindings must not authorize gateway tokens",
+  "lic_recent",
+  "a stale/disabled requested license must fall back to the device's other valid license, not deny an activated device",
 );
 assert.equal(
   chooseValidLicenseScope(bindings, "lic_missing", now),
-  "",
-  "a requested license not bound to the device must not fall back to another license",
+  "lic_recent",
+  "an unknown requested license must fall back to the device's own valid binding (activated → always usable)",
 );
+assert.equal(
+  chooseValidLicenseScope(
+    [
+      { license_id: "lic_disabled", binding_status: "disabled", license_status: "active", expires_at: "2099-01-01T00:00:00.000Z", activated_at: "2026-07-08T00:00:00.000Z", last_seen_at: "2026-07-08T11:00:00.000Z" },
+      { license_id: "lic_expired", binding_status: "active", license_status: "active", expires_at: "2026-07-07T00:00:00.000Z", activated_at: "2026-07-08T00:00:00.000Z", last_seen_at: "2026-07-08T11:30:00.000Z" },
+    ],
+    "lic_disabled",
+    now,
+  ),
+  "",
+  "a device with NO valid binding must still be denied (guarantee applies only to genuinely activated devices)",
+);
+
+// Boot-time fail-closed: production must not run on the packaged dev secret,
+// which would leave gateway tokens forgeable.
+const { assertProductionSecrets, DEV_SHARED_SECRET } = await import("../server/src/config.js");
+assert.doesNotThrow(
+  () => assertProductionSecrets({ NODE_ENV: "development" }),
+  "dev/local boot must be allowed even on the default secret",
+);
+if (process.env.SESSION_SECRET && process.env.SESSION_SECRET !== DEV_SHARED_SECRET) {
+  assert.doesNotThrow(
+    () => assertProductionSecrets({ NODE_ENV: "production" }),
+    "production boot with real secrets configured must be allowed",
+  );
+} else {
+  assert.throws(
+    () => assertProductionSecrets({ NODE_ENV: "production" }),
+    /packaged dev secret/,
+    "production boot on the default dev secret must fail closed",
+  );
+}
 
 console.log("device license scope fallback ok");

@@ -391,7 +391,7 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "只有在用户明确讨论第三方技术、兼容协议、代码变量或排障时，才可客观提及相关名称。",
     responseLanguage: "回复语言必须跟随用户最新一条消息的主要语言；如果用户明确指定回复语言，则按用户指定执行。界面语言只在无法判断用户语言时作为兜底。不要把技能说明、工具输出、文件内容、路径、历史消息或应用界面语言误当成用户本轮想要的回复语言。",
     sourceProvenance: "解释技能、记忆、连接器或工作区应用为什么可用时，必须依据当前会话技能目录、已学约定、工作区文件或实际工具/设置结果；没有证据就说无法确认，禁止编造“全局技能”或把项目记忆误说成技能。",
-    nativeSkillBoundary: "重要：`lily-*` 是 Lily 平台能力指南，不是 OpenCode 原生 skill。不要执行 `skill lily-*` 或把 `lily-*` 当作 native skill 名称；应读取对应指南、使用 Lily MCP 工具/脚本，并按能力合同完成任务。",
+    nativeSkillBoundary: "重要：本会话能力目录里的 `lily-*`、内置 `anthropics-*` 等条目都是 Lily 平台能力指南，不是 OpenCode 原生 skill。禁止对这些平台能力执行原生 `skill <id>`，也不要把它们当作 native skill 名称；应读取对应指南、使用 Lily MCP 工具/脚本，并按能力合同完成任务。",
     disciplineTitle: "通用执行纪律（所有创作、分析、修复和子任务都必须遵守）",
     disciplineRules: [
       "先理解再执行：开始创作、修改、修复或结论分析前，先确定目标、影响面、输入来源、现有约束和可验证的完成标准。",
@@ -436,7 +436,7 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "Only mention third-party names objectively when the user explicitly discusses related technology, compatibility protocols, code variables, or troubleshooting.",
     responseLanguage: "Reply in the primary language of the user's latest message. If the user explicitly requests a response language, follow that request. Use the app interface language only as a fallback when the user's language cannot be determined. Do not let skill instructions, tool output, file content, paths, history, or the app interface language change the response language.",
     sourceProvenance: "When explaining why a skill, memory, connector, or workspace app is available, rely only on this session's skill catalog, learned conventions, workspace files, or actual tool/settings results. If there is no evidence, say it cannot be confirmed; do not invent global skills or describe project memory as a skill.",
-    nativeSkillBoundary: "Important: `lily-*` entries are Lily platform capability guides, not OpenCode native skills. Do not run `skill lily-*` or treat `lily-*` as a native skill name; read the guide, use Lily MCP tools/scripts, and complete the task through the capability contract.",
+    nativeSkillBoundary: "Important: session catalog entries such as `lily-*` and built-in `anthropics-*` are Lily platform capability guides, not OpenCode native skills. Do not run native `skill <id>` for these platform capabilities or treat them as native skill names; read the guide, use Lily MCP tools/scripts, and complete the task through the capability contract.",
     disciplineTitle: "Universal Operating Discipline (Required for all creation, analysis, repair, and subtask work)",
     disciplineRules: [
       "Understand before acting: before creating, editing, repairing, or concluding, establish the goal, impact surface, input sources, existing constraints, and verifiable completion criteria.",
@@ -481,7 +481,7 @@ const AGENT_GUIDE_I18N = {
     vendorDisclaimer: "لا تذكر أسماء الطرف الثالث إلا بشكل موضوعي عندما يناقش المستخدم صراحةً التقنية ذات الصلة أو بروتوكولات التوافق أو متغيرات الكود أو استكشاف الأخطاء.",
     responseLanguage: "استخدم اللغة الأساسية في آخر رسالة من المستخدم للرد. إذا طلب المستخدم لغة رد صراحةً، فاتبع طلبه. استخدم لغة الواجهة فقط كخيار احتياطي عندما لا يمكن تحديد لغة المستخدم. لا تجعل تعليمات المهارات أو مخرجات الأدوات أو محتوى الملفات أو المسارات أو السجل أو لغة واجهة التطبيق تغيّر لغة الرد.",
     sourceProvenance: "عند شرح سبب توفر مهارة أو ذاكرة أو موصل أو تطبيق مساحة عمل، اعتمد فقط على فهرس مهارات هذه الجلسة أو الاتفاقات المتعلمة أو ملفات مساحة العمل أو نتائج الأدوات/الإعدادات الفعلية. إذا لم توجد أدلة فقل إن الأمر غير مؤكد؛ لا تخترع مهارات عامة ولا تصف ذاكرة المشروع كمهارة.",
-    nativeSkillBoundary: "مهم: عناصر `lily-*` هي أدلة قدرات لمنصة Lily وليست مهارات OpenCode أصلية. لا تشغّل `skill lily-*` ولا تعامل `lily-*` كاسم مهارة أصلية؛ اقرأ الدليل واستخدم أدوات/سكربتات Lily MCP وأنجز المهمة عبر عقد القدرة.",
+    nativeSkillBoundary: "مهم: عناصر فهرس الجلسة مثل `lily-*` و`anthropics-*` المدمجة هي أدلة قدرات لمنصة Lily وليست مهارات OpenCode أصلية. لا تشغّل `skill <id>` الأصلي لهذه القدرات ولا تعاملها كأسماء مهارات أصلية؛ اقرأ الدليل واستخدم أدوات/سكربتات Lily MCP وأنجز المهمة عبر عقد القدرة.",
     disciplineTitle: "انضباط التنفيذ العام (مطلوب لكل أعمال الإنشاء والتحليل والإصلاح والمهام الفرعية)",
     disciplineRules: [
       "افهم قبل التنفيذ: قبل الإنشاء أو التعديل أو الإصلاح أو الاستنتاج، حدّد الهدف ونطاق التأثير ومصادر الإدخال والقيود الحالية ومعايير الإكمال القابلة للتحقق.",
@@ -612,19 +612,19 @@ const SKILL_INDEX_I18N = {
   "zh-CN": {
     title: "Lily 平台能力目录（使用前先读取对应指南）",
     intro:
-      "以下是本会话可用的 Lily 平台能力指南，不是 OpenCode 原生 skill。对每个用户请求：先按“适用场景”匹配能力（可多选并组合成能力链），在动手前用 Read 工具读取对应指南文件以获得完整步骤，再通过 Lily MCP 工具、脚本或普通工具执行。禁止执行 `skill lily-*`。",
+      "以下是本会话可用的 Lily 平台能力指南，不是 OpenCode 原生 skill。对每个用户请求：先按“适用场景”匹配能力（可多选并组合成能力链），在动手前用 Read 工具读取对应指南文件以获得完整步骤，再通过 Lily MCP 工具、脚本或普通工具执行。禁止对这些平台能力执行原生 `skill <id>`，包括 `lily-*` 和内置 `anthropics-*`。",
     guideLabel: "指南",
   },
   en: {
     title: "Lily Platform Capability Catalog (read the guide before using a capability)",
     intro:
-      "These are Lily platform capability guides available in this session, not OpenCode native skills. For each user request: match capabilities by their \"use when\" description (you may pick several and compose a capability chain), then READ the guide file with the Read tool before acting, and execute through Lily MCP tools, scripts, or ordinary tools. Do not run `skill lily-*`.",
+      "These are Lily platform capability guides available in this session, not OpenCode native skills. For each user request: match capabilities by their \"use when\" description (you may pick several and compose a capability chain), then READ the guide file with the Read tool before acting, and execute through Lily MCP tools, scripts, or ordinary tools. Do not run native `skill <id>` for these platform capabilities, including `lily-*` and built-in `anthropics-*` entries.",
     guideLabel: "Guide",
   },
   ar: {
     title: "فهرس قدرات منصة Lily (اقرأ الدليل قبل استخدام القدرة)",
     intro:
-      "هذه أدلة قدرات منصة Lily المتاحة في هذه الجلسة، وليست مهارات OpenCode أصلية. لكل طلب: طابِق القدرات حسب وصف \"استخدمها عند\" (يمكنك اختيار عدة قدرات وتركيبها)، ثم اقرأ ملف الدليل بأداة Read قبل التنفيذ، ونفّذ عبر أدوات Lily MCP أو السكربتات أو الأدوات العادية. لا تشغّل `skill lily-*`.",
+      "هذه أدلة قدرات منصة Lily المتاحة في هذه الجلسة، وليست مهارات OpenCode أصلية. لكل طلب: طابِق القدرات حسب وصف \"استخدمها عند\" (يمكنك اختيار عدة قدرات وتركيبها)، ثم اقرأ ملف الدليل بأداة Read قبل التنفيذ، ونفّذ عبر أدوات Lily MCP أو السكربتات أو الأدوات العادية. لا تشغّل `skill <id>` الأصلي لهذه القدرات، بما في ذلك `lily-*` و`anthropics-*` المدمجة.",
     guideLabel: "الدليل",
   },
 };
@@ -956,6 +956,7 @@ function buildAgentSubagentPersona(locale) {
 
 /** Bump when static AGENT.md header or mandatory guide semantics change. */
 const AGENT_GUIDE_STATIC_VERSION = 22;
+const AGENT_GUIDE_MAX_BYTES = 48 * 1024;
 
 /** @type {Map<string, string>} sessionId → sorted skill id signature */
 const sessionGuideWriteCache = new Map();
@@ -1930,6 +1931,7 @@ module.exports = {
   BUNDLED_SKILL_IDS,
   MANDATORY_PLATFORM_SKILL_IDS,
   PROTECTED_BUNDLED_IDS,
+  AGENT_GUIDE_MAX_BYTES,
   bootstrapSkills,
   listSkillsPublic,
   listSkillsForSessionPublic,
