@@ -7,7 +7,7 @@ import { renderNoticeEntry } from "../src/renderer/modules/turn-notice-entry.js"
 
 function element(tagName) {
   const classes = new Set();
-  return {
+  const node = {
     tagName,
     className: "",
     textContent: "",
@@ -18,6 +18,7 @@ function element(tagName) {
     classList: {
       add(name) {
         classes.add(name);
+        node.className = `${node.className} ${name}`.trim();
       },
       contains(name) {
         return classes.has(name);
@@ -30,6 +31,7 @@ function element(tagName) {
       this.attributes[name] = value;
     },
   };
+  return node;
 }
 
 globalThis.document = {
@@ -51,11 +53,18 @@ const plain = renderNoticeEntry({ level: "warning" }, {
 assert.equal(plain.className, "assistant-process-notice is-warning");
 assert.equal(plain.textContent, "Careful");
 
+const liveness = renderNoticeEntry({ code: "toolProgress", level: "progress" }, {
+  resolveDetail: () => "write 正在运行 · 已运行 33s · 最近活动 33s 前",
+  resolveProgressPercent: () => null,
+});
+assert.equal(liveness.className, "assistant-process-notice is-progress is-liveness");
+assert.equal(liveness.textContent, "write 正在运行 · 已运行 33s · 最近活动 33s 前");
+
 const progress = renderNoticeEntry({ level: "info", progress: { percent: 33 } }, {
   resolveDetail: () => "Downloading",
   resolveProgressPercent: () => 33.4,
 });
-assert.equal(progress.className, "assistant-process-notice is-info");
+assert.equal(progress.className, "assistant-process-notice is-info is-progress");
 assert.equal(progress.classList.contains("is-progress"), true);
 assert.equal(progress.children[0].className, "assistant-process-notice-text");
 assert.equal(progress.children[0].textContent, "Downloading");

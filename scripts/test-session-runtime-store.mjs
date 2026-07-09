@@ -385,38 +385,12 @@ if (!runtime.liveTurn?.notices.some((event) => event.payload?.notice?.code === "
 }
 
 store.applyRuntimeEvent({
-  id: "s2-tool-progress",
-  type: "engine.notice",
-  sessionId: "s2",
-  turnId: "t2",
-  seq: 6,
-  ts: 2005,
-  source: "test",
-  payload: {
-    notice: {
-      code: "toolProgress",
-      level: "progress",
-      panel: true,
-      replace: true,
-      detail: "write 正在运行 · 已运行 33s · 最近活动 33s 前",
-    },
-  },
-});
-runtime = store.getRuntimeSession("s2");
-if (runtime.liveTurn?.notices.some((event) => event.payload?.notice?.code === "toolProgress")) {
-  throw new Error(`toolProgress liveness must not render as a process notice card: ${JSON.stringify(runtime.liveTurn?.notices)}`);
-}
-if (runtime.liveTurn?.livenessNotice?.detail !== "write 正在运行 · 已运行 33s · 最近活动 33s 前") {
-  throw new Error(`toolProgress liveness should feed the live status line: ${JSON.stringify(runtime.liveTurn?.livenessNotice)}`);
-}
-
-store.applyRuntimeEvent({
   id: "s2-suggest",
   type: "prompt_suggestions.updated",
   sessionId: "s2",
   turnId: null,
-  seq: 7,
-  ts: 2006,
+  seq: 6,
+  ts: 2005,
   source: "test",
   payload: { suggestions: ["Try this", "Or that"] },
 });

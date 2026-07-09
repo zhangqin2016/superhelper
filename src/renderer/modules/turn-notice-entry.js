@@ -9,6 +9,9 @@ export function renderNoticeEntry(entry, {
   if (!detail) return null;
   const row = document.createElement("div");
   row.className = `assistant-process-notice is-${entry.level || "info"}`;
+  if (entry.code === "toolProgress" || entry.code === "longWait") {
+    row.classList.add("is-liveness");
+  }
   const percent = resolveProgressPercent(entry.progress);
   if (entry.progress && typeof entry.progress === "object") {
     const text = document.createElement("div");

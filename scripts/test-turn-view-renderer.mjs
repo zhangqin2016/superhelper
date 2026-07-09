@@ -266,16 +266,6 @@ assert.equal(
   "15s · 等待回复 · Esc 停止",
 );
 assert.equal(
-  buildLiveStatusText({
-    ...liveTurn,
-    livenessNotice: {
-      code: "toolProgress",
-      detail: "write 正在运行 · 已运行 33s · 最近活动 33s 前",
-    },
-  }, translate, now),
-  "15s · write 正在运行 · 已运行 33s · 最近活动 33s 前 · Esc 停止",
-);
-assert.equal(
   buildLiveStatusText(
     { ...liveTurn, thinkingText: "planning", usage: { estimatedTokens: 1200 } },
     translate,

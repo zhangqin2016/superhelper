@@ -26,8 +26,8 @@ const renderable = getRenderableTimeline({
 
 assert.deepEqual(
   renderable.map((entry) => entry.id),
-  ["text_1", "visible-notice", "tool_1"],
-  "renderable timeline should keep interleaved prose and hide final-answer/noise/liveness entries",
+  ["text_1", "hidden-tool-progress", "hidden-long-wait", "visible-notice", "tool_1"],
+  "renderable timeline should keep interleaved prose/liveness notices and hide only final-answer/noise entries",
 );
 
 const legacy = getRenderableTimeline({

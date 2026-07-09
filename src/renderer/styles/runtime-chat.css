@@ -2101,6 +2101,18 @@
   font-size: 14px;
 }
 
+.assistant-process-notice.is-liveness {
+  margin-top: 2px;
+  padding: 2px 0 2px 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .assistant-process-notice.is-progress {
   display: flex;
   flex-direction: column;
