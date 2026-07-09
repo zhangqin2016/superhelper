@@ -201,10 +201,12 @@ function normalizeApiGateway(raw) {
 
 function normalizeCustomPresetEntry(entry) {
   const baseUrl = String(entry?.baseUrl || "").trim();
+  const compatibilityProfile = normalizeCompatibilityProfile(entry?.compatibilityProfile);
   return {
     ...(entry && typeof entry === "object" ? entry : {}),
     protocol: normalizeProtocol(entry?.protocol) || legacyProtocolForBaseUrl(baseUrl),
-    requestBodyOverlay: normalizeRequestBodyOverlay(entry?.requestBodyOverlay),
+    compatibilityProfile,
+    requestBodyOverlay: normalizeRequestBodyOverlay(entry?.requestBodyOverlay || compatibilityProfile?.requestBodyOverlay),
   };
 }
 
@@ -215,6 +217,23 @@ function normalizeRequestBodyOverlay(value) {
   } catch {
     return null;
   }
+}
+
+function normalizeCompatibilityProfile(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const requestBodyOverlay = normalizeRequestBodyOverlay(value.requestBodyOverlay);
+  const rawConformance = value.conformance;
+  const conformance = rawConformance && typeof rawConformance === "object" && !Array.isArray(rawConformance)
+    ? {
+        chatCompletions: Boolean(rawConformance.chatCompletions),
+        streaming: Boolean(rawConformance.streaming),
+        contentSource: String(rawConformance.contentSource || ""),
+      }
+    : null;
+  const out = {};
+  if (requestBodyOverlay) out.requestBodyOverlay = requestBodyOverlay;
+  if (conformance) out.conformance = conformance;
+  return Object.keys(out).length ? out : null;
 }
 
 function normalizeCustomPresetEntries(entries, activePresetId, servicePresetIds = new Set()) {
@@ -705,6 +724,7 @@ function saveCustomPreset({
   protocol = "",
   tlsSkipVerify = false,
   requestBodyOverlay = null,
+  compatibilityProfile = null,
 }) {
   const validated = validateCustomInput(label, model);
   if (!validated.ok) return validated;
@@ -735,6 +755,7 @@ function saveCustomPreset({
   const user = loadUserChoice();
   const existingIds = new Set(getAllPresets().map((p) => p.id));
   const id = makeCustomId(validated.label, validated.model, existingIds);
+  const normalizedCompatibilityProfile = normalizeCompatibilityProfile(compatibilityProfile);
   const entry = {
     id,
     label: validated.label,
@@ -747,7 +768,8 @@ function saveCustomPreset({
     baseUrl: urlValidated.baseUrl,
     apiKey: keyValidated.apiKey,
     tlsSkipVerify: Boolean(tlsSkipVerify && urlValidated.baseUrl),
-    requestBodyOverlay: normalizeRequestBodyOverlay(requestBodyOverlay),
+    compatibilityProfile: normalizedCompatibilityProfile,
+    requestBodyOverlay: normalizeRequestBodyOverlay(requestBodyOverlay || normalizedCompatibilityProfile?.requestBodyOverlay),
     // Carried from the provider catalog so anthropic vs openai-compatible
     // endpoints resolve correctly instead of relying on URL auto-detection.
     protocol: normalizeProtocol(protocol) || legacyProtocolForBaseUrl(urlValidated.baseUrl),
@@ -789,6 +811,7 @@ async function saveCustomPresetWithProbe(input = {}) {
     protocol,
     baseUrl: urlValidated.baseUrl,
     apiKey: keyValidated.apiKey,
+    compatibilityProfile: probe.profile || null,
     requestBodyOverlay: probe.profile?.requestBodyOverlay || null,
   });
 }

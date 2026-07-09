@@ -30,6 +30,32 @@ const server = http.createServer((req, res) => {
       return;
     }
     const thinkingDisabled = parsed.chat_template_kwargs?.enable_thinking === false;
+    if (parsed.stream) {
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+      });
+      const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+      send({
+        id: "chatcmpl-test",
+        object: "chat.completion.chunk",
+        model: parsed.model,
+        choices: [{
+          index: 0,
+          delta: thinkingDisabled ? { content: "pong" } : { reasoning: "Thinking only" },
+          finish_reason: null,
+        }],
+      });
+      send({
+        id: "chatcmpl-test",
+        object: "chat.completion.chunk",
+        model: parsed.model,
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      });
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({
       id: "chatcmpl-test",
@@ -66,9 +92,15 @@ try {
     { chat_template_kwargs: { enable_thinking: false } },
     "probe should discover a request body overlay instead of relying on model name heuristics",
   );
-  assert.equal(requests.length, 2, "probe should try the plain request, then one candidate repair");
+  assert.equal(result.profile.conformance.chatCompletions, true, "probe profile records non-stream chat conformance");
+  assert.equal(result.profile.conformance.streaming, true, "probe profile records streaming conformance");
+  assert.equal(result.profile.conformance.contentSource, "body-overlay", "probe profile records how compatibility was achieved");
+  assert.equal(requests.length, 4, "probe should verify non-stream and stream for both the plain request and candidate repair");
   assert.equal(requests[0].chat_template_kwargs, undefined, "first probe must measure the endpoint as configured");
-  assert.equal(requests[1].chat_template_kwargs.enable_thinking, false, "second probe applies the discovered candidate");
+  assert.equal(requests[1].chat_template_kwargs, undefined, "plain stream probe must also measure the endpoint as configured");
+  assert.equal(requests[2].chat_template_kwargs.enable_thinking, false, "candidate repair applies to non-stream probe");
+  assert.equal(requests[3].chat_template_kwargs.enable_thinking, false, "candidate repair also applies to stream probe");
+  assert.equal(result.diagnostics.stream, "repaired", "probe must prove the repaired profile works for streaming, not only non-streaming");
 
   const saved = await modelPresets.saveCustomPresetWithProbe({
     label: "Reasoning Default",
@@ -86,9 +118,57 @@ try {
     false,
     "save with probe should persist the discovered body overlay into runtime env",
   );
+  const stored = JSON.parse(fs.readFileSync(path.join(tmp, "model-settings.json"), "utf8"));
+  const storedPreset = stored.customPresets.find((preset) => preset.id === saved.preset.id);
+  assert.equal(storedPreset.compatibilityProfile.conformance.streaming, true, "saved custom model keeps the compatibility contract for diagnostics");
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+const streamBrokenServer = http.createServer((req, res) => {
+  let body = "";
+  req.on("data", (chunk) => {
+    body += chunk;
+  });
+  req.on("end", () => {
+    const parsed = JSON.parse(body || "{}");
+    if (parsed.stream) {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write(`data: ${JSON.stringify({
+        id: "chatcmpl-stream-broken",
+        object: "chat.completion.chunk",
+        model: parsed.model,
+        choices: [{ index: 0, delta: { reasoning: "reasoning only" }, finish_reason: null }],
+      })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      id: "chatcmpl-stream-broken",
+      object: "chat.completion",
+      model: parsed.model,
+      choices: [{ index: 0, message: { role: "assistant", content: "pong" }, finish_reason: "stop" }],
+    }));
+  });
+});
+
+await new Promise((resolve) => streamBrokenServer.listen(0, "127.0.0.1", resolve));
+try {
+  const { port } = streamBrokenServer.address();
+  const result = await probeCustomModelProfile({
+    protocol: "openai",
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    apiKey: "sk-test-probe",
+    model: "provider/nonstream-only",
+    timeoutMs: 5_000,
+  });
+  assert.equal(result.ok, false, "probe must reject endpoints that only pass non-stream chat but fail stream content");
+  assert.equal(result.error, "MODEL_STREAMING_NO_CONTENT", "stream failure should be explicit instead of a generic no-content error");
+} finally {
+  await new Promise((resolve) => streamBrokenServer.close(resolve));
 }
 
 console.log("model-compatibility-probe: ok");
