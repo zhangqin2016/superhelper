@@ -47,7 +47,7 @@ function createProcessJobsMcpServer(options = {}) {
   server.registerTool(
     "job_start",
     {
-      description: "Start a long-running local process as a Lily-managed background job. Returns job id, pid, log paths, and optional health status; use for servers/watchers instead of ad-hoc shell detaching.",
+      description: "Start a long-running local process as a Lily-managed background job. Returns job id, pid, log paths, and optional health status; use for servers/watchers instead of ad-hoc shell detaching. Example call: {\"command\":\"npm run dev\",\"cwd\":\"/work/app\",\"waitForHealthMs\":15000,\"healthcheck\":\"{\\\"type\\\":\\\"http\\\",\\\"url\\\":\\\"http://127.0.0.1:3000\\\"}\"} (healthcheck is a JSON string)",
       inputSchema: {
         command: z.string().describe("Command line to run."),
         args: z.array(z.string()).optional().describe("Arguments when command is an executable path. When provided and shell is omitted, the process starts without a shell."),

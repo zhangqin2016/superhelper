@@ -147,6 +147,12 @@ try {
   assert.equal(result.profile.conformance.toolCalls, true, "probe profile records tool-call conformance");
   assert.equal(result.profile.conformance.contentSource, "body-overlay", "probe profile records how compatibility was achieved");
   assert.equal(result.profile.prompt.systemMaxChars, 10000, "probe should discover the endpoint's safe system prompt size");
+  assert.equal(result.profile.probeVersion, 4, "probe profile must carry probeVersion 4 so stored v3 profiles re-probe via the ratchet");
+  assert.deepEqual(
+    result.profile.capability,
+    { grade: "standard", signals: { instructionFidelity: false, toolChoiceAuto: true } },
+    "mock volunteers tool calls under tool_choice:auto but echoes lowercase pong → standard grade",
+  );
   assert(requests.length > 6, "probe should verify chat, stream, tools, and system prompt capacity");
   assert.equal(requests[0].chat_template_kwargs, undefined, "first probe must measure the endpoint as configured");
   assert.equal(requests[1].chat_template_kwargs, undefined, "plain stream probe must also measure the endpoint as configured");
@@ -174,6 +180,7 @@ try {
     "save with probe should persist the discovered body overlay into runtime env",
   );
   assert.equal(env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS, "10000", "save with probe should persist the discovered system prompt budget");
+  assert.equal(env.LILY_MODEL_CAPABILITY_GRADE, "standard", "save with probe should hand the capability grade to the runtime env");
   const stored = JSON.parse(fs.readFileSync(path.join(tmp, "model-settings.json"), "utf8"));
   const storedPreset = stored.customPresets.find((preset) => preset.id === saved.preset.id);
   assert.equal(storedPreset.compatibilityProfile.conformance.streaming, true, "saved custom model keeps the compatibility contract for diagnostics");
@@ -471,6 +478,235 @@ try {
   assert.equal(result.profile.toolShapeCompat, true, "shape evidence discovered during overlay repair must set the compat flag");
 } finally {
   await new Promise((resolve) => thinkingAndShapeLimitedServer.close(resolve));
+}
+
+// Capability grading (probeVersion 3): the three gateway archetypes from the
+// plan — both signals pass → full; only tool_choice:auto passes → standard;
+// auto fails → lite; a probe transport error writes NO capability field
+// (fail-open = standard, capability-gate Rule 13).
+function capabilityMockServer({ pongReply = "PONG", autoToolCalls = true, failPongProbe = false } = {}) {
+  return http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      const parsed = JSON.parse(body || "{}");
+      const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
+      const autoChoice = parsed.tool_choice === "auto";
+      const userText = (parsed.messages || [])
+        .filter((message) => message?.role === "user")
+        .map((message) => String(message.content || ""))
+        .join(" ");
+      const isPongProbe = userText.includes("PONG");
+      if (isPongProbe && failPongProbe) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "capability probe unavailable" }));
+        return;
+      }
+      const wantsToolCall = hasTools && (!autoChoice || autoToolCalls);
+      const content = isPongProbe ? pongReply : "pong";
+      const toolCall = { id: "call_probe", type: "function", function: { name: "lily_probe_tool", arguments: "{\"ok\":true}" } };
+      if (parsed.stream) {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+        send({
+          id: "chatcmpl-capability",
+          object: "chat.completion.chunk",
+          model: parsed.model,
+          choices: [{
+            index: 0,
+            delta: wantsToolCall ? { tool_calls: [{ index: 0, ...toolCall }] } : { content },
+            finish_reason: null,
+          }],
+        });
+        send({
+          id: "chatcmpl-capability",
+          object: "chat.completion.chunk",
+          model: parsed.model,
+          choices: [{ index: 0, delta: {}, finish_reason: wantsToolCall ? "tool_calls" : "stop" }],
+        });
+        res.write("data: [DONE]\n\n");
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "chatcmpl-capability",
+        object: "chat.completion",
+        model: parsed.model,
+        choices: [{
+          index: 0,
+          message: wantsToolCall
+            ? { role: "assistant", content: null, tool_calls: [toolCall] }
+            : { role: "assistant", content },
+          finish_reason: wantsToolCall ? "tool_calls" : "stop",
+        }],
+      }));
+    });
+  });
+}
+
+async function probeAgainst(server, model) {
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address();
+    return await probeCustomModelProfile({
+      protocol: "openai",
+      baseUrl: `http://127.0.0.1:${port}/v1`,
+      apiKey: "sk-test-probe",
+      model,
+      timeoutMs: 5_000,
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+{
+  const result = await probeAgainst(capabilityMockServer(), "provider/full-capable");
+  assert.equal(result.ok, true, `full-capable probe should succeed: ${JSON.stringify(result)}`);
+  assert.deepEqual(
+    result.profile.capability,
+    { grade: "full", signals: { instructionFidelity: true, toolChoiceAuto: true } },
+    "exact PONG + volunteered tool call must grade full",
+  );
+}
+
+{
+  const result = await probeAgainst(capabilityMockServer({ pongReply: "Sure! pong." }), "provider/standard-capable");
+  assert.equal(result.ok, true, "standard-capable probe should succeed");
+  assert.deepEqual(
+    result.profile.capability,
+    { grade: "standard", signals: { instructionFidelity: false, toolChoiceAuto: true } },
+    "chatty PONG reply with working tool_choice:auto must grade standard",
+  );
+}
+
+{
+  const result = await probeAgainst(capabilityMockServer({ autoToolCalls: false }), "provider/lite-capable");
+  assert.equal(result.ok, true, "lite-capable probe should still save (conformance uses forced tool_choice)");
+  assert.deepEqual(
+    result.profile.capability,
+    { grade: "lite", signals: { instructionFidelity: true, toolChoiceAuto: false } },
+    "a model that never volunteers tool calls must grade lite even with perfect instruction fidelity",
+  );
+}
+
+{
+  const result = await probeAgainst(capabilityMockServer({ failPongProbe: true }), "provider/capability-error");
+  assert.equal(result.ok, true, "a capability-probe transport error must not block saving a conformant model");
+  assert.equal(result.profile.capability, undefined, "probe error must omit the capability field entirely (fail-open = standard)");
+  assert.equal(result.profile.probeVersion, 4, "profile version still advances so the ratchet can re-probe later");
+}
+
+{
+  process.env.LILY_ENABLE_CAPABILITY_GRADING = "0";
+  try {
+    const result = await probeAgainst(capabilityMockServer(), "provider/grading-killed");
+    assert.equal(result.ok, true, "kill switch must not affect conformance probing");
+    assert.equal(result.profile.capability, undefined, "LILY_ENABLE_CAPABILITY_GRADING=0 skips capability probing entirely");
+  } finally {
+    delete process.env.LILY_ENABLE_CAPABILITY_GRADING;
+  }
+}
+
+// Recipe calibration (probeVersion 4): when a signal fails in its plain form,
+// ONE alternate form is tried and the winner is recorded in capability.recipes.
+function recipeMockServer({ zhOnlyFidelity = false, autoNeedsHint = false } = {}) {
+  return http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      const parsed = JSON.parse(body || "{}");
+      const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
+      const autoChoice = parsed.tool_choice === "auto";
+      const userText = (parsed.messages || [])
+        .filter((message) => message?.role === "user")
+        .map((message) => String(message.content || ""))
+        .join(" ");
+      const systemText = (parsed.messages || [])
+        .filter((message) => message?.role === "system")
+        .map((message) => String(message.content || ""))
+        .join(" ");
+      const isZhPongProbe = userText.includes("只回复");
+      const isPongProbe = userText.includes("PONG");
+      const systemHasExample = systemText.includes("lily_probe_tool");
+      const content = isZhPongProbe
+        ? "PONG"
+        : isPongProbe
+          ? (zhOnlyFidelity ? "Sure thing: pong!" : "PONG")
+          : "pong";
+      const wantsToolCall = hasTools && (!autoChoice || (autoNeedsHint ? systemHasExample : true));
+      const toolCall = { id: "call_probe", type: "function", function: { name: "lily_probe_tool", arguments: "{\"ok\":true}" } };
+      if (parsed.stream) {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+        send({
+          id: "chatcmpl-recipe",
+          object: "chat.completion.chunk",
+          model: parsed.model,
+          choices: [{
+            index: 0,
+            delta: wantsToolCall ? { tool_calls: [{ index: 0, ...toolCall }] } : { content },
+            finish_reason: null,
+          }],
+        });
+        send({
+          id: "chatcmpl-recipe",
+          object: "chat.completion.chunk",
+          model: parsed.model,
+          choices: [{ index: 0, delta: {}, finish_reason: wantsToolCall ? "tool_calls" : "stop" }],
+        });
+        res.write("data: [DONE]\n\n");
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "chatcmpl-recipe",
+        object: "chat.completion",
+        model: parsed.model,
+        choices: [{
+          index: 0,
+          message: wantsToolCall
+            ? { role: "assistant", content: null, tool_calls: [toolCall] }
+            : { role: "assistant", content },
+          finish_reason: wantsToolCall ? "tool_calls" : "stop",
+        }],
+      }));
+    });
+  });
+}
+
+{
+  const result = await probeAgainst(recipeMockServer({ zhOnlyFidelity: true }), "provider/zh-instruction-follower");
+  assert.equal(result.ok, true, "zh-only-fidelity probe should succeed");
+  assert.deepEqual(
+    result.profile.capability,
+    {
+      grade: "full",
+      signals: { instructionFidelity: true, toolChoiceAuto: true },
+      recipes: { instructionLanguage: "zh" },
+    },
+    "a model that only follows the Chinese instruction gets fidelity credit plus the zh recipe",
+  );
+}
+
+{
+  const result = await probeAgainst(recipeMockServer({ autoNeedsHint: true }), "provider/needs-tool-call-example");
+  assert.equal(result.ok, true, "hint-dependent probe should succeed");
+  assert.deepEqual(
+    result.profile.capability,
+    {
+      grade: "full",
+      signals: { instructionFidelity: true, toolChoiceAuto: true },
+      recipes: { toolCallHint: true },
+    },
+    "a model that volunteers tool calls only WITH the example is upgraded from lite, carrying the recipe the runtime must apply",
+  );
 }
 
 console.log("model-compatibility-probe: ok");

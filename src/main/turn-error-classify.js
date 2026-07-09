@@ -243,12 +243,39 @@ function classifyTurnFailure(payload, normalized, state) {
     .filter((value) => typeof value === "string" && value.trim())
     .join("\n");
   const thinkingLikeText = String(state?.thinkingText || "");
-  if (looksLikeLeakedToolCallText(assistantLikeText) || looksLikeLeakedToolCallText(thinkingLikeText)) {
+  // Check each candidate INDIVIDUALLY as well as joined: normalized.text and
+  // state.assistantText usually carry the SAME leaked fragment, and the joined
+  // duplicate doubles the stripped length past the short-fragment heuristic —
+  // exactly the single-marker `<tool_call>` leaks weak models produce.
+  const leakCandidates = [assistantLikeText, normalized?.text, state?.assistantText, thinkingLikeText];
+  if (leakCandidates.some((value) => looksLikeLeakedToolCallText(value))) {
     return {
       code: "MALFORMED_TOOL_CALL_TEXT",
       message: "The model returned an incomplete tool-call fragment instead of a final answer. Please retry; if it repeats, refresh the model configuration or start a fresh conversation.",
       retryable: true,
       category: "protocol",
+    };
+  }
+  // Mid-turn stream truncation: the FINAL message ended with an unrecognized
+  // finish reason while earlier steps in the SAME turn reported real ones
+  // ("tool-calls"/"stop") — the gateway cut the stream, usually right as the
+  // model announced its next action, and the engine mistakes the silence for
+  // a clean turn end. Evidence-gated three ways so healthy gateways never trip
+  // it: (1) this turn PROVED the gateway emits recognized reasons, (2) the
+  // final reason is "unknown", (3) tools ran (mid-task, not a chat answer).
+  // Kill switch: LILY_TRUNCATED_END_GUARD=0.
+  if (
+    process.env.LILY_TRUNCATED_END_GUARD !== "0" &&
+    state?.lastStopReason === "unknown" &&
+    state?.sawRecognizedStopReason &&
+    (state?.tools?.size || 0) > 0 &&
+    !payload?.interruptedByUser && !payload?.userInterrupted && !payload?.stalled && !payload?.engineInterrupted
+  ) {
+    return {
+      code: "TRUNCATED_TURN_END",
+      message: "模型响应流在中途被截断，本轮工作没有完成（已完成的步骤结果已保留）。常见原因是模型网关连接不稳定。可以直接重试，或继续提问让我接着做。",
+      retryable: true,
+      category: "model",
     };
   }
   if (isEmptyAssistantCompletion(payload, normalized, state)) {

@@ -1236,6 +1236,18 @@ class OpencodeAgentSession extends EventEmitter {
     if (!effect || !sessionID) return null;
     const rawRequestId = effect.requestId || "";
     const requestId = rawRequestId ? this._childRequestId(sessionID, rawRequestId) : "";
+    // A child ENGINE failure (session.error / step failed inside the subagent
+    // session) is a first-class learning signal: it carries the real reason a
+    // subtask died (gateway error page, stream with no content, tool-format
+    // rejection). Forward it instead of dropping it — the orchestrator feeds it
+    // to diagnostics + background self-heal, and the UI can finally show WHY.
+    if (effect.kind === "error") {
+      return {
+        kind: "error",
+        message: String(effect.message || "Engine error").slice(0, 600),
+        ts: Date.now(),
+      };
+    }
     if (effect.kind === "permission") {
       const mode = this.spawnOptions?.permissionMode || "ask";
       const verdict = decidePermission(mode, effect.toolName, effect.input || {}, {

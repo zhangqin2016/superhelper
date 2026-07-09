@@ -240,6 +240,36 @@ function normalizeCompatibilityProfile(value) {
           : null,
       }
     : null;
+  // Probed capability grade (仿 toolShapeCompat): kept verbatim so the env
+  // builders can hand it to the runtime. Anything but a known grade is dropped
+  // — no capability field means "standard" (today's behavior) everywhere.
+  const rawCapability = value.capability;
+  const capabilityGrade = ["full", "standard", "lite"].includes(String(rawCapability?.grade || ""))
+    ? String(rawCapability.grade)
+    : "";
+  const rawRecipes = rawCapability?.recipes;
+  const recipes = rawRecipes && typeof rawRecipes === "object" && !Array.isArray(rawRecipes)
+    ? {
+        ...(["zh", "en"].includes(String(rawRecipes.instructionLanguage || ""))
+          ? { instructionLanguage: String(rawRecipes.instructionLanguage) }
+          : {}),
+        ...(rawRecipes.toolCallHint === true ? { toolCallHint: true } : {}),
+      }
+    : {};
+  const capability = capabilityGrade
+    ? {
+        grade: capabilityGrade,
+        ...(rawCapability.signals && typeof rawCapability.signals === "object" && !Array.isArray(rawCapability.signals)
+          ? {
+              signals: {
+                instructionFidelity: Boolean(rawCapability.signals.instructionFidelity),
+                toolChoiceAuto: Boolean(rawCapability.signals.toolChoiceAuto),
+              },
+            }
+          : {}),
+        ...(Object.keys(recipes).length ? { recipes } : {}),
+      }
+    : null;
   const out = {};
   const probeVersion = Number.isFinite(Number(value.probeVersion)) && Number(value.probeVersion) > 0
     ? Math.floor(Number(value.probeVersion))
@@ -247,6 +277,7 @@ function normalizeCompatibilityProfile(value) {
   if (probeVersion) out.probeVersion = probeVersion;
   if (requestBodyOverlay) out.requestBodyOverlay = requestBodyOverlay;
   if (value.toolShapeCompat === true) out.toolShapeCompat = true;
+  if (capability) out.capability = capability;
   if (conformance) out.conformance = conformance;
   if (prompt?.systemMaxChars) out.prompt = prompt;
   return Object.keys(out).length ? out : null;
@@ -435,6 +466,12 @@ function customPresetRecord(entry) {
   if (compatibilityProfile?.toolShapeCompat) {
     env.LILY_OPENCODE_TOOL_COMPAT = "1";
   }
+  if (compatibilityProfile?.capability?.grade) {
+    env.LILY_MODEL_CAPABILITY_GRADE = compatibilityProfile.capability.grade;
+  }
+  if (compatibilityProfile?.capability?.recipes) {
+    env.LILY_MODEL_RECIPES = JSON.stringify(compatibilityProfile.capability.recipes);
+  }
   return {
     id: entry.id,
     label: String(entry.label || tiers.main).trim(),
@@ -564,6 +601,12 @@ function getUserApiEnv() {
       }
       if (compatibilityProfile?.toolShapeCompat) {
         env.LILY_OPENCODE_TOOL_COMPAT = "1";
+      }
+      if (compatibilityProfile?.capability?.grade) {
+        env.LILY_MODEL_CAPABILITY_GRADE = compatibilityProfile.capability.grade;
+      }
+      if (compatibilityProfile?.capability?.recipes) {
+        env.LILY_MODEL_RECIPES = JSON.stringify(compatibilityProfile.capability.recipes);
       }
       if (Object.keys(env).length) return env;
     }
@@ -1015,13 +1058,20 @@ async function updateCustomPresetWithProbe(presetId, input = {}) {
   });
 }
 
-function customPresetNeedsCompatibilityProbe(entry) {
+/** Eligibility only: custom openai preset with its own connection + model. */
+function customPresetSupportsCompatibilityProbe(entry) {
   const normalized = normalizeCustomPresetEntry(entry);
   if (!normalized?.id) return false;
   const baseUrl = String(normalized.baseUrl || "").trim();
   if (!baseUrl) return false;
   const protocol = normalizeProtocol(normalized.protocol) || legacyProtocolForBaseUrl(baseUrl);
   if (protocol !== "openai") return false;
+  return Boolean(normalized.model);
+}
+
+function customPresetNeedsCompatibilityProbe(entry) {
+  if (!customPresetSupportsCompatibilityProbe(entry)) return false;
+  const normalized = normalizeCustomPresetEntry(entry);
   const compatibilityProfile = normalizeCompatibilityProfile(normalized.compatibilityProfile);
   const hasPromptProfile = Boolean(compatibilityProfile?.prompt?.systemMaxChars);
   // Profiles from older probe versions are stale: newer probes detect gateway
@@ -1032,16 +1082,19 @@ function customPresetNeedsCompatibilityProbe(entry) {
   return Boolean(normalized.model);
 }
 
-async function repairCustomPresetCompatibilityProfiles({ activeOnly = false, systemPromptProbeText = "", timeoutMs = 10_000 } = {}) {
+async function repairCustomPresetCompatibilityProfiles({ activeOnly = false, force = false, systemPromptProbeText = "", timeoutMs = 10_000 } = {}) {
   const user = loadUserChoice();
   const customPresets = [...(user.customPresets || [])];
   let repairedCount = 0;
+  let changedCount = 0;
   const errors = [];
 
   for (let index = 0; index < customPresets.length; index += 1) {
     const entry = normalizeCustomPresetEntry(customPresets[index]);
     if (activeOnly && entry.id !== getActivePresetId()) continue;
-    if (!customPresetNeedsCompatibilityProbe(entry)) continue;
+    // force (runtime self-heal) re-probes even a current-version profile —
+    // the gateway may have changed behind an unchanged connection config.
+    if (force ? !customPresetSupportsCompatibilityProbe(entry) : !customPresetNeedsCompatibilityProbe(entry)) continue;
 
     const urlValidated = validateBaseUrl(entry.baseUrl, { required: true });
     const keyValidated = validateApiKey(entry.apiKey, {
@@ -1064,11 +1117,14 @@ async function repairCustomPresetCompatibilityProfiles({ activeOnly = false, sys
       errors.push({ id: entry.id, error: probe.error || "MODEL_PROBE_FAILED" });
       continue;
     }
+    const nextProfile = normalizeCompatibilityProfile(probe.profile);
+    const previousProfile = normalizeCompatibilityProfile(entry.compatibilityProfile);
+    if (JSON.stringify(nextProfile) !== JSON.stringify(previousProfile)) changedCount += 1;
     customPresets[index] = {
       ...entry,
       baseUrl: urlValidated.baseUrl,
       apiKey: keyValidated.apiKey,
-      compatibilityProfile: normalizeCompatibilityProfile(probe.profile),
+      compatibilityProfile: nextProfile,
       requestBodyOverlay: normalizeRequestBodyOverlay(probe.profile?.requestBodyOverlay),
     };
     repairedCount += 1;
@@ -1077,7 +1133,7 @@ async function repairCustomPresetCompatibilityProfiles({ activeOnly = false, sys
   if (repairedCount > 0) {
     persistUserChoice({ ...user, customPresets });
   }
-  return { ok: true, repairedCount, errors, ...listPresetsPublic() };
+  return { ok: true, repairedCount, changedCount, errors, ...listPresetsPublic() };
 }
 
 function deleteCustomPreset(presetId) {

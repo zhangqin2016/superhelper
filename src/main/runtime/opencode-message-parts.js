@@ -350,20 +350,120 @@ function buildOpencodePromptBody(opts = {}) {
   const text = [String(opts.text || ""), indexNote, ...textAttachments, note].filter(Boolean).join("\n\n");
   parts.push({ type: "text", text });
   const body = { agent: opts.agent || "build", parts };
-  if (guidance) body.system = truncateSystemGuidance(guidance, opts.maxSystemPromptChars);
+  if (guidance) body.system = truncateSystemGuidance(guidance, opts.maxSystemPromptChars, { intentText: opts.text });
   if (opts.model?.providerID && opts.model?.modelID) {
     body.model = { providerID: opts.model.providerID, modelID: opts.model.modelID };
   }
   return body;
 }
 
-function truncateSystemGuidance(guidance, maxChars) {
+// Guide sections that are GUARDRAILS rather than skill documentation. When the
+// guide must shrink to a weak gateway's system budget, these survive first —
+// they are exactly the rules that keep a weak model from drowning itself
+// (blind whole-file reads, fake background-job claims).
+const GUARDRAIL_SECTION_TITLE = /^(Large Input Protocol|Process Job Protocol|Tool Protocol)\b/i;
+
+const TRUNCATION_NOTICE =
+  "[System guide truncated by Lily for this model's input limit. Use available tools and ask for narrower scope if a capability guide is missing.]";
+
+/** Split markdown guidance into [head, ...sections] on `## ` headings. */
+function splitGuidanceSections(text) {
+  const lines = String(text || "").split("\n");
+  const sections = [];
+  let current = { title: "", lines: [] };
+  for (const line of lines) {
+    if (line.startsWith("## ")) {
+      sections.push(current);
+      current = { title: line.slice(3).trim(), lines: [line] };
+    } else {
+      current.lines.push(line);
+    }
+  }
+  sections.push(current);
+  return sections;
+}
+
+function legacyHeadCut(text, limit, notice) {
+  const headLimit = Math.max(1000, Math.floor(limit) - notice.length);
+  return `${text.slice(0, headLimit).trimEnd()}${notice}`;
+}
+
+/**
+ * Budget-aware guide truncation. The old behavior was a blind head-cut, which
+ * dropped whatever sat at the tail — usually the protocol appendices, i.e. the
+ * guardrails a weak model needs MOST. Now: the head (identity + core rules)
+ * and guardrail sections are kept first, the remaining budget goes to skill
+ * sections — ranked by relevance to THIS turn's request when `intentText` is
+ * provided (intent-gated guidance: within the same budget, the sections that
+ * survive are the ones this turn needs), authored order otherwise — and
+ * dropped sections are NAMED so the model knows what it is missing.
+ * Byte-identical when the guide fits (strong models without a probed budget
+ * never enter this path); falls back to the legacy head-cut on any parsing
+ * surprise.
+ */
+function truncateSystemGuidance(guidance, maxChars, { intentText = "" } = {}) {
   const text = String(guidance || "").trim();
   const limit = Number(maxChars);
   if (!text || !Number.isFinite(limit) || limit <= 0 || text.length <= limit) return text;
-  const notice = "\n\n[System guide truncated by Lily for this model's input limit. Use available tools and ask for narrower scope if a capability guide is missing.]";
-  const headLimit = Math.max(1000, Math.floor(limit) - notice.length);
-  return `${text.slice(0, headLimit).trimEnd()}${notice}`;
+  const notice = `\n\n${TRUNCATION_NOTICE}`;
+  try {
+    const sections = splitGuidanceSections(text);
+    if (sections.length <= 1) return legacyHeadCut(text, limit, notice);
+
+    const head = sections[0];
+    const rest = sections.slice(1);
+    const guardrails = rest.filter((section) => GUARDRAIL_SECTION_TITLE.test(section.title));
+    let others = rest.filter((section) => !GUARDRAIL_SECTION_TITLE.test(section.title));
+    // Intent gating: rank skill sections by overlap with the outgoing request
+    // so the surviving sections are the relevant ones. Stable for ties (and
+    // for empty/no-signal requests), so behavior without a signal is exactly
+    // the authored order.
+    if (String(intentText || "").trim() && others.length > 1) {
+      const { intentOverlapScore } = require("./intent-relevance");
+      others = others
+        .map((section, index) => ({
+          section,
+          index,
+          score: intentOverlapScore(intentText, `${section.title}\n${section.lines.slice(0, 12).join("\n")}`),
+        }))
+        .sort((a, b) => (b.score - a.score) || (a.index - b.index))
+        .map((entry) => entry.section);
+    }
+    const sizeOf = (section) => section.lines.join("\n").trim().length + 2; // + join gap
+
+    // Reserve room for the notice plus a worst-case omitted-sections line.
+    let budget = Math.floor(limit) - notice.length - 200;
+    const headText = head.lines.join("\n").trim();
+    if (headText.length >= budget) return legacyHeadCut(text, limit, notice);
+    budget -= headText.length;
+
+    const kept = [];
+    const omitted = [];
+    // Guardrails first — order within each group stays as authored.
+    for (const section of [...guardrails, ...others]) {
+      const isGuardrail = GUARDRAIL_SECTION_TITLE.test(section.title);
+      const body = section.lines.join("\n").trim();
+      if (sizeOf(section) <= budget) {
+        kept.push(body);
+        budget -= sizeOf(section);
+      } else if (isGuardrail && budget > 600) {
+        // A guardrail that doesn't fit whole still beats absence: keep its head.
+        kept.push(`${body.slice(0, budget - 20).trimEnd()}\n[…]`);
+        budget = 0;
+      } else {
+        omitted.push(section.title || "(untitled)");
+      }
+    }
+
+    const omittedLine = omitted.length
+      ? `\n\n[Omitted for this model's input limit: ${omitted.join("; ").slice(0, 150)}. Ask the user to narrow scope if one is needed.]`
+      : "";
+    const result = `${[headText, ...kept].join("\n\n")}${omittedLine}${notice}`;
+    // Safety invariant: never exceed the gateway's measured limit.
+    return result.length <= limit ? result : legacyHeadCut(text, limit, notice);
+  } catch {
+    return legacyHeadCut(text, limit, notice);
+  }
 }
 
 module.exports = {

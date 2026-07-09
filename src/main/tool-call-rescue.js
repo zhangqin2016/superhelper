@@ -1,0 +1,132 @@
+"use strict";
+
+/**
+ * Turn rescue (turn 级救援) — immediate, silent retry-once for turn failures
+ * that a retry plausibly fixes WITHOUT any config change:
+ *
+ * - MALFORMED_TOOL_CALL_TEXT: weak models (Qwen-family gateways are the
+ *   canonical case) leak their tool call as literal text (`<tool_call>` /
+ *   `<function=...>` markup) instead of emitting a native structured call.
+ *   A re-probe cannot fix model BEHAVIOR — but a one-line corrective
+ *   instruction usually can: these models follow explicit corrections far
+ *   better than abstract schemas. Retry carries the corrective hint on the
+ *   ENGINE-facing text (the visible transcript is untouched).
+ *
+ * - EMPTY_ASSISTANT_COMPLETION: the classic zero-chunk / gateway-flake death.
+ *   When it is transient, an immediate plain retry absorbs it invisibly; when
+ *   it is deterministic (gateway defect), the retry fails once and the
+ *   existing self-heal probe path takes over.
+ *
+ * Capability-gate guard rails (Rule 13):
+ * - kill switches: LILY_TOOL_CALL_RESCUE=0 (malformed),
+ *   LILY_EMPTY_COMPLETION_RETRY=0 (empty)
+ * - side-effect guard: rescue only fires when the failed turn executed NO
+ *   tools — a retry re-runs the whole turn, and replaying a turn that already
+ *   sent mail / edited files is worse than failing honestly
+ * - per-session-per-code cooldown: a model that never recovers costs exactly
+ *   one extra attempt per window, then falls through to the normal failure UX
+ * - fail-open: any internal error leaves the normal failure flow untouched
+ */
+
+const COOLDOWN_MS = 5 * 60_000;
+
+/** @type {Map<string, number>} `${sessionId}:${code}` -> last attempt ts */
+const lastRescueByKey = new Map();
+
+const CORRECTIVE_HINT = [
+  "[system correction] Your previous reply wrote a tool call as plain text (e.g. <tool_call> / <function=...> markup). That text is NOT executed — nothing happened.",
+  "Retry now and follow these rules strictly:",
+  "1. To use a tool, emit a NATIVE structured tool/function call through the tool-calling interface. Never write tool-call markup, XML, or raw JSON inside your text reply.",
+  "2. Make one tool call at a time and wait for its result before the next step.",
+  "3. If you cannot make tool calls, answer the user directly in plain text, with no tool markup at all.",
+].join("\n");
+
+const CORRECTIVE_HINT_ZH = [
+  "[系统纠正] 你上一条回复把工具调用写成了纯文本（例如 <tool_call> / <function=...> 标记）。这些文本不会被执行——什么都没有发生。",
+  "现在重试，并严格遵守：",
+  "1. 需要使用工具时，必须通过工具调用接口发起原生的结构化调用，绝不能在文本回复里写工具调用标记、XML 或 JSON。",
+  "2. 一次只调用一个工具，等拿到结果再进行下一步。",
+  "3. 如果无法发起工具调用，就直接用纯文本回答用户，不要包含任何工具标记。",
+].join("\n");
+
+/** The corrective hint in the language the PROBE showed this model actually
+ *  follows (capability.recipes.instructionLanguage). Default: English. */
+function correctiveHintFor(recipes = {}) {
+  return recipes?.instructionLanguage === "zh" ? CORRECTIVE_HINT_ZH : CORRECTIVE_HINT;
+}
+
+// Per-code rescue strategy. `hint` (when set) rides the engine-facing text of
+// the retried message; `enabled` reads the code's kill switch at call time.
+const RESCUE_STRATEGIES = Object.freeze({
+  MALFORMED_TOOL_CALL_TEXT: Object.freeze({
+    kind: "tool_call_rescue",
+    hint: CORRECTIVE_HINT,
+    enabled: () => process.env.LILY_TOOL_CALL_RESCUE !== "0",
+  }),
+  EMPTY_ASSISTANT_COMPLETION: Object.freeze({
+    kind: "empty_completion_retry",
+    hint: "",
+    enabled: () => process.env.LILY_EMPTY_COMPLETION_RETRY !== "0",
+  }),
+  // Mid-turn stream truncation (final finish reason "unknown" after healthy
+  // ones) — the gateway dropped the stream while the model was mid-task. A
+  // plain retry re-runs the same request; the flake usually doesn't repeat.
+  TRUNCATED_TURN_END: Object.freeze({
+    kind: "truncated_turn_retry",
+    hint: "",
+    enabled: () => process.env.LILY_TRUNCATED_RETRY !== "0",
+  }),
+});
+
+// Tools whose re-execution is harmless (pure reads / research / planning).
+// A rescue retry re-runs the WHOLE turn, so it is only dispatched when every
+// tool the failed turn executed is on this list — replaying a turn that sent
+// mail or edited files would be worse than failing honestly. Names are the
+// engine's core tool names; MCP tools are deliberately NOT listed (their
+// side effects are unknown to the host).
+const READ_ONLY_TOOLS = Object.freeze(new Set([
+  "read", "glob", "grep", "list", "ls", "lsp",
+  "webfetch", "websearch",
+  "todowrite", "todoread", "question",
+]));
+
+/** True when every executed tool is side-effect-free → a turn replay is safe. */
+function isSideEffectFreeToolRun(tools = []) {
+  return tools.every((tool) => READ_ONLY_TOOLS.has(String(tool?.name || "").toLowerCase()));
+}
+
+function rescueStrategyFor(code) {
+  const strategy = RESCUE_STRATEGIES[String(code || "")] || null;
+  if (!strategy || !strategy.enabled()) return null;
+  return strategy;
+}
+
+function isRescuableFailureCode(code) {
+  return Boolean(RESCUE_STRATEGIES[String(code || "")]);
+}
+
+function shouldAttemptRescue(sessionId, code, now = Date.now()) {
+  const last = lastRescueByKey.get(`${String(sessionId || "")}:${String(code || "")}`) || 0;
+  return now - last >= COOLDOWN_MS;
+}
+
+function markRescueAttempt(sessionId, code, now = Date.now()) {
+  lastRescueByKey.set(`${String(sessionId || "")}:${String(code || "")}`, now);
+}
+
+/** Test hook: reset per-session cooldowns. */
+function resetRescueStateForTests() {
+  lastRescueByKey.clear();
+}
+
+module.exports = {
+  CORRECTIVE_HINT,
+  CORRECTIVE_HINT_ZH,
+  correctiveHintFor,
+  rescueStrategyFor,
+  isRescuableFailureCode,
+  isSideEffectFreeToolRun,
+  shouldAttemptRescue,
+  markRescueAttempt,
+  resetRescueStateForTests,
+};

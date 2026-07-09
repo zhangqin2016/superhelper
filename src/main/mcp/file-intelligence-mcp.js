@@ -33,7 +33,7 @@ function createFileIntelligenceMcpServer() {
   server.registerTool(
     "inspect_file",
     {
-      description: "Inspect a local file or directory before reading large inputs. Returns compact metadata and recommended next actions without returning full content.",
+      description: "Inspect a local file or directory before reading large inputs. Returns compact metadata and recommended next actions without returning full content. Example call: {\"path\":\"/data/report.pdf\"}",
       inputSchema: {
         path: z.string().describe("Absolute or workspace-relative local file/directory path"),
       },
@@ -44,7 +44,7 @@ function createFileIntelligenceMcpServer() {
   server.registerTool(
     "sample_file",
     {
-      description: "Sample a local text-like file or directory manifest. Results are explicitly marked as sampled, not full-file coverage.",
+      description: "Sample a local text-like file or directory manifest. Results are explicitly marked as sampled, not full-file coverage. Example call: {\"path\":\"/data/big.log\",\"strategy\":\"tail\",\"lines\":100}",
       inputSchema: {
         path: z.string().describe("Absolute or workspace-relative local file/directory path"),
         strategy: z.enum(["head", "middle", "tail"]).optional().describe("Sampling strategy for line-oriented files"),
@@ -57,7 +57,7 @@ function createFileIntelligenceMcpServer() {
   server.registerTool(
     "extract_file_range",
     {
-      description: "Extract an explicit line range from a local text-like file. Large files require a range and never silently become full-context reads.",
+      description: "Extract an explicit line range from a local text-like file. Large files require a range and never silently become full-context reads. Example call: {\"path\":\"/data/big.log\",\"rangeStart\":1200,\"rangeEnd\":1300}",
       // Flat wire shape: some gateways reject any tool schema with a nested
       // object parameter, so the range travels as two flat integers.
       inputSchema: {
@@ -72,7 +72,7 @@ function createFileIntelligenceMcpServer() {
   server.registerTool(
     "index_path",
     {
-      description: "Build a reusable local evidence index for a text-like file, metadata-indexable document/media file, or bounded directory. Returns an index id; it does not answer the user's question by itself.",
+      description: "Build a reusable local evidence index for a text-like file, metadata-indexable document/media file, or bounded directory. Returns an index id; it does not answer the user's question by itself. Example call: {\"path\":\"/data/contracts\"}",
       inputSchema: {
         path: z.string().describe("Absolute or workspace-relative local file/directory path"),
         workspacePath: z.string().optional().describe("Current workspace root for workspace-scoped index partitioning"),
@@ -86,7 +86,7 @@ function createFileIntelligenceMcpServer() {
   server.registerTool(
     "query_index",
     {
-      description: "Query a local file intelligence index and return compact evidence chunks with source ranges. This retrieves evidence; it does not invent answers.",
+      description: "Query a local file intelligence index and return compact evidence chunks with source ranges. This retrieves evidence; it does not invent answers. Example call: {\"indexId\":\"idx_abc123\",\"query\":\"termination clause\",\"limit\":5}",
       inputSchema: {
         indexId: z.string().describe("Index id returned by index_path"),
         query: z.string().describe("Natural-language or keyword query"),

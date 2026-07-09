@@ -847,6 +847,7 @@ export function initMessageUi() {
 export function wireMessageIpc() {
   window.assistantClient.onRuntimeEvents?.((batch) => {
     void handleMemoryProposalEvents(batch);
+    handleSelfHealRetryEvents(batch);
     applyRuntimeBatch(batch);
   });
   window.assistantClient.onFocusSession?.((data) => {
@@ -872,6 +873,23 @@ export function wireMessageIpc() {
     // instead of a stuck "processing". Cheap: it only toggles classes on the dots.
     updateSessionRunningIndicators();
   });
+}
+
+// Runtime model self-heal / tool-call rescue fired a silent retry of the
+// failed message: tell the user why a "failed" turn is suddenly running again.
+function handleSelfHealRetryEvents(batch) {
+  for (const event of batch?.events || []) {
+    if (event.type !== "turn.self_heal_retry") continue;
+    const kind = event.payload?.kind || "";
+    const key = kind === "tool_call_rescue"
+      ? "toast.toolCallRescueRetry"
+      : kind === "empty_completion_retry"
+        ? "toast.emptyCompletionRetry"
+        : kind === "truncated_turn_retry"
+          ? "toast.truncatedTurnRetry"
+          : "toast.modelSelfHealRetry";
+    showToast(t(key), "info", 6000);
+  }
 }
 
 async function handleMemoryProposalEvents(batch) {

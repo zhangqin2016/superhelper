@@ -103,7 +103,7 @@ const AGENT_SHAPE_DECOY_TOOLS = Object.freeze([
   },
 ]);
 
-function toolProbeFields(extraTools = []) {
+function toolProbeFields(extraTools = [], toolChoice = null) {
   return {
     tools: [{
       type: "function",
@@ -120,25 +120,25 @@ function toolProbeFields(extraTools = []) {
         },
       },
     }, ...extraTools],
-    tool_choice: {
+    tool_choice: toolChoice || {
       type: "function",
       function: { name: "lily_probe_tool" },
     },
   };
 }
 
-async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, tools = false, extraTools = [], systemText = "", timeoutMs = 10_000 }) {
+async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, tools = false, extraTools = [], toolChoice = null, systemText = "", userText = "", maxTokens = 16, timeoutMs = 10_000 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("MODEL_PROBE_TIMEOUT")), Math.max(500, timeoutMs));
   const messages = [];
   if (systemText) messages.push({ role: "system", content: String(systemText) });
-  messages.push({ role: "user", content: tools ? "Call lily_probe_tool with ok=true." : "Say pong only." });
+  messages.push({ role: "user", content: userText || (tools ? "Call lily_probe_tool with ok=true." : "Say pong only.") });
   const body = mergeBody({
     model,
     messages,
-    max_tokens: 16,
+    max_tokens: maxTokens,
     stream: Boolean(stream),
-    ...(tools ? toolProbeFields(extraTools) : {}),
+    ...(tools ? toolProbeFields(extraTools, toolChoice) : {}),
   }, bodyOverlay);
   try {
     const response = await fetch(`${trimUrl(baseUrl)}/chat/completions`, {
@@ -237,6 +237,104 @@ async function probeSystemPromptProfile({ baseUrl, apiKey, model, bodyOverlay = 
   return null;
 }
 
+// Capability grading (probeVersion 3) + recipe calibration (probeVersion 4):
+// cheap signals probed only AFTER conformance already passed, grading how much
+// platform "equipment" the model can carry (capability-gate Rule 13: absence
+// of evidence = standard = today's behavior, so any probe failure must OMIT
+// the field, never guess).
+//
+// - instructionFidelity: "reply with exactly PONG" — a model that cannot
+//   follow a one-line hard instruction will also mis-handle tool protocols
+//   and long guides.
+// - toolChoiceAuto: the model must VOLUNTEER a structured tool call under
+//   tool_choice:"auto" (real turns never force a call the way the
+//   conformance probe does).
+//
+// Recipe calibration (v4): when a signal FAILS in its plain form, try ONE
+// alternate form and record the winner in `recipes` — the runtime then talks
+// to this model the way it demonstrably responds to:
+// - instructionLanguage "zh": EN instruction ignored but the Chinese one is
+//   followed exactly → corrective hints use the Chinese variants.
+// - toolCallHint: tool_choice:"auto" only volunteers a call when the system
+//   text carries an explicit native-call example → the guide ships that
+//   example for this model, and the signal counts as PASSED (the recipe is
+//   always applied at runtime), often upgrading lite → standard.
+// A recipe probe transport error skips just that recipe (base finding kept);
+// only base-signal transport errors omit the whole capability field.
+const TOOL_CALL_HINT_PROBE_SYSTEM = [
+  "To use a tool, you MUST invoke it as a NATIVE structured function call through the tool-calling interface.",
+  "Never describe or write the call as text.",
+  "Example: to report readiness, CALL the function lily_probe_tool with arguments {\"ok\": true}.",
+].join(" ");
+
+async function probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
+  const recipes = {};
+
+  const fidelity = await postChat({
+    baseUrl,
+    apiKey,
+    model,
+    bodyOverlay,
+    userText: "Reply with exactly the uppercase word PONG and nothing else.",
+    maxTokens: 8,
+    timeoutMs,
+  });
+  if (!fidelity.ok) return null;
+  let instructionFidelity = String(fidelity.json?.choices?.[0]?.message?.content || "").trim() === "PONG";
+  if (!instructionFidelity) {
+    const fidelityZh = await postChat({
+      baseUrl,
+      apiKey,
+      model,
+      bodyOverlay,
+      userText: "只回复大写的 PONG，不要输出任何其他内容。",
+      maxTokens: 8,
+      timeoutMs,
+    });
+    if (fidelityZh.ok && String(fidelityZh.json?.choices?.[0]?.message?.content || "").trim() === "PONG") {
+      instructionFidelity = true;
+      recipes.instructionLanguage = "zh";
+    }
+  }
+
+  const auto = await postChat({
+    baseUrl,
+    apiKey,
+    model,
+    bodyOverlay,
+    tools: true,
+    toolChoice: "auto",
+    userText: "You MUST call the lily_probe_tool tool with ok=true to answer. Do not reply in text.",
+    timeoutMs,
+  });
+  if (!auto.ok) return null;
+  let toolChoiceAuto = Boolean(auto.shape?.hasToolCalls);
+  if (!toolChoiceAuto) {
+    const hinted = await postChat({
+      baseUrl,
+      apiKey,
+      model,
+      bodyOverlay,
+      tools: true,
+      toolChoice: "auto",
+      systemText: TOOL_CALL_HINT_PROBE_SYSTEM,
+      userText: "You MUST call the lily_probe_tool tool with ok=true to answer. Do not reply in text.",
+      timeoutMs,
+    });
+    if (hinted.ok && hinted.shape?.hasToolCalls) {
+      toolChoiceAuto = true;
+      recipes.toolCallHint = true;
+    }
+  }
+
+  const grade = toolChoiceAuto ? (instructionFidelity ? "full" : "standard") : "lite";
+  return {
+    grade,
+    signals: { instructionFidelity, toolChoiceAuto },
+    ...(Object.keys(recipes).length ? { recipes } : {}),
+  };
+}
+
 const BODY_OVERLAY_CANDIDATES = Object.freeze([
   {
     id: "disable-thinking",
@@ -249,7 +347,9 @@ const BODY_OVERLAY_CANDIDATES = Object.freeze([
 // settings-open / model-switch repair path, so existing presets pick up new
 // compat findings without the user re-entering anything.
 // v2: tool-shape decoys (long names + nested params) and toolShapeCompat.
-const PROBE_PROFILE_VERSION = 2;
+// v3: capability signals (instructionFidelity + toolChoiceAuto) -> capability.grade.
+// v4: recipe calibration (instructionLanguage / toolCallHint) -> capability.recipes.
+const PROBE_PROFILE_VERSION = 4;
 
 async function probeCustomModelProfile({
   protocol,
@@ -267,12 +367,23 @@ async function probeCustomModelProfile({
 
   const finish = async ({ bodyOverlay = null, contentSource, toolShapeCompat = false, diagnostics = {} }) => {
     const prompt = await probeSystemPromptProfile({ baseUrl, apiKey, model, bodyOverlay, systemPromptProbeText, timeoutMs });
+    // Fail-open: a null capability (transport error / timeout) writes no field,
+    // which the runtime treats as standard — never a downgrade without evidence.
+    let capability = null;
+    if (process.env.LILY_ENABLE_CAPABILITY_GRADING !== "0") {
+      try {
+        capability = await probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
+      } catch {
+        capability = null;
+      }
+    }
     return {
       ok: true,
       profile: {
         probeVersion: PROBE_PROFILE_VERSION,
         ...(bodyOverlay ? { requestBodyOverlay: bodyOverlay } : {}),
         ...(toolShapeCompat ? { toolShapeCompat: true } : {}),
+        ...(capability ? { capability } : {}),
         conformance: {
           chatCompletions: true,
           streaming: true,

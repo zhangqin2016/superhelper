@@ -9,6 +9,11 @@ import path from "node:path";
 const require = createRequire(import.meta.url);
 const tempUserData = fs.mkdtempSync(path.join(os.tmpdir(), "lily-turn-orchestrator-"));
 process.env.LILY_USER_DATA_DIR = tempUserData;
+// Turn rescue would silently retry the synthetic empty/malformed failures this
+// harness uses to exercise failure paths, occupying the runner and queueing
+// later sends. Rescue has its own closed loop in test-tool-call-rescue.mjs.
+process.env.LILY_TOOL_CALL_RESCUE = "0";
+process.env.LILY_EMPTY_COMPLETION_RETRY = "0";
 process.on("exit", () => fs.rmSync(tempUserData, { recursive: true, force: true }));
 const { RuntimeEventBus } = require("../src/main/runtime-event-bus.js");
 const { TranscriptStore } = require("../src/main/transcript-store.js");

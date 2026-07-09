@@ -1,0 +1,26 @@
+{
+  "model": "Qwen/Qwen3.5-27B",
+  "updatedAt": "2026-07-09T20:41:31.286Z",
+  "results": {
+    "basic-instruction": {
+      "pass": true,
+      "sample": "PONG"
+    },
+    "chinese-reply": {
+      "pass": true,
+      "sample": "我是一个交互式 CLI 工具，可以帮助你完成软件工程任务。"
+    },
+    "reasoning-arith": {
+      "pass": true,
+      "sample": "96%"
+    },
+    "tool-roundtrip": {
+      "pass": true,
+      "sample": "暗号是 LILY-EVAL-7391"
+    },
+    "negative-constraint": {
+      "pass": true,
+      "sample": "苹果、香蕉、橙子"
+    }
+  }
+}

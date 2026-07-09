@@ -82,6 +82,9 @@ const TURN_OPTIONAL_TYPES = new Set([
   "queue.updated",
   "user.committed",
   "turn.steered",
+  // Emitted AFTER the failed turn finalized (state.turnId already null), so it
+  // must be deliverable without an active turn or the renderer never sees it.
+  "turn.self_heal_retry",
   "engine.notice",
   "engine.warning",
   "engine.stderr",
@@ -697,10 +700,19 @@ class TurnOrchestrator {
         }
         this._emit(sessionId, "engine.stderr", payload);
         break;
-      case "usage.updated":
+      case "usage.updated": {
         state.usage = payload.usage || payload;
+        // Track finish reasons for the truncation guard: a final "unknown" on
+        // a turn whose earlier steps reported REAL reasons means the gateway
+        // cut the stream mid-turn (classifyTurnFailure -> TRUNCATED_TURN_END).
+        const stopReason = String(payload.stopReason || "");
+        if (stopReason) {
+          state.lastStopReason = stopReason;
+          if (stopReason !== "unknown") state.sawRecognizedStopReason = true;
+        }
         this._emit(sessionId, "usage.updated", payload);
         break;
+      }
       case "assistant.message_stop":
         closeStreamingBlocks(state, Date.now());
         this._emit(sessionId, "assistant.message_stop", payload);
@@ -911,6 +923,124 @@ class TurnOrchestrator {
     return this._startLocalAssistantTurn(session, displayText, files, opts);
   }
 
+  /** Runtime self-heal: a healable failure triggers a forced re-probe of the
+   *  active custom model in the background. If the compatibility profile
+   *  actually changed, the failed message is retried once, silently. Runs
+   *  after the turn already finalized as failed, so every internal error here
+   *  fails open to the normal failure UX. */
+  async _maybeSelfHealAndRetry(sessionId, failure) {
+    try {
+      // Tool-call rescue runs FIRST for leaked-tool-call failures: a corrective
+      // retry fixes model behavior in seconds, while a re-probe only fixes
+      // gateway config. The probe still learns in the background either way.
+      if (await this._maybeToolCallRescueRetry(sessionId, failure)) return;
+      const { attemptModelSelfHeal, isHealableFailureCode } = require("./model-self-heal");
+      if (!isHealableFailureCode(failure?.code)) return;
+      const result = await attemptModelSelfHeal({
+        code: failure.code,
+        systemPromptProbeText: this._selfHealProbeText(sessionId),
+      });
+      if (!result?.healed) return;
+      // Don't fight the user: retry only while the session is still idle with
+      // nothing queued (they may already have resent or moved on).
+      const state = this._state(sessionId);
+      if (state.turnId || state.queue.length) return;
+      if (this.ctx.runnerPool.get(sessionId)?.isBusy?.()) return;
+      // Idle runners still hold the pre-heal model config; recycle them so the
+      // retry binds with the repaired profile.
+      require("./runner-live-config").terminateIdleRunners(this.ctx.runnerPool);
+      log.info(`model self-heal retry: session=${sessionId} code=${failure.code}`);
+      this._emit(sessionId, "turn.self_heal_retry", { errorCode: failure.code });
+      const retried = await this.retryLastMessage(sessionId);
+      if (!retried?.ok) log.warn(`model self-heal retry not sent: ${retried?.error || "unknown"}`);
+    } catch (err) {
+      log.warn(`model self-heal failed open: ${err?.message || String(err)}`);
+    }
+  }
+
+  /** Turn rescue: immediate silent retry-once for failures a retry plausibly
+   *  fixes without config changes — leaked tool-call text (retry carries a
+   *  corrective instruction on the ENGINE-facing text) and empty completions
+   *  (plain retry absorbs gateway flakes). The visible transcript stays
+   *  untouched. Returns true when a rescue retry was dispatched (the self-heal
+   *  path is then skipped for this failure; the background probe still runs so
+   *  the platform keeps learning). Fail-open: any error → normal failure flow. */
+  async _maybeToolCallRescueRetry(sessionId, failure) {
+    try {
+      const rescue = require("./tool-call-rescue");
+      const strategy = rescue.rescueStrategyFor(failure?.code);
+      if (!strategy) return false;
+      if (!rescue.shouldAttemptRescue(sessionId, failure.code)) return false;
+      // Don't fight the user: only while the session is idle with nothing queued.
+      const state = this._state(sessionId);
+      if (state.turnId || state.queue.length) return false;
+      if (this.ctx.runnerPool.get(sessionId)?.isBusy?.()) return false;
+      // Side-effect guard: a retry re-runs the WHOLE turn. Only rescue turns
+      // whose executed tools are ALL side-effect-free (reads/research) —
+      // replaying a turn that already sent mail or edited files is worse than
+      // failing honestly.
+      if (!rescue.isSideEffectFreeToolRun([...(state.tools?.values?.() || [])])) return false;
+      const lastUser = this.ctx.sessionManager.getLastUserMessage(sessionId);
+      if (!lastUser) return false;
+      rescue.markRescueAttempt(sessionId, failure.code);
+      // Deliberately NO probe here: firing the self-heal probe now would burn
+      // its per-preset cooldown, so a deterministic gateway defect could no
+      // longer take the probe→profile-change→retry recovery on the SECOND
+      // failure (the rescue cooldown routes it there untouched). Flakes are
+      // absorbed by this retry; defects keep the exact old recovery path.
+      log.info(`turn rescue retry: session=${sessionId} kind=${strategy.kind}`);
+      this._emit(sessionId, "turn.self_heal_retry", { errorCode: failure.code, kind: strategy.kind });
+      this.transcriptStore.removeLastAssistantMessage(sessionId);
+      // skipPreflight: the model connection was proven live THIS turn (the
+      // request reached the model); a full preflight could spuriously block
+      // the silent retry. A dead runner just fails the send → logged → the
+      // user keeps the normal failure UX they already saw.
+      const content = String(lastUser.content || "").trim();
+      // The corrective hint speaks the language the probe showed this model
+      // actually follows (capability.recipes.instructionLanguage).
+      const hint = strategy.kind === "tool_call_rescue"
+        ? rescue.correctiveHintFor(this._modelRecipes())
+        : strategy.hint;
+      const retried = await this.sendUserMessage(sessionId, lastUser.content, lastUser.files || [], {
+        recordUser: false,
+        spawnEngine: true,
+        skipPreflight: true,
+        ...(hint ? { engineText: `${content}\n\n${hint}` } : {}),
+      });
+      if (!retried?.ok) log.warn(`turn rescue retry not sent: ${retried?.error || "unknown"}`);
+      return true;
+    } catch (err) {
+      log.warn(`turn rescue failed open: ${err?.message || String(err)}`);
+      return false;
+    }
+  }
+
+  /** The active model's probed recipes (capability.recipes), or {} — never throws. */
+  _modelRecipes() {
+    try {
+      return JSON.parse(require("./spawn-env").resolveLilyEnv().LILY_MODEL_RECIPES || "{}") || {};
+    } catch {
+      return {};
+    }
+  }
+
+  /** The active session guide (AGENT.md + protocol appendices) — same text the
+   *  save-time probe uses, so the re-probe measures realistic prompt sizes. */
+  _selfHealProbeText(sessionId) {
+    try {
+      const fs = require("node:fs");
+      const path = require("node:path");
+      const guide = path.join(require("./config").sessionGuideDir(sessionId), "AGENT.md");
+      const base = fs.existsSync(guide) ? fs.readFileSync(guide, "utf8") : "";
+      if (!base.trim()) return "";
+      const { appendLargeInputProtocolGuidance } = require("./large-input-protocol");
+      const { appendProcessJobProtocolGuidance } = require("./process-job-protocol");
+      return appendProcessJobProtocolGuidance(appendLargeInputProtocolGuidance(base));
+    } catch {
+      return "";
+    }
+  }
+
   async retryLastMessage(sessionId) {
     const session = this.ctx.sessionManager.findById(sessionId);
     if (!session) return { ok: false, error: "NO_SESSION" };
@@ -1050,6 +1180,8 @@ class TurnOrchestrator {
     state.processEvents = [];
     state.notices = [];
     state.usage = null;
+    state.lastStopReason = "";
+    state.sawRecognizedStopReason = false;
     state.taskContract = null;
     state.turnPolicy = null;
     state.evidenceLedger = new EvidenceLedger();
@@ -1255,6 +1387,8 @@ class TurnOrchestrator {
     state.processEvents = [];
     state.notices = [];
     state.usage = null;
+    state.lastStopReason = "";
+    state.sawRecognizedStopReason = false;
     state.taskContract = null;
     state.turnPolicy = null;
     state.evidenceLedger = new EvidenceLedger();
@@ -1527,6 +1661,19 @@ class TurnOrchestrator {
           recommendedSkillIds: [],
           requiredRuntimePackIds: [],
         };
+      }
+      // Matched procedure card: a previously proven tool path for a similar
+      // request rides along as ADVISORY context — a weak model gets a working
+      // plan instead of planning from scratch; a strong model gets a head
+      // start it is free to ignore.
+      try {
+        const procedureContext = require("./procedure-cards").buildProcedureCardContext({
+          projectId: session.projectId,
+          text: rawUserText,
+        });
+        if (procedureContext) platformContextParts.push(procedureContext);
+      } catch (err) {
+        log.warn("procedure card context failed open: %s", err?.message || err);
       }
       if (platformContextParts.length) {
         engineText = addLayersToEngineText(engineText, {
@@ -1925,6 +2072,7 @@ class TurnOrchestrator {
           engineMessageId: payload?.engineMessageId || null,
         },
       });
+      void this._maybeSelfHealAndRetry(sessionId, failure);
     } else if (blockingProcessJobs.length) {
       const notice = runningProcessJobNotice(blockingProcessJobs);
       this._finalize(sessionId, "turn.stalled", {
@@ -1938,11 +2086,20 @@ class TurnOrchestrator {
         ...terminalMeta,
       });
     } else {
+      // Snapshot BEFORE finalize — the terminal cleanup nulls enginePayload.
+      const procedureSnapshot = {
+        rawText: String(state.enginePayload?.rawText || ""),
+        tools: [...(state.tools?.values?.() || [])],
+      };
       this._finalize(sessionId, "turn.completed", {
         assistant: normalized.text || state.assistantText,
         resultFromCli: Boolean(payload?.resultFromCli),
         ...terminalMeta,
       });
+      // A completed multi-tool turn is a PROVEN path — distill it into a
+      // procedure card (deterministic, no model call) so later requests with
+      // the same intent start from a working plan instead of from scratch.
+      void this._maybeRecordProcedureCard(sessionId, procedureSnapshot);
     }
     if (state.legacyContextHydrated && payload?.engineMessageId) {
       const runner = this.ctx.runnerPool?.get?.(sessionId);
@@ -1952,6 +2109,33 @@ class TurnOrchestrator {
       );
     }
     this._afterTurnFinalized(sessionId);
+  }
+
+  /** Post-completion procedure-card distillation. Fail-open and async — the
+   *  finished turn's UX can never be affected. The active model's capability
+   *  grade gates AUTHORING (lite paths are not worth teaching from). */
+  async _maybeRecordProcedureCard(sessionId, snapshot = {}) {
+    try {
+      const rawText = String(snapshot.rawText || "").trim();
+      if (!rawText || !snapshot.tools?.length) return;
+      const session = this.ctx.sessionManager.findById(sessionId);
+      if (!session) return;
+      let capabilityGrade = "";
+      try {
+        capabilityGrade = String(require("./spawn-env").resolveLilyEnv().LILY_MODEL_CAPABILITY_GRADE || "");
+      } catch {
+        capabilityGrade = "";
+      }
+      const card = require("./procedure-cards").recordProcedureCardFromTurn({
+        projectId: session.projectId,
+        userText: rawText,
+        tools: snapshot.tools,
+        capabilityGrade,
+      });
+      if (card) log.info(`procedure card recorded: project=${session.projectId} steps=${card.steps.length}`);
+    } catch (err) {
+      log.warn(`procedure card record failed open: ${err?.message || String(err)}`);
+    }
   }
 
   async _handleError(sessionId, message) {
@@ -2124,6 +2308,8 @@ class TurnOrchestrator {
     state.processEvents = [];
     state.notices = [];
     state.usage = null;
+    state.lastStopReason = "";
+    state.sawRecognizedStopReason = false;
     state.taskContract = null;
     state.turnPolicy = null;
     state.evidenceLedger = null;
@@ -2470,6 +2656,7 @@ class TurnOrchestrator {
       phase: item.phase || "starting",
       phaseDetail: item.phaseDetail || "",
       stats: item.stats || {},
+      ...(item.lastError ? { lastError: item.lastError } : {}),
     };
   }
 
@@ -2862,12 +3049,57 @@ class TurnOrchestrator {
         } else if (requestId && event.status !== "requested") {
           item.pendingQuestions = item.pendingQuestions.filter((q) => q.requestId !== requestId && q.rawRequestId !== requestId);
         }
+      } else if (event.kind === "error") {
+        item.status = "failed";
+        item.lastError = {
+          message: String(event.message || "").slice(0, 500),
+          ts: event.ts || Date.now(),
+        };
+        this._noteSubagentEngineError(sessionId, childSessionId, item.lastError.message);
       }
       item.updatedAt = event.ts || Date.now();
     }
     this._refreshSubagentPhase(item);
     state.subagents.set(childSessionId, item);
     return { subagent: this._compactSubagent(item) };
+  }
+
+  /** A subagent's ENGINE died (model/gateway failure inside the child session).
+   *  This signal used to be dropped entirely — the parent only saw a generic
+   *  "Task failed". Feed it to the SAME learning loops the parent turn already
+   *  has: timeline notice (visibility), model-failure diagnostics (telemetry),
+   *  and background self-heal for healable signatures (the platform repairs the
+   *  compatibility profile so the NEXT subtask works). Observe-only: the running
+   *  turn is never interrupted or retried from here; every path fails open. */
+  _noteSubagentEngineError(sessionId, childSessionId, message) {
+    try {
+      const state = this._state(sessionId);
+      const compact = String(message || "").replace(/\s+/g, " ").trim().slice(0, 260);
+      log.warn(`subagent engine error: session=${sessionId} child=${childSessionId} msg=${compact.slice(0, 200)}`);
+      this._emitEngineNotice(sessionId, {
+        code: "subagentEngineError",
+        level: "warning",
+        detail: compact,
+        replacesCode: `subagentEngineError:${childSessionId}`,
+      });
+      const classified = classifyAssistantError(message);
+      void reportModelFailureDiagnostic(this.ctx, sessionId, {
+        source: "subagent_engine_error",
+        turnId: state.turnId,
+        raw: message,
+        classified,
+        payload: { childSessionId },
+      });
+      const { attemptModelSelfHeal, isHealableFailureCode } = require("./model-self-heal");
+      if (classified?.code && isHealableFailureCode(classified.code)) {
+        void attemptModelSelfHeal({
+          code: classified.code,
+          systemPromptProbeText: this._selfHealProbeText(sessionId),
+        });
+      }
+    } catch (err) {
+      log.warn(`subagent engine error handling failed open: ${err?.message || String(err)}`);
+    }
   }
 
   _refreshSubagentPhase(item = {}) {

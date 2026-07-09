@@ -39,6 +39,7 @@
     "headless": "node scripts/lily-headless.mjs",
     "engine:opencode": "node scripts/fetch-opencode-engine.mjs",
     "engine:opencode:all": "node scripts/fetch-opencode-engine.mjs --platform darwin-arm64 && node scripts/fetch-opencode-engine.mjs --platform darwin-x64 && node scripts/fetch-opencode-engine.mjs --platform win32-x64",
+    "eval:model": "node scripts/eval/run-model-evals.mjs",
     "build:runtime-pack": "node scripts/build-runtime-pack.mjs",
     "build:skill-pack": "node scripts/build-skill-pack.mjs",
     "verify:runtime": "node scripts/verify-runtime-bundle.mjs",

@@ -46,6 +46,13 @@ class SessionRunnerPool {
     const { buildSharedBaseConfig } = require("./runtime/opencode-config-builder");
     const permissionMode = extra.permissionMode || getActivePermissionMode();
     const lilyEnv = resolveLilyEnv();
+    // Capability grading (能力分档): only a probed "lite" grade changes anything —
+    // standard/full/absent run today's exact config (capability-gate Rule 13).
+    // Kill switch: LILY_ENABLE_CAPABILITY_GRADING=0 pins every model to standard.
+    const capabilityGrade = process.env.LILY_ENABLE_CAPABILITY_GRADING === "0"
+      ? ""
+      : String(lilyEnv.LILY_MODEL_CAPABILITY_GRADE || "");
+    const liteGrade = capabilityGrade === "lite";
     // The SHARED serve's base config — app-wide only for model/provider +
     // plugins, with Lily extension MCPs scoped to this session's active skills.
     // Other per-session bits are delivered per-request:
@@ -58,10 +65,15 @@ class SessionRunnerPool {
       lilyEnv,
       mcpServers: this._opencodeMcpServers(extra.activeSkillIds || [], {
         toolCompat: lilyEnv.LILY_OPENCODE_TOOL_COMPAT === "1",
+        capabilityGrade,
       }),
       pluginPaths: this._opencodePlugins(),
       skillPaths: this._opencodeSkillPaths(extra.activeSkillIds || [], sessionId),
-      disallowedTools: extra.disallowedTools || [],
+      // lite: no subagents — a weak model cannot drive nested agent loops, and
+      // a dead subagent turn reads worse than doing the work inline.
+      disallowedTools: liteGrade
+        ? [...new Set([...(extra.disallowedTools || []), "task"])]
+        : extra.disallowedTools || [],
       // Static Lily identity header as the primary-agent prompt: suppresses
       // OpenCode's coding-CLI baseline (default.txt) that otherwise mis-frames
       // every turn as a terse software-engineering task. The full per-turn guide
@@ -95,7 +107,12 @@ class SessionRunnerPool {
     // Lily's AGENT.md (identity + rules + ENABLED skills) — the authoritative
     // guidance. It rides every prompt as hidden engine context so resumed or
     // migrated OpenCode sessions cannot drift away from current platform rules.
-    const guidance = this._opencodeGuideContent(extra.configDir, sessionId);
+    // Probed model recipes (e.g. "this model only volunteers tool calls when
+    // shown an example") append their calibrated hints here.
+    const guidance = this._appendModelRecipeHints(
+      this._opencodeGuideContent(extra.configDir, sessionId),
+      lilyEnv,
+    );
     // Reuse Lily's full engine env so skill SCRIPTS run identically under OpenCode
     // (DASHSCOPE_*/VISION_*/ALIYUN_BAILIAN_* for media skills, the curated PATH
     // with bundled node/python, connector-bridge for mail). OpenCode ignores the
@@ -105,6 +122,15 @@ class SessionRunnerPool {
       env = buildAgentSpawnEnv({ configDir: extra.configDir, lilyEnv });
     } catch {
       env = {};
+    }
+
+    // lite grade: tighter system-guide budget through the EXISTING truncation
+    // mechanism — min(probed limit, 8000). A weak model drowns in a 30k-char
+    // guide; the probed limit still wins when the gateway allows even less.
+    if (liteGrade) {
+      const probedMax = Number(lilyEnv.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS);
+      const liteMax = Number.isFinite(probedMax) && probedMax > 0 ? Math.min(probedMax, 8000) : 8000;
+      env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS = String(liteMax);
     }
 
     // OpenCode installs node-based language servers (pyright/tsserver) on demand
@@ -224,16 +250,63 @@ class SessionRunnerPool {
 
   _opencodeSubagentPersona() {
     try {
-      return require("./skill-manager").buildAgentSubagentPersona() || "";
+      const persona = require("./skill-manager").buildAgentSubagentPersona() || "";
+      return this._appendSubagentProtocolHints(persona);
     } catch (err) {
       log.warn("opencode subagent persona unavailable: %s", err?.message || String(err));
       return "";
     }
   }
 
+  /** Compact tool-protocol appendix for SUBAGENTS. The full AGENT.md guidance
+   *  only rides the PARENT prompt's body.system, so a subagent used to get the
+   *  whole lily_* MCP toolset mounted with zero rules on how to use it — the
+   *  classic failure being a child blindly reading a huge file into context.
+   *  Deliberately tiny (a distilled fraction of the parent protocols) so weak
+   *  gateways with small system budgets are never at risk. Kill switch:
+   *  LILY_SUBAGENT_PROTOCOL_HINTS=0. */
+  _appendSubagentProtocolHints(persona) {
+    if (process.env.LILY_SUBAGENT_PROTOCOL_HINTS === "0") return persona;
+    const base = String(persona || "").trim();
+    if (!base) return persona;
+    const hints = [
+      "## Tool Protocol (compact)",
+      "",
+      "- Large/unknown files: never read whole files blindly. Use lily_file_intelligence inspect_file first, then sample/extract/query by goal. State your coverage; never claim full coverage from samples.",
+      "- Long-running processes (servers, watchers, background commands): use lily_process_jobs (job_start with cwd + healthcheck, verify via job_status/job_logs). Short foreground commands stay on normal tools.",
+      "- If a lily_* tool is unavailable or fails, fall back to normal tools and say so — do not block or fabricate results.",
+    ].join("\n");
+    return `${base}\n\n${hints}`;
+  }
+
+  /** Probed model recipes → calibrated guide hints. `toolCallHint` means the
+   *  probe demonstrated this model only volunteers tool calls when the system
+   *  text carries an explicit native-call example — so the guide always ships
+   *  one. Titled "## Tool Protocol …" so the budget truncation's guardrail
+   *  rule keeps it alive on tight system budgets. Fail-open: bad JSON or no
+   *  recipes → guidance untouched. */
+  _appendModelRecipeHints(guidance, lilyEnv = {}) {
+    try {
+      const recipes = JSON.parse(lilyEnv.LILY_MODEL_RECIPES || "{}");
+      if (!recipes || recipes.toolCallHint !== true) return guidance;
+      const base = String(guidance || "").trim();
+      if (!base || base.includes("## Tool Protocol (model recipe)")) return guidance;
+      const hint = [
+        "## Tool Protocol (model recipe)",
+        "",
+        "- To use a tool, you MUST invoke it as a NATIVE structured function call through the tool-calling interface. Never describe or write the call as text, XML, or JSON inside your reply.",
+        "- Example: to read a file, CALL the tool named read with arguments {\"filePath\": \"/absolute/path\"} via a function call — not by writing it out.",
+        "- Make one tool call at a time and wait for its result before the next step.",
+      ].join("\n");
+      return `${base}\n\n${hint}`;
+    } catch {
+      return guidance;
+    }
+  }
+
   /** Lily's active MCP servers (mail/playwright/web) as a {name:{command,args,env}}
    *  map, for translation into OpenCode's mcp config. Empty on any failure. */
-  _opencodeMcpServers(activeSkillIds = null, { toolCompat = false } = {}) {
+  _opencodeMcpServers(activeSkillIds = null, { toolCompat = false, capabilityGrade = "" } = {}) {
     try {
       const fs = require("node:fs");
       const { bundleRuntimeDir } = require("./bundle-locator");
@@ -241,7 +314,18 @@ class SessionRunnerPool {
       const out = require("./config").userDataPath("opencode-mcp.json");
       const written = writeActiveMcpConfig(bundleRuntimeDir(), out, activeSkillIds);
       if (!written) return {};
-      const servers = JSON.parse(fs.readFileSync(out, "utf8")).mcpServers || {};
+      let servers = JSON.parse(fs.readFileSync(out, "utf8")).mcpServers || {};
+      // lite grade: a weak model handed 29 tools calls them badly. Keep the
+      // tool broker (the capability catalog is the platform contract — Lily
+      // skills stop existing without it) AND file intelligence: it is the
+      // guardrail the Large Input Protocol depends on — without it a weak
+      // model faces big files with nothing but blind whole-file reads, which
+      // makes it DUMBER, not safer. Everything else drops; OpenCode's core
+      // tools carry the rest. standard/full/ungraded keep today's set.
+      if (capabilityGrade === "lite") {
+        const keep = ["lily_tool_broker", "lily_file_intelligence"];
+        servers = Object.fromEntries(keep.filter((key) => servers[key]).map((key) => [key, servers[key]]));
+      }
       if (!toolCompat) return servers;
       // Tool-shape compat (the probe found this gateway rejects tool names
       // longer than ~35 chars): OpenCode names MCP tools `<serverKey>_<tool>`,
@@ -277,7 +361,7 @@ class SessionRunnerPool {
         candidates.push(path.join(PROJECT_ROOT, rel));
         return candidates.find((p) => fs.existsSync(p)) || null;
       };
-      return ["verify-edit.js", "compaction-memory.js", "loop-detector.js"].map(resolve).filter(Boolean);
+      return ["verify-edit.js", "compaction-memory.js", "loop-detector.js", "subtask-guard.js"].map(resolve).filter(Boolean);
     } catch {
       return [];
     }

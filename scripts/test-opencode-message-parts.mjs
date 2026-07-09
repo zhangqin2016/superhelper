@@ -39,6 +39,59 @@ const { buildOpencodePromptBody, fileToPart } = require("../src/main/runtime/ope
   assert(body.system.startsWith("AAAA"), "truncation preserves the beginning of Lily's core guidance");
 }
 
+// Section-aware truncation: guardrail protocol sections must SURVIVE a tight
+// budget even when they sit at the tail (the old head-cut dropped exactly
+// those), and dropped skill sections are named so the model knows the gap.
+{
+  const { truncateSystemGuidance } = require("../src/main/runtime/opencode-message-parts.js");
+  const guide = [
+    "# Lily\n\nIdentity and core rules.",
+    `## Skill Alpha\n\n${"alpha ".repeat(400)}`,
+    `## Skill Beta\n\n${"beta ".repeat(400)}`,
+    "## Large Input Protocol\n\nUse lily_file_intelligence inspect_file first; never blind-read huge files.",
+    "## Process Job Protocol\n\nUse lily_process_jobs for long-running work; verify with job_status.",
+  ].join("\n\n");
+
+  const fits = truncateSystemGuidance(guide, guide.length + 10);
+  assert.equal(fits, guide.trim(), "a guide under the limit must pass through byte-identical");
+
+  const cut = truncateSystemGuidance(guide, 1500);
+  assert(cut.length <= 1500, "smart truncation still respects the measured limit");
+  assert.match(cut, /Large Input Protocol/, "the large-input guardrail must survive tail-position truncation");
+  assert.match(cut, /Process Job Protocol/, "the process-job guardrail must survive tail-position truncation");
+  assert.match(cut, /Identity and core rules/, "the identity head is always kept");
+  assert.match(cut, /Omitted for this model's input limit/, "dropped sections are named for the model");
+  assert.match(cut, /Skill Alpha|Skill Beta/, "the omitted list names the dropped skill sections");
+  assert.match(cut, /System guide truncated by Lily/, "the truncation notice is preserved");
+  assert.doesNotMatch(cut, /(alpha ){50}/, "oversized skill bodies are what actually get dropped");
+
+  const headOnly = truncateSystemGuidance("C".repeat(5000), 1500);
+  assert(headOnly.startsWith("CCCC") && headOnly.length <= 1500 + 200,
+    "guides without sections keep the legacy head-cut behavior");
+
+  // Intent gating: within the same tight budget, the skill section RELEVANT to
+  // this turn's request survives instead of whichever came first.
+  const intentGuide = [
+    "# Lily\n\nIdentity and core rules.",
+    `## Mail Sending Skill\n\nHow to send mail with mail_send.\n${"mail rules ".repeat(150)}`,
+    `## 视频生成技能\n\n如何用视频生成工具制作视频。\n${"视频规则 ".repeat(200)}`,
+    "## Large Input Protocol\n\nUse lily_file_intelligence inspect_file first.",
+  ].join("\n\n");
+  const budget = 2600; // fits head + guardrail + ONE skill section
+
+  const videoCut = truncateSystemGuidance(intentGuide, budget, { intentText: "帮我把这段素材做成一个视频" });
+  assert.match(videoCut, /视频生成技能/, "the request-relevant skill section survives");
+  assert.match(videoCut, /Omitted for this model's input limit:.*Mail Sending Skill/s, "the irrelevant section is dropped and named");
+  assert.match(videoCut, /Large Input Protocol/, "guardrails still outrank intent-ranked skill sections");
+
+  const mailCut = truncateSystemGuidance(intentGuide, budget, { intentText: "send the weekly report mail to the team" });
+  assert.match(mailCut, /Mail Sending Skill/, "a different request flips which section survives");
+  assert.match(mailCut, /Omitted for this model's input limit:.*视频生成技能/s, "the now-irrelevant section is dropped and named");
+
+  const noIntentCut = truncateSystemGuidance(intentGuide, budget, { intentText: "" });
+  assert.match(noIntentCut, /Mail Sending Skill/, "without an intent signal the authored order is preserved");
+}
+
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-opencode-parts-"));
   const small = path.join(dir, "small.txt");
