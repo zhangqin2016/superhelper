@@ -254,9 +254,10 @@ function classifyTurnFailure(payload, normalized, state) {
   if (isEmptyAssistantCompletion(payload, normalized, state)) {
     return {
       code: "EMPTY_ASSISTANT_COMPLETION",
-      message: "The selected model did not return any usable assistant content. Check whether the model is available and whether the model name, API base URL, API key, and compatibility options are correct.",
+      message: "当前模型不可用或没有返回可用内容。本轮没有形成回答，请检查模型服务状态、模型名称、API 地址、密钥和兼容参数。",
       retryable: true,
       category: "protocol",
+      suppressIncompleteSummary: true,
     };
   }
   if (normalized?.failed) {

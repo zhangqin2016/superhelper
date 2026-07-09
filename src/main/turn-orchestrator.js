@@ -1906,7 +1906,7 @@ class TurnOrchestrator {
       const failedTurnId = state.turnId;
       this._finalize(sessionId, "turn.failed", {
         failed: true,
-        assistant: appendIncompleteTurnSummary(friendly, state, payload),
+        assistant: failure.suppressIncompleteSummary ? friendly : appendIncompleteTurnSummary(friendly, state, payload),
         errorCode: failure.code,
         errorCategory: failure.category || "",
         retryable: failure.retryable !== false,

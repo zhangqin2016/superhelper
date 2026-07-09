@@ -1148,6 +1148,12 @@ if (
 ) {
   throw new Error(`empty assistant completion must fail visibly, got: ${JSON.stringify(emptyCompletionTerminal)}`);
 }
+if (
+  !/当前模型不可用/.test(emptyCompletionTerminal.payload?.assistant || "") ||
+  /selected model did not return|本轮没有形成最终回答|系统已停止继续等待/i.test(emptyCompletionTerminal.payload?.assistant || "")
+) {
+  throw new Error(`empty assistant completion should show one clear model-unavailable message, got: ${JSON.stringify(emptyCompletionTerminal.payload?.assistant)}`);
+}
 
 sent.length = 0;
 const runningProcessJobTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "渲染一个视频", [], {
