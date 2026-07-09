@@ -239,7 +239,11 @@ function classifyTurnFailure(payload, normalized, state) {
   ].filter((value) => typeof value === "string" && value.trim()).join("\n");
   const errorClassified = classifyAssistantError(rawError);
   if (errorClassified) return errorClassified;
-  if (looksLikeLeakedToolCallText(normalized?.text || state?.assistantText || "")) {
+  const assistantLikeText = [normalized?.text, state?.assistantText]
+    .filter((value) => typeof value === "string" && value.trim())
+    .join("\n");
+  const thinkingLikeText = String(state?.thinkingText || "");
+  if (looksLikeLeakedToolCallText(assistantLikeText) || looksLikeLeakedToolCallText(thinkingLikeText)) {
     return {
       code: "MALFORMED_TOOL_CALL_TEXT",
       message: "The model returned an incomplete tool-call fragment instead of a final answer. Please retry; if it repeats, refresh the model configuration or start a fresh conversation.",

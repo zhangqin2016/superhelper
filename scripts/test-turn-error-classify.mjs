@@ -105,6 +105,15 @@ const leakedToolCall = ec.classifyTurnFailure(
 );
 assert(leakedToolCall?.code === "MALFORMED_TOOL_CALL_TEXT", "leaked tool-call fragments are not successful answers");
 assert(leakedToolCall?.retryable === true, "leaked tool-call fragments are retryable protocol failures");
+const leakedReasoningToolCall = ec.classifyTurnFailure(
+  { code: 0 },
+  { text: "我来继续为您制作一个漂亮的页面！" },
+  {
+    assistantText: "我来继续为您制作一个漂亮的页面！",
+    thinkingText: "<tool_call><function=write><parameter=content><!DOCTYPE html>",
+  },
+);
+assert(leakedReasoningToolCall?.code === "MALFORMED_TOOL_CALL_TEXT", "leaked tool-call fragments in reasoning are not successful answers");
 assert(ec.looksLikeLeakedToolCallText("<tool_call><function=bash><parameter=timeout>10000</parameter>"), "detects tool-call XML");
 assert(!ec.looksLikeLeakedToolCallText("Please set the timeout parameter to 10000."), "does not flag normal prose");
 
