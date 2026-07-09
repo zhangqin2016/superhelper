@@ -648,6 +648,63 @@ async function newSession() {
   session.terminate();
 }
 
+// --- repeated empty completion: fall back to managed default model -----------
+{
+  const made = [];
+  let fallbackCalls = 0;
+  let session;
+  session = new OpencodeAgentSession("empty_completion_fallback", {
+    createServer: (opts) => {
+      const fake = new FakeServer();
+      fake.opts = opts;
+      fake.idleState = true;
+      fake.historyMessages = [];
+      made.push(fake);
+      return fake;
+    },
+    fallbackToDefaultManagedModel: async () => {
+      fallbackCalls += 1;
+      session.ensureProcess(process.cwd(), {
+        agentCommand: "/bin/true",
+        model: { providerID: "lily", modelID: "managed-default" },
+        opencodeConfig: "DEFAULT_CONFIG",
+      }, { lazy: true });
+      return { ok: true, activePresetId: "managed-default" };
+    },
+  });
+  const orch = makeOrchestrator();
+  session.bindOrchestrator(orch);
+  session.ensureProcess(process.cwd(), {
+    agentCommand: "/bin/true",
+    model: { providerID: "lily", modelID: "weak-custom" },
+    opencodeConfig: "CUSTOM_CONFIG",
+  }, { lazy: true });
+
+  session.sendUserMessage({ text: "你好" });
+  await tick();
+  assert(made.length === 1 && made[0].opts.model.modelID === "weak-custom", "first attempt uses selected weak model");
+  made[0].emitEvent({ type: "message.part.updated", properties: { part: { type: "step-start" } } });
+  made[0].emitEvent({ type: "message.part.updated", properties: { part: { type: "step-finish", reason: "unknown", tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } } } });
+  made[0].emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(made[0].prompts.length === 2 && fallbackCalls === 0, "first empty completion replays on the selected model");
+
+  made[0].emitEvent({ type: "message.part.updated", properties: { part: { type: "step-start" } } });
+  made[0].emitEvent({ type: "message.part.updated", properties: { part: { type: "step-finish", reason: "unknown", tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } } } });
+  made[0].emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(fallbackCalls === 1, "second empty completion triggers managed default fallback");
+  assert(made.length === 2 && made[1].opts.model.modelID === "managed-default", "fallback restarts OpenCode with managed default model");
+  assert(made[1].prompts.length === 1, "fallback preserves and resends the current user prompt");
+
+  made[1].emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "默认模型已接管" } });
+  made[1].emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(orch.calls.error.length === 0, "fallback avoids visible empty-completion failure");
+  assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "默认模型已接管", "fallback model completes the turn");
+  session.terminate();
+}
+
 // --- transient hiccup after tool activity: do not replay side effects -------
 {
   const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
