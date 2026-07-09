@@ -979,6 +979,66 @@ async function updateCustomPresetWithProbe(presetId, input = {}) {
   });
 }
 
+function customPresetNeedsCompatibilityProbe(entry) {
+  const normalized = normalizeCustomPresetEntry(entry);
+  if (!normalized?.id) return false;
+  const baseUrl = String(normalized.baseUrl || "").trim();
+  if (!baseUrl) return false;
+  const protocol = normalizeProtocol(normalized.protocol) || legacyProtocolForBaseUrl(baseUrl);
+  if (protocol !== "openai") return false;
+  if (normalizeCompatibilityProfile(normalized.compatibilityProfile) || normalizeRequestBodyOverlay(normalized.requestBodyOverlay)) {
+    return false;
+  }
+  return Boolean(normalized.model);
+}
+
+async function repairCustomPresetCompatibilityProfiles({ activeOnly = false, timeoutMs = 10_000 } = {}) {
+  const user = loadUserChoice();
+  const customPresets = [...(user.customPresets || [])];
+  let repairedCount = 0;
+  const errors = [];
+
+  for (let index = 0; index < customPresets.length; index += 1) {
+    const entry = normalizeCustomPresetEntry(customPresets[index]);
+    if (activeOnly && entry.id !== getActivePresetId()) continue;
+    if (!customPresetNeedsCompatibilityProbe(entry)) continue;
+
+    const urlValidated = validateBaseUrl(entry.baseUrl, { required: true });
+    const keyValidated = validateApiKey(entry.apiKey, {
+      required: Boolean(urlValidated.baseUrl) && !isLoopbackBaseUrl(urlValidated.baseUrl),
+    });
+    if (!urlValidated.ok || !keyValidated.ok) {
+      errors.push({ id: entry.id, error: urlValidated.error || keyValidated.error });
+      continue;
+    }
+
+    const probe = await require("./model-compatibility-probe").probeCustomModelProfile({
+      protocol: "openai",
+      baseUrl: urlValidated.baseUrl,
+      apiKey: keyValidated.apiKey,
+      model: entry.model,
+      timeoutMs: Number(timeoutMs || 10_000),
+    });
+    if (!probe.ok) {
+      errors.push({ id: entry.id, error: probe.error || "MODEL_PROBE_FAILED" });
+      continue;
+    }
+    customPresets[index] = {
+      ...entry,
+      baseUrl: urlValidated.baseUrl,
+      apiKey: keyValidated.apiKey,
+      compatibilityProfile: normalizeCompatibilityProfile(probe.profile),
+      requestBodyOverlay: normalizeRequestBodyOverlay(probe.profile?.requestBodyOverlay),
+    };
+    repairedCount += 1;
+  }
+
+  if (repairedCount > 0) {
+    persistUserChoice({ ...user, customPresets });
+  }
+  return { ok: true, repairedCount, errors, ...listPresetsPublic() };
+}
+
 function deleteCustomPreset(presetId) {
   if (!String(presetId || "").startsWith(CUSTOM_ID_PREFIX)) {
     return { ok: false, error: "NOT_CUSTOM" };
@@ -1087,6 +1147,7 @@ module.exports = {
   saveCustomPresetWithProbe,
   updateCustomPreset,
   updateCustomPresetWithProbe,
+  repairCustomPresetCompatibilityProfiles,
   deleteCustomPreset,
   setApiGateway,
   diagnoseAndRestoreDefaultModel,

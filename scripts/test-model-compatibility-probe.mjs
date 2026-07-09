@@ -164,6 +164,31 @@ try {
   const storedPreset = stored.customPresets.find((preset) => preset.id === saved.preset.id);
   assert.equal(storedPreset.compatibilityProfile.conformance.streaming, true, "saved custom model keeps the compatibility contract for diagnostics");
   assert.equal(storedPreset.compatibilityProfile.conformance.toolCalls, true, "saved custom model records tool-call conformance for agent safety");
+
+  const legacy = modelPresets.saveCustomPreset({
+    label: "Legacy Reasoning Default",
+    protocol: "openai",
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    apiKey: "sk-test-probe",
+    model: "provider/model-with-reasoning-default",
+  });
+  assert.equal(legacy.ok, true, `legacy custom save path should still save: ${JSON.stringify(legacy)}`);
+  modelPresets.setActivePreset(legacy.preset.id);
+  const legacyEnvBeforeRepair = modelPresets.getUserApiEnv();
+  assert.equal(
+    legacyEnvBeforeRepair.LILY_OPENCODE_BODY_OVERLAY_JSON,
+    undefined,
+    "legacy custom presets start without a compatibility overlay",
+  );
+  const repaired = await modelPresets.repairCustomPresetCompatibilityProfiles({ activeOnly: true, timeoutMs: 5_000 });
+  assert.equal(repaired.ok, true, `legacy repair should not fail: ${JSON.stringify(repaired)}`);
+  assert.equal(repaired.repairedCount, 1, "legacy repair should profile the active custom model once");
+  const legacyEnvAfterRepair = modelPresets.getUserApiEnv();
+  assert.equal(
+    JSON.parse(legacyEnvAfterRepair.LILY_OPENCODE_BODY_OVERLAY_JSON).chat_template_kwargs.enable_thinking,
+    false,
+    "legacy repair must persist the discovered overlay into runtime env",
+  );
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });

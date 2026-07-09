@@ -6,6 +6,7 @@ const {
   setActivePreset,
   saveCustomPresetWithProbe,
   updateCustomPresetWithProbe,
+  repairCustomPresetCompatibilityProfiles,
   deleteCustomPreset,
   setApiGateway,
   diagnoseAndRestoreDefaultModel,
@@ -29,13 +30,24 @@ function registerModelHandlers(ctx) {
       // listPresetsPublic() may use the last valid signed cache and local
       // custom presets, but never packaged defaults for service-managed models.
     }
+    try {
+      const repaired = await repairCustomPresetCompatibilityProfiles({ activeOnly: true, timeoutMs: 15_000 });
+      if (repaired?.repairedCount) {
+        require("./runner-live-config").terminateIdleRunners(ctx.runnerPool);
+      }
+    } catch {
+      // Model settings should still render; failed custom-profile repair is
+      // surfaced by save/send preflight paths instead of blocking the panel.
+    }
     return { ok: true, ...listPresetsPublic() };
   });
 
-  ipcMain.handle("models:set-active", (_event, presetId) => {
-    return withRunnerChange(ctx, () => {
+  ipcMain.handle("models:set-active", async (_event, presetId) => {
+    return withRunnerChange(ctx, async () => {
       const r = setActivePreset(presetId);
-      return r.ok ? { ok: true, ...listPresetsPublic() } : r;
+      if (!r.ok) return r;
+      await repairCustomPresetCompatibilityProfiles({ activeOnly: true, timeoutMs: 15_000 });
+      return { ok: true, ...listPresetsPublic() };
     }, { liveEnv: false });
   });
 
