@@ -780,6 +780,105 @@ function saveCustomPreset({
   return { ok: true, preset: customPresetRecord(entry), ...listPresetsPublic() };
 }
 
+function sameCustomConnection(a, b) {
+  return (
+    String(a?.model || "").trim() === String(b?.model || "").trim() &&
+    String(a?.baseUrl || "").trim() === String(b?.baseUrl || "").trim() &&
+    String(a?.apiKey || "").trim() === String(b?.apiKey || "").trim() &&
+    (normalizeProtocol(a?.protocol) || legacyProtocolForBaseUrl(a?.baseUrl)) ===
+      (normalizeProtocol(b?.protocol) || legacyProtocolForBaseUrl(b?.baseUrl))
+  );
+}
+
+function updateCustomPreset(presetId, {
+  label,
+  model,
+  modelHaiku = "",
+  modelSonnet = "",
+  modelOpus = "",
+  modelSubagent = "",
+  description = "",
+  baseUrl = "",
+  apiKey = "",
+  protocol = "",
+  tlsSkipVerify = false,
+  requestBodyOverlay = undefined,
+  compatibilityProfile = undefined,
+} = {}) {
+  if (!String(presetId || "").startsWith(CUSTOM_ID_PREFIX)) {
+    return { ok: false, error: "NOT_CUSTOM" };
+  }
+
+  const user = loadUserChoice();
+  const customPresets = [...(user.customPresets || [])];
+  const index = customPresets.findIndex((p) => p.id === presetId);
+  if (index < 0) return { ok: false, error: "NOT_FOUND" };
+
+  const previous = normalizeCustomPresetEntry(customPresets[index]);
+  const validated = validateCustomInput(label, model);
+  if (!validated.ok) return validated;
+
+  for (const [, value, error] of [
+    ["modelHaiku", modelHaiku, "INVALID_MODEL_HAIKU"],
+    ["modelSonnet", modelSonnet, "INVALID_MODEL_SONNET"],
+    ["modelOpus", modelOpus, "INVALID_MODEL_OPUS"],
+    ["modelSubagent", modelSubagent, "INVALID_MODEL_SUBAGENT"],
+  ]) {
+    const tierValidated = validateOptionalModelId(value, error);
+    if (!tierValidated.ok) return tierValidated;
+  }
+
+  const urlValidated = validateBaseUrl(baseUrl, { required: true });
+  if (!urlValidated.ok) return urlValidated;
+
+  const keyValidated = validateApiKey(apiKey, {
+    required: Boolean(urlValidated.baseUrl) && !isLoopbackBaseUrl(urlValidated.baseUrl),
+    existing: previous.apiKey || "",
+  });
+  if (!keyValidated.ok) return keyValidated;
+
+  const haikuValidated = validateOptionalModelId(modelHaiku);
+  const sonnetValidated = validateOptionalModelId(modelSonnet);
+  const opusValidated = validateOptionalModelId(modelOpus);
+  const subagentValidated = validateOptionalModelId(modelSubagent);
+  const nextProtocol = normalizeProtocol(protocol) || legacyProtocolForBaseUrl(urlValidated.baseUrl);
+  const nextConnection = {
+    model: validated.model,
+    baseUrl: urlValidated.baseUrl,
+    apiKey: keyValidated.apiKey,
+    protocol: nextProtocol,
+  };
+  const canKeepProfile = sameCustomConnection(previous, nextConnection);
+  const normalizedCompatibilityProfile = compatibilityProfile === undefined
+    ? (canKeepProfile ? normalizeCompatibilityProfile(previous.compatibilityProfile) : null)
+    : normalizeCompatibilityProfile(compatibilityProfile);
+  const normalizedRequestBodyOverlay = requestBodyOverlay === undefined
+    ? (canKeepProfile
+        ? normalizeRequestBodyOverlay(previous.requestBodyOverlay || normalizedCompatibilityProfile?.requestBodyOverlay)
+        : normalizeRequestBodyOverlay(normalizedCompatibilityProfile?.requestBodyOverlay))
+    : normalizeRequestBodyOverlay(requestBodyOverlay || normalizedCompatibilityProfile?.requestBodyOverlay);
+
+  const entry = {
+    id: previous.id,
+    label: validated.label,
+    model: validated.model,
+    modelHaiku: haikuValidated.model,
+    modelSonnet: sonnetValidated.model,
+    modelOpus: opusValidated.model,
+    modelSubagent: subagentValidated.model,
+    description: String(description || "").trim().slice(0, 120),
+    baseUrl: urlValidated.baseUrl,
+    apiKey: keyValidated.apiKey,
+    tlsSkipVerify: Boolean(tlsSkipVerify && urlValidated.baseUrl),
+    compatibilityProfile: normalizedCompatibilityProfile,
+    requestBodyOverlay: normalizedRequestBodyOverlay,
+    protocol: nextProtocol,
+  };
+  customPresets[index] = entry;
+  persistUserChoice({ ...user, customPresets });
+  return { ok: true, preset: customPresetRecord(entry), ...listPresetsPublic() };
+}
+
 async function saveCustomPresetWithProbe(input = {}) {
   const protocol = normalizeProtocol(input.protocol) || legacyProtocolForBaseUrl(input.baseUrl);
   if (normalizeRequestBodyOverlay(input.requestBodyOverlay) || protocol !== "openai") {
@@ -808,6 +907,69 @@ async function saveCustomPresetWithProbe(input = {}) {
     };
   }
   return saveCustomPreset({
+    ...input,
+    protocol,
+    baseUrl: urlValidated.baseUrl,
+    apiKey: keyValidated.apiKey,
+    compatibilityProfile: probe.profile || null,
+    requestBodyOverlay: probe.profile?.requestBodyOverlay || null,
+  });
+}
+
+async function updateCustomPresetWithProbe(presetId, input = {}) {
+  const user = loadUserChoice();
+  const previous = normalizeCustomPresetEntry((user.customPresets || []).find((p) => p.id === presetId));
+  if (!previous?.id) return { ok: false, error: "NOT_FOUND" };
+
+  const protocol = normalizeProtocol(input.protocol) || legacyProtocolForBaseUrl(input.baseUrl);
+  const urlValidated = validateBaseUrl(input.baseUrl, { required: true });
+  if (!urlValidated.ok) return urlValidated;
+  const keyValidated = validateApiKey(input.apiKey, {
+    required: Boolean(urlValidated.baseUrl) && !isLoopbackBaseUrl(urlValidated.baseUrl),
+    existing: previous.apiKey || "",
+  });
+  if (!keyValidated.ok) return keyValidated;
+  const modelValidated = validateCustomInput(input.label, input.model);
+  if (!modelValidated.ok) return modelValidated;
+
+  const nextConnection = {
+    model: modelValidated.model,
+    baseUrl: urlValidated.baseUrl,
+    apiKey: keyValidated.apiKey,
+    protocol,
+  };
+  const hasExplicitOverlay = Boolean(normalizeRequestBodyOverlay(input.requestBodyOverlay));
+  const hasExistingProfile = Boolean(
+    normalizeCompatibilityProfile(previous.compatibilityProfile) ||
+      normalizeRequestBodyOverlay(previous.requestBodyOverlay),
+  );
+  if (
+    hasExplicitOverlay ||
+    protocol !== "openai" ||
+    (sameCustomConnection(previous, nextConnection) && hasExistingProfile)
+  ) {
+    return updateCustomPreset(presetId, {
+      ...input,
+      protocol,
+      baseUrl: urlValidated.baseUrl,
+      apiKey: keyValidated.apiKey,
+    });
+  }
+
+  const probe = await require("./model-compatibility-probe").probeCustomModelProfile({
+    protocol,
+    baseUrl: urlValidated.baseUrl,
+    apiKey: keyValidated.apiKey,
+    model: modelValidated.model,
+    timeoutMs: Number(input.probeTimeoutMs || 10_000),
+  });
+  if (!probe.ok) {
+    return {
+      ok: false,
+      error: probe.error || "MODEL_PROBE_FAILED",
+    };
+  }
+  return updateCustomPreset(presetId, {
     ...input,
     protocol,
     baseUrl: urlValidated.baseUrl,
@@ -923,6 +1085,8 @@ module.exports = {
   setActivePreset,
   saveCustomPreset,
   saveCustomPresetWithProbe,
+  updateCustomPreset,
+  updateCustomPresetWithProbe,
   deleteCustomPreset,
   setApiGateway,
   diagnoseAndRestoreDefaultModel,

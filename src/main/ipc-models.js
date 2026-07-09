@@ -5,6 +5,7 @@ const {
   listPresetsPublic,
   setActivePreset,
   saveCustomPresetWithProbe,
+  updateCustomPresetWithProbe,
   deleteCustomPreset,
   setApiGateway,
   diagnoseAndRestoreDefaultModel,
@@ -40,6 +41,10 @@ function registerModelHandlers(ctx) {
 
   ipcMain.handle("models:save-custom", (_event, payload) => {
     return withRunnerChange(ctx, () => saveCustomPresetWithProbe(payload || {}), { liveEnv: false });
+  });
+
+  ipcMain.handle("models:update-custom", (_event, payload) => {
+    return withRunnerChange(ctx, () => updateCustomPresetWithProbe(payload?.presetId, payload?.values || {}), { liveEnv: false });
   });
 
   ipcMain.handle("models:delete-custom", (_event, presetId) => {

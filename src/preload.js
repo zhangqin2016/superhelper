@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   listModels: () => ipcRenderer.invoke("models:list"),
   setActiveModel: (presetId) => ipcRenderer.invoke("models:set-active", presetId),
   saveCustomModel: (payload) => ipcRenderer.invoke("models:save-custom", payload),
+  updateCustomModel: (presetId, values) => ipcRenderer.invoke("models:update-custom", { presetId, values }),
   deleteCustomModel: (presetId) => ipcRenderer.invoke("models:delete-custom", presetId),
   setModelApiGateway: (payload) => ipcRenderer.invoke("models:set-api-gateway", payload),
   diagnoseAndRestoreDefaultModel: () => ipcRenderer.invoke("models:diagnose-restore-default"),

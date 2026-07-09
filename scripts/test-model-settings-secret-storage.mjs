@@ -157,6 +157,29 @@ const profiledOpenCode = JSON.parse(profiledConfig.configContent);
 if (profiledOpenCode.provider.lily.options.body.chat_template_kwargs.enable_thinking !== false) {
   throw new Error(`profiled custom preset must carry body overlay into OpenCode config: ${JSON.stringify(profiledOpenCode.provider.lily.options)}`);
 }
+const updatedProfiledCustom = modelPresets.updateCustomPreset(profiledCustom.preset.id, {
+  label: "Profiled Custom Renamed",
+  model: "profiled-model",
+  baseUrl: "https://profiled.example.com/v1",
+  apiKey: "",
+  protocol: "openai",
+  tlsSkipVerify: false,
+});
+if (!updatedProfiledCustom.ok) throw new Error(`custom preset update should save: ${updatedProfiledCustom.error}`);
+if (updatedProfiledCustom.preset.id !== profiledCustom.preset.id) {
+  throw new Error(`custom preset update must preserve the preset id: ${JSON.stringify(updatedProfiledCustom.preset)}`);
+}
+modelPresets.setActivePreset(profiledCustom.preset.id);
+const updatedProfiledEnv = modelPresets.getUserApiEnv();
+if (updatedProfiledEnv.LILY_API_KEY !== "sk-profiled-secret-123456") {
+  throw new Error(`custom preset update with blank key must keep the existing key: ${JSON.stringify(updatedProfiledEnv)}`);
+}
+if (!updatedProfiledEnv.LILY_OPENCODE_BODY_OVERLAY_JSON) {
+  throw new Error(`custom preset metadata update must preserve the compatibility overlay: ${JSON.stringify(updatedProfiledEnv)}`);
+}
+if (updatedProfiledEnv.LILY_TLS_SKIP_VERIFY) {
+  throw new Error(`custom preset update should apply changed TLS skip setting: ${JSON.stringify(updatedProfiledEnv)}`);
+}
 modelPresets.setActivePreset(saved.preset.id);
 
 const gateway = modelPresets.setApiGateway({

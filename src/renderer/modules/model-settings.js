@@ -141,6 +141,14 @@ function renderCustomList(presets, activePresetId) {
       await refreshModelSelect();
     });
 
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "settings-action-btn settings-action-btn--compact";
+    editBtn.textContent = t("settings.modelCustomEdit");
+    editBtn.addEventListener("click", () => {
+      setCustomEditMode(preset);
+    });
+
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
     deleteBtn.className = "settings-action-btn settings-action-btn--danger settings-action-btn--compact";
@@ -155,11 +163,13 @@ function renderCustomList(presets, activePresetId) {
         showToast(t("toast.modelCustomDeleteFailed"), "error");
         return;
       }
+      if (editingCustomPresetId === preset.id) setCustomEditMode(null);
       showToast(t("toast.modelCustomDeleted"), "success");
       await refreshModelSelect();
     });
 
     actions.appendChild(useBtn);
+    actions.appendChild(editBtn);
     actions.appendChild(deleteBtn);
     row.appendChild(meta);
     row.appendChild(actions);
@@ -172,6 +182,63 @@ function renderCustomList(presets, activePresetId) {
 // key — no manual URL/model typing (that lives under the collapsed "advanced").
 let catalogProviders = [];
 let diagnoseRestoreRunning = false;
+let editingCustomPresetId = null;
+
+function customFormPayload() {
+  return {
+    label: $("modelCustomLabel")?.value?.trim() || "",
+    model: $("modelCustomId")?.value?.trim() || "",
+    baseUrl: $("modelCustomBaseUrl")?.value?.trim() || "",
+    protocol: normalizeProtocolValue($("modelCustomProtocol")?.value),
+    apiKey: $("modelCustomApiKey")?.value?.trim() || "",
+    tlsSkipVerify: Boolean($("modelCustomTlsSkipVerify")?.checked),
+  };
+}
+
+function resetCustomForm() {
+  for (const id of [
+    "modelCustomLabel",
+    "modelCustomId",
+    "modelCustomBaseUrl",
+    "modelCustomProtocol",
+    "modelCustomApiKey",
+    "modelCustomTlsSkipVerify",
+  ]) {
+    const el = $(id);
+    if (el?.type === "checkbox") el.checked = false;
+    else if (id === "modelCustomProtocol" && el) el.value = "openai";
+    else if (el) el.value = "";
+  }
+  $("modelCustomApiKey")?.setAttribute("placeholder", t("settings.modelCustomApiKeyPlaceholder"));
+}
+
+function setCustomEditMode(preset = null) {
+  editingCustomPresetId = preset?.id || null;
+  const addBtn = $("modelCustomAddBtn");
+  const cancelBtn = $("modelCustomCancelBtn");
+  if (addBtn) addBtn.textContent = t(editingCustomPresetId ? "settings.modelCustomSave" : "settings.modelCustomAdd");
+  if (cancelBtn) cancelBtn.hidden = !editingCustomPresetId;
+  if (!preset) {
+    resetCustomForm();
+    return;
+  }
+
+  const advanced = $("modelAdvancedBlock");
+  if (advanced) advanced.open = true;
+  if ($("modelCustomLabel")) $("modelCustomLabel").value = preset.label || "";
+  if ($("modelCustomId")) $("modelCustomId").value = preset.model || "";
+  if ($("modelCustomBaseUrl")) $("modelCustomBaseUrl").value = preset.baseUrl || "";
+  if ($("modelCustomProtocol")) $("modelCustomProtocol").value = normalizeProtocolValue(preset.protocol);
+  if ($("modelCustomTlsSkipVerify")) $("modelCustomTlsSkipVerify").checked = Boolean(preset.tlsSkipVerify);
+  if ($("modelCustomApiKey")) {
+    $("modelCustomApiKey").value = "";
+    $("modelCustomApiKey").setAttribute(
+      "placeholder",
+      preset.apiKeySet ? t("settings.modelCustomApiKeyKeepPlaceholder") : t("settings.modelCustomApiKeyPlaceholder"),
+    );
+  }
+  $("modelCustomLabel")?.focus();
+}
 
 function renderCatalogModels(provider) {
   const modelSel = $("modelCatalogModel");
@@ -412,37 +479,22 @@ export async function initModelSettings() {
     // OpenCode runs ONE model per session (all tiers map to it), so the custom
     // form no longer collects Haiku/Sonnet/Opus — just the model + API, matching
     // OpenCode Desktop. The backend defaults the (omitted) tiers to the main model.
-    const result = await window.assistantClient.saveCustomModel({
-      label: $("modelCustomLabel")?.value?.trim() || "",
-      model: $("modelCustomId")?.value?.trim() || "",
-      baseUrl: $("modelCustomBaseUrl")?.value?.trim() || "",
-      protocol: normalizeProtocolValue($("modelCustomProtocol")?.value),
-      apiKey: $("modelCustomApiKey")?.value?.trim() || "",
-      tlsSkipVerify: Boolean($("modelCustomTlsSkipVerify")?.checked),
-    });
+    const payload = customFormPayload();
+    const result = editingCustomPresetId
+      ? await window.assistantClient.updateCustomModel(editingCustomPresetId, payload)
+      : await window.assistantClient.saveCustomModel(payload);
     if (!result.ok) {
       showToast(apiErrorMessage(result.error), "error");
       return;
     }
 
-    for (const id of [
-      "modelCustomLabel",
-      "modelCustomId",
-      "modelCustomBaseUrl",
-      "modelCustomProtocol",
-      "modelCustomApiKey",
-      "modelCustomTlsSkipVerify",
-    ]) {
-      const el = $(id);
-      if (el?.type === "checkbox") el.checked = false;
-      else if (id === "modelCustomProtocol" && el) el.value = "openai";
-      else if (el) el.value = "";
-    }
+    const wasEditing = Boolean(editingCustomPresetId);
+    setCustomEditMode(null);
 
-    showToast(t("toast.modelCustomSaved"), "success");
+    showToast(t(wasEditing ? "toast.modelCustomUpdated" : "toast.modelCustomSaved"), "success");
     await refreshModelSelect();
 
-    if (result.preset?.id) {
+    if (!wasEditing && result.preset?.id) {
       const switchResult = await window.assistantClient.setActiveModel(result.preset.id);
       if (switchResult.ok) {
         await refreshModelSelect();
@@ -453,4 +505,5 @@ export async function initModelSettings() {
       }
     }
   });
+  $("modelCustomCancelBtn")?.addEventListener("click", () => setCustomEditMode(null));
 }
