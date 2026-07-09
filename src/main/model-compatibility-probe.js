@@ -28,15 +28,18 @@ function messageShape(json) {
   const message = json?.choices?.[0]?.message || {};
   const content = typeof message.content === "string" ? message.content : "";
   const reasoning = typeof message.reasoning === "string" ? message.reasoning : "";
+  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
   return {
     hasContent: content.trim().length > 0,
     hasReasoning: reasoning.trim().length > 0,
+    hasToolCalls: toolCalls.length > 0,
   };
 }
 
 function streamShape(text) {
   let hasContent = false;
   let hasReasoning = false;
+  let hasToolCalls = false;
   for (const line of String(text || "").split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) continue;
@@ -47,21 +50,47 @@ function streamShape(text) {
       const delta = json?.choices?.[0]?.delta || {};
       if (typeof delta.content === "string" && delta.content.trim()) hasContent = true;
       if (typeof delta.reasoning === "string" && delta.reasoning.trim()) hasReasoning = true;
+      if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) hasToolCalls = true;
     } catch {
       // Ignore malformed chunks; the caller handles no-content as failure.
     }
   }
-  return { hasContent, hasReasoning };
+  return { hasContent, hasReasoning, hasToolCalls };
 }
 
-async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, timeoutMs = 10_000 }) {
+function toolProbeFields() {
+  return {
+    tools: [{
+      type: "function",
+      function: {
+        name: "lily_probe_tool",
+        description: "Return a probe result.",
+        parameters: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+          },
+          required: ["ok"],
+          additionalProperties: false,
+        },
+      },
+    }],
+    tool_choice: {
+      type: "function",
+      function: { name: "lily_probe_tool" },
+    },
+  };
+}
+
+async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, tools = false, timeoutMs = 10_000 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("MODEL_PROBE_TIMEOUT")), Math.max(500, timeoutMs));
   const body = mergeBody({
     model,
-    messages: [{ role: "user", content: "Say pong only." }],
+    messages: [{ role: "user", content: tools ? "Call lily_probe_tool with ok=true." : "Say pong only." }],
     max_tokens: 16,
     stream: Boolean(stream),
+    ...(tools ? toolProbeFields() : {}),
   }, bodyOverlay);
   try {
     const response = await fetch(`${trimUrl(baseUrl)}/chat/completions`, {
@@ -89,6 +118,19 @@ async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = f
   }
 }
 
+async function probeTools({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
+  const nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, timeoutMs });
+  if (!nonStream.ok) return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
+  const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, tools: true, stream: true, timeoutMs });
+  if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}` };
+  return {
+    ok: true,
+    nonStreamShape: nonStream.shape,
+    streamShape: stream.shape,
+    hasToolCalls: Boolean(nonStream.shape?.hasToolCalls && stream.shape?.hasToolCalls),
+  };
+}
+
 async function probeCandidate({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
   const nonStream = await postChat({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
   if (!nonStream.ok) return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}` };
@@ -99,6 +141,18 @@ async function probeCandidate({ baseUrl, apiKey, model, bodyOverlay = null, time
     nonStreamShape: nonStream.shape,
     streamShape: stream.shape,
     hasContent: Boolean(nonStream.shape?.hasContent && stream.shape?.hasContent),
+  };
+}
+
+async function validateAgentConformance({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
+  const content = await probeCandidate({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
+  if (!content.ok || !content.hasContent) return { ...content, hasAgentConformance: false };
+  const tools = await probeTools({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
+  if (!tools.ok) return { ...content, tools, hasAgentConformance: false };
+  return {
+    ...content,
+    tools,
+    hasAgentConformance: Boolean(tools.hasToolCalls),
   };
 }
 
@@ -119,15 +173,16 @@ async function probeCustomModelProfile({
   if (protocol && protocol !== "openai") {
     return { ok: true, profile: {}, diagnostics: { skipped: "non-openai-protocol" } };
   }
-  const plain = await probeCandidate({ baseUrl, apiKey, model, timeoutMs });
+  const plain = await validateAgentConformance({ baseUrl, apiKey, model, timeoutMs });
   if (!plain.ok) return { ok: false, error: plain.error };
-  if (plain.hasContent) {
+  if (plain.hasAgentConformance) {
     return {
       ok: true,
       profile: {
         conformance: {
           chatCompletions: true,
           streaming: true,
+          toolCalls: true,
           contentSource: "plain",
         },
       },
@@ -136,7 +191,7 @@ async function probeCustomModelProfile({
   }
 
   for (const candidate of BODY_OVERLAY_CANDIDATES) {
-    const repaired = await probeCandidate({
+    const repaired = await validateAgentConformance({
       baseUrl,
       apiKey,
       model,
@@ -144,7 +199,7 @@ async function probeCustomModelProfile({
       timeoutMs,
     });
     if (!repaired.ok) continue;
-    if (repaired.hasContent) {
+    if (repaired.hasAgentConformance) {
       return {
         ok: true,
         profile: {
@@ -152,6 +207,7 @@ async function probeCustomModelProfile({
           conformance: {
             chatCompletions: true,
             streaming: true,
+            toolCalls: true,
             contentSource: "body-overlay",
           },
         },
@@ -167,7 +223,9 @@ async function probeCustomModelProfile({
 
   return {
     ok: false,
-    error: plain.nonStreamShape?.hasContent && !plain.streamShape?.hasContent
+    error: plain.hasContent && plain.tools && !plain.tools.hasToolCalls
+      ? "MODEL_TOOL_CALLS_UNAVAILABLE"
+      : plain.nonStreamShape?.hasContent && !plain.streamShape?.hasContent
       ? "MODEL_STREAMING_NO_CONTENT"
       : plain.nonStreamShape?.hasReasoning || plain.streamShape?.hasReasoning
         ? "MODEL_REASONING_ONLY"

@@ -227,6 +227,7 @@ function normalizeCompatibilityProfile(value) {
     ? {
         chatCompletions: Boolean(rawConformance.chatCompletions),
         streaming: Boolean(rawConformance.streaming),
+        toolCalls: Boolean(rawConformance.toolCalls),
         contentSource: String(rawConformance.contentSource || ""),
       }
     : null;
