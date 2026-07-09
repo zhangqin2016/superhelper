@@ -75,6 +75,20 @@ function compactArray(values = [], max = 4) {
   return out;
 }
 
+function normalizeQueryToken(token) {
+  const item = String(token || "");
+  if (!/^[a-z]+$/.test(item) || item.length < 4) return item;
+  if (item === "resizing") return "resize";
+  if (item.endsWith("ies") && item.length > 4) return `${item.slice(0, -3)}y`;
+  if (item.endsWith("ing") && item.length > 5) {
+    const stem = item.slice(0, -3);
+    if (/(cod|siz|mov|remov|chang|writ|mak)$/.test(stem)) return `${stem}e`;
+    return stem;
+  }
+  if (item.endsWith("s") && !/(ss|us|is)$/.test(item)) return item.slice(0, -1);
+  return item;
+}
+
 function normalizedQueryText(value) {
   return String(value || "")
     .toLowerCase()
@@ -82,7 +96,10 @@ function normalizedQueryText(value) {
     .replace(/\bremove\b/g, " removal ")
     .replace(/[_./:-]+/g, " ")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .split(" ")
+    .map(normalizeQueryToken)
+    .join(" ");
 }
 
 function hintMatchesText(hint, text) {
@@ -207,11 +224,11 @@ function queryFacts(opts = {}) {
     /localhost|127\.0\.0\.1|console|控制台|前端|frontend|冒烟|smoke|按钮|点击|交互|响应式|布局|登录页|网页.*测试|web app|browser\s+(?:qa|test|check)|qa/i.test(`${text} ${zh}`);
   const web = webLearning || browserQa || /网页|网站|系统|\boa\b|erp|crm|browser|website|web app|playwright|自动化/i.test(`${text} ${zh}`);
   const promptEnhance = /prompt|提示词|咒语|关键词|改写.*提示|写得更专业|扩写/i.test(`${text} ${zh}`);
-  const visualCreative = /海报|封面|小红书|产品图|头像|插画|图片|图像|视频|分镜|poster|cover|image|video|storyboard|visual asset|visual concept|visual design/i.test(`${text} ${zh}`);
+  const visualCreative = /海报|封面|小红书|产品图|头像|插画|图片|图像|视频|分镜|\bposter\b|\bcover\b|\bimage\b|\bvideo\b|\bstoryboard\b|visual asset|visual concept|visual design/i.test(`${text} ${zh}`);
   const mediaTranscode = media && /剪辑|裁剪|转码|压缩|导出|mp4|mov|ffmpeg|transcode|encode|trim|cut|compress/i.test(`${text} ${zh}`);
   const imageTransform = image &&
     /resize|convert|export|thumbnail|compress|crop|scale|smaller|larger|save\s+as|remove.{0,20}background|background removal|change.{0,30}\bto\b.{0,20}(?:png|jpe?g|webp|gif|tiff?|bmp|avif)|格式转换|调整尺寸|缩放|裁剪|压缩|导出|另存为|抠图|去背景|背景移除|改成.{0,12}(?:png|jpe?g|webp|gif|tiff?|bmp|avif)|转成.{0,12}(?:png|jpe?g|webp|gif|tiff?|bmp|avif)/i.test(`${text} ${zh}`);
-  const creativeCreate = !mediaTranscode && !imageTransform && visualCreative && /生成|创建|设计|制作|编辑|优化|海报|封面|产品图|头像|插画|分镜|poster|cover|storyboard|visual asset|visual concept|visual design/i.test(`${text} ${zh}`);
+  const creativeCreate = !mediaTranscode && !imageTransform && visualCreative && /生成|创建|设计|制作|编辑|优化|海报|封面|产品图|头像|插画|分镜|\bposter\b|\bcover\b|\bstoryboard\b|visual asset|visual concept|visual design/i.test(`${text} ${zh}`);
   const imageReview = files.image &&
     /检查|review|qa|验收|错误|错位|清晰|可用|瑕疵|重做|文字错误|artifact/i.test(`${text} ${zh}`);
   const stockResearch = /股票|股价|估值|财报|财务|market cap|valuation|ticker|stock|equity|earnings|英伟达|nvidia|nvda|特斯拉|tesla|tsla/i.test(`${text} ${zh}`);

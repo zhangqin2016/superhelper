@@ -79,6 +79,14 @@ assert.ok(
   byId.get("lily-runtime-packs")?.matchHints?.includes("video transcode"),
   "runtime media processing variants should be catalog-declared capability hints"
 );
+const pluralizedEngineeringHintRecommendations = recommendSkillCapabilityGraph({
+  text: "this PR has missing test coverage and bug risks",
+});
+assert.equal(
+  pluralizedEngineeringHintRecommendations[0]?.id,
+  "lily-engineering-rules",
+  "singular/plural variants of catalog engineering hints should not fall through to creative or prompt skills"
+);
 assert.ok(
   byId.get("lily-prompt-enhancer")?.avoidHints?.includes("skill route"),
   "capability graph should preserve registry-declared avoid hints for negative routing contexts"
@@ -192,6 +200,15 @@ assert.equal(
 assert.ok(
   !uploadedImageResizeRecommendations.some((skill) => skill.id === "lily-creative-director"),
   "uploaded image resize/export should not be mistaken for creative image generation"
+);
+
+const uploadedImageResizingRecommendations = recommendSkillCapabilityGraph({
+  text: "need image resizing for uploaded png",
+});
+assert.equal(
+  uploadedImageResizingRecommendations[0]?.id,
+  "lily-runtime-packs",
+  "derived forms like resizing should still match catalog-declared image resize capability hints"
 );
 
 const attachedPhotoShrinkRecommendations = recommendSkillCapabilityGraph({
