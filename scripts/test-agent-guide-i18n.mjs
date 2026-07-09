@@ -534,4 +534,28 @@ assert.ok(
   "index line must be shorter than the full verbose description (native catalog carries the full text)",
 );
 
+const manySkillFixtures = Array.from({ length: 900 }, (_, index) => ({
+  id: `large-index-fixture-${String(index).padStart(3, "0")}`,
+  skillDir: path.join(skillsCatalogDir, `large-index-fixture-${index}`),
+  manifest: {
+    id: `large-index-fixture-${String(index).padStart(3, "0")}`,
+    name: `Large Index Fixture ${index}`,
+    description:
+      `Use when the user needs synthetic capability ${index}. ` +
+      "This intentionally long registry entry simulates a service-delivered or imported skill catalog that should not crowd out the user's message. ".repeat(3),
+  },
+}));
+const oversizedIndexGuide = skillManager.buildAgentGuideContent(manySkillFixtures, "en");
+assertAgentGuideWithinStaticBudget(oversizedIndexGuide, "English oversized synthetic skill index guide");
+assert.match(
+  oversizedIndexGuide,
+  /skill index was truncated/i,
+  "oversized skill index must fail bounded with an explicit truncation notice",
+);
+assert.match(
+  oversizedIndexGuide,
+  /large-index-fixture-000/,
+  "bounded skill index should keep early representative capabilities",
+);
+
 console.log("agent guide i18n: ok");

@@ -614,20 +614,51 @@ const SKILL_INDEX_I18N = {
     intro:
       "以下是本会话可用的 Lily 平台能力指南，不是 OpenCode 原生 skill。对每个用户请求：先按“适用场景”匹配能力（可多选并组合成能力链），在动手前用 Read 工具读取对应指南文件以获得完整步骤，再通过 Lily MCP 工具、脚本或普通工具执行。禁止对这些平台能力执行原生 `skill <id>`，包括 `lily-*` 和内置 `anthropics-*`。",
     guideLabel: "指南",
+    truncated: "技能目录已截断以保护提示词预算；如需更多能力，请通过设置里的技能目录或按任务关键词搜索/启用对应技能。",
   },
   en: {
     title: "Lily Platform Capability Catalog (read the guide before using a capability)",
     intro:
       "These are Lily platform capability guides available in this session, not OpenCode native skills. For each user request: match capabilities by their \"use when\" description (you may pick several and compose a capability chain), then READ the guide file with the Read tool before acting, and execute through Lily MCP tools, scripts, or ordinary tools. Do not run native `skill <id>` for these platform capabilities, including `lily-*` and built-in `anthropics-*` entries.",
     guideLabel: "Guide",
+    truncated: "Skill index was truncated to protect the prompt budget; search or enable additional skills by task keyword when needed.",
   },
   ar: {
     title: "فهرس قدرات منصة Lily (اقرأ الدليل قبل استخدام القدرة)",
     intro:
       "هذه أدلة قدرات منصة Lily المتاحة في هذه الجلسة، وليست مهارات OpenCode أصلية. لكل طلب: طابِق القدرات حسب وصف \"استخدمها عند\" (يمكنك اختيار عدة قدرات وتركيبها)، ثم اقرأ ملف الدليل بأداة Read قبل التنفيذ، ونفّذ عبر أدوات Lily MCP أو السكربتات أو الأدوات العادية. لا تشغّل `skill <id>` الأصلي لهذه القدرات، بما في ذلك `lily-*` و`anthropics-*` المدمجة.",
     guideLabel: "الدليل",
+    truncated: "تم اختصار فهرس المهارات لحماية ميزانية التعليمات؛ ابحث عن مهارات إضافية أو فعّلها حسب كلمات المهمة عند الحاجة.",
   },
 };
+
+function utf8Bytes(text) {
+  return Buffer.byteLength(String(text || ""), "utf8");
+}
+
+function appendWithinByteBudget(lines, nextLine, maxBytes) {
+  if (!Number.isFinite(maxBytes) || maxBytes <= 0) {
+    lines.push(nextLine);
+    return true;
+  }
+  const candidate = [...lines, nextLine].join("\n");
+  if (utf8Bytes(candidate) > maxBytes) return false;
+  lines.push(nextLine);
+  return true;
+}
+
+function trimUtf8ToBytes(text, maxBytes) {
+  const value = String(text || "");
+  if (utf8Bytes(value) <= maxBytes) return value;
+  let lo = 0;
+  let hi = value.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (utf8Bytes(value.slice(0, mid)) <= maxBytes) lo = mid;
+    else hi = mid - 1;
+  }
+  return value.slice(0, lo);
+}
 
 /** Shorten a skill description to its leading trigger phrase. Lily's platform
  *  guide lists capability pointers and guide paths; agents read the full
@@ -647,18 +678,28 @@ function shortIndexDesc(desc, cap = 180) {
  *  a SHORT when-to-use trigger and the path to its full guide, read on demand
  *  through normal file tools. Keep entries terse so the guide remains a router,
  *  not a second copy of each skill. */
-function buildSkillIndexSection(enabledSkills, loc) {
+function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity) {
   const head = SKILL_INDEX_I18N[loc] || SKILL_INDEX_I18N.en;
-  const lines = [];
+  const lines = [`## ${head.title}`, "", head.intro, ""];
+  let omitted = 0;
   for (const skill of enabledSkills) {
     const e = skillIndexEntry(skill, loc);
     if (!e.desc) continue;
     const guide = e.hasGuide ? ` (${head.guideLabel}: ${e.guidePath})` : "";
     const label = e.name && e.name !== e.id ? `${e.id} (${e.name})` : e.id;
-    lines.push(`- **${label}** — ${shortIndexDesc(e.desc)}${guide}`);
+    if (!appendWithinByteBudget(lines, `- **${label}** — ${shortIndexDesc(e.desc)}${guide}`, maxBytes)) {
+      omitted += 1;
+    }
   }
-  if (!lines.length) return "";
-  return [`## ${head.title}`, "", head.intro, "", ...lines].join("\n");
+  if (lines.length <= 4) return "";
+  if (omitted > 0) {
+    const notice = `- ${head.truncated} (${omitted} omitted)`;
+    if (!appendWithinByteBudget(lines, notice, maxBytes)) {
+      lines.pop();
+      appendWithinByteBudget(lines, notice, maxBytes);
+    }
+  }
+  return lines.join("\n");
 }
 
 function configuredProviderContextSignature() {
@@ -818,6 +859,7 @@ function currentAvailableMediaProviderContext() {
 function buildAgentGuideContent(enabledSkills, locale) {
   const loc = locale || getActiveLocale() || "en";
   const guide = AGENT_GUIDE_I18N[loc] || AGENT_GUIDE_I18N["en"];
+  const indexI18n = SKILL_INDEX_I18N[loc] || SKILL_INDEX_I18N.en;
   const sections = [
     `# ${guide.title}`,
     "",
@@ -881,10 +923,17 @@ function buildAgentGuideContent(enabledSkills, locale) {
     }
   }
 
-  const index = buildSkillIndexSection(enabledSkills, loc);
+  const prefix = `${sections.join("\n").trim()}\n`;
+  const indexBudget = Math.max(0, AGENT_GUIDE_MAX_BYTES - utf8Bytes(prefix) - 512);
+  const index = buildSkillIndexSection(enabledSkills, loc, indexBudget);
   if (index) sections.push(index, "");
 
-  return sections.join("\n").trim() + "\n";
+  const generated = sections.join("\n").trim() + "\n";
+  if (utf8Bytes(generated) <= AGENT_GUIDE_MAX_BYTES) return generated;
+
+  const notice = `\n\n- ${indexI18n.truncated}\n`;
+  const allowed = Math.max(0, AGENT_GUIDE_MAX_BYTES - utf8Bytes(notice));
+  return `${trimUtf8ToBytes(generated, allowed).trimEnd()}${notice}`;
 }
 
 function managedAgentGuideBlock(generatedContent) {
