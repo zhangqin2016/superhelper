@@ -1984,7 +1984,11 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   const orch = makeOrchestrator();
   session.bindOrchestrator(orch);
 
-  session.ensureProcess(process.cwd(), { agentCommand: "/bin/true", opencodeConfig: "CONFIG_A" }, { lazy: true });
+  session.ensureProcess(process.cwd(), {
+    agentCommand: "/bin/true",
+    opencodeConfig: "CONFIG_A",
+    modelConfigFingerprint: "same-model-fp",
+  }, { lazy: true });
   session.sendUserMessage({ text: "turn one" });
   await tick();
   assert(serverCount === 1, "first send starts exactly one server");
@@ -1994,11 +1998,69 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   assert(orch.calls.done.length === 1, "turn one completes");
 
   // Config changes between turns (AGENT.md/digest churn) — must NOT respawn.
-  session.ensureProcess(process.cwd(), { agentCommand: "/bin/true", opencodeConfig: "CONFIG_B_DIFFERENT" }, { lazy: true });
+  session.ensureProcess(process.cwd(), {
+    agentCommand: "/bin/true",
+    opencodeConfig: "CONFIG_B_DIFFERENT",
+    modelConfigFingerprint: "same-model-fp",
+  }, { lazy: true });
   session.sendUserMessage({ text: "turn two" });
   await tick();
   assert(serverCount === 1, "config change does NOT respawn the server (context stays threaded)");
   assert(made[0].prompts.length === 2 && made[0].prompts[1].text === "turn two", "turn two POSTs to the same session");
+  session.terminate();
+}
+
+// --- model config continuity: provider/model changes must restart engine ----
+// OpenCode can keep a provider/model instance alive inside the shared serve. A
+// changed baseURL/key/model options hash must not keep posting into that stale
+// engine session, otherwise custom provider body overlays can appear "missing".
+{
+  let serverCount = 0;
+  const made = [];
+  const invalidations = [];
+  const session = new OpencodeAgentSession("model_config_restart", {
+    createServer: (opts) => {
+      serverCount += 1;
+      const s = new FakeServer();
+      s.opts = opts;
+      made.push(s);
+      return s;
+    },
+  });
+  const orch = makeOrchestrator();
+  session.bindOrchestrator(orch);
+  session.on("engine-session-invalidated", (payload) => invalidations.push(payload));
+
+  session.ensureProcess(process.cwd(), {
+    agentCommand: "/bin/true",
+    opencodeConfig: "CONFIG_MODEL_A",
+    modelConfigFingerprint: "model-fp-a",
+    resumeSessionId: "ses_old_model_config",
+  }, { lazy: true });
+  session.sendUserMessage({ text: "turn one" });
+  await tick();
+  assert(serverCount === 1, "first model config starts one server");
+  assert(made[0].opts.resumeSessionID === "ses_old_model_config", "first start may resume the persisted session");
+  made[0].emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "turn one done" } });
+  made[0].emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(orch.calls.done.length === 1, "turn one completes before model config changes");
+
+  session.ensureProcess(process.cwd(), {
+    agentCommand: "/bin/true",
+    opencodeConfig: "CONFIG_MODEL_B",
+    modelConfigFingerprint: "model-fp-b",
+    resumeSessionId: "ses_old_model_config",
+  }, { lazy: true });
+  assert(made[0].process === null, "stale model-config server is terminated while idle");
+  assert(invalidations.length === 1 && invalidations[0].reason === "model_config_changed", "model config change invalidates the stale resume id");
+
+  session.sendUserMessage({ text: "turn two" });
+  await tick();
+  assert(serverCount === 2, "changed model config starts a fresh server");
+  assert(made[1].opts.configContent === "CONFIG_MODEL_B", "fresh server receives the new OpenCode config");
+  assert(!made[1].opts.resumeSessionID, "fresh model config does not reuse the stale OpenCode session id");
+  assert(made[1].prompts.length === 1 && made[1].prompts[0].text === "turn two", "turn two posts to the fresh model-config session");
   session.terminate();
 }
 

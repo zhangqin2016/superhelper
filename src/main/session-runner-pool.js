@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const { OpencodeAgentSession } = require("./opencode-agent-session");
 const { resolveOpencodeCommand } = require("./agent-command");
 const { getActivePermissionMode } = require("./permission-settings");
@@ -71,10 +72,22 @@ class SessionRunnerPool {
       // config/auth, but the distributed model/MCP won't apply.
       log.warn("opencode config not applied: %s", cfg.reason);
     }
+    const modelConfigFingerprint = cfg.ok ? this._modelConfigFingerprint(cfg.configContent) : "";
+    const modelConfigDiagnostics = cfg.ok ? this._modelConfigDiagnostics(cfg.configContent) : null;
     const modelRouteAudit = cfg.diagnostics?.modelRoute || null;
     if (modelRouteAudit) {
       log.info(
-        `model route audit: route=${modelRouteAudit.route || "-"} provider=${modelRouteAudit.provider || "-"} base=${modelRouteAudit.baseUrl || "-"} key=${modelRouteAudit.keyKind || "-"}`,
+        `model route audit: route=${modelRouteAudit.route || "-"} provider=${modelRouteAudit.provider || "-"} base=${modelRouteAudit.baseUrl || "-"} key=${modelRouteAudit.keyKind || "-"} fp=${modelConfigFingerprint || "-"}`,
+      );
+    }
+    if (modelConfigDiagnostics) {
+      log.info(
+        "opencode model config audit: fp=%s model=%s provider=%s providerOptions=%s modelOptions=%s",
+        modelConfigFingerprint || "-",
+        modelConfigDiagnostics.model || "-",
+        modelConfigDiagnostics.provider || "-",
+        modelConfigDiagnostics.providerOptions || "-",
+        modelConfigDiagnostics.modelOptions || "-",
       );
     }
     // Lily's AGENT.md (identity + rules + ENABLED skills) — the authoritative
@@ -124,6 +137,7 @@ class SessionRunnerPool {
       permissionMode,
       model: cfg.model,
       modelRouteAudit,
+      modelConfigFingerprint,
       env,
       opencodeConfig: cfg.ok ? cfg.configContent : "",
       guidance,
@@ -146,6 +160,51 @@ class SessionRunnerPool {
     }, { lazy: Boolean(callOpts.lazy) });
 
     return runner;
+  }
+
+  _modelConfigFingerprint(configContent = "") {
+    const subset = this._modelConfigSubset(configContent);
+    if (!subset) return "";
+    return crypto.createHash("sha256").update(JSON.stringify(subset)).digest("hex").slice(0, 16);
+  }
+
+  _modelConfigSubset(configContent = "") {
+    try {
+      const parsed = JSON.parse(String(configContent || "{}"));
+      const agentModels = {};
+      for (const [name, agent] of Object.entries(parsed.agent || {})) {
+        if (agent && typeof agent === "object" && agent.model) agentModels[name] = agent.model;
+      }
+      return {
+        model: parsed.model || "",
+        small_model: parsed.small_model || "",
+        provider: parsed.provider || {},
+        agentModels,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  _modelConfigDiagnostics(configContent = "") {
+    const subset = this._modelConfigSubset(configContent);
+    if (!subset) return null;
+    const modelRef = String(subset.model || "");
+    const slash = modelRef.indexOf("/");
+    const provider = slash >= 0 ? modelRef.slice(0, slash) : "";
+    const model = slash >= 0 ? modelRef.slice(slash + 1) : modelRef;
+    const providerCfg = provider ? subset.provider?.[provider] || null : null;
+    const modelCfg = providerCfg?.models?.[model] || null;
+    const providerOptions = Object.keys(providerCfg?.options || {})
+      .filter((key) => !/key|token|authorization/i.test(key))
+      .sort();
+    const modelOptions = Object.keys(modelCfg?.options || {}).sort();
+    return {
+      model: subset.model || "",
+      provider,
+      providerOptions: providerOptions.length ? providerOptions.join(",") : "-",
+      modelOptions: modelOptions.length ? modelOptions.join(",") : "-",
+    };
   }
 
   /** The small, static Lily identity header used as the OpenCode primary-agent

@@ -457,6 +457,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
     this._engineSessionWasResumed = false;
+    this._activeModelConfigFingerprint = "";
     /** @type {ReturnType<typeof setTimeout> | null} */
     this._transientFailureTimer = null;
     this._pendingTransientFailure = null;
@@ -472,7 +473,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   /**
    * @param {string} cwd
-   * @param {{ agentCommand: string, permissionMode?: string, model?: {providerID:string, modelID:string}|null, modelRouteAudit?: object|null, agent?: string|null, configDir?: string, dataDir?: string }} options
+   * @param {{ agentCommand: string, permissionMode?: string, model?: {providerID:string, modelID:string}|null, modelRouteAudit?: object|null, modelConfigFingerprint?: string, agent?: string|null, configDir?: string, dataDir?: string }} options
    */
   ensureProcess(cwd, options, callOpts = {}) {
     if (!cwd || !options?.agentCommand) throw new Error("RUNNER_MISSING_ARGS");
@@ -483,9 +484,57 @@ class OpencodeAgentSession extends EventEmitter {
       this.agentResumeId = options.resumeSessionId;
     }
     this.cwd = cwd;
+    const previousOptions = this.spawnOptions || {};
+    const nextFingerprint = String(options.modelConfigFingerprint || "");
+    const activeFingerprint = String(this._activeModelConfigFingerprint || "");
+    const previousFingerprint = String(previousOptions.modelConfigFingerprint || "");
     this.spawnOptions = options;
+    if (
+      this._server &&
+      !this.busy &&
+      nextFingerprint &&
+      activeFingerprint &&
+      nextFingerprint !== activeFingerprint
+    ) {
+      this._restartIdleEngineForModelConfigChange(activeFingerprint, nextFingerprint);
+    } else if (
+      this._server &&
+      !this.busy &&
+      nextFingerprint &&
+      previousFingerprint &&
+      nextFingerprint !== previousFingerprint &&
+      !activeFingerprint
+    ) {
+      this._restartIdleEngineForModelConfigChange(previousFingerprint, nextFingerprint);
+    }
     if (callOpts.lazy) return;
     void this._ensureStarted();
+  }
+
+  _restartIdleEngineForModelConfigChange(previousFingerprint = "", nextFingerprint = "") {
+    const server = this._server;
+    const previousResumeId = this.agentResumeId || server?.sessionID || "";
+    log.warn(
+      "opencode model config changed — restarting idle engine session: %s -> %s",
+      this._logFingerprint(previousFingerprint || "-"),
+      this._logFingerprint(nextFingerprint || "-"),
+    );
+    try {
+      server?.terminate?.();
+    } catch {
+      // best effort; the next prompt will create a fresh server view.
+    }
+    if (this._server === server) this._server = null;
+    this._starting = null;
+    this.agentResumeId = null;
+    this._engineSessionWasResumed = false;
+    this._activeModelConfigFingerprint = "";
+    this.emit("engine-session-invalidated", {
+      reason: "model_config_changed",
+      errorCode: "",
+      previousResumeId,
+      resetResume: true,
+    });
   }
 
   /** App-level SQLite path for the shared OpenCode serve. OpenCode session rows
@@ -531,6 +580,7 @@ class OpencodeAgentSession extends EventEmitter {
       server.subscribe();
       this._server = server;
       this._engineSessionWasResumed = Boolean(server.wasResumed);
+      this._activeModelConfigFingerprint = String(this.spawnOptions?.modelConfigFingerprint || "");
       // Guidance is delivered with each prompt, not only with fresh sessions:
       // OpenCode resume history may predate the current Lily rules/skill set, and
       // session-level skill toggles can change between turns.
@@ -883,6 +933,7 @@ class OpencodeAgentSession extends EventEmitter {
     this._activeTaskContract = null;
     this._dispatchRetryCount = 0;
     this._transientReplayCount = 0;
+    this._activeModelConfigFingerprint = "";
     this._pendingTransientFailure = null;
     this._turnStartedAt = 0;
     this._sawToolActivity = false;
@@ -907,6 +958,7 @@ class OpencodeAgentSession extends EventEmitter {
       if (this._server === server) {
         this._server = null;
         this._starting = null;
+        this._activeModelConfigFingerprint = "";
       }
       throw err;
     } finally {
@@ -1822,6 +1874,7 @@ class OpencodeAgentSession extends EventEmitter {
       if (this._server === server) this._server = null;
     }
     this._starting = null;
+    this._activeModelConfigFingerprint = "";
     this.agentResumeId = null;
     return this._ensureStarted();
   }
@@ -2203,6 +2256,7 @@ class OpencodeAgentSession extends EventEmitter {
       if (this._server === server) this._server = null;
     }
     this._starting = null;
+    this._activeModelConfigFingerprint = "";
 
     if (!dropResume) return true;
     const previousResumeId = this.agentResumeId || server?.sessionID || "";
@@ -2232,6 +2286,7 @@ class OpencodeAgentSession extends EventEmitter {
     }
     this._server = null;
     this._starting = null;
+    this._activeModelConfigFingerprint = "";
   }
 
   /** The engine became unreachable (SSE gave up after retries, or a spawn error).
@@ -2246,6 +2301,7 @@ class OpencodeAgentSession extends EventEmitter {
     try { this._server?.terminate?.(); } catch { /* best effort */ }
     this._server = null;
     this._starting = null;
+    this._activeModelConfigFingerprint = "";
   }
 
   // --- helpers -------------------------------------------------------------
@@ -2492,6 +2548,10 @@ class OpencodeAgentSession extends EventEmitter {
 
   _sanitize(message) {
     return require("./agent-runner").sanitizeError(message);
+  }
+
+  _logFingerprint(value) {
+    return String(value || "-").replace(/[\r\n\t]/g, " ").slice(0, 80);
   }
 }
 
