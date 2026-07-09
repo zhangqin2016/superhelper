@@ -191,7 +191,7 @@ function buildIncompleteTurnSummary(state = {}, payload = {}) {
     || "",
   );
   if (!hasToolSignal && !failureText) {
-    return "本轮没有形成最终回答。系统已停止继续等待，请重试；如果再次发生，请重启应用后再发起同一个任务。";
+    return "当前模型没有返回任何可用内容，所以本轮没有形成回答。请检查模型是否可用、模型名称/API 地址/密钥/兼容参数是否正确；如果刚修改过模型配置，请重新发起一次。";
   }
 
   const parts = [
@@ -254,7 +254,7 @@ function classifyTurnFailure(payload, normalized, state) {
   if (isEmptyAssistantCompletion(payload, normalized, state)) {
     return {
       code: "EMPTY_ASSISTANT_COMPLETION",
-      message: "The assistant engine ended without producing a final answer. Please retry; if it repeats, refresh the model configuration or start a fresh conversation.",
+      message: "The selected model did not return any usable assistant content. Check whether the model is available and whether the model name, API base URL, API key, and compatibility options are correct.",
       retryable: true,
       category: "protocol",
     };

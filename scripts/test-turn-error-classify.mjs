@@ -95,6 +95,7 @@ assert(normalizedFail?.message === "engine said no" && normalizedFail.retryable 
 const emptyCompletion = ec.classifyTurnFailure({ code: 0 }, { text: "" }, { assistantText: "" });
 assert(emptyCompletion?.code === "EMPTY_ASSISTANT_COMPLETION", "empty assistant completions are not successful answers");
 assert(emptyCompletion?.retryable === true, "empty assistant completions are retryable protocol failures");
+assert(/selected model did not return/i.test(emptyCompletion?.message || ""), "empty completions are reported as model output failures, not generic engine stoppage");
 assert(ec.isEmptyAssistantCompletion({ code: 0 }, { text: "" }, { assistantText: "" }), "detects empty completed output");
 assert(!ec.isEmptyAssistantCompletion({ code: 0 }, { text: "done" }, { assistantText: "" }), "does not flag real text");
 
