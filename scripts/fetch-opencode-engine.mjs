@@ -24,7 +24,7 @@ const platIdx = args.indexOf("--platform");
 const platArg = platIdx >= 0 ? args[platIdx + 1] : null;
 // The positional version arg — but never the value that follows --platform
 // (otherwise `--platform darwin-arm64` is misread as version "darwin-arm64").
-const version = args.find((a, i) => !a.startsWith("--") && i !== platIdx + 1) || "1.17.13";
+const version = args.find((a, i) => !a.startsWith("--") && i !== platIdx + 1) || "1.17.16";
 
 // Map our bundle platform key -> the opencode-ai optional-dep package name.
 const KEY_TO_PKG = {
