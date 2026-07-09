@@ -14,17 +14,32 @@ function asTextJson(value) {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
 }
 
-const healthcheckSchema = z.object({
-  type: z.enum(["none", "process", "tcp", "http", "log"]).optional().describe("Health signal to verify the background job."),
-  host: z.string().optional().describe("TCP host, default 127.0.0.1."),
-  port: z.number().int().min(1).max(65535).optional().describe("TCP port."),
-  url: z.string().optional().describe("HTTP health URL."),
-  contains: z.string().optional().describe("Text expected in stdout/stderr logs."),
-  timeoutMs: z.number().int().min(100).max(30_000).optional().describe("Per-probe timeout."),
-  minStatus: z.number().int().min(100).max(599).optional().describe("Minimum accepted HTTP status."),
-  maxStatus: z.number().int().min(100).max(599).optional().describe("Maximum accepted HTTP status."),
-  tailBytes: z.number().int().min(1).max(1_000_000).optional().describe("Log bytes to inspect for log health."),
-}).optional();
+// Flat wire shape: some gateways reject any tool schema with a nested object
+// parameter, so the healthcheck spec travels as a JSON string and is parsed
+// back into the object process-jobs-core expects.
+const healthcheckSchema = z.string().optional().describe(
+  'Health probe as a JSON string, e.g. {"type":"http","url":"http://127.0.0.1:3000/health","timeoutMs":2000}. '
+  + "type: none|process|tcp|http|log; other keys: host, port (tcp), url, minStatus, maxStatus (http), contains, tailBytes (log), timeoutMs.",
+);
+
+/** Parse the JSON-string healthcheck back into an object; a legacy object
+ *  argument (older callers) still passes through. */
+function parseHealthcheck(value) {
+  if (!value) return undefined;
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function withParsedHealthcheck(args) {
+  const source = args || {};
+  if (source.healthcheck === undefined) return source;
+  return { ...source, healthcheck: parseHealthcheck(source.healthcheck) };
+}
 
 function createProcessJobsMcpServer(options = {}) {
   const server = new McpServer({ name: "lily-process-jobs", version: "1.0.0" });
@@ -47,7 +62,7 @@ function createProcessJobsMcpServer(options = {}) {
       },
       annotations: { destructiveHint: true, openWorldHint: true },
     },
-    async (args) => asTextJson(await startJob(args || {}, options)),
+    async (args) => asTextJson(await startJob(withParsedHealthcheck(args), options)),
   );
 
   server.registerTool(
@@ -60,7 +75,7 @@ function createProcessJobsMcpServer(options = {}) {
       },
       annotations: { readOnlyHint: true },
     },
-    async (args) => asTextJson(await statusJob(args || {}, options)),
+    async (args) => asTextJson(await statusJob(withParsedHealthcheck(args), options)),
   );
 
   server.registerTool(

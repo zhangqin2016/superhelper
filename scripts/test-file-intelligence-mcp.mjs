@@ -53,7 +53,7 @@ try {
 
   const extracted = parseToolText(await client.callTool({
     name: "extract_file_range",
-    arguments: { path: sample, range: { type: "lines", start: 2, end: 3 } },
+    arguments: { path: sample, rangeStart: 2, rangeEnd: 3 },
   }));
   assert.equal(extracted.coverage, "partial", "extract_file_range marks partial coverage");
   assert.equal(extracted.rangeStart, 2);

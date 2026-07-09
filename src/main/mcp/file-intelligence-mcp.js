@@ -16,6 +16,17 @@ function asTextJson(value) {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
 }
 
+/** Rebuild the nested range extractPath expects from the flat wire fields.
+ *  A legacy nested `range` argument (older callers) still passes through. */
+function normalizeExtractRangeArgs(args) {
+  const { rangeStart, rangeEnd, ...rest } = args;
+  if (rest.range || !(Number(rangeStart) >= 1) || !(Number(rangeEnd) >= 1)) return rest;
+  return {
+    ...rest,
+    range: { type: "lines", start: Math.floor(Number(rangeStart)), end: Math.floor(Number(rangeEnd)) },
+  };
+}
+
 function createFileIntelligenceMcpServer() {
   const server = new McpServer({ name: "lily-file-intelligence", version: "1.0.0" });
 
@@ -46,17 +57,16 @@ function createFileIntelligenceMcpServer() {
   server.registerTool(
     "extract_file_range",
     {
-      description: "Extract an explicit range from a local text-like file. Large files require a range and never silently become full-context reads.",
+      description: "Extract an explicit line range from a local text-like file. Large files require a range and never silently become full-context reads.",
+      // Flat wire shape: some gateways reject any tool schema with a nested
+      // object parameter, so the range travels as two flat integers.
       inputSchema: {
         path: z.string().describe("Absolute or workspace-relative local file path"),
-        range: z.object({
-          type: z.enum(["lines"]).describe("Range type"),
-          start: z.number().int().min(1).describe("1-based start line"),
-          end: z.number().int().min(1).describe("1-based end line"),
-        }).optional(),
+        rangeStart: z.number().int().min(1).optional().describe("1-based start line of the extract range"),
+        rangeEnd: z.number().int().min(1).optional().describe("1-based end line of the extract range"),
       },
     },
-    async (args) => asTextJson(extractPath(args || {})),
+    async (args) => asTextJson(extractPath(normalizeExtractRangeArgs(args || {}))),
   );
 
   server.registerTool(

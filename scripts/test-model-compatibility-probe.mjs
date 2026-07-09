@@ -382,12 +382,10 @@ try {
     model: "provider/tool-shape-limited",
     timeoutMs: 5_000,
   });
-  assert.equal(result.ok, false, "probe must reject gateways that die on Lily-shaped tool definitions");
-  assert.equal(
-    result.error,
-    "MODEL_AGENT_TOOL_SHAPE_UNSUPPORTED",
-    "shape rejection must be distinguished from generic tool-call unavailability",
-  );
+  assert.equal(result.ok, true, `shape-limited gateways must save with the compat profile: ${JSON.stringify(result)}`);
+  assert.equal(result.profile.toolShapeCompat, true, "probe must flag tool-shape compat so runtime shortens MCP keys");
+  assert.equal(result.profile.conformance.toolCalls, true, "simple tool calls still count as conformant under compat");
+  assert.equal(result.profile.conformance.toolShape, "compat", "conformance must record the compat contract");
 } finally {
   await new Promise((resolve) => toolShapeLimitedServer.close(resolve));
 }
@@ -464,12 +462,13 @@ try {
     model: "provider/thinking-and-shape-limited",
     timeoutMs: 5_000,
   });
-  assert.equal(result.ok, false, "probe must reject thinking models behind shape-limited gateways");
-  assert.equal(
-    result.error,
-    "MODEL_AGENT_TOOL_SHAPE_UNSUPPORTED",
-    "shape evidence discovered during overlay repair must win over the reasoning-only diagnosis",
+  assert.equal(result.ok, true, `thinking + shape-limited endpoints must save with overlay + compat: ${JSON.stringify(result)}`);
+  assert.deepEqual(
+    result.profile.requestBodyOverlay,
+    { chat_template_kwargs: { enable_thinking: false } },
+    "the thinking overlay must still be discovered on the shape-limited path",
   );
+  assert.equal(result.profile.toolShapeCompat, true, "shape evidence discovered during overlay repair must set the compat flag");
 } finally {
   await new Promise((resolve) => thinkingAndShapeLimitedServer.close(resolve));
 }

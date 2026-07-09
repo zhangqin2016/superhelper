@@ -56,7 +56,9 @@ class SessionRunnerPool {
     // bleed (a single global OPENCODE_CONFIG can only hold one session's config).
     const cfg = buildSharedBaseConfig({
       lilyEnv,
-      mcpServers: this._opencodeMcpServers(extra.activeSkillIds || []),
+      mcpServers: this._opencodeMcpServers(extra.activeSkillIds || [], {
+        toolCompat: lilyEnv.LILY_OPENCODE_TOOL_COMPAT === "1",
+      }),
       pluginPaths: this._opencodePlugins(),
       skillPaths: this._opencodeSkillPaths(extra.activeSkillIds || [], sessionId),
       disallowedTools: extra.disallowedTools || [],
@@ -231,7 +233,7 @@ class SessionRunnerPool {
 
   /** Lily's active MCP servers (mail/playwright/web) as a {name:{command,args,env}}
    *  map, for translation into OpenCode's mcp config. Empty on any failure. */
-  _opencodeMcpServers(activeSkillIds = null) {
+  _opencodeMcpServers(activeSkillIds = null, { toolCompat = false } = {}) {
     try {
       const fs = require("node:fs");
       const { bundleRuntimeDir } = require("./bundle-locator");
@@ -239,7 +241,22 @@ class SessionRunnerPool {
       const out = require("./config").userDataPath("opencode-mcp.json");
       const written = writeActiveMcpConfig(bundleRuntimeDir(), out, activeSkillIds);
       if (!written) return {};
-      return JSON.parse(fs.readFileSync(out, "utf8")).mcpServers || {};
+      const servers = JSON.parse(fs.readFileSync(out, "utf8")).mcpServers || {};
+      if (!toolCompat) return servers;
+      // Tool-shape compat (the probe found this gateway rejects tool names
+      // longer than ~35 chars): OpenCode names MCP tools `<serverKey>_<tool>`,
+      // so shorter server keys keep every Lily tool name inside the limit.
+      // Applied only when the active model's compatibility profile asks for it.
+      const compatKeys = {
+        lily_tool_broker: "lily_tb",
+        lily_file_intelligence: "lily_fi",
+        lily_process_jobs: "lily_pj",
+      };
+      const renamed = {};
+      for (const [key, value] of Object.entries(servers)) {
+        renamed[compatKeys[key] || key] = value;
+      }
+      return renamed;
     } catch (err) {
       log.warn("opencode mcp assembly failed: %s", err?.message || String(err));
       return {};

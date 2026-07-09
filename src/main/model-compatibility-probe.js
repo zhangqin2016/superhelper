@@ -257,28 +257,42 @@ async function probeCustomModelProfile({
   }
   const plain = await validateAgentConformance({ baseUrl, apiKey, model, timeoutMs });
   if (!plain.ok) return { ok: false, error: plain.error };
-  if (plain.hasAgentConformance) {
-    const prompt = await probeSystemPromptProfile({ baseUrl, apiKey, model, systemPromptProbeText, timeoutMs });
+
+  const finish = async ({ bodyOverlay = null, contentSource, toolShapeCompat = false, diagnostics = {} }) => {
+    const prompt = await probeSystemPromptProfile({ baseUrl, apiKey, model, bodyOverlay, systemPromptProbeText, timeoutMs });
     return {
       ok: true,
       profile: {
+        ...(bodyOverlay ? { requestBodyOverlay: bodyOverlay } : {}),
+        ...(toolShapeCompat ? { toolShapeCompat: true } : {}),
         conformance: {
           chatCompletions: true,
           streaming: true,
           toolCalls: true,
-          contentSource: "plain",
+          contentSource,
+          ...(toolShapeCompat ? { toolShape: "compat" } : {}),
         },
         ...(prompt ? { prompt } : {}),
       },
-      diagnostics: { content: "plain", stream: "plain" },
+      diagnostics,
     };
+  };
+
+  if (plain.hasAgentConformance) {
+    return finish({ contentSource: "plain", diagnostics: { content: "plain", stream: "plain" } });
+  }
+  // Gateway rejects Lily-shaped tool definitions but a simple tool works:
+  // runtime tool-shape compat (short MCP server keys + flat schemas) keeps
+  // every real turn inside what this gateway accepts, so save the model with
+  // the compat flag instead of rejecting it.
+  if (plain.agentToolShapeRejected) {
+    return finish({
+      contentSource: "plain",
+      toolShapeCompat: true,
+      diagnostics: { content: "plain", stream: "plain", toolShape: "compat" },
+    });
   }
 
-  // A thinking-default model can fail the plain content probe before the
-  // tools stage ever runs, so shape/tool evidence discovered while testing
-  // overlay candidates must feed the final diagnosis too (the real blocker
-  // is often "gateway rejects Lily-shaped tools", not "reasoning only").
-  let shapeRejected = Boolean(plain.agentToolShapeRejected);
   let toolCallsBlocked = Boolean(plain.hasContent && plain.tools && !plain.tools.hasToolCalls);
   for (const candidate of BODY_OVERLAY_CANDIDATES) {
     const repaired = await validateAgentConformance({
@@ -289,44 +303,31 @@ async function probeCustomModelProfile({
       timeoutMs,
     });
     if (!repaired.ok) continue;
-    if (repaired.agentToolShapeRejected) shapeRejected = true;
-    else if (repaired.hasContent && repaired.tools && !repaired.tools.hasToolCalls) toolCallsBlocked = true;
+    const diagnostics = {
+      content: "repaired",
+      stream: "repaired",
+      candidate: candidate.id,
+      plainHadReasoning: Boolean(plain.nonStreamShape?.hasReasoning || plain.streamShape?.hasReasoning),
+    };
     if (repaired.hasAgentConformance) {
-      const prompt = await probeSystemPromptProfile({
-        baseUrl,
-        apiKey,
-        model,
-        bodyOverlay: candidate.requestBodyOverlay,
-        systemPromptProbeText,
-        timeoutMs,
-      });
-      return {
-        ok: true,
-        profile: {
-          requestBodyOverlay: candidate.requestBodyOverlay,
-          conformance: {
-            chatCompletions: true,
-            streaming: true,
-            toolCalls: true,
-            contentSource: "body-overlay",
-          },
-          ...(prompt ? { prompt } : {}),
-        },
-        diagnostics: {
-          content: "repaired",
-          stream: "repaired",
-          candidate: candidate.id,
-          plainHadReasoning: Boolean(plain.nonStreamShape?.hasReasoning || plain.streamShape?.hasReasoning),
-        },
-      };
+      return finish({ bodyOverlay: candidate.requestBodyOverlay, contentSource: "body-overlay", diagnostics });
     }
+    // A thinking-default model fails the plain content probe before the tools
+    // stage ever runs, so the shape evidence often only appears here.
+    if (repaired.agentToolShapeRejected) {
+      return finish({
+        bodyOverlay: candidate.requestBodyOverlay,
+        contentSource: "body-overlay",
+        toolShapeCompat: true,
+        diagnostics: { ...diagnostics, toolShape: "compat" },
+      });
+    }
+    if (repaired.hasContent && repaired.tools && !repaired.tools.hasToolCalls) toolCallsBlocked = true;
   }
 
   return {
     ok: false,
-    error: shapeRejected
-      ? "MODEL_AGENT_TOOL_SHAPE_UNSUPPORTED"
-      : toolCallsBlocked
+    error: toolCallsBlocked
       ? "MODEL_TOOL_CALLS_UNAVAILABLE"
       : plain.nonStreamShape?.hasContent && !plain.streamShape?.hasContent
       ? "MODEL_STREAMING_NO_CONTENT"

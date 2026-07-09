@@ -229,6 +229,7 @@ function normalizeCompatibilityProfile(value) {
         streaming: Boolean(rawConformance.streaming),
         toolCalls: Boolean(rawConformance.toolCalls),
         contentSource: String(rawConformance.contentSource || ""),
+        ...(rawConformance.toolShape ? { toolShape: String(rawConformance.toolShape) } : {}),
       }
     : null;
   const rawPrompt = value.prompt;
@@ -241,6 +242,7 @@ function normalizeCompatibilityProfile(value) {
     : null;
   const out = {};
   if (requestBodyOverlay) out.requestBodyOverlay = requestBodyOverlay;
+  if (value.toolShapeCompat === true) out.toolShapeCompat = true;
   if (conformance) out.conformance = conformance;
   if (prompt?.systemMaxChars) out.prompt = prompt;
   return Object.keys(out).length ? out : null;
@@ -426,6 +428,9 @@ function customPresetRecord(entry) {
   if (compatibilityProfile?.prompt?.systemMaxChars) {
     env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS = String(compatibilityProfile.prompt.systemMaxChars);
   }
+  if (compatibilityProfile?.toolShapeCompat) {
+    env.LILY_OPENCODE_TOOL_COMPAT = "1";
+  }
   return {
     id: entry.id,
     label: String(entry.label || tiers.main).trim(),
@@ -552,6 +557,9 @@ function getUserApiEnv() {
       const compatibilityProfile = normalizeCompatibilityProfile(entry.compatibilityProfile);
       if (compatibilityProfile?.prompt?.systemMaxChars) {
         env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS = String(compatibilityProfile.prompt.systemMaxChars);
+      }
+      if (compatibilityProfile?.toolShapeCompat) {
+        env.LILY_OPENCODE_TOOL_COMPAT = "1";
       }
       if (Object.keys(env).length) return env;
     }
