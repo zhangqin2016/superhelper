@@ -4,7 +4,7 @@ const { ipcMain } = require("electron");
 const {
   listPresetsPublic,
   setActivePreset,
-  saveCustomPreset,
+  saveCustomPresetWithProbe,
   deleteCustomPreset,
   setApiGateway,
   diagnoseAndRestoreDefaultModel,
@@ -39,7 +39,7 @@ function registerModelHandlers(ctx) {
   });
 
   ipcMain.handle("models:save-custom", (_event, payload) => {
-    return withRunnerChange(ctx, () => saveCustomPreset(payload || {}), { liveEnv: false });
+    return withRunnerChange(ctx, () => saveCustomPresetWithProbe(payload || {}), { liveEnv: false });
   });
 
   ipcMain.handle("models:delete-custom", (_event, presetId) => {

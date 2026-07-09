@@ -133,6 +133,30 @@ if (
 ) {
   throw new Error(`loopback custom preset should build OpenAI-compatible OpenCode config: ${JSON.stringify(localOpenCode)}`);
 }
+const profiledCustom = modelPresets.saveCustomPreset({
+  label: "Profiled Custom",
+  model: "profiled-model",
+  baseUrl: "https://profiled.example.com/v1",
+  apiKey: "sk-profiled-secret-123456",
+  protocol: "openai",
+  requestBodyOverlay: {
+    chat_template_kwargs: { enable_thinking: false },
+  },
+});
+if (!profiledCustom.ok) throw new Error(`profiled custom preset should save: ${profiledCustom.error}`);
+modelPresets.setActivePreset(profiledCustom.preset.id);
+const profiledEnv = modelPresets.getUserApiEnv();
+if (!profiledEnv.LILY_OPENCODE_BODY_OVERLAY_JSON) {
+  throw new Error(`profiled custom preset must carry body overlay into runtime env: ${JSON.stringify(profiledEnv)}`);
+}
+const profiledConfig = resolveOpencodeModelConfig({
+  ...profiledCustom.preset.env,
+  ...profiledEnv,
+});
+const profiledOpenCode = JSON.parse(profiledConfig.configContent);
+if (profiledOpenCode.provider.lily.options.body.chat_template_kwargs.enable_thinking !== false) {
+  throw new Error(`profiled custom preset must carry body overlay into OpenCode config: ${JSON.stringify(profiledOpenCode.provider.lily.options)}`);
+}
 modelPresets.setActivePreset(saved.preset.id);
 
 const gateway = modelPresets.setApiGateway({

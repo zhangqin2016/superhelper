@@ -15,7 +15,6 @@ const {
   anthropicUrl,
   openaiUrl,
   forceProModelId,
-  shouldDisableQwenThinking,
 } = require("../src/main/runtime/opencode-model-config.js");
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
@@ -147,7 +146,7 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
   assert(cfg.provider.lily.npm === "@ai-sdk/openai-compatible", "openai-compatible npm");
   assert(cfg.provider.lily.options.baseURL === "https://api.deepseek.com", "openai baseURL verbatim (no /v1 forced)");
   assert(cfg.provider.lily.options.includeUsage === false, "openai-compatible streaming usage chunks are disabled for self-hosted compatibility");
-  assert(cfg.provider.lily.options.body === undefined, "non-Qwen OpenAI-compatible models do not get Qwen request body options");
+  assert(cfg.provider.lily.options.body === undefined, "OpenAI-compatible models do not get implicit request body options");
 }
 
 {
@@ -158,14 +157,28 @@ assert(forceProModelId("deepseek-v4-pro") === "deepseek-v4-pro", "pro id is unch
     LILY_MODEL: "Qwen/Qwen3.5-27B",
   });
   assert(r.ok && r.protocol === "openai", "Manassa Qwen endpoint uses OpenAI-compatible protocol");
-  assert(shouldDisableQwenThinking("openai", "Qwen/Qwen3.5-27B") === true, "Qwen OpenAI-compatible models need thinking disabled for content output");
-  assert(shouldDisableQwenThinking("anthropic", "Qwen/Qwen3.5-27B") === false, "Anthropic protocol does not receive OpenAI body options");
   const cfg = JSON.parse(r.configContent);
   assert(cfg.model === "lily/Qwen/Qwen3.5-27B", "Qwen slash model id is preserved");
   assert(cfg.provider.lily.options.baseURL === "https://inference.manassa.ae/models/c5917137-16e9-419e-b474-257bd14f18b3/proxy/v1",
     "Qwen OpenAI-compatible baseURL remains the /v1 base");
+  assert(cfg.provider.lily.options.body === undefined,
+    "model names must not trigger hidden behavior; request body options come from a profile");
+}
+
+{
+  const r = resolveOpencodeModelConfig({
+    LILY_API_BASE_URL: "https://inference.manassa.ae/models/c5917137-16e9-419e-b474-257bd14f18b3/proxy/v1",
+    LILY_API_KEY: "sk",
+    LILY_OPENCODE_PROTOCOL: "openai",
+    LILY_MODEL: "Qwen/Qwen3.5-27B",
+    LILY_OPENCODE_BODY_OVERLAY_JSON: JSON.stringify({
+      chat_template_kwargs: { enable_thinking: false },
+    }),
+  });
+  assert(r.ok && r.protocol === "openai", "Manassa Qwen endpoint uses OpenAI-compatible protocol with an explicit profile");
+  const cfg = JSON.parse(r.configContent);
   assert(cfg.provider.lily.options.body.chat_template_kwargs.enable_thinking === false,
-    "Qwen thinking is disabled so vLLM emits assistant content instead of reasoning-only chunks");
+    "profile body overlay is carried into the OpenCode provider config");
 }
 
 {

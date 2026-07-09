@@ -90,8 +90,18 @@ function positiveInt(value) {
   return Math.floor(number);
 }
 
-function shouldDisableQwenThinking(protocol, modelId) {
-  return protocol === "openai" && /(?:^|[/:_-])qwen/i.test(String(modelId || ""));
+function parseBodyOverlay(value) {
+  const text = String(value || "").trim();
+  if (!text) return { ok: true, body: null };
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { ok: false, error: "LILY_OPENCODE_BODY_OVERLAY_JSON must be a JSON object" };
+    }
+    return { ok: true, body: parsed };
+  } catch {
+    return { ok: false, error: "LILY_OPENCODE_BODY_OVERLAY_JSON is not valid JSON" };
+  }
 }
 
 /**
@@ -106,6 +116,7 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   const protocol = detectProtocol(rawBase, lilyEnv);
   const modelId = forceProModelId(requestedModelId, protocol);
   const modelRoute = classifyModelRoute(lilyEnv);
+  const bodyOverlay = parseBodyOverlay(lilyEnv.LILY_OPENCODE_BODY_OVERLAY_JSON);
 
   if (!modelId) {
     return {
@@ -115,6 +126,17 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
       tiers: null,
       configContent: null,
       baseUrl: "",
+      diagnostics: { modelRoute },
+    };
+  }
+  if (!bodyOverlay.ok) {
+    return {
+      ok: false,
+      reason: bodyOverlay.error,
+      model: null,
+      tiers: null,
+      configContent: null,
+      baseUrl: rawBase,
       diagnostics: { modelRoute },
     };
   }
@@ -158,15 +180,7 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   // non-standard chunk before the completed assistant text can settle. Disabling
   // streaming usage keeps the model URL/body otherwise unchanged.
   if (protocol === "openai") options.includeUsage = false;
-  if (shouldDisableQwenThinking(protocol, modelId)) {
-    options.body = {
-      ...(options.body || {}),
-      chat_template_kwargs: {
-        ...(options.body?.chat_template_kwargs || {}),
-        enable_thinking: false,
-      },
-    };
-  }
+  if (bodyOverlay.body) options.body = bodyOverlay.body;
   if (token) {
     options.apiKey = token;
     options.headers = { Authorization: `Bearer ${token}` };
@@ -219,5 +233,5 @@ module.exports = {
   openaiUrl,
   forceProModelId,
   resolveOpencodeProviderSpec,
-  shouldDisableQwenThinking,
+  parseBodyOverlay,
 };

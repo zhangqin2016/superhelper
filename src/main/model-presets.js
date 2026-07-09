@@ -204,7 +204,17 @@ function normalizeCustomPresetEntry(entry) {
   return {
     ...(entry && typeof entry === "object" ? entry : {}),
     protocol: normalizeProtocol(entry?.protocol) || legacyProtocolForBaseUrl(baseUrl),
+    requestBodyOverlay: normalizeRequestBodyOverlay(entry?.requestBodyOverlay),
   };
+}
+
+function normalizeRequestBodyOverlay(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return null;
+  }
 }
 
 function normalizeCustomPresetEntries(entries, activePresetId, servicePresetIds = new Set()) {
@@ -377,6 +387,11 @@ function customPresetRecord(entry) {
   const tiers = resolveTierModels(entry);
   const baseUrl = String(entry.baseUrl || "").trim();
   const apiKey = String(entry.apiKey || "").trim();
+  const env = envFromTierModels(entry);
+  const requestBodyOverlay = normalizeRequestBodyOverlay(entry.requestBodyOverlay);
+  if (requestBodyOverlay) {
+    env.LILY_OPENCODE_BODY_OVERLAY_JSON = JSON.stringify(requestBodyOverlay);
+  }
   return {
     id: entry.id,
     label: String(entry.label || tiers.main).trim(),
@@ -391,7 +406,7 @@ function customPresetRecord(entry) {
     apiKeySet: Boolean(apiKey),
     tlsSkipVerify: Boolean(entry.tlsSkipVerify && baseUrl),
     custom: true,
-    env: envFromTierModels(entry),
+    env,
   };
 }
 
@@ -494,10 +509,12 @@ function getUserApiEnv() {
       const baseUrl = String(entry.baseUrl || "").trim();
       const apiKey = String(entry.apiKey || "").trim();
       const protocol = normalizeProtocol(entry.protocol) || legacyProtocolForBaseUrl(baseUrl);
+      const requestBodyOverlay = normalizeRequestBodyOverlay(entry.requestBodyOverlay);
       if (baseUrl) env.LILY_API_BASE_URL = baseUrl;
       if (apiKey) env.LILY_API_KEY = apiKey;
       if (protocol) env.LILY_OPENCODE_PROTOCOL = protocol;
       if (entry.tlsSkipVerify && baseUrl) env.LILY_TLS_SKIP_VERIFY = "1";
+      if (requestBodyOverlay) env.LILY_OPENCODE_BODY_OVERLAY_JSON = JSON.stringify(requestBodyOverlay);
       if (Object.keys(env).length) return env;
     }
   }
@@ -687,6 +704,7 @@ function saveCustomPreset({
   apiKey = "",
   protocol = "",
   tlsSkipVerify = false,
+  requestBodyOverlay = null,
 }) {
   const validated = validateCustomInput(label, model);
   if (!validated.ok) return validated;
@@ -729,6 +747,7 @@ function saveCustomPreset({
     baseUrl: urlValidated.baseUrl,
     apiKey: keyValidated.apiKey,
     tlsSkipVerify: Boolean(tlsSkipVerify && urlValidated.baseUrl),
+    requestBodyOverlay: normalizeRequestBodyOverlay(requestBodyOverlay),
     // Carried from the provider catalog so anthropic vs openai-compatible
     // endpoints resolve correctly instead of relying on URL auto-detection.
     protocol: normalizeProtocol(protocol) || legacyProtocolForBaseUrl(urlValidated.baseUrl),
@@ -736,6 +755,42 @@ function saveCustomPreset({
   const customPresets = [...(user.customPresets || []), entry];
   persistUserChoice({ ...user, customPresets, activePresetId: id });
   return { ok: true, preset: customPresetRecord(entry), ...listPresetsPublic() };
+}
+
+async function saveCustomPresetWithProbe(input = {}) {
+  const protocol = normalizeProtocol(input.protocol) || legacyProtocolForBaseUrl(input.baseUrl);
+  if (normalizeRequestBodyOverlay(input.requestBodyOverlay) || protocol !== "openai") {
+    return saveCustomPreset(input);
+  }
+  const urlValidated = validateBaseUrl(input.baseUrl, { required: true });
+  if (!urlValidated.ok) return urlValidated;
+  const keyValidated = validateApiKey(input.apiKey, {
+    required: Boolean(urlValidated.baseUrl) && !isLoopbackBaseUrl(urlValidated.baseUrl),
+  });
+  if (!keyValidated.ok) return keyValidated;
+  const modelValidated = validateCustomInput(input.label, input.model);
+  if (!modelValidated.ok) return modelValidated;
+
+  const probe = await require("./model-compatibility-probe").probeCustomModelProfile({
+    protocol,
+    baseUrl: urlValidated.baseUrl,
+    apiKey: keyValidated.apiKey,
+    model: modelValidated.model,
+    timeoutMs: Number(input.probeTimeoutMs || 10_000),
+  });
+  if (!probe.ok) {
+    return {
+      ok: false,
+      error: probe.error || "MODEL_PROBE_FAILED",
+    };
+  }
+  return saveCustomPreset({
+    ...input,
+    protocol,
+    baseUrl: urlValidated.baseUrl,
+    apiKey: keyValidated.apiKey,
+    requestBodyOverlay: probe.profile?.requestBodyOverlay || null,
+  });
 }
 
 function deleteCustomPreset(presetId) {
@@ -843,6 +898,7 @@ module.exports = {
   getApiGatewayPublic,
   setActivePreset,
   saveCustomPreset,
+  saveCustomPresetWithProbe,
   deleteCustomPreset,
   setApiGateway,
   diagnoseAndRestoreDefaultModel,
