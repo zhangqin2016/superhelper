@@ -90,6 +90,10 @@ function positiveInt(value) {
   return Math.floor(number);
 }
 
+function shouldDisableQwenThinking(protocol, modelId) {
+  return protocol === "openai" && /(?:^|[/:_-])qwen/i.test(String(modelId || ""));
+}
+
 /**
  * @param {Record<string, string>} lilyEnv
  * @returns {{ ok:boolean, reason?:string, model:{providerID:string,modelID:string}|null,
@@ -154,6 +158,15 @@ function resolveOpencodeModelConfig(lilyEnv = {}) {
   // non-standard chunk before the completed assistant text can settle. Disabling
   // streaming usage keeps the model URL/body otherwise unchanged.
   if (protocol === "openai") options.includeUsage = false;
+  if (shouldDisableQwenThinking(protocol, modelId)) {
+    options.body = {
+      ...(options.body || {}),
+      chat_template_kwargs: {
+        ...(options.body?.chat_template_kwargs || {}),
+        enable_thinking: false,
+      },
+    };
+  }
   if (token) {
     options.apiKey = token;
     options.headers = { Authorization: `Bearer ${token}` };
@@ -206,4 +219,5 @@ module.exports = {
   openaiUrl,
   forceProModelId,
   resolveOpencodeProviderSpec,
+  shouldDisableQwenThinking,
 };
