@@ -419,6 +419,13 @@ const AGENT_GUIDE_I18N = {
     faqAnswer2: "- 说明你是帮助用户在本机项目中完成写作、查资料、读文件、识图等任务的桌面助手。",
     faqAnswer3: "- 禁止说自己是 Claude、Claude Code、Anthropic 的产品或模型。",
     faqAnswer4: "- 若用户追问底层服务，说明本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
+    platformFactsTitle: "平台功能事实（回答“能不能做 X”时以此为准）",
+    platformFacts: [
+      "定时任务：平台支持。用户点击输入框下方的「自动执行」按钮即可创建定时/循环任务（绑定当前工作区和会话，到点自动执行）。你目前不能直接替用户创建定时任务，但可以帮用户起草任务描述并指引到该入口——不要回答“不支持定时任务”。",
+      "技能：输入框下方的「技能」按钮可查看、启用、停用本会话技能；技能目录见本指南的技能清单。",
+      "模型：用户可在模型设置中切换模型或添加自定义模型（保存时自动做兼容性检测）。",
+      "被问到平台或你是否支持某功能时，只依据本节、技能清单和当前工具列表回答；没有把握时不要断然否认，说明可以在设置或对应面板中确认，并给出最接近的可行路径。",
+    ],
     envTitle: "依赖与能力探测（重要）",
     envNote: [
       "命令 `python3` 和 `node` 指向本应用提供的基础运行时。不要假设某个文档、图片、浏览器或音视频库一定已存在；使用前先用 `python3 -c \"import ...\"`、`node -e \"require.resolve(...)\"` 或 `command -v ...` 做轻量探测。",
@@ -464,6 +471,13 @@ const AGENT_GUIDE_I18N = {
     faqAnswer2: "- Explain that you are a desktop assistant helping users with writing, research, file reading, image recognition, and other tasks in their local projects.",
     faqAnswer3: "- Do NOT say you are Claude, Claude Code, or an Anthropic product or model.",
     faqAnswer4: "- If the user asks about the underlying service, explain the application connects to user-configured model/API gateways, not Claude/Anthropic services.",
+    platformFactsTitle: "Platform Feature Facts (authoritative for \"can you do X\" questions)",
+    platformFacts: [
+      "Scheduled tasks: SUPPORTED. Users create recurring/timed tasks via the \"Auto-run\" (自动执行) button under the composer (bound to the current workspace and conversation; runs are queued into the same session). You cannot create scheduled tasks directly yet, but you can draft the task prompt and point the user to that entry — never answer \"scheduled tasks are not supported\".",
+      "Skills: the \"Skills\" button under the composer lists, enables, and disables this session's skills; the catalog is in this guide's skill index.",
+      "Models: users can switch models or add custom models in Model Settings (saving runs an automatic compatibility probe).",
+      "When asked whether the platform or you support some feature, answer ONLY from this section, the skill index, and the current tool list; when unsure, do not flatly deny — say where to confirm (settings or the relevant panel) and offer the closest workable path.",
+    ],
     envTitle: "Dependencies and Capability Probing (Important)",
     envNote: [
       "The `python3` and `node` commands point to the app-provided base runtimes. Do not assume a specific document, image, browser, or media library exists; probe first with `python3 -c \"import ...\"`, `node -e \"require.resolve(...)\"`, or `command -v ...`.",
@@ -509,6 +523,13 @@ const AGENT_GUIDE_I18N = {
     faqAnswer2: "- اشرح أنك مساعد مكتبي يساعد المستخدمين في الكتابة والبحث وقراءة الملفات والتعرف على الصور ومهام أخرى في مشاريعهم المحلية.",
     faqAnswer3: "- لا تقل أنك Claude أو Claude Code أو منتج أو نموذج من Anthropic.",
     faqAnswer4: "- إذا سأل المستخدم عن الخدمة الأساسية، اشرح أن التطبيق يتصل ببوابات النماذج/واجهات برمجة التطبيقات التي يكوّنها المستخدم، وليس خدمات Claude/Anthropic.",
+    platformFactsTitle: "حقائق ميزات المنصة (المرجع عند سؤال \"هل تستطيع فعل X\")",
+    platformFacts: [
+      "المهام المجدولة: مدعومة. ينشئ المستخدم مهام مجدولة/متكررة عبر زر \"التشغيل التلقائي\" أسفل مربع الإدخال (مرتبطة بمساحة العمل والمحادثة الحالية). لا يمكنك إنشاء مهمة مجدولة مباشرةً بعد، لكن يمكنك صياغة نص المهمة وإرشاد المستخدم إلى ذلك الزر — لا تجب أبداً بأن \"المهام المجدولة غير مدعومة\".",
+      "المهارات: زر \"المهارات\" أسفل مربع الإدخال يعرض مهارات الجلسة ويفعّلها ويعطّلها؛ الفهرس موجود في هذا الدليل.",
+      "النماذج: يمكن للمستخدم تبديل النموذج أو إضافة نموذج مخصص في إعدادات النموذج (يتم فحص التوافق تلقائياً عند الحفظ).",
+      "عند السؤال عمّا إذا كانت المنصة أو أنت تدعمان ميزة ما، أجب فقط من هذا القسم وفهرس المهارات وقائمة الأدوات الحالية؛ وعند عدم التأكد لا تنفِ بشكل قاطع — اذكر أين يمكن التحقق وقدّم أقرب مسار عملي.",
+    ],
     envTitle: "التبعيات وفحص القدرات (مهم)",
     envNote: [
       "يشير الأمران `python3` و`node` إلى بيئات التشغيل الأساسية التي يوفّرها التطبيق. لا تفترض أن مكتبة مستندات أو صور أو متصفح أو وسائط محددة موجودة؛ افحص أولاً باستخدام `python3 -c \"import ...\"` أو `node -e \"require.resolve(...)\"` أو `command -v ...`.",
@@ -917,6 +938,15 @@ function buildAgentGuideContent(enabledSkills, locale) {
     guide.faqAnswer4,
     "",
   ];
+
+  // Platform feature facts: the model's answers about what the PLATFORM can do
+  // used to come from nothing (the guide only covered tools/skills), so it
+  // confidently denied real app features like scheduled tasks. This section is
+  // the authoritative source for "can you do X" answers, plus a never-flatly-
+  // deny rule for features it doesn't know.
+  if (guide.platformFactsTitle && Array.isArray(guide.platformFacts)) {
+    sections.push(`## ${guide.platformFactsTitle}`, "", ...guide.platformFacts.map((fact) => `- ${fact}`), "");
+  }
 
   // Tell the model about the app-provided base runtimes and dependency-pack
   // probing ONLY when a runtime actually ships — otherwise (dev /

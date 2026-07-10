@@ -574,4 +574,18 @@ assert.match(
   assert.doesNotMatch(bareGuide, /Tool Protocol Overrides/, "no overlay-needing skills → no override section");
 }
 
+// Platform feature facts: "can you do X" answers must come from the guide,
+// not from the model's ignorance (it used to deny scheduled tasks exist).
+{
+  const zhFacts = skillManager.buildAgentGuideContent([], "zh-CN");
+  assert.match(zhFacts, /平台功能事实/, "zh guide carries the platform facts section");
+  assert.match(zhFacts, /自动执行/, "scheduled tasks are described with the real UI entry");
+  assert.match(zhFacts, /不要断然否认/, "the never-flatly-deny rule is present");
+  const enFacts = skillManager.buildAgentGuideContent([], "en");
+  assert.match(enFacts, /Platform Feature Facts/, "en guide carries the platform facts section");
+  assert.match(enFacts, /Scheduled tasks: SUPPORTED/, "scheduled tasks are affirmed in English");
+  const arFacts = skillManager.buildAgentGuideContent([], "ar");
+  assert.match(arFacts, /حقائق ميزات المنصة/, "ar guide carries the platform facts section");
+}
+
 console.log("agent guide i18n: ok");
