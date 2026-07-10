@@ -531,6 +531,13 @@ if (!resumeChanged || resumeRaw.sessions.proj1[0].agentResumeId !== "resume-old"
   const unrelated = path.join(roaming, "SomeOtherApp"); // marker file but no marker dir
   fs.mkdirSync(unrelated, { recursive: true });
   fs.writeFileSync(path.join(unrelated, "messages.db"), "");
+  // Migration archives carry the full Lily signature — they must NEVER be
+  // re-discovered as sources (the field bug: re-migrate + re-suffix every
+  // launch until the name hit ENAMETOOLONG and archiving failed forever).
+  const archived = path.join(roaming, "Electron.migrated-backup");
+  mkSignature(archived);
+  const multiArchived = path.join(roaming, "Electron.migrated-backup.migrated-backup.migrated-backup");
+  mkSignature(multiArchived);
 
   assert.equal(looksLikeLilyUserDataRoot(oldUnknownName), true, "signature dir must be recognized regardless of name");
   assert.equal(looksLikeLilyUserDataRoot(unrelated), false, "a lone marker file without a marker dir must not be treated as ours");
@@ -547,6 +554,8 @@ if (!resumeChanged || resumeRaw.sessions.proj1[0].agentResumeId !== "resume-old"
     assert.ok(roots.includes(path.resolve(localOld)), "must scan LocalAppData, not just Roaming");
     assert.ok(!roots.includes(path.resolve(current)), "must never migrate the current userData root into itself");
     assert.ok(!roots.includes(path.resolve(unrelated)), "must not touch an unrelated app's folder");
+    assert.ok(!roots.includes(path.resolve(archived)), "an archived backup must never be re-migrated");
+    assert.ok(!roots.includes(path.resolve(multiArchived)), "suffix-accumulated archives must never be re-migrated");
   } finally {
     if (prevUserData === undefined) delete process.env.LILY_USER_DATA_DIR; else process.env.LILY_USER_DATA_DIR = prevUserData;
     if (prevAppData === undefined) delete process.env.APPDATA; else process.env.APPDATA = prevAppData;

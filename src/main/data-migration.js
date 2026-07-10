@@ -160,6 +160,12 @@ function legacyUserDataRoots() {
   const record = (root) => {
     const key = path.resolve(root);
     if (key === currentRoot || found.has(key)) return;
+    // NEVER treat our own migration archives as legacy sources. They still
+    // carry the Lily signature files, so without this exclusion every launch
+    // re-migrated the archive and re-renamed it with one more suffix — until
+    // the name blew past NAME_MAX (ENAMETOOLONG), the rename failed, and the
+    // full merge ran on EVERY startup forever.
+    if (path.basename(key).includes(".migrated-backup")) return;
     if (!fs.existsSync(root)) return;
     found.set(key, root);
   };
@@ -560,7 +566,12 @@ function migrateLegacyConfigFiles(legacyRoot, currentRoot) {
 }
 
 function archiveLegacyUserDataRoot(legacyRoot) {
-  const backupRoot = `${legacyRoot}.migrated-backup`;
+  // Suffixes must not accumulate: an already-archived root keeps a SHORT,
+  // stamped name so repeated archiving can never approach NAME_MAX.
+  const base = path.basename(legacyRoot);
+  const backupRoot = base.includes(".migrated-backup")
+    ? path.join(path.dirname(legacyRoot), `lily-legacy-archive.${Date.now()}`)
+    : `${legacyRoot}.migrated-backup`;
   try {
     if (fs.existsSync(backupRoot)) {
       const stamped = `${backupRoot}.${Date.now()}`;
