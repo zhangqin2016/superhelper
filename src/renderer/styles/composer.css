@@ -117,7 +117,8 @@
   margin: 0 auto 8px;
   padding: 10px 12px;
   border: 1px solid var(--border-light);
-  border-left: 3px solid var(--warning-text-soft);
+  /* Pending-attention rides the accent, not warning amber (see prompt cards). */
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius);
   background: var(--bg-surface-raised);
   font-size: var(--text-sm);

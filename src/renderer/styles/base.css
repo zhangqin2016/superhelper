@@ -3,6 +3,17 @@
    Raw color values belong here. Component CSS should consume semantic tokens.
    ========================================================================= */
 
+/* Bundled UI face: Inter Variable (SIL OFL). Latin/UI glyphs only — CJK falls
+   through to PingFang SC / Microsoft YaHei by design. Bundling (instead of
+   hoping the OS has it) is what keeps Windows off the Segoe-default look. */
+@font-face {
+  font-family: "InterVariable";
+  src: url("../fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --left-w: 280px;
   --right-w: 320px;
@@ -165,7 +176,7 @@
   --text-base: 13px;
   --text-md: 15px;
 
-  --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font: "InterVariable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 
   font-family: var(--font);
@@ -176,6 +187,9 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* UI numerals are tabular everywhere: ticking timers, token counts, and
+     table columns stop jittering as digits change. Inherited app-wide. */
+  font-variant-numeric: tabular-nums;
 }
 
 :root[data-theme="light"] {
@@ -190,61 +204,66 @@
   --accent-strong-bg: rgba(106, 87, 240, 0.14);
   --accent-ring: rgba(106, 87, 240, 0.2);
 
-  --bg-body: #edf1f7;
-  --bg-left: #f6f8fb;
-  --bg-center: #f8fafc;
-  --bg-right: #f8fafc;
-  --bg-topbar: #ffffff;
-  --bg-input: #ffffff;
+  /* Warm paper, not blue-grey SaaS: ink on paper reads like a document you
+     trust; blue-grey + pure white reads like a template dashboard. Surfaces
+     step by warmth-preserving lightness; hairlines are warm black. */
+  --bg-body: #f1efe9;
+  --bg-left: #f7f5f0;
+  --bg-center: #faf9f5;
+  --bg-right: #f7f5f0;
+  --bg-topbar: #fcfbf8;
+  --bg-input: #fffefb;
   --bg-primary: var(--bg-center);
   --bg-secondary: var(--bg-surface-muted);
   --bg-elevated: var(--bg-surface-raised);
-  --bg-surface: #ffffff;
-  --bg-surface-raised: #ffffff;
-  --bg-surface-hover: #f3f6fb;
-  --bg-surface-active: #e9edf5;
-  --bg-surface-muted: rgba(0, 0, 0, 0.035);
-  --bg-surface-subtle: rgba(0, 0, 0, 0.02);
-  --bg-floating: rgba(255, 255, 255, 0.96);
-  --bg-backdrop: rgba(0, 0, 0, 0.25);
-  --bg-drop-overlay: rgba(0, 0, 0, 0.18);
-  --bg-drop-card: rgba(255, 255, 255, 0.96);
-  --bg-tool-detail: rgba(0, 0, 0, 0.04);
-  --bg-tool-detail-strong: rgba(0, 0, 0, 0.06);
-  --bg-media: rgba(250, 250, 251, 0.96);
-  --bg-choice-backdrop: rgba(0, 0, 0, 0.28);
+  --bg-surface: #fffefb;
+  --bg-surface-raised: #fffefb;
+  --bg-surface-hover: #f2f0ea;
+  --bg-surface-active: #eae7df;
+  --bg-surface-muted: rgba(62, 52, 32, 0.045);
+  --bg-surface-subtle: rgba(62, 52, 32, 0.025);
+  --bg-floating: rgba(255, 254, 251, 0.97);
+  --bg-backdrop: rgba(30, 26, 18, 0.25);
+  --bg-drop-overlay: rgba(30, 26, 18, 0.18);
+  --bg-drop-card: rgba(255, 254, 251, 0.96);
+  --bg-tool-detail: rgba(62, 52, 32, 0.04);
+  --bg-tool-detail-strong: rgba(62, 52, 32, 0.06);
+  --bg-media: rgba(250, 249, 245, 0.96);
+  --bg-choice-backdrop: rgba(30, 26, 18, 0.28);
   --bg-pdf-active: rgba(106, 87, 240, 0.08);
-  --bg-pdf-viewport-sheen: rgba(15, 23, 42, 0.04);
+  --bg-pdf-viewport-sheen: rgba(62, 52, 32, 0.04);
   --bg-user-chip: rgba(255, 255, 255, 0.22);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.16);
 
-  --text-primary: #18181b;
+  /* Warm ink ladder (zinc greys read cold on paper) */
+  --text-primary: #1f1d18;
   --text: var(--text-primary);
-  --text-secondary: #52525b;
-  --text-tertiary: #71717a;
-  --text-faint: #a1a1aa;
-  --text-dim: #6b6b73;
-  --text-muted: #8a8a93;
+  --text-secondary: #57534a;
+  --text-tertiary: #7a7569;
+  --text-faint: #a49e91;
+  --text-dim: #6e6a5f;
+  --text-muted: #8b8578;
   --muted: var(--text-muted);
   --text-inverse: #ffffff;
-  --text-strong: #09090b;
-  --text-code: #b45309;
-  --link: #2563eb;
+  --text-strong: #14120d;
+  --text-code: #a34e0f;
+  --link: #2361c4;
 
-  /* Hairlines, not solid grey lines */
-  --border: rgba(0, 0, 0, 0.08);
-  --border-light: rgba(0, 0, 0, 0.12);
-  --border-subtle: rgba(0, 0, 0, 0.06);
-  --border-strong: rgba(0, 0, 0, 0.16);
+  /* Warm hairlines, not solid grey lines */
+  --border: rgba(62, 52, 32, 0.10);
+  --border-light: rgba(62, 52, 32, 0.13);
+  --border-subtle: rgba(62, 52, 32, 0.075);
+  --border-strong: rgba(62, 52, 32, 0.18);
 
-  --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 18px 42px rgba(15, 23, 42, 0.08);
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08), 0 8px 22px rgba(15, 23, 42, 0.05);
-  --shadow-floating: 0 18px 48px rgba(15, 23, 42, 0.14);
-  --shadow-panel: -10px 0 36px rgba(15, 23, 42, 0.12);
-  --shadow-image: 0 8px 40px rgba(15, 23, 42, 0.22);
-  --shadow-modal: 0 22px 70px rgba(15, 23, 42, 0.18);
-  --shadow-pdf-page: 0 18px 44px rgba(0, 0, 0, 0.18);
-  --shadow-pdf-thumb: 0 1px 4px rgba(15, 23, 42, 0.08);
+  /* Halved shadow weight: paper sits, it doesn't float */
+  --shadow: 0 1px 2px rgba(50, 42, 26, 0.04), 0 14px 34px rgba(50, 42, 26, 0.05);
+  --shadow-sm: 0 1px 2px rgba(50, 42, 26, 0.05), 0 6px 16px rgba(50, 42, 26, 0.035);
+  --shadow-floating: 0 16px 40px rgba(50, 42, 26, 0.10);
+  --shadow-panel: -10px 0 32px rgba(50, 42, 26, 0.08);
+  --shadow-image: 0 8px 36px rgba(50, 42, 26, 0.18);
+  --shadow-modal: 0 22px 64px rgba(50, 42, 26, 0.14);
+  --shadow-pdf-page: 0 16px 40px rgba(50, 42, 26, 0.14);
+  --shadow-pdf-thumb: 0 1px 4px rgba(50, 42, 26, 0.08);
 
   --success-bg: #e9f8ef;
   --success-bg-hover: #d8f1e2;
@@ -292,7 +311,7 @@
   --document-page-bg: #ffffff;
   --image-control-bg: rgba(15, 23, 42, 0.56);
   --image-control-hover: rgba(15, 23, 42, 0.72);
-  --scrollbar-thumb: #d4d4d8;
+  --scrollbar-thumb: #d5d0c4;
 }
 
 :root[data-text-size="large"] {

@@ -8,6 +8,23 @@
 ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 
 /* =========================================================================
+   Focus & selection — ONE voice, always the accent
+   ========================================================================= */
+
+:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+/* =========================================================================
    RTL (Arabic)
    ========================================================================= */
 
