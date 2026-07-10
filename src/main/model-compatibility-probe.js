@@ -25,7 +25,8 @@ function mergeBody(base, overlay) {
 }
 
 function messageShape(json) {
-  const message = json?.choices?.[0]?.message || {};
+  const choice = json?.choices?.[0] || {};
+  const message = choice.message || {};
   const content = typeof message.content === "string" ? message.content : "";
   const reasoning = typeof message.reasoning === "string" ? message.reasoning : "";
   const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
@@ -33,6 +34,7 @@ function messageShape(json) {
     hasContent: content.trim().length > 0,
     hasReasoning: reasoning.trim().length > 0,
     hasToolCalls: toolCalls.length > 0,
+    finishReason: typeof choice.finish_reason === "string" ? choice.finish_reason : "",
   };
 }
 
@@ -40,6 +42,7 @@ function streamShape(text) {
   let hasContent = false;
   let hasReasoning = false;
   let hasToolCalls = false;
+  let finishReason = "";
   for (const line of String(text || "").split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) continue;
@@ -47,15 +50,17 @@ function streamShape(text) {
     if (!data || data === "[DONE]") continue;
     try {
       const json = JSON.parse(data);
-      const delta = json?.choices?.[0]?.delta || {};
+      const choice = json?.choices?.[0] || {};
+      const delta = choice.delta || {};
       if (typeof delta.content === "string" && delta.content.trim()) hasContent = true;
       if (typeof delta.reasoning === "string" && delta.reasoning.trim()) hasReasoning = true;
       if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) hasToolCalls = true;
+      if (typeof choice.finish_reason === "string" && choice.finish_reason) finishReason = choice.finish_reason;
     } catch {
       // Ignore malformed chunks; the caller handles no-content as failure.
     }
   }
-  return { hasContent, hasReasoning, hasToolCalls };
+  return { hasContent, hasReasoning, hasToolCalls, finishReason };
 }
 
 // Decoys mirroring Lily's real agent toolset: MCP tool names run long
@@ -214,6 +219,7 @@ async function validateAgentConformance({ baseUrl, apiKey, model, bodyOverlay = 
 }
 
 const SYSTEM_PROMPT_PROBE_CANDIDATES = Object.freeze([32768, 24576, 16000, 12000, 10000, 8000, 6000, 4000]);
+const SYSTEM_PROMPT_SIZE_REJECTION_STATUSES = Object.freeze(new Set([400, 413, 422]));
 
 function promptProbeSlice(text, maxChars) {
   const source = String(text || "").trim();
@@ -224,15 +230,65 @@ function promptProbeSlice(text, maxChars) {
   return `${source.slice(0, Math.max(1000, limit - notice.length)).trimEnd()}${notice}`;
 }
 
+function isExplicitSystemPromptSizeRejection(result) {
+  if (!SYSTEM_PROMPT_SIZE_REJECTION_STATUSES.has(Number(result?.status))) return false;
+  const json = result?.json;
+  if (!json || typeof json !== "object" || Array.isArray(json)) return false;
+  const error = json.error;
+  const text = [
+    typeof error === "string" ? error : "",
+    error?.message,
+    error?.code,
+    error?.type,
+    json.message,
+    json.detail,
+    json.code,
+    json.type,
+  ].filter((value) => typeof value === "string" && value.trim()).join(" ").toLowerCase();
+  if (!text) return false;
+  const normalized = text.replace(/[_-]+/g, " ");
+  const hasQuotaSignal = (
+    /\b(?:rate|quota)\b/.test(normalized) ||
+    /\bper\s+(?:minute|second|hour)\b/.test(normalized) ||
+    /\b(?:tokens?|requests?)\s*\/\s*(?:min|sec)\b/.test(normalized) ||
+    /\b(?:tpm|rpm|qps)\b/.test(normalized)
+  );
+  // Quota/rate failures can contain words like input, tokens, maximum, and
+  // exceeded, but say nothing about prompt capacity. Reject them before any
+  // positive size matching. Word boundaries avoid substrings such as separate.
+  if (hasQuotaSignal) return false;
+  if (/\bcontext\s+length\s+exceed(?:ed|s|ing)?\b/.test(normalized)) return true;
+  if (/\b(?:context|input|prompt)\b.{0,60}\btoo\s+(?:long|large)\b/.test(normalized)) return true;
+  if (/\btoo\s+many\s+(?:input|prompt)\s+tokens?\b/.test(normalized)) return true;
+
+  const hasSubject = /\b(?:context|input|prompt)\b/.test(normalized);
+  const hasSizeUnit = /\b(?:length|tokens?|characters?|bytes?|size|window)\b/.test(normalized);
+  const hasOverflowMarker = /\b(?:exceed(?:ed|s|ing)?|max(?:imum)?|limit(?:ed|s|ing)?)\b/.test(normalized);
+  const isRateLimit = /\brate\s+limit(?:ed|s|ing)?\b/.test(normalized);
+  return hasSubject && hasSizeUnit && hasOverflowMarker && !isRateLimit;
+}
+
 async function probeSystemPromptProfile({ baseUrl, apiKey, model, bodyOverlay = null, systemPromptProbeText = "", timeoutMs }) {
   const source = String(systemPromptProbeText || "").trim();
   if (!source) return null;
-  for (const systemChars of SYSTEM_PROMPT_PROBE_CANDIDATES) {
+  // Always try the complete guide first. Without this request, a guide larger
+  // than the highest ladder rung would be truncated before the endpoint had a
+  // chance to prove it could accept the full source.
+  const candidates = [source.length, ...SYSTEM_PROMPT_PROBE_CANDIDATES.filter((value) => value < source.length)];
+  for (const systemChars of candidates) {
     const systemText = promptProbeSlice(source, systemChars);
     const result = await postChat({ baseUrl, apiKey, model, bodyOverlay, systemText, timeoutMs });
     if (result.ok && result.shape?.hasContent) {
-      return { systemMaxChars: Math.min(systemChars, source.length) };
+      // A sample shorter than the candidate fitting proves only that the
+      // sample fits. Record a ceiling only after the full source was rejected
+      // and a genuinely smaller candidate was required.
+      if (source.length <= systemChars) return null;
+      return { systemMaxChars: systemChars };
     }
+    // Descend only when the endpoint explicitly classified this request as a
+    // prompt/input-size rejection. Any transient, auth/rate-limit, malformed,
+    // or no-content response is ambiguous and must fail open without a cap.
+    if (!isExplicitSystemPromptSizeRejection(result)) return null;
   }
   return null;
 }
@@ -259,13 +315,24 @@ async function probeSystemPromptProfile({ baseUrl, apiKey, model, bodyOverlay = 
 //   text carries an explicit native-call example → the guide ships that
 //   example for this model, and the signal counts as PASSED (the recipe is
 //   always applied at runtime), often upgrading lite → standard.
-// A recipe probe transport error skips just that recipe (base finding kept);
-// only base-signal transport errors omit the whole capability field.
+// A recipe probe transport error skips just that recipe (base finding kept),
+// but cannot confirm a destructive lite grade. Only base-signal transport
+// errors omit the whole capability field.
 const TOOL_CALL_HINT_PROBE_SYSTEM = [
   "To use a tool, you MUST invoke it as a NATIVE structured function call through the tool-calling interface.",
   "Never describe or write the call as text.",
   "Example: to report readiness, CALL the function lily_probe_tool with arguments {\"ok\": true}.",
 ].join(" ");
+
+function isCompletedAutoNoCall(result) {
+  const shape = result?.shape;
+  return Boolean(
+    result?.ok &&
+    !shape?.hasToolCalls &&
+    shape?.hasContent &&
+    shape?.finishReason === "stop"
+  );
+}
 
 async function probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
   const recipes = {};
@@ -309,6 +376,7 @@ async function probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay = nu
   });
   if (!auto.ok) return null;
   let toolChoiceAuto = Boolean(auto.shape?.hasToolCalls);
+  let successfulAutoNoCalls = isCompletedAutoNoCall(auto) ? 1 : 0;
   if (!toolChoiceAuto) {
     const hinted = await postChat({
       baseUrl,
@@ -324,6 +392,8 @@ async function probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay = nu
     if (hinted.ok && hinted.shape?.hasToolCalls) {
       toolChoiceAuto = true;
       recipes.toolCallHint = true;
+    } else if (isCompletedAutoNoCall(hinted)) {
+      successfulAutoNoCalls += 1;
     }
   }
 
@@ -341,9 +411,13 @@ async function probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay = nu
     // Recipe probes never void the base capability finding.
   }
 
-  const grade = toolChoiceAuto ? (instructionFidelity ? "full" : "standard") : "lite";
+  const confirmedLite = !toolChoiceAuto && successfulAutoNoCalls >= 2;
+  const grade = toolChoiceAuto
+    ? (instructionFidelity ? "full" : "standard")
+    : confirmedLite ? "lite" : "standard";
   return {
     grade,
+    ...(confirmedLite ? { confidence: "confirmed" } : {}),
     signals: { instructionFidelity, toolChoiceAuto },
     ...(Object.keys(recipes).length ? { recipes } : {}),
   };
@@ -384,7 +458,8 @@ const BODY_OVERLAY_CANDIDATES = Object.freeze([
 // v3: capability signals (instructionFidelity + toolChoiceAuto) -> capability.grade.
 // v4: recipe calibration (instructionLanguage / toolCallHint) -> capability.recipes.
 // v5: output ceiling measurement -> capability.recipes.outputTokenCeiling.
-const PROBE_PROFILE_VERSION = 5;
+// v6: observed-only prompt ceilings + confirmed evidence before lite downgrade.
+const PROBE_PROFILE_VERSION = 6;
 
 async function probeCustomModelProfile({
   protocol,

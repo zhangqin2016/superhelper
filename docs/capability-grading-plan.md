@@ -1,10 +1,12 @@
 # 能力分档 → 差异化放权（第 2 层：强模型不变笨、也更聪明）
 
-状态：已实施（2026-07-10）。探针 v3（instructionFidelity + toolChoiceAuto → capability.grade）、env 下发（LILY_MODEL_CAPABILITY_GRADE）、lite 运行时收紧（MCP 留 tool broker + file_intelligence / task deny / prompt≤8000）、kill switch、测试（scripts/test-capability-grading.mjs + 探针 mock 矩阵）全部落地；第 5 节两个小尾巴一并完成（self_heal_retry 事件通路+气泡、RESPONSE_ERROR 进 HEALABLE_CODES）。
+状态：代码与无网络自动门禁已实施（2026-07-10）。探针 v6 只在重复、完整、可见的成功证据下确认 `lite`，旧版或不确定证据保持 `standard`；env 下发、lite 运行时收紧、kill switch、当前回合恢复，以及探针/分档/恢复 mock 矩阵均已落地。`scripts/test-model-eval-policy.mjs` 进一步把实机 eval 变成确定性发版门禁：完整运行缺失/损坏 baseline、结果为空或 case 覆盖不全返回 2，显式单 case 失败或 baseline 由通过变失败返回 1。实机路径复用生产 profile→env 映射（overlay、prompt cap、tool compat、确认后的 grade、recipes）、`buildSharedBaseConfig`、Lily persona 和 runner 的 lite/recipe 指南；直接 CLI 无法覆盖的 Electron 会话 MCP 路由与 turn orchestration 仍由聚焦自动测试守门。
 
 **probe v4 配方校准已追加**：信号失败时多测一形态，胜者写 capability.recipes（instructionLanguage → 救援提示语言；toolCallHint → 指南追加原生调用示例段并计入分档，可把模型从 lite 升 standard/full）；env LILY_MODEL_RECIPES。
 
-待办：对真实弱模型跑 `npm run eval:model` 建 lite 样本基线、验证配方实际收益，并复核强模型基线前后 diff 为零。
+实机验收仍依赖模型地址/密钥：需重新跑真实弱模型并人工复核后更新 baseline、验证配方实际收益；还需建立并复核强模型基线，确认分档前后结果无回退。现有 Qwen baseline 早于完整 Lily persona eval 路径，不能代替这轮凭证依赖的现场复跑。自动化门禁已完成不等于这些实机结论已经验证。
+
+共享 OpenCode serve 的 stdio MCP 调用目前不携带来源 Lily 会话元数据，因此共享 tool broker 明确使用稳定的 `platformOnly` 上下文，避免把一个会话的身份/技能误给另一个会话，也避免每个普通会话生成不同 serve signature。真正隔离的 transport 仍可通过 `writeActiveMcpConfig(..., context)` 传入会话上下文；共享 transport 若要恢复会话级 broker 状态，需要未来增加请求级会话元数据。`learned-*` Web 系统仍沿用既有的按启用技能隔离，不能改成跨会话全局暴露。
 
 ## 目标
 

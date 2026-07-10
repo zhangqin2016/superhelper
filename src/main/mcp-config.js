@@ -112,11 +112,27 @@ function buildMailMcpEntry() {
  * Lily tool broker entry. With LILY_TOOL_BROKER_CONTEXT it exposes session-
  * scoped tools; without context it exposes only platform-level capability and
  * runtime-pack tools.
+ * @param {object | undefined} context Explicit session context. Undefined keeps
+ * the legacy process-environment fallback for external callers.
  */
-function buildToolBrokerMcpEntry() {
+function buildToolBrokerMcpEntry(context) {
   const env = { ELECTRON_RUN_AS_NODE: "1" };
-  if (process.env.LILY_TOOL_BROKER_CONTEXT) {
-    env.LILY_TOOL_BROKER_CONTEXT = process.env.LILY_TOOL_BROKER_CONTEXT;
+  let serializedContext = "";
+  if (context !== undefined) {
+    try {
+      serializedContext = JSON.stringify(context) || "";
+    } catch {
+      // Explicit malformed context fails closed to platform-level broker tools;
+      // never borrow another session's process-global compatibility context.
+      serializedContext = "";
+    }
+  } else if (process.env.LILY_TOOL_BROKER_CONTEXT) {
+    // Compatibility for older/external callers that have not moved to the
+    // explicit fourth writeActiveMcpConfig argument yet.
+    serializedContext = process.env.LILY_TOOL_BROKER_CONTEXT;
+  }
+  if (serializedContext) {
+    env.LILY_TOOL_BROKER_CONTEXT = serializedContext;
   }
   return {
     command: process.execPath,
@@ -209,11 +225,18 @@ function buildWebSystemMcpEntries(systemDirs) {
   return out;
 }
 
-function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null) {
+function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null, context) {
   const mcpServers = {};
   const playwright = runtimeDir ? buildPlaywrightMcpConfig(runtimeDir) : null;
   if (playwright?.mcpServers) Object.assign(mcpServers, playwright.mcpServers);
-  mcpServers.lily_tool_broker = buildToolBrokerMcpEntry();
+  let brokerContext = context;
+  if (context !== undefined && context && typeof context === "object" && !Array.isArray(context)) {
+    brokerContext = { ...context };
+    if (!Array.isArray(brokerContext.activeSkillIds) && Array.isArray(allowedSkillIds)) {
+      brokerContext.activeSkillIds = allowedSkillIds;
+    }
+  }
+  mcpServers.lily_tool_broker = buildToolBrokerMcpEntry(brokerContext);
   mcpServers.lily_file_intelligence = buildFileIntelligenceMcpEntry();
   mcpServers.lily_process_jobs = buildProcessJobsMcpEntry();
   const mail = buildMailMcpEntry();

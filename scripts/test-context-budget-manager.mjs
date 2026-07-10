@@ -147,7 +147,13 @@ assert.deepEqual(
   const decision = decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
     runner: { alive: true, busy: false },
-    sessionSummary: { turnCount: 2, lastEnginePromptTokens: 90, lastEnginePromptTokenSource: "runtime_usage" },
+    sessionSummary: {
+      turnCount: 2,
+      retainedContextTokens: 90,
+      retainedContextTokenSource: "runtime_usage",
+      lastEnginePromptTokens: 20,
+      lastEnginePromptTokenSource: "estimated_provider_fallback",
+    },
     now: 1_000_000,
     contextWindowTokens: 100,
     tokenPressureThreshold: 0.72,
@@ -181,6 +187,24 @@ assert.deepEqual(
     now: 1_000_000,
   });
   assert.equal(coldStartPressure.action, "compact", "pre-turn compaction may start an idle runtime before sending");
+
+  const nextTurnPressure = decidePreTurnCompaction({
+    capabilities: { nativeCompaction: true, manualSummarize: true },
+    model: { providerID: "lily", modelID: "100k-window", contextWindowTokens: 100_000 },
+    runner: { alive: true, busy: false },
+    sessionSummary: {
+      turnCount: 3,
+      retainedContextTokens: 60_000,
+      retainedContextTokenSource: "estimated_retained_context",
+      lastEnginePromptTokens: 20_000,
+    },
+    currentPromptTokens: 20_000,
+    now: 1_000_000,
+  });
+  assert.equal(nextTurnPressure.estimatedPromptTokens, 80_000,
+    "next-turn pressure includes both retained history and current input");
+  assert.equal(nextTurnPressure.action, "compact",
+    "combined 80k pressure compacts before sending into a 100k window");
 
   const topModelRoom = decidePreTurnCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },

@@ -361,7 +361,7 @@ function buildOpencodePromptBody(opts = {}) {
 // guide must shrink to a weak gateway's system budget, these survive first —
 // they are exactly the rules that keep a weak model from drowning itself
 // (blind whole-file reads, fake background-job claims).
-const GUARDRAIL_SECTION_TITLE = /^(Large Input Protocol|Process Job Protocol|Tool Protocol)\b/i;
+const GUARDRAIL_SECTION_TITLE = /^(?:(?:Large Input Protocol|Process Job Protocol|Tool Protocol)\b|Execution Protocol \(lite support\)$)/i;
 
 const TRUNCATION_NOTICE =
   "[System guide truncated by Lily for this model's input limit. Use available tools and ask for narrower scope if a capability guide is missing.]";
@@ -384,8 +384,38 @@ function splitGuidanceSections(text) {
 }
 
 function legacyHeadCut(text, limit, notice) {
-  const headLimit = Math.max(1000, Math.floor(limit) - notice.length);
+  const safeLimit = Math.max(0, Math.floor(limit));
+  if (safeLimit <= notice.length) return notice.slice(0, safeLimit);
+  const headLimit = safeLimit - notice.length;
   return `${text.slice(0, headLimit).trimEnd()}${notice}`;
+}
+
+function omittedSectionsLine(sections) {
+  if (!sections.length) return "";
+  const titles = sections.map((section) => section.title || "(untitled)").join("; ").slice(0, 150);
+  return `\n\n[Omitted for this model's input limit: ${titles}. Ask the user to narrow scope if one is needed.]`;
+}
+
+function minimumGuardrailBody(body) {
+  const source = String(body || "").trim();
+  const newline = source.indexOf("\n");
+  if (newline < 0) return source;
+  const heading = source.slice(0, newline).trim();
+  const content = source.slice(newline).trim();
+  if (!content) return heading;
+  const preview = content.slice(0, 180).trimEnd();
+  return preview.length < content.length
+    ? `${heading}\n\n${preview}\n[…]`
+    : `${heading}\n\n${preview}`;
+}
+
+function truncateGuardrailBody(body, targetLength) {
+  const source = String(body || "").trim();
+  const minimum = minimumGuardrailBody(source);
+  const target = Math.max(minimum.length, Math.floor(targetLength));
+  if (source.length <= target) return source;
+  const suffix = "\n[…]";
+  return `${source.slice(0, Math.max(0, target - suffix.length)).trimEnd()}${suffix}`;
 }
 
 /**
@@ -429,37 +459,57 @@ function truncateSystemGuidance(guidance, maxChars, { intentText = "" } = {}) {
         .sort((a, b) => (b.score - a.score) || (a.index - b.index))
         .map((entry) => entry.section);
     }
-    const sizeOf = (section) => section.lines.join("\n").trim().length + 2; // + join gap
-
-    // Reserve room for the notice plus a worst-case omitted-sections line.
-    let budget = Math.floor(limit) - notice.length - 200;
     const headText = head.lines.join("\n").trim();
-    if (headText.length >= budget) return legacyHeadCut(text, limit, notice);
-    budget -= headText.length;
+    const guardrailBodies = guardrails.map((section) => section.lines.join("\n").trim());
+    const minimumGuardrails = guardrailBodies.map(minimumGuardrailBody);
+    const render = (keptBodies, omittedSections) => (
+      `${[headText, ...keptBodies].filter(Boolean).join("\n\n")}${omittedSectionsLine(omittedSections)}${notice}`
+    );
 
-    const kept = [];
-    const omitted = [];
-    // Guardrails first — order within each group stays as authored.
-    for (const section of [...guardrails, ...others]) {
-      const isGuardrail = GUARDRAIL_SECTION_TITLE.test(section.title);
+    // Start with every guardrail in full and every ordinary section omitted.
+    // If this is too large, shrink only guardrails that have room above their
+    // actionable minimum, largest-first. Re-rendering gives exact accounting
+    // for separators and notices instead of reserving broad slack that can
+    // trigger a final blind head cut.
+    const keptGuardrails = [...guardrailBodies];
+    let result = render(keptGuardrails, others);
+    while (result.length > limit) {
+      let candidateIndex = -1;
+      let candidateReducible = 0;
+      for (let index = 0; index < keptGuardrails.length; index += 1) {
+        const reducible = keptGuardrails[index].length - minimumGuardrails[index].length;
+        if (reducible > candidateReducible) {
+          candidateIndex = index;
+          candidateReducible = reducible;
+        }
+      }
+      if (candidateIndex < 0 || candidateReducible <= 0) {
+        return legacyHeadCut(text, limit, notice);
+      }
+      const excess = result.length - limit;
+      keptGuardrails[candidateIndex] = truncateGuardrailBody(
+        keptGuardrails[candidateIndex],
+        keptGuardrails[candidateIndex].length - Math.min(excess, candidateReducible),
+      );
+      result = render(keptGuardrails, others);
+    }
+
+    // Spend any exact remainder on ordinary sections in relevance/authored
+    // order. The omitted-title line is recomputed for every candidate because
+    // it is part of the real gateway budget too.
+    const kept = [...keptGuardrails];
+    const omitted = [...others];
+    for (const section of others) {
       const body = section.lines.join("\n").trim();
-      if (sizeOf(section) <= budget) {
+      const nextOmitted = omitted.filter((item) => item !== section);
+      const candidate = render([...kept, body], nextOmitted);
+      if (candidate.length <= limit) {
         kept.push(body);
-        budget -= sizeOf(section);
-      } else if (isGuardrail && budget > 600) {
-        // A guardrail that doesn't fit whole still beats absence: keep its head.
-        kept.push(`${body.slice(0, budget - 20).trimEnd()}\n[…]`);
-        budget = 0;
-      } else {
-        omitted.push(section.title || "(untitled)");
+        omitted.splice(omitted.indexOf(section), 1);
+        result = candidate;
       }
     }
 
-    const omittedLine = omitted.length
-      ? `\n\n[Omitted for this model's input limit: ${omitted.join("; ").slice(0, 150)}. Ask the user to narrow scope if one is needed.]`
-      : "";
-    const result = `${[headText, ...kept].join("\n\n")}${omittedLine}${notice}`;
-    // Safety invariant: never exceed the gateway's measured limit.
     return result.length <= limit ? result : legacyHeadCut(text, limit, notice);
   } catch {
     return legacyHeadCut(text, limit, notice);

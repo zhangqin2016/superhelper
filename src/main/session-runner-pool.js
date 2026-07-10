@@ -29,6 +29,7 @@ class SessionRunnerPool {
    * @param {string} sessionId
    * @param {string} cwd
    * @param {{ stagingDir?: string, disallowedTools?: string[], resumeSessionId?: string | null, configDir?: string, permissionMode?: string }} [extra]
+   * @param {{ lazy?: boolean, requireFreshConfig?: boolean }} [callOpts]
    */
   ensure(sessionId, cwd, extra = {}, callOpts = {}) {
     const agentCommand = resolveOpencodeCommand();
@@ -37,9 +38,13 @@ class SessionRunnerPool {
     }
 
     let runner = this._sessions.get(sessionId);
-    if (!runner) {
-      runner = new OpencodeAgentSession(sessionId);
-      this._sessions.set(sessionId, runner);
+    const basePrompt = this._opencodeBasePersona();
+    if (!String(basePrompt || "").trim()) {
+      if (this._hasLastKnownGoodRunner(runner) && !callOpts.requireFreshConfig) {
+        log.warn("opencode base persona unavailable; keeping last-known-good runner for session %s", sessionId);
+        return this._reuseLastKnownGoodRunner(runner, cwd, callOpts);
+      }
+      throw new Error("LILY_BASE_PERSONA_UNAVAILABLE");
     }
 
     const { resolveLilyEnv, buildAgentSpawnEnv } = require("./spawn-env");
@@ -78,16 +83,28 @@ class SessionRunnerPool {
       // OpenCode's coding-CLI baseline (default.txt) that otherwise mis-frames
       // every turn as a terse software-engineering task. The full per-turn guide
       // still rides body.system (see `guidance` below).
-      basePrompt: this._opencodeBasePersona(),
+      basePrompt,
       subagentPrompt: this._opencodeSubagentPersona(),
     });
     if (!cfg.ok) {
-      // Surface, don't hide: the turn may still run against OpenCode's own
-      // config/auth, but the distributed model/MCP won't apply.
-      log.warn("opencode config not applied: %s", cfg.reason);
+      const reason = String(cfg.reason || "UNKNOWN").trim() || "UNKNOWN";
+      if (this._hasLastKnownGoodRunner(runner) && !callOpts.requireFreshConfig) {
+        log.warn(
+          "opencode config invalid (%s); keeping last-known-good runner for session %s",
+          reason,
+          sessionId,
+        );
+        return this._reuseLastKnownGoodRunner(runner, cwd, callOpts);
+      }
+      throw new Error(`OPENCODE_CONFIG_INVALID:${reason}`);
     }
-    const modelConfigFingerprint = cfg.ok ? this._modelConfigFingerprint(cfg.configContent) : "";
-    const modelConfigDiagnostics = cfg.ok ? this._modelConfigDiagnostics(cfg.configContent) : null;
+
+    if (!runner) {
+      runner = new OpencodeAgentSession(sessionId);
+      this._sessions.set(sessionId, runner);
+    }
+    const modelConfigFingerprint = this._modelConfigFingerprint(cfg.configContent);
+    const modelConfigDiagnostics = this._modelConfigDiagnostics(cfg.configContent);
     const modelRouteAudit = cfg.diagnostics?.modelRoute || null;
     if (modelRouteAudit) {
       log.info(
@@ -111,7 +128,9 @@ class SessionRunnerPool {
     // shown an example") append their calibrated hints here.
     const guidance = this._appendModelRecipeHints(
       this._opencodeGuideContent(extra.configDir, sessionId),
-      lilyEnv,
+      capabilityGrade === String(lilyEnv.LILY_MODEL_CAPABILITY_GRADE || "")
+        ? lilyEnv
+        : { ...lilyEnv, LILY_MODEL_CAPABILITY_GRADE: capabilityGrade },
     );
     // Reuse Lily's full engine env so skill SCRIPTS run identically under OpenCode
     // (DASHSCOPE_*/VISION_*/ALIYUN_BAILIAN_* for media skills, the curated PATH
@@ -167,7 +186,7 @@ class SessionRunnerPool {
       modelRouteAudit,
       modelConfigFingerprint,
       env,
-      opencodeConfig: cfg.ok ? cfg.configContent : "",
+      opencodeConfig: cfg.configContent,
       guidance,
       configDir: extra.configDir,
       refreshManagedModelConfig: async () => {
@@ -178,8 +197,14 @@ class SessionRunnerPool {
           reason: "gateway_token_invalid",
         });
         if (!refreshed?.ok) return refreshed;
-        this.ensure(sessionId, cwd, extra, { lazy: true });
-        return { ok: true };
+        try {
+          this.ensure(sessionId, cwd, extra, { lazy: true, requireFreshConfig: true });
+          return { ok: true };
+        } catch (err) {
+          const error = err?.message || String(err) || "OPENCODE_CONFIG_REFRESH_FAILED";
+          log.warn("managed model config refresh could not apply fresh config: %s", error);
+          return { ok: false, error };
+        }
       },
       // Seed the OpenCode session id from the persisted conversation so a fresh
       // runner (app restart / cold session) RESUMES the same server-side session
@@ -187,6 +212,27 @@ class SessionRunnerPool {
       resumeSessionId: extra.resumeSessionId || null,
     }, { lazy: Boolean(callOpts.lazy) });
 
+    return runner;
+  }
+
+  _hasLastKnownGoodRunner(runner) {
+    const options = runner?.spawnOptions;
+    return Boolean(
+      options &&
+      String(options.agentCommand || "").trim() &&
+      String(options.opencodeConfig || "").trim() &&
+      String(options.modelConfigFingerprint || "").trim()
+    );
+  }
+
+  _reuseLastKnownGoodRunner(runner, cwd, callOpts = {}) {
+    // Lazy warm-up may keep a cached runner dormant. A real/non-lazy send must
+    // still restart it from the exact proven options when the fresh persona or
+    // config source is temporarily unavailable; merely returning a dead object
+    // makes the fallback look healthy while the turn cannot start.
+    if (!callOpts.lazy) {
+      runner.ensureProcess(cwd, runner.spawnOptions, { lazy: false });
+    }
     return runner;
   }
 
@@ -237,8 +283,9 @@ class SessionRunnerPool {
 
   /** The small, static Lily identity header used as the OpenCode primary-agent
    *  prompt. Sourced from Lily's OWN i18n strings (no invented persona). "" on
-   *  any failure — then OpenCode falls back to its coding baseline (degraded but
-   *  functional), so this never blocks a session from starting. */
+   *  any failure; cold or requireFreshConfig ensure() rejects that result so
+   *  OpenCode's coding baseline cannot answer in place of Lily, while a normal
+   *  ensure keeps a proven runner's last-known-good persona/config unchanged. */
   _opencodeBasePersona() {
     try {
       return require("./skill-manager").buildAgentBasePersona() || "";
@@ -279,15 +326,25 @@ class SessionRunnerPool {
     return `${base}\n\n${hints}`;
   }
 
-  /** Probed model recipes → calibrated guide hints. `toolCallHint` means the
+  /** Probed model recipes/grade → calibrated guide hints. `toolCallHint` means the
    *  probe demonstrated this model only volunteers tool calls when the system
    *  text carries an explicit native-call example — so the guide always ships
    *  one. Titled "## Tool Protocol …" so the budget truncation's guardrail
-   *  rule keeps it alive on tight system budgets. Fail-open: bad JSON or no
-   *  recipes → guidance untouched. */
+   *  rule keeps it alive on tight system budgets. Confirmed lite receives its
+   *  independent execution protocol; bad/missing recipes leave every non-lite
+   *  guide untouched. */
   _appendModelRecipeHints(guidance, lilyEnv = {}) {
+    const liteGrade = String(lilyEnv.LILY_MODEL_CAPABILITY_GRADE || "") === "lite";
+    let recipes = {};
     try {
-      const recipes = JSON.parse(lilyEnv.LILY_MODEL_RECIPES || "{}") || {};
+      recipes = JSON.parse(lilyEnv.LILY_MODEL_RECIPES || "{}") || {};
+    } catch {
+      // The confirmed grade is independent evidence from the optional recipe
+      // payload. A corrupt recipe must not suppress lite's execution support;
+      // non-lite models still fail open to today's untouched guide.
+      if (!liteGrade) return guidance;
+    }
+    try {
       const lines = [];
       if (recipes.toolCallHint === true) {
         lines.push(
@@ -306,10 +363,23 @@ class SessionRunnerPool {
           `- Your single-response output ceiling is about ${ceiling} tokens (~${approxLines} lines of code/text). Any file longer than that MUST be written in chunks: write the skeleton or first section, then APPEND the rest with edit calls — never attempt it in one write.`,
         );
       }
-      if (!lines.length) return guidance;
       const base = String(guidance || "").trim();
-      if (!base || base.includes("## Tool Protocol (model recipe)")) return guidance;
-      return `${base}\n\n${["## Tool Protocol (model recipe)", "", ...lines].join("\n")}`;
+      if (!base) return guidance;
+      const appendices = [];
+      if (lines.length && !base.includes("## Tool Protocol (model recipe)")) {
+        appendices.push(["## Tool Protocol (model recipe)", "", ...lines].join("\n"));
+      }
+      if (liteGrade && !base.includes("## Execution Protocol (lite support)")) {
+        appendices.push([
+          "## Execution Protocol (lite support)",
+          "",
+          "- Work one verified step at a time. Call one tool, read its result, then choose the next step.",
+          "- Use lily_tool_broker to discover platform capability before claiming a task is unavailable.",
+          "- Keep going until the requested deliverable is verified; report a concrete blocker instead of stopping early.",
+        ].join("\n"));
+      }
+      if (!appendices.length) return guidance;
+      return `${base}\n\n${appendices.join("\n\n")}`;
     } catch {
       return guidance;
     }
@@ -323,7 +393,14 @@ class SessionRunnerPool {
       const { bundleRuntimeDir } = require("./bundle-locator");
       const { writeActiveMcpConfig } = require("./mcp-config");
       const out = require("./config").userDataPath("opencode-mcp.json");
-      const written = writeActiveMcpConfig(bundleRuntimeDir(), out, activeSkillIds);
+      // OpenCode owns one app-wide serve and one stdio MCP child. MCP calls do
+      // not carry the originating Lily conversation, so embedding sessionId or
+      // active skills here would both change serveSignature per conversation
+      // and risk reusing the wrong session in another view. Keep this transport
+      // explicitly platform-only. Callers with an actually isolated transport
+      // can still pass real context directly to writeActiveMcpConfig.
+      const sharedBrokerContext = { platformOnly: true, activeSkillIds: [] };
+      const written = writeActiveMcpConfig(bundleRuntimeDir(), out, activeSkillIds, sharedBrokerContext);
       if (!written) return {};
       let servers = JSON.parse(fs.readFileSync(out, "utf8")).mcpServers || {};
       // lite grade: a weak model handed 29 tools calls them badly. Keep the

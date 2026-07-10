@@ -21,6 +21,13 @@ process.env.LILY_MODEL = "test-model";
 process.env.LILY_API_BASE_URL = "https://example.invalid/v1";
 process.env.LILY_API_KEY = "test-key";
 process.env.LILY_USER_DATA_DIR = tmp;
+const spawnEnv = require("../src/main/spawn-env.js");
+const originalResolveLilyEnv = spawnEnv.resolveLilyEnv;
+spawnEnv.resolveLilyEnv = () => ({
+  LILY_MODEL: "test-model",
+  LILY_API_BASE_URL: "https://example.invalid/v1",
+  LILY_API_KEY: "test-key",
+});
 
 try {
   const pool = new SessionRunnerPool();
@@ -40,11 +47,16 @@ try {
   assert.deepEqual(seenSkillIds, ["lily-write", "learned-crm"],
     "SessionRunnerPool passes the session skill scope into MCP assembly");
   const cfg = JSON.parse(runner.spawnOptions.opencodeConfig || "{}");
+  assert(typeof cfg.model === "string" && cfg.model,
+    "test precondition: shared runner config resolves a real model");
+  assert(cfg.provider && Object.keys(cfg.provider).length > 0,
+    "test precondition: shared runner config contains a nonempty provider config");
   const skillPaths = cfg.skills?.paths || [];
   assert(!skillPaths.some((p) => String(p).endsWith(path.join("lily-config", "skills"))),
     "shared OpenCode config must not expose the global skill registry across workspaces");
   console.log("session-runner-pool-skill-scope: ok");
 } finally {
+  spawnEnv.resolveLilyEnv = originalResolveLilyEnv;
   if (oldBin === undefined) delete process.env.OPENCODE_BIN;
   else process.env.OPENCODE_BIN = oldBin;
   if (oldModel === undefined) delete process.env.LILY_MODEL;

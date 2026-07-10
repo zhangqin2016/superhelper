@@ -95,6 +95,37 @@ function evidenceGapFromRecord(record) {
   };
 }
 
+function finiteNonNegative(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function estimateRecordOutputTokens(record) {
+  const explicit = finiteNonNegative(record?.meta?.engine?.estimatedOutputTokens);
+  if (explicit > 0) return explicit;
+  const parts = [];
+  if (record?.assistantText) parts.push(String(record.assistantText));
+  for (const tool of Array.isArray(record?.tools) ? record.tools : []) {
+    if (tool?.result == null) continue;
+    if (typeof tool.result === "string") {
+      parts.push(tool.result);
+      continue;
+    }
+    try {
+      parts.push(JSON.stringify(tool.result));
+    } catch {
+      // Persisted turn results should normally be serializable. If one is not,
+      // omit only that diagnostic fragment instead of breaking memory updates.
+    }
+  }
+  if (!parts.length) return 0;
+  try {
+    return require("./context-budget-manager").estimateTokensForText(parts.join("\n")).tokens;
+  } catch {
+    return 0;
+  }
+}
+
 function formatSessionSummary(summary) {
   if (!summary || typeof summary !== "object") return "";
   const parts = [];
@@ -142,9 +173,41 @@ function updateSessionSummaryFromRecord(sessionId, record) {
       record.usage?.prompt_tokens ??
       0,
   );
+  const usageOutputTokens = Number(
+    record.usage?.output_tokens ??
+      record.usage?.outputTokens ??
+      record.usage?.completion_tokens ??
+      0,
+  );
+  const hasUsageOutputTokens = Boolean(record.usage && [
+    "output_tokens",
+    "outputTokens",
+    "completion_tokens",
+  ].some((key) => Object.prototype.hasOwnProperty.call(record.usage, key))) &&
+    Number.isFinite(usageOutputTokens) && usageOutputTokens >= 0;
   const bestPromptTokens = Number.isFinite(usageInputTokens) && usageInputTokens > 0
     ? usageInputTokens
     : promptTokens;
+  const promptDeltaTokens = finiteNonNegative(promptTokens) || (() => {
+    try {
+      return require("./context-budget-manager").estimateTokensForText(record.user?.text || "").tokens;
+    } catch {
+      return 0;
+    }
+  })();
+  const outputDeltaTokens = hasUsageOutputTokens
+    ? Math.max(0, usageOutputTokens)
+    : estimateRecordOutputTokens(record);
+  const hasRetainedEstimate = Object.prototype.hasOwnProperty.call(previous, "retainedContextTokens");
+  const previousRetainedTokens = hasRetainedEstimate
+    ? finiteNonNegative(previous.retainedContextTokens)
+    : finiteNonNegative(previous.lastEnginePromptTokens);
+  // Runtime input already includes retained history and earlier tool steps, so
+  // it replaces the fallback estimate. Without runtime usage, add only this
+  // turn's prompt and retained outputs once.
+  const retainedContextTokens = Number.isFinite(usageInputTokens) && usageInputTokens > 0
+    ? usageInputTokens + outputDeltaTokens
+    : previousRetainedTokens + promptDeltaTokens + outputDeltaTokens;
   const turnPointer = record.turnId
     ? {
         turnId: trimText(record.turnId || "", 120),
@@ -186,6 +249,14 @@ function updateSessionSummaryFromRecord(sessionId, record) {
             ? (record.meta?.engine?.estimatedPromptTokenSource || "estimated_provider_fallback")
             : previous.lastEnginePromptTokenSource || ""
         ),
+    retainedContextTokens,
+    retainedContextTokenSource: Number.isFinite(usageInputTokens) && usageInputTokens > 0
+      ? (hasUsageOutputTokens ? "runtime_usage" : "runtime_usage_plus_estimated_output")
+      : "estimated_retained_context",
+    maxRetainedContextTokens: Math.max(
+      finiteNonNegative(previous.maxRetainedContextTokens),
+      retainedContextTokens,
+    ),
     maxEnginePromptTokens: Math.max(
       Number(previous.maxEnginePromptTokens || 0),
       Number.isFinite(bestPromptTokens) ? bestPromptTokens : 0,
@@ -218,6 +289,16 @@ function markSessionCompacted(sessionId, details = {}) {
     contextEpoch: Number(previous.contextEpoch || 0) + 1,
     lastContextMemoryFingerprint: "",
     lastContextMemoryInjection: null,
+    // Native compaction replaces the transcript with a summary whose size is
+    // not currently reported. Clear stale pressure rather than carrying the
+    // pre-compaction context into the next epoch. Future adapters may provide
+    // an observed retainedContextTokens value in details.
+    retainedContextTokens: finiteNonNegative(details.retainedContextTokens),
+    retainedContextTokenSource: finiteNonNegative(details.retainedContextTokens)
+      ? (details.retainedContextTokenSource || "runtime_usage")
+      : "compacted_reset",
+    lastEnginePromptTokens: 0,
+    lastEnginePromptTokenSource: "",
     lastCompaction: {
       runtime: details.runtime || "unknown",
       mode: details.mode || "native",

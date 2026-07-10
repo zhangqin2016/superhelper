@@ -109,6 +109,21 @@ try {
     const brokerCfg = JSON.parse(fs.readFileSync(brokerOut, "utf8"));
     assert(brokerCfg.mcpServers.lily_tool_broker, "default MCP config includes Lily broker alongside other servers");
     assert(brokerCfg.mcpServers.lily_file_intelligence, "broker no longer disables file intelligence");
+
+    // Production callers pass per-session context explicitly. It must win over
+    // a stale process-global compatibility value and inherit the active skill
+    // scope from writeActiveMcpConfig's third argument.
+    const explicitOut = path.join(tmp, "mcp-broker-explicit.json");
+    writeActiveMcpConfig(full, explicitOut, ["lily-runtime-packs"], { sessionId: "session-explicit" });
+    const explicitBroker = JSON.parse(fs.readFileSync(explicitOut, "utf8"))
+      .mcpServers.lily_tool_broker;
+    assert(
+      JSON.stringify(JSON.parse(explicitBroker.env.LILY_TOOL_BROKER_CONTEXT)) === JSON.stringify({
+        sessionId: "session-explicit",
+        activeSkillIds: ["lily-runtime-packs"],
+      }),
+      "explicit broker context carries the real session and active skills without global env mutation",
+    );
   } finally {
     if (prevBrokerContext === undefined) delete process.env.LILY_TOOL_BROKER_CONTEXT;
     else process.env.LILY_TOOL_BROKER_CONTEXT = prevBrokerContext;

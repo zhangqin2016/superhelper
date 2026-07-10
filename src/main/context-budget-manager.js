@@ -195,6 +195,19 @@ function recentCompactionDecision({ sessionSummary = {}, now = Date.now(), minIn
   return null;
 }
 
+function retainedContextPressure(sessionSummary = {}) {
+  const hasRetainedEstimate = Object.prototype.hasOwnProperty.call(sessionSummary, "retainedContextTokens");
+  const rawTokens = hasRetainedEstimate
+    ? Number(sessionSummary.retainedContextTokens)
+    : Number(sessionSummary.lastEnginePromptTokens || 0);
+  return {
+    tokens: Math.max(0, Number.isFinite(rawTokens) ? rawTokens : 0),
+    source: hasRetainedEstimate
+      ? String(sessionSummary.retainedContextTokenSource || "")
+      : String(sessionSummary.lastEnginePromptTokenSource || ""),
+  };
+}
+
 function decidePreTurnCompaction({
   capabilities = {},
   model = {},
@@ -212,27 +225,27 @@ function decidePreTurnCompaction({
   const recent = recentCompactionDecision({ sessionSummary, now, minIntervalMs });
   if (recent) return recent;
 
-  const previousTokens = Number(sessionSummary.lastEnginePromptTokens || 0);
+  const retainedPressure = retainedContextPressure(sessionSummary);
+  const previousTokens = retainedPressure.tokens;
   const currentTokens = Number(currentPromptTokens || 0);
-  const tokenSource = currentPromptTokenSource || sessionSummary.lastEnginePromptTokenSource || "";
+  const previousPromptTokens = Math.max(0, Number.isFinite(previousTokens) ? previousTokens : 0);
+  const normalizedCurrentPromptTokens = Math.max(0, Number.isFinite(currentTokens) ? currentTokens : 0);
+  const tokenSource = currentPromptTokenSource || retainedPressure.source;
   const budget = resolveContextBudget({
     model,
     contextWindowTokens,
     tokenPressureThreshold,
     tokenSource,
   });
-  const estimatedPromptTokens = Math.max(
-    Number.isFinite(previousTokens) ? previousTokens : 0,
-    Number.isFinite(currentTokens) ? currentTokens : 0,
-  );
+  const estimatedPromptTokens = previousPromptTokens + normalizedCurrentPromptTokens;
   if (estimatedPromptTokens > 0 && estimatedPromptTokens >= budget.compactionTriggerTokens) {
     return {
       action: "compact",
       reason: "pre_turn_token_pressure",
       mode: "native",
       estimatedPromptTokens,
-      currentPromptTokens: Number.isFinite(currentTokens) ? currentTokens : 0,
-      previousPromptTokens: Number.isFinite(previousTokens) ? previousTokens : 0,
+      currentPromptTokens: normalizedCurrentPromptTokens,
+      previousPromptTokens,
       contextWindowTokens: budget.contextWindowTokens,
       outputReserveTokens: budget.outputReserveTokens,
       usableInputTokens: budget.usableInputTokens,
@@ -246,8 +259,8 @@ function decidePreTurnCompaction({
     action: "skip",
     reason: "below_token_pressure",
     estimatedPromptTokens,
-    currentPromptTokens: Number.isFinite(currentTokens) ? currentTokens : 0,
-    previousPromptTokens: Number.isFinite(previousTokens) ? previousTokens : 0,
+    currentPromptTokens: normalizedCurrentPromptTokens,
+    previousPromptTokens,
     contextWindowTokens: budget.contextWindowTokens,
     outputReserveTokens: budget.outputReserveTokens,
     usableInputTokens: budget.usableInputTokens,
@@ -274,12 +287,13 @@ function decideBackgroundCompaction({
   const recent = recentCompactionDecision({ sessionSummary, now, minIntervalMs });
   if (recent) return recent;
 
-  const estimatedPromptTokens = Number(sessionSummary.lastEnginePromptTokens || 0);
+  const retainedPressure = retainedContextPressure(sessionSummary);
+  const estimatedPromptTokens = retainedPressure.tokens;
   const budget = resolveContextBudget({
     model,
     contextWindowTokens,
     tokenPressureThreshold,
-    tokenSource: sessionSummary.lastEnginePromptTokenSource || "",
+    tokenSource: retainedPressure.source,
   });
   if (
     Number.isFinite(estimatedPromptTokens) &&
@@ -296,7 +310,7 @@ function decideBackgroundCompaction({
       usableInputTokens: budget.usableInputTokens,
       compactionTriggerTokens: budget.compactionTriggerTokens,
       tokenPressureThreshold: budget.tokenPressureThreshold,
-      tokenSource: sessionSummary.lastEnginePromptTokenSource || "",
+      tokenSource: retainedPressure.source,
       budgetSource: budget.budgetSource,
     };
   }

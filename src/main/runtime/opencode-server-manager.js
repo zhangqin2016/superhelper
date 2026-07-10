@@ -70,6 +70,7 @@ class OpencodeServerManager extends EventEmitter {
     this._terminated = false;
     this._sdkSession = null;
     this._releaseSharedView = null;
+    this.lastPromptText = "";
     this._routingStats = { delivered: 0, dropped: 0, byReason: new Map() };
     this._recentRouting = [];
   }
@@ -216,18 +217,18 @@ class OpencodeServerManager extends EventEmitter {
     // whole turn — fine for a per-session serve, but on the SHARED serve that
     // serialized turns (a long turn in one session blocked every other session's
     // prompt). Async returns at once, so sessions run truly concurrently.
-    return this._sdkSession.promptAsync(
-      this.sessionID,
-      buildOpencodePromptBody({
-        text,
-        files,
-        guidance,
-        agent: this.agent,
-        model: this.model,
-        maxSystemPromptChars: this.env?.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS,
-        allowImageFileParts: allowImageFileParts === true,
-      }),
-    );
+    const body = buildOpencodePromptBody({
+      text,
+      files,
+      guidance,
+      agent: this.agent,
+      model: this.model,
+      maxSystemPromptChars: this.env?.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS,
+      allowImageFileParts: allowImageFileParts === true,
+    });
+    const textPart = body.parts.find((part) => part?.type === "text");
+    this.lastPromptText = typeof textPart?.text === "string" ? textPart.text : "";
+    return this._sdkSession.promptAsync(this.sessionID, body);
   }
 
   /**
@@ -287,16 +288,21 @@ class OpencodeServerManager extends EventEmitter {
     }
   }
 
-  async isSessionIdle() {
-    if (!this.sessionID || !this._sdkSession?.status) return true;
+  async getSessionStatus() {
+    if (!this.sessionID || !this._sdkSession?.status) return "unknown";
     try {
       const status = await this._sdkSession.status();
       const item = status?.[this.sessionID];
-      return !item || item.type === "idle";
+      if (!item) return "unknown";
+      return item.type === "idle" ? "idle" : "busy";
     } catch (err) {
-      log.warn("session status check failed (%s); falling back to idle", err?.message || err);
-      return true;
+      log.warn("session status check failed (%s); status unknown", err?.message || err);
+      return "unknown";
     }
+  }
+
+  async isSessionIdle() {
+    return (await this.getSessionStatus()) === "idle";
   }
 
   async messages(opts = {}) {

@@ -22,6 +22,16 @@ const tempUserData = fs.mkdtempSync(path.join(os.tmpdir(), "lily-subtask-resilie
 process.env.LILY_USER_DATA_DIR = tempUserData;
 process.on("exit", () => fs.rmSync(tempUserData, { recursive: true, force: true }));
 
+const waitFor = async (predicate, message, timeoutMs = 500) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(message);
+};
+const settleAsync = () => new Promise((resolve) => setImmediate(resolve));
+
 // --- 1. subtask-guard plugin -------------------------------------------------
 
 const { SubtaskGuardPlugin } = await import("../resources/opencode-plugins/subtask-guard.js");
@@ -224,7 +234,44 @@ assert.equal(runtimeDiagnosticReports.length, 1, "non-model child errors must no
 
 runner.busy = false;
 runner.emit("done", { code: 0, output: "done" });
-await new Promise((resolve) => setTimeout(resolve, 20));
+await settleAsync();
+flushEvents();
+
+// Parent runner errors must use the same model self-heal wiring as terminal
+// failure payloads. Reset the child-error observations so exact-once is clear.
+selfHealCalls.length = 0;
+const parentHealTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "trigger a healable parent error", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+assert.equal(parentHealTurn.ok, true, `healable parent turn must start: ${JSON.stringify(parentHealTurn)}`);
+flushEvents();
+runner.emit("error", "Error: empty response from upstream gateway");
+runner.emit("done", { code: 0, output: "late duplicate completion" });
+const parentErrorEvents = flushEvents();
+const parentTerminalEvents = parentErrorEvents.filter((event) =>
+  ["turn.completed", "turn.failed", "turn.interrupted", "turn.stalled"].includes(event.type));
+assert.equal(parentTerminalEvents.length, 1, "error followed by done emits exactly one parent terminal event");
+assert.equal(parentTerminalEvents[0].type, "turn.failed", "runner error owns the parent terminal result");
+await waitFor(() => selfHealCalls.length === 1, "healable parent runner error must reach self-heal exactly once");
+assert.equal(selfHealCalls.length, 1, "healable parent runner error triggers self-heal exactly once");
+assert.equal(selfHealCalls[0].code, "RESPONSE_ERROR", "parent runner self-heal receives the classified RESPONSE_ERROR code");
+flushEvents();
+
+runner.busy = false;
+const parentNonHealTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "trigger a non-healable parent error", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+});
+assert.equal(parentNonHealTurn.ok, true, `non-healable parent turn must start: ${JSON.stringify(parentNonHealTurn)}`);
+flushEvents();
+runner.emit("error", "EACCES: permission denied, open /etc/hosts");
+const nonHealEvents = flushEvents();
+assert.equal(nonHealEvents.filter((event) => event.type === "turn.failed").length, 1,
+  "non-healable parent error still emits exactly one failed terminal");
+await settleAsync();
+await settleAsync();
+assert.equal(selfHealCalls.length, 1, "non-healable parent runner error does not trigger another self-heal");
 flushEvents();
 
 // --- 3. subagent persona protocol appendix -----------------------------------

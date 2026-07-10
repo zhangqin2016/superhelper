@@ -28,6 +28,14 @@ assert(
 );
 const tick = () => new Promise((r) => setImmediate(r));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function waitFor(predicate, message, timeoutMs = 500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await sleep(5);
+  }
+  throw new Error(message);
+}
 async function waitIdleSettle() {
   await sleep(OpencodeAgentSession.IDLE_SETTLE_MS + 10);
 }
@@ -43,11 +51,17 @@ class FakeServer extends EventEmitter {
     this.sessionID = null;
     this.idleChecks = [];
     this.idleState = true;
+    this.lastPromptText = "";
+    this.promptTextBuilder = null;
   }
   async start() { return { host: "127.0.0.1", port: 4096 }; }
   async createSession() { this.sessionID = "ses_test"; return this.sessionID; }
   subscribe() { this.subscribed = true; }
   async sendPrompt(p) {
+    const outboundText = typeof this.promptTextBuilder === "function"
+      ? this.promptTextBuilder(p)
+      : p?.text;
+    this.lastPromptText = String(outboundText || "");
     this.prompts.push(p);
     if (this.failPrompt) {
       if (typeof this.failPrompt === "function") this.failPrompt();
@@ -220,15 +234,26 @@ async function newSession() {
     const { fake, session, orch } = await newSession();
     const now = Date.now();
     fake.idleState = false;
-    fake.historyMessages = [{
-      info: {
-        id: "msg_idle_probe_final",
-        role: "assistant",
-        sessionID: "ses_test",
-        time: { created: now, completed: now + 1 },
+    fake.historyMessages = [
+      {
+        info: {
+          id: "msg_idle_probe_user",
+          role: "user",
+          sessionID: "ses_test",
+          time: { created: now },
+        },
+        parts: [{ type: "text", text: "finish without idle event" }],
       },
-      parts: [{ type: "text", text: "probe final answer" }],
-    }];
+      {
+        info: {
+          id: "msg_idle_probe_final",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: now + 1, completed: now + 2 },
+        },
+        parts: [{ type: "text", text: "probe final answer" }],
+      },
+    ];
     session.sendUserMessage({ text: "finish without idle event" });
     await tick();
     fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "probe" } });
@@ -257,15 +282,26 @@ async function newSession() {
     const { fake, session, orch } = await newSession();
     const now = Date.now();
     fake.idleState = false;
-    fake.historyMessages = [{
-      info: {
-        id: "msg_task_probe_final",
-        role: "assistant",
-        sessionID: "ses_test",
-        time: { created: now, completed: now + 1 },
+    fake.historyMessages = [
+      {
+        info: {
+          id: "msg_task_probe_user",
+          role: "user",
+          sessionID: "ses_test",
+          time: { created: now },
+        },
+        parts: [{ type: "text", text: "use task and finish without idle event" }],
       },
-      parts: [{ type: "text", text: "Task result summarized by parent" }],
-    }];
+      {
+        info: {
+          id: "msg_task_probe_final",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: now + 1, completed: now + 2 },
+        },
+        parts: [{ type: "text", text: "Task result summarized by parent" }],
+      },
+    ];
     session.sendUserMessage({ text: "use task and finish without idle event" });
     await tick();
     fake.emitEvent({
@@ -346,6 +382,38 @@ async function newSession() {
     fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
     await waitIdleSettle();
     assert(orch.calls.done.length === 1 && orch.calls.done[0].output === "landed", "turn completes after late events");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- promptAsync transport error: unknown status still takes bounded retry --
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.idleState = false; // legacy boolean path would incorrectly call this busy
+    fake.getSessionStatus = async () => "unknown";
+    let attempts = 0;
+    fake.failPrompt = () => {
+      attempts += 1;
+      if (attempts === 1) {
+        fake.failPrompt = null;
+        throw new Error("socket connection was closed");
+      }
+    };
+    session.sendUserMessage({ text: "retry when official status is unknown" });
+    await tick();
+    await waitFor(
+      () => fake.prompts.length === 2,
+      "unknown status after dispatch failure must reach the existing bounded retry",
+      160,
+    );
+    const accepted = orch.calls.ingest.filter((item) => item.type === "turn.accepted");
+    assert(accepted.length === 1, "bounded retry emits one acceptance transition");
+    assert(accepted[0].payload.source === "dispatch_retry_returned", "unknown status itself is not treated as busy acceptance proof");
     session.terminate();
   } finally {
     OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
@@ -597,6 +665,46 @@ async function newSession() {
   } finally {
     OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
     OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
+// --- transient recovery: stale previous history cannot replace live output --
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  const savedSettle = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 200;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "current transient turn" });
+    await tick();
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "reasoning", delta: "current turn activity" } });
+    const now = Date.now();
+    fake.historyMessages = [{
+      info: {
+        id: "msg_previous_transient_answer",
+        role: "assistant",
+        sessionID: "ses_test",
+        time: { created: now - 1_000, completed: now - 999 },
+      },
+      parts: [{ type: "text", text: "PREVIOUS ANSWER" }],
+    }];
+    fake.idleState = true;
+    fake.emit("error", new Error("SSE reconnect gave up after socket connection was closed"));
+    await waitFor(() => fake.prompts.length === 2, "transient recovery must replay instead of borrowing stale history", 160);
+    assert(orch.calls.done.length === 0, "stale transient history cannot complete the current turn");
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "CURRENT LIVE OUTPUT" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitFor(() => orch.calls.done.length === 1, "replayed transient turn must settle from current live output", 160);
+    assert(orch.calls.done[0].output === "CURRENT LIVE OUTPUT", "transient recovery rejects a previous turn's assistant answer");
+    assert(orch.calls.done[0].resultFromOfficialHistory !== true, "stale transient history is not claimed as the current result");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+    OpencodeAgentSession.IDLE_SETTLE_MS = savedSettle;
   }
 }
 
@@ -1100,6 +1208,36 @@ async function newSession() {
   }
 }
 
+// --- pending prompt: unknown status is not busy acceptance proof -------------
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    let releasePrompt = null;
+    let statusChecks = 0;
+    fake.sendPrompt = async (p) => {
+      fake.prompts.push(p);
+      await new Promise((resolve) => { releasePrompt = resolve; });
+    };
+    fake.idleState = false;
+    fake.getSessionStatus = async () => {
+      statusChecks += 1;
+      return "unknown";
+    };
+    session.sendUserMessage({ text: "pending request with unavailable status" });
+    await tick();
+    await waitFor(() => statusChecks >= 1, "pending prompt must consult tri-state session status", 120);
+    assert(fake.prompts.length === 1, "unknown pending status never duplicates the unresolved request");
+    assert(draftTypes(orch).filter((type) => type === "turn.accepted").length === 0,
+      "unknown pending status does not mark the turn accepted");
+    releasePrompt?.();
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
 // --- attachment dispatch failure: retry as text-only so CLI can handle it ---
 {
   const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
@@ -1151,6 +1289,34 @@ async function newSession() {
     assert(fake.idleChecks.length >= 2, "acceptance watchdog checks official session status");
     assert(orch.calls.error.length === 1, "no activity after retry fails fast instead of hanging at starting");
     assert(session.isBusy() === false, "no-activity failure clears busy state");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
+  }
+}
+
+// --- accepted prompt: unknown status waits without replaying -----------------
+{
+  const saved = OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS;
+  OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    let statusChecks = 0;
+    fake.historyMessages = [];
+    fake.getSessionStatus = async () => {
+      statusChecks += 1;
+      return "unknown";
+    };
+    session.sendUserMessage({ text: "quiet turn while status is unavailable" });
+    await tick();
+    await waitFor(
+      () => statusChecks >= 2 || fake.prompts.length > 1,
+      "acceptance watchdog must keep checking unknown status without replaying",
+      140,
+    );
+    assert(fake.prompts.length === 1, "unknown accepted status does not replay the prompt");
+    assert(orch.calls.error.length === 0, "unknown accepted status stays under the response watchdog");
+    assert(session.isBusy() === true, "unknown accepted status keeps the turn in flight");
     session.terminate();
   } finally {
     OpencodeAgentSession.DISPATCH_FAILURE_GRACE_MS = saved;
@@ -1272,27 +1438,328 @@ async function newSession() {
     const { fake, session, orch } = await newSession();
     session.sendUserMessage({ text: "sync final answer" });
     await tick();
+    delete fake.lastPromptText; // legacy server fallback uses the pending raw text
     const now = Date.now();
-    fake.historyMessages = [{
-      info: {
-        id: "msg_official_final",
-        role: "assistant",
-        sessionID: "ses_test",
-        time: { created: now, completed: now + 1 },
+    fake.historyMessages = [
+      {
+        info: {
+          id: "msg_previous_final",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: now - 5_000, completed: now - 4_999 },
+        },
+        parts: [{ type: "text", text: "PREVIOUS ANSWER" }],
       },
-      parts: [{ type: "text", text: "partial plus official tail" }],
-    }];
+      {
+        info: {
+          id: "msg_current_user",
+          role: "user",
+          sessionID: "ses_test",
+          time: { created: now },
+        },
+        parts: [{ type: "text", text: "sync final answer" }],
+      },
+      {
+        info: {
+          id: "msg_official_final",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: now + 1, completed: now + 2 },
+        },
+        parts: [{ type: "text", text: "CURRENT ANSWER" }],
+      },
+    ];
     fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "partial" } });
     fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
     await waitIdleSettle();
-    const textDeltas = orch.calls.ingest
-      .filter((item) => item.type === "assistant.delta")
-      .map((item) => item.payload.text)
-      .join("");
-    assert(textDeltas === "partial plus official tail", `missing official tail was emitted to UI: ${textDeltas}`);
     assert(orch.calls.done.length === 1, "turn completes after official final sync");
-    assert(orch.calls.done[0].output === "partial plus official tail", "official message text is final output");
+    assert(orch.calls.done[0].output === "CURRENT ANSWER", "final sync selects the answer owned by the current prompt");
     assert(orch.calls.done[0].engineMessageId === "msg_official_final", "official message id becomes turn anchor");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
+}
+
+// --- final sync: attachment-expanded current prompt still proves ownership ---
+{
+  const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    const outboundText = "analyze attachment\n\n[Attachment index]\n- report.pdf\n\nExtracted document text";
+    fake.promptTextBuilder = (payload) => payload?.text === "analyze attachment"
+      ? outboundText
+      : String(payload?.text || "");
+    session.sendUserMessage({ text: "analyze attachment" });
+    await tick();
+    assert(fake.lastPromptText === outboundText, "fake server records the exact expanded outbound prompt text");
+    const now = Date.now();
+    fake.historyMessages = [
+      {
+        info: {
+          id: "msg_attachment_user",
+          role: "user",
+          sessionID: "ses_test",
+          time: { created: now },
+        },
+        parts: [{ type: "text", text: outboundText }],
+      },
+      {
+        info: {
+          id: "msg_attachment_answer",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: now + 1, completed: now + 2 },
+        },
+        parts: [{ type: "text", text: "ATTACHMENT CURRENT ANSWER" }],
+      },
+    ];
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "partial attachment answer" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1, "attachment final sync completes once");
+    assert(orch.calls.done[0].output === "ATTACHMENT CURRENT ANSWER", "attachment-expanded current prompt owns its official answer");
+    assert(orch.calls.done[0].engineMessageId === "msg_attachment_answer", "attachment answer keeps its official message id");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
+}
+
+// --- final sync: same raw prefix with different attachment text is unowned ---
+{
+  const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    const exactOutboundText = "analyze attachment\n\n[Attachment index]\n- report.pdf";
+    const differentHistoryText = "analyze attachment\n\n[Attachment index]\n- different.pdf";
+    fake.promptTextBuilder = () => exactOutboundText;
+    session.sendUserMessage({ text: "analyze attachment" });
+    await tick();
+    const now = Date.now();
+    fake.historyMessages = [
+      {
+        info: {
+          id: "msg_attachment_mismatch_user",
+          role: "user",
+          sessionID: "ses_test",
+          time: { created: now },
+        },
+        parts: [{ type: "text", text: differentHistoryText }],
+      },
+      {
+        info: {
+          id: "msg_attachment_mismatch_answer",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: now + 1, completed: now + 2 },
+        },
+        parts: [{ type: "text", text: "UNOWNED PREFIX-MATCH ANSWER" }],
+      },
+    ];
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "CURRENT LIVE OUTPUT" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1, "attachment mismatch final sync completes once");
+    assert(orch.calls.done[0].output === "CURRENT LIVE OUTPUT", "different attachment expansion cannot borrow the same raw prefix");
+    assert(orch.calls.done[0].resultFromOfficialHistory !== true, "prefix-only attachment match is never official ownership proof");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
+}
+
+// --- final sync: identical previous prompt before turn start is unowned ------
+{
+  const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "repeat" });
+    await tick();
+    const previousCreatedAt = session._turnStartedAt - 1_000;
+    fake.historyMessages = [
+      {
+        info: {
+          id: "msg_previous_identical_user",
+          role: "user",
+          sessionID: "ses_test",
+          time: { created: previousCreatedAt },
+        },
+        parts: [{ type: "text", text: "repeat" }],
+      },
+      {
+        info: {
+          id: "msg_previous_identical_answer",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: previousCreatedAt + 1, completed: previousCreatedAt + 2 },
+        },
+        parts: [{ type: "text", text: "PREVIOUS IDENTICAL-PROMPT ANSWER" }],
+      },
+    ];
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "CURRENT LIVE OUTPUT" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1, "identical previous prompt final sync completes once");
+    assert(orch.calls.done[0].output === "CURRENT LIVE OUTPUT", "identical prompt before turn start cannot own current output");
+    assert(orch.calls.done[0].resultFromOfficialHistory !== true, "previous identical prompt is not marked as current official history");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
+}
+
+// --- final sync: file-only prompt uses exact nonempty outbound ownership -----
+{
+  const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    const outboundText = "[Attachment index]\n- report.pdf\n  source path: /tmp/report.pdf";
+    fake.promptTextBuilder = () => outboundText;
+    session.sendUserMessage({
+      text: "",
+      files: [{ path: "/tmp/report.pdf", name: "report.pdf" }],
+    });
+    await tick();
+    assert(fake.lastPromptText === outboundText, "file-only prompt still records a nonempty exact outbound text");
+    const now = Date.now();
+    fake.historyMessages = [
+      {
+        info: {
+          id: "msg_file_only_user",
+          role: "user",
+          sessionID: "ses_test",
+          time: { created: now },
+        },
+        parts: [{ type: "text", text: outboundText }],
+      },
+      {
+        info: {
+          id: "msg_file_only_answer",
+          role: "assistant",
+          sessionID: "ses_test",
+          time: { created: now + 1, completed: now + 2 },
+        },
+        parts: [{ type: "text", text: "FILE-ONLY CURRENT ANSWER" }],
+      },
+    ];
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "partial file-only answer" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1, "file-only final sync completes once");
+    assert(orch.calls.done[0].output === "FILE-ONLY CURRENT ANSWER", "exact file-only outbound text owns its assistant answer");
+    assert(orch.calls.done[0].engineMessageId === "msg_file_only_answer", "file-only answer keeps its official message id");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
+}
+
+// --- final sync: missing/mismatched outbound text cannot claim history -------
+{
+  const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 20;
+  try {
+    for (const scenario of [
+      { label: "missing", lastPromptText: "" },
+      { label: "mismatched", lastPromptText: "[Attachment index]\n- different.pdf" },
+    ]) {
+      const { fake, session, orch } = await newSession();
+      const actualOutboundText = "[Attachment index]\n- report.pdf\n  source path: /tmp/report.pdf";
+      fake.promptTextBuilder = () => actualOutboundText;
+      session.sendUserMessage({
+        text: "",
+        files: [{ path: "/tmp/report.pdf", name: "report.pdf" }],
+      });
+      await tick();
+      fake.lastPromptText = scenario.lastPromptText;
+      const now = Date.now();
+      fake.historyMessages = [
+        {
+          info: {
+            id: `msg_file_only_${scenario.label}_user`,
+            role: "user",
+            sessionID: "ses_test",
+            time: { created: now },
+          },
+          parts: [{ type: "text", text: actualOutboundText }],
+        },
+        {
+          info: {
+            id: `msg_file_only_${scenario.label}_answer`,
+            role: "assistant",
+            sessionID: "ses_test",
+            time: { created: now + 1, completed: now + 2 },
+          },
+          parts: [{ type: "text", text: "UNPROVEN OFFICIAL ANSWER" }],
+        },
+      ];
+      const liveOutput = `CURRENT LIVE OUTPUT (${scenario.label})`;
+      fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: liveOutput } });
+      fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+      await waitIdleSettle();
+      assert(orch.calls.done.length === 1, `${scenario.label} outbound ownership settles once`);
+      assert(orch.calls.done[0].output === liveOutput, `${scenario.label} outbound ownership preserves current live output`);
+      assert(orch.calls.done[0].resultFromOfficialHistory !== true,
+        `${scenario.label} outbound ownership cannot claim unproven official history`);
+      session.terminate();
+    }
+  } finally {
+    OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
+}
+
+// --- final sync: stale previous answer cannot replace current live output ----
+{
+  const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "current prompt missing from official history" });
+    await tick();
+    const now = Date.now();
+    fake.historyMessages = [{
+      info: {
+        id: "msg_previous_idle_sync_answer",
+        role: "assistant",
+        sessionID: "ses_test",
+        time: { created: now - 1_000, completed: now - 999 },
+      },
+      parts: [{ type: "text", text: "PREVIOUS ANSWER" }],
+    }];
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "CURRENT LIVE OUTPUT" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitIdleSettle();
+    assert(orch.calls.done.length === 1, "idle settlement completes the current turn once");
+    assert(orch.calls.done[0].stalled !== true, "idle final sync is not a watchdog stall");
+    assert(orch.calls.done[0].output === "CURRENT LIVE OUTPUT", "idle final sync preserves current live output when history is unowned");
+    assert(orch.calls.done[0].resultFromOfficialHistory !== true, "unowned previous answer is not marked as the official current result");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.IDLE_SETTLE_MS = saved;
+  }
+}
+
+// --- explicit idle: unknown status still settles from the authoritative event -
+{
+  const saved = OpencodeAgentSession.IDLE_SETTLE_MS;
+  OpencodeAgentSession.IDLE_SETTLE_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    fake.historyMessages = [];
+    fake.idleState = false; // legacy boolean path would keep rescheduling forever
+    fake.getSessionStatus = async () => "unknown";
+    session.sendUserMessage({ text: "explicit idle with unavailable status" });
+    await tick();
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "CURRENT LIVE OUTPUT" } });
+    fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+    await waitFor(() => orch.calls.done.length === 1, "explicit idle must settle once even when status is unknown", 160);
+    assert(orch.calls.done[0].stalled !== true, "explicit idle with unknown status is not marked stalled");
+    assert(orch.calls.done[0].output === "CURRENT LIVE OUTPUT", "explicit idle with unknown status preserves live output");
     session.terminate();
   } finally {
     OpencodeAgentSession.IDLE_SETTLE_MS = saved;
@@ -2248,6 +2715,39 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
     assert(orch.calls.done[0].output === "official recovered answer", "official final text wins");
     assert(orch.calls.done[0].engineMessageId === "msg_stall_recovered", "official recovered message id is preserved");
     assert(fake.aborted === false, "recovered official final must not abort the engine");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = savedTimeout;
+    OpencodeAgentSession.STALLED_HISTORY_SYNC_MS = savedSync;
+  }
+}
+
+// --- no-progress: stale previous answer cannot replace current live output --
+{
+  const savedTimeout = OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS;
+  const savedSync = OpencodeAgentSession.STALLED_HISTORY_SYNC_MS;
+  OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = 40;
+  OpencodeAgentSession.STALLED_HISTORY_SYNC_MS = 20;
+  try {
+    const { fake, session, orch } = await newSession();
+    session.sendUserMessage({ text: "current prompt with live output" });
+    await tick();
+    const now = Date.now();
+    fake.historyMessages = [{
+      info: {
+        id: "msg_previous_stale_answer",
+        role: "assistant",
+        sessionID: "ses_test",
+        time: { created: now - 1_000, completed: now - 999 },
+      },
+      parts: [{ type: "text", text: "PREVIOUS ANSWER" }],
+    }];
+    fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "CURRENT LIVE OUTPUT" } });
+    await sleep(90);
+    assert(orch.calls.done.length === 1, "watchdog settles the current turn once");
+    assert(orch.calls.done[0].stalled === true, "unowned stale history cannot be recovered as a completed current turn");
+    assert(orch.calls.done[0].output === "CURRENT LIVE OUTPUT", "stalled recovery preserves current live output");
+    assert(fake.aborted === true, "unrecovered current turn aborts the engine before settling");
     session.terminate();
   } finally {
     OpencodeAgentSession.TURN_RESPONSE_TIMEOUT_MS = savedTimeout;

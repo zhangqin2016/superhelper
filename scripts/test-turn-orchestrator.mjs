@@ -461,10 +461,15 @@ if (firstSummary?.lastEnginePromptTokens !== assistantMsg.record.meta.engine.est
 }
 if (
   assistantMsg.record.meta?.engine?.estimatedPromptTokens !== 77 ||
+  assistantMsg.record.meta?.engine?.estimatedOutputTokens !== 9 ||
+  assistantMsg.record.meta?.engine?.estimatedOutputTokenSource !== "runtime_usage" ||
   assistantMsg.record.meta?.engine?.estimatedPromptTokenSource !== "runtime_usage" ||
   assistantMsg.record.meta?.contextOsScorecard?.checks?.find((item) => item.id === "beat_exact_tokenizer")?.ok !== true
 ) {
   throw new Error(`runtime usage should be treated as exact token accounting: ${JSON.stringify(assistantMsg.record.meta?.engine)} ${JSON.stringify(assistantMsg.record.meta?.contextOsScorecard)}`);
+}
+if (firstSummary?.retainedContextTokens !== 86 || firstSummary?.retainedContextTokenSource !== "runtime_usage") {
+  throw new Error(`session summary should retain authoritative prompt + output usage: ${JSON.stringify(firstSummary)}`);
 }
 if (assistantMsg.record.tools.some((tool) => tool.status === "running")) {
   throw new Error(`assistant record must not archive running tools: ${JSON.stringify(assistantMsg.record.tools)}`);
@@ -831,9 +836,9 @@ if (!runner.compactions.length) {
 if (!sent.some((entry) => entry.payload?.events?.some((event) => (
   event.type === "context.compactionDecision" &&
   event.payload?.reason === "token_pressure" &&
-  event.payload?.estimatedPromptTokens === 100_000
+  event.payload?.estimatedPromptTokens === 100_001
 )))) {
-  throw new Error(`token-pressure compaction should publish diagnostics: ${JSON.stringify(sent)}`);
+  throw new Error(`token-pressure compaction should include retained assistant output in diagnostics: ${JSON.stringify(sent)}`);
 }
 
 sent.length = 0;

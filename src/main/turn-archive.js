@@ -94,6 +94,33 @@ class TurnArchive {
       provider: enginePayload?.provider || enginePayload?.trace?.provider || "",
       model: enginePayload?.model || enginePayload?.trace?.model || "",
     });
+    const usageOutputTokens = Number(
+      state.usage?.output_tokens ??
+        state.usage?.outputTokens ??
+        state.usage?.completion_tokens ??
+        0,
+    );
+    const estimatedOutputText = [
+      assistantText,
+      ...tools.map((tool) => {
+        if (tool.result == null) return "";
+        if (typeof tool.result === "string") return tool.result;
+        try {
+          return JSON.stringify(tool.result);
+        } catch {
+          return "";
+        }
+      }),
+    ].filter(Boolean).join("\n");
+    const outputTokenEstimate = Number.isFinite(usageOutputTokens) && usageOutputTokens > 0
+      ? {
+          tokens: usageOutputTokens,
+          source: "runtime_usage",
+        }
+      : estimateTokensForText(estimatedOutputText, {
+          provider: enginePayload?.provider || enginePayload?.trace?.provider || "",
+          model: enginePayload?.model || enginePayload?.trace?.model || "",
+        });
     const effectiveTextPreview =
       engineText && engineText !== rawUserText
         ? engineText.slice(0, 1200)
@@ -178,6 +205,8 @@ class TurnArchive {
               promptChars: engineText.length,
               estimatedPromptTokens: promptTokenEstimate.tokens,
               estimatedPromptTokenSource: promptTokenEstimate.source,
+              estimatedOutputTokens: outputTokenEstimate.tokens,
+              estimatedOutputTokenSource: outputTokenEstimate.source,
               trace: enginePayload.trace || null,
             }
           : null,

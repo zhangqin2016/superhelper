@@ -310,15 +310,26 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   manager._sdkSession = {
     status: async () => ({ ses_busy: { type: "busy" } }),
   };
+  assert((await manager.getSessionStatus()) === "busy", "busy session.status is exposed as busy");
   assert((await manager.isSessionIdle()) === false, "busy session.status prevents premature idle completion");
   manager._sdkSession = {
     status: async () => ({ ses_busy: { type: "idle" } }),
   };
+  assert((await manager.getSessionStatus()) === "idle", "idle session.status is exposed as idle");
   assert((await manager.isSessionIdle()) === true, "idle session.status permits completion");
   manager._sdkSession = {
     status: async () => ({}),
   };
-  assert((await manager.isSessionIdle()) === true, "missing status row is treated as idle like official fallback");
+  assert((await manager.getSessionStatus()) === "unknown", "missing status row is unknown");
+  assert((await manager.isSessionIdle()) === false, "missing status row cannot prove the session is idle");
+  manager._sdkSession = {
+    status: async () => { throw new Error("status unavailable"); },
+  };
+  assert((await manager.getSessionStatus()) === "unknown", "thrown status request is unknown");
+  assert((await manager.isSessionIdle()) === false, "thrown status request cannot prove the session is idle");
+  manager._sdkSession = {};
+  assert((await manager.getSessionStatus()) === "unknown", "missing status method is unknown");
+  assert((await manager.isSessionIdle()) === false, "missing status method cannot prove the session is idle");
 }
 
 // --- messages use the official session.messages endpoint --------------------
@@ -340,6 +351,28 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(page.data[0].info.id === "msg_1", "messages result returned");
   assert(JSON.stringify(calls) === JSON.stringify([{ sid: "ses_msgs", opts: { limit: 10, before: "cursor" } }]),
     "messages passes session id and pagination options");
+}
+
+// --- prompt ownership records the exact text body sent to OpenCode -----------
+{
+  const manager = new OpencodeServerManager({
+    serverCommand: "/bin/true",
+    cwd: "/workspace",
+    dataDir: ":memory:",
+  });
+  manager.sessionID = "ses_prompt_text";
+  let sentBody = null;
+  manager._sdkSession = {
+    promptAsync: async (_sid, body) => { sentBody = body; },
+  };
+  await manager.sendPrompt({
+    text: "analyze attachment",
+    files: [{ uri: "file:///scan.png", mime: "image/png", name: "scan.png" }],
+  });
+  const sentText = sentBody?.parts?.find((part) => part.type === "text")?.text || "";
+  assert(sentText.includes("[Attachment index]"), "outbound text includes the generated attachment index");
+  assert(sentText.includes("[Attachment note]"), "outbound text includes the skipped-image note");
+  assert(manager.lastPromptText === sentText, "lastPromptText exactly matches the text part passed to promptAsync");
 }
 
 // --- concurrent sessions post independently through promptAsync -------------

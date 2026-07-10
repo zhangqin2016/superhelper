@@ -15,6 +15,8 @@ const require = createRequire(import.meta.url);
 const { probeCustomModelProfile } = require("../src/main/model-compatibility-probe.js");
 const modelPresets = require("../src/main/model-presets.js");
 const promptProbeText = `${"# Lily guide\n\n".repeat(2000)}Use tools carefully and answer the user.`;
+const shortPromptProbeText = `${"# Lily short guide\n\n".repeat(250)}`.slice(0, 5_000);
+const largePromptProbeText = "# Lily 48 KiB guide\n\n".padEnd(48 * 1024, "x");
 
 const requests = [];
 const server = http.createServer((req, res) => {
@@ -36,8 +38,13 @@ const server = http.createServer((req, res) => {
       .map((message) => String(message.content || "").length)
       .reduce((sum, value) => sum + value, 0);
     if (systemChars > 10_000) {
-      res.writeHead(200, { "content-type": "text/html" });
-      res.end("<!DOCTYPE html><title>Server Unreachable</title>");
+      res.writeHead(413, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        error: {
+          code: "context_length_exceeded",
+          message: "System prompt is too long; maximum context input is 10000 characters.",
+        },
+      }));
       return;
     }
     const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
@@ -147,7 +154,6 @@ try {
   assert.equal(result.profile.conformance.toolCalls, true, "probe profile records tool-call conformance");
   assert.equal(result.profile.conformance.contentSource, "body-overlay", "probe profile records how compatibility was achieved");
   assert.equal(result.profile.prompt.systemMaxChars, 10000, "probe should discover the endpoint's safe system prompt size");
-  assert.equal(result.profile.probeVersion, 5, "probe profile must carry probeVersion 5 so stored v4 profiles re-probe via the ratchet");
   assert.deepEqual(
     result.profile.capability,
     { grade: "standard", signals: { instructionFidelity: false, toolChoiceAuto: true } },
@@ -215,6 +221,63 @@ try {
     false,
     "legacy repair must persist the discovered overlay into runtime env",
   );
+
+  // A short guide succeeding against an endpoint with ample prompt capacity
+  // proves only that the sample fits. It must not turn the sample length into
+  // a sticky hard ceiling, and a current no-ceiling profile must not re-probe
+  // forever when settings are reopened.
+  const amplePromptServer = capabilityMockServer();
+  await new Promise((resolve) => amplePromptServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const amplePort = amplePromptServer.address().port;
+    const ampleBaseUrl = `http://127.0.0.1:${amplePort}/v1`;
+    const ample = await probeCustomModelProfile({
+      protocol: "openai",
+      baseUrl: ampleBaseUrl,
+      apiKey: "sk-test-probe",
+      model: "provider/ample-prompt-capacity",
+      systemPromptProbeText: shortPromptProbeText,
+      timeoutMs: 5_000,
+    });
+    assert.equal(ample.ok, true, `ample prompt probe should succeed: ${JSON.stringify(ample)}`);
+    assert.equal(ample.profile.prompt, undefined,
+      "a successful ~5k sample must not be persisted as an artificial system-prompt ceiling");
+    assert.equal(ample.profile.probeVersion, 6,
+      "probe profile must carry probeVersion 6 so stored v5 profiles re-probe via the ratchet");
+
+    const ampleLarge = await probeCustomModelProfile({
+      protocol: "openai",
+      baseUrl: ampleBaseUrl,
+      apiKey: "sk-test-probe",
+      model: "provider/ample-large-prompt-capacity",
+      systemPromptProbeText: largePromptProbeText,
+      timeoutMs: 5_000,
+    });
+    assert.equal(ampleLarge.ok, true, `ample 48 KiB prompt probe should succeed: ${JSON.stringify(ampleLarge)}`);
+    assert.equal(ampleLarge.profile.prompt, undefined,
+      "an ample endpoint accepting the full 48 KiB guide must not inherit the 32768 probe rung as a ceiling");
+
+    const ampleSaved = modelPresets.saveCustomPreset({
+      label: "Ample Prompt Capacity",
+      protocol: "openai",
+      baseUrl: ampleBaseUrl,
+      apiKey: "sk-test-probe",
+      model: "provider/ample-prompt-capacity",
+      compatibilityProfile: ample.profile,
+    });
+    assert.equal(ampleSaved.ok, true, `ample profile should persist: ${JSON.stringify(ampleSaved)}`);
+    modelPresets.setActivePreset(ampleSaved.preset.id);
+    const noReprobe = await modelPresets.repairCustomPresetCompatibilityProfiles({
+      activeOnly: true,
+      systemPromptProbeText: shortPromptProbeText,
+      timeoutMs: 5_000,
+    });
+    assert.equal(noReprobe.repairedCount, 0,
+      "a current profile with no observed prompt ceiling must not be re-probed forever");
+    assert.deepEqual(noReprobe.errors, [], "skipping a current no-ceiling profile must make no network repair attempt");
+  } finally {
+    await new Promise((resolve) => amplePromptServer.close(resolve));
+  }
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -484,8 +547,15 @@ try {
 // plan — both signals pass → full; only tool_choice:auto passes → standard;
 // auto fails → lite; a probe transport error writes NO capability field
 // (fail-open = standard, capability-gate Rule 13).
-function capabilityMockServer({ pongReply = "PONG", autoToolCalls = true, failPongProbe = false } = {}) {
-  return http.createServer((req, res) => {
+function capabilityMockServer({
+  pongReply = "PONG",
+  autoToolCalls = true,
+  failPongProbe = false,
+  failHintedAutoProbe = false,
+  promptProbeResponses = [],
+} = {}) {
+  let promptProbeRequests = 0;
+  const mockServer = http.createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
@@ -498,10 +568,30 @@ function capabilityMockServer({ pongReply = "PONG", autoToolCalls = true, failPo
         .filter((message) => message?.role === "user")
         .map((message) => String(message.content || ""))
         .join(" ");
+      const systemText = (parsed.messages || [])
+        .filter((message) => message?.role === "system")
+        .map((message) => String(message.content || ""))
+        .join(" ");
+      if (!hasTools && systemText.length >= 1_000 && promptProbeRequests < promptProbeResponses.length) {
+        const response = promptProbeResponses[promptProbeRequests];
+        promptProbeRequests += 1;
+        if (response) {
+          res.writeHead(response.status, { "content-type": response.contentType || "application/json" });
+          res.end(response.raw ?? JSON.stringify(response.json || {}));
+          return;
+        }
+      } else if (!hasTools && systemText.length >= 1_000) {
+        promptProbeRequests += 1;
+      }
       const isPongProbe = userText.includes("PONG");
       if (isPongProbe && failPongProbe) {
         res.writeHead(500, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: "capability probe unavailable" }));
+        return;
+      }
+      if (hasTools && autoChoice && failHintedAutoProbe && systemText.includes("NATIVE structured function call")) {
+        res.writeHead(503, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "hinted auto-tool probe unavailable" }));
         return;
       }
       const wantsToolCall = hasTools && (!autoChoice || autoToolCalls);
@@ -545,9 +635,11 @@ function capabilityMockServer({ pongReply = "PONG", autoToolCalls = true, failPo
       }));
     });
   });
+  mockServer.promptProbeRequestCount = () => promptProbeRequests;
+  return mockServer;
 }
 
-async function probeAgainst(server, model) {
+async function probeAgainst(server, model, { systemPromptProbeText = "" } = {}) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const { port } = server.address();
@@ -556,11 +648,85 @@ async function probeAgainst(server, model) {
       baseUrl: `http://127.0.0.1:${port}/v1`,
       apiKey: "sk-test-probe",
       model,
+      systemPromptProbeText,
       timeoutMs: 5_000,
     });
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+}
+
+{
+  const transientFull = capabilityMockServer({
+    promptProbeResponses: [
+      { status: 500, json: { error: { message: "Temporary upstream failure" } } },
+      null,
+    ],
+  });
+  const result = await probeAgainst(transientFull, "provider/transient-full-prompt", {
+    systemPromptProbeText: largePromptProbeText,
+  });
+  assert.equal(result.ok, true, "a transient prompt-capacity probe failure must not reject a conformant model");
+  assert.equal(result.profile.prompt, undefined,
+    "a transient full-source 500 must not descend and manufacture a smaller prompt ceiling");
+  assert.equal(transientFull.promptProbeRequestCount(), 1,
+    "a transient full-source failure stops the prompt ladder after one request");
+}
+
+{
+  const explicitSizeLimit = capabilityMockServer({
+    promptProbeResponses: [
+      {
+        status: 413,
+        json: { error: { code: "context_length_exceeded", message: "Prompt too long; maximum input is 32768 characters." } },
+      },
+      null,
+    ],
+  });
+  const result = await probeAgainst(explicitSizeLimit, "provider/explicit-prompt-limit", {
+    systemPromptProbeText: largePromptProbeText,
+  });
+  assert.equal(result.profile.prompt?.systemMaxChars, 32768,
+    "an explicit structured prompt-size rejection may descend to the first successful smaller rung");
+  assert.equal(explicitSizeLimit.promptProbeRequestCount(), 2,
+    "an explicit size rejection descends exactly once before the successful rung");
+}
+
+{
+  const transientSmaller = capabilityMockServer({
+    promptProbeResponses: [
+      {
+        status: 422,
+        json: { error: { code: "context_length_exceeded", message: "Input exceeds the maximum context length." } },
+      },
+      { status: 500, json: { error: { message: "Temporary failure on the smaller request" } } },
+      null,
+    ],
+  });
+  const result = await probeAgainst(transientSmaller, "provider/transient-smaller-prompt", {
+    systemPromptProbeText: largePromptProbeText,
+  });
+  assert.equal(result.profile.prompt, undefined,
+    "a transient failure on a smaller rung must stop without recording any ceiling");
+  assert.equal(transientSmaller.promptProbeRequestCount(), 2,
+    "the ladder stops immediately when a smaller candidate fails transiently");
+}
+
+for (const [label, response] of [
+  ["generic-400", { status: 400, json: { error: { message: "Invalid request" } } }],
+  ["generic-input-policy", { status: 400, json: { error: { message: "Input rate limit policy rejected request" } } }],
+  ["input-rate-limit-exceeded", { status: 400, json: { error: { message: "Input rate limit exceeded" } } }],
+  ["maximum-input-request-rate", { status: 400, json: { error: { message: "Maximum input request rate exceeded" } } }],
+  ["input-tokens-per-minute", { status: 400, json: { error: { message: "Too many input tokens per minute" } } }],
+  ["maximum-input-tokens-per-minute", { status: 422, json: { error: { message: "Maximum input tokens per minute exceeded" } } }],
+  ["tpm-rpm-quota", { status: 400, json: { error: { message: "Input token quota exceeded (TPM/RPM)" } } }],
+  ["rate-limit", { status: 429, json: { error: { message: "Rate limit exceeded" } } }],
+  ["malformed-success", { status: 200, contentType: "text/html", raw: "<!DOCTYPE html><title>upstream error</title>" }],
+]) {
+  const ambiguous = capabilityMockServer({ promptProbeResponses: [response, null] });
+  const result = await probeAgainst(ambiguous, `provider/${label}`, { systemPromptProbeText: largePromptProbeText });
+  assert.equal(result.profile.prompt, undefined, `${label} is ambiguous and must not create a prompt ceiling`);
+  assert.equal(ambiguous.promptProbeRequestCount(), 1, `${label} stops the prompt ladder immediately`);
 }
 
 {
@@ -588,8 +754,21 @@ async function probeAgainst(server, model) {
   assert.equal(result.ok, true, "lite-capable probe should still save (conformance uses forced tool_choice)");
   assert.deepEqual(
     result.profile.capability,
-    { grade: "lite", signals: { instructionFidelity: true, toolChoiceAuto: false } },
-    "a model that never volunteers tool calls must grade lite even with perfect instruction fidelity",
+    { grade: "lite", confidence: "confirmed", signals: { instructionFidelity: true, toolChoiceAuto: false } },
+    "two successful no-call auto-tool responses are confirmed lite evidence",
+  );
+}
+
+{
+  const result = await probeAgainst(
+    capabilityMockServer({ autoToolCalls: false, failHintedAutoProbe: true }),
+    "provider/ambiguous-auto-tool",
+  );
+  assert.equal(result.ok, true, "an ambiguous auto-tool confirmation error must not block a conformant model");
+  assert.deepEqual(
+    result.profile.capability,
+    { grade: "standard", signals: { instructionFidelity: true, toolChoiceAuto: false } },
+    "one valid no-call response plus a hinted HTTP error is ambiguous and must fail open to standard",
   );
 }
 
@@ -597,7 +776,7 @@ async function probeAgainst(server, model) {
   const result = await probeAgainst(capabilityMockServer({ failPongProbe: true }), "provider/capability-error");
   assert.equal(result.ok, true, "a capability-probe transport error must not block saving a conformant model");
   assert.equal(result.profile.capability, undefined, "probe error must omit the capability field entirely (fail-open = standard)");
-  assert.equal(result.profile.probeVersion, 5, "profile version still advances so the ratchet can re-probe later");
+  assert.equal(result.profile.probeVersion, 6, "profile version still advances so the ratchet can re-probe later");
 }
 
 {

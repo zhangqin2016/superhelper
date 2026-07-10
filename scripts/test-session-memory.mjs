@@ -55,6 +55,9 @@ try {
   if (summary.lastEnginePromptTokens !== 321 || summary.lastEnginePromptTokenSource !== "runtime_usage") {
     throw new Error(`runtime usage tokens should override char estimates: ${JSON.stringify(summary)}`);
   }
+  if (summary.retainedContextTokens !== 333 || summary.retainedContextTokenSource !== "runtime_usage") {
+    throw new Error(`runtime input + output should become the authoritative retained context: ${JSON.stringify(summary)}`);
+  }
   if (!formatSessionSummary(summary).includes("第1章.md")) {
     throw new Error("formatted summary should include recent files");
   }
@@ -94,6 +97,126 @@ try {
   }
   if (!formatSessionSummary(summary).includes("coverage_claim_without_candidate_set")) {
     throw new Error("formatted summary should include recent evidence gaps");
+  }
+
+  // Fallback accounting is cumulative because per-turn prompt estimates only
+  // describe the new turn payload. Output is retained too. Runtime usage later
+  // replaces (rather than adds to) the estimate because its input already
+  // includes prior context.
+  updateSessionSummaryFromRecord("s_retained", {
+    turnId: "retained_1",
+    terminal: "turn.completed",
+    user: { text: "first" },
+    assistantText: "first result",
+    meta: { engine: {
+      estimatedPromptTokens: 100,
+      estimatedPromptTokenSource: "estimated_provider_fallback",
+      estimatedOutputTokens: 25,
+      estimatedOutputTokenSource: "estimated_provider_fallback",
+    } },
+  });
+  let retained = readSessionSummary("s_retained");
+  if (retained.retainedContextTokens !== 125) {
+    throw new Error(`first fallback turn should retain prompt + output: ${JSON.stringify(retained)}`);
+  }
+  updateSessionSummaryFromRecord("s_retained", {
+    turnId: "retained_2",
+    terminal: "turn.completed",
+    user: { text: "second" },
+    assistantText: "second result",
+    meta: { engine: {
+      estimatedPromptTokens: 50,
+      estimatedPromptTokenSource: "estimated_provider_fallback",
+      estimatedOutputTokens: 10,
+      estimatedOutputTokenSource: "estimated_provider_fallback",
+    } },
+  });
+  retained = readSessionSummary("s_retained");
+  if (retained.retainedContextTokens !== 185 || retained.retainedContextTokenSource !== "estimated_retained_context") {
+    throw new Error(`fallback turns should accumulate without losing prior context: ${JSON.stringify(retained)}`);
+  }
+  updateSessionSummaryFromRecord("s_retained", {
+    turnId: "retained_3",
+    terminal: "turn.completed",
+    user: { text: "third" },
+    assistantText: "third result",
+    usage: { input_tokens: 160, output_tokens: 20 },
+    meta: { engine: {
+      estimatedPromptTokens: 50,
+      estimatedPromptTokenSource: "estimated_provider_fallback",
+      estimatedOutputTokens: 10,
+      estimatedOutputTokenSource: "estimated_provider_fallback",
+    } },
+  });
+  retained = readSessionSummary("s_retained");
+  if (retained.retainedContextTokens !== 180 || retained.retainedContextTokenSource !== "runtime_usage") {
+    throw new Error(`authoritative runtime usage must replace, not double-count, fallback history: ${JSON.stringify(retained)}`);
+  }
+  updateSessionSummaryFromRecord("s_input_only", {
+    turnId: "input_only_1",
+    terminal: "turn.completed",
+    user: { text: "input usage only" },
+    assistantText: "estimated result",
+    usage: { input_tokens: 100 },
+    meta: { engine: {
+      estimatedPromptTokens: 90,
+      estimatedPromptTokenSource: "estimated_provider_fallback",
+      estimatedOutputTokens: 25,
+      estimatedOutputTokenSource: "estimated_provider_fallback",
+    } },
+  });
+  const inputOnly = readSessionSummary("s_input_only");
+  if (
+    inputOnly.retainedContextTokens !== 125 ||
+    inputOnly.retainedContextTokenSource !== "runtime_usage_plus_estimated_output"
+  ) {
+    throw new Error(`input-only runtime usage must keep the best output delta: ${JSON.stringify(inputOnly)}`);
+  }
+  updateSessionSummaryFromRecord("s_output_without_tool", {
+    terminal: "turn.completed",
+    user: { text: "run" },
+    assistantText: "done",
+    meta: { engine: { estimatedPromptTokens: 40 } },
+  });
+  updateSessionSummaryFromRecord("s_output_with_tool", {
+    terminal: "turn.completed",
+    user: { text: "run" },
+    assistantText: "done",
+    tools: [{ name: "read", result: { output: "tool evidence ".repeat(80) } }],
+    meta: { engine: { estimatedPromptTokens: 40 } },
+  });
+  const withoutToolOutput = readSessionSummary("s_output_without_tool");
+  const withToolOutput = readSessionSummary("s_output_with_tool");
+  if (!(withToolOutput.retainedContextTokens > withoutToolOutput.retainedContextTokens)) {
+    throw new Error(`fallback accounting must retain tool output too: ${JSON.stringify({ withoutToolOutput, withToolOutput })}`);
+  }
+  const retainedCompacted = markSessionCompacted("s_retained", {
+    runtime: "opencode",
+    mode: "native",
+    reason: "token_pressure",
+  });
+  if (
+    retainedCompacted.retainedContextTokens !== 0 ||
+    retainedCompacted.lastEnginePromptTokens !== 0 ||
+    retainedCompacted.retainedContextTokenSource !== "compacted_reset"
+  ) {
+    throw new Error(`compaction must clear stale retained-pressure estimates: ${JSON.stringify(retainedCompacted)}`);
+  }
+  updateSessionSummaryFromRecord("s_retained", {
+    turnId: "retained_4",
+    terminal: "turn.completed",
+    user: { text: "after compact" },
+    assistantText: "new result",
+    meta: { engine: {
+      estimatedPromptTokens: 30,
+      estimatedPromptTokenSource: "estimated_provider_fallback",
+      estimatedOutputTokens: 5,
+      estimatedOutputTokenSource: "estimated_provider_fallback",
+    } },
+  });
+  retained = readSessionSummary("s_retained");
+  if (retained.retainedContextTokens !== 35) {
+    throw new Error(`post-compaction fallback must start a fresh estimate epoch: ${JSON.stringify(retained)}`);
   }
 
   updateSessionSummaryFromRecord("s1", {

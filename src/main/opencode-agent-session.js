@@ -353,8 +353,7 @@ function messageTextFromOpenCodeItem(item = {}) {
   return (Array.isArray(item?.parts) ? item.parts : [])
     .filter((part) => part?.type === "text" && !part.ignored && typeof part.text === "string")
     .map((part) => part.text)
-    .join("")
-    .trim();
+    .join("");
 }
 
 function messageCreatedMs(info = {}) {
@@ -1413,6 +1412,22 @@ class OpencodeAgentSession extends EventEmitter {
 
   // --- turn settlement -----------------------------------------------------
 
+  async _getSessionStatus() {
+    const server = this._server;
+    try {
+      if (typeof server?.getSessionStatus === "function") {
+        const status = await server.getSessionStatus();
+        return status === "idle" || status === "busy" ? status : "unknown";
+      }
+      if (typeof server?.isSessionIdle === "function") {
+        return await server.isSessionIdle() ? "idle" : "busy";
+      }
+    } catch (err) {
+      log.warn("opencode session status read failed: %s", err?.message || String(err));
+    }
+    return "unknown";
+  }
+
   _scheduleCompleteTurn(payload) {
     if (this._turnSettled) return;
     this._pendingCompletePayload = payload;
@@ -1428,15 +1443,9 @@ class OpencodeAgentSession extends EventEmitter {
   async _confirmIdleAndComplete() {
     const next = this._pendingCompletePayload;
     if (!next || this._turnSettled) return;
-    let idle = true;
-    try {
-      idle = this._server?.isSessionIdle ? await this._server.isSessionIdle() : true;
-    } catch (err) {
-      log.warn("opencode idle confirmation failed: %s", err?.message || String(err));
-      idle = true;
-    }
+    const status = await this._getSessionStatus();
     if (!this._pendingCompletePayload || this._turnSettled) return;
-    if (!idle) {
+    if (status === "busy") {
       this._scheduleCompleteTurn(next);
       return;
     }
@@ -1480,16 +1489,9 @@ class OpencodeAgentSession extends EventEmitter {
       this._armIdleProbe();
       return;
     }
-    let idle = false;
-    try {
-      idle = this._server?.isSessionIdle ? await this._server.isSessionIdle() : false;
-    } catch (err) {
-      log.warn("opencode idle probe failed: %s", err?.message || String(err));
-      this._armIdleProbe();
-      return;
-    }
+    const status = await this._getSessionStatus();
     if (!this.busy || this._turnSettled || this._pendingCompletePayload) return;
-    if (!idle) {
+    if (status !== "idle") {
       this._armIdleProbe();
       return;
     }
@@ -1526,14 +1528,11 @@ class OpencodeAgentSession extends EventEmitter {
     // request did not arrive" or "the client lost the response after OpenCode
     // accepted it". Ask OpenCode before showing a model failure; if the session
     // is busy, the turn landed and SSE/health timers own the outcome.
-    try {
-      if (this._server?.isSessionIdle && !(await this._server.isSessionIdle())) {
-        this._pendingDispatchFailure = null;
-        this._markTurnAccepted("official_busy");
-        return;
-      }
-    } catch {
-      // If status itself is unavailable, fall through to the bounded retry.
+    const status = await this._getSessionStatus();
+    if (status === "busy") {
+      this._pendingDispatchFailure = null;
+      this._markTurnAccepted("official_busy");
+      return;
     }
 
     if (this._dispatchRetryCount < 1 && this._server && this._pendingPromptPayload) {
@@ -1603,15 +1602,9 @@ class OpencodeAgentSession extends EventEmitter {
       return;
     }
 
-    let idle = true;
-    try {
-      idle = this._server?.isSessionIdle ? await this._server.isSessionIdle() : true;
-    } catch (err) {
-      log.warn("opencode pending prompt status read failed: %s", err?.message || String(err));
-      idle = true;
-    }
+    const status = await this._getSessionStatus();
     if (!this.busy || this._turnSettled || !this._promptDispatchPending) return;
-    if (!idle) {
+    if (status === "busy") {
       this._markTurnAccepted("official_busy");
       return;
     }
@@ -1642,16 +1635,14 @@ class OpencodeAgentSession extends EventEmitter {
   async _confirmPromptAccepted() {
     if (!this.busy || this._turnSettled || this._sawActivity || this._sawEngineEvent) return;
 
-    let idle = true;
-    try {
-      idle = this._server?.isSessionIdle ? await this._server.isSessionIdle() : true;
-    } catch (err) {
-      log.warn("opencode prompt acceptance status read failed: %s", err?.message || String(err));
-      idle = true;
-    }
+    const status = await this._getSessionStatus();
     if (!this.busy || this._turnSettled || this._sawActivity || this._sawEngineEvent) return;
-    if (!idle) {
+    if (status === "busy") {
       this._markTurnAccepted("official_busy");
+      return;
+    }
+    if (status === "unknown") {
+      this._armPromptAcceptanceCheck();
       return;
     }
 
@@ -1733,7 +1724,7 @@ class OpencodeAgentSession extends EventEmitter {
       return;
     }
 
-    const recovered = await this._recoverCompletedAssistantFromHistory({ requireCurrentPrompt: !this._sawActivity }).catch((err) => {
+    const recovered = await this._recoverCompletedAssistantFromHistory({ requireCurrentPrompt: true }).catch((err) => {
       log.warn("opencode transient recovery history read failed: %s", err?.message || String(err));
       return null;
     });
@@ -1749,19 +1740,14 @@ class OpencodeAgentSession extends EventEmitter {
       return;
     }
 
-    let idle = false;
-    try {
-      idle = this._server?.isSessionIdle ? await this._server.isSessionIdle() : false;
-    } catch (err) {
-      log.warn("opencode transient recovery status read failed: %s", err?.message || String(err));
-    }
+    const status = await this._getSessionStatus();
     if (!this.busy || this._turnSettled) return;
-    if (idle && this.collectedOutput.trim()) {
+    if (status === "idle" && this.collectedOutput.trim()) {
       this._pendingTransientFailure = null;
       this._completeTurn({ code: 0, output: this.collectedOutput.trim(), interrupted: false });
       return;
     }
-    if (idle && await this._replayTransientPromptIfSafe(pending)) {
+    if (status === "idle" && await this._replayTransientPromptIfSafe(pending)) {
       return;
     }
 
@@ -1918,15 +1904,19 @@ class OpencodeAgentSession extends EventEmitter {
     const requireCurrentPrompt = Boolean(opts.requireCurrentPrompt);
     let currentUser = null;
     if (requireCurrentPrompt) {
-      const expectedText = String(this._pendingPromptPayload?.text || "").trim();
-      const minPromptCreatedAt = this._turnStartedAt - 2_000;
+      const hasExactOutboundText = typeof this._server?.lastPromptText === "string";
+      const expectedText = hasExactOutboundText
+        ? this._server.lastPromptText
+        : String(this._pendingPromptPayload?.text || "");
+      if (!expectedText.trim()) return null;
+      const minPromptCreatedAt = this._turnStartedAt;
       for (const item of items) {
         const info = item?.info || {};
         if (info.role !== "user") continue;
         const createdAt = messageCreatedMs(info);
         if (!createdAt || createdAt < minPromptCreatedAt) continue;
         const text = messageTextFromOpenCodeItem(item);
-        if (expectedText && text !== expectedText) continue;
+        if (text !== expectedText) continue;
         const rank = createdAt;
         if (!currentUser || rank >= currentUser.rank) {
           currentUser = {
@@ -1987,7 +1977,7 @@ class OpencodeAgentSession extends EventEmitter {
 
   async _recoverStalledFinalFromOfficialState() {
     const latest = await this._withTimeout(
-      this._latestAssistantFromOfficialHistory({ requireCurrentPrompt: !this._sawActivity }),
+      this._latestAssistantFromOfficialHistory({ requireCurrentPrompt: true }),
       OpencodeAgentSession.STALLED_HISTORY_SYNC_MS,
       null,
     );
@@ -1999,24 +1989,19 @@ class OpencodeAgentSession extends EventEmitter {
     // immediately. If the authoritative session status is already idle, the
     // latest assistant text is still a better final source than Lily's live
     // buffer.
-    let idle = false;
-    try {
-      idle = await this._withTimeout(
-        Promise.resolve(this._server?.isSessionIdle ? this._server.isSessionIdle() : false),
-        OpencodeAgentSession.STALLED_HISTORY_SYNC_MS,
-        false,
-      );
-    } catch {
-      idle = false;
-    }
-    return idle ? latest : null;
+    const status = await this._withTimeout(
+      this._getSessionStatus(),
+      OpencodeAgentSession.STALLED_HISTORY_SYNC_MS,
+      "unknown",
+    );
+    return status === "idle" ? latest : null;
   }
 
   async _syncFinalOutputFromOfficialHistory(payload) {
     const current = String(payload?.output || "").trim();
     let latest = null;
     try {
-      latest = await this._latestAssistantFromOfficialHistory();
+      latest = await this._latestAssistantFromOfficialHistory({ requireCurrentPrompt: true });
     } catch (err) {
       log.warn("opencode final history sync failed: %s", err?.message || String(err));
       return payload;

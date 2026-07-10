@@ -1938,7 +1938,9 @@ class TurnOrchestrator {
         turnCount: Number(sessionSummary.turnCount || 0),
         estimatedPromptTokens: decision.estimatedPromptTokens || 0,
         currentPromptTokens: decision.currentPromptTokens || promptEstimate.tokens || 0,
-        previousPromptTokens: decision.previousPromptTokens || Number(sessionSummary.lastEnginePromptTokens || 0),
+        previousPromptTokens: decision.previousPromptTokens || Number(
+          sessionSummary.retainedContextTokens ?? sessionSummary.lastEnginePromptTokens ?? 0,
+        ),
         contextWindowTokens: decision.contextWindowTokens || null,
         outputReserveTokens: decision.outputReserveTokens || null,
         usableInputTokens: decision.usableInputTokens || null,
@@ -2168,6 +2170,7 @@ class TurnOrchestrator {
       retryable: classified?.retryable !== false,
       error: raw,
     });
+    void this._maybeSelfHealAndRetry(sessionId, classified);
     this._afterTurnFinalized(sessionId);
   }
 
@@ -2367,13 +2370,15 @@ class TurnOrchestrator {
           turnCount: Number(sessionSummary.turnCount || 0),
           lastCompactedAt: sessionSummary.lastCompactedAt || null,
           lastCompactionFailedAt: sessionSummary.lastCompactionFailedAt || null,
-          estimatedPromptTokens: decision.estimatedPromptTokens || Number(sessionSummary.lastEnginePromptTokens || 0),
+          estimatedPromptTokens: decision.estimatedPromptTokens || Number(
+            sessionSummary.retainedContextTokens ?? sessionSummary.lastEnginePromptTokens ?? 0,
+          ),
           contextWindowTokens: decision.contextWindowTokens || null,
           outputReserveTokens: decision.outputReserveTokens || null,
           usableInputTokens: decision.usableInputTokens || null,
           compactionTriggerTokens: decision.compactionTriggerTokens || null,
           tokenPressureThreshold: decision.tokenPressureThreshold || null,
-          tokenSource: decision.tokenSource || sessionSummary.lastEnginePromptTokenSource || "",
+          tokenSource: decision.tokenSource || sessionSummary.retainedContextTokenSource || sessionSummary.lastEnginePromptTokenSource || "",
           budgetSource: decision.budgetSource || "",
           providerID: decision.providerID || model?.providerID || "",
           modelID: decision.modelID || model?.modelID || "",

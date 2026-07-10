@@ -240,13 +240,14 @@ function normalizeCompatibilityProfile(value) {
           : null,
       }
     : null;
-  // Probed capability grade (仿 toolShapeCompat): kept verbatim so the env
-  // builders can hand it to the runtime. Anything but a known grade is dropped
+  // Probed capability grade (仿 toolShapeCompat): normalize only known evidence
+  // values before handing them to runtime env builders. Anything else is dropped
   // — no capability field means "standard" (today's behavior) everywhere.
   const rawCapability = value.capability;
   const capabilityGrade = ["full", "standard", "lite"].includes(String(rawCapability?.grade || ""))
     ? String(rawCapability.grade)
     : "";
+  const capabilityConfidence = rawCapability?.confidence === "confirmed" ? "confirmed" : "";
   const rawRecipes = rawCapability?.recipes;
   const ceilingValue = Number(rawRecipes?.outputTokenCeiling);
   const recipes = rawRecipes && typeof rawRecipes === "object" && !Array.isArray(rawRecipes)
@@ -263,6 +264,7 @@ function normalizeCompatibilityProfile(value) {
   const capability = capabilityGrade
     ? {
         grade: capabilityGrade,
+        ...(capabilityConfidence ? { confidence: capabilityConfidence } : {}),
         ...(rawCapability.signals && typeof rawCapability.signals === "object" && !Array.isArray(rawCapability.signals)
           ? {
               signals: {
@@ -285,6 +287,59 @@ function normalizeCompatibilityProfile(value) {
   if (conformance) out.conformance = conformance;
   if (prompt?.systemMaxChars) out.prompt = prompt;
   return Object.keys(out).length ? out : null;
+}
+
+function hasCurrentCompatibilityEvidence(compatibilityProfile) {
+  const version = Number(compatibilityProfile?.probeVersion);
+  return Number.isFinite(version) && version >= 6;
+}
+
+function runtimeCapabilityGrade(compatibilityProfile) {
+  const capability = compatibilityProfile?.capability;
+  const grade = String(capability?.grade || "");
+  // Lite removes tools/context, so legacy or ambiguous evidence must fail open
+  // to the strong default. Full/standard remain non-destructive and unchanged.
+  if (
+    grade === "lite" &&
+    (capability?.confidence !== "confirmed" || !hasCurrentCompatibilityEvidence(compatibilityProfile))
+  ) return "";
+  return grade;
+}
+
+function runtimeSystemPromptMaxChars(compatibilityProfile) {
+  // v5 and older could persist the length of a successful short sample as a
+  // hard ceiling. Only v6+ profiles contain observed-only ceiling evidence.
+  if (!hasCurrentCompatibilityEvidence(compatibilityProfile)) return "";
+  const maxChars = Number(compatibilityProfile?.prompt?.systemMaxChars);
+  return Number.isFinite(maxChars) && maxChars > 0 ? String(Math.floor(maxChars)) : "";
+}
+
+/**
+ * Convert persisted compatibility evidence into the exact runtime env contract.
+ * Both preset activation and standalone evals use this path so stale or
+ * ambiguous probe evidence cannot be interpreted differently at runtime.
+ */
+function buildCompatibilityProfileRuntimeEnv(compatibilityProfile, requestBodyOverlay = null) {
+  const profile = normalizeCompatibilityProfile(compatibilityProfile);
+  const env = {};
+  const overlay = normalizeRequestBodyOverlay(requestBodyOverlay || profile?.requestBodyOverlay);
+  if (overlay) env.LILY_OPENCODE_BODY_OVERLAY_JSON = JSON.stringify(overlay);
+
+  const systemPromptMaxChars = runtimeSystemPromptMaxChars(profile);
+  if (systemPromptMaxChars) {
+    env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS = systemPromptMaxChars;
+  }
+  if (profile?.toolShapeCompat) {
+    env.LILY_OPENCODE_TOOL_COMPAT = "1";
+  }
+  const capabilityGrade = runtimeCapabilityGrade(profile);
+  if (capabilityGrade) {
+    env.LILY_MODEL_CAPABILITY_GRADE = capabilityGrade;
+  }
+  if (profile?.capability?.recipes) {
+    env.LILY_MODEL_RECIPES = JSON.stringify(profile.capability.recipes);
+  }
+  return env;
 }
 
 function normalizeCustomPresetEntries(entries, activePresetId, servicePresetIds = new Set()) {
@@ -458,24 +513,8 @@ function customPresetRecord(entry) {
   const baseUrl = String(entry.baseUrl || "").trim();
   const apiKey = String(entry.apiKey || "").trim();
   const env = envFromTierModels(entry);
-  const requestBodyOverlay = normalizeRequestBodyOverlay(entry.requestBodyOverlay);
-  if (requestBodyOverlay) {
-    env.LILY_OPENCODE_BODY_OVERLAY_JSON = JSON.stringify(requestBodyOverlay);
-  }
+  Object.assign(env, buildCompatibilityProfileRuntimeEnv(entry.compatibilityProfile, entry.requestBodyOverlay));
   const protocol = normalizeProtocol(entry.protocol) || legacyProtocolForBaseUrl(baseUrl);
-  const compatibilityProfile = normalizeCompatibilityProfile(entry.compatibilityProfile);
-  if (compatibilityProfile?.prompt?.systemMaxChars) {
-    env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS = String(compatibilityProfile.prompt.systemMaxChars);
-  }
-  if (compatibilityProfile?.toolShapeCompat) {
-    env.LILY_OPENCODE_TOOL_COMPAT = "1";
-  }
-  if (compatibilityProfile?.capability?.grade) {
-    env.LILY_MODEL_CAPABILITY_GRADE = compatibilityProfile.capability.grade;
-  }
-  if (compatibilityProfile?.capability?.recipes) {
-    env.LILY_MODEL_RECIPES = JSON.stringify(compatibilityProfile.capability.recipes);
-  }
   return {
     id: entry.id,
     label: String(entry.label || tiers.main).trim(),
@@ -593,25 +632,11 @@ function getUserApiEnv() {
       const baseUrl = String(entry.baseUrl || "").trim();
       const apiKey = String(entry.apiKey || "").trim();
       const protocol = normalizeProtocol(entry.protocol) || legacyProtocolForBaseUrl(baseUrl);
-      const requestBodyOverlay = normalizeRequestBodyOverlay(entry.requestBodyOverlay);
       if (baseUrl) env.LILY_API_BASE_URL = baseUrl;
       if (apiKey) env.LILY_API_KEY = apiKey;
       if (protocol) env.LILY_OPENCODE_PROTOCOL = protocol;
       if (entry.tlsSkipVerify && baseUrl) env.LILY_TLS_SKIP_VERIFY = "1";
-      if (requestBodyOverlay) env.LILY_OPENCODE_BODY_OVERLAY_JSON = JSON.stringify(requestBodyOverlay);
-      const compatibilityProfile = normalizeCompatibilityProfile(entry.compatibilityProfile);
-      if (compatibilityProfile?.prompt?.systemMaxChars) {
-        env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS = String(compatibilityProfile.prompt.systemMaxChars);
-      }
-      if (compatibilityProfile?.toolShapeCompat) {
-        env.LILY_OPENCODE_TOOL_COMPAT = "1";
-      }
-      if (compatibilityProfile?.capability?.grade) {
-        env.LILY_MODEL_CAPABILITY_GRADE = compatibilityProfile.capability.grade;
-      }
-      if (compatibilityProfile?.capability?.recipes) {
-        env.LILY_MODEL_RECIPES = JSON.stringify(compatibilityProfile.capability.recipes);
-      }
+      Object.assign(env, buildCompatibilityProfileRuntimeEnv(entry.compatibilityProfile, entry.requestBodyOverlay));
       if (Object.keys(env).length) return env;
     }
   }
@@ -1077,12 +1102,13 @@ function customPresetNeedsCompatibilityProbe(entry) {
   if (!customPresetSupportsCompatibilityProbe(entry)) return false;
   const normalized = normalizeCustomPresetEntry(entry);
   const compatibilityProfile = normalizeCompatibilityProfile(normalized.compatibilityProfile);
-  const hasPromptProfile = Boolean(compatibilityProfile?.prompt?.systemMaxChars);
   // Profiles from older probe versions are stale: newer probes detect gateway
   // defects (e.g. tool-shape limits) the old profile knows nothing about.
   const { PROBE_PROFILE_VERSION } = require("./model-compatibility-probe");
   const isCurrentProbe = Number(compatibilityProfile?.probeVersion) >= PROBE_PROFILE_VERSION;
-  if ((compatibilityProfile || normalizeRequestBodyOverlay(normalized.requestBodyOverlay)) && hasPromptProfile && isCurrentProbe) return false;
+  // A current probe with no prompt ceiling means the tested sample fit without
+  // exposing a limit; absence is a valid finding, not a reason to probe forever.
+  if (compatibilityProfile && isCurrentProbe) return false;
   return Boolean(normalized.model);
 }
 
@@ -1235,6 +1261,7 @@ function reloadPresets() {
 remoteConfig.onRemoteConfigRefreshed(reloadPresets);
 
 module.exports = {
+  buildCompatibilityProfileRuntimeEnv,
   getActivePreset,
   activePresetSupportsVision,
   getActivePresetEnv,
