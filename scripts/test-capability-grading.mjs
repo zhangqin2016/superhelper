@@ -199,6 +199,18 @@ try {
   assert.equal(realPool._appendModelRecipeHints(guide, { LILY_MODEL_RECIPES: '{"instructionLanguage":"zh"}' }), guide,
     "language-only recipes do not touch the guide (they steer corrective hints)");
 
+  // Probed output ceiling: LOW ceilings get a concrete chunking threshold;
+  // ample ceilings inject nothing (strong models pay zero).
+  const ceilingHinted = realPool._appendModelRecipeHints(guide, { LILY_MODEL_RECIPES: '{"outputTokenCeiling":4096}' });
+  assert.match(ceilingHinted, /about 4096 tokens/, "low output ceiling injects the measured number");
+  assert.match(ceilingHinted, /~273 lines/, "the ceiling translates to a concrete line estimate");
+  assert.match(ceilingHinted, /APPEND the rest with edit/, "the hint teaches the chunked-write recovery path");
+  assert.equal(realPool._appendModelRecipeHints(guide, { LILY_MODEL_RECIPES: '{"outputTokenCeiling":32768}' }), guide,
+    "ample ceilings inject nothing — strong models keep today's guide byte-identical");
+  const combined = realPool._appendModelRecipeHints(guide, { LILY_MODEL_RECIPES: '{"toolCallHint":true,"outputTokenCeiling":2048}' });
+  assert.match(combined, /NATIVE structured function call/, "combined recipes merge into one section");
+  assert.match(combined, /about 2048 tokens/, "both hints coexist");
+
   // The recipe section must survive tight budgets: it is titled "Tool Protocol …"
   // exactly so the truncation guardrail keeps it.
   const { truncateSystemGuidance } = require("../src/main/runtime/opencode-message-parts.js");

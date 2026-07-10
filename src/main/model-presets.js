@@ -248,12 +248,16 @@ function normalizeCompatibilityProfile(value) {
     ? String(rawCapability.grade)
     : "";
   const rawRecipes = rawCapability?.recipes;
+  const ceilingValue = Number(rawRecipes?.outputTokenCeiling);
   const recipes = rawRecipes && typeof rawRecipes === "object" && !Array.isArray(rawRecipes)
     ? {
         ...(["zh", "en"].includes(String(rawRecipes.instructionLanguage || ""))
           ? { instructionLanguage: String(rawRecipes.instructionLanguage) }
           : {}),
         ...(rawRecipes.toolCallHint === true ? { toolCallHint: true } : {}),
+        ...(Number.isFinite(ceilingValue) && ceilingValue >= 256 && ceilingValue <= 65536
+          ? { outputTokenCeiling: Math.floor(ceilingValue) }
+          : {}),
       }
     : {};
   const capability = capabilityGrade

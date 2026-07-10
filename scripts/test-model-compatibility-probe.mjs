@@ -147,7 +147,7 @@ try {
   assert.equal(result.profile.conformance.toolCalls, true, "probe profile records tool-call conformance");
   assert.equal(result.profile.conformance.contentSource, "body-overlay", "probe profile records how compatibility was achieved");
   assert.equal(result.profile.prompt.systemMaxChars, 10000, "probe should discover the endpoint's safe system prompt size");
-  assert.equal(result.profile.probeVersion, 4, "probe profile must carry probeVersion 4 so stored v3 profiles re-probe via the ratchet");
+  assert.equal(result.profile.probeVersion, 5, "probe profile must carry probeVersion 5 so stored v4 profiles re-probe via the ratchet");
   assert.deepEqual(
     result.profile.capability,
     { grade: "standard", signals: { instructionFidelity: false, toolChoiceAuto: true } },
@@ -597,7 +597,7 @@ async function probeAgainst(server, model) {
   const result = await probeAgainst(capabilityMockServer({ failPongProbe: true }), "provider/capability-error");
   assert.equal(result.ok, true, "a capability-probe transport error must not block saving a conformant model");
   assert.equal(result.profile.capability, undefined, "probe error must omit the capability field entirely (fail-open = standard)");
-  assert.equal(result.profile.probeVersion, 4, "profile version still advances so the ratchet can re-probe later");
+  assert.equal(result.profile.probeVersion, 5, "profile version still advances so the ratchet can re-probe later");
 }
 
 {
@@ -707,6 +707,80 @@ function recipeMockServer({ zhOnlyFidelity = false, autoNeedsHint = false } = {}
     },
     "a model that volunteers tool calls only WITH the example is upgraded from lite, carrying the recipe the runtime must apply",
   );
+}
+
+// Output ceiling (probeVersion 5): a strict-validating gateway that rejects
+// oversized max_tokens reveals its ceiling; the highest accepted rung lands in
+// recipes. Gateways that accept everything record nothing (strong models and
+// silent clampers keep today's behavior).
+function ceilingMockServer({ maxTokensLimit = 4096 } = {}) {
+  return http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      const parsed = JSON.parse(body || "{}");
+      if (Number(parsed.max_tokens) > maxTokensLimit) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: `max_tokens is too large: maximum is ${maxTokensLimit}` } }));
+        return;
+      }
+      const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
+      const userText = (parsed.messages || [])
+        .filter((message) => message?.role === "user")
+        .map((message) => String(message.content || ""))
+        .join(" ");
+      const content = userText.includes("PONG") ? "PONG" : "pong";
+      const toolCall = { id: "call_probe", type: "function", function: { name: "lily_probe_tool", arguments: "{\"ok\":true}" } };
+      if (parsed.stream) {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+        send({
+          id: "chatcmpl-ceiling",
+          object: "chat.completion.chunk",
+          model: parsed.model,
+          choices: [{ index: 0, delta: hasTools ? { tool_calls: [{ index: 0, ...toolCall }] } : { content }, finish_reason: null }],
+        });
+        send({
+          id: "chatcmpl-ceiling",
+          object: "chat.completion.chunk",
+          model: parsed.model,
+          choices: [{ index: 0, delta: {}, finish_reason: hasTools ? "tool_calls" : "stop" }],
+        });
+        res.write("data: [DONE]\n\n");
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "chatcmpl-ceiling",
+        object: "chat.completion",
+        model: parsed.model,
+        choices: [{
+          index: 0,
+          message: hasTools
+            ? { role: "assistant", content: null, tool_calls: [toolCall] }
+            : { role: "assistant", content },
+          finish_reason: hasTools ? "tool_calls" : "stop",
+        }],
+      }));
+    });
+  });
+}
+
+{
+  const result = await probeAgainst(ceilingMockServer({ maxTokensLimit: 4096 }), "provider/low-output-ceiling");
+  assert.equal(result.ok, true, `low-ceiling probe should succeed: ${JSON.stringify(result)}`);
+  assert.equal(result.profile.capability.recipes.outputTokenCeiling, 4096,
+    "a gateway rejecting oversized max_tokens reveals its 4096 ceiling into the recipe");
+}
+
+{
+  const result = await probeAgainst(ceilingMockServer({ maxTokensLimit: 999999 }), "provider/ample-output-ceiling");
+  assert.equal(result.ok, true);
+  assert.equal(result.profile.capability.recipes?.outputTokenCeiling, undefined,
+    "an ample ceiling records nothing — strong models keep today's behavior");
 }
 
 console.log("model-compatibility-probe: ok");

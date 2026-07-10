@@ -327,12 +327,46 @@ async function probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay = nu
     }
   }
 
+  // Output ceiling (v5): walk max_tokens DOWN until the gateway accepts the
+  // parameter. Strict-validating gateways reject an oversized max_tokens with
+  // an error — the highest accepted value is the ceiling. The runtime then
+  // tells LOW-ceiling models a concrete chunking threshold; ample ceilings
+  // (>= 16384) and silently-clamping gateways record nothing, so strong
+  // models and unknown gateways keep today's exact behavior (the reactive
+  // chunked-write rule still covers them after a real failure).
+  try {
+    const ceiling = await measureOutputCeiling({ baseUrl, apiKey, model, bodyOverlay, timeoutMs });
+    if (ceiling && ceiling <= 8192) recipes.outputTokenCeiling = ceiling;
+  } catch {
+    // Recipe probes never void the base capability finding.
+  }
+
   const grade = toolChoiceAuto ? (instructionFidelity ? "full" : "standard") : "lite";
   return {
     grade,
     signals: { instructionFidelity, toolChoiceAuto },
     ...(Object.keys(recipes).length ? { recipes } : {}),
   };
+}
+
+const OUTPUT_CEILING_LADDER = Object.freeze([32768, 16384, 8192, 4096, 2048]);
+
+async function measureOutputCeiling({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {
+  for (const candidate of OUTPUT_CEILING_LADDER) {
+    const result = await postChat({
+      baseUrl,
+      apiKey,
+      model,
+      bodyOverlay,
+      userText: "Say OK.",
+      maxTokens: candidate,
+      timeoutMs,
+    });
+    // Transport error (timeout/network) → ambiguous, measure nothing.
+    if (!result.ok && !result.status) return null;
+    if (result.ok) return candidate;
+  }
+  return null;
 }
 
 const BODY_OVERLAY_CANDIDATES = Object.freeze([
@@ -349,7 +383,8 @@ const BODY_OVERLAY_CANDIDATES = Object.freeze([
 // v2: tool-shape decoys (long names + nested params) and toolShapeCompat.
 // v3: capability signals (instructionFidelity + toolChoiceAuto) -> capability.grade.
 // v4: recipe calibration (instructionLanguage / toolCallHint) -> capability.recipes.
-const PROBE_PROFILE_VERSION = 4;
+// v5: output ceiling measurement -> capability.recipes.outputTokenCeiling.
+const PROBE_PROFILE_VERSION = 5;
 
 async function probeCustomModelProfile({
   protocol,

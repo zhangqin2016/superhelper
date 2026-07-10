@@ -287,18 +287,29 @@ class SessionRunnerPool {
    *  recipes → guidance untouched. */
   _appendModelRecipeHints(guidance, lilyEnv = {}) {
     try {
-      const recipes = JSON.parse(lilyEnv.LILY_MODEL_RECIPES || "{}");
-      if (!recipes || recipes.toolCallHint !== true) return guidance;
+      const recipes = JSON.parse(lilyEnv.LILY_MODEL_RECIPES || "{}") || {};
+      const lines = [];
+      if (recipes.toolCallHint === true) {
+        lines.push(
+          "- To use a tool, you MUST invoke it as a NATIVE structured function call through the tool-calling interface. Never describe or write the call as text, XML, or JSON inside your reply.",
+          "- Example: to read a file, CALL the tool named read with arguments {\"filePath\": \"/absolute/path\"} via a function call — not by writing it out.",
+          "- Make one tool call at a time and wait for its result before the next step.",
+        );
+      }
+      // Probed output ceiling: only LOW-ceiling models get a concrete chunking
+      // threshold (strong models with ample ceilings carry no recipe and pay
+      // nothing — the chunked-write rule stays reactive for them).
+      const ceiling = Number(recipes.outputTokenCeiling);
+      if (Number.isFinite(ceiling) && ceiling > 0 && ceiling <= 8192) {
+        const approxLines = Math.max(60, Math.floor(ceiling / 15));
+        lines.push(
+          `- Your single-response output ceiling is about ${ceiling} tokens (~${approxLines} lines of code/text). Any file longer than that MUST be written in chunks: write the skeleton or first section, then APPEND the rest with edit calls — never attempt it in one write.`,
+        );
+      }
+      if (!lines.length) return guidance;
       const base = String(guidance || "").trim();
       if (!base || base.includes("## Tool Protocol (model recipe)")) return guidance;
-      const hint = [
-        "## Tool Protocol (model recipe)",
-        "",
-        "- To use a tool, you MUST invoke it as a NATIVE structured function call through the tool-calling interface. Never describe or write the call as text, XML, or JSON inside your reply.",
-        "- Example: to read a file, CALL the tool named read with arguments {\"filePath\": \"/absolute/path\"} via a function call — not by writing it out.",
-        "- Make one tool call at a time and wait for its result before the next step.",
-      ].join("\n");
-      return `${base}\n\n${hint}`;
+      return `${base}\n\n${["## Tool Protocol (model recipe)", "", ...lines].join("\n")}`;
     } catch {
       return guidance;
     }
