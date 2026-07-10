@@ -403,6 +403,7 @@ const AGENT_GUIDE_I18N = {
       "不让平台变笨：能力探测、依赖安装、索引、子任务、压缩和兜底只能增强上下文或工具能力；失败时回退到现有强默认，不得吞上下文、降模型、阻塞对话或让 agent 失去自主判断。",
       "慢不是失败：长任务只要有工具运行、日志输出、心跳、文件产物变化或可观察进度，就继续原强路径；不得因为耗时切到次级/降级方案。只有明确失败、用户要求停止或无进展证据成立时，才允许调整路线。",
       "子任务同样适用：子 agent 只负责一个清晰范围，必须收集证据并返回紧凑 handoff；不得开二级 Task，不得把猜测当结论，不得代替主 agent 给最终用户结论。",
+      "长内容写盘必须分段：超过约 200 行的文档/代码不要塞进单次 write——工具参数会被输出 token 上限截断，导致 content 缺失、write 反复失败。先 write 写入骨架或第一部分，再用 edit 分多次追加后续部分；如果 write 报参数缺失错误，立即改用分段方式而不是原样重试。",
     ],
     subagentTitle: "Lily 子任务代理规则",
     subagentRules: [
@@ -455,6 +456,7 @@ const AGENT_GUIDE_I18N = {
       "Never make the platform dumber: capability probes, dependency installs, indexes, subtasks, compaction, and fallbacks may only add context or tools; on failure they must fall back to the strong default without swallowing context, downgrading models, blocking the conversation, or taking judgment away from the agent.",
       "Slow is not failure: as long as a long task has a running tool, log output, heartbeat, changing artifact, or observable progress, stay on the strong primary path. Do not switch to a secondary/degraded approach because it is taking time. Change route only after explicit failure, user stop request, or proven no-progress evidence.",
       "Subtasks follow the same rules: a subagent owns one clear scope, collects evidence, and returns a compact handoff; it must not spawn nested Task agents, treat guesses as conclusions, or replace the main agent's final answer.",
+      "Long content must be written in chunks: never put a document/code body over ~200 lines into a single write call — the tool arguments get truncated by the output token ceiling, the content key goes missing, and write fails repeatedly. Write the skeleton or first section first, then APPEND the remaining sections with edit calls. If write fails with a missing-argument error, switch to chunked writing immediately instead of retrying the same call.",
     ],
     subagentTitle: "Lily Subagent Rules",
     subagentRules: [
@@ -507,6 +509,7 @@ const AGENT_GUIDE_I18N = {
       "لا تجعل المنصة أضعف: فحوص القدرات وتثبيت التبعيات والفهارس والمهام الفرعية والضغط ومسارات الاحتياط يجب أن تضيف سياقاً أو أدوات فقط؛ وعند الفشل يجب أن تعود إلى الافتراضي القوي دون ابتلاع السياق أو تخفيض النموذج أو حظر المحادثة أو سحب الحكم من الوكيل.",
       "البطء ليس فشلاً: ما دام لدى المهمة الطويلة أداة قيد التشغيل أو خرج سجلات أو نبض حياة أو ملف ناتج يتغير أو تقدم قابل للملاحظة، فابق على المسار الأساسي القوي. لا تنتقل إلى نهج ثانوي/مخفف لأنه يستغرق وقتاً. غيّر المسار فقط بعد فشل صريح أو طلب إيقاف من المستخدم أو دليل مؤكد على انعدام التقدم.",
       "تنطبق القواعد نفسها على المهام الفرعية: الوكيل الفرعي يملك نطاقاً واضحاً واحداً، يجمع الأدلة ويعيد handoff مختصراً؛ ولا يفتح Task متداخلاً ولا يعامل التخمين كاستنتاج ولا يستبدل إجابة الوكيل الرئيسي النهائية.",
+      "المحتوى الطويل يُكتب على أجزاء: لا تضع مستنداً أو كوداً يتجاوز نحو 200 سطر في استدعاء write واحد — تُقتطع وسائط الأداة بسقف رموز الإخراج فيغيب مفتاح content ويفشل write مراراً. اكتب الهيكل أو الجزء الأول أولاً ثم أضف الأقسام المتبقية عبر edit. إذا فشل write بخطأ وسيطة مفقودة، انتقل فوراً إلى الكتابة المجزأة بدلاً من إعادة المحاولة نفسها.",
     ],
     subagentTitle: "قواعد وكيل Lily الفرعي",
     subagentRules: [
