@@ -99,9 +99,7 @@ function detectBasePythonModules(moduleByPackId) {
   }
 }
 
-function baseProvidedRuntimePackMap() {
-  if (baseProvidedCache) return baseProvidedCache;
-  const provided = new Map();
+function baseProvidedLibreOffice(provided) {
   try {
     const env = require("./runtime-python").getRuntimeEnvExtras();
     const dir = env.LILY_LIBREOFFICE_PROGRAM || "";
@@ -112,11 +110,55 @@ function baseProvidedRuntimePackMap() {
   } catch {
     // Base runtime probing is best-effort; explicit dependency packs still work.
   }
-  const modulePairs = Object.values(PACK_SPECS)
+}
+
+function baseModulePairs() {
+  return Object.values(PACK_SPECS)
     .filter((spec) => spec.baseModule)
     .map((spec) => [spec.id, spec.baseModule]);
-  for (const [id] of detectBasePythonModules(modulePairs)) {
+}
+
+function baseProvidedRuntimePackMap() {
+  if (baseProvidedCache) return baseProvidedCache;
+  const provided = new Map();
+  baseProvidedLibreOffice(provided);
+  for (const [id] of detectBasePythonModules(baseModulePairs())) {
     provided.set(id, { source: "base", path: "", version: null });
+  }
+  baseProvidedCache = provided;
+  return provided;
+}
+
+/** Async warm-up for the base-provided cache. The cold path spawns a Python
+ *  interpreter for the module probe — execFileSync on the MAIN thread blocked
+ *  the event loop for seconds (the startup watchdog's "lag 2827ms"). Callers
+ *  that can await (the deferred auto-repair) warm the cache here first, so
+ *  every later sync call is a cache hit. */
+async function warmBaseProvidedRuntimePacks() {
+  if (baseProvidedCache) return baseProvidedCache;
+  const provided = new Map();
+  baseProvidedLibreOffice(provided);
+  const pairs = baseModulePairs();
+  const { resolveVenvPython } = require("./runtime-python");
+  const python = resolveVenvPython();
+  if (python && pairs.length) {
+    const code = [
+      "import importlib.util, json",
+      `items = ${JSON.stringify(pairs)}`,
+      "print(json.dumps({pid: importlib.util.find_spec(mod) is not None for pid, mod in items}))",
+    ].join("\n");
+    try {
+      const raw = await new Promise((resolve, reject) => {
+        const { execFile } = require("node:child_process");
+        execFile(python, ["-c", code], { encoding: "utf8", timeout: 10_000, maxBuffer: 1024 * 1024 },
+          (err, stdout) => (err ? reject(err) : resolve(stdout)));
+      });
+      for (const [id, ok] of Object.entries(JSON.parse(raw))) {
+        if (ok) provided.set(id, { source: "base", path: "", version: null });
+      }
+    } catch {
+      // Fail open: an unprobed base module just means the pack looks absent.
+    }
   }
   baseProvidedCache = provided;
   return provided;
@@ -846,6 +888,7 @@ module.exports = {
   installingRuntimePackIds,
   installedRuntimePackIds,
   baseProvidedRuntimePackMap,
+  warmBaseProvidedRuntimePacks,
   listRuntimePacks,
   platformKey,
   uninstallRuntimePack,

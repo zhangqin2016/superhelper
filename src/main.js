@@ -248,8 +248,13 @@ app.whenReady().then(async () => {
   });
 
   setTimeout(() => {
-    require("./main/runtime-pack-installer")
-      .repairInstalledRuntimePacks()
+    const packs = require("./main/runtime-pack-installer");
+    // Warm the base-provided probe ASYNC first: the cold path spawns a Python
+    // interpreter, and doing that via execFileSync inside repair blocked the
+    // main event loop for ~3s (the watchdog "lag 2827ms" at +15s).
+    packs.warmBaseProvidedRuntimePacks()
+      .catch(() => {})
+      .then(() => packs.repairInstalledRuntimePacks())
       .then((result) => {
         const repaired = (result?.results || []).filter((item) => item.ok && item.repaired);
         if (repaired.length) {
