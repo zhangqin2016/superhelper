@@ -17,6 +17,8 @@ const PLATFORM_TOOLS = [
   "lily_capability_status",
   "runtime_pack_install",
   "runtime_pack_list",
+  "schedule_task_create",
+  "schedule_task_list",
 ];
 
 try {

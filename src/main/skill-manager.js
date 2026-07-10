@@ -421,7 +421,7 @@ const AGENT_GUIDE_I18N = {
     faqAnswer4: "- 若用户追问底层服务，说明本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
     platformFactsTitle: "平台功能事实（回答“能不能做 X”时以此为准）",
     platformFacts: [
-      "定时任务：平台支持。用户点击输入框下方的「自动执行」按钮即可创建定时/循环任务（绑定当前工作区和会话，到点自动执行）。你目前不能直接替用户创建定时任务，但可以帮用户起草任务描述并指引到该入口——不要回答“不支持定时任务”。",
+      "定时任务：平台支持。用户明确要求定时/循环执行时，用 schedule_task_create 工具直接创建（绑定当前对话和工作区，任务会出现在「自动执行」面板供用户修改/删除），用 schedule_task_list 查看已有任务；用户也可以自己点击输入框下方的「自动执行」按钮创建。不要回答“不支持定时任务”。",
       "技能：输入框下方的「技能」按钮可查看、启用、停用本会话技能；技能目录见本指南的技能清单。",
       "模型：用户可在模型设置中切换模型或添加自定义模型（保存时自动做兼容性检测）。",
       "被问到平台或你是否支持某功能时，只依据本节、技能清单和当前工具列表回答；没有把握时不要断然否认，说明可以在设置或对应面板中确认，并给出最接近的可行路径。",
@@ -473,7 +473,7 @@ const AGENT_GUIDE_I18N = {
     faqAnswer4: "- If the user asks about the underlying service, explain the application connects to user-configured model/API gateways, not Claude/Anthropic services.",
     platformFactsTitle: "Platform Feature Facts (authoritative for \"can you do X\" questions)",
     platformFacts: [
-      "Scheduled tasks: SUPPORTED. Users create recurring/timed tasks via the \"Auto-run\" (自动执行) button under the composer (bound to the current workspace and conversation; runs are queued into the same session). You cannot create scheduled tasks directly yet, but you can draft the task prompt and point the user to that entry — never answer \"scheduled tasks are not supported\".",
+      "Scheduled tasks: SUPPORTED. When the user explicitly asks for a recurring/timed task, create it directly with the schedule_task_create tool (bound to the current conversation and workspace; it appears in the Auto-run panel where the user can edit or delete it), and inspect existing ones with schedule_task_list. Users can also use the \"Auto-run\" (自动执行) button under the composer themselves. Never answer \"scheduled tasks are not supported\".",
       "Skills: the \"Skills\" button under the composer lists, enables, and disables this session's skills; the catalog is in this guide's skill index.",
       "Models: users can switch models or add custom models in Model Settings (saving runs an automatic compatibility probe).",
       "When asked whether the platform or you support some feature, answer ONLY from this section, the skill index, and the current tool list; when unsure, do not flatly deny — say where to confirm (settings or the relevant panel) and offer the closest workable path.",
@@ -525,7 +525,7 @@ const AGENT_GUIDE_I18N = {
     faqAnswer4: "- إذا سأل المستخدم عن الخدمة الأساسية، اشرح أن التطبيق يتصل ببوابات النماذج/واجهات برمجة التطبيقات التي يكوّنها المستخدم، وليس خدمات Claude/Anthropic.",
     platformFactsTitle: "حقائق ميزات المنصة (المرجع عند سؤال \"هل تستطيع فعل X\")",
     platformFacts: [
-      "المهام المجدولة: مدعومة. ينشئ المستخدم مهام مجدولة/متكررة عبر زر \"التشغيل التلقائي\" أسفل مربع الإدخال (مرتبطة بمساحة العمل والمحادثة الحالية). لا يمكنك إنشاء مهمة مجدولة مباشرةً بعد، لكن يمكنك صياغة نص المهمة وإرشاد المستخدم إلى ذلك الزر — لا تجب أبداً بأن \"المهام المجدولة غير مدعومة\".",
+      "المهام المجدولة: مدعومة. عندما يطلب المستخدم صراحةً مهمة مجدولة/متكررة، أنشئها مباشرةً بأداة schedule_task_create (مرتبطة بالمحادثة ومساحة العمل الحالية وتظهر في لوحة \"التشغيل التلقائي\" حيث يمكن تعديلها أو حذفها)، واستعرض المهام الحالية بأداة schedule_task_list. يمكن للمستخدم أيضاً استخدام زر \"التشغيل التلقائي\" أسفل مربع الإدخال — لا تجب أبداً بأن \"المهام المجدولة غير مدعومة\".",
       "المهارات: زر \"المهارات\" أسفل مربع الإدخال يعرض مهارات الجلسة ويفعّلها ويعطّلها؛ الفهرس موجود في هذا الدليل.",
       "النماذج: يمكن للمستخدم تبديل النموذج أو إضافة نموذج مخصص في إعدادات النموذج (يتم فحص التوافق تلقائياً عند الحفظ).",
       "عند السؤال عمّا إذا كانت المنصة أو أنت تدعمان ميزة ما، أجب فقط من هذا القسم وفهرس المهارات وقائمة الأدوات الحالية؛ وعند عدم التأكد لا تنفِ بشكل قاطع — اذكر أين يمكن التحقق وقدّم أقرب مسار عملي.",

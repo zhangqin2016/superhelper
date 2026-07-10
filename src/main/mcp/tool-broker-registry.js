@@ -75,7 +75,10 @@ function isPlatformTool(tool) {
   return (
     Array.isArray(tool?.requiredSkillIds) &&
     tool.requiredSkillIds.length === 0 &&
-    (tool.group === "capabilities" || tool.group === "runtime-packs")
+    // scheduled-tasks are app-core like capability/runtime-pack tools: they
+    // must exist even in platform-only context (the lite grade mounts only
+    // the broker, and scheduling has no skill to gate on).
+    (tool.group === "capabilities" || tool.group === "runtime-packs" || tool.group === "scheduled-tasks")
   );
 }
 
@@ -416,6 +419,34 @@ const STATIC_TOOL_DEFINITIONS = [
     handler: async ({ packId }) => require("../runtime-pack-installer").installRuntimePack(packId),
   },
   {
+    id: "schedule_task_create",
+    name: "schedule_task_create",
+    group: "scheduled-tasks",
+    requiredSkillIds: [],
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
+    description: "Create a Lily scheduled (recurring/timed) task from this conversation. Binds to the currently active conversation and workspace, exactly like the Auto-run composer entry; the task appears in the user's Auto-run panel where they can edit or delete it. Only call this when the user explicitly asked for a scheduled/recurring task. Example call: {\"prompt\":\"整理昨天的工作日志并总结要点\",\"scheduleText\":\"每天早上9点\"}",
+    inputSchema: {
+      prompt: z.string().describe("what to run on each execution, phrased as a task prompt"),
+      scheduleText: z.string().describe("natural-language schedule, e.g. 每天早上9点 / every Monday 10:00 / hourly"),
+      title: z.string().optional().describe("short display title; defaults to the prompt head"),
+    },
+    annotations: { destructiveHint: true },
+    handler: async (args) => schedulerBridgeRun("create", args),
+  },
+  {
+    id: "schedule_task_list",
+    name: "schedule_task_list",
+    group: "scheduled-tasks",
+    requiredSkillIds: [],
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
+    description: "List the current workspace's Lily scheduled tasks (id, title, schedule, enabled, next run).",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+    handler: async () => schedulerBridgeRun("list", {}),
+  },
+  {
     id: "browser_open",
     name: "browser_open",
     group: "browser",
@@ -436,6 +467,26 @@ function readJson(file) {
     return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch {
     return null;
+  }
+}
+
+// schedule_task_* run in the broker child process; the actual manager lives in
+// the MAIN process, reached over the token-authed connector bridge (the same
+// path mail tools use). FAIL-SAFE: no bridge env → explicit error, nothing
+// half-created.
+async function schedulerBridgeRun(action, payload) {
+  const base = process.env.LILY_CONNECTOR_BRIDGE_URL || "";
+  const token = process.env.LILY_CONNECTOR_BRIDGE_TOKEN || "";
+  if (!base || !token) return { ok: false, error: "SCHEDULER_BRIDGE_UNAVAILABLE" };
+  try {
+    const res = await fetch(`${base}/v1/scheduled-tasks/${action}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    });
+    return await res.json();
+  } catch (err) {
+    return { ok: false, error: "SCHEDULER_BRIDGE_ERROR", message: err?.message || String(err) };
   }
 }
 

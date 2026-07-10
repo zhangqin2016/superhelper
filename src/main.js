@@ -176,7 +176,15 @@ app.whenReady().then(async () => {
     sessionManager,
     runnerPool,
   });
-  await ensureConnectorBridgeStarted().catch((err) => {
+  await ensureConnectorBridgeStarted({
+    scheduledTaskManager,
+    // Conversation-created scheduled tasks bind to the ACTIVE session/workspace,
+    // mirroring what the Auto-run composer entry does.
+    resolveActiveScope: () => {
+      const active = sessionManager.getActive();
+      return active ? { sessionId: active.id, projectId: active.projectId } : null;
+    },
+  }).catch((err) => {
     console.warn("[connector-bridge]", err?.message || err);
   });
 

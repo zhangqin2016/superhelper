@@ -16,7 +16,10 @@ async function ensureConnectorBridgeStarted(options = {}) {
   const token = crypto.randomBytes(32).toString("base64url");
   const mailStore = options.mailStore || createMailAccountStore();
   const webCredentialStore = options.webCredentialStore || new WebCredentialStore();
-  const server = http.createServer((req, res) => handleRequest(req, res, { token, mailStore, webCredentialStore }));
+  const scheduledTaskManager = options.scheduledTaskManager || null;
+  const resolveActiveScope = options.resolveActiveScope || null;
+  const server = http.createServer((req, res) =>
+    handleRequest(req, res, { token, mailStore, webCredentialStore, scheduledTaskManager, resolveActiveScope }));
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -76,10 +79,66 @@ async function handleRequest(req, res, deps) {
     if (url.pathname === "/v1/web-system/relogin") {
       return sendJson(res, 200, await handleWebSystemRelogin(payload, deps));
     }
+    if (url.pathname === "/v1/scheduled-tasks/create") {
+      return sendJson(res, 200, handleScheduledTaskCreate(payload, deps));
+    }
+    if (url.pathname === "/v1/scheduled-tasks/list") {
+      return sendJson(res, 200, handleScheduledTaskList(deps));
+    }
     return sendJson(res, 404, { ok: false, error: "NOT_FOUND" });
   } catch (err) {
     return sendJson(res, 500, { ok: false, error: "BRIDGE_ERROR", message: err?.message || String(err) });
   }
+}
+
+// Scheduled tasks from conversation: the model's schedule_task_* broker tools
+// land here. Scope binding mirrors the Auto-run composer button — the task is
+// bound to the CURRENTLY ACTIVE conversation and workspace (the broker child
+// has no session identity of its own), and the response echoes the bound scope
+// plus the parsed schedule so the model confirms specifics back to the user.
+// FAIL-SAFE: no manager / no active session => explicit error, nothing created.
+function handleScheduledTaskCreate(payload, deps) {
+  if (!deps.scheduledTaskManager) return { ok: false, error: "SCHEDULER_UNAVAILABLE" };
+  const scope = typeof deps.resolveActiveScope === "function" ? deps.resolveActiveScope() : null;
+  if (!scope?.sessionId || !scope?.projectId) return { ok: false, error: "NO_ACTIVE_SESSION" };
+  const result = deps.scheduledTaskManager.create({
+    prompt: String(payload?.prompt || ""),
+    scheduleText: String(payload?.scheduleText || ""),
+    title: String(payload?.title || ""),
+    sessionId: scope.sessionId,
+    projectId: scope.projectId,
+  });
+  if (!result?.ok) return result || { ok: false, error: "CREATE_FAILED" };
+  const task = result.task || {};
+  return {
+    ok: true,
+    task: {
+      id: task.id,
+      title: task.title,
+      scheduleText: task.scheduleText,
+      nextRunAt: task.nextRunAt,
+      sessionId: task.sessionId,
+      projectId: task.projectId,
+    },
+  };
+}
+
+function handleScheduledTaskList(deps) {
+  if (!deps.scheduledTaskManager) return { ok: false, error: "SCHEDULER_UNAVAILABLE" };
+  const scope = typeof deps.resolveActiveScope === "function" ? deps.resolveActiveScope() : null;
+  const listed = deps.scheduledTaskManager.list(scope?.projectId ? { projectId: scope.projectId } : {});
+  if (!listed?.ok) return listed || { ok: false, error: "LIST_FAILED" };
+  return {
+    ok: true,
+    tasks: (listed.tasks || []).map((task) => ({
+      id: task.id,
+      title: task.title,
+      scheduleText: task.scheduleText,
+      enabled: task.enabled,
+      status: task.status,
+      nextRunAt: task.nextRunAt,
+    })),
+  };
 }
 
 // Auto re-login for a stale web-system session (#1b). Runs in the MAIN process —
