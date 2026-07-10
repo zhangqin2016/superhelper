@@ -204,66 +204,66 @@
   --accent-strong-bg: rgba(106, 87, 240, 0.14);
   --accent-ring: rgba(106, 87, 240, 0.2);
 
-  /* Warm paper, not blue-grey SaaS: ink on paper reads like a document you
-     trust; blue-grey + pure white reads like a template dashboard. Surfaces
-     step by warmth-preserving lightness; hairlines are warm black. */
-  --bg-body: #f1efe9;
-  --bg-left: #f7f5f0;
-  --bg-center: #faf9f5;
-  --bg-right: #f7f5f0;
-  --bg-topbar: #fcfbf8;
-  --bg-input: #fffefb;
+  /* Neutral paper, a breath of warmth — not cream. Ink on paper reads like a
+     document you trust; blue-grey + pure white reads like a template
+     dashboard; full cream reads dated. Hairlines are near-neutral black. */
+  --bg-body: #f1f0ed;
+  --bg-left: #f7f6f3;
+  --bg-center: #fafaf7;
+  --bg-right: #f7f6f3;
+  --bg-topbar: #fcfcfa;
+  --bg-input: #fffffd;
   --bg-primary: var(--bg-center);
   --bg-secondary: var(--bg-surface-muted);
   --bg-elevated: var(--bg-surface-raised);
-  --bg-surface: #fffefb;
-  --bg-surface-raised: #fffefb;
-  --bg-surface-hover: #f2f0ea;
-  --bg-surface-active: #eae7df;
-  --bg-surface-muted: rgba(62, 52, 32, 0.045);
-  --bg-surface-subtle: rgba(62, 52, 32, 0.025);
-  --bg-floating: rgba(255, 254, 251, 0.97);
-  --bg-backdrop: rgba(30, 26, 18, 0.25);
-  --bg-drop-overlay: rgba(30, 26, 18, 0.18);
-  --bg-drop-card: rgba(255, 254, 251, 0.96);
-  --bg-tool-detail: rgba(62, 52, 32, 0.04);
-  --bg-tool-detail-strong: rgba(62, 52, 32, 0.06);
-  --bg-media: rgba(250, 249, 245, 0.96);
-  --bg-choice-backdrop: rgba(30, 26, 18, 0.28);
+  --bg-surface: #fffffd;
+  --bg-surface-raised: #fffffd;
+  --bg-surface-hover: #f2f1ee;
+  --bg-surface-active: #eae9e4;
+  --bg-surface-muted: rgba(52, 48, 40, 0.045);
+  --bg-surface-subtle: rgba(52, 48, 40, 0.025);
+  --bg-floating: rgba(255, 255, 253, 0.97);
+  --bg-backdrop: rgba(28, 26, 22, 0.25);
+  --bg-drop-overlay: rgba(28, 26, 22, 0.18);
+  --bg-drop-card: rgba(255, 255, 253, 0.96);
+  --bg-tool-detail: rgba(52, 48, 40, 0.04);
+  --bg-tool-detail-strong: rgba(52, 48, 40, 0.06);
+  --bg-media: rgba(250, 250, 247, 0.96);
+  --bg-choice-backdrop: rgba(28, 26, 22, 0.28);
   --bg-pdf-active: rgba(106, 87, 240, 0.08);
-  --bg-pdf-viewport-sheen: rgba(62, 52, 32, 0.04);
+  --bg-pdf-viewport-sheen: rgba(52, 48, 40, 0.04);
   --bg-user-chip: rgba(255, 255, 255, 0.22);
   --bg-user-chip-soft: rgba(255, 255, 255, 0.16);
 
-  /* Warm ink ladder (zinc greys read cold on paper) */
-  --text-primary: #1f1d18;
+  /* Near-neutral ink ladder (zinc reads cold, sepia reads dated) */
+  --text-primary: #1d1c19;
   --text: var(--text-primary);
-  --text-secondary: #57534a;
-  --text-tertiary: #7a7569;
-  --text-faint: #a49e91;
-  --text-dim: #6e6a5f;
-  --text-muted: #8b8578;
+  --text-secondary: #55534d;
+  --text-tertiary: #797670;
+  --text-faint: #a3a099;
+  --text-dim: #6d6a64;
+  --text-muted: #8a877f;
   --muted: var(--text-muted);
   --text-inverse: #ffffff;
-  --text-strong: #14120d;
+  --text-strong: #131210;
   --text-code: #a34e0f;
   --link: #2361c4;
 
-  /* Warm hairlines, not solid grey lines */
-  --border: rgba(62, 52, 32, 0.10);
-  --border-light: rgba(62, 52, 32, 0.13);
-  --border-subtle: rgba(62, 52, 32, 0.075);
-  --border-strong: rgba(62, 52, 32, 0.18);
+  /* Near-neutral hairlines, not solid grey lines */
+  --border: rgba(52, 48, 40, 0.10);
+  --border-light: rgba(52, 48, 40, 0.13);
+  --border-subtle: rgba(52, 48, 40, 0.075);
+  --border-strong: rgba(52, 48, 40, 0.18);
 
   /* Halved shadow weight: paper sits, it doesn't float */
-  --shadow: 0 1px 2px rgba(50, 42, 26, 0.04), 0 14px 34px rgba(50, 42, 26, 0.05);
-  --shadow-sm: 0 1px 2px rgba(50, 42, 26, 0.05), 0 6px 16px rgba(50, 42, 26, 0.035);
-  --shadow-floating: 0 16px 40px rgba(50, 42, 26, 0.10);
-  --shadow-panel: -10px 0 32px rgba(50, 42, 26, 0.08);
-  --shadow-image: 0 8px 36px rgba(50, 42, 26, 0.18);
-  --shadow-modal: 0 22px 64px rgba(50, 42, 26, 0.14);
-  --shadow-pdf-page: 0 16px 40px rgba(50, 42, 26, 0.14);
-  --shadow-pdf-thumb: 0 1px 4px rgba(50, 42, 26, 0.08);
+  --shadow: 0 1px 2px rgba(46, 43, 36, 0.04), 0 14px 34px rgba(46, 43, 36, 0.05);
+  --shadow-sm: 0 1px 2px rgba(46, 43, 36, 0.05), 0 6px 16px rgba(46, 43, 36, 0.035);
+  --shadow-floating: 0 16px 40px rgba(46, 43, 36, 0.10);
+  --shadow-panel: -10px 0 32px rgba(46, 43, 36, 0.08);
+  --shadow-image: 0 8px 36px rgba(46, 43, 36, 0.18);
+  --shadow-modal: 0 22px 64px rgba(46, 43, 36, 0.14);
+  --shadow-pdf-page: 0 16px 40px rgba(46, 43, 36, 0.14);
+  --shadow-pdf-thumb: 0 1px 4px rgba(46, 43, 36, 0.08);
 
   --success-bg: #e9f8ef;
   --success-bg-hover: #d8f1e2;
@@ -311,7 +311,7 @@
   --document-page-bg: #ffffff;
   --image-control-bg: rgba(15, 23, 42, 0.56);
   --image-control-hover: rgba(15, 23, 42, 0.72);
-  --scrollbar-thumb: #d5d0c4;
+  --scrollbar-thumb: #d4d2cc;
 }
 
 :root[data-text-size="large"] {
