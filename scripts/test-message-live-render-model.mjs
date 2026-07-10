@@ -54,10 +54,23 @@ const heartbeatSource = readFileSync(
   new URL("../src/renderer/modules/message.js", import.meta.url),
   "utf8",
 );
+// The heartbeat must update BOTH the top status line and running tool clocks —
+// as surgical patches, never a full-article re-render (that would defeat the
+// signature rule asserted above by paying the morphdom cost every second).
 assert.match(
   heartbeatSource,
-  /function refreshLiveStatusOnly[\s\S]*renderLiveTurnArticle\(article,\s*live,\s*\{\s*sessionId\s*\}\)/,
-  "heartbeat refresh must patch the live process row as well as the top status line when elapsed time changes",
+  /function refreshLiveStatusOnly[\s\S]*refreshLiveTurnStatusDisplay\(article,\s*live\)/,
+  "heartbeat refresh must update the top status line",
+);
+assert.match(
+  heartbeatSource,
+  /function refreshLiveStatusOnly[\s\S]*patchLiveToolClocks\(article,\s*live\)/,
+  "heartbeat refresh must tick running tool row clocks surgically",
+);
+assert.doesNotMatch(
+  heartbeatSource.slice(heartbeatSource.indexOf("function refreshLiveStatusOnly")).split("\n").slice(0, 15).join("\n"),
+  /renderLiveTurnArticle/,
+  "the heartbeat must never full-render the article per second",
 );
 runtime.liveTurn.assistantText = "hello world";
 assert.notEqual(runtimeVisualSig(runtime), first, "visible assistant text changes should invalidate the signature");

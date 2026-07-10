@@ -58,7 +58,7 @@ const WORKSPACE_APP_BUILDERS = [
   },
   {
     appId: "daily-stock-analysis",
-    version: "1.0.5",
+    version: "1.0.6",
     script: "scripts/build-stock-workspace-app.mjs",
     name: "股票智能分析 Starter",
     summary: "安装股票投研示范工作区，结合联网研究、Excel 分析和多 Agent 流程生成结构化报告。",

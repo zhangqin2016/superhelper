@@ -47,6 +47,8 @@ import {
   liveTurnFromRecord,
 } from "./turn-view-model.js";
 import { createLiveTurnArticleShell } from "./turn-article-shell.js";
+import { refreshLiveTurnStatusDisplay } from "./turn-article-frame.js";
+import { patchLiveToolClocks } from "./turn-live-clock-patch.js";
 import { updateSessionRunningIndicators } from "./project-tree.js";
 import { updateTopbarTitles } from "./session-chrome.js";
 import { renderMessageQueue } from "./composer.js";
@@ -758,7 +760,11 @@ function refreshLiveStatusOnly(sessionId) {
   if (!live || live.final) return;
   const article = view(sessionId).liveArticles.get(live.turnId);
   if (!article?.isConnected) return;
-  renderLiveTurnArticle(article, live, { sessionId });
+  // Heartbeat tick: status line + running tool clocks only. Full renders stay
+  // event-driven (visual signature) so a long-running tool never costs a
+  // whole-timeline morphdom pass per second.
+  refreshLiveTurnStatusDisplay(article, live);
+  patchLiveToolClocks(article, live);
 }
 
 export function createMessage(sessionId, role, text = "", files = null, options = null) {

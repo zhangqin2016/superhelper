@@ -51,7 +51,7 @@ function parseArgs(argv) {
   const args = {
     sourceDir: DEFAULT_SOURCE_DIR,
     outDir: DEFAULT_OUT_DIR,
-    version: "1.0.2",
+    version: "1.0.6",
     exportedAt: "2026-06-15T00:00:00.000Z",
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -68,7 +68,7 @@ function parseArgs(argv) {
 
 function usage() {
   return [
-    "Usage: node scripts/build-stock-workspace-app.mjs [--source .lily-work/app-build/daily-stock-analysis] [--version 1.0.2] [--exported-at ISO]",
+    "Usage: node scripts/build-stock-workspace-app.mjs [--source .lily-work/app-build/daily-stock-analysis] [--version 1.0.6] [--exported-at ISO]",
     "",
     "Builds the Lily-native daily-stock-analysis workspace app package.",
   ].join(os.EOL);
@@ -425,11 +425,58 @@ def python_in_venv() -> Path:
     return VENV_DIR / "bin" / "python"
 
 
+def runner_env() -> dict:
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(ROOT) if not existing else str(ROOT) + os.pathsep + existing
+    return env
+
+
+def uv_candidate_names() -> list[str]:
+    if platform.system().lower().startswith("win"):
+        return ["uv.exe", "uv"]
+    return ["uv"]
+
+
+def runtime_roots() -> list[Path]:
+    roots = []
+    env_root = os.environ.get("LILY_RUNTIME_ROOT", "").strip()
+    if env_root:
+        roots.append(Path(env_root))
+    executable = Path(sys.executable).resolve()
+    roots.extend(executable.parents)
+    unique = []
+    seen = set()
+    for root in roots:
+        try:
+            resolved = root.resolve()
+        except Exception:
+            resolved = root
+        key = str(resolved)
+        if key not in seen:
+            seen.add(key)
+            unique.append(resolved)
+    return unique
+
+
+def resolve_uv():
+    found = shutil.which("uv")
+    if found:
+        return found
+    for root in runtime_roots():
+        for name in uv_candidate_names():
+            candidate = root / "bin" / name
+            if candidate.exists() and candidate.is_file():
+                return str(candidate)
+    return None
+
+
 def import_ok(python: Path) -> bool:
     try:
         completed = subprocess.run(
             [str(python), "-c", "import tradingagents, lily_adapter"],
             cwd=str(ROOT),
+            env=runner_env(),
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -450,7 +497,7 @@ def prepare_runtime(skip_install: bool = False) -> Path:
     if skip_install:
         raise RuntimeError("DEPENDENCIES_MISSING")
 
-    uv = shutil.which("uv")
+    uv = resolve_uv()
     if not uv:
         raise RuntimeError("UV_NOT_FOUND")
 
@@ -458,7 +505,7 @@ def prepare_runtime(skip_install: bool = False) -> Path:
     subprocess.run([uv, "venv", str(VENV_DIR)], cwd=str(ROOT), check=True, timeout=120)
     venv_python = python_in_venv()
     emit("dependencies", "running", detail="installing app package")
-    subprocess.run([uv, "pip", "install", "-e", "."], cwd=str(ROOT), check=True, timeout=240, env={**os.environ, "VIRTUAL_ENV": str(VENV_DIR)})
+    subprocess.run([uv, "pip", "install", "--python", str(venv_python), "-e", "."], cwd=str(ROOT), check=True, timeout=240, env={**runner_env(), "VIRTUAL_ENV": str(VENV_DIR)})
     if not import_ok(venv_python):
         raise RuntimeError("DEPENDENCY_INSTALL_VERIFICATION_FAILED")
     return venv_python

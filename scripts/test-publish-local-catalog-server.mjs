@@ -73,6 +73,8 @@ assertEqual(engineeringFields.displayInCatalog, "false", "platform rule bundles 
 
 const webApp = WORKSPACE_APP_BUILDERS.find((item) => item.appId === "web-system-learning");
 assert(webApp, "workspace app builders should include web system learning");
+const stockApp = WORKSPACE_APP_BUILDERS.find((item) => item.appId === "daily-stock-analysis");
+assertEqual(stockApp?.version, "1.0.6", "stock workspace app should publish the runtime-repair package version");
 const webAppFields = appUploadFields({
   app: webApp,
   artifact: {
@@ -158,4 +160,4 @@ assertEqual(JSON.parse(metadataFields.nameI18n).en, "Spreadsheets", "metadata sy
 assertEqual(JSON.parse(metadataFields.categoryLabelI18n).en, "Office Documents", "metadata sync should include localized category label");
 assertEqual(metadataFields.displayInCatalog, "true", "metadata sync should keep registry entries catalog-visible by default");
 
-finish("publish-local-catalog-server", 28);
+finish("publish-local-catalog-server", 29);

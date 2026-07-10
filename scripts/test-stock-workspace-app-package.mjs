@@ -55,6 +55,10 @@ try {
   assert(!mainPy.includes("TradingAgentsGraph"), "packaged main.py does not run upstream OpenAI-default demo");
   assert(appRunner.includes('"type": "lily.app.stage"'), "app runner emits stage events");
   assert(appRunner.includes('RESULT_PATH = REPORTS_DIR / "lily-result.json"'), "app runner writes machine-readable result");
+  assert(appRunner.includes('env["PYTHONPATH"] = str(ROOT)'), "app runner makes local adapter imports explicit");
+  assert(appRunner.includes('os.environ.get("LILY_RUNTIME_ROOT"'), "app runner can discover the bundled Lily runtime root");
+  assert(appRunner.includes("def resolve_uv()"), "app runner resolves uv beyond ambient PATH");
+  assert(appRunner.includes('"--python", str(venv_python)'), "app runner installs into the intended workspace venv");
   assert(appRunner.includes("REPORT_NOT_GENERATED"), "app runner validates report artifacts");
   assert(appRunner.includes("TIMEOUT"), "app runner handles engine timeout");
   assert(lilySearch.includes("WEBSEARCH_IQS_API_KEY"), "package includes Lily platform search vendor");

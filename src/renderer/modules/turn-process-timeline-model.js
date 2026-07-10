@@ -21,10 +21,35 @@ export function shouldCollapseProcessGroups(liveTurn = {}, sealed = false) {
   return tools.length >= 2 || (tools.length >= 1 && notices.length >= 1);
 }
 
+// Liveness notices are TRANSIENT by definition ("write 正在运行 · 已运行 33s"):
+// they keep their light is-liveness rendering, but only WHILE the state they
+// describe is still true — a toolProgress line disappears the moment no tool
+// is running, a longWait line the moment anything newer lands, and neither
+// ever reaches the sealed transcript (a saved "still running" would be a
+// permanently false statement in history).
+const LIVENESS_NOTICE_CODES = new Set(["toolProgress", "longWait"]);
+
+function hasRunningToolEntry(liveTurn = {}) {
+  const tools = liveTurn.tools;
+  const values = tools instanceof Map ? [...tools.values()] : Array.isArray(tools) ? tools : [];
+  return values.some((tool) => tool?.status === "running");
+}
+
+function livenessNoticeVisible(entry, { liveTurn, sealed, isLast }) {
+  if (sealed) return false;
+  if (entry.code === "toolProgress") return hasRunningToolEntry(liveTurn);
+  return isLast;
+}
+
 export function timelineForProcessView(liveTurn, sealed) {
-  return collapseRepeatedReadTools(getRenderableTimeline(liveTurn).filter((entry) => (
-    sealed || entry.kind !== "notice" || entry.level === "progress"
-  )));
+  const timeline = getRenderableTimeline(liveTurn);
+  const lastIndex = timeline.length - 1;
+  return collapseRepeatedReadTools(timeline.filter((entry, index) => {
+    if (entry.kind === "notice" && LIVENESS_NOTICE_CODES.has(entry.code)) {
+      return livenessNoticeVisible(entry, { liveTurn, sealed: Boolean(sealed), isLast: index === lastIndex });
+    }
+    return sealed || entry.kind !== "notice" || entry.level === "progress";
+  }));
 }
 
 function canGroupReadTool(entry = {}) {

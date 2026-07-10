@@ -72,4 +72,65 @@ assert.doesNotMatch(layoutSource, /function collapseRepeatedReadTools\s*\(/);
 assert.doesNotMatch(layoutSource, /function canGroupReadTool\s*\(/);
 assert.doesNotMatch(layoutSource, /function partitionTimeline\s*\(/);
 
+// Liveness notices keep the light card while TRUE, vanish the moment they are
+// stale, and never reach the sealed transcript.
+{
+  const runningTurn = {
+    tools: new Map([["w1", { id: "w1", name: "write", status: "running" }]]),
+    timeline: [
+      { kind: "tool", id: "w1", name: "write", status: "running" },
+      { kind: "notice", id: "lv1", code: "toolProgress", level: "progress", detail: "write 正在运行 · 已运行 33s" },
+    ],
+  };
+  assert.deepEqual(
+    timelineForProcessView(runningTurn, false).map((entry) => entry.id),
+    ["w1", "lv1"],
+    "toolProgress stays visible while a tool is actually running",
+  );
+
+  const settledTurn = {
+    tools: new Map([["w1", { id: "w1", name: "write", status: "done" }]]),
+    timeline: [
+      { kind: "tool", id: "w1", name: "write", status: "done" },
+      { kind: "notice", id: "lv1", code: "toolProgress", level: "progress", detail: "write 正在运行 · 已运行 33s" },
+      { kind: "tool", id: "w2", name: "write", status: "done" },
+    ],
+  };
+  assert.deepEqual(
+    timelineForProcessView(settledTurn, false).map((entry) => entry.id),
+    ["w1", "w2"],
+    "a toolProgress snapshot disappears the moment no tool is running",
+  );
+  assert.deepEqual(
+    timelineForProcessView(settledTurn, true).map((entry) => entry.id),
+    ["w1", "w2"],
+    "sealed transcripts never keep a 'still running' statement",
+  );
+
+  const waitingTurn = {
+    tools: new Map(),
+    timeline: [
+      { kind: "notice", id: "lw1", code: "longWait", level: "progress", detail: "仍在等待模型响应" },
+    ],
+  };
+  assert.deepEqual(
+    timelineForProcessView(waitingTurn, false).map((entry) => entry.id),
+    ["lw1"],
+    "longWait shows while it is the newest thing that happened",
+  );
+
+  const movedOnTurn = {
+    tools: new Map(),
+    timeline: [
+      { kind: "notice", id: "lw1", code: "longWait", level: "progress", detail: "仍在等待模型响应" },
+      { kind: "tool", id: "r9", name: "read", status: "done" },
+    ],
+  };
+  assert.deepEqual(
+    timelineForProcessView(movedOnTurn, false).map((entry) => entry.id),
+    ["r9"],
+    "longWait vanishes the moment anything newer lands",
+  );
+}
+
 console.log("turn-process-timeline-model: ok");
