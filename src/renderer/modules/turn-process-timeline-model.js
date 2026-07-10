@@ -27,7 +27,7 @@ export function shouldCollapseProcessGroups(liveTurn = {}, sealed = false) {
 // is running, a longWait line the moment anything newer lands, and neither
 // ever reaches the sealed transcript (a saved "still running" would be a
 // permanently false statement in history).
-const LIVENESS_NOTICE_CODES = new Set(["toolProgress", "longWait"]);
+export const LIVENESS_NOTICE_CODES = new Set(["toolProgress", "longWait"]);
 
 function hasRunningToolEntry(liveTurn = {}) {
   const tools = liveTurn.tools;

@@ -133,4 +133,27 @@ assert.doesNotMatch(layoutSource, /function partitionTimeline\s*\(/);
   );
 }
 
+// Refreshed liveness notices must RELOCATE to the tail: the visibility gate is
+// position-based, and an in-place replace left the first longWait stranded
+// mid-history — invisible for the whole rest of a long turn (field bug: 292s
+// of waiting with no indicator at all).
+{
+  const { appendTimelineNotice } = await import("../src/renderer/modules/turn-notice-timeline.js");
+  const live = { tools: new Map(), timeline: [] };
+  appendTimelineNotice(live, { code: "longWait", level: "progress", replace: true, replacesCode: "longWait", detail: "仍在等待模型响应" });
+  // A tool row lands AFTER the notice (the field sequence: early longWait,
+  // then the skill tool ran) — the stranded notice must be hidden.
+  live.timeline.push({ kind: "tool", id: "sk1", name: "skill", status: "done", startTs: 1, ts: 2 });
+  assert.equal(
+    timelineForProcessView(live, false).filter((entry) => entry.kind === "notice").length,
+    0,
+    "a stale longWait stranded behind a newer tool row stays hidden",
+  );
+  appendTimelineNotice(live, { code: "longWait", level: "progress", replace: true, replacesCode: "longWait", detail: "仍在等待模型响应 · 已等待 292 秒" });
+  const refreshed = timelineForProcessView(live, false);
+  assert.equal(refreshed.at(-1)?.kind, "notice", "a refreshed longWait relocates to the tail and shows again");
+  assert.match(refreshed.at(-1)?.detail || "", /292/, "the refreshed detail is the one shown");
+  assert.equal(live.timeline.filter((entry) => entry.kind === "notice").length, 1, "relocation replaces, never duplicates");
+}
+
 console.log("turn-process-timeline-model: ok");

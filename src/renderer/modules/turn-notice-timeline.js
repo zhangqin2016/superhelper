@@ -1,4 +1,5 @@
 import { isTokenCountDetail } from "./turn-activity-policy.js";
+import { LIVENESS_NOTICE_CODES } from "./turn-process-timeline-model.js";
 
 function ensureTimeline(target) {
   if (!Array.isArray(target.timeline)) target.timeline = [];
@@ -32,7 +33,17 @@ export function appendTimelineNotice(target, notice, ts = Date.now()) {
         existingCode === entry.code ||
         existingReplaceCode === replaceCode
       ) {
-        timeline[index] = { ...existing, ...entry };
+        // Liveness notices RELOCATE to the tail on refresh: a renewed "still
+        // waiting/running" statement IS the newest event, and their visibility
+        // gate (only-while-true / newest-entry) depends on position — an
+        // in-place replace left the first longWait stranded mid-history and
+        // therefore invisible for the whole rest of the turn.
+        if (LIVENESS_NOTICE_CODES.has(entry.code)) {
+          timeline.splice(index, 1);
+          timeline.push({ ...existing, ...entry });
+        } else {
+          timeline[index] = { ...existing, ...entry };
+        }
         return;
       }
     }
