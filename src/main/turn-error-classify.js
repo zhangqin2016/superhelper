@@ -278,6 +278,30 @@ function classifyTurnFailure(payload, normalized, state) {
       category: "model",
     };
   }
+  // Micro-completion: the gateway's thinking-mode handling glitches and the
+  // content channel leaks only a sentence-tail fragment ("…file paths, and a
+  // single research question", 9 tokens on a 20k prompt, clean stop). Evidence
+  // gates keep legitimate short answers safe: no tools ran, the whole output
+  // is a few tokens, it does NOT end like a finished sentence, and the user's
+  // ask was non-trivial. Kill switch: LILY_MICRO_COMPLETION_GUARD=0.
+  if (process.env.LILY_MICRO_COMPLETION_GUARD !== "0" && (state?.tools?.size || 0) === 0) {
+    const text = String(normalized?.text || state?.assistantText || "").trim();
+    // Evidence-first: only the gateway's own usage accounting counts — no
+    // usage data, no classification (synthetic/edge turns stay untouched).
+    const outputTokens = Number(state?.usage?.output_tokens);
+    const tinyOutput = Number.isFinite(outputTokens) && outputTokens > 0 && outputTokens <= 12;
+    const endsLikeSentence = /[。．.!?！?…"”』」)）\]】:：]$/.test(text);
+    const userAskNonTrivial = String(state?.enginePayload?.rawText || "").trim().length >= 8;
+    if (text && tinyOutput && !endsLikeSentence && userAskNonTrivial &&
+        !payload?.interruptedByUser && !payload?.userInterrupted && !payload?.stalled && !payload?.engineInterrupted) {
+      return {
+        code: "MICRO_COMPLETION",
+        message: "模型只返回了一个不完整的句子片段，本轮没有形成有效回答。常见原因是网关的思考模式处理异常吞掉了正文。可以直接重试。",
+        retryable: true,
+        category: "model",
+      };
+    }
+  }
   if (isEmptyAssistantCompletion(payload, normalized, state)) {
     return {
       code: "EMPTY_ASSISTANT_COMPLETION",

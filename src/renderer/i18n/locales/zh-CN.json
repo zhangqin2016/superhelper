@@ -702,6 +702,7 @@
   "toast.toolCallRescueRetry": "检测到模型把工具调用写成了文本，已注入纠正提示并重试…",
   "toast.emptyCompletionRetry": "模型本次没有返回内容，正在自动重试…",
   "toast.truncatedTurnRetry": "模型响应流在任务中途被截断，正在自动重试…",
+  "toast.microCompletionRetry": "模型只返回了一个句子片段，正在自动重试…",
   "markdown.codeCollapseLines": "{count} 行",
   "markdown.codeExpand": "展开",
   "markdown.codeCollapseAction": "收起",

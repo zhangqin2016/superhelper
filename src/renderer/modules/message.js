@@ -892,7 +892,9 @@ function handleSelfHealRetryEvents(batch) {
         ? "toast.emptyCompletionRetry"
         : kind === "truncated_turn_retry"
           ? "toast.truncatedTurnRetry"
-          : "toast.modelSelfHealRetry";
+          : kind === "micro_completion_retry"
+            ? "toast.microCompletionRetry"
+            : "toast.modelSelfHealRetry";
     showToast(t(key), "info", 6000);
   }
 }

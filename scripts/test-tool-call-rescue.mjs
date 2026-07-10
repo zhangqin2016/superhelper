@@ -372,6 +372,63 @@ resetRescueStateForTests();
   selfHealShouldHeal = false;
 }
 
+// Micro-completion: a sentence-tail fragment as the whole answer (gateway
+// thinking-mode glitch) fails + gets a plain retry; a real short answer with
+// sentence-final punctuation is untouched.
+resetRescueStateForTests();
+{
+  const payloadsBefore = runner.sentPayloads.length;
+  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "给我设计一个复杂的任务", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  assert.equal(send.ok, true);
+  const fragment = " file paths, and a single research question";
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "assistant.delta", payload: { text: fragment } },
+    { type: "usage.updated", payload: { usage: { output_tokens: 9 }, stopReason: "stop" } },
+  ]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: fragment });
+  await settle();
+  const events = flushEvents();
+  const failed = events.find((event) => event.type === "turn.failed");
+  assert.equal(failed?.payload?.errorCode, "MICRO_COMPLETION",
+    "a 9-token mid-sentence fragment on a non-trivial ask is a failure, not an answer");
+  const retry = events.find((event) => event.type === "turn.self_heal_retry");
+  assert.equal(retry?.payload?.kind, "micro_completion_retry", "the fragment gets a plain retry");
+  assert.equal(runner.sentPayloads.length, payloadsBefore + 2, "explicit send + one rescue retry");
+
+  // Settle the retried turn with a real answer (ends like a sentence).
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "assistant.delta", payload: { text: "这是一个完整的任务设计方案。" } },
+    { type: "usage.updated", payload: { usage: { output_tokens: 380 }, stopReason: "stop" } },
+  ]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "这是一个完整的任务设计方案。" });
+  await settle();
+  assert(flushEvents().some((event) => event.type === "turn.completed"), "the retried turn completes normally");
+}
+
+{
+  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "帮我确认一下这个方案可以吗", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  assert.equal(send.ok, true);
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "assistant.delta", payload: { text: "可以。" } },
+    { type: "usage.updated", payload: { usage: { output_tokens: 3 }, stopReason: "stop" } },
+  ]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "可以。" });
+  await settle();
+  const events = flushEvents();
+  assert(events.some((event) => event.type === "turn.completed"),
+    "a genuinely short answer ending like a sentence stays a normal completion");
+  assert.equal(events.filter((event) => event.type === "turn.failed").length, 0);
+}
+
 // Negative: a clean "stop" final reason completes normally — no false positive.
 {
   const send = await ctx.turnOrchestrator.sendUserMessage("s1", "总结一下刚才做了什么", [], {

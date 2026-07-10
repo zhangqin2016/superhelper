@@ -76,6 +76,14 @@ const RESCUE_STRATEGIES = Object.freeze({
     hint: "",
     enabled: () => process.env.LILY_TRUNCATED_RETRY !== "0",
   }),
+  // Micro-completion: a sentence-tail fragment leaked as the whole answer
+  // (gateway thinking-mode glitch swallowing the body). A plain retry usually
+  // gets the full response.
+  MICRO_COMPLETION: Object.freeze({
+    kind: "micro_completion_retry",
+    hint: "",
+    enabled: () => process.env.LILY_MICRO_COMPLETION_RETRY !== "0",
+  }),
 });
 
 // Tools whose re-execution is harmless (pure reads / research / planning).
