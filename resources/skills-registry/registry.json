@@ -78,6 +78,7 @@
       "kind": "workflow",
       "intents": ["app.create", "webpage.create", "tool.create", "script.create"],
       "avoidIntents": ["debug.existing_code_only"],
+      "avoidHints": ["修复现有", "修这个", "白屏", "blank page", "fix existing", "报错了", "fix this bug"],
       "matchHints": ["SaaS dashboard", "admin dashboard", "dashboard app", "web tool", "local app", "build dashboard", "create dashboard", "管理后台应用", "统计看板"],
       "primaryTools": ["workspace.files", "shell", "browser.preview"],
       "inputModes": ["text", "workspace", "image"],
@@ -288,7 +289,9 @@
     },
     "lily-pdf-form": {
       "kind": "tool",
-      "intents": ["pdf.form_fill", "form.extract", "form.generate"],
+      "intents": ["pdf.form_fill", "pdf.acroform.inspect"],
+      "matchHints": ["填写表单", "填这个表单", "填表", "fill this form", "fill form", "acroform"],
+      "avoidHints": ["设计表单", "新表单", "表单模板", "制作表单", "提取表格", "design a form", "form template", "extract table", "extract tables"],
       "primaryTools": ["runtime.python", "pdf.writer"],
       "inputModes": ["text", "file"],
       "outputModes": ["artifact"],
@@ -1257,7 +1260,7 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily",
+      "sourceKind": "bundled-vendor",
       "name_i18n": {
         "en": "Document Coauthoring",
         "ar": "المشاركة في كتابة المستندات"
@@ -1293,7 +1296,7 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily",
+      "sourceKind": "bundled-vendor",
       "name_i18n": {
         "en": "Word Document",
         "ar": "مستند Word"
@@ -1329,7 +1332,7 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily",
+      "sourceKind": "bundled-vendor",
       "name_i18n": {
         "en": "PDF Document",
         "ar": "مستند PDF"
@@ -1365,7 +1368,7 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily",
+      "sourceKind": "bundled-vendor",
       "name_i18n": {
         "en": "Presentation Decks",
         "ar": "العروض التقديمية"
@@ -1401,7 +1404,7 @@
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
-      "sourceKind": "lily",
+      "sourceKind": "bundled-vendor",
       "name_i18n": {
         "en": "Spreadsheets",
         "ar": "جداول البيانات"

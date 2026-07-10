@@ -781,4 +781,35 @@ assert.equal(shouldInjectCapabilityContext({ text: "tell me a joke", files: [] }
 assert.equal(shouldInjectCapabilityContext({ text: "帮我做一个 CRM 管理后台应用，包含客户列表和统计看板", files: [] }), true);
 assert.equal(shouldInjectCapabilityContext({ text: "评估这句话应该触发哪个意图和技能", files: [] }), true);
 
+// Routing boundary regressions (机器可执行的技能边界): prose boundaries don't
+// exist for weak models — these assert what the broker actually recommends.
+function recommendedIds(text, files = []) {
+  return recommendSkillCapabilityGraph({ text, files, maxSkills: 8 }).map((skill) => skill.id);
+}
+
+{
+  const fill = recommendedIds("帮我把这个 PDF 表单填了，信息用我发你的名单", [{ name: "application_form.pdf" }]);
+  assert.ok(fill.includes("lily-pdf-form"), `filling an existing PDF form must route to lily-pdf-form: ${fill}`);
+
+  const design = recommendedIds("帮我设计一个新的 PDF 报名表单模板，字段要有姓名电话邮箱");
+  assert.equal(design.includes("lily-pdf-form"), false,
+    `designing a NEW form template must NOT route to lily-pdf-form (it only fills existing AcroForms): ${design}`);
+
+  const extract = recommendedIds("从这个 PDF 里提取表格数据到 Excel", [{ name: "report.pdf" }]);
+  assert.equal(extract.includes("lily-pdf-form"), false,
+    `table extraction must NOT route to lily-pdf-form: ${extract}`);
+  assert.ok(extract.includes("lily-pdf-extraction-router"),
+    `table extraction routes through the extraction router: ${extract}`);
+}
+
+{
+  const fix = recommendedIds("修这个现有项目，页面打开是白屏，控制台报错了");
+  assert.equal(fix.includes("lily-app-builder"), false,
+    `fixing an existing blank page must NOT route to lily-app-builder: ${fix}`);
+  assert.ok(fix.includes("lily-code-repair"), `blank-page repair routes to lily-code-repair: ${fix}`);
+
+  const build = recommendedIds("做一个网页版的番茄钟工具，做完打开检查一下效果");
+  assert.ok(build.includes("lily-app-builder"), `building a new web tool routes to lily-app-builder: ${build}`);
+}
+
 console.log("capability-broker: ok");

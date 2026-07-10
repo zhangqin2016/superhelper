@@ -856,6 +856,40 @@ function currentAvailableMediaProviderContext() {
   }
 }
 
+// Platform overrides for bundled UPSTREAM skills whose original instructions
+// conflict with Lily's platform contract (e.g. "testing is optional" vs the
+// verify-before-deliver rule; "QA must use subagents" vs lite-graded models
+// where the task tool is denied). Vendor skill files stay pristine so upstream
+// updates keep applying cleanly; the correction rides the guide, which is
+// authoritative over skill text. The section title starts with "Tool Protocol"
+// on purpose — the weak-gateway budget truncation treats it as a guardrail
+// section, so exactly the models most likely to follow a wrong instruction
+// are guaranteed to keep the correction.
+const SKILL_PLATFORM_OVERLAYS = {
+  "anthropics-pptx": {
+    en: "anthropics-pptx: subagent-based QA is use-if-available. When the task/subagent tool is unavailable, run the SAME visual QA steps inline in this session — never skip QA because subagents are missing.",
+    zh: "anthropics-pptx：子代理 QA 是“可用则用”。当 task/子代理工具不可用时，在当前会话内联执行同样的视觉 QA 步骤——绝不能因为没有子代理而跳过 QA。",
+  },
+  "anthropics-web-artifacts-builder": {
+    en: "anthropics-web-artifacts-builder: testing is NOT optional on this platform. Verify every browser-visible artifact opens and renders (via lily-browser-qa when enabled) BEFORE presenting it.",
+    zh: "anthropics-web-artifacts-builder：在本平台测试不是可选项。任何浏览器可见产物在交付前必须验证能打开、能渲染（启用 lily-browser-qa 时走它）。",
+  },
+  "anthropics-webapp-testing": {
+    en: "anthropics-webapp-testing: reference material only. Browser verification routes through lily-browser-qa and the platform-managed browser runtime, not hand-written Playwright scripts.",
+    zh: "anthropics-webapp-testing：仅作参考。浏览器验证走 lily-browser-qa 与平台管理的浏览器运行时，不要手写 Playwright 脚本。",
+  },
+};
+
+function buildSkillOverlaySection(enabledSkills, loc) {
+  const zh = String(loc || "").startsWith("zh");
+  const lines = (enabledSkills || [])
+    .map((skill) => SKILL_PLATFORM_OVERLAYS[skill.id])
+    .filter(Boolean)
+    .map((overlay) => `- ${zh ? overlay.zh : overlay.en}`);
+  if (!lines.length) return "";
+  return ["## Tool Protocol Overrides", "", ...lines].join("\n");
+}
+
 function buildAgentGuideContent(enabledSkills, locale) {
   const loc = locale || getActiveLocale() || "en";
   const guide = AGENT_GUIDE_I18N[loc] || AGENT_GUIDE_I18N["en"];
@@ -922,6 +956,9 @@ function buildAgentGuideContent(enabledSkills, locale) {
       lastTitle = title;
     }
   }
+
+  const overlaySection = buildSkillOverlaySection(enabledSkills, loc);
+  if (overlaySection) sections.push(overlaySection, "");
 
   const prefix = `${sections.join("\n").trim()}\n`;
   const indexBudget = Math.max(0, AGENT_GUIDE_MAX_BYTES - utf8Bytes(prefix) - 512);
@@ -1678,8 +1715,12 @@ async function syncServiceSkillPackages({ fetch = true } = {}) {
     const updateAvailable =
       isInstalled && compareSemver(entry.latestVersion, manifest.version || "0.0.0") > 0;
     const shouldInstall = !isInstalled && Boolean(entry.defaultEligible);
+    // "bundled-vendor" = upstream (anthropics/*) skills we bundle and manage —
+    // provenance reads honestly while auto-update behavior stays identical to
+    // first-party "lily" skills.
     const serviceManagedAutoUpdate =
-      Boolean(entry.defaultEligible) && (entry.sourceKind === "lily" || !entry.sourceKind);
+      Boolean(entry.defaultEligible) &&
+      (entry.sourceKind === "lily" || entry.sourceKind === "bundled-vendor" || !entry.sourceKind);
     const shouldUpdate =
       isInstalled &&
       updateAvailable &&

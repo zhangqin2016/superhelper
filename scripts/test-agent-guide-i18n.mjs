@@ -558,4 +558,20 @@ assert.match(
   "bounded skill index should keep early representative capabilities",
 );
 
+// Platform overlays: bundled upstream skills whose instructions conflict with
+// the platform contract get an authoritative correction in the guide. The
+// section title starts with "Tool Protocol" so budget truncation treats it as
+// a guardrail and weak models never lose it.
+{
+  const pptxSkill = allLocalGuideSkills.find((skill) => skill.id === "anthropics-pptx")
+    || { id: "anthropics-pptx", manifest: {}, skillDir: skillsCatalogDir };
+  const zhOverlayGuide = skillManager.buildAgentGuideContent([pptxSkill], "zh-CN");
+  assert.match(zhOverlayGuide, /## Tool Protocol Overrides/, "enabled upstream skills add the override section");
+  assert.match(zhOverlayGuide, /可用则用/, "pptx subagent QA is corrected to use-if-available (lite models have no task tool)");
+  const enOverlayGuide = skillManager.buildAgentGuideContent([pptxSkill], "en");
+  assert.match(enOverlayGuide, /use-if-available/, "the override localizes to English");
+  const bareGuide = skillManager.buildAgentGuideContent([], "zh-CN");
+  assert.doesNotMatch(bareGuide, /Tool Protocol Overrides/, "no overlay-needing skills → no override section");
+}
+
 console.log("agent guide i18n: ok");
