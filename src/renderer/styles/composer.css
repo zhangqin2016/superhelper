@@ -747,8 +747,15 @@
 }
 
 .composer-row:focus-within {
+  /* One quiet ring, not a triple shout: the container communicates focus, so
+     the textarea inside opts out of the global :focus-visible outline. */
   border-color: var(--accent-border);
-  box-shadow: 0 18px 46px color-mix(in srgb, var(--accent) 9%, transparent), var(--top-highlight), 0 0 0 3px var(--accent-ring);
+  box-shadow: 0 14px 38px color-mix(in srgb, var(--accent) 6%, transparent), var(--top-highlight), 0 0 0 2px var(--accent-ring);
+}
+
+.composer-row textarea:focus-visible,
+.composer-row input:focus-visible {
+  outline: none;
 }
 
 .composer-actionbar {
