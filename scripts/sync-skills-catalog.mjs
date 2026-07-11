@@ -17,7 +17,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { copyDirRecursiveShipSafe, purgeJunkUnder } = require("../src/main/ship-ignore.js");
-const { mergeExternalEntries, validateCandidate, writeJsonAtomically } = require("../src/main/skill-catalog-sync-policy.js");
+const { diffRegistries, mergeExternalEntries, validateCandidate, writeJsonAtomically } = require("../src/main/skill-catalog-sync-policy.js");
 const { skillContentRevision, skillDirectoryFiles, registryRevision } = require("../src/main/skill-registry-revision.js");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +26,7 @@ const SOURCES_PATH = path.join(ROOT, "resources/skills-registry/catalog-sources.
 const OUT_PATH = path.join(ROOT, "resources/skills-registry/registry.json");
 const CATALOG_DIR = path.join(ROOT, "resources/skills-catalog");
 const CANDIDATE_PATH = path.join(ROOT, ".lily-work", "skill-sync", "registry.candidate.json");
+const CANDIDATE_DIFF_PATH = path.join(ROOT, ".lily-work", "skill-sync", "registry.diff.json");
 
 const GITHUB_API = "https://api.github.com";
 const HEADERS = {
@@ -322,11 +323,14 @@ async function main() {
   const validation = validateCandidate(candidate, baseline);
   if (!validation.ok) throw new Error(`Candidate registry rejected: ${validation.errors.join("; ")}`);
 
+  const diff = diffRegistries(baseline, candidate);
   writeJsonAtomically(CANDIDATE_PATH, candidate);
+  writeJsonAtomically(CANDIDATE_DIFF_PATH, diff);
   const changedIds = allSkills
     .map((skill) => skill.id)
     .filter((id) => allowAdditions || baseline.skills.some((skill) => skill.id === id));
-  console.log(`Candidate written to ${CANDIDATE_PATH}; ${changedIds.length} existing vendor skill(s) eligible for update.`);
+  console.log(`Candidate written to ${CANDIDATE_PATH}; diff written to ${CANDIDATE_DIFF_PATH}.`);
+  console.log(`Diff: ${diff.added.length} added, ${diff.removed.length} removed, ${diff.changed.length} changed; ${changedIds.length} vendor skill(s) eligible for update.`);
   if (!apply) {
     console.log("Dry run only. Use --apply to bundle vendor updates and atomically replace registry.json.");
     return;

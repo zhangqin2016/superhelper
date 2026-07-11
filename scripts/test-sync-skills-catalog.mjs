@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(import.meta.dirname, "..");
 const {
+  diffRegistries,
   mergeExternalEntries,
   validateCandidate,
   writeJsonAtomically,
@@ -34,6 +35,26 @@ assert.equal(candidate.skills.find((skill) => skill.id === "anthropics-pdf").lat
 assert.deepEqual(candidate.skills.find((skill) => skill.id === "anthropics-pdf").description_i18n, { en: "PDF" });
 assert.deepEqual(candidate.skills.find((skill) => skill.id === "lily-core"), baseline.skills[0]);
 assert.equal(validateCandidate(candidate, baseline).ok, true);
+assert.deepEqual(diffRegistries(baseline, candidate), {
+  added: [],
+  removed: [],
+  changed: ["anthropics-pdf"],
+});
+assert.deepEqual(
+  diffRegistries(baseline, {
+    ...baseline,
+    skills: [
+      { ...baseline.skills[0], latestVersion: "1.0.1" },
+      { id: "anthropics-docx", latestVersion: "1.0.0", category: "office" },
+    ],
+  }),
+  {
+    added: ["anthropics-docx"],
+    removed: ["anthropics-pdf"],
+    changed: ["lily-core"],
+  },
+  "registry diff must make additions, removals, and content changes independently auditable",
+);
 
 const noAddition = mergeExternalEntries(baseline, [{
   id: "anthropics-new-skill",
@@ -58,6 +79,7 @@ fs.rmSync(tmp, { recursive: true, force: true });
 const syncSource = fs.readFileSync(path.join(ROOT, "scripts", "sync-skills-catalog.mjs"), "utf8");
 assert.match(syncSource, /if \(!apply\)/, "catalog sync must default to a non-applying candidate run");
 assert.match(syncSource, /writeJsonAtomically\(CANDIDATE_PATH, candidate\)/, "dry run must write a candidate outside the registry");
+assert.match(syncSource, /writeJsonAtomically\(CANDIDATE_DIFF_PATH, diff\)/, "dry run must write a structured diff beside the candidate");
 const sources = JSON.parse(fs.readFileSync(path.join(ROOT, "resources", "skills-registry", "catalog-sources.json"), "utf8"));
 assert.deepEqual(sources.sources.flatMap((source) => source.allowedIdPrefixes), ["anthropics-"]);
 assert.deepEqual(sources.sources[0].includeOnly.sort(), ["doc-coauthoring", "docx", "pdf", "pptx", "xlsx"]);

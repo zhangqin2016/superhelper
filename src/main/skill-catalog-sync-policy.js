@@ -2,9 +2,22 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { stable } = require("./skill-registry-revision.js");
 
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function diffRegistries(baseline, candidate) {
+  const before = new Map((baseline?.skills || []).map((skill) => [String(skill?.id || ""), skill]));
+  const after = new Map((candidate?.skills || []).map((skill) => [String(skill?.id || ""), skill]));
+  const added = [...after.keys()].filter((id) => id && !before.has(id)).sort();
+  const removed = [...before.keys()].filter((id) => id && !after.has(id)).sort();
+  const changed = [...after.keys()]
+    .filter((id) => id && before.has(id))
+    .filter((id) => JSON.stringify(stable(before.get(id))) !== JSON.stringify(stable(after.get(id))))
+    .sort();
+  return { added, removed, changed };
 }
 
 function mergeExternalEntries(currentRegistry, externalEntries, options = {}) {
@@ -79,6 +92,7 @@ function writeJsonAtomically(targetPath, value) {
 }
 
 module.exports = {
+  diffRegistries,
   mergeExternalEntries,
   validateCandidate,
   writeJsonAtomically,
