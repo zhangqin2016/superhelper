@@ -1057,6 +1057,12 @@ class TurnOrchestrator {
       const strategy = rescue.rescueStrategyFor(failure?.code);
       if (!strategy) return false;
       if (!rescue.shouldAttemptRescue(sessionId, failure.code)) return false;
+      // Strategies with delayMs wait out a transient cause (engine start
+      // failures) BEFORE the idle checks below, so a user who already resent
+      // during the wait is never fought.
+      if (strategy.delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, strategy.delayMs));
+      }
       // Don't fight the user: only while the session is idle with nothing queued.
       const state = this._state(sessionId);
       if (state.turnId || state.queue.length) return false;
@@ -1090,9 +1096,12 @@ class TurnOrchestrator {
       const retried = await this.sendUserMessage(sessionId, lastUser.content, lastUser.files || [], {
         recordUser: false,
         spawnEngine: true,
-        // Strategies with preflight (RUNNER_TERMINATED) lost their runner —
-        // pool.get() would return null, so the resend must run the full
-        // ensure path and build a fresh one.
+        // Belt over the cooldown: a rescue resend that fails at preflight
+        // again must not schedule another rescue from inside itself.
+        rescueAttempt: true,
+        // Strategies with preflight (RUNNER_TERMINATED / RUNNER_ERROR) lost
+        // their runner — pool.get() would return null, so the resend must run
+        // the full ensure path and build a fresh one.
         skipPreflight: !strategy.preflight,
         ...(hint ? { engineText: `${content}\n\n${hint}` } : {}),
       });
@@ -1523,6 +1532,13 @@ class TurnOrchestrator {
         assistant: detail || error,
         code: error,
       });
+      // Engine-start failures never reached a model — side-effect-free by
+      // construction, so the rescue table may quietly wait + resend once
+      // (RUNNER_ERROR strategy). Codes without a strategy (e.g. the engine
+      // binary is missing) fall through to the normal failure UX.
+      if (!opts.rescueAttempt) {
+        void this._maybeSelfHealAndRetry(session.id, { code: error, retryable: true });
+      }
       const result = { ok: false, error };
       if (detail) result.detail = detail;
       return result;
@@ -1556,6 +1572,9 @@ class TurnOrchestrator {
             const detail = ensured.detail
               || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
             this._finalize(session.id, "turn.failed", { failed: true, assistant: detail || error, code: error });
+            if (!opts.rescueAttempt) {
+              void this._maybeSelfHealAndRetry(session.id, { code: error, retryable: true });
+            }
             const result = { ok: false, error };
             if (detail) result.detail = detail;
             return result;

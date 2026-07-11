@@ -573,6 +573,13 @@ resetRescueStateForTests();
   for (const code of others) {
     assert(!rescue.rescueStrategyFor(code)?.preflight, `${code} keeps skipping preflight (its runner is proven alive)`);
   }
+  // Engine start failures wait out the transient cause then resend with full
+  // preflight ("这种不能等恢复重试吗" — yes, it can).
+  const startRetry = rescue.rescueStrategyFor("RUNNER_ERROR");
+  assert(startRetry, "engine-start failures are rescuable");
+  assert.equal(startRetry.kind, "runner_start_retry");
+  assert.equal(startRetry.preflight, true, "the resend rebuilds a fresh runner via full preflight");
+  assert(startRetry.delayMs >= 1000, "the retry waits for the transient start failure to clear");
 }
 
 console.log("tool-call-rescue: ok");

@@ -700,6 +700,7 @@
   "toast.truncatedTurnRetry": "模型响应流在任务中途被截断，正在自动重试…",
   "toast.microCompletionRetry": "模型只返回了一个句子片段，正在自动重试…",
   "toast.runnerTerminatedRetry": "引擎会话已回收，正在自动重建并重试…",
+  "toast.runnerStartRetry": "引擎进程未能启动，正在等待恢复并自动重试…",
   "markdown.codeCollapseLines": "{count} 行",
   "markdown.codeExpand": "展开",
   "markdown.codeCollapseAction": "收起",

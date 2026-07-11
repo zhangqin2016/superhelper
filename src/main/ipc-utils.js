@@ -261,7 +261,25 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     wireRunner(ctx, runner);
 
     if (opts.spawn === true && !runner.isAlive()) {
-      const hint = runner.lastSpawnError || "The assistant engine process failed to start.";
+      // One in-place recovery before giving up: an engine that failed to start
+      // never ran anything, so dropping the corpse and building a fresh runner
+      // is always safe. isAlive() counts an in-flight start as alive, so this
+      // branch only fires when there is genuinely no process and no start
+      // attempt (e.g. a previous async start failed and cleared itself).
+      const firstSpawnError = runner.lastSpawnError || "";
+      runnerPool.terminateSession(sessionId);
+      const fresh = runnerPool.ensure(sessionId, project.path, extra, { lazy: false });
+      wireRunner(ctx, fresh);
+      if (fresh.isAlive()) {
+        console.warn("[runner]", sessionId, "engine was dead at preflight; rebuilt a fresh runner");
+        return {
+          runner: fresh,
+          coldStart: true,
+          usedResume: Boolean(resumeSessionId),
+          project,
+        };
+      }
+      const hint = fresh.lastSpawnError || firstSpawnError || "The assistant engine process failed to start.";
       return { runner: null, error: "RUNNER_ERROR", detail: hint };
     }
 

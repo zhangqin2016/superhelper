@@ -95,6 +95,17 @@ const RESCUE_STRATEGIES = Object.freeze({
     preflight: true,
     enabled: () => process.env.LILY_RUNNER_TERMINATED_RETRY !== "0",
   }),
+  // The engine process failed to start at preflight — the turn never reached
+  // a model, so a resend is free of side effects by construction. delayMs
+  // waits out the transient cause (port teardown, a dying previous serve,
+  // slow disk) before the full-preflight resend rebuilds a fresh runner.
+  RUNNER_ERROR: Object.freeze({
+    kind: "runner_start_retry",
+    hint: "",
+    preflight: true,
+    delayMs: 2000,
+    enabled: () => process.env.LILY_RUNNER_START_RETRY !== "0",
+  }),
 });
 
 // Tools whose re-execution is harmless (pure reads / research / planning).

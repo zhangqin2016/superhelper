@@ -700,6 +700,7 @@
   "toast.truncatedTurnRetry": "انقطع بث استجابة النموذج في منتصف المهمة. تجري إعادة المحاولة تلقائياً…",
   "toast.microCompletionRetry": "أعاد النموذج جزءاً من جملة فقط. تجري إعادة المحاولة تلقائياً…",
   "toast.runnerTerminatedRetry": "تمت إعادة تدوير جلسة المحرك. تجري إعادة البناء والمحاولة تلقائياً…",
+  "toast.runnerStartRetry": "تعذر بدء عملية المحرك. يتم الانتظار وإعادة المحاولة تلقائياً…",
   "markdown.codeCollapseLines": "{count} سطر",
   "markdown.codeExpand": "توسيع",
   "markdown.codeCollapseAction": "طي",

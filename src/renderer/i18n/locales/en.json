@@ -700,6 +700,7 @@
   "toast.truncatedTurnRetry": "The model's response stream was cut off mid-task. Retrying automatically…",
   "toast.microCompletionRetry": "The model returned only a sentence fragment. Retrying automatically…",
   "toast.runnerTerminatedRetry": "The engine session was recycled. Rebuilding and retrying automatically…",
+  "toast.runnerStartRetry": "The engine process failed to start. Waiting and retrying automatically…",
   "markdown.codeCollapseLines": "{count} lines",
   "markdown.codeExpand": "Expand",
   "markdown.codeCollapseAction": "Collapse",

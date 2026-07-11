@@ -558,7 +558,18 @@ class OpencodeAgentSession extends EventEmitter {
    *  permission-mode change applies via applyPermissionMode terminating the idle
    *  runner, after which this spawns fresh and resumes the same session id. */
   _ensureStarted() {
-    if (this._server && this._server.sessionID) return Promise.resolve(this._server);
+    if (this._server && this._server.sessionID) {
+      // Trust the fast path only while the serve process is actually running:
+      // a crashed serve can linger as an object with an exit code before the
+      // exit handler clears it, and returning it here made the very next send
+      // fail instantly ("engine process failed to start") instead of starting
+      // a fresh engine.
+      const proc = this._server.process;
+      const dead = Boolean(proc && (proc.exitCode != null || proc.signalCode != null || proc.killed));
+      if (!dead) return Promise.resolve(this._server);
+      log.warn("opencode serve object was dead at fast path; starting fresh");
+      this._server = null;
+    }
     if (this._starting) return this._starting;
     // SNAPSHOT the spawn options: terminate() nulls this.spawnOptions, and it
     // can race an async start continuation (idle recycling, session
@@ -606,6 +617,9 @@ class OpencodeAgentSession extends EventEmitter {
     })();
     this._starting.catch((err) => {
       this._starting = null;
+      // Surfaced by the preflight's RUNNER_ERROR detail (ipc-utils reads it) —
+      // without this the user only ever saw the generic "failed to start".
+      this.lastSpawnError = this._sanitize(err?.message || String(err || ""));
       log.warn("opencode start failed: %s", err?.message || String(err));
       if (this.busy && !this._turnSettled) this._failTurn(this._sanitize(err?.message), err);
     });
