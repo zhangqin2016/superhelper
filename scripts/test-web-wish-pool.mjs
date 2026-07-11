@@ -50,4 +50,24 @@ assert.match(board, /copy\.statuses\[wish\.status\]/);
 assert.equal(board.includes("submitter"), false);
 assert.equal(board.includes("supportCount"), false);
 
+const supportButton = fs.readFileSync(new URL("../web/components/wish-support-button.js", import.meta.url), "utf8");
+const submitForm = fs.readFileSync(new URL("../web/components/wish-submit-form.js", import.meta.url), "utf8");
+const actions = fs.readFileSync(new URL("../web/app/wishes/actions.js", import.meta.url), "utf8");
+const accountWishes = fs.readFileSync(new URL("../web/app/account/wishes/page.js", import.meta.url), "utf8");
+const loginPage = fs.readFileSync(new URL("../web/app/account/login/page.js", import.meta.url), "utf8");
+const accountActions = fs.readFileSync(new URL("../web/app/account/actions.js", import.meta.url), "utf8");
+assert.match(board, /WishSupportButton/);
+assert.match(supportButton, /toggleWishSupportAction/);
+assert.match(supportButton, /\/account\/login\?next=\/wishes/);
+assert.match(submitForm, /sessionStorage/);
+assert.match(submitForm, /findSimilarWishesAction/);
+assert.match(submitForm, /createWishAction/);
+assert.match(submitForm, /function update[\s\S]+setCreated\(false\)/);
+assert.match(actions, /userApiPost\("\/api\/wishes\/similar"/);
+assert.match(actions, /userApiPost\("\/api\/wishes"/);
+assert.match(actions, /userApiDelete\(`\/api\/wishes\/\$\{wishId\}\/support`/);
+assert.match(accountWishes, /userApiGet\("\/api\/account\/wishes"/);
+assert.match(loginPage, /value === "\/wishes"/);
+assert.match(accountActions, /value === "\/wishes"/);
+
 console.log("web-wish-pool: ok");

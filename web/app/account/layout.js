@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 const nav = [
+  ["愿望", "/account/wishes"],
   ["购买", "/account/billing"],
   ["权益", "/account/entitlements"],
   ["订单", "/account/orders"],

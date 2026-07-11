@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ArrowUpRight, CheckCircle2, Heart, Lightbulb } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Lightbulb } from "lucide-react";
+import { WishSupportButton } from "./wish-support-button";
 
 export function WishBoard({ wishes, copy }) {
   return (
@@ -18,7 +19,7 @@ export function WishBoard({ wishes, copy }) {
               {wish.linkedAppIds.map((id) => <Link key={id} href={`/apps/${id}`}>{copy.viewOutcome}<ArrowUpRight size={14} /></Link>)}
               {wish.linkedSkillIds.map((id) => <Link key={id} href={`/skills#${id}`}>{copy.viewSkill}<ArrowUpRight size={14} /></Link>)}
             </div>
-          ) : <button className="wish-support-placeholder" type="button"><Heart size={15} />{copy.alsoNeed}</button>}
+          ) : <WishSupportButton wishId={wish.id} label={copy.alsoNeed} />}
         </article>
       ))}
     </div>

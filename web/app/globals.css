@@ -1092,15 +1092,43 @@ a {
 .wish-card h2 { margin: 18px 0 9px; font-size: 23px; letter-spacing: -0.03em; }
 .wish-card > p { min-height: 56px; margin: 0; color: #647084; line-height: 1.7; }
 .wish-update { display: flex; align-items: flex-start; gap: 8px; margin-top: 18px; border-radius: 13px; background: #f3f5fb; color: #536078; padding: 13px; font-size: 13px; line-height: 1.5; }
-.wish-links, .wish-support-placeholder { margin-top: 18px; }
+.wish-links, .wish-support-wrap { margin-top: 18px; }
 .wish-links { display: flex; flex-wrap: wrap; gap: 9px; }
-.wish-links a, .wish-support-placeholder { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #d9def0; border-radius: 999px; background: white; color: #586ce8; padding: 9px 12px; font-size: 12px; font-weight: 750; }
+.wish-links a, .wish-support-button { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #d9def0; border-radius: 999px; background: white; color: #586ce8; padding: 9px 12px; font-size: 12px; font-weight: 750; }
+.wish-support-button.is-supported { border-color: #586ce8; background: #e9edff; }
+.wish-support-button:disabled { cursor: wait; opacity: 0.65; }
+.wish-support-wrap > span { display: block; margin-top: 7px; color: #b42318; font-size: 12px; }
+.wish-submit-section { scroll-margin-top: 96px; margin-top: 72px; }
+.wish-submit-form { display: grid; gap: 18px; border: 1px solid #e0e5ef; border-radius: 24px; background: white; padding: clamp(22px, 4vw, 38px); box-shadow: 0 22px 65px rgba(26, 36, 67, 0.08); }
+.wish-submit-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.wish-submit-heading h2 { margin: 0; font-size: 28px; letter-spacing: -0.035em; }
+.wish-submit-heading p { margin: 8px 0 0; color: #647084; }
+.wish-submit-heading > svg { color: #586ce8; }
+.wish-submit-form label { display: grid; gap: 8px; color: #39445a; font-size: 13px; font-weight: 750; }
+.wish-submit-form input, .wish-submit-form textarea, .wish-submit-form select { width: 100%; border: 1px solid #dce1eb; border-radius: 13px; background: #fbfcff; color: #121827; padding: 12px 13px; font: inherit; font-weight: 450; outline: none; }
+.wish-submit-form input:focus, .wish-submit-form textarea:focus, .wish-submit-form select:focus { border-color: #586ce8; box-shadow: 0 0 0 3px rgba(88, 108, 232, 0.12); }
+.wish-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.wish-submit-button, .wish-create-anyway { display: inline-flex; width: max-content; align-items: center; gap: 7px; border-radius: 999px; background: #586ce8; color: white; padding: 12px 18px; font-weight: 750; }
+.wish-submit-button:disabled, .wish-create-anyway:disabled { cursor: wait; opacity: 0.65; }
+.wish-form-privacy { margin: 0; color: #7c879a; font-size: 12px; line-height: 1.6; }
+.wish-form-error, .wish-form-success { margin: 0; border-radius: 12px; padding: 12px 14px; font-size: 13px; }
+.wish-form-error { background: #fff2f0; color: #a7352b; }
+.wish-form-success { background: #e6f6ee; color: #226d4e; }
+.wish-similar { border-radius: 16px; background: #f4f6fb; padding: 18px; }
+.wish-similar h3 { margin: 0; }
+.wish-similar > p { color: #647084; }
+.wish-similar-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid #e2e6ef; padding: 14px 0; }
+.wish-similar-row b, .wish-similar-row span { display: block; }
+.wish-similar-row span { margin-top: 5px; color: #6e798d; font-size: 13px; }
+.wish-similar-row .wish-support-wrap { flex: none; margin: 0; }
 
 @media (max-width: 860px) {
   .catalog-grid--apps, .catalog-grid--skills, .catalog-detail { grid-template-columns: 1fr; }
   .catalog-hero { padding: 128px 0 56px; }
   .wish-grid { grid-template-columns: 1fr; }
   .wish-toolbar { align-items: flex-start; flex-direction: column; }
+  .wish-form-grid { grid-template-columns: 1fr; }
+  .wish-similar-row { align-items: flex-start; flex-direction: column; }
 }
 
 @media (max-width: 860px) {
