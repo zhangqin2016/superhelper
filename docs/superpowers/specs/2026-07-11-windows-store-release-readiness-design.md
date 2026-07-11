@@ -170,13 +170,15 @@ bounded timeout:
 
 - the process remains alive;
 - a visible main window appears;
-- Chromium's debugging endpoint exposes a page titled `Lily Workbench` whose URL
-  is the packaged renderer page;
+- Chromium's debugging endpoint exposes the packaged renderer URL with one of
+  Lily's shipped localized page titles;
 - no matching Application Error or Windows Error Reporting crash event appears.
 
-The app is then asked to close through its main window. Failure to close normally
-is recorded; forced termination is only test cleanup and never turns the check
-into a pass.
+The renderer title is accepted in Lily's shipped locales (`Lily Workbench`,
+`智能工作台`, `Smart Workbench`, or `منصة العمل الذكية`) because renderer i18n
+replaces the static HTML title after load. The app is then asked to close through
+its main window. Failure to close normally is recorded; forced termination is
+only test cleanup and never turns the check into a pass.
 
 ### 5. Silent uninstall and residue inspection
 
@@ -242,7 +244,10 @@ Implementation follows test-first development:
 5. run the focused tests and the repository unit suite;
 6. on Windows, run an unsigned rehearsal to validate tasks 5 and 6;
 7. after the certificate is ready, run the exact final signed installer with
-   strict signatures in a fresh offline Sandbox and retain the report directory.
+   strict signatures in a fresh offline Sandbox and retain the report directory;
+8. run the same strict installer lifecycle directly from a clean standard-user
+   Windows VM, because Windows Sandbox's default account is an administrator and
+   cannot by itself prove Microsoft's standard-user install requirement.
 
 macOS verification can prove script structure and repository integration, but it
 cannot prove the installer lifecycle. Until a report from a real Windows run is
