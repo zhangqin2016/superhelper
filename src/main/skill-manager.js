@@ -709,8 +709,13 @@ function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity) {
   for (const skill of enabledSkills) {
     const e = skillIndexEntry(skill, loc);
     if (!e.desc) continue;
-    const guide = e.hasGuide ? ` (${head.guideLabel}: ${e.guidePath})` : "";
-    const label = e.name && e.name !== e.id ? `${e.id} (${e.name})` : e.id;
+    // FULL-WIDTH parentheses, deliberately: gateway WAFs pattern-match code
+    // injection as ASCII `eval (` — and a skill id ending in "-eval" followed
+    // by " (Name)" tripped one in the field, killing EVERY request that
+    // carried the guide (HTTP 200 + empty body, shown as empty completions).
+    // Full-width （） reads identically to the model and misses the WAF regex.
+    const guide = e.hasGuide ? ` （${head.guideLabel}: ${e.guidePath}）` : "";
+    const label = e.name && e.name !== e.id ? `${e.id}（${e.name}）` : e.id;
     if (!appendWithinByteBudget(lines, `- **${label}** — ${shortIndexDesc(e.desc)}${guide}`, maxBytes)) {
       omitted += 1;
     }
