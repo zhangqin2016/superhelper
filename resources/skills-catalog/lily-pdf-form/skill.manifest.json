@@ -12,5 +12,9 @@
   "riskLevel": "low",
   "permissions": { "network": false, "filesystem": "readwrite", "subprocess": true },
   "requiredRuntimePacks": ["large-document", "pro-pdf"],
-  "name_i18n": { "en": "PDF Form Fill", "ar": "تعبئة نماذج PDF" }
+  "name_i18n": { "en": "PDF Form Fill", "ar": "تعبئة نماذج PDF" },
+  "description_i18n": {
+    "en": "Detects, fills, and validates fields in an existing PDF AcroForm.",
+    "ar": "يكتشف الحقول ويملؤها ويتحقق منها في نموذج PDF AcroForm موجود."
+  }
 }

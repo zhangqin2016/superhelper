@@ -12,5 +12,9 @@
   "riskLevel": "low",
   "permissions": { "network": false, "filesystem": "readwrite", "subprocess": true },
   "requiredRuntimePacks": ["libreoffice"],
-  "name_i18n": { "en": "Template Fill", "ar": "تعبئة القوالب" }
+  "name_i18n": { "en": "Template Fill", "ar": "تعبئة القوالب" },
+  "description_i18n": {
+    "en": "Fills existing Word and related templates with structured data and supports batch output.",
+    "ar": "يملأ قوالب Word والقوالب المرتبطة ببيانات منظمة ويدعم الإخراج الدفعي."
+  }
 }

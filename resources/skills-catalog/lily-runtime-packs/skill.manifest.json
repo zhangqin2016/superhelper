@@ -11,5 +11,9 @@
   "capabilityLayer": "runtime",
   "riskLevel": "low",
   "permissions": { "network": true, "filesystem": "readwrite", "subprocess": true },
-  "name_i18n": { "en": "Runtime Packs", "ar": "حزم التشغيل" }
+  "name_i18n": { "en": "Runtime Packs", "ar": "حزم التشغيل" },
+  "description_i18n": {
+    "en": "Checks, installs, or removes optional local runtime packs through Lily-managed distribution.",
+    "ar": "يفحص أو يثبت أو يزيل حزم تشغيل محلية اختيارية عبر توزيع Lily المُدار."
+  }
 }

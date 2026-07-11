@@ -7,6 +7,11 @@
   "minAppVersion": "0.1.0",
   "category": "design",
   "categoryLabel": "设计创意",
+  "categoryLabel_i18n": {
+    "zh-CN": "设计创意",
+    "en": "Design & Creative",
+    "ar": "التصميم والإبداع"
+  },
   "capabilityLayer": "tool",
   "riskLevel": "low",
   "runtime": "none",
@@ -19,6 +24,18 @@
     "title": "结构图与图表",
     "priority": 18,
     "body": "当正确性取决于结构、文字、关系、步骤或精确数据时，优先生成 Mermaid；Mermaid 无法表达时再生成可编辑 SVG。先从用户材料提取节点、边、层级和标签，保持文字准确，避免用图片模型绘制精确文字或几何。真实可操作页面应使用 lily-app-builder + lily-ui-quality，位图风格素材应使用 lily-image-generation。"
+  },
+  "guideMd_i18n": {
+    "en": {
+      "title": "Diagrams & Structured Visuals",
+      "priority": 18,
+      "body": "When correctness depends on structure, labels, relationships, steps, or exact data, create Mermaid first and use editable SVG only when Mermaid cannot express the result. Extract nodes, edges, hierarchy, and labels from the user's material and keep text exact. Use lily-app-builder with lily-ui-quality for a real interface, and lily-image-generation for bitmap artwork."
+    },
+    "ar": {
+      "title": "المخططات والمرئيات الهيكلية",
+      "priority": 18,
+      "body": "عندما تعتمد الصحة على البنية أو التسميات أو العلاقات أو الخطوات أو البيانات الدقيقة، أنشئ Mermaid أولا واستخدم SVG قابلا للتحرير فقط عندما لا يكفي Mermaid. استخرج العقد والحواف والتسلسل والتسميات من مواد المستخدم وحافظ على دقة النص. استخدم lily-app-builder مع lily-ui-quality للواجهات الحقيقية وlily-image-generation للأعمال النقطية."
+    }
   },
   "name_i18n": {
     "zh-CN": "结构图与图表",

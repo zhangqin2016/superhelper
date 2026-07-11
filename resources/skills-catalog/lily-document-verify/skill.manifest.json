@@ -12,5 +12,9 @@
   "riskLevel": "low",
   "permissions": { "network": false, "filesystem": "readwrite", "subprocess": true },
   "requiredRuntimePacks": ["libreoffice"],
-  "name_i18n": { "en": "Document Verify", "ar": "التحقق من المستندات" }
+  "name_i18n": { "en": "Document Verify", "ar": "التحقق من المستندات" },
+  "description_i18n": {
+    "en": "Renders documents to page images and checks their actual layout before delivery.",
+    "ar": "يصيّر المستندات إلى صور صفحات ويفحص التخطيط الفعلي قبل التسليم."
+  }
 }

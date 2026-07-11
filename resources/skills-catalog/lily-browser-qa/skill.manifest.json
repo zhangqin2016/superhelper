@@ -12,5 +12,9 @@
   "riskLevel": "low",
   "permissions": { "network": true, "filesystem": "read", "subprocess": true },
   "requiredRuntimePacks": ["web-automation"],
-  "name_i18n": { "en": "Browser QA", "ar": "اختبار المتصفح" }
+  "name_i18n": { "en": "Browser QA", "ar": "اختبار المتصفح" },
+  "description_i18n": {
+    "en": "Uses the managed browser runtime to verify interactions, viewports, console output, and screenshot evidence.",
+    "ar": "يستخدم وقت تشغيل المتصفح المُدار للتحقق من التفاعلات وأبعاد العرض والكونسول وأدلة لقطات الشاشة."
+  }
 }

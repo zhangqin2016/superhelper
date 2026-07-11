@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-07-11T04:41:48.955Z",
+  "updatedAt": "2026-07-11T04:46:44.312Z",
   "publisher": "智能工作台技能目录",
   "registryUrl": null,
   "categories": [
@@ -1725,7 +1725,7 @@
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
       },
-      "contentRevision": "feae0b98c1a70521db179a41e55fa9247cc2717a509585d4365f37bf8cab5b82"
+      "contentRevision": "b50b20fa20c4a9e2fef3dda880c1bf462cb112b074a5aa03b3527e51883fe82b"
     },
     {
       "id": "lily-creative-director",
@@ -2095,7 +2095,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "f76e0a8b8d6b971823c860873136469d493812bcdc6f24abfd0f055e2e083eb4"
+      "contentRevision": "07814ada39e5f0cdb0482a5d9b000785d07a23a07db2c7a5f6489831d8bea3cd"
     },
     {
       "id": "lily-document-verify",
@@ -2132,7 +2132,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "d2a269f4da5cdcf68f904474799efdf68f911802c85ee9be2c31341c91df3033"
+      "contentRevision": "31aa87994e4f1b82e96847e710f7367575e1d65972b2670185556aec82bdf6dd"
     },
     {
       "id": "lily-document-query",
@@ -2169,7 +2169,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "9c8e5e906058161b6e713d19df82dd080aaad87a96bcda430219b38fcb8e832e"
+      "contentRevision": "3dbff59a841ec49dcd0ee1cefa4d5c1e78d68db60c80b274f59e627ff1fd71e3"
     },
     {
       "id": "lily-pdf-form",
@@ -2206,7 +2206,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "15309368424d8d2f54bbb2344e09496de3509a1356b314c2f540af1e77ac7120"
+      "contentRevision": "57623c4c97b6eaec907074cb39820f72b66d560250d2d98f615a8a55a5db5bef"
     },
     {
       "id": "lily-runtime-packs",
@@ -2243,7 +2243,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "4965060f638e27b6c837af7f0e266fca7c29c854293cffb00705eb1708eb50e6"
+      "contentRevision": "43fcd8451329da6f646ab745e35ce8a2c0e0d7c02fc9834085e409fe89443b72"
     },
     {
       "id": "lily-engineering-rules",
@@ -2469,5 +2469,5 @@
       "contentRevision": "2cdea587933d1a0b7c07f87ac2d26a53f25d8cc59cc992ce9310fe85299081aa"
     }
   ],
-  "registryRevision": "153114b17c84c3f079e18aeb7f453c5715000edeb412faed59b59f8f30fa1835"
+  "registryRevision": "de9f5dc60c17121bc87116a7fb2b581ef8aa858a862010e7d382f1ddd4a4ac62"
 }
