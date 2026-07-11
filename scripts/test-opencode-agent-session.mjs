@@ -2787,4 +2787,24 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   }
 }
 
+// --- recycleIdleEngine: fresh serve next send, SAME engine session resumed ---
+// (field: gateway connection-affinity pinned the engine's keep-alive pool to a
+// dead backend pod — recycling before a rescue retry gets fresh sockets)
+{
+  const { fake, session } = await newSession();
+  session.sendUserMessage({ text: "warm up" });
+  await tick();
+  assert(session.recycleIdleEngine("test") === false, "a busy engine is never recycled");
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "done" } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  assert(session.isBusy() === false, "warm-up turn settled");
+  const resumeBefore = session.agentResumeId || fake.sessionID || "";
+  assert(session.recycleIdleEngine("test") === true, "an idle engine recycles");
+  assert(session._server === null, "the old serve object is dropped");
+  assert(session.agentResumeId === resumeBefore, "the engine session id survives for resume");
+  assert(session.isAlive() === false || session._starting === null, "no phantom start is left behind");
+  session.terminate();
+}
+
 console.log("opencode-agent-session: ok");

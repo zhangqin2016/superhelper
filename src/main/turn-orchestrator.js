@@ -1096,6 +1096,16 @@ class TurnOrchestrator {
       // absorbed by this retry; defects keep the exact old recovery path.
       log.info(`turn rescue retry: session=${sessionId} kind=${strategy.kind}`);
       this._emit(sessionId, "turn.self_heal_retry", { errorCode: failure.code, kind: strategy.kind });
+      // Fresh engine sockets for strategies that fight poisoned keep-alive
+      // pools; the recycled engine resumes the same session id. Optional so
+      // synthetic runners without the method are unaffected.
+      if (strategy.recycleEngine) {
+        try {
+          this.ctx.runnerPool.get(sessionId)?.recycleIdleEngine?.("turn_rescue");
+        } catch {
+          // Fail open: the plain same-runner retry is still better than nothing.
+        }
+      }
       this.transcriptStore.removeLastAssistantMessage(sessionId);
       // skipPreflight: the model connection was proven live THIS turn (the
       // request reached the model); a full preflight could spuriously block

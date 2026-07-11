@@ -644,6 +644,33 @@ class OpencodeAgentSession extends EventEmitter {
     return this.busy || this._abortSettling;
   }
 
+  /** Drop the idle engine server so the NEXT send spawns a fresh serve
+   *  process — fresh gateway sockets — and resumes the same engine session.
+   *  Field case: a load-balanced gateway with connection affinity pinned the
+   *  engine's keep-alive pool to a dead backend pod during a rolling swap, so
+   *  every request (and every same-runner rescue retry) rode the same dead
+   *  socket and came back empty, while NEW connections reached healthy pods.
+   *  Preserves agentResumeId (unlike a config-change restart) — the recycled
+   *  engine continues the same conversation. */
+  recycleIdleEngine(reason = "") {
+    if (this.isBusy()) return false;
+    const server = this._server;
+    const resumeId = this.agentResumeId || server?.sessionID || null;
+    if (server) {
+      try {
+        server.terminate();
+      } catch {
+        // Best effort; a dead process object is dropped either way.
+      }
+      if (this._server === server) this._server = null;
+    }
+    this._starting = null;
+    this._activeModelConfigFingerprint = "";
+    if (resumeId) this.agentResumeId = resumeId;
+    log.info("idle engine recycled (%s): next send gets fresh gateway connections", reason || "-");
+    return true;
+  }
+
   diagnostics() {
     return {
       sessionId: this.sessionId,

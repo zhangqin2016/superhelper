@@ -71,6 +71,12 @@ const RESCUE_STRATEGIES = Object.freeze({
   EMPTY_ASSISTANT_COMPLETION: Object.freeze({
     kind: "empty_completion_retry",
     hint: "",
+    // Recycle the idle engine before the retry: empty completions from
+    // load-balanced gateways are often a POISONED KEEP-ALIVE POOL (connection
+    // affinity to a dead backend pod), so a same-process retry rides the same
+    // dead socket. A fresh serve process gets fresh connections and resumes
+    // the same engine session.
+    recycleEngine: true,
     enabled: () => process.env.LILY_EMPTY_COMPLETION_RETRY !== "0",
   }),
   // Mid-turn stream truncation (final finish reason "unknown" after healthy

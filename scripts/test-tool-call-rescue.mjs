@@ -628,6 +628,12 @@ resetRescueStateForTests();
   for (const code of others) {
     assert(!rescue.rescueStrategyFor(code)?.preflight, `${code} keeps skipping preflight (its runner is proven alive)`);
   }
+  // Empty completions recycle the idle engine before retrying: same-process
+  // retries ride the same poisoned keep-alive socket during gateway backend
+  // swaps (field: engine 100% empty while fresh connections were 100% ok).
+  assert.equal(rescue.rescueStrategyFor("EMPTY_ASSISTANT_COMPLETION")?.recycleEngine, true,
+    "empty-completion rescue gets fresh gateway connections");
+
   // Engine start failures wait out the transient cause then resend with full
   // preflight ("这种不能等恢复重试吗" — yes, it can).
   const startRetry = rescue.rescueStrategyFor("RUNNER_ERROR");
