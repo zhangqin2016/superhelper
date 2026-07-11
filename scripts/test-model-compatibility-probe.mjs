@@ -242,8 +242,8 @@ try {
     assert.equal(ample.ok, true, `ample prompt probe should succeed: ${JSON.stringify(ample)}`);
     assert.equal(ample.profile.prompt, undefined,
       "a successful ~5k sample must not be persisted as an artificial system-prompt ceiling");
-    assert.equal(ample.profile.probeVersion, 7,
-      "probe profile must carry probeVersion 7 so stored v6 profiles re-probe via the ratchet");
+    assert.equal(ample.profile.probeVersion, 8,
+      "probe profile must carry probeVersion 8 so stored v7 profiles re-probe via the ratchet");
 
     const ampleLarge = await probeCustomModelProfile({
       protocol: "openai",
@@ -779,13 +779,13 @@ for (const [label, response] of [
   const result = await probeAgainst(capabilityMockServer({ failPongProbe: true }), "provider/capability-error");
   assert.equal(result.ok, true, "a capability-probe transport error must not block saving a conformant model");
   assert.equal(result.profile.capability, undefined, "probe error must omit the capability field entirely (fail-open = standard)");
-  assert.equal(result.profile.probeVersion, 7, "profile version still advances so the ratchet can re-probe later");
+  assert.equal(result.profile.probeVersion, 8, "profile version still advances so the ratchet can re-probe later");
 }
 
 // --- v7 large-prompt stress: gateway hangs on big inputs, small requests pass ---
 // (the field case: probes always looked green because probe requests are small,
 // while every real turn carries the ~21k system guide and intermittently died)
-function stressMockServer({ hangLarge = true, failControl = false } = {}) {
+function stressMockServer({ hangLarge = true, emptyLarge = false, failControl = false } = {}) {
   return http.createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => { body += chunk; });
@@ -814,6 +814,19 @@ function stressMockServer({ hangLarge = true, failControl = false } = {}) {
       if (failControl && userText.includes("Say OK.")) {
         res.writeHead(500, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: "control probe unavailable" }));
+        return;
+      }
+      if (emptyLarge && systemChars > 8_000) {
+        // The swallowed-body signature: an instant HTTP-200 whose body has NO
+        // content — what the field gateway does to large streaming requests.
+        if (parsed.stream) {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          res.write("data: [DONE]\n\n");
+          res.end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ id: "c", object: "chat.completion", model: parsed.model, choices: [{ index: 0, message: { role: "assistant", content: "" }, finish_reason: "stop" }] }));
         return;
       }
       if (hangLarge && systemChars > 8_000) {
@@ -851,6 +864,17 @@ function stressMockServer({ hangLarge = true, failControl = false } = {}) {
       "kill switch skips the stress measurement entirely");
     assert.equal(killed.profile.capability.recipes?.systemPromptBudget, undefined,
       "kill switch records no budget");
+
+    // The field variant that slipped v7: an INSTANT HTTP-200 with an empty
+    // body on large requests (no hang at all) — small requests untouched.
+    const swallowed = await probeAgainst(
+      stressMockServer({ hangLarge: false, emptyLarge: true }),
+      "provider/large-prompt-swallowed",
+    );
+    assert.equal(swallowed.profile.capability.signals.largePromptStable, false,
+      "an empty-200 body on large requests is the swallowed-body signature — stress evidence");
+    assert.equal(swallowed.profile.capability.recipes.systemPromptBudget, 12000,
+      "the swallowed-body variant also tightens the guide budget");
 
     const ambiguous = await probeAgainst(
       stressMockServer({ failControl: true }),

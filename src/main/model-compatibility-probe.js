@@ -472,21 +472,28 @@ async function measureLargePromptStress({ baseUrl, apiKey, model, bodyOverlay = 
   const filler = "你是平台助手。规则：认真完成任务并遵守平台规范，输出前核对事实与格式要求。\n";
   const systemText = filler.repeat(Math.ceil(targetChars / filler.length)).slice(0, targetChars);
   let hardFailures = 0;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  // One non-stream and one STREAMING attempt: real turns stream, and the
+  // field gateway failed large streaming requests with instant empty bodies
+  // while large non-stream probes sometimes passed.
+  for (const stream of [false, true]) {
     const result = await postChat({
       baseUrl,
       apiKey,
       model,
       bodyOverlay,
+      stream,
       systemText,
       userText: STRESS_USER_TEXT,
       maxTokens: 24,
       timeoutMs: stressTimeoutMs(),
     });
     if (result.ok && result.shape?.hasContent) continue;
-    // An HTTP-status answer (413/429/5xx page…) is a CLASSIFIED response, not
-    // a hang — other probes own those; this signal must not double-report.
-    if (result.status) return null;
+    // A NON-OK classified status (413/429/5xx…) is someone else's finding —
+    // this signal must not double-report explicit rejections.
+    if (!result.ok && result.status) return null;
+    // Everything else is stress evidence: a hang/abort (no status at all) or
+    // an HTTP-200 whose body carries NO content — the swallowed-body
+    // signature that shows up as empty completions on real turns.
     hardFailures += 1;
   }
   if (!hardFailures) return { stable: true };
@@ -542,7 +549,10 @@ const BODY_OVERLAY_CANDIDATES = Object.freeze([
 // v7: large-prompt stress signal (gateway hangs on big inputs while small
 //     requests pass) -> capability.recipes.systemPromptBudget tightens the
 //     system-guide truncation budget for that model only.
-const PROBE_PROFILE_VERSION = 7;
+// v8: stress evidence widened — an HTTP-200 with an EMPTY body on a large
+//     request (the swallowed-body signature behind field empty completions)
+//     counts, and one of the two attempts runs over streaming like real turns.
+const PROBE_PROFILE_VERSION = 8;
 
 async function probeCustomModelProfile({
   protocol,
