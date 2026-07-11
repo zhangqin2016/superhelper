@@ -32,8 +32,8 @@ export function promptName({
         </header>
         <input class="name-prompt-input" type="text" maxlength="80" autocomplete="off" />
         <div class="name-prompt-actions">
-          <button type="button" class="topbar-btn name-prompt-cancel"></button>
-          <button type="button" class="send-btn name-prompt-confirm"></button>
+          <button type="button" class="dialog-btn name-prompt-cancel"></button>
+          <button type="button" class="dialog-btn dialog-btn--primary name-prompt-confirm"></button>
         </div>
       </div>
     `;

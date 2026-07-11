@@ -47,6 +47,27 @@ for (const required of [
   }
 }
 
+// Dialogs own their button primitive. Borrowing .send-btn (icon-only circle)
+// or .topbar-btn (chrome control) broke dialog text when those evolved —
+// the "确认放开" button clipped to a 34px circle.
+if (!primitiveText.includes(".dialog-btn")) {
+  throw new Error("ui-primitives.css is missing .dialog-btn");
+}
+{
+  const modulesDir = path.join(root, "src/renderer/modules");
+  const offenders = [];
+  for (const entry of fs.readdirSync(modulesDir)) {
+    if (!entry.endsWith(".js")) continue;
+    const text = fs.readFileSync(path.join(modulesDir, entry), "utf8");
+    if (/["'`= ]send-btn[ "'`]/.test(text) && !/send-btn-queued/.test(text)) {
+      offenders.push(entry);
+    }
+  }
+  if (offenders.length) {
+    throw new Error(`send-btn is the composer's icon-only circle — dialogs must use .dialog-btn instead: ${offenders.join(", ")}`);
+  }
+}
+
 function listCssFiles(dir) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

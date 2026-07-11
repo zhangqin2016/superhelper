@@ -1181,13 +1181,6 @@ textarea:disabled { opacity: 0.5; }
   font-weight: 600;
 }
 
-.confirm-dialog-danger {
-  background: var(--danger-text);
-}
-.confirm-dialog-danger:hover {
-  background: var(--danger-text-soft);
-}
-
 @media (max-width: 720px) {
   .composer {
     padding: 10px 12px 12px;

@@ -145,6 +145,56 @@
   outline: none;
 }
 
+/* Dialog buttons — the text-button pair every in-app dialog uses. A ghost
+   pill for the safe action and a filled accent pill for the primary one.
+   Dialogs must NEVER borrow .send-btn (icon-only circle) or .topbar-btn
+   (chrome control): text got clipped when those primitives evolved. */
+.dialog-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  height: 36px;
+  padding: 0 18px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+.dialog-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+.dialog-btn--primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--text-inverse);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.dialog-btn--primary:hover {
+  background: var(--accent-hover);
+  color: var(--text-inverse);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.dialog-btn--primary.confirm-dialog-danger,
+.dialog-btn--danger {
+  background: var(--danger-text);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--danger-text) 24%, transparent);
+}
+.dialog-btn--primary.confirm-dialog-danger:hover,
+.dialog-btn--danger:hover {
+  background: var(--danger-text-soft);
+}
+
 :where(
   .topbar-btn,
   .settings-action-btn,
@@ -155,7 +205,8 @@
   .modal-close-btn,
   .left-action-btn,
   .left-settings-btn,
-  .mode-btn
+  .mode-btn,
+  .dialog-btn
 ):focus-visible {
   outline: none;
   box-shadow: var(--control-focus-ring);
@@ -170,7 +221,8 @@
   .session-skills-reset-btn,
   .modal-close-btn,
   .left-action-btn,
-  .left-settings-btn
+  .left-settings-btn,
+  .dialog-btn
 ):disabled {
   opacity: 0.45;
   cursor: not-allowed;

@@ -255,11 +255,11 @@ function confirmWorkspacePackExport(info, sizeMb) {
     actions.className = "workspace-export-actions";
     const cancel = document.createElement("button");
     cancel.type = "button";
-    cancel.className = "topbar-btn";
+    cancel.className = "dialog-btn";
     cancel.textContent = t("prompt.cancel");
     const confirm = document.createElement("button");
     confirm.type = "button";
-    confirm.className = "send-btn";
+    confirm.className = "dialog-btn dialog-btn--primary";
     const updateConfirmText = () => {
       confirm.textContent = checkbox.checked
         ? t("pack.exportWithWorkspaceSkills")

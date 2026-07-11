@@ -30,8 +30,8 @@ export function confirmDialog({
           </div>
         </header>
         <div class="name-prompt-actions">
-          <button type="button" class="topbar-btn confirm-dialog-cancel"></button>
-          <button type="button" class="send-btn confirm-dialog-confirm"></button>
+          <button type="button" class="dialog-btn confirm-dialog-cancel"></button>
+          <button type="button" class="dialog-btn dialog-btn--primary confirm-dialog-confirm"></button>
         </div>
       </div>
     `;

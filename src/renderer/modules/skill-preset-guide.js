@@ -35,9 +35,9 @@ function renderGuideModal() {
       <ul class="skill-preset-guide-list"></ul>
       <p class="skill-preset-guide-footnote"></p>
       <div class="skill-preset-guide-actions">
-        <button type="button" class="send-btn skill-preset-guide-apply"></button>
-        <button type="button" class="topbar-btn skill-preset-guide-browse"></button>
-        <button type="button" class="topbar-btn skill-preset-guide-later"></button>
+        <button type="button" class="dialog-btn dialog-btn--primary skill-preset-guide-apply"></button>
+        <button type="button" class="dialog-btn skill-preset-guide-browse"></button>
+        <button type="button" class="dialog-btn skill-preset-guide-later"></button>
       </div>
     </div>
   `;
