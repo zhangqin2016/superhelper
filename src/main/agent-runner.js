@@ -73,7 +73,11 @@ const ERROR_PATTERNS = [
     // the real cause (out of balance) from the user. ACCOUNT_LOGIN_REQUIRED is
     // handled earlier (MANAGED_MODEL_AUTH_MISSING) so genuine login/activation
     // prompts still win over this.
-    test: /ENTITLEMENT_INSUFFICIENT|payment.?required|\b402\b|quota|insufficient.*(credit|balance|quota|fund)|(credit|balance|quota|fund).*insufficient|balance|billing|account.*disabled|account.*suspended/i,
+    // NO BARE TOKENS: a bare `balance` matched "load balancer" in gateway 5xx
+    // pages and told users to top up on an infra flake (a non-retryable label
+    // on a retryable failure); bare `quota`/`billing`/`\b402\b` had the same
+    // false-positive surface. Every alternative now requires billing context.
+    test: /ENTITLEMENT_INSUFFICIENT|payment.?required|(?:http|status|code|error)[^0-9a-z]{0,8}402\b|insufficient.{0,24}(credit|balance|quota|fund)|(credit|balance|quota|fund)s?.{0,24}insufficient|quota.{0,24}(exceed|exhaust|limit)|exceed.{0,24}quota|out of (credits?|balance|funds?)|余额不足|已欠费|欠费|额度不足|配额不足|account.{0,16}(disabled|suspended)|billing.{0,24}(limit|issue|error|problem)/i,
     message: "Insufficient account balance. Please top up your account, then retry.",
     retryable: false,
   },

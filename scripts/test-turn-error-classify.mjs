@@ -69,6 +69,18 @@ assert(entitlementInsufficient?.retryable === false, "an empty balance is not fi
 const balanceShellOnly = classifyAssistantError("API Error: 402");
 assert(balanceShellOnly?.code === "QUOTA_EXCEEDED", "a bare 'API Error: 402' shell must NOT be relabeled as a connection interruption");
 
+// NO BARE TOKENS: infra vocabulary that merely CONTAINS billing-ish words must
+// never tell the user to top up (the field case: a gateway 5xx page mentioning
+// its load balancer read as "Insufficient account balance", non-retryable).
+const loadBalancer = classifyAssistantError("upstream connect error: no healthy upstream behind load balancer");
+assert(loadBalancer?.code !== "QUOTA_EXCEEDED", "'load balancer' must not classify as an account balance problem");
+const lineNumber402 = classifyAssistantError("SyntaxError at line 402 in module bundle.js");
+assert(lineNumber402?.code !== "QUOTA_EXCEEDED", "a line number 402 is not an HTTP 402");
+const openaiQuota = classifyAssistantError("You exceeded your current quota, please check your plan and billing details.");
+assert(openaiQuota?.code === "QUOTA_EXCEEDED", "the classic exceeded-quota billing message still classifies");
+const chineseArrears = classifyAssistantError("请求被拒绝：账户余额不足，请充值后重试");
+assert(chineseArrears?.code === "QUOTA_EXCEEDED", "Chinese arrears wording classifies as quota");
+
 const accountLoginStillWins = classifyAssistantError("Request failed: 402 payment_required ACCOUNT_LOGIN_REQUIRED");
 assert(accountLoginStillWins?.code === "MANAGED_MODEL_AUTH_MISSING", "login/activation-required 402 still wins over the balance classifier");
 
