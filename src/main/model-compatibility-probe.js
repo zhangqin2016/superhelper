@@ -411,6 +411,20 @@ async function probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay = nu
     // Recipe probes never void the base capability finding.
   }
 
+  // Large-prompt stress (v7): recorded ONLY when instability is proven —
+  // stable or unmeasured endpoints keep today's exact profile (Rule 13:
+  // absence of evidence changes nothing).
+  let largePromptUnstable = false;
+  try {
+    const stress = await measureLargePromptStress({ baseUrl, apiKey, model, bodyOverlay });
+    if (stress && stress.stable === false && stress.budget) {
+      largePromptUnstable = true;
+      recipes.systemPromptBudget = stress.budget;
+    }
+  } catch {
+    // Recipe probes never void the base capability finding.
+  }
+
   const confirmedLite = !toolChoiceAuto && successfulAutoNoCalls >= 2;
   const grade = toolChoiceAuto
     ? (instructionFidelity ? "full" : "standard")
@@ -418,9 +432,75 @@ async function probeCapabilitySignals({ baseUrl, apiKey, model, bodyOverlay = nu
   return {
     grade,
     ...(confirmedLite ? { confidence: "confirmed" } : {}),
-    signals: { instructionFidelity, toolChoiceAuto },
+    signals: {
+      instructionFidelity,
+      toolChoiceAuto,
+      ...(largePromptUnstable ? { largePromptStable: false } : {}),
+    },
     ...(Object.keys(recipes).length ? { recipes } : {}),
   };
+}
+
+// Large-prompt stress (v7): the field failure this measures is a gateway that
+// answers SMALL requests perfectly but hangs/drops LARGE ones (no explicit
+// size rejection — the v6 prompt-ceiling probe correctly fails open on those).
+// Real turns always carry the ~21k-char system guide, so such a gateway looks
+// healthy to every probe while failing real traffic. Two large attempts; a
+// hard failure (timeout / empty, NO http status) counts only when a small
+// control request right after succeeds — otherwise the endpoint is sick
+// overall and the evidence is ambiguous (fail open, record nothing).
+const STRESS_USER_TEXT = "Reply with the word READY and nothing else.";
+
+// Env-tunable at CALL time (tests shrink the timeout to simulate hangs).
+function stressPromptChars() {
+  const value = Number(process.env.LILY_PROBE_STRESS_CHARS);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 24_000;
+}
+
+function stressTimeoutMs() {
+  const value = Number(process.env.LILY_PROBE_STRESS_TIMEOUT_MS);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 20_000;
+}
+
+function stressBudgetChars() {
+  return Math.max(4_000, Math.floor(stressPromptChars() / 2));
+}
+
+async function measureLargePromptStress({ baseUrl, apiKey, model, bodyOverlay = null }) {
+  if (process.env.LILY_PROBE_LARGE_PROMPT_STRESS === "0") return null;
+  const targetChars = stressPromptChars();
+  const filler = "你是平台助手。规则：认真完成任务并遵守平台规范，输出前核对事实与格式要求。\n";
+  const systemText = filler.repeat(Math.ceil(targetChars / filler.length)).slice(0, targetChars);
+  let hardFailures = 0;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await postChat({
+      baseUrl,
+      apiKey,
+      model,
+      bodyOverlay,
+      systemText,
+      userText: STRESS_USER_TEXT,
+      maxTokens: 24,
+      timeoutMs: stressTimeoutMs(),
+    });
+    if (result.ok && result.shape?.hasContent) continue;
+    // An HTTP-status answer (413/429/5xx page…) is a CLASSIFIED response, not
+    // a hang — other probes own those; this signal must not double-report.
+    if (result.status) return null;
+    hardFailures += 1;
+  }
+  if (!hardFailures) return { stable: true };
+  const control = await postChat({
+    baseUrl,
+    apiKey,
+    model,
+    bodyOverlay,
+    userText: "Say OK.",
+    maxTokens: 8,
+    timeoutMs: 10_000,
+  });
+  if (!(control.ok && control.shape?.hasContent)) return null;
+  return { stable: false, budget: stressBudgetChars() };
 }
 
 const OUTPUT_CEILING_LADDER = Object.freeze([32768, 16384, 8192, 4096, 2048]);
@@ -459,7 +539,10 @@ const BODY_OVERLAY_CANDIDATES = Object.freeze([
 // v4: recipe calibration (instructionLanguage / toolCallHint) -> capability.recipes.
 // v5: output ceiling measurement -> capability.recipes.outputTokenCeiling.
 // v6: observed-only prompt ceilings + confirmed evidence before lite downgrade.
-const PROBE_PROFILE_VERSION = 6;
+// v7: large-prompt stress signal (gateway hangs on big inputs while small
+//     requests pass) -> capability.recipes.systemPromptBudget tightens the
+//     system-guide truncation budget for that model only.
+const PROBE_PROFILE_VERSION = 7;
 
 async function probeCustomModelProfile({
   protocol,

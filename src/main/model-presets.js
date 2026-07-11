@@ -250,6 +250,7 @@ function normalizeCompatibilityProfile(value) {
   const capabilityConfidence = rawCapability?.confidence === "confirmed" ? "confirmed" : "";
   const rawRecipes = rawCapability?.recipes;
   const ceilingValue = Number(rawRecipes?.outputTokenCeiling);
+  const promptBudgetValue = Number(rawRecipes?.systemPromptBudget);
   const recipes = rawRecipes && typeof rawRecipes === "object" && !Array.isArray(rawRecipes)
     ? {
         ...(["zh", "en"].includes(String(rawRecipes.instructionLanguage || ""))
@@ -258,6 +259,10 @@ function normalizeCompatibilityProfile(value) {
         ...(rawRecipes.toolCallHint === true ? { toolCallHint: true } : {}),
         ...(Number.isFinite(ceilingValue) && ceilingValue >= 256 && ceilingValue <= 65536
           ? { outputTokenCeiling: Math.floor(ceilingValue) }
+          : {}),
+        // v7 large-prompt stress budget: only sane, probe-produced values pass.
+        ...(Number.isFinite(promptBudgetValue) && promptBudgetValue >= 2000 && promptBudgetValue <= 60000
+          ? { systemPromptBudget: Math.floor(promptBudgetValue) }
           : {}),
       }
     : {};
@@ -270,6 +275,9 @@ function normalizeCompatibilityProfile(value) {
               signals: {
                 instructionFidelity: Boolean(rawCapability.signals.instructionFidelity),
                 toolChoiceAuto: Boolean(rawCapability.signals.toolChoiceAuto),
+                ...(typeof rawCapability.signals.largePromptStable === "boolean"
+                  ? { largePromptStable: rawCapability.signals.largePromptStable }
+                  : {}),
               },
             }
           : {}),
@@ -325,9 +333,14 @@ function buildCompatibilityProfileRuntimeEnv(compatibilityProfile, requestBodyOv
   const overlay = normalizeRequestBodyOverlay(requestBodyOverlay || profile?.requestBodyOverlay);
   if (overlay) env.LILY_OPENCODE_BODY_OVERLAY_JSON = JSON.stringify(overlay);
 
-  const systemPromptMaxChars = runtimeSystemPromptMaxChars(profile);
-  if (systemPromptMaxChars) {
-    env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS = systemPromptMaxChars;
+  // Two independent evidence sources cap the system-guide size; the runtime
+  // gets the tighter one: an observed explicit size ceiling (v6 prompt probe)
+  // and the large-prompt stress budget (v7 — gateway hangs on big inputs).
+  const systemPromptMaxChars = Number(runtimeSystemPromptMaxChars(profile)) || 0;
+  const stressBudget = Number(profile?.capability?.recipes?.systemPromptBudget) || 0;
+  const promptCaps = [systemPromptMaxChars, stressBudget].filter((value) => value > 0);
+  if (promptCaps.length) {
+    env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS = String(Math.min(...promptCaps));
   }
   if (profile?.toolShapeCompat) {
     env.LILY_OPENCODE_TOOL_COMPAT = "1";

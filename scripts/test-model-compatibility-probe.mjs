@@ -242,8 +242,8 @@ try {
     assert.equal(ample.ok, true, `ample prompt probe should succeed: ${JSON.stringify(ample)}`);
     assert.equal(ample.profile.prompt, undefined,
       "a successful ~5k sample must not be persisted as an artificial system-prompt ceiling");
-    assert.equal(ample.profile.probeVersion, 6,
-      "probe profile must carry probeVersion 6 so stored v5 profiles re-probe via the ratchet");
+    assert.equal(ample.profile.probeVersion, 7,
+      "probe profile must carry probeVersion 7 so stored v6 profiles re-probe via the ratchet");
 
     const ampleLarge = await probeCustomModelProfile({
       protocol: "openai",
@@ -572,7 +572,10 @@ function capabilityMockServer({
         .filter((message) => message?.role === "system")
         .map((message) => String(message.content || ""))
         .join(" ");
-      if (!hasTools && systemText.length >= 1_000 && promptProbeRequests < promptProbeResponses.length) {
+      // The v7 stress probe also sends a big system prompt but is NOT part of
+      // the prompt-ceiling ladder — exclude it via its fixed READY user text.
+      const isStressProbe = userText.includes("READY");
+      if (!hasTools && !isStressProbe && systemText.length >= 1_000 && promptProbeRequests < promptProbeResponses.length) {
         const response = promptProbeResponses[promptProbeRequests];
         promptProbeRequests += 1;
         if (response) {
@@ -580,7 +583,7 @@ function capabilityMockServer({
           res.end(response.raw ?? JSON.stringify(response.json || {}));
           return;
         }
-      } else if (!hasTools && systemText.length >= 1_000) {
+      } else if (!hasTools && !isStressProbe && systemText.length >= 1_000) {
         promptProbeRequests += 1;
       }
       const isPongProbe = userText.includes("PONG");
@@ -776,7 +779,90 @@ for (const [label, response] of [
   const result = await probeAgainst(capabilityMockServer({ failPongProbe: true }), "provider/capability-error");
   assert.equal(result.ok, true, "a capability-probe transport error must not block saving a conformant model");
   assert.equal(result.profile.capability, undefined, "probe error must omit the capability field entirely (fail-open = standard)");
-  assert.equal(result.profile.probeVersion, 6, "profile version still advances so the ratchet can re-probe later");
+  assert.equal(result.profile.probeVersion, 7, "profile version still advances so the ratchet can re-probe later");
+}
+
+// --- v7 large-prompt stress: gateway hangs on big inputs, small requests pass ---
+// (the field case: probes always looked green because probe requests are small,
+// while every real turn carries the ~21k system guide and intermittently died)
+function stressMockServer({ hangLarge = true, failControl = false } = {}) {
+  return http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      const parsed = JSON.parse(body || "{}");
+      const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
+      const userText = (parsed.messages || []).filter((m) => m?.role === "user").map((m) => String(m.content || "")).join(" ");
+      const systemChars = (parsed.messages || []).filter((m) => m?.role === "system")
+        .reduce((sum, m) => sum + String(m.content || "").length, 0);
+      const respond = () => {
+        const wantsToolCall = hasTools;
+        const content = userText.includes("PONG") ? "PONG" : "pong";
+        const toolCall = { id: "call_probe", type: "function", function: { name: "lily_probe_tool", arguments: "{\"ok\":true}" } };
+        if (parsed.stream) {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+          send({ id: "c", object: "chat.completion.chunk", model: parsed.model, choices: [{ index: 0, delta: wantsToolCall ? { tool_calls: [{ index: 0, ...toolCall }] } : { content }, finish_reason: null }] });
+          send({ id: "c", object: "chat.completion.chunk", model: parsed.model, choices: [{ index: 0, delta: {}, finish_reason: wantsToolCall ? "tool_calls" : "stop" }] });
+          res.write("data: [DONE]\n\n");
+          res.end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ id: "c", object: "chat.completion", model: parsed.model, choices: [{ index: 0, message: wantsToolCall ? { role: "assistant", content: "", tool_calls: [toolCall] } : { role: "assistant", content }, finish_reason: wantsToolCall ? "tool_calls" : "stop" }] }));
+      };
+      if (failControl && userText.includes("Say OK.")) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "control probe unavailable" }));
+        return;
+      }
+      if (hangLarge && systemChars > 8_000) {
+        // Hold the socket past the stress timeout — a hang, not a rejection.
+        setTimeout(respond, 900);
+        return;
+      }
+      respond();
+    });
+  });
+}
+
+{
+  process.env.LILY_PROBE_STRESS_TIMEOUT_MS = "250";
+  try {
+    const result = await probeAgainst(stressMockServer(), "provider/large-prompt-hangs");
+    assert.equal(result.ok, true, `stress probe should still save: ${JSON.stringify(result)}`);
+    assert.equal(result.profile.capability.signals.largePromptStable, false,
+      "a gateway that hangs on large prompts while small requests pass is recorded unstable");
+    assert.equal(result.profile.capability.recipes.systemPromptBudget, 12000,
+      "instability tightens the system-guide budget to half the failing size");
+    const env = modelPresets.buildCompatibilityProfileRuntimeEnv(result.profile);
+    assert.equal(env.LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS, "12000",
+      "the stress budget reaches the runtime truncation env");
+
+    const killed = await (async () => {
+      process.env.LILY_PROBE_LARGE_PROMPT_STRESS = "0";
+      try {
+        return await probeAgainst(stressMockServer(), "provider/large-prompt-hangs-killed");
+      } finally {
+        delete process.env.LILY_PROBE_LARGE_PROMPT_STRESS;
+      }
+    })();
+    assert.equal(killed.profile.capability.signals.largePromptStable, undefined,
+      "kill switch skips the stress measurement entirely");
+    assert.equal(killed.profile.capability.recipes?.systemPromptBudget, undefined,
+      "kill switch records no budget");
+
+    const ambiguous = await probeAgainst(
+      stressMockServer({ failControl: true }),
+      "provider/large-prompt-ambiguous",
+    );
+    assert.equal(ambiguous.profile.capability.signals.largePromptStable, undefined,
+      "a failing control request means the endpoint is sick overall — ambiguous, record nothing");
+    assert.equal(ambiguous.profile.capability.recipes?.systemPromptBudget, undefined,
+      "ambiguous stress evidence must not tighten the guide budget");
+  } finally {
+    delete process.env.LILY_PROBE_STRESS_TIMEOUT_MS;
+  }
 }
 
 {
