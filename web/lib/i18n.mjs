@@ -175,7 +175,7 @@ export const dictionaries = {
       brand: "Lily 管理后台",
       subtitle: "控制台",
       signOut: "退出登录",
-      nav: { dashboard: "仪表盘", users: "用户", licenses: "授权", devices: "设备", usage: "用量", contacts: "联系咨询", releases: "版本", runtimePacks: "运行时扩展包", skillPackages: "技能包", apps: "应用商店", plugins: "插件", config: "配置中心", health: "健康检查", diagnostics: "诊断", settings: "设置", audit: "审计" },
+      nav: { dashboard: "仪表盘", users: "用户", licenses: "授权", devices: "设备", usage: "用量", contacts: "联系咨询", wishes: "许愿池", releases: "版本", runtimePacks: "运行时扩展包", skillPackages: "技能包", apps: "应用商店", plugins: "插件", config: "配置中心", health: "健康检查", diagnostics: "诊断", settings: "设置", audit: "审计" },
       navGroups: { operations: "运营", distribution: "发布与分发", configuration: "配置", monitoring: "监控与安全" },
       configCenter: { title: "配置中心", subtitle: "一处管理：基础设置、模型供应商、下发规则与设备分组。" },
       configTabs: { basics: "基础设置", storage: "对象存储", sms: "短信登录", payment: "支付配置", overview: "概览", providers: "模型供应商", profiles: "下发规则", groups: "设备分组" },
@@ -234,6 +234,15 @@ export const dictionaries = {
       settings: { trialTitle: "新设备免费试用", trialDesc: "设备首次连接服务端时按这里的天数生成试用期。修改后只影响之后首次注册的新设备，不会自动延长已注册设备。", trialDays: "免费试用天数", qiniuTitle: "文件存储（CDN）", qiniuDesc: "技能包、扩展包、反馈附件和版本更新的文件都存在这里。下面是云存储（七牛）的访问地址和密钥；Secret Key 留空表示不修改、沿用现有值。", qiniuPublicBaseUrl: "文件访问地址（CDN）", qiniuUploadUrl: "文件上传地址", qiniuAccessKey: "Access Key", qiniuSecretKey: "Secret Key", qiniuSecretKeyKeep: "Secret Key（已配置）", qiniuSecretKeyPlaceholder: "留空表示不修改", qiniuBucket: "Bucket", aliyunSmsTitle: "阿里云短信", aliyunSmsDesc: "用于手机号验证码登录。AccessKeySecret 会加密存储在服务端数据库，不会下发给客户端。", aliyunSmsAccessKeyId: "AccessKeyId", aliyunSmsAccessKeySecret: "AccessKeySecret", aliyunSmsAccessKeySecretKeep: "AccessKeySecret（已配置）", aliyunSmsSecretPlaceholder: "留空表示不修改", aliyunSmsSignName: "短信签名", aliyunSmsTemplateLogin: "登录模板 Code", aliyunSmsRegion: "Region", save: "保存设置" },
       settingsDelivery: { modelTitle: "聊天模型投递方式", mediaTitle: "媒体投递方式（图片 / 视频 / 识图 / 语音）", direct: "直连（更快；真实密钥下发到客户端）", gateway: "走网关（密钥只在服务端，客户端拿短期 token，多一跳）", modelHelp: "主聊天模型如何下发。直连绕开网关、弱网更稳；网关把密钥留在服务端但多一跳。改后默认配置会即时重建。", mediaHelp: "直连绕开我们的网关，弱网下更稳更快；网关更安全但多一跳。" },
       contacts: { headings: ["时间", "联系人", "公司", "主题", "内容", "附件", "来源"], emptyTitle: "暂无联系咨询", emptyDesc: "官网联系表单提交后会显示在这里。" },
+      wishes: {
+        title: "许愿池", subtitle: "审核、合并并推进用户提出的真实工作需求。", back: "返回许愿池", filter: "筛选",
+        allStatuses: "全部状态", allCategories: "全部分类", columns: ["愿望", "状态", "分类", "需求热度", "更新时间"],
+        emptyTitle: "暂无愿望", emptyDesc: "用户登录官网提交愿望后会显示在这里。",
+        statuses: { pending: "待审核", reviewing: "审核中", published: "已公开", planned: "已计划", building: "实现中", shipped: "已上线", declined: "不采用", merged: "已合并" },
+        categories: { office: "办公文档", research: "研究", communication: "沟通协作", data: "数据", creative: "创意", developer: "开发", other: "其他" },
+        originalSubmission: "原始提交（不公开）", status: "状态", category: "分类", publicTitle: "公开标题", publicSummary: "公开摘要", publicUpdate: "公开进展", submitterNote: "提交者可见说明", linkedApps: "关联应用 ID", linkedSkills: "关联技能 ID",
+        deliveryLinks: "上线成果", deliveryHelp: "标记为已上线前，至少关联一个已启用应用或公开技能。", save: "保存审核结果", saving: "保存中...", mergeTarget: "合并到愿望 ID", merge: "合并愿望", merging: "合并中...", mergeConfirm: "确认把支持关系迁移到目标愿望并标记当前愿望为已合并？",
+      },
       attachments: { fallbackName: "反馈图片", previewFailed: "预览失败", missingUrl: "缺少链接", attachmentLabel: "图片附件", openOriginal: "打开原图", closePreview: "关闭预览" },
       uploadForms: { skillPackage: { description: "上传 .skillpack.zip 后会自动发布到七牛云，并写入 SHA256、大小和下载地址。", namePlaceholder: "编程创作增强" }, workspaceApp: { description: "上传工作空间导出的应用或连接器 zip，后台会发布到七牛云并进入应用商店目录。", namePlaceholder: "股票投研看板", summaryPlaceholder: "输入股票代码，生成行情、财报、估值和风险摘要。", descriptionPlaceholder: "说明这个应用解决什么问题、需要什么输入、会输出什么结果、有哪些限制。", notesPlaceholder: "本版本更新说明", runtimeDeps: "依赖的运行时扩展", skillDeps: "依赖的技能包", depsEmptyRuntime: "还没有运行时扩展，可先到「运行时」页签上传。", depsEmptySkill: "还没有技能包，可先到「技能」页签上传。" } },
       health: {
@@ -371,7 +380,7 @@ export const dictionaries = {
     },
     contactForm: { name: "Name", email: "Email", company: "Company / team", phone: "Phone / chat", subject: "Subject", message: "What should we help with?", submit: "Submit contact request", sending: "Submitting...", required: "Please leave your name, email, and a message of at least 8 characters.", failed: "Could not submit. Please try again later.", success: "Received. We will review it in the admin console." },
     admin: {
-      brand: "Lily Admin", subtitle: "Control console", signOut: "Sign out", nav: { dashboard: "Dashboard", users: "Users", licenses: "Licenses", devices: "Devices", usage: "Usage", contacts: "Contacts", releases: "Releases", runtimePacks: "Runtime packs", skillPackages: "Skill packages", apps: "App store", plugins: "Plugins", config: "Config center", health: "Health", diagnostics: "Diagnostics", settings: "Settings", audit: "Audit" },
+      brand: "Lily Admin", subtitle: "Control console", signOut: "Sign out", nav: { dashboard: "Dashboard", users: "Users", licenses: "Licenses", devices: "Devices", usage: "Usage", contacts: "Contacts", wishes: "Wish pool", releases: "Releases", runtimePacks: "Runtime packs", skillPackages: "Skill packages", apps: "App store", plugins: "Plugins", config: "Config center", health: "Health", diagnostics: "Diagnostics", settings: "Settings", audit: "Audit" },
       navGroups: { operations: "Operations", distribution: "Distribution", configuration: "Configuration", monitoring: "Monitoring" },
       configCenter: { title: "Config center", subtitle: "One place: basics, model providers, delivery rules, and device groups." },
       configTabs: { basics: "Basics", storage: "Storage", sms: "SMS login", payment: "Payments", overview: "Overview", providers: "Model providers", profiles: "Delivery rules", groups: "Device groups" },
@@ -388,6 +397,15 @@ export const dictionaries = {
       settings: { trialTitle: "New-device free trial", trialDesc: "When a device first connects to the service, it receives this many trial days. Changes only apply to future first registrations and do not extend existing devices.", trialDays: "Free trial days", qiniuTitle: "File storage (CDN)", qiniuDesc: "Skill packages, runtime packs, feedback attachments, and app updates are stored here. Below are the cloud storage (Qiniu) URLs and keys; leave Secret Key empty to keep the existing value.", qiniuPublicBaseUrl: "File access URL (CDN)", qiniuUploadUrl: "File upload URL", qiniuAccessKey: "Access Key", qiniuSecretKey: "Secret Key", qiniuSecretKeyKeep: "Secret Key (configured)", qiniuSecretKeyPlaceholder: "Leave empty to keep unchanged", qiniuBucket: "Bucket", aliyunSmsTitle: "Aliyun SMS", aliyunSmsDesc: "Used for phone verification login. AccessKeySecret is encrypted in the server database and never delivered to clients.", aliyunSmsAccessKeyId: "AccessKeyId", aliyunSmsAccessKeySecret: "AccessKeySecret", aliyunSmsAccessKeySecretKeep: "AccessKeySecret (configured)", aliyunSmsSecretPlaceholder: "Leave empty to keep unchanged", aliyunSmsSignName: "SMS sign name", aliyunSmsTemplateLogin: "Login template code", aliyunSmsRegion: "Region", save: "Save settings" },
       settingsDelivery: { modelTitle: "Chat model delivery", mediaTitle: "Media delivery (image / video / vision / speech)", direct: "Direct (faster; real key delivered to client)", gateway: "Gateway (key stays on server; client uses short-lived token)", modelHelp: "How the main chat model is delivered. Direct skips the gateway and is steadier on weak networks; gateway keeps keys server-side with one extra hop. Changing this rebuilds the default config immediately.", mediaHelp: "Direct skips our gateway and is faster on weak networks. Gateway is safer but adds one server hop." },
       contacts: { headings: ["Time", "Contact", "Company", "Subject", "Message", "Attachments", "Source"], emptyTitle: "No contact requests", emptyDesc: "Website contact form submissions will appear here." },
+      wishes: {
+        title: "Wish pool", subtitle: "Review, merge, and deliver real user outcomes.", back: "Back to wishes", filter: "Filter",
+        allStatuses: "All statuses", allCategories: "All categories", columns: ["Wish", "Status", "Category", "Demand", "Updated"],
+        emptyTitle: "No wishes yet", emptyDesc: "Account-backed website submissions will appear here.",
+        statuses: { pending: "Pending", reviewing: "Reviewing", published: "Published", planned: "Planned", building: "Building", shipped: "Shipped", declined: "Declined", merged: "Merged" },
+        categories: { office: "Office", research: "Research", communication: "Communication", data: "Data", creative: "Creative", developer: "Developer", other: "Other" },
+        originalSubmission: "Original private submission", status: "Status", category: "Category", publicTitle: "Public title", publicSummary: "Public summary", publicUpdate: "Public update", submitterNote: "Submitter-only note", linkedApps: "Linked app IDs", linkedSkills: "Linked skill IDs",
+        deliveryLinks: "Shipped outcomes", deliveryHelp: "Shipped wishes must link to at least one enabled app or public skill.", save: "Save review", saving: "Saving...", mergeTarget: "Target wish ID", merge: "Merge wish", merging: "Merging...", mergeConfirm: "Move supporters to the target and mark this wish merged?",
+      },
       attachments: { fallbackName: "Feedback image", previewFailed: "Preview failed", missingUrl: "Missing URL", attachmentLabel: "Image attachment", openOriginal: "Open original", closePreview: "Close preview" },
       uploadForms: { skillPackage: { description: "Upload a .skillpack.zip to publish it to Qiniu and record SHA256, size, and download URL.", namePlaceholder: "Coding workflow boost" }, workspaceApp: { description: "Upload a workspace-exported app or connector zip. The admin service publishes it to Qiniu and adds it to the app catalog.", namePlaceholder: "Stock research dashboard", summaryPlaceholder: "Enter a ticker to generate market, financial, valuation, and risk summaries.", descriptionPlaceholder: "Describe what this app solves, required inputs, outputs, and limits.", notesPlaceholder: "Release notes for this version", runtimeDeps: "Required runtime packs", skillDeps: "Required skill packages", depsEmptyRuntime: "No runtime packs yet — upload one under the Runtime tab first.", depsEmptySkill: "No skill packages yet — upload one under the Skills tab first." } },
       health: {
@@ -442,5 +460,14 @@ export const dictionaries = {
 };
 
 if (!dictionaries.ar.admin) {
-  dictionaries.ar.admin = dictionaries.en.admin;
+  dictionaries.ar.admin = {
+    ...dictionaries.en.admin,
+    nav: { ...dictionaries.en.admin.nav, wishes: "مجموعة الأمنيات" },
+    wishes: {
+      ...dictionaries.en.admin.wishes,
+      title: "مجموعة الأمنيات",
+      subtitle: "مراجعة رغبات المستخدمين ودمجها ومتابعة تنفيذها.",
+      statuses: { pending: "قيد المراجعة", reviewing: "تتم المراجعة", published: "منشور", planned: "مخطط", building: "قيد التنفيذ", shipped: "تم الإطلاق", declined: "مرفوض", merged: "مدمج" },
+    },
+  };
 }
