@@ -2,20 +2,16 @@
    Composer
    ========================================================================= */
 
+/* The composer is a single floating card on the page background — no full-width
+   top border, no chrome strip behind it. The card itself carries the affordance
+   (the Doubao-desktop / Codex composer idiom). */
 .composer {
   position: relative;
   z-index: 20;
   flex-shrink: 0;
-  padding: 14px 20px 18px;
-  border-top: 1px solid var(--border-light);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-topbar) 82%, transparent), var(--bg-topbar) 38%),
-    color-mix(in srgb, var(--bg-topbar) 94%, var(--bg-surface) 6%);
-  box-shadow: 0 -14px 34px color-mix(in srgb, var(--bg-body) 10%, transparent), var(--top-highlight);
-}
-
-.composer.composer-busy {
-  border-top-color: var(--accent-border);
+  padding: 6px 20px 16px;
+  border-top: 0;
+  background: transparent;
 }
 
 /* Pinned task strip: the live to-do list, just above the input, collapsible. */
@@ -558,33 +554,37 @@
   flex-wrap: wrap;
 }
 .composer-toolbar .composer-icon-btn {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
 }
+.composer-toolbar .composer-attach-btn,
 .composer-toolbar .composer-skill-btn {
   width: auto;
   justify-content: center;
 }
+.composer-toolbar .composer-attach-btn {
+  width: 30px;
+}
 .composer-toolbar #scheduledTaskBtn {
   width: auto;
-  min-width: 32px;
-  padding: 0 9px;
+  min-width: 30px;
+  padding: 0 10px;
   gap: 5px;
   display: flex;
   align-items: center;
 }
 
+/* Quiet pill: no chrome until interaction, same voice as the icon buttons. */
 .permission-mode-wrap {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   position: relative;
-  padding: 0 9px;
-  height: 34px;
-  border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 96%, var(--accent) 4%), var(--bg-input));
+  padding: 0 10px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
   min-width: 0;
@@ -594,18 +594,15 @@
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
-  box-shadow: var(--top-highlight), 0 1px 2px color-mix(in srgb, var(--bg-body) 8%, transparent);
 }
 
 .permission-mode-wrap:hover {
-  border-color: color-mix(in srgb, var(--accent-border) 70%, var(--border-light) 30%);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 92%, var(--accent) 8%), var(--bg-input));
+  background: var(--bg-surface-hover);
 }
 
 .permission-mode-wrap:focus-within {
   border-color: var(--accent-border);
-  box-shadow: var(--top-highlight), 0 0 0 3px var(--accent-subtle);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
 .permission-mode-wrap::after {
@@ -640,16 +637,16 @@
 
 .permission-mode-button {
   display: block;
-  min-width: 92px;
+  min-width: 0;
   max-width: 160px;
-  height: 30px;
+  height: 28px;
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-size: 12px;
-  font-weight: 600;
-  line-height: 30px;
+  font-weight: 500;
+  line-height: 28px;
   cursor: pointer;
   outline: none;
   overflow: hidden;
@@ -661,6 +658,10 @@
 .permission-mode-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.permission-mode-wrap:hover .permission-mode-button {
+  color: var(--text-primary);
 }
 
 .permission-mode-menu {
@@ -733,11 +734,10 @@
   gap: 0;
   width: min(100%, var(--chat-col));
   margin: 0 auto;
-  border: 1px solid color-mix(in srgb, var(--border-light) 78%, transparent);
-  border-radius: 14px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 92%, var(--bg-surface) 8%), var(--bg-input));
-  box-shadow: 0 16px 42px color-mix(in srgb, var(--bg-body) 12%, transparent), var(--top-highlight);
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  background: var(--bg-input);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--bg-body) 14%, transparent), var(--top-highlight);
   overflow: visible;
   min-width: 0;
   transition:
@@ -758,25 +758,25 @@
   outline: none;
 }
 
+/* Seamless with the textarea — one card, no divider line (Doubao/Codex idiom). */
 .composer-actionbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 44px;
-  padding: 7px 9px 8px;
-  border-top: 1px solid var(--border-subtle);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-subtle) 54%, var(--bg-surface) 46%), color-mix(in srgb, var(--bg-surface-muted) 62%, transparent));
+  min-height: 46px;
+  padding: 4px 8px 8px 8px;
+  border-top: 0;
+  background: transparent;
   min-width: 0;
-  border-radius: 0 0 13px 13px;
+  border-radius: 0 0 19px 19px;
 }
 
 .composer-icon-btn {
   display: grid; place-items: center;
-  width: 32px; height: 32px; padding: 0;
+  width: 30px; height: 30px; padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -787,16 +787,22 @@
     box-shadow var(--dur) var(--ease);
 }
 .composer-icon-btn:hover {
-  border-color: var(--border-light);
   background: var(--bg-surface-hover);
   color: var(--text-primary);
-  box-shadow: var(--top-highlight);
+}
+
+/* The "+" entry: a quiet outlined circle, first in the row. */
+.composer-attach-btn {
+  border-color: var(--border-light);
+}
+.composer-attach-btn:hover {
+  border-color: color-mix(in srgb, var(--accent-border) 60%, var(--border-light) 40%);
 }
 
 .composer-skill-btn {
   width: auto;
-  height: 32px;
-  padding: 0 8px;
+  height: 30px;
+  padding: 0 10px;
   gap: 5px;
   display: flex;
   align-items: center;
@@ -832,36 +838,50 @@ textarea {
   transition: color var(--dur) var(--ease);
 }
 
+/* Inside the composer card the actionbar below is seamless (no divider), so a
+   light bottom padding lets textarea + toolbar read as one block. */
+.composer-row textarea {
+  padding: 14px 16px 4px;
+}
+
 textarea:disabled { opacity: 0.5; }
 
 
+/* Circular icon send button (↑) — the composer's single loud element. */
 .send-btn {
-  min-width: 76px;
-  height: 32px;
-  padding: 0 16px;
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius);
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
   background: var(--accent);
   color: var(--text-inverse);
-  font-size: var(--text-sm);
-  font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 24%, transparent), var(--top-highlight);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 26%, transparent);
   transition:
     background var(--dur) var(--ease),
-    border-color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease),
-    transform var(--dur) var(--ease);
+    transform var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
 }
 .send-btn:hover {
   background: var(--accent-hover);
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 30%, transparent), var(--top-highlight);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 32%, transparent);
   transform: translateY(-1px);
 }
-.send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.send-btn:active { transform: none; }
+.send-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
 .send-btn.send-btn-queued {
   background: var(--accent);
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 24%, transparent), var(--top-highlight);
 }
 
 .scheduled-task-card {
@@ -1180,12 +1200,7 @@ textarea:disabled { opacity: 0.5; }
   }
 
   .permission-mode-button {
-    min-width: 76px;
     max-width: 96px;
-  }
-
-  .send-btn {
-    min-width: 76px;
   }
 
   .scheduled-task-preview-row {
