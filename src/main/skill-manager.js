@@ -714,8 +714,15 @@ function buildSkillIndexSection(enabledSkills, loc, maxBytes = Infinity) {
     // by " (Name)" tripped one in the field, killing EVERY request that
     // carried the guide (HTTP 200 + empty body, shown as empty completions).
     // Full-width （） reads identically to the model and misses the WAF regex.
-    const guide = e.hasGuide ? ` （${head.guideLabel}: ${e.guidePath}）` : "";
-    const label = e.name && e.name !== e.id ? `${e.id}（${e.name}）` : e.id;
+    // LILY_GUIDE_ASCII_PARENS=1 restores the ASCII format (escape hatch for
+    // debugging; default behavior is the WAF-safe full-width form).
+    const asciiParens = process.env.LILY_GUIDE_ASCII_PARENS === "1";
+    const guide = e.hasGuide
+      ? (asciiParens ? ` (${head.guideLabel}: ${e.guidePath})` : ` （${head.guideLabel}: ${e.guidePath}）`)
+      : "";
+    const label = e.name && e.name !== e.id
+      ? (asciiParens ? `${e.id} (${e.name})` : `${e.id}（${e.name}）`)
+      : e.id;
     if (!appendWithinByteBudget(lines, `- **${label}** — ${shortIndexDesc(e.desc)}${guide}`, maxBytes)) {
       omitted += 1;
     }

@@ -588,4 +588,34 @@ assert.match(
   assert.match(arFacts, /حقائق ميزات المنصة/, "ar guide carries the platform facts section");
 }
 
+// WAF-safe skill catalog: the index must never emit ASCII "eval (" — a
+// gateway WAF swallowed every request whose guide contained it (field:
+// "lily-intent-eval (Lily Intent Eval)" → HTTP 200 + empty body on every
+// turn). Full-width parens by default; LILY_GUIDE_ASCII_PARENS=1 escape hatch.
+{
+  const evalSkillDir = path.join(guideTestUserData, "skills", "lily-intent-eval");
+  fs.mkdirSync(evalSkillDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(evalSkillDir, "SKILL.md"),
+    "---\nname: Lily Intent Eval\ndescription: Golden examples for intent routing.\n---\n",
+    "utf8",
+  );
+  const evalSkill = {
+    id: "lily-intent-eval",
+    skillDir: evalSkillDir,
+    manifest: { name: "Lily Intent Eval", description: "Golden examples for intent routing." },
+  };
+  const guide = skillManager.buildAgentGuideContent([evalSkill], "zh-CN");
+  assert.match(guide, /lily-intent-eval（Lily Intent Eval）/, "catalog labels use full-width parens");
+  assert.doesNotMatch(guide, /eval \(/, "the guide must not contain the WAF trigger sequence `eval (`");
+
+  process.env.LILY_GUIDE_ASCII_PARENS = "1";
+  try {
+    const asciiGuide = skillManager.buildAgentGuideContent([evalSkill], "zh-CN");
+    assert.match(asciiGuide, /lily-intent-eval \(Lily Intent Eval\)/, "escape hatch restores the ASCII format");
+  } finally {
+    delete process.env.LILY_GUIDE_ASCII_PARENS;
+  }
+}
+
 console.log("agent guide i18n: ok");
