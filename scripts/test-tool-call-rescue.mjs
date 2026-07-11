@@ -429,6 +429,60 @@ resetRescueStateForTests();
   assert.equal(events.filter((event) => event.type === "turn.failed").length, 0);
 }
 
+// Field case 2: leaked CODE fragment from an earlier task as the answer to a
+// trivial greeting — 18 tokens, so the tiny-token branch alone would miss it;
+// the code-shape signature catches it.
+resetRescueStateForTests();
+{
+  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "hi", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  assert.equal(send.ok, true);
+  const leakedCode = "paragraphs.push(p2('7.4 在线学习生态'));\\nparagraph";
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "assistant.delta", payload: { text: leakedCode } },
+    { type: "usage.updated", payload: { usage: { output_tokens: 18 }, stopReason: "stop" } },
+  ]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: leakedCode });
+  await settle();
+  const events = flushEvents();
+  assert.equal(events.find((event) => event.type === "turn.failed")?.payload?.errorCode, "MICRO_COMPLETION",
+    "a code fragment leaked as the whole answer is a failure even on a trivial ask");
+  assert.equal(events.find((event) => event.type === "turn.self_heal_retry")?.payload?.kind, "micro_completion_retry");
+  // Settle the retry with a normal greeting.
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "assistant.delta", payload: { text: "你好！有什么可以帮你？" } },
+    { type: "usage.updated", payload: { usage: { output_tokens: 12 }, stopReason: "stop" } },
+  ]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "你好！有什么可以帮你？" });
+  await settle();
+  flushEvents();
+}
+
+// Safety: a punctuation-less CJK greeting to a trivial ask has NO fragment
+// signature — it completes normally (no hidden retry, no failure).
+{
+  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "hello", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  assert.equal(send.ok, true);
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "assistant.delta", payload: { text: "你好" } },
+    { type: "usage.updated", payload: { usage: { output_tokens: 2 }, stopReason: "stop" } },
+  ]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "你好" });
+  await settle();
+  const events = flushEvents();
+  assert(events.some((event) => event.type === "turn.completed"),
+    "a bare CJK greeting to a trivial ask completes normally");
+  assert.equal(events.filter((event) => event.type === "turn.failed").length, 0);
+}
+
 // Negative: a clean "stop" final reason completes normally — no false positive.
 {
   const send = await ctx.turnOrchestrator.sendUserMessage("s1", "总结一下刚才做了什么", [], {

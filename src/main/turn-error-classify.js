@@ -278,21 +278,29 @@ function classifyTurnFailure(payload, normalized, state) {
       category: "model",
     };
   }
-  // Micro-completion: the gateway's thinking-mode handling glitches and the
-  // content channel leaks only a sentence-tail fragment ("…file paths, and a
-  // single research question", 9 tokens on a 20k prompt, clean stop). Evidence
-  // gates keep legitimate short answers safe: no tools ran, the whole output
-  // is a few tokens, it does NOT end like a finished sentence, and the user's
-  // ask was non-trivial. Kill switch: LILY_MICRO_COMPLETION_GUARD=0.
+  // Micro-completion: the gateway glitches and the content channel leaks a
+  // stray fragment as the whole answer — a sentence tail ("…file paths, and a
+  // single research question", 9 tokens) or even CODE from an earlier task
+  // ("paragraphs.push(p2('7.4 …'));\nparagraph", 18 tokens, to "hi"). Evidence
+  // gates keep legitimate short answers safe: no tools ran, gateway-reported
+  // output is tiny, the text does NOT end like a finished sentence, AND the
+  // fragment carries a continuation signature — code syntax without a fence,
+  // a lowercase latin mid-sentence start, or a few-token reply to a
+  // non-trivial ask. Kill switch: LILY_MICRO_COMPLETION_GUARD=0.
   if (process.env.LILY_MICRO_COMPLETION_GUARD !== "0" && (state?.tools?.size || 0) === 0) {
     const text = String(normalized?.text || state?.assistantText || "").trim();
     // Evidence-first: only the gateway's own usage accounting counts — no
     // usage data, no classification (synthetic/edge turns stay untouched).
     const outputTokens = Number(state?.usage?.output_tokens);
-    const tinyOutput = Number.isFinite(outputTokens) && outputTokens > 0 && outputTokens <= 12;
+    const tinyOutput = Number.isFinite(outputTokens) && outputTokens > 0 && outputTokens <= 24;
     const endsLikeSentence = /[。．.!?！?…"”』」)）\]】:：]$/.test(text);
     const userAskNonTrivial = String(state?.enginePayload?.rawText || "").trim().length >= 8;
-    if (text && tinyOutput && !endsLikeSentence && userAskNonTrivial &&
+    const codeShaped = !text.includes("```") &&
+      (/[;{}]\s*$/.test(text) || /\)\);|=>|\\n/.test(text));
+    const latinMidSentenceStart = /^[a-z]/.test(text) && /[,;]/.test(text);
+    const fragmentSignature = codeShaped || latinMidSentenceStart ||
+      (Number.isFinite(outputTokens) && outputTokens <= 12 && userAskNonTrivial);
+    if (text && tinyOutput && !endsLikeSentence && fragmentSignature &&
         !payload?.interruptedByUser && !payload?.userInterrupted && !payload?.stalled && !payload?.engineInterrupted) {
       return {
         code: "MICRO_COMPLETION",
