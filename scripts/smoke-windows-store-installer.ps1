@@ -33,6 +33,8 @@ New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 $Checks = New-Object System.Collections.Generic.List[object]
 $script:InstalledEntry = $null
+$script:InstallDirectory = ""
+$script:UserDataResidueRecorded = $false
 $Report = [ordered]@{
   schemaVersion = 1
   product = "Lily Workbench"
@@ -43,6 +45,7 @@ $Report = [ordered]@{
     "registry-before.json"
     "registry-installed.json"
     "registry-after.json"
+    "user-data-residue.json"
     "chromium.log"
     "startup-event-log.json"
   )
@@ -64,6 +67,56 @@ $Report = [ordered]@{
     powershellVersion = $PSVersionTable.PSVersion.ToString()
   }
   checks = @()
+}
+
+if ($null -eq ("Lily.NativeCommandLine.CommandLineParser" -as [type])) {
+  Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+namespace Lily.NativeCommandLine
+{
+    public static class CommandLineParser
+    {
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CommandLineToArgvW(string commandLine, out int argumentCount);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr LocalFree(IntPtr memory);
+
+        public static string[] Split(string commandLine)
+        {
+            if (commandLine == null)
+            {
+                throw new ArgumentNullException("commandLine");
+            }
+
+            int argumentCount;
+            IntPtr argumentsPointer = CommandLineToArgvW(commandLine, out argumentCount);
+            if (argumentsPointer == IntPtr.Zero)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            try
+            {
+                string[] arguments = new string[argumentCount];
+                for (int index = 0; index < argumentCount; index++)
+                {
+                    IntPtr argumentPointer = Marshal.ReadIntPtr(argumentsPointer, index * IntPtr.Size);
+                    arguments[index] = Marshal.PtrToStringUni(argumentPointer);
+                }
+                return arguments;
+            }
+            finally
+            {
+                LocalFree(argumentsPointer);
+            }
+        }
+    }
+}
+'@
 }
 
 function Add-Check {
@@ -878,6 +931,337 @@ function Get-LilyShortcuts {
   return @($shortcutsByPath.Values | Sort-Object path)
 }
 
+function Resolve-UninstallCommand {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Entry,
+
+    [Parameter(Mandatory = $true)]
+    [string]$InstallDirectory
+  )
+
+  $quietCommand = (Get-ObjectPropertyValue `
+    -InputObject $Entry `
+    -Name "QuietUninstallString").Trim()
+  if ([string]::IsNullOrWhiteSpace($quietCommand)) {
+    throw "The Lily Workbench ARP entry does not declare QuietUninstallString."
+  }
+
+  $expandedCommand = [Environment]::ExpandEnvironmentVariables($quietCommand)
+  $tokens = @([Lily.NativeCommandLine.CommandLineParser]::Split($expandedCommand))
+  if ($tokens.Count -lt 1 -or [string]::IsNullOrWhiteSpace([string]$tokens[0])) {
+    throw "QuietUninstallString did not contain an uninstaller executable."
+  }
+
+  $uninstallerPath = [System.IO.Path]::GetFullPath([string]$tokens[0])
+  $expandedInstallDirectory = [Environment]::ExpandEnvironmentVariables($InstallDirectory)
+  $installRoot = [System.IO.Path]::GetFullPath($expandedInstallDirectory)
+  $trimCharacters = [char[]]@(
+    [System.IO.Path]::DirectorySeparatorChar
+    [System.IO.Path]::AltDirectorySeparatorChar
+  )
+  $installRootWithSeparator = $installRoot.TrimEnd($trimCharacters) + [System.IO.Path]::DirectorySeparatorChar
+  if (-not $uninstallerPath.StartsWith(
+      $installRootWithSeparator,
+      [System.StringComparison]::OrdinalIgnoreCase
+    )) {
+    throw ("QuietUninstallString points outside the installation directory: " + $uninstallerPath)
+  }
+  if (-not (Test-Path -LiteralPath $uninstallerPath -PathType Leaf)) {
+    throw ("The registered quiet uninstaller does not exist: " + $uninstallerPath)
+  }
+
+  $arguments = @()
+  if ($tokens.Count -gt 1) {
+    $arguments = @($tokens[1..($tokens.Count - 1)] | ForEach-Object { [string]$_ })
+  }
+  $declaresSilent = $arguments -ccontains "/S"
+
+  return [pscustomobject][ordered]@{
+    filePath = $uninstallerPath
+    arguments = @($arguments)
+    declaresSilent = [bool]$declaresSilent
+    originalCommand = $quietCommand
+    expandedCommand = $expandedCommand
+  }
+}
+
+function Record-UninstallQuietContract {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Command
+  )
+
+  $existingChecks = @($script:Checks | Where-Object {
+    $_.id -eq "uninstall.quiet_contract"
+  })
+  if ($existingChecks.Count -gt 0) {
+    return
+  }
+
+  if ([bool]$Command.declaresSilent) {
+    Add-Check `
+      -Id "uninstall.quiet_contract" `
+      -Status "pass" `
+      -Detail "QuietUninstallString explicitly declares the case-sensitive uppercase /S switch." `
+      -Evidence $Command | Out-Null
+    return
+  }
+
+  Add-Check `
+    -Id "uninstall.quiet_contract" `
+    -Status "fail" `
+    -Detail "QuietUninstallString does not explicitly declare the case-sensitive uppercase /S switch; /S may only be appended for safe cleanup." `
+    -Evidence $Command | Out-Null
+}
+
+function Invoke-SilentUninstall {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Entry,
+
+    [Parameter(Mandatory = $true)]
+    [string]$InstallDirectory,
+
+    [Parameter(Mandatory = $true)]
+    [int]$TimeoutSeconds
+  )
+
+  $command = Resolve-UninstallCommand `
+    -Entry $Entry `
+    -InstallDirectory $InstallDirectory
+  $arguments = @($command.arguments)
+  if (-not $command.declaresSilent) {
+    $arguments += "/S"
+  }
+
+  $processResult = Invoke-MonitoredProcess `
+    -FilePath $command.filePath `
+    -ArgumentList $arguments `
+    -TimeoutSeconds $TimeoutSeconds `
+    -Label "uninstaller"
+
+  $removalWaitSeconds = [Math]::Min(
+    30,
+    [Math]::Max(5, [int][Math]::Ceiling($TimeoutSeconds / 10.0))
+  )
+  $removalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+  $productEntryRemoved = $false
+  $installDirectoryRemoved = $false
+  while ($true) {
+    $remainingProductEntries = @(Get-LilyUninstallEntries | Where-Object {
+      [string]::Equals(
+        [string]$_.RegistryPath,
+        [string]$Entry.RegistryPath,
+        [System.StringComparison]::OrdinalIgnoreCase
+      )
+    })
+    $productEntryRemoved = $remainingProductEntries.Count -eq 0
+    $installDirectoryRemoved = -not (Test-Path -LiteralPath $InstallDirectory)
+    if ($productEntryRemoved -and $installDirectoryRemoved) {
+      break
+    }
+    if ($removalStopwatch.Elapsed.TotalSeconds -ge $removalWaitSeconds) {
+      break
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  $removalStopwatch.Stop()
+
+  return [pscustomobject][ordered]@{
+    command = $command
+    argumentsUsed = @($arguments)
+    process = $processResult
+    productEntryRemoved = [bool]$productEntryRemoved
+    installDirectoryRemoved = [bool]$installDirectoryRemoved
+  }
+}
+
+function Get-LilyUserDataResidues {
+  $candidates = New-Object System.Collections.Generic.List[object]
+  if (-not [string]::IsNullOrWhiteSpace($env:APPDATA)) {
+    $candidates.Add([pscustomobject]@{
+      path = Join-Path $env:APPDATA "lily-workbench"
+      kind = "roaming_user_data"
+    }) | Out-Null
+  }
+  if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    $candidates.Add([pscustomobject]@{
+      path = Join-Path $env:LOCALAPPDATA "lily-workbench"
+      kind = "local_user_data"
+    }) | Out-Null
+    $candidates.Add([pscustomobject]@{
+      path = Join-Path $env:LOCALAPPDATA "lily-workbench-updater"
+      kind = "updater_data"
+    }) | Out-Null
+  }
+
+  $documentsDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::MyDocuments)
+  if (-not [string]::IsNullOrWhiteSpace($documentsDirectory)) {
+    $candidates.Add([pscustomobject]@{
+      path = Join-Path $documentsDirectory "Lily Workbench"
+      kind = "documents"
+    }) | Out-Null
+    $candidates.Add([pscustomobject]@{
+      path = Join-Path $documentsDirectory "Lily Apps"
+      kind = "documents"
+    }) | Out-Null
+  }
+
+  $seenPaths = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase
+  )
+  $residues = New-Object System.Collections.Generic.List[object]
+  foreach ($candidate in $candidates) {
+    $candidatePath = [System.IO.Path]::GetFullPath([string]$candidate.path)
+    if (-not $seenPaths.Add($candidatePath) -or
+        -not (Test-Path -LiteralPath $candidatePath)) {
+      continue
+    }
+    $residues.Add([pscustomobject][ordered]@{
+      path = $candidatePath
+      kind = [string]$candidate.kind
+    }) | Out-Null
+  }
+
+  return @($residues | Sort-Object path)
+}
+
+function Get-LilyInstallResidues {
+  $candidateRoots = New-Object System.Collections.Generic.List[object]
+  if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    $candidateRoots.Add([pscustomobject]@{
+      path = Join-Path $env:LOCALAPPDATA "Programs"
+      kind = "per_user_programs"
+    }) | Out-Null
+  }
+  if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+    $candidateRoots.Add([pscustomobject]@{
+      path = $env:ProgramFiles
+      kind = "program_files"
+    }) | Out-Null
+  }
+  if (-not [string]::IsNullOrWhiteSpace(${env:ProgramFiles(x86)})) {
+    $candidateRoots.Add([pscustomobject]@{
+      path = ${env:ProgramFiles(x86)}
+      kind = "program_files_x86"
+    }) | Out-Null
+  }
+
+  $candidates = New-Object System.Collections.Generic.List[object]
+  foreach ($candidateRoot in $candidateRoots) {
+    foreach ($directoryName in @("LilyWorkbench", "Lily Workbench")) {
+      $candidates.Add([pscustomobject]@{
+        path = Join-Path ([string]$candidateRoot.path) $directoryName
+        kind = [string]$candidateRoot.kind
+      }) | Out-Null
+    }
+  }
+  if (-not [string]::IsNullOrWhiteSpace($script:InstallDirectory)) {
+    $candidates.Add([pscustomobject]@{
+      path = $script:InstallDirectory
+      kind = "observed_install_directory"
+    }) | Out-Null
+  }
+
+  $seenPaths = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase
+  )
+  $residues = New-Object System.Collections.Generic.List[object]
+  foreach ($candidate in $candidates) {
+    $candidatePath = [System.IO.Path]::GetFullPath([string]$candidate.path)
+    if (-not $seenPaths.Add($candidatePath) -or
+        -not (Test-Path -LiteralPath $candidatePath -PathType Container)) {
+      continue
+    }
+    $residues.Add([pscustomobject][ordered]@{
+      path = $candidatePath
+      kind = [string]$candidate.kind
+    }) | Out-Null
+  }
+
+  return @($residues | Sort-Object path)
+}
+
+function Try-NormalUninstallCleanup {
+  $entry = $null
+  try {
+    $entries = @(Get-LilyUninstallEntries)
+    if ($entries.Count -eq 0) {
+      Add-Check `
+        -Id "cleanup.normal_uninstaller" `
+        -Status "not_applicable" `
+        -Detail "No Lily Workbench ARP entry remained for normal-uninstaller cleanup." | Out-Null
+      return
+    }
+    if ($entries.Count -gt 1) {
+      Add-Check `
+        -Id "cleanup.normal_uninstaller" `
+        -Status "fail" `
+        -Detail ("Normal cleanup refused to guess between {0} Lily Workbench ARP entries." -f $entries.Count) `
+        -Evidence $entries | Out-Null
+      return
+    }
+
+    $entry = $entries[0]
+    $cleanupInstallDirectory = $script:InstallDirectory
+    if ([string]::IsNullOrWhiteSpace($cleanupInstallDirectory) -or
+        -not (Test-Path -LiteralPath $cleanupInstallDirectory -PathType Container)) {
+      $cleanupInstallDirectory = Resolve-InstallDirectory -Entry $entry
+    }
+
+    $command = Resolve-UninstallCommand `
+      -Entry $entry `
+      -InstallDirectory $cleanupInstallDirectory
+    Record-UninstallQuietContract -Command $command
+    $cleanupResult = Invoke-SilentUninstall `
+      -Entry $entry `
+      -InstallDirectory $cleanupInstallDirectory `
+      -TimeoutSeconds $script:UninstallTimeoutSeconds
+    $cleanupVisibleWindows = @($cleanupResult.process.visibleWindows)
+    $cleanupPassed = (
+      -not $cleanupResult.process.timedOut -and
+      $null -ne $cleanupResult.process.exitCode -and
+      [int]$cleanupResult.process.exitCode -eq 0 -and
+      $cleanupVisibleWindows.Count -eq 0 -and
+      [bool]$cleanupResult.productEntryRemoved -and
+      [bool]$cleanupResult.installDirectoryRemoved
+    )
+    if ($cleanupPassed) {
+      Add-Check `
+        -Id "cleanup.normal_uninstaller" `
+        -Status "pass" `
+        -Detail "The registered normal uninstaller completed bounded silent cleanup." `
+        -Evidence $cleanupResult | Out-Null
+    } else {
+      Add-Check `
+        -Id "cleanup.normal_uninstaller" `
+        -Status "fail" `
+        -Detail "The registered normal uninstaller did not complete bounded silent cleanup." `
+        -Evidence $cleanupResult | Out-Null
+    }
+  } catch {
+    $quietContractChecks = @($script:Checks | Where-Object {
+      $_.id -eq "uninstall.quiet_contract"
+    })
+    if ($quietContractChecks.Count -eq 0) {
+      Add-Check `
+        -Id "uninstall.quiet_contract" `
+        -Status "fail" `
+        -Detail ("Unable to validate the registered uppercase /S quiet-uninstall contract: " + $_.Exception.Message) `
+        -Evidence $entry | Out-Null
+    }
+    Add-Check `
+      -Id "cleanup.normal_uninstaller" `
+      -Status "fail" `
+      -Detail ("Normal-uninstaller cleanup failed: " + $_.Exception.Message) `
+      -Evidence ([pscustomobject][ordered]@{
+        exceptionType = $_.Exception.GetType().FullName
+        scriptStackTrace = $_.ScriptStackTrace
+      }) | Out-Null
+  }
+}
+
 function Write-Reports {
   $script:Report.completedAt = (Get-Date).ToString("o")
   $script:Report.checks = @($script:Checks)
@@ -920,6 +1304,11 @@ $transcriptStarted = $false
 $exitCode = 1
 
 try {
+  Add-Check `
+    -Id "certification.wack" `
+    -Status "not_applicable" `
+    -Detail "The current artifact is a raw/unpackaged NSIS EXE, while the current Windows App Certification Kit CLI targets packaged AppX/MSIX artifacts; this runner does not fabricate a WACK result." | Out-Null
+
   Start-Transcript -Path $transcriptPath -Force | Out-Null
   $transcriptStarted = $true
 
@@ -1117,6 +1506,7 @@ try {
   }
 
   $installDirectory = Resolve-InstallDirectory -Entry $script:InstalledEntry
+  $script:InstallDirectory = $installDirectory
   $applicationPath = Join-Path $installDirectory "LilyWorkbench.exe"
   $script:Report["installation"] = [ordered]@{
     directory = $installDirectory
@@ -1237,6 +1627,128 @@ try {
     -PassDetail "Lily Workbench accepted CloseMainWindow and exited within 15 seconds." `
     -FailDetail "Lily Workbench did not complete a normal CloseMainWindow shutdown within 15 seconds." `
     -Evidence $launchResult
+
+  $uninstallCommand = Resolve-UninstallCommand `
+    -Entry $script:InstalledEntry `
+    -InstallDirectory $script:InstallDirectory
+  Record-UninstallQuietContract -Command $uninstallCommand
+  $uninstallResult = Invoke-SilentUninstall `
+    -Entry $script:InstalledEntry `
+    -InstallDirectory $script:InstallDirectory `
+    -TimeoutSeconds $UninstallTimeoutSeconds
+  $script:Report["uninstall"] = $uninstallResult
+
+  if (-not $uninstallResult.process.timedOut) {
+    Add-Check `
+      -Id "uninstall.completed_in_time" `
+      -Status "pass" `
+      -Detail "The registered quiet uninstaller completed within the configured timeout." `
+      -Evidence $uninstallResult | Out-Null
+  } else {
+    Add-Check `
+      -Id "uninstall.completed_in_time" `
+      -Status "fail" `
+      -Detail "The registered quiet uninstaller exceeded the configured timeout." `
+      -Evidence $uninstallResult | Out-Null
+  }
+
+  if ($null -ne $uninstallResult.process.exitCode -and
+      [int]$uninstallResult.process.exitCode -eq 0) {
+    Add-Check `
+      -Id "uninstall.exit_code" `
+      -Status "pass" `
+      -Detail "The registered quiet uninstaller returned exit code 0." `
+      -Evidence $uninstallResult | Out-Null
+  } else {
+    Add-Check `
+      -Id "uninstall.exit_code" `
+      -Status "fail" `
+      -Detail ("The registered quiet uninstaller did not return exit code 0: " + [string]$uninstallResult.process.exitCode) `
+      -Evidence $uninstallResult | Out-Null
+  }
+
+  $uninstallVisibleWindows = @($uninstallResult.process.visibleWindows)
+  if ($uninstallVisibleWindows.Count -eq 0) {
+    Add-Check `
+      -Id "uninstall.no_visible_ui" `
+      -Status "pass" `
+      -Detail "The registered quiet uninstaller showed no visible root or descendant windows." `
+      -Evidence $uninstallResult | Out-Null
+  } else {
+    Add-Check `
+      -Id "uninstall.no_visible_ui" `
+      -Status "fail" `
+      -Detail ("The registered quiet uninstaller showed {0} visible window or windows." -f $uninstallVisibleWindows.Count) `
+      -Evidence $uninstallResult | Out-Null
+  }
+
+  if ([bool]$uninstallResult.productEntryRemoved) {
+    Add-Check `
+      -Id "uninstall.product_entry_removed" `
+      -Status "pass" `
+      -Detail "The Lily Workbench ARP entry disappeared after uninstall." `
+      -Evidence $uninstallResult | Out-Null
+  } else {
+    Add-Check `
+      -Id "uninstall.product_entry_removed" `
+      -Status "fail" `
+      -Detail "The Lily Workbench ARP entry remained after the bounded removal poll." `
+      -Evidence $uninstallResult | Out-Null
+  }
+
+  if ([bool]$uninstallResult.installDirectoryRemoved) {
+    Add-Check `
+      -Id "uninstall.install_directory_removed" `
+      -Status "pass" `
+      -Detail "The installation directory disappeared after the bounded asynchronous NSIS removal poll." `
+      -Evidence $uninstallResult | Out-Null
+  } else {
+    Add-Check `
+      -Id "uninstall.install_directory_removed" `
+      -Status "fail" `
+      -Detail "The installation directory remained after the bounded asynchronous NSIS removal poll." `
+      -Evidence $uninstallResult | Out-Null
+  }
+
+  $remainingShortcuts = @(Get-LilyShortcuts)
+  if ($remainingShortcuts.Count -eq 0) {
+    Add-Check `
+      -Id "uninstall.shortcuts_removed" `
+      -Status "pass" `
+      -Detail "No Lily Workbench desktop or Start menu shortcut remained after uninstall." `
+      -Evidence $remainingShortcuts | Out-Null
+  } else {
+    Add-Check `
+      -Id "uninstall.shortcuts_removed" `
+      -Status "fail" `
+      -Detail ("Found {0} Lily Workbench shortcut or shortcuts after uninstall." -f $remainingShortcuts.Count) `
+      -Evidence $remainingShortcuts | Out-Null
+  }
+
+  $userDataResidues = @(Get-LilyUserDataResidues)
+  $userDataResiduePath = Write-JsonEvidence `
+    -FileName "user-data-residue.json" `
+    -Value @($userDataResidues)
+  if ($userDataResidues.Count -eq 0) {
+    Add-Check `
+      -Id "uninstall.user_data_residue" `
+      -Status "pass" `
+      -Detail "No known Lily Workbench user-data residue remained." `
+      -Evidence $userDataResiduePath | Out-Null
+  } elseif ($AllowUserDataRemnants) {
+    Add-Check `
+      -Id "uninstall.user_data_residue" `
+      -Status "warning" `
+      -Detail ("AllowUserDataRemnants explicitly permits {0} inventoried user-data residue path or paths." -f $userDataResidues.Count) `
+      -Evidence $userDataResiduePath | Out-Null
+  } else {
+    Add-Check `
+      -Id "uninstall.user_data_residue" `
+      -Status "fail" `
+      -Detail ("Strict residue policy found {0} known Lily Workbench user-data residue path or paths." -f $userDataResidues.Count) `
+      -Evidence $userDataResiduePath | Out-Null
+  }
+  $script:UserDataResidueRecorded = $true
 } catch {
   Add-Check `
     -Id "runner.exception" `
@@ -1247,19 +1759,150 @@ try {
       scriptStackTrace = $_.ScriptStackTrace
     }) | Out-Null
 } finally {
-  $failedChecks = @($Checks | Where-Object { $_.status -eq "fail" })
-  if ($failedChecks.Count -eq 0) {
-    $exitCode = 0
-  } else {
-    $exitCode = 1
+  try {
+    $remainingEntriesBeforeCleanup = @(Get-LilyUninstallEntries)
+    if ($remainingEntriesBeforeCleanup.Count -gt 0) {
+      Try-NormalUninstallCleanup
+    }
+  } catch {
+    Add-Check `
+      -Id "cleanup.normal_uninstaller" `
+      -Status "fail" `
+      -Detail ("Unable to inspect ARP state before normal-uninstaller cleanup: " + $_.Exception.Message) `
+      -Evidence ([pscustomobject][ordered]@{
+        exceptionType = $_.Exception.GetType().FullName
+        scriptStackTrace = $_.ScriptStackTrace
+      }) | Out-Null
+  }
+
+  try {
+    $registryAfter = @(Get-LilyUninstallEntries)
+    $registryAfterPath = Write-JsonEvidence `
+      -FileName "registry-after.json" `
+      -Value @($registryAfter)
+    Add-Check `
+      -Id "cleanup.registry_after" `
+      -Status "pass" `
+      -Detail ("Captured the real post-cleanup ARP snapshot with {0} Lily Workbench entry or entries." -f $registryAfter.Count) `
+      -Evidence $registryAfterPath | Out-Null
+  } catch {
+    Add-Check `
+      -Id "cleanup.registry_after" `
+      -Status "fail" `
+      -Detail ("Unable to capture registry-after.json after cleanup: " + $_.Exception.Message) `
+      -Evidence ([pscustomobject][ordered]@{
+        exceptionType = $_.Exception.GetType().FullName
+        scriptStackTrace = $_.ScriptStackTrace
+      }) | Out-Null
+  }
+
+  try {
+    $installResidues = @(Get-LilyInstallResidues)
+    if ($installResidues.Count -eq 0) {
+      Add-Check `
+        -Id "cleanup.install_residue" `
+        -Status "pass" `
+        -Detail "No known Lily Workbench installation directory remained after normal cleanup." `
+        -Evidence $installResidues | Out-Null
+    } else {
+      Add-Check `
+        -Id "cleanup.install_residue" `
+        -Status "fail" `
+        -Detail ("Found {0} known Lily Workbench installation directory residue path or paths." -f $installResidues.Count) `
+        -Evidence $installResidues | Out-Null
+    }
+  } catch {
+    Add-Check `
+      -Id "cleanup.install_residue" `
+      -Status "fail" `
+      -Detail ("Unable to inventory installation-directory residue: " + $_.Exception.Message) `
+      -Evidence ([pscustomobject][ordered]@{
+        exceptionType = $_.Exception.GetType().FullName
+        scriptStackTrace = $_.ScriptStackTrace
+      }) | Out-Null
+  }
+
+  try {
+    $shortcutResidues = @(Get-LilyShortcuts)
+    if ($shortcutResidues.Count -eq 0) {
+      Add-Check `
+        -Id "cleanup.shortcut_residue" `
+        -Status "pass" `
+        -Detail "No Lily Workbench desktop or Start menu shortcut residue remained after normal cleanup." `
+        -Evidence $shortcutResidues | Out-Null
+    } else {
+      Add-Check `
+        -Id "cleanup.shortcut_residue" `
+        -Status "fail" `
+        -Detail ("Found {0} Lily Workbench shortcut residue path or paths." -f $shortcutResidues.Count) `
+        -Evidence $shortcutResidues | Out-Null
+    }
+  } catch {
+    Add-Check `
+      -Id "cleanup.shortcut_residue" `
+      -Status "fail" `
+      -Detail ("Unable to inventory shortcut residue: " + $_.Exception.Message) `
+      -Evidence ([pscustomobject][ordered]@{
+        exceptionType = $_.Exception.GetType().FullName
+        scriptStackTrace = $_.ScriptStackTrace
+      }) | Out-Null
+  }
+
+  try {
+    $finalUserDataResidues = @(Get-LilyUserDataResidues)
+    $finalUserDataResiduePath = Write-JsonEvidence `
+      -FileName "user-data-residue.json" `
+      -Value @($finalUserDataResidues)
+    if (-not $script:UserDataResidueRecorded) {
+      if ($finalUserDataResidues.Count -eq 0) {
+        Add-Check `
+          -Id "cleanup.user_data_residue" `
+          -Status "pass" `
+          -Detail "No known Lily Workbench user-data residue remained after normal cleanup." `
+          -Evidence $finalUserDataResiduePath | Out-Null
+      } elseif ($AllowUserDataRemnants) {
+        Add-Check `
+          -Id "cleanup.user_data_residue" `
+          -Status "warning" `
+          -Detail ("AllowUserDataRemnants explicitly permits {0} inventoried user-data residue path or paths after cleanup." -f $finalUserDataResidues.Count) `
+          -Evidence $finalUserDataResiduePath | Out-Null
+      } else {
+        Add-Check `
+          -Id "cleanup.user_data_residue" `
+          -Status "fail" `
+          -Detail ("Strict residue policy found {0} known Lily Workbench user-data residue path or paths after cleanup." -f $finalUserDataResidues.Count) `
+          -Evidence $finalUserDataResiduePath | Out-Null
+      }
+      $script:UserDataResidueRecorded = $true
+    }
+  } catch {
+    Add-Check `
+      -Id "cleanup.user_data_residue" `
+      -Status "fail" `
+      -Detail ("Unable to inventory or write user-data-residue.json: " + $_.Exception.Message) `
+      -Evidence ([pscustomobject][ordered]@{
+        exceptionType = $_.Exception.GetType().FullName
+        scriptStackTrace = $_.ScriptStackTrace
+      }) | Out-Null
   }
 
   if ($transcriptStarted) {
     try {
       Stop-Transcript | Out-Null
     } catch {
+      Add-Check `
+        -Id "cleanup.transcript" `
+        -Status "fail" `
+        -Detail ("Unable to stop readiness transcript: " + $_.Exception.Message) | Out-Null
       Write-Warning ("Unable to stop transcript: " + $_.Exception.Message)
     }
+  }
+
+  $failedChecks = @($Checks | Where-Object { $_.status -eq "fail" })
+  if ($failedChecks.Count -eq 0) {
+    $exitCode = 0
+  } else {
+    $exitCode = 1
   }
 
   try {
@@ -1269,7 +1912,17 @@ try {
     Write-Warning ("Unable to write readiness reports: " + $_.Exception.Message)
   }
 
-  Set-Content -LiteralPath $exitCodePath -Value $exitCode -Encoding ASCII
+  try {
+    Set-Content -LiteralPath $exitCodePath -Value $exitCode -Encoding ASCII
+  } catch {
+    $exitCode = 1
+    Write-Warning ("Unable to write readiness exit-code sentinel: " + $_.Exception.Message)
+    try {
+      Set-Content -LiteralPath $exitCodePath -Value 1 -Encoding ASCII
+    } catch {
+      Write-Warning ("Unable to retry readiness exit-code sentinel: " + $_.Exception.Message)
+    }
+  }
 }
 
 exit $exitCode

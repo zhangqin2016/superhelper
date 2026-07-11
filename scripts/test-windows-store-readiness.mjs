@@ -67,6 +67,124 @@ assert.match(runner, /DisplayVersion/);
 assert.match(runner, /InstallLocation/);
 assert.match(runner, /DisplayIcon/);
 assert.match(runner, /UninstallString/);
+
+const nativeCommandLineSource = runner.match(/Add-Type\s+-TypeDefinition\s+@'([\s\S]*?)'@/)?.[1] ?? "";
+assert.ok(nativeCommandLineSource, "the runner must compile a native Windows command-line parser");
+assert.match(
+  runner,
+  /if \(\$null -eq \(["']Lily\.NativeCommandLine\.[A-Za-z]+["'] -as \[type\]\)\) \{\s*Add-Type/,
+  "the native parser type must only be compiled when it is not already loaded",
+);
+assert.match(nativeCommandLineSource, /namespace Lily\.NativeCommandLine/);
+assert.match(nativeCommandLineSource, /DllImport\(["']shell32\.dll["']/i);
+assert.match(nativeCommandLineSource, /CommandLineToArgvW/);
+assert.match(nativeCommandLineSource, /DllImport\(["']kernel32\.dll["']/i);
+assert.match(nativeCommandLineSource, /LocalFree/);
+assert.match(nativeCommandLineSource, /public static string\[\] Split\s*\(/);
+assert.match(nativeCommandLineSource, /try\s*\{/);
+assert.match(nativeCommandLineSource, /finally\s*\{[\s\S]*LocalFree\s*\(/);
+
+const resolveUninstallMatch = runner.match(
+  /function Resolve-UninstallCommand \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(resolveUninstallMatch, "Resolve-UninstallCommand must be a standalone helper.");
+const resolveUninstallBody = resolveUninstallMatch[1];
+assert.match(resolveUninstallBody, /\[object\]\$Entry/);
+assert.match(resolveUninstallBody, /\[string\]\$InstallDirectory/);
+assert.match(resolveUninstallBody, /QuietUninstallString/);
+assert.doesNotMatch(resolveUninstallBody, /\.UninstallString\b|-Name\s+["']UninstallString["']/);
+assert.match(resolveUninstallBody, /ExpandEnvironmentVariables\s*\(/);
+assert.match(resolveUninstallBody, /\[Lily\.NativeCommandLine\.[A-Za-z]+\]::Split\s*\(/);
+assert.doesNotMatch(resolveUninstallBody, /\s-split\s|\.Split\(\s*["']\s+["']/);
+assert.match(resolveUninstallBody, /\.Count\s+-lt\s+1/);
+assert.match(resolveUninstallBody, /\[System\.IO\.Path\]::GetFullPath\s*\(/);
+assert.match(resolveUninstallBody, /DirectorySeparatorChar/);
+assert.match(resolveUninstallBody, /\.StartsWith\([\s\S]{0,180}OrdinalIgnoreCase/);
+assert.match(resolveUninstallBody, /Test-Path\s+-LiteralPath[\s\S]{0,100}-PathType\s+Leaf/);
+assert.match(resolveUninstallBody, /-ccontains\s+["']\/S["']/);
+assert.match(resolveUninstallBody, /filePath\s*=/);
+assert.match(resolveUninstallBody, /arguments\s*=/);
+assert.match(resolveUninstallBody, /declaresSilent\s*=/);
+assert.match(resolveUninstallBody, /originalCommand\s*=/);
+
+const quietContractMatch = runner.match(
+  /function Record-UninstallQuietContract \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(quietContractMatch, "the uppercase /S contract must be recorded independently of cleanup");
+assert.match(quietContractMatch[1], /uninstall\.quiet_contract/);
+assert.match(quietContractMatch[1], /\.declaresSilent/);
+assert.match(quietContractMatch[1], /-Status\s+["']pass["']/);
+assert.match(quietContractMatch[1], /-Status\s+["']fail["']/);
+
+const silentUninstallMatch = runner.match(
+  /function Invoke-SilentUninstall \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(silentUninstallMatch, "Invoke-SilentUninstall must be a standalone helper.");
+const silentUninstallBody = silentUninstallMatch[1];
+assert.match(silentUninstallBody, /Resolve-UninstallCommand/);
+assert.match(silentUninstallBody, /if \(-not \$command\.declaresSilent\)/);
+assert.match(silentUninstallBody, /\+=\s*["']\/S["']/);
+assert.match(silentUninstallBody, /Invoke-MonitoredProcess/);
+assert.match(silentUninstallBody, /-Label\s+["']uninstaller["']/);
+assert.match(silentUninstallBody, /Get-LilyUninstallEntries/);
+assert.match(silentUninstallBody, /Test-Path\s+-LiteralPath\s+\$InstallDirectory/);
+assert.match(silentUninstallBody, /\[Math\]::Min\(\s*30\s*,/);
+assert.doesNotMatch(silentUninstallBody, /\$TimeoutSeconds\s*\*\s*2/);
+assert.match(silentUninstallBody, /Start-Sleep\s+-Milliseconds\s+500/);
+for (const property of ["command", "process", "productEntryRemoved", "installDirectoryRemoved"]) {
+  assert.match(silentUninstallBody, new RegExp(`${property}\\s*=`));
+}
+
+const userResidueMatch = runner.match(
+  /function Get-LilyUserDataResidues \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(userResidueMatch, "Get-LilyUserDataResidues must be a standalone helper.");
+const userResidueBody = userResidueMatch[1];
+assert.match(userResidueBody, /\$env:APPDATA/);
+assert.match(userResidueBody, /\$env:LOCALAPPDATA/);
+for (const expectedPathPart of ["lily-workbench", "lily-workbench-updater", "Lily Workbench", "Lily Apps"]) {
+  assert.ok(userResidueBody.includes(`"${expectedPathPart}"`), `user residue inventory must include ${expectedPathPart}`);
+}
+assert.match(userResidueBody, /MyDocuments/);
+assert.match(userResidueBody, /Test-Path\s+-LiteralPath/);
+assert.match(userResidueBody, /path\s*=/);
+assert.match(userResidueBody, /kind\s*=/);
+assert.doesNotMatch(userResidueBody, /Remove-Item/);
+
+const installResidueMatch = runner.match(
+  /function Get-LilyInstallResidues \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(installResidueMatch, "Get-LilyInstallResidues must be a standalone helper.");
+const installResidueBody = installResidueMatch[1];
+assert.match(installResidueBody, /\$env:LOCALAPPDATA/);
+assert.match(installResidueBody, /\$env:ProgramFiles/);
+assert.match(installResidueBody, /\$\{env:ProgramFiles\(x86\)\}/);
+assert.match(installResidueBody, /\$script:InstallDirectory/);
+for (const expectedPathPart of ["Programs", "LilyWorkbench", "Lily Workbench"]) {
+  assert.ok(installResidueBody.includes(`"${expectedPathPart}"`), `install residue inventory must include ${expectedPathPart}`);
+}
+assert.match(installResidueBody, /OrdinalIgnoreCase/);
+assert.match(installResidueBody, /Test-Path\s+-LiteralPath/);
+assert.doesNotMatch(installResidueBody, /Remove-Item/);
+
+const normalCleanupMatch = runner.match(
+  /function Try-NormalUninstallCleanup \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(normalCleanupMatch, "Try-NormalUninstallCleanup must be a standalone helper.");
+const normalCleanupBody = normalCleanupMatch[1];
+assert.match(normalCleanupBody, /try\s*\{/);
+assert.match(normalCleanupBody, /Get-LilyUninstallEntries/);
+assert.match(normalCleanupBody, /\.Count\s+-eq\s+0/);
+assert.match(normalCleanupBody, /\.Count\s+-gt\s+1/);
+assert.match(normalCleanupBody, /Resolve-UninstallCommand/);
+assert.match(normalCleanupBody, /Record-UninstallQuietContract/);
+assert.match(normalCleanupBody, /Invoke-SilentUninstall/);
+assert.match(normalCleanupBody, /cleanup\.normal_uninstaller/);
+assert.match(normalCleanupBody, /-Status\s+["']pass["']/);
+assert.match(normalCleanupBody, /-Status\s+["']fail["']/);
+assert.match(normalCleanupBody, /catch\s*\{/);
+assert.doesNotMatch(normalCleanupBody, /\.UninstallString\b|-Name\s+["']UninstallString["']/);
+assert.doesNotMatch(normalCleanupBody, /Remove-Item|full-uninstall-lily-workbench/i);
 assert.match(runner, /function Get-LilyProcesses\b/);
 assert.match(runner, /LilyWorkbench/);
 assert.match(runner, /Lily Workbench/);
@@ -244,6 +362,42 @@ assert.match(getLaunchCheck("launch.normal_close"), /\$launchResult\.closedNorma
 assert.match(runner, /evidenceFiles\s*=\s*@\([\s\S]*chromium\.log[\s\S]*startup-event-log\.json/);
 assert.match(runner, /\$script:Report\["evidence"\]\["chromium\.log"\]/);
 
+assert.match(runner, /\$script:InstallDirectory\s*=\s*\$installDirectory/);
+assert.match(launchMainBody, /\$uninstallCommand\s*=\s*Resolve-UninstallCommand/);
+assert.match(launchMainBody, /Record-UninstallQuietContract\s+-Command\s+\$uninstallCommand/);
+assert.match(launchMainBody, /\$uninstallResult\s*=\s*Invoke-SilentUninstall/);
+for (const checkId of [
+  "uninstall.quiet_contract",
+  "uninstall.completed_in_time",
+  "uninstall.exit_code",
+  "uninstall.no_visible_ui",
+  "uninstall.product_entry_removed",
+  "uninstall.install_directory_removed",
+  "uninstall.shortcuts_removed",
+]) {
+  assert.ok(runner.includes(`-Id "${checkId}"`), `${checkId} must be recorded`);
+}
+assert.match(launchMainBody, /\$uninstallResult\.process\.timedOut/);
+assert.match(launchMainBody, /\$uninstallResult\.process\.exitCode/);
+assert.match(launchMainBody, /\$uninstallResult\.process\.visibleWindows/);
+assert.match(launchMainBody, /\$uninstallResult\.productEntryRemoved/);
+assert.match(launchMainBody, /\$uninstallResult\.installDirectoryRemoved/);
+assert.match(launchMainBody, /Get-LilyShortcuts/);
+assert.match(launchMainBody, /Get-LilyUserDataResidues/);
+assert.match(launchMainBody, /uninstall\.user_data_residue/);
+assert.match(launchMainBody, /\$AllowUserDataRemnants/);
+assert.match(launchMainBody, /-Status\s+"warning"/);
+assert.match(launchMainBody, /-Status\s+"fail"/);
+
+const wackCheck = runner.match(
+  /Add-Check[\s\S]{0,180}-Id "certification\.wack"[\s\S]{0,600}/,
+)?.[0] ?? "";
+assert.ok(wackCheck, "certification.wack must be explicitly recorded");
+assert.match(wackCheck, /-Status "not_applicable"/);
+assert.match(wackCheck, /unpackaged NSIS EXE/);
+assert.match(wackCheck, /packaged AppX\/MSIX/);
+assert.doesNotMatch(runner, /-apptype\s+desktop/i);
+
 assert.match(runner, /function Test-PortableExecutable\b/);
 assert.match(runner, /\[System\.IO\.FileShare\]::ReadWrite/);
 assert.match(runner, /0x4D/);
@@ -265,6 +419,7 @@ assert.match(runner, /Administrator/);
 assert.match(runner, /registry-before\.json/);
 assert.match(runner, /registry-installed\.json/);
 assert.match(runner, /registry-after\.json/);
+assert.match(runner, /user-data-residue\.json/);
 assert.match(runner, /signature-inventory\.json/);
 assert.match(runner, /\$script:InstalledEntry/);
 assert.match(runner, /LilyWorkbench\.exe/);
@@ -279,7 +434,50 @@ assert.match(
   /\(\[string\]\$script:InstalledEntry\.Publisher\)\.IndexOf\(\s*\$ExpectedPublisher,\s*\[System\.StringComparison\]::OrdinalIgnoreCase\s*\)/,
 );
 assert.match(runner, /Get-FileHash[^\r\n]*SHA256/);
+assert.doesNotMatch(runner, /\bRemove-Item\b/i);
 assert.doesNotMatch(runner, /full-uninstall-lily-workbench/i);
+
+const mainFinallyStart = runner.lastIndexOf("} finally {");
+const mainFinallyEnd = runner.lastIndexOf("\n}\n\nexit $exitCode");
+assert.ok(mainFinallyStart >= 0 && mainFinallyEnd > mainFinallyStart, "the main flow must have a finalization block");
+const mainFinallyBody = runner.slice(mainFinallyStart + "} finally {".length, mainFinallyEnd);
+assert.match(
+  mainFinallyBody,
+  /Get-LilyUninstallEntries[\s\S]{0,300}Try-NormalUninstallCleanup/,
+  "finally must use the normal registered uninstaller whenever an ARP entry remains",
+);
+const cleanupAttemptIndex = mainFinallyBody.indexOf("Try-NormalUninstallCleanup");
+const registryAfterIndex = mainFinallyBody.search(
+  /Write-JsonEvidence[\s\S]{0,80}-FileName "registry-after\.json"/,
+);
+assert.ok(cleanupAttemptIndex >= 0 && registryAfterIndex > cleanupAttemptIndex);
+assert.match(mainFinallyBody, /\$registryAfter\s*=\s*@\(Get-LilyUninstallEntries\)/);
+assert.match(mainFinallyBody, /cleanup\.registry_after/);
+assert.equal(
+  runner.match(/Write-JsonEvidence[\s\S]{0,80}-FileName "registry-after\.json"/g)?.length ?? 0,
+  1,
+  "registry-after evidence must be a single real post-cleanup snapshot",
+);
+assert.match(mainFinallyBody, /Get-LilyInstallResidues/);
+assert.match(mainFinallyBody, /cleanup\.install_residue/);
+assert.match(mainFinallyBody, /Get-LilyShortcuts/);
+assert.match(mainFinallyBody, /cleanup\.shortcut_residue/);
+assert.match(mainFinallyBody, /Get-LilyUserDataResidues/);
+assert.match(mainFinallyBody, /Write-JsonEvidence[\s\S]{0,80}-FileName "user-data-residue\.json"/);
+assert.match(mainFinallyBody, /cleanup\.user_data_residue/);
+assert.match(mainFinallyBody, /\$AllowUserDataRemnants/);
+
+const stopTranscriptIndex = mainFinallyBody.indexOf("Stop-Transcript");
+const finalExitCalculationIndex = mainFinallyBody.indexOf("$failedChecks =");
+const writeReportsIndex = mainFinallyBody.indexOf("Write-Reports");
+const writeSentinelIndex = mainFinallyBody.indexOf("Set-Content -LiteralPath $exitCodePath");
+assert.ok(stopTranscriptIndex >= 0 && finalExitCalculationIndex > stopTranscriptIndex);
+assert.ok(finalExitCalculationIndex > mainFinallyBody.indexOf("cleanup.install_residue"));
+assert.ok(finalExitCalculationIndex > mainFinallyBody.indexOf("cleanup.user_data_residue"));
+assert.ok(writeReportsIndex > finalExitCalculationIndex);
+assert.ok(writeSentinelIndex > writeReportsIndex);
+assert.match(mainFinallyBody, /try\s*\{[\s\S]{0,180}Write-Reports[\s\S]{0,180}catch\s*\{[\s\S]{0,120}\$exitCode\s*=\s*1/);
+assert.match(mainFinallyBody, /try\s*\{[\s\S]{0,180}Set-Content\s+-LiteralPath\s+\$exitCodePath/);
 
 assert.match(runner, /readiness-report\.json/);
 assert.match(runner, /readiness-summary\.md/);
