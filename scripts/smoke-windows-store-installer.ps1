@@ -43,6 +43,8 @@ $Report = [ordered]@{
     "registry-before.json"
     "registry-installed.json"
     "registry-after.json"
+    "chromium.log"
+    "startup-event-log.json"
   )
   evidence = [ordered]@{}
   installer = [ordered]@{
@@ -233,6 +235,334 @@ function Get-ProcessStartTicks {
     return [long]$Process.StartTime.ToUniversalTime().Ticks
   } catch {
     return $null
+  }
+}
+
+function Get-FreeLoopbackPort {
+  $listener = $null
+  try {
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    return [int]$listener.LocalEndpoint.Port
+  } finally {
+    if ($null -ne $listener) {
+      $listener.Stop()
+    }
+  }
+}
+
+function Wait-LilyRenderer {
+  param(
+    [Parameter(Mandatory = $true)]
+    [int]$Port,
+
+    [Parameter(Mandatory = $true)]
+    [int]$ProcessId,
+
+    [Parameter(Mandatory = $true)]
+    [int]$TimeoutSeconds
+  )
+
+  $knownTitles = @(
+    "Lily Workbench"
+    "智能工作台"
+    "Smart Workbench"
+    "منصة العمل الذكية"
+  )
+  $rendererTarget = $null
+  $visibleWindow = $null
+  $lastProcessIds = @()
+  $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+  while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+    $rootProcess = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($null -eq $rootProcess) {
+      $stopwatch.Stop()
+      return [pscustomobject][ordered]@{
+        target = $null
+        visibleWindow = $null
+        rootExited = $true
+        processIds = @($lastProcessIds)
+      }
+    }
+
+    $lastProcessIds = @(Get-ProcessTreeIds -RootId $ProcessId)
+    $visibleWindow = $null
+    foreach ($treeId in $lastProcessIds) {
+      $treeProcess = Get-Process -Id $treeId -ErrorAction SilentlyContinue
+      if ($null -eq $treeProcess) {
+        continue
+      }
+
+      try {
+        $mainWindowHandle = [long]$treeProcess.MainWindowHandle
+        if ($mainWindowHandle -ne 0) {
+          $visibleWindow = [pscustomobject][ordered]@{
+            processId = [int]$treeProcess.Id
+            processName = [string]$treeProcess.ProcessName
+            mainWindowHandle = $mainWindowHandle
+            windowTitle = [string]$treeProcess.MainWindowTitle
+          }
+          break
+        }
+      } catch {
+        # A process can exit between tree enumeration and window inspection.
+      }
+    }
+
+    $rendererTarget = $null
+    try {
+      $targets = @(Invoke-RestMethod `
+        -Uri ("http://127.0.0.1:{0}/json/list" -f $Port) `
+        -Method Get `
+        -TimeoutSec 2 `
+        -ErrorAction Stop)
+      $rendererTarget = @($targets | Where-Object {
+        $targetType = Get-ObjectPropertyValue -InputObject $_ -Name "type"
+        $isPageTarget = [string]::Equals($targetType, "page", [System.StringComparison]::Ordinal)
+        $targetTitle = Get-ObjectPropertyValue -InputObject $_ -Name "title"
+        $targetUrl = Get-ObjectPropertyValue -InputObject $_ -Name "url"
+        $isPageTarget -and
+        ($knownTitles -ccontains $targetTitle) -and
+        ($targetUrl -match 'renderer[/\\]index\.html')
+      } | Select-Object -First 1)
+      if ($rendererTarget.Count -gt 0) {
+        $rendererTarget = $rendererTarget[0]
+      } else {
+        $rendererTarget = $null
+      }
+    } catch {
+      # Chromium's loopback endpoint is expected to refuse requests until startup completes.
+      $rendererTarget = $null
+    }
+
+    if ($null -ne $rendererTarget -and $null -ne $visibleWindow) {
+      $stopwatch.Stop()
+      return [pscustomobject][ordered]@{
+        target = $rendererTarget
+        visibleWindow = $visibleWindow
+        rootExited = $false
+        processIds = @($lastProcessIds)
+      }
+    }
+
+    Start-Sleep -Milliseconds 250
+  }
+
+  $stopwatch.Stop()
+  return [pscustomobject][ordered]@{
+    target = $null
+    visibleWindow = $visibleWindow
+    rootExited = $false
+    processIds = @($lastProcessIds)
+  }
+}
+
+function Get-LilyCrashEvents {
+  param(
+    [Parameter(Mandatory = $true)]
+    [datetime]$StartTime
+  )
+
+  try {
+    $applicationEvents = @(Get-WinEvent `
+      -FilterHashtable @{
+        LogName = "Application"
+        StartTime = $StartTime
+      } `
+      -ErrorAction Stop)
+  } catch {
+    if ($_.FullyQualifiedErrorId -like "NoMatchingEventsFound*") {
+      $applicationEvents = @()
+    } else {
+      throw ("Unable to query the Windows Application event log: " + $_.Exception.Message)
+    }
+  }
+
+  $crashEvents = @($applicationEvents | Where-Object {
+    ($_.ProviderName -eq "Application Error" -or $_.ProviderName -eq "Windows Error Reporting") -and
+    ([string]$_.Message -match '(?i)(LilyWorkbench\.exe|Lily Workbench\.exe)')
+  } | ForEach-Object {
+    [pscustomobject][ordered]@{
+      timeCreated = $_.TimeCreated.ToString("o")
+      providerName = [string]$_.ProviderName
+      eventId = [int]$_.Id
+      level = [string]$_.LevelDisplayName
+      recordId = [long]$_.RecordId
+      message = [string]$_.Message
+    }
+  })
+
+  Write-JsonEvidence -FileName "startup-event-log.json" -Value @($crashEvents) | Out-Null
+  return @($crashEvents)
+}
+
+function Invoke-LilyLaunchProbe {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$MainExe,
+
+    [Parameter(Mandatory = $true)]
+    [int]$TimeoutSeconds
+  )
+
+  $startedAt = Get-Date
+  $chromiumLog = Join-Path $script:OutputDirectory "chromium.log"
+  $startupEventLog = Join-Path $script:OutputDirectory "startup-event-log.json"
+  $script:Report["evidence"]["chromium.log"] = $chromiumLog
+  $script:Report["evidence"]["startup-event-log.json"] = $startupEventLog
+
+  $port = $null
+  $rootProcess = $null
+  $rootId = $null
+  $rootStartTicks = $null
+  $ownedStartTicks = @{}
+  $rendererProbe = [pscustomobject][ordered]@{
+    target = $null
+    visibleWindow = $null
+    rootExited = $false
+    processIds = @()
+  }
+  $remainedAlive = $false
+  $exitedUnexpectedly = $false
+  $closedNormally = $false
+  $crashEvents = @()
+  $probeError = ""
+  $crashEventQueryError = ""
+  $cleanupError = ""
+
+  try {
+    $port = Get-FreeLoopbackPort
+    $launchArguments = @(
+      "--remote-debugging-address=127.0.0.1"
+      ("--remote-debugging-port=" + $port)
+      "--enable-logging=file"
+      ("--log-file=`"" + $chromiumLog + "`"")
+    )
+    $rootProcess = Start-Process -FilePath $MainExe -ArgumentList $launchArguments -PassThru
+    $rootId = [int]$rootProcess.Id
+    $rootStartTicks = Get-ProcessStartTicks -Process $rootProcess
+    if ($null -eq $rootStartTicks) {
+      throw ("Unable to read the Lily Workbench launch process start time: " + $rootId)
+    }
+    $ownedStartTicks[[string]$rootId] = [long]$rootStartTicks
+
+    $rendererProbe = Wait-LilyRenderer `
+      -Port $port `
+      -ProcessId $rootId `
+      -TimeoutSeconds $TimeoutSeconds
+
+    foreach ($treeId in @($rendererProbe.processIds)) {
+      $treeProcess = Get-Process -Id $treeId -ErrorAction SilentlyContinue
+      if ($null -eq $treeProcess) {
+        continue
+      }
+      $treeStartTicks = Get-ProcessStartTicks -Process $treeProcess
+      if ($null -ne $treeStartTicks -and [long]$treeStartTicks -ge [long]$rootStartTicks) {
+        $ownedStartTicks[[string]$treeId] = [long]$treeStartTicks
+      }
+    }
+
+    $currentRoot = Get-Process -Id $rootId -ErrorAction SilentlyContinue
+    if ($null -eq $currentRoot) {
+      $exitedUnexpectedly = $true
+    } else {
+      $currentRootStartTicks = Get-ProcessStartTicks -Process $currentRoot
+      if ($null -eq $currentRootStartTicks -or
+          [long]$currentRootStartTicks -ne [long]$rootStartTicks) {
+        $exitedUnexpectedly = $true
+      } else {
+        $remainedAlive = $true
+      }
+    }
+
+    if ($remainedAlive) {
+      foreach ($treeId in @(Get-ProcessTreeIds -RootId $rootId)) {
+        $treeProcess = Get-Process -Id $treeId -ErrorAction SilentlyContinue
+        if ($null -eq $treeProcess) {
+          continue
+        }
+        $treeStartTicks = Get-ProcessStartTicks -Process $treeProcess
+        if ($null -ne $treeStartTicks -and [long]$treeStartTicks -ge [long]$rootStartTicks) {
+          $ownedStartTicks[[string]$treeId] = [long]$treeStartTicks
+        }
+      }
+
+      if (-not $rootProcess.CloseMainWindow()) {
+        throw "Lily Workbench did not accept the normal window-close request."
+      }
+      Wait-Process -InputObject $rootProcess -Timeout 15 -ErrorAction Stop
+      $closedNormally = $true
+    }
+  } catch {
+    $probeError = $_.Exception.Message
+  } finally {
+    try {
+      $crashEvents = @(Get-LilyCrashEvents -StartTime $startedAt)
+    } catch {
+      $crashEventQueryError = $_.Exception.Message
+    }
+
+    try {
+      $cleanupStartTicks = @{}
+      foreach ($knownIdText in @($ownedStartTicks.Keys)) {
+        $knownId = [int]$knownIdText
+        $knownProcess = Get-Process -Id $knownId -ErrorAction SilentlyContinue
+        if ($null -eq $knownProcess) {
+          continue
+        }
+        $knownCurrentStartTicks = Get-ProcessStartTicks -Process $knownProcess
+        if ($null -eq $knownCurrentStartTicks -or
+            [long]$knownCurrentStartTicks -ne [long]$ownedStartTicks[$knownIdText]) {
+          continue
+        }
+
+        foreach ($cleanupId in @(Get-ProcessTreeIds -RootId $knownId)) {
+          $cleanupProcess = Get-Process -Id $cleanupId -ErrorAction SilentlyContinue
+          if ($null -eq $cleanupProcess) {
+            continue
+          }
+          $cleanupTicks = Get-ProcessStartTicks -Process $cleanupProcess
+          if ($null -eq $cleanupTicks -or
+              $null -eq $rootStartTicks -or
+              [long]$cleanupTicks -lt [long]$rootStartTicks) {
+            continue
+          }
+          $cleanupStartTicks[[string]$cleanupId] = [long]$cleanupTicks
+        }
+      }
+
+      foreach ($cleanupIdText in @($cleanupStartTicks.Keys | Sort-Object { [int]$_ } -Descending)) {
+        $cleanupId = [int]$cleanupIdText
+        $cleanupProcess = Get-Process -Id $cleanupId -ErrorAction SilentlyContinue
+        if ($null -eq $cleanupProcess) {
+          continue
+        }
+        $cleanupTicks = Get-ProcessStartTicks -Process $cleanupProcess
+        if ($null -ne $cleanupTicks -and
+            [long]$cleanupTicks -eq [long]$cleanupStartTicks[$cleanupIdText]) {
+          Stop-Process -Id $cleanupId -Force -ErrorAction SilentlyContinue
+        }
+      }
+    } catch {
+      $cleanupError = $_.Exception.Message
+    }
+  }
+
+  return [pscustomobject][ordered]@{
+    processId = $rootId
+    remainedAlive = $remainedAlive
+    exitedUnexpectedly = $exitedUnexpectedly
+    visibleWindow = $rendererProbe.visibleWindow
+    rendererTarget = $rendererProbe.target
+    closedNormally = $closedNormally
+    crashEvents = @($crashEvents)
+    crashEventQueryError = $crashEventQueryError
+    chromiumLog = $chromiumLog
+    startupEventLog = $startupEventLog
+    debuggingPort = $port
+    probeError = $probeError
+    cleanupError = $cleanupError
   }
 }
 
@@ -798,6 +1128,43 @@ try {
       -Detail ("Rehearsal mode found {0} installed MZ portable executable or executables without a valid Authenticode signature." -f $invalidInstalledSignatures.Count) `
       -Evidence $signatureInventoryPath | Out-Null
   }
+
+  $launchResult = Invoke-LilyLaunchProbe `
+    -MainExe $applicationPath `
+    -TimeoutSeconds $LaunchTimeoutSeconds
+  $script:Report["launch"] = $launchResult
+  $launchCrashEvents = @($launchResult.crashEvents)
+  $launchCrashEventQuerySucceeded = [string]::IsNullOrWhiteSpace(
+    [string]$launchResult.crashEventQueryError
+  )
+
+  Require-Check `
+    -Id "launch.visible_window" `
+    -Condition ($null -ne $launchResult.visibleWindow) `
+    -PassDetail "Lily Workbench opened a visible root or descendant window." `
+    -FailDetail "Lily Workbench did not open a visible window during the bounded launch probe." `
+    -Evidence $launchResult
+
+  Require-Check `
+    -Id "launch.renderer_ready" `
+    -Condition ($null -ne $launchResult.rendererTarget) `
+    -PassDetail "Chromium exposed the packaged Lily renderer page on the loopback debugging endpoint." `
+    -FailDetail "The launch probe did not find the packaged Lily renderer page on the loopback debugging endpoint." `
+    -Evidence $launchResult
+
+  Require-Check `
+    -Id "launch.no_crash_event" `
+    -Condition ($launchCrashEventQuerySucceeded -and $launchCrashEvents.Count -eq 0) `
+    -PassDetail "No Lily Workbench crash event was recorded in the Windows Application log." `
+    -FailDetail ("The Windows Application log crash check failed: querySucceeded={0}, crashEvents={1}." -f $launchCrashEventQuerySucceeded, $launchCrashEvents.Count) `
+    -Evidence $launchResult
+
+  Require-Check `
+    -Id "launch.normal_close" `
+    -Condition ([bool]$launchResult.closedNormally) `
+    -PassDetail "Lily Workbench accepted CloseMainWindow and exited within 15 seconds." `
+    -FailDetail "Lily Workbench did not complete a normal CloseMainWindow shutdown within 15 seconds." `
+    -Evidence $launchResult
 } catch {
   Add-Check `
     -Id "runner.exception" `
