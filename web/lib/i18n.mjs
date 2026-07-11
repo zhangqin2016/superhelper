@@ -471,3 +471,25 @@ if (!dictionaries.ar.admin) {
     },
   };
 }
+
+dictionaries.zh.catalog = {
+  apps: {
+    eyebrow: "Lily 应用", title: "拿来就能用的完整工作场景", description: "应用把工作区、技能与模板组合成一个可直接开始的成果入口。", details: "查看详情", back: "返回应用", whatItDoes: "它能帮你完成什么", version: "版本", plan: "适用计划", useInLily: "在 Lily 中使用",
+    emptyTitle: "暂时没有可公开的应用", emptyDescription: "新应用通过审核后会出现在这里。", errorTitle: "应用目录暂时不可用", errorDescription: "你仍然可以下载 Lily，稍后再回来查看目录。",
+    categories: { productivity: "效率", office: "办公文档", connectors: "连接器", data: "数据", finance: "金融投研", creative: "设计创意", developer: "开发", business: "业务", education: "学习", research: "研究" },
+  },
+};
+dictionaries.en.catalog = {
+  apps: {
+    eyebrow: "Lily Apps", title: "Complete workflows, ready to use", description: "Apps combine a workspace, skills, and templates into a practical starting point.", details: "View details", back: "Back to apps", whatItDoes: "What it helps you deliver", version: "Version", plan: "Plan", useInLily: "Use in Lily",
+    emptyTitle: "No public apps yet", emptyDescription: "Reviewed applications will appear here.", errorTitle: "The app catalog is temporarily unavailable", errorDescription: "You can still download Lily and return to the catalog later.",
+    categories: { productivity: "Productivity", office: "Office", connectors: "Connectors", data: "Data", finance: "Finance", creative: "Creative", developer: "Developer", business: "Business", education: "Education", research: "Research" },
+  },
+};
+dictionaries.ar.catalog = {
+  apps: {
+    eyebrow: "تطبيقات Lily", title: "مسارات عمل كاملة وجاهزة للاستخدام", description: "تجمع التطبيقات مساحة العمل والمهارات والقوالب في نقطة بداية عملية.", details: "عرض التفاصيل", back: "العودة إلى التطبيقات", whatItDoes: "ما الذي يساعدك على إنجازه", version: "الإصدار", plan: "الخطة", useInLily: "استخدمه في Lily",
+    emptyTitle: "لا توجد تطبيقات عامة حالياً", emptyDescription: "ستظهر التطبيقات بعد مراجعتها.", errorTitle: "دليل التطبيقات غير متاح مؤقتاً", errorDescription: "يمكنك تنزيل Lily والعودة إلى الدليل لاحقاً.",
+    categories: { productivity: "الإنتاجية", office: "المكتب", connectors: "الموصلات", data: "البيانات", finance: "التمويل", creative: "الإبداع", developer: "التطوير", business: "الأعمال", education: "التعليم", research: "البحث" },
+  },
+};

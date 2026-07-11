@@ -82,4 +82,15 @@ const publicApiSource = fs.readFileSync(new URL("../web/lib/public-api.js", impo
 assert.match(publicApiSource, /cache: "no-store"/);
 assert.match(publicApiSource, /AbortSignal\.timeout\(5000\)/);
 
+const appsPage = fs.readFileSync(new URL("../web/app/apps/page.js", import.meta.url), "utf8");
+const appDetailPage = fs.readFileSync(new URL("../web/app/apps/[id]/page.js", import.meta.url), "utf8");
+const appCatalog = fs.readFileSync(new URL("../web/components/app-catalog.js", import.meta.url), "utf8");
+assert.match(appsPage, /publicApiGet\("\/api\/apps\/catalog"\)/);
+assert.match(appsPage, /normalizeApps/);
+assert.match(appCatalog, /href=\{`\/apps\/\$\{app\.id\}`\}/);
+assert.match(appDetailPage, /publicApiGet\("\/api\/apps\/catalog"\)/);
+assert.match(appDetailPage, /href="\/download"/);
+assert.equal(appDetailPage.includes("downloadUrl"), false);
+assert.equal(appDetailPage.includes("sha256"), false);
+
 console.log("web-public-catalog: ok");
