@@ -246,10 +246,18 @@ export function registerPublicWishRoutes(app) {
     if (!account) return reply;
     if (!takeAction(reply, account.userId, "support")) return reply;
     const { id } = wishIdSchema.parse(request.params || {});
-    await db.deleteFrom("feature_wish_supporters")
-      .where("wish_id", "=", id)
-      .where("user_id", "=", account.userId)
-      .execute();
+    const removed = await db.transaction().execute(async (trx) => {
+      const wish = await trx.selectFrom("feature_wishes").select("id")
+        .where("id", "=", id).where("status", "in", PUBLIC_STATUSES)
+        .forUpdate().executeTakeFirst();
+      if (!wish) return false;
+      await trx.deleteFrom("feature_wish_supporters")
+        .where("wish_id", "=", id)
+        .where("user_id", "=", account.userId)
+        .execute();
+      return true;
+    });
+    if (!removed) return reply.code(404).send({ ok: false, code: "WISH_NOT_FOUND" });
     return { ok: true, supported: false };
   });
 

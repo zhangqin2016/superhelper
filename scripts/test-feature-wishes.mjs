@@ -202,6 +202,7 @@ assert.match(publicWishRouteSource, /onConflict[\s\S]+columns\(\["wish_id",\s*"u
 assert.match(publicWishRouteSource, /resolveWebUser/);
 assert.match(publicWishRouteSource, /orderBy\("support_count",\s*"desc"\)[\s\S]+limit\(100\)/);
 assert.match(publicWishRouteSource, /support[\s\S]+transaction\(\)\.execute[\s\S]+forUpdate\(\)/);
+assert.match(publicWishRouteSource, /app\.delete[\s\S]+transaction\(\)\.execute[\s\S]+forUpdate\(\)/);
 assert.match(publicWishRouteSource, /validPublicOutcomeRows/);
 
 const publicRoutesSource = fs.readFileSync(new URL("../server/src/routes/public.js", import.meta.url), "utf8");
