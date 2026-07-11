@@ -19,8 +19,11 @@ const liveOutput = execFileSync("node", ["scripts/run-intent-eval.mjs", "--json"
 });
 const liveReport = JSON.parse(liveOutput);
 assert.equal(liveReport.ok, true);
-assert.equal(liveReport.mode, "broker");
+assert.equal(liveReport.mode, "broker-route");
+assert.deepEqual(liveReport.evaluatedDimensions, ["route", "must_not_route"]);
 assert.equal(liveReport.coverage.examples >= 19, true);
+
+assert.deepEqual(report.evaluatedDimensions, [], "validation-only mode must not imply live behavior coverage");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-intent-eval-"));
 const actualPath = path.join(tmp, "actual.jsonl");
@@ -49,6 +52,32 @@ try {
   assert.match(text, /missing route/);
 }
 assert.equal(failed, true, "actual route output missing required route steps must fail");
+
+const completeActualPath = path.join(tmp, "complete-actual.jsonl");
+const goldenRows = fs.readFileSync(
+  "resources/skills-catalog/lily-intent-eval/references/golden.jsonl",
+  "utf8",
+).trim().split(/\r?\n/).map(JSON.parse);
+fs.writeFileSync(
+  completeActualPath,
+  goldenRows.map((row) => JSON.stringify({
+    id: row.id,
+    intents: row.expected_intents,
+    route: row.expected_route,
+    needs_clarification: row.needs_clarification,
+    verification: row.verification_required,
+  })).join("\n"),
+);
+const actualReport = JSON.parse(execFileSync(
+  "node",
+  ["scripts/run-intent-eval.mjs", "--actual", completeActualPath, "--json"],
+  { encoding: "utf8" },
+));
+assert.equal(actualReport.mode, "actual");
+assert.deepEqual(
+  actualReport.evaluatedDimensions,
+  ["intents", "route", "must_not_route", "clarification", "verification"],
+);
 fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log("intent-eval: ok");

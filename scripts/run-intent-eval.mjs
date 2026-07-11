@@ -91,7 +91,8 @@ function intersects(actual, forbidden) {
   return normalizeArray(forbidden).filter((item) => actualSet.has(item));
 }
 
-function evaluateActual(goldenRows, actualRows) {
+function evaluateActual(goldenRows, actualRows, dimensions) {
+  const evaluated = new Set(dimensions);
   const byId = new Map(actualRows.map((row) => [row.id, row]));
   const failures = [];
   for (const expected of goldenRows) {
@@ -100,17 +101,22 @@ function evaluateActual(goldenRows, actualRows) {
       failures.push({ id: expected.id, issue: "missing actual route output" });
       continue;
     }
-    const missingIntents = includesAll(actual.intents || actual.actual_intents, expected.expected_intents);
-    const missingRoute = includesAll(actual.route || actual.actual_route, expected.expected_route);
-    const forbiddenRoute = intersects(actual.route || actual.actual_route, expected.must_not_route);
-    const missingVerification = includesAll(
-      actual.verification || actual.verification_required,
-      expected.verification_required,
-    );
+    const missingIntents = evaluated.has("intents")
+      ? includesAll(actual.intents || actual.actual_intents, expected.expected_intents)
+      : [];
+    const missingRoute = evaluated.has("route")
+      ? includesAll(actual.route || actual.actual_route, expected.expected_route)
+      : [];
+    const forbiddenRoute = evaluated.has("must_not_route")
+      ? intersects(actual.route || actual.actual_route, expected.must_not_route)
+      : [];
+    const missingVerification = evaluated.has("verification")
+      ? includesAll(actual.verification || actual.verification_required, expected.verification_required)
+      : [];
     if (missingIntents.length) failures.push({ id: expected.id, issue: `missing intents: ${missingIntents.join(",")}` });
     if (missingRoute.length) failures.push({ id: expected.id, issue: `missing route: ${missingRoute.join(",")}` });
     if (forbiddenRoute.length) failures.push({ id: expected.id, issue: `forbidden route: ${forbiddenRoute.join(",")}` });
-    if (actual.needs_clarification !== expected.needs_clarification) {
+    if (evaluated.has("clarification") && actual.needs_clarification !== expected.needs_clarification) {
       failures.push({
         id: expected.id,
         issue: `clarification mismatch: expected ${expected.needs_clarification}, got ${actual.needs_clarification}`,
@@ -136,13 +142,10 @@ function summarizeCoverage(rows) {
 function brokerActual(row) {
   return {
     id: row.id,
-    intents: normalizeArray(row.expected_intents),
     route: recommendSkillCapabilityGraph({
       text: row.prompt,
       files: normalizeArray(row.attachments).map((name) => ({ name })),
     }).map((skill) => skill.id),
-    needs_clarification: row.needs_clarification,
-    verification: normalizeArray(row.verification_required),
   };
 }
 
@@ -155,15 +158,19 @@ const duplicateIds = goldenRows
 for (const id of new Set(duplicateIds)) validationIssues.push(`${id}: duplicate id`);
 
 let actualFailures = [];
+let evaluatedDimensions = [];
 if (args.actual) {
-  actualFailures = evaluateActual(goldenRows, readJsonl(args.actual));
+  evaluatedDimensions = ["intents", "route", "must_not_route", "clarification", "verification"];
+  actualFailures = evaluateActual(goldenRows, readJsonl(args.actual), evaluatedDimensions);
 } else if (args.broker) {
-  actualFailures = evaluateActual(goldenRows, goldenRows.map(brokerActual));
+  evaluatedDimensions = ["route", "must_not_route"];
+  actualFailures = evaluateActual(goldenRows, goldenRows.map(brokerActual), evaluatedDimensions);
 }
 
 const report = {
   ok: validationIssues.length === 0 && actualFailures.length === 0,
-  mode: args.actual ? "actual" : args.broker ? "broker" : "validate",
+  mode: args.actual ? "actual" : args.broker ? "broker-route" : "validate",
+  evaluatedDimensions,
   coverage: summarizeCoverage(goldenRows),
   validationIssues,
   actualFailures,
