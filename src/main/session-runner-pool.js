@@ -410,17 +410,10 @@ class SessionRunnerPool {
       );
       if (!written) return {};
       let servers = JSON.parse(fs.readFileSync(out, "utf8")).mcpServers || {};
-      // lite grade: a weak model handed 29 tools calls them badly. Keep the
-      // tool broker (the capability catalog is the platform contract — Lily
-      // skills stop existing without it) AND file intelligence: it is the
-      // guardrail the Large Input Protocol depends on — without it a weak
-      // model faces big files with nothing but blind whole-file reads, which
-      // makes it DUMBER, not safer. Everything else drops; OpenCode's core
-      // tools carry the rest. standard/full/ungraded keep today's set.
-      if (capabilityGrade === "lite") {
-        const keep = ["lily_tool_broker", "lily_file_intelligence"];
-        servers = Object.fromEntries(keep.filter((key) => servers[key]).map((key) => [key, servers[key]]));
-      }
+      // Capability grading is additive. Lite models receive tighter execution
+      // guidance, but retain the same executable MCP surface as the strong
+      // default. Dropping whole servers here made browser, mail, process-job,
+      // and learned-system tasks impossible with no strong-model fallback.
       if (!toolCompat) return servers;
       // Tool-shape compat (the probe found this gateway rejects tool names
       // longer than ~35 chars): OpenCode names MCP tools `<serverKey>_<tool>`,

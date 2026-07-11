@@ -476,7 +476,7 @@ try {
     delete process.env.LILY_ENABLE_CAPABILITY_GRADING;
   }
 
-  // --- 4. real MCP assembly: lite keeps ONLY the tool broker ---
+  // --- 4. real MCP assembly: lite support is additive, never capability-destructive ---
   const realPool = new SessionRunnerPool();
   const baseline = realPool._opencodeMcpServers(null, {});
   assert(baseline.lily_tool_broker, "baseline MCP assembly must include the tool broker (test would be vacuous otherwise)");
@@ -524,12 +524,16 @@ try {
     "two Lily sessions with the same scope produce byte-identical full shared OpenCode config");
 
   const liteServers = realPool._opencodeMcpServers(null, { capabilityGrade: "lite" });
-  assert.deepEqual(Object.keys(liteServers).sort(), ["lily_file_intelligence", "lily_tool_broker"],
-    "lite keeps the tool broker (platform contract) AND file intelligence (the Large Input Protocol guardrail)");
+  assert.deepEqual(liteServers, baseline,
+    "lite guidance must not remove executable MCP capabilities such as Playwright, mail, process jobs, or learned systems");
 
   const liteCompatServers = realPool._opencodeMcpServers(null, { capabilityGrade: "lite", toolCompat: true });
-  assert.deepEqual(Object.keys(liteCompatServers).sort(), ["lily_fi", "lily_tb"],
-    "lite composes with tool-shape compat (short server keys)");
+  assert.equal(liteCompatServers.lily_tb !== undefined, true,
+    "lite still composes with tool-shape compat (short broker key)");
+  assert.equal(liteCompatServers.lily_fi !== undefined, true,
+    "lite still composes with tool-shape compat (short file-intelligence key)");
+  assert.equal(Object.keys(liteCompatServers).length, Object.keys(baseline).length,
+    "tool-shape compatibility must rename servers without dropping capabilities");
 
   const standardServers = realPool._opencodeMcpServers(null, { capabilityGrade: "standard" });
   assert.deepEqual(standardServers, baseline, "standard grade must not change MCP assembly at all");

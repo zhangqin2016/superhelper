@@ -44,7 +44,7 @@
 
 `_opencodeMcpServers(activeSkillIds, { toolCompat, capabilityGrade })`：
 
-- `lite`：MCP 只保留 `lily_tool_broker`（能力目录是平台合同，必须在）；file-intelligence/process-jobs/mail/web_* 全部不挂——弱模型用 opencode 核心工具就够
+- `lite`：MCP 可执行面与强默认保持一致；只追加更短、更确定的执行协议和已探测的兼容配方。不能通过删除 file-intelligence、process-jobs、mail、Playwright 或 `web_*` 来“简化”，因为这会让真实任务无强模型回退地失去能力。
 - `standard`/`full`/无档：完全不动（现状）
 - lite 同时下发 `LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS` 已有机制的更紧默认（如 min(测得值, 8000)），并加入 disallowedTools: ["task"]（关子代理，弱模型带不动）
 
