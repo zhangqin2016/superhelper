@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { userDataPath, PROJECT_ROOT } = require("./config");
 const { normalizeSkillCapabilityContract } = require("./skill-capability-contract");
+const { registryRevision } = require("./skill-registry-revision");
 
 const REGISTRY_FETCH_TIMEOUT_MS = 30_000;
 const BUNDLED_REGISTRY_SOURCE = "bundled://local";
@@ -82,6 +83,8 @@ function normalizeRegistryEntry(raw, capabilityOverride = null) {
     defaultEligible: Boolean(raw.defaultEligible),
     featured: Boolean(raw.featured),
     displayInCatalog: raw.displayInCatalog !== false,
+    sourceKind: raw.sourceKind ? String(raw.sourceKind) : null,
+    contentRevision: raw.contentRevision ? String(raw.contentRevision) : null,
     changelog_i18n: normalizeStringMap(raw.changelog_i18n),
     capability: normalizeSkillCapabilityContract(rawCapability, {
       capabilityLayer: raw.capabilityLayer,
@@ -138,18 +141,19 @@ function parseRegistryJson(body) {
   const skills = parsed.skills
     .map((entry) => normalizeRegistryEntry(entry, capabilityMap[entry?.id]))
     .filter(Boolean);
+  const registry = {
+    schemaVersion: 1,
+    updatedAt: parsed.updatedAt || null,
+    publisher: parsed.publisher || "",
+    registryUrl: parsed.registryUrl || null,
+    categories: mergeCategoryLists(parsed.categories),
+    capabilities: capabilityMap,
+    remoteIndexes: Array.isArray(parsed.remoteIndexes) ? parsed.remoteIndexes : [],
+    skills,
+  };
   return {
     ok: true,
-    registry: {
-      schemaVersion: 1,
-      updatedAt: parsed.updatedAt || null,
-      publisher: parsed.publisher || "",
-      registryUrl: parsed.registryUrl || null,
-      categories: mergeCategoryLists(parsed.categories),
-      capabilities: capabilityMap,
-      remoteIndexes: Array.isArray(parsed.remoteIndexes) ? parsed.remoteIndexes : [],
-      skills,
-    },
+    registry: { ...registry, registryRevision: registryRevision(registry) },
   };
 }
 
@@ -221,16 +225,12 @@ async function fetchRegistry(url) {
 function loadCachedRegistry() {
   try {
     const raw = JSON.parse(fs.readFileSync(registryCachePath(), "utf8"));
-    if (!raw?.skills) return null;
+    const parsed = parseRegistryJson(raw);
+    if (!parsed.ok) return null;
     return {
+      ...parsed.registry,
       fetchedAt: raw.fetchedAt || null,
       sourceUrl: raw.sourceUrl || null,
-      updatedAt: raw.updatedAt || null,
-      publisher: raw.publisher || "",
-      categories: Array.isArray(raw.categories) ? raw.categories : [],
-      capabilities: raw.capabilities && typeof raw.capabilities === "object" ? raw.capabilities : {},
-      remoteIndexes: Array.isArray(raw.remoteIndexes) ? raw.remoteIndexes : [],
-      skills: raw.skills.map((entry) => normalizeRegistryEntry(entry, raw.capabilities?.[entry?.id])).filter(Boolean),
     };
   } catch {
     return null;
@@ -247,7 +247,8 @@ function ensureBundledRegistryCached() {
     !cached ||
     cached.sourceUrl !== BUNDLED_REGISTRY_SOURCE ||
     cached.updatedAt !== bundled.updatedAt ||
-    cachedIds !== bundledIds
+    cachedIds !== bundledIds ||
+    cached.registryRevision !== bundled.registryRevision
   ) {
     const fetchedAt = cacheRegistry(bundled, BUNDLED_REGISTRY_SOURCE);
     return { ...bundled, fetchedAt };

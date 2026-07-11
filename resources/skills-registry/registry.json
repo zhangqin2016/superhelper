@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-06-14T01:30:00.000Z",
+  "updatedAt": "2026-07-11T04:27:17.159Z",
   "publisher": "智能工作台技能目录",
   "registryUrl": null,
   "categories": [
@@ -64,312 +64,1333 @@
   "capabilities": {
     "lily-coding-core": {
       "kind": "workflow",
-      "intents": ["code.change", "code.create", "debug.fix", "automation.build", "workflow.orchestrate"],
-      "avoidIntents": ["office.only", "research.only"],
-      "matchHints": ["code change", "code create", "build dashboard", "web tool", "local app", "component implementation", "API integration", "实现组件", "接入接口", "改代码"],
-      "primaryTools": ["workspace.files", "shell", "tests"],
-      "inputModes": ["text", "workspace", "file"],
-      "outputModes": ["workspace_change", "artifact", "text"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["inspect_context", "run_tests", "build_or_smoke_test"] },
-      "failure": { "recovery": ["find_root_cause", "minimal_fix", "rerun_verification"] }
+      "intents": [
+        "code.change",
+        "code.create",
+        "debug.fix",
+        "automation.build",
+        "workflow.orchestrate"
+      ],
+      "avoidIntents": [
+        "office.only",
+        "research.only"
+      ],
+      "matchHints": [
+        "code change",
+        "code create",
+        "build dashboard",
+        "web tool",
+        "local app",
+        "component implementation",
+        "API integration",
+        "实现组件",
+        "接入接口",
+        "改代码"
+      ],
+      "primaryTools": [
+        "workspace.files",
+        "shell",
+        "tests"
+      ],
+      "inputModes": [
+        "text",
+        "workspace",
+        "file"
+      ],
+      "outputModes": [
+        "workspace_change",
+        "artifact",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "inspect_context",
+          "run_tests",
+          "build_or_smoke_test"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "find_root_cause",
+          "minimal_fix",
+          "rerun_verification"
+        ]
+      }
     },
     "lily-app-builder": {
       "kind": "workflow",
-      "intents": ["app.create", "webpage.create", "webpage.redesign", "tool.create", "script.create"],
-      "avoidIntents": ["debug.existing_code_only"],
-      "avoidHints": ["修复现有", "修这个", "白屏", "blank page", "fix existing", "报错了", "fix this bug"],
-      "matchHints": ["SaaS dashboard", "admin dashboard", "dashboard app", "landing page", "login screen", "redesign page", "polish page", "web tool", "local app", "build dashboard", "create dashboard", "管理后台应用", "统计看板", "设计落地页", "美化登录页"],
-      "primaryTools": ["workspace.files", "shell", "process.jobs", "browser.preview"],
-      "inputModes": ["text", "workspace", "image"],
-      "outputModes": ["workspace_change", "artifact", "preview_url"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["start_app", "screenshot_check", "artifact_path_check"] },
-      "failure": { "recovery": ["make_minimal_runnable", "verify_browser", "report_exact_path"] }
+      "intents": [
+        "app.create",
+        "webpage.create",
+        "webpage.redesign",
+        "tool.create",
+        "script.create"
+      ],
+      "avoidIntents": [
+        "debug.existing_code_only"
+      ],
+      "avoidHints": [
+        "修复现有",
+        "修这个",
+        "白屏",
+        "blank page",
+        "fix existing",
+        "报错了",
+        "fix this bug"
+      ],
+      "matchHints": [
+        "SaaS dashboard",
+        "admin dashboard",
+        "dashboard app",
+        "landing page",
+        "login screen",
+        "redesign page",
+        "polish page",
+        "web tool",
+        "local app",
+        "build dashboard",
+        "create dashboard",
+        "管理后台应用",
+        "统计看板",
+        "设计落地页",
+        "美化登录页"
+      ],
+      "primaryTools": [
+        "workspace.files",
+        "shell",
+        "process.jobs",
+        "browser.preview"
+      ],
+      "inputModes": [
+        "text",
+        "workspace",
+        "image"
+      ],
+      "outputModes": [
+        "workspace_change",
+        "artifact",
+        "preview_url"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "start_app",
+          "screenshot_check",
+          "artifact_path_check"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "make_minimal_runnable",
+          "verify_browser",
+          "report_exact_path"
+        ]
+      }
     },
     "lily-code-repair": {
       "kind": "quality",
-      "intents": ["debug.fix", "test.failure", "build.failure", "runtime.error"],
-      "avoidIntents": ["greenfield.create"],
-      "primaryTools": ["shell", "logs", "workspace.files", "tests"],
-      "inputModes": ["text", "workspace", "file"],
-      "outputModes": ["workspace_change", "diagnosis", "text"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["reproduce", "root_cause", "rerun_failing_command"] },
-      "failure": { "recovery": ["preserve_user_changes", "narrow_scope", "explain_remaining_risk"] }
+      "intents": [
+        "debug.fix",
+        "test.failure",
+        "build.failure",
+        "runtime.error"
+      ],
+      "avoidIntents": [
+        "greenfield.create"
+      ],
+      "primaryTools": [
+        "shell",
+        "logs",
+        "workspace.files",
+        "tests"
+      ],
+      "inputModes": [
+        "text",
+        "workspace",
+        "file"
+      ],
+      "outputModes": [
+        "workspace_change",
+        "diagnosis",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "reproduce",
+          "root_cause",
+          "rerun_failing_command"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "preserve_user_changes",
+          "narrow_scope",
+          "explain_remaining_risk"
+        ]
+      }
     },
     "lily-office-intent": {
       "kind": "router",
-      "intents": ["office.route", "document.process", "spreadsheet.process", "presentation.process"],
-      "avoidIntents": ["codebase.architecture"],
-      "primaryTools": ["skill.router", "runtime.python"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["routing_decision", "text"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["classify_file_type", "select_office_path"] },
-      "failure": { "recovery": ["ask_for_missing_file", "fallback_to_runtime_extraction"] }
+      "intents": [
+        "office.route",
+        "document.process",
+        "spreadsheet.process",
+        "presentation.process"
+      ],
+      "avoidIntents": [
+        "codebase.architecture"
+      ],
+      "primaryTools": [
+        "skill.router",
+        "runtime.python"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "routing_decision",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "classify_file_type",
+          "select_office_path"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "ask_for_missing_file",
+          "fallback_to_runtime_extraction"
+        ]
+      }
     },
     "lily-pdf-extraction-router": {
       "kind": "router",
-      "intents": ["pdf.read", "pdf.extract", "pdf.ocr", "pdf.table_extract"],
-      "primaryTools": ["runtime.python", "runtime.pack.pro-pdf"],
-      "runtimeDependencies": ["python", "optional:pro-pdf"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["text", "artifact"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["detect_digital_or_scan", "sample_pages", "cross_check_tables"] },
-      "failure": { "recovery": ["try_ocr_path", "suggest_runtime_pack", "report_unreadable_pages"] }
+      "intents": [
+        "pdf.read",
+        "pdf.extract",
+        "pdf.ocr",
+        "pdf.table_extract"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "runtime.pack.pro-pdf"
+      ],
+      "runtimeDependencies": [
+        "python",
+        "optional:pro-pdf"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "text",
+        "artifact"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "detect_digital_or_scan",
+          "sample_pages",
+          "cross_check_tables"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "try_ocr_path",
+          "suggest_runtime_pack",
+          "report_unreadable_pages"
+        ]
+      }
     },
     "lily-excel-data-analysis": {
       "kind": "workflow",
-      "intents": ["spreadsheet.analyze", "csv.analyze", "data.clean", "chart.create"],
-      "primaryTools": ["runtime.python", "spreadsheet.writer"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["artifact", "text"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["schema_detect", "row_count_check", "output_file_check"] },
-      "failure": { "recovery": ["preserve_original", "write_audit_sheet", "summarize_assumptions"] }
+      "intents": [
+        "spreadsheet.analyze",
+        "csv.analyze",
+        "data.clean",
+        "chart.create"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "spreadsheet.writer"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "artifact",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "schema_detect",
+          "row_count_check",
+          "output_file_check"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "preserve_original",
+          "write_audit_sheet",
+          "summarize_assumptions"
+        ]
+      }
     },
     "lily-ppt-design-qa": {
       "kind": "quality",
-      "intents": ["presentation.review", "ppt.qa", "slide.design_check"],
-      "primaryTools": ["runtime.python", "render.preview"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["text", "artifact"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["render_slides", "check_overflow", "visual_consistency_review"] },
-      "failure": { "recovery": ["report_unrendered_slides", "suggest_manual_review"] }
+      "intents": [
+        "presentation.review",
+        "ppt.qa",
+        "slide.design_check"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "render.preview"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "text",
+        "artifact"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "render_slides",
+          "check_overflow",
+          "visual_consistency_review"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "report_unrendered_slides",
+          "suggest_manual_review"
+        ]
+      }
     },
     "lily-ui-quality": {
       "kind": "quality",
-      "intents": ["ui.create", "ui.review", "frontend.visual_qa", "interaction.review", "accessibility.review", "localization.review"],
-      "matchHints": ["landing page design", "login screen design", "responsive design", "spacing hierarchy", "UI visual consistency", "interaction audit", "layout audit", "UI audit", "frontend visual QA", "accessibility review", "RTL layout", "间距层级", "UI 视觉一致性", "页面美化", "无障碍检查"],
-      "primaryTools": ["browser.preview", "screenshot", "console.logs"],
-      "inputModes": ["text", "workspace", "image"],
-      "outputModes": ["issue_list", "workspace_change", "text"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["desktop_screenshot", "mobile_screenshot", "no_overlap_check"] },
-      "failure": { "recovery": ["prioritize_visible_issues", "recheck_after_fix"] }
+      "intents": [
+        "ui.create",
+        "ui.review",
+        "frontend.visual_qa",
+        "interaction.review",
+        "accessibility.review",
+        "localization.review"
+      ],
+      "matchHints": [
+        "landing page design",
+        "login screen design",
+        "responsive design",
+        "spacing hierarchy",
+        "UI visual consistency",
+        "interaction audit",
+        "layout audit",
+        "UI audit",
+        "frontend visual QA",
+        "accessibility review",
+        "RTL layout",
+        "间距层级",
+        "UI 视觉一致性",
+        "页面美化",
+        "无障碍检查"
+      ],
+      "primaryTools": [
+        "browser.preview",
+        "screenshot",
+        "console.logs"
+      ],
+      "inputModes": [
+        "text",
+        "workspace",
+        "image"
+      ],
+      "outputModes": [
+        "issue_list",
+        "workspace_change",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "desktop_screenshot",
+          "mobile_screenshot",
+          "no_overlap_check"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "prioritize_visible_issues",
+          "recheck_after_fix"
+        ]
+      }
     },
     "lily-browser-qa": {
       "kind": "quality",
-      "intents": ["browser.test", "webapp.qa", "frontend.smoke_test"],
-      "primaryTools": ["browser.preview", "playwright", "console.logs"],
-      "runtimeDependencies": ["web-automation"],
-      "inputModes": ["text", "workspace", "url"],
-      "outputModes": ["test_report", "screenshot", "text"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["open_page", "interact", "check_console", "screenshot"] },
-      "failure": { "recovery": ["start_dev_server", "retry_with_visible_browser", "report_blocker"] }
+      "intents": [
+        "browser.test",
+        "webapp.qa",
+        "frontend.smoke_test"
+      ],
+      "primaryTools": [
+        "browser.preview",
+        "playwright",
+        "console.logs"
+      ],
+      "runtimeDependencies": [
+        "web-automation"
+      ],
+      "inputModes": [
+        "text",
+        "workspace",
+        "url"
+      ],
+      "outputModes": [
+        "test_report",
+        "screenshot",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "open_page",
+          "interact",
+          "check_console",
+          "screenshot"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "start_dev_server",
+          "retry_with_visible_browser",
+          "report_blocker"
+        ]
+      }
     },
     "lily-creative-director": {
       "kind": "workflow",
-      "intents": ["image.create", "video.create", "poster.create", "visual.direction"],
-      "primaryTools": ["vision.model", "image.model", "prompt.builder"],
-      "inputModes": ["text", "image"],
-      "outputModes": ["prompt", "artifact", "text"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["define_use_case", "style_direction", "quality_constraints"] },
-      "failure": { "recovery": ["ask_for_brand_or_style", "produce_safe_alternative"] }
+      "intents": [
+        "image.create",
+        "video.create",
+        "poster.create",
+        "visual.direction"
+      ],
+      "primaryTools": [
+        "vision.model",
+        "image.model",
+        "prompt.builder"
+      ],
+      "inputModes": [
+        "text",
+        "image"
+      ],
+      "outputModes": [
+        "prompt",
+        "artifact",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "define_use_case",
+          "style_direction",
+          "quality_constraints"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "ask_for_brand_or_style",
+          "produce_safe_alternative"
+        ]
+      }
     },
     "lily-prompt-enhancer": {
       "kind": "tool",
-      "intents": ["prompt.enhance", "image.prompt", "video.prompt"],
-      "avoidHints": ["skill route", "which route", "should trigger", "routing eval", "intent eval", "触发哪个", "意图评估", "路由评估"],
-      "primaryTools": ["prompt.builder"],
-      "inputModes": ["text", "image"],
-      "outputModes": ["prompt", "text"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["preserve_user_intent", "add_constraints", "avoid_unsupported_claims"] },
-      "failure": { "recovery": ["keep_prompt_simple", "list_assumptions"] }
+      "intents": [
+        "prompt.enhance",
+        "image.prompt",
+        "video.prompt"
+      ],
+      "avoidHints": [
+        "skill route",
+        "which route",
+        "should trigger",
+        "routing eval",
+        "intent eval",
+        "触发哪个",
+        "意图评估",
+        "路由评估"
+      ],
+      "primaryTools": [
+        "prompt.builder"
+      ],
+      "inputModes": [
+        "text",
+        "image"
+      ],
+      "outputModes": [
+        "prompt",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "preserve_user_intent",
+          "add_constraints",
+          "avoid_unsupported_claims"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "keep_prompt_simple",
+          "list_assumptions"
+        ]
+      }
     },
     "lily-image-qa": {
       "kind": "quality",
-      "intents": ["image.review", "visual_asset.qa", "image.compare"],
-      "primaryTools": ["vision.model", "image.viewer"],
-      "inputModes": ["text", "image"],
-      "outputModes": ["issue_list", "text"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["check_subject", "check_text_faces_hands", "check_use_case_fit"] },
-      "failure": { "recovery": ["recommend_retry_prompt", "separate_facts_from_inference"] }
+      "intents": [
+        "image.review",
+        "visual_asset.qa",
+        "image.compare"
+      ],
+      "primaryTools": [
+        "vision.model",
+        "image.viewer"
+      ],
+      "inputModes": [
+        "text",
+        "image"
+      ],
+      "outputModes": [
+        "issue_list",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "check_subject",
+          "check_text_faces_hands",
+          "check_use_case_fit"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "recommend_retry_prompt",
+          "separate_facts_from_inference"
+        ]
+      }
     },
     "lily-research-synthesis": {
       "kind": "workflow",
-      "intents": ["research.latest", "fact_check", "ranking.compare", "source_synthesis"],
-      "matchHints": ["latest news", "current facts", "rankings", "API prices", "with citations", "with sources", "source-backed", "最新信息", "今天新闻", "排行榜", "价格", "引用来源", "带来源", "给出处"],
-      "primaryTools": ["web.search", "source.reader"],
-      "inputModes": ["text", "url"],
-      "outputModes": ["cited_answer", "text"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["browse_current_sources", "cross_source_check", "cite_sources"] },
-      "failure": { "recovery": ["state_uncertainty", "separate_old_and_current_facts"] }
+      "intents": [
+        "research.latest",
+        "fact_check",
+        "ranking.compare",
+        "source_synthesis"
+      ],
+      "matchHints": [
+        "latest news",
+        "current facts",
+        "rankings",
+        "API prices",
+        "with citations",
+        "with sources",
+        "source-backed",
+        "最新信息",
+        "今天新闻",
+        "排行榜",
+        "价格",
+        "引用来源",
+        "带来源",
+        "给出处"
+      ],
+      "primaryTools": [
+        "web.search",
+        "source.reader"
+      ],
+      "inputModes": [
+        "text",
+        "url"
+      ],
+      "outputModes": [
+        "cited_answer",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "browse_current_sources",
+          "cross_source_check",
+          "cite_sources"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "state_uncertainty",
+          "separate_old_and_current_facts"
+        ]
+      }
     },
     "lily-stock-research": {
       "kind": "workflow",
-      "intents": ["stock.analyze", "market.research", "financial.report"],
-      "matchHints": ["stock", "equity", "ticker", "ETF", "market cap", "stock market", "watchlist", "portfolio", "position", "exposure", "股票", "股价", "指数", "自选股", "持仓", "组合", "敞口", "市场复盘"],
-      "primaryTools": ["market.data", "web.search", "runtime.python"],
-      "inputModes": ["text", "ticker"],
-      "outputModes": ["report", "artifact", "text"],
-      "risk": { "level": "medium", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["data_source_trace", "cross_check_prices", "investment_disclaimer"] },
-      "failure": { "recovery": ["fallback_to_public_sources", "mark_missing_metrics", "avoid_buy_sell_advice"] }
+      "intents": [
+        "stock.analyze",
+        "market.research",
+        "financial.report"
+      ],
+      "matchHints": [
+        "stock",
+        "equity",
+        "ticker",
+        "ETF",
+        "market cap",
+        "stock market",
+        "watchlist",
+        "portfolio",
+        "position",
+        "exposure",
+        "股票",
+        "股价",
+        "指数",
+        "自选股",
+        "持仓",
+        "组合",
+        "敞口",
+        "市场复盘"
+      ],
+      "primaryTools": [
+        "market.data",
+        "web.search",
+        "runtime.python"
+      ],
+      "inputModes": [
+        "text",
+        "ticker"
+      ],
+      "outputModes": [
+        "report",
+        "artifact",
+        "text"
+      ],
+      "risk": {
+        "level": "medium",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "data_source_trace",
+          "cross_check_prices",
+          "investment_disclaimer"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "fallback_to_public_sources",
+          "mark_missing_metrics",
+          "avoid_buy_sell_advice"
+        ]
+      }
     },
     "lily-web-system-learning": {
       "kind": "connector",
-      "intents": ["web_system.learn", "web_system.automate", "logged_in_system.map"],
-      "primaryTools": ["playwright", "har.capture", "mcp.tool_broker"],
-      "runtimeDependencies": ["chromium"],
-      "inputModes": ["text", "url", "browser_session"],
-      "outputModes": ["capability_map", "workspace_skill", "tool_manifest"],
-      "risk": { "level": "high", "confirmation": "always" },
-      "verification": { "required": true, "methods": ["capture_login_session", "discover_api_contract", "generate_capability_map", "dry_run_read_action"] },
-      "failure": { "recovery": ["stop_runtime_script_generation", "ask_user_to_login_once", "report_unlearned_routes"] }
+      "intents": [
+        "web_system.learn",
+        "web_system.automate",
+        "logged_in_system.map"
+      ],
+      "primaryTools": [
+        "playwright",
+        "har.capture",
+        "mcp.tool_broker"
+      ],
+      "runtimeDependencies": [
+        "chromium"
+      ],
+      "inputModes": [
+        "text",
+        "url",
+        "browser_session"
+      ],
+      "outputModes": [
+        "capability_map",
+        "workspace_skill",
+        "tool_manifest"
+      ],
+      "risk": {
+        "level": "high",
+        "confirmation": "always"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "capture_login_session",
+          "discover_api_contract",
+          "generate_capability_map",
+          "dry_run_read_action"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "stop_runtime_script_generation",
+          "ask_user_to_login_once",
+          "report_unlearned_routes"
+        ]
+      }
     },
     "lily-mail-assistant": {
       "kind": "connector",
-      "intents": ["mail.search", "mail.summarize", "mail.draft", "mail.send"],
-      "primaryTools": ["mail.connector", "mcp.tool_broker"],
-      "inputModes": ["text", "mailbox"],
-      "outputModes": ["email_draft", "text"],
-      "risk": { "level": "high", "confirmation": "always" },
-      "verification": { "required": true, "methods": ["scope_mailbox", "draft_before_send", "exact_recipient_confirmation"] },
-      "failure": { "recovery": ["never_send_without_confirmation", "summarize_missing_attachment_support"] }
+      "intents": [
+        "mail.search",
+        "mail.summarize",
+        "mail.draft",
+        "mail.send"
+      ],
+      "primaryTools": [
+        "mail.connector",
+        "mcp.tool_broker"
+      ],
+      "inputModes": [
+        "text",
+        "mailbox"
+      ],
+      "outputModes": [
+        "email_draft",
+        "text"
+      ],
+      "risk": {
+        "level": "high",
+        "confirmation": "always"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "scope_mailbox",
+          "draft_before_send",
+          "exact_recipient_confirmation"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "never_send_without_confirmation",
+          "summarize_missing_attachment_support"
+        ]
+      }
     },
     "lily-skill-quality-gate": {
       "kind": "quality",
-      "intents": ["skill.review", "skill.release_gate", "capability.audit"],
-      "primaryTools": ["workspace.files", "tests"],
-      "inputModes": ["text", "workspace"],
-      "outputModes": ["review", "text"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["check_trigger_io", "check_verification", "check_recovery", "check_safety"] },
-      "failure": { "recovery": ["block_release", "list_missing_contracts"] }
+      "intents": [
+        "skill.review",
+        "skill.release_gate",
+        "capability.audit"
+      ],
+      "primaryTools": [
+        "workspace.files",
+        "tests"
+      ],
+      "inputModes": [
+        "text",
+        "workspace"
+      ],
+      "outputModes": [
+        "review",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "check_trigger_io",
+          "check_verification",
+          "check_recovery",
+          "check_safety"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "block_release",
+          "list_missing_contracts"
+        ]
+      }
     },
     "lily-intent-eval": {
       "kind": "quality",
-      "intents": ["intent.evaluate", "routing.test", "prompt_regression"],
-      "matchHints": ["skill route", "which route", "should trigger", "routing eval", "intent eval", "prompt regression", "触发哪个", "意图评估", "路由评估"],
-      "primaryTools": ["test.fixtures", "router.evaluator"],
-      "inputModes": ["text", "fixture"],
-      "outputModes": ["evaluation_report", "text"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["run_intent_cases", "compare_expected_route", "flag_false_positive"] },
-      "failure": { "recovery": ["add_regression_case", "tighten_trigger_terms"] }
+      "intents": [
+        "intent.evaluate",
+        "routing.test",
+        "prompt_regression"
+      ],
+      "matchHints": [
+        "skill route",
+        "which route",
+        "should trigger",
+        "routing eval",
+        "intent eval",
+        "prompt regression",
+        "触发哪个",
+        "意图评估",
+        "路由评估"
+      ],
+      "primaryTools": [
+        "test.fixtures",
+        "router.evaluator"
+      ],
+      "inputModes": [
+        "text",
+        "fixture"
+      ],
+      "outputModes": [
+        "evaluation_report",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "run_intent_cases",
+          "compare_expected_route",
+          "flag_false_positive"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "add_regression_case",
+          "tighten_trigger_terms"
+        ]
+      }
     },
     "lily-template-fill": {
       "kind": "tool",
-      "intents": ["template.fill", "document.generate_from_template"],
-      "primaryTools": ["runtime.python", "document.writer"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["artifact"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["extract_placeholders", "confirm_missing_fields", "output_file_check"] },
-      "failure": { "recovery": ["preserve_template", "mark_unfilled_fields"] }
+      "intents": [
+        "template.fill",
+        "document.generate_from_template"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "document.writer"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "artifact"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "extract_placeholders",
+          "confirm_missing_fields",
+          "output_file_check"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "preserve_template",
+          "mark_unfilled_fields"
+        ]
+      }
     },
     "lily-document-verify": {
       "kind": "quality",
-      "intents": ["document.verify", "doc.render_check", "office.qa"],
-      "primaryTools": ["runtime.python", "render.preview"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["verification_report", "text"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["render_pages", "check_overflow", "compare_expected_sections"] },
-      "failure": { "recovery": ["report_unverified_pages", "suggest_runtime_pack"] }
+      "intents": [
+        "document.verify",
+        "doc.render_check",
+        "office.qa"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "render.preview"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "verification_report",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "render_pages",
+          "check_overflow",
+          "compare_expected_sections"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "report_unverified_pages",
+          "suggest_runtime_pack"
+        ]
+      }
     },
     "lily-document-query": {
       "kind": "tool",
-      "intents": ["document.query", "document.followup", "doc.evidence_lookup"],
-      "primaryTools": ["document.query_index", "node.script"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["evidence_snippets", "text"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["list_indexed_documents", "search_chunks", "cite_chunk_id"] },
-      "failure": { "recovery": ["report_no_index", "ask_reupload", "route_to_extraction_skill"] }
+      "intents": [
+        "document.query",
+        "document.followup",
+        "doc.evidence_lookup"
+      ],
+      "primaryTools": [
+        "document.query_index",
+        "node.script"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "evidence_snippets",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "list_indexed_documents",
+          "search_chunks",
+          "cite_chunk_id"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "report_no_index",
+          "ask_reupload",
+          "route_to_extraction_skill"
+        ]
+      }
     },
     "lily-pdf-form": {
       "kind": "tool",
-      "intents": ["pdf.form_fill", "pdf.acroform.inspect"],
-      "matchHints": ["填写表单", "填这个表单", "填表", "fill this form", "fill form", "acroform"],
-      "avoidHints": ["设计表单", "新表单", "表单模板", "制作表单", "提取表格", "design a form", "form template", "extract table", "extract tables"],
-      "primaryTools": ["runtime.python", "pdf.writer"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["artifact"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["detect_fields", "validate_required_fields", "output_file_check"] },
-      "failure": { "recovery": ["preserve_original", "list_unfilled_fields"] }
+      "intents": [
+        "pdf.form_fill",
+        "pdf.acroform.inspect"
+      ],
+      "matchHints": [
+        "填写表单",
+        "填这个表单",
+        "填表",
+        "fill this form",
+        "fill form",
+        "acroform"
+      ],
+      "avoidHints": [
+        "设计表单",
+        "新表单",
+        "表单模板",
+        "制作表单",
+        "提取表格",
+        "design a form",
+        "form template",
+        "extract table",
+        "extract tables"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "pdf.writer"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "artifact"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "detect_fields",
+          "validate_required_fields",
+          "output_file_check"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "preserve_original",
+          "list_unfilled_fields"
+        ]
+      }
     },
     "lily-runtime-packs": {
       "kind": "runtime",
-      "intents": ["runtime.install", "capability_pack.install", "office_runtime.enable"],
-      "matchHints": ["image resize", "background removal", "video transcode", "OCR pack", "Docling", "LibreOffice", "ffmpeg", "runtime pack"],
-      "primaryTools": ["runtime.pack.manager", "qiniu.download"],
-      "inputModes": ["text"],
-      "outputModes": ["runtime_state", "text"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["resolve_server_pack", "download_verify_hash", "runtime_health_check"] },
-      "failure": { "recovery": ["report_download_error", "keep_existing_runtime", "retry_from_server_url"] }
+      "intents": [
+        "runtime.install",
+        "capability_pack.install",
+        "office_runtime.enable"
+      ],
+      "matchHints": [
+        "image resize",
+        "background removal",
+        "video transcode",
+        "OCR pack",
+        "Docling",
+        "LibreOffice",
+        "ffmpeg",
+        "runtime pack"
+      ],
+      "primaryTools": [
+        "runtime.pack.manager",
+        "qiniu.download"
+      ],
+      "inputModes": [
+        "text"
+      ],
+      "outputModes": [
+        "runtime_state",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "resolve_server_pack",
+          "download_verify_hash",
+          "runtime_health_check"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "report_download_error",
+          "keep_existing_runtime",
+          "retry_from_server_url"
+        ]
+      }
     },
     "lily-engineering-rules": {
       "kind": "workflow",
-      "intents": ["engineering.rules", "code.review_discipline", "delivery.quality"],
-      "matchHints": ["engineering discipline", "code review", "diff review", "missing tests", "bug risk", "overengineering", "over-design", "capability regression", "delivery quality", "minimal change", "verification before completion", "工程规范", "代码评审", "缺少测试", "过度设计", "能力退化"],
-      "primaryTools": ["workspace.files", "tests"],
-      "inputModes": ["text", "workspace"],
-      "outputModes": ["text", "review"],
-      "risk": { "level": "low", "confirmation": "none" },
-      "verification": { "required": true, "methods": ["read_before_write", "protect_user_changes", "verify_before_complete"] },
-      "failure": { "recovery": ["state_blocker", "avoid_unverified_claims"] }
+      "intents": [
+        "engineering.rules",
+        "code.review_discipline",
+        "delivery.quality"
+      ],
+      "matchHints": [
+        "engineering discipline",
+        "code review",
+        "diff review",
+        "missing tests",
+        "bug risk",
+        "overengineering",
+        "over-design",
+        "capability regression",
+        "delivery quality",
+        "minimal change",
+        "verification before completion",
+        "工程规范",
+        "代码评审",
+        "缺少测试",
+        "过度设计",
+        "能力退化"
+      ],
+      "primaryTools": [
+        "workspace.files",
+        "tests"
+      ],
+      "inputModes": [
+        "text",
+        "workspace"
+      ],
+      "outputModes": [
+        "text",
+        "review"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "none"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "read_before_write",
+          "protect_user_changes",
+          "verify_before_complete"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "state_blocker",
+          "avoid_unverified_claims"
+        ]
+      }
     },
     "anthropics-doc-coauthoring": {
       "kind": "workflow",
-      "intents": ["document.coauthor", "proposal.write", "structured_doc.write"],
-      "primaryTools": ["runtime.python", "document.writer"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["artifact", "text"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["outline_check", "file_created", "content_review"] },
-      "failure": { "recovery": ["ask_for_audience", "produce_markdown_first"] }
+      "intents": [
+        "document.coauthor",
+        "proposal.write",
+        "structured_doc.write"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "document.writer"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "artifact",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "outline_check",
+          "file_created",
+          "content_review"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "ask_for_audience",
+          "produce_markdown_first"
+        ]
+      }
     },
     "anthropics-docx": {
       "kind": "tool",
-      "intents": ["docx.read", "docx.write", "word.process"],
-      "primaryTools": ["runtime.python", "python-docx"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["artifact", "text"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["open_docx", "preserve_original", "output_file_check"] },
-      "failure": { "recovery": ["fallback_markdown", "report_unsupported_feature"] }
+      "intents": [
+        "docx.read",
+        "docx.write",
+        "word.process"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "python-docx"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "artifact",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "open_docx",
+          "preserve_original",
+          "output_file_check"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "fallback_markdown",
+          "report_unsupported_feature"
+        ]
+      }
     },
     "anthropics-pdf": {
       "kind": "tool",
-      "intents": ["pdf.read", "pdf.write", "pdf.convert"],
-      "primaryTools": ["runtime.python", "pdfplumber", "pypdf"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["artifact", "text"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["sample_extract", "page_count_check", "output_file_check"] },
-      "failure": { "recovery": ["try_ocr_if_scan", "report_pages_with_errors"] }
+      "intents": [
+        "pdf.read",
+        "pdf.write",
+        "pdf.convert"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "pdfplumber",
+        "pypdf"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "artifact",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "sample_extract",
+          "page_count_check",
+          "output_file_check"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "try_ocr_if_scan",
+          "report_pages_with_errors"
+        ]
+      }
     },
     "anthropics-pptx": {
       "kind": "tool",
-      "intents": ["pptx.read", "pptx.write", "presentation.create"],
-      "primaryTools": ["runtime.python", "python-pptx"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["artifact", "text"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["slide_count_check", "layout_check", "output_file_check"] },
-      "failure": { "recovery": ["reduce_slide_complexity", "report_render_limit"] }
+      "intents": [
+        "pptx.read",
+        "pptx.write",
+        "presentation.create"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "python-pptx"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "artifact",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "slide_count_check",
+          "layout_check",
+          "output_file_check"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "reduce_slide_complexity",
+          "report_render_limit"
+        ]
+      }
     },
     "anthropics-xlsx": {
       "kind": "tool",
-      "intents": ["xlsx.read", "xlsx.write", "spreadsheet.process"],
-      "primaryTools": ["runtime.python", "openpyxl", "pandas"],
-      "inputModes": ["text", "file"],
-      "outputModes": ["artifact", "text"],
-      "risk": { "level": "low", "confirmation": "before_mutation" },
-      "verification": { "required": true, "methods": ["sheet_count_check", "formula_preservation_check", "output_file_check"] },
-      "failure": { "recovery": ["preserve_original", "write_change_log_sheet"] }
+      "intents": [
+        "xlsx.read",
+        "xlsx.write",
+        "spreadsheet.process"
+      ],
+      "primaryTools": [
+        "runtime.python",
+        "openpyxl",
+        "pandas"
+      ],
+      "inputModes": [
+        "text",
+        "file"
+      ],
+      "outputModes": [
+        "artifact",
+        "text"
+      ],
+      "risk": {
+        "level": "low",
+        "confirmation": "before_mutation"
+      },
+      "verification": {
+        "required": true,
+        "methods": [
+          "sheet_count_check",
+          "formula_preservation_check",
+          "output_file_check"
+        ]
+      },
+      "failure": {
+        "recovery": [
+          "preserve_original",
+          "write_change_log_sheet"
+        ]
+      }
     }
   },
   "skills": [
@@ -407,7 +1428,8 @@
       "categoryLabel_i18n": {
         "en": "Development",
         "ar": "التطوير"
-      }
+      },
+      "contentRevision": "d79aef08375a74b199451ab4ecc37f0f959b597c01e7ef15b5ce5a0a7b0decc1"
     },
     {
       "id": "lily-app-builder",
@@ -443,7 +1465,8 @@
       "categoryLabel_i18n": {
         "en": "Development",
         "ar": "التطوير"
-      }
+      },
+      "contentRevision": "e0af4fe2a4be58e800fe6690534e667c699af885cdfc66769100d9faf931925e"
     },
     {
       "id": "lily-code-repair",
@@ -479,7 +1502,8 @@
       "categoryLabel_i18n": {
         "en": "Development",
         "ar": "التطوير"
-      }
+      },
+      "contentRevision": "d36a168deb0ac0f0e77b7d6415db156bc8553dce35193d9a5dd2685157c997e7"
     },
     {
       "id": "lily-office-intent",
@@ -515,7 +1539,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "b4e87b4d53edbdb6f3c0e75bb46ed2031f1d283a9c4a6264c9880e1cdb4ba026"
     },
     {
       "id": "lily-pdf-extraction-router",
@@ -551,7 +1576,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "80b236e17e1796c173739fce6d35a1687b6e741ce6edca4f233d3c5b6ff5fd20"
     },
     {
       "id": "lily-excel-data-analysis",
@@ -587,7 +1613,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "37bf32e2fc166807dd899dfd4cc2cdbb6fb908582efea27b3f01efbad774253d"
     },
     {
       "id": "lily-ppt-design-qa",
@@ -623,7 +1650,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "a384b312bb77dd8175d0231975d189d04658158ef5165c5864db2dc3d686c8d6"
     },
     {
       "id": "lily-ui-quality",
@@ -659,7 +1687,8 @@
       "categoryLabel_i18n": {
         "en": "Design & UI",
         "ar": "التصميم والواجهات"
-      }
+      },
+      "contentRevision": "a7ec8fa2a3f392f36614c9efafdbba6b7de6ea6b3a394b0898c3d12b2128ae69"
     },
     {
       "id": "lily-browser-qa",
@@ -695,7 +1724,8 @@
       "categoryLabel_i18n": {
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
-      }
+      },
+      "contentRevision": "1d75bb0a6142b4d5153f8e70f9a40f827a831e85e492296829dc980af072a4ea"
     },
     {
       "id": "lily-creative-director",
@@ -731,7 +1761,8 @@
       "categoryLabel_i18n": {
         "en": "Media & Creative",
         "ar": "الوسائط والإبداع"
-      }
+      },
+      "contentRevision": "a841887c35ac1712448842a5935395622b01a9b39b778ddbae359f747e57911f"
     },
     {
       "id": "lily-prompt-enhancer",
@@ -767,7 +1798,8 @@
       "categoryLabel_i18n": {
         "en": "Media & Creative",
         "ar": "الوسائط والإبداع"
-      }
+      },
+      "contentRevision": "e020ed0e721475c3fca05bcc51a9dd28efb19b04e7ad2bb004b6f36f59f9ba82"
     },
     {
       "id": "lily-image-qa",
@@ -803,7 +1835,8 @@
       "categoryLabel_i18n": {
         "en": "Media & Creative",
         "ar": "الوسائط والإبداع"
-      }
+      },
+      "contentRevision": "281232bdf7d0c4349fe54f6f721174c2b7f2bfaab34ca852ec23719b4575ea88"
     },
     {
       "id": "lily-research-synthesis",
@@ -839,7 +1872,8 @@
       "categoryLabel_i18n": {
         "en": "Research",
         "ar": "البحث"
-      }
+      },
+      "contentRevision": "823dff0604619a4313660e01c502a553791a684435d4409e09e2fc3c028364f0"
     },
     {
       "id": "lily-stock-research",
@@ -875,7 +1909,8 @@
       "categoryLabel_i18n": {
         "en": "Research",
         "ar": "البحث"
-      }
+      },
+      "contentRevision": "b403f383f191521a109b82bf1586c84e88bdaf3678d03619c16d6154ce947fe4"
     },
     {
       "id": "lily-web-system-learning",
@@ -911,7 +1946,8 @@
       "categoryLabel_i18n": {
         "en": "Automation",
         "ar": "الأتمتة"
-      }
+      },
+      "contentRevision": "81d8c02d88da1808f9beb23bb0b8a7e29a3b00acb804cc9fea60096dfbbbefab"
     },
     {
       "id": "lily-mail-assistant",
@@ -947,7 +1983,8 @@
       "categoryLabel_i18n": {
         "en": "Automation",
         "ar": "الأتمتة"
-      }
+      },
+      "contentRevision": "0d59ca0d1285a579f19c9cc84514079fbd69ca1b8e0baadf2ae2a4aa5a82881b"
     },
     {
       "id": "lily-skill-quality-gate",
@@ -983,7 +2020,8 @@
       "categoryLabel_i18n": {
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
-      }
+      },
+      "contentRevision": "b72a29c36aae8e56f4ef67e5930abd9b2f27b7155b8bbf7e7f4d8c80ba10e440"
     },
     {
       "id": "lily-intent-eval",
@@ -1019,7 +2057,8 @@
       "categoryLabel_i18n": {
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
-      }
+      },
+      "contentRevision": "d8f218e1db604007deae4d994d80ad1a6325a29e16c2f9526802f189f8d59f3a"
     },
     {
       "id": "lily-template-fill",
@@ -1055,7 +2094,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "ecb31ff520a409e22378ddd6eb534bb901920886522cc2eaf891f61227613dec"
     },
     {
       "id": "lily-document-verify",
@@ -1091,7 +2131,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "ad5240e23650e6ce48076f2276235f6ad47049df4923ceb33b8b2a23af014162"
     },
     {
       "id": "lily-document-query",
@@ -1127,7 +2168,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "f5442104bc8a37905974e62e21edd004f5f7dfd5c06e99f38c5c2d22dd6f4ddc"
     },
     {
       "id": "lily-pdf-form",
@@ -1163,7 +2205,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "857645271bae8cc8f08102ceabffa374bd80fc1b66fc398920e3d41d26a90efd"
     },
     {
       "id": "lily-runtime-packs",
@@ -1199,7 +2242,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "9aeb010845ca409ec5fdf11603c3e6fcd5638aa17b42e6aae03f48e20d90b0ce"
     },
     {
       "id": "lily-engineering-rules",
@@ -1236,7 +2280,8 @@
       "categoryLabel_i18n": {
         "en": "Development",
         "ar": "التطوير"
-      }
+      },
+      "contentRevision": "37e2b06f219cb1a2eddb41b40867f572062f971b92b6c3ed05207a7e572ae5d0"
     },
     {
       "id": "anthropics-doc-coauthoring",
@@ -1272,7 +2317,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "2dbe2889f6f7e085e3bc26b162ef08bc6894793aa4fd59fb8fc01160d1d99595"
     },
     {
       "id": "anthropics-docx",
@@ -1308,7 +2354,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "9712322e636afe6fa9dd665bb27838ea98c2fcf9a09a2d6ae422aa70259f20b4"
     },
     {
       "id": "anthropics-pdf",
@@ -1344,7 +2391,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "0ed91b3df70748d8c905b878cc5ad661abf5cdaf6b30d7ff1b168433407d931e"
     },
     {
       "id": "anthropics-pptx",
@@ -1380,7 +2428,8 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "689cd3a3357dc6d6cbfcec9c8390f691c2bd5921c7f0aaf2254b95715efdac0a"
     },
     {
       "id": "anthropics-xlsx",
@@ -1416,7 +2465,9 @@
       "categoryLabel_i18n": {
         "en": "Office Documents",
         "ar": "مستندات المكتب"
-      }
+      },
+      "contentRevision": "0341c95a438d46920383908afe64a8a51d5a00dc6efe433a5c35cde0317fba2a"
     }
-  ]
+  ],
+  "registryRevision": "9e3ff2236a74d30cdabc5a7b659812b268eb4c0b55095745ac3b081c14b45281"
 }

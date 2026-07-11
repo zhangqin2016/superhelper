@@ -134,6 +134,28 @@ fs.writeFileSync(
 );
 const bootstrapResult = skillManager.bootstrapSkills();
 
+const bundledAfterBootstrap = skillRegistry.loadBundledRegistry();
+const sameTimestampStaleCache = JSON.parse(fs.readFileSync(
+  path.join(tmp, "skills-cache", "registry.json"),
+  "utf8",
+));
+sameTimestampStaleCache.updatedAt = bundledAfterBootstrap.updatedAt;
+sameTimestampStaleCache.sourceUrl = skillRegistry.BUNDLED_REGISTRY_SOURCE;
+sameTimestampStaleCache.skills = bundledAfterBootstrap.skills.map((skill) => ({ ...skill }));
+sameTimestampStaleCache.skills[0].description = "stale description with unchanged timestamp and ids";
+fs.writeFileSync(
+  path.join(tmp, "skills-cache", "registry.json"),
+  JSON.stringify(sameTimestampStaleCache, null, 2),
+  "utf8",
+);
+const contentRefreshedRegistry = skillRegistry.ensureBundledRegistryCached();
+if (contentRefreshedRegistry.skills[0].description === "stale description with unchanged timestamp and ids") {
+  throw new Error("bundled registry cache should refresh when content changes without timestamp/id changes");
+}
+if (contentRefreshedRegistry.skills.find((skill) => skill.id === "lily-app-builder")?.sourceKind !== "lily") {
+  throw new Error("registry normalization should preserve sourceKind provenance");
+}
+
 const mandatory = skillManager.MANDATORY_PLATFORM_SKILL_IDS;
 const expectedMandatory = [
   "lily-workbench-rules",
