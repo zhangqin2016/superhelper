@@ -220,9 +220,8 @@ function queryFacts(opts = {}) {
   const spreadsheetAnalysis = spreadsheet &&
     /analy[sz]e|clean|chart|pivot|summary|formula|outlier|dashboard|分析|清洗|图表|透视|汇总|公式|异常值|看板/i.test(`${text} ${zh}`);
   const webLearning = /学习|learn|自动化.*可复用|生成可复用|workspace skill|capability map|后台系统|logged.?in system/i.test(`${text} ${zh}`);
-  const browserQa = !sourceOfficeFile &&
+  const browserQaSignal = !sourceOfficeFile &&
     /localhost|127\.0\.0\.1|console|控制台|前端|frontend|冒烟|smoke|按钮|点击|交互|响应式|布局|登录页|网页.*测试|web app|browser\s+(?:qa|test|check)|qa/i.test(`${text} ${zh}`);
-  const web = webLearning || browserQa || /网页|网站|系统|\boa\b|erp|crm|browser|website|web app|playwright|自动化/i.test(`${text} ${zh}`);
   const promptEnhance = /prompt|提示词|咒语|关键词|改写.*提示|写得更专业|扩写/i.test(`${text} ${zh}`);
   const visualCreative = /海报|封面|小红书|产品图|头像|插画|图片|图像|视频|分镜|\bposter\b|\bcover\b|\bimage\b|\bvideo\b|\bstoryboard\b|visual asset|visual concept|visual design/i.test(`${text} ${zh}`);
   const mediaTranscode = media && /剪辑|裁剪|转码|压缩|导出|mp4|mov|ffmpeg|transcode|encode|trim|cut|compress/i.test(`${text} ${zh}`);
@@ -241,14 +240,25 @@ function queryFacts(opts = {}) {
   const intentEval = /意图|intent|路由|routing|触发哪个|prompt regression|评估这句话/i.test(`${text} ${zh}`) &&
     /评估|evaluate|测试|test|触发|识别/i.test(`${text} ${zh}`);
   const mail = /邮件|邮箱|email|mail|inbox|客户.*回复|回复客户|收件箱|发信|send mail/i.test(`${text} ${zh}`);
-  const uiQuality = !sourceOfficeFile &&
-    /ui|页面|界面|间距|层级|视觉一致|visual consistency|frontend visual|interaction review|布局.*质量/i.test(`${text} ${zh}`) &&
-    /检查|review|质量|qa|评审|验收|一致|问题/i.test(`${text} ${zh}`);
   const codeSignal = /debug|fix|TypeError|ReferenceError|SyntaxError|build failure|test failure|runtime error|cannot read|stack trace|exception|npm|node|python|java|代码|编译|构建|测试失败/i.test(`${text} ${zh}`);
   const codeRepair = !files.image && !files.pdf && !files.docx && !files.pptx && !spreadsheet &&
     (codeSignal || /报错|异常|失败|修复/i.test(`${text} ${zh}`));
-  const appCreate = !codeRepair &&
-    /做一个.*(应用|app|网页|网站|页面|后台|看板|工具)|搭建.*(应用|app|网页|网站|页面|后台|看板|工具)|创建.*(应用|app|网页|网站|页面|后台|看板|工具)|构建.*(应用|app|网页|网站|页面|后台|看板|工具)|生成.*网页|开发.*应用|开发.*页面|写.*脚本|生成.*脚本|批量.*文件|web app|管理后台|小工具|script/i.test(`${text} ${zh}`);
+  const uiBuildArtifact = !pdf && !sourceOfficeFile &&
+    /页面|界面|落地页|登录页|官网|网站|网页|仪表盘|看板|管理后台|后台页面|landing\s*page|login\s*(?:page|screen)|web\s*page|website|dashboard|admin\s*(?:page|screen|interface)/i.test(`${text} ${zh}`);
+  const uiArtifact = uiBuildArtifact || (!pdf && !sourceOfficeFile &&
+    /ui|组件|表单|component|form/i.test(`${text} ${zh}`));
+  const uiReview = uiArtifact &&
+    /审查|评审|验收|质量|一致|无障碍|可访问|间距|层级|视觉|交互|audit|review|critique|visual\s*qa|quality|consistency|accessibility|spacing|hierarchy|interaction/i.test(`${text} ${zh}`);
+  const uiDesignVerb = /设计|美化|优化|改版|重新设计|重设计|design|redesign|polish|restyle/i.test(`${text} ${zh}`);
+  const uiCreate = !codeRepair && uiArtifact && (uiDesignVerb || (uiBuildArtifact &&
+    /制作|创建|构建|开发|实现|生成|搭建|做一个|build|create|implement|make/i.test(`${text} ${zh}`)));
+  const explicitBrowserVerification = uiArtifact &&
+    /打开|预览|截图|浏览器|点击|测试|验证|响应式|控制台|open|preview|screenshot|browser|click|test|verify|responsive|console/i.test(`${text} ${zh}`);
+  const uiQuality = uiReview || uiCreate;
+  const appCreate = !codeRepair && (uiCreate ||
+    /做一个.*(应用|app|工具)|搭建.*(应用|app|工具)|创建.*(应用|app|工具)|构建.*(应用|app|工具)|开发.*应用|写.*脚本|生成.*脚本|批量.*文件|web app|小工具|script/i.test(`${text} ${zh}`));
+  const browserQa = browserQaSignal || uiReview || explicitBrowserVerification || appCreate;
+  const web = webLearning || browserQa || uiQuality || appCreate || /网页|网站|系统|\boa\b|erp|crm|browser|website|web app|playwright|自动化/i.test(`${text} ${zh}`);
   const codingCore = !sourceResearch && !appCreate && !codeRepair && !files.image && !files.pdf && !files.docx && !files.pptx && !files.xlsx &&
     /实现|接入|组件|表单|逻辑|重构|改代码|代码|automation|script|function|api|hook|component/i.test(`${text} ${zh}`);
   return {
@@ -285,6 +295,10 @@ function queryFacts(opts = {}) {
     skillQuality,
     intentEval,
     mail,
+    uiArtifact,
+    uiReview,
+    uiCreate,
+    explicitBrowserVerification,
     uiQuality,
     codeRepair,
     appCreate,

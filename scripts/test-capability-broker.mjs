@@ -415,6 +415,30 @@ assert.ok(
   "UI audit should not be mistaken for creative visual generation"
 );
 
+const uiCreationCases = [
+  ["设计一个有高级感的 SaaS 落地页", ["lily-app-builder", "lily-ui-quality", "lily-browser-qa"]],
+  ["美化这个登录页并优化移动端", ["lily-app-builder", "lily-ui-quality", "lily-browser-qa"]],
+  ["Build a distinctive landing page", ["lily-app-builder", "lily-ui-quality", "lily-browser-qa"]],
+  ["Redesign this login screen", ["lily-app-builder", "lily-ui-quality", "lily-browser-qa"]],
+];
+for (const [text, required] of uiCreationCases) {
+  const ids = recommendSkillCapabilityGraph({ text }).map((skill) => skill.id);
+  for (const id of required) {
+    assert.ok(ids.includes(id), `${text} should include ${id}: ${ids}`);
+  }
+  assert.equal(ids.includes("frontend-design"), false, `${text} must not route to a removed skill id`);
+}
+
+const explicitUiVerification = recommendSkillCapabilityGraph({
+  text: "重设计这个落地页，完成后打开并截图检查",
+}).map((skill) => skill.id);
+assert.ok(explicitUiVerification.includes("lily-browser-qa"), "explicit UI verification should include browser QA");
+
+const uiAdviceOnly = recommendSkillCapabilityGraph({
+  text: "解释什么是视觉层级",
+}).map((skill) => skill.id);
+assert.equal(uiAdviceOnly.includes("lily-app-builder"), false, "UI concept explanations must not create an app");
+
 const codeRepairRecommendations = recommendSkillCapabilityGraph({
   text: "修复这个报错：TypeError cannot read property of undefined",
 });
