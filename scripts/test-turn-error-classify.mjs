@@ -112,6 +112,37 @@ assert(emptyCompletion?.suppressIncompleteSummary === true, "empty model output 
 assert(ec.isEmptyAssistantCompletion({ code: 0 }, { text: "" }, { assistantText: "" }), "detects empty completed output");
 assert(!ec.isEmptyAssistantCompletion({ code: 0 }, { text: "done" }, { assistantText: "" }), "does not flag real text");
 
+// MICRO_COMPLETION field case: a fragment of our own system guide echoed as
+// the whole answer to "你好" (11 tokens, head cut mid-word). Two independent
+// signatures must each catch it: the dangling ** and the unprompted lily-
+// skill namespace.
+const guideEcho = ec.classifyTurnFailure(
+  { code: 0 },
+  { text: "ily-csv-conversion (CSV 转换)**" },
+  { usage: { output_tokens: 11 }, enginePayload: { rawText: "你好" } },
+);
+assert(guideEcho?.code === "MICRO_COMPLETION", "system-guide echo fragments are failures, not answers");
+const danglingBoldOnly = ec.classifyTurnFailure(
+  { code: 0 },
+  { text: "以下步骤**" },
+  { usage: { output_tokens: 6 }, enginePayload: { rawText: "你好" } },
+);
+assert(danglingBoldOnly?.code === "MICRO_COMPLETION", "an unpaired ** is a mid-document cut");
+// 不变笨 guards: paired bold in a legit short answer stays a normal completion;
+// naming a lily- skill the USER asked about is not an echo.
+const pairedBold = ec.classifyTurnFailure(
+  { code: 0 },
+  { text: "**方案 A** 更适合你的场景" },
+  { usage: { output_tokens: 14 }, enginePayload: { rawText: "你好" } },
+);
+assert(pairedBold === null, "paired bold markers in a real short answer must not be flagged");
+const askedAboutSkill = ec.classifyTurnFailure(
+  { code: 0 },
+  { text: "lily-csv-conversion 支持 xlsx 和 csv" },
+  { usage: { output_tokens: 14 }, enginePayload: { rawText: "lily-csv-conversion 能转 xlsx 吗" } },
+);
+assert(askedAboutSkill === null, "mentioning a skill the user asked about is not a prompt echo");
+
 const leakedToolCall = ec.classifyTurnFailure(
   {},
   { text: "> <parameter=timeout> 10000 </parameter> </function> </tool_call>" },

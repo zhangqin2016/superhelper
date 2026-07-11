@@ -462,6 +462,39 @@ resetRescueStateForTests();
   flushEvents();
 }
 
+// Field case 3: the model echoes a fragment of OUR OWN system guide as the
+// answer to "你好" — "ily-csv-conversion (CSV 转换)**", 11 tokens. It slipped
+// every earlier signature (not code-shaped, no comma, ask under 8 chars); the
+// dangling ** and the unprompted lily- namespace are the new evidence.
+resetRescueStateForTests();
+{
+  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "你好", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  assert.equal(send.ok, true);
+  const leakedGuide = "ily-csv-conversion (CSV 转换)**";
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "assistant.delta", payload: { text: leakedGuide } },
+    { type: "usage.updated", payload: { usage: { output_tokens: 11 }, stopReason: "stop" } },
+  ]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: leakedGuide });
+  await settle();
+  const events = flushEvents();
+  assert.equal(events.find((event) => event.type === "turn.failed")?.payload?.errorCode, "MICRO_COMPLETION",
+    "a system-guide echo fragment (dangling ** / unprompted skill namespace) is a failure, not an answer");
+  assert.equal(events.find((event) => event.type === "turn.self_heal_retry")?.payload?.kind, "micro_completion_retry");
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "assistant.delta", payload: { text: "你好！有什么可以帮你？" } },
+    { type: "usage.updated", payload: { usage: { output_tokens: 12 }, stopReason: "stop" } },
+  ]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "你好！有什么可以帮你？" });
+  await settle();
+  flushEvents();
+}
+
 // Safety: a punctuation-less CJK greeting to a trivial ask has NO fragment
 // signature — it completes normally (no hidden retry, no failure).
 {

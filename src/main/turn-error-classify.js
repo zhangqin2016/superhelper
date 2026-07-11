@@ -294,11 +294,20 @@ function classifyTurnFailure(payload, normalized, state) {
     const outputTokens = Number(state?.usage?.output_tokens);
     const tinyOutput = Number.isFinite(outputTokens) && outputTokens > 0 && outputTokens <= 24;
     const endsLikeSentence = /[。．.!?！?…"”』」)）\]】:：]$/.test(text);
-    const userAskNonTrivial = String(state?.enginePayload?.rawText || "").trim().length >= 8;
+    const userAsk = String(state?.enginePayload?.rawText || "").trim();
+    const userAskNonTrivial = userAsk.length >= 8;
     const codeShaped = !text.includes("```") &&
       (/[;{}]\s*$/.test(text) || /\)\);|=>|\\n/.test(text));
     const latinMidSentenceStart = /^[a-z]/.test(text) && /[,;]/.test(text);
-    const fragmentSignature = codeShaped || latinMidSentenceStart ||
+    // An unpaired ** is a document cut mid-bold-run, never a finished answer
+    // ("ily-csv-conversion (CSV 转换)**", 11 tokens, to "你好" — the fragment
+    // was a bolded list item from OUR OWN system guide with its head cut off).
+    const danglingMarkdown = ((text.match(/\*\*/g) || []).length % 2) === 1;
+    // Our internal skill namespace appearing unprompted is a system-prompt
+    // echo — the user never typed "lily-…", so the content channel leaked the
+    // injected guide instead of an answer.
+    const promptEcho = /\blily-[a-z0-9][a-z0-9-]*/i.test(text) && !/lily-/i.test(userAsk);
+    const fragmentSignature = codeShaped || latinMidSentenceStart || danglingMarkdown || promptEcho ||
       (Number.isFinite(outputTokens) && outputTokens <= 12 && userAskNonTrivial);
     if (text && tinyOutput && !endsLikeSentence && fragmentSignature &&
         !payload?.interruptedByUser && !payload?.userInterrupted && !payload?.stalled && !payload?.engineInterrupted) {
