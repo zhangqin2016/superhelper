@@ -39,6 +39,7 @@ export const OPENAPI_TAGS = [
   { name: "admin:system", description: "Admin system settings" },
   { name: "admin:usage", description: "Admin usage analytics" },
   { name: "admin:workspace-apps", description: "Admin workspace-app catalog" },
+  { name: "admin:wishes", description: "Admin wish moderation and delivery status" },
   { name: "gateway:model", description: "Model gateway (LLM proxy)" },
   { name: "gateway:media", description: "Media generation gateway" },
 ];

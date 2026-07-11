@@ -11,6 +11,7 @@ const {
   mergeSupporterIds,
   normalizeWishInput,
   serializePublicWish,
+  validateWishAdminUpdate,
   validateWishPublication,
 } = await import("../server/src/services/feature-wishes.js");
 const { classifyWebSession } = await import("../server/src/services/web-user-session.js");
@@ -154,6 +155,31 @@ limiterNow += 60 * 60 * 1000;
 assert.equal(limiter.take("usr_1", "create"), true);
 assert.equal(limiter.take("usr_1", "unknown"), false);
 
+assert.deepEqual(
+  validateWishAdminUpdate(
+    { ...publicRow, status: "declined" },
+    { status: "building" },
+    { validAppIds: [], validSkillIds: [] },
+  ),
+  { ok: false, code: "WISH_STATUS_TRANSITION_INVALID" },
+);
+assert.deepEqual(
+  validateWishAdminUpdate(
+    { ...publicRow, status: "building" },
+    { status: "shipped", linkedAppIds: ["missing-app"] },
+    { validAppIds: [], validSkillIds: [] },
+  ),
+  { ok: false, code: "WISH_LINKED_OUTCOME_INVALID" },
+);
+const shippedUpdate = validateWishAdminUpdate(
+  { ...publicRow, status: "building" },
+  { status: "shipped", linkedAppIds: ["invoice-app"] },
+  { validAppIds: ["invoice-app"], validSkillIds: [] },
+);
+assert.equal(shippedUpdate.ok, true);
+assert.equal(shippedUpdate.value.status, "shipped");
+assert.deepEqual(shippedUpdate.value.linked_app_ids, ["invoice-app"]);
+
 const publicWishRouteSource = fs.readFileSync(
   new URL("../server/src/routes/public/wishes.js", import.meta.url),
   "utf8",
@@ -177,5 +203,21 @@ assert.match(publicRoutesSource, /registerPublicWishRoutes\(app\)/);
 
 const openapiSource = fs.readFileSync(new URL("../server/src/openapi.js", import.meta.url), "utf8");
 assert.match(openapiSource, /public:wishes/);
+
+const adminWishRouteSource = fs.readFileSync(
+  new URL("../server/src/routes/admin/wishes.js", import.meta.url),
+  "utf8",
+);
+for (const route of ["/api/admin/wishes", "/api/admin/wishes/:id", "/api/admin/wishes/:id/merge"]) {
+  assert.equal(adminWishRouteSource.includes(route), true, `missing admin wish route ${route}`);
+}
+assert.match(adminWishRouteSource, /validateWishAdminUpdate/);
+assert.match(adminWishRouteSource, /db\.transaction\(\)\.execute/);
+assert.match(adminWishRouteSource, /wish\.merge/);
+assert.match(adminWishRouteSource, /onConflict[\s\S]+columns\(\["wish_id",\s*"user_id"\]\)/);
+
+const adminRoutesSource = fs.readFileSync(new URL("../server/src/routes/admin.js", import.meta.url), "utf8");
+assert.match(adminRoutesSource, /registerAdminWishRoutes\(app, \{ audit \}\)/);
+assert.match(openapiSource, /admin:wishes/);
 
 console.log("feature-wishes: ok");

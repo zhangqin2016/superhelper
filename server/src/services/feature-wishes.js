@@ -98,6 +98,50 @@ export function validateWishPublication(row = {}) {
   return { ok: true };
 }
 
+export function validateWishAdminUpdate(
+  current = {},
+  input = {},
+  { validAppIds = [], validSkillIds = [] } = {},
+) {
+  const status = input.status === undefined ? String(current.status || "pending") : String(input.status);
+  if (!canTransitionWish(current.status, status)) {
+    return { ok: false, code: "WISH_STATUS_TRANSITION_INVALID" };
+  }
+
+  const linkedAppIds = input.linkedAppIds === undefined
+    ? stringList(current.linked_app_ids)
+    : stringList(input.linkedAppIds);
+  const linkedSkillIds = input.linkedSkillIds === undefined
+    ? stringList(current.linked_skill_ids)
+    : stringList(input.linkedSkillIds);
+  const allowedApps = new Set(validAppIds.map(String));
+  const allowedSkills = new Set(validSkillIds.map(String));
+  if (linkedAppIds.some((id) => !allowedApps.has(id)) || linkedSkillIds.some((id) => !allowedSkills.has(id))) {
+    return { ok: false, code: "WISH_LINKED_OUTCOME_INVALID" };
+  }
+
+  const value = {
+    public_title: input.publicTitle === undefined ? current.public_title : String(input.publicTitle || "").trim() || null,
+    public_title_i18n: input.publicTitleI18n === undefined ? stringMap(current.public_title_i18n) : stringMap(input.publicTitleI18n),
+    public_summary: input.publicSummary === undefined ? current.public_summary : String(input.publicSummary || "").trim() || null,
+    public_summary_i18n: input.publicSummaryI18n === undefined ? stringMap(current.public_summary_i18n) : stringMap(input.publicSummaryI18n),
+    public_update: input.publicUpdate === undefined ? current.public_update : String(input.publicUpdate || "").trim() || null,
+    public_update_i18n: input.publicUpdateI18n === undefined ? stringMap(current.public_update_i18n) : stringMap(input.publicUpdateI18n),
+    submitter_status_note: input.submitterStatusNote === undefined
+      ? current.submitter_status_note
+      : String(input.submitterStatusNote || "").trim() || null,
+    category: input.category === undefined
+      ? (WISH_CATEGORIES.has(String(current.category || "")) ? String(current.category) : "other")
+      : (WISH_CATEGORIES.has(String(input.category)) ? String(input.category) : "other"),
+    status,
+    linked_app_ids: linkedAppIds,
+    linked_skill_ids: linkedSkillIds,
+  };
+  const publication = validateWishPublication(value);
+  if (!publication.ok) return publication;
+  return { ok: true, value };
+}
+
 export function serializePublicWish(row = {}, { locale = "zh" } = {}) {
   const status = String(row.status || "");
   if (!PUBLIC_WISH_STATUSES.has(status)) return null;
