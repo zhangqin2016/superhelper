@@ -3,6 +3,8 @@ import { SiteNav } from "../../components/site-nav";
 import { SiteFooter } from "../../components/site-footer";
 import { getI18n } from "../../lib/i18n.mjs";
 
+export const metadata = { title: "Pricing", description: "Choose a Lily Workbench plan for personal work or your team.", alternates: { canonical: "/pricing" } };
+
 export default async function PricingPage() {
   const { locale, t } = await getI18n();
   return (

@@ -4,7 +4,7 @@ import { normalizeApps } from "../../lib/public-catalog.mjs";
 import { publicApiGet } from "../../lib/public-api";
 import { getI18n } from "../../lib/i18n.mjs";
 
-export const metadata = { title: "Lily Apps · Lily Workbench", description: "Ready-to-use Lily workspaces, tools, dashboards, and templates." };
+export const metadata = { title: "Apps", description: "Browse ready-to-use Lily workspaces, tools, dashboards, and templates.", alternates: { canonical: "/apps" } };
 export const dynamic = "force-dynamic";
 
 export default async function AppsPage() {

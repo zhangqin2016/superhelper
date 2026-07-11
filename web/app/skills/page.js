@@ -4,7 +4,7 @@ import { normalizeSkills } from "../../lib/public-catalog.mjs";
 import { publicApiGet } from "../../lib/public-api";
 import { getI18n } from "../../lib/i18n.mjs";
 
-export const metadata = { title: "Lily Skills · Lily Workbench", description: "Focused Lily skills for documents, research, data, design, and quality work." };
+export const metadata = { title: "Skills", description: "Browse focused Lily skills for documents, research, data, design, and quality work.", alternates: { canonical: "/skills" } };
 export const dynamic = "force-dynamic";
 
 export default async function SkillsPage() {

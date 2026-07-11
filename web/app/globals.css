@@ -544,12 +544,6 @@ a {
 .home-button--light { background: #fff; color: var(--lily-ink); }
 .home-button--ghost { border-color: rgba(255, 255, 255, 0.22); color: #fff; }
 
-.product-window {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(180deg, rgba(23, 29, 37, 0.94), rgba(12, 16, 21, 0.98));
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
 .metric-card {
   border: 1px solid rgba(38, 49, 61, 0.8);
   background: rgba(255, 255, 255, 0.94);

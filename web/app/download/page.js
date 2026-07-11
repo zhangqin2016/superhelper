@@ -6,6 +6,7 @@ import { safeApiGet } from "../../lib/api";
 import { getI18n } from "../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Download", description: "Download Lily Workbench for macOS or Windows.", alternates: { canonical: "/download" } };
 
 async function release(platform) {
   return safeApiGet(`/api/releases/latest?platform=${platform}&version=0.0.0`, { hasUpdate: false });

@@ -72,4 +72,14 @@ for (const obsolete of [".kinetic-hero", ".workflow-brain", ".expert-card", "ani
   assert.equal(globalCss.includes(obsolete), false, `obsolete demo style remains: ${obsolete}`);
 }
 
+const layoutSource = fs.readFileSync(new URL("../web/app/layout.js", import.meta.url), "utf8");
+assert.match(layoutSource, /personal AI desktop workbench/i);
+assert.match(layoutSource, /metadataBase/);
+for (const route of ["apps/page.js", "apps/[id]/page.js", "skills/page.js", "wishes/page.js", "download/page.js", "pricing/page.js"]) {
+  const routeSource = fs.readFileSync(new URL(`../web/app/${route}`, import.meta.url), "utf8");
+  assert.match(routeSource, /export const metadata|generateMetadata/, `${route} missing distinct metadata`);
+}
+assert.equal(fs.existsSync(new URL("../web/components/product-window.js", import.meta.url)), false, "obsolete product window component still exists");
+assert.equal(globalCss.includes(".product-window"), false, "obsolete product window CSS still exists");
+
 console.log("premium-homepage: ok");
