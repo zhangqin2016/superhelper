@@ -501,6 +501,68 @@ sent.length = 0;
 messages.length = 0;
 runner.sentPayloads.length = 0;
 
+const readinessOrder = [];
+const originalSendUserMessage = runner.sendUserMessage.bind(runner);
+runner.sendUserMessage = (payload) => {
+  readinessOrder.push("dispatch");
+  return originalSendUserMessage(payload);
+};
+ctx.sessionManager.admitTurnInput = () => {
+  readinessOrder.push("admit");
+  return { admittedSeq: 1 };
+};
+ctx.diagnoseSendBlocker = () => null;
+ctx.ensureSessionRunner = () => {
+  readinessOrder.push("ensure-runner");
+  return { runner, project: ctx.projectManager.find(), coldStart: false, usedResume: false };
+};
+ctx.capabilityReadinessDeps = {
+  plan: () => ({
+    requiredPackIds: ["web-automation"],
+    enhancementPackIds: [],
+    fallbackCapabilityIds: ["code-static-review"],
+  }),
+  installed: () => new Set(),
+  installing: () => new Set(),
+  prepare: async () => {
+    if (!messages.some((message) => message.role === "user" && message.content === "打开浏览器截图")) {
+      throw new Error("user input must be committed before dependency preparation");
+    }
+    readinessOrder.push("prepare");
+    return {
+      ok: true,
+      readyPackIds: ["web-automation"],
+      failedPackIds: [],
+      unavailablePackIds: [],
+      refreshRequired: true,
+    };
+  },
+  refresh: () => readinessOrder.push("refresh"),
+};
+const readinessTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "打开浏览器截图", [], {
+  spawnEngine: false,
+  skipVision: true,
+  skipDocument: true,
+});
+if (!readinessTurn.ok) throw new Error(`readiness turn should start: ${JSON.stringify(readinessTurn)}`);
+if (JSON.stringify(readinessOrder) !== JSON.stringify(["admit", "prepare", "refresh", "ensure-runner", "dispatch"])) {
+  throw new Error(`readiness order mismatch: ${JSON.stringify(readinessOrder)}`);
+}
+const readinessPayload = runner.sentPayloads.at(-1);
+if (readinessPayload?.trace?.capabilityReadiness?.status !== "ready" || runner.sentPayloads.length !== 1) {
+  throw new Error(`prepared turn must dispatch once with readiness trace: ${JSON.stringify(readinessPayload?.trace)}`);
+}
+runner.finish("browser ready");
+ctx.eventBus.flush();
+runner.sendUserMessage = originalSendUserMessage;
+delete ctx.sessionManager.admitTurnInput;
+delete ctx.diagnoseSendBlocker;
+delete ctx.ensureSessionRunner;
+delete ctx.capabilityReadinessDeps;
+sent.length = 0;
+messages.length = 0;
+runner.sentPayloads.length = 0;
+
 const pdfCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "提取 PDF 表格并检查版面", [
   { path: path.join(tempUserData, "contract.pdf"), name: "contract.pdf" },
 ], {

@@ -258,6 +258,57 @@ function buildDependencyAdvisoryForTurn(text, files) {
   }
 }
 
+async function prepareTurnCapabilityReadiness({ ctx, sessionId, turnId, text, files, deps = {} }) {
+  try {
+    const readiness = require("./capability-readiness");
+    const installer = require("./runtime-pack-installer");
+    const plan = (deps.plan || readiness.planCapabilityReadiness)({ text, files });
+    const installedPackIds = (deps.installed || installer.installedRuntimePackIds)();
+    const installingPackIds = (deps.installing || installer.installingRuntimePackIds)();
+    const resolved = readiness.resolveCapabilityReadiness(plan, {
+      installedPackIds,
+      installingPackIds,
+      unavailablePackIds: new Set(),
+    });
+    const unresolvedPackIds = [...new Set([
+      ...(resolved.missingRequiredPackIds || []),
+      ...(resolved.installingPackIds || []),
+    ])];
+    if (unresolvedPackIds.length) {
+      const prepare = deps.prepare || ((payload) => {
+        const coordinator = ctx?.runtimePackCoordinator || require("./runtime-pack-coordinator").runtimePackCoordinator;
+        return coordinator.prepare(payload);
+      });
+      const prepared = await prepare({ turnId, requiredPackIds: unresolvedPackIds });
+      if (prepared.refreshRequired) {
+        const refresh = deps.refresh || ctx?.refreshPreparedRuntimeForTurn
+          || require("./runner-live-config").refreshPreparedRuntimeForTurn;
+        refresh(ctx, sessionId);
+      }
+      return {
+        status: prepared.ok ? "ready" : "degraded",
+        requiredPackIds: plan.requiredPackIds || [],
+        enhancementPackIds: plan.enhancementPackIds || [],
+        readyPackIds: prepared.readyPackIds || [],
+        failedPackIds: prepared.failedPackIds || [],
+        unavailablePackIds: prepared.unavailablePackIds || [],
+        fallbackCapabilityIds: plan.fallbackCapabilityIds || [],
+      };
+    }
+    return {
+      status: resolved.status,
+      requiredPackIds: plan.requiredPackIds || [],
+      enhancementPackIds: plan.enhancementPackIds || [],
+      readyPackIds: resolved.readyPackIds || [],
+      failedPackIds: [],
+      unavailablePackIds: resolved.unavailablePackIds || [],
+      fallbackCapabilityIds: plan.fallbackCapabilityIds || [],
+    };
+  } catch (error) {
+    return { status: "baseline", error: error?.message || String(error) };
+  }
+}
+
 function compactToolInput(input, name = "Tool") {
   if (!input || typeof input !== "object") return {};
   return {
@@ -1294,7 +1345,13 @@ class TurnOrchestrator {
 
   async _startTurn(session, text, files, opts = {}) {
     const rawUserText = String(text || "").trim();
-    const { diagnoseSendBlocker, ensureSessionRunner, refreshRemoteConfigForSend } = require("./ipc-utils");
+    const {
+      diagnoseSendBlocker: defaultDiagnoseSendBlocker,
+      ensureSessionRunner: defaultEnsureSessionRunner,
+      refreshRemoteConfigForSend,
+    } = require("./ipc-utils");
+    const diagnoseSendBlocker = this.ctx.diagnoseSendBlocker || defaultDiagnoseSendBlocker;
+    const ensureSessionRunner = this.ctx.ensureSessionRunner || defaultEnsureSessionRunner;
     if (!opts.skipPreflight) {
       let blocked = diagnoseSendBlocker(this.ctx, session.id);
       if (blocked?.error === "SERVICE_MODEL_CONFIG_UNAVAILABLE") {
@@ -1311,66 +1368,11 @@ class TurnOrchestrator {
       if (blocked) return { ok: false, error: blocked.error, detail: blocked.detail };
     }
 
-    let ensured = opts.skipPreflight
-      ? { runner: this.ctx.runnerPool.get(session.id) }
-      : ensureSessionRunner(this.ctx, session.id, {
-          spawn: opts.spawnEngine !== false,
-          permissionMode: opts.permissionMode,
-        });
-    let runner = ensured.runner;
-    if (!runner) {
-      const error = ensured.error || "RUNNER_ERROR";
-      const result = { ok: false, error };
-      // Known, localizable codes (e.g. OPENCODE_NOT_READY) carry NO raw detail so
-      // the renderer renders the translated message; everything else keeps a hint.
-      const detail = ensured.detail
-        || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
-      if (detail) result.detail = detail;
-      return result;
-    }
-    if (!opts.skipPreflight && ensured.usedResume && session.agentResumeId) {
-      try {
-        const { verifyRunnerResumeContinuity } = require("./resume-continuity-guard");
-        const continuity = await verifyRunnerResumeContinuity({
-          runner,
-          sessionManager: this.ctx.sessionManager,
-          sessionId: session.id,
-        });
-        if (!continuity.ok) {
-          log.warn(
-            "opencode resume continuity mismatch; resetting engine session: session=%s resume=%s reason=%s local=%s official=%s",
-            session.id,
-            session.agentResumeId || "",
-            continuity.reason || "",
-            continuity.localUserSample || "",
-            continuity.officialUserSample || "",
-          );
-          this.ctx.sessionManager?.clearAgentResumeId?.(session.id);
-          this.ctx.runnerPool?.terminateSession?.(session.id);
-          ensured = ensureSessionRunner(this.ctx, session.id, {
-            spawn: opts.spawnEngine !== false,
-            permissionMode: opts.permissionMode,
-          });
-          runner = ensured.runner;
-          if (!runner) {
-            const error = ensured.error || "RUNNER_ERROR";
-            const result = { ok: false, error };
-            const detail = ensured.detail
-              || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
-            if (detail) result.detail = detail;
-            return result;
-          }
-        }
-      } catch (err) {
-        log.warn("opencode resume continuity check failed open: %s", err?.message || String(err));
-      }
-    }
-
-    const project =
-      ensured.project ||
-      (session?.projectId && typeof this.ctx.projectManager?.find === "function"
-        ? this.ctx.projectManager.find(session.projectId)
-        : null);
+    let ensured = null;
+    let runner = null;
+    const project = session?.projectId && typeof this.ctx.projectManager?.find === "function"
+      ? this.ctx.projectManager.find(session.projectId)
+      : null;
     const displaySourceFiles = Array.isArray(files) ? files : [];
     if (!opts.skipDocument && project?.path) {
       try {
@@ -1412,7 +1414,7 @@ class TurnOrchestrator {
     state.pendingHooks.clear();
     state.tools.clear();
     const displayFiles = mergeDisplayFileMetadata(displaySourceFiles, opts.displayFiles);
-    const dependencyAdvisory = buildDependencyAdvisoryForTurn(rawUserText, files);
+    let dependencyAdvisory = buildDependencyAdvisoryForTurn(rawUserText, files);
     state.currentPayload = {
       rawText: rawUserText,
       text: rawUserText,
@@ -1460,6 +1462,79 @@ class TurnOrchestrator {
         text: rawUserText,
         files: displayFiles.length ? displayFiles : null,
       }, { turnId: state.turnId });
+    }
+
+    const capabilityReadinessTrace = opts.skipPreflight
+      ? null
+      : await prepareTurnCapabilityReadiness({
+          ctx: this.ctx,
+          sessionId: session.id,
+          turnId: state.turnId,
+          text: rawUserText,
+          files,
+          deps: this.ctx.capabilityReadinessDeps,
+        });
+    if (capabilityReadinessTrace?.status === "ready") {
+      dependencyAdvisory = buildDependencyAdvisoryForTurn(rawUserText, files);
+    }
+
+    ensured = opts.skipPreflight
+      ? { runner: this.ctx.runnerPool.get(session.id) }
+      : ensureSessionRunner(this.ctx, session.id, {
+          spawn: opts.spawnEngine !== false,
+          permissionMode: opts.permissionMode,
+        });
+    runner = ensured.runner;
+    if (!runner) {
+      const error = ensured.error || "RUNNER_ERROR";
+      const detail = ensured.detail
+        || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
+      this._finalize(session.id, "turn.failed", {
+        failed: true,
+        assistant: detail || error,
+        code: error,
+      });
+      const result = { ok: false, error };
+      if (detail) result.detail = detail;
+      return result;
+    }
+    if (!opts.skipPreflight && ensured.usedResume && session.agentResumeId) {
+      try {
+        const { verifyRunnerResumeContinuity } = require("./resume-continuity-guard");
+        const continuity = await verifyRunnerResumeContinuity({
+          runner,
+          sessionManager: this.ctx.sessionManager,
+          sessionId: session.id,
+        });
+        if (!continuity.ok) {
+          log.warn(
+            "opencode resume continuity mismatch; resetting engine session: session=%s resume=%s reason=%s local=%s official=%s",
+            session.id,
+            session.agentResumeId || "",
+            continuity.reason || "",
+            continuity.localUserSample || "",
+            continuity.officialUserSample || "",
+          );
+          this.ctx.sessionManager?.clearAgentResumeId?.(session.id);
+          this.ctx.runnerPool?.terminateSession?.(session.id);
+          ensured = ensureSessionRunner(this.ctx, session.id, {
+            spawn: opts.spawnEngine !== false,
+            permissionMode: opts.permissionMode,
+          });
+          runner = ensured.runner;
+          if (!runner) {
+            const error = ensured.error || "RUNNER_ERROR";
+            const detail = ensured.detail
+              || (error === "OPENCODE_NOT_READY" ? "" : "Unable to start the assistant process. Please check the terminal logs or restart the application.");
+            this._finalize(session.id, "turn.failed", { failed: true, assistant: detail || error, code: error });
+            const result = { ok: false, error };
+            if (detail) result.detail = detail;
+            return result;
+          }
+        }
+      } catch (err) {
+        log.warn("opencode resume continuity check failed open: %s", err?.message || String(err));
+      }
     }
 
     if (!opts.skipVision) {
@@ -1639,6 +1714,14 @@ class TurnOrchestrator {
       const platformContextParts = [];
       if (contextMemory.text && !contextMemory.deduped) platformContextParts.push(contextMemory.text);
       if (dependencyAdvisory?.text) platformContextParts.push(dependencyAdvisory.text);
+      if (capabilityReadinessTrace?.status === "degraded") {
+        const unavailable = capabilityReadinessTrace.unavailablePackIds || [];
+        const failed = capabilityReadinessTrace.failedPackIds || [];
+        const browserUnavailable = [...unavailable, ...failed].includes("web-automation");
+        platformContextParts.push(browserUnavailable
+          ? "Capability readiness: live browser evidence is unavailable for this turn. Continue once using static code inspection, state the evidence limitation, and do not claim browser verification."
+          : `Capability readiness: optional task tooling could not be prepared (${[...unavailable, ...failed].slice(0, 5).join(", ")}). Continue once with the listed fallback capabilities and state any verification limitation.`);
+      }
       try {
         if (shouldInjectCapabilityContext({ text: rawUserText, files, dependencyAdvisory, turnPolicy })) {
           const recommendedCapabilities = recommendSkillCapabilityGraph({
@@ -1734,6 +1817,7 @@ class TurnOrchestrator {
               installingPackIds: dependencyAdvisory.installingPackIds,
             }
           : null,
+        capabilityReadiness: capabilityReadinessTrace,
         capabilityContext: capabilityContextTrace,
         contextMemory: contextMemory
           ? {
@@ -1802,6 +1886,7 @@ class TurnOrchestrator {
               installingPackIds: dependencyAdvisory.installingPackIds,
             }
           : null,
+        capabilityReadiness: capabilityReadinessTrace,
         capabilityContext: capabilityContextTrace
           ? {
               injected: capabilityContextTrace.injected,
@@ -3266,4 +3351,4 @@ class TurnOrchestrator {
   }
 }
 
-module.exports = { TurnOrchestrator };
+module.exports = { TurnOrchestrator, prepareTurnCapabilityReadiness };

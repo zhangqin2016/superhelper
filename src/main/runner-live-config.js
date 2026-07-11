@@ -57,6 +57,13 @@ function terminateIdleRunners(runnerPool) {
   return { terminated };
 }
 
+function refreshPreparedRuntimeForTurn(ctx, sessionId) {
+  const runner = ctx?.runnerPool?.get?.(sessionId);
+  if (runner?.isBusy?.()) throw new Error("RUNNER_ALREADY_BUSY_BEFORE_DISPATCH");
+  if (runner?.isAlive?.()) ctx.runnerPool.terminateSession(sessionId);
+  return { refreshed: true, sessionId };
+}
+
 /**
  * @param {import("./session-runner-pool").SessionRunnerPool} runnerPool
  */
@@ -81,6 +88,7 @@ function reloadSkillsForIdleRunners(runnerPool) {
 module.exports = {
   buildLiveEngineEnvPatch,
   applyLiveEnvToPool,
+  refreshPreparedRuntimeForTurn,
   terminateIdleRunners,
   reloadSkillsForIdleRunners,
 };

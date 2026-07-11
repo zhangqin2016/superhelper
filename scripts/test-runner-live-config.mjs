@@ -10,7 +10,12 @@ const require = createRequire(import.meta.url);
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "lily-runner-live-config-"));
 process.env.LILY_USER_DATA_DIR = root;
 process.resourcesPath ||= root;
-const { buildLiveEngineEnvPatch, applyLiveEnvToPool, terminateIdleRunners } = require("../src/main/runner-live-config.js");
+const {
+  buildLiveEngineEnvPatch,
+  applyLiveEnvToPool,
+  refreshPreparedRuntimeForTurn,
+  terminateIdleRunners,
+} = require("../src/main/runner-live-config.js");
 
 function writeRemoteConfig(effectiveConfig) {
   const state = {
@@ -29,6 +34,22 @@ function writeRemoteConfig(effectiveConfig) {
       updatedAt: new Date().toISOString(),
     }),
     "utf8",
+  );
+}
+
+{
+  const terminated = [];
+  const ctx = {
+    runnerPool: {
+      get: () => ({ isAlive: () => true, isBusy: () => false }),
+      terminateSession: (id) => terminated.push(id),
+    },
+  };
+  assert.deepEqual(refreshPreparedRuntimeForTurn(ctx, "prepared"), { refreshed: true, sessionId: "prepared" });
+  assert.deepEqual(terminated, ["prepared"], "prepared dependencies should restart an idle live runner before dispatch");
+  assert.throws(
+    () => refreshPreparedRuntimeForTurn({ runnerPool: { get: () => ({ isBusy: () => true }) } }, "busy"),
+    /RUNNER_ALREADY_BUSY_BEFORE_DISPATCH/,
   );
 }
 
