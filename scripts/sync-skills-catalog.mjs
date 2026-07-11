@@ -17,7 +17,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { copyDirRecursiveShipSafe, purgeJunkUnder } = require("../src/main/ship-ignore.js");
-const { diffRegistries, mergeExternalEntries, validateCandidate, writeJsonAtomically } = require("../src/main/skill-catalog-sync-policy.js");
+const { applyCatalogTransaction, diffRegistries, mergeExternalEntries, validateCandidate, writeJsonAtomically } = require("../src/main/skill-catalog-sync-policy.js");
 const { skillContentRevision, skillDirectoryFiles, registryRevision } = require("../src/main/skill-registry-revision.js");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,6 +27,7 @@ const OUT_PATH = path.join(ROOT, "resources/skills-registry/registry.json");
 const CATALOG_DIR = path.join(ROOT, "resources/skills-catalog");
 const CANDIDATE_PATH = path.join(ROOT, ".lily-work", "skill-sync", "registry.candidate.json");
 const CANDIDATE_DIFF_PATH = path.join(ROOT, ".lily-work", "skill-sync", "registry.diff.json");
+const STAGED_CATALOG_DIR = path.join(ROOT, ".lily-work", "skill-sync", "catalog.candidate");
 
 const GITHUB_API = "https://api.github.com";
 const HEADERS = {
@@ -224,8 +225,8 @@ async function ensureRepoExtracted(repo, ref) {
   return path.join(treeDir, folder);
 }
 
-async function bundleSkills(skills) {
-  fs.mkdirSync(CATALOG_DIR, { recursive: true });
+async function bundleSkills(skills, catalogDir = CATALOG_DIR) {
+  fs.mkdirSync(catalogDir, { recursive: true });
   const repoRoots = new Map();
   let bundled = 0;
   let skipped = 0;
@@ -242,7 +243,7 @@ async function bundleSkills(skills) {
     }
     const repoRoot = repoRoots.get(cacheKey);
     const src = path.join(repoRoot, skill.github.path);
-    const dest = path.join(CATALOG_DIR, skill.id);
+    const dest = path.join(catalogDir, skill.id);
 
     if (!fs.existsSync(path.join(src, "SKILL.md"))) {
       console.warn(`  skip bundle (no SKILL.md): ${skill.id}`);
@@ -255,13 +256,13 @@ async function bundleSkills(skills) {
     bundled += 1;
   }
 
-  console.log(`Bundled ${bundled} skills to ${CATALOG_DIR} (${skipped} skipped)`);
+  console.log(`Bundled ${bundled} skills to ${catalogDir} (${skipped} skipped)`);
 }
 
-function stampCandidate(candidate) {
+function stampCandidate(candidate, catalogDir = CATALOG_DIR) {
   const next = JSON.parse(JSON.stringify(candidate));
   for (const skill of next.skills || []) {
-    const dir = path.join(CATALOG_DIR, skill.id);
+    const dir = path.join(catalogDir, skill.id);
     const skillPath = path.join(dir, "SKILL.md");
     if (!fs.existsSync(skillPath)) throw new Error(`Registered skill is missing SKILL.md: ${skill.id}`);
     const manifestPath = path.join(dir, "skill.manifest.json");
@@ -337,9 +338,16 @@ async function main() {
   }
 
   const changed = allSkills.filter((skill) => changedIds.includes(skill.id));
-  await bundleSkills(changed);
-  const stamped = stampCandidate(candidate);
-  writeJsonAtomically(OUT_PATH, stamped);
+  fs.rmSync(STAGED_CATALOG_DIR, { recursive: true, force: true });
+  copyDirRecursive(CATALOG_DIR, STAGED_CATALOG_DIR);
+  await bundleSkills(changed, STAGED_CATALOG_DIR);
+  const stamped = stampCandidate(candidate, STAGED_CATALOG_DIR);
+  applyCatalogTransaction({
+    catalogDir: CATALOG_DIR,
+    stagedCatalogDir: STAGED_CATALOG_DIR,
+    registryPath: OUT_PATH,
+    registry: stamped,
+  });
   console.log(`Applied ${changed.length} vendor skill update(s) to ${OUT_PATH}`);
 }
 

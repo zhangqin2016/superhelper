@@ -91,7 +91,31 @@ function writeJsonAtomically(targetPath, value) {
   }
 }
 
+function applyCatalogTransaction({ catalogDir, stagedCatalogDir, registryPath, registry }) {
+  if (!fs.existsSync(stagedCatalogDir)) throw new Error(`staged catalog not found: ${stagedCatalogDir}`);
+  const backupDir = `${catalogDir}.backup-${process.pid}-${Date.now()}`;
+  let movedCurrent = false;
+  let installedStaged = false;
+  try {
+    if (fs.existsSync(catalogDir)) {
+      fs.renameSync(catalogDir, backupDir);
+      movedCurrent = true;
+    }
+    fs.renameSync(stagedCatalogDir, catalogDir);
+    installedStaged = true;
+    writeJsonAtomically(registryPath, registry);
+  } catch (error) {
+    if (installedStaged && fs.existsSync(catalogDir)) {
+      fs.rmSync(catalogDir, { recursive: true, force: true });
+    }
+    if (movedCurrent && fs.existsSync(backupDir)) fs.renameSync(backupDir, catalogDir);
+    throw error;
+  }
+  if (movedCurrent) fs.rmSync(backupDir, { recursive: true, force: true });
+}
+
 module.exports = {
+  applyCatalogTransaction,
   diffRegistries,
   mergeExternalEntries,
   validateCandidate,
