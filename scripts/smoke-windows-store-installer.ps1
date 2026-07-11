@@ -287,7 +287,6 @@ function Wait-LilyRenderer {
     }
 
     $lastProcessIds = @(Get-ProcessTreeIds -RootId $ProcessId)
-    $visibleWindow = $null
     foreach ($treeId in $lastProcessIds) {
       $treeProcess = Get-Process -Id $treeId -ErrorAction SilentlyContinue
       if ($null -eq $treeProcess) {
@@ -296,7 +295,7 @@ function Wait-LilyRenderer {
 
       try {
         $mainWindowHandle = [long]$treeProcess.MainWindowHandle
-        if ($mainWindowHandle -ne 0) {
+        if ($null -eq $visibleWindow -and $mainWindowHandle -ne 0) {
           $visibleWindow = [pscustomobject][ordered]@{
             processId = [int]$treeProcess.Id
             processName = [string]$treeProcess.ProcessName
@@ -312,11 +311,12 @@ function Wait-LilyRenderer {
 
     $rendererTarget = $null
     try {
-      $targets = @(Invoke-RestMethod `
+      $targetResponse = Invoke-RestMethod `
         -Uri ("http://127.0.0.1:{0}/json/list" -f $Port) `
         -Method Get `
         -TimeoutSec 2 `
-        -ErrorAction Stop)
+        -ErrorAction Stop
+      $targets = @($targetResponse | Write-Output)
       $rendererTarget = @($targets | Where-Object {
         $targetType = Get-ObjectPropertyValue -InputObject $_ -Name "type"
         $isPageTarget = [string]::Equals($targetType, "page", [System.StringComparison]::Ordinal)
@@ -430,6 +430,7 @@ function Invoke-LilyLaunchProbe {
   $probeError = ""
   $crashEventQueryError = ""
   $cleanupError = ""
+  $remainingOwnedProcessIds = @()
 
   try {
     $port = Get-FreeLoopbackPort
@@ -503,8 +504,8 @@ function Invoke-LilyLaunchProbe {
       $crashEventQueryError = $_.Exception.Message
     }
 
+    $cleanupStartTicks = @{}
     try {
-      $cleanupStartTicks = @{}
       foreach ($knownIdText in @($ownedStartTicks.Keys)) {
         $knownId = [int]$knownIdText
         $knownProcess = Get-Process -Id $knownId -ErrorAction SilentlyContinue
@@ -544,8 +545,53 @@ function Invoke-LilyLaunchProbe {
           Stop-Process -Id $cleanupId -Force -ErrorAction SilentlyContinue
         }
       }
+
+      $cleanupStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+      while ($true) {
+        $remainingOwnedProcessIds = @()
+        foreach ($cleanupIdText in @($cleanupStartTicks.Keys)) {
+          $cleanupId = [int]$cleanupIdText
+          $cleanupProcess = Get-Process -Id $cleanupId -ErrorAction SilentlyContinue
+          if ($null -eq $cleanupProcess) {
+            continue
+          }
+
+          $cleanupTicks = Get-ProcessStartTicks -Process $cleanupProcess
+          if ($null -eq $cleanupTicks -or
+              [long]$cleanupTicks -eq [long]$cleanupStartTicks[$cleanupIdText]) {
+            $remainingOwnedProcessIds += $cleanupId
+          }
+        }
+
+        if ($remainingOwnedProcessIds.Count -eq 0) {
+          break
+        }
+        if ($cleanupStopwatch.Elapsed.TotalSeconds -lt 5) {
+          Start-Sleep -Milliseconds 100
+          continue
+        }
+        break
+      }
+      $cleanupStopwatch.Stop()
+
+      if ($remainingOwnedProcessIds.Count -gt 0) {
+        $cleanupError = "Owned Lily Workbench processes remained after forced cleanup."
+      }
     } catch {
       $cleanupError = $_.Exception.Message
+      $remainingOwnedProcessIds = @()
+      foreach ($cleanupIdText in @($cleanupStartTicks.Keys)) {
+        $cleanupId = [int]$cleanupIdText
+        $cleanupProcess = Get-Process -Id $cleanupId -ErrorAction SilentlyContinue
+        if ($null -eq $cleanupProcess) {
+          continue
+        }
+        $cleanupTicks = Get-ProcessStartTicks -Process $cleanupProcess
+        if ($null -ne $cleanupTicks -and
+            [long]$cleanupTicks -eq [long]$cleanupStartTicks[$cleanupIdText]) {
+          $remainingOwnedProcessIds += $cleanupId
+        }
+      }
     }
   }
 
@@ -563,6 +609,7 @@ function Invoke-LilyLaunchProbe {
     debuggingPort = $port
     probeError = $probeError
     cleanupError = $cleanupError
+    remainingOwnedProcessIds = @($remainingOwnedProcessIds)
   }
 }
 
@@ -1137,6 +1184,24 @@ try {
   $launchCrashEventQuerySucceeded = [string]::IsNullOrWhiteSpace(
     [string]$launchResult.crashEventQueryError
   )
+  $launchRemainingOwnedProcessIds = @($launchResult.remainingOwnedProcessIds)
+
+  Require-Check `
+    -Id "launch.probe" `
+    -Condition ([string]::IsNullOrWhiteSpace([string]$launchResult.probeError)) `
+    -PassDetail "The Lily Workbench launch probe completed without an internal error." `
+    -FailDetail ("The Lily Workbench launch probe failed: " + [string]$launchResult.probeError) `
+    -Evidence $launchResult
+
+  Require-Check `
+    -Id "launch.cleanup" `
+    -Condition (
+      [string]::IsNullOrWhiteSpace([string]$launchResult.cleanupError) -and
+      $launchRemainingOwnedProcessIds.Count -eq 0
+    ) `
+    -PassDetail "No process instance owned by the launch probe remained after cleanup." `
+    -FailDetail ("Launch cleanup failed: error={0}, remainingProcessIds={1}." -f $launchResult.cleanupError, ($launchRemainingOwnedProcessIds -join ",")) `
+    -Evidence $launchResult
 
   Require-Check `
     -Id "launch.visible_window" `
@@ -1150,6 +1215,13 @@ try {
     -Condition ($null -ne $launchResult.rendererTarget) `
     -PassDetail "Chromium exposed the packaged Lily renderer page on the loopback debugging endpoint." `
     -FailDetail "The launch probe did not find the packaged Lily renderer page on the loopback debugging endpoint." `
+    -Evidence $launchResult
+
+  Require-Check `
+    -Id "launch.chromium_log" `
+    -Condition (Test-Path -LiteralPath $launchResult.chromiumLog -PathType Leaf) `
+    -PassDetail "Chromium produced its requested startup log evidence file." `
+    -FailDetail ("Chromium did not produce its requested startup log evidence file: " + $launchResult.chromiumLog) `
     -Evidence $launchResult
 
   Require-Check `

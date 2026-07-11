@@ -114,6 +114,12 @@ for (const title of ["Lily Workbench", "智能工作台", "Smart Workbench", "م
 assert.match(waitRendererBody, /Get-Process\s+-Id\s+\$ProcessId/);
 assert.match(waitRendererBody, /Get-ProcessTreeIds\s+-RootId\s+\$ProcessId/);
 assert.match(waitRendererBody, /MainWindowHandle/);
+assert.match(
+  waitRendererBody,
+  /\$targetResponse\s*=\s*Invoke-RestMethod/,
+  "PowerShell 5.1 CDP responses must be captured before their root array is expanded",
+);
+assert.match(waitRendererBody, /\$targets\s*=\s*@\(\s*\$targetResponse\s*\|\s*Write-Output\s*\)/);
 assert.match(waitRendererBody, /Invoke-RestMethod/);
 assert.match(waitRendererBody, /http:\/\/127\.0\.0\.1/);
 assert.match(waitRendererBody, /\/json\/list/);
@@ -130,6 +136,16 @@ assert.match(
 assert.match(waitRendererBody, /Start-Sleep\s+-Milliseconds\s+250/);
 assert.match(waitRendererBody, /target\s*=\s*\$rendererTarget/);
 assert.match(waitRendererBody, /visibleWindow\s*=\s*\$visibleWindow/);
+assert.equal(
+  waitRendererBody.match(/\$visibleWindow\s*=\s*\$null/g)?.length ?? 0,
+  1,
+  "the first observed visible window must survive later polling iterations",
+);
+assert.match(
+  waitRendererBody,
+  /\$null\s+-eq\s+\$visibleWindow\s+-and\s+\$mainWindowHandle\s+-ne\s+0/,
+  "later windows must not replace the first visible-window evidence",
+);
 
 const crashEventsMatch = runner.match(/function Get-LilyCrashEvents \{([\s\S]*?)\n\}\n\nfunction /);
 assert.ok(crashEventsMatch, "Get-LilyCrashEvents must remain a standalone helper.");
@@ -163,6 +179,21 @@ assert.match(launchProbeBody, /finally\s*\{[\s\S]*Get-LilyCrashEvents\s+-StartTi
 assert.match(launchProbeBody, /Get-ProcessStartTicks/);
 assert.match(launchProbeBody, /Get-ProcessTreeIds/);
 assert.match(launchProbeBody, /Stop-Process[\s\S]{0,120}-Force/);
+const forcedCleanupBody = launchProbeBody.slice(launchProbeBody.indexOf("Stop-Process"));
+assert.match(forcedCleanupBody, /\$cleanupStopwatch\s*=\s*\[System\.Diagnostics\.Stopwatch\]::StartNew\(\)/);
+assert.match(forcedCleanupBody, /\$cleanupStopwatch\.Elapsed\.TotalSeconds\s+-lt\s+5/);
+assert.match(forcedCleanupBody, /Get-Process\s+-Id\s+\$cleanupId/);
+assert.match(forcedCleanupBody, /Get-ProcessStartTicks\s+-Process\s+\$cleanupProcess/);
+assert.match(
+  forcedCleanupBody,
+  /\[long\]\$cleanupTicks\s+-eq\s+\[long\]\$cleanupStartTicks\[\$cleanupIdText\]/,
+);
+assert.match(forcedCleanupBody, /\$remainingOwnedProcessIds/);
+assert.doesNotMatch(
+  forcedCleanupBody,
+  /\$remainingOwnedProcessIds\s*=\s*@\(\$ownedStartTicks\.Keys/,
+  "a cleanup exception must not report an unverified or PID-reused process as still owned",
+);
 for (const property of [
   "processId",
   "remainedAlive",
@@ -171,6 +202,7 @@ for (const property of [
   "closedNormally",
   "crashEvents",
   "chromiumLog",
+  "remainingOwnedProcessIds",
 ]) {
   assert.match(launchProbeBody, new RegExp(`${property}\\s*=`));
 }
@@ -182,6 +214,7 @@ assert.ok(launchMainMatch, "the main readiness flow must invoke the launch probe
 const launchMainBody = launchMainMatch[0];
 assert.match(launchMainBody, /-MainExe\s+\$applicationPath/);
 assert.match(launchMainBody, /-TimeoutSeconds\s+\$LaunchTimeoutSeconds/);
+assert.match(launchMainBody, /\$launchRemainingOwnedProcessIds\s*=\s*@\(\$launchResult\.remainingOwnedProcessIds\)/);
 
 function getLaunchCheck(id) {
   const escapedId = id.replaceAll(".", "\\.");
@@ -197,6 +230,15 @@ function getLaunchCheck(id) {
 
 assert.match(getLaunchCheck("launch.visible_window"), /\$launchResult\.visibleWindow/);
 assert.match(getLaunchCheck("launch.renderer_ready"), /\$launchResult\.rendererTarget/);
+assert.match(getLaunchCheck("launch.probe"), /\$launchResult\.probeError/);
+const cleanupCheck = getLaunchCheck("launch.cleanup");
+assert.match(cleanupCheck, /\$launchResult\.cleanupError/);
+assert.match(cleanupCheck, /\$launchRemainingOwnedProcessIds\.Count\s+-eq\s+0/);
+const chromiumLogCheck = getLaunchCheck("launch.chromium_log");
+assert.match(
+  chromiumLogCheck,
+  /Test-Path\s+-LiteralPath\s+\$launchResult\.chromiumLog\s+-PathType\s+Leaf/,
+);
 assert.match(getLaunchCheck("launch.no_crash_event"), /\$launchCrashEvents\.Count\s+-eq\s+0/);
 assert.match(getLaunchCheck("launch.normal_close"), /\$launchResult\.closedNormally/);
 assert.match(runner, /evidenceFiles\s*=\s*@\([\s\S]*chromium\.log[\s\S]*startup-event-log\.json/);
