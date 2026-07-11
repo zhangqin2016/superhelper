@@ -203,7 +203,13 @@
   opacity: 1;
 }
 
-:where(
+/* :is(), NOT :where(): these controls carry their own soft focus ring and must
+   suppress the global system.css `:focus-visible` outline. :where() has zero
+   specificity, so the later-loaded global rule overrode the outline:none and
+   every control showed a DOUBLE ring — hard purple outline + soft shadow (the
+   "打开工作空间" screenshot). :is() keeps class specificity and wins
+   order-independently. */
+:is(
   .topbar-btn,
   .settings-action-btn,
   .diff-btn,
@@ -214,7 +220,10 @@
   .left-action-btn,
   .left-settings-btn,
   .mode-btn,
-  .dialog-btn
+  .dialog-btn,
+  .composer-icon-btn,
+  .send-btn,
+  .runtime-pack-progress-main
 ):focus-visible {
   outline: none;
   box-shadow: var(--control-focus-ring);
