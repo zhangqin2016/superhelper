@@ -51,4 +51,16 @@ const fallbackSource = fs.readFileSync(productFallback, "utf8");
 assert.equal(/base64|https?:\/\/(?!www\.w3\.org)|\/Users\/|placeholder/i.test(fallbackSource), false, "fallback contains unsafe or placeholder content");
 assert.match(fallbackSource, /Lily Workbench/);
 
+const homePageSource = fs.readFileSync(new URL("../web/app/page.js", import.meta.url), "utf8");
+for (const component of ["HomeHero", "HomeWorkflows", "FeaturedCatalog", "HomeTrust", "WishPoolPreview", "HomeFinalCta"]) {
+  assert.match(homePageSource, new RegExp(`import \\{ ${component} \\}`), `homepage missing ${component}`);
+}
+for (const endpoint of ["/api/apps/catalog", "/api/skills/registry", "/api/wishes"]) {
+  assert.equal(homePageSource.includes(endpoint), true, `homepage missing independent fetch for ${endpoint}`);
+}
+assert.match(homePageSource, /Promise\.all/);
+assert.equal(homePageSource.includes("ProductWindow"), false, "old demo product window is still imported");
+assert.match(fs.readFileSync(new URL("../web/components/home/home-hero.js", import.meta.url), "utf8"), /href="\/download"/);
+assert.match(fs.readFileSync(new URL("../web/components/home/home-hero.js", import.meta.url), "utf8"), /href="#product-demo"/);
+
 console.log("premium-homepage: ok");
