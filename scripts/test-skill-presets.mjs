@@ -60,6 +60,20 @@ const skillPresets = require(path.join(ROOT, "src/main/skill-presets.js"));
 const skillRegistry = require(path.join(ROOT, "src/main/skill-registry.js"));
 const skillManager = require(path.join(ROOT, "src/main/skill-manager.js"));
 
+const guideSource = fs.readFileSync(
+  path.join(ROOT, "src/renderer/modules/skill-preset-guide.js"),
+  "utf8",
+);
+if (/installMissingRuntimePacks\(getMissingPacks\(\)\)/.test(guideSource)) {
+  throw new Error("applying a skill preset must not eagerly install optional runtime packs");
+}
+if (/loadRuntimePackPreflight\(\{ presetId \}\)/.test(guideSource)) {
+  throw new Error("first-run skill activation must not wait for an unnecessary dependency probe");
+}
+if (!/applySkillPreset\(presetId\)/.test(guideSource)) {
+  throw new Error("first-run guide must still apply the selected skill preset");
+}
+
 if (skillPresets.SKILL_PRESETS.length !== 4) {
   throw new Error(`expected 4 canonical curated presets, got ${skillPresets.SKILL_PRESETS.length}`);
 }
