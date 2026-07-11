@@ -18,7 +18,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { copyDirRecursiveShipSafe, purgeJunkUnder } = require("../src/main/ship-ignore.js");
 const { mergeExternalEntries, validateCandidate, writeJsonAtomically } = require("../src/main/skill-catalog-sync-policy.js");
-const { skillContentRevision, registryRevision } = require("../src/main/skill-registry-revision.js");
+const { skillContentRevision, skillDirectoryFiles, registryRevision } = require("../src/main/skill-registry-revision.js");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -268,6 +268,7 @@ function stampCandidate(candidate) {
     skill.contentRevision = skillContentRevision(skill, {
       skillMarkdown: fs.readFileSync(skillPath, "utf8"),
       manifest,
+      files: skillDirectoryFiles(dir),
     });
   }
   next.registryRevision = registryRevision(next);

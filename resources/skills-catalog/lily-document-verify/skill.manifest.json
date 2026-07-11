@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
-  "id": "lily-template-fill",
-  "name": "模板填充",
-  "description": "用结构化数据填充 Word 等现有模板并支持批量输出。",
+  "id": "lily-document-verify",
+  "name": "文档校验",
+  "description": "把文档渲染成逐页图像并在交付前检查实际布局。",
   "version": "1.0.1",
   "minAppVersion": "0.1.0",
   "runtime": "none",
   "category": "office",
   "publisher": "Lily Workbench",
-  "capabilityLayer": "tool",
+  "capabilityLayer": "quality",
   "riskLevel": "low",
   "permissions": { "network": false, "filesystem": "readwrite", "subprocess": true },
   "requiredRuntimePacks": ["libreoffice"],
-  "name_i18n": { "en": "Template Fill", "ar": "تعبئة القوالب" }
+  "name_i18n": { "en": "Document Verify", "ar": "التحقق من المستندات" }
 }

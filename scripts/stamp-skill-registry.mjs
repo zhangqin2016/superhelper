@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
-const { skillContentRevision, registryRevision } = require("../src/main/skill-registry-revision.js");
+const { skillContentRevision, skillDirectoryFiles, registryRevision } = require("../src/main/skill-registry-revision.js");
 
 function parseArgs(argv) {
   const args = { root: PROJECT_ROOT, check: false, touch: false };
@@ -37,6 +37,7 @@ function stampedRegistry(root, registry) {
     skill.contentRevision = skillContentRevision(skill, {
       skillMarkdown: fs.readFileSync(skillPath, "utf8"),
       manifest,
+      files: skillDirectoryFiles(skillDir),
     });
   }
   next.registryRevision = registryRevision(next);

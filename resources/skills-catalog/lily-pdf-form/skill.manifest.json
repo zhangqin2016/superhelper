@@ -3,7 +3,7 @@
   "id": "lily-pdf-form",
   "name": "PDF 表单填写",
   "description": "识别、填写并校验已有 PDF AcroForm 字段。",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "0.1.0",
   "runtime": "none",
   "category": "office",

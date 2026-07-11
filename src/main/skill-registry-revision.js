@@ -1,6 +1,8 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
@@ -22,12 +24,36 @@ function entryRevision(entry) {
   return sha256(content);
 }
 
-function skillContentRevision(entry, { skillMarkdown = "", manifest = null } = {}) {
+function skillDirectoryFiles(skillDir) {
+  const files = [];
+  const visit = (dir) => {
+    for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+      if ([".DS_Store", "__pycache__", "node_modules", ".git"].includes(item.name)) continue;
+      const absolute = path.join(dir, item.name);
+      if (item.isDirectory()) {
+        visit(absolute);
+        continue;
+      }
+      if (!item.isFile()) continue;
+      const buffer = fs.readFileSync(absolute);
+      files.push({
+        path: path.relative(skillDir, absolute).split(path.sep).join("/"),
+        sizeBytes: buffer.length,
+        sha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+      });
+    }
+  };
+  visit(skillDir);
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function skillContentRevision(entry, { skillMarkdown = "", manifest = null, files = [] } = {}) {
   const { contentRevision, fetchedAt, ...content } = entry || {};
   return sha256({
     entry: content,
     skillMarkdown: String(skillMarkdown).replace(/\r\n/g, "\n"),
     manifest,
+    files,
   });
 }
 
@@ -45,6 +71,7 @@ function registryRevision(registry) {
 module.exports = {
   stable,
   entryRevision,
+  skillDirectoryFiles,
   skillContentRevision,
   registryRevision,
 };

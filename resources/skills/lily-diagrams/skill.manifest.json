@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-diagrams",
+  "name": "结构图与图表",
+  "version": "1.0.0",
+  "description": "为关系、步骤、结构、标签和数据生成准确可编辑的 Mermaid 或 SVG 图示。",
+  "minAppVersion": "0.1.0",
+  "category": "design",
+  "categoryLabel": "设计创意",
+  "capabilityLayer": "tool",
+  "riskLevel": "low",
+  "runtime": "none",
+  "permissions": {
+    "network": false,
+    "filesystem": "write",
+    "subprocess": "none"
+  },
+  "guideMd": {
+    "title": "结构图与图表",
+    "priority": 18,
+    "body": "当正确性取决于结构、文字、关系、步骤或精确数据时，优先生成 Mermaid；Mermaid 无法表达时再生成可编辑 SVG。先从用户材料提取节点、边、层级和标签，保持文字准确，避免用图片模型绘制精确文字或几何。真实可操作页面应使用 lily-app-builder + lily-ui-quality，位图风格素材应使用 lily-image-generation。"
+  },
+  "name_i18n": {
+    "zh-CN": "结构图与图表",
+    "en": "Diagrams & Structured Visuals",
+    "ar": "المخططات والمرئيات الهيكلية"
+  },
+  "description_i18n": {
+    "zh-CN": "为关系、步骤、结构、标签和数据生成准确可编辑的 Mermaid 或 SVG 图示。",
+    "en": "Creates accurate, editable Mermaid or SVG diagrams for relationships, steps, structures, labels, and data.",
+    "ar": "ينشئ مخططات Mermaid أو SVG دقيقة وقابلة للتحرير للعلاقات والخطوات والبنى والتسميات والبيانات."
+  }
+}

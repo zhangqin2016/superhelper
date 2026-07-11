@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-07-11T04:38:58.770Z",
+  "updatedAt": "2026-07-11T04:41:48.955Z",
   "publisher": "智能工作台技能目录",
   "registryUrl": null,
   "categories": [
@@ -1429,7 +1429,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "05df2071a5318871aa8b4a345dbcbf4d1e805a7a938686d7216e56cc2211a0d3"
+      "contentRevision": "bc4a0a79f7f3a2e04f96a79717855dd118486e78a914226121adac2e3a27f05e"
     },
     {
       "id": "lily-app-builder",
@@ -1466,7 +1466,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "cf415e8872d6534affd007e950e1999958c54b9ea85b23f64482ebddf78a13a1"
+      "contentRevision": "7440faf63812afbe9579a082199f56638a667362102b2a53fbf45398f1165915"
     },
     {
       "id": "lily-code-repair",
@@ -1503,7 +1503,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "d1c4f0333e3b635d685f386ba780412ea5a94fc29755f9a0ebef3cda9f27a38e"
+      "contentRevision": "0ae9fe153e9feac45884d15fe8215193caa33c64b1c21ee2de570b1ef24405df"
     },
     {
       "id": "lily-office-intent",
@@ -1540,7 +1540,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "b4e87b4d53edbdb6f3c0e75bb46ed2031f1d283a9c4a6264c9880e1cdb4ba026"
+      "contentRevision": "faf284fb4b6f9531fe39c4889a00fa2dc6c21263f88ea83f2096a42e8f0ec368"
     },
     {
       "id": "lily-pdf-extraction-router",
@@ -1577,7 +1577,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "80b236e17e1796c173739fce6d35a1687b6e741ce6edca4f233d3c5b6ff5fd20"
+      "contentRevision": "e8df33025a9694d20b7189c958d23c006d48c661fa9a64f95d1ce704c4bf1e5c"
     },
     {
       "id": "lily-excel-data-analysis",
@@ -1614,7 +1614,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "37bf32e2fc166807dd899dfd4cc2cdbb6fb908582efea27b3f01efbad774253d"
+      "contentRevision": "6d672a5bad0cdb8c75e03a1d76a691a6d80f727378c8005c092fe784218b2b23"
     },
     {
       "id": "lily-ppt-design-qa",
@@ -1651,7 +1651,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "a384b312bb77dd8175d0231975d189d04658158ef5165c5864db2dc3d686c8d6"
+      "contentRevision": "60a3c7c08d70c2a1c2a3c5d0357c2643260b5ce2fe36dc85d23d3b70af8128ce"
     },
     {
       "id": "lily-ui-quality",
@@ -1688,7 +1688,7 @@
         "en": "Design & UI",
         "ar": "التصميم والواجهات"
       },
-      "contentRevision": "a7ec8fa2a3f392f36614c9efafdbba6b7de6ea6b3a394b0898c3d12b2128ae69"
+      "contentRevision": "258bd7279255c21f2794eca1c7f831be40d13aebf4b7d30cca87c0a91969f943"
     },
     {
       "id": "lily-browser-qa",
@@ -1725,7 +1725,7 @@
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
       },
-      "contentRevision": "320721db611bd55c710137692dd56a0eab767502ce3ffbabe1f9cf0ff8c1a155"
+      "contentRevision": "feae0b98c1a70521db179a41e55fa9247cc2717a509585d4365f37bf8cab5b82"
     },
     {
       "id": "lily-creative-director",
@@ -1762,7 +1762,7 @@
         "en": "Media & Creative",
         "ar": "الوسائط والإبداع"
       },
-      "contentRevision": "a841887c35ac1712448842a5935395622b01a9b39b778ddbae359f747e57911f"
+      "contentRevision": "d04dca1c527ff5b282f91fe9f0a29781e9ebe7675dcfd6c78a91d3ab25e0fe18"
     },
     {
       "id": "lily-prompt-enhancer",
@@ -1799,7 +1799,7 @@
         "en": "Media & Creative",
         "ar": "الوسائط والإبداع"
       },
-      "contentRevision": "e020ed0e721475c3fca05bcc51a9dd28efb19b04e7ad2bb004b6f36f59f9ba82"
+      "contentRevision": "bb3e0ff101547fffd599256bab839a084d0e4f10057432ed59a7ec5ad78d1017"
     },
     {
       "id": "lily-image-qa",
@@ -1836,7 +1836,7 @@
         "en": "Media & Creative",
         "ar": "الوسائط والإبداع"
       },
-      "contentRevision": "281232bdf7d0c4349fe54f6f721174c2b7f2bfaab34ca852ec23719b4575ea88"
+      "contentRevision": "1eb19ab0aa69df1ed7291868f0154d79474533a1d57807d549ffb3e04bfb1014"
     },
     {
       "id": "lily-research-synthesis",
@@ -1873,7 +1873,7 @@
         "en": "Research",
         "ar": "البحث"
       },
-      "contentRevision": "823dff0604619a4313660e01c502a553791a684435d4409e09e2fc3c028364f0"
+      "contentRevision": "017b7b6ff26692167643862a9028edbace54f668008de5537b349bc2556271d2"
     },
     {
       "id": "lily-stock-research",
@@ -1910,7 +1910,7 @@
         "en": "Research",
         "ar": "البحث"
       },
-      "contentRevision": "b403f383f191521a109b82bf1586c84e88bdaf3678d03619c16d6154ce947fe4"
+      "contentRevision": "adf1352b2d1d277ce1a869965a6e27be36ed8f7929407cd6f30445d0e1f87305"
     },
     {
       "id": "lily-web-system-learning",
@@ -1947,7 +1947,7 @@
         "en": "Automation",
         "ar": "الأتمتة"
       },
-      "contentRevision": "6658f249974ecf159bc5bef3401525bcbe25b5d68f30280bdb90c13e76eeac22"
+      "contentRevision": "57da009686d695d14143cf335bcf81b3f9c9b39de8fda849bc46817d00dc612a"
     },
     {
       "id": "lily-mail-assistant",
@@ -1984,7 +1984,7 @@
         "en": "Automation",
         "ar": "الأتمتة"
       },
-      "contentRevision": "0d59ca0d1285a579f19c9cc84514079fbd69ca1b8e0baadf2ae2a4aa5a82881b"
+      "contentRevision": "0f56d2354a153e4ef5db5ef9645b2d67945097c68e41a3dc5c594f60ddbc6fca"
     },
     {
       "id": "lily-skill-quality-gate",
@@ -2021,13 +2021,13 @@
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
       },
-      "contentRevision": "b72a29c36aae8e56f4ef67e5930abd9b2f27b7155b8bbf7e7f4d8c80ba10e440"
+      "contentRevision": "bddf9ea4a8d077844ccb51fa945abce1d406514147b19578035d532825912cd1"
     },
     {
       "id": "lily-intent-eval",
       "name": "意图路由评测",
       "description": "维护 Lily 意图识别和任务分流的黄金样例与回归测试，覆盖 Office、编程、设计、媒体、研究、运行时和混合任务。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2058,13 +2058,13 @@
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
       },
-      "contentRevision": "d8f218e1db604007deae4d994d80ad1a6325a29e16c2f9526802f189f8d59f3a"
+      "contentRevision": "a98c8bc3babf3f153e57a53708af91f94849dc508d2c42fb2484e4118dfc2beb"
     },
     {
       "id": "lily-template-fill",
       "name": "模板填充",
       "description": "根据用户数据填充 Word、PPT、Excel 或 Markdown 模板，保持结构、占位符和交付文件可复查。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2095,13 +2095,13 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "c1cd19b48b5c0f871d62cf00f65a2efcfecf7537bf0dc8f5926b8d28b96baef0"
+      "contentRevision": "f76e0a8b8d6b971823c860873136469d493812bcdc6f24abfd0f055e2e083eb4"
     },
     {
       "id": "lily-document-verify",
       "name": "文档验证",
       "description": "文档交付前检查格式、目录、分页、表格、图片、链接、导出渲染和读者可用性，避免只生成不验收。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2132,13 +2132,13 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "2bc57c6da27ab79c999e418712e09ba0ed1908d325d4da144d3fbc31c817a8b5"
+      "contentRevision": "d2a269f4da5cdcf68f904474799efdf68f911802c85ee9be2c31341c91df3033"
     },
     {
       "id": "lily-document-query",
       "name": "文档追问",
       "description": "对已上传并抽取过的文档建立轻量查询入口，按 chunk 搜索和引用证据，支持用户继续追问条款、数字、风险和章节内容。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2169,13 +2169,13 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "d059b60fffe03b0b0c3cb790d48b21ab070cbf5b70f4598cf06e55719e60b53a"
+      "contentRevision": "9c8e5e906058161b6e713d19df82dd080aaad87a96bcda430219b38fcb8e832e"
     },
     {
       "id": "lily-pdf-form",
       "name": "PDF 表单填写",
       "description": "识别、填写、校验 PDF 表单字段，保留原始格式并输出可打开、可复查的填表结果。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2206,13 +2206,13 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "5cfd43b9a80bd31f1ad963f5e26bb8c769b5b55a79ce4615465fc85d9e2ba974"
+      "contentRevision": "15309368424d8d2f54bbb2344e09496de3509a1356b314c2f540af1e77ac7120"
     },
     {
       "id": "lily-runtime-packs",
       "name": "Runtime 能力包",
       "description": "安装、检查或移除可选重型本地 runtime，例如复杂 PDF 解析引擎，避免把大模型/大依赖默认打进基础安装包。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2243,7 +2243,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "a1e3ee79f62e735291c68fd3e14302fd5fbe004bb90d5d7ac64e776a43c1f56b"
+      "contentRevision": "4965060f638e27b6c837af7f0e266fca7c29c854293cffb00705eb1708eb50e6"
     },
     {
       "id": "lily-engineering-rules",
@@ -2281,7 +2281,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "a3c468b57a25281e4ac0af41b749ed849849c67503cc27f951c22f9e857e99f7"
+      "contentRevision": "fcfcfbf599d292144541888cb1909e9f5ab0826a50cdaead4db5f5c35b4005d0"
     },
     {
       "id": "anthropics-doc-coauthoring",
@@ -2318,7 +2318,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "955ab79ddfa1f68fb5857824874bc28f0852282e96ba7829f037470d59e7352e"
+      "contentRevision": "d906ae5baad9dd9c32ffa4bbc6035ad9f37692f78596981e61a5080b2e3be03a"
     },
     {
       "id": "anthropics-docx",
@@ -2355,7 +2355,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "29e06805fedb4b98bf88ebf87892942ee9d5680e775ae5f51c4d1197d9afebb6"
+      "contentRevision": "6741a7d329da961ade7ba68701023177b8a2a47d30f362277bd02ae14615830b"
     },
     {
       "id": "anthropics-pdf",
@@ -2392,7 +2392,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "93c87db86e466b6b25a1eefc99a0daff6654349ed42c3bbe372acfa37d3cc56f"
+      "contentRevision": "fe122b807531e8d025b2620a72c80dca4da600ad1b51028f0d276e0a7f6a44a5"
     },
     {
       "id": "anthropics-pptx",
@@ -2429,7 +2429,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "59d70fc914e7d7bfb7691a62788da04b91322fef22a9b752bb286805077d9f0a"
+      "contentRevision": "404c0b38397bdd7a4792ce767ee4218388937ff99d2ceee8015a930ef9e74f8d"
     },
     {
       "id": "anthropics-xlsx",
@@ -2466,8 +2466,8 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "b7a4aa564cb4d27fd5b69a920774a2260f91b4ed8e3459b2ca29c643be8c6c54"
+      "contentRevision": "2cdea587933d1a0b7c07f87ac2d26a53f25d8cc59cc992ce9310fe85299081aa"
     }
   ],
-  "registryRevision": "0ba8ea3adec744b5274c75d6b70c5458f16e2798343a7483fdfbfafc1afeb939"
+  "registryRevision": "153114b17c84c3f079e18aeb7f453c5715000edeb412faed59b59f8f30fa1835"
 }

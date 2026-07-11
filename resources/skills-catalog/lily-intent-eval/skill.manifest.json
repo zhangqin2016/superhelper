@@ -3,7 +3,7 @@
   "id": "lily-intent-eval",
   "name": "Lily Intent Eval",
   "description": "为 Lily 意图路由维护黄金样例和回归测试，覆盖 Office、编程、UI、媒体、研究、运行时和混合任务。",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "0.1.0",
   "runtime": "none",
   "category": "quality",

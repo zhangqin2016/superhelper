@@ -3,7 +3,7 @@
   "id": "lily-runtime-packs",
   "name": "Runtime 能力包",
   "description": "通过 Lily 托管渠道检查、安装或移除可选本地运行包。",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "0.1.0",
   "runtime": "none",
   "category": "office",

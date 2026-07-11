@@ -50,6 +50,14 @@ assert.throws(
   /Command failed/,
   "guide-only changes must invalidate the stored registry revision",
 );
+execFileSync(process.execPath, [script, "--root", tmp], { stdio: "pipe" });
+fs.mkdirSync(path.join(skillDir, "references"), { recursive: true });
+fs.writeFileSync(path.join(skillDir, "references", "golden.jsonl"), "{\"id\":\"new\"}\n", "utf8");
+assert.throws(
+  () => execFileSync(process.execPath, [script, "--root", tmp, "--check"], { stdio: "pipe" }),
+  /Command failed/,
+  "script/reference changes must invalidate the stored registry revision",
+);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("skill-registry-revision: ok");

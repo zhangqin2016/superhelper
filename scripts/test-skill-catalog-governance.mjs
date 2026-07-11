@@ -30,6 +30,7 @@ const expectedPermissions = {
   "lily-app-builder": { network: false, filesystem: "readwrite", subprocess: true },
   "lily-code-repair": { network: false, filesystem: "readwrite", subprocess: true },
   "lily-document-query": { network: false, filesystem: "read", subprocess: true },
+  "lily-document-verify": { network: false, filesystem: "readwrite", subprocess: true },
   "lily-pdf-form": { network: false, filesystem: "readwrite", subprocess: true },
   "lily-runtime-packs": { network: true, filesystem: "readwrite", subprocess: true },
   "lily-template-fill": { network: false, filesystem: "readwrite", subprocess: true },
