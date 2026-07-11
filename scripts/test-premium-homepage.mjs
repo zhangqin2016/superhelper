@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import { dictionaries } from "../web/lib/i18n.mjs";
 import { buildHomeOptionalSections, homeContentFor } from "../web/lib/homepage-content.mjs";
@@ -40,5 +41,14 @@ assert.deepEqual(buildHomeOptionalSections({
 }), { apps: [], skills: [], wishes: [] });
 
 assert.equal(homeContentFor(dictionaries.zh).hero.title.length > 0, true, "core content must not depend on catalogs");
+
+const productWebp = new URL("../web/public/product/lily-workbench-home.webp", import.meta.url);
+const productFallback = new URL("../web/public/product/lily-workbench-home-fallback.svg", import.meta.url);
+assert.equal(fs.existsSync(productWebp), true, "homepage product WebP is missing");
+assert.equal(fs.statSync(productWebp).size < 500 * 1024, true, "homepage product WebP must stay below 500 KB");
+assert.equal(fs.existsSync(productFallback), true, "homepage product fallback is missing");
+const fallbackSource = fs.readFileSync(productFallback, "utf8");
+assert.equal(/base64|https?:\/\/(?!www\.w3\.org)|\/Users\/|placeholder/i.test(fallbackSource), false, "fallback contains unsafe or placeholder content");
+assert.match(fallbackSource, /Lily Workbench/);
 
 console.log("premium-homepage: ok");
