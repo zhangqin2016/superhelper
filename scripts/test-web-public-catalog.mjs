@@ -93,4 +93,13 @@ assert.match(appDetailPage, /href="\/download"/);
 assert.equal(appDetailPage.includes("downloadUrl"), false);
 assert.equal(appDetailPage.includes("sha256"), false);
 
+const skillsPage = fs.readFileSync(new URL("../web/app/skills/page.js", import.meta.url), "utf8");
+const skillCatalog = fs.readFileSync(new URL("../web/components/skill-catalog.js", import.meta.url), "utf8");
+assert.match(skillsPage, /publicApiGet\("\/api\/skills\/registry"\)/);
+assert.match(skillsPage, /normalizeSkills/);
+assert.match(skillCatalog, /href="\/download"/);
+for (const privateField of ["downloadUrl", "sha256", "capability"]) {
+  assert.equal(skillCatalog.includes(privateField), false, `skill catalog exposes ${privateField}`);
+}
+
 console.log("web-public-catalog: ok");

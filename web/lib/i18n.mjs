@@ -478,6 +478,10 @@ dictionaries.zh.catalog = {
     emptyTitle: "暂时没有可公开的应用", emptyDescription: "新应用通过审核后会出现在这里。", errorTitle: "应用目录暂时不可用", errorDescription: "你仍然可以下载 Lily，稍后再回来查看目录。",
     categories: { productivity: "效率", office: "办公文档", connectors: "连接器", data: "数据", finance: "金融投研", creative: "设计创意", developer: "开发", business: "业务", education: "学习", research: "研究" },
   },
+  skills: {
+    eyebrow: "Lily 技能", title: "需要时出现，不需要时保持安静", description: "技能是 Lily 处理特定任务的方法。你只需要描述目标，不必学习插件系统。", availableInLily: "已在 Lily 中提供", getLily: "获取 Lily", noDescription: "面向真实工作的专注能力。",
+    emptyTitle: "暂时没有可公开的技能", emptyDescription: "审核通过的技能会出现在这里。", errorTitle: "技能目录暂时不可用", errorDescription: "你仍然可以下载 Lily，稍后再回来查看目录。", risks: { low: "低风险", medium: "需要确认", high: "高风险操作" },
+  },
 };
 dictionaries.en.catalog = {
   apps: {
@@ -485,11 +489,19 @@ dictionaries.en.catalog = {
     emptyTitle: "No public apps yet", emptyDescription: "Reviewed applications will appear here.", errorTitle: "The app catalog is temporarily unavailable", errorDescription: "You can still download Lily and return to the catalog later.",
     categories: { productivity: "Productivity", office: "Office", connectors: "Connectors", data: "Data", finance: "Finance", creative: "Creative", developer: "Developer", business: "Business", education: "Education", research: "Research" },
   },
+  skills: {
+    eyebrow: "Lily Skills", title: "Present when needed, quiet when not", description: "Skills are focused ways Lily handles specific work. Describe the outcome instead of learning a plugin system.", availableInLily: "Available in Lily", getLily: "Get Lily", noDescription: "A focused capability for real work.",
+    emptyTitle: "No public skills yet", emptyDescription: "Reviewed skills will appear here.", errorTitle: "The skill catalog is temporarily unavailable", errorDescription: "You can still download Lily and return to the catalog later.", risks: { low: "Low risk", medium: "Confirmation needed", high: "High-risk action" },
+  },
 };
 dictionaries.ar.catalog = {
   apps: {
     eyebrow: "تطبيقات Lily", title: "مسارات عمل كاملة وجاهزة للاستخدام", description: "تجمع التطبيقات مساحة العمل والمهارات والقوالب في نقطة بداية عملية.", details: "عرض التفاصيل", back: "العودة إلى التطبيقات", whatItDoes: "ما الذي يساعدك على إنجازه", version: "الإصدار", plan: "الخطة", useInLily: "استخدمه في Lily",
     emptyTitle: "لا توجد تطبيقات عامة حالياً", emptyDescription: "ستظهر التطبيقات بعد مراجعتها.", errorTitle: "دليل التطبيقات غير متاح مؤقتاً", errorDescription: "يمكنك تنزيل Lily والعودة إلى الدليل لاحقاً.",
     categories: { productivity: "الإنتاجية", office: "المكتب", connectors: "الموصلات", data: "البيانات", finance: "التمويل", creative: "الإبداع", developer: "التطوير", business: "الأعمال", education: "التعليم", research: "البحث" },
+  },
+  skills: {
+    eyebrow: "مهارات Lily", title: "تظهر عند الحاجة وتبقى هادئة عند عدم الحاجة", description: "المهارات طرق مركزة لمعالجة أعمال محددة. صف النتيجة بدلاً من تعلم نظام إضافات.", availableInLily: "متاحة في Lily", getLily: "احصل على Lily", noDescription: "قدرة مركزة للعمل الحقيقي.",
+    emptyTitle: "لا توجد مهارات عامة حالياً", emptyDescription: "ستظهر المهارات بعد مراجعتها.", errorTitle: "دليل المهارات غير متاح مؤقتاً", errorDescription: "يمكنك تنزيل Lily والعودة إلى الدليل لاحقاً.", risks: { low: "مخاطر منخفضة", medium: "تحتاج تأكيداً", high: "إجراء عالي المخاطر" },
   },
 };
