@@ -1,0 +1,53 @@
+<style>
+  .site-map{margin-top:24px;border:1px solid #dfe4ef;border-radius:24px;overflow:hidden;background:#f7f9ff;color:#111827;box-shadow:0 28px 80px rgba(43,63,120,.12)}
+  .site-map *{box-sizing:border-box}.map-nav{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:rgba(255,255,255,.9);border-bottom:1px solid #e8ebf2;font-size:11px}.map-brand{display:flex;align-items:center;gap:8px;font-weight:850}.map-logo{width:25px;height:25px;border-radius:8px;background:#5368e8;color:white;display:grid;place-items:center}.map-links{display:flex;gap:20px;color:#64748b}.nav-actions{display:flex;align-items:center;gap:10px}.nav-actions b{background:#111827;color:white;padding:8px 12px;border-radius:999px;font-size:9px}
+  .map-hero{position:relative;min-height:440px;padding:66px 7% 0;overflow:hidden;background:radial-gradient(circle at 82% 25%,#cfd9ff 0,transparent 31%),linear-gradient(145deg,#fbfcff,#eef3ff)}
+  .hero-kicker{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#5368e8;font-weight:850}.map-hero h3{max-width:620px;margin:14px 0 14px;font-size:46px;line-height:1.05;letter-spacing:-.055em;color:#121827}.map-hero p{max-width:530px;color:#59657a;font-size:15px;line-height:1.7}.hero-actions{display:flex;gap:9px;margin-top:23px}.hero-actions span{padding:11px 16px;border-radius:999px;font-size:10px;font-weight:850}.hero-actions span:first-child{background:#5368e8;color:white}.hero-actions span:last-child{background:white;border:1px solid #d8deeb;color:#273044}.system-note{margin-top:14px;color:#768197;font-size:9px}
+  .hero-product{position:absolute;right:6%;bottom:-75px;width:48%;height:290px;border:1px solid #dce2ed;border-radius:18px 18px 0 0;background:white;box-shadow:0 28px 80px rgba(27,40,79,.18);padding:12px}.window-top{display:flex;gap:4px;margin-bottom:12px}.window-top i{width:6px;height:6px;border-radius:50%;background:#cad0dc}.window-body{height:235px;display:grid;grid-template-columns:27% 1fr;gap:9px}.window-side{background:#f3f5fa;border-radius:10px;padding:11px}.window-main{background:#fbfcff;border:1px solid #edf0f6;border-radius:10px;padding:15px}.ui-line{height:6px;border-radius:99px;background:#d9deea;margin-bottom:8px}.ui-line.short{width:54%}.ui-card{margin-top:15px;padding:14px;border-radius:11px;background:white;box-shadow:0 8px 26px #5266a513}.ui-answer{width:70%;height:34px;border-radius:10px;background:#edf0ff;margin-top:12px}.ui-user{width:45%;height:27px;border-radius:10px;background:#5368e8;margin:10px 0 0 auto}
+  .proof-strip{display:grid;grid-template-columns:repeat(4,1fr);background:white;border-top:1px solid #e7eaf1;border-bottom:1px solid #e7eaf1}.proof-strip div{padding:19px 16px;text-align:center;border-right:1px solid #edf0f5}.proof-strip div:last-child{border-right:0}.proof-strip b{display:block;font-size:11px}.proof-strip span{display:block;margin-top:4px;color:#7b8495;font-size:8px}
+  .map-section{padding:54px 7%;background:white;border-bottom:1px solid #edf0f5}.section-label{color:#5368e8;font-size:9px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}.map-section h4{margin:9px 0 8px;font-size:27px;letter-spacing:-.035em}.section-desc{max-width:570px;color:#697386;font-size:12px;line-height:1.7}.pain-flow{display:grid;grid-template-columns:1fr 34px 1fr 34px 1fr;align-items:stretch;gap:8px;margin-top:24px}.pain-step{border:1px solid #e3e7ef;border-radius:15px;padding:18px;background:#fbfcff}.pain-step b{font-size:12px}.pain-step p{margin:7px 0 0;color:#748095;font-size:9px;line-height:1.55}.flow-arrow{display:grid;place-items:center;color:#5368e8;font-weight:900}
+  .scene-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;margin-top:25px}.scene-primary{min-height:240px;padding:24px;border-radius:18px;background:#111827;color:white;position:relative;overflow:hidden}.scene-primary:after{content:"";position:absolute;width:240px;height:240px;border-radius:50%;background:#667cff;filter:blur(80px);right:-90px;top:20px}.scene-primary h5{font-size:21px;margin:12px 0 9px;position:relative;z-index:1}.scene-primary p{max-width:62%;color:#aeb7c8;font-size:10px;line-height:1.65;position:relative;z-index:1}.scene-file{position:absolute;z-index:2;right:20px;bottom:20px;width:43%;padding:15px;border-radius:13px;background:white;color:#182033;box-shadow:0 15px 40px #0004}.scene-file div{height:6px;border-radius:99px;background:#dfe3ec;margin-bottom:8px}.scene-file div:nth-child(2){width:75%}.scene-file div:nth-child(3){width:48%;background:#788cf3}.scene-list{display:grid;gap:12px}.scene-small{border:1px solid #e3e7ef;border-radius:16px;padding:17px;background:#f8faff}.scene-small b{font-size:11px}.scene-small p{font-size:9px;line-height:1.55;color:#738096;margin:6px 0 0}
+  .trust{display:grid;grid-template-columns:.8fr 1.2fr;gap:26px;align-items:center;background:#f3f5fb}.trust-panel{border:1px solid #dfe4ed;border-radius:18px;background:white;padding:20px}.trust-row{display:flex;gap:10px;padding:12px 0;border-bottom:1px solid #edf0f5}.trust-row:last-child{border-bottom:0}.trust-icon{width:25px;height:25px;border-radius:8px;background:#e9edff;color:#5368e8;display:grid;place-items:center;font-weight:900}.trust-row b{display:block;font-size:10px}.trust-row span{display:block;color:#7d8797;font-size:8px;margin-top:3px}
+  .final-cta{text-align:center;padding:62px 7%;background:#111827;color:white}.final-cta h4{font-size:31px;margin:0}.final-cta p{color:#aeb7c8;font-size:11px;margin:12px auto 20px}.final-button{display:inline-block;border-radius:999px;background:#7286ff;color:white;padding:13px 19px;font-size:10px;font-weight:850}
+  .decision{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}.decision .option{margin:0}
+  @media(max-width:760px){.map-links{display:none}.map-hero{padding:45px 24px 0;min-height:560px}.map-hero h3{font-size:36px}.hero-product{position:absolute;left:24px;right:24px;width:auto;bottom:-50px}.proof-strip{grid-template-columns:1fr 1fr}.pain-flow{grid-template-columns:1fr}.flow-arrow{transform:rotate(90deg)}.scene-grid,.trust{grid-template-columns:1fr}.scene-primary p{max-width:100%}.scene-file{display:none}}
+</style>
+
+<p class="label">C 方向深化 · 信息架构</p>
+<h2>首页不再“展示功能”，而是完成一次购买说服</h2>
+<p class="subtitle">从痛点共鸣到真实产品，再到信任与下载；企业后台、技能目录和管理能力不再挤进个人用户主线。</p>
+
+<div class="site-map">
+  <div class="map-nav"><div class="map-brand"><span class="map-logo">L</span>Lily Workbench</div><div class="map-links"><span>产品</span><span>使用场景</span><span>安全与隐私</span><span>价格</span></div><div class="nav-actions"><span>登录</span><b>免费下载</b></div></div>
+  <div class="map-hero">
+    <div class="hero-kicker">你的个人 AI 工作台</div>
+    <h3>你的项目，<br>终于有人记得。</h3>
+    <p>把文件、网页和对话放进同一个工作区。Lily 读懂上下文、找到关键证据，陪你把复杂工作推进到底。</p>
+    <div class="hero-actions"><span>免费下载</span><span>观看 90 秒演示</span></div>
+    <div class="system-note">支持 macOS 与 Windows · 安装后即可开始</div>
+    <div class="hero-product"><div class="window-top"><i></i><i></i><i></i></div><div class="window-body"><div class="window-side"><div class="ui-line"></div><div class="ui-line short"></div><div class="ui-line"></div><div class="ui-line short"></div></div><div class="window-main"><div class="ui-line short"></div><div class="ui-card"><div class="ui-line"></div><div class="ui-line short"></div></div><div class="ui-answer"></div><div class="ui-user"></div></div></div></div>
+  </div>
+  <div class="proof-strip"><div><b>项目上下文</b><span>文件与对话归于一个工作区</span></div><div><b>跨格式理解</b><span>文档、表格、图片与网页</span></div><div><b>持续记忆</b><span>不用每次从头解释</span></div><div><b>真实交付</b><span>不止建议，还能推进工作</span></div></div>
+
+  <div class="map-section">
+    <div class="section-label">The problem</div><h4>你缺的不是另一个聊天框。</h4><div class="section-desc">真正让人疲惫的是：资料散在不同地方、每次都要重新交代背景、最后仍要自己把答案变成工作成果。</div>
+    <div class="pain-flow"><div class="pain-step"><b>01 · 把现场交给它</b><p>选择一个项目文件夹，放入文档、截图、表格和链接。</p></div><div class="flow-arrow">→</div><div class="pain-step"><b>02 · 它先理解上下文</b><p>自动串联材料、找出冲突和缺口，不要求你写完美提示词。</p></div><div class="flow-arrow">→</div><div class="pain-step"><b>03 · 得到可用结果</b><p>报告、清单、方案、回复和下一步，都回到你的工作现场。</p></div></div>
+  </div>
+
+  <div class="map-section">
+    <div class="section-label">Real work</div><h4>用真实任务证明，而不是堆功能卡片。</h4><div class="section-desc">首页只保留三个最能说明价值的场景，每个场景都展示“输入材料 → Lily 的判断 → 最终交付”。</div>
+    <div class="scene-grid"><div class="scene-primary"><div class="section-label">项目研究</div><h5>六份材料，一份能直接开会的结论。</h5><p>把访谈、竞品网页、截图和会议记录放进工作区，Lily 找出共同问题、保留证据并生成行动建议。</p><div class="scene-file"><div></div><div></div><div></div></div></div><div class="scene-list"><div class="scene-small"><b>文档工作</b><p>从多份旧资料中整理结构、起草初稿并检查遗漏。</p></div><div class="scene-small"><b>长期项目</b><p>记住每次讨论和文件变化，不必反复解释背景。</p></div><div class="scene-small"><b>问题排查</b><p>结合截图、日志和历史记录定位原因并列出修复顺序。</p></div></div></div>
+  </div>
+
+  <div class="map-section trust">
+    <div><div class="section-label">Trust</div><h4>高级感来自可信，不来自炫技。</h4><div class="section-desc">明确解释工作区边界、数据去向和可控权限；只写代码与服务实际支持的承诺。</div></div>
+    <div class="trust-panel"><div class="trust-row"><div class="trust-icon">✓</div><div><b>你选择工作区</b><span>不会无边界扫描整台电脑</span></div></div><div class="trust-row"><div class="trust-icon">✓</div><div><b>任务彼此隔离</b><span>不同项目保持独立上下文</span></div></div><div class="trust-row"><div class="trust-icon">✓</div><div><b>操作过程可见</b><span>工具执行和结果在对话中清晰呈现</span></div></div></div>
+  </div>
+
+  <div class="final-cta"><h4>把下一个复杂项目，交给 Lily。</h4><p>先免费下载。用一个真实文件夹开始，而不是从空白提示词开始。</p><span class="final-button">下载 Lily Workbench</span></div>
+</div>
+
+<div class="decision options">
+  <div class="option" data-choice="approve-homepage-structure" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>结构通过，继续视觉细化</h3><p>下一步确定字体、颜色、产品截图方式与动效尺度。</p></div></div>
+  <div class="option" data-choice="revise-homepage-structure" onclick="toggleSelect(this)"><div class="letter">↺</div><div class="content"><h3>结构需要调整</h3><p>点击后在对话里告诉我希望删掉、前移或强化哪一段。</p></div></div>
+</div>

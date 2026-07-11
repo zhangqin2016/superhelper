@@ -1,0 +1,49 @@
+<style>
+  .system-board{margin-top:24px;padding:26px;border:1px solid #dfe4ee;border-radius:24px;background:#f6f8fd;color:#131927;box-shadow:0 24px 70px rgba(37,51,91,.1)}
+  .board-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.panel{border:1px solid #e1e5ee;border-radius:18px;background:white;padding:20px}.panel.wide{grid-column:1/-1}.panel-label{font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:#6376e7;font-weight:850}.panel h3{font-size:20px;margin:8px 0 8px;color:#151b2a}.panel p{font-size:11px;line-height:1.65;color:#69758a;margin:0}
+  .swatches{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:18px}.swatch{overflow:hidden;border:1px solid #e4e7ee;border-radius:12px;background:white}.color{height:55px}.swatch b,.swatch span{display:block;padding:0 8px}.swatch b{font-size:8px;margin-top:8px}.swatch span{font-size:7px;color:#7d8799;margin:3px 0 8px}
+  .type-sheet{margin-top:17px;padding:18px;border-radius:14px;background:#f7f9ff}.type-display{font-size:35px;line-height:1.08;letter-spacing:-.055em;font-weight:720;color:#121827}.type-body{margin-top:12px!important;max-width:480px;font-size:12px!important}.type-meta{display:flex;gap:14px;margin-top:14px;color:#7b8495;font-size:8px}
+  .product-stage{position:relative;min-height:430px;margin-top:18px;border-radius:18px;overflow:hidden;background:radial-gradient(circle at 80% 20%,#d7dfff,transparent 32%),linear-gradient(150deg,#fbfcff,#eef2fc);padding:36px}.stage-copy{position:relative;z-index:2;width:42%}.stage-copy h4{font-size:29px;line-height:1.08;letter-spacing:-.045em;margin:10px 0}.stage-copy p{font-size:10px;line-height:1.65;color:#667187}.stage-button{display:inline-block;margin-top:13px;background:#586ce8;color:white;border-radius:999px;padding:9px 13px;font-size:8px;font-weight:850}.real-window{position:absolute;right:4%;bottom:-48px;width:53%;height:350px;border:1px solid #d9deea;border-radius:18px 18px 0 0;background:white;box-shadow:0 30px 80px rgba(34,47,84,.2);padding:12px;transform:rotate(-1.5deg)}.real-top{display:flex;align-items:center;gap:4px;height:20px}.real-top i{width:5px;height:5px;border-radius:50%;background:#c8ceda}.real-body{display:grid;grid-template-columns:25% 1fr;gap:8px;height:292px}.real-side{border-radius:9px;background:#f1f3f8;padding:10px}.real-main{border:1px solid #edf0f5;border-radius:9px;background:#fbfcff;padding:13px}.real-line{height:5px;border-radius:99px;background:#dce1eb;margin-bottom:7px}.real-line.short{width:54%}.real-message{margin-top:15px;padding:14px;border:1px solid #e4e8f0;border-radius:11px;background:white}.real-tool{display:flex;align-items:center;gap:7px;margin-top:10px;padding:9px;border-radius:9px;background:#eef1ff;color:#5264d9;font-size:7px;font-weight:800}.real-tool i{width:12px;height:12px;border-radius:4px;background:#6679ec}.annotation{position:absolute;border-radius:999px;background:#111827;color:white;padding:7px 9px;font-size:7px;font-weight:800;box-shadow:0 10px 25px #11182726}.annotation.one{right:39%;top:52px}.annotation.two{right:2%;top:185px}.annotation:after{content:"";position:absolute;width:25px;height:1px;background:#11182788;top:50%}.annotation.one:after{left:100%}.annotation.two:after{right:100%}
+  .motion-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:17px}.motion-card{border:1px solid #e4e7ee;border-radius:13px;padding:13px;background:#fafbfe}.motion-icon{width:29px;height:29px;border-radius:9px;background:#e8ecff;color:#586ce8;display:grid;place-items:center;font-size:11px;font-weight:900}.motion-card b{display:block;font-size:10px;margin-top:10px}.motion-card span{display:block;color:#7b8496;font-size:8px;line-height:1.5;margin-top:4px}.motion-card.no .motion-icon{background:#f3f4f6;color:#9299a6}
+  .rule-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:17px}.rule{border-radius:13px;padding:14px}.rule.good{background:#edf8f3;color:#185c43}.rule.bad{background:#f6f7f9;color:#667085}.rule b{font-size:10px}.rule ul{padding-left:15px;margin:8px 0 0;font-size:8px;line-height:1.7}
+  .decision{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}.decision .option{margin:0}
+  @media(max-width:760px){.board-grid{grid-template-columns:1fr}.panel.wide{grid-column:auto}.swatches{grid-template-columns:repeat(2,1fr)}.product-stage{min-height:600px;padding:25px}.stage-copy{width:100%}.real-window{left:20px;right:20px;width:auto;bottom:-40px;height:340px}.annotation{display:none}.motion-grid{grid-template-columns:1fr 1fr}.rule-row,.decision{grid-template-columns:1fr}}
+</style>
+
+<p class="label">C 方向深化 · 视觉系统</p>
+<h2>亲和，但不幼稚；高级，但不故作神秘</h2>
+<p class="subtitle">成熟感来自比例、真实内容和克制。视觉系统只服务一件事：让个人用户相信这是每天都能用的桌面产品。</p>
+
+<div class="system-board">
+  <div class="board-grid">
+    <section class="panel">
+      <div class="panel-label">01 · Color</div><h3>矿物蓝 + 珍珠白</h3><p>蓝色只用于关键动作和产品状态，不铺满页面。深墨色承担标题，暖灰蓝负责背景层次。</p>
+      <div class="swatches"><div class="swatch"><div class="color" style="background:#121827"></div><b>Ink</b><span>#121827</span></div><div class="swatch"><div class="color" style="background:#586CE8"></div><b>Lily Blue</b><span>#586CE8</span></div><div class="swatch"><div class="color" style="background:#DCE3FF"></div><b>Lavender</b><span>#DCE3FF</span></div><div class="swatch"><div class="color" style="background:#F6F8FD"></div><b>Pearl</b><span>#F6F8FD</span></div><div class="swatch"><div class="color" style="background:#35A47A"></div><b>Success</b><span>#35A47A</span></div></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-label">02 · Typography</div><h3>消费级产品排版</h3><p>中文优先使用系统字体，避免远程字体加载导致闪烁；英文用 Geist/Inter。大标题收紧字距，正文保持舒适行高。</p>
+      <div class="type-sheet"><div class="type-display">你的项目，<br>终于有人记得。</div><p class="type-body">不炫耀技术名词，先把用户每天真实感受到的麻烦说清楚。</p><div class="type-meta"><span>H1 64–72px</span><span>正文 18px / 1.75</span><span>内容宽度 620px</span></div></div>
+    </section>
+
+    <section class="panel wide">
+      <div class="panel-label">03 · Product imagery</div><h3>真实桌面产品是唯一主视觉</h3><p>不再用抽象“大脑”、旋转光环或假数据面板。首屏使用真实客户端截图，内容做脱敏或换成可信的示例项目，并用两处轻量标注解释价值。</p>
+      <div class="product-stage"><div class="stage-copy"><div class="panel-label">Your personal AI workbench</div><h4>从真实文件夹开始，<br>不是从空白提示词开始。</h4><p>产品画面占据首屏视觉重量，让用户一眼知道它是可安装、可操作、能处理真实工作的桌面应用。</p><span class="stage-button">免费下载</span></div><div class="annotation one">项目上下文持续保留</div><div class="annotation two">执行过程与结果可见</div><div class="real-window"><div class="real-top"><i></i><i></i><i></i></div><div class="real-body"><div class="real-side"><div class="real-line"></div><div class="real-line short"></div><div class="real-line"></div><div class="real-line short"></div></div><div class="real-main"><div class="real-line short"></div><div class="real-message"><div class="real-line"></div><div class="real-line"></div><div class="real-line short"></div><div class="real-tool"><i></i>已读取 6 份项目资料</div></div><div class="real-message"><div class="real-line"></div><div class="real-line short"></div></div></div></div></div></div>
+    </section>
+
+    <section class="panel wide">
+      <div class="panel-label">04 · Motion</div><h3>动效只解释状态，不负责“显得高级”</h3><p>页面进入时轻微出现，产品窗口随滚动有极小视差；除此之外保持安静，并完整支持减少动态效果设置。</p>
+      <div class="motion-grid"><div class="motion-card"><div class="motion-icon">↑</div><b>一次性入场</b><span>220–360ms，淡入并上移 8px</span></div><div class="motion-card"><div class="motion-icon">↕</div><b>轻微视差</b><span>只用于首屏产品窗口，幅度低于 12px</span></div><div class="motion-card"><div class="motion-icon">●</div><b>状态反馈</b><span>按钮、下载状态和可操作元素</span></div><div class="motion-card no"><div class="motion-icon">×</div><b>拒绝循环表演</b><span>不旋转、不漂浮、不扫光、不无限脉冲</span></div></div>
+    </section>
+
+    <section class="panel wide">
+      <div class="panel-label">05 · Taste rules</div><h3>统一审美约束</h3>
+      <div class="rule-row"><div class="rule good"><b>保留</b><ul><li>大留白、真实界面、清晰信息层级</li><li>少量蓝色强调和非常轻的背景光晕</li><li>真实任务文案、明确平台与下载信息</li></ul></div><div class="rule bad"><b>删除</b><ul><li>六张同质图标卡、荧光网格和“AI 大脑”</li><li>每个区块都换背景色、每个元素都在动</li><li>未经证实的数字、Logo 墙和空泛超级能力</li></ul></div></div>
+    </section>
+  </div>
+</div>
+
+<div class="decision options">
+  <div class="option" data-choice="approve-visual-system" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>视觉系统通过</h3><p>按这套颜色、排版、产品画面与动效边界进入书面方案。</p></div></div>
+  <div class="option" data-choice="revise-visual-system" onclick="toggleSelect(this)"><div class="letter">↺</div><div class="content"><h3>需要调整</h3><p>点击后告诉我希望更稳重、更年轻、或更有科技感。</p></div></div>
+</div>

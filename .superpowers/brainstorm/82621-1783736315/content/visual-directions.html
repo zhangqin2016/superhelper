@@ -1,0 +1,72 @@
+<style>
+  .direction-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:24px}
+  .direction{overflow:hidden;border:1px solid var(--border);border-radius:18px;background:var(--surface);cursor:pointer;transition:.2s ease}
+  .direction:hover{transform:translateY(-3px);box-shadow:0 18px 50px rgba(15,23,42,.12)}
+  .direction.selected{outline:3px solid #2563eb;outline-offset:2px}
+  .preview{min-height:390px;padding:16px;position:relative;overflow:hidden}
+  .preview-nav{display:flex;align-items:center;justify-content:space-between;font-size:9px;font-weight:700;letter-spacing:.04em}
+  .preview-logo{display:flex;align-items:center;gap:7px;font-size:11px}.mark{width:18px;height:18px;border-radius:6px;display:grid;place-items:center}
+  .preview-links{display:flex;gap:11px;opacity:.62}.mini-cta{border-radius:999px;padding:7px 10px;font-size:8px;font-weight:800}
+  .preview-copy{position:relative;z-index:2;margin-top:44px;max-width:92%}.eyebrow{font-size:8px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;opacity:.64}
+  .preview h3{font-size:25px;line-height:1.08;letter-spacing:-.04em;margin:10px 0}.preview p{font-size:10px;line-height:1.65;max-width:90%;opacity:.67}
+  .actions{display:flex;gap:7px;margin-top:15px}.button{border-radius:999px;padding:8px 11px;font-size:8px;font-weight:800}.ghost{border:1px solid currentColor;opacity:.7}
+  .app-frame{position:absolute;left:16px;right:16px;bottom:-39px;height:145px;border-radius:12px 12px 0 0;padding:9px;box-shadow:0 18px 55px rgba(0,0,0,.2)}
+  .app-bar{display:flex;gap:3px;margin-bottom:8px}.dot{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.35}.app-body{display:grid;grid-template-columns:28% 1fr;gap:7px;height:108px}.side,.chat{border-radius:7px;padding:7px}.line{height:4px;border-radius:99px;background:currentColor;opacity:.12;margin-bottom:6px}.bubble{width:72%;border-radius:7px;padding:8px;margin-top:8px}.bubble.right{margin-left:auto;width:58%}
+  .proof{position:absolute;right:17px;top:114px;display:grid;gap:5px}.proof span{font-size:7px;border-radius:999px;padding:5px 7px}
+  .a{background:#f4f0e8;color:#171714}.a .mark,.a .button,.a .mini-cta{background:#1b3d32;color:#fff}.a .app-frame{background:#1b201d;color:#fff}.a .side{background:#252b27}.a .chat{background:#f5f2ea;color:#17201c}.a .bubble{background:#fff}.a .bubble.right{background:#d6eadc}.a:after{content:"";position:absolute;width:180px;height:180px;border-radius:50%;background:#b9d7c2;filter:blur(55px);right:-70px;top:80px;opacity:.65}
+  .b{background:#06080d;color:#f6f7fb}.b .mark,.b .button,.b .mini-cta{background:#86f7ce;color:#07110e}.b .app-frame{background:#10151c;border:1px solid #26323f}.b .side{background:#141b24}.b .chat{background:#0c1118}.b .bubble{background:#17232d}.b .bubble.right{background:#164d43}.b .proof span{border:1px solid #86f7ce55;background:#86f7ce12;color:#86f7ce}.b:after{content:"";position:absolute;inset:0;background:linear-gradient(#ffffff0b 1px,transparent 1px),linear-gradient(90deg,#ffffff0b 1px,transparent 1px);background-size:24px 24px;mask-image:linear-gradient(to bottom,black,transparent 75%)}
+  .c{background:linear-gradient(145deg,#f8fbff,#eef4ff);color:#101827}.c .mark,.c .button,.c .mini-cta{background:#4f67e8;color:#fff}.c .app-frame{background:white;color:#182033}.c .side{background:#f1f3f8}.c .chat{background:#fafbfe}.c .bubble{background:#eef1f6}.c .bubble.right{background:#dfe5ff}.c .proof span{background:white;color:#344054;box-shadow:0 7px 20px #5064a51c}.c:after{content:"";position:absolute;width:210px;height:210px;border-radius:50%;background:#bfd0ff;filter:blur(65px);right:-90px;top:90px;opacity:.8}
+  .direction-body{padding:18px}.direction-body h3{font-size:17px;margin:0 0 7px}.direction-body p{font-size:12px;line-height:1.55;margin:0;color:var(--muted)}.recommend{display:inline-flex;margin-top:12px;border-radius:999px;background:#e8f5ed;color:#17603b;padding:5px 8px;font-size:9px;font-weight:800}.trade{margin-top:12px;font-size:10px;line-height:1.55;color:var(--muted)}
+  @media(max-width:900px){.direction-grid{grid-template-columns:1fr}.preview{min-height:410px}}
+</style>
+
+<p class="label">Lily Workbench · 首页视觉方向</p>
+<h2>哪一种更像“值得付费的个人 AI 工作台”？</h2>
+<p class="subtitle">三套方案都围绕同一痛点：资料散、反复解释、普通 AI 只回答不交付。点击卡片选择；我推荐 A。</p>
+
+<div class="direction-grid cards">
+  <div class="direction card" data-choice="a-editorial-workbench" onclick="toggleSelect(this)">
+    <div class="preview a">
+      <div class="preview-nav"><div class="preview-logo"><span class="mark">L</span>LILY</div><div class="preview-links"><span>场景</span><span>能力</span><span>安全</span></div><span class="mini-cta">免费下载</span></div>
+      <div class="preview-copy">
+        <div class="eyebrow">Your work, finally in context</div>
+        <h3>把零散资料，<br>变成完成的工作。</h3>
+        <p>连接你的本地文件夹。Lily 会理解上下文、寻找证据，并把下一步真正做出来。</p>
+        <div class="actions"><span class="button">免费下载</span><span class="button ghost">看看它怎么工作</span></div>
+      </div>
+      <div class="proof"><span>本地工作区</span><span>跨文件理解</span><span>可执行交付</span></div>
+      <div class="app-frame"><div class="app-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i></div><div class="app-body"><div class="side"><div class="line"></div><div class="line"></div><div class="line"></div></div><div class="chat"><div class="line"></div><div class="bubble"><div class="line"></div><div class="line"></div></div><div class="bubble right"><div class="line"></div></div></div></div></div>
+    </div>
+    <div class="direction-body"><h3>A · 编辑部式高端工作台</h3><p>克制、可信、有产品质感。大留白 + 暖白纸感 + 深森林绿，用真实产品界面承担说服力。</p><span class="recommend">推荐 · 最适合付费转化</span><div class="trade">优势：高级但不疏离，差异化明确。代价：需要更好的真实产品截图与文案节奏。</div></div>
+  </div>
+
+  <div class="direction card" data-choice="b-future-os" onclick="toggleSelect(this)">
+    <div class="preview b">
+      <div class="preview-nav"><div class="preview-logo"><span class="mark">L</span>LILY OS</div><div class="preview-links"><span>ENGINE</span><span>SKILLS</span><span>SECURITY</span></div><span class="mini-cta">GET APP</span></div>
+      <div class="preview-copy">
+        <div class="eyebrow">Agentic desktop intelligence</div>
+        <h3>不止回答。<br>让工作开始流动。</h3>
+        <p>文件、网页、图片和长期记忆进入同一个执行引擎，从理解到交付一次完成。</p>
+        <div class="actions"><span class="button">立即下载</span><span class="button ghost">观看演示</span></div>
+      </div>
+      <div class="proof"><span>LOCAL CONTEXT</span><span>LONG MEMORY</span><span>142 SKILLS</span></div>
+      <div class="app-frame"><div class="app-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i></div><div class="app-body"><div class="side"><div class="line"></div><div class="line"></div><div class="line"></div></div><div class="chat"><div class="line"></div><div class="bubble"><div class="line"></div><div class="line"></div></div><div class="bubble right"><div class="line"></div></div></div></div></div>
+    </div>
+    <div class="direction-body"><h3>B · 未来操作系统</h3><p>黑色、网格、荧光绿和动态执行流，技术冲击力最强，适合强调“Agent OS”。</p><div class="trade">优势：第一眼很 AI、很酷。风险：最容易继续像概念 Demo，也可能吓退普通办公用户。</div></div>
+  </div>
+
+  <div class="direction card" data-choice="c-friendly-premium" onclick="toggleSelect(this)">
+    <div class="preview c">
+      <div class="preview-nav"><div class="preview-logo"><span class="mark">L</span>Lily</div><div class="preview-links"><span>功能</span><span>案例</span><span>价格</span></div><span class="mini-cta">免费开始</span></div>
+      <div class="preview-copy">
+        <div class="eyebrow">One calm place for every project</div>
+        <h3>你的项目，<br>终于有人记得。</h3>
+        <p>把文件夹交给 Lily。它读懂材料、记住进度，陪你把每一件复杂工作推进到底。</p>
+        <div class="actions"><span class="button">免费开始</span><span class="button ghost">了解更多</span></div>
+      </div>
+      <div class="proof"><span>无需写提示词</span><span>新手友好</span><span>Mac & Windows</span></div>
+      <div class="app-frame"><div class="app-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i></div><div class="app-body"><div class="side"><div class="line"></div><div class="line"></div><div class="line"></div></div><div class="chat"><div class="line"></div><div class="bubble"><div class="line"></div><div class="line"></div></div><div class="bubble right"><div class="line"></div></div></div></div></div>
+    </div>
+    <div class="direction-body"><h3>C · 亲和型精品效率工具</h3><p>明亮、柔和、低门槛，接近成熟消费级效率软件，突出“无需会 AI”。</p><div class="trade">优势：最容易理解和下载。风险：高级感尚可，但与 Notion 类产品的视觉区分较弱。</div></div>
+  </div>
+</div>
