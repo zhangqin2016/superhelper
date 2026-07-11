@@ -12,6 +12,7 @@ const {
   serializePublicWish,
   validateWishPublication,
 } = await import("../server/src/services/feature-wishes.js");
+const { classifyWebSession } = await import("../server/src/services/web-user-session.js");
 
 const publicRow = {
   id: "wish_invoice",
@@ -112,5 +113,33 @@ assert.match(migration, /wish_id text not null references feature_wishes\(id\) o
 assert.match(migration, /check \(status in \('pending','reviewing','published','planned','building','shipped','declined','merged'\)\)/i);
 assert.match(migration, /feature_wishes_public_idx/i);
 assert.match(migration, /feature_wishes_submitter_idx/i);
+
+const validVerified = { ok: true, userId: "usr_1", sessionId: "sess_1" };
+const validSession = {
+  id: "sess_1",
+  user_id: "usr_1",
+  revoked_at: null,
+  expires_at: "2026-07-12T00:00:00.000Z",
+};
+const now = new Date("2026-07-11T00:00:00.000Z").getTime();
+assert.deepEqual(classifyWebSession({ verified: { ok: false, code: "INVALID" }, session: null, now }), {
+  ok: false,
+  code: "USER_LOGIN_REQUIRED",
+});
+assert.deepEqual(classifyWebSession({ verified: validVerified, session: validSession, now }), {
+  ok: true,
+  userId: "usr_1",
+  sessionId: "sess_1",
+});
+assert.equal(classifyWebSession({ verified: validVerified, session: { ...validSession, user_id: "usr_2" }, now }).ok, false);
+assert.equal(classifyWebSession({ verified: validVerified, session: { ...validSession, revoked_at: new Date() }, now }).ok, false);
+assert.equal(
+  classifyWebSession({
+    verified: validVerified,
+    session: { ...validSession, expires_at: "2026-07-10T00:00:00.000Z" },
+    now,
+  }).ok,
+  false,
+);
 
 console.log("feature-wishes: ok");
