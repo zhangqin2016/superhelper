@@ -4,6 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const guide = await readFile(
+  path.join(root, "docs", "windows-store-release-readiness.md"),
+  "utf8",
+);
+const releaseSop = await readFile(
+  path.join(root, "docs", "release-and-deploy-sop.md"),
+  "utf8",
+);
 const launcher = await readFile(
   path.join(root, "scripts", "start-windows-store-sandbox.ps1"),
   "utf8",
@@ -13,6 +21,37 @@ const runnerBytes = await readFile(path.join(root, "scripts", "smoke-windows-sto
 assert.deepEqual([...runnerBytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
 
 const runner = runnerBytes.subarray(3).toString("utf8");
+
+for (const requiredGuideText of [
+  "-RequireSignature",
+  "-AllowUserDataRemnants",
+  "/S /currentuser",
+  "readiness-report.json",
+  "readiness-summary.md",
+  "Windows App Certification Kit",
+  "不适用",
+  "真实 Windows",
+  "标准用户",
+  "不会卸载预存安装",
+]) {
+  assert.ok(
+    guide.includes(requiredGuideText),
+    `Windows Store readiness guide must include ${requiredGuideText}`,
+  );
+}
+
+for (const officialUrl of [
+  "https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msi/app-package-requirements",
+  "https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msi/manual-package-validation",
+  "https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msi/app-certification-process",
+]) {
+  assert.ok(guide.includes(officialUrl), `Windows Store readiness guide must cite ${officialUrl}`);
+}
+
+assert.ok(
+  releaseSop.includes("[windows-store-release-readiness.md](windows-store-release-readiness.md)"),
+  "release SOP must link the Windows Store EXE readiness guide",
+);
 
 assert.match(runner, /Set-StrictMode -Version Latest/);
 assert.match(runner, /\$Installer\b/);

@@ -140,6 +140,15 @@ Targets:
 Use `--skip-server-publish` only when you intentionally want static CDN update
 metadata but no API `releases` rows.
 
+### Windows Store EXE Pre-Submission Gate
+
+Before entering a Windows x64 NSIS EXE in Partner Center, follow
+[windows-store-release-readiness.md](windows-store-release-readiness.md). Run the
+lifecycle and signature gate against the same signed, versioned installer in an
+offline Windows Sandbox and on a real, clean Windows standard-user VM, then retain
+the generated reports. A macOS package-content check does not exercise Windows
+install, launch, or uninstall behavior and cannot replace this gate.
+
 ### Desktop Release Verification
 
 After publish:
