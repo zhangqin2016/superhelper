@@ -21,7 +21,7 @@ editable. Use one of these vector paths instead.
    branded visuals.
 3. Not a diagram? Defer to the intent router's "Visual / graphic output" rubric:
    perceptual/creative work (people, scenes, posters, textures) → `lily-image-generation`;
-   a real, usable UI or web page → `frontend-design` (code), not a diagram or a picture.
+   a real, usable UI or web page → `lily-app-builder` + `lily-ui-quality` (code), not a diagram or a picture.
 
 ## Mermaid (preferred)
 

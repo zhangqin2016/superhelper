@@ -1,6 +1,6 @@
 ---
 name: lily-image-generation
-description: Generate bitmap images with the configured image provider. Supports Lily GPU, Alibaba Bailian Qwen-Image, Volcengine Seedream, Kling, MiniMax, and Zhipu. Use for scene/texture/creative work where realism, style, or mood is what matters — portraits, people, scenes, landscapes, background art, textures, posters, illustrations, product shots, avatars, covers, concept art. NOT for structural content (flowcharts, architecture diagrams, charts, icons, wireframes → lily-diagrams) and NOT for a real/usable UI or web page (landing page, dashboard, component → frontend-design). See the intent router's visual-output rubric.
+description: Generate bitmap images with the configured image provider. Supports Lily GPU, Alibaba Bailian Qwen-Image, Volcengine Seedream, Kling, MiniMax, and Zhipu. Use for scene/texture/creative work where realism, style, or mood is what matters — portraits, people, scenes, landscapes, background art, textures, posters, illustrations, product shots, avatars, covers, concept art. NOT for structural content (flowcharts, architecture diagrams, charts, icons, wireframes → lily-diagrams) and NOT for a real/usable UI or web page (landing page, dashboard, component → lily-app-builder + lily-ui-quality). See the intent router's visual-output rubric.
 allowed-tools: Bash(node *)
 ---
 
@@ -14,7 +14,7 @@ Route by what makes the output correct (full rubric: the intent router's
 "Visual / graphic output" section). In short: structural content whose
 correctness is exact text/data/geometry — flowcharts, architecture, charts,
 icons, wireframes — is **not** a bitmap → use `lily-diagrams`. A real, usable
-UI or web page → use `frontend-design` (code), not a picture of one. Use this
+UI or web page → use `lily-app-builder` with `lily-ui-quality` (code), not a picture of one. Use this
 tool only when realism, style, or mood is what matters.
 
 ## Ground the request in context — don't interrogate

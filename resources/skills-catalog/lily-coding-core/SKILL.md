@@ -1,36 +1,44 @@
 ---
 name: lily-coding-core
-description: Use when the user wants to build, modify, debug, or verify code, webpages, small tools, scripts, automations, local apps, UI prototypes, or data-processing programs. Wraps planning, systematic debugging, TDD, completion verification, frontend design, and browser QA into one Lily workflow.
+description: Use for coding, modification, debugging, refactoring, and verification. Provides Lily's baseline engineering discipline while delegating app construction, UI judgment, browser evidence, and repair workflows to focused skills.
 ---
 
 # Lily Coding Core
 
-This is Lily's baseline engineering discipline for ordinary-language coding work. It makes pages, tools, scripts, automations, local app prototypes, and code changes more likely to work on the first useful pass.
+This is Lily's baseline engineering discipline. It improves reliability without restricting a capable model's ability to reason, inspect more context, or choose a better implementation within the user's scope.
 
 ## When to Use
 
-- Building or changing a webpage, component, script, automation, tool, local app prototype, or data-processing program.
-- Debugging, explaining, refactoring, or verifying code.
-- Improving a page that looks wrong or has weak interaction.
-- Handling user reports such as failed, broken, blank, cannot open, test failed, build failed, or deploy failed.
+- Building or changing code, components, scripts, automations, tools, services, configuration, or data processors.
+- Explaining, debugging, refactoring, or verifying code.
+- Coordinating a mixed implementation that needs focused build, design, browser, or repair guidance.
 
-Do not use for pure Word/PDF/PPT/Excel tasks unless code or a web artifact is also involved.
+Do not use for pure Word, PDF, PPT, or Excel work unless code or a web artifact is also part of the deliverable.
 
 ## Workflow
 
-1. Identify the deliverable: script, page, component, tool, service, config fix, or data processor.
-2. Ask only blocking questions. If a safe small step is possible, proceed.
-3. Read current structure, entrypoints, callers, tests, and style before writing.
-4. Make the smallest runnable change. Avoid unrelated refactors and new frameworks.
-5. Apply UI quality rules when a visible interface is involved: hierarchy, states, empty/error cases, responsive layout, and text fit.
-6. Verify with a command, test, build, or browser check whenever possible.
-7. If verification fails, find root cause before patching.
-8. Explain changes, verification, paths, and any unverified risk in plain language.
+1. Identify the intended behavior, success check, constraints, and protected existing behavior.
+2. Ask only blocking questions; use safe context and small reversible checks to progress.
+3. Read entrypoints, callers, tests, shared utilities, and local conventions before editing.
+4. Add or update a test that expresses the intended behavior when code behavior changes.
+5. Make the smallest coherent change. Preserve user work and avoid unrelated refactors or framework replacement.
+6. Run the narrowest meaningful verification, then the relevant broader regression suite.
+7. If verification fails, determine root cause before changing implementation.
+8. Report changed paths, evidence, residual risk, and anything not verified.
+
+## Specialist Routing
+
+- Use `lily-app-builder` when the result is a runnable page, app, tool, script, or automation.
+- Use `lily-ui-quality` for interface creation and review standards.
+- Use `lily-browser-qa` for real browser interaction, screenshots, and runtime evidence.
+- Use `lily-code-repair` when an existing implementation fails and needs root-cause repair.
+
+These guides add deterministic scaffolding for smaller models. They do not downgrade the selected model, remove context, hide tools, or replace the strong default when a specialist path is unavailable.
 
 ## Quality Bar
 
-- The result runs, or the exact reason it cannot run in this environment is stated.
-- At least one meaningful verification is run when available.
-- UI must not overlap, overflow, or visibly break at normal sizes.
-- Generated artifacts must have absolute paths or clear open/run instructions.
-- Avoid excessive engineering vocabulary when the user only needs the result.
+- The result runs, or the exact environmental blocker is stated.
+- Behavioral changes have a meaningful automated check when feasible.
+- Completion claims cite actual command, test, browser, or artifact evidence.
+- Generated artifacts have absolute paths or clear run/open instructions.
+- No helper failure may silently turn into a weaker, improvised execution path.

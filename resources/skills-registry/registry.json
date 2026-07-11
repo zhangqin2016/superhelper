@@ -64,7 +64,7 @@
   "capabilities": {
     "lily-coding-core": {
       "kind": "workflow",
-      "intents": ["code.change", "code.create", "debug.fix", "automation.build"],
+      "intents": ["code.change", "code.create", "debug.fix", "automation.build", "workflow.orchestrate"],
       "avoidIntents": ["office.only", "research.only"],
       "matchHints": ["code change", "code create", "build dashboard", "web tool", "local app", "component implementation", "API integration", "实现组件", "接入接口", "改代码"],
       "primaryTools": ["workspace.files", "shell", "tests"],
@@ -76,11 +76,11 @@
     },
     "lily-app-builder": {
       "kind": "workflow",
-      "intents": ["app.create", "webpage.create", "tool.create", "script.create"],
+      "intents": ["app.create", "webpage.create", "webpage.redesign", "tool.create", "script.create"],
       "avoidIntents": ["debug.existing_code_only"],
       "avoidHints": ["修复现有", "修这个", "白屏", "blank page", "fix existing", "报错了", "fix this bug"],
-      "matchHints": ["SaaS dashboard", "admin dashboard", "dashboard app", "web tool", "local app", "build dashboard", "create dashboard", "管理后台应用", "统计看板"],
-      "primaryTools": ["workspace.files", "shell", "browser.preview"],
+      "matchHints": ["SaaS dashboard", "admin dashboard", "dashboard app", "landing page", "login screen", "redesign page", "polish page", "web tool", "local app", "build dashboard", "create dashboard", "管理后台应用", "统计看板", "设计落地页", "美化登录页"],
+      "primaryTools": ["workspace.files", "shell", "process.jobs", "browser.preview"],
       "inputModes": ["text", "workspace", "image"],
       "outputModes": ["workspace_change", "artifact", "preview_url"],
       "risk": { "level": "low", "confirmation": "before_mutation" },
@@ -142,8 +142,8 @@
     },
     "lily-ui-quality": {
       "kind": "quality",
-      "intents": ["ui.review", "frontend.visual_qa", "interaction.review"],
-      "matchHints": ["spacing hierarchy", "UI visual consistency", "interaction audit", "layout audit", "UI audit", "frontend visual QA", "间距层级", "UI 视觉一致性"],
+      "intents": ["ui.create", "ui.review", "frontend.visual_qa", "interaction.review", "accessibility.review", "localization.review"],
+      "matchHints": ["landing page design", "login screen design", "responsive design", "spacing hierarchy", "UI visual consistency", "interaction audit", "layout audit", "UI audit", "frontend visual QA", "accessibility review", "RTL layout", "间距层级", "UI 视觉一致性", "页面美化", "无障碍检查"],
       "primaryTools": ["browser.preview", "screenshot", "console.logs"],
       "inputModes": ["text", "workspace", "image"],
       "outputModes": ["issue_list", "workspace_change", "text"],
@@ -377,7 +377,7 @@
       "id": "lily-coding-core",
       "name": "编程核心",
       "description": "编程、改代码、做应用、修 Bug、前端页面和自动化任务的核心规则，强调先理解目标、最小改动、可运行验证和交付质量。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.2",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -412,8 +412,8 @@
     {
       "id": "lily-app-builder",
       "name": "应用构建",
-      "description": "把一句话需求落成可运行网页、小工具、脚本、自动化或本地应用，要求启动验证、截图检查和可打开产物路径。",
-      "latestVersion": "1.0.1",
+      "description": "把一句话需求落成可运行网页、落地页、小工具、脚本、自动化或本地应用，保留现有技术栈，通过受监督进程和真实验证交付。",
+      "latestVersion": "1.0.2",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -426,7 +426,7 @@
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
-      "changelog": "Lily 自研：普通用户一句话构建网页、小工具、脚本、自动化或本地应用。",
+      "changelog": "补充落地页/重设计路由、受监督开发服务、进展约束和浏览器验证闭环。",
       "capabilityLayer": "workflow",
       "riskLevel": "low",
       "defaultEligible": true,
@@ -628,8 +628,8 @@
     {
       "id": "lily-ui-quality",
       "name": "界面质量验收",
-      "description": "网页、应用界面、表单、仪表盘和交互产物交付前检查视觉层级、间距、响应式、可用性、空态和错误态。",
-      "latestVersion": "1.0.0",
+      "description": "创建或审查网页与应用界面，覆盖视觉层级、排版、颜色、响应式、状态、无障碍、RTL、本地化和内容压力。",
+      "latestVersion": "1.1.0",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -642,18 +642,18 @@
       "categoryLabel": "设计交互",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
-      "changelog": "Lily 自研：吸收前端设计和浏览器视觉 QA 的 UI/交互/审美质量门禁。",
+      "changelog": "新增创建/审查双模式以及无障碍、本地化、缩放、减少动效和内容压力门禁。",
       "capabilityLayer": "quality",
       "riskLevel": "low",
       "defaultEligible": true,
       "featured": true,
       "sourceKind": "lily",
       "name_i18n": {
-        "en": "UI Quality Review",
+        "en": "UI Design & Quality",
         "ar": "مراجعة جودة الواجهة"
       },
       "description_i18n": {
-        "en": "Reviews visual hierarchy, spacing, responsive behavior, usability, empty/error states, and interaction quality before delivering web/app interfaces.",
+        "en": "Creates or reviews interface direction across hierarchy, typography, color, responsive behavior, states, accessibility, RTL, localization, and content stress.",
         "ar": "يراجع التسلسل البصري والمسافات والاستجابة وقابلية الاستخدام وحالات الفراغ والخطأ وجودة التفاعل قبل تسليم الواجهات."
       },
       "categoryLabel_i18n": {
@@ -664,8 +664,8 @@
     {
       "id": "lily-browser-qa",
       "name": "浏览器实测",
-      "description": "对本地或线上网页进行真实浏览器打开、点击、输入、截图和回归验证，确认页面不是只在代码层面看起来可行。",
-      "latestVersion": "1.0.0",
+      "description": "对本地或线上网页进行真实浏览器打开、点击、输入、视口检查、截图和回归验证，并报告实际证据与未覆盖项。",
+      "latestVersion": "1.1.0",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -678,7 +678,7 @@
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
-      "changelog": "Lily 自研：吸收浏览器测试、控制台检查、截图和响应式验证的前端交付验收门禁。",
+      "changelog": "补充运行包不可用恢复、明确视口、实际结果、截图证据和受监督服务要求。",
       "capabilityLayer": "quality",
       "riskLevel": "low",
       "defaultEligible": true,

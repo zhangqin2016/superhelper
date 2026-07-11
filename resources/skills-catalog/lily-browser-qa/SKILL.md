@@ -1,33 +1,46 @@
 ---
 name: lily-browser-qa
-description: Use when a web page, local app, dashboard, form, generated HTML, React/Vue app, or browser-visible artifact needs to be verified by actually opening it. Covers running a dev server when needed, checking desktop/mobile viewports, clicking through primary flows, inspecting console errors, validating loading/empty/error states, capturing screenshots, and fixing regressions before delivery.
+description: Use when a browser-visible artifact must be verified by actually opening it. Covers supervised dev-server startup, explicit viewports, primary-flow interaction, console/runtime errors, state checks, screenshots, and evidence-based reporting.
 ---
 
 # Lily Browser QA
 
-Use this skill as the default delivery gate for anything that can be opened in a browser. Do not rely on imagination when the page can be inspected.
+This skill is the execution and evidence layer for browser-visible work. Design judgment belongs to `lily-ui-quality`; code repair belongs to `lily-code-repair`.
 
-## When to Use
+## Preconditions
 
-- Creating or changing a website, admin screen, dashboard, form, generated HTML file, React/Vue app, or browser-visible tool.
-- Changing frontend layout, styles, interactions, uploads, navigation, dialogs, charts, or forms.
-- The user reports that a page is blank, broken, misaligned, unclickable, or has console errors.
-- Delivery needs proof that the page opens and primary flows work.
+- Determine the exact URL or standalone file to open.
+- Reuse an existing server when safe. Start a long-lived server through `lily_process_jobs` and confirm readiness with `job_status` and `job_logs`.
+- If the platform reports `BROWSER_RUNTIME_UNAVAILABLE`, do not improvise an unverified result. Report the missing `web-automation` runtime pack and use the supported installation path. The rest of chat and coding work must remain available.
 
 ## Workflow
 
-1. Determine how to open it: reuse an existing dev server, start one when required, or open a standalone HTML file.
-2. Wait for real content. Do not screenshot or judge a blank loading state.
-3. Exercise the primary path: click main buttons, fill key forms, trigger common states.
-4. Inspect console and network errors; fix errors that affect the user path.
-5. Check at least one desktop width and one narrow/mobile width.
-6. Verify loading, empty, error, disabled, and success states when they are part of the feature.
-7. Re-open or re-screenshot after fixes.
-8. Report what was verified: page, route, viewport, command, or screenshot evidence.
+1. Record the URL, build/start command, process job id when used, and expected user path.
+2. Wait for real content and a ready state; do not judge or screenshot a blank loading transition.
+3. Exercise the primary steps: click main actions, enter representative data, submit forms, navigate, and trigger relevant dialogs or menus.
+4. Inspect console and relevant network/runtime errors. A fatal error or failed primary action is a failed check.
+5. Use explicit viewports. At minimum test one representative desktop viewport and one narrow/mobile viewport for responsive work.
+6. Check the states that exist in scope: loading, empty, error, disabled, success, validation, permission, and destructive confirmation.
+7. Check keyboard navigation, visible focus, labels, long text, 200% zoom, reduced motion, and RTL/localized layout when relevant to the request.
+8. Capture screenshots only after the intended state is visible. After a fix, repeat the original steps and collect new evidence.
+9. Stop temporary process jobs unless they are intentionally handed back to the user.
+
+## Evidence Report
+
+Report all of the following:
+
+- URL or file opened.
+- Browser/runtime used and process job id when applicable.
+- Viewport dimensions.
+- Steps executed.
+- Expected result and actual result.
+- Console or network failures that affected the path.
+- Screenshot paths or identifiers.
+- States and viewports not tested.
 
 ## Quality Bar
 
-- Blank page, fatal console error, or unclickable primary button means not complete.
-- Obvious mobile overflow, overlap, clipped text, or compressed controls means not complete.
-- Form submission without feedback is not acceptable.
-- Never claim visual verification without opening the page or stating why that was impossible.
+- A blank page, fatal console error, or unclickable primary action fails QA.
+- Mobile overflow, overlap, clipped text, invisible focus, or inaccessible required controls fails the affected path.
+- Form submission without clear feedback fails the interaction check.
+- Never claim visual or browser verification without opening the artifact and reporting actual results.

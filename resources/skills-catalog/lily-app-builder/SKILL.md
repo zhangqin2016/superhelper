@@ -1,48 +1,50 @@
 ---
 name: lily-app-builder
-description: Use when the user describes a webpage, small tool, script, automation, or local app in plain language and expects a runnable result. Turns natural-language intent into the smallest working deliverable, starts it when possible, verifies it with browser or command output, and returns exact local paths.
+description: Use when the user describes a webpage, landing page, small tool, script, automation, or local app in plain language and expects a runnable result. Turns intent into the smallest working deliverable, preserves the existing stack, starts it safely, verifies it, and returns exact local paths.
 ---
 
 # Lily App Builder
 
-Use this skill to turn a plain-language request into a runnable artifact. The user should not need to understand project structure, framework choices, or build tooling before getting something useful.
+Turn a plain-language request into a runnable artifact. The user should not need to choose a framework or understand the project structure before getting a useful result.
 
 ## When to Use
 
-- The user asks for a webpage, small tool, script, automation, prototype, local app, data processor, or generated HTML report.
-- The user describes the business outcome but not the technical stack.
+- Build or redesign a webpage, landing page, dashboard, admin screen, small tool, script, automation, prototype, local app, or generated HTML report.
+- The user describes the outcome but not the technical stack.
 - The user wants something they can open, run, or reuse.
-- The request is phrased like "build it", "make a runnable file", "open it for me", or "turn this material into an interactive page".
 
 ## When Not to Use
 
 - The user only wants explanation, pseudocode, or planning.
-- The deliverable is purely Word, PDF, PPT, or Excel unless a webpage/script/automation is part of the output.
-- Existing code is broken; use lily-code-repair first.
-- The request is a large long-term product or backend platform that cannot honestly be completed in one pass.
+- The deliverable is purely Word, PDF, PPT, or Excel unless a webpage, script, or automation is also required.
+- Existing code is broken; start with `lily-code-repair`.
+- Do not replace a working project stack merely because another framework is more familiar.
 
 ## Workflow
 
-1. Identify the smallest useful deliverable: single HTML file, existing frontend change, Node/Python script, shell automation, lightweight local app, or project modification.
-2. Choose the simplest technology that fits the existing workspace. For new tools, prefer low-dependency outputs the user can reopen later.
-3. Put files in a clear workspace location. Do not scatter temporary deliverables.
-4. Read the existing structure before editing. Make only the files required for the core use case.
-5. Run the artifact: execute scripts with a tiny sample; start a dev server for app pages; open single HTML files when possible.
-6. Verify visible artifacts with browser QA and UI quality checks. Verify non-UI scripts with command output or sample input.
-7. Fix one round of obvious startup, console, layout, or command failures by reading the actual error.
-8. Deliver absolute paths, run/open instructions, and verification evidence.
+1. Define the smallest useful deliverable and its success check.
+2. Read the existing entrypoints, callers, styles, tests, and build commands. Preserve the current stack and user changes.
+3. For a new artifact, choose the lowest-dependency option that satisfies the request. For an existing project, follow its conventions.
+4. Put files in one clear workspace location and make only the changes needed for the core user path.
+5. Run scripts with a representative small input. For a long-lived dev server, use the `lily_process_jobs` MCP: start with `job_start`, inspect readiness and the actual port with `job_status` and `job_logs`, and keep the job id.
+6. If `lily_process_jobs` is unavailable, fail open to the normal foreground shell workflow. Never hide the server with `nohup`, `&`, `disown`, or an untracked detached process.
+7. For visible interfaces, apply `lily-ui-quality`, then use `lily-browser-qa` to open the actual URL, exercise the primary path, and check desktop and mobile viewports.
+8. When verification fails, read the actual error and use `lily-code-repair`. Continue while outputs or evidence show progress; stop only on confirmed non-progress, a real blocker, or user direction.
+9. Stop a temporary process job after verification unless the user needs it left running. If it remains active, report the job id, URL, port, and stop command.
+10. Deliver absolute paths, run/open instructions, and the evidence actually observed.
 
 ## Quality Bar
 
-- No runnable entrypoint means the task is not complete.
-- Browser artifacts must be opened or the reason they could not be opened must be stated.
-- UI text must not overlap, overflow, or break on obvious desktop/mobile sizes.
+- No runnable entrypoint means the task is incomplete.
+- Browser artifacts must be opened, or the exact runtime blocker must be stated.
+- UI text must not overlap, overflow, or break at the tested desktop/mobile sizes.
 - Do not return only snippets unless the user explicitly asked for snippets.
+- Do not claim progress, readiness, or completion without command, job, browser, or file evidence.
 - Keep technical explanation limited to what the user needs to run and maintain the result.
 
 ## Related Skills
 
-- lily-coding-core for engineering discipline.
-- lily-browser-qa for browser-visible outputs.
-- lily-ui-quality for interface polish and responsive behavior.
-- lily-code-repair when verification fails.
+- `lily-coding-core` for engineering discipline.
+- `lily-ui-quality` for interface creation and review standards.
+- `lily-browser-qa` for browser-visible evidence.
+- `lily-code-repair` for root-cause repair when verification fails.
