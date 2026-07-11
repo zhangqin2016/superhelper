@@ -291,6 +291,15 @@ try {
     !browserQaListResult.skillGraph.some((skill) => skill.id === "lily-web-system-learning"),
     "capability list web QA should omit high-risk learning",
   );
+  const browserQaPackStatus = await findBrokerTool(runtime, "lily_capability_list").handler({
+    query: "测试这个网页是否有 console error 和按钮失效问题",
+  }, runtime, {
+    installedRuntimePackIds: () => new Set(),
+  });
+  assert(
+    browserQaPackStatus.runtimePacks.missing.includes("web-automation"),
+    "capability list should name the Web Automation pack required by Browser QA",
+  );
   const localSmokeListResult = await findBrokerTool(runtime, "lily_capability_list").handler({
     query: "打开 localhost:3000 做前端冒烟测试",
   }, runtime);
@@ -554,6 +563,15 @@ try {
 
   const browser = { sessionId: "s1", activeSkillIds: ["lily-browser-qa"], runtime: { browserAvailable: true } };
   assert(JSON.stringify(names(browser)) === JSON.stringify([...PLATFORM_TOOLS, "browser_open"].sort()), "browser tool visible when runtime exists");
+  const browserRuntimeAvailableStatus = await findBrokerTool(runtime, "lily_capability_status").handler({}, browser);
+  assert(
+    browserRuntimeAvailableStatus.toolDetails.some((tool) => (
+      tool.name === "browser_open" &&
+      tool.executionSurface === "browser_runtime" &&
+      tool.mcpServerName === "playwright"
+    )),
+    "browser capability status should direct execution to the registered Playwright MCP server",
+  );
   assert(JSON.stringify(names({ ...browser, runtime: { browserAvailable: false } })) === JSON.stringify(PLATFORM_TOOLS), "browser tool hidden when runtime missing");
   const browserRuntimeBlockedStatus = await findBrokerTool(runtime, "lily_capability_status").handler({}, {
     ...browser,

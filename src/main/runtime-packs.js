@@ -182,6 +182,12 @@ function effectivePackEntries() {
   return entries;
 }
 
+function getEffectiveRuntimePackDir(id) {
+  if (!id) return "";
+  const entry = effectivePackEntries().find((item) => item.id === id && item.source !== "pip");
+  return entry?.dir && fs.existsSync(entry.dir) ? entry.dir : "";
+}
+
 function isPythonPathPack(id) {
   const spec = PACK_SPECS[id];
   if (spec) return spec.pythonPath === true;
@@ -297,6 +303,7 @@ function getRuntimePackEnvExtras() {
 }
 
 module.exports = {
+  getEffectiveRuntimePackDir,
   getRuntimePackPythonPaths,
   getRuntimePackLibreOfficeDirs,
   getRuntimePackPathEntries,

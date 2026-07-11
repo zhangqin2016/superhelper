@@ -70,6 +70,7 @@ const SKILL_RUNTIME_PACKS = {
   "lily-document-query": ["large-document", "pro-pdf", "rapidocr", "opencv"],
   "lily-pdf-form": ["large-document", "pro-pdf"],
   "lily-web-system-learning": ["web-automation"],
+  "lily-browser-qa": ["web-automation"],
   "lily-video-generation": ["ffmpeg"],
 };
 

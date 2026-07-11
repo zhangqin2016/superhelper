@@ -392,6 +392,7 @@ class SessionRunnerPool {
       const fs = require("node:fs");
       const { bundleRuntimeDir } = require("./bundle-locator");
       const { writeActiveMcpConfig } = require("./mcp-config");
+      const { getEffectiveRuntimePackDir } = require("./runtime-packs");
       const out = require("./config").userDataPath("opencode-mcp.json");
       // OpenCode owns one app-wide serve and one stdio MCP child. MCP calls do
       // not carry the originating Lily conversation, so embedding sessionId or
@@ -400,7 +401,13 @@ class SessionRunnerPool {
       // explicitly platform-only. Callers with an actually isolated transport
       // can still pass real context directly to writeActiveMcpConfig.
       const sharedBrokerContext = { platformOnly: true, activeSkillIds: [] };
-      const written = writeActiveMcpConfig(bundleRuntimeDir(), out, activeSkillIds, sharedBrokerContext);
+      const written = writeActiveMcpConfig(
+        bundleRuntimeDir(),
+        out,
+        activeSkillIds,
+        sharedBrokerContext,
+        { webAutomationPackDir: getEffectiveRuntimePackDir("web-automation") },
+      );
       if (!written) return {};
       let servers = JSON.parse(fs.readFileSync(out, "utf8")).mcpServers || {};
       // lite grade: a weak model handed 29 tools calls them badly. Keep the

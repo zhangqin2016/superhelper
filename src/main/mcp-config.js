@@ -47,19 +47,46 @@ function bundledNodeModulesDir(runtimeDir) {
   return path.join(runtimeDir, "web", "node_modules");
 }
 
+function resolvePlaywrightRuntime(runtimeDir, { webAutomationPackDir = "" } = {}) {
+  if (!runtimeDir) return null;
+  const command = nodeBinaryPath(runtimeDir);
+  if (!command) return null;
+
+  if (webAutomationPackDir) {
+    const cliPath = path.join(webAutomationPackDir, "node_modules", "@playwright", "mcp", "cli.js");
+    if (fs.existsSync(cliPath)) {
+      return {
+        command,
+        cliPath,
+        browsersPath: path.join(webAutomationPackDir, "browsers"),
+        source: "web-automation-pack",
+      };
+    }
+  }
+
+  const cliPath = playwrightMcpEntry(runtimeDir);
+  if (!fs.existsSync(cliPath)) return null;
+  return {
+    command,
+    cliPath,
+    browsersPath: bundledBrowsersDir(runtimeDir),
+    source: "base-runtime",
+  };
+}
+
 /** True only when the bundle actually carries node + @playwright/mcp. */
-function playwrightMcpAvailable(runtimeDir) {
-  if (!runtimeDir) return false;
-  return Boolean(nodeBinaryPath(runtimeDir)) && fs.existsSync(playwrightMcpEntry(runtimeDir));
+function playwrightMcpAvailable(runtimeDir, options) {
+  return Boolean(resolvePlaywrightRuntime(runtimeDir, options));
 }
 
 /**
  * The engine MCP config document, or null when the bundle is absent.
  * @param {string} runtimeDir
  */
-function buildPlaywrightMcpConfig(runtimeDir) {
-  if (!playwrightMcpAvailable(runtimeDir)) return null;
-  const browsers = bundledBrowsersDir(runtimeDir);
+function buildPlaywrightMcpConfig(runtimeDir, options) {
+  const resolved = resolvePlaywrightRuntime(runtimeDir, options);
+  if (!resolved) return null;
+  const browsers = resolved.browsersPath;
   const hasBundledChromium = fs.existsSync(browsers);
   const env = {};
   if (hasBundledChromium) env.PLAYWRIGHT_BROWSERS_PATH = browsers;
@@ -71,10 +98,10 @@ function buildPlaywrightMcpConfig(runtimeDir) {
   return {
     mcpServers: {
       playwright: {
-        command: nodeBinaryPath(runtimeDir),
+        command: resolved.command,
         // Headless, isolated profile; never reuse credentials from the host —
         // the model logs in interactively when needed.
-        args: [playwrightMcpEntry(runtimeDir), "--browser", browserArg, "--headless", "--isolated"],
+        args: [resolved.cliPath, "--browser", browserArg, "--headless", "--isolated"],
         env,
       },
     },
@@ -225,9 +252,9 @@ function buildWebSystemMcpEntries(systemDirs) {
   return out;
 }
 
-function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null, context) {
+function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null, context, options = {}) {
   const mcpServers = {};
-  const playwright = runtimeDir ? buildPlaywrightMcpConfig(runtimeDir) : null;
+  const playwright = runtimeDir ? buildPlaywrightMcpConfig(runtimeDir, options) : null;
   if (playwright?.mcpServers) Object.assign(mcpServers, playwright.mcpServers);
   let brokerContext = context;
   if (context !== undefined && context && typeof context === "object" && !Array.isArray(context)) {
@@ -258,6 +285,7 @@ module.exports = {
   buildToolBrokerMcpEntry,
   bundledBrowsersDir,
   bundledNodeModulesDir,
+  resolvePlaywrightRuntime,
   playwrightMcpAvailable,
   buildPlaywrightMcpConfig,
   webSystemMcpEntry,

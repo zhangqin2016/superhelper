@@ -30,6 +30,7 @@ const EXECUTION_SURFACES = {
 const MCP_SERVER_NAMES = {
   toolBroker: "lily_tool_broker",
   mail: "mail",
+  browser: "playwright",
 };
 
 function asTextJson(value) {
@@ -452,6 +453,7 @@ const STATIC_TOOL_DEFINITIONS = [
     group: "browser",
     requiredSkillIds: [SKILLS.browser],
     executionSurface: EXECUTION_SURFACES.browserRuntime,
+    mcpServerName: MCP_SERVER_NAMES.browser,
     description: "Open a URL in the broker-managed browser runtime.",
     inputSchema: {
       url: z.string().describe("URL to open"),

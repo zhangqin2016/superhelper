@@ -74,6 +74,36 @@ try {
   const cfg2 = buildPlaywrightMcpConfig(noBrowsers);
   assert(cfg2 && cfg2.mcpServers.playwright.env.PLAYWRIGHT_BROWSERS_PATH === undefined, "no browsers env when browsers dir absent");
 
+  // optional Web Automation pack → use pack MCP/browser assets with the base runtime Node
+  const packRuntime = path.join(tmp, "pack-runtime");
+  fs.mkdirSync(path.join(packRuntime, "node", "bin"), { recursive: true });
+  fs.writeFileSync(path.join(packRuntime, "node", "bin", isWin ? "node.exe" : "node"), "");
+  const webAutomationPack = path.join(tmp, "web-automation");
+  fs.mkdirSync(path.join(webAutomationPack, "node_modules", "@playwright", "mcp"), { recursive: true });
+  fs.writeFileSync(path.join(webAutomationPack, "node_modules", "@playwright", "mcp", "cli.js"), "");
+  fs.mkdirSync(path.join(webAutomationPack, "browsers"), { recursive: true });
+  const packCfg = buildPlaywrightMcpConfig(packRuntime, { webAutomationPackDir: webAutomationPack });
+  assert(packCfg?.mcpServers?.playwright, "installed Web Automation pack should activate Playwright MCP");
+  assert(
+    packCfg.mcpServers.playwright.args[0] === path.join(webAutomationPack, "node_modules", "@playwright", "mcp", "cli.js"),
+    "Playwright MCP CLI should come from the effective Web Automation pack",
+  );
+  assert(
+    packCfg.mcpServers.playwright.env.PLAYWRIGHT_BROWSERS_PATH === path.join(webAutomationPack, "browsers"),
+    "browser assets should come from the effective Web Automation pack",
+  );
+  const invalidPack = path.join(tmp, "invalid-web-automation");
+  fs.mkdirSync(invalidPack, { recursive: true });
+  const fallbackCfg = buildPlaywrightMcpConfig(full, { webAutomationPackDir: invalidPack });
+  assert(
+    fallbackCfg.mcpServers.playwright.args[0] === path.join(full, "web", "node_modules", "@playwright", "mcp", "cli.js"),
+    "a malformed optional pack must fall back to the previously working base runtime",
+  );
+  assert(
+    buildPlaywrightMcpConfig(packRuntime, { webAutomationPackDir: invalidPack }) === null,
+    "an unusable optional pack without a base runtime must remain a clean no-op",
+  );
+
   // write path
   const out = path.join(tmp, "mcp-active.json");
   const written = writeActiveMcpConfig(full, out);
@@ -83,6 +113,11 @@ try {
   assert(parsed.mcpServers.lily_tool_broker.command, "written config includes Lily tool broker");
   assert(parsed.mcpServers.lily_file_intelligence.command, "written config includes file intelligence server");
   assert(parsed.mcpServers.lily_process_jobs.command, "written config includes process jobs server");
+
+  const packOut = path.join(tmp, "mcp-pack.json");
+  writeActiveMcpConfig(packRuntime, packOut, null, undefined, { webAutomationPackDir: webAutomationPack });
+  const packWritten = JSON.parse(fs.readFileSync(packOut, "utf8"));
+  assert(packWritten.mcpServers.playwright.args[0].startsWith(webAutomationPack), "active config should retain pack Playwright path");
 
   const learnedRoot = path.join(process.env.LILY_USER_DATA_DIR, "lily-config", "skills");
   const enabled = path.join(learnedRoot, "learned-enabled");

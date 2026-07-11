@@ -32,6 +32,11 @@ const packs = require(path.join(ROOT, "src/main/runtime-packs.js"));
 const runtimePython = require(path.join(ROOT, "src/main/runtime-python.js"));
 
 // No state file yet, but read-only bundled packs should already be usable.
+assert(
+  packs.getEffectiveRuntimePackDir("web-automation") === bundledWeb,
+  "effective pack lookup should expose a bundled Web Automation pack without install state",
+);
+assert(packs.getEffectiveRuntimePackDir("missing-pack") === "", "missing effective packs should return an empty path");
 assert(Array.isArray(packs.getRuntimePackPythonPaths()), "should return an array");
 assert(packs.getRuntimePackPythonPaths().length === 0, "fresh userData with web runtime → no Python pack paths");
 assert(

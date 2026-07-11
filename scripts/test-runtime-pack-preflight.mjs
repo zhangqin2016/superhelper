@@ -43,6 +43,15 @@ includes(ids, "opencv", "Image OCR should require OpenCV preprocessing");
 ids = inferRuntimePackIds({ text: "学习这个 OA 系统并生成工作区技能" });
 includes(ids, "web-automation", "Web system learning should require browser automation");
 
+ids = inferRuntimePackIds({ skillIds: ["lily-browser-qa"] });
+includes(ids, "web-automation", "Browser QA should require browser automation");
+
+ids = inferRuntimePackIds({ skillIds: ["lily-ui-quality", "lily-browser-qa"] });
+includes(ids, "web-automation", "UI review with browser QA should require browser automation");
+
+ids = inferRuntimePackIds({ skillIds: ["lily-app-builder"] });
+excludes(ids, "web-automation", "App Builder alone should remain usable without the optional browser runtime");
+
 ids = inferRuntimePackIds({ text: "把这个视频裁剪并压缩", files: [{ name: "demo.mp4" }] });
 includes(ids, "ffmpeg", "Media processing should require FFmpeg");
 

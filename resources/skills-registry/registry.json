@@ -155,7 +155,7 @@
       "kind": "quality",
       "intents": ["browser.test", "webapp.qa", "frontend.smoke_test"],
       "primaryTools": ["browser.preview", "playwright", "console.logs"],
-      "runtimeDependencies": ["chromium"],
+      "runtimeDependencies": ["web-automation"],
       "inputModes": ["text", "workspace", "url"],
       "outputModes": ["test_report", "screenshot", "text"],
       "risk": { "level": "low", "confirmation": "none" },
