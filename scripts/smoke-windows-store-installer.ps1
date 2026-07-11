@@ -93,13 +93,18 @@ function Require-Check {
     [Parameter(Mandatory = $true)]
     [string]$Title,
 
+    [string]$SuccessMessage = "Required check passed.",
+
     [string]$FailureMessage = "Required check failed."
   )
 
-  if (-not $Condition) {
-    Add-Check -Id $Id -Title $Title -Status "fail" -Details $FailureMessage | Out-Null
-    throw $FailureMessage
+  if ($Condition) {
+    Add-Check -Id $Id -Title $Title -Status "pass" -Details $SuccessMessage | Out-Null
+    return
   }
+
+  Add-Check -Id $Id -Title $Title -Status "fail" -Details $FailureMessage | Out-Null
+  throw $FailureMessage
 }
 
 function Write-Reports {
