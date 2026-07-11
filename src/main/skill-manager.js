@@ -894,13 +894,9 @@ const SKILL_PLATFORM_OVERLAYS = {
     en: "anthropics-pptx: subagent-based QA is use-if-available. When the task/subagent tool is unavailable, run the SAME visual QA steps inline in this session — never skip QA because subagents are missing.",
     zh: "anthropics-pptx：子代理 QA 是“可用则用”。当 task/子代理工具不可用时，在当前会话内联执行同样的视觉 QA 步骤——绝不能因为没有子代理而跳过 QA。",
   },
-  "anthropics-web-artifacts-builder": {
-    en: "anthropics-web-artifacts-builder: testing is NOT optional on this platform. Verify every browser-visible artifact opens and renders (via lily-browser-qa when enabled) BEFORE presenting it.",
-    zh: "anthropics-web-artifacts-builder：在本平台测试不是可选项。任何浏览器可见产物在交付前必须验证能打开、能渲染（启用 lily-browser-qa 时走它）。",
-  },
-  "anthropics-webapp-testing": {
-    en: "anthropics-webapp-testing: reference material only. Browser verification routes through lily-browser-qa and the platform-managed browser runtime, not hand-written Playwright scripts.",
-    zh: "anthropics-webapp-testing：仅作参考。浏览器验证走 lily-browser-qa 与平台管理的浏览器运行时，不要手写 Playwright 脚本。",
+  "anthropics-pdf": {
+    en: "anthropics-pdf: Lily's bundled document pipeline and managed runtime packs are authoritative. Do not ad-hoc install or assume upstream-named tools such as pytesseract, reportlab, or qpdf exist; use the available Lily extraction/rendering routes and report a managed-runtime blocker explicitly.",
+    zh: "anthropics-pdf：以 Lily 内置文档管线和受管理依赖包为准。不要临时安装或假定 pytesseract、reportlab、qpdf 等上游工具必然存在；优先使用 Lily 可用的提取/渲染路线，缺少受管理运行时则明确报告。",
   },
 };
 

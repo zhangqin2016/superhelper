@@ -55,6 +55,7 @@ function buildManifestFromSkillMd({ skillId, skillMd, version = "1.0.0", priorit
     permissions: {
       network: false,
       filesystem: "read",
+      subprocess: false,
     },
     guideMd: {
       title,

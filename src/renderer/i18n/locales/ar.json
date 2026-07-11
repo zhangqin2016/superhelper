@@ -1006,6 +1006,8 @@
   "skills.perm.network": "يتطلب شبكة",
   "skills.perm.read": "قراءة ملفات",
   "skills.perm.readwrite": "قراءة/كتابة ملفات",
+  "skills.perm.subprocess": "تشغيل عمليات محلية",
+  "skills.perm.runtimePacks": "حزم التشغيل: {packs}",
   "skills.badge.catalog": "كتالوج",
   "skills.badge.recommended": "موصى به",
   "skills.badge.auto": "تلقائي",

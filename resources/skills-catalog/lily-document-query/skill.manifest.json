@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-document-query",
+  "name": "文档追问",
+  "description": "对已抽取文档建立轻量查询入口并返回可引用证据。",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "category": "office",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "tool",
+  "riskLevel": "low",
+  "permissions": { "network": false, "filesystem": "read", "subprocess": true },
+  "requiredRuntimePacks": ["large-document", "pro-pdf", "rapidocr", "opencv"],
+  "name_i18n": { "en": "Document Query", "ar": "استعلام المستندات" }
+}

@@ -60,8 +60,11 @@ const skillPresets = require(path.join(ROOT, "src/main/skill-presets.js"));
 const skillRegistry = require(path.join(ROOT, "src/main/skill-registry.js"));
 const skillManager = require(path.join(ROOT, "src/main/skill-manager.js"));
 
-if (skillPresets.SKILL_PRESETS.length !== 5) {
-  throw new Error(`expected 5 curated presets, got ${skillPresets.SKILL_PRESETS.length}`);
+if (skillPresets.SKILL_PRESETS.length !== 4) {
+  throw new Error(`expected 4 canonical curated presets, got ${skillPresets.SKILL_PRESETS.length}`);
+}
+if (skillPresets.getPresetById("reliability")?.aliasOf !== "dev-starter") {
+  throw new Error("legacy reliability preset should resolve to dev-starter without duplicating the catalog");
 }
 if (skillPresets.SKILL_PRESETS[0].id !== "office-starter") {
   throw new Error("office-starter should be the first preset");
@@ -91,8 +94,8 @@ skillManager.bootstrapSkills();
 
 const catalog = await skillManager.checkRegistryUpdates({ fetch: false });
 if (!catalog.ok) throw new Error("catalog bootstrap failed");
-if (!Array.isArray(catalog.presets) || catalog.presets.length !== 5) {
-  throw new Error("catalog should expose 5 curated presets");
+if (!Array.isArray(catalog.presets) || catalog.presets.length !== 4) {
+  throw new Error("catalog should expose 4 canonical curated presets");
 }
 if (!Array.isArray(catalog.featuredSkillIds) || catalog.featuredSkillIds.length !== 23) {
   throw new Error("catalog should expose featuredSkillIds");

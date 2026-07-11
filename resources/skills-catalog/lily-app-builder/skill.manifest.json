@@ -6,15 +6,15 @@
   "version": "1.0.2",
   "minAppVersion": "0.1.0",
   "runtime": "none",
-  "category": "coding",
+  "category": "dev",
   "categoryLabel": "编程研发",
   "publisher": "Lily Workbench",
   "capabilityLayer": "workflow",
   "riskLevel": "low",
   "permissions": {
     "network": false,
-    "filesystem": "none",
-    "subprocess": "none"
+    "filesystem": "readwrite",
+    "subprocess": true
   },
   "name_i18n": {
     "en": "App Builder",

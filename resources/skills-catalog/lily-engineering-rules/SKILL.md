@@ -1,66 +1,24 @@
 ---
 name: lily-engineering-rules
-description: Engineering collaboration rules for non-trivial development, debugging, architecture changes, tests, code review, documentation, and release work. Use when the user asks for careful engineering, surgical changes, root-cause debugging, or project-standard implementation.
-intent: Provide executable engineering discipline: clarify assumptions, keep changes minimal, verify against goals, choose coherent designs over compromises, encode intent in tests, checkpoint long tasks, follow local conventions, and state skipped work.
-type: reference
-best_for:
-  - Non-trivial feature work or bug fixes
-  - Refactors or migrations that need tight scope control
-  - Tests, reviews, or tasks requiring project engineering standards
-scenarios:
-  - Change this module without touching unrelated code
-  - Implement this according to our project standards
-  - Find the root cause before fixing this bug
+description: Mandatory engineering collaboration rules for development, debugging, architecture, testing, review, deployment, and documentation.
+canonical_source: resources/skills/lily-engineering-rules/skill.manifest.json#guideMd_i18n.en.body
 ---
 
-# Engineering Collaboration Rules
+# Engineering Rules
 
-Use these rules for development tasks unless the user's current instruction explicitly overrides them.
+Development, debugging, architecture, testing, review, deployment, and documentation tasks must follow these rules unless the user explicitly asks otherwise in the current turn.
 
-## 1. Think Before Writing
+1. **Think before writing**: state key assumptions; ask only when ambiguity changes the solution; name conflicting interpretations.
+2. **Prefer simplicity**: use the least code that solves the problem; avoid speculative features and one-off abstractions.
+3. **Make surgical changes**: touch only files required for the goal; match existing style; do not reformat unrelated code.
+4. **Work from the goal**: define success criteria, then iterate based on evidence until they are met.
+5. **Use tools for deterministic work**: counts, transforms, routing, retries, and verification must use code, commands, or tests when possible.
+6. **Checkpoint long work**: state what was inspected, changed, verified, and what remains.
+7. **Choose one design when patterns conflict**: pick based on recency, call surface, ownership, and tests; do not blend incompatible approaches.
+8. **Read before writing**: inspect exports, direct callers, shared helpers, and relevant tests; for bugs, find root cause first.
+9. **Tests encode intent**: behavior changes and bug fixes need a regression check when the project has a test path.
+10. **Verify before completion**: run the relevant test/build/repro/preview when possible; otherwise state the unverified risk.
+11. **State skipped work**: never imply a test, deploy, browser check, or release happened if it did not.
+12. **Preserve user work**: never revert, delete, or overwrite unrelated user changes; work around them or ask when they block the task.
 
-State assumptions. Ask when ambiguity would change the solution. If several interpretations exist, name them. If a simpler route exists, point it out.
-
-## 2. Prefer Simplicity
-
-Use the least code that solves the problem. Avoid speculative features and one-off abstractions. If a senior engineer would call it over-engineered, simplify.
-
-## 3. Make Surgical Changes
-
-Touch only what is required. Clean up only the mess you introduce. Match existing style and avoid unrelated formatting churn.
-
-## 4. Work From the Goal
-
-Define success criteria, then iterate until they are met. Do not follow steps mechanically when evidence changes.
-
-## 5. Use Models for Judgment, Code for Determinism
-
-Use reasoning for classification, drafting, summarization, and extraction. Use code, tools, and tests for routing, retries, transforms, and anything deterministic.
-
-## 6. Checkpoint Long Work
-
-Break complex work into phases. Summarize remaining work before context or time pressure causes silent loss. State blockers plainly.
-
-## 7. Choose When Designs Conflict
-
-When two patterns conflict, choose one based on recency, usage, ownership, or test coverage. Explain the choice and mark the losing path for cleanup.
-
-## 8. Read Before Writing
-
-Before adding code, read exports, direct callers, shared helpers, and tests. For bugs, find root cause instead of patching only symptoms.
-
-## 9. Tests Encode Intent
-
-Tests should prove why behavior matters, not just that lines executed. For bug fixes, add or run a regression check when the project has a test habit.
-
-## 10. Checkpoint After Critical Steps
-
-After migrations, protocol changes, state-machine changes, or broad UI changes, verify that the next step still matches the goal.
-
-## 11. State Skipped Work
-
-If a test, build, deploy, or browser verification could not run, say why. Do not imply completion beyond evidence.
-
-## 12. Preserve User Work
-
-Do not revert, delete, or overwrite unrelated user changes. If they block the task, work with them or ask for direction.
+Skill directory: `{{SKILL_DIR}}`

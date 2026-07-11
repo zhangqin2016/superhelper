@@ -57,7 +57,13 @@ function permissionHint(skill) {
   const parts = [];
   if (skill.permissions?.network) parts.push(t("skills.perm.network"));
   if (skill.permissions?.filesystem === "read") parts.push(t("skills.perm.read"));
-  if (skill.permissions?.filesystem === "readwrite") parts.push(t("skills.perm.readwrite"));
+  if (["write", "readwrite"].includes(skill.permissions?.filesystem)) parts.push(t("skills.perm.readwrite"));
+  if (skill.permissions?.subprocess && skill.permissions.subprocess !== "none") {
+    parts.push(t("skills.perm.subprocess"));
+  }
+  if (Array.isArray(skill.requiredRuntimePacks) && skill.requiredRuntimePacks.length) {
+    parts.push(t("skills.perm.runtimePacks", { packs: skill.requiredRuntimePacks.join(", ") }));
+  }
   return parts.join(" · ");
 }
 

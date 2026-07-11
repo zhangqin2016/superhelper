@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-07-11T04:27:17.159Z",
+  "updatedAt": "2026-07-11T04:38:58.770Z",
   "publisher": "智能工作台技能目录",
   "registryUrl": null,
   "categories": [
@@ -1407,7 +1407,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1429,7 +1429,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "d79aef08375a74b199451ab4ecc37f0f959b597c01e7ef15b5ce5a0a7b0decc1"
+      "contentRevision": "05df2071a5318871aa8b4a345dbcbf4d1e805a7a938686d7216e56cc2211a0d3"
     },
     {
       "id": "lily-app-builder",
@@ -1444,7 +1444,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1466,13 +1466,13 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "e0af4fe2a4be58e800fe6690534e667c699af885cdfc66769100d9faf931925e"
+      "contentRevision": "cf415e8872d6534affd007e950e1999958c54b9ea85b23f64482ebddf78a13a1"
     },
     {
       "id": "lily-code-repair",
       "name": "代码修复",
       "description": "代码、网页、应用、测试、构建、部署或自动化失败时使用，先复现和定位根因，再做最小修复并重跑验证。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -1481,7 +1481,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1503,7 +1503,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "d36a168deb0ac0f0e77b7d6415db156bc8553dce35193d9a5dd2685157c997e7"
+      "contentRevision": "d1c4f0333e3b635d685f386ba780412ea5a94fc29755f9a0ebef3cda9f27a38e"
     },
     {
       "id": "lily-office-intent",
@@ -1703,7 +1703,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1725,7 +1725,7 @@
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
       },
-      "contentRevision": "1d75bb0a6142b4d5153f8e70f9a40f827a831e85e492296829dc980af072a4ea"
+      "contentRevision": "320721db611bd55c710137692dd56a0eab767502ce3ffbabe1f9cf0ff8c1a155"
     },
     {
       "id": "lily-creative-director",
@@ -1925,7 +1925,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.48",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "网页自动化",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -1947,7 +1947,7 @@
         "en": "Automation",
         "ar": "الأتمتة"
       },
-      "contentRevision": "81d8c02d88da1808f9beb23bb0b8a7e29a3b00acb804cc9fea60096dfbbbefab"
+      "contentRevision": "6658f249974ecf159bc5bef3401525bcbe25b5d68f30280bdb90c13e76eeac22"
     },
     {
       "id": "lily-mail-assistant",
@@ -2095,7 +2095,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "ecb31ff520a409e22378ddd6eb534bb901920886522cc2eaf891f61227613dec"
+      "contentRevision": "c1cd19b48b5c0f871d62cf00f65a2efcfecf7537bf0dc8f5926b8d28b96baef0"
     },
     {
       "id": "lily-document-verify",
@@ -2132,7 +2132,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "ad5240e23650e6ce48076f2276235f6ad47049df4923ceb33b8b2a23af014162"
+      "contentRevision": "2bc57c6da27ab79c999e418712e09ba0ed1908d325d4da144d3fbc31c817a8b5"
     },
     {
       "id": "lily-document-query",
@@ -2169,7 +2169,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "f5442104bc8a37905974e62e21edd004f5f7dfd5c06e99f38c5c2d22dd6f4ddc"
+      "contentRevision": "d059b60fffe03b0b0c3cb790d48b21ab070cbf5b70f4598cf06e55719e60b53a"
     },
     {
       "id": "lily-pdf-form",
@@ -2206,7 +2206,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "857645271bae8cc8f08102ceabffa374bd80fc1b66fc398920e3d41d26a90efd"
+      "contentRevision": "5cfd43b9a80bd31f1ad963f5e26bb8c769b5b55a79ce4615465fc85d9e2ba974"
     },
     {
       "id": "lily-runtime-packs",
@@ -2243,13 +2243,13 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "9aeb010845ca409ec5fdf11603c3e6fcd5638aa17b42e6aae03f48e20d90b0ce"
+      "contentRevision": "a1e3ee79f62e735291c68fd3e14302fd5fbe004bb90d5d7ac64e776a43c1f56b"
     },
     {
       "id": "lily-engineering-rules",
       "name": "工程协作规则",
       "description": "非简单开发、调试、架构调整、测试、代码评审、文档和发布任务的工程协作规则，强调先澄清、最小改动、根因定位、验证和交付边界。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2258,7 +2258,7 @@
         "ref": "main"
       },
       "minAppVersion": "0.1.0",
-      "category": "coding",
+      "category": "dev",
       "categoryLabel": "编程创作",
       "publisher": "Lily Workbench",
       "sourceRepo": "lily-workbench/skills",
@@ -2281,7 +2281,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "37e2b06f219cb1a2eddb41b40867f572062f971b92b6c3ed05207a7e572ae5d0"
+      "contentRevision": "a3c468b57a25281e4ac0af41b749ed849849c67503cc27f951c22f9e857e99f7"
     },
     {
       "id": "anthropics-doc-coauthoring",
@@ -2298,7 +2298,7 @@
       "minAppVersion": "0.1.0",
       "category": "office",
       "categoryLabel": "办公文档",
-      "publisher": "Lily Workbench",
+      "publisher": "Anthropic",
       "sourceRepo": "anthropics/skills",
       "changelog": "来自 anthropics/skills",
       "capabilityLayer": "workflow",
@@ -2318,7 +2318,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "2dbe2889f6f7e085e3bc26b162ef08bc6894793aa4fd59fb8fc01160d1d99595"
+      "contentRevision": "955ab79ddfa1f68fb5857824874bc28f0852282e96ba7829f037470d59e7352e"
     },
     {
       "id": "anthropics-docx",
@@ -2335,7 +2335,7 @@
       "minAppVersion": "0.1.0",
       "category": "office",
       "categoryLabel": "办公文档",
-      "publisher": "Lily Workbench",
+      "publisher": "Anthropic",
       "sourceRepo": "anthropics/skills",
       "changelog": "来自 anthropics/skills",
       "capabilityLayer": "tool",
@@ -2355,7 +2355,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "9712322e636afe6fa9dd665bb27838ea98c2fcf9a09a2d6ae422aa70259f20b4"
+      "contentRevision": "29e06805fedb4b98bf88ebf87892942ee9d5680e775ae5f51c4d1197d9afebb6"
     },
     {
       "id": "anthropics-pdf",
@@ -2372,7 +2372,7 @@
       "minAppVersion": "0.1.0",
       "category": "office",
       "categoryLabel": "办公文档",
-      "publisher": "Lily Workbench",
+      "publisher": "Anthropic",
       "sourceRepo": "anthropics/skills",
       "changelog": "来自 anthropics/skills",
       "capabilityLayer": "tool",
@@ -2392,7 +2392,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "0ed91b3df70748d8c905b878cc5ad661abf5cdaf6b30d7ff1b168433407d931e"
+      "contentRevision": "93c87db86e466b6b25a1eefc99a0daff6654349ed42c3bbe372acfa37d3cc56f"
     },
     {
       "id": "anthropics-pptx",
@@ -2409,7 +2409,7 @@
       "minAppVersion": "0.1.0",
       "category": "office",
       "categoryLabel": "办公文档",
-      "publisher": "Lily Workbench",
+      "publisher": "Anthropic",
       "sourceRepo": "anthropics/skills",
       "changelog": "来自 anthropics/skills",
       "capabilityLayer": "tool",
@@ -2429,7 +2429,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "689cd3a3357dc6d6cbfcec9c8390f691c2bd5921c7f0aaf2254b95715efdac0a"
+      "contentRevision": "59d70fc914e7d7bfb7691a62788da04b91322fef22a9b752bb286805077d9f0a"
     },
     {
       "id": "anthropics-xlsx",
@@ -2446,7 +2446,7 @@
       "minAppVersion": "0.1.0",
       "category": "office",
       "categoryLabel": "办公文档",
-      "publisher": "Lily Workbench",
+      "publisher": "Anthropic",
       "sourceRepo": "anthropics/skills",
       "changelog": "来自 anthropics/skills",
       "capabilityLayer": "tool",
@@ -2466,8 +2466,8 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "0341c95a438d46920383908afe64a8a51d5a00dc6efe433a5c35cde0317fba2a"
+      "contentRevision": "b7a4aa564cb4d27fd5b69a920774a2260f91b4ed8e3459b2ca29c643be8c6c54"
     }
   ],
-  "registryRevision": "9e3ff2236a74d30cdabc5a7b659812b268eb4c0b55095745ac3b081c14b45281"
+  "registryRevision": "0ba8ea3adec744b5274c75d6b70c5458f16e2798343a7483fdfbfafc1afeb939"
 }

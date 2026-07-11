@@ -1023,6 +1023,8 @@
   "skills.perm.network": "需联网",
   "skills.perm.read": "读文件",
   "skills.perm.readwrite": "读写文件",
+  "skills.perm.subprocess": "运行本地进程",
+  "skills.perm.runtimePacks": "依赖包：{packs}",
   "skills.badge.catalog": "目录",
   "skills.badge.recommended": "推荐",
   "skills.badge.auto": "自动下发",

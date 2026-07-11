@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-runtime-packs",
+  "name": "Runtime 能力包",
+  "description": "通过 Lily 托管渠道检查、安装或移除可选本地运行包。",
+  "version": "1.0.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "none",
+  "category": "office",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "runtime",
+  "riskLevel": "low",
+  "permissions": { "network": true, "filesystem": "readwrite", "subprocess": true },
+  "name_i18n": { "en": "Runtime Packs", "ar": "حزم التشغيل" }
+}

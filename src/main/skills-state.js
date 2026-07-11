@@ -95,10 +95,13 @@ function readInstalledManifest(skillId) {
 function buildReplacements(skillDir, manifest) {
   ensureRuntimeNodeShim();
   const nodeBin = resolveRuntimeNodePath();
+  const runtimeScriptsDir = bundledResourceCandidates(path.join("resources", "runtime-scripts")) ||
+    path.join(PROJECT_ROOT, "resources", "runtime-scripts");
   const replacements = {
     "{{NODE_BIN}}": nodeBin,
     "{{SKILL_DIR}}": skillDir,
     "{{USER_DATA}}": userDataPath(),
+    "{{RUNTIME_SCRIPTS_DIR}}": runtimeScriptsDir,
   };
   const custom = manifest?.placeholders;
   if (custom && typeof custom === "object") {

@@ -1023,6 +1023,8 @@
   "skills.perm.network": "Network",
   "skills.perm.read": "Read files",
   "skills.perm.readwrite": "Read/write files",
+  "skills.perm.subprocess": "Run local processes",
+  "skills.perm.runtimePacks": "Runtime packs: {packs}",
   "skills.badge.catalog": "Catalog",
   "skills.badge.recommended": "Recommended",
   "skills.badge.auto": "Auto",

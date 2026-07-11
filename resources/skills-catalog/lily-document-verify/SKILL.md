@@ -12,7 +12,7 @@ Text extraction tells you what a document says; it cannot prove the document loo
 
 ## Workflow
 
-1. Render the document to page images with resources/runtime-scripts/render_document.py.
+1. Render the document to page images with `{{RUNTIME_SCRIPTS_DIR}}/render_document.py`.
 2. Inspect each relevant page image for clipped text, broken tables, unexpected blank pages, missing images, extra pages, font fallback, and content outside page margins.
 3. Report honestly. Name the page and issue. If everything looks correct, say what was checked.
 

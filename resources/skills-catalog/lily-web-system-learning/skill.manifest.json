@@ -6,7 +6,7 @@
   "version": "1.0.23",
   "minAppVersion": "0.1.48",
   "runtime": "node",
-  "category": "coding",
+  "category": "dev",
   "categoryLabel": "网页自动化",
   "publisher": "Lily Workbench",
   "capabilityLayer": "workflow",

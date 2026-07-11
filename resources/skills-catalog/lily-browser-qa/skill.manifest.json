@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "lily-browser-qa",
+  "name": "浏览器实测",
+  "description": "使用受管理浏览器运行时验证网页交互、视口、控制台和截图证据。",
+  "version": "1.1.0",
+  "minAppVersion": "0.1.0",
+  "runtime": "node",
+  "category": "dev",
+  "publisher": "Lily Workbench",
+  "capabilityLayer": "quality",
+  "riskLevel": "low",
+  "permissions": { "network": true, "filesystem": "read", "subprocess": true },
+  "requiredRuntimePacks": ["web-automation"],
+  "name_i18n": { "en": "Browser QA", "ar": "اختبار المتصفح" }
+}

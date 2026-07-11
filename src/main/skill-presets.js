@@ -52,10 +52,6 @@ const SKILL_PRESETS = [
     skillIds: OFFICE_STARTER_SKILL_IDS,
   },
   {
-    id: "reliability",
-    skillIds: RELIABILITY_CORE_SKILL_IDS,
-  },
-  {
     id: "dev-starter",
     skillIds: RELIABILITY_CORE_SKILL_IDS,
   },
@@ -72,10 +68,14 @@ const SKILL_PRESETS = [
 const FEATURED_SKILL_IDS = uniqueSkillIds(SKILL_PRESETS.flatMap((p) => p.skillIds));
 
 const PRESET_BY_ID = Object.fromEntries(SKILL_PRESETS.map((p) => [p.id, p]));
+const PRESET_ALIASES = Object.freeze({ reliability: "dev-starter" });
 
 function getPresetById(presetId) {
   if (!presetId || typeof presetId !== "string") return null;
-  return PRESET_BY_ID[presetId] || null;
+  const canonical = PRESET_ALIASES[presetId] || presetId;
+  const preset = PRESET_BY_ID[canonical];
+  if (!preset) return null;
+  return canonical === presetId ? preset : { ...preset, id: presetId, aliasOf: canonical };
 }
 
 function filterSkillIdsInRegistry(registry, skillIds) {
@@ -113,6 +113,7 @@ module.exports = {
   RELIABILITY_CORE_SKILL_IDS,
   CREATIVE_STARTER_SKILL_IDS,
   RESEARCH_STARTER_SKILL_IDS,
+  PRESET_ALIASES,
   getPresetById,
   filterSkillIdsInRegistry,
   listPresetProgress,
