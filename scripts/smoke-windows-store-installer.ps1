@@ -971,6 +971,10 @@ function Stop-OwnedProcessTree {
     [AllowNull()]
     [object]$RootStartTicks = $null,
 
+    [Parameter(Mandatory = $true)]
+    [AllowNull()]
+    [object]$MinimumOwnedStartTicks,
+
     [hashtable]$KnownStartTicks = @{}
   )
 
@@ -978,6 +982,11 @@ function Stop-OwnedProcessTree {
   $stoppedIds = New-Object "System.Collections.Generic.HashSet[int]"
   $ownedStartTicks = @{}
   $depthById = @{}
+  $effectiveMinimumStartTicks = if ($null -ne $RootStartTicks) {
+    [long]$RootStartTicks
+  } else {
+    $MinimumOwnedStartTicks
+  }
 
   foreach ($knownIdText in @($KnownStartTicks.Keys)) {
     if ($null -eq $RootStartTicks -and
@@ -1000,7 +1009,8 @@ function Stop-OwnedProcessTree {
           -AnchorIds @([int]$RootId) `
           -DepthById $depthById `
           -OwnedStartTicks $ownedStartTicks `
-          -Errors $errors
+          -Errors $errors `
+          -MinimumStartTicks $effectiveMinimumStartTicks
       } else {
         $errors.Add("Unable to capture descendants because the object-bound root PID is unavailable.") | Out-Null
       }
@@ -1024,7 +1034,7 @@ function Stop-OwnedProcessTree {
       -DepthById $depthById `
       -OwnedStartTicks $ownedStartTicks `
       -Errors $errors `
-      -MinimumStartTicks $RootStartTicks
+      -MinimumStartTicks $effectiveMinimumStartTicks
   }
 
   $stopOrder = @($ownedStartTicks.Keys | ForEach-Object {
@@ -1080,7 +1090,8 @@ function Stop-OwnedProcessTree {
         -AnchorIds @([int]$RootId) `
         -DepthById $depthById `
         -OwnedStartTicks $ownedStartTicks `
-        -Errors $errors
+        -Errors $errors `
+        -MinimumStartTicks $effectiveMinimumStartTicks
 
       $lateStopOrder = @($ownedStartTicks.Keys | ForEach-Object {
         $lateOwnedIdText = [string]$_
@@ -1193,6 +1204,7 @@ function Invoke-MonitoredProcess {
   $rootProcess = $null
   $rootId = $null
   $rootStartTicks = $null
+  $monitorStartedAtTicks = $null
   $knownStartTicks = @{}
   $previousAnchorIds = @()
   $lastActiveIds = @()
@@ -1204,6 +1216,7 @@ function Invoke-MonitoredProcess {
   $timeoutCleanup = $null
 
   try {
+    $monitorStartedAtTicks = [DateTime]::UtcNow.Ticks
     $rootProcess = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -PassThru
     $rootId = [int]$rootProcess.Id
     $rootStartTicks = Get-ProcessStartTicks -Process $rootProcess
@@ -1293,6 +1306,7 @@ function Invoke-MonitoredProcess {
         -RootProcess $rootProcess `
         -RootId $rootId `
         -RootStartTicks $rootStartTicks `
+        -MinimumOwnedStartTicks $monitorStartedAtTicks `
         -KnownStartTicks $knownStartTicks
     }
 
@@ -1311,6 +1325,7 @@ function Invoke-MonitoredProcess {
         -RootProcess $rootProcess `
         -RootId $rootId `
         -RootStartTicks $rootStartTicks `
+        -MinimumOwnedStartTicks $monitorStartedAtTicks `
         -KnownStartTicks $knownStartTicks
     } catch {
       $exceptionCleanup = [pscustomobject][ordered]@{

@@ -367,9 +367,24 @@ const stopOwnedTreeMatch = runner.match(
 );
 assert.ok(stopOwnedTreeMatch, "Stop-OwnedProcessTree must be a standalone bounded cleanup helper.");
 const stopOwnedTreeBody = stopOwnedTreeMatch[1];
-for (const parameter of ["RootProcess", "RootId", "RootStartTicks", "KnownStartTicks"]) {
+for (const parameter of [
+  "RootProcess",
+  "RootId",
+  "RootStartTicks",
+  "MinimumOwnedStartTicks",
+  "KnownStartTicks",
+]) {
   assert.match(stopOwnedTreeBody, new RegExp(`\\$${parameter}\\b`));
 }
+assert.match(
+  stopOwnedTreeBody,
+  /\$effectiveMinimumStartTicks\s*=\s*if \(\$null -ne \$RootStartTicks\)[\s\S]{0,180}\$MinimumOwnedStartTicks/,
+);
+assert.equal(
+  stopOwnedTreeBody.match(/-MinimumStartTicks\s+\$effectiveMinimumStartTicks/g)?.length ?? 0,
+  3,
+  "pre-kill, post-kill, and bounded fallback discovery must all enforce the effective launch bound",
+);
 assert.match(stopOwnedTreeBody, /Add-OwnedDescendantProcesses/);
 assert.match(stopOwnedTreeBody, /Sort-Object[\s\S]{0,180}Descending/);
 const knownIdentityImport = stopOwnedTreeBody.match(
@@ -428,6 +443,16 @@ const monitoredProcessMatch = runner.match(
 assert.ok(monitoredProcessMatch, "Invoke-MonitoredProcess must remain a standalone helper.");
 const monitoredProcessBody = monitoredProcessMatch[1];
 assert.match(monitoredProcessBody, /try\s*\{[\s\S]*Start-Process[\s\S]*-PassThru/);
+assert.match(
+  monitoredProcessBody,
+  /\$monitorStartedAtTicks\s*=\s*\[DateTime\]::UtcNow\.Ticks\s*\r?\n\s*\$rootProcess\s*=\s*Start-Process/,
+  "the ownership lower bound must be captured immediately before process launch",
+);
+assert.equal(
+  monitoredProcessBody.match(/-MinimumOwnedStartTicks\s+\$monitorStartedAtTicks/g)?.length ?? 0,
+  2,
+  "timeout and exception cleanup must receive the monitor launch lower bound",
+);
 assert.match(monitoredProcessBody, /catch\s*\{/);
 assert.match(monitoredProcessBody, /Stop-OwnedProcessTree/);
 assert.match(monitoredProcessBody, /\$Label\s*\+\s*["']\.monitor_exception_cleanup["']/);
