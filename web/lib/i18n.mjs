@@ -46,6 +46,15 @@ export const dictionaries = {
       download: "下载",
       open: "打开导航",
     },
+    premiumHome: {
+      hero: { eyebrow: "为真实工作而生的 AI 桌面工作台", title: "你的项目，终于有人记得。", description: "把文件、截图、表格和历史对话留在同一个工作空间。Lily 理解上下文，调用合适的技能，把零散材料推进成可交付成果。", primaryCta: "免费下载", secondaryCta: "看看它怎么工作", note: "面向个人用户 · 支持 macOS" },
+      problem: { eyebrow: "不是再开一个聊天框", title: "工作卡住，往往不是因为缺答案。", description: "而是资料散落、上下文反复解释、工具彼此割裂。Lily 把它们放回同一个项目现场。" },
+      workflows: { title: "从一堆材料，到真正完成", items: [["把项目交给 Lily", "拖入文件、截图和表格，或直接选择一个本地工作目录。"], ["它自己补齐上下文", "阅读材料、查找线索、调用技能，不用你逐步遥控。"], ["拿走可以继续用的结果", "得到文档、表格、清单和明确下一步，而不只是一次回答。"]] },
+      trust: { eyebrow: "清晰、可控、留在你的工作流里", title: "你看得见它做了什么。", items: [["本地工作空间", "项目资料按任务组织，减少重复上传和解释。"], ["过程可追踪", "工具调用、引用和输出都在对话里清楚呈现。"], ["能力可扩展", "按需安装应用与技能，重型能力不会拖慢普通电脑。"]] },
+      catalog: { eyebrow: "应用与技能", title: "需要什么，就给工作台增加什么。", appsTitle: "精选应用", skillsTitle: "热门技能", allApps: "查看全部应用", allSkills: "浏览技能库" },
+      wishes: { eyebrow: "共创愿望", title: "你许愿，我们认真实现。", description: "浏览大家正在期待的能力，为同感愿望助力，或提交一个新的工作痛点。", all: "进入共创愿望" },
+      finalCta: { title: "下一个项目，不必再从零解释。", description: "下载 Lily Workbench，让材料、上下文和成果留在同一个工作现场。", primary: "免费下载", secondary: "查看个人方案" },
+    },
     home: {
       badge: "截图、文档、表格都能放进来",
       titleA: "不会写提示词，",
@@ -303,6 +312,15 @@ export const dictionaries = {
   },
   en: {
     nav: { apps: "Apps", skills: "Skills", wishes: "Wish pool", account: "Account", scenarios: "Scenarios", experts: "Experts", product: "How it works", pricing: "Pricing", docs: "Docs", contact: "Contact", billing: "License", download: "Download", open: "Open navigation" },
+    premiumHome: {
+      hero: { eyebrow: "An AI desktop workbench for real work", title: "Your project finally has a memory.", description: "Keep files, screenshots, spreadsheets, and conversations in one workspace. Lily understands the context, uses the right skills, and turns scattered material into finished work.", primaryCta: "Download free", secondaryCta: "See how it works", note: "For individuals · macOS supported" },
+      problem: { eyebrow: "More than another chat box", title: "Work rarely stalls because you lack an answer.", description: "It stalls when context is scattered, explanations repeat, and tools do not connect. Lily brings them back into one project." },
+      workflows: { title: "From scattered material to finished work", items: [["Bring Lily the project", "Drop in files, screenshots, and sheets, or choose a local workspace folder."], ["Let it rebuild the context", "Read material, find clues, and use skills without step-by-step steering."], ["Take away usable outcomes", "Get documents, sheets, checklists, and a clear next step—not just an answer."]] },
+      trust: { eyebrow: "Clear, controlled, and part of your workflow", title: "You can see what Lily is doing.", items: [["Local workspaces", "Keep project material organized by task and explain it fewer times."], ["Traceable progress", "Tool calls, references, and outputs stay visible in the conversation."], ["Expandable capability", "Add apps and skills as needed without burdening everyday laptops."]] },
+      catalog: { eyebrow: "Apps and skills", title: "Add the capability your work needs.", appsTitle: "Featured apps", skillsTitle: "Popular skills", allApps: "View all apps", allSkills: "Browse skills" },
+      wishes: { eyebrow: "Wish pool", title: "You wish. We build with you.", description: "Explore what people need, support a shared pain point, or submit the capability missing from your work.", all: "Explore the wish pool" },
+      finalCta: { title: "Your next project should not start from zero.", description: "Download Lily Workbench and keep material, context, and outcomes in one place.", primary: "Download free", secondary: "View personal plan" },
+    },
     home: {
       badge: "Turn messy information into executable outcomes",
       titleA: "Stop chatting with AI.",
@@ -444,6 +462,15 @@ export const dictionaries = {
   },
   ar: {
     nav: { apps: "التطبيقات", skills: "المهارات", wishes: "الأمنيات", account: "الحساب", scenarios: "السيناريوهات", experts: "مساحات الخبراء", product: "طريقة العمل", pricing: "الأسعار", docs: "المساعدة", contact: "تواصل", billing: "الترخيص", download: "تنزيل", open: "فتح القائمة" },
+    premiumHome: {
+      hero: { eyebrow: "منضدة عمل مكتبية بالذكاء الاصطناعي للعمل الحقيقي", title: "أصبح لمشروعك ذاكرة أخيراً.", description: "احتفظ بالملفات ولقطات الشاشة والجداول والمحادثات في مساحة واحدة. يفهم Lily السياق ويستخدم المهارات المناسبة ليحوّل المواد المتفرقة إلى عمل منجز.", primaryCta: "تنزيل مجاني", secondaryCta: "شاهد طريقة العمل", note: "للأفراد · يدعم macOS" },
+      problem: { eyebrow: "أكثر من نافذة محادثة", title: "نادراً ما يتوقف العمل بسبب غياب إجابة.", description: "بل يتوقف حين يتشتت السياق وتتكرر الشروحات ولا تتصل الأدوات. يجمعها Lily في مشروع واحد." },
+      workflows: { title: "من مواد متفرقة إلى عمل مكتمل", items: [["أعط Lily المشروع", "أضف الملفات واللقطات والجداول أو اختر مجلد عمل محلياً."], ["دعه يبني السياق", "يقرأ المواد ويبحث عن الأدلة ويستخدم المهارات دون توجيه كل خطوة."], ["احصل على نتائج قابلة للاستخدام", "مستندات وجداول وقوائم وخطوة تالية واضحة، لا مجرد إجابة."]] },
+      trust: { eyebrow: "واضح ومضبوط وداخل سير عملك", title: "ترى بوضوح ما يفعله Lily.", items: [["مساحات عمل محلية", "نظّم مواد المشروع حسب المهمة وقلّل إعادة الشرح."], ["تقدم قابل للتتبع", "تبقى الأدوات والمراجع والنتائج ظاهرة في المحادثة."], ["قدرات قابلة للتوسعة", "أضف التطبيقات والمهارات عند الحاجة دون إثقال الأجهزة العادية."]] },
+      catalog: { eyebrow: "التطبيقات والمهارات", title: "أضف القدرة التي يحتاجها عملك.", appsTitle: "تطبيقات مختارة", skillsTitle: "مهارات شائعة", allApps: "كل التطبيقات", allSkills: "استعرض المهارات" },
+      wishes: { eyebrow: "مجموعة الأمنيات", title: "تتمنى، ونبني معك.", description: "استكشف احتياجات الآخرين وادعم ألماً مشتركاً أو أرسل القدرة الناقصة في عملك.", all: "استكشف الأمنيات" },
+      finalCta: { title: "لا ينبغي أن يبدأ مشروعك التالي من الصفر.", description: "نزّل Lily Workbench واجمع المواد والسياق والنتائج في مكان واحد.", primary: "تنزيل مجاني", secondary: "عرض الخطة الشخصية" },
+    },
     home: {
       badge: "حوّل الفوضى إلى نتائج قابلة للتنفيذ",
       titleA: "لا تكتف بالدردشة مع الذكاء الاصطناعي.",
