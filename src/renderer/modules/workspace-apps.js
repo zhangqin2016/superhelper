@@ -145,9 +145,11 @@ function renderAppCard(app) {
     open.addEventListener("click", () => void openInstalledWorkspaceApp(app, open));
     actions.append(open);
 
+    // One primary per action row: opening the installed workspace is the main
+    // action; creating another instance is secondary.
     const createAnother = document.createElement("button");
     createAnother.type = "button";
-    createAnother.className = "settings-action-btn settings-action-btn--primary settings-action-btn--compact";
+    createAnother.className = "settings-action-btn settings-action-btn--compact";
     createAnother.textContent = t("apps.createAnother");
     createAnother.addEventListener("click", () => {
       void installWorkspaceApp({ ...app, forceNewInstance: true }, createAnother);

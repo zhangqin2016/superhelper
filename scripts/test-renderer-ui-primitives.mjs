@@ -68,6 +68,25 @@ if (!primitiveText.includes(".dialog-btn")) {
   }
 }
 
+// Disabled FILLED buttons must go neutral, not opacity-ghost the accent fill:
+// a washed-out purple gradient reads as a rendering bug (the disabled
+// "打开工作空间" case), not as "unavailable".
+{
+  const settingsCss = fs.readFileSync(settingsPath, "utf8");
+  const primaryDisabled = settingsCss.match(/\.settings-action-btn--primary:disabled[^{]*\{[^}]*\}/s)?.[0] || "";
+  if (!primaryDisabled.includes("opacity: 1")) {
+    throw new Error("settings-action-btn--primary:disabled must override the 0.45 opacity ghosting with a neutral fill");
+  }
+  const dialogPrimaryDisabled = primitiveText.match(/\.dialog-btn--primary:disabled\s*\{[^}]*\}/s)?.[0] || "";
+  if (!dialogPrimaryDisabled.includes("opacity: 1")) {
+    throw new Error("dialog-btn--primary:disabled must use a neutral fill, not opacity ghosting");
+  }
+  const sendDisabled = composerText.match(/\.send-btn:disabled\s*\{[^}]*\}/s)?.[0] || "";
+  if (/opacity:\s*0?\.\d/.test(sendDisabled)) {
+    throw new Error("send-btn:disabled must use a neutral fill, not opacity ghosting");
+  }
+}
+
 function listCssFiles(dir) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

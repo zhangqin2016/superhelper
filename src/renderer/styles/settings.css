@@ -657,6 +657,18 @@
   cursor: not-allowed;
 }
 
+/* Disabled FILLED buttons go neutral instead of ghosting the accent fill:
+   an accent gradient at 45% opacity reads as a broken washed-out outline
+   (the disabled "打开工作空间" case), not as "unavailable". */
+.settings-action-btn--primary:disabled,
+.settings-action-btn--primary[aria-disabled="true"] {
+  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
+  color: var(--text-tertiary);
+  box-shadow: none;
+  opacity: 1;
+}
+
 .settings-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1503,14 +1515,16 @@
 
 .workspace-app-download[aria-disabled="true"],
 .workspace-app-download:disabled {
-  opacity: 0.45;
   pointer-events: none;
 }
 
-/* Installing… — keep the button readable (not greyed out like plain disabled)
-   and show a spinner so a long download/unpack reads as progress, not a freeze. */
+/* Installing… — keep the accent fill (not the neutral disabled look) and show
+   a spinner so a long download/unpack reads as progress, not a freeze. */
 .workspace-app-download[data-busy="1"]:disabled {
   opacity: 1;
+  border-color: var(--accent-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, white 18%), var(--accent));
+  color: var(--text-inverse);
 }
 .workspace-app-download[data-busy="1"]::before {
   content: "";
@@ -1695,6 +1709,9 @@
 
 .runtime-pack-install[data-busy="1"]:disabled {
   opacity: 1;
+  border-color: var(--accent-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, white 18%), var(--accent));
+  color: var(--text-inverse);
 }
 
 .runtime-pack-install[data-unavailable="1"]:disabled {

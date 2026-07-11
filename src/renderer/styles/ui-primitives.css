@@ -194,6 +194,14 @@
 .dialog-btn--danger:hover {
   background: var(--danger-text-soft);
 }
+/* Filled buttons go neutral when disabled — ghosting an accent fill with
+   opacity reads as a rendering bug, not as "unavailable". */
+.dialog-btn--primary:disabled {
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
+  color: var(--text-tertiary);
+  box-shadow: none;
+  opacity: 1;
+}
 
 :where(
   .topbar-btn,

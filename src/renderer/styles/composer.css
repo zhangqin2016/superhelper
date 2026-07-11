@@ -875,7 +875,8 @@ textarea:disabled { opacity: 0.5; }
 }
 .send-btn:active { transform: none; }
 .send-btn:disabled {
-  opacity: 0.45;
+  background: color-mix(in srgb, var(--bg-surface-hover) 86%, var(--bg-elevated) 14%);
+  color: var(--text-tertiary);
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
