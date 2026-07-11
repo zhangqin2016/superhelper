@@ -667,6 +667,24 @@ assert.match(
 assert.match(sandboxCommand, /if exist "C:\\LilyStoreReadiness\\results\\readiness-summary\.md"/i);
 assert.match(sandboxCommand, /notepad\.exe "C:\\LilyStoreReadiness\\results\\readiness-summary\.md"/i);
 assert.match(sandboxCommand, /exit \/b %LILY_READINESS_EXIT_CODE%/i);
+const fallbackSentinel = sandboxCommand.match(
+  /if not exist "C:\\LilyStoreReadiness\\results\\readiness-exit-code\.txt" \((?<body>[\s\S]*?)\n\)/i,
+)?.groups?.body ?? "";
+assert.ok(
+  fallbackSentinel,
+  "cmd must synthesize a sentinel only when the smoke runner did not write one",
+);
+const fallbackTempWriteIndex = fallbackSentinel.search(
+  />\s*"C:\\LilyStoreReadiness\\results\\readiness-exit-code\.tmp"\s+echo %LILY_READINESS_EXIT_CODE%/i,
+);
+const fallbackAtomicMoveIndex = fallbackSentinel.search(
+  /move \/y "C:\\LilyStoreReadiness\\results\\readiness-exit-code\.tmp" "C:\\LilyStoreReadiness\\results\\readiness-exit-code\.txt"/i,
+);
+assert.ok(fallbackTempWriteIndex >= 0, "cmd must write the captured PowerShell exit code to a temporary sentinel");
+assert.ok(
+  fallbackAtomicMoveIndex > fallbackTempWriteIndex,
+  "cmd must atomically rename the completed temporary sentinel without overwriting a runner sentinel",
+);
 assert.doesNotMatch(
   sandboxCommand,
   /ExpectedPublisher|ExpectedVersion|RequireSignature|AllowUserDataRemnants/,
@@ -718,27 +736,77 @@ assert.match(
 );
 assert.match(launcher, /["']readiness-exit-code\.txt["']/);
 assert.match(launcher, /["']readiness-summary\.md["']/);
-assert.match(launcher, /\[System\.Diagnostics\.Stopwatch\]::StartNew\(\)/);
+const sentinelPollingStart = launcher.indexOf(
+  "$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()",
+);
+const sentinelPollingEnd = launcher.indexOf("$stopwatch.Stop()", sentinelPollingStart);
+assert.ok(
+  sentinelPollingStart >= 0 && sentinelPollingEnd > sentinelPollingStart,
+  "the host sentinel deadline loop must be extractable",
+);
+const sentinelPolling = launcher.slice(sentinelPollingStart, sentinelPollingEnd);
 assert.match(
-  launcher,
-  /\$stopwatch\.Elapsed\.TotalSeconds\s+-ge\s+\$SandboxTimeoutSeconds/,
+  sentinelPolling,
+  /while \(\$stopwatch\.Elapsed\.TotalSeconds\s+-lt\s+\$SandboxTimeoutSeconds\)/,
 );
 assert.match(
-  launcher,
-  /timed out[\s\S]{0,120}\$stage/i,
-  "timeout errors must point to the retained evidence stage",
+  sentinelPolling,
+  /Test-Path\s+-LiteralPath\s+\$exitCodePath\s+-PathType\s+Leaf/,
 );
-assert.match(launcher, /Start-Sleep\s+-Seconds\s+1/);
+assert.match(
+  sentinelPolling,
+  /\$candidateExitCodeText\s*=\s*\(Get-Content\s+-LiteralPath\s+\$exitCodePath\s+-Raw\s+-Encoding\s+ASCII\)\.Trim\(\)/,
+);
+const parseSuccess = sentinelPolling.match(
+  /if \(\[int\]::TryParse\(\$candidateExitCodeText,\s*\[ref\]\$candidateExitCode\)\) \{(?<body>[\s\S]*?)\n\s*\}/,
+)?.groups?.body ?? "";
+assert.ok(parseSuccess, "the host must validate sentinel contents inside the deadline loop");
+assert.match(parseSuccess, /\$innerExitCode\s*=\s*\$candidateExitCode/);
+assert.match(parseSuccess, /\$sentinelParsed\s*=\s*\$true/);
+assert.match(parseSuccess, /\bbreak\b/);
+assert.equal(
+  sentinelPolling.match(/\bbreak\b/g)?.length ?? 0,
+  1,
+  "only a successfully parsed integer sentinel may end polling",
+);
+const transientReadCatch = sentinelPolling.match(
+  /catch\s*\{(?<body>[\s\S]*?)\n\s*\}/,
+)?.groups?.body ?? "";
+assert.match(transientReadCatch, /\$lastSentinelReadError\s*=\s*\$_\.Exception\.Message/);
+assert.doesNotMatch(transientReadCatch, /\bthrow\b/);
+assert.match(sentinelPolling, /Start-Sleep\s+-Seconds\s+1/);
 assert.doesNotMatch(
-  launcher,
+  sentinelPolling,
   /\$sandboxProcess\.HasExited/,
   "the readiness sentinel, not the controller process, is authoritative",
 );
-assert.match(launcher, /\(Get-Content[\s\S]{0,160}\$exitCodePath[\s\S]{0,160}\)\.Trim\(\)/);
-assert.match(launcher, /\[int\]::TryParse\(\$exitCodeText,\s*\[ref\]\$innerExitCode\)/);
+assert.doesNotMatch(
+  sentinelPolling,
+  /\bthrow\b/,
+  "empty, partial, or temporarily unreadable sentinels must be retried until the deadline",
+);
+
+const sentinelDeadlineResult = launcher.slice(
+  sentinelPollingEnd,
+  launcher.indexOf("if (Test-Path -LiteralPath $summaryPath", sentinelPollingEnd),
+);
 assert.match(
-  launcher,
-  /if \(-not \[int\]::TryParse\([\s\S]{0,160}\)\) \{[\s\S]{0,160}throw/,
+  sentinelDeadlineResult,
+  /if \(-not \$sentinelParsed\) \{/,
+);
+const invalidSentinelResult = sentinelDeadlineResult.match(
+  /if \(Test-Path\s+-LiteralPath\s+\$exitCodePath\s+-PathType\s+Leaf\) \{(?<body>[\s\S]*?)\n\s*\}/,
+)?.groups?.body ?? "";
+assert.match(invalidSentinelResult, /\bthrow\b/);
+assert.match(
+  invalidSentinelResult,
+  /\$lastExitCodeText/,
+  "an invalid-sentinel error must include the last observed text",
+);
+assert.match(
+  sentinelDeadlineResult.slice(sentinelDeadlineResult.indexOf(invalidSentinelResult)),
+  /timed out[\s\S]{0,160}\$stage/i,
+  "a missing-sentinel timeout must point to the retained evidence stage",
 );
 assert.match(launcher, /Get-Content[\s\S]{0,160}\$summaryPath[\s\S]{0,160}-Raw/);
 assert.match(launcher, /finally\s*\{[\s\S]{0,180}Evidence path:[\s\S]{0,120}\$stage/);

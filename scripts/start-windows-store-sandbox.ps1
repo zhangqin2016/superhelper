@@ -98,6 +98,10 @@ $commandContent = @'
 @echo off
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\LilyStoreReadiness\sandbox-bootstrap.ps1"
 set "LILY_READINESS_EXIT_CODE=%ERRORLEVEL%"
+if not exist "C:\LilyStoreReadiness\results\readiness-exit-code.txt" (
+  >"C:\LilyStoreReadiness\results\readiness-exit-code.tmp" echo %LILY_READINESS_EXIT_CODE%
+  if not exist "C:\LilyStoreReadiness\results\readiness-exit-code.txt" move /y "C:\LilyStoreReadiness\results\readiness-exit-code.tmp" "C:\LilyStoreReadiness\results\readiness-exit-code.txt" >nul
+)
 if exist "C:\LilyStoreReadiness\results\readiness-summary.md" start "" notepad.exe "C:\LilyStoreReadiness\results\readiness-summary.md"
 exit /b %LILY_READINESS_EXIT_CODE%
 '@
@@ -134,18 +138,35 @@ try {
     -PassThru
   Write-Verbose ("Windows Sandbox process id: " + $sandboxProcess.Id)
 
+  $sentinelParsed = $false
+  $lastExitCodeText = ""
+  $lastSentinelReadError = ""
   $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-  while (-not (Test-Path -LiteralPath $exitCodePath -PathType Leaf)) {
-    if ($stopwatch.Elapsed.TotalSeconds -ge $SandboxTimeoutSeconds) {
-      throw ("Windows Sandbox readiness timed out. Evidence remains at: " + $stage)
+  while ($stopwatch.Elapsed.TotalSeconds -lt $SandboxTimeoutSeconds) {
+    try {
+      if (Test-Path -LiteralPath $exitCodePath -PathType Leaf) {
+        $candidateExitCodeText = (Get-Content -LiteralPath $exitCodePath -Raw -Encoding ASCII).Trim()
+        $lastExitCodeText = $candidateExitCodeText
+        $lastSentinelReadError = ""
+        [int]$candidateExitCode = 0
+        if ([int]::TryParse($candidateExitCodeText, [ref]$candidateExitCode)) {
+          $innerExitCode = $candidateExitCode
+          $sentinelParsed = $true
+          break
+        }
+      }
+    } catch {
+      $lastSentinelReadError = $_.Exception.Message
     }
     Start-Sleep -Seconds 1
   }
   $stopwatch.Stop()
 
-  $exitCodeText = (Get-Content -LiteralPath $exitCodePath -Raw -Encoding ASCII).Trim()
-  if (-not [int]::TryParse($exitCodeText, [ref]$innerExitCode)) {
-    throw ("The Sandbox readiness exit-code sentinel is invalid: " + $exitCodeText)
+  if (-not $sentinelParsed) {
+    if (Test-Path -LiteralPath $exitCodePath -PathType Leaf) {
+      throw ("The Sandbox readiness exit-code sentinel is invalid. Last text: " + $lastExitCodeText + ". Last read error: " + $lastSentinelReadError + ". Evidence remains at: " + $stage)
+    }
+    throw ("Windows Sandbox readiness timed out. Evidence remains at: " + $stage)
   }
 
   if (Test-Path -LiteralPath $summaryPath -PathType Leaf) {
