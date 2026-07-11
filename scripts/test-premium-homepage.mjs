@@ -63,4 +63,13 @@ assert.equal(homePageSource.includes("ProductWindow"), false, "old demo product 
 assert.match(fs.readFileSync(new URL("../web/components/home/home-hero.js", import.meta.url), "utf8"), /href="\/download"/);
 assert.match(fs.readFileSync(new URL("../web/components/home/home-hero.js", import.meta.url), "utf8"), /href="#product-demo"/);
 
+const globalCss = fs.readFileSync(new URL("../web/app/globals.css", import.meta.url), "utf8").toLowerCase();
+for (const token of ["--lily-ink: #121827", "--lily-blue: #586ce8", "--lily-lavender: #dce3ff", "--lily-pearl: #f6f8fd", "--lily-success: #35a47a"]) {
+  assert.equal(globalCss.includes(token), true, `missing premium token ${token}`);
+}
+assert.match(globalCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+for (const obsolete of [".kinetic-hero", ".workflow-brain", ".expert-card", "animation: expertfloat", "animation: brainspin"]) {
+  assert.equal(globalCss.includes(obsolete), false, `obsolete demo style remains: ${obsolete}`);
+}
+
 console.log("premium-homepage: ok");
