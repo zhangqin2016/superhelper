@@ -517,18 +517,35 @@ async function extractArtifact(archivePath, targetDir, artifact, options = {}) {
   return "tar.gz";
 }
 
-function replacePackDirectory(stagingPath, targetPath) {
+const TRANSIENT_FS_CODES = new Set(["EPERM", "EBUSY", "EACCES", "ENOTEMPTY"]);
+
+/** Rename with retry: on Windows, antivirus real-time scanning briefly locks
+ *  freshly extracted files, making the first rename fail EPERM/EBUSY even
+ *  though the install is fine. Retrying over a few seconds absorbs the scan. */
+async function renameWithRetry(from, to, attempts = 6) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (error) {
+      if (attempt >= attempts - 1 || !TRANSIENT_FS_CODES.has(error?.code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+  }
+}
+
+async function replacePackDirectory(stagingPath, targetPath) {
   const parentDir = path.dirname(targetPath);
   const backupPath = path.join(parentDir, `.${path.basename(targetPath)}-${Date.now()}.previous`);
   let backedUp = false;
   fs.mkdirSync(parentDir, { recursive: true });
   fs.rmSync(backupPath, { recursive: true, force: true });
   if (fs.existsSync(targetPath)) {
-    fs.renameSync(targetPath, backupPath);
+    await renameWithRetry(targetPath, backupPath);
     backedUp = true;
   }
   try {
-    fs.renameSync(stagingPath, targetPath);
+    await renameWithRetry(stagingPath, targetPath);
     if (backedUp) fs.rmSync(backupPath, { recursive: true, force: true });
   } catch (error) {
     if (backedUp && fs.existsSync(backupPath) && !fs.existsSync(targetPath)) {
@@ -821,7 +838,7 @@ async function runRuntimePackInstall(id, job) {
       }
       healthCheckedAt = new Date().toISOString();
     }
-    replacePackDirectory(stagingPath, target);
+    await replacePackDirectory(stagingPath, target);
     const state = readState();
     state.installed[id] = {
       installedAt: new Date().toISOString(),
@@ -836,13 +853,25 @@ async function runRuntimePackInstall(id, job) {
     publishProgress(job, id, "installed", { version: artifact.version || null, path: target, repaired: force || undefined });
     return { ok: true, id, version: artifact.version || null, path: target, repaired: force || undefined };
   } catch (error) {
-    fs.rmSync(stagingPath, { recursive: true, force: true });
+    try {
+      fs.rmSync(stagingPath, { recursive: true, force: true });
+    } catch {
+      // Cleanup must not mask the real install error.
+    }
     const message = error?.message || String(error);
     publishProgress(job, id, "failed", { error: message });
     return { ok: false, id, error: message };
   } finally {
-    fs.rmSync(archivePath, { force: true });
-    fs.rmSync(stagingPath, { recursive: true, force: true });
+    // Best-effort ONLY: a throw in finally REPLACES the function's return
+    // value, so a locked temp file (Windows AV scanning a fresh archive)
+    // would turn an already-successful install — state written, "installed"
+    // published — into a bogus "install failed" for the user.
+    try {
+      fs.rmSync(archivePath, { force: true });
+    } catch {}
+    try {
+      fs.rmSync(stagingPath, { recursive: true, force: true });
+    } catch {}
   }
 }
 
@@ -861,8 +890,18 @@ async function repairInstalledRuntimePacks(options = {}) {
       results.push({ ok: true, id, skipped: true, reason: "healthy" });
       continue;
     }
+    // One failed probe is not proof of a broken pack: on Windows the first
+    // run of a large binary (LibreOffice cold start under AV scanning) can
+    // time out even though the install is intact. Confirm before the
+    // expensive re-download — the first probe usually warmed the caches.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const recheck = await checkHealth(id);
+    if (recheck?.ok) {
+      results.push({ ok: true, id, skipped: true, reason: "healthy-on-recheck" });
+      continue;
+    }
     const repaired = await installRuntimePack(id, { ...options, force: true, repair: true });
-    results.push({ ...repaired, healthBefore: health });
+    results.push({ ...repaired, healthBefore: recheck });
   }
   return { ok: results.every((item) => item.ok), results };
 }

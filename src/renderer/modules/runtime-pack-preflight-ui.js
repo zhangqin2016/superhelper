@@ -35,7 +35,12 @@ export async function installMissingRuntimePacks(missingPacks = [], options = {}
   for (const pack of missingPacks) {
     const name = runtimePackLabel(pack);
     showToast(t(options.waiting ? "composer.dependencyInstallWaiting" : "composer.dependencyInstallStarted", { name }), "info");
-    const result = await window.assistantClient.installRuntimePack(pack.id);
+    let result;
+    try {
+      result = await window.assistantClient.installRuntimePack(pack.id);
+    } catch (err) {
+      result = { ok: false, error: err?.message || String(err) };
+    }
     if (!result?.ok) {
       showToast(t("composer.dependencyInstallFailed", {
         name,

@@ -21,7 +21,14 @@ async function installRuntimePackForIpc(ctx, payload = {}, deps = {}) {
     force: Boolean(payload.force),
     repair: Boolean(payload.repair),
   } : {};
-  const result = await installer.installRuntimePack(packIdFromPayload(payload), options);
+  let result;
+  try {
+    result = await installer.installRuntimePack(packIdFromPayload(payload), options);
+  } catch (err) {
+    // A rejected invoke surfaces as an opaque "Error invoking remote method"
+    // in the renderer; return a structured failure instead.
+    return { ok: false, error: err?.message || String(err) };
+  }
   if (result?.ok) {
     result.runnerRefresh = refreshRuntimePackRunnerEnv(ctx);
   }

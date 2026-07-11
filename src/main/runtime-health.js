@@ -9,7 +9,12 @@ const { pathToFileURL } = require("node:url");
 const { PACK_SPECS } = require("./runtime-pack-specs");
 
 const pexecFile = promisify(execFile);
-const CHECK_TIMEOUT_MS = 20_000;
+// Windows gets a much longer budget: first-run executables (fresh extract)
+// are synchronously scanned by Defender/AV, so a 20s cap produced false
+// "unhealthy" verdicts on intact installs — which the startup auto-repair
+// then "fixed" with a full re-download that failed the same probe again.
+const CHECK_TIMEOUT_MS = process.platform === "win32" ? 60_000 : 20_000;
+const LIBREOFFICE_CHECK_TIMEOUT_MS = process.platform === "win32" ? 120_000 : 45_000;
 
 const REQUIRED_BASE_PYTHON_MODULES = [
   { id: "pandas", module: "pandas" },
@@ -53,12 +58,12 @@ function missingCheck(id, error = "MISSING", detail = {}) {
   return { id, ok: false, status: "missing", error, ...detail };
 }
 
-async function runExecutable(id, exe, args = [], env = process.env) {
+async function runExecutable(id, exe, args = [], env = process.env, opts = {}) {
   if (!exe || !fs.existsSync(exe)) return missingCheck(id, "EXECUTABLE_MISSING", { path: exe || "" });
   const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(String(exe || ""));
   try {
     const result = await pexecFile(exe, args, {
-      timeout: CHECK_TIMEOUT_MS,
+      timeout: Number(opts.timeoutMs) || CHECK_TIMEOUT_MS,
       env,
       maxBuffer: 1024 * 1024,
       windowsHide: true,
@@ -180,7 +185,7 @@ async function checkLibreOfficePack(id, spec, packDir) {
     const check = await runExecutable(`${id}:soffice`, exe, args, {
       ...process.env,
       SAL_USE_VCLPLUGIN: process.env.SAL_USE_VCLPLUGIN || "svp",
-    });
+    }, { timeoutMs: LIBREOFFICE_CHECK_TIMEOUT_MS });
     return {
       id,
       ok: check.ok,

@@ -1,5 +1,11 @@
 import { t } from "../i18n/index.js";
 import { runtimePackLabel } from "./runtime-pack-preflight-ui.js";
+import { openSettingsPage } from "./settings-panel.js";
+
+// Home-surface dependency progress: a small ring next to the sidebar settings
+// button, NOT a floating banner. Installs are background plumbing — the user
+// asked for "一个小圆圈进度" by the config entry, with details one click away
+// (the ring opens Settings → 依赖). Hover shows phase + bytes as a tooltip.
 
 const TERMINAL_PHASES = new Set(["installed", "skipped", "failed"]);
 const ACTIVE_VISIBLE_PHASES = new Set([
@@ -13,33 +19,56 @@ const ACTIVE_VISIBLE_PHASES = new Set([
   "failed",
 ]);
 
+// Failed states must clear on their own: a stale red indicator that outlives
+// the incident reads as "the product is broken" forever.
+const DONE_CLEAR_MS = 2600;
+const FAILED_CLEAR_MS = 12_000;
+
+const RING_RADIUS = 13;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
 const activeProgress = new Map();
 const cleanupTimers = new Map();
 
 let root = null;
-let titleEl = null;
-let metaEl = null;
-let fillEl = null;
+let arcEl = null;
+let labelEl = null;
 let initialized = false;
 
 function ensureElement() {
-  if (root) return;
-  root = document.createElement("div");
-  root.className = "runtime-pack-progress-main";
-  root.hidden = true;
-  root.setAttribute("role", "status");
-  root.setAttribute("aria-live", "polite");
-  root.innerHTML = `
-    <div class="runtime-pack-progress-main-title"></div>
-    <div class="runtime-pack-progress-main-meta"></div>
-    <div class="runtime-pack-progress-main-track">
-      <div class="runtime-pack-progress-main-fill"></div>
-    </div>
-  `;
-  titleEl = root.querySelector(".runtime-pack-progress-main-title");
-  metaEl = root.querySelector(".runtime-pack-progress-main-meta");
-  fillEl = root.querySelector(".runtime-pack-progress-main-fill");
-  document.body.appendChild(root);
+  if (root && root.isConnected) return;
+  if (!root) {
+    root = document.createElement("button");
+    root.type = "button";
+    root.className = "runtime-pack-progress-main";
+    root.hidden = true;
+    root.setAttribute("role", "status");
+    root.setAttribute("aria-live", "polite");
+    root.innerHTML = `
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <circle class="runtime-pack-progress-main-track" cx="16" cy="16" r="${RING_RADIUS}" />
+        <circle class="runtime-pack-progress-main-fill" cx="16" cy="16" r="${RING_RADIUS}"
+          stroke-dasharray="${RING_CIRCUMFERENCE.toFixed(2)}" stroke-dashoffset="${RING_CIRCUMFERENCE.toFixed(2)}" />
+      </svg>
+      <span class="runtime-pack-progress-main-label"></span>
+    `;
+    arcEl = root.querySelector(".runtime-pack-progress-main-fill");
+    labelEl = root.querySelector(".runtime-pack-progress-main-label");
+    root.addEventListener("click", () => {
+      try {
+        openSettingsPage("runtime");
+      } catch {
+        // The ring is informational; a failed navigation must not throw.
+      }
+    });
+  }
+  const settingsBtn = document.getElementById("settingsBtn");
+  if (settingsBtn?.parentElement) {
+    settingsBtn.parentElement.classList.add("left-footer--with-runtime-progress");
+    settingsBtn.insertAdjacentElement("afterend", root);
+  } else {
+    document.body.appendChild(root);
+  }
 }
 
 function formatBytes(bytes) {
@@ -118,31 +147,15 @@ function progressGroup(progress) {
   return progress?.turnId || progress?.jobId || "settings";
 }
 
-function render() {
-  ensureElement();
-  if (!activeProgress.size) {
-    root.hidden = true;
-    return;
-  }
-
-  const progress = latestVisibleProgress();
-  if (!progress) {
-    root.hidden = true;
-    return;
-  }
-
+function progressTitle(progress) {
   const name = runtimePackLabel(progress) || progress.id || "";
-  const terminal = TERMINAL_PHASES.has(progress.phase);
   const failed = progress.phase === "failed";
-  const percent = progressPercent(progress);
   const count = [...activeProgress.values()].filter((item) => (
     ACTIVE_VISIBLE_PHASES.has(item?.phase) && progressGroup(item) === progressGroup(progress)
   )).length;
-
-  root.hidden = false;
-  root.classList.toggle("runtime-pack-progress-main--failed", failed);
-  root.classList.toggle("runtime-pack-progress-main--indeterminate", percent === null && !terminal);
-
+  if (count > 1 && !failed && progress.phase !== "installed") {
+    return t("runtimeProgress.multiple", { count });
+  }
   const titleKey = failed
     ? "runtimeProgress.degraded"
     : progress.phase === "installed"
@@ -150,11 +163,52 @@ function render() {
       : progress.phase === "refreshing"
         ? "runtimeProgress.refreshing"
         : "runtimeProgress.preparing";
-  titleEl.textContent = count > 1 && !failed && progress.phase !== "installed"
-    ? t("runtimeProgress.multiple", { count })
-    : t(titleKey, { name });
-  metaEl.textContent = progressMeta(progress);
-  fillEl.style.width = percent === null ? "" : `${percent}%`;
+  return t(titleKey, { name });
+}
+
+function render() {
+  ensureElement();
+  const progress = activeProgress.size ? latestVisibleProgress() : null;
+  if (!progress) {
+    root.hidden = true;
+    return;
+  }
+
+  const failed = progress.phase === "failed";
+  const done = progress.phase === "installed";
+  const percent = progressPercent(progress);
+
+  root.hidden = false;
+  root.classList.toggle("runtime-pack-progress-main--failed", failed);
+  root.classList.toggle("runtime-pack-progress-main--done", done);
+  root.classList.toggle(
+    "runtime-pack-progress-main--indeterminate",
+    percent === null && !failed && !done,
+  );
+
+  if (failed || done) {
+    arcEl.style.strokeDashoffset = "0";
+    labelEl.textContent = failed ? "!" : "✓";
+  } else if (percent === null) {
+    // Indeterminate: CSS spins a fixed arc; keep the center quiet.
+    arcEl.style.strokeDashoffset = String((RING_CIRCUMFERENCE * 0.72).toFixed(2));
+    labelEl.textContent = "";
+  } else {
+    arcEl.style.strokeDashoffset = String((RING_CIRCUMFERENCE * (1 - percent / 100)).toFixed(2));
+    labelEl.textContent = String(percent);
+  }
+
+  const tooltip = [progressTitle(progress), progressMeta(progress)].filter(Boolean).join(" · ");
+  root.title = tooltip;
+  root.setAttribute("aria-label", tooltip);
+}
+
+function scheduleCleanup(key, delayMs) {
+  cleanupTimers.set(key, setTimeout(() => {
+    cleanupTimers.delete(key);
+    activeProgress.delete(key);
+    render();
+  }, delayMs));
 }
 
 function handleProgress(eventOrProgress, maybeProgress) {
@@ -177,11 +231,9 @@ function handleProgress(eventOrProgress, maybeProgress) {
 
   activeProgress.set(key, progress);
   if (progress.phase === "installed" || progress.phase === "skipped") {
-    cleanupTimers.set(key, setTimeout(() => {
-      cleanupTimers.delete(key);
-      activeProgress.delete(key);
-      render();
-    }, 2600));
+    scheduleCleanup(key, DONE_CLEAR_MS);
+  } else if (progress.phase === "failed") {
+    scheduleCleanup(key, FAILED_CLEAR_MS);
   }
   render();
 }

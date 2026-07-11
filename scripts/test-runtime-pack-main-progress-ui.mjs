@@ -44,6 +44,13 @@ for (const phase of ["resolving", "downloading", "verifying", "extracting", "hea
 assert.doesNotMatch(progressUi, /MAIN_VISIBLE_PHASES = new Set\(\["failed"\]\)/);
 assert.match(progressUi, /latestVisibleProgress/);
 assert.match(progressUi, /runtimeProgress\.multiple/);
+// The home surface shows a small ring by the sidebar settings button — never
+// a floating banner (background plumbing must not shout at the user).
+assert.match(progressUi, /settingsBtn/, "ring anchors next to the sidebar settings button");
+assert.match(progressUi, /openSettingsPage\("runtime"\)/, "clicking the ring opens Settings → dependencies");
+assert.match(progressUi, /stroke-dashoffset/, "progress renders as an SVG ring");
+assert.match(progressUi, /FAILED_CLEAR_MS/, "failed states auto-clear instead of persisting forever");
+assert.match(progressUi, /insertAdjacentElement\("afterend", root\)/, "ring inserts beside the settings button");
 
 const app = read("src/renderer/app.js");
 assert.match(app, /initRuntimePackProgress/);

@@ -316,7 +316,12 @@ async function installRuntimePack(pack) {
   if (!ok) return;
   progressById.set(pack.id, { id: pack.id, phase: "resolving" });
   updateRuntimePackCard(pack.id);
-  const result = await window.assistantClient.installRuntimePack(pack.id);
+  let result;
+  try {
+    result = await window.assistantClient.installRuntimePack(pack.id);
+  } catch (err) {
+    result = { ok: false, error: err?.message || String(err) };
+  }
   if (!result?.ok) {
     progressById.set(pack.id, { id: pack.id, phase: "failed", error: result?.error });
     showToast(errorMessage(result?.error), "error");
