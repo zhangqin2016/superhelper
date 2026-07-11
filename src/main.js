@@ -269,6 +269,21 @@ app.whenReady().then(async () => {
       .catch((err) => console.warn("[runtime-packs] auto-repair failed", err?.message || err));
   }, 15_000);
 
+  if (process.platform === "win32") {
+    // Legacy-install healing (改名遗留): old-appId installs pass their local
+    // license check but speak a dead protocol, so users launching a stale
+    // shortcut see "licensed but never works". Detect + offer one-click
+    // uninstall of the OLD product (its own uninstaller, with consent).
+    setTimeout(() => {
+      require("./main/windows-legacy-installs")
+        .maybeHealLegacyInstallsWindows({ mainWindow })
+        .then((result) => {
+          if (result?.found) console.info("[legacy-installs]", JSON.stringify(result));
+        })
+        .catch((err) => console.warn("[legacy-installs] check failed", err?.message || err));
+    }, 20_000);
+  }
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

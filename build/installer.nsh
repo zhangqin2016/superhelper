@@ -1,3 +1,44 @@
+; Legacy-identity cleanup (改名遗留): the product used to ship under NSIS appId
+; com.company.ai-super-terminal ("AI Super Terminal" / "智能助手" / "智能工作台").
+; The rename to cn.lilywb.workbench makes NSIS treat old and new as SEPARATE
+; products installed side by side; the old binaries pass local license checks
+; but speak a dead protocol ("licensed but never works" via stale shortcuts).
+; On every new install, silently run the OLD product's own uninstaller when its
+; uninstall registry key exists (per-user first, then per-machine). Best-effort:
+; any failure just proceeds with the normal install.
+!macro _lilyUninstallLegacyFromKey ROOT_HKEY
+  ClearErrors
+  ReadRegStr $0 ${ROOT_HKEY} "Software\Microsoft\Windows\CurrentVersion\Uninstall\com.company.ai-super-terminal" "QuietUninstallString"
+  ${if} ${Errors}
+  ${orif} $0 == ""
+    ClearErrors
+    ReadRegStr $0 ${ROOT_HKEY} "Software\Microsoft\Windows\CurrentVersion\Uninstall\com.company.ai-super-terminal" "UninstallString"
+    ${ifNot} ${Errors}
+    ${andif} $0 != ""
+      StrCpy $0 `$0 /S`
+    ${endif}
+  ${endif}
+  ${if} $0 != ""
+    DetailPrint "Removing legacy installation (pre-rename product)..."
+    ; _?= is not set, so ExecWait returns immediately for NSIS uninstallers
+    ; that copy themselves to %TEMP%; give the copy a moment to detach files.
+    nsExec::Exec `"$SYSDIR\cmd.exe" /C $0`
+    Pop $1
+    Sleep 2000
+  ${endif}
+!macroend
+
+!macro customInit
+  Push $0
+  Push $1
+  StrCpy $0 ""
+  !insertmacro _lilyUninstallLegacyFromKey HKCU
+  StrCpy $0 ""
+  !insertmacro _lilyUninstallLegacyFromKey HKLM
+  Pop $1
+  Pop $0
+!macroend
+
 !macro customCheckAppRunning
   Push $0
   Push $1
