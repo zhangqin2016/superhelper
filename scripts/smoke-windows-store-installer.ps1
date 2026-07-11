@@ -74,8 +74,10 @@ function Initialize-NativeCommandLine {
   if ($null -eq ("Lily.NativeCommandLine.CommandLineParser" -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Lily.NativeCommandLine
 {
@@ -117,9 +119,168 @@ namespace Lily.NativeCommandLine
             }
         }
     }
+
+    public sealed class VisibleWindowInfo
+    {
+        public int ProcessId { get; set; }
+        public long WindowHandle { get; set; }
+        public string WindowTitle { get; set; }
+    }
+
+    public static class WindowEnumerator
+    {
+        private delegate bool EnumWindowsCallback(IntPtr windowHandle, IntPtr state);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr state);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindowVisible(IntPtr windowHandle);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint GetWindowThreadProcessId(IntPtr windowHandle, out uint processId);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern int GetWindowTextLength(IntPtr windowHandle);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern int GetWindowText(IntPtr windowHandle, StringBuilder text, int maximumCount);
+
+        public static VisibleWindowInfo[] GetVisibleWindows(int[] processIds)
+        {
+            if (processIds == null)
+            {
+                throw new ArgumentNullException("processIds");
+            }
+
+            HashSet<uint> requestedProcessIds = new HashSet<uint>();
+            foreach (int processId in processIds)
+            {
+                if (processId > 0)
+                {
+                    requestedProcessIds.Add((uint)processId);
+                }
+            }
+
+            List<VisibleWindowInfo> windows = new List<VisibleWindowInfo>();
+            Exception callbackException = null;
+            EnumWindowsCallback callback = delegate(IntPtr windowHandle, IntPtr state)
+            {
+                try
+                {
+                    if (!IsWindowVisible(windowHandle))
+                    {
+                        return true;
+                    }
+
+                    uint processId;
+                    GetWindowThreadProcessId(windowHandle, out processId);
+                    if (!requestedProcessIds.Contains(processId))
+                    {
+                        return true;
+                    }
+
+                    int titleLength = GetWindowTextLength(windowHandle);
+                    StringBuilder title = new StringBuilder(titleLength + 1);
+                    if (titleLength > 0)
+                    {
+                        GetWindowText(windowHandle, title, title.Capacity);
+                    }
+
+                    windows.Add(new VisibleWindowInfo
+                    {
+                        ProcessId = (int)processId,
+                        WindowHandle = windowHandle.ToInt64(),
+                        WindowTitle = title.ToString()
+                    });
+                    return true;
+                }
+                catch (Exception exception)
+                {
+                    callbackException = exception;
+                    return false;
+                }
+            };
+
+            bool completed = EnumWindows(callback, IntPtr.Zero);
+            GC.KeepAlive(callback);
+            if (callbackException != null)
+            {
+                throw new InvalidOperationException("Visible-window enumeration failed.", callbackException);
+            }
+            if (!completed)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            return windows.ToArray();
+        }
+    }
 }
 '@
   }
+}
+
+function Get-VisibleTopLevelWindows {
+  param(
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyCollection()]
+    [int[]]$ProcessIds,
+
+    [string]$Label = ""
+  )
+
+  $uniqueProcessIds = @($ProcessIds | Where-Object { $_ -gt 0 } | Sort-Object -Unique)
+  if ($uniqueProcessIds.Count -eq 0) {
+    return @()
+  }
+
+  return @([Lily.NativeCommandLine.WindowEnumerator]::GetVisibleWindows(
+    [int[]]$uniqueProcessIds
+  ) | ForEach-Object {
+    [pscustomobject][ordered]@{
+      processId = [int]$_.ProcessId
+      windowHandle = [long]$_.WindowHandle
+      windowTitle = [string]$_.WindowTitle
+      label = $Label
+    }
+  })
+}
+
+function Test-LilyPackagedRendererUrl {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Url
+  )
+
+  $rendererUri = $null
+  if (-not [System.Uri]::TryCreate(
+    $Url,
+    [System.UriKind]::Absolute,
+    [ref]$rendererUri
+  )) {
+    return $false
+  }
+  if (-not [string]::Equals(
+    $rendererUri.Scheme,
+    "file",
+    [System.StringComparison]::OrdinalIgnoreCase
+  )) {
+    return $false
+  }
+  if (-not [string]::IsNullOrEmpty($rendererUri.Query) -or
+      -not [string]::IsNullOrEmpty($rendererUri.Fragment)) {
+    return $false
+  }
+
+  try {
+    $normalizedPath = [System.Uri]::UnescapeDataString($rendererUri.AbsolutePath).Replace("\", "/")
+  } catch {
+    return $false
+  }
+  return $normalizedPath -match '(?i)/resources/app\.asar/src/renderer/index\.html$'
 }
 
 function Add-Check {
@@ -243,6 +404,32 @@ function Get-LilyUninstallEntries {
   }
 }
 
+function Get-LilyLegacyUninstallEntries {
+  $legacyKeyName = "com.company.ai-super-terminal"
+  $registryRoots = @(
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall"
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall"
+    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+  )
+
+  foreach ($registryRoot in $registryRoots) {
+    $registryPath = Join-Path $registryRoot $legacyKeyName
+    if (-not (Test-Path -LiteralPath $registryPath)) {
+      continue
+    }
+
+    $properties = Get-ItemProperty -LiteralPath $registryPath -ErrorAction Stop
+    [pscustomobject][ordered]@{
+      RegistryPath = $registryPath
+      DisplayName = Get-ObjectPropertyValue -InputObject $properties -Name "DisplayName"
+      DisplayVersion = Get-ObjectPropertyValue -InputObject $properties -Name "DisplayVersion"
+      InstallLocation = Get-ObjectPropertyValue -InputObject $properties -Name "InstallLocation"
+      UninstallString = Get-ObjectPropertyValue -InputObject $properties -Name "UninstallString"
+      QuietUninstallString = Get-ObjectPropertyValue -InputObject $properties -Name "QuietUninstallString"
+    }
+  }
+}
+
 function Get-LilyProcesses {
   $processNames = @(
     "LilyWorkbench"
@@ -336,33 +523,18 @@ function Wait-LilyRenderer {
       $stopwatch.Stop()
       return [pscustomobject][ordered]@{
         target = $null
-        visibleWindow = $null
+        visibleWindow = $visibleWindow
         rootExited = $true
         processIds = @($lastProcessIds)
       }
     }
 
     $lastProcessIds = @(Get-ProcessTreeIds -RootId $ProcessId)
-    foreach ($treeId in $lastProcessIds) {
-      $treeProcess = Get-Process -Id $treeId -ErrorAction SilentlyContinue
-      if ($null -eq $treeProcess) {
-        continue
-      }
-
-      try {
-        $mainWindowHandle = [long]$treeProcess.MainWindowHandle
-        if ($null -eq $visibleWindow -and $mainWindowHandle -ne 0) {
-          $visibleWindow = [pscustomobject][ordered]@{
-            processId = [int]$treeProcess.Id
-            processName = [string]$treeProcess.ProcessName
-            mainWindowHandle = $mainWindowHandle
-            windowTitle = [string]$treeProcess.MainWindowTitle
-          }
-          break
-        }
-      } catch {
-        # A process can exit between tree enumeration and window inspection.
-      }
+    $visibleTopLevelWindows = @(
+      Get-VisibleTopLevelWindows -ProcessIds $lastProcessIds -Label "application"
+    )
+    if ($null -eq $visibleWindow -and $visibleTopLevelWindows.Count -gt 0) {
+      $visibleWindow = $visibleTopLevelWindows[0]
     }
 
     $rendererTarget = $null
@@ -380,7 +552,7 @@ function Wait-LilyRenderer {
         $targetUrl = Get-ObjectPropertyValue -InputObject $_ -Name "url"
         $isPageTarget -and
         ($knownTitles -ccontains $targetTitle) -and
-        ($targetUrl -match 'renderer[/\\]index\.html')
+        (Test-LilyPackagedRendererUrl -Url $targetUrl)
       } | Select-Object -First 1)
       if ($rendererTarget.Count -gt 0) {
         $rendererTarget = $rendererTarget[0]
@@ -669,6 +841,202 @@ function Invoke-LilyLaunchProbe {
   }
 }
 
+function Stop-OwnedProcessTree {
+  param(
+    [AllowNull()]
+    [System.Diagnostics.Process]$RootProcess = $null,
+
+    [AllowNull()]
+    [object]$RootId = $null,
+
+    [AllowNull()]
+    [object]$RootStartTicks = $null,
+
+    [hashtable]$KnownStartTicks = @{}
+  )
+
+  $errors = New-Object "System.Collections.Generic.HashSet[string]"
+  $stoppedIds = New-Object "System.Collections.Generic.HashSet[int]"
+  $ownedStartTicks = @{}
+  $depthById = @{}
+
+  foreach ($knownIdText in @($KnownStartTicks.Keys)) {
+    $ownedStartTicks[[string][int]$knownIdText] = [long]$KnownStartTicks[$knownIdText]
+  }
+  if ($null -ne $RootId -and $null -ne $RootStartTicks) {
+    $ownedStartTicks[[string][int]$RootId] = [long]$RootStartTicks
+    $depthById[[string][int]$RootId] = 0
+  }
+
+  if ($null -ne $RootProcess -and $null -eq $RootStartTicks) {
+    try {
+      if (-not $RootProcess.HasExited) {
+        $RootProcess.Kill()
+        if (-not $RootProcess.WaitForExit(5000)) {
+          $errors.Add("The root process did not exit within five seconds after object-bound Kill().") | Out-Null
+        } else {
+          $stoppedIds.Add([int]$RootProcess.Id) | Out-Null
+        }
+      }
+    } catch {
+      $errors.Add("Unable to stop the root process through its original process object: " + $_.Exception.Message) | Out-Null
+    }
+  }
+
+  try {
+    $processSnapshot = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop)
+    $snapshotById = @{}
+    foreach ($processRecord in $processSnapshot) {
+      $snapshotById[[string][int]$processRecord.ProcessId] = $processRecord
+    }
+
+    $foundDescendant = $true
+    while ($foundDescendant) {
+      $foundDescendant = $false
+      foreach ($processRecord in $processSnapshot) {
+        $processId = [int]$processRecord.ProcessId
+        $processKey = [string]$processId
+        $parentKey = [string][int]$processRecord.ParentProcessId
+        if ($ownedStartTicks.ContainsKey($processKey) -or
+            -not $ownedStartTicks.ContainsKey($parentKey)) {
+          continue
+        }
+
+        try {
+          $process = [System.Diagnostics.Process]::GetProcessById($processId)
+          $processStartTicks = Get-ProcessStartTicks -Process $process
+          if ($null -eq $processStartTicks) {
+            $errors.Add("Unable to verify start time for descendant process " + $processId + ".") | Out-Null
+            continue
+          }
+          if ($null -ne $RootStartTicks -and
+              [long]$processStartTicks -lt [long]$RootStartTicks) {
+            continue
+          }
+
+          $ownedStartTicks[$processKey] = [long]$processStartTicks
+          $depthById[$processKey] = [int]$depthById[$parentKey] + 1
+          $foundDescendant = $true
+        } catch [System.ArgumentException] {
+          # The descendant exited between the CIM snapshot and identity verification.
+        } catch {
+          $errors.Add("Unable to verify descendant process " + $processId + ": " + $_.Exception.Message) | Out-Null
+        }
+      }
+    }
+
+    $foundDepth = $true
+    while ($foundDepth) {
+      $foundDepth = $false
+      foreach ($ownedIdText in @($ownedStartTicks.Keys)) {
+        if ($depthById.ContainsKey($ownedIdText)) {
+          continue
+        }
+        $ownedRecord = $snapshotById[$ownedIdText]
+        if ($null -ne $ownedRecord) {
+          $parentKey = [string][int]$ownedRecord.ParentProcessId
+          if ($depthById.ContainsKey($parentKey)) {
+            $depthById[$ownedIdText] = [int]$depthById[$parentKey] + 1
+            $foundDepth = $true
+          }
+        }
+      }
+    }
+  } catch {
+    $errors.Add("Unable to enumerate the owned process tree: " + $_.Exception.Message) | Out-Null
+  }
+
+  $stopOrder = @($ownedStartTicks.Keys | ForEach-Object {
+    $ownedIdText = [string]$_
+    [pscustomobject][ordered]@{
+      processId = [int]$ownedIdText
+      depth = if ($depthById.ContainsKey($ownedIdText)) { [int]$depthById[$ownedIdText] } else { 0 }
+    }
+  } | Sort-Object `
+    -Property @{ Expression = { $_.depth }; Descending = $true }, `
+              @{ Expression = { $_.processId }; Descending = $true })
+
+  foreach ($ownedProcessRecord in $stopOrder) {
+    $ownedProcessId = [int]$ownedProcessRecord.processId
+    $ownedProcessKey = [string]$ownedProcessId
+    try {
+      $ownedProcess = [System.Diagnostics.Process]::GetProcessById($ownedProcessId)
+    } catch [System.ArgumentException] {
+      continue
+    } catch {
+      $errors.Add("Unable to open owned process " + $ownedProcessId + ": " + $_.Exception.Message) | Out-Null
+      continue
+    }
+
+    $currentStartTicks = Get-ProcessStartTicks -Process $ownedProcess
+    if ($null -eq $currentStartTicks) {
+      $errors.Add("Unable to reverify start time for owned process " + $ownedProcessId + ".") | Out-Null
+      continue
+    }
+    if ([long]$currentStartTicks -ne [long]$ownedStartTicks[$ownedProcessKey]) {
+      continue
+    }
+
+    try {
+      Stop-Process -Id $ownedProcessId -Force -ErrorAction Stop
+      $stoppedIds.Add($ownedProcessId) | Out-Null
+    } catch {
+      $errors.Add("Unable to stop owned process " + $ownedProcessId + ": " + $_.Exception.Message) | Out-Null
+    }
+  }
+
+  $remainingOwnedProcessIds = @()
+  $cleanupStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+  while ($cleanupStopwatch.Elapsed.TotalSeconds -lt 5) {
+    $remainingOwnedProcessIds = @()
+    foreach ($ownedIdText in @($ownedStartTicks.Keys)) {
+      $ownedProcessId = [int]$ownedIdText
+      try {
+        $ownedProcess = [System.Diagnostics.Process]::GetProcessById($ownedProcessId)
+      } catch [System.ArgumentException] {
+        continue
+      } catch {
+        $errors.Add("Unable to verify cleanup for owned process " + $ownedProcessId + ": " + $_.Exception.Message) | Out-Null
+        $remainingOwnedProcessIds += $ownedProcessId
+        continue
+      }
+
+      $currentStartTicks = Get-ProcessStartTicks -Process $ownedProcess
+      if ($null -eq $currentStartTicks) {
+        $errors.Add("Unable to reverify cleanup identity for owned process " + $ownedProcessId + ".") | Out-Null
+        $remainingOwnedProcessIds += $ownedProcessId
+      } elseif ([long]$currentStartTicks -eq [long]$ownedStartTicks[$ownedIdText]) {
+        $remainingOwnedProcessIds += $ownedProcessId
+      }
+    }
+
+    if ($remainingOwnedProcessIds.Count -eq 0) {
+      break
+    }
+    Start-Sleep -Milliseconds 100
+  }
+  $cleanupStopwatch.Stop()
+
+  if ($null -ne $RootProcess -and $null -eq $RootStartTicks) {
+    try {
+      if (-not $RootProcess.HasExited -and $null -ne $RootId) {
+        $remainingOwnedProcessIds += [int]$RootId
+      }
+    } catch {
+      $errors.Add("Unable to verify object-bound root cleanup: " + $_.Exception.Message) | Out-Null
+      if ($null -ne $RootId) {
+        $remainingOwnedProcessIds += [int]$RootId
+      }
+    }
+  }
+
+  return [pscustomobject][ordered]@{
+    stoppedIds = @($stoppedIds | Sort-Object)
+    remainingOwnedProcessIds = @($remainingOwnedProcessIds | Sort-Object -Unique)
+    errors = @($errors | Sort-Object)
+  }
+}
+
 function Invoke-MonitoredProcess {
   param(
     [Parameter(Mandatory = $true)][string]$FilePath,
@@ -677,136 +1045,155 @@ function Invoke-MonitoredProcess {
     [Parameter(Mandatory = $true)][string]$Label
   )
 
-  $rootProcess = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -PassThru
-  $rootId = [int]$rootProcess.Id
-  $rootStartTicks = Get-ProcessStartTicks -Process $rootProcess
-  if ($null -eq $rootStartTicks) {
-    throw ("Unable to read the start time for {0} process {1}." -f $Label, $rootId)
-  }
-
+  $rootProcess = $null
+  $rootId = $null
+  $rootStartTicks = $null
   $knownStartTicks = @{}
-  $knownStartTicks[[string]$rootId] = $rootStartTicks
-  $previousAnchorIds = @($rootId)
-  $lastActiveIds = @($rootId)
+  $previousAnchorIds = @()
+  $lastActiveIds = @()
   $visibleWindows = [ordered]@{}
-  $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+  $stopwatch = $null
   $rootExited = $false
   $rootExitCode = $null
   $timedOut = $false
+  $timeoutCleanup = $null
 
-  while ($true) {
-    $candidateIds = New-Object "System.Collections.Generic.HashSet[int]"
-    foreach ($knownId in @($knownStartTicks.Keys)) {
-      $candidateIds.Add([int]$knownId) | Out-Null
+  try {
+    $rootProcess = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -PassThru
+    $rootId = [int]$rootProcess.Id
+    $rootStartTicks = Get-ProcessStartTicks -Process $rootProcess
+    if ($null -eq $rootStartTicks) {
+      throw [System.InvalidOperationException]::new(
+        ("Unable to read the start time for {0} process {1}." -f $Label, $rootId)
+      )
     }
-    foreach ($anchorId in $previousAnchorIds) {
-      foreach ($treeId in @(Get-ProcessTreeIds -RootId $anchorId)) {
-        $candidateIds.Add([int]$treeId) | Out-Null
-      }
-    }
 
-    $activeProcesses = New-Object System.Collections.Generic.List[object]
-    foreach ($candidateId in @($candidateIds)) {
-      $candidateProcess = Get-Process -Id $candidateId -ErrorAction SilentlyContinue
-      if ($null -eq $candidateProcess) {
-        continue
-      }
+    $knownStartTicks[[string]$rootId] = [long]$rootStartTicks
+    $previousAnchorIds = @($rootId)
+    $lastActiveIds = @($rootId)
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-      $currentStartTicks = Get-ProcessStartTicks -Process $candidateProcess
-      if ($null -eq $currentStartTicks) {
-        continue
+    while ($true) {
+      $candidateIds = New-Object "System.Collections.Generic.HashSet[int]"
+      foreach ($knownId in @($knownStartTicks.Keys)) {
+        $candidateIds.Add([int]$knownId) | Out-Null
       }
-
-      $candidateKey = [string]$candidateId
-      if ($knownStartTicks.ContainsKey($candidateKey)) {
-        if ([long]$knownStartTicks[$candidateKey] -ne [long]$currentStartTicks) {
-          continue
+      foreach ($anchorId in $previousAnchorIds) {
+        foreach ($treeId in @(Get-ProcessTreeIds -RootId $anchorId)) {
+          $candidateIds.Add([int]$treeId) | Out-Null
         }
-      } else {
-        if ([long]$currentStartTicks -lt [long]$rootStartTicks) {
-          continue
-        }
-        $knownStartTicks[$candidateKey] = [long]$currentStartTicks
       }
 
-      $activeProcesses.Add($candidateProcess) | Out-Null
-      try {
-        $mainWindowHandle = [long]$candidateProcess.MainWindowHandle
-        if ($mainWindowHandle -eq 0) {
+      $activeProcesses = New-Object System.Collections.Generic.List[object]
+      foreach ($candidateId in @($candidateIds)) {
+        try {
+          $candidateProcess = [System.Diagnostics.Process]::GetProcessById($candidateId)
+        } catch [System.ArgumentException] {
           continue
         }
 
-        $windowKey = "{0}:{1}" -f $candidateProcess.Id, $mainWindowHandle
-        if (-not $visibleWindows.Contains($windowKey)) {
-          $visibleWindows[$windowKey] = [pscustomobject][ordered]@{
-            processId = [int]$candidateProcess.Id
-            processName = [string]$candidateProcess.ProcessName
-            windowTitle = [string]$candidateProcess.MainWindowTitle
-            label = $Label
+        $currentStartTicks = Get-ProcessStartTicks -Process $candidateProcess
+        if ($null -eq $currentStartTicks) {
+          throw [System.InvalidOperationException]::new(
+            ("Unable to verify the start time for {0} process {1}." -f $Label, $candidateId)
+          )
+        }
+
+        $candidateKey = [string]$candidateId
+        if ($knownStartTicks.ContainsKey($candidateKey)) {
+          if ([long]$knownStartTicks[$candidateKey] -ne [long]$currentStartTicks) {
+            continue
           }
+        } else {
+          if ([long]$currentStartTicks -lt [long]$rootStartTicks) {
+            continue
+          }
+          $knownStartTicks[$candidateKey] = [long]$currentStartTicks
         }
-      } catch {
-        # The process can exit between enumeration and window inspection.
-      }
-    }
-    $lastActiveIds = @($activeProcesses | ForEach-Object { [int]$_.Id })
-    $previousAnchorIds = $lastActiveIds
 
-    if (-not $rootExited) {
-      try {
+        $activeProcesses.Add($candidateProcess) | Out-Null
+      }
+      $lastActiveIds = @($activeProcesses | ForEach-Object { [int]$_.Id })
+      $previousAnchorIds = $lastActiveIds
+      foreach ($visibleWindow in @(
+        Get-VisibleTopLevelWindows -ProcessIds $lastActiveIds -Label $Label
+      )) {
+        $windowKey = "{0}:{1}" -f $visibleWindow.processId, $visibleWindow.windowHandle
+        if (-not $visibleWindows.Contains($windowKey)) {
+          $visibleWindows[$windowKey] = $visibleWindow
+        }
+      }
+
+      if (-not $rootExited) {
         if ($rootProcess.WaitForExit(0)) {
           $rootExitCode = [int]$rootProcess.ExitCode
           $rootExited = $true
         }
-      } catch {
-        $rootExited = $true
-      }
-    }
-
-    if ($rootExited -and $lastActiveIds.Count -eq 0) {
-      break
-    }
-
-    if ($stopwatch.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
-      $timedOut = $true
-      break
-    }
-
-    Start-Sleep -Milliseconds 150
-  }
-
-  $stopwatch.Stop()
-
-  if ($timedOut) {
-    $processIdsToStop = New-Object "System.Collections.Generic.HashSet[int]"
-    foreach ($activeId in $lastActiveIds) {
-      $activeProcess = Get-Process -Id $activeId -ErrorAction SilentlyContinue
-      if ($null -eq $activeProcess) {
-        continue
       }
 
-      $currentStartTicks = Get-ProcessStartTicks -Process $activeProcess
-      if ($null -eq $currentStartTicks -or
-          [long]$knownStartTicks[[string]$activeId] -ne [long]$currentStartTicks) {
-        continue
+      if ($rootExited -and $lastActiveIds.Count -eq 0) {
+        break
       }
 
-      foreach ($descendantId in @(Get-ProcessTreeIds -RootId $activeId)) {
-        $processIdsToStop.Add([int]$descendantId) | Out-Null
+      if ($stopwatch.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+        $timedOut = $true
+        break
+      }
+
+      Start-Sleep -Milliseconds 150
+    }
+
+    if ($timedOut) {
+      $timeoutCleanup = Stop-OwnedProcessTree `
+        -RootProcess $rootProcess `
+        -RootId $rootId `
+        -RootStartTicks $rootStartTicks `
+        -KnownStartTicks $knownStartTicks
+    }
+
+    $visibleWindowRecords = @($visibleWindows.GetEnumerator() | ForEach-Object { $_.Value })
+    return [pscustomobject][ordered]@{
+      processId = $rootId
+      exitCode = $rootExitCode
+      timedOut = $timedOut
+      visibleWindows = $visibleWindowRecords
+      timeoutCleanup = $timeoutCleanup
+    }
+  } catch {
+    $originalException = $_.Exception
+    try {
+      $exceptionCleanup = Stop-OwnedProcessTree `
+        -RootProcess $rootProcess `
+        -RootId $rootId `
+        -RootStartTicks $rootStartTicks `
+        -KnownStartTicks $knownStartTicks
+    } catch {
+      $exceptionCleanup = [pscustomobject][ordered]@{
+        stoppedIds = @()
+        remainingOwnedProcessIds = @()
+        errors = @("Exception cleanup helper failed: " + $_.Exception.Message)
       }
     }
-
-    foreach ($processIdToStop in @($processIdsToStop | Sort-Object -Descending)) {
-      Stop-Process -Id $processIdToStop -Force -ErrorAction SilentlyContinue
+    $cleanupPassed = (
+      @($exceptionCleanup.remainingOwnedProcessIds).Count -eq 0 -and
+      @($exceptionCleanup.errors).Count -eq 0
+    )
+    $cleanupStatus = if ($cleanupPassed) { "pass" } else { "fail" }
+    $cleanupDetail = if ($cleanupPassed) {
+      "The monitor stopped every process it owned before propagating the original monitoring exception."
+    } else {
+      "The monitor could not fully verify exception cleanup; the original monitoring exception is still propagated."
     }
-  }
-
-  $visibleWindowRecords = @($visibleWindows.GetEnumerator() | ForEach-Object { $_.Value })
-  return [pscustomobject][ordered]@{
-    processId = $rootId
-    exitCode = $rootExitCode
-    timedOut = $timedOut
-    visibleWindows = $visibleWindowRecords
+    Add-Check `
+      -Id ($Label + ".monitor_exception_cleanup") `
+      -Status $cleanupStatus `
+      -Detail $cleanupDetail `
+      -Evidence $exceptionCleanup | Out-Null
+    throw $originalException
+  } finally {
+    if ($null -ne $stopwatch) {
+      $stopwatch.Stop()
+    }
   }
 }
 
@@ -838,6 +1225,16 @@ function Test-PortableExecutable {
   }
 }
 
+function Normalize-PublisherName {
+  param(
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyString()]
+    [string]$Value
+  )
+
+  return $Value.Trim().Normalize([System.Text.NormalizationForm]::FormKC)
+}
+
 function Get-SignatureRecord {
   param(
     [Parameter(Mandatory = $true)]
@@ -846,9 +1243,14 @@ function Get-SignatureRecord {
 
   $signature = Get-AuthenticodeSignature -LiteralPath $LiteralPath
   $signerSubject = ""
+  $signerSimpleName = ""
   $thumbprint = ""
   if ($null -ne $signature.SignerCertificate) {
     $signerSubject = [string]$signature.SignerCertificate.Subject
+    $signerSimpleName = [string]$signature.SignerCertificate.GetNameInfo(
+      [System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName,
+      $false
+    )
     $thumbprint = [string]$signature.SignerCertificate.Thumbprint
   }
 
@@ -857,6 +1259,7 @@ function Get-SignatureRecord {
     status = [string]$signature.Status
     statusMessage = [string]$signature.StatusMessage
     signerSubject = $signerSubject
+    signerSimpleName = $signerSimpleName
     thumbprint = $thumbprint
   }
 }
@@ -1333,6 +1736,14 @@ try {
 
   $script:Report.installer["path"] = $resolvedInstaller
 
+  $legacyEntries = @(Get-LilyLegacyUninstallEntries)
+  Require-Check `
+    -Id "preflight.no_legacy_install" `
+    -Condition ($legacyEntries.Count -eq 0) `
+    -PassDetail "No installation registered under the former Lily Workbench appId was found." `
+    -FailDetail ("Expected a clean VM, but found {0} installation registered under the former Lily Workbench appId." -f $legacyEntries.Count) `
+    -Evidence $legacyEntries
+
   $registryBefore = @(Get-LilyUninstallEntries)
   $registryBeforePath = Write-JsonEvidence -FileName "registry-before.json" -Value @($registryBefore)
   Require-Check `
@@ -1417,15 +1828,19 @@ try {
   }
 
   if (-not [string]::IsNullOrWhiteSpace($ExpectedPublisher)) {
-    $signerContainsExpectedPublisher = ([string]$installerSignature.signerSubject).IndexOf(
-      $ExpectedPublisher,
+    $normalizedExpectedPublisher = Normalize-PublisherName -Value $ExpectedPublisher
+    $normalizedSignerSimpleName = Normalize-PublisherName `
+      -Value ([string]$installerSignature.signerSimpleName)
+    $signerMatchesExpectedPublisher = [string]::Equals(
+      $normalizedSignerSimpleName,
+      $normalizedExpectedPublisher,
       [System.StringComparison]::OrdinalIgnoreCase
-    ) -ge 0
+    )
     Require-Check `
       -Id "installer.publisher" `
-      -Condition $signerContainsExpectedPublisher `
-      -PassDetail ("The installer signer subject contains the expected publisher: " + $ExpectedPublisher) `
-      -FailDetail ("The installer signer subject does not contain the expected publisher: " + $ExpectedPublisher) `
+      -Condition $signerMatchesExpectedPublisher `
+      -PassDetail ("The installer signer simple name exactly matches the expected publisher: " + $ExpectedPublisher) `
+      -FailDetail ("The installer signer simple name does not exactly match the expected publisher: " + $ExpectedPublisher) `
       -Evidence $installerSignature
   }
 
@@ -1480,15 +1895,19 @@ try {
     -Evidence $script:InstalledEntry
 
   if (-not [string]::IsNullOrWhiteSpace($ExpectedPublisher)) {
-    $arpPublisherMatches = ([string]$script:InstalledEntry.Publisher).IndexOf(
-      $ExpectedPublisher,
+    $normalizedExpectedPublisher = Normalize-PublisherName -Value $ExpectedPublisher
+    $normalizedArpPublisher = Normalize-PublisherName `
+      -Value ([string]$script:InstalledEntry.Publisher)
+    $arpPublisherMatches = [string]::Equals(
+      $normalizedArpPublisher,
+      $normalizedExpectedPublisher,
       [System.StringComparison]::OrdinalIgnoreCase
-    ) -ge 0
+    )
     Require-Check `
       -Id "registry.publisher" `
       -Condition $arpPublisherMatches `
-      -PassDetail ("The ARP publisher contains the expected publisher: " + $ExpectedPublisher) `
-      -FailDetail ("The ARP publisher does not contain the expected publisher: " + $ExpectedPublisher) `
+      -PassDetail ("The normalized ARP publisher exactly matches the expected publisher: " + $ExpectedPublisher) `
+      -FailDetail ("The normalized ARP publisher does not exactly match the expected publisher: " + $ExpectedPublisher) `
       -Evidence $script:InstalledEntry
   }
 

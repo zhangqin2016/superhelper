@@ -112,6 +112,38 @@ assert.match(runner, /InstallLocation/);
 assert.match(runner, /DisplayIcon/);
 assert.match(runner, /UninstallString/);
 
+const legacyEntriesMatch = runner.match(
+  /function Get-LilyLegacyUninstallEntries \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(legacyEntriesMatch, "Get-LilyLegacyUninstallEntries must be a standalone helper.");
+const legacyEntriesBody = legacyEntriesMatch[1];
+assert.match(legacyEntriesBody, /HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall/);
+assert.match(legacyEntriesBody, /HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall/);
+assert.match(
+  legacyEntriesBody,
+  /HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall/,
+);
+assert.match(
+  legacyEntriesBody,
+  /com\.company\.ai-super-terminal/,
+  "legacy detection must address the exact former appId registry key",
+);
+assert.doesNotMatch(
+  legacyEntriesBody,
+  /Get-ChildItem|Where-Object/,
+  "legacy detection must not depend on display-name discovery",
+);
+for (const property of [
+  "RegistryPath",
+  "DisplayName",
+  "DisplayVersion",
+  "InstallLocation",
+  "UninstallString",
+  "QuietUninstallString",
+]) {
+  assert.match(legacyEntriesBody, new RegExp(`${property}\\s*=`));
+}
+
 const initializeNativeMatch = runner.match(
   /function Initialize-NativeCommandLine \{([\s\S]*?)\n\}\n\nfunction /,
 );
@@ -137,6 +169,41 @@ assert.match(nativeCommandLineSource, /LocalFree/);
 assert.match(nativeCommandLineSource, /public static string\[\] Split\s*\(/);
 assert.match(nativeCommandLineSource, /try\s*\{/);
 assert.match(nativeCommandLineSource, /finally\s*\{[\s\S]*LocalFree\s*\(/);
+assert.match(nativeCommandLineSource, /DllImport\(["']user32\.dll["'][\s\S]*EnumWindows/i);
+assert.match(nativeCommandLineSource, /IsWindowVisible/);
+assert.match(nativeCommandLineSource, /GetWindowThreadProcessId/);
+assert.match(nativeCommandLineSource, /GetWindowTextLength/);
+assert.match(nativeCommandLineSource, /GetWindowText/);
+
+const visibleWindowsMatch = runner.match(
+  /function Get-VisibleTopLevelWindows \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(visibleWindowsMatch, "Get-VisibleTopLevelWindows must be a standalone helper.");
+const visibleWindowsBody = visibleWindowsMatch[1];
+assert.match(visibleWindowsBody, /\[int\[\]\]\$ProcessIds/);
+assert.match(visibleWindowsBody, /Lily\.NativeCommandLine\.[A-Za-z]+\]::GetVisibleWindows/);
+for (const property of ["processId", "windowHandle", "windowTitle", "label"]) {
+  assert.match(visibleWindowsBody, new RegExp(`${property}\\s*=`));
+}
+
+const packagedRendererUrlMatch = runner.match(
+  /function Test-LilyPackagedRendererUrl \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(packagedRendererUrlMatch, "Test-LilyPackagedRendererUrl must be a standalone helper.");
+const packagedRendererUrlBody = packagedRendererUrlMatch[1];
+assert.match(packagedRendererUrlBody, /\[System\.Uri\]::TryCreate/);
+assert.match(packagedRendererUrlBody, /\[System\.UriKind\]::Absolute/);
+assert.match(packagedRendererUrlBody, /\.Scheme/);
+assert.match(packagedRendererUrlBody, /["']file["']/);
+assert.match(packagedRendererUrlBody, /OrdinalIgnoreCase/);
+assert.match(packagedRendererUrlBody, /UnescapeDataString/);
+assert.match(packagedRendererUrlBody, /\.Replace\(["']\\["'],\s*["']\/["']\)/);
+assert.ok(
+  packagedRendererUrlBody.includes("/resources/app\\.asar/src/renderer/index\\.html$"),
+  "the packaged renderer path must be anchored at app.asar/src/renderer/index.html",
+);
+assert.match(packagedRendererUrlBody, /\.Query/);
+assert.match(packagedRendererUrlBody, /\.Fragment/);
 
 const resolveUninstallMatch = runner.match(
   /function Resolve-UninstallCommand \{([\s\S]*?)\n\}\n\nfunction /,
@@ -255,6 +322,11 @@ assert.match(normalCleanupBody, /-Status\s+["']fail["']/);
 assert.match(normalCleanupBody, /catch\s*\{/);
 assert.doesNotMatch(normalCleanupBody, /\.UninstallString\b|-Name\s+["']UninstallString["']/);
 assert.doesNotMatch(normalCleanupBody, /Remove-Item|full-uninstall-lily-workbench/i);
+assert.doesNotMatch(
+  normalCleanupBody,
+  /Get-LilyLegacyUninstallEntries|com\.company\.ai-super-terminal/,
+  "normal cleanup must never acquire ownership of a legacy installation",
+);
 assert.match(runner, /function Get-LilyProcesses\b/);
 assert.match(runner, /LilyWorkbench/);
 assert.match(runner, /Lily Workbench/);
@@ -264,11 +336,79 @@ assert.match(runner, /智能工作台/);
 assert.match(runner, /function Get-ProcessTreeIds\b/);
 assert.match(runner, /Get-CimInstance\s+-ClassName\s+Win32_Process/);
 assert.match(runner, /ParentProcessId/);
-assert.match(runner, /function Invoke-MonitoredProcess\b/);
-assert.match(runner, /Start-Process[\s\S]*-PassThru/);
-assert.match(runner, /MainWindowHandle/);
-assert.match(runner, /visibleWindows/);
-assert.match(runner, /150/);
+const stopOwnedTreeMatch = runner.match(
+  /function Stop-OwnedProcessTree \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(stopOwnedTreeMatch, "Stop-OwnedProcessTree must be a standalone bounded cleanup helper.");
+const stopOwnedTreeBody = stopOwnedTreeMatch[1];
+for (const parameter of ["RootProcess", "RootId", "RootStartTicks", "KnownStartTicks"]) {
+  assert.match(stopOwnedTreeBody, new RegExp(`\\$${parameter}\\b`));
+}
+assert.match(stopOwnedTreeBody, /Get-CimInstance\s+-ClassName\s+Win32_Process\s+-ErrorAction\s+Stop/);
+assert.match(stopOwnedTreeBody, /ParentProcessId/);
+assert.match(stopOwnedTreeBody, /Sort-Object[\s\S]{0,180}Descending/);
+const knownIdentityImport = stopOwnedTreeBody.match(
+  /foreach \(\$knownIdText in @\(\$KnownStartTicks\.Keys\)\) \{([\s\S]*?)\n  \}/,
+)?.[1] ?? "";
+assert.ok(knownIdentityImport, "known process identities must be imported before cleanup");
+assert.doesNotMatch(
+  knownIdentityImport,
+  /\$depthById/,
+  "known descendants must not all be assigned root depth",
+);
+assert.match(stopOwnedTreeBody, /\$foundDepth\s*=\s*\$true[\s\S]*while \(\$foundDepth\)/);
+assert.match(stopOwnedTreeBody, /Stop-Process[\s\S]{0,100}-ErrorAction\s+Stop/);
+assert.match(stopOwnedTreeBody, /\.Kill\(\)/, "an unreadable root start time still needs object-bound cleanup");
+assert.match(stopOwnedTreeBody, /\.WaitForExit\([\s\S]{0,80}5000/);
+assert.match(stopOwnedTreeBody, /Elapsed\.TotalSeconds\s+-lt\s+5/);
+for (const property of ["stoppedIds", "remainingOwnedProcessIds", "errors"]) {
+  assert.match(stopOwnedTreeBody, new RegExp(`${property}\\s*=`));
+}
+assert.doesNotMatch(
+  stopOwnedTreeBody,
+  /Stop-Process[^\r\n]*SilentlyContinue/,
+  "owned cleanup must not hide Stop-Process failures",
+);
+
+const monitoredProcessMatch = runner.match(
+  /function Invoke-MonitoredProcess \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(monitoredProcessMatch, "Invoke-MonitoredProcess must remain a standalone helper.");
+const monitoredProcessBody = monitoredProcessMatch[1];
+assert.match(monitoredProcessBody, /try\s*\{[\s\S]*Start-Process[\s\S]*-PassThru/);
+assert.match(monitoredProcessBody, /catch\s*\{/);
+assert.match(monitoredProcessBody, /Stop-OwnedProcessTree/);
+assert.match(monitoredProcessBody, /\$Label\s*\+\s*["']\.monitor_exception_cleanup["']/);
+assert.match(monitoredProcessBody, /Add-Check[\s\S]{0,500}-Status\s+\$cleanupStatus/);
+assert.match(monitoredProcessBody, /remainingOwnedProcessIds/);
+assert.match(monitoredProcessBody, /throw\s+\$originalException/);
+const monitorExceptionPath = monitoredProcessBody.match(
+  /catch \{\s*\$originalException\s*=\s*\$_\.Exception([\s\S]*?)throw\s+\$originalException/,
+)?.[1] ?? "";
+assert.ok(monitorExceptionPath, "the monitor exception path must be extractable");
+assert.match(
+  monitorExceptionPath,
+  /try\s*\{[\s\S]*Stop-OwnedProcessTree[\s\S]*\}\s*catch\s*\{[\s\S]*cleanup helper/i,
+  "cleanup-helper failure must become evidence without replacing the original monitor exception",
+);
+assert.match(
+  monitoredProcessBody.slice(monitoredProcessBody.indexOf("if ($timedOut)")),
+  /Stop-OwnedProcessTree/,
+  "timeout cleanup must reuse the verified bounded tree cleanup",
+);
+assert.doesNotMatch(
+  monitoredProcessBody,
+  /Start-Process[\s\S]{0,300}throw\s+\(["']Unable to read the start time/,
+  "a post-start failure must not use a naked throw before exception cleanup",
+);
+assert.match(monitoredProcessBody, /visibleWindows/);
+assert.match(monitoredProcessBody, /150/);
+assert.match(monitoredProcessBody, /Get-VisibleTopLevelWindows\s+-ProcessIds\s+\$lastActiveIds/);
+assert.doesNotMatch(
+  monitoredProcessBody,
+  /\.MainWindowHandle\b/,
+  "Process.MainWindowHandle must not be the only silent-UI evidence",
+);
 
 assert.match(
   runner,
@@ -301,7 +441,8 @@ for (const title of ["Lily Workbench", "智能工作台", "Smart Workbench", "م
 }
 assert.match(waitRendererBody, /Get-Process\s+-Id\s+\$ProcessId/);
 assert.match(waitRendererBody, /Get-ProcessTreeIds\s+-RootId\s+\$ProcessId/);
-assert.match(waitRendererBody, /MainWindowHandle/);
+assert.match(waitRendererBody, /Get-VisibleTopLevelWindows\s+-ProcessIds\s+\$lastProcessIds/);
+assert.doesNotMatch(waitRendererBody, /\.MainWindowHandle\b/);
 assert.match(
   waitRendererBody,
   /\$targetResponse\s*=\s*Invoke-RestMethod/,
@@ -313,9 +454,11 @@ assert.match(waitRendererBody, /http:\/\/127\.0\.0\.1/);
 assert.match(waitRendererBody, /\/json\/list/);
 assert.match(waitRendererBody, /-TimeoutSec\s+2/);
 assert.match(waitRendererBody, /["']type["'][\s\S]{0,120}["']page["']/);
-assert.ok(
-  waitRendererBody.includes("renderer[/\\\\]index\\.html"),
-  "renderer readiness must require the packaged renderer/index.html URL",
+assert.match(waitRendererBody, /Test-LilyPackagedRendererUrl\s+-Url\s+\$targetUrl/);
+assert.doesNotMatch(
+  waitRendererBody,
+  /\$targetUrl\s+-match\s+["'][^"']*renderer[^"']*index\\?\.html/i,
+  "renderer readiness must not accept an unanchored URL substring",
 );
 assert.match(
   waitRendererBody,
@@ -331,7 +474,7 @@ assert.equal(
 );
 assert.match(
   waitRendererBody,
-  /\$null\s+-eq\s+\$visibleWindow\s+-and\s+\$mainWindowHandle\s+-ne\s+0/,
+  /\$null\s+-eq\s+\$visibleWindow[\s\S]{0,180}\$visibleTopLevelWindows\.Count\s+-gt\s+0/,
   "later windows must not replace the first visible-window evidence",
 );
 
@@ -476,7 +619,18 @@ assert.match(runner, /\.Dispose\(\)/);
 assert.match(runner, /function Get-SignatureRecord\b/);
 assert.match(runner, /Get-AuthenticodeSignature\s+-LiteralPath/);
 assert.match(runner, /signerSubject/);
+assert.match(runner, /signerSimpleName/);
+assert.match(runner, /GetNameInfo\(/);
+assert.match(runner, /X509NameType\]::SimpleName/);
+assert.match(runner, /GetNameInfo\([\s\S]{0,180}\$false\s*\)/);
 assert.match(runner, /thumbprint/);
+const normalizePublisherMatch = runner.match(
+  /function Normalize-PublisherName \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(normalizePublisherMatch, "Normalize-PublisherName must be a standalone helper.");
+assert.match(normalizePublisherMatch[1], /\.Trim\(\)/);
+assert.match(normalizePublisherMatch[1], /\.Normalize\(/);
+assert.match(normalizePublisherMatch[1], /NormalizationForm\]::Form(?:KC|C)/);
 assert.match(runner, /function Get-PeSignatureInventory\b/);
 assert.match(runner, /function Resolve-InstallDirectory\b/);
 assert.match(runner, /function Get-LilyShortcuts\b/);
@@ -497,12 +651,28 @@ assert.match(runner, /OrdinalIgnoreCase/);
 assert.doesNotMatch(runner, /\[string\]::IndexOf\s*\(/);
 assert.match(
   runner,
-  /\(\[string\]\$installerSignature\.signerSubject\)\.IndexOf\(\s*\$ExpectedPublisher,\s*\[System\.StringComparison\]::OrdinalIgnoreCase\s*\)/,
+  /\$signerMatchesExpectedPublisher\s*=\s*\[string\]::Equals\(\s*\$normalizedSignerSimpleName,\s*\$normalizedExpectedPublisher,\s*\[System\.StringComparison\]::OrdinalIgnoreCase\s*\)/,
 );
 assert.match(
   runner,
-  /\(\[string\]\$script:InstalledEntry\.Publisher\)\.IndexOf\(\s*\$ExpectedPublisher,\s*\[System\.StringComparison\]::OrdinalIgnoreCase\s*\)/,
+  /\$arpPublisherMatches\s*=\s*\[string\]::Equals\(\s*\$normalizedArpPublisher,\s*\$normalizedExpectedPublisher,\s*\[System\.StringComparison\]::OrdinalIgnoreCase\s*\)/,
 );
+const signerComparisonIndex = runner.indexOf('$signerMatchesExpectedPublisher =');
+const arpComparisonIndex = runner.indexOf('$arpPublisherMatches =');
+const installerPublisherBlock = runner.slice(
+  runner.lastIndexOf('if (-not [string]::IsNullOrWhiteSpace($ExpectedPublisher))', signerComparisonIndex),
+  runner.indexOf('$script:InstallAttemptStarted = $true'),
+);
+const arpPublisherBlock = runner.slice(
+  runner.lastIndexOf('if (-not [string]::IsNullOrWhiteSpace($ExpectedPublisher))', arpComparisonIndex),
+  runner.indexOf('if (-not [string]::IsNullOrWhiteSpace($ExpectedVersion))'),
+);
+assert.match(installerPublisherBlock, /installerSignature\.signerSimpleName/);
+assert.match(installerPublisherBlock, /Normalize-PublisherName/);
+assert.match(arpPublisherBlock, /InstalledEntry\.Publisher/);
+assert.match(arpPublisherBlock, /Normalize-PublisherName/);
+assert.doesNotMatch(installerPublisherBlock, /\.IndexOf\(|\.Contains\(/);
+assert.doesNotMatch(arpPublisherBlock, /\.IndexOf\(|\.Contains\(/);
 assert.match(runner, /Get-FileHash[^\r\n]*SHA256/);
 assert.doesNotMatch(runner, /\bRemove-Item\b/i);
 assert.doesNotMatch(runner, /full-uninstall-lily-workbench/i);
@@ -559,11 +729,25 @@ const mainTryEnd = runner.indexOf("\n} catch {", mainTryStart);
 assert.ok(mainTryStart >= 0 && mainTryEnd > mainTryStart, "the main readiness try body must be extractable");
 const mainTryBody = runner.slice(mainTryStart + "\ntry {".length, mainTryEnd);
 const cleanRegistryGateIndex = mainTryBody.indexOf('-Id "preflight.clean_registry"');
+const legacyRegistryLookupIndex = mainTryBody.indexOf("Get-LilyLegacyUninstallEntries");
+const legacyRegistryGateIndex = mainTryBody.indexOf('-Id "preflight.no_legacy_install"');
 const windowsPreflightIndex = mainTryBody.indexOf('-Id "preflight.windows"');
 const nativeInitializationIndex = mainTryBody.indexOf("Initialize-NativeCommandLine");
 const installOwnershipIndex = mainTryBody.indexOf("$script:InstallAttemptStarted = $true");
 const installerInvocationIndex = mainTryBody.indexOf("$installResult = Invoke-MonitoredProcess");
 assert.ok(cleanRegistryGateIndex >= 0, "the clean-registry gate must remain in the main flow");
+assert.ok(legacyRegistryLookupIndex >= 0, "the main flow must inspect the exact legacy appId key");
+assert.ok(legacyRegistryGateIndex >= 0, "the legacy-install preflight gate must be named");
+assert.match(
+  mainTryBody.slice(legacyRegistryLookupIndex, legacyRegistryGateIndex + 500),
+  /\$legacyEntries\.Count\s*-eq\s*0/,
+);
+assert.ok(
+  legacyRegistryLookupIndex < legacyRegistryGateIndex &&
+    legacyRegistryGateIndex < cleanRegistryGateIndex &&
+    legacyRegistryGateIndex < installOwnershipIndex,
+  "legacy installation detection must fail before the current ARP gate and before cleanup ownership",
+);
 assert.ok(
   nativeInitializationIndex > windowsPreflightIndex && nativeInitializationIndex < installOwnershipIndex,
   "native command-line initialization must run inside main try after Windows preflight and before install ownership",
