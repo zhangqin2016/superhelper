@@ -88,6 +88,14 @@ const providerNotConfigured = classifyAssistantError("API Error: 404 model provi
 assert(providerNotConfigured?.code === "MODEL_UNAVAILABLE", "a removed managed model (gateway 404 provider not configured) must NOT be relabeled as a connection interruption");
 assert(providerNotConfigured?.retryable === true, "a removed model is recoverable — the session layer refreshes config and falls back to the default");
 
+const backendSwapped = classifyAssistantError(
+  "Request failed: 400 The supported API model names are deepseek-v4-pro or deepseek-v4-flash, but you passed Qwen/Qwen3.5-27B.",
+);
+assert(backendSwapped?.code === "MODEL_UNAVAILABLE",
+  "a proxy endpoint whose backend model was swapped must read as model-unavailable, not a network drop");
+assert(backendSwapped?.retryable === true,
+  "backend swaps are recoverable — config refresh / model change fixes them");
+
 const bareGateway404 = classifyAssistantError("API Error: 404");
 assert(bareGateway404?.code === "MODEL_UNAVAILABLE", "a bare gateway 404 shell routes to model-unavailable (refresh+fallback), not connection-interrupted");
 

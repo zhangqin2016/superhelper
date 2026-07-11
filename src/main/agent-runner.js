@@ -102,7 +102,12 @@ const ERROR_PATTERNS = [
     // / 404 catch there does not relabel a removed model as a network drop.
     // Retryable: the session layer refreshes config on this, which drops the
     // dead preset and falls the active selection back to a delivered model.
-    test: /model provider not configured|provider not configured|model provider not found|model gateway disabled|no model provider|selected model|pick a different model|model .*does not exist|model .*not found|model .*not supported|invalid model|may not have access to it|\b404\b/i,
+    // "supported … model names|but you passed": a managed/proxy endpoint whose
+    // backend was SWAPPED to a different model family rejects the configured
+    // model name (field: OICM+ endpoint answering "The supported API model
+    // names are deepseek-v4-pro …, but you passed Qwen/…"). Without this the
+    // broad request-failed catch called it a network interruption.
+    test: /model provider not configured|provider not configured|model provider not found|model gateway disabled|no model provider|selected model|pick a different model|model .*does not exist|model .*not found|model .*not supported|invalid model|may not have access to it|supported (?:API )?model names?|but you passed|\b404\b/i,
     message: "The selected model is no longer available. Configuration has been refreshed and the default model restored — please retry.",
     retryable: true,
   },
