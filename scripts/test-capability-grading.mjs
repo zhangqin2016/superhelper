@@ -502,7 +502,7 @@ try {
   }
   assert.deepEqual(
     JSON.parse(firstSharedBrokerServers.lily_tool_broker.env.LILY_TOOL_BROKER_CONTEXT),
-    { platformOnly: true, activeSkillIds: [] },
+    { platformOnly: true, activeSkillIds: [], runtime: { browserAvailable: false } },
     "the app-wide serve gets explicit platform-only broker context, never one conversation's identity",
   );
   assert.equal(

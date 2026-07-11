@@ -262,6 +262,10 @@ function writeActiveMcpConfig(runtimeDir, outPath, allowedSkillIds = null, conte
     if (!Array.isArray(brokerContext.activeSkillIds) && Array.isArray(allowedSkillIds)) {
       brokerContext.activeSkillIds = allowedSkillIds;
     }
+    brokerContext.runtime = {
+      ...(context.runtime || {}),
+      browserAvailable: Boolean(playwright?.mcpServers?.playwright),
+    };
   }
   mcpServers.lily_tool_broker = buildToolBrokerMcpEntry(brokerContext);
   mcpServers.lily_file_intelligence = buildFileIntelligenceMcpEntry();

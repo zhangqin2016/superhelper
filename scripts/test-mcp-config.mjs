@@ -156,8 +156,9 @@ try {
       JSON.stringify(JSON.parse(explicitBroker.env.LILY_TOOL_BROKER_CONTEXT)) === JSON.stringify({
         sessionId: "session-explicit",
         activeSkillIds: ["lily-runtime-packs"],
+        runtime: { browserAvailable: true },
       }),
-      "explicit broker context carries the real session and active skills without global env mutation",
+      "explicit broker context carries session scope plus browser availability derived from the registered MCP server",
     );
   } finally {
     if (prevBrokerContext === undefined) delete process.env.LILY_TOOL_BROKER_CONTEXT;
