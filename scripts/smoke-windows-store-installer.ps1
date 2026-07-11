@@ -651,8 +651,7 @@ try {
   }
 
   if (-not [string]::IsNullOrWhiteSpace($ExpectedPublisher)) {
-    $signerContainsExpectedPublisher = [string]::IndexOf(
-      [string]$installerSignature.signerSubject,
+    $signerContainsExpectedPublisher = ([string]$installerSignature.signerSubject).IndexOf(
       $ExpectedPublisher,
       [System.StringComparison]::OrdinalIgnoreCase
     ) -ge 0
@@ -714,8 +713,7 @@ try {
     -Evidence $script:InstalledEntry
 
   if (-not [string]::IsNullOrWhiteSpace($ExpectedPublisher)) {
-    $arpPublisherMatches = [string]::IndexOf(
-      [string]$script:InstalledEntry.Publisher,
+    $arpPublisherMatches = ([string]$script:InstalledEntry.Publisher).IndexOf(
       $ExpectedPublisher,
       [System.StringComparison]::OrdinalIgnoreCase
     ) -ge 0

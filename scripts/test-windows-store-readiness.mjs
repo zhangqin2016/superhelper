@@ -107,6 +107,15 @@ assert.match(runner, /signature-inventory\.json/);
 assert.match(runner, /\$script:InstalledEntry/);
 assert.match(runner, /LilyWorkbench\.exe/);
 assert.match(runner, /OrdinalIgnoreCase/);
+assert.doesNotMatch(runner, /\[string\]::IndexOf\s*\(/);
+assert.match(
+  runner,
+  /\(\[string\]\$installerSignature\.signerSubject\)\.IndexOf\(\s*\$ExpectedPublisher,\s*\[System\.StringComparison\]::OrdinalIgnoreCase\s*\)/,
+);
+assert.match(
+  runner,
+  /\(\[string\]\$script:InstalledEntry\.Publisher\)\.IndexOf\(\s*\$ExpectedPublisher,\s*\[System\.StringComparison\]::OrdinalIgnoreCase\s*\)/,
+);
 assert.match(runner, /Get-FileHash[^\r\n]*SHA256/);
 assert.doesNotMatch(runner, /full-uninstall-lily-workbench/i);
 
