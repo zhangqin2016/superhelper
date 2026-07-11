@@ -505,3 +505,19 @@ dictionaries.ar.catalog = {
     emptyTitle: "لا توجد مهارات عامة حالياً", emptyDescription: "ستظهر المهارات بعد مراجعتها.", errorTitle: "دليل المهارات غير متاح مؤقتاً", errorDescription: "يمكنك تنزيل Lily والعودة إلى الدليل لاحقاً.", risks: { low: "مخاطر منخفضة", medium: "تحتاج تأكيداً", high: "إجراء عالي المخاطر" },
   },
 };
+
+dictionaries.zh.wishPool = {
+  eyebrow: "Lily 许愿池 · 需求共创计划", title: "一起决定，Lily 下一步学会什么。", description: "告诉我们你真正想完成的工作。相似愿望会被合并，每个公开愿望都有清楚的进度。", filterLabel: "许愿池筛选", create: "许一个愿望", alsoNeed: "我也需要", viewOutcome: "查看已上线应用", viewSkill: "查看已上线技能",
+  tabs: { all: "大家都想要", published: "最新公开", planned: "已计划", building: "实现中", shipped: "已上线" }, statuses: { published: "已公开", planned: "已计划", building: "实现中", shipped: "已上线" }, categories: { office: "办公文档", research: "研究", communication: "沟通协作", data: "数据", creative: "创意", developer: "开发", other: "其他" },
+  emptyTitle: "还没有符合条件的公开愿望", emptyDescription: "你可以提交第一个真实工作需求。", errorTitle: "许愿池暂时不可用", errorDescription: "愿望没有丢失，请稍后重试。官网其他功能仍可正常使用。",
+};
+dictionaries.en.wishPool = {
+  eyebrow: "Lily Wish Pool · Co-creation", title: "Help decide what Lily learns next.", description: "Tell us about real work you want to complete. Similar wishes are merged and every public wish has a clear status.", filterLabel: "Wish filters", create: "Make a wish", alsoNeed: "I need this too", viewOutcome: "View shipped app", viewSkill: "View shipped skill",
+  tabs: { all: "Most wanted", published: "New", planned: "Planned", building: "Building", shipped: "Shipped" }, statuses: { published: "Published", planned: "Planned", building: "Building", shipped: "Shipped" }, categories: { office: "Office", research: "Research", communication: "Communication", data: "Data", creative: "Creative", developer: "Developer", other: "Other" },
+  emptyTitle: "No matching public wishes yet", emptyDescription: "You can submit the first real work outcome.", errorTitle: "The wish pool is temporarily unavailable", errorDescription: "No wish was lost. Try again later; the rest of the website still works.",
+};
+dictionaries.ar.wishPool = {
+  eyebrow: "مجموعة أمنيات Lily · تطوير مشترك", title: "ساعدنا في تحديد ما ستتعلمه Lily تالياً.", description: "أخبرنا عن عمل حقيقي تريد إنجازه. ندمج الرغبات المتشابهة ولكل رغبة عامة حالة واضحة.", filterLabel: "مرشحات الأمنيات", create: "أضف أمنية", alsoNeed: "أحتاج هذا أيضاً", viewOutcome: "عرض التطبيق المنجز", viewSkill: "عرض المهارة المنجزة",
+  tabs: { all: "الأكثر طلباً", published: "جديد", planned: "مخطط", building: "قيد التنفيذ", shipped: "تم الإطلاق" }, statuses: { published: "منشور", planned: "مخطط", building: "قيد التنفيذ", shipped: "تم الإطلاق" }, categories: { office: "المكتب", research: "البحث", communication: "التواصل", data: "البيانات", creative: "الإبداع", developer: "التطوير", other: "أخرى" },
+  emptyTitle: "لا توجد أمنيات عامة مطابقة", emptyDescription: "يمكنك إرسال أول نتيجة عمل حقيقية.", errorTitle: "مجموعة الأمنيات غير متاحة مؤقتاً", errorDescription: "لم نفقد أي رغبة. حاول لاحقاً، وبقية الموقع تعمل بشكل طبيعي.",
+};

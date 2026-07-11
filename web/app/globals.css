@@ -1075,10 +1075,32 @@ a {
 .catalog-grid--skills { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .skill-mark { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 14px; background: #e8ecff; color: #586ce8; }
 .catalog-card--skill > p { min-height: 78px; }
+.wish-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 24px; }
+.wish-toolbar nav { display: flex; flex-wrap: wrap; gap: 8px; }
+.wish-toolbar nav a { border: 1px solid #e0e5ef; border-radius: 999px; background: white; color: #647084; padding: 9px 13px; font-size: 13px; font-weight: 700; }
+.wish-toolbar nav a.active { border-color: #121827; background: #121827; color: white; }
+.wish-create-link { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; background: #586ce8; color: white; padding: 11px 15px; font-size: 13px; font-weight: 750; white-space: nowrap; }
+.wish-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.wish-card { border: 1px solid #e0e5ef; border-radius: 22px; background: white; padding: 24px; box-shadow: 0 18px 55px rgba(26, 36, 67, 0.06); }
+.wish-card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wish-category { display: inline-flex; align-items: center; gap: 6px; color: #586ce8; font-size: 12px; font-weight: 750; }
+.wish-status { border-radius: 999px; padding: 6px 9px; font-size: 11px; font-weight: 800; }
+.wish-status--published { background: #eef1f6; color: #536078; }
+.wish-status--planned { background: #fff2dc; color: #865800; }
+.wish-status--building { background: #e7edff; color: #3d5fc5; }
+.wish-status--shipped { background: #e2f5ec; color: #22704f; }
+.wish-card h2 { margin: 18px 0 9px; font-size: 23px; letter-spacing: -0.03em; }
+.wish-card > p { min-height: 56px; margin: 0; color: #647084; line-height: 1.7; }
+.wish-update { display: flex; align-items: flex-start; gap: 8px; margin-top: 18px; border-radius: 13px; background: #f3f5fb; color: #536078; padding: 13px; font-size: 13px; line-height: 1.5; }
+.wish-links, .wish-support-placeholder { margin-top: 18px; }
+.wish-links { display: flex; flex-wrap: wrap; gap: 9px; }
+.wish-links a, .wish-support-placeholder { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #d9def0; border-radius: 999px; background: white; color: #586ce8; padding: 9px 12px; font-size: 12px; font-weight: 750; }
 
 @media (max-width: 860px) {
   .catalog-grid--apps, .catalog-grid--skills, .catalog-detail { grid-template-columns: 1fr; }
   .catalog-hero { padding: 128px 0 56px; }
+  .wish-grid { grid-template-columns: 1fr; }
+  .wish-toolbar { align-items: flex-start; flex-direction: column; }
 }
 
 @media (max-width: 860px) {
