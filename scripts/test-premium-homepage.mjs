@@ -51,6 +51,13 @@ const fallbackSource = fs.readFileSync(productFallback, "utf8");
 assert.equal(/base64|https?:\/\/(?!www\.w3\.org)|\/Users\/|placeholder/i.test(fallbackSource), false, "fallback contains unsafe or placeholder content");
 assert.match(fallbackSource, /Lily Workbench/);
 
+const webDockerfile = fs.readFileSync(new URL("../web/Dockerfile", import.meta.url), "utf8");
+assert.match(
+  webDockerfile,
+  /COPY\s+--from=builder\s+\/app\/public\s+\.\/public/,
+  "production web image must include public assets",
+);
+
 const homePageSource = fs.readFileSync(new URL("../web/app/page.js", import.meta.url), "utf8");
 for (const component of ["HomeHero", "HomeWorkflows", "FeaturedCatalog", "HomeTrust", "WishPoolPreview", "HomeFinalCta"]) {
   assert.match(homePageSource, new RegExp(`import \\{ ${component} \\}`), `homepage missing ${component}`);
