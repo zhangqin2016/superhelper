@@ -4,7 +4,8 @@
  * and bundle skill files into resources/skills-catalog/<id>/ (offline install).
  *
  * Usage:
- *   node scripts/sync-skills-catalog.mjs           # refresh registry + bundle
+ *   node scripts/sync-skills-catalog.mjs           # fetch + validate + write a candidate only
+ *   node scripts/sync-skills-catalog.mjs --apply   # atomically apply validated updates
  *   node scripts/sync-skills-catalog.mjs --bundle-only  # bundle from existing registry.json
  */
 
@@ -16,12 +17,15 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { copyDirRecursiveShipSafe, purgeJunkUnder } = require("../src/main/ship-ignore.js");
+const { mergeExternalEntries, validateCandidate, writeJsonAtomically } = require("../src/main/skill-catalog-sync-policy.js");
+const { skillContentRevision, registryRevision } = require("../src/main/skill-registry-revision.js");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const SOURCES_PATH = path.join(ROOT, "resources/skills-registry/catalog-sources.json");
 const OUT_PATH = path.join(ROOT, "resources/skills-registry/registry.json");
 const CATALOG_DIR = path.join(ROOT, "resources/skills-catalog");
+const CANDIDATE_PATH = path.join(ROOT, ".lily-work", "skill-sync", "registry.candidate.json");
 
 const GITHUB_API = "https://api.github.com";
 const HEADERS = {
@@ -253,8 +257,27 @@ async function bundleSkills(skills) {
   console.log(`Bundled ${bundled} skills to ${CATALOG_DIR} (${skipped} skipped)`);
 }
 
+function stampCandidate(candidate) {
+  const next = JSON.parse(JSON.stringify(candidate));
+  for (const skill of next.skills || []) {
+    const dir = path.join(CATALOG_DIR, skill.id);
+    const skillPath = path.join(dir, "SKILL.md");
+    if (!fs.existsSync(skillPath)) throw new Error(`Registered skill is missing SKILL.md: ${skill.id}`);
+    const manifestPath = path.join(dir, "skill.manifest.json");
+    const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, "utf8")) : null;
+    skill.contentRevision = skillContentRevision(skill, {
+      skillMarkdown: fs.readFileSync(skillPath, "utf8"),
+      manifest,
+    });
+  }
+  next.registryRevision = registryRevision(next);
+  return next;
+}
+
 async function main() {
   const bundleOnly = process.argv.includes("--bundle-only");
+  const apply = process.argv.includes("--apply");
+  const allowAdditions = process.argv.includes("--allow-additions");
   let allSkills = [];
 
   if (bundleOnly) {
@@ -288,22 +311,31 @@ async function main() {
     return a.name.localeCompare(b.name);
   });
 
-  const registry = {
-    schemaVersion: 1,
-    updatedAt: new Date().toISOString(),
-    publisher: "智能工作台技能目录",
-    registryUrl: null,
-    categories: catalog.categories,
-    remoteIndexes: catalog.remoteIndexes || [],
-    skills: allSkills,
-  };
+  const baseline = JSON.parse(fs.readFileSync(OUT_PATH, "utf8"));
+  const allowedIdPrefixes = [...new Set(catalog.sources.flatMap((source) => (
+    Array.isArray(source.allowedIdPrefixes) ? source.allowedIdPrefixes : [`${source.prefix}-`]
+  )))];
+  const candidate = mergeExternalEntries(baseline, allSkills, { allowedIdPrefixes, allowAdditions });
+  candidate.updatedAt = new Date().toISOString();
+  candidate.remoteIndexes = catalog.remoteIndexes || baseline.remoteIndexes || [];
+  const validation = validateCandidate(candidate, baseline);
+  if (!validation.ok) throw new Error(`Candidate registry rejected: ${validation.errors.join("; ")}`);
 
-  fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true });
-  fs.writeFileSync(OUT_PATH, JSON.stringify(registry, null, 2), "utf8");
-  console.log(`Wrote ${allSkills.length} skills to ${OUT_PATH}`);
+  writeJsonAtomically(CANDIDATE_PATH, candidate);
+  const changedIds = allSkills
+    .map((skill) => skill.id)
+    .filter((id) => allowAdditions || baseline.skills.some((skill) => skill.id === id));
+  console.log(`Candidate written to ${CANDIDATE_PATH}; ${changedIds.length} existing vendor skill(s) eligible for update.`);
+  if (!apply) {
+    console.log("Dry run only. Use --apply to bundle vendor updates and atomically replace registry.json.");
+    return;
+  }
 
-  console.log("Bundling skill files for offline install...");
-  await bundleSkills(allSkills);
+  const changed = allSkills.filter((skill) => changedIds.includes(skill.id));
+  await bundleSkills(changed);
+  const stamped = stampCandidate(candidate);
+  writeJsonAtomically(OUT_PATH, stamped);
+  console.log(`Applied ${changed.length} vendor skill update(s) to ${OUT_PATH}`);
 }
 
 main().catch((err) => {

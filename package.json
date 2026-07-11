@@ -20,6 +20,7 @@
     "test:release": "node scripts/test-license-update.mjs && node scripts/test-release-admin.mjs && node scripts/test-publish-local-catalog-server.mjs && node scripts/test-ship-ignore.mjs && node scripts/test-skill-catalog.mjs && node scripts/test-data-migration.mjs",
     "test:skills": "node scripts/test-skill-root.mjs && node scripts/test-skill-catalog.mjs && node scripts/test-build-skill-pack.mjs && node scripts/test-skill-presets.mjs && node scripts/test-intent-eval.mjs && node scripts/test-file-staging-manager.mjs && node scripts/test-vision-translator.mjs && node scripts/test-image-send-flow.mjs && node scripts/test-media-generation-skills.mjs && node scripts/test-document-translator.mjs && node scripts/test-document-send-flow.mjs",
     "sync:skills-catalog": "node scripts/sync-skills-catalog.mjs",
+    "sync:skills-catalog:apply": "node scripts/sync-skills-catalog.mjs --apply",
     "sync:skills-bundle": "node scripts/sync-skills-catalog.mjs --bundle-only",
     "generate:skill-i18n": "node scripts/generate-skill-i18n.mjs",
     "license:keygen": "node scripts/license-keygen.mjs",

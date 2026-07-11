@@ -10,78 +10,20 @@
   "sources": [
     {
       "prefix": "anthropics",
+      "allowedIdPrefixes": ["anthropics-"],
       "repo": "anthropics/skills",
       "path": "skills",
       "ref": "main",
       "category": "office",
       "categoryLabel": "办公文档",
       "publisher": "Anthropic",
-      "exclude": ["claude-api", "mcp-builder"],
       "includeOnly": [
         "doc-coauthoring",
         "docx",
-        "internal-comms",
         "pdf",
         "pptx",
-        "xlsx",
-        "webapp-testing",
-        "skill-creator"
+        "xlsx"
       ]
-    },
-    {
-      "prefix": "anthropics",
-      "repo": "anthropics/skills",
-      "path": "skills",
-      "ref": "main",
-      "category": "design",
-      "categoryLabel": "设计创意",
-      "publisher": "Anthropic",
-      "includeOnly": [
-        "algorithmic-art",
-        "brand-guidelines",
-        "canvas-design",
-        "frontend-design",
-        "slack-gif-creator",
-        "theme-factory",
-        "web-artifacts-builder"
-      ]
-    },
-    {
-      "prefix": "superpowers",
-      "repo": "obra/superpowers",
-      "path": "skills",
-      "ref": "main",
-      "category": "coding",
-      "categoryLabel": "研发工程",
-      "publisher": "obra/superpowers"
-    },
-    {
-      "prefix": "marketing",
-      "repo": "coreyhaines31/marketingskills",
-      "path": "skills",
-      "ref": "main",
-      "category": "marketing",
-      "categoryLabel": "市场营销",
-      "publisher": "coreyhaines31/marketingskills"
-    },
-    {
-      "prefix": "pm",
-      "repo": "deanpeters/Product-Manager-Skills",
-      "path": "skills",
-      "ref": "main",
-      "category": "pm",
-      "categoryLabel": "产品经理",
-      "publisher": "deanpeters/Product-Manager-Skills"
-    },
-    {
-      "prefix": "tob",
-      "repo": "trailofbits/skills",
-      "path": "plugins",
-      "ref": "main",
-      "category": "security",
-      "categoryLabel": "安全审计",
-      "publisher": "Trail of Bits",
-      "mode": "plugin-skills"
     }
   ],
   "remoteIndexes": [
