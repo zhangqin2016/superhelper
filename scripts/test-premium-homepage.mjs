@@ -59,6 +59,7 @@ for (const endpoint of ["/api/apps/catalog", "/api/skills/registry", "/api/wishe
   assert.equal(homePageSource.includes(endpoint), true, `homepage missing independent fetch for ${endpoint}`);
 }
 assert.match(homePageSource, /Promise\.all/);
+assert.match(homePageSource, /timeoutMs: 1200/);
 assert.equal(homePageSource.includes("ProductWindow"), false, "old demo product window is still imported");
 assert.match(fs.readFileSync(new URL("../web/components/home/home-hero.js", import.meta.url), "utf8"), /href="\/download"/);
 assert.match(fs.readFileSync(new URL("../web/components/home/home-hero.js", import.meta.url), "utf8"), /href="#product-demo"/);

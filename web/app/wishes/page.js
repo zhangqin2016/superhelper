@@ -7,7 +7,7 @@ import { publicApiGet } from "../../lib/public-api";
 import { classifyWishResult, normalizePublicWishes, wishQuery } from "../../lib/public-wishes.mjs";
 import { getI18n } from "../../lib/i18n.mjs";
 
-export const metadata = { title: "共创愿望", description: "浏览、支持或提交你希望 Lily 实现的真实工作需求。", alternates: { canonical: "/wishes" } };
+export const metadata = { title: "Wish pool", description: "Browse, support, or submit a real work need you want Lily to build.", alternates: { canonical: "/wishes" } };
 export const dynamic = "force-dynamic";
 
 export default async function WishesPage({ searchParams }) {

@@ -80,7 +80,8 @@ assert.deepEqual(classifyPublicApiResult({ ok: true, data: { apps: [] } }), {
 
 const publicApiSource = fs.readFileSync(new URL("../web/lib/public-api.js", import.meta.url), "utf8");
 assert.match(publicApiSource, /cache: "no-store"/);
-assert.match(publicApiSource, /AbortSignal\.timeout\(5000\)/);
+assert.match(publicApiSource, /timeoutMs = 5000/);
+assert.match(publicApiSource, /AbortSignal\.timeout\(timeoutMs\)/);
 
 const appsPage = fs.readFileSync(new URL("../web/app/apps/page.js", import.meta.url), "utf8");
 const appDetailPage = fs.readFileSync(new URL("../web/app/apps/[id]/page.js", import.meta.url), "utf8");

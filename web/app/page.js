@@ -15,10 +15,11 @@ export const dynamic = "force-dynamic";
 export default async function HomePage() {
   const { locale, t } = await getI18n();
   const copy = homeContentFor(t);
+  const optionalFetch = { timeoutMs: 1200 };
   const [appsResult, skillsResult, wishesResult] = await Promise.all([
-    publicApiGet("/api/apps/catalog"),
-    publicApiGet(`/api/skills/registry?locale=${locale}`),
-    publicApiGet(`/api/wishes?sort=popular&locale=${locale}`),
+    publicApiGet("/api/apps/catalog", optionalFetch),
+    publicApiGet(`/api/skills/registry?locale=${locale}`, optionalFetch),
+    publicApiGet(`/api/wishes?sort=popular&locale=${locale}`, optionalFetch),
   ]);
   const { apps, skills, wishes } = buildHomeOptionalSections({ appsResult, skillsResult, wishesResult, locale });
 
