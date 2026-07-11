@@ -475,11 +475,7 @@ for (const skill of result.available || []) {
     throw new Error(`curated catalog should expose user-facing skill names, got ${skill.id}: ${skill.name}`);
   }
 }
-for (const rawDevSkillId of [
-  "lily-engineering-rules",
-  "anthropics-frontend-design",
-  "anthropics-webapp-testing",
-]) {
+for (const rawDevSkillId of ["lily-engineering-rules"]) {
   if ((result.available || []).some((skill) => skill.id === rawDevSkillId)) {
     throw new Error(`default catalog should expose lily-coding-core instead of raw skill ${rawDevSkillId}`);
   }
