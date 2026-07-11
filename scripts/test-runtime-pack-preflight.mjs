@@ -14,7 +14,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-runtime-pack-preflight-"
 process.env.LILY_USER_DATA_DIR = tmp;
 process.env.LILY_BUNDLED_RUNTIME_PACK_ROOTS = path.join(tmp, "bundled-runtime-packs");
 
-const { inferRuntimePackIds, preflightRuntimePacks } = require(
+const { inferRuntimePackIds, planRuntimePacks, preflightRuntimePacks } = require(
   path.join(ROOT, "src/main/runtime-pack-preflight.js"),
 );
 
@@ -35,6 +35,13 @@ includes(ids, "libreoffice", "Office conversion text should require LibreOffice"
 ids = inferRuntimePackIds({ files: [{ name: "contract.pdf" }] });
 includes(ids, "large-document", "PDF files should require the large document engine");
 includes(ids, "pro-pdf", "PDF files should require pro PDF extraction");
+let plan = planRuntimePacks({ files: [{ name: "contract.pdf" }] });
+assertEqual(JSON.stringify(plan.requiredPackIds), "[]", "ordinary PDF reads must use bundled extraction without blocking first use");
+includes(plan.enhancementPackIds, "large-document", "large PDF support should remain an enhancement");
+includes(plan.enhancementPackIds, "pro-pdf", "pro PDF layout extraction should remain an enhancement");
+
+plan = planRuntimePacks({ text: "恢复复杂 PDF 的表格结构和阅读顺序", files: [{ name: "layout.pdf" }] });
+includes(plan.requiredPackIds, "pro-pdf", "explicit complex layout recovery requires Docling");
 
 ids = inferRuntimePackIds({ text: "识别截图里的表格", files: [{ name: "screen.png", isImage: true }] });
 includes(ids, "rapidocr", "Image OCR should require RapidOCR");
@@ -60,11 +67,7 @@ excludes(ids, "rapidocr", "Remote image generation should not require local OCR"
 excludes(ids, "ffmpeg", "Remote image generation should not require media processing");
 
 ids = inferRuntimePackIds({ presetId: "office-starter" });
-includes(ids, "libreoffice", "Office starter should prepare LibreOffice");
-includes(ids, "large-document", "Office starter should prepare the large document engine");
-includes(ids, "pro-pdf", "Office starter should prepare pro PDF extraction");
-includes(ids, "rapidocr", "Office starter should prepare OCR for scanned documents");
-includes(ids, "opencv", "Office starter should prepare image preprocessing for OCR");
+assertEqual(JSON.stringify(ids), "[]", "applying a skill preset must not eagerly prepare heavyweight runtime packs");
 
 const preflight = preflightRuntimePacks({ text: "学习这个 OA 系统" });
 assert(preflight.ok, "preflight should succeed");

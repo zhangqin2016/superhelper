@@ -3,7 +3,7 @@
 const path = require("node:path");
 
 const { PACK_SPECS } = require("./runtime-pack-specs");
-const { getPresetById } = require("./skill-presets");
+const { planCapabilityReadiness } = require("./capability-readiness");
 
 const OFFICE_EXTENSIONS = new Set([
   ".doc",
@@ -119,11 +119,6 @@ function collectSkillIds(payload = {}) {
   for (const key of ["skillIds", "enabledSkillIds", "sessionSkillIds"]) {
     for (const id of Array.isArray(payload[key]) ? payload[key] : []) append(id);
   }
-  for (const id of Array.isArray(payload.preset?.skillIds) ? payload.preset.skillIds : []) append(id);
-  const preset = getPresetById(payload.presetId);
-  if (preset) {
-    for (const id of preset.skillIds) append(id);
-  }
   return [...new Set(ids)];
 }
 
@@ -134,44 +129,59 @@ function addSkillRuntimePacks(ids, skillIds = []) {
   }
 }
 
-function inferRuntimePackIds(payload = {}) {
+function planRuntimePacks(payload = {}) {
   const text = textOf(payload.text || payload.prompt || payload.message);
   const facts = collectFileFacts(payload.files || payload.attachments || []);
-  const ids = [];
+  const planned = planCapabilityReadiness({
+    text,
+    files: payload.files || payload.attachments || [],
+  });
+  const requiredPackIds = [...planned.requiredPackIds];
+  const enhancementPackIds = [...planned.enhancementPackIds];
 
   for (const id of Array.isArray(payload.requiredPackIds) ? payload.requiredPackIds : []) {
-    addPack(ids, id);
+    addPack(requiredPackIds, id);
   }
 
-  addSkillRuntimePacks(ids, collectSkillIds(payload));
+  addSkillRuntimePacks(requiredPackIds, collectSkillIds(payload));
 
   if (facts.hasOffice || hasAny(text, OFFICE_PATTERNS)) {
-    addPack(ids, "libreoffice");
+    addPack(requiredPackIds, "libreoffice");
   }
 
-  if (facts.hasPdf || hasAny(text, PDF_PATTERNS)) {
-    addPack(ids, "large-document");
-    addPack(ids, "pro-pdf");
+  if ((facts.hasPdf || hasAny(text, PDF_PATTERNS)) && !planned.capabilityIds.includes("pdf-read")) {
+    addPack(enhancementPackIds, "large-document");
+    addPack(enhancementPackIds, "pro-pdf");
   }
 
   if (facts.hasPdf && hasAny(text, OCR_PATTERNS)) {
-    addPack(ids, "rapidocr");
+    addPack(requiredPackIds, "rapidocr");
   }
 
   if ((facts.hasImage && hasAny(text, OCR_PATTERNS)) || hasAny(text, OCR_PATTERNS)) {
-    addPack(ids, "rapidocr");
-    addPack(ids, "opencv");
+    addPack(requiredPackIds, "rapidocr");
+    addPack(requiredPackIds, "opencv");
   }
 
   if (hasAny(text, WEB_AUTOMATION_PATTERNS)) {
-    addPack(ids, "web-automation");
+    addPack(requiredPackIds, "web-automation");
   }
 
   if (facts.hasMedia || hasAny(text, MEDIA_PROCESSING_PATTERNS)) {
-    addPack(ids, "ffmpeg");
+    addPack(requiredPackIds, "ffmpeg");
   }
 
-  return ids;
+  return {
+    capabilityIds: planned.capabilityIds,
+    requiredPackIds: [...new Set(requiredPackIds)],
+    enhancementPackIds: [...new Set(enhancementPackIds.filter((id) => !requiredPackIds.includes(id)))],
+    fallbackCapabilityIds: planned.fallbackCapabilityIds,
+  };
+}
+
+function inferRuntimePackIds(payload = {}) {
+  const plan = planRuntimePacks(payload);
+  return [...new Set([...plan.requiredPackIds, ...plan.enhancementPackIds])];
 }
 
 function localizedFallbackLabel(id) {
@@ -229,7 +239,8 @@ function buildRuntimePackAdvisory(preflight = {}) {
 }
 
 function preflightRuntimePacks(payload = {}) {
-  const requiredPackIds = inferRuntimePackIds(payload);
+  const plan = planRuntimePacks(payload);
+  const requiredPackIds = plan.requiredPackIds;
   if (!requiredPackIds.length) {
     return emptyPreflight(requiredPackIds);
   }
@@ -254,6 +265,7 @@ function preflightRuntimePacks(payload = {}) {
     ok: true,
     blocking: false,
     requiredPackIds,
+    enhancementPackIds: plan.enhancementPackIds,
     missingPackIds,
     missingPacks: missingPackIds.map((id) => toMissingPack(id, packsById.get(id))),
     installingPackIds,
@@ -268,6 +280,7 @@ function preflightRuntimePacks(payload = {}) {
 module.exports = {
   buildRuntimePackAdvisory,
   inferRuntimePackIds,
+  planRuntimePacks,
   preflightRuntimePacks,
   collectSkillIds,
 };
