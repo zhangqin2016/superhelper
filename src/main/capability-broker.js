@@ -263,6 +263,7 @@ function queryFacts(opts = {}) {
     /实现|接入|组件|表单|逻辑|重构|改代码|代码|automation|script|function|api|hook|component/i.test(`${text} ${zh}`);
   return {
     rawText: `${text} ${zh}`,
+    sourceOfficeFile,
     office: files.pdf || files.xlsx || files.pptx || files.docx ||
       /pdf|word|excel|xlsx|spreadsheet|worksheet|ppt|powerpoint|presentation|document|office|文档|表格|演示|幻灯片|合同|模板/i.test(`${text} ${zh}`),
     pdf,
@@ -279,7 +280,7 @@ function queryFacts(opts = {}) {
     evidenceLookup,
     readSummary,
     templateFill,
-    runtime: mediaTranscode || imageTransform || /依赖|安装|启用|runtime|dependency|pack|ocr|docling|libreoffice|ffmpeg|playwright/i.test(`${text} ${zh}`),
+    runtime: mediaTranscode || imageTransform || /依赖|安装|启用|专业解析引擎|专业.*引擎|runtime|dependency|pack|ocr|docling|libreoffice|ffmpeg|playwright|advanced parser|professional parser/i.test(`${text} ${zh}`),
     web: web || uiQuality || appCreate,
     webLearning,
     browserQa: browserQa || uiQuality || appCreate,
@@ -309,14 +310,15 @@ function queryFacts(opts = {}) {
 
 function skillRelevance(skill, facts) {
   let score = 0;
+  const appWithTextOnlyOfficeInput = facts.appCreate && !facts.sourceOfficeFile;
   if (capabilityAvoidHintMatches(skill, facts.rawText)) return 0;
   if (skill.id === "lily-prompt-enhancer" && facts.intentEval) return 0;
-  if (skill.id === "lily-office-intent" && facts.office) score += 120;
+  if (skill.id === "lily-office-intent" && facts.office && !appWithTextOnlyOfficeInput) score += 120;
   if (skill.id === "lily-runtime-packs" && facts.runtime) score += facts.mediaTranscode ? 170 : 160;
   if (skill.id === "lily-pdf-extraction-router" && facts.pdf) score += 100;
-  if (skill.id === "lily-excel-data-analysis" && facts.xlsx) score += facts.spreadsheetAnalysis ? 150 : 95;
+  if (skill.id === "lily-excel-data-analysis" && facts.xlsx && !appWithTextOnlyOfficeInput) score += facts.spreadsheetAnalysis ? 150 : 95;
   if (skill.id === "lily-ppt-design-qa" && facts.pptx) score += facts.pptQa ? 150 : 90;
-  if (skill.id === "lily-document-verify" && (facts.office || facts.pdf || facts.pptx || facts.docx || facts.xlsx || facts.referencedDocument)) score += facts.documentVerification ? 175 : 55;
+  if (skill.id === "lily-document-verify" && !appWithTextOnlyOfficeInput && (facts.office || facts.pdf || facts.pptx || facts.docx || facts.xlsx || facts.referencedDocument)) score += facts.documentVerification ? 175 : 55;
   if (skill.id === "lily-template-fill" && facts.templateFill) score += 170;
   if (skill.id === "lily-document-query" && (facts.pdf || facts.docx || facts.xlsx || facts.pptx || facts.office || facts.referencedDocument)) {
     score += facts.evidenceLookup ? 140 : 50;
@@ -328,7 +330,7 @@ function skillRelevance(skill, facts) {
       ? 160
       : facts.readSummary && !facts.evidenceLookup ? 160 : 90;
   }
-  if (skill.id === "anthropics-xlsx" && facts.xlsx) score += facts.readSummary && !facts.evidenceLookup ? 160 : 90;
+  if (skill.id === "anthropics-xlsx" && facts.xlsx && !appWithTextOnlyOfficeInput) score += facts.readSummary && !facts.evidenceLookup ? 160 : 90;
   if (skill.id === "anthropics-pptx" && facts.pptx) {
     score += /创建|生成|制作|培训课件|create|write|deck/i.test(facts.rawText || "")
       ? 170
@@ -338,7 +340,7 @@ function skillRelevance(skill, facts) {
   if (skill.id === "lily-web-system-learning" && facts.webLearning) score += 140;
   if (skill.id === "lily-browser-qa" && facts.web && (!facts.sourceResearch || facts.browserQa)) score += facts.browserQa ? 150 : 60;
   if (skill.id === "lily-creative-director" && facts.creativeCreate && !facts.imageReview) score += facts.promptEnhance ? 100 : 150;
-  if (skill.id === "lily-prompt-enhancer" && !facts.intentEval && (facts.promptEnhance || facts.creativeCreate)) score += facts.promptEnhance ? 150 : 80;
+  if (skill.id === "lily-prompt-enhancer" && !facts.intentEval && !facts.imageReview && (facts.promptEnhance || facts.creativeCreate)) score += facts.promptEnhance ? 150 : 80;
   if (skill.id === "lily-image-qa" && facts.image) score += facts.imageReview ? 150 : 60;
   if (skill.id === "lily-stock-research" && facts.stockResearch) score += 160;
   if (skill.id === "lily-research-synthesis" && facts.sourceResearch) score += facts.stockResearch ? 90 : 150;
@@ -348,11 +350,13 @@ function skillRelevance(skill, facts) {
   if (skill.id === "lily-ui-quality" && facts.uiQuality) score += 160;
   if (skill.id === "lily-code-repair" && facts.codeRepair) score += 160;
   if (skill.id === "lily-app-builder" && facts.appCreate) score += 170;
-  if (skill.id === "lily-coding-core" && (facts.codingCore || facts.appCreate)) score += facts.appCreate ? 90 : 160;
+  if (skill.id === "lily-coding-core" && (facts.codingCore || facts.appCreate || facts.codeRepair)) {
+    score += facts.codingCore ? 160 : 90;
+  }
   if (skill.id === "lily-engineering-rules" && facts.engineeringRules) score += 170;
   score += capabilityHintRelevance(skill, facts.rawText);
   if (skill.id.startsWith("anthropics-") && !score) score -= 20;
-  if (skill.kind === "router" && facts.office && skill.id !== "lily-pdf-extraction-router") score += 20;
+  if (skill.kind === "router" && facts.office && !appWithTextOnlyOfficeInput && skill.id !== "lily-pdf-extraction-router") score += 20;
   if (skill.kind === "runtime" && facts.runtime) score += 20;
   return score;
 }

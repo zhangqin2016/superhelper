@@ -14,6 +14,14 @@ assert.equal(report.coverage.examples >= 10, true);
 assert.equal(report.coverage.intents >= 10, true);
 assert.equal(report.coverage.routes >= 10, true);
 
+const liveOutput = execFileSync("node", ["scripts/run-intent-eval.mjs", "--json", "--broker"], {
+  encoding: "utf8",
+});
+const liveReport = JSON.parse(liveOutput);
+assert.equal(liveReport.ok, true);
+assert.equal(liveReport.mode, "broker");
+assert.equal(liveReport.coverage.examples >= 19, true);
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-intent-eval-"));
 const actualPath = path.join(tmp, "actual.jsonl");
 fs.writeFileSync(

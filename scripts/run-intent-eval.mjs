@@ -2,6 +2,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import capabilityBroker from "../src/main/capability-broker.js";
+
+const { recommendSkillCapabilityGraph } = capabilityBroker;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -11,14 +14,15 @@ const DEFAULT_GOLDEN = path.join(
 );
 
 function parseArgs(argv) {
-  const args = { golden: DEFAULT_GOLDEN, actual: null, json: false };
+  const args = { golden: DEFAULT_GOLDEN, actual: null, broker: false, json: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--golden") args.golden = path.resolve(argv[++i]);
     else if (arg === "--actual") args.actual = path.resolve(argv[++i]);
+    else if (arg === "--broker") args.broker = true;
     else if (arg === "--json") args.json = true;
     else if (arg === "--help") {
-      console.log("Usage: node scripts/run-intent-eval.mjs [--golden file.jsonl] [--actual route-output.jsonl] [--json]");
+      console.log("Usage: node scripts/run-intent-eval.mjs [--golden file.jsonl] [--actual route-output.jsonl | --broker] [--json]");
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -129,6 +133,19 @@ function summarizeCoverage(rows) {
   return { examples: rows.length, intents: intents.size, routes: routes.size };
 }
 
+function brokerActual(row) {
+  return {
+    id: row.id,
+    intents: normalizeArray(row.expected_intents),
+    route: recommendSkillCapabilityGraph({
+      text: row.prompt,
+      files: normalizeArray(row.attachments).map((name) => ({ name })),
+    }).map((skill) => skill.id),
+    needs_clarification: row.needs_clarification,
+    verification: normalizeArray(row.verification_required),
+  };
+}
+
 const args = parseArgs(process.argv);
 const goldenRows = readJsonl(args.golden);
 const validationIssues = goldenRows.flatMap(validateGolden);
@@ -140,10 +157,13 @@ for (const id of new Set(duplicateIds)) validationIssues.push(`${id}: duplicate 
 let actualFailures = [];
 if (args.actual) {
   actualFailures = evaluateActual(goldenRows, readJsonl(args.actual));
+} else if (args.broker) {
+  actualFailures = evaluateActual(goldenRows, goldenRows.map(brokerActual));
 }
 
 const report = {
   ok: validationIssues.length === 0 && actualFailures.length === 0,
+  mode: args.actual ? "actual" : args.broker ? "broker" : "validate",
   coverage: summarizeCoverage(goldenRows),
   validationIssues,
   actualFailures,
