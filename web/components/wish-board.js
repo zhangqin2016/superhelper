@@ -19,7 +19,7 @@ export function WishBoard({ wishes, copy }) {
               {wish.linkedAppIds.map((id) => <Link key={id} href={`/apps/${id}`}>{copy.viewOutcome}<ArrowUpRight size={14} /></Link>)}
               {wish.linkedSkillIds.map((id) => <Link key={id} href={`/skills#${id}`}>{copy.viewSkill}<ArrowUpRight size={14} /></Link>)}
             </div>
-          ) : <WishSupportButton wishId={wish.id} label={copy.alsoNeed} />}
+          ) : <WishSupportButton wishId={wish.id} label={copy.alsoNeed} initialSupported={wish.supportedByViewer} />}
         </article>
       ))}
     </div>

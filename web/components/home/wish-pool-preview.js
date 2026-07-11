@@ -11,7 +11,7 @@ export function WishPoolPreview({ wishes, copy }) {
           <Link href="/wishes" className="home-text-link">{copy.all}<ArrowUpRight size={17} /></Link>
         </div>
         <div className="home-wish-grid">
-          {wishes.map((wish) => <Link href="/wishes" className="home-wish-card" key={wish.id}><Lightbulb size={19} /><span className={`home-wish-status home-wish-status--${wish.status}`}>{wish.status}</span><h3>{wish.title}</h3><p>{wish.summary}</p></Link>)}
+          {wishes.map((wish) => <Link href="/wishes" className="home-wish-card" key={wish.id}><Lightbulb size={19} /><span className={`home-wish-status home-wish-status--${wish.status}`}>{copy.statuses[wish.status] || wish.status}</span><h3>{wish.title}</h3><p>{wish.summary}</p></Link>)}
         </div>
       </div>
     </section>

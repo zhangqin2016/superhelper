@@ -48,12 +48,14 @@ assert.deepEqual(serializePublicWish(publicRow, { locale: "en" }), {
   linkedAppIds: [],
   linkedSkillIds: [],
   supportCount: 4,
+  supportedByViewer: false,
   createdAt: "2026-07-11T00:00:00.000Z",
   updatedAt: "2026-07-11T00:00:00.000Z",
 });
 assert.equal(JSON.stringify(serializePublicWish(publicRow)).includes("usr_private"), false);
 assert.equal(JSON.stringify(serializePublicWish(publicRow)).includes("private workflow"), false);
 assert.equal(serializePublicWish({ ...publicRow, status: "pending" }), null);
+assert.equal(serializePublicWish({ ...publicRow, viewer_supported: true }).supportedByViewer, true);
 
 assert.deepEqual(
   validateWishPublication({ ...publicRow, status: "shipped" }),
@@ -197,6 +199,10 @@ assert.match(publicWishRouteSource, /requireWebUser/);
 assert.match(publicWishRouteSource, /serializePublicWish/);
 assert.match(publicWishRouteSource, /createWishActionLimiter/);
 assert.match(publicWishRouteSource, /onConflict[\s\S]+columns\(\["wish_id",\s*"user_id"\]\)/);
+assert.match(publicWishRouteSource, /resolveWebUser/);
+assert.match(publicWishRouteSource, /orderBy\("support_count",\s*"desc"\)[\s\S]+limit\(100\)/);
+assert.match(publicWishRouteSource, /support[\s\S]+transaction\(\)\.execute[\s\S]+forUpdate\(\)/);
+assert.match(publicWishRouteSource, /validPublicOutcomeRows/);
 
 const publicRoutesSource = fs.readFileSync(new URL("../server/src/routes/public.js", import.meta.url), "utf8");
 assert.match(publicRoutesSource, /registerPublicWishRoutes\(app\)/);
@@ -215,6 +221,7 @@ assert.match(adminWishRouteSource, /validateWishAdminUpdate/);
 assert.match(adminWishRouteSource, /db\.transaction\(\)\.execute/);
 assert.match(adminWishRouteSource, /wish\.merge/);
 assert.match(adminWishRouteSource, /onConflict[\s\S]+columns\(\["wish_id",\s*"user_id"\]\)/);
+assert.match(adminWishRouteSource, /app\.patch[\s\S]+db\.transaction\(\)\.execute[\s\S]+forUpdate\(\)/);
 
 const adminRoutesSource = fs.readFileSync(new URL("../server/src/routes/admin.js", import.meta.url), "utf8");
 assert.match(adminRoutesSource, /registerAdminWishRoutes\(app, \{ audit \}\)/);

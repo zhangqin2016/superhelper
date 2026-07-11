@@ -19,6 +19,7 @@ const wishes = normalizePublicWishes({ wishes: [{
   linkedAppIds: ["invoice-app"],
   linkedSkillIds: [],
   supportCount: 12,
+  supportedByViewer: true,
   submitter_user_id: "usr_private",
   problem: "private",
 }] });
@@ -32,6 +33,7 @@ assert.deepEqual(wishes, [{
   status: "building",
   linkedAppIds: ["invoice-app"],
   linkedSkillIds: [],
+  supportedByViewer: true,
 }]);
 assert.equal(JSON.stringify(wishes).includes("usr_private"), false);
 assert.equal(JSON.stringify(wishes).includes("supportCount"), false);
@@ -44,7 +46,7 @@ assert.equal(classifyWishResult({ ok: true, data: { wishes } }).state, "ready");
 
 const page = fs.readFileSync(new URL("../web/app/wishes/page.js", import.meta.url), "utf8");
 const board = fs.readFileSync(new URL("../web/components/wish-board.js", import.meta.url), "utf8");
-assert.match(page, /publicApiGet\(`\/api\/wishes\$\{query\}`\)/);
+assert.match(page, /userApiGetResult\(`\/api\/wishes\$\{query\}`\)/);
 assert.match(page, /normalizePublicWishes/);
 assert.match(board, /copy\.statuses\[wish\.status\]/);
 assert.equal(board.includes("submitter"), false);
@@ -57,6 +59,7 @@ const accountWishes = fs.readFileSync(new URL("../web/app/account/wishes/page.js
 const loginPage = fs.readFileSync(new URL("../web/app/account/login/page.js", import.meta.url), "utf8");
 const accountActions = fs.readFileSync(new URL("../web/app/account/actions.js", import.meta.url), "utf8");
 assert.match(board, /WishSupportButton/);
+assert.match(board, /initialSupported=\{wish\.supportedByViewer\}/);
 assert.match(supportButton, /toggleWishSupportAction/);
 assert.match(supportButton, /\/account\/login\?next=\/wishes/);
 assert.match(submitForm, /sessionStorage/);
@@ -69,5 +72,13 @@ assert.match(actions, /userApiDelete\(`\/api\/wishes\/\$\{wishId\}\/support`/);
 assert.match(accountWishes, /userApiGet\("\/api\/account\/wishes"/);
 assert.match(loginPage, /value === "\/wishes"/);
 assert.match(accountActions, /value === "\/wishes"/);
+
+const skillCatalog = fs.readFileSync(new URL("../web/components/skill-catalog.js", import.meta.url), "utf8");
+const wishPreview = fs.readFileSync(new URL("../web/components/home/wish-pool-preview.js", import.meta.url), "utf8");
+const appDetail = fs.readFileSync(new URL("../web/app/apps/[id]/page.js", import.meta.url), "utf8");
+assert.match(skillCatalog, /id=\{skill\.id\}/);
+assert.match(wishPreview, /copy\.statuses\[wish\.status\]/);
+assert.match(appDetail, /generateMetadata/);
+assert.match(appDetail, /`\/apps\/\$\{encodeURIComponent\(id\)\}`/);
 
 console.log("web-wish-pool: ok");

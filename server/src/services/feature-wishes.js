@@ -165,6 +165,7 @@ export function serializePublicWish(row = {}, { locale = "zh" } = {}) {
     linkedAppIds: stringList(row.linked_app_ids),
     linkedSkillIds: stringList(row.linked_skill_ids),
     supportCount: Math.max(0, Number(row.support_count || 0) || 0),
+    supportedByViewer: Boolean(row.viewer_supported),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };

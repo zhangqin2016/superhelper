@@ -43,13 +43,13 @@ async function attachSupportCounts(rows) {
   return rows.map((row) => ({ ...row, support_count: byId.get(row.id) || 0 }));
 }
 
-async function validOutcomeIds(appIds, skillIds) {
+async function validOutcomeIds(database, appIds, skillIds) {
   const apps = appIds.length
-    ? await db.selectFrom("workspace_apps").select("app_id")
+    ? await database.selectFrom("workspace_apps").select("app_id")
       .where("app_id", "in", appIds).where("enabled", "=", true).execute()
     : [];
   const skills = skillIds.length
-    ? await db.selectFrom("skill_packages").select("skill_id")
+    ? await database.selectFrom("skill_packages").select("skill_id")
       .where("skill_id", "in", skillIds)
       .where("enabled", "=", true)
       .where("display_in_catalog", "=", true)
@@ -107,23 +107,30 @@ export function registerAdminWishRoutes(app, { audit }) {
   }, async (request, reply) => {
     const { id } = idSchema.parse(request.params || {});
     const input = patchSchema.parse(request.body || {});
-    const current = await db.selectFrom("feature_wishes").selectAll().where("id", "=", id).executeTakeFirst();
-    if (!current) return reply.code(404).send({ ok: false, code: "WISH_NOT_FOUND" });
-    const requestedAppIds = input.linkedAppIds ?? (Array.isArray(current.linked_app_ids) ? current.linked_app_ids : []);
-    const requestedSkillIds = input.linkedSkillIds ?? (Array.isArray(current.linked_skill_ids) ? current.linked_skill_ids : []);
-    const validIds = await validOutcomeIds(requestedAppIds, requestedSkillIds);
-    const checked = validateWishAdminUpdate(current, input, validIds);
-    if (!checked.ok) return reply.code(400).send({ ok: false, code: checked.code });
-
-    const now = new Date();
-    const publishedAt = PUBLIC_WISH_STATUSES.has(checked.value.status)
-      ? (current.published_at || now)
-      : current.published_at;
-    const wish = await db.updateTable("feature_wishes")
-      .set({ ...checked.value, published_at: publishedAt, updated_at: now })
-      .where("id", "=", id)
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    const result = await db.transaction().execute(async (trx) => {
+      const current = await trx.selectFrom("feature_wishes").selectAll()
+        .where("id", "=", id).forUpdate().executeTakeFirst();
+      if (!current) return { ok: false, code: "WISH_NOT_FOUND", statusCode: 404 };
+      const requestedAppIds = input.linkedAppIds ?? (Array.isArray(current.linked_app_ids) ? current.linked_app_ids : []);
+      const requestedSkillIds = input.linkedSkillIds ?? (Array.isArray(current.linked_skill_ids) ? current.linked_skill_ids : []);
+      const validIds = await validOutcomeIds(trx, requestedAppIds, requestedSkillIds);
+      const checked = validateWishAdminUpdate(current, input, validIds);
+      if (!checked.ok) return { ...checked, statusCode: 400 };
+      const now = new Date();
+      const publishedAt = PUBLIC_WISH_STATUSES.has(checked.value.status)
+        ? (current.published_at || now)
+        : current.published_at;
+      const wish = await trx.updateTable("feature_wishes")
+        .set({ ...checked.value, published_at: publishedAt, updated_at: now })
+        .where("id", "=", id)
+        .where("status", "=", current.status)
+        .returningAll()
+        .executeTakeFirst();
+      if (!wish) return { ok: false, code: "WISH_CONCURRENT_UPDATE", statusCode: 409 };
+      return { ok: true, current, checked, wish };
+    });
+    if (!result.ok) return reply.code(result.statusCode).send({ ok: false, code: result.code });
+    const { current, checked, wish } = result;
     await audit(request, "wish.update", "feature_wish", id, {
       fromStatus: current.status,
       toStatus: wish.status,

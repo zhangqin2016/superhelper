@@ -18,6 +18,7 @@ export function normalizePublicWishes(payload = {}) {
       status: String(wish.status),
       linkedAppIds: list(wish.linkedAppIds),
       linkedSkillIds: list(wish.linkedSkillIds),
+      supportedByViewer: Boolean(wish.supportedByViewer),
     }))
     .filter((wish) => wish.id && wish.title && wish.summary);
 }

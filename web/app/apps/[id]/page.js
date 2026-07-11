@@ -7,7 +7,15 @@ import { publicApiGet } from "../../../lib/public-api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "App details", description: "Explore a Lily app and use it in your desktop workbench.", alternates: { canonical: "/apps" } };
+
+export async function generateMetadata({ params }) {
+  const { id } = await params;
+  return {
+    title: "App details",
+    description: "Explore a Lily app and use it in your desktop workbench.",
+    alternates: { canonical: `/apps/${encodeURIComponent(id)}` },
+  };
+}
 
 export default async function AppDetailPage({ params }) {
   const { id } = await params;

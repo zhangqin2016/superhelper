@@ -3,8 +3,8 @@ import { Plus } from "lucide-react";
 import { PublicCatalogShell } from "../../components/public-catalog-shell";
 import { WishBoard } from "../../components/wish-board";
 import { WishSubmitForm } from "../../components/wish-submit-form";
-import { publicApiGet } from "../../lib/public-api";
 import { classifyWishResult, normalizePublicWishes, wishQuery } from "../../lib/public-wishes.mjs";
+import { userApiGetResult } from "../../lib/user-api";
 import { getI18n } from "../../lib/i18n.mjs";
 
 export const metadata = { title: "Wish pool", description: "Browse, support, or submit a real work need you want Lily to build.", alternates: { canonical: "/wishes" } };
@@ -14,7 +14,7 @@ export default async function WishesPage({ searchParams }) {
   const { locale, t } = await getI18n();
   const params = await searchParams;
   const query = wishQuery({ status: params?.status, category: params?.category, sort: params?.sort, locale });
-  const result = await publicApiGet(`/api/wishes${query}`);
+  const result = await userApiGetResult(`/api/wishes${query}`);
   const state = classifyWishResult(result);
   const wishes = result.ok ? normalizePublicWishes(result.data) : [];
   const copy = t.wishPool;

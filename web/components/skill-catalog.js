@@ -16,7 +16,7 @@ export function SkillCatalog({ skills, copy }) {
           <div className="skill-group-heading"><span>{category}</span><small>{items.length}</small></div>
           <div className="catalog-grid catalog-grid--skills">
             {items.map((skill) => (
-              <article className="catalog-card catalog-card--skill" key={skill.id}>
+              <article id={skill.id} className="catalog-card catalog-card--skill" key={skill.id}>
                 <div className="skill-mark"><Sparkles size={20} /></div>
                 <div className="catalog-card-meta"><span>{skill.publisher}</span><span>{copy.risks[skill.riskLevel] || skill.riskLevel}</span></div>
                 <h2>{skill.name}</h2>

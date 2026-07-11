@@ -49,13 +49,50 @@ async function supportCounts(rows) {
   return rows.map((row) => ({ ...row, support_count: byId.get(row.id) || 0 }));
 }
 
-async function publicWishRow(id) {
-  return db
-    .selectFrom("feature_wishes")
-    .selectAll()
-    .where("id", "=", id)
-    .where("status", "in", PUBLIC_STATUSES)
-    .executeTakeFirst();
+async function attachViewerSupport(rows, userId, database = db) {
+  if (!userId || rows.length === 0) return rows.map((row) => ({ ...row, viewer_supported: false }));
+  const supported = await database.selectFrom("feature_wish_supporters")
+    .select("wish_id")
+    .where("user_id", "=", userId)
+    .where("wish_id", "in", rows.map((row) => row.id))
+    .execute();
+  const ids = new Set(supported.map((row) => row.wish_id));
+  return rows.map((row) => ({ ...row, viewer_supported: ids.has(row.id) }));
+}
+
+async function validPublicOutcomeRows(rows, database = db) {
+  const shipped = rows.filter((row) => row.status === "shipped");
+  if (shipped.length === 0) return rows;
+  const appIds = [...new Set(shipped.flatMap((row) => Array.isArray(row.linked_app_ids) ? row.linked_app_ids : []))];
+  const skillIds = [...new Set(shipped.flatMap((row) => Array.isArray(row.linked_skill_ids) ? row.linked_skill_ids : []))];
+  const [apps, skills] = await Promise.all([
+    appIds.length ? database.selectFrom("workspace_apps").select("app_id")
+      .where("app_id", "in", appIds).where("enabled", "=", true).execute() : [],
+    skillIds.length ? database.selectFrom("skill_packages").select("skill_id")
+      .where("skill_id", "in", skillIds).where("enabled", "=", true)
+      .where("display_in_catalog", "=", true).execute() : [],
+  ]);
+  const validApps = new Set(apps.map((row) => row.app_id));
+  const validSkills = new Set(skills.map((row) => row.skill_id));
+  return rows.map((row) => row.status !== "shipped" ? row : ({
+    ...row,
+    linked_app_ids: (Array.isArray(row.linked_app_ids) ? row.linked_app_ids : []).filter((id) => validApps.has(id)),
+    linked_skill_ids: (Array.isArray(row.linked_skill_ids) ? row.linked_skill_ids : []).filter((id) => validSkills.has(id)),
+  }));
+}
+
+async function popularWishRows(input) {
+  let query = db.selectFrom("feature_wishes as wishes")
+    .leftJoin("feature_wish_supporters as supporters", "supporters.wish_id", "wishes.id")
+    .selectAll("wishes")
+    .select(({ fn }) => fn.count("supporters.user_id").as("support_count"))
+    .where("wishes.status", "in", input.status ? [input.status] : PUBLIC_STATUSES);
+  if (input.category) query = query.where("wishes.category", "=", input.category);
+  return query.groupBy("wishes.id")
+    .orderBy("support_count", "desc")
+    .orderBy("wishes.updated_at", "desc")
+    .limit(100)
+    .execute();
 }
 
 function takeAction(reply, userId, action) {
@@ -74,20 +111,20 @@ export function registerPublicWishRoutes(app) {
     },
   }, async (request) => {
     const input = listSchema.parse(request.query || {});
-    let query = db
-      .selectFrom("feature_wishes")
-      .selectAll()
-      .where("status", "in", input.status ? [input.status] : PUBLIC_STATUSES);
-    if (input.category) query = query.where("category", "=", input.category);
-    const rows = await supportCounts(await query.orderBy("updated_at", "desc").limit(200).execute());
+    const account = await resolveWebUser(request);
+    let rows;
     if (input.sort === "popular") {
-      rows.sort((left, right) =>
-        Number(right.support_count || 0) - Number(left.support_count || 0)
-        || new Date(right.updated_at || 0).getTime() - new Date(left.updated_at || 0).getTime());
+      rows = await popularWishRows(input);
+    } else {
+      let query = db.selectFrom("feature_wishes").selectAll()
+        .where("status", "in", input.status ? [input.status] : PUBLIC_STATUSES);
+      if (input.category) query = query.where("category", "=", input.category);
+      rows = await supportCounts(await query.orderBy("updated_at", "desc").limit(100).execute());
     }
+    rows = await attachViewerSupport(await validPublicOutcomeRows(rows), account.ok ? account.userId : null);
     return {
       ok: true,
-      wishes: rows.slice(0, 100).map((row) => serializePublicWish(row, { locale: input.locale })).filter(Boolean),
+      wishes: rows.map((row) => serializePublicWish(row, { locale: input.locale })).filter(Boolean),
     };
   });
 
@@ -103,9 +140,10 @@ export function registerPublicWishRoutes(app) {
     const row = await db.selectFrom("feature_wishes").selectAll().where("id", "=", id).executeTakeFirst();
     if (!row) return reply.code(404).send({ ok: false, code: "WISH_NOT_FOUND" });
     const locale = localeSchema.parse(request.query?.locale || "zh");
-    const publicWish = serializePublicWish(row, { locale });
-    if (publicWish) return { ok: true, wish: publicWish };
     const account = await resolveWebUser(request);
+    const [publicRow] = await attachViewerSupport(await validPublicOutcomeRows([row]), account.ok ? account.userId : null);
+    const publicWish = serializePublicWish(publicRow, { locale });
+    if (publicWish) return { ok: true, wish: publicWish };
     if (!account.ok || row.submitter_user_id !== account.userId) {
       return reply.code(404).send({ ok: false, code: "WISH_NOT_FOUND" });
     }
@@ -125,13 +163,14 @@ export function registerPublicWishRoutes(app) {
     if (!account) return reply;
     if (!takeAction(reply, account.userId, "similar")) return reply;
     const input = similarSchema.parse(request.body || {});
-    const rows = await supportCounts(await db
+    let rows = await supportCounts(await db
       .selectFrom("feature_wishes")
       .selectAll()
       .where("status", "in", PUBLIC_STATUSES)
       .orderBy("updated_at", "desc")
       .limit(300)
       .execute());
+    rows = await attachViewerSupport(await validPublicOutcomeRows(rows), account.userId);
     const wishes = findSimilarWishes(input.title, rows)
       .map((row) => {
         const wish = serializePublicWish(row, { locale: input.locale });
@@ -180,11 +219,18 @@ export function registerPublicWishRoutes(app) {
     if (!account) return reply;
     if (!takeAction(reply, account.userId, "support")) return reply;
     const { id } = wishIdSchema.parse(request.params || {});
-    if (!(await publicWishRow(id))) return reply.code(404).send({ ok: false, code: "WISH_NOT_FOUND" });
-    await db.insertInto("feature_wish_supporters")
-      .values({ wish_id: id, user_id: account.userId })
-      .onConflict((conflict) => conflict.columns(["wish_id", "user_id"]).doNothing())
-      .execute();
+    const supported = await db.transaction().execute(async (trx) => {
+      const wish = await trx.selectFrom("feature_wishes").select("id")
+        .where("id", "=", id).where("status", "in", PUBLIC_STATUSES)
+        .forUpdate().executeTakeFirst();
+      if (!wish) return false;
+      await trx.insertInto("feature_wish_supporters")
+        .values({ wish_id: id, user_id: account.userId })
+        .onConflict((conflict) => conflict.columns(["wish_id", "user_id"]).doNothing())
+        .execute();
+      return true;
+    });
+    if (!supported) return reply.code(404).send({ ok: false, code: "WISH_NOT_FOUND" });
     return { ok: true, supported: true };
   });
 
