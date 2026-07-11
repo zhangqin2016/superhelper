@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import module from "node:module";
 import os from "node:os";
@@ -101,7 +102,14 @@ for (const skillId of ["anthropics-algorithmic-art", "marketing-referrals", "lea
       description: "",
       version: "1.0.0",
       ...(skillId === "learned-demo-oa"
-        ? { origin: "workspace", workspaceOnly: true, category: "workspace", publisher: "Workspace" }
+        ? {
+          origin: "workspace",
+          workspaceOnly: true,
+          category: "workspace",
+          publisher: "Workspace",
+          permissions: { network: true, filesystem: "read", subprocess: true },
+          requiredRuntimePacks: ["web-automation"],
+        }
         : {}),
     }, null, 2),
     "utf8",
@@ -381,6 +389,16 @@ const learnedSkill = skillManager.listSkillsPublic().find((skill) => skill.id ==
 if (!learnedSkill || learnedSkill.source !== "learned" || learnedSkill.origin !== "workspace") {
   throw new Error(`learned workspace skill should survive registry refresh: ${JSON.stringify(learnedSkill)}`);
 }
+assert.deepEqual(
+  learnedSkill.permissions,
+  { network: true, filesystem: "read", subprocess: true },
+  "installed skill permissions must reach the renderer without dropping subprocess access",
+);
+assert.deepEqual(
+  learnedSkill.requiredRuntimePacks,
+  ["web-automation"],
+  "installed runtime-pack requirements must reach the renderer",
+);
 if (!fs.existsSync(path.join(tmp, "lily-config", "skills", "learned-demo-oa"))) {
   throw new Error("learned workspace skill directory should survive registry refresh");
 }

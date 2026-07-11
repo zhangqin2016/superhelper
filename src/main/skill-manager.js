@@ -1506,7 +1506,11 @@ function skillToPublic(skillId, entry, manifest, registryEntry) {
     permissions: {
       network: Boolean(manifest?.permissions?.network ?? registryEntry?.permissions?.network),
       filesystem: manifest?.permissions?.filesystem || "none",
+      subprocess: Boolean(manifest?.permissions?.subprocess ?? registryEntry?.permissions?.subprocess),
     },
+    requiredRuntimePacks: uniqueStrings(
+      manifest?.requiredRuntimePacks || registryEntry?.requiredRuntimePacks,
+    ),
     canDisable: !platformMandatory && Boolean(manifest || entry),
     platformMandatory,
     canRestore: PROTECTED_BUNDLED_IDS.has(skillId),
