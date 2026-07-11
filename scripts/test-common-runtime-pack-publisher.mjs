@@ -28,6 +28,9 @@ assert.match(script, /POST|runtime-packs/, "publisher must register artifacts wi
 assert.match(script, /refusing to publish unverified native\/browser binaries/, "publisher must fail loud on unverified cross-platform native/browser packs");
 assert.match(pythonPackBuilder, /--register requires RELEASE_ADMIN_TOKEN/, "Python dependency pack builder must support server registration");
 assert.match(pythonPackBuilder, /release-admin\.mjs/, "Python dependency pack builder must support CDN upload");
+assert.match(pythonPackBuilder, /updateRuntimePackLock/, "verified Python packs must update the release lock");
+assert.match(script, /updateRuntimePackLock/, "verified native/browser packs must update the release lock");
+assert.match(script, /chromiumRevision/, "web lock entries must pin the Chromium revision");
 for (const pack of ["pillow", "opencv", "rapidocr", "rembg"]) {
   assert.match(specs, new RegExp(`${pack}:|\"${pack}\"`), `dependency catalog must include ${pack}`);
 }

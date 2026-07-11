@@ -142,9 +142,11 @@ assert.match(
   /scripts\/release-preflight\.mjs/,
   "one-click release must run dependency/runtime-pack preflight before build/publish",
 );
+assert.match(releaseOne, /LILY_RELEASE_ONLINE_PREFLIGHT/, "one-click uploads must compare locked packs with production");
 const releasePreflight = fs.readFileSync(path.join(ROOT, "scripts/release-preflight.mjs"), "utf8");
 for (const test of [
   "test-runtime-packs.mjs",
+  "test-runtime-pack-release-matrix.mjs",
   "test-spawn-env-runtime.mjs",
   "test-runtime-health.mjs",
   "test-runtime-pack-installer.mjs",
@@ -153,6 +155,8 @@ for (const test of [
 ]) {
   assert.match(releasePreflight, new RegExp(test.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `release preflight must run ${test}`);
 }
+assert.match(releasePreflight, /--strict/, "release preflight must require complete verified platform coverage");
+assert.match(releasePreflight, /LILY_RELEASE_ONLINE_PREFLIGHT/, "release preflight must support production artifact comparison");
 for (const deployScript of ["deploy/baota/push-via-qiniu.sh", "deploy/baota/push-images-via-qiniu.sh"]) {
   const text = fs.readFileSync(path.join(ROOT, deployScript), "utf8");
   assert.match(text, /npm run deploy:preflight/, `${deployScript} must run deploy preflight before pushing`);

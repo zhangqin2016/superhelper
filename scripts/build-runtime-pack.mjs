@@ -25,6 +25,7 @@ import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { healthProbeForSpec, updateRuntimePackLock } from "./lib/runtime-pack-lock.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -233,6 +234,13 @@ try {
   const url = joinUrl(domain, key);
 
   const metadata = { packId, platform, version, url, sha256, sizeBytes, file: outFile };
+  if (!cross) {
+    updateRuntimePackLock({
+      ...metadata,
+      healthProbe: healthProbeForSpec(spec),
+    });
+    console.log(`[build-runtime-pack] updated verified lock entry: ${packId}:${platform}`);
+  }
   console.log("\n[build-runtime-pack] artifact ready:");
   console.log(JSON.stringify(metadata, null, 2));
   if (args.upload) {

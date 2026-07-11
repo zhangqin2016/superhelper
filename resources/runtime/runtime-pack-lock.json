@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "releaseTargets": [
+    "darwin-arm64",
+    "darwin-x64",
+    "win32-x64"
+  ],
+  "releaseRequiredPackIds": [
+    "ffmpeg",
+    "large-document",
+    "libreoffice",
+    "opencv",
+    "pandoc",
+    "pillow",
+    "pro-pdf",
+    "rapidocr",
+    "rembg",
+    "web-automation"
+  ],
+  "entries": []
+}

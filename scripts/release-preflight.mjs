@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const CHECKS = [
+  ["node", ["scripts/test-runtime-pack-release-matrix.mjs", "--strict"]],
   ["node", ["scripts/test-runtime-packs.mjs"]],
   ["node", ["scripts/test-spawn-env-runtime.mjs"]],
   ["node", ["scripts/test-runtime-health.mjs"]],
@@ -22,6 +23,10 @@ const CHECKS = [
   ["node", ["scripts/test-runtime-pack-settings-ui.mjs"]],
   ["node", ["scripts/test-common-runtime-pack-publisher.mjs"]],
 ];
+
+if (process.env.LILY_RELEASE_ONLINE_PREFLIGHT === "1") {
+  CHECKS.unshift(["node", ["scripts/test-runtime-pack-release-matrix.mjs", "--online"]]);
+}
 
 function run(command, args) {
   console.log(`[release-preflight] ${command} ${args.join(" ")}`);

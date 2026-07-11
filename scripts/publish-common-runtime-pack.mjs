@@ -16,9 +16,11 @@ import path from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { healthProbeForSpec, updateRuntimePackLock } from "./lib/runtime-pack-lock.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const { PACK_SPECS } = require(path.join(ROOT, "src/main/runtime-pack-specs.js"));
 const DEFAULT_DOMAIN = "https://qny.lanrensoft.cn";
 const DEFAULT_BUCKET = "lanrensoft";
 const DEFAULT_PREFIX = "app/runtime-packs";
@@ -244,7 +246,18 @@ function buildWebAutomation({ stageDir, platform }) {
     },
   });
 
-  return `playwright-${playwrightVersion}_mcp-${mcpVersion}`;
+  const chromiumDir = fs.readdirSync(path.join(stageDir, "browsers"))
+    .find((name) => /^chromium(?:_headless_shell)?-\d+$/.test(name));
+  const chromiumRevision = chromiumDir?.match(/-(\d+)$/)?.[1];
+  if (!chromiumRevision) fail("Playwright Chromium revision could not be derived after probe");
+  return {
+    version: `playwright-${playwrightVersion}_mcp-${mcpVersion}`,
+    components: {
+      playwright: playwrightVersion,
+      "@playwright/mcp": mcpVersion,
+      chromiumRevision,
+    },
+  };
 }
 
 function buildFfmpeg({ stageDir, platform }) {
@@ -366,11 +379,13 @@ async function buildOne(packId, options) {
   const outDir = path.resolve(ROOT, options.out || path.join("dist", "runtime-packs"));
   const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), `lily-${packId}-`));
   try {
-    let version;
-    if (packId === "web-automation") version = buildWebAutomation({ stageDir, platform });
-    else if (packId === "ffmpeg") version = buildFfmpeg({ stageDir, platform });
-    else if (packId === "pandoc") version = buildPandoc({ stageDir, platform });
+    let build;
+    if (packId === "web-automation") build = buildWebAutomation({ stageDir, platform });
+    else if (packId === "ffmpeg") build = buildFfmpeg({ stageDir, platform });
+    else if (packId === "pandoc") build = buildPandoc({ stageDir, platform });
     else fail(`unsupported pack: ${packId}`);
+    const version = typeof build === "string" ? build : build.version;
+    const components = typeof build === "object" ? build.components : undefined;
 
     const fileName = `${packId}-${platform}-${version}.tar.gz`;
     const file = path.join(outDir, fileName);
@@ -380,6 +395,14 @@ async function buildOne(packId, options) {
     const key = `${options.prefix}/${fileName}`;
     const url = joinUrl(options.domain, key);
     const artifact = { packId, platform, version, url, sha256, sizeBytes, file };
+    if (platform === detectPlatform()) {
+      updateRuntimePackLock({
+        ...artifact,
+        healthProbe: healthProbeForSpec(PACK_SPECS[packId]),
+        components,
+      });
+      console.log(`[publish-runtime-pack] updated verified lock entry: ${packId}:${platform}`);
+    }
     console.log("[publish-runtime-pack] artifact:");
     console.log(JSON.stringify(artifact, null, 2));
 

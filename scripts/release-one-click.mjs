@@ -497,7 +497,12 @@ const versionSnapshot = snapshotVersionFiles();
 
 try {
   if (!options["skip-preflight"]) {
-    run(scriptNode, ["scripts/release-preflight.mjs"]);
+    run(scriptNode, ["scripts/release-preflight.mjs"], {
+      env: {
+        ...process.env,
+        ...(options.upload ? { LILY_RELEASE_ONLINE_PREFLIGHT: "1" } : {}),
+      },
+    });
   }
 
   setPackageVersion(nextVersion);
