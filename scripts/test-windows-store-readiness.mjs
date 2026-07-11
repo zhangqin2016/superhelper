@@ -336,6 +336,32 @@ assert.match(runner, /智能工作台/);
 assert.match(runner, /function Get-ProcessTreeIds\b/);
 assert.match(runner, /Get-CimInstance\s+-ClassName\s+Win32_Process/);
 assert.match(runner, /ParentProcessId/);
+const captureDescendantsMatch = runner.match(
+  /function Add-OwnedDescendantProcesses \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(
+  captureDescendantsMatch,
+  "Add-OwnedDescendantProcesses must capture descendants from discovery-only anchors.",
+);
+const captureDescendantsBody = captureDescendantsMatch[1];
+for (const parameter of ["AnchorIds", "DepthById", "OwnedStartTicks", "Errors"]) {
+  assert.match(captureDescendantsBody, new RegExp(`\\$${parameter}\\b`));
+}
+assert.match(
+  captureDescendantsBody,
+  /Get-CimInstance\s+-ClassName\s+Win32_Process\s+-ErrorAction\s+Stop/,
+);
+assert.match(captureDescendantsBody, /ParentProcessId/);
+assert.match(captureDescendantsBody, /Get-ProcessStartTicks\s+-Process/);
+assert.match(captureDescendantsBody, /\$OwnedStartTicks\[\$processKey\]\s*=\s*\[long\]/);
+assert.match(captureDescendantsBody, /\$Errors\.Add\(["']Unable to enumerate/);
+assert.match(captureDescendantsBody, /\$Errors\.Add\(["']Unable to verify start time/);
+assert.doesNotMatch(
+  captureDescendantsBody,
+  /\$OwnedStartTicks\[[^\r\n]*\$anchorId/,
+  "a discovery-only root anchor must never become PID-owned without a start time",
+);
+
 const stopOwnedTreeMatch = runner.match(
   /function Stop-OwnedProcessTree \{([\s\S]*?)\n\}\n\nfunction /,
 );
@@ -344,8 +370,7 @@ const stopOwnedTreeBody = stopOwnedTreeMatch[1];
 for (const parameter of ["RootProcess", "RootId", "RootStartTicks", "KnownStartTicks"]) {
   assert.match(stopOwnedTreeBody, new RegExp(`\\$${parameter}\\b`));
 }
-assert.match(stopOwnedTreeBody, /Get-CimInstance\s+-ClassName\s+Win32_Process\s+-ErrorAction\s+Stop/);
-assert.match(stopOwnedTreeBody, /ParentProcessId/);
+assert.match(stopOwnedTreeBody, /Add-OwnedDescendantProcesses/);
 assert.match(stopOwnedTreeBody, /Sort-Object[\s\S]{0,180}Descending/);
 const knownIdentityImport = stopOwnedTreeBody.match(
   /foreach \(\$knownIdText in @\(\$KnownStartTicks\.Keys\)\) \{([\s\S]*?)\n  \}/,
@@ -356,7 +381,7 @@ assert.doesNotMatch(
   /\$depthById/,
   "known descendants must not all be assigned root depth",
 );
-assert.match(stopOwnedTreeBody, /\$foundDepth\s*=\s*\$true[\s\S]*while \(\$foundDepth\)/);
+assert.match(captureDescendantsBody, /\$foundDepth\s*=\s*\$true[\s\S]*while \(\$foundDepth\)/);
 assert.match(stopOwnedTreeBody, /Stop-Process[\s\S]{0,100}-ErrorAction\s+Stop/);
 assert.match(stopOwnedTreeBody, /\.Kill\(\)/, "an unreadable root start time still needs object-bound cleanup");
 assert.match(stopOwnedTreeBody, /\.WaitForExit\([\s\S]{0,80}5000/);
@@ -369,6 +394,33 @@ assert.doesNotMatch(
   /Stop-Process[^\r\n]*SilentlyContinue/,
   "owned cleanup must not hide Stop-Process failures",
 );
+const fallbackCondition = "if ($null -ne $RootProcess -and $null -eq $RootStartTicks)";
+const fallbackStart = stopOwnedTreeBody.indexOf(fallbackCondition);
+const fallbackKill = stopOwnedTreeBody.indexOf("$RootProcess.Kill()", fallbackStart);
+const preKillCapture = stopOwnedTreeBody.indexOf("Add-OwnedDescendantProcesses", fallbackStart);
+assert.ok(fallbackStart >= 0 && fallbackKill > fallbackStart, "the object-bound fallback must remain explicit");
+assert.ok(
+  preKillCapture > fallbackStart && preKillCapture < fallbackKill,
+  "descendants must be captured from RootId before the object-bound root Kill()",
+);
+const fallbackBeforeKill = stopOwnedTreeBody.slice(fallbackStart, fallbackKill);
+assert.match(fallbackBeforeKill, /-AnchorIds\s+@\(\[int\]\$RootId\)/);
+assert.doesNotMatch(fallbackBeforeKill, /Stop-Process\s+-Id/);
+const postKillCapture = stopOwnedTreeBody.indexOf("Add-OwnedDescendantProcesses", fallbackKill);
+assert.ok(postKillCapture > fallbackKill, "the fallback must capture descendants again after Kill()");
+assert.match(
+  stopOwnedTreeBody,
+  /if \(\$null -eq \$RootStartTicks[\s\S]{0,180}\$ownedProcessId\s+-eq\s+\[int\]\$RootId\) \{\s*continue/,
+  "an unverified root PID must never be passed to Stop-Process",
+);
+const boundedCleanupLoop = stopOwnedTreeBody.slice(
+  stopOwnedTreeBody.indexOf("$cleanupStopwatch ="),
+  stopOwnedTreeBody.indexOf("$cleanupStopwatch.Stop()"),
+);
+assert.match(boundedCleanupLoop, /Add-OwnedDescendantProcesses/);
+assert.match(boundedCleanupLoop, /-AnchorIds\s+@\(\[int\]\$RootId\)/);
+assert.match(boundedCleanupLoop, /Stop-Process\s+-Id/);
+assert.match(boundedCleanupLoop, /Get-ProcessStartTicks\s+-Process/);
 
 const monitoredProcessMatch = runner.match(
   /function Invoke-MonitoredProcess \{([\s\S]*?)\n\}\n\nfunction /,

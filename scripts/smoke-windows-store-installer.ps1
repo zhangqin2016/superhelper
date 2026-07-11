@@ -841,6 +841,125 @@ function Invoke-LilyLaunchProbe {
   }
 }
 
+function Add-OwnedDescendantProcesses {
+  param(
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyCollection()]
+    [int[]]$AnchorIds,
+
+    [Parameter(Mandatory = $true)]
+    [hashtable]$DepthById,
+
+    [Parameter(Mandatory = $true)]
+    [hashtable]$OwnedStartTicks,
+
+    [Parameter(Mandatory = $true)]
+    [System.Collections.Generic.HashSet[string]]$Errors,
+
+    [AllowNull()]
+    [object]$MinimumStartTicks = $null
+  )
+
+  $discoveryIds = New-Object "System.Collections.Generic.HashSet[int]"
+  foreach ($anchorId in $AnchorIds) {
+    if ($anchorId -gt 0) {
+      $discoveryIds.Add([int]$anchorId) | Out-Null
+    }
+  }
+  foreach ($ownedIdText in @($OwnedStartTicks.Keys)) {
+    $discoveryIds.Add([int]$ownedIdText) | Out-Null
+  }
+
+  try {
+    $processSnapshot = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop)
+  } catch {
+    $Errors.Add("Unable to enumerate owned-process descendants: " + $_.Exception.Message) | Out-Null
+    return
+  }
+
+  $snapshotById = @{}
+  foreach ($processRecord in $processSnapshot) {
+    $snapshotById[[string][int]$processRecord.ProcessId] = $processRecord
+  }
+
+  $foundDescendant = $true
+  while ($foundDescendant) {
+    $foundDescendant = $false
+    foreach ($processRecord in $processSnapshot) {
+      $processId = [int]$processRecord.ProcessId
+      $processKey = [string]$processId
+      $parentProcessId = [int]$processRecord.ParentProcessId
+      if ($OwnedStartTicks.ContainsKey($processKey) -or
+          -not $discoveryIds.Contains($parentProcessId)) {
+        continue
+      }
+
+      try {
+        $process = [System.Diagnostics.Process]::GetProcessById($processId)
+        $processStartTicks = Get-ProcessStartTicks -Process $process
+        if ($null -eq $processStartTicks) {
+          $Errors.Add("Unable to verify start time for descendant process " + $processId + ".") | Out-Null
+          continue
+        }
+        if ($null -ne $MinimumStartTicks -and
+            [long]$processStartTicks -lt [long]$MinimumStartTicks) {
+          continue
+        }
+
+        $OwnedStartTicks[$processKey] = [long]$processStartTicks
+        $discoveryIds.Add($processId) | Out-Null
+        $foundDescendant = $true
+      } catch [System.ArgumentException] {
+        # The descendant exited between the CIM snapshot and identity verification.
+      } catch {
+        $Errors.Add("Unable to verify descendant process " + $processId + ": " + $_.Exception.Message) | Out-Null
+      }
+    }
+  }
+
+  $resolvedDepthById = @{}
+  foreach ($anchorId in $AnchorIds) {
+    $anchorKey = [string][int]$anchorId
+    if ($DepthById.ContainsKey($anchorKey)) {
+      $resolvedDepthById[$anchorKey] = [int]$DepthById[$anchorKey]
+    } else {
+      $resolvedDepthById[$anchorKey] = 0
+    }
+  }
+  foreach ($depthIdText in @($DepthById.Keys)) {
+    if (-not $resolvedDepthById.ContainsKey($depthIdText)) {
+      $resolvedDepthById[$depthIdText] = [int]$DepthById[$depthIdText]
+    }
+  }
+
+  $foundDepth = $true
+  while ($foundDepth) {
+    $foundDepth = $false
+    foreach ($ownedIdText in @($OwnedStartTicks.Keys)) {
+      if ($resolvedDepthById.ContainsKey($ownedIdText)) {
+        continue
+      }
+      $ownedRecord = $snapshotById[$ownedIdText]
+      if ($null -eq $ownedRecord) {
+        continue
+      }
+      $parentKey = [string][int]$ownedRecord.ParentProcessId
+      if ($resolvedDepthById.ContainsKey($parentKey)) {
+        $resolvedDepthById[$ownedIdText] = [int]$resolvedDepthById[$parentKey] + 1
+        $foundDepth = $true
+      }
+    }
+  }
+
+  foreach ($ownedIdText in @($OwnedStartTicks.Keys)) {
+    if ($resolvedDepthById.ContainsKey($ownedIdText)) {
+      $DepthById[$ownedIdText] = [int]$resolvedDepthById[$ownedIdText]
+    } elseif (-not $DepthById.ContainsKey($ownedIdText)) {
+      $DepthById[$ownedIdText] = 0
+    }
+  }
+}
+
 function Stop-OwnedProcessTree {
   param(
     [AllowNull()]
@@ -861,6 +980,12 @@ function Stop-OwnedProcessTree {
   $depthById = @{}
 
   foreach ($knownIdText in @($KnownStartTicks.Keys)) {
+    if ($null -eq $RootStartTicks -and
+        $null -ne $RootId -and
+        [int]$knownIdText -eq [int]$RootId) {
+      $errors.Add("Ignored the unverified root PID from KnownStartTicks.") | Out-Null
+      continue
+    }
     $ownedStartTicks[[string][int]$knownIdText] = [long]$KnownStartTicks[$knownIdText]
   }
   if ($null -ne $RootId -and $null -ne $RootStartTicks) {
@@ -870,6 +995,16 @@ function Stop-OwnedProcessTree {
 
   if ($null -ne $RootProcess -and $null -eq $RootStartTicks) {
     try {
+      if ($null -ne $RootId) {
+        Add-OwnedDescendantProcesses `
+          -AnchorIds @([int]$RootId) `
+          -DepthById $depthById `
+          -OwnedStartTicks $ownedStartTicks `
+          -Errors $errors
+      } else {
+        $errors.Add("Unable to capture descendants because the object-bound root PID is unavailable.") | Out-Null
+      }
+
       if (-not $RootProcess.HasExited) {
         $RootProcess.Kill()
         if (-not $RootProcess.WaitForExit(5000)) {
@@ -883,67 +1018,13 @@ function Stop-OwnedProcessTree {
     }
   }
 
-  try {
-    $processSnapshot = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop)
-    $snapshotById = @{}
-    foreach ($processRecord in $processSnapshot) {
-      $snapshotById[[string][int]$processRecord.ProcessId] = $processRecord
-    }
-
-    $foundDescendant = $true
-    while ($foundDescendant) {
-      $foundDescendant = $false
-      foreach ($processRecord in $processSnapshot) {
-        $processId = [int]$processRecord.ProcessId
-        $processKey = [string]$processId
-        $parentKey = [string][int]$processRecord.ParentProcessId
-        if ($ownedStartTicks.ContainsKey($processKey) -or
-            -not $ownedStartTicks.ContainsKey($parentKey)) {
-          continue
-        }
-
-        try {
-          $process = [System.Diagnostics.Process]::GetProcessById($processId)
-          $processStartTicks = Get-ProcessStartTicks -Process $process
-          if ($null -eq $processStartTicks) {
-            $errors.Add("Unable to verify start time for descendant process " + $processId + ".") | Out-Null
-            continue
-          }
-          if ($null -ne $RootStartTicks -and
-              [long]$processStartTicks -lt [long]$RootStartTicks) {
-            continue
-          }
-
-          $ownedStartTicks[$processKey] = [long]$processStartTicks
-          $depthById[$processKey] = [int]$depthById[$parentKey] + 1
-          $foundDescendant = $true
-        } catch [System.ArgumentException] {
-          # The descendant exited between the CIM snapshot and identity verification.
-        } catch {
-          $errors.Add("Unable to verify descendant process " + $processId + ": " + $_.Exception.Message) | Out-Null
-        }
-      }
-    }
-
-    $foundDepth = $true
-    while ($foundDepth) {
-      $foundDepth = $false
-      foreach ($ownedIdText in @($ownedStartTicks.Keys)) {
-        if ($depthById.ContainsKey($ownedIdText)) {
-          continue
-        }
-        $ownedRecord = $snapshotById[$ownedIdText]
-        if ($null -ne $ownedRecord) {
-          $parentKey = [string][int]$ownedRecord.ParentProcessId
-          if ($depthById.ContainsKey($parentKey)) {
-            $depthById[$ownedIdText] = [int]$depthById[$parentKey] + 1
-            $foundDepth = $true
-          }
-        }
-      }
-    }
-  } catch {
-    $errors.Add("Unable to enumerate the owned process tree: " + $_.Exception.Message) | Out-Null
+  if ($null -ne $RootId) {
+    Add-OwnedDescendantProcesses `
+      -AnchorIds @([int]$RootId) `
+      -DepthById $depthById `
+      -OwnedStartTicks $ownedStartTicks `
+      -Errors $errors `
+      -MinimumStartTicks $RootStartTicks
   }
 
   $stopOrder = @($ownedStartTicks.Keys | ForEach-Object {
@@ -959,6 +1040,11 @@ function Stop-OwnedProcessTree {
   foreach ($ownedProcessRecord in $stopOrder) {
     $ownedProcessId = [int]$ownedProcessRecord.processId
     $ownedProcessKey = [string]$ownedProcessId
+    if ($null -eq $RootStartTicks -and
+        $null -ne $RootId -and
+        $ownedProcessId -eq [int]$RootId) {
+      continue
+    }
     try {
       $ownedProcess = [System.Diagnostics.Process]::GetProcessById($ownedProcessId)
     } catch [System.ArgumentException] {
@@ -986,8 +1072,59 @@ function Stop-OwnedProcessTree {
   }
 
   $remainingOwnedProcessIds = @()
+  $emptyFallbackScans = 0
   $cleanupStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
   while ($cleanupStopwatch.Elapsed.TotalSeconds -lt 5) {
+    if ($null -eq $RootStartTicks -and $null -ne $RootId) {
+      Add-OwnedDescendantProcesses `
+        -AnchorIds @([int]$RootId) `
+        -DepthById $depthById `
+        -OwnedStartTicks $ownedStartTicks `
+        -Errors $errors
+
+      $lateStopOrder = @($ownedStartTicks.Keys | ForEach-Object {
+        $lateOwnedIdText = [string]$_
+        [pscustomobject][ordered]@{
+          processId = [int]$lateOwnedIdText
+          depth = if ($depthById.ContainsKey($lateOwnedIdText)) { [int]$depthById[$lateOwnedIdText] } else { 0 }
+        }
+      } | Sort-Object `
+        -Property @{ Expression = { $_.depth }; Descending = $true }, `
+                  @{ Expression = { $_.processId }; Descending = $true })
+
+      foreach ($lateOwnedRecord in $lateStopOrder) {
+        $ownedProcessId = [int]$lateOwnedRecord.processId
+        if ($ownedProcessId -eq [int]$RootId) {
+          continue
+        }
+        $ownedProcessKey = [string]$ownedProcessId
+        try {
+          $ownedProcess = [System.Diagnostics.Process]::GetProcessById($ownedProcessId)
+        } catch [System.ArgumentException] {
+          continue
+        } catch {
+          $errors.Add("Unable to open late descendant process " + $ownedProcessId + ": " + $_.Exception.Message) | Out-Null
+          continue
+        }
+
+        $currentStartTicks = Get-ProcessStartTicks -Process $ownedProcess
+        if ($null -eq $currentStartTicks) {
+          $errors.Add("Unable to reverify start time for late descendant process " + $ownedProcessId + ".") | Out-Null
+          continue
+        }
+        if ([long]$currentStartTicks -ne [long]$ownedStartTicks[$ownedProcessKey]) {
+          continue
+        }
+
+        try {
+          Stop-Process -Id $ownedProcessId -Force -ErrorAction Stop
+          $stoppedIds.Add($ownedProcessId) | Out-Null
+        } catch {
+          $errors.Add("Unable to stop late descendant process " + $ownedProcessId + ": " + $_.Exception.Message) | Out-Null
+        }
+      }
+    }
+
     $remainingOwnedProcessIds = @()
     foreach ($ownedIdText in @($ownedStartTicks.Keys)) {
       $ownedProcessId = [int]$ownedIdText
@@ -1011,8 +1148,16 @@ function Stop-OwnedProcessTree {
     }
 
     if ($remainingOwnedProcessIds.Count -eq 0) {
+      if ($null -eq $RootStartTicks -and
+          $null -ne $RootId -and
+          $emptyFallbackScans -lt 1) {
+        $emptyFallbackScans++
+        Start-Sleep -Milliseconds 100
+        continue
+      }
       break
     }
+    $emptyFallbackScans = 0
     Start-Sleep -Milliseconds 100
   }
   $cleanupStopwatch.Stop()
