@@ -22,6 +22,7 @@ fs.mkdirSync(path.join(bundledWeb, "browsers"), { recursive: true });
 
 const zip = new JSZip();
 zip.file("module/__init__.py", "OK = True\n");
+zip.file("docling/__init__.py", "OK = True\n");
 const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 const sha256 = crypto.createHash("sha256").update(zipBuffer).digest("hex");
 
@@ -139,9 +140,16 @@ try {
   assert.equal(bundledUninstall.error, "BUNDLED_RUNTIME_PACK_READ_ONLY");
 
   const progressEvents = [];
-  const installed = await installer.installRuntimePack("pro-pdf");
+  const proPdfProgress = [];
+  const installed = await installer.installRuntimePack("pro-pdf", {
+    onProgress: (event) => proPdfProgress.push(event),
+  });
   assert.equal(installed.ok, true, `install failed: ${JSON.stringify(installed)}`);
   assert.equal(installed.version, "1.2.3");
+  assert(
+    proPdfProgress.some((event) => event.phase === "health-checking"),
+    `known packs must pass health checks before activation: ${JSON.stringify(proPdfProgress)}`,
+  );
   assert(
     fs.existsSync(path.join(runtimePackRoot, "runtime-packs", "pro-pdf", "module", "__init__.py")),
     "pack contents should be installed under the selected runtime-pack root",
@@ -166,6 +174,7 @@ try {
   const state = JSON.parse(fs.readFileSync(path.join(runtimePackRoot, "runtime-packs.json"), "utf8"));
   assert.equal(state.installed["pro-pdf"].source, "artifact");
   assert.equal(state.installed["pro-pdf"].format, "zip");
+  assert.equal(typeof state.installed["pro-pdf"].healthCheckedAt, "string");
   assert(installer.installedRuntimePackIds().has("pro-pdf"), "installed id should be visible");
   assert.equal(
     installer.listRuntimePacks().packs.find((pack) => pack.id === "pro-pdf")?.locationKind,

@@ -801,6 +801,16 @@ async function runRuntimePackInstall(id, job) {
       id,
       onProgress: (progress) => job.publish({ ...packProgressMeta(id), ...progress, path: target }),
     });
+    let healthCheckedAt = null;
+    if (PACK_SPECS[id]) {
+      publishProgress(job, id, "health-checking", { path: stagingPath });
+      const health = await require("./runtime-health").checkRuntimePackHealthAtPath(id, stagingPath);
+      if (!health.ok) {
+        publishProgress(job, id, "failed", { error: "RUNTIME_PACK_HEALTH_FAILED", health });
+        return { ok: false, id, error: "RUNTIME_PACK_HEALTH_FAILED", health };
+      }
+      healthCheckedAt = new Date().toISOString();
+    }
     replacePackDirectory(stagingPath, target);
     const state = readState();
     state.installed[id] = {
@@ -808,6 +818,8 @@ async function runRuntimePackInstall(id, job) {
       source: "artifact",
       version: artifact.version || null,
       sha256: artifact.sha256 || null,
+      sizeBytes: Number(artifact.sizeBytes || artifact.size || 0) || null,
+      healthCheckedAt,
       format,
     };
     writeState(state);

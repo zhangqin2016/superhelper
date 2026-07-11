@@ -226,6 +226,31 @@ function packEntry(packId) {
   return require("./runtime-packs").effectivePackEntries().find((entry) => entry.id === packId) || null;
 }
 
+async function checkRuntimePackHealthAtPath(packId, packDir) {
+  const id = String(packId || "").trim();
+  const spec = PACK_SPECS[id];
+  if (!spec) return { ok: false, id, status: "unknown", error: "UNKNOWN_PACK" };
+  const dir = String(packDir || "").trim();
+  if (spec.pythonPath && spec.probe) return checkPythonProbe(id, spec.probe, dir);
+  if (spec.installKind === "node-browser-runtime") return checkWebAutomationPack(id, spec, dir);
+  if (spec.health?.kind === "libreoffice") return checkLibreOfficePack(id, spec, dir);
+  const executables = Array.isArray(spec.health?.executables) ? spec.health.executables : [];
+  if (executables.length) {
+    const checks = [];
+    for (const item of executables) {
+      checks.push(await runExecutable(`${id}:${item.name}`, findPackExecutable(spec, dir, item.name), item.args || []));
+    }
+    return {
+      id,
+      ok: checks.every((check) => check.ok),
+      status: checks.every((check) => check.ok) ? "ok" : "failed",
+      path: dir,
+      checks,
+    };
+  }
+  return okCheck(id, { path: dir, skipped: true });
+}
+
 async function checkRuntimePackHealth(packId) {
   const id = String(packId || "").trim();
   const spec = PACK_SPECS[id];
@@ -233,25 +258,7 @@ async function checkRuntimePackHealth(packId) {
   const entry = packEntry(id);
   const base = require("./runtime-pack-installer").baseProvidedRuntimePackMap().get(id);
   if (!entry && !base) return { ok: false, id, status: "not_installed", error: "NOT_INSTALLED" };
-  const dir = entry?.dir || "";
-  if (spec.pythonPath && spec.probe) return checkPythonProbe(id, spec.probe, dir || base?.path || "");
-  if (spec.installKind === "node-browser-runtime") return checkWebAutomationPack(id, spec, dir || base?.path || "");
-  if (spec.health?.kind === "libreoffice") return checkLibreOfficePack(id, spec, dir || base?.path || "");
-  const executables = Array.isArray(spec.health?.executables) ? spec.health.executables : [];
-  if (executables.length) {
-    const checks = [];
-    for (const item of executables) {
-      checks.push(await runExecutable(`${id}:${item.name}`, findPackExecutable(spec, dir || base?.path || "", item.name), item.args || []));
-    }
-    return {
-      id,
-      ok: checks.every((check) => check.ok),
-      status: checks.every((check) => check.ok) ? "ok" : "failed",
-      path: dir || base?.path || "",
-      checks,
-    };
-  }
-  return okCheck(id, { path: dir, skipped: true });
+  return checkRuntimePackHealthAtPath(id, entry?.dir || base?.path || "");
 }
 
 async function checkPythonModules(python) {
@@ -320,4 +327,5 @@ module.exports = {
   checkBaseRuntimeHealth,
   checkDependencyHealth,
   checkRuntimePackHealth,
+  checkRuntimePackHealthAtPath,
 };

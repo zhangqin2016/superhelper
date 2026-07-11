@@ -23,6 +23,11 @@ const packs = require(path.join(ROOT, "src/main/runtime-packs.js"));
 const runtimePython = require(path.join(ROOT, "src/main/runtime-python.js"));
 const health = require(path.join(ROOT, "src/main/runtime-health.js"));
 
+assert(
+  typeof health.checkRuntimePackHealthAtPath === "function",
+  "runtime health should expose a pre-activation path check",
+);
+
 const policy = health.basePythonModulePolicy();
 assert(policy.required.some((item) => item.id === "python-docx"), "document core modules should remain required");
 for (const optionalPackModule of ["opencv", "rembg", "large-document", "pro-pdf"]) {
@@ -43,6 +48,16 @@ function makeExecutable(file, body) {
 }
 
 try {
+  const stagingWeb = path.join(tmp, "staging-web-automation");
+  fs.mkdirSync(path.join(stagingWeb, "node_modules", "playwright"), { recursive: true });
+  fs.mkdirSync(path.join(stagingWeb, "browsers"), { recursive: true });
+  fs.writeFileSync(path.join(stagingWeb, "node_modules", "playwright", "package.json"), "{}\n");
+  const stagingWebHealth = await health.checkRuntimePackHealthAtPath("web-automation", stagingWeb);
+  assert(
+    stagingWebHealth.ok,
+    `staging runtime packs should be health-checkable before state activation: ${JSON.stringify(stagingWebHealth)}`,
+  );
+
   const base = await health.checkBaseRuntimeHealth();
   assert(base.ok, `base runtime health should pass when required checks pass: ${JSON.stringify(base)}`);
   assert(
