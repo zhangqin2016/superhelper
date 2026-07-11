@@ -34,6 +34,7 @@ New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $Checks = New-Object System.Collections.Generic.List[object]
 $script:InstalledEntry = $null
 $script:InstallDirectory = ""
+$script:InstallAttemptStarted = $false
 $script:UserDataResidueRecorded = $false
 $Report = [ordered]@{
   schemaVersion = 1
@@ -69,8 +70,9 @@ $Report = [ordered]@{
   checks = @()
 }
 
-if ($null -eq ("Lily.NativeCommandLine.CommandLineParser" -as [type])) {
-  Add-Type -TypeDefinition @'
+function Initialize-NativeCommandLine {
+  if ($null -eq ("Lily.NativeCommandLine.CommandLineParser" -as [type])) {
+    Add-Type -TypeDefinition @'
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -117,6 +119,7 @@ namespace Lily.NativeCommandLine
     }
 }
 '@
+  }
 }
 
 function Add-Check {
@@ -1049,13 +1052,7 @@ function Invoke-SilentUninstall {
   $productEntryRemoved = $false
   $installDirectoryRemoved = $false
   while ($true) {
-    $remainingProductEntries = @(Get-LilyUninstallEntries | Where-Object {
-      [string]::Equals(
-        [string]$_.RegistryPath,
-        [string]$Entry.RegistryPath,
-        [System.StringComparison]::OrdinalIgnoreCase
-      )
-    })
+    $remainingProductEntries = @(Get-LilyUninstallEntries)
     $productEntryRemoved = $remainingProductEntries.Count -eq 0
     $installDirectoryRemoved = -not (Test-Path -LiteralPath $InstallDirectory)
     if ($productEntryRemoved -and $installDirectoryRemoved) {
@@ -1073,6 +1070,7 @@ function Invoke-SilentUninstall {
     argumentsUsed = @($arguments)
     process = $processResult
     productEntryRemoved = [bool]$productEntryRemoved
+    remainingProductEntries = @($remainingProductEntries)
     installDirectoryRemoved = [bool]$installDirectoryRemoved
   }
 }
@@ -1318,6 +1316,8 @@ try {
     -PassDetail "The runner is executing on Windows." `
     -FailDetail "This readiness runner must execute on Windows; lifecycle commands were not started."
 
+  Initialize-NativeCommandLine
+
   $resolvedInstaller = (Resolve-Path -LiteralPath $Installer -ErrorAction Stop).ProviderPath
   $isExeInstaller = [string]::Equals(
     [System.IO.Path]::GetExtension($resolvedInstaller),
@@ -1430,6 +1430,7 @@ try {
   }
 
   $installArguments = @("/S", "/currentuser")
+  $script:InstallAttemptStarted = $true
   $installResult = Invoke-MonitoredProcess `
     -FilePath $resolvedInstaller `
     -ArgumentList $installArguments `
@@ -1761,7 +1762,7 @@ try {
 } finally {
   try {
     $remainingEntriesBeforeCleanup = @(Get-LilyUninstallEntries)
-    if ($remainingEntriesBeforeCleanup.Count -gt 0) {
+    if ($script:InstallAttemptStarted -and $remainingEntriesBeforeCleanup.Count -gt 0) {
       Try-NormalUninstallCleanup
     }
   } catch {

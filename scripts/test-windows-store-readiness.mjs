@@ -20,6 +20,7 @@ assert.match(runner, /\$AllowUserDataRemnants\b/);
 assert.match(runner, /\$InstallTimeoutSeconds\b/);
 assert.match(runner, /\$LaunchTimeoutSeconds\b/);
 assert.match(runner, /\$UninstallTimeoutSeconds\b/);
+assert.match(runner, /\$script:InstallAttemptStarted\s*=\s*\$false/);
 assert.match(runner, /["']\/S["']/, "silent install must use the quoted, uppercase /S switch");
 assert.match(runner, /["']\/currentuser["']/, "silent install must target the current user");
 assert.match(runner, /@\(\s*["']\/S["']\s*,\s*["']\/currentuser["']\s*\)/);
@@ -68,13 +69,23 @@ assert.match(runner, /InstallLocation/);
 assert.match(runner, /DisplayIcon/);
 assert.match(runner, /UninstallString/);
 
-const nativeCommandLineSource = runner.match(/Add-Type\s+-TypeDefinition\s+@'([\s\S]*?)'@/)?.[1] ?? "";
-assert.ok(nativeCommandLineSource, "the runner must compile a native Windows command-line parser");
+const initializeNativeMatch = runner.match(
+  /function Initialize-NativeCommandLine \{([\s\S]*?)\n\}\n\nfunction /,
+);
+assert.ok(initializeNativeMatch, "Initialize-NativeCommandLine must be a standalone helper.");
+const initializeNativeBody = initializeNativeMatch[1];
 assert.match(
-  runner,
+  initializeNativeBody,
   /if \(\$null -eq \(["']Lily\.NativeCommandLine\.[A-Za-z]+["'] -as \[type\]\)\) \{\s*Add-Type/,
   "the native parser type must only be compiled when it is not already loaded",
 );
+assert.doesNotMatch(
+  runner.replace(initializeNativeMatch[0], ""),
+  /\bAdd-Type\b/,
+  "Add-Type must not execute at top level outside the report-protected main try",
+);
+const nativeCommandLineSource = runner.match(/Add-Type\s+-TypeDefinition\s+@'([\s\S]*?)'@/)?.[1] ?? "";
+assert.ok(nativeCommandLineSource, "the runner must compile a native Windows command-line parser");
 assert.match(nativeCommandLineSource, /namespace Lily\.NativeCommandLine/);
 assert.match(nativeCommandLineSource, /DllImport\(["']shell32\.dll["']/i);
 assert.match(nativeCommandLineSource, /CommandLineToArgvW/);
@@ -127,11 +138,27 @@ assert.match(silentUninstallBody, /\+=\s*["']\/S["']/);
 assert.match(silentUninstallBody, /Invoke-MonitoredProcess/);
 assert.match(silentUninstallBody, /-Label\s+["']uninstaller["']/);
 assert.match(silentUninstallBody, /Get-LilyUninstallEntries/);
+assert.doesNotMatch(
+  silentUninstallBody,
+  /RegistryPath|Where-Object/,
+  "uninstall success must require every Lily Workbench ARP entry to disappear",
+);
+assert.match(silentUninstallBody, /\$remainingProductEntries\s*=\s*@\(Get-LilyUninstallEntries\)/);
+assert.match(
+  silentUninstallBody,
+  /\$productEntryRemoved\s*=\s*\$remainingProductEntries\.Count\s+-eq\s+0/,
+);
 assert.match(silentUninstallBody, /Test-Path\s+-LiteralPath\s+\$InstallDirectory/);
 assert.match(silentUninstallBody, /\[Math\]::Min\(\s*30\s*,/);
 assert.doesNotMatch(silentUninstallBody, /\$TimeoutSeconds\s*\*\s*2/);
 assert.match(silentUninstallBody, /Start-Sleep\s+-Milliseconds\s+500/);
-for (const property of ["command", "process", "productEntryRemoved", "installDirectoryRemoved"]) {
+for (const property of [
+  "command",
+  "process",
+  "productEntryRemoved",
+  "remainingProductEntries",
+  "installDirectoryRemoved",
+]) {
   assert.match(silentUninstallBody, new RegExp(`${property}\\s*=`));
 }
 
@@ -443,8 +470,13 @@ assert.ok(mainFinallyStart >= 0 && mainFinallyEnd > mainFinallyStart, "the main 
 const mainFinallyBody = runner.slice(mainFinallyStart + "} finally {".length, mainFinallyEnd);
 assert.match(
   mainFinallyBody,
-  /Get-LilyUninstallEntries[\s\S]{0,300}Try-NormalUninstallCleanup/,
-  "finally must use the normal registered uninstaller whenever an ARP entry remains",
+  /if \(\$script:InstallAttemptStarted\s+-and\s+\$remainingEntriesBeforeCleanup\.Count\s+-gt\s+0\) \{\s*Try-NormalUninstallCleanup/,
+  "finally may use the normal registered uninstaller only after this run attempted installation",
+);
+assert.doesNotMatch(
+  mainFinallyBody,
+  /if \(\$remainingEntriesBeforeCleanup\.Count\s+-gt\s+0\) \{\s*Try-NormalUninstallCleanup/,
+  "a pre-existing ARP entry must never grant this run cleanup ownership",
 );
 const cleanupAttemptIndex = mainFinallyBody.indexOf("Try-NormalUninstallCleanup");
 const registryAfterIndex = mainFinallyBody.search(
@@ -478,6 +510,25 @@ assert.ok(writeReportsIndex > finalExitCalculationIndex);
 assert.ok(writeSentinelIndex > writeReportsIndex);
 assert.match(mainFinallyBody, /try\s*\{[\s\S]{0,180}Write-Reports[\s\S]{0,180}catch\s*\{[\s\S]{0,120}\$exitCode\s*=\s*1/);
 assert.match(mainFinallyBody, /try\s*\{[\s\S]{0,180}Set-Content\s+-LiteralPath\s+\$exitCodePath/);
+
+const mainTryStart = runner.indexOf("\ntry {", runner.indexOf("$exitCode = 1"));
+const mainTryEnd = runner.indexOf("\n} catch {", mainTryStart);
+assert.ok(mainTryStart >= 0 && mainTryEnd > mainTryStart, "the main readiness try body must be extractable");
+const mainTryBody = runner.slice(mainTryStart + "\ntry {".length, mainTryEnd);
+const cleanRegistryGateIndex = mainTryBody.indexOf('-Id "preflight.clean_registry"');
+const windowsPreflightIndex = mainTryBody.indexOf('-Id "preflight.windows"');
+const nativeInitializationIndex = mainTryBody.indexOf("Initialize-NativeCommandLine");
+const installOwnershipIndex = mainTryBody.indexOf("$script:InstallAttemptStarted = $true");
+const installerInvocationIndex = mainTryBody.indexOf("$installResult = Invoke-MonitoredProcess");
+assert.ok(cleanRegistryGateIndex >= 0, "the clean-registry gate must remain in the main flow");
+assert.ok(
+  nativeInitializationIndex > windowsPreflightIndex && nativeInitializationIndex < installOwnershipIndex,
+  "native command-line initialization must run inside main try after Windows preflight and before install ownership",
+);
+assert.ok(
+  installOwnershipIndex > cleanRegistryGateIndex && installerInvocationIndex > installOwnershipIndex,
+  "cleanup ownership must be acquired after the clean-registry gate and immediately before invoking this run's installer",
+);
 
 assert.match(runner, /readiness-report\.json/);
 assert.match(runner, /readiness-summary\.md/);
