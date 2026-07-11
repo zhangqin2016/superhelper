@@ -20,6 +20,7 @@ export async function AdminShell({ children, title, subtitle }) {
         { href: "/admin/usage", label: nav.usage },
         { href: "/admin/billing", label: nav.billing || "Billing" },
         { href: "/admin/contacts", label: nav.contacts },
+        { href: "/admin/wishes", label: nav.wishes },
       ],
     },
     {

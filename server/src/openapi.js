@@ -20,6 +20,7 @@ export const OPENAPI_TAGS = [
   { name: "public:licenses", description: "License activation & status" },
   { name: "public:skills", description: "Public skill packages" },
   { name: "public:telemetry", description: "Usage / skill / diagnostics reporting" },
+  { name: "public:wishes", description: "Public wish pool and account-backed support" },
   { name: "admin:auth", description: "Admin authentication" },
   { name: "admin:billing", description: "Admin billing products and pricing" },
   { name: "admin:summary", description: "Admin dashboard summary" },
@@ -38,6 +39,7 @@ export const OPENAPI_TAGS = [
   { name: "admin:system", description: "Admin system settings" },
   { name: "admin:usage", description: "Admin usage analytics" },
   { name: "admin:workspace-apps", description: "Admin workspace-app catalog" },
+  { name: "admin:wishes", description: "Admin wish moderation and delivery status" },
   { name: "gateway:model", description: "Model gateway (LLM proxy)" },
   { name: "gateway:media", description: "Media generation gateway" },
 ];

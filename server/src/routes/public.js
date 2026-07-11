@@ -8,6 +8,7 @@ import { registerPublicDeviceRoutes } from "./public/devices.js";
 import { registerPublicLicenseRoutes } from "./public/licenses.js";
 import { registerPublicSkillRoutes } from "./public/skills.js";
 import { registerPublicTelemetryRoutes } from "./public/telemetry.js";
+import { registerPublicWishRoutes } from "./public/wishes.js";
 import { okResponse } from "../openapi.js";
 
 export async function publicRoutes(app) {
@@ -32,4 +33,5 @@ export async function publicRoutes(app) {
   registerPublicLicenseRoutes(app);
   registerPublicSkillRoutes(app);
   registerPublicTelemetryRoutes(app);
+  registerPublicWishRoutes(app);
 }

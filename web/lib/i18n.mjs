@@ -32,6 +32,10 @@ export async function getI18n() {
 export const dictionaries = {
   zh: {
     nav: {
+      apps: "应用",
+      skills: "技能",
+      wishes: "共创愿望",
+      account: "我的账户",
       scenarios: "场景",
       experts: "专家工作区",
       product: "工作方式",
@@ -41,6 +45,15 @@ export const dictionaries = {
       billing: "授权",
       download: "下载",
       open: "打开导航",
+    },
+    premiumHome: {
+      hero: { eyebrow: "为真实工作而生的 AI 桌面工作台", title: "你的项目，终于有人记得。", description: "把文件、截图、表格和历史对话留在同一个工作空间。Lily 理解上下文，调用合适的技能，把零散材料推进成可交付成果。", primaryCta: "免费下载", secondaryCta: "看看它怎么工作", note: "面向个人用户 · 支持 macOS" },
+      problem: { eyebrow: "不是再开一个聊天框", title: "工作卡住，往往不是因为缺答案。", description: "而是资料散落、上下文反复解释、工具彼此割裂。Lily 把它们放回同一个项目现场。" },
+      workflows: { title: "从一堆材料，到真正完成", items: [["把项目交给 Lily", "拖入文件、截图和表格，或直接选择一个本地工作目录。"], ["它自己补齐上下文", "阅读材料、查找线索、调用技能，不用你逐步遥控。"], ["拿走可以继续用的结果", "得到文档、表格、清单和明确下一步，而不只是一次回答。"]] },
+      trust: { eyebrow: "清晰、可控、留在你的工作流里", title: "你看得见它做了什么。", items: [["本地工作空间", "项目资料按任务组织，减少重复上传和解释。"], ["过程可追踪", "工具调用、引用和输出都在对话里清楚呈现。"], ["能力可扩展", "按需安装应用与技能，重型能力不会拖慢普通电脑。"]] },
+      catalog: { eyebrow: "应用与技能", title: "需要什么，就给工作台增加什么。", appsTitle: "精选应用", skillsTitle: "热门技能", allApps: "查看全部应用", allSkills: "浏览技能库" },
+      wishes: { eyebrow: "共创愿望", title: "你许愿，我们认真实现。", description: "浏览大家正在期待的能力，为同感愿望助力，或提交一个新的工作痛点。", all: "进入共创愿望", statuses: { published: "已公开", planned: "已规划", building: "实现中", shipped: "已上线" } },
+      finalCta: { title: "下一个项目，不必再从零解释。", description: "下载 Lily Workbench，让材料、上下文和成果留在同一个工作现场。", primary: "免费下载", secondary: "查看个人方案" },
     },
     home: {
       badge: "截图、文档、表格都能放进来",
@@ -175,7 +188,7 @@ export const dictionaries = {
       brand: "Lily 管理后台",
       subtitle: "控制台",
       signOut: "退出登录",
-      nav: { dashboard: "仪表盘", users: "用户", licenses: "授权", devices: "设备", usage: "用量", contacts: "联系咨询", releases: "版本", runtimePacks: "运行时扩展包", skillPackages: "技能包", apps: "应用商店", plugins: "插件", config: "配置中心", health: "健康检查", diagnostics: "诊断", settings: "设置", audit: "审计" },
+      nav: { dashboard: "仪表盘", users: "用户", licenses: "授权", devices: "设备", usage: "用量", contacts: "联系咨询", wishes: "许愿池", releases: "版本", runtimePacks: "运行时扩展包", skillPackages: "技能包", apps: "应用商店", plugins: "插件", config: "配置中心", health: "健康检查", diagnostics: "诊断", settings: "设置", audit: "审计" },
       navGroups: { operations: "运营", distribution: "发布与分发", configuration: "配置", monitoring: "监控与安全" },
       configCenter: { title: "配置中心", subtitle: "一处管理：基础设置、模型供应商、下发规则与设备分组。" },
       configTabs: { basics: "基础设置", storage: "对象存储", sms: "短信登录", payment: "支付配置", overview: "概览", providers: "模型供应商", profiles: "下发规则", groups: "设备分组" },
@@ -234,6 +247,15 @@ export const dictionaries = {
       settings: { trialTitle: "新设备免费试用", trialDesc: "设备首次连接服务端时按这里的天数生成试用期。修改后只影响之后首次注册的新设备，不会自动延长已注册设备。", trialDays: "免费试用天数", qiniuTitle: "文件存储（CDN）", qiniuDesc: "技能包、扩展包、反馈附件和版本更新的文件都存在这里。下面是云存储（七牛）的访问地址和密钥；Secret Key 留空表示不修改、沿用现有值。", qiniuPublicBaseUrl: "文件访问地址（CDN）", qiniuUploadUrl: "文件上传地址", qiniuAccessKey: "Access Key", qiniuSecretKey: "Secret Key", qiniuSecretKeyKeep: "Secret Key（已配置）", qiniuSecretKeyPlaceholder: "留空表示不修改", qiniuBucket: "Bucket", aliyunSmsTitle: "阿里云短信", aliyunSmsDesc: "用于手机号验证码登录。AccessKeySecret 会加密存储在服务端数据库，不会下发给客户端。", aliyunSmsAccessKeyId: "AccessKeyId", aliyunSmsAccessKeySecret: "AccessKeySecret", aliyunSmsAccessKeySecretKeep: "AccessKeySecret（已配置）", aliyunSmsSecretPlaceholder: "留空表示不修改", aliyunSmsSignName: "短信签名", aliyunSmsTemplateLogin: "登录模板 Code", aliyunSmsRegion: "Region", save: "保存设置" },
       settingsDelivery: { modelTitle: "聊天模型投递方式", mediaTitle: "媒体投递方式（图片 / 视频 / 识图 / 语音）", direct: "直连（更快；真实密钥下发到客户端）", gateway: "走网关（密钥只在服务端，客户端拿短期 token，多一跳）", modelHelp: "主聊天模型如何下发。直连绕开网关、弱网更稳；网关把密钥留在服务端但多一跳。改后默认配置会即时重建。", mediaHelp: "直连绕开我们的网关，弱网下更稳更快；网关更安全但多一跳。" },
       contacts: { headings: ["时间", "联系人", "公司", "主题", "内容", "附件", "来源"], emptyTitle: "暂无联系咨询", emptyDesc: "官网联系表单提交后会显示在这里。" },
+      wishes: {
+        title: "许愿池", subtitle: "审核、合并并推进用户提出的真实工作需求。", back: "返回许愿池", filter: "筛选",
+        allStatuses: "全部状态", allCategories: "全部分类", columns: ["愿望", "状态", "分类", "需求热度", "更新时间"],
+        emptyTitle: "暂无愿望", emptyDesc: "用户登录官网提交愿望后会显示在这里。",
+        statuses: { pending: "待审核", reviewing: "审核中", published: "已公开", planned: "已计划", building: "实现中", shipped: "已上线", declined: "不采用", merged: "已合并" },
+        categories: { office: "办公文档", research: "研究", communication: "沟通协作", data: "数据", creative: "创意", developer: "开发", other: "其他" },
+        originalSubmission: "原始提交（不公开）", status: "状态", category: "分类", publicTitle: "公开标题", publicSummary: "公开摘要", publicUpdate: "公开进展", submitterNote: "提交者可见说明", linkedApps: "关联应用 ID", linkedSkills: "关联技能 ID",
+        deliveryLinks: "上线成果", deliveryHelp: "标记为已上线前，至少关联一个已启用应用或公开技能。", save: "保存审核结果", saving: "保存中...", mergeTarget: "合并到愿望 ID", merge: "合并愿望", merging: "合并中...", mergeConfirm: "确认把支持关系迁移到目标愿望并标记当前愿望为已合并？",
+      },
       attachments: { fallbackName: "反馈图片", previewFailed: "预览失败", missingUrl: "缺少链接", attachmentLabel: "图片附件", openOriginal: "打开原图", closePreview: "关闭预览" },
       uploadForms: { skillPackage: { description: "上传 .skillpack.zip 后会自动发布到七牛云，并写入 SHA256、大小和下载地址。", namePlaceholder: "编程创作增强" }, workspaceApp: { description: "上传工作空间导出的应用或连接器 zip，后台会发布到七牛云并进入应用商店目录。", namePlaceholder: "股票投研看板", summaryPlaceholder: "输入股票代码，生成行情、财报、估值和风险摘要。", descriptionPlaceholder: "说明这个应用解决什么问题、需要什么输入、会输出什么结果、有哪些限制。", notesPlaceholder: "本版本更新说明", runtimeDeps: "依赖的运行时扩展", skillDeps: "依赖的技能包", depsEmptyRuntime: "还没有运行时扩展，可先到「运行时」页签上传。", depsEmptySkill: "还没有技能包，可先到「技能」页签上传。" } },
       health: {
@@ -289,7 +311,16 @@ export const dictionaries = {
     },
   },
   en: {
-    nav: { scenarios: "Scenarios", experts: "Experts", product: "How it works", pricing: "Pricing", docs: "Docs", contact: "Contact", billing: "License", download: "Download", open: "Open navigation" },
+    nav: { apps: "Apps", skills: "Skills", wishes: "Wish pool", account: "Account", scenarios: "Scenarios", experts: "Experts", product: "How it works", pricing: "Pricing", docs: "Docs", contact: "Contact", billing: "License", download: "Download", open: "Open navigation" },
+    premiumHome: {
+      hero: { eyebrow: "An AI desktop workbench for real work", title: "Your project finally has a memory.", description: "Keep files, screenshots, spreadsheets, and conversations in one workspace. Lily understands the context, uses the right skills, and turns scattered material into finished work.", primaryCta: "Download free", secondaryCta: "See how it works", note: "For individuals · macOS supported" },
+      problem: { eyebrow: "More than another chat box", title: "Work rarely stalls because you lack an answer.", description: "It stalls when context is scattered, explanations repeat, and tools do not connect. Lily brings them back into one project." },
+      workflows: { title: "From scattered material to finished work", items: [["Bring Lily the project", "Drop in files, screenshots, and sheets, or choose a local workspace folder."], ["Let it rebuild the context", "Read material, find clues, and use skills without step-by-step steering."], ["Take away usable outcomes", "Get documents, sheets, checklists, and a clear next step—not just an answer."]] },
+      trust: { eyebrow: "Clear, controlled, and part of your workflow", title: "You can see what Lily is doing.", items: [["Local workspaces", "Keep project material organized by task and explain it fewer times."], ["Traceable progress", "Tool calls, references, and outputs stay visible in the conversation."], ["Expandable capability", "Add apps and skills as needed without burdening everyday laptops."]] },
+      catalog: { eyebrow: "Apps and skills", title: "Add the capability your work needs.", appsTitle: "Featured apps", skillsTitle: "Popular skills", allApps: "View all apps", allSkills: "Browse skills" },
+      wishes: { eyebrow: "Wish pool", title: "You wish. We build with you.", description: "Explore what people need, support a shared pain point, or submit the capability missing from your work.", all: "Explore the wish pool", statuses: { published: "Published", planned: "Planned", building: "Building", shipped: "Shipped" } },
+      finalCta: { title: "Your next project should not start from zero.", description: "Download Lily Workbench and keep material, context, and outcomes in one place.", primary: "Download free", secondary: "View personal plan" },
+    },
     home: {
       badge: "Turn messy information into executable outcomes",
       titleA: "Stop chatting with AI.",
@@ -371,7 +402,7 @@ export const dictionaries = {
     },
     contactForm: { name: "Name", email: "Email", company: "Company / team", phone: "Phone / chat", subject: "Subject", message: "What should we help with?", submit: "Submit contact request", sending: "Submitting...", required: "Please leave your name, email, and a message of at least 8 characters.", failed: "Could not submit. Please try again later.", success: "Received. We will review it in the admin console." },
     admin: {
-      brand: "Lily Admin", subtitle: "Control console", signOut: "Sign out", nav: { dashboard: "Dashboard", users: "Users", licenses: "Licenses", devices: "Devices", usage: "Usage", contacts: "Contacts", releases: "Releases", runtimePacks: "Runtime packs", skillPackages: "Skill packages", apps: "App store", plugins: "Plugins", config: "Config center", health: "Health", diagnostics: "Diagnostics", settings: "Settings", audit: "Audit" },
+      brand: "Lily Admin", subtitle: "Control console", signOut: "Sign out", nav: { dashboard: "Dashboard", users: "Users", licenses: "Licenses", devices: "Devices", usage: "Usage", contacts: "Contacts", wishes: "Wish pool", releases: "Releases", runtimePacks: "Runtime packs", skillPackages: "Skill packages", apps: "App store", plugins: "Plugins", config: "Config center", health: "Health", diagnostics: "Diagnostics", settings: "Settings", audit: "Audit" },
       navGroups: { operations: "Operations", distribution: "Distribution", configuration: "Configuration", monitoring: "Monitoring" },
       configCenter: { title: "Config center", subtitle: "One place: basics, model providers, delivery rules, and device groups." },
       configTabs: { basics: "Basics", storage: "Storage", sms: "SMS login", payment: "Payments", overview: "Overview", providers: "Model providers", profiles: "Delivery rules", groups: "Device groups" },
@@ -388,6 +419,15 @@ export const dictionaries = {
       settings: { trialTitle: "New-device free trial", trialDesc: "When a device first connects to the service, it receives this many trial days. Changes only apply to future first registrations and do not extend existing devices.", trialDays: "Free trial days", qiniuTitle: "File storage (CDN)", qiniuDesc: "Skill packages, runtime packs, feedback attachments, and app updates are stored here. Below are the cloud storage (Qiniu) URLs and keys; leave Secret Key empty to keep the existing value.", qiniuPublicBaseUrl: "File access URL (CDN)", qiniuUploadUrl: "File upload URL", qiniuAccessKey: "Access Key", qiniuSecretKey: "Secret Key", qiniuSecretKeyKeep: "Secret Key (configured)", qiniuSecretKeyPlaceholder: "Leave empty to keep unchanged", qiniuBucket: "Bucket", aliyunSmsTitle: "Aliyun SMS", aliyunSmsDesc: "Used for phone verification login. AccessKeySecret is encrypted in the server database and never delivered to clients.", aliyunSmsAccessKeyId: "AccessKeyId", aliyunSmsAccessKeySecret: "AccessKeySecret", aliyunSmsAccessKeySecretKeep: "AccessKeySecret (configured)", aliyunSmsSecretPlaceholder: "Leave empty to keep unchanged", aliyunSmsSignName: "SMS sign name", aliyunSmsTemplateLogin: "Login template code", aliyunSmsRegion: "Region", save: "Save settings" },
       settingsDelivery: { modelTitle: "Chat model delivery", mediaTitle: "Media delivery (image / video / vision / speech)", direct: "Direct (faster; real key delivered to client)", gateway: "Gateway (key stays on server; client uses short-lived token)", modelHelp: "How the main chat model is delivered. Direct skips the gateway and is steadier on weak networks; gateway keeps keys server-side with one extra hop. Changing this rebuilds the default config immediately.", mediaHelp: "Direct skips our gateway and is faster on weak networks. Gateway is safer but adds one server hop." },
       contacts: { headings: ["Time", "Contact", "Company", "Subject", "Message", "Attachments", "Source"], emptyTitle: "No contact requests", emptyDesc: "Website contact form submissions will appear here." },
+      wishes: {
+        title: "Wish pool", subtitle: "Review, merge, and deliver real user outcomes.", back: "Back to wishes", filter: "Filter",
+        allStatuses: "All statuses", allCategories: "All categories", columns: ["Wish", "Status", "Category", "Demand", "Updated"],
+        emptyTitle: "No wishes yet", emptyDesc: "Account-backed website submissions will appear here.",
+        statuses: { pending: "Pending", reviewing: "Reviewing", published: "Published", planned: "Planned", building: "Building", shipped: "Shipped", declined: "Declined", merged: "Merged" },
+        categories: { office: "Office", research: "Research", communication: "Communication", data: "Data", creative: "Creative", developer: "Developer", other: "Other" },
+        originalSubmission: "Original private submission", status: "Status", category: "Category", publicTitle: "Public title", publicSummary: "Public summary", publicUpdate: "Public update", submitterNote: "Submitter-only note", linkedApps: "Linked app IDs", linkedSkills: "Linked skill IDs",
+        deliveryLinks: "Shipped outcomes", deliveryHelp: "Shipped wishes must link to at least one enabled app or public skill.", save: "Save review", saving: "Saving...", mergeTarget: "Target wish ID", merge: "Merge wish", merging: "Merging...", mergeConfirm: "Move supporters to the target and mark this wish merged?",
+      },
       attachments: { fallbackName: "Feedback image", previewFailed: "Preview failed", missingUrl: "Missing URL", attachmentLabel: "Image attachment", openOriginal: "Open original", closePreview: "Close preview" },
       uploadForms: { skillPackage: { description: "Upload a .skillpack.zip to publish it to Qiniu and record SHA256, size, and download URL.", namePlaceholder: "Coding workflow boost" }, workspaceApp: { description: "Upload a workspace-exported app or connector zip. The admin service publishes it to Qiniu and adds it to the app catalog.", namePlaceholder: "Stock research dashboard", summaryPlaceholder: "Enter a ticker to generate market, financial, valuation, and risk summaries.", descriptionPlaceholder: "Describe what this app solves, required inputs, outputs, and limits.", notesPlaceholder: "Release notes for this version", runtimeDeps: "Required runtime packs", skillDeps: "Required skill packages", depsEmptyRuntime: "No runtime packs yet — upload one under the Runtime tab first.", depsEmptySkill: "No skill packages yet — upload one under the Skills tab first." } },
       health: {
@@ -421,7 +461,16 @@ export const dictionaries = {
     pages: { docsTitle: "Documentation", docsDesc: "First-run setup for teams deploying Lily Workbench.", pricingTitle: "Pricing", pricingDesc: "Start lightweight, then add team license control and deployment management.", pricingPlans: [["Personal", "Personal trial", "1 seat", ["Desktop client", "Manual updates", "Basic skill packages"]], ["Team", "Recommended", "5+ seats", ["License console", "Device analytics", "Skill package catalog", "Release control"]], ["Enterprise", "Contact sales", "Custom", ["Private deployment", "Custom skill packages", "Priority support"]]], contactTitle: "Bring Lily Workbench into your team with controlled licenses, skill packages, and updates.", contactDesc: "For teams that need private deployment, device licensing, skill package delivery and release control. We only collect device and aggregate usage stats.", contactPrepareTitle: "We will confirm first", contactPrepareItems: [["Deployment scope", "Mac only first, or Mac and Windows."], ["License policy", "Seats, expiry, offline activation, and update policy."], ["Skill package catalog", "MCP, skill, and internal tool entries to publish."]], downloadTitle: "Download Lily Workbench", downloadDesc: "Install the desktop client and connect it to your licensed team deployment.", changelogTitle: "Changelog", downloadPlatforms: { macArm: "Apple Silicon Mac · DMG", macIntel: "Intel Mac · DMG" } },
   },
   ar: {
-    nav: { scenarios: "السيناريوهات", experts: "مساحات الخبراء", product: "طريقة العمل", pricing: "الأسعار", docs: "المساعدة", contact: "تواصل", billing: "الترخيص", download: "تنزيل", open: "فتح القائمة" },
+    nav: { apps: "التطبيقات", skills: "المهارات", wishes: "الأمنيات", account: "الحساب", scenarios: "السيناريوهات", experts: "مساحات الخبراء", product: "طريقة العمل", pricing: "الأسعار", docs: "المساعدة", contact: "تواصل", billing: "الترخيص", download: "تنزيل", open: "فتح القائمة" },
+    premiumHome: {
+      hero: { eyebrow: "منضدة عمل مكتبية بالذكاء الاصطناعي للعمل الحقيقي", title: "أصبح لمشروعك ذاكرة أخيراً.", description: "احتفظ بالملفات ولقطات الشاشة والجداول والمحادثات في مساحة واحدة. يفهم Lily السياق ويستخدم المهارات المناسبة ليحوّل المواد المتفرقة إلى عمل منجز.", primaryCta: "تنزيل مجاني", secondaryCta: "شاهد طريقة العمل", note: "للأفراد · يدعم macOS" },
+      problem: { eyebrow: "أكثر من نافذة محادثة", title: "نادراً ما يتوقف العمل بسبب غياب إجابة.", description: "بل يتوقف حين يتشتت السياق وتتكرر الشروحات ولا تتصل الأدوات. يجمعها Lily في مشروع واحد." },
+      workflows: { title: "من مواد متفرقة إلى عمل مكتمل", items: [["أعط Lily المشروع", "أضف الملفات واللقطات والجداول أو اختر مجلد عمل محلياً."], ["دعه يبني السياق", "يقرأ المواد ويبحث عن الأدلة ويستخدم المهارات دون توجيه كل خطوة."], ["احصل على نتائج قابلة للاستخدام", "مستندات وجداول وقوائم وخطوة تالية واضحة، لا مجرد إجابة."]] },
+      trust: { eyebrow: "واضح ومضبوط وداخل سير عملك", title: "ترى بوضوح ما يفعله Lily.", items: [["مساحات عمل محلية", "نظّم مواد المشروع حسب المهمة وقلّل إعادة الشرح."], ["تقدم قابل للتتبع", "تبقى الأدوات والمراجع والنتائج ظاهرة في المحادثة."], ["قدرات قابلة للتوسعة", "أضف التطبيقات والمهارات عند الحاجة دون إثقال الأجهزة العادية."]] },
+      catalog: { eyebrow: "التطبيقات والمهارات", title: "أضف القدرة التي يحتاجها عملك.", appsTitle: "تطبيقات مختارة", skillsTitle: "مهارات شائعة", allApps: "كل التطبيقات", allSkills: "استعرض المهارات" },
+      wishes: { eyebrow: "مجموعة الأمنيات", title: "تتمنى، ونبني معك.", description: "استكشف احتياجات الآخرين وادعم ألماً مشتركاً أو أرسل القدرة الناقصة في عملك.", all: "استكشف الأمنيات", statuses: { published: "منشور", planned: "مخطط", building: "قيد التنفيذ", shipped: "تم الإطلاق" } },
+      finalCta: { title: "لا ينبغي أن يبدأ مشروعك التالي من الصفر.", description: "نزّل Lily Workbench واجمع المواد والسياق والنتائج في مكان واحد.", primary: "تنزيل مجاني", secondary: "عرض الخطة الشخصية" },
+    },
     home: {
       badge: "حوّل الفوضى إلى نتائج قابلة للتنفيذ",
       titleA: "لا تكتف بالدردشة مع الذكاء الاصطناعي.",
@@ -442,5 +491,67 @@ export const dictionaries = {
 };
 
 if (!dictionaries.ar.admin) {
-  dictionaries.ar.admin = dictionaries.en.admin;
+  dictionaries.ar.admin = {
+    ...dictionaries.en.admin,
+    nav: { ...dictionaries.en.admin.nav, wishes: "مجموعة الأمنيات" },
+    wishes: {
+      ...dictionaries.en.admin.wishes,
+      title: "مجموعة الأمنيات",
+      subtitle: "مراجعة رغبات المستخدمين ودمجها ومتابعة تنفيذها.",
+      statuses: { pending: "قيد المراجعة", reviewing: "تتم المراجعة", published: "منشور", planned: "مخطط", building: "قيد التنفيذ", shipped: "تم الإطلاق", declined: "مرفوض", merged: "مدمج" },
+    },
+  };
 }
+
+dictionaries.zh.catalog = {
+  apps: {
+    eyebrow: "Lily 应用", title: "拿来就能用的完整工作场景", description: "应用把工作区、技能与模板组合成一个可直接开始的成果入口。", details: "查看详情", back: "返回应用", whatItDoes: "它能帮你完成什么", version: "版本", plan: "适用计划", useInLily: "在 Lily 中使用",
+    emptyTitle: "暂时没有可公开的应用", emptyDescription: "新应用通过审核后会出现在这里。", errorTitle: "应用目录暂时不可用", errorDescription: "你仍然可以下载 Lily，稍后再回来查看目录。",
+    categories: { productivity: "效率", office: "办公文档", connectors: "连接器", data: "数据", finance: "金融投研", creative: "设计创意", developer: "开发", business: "业务", education: "学习", research: "研究" },
+  },
+  skills: {
+    eyebrow: "Lily 技能", title: "需要时出现，不需要时保持安静", description: "技能是 Lily 处理特定任务的方法。你只需要描述目标，不必学习插件系统。", availableInLily: "已在 Lily 中提供", getLily: "获取 Lily", noDescription: "面向真实工作的专注能力。",
+    emptyTitle: "暂时没有可公开的技能", emptyDescription: "审核通过的技能会出现在这里。", errorTitle: "技能目录暂时不可用", errorDescription: "你仍然可以下载 Lily，稍后再回来查看目录。", risks: { low: "低风险", medium: "需要确认", high: "高风险操作" },
+  },
+};
+dictionaries.en.catalog = {
+  apps: {
+    eyebrow: "Lily Apps", title: "Complete workflows, ready to use", description: "Apps combine a workspace, skills, and templates into a practical starting point.", details: "View details", back: "Back to apps", whatItDoes: "What it helps you deliver", version: "Version", plan: "Plan", useInLily: "Use in Lily",
+    emptyTitle: "No public apps yet", emptyDescription: "Reviewed applications will appear here.", errorTitle: "The app catalog is temporarily unavailable", errorDescription: "You can still download Lily and return to the catalog later.",
+    categories: { productivity: "Productivity", office: "Office", connectors: "Connectors", data: "Data", finance: "Finance", creative: "Creative", developer: "Developer", business: "Business", education: "Education", research: "Research" },
+  },
+  skills: {
+    eyebrow: "Lily Skills", title: "Present when needed, quiet when not", description: "Skills are focused ways Lily handles specific work. Describe the outcome instead of learning a plugin system.", availableInLily: "Available in Lily", getLily: "Get Lily", noDescription: "A focused capability for real work.",
+    emptyTitle: "No public skills yet", emptyDescription: "Reviewed skills will appear here.", errorTitle: "The skill catalog is temporarily unavailable", errorDescription: "You can still download Lily and return to the catalog later.", risks: { low: "Low risk", medium: "Confirmation needed", high: "High-risk action" },
+  },
+};
+dictionaries.ar.catalog = {
+  apps: {
+    eyebrow: "تطبيقات Lily", title: "مسارات عمل كاملة وجاهزة للاستخدام", description: "تجمع التطبيقات مساحة العمل والمهارات والقوالب في نقطة بداية عملية.", details: "عرض التفاصيل", back: "العودة إلى التطبيقات", whatItDoes: "ما الذي يساعدك على إنجازه", version: "الإصدار", plan: "الخطة", useInLily: "استخدمه في Lily",
+    emptyTitle: "لا توجد تطبيقات عامة حالياً", emptyDescription: "ستظهر التطبيقات بعد مراجعتها.", errorTitle: "دليل التطبيقات غير متاح مؤقتاً", errorDescription: "يمكنك تنزيل Lily والعودة إلى الدليل لاحقاً.",
+    categories: { productivity: "الإنتاجية", office: "المكتب", connectors: "الموصلات", data: "البيانات", finance: "التمويل", creative: "الإبداع", developer: "التطوير", business: "الأعمال", education: "التعليم", research: "البحث" },
+  },
+  skills: {
+    eyebrow: "مهارات Lily", title: "تظهر عند الحاجة وتبقى هادئة عند عدم الحاجة", description: "المهارات طرق مركزة لمعالجة أعمال محددة. صف النتيجة بدلاً من تعلم نظام إضافات.", availableInLily: "متاحة في Lily", getLily: "احصل على Lily", noDescription: "قدرة مركزة للعمل الحقيقي.",
+    emptyTitle: "لا توجد مهارات عامة حالياً", emptyDescription: "ستظهر المهارات بعد مراجعتها.", errorTitle: "دليل المهارات غير متاح مؤقتاً", errorDescription: "يمكنك تنزيل Lily والعودة إلى الدليل لاحقاً.", risks: { low: "مخاطر منخفضة", medium: "تحتاج تأكيداً", high: "إجراء عالي المخاطر" },
+  },
+};
+
+dictionaries.zh.wishPool = {
+  eyebrow: "Lily 许愿池 · 需求共创计划", title: "一起决定，Lily 下一步学会什么。", description: "告诉我们你真正想完成的工作。相似愿望会被合并，每个公开愿望都有清楚的进度。", filterLabel: "许愿池筛选", create: "许一个愿望", alsoNeed: "我也需要", viewOutcome: "查看已上线应用", viewSkill: "查看已上线技能",
+  tabs: { all: "大家都想要", published: "最新公开", planned: "已计划", building: "实现中", shipped: "已上线" }, statuses: { published: "已公开", planned: "已计划", building: "实现中", shipped: "已上线" }, categories: { office: "办公文档", research: "研究", communication: "沟通协作", data: "数据", creative: "创意", developer: "开发", other: "其他" },
+  emptyTitle: "还没有符合条件的公开愿望", emptyDescription: "你可以提交第一个真实工作需求。", errorTitle: "许愿池暂时不可用", errorDescription: "愿望没有丢失，请稍后重试。官网其他功能仍可正常使用。",
+  form: { formTitle: "许一个愿望", formDescription: "描述真实工作问题，不需要先替我们设计功能。", titleLabel: "你想完成什么？", titlePlaceholder: "例如：把每月发票整理成报销表", problemLabel: "现在最卡在哪里？", outcomeLabel: "理想结果是什么样？", categoryLabel: "类别", similarTitle: "可能已经有相似愿望", similarDescription: "加入“我也需要”可以避免重复提交。", createAnyway: "仍然创建新愿望", submit: "检查并提交", sending: "处理中...", failed: "提交失败，请稍后重试。", success: "愿望已提交并进入审核。", privacy: "新愿望默认不公开。审核通过后只公开整理过的需求描述，不展示账号和联系方式。" },
+};
+dictionaries.en.wishPool = {
+  eyebrow: "Lily Wish Pool · Co-creation", title: "Help decide what Lily learns next.", description: "Tell us about real work you want to complete. Similar wishes are merged and every public wish has a clear status.", filterLabel: "Wish filters", create: "Make a wish", alsoNeed: "I need this too", viewOutcome: "View shipped app", viewSkill: "View shipped skill",
+  tabs: { all: "Most wanted", published: "New", planned: "Planned", building: "Building", shipped: "Shipped" }, statuses: { published: "Published", planned: "Planned", building: "Building", shipped: "Shipped" }, categories: { office: "Office", research: "Research", communication: "Communication", data: "Data", creative: "Creative", developer: "Developer", other: "Other" },
+  emptyTitle: "No matching public wishes yet", emptyDescription: "You can submit the first real work outcome.", errorTitle: "The wish pool is temporarily unavailable", errorDescription: "No wish was lost. Try again later; the rest of the website still works.",
+  form: { formTitle: "Make a wish", formDescription: "Describe real work; you do not need to design the feature for us.", titleLabel: "What do you want to complete?", titlePlaceholder: "For example: turn monthly invoices into an expense sheet", problemLabel: "Where are you stuck today?", outcomeLabel: "What would a useful result look like?", categoryLabel: "Category", similarTitle: "A similar wish may already exist", similarDescription: "Choose “I need this too” instead of creating a duplicate.", createAnyway: "Create a new wish anyway", submit: "Check and submit", sending: "Working...", failed: "Could not submit. Try again later.", success: "Your wish is pending review.", privacy: "New wishes are private by default. Only reviewed outcome copy is published; account details stay private." },
+};
+dictionaries.ar.wishPool = {
+  eyebrow: "مجموعة أمنيات Lily · تطوير مشترك", title: "ساعدنا في تحديد ما ستتعلمه Lily تالياً.", description: "أخبرنا عن عمل حقيقي تريد إنجازه. ندمج الرغبات المتشابهة ولكل رغبة عامة حالة واضحة.", filterLabel: "مرشحات الأمنيات", create: "أضف أمنية", alsoNeed: "أحتاج هذا أيضاً", viewOutcome: "عرض التطبيق المنجز", viewSkill: "عرض المهارة المنجزة",
+  tabs: { all: "الأكثر طلباً", published: "جديد", planned: "مخطط", building: "قيد التنفيذ", shipped: "تم الإطلاق" }, statuses: { published: "منشور", planned: "مخطط", building: "قيد التنفيذ", shipped: "تم الإطلاق" }, categories: { office: "المكتب", research: "البحث", communication: "التواصل", data: "البيانات", creative: "الإبداع", developer: "التطوير", other: "أخرى" },
+  emptyTitle: "لا توجد أمنيات عامة مطابقة", emptyDescription: "يمكنك إرسال أول نتيجة عمل حقيقية.", errorTitle: "مجموعة الأمنيات غير متاحة مؤقتاً", errorDescription: "لم نفقد أي رغبة. حاول لاحقاً، وبقية الموقع تعمل بشكل طبيعي.",
+  form: { formTitle: "أضف أمنية", formDescription: "صف عملاً حقيقياً؛ لا تحتاج إلى تصميم الميزة نيابة عنا.", titleLabel: "ما الذي تريد إنجازه؟", titlePlaceholder: "مثال: تحويل فواتير الشهر إلى جدول مصروفات", problemLabel: "أين تتعطل الآن؟", outcomeLabel: "كيف تبدو النتيجة المفيدة؟", categoryLabel: "الفئة", similarTitle: "قد توجد رغبة مشابهة", similarDescription: "اختر «أحتاج هذا أيضاً» بدلاً من إنشاء تكرار.", createAnyway: "إنشاء رغبة جديدة على أي حال", submit: "تحقق وأرسل", sending: "جارٍ العمل...", failed: "تعذر الإرسال. حاول لاحقاً.", success: "دخلت رغبتك مرحلة المراجعة.", privacy: "الرغبات الجديدة خاصة افتراضياً. ننشر وصف النتيجة بعد المراجعة فقط، وتبقى بيانات الحساب خاصة." },
+};

@@ -20,6 +20,7 @@ import { registerAdminSkillPackageRoutes } from "./admin/skill-packages.js";
 import { registerAdminUsageRoutes } from "./admin/usage.js";
 import { registerAdminUserRoutes } from "./admin/users.js";
 import { registerAdminWorkspaceAppRoutes } from "./admin/workspace-apps.js";
+import { registerAdminWishRoutes } from "./admin/wishes.js";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -107,6 +108,7 @@ export async function adminRoutes(app) {
   registerAdminRuntimePackRoutes(app, { audit });
   registerAdminSkillPackageRoutes(app, { audit });
   registerAdminWorkspaceAppRoutes(app, { audit });
+  registerAdminWishRoutes(app, { audit });
   registerAdminModelProviderRoutes(app, { audit });
   registerAdminConfigGroupRoutes(app, { audit });
   registerAdminConfigProfileRoutes(app, { audit });

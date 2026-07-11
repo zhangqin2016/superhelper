@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity, BarChart3, Boxes, ClipboardList, CreditCard, DownloadCloud, Gauge,
-  KeyRound, Laptop, Mail, PackageCheck, Radar, Settings, SlidersHorizontal, Store, UsersRound,
+  KeyRound, Laptop, Lightbulb, Mail, PackageCheck, Radar, Settings, SlidersHorizontal, Store, UsersRound,
 } from "lucide-react";
 
 // href → icon, kept here so the server shell passes only plain (serializable)
@@ -16,6 +16,7 @@ const ICONS = {
   "/admin/devices": Laptop,
   "/admin/usage": BarChart3,
   "/admin/contacts": Mail,
+  "/admin/wishes": Lightbulb,
   "/admin/billing": CreditCard,
   "/admin/releases": DownloadCloud,
   "/admin/library": Store,

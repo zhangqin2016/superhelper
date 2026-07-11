@@ -67,3 +67,18 @@ export async function userApiPost(path, body) {
   }
   return json;
 }
+
+export async function userApiDelete(path) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "DELETE",
+    cache: "no-store",
+    headers: await userHeaders(),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || json?.ok === false) {
+    const code = json?.code || "";
+    const message = json?.message || json?.error || code || `API ${path} failed: ${response.status}`;
+    throw new Error(code && message !== code ? `${code}: ${message}` : message);
+  }
+  return json;
+}

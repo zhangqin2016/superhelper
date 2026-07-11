@@ -18,6 +18,17 @@ function actionFormData(firstArg, secondArg) {
   return secondArg || firstArg;
 }
 
+function commaList(value) {
+  return String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function jsonMap(value) {
+  if (!String(value || "").trim()) return {};
+  const parsed = JSON.parse(value);
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error("i18n fields must be JSON objects.");
+  return Object.fromEntries(Object.entries(parsed).map(([key, item]) => [key, String(item || "").trim()]).filter(([, item]) => item));
+}
+
 export async function createLicenseAction(_previousState, formData) {
   formData = actionFormData(_previousState, formData);
   try {
@@ -294,6 +305,44 @@ export async function setSkillPackageEnabledAction(formData) {
 export async function setWorkspaceAppEnabledAction(formData) {
   await apiPatch(`/api/admin/workspace-apps/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
   revalidatePath("/admin/apps");
+}
+
+export async function updateWishAction(_previousState, formData) {
+  formData = actionFormData(_previousState, formData);
+  const id = text(formData, "id");
+  try {
+    await apiPatch(`/api/admin/wishes/${id}`, {
+      publicTitle: text(formData, "publicTitle") || null,
+      publicTitleI18n: jsonMap(text(formData, "publicTitleI18n")),
+      publicSummary: text(formData, "publicSummary") || null,
+      publicSummaryI18n: jsonMap(text(formData, "publicSummaryI18n")),
+      publicUpdate: text(formData, "publicUpdate") || null,
+      publicUpdateI18n: jsonMap(text(formData, "publicUpdateI18n")),
+      submitterStatusNote: text(formData, "submitterStatusNote") || null,
+      category: text(formData, "category") || "other",
+      status: text(formData, "status") || "reviewing",
+      linkedAppIds: commaList(text(formData, "linkedAppIds")),
+      linkedSkillIds: commaList(text(formData, "linkedSkillIds")),
+    });
+    revalidatePath("/admin/wishes");
+    revalidatePath(`/admin/wishes/${id}`);
+    return { ok: true, message: "Wish updated." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to update wish." };
+  }
+}
+
+export async function mergeWishAction(_previousState, formData) {
+  formData = actionFormData(_previousState, formData);
+  const id = text(formData, "id");
+  try {
+    await apiPost(`/api/admin/wishes/${id}/merge`, { targetWishId: text(formData, "targetWishId") });
+    revalidatePath("/admin/wishes");
+    revalidatePath(`/admin/wishes/${id}`);
+    return { ok: true, message: "Wish merged." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to merge wish." };
+  }
 }
 
 export async function setConfigProfileEnabledAction(formData) {

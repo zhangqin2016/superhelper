@@ -4,7 +4,9 @@ export const dynamic = "force-dynamic";
 
 function safeNext(value) {
   if (typeof value !== "string") return "/account/billing";
-  if (!value.startsWith("/account/") || value.startsWith("//")) return "/account/billing";
+  if (value.startsWith("//")) return "/account/billing";
+  if (value === "/wishes") return value;
+  if (!value.startsWith("/account/")) return "/account/billing";
   return value;
 }
 

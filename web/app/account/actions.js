@@ -14,6 +14,7 @@ function actionFormData(first, second) {
 }
 
 function safeAccountNext(value, fallback = "/account/billing") {
+  if (value === "/wishes") return value;
   if (!value || !value.startsWith("/account/")) return fallback;
   if (value.startsWith("//")) return fallback;
   return value;
