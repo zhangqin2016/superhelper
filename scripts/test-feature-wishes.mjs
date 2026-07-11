@@ -6,6 +6,7 @@ process.env.DATABASE_URL ||= "postgres://unused:unused@localhost:5432/unused";
 
 const {
   canTransitionWish,
+  createWishActionLimiter,
   findSimilarWishes,
   mergeSupporterIds,
   normalizeWishInput,
@@ -141,5 +142,40 @@ assert.equal(
   }).ok,
   false,
 );
+
+let limiterNow = 1_000;
+const limiter = createWishActionLimiter({ now: () => limiterNow });
+for (let index = 0; index < 5; index += 1) {
+  assert.equal(limiter.take("usr_1", "create"), true);
+}
+assert.equal(limiter.take("usr_1", "create"), false);
+assert.equal(limiter.take("usr_2", "create"), true);
+limiterNow += 60 * 60 * 1000;
+assert.equal(limiter.take("usr_1", "create"), true);
+assert.equal(limiter.take("usr_1", "unknown"), false);
+
+const publicWishRouteSource = fs.readFileSync(
+  new URL("../server/src/routes/public/wishes.js", import.meta.url),
+  "utf8",
+);
+for (const route of [
+  "/api/wishes",
+  "/api/wishes/:id",
+  "/api/wishes/similar",
+  "/api/wishes/:id/support",
+  "/api/account/wishes",
+]) {
+  assert.equal(publicWishRouteSource.includes(route), true, `missing public wish route ${route}`);
+}
+assert.match(publicWishRouteSource, /requireWebUser/);
+assert.match(publicWishRouteSource, /serializePublicWish/);
+assert.match(publicWishRouteSource, /createWishActionLimiter/);
+assert.match(publicWishRouteSource, /onConflict[\s\S]+columns\(\["wish_id",\s*"user_id"\]\)/);
+
+const publicRoutesSource = fs.readFileSync(new URL("../server/src/routes/public.js", import.meta.url), "utf8");
+assert.match(publicRoutesSource, /registerPublicWishRoutes\(app\)/);
+
+const openapiSource = fs.readFileSync(new URL("../server/src/openapi.js", import.meta.url), "utf8");
+assert.match(openapiSource, /public:wishes/);
 
 console.log("feature-wishes: ok");

@@ -21,6 +21,12 @@ const TRANSITIONS = new Map([
   ["merged", new Set()],
 ]);
 
+const ACTION_LIMITS = {
+  similar: { max: 30, windowMs: 60_000 },
+  create: { max: 5, windowMs: 60 * 60_000 },
+  support: { max: 60, windowMs: 60_000 },
+};
+
 function stringMap(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(
@@ -167,4 +173,29 @@ export function findSimilarWishes(query, rows = [], { limit = 5, threshold = 0.3
 
 export function mergeSupporterIds(targetIds = [], sourceIds = []) {
   return [...new Set([...targetIds, ...sourceIds].map((item) => String(item || "").trim()).filter(Boolean))];
+}
+
+export function createWishActionLimiter({ now = () => Date.now() } = {}) {
+  const buckets = new Map();
+  return {
+    take(userId, action) {
+      const policy = ACTION_LIMITS[action];
+      const user = String(userId || "").trim();
+      if (!policy || !user) return false;
+      const currentTime = now();
+      const key = `${action}:${user}`;
+      const existing = buckets.get(key);
+      if (!existing || existing.resetAt <= currentTime) {
+        buckets.set(key, { count: 1, resetAt: currentTime + policy.windowMs });
+        return true;
+      }
+      existing.count += 1;
+      if (buckets.size > 5_000) {
+        for (const [bucketKey, bucket] of buckets) {
+          if (bucket.resetAt <= currentTime) buckets.delete(bucketKey);
+        }
+      }
+      return existing.count <= policy.max;
+    },
+  };
 }
