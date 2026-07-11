@@ -701,6 +701,7 @@
   "toast.microCompletionRetry": "أعاد النموذج جزءاً من جملة فقط. تجري إعادة المحاولة تلقائياً…",
   "toast.runnerTerminatedRetry": "تمت إعادة تدوير جلسة المحرك. تجري إعادة البناء والمحاولة تلقائياً…",
   "toast.runnerStartRetry": "تعذر بدء عملية المحرك. يتم الانتظار وإعادة المحاولة تلقائياً…",
+  "toast.selfHealProbeNoChange": "أُعيد فحص النموذج الحالي: لا تغيير في إعدادات التوافق. غالباً ما يشير هذا إلى خلل عابر في البوابة — أعد المحاولة لاحقاً أو تواصل مع مزوّد النموذج.",
   "markdown.codeCollapseLines": "{count} سطر",
   "markdown.codeExpand": "توسيع",
   "markdown.codeCollapseAction": "طي",

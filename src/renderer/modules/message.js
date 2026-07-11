@@ -884,6 +884,12 @@ export function wireMessageIpc() {
 // failed message: tell the user why a "failed" turn is suddenly running again.
 function handleSelfHealRetryEvents(batch) {
   for (const event of batch?.events || []) {
+    if (event.type === "turn.self_heal_notice") {
+      if (event.payload?.kind === "probe_no_change") {
+        showToast(t("toast.selfHealProbeNoChange"), "info", 7000);
+      }
+      continue;
+    }
     if (event.type !== "turn.self_heal_retry") continue;
     const kind = event.payload?.kind || "";
     const key = kind === "tool_call_rescue"

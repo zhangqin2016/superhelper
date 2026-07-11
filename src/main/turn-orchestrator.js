@@ -85,6 +85,7 @@ const TURN_OPTIONAL_TYPES = new Set([
   // Emitted AFTER the failed turn finalized (state.turnId already null), so it
   // must be deliverable without an active turn or the renderer never sees it.
   "turn.self_heal_retry",
+  "turn.self_heal_notice",
   "engine.notice",
   "engine.warning",
   "engine.stderr",
@@ -1017,6 +1018,14 @@ class TurnOrchestrator {
         code: failure.code,
         systemPromptProbeText: this._selfHealProbeText(sessionId),
       });
+      if (result?.attempted && !result.healed) {
+        // The probe ran and found nothing to change — tell the user, or the
+        // self-heal machinery looks like it silently disappeared.
+        this._emit(sessionId, "turn.self_heal_notice", {
+          kind: "probe_no_change",
+          errorCode: failure?.code || "",
+        });
+      }
       if (!result?.healed) return;
       // Don't fight the user: retry only while the session is still idle with
       // nothing queued (they may already have resent or moved on).
@@ -1056,6 +1065,11 @@ class TurnOrchestrator {
       const rescue = require("./tool-call-rescue");
       const strategy = rescue.rescueStrategyFor(failure?.code);
       if (!strategy) return false;
+      // A failed RESCUE turn never chains into another rescue: one silent
+      // attempt per user action, so automation can never loop — and the time
+      // cooldown can stay a tiny debounce instead of punishing the user's own
+      // resend minutes later.
+      if (this._state(sessionId).wasRescueAttempt) return false;
       if (!rescue.shouldAttemptRescue(sessionId, failure.code)) return false;
       // Strategies with delayMs wait out a transient cause (engine start
       // failures) BEFORE the idle checks below, so a user who already resent
@@ -1269,6 +1283,10 @@ class TurnOrchestrator {
     // Reuse a pre-echoed turnId (see echoUserMessage) so the already-shown user
     // message and this turn's assistant card belong to the SAME turn.
     state.turnId = opts.turnId || newTurnId();
+    // Sticky across finalize (deliberately NOT cleared in the idle reset):
+    // the rescue hook runs after the turn state was reset, and must know the
+    // turn it is inspecting was itself a rescue attempt.
+    state.wasRescueAttempt = Boolean(opts.rescueAttempt);
     state.steerCount = 0;
     state.admittedSeq = null;
     state.assistantText = "";
@@ -1427,6 +1445,7 @@ class TurnOrchestrator {
     const allowImageFileParts = Boolean(require("./model-presets").activePresetSupportsVision());
     state.phase = "starting";
     state.turnId = newTurnId();
+    state.wasRescueAttempt = Boolean(opts.rescueAttempt);
     state.steerCount = 0;
     state.admittedSeq = null;
     state.assistantText = "";
@@ -2192,7 +2211,13 @@ class TurnOrchestrator {
         ...terminalMeta,
       });
     } else if (failed) {
-      const friendly = failure.message || normalized.text || sanitizeError(collectFailureTextFromState(state)) || "The assistant engine encountered an error. Please retry.";
+      let friendly = failure.message || normalized.text || sanitizeError(collectFailureTextFromState(state)) || "The assistant engine encountered an error. Please retry.";
+      // Make the invisible self-heal visible: when THIS turn was already the
+      // silent rescue retry, say so — otherwise the user reads two naked
+      // failures and concludes the auto-recovery is gone.
+      if (state.wasRescueAttempt) {
+        friendly = `${friendly}\n\n（平台已自动重试 1 次仍然失败，判断为持续性故障。）`;
+      }
       const rawFailureText = collectFailureTextFromState(state) || normalized.text || payload?.error || payload?.message || friendly;
       const failedTurnId = state.turnId;
       this._finalize(sessionId, "turn.failed", {

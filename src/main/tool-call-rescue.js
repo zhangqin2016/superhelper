@@ -28,7 +28,12 @@
  * - fail-open: any internal error leaves the normal failure flow untouched
  */
 
-const COOLDOWN_MS = 5 * 60_000;
+// Pure double-fire debounce. Loop prevention does NOT live here: a failed
+// rescue turn never chains into another rescue (the orchestrator's
+// wasRescueAttempt guard), so every USER action gets at most one silent
+// retry. The old 5-minute cooldown made a user's manual resend seconds after
+// a failure get WORSE treatment than their first send (no rescue at all).
+const COOLDOWN_MS = 5_000;
 
 /** @type {Map<string, number>} `${sessionId}:${code}` -> last attempt ts */
 const lastRescueByKey = new Map();

@@ -701,6 +701,7 @@
   "toast.microCompletionRetry": "模型只返回了一个句子片段，正在自动重试…",
   "toast.runnerTerminatedRetry": "引擎会话已回收，正在自动重建并重试…",
   "toast.runnerStartRetry": "引擎进程未能启动，正在等待恢复并自动重试…",
+  "toast.selfHealProbeNoChange": "已重新体检当前模型：兼容配置无变化。失败多为网关瞬时故障，可稍后重试或联系模型服务方。",
   "markdown.codeCollapseLines": "{count} 行",
   "markdown.codeExpand": "展开",
   "markdown.codeCollapseAction": "收起",

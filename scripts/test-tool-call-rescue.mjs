@@ -495,6 +495,61 @@ resetRescueStateForTests();
   flushEvents();
 }
 
+// Rescue-chain guard + user-resend fairness ("小模型自动修复没有了吗" field case):
+// a failed rescue turn never chains into a second rescue and its failure
+// message SAYS a retry already happened; a fresh manual resend afterwards
+// gets a fresh rescue instead of being punished by a long cooldown.
+resetRescueStateForTests();
+{
+  const send = await ctx.turnOrchestrator.sendUserMessage("s1", "你好", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  assert.equal(send.ok, true);
+  flushEvents();
+  const payloadsBefore = runner.sentPayloads.length;
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "" });
+  await settle();
+  assert(flushEvents().some((e) => e.type === "turn.self_heal_retry"), "first empty failure gets the silent rescue");
+  // The rescue retry fails the same way — no second rescue, and the visible
+  // failure admits the auto-retry already ran.
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "" });
+  await settle();
+  const chainEvents = flushEvents();
+  assert.equal(chainEvents.filter((e) => e.type === "turn.self_heal_retry").length, 0,
+    "a failed rescue turn never chains into another rescue");
+  const chainFailed = chainEvents.find((e) => e.type === "turn.failed");
+  assert.match(String(chainFailed?.payload?.assistant || ""), /已自动重试 1 次/,
+    "the second failure tells the user the platform already retried");
+  assert.equal(runner.sentPayloads.length, payloadsBefore + 1, "exactly one rescue dispatch");
+
+  // Manual resend after the debounce window: rescue fires again for the
+  // user's own action (the old 5-minute cooldown left this naked).
+  resetRescueStateForTests();
+  const resend = await ctx.turnOrchestrator.sendUserMessage("s1", "你好", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+  });
+  assert.equal(resend.ok, true);
+  flushEvents();
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "" });
+  await settle();
+  assert(flushEvents().some((e) => e.type === "turn.self_heal_retry"),
+    "a fresh user resend gets a fresh rescue");
+  // Settle the retried turn cleanly.
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "assistant.delta", payload: { text: "你好！有什么可以帮你？" } },
+    { type: "usage.updated", payload: { usage: { output_tokens: 12 }, stopReason: "stop" } },
+  ]);
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "你好！有什么可以帮你？" });
+  await settle();
+  flushEvents();
+}
+
 // Safety: a punctuation-less CJK greeting to a trivial ask has NO fragment
 // signature — it completes normally (no hidden retry, no failure).
 {

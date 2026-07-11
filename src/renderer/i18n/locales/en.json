@@ -701,6 +701,7 @@
   "toast.microCompletionRetry": "The model returned only a sentence fragment. Retrying automatically…",
   "toast.runnerTerminatedRetry": "The engine session was recycled. Rebuilding and retrying automatically…",
   "toast.runnerStartRetry": "The engine process failed to start. Waiting and retrying automatically…",
+  "toast.selfHealProbeNoChange": "Re-checked the current model: compatibility settings unchanged. This usually indicates a transient gateway fault — retry later or contact the model provider.",
   "markdown.codeCollapseLines": "{count} lines",
   "markdown.codeExpand": "Expand",
   "markdown.codeCollapseAction": "Collapse",

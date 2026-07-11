@@ -22,6 +22,7 @@ const RUNTIME_EVENT_TYPES = new Set([
   "turn.accepted",
   "turn.steered",
   "turn.self_heal_retry",
+  "turn.self_heal_notice",
   "task.created",
   "task.plan.updated",
   "task.step.started",
@@ -84,6 +85,7 @@ const TURN_OPTIONAL_TYPES = new Set([
   "turn.steered",
   // Fired after the failed turn already finalized (no active turnId).
   "turn.self_heal_retry",
+  "turn.self_heal_notice",
   "engine.notice",
   "engine.warning",
   "engine.stderr",
