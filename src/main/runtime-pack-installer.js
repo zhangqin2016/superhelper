@@ -4,8 +4,8 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync, spawn } = require("node:child_process");
-const { finished } = require("node:stream/promises");
 const { PROJECT_ROOT } = require("./config");
+const { downloadArtifact } = require("./runtime-pack-download");
 const {
   bundledPackDir,
   effectivePackEntries,
@@ -180,14 +180,6 @@ function sha256File(filePath) {
   return hash.digest("hex");
 }
 
-function safeUrl(value) {
-  const parsed = new URL(String(value || ""));
-  if (parsed.protocol !== "https:" && parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost") {
-    throw new Error("INVALID_RUNTIME_PACK_URL");
-  }
-  return parsed.toString();
-}
-
 function safeProgressCall(onProgress, progress) {
   if (typeof onProgress !== "function") return;
   try {
@@ -247,40 +239,6 @@ function emitProgress(onProgress, id, phase, detail = {}) {
 
 function publishProgress(job, id, phase, detail = {}) {
   job.publish({ id, phase, at: new Date().toISOString(), ...packProgressMeta(id), ...detail });
-}
-
-async function downloadToFile(url, destPath, options = {}) {
-  const { id = "", onProgress } = options;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
-  let written = 0;
-  let lastProgressAt = 0;
-  try {
-    const response = await fetch(safeUrl(url), { signal: controller.signal });
-    if (!response.ok) throw new Error(`RUNTIME_PACK_DOWNLOAD_FAILED_${response.status}`);
-    const length = Number(response.headers.get("content-length") || 0);
-    if (length > MAX_RUNTIME_PACK_BYTES) throw new Error("RUNTIME_PACK_TOO_LARGE");
-    emitProgress(onProgress, id, "downloading", { writtenBytes: 0, totalBytes: length || null });
-    fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    const file = fs.createWriteStream(destPath);
-    try {
-      for await (const chunk of response.body) {
-        written += chunk.length;
-        if (written > MAX_RUNTIME_PACK_BYTES) throw new Error("RUNTIME_PACK_TOO_LARGE");
-        if (!file.write(chunk)) await new Promise((resolve) => file.once("drain", resolve));
-        const now = Date.now();
-        if (now - lastProgressAt > 250 || (length && written >= length)) {
-          lastProgressAt = now;
-          emitProgress(onProgress, id, "downloading", { writtenBytes: written, totalBytes: length || null });
-        }
-      }
-    } finally {
-      file.end();
-    }
-    await finished(file);
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 function uniqueByCommand(candidates) {
@@ -798,19 +756,42 @@ async function runRuntimePackInstall(id, job) {
   const target = packDir(id);
   const cacheDir = packsRoot();
   const installNonce = Date.now();
-  const archivePath = path.join(cacheDir, `.${id}-${installNonce}.pack${archiveExtensionForArtifact(artifact)}`);
+  const artifactKey = crypto.createHash("sha256")
+    .update(`${id}\0${artifact.version || ""}\0${artifact.sha256 || artifact.url}`)
+    .digest("hex")
+    .slice(0, 20);
+  const archivePath = path.join(cacheDir, `.${id}-${artifactKey}.pack${archiveExtensionForArtifact(artifact)}`);
+  const partPath = `${archivePath}.part`;
   const stagingPath = path.join(cacheDir, `.${id}-${installNonce}.extracting`);
 
   try {
     fs.rmSync(stagingPath, { recursive: true, force: true });
-    await downloadToFile(artifact.url, archivePath, {
-      id,
-      onProgress: (progress) => job.publish({ ...packProgressMeta(id), ...progress }),
+    const downloaded = await downloadArtifact({
+      url: artifact.url,
+      partPath,
+      expectedBytes: Number(artifact.sizeBytes || artifact.size || 0),
+      maxBytes: MAX_RUNTIME_PACK_BYTES,
+      requestTimeoutMs: DOWNLOAD_TIMEOUT_MS,
+      onProgress: (progress) => job.publish({
+        id,
+        phase: "downloading",
+        at: new Date().toISOString(),
+        ...packProgressMeta(id),
+        ...progress,
+      }),
     });
+    if (!downloaded.ok) {
+      publishProgress(job, id, "failed", { error: downloaded.error });
+      return { ...downloaded, id };
+    }
+    fs.rmSync(archivePath, { force: true });
+    fs.renameSync(partPath, archivePath);
     if (artifact.sha256) {
       publishProgress(job, id, "verifying", { sha256: String(artifact.sha256).toLowerCase() });
       const actual = sha256File(archivePath);
       if (actual !== String(artifact.sha256).toLowerCase()) {
+        fs.rmSync(archivePath, { force: true });
+        fs.rmSync(partPath, { force: true });
         publishProgress(job, id, "failed", { error: "CHECKSUM_MISMATCH" });
         return { ok: false, id, error: "CHECKSUM_MISMATCH" };
       }
