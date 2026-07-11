@@ -211,10 +211,15 @@ function broadcastRuntimePackProgress(progress) {
   }
 }
 
+function publishRuntimePackProgress(progress) {
+  broadcastRuntimePackProgress(progress);
+}
+
 function createInstallJob(id, options = {}) {
   const subscribers = new Set();
   const job = {
     id,
+    jobId: `runtime_pack_${crypto.randomUUID()}`,
     options,
     latest: null,
     promise: null,
@@ -225,9 +230,14 @@ function createInstallJob(id, options = {}) {
       return () => subscribers.delete(onProgress);
     },
     publish(progress) {
-      job.latest = progress;
-      for (const onProgress of [...subscribers]) safeProgressCall(onProgress, progress);
-      broadcastRuntimePackProgress(progress);
+      const enriched = {
+        jobId: job.jobId,
+        turnId: String(job.options?.turnId || ""),
+        ...progress,
+      };
+      job.latest = enriched;
+      for (const onProgress of [...subscribers]) safeProgressCall(onProgress, enriched);
+      broadcastRuntimePackProgress(enriched);
     },
   };
   return job;
@@ -884,5 +894,6 @@ module.exports = {
   warmBaseProvidedRuntimePacks,
   listRuntimePacks,
   platformKey,
+  publishRuntimePackProgress,
   uninstallRuntimePack,
 };

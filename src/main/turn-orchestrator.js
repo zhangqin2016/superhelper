@@ -283,7 +283,33 @@ async function prepareTurnCapabilityReadiness({ ctx, sessionId, turnId, text, fi
       if (prepared.refreshRequired) {
         const refresh = deps.refresh || ctx?.refreshPreparedRuntimeForTurn
           || require("./runner-live-config").refreshPreparedRuntimeForTurn;
-        refresh(ctx, sessionId);
+        const progressId = prepared.readyPackIds?.[0] || unresolvedPackIds[0];
+        const jobId = `runtime_refresh_${turnId}`;
+        const publishProgress = deps.progress || installer.publishRuntimePackProgress;
+        publishProgress({ id: progressId, jobId, turnId, phase: "refreshing", at: new Date().toISOString() });
+        try {
+          refresh(ctx, sessionId);
+        } catch (error) {
+          publishProgress({
+            id: progressId,
+            jobId,
+            turnId,
+            phase: "failed",
+            error: error?.message || String(error),
+            at: new Date().toISOString(),
+          });
+          return {
+            status: "degraded",
+            requiredPackIds: plan.requiredPackIds || [],
+            enhancementPackIds: plan.enhancementPackIds || [],
+            readyPackIds: prepared.readyPackIds || [],
+            failedPackIds: unresolvedPackIds,
+            unavailablePackIds: prepared.unavailablePackIds || [],
+            fallbackCapabilityIds: plan.fallbackCapabilityIds || [],
+            error: error?.message || String(error),
+          };
+        }
+        publishProgress({ id: progressId, jobId, turnId, phase: "installed", at: new Date().toISOString() });
       }
       return {
         status: prepared.ok ? "ready" : "degraded",

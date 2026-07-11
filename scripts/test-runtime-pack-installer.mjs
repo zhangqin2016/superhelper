@@ -142,6 +142,7 @@ try {
   const progressEvents = [];
   const proPdfProgress = [];
   const installed = await installer.installRuntimePack("pro-pdf", {
+    turnId: "turn_runtime_test",
     onProgress: (event) => proPdfProgress.push(event),
   });
   assert.equal(installed.ok, true, `install failed: ${JSON.stringify(installed)}`);
@@ -150,6 +151,8 @@ try {
     proPdfProgress.some((event) => event.phase === "health-checking"),
     `known packs must pass health checks before activation: ${JSON.stringify(proPdfProgress)}`,
   );
+  assert(proPdfProgress.every((event) => event.turnId === "turn_runtime_test"));
+  assert(proPdfProgress.every((event) => typeof event.jobId === "string" && event.jobId));
   assert(
     fs.existsSync(path.join(runtimePackRoot, "runtime-packs", "pro-pdf", "module", "__init__.py")),
     "pack contents should be installed under the selected runtime-pack root",

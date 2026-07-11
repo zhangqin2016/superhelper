@@ -37,11 +37,13 @@ assert.match(turnOrchestrator, /dependencyAdvisory/);
 const progressUi = read("src/renderer/modules/runtime-pack-progress.js");
 assert.match(progressUi, /onRuntimePackProgress/);
 assert.match(progressUi, /runtime-pack-progress-main/);
-assert.match(progressUi, /MAIN_VISIBLE_PHASES = new Set\(\["failed"\]\)/);
+assert.match(progressUi, /ACTIVE_VISIBLE_PHASES/);
+for (const phase of ["resolving", "downloading", "verifying", "extracting", "health-checking", "refreshing", "installed", "failed"]) {
+  assert.match(progressUi, new RegExp(`\\b${phase.replace("-", "\\-")}\\b`));
+}
+assert.doesNotMatch(progressUi, /MAIN_VISIBLE_PHASES = new Set\(\["failed"\]\)/);
 assert.match(progressUi, /latestVisibleProgress/);
-assert.doesNotMatch(progressUi, /runtimeProgress\.title/);
-assert.doesNotMatch(progressUi, /runtimeProgress\.done/);
-assert.doesNotMatch(progressUi, /runtimeProgress\.multiple/);
+assert.match(progressUi, /runtimeProgress\.multiple/);
 
 const app = read("src/renderer/app.js");
 assert.match(app, /initRuntimePackProgress/);
@@ -56,6 +58,10 @@ for (const locale of ["zh-CN", "en", "ar"]) {
     "composer.dependencyInstallWaiting",
     "runtimeProgress.failed",
     "runtimeProgress.bytes",
+    "runtimeProgress.preparing",
+    "runtimeProgress.refreshing",
+    "runtimeProgress.ready",
+    "runtimeProgress.degraded",
   ]) {
     assert.ok(messages[key], `${locale} missing ${key}`);
   }

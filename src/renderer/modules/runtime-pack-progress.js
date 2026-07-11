@@ -2,7 +2,16 @@ import { t } from "../i18n/index.js";
 import { runtimePackLabel } from "./runtime-pack-preflight-ui.js";
 
 const TERMINAL_PHASES = new Set(["installed", "skipped", "failed"]);
-const MAIN_VISIBLE_PHASES = new Set(["failed"]);
+const ACTIVE_VISIBLE_PHASES = new Set([
+  "resolving",
+  "downloading",
+  "verifying",
+  "extracting",
+  "health-checking",
+  "refreshing",
+  "installed",
+  "failed",
+]);
 
 const activeProgress = new Map();
 const cleanupTimers = new Map();
@@ -101,8 +110,12 @@ function progressMeta(progress) {
 
 function latestVisibleProgress() {
   return [...activeProgress.values()]
-    .filter((progress) => MAIN_VISIBLE_PHASES.has(progress?.phase))
+    .filter((progress) => ACTIVE_VISIBLE_PHASES.has(progress?.phase))
     .sort((a, b) => String(b?.at || "").localeCompare(String(a?.at || "")))[0] || null;
+}
+
+function progressGroup(progress) {
+  return progress?.turnId || progress?.jobId || "settings";
 }
 
 function render() {
@@ -122,12 +135,24 @@ function render() {
   const terminal = TERMINAL_PHASES.has(progress.phase);
   const failed = progress.phase === "failed";
   const percent = progressPercent(progress);
+  const count = [...activeProgress.values()].filter((item) => (
+    ACTIVE_VISIBLE_PHASES.has(item?.phase) && progressGroup(item) === progressGroup(progress)
+  )).length;
 
   root.hidden = false;
   root.classList.toggle("runtime-pack-progress-main--failed", failed);
   root.classList.toggle("runtime-pack-progress-main--indeterminate", percent === null && !terminal);
 
-  titleEl.textContent = t("runtimeProgress.failed", { name });
+  const titleKey = failed
+    ? "runtimeProgress.degraded"
+    : progress.phase === "installed"
+      ? "runtimeProgress.ready"
+      : progress.phase === "refreshing"
+        ? "runtimeProgress.refreshing"
+        : "runtimeProgress.preparing";
+  titleEl.textContent = count > 1 && !failed && progress.phase !== "installed"
+    ? t("runtimeProgress.multiple", { count })
+    : t(titleKey, { name });
   metaEl.textContent = progressMeta(progress);
   fillEl.style.width = percent === null ? "" : `${percent}%`;
 }
@@ -137,17 +162,24 @@ function handleProgress(eventOrProgress, maybeProgress) {
   if (!progress?.id) return;
 
   ensureElement();
-  const id = progress.id;
-  if (cleanupTimers.has(id)) {
-    clearTimeout(cleanupTimers.get(id));
-    cleanupTimers.delete(id);
+  const key = `${progressGroup(progress)}:${progress.id}`;
+  if (progress.phase !== "failed") {
+    for (const [existingKey, existing] of activeProgress) {
+      if (existing?.phase === "failed" && progressGroup(existing) !== progressGroup(progress)) {
+        activeProgress.delete(existingKey);
+      }
+    }
+  }
+  if (cleanupTimers.has(key)) {
+    clearTimeout(cleanupTimers.get(key));
+    cleanupTimers.delete(key);
   }
 
-  activeProgress.set(id, progress);
-  if (TERMINAL_PHASES.has(progress.phase)) {
-    cleanupTimers.set(id, setTimeout(() => {
-      cleanupTimers.delete(id);
-      activeProgress.delete(id);
+  activeProgress.set(key, progress);
+  if (progress.phase === "installed" || progress.phase === "skipped") {
+    cleanupTimers.set(key, setTimeout(() => {
+      cleanupTimers.delete(key);
+      activeProgress.delete(key);
       render();
     }, 2600));
   }
