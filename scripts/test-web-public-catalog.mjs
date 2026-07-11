@@ -102,4 +102,21 @@ for (const privateField of ["downloadUrl", "sha256", "capability"]) {
   assert.equal(skillCatalog.includes(privateField), false, `skill catalog exposes ${privateField}`);
 }
 
+const siteNav = fs.readFileSync(new URL("../web/components/site-nav.js", import.meta.url), "utf8");
+const siteFooter = fs.readFileSync(new URL("../web/components/site-footer.js", import.meta.url), "utf8");
+for (const href of ["/apps", "/skills", "/wishes", "/pricing", "/account", "/download"]) {
+  assert.equal(siteNav.includes(`"${href}"`), true, `public nav missing ${href}`);
+}
+assert.match(siteNav, /onClick=\{\(\) => setOpen\(false\)\}/);
+assert.match(siteFooter, /href="\/apps"/);
+assert.match(siteFooter, /href="\/skills"/);
+assert.match(siteFooter, /href="\/wishes"/);
+
+const { dictionaries } = await import("../web/lib/i18n.mjs");
+for (const locale of ["zh", "en", "ar"]) {
+  for (const key of ["apps", "skills", "wishes", "pricing", "account", "download"]) {
+    assert.equal(typeof dictionaries[locale].nav[key], "string", `${locale} nav missing ${key}`);
+  }
+}
+
 console.log("web-public-catalog: ok");

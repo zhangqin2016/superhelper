@@ -32,6 +32,10 @@ export async function getI18n() {
 export const dictionaries = {
   zh: {
     nav: {
+      apps: "应用",
+      skills: "技能",
+      wishes: "共创愿望",
+      account: "我的账户",
       scenarios: "场景",
       experts: "专家工作区",
       product: "工作方式",
@@ -298,7 +302,7 @@ export const dictionaries = {
     },
   },
   en: {
-    nav: { scenarios: "Scenarios", experts: "Experts", product: "How it works", pricing: "Pricing", docs: "Docs", contact: "Contact", billing: "License", download: "Download", open: "Open navigation" },
+    nav: { apps: "Apps", skills: "Skills", wishes: "Wish pool", account: "Account", scenarios: "Scenarios", experts: "Experts", product: "How it works", pricing: "Pricing", docs: "Docs", contact: "Contact", billing: "License", download: "Download", open: "Open navigation" },
     home: {
       badge: "Turn messy information into executable outcomes",
       titleA: "Stop chatting with AI.",
@@ -439,7 +443,7 @@ export const dictionaries = {
     pages: { docsTitle: "Documentation", docsDesc: "First-run setup for teams deploying Lily Workbench.", pricingTitle: "Pricing", pricingDesc: "Start lightweight, then add team license control and deployment management.", pricingPlans: [["Personal", "Personal trial", "1 seat", ["Desktop client", "Manual updates", "Basic skill packages"]], ["Team", "Recommended", "5+ seats", ["License console", "Device analytics", "Skill package catalog", "Release control"]], ["Enterprise", "Contact sales", "Custom", ["Private deployment", "Custom skill packages", "Priority support"]]], contactTitle: "Bring Lily Workbench into your team with controlled licenses, skill packages, and updates.", contactDesc: "For teams that need private deployment, device licensing, skill package delivery and release control. We only collect device and aggregate usage stats.", contactPrepareTitle: "We will confirm first", contactPrepareItems: [["Deployment scope", "Mac only first, or Mac and Windows."], ["License policy", "Seats, expiry, offline activation, and update policy."], ["Skill package catalog", "MCP, skill, and internal tool entries to publish."]], downloadTitle: "Download Lily Workbench", downloadDesc: "Install the desktop client and connect it to your licensed team deployment.", changelogTitle: "Changelog", downloadPlatforms: { macArm: "Apple Silicon Mac · DMG", macIntel: "Intel Mac · DMG" } },
   },
   ar: {
-    nav: { scenarios: "السيناريوهات", experts: "مساحات الخبراء", product: "طريقة العمل", pricing: "الأسعار", docs: "المساعدة", contact: "تواصل", billing: "الترخيص", download: "تنزيل", open: "فتح القائمة" },
+    nav: { apps: "التطبيقات", skills: "المهارات", wishes: "الأمنيات", account: "الحساب", scenarios: "السيناريوهات", experts: "مساحات الخبراء", product: "طريقة العمل", pricing: "الأسعار", docs: "المساعدة", contact: "تواصل", billing: "الترخيص", download: "تنزيل", open: "فتح القائمة" },
     home: {
       badge: "حوّل الفوضى إلى نتائج قابلة للتنفيذ",
       titleA: "لا تكتف بالدردشة مع الذكاء الاصطناعي.",

@@ -10,10 +10,10 @@ export function SiteNav({ initialLocale }) {
   const [open, setOpen] = useState(false);
   const { t } = useI18n(initialLocale);
   const links = [
-    ["/#scenarios", t.nav.scenarios],
-    ["/#experts", t.nav.experts],
-    ["/#product", t.nav.product],
-    ["/contact", t.nav.contact],
+    ["/apps", t.nav.apps],
+    ["/skills", t.nav.skills],
+    ["/wishes", t.nav.wishes],
+    ["/pricing", t.nav.pricing],
   ];
   return (
     <header className="site-nav fixed left-0 right-0 top-0 border-b backdrop-blur-xl">
@@ -29,6 +29,9 @@ export function SiteNav({ initialLocale }) {
         </nav>
         <div className="flex items-center gap-2">
           <LanguageSwitcher compact initialLocale={initialLocale} />
+          <Link href="/account" className="site-account hidden rounded-lg px-3 py-2 text-sm font-semibold text-white/76 hover:text-white md:inline-flex">
+            {t.nav.account}
+          </Link>
           <Link href="/download" className="nav-download rounded-lg bg-white px-4 py-2 text-sm font-semibold text-ink">
             {t.nav.download}
           </Link>
@@ -50,6 +53,9 @@ export function SiteNav({ initialLocale }) {
                 {label}
               </Link>
             ))}
+            <Link href="/account" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2 hover:bg-white/8">
+              {t.nav.account}
+            </Link>
             <Link href="/download" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2 hover:bg-white/8">
               {t.nav.download}
             </Link>

@@ -1,4 +1,6 @@
 import { headers } from "next/headers";
+import Link from "next/link";
+import { getI18n } from "../lib/i18n.mjs";
 
 const ICP_NUMBER = "京ICP备2026001588号-2";
 const COMPANY_NAME = "北京科瑞普投艺术科技有限公司";
@@ -54,15 +56,27 @@ function shouldShowChinaFiling(headerStore) {
 
 export async function SiteFooter() {
   const headerStore = await headers();
-  if (!shouldShowChinaFiling(headerStore)) return null;
+  const showChinaFiling = shouldShowChinaFiling(headerStore);
+  const { t } = await getI18n();
 
   return (
     <footer className="site-footer">
       <div className="shell site-footer-inner">
-        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
-          {ICP_NUMBER}
-        </a>
-        <span>{COMPANY_NAME}</span>
+        <nav className="site-footer-links" aria-label={t.nav.open}>
+          <Link href="/apps">{t.nav.apps}</Link>
+          <Link href="/skills">{t.nav.skills}</Link>
+          <Link href="/wishes">{t.nav.wishes}</Link>
+          <Link href="/pricing">{t.nav.pricing}</Link>
+          <Link href="/download">{t.nav.download}</Link>
+        </nav>
+        {showChinaFiling ? (
+          <div className="site-footer-filing">
+            <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
+              {ICP_NUMBER}
+            </a>
+            <span>{COMPANY_NAME}</span>
+          </div>
+        ) : null}
       </div>
     </footer>
   );
