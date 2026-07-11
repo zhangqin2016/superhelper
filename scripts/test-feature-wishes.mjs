@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 process.env.DATABASE_URL ||= "postgres://unused:unused@localhost:5432/unused";
 
@@ -98,5 +99,18 @@ assert.equal(
   normalizeWishInput({ title: " x ", problem: "short", desiredOutcome: "short" }).ok,
   false,
 );
+
+const migration = fs.readFileSync(
+  new URL("../server/migrations/023_feature_wishes.sql", import.meta.url),
+  "utf8",
+);
+assert.match(migration, /create table if not exists feature_wishes/i);
+assert.match(migration, /create table if not exists feature_wish_supporters/i);
+assert.match(migration, /unique\s*\(wish_id,\s*user_id\)/i);
+assert.match(migration, /merged_into_id text references feature_wishes\(id\) on delete set null/i);
+assert.match(migration, /wish_id text not null references feature_wishes\(id\) on delete cascade/i);
+assert.match(migration, /check \(status in \('pending','reviewing','published','planned','building','shipped','declined','merged'\)\)/i);
+assert.match(migration, /feature_wishes_public_idx/i);
+assert.match(migration, /feature_wishes_submitter_idx/i);
 
 console.log("feature-wishes: ok");
