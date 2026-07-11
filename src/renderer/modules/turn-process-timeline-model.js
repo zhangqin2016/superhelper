@@ -41,10 +41,19 @@ function livenessNoticeVisible(entry, { liveTurn, sealed, isLast }) {
   return isLast;
 }
 
+function isLegacyDiscardSinkProgress(entry = {}) {
+  if (entry.kind !== "notice" || entry.code !== "workProgress" || entry.level !== "progress" || entry.progress) return false;
+  const detail = String(entry.detail || "");
+  if (!detail.startsWith("Download: ")) return false;
+  const target = detail.slice("Download: ".length);
+  return target === "/dev/null" || /^(?:nul:?|\$null)$/i.test(target);
+}
+
 export function timelineForProcessView(liveTurn, sealed) {
   const timeline = getRenderableTimeline(liveTurn);
   const lastIndex = timeline.length - 1;
   return collapseRepeatedReadTools(timeline.filter((entry, index) => {
+    if (sealed && isLegacyDiscardSinkProgress(entry)) return false;
     if (entry.kind === "notice" && LIVENESS_NOTICE_CODES.has(entry.code)) {
       return livenessNoticeVisible(entry, { liveTurn, sealed: Boolean(sealed), isLast: index === lastIndex });
     }

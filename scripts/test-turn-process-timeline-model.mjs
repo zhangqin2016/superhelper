@@ -41,6 +41,41 @@ const sealedTimeline = timelineForProcessView({
 }, true);
 assert.deepEqual(sealedTimeline.map((entry) => entry.id), ["n1", "n2", "r1"]);
 
+const legacyDiscardTurn = {
+  timeline: [
+    { kind: "notice", id: "discard-nul", code: "workProgress", level: "progress", detail: "Download: nul" },
+    { kind: "notice", id: "discard-nul-colon", code: "workProgress", level: "progress", detail: "Download: NUL:" },
+    { kind: "notice", id: "discard-dev-null", code: "workProgress", level: "progress", detail: "Download: /dev/null" },
+    { kind: "notice", id: "discard-powershell-null", code: "workProgress", level: "progress", detail: "Download: $null" },
+    { kind: "notice", id: "info-discard-detail", code: "workProgress", level: "info", detail: "Download: NUL" },
+    { kind: "notice", id: "error-discard-detail", code: "workProgress", level: "error", detail: "Download: NUL" },
+    { kind: "notice", id: "literal-null", code: "workProgress", level: "progress", detail: "Download: null" },
+    { kind: "notice", id: "real-path", code: "workProgress", level: "progress", detail: "Download: /tmp/archive.zip" },
+    { kind: "notice", id: "uppercase-posix-path", code: "workProgress", level: "progress", detail: "Download: /DEV/NULL" },
+    { kind: "notice", id: "nul-filename", code: "workProgress", level: "progress", detail: "Download: NUL.txt" },
+    { kind: "notice", id: "missing-space", code: "workProgress", level: "progress", detail: "Download:NUL" },
+    { kind: "notice", id: "double-space", code: "workProgress", level: "progress", detail: "Download:  nul" },
+    {
+      kind: "notice",
+      id: "structured-nul",
+      code: "workProgress",
+      level: "progress",
+      detail: "Download: nul",
+      progress: { phase: "downloading", percent: 0 },
+    },
+  ],
+};
+assert.deepEqual(
+  timelineForProcessView(legacyDiscardTurn, true).map((entry) => entry.id),
+  ["info-discard-detail", "error-discard-detail", "literal-null", "real-path", "uppercase-posix-path", "nul-filename", "missing-space", "double-space", "structured-nul"],
+  "sealed history drops only unstructured legacy discard-sink progress notices",
+);
+assert.equal(
+  timelineForProcessView(legacyDiscardTurn, false).some((entry) => entry.id === "discard-nul"),
+  true,
+  "live turns keep unstructured legacy progress notices for compatibility",
+);
+
 const repeatedReads = collapseRepeatedReadTools([
   { kind: "tool", id: "r1", name: "Read", input: { file_path: "a.js" }, status: "done" },
   { kind: "tool", id: "r2", name: "read", input: { file_path: "b.js" }, status: "done" },

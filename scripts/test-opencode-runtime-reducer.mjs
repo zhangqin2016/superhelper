@@ -180,6 +180,23 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
   assert(!curlProbe.drafts.some((draft) => draft.type === "engine.notice" && draft.payload?.notice?.code === "workProgress"),
     "curl health probe must not emit a fake download notice");
 
+  const curlDiscardState = createOpencodeRuntimeState();
+  const curlDiscard = reduce("message.part.updated", {
+    part: {
+      type: "tool",
+      tool: "bash",
+      callID: "curl_discard",
+      state: {
+        status: "running",
+        input: { command: "curl.exe -sS https://example.com/health >nul 2>&1" },
+      },
+    },
+  }, curlDiscardState);
+  assert(curlDiscard.drafts.length === 1 && curlDiscard.drafts[0].type === "tool.started",
+    `curl discard sink should only emit the normal tool row: ${JSON.stringify(curlDiscard.drafts)}`);
+  assert(!curlDiscard.drafts.some((draft) => draft.payload?.notice?.code === "workProgress"),
+    "curl discard sink must not emit a fake download notice");
+
   const partial = reduce("message.part.updated", {
     part: { type: "tool", tool: "bash", callID: "c1", state: { status: "running", metadata: { output: "partial" }, input: { command: "ls" } } },
   }, state);

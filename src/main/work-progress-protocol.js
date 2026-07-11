@@ -196,7 +196,15 @@ function extractStdoutRedirectTarget(command = "") {
   return "";
 }
 
-function inferWorkProgressFromCommand(command = "") {
+function isDiscardOutputTarget(target = "", { platform = process.platform, command = "" } = {}) {
+  const value = String(target || "").trim();
+  if (value === "/dev/null") return true;
+  if (!/^(?:nul:?|\$null)$/i.test(value)) return false;
+  const usesWindowsTransferTool = /\b(?:curl|wget|aria2c|rsync|rclone|scp)\.exe\b/i.test(String(command || ""));
+  return String(platform || process.platform).toLowerCase() === "win32" || usesWindowsTransferTool;
+}
+
+function inferWorkProgressFromCommand(command = "", options = {}) {
   const text = String(command || "").trim();
   if (!text) return null;
   const lower = text.toLowerCase();
@@ -208,9 +216,13 @@ function inferWorkProgressFromCommand(command = "") {
     text.match(/(?:^|\s)(?:-o|--output)\s+(?:"([^"]+)"|'([^']+)'|([^\s|;&<>]+))/)?.slice(1).find(Boolean) ||
     "";
   const remoteName = /(?:^|\s)(?:-O|--remote-name)(?=\s|$)/.test(text);
-  const output =
+  const rawOutput =
     flagOutput ||
     extractStdoutRedirectTarget(text);
+  const output = isDiscardOutputTarget(rawOutput, {
+    platform: options?.platform,
+    command: text,
+  }) ? "" : rawOutput;
   const upload = /\b(upload|put|scp|rsync|rclone\s+copyto?)\b/i.test(text);
   if (usesCurl && !upload && !output && !remoteName) return null;
   return {

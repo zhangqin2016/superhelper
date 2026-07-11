@@ -56,6 +56,21 @@ assertEqual(remoteName.path, "", "fd redirect is not treated as the remote-name 
 const stdoutRedirect = inferWorkProgressFromCommand('curl -L "https://example.com/blender.dmg" > "D:/tmp/blender.dmg"');
 assertEqual(stdoutRedirect.path, "D:/tmp/blender.dmg", "stdout redirect can infer an output path");
 
+const windowsNul = inferWorkProgressFromCommand("curl -sS https://example.com/health >NUL 2>&1", { platform: "win32" });
+assert(windowsNul === null, "Windows NUL stdout sink is not guessed as a download");
+
+const windowsNulColon = inferWorkProgressFromCommand("curl -sS https://example.com/health >NUL: 2>&1", { platform: "win32" });
+assert(windowsNulColon === null, "Windows NUL: stdout sink is not guessed as a download");
+
+const posixDevNull = inferWorkProgressFromCommand("curl -sS https://example.com/health >/dev/null 2>&1", { platform: "linux" });
+assert(posixDevNull === null, "POSIX /dev/null stdout sink is not guessed as a download");
+
+const windowsPowerShellNull = inferWorkProgressFromCommand("curl -sS https://example.com/health >$null 2>&1", { platform: "win32" });
+assert(windowsPowerShellNull === null, "Windows PowerShell $null stdout sink is not guessed as a download");
+
+const linuxNullPath = inferWorkProgressFromCommand('curl -L -o null "https://example.com/blender.dmg"', { platform: "linux" });
+assertEqual(linuxNullPath.path, "null", "ordinary Linux output path named null is preserved");
+
 const healthProbe = inferWorkProgressFromCommand("curl.exe -sS --connect-timeout 3 http://127.0.0.1:8188/system_stats 2>&1 | select -First 20");
 assert(healthProbe === null, "curl health probes with fd redirection are not guessed as downloads");
 
@@ -66,4 +81,4 @@ const latestInferred = latestWorkProgress("noise\r 55  100M   55 55M    0     0 
 assertEqual(latestInferred.percent, 55, "latest parser handles carriage-return progress");
 assert(inferWorkProgressLine("1 2 3 4") === null, "plain numeric output is not guessed as progress");
 
-finish("test-work-progress-protocol", 23);
+finish("test-work-progress-protocol", 28);
