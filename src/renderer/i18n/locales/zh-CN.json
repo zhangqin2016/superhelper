@@ -5,16 +5,13 @@
   "app.addWorkspace": "请添加工作空间文件夹",
   "app.folderLabel": "文件夹：{name}",
   "app.agentNotReady": "内置助手引擎未就绪。请重启应用；开发调试可运行 npm run start:dev。",
-
   "common.copy": "复制",
   "common.copied": "已复制",
   "common.copyFailed": "复制失败",
   "common.actionFailed": "操作失败",
   "file.open": "打开",
-
   "drop.title": "拖放文件到这里上传",
   "drop.types": "支持图片、文档等常见文件；较大文件会自动索引处理",
-
   "sidebar.search": "搜索对话...",
   "sidebar.myChats": "我的对话",
   "sidebar.addFolder": "添加文件夹",
@@ -30,7 +27,6 @@
   "sidebar.renameSessionHint": "双击可修改名称",
   "sidebar.newSession": "新建对话",
   "sidebar.moreActions": "更多操作",
-
   "ctx.switchFolder": "切换到此文件夹",
   "ctx.pin": "置顶",
   "ctx.unpin": "取消置顶",
@@ -80,7 +76,6 @@
   "toast.folderAlreadyWorkspace": "该文件夹已是工作空间，已为你切换过去",
   "toast.importPackMissingSkills": "已导入。此工作空间还需要技能：{skills}，请到技能中心获取后启用。",
   "ctx.archive": "归档",
-
   "topbar.toggleSidebar": "显示/隐藏侧边栏",
   "topbar.stop": "停止",
   "topbar.stopTitle": "停止当前回复",
@@ -109,7 +104,6 @@
   "taskCenter.summaryFailed": "{count} 个任务需要处理",
   "taskCenter.queueCount": "{count} 条排队",
   "taskCenter.artifactCount": "{count} 个产物",
-
   "composer.skills": "技能",
   "composer.skillsTitle": "本对话技能",
   "composer.attach": "添加图片或文件",
@@ -196,7 +190,6 @@
   "scheduled.taskActive": "任务正在执行或排队中，请等本次结束后再删除。",
   "scheduled.empty": "当前对话还没有自动任务。",
   "scheduled.listFailed": "加载自动任务失败。",
-
   "settings.title": "设置",
   "settings.close": "关闭设置",
   "settings.navLabel": "设置分类",
@@ -681,7 +674,6 @@
   "settings.updateLatest": "当前已是最新版本：{version}",
   "settings.updateAvailable": "发现新版本：{latest}（当前 {current}）",
   "settings.other": "其他",
-
   "toast.modelBusy": "正在回复中，请稍后再切换模型。",
   "toast.modelSwitchFailed": "模型切换失败，请重试。",
   "toast.modelSwitched": "已切换为：{label}",
@@ -707,6 +699,7 @@
   "toast.emptyCompletionRetry": "模型本次没有返回内容，正在自动重试…",
   "toast.truncatedTurnRetry": "模型响应流在任务中途被截断，正在自动重试…",
   "toast.microCompletionRetry": "模型只返回了一个句子片段，正在自动重试…",
+  "toast.runnerTerminatedRetry": "引擎会话已回收，正在自动重建并重试…",
   "markdown.codeCollapseLines": "{count} 行",
   "markdown.codeExpand": "展开",
   "markdown.codeCollapseAction": "收起",
@@ -785,7 +778,6 @@
   "toast.updateAlreadyLatest": "当前已是最新版本",
   "toast.updateAvailable": "发现新版本",
   "toast.updateAvailableVersion": "发现新版本 {version}，点击下载",
-
   "update.pillTitle": "版本更新",
   "update.pillAvailable": "有新版本",
   "update.pillChecking": "检查更新",
@@ -805,7 +797,6 @@
   "update.restart": "重启更新",
   "update.working": "处理中…",
   "update.later": "稍后",
-
   "license.error.INVALID_FORMAT": "激活码格式无效",
   "license.error.NO_PUBLIC_KEY": "缺少授权公钥，请联系管理员",
   "license.error.BAD_SIGNATURE": "激活码签名无效",
@@ -821,7 +812,6 @@
   "license.error.TRIAL_EXPIRED": "免费试用已过期，请登录购买或输入激活码继续使用",
   "license.error.CLOCK_ROLLBACK": "检测到系统时间回退，请校准时间",
   "license.error.GENERIC": "授权校验失败",
-
   "update.error.NO_MANIFEST_URL": "更新服务地址未配置",
   "update.error.INVALID_URL": "URL 无效，需以 http:// 或 https:// 开头",
   "update.error.FETCH_FAILED": "更新清单下载失败",
@@ -836,7 +826,6 @@
   "update.error.UPDATE_NOT_DOWNLOADED": "更新尚未下载完成",
   "update.error.INSTALL_FAILED": "更新安装失败",
   "update.error.GENERIC": "检查更新失败",
-
   "send.error.NO_CLI": "内置助手引擎未就绪。请完全退出后重新打开应用。",
   "send.error.NO_PROJECT": "该对话所属的文件夹已不存在，请在左侧重新选择文件夹或新建对话。",
   "send.error.INVALID_WORKDIR": "工作目录不存在，请检查左侧文件夹路径是否有效。",
@@ -853,7 +842,6 @@
   "send.error.VISION_UNAVAILABLE": "内置图片识别未配置，无法分析截图。请联系管理员或稍后再试。",
   "send.error.VISION_FAILED": "图片识别失败，请稍后再试。",
   "send.error.DOCUMENT_FAILED": "文档内容读取失败，请稍后再试。",
-
   "prompt.defaultTitle": "输入名称",
   "prompt.defaultLabel": "名称",
   "prompt.confirm": "确定",
@@ -865,7 +853,6 @@
   "prompt.projectLabel": "在列表里显示的名字（不影响电脑上的文件夹名）",
   "prompt.projectPlaceholder": "例如：我的文档、工作资料",
   "prompt.newSession": "新对话",
-
   "message.user": "你",
   "message.userTaskLabel": "你的任务",
   "message.resultLabel": "工作结果",
@@ -941,7 +928,6 @@
   "message.errorGeneric": "处理请求时遇到问题。",
   "message.toolFailed": "{title}失败",
   "message.retry": "重试",
-
   "permission.approvePlanTitle": "计划已写好，等待你的审批",
   "permission.approvePlanDesc": "批准后助手将退出计划模式并开始执行。",
   "permission.approveActionTitle": "需要你的确认",
@@ -974,7 +960,6 @@
   "question.otherPlaceholder": "可直接输入你的答案",
   "question.freeAnswerPrompt": "请补充你的回答。",
   "question.respondFailed": "答案提交失败，请重试。",
-
   "tool.readFile": "查看文件",
   "tool.writeFile": "写入内容",
   "tool.editFile": "修改内容",
@@ -1020,7 +1005,6 @@
   "subagent.questionCardTitle": "子任务需要你选择",
   "subagent.transcript": "子任务输出",
   "subagent.transcriptOutput": "回复",
-
   "skills.source.bundled": "内置",
   "skills.source.remote": "远程",
   "skills.source.local": "本地",
@@ -1083,7 +1067,6 @@
   "skills.registryConfigured": "已配置技能目录",
   "skills.checkResultUpdates": "{count} 个可更新",
   "skills.checkResultAvailable": "{count} 个可安装",
-
   "skills.category.office": "办公文档",
   "skills.category.core": "核心能力",
   "skills.category.workspace": "工作区技能",
@@ -1144,7 +1127,6 @@
   "apps.type.tool": "工具",
   "apps.type.dashboard": "看板",
   "apps.type.connector": "连接器",
-
   "errors.PRESET_EMPTY": "岗位包中的技能在当前目录中不可用。",
   "errors.BUSY": "有对话正在处理中，请稍后再试。",
   "errors.NETWORK": "无法连接技能目录，请检查网络或 URL。",
@@ -1159,19 +1141,16 @@
   "errors.BUNDLED_PROTECTED": "内置技能不能通过远程覆盖。",
   "errors.MANDATORY_SKILL": "该技能为平台基础规则，无法关闭。",
   "errors.GENERIC": "操作失败，请重试。",
-
   "fileErrors.FILE_NOT_FOUND": "文件不存在或路径无效。",
   "fileErrors.NOT_A_FILE": "暂不支持上传文件夹。",
   "fileErrors.UNSUPPORTED_TYPE": "不支持此文件格式。支持图片、PDF、Word、文本等常见格式。",
   "fileErrors.FILE_TOO_LARGE": "粘贴的文件过大，请先保存为文件后再拖入或选择上传。",
   "fileErrors.GENERIC": "文件处理失败：{error}",
   "fileErrors.WITH_NAME": "{message}（{name}）",
-
   "model.pro.label": "DeepSeek Pro",
   "model.pro.desc": "deepseek-v4-pro，适合复杂任务",
   "model.flash.label": "DeepSeek Pro",
   "model.flash.desc": "deepseek-v4-pro[1m]，统一使用 Pro 模型",
-
   "permission.plan.label": "只读规划",
   "permission.plan.desc": "只读分析工作区并给出方案，不修改文件、不执行命令。",
   "permission.ask.label": "确认后执行",
@@ -1181,14 +1160,12 @@
   "permission.bypassConfirmTitle": "确认完全放开权限？",
   "permission.bypassConfirmMessage": "当前会话或全局默认将不再弹出确认，助手可以直接读写文件并执行命令。只建议在可信工作区使用。",
   "permission.bypassConfirm": "确认放开",
-
   "search.provider.iqs.label": "阿里 IQS",
   "search.provider.iqs.desc": "国内直连稳定、合规可商用，应用内置。",
   "search.provider.searxng.label": "SearXNG",
   "search.provider.searxng.desc": "开源元搜索，无追踪、无需 API Key。",
   "search.provider.duckduckgo.label": "DuckDuckGo",
   "search.provider.duckduckgo.desc": "直连 DuckDuckGo Lite，无需 API Key。",
-
   "diff.title": "文件变更",
   "diff.acceptAll": "全部接受",
   "diff.rejectAll": "全部拒绝",

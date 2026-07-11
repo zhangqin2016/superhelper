@@ -23,6 +23,18 @@ const ERROR_PATTERNS = [
     retryable: true,
   },
   {
+    code: "RUNNER_TERMINATED",
+    category: "session",
+    // A concurrent terminate (idle recycling / session invalidation) raced the
+    // engine start. The engine never launched, so the turn is side-effect-free
+    // and safe to resend; the rescue path retries it silently with a fresh
+    // runner. MUST precede MODEL_CONNECTION_FAILED — its broad "request failed"
+    // catch previously relabeled this as a network interruption.
+    test: /RUNNER_TERMINATED|runner was recycled/i,
+    message: "The engine session was recycled before the reply could start. It restarts automatically on retry — please send your message again.",
+    retryable: true,
+  },
+  {
     code: "SESSION_INVALID",
     category: "session",
     test: /resume|session.*not found|unknown session|session context has expired/i,

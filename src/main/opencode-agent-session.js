@@ -560,16 +560,28 @@ class OpencodeAgentSession extends EventEmitter {
   _ensureStarted() {
     if (this._server && this._server.sessionID) return Promise.resolve(this._server);
     if (this._starting) return this._starting;
+    // SNAPSHOT the spawn options: terminate() nulls this.spawnOptions, and it
+    // can race an async start continuation (idle recycling, session
+    // invalidation, safe-replay). The bare property read here produced the
+    // field TypeError "Cannot read properties of null (reading 'agentCommand')",
+    // which the broad request-failed classifier then mislabeled as a NETWORK
+    // interruption. A recycled runner must fail honestly and retryably.
+    const spawnOptions = this.spawnOptions;
+    if (!spawnOptions?.agentCommand) {
+      return Promise.reject(new Error(
+        "RUNNER_TERMINATED: the engine runner was recycled before the turn could start",
+      ));
+    }
     this._starting = (async () => {
       const server = this._createServer({
-        serverCommand: this.spawnOptions.agentCommand,
+        serverCommand: spawnOptions.agentCommand,
         cwd: this.cwd,
         dataDir: this._dataDir(),
-        env: this.spawnOptions.env || {},
-        model: this.spawnOptions.model || null,
-        agent: this.spawnOptions.agent || null,
+        env: spawnOptions.env || {},
+        model: spawnOptions.model || null,
+        agent: spawnOptions.agent || null,
         resumeSessionID: this.agentResumeId || null,
-        configContent: this.spawnOptions.opencodeConfig || "",
+        configContent: spawnOptions.opencodeConfig || "",
       });
       server.on("event", (ev) => this._handleEvent(ev));
       server.on("exit", ({ code }) => this._onServerExit(code));
@@ -579,7 +591,7 @@ class OpencodeAgentSession extends EventEmitter {
       server.subscribe();
       this._server = server;
       this._engineSessionWasResumed = Boolean(server.wasResumed);
-      this._activeModelConfigFingerprint = String(this.spawnOptions?.modelConfigFingerprint || "");
+      this._activeModelConfigFingerprint = String(spawnOptions.modelConfigFingerprint || "");
       // Guidance is delivered with each prompt, not only with fresh sessions:
       // OpenCode resume history may predate the current Lily rules/skill set, and
       // session-level skill toggles can change between turns.

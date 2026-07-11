@@ -84,6 +84,17 @@ const RESCUE_STRATEGIES = Object.freeze({
     hint: "",
     enabled: () => process.env.LILY_MICRO_COMPLETION_RETRY !== "0",
   }),
+  // A terminated/recycled runner raced the send (idle restart, session
+  // invalidation): the engine never started, so the turn is guaranteed
+  // side-effect-free. preflight — the old runner is gone from the pool, so
+  // the resend must run the full ensure path to build a fresh one (the other
+  // strategies skip preflight because THEIR runner is proven alive).
+  RUNNER_TERMINATED: Object.freeze({
+    kind: "runner_terminated_retry",
+    hint: "",
+    preflight: true,
+    enabled: () => process.env.LILY_RUNNER_TERMINATED_RETRY !== "0",
+  }),
 });
 
 // Tools whose re-execution is harmless (pure reads / research / planning).

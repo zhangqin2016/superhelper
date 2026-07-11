@@ -91,6 +91,15 @@ assert(providerNotConfigured?.retryable === true, "a removed model is recoverabl
 const bareGateway404 = classifyAssistantError("API Error: 404");
 assert(bareGateway404?.code === "MODEL_UNAVAILABLE", "a bare gateway 404 shell routes to model-unavailable (refresh+fallback), not connection-interrupted");
 
+// A recycled runner racing the engine start is a SESSION failure, not a
+// network drop (field: "Request failed: Cannot read properties of null
+// (reading 'agentCommand')" was shown as "connection interrupted").
+const runnerTerminated = classifyAssistantError(
+  "Request failed: RUNNER_TERMINATED: the engine runner was recycled before the turn could start",
+);
+assert(runnerTerminated?.code === "RUNNER_TERMINATED", "recycled-runner races classify as RUNNER_TERMINATED");
+assert(runnerTerminated?.retryable === true, "a recycled runner is retryable — the engine never started");
+
 const genericUnauthorized = classifyAssistantError("Request failed: 401 Unauthorized");
 assert(genericUnauthorized?.code === "AUTH_FAILED", "generic 401 remains a user/API-key auth failure");
 assert(genericUnauthorized?.retryable === false, "generic API auth failures are not blindly retried");

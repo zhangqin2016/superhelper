@@ -560,4 +560,19 @@ resetRescueStateForTests();
     "all-unknown gateways never trip the truncation guard (no recognized-reason evidence)");
 }
 
+// RUNNER_TERMINATED strategy: a recycled runner is gone from the pool, so its
+// rescue MUST run the full preflight (skipPreflight would pool.get() -> null
+// and the silent retry would die as RUNNER_ERROR).
+{
+  const rescue = require("../src/main/tool-call-rescue.js");
+  const strategy = rescue.rescueStrategyFor("RUNNER_TERMINATED");
+  assert(strategy, "recycled-runner failures are rescuable");
+  assert.equal(strategy.kind, "runner_terminated_retry");
+  assert.equal(strategy.preflight, true, "the resend needs the full ensure path to build a fresh runner");
+  const others = ["MALFORMED_TOOL_CALL_TEXT", "EMPTY_ASSISTANT_COMPLETION", "TRUNCATED_TURN_END", "MICRO_COMPLETION"];
+  for (const code of others) {
+    assert(!rescue.rescueStrategyFor(code)?.preflight, `${code} keeps skipping preflight (its runner is proven alive)`);
+  }
+}
+
 console.log("tool-call-rescue: ok");

@@ -1090,7 +1090,10 @@ class TurnOrchestrator {
       const retried = await this.sendUserMessage(sessionId, lastUser.content, lastUser.files || [], {
         recordUser: false,
         spawnEngine: true,
-        skipPreflight: true,
+        // Strategies with preflight (RUNNER_TERMINATED) lost their runner —
+        // pool.get() would return null, so the resend must run the full
+        // ensure path and build a fresh one.
+        skipPreflight: !strategy.preflight,
         ...(hint ? { engineText: `${content}\n\n${hint}` } : {}),
       });
       if (!retried?.ok) log.warn(`turn rescue retry not sent: ${retried?.error || "unknown"}`);

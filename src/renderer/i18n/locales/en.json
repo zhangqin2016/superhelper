@@ -5,16 +5,13 @@
   "app.addWorkspace": "Add a workspace folder",
   "app.folderLabel": "Folder: {name}",
   "app.agentNotReady": "Built-in assistant engine is not ready. Restart the app; for development use npm run start:dev.",
-
   "common.copy": "Copy",
   "common.copied": "Copied",
   "common.copyFailed": "Copy failed",
   "common.actionFailed": "Action failed",
   "file.open": "Open",
-
   "drop.title": "Drop files here to upload",
   "drop.types": "Images, documents, and common files; large files are indexed automatically",
-
   "sidebar.search": "Search chats...",
   "sidebar.myChats": "My chats",
   "sidebar.addFolder": "Add folder",
@@ -30,7 +27,6 @@
   "sidebar.renameSessionHint": "Double-click to rename",
   "sidebar.newSession": "New chat",
   "sidebar.moreActions": "More actions",
-
   "ctx.switchFolder": "Switch to this folder",
   "ctx.pin": "Pin",
   "ctx.unpin": "Unpin",
@@ -80,7 +76,6 @@
   "toast.folderAlreadyWorkspace": "That folder is already a workspace — switched to it",
   "toast.importPackMissingSkills": "Imported. This workspace also needs skills: {skills} — get them from the Skill Center and enable them.",
   "ctx.archive": "Archive",
-
   "topbar.toggleSidebar": "Show/hide sidebar",
   "topbar.stop": "Stop",
   "topbar.stopTitle": "Stop current reply",
@@ -109,7 +104,6 @@
   "taskCenter.summaryFailed": "{count} task(s) need attention",
   "taskCenter.queueCount": "{count} queued",
   "taskCenter.artifactCount": "{count} artifact(s)",
-
   "composer.skills": "Skills",
   "composer.skillsTitle": "Chat skills",
   "composer.attach": "Add image or file",
@@ -196,7 +190,6 @@
   "scheduled.taskActive": "This task is running or queued. Delete it after the current run finishes.",
   "scheduled.empty": "No scheduled tasks in this chat.",
   "scheduled.listFailed": "Could not load scheduled tasks.",
-
   "settings.title": "Settings",
   "settings.close": "Close settings",
   "settings.navLabel": "Settings categories",
@@ -681,7 +674,6 @@
   "settings.updateLatest": "You are on the latest version: {version}",
   "settings.updateAvailable": "New version available: {latest} (current {current})",
   "settings.other": "Other",
-
   "toast.modelBusy": "A reply is in progress. Try again later to switch models.",
   "toast.modelSwitchFailed": "Failed to switch model. Please retry.",
   "toast.modelSwitched": "Switched to: {label}",
@@ -707,6 +699,7 @@
   "toast.emptyCompletionRetry": "The model returned no content this time. Retrying automatically…",
   "toast.truncatedTurnRetry": "The model's response stream was cut off mid-task. Retrying automatically…",
   "toast.microCompletionRetry": "The model returned only a sentence fragment. Retrying automatically…",
+  "toast.runnerTerminatedRetry": "The engine session was recycled. Rebuilding and retrying automatically…",
   "markdown.codeCollapseLines": "{count} lines",
   "markdown.codeExpand": "Expand",
   "markdown.codeCollapseAction": "Collapse",
@@ -785,7 +778,6 @@
   "toast.updateAlreadyLatest": "Already on the latest version",
   "toast.updateAvailable": "New version available",
   "toast.updateAvailableVersion": "Version {version} is available. Click to download",
-
   "update.pillTitle": "App update",
   "update.pillAvailable": "Update available",
   "update.pillChecking": "Checking",
@@ -805,7 +797,6 @@
   "update.restart": "Restart update",
   "update.working": "Working…",
   "update.later": "Later",
-
   "license.error.INVALID_FORMAT": "Invalid activation code format",
   "license.error.NO_PUBLIC_KEY": "License public key is missing",
   "license.error.BAD_SIGNATURE": "Activation code signature is invalid",
@@ -821,7 +812,6 @@
   "license.error.TRIAL_EXPIRED": "Free trial has expired. Sign in to buy credits or enter an activation code to continue.",
   "license.error.CLOCK_ROLLBACK": "System clock rollback detected",
   "license.error.GENERIC": "License verification failed",
-
   "update.error.NO_MANIFEST_URL": "The update service URL is not configured",
   "update.error.INVALID_URL": "Invalid URL; must start with http:// or https://",
   "update.error.FETCH_FAILED": "Failed to fetch update manifest",
@@ -836,7 +826,6 @@
   "update.error.UPDATE_NOT_DOWNLOADED": "The update has not finished downloading",
   "update.error.INSTALL_FAILED": "Update installation failed",
   "update.error.GENERIC": "Update check failed",
-
   "send.error.NO_CLI": "Assistant engine not ready. Quit and reopen the app.",
   "send.error.NO_PROJECT": "This chat's folder no longer exists. Pick a folder or create a new chat.",
   "send.error.INVALID_WORKDIR": "Working directory missing. Check the folder path on the left.",
@@ -853,7 +842,6 @@
   "send.error.VISION_UNAVAILABLE": "Built-in image recognition is not configured. Cannot analyze screenshots.",
   "send.error.VISION_FAILED": "Image recognition failed. Please try again later.",
   "send.error.DOCUMENT_FAILED": "Could not read the document. Please try again later.",
-
   "prompt.defaultTitle": "Enter name",
   "prompt.defaultLabel": "Name",
   "prompt.confirm": "OK",
@@ -865,7 +853,6 @@
   "prompt.projectLabel": "Display name in the list (does not rename the folder on disk)",
   "prompt.projectPlaceholder": "e.g. My docs, Work files",
   "prompt.newSession": "New chat",
-
   "message.user": "You",
   "message.userTaskLabel": "Your task",
   "message.resultLabel": "Result",
@@ -941,7 +928,6 @@
   "message.errorGeneric": "Something went wrong while handling the request.",
   "message.toolFailed": "{title} failed",
   "message.retry": "Retry",
-
   "permission.approvePlanTitle": "Plan ready — waiting for your approval",
   "permission.approvePlanDesc": "After approval, the assistant will leave plan mode and start executing.",
   "permission.approveActionTitle": "Confirmation required",
@@ -974,7 +960,6 @@
   "question.otherPlaceholder": "Type a custom answer",
   "question.freeAnswerPrompt": "Please add your answer.",
   "question.respondFailed": "Could not submit your answer. Please try again.",
-
   "tool.readFile": "Review file",
   "tool.writeFile": "Write content",
   "tool.editFile": "Update content",
@@ -1020,7 +1005,6 @@
   "subagent.questionCardTitle": "Subtask needs your choice",
   "subagent.transcript": "Subtask output",
   "subagent.transcriptOutput": "Reply",
-
   "skills.source.bundled": "Built-in",
   "skills.source.remote": "Remote",
   "skills.source.local": "Local",
@@ -1083,7 +1067,6 @@
   "skills.registryConfigured": "Registry configured",
   "skills.checkResultUpdates": "{count} updates",
   "skills.checkResultAvailable": "{count} to install",
-
   "skills.category.office": "Office",
   "skills.category.core": "Core",
   "skills.category.workspace": "Workspace skills",
@@ -1144,7 +1127,6 @@
   "apps.type.tool": "Tool",
   "apps.type.dashboard": "Dashboard",
   "apps.type.connector": "Connector",
-
   "errors.PRESET_EMPTY": "Skills in this pack are not available in the current catalog.",
   "errors.BUSY": "A chat is busy. Please try again later.",
   "errors.NETWORK": "Cannot reach skill registry. Check network or URL.",
@@ -1159,19 +1141,16 @@
   "errors.BUNDLED_PROTECTED": "Built-in skills cannot be overwritten remotely.",
   "errors.MANDATORY_SKILL": "This skill is required platform rules and cannot be disabled.",
   "errors.GENERIC": "Operation failed. Please retry.",
-
   "fileErrors.FILE_NOT_FOUND": "File not found or path invalid.",
   "fileErrors.NOT_A_FILE": "Folders cannot be uploaded.",
   "fileErrors.UNSUPPORTED_TYPE": "Unsupported file type. Images, PDF, Word, text, etc. are supported.",
   "fileErrors.FILE_TOO_LARGE": "Pasted file is too large. Save it as a file, then drag it in or choose it from disk.",
   "fileErrors.GENERIC": "File error: {error}",
   "fileErrors.WITH_NAME": "{message} ({name})",
-
   "model.pro.label": "DeepSeek Pro",
   "model.pro.desc": "deepseek-v4-pro for complex tasks",
   "model.flash.label": "DeepSeek Pro",
   "model.flash.desc": "deepseek-v4-pro[1m] for all runtime tiers",
-
   "permission.plan.label": "Plan",
   "permission.plan.desc": "Read-only: analyze the workspace and propose a plan without changing files or running commands.",
   "permission.ask.label": "Ask",
@@ -1181,14 +1160,12 @@
   "permission.bypassConfirmTitle": "Allow full access?",
   "permission.bypassConfirmMessage": "This will stop showing confirmations. The assistant can directly read and write files and run commands. Use only in trusted workspaces.",
   "permission.bypassConfirm": "Allow full access",
-
   "search.provider.iqs.label": "Alibaba IQS",
   "search.provider.iqs.desc": "Stable domestic search, built into the app.",
   "search.provider.searxng.label": "SearXNG",
   "search.provider.searxng.desc": "Open meta-search, no tracking, no API key.",
   "search.provider.duckduckgo.label": "DuckDuckGo",
   "search.provider.duckduckgo.desc": "Direct DuckDuckGo Lite, no API key.",
-
   "diff.title": "File Changes",
   "diff.acceptAll": "Accept All",
   "diff.rejectAll": "Reject All",
