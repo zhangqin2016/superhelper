@@ -4,6 +4,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const launcher = await readFile(
+  path.join(root, "scripts", "start-windows-store-sandbox.ps1"),
+  "utf8",
+);
 const runnerBytes = await readFile(path.join(root, "scripts", "smoke-windows-store-installer.ps1"));
 
 assert.deepEqual([...runnerBytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
@@ -536,5 +540,214 @@ assert.match(runner, /readiness-transcript\.log/);
 assert.match(runner, /readiness-exit-code\.txt/);
 assert.match(runner, /ConvertTo-Json -Depth 8/);
 assert.match(runner, /exit \$exitCode\s*$/);
+
+const launcherParameters = launcher.match(/param\((?<body>[\s\S]*?)\n\)/)?.groups?.body ?? "";
+assert.ok(launcherParameters, "the Sandbox launcher must declare a parameter block");
+assert.match(
+  launcherParameters,
+  /\[Parameter\(Mandatory\s*=\s*\$true\)\]\s*\[string\]\$Installer/,
+);
+assert.match(launcherParameters, /\[string\]\$ExpectedPublisher\s*=\s*["']{2}/);
+assert.match(launcherParameters, /\[string\]\$ExpectedVersion\s*=\s*["']{2}/);
+assert.match(launcherParameters, /\[switch\]\$RequireSignature/);
+assert.match(launcherParameters, /\[switch\]\$AllowUserDataRemnants/);
+assert.match(
+  launcherParameters,
+  /\[ValidateRange\(60,\s*1800\)\]\s*\[int\]\$SandboxTimeoutSeconds\s*=\s*600/,
+);
+
+assert.match(launcher, /Set-StrictMode -Version Latest/);
+assert.match(launcher, /\$ErrorActionPreference\s*=\s*["']Stop["']/);
+assert.match(launcher, /\$env:OS\s+-ne\s+["']Windows_NT["']/);
+assert.match(
+  launcher,
+  /Join-Path[\s\S]{0,120}\$env:WINDIR[\s\S]{0,120}["']System32[\\/]WindowsSandbox\.exe["']/,
+);
+assert.match(
+  launcher,
+  /Test-Path\s+-LiteralPath\s+\$sandboxExecutable\s+-PathType\s+Leaf/,
+);
+assert.match(launcher, /Containers-DisposableClientVM/);
+assert.match(launcher, /restart/i);
+assert.doesNotMatch(launcher, /\bEnable-WindowsOptionalFeature\b|\bdism(?:\.exe)?\b/i);
+
+assert.match(
+  launcher,
+  /\$resolvedInstaller\s*=\s*\(Resolve-Path\s+-LiteralPath\s+\$Installer\s+-ErrorAction\s+Stop\)\.ProviderPath/,
+);
+assert.match(launcher, /\$repoRoot\s*=[^\r\n]*\$PSScriptRoot/);
+assert.match(launcher, /["']\.lily-work["']/);
+assert.match(launcher, /["']windows-store-readiness["']/);
+assert.match(launcher, /Get-Date\s+-Format\s+["']yyyyMMdd-HHmmssfff["']/);
+assert.match(launcher, /\[Guid\]::NewGuid\(\)\.ToString\(["']N["']\)/);
+assert.match(launcher, /\$resultsDirectory\s*=\s*Join-Path\s+\$stage\s+["']results["']/);
+assert.match(
+  launcher,
+  /Test-Path\s+-LiteralPath\s+\$smokeRunnerPath\s+-PathType\s+Leaf/,
+);
+assert.match(
+  launcher,
+  /Copy-Item\s+-LiteralPath\s+\$smokeRunnerPath\s+-Destination\s+\$stagedSmokeRunner/,
+);
+assert.match(
+  launcher,
+  /Copy-Item\s+-LiteralPath\s+\$resolvedInstaller\s+-Destination\s+\$stagedInstaller/,
+);
+
+const sandboxOptions = launcher.match(
+  /\$sandboxOptions\s*=\s*\[ordered\]@\{(?<body>[\s\S]*?)\n\}/,
+)?.groups?.body ?? "";
+assert.ok(sandboxOptions, "the launcher must build sandbox-options.json from typed parameters");
+assert.match(sandboxOptions, /installerFile\s*=\s*\$installerFile/);
+assert.match(sandboxOptions, /expectedPublisher\s*=\s*\$ExpectedPublisher/);
+assert.match(sandboxOptions, /expectedVersion\s*=\s*\$ExpectedVersion/);
+assert.match(sandboxOptions, /requireSignature\s*=\s*\[bool\]\$RequireSignature/);
+assert.match(
+  sandboxOptions,
+  /allowUserDataRemnants\s*=\s*\[bool\]\$AllowUserDataRemnants/,
+);
+assert.match(
+  launcher,
+  /\$sandboxOptions\s*\|\s*ConvertTo-Json\s+-Depth\s+4\s*\|\s*Set-Content[\s\S]{0,160}-Encoding\s+UTF8/,
+);
+assert.match(launcher, /["']sandbox-options\.json["']/);
+
+const bootstrap = launcher.match(
+  /\$bootstrapContent\s*=\s*@'(?<body>[\s\S]*?)'@/,
+)?.groups?.body ?? "";
+assert.ok(bootstrap, "the sandbox bootstrap must be a fixed literal here-string");
+assert.match(bootstrap, /Set-StrictMode -Version Latest/);
+assert.match(bootstrap, /\$ErrorActionPreference\s*=\s*"Stop"/);
+assert.match(bootstrap, /\$root\s*=\s*"C:\\LilyStoreReadiness"/);
+assert.match(
+  bootstrap,
+  /Get-Content\s+-LiteralPath\s+\$optionsPath\s+-Raw\s+-Encoding\s+UTF8\s*\|\s*ConvertFrom-Json/,
+);
+assert.match(bootstrap, /"sandbox-options\.json"/);
+assert.match(bootstrap, /"smoke-windows-store-installer\.ps1"/);
+assert.match(bootstrap, /"results"/);
+assert.match(bootstrap, /\$runnerParameters\s*=\s*@\{/);
+assert.match(bootstrap, /Installer\s*=\s*Join-Path\s+\$root\s+\(\[string\]\$options\.installerFile\)/);
+assert.match(bootstrap, /OutputDirectory\s*=\s*\$outputDirectory/);
+for (const optionalProperty of [
+  "expectedPublisher",
+  "expectedVersion",
+  "requireSignature",
+  "allowUserDataRemnants",
+]) {
+  assert.match(bootstrap, new RegExp(`\\$options\\.${optionalProperty}`));
+}
+for (const optionalParameter of [
+  "ExpectedPublisher",
+  "ExpectedVersion",
+  "RequireSignature",
+  "AllowUserDataRemnants",
+]) {
+  assert.match(bootstrap, new RegExp(`\\$runnerParameters\\["${optionalParameter}"\\]\\s*=`));
+}
+assert.match(bootstrap, /&\s+\$runnerPath\s+@runnerParameters/);
+assert.doesNotMatch(
+  bootstrap,
+  /\$(?:ExpectedPublisher|ExpectedVersion|RequireSignature|AllowUserDataRemnants)\b/,
+  "host dynamic values must not be interpolated into the fixed bootstrap",
+);
+assert.match(
+  launcher,
+  /Set-Content\s+-LiteralPath\s+\$bootstrapPath\s+-Value\s+\$bootstrapContent\s+-Encoding\s+ASCII/,
+);
+
+const sandboxCommand = launcher.match(
+  /\$commandContent\s*=\s*@'(?<body>[\s\S]*?)'@/,
+)?.groups?.body ?? "";
+assert.ok(sandboxCommand, "the Sandbox logon command must be a fixed literal cmd script");
+assert.match(
+  sandboxCommand,
+  /powershell\.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\LilyStoreReadiness\\sandbox-bootstrap\.ps1"/,
+);
+assert.match(sandboxCommand, /if exist "C:\\LilyStoreReadiness\\results\\readiness-summary\.md"/i);
+assert.match(sandboxCommand, /notepad\.exe "C:\\LilyStoreReadiness\\results\\readiness-summary\.md"/i);
+assert.match(sandboxCommand, /exit \/b %LILY_READINESS_EXIT_CODE%/i);
+assert.doesNotMatch(
+  sandboxCommand,
+  /ExpectedPublisher|ExpectedVersion|RequireSignature|AllowUserDataRemnants/,
+);
+assert.match(
+  launcher,
+  /Set-Content\s+-LiteralPath\s+\$commandPath\s+-Value\s+\$commandContent\s+-Encoding\s+ASCII/,
+);
+
+assert.match(
+  launcher,
+  /\[Security\.SecurityElement\]::Escape\(\$stage\)/,
+  "the mapped host path must be XML-escaped",
+);
+const sandboxConfiguration = launcher.match(
+  /\$sandboxConfiguration\s*=\s*@"(?<body>[\s\S]*?)"@/,
+)?.groups?.body ?? "";
+assert.ok(sandboxConfiguration, "the launcher must emit a Windows Sandbox configuration");
+assert.match(sandboxConfiguration, /<Networking>Disable<\/Networking>/);
+assert.match(sandboxConfiguration, /<ClipboardRedirection>Disable<\/ClipboardRedirection>/);
+assert.equal(
+  sandboxConfiguration.match(/<MappedFolder>/g)?.length ?? 0,
+  1,
+  "only the unique readiness stage may be mapped into Sandbox",
+);
+assert.match(sandboxConfiguration, /<HostFolder>\$escapedStage<\/HostFolder>/);
+assert.match(
+  sandboxConfiguration,
+  /<SandboxFolder>C:\\LilyStoreReadiness<\/SandboxFolder>/,
+);
+assert.match(sandboxConfiguration, /<ReadOnly>false<\/ReadOnly>/);
+assert.match(sandboxConfiguration, /<LogonCommand>/);
+assert.match(
+  sandboxConfiguration,
+  /<Command>cmd\.exe \/c "C:\\LilyStoreReadiness\\run-readiness\.cmd"<\/Command>/,
+);
+assert.doesNotMatch(
+  sandboxConfiguration,
+  /ExpectedPublisher|ExpectedVersion|RequireSignature|AllowUserDataRemnants/,
+);
+assert.match(
+  launcher,
+  /Set-Content\s+-LiteralPath\s+\$wsbPath\s+-Value\s+\$sandboxConfiguration\s+-Encoding\s+UTF8/,
+);
+
+assert.match(
+  launcher,
+  /Start-Process[\s\S]{0,200}-FilePath\s+\$sandboxExecutable[\s\S]{0,200}-ArgumentList\s+@\(\s*"`"\$wsbPath`""\s*\)/,
+);
+assert.match(launcher, /["']readiness-exit-code\.txt["']/);
+assert.match(launcher, /["']readiness-summary\.md["']/);
+assert.match(launcher, /\[System\.Diagnostics\.Stopwatch\]::StartNew\(\)/);
+assert.match(
+  launcher,
+  /\$stopwatch\.Elapsed\.TotalSeconds\s+-ge\s+\$SandboxTimeoutSeconds/,
+);
+assert.match(
+  launcher,
+  /timed out[\s\S]{0,120}\$stage/i,
+  "timeout errors must point to the retained evidence stage",
+);
+assert.match(launcher, /Start-Sleep\s+-Seconds\s+1/);
+assert.doesNotMatch(
+  launcher,
+  /\$sandboxProcess\.HasExited/,
+  "the readiness sentinel, not the controller process, is authoritative",
+);
+assert.match(launcher, /\(Get-Content[\s\S]{0,160}\$exitCodePath[\s\S]{0,160}\)\.Trim\(\)/);
+assert.match(launcher, /\[int\]::TryParse\(\$exitCodeText,\s*\[ref\]\$innerExitCode\)/);
+assert.match(
+  launcher,
+  /if \(-not \[int\]::TryParse\([\s\S]{0,160}\)\) \{[\s\S]{0,160}throw/,
+);
+assert.match(launcher, /Get-Content[\s\S]{0,160}\$summaryPath[\s\S]{0,160}-Raw/);
+assert.match(launcher, /finally\s*\{[\s\S]{0,180}Evidence path:[\s\S]{0,120}\$stage/);
+assert.match(launcher, /exit\s+\$innerExitCode\s*$/);
+assert.doesNotMatch(launcher, /\bRemove-Item\b/);
+assert.doesNotMatch(
+  launcher,
+  /\b(?:Invoke-WebRequest|Invoke-RestMethod|Start-BitsTransfer|curl(?:\.exe)?|wget(?:\.exe)?)\b/i,
+  "the offline Sandbox launcher must not download anything",
+);
 
 console.log("windows store readiness contracts ok");
