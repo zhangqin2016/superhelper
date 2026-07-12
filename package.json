@@ -155,7 +155,10 @@
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "signIgnore": [
         ".*/Resources/bundles/.*"
-      ]
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "语音输入需要使用麦克风进行实时听写。Voice input uses the microphone for realtime dictation."
+      }
     },
     "dmg": {
       "artifactName": "${productName}-${version}-${arch}.${ext}",

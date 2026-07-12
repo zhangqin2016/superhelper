@@ -11,6 +11,7 @@ import { refreshState, updateTopbarTitles } from "./modules/session-chrome.js";
 import { wireMessageIpc, initMessageUi, syncComposerForActiveSession } from "./modules/message.js";
 import { initMigrationProgress } from "./modules/migration-progress.js";
 import { initRuntimePackProgress } from "./modules/runtime-pack-progress.js";
+import { initVoiceDictation } from "./modules/voice-dictation.js";
 import { renderProjectTree, initAddProject, initTopbarSessionRename } from "./modules/project-tree.js";
 import { initSettingsPanel } from "./modules/settings-panel.js";
 import { initModelSettings } from "./modules/model-settings.js";
@@ -186,6 +187,7 @@ async function init() {
   wireMessageIpc();
   initMigrationProgress();
   initRuntimePackProgress();
+  initVoiceDictation();
   initCustomSelects();
 
   initComposer();

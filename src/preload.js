@@ -199,6 +199,13 @@ contextBridge.exposeInMainWorld("assistantClient", {
   ),
   uninstallRuntimePack: (id) => ipcRenderer.invoke("runtime-packs:uninstall", { id }),
 
+  voiceDictationStart: () => ipcRenderer.invoke("voice:start"),
+  voiceDictationStop: () => ipcRenderer.invoke("voice:stop"),
+  voiceDictationAudio: (base64Audio) => ipcRenderer.send("voice:audio", base64Audio),
+  onVoiceDictationEvent: (callback) => {
+    ipcRenderer.on("voice:event", (_event, payload) => callback(payload));
+  },
+
   getUpdateSettings: () => ipcRenderer.invoke("updates:get-settings"),
   getUpdateState: () => ipcRenderer.invoke("updates:get-state"),
   getUsageSummary: () => ipcRenderer.invoke("usage:get-summary"),

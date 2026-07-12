@@ -240,6 +240,7 @@ app.whenReady().then(async () => {
   };
 
   ipcHandlers.registerAll(appContext);
+  require("./main/voice-dictation-service").registerVoiceDictationIpc();
   scheduledTaskManager.start(appContext);
 
   require("./main/update-scheduler").startBackgroundUpdateChecks({

@@ -799,6 +799,33 @@
   border-color: color-mix(in srgb, var(--accent-border) 60%, var(--border-light) 40%);
 }
 
+/* Voice dictation mic: idle = quiet icon; listening = accent icon with a
+   breathing ring whose spread follows the live input level (--voice-level,
+   0..1, set from the capture RMS). */
+.composer-mic-btn {
+  --voice-level: 0;
+  position: relative;
+}
+.composer-mic-btn.is-connecting,
+.composer-mic-btn.is-finishing {
+  color: var(--accent);
+  animation: voice-connecting-pulse 1.1s ease-in-out infinite;
+}
+.composer-mic-btn.is-listening {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  box-shadow: 0 0 0 calc(2px + var(--voice-level) * 6px)
+    color-mix(in srgb, var(--accent) calc(18% + var(--voice-level) * 30%), transparent);
+  transition: box-shadow 0.12s ease-out;
+}
+.composer-mic-btn.is-listening.is-speaking {
+  color: var(--accent-hover);
+}
+@keyframes voice-connecting-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 .composer-skill-btn {
   width: auto;
   height: 30px;
