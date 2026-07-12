@@ -750,6 +750,16 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   const minimaxKey = gatewayProviders["minimax-media"]?.apiKey || config.minimaxApiKey;
   const zhipuKey = gatewayProviders["zhipu-media"]?.apiKey || config.zhipuApiKey;
   const searchEnabled = Boolean(searchKey);
+  // Mobile Command relay URL: independent of media keys/mode — it's the pairing
+  // WebSocket endpoint the desktop bridge connects to. Delivered whenever the
+  // public base is known so the desktop knows where to reach it.
+  if (base) {
+    const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
+    const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
+    env.LILY_MOBILE_RELAY_URL = `${base.replace(/^http/, "ws")}/api/mobile/relay`;
+    runtime.env = env;
+    configCopy.runtime = runtime;
+  }
   if (base && (visionKey || searchEnabled || volcengineKey || klingAccessKey || minimaxKey || zhipuKey)) {
     const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
     const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};

@@ -241,6 +241,11 @@ app.whenReady().then(async () => {
 
   ipcHandlers.registerAll(appContext);
   require("./main/voice-dictation-service").registerVoiceDictationIpc();
+  try {
+    require("./main/ipc-mobile-pairing").registerMobilePairingIpc(appContext);
+  } catch (err) {
+    console.warn("[mobile-pairing] IPC registration skipped:", err?.message || err);
+  }
   scheduledTaskManager.start(appContext);
 
   require("./main/update-scheduler").startBackgroundUpdateChecks({

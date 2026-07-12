@@ -199,6 +199,13 @@ contextBridge.exposeInMainWorld("assistantClient", {
   ),
   uninstallRuntimePack: (id) => ipcRenderer.invoke("runtime-packs:uninstall", { id }),
 
+  mobilePairingCreateChallenge: () => ipcRenderer.invoke("mobile-pairing:create-challenge"),
+  mobilePairingPollPending: () => ipcRenderer.invoke("mobile-pairing:poll-pending"),
+  mobilePairingApprove: (grantId) => ipcRenderer.invoke("mobile-pairing:approve", grantId),
+  mobilePairingDeny: (grantId) => ipcRenderer.invoke("mobile-pairing:deny", grantId),
+  mobilePairingRevoke: (payload) => ipcRenderer.invoke("mobile-pairing:revoke", payload),
+  mobilePairingStatus: () => ipcRenderer.invoke("mobile-pairing:status"),
+
   voiceDictationStart: () => ipcRenderer.invoke("voice:start"),
   voiceDictationStop: () => ipcRenderer.invoke("voice:stop"),
   voiceDictationAudio: (base64Audio) => ipcRenderer.send("voice:audio", base64Audio),

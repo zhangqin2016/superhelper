@@ -831,6 +831,7 @@ module.exports = {
   refreshClientBootstrap,
   getServiceSettings,
   getDeviceId,
+  serviceFetch,
   devicePayload,
   sendSmsCode,
   loginWithSms,
