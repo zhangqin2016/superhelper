@@ -4,7 +4,7 @@ Owner: **Mobile Command / ASR DRI**. Freeze this contract, schemas, corpus versi
 
 ## Run validity and sample size
 
-Use the identical randomized case order for every candidate/device/network cell. The corpus is balanced across environment × locale × length × intent. A decision run requires at least **500 scored utterances per candidate**, at least **20 per required matrix cell**, and representative iOS and Android runs. Exclusions are limited to predeclared capture corruption or revoked consent and are reported with reasons; provider errors remain failures.
+Use the identical randomized case order for every candidate/device/network cell. The corpus is balanced across environment × locale × length × intent. A decision run requires at least **500 attempted and 500 scored utterances per candidate**, at least **20 scored rows per required matrix cell**, representative iOS and Android runs, foreground/background capture, offline/connected networks, all declared noise/language conditions, and mixed-language key-term annotations. Exclusions are limited to predeclared capture corruption or revoked consent and are reported with reasons; provider errors remain failures. Missing coverage emits `blocked` with no acceptance result.
 
 If any required input in `README.md` is absent, emit only a `blocked` artifact with reasons. Do not impute, substitute candidates, or turn missing measurements into zero.
 
@@ -13,14 +13,14 @@ If any required input in `README.md` is absent, emit only a `blocked` artifact w
 - Latency: monotonic elapsed milliseconds from audio-start to first non-empty partial, and audio-stop to accepted final. Report nearest-rank p50/p95 over scored utterances.
 - WER = `(substitutions + deletions + insertions) / reference words`; lowercase and Unicode NFC only. CER uses Unicode code points after NFC and removes annotation-only spaces for zh-CN. Report both; do not transliterate or model-correct.
 - Usable-command rate = cases whose normalized intent **and every annotated slot** exactly match / scored cases.
-- Mixed key-term exact rate = annotated names/files/apps preserved exactly / annotated mixed-language key terms.
-- Flicker = partial revisions that change already displayed stable tokens outside the active trailing segment, normalized per 10 seconds of speech. Revision IDs must be strictly increasing.
-- Successful-final and draft-preservation rates use attempted cases as denominator. A crash, timeout, missing final, or provider error is not excluded.
+- Mixed key-term exact rate is micro-averaged: exactly preserved annotated names/files/apps / all annotated terms on `mixed` rows. Rows with no annotation add neither success nor denominator; absence of required annotations blocks the run.
+- Flicker compares revision token arrays only before the previous revision's `activeTrailingStart`; each changed stable token is counted and normalized per 10 seconds. Changes inside the active trailing segment are not flicker. Revision IDs must be strictly increasing.
+- Successful-final and draft-preservation rates use **all attempted rows**, including exclusions and provider errors, as denominator. A crash, timeout, missing final, provider error, or excluded row is not a successful final.
 - CPU is time-weighted process average; `rssDeltaPeakMiB = process-tree peak RSS - process-tree baseline RSS` per utterance and its reported point is the median across utterances; battery is baseline-adjusted percentage points per 30 minutes; network is total bytes sent/received; cost is the provider invoice-unit calculation from billable audio seconds and the price artifact active on run date.
 
 ## Uncertainty and acceptance
 
-Report 95% Wilson score intervals for proportions (usable, key-term, successful-final, draft preservation). Report 95% stratified bootstrap intervals (10,000 resamples, fixed seed `20260712`, resampling within matrix cells) for p50/p95 latency, WER/CER, flicker, CPU, RSS, battery, network, and cost. Publish point estimate and both bounds; never interpret overlapping intervals as equivalence.
+Report analytic two-sided 95% Wilson score intervals (`z = 1.959963984540054`) for usable-command, slot exact, mixed key-term micro, successful-final, and draft-preservation proportions. Report 95% stratified bootstrap intervals (10,000 resamples, fixed seed `20260712`, resampling within matrix cells) for p50/p95 latency, WER/CER, flicker, revision violations, CPU, RSS, battery, network, cost, and crash rate. Publish point estimate and both bounds; never interpret overlapping intervals as equivalence.
 
 A candidate passes only when its point estimate meets every threshold and the conservative 95% bound also meets accuracy/reliability gates (lower bound) and latency/resource/flicker gates (upper bound):
 

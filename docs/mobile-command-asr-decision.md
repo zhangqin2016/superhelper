@@ -33,6 +33,6 @@ The full numeric gate and candidate evidence are in [the ASR spike](mobile-comma
 
 ## Blocking Artifacts And Next Experiment
 
-Blocking artifacts are the approved versioned corpus/annotations, consent and scorer implementation, representative iOS/Android devices and app builds, provider/model/region and test credentials/endpoints, deploy-specific privacy/retention/cost evidence, background/network profiles, energy measurements, and composer patch/failure tests. Missing inputs produce a `blocked` artifact; they are never scored as zero or silently substituted.
+Blocking artifacts are the approved versioned corpus/annotations, consent and scorer implementation, >= 500 attempted/scored rows with >= 20 scored per matrix cell, representative iOS/Android devices and one homogeneous app/candidate/provider/model/region, foreground/background and offline/connected profiles, deploy-specific privacy/retention/cost evidence, energy measurements, and composer patch/failure tests. Missing inputs produce a `blocked` artifact with no acceptance result; they are never scored as zero or silently substituted.
 
 Run [ASR spike §6](mobile-command-asr-provider-spike.md#6-next-reproducible-experiment) without changing thresholds after results are visible. A primary/fallback order may be chosen only after every mandatory threshold and privacy/operations review passes. Until then, the only safe degradation is editable text input with existing draft preserved.

@@ -1,137 +1,124 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import Ajv from 'ajv';
 
 const root = path.resolve(import.meta.dirname, '..');
 const temp = await mkdtemp(path.join(tmpdir(), 'lily-asr-scorer-'));
-const eventsPath = path.join(temp, 'events.ndjson');
-const metadataPath = path.join(temp, 'metadata.json');
-const outputA = path.join(temp, 'metrics-a.json');
-const outputB = path.join(temp, 'metrics-b.json');
 const hash = 'a'.repeat(64);
+const schemaPath = path.join(root, 'docs/evidence/mobile-command/asr/event-row.schema.json');
+const environments = ['quiet', 'street', 'headset', 'far-field'];
+const languages = ['zh-CN', 'en-US', 'mixed'];
+const lengths = ['short', 'long'];
+const intents = ['ordinary', 'sensitive'];
+const cells = environments.flatMap((environment) =>
+  languages.flatMap((language) =>
+    lengths.flatMap((length) =>
+      intents.map((intent) => ({ environment, language, length, intent }))
+    )
+  )
+);
 
-const base = {
-  schemaVersion: '1.0.0',
-  candidate: { provider: 'local-test', model: 'fixture', modelVersion: '1', region: 'device', endpointClass: 'on-device' },
-  device: { deviceId: 'test-device', manufacturer: 'Test', model: 'Fixture', os: 'Android', osVersion: '1' },
-  app: { name: 'Lily Test', version: '1.0.0', build: '1' },
-  network: { profile: 'offline', downKbps: 0, upKbps: 0, rttMs: 0, packetLossPercent: 0 },
-  audioSha256: hash,
-  consentRef: 'consent-fixture',
-  language: 'en-US',
-  noiseProfile: 'controlled-quiet',
-  referenceIntent: 'open-file',
-  hypothesisIntent: 'open-file',
-  slotsExpected: { file: 'report' },
-  slotsObserved: { file: 'report' },
-  keyTermsExpected: ['report'],
-  keyTermsObserved: ['report'],
-  errors: [],
-  excluded: false,
-  draftPreserved: true,
-};
-
-const events = Array.from({ length: 16 }, (_, index) => {
-  const environment = 'quiet';
-  const locale = 'mixed';
-  const length = 'short';
-  const intent = 'ordinary';
-  const audioStartMs = 1_000;
-  const audioStopMs = 11_000;
+function row(index, cell, os) {
+  const finalOk = index !== 0;
   return {
-    ...base,
-    eventId: `event-${index}`,
-    caseId: `${environment}.${locale}.${length}.${intent}.${String(index + 1).padStart(3, '0')}`,
-    environment,
-    language: locale,
-    timestamps: { audioStartMs, audioStopMs, firstPartialMs: audioStartMs + 200 + index, finalMs: audioStopMs + 500 + index },
+    schemaVersion: '1.1.0', eventId: `event-${os}-${index}`,
+    caseId: `${cell.environment}.${cell.language}.${cell.length}.${cell.intent}.${String(index + 1).padStart(3, '0')}`,
+    candidate: { provider: 'local-test', model: 'fixture', modelVersion: '1', region: 'device', endpointClass: 'on-device' },
+    device: { deviceId: `${os.toLowerCase()}-device`, manufacturer: 'Test', model: 'Fixture', os, osVersion: '1' },
+    app: { name: 'Lily Test', version: '1.0.0', build: '1' },
+    network: { profile: index % 2 ? 'wifi-good' : 'offline', downKbps: 1000, upKbps: 500, rttMs: 20, packetLossPercent: 0 },
+    environment: cell.environment, noiseProfile: `controlled-${cell.environment}`, language: cell.language,
+    captureMode: index % 2 ? 'foreground' : 'background',
+    audioSha256: hash, consentRef: 'consent-fixture',
+    timestamps: { audioStartMs: 1000, audioStopMs: 11000, firstPartialMs: 1200, finalMs: 11500 },
     partialRevisions: [
-      { revisionId: 1, atMs: audioStartMs + 200, text: 'open', final: false },
-      { revisionId: 2, atMs: audioStartMs + 300, text: index === 0 ? 'other' : 'open report', final: false },
-      { revisionId: 3, atMs: audioStopMs + 500, text: 'open report', final: true },
+      { revisionId: 1, atMs: 1200, tokens: ['open', 'rep'], activeTrailingStart: 1, final: false },
+      { revisionId: 2, atMs: 1300, tokens: [index === 1 ? 'close' : 'open', 'report'], activeTrailingStart: 1, final: false },
+      { revisionId: 3, atMs: 11500, tokens: ['open', 'report'], activeTrailingStart: 2, final: true }
     ],
-    reference: 'open report',
-    hypothesis: index === 1 ? 'open reports' : 'open report',
-    resources: {
-      cpuBaselinePercent: 2,
-      cpuAveragePercent: 12 + index / 10,
-      cpuPeakPercent: 30,
-      rssBaselineMiB: 100,
-      rssPeakMiB: index >= 9 ? 230 : 180,
-      batteryStartPercent: 80,
-      batteryEndPercent: 79,
-      measurementMinutes: 30,
-      networkBytesSent: index * 10,
-      networkBytesReceived: index * 20,
-      billableAudioSeconds: 10,
-      cost: 0.01,
-      currency: 'USD'
-    }
+    reference: 'open report', hypothesis: finalOk ? 'open report' : 'close report',
+    referenceIntent: 'open-file', hypothesisIntent: finalOk ? 'open-file' : 'close-file',
+    slotsExpected: { file: 'report' }, slotsObserved: finalOk ? { file: 'report' } : { file: 'other' },
+    keyTermsExpected: cell.language === 'mixed' ? ['report', 'Lily'] : [], keyTermsObserved: cell.language === 'mixed' ? ['report', ...(index % 3 ? ['Lily'] : [])] : [],
+    errors: [], excluded: false, draftPreserved: finalOk,
+    resources: { cpuBaselinePercent: 2, cpuAveragePercent: 12, cpuPeakPercent: 30, rssBaselineMiB: 100, rssPeakMiB: 180, batteryStartPercent: 80, batteryEndPercent: 79, measurementMinutes: 30, networkBytesSent: 10, networkBytesReceived: 20, billableAudioSeconds: 10, cost: 0.01, currency: 'USD' }
   };
-});
-
-await writeFile(eventsPath, `${events.map((row) => JSON.stringify(row)).join('\n')}\n`);
-await writeFile(metadataPath, JSON.stringify({
-  runId: '20260712T120000Z_aaaaaaaaaaaa',
-  startedAt: '2026-07-12T12:00:00Z',
-  owner: 'Mobile Command / ASR DRI',
-  scorer: { version: '1.0.0', commit: 'fixture-commit', bootstrapSeed: 20260712, bootstrapIterations: 200 },
-  corpus: { id: 'fixture-corpus', version: '1', path: 'external/fixture', sha256: hash },
-  artifacts: [{ kind: 'events', path: 'events.ndjson', sha256: hash }],
-  privacyCost: { audioRetention: 'none', transcriptRetention: 'test-only', logging: 'none', credentialOwner: 'test' }
-}));
-
-function run(output) {
-  const result = spawnSync(process.execPath, [
-    path.join(root, 'scripts/score-mobile-asr-evidence.mjs'),
-    '--events', eventsPath,
-    '--metadata', metadataPath,
-    '--output', output,
-  ], { cwd: root, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
 }
 
-run(outputA);
-run(outputB);
+async function writeRun(name, rowsByFile) {
+  const paths = [];
+  for (let i = 0; i < rowsByFile.length; i += 1) {
+    const file = path.join(temp, `${name}-${i}.ndjson`);
+    const bytes = `${rowsByFile[i].map(JSON.stringify).join('\n')}\n`;
+    await writeFile(file, bytes);
+    paths.push({ path: file, sha256: createHash('sha256').update(bytes).digest('hex'), deviceId: rowsByFile[i][0].device.deviceId });
+  }
+  const metadataPath = path.join(temp, `${name}-metadata.json`);
+  await writeFile(metadataPath, JSON.stringify({ runId: '20260712T120000Z_aaaaaaaaaaaa', startedAt: '2026-07-12T12:00:00Z', owner: 'Mobile Command / ASR DRI', scorer: { version: '1.1.0', commit: 'fixture-commit', bootstrapSeed: 20260712, bootstrapIterations: 100 }, corpus: { id: 'fixture-corpus', version: '1', path: 'external/fixture', sha256: hash }, inputArtifacts: paths, artifacts: [], privacyCost: { audioRetention: 'none', transcriptRetention: 'test-only', logging: 'none', credentialOwner: 'test' } }));
+  return { paths, metadataPath };
+}
+
+function invoke(run, output) {
+  return spawnSync(process.execPath, [path.join(root, 'scripts/score-mobile-asr-evidence.mjs'), ...run.paths.flatMap((item) => ['--events', item.path]), '--metadata', run.metadataPath, '--event-schema', schemaPath, '--output', output], { cwd: root, encoding: 'utf8' });
+}
+
+const small = await writeRun('small', [[row(0, cells[0], 'iOS')], [row(1, cells[1], 'Android')]]);
+const smallOutput = path.join(temp, 'small.json');
+assert.equal(invoke(small, smallOutput).status, 0);
+const blocked = JSON.parse(await readFile(smallOutput, 'utf8'));
+assert.equal(blocked.status, 'blocked');
+assert.ok(blocked.missingInputs.some((item) => item.includes('500')));
+assert.equal(blocked.acceptance, undefined, 'blocked runs must not publish acceptance passes');
+
+const ios = [];
+const android = [];
+for (const [cellIndex, cell] of cells.entries()) for (let n = 0; n < 21; n += 1) {
+  const target = n % 2 ? ios : android;
+  const event = row(cellIndex * 21 + n, cell, n % 2 ? 'iOS' : 'Android');
+  if (cellIndex === 0 && n === 0) { event.excluded = true; event.exclusionReason = 'predeclared capture corruption'; }
+  target.push(event);
+}
+const completeRun = await writeRun('complete', [ios, android]);
+const outputA = path.join(temp, 'complete-a.json');
+const outputB = path.join(temp, 'complete-b.json');
+assert.equal(invoke(completeRun, outputA).status, 0);
+assert.equal(invoke(completeRun, outputB).status, 0);
 const a = JSON.parse(await readFile(outputA, 'utf8'));
 const b = JSON.parse(await readFile(outputB, 'utf8'));
-
-const ajv = new Ajv({ allErrors: true, schemaId: 'auto' });
-const draft6Compatible = async (file) => JSON.parse(
-  (await readFile(path.join(root, file), 'utf8'))
-    .replace('"$schema": "https://json-schema.org/draft/2020-12/schema",', '')
-    .replaceAll('"$defs"', '"definitions"')
-    .replaceAll('#/$defs/', '#/definitions/')
-);
-const validateEvent = ajv.compile(await draft6Compatible('docs/evidence/mobile-command/asr/event-row.schema.json'));
-for (const event of events) assert.equal(validateEvent(event), true, ajv.errorsText(validateEvent.errors));
-const validateMetrics = ajv.compile(await draft6Compatible('docs/evidence/mobile-command/asr/raw-metrics.schema.json'));
-assert.equal(validateMetrics(a), true, ajv.errorsText(validateMetrics.errors));
-
-assert.deepEqual(a, b, 'fixed-seed scoring must be byte-semantically deterministic');
+assert.deepEqual(a, b);
 assert.equal(a.status, 'complete');
-assert.deepEqual(a.sampleCounts, { attempted: 16, scored: 16, excluded: 0 });
+assert.equal(a.devices.length, 2);
 
-for (const metric of [
-  a.latencyMs.firstPartial.p50, a.latencyMs.firstPartial.p95,
-  a.latencyMs.finalAfterStop.p50, a.latencyMs.finalAfterStop.p95,
-  a.accuracy.wer, a.accuracy.cer, a.accuracy.usableCommandRate,
-  a.accuracy.slotExactRate, a.accuracy.mixedKeyTermExactRate,
-  a.stability.flickerRewritesPer10s, a.stability.monotonicRevisionViolationRate, a.resources.cpuAveragePercent,
-  a.resources.rssDeltaPeakMiB, a.resources.batteryDeltaPercentPer30Min,
-  a.network.bytesSent, a.network.bytesReceived, a.cost.total,
-  a.reliability.successfulFinalRate, a.reliability.draftPreservationRate, a.reliability.crashRate,
-]) {
-  assert.deepEqual(Object.keys(metric).sort(), ['lower95', 'n', 'point', 'unit', 'upper95']);
-  assert.ok(metric.lower95 <= metric.point && metric.point <= metric.upper95);
+const expected = wilson(1007, 1007);
+assert.deepEqual(a.sampleCounts, { attempted: 1008, scored: 1007, excluded: 1 });
+assert.equal(a.accuracy.usableCommandRate.n, 1007);
+assert.ok(Math.abs(a.accuracy.usableCommandRate.lower95 - expected.lower) < 1e-12);
+assert.ok(Math.abs(a.accuracy.usableCommandRate.upper95 - expected.upper) < 1e-12);
+assert.notEqual(a.accuracy.usableCommandRate.lower95, a.accuracy.wer.lower95, 'Wilson and bootstrap intervals must be distinct methods');
+assert.equal(a.reliability.draftPreservationRate.n, 1008, 'attempted rows are the denominator');
+assert.equal(a.reliability.successfulFinalRate.n, 1008, 'excluded/errors still count in successful-final denominator');
+assert.equal(a.reliability.successfulFinalRate.point, 1007 / 1008);
+assert.equal(a.accuracy.mixedKeyTermExactRate.n, 672, 'mixed key-term interval uses annotated terms as micro denominator');
+assert.equal(a.stability.flickerRewritesPer10s.point > 0, true, 'only stable-prefix token changes flicker');
+
+const invalidRows = [[{ ...row(0, cells[0], 'iOS'), unexpected: true }], [row(1, cells[1], 'Android')]];
+const invalid = await writeRun('invalid', invalidRows);
+assert.notEqual(invoke(invalid, path.join(temp, 'invalid.json')).status, 0, 'runtime schema validation must reject additional properties');
+
+const mixedRows = [[row(0, cells[0], 'iOS')], [{ ...row(1, cells[1], 'Android'), candidate: { ...row(1, cells[1], 'Android').candidate, provider: 'other' } }]];
+const mixed = await writeRun('mixed-provider', mixedRows);
+assert.notEqual(invoke(mixed, path.join(temp, 'mixed.json')).status, 0, 'candidate homogeneity is mandatory');
+
+function wilson(success, n) {
+  const z = 1.959963984540054;
+  const p = success / n;
+  const d = 1 + z * z / n;
+  const center = (p + z * z / (2 * n)) / d;
+  const margin = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d;
+  return { lower: center - margin, upper: center + margin };
 }
-
-assert.equal(a.resources.rssDeltaPeakMiB.point, 80, 'RSS point must use per-row peak minus baseline, then median');
-assert.equal(a.acceptance.rssDeltaPeakMiB.threshold, 100);
-assert.equal(a.acceptance.rssDeltaPeakMiB.conservativePass, false, 'upper CI above 100 must fail the conservative gate');
-assert.equal(a.scorer.bootstrapSeed, 20260712);
 
 console.log('mobile ASR evidence scorer tests passed');

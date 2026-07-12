@@ -68,6 +68,6 @@ Authoritative API reference set reviewed on 2026-07-12: [Web Speech API on MDN](
 1. Freeze and hash the corpus/annotations; assign the same utterance order to every candidate.
 2. Record device model, OS, app/browser build, network profile, provider/model/region, credential owner, and timestamp.
 3. Capture utterance-level timestamps, revisions, references/hypotheses, CPU/process-tree RSS baseline and peak, energy/network/cost inputs using [the event-row schema](evidence/mobile-command/asr/event-row.schema.json), then score to [the raw metrics schema](evidence/mobile-command/asr/raw-metrics.schema.json).
-4. Run at least 500 utterances per candidate, including offline and weak-network cases; calculate p50/p95, CER/WER, key-term accuracy, failure preservation, and crash rate with the same scorer.
+4. Run at least 500 attempted and 500 scored utterances per homogeneous candidate across the frozen matrix, with >= 20 scored per cell, iOS and Android, foreground/background, and offline/connected profiles. Coverage gaps must remain `blocked`; calculate Wilson proportion intervals and deterministic stratified-bootstrap continuous intervals with the same scorer.
 5. Have privacy and operations owners verify the deployed retention/region/credential/cost facts.
 6. Score with [the frozen scoring contract](evidence/mobile-command/asr/scoring-contract.md). Select a primary/fallback only if it passes all mandatory thresholds; otherwise ship text-only voice degradation and keep MC-ADR-008 proposed.

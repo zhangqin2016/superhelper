@@ -4,9 +4,9 @@
   "title": "Mobile Command ASR utterance event row",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "eventId", "caseId", "candidate", "device", "app", "network", "environment", "noiseProfile", "language", "audioSha256", "consentRef", "timestamps", "partialRevisions", "reference", "hypothesis", "referenceIntent", "hypothesisIntent", "slotsExpected", "slotsObserved", "keyTermsExpected", "keyTermsObserved", "errors", "excluded", "draftPreserved", "resources"],
+  "required": ["schemaVersion", "eventId", "caseId", "candidate", "device", "app", "network", "environment", "noiseProfile", "language", "captureMode", "audioSha256", "consentRef", "timestamps", "partialRevisions", "reference", "hypothesis", "referenceIntent", "hypothesisIntent", "slotsExpected", "slotsObserved", "keyTermsExpected", "keyTermsObserved", "errors", "excluded", "draftPreserved", "resources"],
   "properties": {
-    "schemaVersion": { "const": "1.0.0" },
+    "schemaVersion": { "const": "1.1.0" },
     "eventId": { "type": "string", "pattern": "^[a-zA-Z0-9-]+$" },
     "caseId": { "type": "string", "pattern": "^(quiet|street|headset|far-field)\\.(zh-CN|en-US|mixed)\\.(short|long)\\.(ordinary|sensitive)\\.[0-9]{3,}$" },
     "candidate": { "$ref": "#/$defs/candidate" },
@@ -16,6 +16,7 @@
     "environment": { "enum": ["quiet", "street", "headset", "far-field"] },
     "noiseProfile": { "type": "string", "minLength": 1 },
     "language": { "enum": ["zh-CN", "en-US", "mixed"] },
+    "captureMode": { "enum": ["foreground", "background"] },
     "audioSha256": { "$ref": "#/$defs/sha256" },
     "consentRef": { "type": "string", "minLength": 1 },
     "timestamps": {
@@ -41,7 +42,7 @@
     "device": { "type": "object", "additionalProperties": false, "required": ["deviceId", "manufacturer", "model", "os", "osVersion"], "properties": { "deviceId": { "type": "string", "pattern": "^[a-z0-9-]+$" }, "manufacturer": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "os": { "enum": ["iOS", "Android"] }, "osVersion": { "type": "string", "minLength": 1 } } },
     "app": { "type": "object", "additionalProperties": false, "required": ["name", "version", "build"], "properties": { "name": { "type": "string", "minLength": 1 }, "version": { "type": "string", "minLength": 1 }, "build": { "type": "string", "minLength": 1 } } },
     "network": { "type": "object", "additionalProperties": false, "required": ["profile", "downKbps", "upKbps", "rttMs", "packetLossPercent"], "properties": { "profile": { "type": "string", "minLength": 1 }, "downKbps": { "type": "number", "minimum": 0 }, "upKbps": { "type": "number", "minimum": 0 }, "rttMs": { "type": "number", "minimum": 0 }, "packetLossPercent": { "type": "number", "minimum": 0, "maximum": 100 } } },
-    "revision": { "type": "object", "additionalProperties": false, "required": ["revisionId", "atMs", "text", "final"], "properties": { "revisionId": { "type": "integer", "minimum": 1 }, "atMs": { "$ref": "#/$defs/millis" }, "text": { "type": "string" }, "final": { "type": "boolean" } } },
+    "revision": { "type": "object", "additionalProperties": false, "required": ["revisionId", "atMs", "tokens", "activeTrailingStart", "final"], "properties": { "revisionId": { "type": "integer", "minimum": 1 }, "atMs": { "$ref": "#/$defs/millis" }, "tokens": { "type": "array", "items": { "type": "string" } }, "activeTrailingStart": { "type": "integer", "minimum": 0 }, "final": { "type": "boolean" } } },
     "stringMap": { "type": "object", "additionalProperties": { "type": "string" } },
     "stringArray": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
     "error": { "type": "object", "additionalProperties": false, "required": ["code", "message"], "properties": { "code": { "type": "string", "minLength": 1 }, "message": { "type": "string", "minLength": 1 } } },

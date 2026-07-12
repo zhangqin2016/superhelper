@@ -15,7 +15,7 @@ docs/evidence/mobile-command/asr/
   scoring-contract.md
   runs/<run-id>/                         # generated evidence; do not create before a real run
     corpus-manifest.json
-    <candidate-id>__<device-id>__metadata.json
+    <candidate-id>__run-metadata.json
     <candidate-id>__<device-id>__raw-metrics.json
     <candidate-id>__<device-id>__events.ndjson
     SHA256SUMS
@@ -27,13 +27,17 @@ Scorer owner: **Mobile Command / ASR DRI**. Freeze the scorer version and git co
 
 ```bash
 node scripts/score-mobile-asr-evidence.mjs \
-  --events docs/evidence/mobile-command/asr/runs/<run-id>/<candidate-id>__<device-id>__events.ndjson \
-  --metadata docs/evidence/mobile-command/asr/runs/<run-id>/<candidate-id>__<device-id>__metadata.json \
+  --events docs/evidence/mobile-command/asr/runs/<run-id>/<candidate-id>__<ios-device-id>__events.ndjson \
+  --events docs/evidence/mobile-command/asr/runs/<run-id>/<candidate-id>__<android-device-id>__events.ndjson \
+  --metadata docs/evidence/mobile-command/asr/runs/<run-id>/<candidate-id>__run-metadata.json \
+  --event-schema docs/evidence/mobile-command/asr/event-row.schema.json \
   --output docs/evidence/mobile-command/asr/runs/<run-id>/<candidate-id>__<device-id>__raw-metrics.json
 find docs/evidence/mobile-command/asr/runs/<run-id> -type f ! -name SHA256SUMS -exec shasum -a 256 {} + | sort > docs/evidence/mobile-command/asr/runs/<run-id>/SHA256SUMS
 ```
 
-Metadata fixes `scorer.version`, `scorer.commit`, bootstrap seed/iterations, corpus hash, candidate/model/region, privacy facts, and input artifact hashes. The scorer performs no network calls.
+Metadata fixes `scorer.version`, `scorer.commit`, bootstrap seed/iterations, corpus hash, candidate/model/region, privacy facts, and `inputArtifacts[]` bindings (`path`, SHA-256, and the file's single `deviceId`). Repeat `--events` for every bound device file. The scorer performs no network calls; it validates every row against the Draft 2020-12 event schema and validates its own output against the raw-metrics schema before writing.
+
+A complete run requires one homogeneous candidate/provider/model/model-version/region and app version, at least 500 attempted and 500 scored utterances, >= 20 scored rows in every required case matrix cell, representative iOS and Android devices, foreground/background modes, offline/connected network profiles, all noise/language conditions, and annotated mixed-language key terms. Any coverage gap produces `status: blocked`, `missingInputs`, and no `acceptance` object. Mixed candidate or manifest/hash/device binding is an input error and exits nonzero.
 
 ## Corpus case IDs
 
