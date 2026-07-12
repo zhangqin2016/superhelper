@@ -1409,4 +1409,48 @@ if (queueState.queue.length !== 0) {
   throw new Error(`retried queued message should be removed after start: ${JSON.stringify(queueState.queue)}`);
 }
 
+// Wedged runner: the orchestrator turn finalized (phase idle) but the runner
+// stays busy forever (abort never settled). The dispatcher must NOT retry
+// against it endlessly — that is the "shows idle but the message stays queued"
+// bug. After the grace window it recycles the runner and dispatches fresh.
+{
+  const previousThreshold = TurnOrchestrator.STALE_RUNNER_BUSY_DISPATCHES;
+  const previousDelay = TurnOrchestrator.QUEUE_RETRY_DELAY_MS;
+  TurnOrchestrator.STALE_RUNNER_BUSY_DISPATCHES = 3;
+  TurnOrchestrator.QUEUE_RETRY_DELAY_MS = 1;
+  terminatedSessions.length = 0;
+  queueState.phase = "idle";
+  queueState.dispatchBusyRetries = 0;
+  queueState.queue = [{ id: "queue_wedged", text: "still queued", files: [], displayFiles: [] }];
+  let wedgedAttempts = 0;
+  ctx.turnOrchestrator._tryStartQueuedItem = async () => {
+    wedgedAttempts += 1;
+    // Recycling clears the wedge: once the session was terminated, a fresh
+    // runner starts the item (mirrors runnerPool.ensure building a new runner).
+    if (terminatedSessions.includes("s1")) return { ok: true, turnId: "after_recycle" };
+    return { ok: false, retry: true, error: "RUNNER_BUSY" };
+  };
+  try {
+    // Drive the retry timer the full grace window; the 3rd busy retry trips
+    // the recycle, and the immediate re-dispatch then starts the item.
+    for (let i = 0; i < 5; i += 1) {
+      await ctx.turnOrchestrator._dispatchNext("s1");
+      await new Promise((resolve) => setTimeout(resolve, 3));
+    }
+  } finally {
+    TurnOrchestrator.STALE_RUNNER_BUSY_DISPATCHES = previousThreshold;
+    TurnOrchestrator.QUEUE_RETRY_DELAY_MS = previousDelay;
+    ctx.turnOrchestrator._tryStartQueuedItem = originalTryStartQueuedItem;
+    ctx.turnOrchestrator._clearDispatchRetry("s1");
+  }
+  if (!terminatedSessions.includes("s1")) {
+    throw new Error("a runner wedged busy while the session is idle must be recycled, not retried forever");
+  }
+  if (queueState.queue.length !== 0) {
+    throw new Error(`the queued message must be dispatched after the wedged runner is recycled: ${JSON.stringify(queueState.queue)}`);
+  }
+  queueState.queue = [];
+  queueState.dispatchBusyRetries = 0;
+}
+
 console.log("turn-orchestrator: ok");

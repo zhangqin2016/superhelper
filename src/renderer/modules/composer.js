@@ -79,7 +79,14 @@ export function renderMessageQueue(sessionId, items = []) {
       item.text ||
       (item.hasFiles ? t("composer.queueAttachmentOnly") : t("composer.queueEmptyText"));
     text.textContent = preview;
-    text.title = preview;
+    // Only surface the full text on hover when the single-line preview is
+    // actually clipped. An unconditional title popped a redundant tooltip
+    // repeating what the bubble already shows in full, hovering over the
+    // composer. Measured after layout; the row may be replaced before then.
+    requestAnimationFrame(() => {
+      if (!text.isConnected) return;
+      text.title = text.scrollWidth > text.clientWidth + 1 ? preview : "";
+    });
     row.appendChild(text);
 
     const rm = document.createElement("button");

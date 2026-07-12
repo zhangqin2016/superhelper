@@ -346,6 +346,10 @@ function compactToolInput(input, name = "Tool") {
 
 class TurnOrchestrator {
   static QUEUE_RETRY_DELAY_MS = 80;
+  // Consecutive RUNNER_BUSY dispatch retries (× QUEUE_RETRY_DELAY_MS ≈ 2.4s of
+  // grace for a normal abort-settle) before a runner that stays busy while the
+  // session is idle is treated as wedged and recycled.
+  static STALE_RUNNER_BUSY_DISPATCHES = 30;
 
   constructor(ctx) {
     this.ctx = ctx;
@@ -2633,9 +2637,34 @@ class TurnOrchestrator {
     try {
       result = await this._tryStartQueuedItem(sessionId, next);
       if (result?.retry) {
+        // RUNNER_BUSY retry: the orchestrator turn already finalized (we only
+        // reach here with phase === "idle"), so a runner that STILL reports
+        // busy is wedged — its abort never settled, or the engine never sent
+        // idle. Retrying against it forever is exactly the "shows idle but the
+        // message stays queued" bug. Give a short grace for a normal
+        // abort-settle, then recycle the runner and dispatch fresh.
+        if (result.error === "RUNNER_BUSY") {
+          state.dispatchBusyRetries = (state.dispatchBusyRetries || 0) + 1;
+          if (state.dispatchBusyRetries >= TurnOrchestrator.STALE_RUNNER_BUSY_DISPATCHES) {
+            log.warn(
+              "queued dispatch: runner wedged busy while session idle (%d retries) — recycling: session=%s",
+              state.dispatchBusyRetries,
+              sessionId,
+            );
+            state.dispatchBusyRetries = 0;
+            try {
+              this.ctx.runnerPool?.terminateSession?.(sessionId);
+            } catch (err) {
+              log.warn("wedged-runner recycle failed: %s", err?.message || err);
+            }
+            void this._dispatchNext(sessionId);
+            return;
+          }
+        }
         this._scheduleDispatchRetry(sessionId);
         return;
       }
+      state.dispatchBusyRetries = 0;
       if (!result?.ok) {
         state.queue.shift();
         this._completeQueuedScheduledRun(next, "turn.failed", {
