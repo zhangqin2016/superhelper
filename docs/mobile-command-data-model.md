@@ -134,9 +134,9 @@ Check: `device_role IN ('desktop','mobile')`. A device has one role for this fea
 | `key_alg` | `text` | no | `'ed25519'` | check | immutable | retain with row |
 | `status` | `text` | no | `'active'` | check | active to rotated/revoked only | retain as evidence |
 | `activated_at` | `timestamptz` | no | `now()` | none | immutable | retain with row |
-| `retired_at` | `timestamptz` | yes | none | none | null to timestamp once | retain with row |
+| `terminal_at` | `timestamptz` | yes | none | none | null to timestamp once when rotated/revoked | cleanup anchor: purge 365 days after terminal state |
 
-Unique `(device_id, generation)` and partial unique index on `(device_id) WHERE status='active'`. Checks: `generation > 0`, `key_alg='ed25519'`, valid status, and retired timestamp consistency. The compatibility `device_public_keys` row must equal the active history key in the same rotation transaction.
+Unique `(device_id, generation)` and partial unique index on `(device_id) WHERE status='active'`; cleanup index `(terminal_at) WHERE status IN ('rotated','revoked')`. Checks: `generation > 0`, `key_alg='ed25519'`, valid status, and `terminal_at` is null exactly for active rows and non-null for both rotated and revoked rows. Rotation sets the old row to `rotated` and `terminal_at=now()`; revocation sets the active row to `revoked` and `terminal_at=now()`. The compatibility `device_public_keys` row must equal the active history key in the same rotation transaction and is deleted/disabled when the key is revoked.
 
 ### 3.3 `mobile_pairing_challenges`
 
@@ -149,10 +149,10 @@ Unique `(device_id, generation)` and partial unique index on `(device_id) WHERE 
 | `token_hash` | `text` | no | none | unique | immutable | hash only; never log or return after creation |
 | `status` | `text` | no | `'pending'` | check | one-way terminal transition | purge after terminal window |
 | `expires_at` | `timestamptz` | no | none | check | immutable | purge after terminal window |
-| `consumed_at` | `timestamptz` | yes | none | none | null to timestamp once | purge after terminal window |
+| `consumed_at` | `timestamptz` | yes | none | none | null to terminal timestamp once for consumed/cancelled | purge after terminal window |
 | `created_at` | `timestamptz` | no | `now()` | none | immutable | purge after terminal window |
 
-Unique `token_hash`; lookup index `(desktop_device_id, status, expires_at)`; status check `pending/consumed/expired/cancelled`; `expires_at > created_at`; consumed timestamp is present exactly for `consumed`. Challenge TTL is five minutes.
+Unique `token_hash`; lookup index `(desktop_device_id, status, expires_at)`; status check `pending/consumed/expired/cancelled`; `expires_at > created_at`; `consumed_at` is present exactly for `consumed` or `cancelled` as their terminal handling time. Challenge TTL is five minutes.
 
 ### 3.4 `mobile_pairing_grants`
 
@@ -165,12 +165,25 @@ Unique `token_hash`; lookup index `(desktop_device_id, status, expires_at)`; sta
 | `mobile_device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | opaque in logs |
 | `license_id` | `text` | no | none | `licenses(id)` | immutable snapshot | commercial identifier redacted |
 | `status` | `text` | no | `'pending_approval'` | check | state machine only | retain revocation evidence |
+| `approval_expires_at` | `timestamptz` | no | none | none | immutable | timeout anchor; pending becomes expired at this instant |
 | `approved_at` | `timestamptz` | yes | none | none | null to timestamp once | retain with grant |
-| `revoked_at` | `timestamptz` | yes | none | none | null to timestamp once | retain with grant |
+| `terminal_at` | `timestamptz` | yes | none | none | null to timestamp once for denied/revoked/expired | cleanup anchor for every terminal grant |
 | `revoked_reason` | `text` | yes | none | none | set with revoke | bounded code, no free-form secrets |
 | `created_at` | `timestamptz` | no | `now()` | none | immutable | retain with grant |
 
-Partial unique `(desktop_device_id, mobile_device_id) WHERE status IN ('pending_approval','active')`; lookup indexes `(user_id,status)` and `(mobile_device_id,status)`. Checks forbid self-pairing, constrain status, and require timestamps consistent with active/revoked states. Approval is a compare-and-set from `pending_approval`; concurrent decisions cannot both win.
+Partial unique `(desktop_device_id, mobile_device_id) WHERE status IN ('pending_approval','active')`; lookup indexes `(user_id,status)`, `(mobile_device_id,status)`, `(approval_expires_at) WHERE status='pending_approval'`, and `(terminal_at) WHERE status IN ('denied','revoked','expired')`. Checks forbid self-pairing, constrain status, require `approval_expires_at > created_at`, and require timestamps consistent with each state. Approval is a compare-and-set from unexpired `pending_approval`; concurrent decisions cannot both win.
+
+Grant retention is closed by state:
+
+| State | Transition/anchor | Retention and cleanup |
+|---|---|---|
+| `pending_approval` | created with `approval_expires_at = created_at + 2 minutes` | cleanup job atomically changes overdue rows to `expired`, sets `terminal_at=now()`, and thereby releases the partial unique live-pair slot; abandoned pending rows cannot persist indefinitely |
+| `active` | `approved_at` set by desktop compare-and-set; `terminal_at` null | retained while authority is active; it must transition to `revoked` before deletion |
+| `denied` | desktop denial sets `terminal_at=now()` | purge 30 days after `terminal_at` |
+| `expired` | approval timeout job sets `terminal_at=now()` | purge 24 hours after `terminal_at` |
+| `revoked` | account/device/license/risk/user action sets `terminal_at=now()` and bounded `revoked_reason` | purge 365 days after `terminal_at` |
+
+The timeout transition runs at least every minute, before creation of a new grant for the same pair, using `FOR UPDATE SKIP LOCKED` in bounded batches. An approval update must include `status='pending_approval' AND approval_expires_at > now()`; otherwise it loses to expiry/deny and creates no active grant.
 
 ### 3.5 `mobile_remote_sessions`
 
@@ -243,7 +256,24 @@ Index `(remote_session_id,status,expires_at)`. Checks constrain status, `max_use
 
 Unique `event_id`; indexes `(remote_session_id,created_at DESC)` and `(event_type,created_at DESC)`; check `outcome IN ('allowed','denied','revoked','failed')`. It is intentionally append-only and does not cascade away with operational rows.
 
-## 4. Ownership, Revocation, Deletion, And Cleanup
+## 4. State Retention Closure
+
+Every stateful additive table has an explicit terminal transition and cleanup anchor:
+
+| Table | Non-terminal states | Terminal states and anchor | Cleanup |
+|---|---|---|---|
+| `mobile_device_roles` | role row while device exists | device deletion | `ON DELETE CASCADE`; no independent timer |
+| `mobile_device_key_history` | `active` | `rotated`/`revoked` at `terminal_at` | 365 days after `terminal_at` |
+| `mobile_pairing_challenges` | `pending` until `expires_at` | `consumed` at `consumed_at`; `expired` at `expires_at`; `cancelled` uses cancellation time recorded in `consumed_at` as the existing terminal-time column | 24 hours after `coalesce(consumed_at, expires_at)`; pending rows are first transitioned to `expired` |
+| `mobile_pairing_grants` | `pending_approval`, `active` | `denied`/`expired`/`revoked` at `terminal_at` | respectively 30 days/24 hours/365 days after `terminal_at` |
+| `mobile_remote_sessions` | `active` until `expires_at` | `ended`/`revoked`/`expired` at `ended_at` | 90 days after `ended_at`; overdue active rows first transition to `expired` |
+| `mobile_remote_tokens` | unused and unrevoked before `expires_at` | used at `used_at`, revoked at `revoked_at`, otherwise expired at `expires_at` | 30 days after `coalesce(revoked_at, used_at, expires_at)` |
+| `mobile_remote_approvals` | `pending`/`approved` before `expires_at` and use limit | `denied`/`revoked` at `decided_at`; `expired` at `expires_at`; `consumed` when `use_count=max_uses` | 365 days after `coalesce(decided_at, expires_at)` or earlier with owning session cascade; expired/consumed transitions are audited before purge |
+| `mobile_remote_audit_events` | append-only; no mutable state | `created_at` is retention anchor | purge 365 days after `created_at` after required pseudonymization |
+
+For challenge cancellation, `consumed_at` means the terminal handling time for both `consumed` and `cancelled`; it is not evidence that a cancelled token was consumed. The DDL check below enforces a terminal timestamp for both. All expiry transitions use database `now()` and bounded `FOR UPDATE SKIP LOCKED` batches.
+
+## 5. Ownership, Revocation, Deletion, And Cleanup
 
 | Trigger | Transactional effect | Asynchronous effect | Local baseline |
 |---|---|---|---|
@@ -254,9 +284,9 @@ Unique `event_id`; indexes `(remote_session_id,created_at DESC)` and `(event_typ
 | user deletion | existing/new user-owned FKs cascade operational rows; audit `user_id` becomes null | redact/pseudonymize audit identifiers | destructive account operation is explicit |
 | device deletion | device-owned operational/key rows cascade; audit IDs remain pseudonymized evidence | clean transport/push state | no cross-device reassignment |
 
-Cleanup runs at least every 15 minutes under a single advisory lock and deletes in bounded batches: nonces older than ten minutes; challenges 24 hours after terminal/expiry; remote tokens 30 days after expiry/revoke; remote sessions 90 days after terminal/expiry; revoked grants/key history 365 days after revocation; audit after 365 days. Cleanup failure must alert and deny authority if replay or audit storage cannot be safely maintained; it must not block local Lily chat.
+General cleanup runs at least every 15 minutes under a single advisory lock and deletes in bounded batches: nonces older than ten minutes; challenges 24 hours after terminal/expiry; denied grants 30 days, expired grants 24 hours, and revoked grants 365 days after `terminal_at`; rotated or revoked key-history rows 365 days after `terminal_at`; remote tokens 30 days after expiry/revoke; remote sessions 90 days after terminal/expiry; and audit after 365 days. The separate grant-timeout transition runs at least every minute so stale `pending_approval` rows release their live-pair uniqueness promptly. Active grants and active keys have no cleanup deadline and must first enter an explicit terminal state. Cleanup failure must alert and deny authority if replay or audit storage cannot be safely maintained; it must not block local Lily chat.
 
-## 5. Migration Compatibility
+## 6. Migration Compatibility
 
 The future migration is additive and lexically ordered after the current latest migration. It does not rename, delete, reinterpret, or backfill `devices`, `users`, `user_devices`, `user_sessions`, `licenses`, `license_devices`, `device_public_keys`, or `request_nonces`. Existing desktop IDs, account sessions, keys, and licenses remain valid. No historical row is assigned a desktop/mobile role automatically; role is created only by a verified feature enrollment. Rollback disables Mobile Command routes first and may leave additive tables dormant; it must not drop them while a deployed client could still reference them.
 
@@ -278,12 +308,14 @@ create table if not exists mobile_device_key_history (
   key_alg text not null default 'ed25519' check (key_alg = 'ed25519'),
   status text not null default 'active' check (status in ('active', 'rotated', 'revoked')),
   activated_at timestamptz not null default now(),
-  retired_at timestamptz,
+  terminal_at timestamptz,
   unique (device_id, generation),
-  check ((status = 'active' and retired_at is null) or (status <> 'active' and retired_at is not null))
+  check ((status = 'active' and terminal_at is null) or (status in ('rotated', 'revoked') and terminal_at is not null))
 );
 create unique index if not exists mobile_device_key_history_active_unique
   on mobile_device_key_history (device_id) where status = 'active';
+create index if not exists mobile_device_key_history_cleanup_idx
+  on mobile_device_key_history (terminal_at) where status in ('rotated', 'revoked');
 
 create table if not exists mobile_pairing_challenges (
   id text primary key,
@@ -296,7 +328,8 @@ create table if not exists mobile_pairing_challenges (
   consumed_at timestamptz,
   created_at timestamptz not null default now(),
   check (expires_at > created_at),
-  check ((status = 'consumed' and consumed_at is not null) or (status <> 'consumed' and consumed_at is null))
+  check ((status in ('consumed', 'cancelled') and consumed_at is not null)
+      or (status in ('pending', 'expired') and consumed_at is null))
 );
 create index if not exists mobile_pairing_challenges_lookup_idx
   on mobile_pairing_challenges (desktop_device_id, status, expires_at);
@@ -308,21 +341,27 @@ create table if not exists mobile_pairing_grants (
   desktop_device_id text not null references devices(id) on delete cascade,
   mobile_device_id text not null references devices(id) on delete cascade,
   license_id text not null references licenses(id),
-  status text not null default 'pending_approval' check (status in ('pending_approval', 'active', 'denied', 'revoked')),
+  status text not null default 'pending_approval' check (status in ('pending_approval', 'active', 'denied', 'revoked', 'expired')),
+  approval_expires_at timestamptz not null,
   approved_at timestamptz,
-  revoked_at timestamptz,
+  terminal_at timestamptz,
   revoked_reason text,
   created_at timestamptz not null default now(),
   check (desktop_device_id <> mobile_device_id),
-  check ((status = 'active' and approved_at is not null and revoked_at is null)
-      or (status = 'revoked' and revoked_at is not null)
-      or status in ('pending_approval', 'denied'))
+  check (approval_expires_at > created_at),
+  check ((status = 'pending_approval' and approved_at is null and terminal_at is null)
+      or (status = 'active' and approved_at is not null and terminal_at is null)
+      or (status in ('denied', 'revoked', 'expired') and terminal_at is not null))
 );
 create unique index if not exists mobile_pairing_grants_live_pair_unique
   on mobile_pairing_grants (desktop_device_id, mobile_device_id)
   where status in ('pending_approval', 'active');
 create index if not exists mobile_pairing_grants_user_status_idx on mobile_pairing_grants (user_id, status);
 create index if not exists mobile_pairing_grants_mobile_status_idx on mobile_pairing_grants (mobile_device_id, status);
+create index if not exists mobile_pairing_grants_pending_expiry_idx
+  on mobile_pairing_grants (approval_expires_at) where status = 'pending_approval';
+create index if not exists mobile_pairing_grants_cleanup_idx
+  on mobile_pairing_grants (terminal_at) where status in ('denied', 'revoked', 'expired');
 
 create table if not exists mobile_remote_sessions (
   id text primary key,
