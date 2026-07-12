@@ -113,7 +113,25 @@ Existing exact constraints: `device_public_keys` primary key `(device_id)`; `req
 
 ## 3. Additive Mobile Command Tables
 
-### 3.1 `mobile_device_roles`
+### 3.1 `user_session_refresh_token_history`
+
+This minimal tombstone table makes planned Mobile refresh-token replay detection queryable after `user_sessions.refresh_token_hash` has been replaced. It stores hashes only, never plaintext tokens.
+
+| Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
+|---|---|---:|---|---|---|---|
+| `id` | `bigserial` | no | sequence | primary key | immutable | purge at `expires_at`; never expose externally |
+| `session_id` | `text` | no | none | `user_sessions(id) ON DELETE CASCADE` | immutable | purge with session or at `expires_at` |
+| `token_hash` | `text` | no | none | unique | immutable | HMAC hash only; never log, return, or store plaintext |
+| `token_version` | `integer` | no | none | check; unique with session | immutable | purge at `expires_at` |
+| `invalidated_at` | `timestamptz` | no | `now()` | none | immutable | rotation/revocation clock anchor; retain until `expires_at` |
+| `expires_at` | `timestamptz` | no | none | check | immutable | cleanup anchor; original token/session validity limit |
+| `reason` | `text` | no | `'rotated'` | check | immutable | fixed bounded code; purge with tombstone |
+
+Exact constraints/indexes: primary key `(id)`, unique `(token_hash)`, unique `(session_id, token_version)`, check `token_version > 0`, check `expires_at > invalidated_at`, check `reason = 'rotated'`, lookup index `(token_hash, expires_at)`, and cleanup index `(expires_at)`. Replay outcome is recorded in the remote audit owner rather than mutating the tombstone. Hash lookup uses the same HMAC/pepper as current `hashRefreshToken`; a raw token or reversible encryption is prohibited.
+
+On a planned Mobile refresh, the server locks the `user_sessions` row and in one database transaction: (1) verifies the current old hash/version; (2) inserts that old hash/version into this table with `invalidated_at=now()` and `expires_at` equal to the pre-rotation session expiry; (3) compare-and-sets the current row to the new hash/version and sliding 30-day expiry; and (4) commits before returning either new token. A request whose hash does not match a current session queries this table for `token_hash` with `expires_at > now()`; a match locates `session_id` and triggers account-session and paired-grant revocation. Concurrent duplicate rotation loses on the unique tombstone/CAS and follows the replay path.
+
+### 3.2 `mobile_device_roles`
 
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
@@ -123,22 +141,22 @@ Existing exact constraints: `device_public_keys` primary key `(device_id)`; `req
 
 Check: `device_role IN ('desktop','mobile')`. A device has one role for this feature.
 
-### 3.2 `mobile_device_key_history`
+### 3.3 `mobile_device_key_history`
 
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
-| `id` | `text` | no | none | primary key | immutable | retain 365 days after revoke |
-| `device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | delete with device |
-| `generation` | `integer` | no | none | unique with device; check | immutable, strictly increasing | retain as rollback evidence |
-| `public_key` | `text` | no | none | none | immutable | omit from routine logs |
-| `key_alg` | `text` | no | `'ed25519'` | check | immutable | retain with row |
-| `status` | `text` | no | `'active'` | check | active to rotated/revoked only | retain as evidence |
-| `activated_at` | `timestamptz` | no | `now()` | none | immutable | retain with row |
+| `id` | `text` | no | none | primary key | immutable | active: retain; rotated/revoked: purge 365 days after `terminal_at` |
+| `device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | active: retain; rotated/revoked: purge 365 days after `terminal_at`, or delete with device |
+| `generation` | `integer` | no | none | unique with device; check | immutable, strictly increasing | active: retain; rotated/revoked: purge 365 days after `terminal_at` |
+| `public_key` | `text` | no | none | none | immutable | omit from routine logs; rotated/revoked: purge 365 days after `terminal_at` |
+| `key_alg` | `text` | no | `'ed25519'` | check | immutable | active: retain; rotated/revoked: purge 365 days after `terminal_at` |
+| `status` | `text` | no | `'active'` | check | active to rotated/revoked only | state anchor; rotated/revoked row purges 365 days after `terminal_at` |
+| `activated_at` | `timestamptz` | no | `now()` | none | immutable | active: retain; rotated/revoked: purge 365 days after `terminal_at` |
 | `terminal_at` | `timestamptz` | yes | none | none | null to timestamp once when rotated/revoked | cleanup anchor: purge 365 days after terminal state |
 
 Unique `(device_id, generation)` and partial unique index on `(device_id) WHERE status='active'`; cleanup index `(terminal_at) WHERE status IN ('rotated','revoked')`. Checks: `generation > 0`, `key_alg='ed25519'`, valid status, and `terminal_at` is null exactly for active rows and non-null for both rotated and revoked rows. Rotation sets the old row to `rotated` and `terminal_at=now()`; revocation sets the active row to `revoked` and `terminal_at=now()`. The compatibility `device_public_keys` row must equal the active history key in the same rotation transaction and is deleted/disabled when the key is revoked.
 
-### 3.3 `mobile_pairing_challenges`
+### 3.4 `mobile_pairing_challenges`
 
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
@@ -154,22 +172,22 @@ Unique `(device_id, generation)` and partial unique index on `(device_id) WHERE 
 
 Unique `token_hash`; lookup index `(desktop_device_id, status, expires_at)`; status check `pending/consumed/expired/cancelled`; `expires_at > created_at`; `consumed_at` is present exactly for `consumed` or `cancelled` as their terminal handling time. Challenge TTL is five minutes.
 
-### 3.4 `mobile_pairing_grants`
+### 3.5 `mobile_pairing_grants`
 
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
-| `id` | `text` | no | none | primary key | immutable | purge 365 days after revocation |
-| `user_id` | `text` | no | none | `users(id) ON DELETE CASCADE` | immutable | opaque in logs |
-| `account_session_id` | `text` | no | none | `user_sessions(id) ON DELETE CASCADE` | immutable | revoke on session revocation |
-| `desktop_device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | opaque in logs |
-| `mobile_device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | opaque in logs |
-| `license_id` | `text` | no | none | `licenses(id)` | immutable snapshot | commercial identifier redacted |
-| `status` | `text` | no | `'pending_approval'` | check | state machine only | retain revocation evidence |
-| `approval_expires_at` | `timestamptz` | no | none | none | immutable | timeout anchor; pending becomes expired at this instant |
-| `approved_at` | `timestamptz` | yes | none | none | null to timestamp once | retain with grant |
-| `terminal_at` | `timestamptz` | yes | none | none | null to timestamp once for denied/revoked/expired | cleanup anchor for every terminal grant |
-| `revoked_reason` | `text` | yes | none | none | set with revoke | bounded code, no free-form secrets |
-| `created_at` | `timestamptz` | no | `now()` | none | immutable | retain with grant |
+| `id` | `text` | no | none | primary key | immutable | by `status`/`terminal_at`: expired 24 h, denied 30 d, revoked 365 d; active retained |
+| `user_id` | `text` | no | none | `users(id) ON DELETE CASCADE` | immutable | same state retention; opaque in logs; delete with user |
+| `account_session_id` | `text` | no | none | `user_sessions(id) ON DELETE CASCADE` | immutable | same state retention; revoke on session revocation; delete with session |
+| `desktop_device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | same state retention; opaque in logs; delete with device |
+| `mobile_device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | same state retention; opaque in logs; delete with device |
+| `license_id` | `text` | no | none | `licenses(id)` | immutable snapshot | same state retention; commercial identifier redacted |
+| `status` | `text` | no | `'pending_approval'` | check | state machine only | controls State Retention Closure matrix: expired 24 h, denied 30 d, revoked 365 d, active retained |
+| `approval_expires_at` | `timestamptz` | no | none | none | immutable | pending timeout anchor; after transition, state retention uses `terminal_at` |
+| `approved_at` | `timestamptz` | yes | none | none | null to timestamp once | same state retention; active retained until revoked |
+| `terminal_at` | `timestamptz` | yes | none | none | null to timestamp once for denied/revoked/expired | cleanup anchor: expired 24 h, denied 30 d, revoked 365 d |
+| `revoked_reason` | `text` | yes | none | none | set with revoke | bounded code; same state retention, no free-form secrets |
+| `created_at` | `timestamptz` | no | `now()` | none | immutable | same state retention; pending bounded by `approval_expires_at` |
 
 Partial unique `(desktop_device_id, mobile_device_id) WHERE status IN ('pending_approval','active')`; lookup indexes `(user_id,status)`, `(mobile_device_id,status)`, `(approval_expires_at) WHERE status='pending_approval'`, and `(terminal_at) WHERE status IN ('denied','revoked','expired')`. Checks forbid self-pairing, constrain status, require `approval_expires_at > created_at`, and require timestamps consistent with each state. Approval is a compare-and-set from unexpired `pending_approval`; concurrent decisions cannot both win.
 
@@ -185,7 +203,7 @@ Grant retention is closed by state:
 
 The timeout transition runs at least every minute, before creation of a new grant for the same pair, using `FOR UPDATE SKIP LOCKED` in bounded batches. An approval update must include `status='pending_approval' AND approval_expires_at > now()`; otherwise it loses to expiry/deny and creates no active grant.
 
-### 3.5 `mobile_remote_sessions`
+### 3.6 `mobile_remote_sessions`
 
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
@@ -206,7 +224,7 @@ The timeout transition runs at least every minute, before creation of a new gran
 
 Partial unique `(pairing_grant_id) WHERE status='active'`; lookup indexes `(desktop_device_id,status,last_seen_at DESC)`, `(mobile_device_id,status,last_seen_at DESC)`, and `(expires_at) WHERE status='active'`. Checks constrain status/permission and terminal timestamps. Remote session TTL is 30 minutes with activity refresh, capped at 12 hours from `created_at`; reconnect never changes its identities.
 
-### 3.6 `mobile_remote_tokens`
+### 3.7 `mobile_remote_tokens`
 
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
@@ -221,7 +239,7 @@ Partial unique `(pairing_grant_id) WHERE status='active'`; lookup indexes `(desk
 
 Unique `token_hash` and `(remote_session_id,generation)`; index `(remote_session_id,expires_at)`. Refresh tokens are opaque, one-time, 30-minute credentials; atomic consume issues the next generation and marks `used_at`. Reuse revokes the remote session and every token in its family.
 
-### 3.7 `mobile_remote_approvals`
+### 3.8 `mobile_remote_approvals`
 
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
@@ -239,7 +257,7 @@ Unique `token_hash` and `(remote_session_id,generation)`; index `(remote_session
 
 Index `(remote_session_id,status,expires_at)`. Checks constrain status, `max_uses > 0`, and `0 <= use_count <= max_uses`. Approval consumption is atomic and bound to the stored session/device/action/resource digest.
 
-### 3.8 `mobile_remote_audit_events`
+### 3.9 `mobile_remote_audit_events`
 
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
@@ -262,6 +280,7 @@ Every stateful additive table has an explicit terminal transition and cleanup an
 
 | Table | Non-terminal states | Terminal states and anchor | Cleanup |
 |---|---|---|---|
+| `user_session_refresh_token_history` | none; each row is an invalidated-token tombstone | `invalidated_at`; queryable until original validity `expires_at` | purge at `expires_at`; cascade with account session |
 | `mobile_device_roles` | role row while device exists | device deletion | `ON DELETE CASCADE`; no independent timer |
 | `mobile_device_key_history` | `active` | `rotated`/`revoked` at `terminal_at` | 365 days after `terminal_at` |
 | `mobile_pairing_challenges` | `pending` until `expires_at` | `consumed` at `consumed_at`; `expired` at `expires_at`; `cancelled` uses cancellation time recorded in `consumed_at` as the existing terminal-time column | 24 hours after `coalesce(consumed_at, expires_at)`; pending rows are first transitioned to `expired` |
@@ -284,7 +303,7 @@ For challenge cancellation, `consumed_at` means the terminal handling time for b
 | user deletion | existing/new user-owned FKs cascade operational rows; audit `user_id` becomes null | redact/pseudonymize audit identifiers | destructive account operation is explicit |
 | device deletion | device-owned operational/key rows cascade; audit IDs remain pseudonymized evidence | clean transport/push state | no cross-device reassignment |
 
-General cleanup runs at least every 15 minutes under a single advisory lock and deletes in bounded batches: nonces older than ten minutes; challenges 24 hours after terminal/expiry; denied grants 30 days, expired grants 24 hours, and revoked grants 365 days after `terminal_at`; rotated or revoked key-history rows 365 days after `terminal_at`; remote tokens 30 days after expiry/revoke; remote sessions 90 days after terminal/expiry; and audit after 365 days. The separate grant-timeout transition runs at least every minute so stale `pending_approval` rows release their live-pair uniqueness promptly. Active grants and active keys have no cleanup deadline and must first enter an explicit terminal state. Cleanup failure must alert and deny authority if replay or audit storage cannot be safely maintained; it must not block local Lily chat.
+General cleanup runs at least every 15 minutes under a single advisory lock and deletes in bounded batches: refresh-token tombstones at `expires_at`; nonces older than ten minutes; challenges 24 hours after terminal/expiry; denied grants 30 days, expired grants 24 hours, and revoked grants 365 days after `terminal_at`; rotated or revoked key-history rows 365 days after `terminal_at`; remote tokens 30 days after expiry/revoke; remote sessions 90 days after terminal/expiry; and audit after 365 days. The separate grant-timeout transition runs at least every minute so stale `pending_approval` rows release their live-pair uniqueness promptly. Active grants and active keys have no cleanup deadline and must first enter an explicit terminal state. Cleanup failure must alert and deny authority if replay or audit storage cannot be safely maintained; it must not block local Lily chat.
 
 ## 6. Migration Compatibility
 
@@ -294,6 +313,22 @@ The future migration is additive and lexically ordered after the current latest 
 
 ```sql
 -- NORMATIVE APPENDIX ONLY. A future migration must receive the next repository number.
+create table if not exists user_session_refresh_token_history (
+  id bigserial primary key,
+  session_id text not null references user_sessions(id) on delete cascade,
+  token_hash text not null unique,
+  token_version integer not null check (token_version > 0),
+  invalidated_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  reason text not null default 'rotated' check (reason = 'rotated'),
+  unique (session_id, token_version),
+  check (expires_at > invalidated_at)
+);
+create index if not exists user_session_refresh_token_history_lookup_idx
+  on user_session_refresh_token_history (token_hash, expires_at);
+create index if not exists user_session_refresh_token_history_cleanup_idx
+  on user_session_refresh_token_history (expires_at);
+
 create table if not exists mobile_device_roles (
   device_id text primary key references devices(id) on delete cascade,
   device_role text not null check (device_role in ('desktop', 'mobile')),

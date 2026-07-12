@@ -27,7 +27,7 @@ Generic `account_id` is not persisted; where old prose says account ID it maps t
 |---|---|---|---:|---|---|---|---|
 | Account access token (existing) | Lily server / account APIs | signed `typ=access`, `sub=user_id`, `sid=account_session_id`, `did=device_id`, scopes, `iat`, `exp` | 15 min | mobile secure memory only; never persistent logs | mint on refresh; no silent extension | MAC verification, expiry, route scope; mutating device routes also require device signature/nonce | reject if expired, malformed, wrong scope/device, or backing session revoked; no offline authority |
 | Account refresh token — current baseline | Lily server / current `/api/auth/session/refresh` | opaque random secret; hash uniquely identifies `user_sessions`; request signed by the same `device_id` | sliding 30 days: `SESSION_RENEWAL_TTL_MS = 30 * 24 * 60 * 60 * 1000` in `server/src/services/account-auth.js:9` | plaintext in the current client credential store; server stores HMAC hash | current route reuses the same refresh token/hash/version and extends `expires_at`; this is recorded behavior, not the Mobile Command target | unique hash, signed request, five-minute skew, per-device nonce and device match | logout, account/session/device revoke, or expiry; offline storage grants no authority |
-| Account refresh token — planned Mobile rotation | Lily server / Mobile-capable `/api/auth/session/refresh` response contract | same account-session/device binding; request includes the old token whose hash and current `refresh_token_version` must match the locked row | sliding 30 days, preserving the current TTL constant | plaintext only in Keychain/Keystore; server stores only the newly issued HMAC hash | rotate on every successful Mobile refresh: atomically replace hash, increment version, and return the new refresh token with the new access token | signed request and nonce plus compare-and-set on old hash/version; replay of an already rotated token revokes the account session and its remote grants | all baseline triggers plus old-token replay; legacy non-Mobile behavior remains unchanged until its separately versioned migration |
+| Account refresh token — planned Mobile rotation | Lily server / Mobile-capable `/api/auth/session/refresh` response contract | same account-session/device binding; request includes the old token whose hash and current `refresh_token_version` must match the locked row | sliding 30 days, preserving the current TTL constant | plaintext only in Keychain/Keystore; server stores the current HMAC hash plus invalidated hash tombstones in `user_session_refresh_token_history`; no plaintext | rotate on every successful Mobile refresh: in one transaction insert old hash/version tombstone, replace current hash, increment version, and return the new refresh token with the new access token | signed request and nonce plus compare-and-set on old hash/version; current-hash miss queries unexpired unique tombstone to locate the session; match revokes the account session and its remote grants | all baseline triggers plus old-token replay; tombstones purge at their original `expires_at`; legacy non-Mobile behavior remains unchanged until its separately versioned migration |
 | Desktop device signature | desktop installation / Lily server and paired mobile verifier | Ed25519 signature over canonical method, path, RFC3339 timestamp, nonce, body hash; `device_id`, key generation | request only; ±5 min skew | private key OS credential store; public key server + paired trust record | monotonic generation; old key signs new key or desktop approval/re-pair | `request_nonces(device_id,nonce)` retained 10 min; body/path binding | key/device revoke rejects; offline server routes unavailable; local Lily unaffected |
 | Mobile device signature | mobile installation / Lily server and paired desktop | same canonical envelope, plus remote-session and command identifiers in signed body | request/event only; ±5 min skew | private key Keychain/Keystore; PWA non-exportable WebCrypto only when supported | same monotonic rule; rollback generation rejected | nonce is scoped to mobile `devices.id`; remote event additionally binds session, desktop, sequence/idempotency | revoke ends grants/sessions; offline cannot gain authority; already displayed local content remains read-only |
 | Pairing challenge token | Lily server after signed/authenticated desktop request / one mobile consume endpoint | opaque 256-bit token; server hash binds `pairing_id`, `user_id`, account session, desktop device, protocol | 5 min, one use | plaintext only in QR/in-memory desktop; hash at server | never rotated; create a new challenge | atomic `pending -> consumed`; token hash unique; consuming request signed by mobile key | cancel, consume, expiry, desktop/account session revoke; no offline consume |
@@ -103,24 +103,29 @@ sequenceDiagram
   participant S as Lily Server
   participant DB as PostgreSQL
   M->>S: Old refresh token + observed version + matching device + signed nonce
-  S->>DB: BEGIN; lock user_session found by old token hash
-  DB-->>S: Stored old hash/version, device, expiry, revoked_at
-  S->>S: Verify old hash, version, active session, 30-day expiry, device signature/binding
-  alt valid Mobile rotation
+  S->>DB: Find current user_session by old token hash
+  alt current hash found
+    S->>DB: BEGIN; lock current user_session row
+    DB-->>S: Stored old hash/version, device, expiry, revoked_at
+    S->>S: Verify old hash, version, active session, 30-day expiry, device signature/binding
     S->>S: Generate new refresh token/hash and 15 min access token
-    S->>DB: CAS old hash/version; set new hash, version+1, last_seen_at, sliding expiry
+    S->>DB: Insert old hash/version tombstone with original expires_at
+    S->>DB: CAS current old hash/version; set new hash, version+1, last_seen_at, sliding expiry
     DB-->>S: Exactly one row updated; COMMIT
     S-->>M: New access token + new refresh token + new version
-  else old hash/version already rotated (replay)
-    S->>DB: Revoke account session with refresh_replay reason; revoke sourced remote grants/sessions; audit
-    S-->>M: SESSION_REVOKED; full login required
-  else expired/revoked/device/signature mismatch
-    S->>DB: ROLLBACK; no token mutation
-    S-->>M: SESSION_EXPIRED, SESSION_REVOKED, or DEVICE_MISMATCH
+  else current hash not found
+    S->>DB: Find unexpired tombstone by old token hash
+    alt tombstone found (rotated-token replay)
+      DB-->>S: Owning session_id and old version
+      S->>DB: Revoke account session with refresh_replay reason; revoke sourced grants/sessions; audit
+      S-->>M: SESSION_REVOKED; full login required
+    else no tombstone
+      S-->>M: SESSION_EXPIRED; no identity disclosed
+    end
   end
 ```
 
-The current baseline route verifies the same identity fields but returns only a new access token and keeps the existing refresh hash/version. Mobile Command requires the planned compare-and-set branch above; clients must not assume rotation exists until the versioned response advertises and returns `refreshToken` plus `refreshTokenVersion`. An account refresh token cannot refresh a remote token, and a remote refresh token cannot refresh an account session.
+Any active-session, expiry, device, signature, version, tombstone-insert, or CAS failure rolls back token mutation and returns the bounded session/device error. The old tombstone is inserted before the current hash is replaced within the same transaction, so there is no committed state where the old hash is neither current nor queryable. The current baseline route verifies the same identity fields but returns only a new access token and keeps the existing refresh hash/version. Mobile Command requires the planned compare-and-set branch above; clients must not assume rotation exists until the versioned response advertises and returns `refreshToken` plus `refreshTokenVersion`. An account refresh token cannot refresh a remote token, and a remote refresh token cannot refresh an account session.
 
 ### 4.4 Device-key rotation
 
