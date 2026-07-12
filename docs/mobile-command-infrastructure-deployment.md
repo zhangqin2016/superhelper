@@ -102,7 +102,7 @@ monthly total = compute + database/cache + TURN + storage + egress + push + tele
 - Temporary objects must be excluded from backups unless privacy explicitly approves a bounded encrypted recovery copy. Lifecycle expiry is not deletion proof until object versions, multipart remnants, replicas and backups are demonstrated absent or expired.
 - Stateful control-plane recovery point/recovery time objectives are **UNVERIFIED**. Required artifact: backup inventory, restore drill, measured RPO/RTO, regional dependency map, and privacy-approved restore/deletion reconciliation.
 - TURN outage: stop issuing credentials, show recoverable Live Control failure, preserve Chat Only.
-- Push outage: queue only bounded non-sensitive advisory intent or rely on reconnect/poll; never block commands or approvals.
+- Push outage: queue only the strict opaque advisory-intent allowlist governed by [MC-SPEC-024](mobile-command-privacy-retention-compliance.md), with accepted expiry/collapse/dedupe/deletion and regional evidence, or rely on reconnect/poll. The queue cannot contain notification, task, message, file, command or approval content and push failure never blocks commands or approvals.
 - Storage outage: reject new transfers explicitly, preserve local draft/file, and never inject partial/unverified bytes into Lily.
 - Edge outage: clients may use only an accepted signed/bootstrap fallback; no guessed endpoint or policy downgrade.
 

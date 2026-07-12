@@ -37,12 +37,13 @@ Self-hosted coturn requirements:
 - bandwidth metrics
 - abuse throttling
 
-Credential rules:
+Proposed credential validation hypothesis:
 
-- max TTL 30 minutes
 - bound to account/session
 - refresh before expiry
 - revoke by ending remote session
+
+The `30 minutes` value in the draft WebRTC contract is an **UNVERIFIED initial validation bound**, not an accepted operations threshold and not evidence of a security-approved protocol maximum. MC-ADR-004 must cite the accepted credential-threshold artifact that distinguishes any protocol/schema maximum from the shorter operations-selected issuance TTL. Before release, the issuer/clients must be tested across expiry, refresh, replay, revoke, clock skew and active-session rotation, and the infrastructure/security owners must approve the value. Runtime code and provider configuration must not hardcode `30 minutes` until that acceptance exists.
 
 ## 4. Temporary Storage
 
@@ -94,24 +95,27 @@ The classifications below describe escalation intent. Numeric trigger thresholds
 P0 alerts:
 
 - suspicious permission bypass signal
-- spike in unauthorized input attempts
-- TURN bandwidth runaway
-- upload storage runaway
-- signing verification failures spike
 - device revocation failures
+- kill switch failed to apply or propagate while sensitive authority remained usable
 
 P1 alerts:
 
+- spike in unauthorized input attempts without confirmed bypass
+- TURN bandwidth runaway
+- upload storage runaway
+- signing verification failures spike
 - WebRTC connect success below threshold
 - upload failure rate spike
 - signaling error spike
 - push delivery failure spike
 
+A kill switch that successfully fails closed and disables Mobile Command authority is expected safety behavior. Record the resulting user impact as an availability degradation; do not page P0 merely because the sensitive feature became unavailable. P0 requires authority-side fail-open, such as non-propagation or continued sensitive capability after denial.
+
 ## 7. Rate Limits
 
-Default limits:
+**PROPOSED TEST HYPOTHESES — not runtime defaults:**
 
-| Action | Limit |
+| Action | Initial validation bound |
 |---|---:|
 | pairing start | 10 / hour / desktop |
 | pairing consume | 20 / hour / account |
@@ -122,7 +126,9 @@ Default limits:
 | upload bandwidth | account quota |
 | TURN bandwidth | account/session quota |
 
-Exceeded limits return `SERVER_RATE_LIMITED`.
+These values are inputs for abuse/load/false-positive testing only. They must not be presented as accepted defaults, shipped as literals, or copied into provider configuration until MC-SPEC-023/025 records representative traffic/load evidence, the exact counter/window/scope semantics, capability-gate behavior, and an accepted threshold artifact with infrastructure, security, product and support owner approval. Any security-canonical protocol/schema maximum must be cited separately; an operations-selected threshold may be stricter but cannot silently redefine that maximum.
+
+After an operations threshold is accepted, exceeding it returns the canonical rate-limit error selected by the protocol/error catalog. `SERVER_RATE_LIMITED` is a draft compatibility label here, not proof of the final wire code.
 
 ## 8. Abuse Controls
 
@@ -151,7 +157,7 @@ If the scoped switch is unavailable or propagation is unverified, stop issuing r
 
 ### 9.2 TURN Cost Spike
 
-1. Reduce max session TTL.
+1. Apply the accepted emergency issuance TTL; if no TTL threshold has been accepted, stop new TURN credential issuance for the affected scope instead of inventing or hardcoding one during the incident.
 2. Enforce bandwidth limits.
 3. Disable relay for suspected accounts.
 4. Keep Chat Only available.
@@ -207,6 +213,8 @@ Before enabling stable rollout:
 - verify TURN credential expiry
 - verify rate limits
 - verify rollback keeps Chat Only or desktop baseline
+
+For every numeric TTL, rate limit, quota, SLO and alert threshold, attach the measured test result, counter/window semantics, selected value, approving owners and accepted artifact ID. Until then values labeled as hypotheses above are documentation-only and must not be runtime defaults.
 
 Required kill switches, all currently planned rather than implemented, are: `mobileCommandEnabled`, `desktopControlEnabled`, `webrtcEnabled`, upload enablement, voice/provider enablement, push enablement, and region/account/device scoped denial. Verification must show signed/configured authority, audience, propagation time, active-session behavior, audit event, stale-config behavior, and recovery. Missing evidence blocks release.
 

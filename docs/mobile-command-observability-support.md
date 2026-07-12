@@ -64,9 +64,11 @@ All numeric SLOs and alert thresholds are **UNVERIFIED**; draft numbers elsewher
 
 Mandatory alert classes without invented thresholds:
 
-- P0: any proven authorization bypass, revoked-device control, secret exposure, prohibited-content telemetry, or kill switch failing closed for sensitive capability;
+- P0: any proven authorization bypass, revoked-device control, secret exposure, prohibited-content telemetry, or kill switch that fails to apply, fails to propagate, evaluates enabled when denial is required, or otherwise leaves a sensitive capability usable (authority-side fail-open);
 - P1: sustained regional inability to pair/signal/connect/upload, deletion backlog beyond approved SLA, signing/credential failures, or uncontrolled TURN/storage cost;
 - P2: degraded single-platform/provider path with Chat Only/local Lily intact.
+
+A kill switch that correctly disables sensitive authority is the required fail-safe behavior, not an incident. Its resulting loss of Mobile Command availability may be recorded and triaged as an availability degradation according to measured customer impact, while Chat Only/current local Lily remains available. Alert logic must test effective authority at the consuming service/client boundary; observing a configuration write alone does not prove propagation or containment.
 
 Until measured thresholds and routing tests exist, production enablement is **BLOCKED**; “alert configured” without a fired-and-acknowledged drill is insufficient.
 
