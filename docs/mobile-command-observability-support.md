@@ -104,13 +104,20 @@ Correlation joins only through the short-lived `correlationId` and bounded pseud
 Customer-visible status is a separate, human-approved projection of confirmed incidents. Status-page and client advisories may expose only:
 
 ```text
-service, region, capability, status, startedAt, updatedAt,
-resolvedAt, incidentId
+service, region, capability,
+phase, impact, fallback,
+startedAt, updatedAt, resolvedAt, incidentId
 ```
 
-All values use bounded public enums; `incidentId` is an opaque public case ID. Public output must not contain user/account/device/session/correlation IDs, IP/network endpoints, provider names/tenants/internal topology, error bodies, metrics labels, secrets, or content.
+The schema uses stable codes:
 
-Publication levels are: `investigating`, `identified`, `monitoring`, and `resolved`. Capability impact must distinguish `unavailable`, `partial`, and `degraded`, including explicit safe fallback such as `Chat Only`, `Observe available / Control unavailable`, `uploads unavailable`, or `push advisory delayed`. Region is published only at the approved customer-facing granularity. `resolvedAt` is set only after effective recovery is observed at the consuming boundary; recovery updates must state the restored capability and remove stale client advisory state.
+- `phase`: `investigating | identified | monitoring | resolved`;
+- `impact`: `unavailable | partial | degraded | none`;
+- `fallback`: `chat_only | observe_only | local_desktop_only | none`.
+
+`service`, `region`, and `capability` also come from bounded, versioned public enums; `incidentId` is an opaque public case ID. UI and status-page prose is localized from these stable codes and is not part of the payload. The public schema rejects free-text title, summary, message, cause, workaround, provider, or error fields. Public output must not contain user/account/device/session/correlation IDs, IP/network endpoints, provider names/tenants/internal topology, error bodies, metrics labels, secrets, or content.
+
+`phase = resolved` requires `impact = none`, `fallback = none`, a non-null `resolvedAt`, and effective recovery observed at the consuming boundary. Non-resolved records require `resolvedAt = null`. `impact = partial` or `impact = degraded` requires `fallback != none`; the fallback code states the actually safe remaining surface, not a proposed workaround. `impact = none` is valid only for `phase = resolved`. `fallback = none` on an active incident is permitted only when the capability is `unavailable` and no safe Mobile Command fallback exists; current local Lily behavior still must not be weakened. Region is published only at the approved customer-facing granularity, and recovery removes stale client advisory state.
 
 Trigger contract: a confirmed P0 customer-impacting incident requires a status-page and in-app advisory; a P1 publishes when the accepted impact/duration matrix says customers must act or a regional capability is materially degraded; a P2 remains internal unless the accepted matrix requires an in-app advisory for a known platform/capability cohort. Security detail may be withheld, but the safe capability impact and fallback cannot be misstated. These are publication classes, not numeric thresholds; the exact confirmation, duration and audience rules remain evidence-gated below.
 
