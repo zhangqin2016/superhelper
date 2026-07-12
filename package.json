@@ -7,10 +7,13 @@
   "scripts": {
     "start": "electron .",
     "start:dev": "DEV_USE_SYSTEM_AGENT=1 electron .",
+    "start:overseas": "LILY_CLIENT_REGION=overseas electron .",
+    "start:dev:overseas": "DEV_USE_SYSTEM_AGENT=1 LILY_CLIENT_REGION=overseas electron .",
     "server:dev": "npm --prefix server run dev",
     "server:migrate": "npm --prefix server run migrate",
     "server:smoke": "npm --prefix server run smoke",
     "server:integration": "npm --prefix server run integration",
+    "server:e2e:mobile": "npm --prefix server run e2e:mobile",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web run build",
     "test:unit": "node scripts/run-all-tests.mjs",
