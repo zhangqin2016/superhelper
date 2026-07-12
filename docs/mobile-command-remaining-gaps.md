@@ -46,19 +46,19 @@ A later gate may reopen an earlier artifact. The canonical owner must be correct
 
 The previous gap inventory is preserved here by disposition rather than repeated as parallel prose:
 
-| Historical item | Current disposition |
-|---|---|
-| Concrete repository integration | Consolidated into the first three dashboard rows and MC-ADR-001/003 |
-| Machine-readable schemas and shared validators | Consolidated into lifecycle/API and schema rows; production type generation is post-freeze implementation |
-| Real account/license/device model | Consolidated into identity/data row and MC-ADR-003 |
-| Desktop OS helper design | Split by Windows/macOS/Linux evidence in MC-ADR-005–007 |
-| Voice input/ASR | Consolidated into ASR row and MC-ADR-008; the voice UX contract remains a dependency |
-| Brand asset pipeline | Spec closure now tracks visual/design evidence; generation script/assets are later implementation outputs |
-| Mobile build/packaging | Consolidated into app boundary, native shell, and release-coupling rows |
-| Service deployment/TURN | Consolidated into WebRTC/TURN, push, storage, privacy, and operations rows |
-| UI visual tokens | Consolidated into visual design/brand evidence row |
-| Full acceptance tests | Consolidated into requirements/tests/sign-off row |
-| Offline drafts, i18n copy, telemetry, privacy, admin/support diagnostics | Assigned to state/error, UI, privacy, observability, and support canonical artifacts |
+| Historical item | Owner | Dependency | Evidence | Status | Current disposition |
+|---|---|---|---|---|---|
+| Concrete repository integration | MC-SPEC-005, MC-SPEC-036; MC-ADR-001 | Inventory gate | Verified repository exports, callers, routes, tables, config, and build boundary | evidence-needed | Consolidated into the first three closure-dashboard rows |
+| Machine-readable schemas and shared validators | MC-SPEC-009–014 | Domain contracts | Valid schemas, complete API matrix, negative cases, and prose reconciliation | draft | Production type generation is post-freeze implementation |
+| Real account/license/device model | MC-SPEC-006–007; MC-ADR-003 | MC-SPEC-005 | Verified identity/table mapping, constraints, retention, and revocation | evidence-needed | Consolidated into the identity/data closure row |
+| Desktop OS helper design | MC-SPEC-016, MC-SPEC-018–019; MC-ADR-005–007 | Repository truth and identity contract | Real Windows/macOS/Linux capture, input, security, signing, and packaging results | evidence-needed | Split into platform-specific decision records |
+| Voice input/ASR | MC-SPEC-017, MC-SPEC-020–021; MC-ADR-008 | Identity, permission, privacy, and config contracts | Measured ASR quality/latency/cost/privacy results | evidence-needed | Voice UX remains a domain input to the evidence-backed provider decision |
+| Brand asset pipeline | MC-SPEC-022, MC-SPEC-031–033 | Product/UI contract and repository truth | Approved tokens/reference renders and visual QA | evidence-needed | Script and generated assets are later implementation outputs |
+| Mobile build/packaging | MC-SPEC-034; MC-ADR-001–002, MC-ADR-012 | Repository truth, platform evidence, and protocol compatibility | Verified CI, signing, store, mixed-version, rollout, and rollback constraints | evidence-needed | Consolidated into app-boundary, native-shell, and release-coupling rows |
+| Service deployment/TURN | MC-SPEC-023–025, MC-SPEC-029; MC-ADR-004, MC-ADR-009–010 | Identity, protocol, and platform gates | Provider/topology, capacity, cost, privacy, observability, and DR evidence | evidence-needed | Split into WebRTC/TURN, push, storage, privacy, and operations rows |
+| UI visual tokens | MC-SPEC-022, MC-SPEC-031–033 | Domain UI states and platform matrix | Desktop-derived tokens, safe areas, dark mode, reference renders, and design approval | evidence-needed | Consolidated into visual design/brand evidence row |
+| Full acceptance tests | MC-SPEC-003–004, MC-SPEC-037–038 | All canonical contracts and decisions | Complete traceability, deterministic validation, QA IDs, and sign-off | draft | Consolidated into requirements/tests/sign-off row |
+| Offline drafts, i18n copy, telemetry, privacy, admin/support diagnostics | MC-SPEC-010–011, MC-SPEC-024–025, MC-SPEC-031 | Domain and protocol contracts | Retention/copy review, telemetry schema, diagnostics workflow, and support approval | evidence-needed | Assigned to state/error, UI, privacy, observability, and support owners |
 
 This disposition preserves the historical concerns while removing duplicate ownership and stale “next document” lists.
 
