@@ -8,6 +8,7 @@ import { adminRoutes } from "./routes/admin.js";
 import { modelGatewayRoutes } from "./services/model-gateway.js";
 import { mediaGatewayRoutes } from "./services/media-gateway.js";
 import { asrGatewayRoutes } from "./services/asr-gateway.js";
+import { registerMobileRelay } from "./services/mobile-relay.js";
 import { ensureEnvManagedConfigProfile } from "./services/client-config.js";
 import { refreshModelCatalog } from "./services/model-catalog.js";
 import { ensureEnvQiniuConfigSeeded } from "./services/app-settings.js";
@@ -89,6 +90,10 @@ export async function buildApp() {
   }, 24 * 60 * 60 * 1000);
   catalogTimer.unref?.();
   await registerRoutes(app);
+  // Mobile Command WebSocket relay: attaches to the underlying http server's
+  // upgrade event (fastify has no WS server). Gated so it only runs in the full
+  // app, not the doc-only app used by the OpenAPI coverage test.
+  registerMobileRelay(app);
 
   return app;
 }
