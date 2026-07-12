@@ -18,10 +18,10 @@ Every candidate must be tested on the same versioned corpus and devices:
 | Final after stop, 10-second speech | p50 < 800 ms and p95 < 1,200 ms |
 | zh-CN short commands | >= 95% usable-command accuracy and reported CER |
 | Mixed zh/en key terms | >= 95% exact preservation of the annotated names/files/apps set |
-| Draft safety | 100% of network/provider/permission failures preserve prior draft and last usable partial |
+| Draft safety | exact zero draft-preservation failures across all attempted rows; Wilson interval remains diagnostic |
 | Partial stability | <= 2 disruptive rewrites per 10-second utterance; revision ordering is monotonic |
 | Device cost | average CPU <= 20%, baseline-adjusted process-tree `rssDeltaPeakMiB` (peak minus baseline) <= 100 MiB, and <= 3% battery per 30 minutes on the declared mid-range device |
-| Reliability | >= 99% successful finals across 500 utterances; no crash |
+| Reliability | >= 99% successful finals; exact zero crashes and revision-order violations |
 | Privacy/config | processing region, retention, logging, credentials, disable switch, and user copy are verified for the deployed configuration |
 
 The corpus must include the five command phrases previously specified, balanced zh-CN/en-US/mixed speech, quiet/street/headset/distant-mic conditions, short and long dictation, corrections, sensitive intents, offline mode, and controlled latency/loss profiles. Raw audio requires explicit approval and must not be committed by default.
@@ -68,6 +68,6 @@ Authoritative API reference set reviewed on 2026-07-12: [Web Speech API on MDN](
 1. Freeze and hash the corpus/annotations; assign the same utterance order to every candidate.
 2. Record device model, OS, app/browser build, network profile, provider/model/region, credential owner, and timestamp.
 3. Capture utterance-level timestamps, revisions, references/hypotheses, CPU/process-tree RSS baseline and peak, energy/network/cost inputs using [the event-row schema](evidence/mobile-command/asr/event-row.schema.json), then score to [the raw metrics schema](evidence/mobile-command/asr/raw-metrics.schema.json).
-4. Run at least 500 attempted and 500 scored utterances per homogeneous candidate across the frozen matrix, with >= 20 scored per cell, iOS and Android, foreground/background, and offline/connected profiles. Coverage gaps must remain `blocked`; calculate Wilson proportion intervals and deterministic stratified-bootstrap continuous intervals with the same scorer.
+4. Run the frozen effective minimum: >= 20 scored in each of 48 content cells (>= 960 total), >= 250 scored per OS, and >= 50 per OS×network and OS×capture-mode stratum. Coverage gaps remain `blocked`; calculate Wilson/stratified-bootstrap diagnostics while applying exact zero-tolerance draft/crash/revision gates.
 5. Have privacy and operations owners verify the deployed retention/region/credential/cost facts.
 6. Score with [the frozen scoring contract](evidence/mobile-command/asr/scoring-contract.md). Select a primary/fallback only if it passes all mandatory thresholds; otherwise ship text-only voice degradation and keep MC-ADR-008 proposed.

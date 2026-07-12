@@ -72,15 +72,19 @@ function score(attempted, scoredRows, meta, artifacts) {
     networkProfiles: [...new Map(scoredRows.map((row) => [row.network.profile, row.network])).values()], sampleCounts: counts(attempted, scoredRows),
     latencyMs: { firstPartial: { p50: bootstrap(quantile((r) => r.timestamps.firstPartialMs - r.timestamps.audioStartMs, .5), 'ms'), p95: bootstrap(quantile((r) => r.timestamps.firstPartialMs - r.timestamps.audioStartMs, .95), 'ms') }, finalAfterStop: { p50: bootstrap(quantile((r) => r.timestamps.finalMs - r.timestamps.audioStopMs, .5), 'ms'), p95: bootstrap(quantile((r) => r.timestamps.finalMs - r.timestamps.audioStopMs, .95), 'ms') } },
     accuracy: { wer: bootstrap(mean((r) => editRate(r.reference, r.hypothesis, words)), 'ratio'), cer: bootstrap(mean((r) => editRate(r.reference, r.hypothesis, chars)), 'ratio'), usableCommandRate: wilsonMetric(sum(usableValues), usableValues.length), slotExactRate: wilsonMetric(sum(slotValues), slotValues.length), mixedKeyTermExactRate: wilsonMetric(sum(mixed), mixed.length) },
-    stability: { flickerRewritesPer10s: bootstrap(mean(flicker), 'rewrites/10s'), monotonicRevisionViolationRate: bootstrap(mean(revisionViolation), 'ratio') },
+    stability: { flickerRewritesPer10s: bootstrap(mean(flicker), 'rewrites/10s'), monotonicRevisionViolationRate: bootstrap(mean(revisionViolation), 'ratio'), revisionOrderViolations: { count: sum(scoredRows.map(revisionViolation)), n: scoredRows.length } },
     resources: { cpuAveragePercent: bootstrap(mean((r) => r.resources.cpuAveragePercent), 'percent'), rssDeltaPeakMiB: bootstrap(quantile((r) => r.resources.rssPeakMiB - r.resources.rssBaselineMiB, .5), 'MiB'), batteryDeltaPercentPer30Min: bootstrap(mean((r) => (r.resources.batteryStartPercent - r.resources.batteryEndPercent) * 30 / r.resources.measurementMinutes), 'percentage-points/30min') },
     network: { bytesSent: bootstrap(mean((r) => r.resources.networkBytesSent), 'bytes/utterance'), bytesReceived: bootstrap(mean((r) => r.resources.networkBytesReceived), 'bytes/utterance') },
     cost: { total: bootstrap((data) => sum(data.map((r) => r.resources.cost)), scoredRows[0].resources.currency) },
-    reliability: { successfulFinalRate: wilsonMetric(sum(successfulValues), attempted.length), draftPreservationRate: wilsonMetric(sum(draftValues), attempted.length), crashRate: bootstrap(mean((r) => Number(r.errors.some((e) => e.code === 'CRASH'))), 'ratio') },
+    reliability: { successfulFinalRate: wilsonMetric(sum(successfulValues), attempted.length), draftPreservationRate: wilsonMetric(sum(draftValues), attempted.length), crashRate: bootstrap(mean((r) => Number(r.errors.some((e) => e.code === 'CRASH'))), 'ratio'), draftPreservationFailures: { count: attempted.length - sum(draftValues), n: attempted.length }, crashes: { count: sum(crashValues), n: attempted.length } },
     acceptance: {}, privacy: meta.privacyCost, artifacts
   };
-  const gates = [['firstPartialP50', result.latencyMs.firstPartial.p50, 350, 'upper'], ['firstPartialP95', result.latencyMs.firstPartial.p95, 600, 'upper'], ['finalAfterStopP50', result.latencyMs.finalAfterStop.p50, 800, 'upper'], ['finalAfterStopP95', result.latencyMs.finalAfterStop.p95, 1200, 'upper'], ['usableCommandRate', result.accuracy.usableCommandRate, .95, 'lower'], ['mixedKeyTermExactRate', result.accuracy.mixedKeyTermExactRate, .95, 'lower'], ['flickerRewritesPer10s', result.stability.flickerRewritesPer10s, 2, 'upper'], ['cpuAveragePercent', result.resources.cpuAveragePercent, 20, 'upper'], ['rssDeltaPeakMiB', result.resources.rssDeltaPeakMiB, 100, 'upper'], ['batteryDeltaPercentPer30Min', result.resources.batteryDeltaPercentPer30Min, 3, 'upper'], ['successfulFinalRate', result.reliability.successfulFinalRate, .99, 'lower'], ['draftPreservationRate', result.reliability.draftPreservationRate, 1, 'lower']];
+  const gates = [['firstPartialP50', result.latencyMs.firstPartial.p50, 350, 'upper'], ['firstPartialP95', result.latencyMs.firstPartial.p95, 600, 'upper'], ['finalAfterStopP50', result.latencyMs.finalAfterStop.p50, 800, 'upper'], ['finalAfterStopP95', result.latencyMs.finalAfterStop.p95, 1200, 'upper'], ['usableCommandRate', result.accuracy.usableCommandRate, .95, 'lower'], ['mixedKeyTermExactRate', result.accuracy.mixedKeyTermExactRate, .95, 'lower'], ['flickerRewritesPer10s', result.stability.flickerRewritesPer10s, 2, 'upper'], ['cpuAveragePercent', result.resources.cpuAveragePercent, 20, 'upper'], ['rssDeltaPeakMiB', result.resources.rssDeltaPeakMiB, 100, 'upper'], ['batteryDeltaPercentPer30Min', result.resources.batteryDeltaPercentPer30Min, 3, 'upper'], ['successfulFinalRate', result.reliability.successfulFinalRate, .99, 'lower']];
   for (const [name, metric, threshold, bound] of gates) result.acceptance[name] = { threshold, bound, conservativePass: bound === 'upper' ? metric.upper95 <= threshold : metric.lower95 >= threshold };
+  result.acceptance.draftPreservation = exactZeroGate(result.reliability.draftPreservationFailures.count);
+  result.acceptance.crashes = exactZeroGate(result.reliability.crashes.count);
+  result.acceptance.revisionOrderViolations = exactZeroGate(result.stability.revisionOrderViolations.count);
+  result.overallAcceptancePass = Object.values(result.acceptance).every((gate) => gate.conservativePass);
   return result;
 }
 
@@ -89,9 +93,12 @@ function validityFailures(attempted, scored) {
   if (attempted.length < 500 || scored.length < 500) failures.push('at least 500 attempted and 500 scored utterances required');
   const countsByCell = Map.groupBy(scored, cellKey);
   for (const e of ['quiet','street','headset','far-field']) for (const l of ['zh-CN','en-US','mixed']) for (const len of ['short','long']) for (const i of ['ordinary','sensitive']) if ((countsByCell.get(`${e}.${l}.${len}.${i}`)?.length || 0) < 20) failures.push(`matrix cell ${e}.${l}.${len}.${i} requires >=20 scored`);
-  for (const os of ['iOS','Android']) if (!attempted.some((r) => r.device.os === os)) failures.push(`representative ${os} device required`);
-  if (!attempted.some((r) => r.network.profile === 'offline') || !attempted.some((r) => r.network.profile !== 'offline')) failures.push('offline and connected network profiles required');
-  for (const mode of ['foreground','background']) if (!attempted.some((r) => r.captureMode === mode)) failures.push(`${mode} capture mode required`);
+  for (const os of ['iOS','Android']) {
+    const osRows = scored.filter((r) => r.device.os === os);
+    if (osRows.length < 250) failures.push(`${os} requires >=250 scored utterances (found ${osRows.length})`);
+    for (const profile of ['offline','connected']) { const n=osRows.filter((r)=>r.network.profile===profile).length; if(n<50) failures.push(`${os} × ${profile} requires >=50 scored utterances (found ${n})`); }
+    for (const mode of ['foreground','background']) { const n=osRows.filter((r)=>r.captureMode===mode).length; if(n<50) failures.push(`${os} × ${mode} requires >=50 scored utterances (found ${n})`); }
+  }
   if (!attempted.some((r) => r.language === 'mixed' && r.keyTermsExpected.length)) failures.push('annotated mixed-language key terms required');
   return failures;
 }
@@ -110,6 +117,7 @@ function words(s){return s.split(/\s+/).filter(Boolean);} function chars(s){retu
 function levenshtein(a,b){let p=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const c=[i];for(let j=1;j<=b.length;j++)c[j]=Math.min(c[j-1]+1,p[j]+1,p[j-1]+Number(a[i-1]!==b[j-1]));p=c;}return p[b.length];}
 function wilson(success,n){const z=1.959963984540054,p=success/n,d=1+z*z/n,c=(p+z*z/(2*n))/d,m=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n))/d;return{lower:c-m,upper:c+m};}
 function shape(point,lower95,upper95,unit,n){return{point,lower95,upper95,unit,n};} function sum(v){return v.reduce((a,b)=>a+b,0);} function percentile(a,q){return a[Math.max(0,Math.ceil(q*a.length)-1)];}
+function exactZeroGate(count){return{threshold:0,bound:'exact',observedFailures:count,conservativePass:count===0};}
 function cellKey(r){return r.caseId.split('.').slice(0,4).join('.');}
 function counts(a,s){return{attempted:a.length,scored:s.length,excluded:a.length-s.length};}
 function mulberry32(v){return()=>{v|=0;v=v+0x6D2B79F5|0;let t=Math.imul(v^v>>>15,1|v);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}

@@ -14,7 +14,7 @@ Authoritative API references confirm that browser/native speech interfaces exist
 | p95 final after stop < 1,200 ms | unverified |
 | zh-CN usable-command accuracy >= 95% | unverified |
 | mixed zh/en key-term preservation >= 95% | unverified |
-| failure preserves draft/partial 100% | unverified |
+| exact zero draft-preservation failures, crashes, and revision-order violations | unverified |
 | acceptable mid-range-device CPU / baseline-adjusted process-tree RSS delta / battery | unverified |
 | accepted region/retention/credential/quota/cost path | blocked |
 
@@ -33,6 +33,6 @@ The full numeric gate and candidate evidence are in [the ASR spike](mobile-comma
 
 ## Blocking Artifacts And Next Experiment
 
-Blocking artifacts are the approved versioned corpus/annotations, consent and scorer implementation, >= 500 attempted/scored rows with >= 20 scored per matrix cell, representative iOS/Android devices and one homogeneous app/candidate/provider/model/region, foreground/background and offline/connected profiles, deploy-specific privacy/retention/cost evidence, energy measurements, and composer patch/failure tests. Missing inputs produce a `blocked` artifact with no acceptance result; they are never scored as zero or silently substituted.
+Blocking artifacts are the approved versioned corpus/annotations, consent and scorer implementation, the frozen effective >= 960 scored matrix (>= 20 per content cell, >= 250 per OS, >= 50 per OS×network and OS×capture mode), representative devices and one homogeneous app/candidate/provider/model/region, deploy-specific privacy/retention/cost evidence, energy measurements, and composer patch/failure tests. Missing strata produce a `blocked` artifact with no acceptance result. Any draft-preservation failure, crash, or revision-order violation is an exact overall failure, never softened by a confidence interval.
 
 Run [ASR spike §6](mobile-command-asr-provider-spike.md#6-next-reproducible-experiment) without changing thresholds after results are visible. A primary/fallback order may be chosen only after every mandatory threshold and privacy/operations review passes. Until then, the only safe degradation is editable text input with existing draft preserved.

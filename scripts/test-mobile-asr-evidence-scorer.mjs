@@ -29,9 +29,9 @@ function row(index, cell, os) {
     candidate: { provider: 'local-test', model: 'fixture', modelVersion: '1', region: 'device', endpointClass: 'on-device' },
     device: { deviceId: `${os.toLowerCase()}-device`, manufacturer: 'Test', model: 'Fixture', os, osVersion: '1' },
     app: { name: 'Lily Test', version: '1.0.0', build: '1' },
-    network: { profile: index % 2 ? 'wifi-good' : 'offline', downKbps: 1000, upKbps: 500, rttMs: 20, packetLossPercent: 0 },
+    network: { profile: Math.floor(index / 2) % 2 ? 'connected' : 'offline', downKbps: 1000, upKbps: 500, rttMs: 20, packetLossPercent: 0 },
     environment: cell.environment, noiseProfile: `controlled-${cell.environment}`, language: cell.language,
-    captureMode: index % 2 ? 'foreground' : 'background',
+    captureMode: Math.floor(index / 4) % 2 ? 'foreground' : 'background',
     audioSha256: hash, consentRef: 'consent-fixture',
     timestamps: { audioStartMs: 1000, audioStopMs: 11000, firstPartialMs: 1200, finalMs: 11500 },
     partialRevisions: [
@@ -42,7 +42,7 @@ function row(index, cell, os) {
     reference: 'open report', hypothesis: finalOk ? 'open report' : 'close report',
     referenceIntent: 'open-file', hypothesisIntent: finalOk ? 'open-file' : 'close-file',
     slotsExpected: { file: 'report' }, slotsObserved: finalOk ? { file: 'report' } : { file: 'other' },
-    keyTermsExpected: cell.language === 'mixed' ? ['report', 'Lily'] : [], keyTermsObserved: cell.language === 'mixed' ? ['report', ...(index % 3 ? ['Lily'] : [])] : [],
+    keyTermsExpected: cell.language === 'mixed' ? ['report', 'Lily'] : [], keyTermsObserved: cell.language === 'mixed' ? ['report', 'Lily'] : [],
     errors: [], excluded: false, draftPreserved: finalOk,
     resources: { cpuBaselinePercent: 2, cpuAveragePercent: 12, cpuPeakPercent: 30, rssBaselineMiB: 100, rssPeakMiB: 180, batteryStartPercent: 80, batteryEndPercent: 79, measurementMinutes: 30, networkBytesSent: 10, networkBytesReceived: 20, billableAudioSeconds: 10, cost: 0.01, currency: 'USD' }
   };
@@ -78,7 +78,7 @@ const android = [];
 for (const [cellIndex, cell] of cells.entries()) for (let n = 0; n < 21; n += 1) {
   const target = n % 2 ? ios : android;
   const event = row(cellIndex * 21 + n, cell, n % 2 ? 'iOS' : 'Android');
-  if (cellIndex === 0 && n === 0) { event.excluded = true; event.exclusionReason = 'predeclared capture corruption'; }
+  if (cellIndex === 0 && n === 0) { event.excluded = true; event.exclusionReason = 'predeclared capture corruption'; event.draftPreserved = true; }
   target.push(event);
 }
 const completeRun = await writeRun('complete', [ios, android]);
@@ -101,8 +101,46 @@ assert.notEqual(a.accuracy.usableCommandRate.lower95, a.accuracy.wer.lower95, 'W
 assert.equal(a.reliability.draftPreservationRate.n, 1008, 'attempted rows are the denominator');
 assert.equal(a.reliability.successfulFinalRate.n, 1008, 'excluded/errors still count in successful-final denominator');
 assert.equal(a.reliability.successfulFinalRate.point, 1007 / 1008);
+assert.ok(a.reliability.draftPreservationRate.lower95 < 1, 'Wilson interval is still reported for an all-success proportion');
+assert.equal(a.acceptance.draftPreservation.conservativePass, true, 'draft safety passes on exact zero failures, not Wilson lower bound');
+assert.deepEqual(a.reliability.draftPreservationFailures, { count: 0, n: 1008 });
+assert.equal(a.acceptance.crashes.conservativePass, true);
+assert.equal(a.acceptance.revisionOrderViolations.conservativePass, true);
+assert.equal(a.overallAcceptancePass, true);
 assert.equal(a.accuracy.mixedKeyTermExactRate.n, 672, 'mixed key-term interval uses annotated terms as micro denominator');
 assert.equal(a.stability.flickerRewritesPer10s.point > 0, true, 'only stable-prefix token changes flicker');
+
+const oneViolationIos = structuredClone(ios);
+oneViolationIos[0].partialRevisions[1].revisionId = 1;
+oneViolationIos[0].errors = [{ code: 'CRASH', message: 'synthetic test failure' }];
+oneViolationIos[0].draftPreserved = false;
+const unsafeRun = await writeRun('unsafe', [oneViolationIos, android]);
+const unsafeOutput = path.join(temp, 'unsafe.json');
+assert.equal(invoke(unsafeRun, unsafeOutput).status, 0);
+const unsafe = JSON.parse(await readFile(unsafeOutput, 'utf8'));
+assert.equal(unsafe.status, 'complete');
+assert.equal(unsafe.acceptance.revisionOrderViolations.conservativePass, false);
+assert.equal(unsafe.acceptance.crashes.conservativePass, false);
+assert.equal(unsafe.acceptance.draftPreservation.conservativePass, false);
+assert.equal(unsafe.overallAcceptancePass, false);
+assert.deepEqual(unsafe.stability.revisionOrderViolations, { count: 1, n: 1007 });
+
+const imbalancedRows = [...ios, ...android].map((event, index) => ({ ...structuredClone(event), device: { ...event.device, deviceId: index === 0 ? 'android-only' : 'ios-heavy', os: index === 0 ? 'Android' : 'iOS' } }));
+const imbalanced = await writeRun('imbalanced', [[imbalancedRows[0]], imbalancedRows.slice(1)]);
+const imbalancedOutput = path.join(temp, 'imbalanced.json');
+assert.equal(invoke(imbalanced, imbalancedOutput).status, 0);
+const imbalancedResult = JSON.parse(await readFile(imbalancedOutput, 'utf8'));
+assert.equal(imbalancedResult.status, 'blocked');
+assert.ok(imbalancedResult.missingInputs.some((item) => item.includes('Android') && item.includes('250')));
+
+const noStrataRows = [...ios, ...android].map((event) => ({ ...structuredClone(event), network: { ...event.network, profile: 'connected' }, captureMode: 'foreground' }));
+const noStrata = await writeRun('no-strata', [noStrataRows.filter((r) => r.device.os === 'iOS'), noStrataRows.filter((r) => r.device.os === 'Android')]);
+const noStrataOutput = path.join(temp, 'no-strata.json');
+assert.equal(invoke(noStrata, noStrataOutput).status, 0);
+const noStrataResult = JSON.parse(await readFile(noStrataOutput, 'utf8'));
+assert.equal(noStrataResult.status, 'blocked');
+assert.ok(noStrataResult.missingInputs.some((item) => item.includes('offline') && item.includes('50')));
+assert.ok(noStrataResult.missingInputs.some((item) => item.includes('background') && item.includes('50')));
 
 const invalidRows = [[{ ...row(0, cells[0], 'iOS'), unexpected: true }], [row(1, cells[1], 'Android')]];
 const invalid = await writeRun('invalid', invalidRows);

@@ -37,7 +37,9 @@ find docs/evidence/mobile-command/asr/runs/<run-id> -type f ! -name SHA256SUMS -
 
 Metadata fixes `scorer.version`, `scorer.commit`, bootstrap seed/iterations, corpus hash, candidate/model/region, privacy facts, and `inputArtifacts[]` bindings (`path`, SHA-256, and the file's single `deviceId`). Repeat `--events` for every bound device file. The scorer performs no network calls; it validates every row against the Draft 2020-12 event schema and validates its own output against the raw-metrics schema before writing.
 
-A complete run requires one homogeneous candidate/provider/model/model-version/region and app version, at least 500 attempted and 500 scored utterances, >= 20 scored rows in every required case matrix cell, representative iOS and Android devices, foreground/background modes, offline/connected network profiles, all noise/language conditions, and annotated mixed-language key terms. Any coverage gap produces `status: blocked`, `missingInputs`, and no `acceptance` object. Mixed candidate or manifest/hash/device binding is an input error and exits nonzero.
+A complete run requires one homogeneous candidate/provider/model/model-version/region and app version, at least 500 attempted and 500 scored utterances, >= 20 scored rows in every required case matrix cell (therefore >= 960 for the frozen 48-cell matrix), >= 250 scored on each of iOS and Android, >= 50 scored in every OS × network (`offline`, `connected`) stratum, and >= 50 scored in every OS × capture-mode (`foreground`, `background`) stratum. Annotated mixed-language key terms are also mandatory. Any coverage gap produces `status: blocked`, a separate `missingInputs` entry for every deficient stratum, and no `acceptance` object. Mixed candidate or manifest/hash/device binding is an input error and exits nonzero.
+
+Draft-preservation, crash, and revision-order safety gates use exact zero-tolerance failure counts. Their Wilson/bootstrap intervals remain diagnostic; they cannot turn one observed safety failure into a pass. `overallAcceptancePass` is false if any statistical gate fails or any exact failure count is nonzero.
 
 ## Corpus case IDs
 
