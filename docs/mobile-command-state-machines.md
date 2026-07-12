@@ -112,12 +112,12 @@ Persistence: the canonical upload record durably stores `state`, nullable `resum
 
 | State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
 |---|---|---|---|---|---|---|
-| `active` (initial) | `device.revoke` | authorized desktop/mobile/admin risk actor | `revoking` | durable revocation CAS and audit intent | `device.revocation.started` | remain `active` with authority denied if audit uncertain |
-| `revoking` | `device.revocation.commit` | durable device/grant revocation exists | `terminal_revoked` (terminal) | end sessions; invalidate tokens/approvals/push; cancel owned `admitted` queue and uploads | `device.revoked` | retry reconciliation |
+| `active` (initial) | `device.revoke` | authorized desktop/mobile/admin risk actor; row/version current | `revoking` | first atomically CAS `active→revoking`, persist deny intent/revocation actor/reason/time and durable audit intent; only after commit start cascades | `device.revocation.started` | CAS/audit-intent transaction failure leaves `active` with no claimed revocation and returns error; no cascade runs |
+| `revoking` | `device.revocation.commit` | durable deny intent exists and every required cascade is durably reconciled | `terminal_revoked` (terminal) | end sessions; invalidate tokens/approvals/push; cancel owned `admitted` queue/uploads; persist completion audit | `device.revoked` | any step failure records step/attempt/audit diagnostic, returns `MC-ERR-REVOCATION-RECONCILIATION-FAILED`, and remains `revoking` with authority denied |
 | `revoking` | `device.revoke` | same device revocation is repeated idempotently | `revoking` | return/continue the durable revocation reconciliation; grant no authority | `device.revocation.started` | remain `revoking` with authority denied |
 | `terminal_revoked` | any remote authority event | always | `terminal_revoked` | reject; return stored revocation | `device.revoked` | — |
 
-Persistence: server revocation is authoritative and permanent unless a new explicit pairing creates a new grant. Restart reconciles cascades until complete while denying authority. Already `dispatching`/`engine_accepted` turns may continue locally, but the device gets no further control, answer, cancellation, artifact or reconnect authority.
+Persistence: `revoking` plus deny intent is the durable authority boundary. Restart finding `revoking` MUST deny all authority and idempotently reconcile each cascade/audit step from persisted checkpoints until `terminal_revoked`; it never rolls back to `active`. Server revocation is permanent unless a new explicit pairing creates a new grant. Already `dispatching`/`engine_accepted` turns may continue locally, but the device gets no further control, answer, cancellation, artifact or reconnect authority.
 
 ## 9. MC-SM-RECONNECT — Projection/Command Reconnect
 
