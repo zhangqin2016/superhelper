@@ -6,6 +6,7 @@ import {
   shouldHideImageResultBlock,
   stripGeneratedMediaMarkers,
 } from "./turn-artifact-model.js";
+import { parseGeneratedMedia } from "./tool-payload-renderer.js";
 import {
   inlineImageKeyForContentBlocks,
   inlineImagesForNarrative,
@@ -40,10 +41,31 @@ export function buildTurnViewModel(liveTurn = {}, options = {}) {
     isWorking: !sealed && liveTurn.phase === "starting",
   };
   const hoistedMedia = collectHoistableMedia(liveTurn);
-  const hoistedMediaGroups = groupHoistableMediaBlocks(hoistedMedia);
   const rawAssistantText = resolveAssistantStreamText(liveTurn);
-  const text = hoistedMedia.length
-    ? stripGeneratedMediaMarkers(rawAssistantText)
+  // Models echo <generated_media …> markup into their ANSWER text (field
+  // photo: three turns showing raw XML). The markup itself declares
+  // path/type/bytes, so parse it into the same hoisted cards — media echoed
+  // in text renders like tool-produced media even when this turn's tool
+  // results are absent (subagent runs, rehydrated sealed turns). Dedupe by
+  // file path against tool-derived blocks.
+  try {
+    const seen = new Set(hoistedMedia.map((block) => (block.files || []).map((file) => file.path).join("|") || JSON.stringify(block)));
+    for (const block of parseGeneratedMedia(rawAssistantText) || []) {
+      const key = (block.files || []).map((file) => file.path).join("|") || JSON.stringify(block);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      hoistedMedia.push(block);
+    }
+  } catch {
+    // Text-echoed media is a bonus; parsing failures keep tool-derived media.
+  }
+  const hoistedMediaGroups = groupHoistableMediaBlocks(hoistedMedia);
+  // Protocol markup NEVER renders as literal XML: complete blocks are
+  // stripped (their cards render in the artifacts slot), stray/partial tags
+  // are escaped. Marker-free text passes through byte-identical (strip also
+  // collapses blank runs, so it must not touch normal answers).
+  const text = rawAssistantText.includes("<generated_media")
+    ? escapeGeneratedMediaMarkers(stripGeneratedMediaMarkers(rawAssistantText))
     : escapeGeneratedMediaMarkers(rawAssistantText);
   const contentBlocks = Array.isArray(liveTurn.contentBlocks) ? liveTurn.contentBlocks : [];
   const resultBlocks = mergeTurnResultBlocks(liveTurn.resultBlocks || [], liveTurn.artifacts || []);

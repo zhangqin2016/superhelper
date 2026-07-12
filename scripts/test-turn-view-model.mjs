@@ -462,4 +462,43 @@ assert.doesNotMatch(
   "DOM result block renderer must not own artifact merge logic",
 );
 
+// Field photo case: the model echoed <generated_media> markup into its ANSWER
+// text on turns whose tool results are absent (subagent runs / rehydrated
+// sealed turns). The markup must render as media cards, never as literal XML.
+{
+  const echoed = buildTurnViewModel({
+    turnId: "turn_echoed_media",
+    phase: "done",
+    assistantText: '图片已生成 <generated_media type="image"> <file path="D:\\aicode\\images\\generated-assets\\image-1.png" bytes="5404834" /> </generated_media>',
+    thinkingText: "",
+    contentBlocks: [],
+    artifacts: [],
+    resultBlocks: [],
+    tools: new Map(),
+    final: { type: "turn.completed" },
+  });
+  assert.doesNotMatch(echoed.narrative.text, /<generated_media/, "echoed markup never renders as literal XML");
+  assert.doesNotMatch(echoed.narrative.text, /&lt;generated_media/, "echoed markup is stripped, not escaped");
+  assert.match(echoed.narrative.text, /图片已生成/, "the prose around the markup survives");
+  assert.equal(echoed.artifacts.hoistedMedia.length, 1, "text-echoed media hoists into the artifacts slot");
+  assert.equal(echoed.artifacts.hoistedMedia[0].files[0].path, "D:\\aicode\\images\\generated-assets\\image-1.png");
+
+  // Marker-free text passes through byte-identical (strip collapses blank
+  // runs, so it must never touch normal answers).
+  const plain = buildTurnViewModel({
+    turnId: "turn_plain",
+    phase: "done",
+    assistantText: "第一段。\n\n\n第二段带多空行。  ",
+    thinkingText: "",
+    contentBlocks: [],
+    artifacts: [],
+    resultBlocks: [],
+    tools: new Map(),
+    final: { type: "turn.completed" },
+  });
+  // (the stream resolver already trims outer whitespace — the guard here is
+  // that interior blank runs survive, which the strip path would collapse)
+  assert.equal(plain.narrative.text, "第一段。\n\n\n第二段带多空行。", "marker-free text keeps interior blank runs");
+}
+
 console.log("turn-view-model: ok");
