@@ -117,16 +117,54 @@ function defaultResolveApiKey() {
   return resolveSettingsEnvValue("DASHSCOPE_API_KEY", "ALIYUN_BAILIAN_API_KEY") || "";
 }
 
+/** Managed gateway relay (media_delivery_mode = "gateway"): the server keeps
+ *  the DashScope key and bridges the realtime WS behind /llm/asr; the client
+ *  authenticates with the vision gateway token already delivered in its
+ *  DASHSCOPE_API_KEY slot. No relay URL (direct/BYOK mode) → dial DashScope
+ *  directly with the real key. */
+function defaultResolveRelay() {
+  const { resolveSettingsEnvValue } = require("./agent-settings");
+  const url = String(resolveSettingsEnvValue("LILY_ASR_RELAY_URL") || "").trim();
+  if (!url) return null;
+  const token = String(resolveSettingsEnvValue("DASHSCOPE_API_KEY", "ALIYUN_BAILIAN_API_KEY") || "").trim();
+  if (!token) return null;
+  return { url: url.replace(/\/+$/, ""), token };
+}
+
+/** Parse an SSE chunk stream incrementally; returns the JSON payloads of
+ *  complete `data:` events and the unconsumed remainder. */
+function drainSseBuffer(buffer) {
+  const events = [];
+  let rest = buffer;
+  for (;;) {
+    const cut = rest.indexOf("\n\n");
+    if (cut === -1) break;
+    const block = rest.slice(0, cut);
+    rest = rest.slice(cut + 2);
+    for (const line of block.split("\n")) {
+      if (!line.startsWith("data:")) continue;
+      try {
+        events.push(JSON.parse(line.slice(5).trim()));
+      } catch {
+        // keepalives / malformed frames are ignored
+      }
+    }
+  }
+  return { events, rest };
+}
+
 /**
  * One dictation session at a time (a second start stops the first). All deps
  * are injectable so the whole lifecycle closes the loop in plain-node tests.
  */
 function createVoiceDictationService({
   resolveApiKey = defaultResolveApiKey,
+  resolveRelay = defaultResolveRelay,
   WebSocketCtor = globalThis.WebSocket,
+  fetchImpl = globalThis.fetch,
   resolveUrl = resolveAsrUrl,
 } = {}) {
-  let active = null; // { ws, send(eventObj), emit, finishTimer, finished }
+  let active = null; // ws mode: { ws, ... } | relay mode: { relay, sessionId, outbox, ... }
 
   function emitTo(sender, payload) {
     try {
@@ -146,7 +184,131 @@ function createVoiceDictationService({
     } catch {
       // best effort
     }
+    try {
+      session.abort?.abort?.();
+    } catch {
+      // best effort
+    }
     if (notifyClosed) emitTo(session.sender, { kind: "closed" });
+  }
+
+  async function pumpRelayEvents(session) {
+    let response;
+    try {
+      response = await fetchImpl(`${session.relay.url}/sessions/${session.sessionId}/events`, {
+        headers: { authorization: `Bearer ${session.relay.token}` },
+        signal: session.abort.signal,
+      });
+    } catch {
+      response = null;
+    }
+    if (!response?.ok || !response.body) {
+      if (active === session) {
+        emitTo(session.sender, { kind: "error", code: "ASR_RELAY_EVENTS_FAILED", message: "event stream unavailable" });
+        teardown(session, { notifyClosed: true });
+      }
+      return;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const drained = drainSseBuffer(buffer);
+        buffer = drained.rest;
+        for (const event of drained.events) {
+          emitTo(session.sender, event);
+          if (event.kind === "finished" || event.kind === "closed") {
+            session.finished = true;
+            teardown(session, { notifyClosed: event.kind !== "closed" });
+            return;
+          }
+        }
+      }
+    } catch {
+      // stream aborted (teardown) or network drop — fall through
+    }
+    if (active === session && !session.finished) {
+      teardown(session, { notifyClosed: true });
+    }
+  }
+
+  function flushRelayOutbox(session) {
+    if (session.posting || !session.outbox.length || !session.sessionId) return;
+    session.posting = true;
+    const chunks = session.outbox.splice(0);
+    fetchImpl(`${session.relay.url}/sessions/${session.sessionId}/audio`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${session.relay.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ chunks }),
+      signal: session.abort.signal,
+    }).catch(() => {
+      // Dropped audio frames degrade transcription, not the app.
+    }).finally(() => {
+      session.posting = false;
+      flushRelayOutbox(session);
+    });
+  }
+
+  function startRelay(relay, sender) {
+    const session = {
+      relay,
+      sender,
+      sessionId: "",
+      abort: new AbortController(),
+      outbox: [],
+      posting: false,
+      finished: false,
+      finishTimer: null,
+    };
+    active = session;
+    void (async () => {
+      let response;
+      try {
+        response = await fetchImpl(`${relay.url}/sessions`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${relay.token}`,
+            "content-type": "application/json",
+          },
+          body: "{}",
+          signal: session.abort.signal,
+        });
+      } catch (err) {
+        response = { ok: false, _err: err };
+      }
+      if (active !== session) return;
+      if (!response.ok) {
+        emitTo(sender, {
+          kind: "error",
+          code: `ASR_RELAY_HTTP_${response.status || 0}`,
+          message: String(response._err?.message || "relay session rejected"),
+        });
+        teardown(session, { notifyClosed: true });
+        return;
+      }
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+      session.sessionId = String(payload?.sessionId || "");
+      if (!session.sessionId) {
+        emitTo(sender, { kind: "error", code: "ASR_RELAY_BAD_SESSION", message: "relay returned no session id" });
+        teardown(session, { notifyClosed: true });
+        return;
+      }
+      void pumpRelayEvents(session);
+      flushRelayOutbox(session);
+    })();
+    return { ok: true, transport: "relay" };
   }
 
   return {
@@ -156,9 +318,13 @@ function createVoiceDictationService({
 
     start({ sender } = {}) {
       if (!dictationEnabled()) return { ok: false, error: "VOICE_DICTATION_DISABLED" };
+      if (active) teardown(active, { notifyClosed: true });
+      // Managed gateway relay first — mirrors how every other media call
+      // routes when the admin keeps keys server-side.
+      const relay = resolveRelay();
+      if (relay) return startRelay(relay, sender);
       const apiKey = String(resolveApiKey() || "").trim();
       if (!apiKey) return { ok: false, error: "NO_DASHSCOPE_KEY" };
-      if (active) teardown(active, { notifyClosed: true });
 
       let ws;
       try {
@@ -211,6 +377,14 @@ function createVoiceDictationService({
     feed(base64Audio) {
       const session = active;
       if (!session) return false;
+      if (session.relay) {
+        // Outbox drains sequentially — one in-flight POST carrying every
+        // queued frame, so batching adapts to network latency automatically.
+        session.outbox.push(String(base64Audio || ""));
+        if (session.outbox.length > 120) session.outbox.shift();
+        flushRelayOutbox(session);
+        return true;
+      }
       const ws = session.ws;
       if (!ws || ws.readyState !== (WebSocketCtor.OPEN ?? 1)) return false;
       try {
@@ -224,9 +398,25 @@ function createVoiceDictationService({
     stop() {
       const session = active;
       if (!session) return { ok: true, idle: true };
-      // session.finish flushes the trailing segment; the server answers with
+      // session.finish flushes the trailing segment; the upstream answers with
       // the last `completed` + `session.finished`. A grace timer guarantees
-      // teardown even if the gateway never答复.
+      // teardown even if it never does.
+      if (session.relay) {
+        if (session.sessionId) {
+          fetchImpl(`${session.relay.url}/sessions/${session.sessionId}/finish`, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${session.relay.token}`,
+              "content-type": "application/json",
+            },
+            body: "{}",
+          }).catch(() => {});
+        }
+        session.finishTimer = setTimeout(() => {
+          if (!session.finished) teardown(session, { notifyClosed: true });
+        }, FINISH_GRACE_MS);
+        return { ok: true };
+      }
       try {
         session.ws?.send?.(JSON.stringify({ type: "session.finish" }));
       } catch {
@@ -272,6 +462,7 @@ module.exports = {
   buildAppendEvent,
   buildSessionUpdate,
   createVoiceDictationService,
+  drainSseBuffer,
   parseAsrServerEvent,
   registerVoiceDictationIpc,
   resolveAsrUrl,

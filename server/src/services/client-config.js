@@ -775,6 +775,11 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
         env.DASHSCOPE_IMAGE_BASE_URL = `${base}/llm/dashscope-media`;
         env.DASHSCOPE_VIDEO_BASE_URL = `${base}/llm/dashscope-media`;
         env.DASHSCOPE_TTS_BASE_URL = `${base}/llm/dashscope-media`;
+        // Realtime dictation: gateway mode relays the ASR WebSocket through
+        // /llm/asr (SSE+POST bridge) so the DashScope key stays server-side.
+        // The client authenticates with the same vision token already in its
+        // DASHSCOPE_API_KEY slot.
+        env.LILY_ASR_RELAY_URL = `${base}/llm/asr`;
       } else {
         env.DASHSCOPE_API_KEY = visionKey;
         env.VISION_API_KEY = visionKey;
@@ -783,6 +788,9 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
         delete env.DASHSCOPE_IMAGE_BASE_URL;
         delete env.DASHSCOPE_VIDEO_BASE_URL;
         delete env.DASHSCOPE_TTS_BASE_URL;
+        // Direct mode: the client holds the real key and dials DashScope's
+        // realtime WS itself — no relay URL.
+        delete env.LILY_ASR_RELAY_URL;
       }
     }
     if (searchEnabled) {

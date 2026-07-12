@@ -127,6 +127,72 @@ function fakeSender() {
   delete process.env.LILY_VOICE_DICTATION;
 }
 
+// --- relay transport (gateway media mode) against a fake fetch ------------------
+{
+  const calls = [];
+  let sseController = null;
+  const sseStream = new ReadableStream({
+    start(controller) { sseController = controller; },
+  });
+  const encoder = new TextEncoder();
+  const fakeFetch = async (url, init = {}) => {
+    calls.push({ url, method: init.method || "GET", body: init.body || "" });
+    if (url.endsWith("/sessions") && init.method === "POST") {
+      return { ok: true, status: 200, json: async () => ({ ok: true, sessionId: "asr_test_1" }) };
+    }
+    if (url.includes("/events")) {
+      return { ok: true, status: 200, body: sseStream };
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+
+  const service = svc.createVoiceDictationService({
+    resolveApiKey: () => "",
+    resolveRelay: () => ({ url: "https://lily.example/llm/asr", token: "lgw.token.abc" }),
+    WebSocketCtor: FakeWebSocket,
+    fetchImpl: fakeFetch,
+  });
+  const sender = fakeSender();
+  const started = service.start({ sender });
+  assert.equal(started.ok, true);
+  assert.equal(started.transport, "relay", "gateway mode selects the relay transport");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(calls[0].url, "https://lily.example/llm/asr/sessions", "relay session created");
+  assert.match(calls[1].url, /\/sessions\/asr_test_1\/events$/, "event stream attached");
+
+  assert.equal(service.feed("QUJD"), true, "relay feed accepts audio");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const audioCall = calls.find((c) => c.url.endsWith("/audio"));
+  assert.ok(audioCall, "audio frame POSTed to the relay");
+  assert.deepEqual(JSON.parse(audioCall.body), { chunks: ["QUJD"] });
+
+  sseController.enqueue(encoder.encode('data: {"kind":"ready"}\n\ndata: {"kind":"partial","text":"打开","stash":"文件"}\n\n'));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(sender.events[0], { kind: "ready" }, "relay forwards ready");
+  assert.equal(sender.events[1].kind, "partial");
+
+  const stopped = service.stop();
+  assert.equal(stopped.ok, true);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(calls.some((c) => c.url.endsWith("/finish")), "stop POSTs finish");
+
+  sseController.enqueue(encoder.encode('data: {"kind":"final","transcript":"打开文件。"}\n\ndata: {"kind":"finished"}\n\n'));
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(sender.events.some((e) => e.kind === "final"), "trailing final arrives after finish");
+  assert.equal(service.isActive(), false, "relay session torn down on finished");
+}
+
+// --- SSE buffer parser -----------------------------------------------------------
+{
+  const one = svc.drainSseBuffer('data: {"kind":"ready"}\n\ndata: {"kind":"par');
+  assert.deepEqual(one.events, [{ kind: "ready" }]);
+  assert.equal(one.rest, 'data: {"kind":"par', "incomplete block stays buffered");
+  const two = svc.drainSseBuffer(`${one.rest}tial","text":"a","stash":""}\n\n: keepalive\n\n`);
+  assert.equal(two.events.length, 1);
+  assert.equal(two.events[0].kind, "partial");
+  assert.equal(two.rest, "");
+}
+
 // --- wiring (static) ------------------------------------------------------------
 {
   const preload = fs.readFileSync(path.join(ROOT, "src/preload.js"), "utf8");
@@ -135,6 +201,16 @@ function fakeSender() {
   }
   const mainJs = fs.readFileSync(path.join(ROOT, "src/main.js"), "utf8");
   assert.match(mainJs, /registerVoiceDictationIpc/, "main registers the voice IPC");
+  // Managed gateway mode: the server relays the ASR socket and the client is
+  // told via LILY_ASR_RELAY_URL — keys stay server-side like all other media.
+  const serverApp = fs.readFileSync(path.join(ROOT, "server/src/app.js"), "utf8");
+  assert.match(serverApp, /asrGatewayRoutes/, "server registers the ASR relay routes");
+  assert.match(serverApp, /llm\/asr\/sessions/, "ASR session streams are exempt from the general rate limit");
+  const clientConfig = fs.readFileSync(path.join(ROOT, "server/src/services/client-config.js"), "utf8");
+  assert.match(clientConfig, /LILY_ASR_RELAY_URL/, "gateway media mode delivers the relay URL");
+  const asrGateway = fs.readFileSync(path.join(ROOT, "server/src/services/asr-gateway.js"), "utf8");
+  assert.match(asrGateway, /verifyModelGatewayToken/, "relay authenticates gateway tokens");
+  assert.match(asrGateway, /session\.finish/, "relay flushes the trailing segment on finish");
   const appJs = fs.readFileSync(path.join(ROOT, "src/renderer/app.js"), "utf8");
   assert.match(appJs, /initVoiceDictation/, "renderer initializes voice dictation");
   const rendererModule = fs.readFileSync(path.join(ROOT, "src/renderer/modules/voice-dictation.js"), "utf8");

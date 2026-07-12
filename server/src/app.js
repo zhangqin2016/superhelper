@@ -7,6 +7,7 @@ import { publicRoutes } from "./routes/public.js";
 import { adminRoutes } from "./routes/admin.js";
 import { modelGatewayRoutes } from "./services/model-gateway.js";
 import { mediaGatewayRoutes } from "./services/media-gateway.js";
+import { asrGatewayRoutes } from "./services/asr-gateway.js";
 import { ensureEnvManagedConfigProfile } from "./services/client-config.js";
 import { refreshModelCatalog } from "./services/model-catalog.js";
 import { ensureEnvQiniuConfigSeeded } from "./services/app-settings.js";
@@ -58,6 +59,10 @@ export async function buildApp() {
 
   app.addHook("preHandler", async (request, reply) => {
     if (!request.url.startsWith("/api/") && !request.url.startsWith("/llm/")) return;
+    // Realtime dictation streams ~10 small audio frames per second — the
+    // general per-IP budget would kill a session after ~12s. The ASR relay
+    // has its own guards (session cap, idle/hard timers, gateway token auth).
+    if (request.url.startsWith("/llm/asr/sessions")) return;
     if (checkRateLimit(request)) return;
     reply.code(429).send({ ok: false, code: "RATE_LIMITED" });
   });
@@ -98,6 +103,7 @@ export async function registerRoutes(app) {
   await app.register(adminRoutes);
   await app.register(modelGatewayRoutes);
   await app.register(mediaGatewayRoutes);
+  await app.register(asrGatewayRoutes);
 }
 
 // A logger-less app with only Swagger + routes wired (no CORS/cookie/multipart, no
