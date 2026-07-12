@@ -201,4 +201,25 @@ export async function revokePairingGrant({
   return { ok: true, grantId, status: "revoked", reason: code };
 }
 
+/** Shape a pending grant row for the desktop approval list (opaque, no secrets). */
+export function shapePendingGrant(row) {
+  return {
+    grantId: row.id,
+    mobileDeviceId: row.mobile_device_id,
+    approvalExpiresAt: row.approval_expires_at,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Desktop polls its pending pairing requests. `listPending(desktopDeviceId,
+ * nowIso)` returns unexpired pending_approval rows for this desktop. Pure
+ * shaping so the response never leaks internal columns.
+ */
+export async function listPendingGrants({ desktopDeviceId, now = new Date(), listPending }) {
+  if (!desktopDeviceId) return { ok: false, code: "PAIRING_PENDING_INVALID" };
+  const rows = (await listPending(desktopDeviceId, now.toISOString())) || [];
+  return { ok: true, grants: rows.map(shapePendingGrant) };
+}
+
 export { asTime };

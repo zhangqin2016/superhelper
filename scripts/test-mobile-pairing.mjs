@@ -14,6 +14,8 @@ const {
   approvePairingGrant,
   denyPairingGrant,
   revokePairingGrant,
+  listPendingGrants,
+  shapePendingGrant,
   hashPairingToken,
   generatePairingToken,
   CHALLENGE_TTL_MS,
@@ -197,6 +199,25 @@ function pendingChallenge(overrides = {}) {
 
   const notRevocable = await revokePairingGrant({ grantId: "x", userId: "u1", casRevokeGrant: async () => 0 });
   assert.equal(notRevocable.code, "PAIRING_NOT_REVOCABLE", "a terminal grant cannot be revoked again");
+}
+
+// --- listPendingGrants: desktop polls its pending requests -------------------
+{
+  const shaped = shapePendingGrant({ id: "mpg_1", mobile_device_id: "dmob", approval_expires_at: "2026-07-12T12:02:00.000Z", created_at: "2026-07-12T12:00:00.000Z", user_id: "u1", license_id: "lic1" });
+  assert.deepEqual(shaped, { grantId: "mpg_1", mobileDeviceId: "dmob", approvalExpiresAt: "2026-07-12T12:02:00.000Z", createdAt: "2026-07-12T12:00:00.000Z" }, "the pending view exposes no internal columns (no user_id/license_id)");
+
+  let queriedDevice = null;
+  const res = await listPendingGrants({
+    desktopDeviceId: "dtop",
+    listPending: async (deviceId) => { queriedDevice = deviceId; return [{ id: "mpg_1", mobile_device_id: "dmob", approval_expires_at: "x", created_at: "y" }]; },
+  });
+  assert.equal(res.ok, true);
+  assert.equal(queriedDevice, "dtop", "pending is scoped to the desktop's own device");
+  assert.equal(res.grants.length, 1);
+  assert.equal(res.grants[0].grantId, "mpg_1");
+
+  const bad = await listPendingGrants({ desktopDeviceId: "", listPending: async () => { throw new Error("must not query"); } });
+  assert.equal(bad.ok, false, "missing desktop device is rejected");
 }
 
 console.log("mobile-pairing: ok");

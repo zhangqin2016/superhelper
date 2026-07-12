@@ -13,6 +13,7 @@ import {
   approvePairingGrant,
   denyPairingGrant,
   revokePairingGrant,
+  listPendingGrants,
 } from "../../services/mobile-pairing.js";
 
 // Mobile Command Phase 1 pairing routes. Thin HTTP layer over the pure pairing
@@ -176,6 +177,29 @@ export function registerPublicMobileRoutes(app) {
       });
       if (!result.ok) return reply.code(409).send({ ok: false, code: result.code });
       return reply.send({ ok: true, grantId: result.grantId, status: result.status });
+    },
+  );
+
+  app.post(
+    "/api/mobile/pairing/pending",
+    { schema: { tags: ["public:mobile"], summary: "Desktop lists its pending pairing requests", body: zodBody(challengeSchema), response: { 200: okResponse({ grants: { type: "array", items: { type: "object" } } }) } } },
+    async (request, reply) => {
+      const input = challengeSchema.parse(request.body);
+      const account = await bothGuards(request, reply, input);
+      if (!account) return;
+      const result = await listPendingGrants({
+        desktopDeviceId: account.deviceId,
+        listPending: (desktopDeviceId, nowIso) => db
+          .selectFrom("mobile_pairing_grants")
+          .selectAll()
+          .where("desktop_device_id", "=", desktopDeviceId)
+          .where("status", "=", "pending_approval")
+          .where("approval_expires_at", ">", nowIso)
+          .orderBy("created_at", "asc")
+          .execute(),
+      });
+      if (!result.ok) return reply.code(400).send({ ok: false, code: result.code });
+      return reply.send({ ok: true, grants: result.grants });
     },
   );
 }
