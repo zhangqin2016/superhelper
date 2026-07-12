@@ -4,7 +4,7 @@
 
 This is the repository-truth artifact for MC-SPEC-005. Line references describe the audited HEAD (`5b102d62`) on 2026-07-12. A row marked **verified current** names code or data that exists now; a **planned seam** is additive design work and is not an existing export, route, table, or capability.
 
-Mobile Command production code does not exist. In particular, the current tree has no pairing, remote-session, remote-permission, remote-audit, TURN, upload, or signaling route/table. Existing admin `audit_logs` are not a remote-command audit ledger.
+Mobile Command production code does not exist. In particular, the current tree has no Mobile Command-specific pairing, remote-session, remote-permission, remote-audit, TURN-credential, remote-upload, or signaling route/table. Existing admin `audit_logs` and unrelated upload facilities are not Mobile Command remote-authority or transfer owners.
 
 ## 2. Verified Integration Matrix
 

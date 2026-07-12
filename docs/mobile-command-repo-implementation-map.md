@@ -6,6 +6,7 @@ This MC-SPEC-036 map separates verified current owners from planned placement. I
 
 - Extend the current route, lifecycle, turn, event, config, IPC, migration, and logging seams.
 - Do not call private `serviceFetch` or signing helpers, raw OpenCode runtime APIs, or `OpencodeAgentSession.sendUserMessage` from Mobile Command.
+- `src/main/service-client.js` remains the single desktop owner of transport, device signing/key access, region/base selection, and network retry behavior. Mobile Command receives only narrow exported route wrappers.
 - Local capability remains the strong default; remote authority ambiguity fails safe.
 
 ## 2. Verified Current Owners
@@ -33,7 +34,7 @@ All paths in this section are **planned; they do not exist at the audited HEAD**
 src/main/mobile-command/
   index.js
   service.js
-  cloud-client.js
+  remote-api.js
   pairing-controller.js
   remote-session-controller.js
   agent-bridge.js
@@ -47,15 +48,25 @@ src/main/mobile-command/
   platform/
 ```
 
-`agent-bridge.js` must delegate to the existing orchestrator. `event-projector.js` consumes normalized Lily events. `artifact-source.js` and `upload-staging-adapter.js` wrap only the verified local invariants; they do not turn current registries into network services. OS adapter filenames remain evidence-needed under MC-ADR-005–007.
+`remote-api.js` is a domain facade over narrow exported functions from the existing `src/main/service-client.js`; it must not perform fetches directly, sign requests, access/hold device keys, select a region/base URL, or implement retries. `agent-bridge.js` delegates to the existing orchestrator. `event-projector.js` consumes normalized Lily events. `artifact-source.js` and `upload-staging-adapter.js` wrap only the verified local invariants; they do not turn current registries into network services. OS adapter filenames remain evidence-needed under MC-ADR-005–007.
 
 ```text
 server/src/routes/public/mobile-command.js
+server/src/routes/public/mobile-command/
+  pairing-devices.js
+  remote-sessions-permissions.js
+  signaling-turn.js
+  uploads-artifacts.js
 server/src/services/mobile-command/
+  pairing-device-service.js
+  remote-session-permission-service.js
+  signaling-turn-service.js
+  upload-artifact-service.js
+  remote-audit-service.js
 server/migrations/<next-sequence>_mobile_command.sql
 ```
 
-The planned public registrar owns pairing, remote-session, permission resolution, signaling/TURN credential, upload, and artifact authorization endpoints after MC-SPEC-006–011 define them. It is registered from current `server/src/routes/public.js`; there is no `server/src/routes/public/index.js`.
+The planned `mobile-command.js` is the single public registrar/plugin registered from current `server/src/routes/public.js`; it composes the focused child route modules and does not implement all six domains itself. Child routes own HTTP validation/translation only. The separate focused services own pairing/device, remote-session/permission, signaling/TURN, upload/artifact, and audit business behavior after MC-SPEC-006–011 define it. There is no `server/src/routes/public/index.js`.
 
 ```text
 src/shared/mobile-command/
@@ -78,7 +89,7 @@ MC-ADR-002 likewise owns native-shell selection and paths. No `mobile-native/`, 
 |---|---|
 | `server/src/routes/public.js` | Register the single Mobile Command public registrar |
 | `src/main.js` | Construct/start/stop the service with existing lifecycle behavior preserved |
-| `src/main/service-client.js` | Export narrow route wrappers; do not export general arbitrary fetch/sign primitives without a separate security review |
+| `src/main/service-client.js` | Remain the only transport/signing/key/region/retry owner and export narrow Mobile Command route wrappers; never export a general arbitrary fetch/sign primitive |
 | `src/main/remote-config.js` | Read additive accepted fields and notify existing listeners |
 | `src/main/ipc-handlers.js` | Compose a dedicated Mobile Command IPC handler module |
 | `src/main/turn-orchestrator.js` | At most accept validated additive source/idempotency metadata; retain sole turn ownership |
@@ -88,7 +99,7 @@ MC-ADR-002 likewise owns native-shell selection and paths. No `mobile-native/`, 
 
 ## 6. Planned Verification Placement
 
-Tests remain planned under auto-discovered `scripts/test-*.mjs`. Minimum boundaries are route registration/OpenAPI coverage, identity and revocation, signature replay, command idempotency and session isolation, queue/steer fallback, permission/question authority, upload chunk/hash/risk, artifact authorization, event replay/backpressure, lifecycle disablement, config kill switches, and capability-gate fallback.
+Tests remain planned under auto-discovered `scripts/test-*.mjs`. Minimum boundaries are route registration/OpenAPI coverage, identity and revocation, signature replay, command idempotency proving exactly-once dispatch and no replayed side effects, session isolation, queue/steer fallback, permission/question authority, upload chunk/hash/risk, artifact authorization, event replay/backpressure, lifecycle disablement, config kill switches, and capability-gate fallback.
 
 ## 7. Dependency Order
 
