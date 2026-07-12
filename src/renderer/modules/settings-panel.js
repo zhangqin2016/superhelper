@@ -10,6 +10,7 @@ import { refreshModelSelect } from "./model-settings.js";
 import { refreshPermissionSelect, refreshSessionPermissionSelect } from "./permission-settings.js";
 import { refreshSearchSettings } from "./search-settings.js";
 import { refreshMediaProviderSettings } from "./media-provider-settings.js";
+import { onMobilePairingPageShown, onMobilePairingPageHidden } from "./mobile-pairing-settings.js";
 import { refreshSkillsList } from "./skill-settings.js";
 import { refreshConnectorSettings, initConnectorSettings } from "./connector-settings.js";
 import { refreshWorkspaceApps } from "./workspace-apps.js";
@@ -37,6 +38,7 @@ const SETTINGS_PAGES = [
   "apps",
   "runtime",
   "memory",
+  "mobile",
   "account",
   "help",
   "usage",
@@ -221,6 +223,10 @@ function switchSettingsPage(pageId) {
     btn.setAttribute("aria-selected", active ? "true" : "false");
     btn.tabIndex = related ? 0 : -1;
   });
+
+  // The mobile-pairing page polls for pending requests only while it is open.
+  if (pageId === "mobile") onMobilePairingPageShown();
+  else onMobilePairingPageHidden();
 }
 
 function setPanelOpen(open) {

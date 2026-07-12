@@ -304,6 +304,7 @@
             <button type="button" class="settings-nav-item" data-settings-page="media" data-i18n="settings.nav.media">媒体生成</button>
             <button type="button" class="settings-nav-item" data-settings-page="connectors" data-i18n="settings.nav.connectors">连接器</button>
             <button type="button" class="settings-nav-item" data-settings-page="memory" data-i18n="settings.nav.memory">记忆</button>
+            <button type="button" class="settings-nav-item" data-settings-page="mobile" data-i18n="settings.nav.mobile">手机控制</button>
             <div class="settings-nav-group" data-i18n="settings.navGroup.support">账户与支持</div>
             <button type="button" class="settings-nav-item" data-settings-page="account" data-i18n="settings.nav.account">账户</button>
             <button type="button" class="settings-nav-item" data-settings-page="help" data-i18n="settings.nav.help">帮助与关于</button>
@@ -449,6 +450,24 @@
                 </table>
               </div>
             </section>
+            <section id="settingsPageMobile" class="settings-page" data-settings-page="mobile" hidden>
+              <h3 class="settings-page-title" data-i18n="settings.nav.mobile">手机控制</h3>
+              <p class="settings-section-desc" data-i18n="settings.mobileDesc">用手机扫码配对本机，配对成功后可以从手机把任务发送到当前对话。</p>
+              <div class="settings-actions settings-page-actions">
+                <button id="mobilePairStartBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.mobilePairStart">生成配对码</button>
+                <span id="mobilePairBridgeStatus" class="settings-section-desc" hidden></span>
+              </div>
+              <div id="mobilePairChallenge" class="settings-field" hidden>
+                <h4 class="settings-subsection-title" data-i18n="settings.mobilePairScan">在手机上打开配对页并输入以下配对码</h4>
+                <div id="mobilePairCode" class="mobile-pair-code" role="textbox" aria-readonly="true"></div>
+                <p id="mobilePairExpiry" class="settings-section-desc"></p>
+              </div>
+              <div class="settings-field">
+                <h4 class="settings-subsection-title" data-i18n="settings.mobilePairPending">待批准的配对请求</h4>
+                <div id="mobilePairPendingList" class="settings-memory-list"></div>
+              </div>
+            </section>
+
             <section id="settingsPageMemory" class="settings-page" data-settings-page="memory" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.memory">记忆</h3>
               <p class="settings-section-desc" data-i18n="settings.memoryDesc">管理当前工作区中用户确认过的长期偏好，以及待确认的记忆候选。</p>

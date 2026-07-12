@@ -2448,3 +2448,21 @@ body.settings-open {
 .media-save-btn:hover {
   filter: brightness(0.98);
 }
+
+/* Mobile Command pairing panel */
+.mobile-pair-code {
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  word-break: break-all;
+  user-select: all;
+}
+.mobile-pair-pending-device {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
