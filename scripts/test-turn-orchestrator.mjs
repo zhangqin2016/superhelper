@@ -1520,4 +1520,55 @@ if (queueState.queue.length !== 0) {
   busyState.turnId = null;
 }
 
+// Crash-safe exactly-once admission across a restart (contract §3.3). An
+// injected in-memory-backed ledger store persists on admit; a fresh orchestrator
+// built over the SAME store reloads it, so a mobile command replayed after the
+// "restart" resolves to its original admission instead of enqueuing again.
+{
+  const must = (cond, msg) => { if (!cond) throw new Error(msg); };
+  const { createExternalCommandLedgerStore } = require("../src/main/external-command-ledger-store.js");
+
+  // A file the store reads/writes, held in memory so no real disk is touched.
+  const disk = new Map();
+  const io = {
+    existsSync: (p) => disk.has(p),
+    readFileSync: (p) => disk.get(p),
+    writeFileSync: (p, data) => disk.set(p, data),
+    renameSync: (a, b) => { disk.set(b, disk.get(a)); disk.delete(a); },
+    mkdirSync: () => {},
+    dirname: () => "/tmp",
+  };
+  const makeStore = () => createExternalCommandLedgerStore({
+    filePath: "/tmp/restart-ledger.json", io, log: {}, debounceMs: 0,
+  });
+
+  const restartCtx = { ...ctx, externalCommandLedgerStore: makeStore() };
+  const orchA = new TurnOrchestrator(restartCtx);
+  orchA.bindRunner(runner);
+  const st = orchA._state("s1");
+  st.phase = "streaming"; st.turnId = "t_restart"; st.queue = [];
+
+  const envelope = {
+    commandId: "cmd_restart_1", idempotencyKey: "idem_restart_1", payloadHash: "hash_r",
+    lilySessionId: "s1", mobileDeviceId: "dmob", text: "重启前发来的任务", mode: "queue",
+  };
+  const admitted = await orchA.admitExternalCommand(envelope);
+  must(admitted.ok === true, "pre-restart admit succeeds");
+  // debounceMs:0 → flush is scheduled on a 0ms timer; let it fire.
+  await new Promise((r) => setTimeout(r, 5));
+  must(disk.has("/tmp/restart-ledger.json"), "the ledger was persisted to durable storage");
+
+  // "Restart": a brand-new orchestrator over the same durable store.
+  const orchB = new TurnOrchestrator({ ...ctx, externalCommandLedgerStore: makeStore() });
+  orchB.bindRunner(runner);
+  must(orchB.externalLedgers.get("s1")?.has("cmd_restart_1"), "the reloaded ledger carries the pre-restart command");
+  const st2 = orchB._state("s1");
+  st2.phase = "streaming"; st2.turnId = "t_after"; st2.queue = [];
+
+  const replayAfterRestart = await orchB.admitExternalCommand(envelope);
+  must(replayAfterRestart.ok === true, "a post-restart replay returns the original admission");
+  must(replayAfterRestart.commandId === "cmd_restart_1", "post-restart replay returns the same commandId");
+  must(st2.queue.length === 0, "a post-restart replay does NOT enqueue a second turn (exactly-once survives restart)");
+}
+
 console.log("turn-orchestrator: ok");

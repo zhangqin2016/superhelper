@@ -366,10 +366,30 @@ class TurnOrchestrator {
     this.runCoordinator = ctx.turnRunCoordinator || new TurnRunCoordinator();
     this.dispatchRetryTimers = new Map();
     // External-command dedup ledgers, keyed by lilySessionId → Map(commandId →
-    // record). In-memory today (single-process exactly-once ADMISSION); durable
-    // co-flush with the session store is the tracked follow-up for crash-safe
-    // exactly-once across restarts (contract §3.3).
-    this.externalLedgers = new Map();
+    // record). Backed by a durable store so exactly-once ADMISSION survives a
+    // desktop restart (contract §3.3): a replayed mobile commandId resolves to
+    // its original admission instead of enqueuing a second turn. Fail-open — if
+    // the store can't be built or loaded, fall back to an in-memory-only Map
+    // (the prior behaviour), never worse.
+    this._ledgerStore = this._buildLedgerStore(ctx);
+    this.externalLedgers = this._ledgerStore ? this._ledgerStore.loadSync() : new Map();
+  }
+
+  _buildLedgerStore(ctx) {
+    try {
+      if (ctx && ctx.externalCommandLedgerStore) return ctx.externalCommandLedgerStore;
+      const { createExternalCommandLedgerStore } = require("./external-command-ledger-store");
+      const { userDataPath } = require("./config");
+      return createExternalCommandLedgerStore({ filePath: userDataPath("mobile-command-ledger.json") });
+    } catch (err) {
+      log.warn("external command ledger store unavailable, in-memory only: %s", err?.message || err);
+      return null;
+    }
+  }
+
+  _persistExternalLedgers() {
+    try { this._ledgerStore && this._ledgerStore.scheduleFlush(this.externalLedgers); }
+    catch (err) { log.warn("external ledger flush schedule failed open: %s", err?.message || err); }
   }
 
   _externalLedger(sessionId) {
@@ -444,6 +464,7 @@ class TurnOrchestrator {
       };
       decision.record.queueItemId = item.id;
       ledger.set(decision.record.commandId, decision.record);
+      this._persistExternalLedgers();
       state.queue.push(item);
       this._emitQueue(sessionId);
       void this._dispatchNext(sessionId);
