@@ -94,10 +94,10 @@ The normative native errors are the `MC-ERR-NATIVE-*` rows in [the error recover
 | `NATIVE_PERMISSION_RESTRICTED` | `MC-ERR-NATIVE-PERMISSION-DENIED` |
 | `NATIVE_KEY_NOT_FOUND` | `MC-ERR-NATIVE-KEY-INVALIDATED` |
 | `NATIVE_KEY_INVALIDATED` | `MC-ERR-NATIVE-KEY-INVALIDATED` |
-| `NATIVE_KEYSTORE_UNAVAILABLE` | `MC-ERR-NATIVE-KEY-INVALIDATED` |
-| `NATIVE_SIGN_FAILED` | `MC-ERR-NATIVE-KEY-INVALIDATED` |
+| `NATIVE_KEYSTORE_UNAVAILABLE` | `MC-ERR-NATIVE-KEYSTORE-UNAVAILABLE` |
+| `NATIVE_SIGN_FAILED` | `MC-ERR-NATIVE-SIGN-FAILED` |
 | `NATIVE_UPLOAD_FAILED` | `MC-ERR-NATIVE-UPLOAD-FAILED` |
-| `NATIVE_UPLOAD_CANCELLED` | `MC-ERR-NATIVE-UPLOAD-FAILED` |
+| `NATIVE_UPLOAD_CANCELLED` | `MC-ERR-NATIVE-UPLOAD-CANCELLED` |
 | `NATIVE_UPLOAD_BACKGROUND_UNAVAILABLE` | `MC-ERR-NATIVE-UPLOAD-FAILED` |
 | `NATIVE_PUSH_UNAVAILABLE` | `MC-ERR-NATIVE-METHOD-UNSUPPORTED` |
 | `NATIVE_SHARE_NO_FILES` | `MC-ERR-PROTOCOL-INVALID` |
@@ -176,7 +176,7 @@ Rules:
 
 - Private key is non-exportable.
 - Web stores only `keyHandle`.
-- Key invalidation maps to `MC-ERR-NATIVE-KEY-INVALIDATED`, then Web requires approved rotation or re-pairing. Native signs only the versioned canonical digest assembled by the typed Web identity adapter; it never accepts arbitrary remote protocol or script text.
+- Only a permanently invalidated key confirmed by the OS maps to `MC-ERR-NATIVE-KEY-INVALIDATED`, after which Web requires approved rotation or re-pairing. Temporary keystore/system unavailability maps to `MC-ERR-NATIVE-KEYSTORE-UNAVAILABLE`, denies the current sensitive operation, and may be retried only after explicit user action or a foreground/system-state change; it never triggers automatic re-pair. A signature attempt that proves it produced no signature or side effect maps to `MC-ERR-NATIVE-SIGN-FAILED` and may retry at most once with the identical canonical digest; ambiguous or repeated failure stops. Native signs only the versioned canonical digest assembled by the typed Web identity adapter; it never accepts arbitrary remote protocol or script text.
 
 ## 7. Background Upload API
 
@@ -254,6 +254,7 @@ Rules:
 - Native cannot mark upload `verified` or `staged`.
 - iOS uses background `URLSession`.
 - Android uses WorkManager / foreground service as required by OS.
+- A user cancellation maps to `MC-ERR-NATIVE-UPLOAD-CANCELLED`, terminalizes the native transport as `cancelled`, and projects canonical MC-SM-UPLOAD cancellation without retry or error escalation; telemetry is informational.
 
 ## 8. Push API
 
