@@ -52,7 +52,7 @@ Fixtures use reserved synthetic IDs (`usr_test`, `desk_test`, `mob_test`, `rs_te
 Verification command (reads the catalog, expands any declared patch, canonicalizes, then checks bytes/hash and all 62 case references):
 
 ```bash
-node scripts/test-mobile-command-spec-closure.mjs --fixtures docs/mobile-command-test-cases.md
+node scripts/test-mobile-command-spec-closure.mjs --fixtures docs/fixtures/mobile-command-test-fixtures.json --manifest docs/mobile-command-test-cases.md
 ```
 
 Until Task 10 creates that validator, the equivalent inline Node verification recorded with Task 9 must recompute every manifest row; visual comparison or trusting a pasted digest is not acceptable.

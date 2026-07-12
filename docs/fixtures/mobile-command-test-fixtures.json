@@ -1,0 +1,5995 @@
+{
+  "fixtureVersion": 1,
+  "canonicalization": "recursive-key-sort-json-stringify-utf8",
+  "syntheticOnly": true,
+  "cases": [
+    {
+      "caseId": "MC-TC-PAIR-001",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-pair-001",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PAIR-001",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 1
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PAIR-001",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PAIR-001",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PAIR-001",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PAIR-002",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-pair-002",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PAIR-002",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 2
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PAIR-002",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PAIR-002",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PAIR-002",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PAIR-003",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "barrier": "pair-consume-0",
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-pair-003",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PAIR-003",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 3,
+              "variant": "consume"
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "active",
+            "projection": {
+              "variant": "consume"
+            }
+          }
+        },
+        {
+          "at": 1767225600001,
+          "barrier": "pair-consume-1",
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-pair-003",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PAIR-003",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 3,
+              "variant": "replay"
+            }
+          },
+          "expected": {
+            "httpStatus": 409,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": "MC-ERR-PAIRING-TOKEN-CONSUMED",
+            "state": "consumed",
+            "projection": {
+              "variant": "replay"
+            }
+          }
+        },
+        {
+          "at": 1767225600002,
+          "barrier": "pair-consume-2",
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-pair-003",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PAIR-003",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 3,
+              "variant": "forged"
+            }
+          },
+          "expected": {
+            "httpStatus": 401,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": "MC-ERR-AUTH-SIGNATURE-INVALID",
+            "state": "consumed",
+            "projection": {
+              "variant": "forged"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "consumed",
+        "lastErrorCode": "MC-ERR-AUTH-SIGNATURE-INVALID",
+        "projection": {
+          "variant": "forged"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PAIR-003",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PAIR-004",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-pair-004",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PAIR-004",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 4
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PAIR-004",
+              "status": "completed"
+            }
+          },
+          "barrier": "barrier_mc-tc-pair-004",
+          "orderedAction": 1
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PAIR-004",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PAIR-004",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PAIR-005",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-pair-005",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PAIR-005",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 5
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PAIR-005",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PAIR-005",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PAIR-005",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PAIR-006",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-pair-006",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PAIR-006",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 6
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PAIR-006",
+              "status": "completed"
+            }
+          },
+          "barrier": "barrier_mc-tc-pair-006",
+          "orderedAction": 1
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PAIR-006",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PAIR-006",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PAIR-007",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-pair-007",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PAIR-007",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 7
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PAIR-007",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PAIR-007",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PAIR-007",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PAIR-008",
+      "boundary": "native-v1",
+      "schemaRef": "../schemas/mobile-command-native-bridge.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "native",
+            "request": {
+              "id": "native_8",
+              "version": 1,
+              "method": "camera.scanQr",
+              "params": {}
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": null,
+            "nativeOk": true,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PAIR-008",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PAIR-008",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PAIR-008",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-CMD-001",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 1,
+              "eventId": "evt_mc-tc-cmd-001",
+              "type": "command.submit",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "caseId": "MC-TC-CMD-001",
+                "lilySessionId": "sess_test",
+                "text": "synthetic test input"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "command.accepted",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-CMD-001",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-CMD-001",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-CMD-001",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-CMD-002",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 2,
+              "eventId": "evt_mc-tc-cmd-002",
+              "type": "command.submit",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "caseId": "MC-TC-CMD-002",
+                "lilySessionId": "sess_test",
+                "text": "synthetic test input"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "command.accepted",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-CMD-002",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-CMD-002",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-CMD-002",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-CMD-003",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 3,
+              "eventId": "evt_mc-tc-cmd-003",
+              "type": "command.submit",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "caseId": "MC-TC-CMD-003",
+                "lilySessionId": "sess_test",
+                "text": "synthetic test input"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "command.accepted",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-CMD-003",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-CMD-003",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-CMD-003",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-CMD-004",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 4,
+              "eventId": "evt_mc-tc-cmd-004",
+              "type": "command.submit",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "caseId": "MC-TC-CMD-004",
+                "lilySessionId": "sess_test",
+                "text": "synthetic test input"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "command.accepted",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-CMD-004",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-CMD-004",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-CMD-004",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-CMD-005",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 5,
+              "eventId": "evt_mc-tc-cmd-005",
+              "type": "command.submit",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "caseId": "MC-TC-CMD-005",
+                "lilySessionId": "sess_test",
+                "text": "synthetic test input"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "command.accepted",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-CMD-005",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-CMD-005",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-CMD-005",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-CMD-006",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 6,
+              "eventId": "evt_mc-tc-cmd-006",
+              "type": "command.submit",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "caseId": "MC-TC-CMD-006",
+                "lilySessionId": "sess_test",
+                "text": "synthetic test input"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "command.accepted",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-CMD-006",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-CMD-006",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-CMD-006",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-CMD-007",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 7,
+              "eventId": "evt_cmd007_0",
+              "type": "command.submit",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "variant": "malformed",
+                "payloadBytes": 128,
+                "signature": null
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "error",
+            "nativeOk": null,
+            "errorCode": "MC-ERR-PROTOCOL-INVALID",
+            "state": "unchanged",
+            "projection": {
+              "lilySessionId": "sess_test",
+              "admissions": 0
+            }
+          }
+        },
+        {
+          "at": 1767225600001,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 8,
+              "eventId": "evt_cmd007_1",
+              "type": "command.submit",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "variant": "forged",
+                "payloadBytes": 128,
+                "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "error",
+            "nativeOk": null,
+            "errorCode": "MC-ERR-AUTH-SIGNATURE-INVALID",
+            "state": "unchanged",
+            "projection": {
+              "lilySessionId": "sess_test",
+              "admissions": 0
+            }
+          }
+        },
+        {
+          "at": 1767225600002,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 9,
+              "eventId": "evt_cmd007_2",
+              "type": "command.submit",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "variant": "oversized",
+                "payloadBytes": 1048577,
+                "signature": null
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "error",
+            "nativeOk": null,
+            "errorCode": "MC-ERR-PROTOCOL-INVALID",
+            "state": "unchanged",
+            "projection": {
+              "lilySessionId": "sess_test",
+              "admissions": 0
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "unchanged",
+        "lastErrorCode": "MC-ERR-PROTOCOL-INVALID",
+        "projection": {
+          "lilySessionId": "sess_test",
+          "admissions": 0
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-CMD-007",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-LIVE-001",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "input.pointer",
+              "seq": 1,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-LIVE-001",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-LIVE-001",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-LIVE-001",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-LIVE-001",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-LIVE-002",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "input.pointer",
+              "seq": 2,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-LIVE-002",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-LIVE-002",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-LIVE-002",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-LIVE-002",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-LIVE-003",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "input.pointer",
+              "seq": 3,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-LIVE-003",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-LIVE-003",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-LIVE-003",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-LIVE-003",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-LIVE-004",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "input.pointer",
+              "seq": 4,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-LIVE-004",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-LIVE-004",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-LIVE-004",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-LIVE-004",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-LIVE-005",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "input.pointer",
+              "seq": 5,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-LIVE-005",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-LIVE-005",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-LIVE-005",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-LIVE-005",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-LIVE-006",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "input.pointer",
+              "seq": 6,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-LIVE-006",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-LIVE-006",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-LIVE-006",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-LIVE-006",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-LIVE-007",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "input.pointer",
+              "seq": 7,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-LIVE-007",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-LIVE-007",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-LIVE-007",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-LIVE-007",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PERM-001",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "control.permission.check",
+              "seq": 1,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-PERM-001",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PERM-001",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PERM-001",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PERM-001",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PERM-002",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "control.permission.check",
+              "seq": 2,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-PERM-002",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PERM-002",
+              "status": "completed"
+            }
+          },
+          "barrier": "barrier_mc-tc-perm-002",
+          "orderedAction": 1
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PERM-002",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PERM-002",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PERM-003",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "control.permission.check",
+              "seq": 3,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-PERM-003",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PERM-003",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PERM-003",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PERM-003",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PERM-004",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "control.permission.check",
+              "seq": 4,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-PERM-004",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PERM-004",
+              "status": "completed"
+            }
+          },
+          "barrier": "barrier_mc-tc-perm-004",
+          "orderedAction": 1
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PERM-004",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PERM-004",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PERM-005",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "control.permission.check",
+              "seq": 5,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-PERM-005",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PERM-005",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PERM-005",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PERM-005",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PERM-006",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "control.permission.check",
+              "seq": 6,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-PERM-006",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PERM-006",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PERM-006",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PERM-006",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PERM-007",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "control.permission.check",
+              "seq": 7,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-PERM-007",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PERM-007",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PERM-007",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PERM-007",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PERM-008",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "control.permission.check",
+              "seq": 8,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-PERM-008",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PERM-008",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PERM-008",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PERM-008",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PERM-009",
+      "boundary": "datachannel-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "dc",
+            "message": {
+              "v": 1,
+              "t": "control.permission.check",
+              "seq": 9,
+              "ts": 1767225600000,
+              "payload": {
+                "caseId": "MC-TC-PERM-009",
+                "surfaceId": "surface_test",
+                "x": 0.5,
+                "y": 0.5
+              },
+              "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "control.ack",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PERM-009",
+              "status": "completed"
+            }
+          },
+          "barrier": "barrier_mc-tc-perm-009",
+          "orderedAction": 1
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PERM-009",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PERM-009",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-001",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-file-001",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-FILE-001",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 1
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-001",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-001",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-001",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-002",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http-binary",
+            "method": "PUT",
+            "path": "/api/mobile/uploads/upl_test/chunks/0",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/octet-stream",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1",
+              "X-Chunk-SHA256": "ae4b3280e56e2faf83f414a6e3dabe9d5fbe18976544c05fed121accb85b53fc"
+            },
+            "binary": {
+              "base64": "YWJj",
+              "sizeBytes": 3,
+              "sha256": "ae4b3280e56e2faf83f414a6e3dabe9d5fbe18976544c05fed121accb85b53fc",
+              "chunkIndex": 0
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-002",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-002",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-002",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-003",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-file-003",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-FILE-003",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 3
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-003",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-003",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-003",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-004",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-file-004",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-FILE-004",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 4
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-004",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-004",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-004",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-005",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-file-005",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-FILE-005",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 5
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-005",
+              "status": "completed"
+            }
+          },
+          "barrier": "barrier_mc-tc-file-005",
+          "orderedAction": 1
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-005",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-005",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-006",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-file-006",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-FILE-006",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 6
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-006",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-006",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-006",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-007",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-file-007",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-FILE-007",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 7
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-007",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-007",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-007",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-008",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-file-008",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-FILE-008",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 8
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-008",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-008",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-008",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-009",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-file-009",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-FILE-009",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 9
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-009",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-009",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-009",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-010",
+      "boundary": "native-v1",
+      "schemaRef": "../schemas/mobile-command-native-bridge.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "native",
+            "request": {
+              "id": "native_10",
+              "version": 1,
+              "method": "share.getPendingSharedFiles",
+              "params": {}
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": null,
+            "nativeOk": true,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-010",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-010",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-010",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-FILE-011",
+      "boundary": "native-v1",
+      "schemaRef": "../schemas/mobile-command-native-bridge.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "native",
+            "request": {
+              "id": "native_11",
+              "version": 1,
+              "method": "upload.startBackgroundUpload",
+              "params": {
+                "uploadId": "upl_test",
+                "uploadHandle": "uh_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "nativeFileHandle": "nfh_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "sizeBytes": 3,
+                "sha256": "ae4b3280e56e2faf83f414a6e3dabe9d5fbe18976544c05fed121accb85b53fc"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": null,
+            "nativeOk": true,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-FILE-011",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-FILE-011",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-FILE-011",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-VOICE-001",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 1,
+              "eventId": "evt_mc-tc-voice-001",
+              "type": "voice.transcript.patch",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "caseId": "MC-TC-VOICE-001",
+                "lilySessionId": "sess_test",
+                "text": "synthetic test input"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "command.accepted",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-VOICE-001",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-VOICE-001",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-VOICE-001",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-VOICE-002",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 2,
+              "eventId": "evt_mc-tc-voice-002",
+              "type": "voice.transcript.patch",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "caseId": "MC-TC-VOICE-002",
+                "lilySessionId": "sess_test",
+                "text": "synthetic test input"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "command.accepted",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-VOICE-002",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-VOICE-002",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-VOICE-002",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-VOICE-003",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 3,
+              "eventId": "evt_mc-tc-voice-003",
+              "type": "voice.transcript.patch",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "caseId": "MC-TC-VOICE-003",
+                "lilySessionId": "sess_test",
+                "text": "synthetic test input"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "command.accepted",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-VOICE-003",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-VOICE-003",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-VOICE-003",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-VOICE-004",
+      "boundary": "websocket-v1",
+      "schemaRef": "../schemas/mobile-command-events.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "ws",
+            "event": {
+              "version": 1,
+              "epoch": "epoch_test_1",
+              "sequence": 4,
+              "eventId": "evt_mc-tc-voice-004",
+              "type": "voice.transcript.patch",
+              "remoteSessionId": "rs_test",
+              "payload": {
+                "caseId": "MC-TC-VOICE-004",
+                "lilySessionId": "sess_test",
+                "text": "synthetic test input"
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": "command.accepted",
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-VOICE-004",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-VOICE-004",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-VOICE-004",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-NATIVE-001",
+      "boundary": "native-v1",
+      "schemaRef": "../schemas/mobile-command-native-bridge.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "native",
+            "request": {
+              "id": "native_1",
+              "version": 1,
+              "method": "secureKey.generateDeviceKey",
+              "params": {
+                "label": "Lily synthetic test key",
+                "requireBiometric": false
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": null,
+            "nativeOk": true,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-NATIVE-001",
+              "status": "completed"
+            }
+          }
+        },
+        {
+          "at": 1767225600001,
+          "action": {
+            "transport": "native",
+            "request": {
+              "id": "native_1_sign",
+              "version": 1,
+              "method": "secureKey.sign",
+              "params": {
+                "keyHandle": "key_test0001",
+                "canonicalDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "signatureVersion": 1
+              }
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": null,
+            "nativeOk": true,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "algorithm": "Ed25519",
+              "privateKeyExported": false
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-NATIVE-001",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-NATIVE-001",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-NATIVE-002",
+      "boundary": "native-v1",
+      "schemaRef": "../schemas/mobile-command-native-bridge.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "native",
+            "request": {
+              "id": "native_2",
+              "version": 1,
+              "method": "permissions.getStatus",
+              "params": {}
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": null,
+            "nativeOk": true,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-NATIVE-002",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-NATIVE-002",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-NATIVE-002",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-NATIVE-003",
+      "boundary": "native-v1",
+      "schemaRef": "../schemas/mobile-command-native-bridge.schema.json",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "native",
+            "request": {
+              "id": "native_3",
+              "version": 1,
+              "method": "permissions.getStatus",
+              "params": {}
+            }
+          },
+          "expected": {
+            "httpStatus": null,
+            "eventType": null,
+            "nativeOk": true,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-NATIVE-003",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-NATIVE-003",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-NATIVE-003",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-OPS-001",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-ops-001",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-OPS-001",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 1
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-OPS-001",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-OPS-001",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-OPS-001",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-OPS-002",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-ops-002",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-OPS-002",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 2
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-OPS-002",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-OPS-002",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-OPS-002",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-OPS-003",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-ops-003",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-OPS-003",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 3
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-OPS-003",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-OPS-003",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-OPS-003",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PRIV-001",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-priv-001",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PRIV-001",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 1
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PRIV-001",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PRIV-001",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PRIV-001",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PRIV-002",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-priv-002",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PRIV-002",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 2
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PRIV-002",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PRIV-002",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PRIV-002",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PRIV-003",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-priv-003",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PRIV-003",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 3
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PRIV-003",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PRIV-003",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PRIV-003",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PRIV-004",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-priv-004",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PRIV-004",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 4
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PRIV-004",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PRIV-004",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PRIV-004",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-PRIV-005",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-priv-005",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-PRIV-005",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 5
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-PRIV-005",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-PRIV-005",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-PRIV-005",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-REL-001",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-rel-001",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-REL-001",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 1
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-REL-001",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-REL-001",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-REL-001",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-REL-002",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-rel-002",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-REL-002",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 2
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-REL-002",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-REL-002",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-REL-002",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-REL-003",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-rel-003",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-REL-003",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 3
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-REL-003",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-REL-003",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-REL-003",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-REL-004",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-rel-004",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-REL-004",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 4
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-REL-004",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-REL-004",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-REL-004",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    },
+    {
+      "caseId": "MC-TC-REL-005",
+      "boundary": "http-v1",
+      "schemaRef": "../schemas/mobile-command.openapi.yaml",
+      "clock": {
+        "startMs": 1767225600000,
+        "tickMs": 1
+      },
+      "preState": {
+        "accountId": "usr_test",
+        "desktopDeviceId": "desk_test",
+        "mobileDeviceId": "mob_test",
+        "remoteSessionId": "rs_test",
+        "lilySessionId": "sess_test"
+      },
+      "steps": [
+        {
+          "at": 1767225600000,
+          "action": {
+            "transport": "http",
+            "method": "POST",
+            "path": "/api/mobile/test/mc-tc-rel-005",
+            "headers": {
+              "Authorization": "Bearer test_access_token_00000000000000000000000000000000",
+              "Content-Type": "application/json",
+              "Idempotency-Key": "idem_test_0000000000000001",
+              "X-Device-Nonce": "nonce_test_000001",
+              "X-Device-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "X-Device-Timestamp": "1767225600000",
+              "X-Protocol-Version": "1",
+              "X-Signature-Version": "1"
+            },
+            "body": {
+              "caseId": "MC-TC-REL-005",
+              "protocolVersion": 1,
+              "schemaVersion": 1,
+              "testSequence": 5
+            }
+          },
+          "expected": {
+            "httpStatus": 200,
+            "eventType": null,
+            "nativeOk": null,
+            "errorCode": null,
+            "state": "completed",
+            "projection": {
+              "caseId": "MC-TC-REL-005",
+              "status": "completed"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "terminalState": "completed",
+        "lastErrorCode": null,
+        "projection": {
+          "caseId": "MC-TC-REL-005",
+          "status": "completed"
+        }
+      },
+      "forbiddenSideEffects": [
+        "authorityStore.writeWithoutGrant",
+        "admissionStore.duplicate",
+        "orchestratorQueue.enqueueOnError",
+        "runnerPool.createOnError",
+        "stagingStore.writeOnError",
+        "artifactRegistry.publishOnError",
+        "osAdapter.invokeOnError",
+        "auditStore.successOnError"
+      ],
+      "audit": {
+        "eventType": "mobile.test.case",
+        "fields": {
+          "caseId": "MC-TC-REL-005",
+          "result": "asserted"
+        },
+        "prohibited": [
+          "body",
+          "clipboard",
+          "rawInput",
+          "secret",
+          "token"
+        ]
+      },
+      "cleanup": {
+        "actions": [
+          "deleteSyntheticRows",
+          "closeSyntheticChannels",
+          "assertNoTempObjects"
+        ]
+      },
+      "platforms": [
+        "server-test",
+        "desktop-test",
+        "mobile-simulator"
+      ]
+    }
+  ]
+}

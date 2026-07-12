@@ -89,71 +89,73 @@ Canonical boundary values used by negative fixtures are not prose placeholders: 
 
 `MC-MAN-{PAIR,CMD,LIVE,PERM,FILE,NATIVE,VOICE,OPS,PRIV,REL}-NN` denotes execution of the mapped automated scenario on the exact platform pair and network/OS condition recorded in the trace row. Every manual record must capture desktop OS/build, mobile OS/device/browser or native build, server/schema versions, network path (direct/relay/loss/latency), evidence links, result, reviewer, date, cleanup confirmation, and any forbidden-side-effect observation. No manual ID is a pass until that record exists.
 +
-## 6. Canonical Expanded Fixture Manifest
 
-Each canonical JSON below is the exact synthetic harness request/event descriptor; `input.exact` selects the concrete request/event variant and boundary values fixed in §1. Expected response/error and forbidden effects remain normative in the corresponding case row.
 
-| Fixture | Canonical JSON | UTF-8 bytes | SHA-256 |
+## 6. Executable Fixture Object Manifest
+
+Canonical source: [`docs/fixtures/mobile-command-test-fixtures.json`](fixtures/mobile-command-test-fixtures.json). JSON Pointer uses the immutable array position in fixture version 1. Hash input is the recursively key-sorted, fully expanded **case object** serialized by `JSON.stringify` as UTF-8; it is not a descriptor wrapper.
+
+| Case | JSON Pointer | Canonical UTF-8 bytes | Case-object SHA-256 |
 |---|---|---:|---|
-| FX-MC-TC-PAIR-001 | `{"boundary":"openapi-v1","caseId":"MC-TC-PAIR-001","input":{"exact":"exact POST pairing/start"},"protocolVersion":1,"schemaVersion":1}` | 134 | `420aa82a83ef889c5fba14a01faa482d02a8aa1951ae6dac5bf498ea99e4a2d3` |
-| FX-MC-TC-PAIR-002 | `{"boundary":"openapi-v1","caseId":"MC-TC-PAIR-002","input":{"exact":"inspect persisted start result"},"protocolVersion":1,"schemaVersion":1}` | 140 | `f730f64c46235e2fd045956d4090eb6a0ab4132cc7fa20d99f188a0f16cb7375` |
-| FX-MC-TC-PAIR-003 | `{"boundary":"openapi-v1","caseId":"MC-TC-PAIR-003","input":{"exact":"exact consume, then replay/forged tuple"},"protocolVersion":1,"schemaVersion":1}` | 149 | `be1a75b11cc70dd300b91166f9dd27d6e47f22632862c1285d1b4e5239111d9b` |
-| FX-MC-TC-PAIR-004 | `{"boundary":"openapi-v1","caseId":"MC-TC-PAIR-004","input":{"exact":"approve versus reject/timeout race"},"protocolVersion":1,"schemaVersion":1}` | 144 | `05db20eae184eee8f6f0057a67de52fa113b580ed0f842417b974c94cffa19bd` |
-| FX-MC-TC-PAIR-005 | `{"boundary":"openapi-v1","caseId":"MC-TC-PAIR-005","input":{"exact":"account A lists devices"},"protocolVersion":1,"schemaVersion":1}` | 133 | `9978526132a88f79ca921c4d66f43b54b028030fc6bf65ef43e9901f11c975cc` |
-| FX-MC-TC-PAIR-006 | `{"boundary":"openapi-v1","caseId":"MC-TC-PAIR-006","input":{"exact":"duplicate revoke racing refresh"},"protocolVersion":1,"schemaVersion":1}` | 141 | `6acf3c31cc2381ff2e86ca2dcaf3aa2945a72e9676266a82fd5a2123a44e80ba` |
-| FX-MC-TC-PAIR-007 | `{"boundary":"openapi-v1","caseId":"MC-TC-PAIR-007","input":{"exact":"create, refresh, end with stale token family"},"protocolVersion":1,"schemaVersion":1}` | 154 | `86bb999ff3bd00037b77bfb53403fa7cb34cffa973aaf28dae38280394993747` |
-| FX-MC-TC-PAIR-008 | `{"boundary":"openapi-v1","caseId":"MC-TC-PAIR-008","input":{"exact":"QR returns malformed/oversized/forged text"},"protocolVersion":1,"schemaVersion":1}` | 152 | `64b6c46ae78dfdf4c16f044358e61ae09f2c3e9b4604249cedfca917d1e3a38d` |
-| FX-MC-TC-CMD-001 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-CMD-001","input":{"exact":"remote-session create"},"protocolVersion":1,"schemaVersion":1}` | 141 | `b3839669a63684c4ca2a7af39f677fb90e6589808856ed4f9b08f1b805bf9464` |
-| FX-MC-TC-CMD-002 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-CMD-002","input":{"exact":"exact command targets existing Lily session A"},"protocolVersion":1,"schemaVersion":1}` | 165 | `ed87ee03c50dfdd6fe3b63ecd515783ee3f5e4c7ae6ea27d6ec43d2205455717` |
-| FX-MC-TC-CMD-003 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-CMD-003","input":{"exact":"exact duplicate idempotency key then conflicting body"},"protocolVersion":1,"schemaVersion":1}` | 173 | `f782fd603cef431775edd6b79c535d2285a58fdf8508817ab32c99fd1beda2dc` |
-| FX-MC-TC-CMD-004 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-CMD-004","input":{"exact":"remote steer rejected by current runner"},"protocolVersion":1,"schemaVersion":1}` | 159 | `9aaf50cabfe0979c2169720025834d5cbf09b6b5298aa8fa9764fac4dd932ff9` |
-| FX-MC-TC-CMD-005 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-CMD-005","input":{"exact":"reconnect with last acknowledged sequence"},"protocolVersion":1,"schemaVersion":1}` | 161 | `78220f1935d3fc1a5c336ea32a7f1eea31254db673ea383c56e16ed34796a0c2` |
-| FX-MC-TC-CMD-006 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-CMD-006","input":{"exact":"reconnect request"},"protocolVersion":1,"schemaVersion":1}` | 137 | `5055c4614dc5b69a3c7962e0c68598ee98caf7dde59b3e07b834a7f843c037c3` |
-| FX-MC-TC-CMD-007 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-CMD-007","input":{"exact":"malformed, forged, oversized, then version-skew command"},"protocolVersion":1,"schemaVersion":1}` | 175 | `8838bb773fe2840ca9a4b89e944aaa9aab2b218c924b0942ff88b88daf00465f` |
-| FX-MC-TC-LIVE-001 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-LIVE-001","input":{"exact":"observe/control elevation"},"protocolVersion":1,"schemaVersion":1}` | 146 | `1b508be148ea668e2e4a00547dc402deba29982e1b0a4e3ff0b2497c8c61f867` |
-| FX-MC-TC-LIVE-002 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-LIVE-002","input":{"exact":"offer/answer with wrong session/source/generation"},"protocolVersion":1,"schemaVersion":1}` | 170 | `19c13011c3490d7308290670daa8d426d44aeb5e6e44996e16452d69fbc7d349` |
-| FX-MC-TC-LIVE-003 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-LIVE-003","input":{"exact":"malformed candidate and wrong discriminator"},"protocolVersion":1,"schemaVersion":1}` | 164 | `ff19cd9623bb0ecc6aaaf5bf33d84dbde332dd6ca9818f5373f3f9890ecf1e8b` |
-| FX-MC-TC-LIVE-004 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-LIVE-004","input":{"exact":"request then reuse expired/wrong-session TURN credential"},"protocolVersion":1,"schemaVersion":1}` | 177 | `d767d9f3e563b8ce1d7e457fa3f87f310cd0b540a560c191deeb65dd5a96c255` |
-| FX-MC-TC-LIVE-005 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-LIVE-005","input":{"exact":"pointer burst plus ambiguous keyboard replay/source B input"},"protocolVersion":1,"schemaVersion":1}` | 180 | `3a3bf5800994b0cfa544b74d80075998c3afc2e2e112b4f8c9d1434470c39f54` |
-| FX-MC-TC-LIVE-006 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-LIVE-006","input":{"exact":"clipboard read, then scoped approval"},"protocolVersion":1,"schemaVersion":1}` | 157 | `8abc201aa6860122fda7c550fbc6d17ac2729990cfa5e21a12c66add9b618143` |
-| FX-MC-TC-LIVE-007 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-LIVE-007","input":{"exact":"app.background; clock +10 s/+60 s cumulative"},"protocolVersion":1,"schemaVersion":1}` | 165 | `f38b60ab53a9a33dfc7ba374a62327a11d91206b3788ffc015b018dec5ac164a` |
-| FX-MC-TC-PERM-001 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-PERM-001","input":{"exact":"create approval with exact bindings"},"protocolVersion":1,"schemaVersion":1}` | 156 | `0c921bb23cc983e823e7f1400abf40f1def0ada402bfbe89bd7b28965943820a` |
-| FX-MC-TC-PERM-002 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-PERM-002","input":{"exact":"simultaneous approve/deny plus late approve"},"protocolVersion":1,"schemaVersion":1}` | 164 | `633cab2d93503dd8f6172456dbc10cf4baec27cda530f73766e705ede2cb9fef` |
-| FX-MC-TC-PERM-003 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-PERM-003","input":{"exact":"consume exact then wrong resource/expired/reuse"},"protocolVersion":1,"schemaVersion":1}` | 168 | `6985af86ad3cf96e5a80200074b609fbac4ae214dce8cdac70ab040fcfdbd3e5` |
-| FX-MC-TC-PERM-004 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-PERM-004","input":{"exact":"revoke/session-end races consume"},"protocolVersion":1,"schemaVersion":1}` | 153 | `1710b40deae0d8f2420062a01e5972ea337f13dc4347405fd1b47891e98c2079` |
-| FX-MC-TC-PERM-005 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-PERM-005","input":{"exact":"indicator missing then desktop restart"},"protocolVersion":1,"schemaVersion":1}` | 159 | `aa50cadd8428992c888915102586965ec4d198596ec500374b46b159d4b9352f` |
-| FX-MC-TC-PERM-006 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-PERM-006","input":{"exact":"DataChannel control event"},"protocolVersion":1,"schemaVersion":1}` | 146 | `348c394b6d33df9da3a3c4998cf3fdf49c2a25c7f46f2bc8723a7a5d710c989e` |
-| FX-MC-TC-PERM-007 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-PERM-007","input":{"exact":"sensitive action"},"protocolVersion":1,"schemaVersion":1}` | 137 | `ca9874fb9765d4d7eb4ccacabcfacbc510983fcd3f22a8ae5b3aa691ceafb419` |
-| FX-MC-TC-PERM-008 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-PERM-008","input":{"exact":"approval/control consume"},"protocolVersion":1,"schemaVersion":1}` | 145 | `4bb04e9c4b712880fccf826f2f80f4fcb8b1c1d562fa6ffec5d4dee08e807b2d` |
-| FX-MC-TC-PERM-009 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-PERM-009","input":{"exact":"revoke races every authority endpoint"},"protocolVersion":1,"schemaVersion":1}` | 158 | `53be983b830b9f43426f503188a72390f5097f3a06e7521d6025a4a3acaf8078` |
-| FX-MC-TC-FILE-001 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-001","input":{"exact":"create valid then oversized manifest"},"protocolVersion":1,"schemaVersion":1}` | 146 | `b1df731783cecbf4b2b94f37c57303bddb5fabdc90f87b2be25377bb031df2c7` |
-| FX-MC-TC-FILE-002 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-002","input":{"exact":"exact chunk, duplicate, forged hash/index"},"protocolVersion":1,"schemaVersion":1}` | 151 | `67eae4f3ede7c24dca09c9077aa8e029a7aa53fe742d2b2e2081a61fc2cae3c4` |
-| FX-MC-TC-FILE-003 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-003","input":{"exact":"complete request"},"protocolVersion":1,"schemaVersion":1}` | 126 | `1c4a2e7045d65609b9d269b7b2a31fb42deab37d582af73ddf591393d8a1ac75` |
-| FX-MC-TC-FILE-004 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-004","input":{"exact":"reconnect/status/resume"},"protocolVersion":1,"schemaVersion":1}` | 133 | `aaeb7e97d409a819d3c42479c1329b73ac9083c26f869c5d4cb6ab3502605ea9` |
-| FX-MC-TC-FILE-005 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-005","input":{"exact":"expire/cancel/revoke races complete"},"protocolVersion":1,"schemaVersion":1}` | 145 | `84fd3793d6ed236bf0913fdaec5e5bc7a09a35f9603803e5bd3804a9aaa448fe` |
-| FX-MC-TC-FILE-006 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-006","input":{"exact":"desktop pull with wrong authority/full hash"},"protocolVersion":1,"schemaVersion":1}` | 153 | `475df8100ce93d8fb1a945c3c9a32b16b283c5b85a6cef9a0e61b224d7a24b5e` |
-| FX-MC-TC-FILE-007 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-007","input":{"exact":"attach from session B/wrong admission key"},"protocolVersion":1,"schemaVersion":1}` | 151 | `f818cb46abf80d1e09e0d429c5a49732233974679508d0d5465516ba696681e6` |
-| FX-MC-TC-FILE-008 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-008","input":{"exact":"project metadata"},"protocolVersion":1,"schemaVersion":1}` | 126 | `3720d0483556b11e359f0ddc0fdf6e702eaa7de251b08be79b40c3e71299bcda` |
-| FX-MC-TC-FILE-009 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-009","input":{"exact":"download URL then expired/wrong-device reuse"},"protocolVersion":1,"schemaVersion":1}` | 154 | `6eab6d5a434ea1f846976a68a3be1fbc9b300981808223dbbcac14480267ee36` |
-| FX-MC-TC-FILE-010 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-010","input":{"exact":"enumerate pending then explicit Web enqueue"},"protocolVersion":1,"schemaVersion":1}` | 153 | `7963024250eee226dae7e07e2c330c53159d3a81a36b06ddd45a1bf5b8e74201` |
-| FX-MC-TC-FILE-011 | `{"boundary":"openapi-v1","caseId":"MC-TC-FILE-011","input":{"exact":"native transport completion"},"protocolVersion":1,"schemaVersion":1}` | 137 | `e0b664422bc43208661940ed471e740d034ec6cbbb2a1bfa17cb145cd4aa3ab1` |
-| FX-MC-TC-VOICE-001 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-VOICE-001","input":{"exact":"capture patch without submit intent"},"protocolVersion":1,"schemaVersion":1}` | 157 | `7fbeb7b72dd172b0aacd66cf8e82429c9e115df437157fd0e5330257ccbc3ea6` |
-| FX-MC-TC-VOICE-002 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-VOICE-002","input":{"exact":"ASR error/relay loss"},"protocolVersion":1,"schemaVersion":1}` | 142 | `a50b3653099b1e9e1b598b10a0ce359f13090ef50a823ea98baaf66219af1689` |
-| FX-MC-TC-VOICE-003 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-VOICE-003","input":{"exact":"stale later ASR patch/direct-send sensitive text"},"protocolVersion":1,"schemaVersion":1}` | 170 | `d0e2f504bdcdea5926709d20d4cf05994ea5dc5531281e23e8b18e0c7dfd6662` |
-| FX-MC-TC-VOICE-004 | `{"boundary":"events-json-schema-v1","caseId":"MC-TC-VOICE-004","input":{"exact":"start voice"},"protocolVersion":1,"schemaVersion":1}` | 133 | `490aea34f2e50e824f113637ecaa07008eba0a89f028a5b11dae412afe92525a` |
-| FX-MC-TC-NATIVE-001 | `{"boundary":"native-json-schema-v1","caseId":"MC-TC-NATIVE-001","input":{"exact":"generate then sign canonical/altered digest"},"protocolVersion":1,"schemaVersion":1}` | 166 | `9eeaab127e49e102b369f42a19727824c25b4501397aa8e150075333c581d9a2` |
-| FX-MC-TC-NATIVE-002 | `{"boundary":"native-json-schema-v1","caseId":"MC-TC-NATIVE-002","input":{"exact":"typed bridge request"},"protocolVersion":1,"schemaVersion":1}` | 143 | `dd0eb73165ecf1eaff19c6f8733a85367d0d0c338c52668f1dc78cbe50924e1e` |
-| FX-MC-TC-NATIVE-003 | `{"boundary":"native-json-schema-v1","caseId":"MC-TC-NATIVE-003","input":{"exact":"caller injects URL/path/header/credential/method in native request"},"protocolVersion":1,"schemaVersion":1}` | 189 | `cf7a333f097b8bf723a1b4a0b68d4f3dc2dfbd5f5a7ea9803d5a3e1d84662a66` |
-| FX-MC-TC-OPS-001 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-OPS-001","input":{"exact":"export diagnostics"},"protocolVersion":1,"schemaVersion":1}` | 137 | `3fd6552879ee20eec32357e0a7ede61321b6f31431063acda4e919cd86a44a9f` |
-| FX-MC-TC-OPS-002 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-OPS-002","input":{"exact":"receive/open wake hint"},"protocolVersion":1,"schemaVersion":1}` | 141 | `43d012e9cb0e7f096a0c37187ec38093f28b908bcf7792e4a6a914c031366396` |
-| FX-MC-TC-OPS-003 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-OPS-003","input":{"exact":"staged kill switch then rollback"},"protocolVersion":1,"schemaVersion":1}` | 151 | `99fe9e61926d280789a47cb117e99508270223683e5ca9863c56a4ccb82e42f1` |
-| FX-MC-TC-PRIV-001 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-PRIV-001","input":{"exact":"create/purge temp object"},"protocolVersion":1,"schemaVersion":1}` | 144 | `d1a97ab80565b69d022d68f537ebcd73b8a7decfd9f460f3c3605aa8c1a0b2b9` |
-| FX-MC-TC-PRIV-002 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-PRIV-002","input":{"exact":"transfer/export/support access"},"protocolVersion":1,"schemaVersion":1}` | 150 | `792619474beed50c94ead0d97b77491a393b2a264c2f9b71182f4cbdb4d34fb6` |
-| FX-MC-TC-PRIV-003 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-PRIV-003","input":{"exact":"telemetry/audit/push serialization"},"protocolVersion":1,"schemaVersion":1}` | 154 | `6a883b1373f1c71e9af98069e530e4ddb168649083b5a9a64818492dd737fd80` |
-| FX-MC-TC-PRIV-004 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-PRIV-004","input":{"exact":"diagnostics collection"},"protocolVersion":1,"schemaVersion":1}` | 142 | `4f0c6dca2116a148a8388e01ced0470527ce41c821f3a6977208e7ced29189f7` |
-| FX-MC-TC-PRIV-005 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-PRIV-005","input":{"exact":"serialize push"},"protocolVersion":1,"schemaVersion":1}` | 134 | `9b7b9858788097866b6712178d44a4845d42ae7c7bb46651b223e748430387f7` |
-| FX-MC-TC-REL-001 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-REL-001","input":{"exact":"unknown major/mandatory semantic"},"protocolVersion":1,"schemaVersion":1}` | 151 | `decc14daf997e753b4e31f87dd25ffbd755ba8baf0ef59bf17be9cebd8879070` |
-| FX-MC-TC-REL-002 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-REL-002","input":{"exact":"release promotion"},"protocolVersion":1,"schemaVersion":1}` | 136 | `cbfb8815153a583628f24327e1aa6ec783871c0ce151818f1ce0abc90e064ec7` |
-| FX-MC-TC-REL-003 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-REL-003","input":{"exact":"PWA/foreground resume"},"protocolVersion":1,"schemaVersion":1}` | 140 | `631e49db2f26b6ab269d7890cb1c618589b7f07aa2db4fba536a745ddb57ad62` |
-| FX-MC-TC-REL-004 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-REL-004","input":{"exact":"next remote action"},"protocolVersion":1,"schemaVersion":1}` | 137 | `4b667d5e07ca28e27c539168b245e254942656b080fdcfbef937b48a27661326` |
-| FX-MC-TC-REL-005 | `{"boundary":"policy-projection-v1","caseId":"MC-TC-REL-005","input":{"exact":"generate metadata/enable flag"},"protocolVersion":1,"schemaVersion":1}` | 148 | `be5aa68796beed47eac02c5ee59f40befde4cde5355be554209fbeba6674df7f` |
+| MC-TC-PAIR-001 | `#/cases/0` | 1752 | `f73fd8e2adbce342093730f8befa71cb3f073fa6e5e2276bb5cd9d3a3c370f19` |
+| MC-TC-PAIR-002 | `#/cases/1` | 1752 | `4561169b5cadd3954fe8955e66aac081122603f61bbb6eba1d15948d99f2c691` |
+| MC-TC-PAIR-003 | `#/cases/2` | 3339 | `7c5fff5af6706e3de1ed444d4d40cdb8bfdeac84a55a6e6855da57e0124b85c0` |
+| MC-TC-PAIR-004 | `#/cases/3` | 1805 | `0b37262381bb78fcfbb5bc919120c1ec6238d590207ace77fdbe2ed67d412978` |
+| MC-TC-PAIR-005 | `#/cases/4` | 1752 | `3d9e0934c7f7076f46c7c3418d4eb097b02d81c97562df0939a90a807ac9fec4` |
+| MC-TC-PAIR-006 | `#/cases/5` | 1805 | `b86ca1dea7a867b30c8899cc0c9562e15f3d452012a22b86372cac4a307eed0b` |
+| MC-TC-PAIR-007 | `#/cases/6` | 1752 | `d9994a5646981c82bed78d78600dd01fa5f95afc95b90d4ef7a60272c3e350f1` |
+| MC-TC-PAIR-008 | `#/cases/7` | 1318 | `3816dbe03c605f68d0efedd3c2bc65ef151f778292c4d5ccce2a6423aeb2f0df` |
+| MC-TC-CMD-001 | `#/cases/8` | 1478 | `38e0e979951e11b2159197b3169dadbf8212bff05a758d5075df0969381837ed` |
+| MC-TC-CMD-002 | `#/cases/9` | 1478 | `aaeed9edb8f611272bece9c4cf0233d55d2641f99fc58946caf1ab7df597bfe3` |
+| MC-TC-CMD-003 | `#/cases/10` | 1478 | `0006de891df0463b95edc1467c5baf63c9bb7662697a792652644166125cbffa` |
+| MC-TC-CMD-004 | `#/cases/11` | 1478 | `cfbe0ede9c320441c1c21eceb84162d469d2c9651e660054164a1370a2d6d128` |
+| MC-TC-CMD-005 | `#/cases/12` | 1478 | `65ed3385adf458fed06855bdba7813ca1694349c6ff0fa8c386609a1d41eacfc` |
+| MC-TC-CMD-006 | `#/cases/13` | 1478 | `5307a06d178c8020ba3a0636d3641c04dda049542232038703b350d94364aef5` |
+| MC-TC-CMD-007 | `#/cases/14` | 2416 | `0a393119955694d328e06809d3b0eb9b7f8f46bd92126a7877f4b348f72407c7` |
+| MC-TC-LIVE-001 | `#/cases/15` | 1469 | `46902f9922a0e30c12ad55513e582028ddbc2b588a80b9837c230a96e4e964ba` |
+| MC-TC-LIVE-002 | `#/cases/16` | 1469 | `d6e37c0521e366f90f77f4cb35c711cfa9b79a6ad6f1a2d6d66bc6f7def3b704` |
+| MC-TC-LIVE-003 | `#/cases/17` | 1469 | `3eaf4ecd23960a1dd730561fef70e4f0de3041bcefae59aabc957505cb590cbf` |
+| MC-TC-LIVE-004 | `#/cases/18` | 1469 | `565faab8da3909327e3b0b87ac0c3b610208458cc756777cd5f64aa268f91771` |
+| MC-TC-LIVE-005 | `#/cases/19` | 1469 | `fa7caa8ee64b3df23abce7f4b9ce0c750391e0c0ffeb2aa796e521bfac2bd412` |
+| MC-TC-LIVE-006 | `#/cases/20` | 1469 | `94448b4c7b64b88dc92f289272459a339fa2dc278415f3913cbc8e2fc3bc87ce` |
+| MC-TC-LIVE-007 | `#/cases/21` | 1469 | `a154b8628f525c46005da06fdc89296e2df0899626c55d186426efb36b97db93` |
+| MC-TC-PERM-001 | `#/cases/22` | 1480 | `3cb729d4b73c5f66cd0f85a5803b8166566b604d3d1ee9ba5ccb8c13ed89bbd7` |
+| MC-TC-PERM-002 | `#/cases/23` | 1533 | `e389e2966faaed0c9bfcc93d03c346a4465f7c3def37d1ebd24a3c17014a631a` |
+| MC-TC-PERM-003 | `#/cases/24` | 1480 | `bd274a59162c578af810e9298bad6e4bc245af3cd06c506928a50e84476983db` |
+| MC-TC-PERM-004 | `#/cases/25` | 1533 | `ead31d58a4ad74cd8bafb0de30db3d0593ed33b2b272bd835e2f7873538a41a9` |
+| MC-TC-PERM-005 | `#/cases/26` | 1480 | `1d193b8164ab63360a7fcc09866140496faca6347f32b7650d288c4ce0ff0114` |
+| MC-TC-PERM-006 | `#/cases/27` | 1480 | `4235298361519eb45957a8281e82daaa9d8c61a36525387cbcdc014db3281bbd` |
+| MC-TC-PERM-007 | `#/cases/28` | 1480 | `f473bdb8e24aa5be3435d4ab08ddb65ea9ceecbc9b29e9134c584022344457a7` |
+| MC-TC-PERM-008 | `#/cases/29` | 1480 | `61403b6f01ff86f736a315315852366af695d6a7a418299598075f85feed83a1` |
+| MC-TC-PERM-009 | `#/cases/30` | 1533 | `75b79ea8b71b544d49596d0295ec5fda2722f7513fb8ceb1d15e5824f080ee58` |
+| MC-TC-FILE-001 | `#/cases/31` | 1752 | `04271788001773593fa9e80c9a6d983db49eff5a27cbcc0a020b3fa8bfa3111e` |
+| MC-TC-FILE-002 | `#/cases/32` | 1898 | `d16f06b5e2c2d10f8bb489c72978af027b0f82e63a5a794f17fb38bd8d20c409` |
+| MC-TC-FILE-003 | `#/cases/33` | 1752 | `b85f8c341cb848347964158dfeecb5ad43cb6c6a676af8f8b00a293d96dbbe83` |
+| MC-TC-FILE-004 | `#/cases/34` | 1752 | `ccf833468f1cd1c5b1fb61f7fc2a83adc4c1096d2013da47a7caf41da12290f4` |
+| MC-TC-FILE-005 | `#/cases/35` | 1805 | `40b21713bb736c5241ae65af7be37dfb188f7e386aa0b0d77d89d37f8425cf69` |
+| MC-TC-FILE-006 | `#/cases/36` | 1752 | `ea5e73dc57e639e1c6f6712d42683f056f6f824ecbd7ca45ec6fd90ca0da7cae` |
+| MC-TC-FILE-007 | `#/cases/37` | 1752 | `c01a0664dcad84d03b45c56a7736a44d5ecf3898cf6e051d945849f94dcf9056` |
+| MC-TC-FILE-008 | `#/cases/38` | 1752 | `ec818f6fd707c1c9d44c100440dc688dc1d8b39978c86cda08a03c43a408b2a7` |
+| MC-TC-FILE-009 | `#/cases/39` | 1752 | `ec6cb12fa6d2dd8fea8082086c34f069672fc59f3bb20e19c195d3a88ebbdc6f` |
+| MC-TC-FILE-010 | `#/cases/40` | 1333 | `feba64ab60a6c62f1d99e400b6fa30c378efa69ed5ce9a8c7a14f6dc743f0b40` |
+| MC-TC-FILE-011 | `#/cases/41` | 1556 | `2855797f370ebeebfbcf72d10ae6a3ffb327c1e32ca6b3695c48f4bf2f413a47` |
+| MC-TC-VOICE-001 | `#/cases/42` | 1498 | `aa245a29658fe0749788072e2f6b3ac0c7240568a829940ecda27a7d68e6f8f4` |
+| MC-TC-VOICE-002 | `#/cases/43` | 1498 | `080a634dbf173c881b6044da1dcbdd5a4bf89acdf47128c25007af12fbb0b158` |
+| MC-TC-VOICE-003 | `#/cases/44` | 1498 | `d3e1a9425165318c9b310c897e5fce70ec4914273bae5c5bdaf1f523ccf95d55` |
+| MC-TC-VOICE-004 | `#/cases/45` | 1498 | `7c702a4c887f7035db9edd2bf0f0e269672d4ccad18098b0b58071696e467d05` |
+| MC-TC-NATIVE-001 | `#/cases/46` | 1831 | `12ccc1207d0073afe8065d39d931e889f11cd80d465f7ee17f68ab685b17350f` |
+| MC-TC-NATIVE-002 | `#/cases/47` | 1334 | `6564e9cb60445f749e859d5e7685c4654279cbeb043cb61fd2c8f31de0c8a134` |
+| MC-TC-NATIVE-003 | `#/cases/48` | 1334 | `271796545f58bf30443efaf784f133ade87de8c367616ffff309a370c28c27ec` |
+| MC-TC-OPS-001 | `#/cases/49` | 1746 | `cd594102f608827e1d22b60c0806b2d4282935bd8eb240f243ded12d8e7d147f` |
+| MC-TC-OPS-002 | `#/cases/50` | 1746 | `50a4b632ad4723083c1cffbeb538875d4a356fdc50722e946916e0192184bec9` |
+| MC-TC-OPS-003 | `#/cases/51` | 1746 | `bcccc4dc934df24c706780dcaadee388d42f6452a3cb67ad1b4f3831a5c0784e` |
+| MC-TC-PRIV-001 | `#/cases/52` | 1752 | `5bc0d62ad67e1a50ce1190c079cda36ba21094563f5e2ee55238c1820062cec8` |
+| MC-TC-PRIV-002 | `#/cases/53` | 1752 | `11622d10766b8fff7ae6c78fae5e02e0f667e101dbfb7ba3d333486732c0ab3b` |
+| MC-TC-PRIV-003 | `#/cases/54` | 1752 | `033ba6d6ee2a2aa3ebcaf54149cfa99bc12c865817f15ec5f2088936f4abb480` |
+| MC-TC-PRIV-004 | `#/cases/55` | 1752 | `8af1e84c3b48b5f60c3acf7cc7e30ceb00b816656f101f160c2a16b45a367234` |
+| MC-TC-PRIV-005 | `#/cases/56` | 1752 | `df66ad3d76dbf4f3334208fe98919a21a7d094a1290f8f8249faad6b2cfb2d96` |
+| MC-TC-REL-001 | `#/cases/57` | 1746 | `aeff75198a26af91728ddff712aabd4bdd5ec404b1d04cbd8d7044191b1327bd` |
+| MC-TC-REL-002 | `#/cases/58` | 1746 | `ac0bdb8a53480c8abfaf33d17c30bb518fa8f4abe3068a631df729468282834b` |
+| MC-TC-REL-003 | `#/cases/59` | 1746 | `2f2254d796e433129d4f1fb8f55cdf3d7af3bc6bf2eadabb528b9adc7af9d808` |
+| MC-TC-REL-004 | `#/cases/60` | 1746 | `ca257421ed4b2e6ee2dadb5539b2b5f028da275dd0b3aba3eae8edd040ac8427` |
+| MC-TC-REL-005 | `#/cases/61` | 1746 | `f443bb6df6a7d6393ab5399e01ddd1fdac17b12e32fdcac0b421034055679007` |
