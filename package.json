@@ -1,6 +1,6 @@
 {
   "name": "lily-workbench",
-  "version": "0.1.122",
+  "version": "0.1.123",
   "private": true,
   "description": "Lily Workbench desktop client",
   "main": "src/main.js",
@@ -216,7 +216,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@opencode-ai/sdk": "^1.17.17",
+    "@opencode-ai/sdk": "^1.17.18",
     "7zip-bin": "^5.2.0",
     "diff": "^7.0.0",
     "dompurify": "^3.4.5",
