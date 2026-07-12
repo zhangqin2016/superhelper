@@ -26,16 +26,16 @@ The corpus must include the five command phrases previously specified, balanced 
 
 ## 3. Candidate Evidence Matrix
 
-`PASS` below means only that an official source documents the named candidate capability. Performance cells remain `UNVERIFIED`.
+`PASS` is used only when a linked, candidate-specific official source documents the named API capability. A Lily specification placeholder is a design input, not provider evidence. Performance remains `UNVERIFIED` until the common corpus runs.
 
 | Candidate | Official capability evidence | Latency/quality | iOS/Android behavior | Privacy/retention/cost | Decision result |
 |---|---|---|---|---|---|
 | Browser Speech API | PASS — official browser API documentation describes speech-recognition capability; availability varies by browser | UNVERIFIED — no corpus or device run | UNVERIFIED — no iOS/Android browser run | UNVERIFIED — deployed processing/retention/cost not proven | UNVERIFIED; cannot be primary/fallback |
 | Native OS Speech | PASS — official Apple/Android platform documentation describes native speech APIs | UNVERIFIED — no corpus or device run | UNVERIFIED — no native prototype/background run | UNVERIFIED — entitlements, on-device/server path, retention and quota not proven | UNVERIFIED |
-| Lily Streaming ASR | PASS — current Lily specifications permit a configured streaming provider path | UNVERIFIED — no endpoint credentials or run | UNVERIFIED | BLOCKED — no deployed provider/config/privacy/cost artifact | BLOCKED |
-| Lily non-streaming ASR | PASS — current Lily specifications permit configured upload/final transcription | UNVERIFIED — no endpoint credentials or run | UNVERIFIED | BLOCKED — no deployed provider/config/privacy/cost artifact | BLOCKED |
-| Configured model transcription | PASS — candidate providers may document audio transcription capability | UNVERIFIED — no configured-provider corpus run | UNVERIFIED | BLOCKED — no accepted provider, credentials, region, retention, quota or cost evidence | BLOCKED |
-| Text input | PASS — existing required fail-open behavior in the voice contract | Not an ASR candidate | Applicable on target UI once implemented | No audio leaves device | Verified required degradation, not an ASR winner |
+| Lily Streaming ASR | BLOCKED — specification placeholder only; no concrete upstream, endpoint, credential, or candidate-specific official source | UNVERIFIED — no endpoint credentials or run | UNVERIFIED | BLOCKED — no deployed provider/config/privacy/cost artifact | BLOCKED; cannot be primary/fallback |
+| Lily non-streaming ASR | BLOCKED — specification placeholder only; no concrete upstream, endpoint, credential, or candidate-specific official source | UNVERIFIED — no endpoint credentials or run | UNVERIFIED | BLOCKED — no deployed provider/config/privacy/cost artifact | BLOCKED; cannot be primary/fallback |
+| Configured model transcription | UNVERIFIED — no provider/model selected and no candidate-specific official source or endpoint evidence recorded | UNVERIFIED — no configured-provider corpus run | UNVERIFIED | BLOCKED — no accepted provider, credentials, region, retention, quota or cost evidence | BLOCKED; cannot be primary/fallback |
+| Text input | REQUIRED DESIGN FALLBACK — implementation UNVERIFIED; specified by the voice contract only | Not an ASR candidate | UNVERIFIED — composer/provider integration is not implemented | Design path sends no audio, but implementation is unverified | REQUIRED DESIGN FALLBACK — implementation UNVERIFIED; not an ASR winner |
 
 Official source set reviewed on 2026-07-12: [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API), [Apple Speech framework](https://developer.apple.com/documentation/speech), and [Android SpeechRecognizer](https://developer.android.com/reference/android/speech/SpeechRecognizer). These links support API candidacy only.
 
