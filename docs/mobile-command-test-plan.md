@@ -42,3 +42,17 @@ Severity: P0 is unauthorized control/action, cross-account/session leak, private
 ## 7. Evidence Retention
 
 Store machine logs, schema fixtures, screenshots/video where permitted, build/provenance IDs, network profiles, reviewer/date, and cleanup proof under the future release evidence manifest. Never store clipboard, raw input, prompt/file bodies, private keys, tokens, TURN credentials, or unredacted diagnostics. Planned case names and candidate-vendor documentation are not execution evidence.
+
+## 8. Canonical Fixture And Hash Contract
+
+Fixture JSON uses UTF-8 without BOM or trailing newline. Recursively sort object keys by Unicode code point; preserve array order and JSON number/string spelling; serialize with `JSON.stringify` and no whitespace. Binary fixtures use the descriptor `binary:v1;contentType=<type>;length=<decimal>;sha256=<lower-hex>` and the hash is over the actual bytes, not the descriptor. Every final expanded fixture has `schemaVersion:1`, `protocolVersion:1`, its schema boundary, UTF-8 byte length and lowercase SHA-256 in the case catalog. A base plus patch is allowed only when the catalog also records the final expanded hash.
+
+Fixtures use reserved synthetic IDs (`usr_test`, `desk_test`, `mob_test`, `rs_test`, `sess_test`) and repeated non-secret bytes. They MUST NOT contain real credentials, signatures, keys, TURN secrets, push tokens, file contents or PII.
+
+Verification command (reads the catalog, expands any declared patch, canonicalizes, then checks bytes/hash and all 62 case references):
+
+```bash
+node scripts/test-mobile-command-spec-closure.mjs --fixtures docs/mobile-command-test-cases.md
+```
+
+Until Task 10 creates that validator, the equivalent inline Node verification recorded with Task 9 must recompute every manifest row; visual comparison or trusting a pasted digest is not acceptable.

@@ -81,7 +81,32 @@ Review date: **2026-07-12**. Reviewer: specification traceability review. Result
 
 Requirement → contract → schema/operation → test → gate samples (at least two per domain): `MC-CMD-002/008`, `MC-PAIR-003/008`, `MC-LIVE-002/007`, `MC-PERM-003/008`, `MC-FILE-003/011`, `MC-VOICE-001/003`, `MC-NATIVE-001/002`, `MC-OPS-001/003`, `MC-PRIV-001/003`, and `MC-REL-001/005`. Each resolves across one row of §2; blocked evidence is preserved in Status.
 
-Test → requirement reverse samples: `MC-TC-CMD-002→MC-CMD-002`, `MC-TC-CMD-007→MC-CMD-008`, `MC-TC-PAIR-003→MC-PAIR-003`, `MC-TC-PAIR-008→MC-PAIR-008`, `MC-TC-LIVE-002→MC-LIVE-002`, `MC-TC-PERM-008→MC-PERM-008`, `MC-TC-FILE-003→MC-FILE-003`, `MC-TC-VOICE-004→MC-VOICE-003`, `MC-TC-NATIVE-001→MC-NATIVE-001`, `MC-TC-OPS-003→MC-OPS-003`, `MC-TC-PRIV-003→MC-PRIV-003`, and `MC-TC-REL-005→MC-REL-005`. No orphan was found in this sample.
+Test → requirement reverse samples (two complete chains per domain):
+
+| Domain | Test → requirement | Canonical section | Schema/operation | Gate | Finding |
+|---|---|---|---|---|---|
+| CMD | MC-TC-CMD-002 → MC-CMD-002 | Agent bridge §3 | `command.submit` | SF-02, PR-02 | complete |
+| CMD | MC-TC-CMD-007 → MC-CMD-008 | Agent bridge §7 | `command.submit` rejection | SF-04, PR-04 | complete |
+| PAIR | MC-TC-PAIR-003 → MC-PAIR-003 | State machines §2 | `POST /api/mobile/pairing/consume` | SF-03, PR-02 | complete |
+| PAIR | MC-TC-PAIR-008 → MC-PAIR-008 | Native shell §11 | `camera.scanQr` | SF-03, PR-07 | complete; blocked evidence retained |
+| LIVE | MC-TC-LIVE-002 → MC-LIVE-002 | WebRTC runbook §3 | `webrtc.offer/answer` | SF-06, PR-06 | complete; blocked evidence retained |
+| LIVE | MC-TC-LIVE-007 → MC-LIVE-007 | State machines §10 | `app.background` | SF-03, PR-07 | complete |
+| PERM | MC-TC-PERM-003 → MC-PERM-003 | State machines §5 | `approval.consume` | SF-04, PR-03 | complete |
+| PERM | MC-TC-PERM-008 → MC-PERM-008 | Threat model §9 | approval/control audit | SF-07, PR-08 | complete |
+| FILE | MC-TC-FILE-003 → MC-FILE-003 | State machines §7 | upload complete | SF-04, PR-04 | complete |
+| FILE | MC-TC-FILE-011 → MC-FILE-011 | Native shell §7 | `upload.startBackgroundUpload` | SF-06, PR-07 | complete; blocked evidence retained |
+| VOICE | MC-TC-VOICE-002 → MC-VOICE-001 | Voice input §11 | `voice.transcript.patch` | SF-06, PR-07 | complete |
+| VOICE | MC-TC-VOICE-004 → MC-VOICE-003 | Voice input §6 | ASR adapter config | SF-06, PR-07 | complete; blocked evidence retained |
+| NATIVE | MC-TC-NATIVE-001 → MC-NATIVE-001 | Native shell §6 | `secureKey.generateDeviceKey/sign` | SF-06, PR-07 | complete; blocked evidence retained |
+| NATIVE | MC-TC-NATIVE-002 → MC-NATIVE-002 | Native shell §4 | native error response | SF-03, PR-07 | complete |
+| OPS | MC-TC-OPS-001 → MC-OPS-001 | Ops runbook §10 | diagnostics export | SF-07, PR-08 | complete; blocked evidence retained |
+| OPS | MC-TC-OPS-003 → MC-OPS-003 | Ops runbook §12 | signed config/bootstrap | SF-07, PR-09 | complete; blocked evidence retained |
+| PRIV | MC-TC-PRIV-001 → MC-PRIV-001 | Privacy §3 | storage lifecycle | SF-07, PR-08 | complete; blocked evidence retained |
+| PRIV | MC-TC-PRIV-003 → MC-PRIV-003 | Threat model §9 | telemetry/audit/push | SF-07, PR-08 | complete |
+| REL | MC-TC-REL-001 → MC-REL-001 | Protocol §8 | all schemas/version gate | SF-03, PR-05 | complete |
+| REL | MC-TC-REL-005 → MC-REL-005 | Platform matrix §2 | release metadata/config | SF-06, PR-07 | complete; blocked evidence retained |
+
+No orphan or status promotion was found in these 20 reverse samples.
 
 ## 4. Deliberate Non-Applicability
 
