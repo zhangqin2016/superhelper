@@ -30,6 +30,18 @@ function registerMobilePairingIpc(ctx) {
     getServerBaseUrl: () => getServiceSettings()?.apiBaseUrl || "",
     // Delivered by the server in gateway mode (mirrors LILY_ASR_RELAY_URL).
     getRelayUrl: () => String(resolveSettingsEnvValue("LILY_MOBILE_RELAY_URL") || "").trim(),
+    // Render the scannable pairing link to a QR image (main process = Node, so
+    // qrcode works without a renderer bundler). Fail-open: any failure returns
+    // "" and the renderer falls back to the copy-paste text code.
+    makeQrImage: async (text) => {
+      try {
+        const QRCode = require("qrcode");
+        return await QRCode.toDataURL(String(text || ""), { errorCorrectionLevel: "M", margin: 1, width: 240 });
+      } catch (err) {
+        log.warn("qrcode unavailable, text code only: %s", err?.message || err);
+        return "";
+      }
+    },
     startBridge: (opts) => createMobileAgentBridge({
       ...opts,
       log,

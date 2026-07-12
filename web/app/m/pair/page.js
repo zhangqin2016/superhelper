@@ -28,13 +28,31 @@ function ensureDeviceId() {
   }
 }
 
+function pageOrigin() {
+  try { return typeof window !== "undefined" ? window.location.origin : ""; } catch { return ""; }
+}
+
 function parsePairingCode(raw) {
-  // Desktop shows `${serverUrl}#${token}`. Accept that, or a bare token if the
-  // page was opened with ?url= already set.
+  // Desktop shows `${serverUrl}#${token}` for manual paste. Accept that, or a
+  // bare token — in which case the API base is this page's own origin (the
+  // scan deep link lands here, served from the API server).
   const text = String(raw || "").trim();
   const hashAt = text.lastIndexOf("#");
   if (hashAt > 0) return { url: text.slice(0, hashAt).replace(/\/+$/, ""), token: text.slice(hashAt + 1) };
-  return { url: "", token: text };
+  return { url: pageOrigin(), token: text };
+}
+
+// A scanned QR opens `${api}/m/pair#u=<api>&t=<token>`. Pull the API base (u)
+// and one-time token (t) out of the URL fragment; fall back to this page's
+// origin when u is absent. Returns null when the fragment isn't a scan link.
+function parseScanHash(hash) {
+  const frag = String(hash || "").replace(/^#/, "");
+  if (!frag || !/(^|&)t=/.test(frag)) return null;
+  const params = new URLSearchParams(frag);
+  const token = params.get("t");
+  if (!token) return null;
+  const url = (params.get("u") || pageOrigin()).replace(/\/+$/, "");
+  return { url, token };
 }
 
 function wsOrigin(httpUrl) {
@@ -56,9 +74,12 @@ export default function MobilePairPage() {
 
   useEffect(() => {
     setDeviceId(ensureDeviceId());
-    // Prefill the code from the URL hash if the phone opened a deep link.
+    // A scanned QR lands here with the API base + token in the fragment: prefill
+    // the code so the only manual step left is the one-time same-account login.
     if (typeof window !== "undefined" && window.location.hash.length > 1) {
-      setCodeInput(decodeURIComponent(window.location.hash.slice(1)));
+      const scanned = parseScanHash(window.location.hash);
+      if (scanned) setCodeInput(`${scanned.url}#${scanned.token}`);
+      else setCodeInput(decodeURIComponent(window.location.hash.slice(1)));
     }
     return () => { try { wsRef.current?.close(); } catch { /* noop */ } };
   }, []);

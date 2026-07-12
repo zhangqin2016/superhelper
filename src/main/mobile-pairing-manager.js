@@ -16,7 +16,14 @@ function buildQrPayload({ serverBaseUrl, token, desktopDeviceId }) {
   // The mobile scans this: enough to reach the server and claim the challenge.
   // The raw token appears ONLY here (and in the desktop's memory) — never
   // persisted server-side (only its hash is).
-  return { v: 1, url: String(serverBaseUrl || "").replace(/\/+$/, ""), token, desktopDeviceId };
+  const url = String(serverBaseUrl || "").replace(/\/+$/, "");
+  // A phone-camera-openable deep link into the mobile pairing page. Opening it
+  // lands on /m/pair with the API base (u) and one-time token (t) prefilled, so
+  // scanning is the whole interaction (a one-time same-account login aside). The
+  // text `${url}#${token}` stays available for manual paste on any deployment
+  // where the page isn't served from the API origin.
+  const scanUrl = url ? `${url}/m/pair#u=${encodeURIComponent(url)}&t=${encodeURIComponent(token)}` : "";
+  return { v: 1, url, token, desktopDeviceId, scanUrl };
 }
 
 function createMobilePairingManager({
@@ -26,6 +33,7 @@ function createMobilePairingManager({
   getServerBaseUrl,
   getRelayUrl,
   startBridge, // ({ relayUrl, token, grantId, desktopDeviceId }) -> bridge
+  makeQrImage = async () => "", // (text) -> data URL; injected (qrcode) by the IPC layer, fail-open to ""
   now = () => new Date(),
   log = { info() {}, warn() {} },
 } = {}) {
@@ -54,15 +62,23 @@ function createMobilePairingManager({
       if (!res?.ok || !res.json?.ok) {
         return { ok: false, code: res?.json?.code || res?.code || res?.error || "PAIRING_CHALLENGE_FAILED" };
       }
+      const qr = buildQrPayload({
+        serverBaseUrl: getServerBaseUrl(),
+        token: res.json.token,
+        desktopDeviceId: getDesktopDeviceId(),
+      });
+      // Render the scannable link to a QR image. Fail-open: on any error the
+      // renderer still shows the text code for manual paste (image === "").
+      let image = "";
+      if (qr.scanUrl) {
+        try { image = await makeQrImage(qr.scanUrl); }
+        catch (err) { log.warn("qr image render failed, text code only: %s", err?.message || err); }
+      }
       return {
         ok: true,
         challengeId: res.json.challengeId,
         expiresAt: res.json.expiresAt,
-        qr: buildQrPayload({
-          serverBaseUrl: getServerBaseUrl(),
-          token: res.json.token,
-          desktopDeviceId: getDesktopDeviceId(),
-        }),
+        qr: { ...qr, image: String(image || "") },
       };
     },
 

@@ -108,6 +108,13 @@ async function startPairing(btn) {
       // The mobile page consumes this compact payload (server url + token).
       code.textContent = `${res.qr?.url || ""}#${res.qr?.token || ""}`;
     }
+    const qrImg = $("mobilePairQr");
+    if (qrImg) {
+      // Scannable QR when the main process could render it; otherwise stay
+      // hidden and let the text code below carry the manual-paste path.
+      if (res.qr?.image) { qrImg.src = res.qr.image; qrImg.hidden = false; }
+      else { qrImg.removeAttribute("src"); qrImg.hidden = true; }
+    }
     if (wrap) wrap.hidden = false;
     const expiry = $("mobilePairExpiry");
     if (expiry && res.expiresAt) {

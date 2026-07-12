@@ -16,6 +16,7 @@ const index = read("src/renderer/index.html");
 assert.match(index, /data-settings-page="mobile"/, "the mobile settings page/nav exists");
 assert.match(index, /id="settingsPageMobile"/, "the mobile settings page section exists");
 assert.match(index, /id="mobilePairStartBtn"/, "the generate-code button exists");
+assert.match(index, /id="mobilePairQr"/, "the scannable QR image host exists");
 assert.match(index, /id="mobilePairPendingList"/, "the pending list host exists");
 
 const panel = read("src/renderer/modules/settings-panel.js");
@@ -35,7 +36,7 @@ assert.match(mod, /nav\.hidden = true/, "the nav entry hides when the feature is
 
 // Every i18n key the UI/module reference exists in all three locales.
 const keys = [
-  "settings.nav.mobile", "settings.mobileDesc", "settings.mobilePairStart", "settings.mobilePairScan",
+  "settings.nav.mobile", "settings.mobileDesc", "settings.mobilePairStart", "settings.mobilePairScan", "settings.mobilePairCodeHint",
   "settings.mobilePairExpiry", "settings.mobilePairPending", "settings.mobilePairNoPending",
   "settings.mobilePairDevice", "settings.mobilePairApprove", "settings.mobilePairDeny",
   "settings.mobilePairApproved", "settings.mobilePairBridged", "settings.mobilePairLoginRequired",

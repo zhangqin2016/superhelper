@@ -20,28 +20,54 @@ function makeManager(overrides = {}) {
     getServerBaseUrl: () => "https://lily.example",
     getRelayUrl: () => "wss://lily.example",
     startBridge: (opts) => { const b = { ...opts, started: false, connected: true, start() { this.started = true; }, stop() { this.connected = false; }, isConnected() { return this.connected; } }; bridges.push(b); return b; },
+    ...(overrides.makeQrImage ? { makeQrImage: overrides.makeQrImage } : {}),
   });
   return { mgr, calls, bridges };
 }
 
-// --- QR payload: carries reach + token, versioned ---------------------------
+// --- QR payload: carries reach + token, versioned, + scannable deep link -----
 {
   const qr = buildQrPayload({ serverBaseUrl: "https://lily.example/", token: "mpt_x", desktopDeviceId: "dtop" });
-  assert.deepEqual(qr, { v: 1, url: "https://lily.example", token: "mpt_x", desktopDeviceId: "dtop" });
+  assert.equal(qr.v, 1);
+  assert.equal(qr.url, "https://lily.example");
+  assert.equal(qr.token, "mpt_x");
+  assert.equal(qr.desktopDeviceId, "dtop");
+  // The scan link opens the mobile page with API base (u) + one-time token (t).
+  assert.equal(qr.scanUrl, "https://lily.example/m/pair#u=https%3A%2F%2Flily.example&t=mpt_x", "scanUrl is a deep link into /m/pair");
+  // No server base → no scan link (paste-only), never a broken URL.
+  assert.equal(buildQrPayload({ serverBaseUrl: "", token: "t", desktopDeviceId: "d" }).scanUrl, "");
 }
 
-// --- createChallenge → QR ----------------------------------------------------
+// --- createChallenge → QR (image rendered from the scan link) -----------------
 {
-  const { mgr, calls } = makeManager({
+  const rendered = [];
+  const { mgr } = makeManager({
     serviceFetch: async (pathname) => pathname.endsWith("/challenge")
       ? { ok: true, json: { ok: true, challengeId: "mpc_1", token: "mpt_raw", expiresAt: "2026-07-12T12:05:00Z" } }
       : { ok: true, json: { ok: true } },
+    makeQrImage: async (text) => { rendered.push(text); return "data:image/png;base64,QQ=="; },
   });
   const res = await mgr.createChallenge();
   assert.equal(res.ok, true);
   assert.equal(res.challengeId, "mpc_1");
   assert.equal(res.qr.token, "mpt_raw", "the raw token goes into the QR");
   assert.equal(res.qr.url, "https://lily.example");
+  assert.equal(res.qr.image, "data:image/png;base64,QQ==", "the rendered QR image rides the result");
+  assert.equal(rendered[0], res.qr.scanUrl, "the QR image is rendered from the scan deep link");
+}
+
+// --- createChallenge is fail-open when QR rendering throws (text code only) ---
+{
+  const { mgr } = makeManager({
+    serviceFetch: async (pathname) => pathname.endsWith("/challenge")
+      ? { ok: true, json: { ok: true, challengeId: "mpc_2", token: "mpt_raw2", expiresAt: "2026-07-12T12:05:00Z" } }
+      : { ok: true, json: { ok: true } },
+    makeQrImage: async () => { throw new Error("no qr lib"); },
+  });
+  const res = await mgr.createChallenge();
+  assert.equal(res.ok, true, "challenge still succeeds when QR rendering fails");
+  assert.equal(res.qr.image, "", "image is empty; the text code carries pairing");
+  assert.ok(res.qr.token, "the token is still present for manual paste");
 }
 
 // --- account not logged in → challenge fails cleanly -------------------------

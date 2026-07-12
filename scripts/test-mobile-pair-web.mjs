@@ -30,5 +30,10 @@ assert.match(page, /command\.admitted/, "renders the admission ack");
 assert.match(page, /command\.rejected/, "renders a rejection");
 // Retry-until-approved: the relay refuses until the desktop approves.
 assert.match(page, /setTimeout\(tryOnce/, "retries the relay connection until approval flips the grant active");
+// Scan deep link: a QR opens /m/pair#u=<api>&t=<token>; the page reads t (and
+// falls back to its own origin for the API base) so scanning is the whole flow.
+assert.match(page, /parseScanHash/, "parses the scanned QR deep link");
+assert.match(page, /\bt=/, "reads the token param from the scan hash");
+assert.match(page, /pageOrigin\(\)/, "falls back to the page origin as the API base when scanned");
 
 console.log("mobile-pair-web: ok");

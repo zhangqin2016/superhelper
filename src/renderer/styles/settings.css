@@ -2450,6 +2450,17 @@ body.settings-open {
 }
 
 /* Mobile Command pairing panel */
+.mobile-pair-qr {
+  display: block;
+  width: 200px;
+  height: 200px;
+  margin: 12px 0;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  image-rendering: pixelated;
+}
 .mobile-pair-code {
   margin: 8px 0;
   padding: 12px 14px;
