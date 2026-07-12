@@ -8,6 +8,7 @@ Remote control is safe only if permission failures deny risky actions while ordi
 
 ## 2. Security Invariants
 
+- Authentication facts, credential lifetimes, key rotation, and revocation provenance are owned by [the authentication and identity contract](mobile-command-auth-identity-contract.md); this document consumes them and does not redefine them.
 - Default bound-device permission is Chat Only.
 - Desktop Control is never granted without explicit desktop-side approval.
 - Sensitive Ops are never standing permissions.
@@ -174,8 +175,19 @@ Approval prompt must show:
 | Native bridge abuse | whitelist bridge, no arbitrary command API |
 | Old client ignores safety field | server gates by protocol version |
 | Audit tampering | local append-only log plus server summary |
+| Cross-account pairing | Pairing consume and desktop approval require the same `users.id`; both active `user_devices` rows and the originating `user_sessions.id` are revalidated before grant activation. A phone number or QR possession is insufficient. |
+| License/device confusion | `licenses.id` is entitlement only. Remote authority requires an active binding from the selected license to the exact `desktop_device_id`; a mobile binding, same fingerprint, or another desktop's valid license cannot substitute. |
+| Replay across desktop devices | Every signed payload binds the exact `desktop_device_id`, remote session, method/event, body hash, timestamp, and nonce. Nonces are scoped to the signing unified `devices.id`; desktop B rejects an envelope for desktop A. |
+| Device-key rollback | Key generations increase monotonically; server and paired desktop reject a public key or generation older than the last accepted value. Rotation updates key history and the compatibility key atomically. |
+| Revoked mobile reconnect | Reconnect revalidates `user_devices`, active key generation, pairing grant, account session, remote session, and license. Cached grant/token/permission state cannot recreate authority. |
+| Approval race | Desktop approval/deny/timeout is a database compare-and-set from `pending`; the unique live-pair constraint and atomic approval use counter allow one terminal result only. Late responses are rejected and audited. |
+| Session fixation | Server creates every `mobile_remote_sessions.id`; clients cannot choose it. Reconnect keeps the original full identity tuple, token generation, and expiry, while a replacement device or account requires a new pairing/session. |
+| Audit failure | Session start, Level 2+ grant, approval, revoke, key rotation, and sensitive action require durable allowlisted audit before side effect. Failure denies authority and alerts; ordinary Chat Only messages may continue with recoverable diagnostics. |
+| Stolen remote token | Mutations require the bound mobile device signature in addition to short-lived token validation. Used refresh-token generation replay revokes the entire token family and remote session. |
 
 ## 8. Key Management
+
+Credential issuers, audiences, storage, TTLs, and offline behavior are normative only in [the authentication and identity contract](mobile-command-auth-identity-contract.md). The rules below are permission consequences of that contract.
 
 ### 8.1 Mobile Device Key
 
@@ -193,7 +205,7 @@ Rotate when:
 - User explicitly refreshes trust.
 - Security policy changes require stronger key storage.
 
-Rotation requires desktop approval unless an existing valid key signs the rotation request.
+Rotation requires the active key to sign the new monotonically increasing generation and the new key to prove possession. If the active key is unavailable, desktop approval or re-pairing is mandatory. A stale backup or the existing key-upsert compatibility path cannot lower the accepted generation.
 
 ### 8.3 Revocation
 
@@ -203,6 +215,8 @@ Revocation sources:
 - Mobile user logs out and removes binding.
 - Server admin risk action.
 - Device signature anomalies.
+- Account-session logout/revocation or account/device ownership removal.
+- License expiration, license disablement, or removal of the exact target desktop binding.
 
 Revocation effects:
 
@@ -210,6 +224,7 @@ Revocation effects:
 - Invalidate outstanding approvals.
 - Reject future signed events.
 - Delete server push token association.
+- Reject reconnect and refresh using cached tokens or grants.
 
 ## 9. Audit Policy
 
@@ -255,6 +270,9 @@ Do not store:
 | replay cache unavailable | reject mutating event |
 | audit unavailable | deny sensitive action |
 | desktop cannot determine active screen | deny desktop observe/control |
+| account/license/device tuple mismatch | reject pairing/session/command; do not search for a different identity tuple |
+| stale key generation | reject and require approved rotation or re-pairing |
+| concurrent approval result | first compare-and-set wins; reject and audit every later result |
 
 ## 11. Tests
 

@@ -53,14 +53,14 @@ Repository-truth decisions may be accepted by the accountable architecture role 
 ## MC-ADR-003 — User, license, desktop, and mobile identity mapping
 
 - Status: accepted
-- Decision: Use `users.id` as `user_id`; use the unified existing `devices.id` as `device_id` for both desktop and mobile devices, with role/pairing represented additively; use `user_sessions.id` only for account authentication state; and use `licenses.id` through `license_devices` as entitlement context. A future remote session is a distinct additive concept and must not be called an account session or local conversation.
+- Decision: Use `users.id` as `user_id`; use the unified existing `devices.id` as `device_id` for both desktop and mobile devices, with role/pairing represented additively; use `user_sessions.id` only for account authentication state; and use `licenses.id` through `license_devices` as entitlement context. `mobile_remote_sessions.id` is a distinct additive remote-channel concept and must never be stored in, encoded as, or called a `user_sessions` account session or a local conversation.
 - Repository evidence: `server/migrations/001_initial.sql:1-32` defines licenses, devices, and license bindings; `server/migrations/007_client_config_profiles.sql:43-56` binds device keys/nonces to the same device; `server/migrations/022_account_wallet.sql:1-63` defines users, user sessions, and user-device links; `server/src/routes/public/auth.js:88-111,213-231` creates account sessions and user-device links.
-- Evidence refs: MC-SPEC-005 §2–3; `server/migrations/001_initial.sql`; `server/migrations/007_client_config_profiles.sql`; `server/migrations/022_account_wallet.sql`; `server/src/routes/public/auth.js`
+- Evidence refs: MC-SPEC-005 §2–3; [data model](mobile-command-data-model.md) §§2–5 and Appendix A; [authentication and identity contract](mobile-command-auth-identity-contract.md) §§1–6; `server/migrations/001_initial.sql`; `server/migrations/007_client_config_profiles.sql`; `server/migrations/022_account_wallet.sql`; `server/src/services/device-identity.js`; `server/src/routes/public/auth.js`; `server/src/services/account-auth.js`
 - Evidence owner: Identity and security lead
 - Alternatives: user-primary ownership; license-primary ownership; device-primary ownership; explicit linked identity domains.
 - Capability gate: Identity uncertainty must reject pairing/control authority without invalidating local desktop licensing or local sessions.
 - Failure fallback: Authentication/binding ambiguity denies remote actions; local Lily remains usable.
-- Compatibility migration: Must specify existing-device compatibility, key rotation, revocation cascades, account sign-out, license change, and desktop replacement.
+- Compatibility migration: The accepted contract is additive: existing device/account/license rows remain valid; all persisted instants are PostgreSQL `timestamptz`; key history prevents rollback while mirroring its active key into `device_public_keys`; account sign-out, device revoke/replacement, or license invalidation revokes remote grants/sessions/tokens without deleting local conversations. Appendix DDL is normative and intentionally not applied during specification closure.
 - Supersedes: None.
 - Approved by: Identity and security lead
 - Approved on: 2026-07-12
