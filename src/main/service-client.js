@@ -84,9 +84,24 @@ function normalizeBaseUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
+// Local escape hatch: force the account/login feature ON regardless of the
+// edition (the "overseas" edition sets account:false) or a remote client policy
+// that disables it. For running abroad / against a self-hosted server where the
+// packaged policy would otherwise hide the login button. Opt-in only — unset it
+// and behaviour is byte-identical to before (CAPABILITY-GATE Rule 13).
+function forceAccountEnabled() {
+  const v = String(process.env.LILY_FORCE_ACCOUNT || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+function applyLocalFeatureOverrides(features) {
+  if (!forceAccountEnabled()) return features;
+  return { ...features, account: true, accountLogin: true };
+}
+
 function defaultFeatures() {
   const editionFeatures = appEdition().features || {};
-  return {
+  return applyLocalFeatureOverrides({
     accountLogin: editionFeatures.account !== false,
     purchase: editionFeatures.billing !== false,
     licenseActivation: true,
@@ -94,7 +109,7 @@ function defaultFeatures() {
     modelDirect: false,
     account: editionFeatures.account !== false,
     billing: editionFeatures.billing !== false,
-  };
+  });
 }
 
 function builtinServiceApiBaseUrl() {
@@ -191,6 +206,9 @@ function normalizeClientPolicy(raw = {}, source = "remote") {
   };
   if (features.accountLogin === false) features.account = false;
   if (features.purchase === false) features.billing = false;
+  // Local force-account override wins over a remote/edition policy that would
+  // otherwise hide the login button (see forceAccountEnabled).
+  Object.assign(features, applyLocalFeatureOverrides(features));
   return {
     ...fallback,
     ...raw,
