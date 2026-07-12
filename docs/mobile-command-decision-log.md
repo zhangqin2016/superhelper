@@ -86,8 +86,8 @@ Repository-truth decisions may be accepted by the accountable architecture role 
 
 - Status: proposed
 - Decision: Select and prove Windows app/desktop capture and scoped input injection technologies, helper language/library, IPC, permission, signing, packaging, update, and crash recovery.
-- Repository evidence: Existing OS documents list Electron desktop capture, Windows Graphics Capture, and `SendInput` candidates; [OS helper spike](mobile-command-os-helper-spike.md) has no measured result.
-- Evidence refs: Pending — MC-SPEC-015, MC-SPEC-016, MC-SPEC-018, MC-SPEC-019
+- Repository evidence: No Windows device or VM was available on 2026-07-12. Candidate descriptions exist, but there is no runtime, permission, performance, packaging, signing, multi-monitor, IME, or crash-recovery result. This absence is recorded evidence, not a technology selection.
+- Evidence refs: [OS helper spike](mobile-command-os-helper-spike.md) OS-EV-005; [OS helper decision gate](mobile-command-os-helper-decision.md); [platform evidence matrix](mobile-command-platform-support-matrix.md); MC-SPEC-015, MC-SPEC-016, MC-SPEC-018, MC-SPEC-019
 - Evidence owner: Windows platform lead
 - Alternatives: Electron-only capture; Windows Graphics Capture helper; Node native addon; Rust/C++ helper using `SendInput`; observe-only degradation.
 - Capability gate: Helper failure cannot affect desktop chat; input outside the approved surface must be rejected.
@@ -102,8 +102,8 @@ Repository-truth decisions may be accepted by the accountable architecture role 
 
 - Status: proposed
 - Decision: Select and prove macOS app/desktop capture and scoped input injection technologies, permission flow, helper boundary, signing, notarization, packaging, update, and crash recovery.
-- Repository evidence: Existing OS documents list ScreenCaptureKit/Electron and CGEvent/Accessibility candidates; no real-device permission or notarization evidence exists.
-- Evidence refs: Pending — MC-SPEC-015, MC-SPEC-016, MC-SPEC-018, MC-SPEC-019
+- Repository evidence: On macOS 26.4.1 arm64 with Electron 41, the Electron capture API existed but an asleep display produced 0 sources/empty thumbnails; ScreenCaptureKit only typechecked; the CGEvent permission probe returned `false`. Complete Xcode, a valid signing identity, and notarization credentials were unavailable. These observations do not prove usable capture or control.
+- Evidence refs: [OS helper spike](mobile-command-os-helper-spike.md) OS-EV-001–004; [OS helper decision gate](mobile-command-os-helper-decision.md); [platform evidence matrix](mobile-command-platform-support-matrix.md); MC-SPEC-015, MC-SPEC-016, MC-SPEC-018, MC-SPEC-019
 - Evidence owner: macOS platform lead
 - Alternatives: Electron capture; ScreenCaptureKit helper; CGEvent helper; observe-only degradation.
 - Capability gate: Missing Screen Recording or Accessibility authority denies the affected mode while preserving Chat Only.
@@ -118,8 +118,8 @@ Repository-truth decisions may be accepted by the accountable architecture role 
 
 - Status: proposed
 - Decision: Select the supported Linux display/session matrix and whether each environment provides observe, control, or explicit Chat Only degradation.
-- Repository evidence: Existing documents mention PipeWire/portal and limited input but do not record distro, Wayland/X11, portal, packaging, or security evidence.
-- Evidence refs: Pending — MC-SPEC-015, MC-SPEC-016, MC-SPEC-018, MC-SPEC-019
+- Repository evidence: No Linux device or VM was available on 2026-07-12. Distro, Wayland/X11, PipeWire/portal, compositor input, permission, packaging, performance, and security behavior remain unverified.
+- Evidence refs: [OS helper spike](mobile-command-os-helper-spike.md) OS-EV-006; [OS helper decision gate](mobile-command-os-helper-decision.md); [platform evidence matrix](mobile-command-platform-support-matrix.md); MC-SPEC-015, MC-SPEC-016, MC-SPEC-018, MC-SPEC-019
 - Evidence owner: Linux platform lead
 - Alternatives: Wayland portal observe only; X11 capture/control; helper-based control; Linux Chat Only.
 - Capability gate: Unsupported Linux environments must fail loud to Chat Only rather than advertise unsafe or nonfunctional control.
@@ -134,8 +134,8 @@ Repository-truth decisions may be accepted by the accountable architecture role 
 
 - Status: proposed
 - Decision: Select configured ASR primary/fallback order, service endpoints, credentials, privacy path, thresholds, languages, latency/quality targets, and cost limits.
-- Repository evidence: [ASR provider spike](mobile-command-asr-provider-spike.md) contains only `TBD` evaluation results; [voice input contract](mobile-command-voice-input.md) contains a proposed provider order.
-- Evidence refs: Pending — MC-SPEC-017, MC-SPEC-020, MC-SPEC-021, MC-SPEC-024
+- Repository evidence: Official browser, Apple, and Android sources establish candidate API capabilities only. No provider credential, deployed endpoint, real iOS/Android device, shared corpus, weak-network run, privacy deployment review, or battery measurement was available. Therefore p95 partial/final latency, zh-CN and mixed-language quality, failure preservation, cost, and energy targets are unverified.
+- Evidence refs: [ASR provider spike](mobile-command-asr-provider-spike.md); [ASR decision gate](mobile-command-asr-decision.md); [voice input contract](mobile-command-voice-input.md); MC-SPEC-017, MC-SPEC-020, MC-SPEC-021, MC-SPEC-024
 - Evidence owner: Speech and privacy lead
 - Alternatives: browser speech; native OS speech; Lily streaming ASR; Lily non-streaming ASR; configured model transcription; text-only fallback.
 - Capability gate: ASR failure preserves existing typed text and partial transcript; voice never bypasses approval or switches to an unconfigured provider.

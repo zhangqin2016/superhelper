@@ -46,6 +46,13 @@ Update rule: first change the canonical index row or ADR, then refresh this proj
 
 A later gate may reopen an earlier artifact. The canonical owner must be corrected and all dependents revalidated; the dashboard status may move backward.
 
+### 3.1 Task 7 Evidence Checkpoint — 2026-07-12
+
+- MC-SPEC-015/016/019 and MC-ADR-005/006/007 remain `evidence-needed`/`proposed`. macOS evidence is limited to Electron API presence with an asleep display returning 0 sources/empty thumbnails, ScreenCaptureKit typecheck, CGEvent permission `false`, and blocked signing/notarization prerequisites. Windows and Linux have no real device/VM evidence.
+- MC-SPEC-017/021 and MC-ADR-008 remain `evidence-needed`/`proposed`. Official sources prove candidate API capability only; no shared corpus, real mobile device, credentials, latency, accuracy, mixed-language, privacy-deployment, cost, or battery result exists.
+- MC-SPEC-022 remains `evidence-needed` and its planned visual-system document was not created. High-fidelity screens, brand-derived token proof, required state screenshots, accessibility QA, and design approval are missing.
+- The evidence gate therefore remains blocked. Unverified Live, control, native, and ASR capabilities must not be advertised; the required design degradation is explicit Chat Only/text input while today's local Lily remains unchanged.
+
 ## 4. Historical Gap Disposition
 
 The previous gap inventory is preserved here by disposition rather than repeated as parallel prose:

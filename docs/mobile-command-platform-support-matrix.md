@@ -1,0 +1,48 @@
+# Lily Mobile Command Pro Platform Evidence Matrix
+
+## 1. Meaning Of Support
+
+Status: **evidence-needed** as of 2026-07-12. This matrix records verified, unverified, and required degradation; it does not authorize release.
+
+- `verified`: exercised in a representative environment with recorded evidence for the stated scope.
+- `unverified`: not exercised end-to-end; it must not be advertised as supported.
+- `blocked`: a known missing prerequisite prevented verification.
+- `degrade`: behavior required when an unverified/blocked capability is encountered.
+
+No iOS native, Android native, or mobile PWA device/browser matrix was executed. No Windows/Linux desktop device/VM was executed. macOS capture/input evidence is limited as recorded in [the OS spike](mobile-command-os-helper-spike.md).
+
+## 2. Pair Matrix
+
+The status applies to every capability column below; `Chat Only` is a required design fallback, not an implemented/verified Mobile Command product claim.
+
+| Desktop + client | Command | Push | Background upload | Lily observe/control | Desktop observe/control | Clipboard | Keyboard/IME | File share/camera | Reconnect/permissions | Exact downgrade |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Windows + iOS native | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | Feature-disabled Live/native actions; Chat Only design fallback |
+| Windows + Android native | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | Feature-disabled Live/native actions; Chat Only design fallback |
+| Windows + PWA | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | No native/background assumptions; Chat Only design fallback |
+| macOS + iOS native | unverified | unverified | unverified | blocked | blocked | unverified | blocked | unverified | blocked | Electron capture produced no source while display slept; CGEvent permission false; revoke control and use Chat Only |
+| macOS + Android native | unverified | unverified | unverified | blocked | blocked | unverified | blocked | unverified | blocked | Same limited desktop evidence; feature-disable Live/control and use Chat Only |
+| macOS + PWA | unverified | unverified | unverified | blocked | blocked | unverified | blocked | unverified | blocked | Same limited desktop evidence; no native capability assumption; use Chat Only |
+| Linux + iOS native | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | Feature-disabled Live/control/native actions; Chat Only design fallback |
+| Linux + Android native | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | Feature-disabled Live/control/native actions; Chat Only design fallback |
+| Linux + PWA | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | unverified | No portal/native/background assumption; Chat Only design fallback |
+
+## 3. Verified Facts And Non-Claims
+
+| Area | Evidence status |
+|---|---|
+| macOS Electron capture API availability | verified only that Electron 41 exposed the API on macOS 26.4.1 arm64 |
+| macOS usable Electron frames | not verified; observed failure was 0 sources/empty thumbnails with display asleep |
+| ScreenCaptureKit | verified only that the prototype typechecked; runtime capture is unverified |
+| CGEvent input | verified permission probe result `false`; authorized input/control is not supported by this evidence |
+| Windows/Linux desktop capability | unverified due to no device/VM |
+| Mobile command/push/upload/share/camera/reconnect | unverified due to no real mobile implementation/device run |
+| ASR | candidate APIs documented, but all production performance and privacy thresholds unverified |
+
+Unsupported or unverified capability must be absent/disabled in release metadata and UI. Failure must be explicit, must not grant authority, and must preserve today's local Lily behavior.
+
+## 4. Closure Requirements
+
+Platform support requires the OS/helper experiment and signing artifacts in [the OS decision gate](mobile-command-os-helper-decision.md), the mobile device/native/PWA test matrix, network/reconnect and background tests, permissions/revocation tests, and ASR evidence in [the ASR decision gate](mobile-command-asr-decision.md). Each claimed pair must record exact OS/device/app/browser versions and the applicable test-case evidence.
+
+The visual system is also blocked and is not created by this evidence task: high-fidelity screens, brand-derived token proof, required state screenshots, accessibility QA, and explicit design approval are missing. MC-SPEC-022 remains `evidence-needed`.
