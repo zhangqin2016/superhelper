@@ -1,0 +1,66 @@
+Command group (run from repository root, 2026-07-12):
+  uname -a
+  uname -m
+  arch
+  sw_vers
+  sysctl -n hw.optional.arm64
+  system_profiler SPDisplaysDataType | sed -n '1,30p'
+  node -p "process.platform+' '+process.arch+' node='+process.version"
+  ./node_modules/.bin/electron --version
+  swift --version
+  clang --version | sed -n '1,4p'
+  xcodebuild -version
+  xcrun notarytool --version
+  security find-identity -v -p codesigning
+
+Output (hostname redacted; no other output changed):
+Darwin <redacted-host> 25.4.0 Darwin Kernel Version 25.4.0: Thu Mar 19 19:33:50 PDT 2026; root:xnu-12377.101.15~1/RELEASE_ARM64_T6050 arm64
+arm64
+arm64
+ProductName:            macOS
+ProductVersion:         26.4.1
+BuildVersion:           25E253
+1
+Graphics/Displays:
+
+    Apple M5 Pro:
+
+      Chipset Model: Apple M5 Pro
+      Type: GPU
+      Bus: Built-In
+      Total Number of Cores: 20
+      Vendor: Apple (0x106b)
+      Metal Support: Metal 4
+      Displays:
+        Color LCD:
+          Display Type: Built-in Liquid Retina XDR Display
+          Resolution: 3456 x 2234 Retina
+          Main Display: Yes
+          Mirror: Off
+          Online: Yes
+          Automatically Adjust Brightness: Yes
+          Display Asleep: Yes
+          Connection Type: Internal
+
+darwin arm64 node=v22.19.0
+v41.7.0
+swift-driver version: 1.115.1 Apple Swift version 6.0.3 (swiftlang-6.0.3.1.10 clang-1600.0.30.1)
+Target: arm64-apple-macosx16.0
+Apple clang version 16.0.0 (clang-1600.0.26.6)
+Target: arm64-apple-darwin25.4.0
+Thread model: posix
+InstalledDir: /Library/Developer/CommandLineTools/usr/bin
+xcode-select: error: tool 'xcodebuild' requires Xcode, but active developer directory '/Library/Developer/CommandLineTools' is a command line tools instance
+1.0.0 (37)
+     0 valid identities found
+
+Signing/notarization environment-variable presence check (values were never printed):
+CSC_LINK=unset
+CSC_KEY_PASSWORD=unset
+APPLE_ID=unset
+APPLE_APP_SPECIFIC_PASSWORD=unset
+APPLE_TEAM_ID=unset
+MAC_ENGINE_SIGN_ID=unset
+MAC_APP_SIGN_ID=unset
+WIN_CSC_LINK=unset
+WIN_CSC_KEY_PASSWORD=unset

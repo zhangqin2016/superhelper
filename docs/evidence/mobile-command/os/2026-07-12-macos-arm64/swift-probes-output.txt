@@ -1,0 +1,16 @@
+Commands (run from repository root, 2026-07-12):
+  swiftc -typecheck docs/evidence/mobile-command/os/2026-07-12-macos-arm64/screencapturekit-typecheck.swift
+  swiftc docs/evidence/mobile-command/os/2026-07-12-macos-arm64/coregraphics-permission-probe.swift -o /tmp/lily-coregraphics-permission-probe
+  perl -e 'alarm 5; exec @ARGV' /tmp/lily-coregraphics-permission-probe
+
+Output:
+screencapturekit_typecheck_exit=0
+coregraphics_compile_exit=0
+screenPreflight=true
+listenEventPreflight=true
+postEventPreflight=false
+coregraphics_run_exit=0
+
+Interpretation boundary: ScreenCaptureKit symbols typechecked only; no stream or frame
+was requested. CoreGraphics preflight functions do not request permissions. No input
+event was created or posted. `postEventPreflight=false` blocks authorized input evidence.

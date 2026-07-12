@@ -1,0 +1,43 @@
+Command (run from repository root, 2026-07-12):
+  ./node_modules/.bin/electron docs/evidence/mobile-command/os/2026-07-12-macos-arm64/electron-capture-probe.cjs
+
+Exit: 0
+
+Output:
+{
+  "electron": "41.7.0",
+  "chrome": "146.0.7680.216",
+  "node": "24.15.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "apiTypes": {
+    "desktopCapturerGetSources": "function",
+    "getMediaAccessStatus": "function",
+    "isTrustedAccessibilityClient": "function",
+    "askForMediaAccess": "function"
+  },
+  "screenCapturePermission": "granted",
+  "accessibilityTrustedNoPrompt": false,
+  "displays": [
+    {
+      "id": 1,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1728,
+        "height": 1117
+      },
+      "scaleFactor": 2
+    }
+  ],
+  "capture": {
+    "ok": true,
+    "count": 0,
+    "idPrefixes": [],
+    "nonEmptyThumbnailCount": 0
+  }
+}
+
+Interpretation boundary: the API call completed, but usable capture failed because no
+screen source or non-empty thumbnail was returned. The environment inventory records
+that the only display was asleep. This is not evidence about an awake display.
