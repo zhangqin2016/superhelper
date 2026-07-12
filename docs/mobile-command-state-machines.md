@@ -25,7 +25,7 @@ Persistence: challenge, consume result, key generation, approval result and gran
 | `initial` (initial) | `session.create` | full identity tuple, pairing grant, license, signature and nonce active | `active_chat` | server creates ID/token generation and durable session | `session.created` | `terminal_denied` |
 | `active_chat` | `session.permission_changed` | MC-SM-PERMISSION grants L2+ | `active_live` | bind temporary grant | `session.mode.changed` | remain `active_chat` |
 | `active_live` | `session.permission_revoked` | any revocation/TTL/disconnect precedence | `active_chat` | stop input/media authority | `session.mode.changed` | — |
-| `active_chat` / `active_live` | `session.refresh` | same tuple/token family; signed nonce fresh | same state | rotate access token only | `session.refreshed` | `terminal_revoked` on replay/theft |
+| `active_chat` / `active_live` | `session.refresh` | same tuple/token family; signed nonce fresh; presented refresh token is current and unused | same state | atomically consume the current one-time refresh token, rotate access-token generation, increment refresh-family generation, and persist the next one-time refresh token before returning either token | `session.refreshed` | `terminal_revoked` on used-token replay/theft; no partial token response |
 | `active_chat` / `active_live` | `session.end` / `session.timeout` | actor authorized or absolute TTL reached | `terminal_ended` (terminal) | revoke token family, permissions and approvals | `session.ended` | — |
 | any non-terminal | `device.revoked` | MC-SM-REVOCATION wins | `terminal_revoked` (terminal) | cascade revocation | `session.revoked` | — |
 
@@ -65,7 +65,11 @@ Persistence: all approval states, generations and uses are desktop durable. Rest
 |---|---|---|---|---|---|---|
 | `idle` (initial) | `webrtc.start` | active L2+ grant and source allowed | `signaling` | obtain TURN and send offer | `webrtc.offer` | `chat_only` |
 | `signaling` | `webrtc.answer` | session/generation match within 10 s | `ice_connecting` | set descriptions | `webrtc.answer.applied` | `chat_only` |
-| `ice_connecting` | `webrtc.ice.candidate` | canonical candidate envelope and generation | `ice_connecting` | add candidate idempotently | `webrtc.ice.candidate.applied` | remain or `chat_only` |
+| `signaling` | `webrtc.ice.candidate` | canonical candidate envelope/generation validates and append succeeds before signaling deadline | `signaling` | append candidate idempotently | `webrtc.ice.candidate.applied` | `signaling` + `MC-ERR-WEBRTC-SIGNALING-FAILED` while deadline remains |
+| `ice_connecting` | `webrtc.ice.candidate` | canonical candidate envelope/generation validates and append succeeds before ICE deadline | `ice_connecting` | append candidate idempotently | `webrtc.ice.candidate.applied` | `ice_connecting` + `MC-ERR-WEBRTC-SIGNALING-FAILED` while deadline remains |
+| `signaling` | `webrtc.ice.candidate.failed` | validation/append failed and signaling deadline has not elapsed | `signaling` | reject candidate; keep waiting for a valid candidate/answer | `webrtc.candidate.rejected` with catalog error | `signaling`; no permission change |
+| `ice_connecting` | `webrtc.ice.candidate.failed` | validation/append failed and ICE deadline has not elapsed | `ice_connecting` | reject candidate; keep waiting for a valid candidate | `webrtc.candidate.rejected` with catalog error | `ice_connecting`; no permission change |
+| `signaling` / `ice_connecting` | `webrtc.timeout` / `webrtc.terminal_failure` | signaling 10 s or ICE 20 s deadline elapsed, or failure is terminal | `chat_only` | close peer/media/data and revoke L2+ | `webrtc.closed` | — |
 | `ice_connecting` | `webrtc.connected` | ICE within 20 s, channels/source authorized | `connected` | start permitted media; input still policy-gated | `webrtc.connected` | `chat_only` |
 | `connected` | `webrtc.degraded` | quality threshold crossed | `degraded` | reduce bitrate/fps/resolution | `webrtc.degraded` | `restarting_ice` |
 | `connected` / `degraded` | `webrtc.disconnected` | session still active | `restarting_ice` | pause input; one ICE restart | `webrtc.reconnecting` | `signaling_reconnecting` |
@@ -80,18 +84,25 @@ Only `closed` is terminal; `chat_only` permits a fresh explicitly approved start
 
 | State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
 |---|---|---|---|---|---|---|
-| `created` (initial) | `upload.chunk.accepted` | signed session; chunk hash/index valid | `uploading` | persist chunk receipt | `upload.progress` | `recoverable` |
-| `uploading` | `upload.chunk.accepted` | duplicate hash matches or new missing chunk | `uploading` | idempotent receipt/update | `upload.progress` | `recoverable` |
-| `uploading` | `upload.complete` | all chunks and full hash valid | `verified` | seal temporary object | `upload.verified` | `recoverable` or `terminal_failed` |
-| `verified` | `upload.desktop_pull` | desktop/session/device authorized | `pulling` | stream to desktop temp | `upload.pull.started` | `recoverable` |
-| `pulling` | `upload.pull.completed` | desktop full hash matches | `staging` | classify risk and invoke existing staging adapter | `upload.pull.completed` | `recoverable` |
-| `staging` | `upload.staged` | staging succeeds | `staged` | persist opaque `stagedFileId` | `upload.staged` | `recoverable` or `terminal_failed` |
-| `staged` | `upload.attach` | same Lily session and command admission | `terminal_attached` (terminal) | attach once through bridge | `upload.attached` | `recoverable` |
-| `recoverable` | `upload.retry` | catalog policy, TTL and same idempotency/payload | prior safe checkpoint | retry only missing/reversible step | `upload.retrying` | `terminal_failed` |
+| `created` (initial) | `upload.chunk.accepted` | signed session; chunk hash/index valid | `uploading` | persist chunk receipt | `upload.progress` | `recoverable` with `resume_state='created'` |
+| `uploading` | `upload.chunk.accepted` | duplicate hash matches or new missing chunk | `uploading` | idempotent receipt/update | `upload.progress` | `recoverable` with `resume_state='uploading'` |
+| `uploading` | `upload.complete` | all chunks present; same upload idempotency/payload | `verifying` | persist immutable chunk manifest and begin full-hash verification | `upload.verifying` | `recoverable` with `resume_state='uploading'` |
+| `verifying` | `upload.verification.passed` | full hash and object seal succeed | `verified` | atomically seal temporary object | `upload.verified` | `recoverable` with `resume_state='verifying'` or `terminal_failed` |
+| `verified` | `upload.desktop_pull` | desktop/session/device authorized | `pulling` | stream to desktop temp | `upload.pull.started` | `recoverable` with `resume_state='verified'` |
+| `pulling` | `upload.pull.completed` | desktop full hash matches | `staging` | classify risk and invoke existing staging adapter | `upload.pull.completed` | `recoverable` with `resume_state='pulling'` |
+| `staging` | `upload.staged` | staging succeeds | `staged` | persist opaque `stagedFileId` | `upload.staged` | `recoverable` with `resume_state='staging'` or `terminal_failed` |
+| `staged` | `upload.attach` | same Lily session and command admission | `terminal_attached` (terminal) | attach once through bridge | `upload.attached` | `recoverable` with `resume_state='staged'` |
+| `recoverable` | `upload.retry` | `resume_state='created'`; catalog budget/TTL valid; same idempotency/payload | `created` | clear transient error only | `upload.retrying` | `terminal_failed` |
+| `recoverable` | `upload.retry` | `resume_state='uploading'`; catalog budget/TTL valid; same idempotency/payload | `uploading` | resume missing chunks only | `upload.retrying` | `terminal_failed` |
+| `recoverable` | `upload.retry` | `resume_state='verifying'`; catalog budget/TTL valid; same immutable manifest | `verifying` | rerun full-hash verification, never accept new chunks | `upload.retrying` | `terminal_failed` |
+| `recoverable` | `upload.retry` | `resume_state='verified'`; catalog budget/TTL valid; sealed object unchanged | `verified` | await/reissue authorized desktop pull | `upload.retrying` | `terminal_failed` |
+| `recoverable` | `upload.retry` | `resume_state='pulling'`; catalog budget/TTL valid; same desktop binding | `pulling` | resume/restart temp pull and re-hash | `upload.retrying` | `terminal_failed` |
+| `recoverable` | `upload.retry` | `resume_state='staging'`; catalog budget/TTL valid; same verified temp file | `staging` | retry risk/staging adapter | `upload.retrying` | `terminal_failed` |
+| `recoverable` | `upload.retry` | `resume_state='staged'`; catalog budget/TTL valid; same session/command key | `staged` | retry attachment admission only | `upload.retrying` | `terminal_failed` |
 | any non-terminal | `upload.cancel` / `upload.expire` | owner or authority clock | `terminal_cancelled` / `terminal_expired` (terminal) | abort transport and cleanup temp | `upload.cancelled` / `upload.expired` | — |
 | any non-terminal | `device.revoked` | revocation precedence | `terminal_revoked` (terminal) | block attach/download; cleanup by retention | `upload.revoked` | — |
 
-Persistence: server stores chunk/hash/status/idempotency; desktop stores pull/staging checkpoint. Native transport status is never this machine's state. Restart resumes from the last verified checkpoint; it never guesses `verified`, `staged`, or `attached`. `recoverable` has explicit outgoing retry/cancel/expire/revoke edges.
+Persistence: the canonical upload record durably stores `state`, nullable `resume_state` constrained to `created|uploading|verifying|verified|pulling|staging|staged`, `error_code`, `retry_count`, `idempotency_key`, canonical payload hash, immutable chunk manifest/hash, expiry, and version for CAS. `resume_state` MUST be non-null iff `state='recoverable'`; entering `recoverable` and recording its source checkpoint is one atomic write, and leaving it clears `resume_state` atomically. Server stores chunk/hash checkpoints; desktop stores pull/staging checkpoint and opaque staged ID. Native transport status is never this machine's state. Restart reads these fields and resumes only through the matching explicit row; it never guesses `verified`, `staged`, or attachment success.
 
 ## 8. MC-SM-REVOCATION — Device Revocation
 
@@ -121,9 +132,11 @@ Projection journal/epoch are desktop durable; relay cursors are delivery hints o
 | State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
 |---|---|---|---|---|---|---|
 | `foreground` (initial) | `mobile.background` | native/web lifecycle event monotonic | `background_grace` | pause control input immediately; persist timestamp | `mobile.backgrounded` | `chat_only_background` |
-| `background_grace` | `background.observe.timeout` | 60 s authority-clock elapsed | `chat_only_background` | close WebRTC/revoke L2+ | `permission.revoked` | — |
-| `background_grace` | `background.control.timeout` | 10 s authority-clock elapsed | `observe_background` or `chat_only_background` | revoke control; observe only if allowed | `permission.revoked` | — |
-| `background_grace` / `observe_background` | `mobile.foreground` | tuple/session/permission/network revalidated | `foreground` | run reconnect/snapshot; control requires valid grant | `mobile.foregrounded` | `chat_only_background` |
+| `background_grace` | `background.observe.timeout` | 60 s cumulative elapsed from persisted `backgroundedAt` before the control timer was observed | `chat_only_background` | close WebRTC/revoke L2+ | `webrtc.closed` and `permission.revoked` | — |
+| `background_grace` | `background.control.timeout` | 10 s elapsed from persisted `backgroundedAt`; observe permission/media remains valid | `observe_background` | revoke control; keep observe only for the remaining 50 s | `permission.revoked` | `chat_only_background` if observe is not valid |
+| `observe_background` | `background.observe.timeout` | 60 s cumulative elapsed from the original persisted `backgroundedAt` (not 60 s after entering this state) | `chat_only_background` | close WebRTC and revoke observe/L2+ | `webrtc.closed` and `permission.revoked` | — |
+| `background_grace` | `mobile.foreground` | event is newer than `backgroundedAt`, elapsed time is under 10 s, and tuple/session/network plus exact retained permission/WebRTC generation all revalidate | `foreground` | run reconnect/snapshot and resume the still-valid retained observe/control level | `mobile.foregrounded` | `chat_only_background` |
+| `observe_background` | `mobile.foreground` | event is newer than `backgroundedAt`, cumulative elapsed time is at least 10 s but under 60 s, and tuple/session/network plus retained observe permission/WebRTC generation all revalidate | `foreground` | run reconnect/snapshot and resume observe only; control requires a new grant | `mobile.foregrounded` | `chat_only_background` |
 | any state | `mobile.locked` / `device.revoked` / `session.end` | safety precedence | `chat_only_background` or `terminal_ended` | close WebRTC and revoke L2+ | `webrtc.closed` | — |
 
 Lifecycle state/timestamp is native-local durable enough to report after resume; remote authority uses desktop/server clocks. Process restart or missing lifecycle signal assumes background/chat-only. Exact repeated lifecycle events are ignored by timestamp/sequence.

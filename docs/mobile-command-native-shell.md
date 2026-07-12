@@ -4,6 +4,8 @@
 
 The mobile client is Web-first. The native layer is a thin capability shell for iOS and Android. It exposes system capabilities that are unreliable or unavailable in plain PWA, while the Web app owns UI and protocol validation. Lifecycle business state is canonical in [the state machines](mobile-command-state-machines.md), errors/retries in [the error catalog](mobile-command-error-recovery-catalog.md), and method coverage in [the API completeness matrix](mobile-command-api-completeness-matrix.md).
 
+The API completeness matrix is also the sole route/operation authority. Native methods are local capability calls and MUST NOT introduce alternate server routes.
+
 ## 2. Non-Negotiable Boundary
 
 Native shell may:

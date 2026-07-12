@@ -4,6 +4,8 @@
 
 This document defines mobile-to-desktop uploads, desktop-to-mobile artifact downloads, staging, deduplication, retry, risk handling, cleanup, and tests.
 
+HTTP/WS route names and operation coverage are authoritative only in [the API completeness matrix](mobile-command-api-completeness-matrix.md); this contract does not create alternate routes.
+
 Files must enter Lily through existing staging/attachment/artifact mechanisms. Mobile paths or temporary object paths must never be injected directly into the model.
 
 ## 2. Invariants

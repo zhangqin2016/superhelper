@@ -4,6 +4,8 @@
 
 This runbook owns WebRTC operational behavior: signaling, ICE/TURN, media constraints, DataChannel backpressure, weak-network actions, and QA. MC-SM-WEBRTC, MC-SM-RECONNECT and MC-SM-BACKGROUND in [the canonical state machines](mobile-command-state-machines.md) own state names/transitions; [the error recovery catalog](mobile-command-error-recovery-catalog.md) owns codes and retry policy.
 
+Signaling/TURN route and operation authority is [the API completeness matrix](mobile-command-api-completeness-matrix.md); this runbook does not create alternate endpoints.
+
 WebRTC failure must degrade to Chat Only. It must not break local Lily agent execution.
 
 ## 2. Session Modes

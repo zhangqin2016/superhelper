@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document defines human-readable field-level protocol details for Lily Mobile Command Pro. Operation coverage is owned by [the API completeness matrix](mobile-command-api-completeness-matrix.md), lifecycle names by [the canonical state machines](mobile-command-state-machines.md), and error/retry semantics by [the error recovery catalog](mobile-command-error-recovery-catalog.md). Task 6 will reconcile the machine schemas with those owners; this prose MUST NOT be treated as evidence that a route already exists.
+This document defines human-readable field-level protocol details for Lily Mobile Command Pro. Operation and route authority is owned by [the API completeness matrix](mobile-command-api-completeness-matrix.md), lifecycle names by [the canonical state machines](mobile-command-state-machines.md), and error/retry semantics by [the error recovery catalog](mobile-command-error-recovery-catalog.md). Task 6 will reconcile the machine schemas with those owners; this prose MUST NOT be treated as evidence that a route already exists.
 
 No implementation should invent fields outside this contract. Additive fields are allowed only when they preserve old-client behavior.
 
@@ -198,11 +198,11 @@ Every UI-visible error maps to an i18n key. Protocol handlers must never return 
 
 ## 4. HTTP API
 
-All routes are under `/public`.
+Canonical routes are written as absolute application paths below and include the `/public` prefix exactly as owned by the API completeness matrix.
 
 ### 4.1 Start Pairing
 
-`POST /mobile/pairing/start`
+`POST /public/mobile/pairing/start`
 
 Desktop-originated.
 
@@ -235,7 +235,7 @@ Failure:
 
 ### 4.2 Consume Pairing
 
-`POST /mobile/pairing/consume`
+`POST /public/mobile/pairing/consume`
 
 Mobile-originated, signed.
 
@@ -274,7 +274,7 @@ Failure:
 
 ### 4.3 List Devices
 
-`GET /mobile/devices`
+`GET /public/mobile/devices`
 
 Response:
 
@@ -301,7 +301,7 @@ type ListDevicesResponse = {
 
 ### 4.4 Revoke Device
 
-`DELETE /mobile/devices/:mobileDeviceId`
+`DELETE /public/mobile/devices/{mobileDeviceId}`
 
 Response:
 
@@ -314,7 +314,7 @@ type RevokeDeviceResponse = {
 
 ### 4.5 Create Remote Session
 
-`POST /remote/sessions`
+`POST /public/mobile/sessions`
 
 Mobile-originated, signed.
 
@@ -343,9 +343,15 @@ type CreateRemoteSessionResponse = {
 };
 ```
 
-### 4.6 Request Permission
+### 4.6 Refresh Remote Session
 
-`POST /remote/sessions/:remoteSessionId/permissions`
+`POST /public/mobile/sessions/{remoteSessionId}/refresh`
+
+Mobile-originated and signed. The request presents the current one-time remote refresh token and observed family generation. Success atomically consumes it, rotates `access_token_generation`, advances the refresh-family generation, and returns both the next one-time refresh token and the new access token. A lost success response is not automatically retried with the old token; used-token replay revokes the family/session.
+
+### 4.7 Request Permission
+
+`POST /public/mobile/sessions/{remoteSessionId}/permissions`
 
 Mobile-originated, signed.
 
@@ -380,9 +386,9 @@ type RequestPermissionResponse =
     };
 ```
 
-### 4.7 End Remote Session
+### 4.8 End Remote Session
 
-`POST /remote/sessions/:remoteSessionId/end`
+`DELETE /public/mobile/sessions/{remoteSessionId}`
 
 Request:
 
@@ -401,14 +407,14 @@ type EndRemoteSessionResponse = {
 };
 ```
 
-### 4.8 TURN Credentials
+### 4.9 TURN Credentials
 
-`POST /remote/turn-credentials`
+`POST /public/mobile/sessions/{remoteSessionId}/turn-credentials`
 
 Request:
 
 ```ts
-type TurnCredentialsRequest = SignedEnvelopeFields & {
+type TurnCredentialRequest = SignedEnvelopeFields & {
   remoteSessionId: RemoteSessionId;
 };
 ```
@@ -416,7 +422,7 @@ type TurnCredentialsRequest = SignedEnvelopeFields & {
 Response:
 
 ```ts
-type TurnCredentialsResponse = {
+type TurnCredentialSet = {
   iceServers: Array<{
     urls: string[];
     username?: string;
@@ -634,7 +640,7 @@ These payload sketches defer all status names and transitions to MC-SM-UPLOAD. U
 
 ### 7.1 Create Upload
 
-`POST /remote/uploads`
+`POST /public/mobile/uploads`
 
 ```ts
 type CreateUploadRequest = SignedEnvelopeFields & {
@@ -658,7 +664,7 @@ type CreateUploadResponse = {
 
 ### 7.2 Commit Chunk
 
-`PUT /remote/uploads/:uploadId/chunks/:chunkIndex`
+`PUT /public/mobile/uploads/{uploadId}/chunks/{chunkIndex}`
 
 Headers:
 
@@ -681,7 +687,7 @@ type CommitChunkResponse = {
 
 ### 7.3 Complete Upload
 
-`POST /remote/uploads/:uploadId/complete`
+`POST /public/mobile/uploads/{uploadId}/complete`
 
 Response:
 
@@ -695,10 +701,13 @@ type CompleteUploadResponse = {
 
 ### 7.4 Upload Status
 
+`GET /public/mobile/uploads/{uploadId}`
+
 ```ts
 type UploadStatus =
   | 'created'
   | 'uploading'
+  | 'verifying'
   | 'verified'
   | 'pulling'
   | 'staging'
