@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-The mobile client is Web-first. The native layer is a thin capability shell for iOS and Android. It exposes system capabilities that are unreliable or unavailable in plain PWA, while the Web app owns UI, routing, state machines, protocol validation, and business logic.
+The mobile client is Web-first. The native layer is a thin capability shell for iOS and Android. It exposes system capabilities that are unreliable or unavailable in plain PWA, while the Web app owns UI and protocol validation. Lifecycle business state is canonical in [the state machines](mobile-command-state-machines.md), errors/retries in [the error catalog](mobile-command-error-recovery-catalog.md), and method coverage in [the API completeness matrix](mobile-command-api-completeness-matrix.md).
 
 ## 2. Non-Negotiable Boundary
 
@@ -82,6 +82,8 @@ Rules:
 
 ## 5. Error Codes
 
+The normative native errors are the `MC-ERR-NATIVE-*` rows in [the error recovery catalog](mobile-command-error-recovery-catalog.md). The names below are legacy bridge aliases accepted only at a compatibility adapter; new native implementations return canonical codes and do not invent local recovery policy.
+
 ```text
 NATIVE_METHOD_UNSUPPORTED
 NATIVE_PLATFORM_UNSUPPORTED
@@ -116,7 +118,7 @@ type GenerateDeviceKeyParams = {
 type GenerateDeviceKeyResult = {
   keyHandle: string;
   publicKey: string;
-  algorithm: 'ECDSA_P256_SHA256';
+  algorithm: 'Ed25519';
   hardwareBacked?: boolean;
 };
 ```
@@ -132,12 +134,13 @@ secureKey.generateDeviceKey
 ```ts
 type SignParams = {
   keyHandle: string;
-  payload: string;
+  canonicalDigest: string;
+  signatureVersion: 1;
 };
 
 type SignResult = {
   signature: string;
-  algorithm: 'ECDSA_P256_SHA256';
+  algorithm: 'Ed25519';
 };
 ```
 
@@ -169,7 +172,7 @@ Rules:
 
 - Private key is non-exportable.
 - Web stores only `keyHandle`.
-- Key invalidation returns `NATIVE_KEY_INVALIDATED`, then Web must require re-pairing.
+- Key invalidation maps to `MC-ERR-NATIVE-KEY-INVALIDATED`, then Web requires approved rotation or re-pairing. Native signs only the versioned canonical digest assembled by the typed Web identity adapter; it never accepts arbitrary remote protocol or script text.
 
 ## 7. Background Upload API
 
@@ -213,6 +216,8 @@ type NativeUploadStatus = {
   errorCode?: NativeBridgeErrorCode;
 };
 ```
+
+These are native transport states only. They never substitute for MC-SM-UPLOAD or imply `verified`, `staged`, or `terminal_attached`; after Web/native restart the server/desktop checkpoint is reconciled before progress is projected.
 
 Method:
 
@@ -395,6 +400,8 @@ type NativeLifecycleEvent =
 ```
 
 Web uses lifecycle events to pause control, recover uploads, and deep-link notifications.
+
+MC-SM-BACKGROUND owns the resulting permission/WebRTC state. Native owns only monotonic lifecycle observation and background transport. Voice capture methods, when supported, return a local audio descriptor; transcript/voice-command patch semantics remain owned by `mobile-command-voice-input.md` and the agent bridge, not native lifecycle or upload transport.
 
 ## 13. Platform Notes
 

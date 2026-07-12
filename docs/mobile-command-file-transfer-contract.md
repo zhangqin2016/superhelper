@@ -18,40 +18,7 @@ Files must enter Lily through existing staging/attachment/artifact mechanisms. M
 
 ## 3. Upload State Machine
 
-```text
-created
-uploading
-uploaded
-verified
-desktop_pull_pending
-desktop_pulled
-staged
-attached_to_turn
-failed_recoverable
-failed_final
-expired
-```
-
-Allowed transitions:
-
-| From | To | Authority |
-|---|---|---|
-| created | uploading | mobile |
-| uploading | uploaded | server |
-| uploaded | verified | server |
-| verified | desktop_pull_pending | server |
-| desktop_pull_pending | desktop_pulled | desktop |
-| desktop_pulled | staged | desktop |
-| staged | attached_to_turn | agent bridge |
-| any non-terminal | failed_recoverable | current authority |
-| any non-terminal | failed_final | current authority |
-| created/uploading/uploaded/verified | expired | cleanup job |
-
-Terminal states:
-
-- `attached_to_turn`
-- `failed_final`
-- `expired`
+MC-SM-UPLOAD in [the canonical state machines](mobile-command-state-machines.md) exclusively owns upload states and transitions. In particular, recoverable failures enter `recoverable` and retain explicit `upload.retry`, `upload.cancel`, `upload.expire`, and `device.revoked` outgoing edges; native transport progress never advances this business machine. This document owns transfer metadata, risk, staging and artifact-download rules only.
 
 ## 4. Upload Metadata
 
@@ -112,7 +79,7 @@ Idempotency scope:
 | desktop pull | upload id + desktop device id |
 | attach to turn | upload id + lily session id + client message id |
 
-Conflict returns `REQUEST_IDEMPOTENCY_CONFLICT`.
+Conflict returns `MC-ERR-PROTOCOL-IDEMPOTENCY-CONFLICT`. A write without an idempotency key is not retried automatically; exact retries return the persisted checkpoint.
 
 ## 7. Mobile Flow
 
@@ -129,7 +96,7 @@ If mobile goes offline, it resumes from server upload status.
 
 ## 8. Desktop Pull Flow
 
-1. Desktop receives `upload.verified`.
+1. Desktop receives canonical `upload.verified`.
 2. Desktop confirms remote session and device trust.
 3. Desktop downloads object to remote staging temp.
 4. Desktop verifies full sha256.
@@ -249,17 +216,21 @@ Cleanup must not remove:
 
 ## 14. Failure Behavior
 
+Codes and retry counts/backoff/jitter/terminal behavior are normative only in [the error recovery catalog](mobile-command-error-recovery-catalog.md). This table describes domain effects and cites canonical codes.
+
 | Failure | Behavior |
 |---|---|
-| chunk upload network failure | recoverable, resume missing chunk |
-| chunk hash mismatch | reject chunk, recoverable |
-| file hash mismatch | delete temp, failed_recoverable |
-| quota exceeded | failed_final for current upload |
+| chunk upload network failure | `recoverable`; resume missing chunk under `MC-ERR-SERVER-UNAVAILABLE` policy |
+| chunk hash mismatch | reject chunk; `MC-ERR-UPLOAD-CHUNK-HASH-MISMATCH` |
+| file hash mismatch | delete temp; `MC-ERR-UPLOAD-FILE-HASH-MISMATCH` and `recoverable` |
+| quota exceeded | `MC-ERR-UPLOAD-QUOTA-EXCEEDED`; no staging/attach |
 | desktop offline | stay verified, wait until TTL |
-| desktop pull failed | failed_recoverable |
-| staging failed | failed_recoverable unless unsupported file |
+| desktop pull failed | `MC-ERR-UPLOAD-DESKTOP-PULL-FAILED`; return to verified checkpoint through `recoverable` |
+| staging failed | `MC-ERR-UPLOAD-STAGING-FAILED`; `recoverable` unless terminally unsupported |
 | high-risk file | approval required before risky action |
 | cleanup failed | retry and audit summary |
+
+Artifact descriptors are projected only from sealed local turn/artifact facts. This document owns authorized materialization and download; WebRTC `file-meta`, native share, and lifecycle layers MUST NOT mint artifact URLs, infer availability, or expose a desktop path.
 
 ## 15. Tests
 

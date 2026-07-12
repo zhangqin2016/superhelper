@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document defines the field-level protocol contracts for Lily Mobile Command Pro. It covers HTTP APIs, WebSocket messages, WebRTC DataChannel messages, shared IDs, signatures, idempotency, error payloads, and versioning.
+This document defines human-readable field-level protocol details for Lily Mobile Command Pro. Operation coverage is owned by [the API completeness matrix](mobile-command-api-completeness-matrix.md), lifecycle names by [the canonical state machines](mobile-command-state-machines.md), and error/retry semantics by [the error recovery catalog](mobile-command-error-recovery-catalog.md). Task 6 will reconcile the machine schemas with those owners; this prose MUST NOT be treated as evidence that a route already exists.
 
 No implementation should invent fields outside this contract. Additive fields are allowed only when they preserve old-client behavior.
 
@@ -11,12 +11,12 @@ No implementation should invent fields outside this contract. Additive fields ar
 ### 2.1 IDs
 
 ```ts
-type AccountId = `acct_${string}`;
-type DesktopDeviceId = `desktop_${string}`;
-type MobileDeviceId = `mobile_${string}`;
+type UserId = string; // users.id
+type DesktopDeviceId = string; // unified devices.id, role desktop
+type MobileDeviceId = string; // unified devices.id, role mobile
 type LilySessionId = string;
 type RemoteSessionId = `rs_${string}`;
-type PairingId = `pair_${string}`;
+type PairingId = string; // mobile_pairing_challenges.id or grant id by field name
 type ApprovalId = `appr_${string}`;
 type UploadId = `upl_${string}`;
 type ArtifactId = `art_${string}`;
@@ -80,8 +80,9 @@ Rules:
 
 - `nonce` must be unique per mobile device for at least 10 minutes.
 - Desktop and server must keep a bounded replay cache.
-- Requests outside allowed clock skew are rejected with `REQUEST_CLOCK_SKEW`.
-- Signature verification failure returns `DEVICE_SIGNATURE_INVALID`.
+- Requests outside allowed clock skew return `MC-ERR-AUTH-CLOCK-SKEW`.
+- Signature verification failure returns `MC-ERR-AUTH-SIGNATURE-INVALID`.
+- The signed canonical input binds method/event type, exact path or remote session, desktop and mobile device IDs, protocol/signature version, timestamp, nonce, and canonical body hash as specified by the identity contract. A signature authenticates only the active device key generation; authorization still revalidates the full identity tuple.
 
 ### 2.5 Idempotency
 
@@ -97,7 +98,7 @@ Idempotent operations:
 - approval grant/deny
 - agent message submit
 
-Retrying the same key returns the original terminal result or current operation status. It must not create duplicate messages, uploads, sessions, approvals, or files.
+Retrying the same key returns the original terminal result or current operation status. It must not create duplicate messages, uploads, sessions, approvals, or files. Mutating requests without an idempotency key are never retried automatically. Same key plus a different canonical payload returns `MC-ERR-PROTOCOL-IDEMPOTENCY-CONFLICT`.
 
 ## 3. Error Model
 
@@ -124,6 +125,8 @@ type ApiError = {
 ```
 
 ### 3.1 Error Codes
+
+The normative code set and every count/backoff/jitter/terminal policy are in [the error recovery catalog](mobile-command-error-recovery-catalog.md). The unprefixed names retained below are pre-canonical compatibility aliases only; adapters map them one-to-one to `MC-ERR-*`, and new clients/servers emit only catalog codes.
 
 ```text
 AUTH_REQUIRED
@@ -490,7 +493,10 @@ type ApprovalRequiredPayload = {
     | 'shell_command'
     | 'software_install'
     | 'clipboard_read'
-    | 'desktop_control';
+    | 'desktop_control'
+    | 'screen_source_switch'
+    | 'system_settings'
+    | 'high_risk_upload';
   summary: string;
   affectedResources: string[];
   expiresAt: UnixMs;
@@ -521,6 +527,8 @@ type WebRtcIceCandidatePayload = {
   sdpMLineIndex?: number;
 };
 ```
+
+The exact candidate event discriminator is `webrtc.ice.candidate`; `ice.candidate` is invalid.
 
 ## 6. DataChannel Protocol
 
@@ -622,6 +630,8 @@ type HealthStatsPayload = {
 
 ## 7. Upload Protocol
 
+These payload sketches defer all status names and transitions to MC-SM-UPLOAD. Upload and artifact metadata use authenticated HTTP/WS projection, not a `file-meta` DataChannel. Artifact materialization/download is owned by [the file transfer contract](mobile-command-file-transfer-contract.md).
+
 ### 7.1 Create Upload
 
 `POST /remote/uploads`
@@ -678,7 +688,7 @@ Response:
 ```ts
 type CompleteUploadResponse = {
   uploadId: UploadId;
-  status: 'verified' | 'failed_recoverable' | 'failed_final';
+  status: 'verified' | 'recoverable' | 'terminal_failed';
   desktopPullRequired: true;
 };
 ```
@@ -689,25 +699,27 @@ type CompleteUploadResponse = {
 type UploadStatus =
   | 'created'
   | 'uploading'
-  | 'uploaded'
   | 'verified'
-  | 'desktop_pull_pending'
-  | 'desktop_pulled'
+  | 'pulling'
+  | 'staging'
   | 'staged'
-  | 'attached_to_turn'
-  | 'failed_recoverable'
-  | 'failed_final'
-  | 'expired';
+  | 'recoverable'
+  | 'terminal_attached'
+  | 'terminal_failed'
+  | 'terminal_cancelled'
+  | 'terminal_expired'
+  | 'terminal_revoked';
 ```
 
 ## 8. Versioning
 
 - Current protocol major version: `1`.
 - Unknown major version is rejected.
-- Unknown additive fields are ignored.
+- Unknown explicitly optional additive fields/events may be ignored.
 - Required field removal requires version `2`.
 - Changed meaning of an existing enum value requires version `2`.
-- New enum values require clients to handle unknown values as recoverable unsupported state.
+- A new mandatory event, state, approval action, signature version, redaction rule, or permission semantic requires coordinated compatibility support. An unsupported mandatory semantic returns `MC-ERR-PROTOCOL-CLIENT-UPGRADE-REQUIRED`, disables remote mutation, and may retain read-only projection only when proven safe. Local Lily remains unchanged.
+- Compatibility aliases may be accepted at an older boundary but are normalized before domain logic; they are never emitted by new implementations.
 
 ## 9. Acceptance Tests
 

@@ -1,0 +1,133 @@
+# Lily Mobile Command Pro Canonical State Machines
+
+## 1. Scope And Conventions
+
+This document is the canonical owner of Mobile Command lifecycle state and event names (MC-SPEC-011). Domain contracts may describe payloads and side effects, but MUST reference these identifiers and MUST NOT create local states or transitions. Errors are owned by [the error recovery catalog](mobile-command-error-recovery-catalog.md).
+
+All machines use durable compare-and-set transitions. `initial` marks the creation state; `terminal` means no outgoing transition except an exact idempotent read/repeat. An event not listed for the current state is illegal and returns `MC-ERR-PROTOCOL-ILLEGAL-TRANSITION` without mutation. Exact repeats return the persisted result; same idempotency key with a different canonical payload returns `MC-ERR-PROTOCOL-IDEMPOTENCY-CONFLICT`. Named timeouts use the authority clock and are explicit events in the tables. Device/grant/account/license revocation has precedence over every ordinary event and timeout, immediately applying MC-SM-REVOCATION. Remote failure preserves local Lily; authority uncertainty denies remote action.
+
+## 2. MC-SM-PAIRING — Pairing
+
+| State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
+|---|---|---|---|---|---|---|
+| `initial` (initial) | `pairing.start` | signed active desktop, feature enabled | `challenge_created` | persist one-time hashed challenge and expiry | `pairing.challenge.created` | `terminal_rejected` + catalog error |
+| `challenge_created` | `pairing.consume` | signed mobile; token, user, license and desktop tuple match | `mobile_proved` | atomically consume token and bind key generation | `pairing.mobile.proved` | `terminal_expired` or `terminal_rejected` |
+| `challenge_created` | `pairing.timeout` | authority clock reached expiry | `terminal_expired` (terminal) | invalidate token | `pairing.expired` | — |
+| `mobile_proved` | `pairing.approve` | explicit desktop approval; identity tuple still active | `terminal_paired` (terminal) | create grant and audit atomically | `pairing.completed` | `terminal_rejected` |
+| `mobile_proved` | `pairing.reject` / `pairing.timeout` | desktop decision or approval expiry | `terminal_rejected` (terminal) | invalidate challenge; no grant | `pairing.rejected` | — |
+
+Persistence: challenge, consume result, key generation, approval result and grant are server durable. Restart reloads them; consumed tokens never reopen. Exact start/consume/decision retries return the same record.
+
+## 3. MC-SM-REMOTE-SESSION — Remote Session
+
+| State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
+|---|---|---|---|---|---|---|
+| `initial` (initial) | `session.create` | full identity tuple, pairing grant, license, signature and nonce active | `active_chat` | server creates ID/token generation and durable session | `session.created` | `terminal_denied` |
+| `active_chat` | `session.permission_changed` | MC-SM-PERMISSION grants L2+ | `active_live` | bind temporary grant | `session.mode.changed` | remain `active_chat` |
+| `active_live` | `session.permission_revoked` | any revocation/TTL/disconnect precedence | `active_chat` | stop input/media authority | `session.mode.changed` | — |
+| `active_chat` / `active_live` | `session.refresh` | same tuple/token family; signed nonce fresh | same state | rotate access token only | `session.refreshed` | `terminal_revoked` on replay/theft |
+| `active_chat` / `active_live` | `session.end` / `session.timeout` | actor authorized or absolute TTL reached | `terminal_ended` (terminal) | revoke token family, permissions and approvals | `session.ended` | — |
+| any non-terminal | `device.revoked` | MC-SM-REVOCATION wins | `terminal_revoked` (terminal) | cascade revocation | `session.revoked` | — |
+
+Persistence: server session/token generation is durable; desktop permission binding is durable enough to fail safe after restart. Restart never reconstructs L2+ from mobile cache; it returns `active_chat` until revalidated. Exact create/end retries are idempotent.
+
+## 4. MC-SM-PERMISSION — Observe/Control Permission
+
+| State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
+|---|---|---|---|---|---|---|
+| `chat_only` (initial) | `permission.request` | active session; requested level known | `pending_desktop` | create bounded desktop request | `permission.requested` | remain `chat_only` |
+| `pending_desktop` | `permission.allow` | desktop CAS wins; indicator/audit available | `observe_active` or `control_active` | mint scoped TTL grant | `permission.granted` | `chat_only` |
+| `pending_desktop` | `permission.deny` / `permission.timeout` | first terminal CAS | `chat_only` | terminalize request | `permission.denied` / `permission.expired` | — |
+| `observe_active` | `permission.elevate` | desktop approval required | `pending_desktop` | pause new control input | `permission.requested` | `chat_only` |
+| `observe_active` / `control_active` | `permission.revoke` / `permission.timeout` / `desktop.locked` | any safety trigger | `chat_only` | stop capture/input authority; audit | `permission.revoked` | — |
+| `control_active` | `mobile.background` | MC-SM-BACKGROUND control grace starts | `control_suspended` | pause all input | `permission.suspended` | `chat_only` on timeout |
+| `control_suspended` | `mobile.foreground` | within 10 s; tuple and WebRTC revalidated | `control_active` | resume input | `permission.resumed` | `chat_only` |
+
+Persistence: pending request and grant expiry/use scope are desktop durable; live input authorization is volatile and starts disabled after restart. Repeated allow/deny returns the winning CAS. Revocation always beats late allow.
+
+## 5. MC-SM-APPROVAL — Scoped Sensitive Approval
+
+Canonical actions are `desktop_control`, `screen_source_switch`, `clipboard_read`, `file_delete`, `file_overwrite`, `external_send`, `shell_command`, `software_install`, `system_settings`, and `high_risk_upload`.
+
+| State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
+|---|---|---|---|---|---|---|
+| `initial` (initial) | `approval.request` | action in canonical set; session/device/resource bound | `pending` | persist scope, expiry and maxUses | `approval.requested` | `terminal_denied` |
+| `pending` | `approval.allow_once` / `approval.allow_timed` | desktop CAS wins; timed only for screen/control | `granted` | durable audit before authority | `approval.granted` | `terminal_denied` |
+| `pending` | `approval.deny` / `approval.timeout` | first terminal CAS | `terminal_denied` (terminal) | audit denial/expiry | `approval.denied` / `approval.expired` | — |
+| `granted` | `approval.consume` | exact action/session/device/resources; uses and TTL valid | `granted` or `terminal_consumed` (terminal) | decrement atomically, then permit side effect | `approval.consumed` | `terminal_revoked` |
+| `pending` / `granted` | `permission.revoke` / `device.revoked` / `session.end` | revocation precedence | `terminal_revoked` (terminal) | invalidate unused authority | `approval.revoked` | — |
+
+Persistence: all approval states, generations and uses are desktop durable. Restart reloads but does not replay a sensitive side effect. Repeated decisions/consumes return the prior result; payload mismatch conflicts.
+
+## 6. MC-SM-WEBRTC — WebRTC
+
+| State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
+|---|---|---|---|---|---|---|
+| `idle` (initial) | `webrtc.start` | active L2+ grant and source allowed | `signaling` | obtain TURN and send offer | `webrtc.offer` | `chat_only` |
+| `signaling` | `webrtc.answer` | session/generation match within 10 s | `ice_connecting` | set descriptions | `webrtc.answer.applied` | `chat_only` |
+| `ice_connecting` | `webrtc.ice.candidate` | canonical candidate envelope and generation | `ice_connecting` | add candidate idempotently | `webrtc.ice.candidate.applied` | remain or `chat_only` |
+| `ice_connecting` | `webrtc.connected` | ICE within 20 s, channels/source authorized | `connected` | start permitted media; input still policy-gated | `webrtc.connected` | `chat_only` |
+| `connected` | `webrtc.degraded` | quality threshold crossed | `degraded` | reduce bitrate/fps/resolution | `webrtc.degraded` | `restarting_ice` |
+| `connected` / `degraded` | `webrtc.disconnected` | session still active | `restarting_ice` | pause input; one ICE restart | `webrtc.reconnecting` | `signaling_reconnecting` |
+| `restarting_ice` | `webrtc.restart.failed` | restart exhausted/20 s | `signaling_reconnecting` | one signaling reconnect | `webrtc.reconnecting` | `chat_only` |
+| reconnect state | `webrtc.connected` | identity/permission/source revalidated | `connected` | resume only allowed mode | `webrtc.reconnected` | `chat_only` |
+| any non-terminal | `permission.revoke` / `device.revoked` / `webrtc.timeout` | safety/timeout precedence | `chat_only` | close media/data; revoke L2+ | `webrtc.closed` | — |
+| `chat_only` | `session.end` | authorized end | `closed` (terminal) | release peer/TURN resources | `webrtc.closed` | — |
+
+Only `closed` is terminal; `chat_only` permits a fresh explicitly approved start. Peer state is volatile. Restart begins `idle`/`chat_only`, never silently restores control. Duplicate candidates are safe by candidate identity; offers/answers require generation idempotency.
+
+## 7. MC-SM-UPLOAD — Upload And Desktop Staging
+
+| State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
+|---|---|---|---|---|---|---|
+| `created` (initial) | `upload.chunk.accepted` | signed session; chunk hash/index valid | `uploading` | persist chunk receipt | `upload.progress` | `recoverable` |
+| `uploading` | `upload.chunk.accepted` | duplicate hash matches or new missing chunk | `uploading` | idempotent receipt/update | `upload.progress` | `recoverable` |
+| `uploading` | `upload.complete` | all chunks and full hash valid | `verified` | seal temporary object | `upload.verified` | `recoverable` or `terminal_failed` |
+| `verified` | `upload.desktop_pull` | desktop/session/device authorized | `pulling` | stream to desktop temp | `upload.pull.started` | `recoverable` |
+| `pulling` | `upload.pull.completed` | desktop full hash matches | `staging` | classify risk and invoke existing staging adapter | `upload.pull.completed` | `recoverable` |
+| `staging` | `upload.staged` | staging succeeds | `staged` | persist opaque `stagedFileId` | `upload.staged` | `recoverable` or `terminal_failed` |
+| `staged` | `upload.attach` | same Lily session and command admission | `terminal_attached` (terminal) | attach once through bridge | `upload.attached` | `recoverable` |
+| `recoverable` | `upload.retry` | catalog policy, TTL and same idempotency/payload | prior safe checkpoint | retry only missing/reversible step | `upload.retrying` | `terminal_failed` |
+| any non-terminal | `upload.cancel` / `upload.expire` | owner or authority clock | `terminal_cancelled` / `terminal_expired` (terminal) | abort transport and cleanup temp | `upload.cancelled` / `upload.expired` | — |
+| any non-terminal | `device.revoked` | revocation precedence | `terminal_revoked` (terminal) | block attach/download; cleanup by retention | `upload.revoked` | — |
+
+Persistence: server stores chunk/hash/status/idempotency; desktop stores pull/staging checkpoint. Native transport status is never this machine's state. Restart resumes from the last verified checkpoint; it never guesses `verified`, `staged`, or `attached`. `recoverable` has explicit outgoing retry/cancel/expire/revoke edges.
+
+## 8. MC-SM-REVOCATION — Device Revocation
+
+| State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
+|---|---|---|---|---|---|---|
+| `active` (initial) | `device.revoke` | authorized desktop/mobile/admin risk actor | `revoking` | durable revocation CAS and audit intent | `device.revocation.started` | remain `active` with authority denied if audit uncertain |
+| `revoking` | `device.revocation.commit` | durable device/grant revocation exists | `terminal_revoked` (terminal) | end sessions; invalidate tokens/approvals/push; cancel owned `admitted` queue and uploads | `device.revoked` | retry reconciliation |
+| `terminal_revoked` | any remote authority event | always | `terminal_revoked` | reject; return stored revocation | `device.revoked` | — |
+
+Persistence: server revocation is authoritative and permanent unless a new explicit pairing creates a new grant. Restart reconciles cascades until complete while denying authority. Already `dispatching`/`engine_accepted` turns may continue locally, but the device gets no further control, answer, cancellation, artifact or reconnect authority.
+
+## 9. MC-SM-RECONNECT — Projection/Command Reconnect
+
+| State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
+|---|---|---|---|---|---|---|
+| `disconnected` (initial) | `reconnect.request` | full tuple revalidated; cursor supplied | `validating_cursor` | acquire per-session projection/admission lock | `reconnect.validating` | `terminal_denied` |
+| `validating_cursor` | `reconnect.cursor.valid` | epoch matches and journal range contiguous | `replaying` | replay allowlisted journal after cursor | `reconnect.replay.started` | `snapshotting` |
+| `validating_cursor` | `reconnect.cursor.gap` / `reconnect.epoch.mismatch` | gap, restart or unknown cursor | `snapshotting` | discard incremental assumption | `reconnect.snapshot.required` | `terminal_denied` |
+| `snapshotting` | `reconnect.snapshot.cut` | authorized atomic snapshot/high-water captured | `subscribing` | send snapshot then subscribe after cut | `reconnect.snapshot` | `disconnected` |
+| `replaying` / `subscribing` | `reconnect.ack` | client acknowledges current epoch/seq | `connected` | persist delivery cursor optimization | `reconnect.completed` | `disconnected` |
+| any non-terminal | `device.revoked` | revocation precedence | `terminal_denied` (terminal) | disclose no snapshot/events | `reconnect.denied` | — |
+
+Projection journal/epoch are desktop durable; relay cursors are delivery hints only. Restart rotates or proves the epoch and uses a snapshot. Repeat reconnects are read-idempotent. A reconnect never re-dispatches a command in `dispatching`/`dispatch_unknown`.
+
+## 10. MC-SM-BACKGROUND — Mobile Foreground/Background
+
+| State | Event | Guard | Next state | Side effect | Emitted event | Failure transition |
+|---|---|---|---|---|---|---|
+| `foreground` (initial) | `mobile.background` | native/web lifecycle event monotonic | `background_grace` | pause control input immediately; persist timestamp | `mobile.backgrounded` | `chat_only_background` |
+| `background_grace` | `background.observe.timeout` | 60 s authority-clock elapsed | `chat_only_background` | close WebRTC/revoke L2+ | `permission.revoked` | — |
+| `background_grace` | `background.control.timeout` | 10 s authority-clock elapsed | `observe_background` or `chat_only_background` | revoke control; observe only if allowed | `permission.revoked` | — |
+| `background_grace` / `observe_background` | `mobile.foreground` | tuple/session/permission/network revalidated | `foreground` | run reconnect/snapshot; control requires valid grant | `mobile.foregrounded` | `chat_only_background` |
+| any state | `mobile.locked` / `device.revoked` / `session.end` | safety precedence | `chat_only_background` or `terminal_ended` | close WebRTC and revoke L2+ | `webrtc.closed` | — |
+
+Lifecycle state/timestamp is native-local durable enough to report after resume; remote authority uses desktop/server clocks. Process restart or missing lifecycle signal assumes background/chat-only. Exact repeated lifecycle events are ignored by timestamp/sequence.
+
+## 11. Compatibility Rule
+
+Unknown optional fields/events may be ignored only when explicitly additive. Unknown mandatory event, state, approval action, redaction rule, signature version or permission semantic returns `MC-ERR-PROTOCOL-CLIENT-UPGRADE-REQUIRED` and disables remote mutation while local Lily remains unchanged. State names are never translated heuristically.

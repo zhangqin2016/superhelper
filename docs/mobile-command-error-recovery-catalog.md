@@ -1,0 +1,67 @@
+# Lily Mobile Command Pro Error And Recovery Catalog
+
+## 1. Contract
+
+This document is the canonical owner of Mobile Command error identifiers and retry behavior (MC-SPEC-010). Wire `code` values use the exact `MC-ERR-*` strings below. Existing prose names are compatibility aliases only and MUST map at the boundary; no domain document may invent an error.
+
+Retry notation is complete: `count/backoff/jitter/idempotency/terminal`. Counts are automatic retries after the first attempt. Mutating requests without a valid idempotency key always use `0/none/none/required/no automatic retry`. Revocation and signature/replay failures are never downgraded to anonymous or weaker authority.
+
+| Code | Surface/status | Recoverable | Retry policy | User copy key | Telemetry | Downgrade/revocation | Canonical owner |
+|---|---|---:|---|---|---|---|---|
+| `MC-ERR-AUTH-REQUIRED` | HTTP 401 / WS close 4401 | yes | `0/none/none/n-a/re-authenticate` | `mobile.error.authRequired` | `auth_required` | Chat Only unavailable remotely; local Lily unchanged | identity contract |
+| `MC-ERR-AUTH-SIGNATURE-INVALID` | HTTP 401 / event reject | no | `0/none/none/required/re-pair-or-rotate` | `mobile.error.signatureInvalid` | `signature_invalid` | deny mutation; no fallback identity | identity contract |
+| `MC-ERR-AUTH-CLOCK-SKEW` | HTTP 401 | yes | `1/immediate/none/same key/terminal if repeated` | `mobile.error.clockSkew` | `clock_skew` | deny mutation until signed time correction | identity contract |
+| `MC-ERR-AUTH-REPLAY-DETECTED` | HTTP 409 / event reject | no | `0/none/none/required/revoke on token-family replay` | `mobile.error.replayDetected` | `replay_detected` | deny; refresh replay revokes family/session | identity contract |
+| `MC-ERR-AUTH-NONCE-UNAVAILABLE` | HTTP 503 / event reject | yes | `0/none/none/required/user retry after authority recovers` | `mobile.error.securityUnavailable` | `nonce_store_unavailable` | deny all mutations | identity contract |
+| `MC-ERR-AUTH-DEVICE-REVOKED` | HTTP 403 / WS close 4403 | no | `0/none/none/required/terminal` | `mobile.error.deviceRevoked` | `device_revoked` | apply MC-SM-REVOCATION | identity contract |
+| `MC-ERR-AUTH-KEY-ROTATION-REQUIRED` | HTTP 409 | yes | `0/none/none/required/approved rotation or re-pair` | `mobile.error.keyRotationRequired` | `key_rotation_required` | deny stale generation | identity contract |
+| `MC-ERR-PAIRING-TOKEN-INVALID` | HTTP 400 | no | `0/none/none/required/new challenge` | `mobile.error.pairingInvalid` | `pairing_invalid` | no grant | MC-SM-PAIRING |
+| `MC-ERR-PAIRING-TOKEN-EXPIRED` | HTTP 410 | yes | `0/none/none/required/new challenge` | `mobile.error.pairingExpired` | `pairing_expired` | no grant | MC-SM-PAIRING |
+| `MC-ERR-PAIRING-TOKEN-CONSUMED` | HTTP 409 | no | `0/none/none/required/return existing same-key result only` | `mobile.error.pairingConsumed` | `pairing_consumed` | no second grant | MC-SM-PAIRING |
+| `MC-ERR-PAIRING-DESKTOP-OFFLINE` | HTTP 409 | yes | `2/1s exponential/±20%/same key/wait or new challenge` | `mobile.error.desktopOffline` | `pairing_desktop_offline` | no auto-approval | MC-SM-PAIRING |
+| `MC-ERR-PAIRING-DESKTOP-REJECTED` | HTTP 403 | no | `0/none/none/required/terminal` | `mobile.error.pairingRejected` | `pairing_rejected` | no grant | MC-SM-PAIRING |
+| `MC-ERR-SESSION-NOT-FOUND` | HTTP 404 / WS reject | yes | `0/none/none/n-a/explicit session create` | `mobile.error.sessionMissing` | `session_not_found` | no retargeting; local task unchanged | MC-SM-REMOTE-SESSION |
+| `MC-ERR-SESSION-EXPIRED` | HTTP 401 / WS close 4401 | yes | `0/none/none/required/re-authenticate` | `mobile.error.sessionExpired` | `session_expired` | revoke L2+ | MC-SM-REMOTE-SESSION |
+| `MC-ERR-SESSION-CONFLICT` | HTTP 409 | yes | `0/none/none/required/read canonical session` | `mobile.error.sessionConflict` | `session_conflict` | no duplicate session | MC-SM-REMOTE-SESSION |
+| `MC-ERR-PERMISSION-DENIED` | HTTP 403 / event reject | no | `0/none/none/required/terminal` | `mobile.error.permissionDenied` | `permission_denied` | Chat Only | permission threat model |
+| `MC-ERR-PERMISSION-APPROVAL-REQUIRED` | HTTP 409 | yes | `0/none/none/required/wait for desktop decision` | `mobile.error.approvalRequired` | `approval_required` | no action before approval | MC-SM-PERMISSION |
+| `MC-ERR-PERMISSION-APPROVAL-EXPIRED` | HTTP 410 | yes | `0/none/none/required/new approval request` | `mobile.error.approvalExpired` | `approval_expired` | revoke scope | MC-SM-APPROVAL |
+| `MC-ERR-PERMISSION-POLICY-FAILED` | HTTP 503 / event reject | yes | `0/none/none/required/authority repair` | `mobile.error.permissionUnavailable` | `permission_policy_failed` | deny control/sensitive; Chat Only | permission threat model |
+| `MC-ERR-PERMISSION-AUDIT-FAILED` | HTTP 503 | yes | `0/none/none/required/repair audit` | `mobile.error.auditUnavailable` | `audit_failed` | deny L2+/sensitive; ordinary chat allowed | permission threat model |
+| `MC-ERR-BRIDGE-SESSION-ABSENT` | WS command result | yes | `0/none/none/required/user chooses task` | `mobile.error.taskMissing` | `bridge_session_absent` | no hidden session/retarget | bridge contract |
+| `MC-ERR-BRIDGE-BUSY` | WS command result | yes | `0/none/none/same key/canonical FIFO admission` | `mobile.error.commandQueued` | `bridge_busy` | queue; never remote steer | bridge contract |
+| `MC-ERR-BRIDGE-INJECTION-FAILED` | WS command result | yes | `1/500ms/±20%/same key/terminal stored error` | `mobile.error.commandFailed` | `bridge_injection_failed` | preserve local Lily | bridge contract |
+| `MC-ERR-BRIDGE-DELIVERY-UNKNOWN` | WS command result | no | `0/none/none/required/new explicit command to redo` | `mobile.error.deliveryUnknown` | `delivery_unknown` | never auto-resend | bridge contract |
+| `MC-ERR-BRIDGE-ARTIFACT-UNAVAILABLE` | WS event / HTTP 404 | yes | `2/1s exponential/±20%/read-only or same key/separate transfer failure` | `mobile.error.artifactUnavailable` | `artifact_unavailable` | answer remains terminal; no fabricated URL | bridge/file contracts |
+| `MC-ERR-WEBRTC-SIGNALING-FAILED` | WS result | yes | `1/1s/±20%/generation key/Chat Only` | `mobile.error.liveSignaling` | `webrtc_signaling_failed` | Chat Only; revoke L2+ after grace | MC-SM-WEBRTC |
+| `MC-ERR-WEBRTC-TURN-UNAVAILABLE` | HTTP 503 | yes | `2/500ms exponential/±20%/read or same key/Chat Only` | `mobile.error.turnUnavailable` | `turn_unavailable` | P2P only if policy permits, else Chat Only | WebRTC runbook |
+| `MC-ERR-WEBRTC-ICE-FAILED` | WS event | yes | `1 ICE + 1 signaling/20s then immediate/none/generation key/Chat Only` | `mobile.error.iceFailed` | `ice_failed` | pause input then Chat Only | MC-SM-WEBRTC |
+| `MC-ERR-WEBRTC-DATA-CHANNEL-CLOSED` | DataChannel close | yes | `1/via ICE reconnect/none/session generation/Chat Only` | `mobile.error.controlDisconnected` | `datachannel_closed` | pause/revoke control | MC-SM-WEBRTC |
+| `MC-ERR-WEBRTC-SOURCE-UNAVAILABLE` | WS result | yes | `0/none/none/required/reselect source` | `mobile.error.sourceUnavailable` | `source_unavailable` | Chat Only or prior approved source | WebRTC runbook |
+| `MC-ERR-UPLOAD-TOO-LARGE` | HTTP 413 | no | `0/none/none/required/terminal current upload` | `mobile.error.fileTooLarge` | `upload_too_large` | no staging/attach | file contract |
+| `MC-ERR-UPLOAD-QUOTA-EXCEEDED` | HTTP 429 | yes | `0/until retryAfter/±10%/same key/expire or user cleanup` | `mobile.error.uploadQuota` | `upload_quota` | no staging/attach | file contract |
+| `MC-ERR-UPLOAD-CHUNK-MISSING` | HTTP 409 | yes | `3/250ms exponential/±20%/same chunk key/terminal recoverable state` | `mobile.error.chunkMissing` | `chunk_missing` | resume missing only | MC-SM-UPLOAD |
+| `MC-ERR-UPLOAD-CHUNK-HASH-MISMATCH` | HTTP 422 | yes | `2/250ms exponential/±20%/same chunk key/terminal recoverable state` | `mobile.error.chunkCorrupt` | `chunk_hash_mismatch` | discard bad chunk | MC-SM-UPLOAD |
+| `MC-ERR-UPLOAD-FILE-HASH-MISMATCH` | HTTP 422 | yes | `1/1s/±20%/same upload key/recoverable then terminal` | `mobile.error.fileCorrupt` | `file_hash_mismatch` | delete temp; never stage | MC-SM-UPLOAD |
+| `MC-ERR-UPLOAD-EXPIRED` | HTTP 410 | no | `0/none/none/required/new upload` | `mobile.error.uploadExpired` | `upload_expired` | cleanup temp | MC-SM-UPLOAD |
+| `MC-ERR-UPLOAD-DESKTOP-PULL-FAILED` | WS/HTTP 503 | yes | `3/1s exponential/±20%/upload+desktop key/expire or terminal` | `mobile.error.desktopPullFailed` | `desktop_pull_failed` | remain recoverable/verified checkpoint | MC-SM-UPLOAD |
+| `MC-ERR-UPLOAD-STAGING-FAILED` | WS result | yes | `2/1s exponential/±20%/upload+session key/terminal failed` | `mobile.error.stagingFailed` | `staging_failed` | never inject raw object/path | file contract |
+| `MC-ERR-UPLOAD-RISK-APPROVAL-REQUIRED` | HTTP/WS 409 | yes | `0/none/none/required/wait or deny` | `mobile.error.riskyFileApproval` | `risk_approval_required` | file may be staged; risky action blocked | permission/file contracts |
+| `MC-ERR-ARTIFACT-NOT-FOUND` | HTTP 404 | yes | `1/500ms/±20%/read-only/terminal unavailable` | `mobile.error.artifactNotFound` | `artifact_not_found` | answer/local registry unchanged | bridge/file contracts |
+| `MC-ERR-ARTIFACT-EXPIRED` | HTTP 410 | yes | `0/none/none/required/request new authorized materialization` | `mobile.error.downloadExpired` | `artifact_expired` | local artifact unchanged | file contract |
+| `MC-ERR-ARTIFACT-DOWNLOAD-DENIED` | HTTP 403 | no | `0/none/none/required/terminal` | `mobile.error.downloadDenied` | `artifact_download_denied` | no path/URL disclosure | file contract |
+| `MC-ERR-NATIVE-METHOD-UNSUPPORTED` | native bridge response | no | `0/none/none/n-a/PWA downgrade` | `mobile.error.nativeUnsupported` | `native_method_unsupported` | explicit platform downgrade | native shell |
+| `MC-ERR-NATIVE-PERMISSION-DENIED` | native bridge response | yes | `0/none/none/n-a/user changes OS setting` | `mobile.error.nativePermission` | `native_permission_denied` | capability-specific downgrade | native shell |
+| `MC-ERR-NATIVE-KEY-INVALIDATED` | native bridge response | yes | `0/none/none/n-a/re-pair` | `mobile.error.keyInvalidated` | `native_key_invalidated` | deny signing; re-pair | identity/native contracts |
+| `MC-ERR-NATIVE-UPLOAD-FAILED` | native bridge response | yes | `2/1s exponential/±20%/same upload handle/Web foreground resume or terminal` | `mobile.error.backgroundUploadFailed` | `native_upload_failed` | canonical upload remains recoverable | native shell |
+| `MC-ERR-NATIVE-TIMEOUT` | native bridge response | yes | `1/500ms/±20%/read or same operation key/explicit downgrade` | `mobile.error.nativeTimeout` | `native_timeout` | no business-state success inferred | native shell |
+| `MC-ERR-PROTOCOL-INVALID` | HTTP 400 / event reject | no | `0/none/none/required/fix client` | `mobile.error.invalidRequest` | `protocol_invalid` | no mutation | protocol schema |
+| `MC-ERR-PROTOCOL-ILLEGAL-TRANSITION` | HTTP 409 / event reject | no | `0/none/none/required/read canonical state` | `mobile.error.stateConflict` | `illegal_transition` | no mutation | state machines |
+| `MC-ERR-PROTOCOL-IDEMPOTENCY-CONFLICT` | HTTP 409 / event reject | no | `0/none/none/required/new key for new intent` | `mobile.error.requestConflict` | `idempotency_conflict` | no mutation/side effect | protocol schema |
+| `MC-ERR-PROTOCOL-CLIENT-UPGRADE-REQUIRED` | HTTP 426 / WS close 4406 | yes | `0/none/none/n-a/upgrade client` | `mobile.error.upgradeRequired` | `client_upgrade_required` | read-only projection if safe; remote mutation off | protocol schema |
+| `MC-ERR-SERVER-RATE-LIMITED` | HTTP 429 | yes | `2/retryAfter then exponential/±20%/read or same key/terminal surfaced` | `mobile.error.rateLimited` | `rate_limited` | no weaker route | service contract |
+| `MC-ERR-SERVER-UNAVAILABLE` | HTTP 503 / WS close 1013 | yes | `3/500ms exponential capped 5s/±20%/read or same key/local-only` | `mobile.error.serverUnavailable` | `server_unavailable` | local Lily unchanged | service contract |
+
+## 2. Compatibility Aliases
+
+Legacy prose names (`REQUEST_IDEMPOTENCY_CONFLICT`, `DEVICE_SIGNATURE_INVALID`, `CLIENT_UPGRADE_REQUIRED`, `DELIVERY_UNKNOWN`, `artifact_unavailable`, `NATIVE_*`, and similar) map one-to-one to the closest catalog row at protocol adapters. New schemas and implementations emit only `MC-ERR-*`. Removing or changing the semantics of an existing error requires a protocol-major change; additive codes require clients to treat unknown codes as `MC-ERR-PROTOCOL-CLIENT-UPGRADE-REQUIRED` for mutations, never as retryable success.

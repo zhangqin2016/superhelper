@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document defines the production WebRTC behavior for Lily Mobile Command Pro: connection setup, signaling, ICE/TURN, media constraints, DataChannel backpressure, reconnect, weak network behavior, and QA.
+This runbook owns WebRTC operational behavior: signaling, ICE/TURN, media constraints, DataChannel backpressure, weak-network actions, and QA. MC-SM-WEBRTC, MC-SM-RECONNECT and MC-SM-BACKGROUND in [the canonical state machines](mobile-command-state-machines.md) own state names/transitions; [the error recovery catalog](mobile-command-error-recovery-catalog.md) owns codes and retry policy.
 
 WebRTC failure must degrade to Chat Only. It must not break local Lily agent execution.
 
@@ -31,10 +31,10 @@ sequenceDiagram
   S->>D: webrtc.offer
   D->>S: webrtc.answer
   S->>M: webrtc.answer
-  M->>S: ice.candidate
-  S->>D: ice.candidate
-  D->>S: ice.candidate
-  S->>M: ice.candidate
+  M->>S: webrtc.ice.candidate
+  S->>D: webrtc.ice.candidate
+  D->>S: webrtc.ice.candidate
+  S->>M: webrtc.ice.candidate
   M-->>D: WebRTC media + data channels
 ```
 
@@ -122,7 +122,8 @@ Weak network downgrade:
 | keyboard | true | true | typing/shortcuts |
 | clipboard | true | true | clipboard requests |
 | health | false | false | stats/ping |
-| file-meta | true | true | upload/download metadata |
+
+File/upload/artifact metadata is deliberately absent: it uses authenticated HTTP/WS projection and is owned by the file-transfer contract. DataChannel cannot mint upload or artifact authority.
 
 ### 6.1 Backpressure
 
@@ -144,36 +145,11 @@ Thresholds:
 
 ## 7. Reconnect State Machine
 
-```text
-connected
-degraded
-ice_restarting
-signaling_reconnecting
-permission_rechecking
-reconnected
-failed_chat_only
-closed
-```
-
-Rules:
-
-- ICE failure triggers one ICE restart.
-- If restart fails, reconnect signaling once.
-- During reconnect, control input is paused.
-- Observe may continue if video recovers before TTL.
-- Control permission expires if reconnect exceeds grace period.
-- On final failure, return to Chat Only.
+Use MC-SM-WEBRTC for media/ICE reconnect and MC-SM-RECONNECT for durable command/projection recovery. ICE failure permits one ICE restart and then one signaling reconnect as cataloged by `MC-ERR-WEBRTC-ICE-FAILED`. Input pauses before either attempt; identity, permission and source are revalidated before resume. Exhaustion enters canonical `chat_only`, never a locally invented reconnect state, and does not end the Lily task.
 
 ## 8. Mobile Background Behavior
 
-| State | Observe | Control |
-|---|---|---|
-| app background < 10s | keep session | pause input |
-| app background 10-60s | keep observe if platform allows | revoke control |
-| app background > 60s | close WebRTC | Chat Only |
-| phone lock | close WebRTC | revoke control |
-
-Native shell may improve lifecycle reporting but cannot keep control active silently.
+MC-SM-BACKGROUND is canonical: input pauses immediately, control is revoked after 10 seconds, observe may remain only until 60 seconds when platform/policy allow, and lock closes WebRTC/revokes L2+. Native shell owns lifecycle observation, not permission state, and cannot keep control active silently. Missing/restarted lifecycle state assumes background/Chat Only.
 
 ## 9. Desktop Source Mapping
 
