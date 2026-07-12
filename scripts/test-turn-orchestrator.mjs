@@ -1453,4 +1453,71 @@ if (queueState.queue.length !== 0) {
   queueState.dispatchBusyRetries = 0;
 }
 
+// admitExternalCommand: the mobile injection seam (MC-SPEC-008 §3.3). A mobile
+// command enters an idle session as exactly one FIFO item carrying durable
+// command metadata; a replay does not enqueue twice; a reused key with a new
+// payload is rejected; a requested steer is admitted as queue with a downgrade
+// reason (runner.steer never called).
+{
+  // Drive the seam against a BUSY session so admitted items stay in the queue
+  // (the heavy real dispatch path is covered by the existing queue tests; here
+  // we verify admission, enqueue metadata, and idempotency deterministically).
+  const busyState = ctx.turnOrchestrator._state("s1");
+  busyState.phase = "streaming";
+  busyState.turnId = "turn_active_ext";
+  busyState.queue = [];
+  ctx.turnOrchestrator._clearDispatchRetry?.("s1");
+  const must = (cond, msg) => { if (!cond) throw new Error(msg); };
+
+  const envelope = {
+    commandId: "cmd_ext_1",
+    idempotencyKey: "idem_ext_1",
+    payloadHash: "hash_1",
+    lilySessionId: "s1",
+    mobileDeviceId: "dmob",
+    desktopDeviceId: "dtop",
+    remoteSessionId: "rs_1",
+    text: "从手机发来的任务",
+    mode: "queue",
+    sourceSequence: 1,
+  };
+
+  const first = await ctx.turnOrchestrator.admitExternalCommand(envelope);
+  must(first.ok === true, `admit should succeed: ${JSON.stringify(first)}`);
+  must(first.commandId === "cmd_ext_1", "admission returns the commandId");
+  must(first.effectiveMode === "queue", "queue command admits as queue");
+  must(busyState.queue.length === 1, "the command is admitted as exactly one FIFO item");
+  const admittedItem = busyState.queue[0];
+  must(admittedItem.options?.externalCommand?.commandId === "cmd_ext_1", "durable command metadata rides the queue item");
+  must(admittedItem.options?.queueOrigin === "mobile_command", "the item is marked as a mobile command");
+
+  // Replay of the same command must NOT enqueue again.
+  const replay = await ctx.turnOrchestrator.admitExternalCommand(envelope);
+  must(replay.ok === true, "a replay returns the existing admission");
+  must(replay.commandId === "cmd_ext_1", "replay returns the same commandId");
+  must(busyState.queue.length === 1, "a replayed command never enqueues a second item");
+
+  // Same key, new payload → rejected (never overwrites the original command).
+  const conflict = await ctx.turnOrchestrator.admitExternalCommand({ ...envelope, payloadHash: "hash_DIFFERENT" });
+  must(conflict.ok === false && conflict.code === "COMMAND_PAYLOAD_CONFLICT", "a reused key with a new payload is rejected");
+  must(busyState.queue.length === 1, "a conflicting command does not enqueue");
+
+  // Requested steer is admitted as queue with the downgrade reason surfaced.
+  const steer = await ctx.turnOrchestrator.admitExternalCommand({
+    ...envelope, commandId: "cmd_ext_2", idempotencyKey: "idem_ext_2", payloadHash: "hash_2", mode: "steer",
+  });
+  must(steer.requestedMode === "steer", "requested steer preserved");
+  must(steer.effectiveMode === "queue", "steer downgrades to queue under today's engine");
+  must(steer.downgradeReason === "STEER_IDEMPOTENCY_UNAVAILABLE", "downgrade reason surfaced to mobile");
+  must(busyState.queue.length === 2, "the steer command is admitted as a second queued item");
+
+  // A command targeting a nonexistent session is a non-admission.
+  const absent = await ctx.turnOrchestrator.admitExternalCommand({ ...envelope, commandId: "cmd_ext_3", idempotencyKey: "i3", payloadHash: "h3", lilySessionId: "no_such_session" });
+  must(absent.ok === false && absent.code === "SESSION_ABSENT", "a command to an unknown session is refused");
+
+  busyState.queue = [];
+  busyState.phase = "idle";
+  busyState.turnId = null;
+}
+
 console.log("turn-orchestrator: ok");

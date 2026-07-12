@@ -135,6 +135,11 @@ function queueDispatchOptions(opts = {}) {
     permissionMode: opts.permissionMode || undefined,
     queueOrigin,
     queueVisibility: opts.queueVisibility === "background" ? "background" : "composer",
+    // Mobile Command: durable command metadata must survive _tryStartQueuedItem
+    // dispatch into the started turn (contract §3.2), so it rides the options.
+    externalCommand: opts.externalCommand && typeof opts.externalCommand === "object"
+      ? opts.externalCommand
+      : null,
   };
 }
 
@@ -360,6 +365,93 @@ class TurnOrchestrator {
     this.boundRunners = new WeakSet();
     this.runCoordinator = ctx.turnRunCoordinator || new TurnRunCoordinator();
     this.dispatchRetryTimers = new Map();
+    // External-command dedup ledgers, keyed by lilySessionId → Map(commandId →
+    // record). In-memory today (single-process exactly-once ADMISSION); durable
+    // co-flush with the session store is the tracked follow-up for crash-safe
+    // exactly-once across restarts (contract §3.3).
+    this.externalLedgers = new Map();
+  }
+
+  _externalLedger(sessionId) {
+    let ledger = this.externalLedgers.get(sessionId);
+    if (!ledger) {
+      ledger = new Map();
+      this.externalLedgers.set(sessionId, ledger);
+    }
+    return ledger;
+  }
+
+  /**
+   * The ONLY external (mobile) command admission entry (MC-SPEC-008 §3.3).
+   * Mobile code must never call sendUserMessage/runner directly. Validates and
+   * admits exactly once: a replayed commandId returns its existing ledger state
+   * without re-enqueuing; a same-key/different-payload command is rejected; an
+   * absent/misowned session is a non-admission. A requested steer is admitted
+   * as queue (downgradeReason recorded); runner.steer is never invoked.
+   * Returns the admission response shape mobile consumes. Fail-open: internal
+   * errors surface as a structured non-admission, never a thrown turn.
+   */
+  async admitExternalCommand(envelope = {}, checks = {}) {
+    try {
+      const admission = require("./external-command-admission");
+      const sessionId = String(envelope?.lilySessionId || "");
+      const session = sessionId ? this.ctx.sessionManager.findById(sessionId) : null;
+      const sessionExists = typeof checks.sessionExists === "boolean"
+        ? checks.sessionExists
+        : Boolean(session);
+      const sessionOwned = typeof checks.sessionOwned === "boolean"
+        ? checks.sessionOwned
+        : true; // ownership resolved by the caller (pairing grant) in Phase 1
+      const ledger = this._externalLedger(sessionId);
+      const existingRecord = envelope?.commandId ? ledger.get(envelope.commandId) || null : null;
+
+      const decision = admission.decideExternalCommandAdmission({
+        envelope,
+        existingRecord,
+        sessionExists,
+        sessionOwned,
+      });
+      if (decision.outcome === "invalid") return { ok: false, code: decision.code };
+      if (decision.outcome === "payload_conflict") return { ok: false, code: decision.code };
+      if (decision.outcome === "session_absent") return { ok: false, code: decision.code };
+      if (decision.outcome === "ownership_mismatch") return { ok: false, code: decision.code };
+      if (decision.outcome === "idempotent_hit") return decision.response;
+
+      // admit: create ONE FIFO item carrying durable command metadata, record
+      // the ledger entry, then let the normal dispatcher run it. The ledger
+      // write + enqueue happen together before any async dispatch, so a
+      // duplicate arriving concurrently finds the record and no second enqueue.
+      const state = this._state(sessionId);
+      const item = {
+        id: newQueueId(),
+        text: String(envelope.text || ""),
+        files: Array.isArray(envelope.files) ? envelope.files : [],
+        displayFiles: mergeDisplayFileMetadata(envelope.files || [], envelope.displayFiles),
+        options: queueDispatchOptions({
+          queueOrigin: "mobile_command",
+          queueVisibility: "composer",
+          externalCommand: {
+            commandId: decision.record.commandId,
+            idempotencyKey: decision.record.idempotencyKey,
+            payloadHash: decision.record.payloadHash,
+            requestedMode: decision.record.requestedMode,
+            effectiveMode: decision.record.effectiveMode,
+            downgradeReason: decision.record.downgradeReason,
+            mobileDeviceId: decision.record.mobileDeviceId,
+            remoteSessionId: decision.record.remoteSessionId,
+          },
+        }),
+      };
+      decision.record.queueItemId = item.id;
+      ledger.set(decision.record.commandId, decision.record);
+      state.queue.push(item);
+      this._emitQueue(sessionId);
+      void this._dispatchNext(sessionId);
+      return admission.admissionResponse(decision.record);
+    } catch (err) {
+      log.warn("admitExternalCommand failed open: %s", err?.message || err);
+      return { ok: false, code: "COMMAND_ADMISSION_ERROR" };
+    }
   }
 
   snapshot(sessionId) {
