@@ -1,276 +1,106 @@
-# Lily Mobile Command Pro Repo Implementation Map
+# Lily Mobile Command Pro Repository Implementation Map
 
-## 1. Purpose
+## 1. Status And Rules
 
-This document maps the Mobile Command Pro design to concrete repository locations. It defines files to create, files to touch only for wiring, and files that must not receive new responsibilities.
+This MC-SPEC-036 map separates verified current owners from planned placement. It does not authorize production implementation. Current evidence is canonical in [MC-SPEC-005](mobile-command-existing-system-integration.md); planned names below may change when the data, auth, agent-bridge, API, and native contracts are accepted.
 
-## 2. Implementation Principles
+- Extend the current route, lifecycle, turn, event, config, IPC, migration, and logging seams.
+- Do not call private `serviceFetch` or signing helpers, raw OpenCode runtime APIs, or `OpencodeAgentSession.sendUserMessage` from Mobile Command.
+- Local capability remains the strong default; remote authority ambiguity fails safe.
 
-- Add new cohesive modules instead of growing existing large files.
-- Main process owns desktop capabilities and local security decisions.
-- Server owns account/device/session routing, not screen or input content.
-- Mobile Web app owns UI, state, protocol validation, and command experience.
-- Native shell owns only system capabilities.
-- All capability-affecting paths need fail-open / fail-safe tests.
+## 2. Verified Current Owners
 
-## 3. Desktop Main Process
+| Responsibility | Existing owner | Planned use boundary |
+|---|---|---|
+| Server route composition | `server/src/app.js`, `server/src/routes/public.js` | Register one additive public route plugin through `publicRoutes` |
+| User/device/session/license identity | `server/src/routes/public/auth.js`, `server/src/services/device-identity.js`, existing migrations | Reference existing IDs; add remote-specific relations instead of parallel base identities |
+| Region and effective config | `server/src/services/client-bootstrap.js`, `server/src/routes/public/client-config.js`, `src/main/remote-config.js` | Add versioned policy/config fields without merging the two delivery paths |
+| Authenticated desktop service requests | `src/main/service-client.js` | Add reviewed exported wrapper methods; private transport/signing functions are not an integration API |
+| Conversation and command entry | `src/main/turn-orchestrator.js` | Inject only through `TurnOrchestrator.sendUserMessage` |
+| Engine message/event normalization | `src/main/runtime/opencode-message-parts.js`, `src/main/runtime/opencode-runtime-reducer.js`, `src/main/opencode-agent-session.js` | Project normalized Lily events; never forward raw engine events |
+| Permission/question handling | `src/main/opencode-agent-session.js`, `src/main/turn-orchestrator.js` | Add remote eligibility/resolution around current permission/question semantics |
+| Local artifact identity | `src/main/artifact-registry.js`, `src/main/turn-artifacts.js` | Source adapter only; add remote descriptors and authorization separately |
+| Local attachment staging | `src/main/file-staging-manager.js`, `src/main/ipc-files.js` | Destination adapter only after remote upload verification |
+| Lifecycle and IPC | `src/main.js`, `src/main/ipc-handlers.js` and domain `src/main/ipc-*.js` modules | Minimal service composition and dedicated local UI bridge |
+| Logging | `src/main/logger.js`, Fastify logger | Add redacted structured telemetry/audit owner |
+| SQL migrations | `server/migrations/` | Next ordered additive migration after schema contracts are accepted |
 
-Create:
+## 3. Planned Additive Placement
+
+All paths in this section are **planned; they do not exist at the audited HEAD**.
 
 ```text
-src/main/mobile-control/
+src/main/mobile-command/
   index.js
-  mobile-control-service.js
-  pairing-service.js
-  device-registry.js
-  cloud-relay-client.js
+  service.js
+  cloud-client.js
+  pairing-controller.js
+  remote-session-controller.js
+  agent-bridge.js
+  event-projector.js
+  permission-policy.js
+  artifact-source.js
+  upload-staging-adapter.js
   signaling-client.js
   rtc-session-manager.js
-  screen-capture-service.js
-  input-control-service.js
-  clipboard-bridge.js
-  file-transfer-service.js
-  agent-mobile-bridge.js
-  permission-policy.js
-  approval-service.js
-  audit-log-service.js
-  remote-health-service.js
-  protocol.js
-  config.js
+  audit.js
+  platform/
 ```
 
-### 3.1 Wiring Files
-
-Touch only for lifecycle wiring:
+`agent-bridge.js` must delegate to the existing orchestrator. `event-projector.js` consumes normalized Lily events. `artifact-source.js` and `upload-staging-adapter.js` wrap only the verified local invariants; they do not turn current registries into network services. OS adapter filenames remain evidence-needed under MC-ADR-005–007.
 
 ```text
-src/main.js
-src/main/ipc-handlers.js
-src/main/config.js
-src/main/client-config-service.js
+server/src/routes/public/mobile-command.js
+server/src/services/mobile-command/
+server/migrations/<next-sequence>_mobile_command.sql
 ```
 
-Rules:
-
-- `src/main.js` may start/stop `mobile-control-service`.
-- `ipc-handlers.js` may expose pairing QR/status only.
-- No remote protocol logic in IPC files.
-- No OS input logic outside `input-control-service.js` and platform adapters.
-
-### 3.2 Existing Modules To Reuse
-
-| Need | Existing module |
-|---|---|
-| app icon | `src/main/app-icon.js`, `resources/icon*` |
-| file staging | `src/main/file-staging-manager.js` |
-| artifacts | `src/main/artifact-registry.js` |
-| sessions | `src/main/session-*`, `agent-session.js`, `turn-orchestrator.js` |
-| config | `client-config-service.js`, `config.js` |
-| crypto helpers | `crypto-signing.js` if suitable |
-
-Read exports before using. Do not duplicate staging, artifact, or session stores.
-
-### 3.3 Platform Adapters
-
-Create:
-
-```text
-src/main/mobile-control/platform/
-  windows-input-helper.js
-  macos-input-helper.js
-  linux-input-helper.js
-  screen-source-adapter.js
-  permission-detector.js
-```
-
-Native binaries or helper scripts, if needed:
-
-```text
-resources/mobile-control/
-  win32/
-  darwin/
-  linux/
-```
-
-No helper may accept arbitrary script text.
-
-## 4. Shared Protocol Code
-
-Create:
+The planned public registrar owns pairing, remote-session, permission resolution, signaling/TURN credential, upload, and artifact authorization endpoints after MC-SPEC-006–011 define them. It is registered from current `server/src/routes/public.js`; there is no `server/src/routes/public/index.js`.
 
 ```text
 src/shared/mobile-command/
-  ids.js
-  error-codes.js
-  permission-levels.js
-  event-types.js
-  schemas.js
-  validators.js
-```
-
-If repo prefers ESM/CJS consistency, follow existing local style.
-
-Generated or source schemas:
-
-```text
 docs/schemas/mobile-command.openapi.yaml
 docs/schemas/mobile-command-events.schema.json
 docs/schemas/mobile-command-native-bridge.schema.json
 ```
 
-Consumers:
+Shared runtime placement is conditional on a later build/module-format audit. The three schema paths exist today as draft documentation boundaries; executable shared validators are planned.
 
-- server route validation
-- desktop event validation
-- mobile app typed client
-- tests
+## 4. Mobile And Native Placement
 
-## 5. Server
+MC-ADR-001 remains proposed: repository evidence alone does not prove that nesting an independently packaged PWA/native application in the current Next.js `web/` package is safe. Therefore neither `web/mobile-command/`, top-level `mobile/`, nor another repository is accepted here.
 
-Create:
+MC-ADR-002 likewise owns native-shell selection and paths. No `mobile-native/`, Capacitor, iOS, or Android project is a current interface or accepted placement.
 
-```text
-server/src/routes/public/mobile-pairing.js
-server/src/routes/public/mobile-devices.js
-server/src/routes/public/remote-sessions.js
-server/src/routes/public/remote-signaling.js
-server/src/routes/public/remote-turn.js
-server/src/routes/public/remote-uploads.js
-server/src/services/mobile-device-service.js
-server/src/services/remote-session-service.js
-server/src/services/remote-signaling-service.js
-server/src/services/remote-audit-service.js
-server/src/services/remote-upload-service.js
-server/src/services/turn-credential-service.js
-```
+## 5. Existing Files Allowed Only Narrow Wiring
 
-Touch:
+| Current file | Allowed additive change after specification freeze |
+|---|---|
+| `server/src/routes/public.js` | Register the single Mobile Command public registrar |
+| `src/main.js` | Construct/start/stop the service with existing lifecycle behavior preserved |
+| `src/main/service-client.js` | Export narrow route wrappers; do not export general arbitrary fetch/sign primitives without a separate security review |
+| `src/main/remote-config.js` | Read additive accepted fields and notify existing listeners |
+| `src/main/ipc-handlers.js` | Compose a dedicated Mobile Command IPC handler module |
+| `src/main/turn-orchestrator.js` | At most accept validated additive source/idempotency metadata; retain sole turn ownership |
+| `src/main/opencode-agent-session.js` | No Mobile Command business logic; runtime adapter behavior only |
+| `src/main/file-staging-manager.js` | No network/chunk/auth logic |
+| `src/main/artifact-registry.js` | No remote authorization, retention, or download-token logic |
 
-```text
-server/src/routes/public/index.js
-server/src/db.js
-```
+## 6. Planned Verification Placement
 
-Migrations:
+Tests remain planned under auto-discovered `scripts/test-*.mjs`. Minimum boundaries are route registration/OpenAPI coverage, identity and revocation, signature replay, command idempotency and session isolation, queue/steer fallback, permission/question authority, upload chunk/hash/risk, artifact authorization, event replay/backpressure, lifecycle disablement, config kill switches, and capability-gate fallback.
 
-```text
-server/migrations/YYYYMMDDHHMM_mobile_command.sql
-```
+## 7. Dependency Order
 
-Migration must include:
+1. Accept identity/data/auth and configuration semantics.
+2. Accept API, event, native bridge, state, and error contracts.
+3. Add migrations and server registrar behind disabled authority defaults.
+4. Add desktop service composition, narrow service wrappers, and agent bridge.
+5. Add remote event, permission/question, artifact, and upload adapters.
+6. Select and add the mobile application/native shell only after MC-ADR-001/002 evidence.
+7. Add signaling/WebRTC and OS adapters only after their evidence decisions.
+8. Close audit, observability, compatibility, and release gates.
 
-- tables
-- unique indexes
-- lookup indexes
-- additive-only changes
-- rollback notes if repo convention supports rollback
+## 8. Acceptance Boundary
 
-## 6. Mobile Web App
-
-Preferred location if using current `web/`:
-
-```text
-web/mobile-command/
-  app/
-  components/
-  services/
-  state/
-  domain/
-  storage/
-  telemetry/
-  native/
-```
-
-Alternative if `web/` structure makes route isolation hard:
-
-```text
-mobile/
-```
-
-Decision rule:
-
-- Use `web/mobile-command/` if build tooling can isolate PWA bundle cleanly.
-- Use `mobile/` if Next.js marketing/admin constraints would couple release cycles.
-
-## 7. Native Capability Shell
-
-If using Capacitor:
-
-```text
-mobile-native/
-  capacitor.config.ts
-  ios/
-  android/
-  plugins/
-    lily-secure-key/
-    lily-background-upload/
-    lily-share/
-    lily-permissions/
-```
-
-The native shell loads the mobile web bundle. It does not contain business UI.
-
-## 8. Tests
-
-Create:
-
-```text
-scripts/test-mobile-protocol-schema.mjs
-scripts/test-mobile-error-contract.mjs
-scripts/test-mobile-idempotency.mjs
-scripts/test-mobile-signature-replay.mjs
-scripts/test-remote-session-permissions.mjs
-scripts/test-remote-approval-policy.mjs
-scripts/test-remote-device-revocation.mjs
-scripts/test-remote-agent-bridge.mjs
-scripts/test-remote-session-isolation.mjs
-scripts/test-remote-file-transfer.mjs
-scripts/test-remote-upload-idempotency.mjs
-scripts/test-remote-upload-hash.mjs
-scripts/test-remote-upload-risk.mjs
-scripts/test-remote-artifact-download.mjs
-scripts/test-remote-signaling-contract.mjs
-scripts/test-remote-webrtc-state-machine.mjs
-scripts/test-remote-datachannel-backpressure.mjs
-scripts/test-remote-input-protocol.mjs
-scripts/test-mobile-native-bridge-schema.mjs
-scripts/test-mobile-ui-states.mjs
-```
-
-Tests should be auto-discovered by the existing test runner.
-
-## 9. Files Not To Grow With New Responsibilities
-
-Do not put new remote-control business logic in:
-
-```text
-src/main/ipc-handlers.js
-src/main/agent-session.js
-src/main/turn-orchestrator.js
-src/renderer/app.js
-src/renderer/modules/message.js
-```
-
-These may receive minimal integration hooks only.
-
-## 10. Implementation Order
-
-1. Shared constants and schemas.
-2. Permission-policy pure module and tests.
-3. Server migrations and device/session routes.
-4. Desktop mobile-control service skeleton behind feature flag.
-5. Pairing and device registry.
-6. Agent mobile bridge.
-7. Mobile Command UI.
-8. Upload service and staging bridge.
-9. WebRTC signaling and state machine.
-10. Screen capture and input adapters.
-11. Native shell capabilities.
-12. Audit, telemetry, release gates.
-
-## 11. Acceptance
-
-- A developer can identify the owner file for each responsibility.
-- Existing session/file/artifact systems are reused.
-- Feature disabled path starts desktop exactly as today.
-- Tests fail if remote-control logic bypasses permission policy.
+This map is repository-grounded when every current path exists and every nonexistent path is labeled planned. It is not implementation-ready until its dependent canonical artifacts and ADRs are accepted.

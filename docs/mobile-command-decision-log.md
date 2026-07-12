@@ -16,7 +16,7 @@ Every ADR retains the nine required compatibility fields and adds four auditable
 
 Supersession is append-only: create a new `MC-ADR-*` ID, set its `Supersedes` field to the old ID, and change the old record's status to `superseded`. Never edit an accepted decision in place to represent a different choice, and never delete the old record.
 
-No record below is accepted. Recommendations in earlier documents are inputs, not evidence-backed decisions.
+Repository-truth decisions may be accepted by the accountable architecture role when the audited current code is sufficient. Vendor, platform, product-location, and production-topology choices remain proposed until their separate evidence gates complete.
 
 ## MC-ADR-001 — Mobile application repository and build boundary
 
@@ -52,19 +52,19 @@ No record below is accepted. Recommendations in earlier documents are inputs, no
 
 ## MC-ADR-003 — User, license, desktop, and mobile identity mapping
 
-- Status: proposed
-- Decision: Map every proposed user/account, license, desktop installation/device, mobile device, key, token, and pairing identifier to verified current repository concepts or explicitly approved additive concepts.
-- Repository evidence: Current specifications use generic `account_id`, `desktop_device_id`, and `mobile_device_id`; the repository-truth gate must inspect existing routes, services, and migrations before terminology is selected.
-- Evidence refs: Pending — MC-SPEC-005, MC-SPEC-006, MC-SPEC-007
+- Status: accepted
+- Decision: Use `users.id` as `user_id`; use the unified existing `devices.id` as `device_id` for both desktop and mobile devices, with role/pairing represented additively; use `user_sessions.id` only for account authentication state; and use `licenses.id` through `license_devices` as entitlement context. A future remote session is a distinct additive concept and must not be called an account session or local conversation.
+- Repository evidence: `server/migrations/001_initial.sql:1-32` defines licenses, devices, and license bindings; `server/migrations/007_client_config_profiles.sql:43-56` binds device keys/nonces to the same device; `server/migrations/022_account_wallet.sql:1-63` defines users, user sessions, and user-device links; `server/src/routes/public/auth.js:88-111,213-231` creates account sessions and user-device links.
+- Evidence refs: MC-SPEC-005 §2–3; `server/migrations/001_initial.sql`; `server/migrations/007_client_config_profiles.sql`; `server/migrations/022_account_wallet.sql`; `server/src/routes/public/auth.js`
 - Evidence owner: Identity and security lead
 - Alternatives: user-primary ownership; license-primary ownership; device-primary ownership; explicit linked identity domains.
 - Capability gate: Identity uncertainty must reject pairing/control authority without invalidating local desktop licensing or local sessions.
 - Failure fallback: Authentication/binding ambiguity denies remote actions; local Lily remains usable.
 - Compatibility migration: Must specify existing-device compatibility, key rotation, revocation cascades, account sign-out, license change, and desktop replacement.
 - Supersedes: None.
-- Approved by: Pending
-- Approved on: Pending
-- Accepted by date: Pending
+- Approved by: Identity and security lead
+- Approved on: 2026-07-12
+- Accepted by date: Identity and security lead / 2026-07-12
 
 ## MC-ADR-004 — WebRTC topology and TURN service
 
@@ -180,19 +180,19 @@ No record below is accepted. Recommendations in earlier documents are inputs, no
 
 ## MC-ADR-011 — Feature-flag source and configuration merge
 
-- Status: proposed
-- Decision: Select the authoritative flag/config source, scope and precedence, client cache, expiry, rollout, kill switch, schema/version behavior, and offline defaults.
-- Repository evidence: Existing documents request server-configurable capability flags but do not map them to verified current configuration exports or merge behavior.
-- Evidence refs: Pending — MC-SPEC-005, MC-SPEC-023, MC-SPEC-034
+- Status: accepted
+- Decision: Preserve two authoritative current delivery paths: `GET /api/client/bootstrap` owns unsigned region/routing/bootstrap feature policy, while signed `POST /api/client/config` owns device-resolved effective configuration merged from enabled `config_profiles` by scope/priority. Mobile Command adds versioned fields and kill switches to the appropriate path; it does not collapse the two sources or create an unreviewed third config service.
+- Repository evidence: `server/src/routes/public/client-config.js:61-103,106-175` shows profile filtering/`deepMerge`, the bootstrap GET, and the signed config POST; `src/main/service-client.js:293-328` calls bootstrap directly without the signed `serviceFetch`; `src/main/remote-config.js:275-326` verifies and caches effective config.
+- Evidence refs: MC-SPEC-005 §2–3; `server/src/routes/public/client-config.js`; `src/main/service-client.js`; `src/main/remote-config.js`; MC-SPEC-023; MC-SPEC-034
 - Evidence owner: Configuration platform lead
 - Alternatives: existing Lily remote config; dedicated Mobile Command config; build-time flags; hybrid signed remote config.
 - Capability gate: Unknown, expired, or unavailable remote authority disables sensitive remote capabilities while preserving today's desktop/local behavior.
 - Failure fallback: Fail open to the existing desktop baseline and fail safe for pairing, observe, control, upload, voice-provider, and push authority.
 - Compatibility migration: Must define additive fields, older-client ignore behavior, rollback, cached-config expiry, and scope changes.
 - Supersedes: None.
-- Approved by: Pending
-- Approved on: Pending
-- Accepted by date: Pending
+- Approved by: Configuration platform lead
+- Approved on: 2026-07-12
+- Accepted by date: Configuration platform lead / 2026-07-12
 
 ## MC-ADR-012 — Desktop, server, web, and native release coupling
 
@@ -210,13 +210,61 @@ No record below is accepted. Recommendations in earlier documents are inputs, no
 - Approved on: Pending
 - Accepted by date: Pending
 
+## MC-ADR-013 — Public route registration boundary
+
+- Status: accepted
+- Decision: Register future public Mobile Command routes through one cohesive public registrar called by `publicRoutes`; `registerRoutes` remains the top-level composition owner. The routes must remain visible to `buildDocApp` OpenAPI enumeration.
+- Repository evidence: `server/src/app.js:91-114` calls and exports `registerRoutes`; `server/src/routes/public.js:14-37` is the actual public registrar. There is no `server/src/routes/public/index.js`.
+- Evidence refs: MC-SPEC-005 §2; `server/src/app.js`; `server/src/routes/public.js`
+- Evidence owner: Server architecture lead
+- Alternatives: direct registration in `app.js`; scattered route registration; a new unreferenced public index.
+- Capability gate: Registration failure or feature disablement cannot affect existing public routes or desktop behavior.
+- Failure fallback: Keep the registrar disabled/absent and preserve today's route graph.
+- Compatibility migration: Add routes and schemas without changing existing URLs or registration order; preserve doc-app coverage.
+- Supersedes: None.
+- Approved by: Server architecture lead
+- Approved on: 2026-07-12
+- Accepted by date: Server architecture lead / 2026-07-12
+
+## MC-ADR-014 — Existing-conversation command and event boundary
+
+- Status: accepted
+- Decision: Inject remote commands only through `TurnOrchestrator.sendUserMessage` for an existing local session. Busy behavior, queue ordering, steer fallback, transcript ownership, normalized runtime events, permission events, and question events remain owned by the current orchestrator/runtime adapter chain; Mobile Command must not call the engine session directly or forward raw OpenCode events.
+- Repository evidence: `src/main/turn-orchestrator.js:841-925` owns dispatch/queue/steer fallback; assistant IPC and scheduled tasks call it at `src/main/ipc-assistant.js:106,176` and `src/main/scheduled-tasks.js:276`; runtime normalization lives in `src/main/runtime/opencode-message-parts.js` and `src/main/runtime/opencode-runtime-reducer.js`.
+- Evidence refs: MC-SPEC-005 §2–3; `src/main/turn-orchestrator.js`; `src/main/ipc-assistant.js`; `src/main/scheduled-tasks.js`; `src/main/runtime/opencode-message-parts.js`; `src/main/runtime/opencode-runtime-reducer.js`
+- Evidence owner: Desktop agent architecture lead
+- Alternatives: direct `OpencodeAgentSession` calls; parallel remote conversation store; raw runtime event proxy.
+- Capability gate: Bridge/steer failure degrades to today's queue/local behavior and never weakens the local session.
+- Failure fallback: Reject before dispatch when authority is invalid; after a valid busy dispatch, use the existing queue fallback.
+- Compatibility migration: Preserve local session IDs, transcript ordering, renderer events, permission/question handling, and kill switch behavior.
+- Supersedes: None.
+- Approved by: Desktop agent architecture lead
+- Approved on: 2026-07-12
+- Accepted by date: Desktop agent architecture lead / 2026-07-12
+
+## MC-ADR-015 — Artifact registry and file staging reuse boundary
+
+- Status: accepted
+- Decision: Reuse the current artifact registry only as a workspace-confined local artifact source and the file staging manager only as a local destination after remote bytes are fully authorized and verified. Neither current module is a remote transfer, authorization, retention, replay, scanning, or live-artifact-event service.
+- Repository evidence: `src/main/artifact-registry.js:175-277` requires workspace paths and owns local manifest identity; `src/main/turn-artifacts.js` derives artifacts at terminal processing; `src/main/file-staging-manager.js:67-150` stages whole local paths/buffers with random IDs and has no chunk/hash/idempotency/risk contract.
+- Evidence refs: MC-SPEC-005 §2–3; `src/main/artifact-registry.js`; `src/main/turn-artifacts.js`; `src/main/file-staging-manager.js`; MC-SPEC-027
+- Evidence owner: Desktop data-boundary lead
+- Alternatives: treat existing modules as complete remote transfer services; duplicate all local registries; build network logic into either module.
+- Capability gate: Remote transfer failure leaves current local artifacts and attachments unchanged; unverifiable input never reaches execution.
+- Failure fallback: Fail remote upload/download explicitly and retain today's local-only path.
+- Compatibility migration: Preserve manifest format and current staging callers; add adapters and remote descriptors outside these modules.
+- Supersedes: None.
+- Approved by: Desktop data-boundary lead
+- Approved on: 2026-07-12
+- Accepted by date: Desktop data-boundary lead / 2026-07-12
+
 ## 2. Mandatory Decision Closure Summary
 
 | Decision | Responsible role | Current status |
 |---|---|---|
 | MC-ADR-001 | Repository architecture lead | proposed |
 | MC-ADR-002 | Mobile platform lead | proposed |
-| MC-ADR-003 | Identity and security lead | proposed |
+| MC-ADR-003 | Identity and security lead | accepted |
 | MC-ADR-004 | Infrastructure and operations lead | proposed |
 | MC-ADR-005 | Windows platform lead | proposed |
 | MC-ADR-006 | macOS platform lead | proposed |
@@ -224,7 +272,10 @@ No record below is accepted. Recommendations in earlier documents are inputs, no
 | MC-ADR-008 | Speech and privacy lead | proposed |
 | MC-ADR-009 | Mobile infrastructure lead | proposed |
 | MC-ADR-010 | Data infrastructure lead | proposed |
-| MC-ADR-011 | Configuration platform lead | proposed |
+| MC-ADR-011 | Configuration platform lead | accepted |
 | MC-ADR-012 | Release engineering lead | proposed |
+| MC-ADR-013 | Server architecture lead | accepted |
+| MC-ADR-014 | Desktop agent architecture lead | accepted |
+| MC-ADR-015 | Desktop data-boundary lead | accepted |
 
 The specification-freeze gate is blocked while any row remains `proposed`.
