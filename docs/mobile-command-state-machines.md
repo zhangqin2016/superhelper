@@ -15,6 +15,7 @@ All machines use durable compare-and-set transitions. `initial` marks the creati
 | `challenge_created` | `pairing.timeout` | authority clock reached expiry | `terminal_expired` (terminal) | invalidate token | `pairing.expired` | — |
 | `mobile_proved` | `pairing.approve` | explicit desktop approval; identity tuple still active | `terminal_paired` (terminal) | create grant and audit atomically | `pairing.completed` | `terminal_rejected` |
 | `mobile_proved` | `pairing.reject` / `pairing.timeout` | desktop decision or approval expiry | `terminal_rejected` (terminal) | invalidate challenge; no grant | `pairing.rejected` | — |
+| `initial` / `challenge_created` / `mobile_proved` | `device.revoked` | either bound desktop/mobile device is durably revoked | `terminal_revoked` (terminal) | invalidate challenge/approval, deny grant creation, cleanup pairing secret, and audit | `pairing.revoked` | reconciliation retries while authority remains denied |
 
 Persistence: challenge, consume result, key generation, approval result and grant are server durable. Restart reloads them; consumed tokens never reopen. Exact start/consume/decision retries return the same record.
 
@@ -43,6 +44,7 @@ Persistence: server session/token generation is durable; desktop permission bind
 | `observe_active` / `control_active` | `permission.revoke` / `permission.timeout` / `desktop.locked` | any safety trigger | `chat_only` | stop capture/input authority; audit | `permission.revoked` | — |
 | `control_active` | `mobile.background` | MC-SM-BACKGROUND control grace starts | `control_suspended` | pause all input | `permission.suspended` | `chat_only` on timeout |
 | `control_suspended` | `mobile.foreground` | within 10 s; tuple and WebRTC revalidated | `control_active` | resume input | `permission.resumed` | `chat_only` |
+| `chat_only` / `pending_desktop` / `observe_active` / `control_active` / `control_suspended` | `device.revoked` | MC-SM-REVOCATION durable commit wins | `terminal_revoked` (terminal) | invalidate pending request/grant, stop capture/input, cleanup authority, and audit | `permission.revoked` and `device.revoked` | reconciliation retries while authority remains denied |
 
 Persistence: pending request and grant expiry/use scope are desktop durable; live input authorization is volatile and starts disabled after restart. Repeated allow/deny returns the winning CAS. Revocation always beats late allow.
 
@@ -57,6 +59,7 @@ Canonical actions are `desktop_control`, `screen_source_switch`, `clipboard_read
 | `pending` | `approval.deny` / `approval.timeout` | first terminal CAS | `terminal_denied` (terminal) | audit denial/expiry | `approval.denied` / `approval.expired` | — |
 | `granted` | `approval.consume` | exact action/session/device/resources; uses and TTL valid | `granted` or `terminal_consumed` (terminal) | decrement atomically, then permit side effect | `approval.consumed` | `terminal_revoked` |
 | `pending` / `granted` | `permission.revoke` / `device.revoked` / `session.end` | revocation precedence | `terminal_revoked` (terminal) | invalidate unused authority | `approval.revoked` | — |
+| `initial` | `device.revoked` | requesting device is durably revoked before request persistence | `terminal_revoked` (terminal) | create no approval, cleanup provisional correlation, and audit | `approval.revoked` and `device.revoked` | reconciliation retries while authority remains denied |
 
 Persistence: all approval states, generations and uses are desktop durable. Restart reloads but does not replay a sensitive side effect. Repeated decisions/consumes return the prior result; payload mismatch conflicts.
 
@@ -75,7 +78,8 @@ Persistence: all approval states, generations and uses are desktop durable. Rest
 | `restarting_ice` | `webrtc.restart.failed` | restart exhausted/20 s | `signaling_reconnecting` | one signaling reconnect | `webrtc.reconnecting` | `chat_only` |
 | `restarting_ice` | `webrtc.connected` | ICE restart succeeds before 20 s and identity/permission/source all revalidate | `connected` | resume only the still-authorized mode | `webrtc.reconnected` | `signaling_reconnecting` on restart failure/deadline |
 | `signaling_reconnecting` | `webrtc.connected` | the single signaling reconnect succeeds before its deadline and identity/permission/source all revalidate | `connected` | resume only the still-authorized mode | `webrtc.reconnected` | `chat_only` on failure/deadline; close media/data and revoke L2+ |
-| `idle` / `signaling` / `ice_connecting` / `connected` / `degraded` / `restarting_ice` / `signaling_reconnecting` | `permission.revoke` / `device.revoked` / `webrtc.timeout` | safety/timeout precedence | `chat_only` | close media/data; revoke L2+ | `webrtc.closed` | — |
+| `idle` / `signaling` / `ice_connecting` / `connected` / `degraded` / `restarting_ice` / `signaling_reconnecting` | `permission.revoke` / `webrtc.timeout` | permission/timeout precedence | `chat_only` | close media/data; revoke L2+ | `webrtc.closed` | — |
+| `idle` / `signaling` / `ice_connecting` / `connected` / `degraded` / `restarting_ice` / `signaling_reconnecting` / `chat_only` | `device.revoked` | MC-SM-REVOCATION durable commit wins over every media/session event | `closed` (terminal) | close peer/media/data and release TURN; revoke remote tokens, approvals, push binding, upload/artifact authority; schedule owned temporary cleanup; persist audit/reconciliation | `webrtc.closed` and `device.revoked` | reconciliation retries while all remote authority remains denied |
 | `chat_only` | `session.end` | authorized end | `closed` (terminal) | release peer/TURN resources | `webrtc.closed` | — |
 
 Only `closed` is terminal; `chat_only` permits a fresh explicitly approved start. Peer state is volatile. Restart begins `idle`/`chat_only`, never silently restores control. Duplicate candidates are safe by candidate identity; offers/answers require generation idempotency.
@@ -110,6 +114,7 @@ Persistence: the canonical upload record durably stores `state`, nullable `resum
 |---|---|---|---|---|---|---|
 | `active` (initial) | `device.revoke` | authorized desktop/mobile/admin risk actor | `revoking` | durable revocation CAS and audit intent | `device.revocation.started` | remain `active` with authority denied if audit uncertain |
 | `revoking` | `device.revocation.commit` | durable device/grant revocation exists | `terminal_revoked` (terminal) | end sessions; invalidate tokens/approvals/push; cancel owned `admitted` queue and uploads | `device.revoked` | retry reconciliation |
+| `revoking` | `device.revoke` | same device revocation is repeated idempotently | `revoking` | return/continue the durable revocation reconciliation; grant no authority | `device.revocation.started` | remain `revoking` with authority denied |
 | `terminal_revoked` | any remote authority event | always | `terminal_revoked` | reject; return stored revocation | `device.revoked` | — |
 
 Persistence: server revocation is authoritative and permanent unless a new explicit pairing creates a new grant. Restart reconciles cascades until complete while denying authority. Already `dispatching`/`engine_accepted` turns may continue locally, but the device gets no further control, answer, cancellation, artifact or reconnect authority.
@@ -137,7 +142,9 @@ Projection journal/epoch are desktop durable; relay cursors are delivery hints o
 | `observe_background` | `background.observe.timeout` | 60 s cumulative elapsed from the original persisted `backgroundedAt` (not 60 s after entering this state) | `chat_only_background` | close WebRTC and revoke observe/L2+ | `webrtc.closed` and `permission.revoked` | — |
 | `background_grace` | `mobile.foreground` | event is newer than `backgroundedAt`, elapsed time is under 10 s, and tuple/session/network plus exact retained permission/WebRTC generation all revalidate | `foreground` | run reconnect/snapshot and resume the still-valid retained observe/control level | `mobile.foregrounded` | `chat_only_background` |
 | `observe_background` | `mobile.foreground` | event is newer than `backgroundedAt`, cumulative elapsed time is at least 10 s but under 60 s, and tuple/session/network plus retained observe permission/WebRTC generation all revalidate | `foreground` | run reconnect/snapshot and resume observe only; control requires a new grant | `mobile.foregrounded` | `chat_only_background` |
-| `foreground` / `background_grace` / `observe_background` / `chat_only_background` | `mobile.locked` / `device.revoked` / `session.end` | safety precedence | `chat_only_background` or `terminal_ended` | close WebRTC and revoke L2+ | `webrtc.closed` | — |
+| `foreground` / `background_grace` / `observe_background` / `chat_only_background` | `mobile.locked` | mobile lock safety precedence | `chat_only_background` | close WebRTC and revoke L2+ | `webrtc.closed` | — |
+| `foreground` / `background_grace` / `observe_background` / `chat_only_background` | `device.revoked` | MC-SM-REVOCATION durable commit wins | `terminal_ended` (terminal) | close WebRTC; revoke tokens/permissions/approvals/push/upload/artifact authority; cleanup and audit | `webrtc.closed` and `device.revoked` | reconciliation retries while authority remains denied |
+| `foreground` / `background_grace` / `observe_background` / `chat_only_background` | `session.end` | authorized session end | `terminal_ended` (terminal) | close WebRTC and revoke L2+ | `webrtc.closed` | — |
 
 Lifecycle state/timestamp is native-local durable enough to report after resume; remote authority uses desktop/server clocks. Process restart or missing lifecycle signal assumes background/chat-only. Exact repeated lifecycle events are ignored by timestamp/sequence.
 
