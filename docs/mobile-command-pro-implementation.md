@@ -912,7 +912,7 @@ file-meta   file transfer metadata
 
 Agent Bridge 的注入、并发、幂等、取消归属、事件投影、推理可见性、工具生命周期、permission/question eligibility、artifact 终局推导、重连快照、terminal 映射和失败矩阵，以 [MC-SPEC-008 Agent Bridge Contract](mobile-command-agent-bridge-contract.md) 为唯一规范来源。
 
-产品摘要：手机命令必须绑定一个明确存在的 Lily session，并经 [MC-SPEC-008 planned admission/dispatch state machine](mobile-command-agent-bridge-contract.md#33-exactly-once-admission-at-most-one-automatic-dispatch-attempt) 进入唯一的本地历史。合同只保证 exactly-once admission 和 at-most-one automatic dispatch attempt，不保证 engine side effect exactly once；`dispatching` 窗口崩溃必须显示 `dispatch_unknown`/`DELIVERY_UNKNOWN` 且不自动重放。当前 remote steer 确定性归一化为 durable FIFO queue。admission response、`queue.updated` 和 reconnect snapshot 使用同名 mode/downgrade 字段。重连 cursor 来自 planned durable `projectionEpoch`/`projectionSeq` journal，不能使用当前内存 `RuntimeEventBus.seq`。普通 desktop/remote 消息按同一 session lock 的 durable commit order FIFO；device revoke 只原子取消该设备尚未 dispatch 的 admitted 项，不影响其他 owner。relay 或 bridge 失败不影响本地 Lily，且不能伪造执行、完成或授权。
+产品摘要：手机命令必须绑定一个明确存在的 Lily session，并经 [MC-SPEC-008 planned admission/dispatch state machine](mobile-command-agent-bridge-contract.md#33-exactly-once-admission-at-most-one-automatic-dispatch-attempt) 进入唯一的本地历史。idle admission 只原子附着到 durable FIFO/idle-turn input record，不声称已经 started。合同只保证 exactly-once admission 和 at-most-one automatic dispatch attempt；当前 steer queue 也可能进入 `dispatch_unknown`、没有已确认 turn，手机必须可见，绝不自动重放。重连由 bridge 编排授权 snapshot 请求/组装，event-projector 负责 durable journal/high-water/atomic cursor cut；不能使用当前内存 `RuntimeEventBus.seq`。普通 desktop/remote 消息按 durable commit order FIFO，device revoke 只取消该设备尚未 dispatch 的 admitted 项。relay 或 bridge 失败不影响本地 Lily，且不能伪造执行、完成或授权。
 
 ## 15. 文件传输
 
