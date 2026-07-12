@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lilyworkbench.local/schemas/mobile-command-events.schema.json",
+  "title": "Lily Mobile Command Pro Events",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/wsEnvelope" },
+    { "$ref": "#/$defs/dataChannelEnvelope" }
+  ],
+  "$defs": {
+    "unixMs": { "type": "integer", "minimum": 0 },
+    "eventId": { "type": "string", "pattern": "^evt_.+" },
+    "remoteSessionId": { "type": "string", "pattern": "^rs_.+" },
+    "desktopDeviceId": { "type": "string", "pattern": "^desktop_.+" },
+    "mobileDeviceId": { "type": "string", "pattern": "^mobile_.+" },
+    "correlationId": { "type": "string", "pattern": "^corr_.+" },
+    "wsEnvelope": {
+      "type": "object",
+      "required": ["version", "id", "type", "remoteSessionId", "desktopDeviceId", "timestamp", "correlationId", "payload"],
+      "properties": {
+        "version": { "const": 1 },
+        "id": { "$ref": "#/$defs/eventId" },
+        "idempotencyKey": { "type": "string", "pattern": "^idem_.+" },
+        "type": { "$ref": "#/$defs/wsEventType" },
+        "remoteSessionId": { "$ref": "#/$defs/remoteSessionId" },
+        "desktopDeviceId": { "$ref": "#/$defs/desktopDeviceId" },
+        "mobileDeviceId": { "$ref": "#/$defs/mobileDeviceId" },
+        "lilySessionId": { "type": "string" },
+        "timestamp": { "$ref": "#/$defs/unixMs" },
+        "correlationId": { "$ref": "#/$defs/correlationId" },
+        "payload": { "type": "object" },
+        "signature": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "wsEventType": {
+      "enum": [
+        "agent.message",
+        "agent.stream.delta",
+        "agent.tool.started",
+        "agent.tool.progress",
+        "agent.tool.completed",
+        "agent.artifact.created",
+        "approval.required",
+        "approval.granted",
+        "approval.denied",
+        "webrtc.offer",
+        "webrtc.answer",
+        "webrtc.ice.candidate",
+        "session.ended",
+        "health.ping",
+        "health.stats"
+      ]
+    },
+    "dataChannelEnvelope": {
+      "type": "object",
+      "required": ["v", "id", "t", "ts", "p"],
+      "properties": {
+        "v": { "const": 1 },
+        "id": { "$ref": "#/$defs/eventId" },
+        "t": { "$ref": "#/$defs/dataChannelEventType" },
+        "ts": { "$ref": "#/$defs/unixMs" },
+        "p": {
+          "oneOf": [
+            { "$ref": "#/$defs/pointerPayload" },
+            { "$ref": "#/$defs/scrollPayload" },
+            { "$ref": "#/$defs/keyboardTypePayload" },
+            { "$ref": "#/$defs/keyboardShortcutPayload" },
+            { "$ref": "#/$defs/clipboardReadPayload" },
+            { "$ref": "#/$defs/clipboardWritePayload" },
+            { "$ref": "#/$defs/healthStatsPayload" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "dataChannelEventType": {
+      "enum": [
+        "control.pointer.move",
+        "control.pointer.down",
+        "control.pointer.up",
+        "control.pointer.scroll",
+        "control.keyboard.type",
+        "control.keyboard.shortcut",
+        "clipboard.read.request",
+        "clipboard.write.request",
+        "health.stats"
+      ]
+    },
+    "pointerPayload": {
+      "type": "object",
+      "required": ["surfaceId", "x", "y", "pointerType"],
+      "properties": {
+        "surfaceId": { "type": "string" },
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "button": { "enum": ["left", "right", "middle"] },
+        "pointerType": { "enum": ["touch", "mouse", "pen"] },
+        "modifiers": {
+          "type": "array",
+          "items": { "enum": ["shift", "ctrl", "alt", "meta"] }
+        }
+      },
+      "additionalProperties": false
+    },
+    "scrollPayload": {
+      "type": "object",
+      "required": ["surfaceId", "x", "y", "deltaX", "deltaY"],
+      "properties": {
+        "surfaceId": { "type": "string" },
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "deltaX": { "type": "number" },
+        "deltaY": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "keyboardTypePayload": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 10000 }
+      },
+      "additionalProperties": false
+    },
+    "keyboardShortcutPayload": {
+      "type": "object",
+      "required": ["keys"],
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 32 },
+          "minItems": 1,
+          "maxItems": 8
+        }
+      },
+      "additionalProperties": false
+    },
+    "clipboardReadPayload": {
+      "type": "object",
+      "required": ["maxBytes"],
+      "properties": {
+        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 1048576 }
+      },
+      "additionalProperties": false
+    },
+    "clipboardWritePayload": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 1048576 }
+      },
+      "additionalProperties": false
+    },
+    "healthStatsPayload": {
+      "type": "object",
+      "properties": {
+        "rttMs": { "type": "number", "minimum": 0 },
+        "packetLoss": { "type": "number", "minimum": 0, "maximum": 1 },
+        "fps": { "type": "number", "minimum": 0 },
+        "bitrateKbps": { "type": "number", "minimum": 0 },
+        "dataChannelBufferedAmount": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

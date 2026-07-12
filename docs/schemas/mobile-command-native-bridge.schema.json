@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lilyworkbench.local/schemas/mobile-command-native-bridge.schema.json",
+  "title": "Lily Mobile Command Native Bridge",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" }
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": ["id", "version", "method", "params"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "const": 1 },
+        "method": {
+          "enum": [
+            "secureKey.generateDeviceKey",
+            "secureKey.sign",
+            "secureKey.deleteDeviceKey",
+            "upload.startBackgroundUpload",
+            "upload.getUploadStatus",
+            "upload.cancelUpload",
+            "push.register",
+            "push.unregister",
+            "share.getPendingSharedFiles",
+            "permissions.getStatus",
+            "permissions.request",
+            "camera.scanQr"
+          ]
+        },
+        "params": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "response": {
+      "type": "object",
+      "required": ["id", "ok"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "ok": { "type": "boolean" },
+        "result": { "type": "object" },
+        "error": { "$ref": "#/$defs/error" }
+      },
+      "oneOf": [
+        { "required": ["result"], "properties": { "ok": { "const": true } } },
+        { "required": ["error"], "properties": { "ok": { "const": false } } }
+      ],
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "recoverable", "messageKey"],
+      "properties": {
+        "code": {
+          "enum": [
+            "NATIVE_METHOD_UNSUPPORTED",
+            "NATIVE_PLATFORM_UNSUPPORTED",
+            "NATIVE_PERMISSION_DENIED",
+            "NATIVE_PERMISSION_RESTRICTED",
+            "NATIVE_KEY_NOT_FOUND",
+            "NATIVE_KEY_INVALIDATED",
+            "NATIVE_KEYSTORE_UNAVAILABLE",
+            "NATIVE_SIGN_FAILED",
+            "NATIVE_UPLOAD_FAILED",
+            "NATIVE_UPLOAD_CANCELLED",
+            "NATIVE_UPLOAD_BACKGROUND_UNAVAILABLE",
+            "NATIVE_PUSH_UNAVAILABLE",
+            "NATIVE_SHARE_NO_FILES",
+            "NATIVE_FILE_ACCESS_DENIED",
+            "NATIVE_FILE_TOO_LARGE",
+            "NATIVE_CAMERA_UNAVAILABLE",
+            "NATIVE_SCANNER_FAILED",
+            "NATIVE_TIMEOUT"
+          ]
+        },
+        "recoverable": { "type": "boolean" },
+        "messageKey": { "type": "string" },
+        "details": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    }
+  }
+}
