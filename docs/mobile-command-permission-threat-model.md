@@ -183,7 +183,7 @@ Approval prompt must show:
 | Approval race | Desktop approval/deny/timeout is a database compare-and-set from `pending`; the unique live-pair constraint and atomic approval use counter allow one terminal result only. Late responses are rejected and audited. |
 | Session fixation | Server creates every `mobile_remote_sessions.id`; clients cannot choose it. Reconnect keeps the original full identity tuple, token generation, and expiry, while a replacement device or account requires a new pairing/session. |
 | Audit failure | Session start, Level 2+ grant, approval, revoke, key rotation, and sensitive action require durable allowlisted audit before side effect. Failure denies authority and alerts; ordinary Chat Only messages may continue with recoverable diagnostics. |
-| Stolen remote token | Mutations require the bound mobile device signature in addition to short-lived token validation. Used refresh-token generation replay revokes the entire token family and remote session. |
+| Stolen remote token | Every request reloads the active/unexpired remote session and compares its `access_token_generation`; suspected access-token theft atomically increments the generation and rejects all prior-generation access tokens. Mutations also require the bound mobile signature. Used refresh-token replay revokes the entire token family and remote session. |
 
 ## 8. Key Management
 

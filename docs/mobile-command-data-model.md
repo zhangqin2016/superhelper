@@ -73,6 +73,8 @@ Existing exact constraint: primary key `(user_id, device_id)`. A pairing grant r
 
 Existing exact constraints/indexes: primary key `(id)`, unique `(refresh_token_hash)`, `user_sessions_user_idx (user_id, created_at DESC)`, and `user_sessions_device_idx (device_id, created_at DESC)`. Mobile remote authority references this row at grant creation but uses its own lifecycle. Sign-out revokes the account session and all grants issued from it; it does not turn a remote session into an account session.
 
+The proposed appendix additively declares unique `(id,user_id,device_id)` over existing columns so a composite grant FK can enforce ownership. It changes no current row or current account-session semantics.
+
 ### 2.5 `licenses` and `license_devices`
 
 | Table.Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
@@ -177,11 +179,11 @@ Unique `token_hash`; lookup index `(desktop_device_id, status, expires_at)`; sta
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
 | `id` | `text` | no | none | primary key | immutable | by `status`/`terminal_at`: expired 24 h, denied 30 d, revoked 365 d; active retained |
-| `user_id` | `text` | no | none | `users(id) ON DELETE CASCADE` | immutable | same state retention; opaque in logs; delete with user |
-| `account_session_id` | `text` | no | none | `user_sessions(id) ON DELETE CASCADE` | immutable | same state retention; revoke on session revocation; delete with session |
-| `desktop_device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | same state retention; opaque in logs; delete with device |
-| `mobile_device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | same state retention; opaque in logs; delete with device |
-| `license_id` | `text` | no | none | `licenses(id)` | immutable snapshot | same state retention; commercial identifier redacted |
+| `user_id` | `text` | no | none | with account/mobile IDs → `user_sessions(id,user_id,device_id) ON DELETE CASCADE` | immutable | same state retention; opaque in logs; delete through account session |
+| `account_session_id` | `text` | no | none | with `user_id,mobile_device_id` → `user_sessions(id,user_id,device_id) ON DELETE CASCADE` | immutable | same state retention; revoke on session revocation; delete with session |
+| `desktop_device_id` | `text` | no | none | with `license_id` → `license_devices(license_id,device_id)` | immutable | same state retention; opaque in logs; exact binding required |
+| `mobile_device_id` | `text` | no | none | with account/user IDs → `user_sessions(id,user_id,device_id)` | immutable | same state retention; opaque in logs; exact session device required |
+| `license_id` | `text` | no | none | with `desktop_device_id` → `license_devices(license_id,device_id)` | immutable snapshot | same state retention; commercial identifier redacted |
 | `status` | `text` | no | `'pending_approval'` | check | state machine only | controls State Retention Closure matrix: expired 24 h, denied 30 d, revoked 365 d, active retained |
 | `approval_expires_at` | `timestamptz` | no | none | none | immutable | pending timeout anchor; after transition, state retention uses `terminal_at` |
 | `approved_at` | `timestamptz` | yes | none | none | null to timestamp once | same state retention; active retained until revoked |
@@ -208,21 +210,24 @@ The timeout transition runs at least every minute, before creation of a new gran
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
 | `id` | `text` | no | none | primary key | immutable | purge 90 days after end/expiry |
-| `pairing_grant_id` | `text` | no | none | `mobile_pairing_grants(id) ON DELETE CASCADE` | immutable | purge with grant |
-| `user_id` | `text` | no | none | `users(id) ON DELETE CASCADE` | immutable | opaque in logs |
-| `account_session_id` | `text` | no | none | `user_sessions(id) ON DELETE CASCADE` | immutable | session is auth provenance only |
-| `desktop_device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | opaque in logs |
-| `mobile_device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | opaque in logs |
-| `license_id` | `text` | no | none | `licenses(id)` | immutable snapshot | redact in logs |
+| `pairing_grant_id` | `text` | no | none | part of composite FK to exact grant tuple, `ON DELETE CASCADE` | immutable | purge with grant |
+| `user_id` | `text` | no | none | part of composite FK to exact grant tuple | immutable | opaque in logs |
+| `account_session_id` | `text` | no | none | part of composite FK to exact grant tuple | immutable | session is auth provenance only |
+| `desktop_device_id` | `text` | no | none | part of composite FK to exact grant tuple | immutable | opaque in logs |
+| `mobile_device_id` | `text` | no | none | part of composite FK to exact grant tuple; unique with session `id` | immutable | opaque in logs |
+| `license_id` | `text` | no | none | part of composite FK to exact grant tuple | immutable snapshot | redact in logs |
 | `status` | `text` | no | `'active'` | check | active to ended/revoked/expired | retain terminal state |
 | `permission_level` | `smallint` | no | `1` | check | policy-controlled; never above 5 standing | retain with session |
+| `access_token_generation` | `integer` | no | `1` | check | atomic increment revokes all access tokens of prior generation | retain with session; never exposed except as signed token claim |
 | `expires_at` | `timestamptz` | no | none | none | bounded extension on refresh | purge after terminal window |
 | `last_seen_at` | `timestamptz` | no | `now()` | none | heartbeat | retain with session |
 | `ended_at` | `timestamptz` | yes | none | none | null to timestamp once | retain with session |
 | `end_reason` | `text` | yes | none | none | set with terminal transition | bounded code |
 | `created_at` | `timestamptz` | no | `now()` | none | immutable | retain with session |
 
-Partial unique `(pairing_grant_id) WHERE status='active'`; lookup indexes `(desktop_device_id,status,last_seen_at DESC)`, `(mobile_device_id,status,last_seen_at DESC)`, and `(expires_at) WHERE status='active'`. Checks constrain status/permission and terminal timestamps. Remote session TTL is 30 minutes with activity refresh, capped at 12 hours from `created_at`; reconnect never changes its identities.
+The grant has unique key `(id,user_id,account_session_id,desktop_device_id,mobile_device_id,license_id)`. This table has a composite FK over `(pairing_grant_id,user_id,account_session_id,desktop_device_id,mobile_device_id,license_id)` to that exact grant key, so none of the redundant subject fields can drift. It also has unique `(id,mobile_device_id)` for approval references. Partial unique `(pairing_grant_id) WHERE status='active'`; lookup indexes `(desktop_device_id,status,last_seen_at DESC)`, `(mobile_device_id,status,last_seen_at DESC)`, and `(expires_at) WHERE status='active'`. Checks constrain status/permission, `access_token_generation > 0`, and terminal timestamps. Remote session TTL is 30 minutes with activity refresh, capped at 12 hours from `created_at`; reconnect never changes its identities.
+
+Remote-session creation is one transaction. It locks the active pairing grant, account session, both `user_devices`, both role rows, selected license, and exact desktop `license_devices` row with `SELECT ... FOR UPDATE`; asserts active/unrevoked/unexpired states and correct roles; updates every existing row for that grant with `status='active' AND expires_at<=now()` to `status='expired', ended_at=now(), end_reason='expired_before_recreate'`; then inserts the new session. The immediate update precedes the insert and releases the partial unique slot without waiting for the 15-minute cleanup fallback. Any missing/mismatched/changed row rolls back the whole transaction.
 
 ### 3.7 `mobile_remote_tokens`
 
@@ -244,8 +249,8 @@ Unique `token_hash` and `(remote_session_id,generation)`; index `(remote_session
 | Column | SQL type | Null | Default | References | Mutability | Retention/redaction |
 |---|---|---:|---|---|---|---|
 | `id` | `text` | no | none | primary key | immutable | purge/redact resource summary after 365 days |
-| `remote_session_id` | `text` | no | none | `mobile_remote_sessions(id) ON DELETE CASCADE` | immutable | purge with session |
-| `mobile_device_id` | `text` | no | none | `devices(id) ON DELETE CASCADE` | immutable | opaque in logs |
+| `remote_session_id` | `text` | no | none | composite FK with mobile device to `mobile_remote_sessions` | immutable | purge with session |
+| `mobile_device_id` | `text` | no | none | `(remote_session_id,mobile_device_id)` references session pair | immutable | opaque in logs |
 | `action_type` | `text` | no | none | bounded application enum | immutable | retain category only |
 | `resource_summary` | `jsonb` | no | `'{}'` | none | immutable | allowlisted/redacted; no content, path secrets, typed text |
 | `status` | `text` | no | `'pending'` | check | compare-and-set once | retain decision evidence |
@@ -255,7 +260,9 @@ Unique `token_hash` and `(remote_session_id,generation)`; index `(remote_session
 | `decided_at` | `timestamptz` | yes | none | none | null to timestamp once | retain |
 | `created_at` | `timestamptz` | no | `now()` | none | immutable | retain |
 
-Index `(remote_session_id,status,expires_at)`. Checks constrain status, `max_uses > 0`, and `0 <= use_count <= max_uses`. Approval consumption is atomic and bound to the stored session/device/action/resource digest.
+Composite FK `(remote_session_id,mobile_device_id)` references `mobile_remote_sessions(id,mobile_device_id)`, proving the approval's requesting device belongs to that session. Index `(remote_session_id,status,expires_at)`. Checks constrain `max_uses > 0`, bounds, and state consistency: pending has no decision and zero use; approved has a decision and is below its use cap; denied has a decision and zero use; expired has a decision and is below its cap; consumed has a decision and exactly `max_uses`; revoked has a decision. Approval consumption is atomic and bound to the stored session/device/action/resource digest.
+
+Every transition to `approved`, `denied`, `expired`, `consumed`, or `revoked` sets `decided_at` if it is still null in the same compare-and-set transaction. Expiry processing therefore changes overdue pending/approved rows to `expired` with `decided_at=now()` before cleanup; consumption atomically increments `use_count` and changes to `consumed` exactly at `max_uses`.
 
 ### 3.9 `mobile_remote_audit_events`
 
@@ -309,10 +316,15 @@ General cleanup runs at least every 15 minutes under a single advisory lock and 
 
 The future migration is additive and lexically ordered after the current latest migration. It does not rename, delete, reinterpret, or backfill `devices`, `users`, `user_devices`, `user_sessions`, `licenses`, `license_devices`, `device_public_keys`, or `request_nonces`. Existing desktop IDs, account sessions, keys, and licenses remain valid. No historical row is assigned a desktop/mobile role automatically; role is created only by a verified feature enrollment. Rollback disables Mobile Command routes first and may leave additive tables dormant; it must not drop them while a deployed client could still reference them.
 
+The appendix adds `user_sessions(id,user_id,device_id)` as an explicit composite unique key without changing existing values, enabling the grant FK to prove account-session ownership. `license_devices` already has unique `(license_id,device_id)`. PostgreSQL FKs enforce tuple equality and deletion propagation; mutable predicates (`status='active'`, expiry, correct role, valid license status) cannot be represented by ordinary FKs and are therefore mandatory locked assertions in the same transaction that creates/refreshes authority. No authority row is committed if any assertion fails.
+
 ## Appendix A — Normative PostgreSQL DDL (Not Applied)
 
 ```sql
 -- NORMATIVE APPENDIX ONLY. A future migration must receive the next repository number.
+alter table user_sessions
+  add constraint user_sessions_identity_tuple_unique unique (id, user_id, device_id);
+
 create table if not exists user_session_refresh_token_history (
   id bigserial primary key,
   session_id text not null references user_sessions(id) on delete cascade,
@@ -372,10 +384,10 @@ create index if not exists mobile_pairing_challenges_lookup_idx
 create table if not exists mobile_pairing_grants (
   id text primary key,
   user_id text not null references users(id) on delete cascade,
-  account_session_id text not null references user_sessions(id) on delete cascade,
+  account_session_id text not null,
   desktop_device_id text not null references devices(id) on delete cascade,
   mobile_device_id text not null references devices(id) on delete cascade,
-  license_id text not null references licenses(id),
+  license_id text not null,
   status text not null default 'pending_approval' check (status in ('pending_approval', 'active', 'denied', 'revoked', 'expired')),
   approval_expires_at timestamptz not null,
   approved_at timestamptz,
@@ -386,7 +398,12 @@ create table if not exists mobile_pairing_grants (
   check (approval_expires_at > created_at),
   check ((status = 'pending_approval' and approved_at is null and terminal_at is null)
       or (status = 'active' and approved_at is not null and terminal_at is null)
-      or (status in ('denied', 'revoked', 'expired') and terminal_at is not null))
+      or (status in ('denied', 'revoked', 'expired') and terminal_at is not null)),
+  unique (id, user_id, account_session_id, desktop_device_id, mobile_device_id, license_id),
+  foreign key (account_session_id, user_id, mobile_device_id)
+    references user_sessions(id, user_id, device_id) on delete cascade,
+  foreign key (license_id, desktop_device_id)
+    references license_devices(license_id, device_id)
 );
 create unique index if not exists mobile_pairing_grants_live_pair_unique
   on mobile_pairing_grants (desktop_device_id, mobile_device_id)
@@ -400,21 +417,26 @@ create index if not exists mobile_pairing_grants_cleanup_idx
 
 create table if not exists mobile_remote_sessions (
   id text primary key,
-  pairing_grant_id text not null references mobile_pairing_grants(id) on delete cascade,
-  user_id text not null references users(id) on delete cascade,
-  account_session_id text not null references user_sessions(id) on delete cascade,
-  desktop_device_id text not null references devices(id) on delete cascade,
-  mobile_device_id text not null references devices(id) on delete cascade,
-  license_id text not null references licenses(id),
+  pairing_grant_id text not null,
+  user_id text not null,
+  account_session_id text not null,
+  desktop_device_id text not null,
+  mobile_device_id text not null,
+  license_id text not null,
   status text not null default 'active' check (status in ('active', 'ended', 'revoked', 'expired')),
   permission_level smallint not null default 1 check (permission_level between 1 and 5),
+  access_token_generation integer not null default 1 check (access_token_generation > 0),
   expires_at timestamptz not null,
   last_seen_at timestamptz not null default now(),
   ended_at timestamptz,
   end_reason text,
   created_at timestamptz not null default now(),
   check (expires_at > created_at),
-  check ((status = 'active' and ended_at is null) or (status <> 'active' and ended_at is not null))
+  check ((status = 'active' and ended_at is null) or (status <> 'active' and ended_at is not null)),
+  unique (id, mobile_device_id),
+  foreign key (pairing_grant_id, user_id, account_session_id, desktop_device_id, mobile_device_id, license_id)
+    references mobile_pairing_grants(id, user_id, account_session_id, desktop_device_id, mobile_device_id, license_id)
+    on delete cascade
 );
 create unique index if not exists mobile_remote_sessions_active_grant_unique
   on mobile_remote_sessions (pairing_grant_id) where status = 'active';
@@ -442,8 +464,8 @@ create index if not exists mobile_remote_tokens_session_expiry_idx
 
 create table if not exists mobile_remote_approvals (
   id text primary key,
-  remote_session_id text not null references mobile_remote_sessions(id) on delete cascade,
-  mobile_device_id text not null references devices(id) on delete cascade,
+  remote_session_id text not null,
+  mobile_device_id text not null,
   action_type text not null,
   resource_summary jsonb not null default '{}',
   status text not null default 'pending' check (status in ('pending', 'approved', 'denied', 'expired', 'consumed', 'revoked')),
@@ -452,7 +474,15 @@ create table if not exists mobile_remote_approvals (
   expires_at timestamptz not null,
   decided_at timestamptz,
   created_at timestamptz not null default now(),
-  check (expires_at > created_at)
+  check (expires_at > created_at),
+  check ((status = 'pending' and decided_at is null and use_count = 0)
+      or (status = 'approved' and decided_at is not null and use_count < max_uses)
+      or (status = 'denied' and decided_at is not null and use_count = 0)
+      or (status = 'expired' and decided_at is not null and use_count < max_uses)
+      or (status = 'consumed' and decided_at is not null and use_count = max_uses)
+      or (status = 'revoked' and decided_at is not null)),
+  foreign key (remote_session_id, mobile_device_id)
+    references mobile_remote_sessions(id, mobile_device_id) on delete cascade
 );
 create index if not exists mobile_remote_approvals_lookup_idx
   on mobile_remote_approvals (remote_session_id, status, expires_at);
