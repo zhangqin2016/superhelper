@@ -1,241 +1,88 @@
-# Lily Mobile Command Pro Test Cases
-
-## 1. Purpose
-
-This document expands the test plan into case-level Given/When/Then scenarios. Every release gate should map to at least one case ID.
-
-## 2. Protocol Cases
-
-### MCP-PROTO-001 Invalid Major Version
-
-File: `scripts/test-mobile-protocol-schema.mjs`
-
-Given a WebSocket envelope with `version: 2`  
-When the desktop validator receives it  
-Then it rejects the event with `REQUEST_INVALID`  
-And no side effect runs.
-
-### MCP-PROTO-002 Unknown Additive Field
-
-Given a valid version 1 HTTP request with an unknown additive field  
-When the server validates it  
-Then validation succeeds  
-And the unknown field is ignored.
-
-### MCP-PROTO-003 DataChannel Coordinate Bounds
-
-Given a pointer event with `x: 1.2`  
-When the desktop validates the DataChannel payload  
-Then it rejects the payload before permission-policy  
-And the OS input adapter is not called.
-
-## 3. Security Cases
-
-### MCP-SEC-001 Bad Signature
-
-File: `scripts/test-mobile-signature-replay.mjs`
-
-Given a signed mobile request with a modified body  
-When the server verifies signature  
-Then it returns `DEVICE_SIGNATURE_INVALID`.
-
-### MCP-SEC-002 Nonce Replay
-
-Given a valid signed request already accepted once  
-When the same nonce is sent again within replay window  
-Then the request is rejected with `REQUEST_REPLAY_DETECTED`.
-
-### MCP-SEC-003 Revoked Device
-
-Given a bound mobile device is revoked  
-When it attempts to create a remote session  
-Then the server returns `DEVICE_REVOKED`  
-And all active sessions for that mobile device are ended.
-
-## 4. Permission Cases
-
-### MCP-PERM-001 Default Chat Only
-
-File: `scripts/test-remote-session-permissions.mjs`
-
-Given a newly paired phone  
-When it creates a remote session  
-Then permission level is `ChatOnly`.
-
-### MCP-PERM-002 Unauthorized Input
-
-Given a remote session at `ChatOnly`  
-When a pointer event arrives  
-Then permission-policy denies it  
-And input adapter is not called.
-
-### MCP-PERM-003 Desktop Control Requires Approval
-
-Given a remote session at `ControlApp`  
-When mobile requests `ControlDesktop`  
-Then approval is required  
-And control remains scoped to app until approval is granted.
-
-### MCP-PERM-004 Policy Exception
-
-Given permission-policy throws an exception  
-When a control event arrives  
-Then event is denied  
-And session degrades to Chat Only.
-
-## 5. Agent Bridge Cases
-
-### MCP-AGENT-001 Target Session Delivery
-
-File: `scripts/test-remote-agent-bridge.mjs`
-
-Given mobile sends an agent message with `lilySessionId: A`  
-When desktop bridge receives it  
-Then the message is appended only to Lily session A.
-
-### MCP-AGENT-002 Bridge Failure
-
-Given file staging fails for an attachment  
-When agent-mobile-bridge prepares the turn  
-Then it returns recoverable error  
-And does not send a blind prompt to the agent.
-
-### MCP-AGENT-003 Busy Runner
-
-Given target Lily session is busy  
-When mobile sends a follow-up command  
-Then it follows existing queue/steer rules  
-And does not create an unbound runner.
-
-## 6. File Transfer Cases
-
-### MCP-FILE-001 Chunk Retry
-
-File: `scripts/test-remote-upload-idempotency.mjs`
-
-Given a chunk upload succeeds  
-When the same chunk and idempotency key are retried  
-Then server returns existing status  
-And no duplicate object is created.
-
-### MCP-FILE-002 Hash Mismatch
-
-Given desktop pulls a verified object  
-When full sha256 does not match upload metadata  
-Then desktop deletes temp file  
-And upload becomes `failed_recoverable`.
-
-### MCP-FILE-003 Staging Before Agent
-
-Given upload is verified but not staged  
-When mobile sends agent message with that upload  
-Then bridge waits or returns recoverable error  
-And agent never receives the temporary object path.
-
-### MCP-FILE-004 Risky Upload
-
-Given mobile uploads `setup.exe`  
-When risk classifier runs  
-Then file risk is high  
-And execution requires approval.
-
-## 7. WebRTC Cases
-
-### MCP-RTC-001 ICE Failure
-
-File: `scripts/test-remote-webrtc-state-machine.mjs`
-
-Given WebRTC ICE fails after one restart  
-When reconnect grace expires  
-Then Live Control closes  
-And Command remains available.
-
-### MCP-RTC-002 DataChannel Backpressure
-
-Given control channel buffered amount exceeds threshold  
-When pointer move events arrive  
-Then stale pointer moves are dropped  
-And keyboard events are not dropped.
-
-### MCP-RTC-003 Source Topology Change
-
-Given desktop display topology changes during control  
-When source metadata changes  
-Then control is paused  
-And source refresh requires permission re-check.
-
-## 8. Native Shell Cases
-
-### MCP-NATIVE-001 Private Key Not Exported
-
-File: `scripts/test-mobile-native-key-contract.mjs`
-
-Given native shell generates a device key  
-When Web receives result  
-Then result includes `keyHandle` and `publicKey`  
-And does not include private key material.
-
-### MCP-NATIVE-002 Native Upload Cannot Verify
-
-Given native background upload completes transport  
-When native reports status  
-Then Web upload remains not `verified` until server verification.
-
-## 9. Voice Cases
-
-### MCP-VOICE-001 Preserve Draft On Failure
-
-File: `scripts/test-mobile-voice-fail-open.mjs`
-
-Given composer contains typed text  
-When ASR fails mid-recording  
-Then typed text remains  
-And partial transcript is preserved if available.
-
-### MCP-VOICE-002 User Edit Wins
-
-Given ASR partial transcript appears  
-When user edits a word  
-And a later ASR patch arrives for the old range  
-Then user edit is not overwritten.
-
-### MCP-VOICE-003 Sensitive Direct Send Blocked
-
-Given direct send is enabled  
-When user says "delete the desktop folder"  
-Then transcript is shown for review  
-And approval is required before execution.
-
-## 10. UI Cases
-
-### MCP-UI-001 Offline Does Not Claim Sent
-
-File: `scripts/test-mobile-ui-states.mjs`
-
-Given desktop is offline  
-When user writes a command  
-Then UI allows saving draft  
-And does not show sent/delivered.
-
-### MCP-UI-002 Brand Consistency
-
-Given mobile app renders manifest and shell  
-When brand assets are inspected  
-Then name is Lily Workbench / 智能工作台  
-And icons derive from desktop source.
-
-## 11. Ops Cases
-
-### MCP-OPS-001 Kill Desktop Control
-
-Given remote config sets `desktopControlEnabled: false`  
-When mobile requests Desktop Control  
-Then request is denied  
-And Chat Only remains available.
-
-### MCP-OPS-002 TURN Cost Guard
-
-Given account exceeds TURN bandwidth quota  
-When a new relay session is requested  
-Then Live Control is denied or degraded  
-And Chat Only remains available.
+# Lily Mobile Command Pro Stable Test Cases
+
+## 1. Normative Case Shape
+
+Every `MC-TC-*` row below is a stable Given/When/Then case. Read columns as: **Given** Preconditions + Fixture; **When** Exact input/event; **Then** Expected state/response/error + Forbidden side effects + Audit/telemetry; finally Cleanup and Platform. An automated filename is planned ownership, not evidence that the test exists or passed. Secret/body telemetry is always prohibited even where the shorter cell says “redacted audit”.
+
+Fixture IDs: `FX-ID-VALID` (bound user/license/desktop/mobile/key), `FX-SESSION-IDLE`, `FX-SESSION-BUSY`, `FX-REVOKE-RACE`, `FX-UPLOAD-3CHUNK`, `FX-LIVE-GRANT`, `FX-NATIVE-MOCK`, `FX-ASR-DRAFT`, `FX-OPS-CONFIG`, and `FX-VERSION-SKEW`.
+
+## 2. Pairing And Command
+
+| Case / planned file | Preconditions / fixture | Exact input or event | Expected state transition | Expected response/error | Forbidden side effects | Required audit/telemetry | Cleanup | Platform |
+|---|---|---|---|---|---|---|---|---|
+| MC-TC-PAIR-001 / `test-mobile-pairing.mjs` | active signed desktop; FX-ID-VALID | exact `POST pairing/start` | none → challenge_pending with bounded TTL | typed challenge | no grant/session | redacted pairing-start audit | expire challenge | server + desktop |
+| MC-TC-PAIR-002 / `test-mobile-pairing.mjs` | same fixture | inspect persisted start result | one hashed challenge only | no standing credential | no plaintext token/key | hash/TTL metadata only | delete fixture row | server |
+| MC-TC-PAIR-003 / `test-mobile-pairing-security.mjs` | FX-ID-VALID + one-time challenge | exact consume, then replay/forged tuple | challenge_pending → consumed once | first accepted; replay `MC-ERR-PAIRING-TOKEN-CONSUMED`, forged rejected | no second grant | tuple/result audit without secret | revoke grant | server |
+| MC-TC-PAIR-004 / `test-mobile-pairing-approval.mjs` | pending desktop approval | approve versus reject/timeout race | first terminal decision wins | late decision rejected | no late grant | decision/CAS audit | clear approval | server + desktop |
+| MC-TC-PAIR-005 / `test-mobile-device-list.mjs` | two accounts/devices | account A lists devices | state unchanged | only A redacted rows | no cross-account/key disclosure | list count only | delete fixtures | server |
+| MC-TC-PAIR-006 / `test-mobile-revocation.mjs` | active grant/session; FX-REVOKE-RACE | duplicate revoke racing refresh | grant → revoked before refresh | revoke idempotent; refresh device-revoked | no later authority | ordered revoke/deny audit | end sessions | server + desktop |
+| MC-TC-PAIR-007 / `test-mobile-session-auth.mjs` | FX-ID-VALID | create, refresh, end with stale token family | active → ended | stale/reused family rejected | no family resurrection | token-family hash/outcome | revoke fixture | server |
+| MC-TC-PAIR-008 / `test-mobile-native-qr.mjs` | FX-NATIVE-MOCK | QR returns malformed/oversized/forged text | native state unchanged | untrusted text passed to Web validator/rejected | native must not consume/grant | size/result only | clear scanner temp | iOS + Android native |
+| MC-TC-CMD-001 / `test-remote-session-isolation.mjs` | account, remote channel, Lily conversation IDs differ | remote-session create | channel active; conversation unchanged | bounded channel descriptor | no account/local-session substitution | IDs hashed and distinguished | end channel | server + desktop |
+| MC-TC-CMD-002 / `test-remote-agent-bridge.mjs` | FX-SESSION-IDLE | exact command targets existing Lily session A | admitted → dispatched through orchestrator | accepted with admission key | no session B/direct engine call | admission/target/mode | remove test turn | desktop |
+| MC-TC-CMD-003 / `test-mobile-command-idempotency.mjs` | prior durable admission | exact duplicate idempotency key then conflicting body | remains one admission | duplicate returns existing; conflict typed error | no second dispatch | key hash/outcome | clear admission | server + desktop |
+| MC-TC-CMD-004 / `test-remote-agent-bridge.mjs` | FX-SESSION-BUSY | remote steer rejected by current runner | steer_pending → FIFO queued | visible requested/effective mode | no unbound runner | fallback reason/modes | drain queue | desktop |
+| MC-TC-CMD-005 / `test-mobile-replay-snapshot.mjs` | durable epoch/sequence gap | reconnect with last acknowledged sequence | replay or atomic snapshot cut | ordered events/snapshot | no duplicate terminal or command dispatch | gap/cut/count | close socket | relay + desktop |
+| MC-TC-CMD-006 / `test-mobile-replay-snapshot.mjs` | volatile cursor only + ambiguous dispatch | reconnect request | channel recovers without dispatch | snapshot or delivery-unknown | no cursor trust/re-dispatch | ambiguity audit | close socket | relay + desktop |
+| MC-TC-CMD-007 / `test-remote-fail-open.mjs` | FX-SESSION-IDLE with local transcript hash | malformed, forged, oversized, then version-skew command | remote request rejected; local state byte-identical | protocol/auth/size/upgrade error | no admission/tool/session mutation | metadata/error only | discard payload | server + desktop |
+
+## 3. Live And Permission
+
+| Case / planned file | Preconditions / fixture | Exact input or event | Expected state transition | Expected response/error | Forbidden side effects | Required audit/telemetry | Cleanup | Platform |
+|---|---|---|---|---|---|---|---|---|
+| MC-TC-LIVE-001 / `test-remote-session-permissions.mjs` | Chat Only session | observe/control elevation | pending approval or denied | explicit policy result | no capture/input before grant | permission request/result | revoke grant | desktop all OS |
+| MC-TC-LIVE-002 / `test-remote-signaling-contract.mjs` | FX-LIVE-GRANT | offer/answer with wrong session/source/generation | signaling unchanged | protocol/permission denied | no peer connection authority | binding mismatch only | close peer | desktop × mobile |
+| MC-TC-LIVE-003 / `test-remote-signaling-contract.mjs` | signaling before deadline | malformed candidate and wrong discriminator | signaling remains pending | candidate rejected; deadline retained | no premature terminal failure | candidate class/result | close peer | WebRTC platforms |
+| MC-TC-LIVE-004 / `test-mobile-turn-credentials.mjs` | active remote session | request then reuse expired/wrong-session TURN credential | credential expires; app state unchanged | expired/binding denied | no application authority | issuance/expiry/session hash | expire credential | regional relay pairs |
+| MC-TC-LIVE-005 / `test-remote-input-protocol.mjs` | FX-LIVE-GRANT/source A | pointer burst plus ambiguous keyboard replay/source B input | pointer may coalesce; invalid input denied | typed denial for bounds/source | no keyboard replay/OS call on invalid | counts/reasons, no raw input | release keys/revoke | Windows/macOS/Linux evidence pairs |
+| MC-TC-LIVE-006 / `test-remote-clipboard-policy.mjs` | live grant without clipboard approval | clipboard read, then scoped approval | denied → one approved read | approval-required then redacted success metadata | no content telemetry | action/outcome only | clear clipboard fixture | supported desktop pairs |
+| MC-TC-LIVE-007 / `test-mobile-background-policy.mjs` | active control | `app.background`; clock +10 s/+60 s cumulative | pause immediate → control revoked → observe revoked | visible downgrade | no input after background | timers/transitions only | foreground Chat Only | iOS/Android/PWA |
+| MC-TC-PERM-001 / `test-remote-approval-policy.mjs` | sensitive action | create approval with exact bindings | none → pending | bounded approval descriptor | no side effect | scope hashes/TTL/uses | expire | desktop |
+| MC-TC-PERM-002 / `test-remote-approval-policy.mjs` | pending approval | simultaneous approve/deny plus late approve | first terminal result | late conflict | no late authority | CAS winner/time | delete fixture | desktop |
+| MC-TC-PERM-003 / `test-remote-approval-consume.mjs` | approved one-use scope | consume exact then wrong resource/expired/reuse | approved → consumed once | latter denied | no extra sensitive side effect | consume outcome only | revoke | desktop |
+| MC-TC-PERM-004 / `test-remote-approval-race.mjs` | FX-REVOKE-RACE + unused approval | revoke/session-end races consume | revoked before side effect | device/session revoked | no consume/action | ordered audit | end session | server + desktop |
+| MC-TC-PERM-005 / `test-remote-permission-lifecycle.mjs` | L2+ grant | indicator missing then desktop restart | grant → disabled | policy denied/revalidation required | no invisible control | grant/indicator/restart state | revoke | desktop all OS |
+| MC-TC-PERM-006 / `test-remote-input-protocol.mjs` | no exact live grant/source mismatch | DataChannel control event | unchanged/denied | permission denied | no OS adapter invocation | denial reason only | close channel | desktop all OS |
+| MC-TC-PERM-007 / `test-remote-permission-fail-safe.mjs` | missing/stale policy or policy exception | sensitive action | control → Chat Only | policy failed/denied | no input/capture side effect | exception class, no payload | restore policy | desktop |
+| MC-TC-PERM-008 / `test-remote-audit-fail-safe.mjs` | audit store forced failure | approval/control consume | sensitive state not entered | audit failed | no sensitive action; local chat remains usable | local health + audit failure | restore store | server + desktop |
+| MC-TC-PERM-009 / `test-remote-device-revocation.mjs` | active command/upload/approval/session | revoke races every authority endpoint | all remote authority revoked | device revoked | no cancel/artifact/command/reconnect authority | cascade ordering | delete fixtures | server + desktop |
+
+## 4. File, Voice, Native, Ops, Privacy, Release
+
+| Case / planned file | Preconditions / fixture | Exact input or event | Expected state transition | Expected response/error | Forbidden side effects | Required audit/telemetry | Cleanup | Platform |
+|---|---|---|---|---|---|---|---|---|
+| MC-TC-FILE-001 / `test-remote-file-transfer.mjs` | FX-UPLOAD-3CHUNK | create valid then oversized manifest | none → created; oversized rejected | descriptor / `MC-ERR-UPLOAD-TOO-LARGE` | no object for rejected input | size/hash metadata | cancel upload | server |
+| MC-TC-FILE-002 / `test-remote-upload-idempotency.mjs` | created upload | exact chunk, duplicate, forged hash/index | checkpoint advances once | existing status / hash error | no duplicate object | index/outcome, no bytes | delete temp | server/storage |
+| MC-TC-FILE-003 / `test-remote-upload-hash.mjs` | all chunks or one missing/corrupt | complete request | verified only for full valid hash | missing/hash mismatch otherwise | no seal/stage on failure | hash result only | delete corrupt temp | server/storage |
+| MC-TC-FILE-004 / `test-remote-upload-resume.mjs` | persisted resume checkpoint + relay loss | reconnect/status/resume | resumes exact checkpoint | recoverable status | no guessed/replayed chunk | checkpoint/retry count | complete/cancel | mobile + server |
+| MC-TC-FILE-005 / `test-remote-upload-revocation.mjs` | created upload; FX-REVOKE-RACE | expire/cancel/revoke races complete | terminal blocked state | expired/cancelled/revoked | no staging/attachment | terminal cause | purge object | server + desktop |
+| MC-TC-FILE-006 / `test-remote-file-transfer.mjs` | sealed object | desktop pull with wrong authority/full hash | pull fails before staging | auth/hash error | no staging ID | result/size only | delete temp | desktop |
+| MC-TC-FILE-007 / `test-remote-agent-bridge.mjs` | staged opaque ID for session A | attach from session B/wrong admission key | command rejected | permission/idempotency error | no path/agent dispatch | IDs/outcome only | remove staging fixture | desktop |
+| MC-TC-FILE-008 / `test-remote-artifact-download.mjs` | sealed local terminal artifact | project metadata | artifact available | redacted descriptor | no local path/body | type/size/correlation | expire descriptor | desktop + mobile |
+| MC-TC-FILE-009 / `test-remote-artifact-download.mjs` | authorized artifact | download URL then expired/wrong-device reuse | turn remains terminal | bytes once / denied | no turn mutation/path leak | download outcome | expire URL | server + desktop |
+| MC-TC-FILE-010 / `test-mobile-native-share.mjs` | FX-NATIVE-MOCK shared file | enumerate pending then explicit Web enqueue | temp → acknowledged/enqueued | opaque native handle | no auto-upload/path exposure | count/TTL only | TTL purge | iOS + Android |
+| MC-TC-FILE-011 / `test-mobile-native-upload-contract.mjs` | verified Web upload absent | native transport completion | transport complete only | status reports transport | no verified/staged/attached business state | byte/progress only | foreground reconcile | iOS + Android/PWA downgrade |
+| MC-TC-VOICE-001 / `test-mobile-voice-contract.mjs` | composer idle | capture patch without submit intent | draft patched only | local transcript | no hidden command | segment/revision only | clear draft | iOS/Android/PWA |
+| MC-TC-VOICE-002 / `test-mobile-voice-fail-open.mjs` | FX-ASR-DRAFT typed text + partial | ASR error/relay loss | recording → text draft | recoverable ASR error | no draft loss/send/provider improvisation | provider/error/latency only | stop capture | configured voice platforms |
+| MC-TC-VOICE-003 / `test-mobile-voice-merge.mjs` | user-edited transcript range | stale later ASR patch/direct-send sensitive text | user edit retained; review required | conflict ignored/approval required | no overwrite/hidden send | revision/conflict only | clear draft | configured voice platforms |
+| MC-TC-VOICE-004 / `test-mobile-asr-routing.mjs` | provider/credential absent or unaccepted | start voice | remains text-only | provider unavailable | no unconfigured provider call | availability reason | none | all mobile clients |
+| MC-TC-NATIVE-001 / `test-mobile-native-key-contract.mjs` | FX-NATIVE-MOCK | generate then sign canonical/altered digest | handle created; signature bound | public key/handle/signature only | no private key/authority | algorithm/key ID/outcome | destroy test key | iOS + Android |
+| MC-TC-NATIVE-002 / `test-mobile-native-bridge-schema.mjs` | unsupported/unavailable/timed-out method | typed bridge request | capability downgrades | typed native error | no business success inferred | method/error/latency | cancel invocation | native + PWA fallback |
+| MC-TC-NATIVE-003 / `test-mobile-native-authority.mjs` | FX-NATIVE-MOCK | caller injects URL/path/header/credential/method in native request | rejected unchanged | protocol invalid | no network/file/authority side effect | field class only | clear temp | iOS + Android |
+| MC-TC-OPS-001 / `test-mobile-diagnostics-redaction.mjs` | explicit consent + seeded secrets/bodies | export diagnostics | package generated redacted | success metadata | no screen/input/clipboard/file/prompt bodies | consent/package hash | delete package | all platforms |
+| MC-TC-OPS-002 / `test-mobile-push-contract.mjs` | paired but expired/revoked session | receive/open wake hint | app wakes, authority unchanged | reconnect auth required | no grant/message/file name | opaque correlation only | clear notification | iOS + Android |
+| MC-TC-OPS-003 / `test-remote-kill-switch.mjs` | FX-OPS-CONFIG active control | staged kill switch then rollback | affected remote mode → Chat Only | feature disabled | no local Lily outage | config version/transitions | restore config | server + desktop + mobile |
+| MC-TC-PRIV-001 / `test-mobile-retention-policy.mjs` | storage policy absent, then approved TTL fixture | create/purge temp object | absent policy blocks; TTL deletes | policy denied / deletion proof | no indefinite/backup residue | object class/region/deletion ID | verify purge | approved regions |
+| MC-TC-PRIV-002 / `test-mobile-privacy-gates.mjs` | legal/cross-border/support approval absent | transfer/export/support access | denied unchanged | approval required | no data disclosure | gate/result only | close access | configured regions |
+| MC-TC-PRIV-003 / `test-mobile-telemetry-prohibitions.mjs` | seeded clipboard/raw input | telemetry/audit/push serialization | event emitted redacted | schema valid | prohibited bodies absent | redaction counters | delete events | all platforms |
+| MC-TC-PRIV-004 / `test-mobile-diagnostics-redaction.mjs` | no consent then consent | diagnostics collection | denied then redacted package | consent required / success | no allowlist bypass | consent/version | delete package | all platforms |
+| MC-TC-PRIV-005 / `test-mobile-push-contract.mjs` | sensitive filename/message fixture | serialize push | wake hint only | opaque payload | no sensitive text | schema/result | clear push | iOS + Android |
+| MC-TC-REL-001 / `test-mobile-protocol-version.mjs` | FX-VERSION-SKEW | unknown major/mandatory semantic | remote mutation disabled | `MC-ERR-PROTOCOL-CLIENT-UPGRADE-REQUIRED` | no mutation/local Lily change | versions/result | close channel | mixed versions |
+| MC-TC-REL-002 / `test-mobile-release-compatibility.mjs` | unsigned artifact or incompatible window | release promotion | promotion blocked | release-gate error | no rollout | provenance/window/result | remove candidate | CI + stores |
+| MC-TC-REL-003 / `test-mobile-upload-downgrade.mjs` | native upload interrupted | PWA/foreground resume | resumes canonical checkpoint | recoverable status | no checkpoint loss/duplicate verify | adapter/checkpoint | finish/cancel | native + PWA |
+| MC-TC-REL-004 / `test-mobile-lifecycle-fail-safe.mjs` | lifecycle event source missing/restarted | next remote action | background/Chat Only | revalidation required | no control/local outage | source age/downgrade | restore source | all mobile clients |
+| MC-TC-REL-005 / `test-mobile-release-metadata.mjs` | unverified platform pair | generate metadata/enable flag | capability absent/disabled | explicit unsupported | no false advertisement | pair/evidence ID/result | none | all advertised pairs |
+
+## 5. Manual Case Registry
+
+`MC-MAN-{PAIR,CMD,LIVE,PERM,FILE,NATIVE,VOICE,OPS,PRIV,REL}-NN` denotes execution of the mapped automated scenario on the exact platform pair and network/OS condition recorded in the trace row. Every manual record must capture desktop OS/build, mobile OS/device/browser or native build, server/schema versions, network path (direct/relay/loss/latency), evidence links, result, reviewer, date, cleanup confirmation, and any forbidden-side-effect observation. No manual ID is a pass until that record exists.
