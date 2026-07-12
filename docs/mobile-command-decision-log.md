@@ -246,8 +246,8 @@ Repository-truth decisions may be accepted by the accountable architecture role 
 
 - Status: accepted
 - Decision: Reuse the current artifact registry only as a workspace-confined local artifact source and the file staging manager only as a local destination after remote bytes are fully authorized and verified. Neither current module is a remote transfer, authorization, retention, replay, scanning, or live-artifact-event service.
-- Repository evidence: `src/main/artifact-registry.js:175-277` requires workspace paths and owns local manifest identity; `src/main/turn-artifacts.js` derives artifacts at terminal processing; `src/main/file-staging-manager.js:67-150` stages whole local paths/buffers with random IDs and has no chunk/hash/idempotency/risk contract.
-- Evidence refs: MC-SPEC-005 §2–3; `src/main/artifact-registry.js`; `src/main/turn-artifacts.js`; `src/main/file-staging-manager.js`; MC-SPEC-027
+- Repository evidence: `src/main/artifact-registry.js:175-277` requires workspace paths and owns local manifest identity; `src/main/turn-artifacts.js:264-357` derives artifacts from terminal record inputs through `buildTurnArtifacts`, called by `src/main/turn-archive.js:15-49` and the legacy backfill at `src/main/session-artifact-backfill.js:8-29`; `src/main/file-staging-manager.js:67-150` stages whole local paths/buffers with random IDs and has no chunk/hash/idempotency/risk contract.
+- Evidence refs: MC-SPEC-005 §2–3; `src/main/artifact-registry.js`; `src/main/turn-artifacts.js`; `src/main/turn-archive.js`; `src/main/session-artifact-backfill.js`; `src/main/file-staging-manager.js`; MC-SPEC-027
 - Evidence owner: Desktop data-boundary lead
 - Alternatives: treat existing modules as complete remote transfer services; duplicate all local registries; build network logic into either module.
 - Capability gate: Remote transfer failure leaves current local artifacts and attachments unchanged; unverifiable input never reaches execution.

@@ -12,18 +12,18 @@ This MC-SPEC-036 map separates verified current owners from planned placement. I
 
 | Responsibility | Existing owner | Planned use boundary |
 |---|---|---|
-| Server route composition | `server/src/app.js`, `server/src/routes/public.js` | Register one additive public route plugin through `publicRoutes` |
-| User/device/session/license identity | `server/src/routes/public/auth.js`, `server/src/services/device-identity.js`, existing migrations | Reference existing IDs; add remote-specific relations instead of parallel base identities |
-| Region and effective config | `server/src/services/client-bootstrap.js`, `server/src/routes/public/client-config.js`, `src/main/remote-config.js` | Add versioned policy/config fields without merging the two delivery paths |
-| Authenticated desktop service requests | `src/main/service-client.js` | Add reviewed exported wrapper methods; private transport/signing functions are not an integration API |
-| Conversation and command entry | `src/main/turn-orchestrator.js` | Inject only through `TurnOrchestrator.sendUserMessage` |
-| Engine message/event normalization | `src/main/runtime/opencode-message-parts.js`, `src/main/runtime/opencode-runtime-reducer.js`, `src/main/opencode-agent-session.js` | Project normalized Lily events; never forward raw engine events |
-| Permission/question handling | `src/main/opencode-agent-session.js`, `src/main/turn-orchestrator.js` | Add remote eligibility/resolution around current permission/question semantics |
-| Local artifact identity | `src/main/artifact-registry.js`, `src/main/turn-artifacts.js` | Source adapter only; add remote descriptors and authorization separately |
-| Local attachment staging | `src/main/file-staging-manager.js`, `src/main/ipc-files.js` | Destination adapter only after remote upload verification |
-| Lifecycle and IPC | `src/main.js`, `src/main/ipc-handlers.js` and domain `src/main/ipc-*.js` modules | Minimal service composition and dedicated local UI bridge |
-| Logging | `src/main/logger.js`, Fastify logger | Add redacted structured telemetry/audit owner |
-| SQL migrations | `server/migrations/` | Next ordered additive migration after schema contracts are accepted |
+| Server route composition | `server/src/app.js:91-114`; `server/src/routes/public.js:14-37` | Register one additive public route plugin through `publicRoutes` |
+| User/device/session/license identity | `server/src/routes/public/auth.js:88-111,114-260`; `server/src/services/device-identity.js:13-164`; `server/migrations/001_initial.sql:1-32`; `server/migrations/007_client_config_profiles.sql:43-56`; `server/migrations/022_account_wallet.sql:1-63` | Reference existing IDs; add remote-specific relations instead of parallel base identities |
+| Region and effective config | `server/src/services/client-bootstrap.js:1-124`; `server/src/routes/public/client-config.js:61-175`; `src/main/remote-config.js:275-326` | Add versioned policy/config fields without merging the two delivery paths |
+| Authenticated desktop service requests | `src/main/service-client.js:465-525,827-859` | Add reviewed exported wrapper methods; private transport/signing functions are not an integration API |
+| Conversation and command entry | `src/main/turn-orchestrator.js:841-925,3437`; `src/main/ipc-assistant.js:106,176`; `src/main/scheduled-tasks.js:276` | Inject only through `TurnOrchestrator.sendUserMessage` |
+| Engine message/event normalization | `src/main/runtime/opencode-message-parts.js:526-535`; `src/main/runtime/opencode-runtime-reducer.js:739-842`; `src/main/opencode-agent-session.js:1303-1350` | Project normalized Lily events; never forward raw engine events |
+| Permission/question handling | `src/main/opencode-agent-session.js:1303-1350`; `src/main/turn-orchestrator.js:705-740,1184-1195` | Add remote eligibility/resolution around current permission/question semantics |
+| Local artifact identity | `src/main/artifact-registry.js:175-277`; `src/main/turn-artifacts.js:264-357`; `src/main/turn-archive.js:15-49`; `src/main/session-artifact-backfill.js:8-29` | Source adapter only; add remote descriptors and authorization separately |
+| Local attachment staging | `src/main/file-staging-manager.js:67-150,240`; `src/main/ipc-files.js:150-192` | Destination adapter only after remote upload verification |
+| Lifecycle and IPC | `src/main.js:288-313`; `src/main/ipc-handlers.js:42-262`; `src/main/ipc-sessions.js:68-235,385-390` | Minimal service composition and dedicated local UI bridge |
+| Logging | `src/main/logger.js:5-38`; `server/src/app.js:85-89`; `server/migrations/001_initial.sql:74-83` | Add redacted structured telemetry/audit owner |
+| SQL migrations | `server/scripts/migrate.mjs:9-48`; `server/migrations/001_initial.sql`; `server/migrations/007_client_config_profiles.sql`; `server/migrations/022_account_wallet.sql` | Next ordered additive migration after schema contracts are accepted |
 
 ## 3. Planned Additive Placement
 
@@ -64,7 +64,7 @@ docs/schemas/mobile-command-events.schema.json
 docs/schemas/mobile-command-native-bridge.schema.json
 ```
 
-Shared runtime placement is conditional on a later build/module-format audit. The three schema paths exist today as draft documentation boundaries; executable shared validators are planned.
+Shared runtime placement is conditional on a later build/module-format audit. The three schema paths exist at audited HEAD `5b102d62` (`git ls-tree -r --name-only 5b102d62 docs/schemas`); executable shared validators are planned.
 
 ## 4. Mobile And Native Placement
 
