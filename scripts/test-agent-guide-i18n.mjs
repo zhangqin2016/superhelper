@@ -621,15 +621,16 @@ assert.match(
 // Anti-hallucination rule must live in the HEAD (before the first "## " section
 // heading) so no truncation path can shed it — the fix for "confidently wrong
 // then apologizes".
-for (const [locale, needle] of [
-  ["zh-CN", "抗幻觉铁律"],
-  ["en", "Anti-hallucination rule"],
-  ["ar", "قاعدة مكافحة الهلوسة"],
+for (const [locale, needle, gateNeedle] of [
+  ["zh-CN", "抗幻觉硬门槛", "先查证再回答"],
+  ["en", "Anti-hallucination gate", "verify before answering"],
+  ["ar", "بوابة مكافحة الهلوسة", "تحقّق قبل الإجابة"],
 ]) {
   const guide = skillManager.buildAgentGuideContent([], locale);
-  assert.ok(guide.includes(needle), `${locale} guide carries the anti-hallucination rule`);
+  assert.ok(guide.includes(needle), `${locale} guide carries the anti-hallucination gate`);
   const head = guide.split(/\n## /)[0];
-  assert.ok(head.includes(needle), `${locale} anti-hallucination rule sits in the never-truncated head`);
+  assert.ok(head.includes(needle), `${locale} anti-hallucination gate sits in the never-truncated head`);
+  assert.ok(head.includes(gateNeedle), `${locale} gate mandates verify-before-answer, not just "say unknown"`);
 }
 
 console.log("agent guide i18n: ok");
