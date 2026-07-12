@@ -43,6 +43,18 @@ export function registerPublicMobileRoutes(app) {
     return requireAccountSession(request, reply, input);
   }
 
+  // Mobile-side (Phase 1): account token only, no per-request device signature.
+  // The mobile client is a WEB page that cannot hold a native ed25519 device
+  // key. Pairing security here rests on three controls: the 256-bit one-time QR
+  // token (proximity/possession), the SAME-account session (consume requires
+  // challenge.user_id === caller), and explicit desktop approval (human gate).
+  // Per-request device signature is defense-in-depth deferred to a native shell.
+  // Desktop-side endpoints (challenge/approve/deny/pending) keep bothGuards.
+  async function accountGuard(request, reply, input) {
+    await upsertDevice(input);
+    return requireAccountSession(request, reply, input);
+  }
+
   app.post(
     "/api/mobile/pairing/challenge",
     {
@@ -80,7 +92,8 @@ export function registerPublicMobileRoutes(app) {
     },
     async (request, reply) => {
       const input = consumeSchema.parse(request.body);
-      const account = await bothGuards(request, reply, input);
+      // Mobile web client: account-token auth (see accountGuard rationale).
+      const account = await accountGuard(request, reply, input);
       if (!account) return;
       const result = await consumePairingChallenge({
         token: input.token,
