@@ -4,7 +4,7 @@
 
 Status: **evidence-needed**. No ASR primary or fallback provider is selected, and MC-ADR-008 remains `proposed`.
 
-Official candidate documentation confirms that browser/native speech APIs exist. It does not establish Lily's production performance, privacy, cost, credential, background, or failure behavior. No real device, shared corpus, provider credential, or deployed endpoint was tested.
+Authoritative API references confirm that browser/native speech interfaces exist. They do not establish vendor or Lily production performance, privacy, cost, credential, background, or failure behavior. No real device, shared corpus, provider credential, or deployed endpoint was tested, and no result is labeled accepted.
 
 ## Actual Result Against Acceptance
 
@@ -18,7 +18,7 @@ Official candidate documentation confirms that browser/native speech APIs exist.
 | acceptable mid-range-device CPU/memory/battery | unverified |
 | accepted region/retention/credential/quota/cost path | blocked |
 
-The full numeric gate and candidate evidence are in [the ASR spike](mobile-command-asr-provider-spike.md).
+The full numeric gate and candidate evidence are in [the ASR spike](mobile-command-asr-provider-spike.md). The next run must use the fixed [evidence workspace](evidence/mobile-command/asr/README.md), [corpus manifest schema](evidence/mobile-command/asr/corpus-manifest.schema.json), [raw metrics schema](evidence/mobile-command/asr/raw-metrics.schema.json), and [scoring contract](evidence/mobile-command/asr/scoring-contract.md).
 
 ## Constraints That Apply Before Selection
 
@@ -33,6 +33,6 @@ The full numeric gate and candidate evidence are in [the ASR spike](mobile-comma
 
 ## Blocking Artifacts And Next Experiment
 
-Blocking artifacts are the versioned corpus/scorer, representative iOS/Android devices, test credentials/endpoints, deploy-specific privacy/cost evidence, background/network profiles, energy measurements, and composer patch/failure tests.
+Blocking artifacts are the approved versioned corpus/annotations, consent and scorer implementation, representative iOS/Android devices and app builds, provider/model/region and test credentials/endpoints, deploy-specific privacy/retention/cost evidence, background/network profiles, energy measurements, and composer patch/failure tests. Missing inputs produce a `blocked` artifact; they are never scored as zero or silently substituted.
 
 Run [ASR spike §6](mobile-command-asr-provider-spike.md#6-next-reproducible-experiment) without changing thresholds after results are visible. A primary/fallback order may be chosen only after every mandatory threshold and privacy/operations review passes. Until then, the only safe degradation is editable text input with existing draft preserved.

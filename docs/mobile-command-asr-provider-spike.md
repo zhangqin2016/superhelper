@@ -4,7 +4,9 @@
 
 Status: **evidence-needed**. Recorded 2026-07-12.
 
-Only official candidate capability documentation was reviewed. No provider credentials, real iOS/Android device run, shared audio corpus, weak-network run, or battery measurement was available. Official documentation establishes candidate features and constraints only; it is not latency, accuracy, privacy-deployment, cost, or battery performance evidence. MC-ADR-008 remains `proposed`.
+Only API reference documentation was reviewed. No provider credentials, real iOS/Android device run, shared audio corpus, weak-network run, or battery measurement was available. API references establish candidate interfaces and constraints only; they are not vendor-specific latency, accuracy, privacy-deployment, cost, or battery evidence. MC-ADR-008 remains `proposed`.
+
+The executable, data-free experiment format is fixed at [the ASR evidence workspace](evidence/mobile-command/asr/README.md), including JSON schemas, corpus case IDs, artifact hashes, sample size, confidence intervals, scoring, and blocked inputs. It does not contain measurements or audio.
 
 ## 2. Predeclared Acceptance Thresholds
 
@@ -26,18 +28,18 @@ The corpus must include the five command phrases previously specified, balanced 
 
 ## 3. Candidate Evidence Matrix
 
-`PASS` is used only when a linked, candidate-specific official source documents the named API capability. A Lily specification placeholder is a design input, not provider evidence. Performance remains `UNVERIFIED` until the common corpus runs.
+`OBSERVED-DOC` means only that an authoritative API reference documents the named interface. `OBSERVED-LOCAL` is reserved for reproducible local observations with hashed raw artifacts; none exist yet. A Lily specification placeholder is a design input, not provider evidence. Performance remains `UNVERIFIED` until the common corpus runs.
 
 | Candidate | Official capability evidence | Latency/quality | iOS/Android behavior | Privacy/retention/cost | Decision result |
 |---|---|---|---|---|---|
-| Browser Speech API | PASS — official browser API documentation describes speech-recognition capability; availability varies by browser | UNVERIFIED — no corpus or device run | UNVERIFIED — no iOS/Android browser run | UNVERIFIED — deployed processing/retention/cost not proven | UNVERIFIED; cannot be primary/fallback |
-| Native OS Speech | PASS — official Apple/Android platform documentation describes native speech APIs | UNVERIFIED — no corpus or device run | UNVERIFIED — no native prototype/background run | UNVERIFIED — entitlements, on-device/server path, retention and quota not proven | UNVERIFIED |
+| Browser Speech API | OBSERVED-DOC — MDN is an authoritative Web API reference describing speech recognition and browser availability, not vendor evidence | UNVERIFIED — no corpus or device run | UNVERIFIED — no iOS/Android browser run | UNVERIFIED — deployed processing/retention/cost not proven | UNVERIFIED; cannot be primary/fallback |
+| Native OS Speech | OBSERVED-DOC — Apple/Android API references describe native speech interfaces | UNVERIFIED — no corpus or device run | UNVERIFIED — no native prototype/background run | UNVERIFIED — entitlements, on-device/server path, retention and quota not proven | UNVERIFIED |
 | Lily Streaming ASR | BLOCKED — specification placeholder only; no concrete upstream, endpoint, credential, or candidate-specific official source | UNVERIFIED — no endpoint credentials or run | UNVERIFIED | BLOCKED — no deployed provider/config/privacy/cost artifact | BLOCKED; cannot be primary/fallback |
 | Lily non-streaming ASR | BLOCKED — specification placeholder only; no concrete upstream, endpoint, credential, or candidate-specific official source | UNVERIFIED — no endpoint credentials or run | UNVERIFIED | BLOCKED — no deployed provider/config/privacy/cost artifact | BLOCKED; cannot be primary/fallback |
 | Configured model transcription | UNVERIFIED — no provider/model selected and no candidate-specific official source or endpoint evidence recorded | UNVERIFIED — no configured-provider corpus run | UNVERIFIED | BLOCKED — no accepted provider, credentials, region, retention, quota or cost evidence | BLOCKED; cannot be primary/fallback |
 | Text input | REQUIRED DESIGN FALLBACK — implementation UNVERIFIED; specified by the voice contract only | Not an ASR candidate | UNVERIFIED — composer/provider integration is not implemented | Design path sends no audio, but implementation is unverified | REQUIRED DESIGN FALLBACK — implementation UNVERIFIED; not an ASR winner |
 
-Official source set reviewed on 2026-07-12: [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API), [Apple Speech framework](https://developer.apple.com/documentation/speech), and [Android SpeechRecognizer](https://developer.android.com/reference/android/speech/SpeechRecognizer). These links support API candidacy only.
+Authoritative API reference set reviewed on 2026-07-12: [Web Speech API on MDN](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API), [Apple Speech framework](https://developer.apple.com/documentation/speech), and [Android SpeechRecognizer](https://developer.android.com/reference/android/speech/SpeechRecognizer). MDN is a platform API reference, not evidence from a deployed ASR vendor. These links support API candidacy only.
 
 ## 4. Actual Threshold Results
 
@@ -54,7 +56,7 @@ Official source set reviewed on 2026-07-12: [Web Speech API](https://developer.m
 
 ## 5. Blocking Artifacts
 
-- Accepted, versioned multilingual/noise corpus and scoring script.
+- Accepted, versioned multilingual/noise corpus and scoring implementation conforming to [the fixed evidence format](evidence/mobile-command/asr/README.md).
 - Representative iOS and Android devices plus declared browser/native-shell versions.
 - Test credentials and deploy-specific endpoints for each configured remote candidate.
 - Provider region, subprocessors, audio/transcript retention/logging, deletion, quota, and price evidence reviewed by privacy/operations owners.
@@ -65,7 +67,7 @@ Official source set reviewed on 2026-07-12: [Web Speech API](https://developer.m
 
 1. Freeze and hash the corpus/annotations; assign the same utterance order to every candidate.
 2. Record device model, OS, app/browser build, network profile, provider/model/region, credential owner, and timestamp.
-3. Capture partial/final monotonic timestamps, transcript revisions, CPU/RSS/energy, errors, and cost units into one normalized JSON schema.
+3. Capture partial/final monotonic timestamps, transcript revisions, CPU/RSS/energy/network, errors, and cost units using [the raw metrics schema](evidence/mobile-command/asr/raw-metrics.schema.json).
 4. Run at least 500 utterances per candidate, including offline and weak-network cases; calculate p50/p95, CER/WER, key-term accuracy, failure preservation, and crash rate with the same scorer.
 5. Have privacy and operations owners verify the deployed retention/region/credential/cost facts.
-6. Select a primary/fallback only if it passes all mandatory thresholds; otherwise ship text-only voice degradation and keep MC-ADR-008 proposed.
+6. Score with [the frozen scoring contract](evidence/mobile-command/asr/scoring-contract.md). Select a primary/fallback only if it passes all mandatory thresholds; otherwise ship text-only voice degradation and keep MC-ADR-008 proposed.

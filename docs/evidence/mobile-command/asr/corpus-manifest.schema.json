@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lily.local/schemas/mobile-command/asr/corpus-manifest.schema.json",
+  "title": "Mobile Command ASR corpus manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "corpusId", "corpusVersion", "createdAt", "owner", "annotationArtifact", "cases"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "corpusId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "corpusVersion": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "owner": { "type": "string", "minLength": 1 },
+    "annotationArtifact": { "$ref": "#/$defs/artifact" },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recording", "processing", "researchUse", "approvedAt", "withdrawalContact"],
+      "properties": {
+        "recording": { "const": true },
+        "processing": { "const": true },
+        "researchUse": { "const": true },
+        "approvedAt": { "type": "string", "format": "date-time" },
+        "withdrawalContact": { "type": "string", "minLength": 1 }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "subjectId", "environment", "locale", "length", "intent", "annotationId", "audioExternalId", "dataClass", "captureRegion", "allowedProcessingRegions", "retentionUntil", "deletionOwner", "consent"],
+      "properties": {
+        "caseId": { "type": "string", "pattern": "^(quiet|street|headset|far-field)\\.(zh-CN|en-US|mixed)\\.(short|long)\\.(ordinary|sensitive)\\.[0-9]{3,}$" },
+        "subjectId": { "type": "string", "pattern": "^subject-[a-z0-9-]+$" },
+        "environment": { "enum": ["quiet", "street", "headset", "far-field"] },
+        "locale": { "enum": ["zh-CN", "en-US", "mixed"] },
+        "length": { "enum": ["short", "long"] },
+        "intent": { "enum": ["ordinary", "sensitive"] },
+        "annotationId": { "type": "string", "minLength": 1 },
+        "audioExternalId": { "type": "string", "minLength": 1 },
+        "dataClass": { "enum": ["synthetic-consented", "human-pseudonymous"] },
+        "captureRegion": { "type": "string", "minLength": 1 },
+        "allowedProcessingRegions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "retentionUntil": { "type": "string", "format": "date-time" },
+        "deletionOwner": { "type": "string", "minLength": 1 },
+        "consent": { "$ref": "#/$defs/consent" }
+      }
+    }
+  }
+}
