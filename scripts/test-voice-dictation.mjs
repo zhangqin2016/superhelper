@@ -127,6 +127,72 @@ function fakeSender() {
   delete process.env.LILY_VOICE_DICTATION;
 }
 
+// --- connect retry: transient gateway drops before ready auto-reconnect --------
+// (field: the realtime gateway intermittently kills a fresh socket; a single
+// attempt surfaced "语音识别连接出现问题" instead of just retrying)
+{
+  process.env.LILY_ASR_CONNECT_BACKOFF_MS = "1";
+  try {
+    const built = [];
+    class FlakyWS {
+      static OPEN = 1;
+      constructor() { FlakyWS.count = (FlakyWS.count || 0) + 1; this.n = FlakyWS.count; this.readyState = 0; this.sent = []; built.push(this); }
+      send(d) { this.sent.push(JSON.parse(d)); }
+      close() { this.closed = true; }
+    }
+    FlakyWS.count = 0;
+    const service = svc.createVoiceDictationService({
+      resolveApiKey: () => "sk-x",
+      resolveRelay: () => null,
+      WebSocketCtor: FlakyWS,
+    });
+    const sender = fakeSender();
+    assert.equal(service.start({ sender }).ok, true);
+    // Attempt 1: error before ready → should redial, not surface an error.
+    built[0].onerror?.({ message: "boom" });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.ok(sender.events.some((e) => e.kind === "reconnecting"), "an early drop emits reconnecting, not error");
+    assert.equal(sender.events.filter((e) => e.kind === "error").length, 0, "no error surfaced while retries remain");
+    assert.ok(built.length >= 2, "a second socket was dialed");
+    // Attempt 2 succeeds.
+    built[1].readyState = 1;
+    built[1].onopen?.();
+    built[1].onmessage?.({ data: JSON.stringify({ type: "session.created" }) });
+    assert.ok(sender.events.some((e) => e.kind === "ready"), "the retry reaches ready");
+    assert.equal(service.isActive(), true);
+    service.stop();
+  } finally {
+    delete process.env.LILY_ASR_CONNECT_BACKOFF_MS;
+  }
+}
+
+// --- connect retry exhausts → error surfaces ------------------------------------
+{
+  process.env.LILY_ASR_CONNECT_ATTEMPTS = "2";
+  process.env.LILY_ASR_CONNECT_BACKOFF_MS = "1";
+  try {
+    class DeadWS {
+      static OPEN = 1;
+      constructor() { DeadWS.all = DeadWS.all || []; DeadWS.all.push(this); this.readyState = 0; }
+      send() {}
+      close() { this.closed = true; }
+    }
+    DeadWS.all = [];
+    const service = svc.createVoiceDictationService({ resolveApiKey: () => "sk-x", resolveRelay: () => null, WebSocketCtor: DeadWS });
+    const sender = fakeSender();
+    service.start({ sender });
+    DeadWS.all[0].onerror?.({ message: "x" });
+    await new Promise((r) => setTimeout(r, 10));
+    DeadWS.all[1].onerror?.({ message: "x" });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.ok(sender.events.some((e) => e.kind === "error"), "error surfaces only after attempts exhaust");
+    assert.equal(service.isActive(), false);
+  } finally {
+    delete process.env.LILY_ASR_CONNECT_ATTEMPTS;
+    delete process.env.LILY_ASR_CONNECT_BACKOFF_MS;
+  }
+}
+
 // --- relay transport (gateway media mode) against a fake fetch ------------------
 {
   const calls = [];

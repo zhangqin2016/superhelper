@@ -33,6 +33,18 @@ const log = getLogger("voice-dictation");
 const DEFAULT_MODEL = "qwen3-asr-flash-realtime";
 const DEFAULT_WS_BASE = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
 const FINISH_GRACE_MS = 2_500;
+// The realtime gateway intermittently drops a fresh socket before it is ready
+// (esp. rapid reconnects) — the same instability seen across the endpoint.
+// Retry the CONNECT a few times with backoff before surfacing an error; once
+// the session is ready a drop ends dictation (reconnecting mid-utterance would
+// lose audio). Read at call time so tests (and ops) can tune them.
+function connectMaxAttempts() {
+  return Math.max(1, Number(process.env.LILY_ASR_CONNECT_ATTEMPTS) || 3);
+}
+function connectBackoffMs() {
+  const v = Number(process.env.LILY_ASR_CONNECT_BACKOFF_MS);
+  return Number.isFinite(v) && v >= 0 ? v : 400;
+}
 
 function dictationEnabled() {
   return process.env.LILY_VOICE_DICTATION !== "0";
@@ -326,51 +338,80 @@ function createVoiceDictationService({
       const apiKey = String(resolveApiKey() || "").trim();
       if (!apiKey) return { ok: false, error: "NO_DASHSCOPE_KEY" };
 
-      let ws;
-      try {
-        ws = new WebSocketCtor(resolveUrl(), {
-          headers: {
-            authorization: `Bearer ${apiKey}`,
-            "openai-beta": "realtime=v1",
-          },
-        });
-      } catch (err) {
-        return { ok: false, error: "ASR_CONNECT_FAILED", detail: err?.message || String(err) };
-      }
-
-      const session = { ws, sender, finishTimer: null, finished: false };
+      // The session survives across connect retries so buffered audio (fed by
+      // the renderer before `ready`) rides the eventual live socket.
+      const session = { ws: null, sender, finishTimer: null, finished: false, ready: false, stopped: false };
       active = session;
 
-      ws.onopen = () => {
+      const dial = (attempt) => {
+        if (active !== session || session.stopped) return;
+        let ws;
         try {
-          ws.send(JSON.stringify(buildSessionUpdate()));
+          ws = new WebSocketCtor(resolveUrl(), {
+            headers: {
+              authorization: `Bearer ${apiKey}`,
+              "openai-beta": "realtime=v1",
+            },
+          });
         } catch (err) {
-          log.warn(`session.update send failed: ${err?.message || err}`);
-          emitTo(sender, { kind: "error", code: "ASR_CONNECT_FAILED", message: String(err?.message || err) });
-          teardown(session, { notifyClosed: true });
+          retryOrFail(attempt, err);
+          return;
         }
+        session.ws = ws;
+        ws.onopen = () => {
+          try {
+            ws.send(JSON.stringify(buildSessionUpdate()));
+          } catch (err) {
+            retryOrFail(attempt, err);
+          }
+        };
+        ws.onmessage = (message) => {
+          const parsed = parseAsrServerEvent(message?.data);
+          if (!parsed) return;
+          if (parsed.kind === "ready") session.ready = true;
+          emitTo(sender, parsed);
+          if (parsed.kind === "finished") {
+            session.finished = true;
+            teardown(session, { notifyClosed: true });
+          } else if (parsed.kind === "error") {
+            log.warn(`asr error: ${parsed.code} ${parsed.message}`);
+          }
+        };
+        ws.onerror = (err) => {
+          if (session.ready || active !== session) return; // post-ready drop → onclose ends it
+          log.warn(`asr socket error (attempt ${attempt}): ${err?.message || err?.error?.message || "socket error"}`);
+          retryOrFail(attempt, err);
+        };
+        ws.onclose = () => {
+          if (active !== session) return;
+          if (session.ready) {
+            // A drop after transcripts began: end cleanly, do not silently
+            // reconnect (buffered audio mid-utterance can't be replayed).
+            teardown(session, { notifyClosed: true });
+          } else if (!session.stopped) {
+            retryOrFail(attempt, new Error("closed before ready"));
+          }
+        };
       };
-      ws.onmessage = (message) => {
-        const parsed = parseAsrServerEvent(message?.data);
-        if (!parsed) return;
-        emitTo(sender, parsed);
-        if (parsed.kind === "finished") {
-          session.finished = true;
-          teardown(session, { notifyClosed: true });
-        } else if (parsed.kind === "error") {
-          log.warn(`asr error: ${parsed.code} ${parsed.message}`);
+
+      const retryOrFail = (attempt, err) => {
+        if (active !== session || session.stopped) return;
+        try {
+          session.ws?.close?.();
+        } catch { /* best effort */ }
+        session.ws = null;
+        if (attempt < connectMaxAttempts()) {
+          const delay = connectBackoffMs() * attempt;
+          emitTo(sender, { kind: "reconnecting", attempt });
+          session.finishTimer = setTimeout(() => dial(attempt + 1), delay);
+          return;
         }
-      };
-      ws.onerror = (err) => {
-        log.warn(`asr socket error: ${err?.message || err?.error?.message || "socket error"}`);
+        log.warn(`asr connect failed after ${attempt} attempts: ${err?.message || err}`);
         emitTo(sender, { kind: "error", code: "ASR_SOCKET_ERROR", message: String(err?.message || "connection error") });
         teardown(session, { notifyClosed: true });
       };
-      ws.onclose = () => {
-        if (active === session || !session.finished) {
-          teardown(session, { notifyClosed: true });
-        }
-      };
+
+      dial(1);
       return { ok: true };
     },
 
@@ -417,8 +458,15 @@ function createVoiceDictationService({
         }, FINISH_GRACE_MS);
         return { ok: true };
       }
+      // Stop during connect retries: cancel the pending redial and end now.
+      session.stopped = true;
+      clearTimeout(session.finishTimer);
+      if (!session.ready || !session.ws) {
+        teardown(session, { notifyClosed: true });
+        return { ok: true };
+      }
       try {
-        session.ws?.send?.(JSON.stringify({ type: "session.finish" }));
+        session.ws.send(JSON.stringify({ type: "session.finish" }));
       } catch {
         teardown(session, { notifyClosed: true });
         return { ok: true };

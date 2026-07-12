@@ -253,6 +253,12 @@ function handleVoiceEvent(event) {
     renderTranscript();
   } else if (kind === "vad" && state.button) {
     state.button.classList.toggle("is-speaking", Boolean(event.speaking));
+  } else if (kind === "reconnecting") {
+    // Transient gateway drop before the session went live — the service is
+    // redialing. Show the connecting state instead of an error; audio keeps
+    // buffering locally until the retry succeeds.
+    state.ready = false;
+    setPhase("connecting");
   } else if (kind === "error") {
     stopCapture();
     setPhase("idle");
